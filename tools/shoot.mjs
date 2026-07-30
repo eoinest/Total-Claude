@@ -36,10 +36,13 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 // ---------------------------------------------------------------------------
 const SHOTS = {
   establishing: {
-    desc: 'Opening wide shot from behind the Roman line, both armies in frame',
-    // zoom 0.82 is a ~395 m orbit, which puts a man at ~5 px and reduces both armies to
-    // dust-coloured bands no amount of model detail can rescue. 0.55 gives ~12 px.
-    x: 0, z: -20, zoom: 0.55, yaw: Math.PI, at: 1,
+    // Auto-framed from behind the player's own line, looking at the enemy — the classic
+    // Total War establishing composition, with your own men large in the foreground and
+    // the opposing host beyond. A fixed focus cannot do this: at zoom 0.82 a man is 5 px,
+    // and at 0.55 the 320 m gap between the armies does not fit, so the camera ended up
+    // photographing the empty ground between them.
+    desc: 'From behind the Roman line, looking north at the Juthungi host',
+    follow: 'ownLine', zoom: 0.70, at: 1,
   },
   wide: {
     // 0.95 is very nearly full zoom-out: an almost top-down strategic view in which the
@@ -341,7 +344,19 @@ try {
               }
             }
 
-            if (s.follow === 'romanFront' || s.follow === 'germanFront') {
+            if (s.follow === 'ownLine') {
+              // Centroid of the player faction's living men, and of the enemy's, so the
+              // camera can sit behind one and aim along the axis at the other.
+              const ax = cn[0] ? cx[0] / cn[0] : 0, az = cn[0] ? cz[0] / cn[0] : 0;
+              const bx = cn[1] ? cx[1] / cn[1] : 0, bz = cn[1] ? cz[1] / cn[1] : 0;
+              // Focus on our own line. The orbit then puts the eye behind it, so the whole
+              // enemy host falls beyond the focus instead of behind the camera.
+              fx = ax; fz = az;
+              fyaw = Math.atan2(bx - ax, bz - az);
+              n = -1;
+            }
+
+            if (n === 0 && (s.follow === 'romanFront' || s.follow === 'germanFront')) {
               // Frame ONE front-line infantry unit, not the army's centroid. Averaging
               // rank 0 across a 660 m frontage plus the second line and the archers put
               // the focus in open ground between the lines, with the nearest cohort in a

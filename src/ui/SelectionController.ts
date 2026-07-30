@@ -204,10 +204,10 @@ export class SelectionController {
   }
 
   /**
-   * Note when testing this: the order lands — `BattleSystem.setFormation` applies it on the
-   * same tick — but `TacticalAI` currently commands *both* armies, and within a second or so
-   * it re-issues its own formation for the same unit and the player's choice is gone. The
-   * HUD half is correct; the AI needs to stand off units the player is driving.
+   * Note when testing this under the screenshot harness: the harness defaults to
+   * `?autoplay=1`, which hands both armies to the AI so a shot has a battle in it, and the
+   * AI will re-issue its own formation over the player's within a second. Load with an
+   * explicit `?autoplay=0` to drive Rome yourself and see the order hold.
    */
   issueFormation(id: string, ctx: EngineContext): void {
     const ids = this.model.selectedViews
