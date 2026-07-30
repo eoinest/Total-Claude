@@ -25,7 +25,9 @@ import {
   type ColumnOrder,
   type GeoStream,
 } from './build';
+import { HALF_EXTENT } from '../terrain/TerrainSystem';
 import { crestZAt, roadCentreX } from '../terrain/topography';
+import type { CityMatKey } from './materials';
 import { AQUEDUCTS, GATE_X, LANDMARKS, type LandmarkPlacement } from './layout';
 import { PAL } from './palette';
 import { cylinderBetween, type CityChunkSpec, type TreeRequest } from './wall';
@@ -243,15 +245,19 @@ export function buildLandmarks(heightAt: Ground, seed: string): LandmarkOutput {
 
   // The far horizon: the Alban hills and the campagna, closing the view beyond the
   // terrain's edge so the city does not end against empty sky.
+  // A ring about the world origin, so that is where its bounding volume has to be: the
+  // declared centre used to be (0, 1900) with radius 2600, which does not enclose the
+  // geometry at all and put the LOD and shadow distance out by up to 1.9 km.
   chunks.push({
     name: 'far-hills',
     cx: 0,
-    cz: 1900,
-    radius: 2600,
+    cz: 0,
+    radius: FAR_HILLS_RADIUS,
     castShadow: false,
     lodSwitch: [1e9, 1e9],
+    scenery: true,
     build: (batch) => {
-      batch.setUvOrigin(0, 0, 1900);
+      batch.setUvOrigin(0, 0, 0);
       buildFarHills(batch, heightAt);
     },
   });
@@ -259,9 +265,20 @@ export function buildLandmarks(heightAt: Ground, seed: string): LandmarkOutput {
   return { chunks, trees, footprints };
 }
 
-function buildLandmark(batch: Batch, detail: number, m: LandmarkPlacement, heightAt: Ground, rng: Rng): void {
-  const g = heightAt(m.x, m.z);
-  const mat = new THREE.Matrix4().makeRotationY(m.rot).setPosition(m.x, 0, m.z);
+function buildLandmark(batch: Batch, detail: number, world: LandmarkPlacement, heightAt: Ground, rng: Rng): void {
+  const g = heightAt(world.x, world.z);
+  // Monuments are authored at true scale and compressed **in plan only** by the placement
+  // matrix: heights pass through at 1:1, so the Colosseum keeps its 48 m attic while its
+  // footprint takes the share of the ground the projection can actually spare. See
+  // `PLAN_SCALE` in layout.ts for the measurement that fixes the number. Normals are
+  // recomputed from the transformed edges in `GeoStream.prepare`, so a non-uniform scale is
+  // safe here in a way it would not be if they were transformed directly.
+  const mat = new THREE.Matrix4()
+    .makeRotationY(world.rot)
+    .setPosition(world.x, 0, world.z)
+    .scale(SCALE_V.set(world.planScale, 1, world.planScale));
+  // Everything below works in the monument's own frame, so it needs the *unscaled* extents.
+  const m = localExtents(world);
   // Every stream the monument builders might touch has to share the placement
   // transform. Unused streams cost nothing: empty ones are dropped when baking.
   // EVERY material key, not a hand-kept subset. A builder that reaches for a stream missing
@@ -270,18 +287,13 @@ function buildLandmark(batch: Batch, detail: number, m: LandmarkPlacement, heigh
   // `buildMound` began using `concrete` for the natural hills: the Janiculum's 230 m earth
   // bank was drawn at (0, 0), a 40 m tan mass across the whole approach that occluded the
   // Roman line in every establishing shot. Enumerate the union, not the guess.
-  const keys: Parameters<Batch['s']>[0][] = [
-    'stone',
-    'brick',
-    'stucco',
-    'roof',
-    'metal',
-    'timber',
-    'road',
-    'concrete',
-    'foliage',
-  ];
-  for (const k of keys) batch.s(k).push(mat);
+  //
+  // And push through `pushAll`, never by iterating the keys: at mid and far detail several
+  // of these nine keys resolve to the *same* stream, and pushing per key composed the
+  // placement matrix up to four times. See `Batch.distinct`. That is what put the Mausoleum
+  // of Augustus, the Horologium, the Iseum Campense and Trajan's Column at exactly (0, 0)
+  // whenever the camera was more than 560 m from them.
+  const streams = batch.pushAll(LANDMARK_KEYS, mat);
 
   let podium = g;
   if (!m.mound) podium = buildSubstructure(batch, detail, m, heightAt, g);
@@ -290,7 +302,7 @@ function buildLandmark(batch: Batch, detail: number, m: LandmarkPlacement, heigh
     // masonry; the Aventine, the Caelian and the Janiculum are natural hills and read
     // as earth and planting.
     const built = m.id === 'temple-jupiter' || m.id === 'palatine';
-    buildMound(batch, detail, m.moundRadius ?? m.clear, m.mound, g, heightAt, m.x, m.z, m.rot, built);
+    buildMound(batch, detail, m.moundRadius ?? m.clear, m.mound, g, heightAt, m.x, m.z, m.rot, built, m.planScale);
     podium = g + m.mound;
   }
 
@@ -463,9 +475,46 @@ function buildLandmark(batch: Batch, detail: number, m: LandmarkPlacement, heigh
       break;
   }
 
-  for (const k of keys) batch.s(k).pop();
+  batch.popAll(streams);
 }
 
+const SCALE_V = new THREE.Vector3();
+
+/**
+ * A monument's footprint in its own, uncompressed frame.
+ *
+ * `LandmarkPlacement` carries *world* extents, because the keep-out map, the overlap solver,
+ * the movement grid and the plan diagnostic all measure ground. The geometry builders are
+ * inside the placement matrix, which compresses plan by `planScale`, so they need the
+ * extents divided back out or the compression is applied twice.
+ */
+function localExtents(m: LandmarkPlacement): LandmarkPlacement {
+  if (m.planScale === 1) return m;
+  const k = 1 / m.planScale;
+  return {
+    ...m,
+    hw: m.hw * k,
+    hd: m.hd * k,
+    clear: m.clear * k,
+    moundRadius: m.moundRadius === undefined ? undefined : m.moundRadius * k,
+  };
+}
+
+/**
+ * Every material stream a monument builder can reach for. Kept as a named constant so the
+ * placement push and any later addition cannot drift apart.
+ */
+const LANDMARK_KEYS: readonly CityMatKey[] = [
+  'stone',
+  'brick',
+  'stucco',
+  'roof',
+  'metal',
+  'timber',
+  'road',
+  'concrete',
+  'foliage',
+];
 
 /**
  * The substructure under a large flat monument.
@@ -501,6 +550,11 @@ function buildSubstructure(
   // The building, not the precinct: the plinth should not swallow the paved area around it.
   const hw = m.hw / 1.07;
   const hd = m.hd / 1.07;
+  // `m` is in the monument's own frame; the terrain is not. Sampling offsets go back through
+  // the plan compression or the plinth follows ground 1/PLAN_SCALE too far out.
+  const k = m.planScale;
+  const sample = (u: number, v: number): number =>
+    heightAt(m.x + (u * cs - v * sn) * k, m.z + (u * sn + v * cs) * k);
   const nu = Math.max(2, Math.round(hw / 24));
   const nv = Math.max(2, Math.round(hd / 24));
   let low = Infinity;
@@ -509,7 +563,7 @@ function buildSubstructure(
     for (let i = 0; i <= nu; i++) {
       const u = -hw + (hw * 2 * i) / nu;
       const v = -hd + (hd * 2 * j) / nv;
-      const h = heightAt(m.x + u * cs - v * sn, m.z + u * sn + v * cs);
+      const h = sample(u, v);
       low = Math.min(low, h);
       high = Math.max(high, h);
     }
@@ -541,10 +595,7 @@ function buildSubstructure(
       const bx = x0 + (x1 - x0) * ((i + 1) / segs);
       const bz = z0 + (z1 - z0) * ((i + 1) / segs);
       // Foot of this bay follows the ground, so the plinth is only as deep as it must be.
-      const g0 = Math.min(
-        heightAt(m.x + ax * cs - az * sn, m.z + ax * sn + az * cs),
-        heightAt(m.x + bx * cs - bz * sn, m.z + bx * sn + bz * cs)
-      ) - 1.1;
+      const g0 = Math.min(sample(ax, az), sample(bx, bz)) - 1.1;
       col.copy(PAL.peperino).multiplyScalar(0.9 + hash2(c, i, 0x5f1) * 0.2);
       quadPrism(st, ax, az, bx, bz, -dz, dx, 0.9, g0, podium, col, PAL.travertineDirty, {
         top: false,
@@ -601,7 +652,9 @@ function buildMound(
   wx: number,
   wz: number,
   rot: number,
-  built: boolean
+  built: boolean,
+  /** Plan compression the placement matrix applies, for terrain sampling. See `PLAN_SCALE`. */
+  planScale: number
 ): void {
   const st = batch.s(built ? 'stone' : 'concrete');
   const seg = detail >= 1 ? 30 : 14;
@@ -641,7 +694,10 @@ function buildMound(
         if (r > 0) return y0;
         const lx = Math.cos(a) * rr;
         const lz = Math.sin(a) * rr;
-        return Math.min(y0, heightAt(wx + lx * cs - lz * sn, wz + lx * sn + lz * cs) - 1.5);
+        return Math.min(
+          y0,
+          heightAt(wx + (lx * cs - lz * sn) * planScale, wz + (lx * sn + lz * cs) * planScale) - 1.5
+        );
       };
       // Per-facet tone so a 130 m bank is not one flat plate of colour.
       const shade = new THREE.Color().copy(face).multiplyScalar(0.93 + hash2(i, r, 0x71a) * 0.14);
@@ -2681,8 +2737,10 @@ function buildAqueduct(
       const h = chY - g;
       if (h < 3) continue;
       const m = new THREE.Matrix4().makeRotationY(dirY).setPosition(px, g, pz);
-      stone.push(m);
-      brick.push(m);
+      // Safe today only because an aqueduct chunk never builds its far level, where
+      // `collapseTo` would make these one stream; through `pushAll` it stays safe if that
+      // changes. See `Batch.distinct`.
+      const pushed = batch.pushAll(AQUEDUCT_KEYS, m);
       const spring = Math.max(2.5, h - bay * 0.5 - 1.6);
       const open = Math.min(bay - aq.pierWidth, (h - spring) * 2);
       archPanel(stone, bay + 0.05, h, PAL.travertineDirty, {
@@ -2706,11 +2764,13 @@ function buildAqueduct(
           backFace: true,
         });
       }
-      stone.pop();
-      brick.pop();
+      batch.popAll(pushed);
     }
   }
 }
+
+/** Both streams `buildAqueduct` touches. See `Batch.distinct`. */
+const AQUEDUCT_KEYS: readonly CityMatKey[] = ['stone', 'brick'];
 
 // ---------------------------------------------------------------------------
 // Far horizon
@@ -2721,6 +2781,9 @@ function buildAqueduct(
  * bare sky. From the battlefield these sit 1.5–2.5 km out and read as the Alban
  * hills through the aerial haze — cheap, and the frame collapses without them.
  */
+/** Outer radius of the horizon ring; the far-hills chunk's declared bounding radius. */
+export const FAR_HILLS_RADIUS = (HALF_EXTENT * Math.SQRT2 + 60) * (2600 / 1560) + 200;
+
 function buildFarHills(batch: Batch, heightAt: Ground): void {
   const st = batch.s('stone');
   const ridge = new THREE.Color().copy(PAL.peperino).multiplyScalar(0.85);
@@ -2732,10 +2795,20 @@ function buildFarHills(batch: Batch, heightAt: Ground): void {
   const nrm = new THREE.Vector3();
 
   // Three concentric ridges of increasing distance and decreasing contrast.
+  //
+  // The innermost radius is `HALF_EXTENT · √2 + 60`: the heightfield is a *square*, so its
+  // circumradius is 1,980 m and a ring inside that cuts the corners of the map. The first
+  // version put the near ridge at 1,560 m, which drove a 62 m vertical curtain of hill
+  // straight across the plain at x ≈ ±1,200, z ≈ ±1,000 — inside the battlefield, standing
+  // on flat ground behind both armies, and always at full detail. Radii are scaled together
+  // so each ridge keeps the angular height it had from the centre of the map and the horizon
+  // reads exactly as before.
+  const R0 = HALF_EXTENT * Math.SQRT2 + 60;
+  const k = R0 / 1560;
   const layers = [
-    { r: 1560, h: 62, freq: 5.5, tint: ridge },
-    { r: 2050, h: 108, freq: 3.5, tint: new THREE.Color().lerpColors(ridge, far, 0.5) },
-    { r: 2600, h: 168, freq: 2.5, tint: far },
+    { r: R0, h: 62 * k, freq: 5.5, tint: ridge },
+    { r: 2050 * k, h: 108 * k, freq: 3.5, tint: new THREE.Color().lerpColors(ridge, far, 0.5) },
+    { r: 2600 * k, h: 168 * k, freq: 2.5, tint: far },
   ];
   for (const L of layers) {
     const seg = 96;
@@ -2861,17 +2934,21 @@ function buildRoadTombs(batch: Batch, detail: number, heightAt: Ground, sites: T
   // dead centre of the battlefield. That is the pair of terracotta planes floating in mid-air
   // over open ground in every strategic frame. An unpushed stream fails silently and puts the
   // geometry somewhere plausible-looking, which is why it survived several passes.
+  //
+  // The keys are pushed through `batch.pushAll`, which resolves aliases: at far detail all
+  // four of these are one stream, and pushing per key composed the placement matrix four
+  // times — a duplicate necropolis at 4× its coordinates, 1.5 km out on the plain.
+  const TOMB_KEYS: readonly CityMatKey[] = ['stone', 'brick', 'metal', 'roof'];
   const stone = batch.s('stone');
   const brick = batch.s('brick');
   const metal = batch.s('metal');
   const roof = batch.s('roof');
-  const pushed = [stone, brick, metal, roof];
 
   for (let i = 0; i < sites.length; i++) {
     const site = sites[i];
     const g = heightAt(site.x, site.z);
     const m = new THREE.Matrix4().makeRotationY(site.rot).setPosition(site.x, 0, site.z);
-    for (const st of pushed) st.push(m);
+    const pushed = batch.pushAll(TOMB_KEYS, m);
     const kind = site.kind;
     // Roadside tombs are tufa, travertine and brick, and half of them were rendered and
     // painted. Marble was for the very rich, and a whole necropolis of it reads as snow.
@@ -2980,6 +3057,6 @@ function buildRoadTombs(batch: Batch, detail: number, heightAt: Ground, sites: T
       if (detail >= 2) box(metal, -0.3, g + h + 0.28, -0.3, 0.3, g + h + 1.1, 0.3, PAL.bronze);
     }
 
-    for (const st of pushed) st.pop();
+    batch.popAll(pushed);
   }
 }

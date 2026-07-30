@@ -747,3 +747,63 @@ lat/lon to pixel coordinates against that image's stated bounding box.
   geometries are traced from OSM and therefore ODbL-derived upstream despite the CC-BY label.
 - **DARE** is CC BY-**SA** 3.0 (not CC-BY) and has no intra-urban Rome content.
   **AWMC** is ODbL for GIS and CC BY-NC 4.0 for finished maps, and has no Rome city plan.
+
+### 8. AGEA 2012 colour orthophoto of central Rome — the modern aerial reference
+- **Creator:** Agenzia per le Erogazioni in Agricoltura (AGEA), flown 2012; published by the
+  Geoportale Nazionale, Ministero dell'Ambiente e della Sicurezza Energetica (MASE).
+- **Asset page / service:** <https://gn.mase.gov.it/> — WMS
+  `http://wms.pcn.minambiente.it/ogc?map=/ms_ogc/WMS_v1.3/raster/ortofoto_colore_12.map`
+- **Licence (verbatim, `https://gn.mase.gov.it/portale/note-legali`):** "I dati scaricabili
+  tramite il servizio di Download del Geoportale sono messi a disposizione con licenza
+  **CC BY 4.0**". The `GetCapabilities` of this service additionally declares
+  `<Fees>Nessuna condizione applicata</Fees>` and `<AccessConstraints>Nessuno</AccessConstraints>`.
+  Attribution: *AGEA / Geoportale Nazionale — MASE, CC BY 4.0*.
+- **File:** WMS 1.1.1 `GetMap`, `layers=OI.ORTOIMMAGINI.2012.33`, `srs=EPSG:3004`,
+  `format=image/jpeg`. The service caps `WIDTH`/`HEIGHT` at 2048, so it was fetched as four
+  2048 × 1367 tiles on the bbox quadrants and mosaicked.
+- **CRS / extent:** EPSG:3004, bbox
+  `2307658.1627,4638582.868607,2314671.3719,4643263.3909` — **byte-for-byte the same bbox,
+  size and CRS as item 5**, so the modern orthophoto and the Lanciani plan are
+  pixel-registered to each other and share one georeference. 4096 × 2734 at 1.7122 m/px
+  (50 cm native, downsampled).
+- **What it is for.** The user asked for "aerial photos of rome versus aerial photos of the
+  layout". This is the aerial photograph half. It also independently validates the survey in
+  `src/city/rome.ts`, because a 50 cm orthophoto shows the Colosseum and the Circus Maximus
+  unambiguously: measured off it, the Colosseum's centre agrees with `rome.ts` to ~25 m and
+  its arena axis to ~9°, and the Circus Maximus's centre to 27 m with a long axis of
+  **118.8°** against the 120° in the survey.
+- Local: `agea-2012-ortofoto-EPSG3004-2307658_4638583_2314671_4643263-4096px.jpg`
+
+### How the georeference is used in-engine
+
+`src/city/overlay.ts` carries a plain 6-parameter affine from raster pixels to the survey
+frame of `rome.ts` (metres east/north of the Temple of Jupiter OM):
+
+```
+e = 1.70846149·px + 0.05015993·py − 3538.9517
+n = 0.05027504·px − 1.71190121·py + 2244.5710
+```
+
+fitted against a full inverse of EPSG:3004 (Transverse Mercator on the Hayford 1909
+ellipsoid, k₀ = 0.9996, λ₀ = 15° E, false easting 2 520 000 m, plus the EPSG:1659 Monte
+Mario → WGS84 Helmert) over a 13 × 13 grid spanning the whole plate. **Worst residual
+1.26 m over 7 km.** The 0.0294 shear is the grid convergence of EPSG:3004 at Rome's
+longitude — 1.68° west of grid north — so neither raster is north-up in the survey frame and
+neither may be treated as an axis-aligned rectangle.
+
+Both rasters are **local reference only**: `reference/` is gitignored, `overlay.ts` is
+imported solely by `preview.ts` and the plan-view harness (neither is a Vite build entry —
+the only input is `index.html`), and `CitySystem.setReferenceOverlay` refuses outside
+`import.meta.env.DEV`. A clean checkout has neither the code path nor the file, and the
+overlay's loader treats a missing raster as a no-op.
+
+### Free 3D models of Rome — checked again, still nothing usable
+- **Rome Reborn** (romereborn.org) — could not be reached from this environment on this
+  pass, so its terms were **not** re-verified. It is sold through Flyover Zone as commercial
+  VR titles and its licensing page has historically been all-rights-reserved; treated as
+  unusable until someone reads the page directly.
+- **Stanford Digital Forma Urbis Romae**, **Digital Augustan Rome**, **mappingrome.com** —
+  unchanged from the section above: all rights reserved or no licence at all. Not used.
+- Nothing on Sketchfab under CC0/CC-BY is a *georeferenced model of the city*; the CC0
+  Roman assets there are individual props and monuments, which would not answer the
+  question this task is about (where the Colosseum is), and were not downloaded.

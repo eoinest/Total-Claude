@@ -86,8 +86,11 @@ const SHOTS = {
     follow: 'cavalry', zoom: 0.42, at: 62,
   },
   city: {
-    desc: 'Necropolis, road, Aurelian Wall and the city beyond',
-    x: 60, z: 400, zoom: 0.62, yaw: 0.0, at: 2,
+    // Was (60, 400) zoom 0.62, which put the camera *inside* the Via Flaminia tomb field
+    // rather than on the city. Pulled back and lifted so the wall reads as the foreground
+    // and the districts behind it fill the frame.
+    desc: 'The Aurelian Wall with the city behind it',
+    x: 40, z: 620, zoom: 0.74, yaw: Math.PI * 0.06, at: 2,
   },
   wall: {
     // Looking *along* the curtain rather than square at it. The wall's outer face points

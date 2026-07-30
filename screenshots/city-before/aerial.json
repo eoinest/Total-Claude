@@ -1,0 +1,345 @@
+{
+  "at": "2026-07-30T22:15:00.747Z",
+  "rects": {
+    "field": {
+      "desc": "Whole heightfield from directly overhead",
+      "minX": -1400,
+      "maxX": 1400,
+      "minZ": -1400,
+      "maxZ": 1400,
+      "px": 1600
+    },
+    "city": {
+      "desc": "The city behind the wall, plan view",
+      "minX": -1400,
+      "maxX": 1400,
+      "minZ": 380,
+      "maxZ": 1400,
+      "px": 2000
+    },
+    "core": {
+      "desc": "Capitol, Fora, Palatine, Colosseum, Circus",
+      "minX": -200,
+      "maxX": 1200,
+      "minZ": 560,
+      "maxZ": 1340,
+      "px": 1800
+    }
+  },
+  "shots": [
+    {
+      "name": "field",
+      "draws": 80,
+      "tris": 2603844,
+      "ms": 28.155555544959203,
+      "desc": "Whole heightfield from directly overhead",
+      "mPerPx": 1.75
+    },
+    {
+      "name": "city",
+      "draws": 79,
+      "tris": 2573844,
+      "ms": 8.464516130570454,
+      "desc": "The city behind the wall, plan view",
+      "mPerPx": 1.4
+    },
+    {
+      "name": "core",
+      "draws": 68,
+      "tris": 2541987,
+      "ms": 9.769230772898792,
+      "desc": "Capitol, Fora, Palatine, Colosseum, Circus",
+      "mPerPx": 0.7777777777777778
+    }
+  ],
+  "drift": [
+    {
+      "id": "theatre-marcellus",
+      "drift": 383.7,
+      "x": -173.3,
+      "z": 1101.9,
+      "idealX": 196.9,
+      "idealZ": 1001.1
+    },
+    {
+      "id": "temple-serapis",
+      "drift": 337.1,
+      "x": 701.5,
+      "z": 604.4,
+      "idealX": 461,
+      "idealZ": 840.5
+    },
+    {
+      "id": "ludus-magnus",
+      "drift": 334.1,
+      "x": 1038.5,
+      "z": 1161.5,
+      "idealX": 730.7,
+      "idealZ": 1031.5
+    },
+    {
+      "id": "trajan-market",
+      "drift": 295,
+      "x": 568.7,
+      "z": 647.4,
+      "idealX": 408.2,
+      "idealZ": 894.9
+    },
+    {
+      "id": "theatre-pompey",
+      "drift": 291.1,
+      "x": -369.2,
+      "z": 933.8,
+      "idealX": -78.2,
+      "idealZ": 929.6
+    },
+    {
+      "id": "basilica-ulpia",
+      "drift": 283.3,
+      "x": 324.8,
+      "z": 631.3,
+      "idealX": 376.8,
+      "idealZ": 909.8
+    },
+    {
+      "id": "porticus-octaviae",
+      "drift": 274,
+      "x": -108.4,
+      "z": 938.8,
+      "idealX": 159.3,
+      "idealZ": 997.1
+    },
+    {
+      "id": "trajan-column",
+      "drift": 223,
+      "x": 265,
+      "z": 700.9,
+      "idealX": 365.7,
+      "idealZ": 899.8
+    },
+    {
+      "id": "imperial-fora",
+      "drift": 222.3,
+      "x": 489.2,
+      "z": 730.9,
+      "idealX": 425.1,
+      "idealZ": 943.8
+    },
+    {
+      "id": "stadium-domitian",
+      "drift": 195.8,
+      "x": -179.1,
+      "z": 675.3,
+      "idealX": -45.4,
+      "idealZ": 818.3
+    },
+    {
+      "id": "forum-romanum",
+      "drift": 192,
+      "x": 352.2,
+      "z": 798.4,
+      "idealX": 402.5,
+      "idealZ": 983.7
+    },
+    {
+      "id": "pantheon",
+      "drift": 191.4,
+      "x": 130.7,
+      "z": 645.4,
+      "idealX": 94.1,
+      "idealZ": 833.2
+    },
+    {
+      "id": "temple-isis",
+      "drift": 190.6,
+      "x": 210.5,
+      "z": 675.8,
+      "idealX": 159.3,
+      "idealZ": 859.4
+    },
+    {
+      "id": "palatine",
+      "drift": 182.1,
+      "x": 324.7,
+      "z": 956.7,
+      "idealX": 461,
+      "idealZ": 1077.4
+    },
+    {
+      "id": "aventine-temples",
+      "drift": 181,
+      "x": 9.1,
+      "z": 1274.7,
+      "idealX": 170.8,
+      "idealZ": 1193.3
+    },
+    {
+      "id": "horologium",
+      "drift": 178.9,
+      "x": 135.4,
+      "z": 580.9,
+      "idealX": 149.1,
+      "idealZ": 759.3
+    },
+    {
+      "id": "caelian-villas",
+      "drift": 178.1,
+      "x": 863,
+      "z": 1138.5,
+      "idealX": 685.1,
+      "idealZ": 1131.8
+    },
+    {
+      "id": "temple-jupiter",
+      "drift": 177.2,
+      "x": 149.2,
+      "z": 879.2,
+      "idealX": 292.2,
+      "idealZ": 983.7
+    },
+    {
+      "id": "tabularium",
+      "drift": 174,
+      "x": 146.3,
+      "z": 952.3,
+      "idealX": 318.8,
+      "idealZ": 974.9
+    },
+    {
+      "id": "largo-argentina",
+      "drift": 159.7,
+      "x": 80.4,
+      "z": 750.2,
+      "idealX": 86.6,
+      "idealZ": 909.8
+    },
+    {
+      "id": "circus-maximus",
+      "drift": 153.4,
+      "x": 249.4,
+      "z": 1156.7,
+      "idealX": 402.5,
+      "idealZ": 1146.5
+    },
+    {
+      "id": "janiculum",
+      "drift": 144.6,
+      "x": -912.8,
+      "z": 1070.1,
+      "idealX": -768.1,
+      "idealZ": 1070.1
+    },
+    {
+      "id": "ara-pacis",
+      "drift": 142.6,
+      "x": 152.7,
+      "z": 557.4,
+      "idealX": 152.6,
+      "idealZ": 700
+    },
+    {
+      "id": "baths-trajan",
+      "drift": 141.7,
+      "x": 741.1,
+      "z": 832.3,
+      "idealX": 772.8,
+      "idealZ": 970.4
+    },
+    {
+      "id": "castra-praetoria",
+      "drift": 131.7,
+      "x": 1117.7,
+      "z": 785.5,
+      "idealX": 1151.1,
+      "idealZ": 658.1
+    },
+    {
+      "id": "baths-agrippa",
+      "drift": 119.5,
+      "x": 177.9,
+      "z": 765.8,
+      "idealX": 104.8,
+      "idealZ": 860.3
+    },
+    {
+      "id": "baths-nero",
+      "drift": 114.5,
+      "x": -26.1,
+      "z": 755.6,
+      "idealX": 44.1,
+      "idealZ": 846.1
+    },
+    {
+      "id": "colosseum",
+      "drift": 107.5,
+      "x": 548.9,
+      "z": 1026.3,
+      "idealX": 655.4,
+      "idealZ": 1040.6
+    },
+    {
+      "id": "baths-caracalla",
+      "drift": 86.3,
+      "x": 722.2,
+      "z": 1250.8,
+      "idealX": 666.5,
+      "idealZ": 1316.7
+    },
+    {
+      "id": "gardens-sallust",
+      "drift": 61.9,
+      "x": 726.6,
+      "z": 580,
+      "idealX": 685.1,
+      "idealZ": 625.9
+    },
+    {
+      "id": "mausoleum-augustus",
+      "drift": 61,
+      "x": 41.7,
+      "z": 602.5,
+      "idealX": 79.1,
+      "idealZ": 650.7
+    },
+    {
+      "id": "baths-titus",
+      "drift": 10.5,
+      "x": 735.3,
+      "z": 1009.3,
+      "idealX": 725.4,
+      "idealZ": 1005.9
+    },
+    {
+      "id": "tiber-island",
+      "drift": 0,
+      "x": -623.6,
+      "z": 1025.7,
+      "idealX": -623.6,
+      "idealZ": 1025.7
+    },
+    {
+      "id": "mausoleum-hadrian",
+      "drift": 0,
+      "x": -796.3,
+      "z": 722.2,
+      "idealX": -796.3,
+      "idealZ": 722.2
+    }
+  ],
+  "meanDrift": 174.1,
+  "cityStats": {
+    "chunks": 24,
+    "meshes": 167,
+    "visibleMeshes": 63,
+    "visibleTriangles": 788863,
+    "triangles": 2061394,
+    "materials": 9,
+    "usedManifest": true,
+    "footprintOverlaps": 0,
+    "footprintOverlapWorst": 0,
+    "topologyPass": 44,
+    "topologyChecks": 44,
+    "amphitheatres": 1,
+    "strayGeometry": 34
+  }
+}

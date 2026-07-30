@@ -93,6 +93,12 @@ export interface CityChunkSpec {
   lodSwitch: [number, number];
   /** Material the far level collapses into. Defaults to `stone`. */
   farMaterial?: CityMatKey;
+  /**
+   * Distant scenery that deliberately lies outside the heightfield — only the horizon
+   * ring. Exempt from `assertNoStrayGeometry`'s battlefield test, and required by it to
+   * stay wholly beyond the map instead.
+   */
+  scenery?: boolean;
 }
 
 export interface WallBuildOutput {
@@ -620,8 +626,10 @@ function buildTower(
   const proj = WALL.towerProject;
   // Modules are authored with −Z outward; `f.rotY` turns that onto the wall run.
   const m = new THREE.Matrix4().makeRotationY(f.rotY).setPosition(x, 0, z);
-  const used = [brick, stone, roof];
-  for (const st of used) st.push(m);
+  // Through `pushAll`, which resolves material aliases: at far detail all three of these
+  // are the same stream, and pushing per key composed the placement matrix three times —
+  // towers scattered to roughly 3x their position. See `Batch.distinct`.
+  const used = batch.pushAll(TOWER_KEYS, m);
 
   const zOuter = -(T * 0.5 + proj);
   const zInner = T * 0.5;
@@ -658,7 +666,7 @@ function buildTower(
   }
 
   if (unfinished) {
-    for (const st of used) st.pop();
+    batch.popAll(used);
     return;
   }
 
@@ -720,12 +728,18 @@ function buildTower(
     stone.pop();
   }
 
-  for (const st of used) st.pop();
+  batch.popAll(used);
 }
+
+/** Every stream `buildTower` touches. See `Batch.distinct`. */
+const TOWER_KEYS: readonly CityMatKey[] = ['brick', 'stone', 'roof'];
 
 // ---------------------------------------------------------------------------
 // Gate — the Porta Flaminia, on the axis of the Via Flaminia
 // ---------------------------------------------------------------------------
+
+/** Every stream `buildGate` touches. See `Batch.distinct`. */
+const GATE_KEYS: readonly CityMatKey[] = ['brick', 'stone', 'metal', 'timber', 'roof', 'road'];
 
 function buildGate(batch: Batch, detail: number, bay: Bay, heightAt: (x: number, z: number) => number, rng: Rng): void {
   const brick = batch.s('brick');
@@ -746,8 +760,9 @@ function buildGate(batch: Batch, detail: number, bay: Bay, heightAt: (x: number,
   buildGateApproach(batch, detail, cx, cz, f, heightAt, rng);
 
   const m = new THREE.Matrix4().makeRotationY(f.rotY).setPosition(cx, 0, cz);
-  const used = [brick, stone, metal, timber, roof, road];
-  for (const st of used) st.push(m);
+  // See `Batch.distinct`: at mid detail these six keys are three streams and at far detail
+  // one, so pushing per key put the whole 25 x 11 m gate block at `m^3` and `m^6`.
+  const used = batch.pushAll(GATE_KEYS, m);
 
   // 11 m of masonry front to back so the passage is a real tunnel, and an attic
   // above the arch for the dedicatory inscription.
@@ -930,8 +945,7 @@ function buildGate(batch: Batch, detail: number, bay: Bay, heightAt: (x: number,
   for (const s of [-1, 1]) {
     const leafW = GATE_OPEN_WIDTH * 0.47;
     const mm = new THREE.Matrix4().makeRotationY(s * 1.72).setPosition((s * GATE_OPEN_WIDTH) / 2, 0, zF + 5.4);
-    timber.push(mm);
-    metal.push(mm);
+    const leaf = batch.pushAll(LEAF_KEYS, mm);
     box(timber, Math.min(0, s * leafW), g + 0.1, -0.1, Math.max(0, s * leafW), g + 5.7, 0.1, PAL.timberDark);
     if (detail >= 1) {
       for (let k = 0; k < 4; k++) {
@@ -939,8 +953,7 @@ function buildGate(batch: Batch, detail: number, bay: Bay, heightAt: (x: number,
         box(metal, Math.min(0, s * leafW), y, -0.14, Math.max(0, s * leafW), y + 0.17, 0.14, PAL.iron);
       }
     }
-    timber.pop();
-    metal.pop();
+    batch.popAll(leaf);
   }
 
   // Polygonal basalt carriageway, rutted by two centuries of carts.
@@ -951,16 +964,19 @@ function buildGate(batch: Batch, detail: number, bay: Bay, heightAt: (x: number,
     const gx = 13.5;
     const gz = 10.5;
     const gg = heightAt(cx + gx * Math.cos(f.rotY), cz + gz) - g;
-    brick.pushTranslate(gx, gg, gz);
-    roof.pushTranslate(gx, gg, gz);
+    const guard = batch.pushAllTranslate(GUARD_KEYS, gx, gg, gz);
     box(brick, -4.2, g, -3.1, 4.2, g + 3.3, 3.1, PAL.ochreDeep, { groundShade: 0.2 });
     hipRoof(roof, 9.2, 7.1, g + 3.3, 1.6, 0.45, PAL.roofTileOld);
-    brick.pop();
-    roof.pop();
+    batch.popAll(guard);
   }
 
-  for (const st of used) st.pop();
+  batch.popAll(used);
 }
+
+/** Gate leaves and their ironwork; one stream at far detail. See `Batch.distinct`. */
+const LEAF_KEYS: readonly CityMatKey[] = ['timber', 'metal'];
+/** Guardhouse walls and roof; one stream at far detail. See `Batch.distinct`. */
+const GUARD_KEYS: readonly CityMatKey[] = ['brick', 'roof'];
 
 /**
  * The ground outside the Porta Flaminia: the paved apron of the Via Flaminia widening

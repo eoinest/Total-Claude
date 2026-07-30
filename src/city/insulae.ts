@@ -13,6 +13,7 @@ import {
   type GeoStream,
 } from './build';
 import { DISTRICTS, KeepOut, STREETS, type DistrictSpec } from './layout';
+import type { CityMatKey } from './materials';
 import { PAL } from './palette';
 import { cylinderBetween, type CityChunkSpec, type TreeRequest } from './wall';
 
@@ -196,14 +197,34 @@ export function buildDistricts(
   // Group districts into depth bands: one chunk per band keeps the draw count down,
   // and the whole city is normally in frame at once anyway so per-district culling
   // buys little.
+  // Ids must match `DISTRICT_PLAN` in layout.ts exactly — see `assertEveryDistrictBuilt`,
+  // which is why this list is now checked rather than trusted. Six of the seven names the
+  // first revision used (`porta-flaminia`, `campus-north`, `campus-mid`, `campus-south`,
+  // `east-suburb`, `forum-east`) matched nothing, so the whole of the Campus Martius, the
+  // Velabrum and the Emporium — 40 % of the city's fabric, and the ground directly behind
+  // the wall in the standard viewpoint — were laid out, reserved in the movement grid and
+  // planted with trees, but never emitted as geometry. The visible symptom was courtyard
+  // cypresses standing in bare field.
   const groups: { name: string; ids: string[]; lod: [number, number] }[] = [
-    { name: 'city-gate', ids: ['porta-flaminia'], lod: [260, 1200] },
-    { name: 'city-campus-n', ids: ['campus-north', 'via-lata', 'quirinal', 'vaticanus'], lod: [420, 1400] },
-    { name: 'city-campus-s', ids: ['campus-mid', 'campus-south', 'trastevere'], lod: [520, 1e9] },
-    { name: 'city-east', ids: ['viminal', 'esquiline', 'east-suburb'], lod: [560, 1e9] },
-    { name: 'city-central', ids: ['subura', 'forum-east'], lod: [560, 1e9] },
-    { name: 'city-south', ids: ['caelian', 'aventine'], lod: [600, 1e9] },
+    { name: 'city-gate', ids: ['campus-flaminia'], lod: [260, 1200] },
+    { name: 'city-campus-n', ids: ['campus-augusti', 'via-lata', 'vaticanus'], lod: [420, 1400] },
+    { name: 'city-campus-s', ids: ['campus-medius', 'campus-flaminius', 'trastevere', 'ripa-campi'], lod: [520, 1e9] },
+    { name: 'city-east', ids: ['quirinal', 'viminal', 'esquiline'], lod: [560, 1e9] },
+    // The Velabrum is the low ground *between* the Forum Boarium and the Forum, so the two
+    // share a chunk rather than adding one: the city is already at 104 visible meshes
+    // against a budget of 100.
+    { name: 'city-central', ids: ['subura', 'velabrum', 'forum-boarium'], lod: [560, 1e9] },
+    { name: 'city-south', ids: ['caelian', 'aventine', 'emporium'], lod: [600, 1e9] },
   ];
+  const built = new Set(groups.flatMap((g) => g.ids));
+  const missing = DISTRICTS.filter((d) => !built.has(d.id)).map((d) => d.id);
+  const unknown = [...built].filter((id) => !DISTRICTS.some((d) => d.id === id));
+  if (missing.length || unknown.length) {
+    console.warn(
+      `[city] district groups do not cover the plan: unbuilt ${missing.join(', ') || 'none'}; ` +
+        `unknown ${unknown.join(', ') || 'none'}`
+    );
+  }
 
   const chunks: CityChunkSpec[] = [];
   for (const grp of groups) {
@@ -348,12 +369,16 @@ function buildBuilding(batch: Batch, detail: number, plot: Plot, d: DistrictSpec
   const m = new THREE.Matrix4().makeRotationY(plot.rot).setPosition(plot.x, 0, plot.z);
   const stucco = batch.s('stucco');
   const roof = batch.s('roof');
-  const used: GeoStream[] = [stucco, roof];
   const timber = detail >= 2 ? batch.s('timber') : null;
   const stone = detail >= 1 ? batch.s('stone') : null;
-  if (timber) used.push(timber);
-  if (stone) used.push(stone);
-  for (const st of used) st.push(m);
+  // Through `pushAll`, which drops aliases. At far detail `collapseTo` makes `stucco` and
+  // `roof` the *same* stream, so pushing per stream composed the placement matrix twice and
+  // the whole quarter was drawn again at roughly double its coordinates. See
+  // `Batch.distinct`.
+  const keys: CityMatKey[] = ['stucco', 'roof'];
+  if (timber) keys.push('timber');
+  if (stone) keys.push('stone');
+  const used = batch.pushAll(keys, m);
 
   const w = plot.hw * 2;
   const dep = plot.hd * 2;
@@ -371,13 +396,13 @@ function buildBuilding(batch: Batch, detail: number, plot: Plot, d: DistrictSpec
     const h = GROUND_H + STOREY_H * (floors - 1);
     box(stucco, -w / 2, g, -dep / 2, w / 2, g + h, dep / 2, paintColour(rng), { bottom: false });
     hipRoof(roof, w, dep, g + h, Math.min(w, dep) * 0.16, 0.4, roofColour(rng));
-    for (const st of used) st.pop();
+    batch.popAll(used);
     return;
   }
 
   if (grand) {
     buildDomus(batch, detail, w, dep, g, rng, stucco, roof, stone, timber);
-    for (const st of used) st.pop();
+    batch.popAll(used);
     return;
   }
 
@@ -401,11 +426,12 @@ function buildBuilding(batch: Batch, detail: number, plot: Plot, d: DistrictSpec
       const fl = clamp(floors + (hash2(k, Math.round(w), 55) < 0.3 ? -1 : 0), 1, 5);
       buildWing(batch, detail, x0, z0, x1, z1, g, fl, paint, tile, rng, stucco, roof, timber, stone, k === 0 ? -1 : k === 1 ? 1 : 0, k < 2 ? 'gable' : 'hip');
     }
-    // The court itself: paved, with a cistern mouth and a vine.
-    const cst = batch.s('stone');
-    cst.push(m);
-    box(cst, -w / 2 + wingW, g + 0.06, -dep / 2 + wingW, w / 2 - wingW, g + 0.12, dep / 2 - wingW, PAL.basalt, { bottom: false });
-    cst.pop();
+    // The court itself: paved, with a cistern mouth and a vine. `stone` is already carrying
+    // the placement transform from `used` above, so it must *not* be pushed again — the
+    // earlier revision did, and every courtyard shed a stray basalt slab at `m²`.
+    if (stone) {
+      box(stone, -w / 2 + wingW, g + 0.06, -dep / 2 + wingW, w / 2 - wingW, g + 0.12, dep / 2 - wingW, PAL.basalt, { bottom: false });
+    }
     if (detail >= 2 && stone) {
       cylinder(stone, 0, g + 0.1, 0, 0.7, 0.65, 0.85, 9, PAL.travertineDirty, { top: true });
     }
@@ -413,7 +439,7 @@ function buildBuilding(batch: Batch, detail: number, plot: Plot, d: DistrictSpec
     buildWing(batch, detail, -w / 2, -dep / 2, w / 2, dep / 2, g, floors, paint, tile, rng, stucco, roof, timber, stone, plot.frontSide);
   }
 
-  for (const st of used) st.pop();
+  batch.popAll(used);
 }
 
 /**

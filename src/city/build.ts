@@ -345,15 +345,74 @@ export class Batch {
     if (!st) {
       st = new GeoStream();
       st.uvScale = 1 / this.mats.worldSize(k);
+      st.uvOrigin.copy(this.uvOrigin);
       this.streams.set(k, st);
     }
     return st;
   }
 
-  /** Shift UV origin for every stream — keeps UV magnitudes small far from origin. */
-  setUvOrigin(x: number, y: number, z: number): void {
-    for (const st of this.streams.values()) st.uvOrigin.set(x, y, z);
+  /**
+   * The distinct streams behind `keys`, each appearing once.
+   *
+   * **`s()` is not injective, and that is what produced buildings in the battlefield.**
+   * `collapseTo` maps all nine material keys to one stream and `mergeTrim` maps them to
+   * five, so the natural-looking
+   *
+   * ```ts
+   * for (const k of keys) batch.s(k).push(mat);   // WRONG
+   * ```
+   *
+   * pushes `mat` onto the *same* stream once per alias, and `GeoStream.push` composes
+   * rather than replaces — so at mid detail a landmark was emitted at `mat⁴` and at far
+   * detail the gate at `mat⁶`. For a Y-rotation-plus-translation the composed translation
+   * is `(I + R + R² + R³)·p`, whose length collapses to **zero at a 90° rotation**: the
+   * Mausoleum of Augustus, the Horologium, the Iseum and Trajan's Column all sit at
+   * exactly 90° in world rotation and were therefore drawn at the world origin — in the
+   * middle of the battlefield — at every camera distance beyond 560 m, vanishing again as
+   * soon as the camera came close enough to swap in the correct full-detail level.
+   *
+   * Use `pushAll`/`popAll`, or this, and never iterate keys.
+   */
+  distinct(keys: readonly CityMatKey[]): GeoStream[] {
+    const out: GeoStream[] = [];
+    for (const key of keys) {
+      const st = this.s(key);
+      // Nine keys at most, so a linear scan is cheaper than a Set.
+      if (!out.includes(st)) out.push(st);
+    }
+    return out;
   }
+
+  /** Push one matrix onto each distinct stream behind `keys`. Pop with `popAll`. */
+  pushAll(keys: readonly CityMatKey[], m: THREE.Matrix4): GeoStream[] {
+    const out = this.distinct(keys);
+    for (const st of out) st.push(m);
+    return out;
+  }
+
+  /** As `pushAll`, with a pure translation. */
+  pushAllTranslate(keys: readonly CityMatKey[], x: number, y: number, z: number): GeoStream[] {
+    TRANS.makeTranslation(x, y, z);
+    return this.pushAll(keys, TRANS);
+  }
+
+  popAll(streams: readonly GeoStream[]): void {
+    for (const st of streams) st.pop();
+  }
+
+  /**
+   * Shift UV origin for every stream — keeps UV magnitudes small far from origin.
+   *
+   * Remembered, and applied to streams created later, because callers set it *before*
+   * building and the streams are created lazily inside the builder. Without that, the first
+   * object in a chunk got no UV origin at all and every one after it carried its
+   * predecessor's.
+   */
+  setUvOrigin(x: number, y: number, z: number): void {
+    this.uvOrigin.set(x, y, z);
+    for (const st of this.streams.values()) st.uvOrigin.copy(this.uvOrigin);
+  }
+  private readonly uvOrigin = new THREE.Vector3();
 
   setTransform(m: THREE.Matrix4 | null): void {
     for (const st of this.streams.values()) st.setTransform(m);

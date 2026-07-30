@@ -10,9 +10,15 @@
  * comparable with the graded ones.
  *
  *   node src/city/shoot-city.mjs --shots=city,skyline --out=screenshots/city
+ *   node src/city/shoot-city.mjs --shots=plan                  # labelled SVG plan + assertions
+ *   node src/city/shoot-city.mjs --shots=aerial                # orthographic plan views vs
+ *                                                              # the georeferenced Lanciani plan
+ *   node src/city/shoot-city.mjs --shots=aerial --ref=aerial    # ...vs the 2012 orthophoto
+ *   node src/city/shoot-city.mjs --shots=aerial --lod=1         # at the detail the field sees
  */
 
 import { chromium } from 'playwright';
+import sharp from 'sharp';
 import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -57,6 +63,32 @@ const SHOTS = {
  */
 const PLAN_SHOT = 'plan';
 
+/**
+ * Orthographic plan views, rendered through the real engine.
+ *
+ * `--shots=aerial` renders each of these rectangles three times — the city alone, the
+ * georeferenced archaeological plan alone, and the two together — through an orthographic
+ * camera looking straight down at a *known* world rectangle. Because the projection is
+ * orthographic and the rectangle is exact, screen pixels are a linear function of world
+ * metres: 1 px = (maxX − minX) / width metres, everywhere in the frame. That is what makes
+ * the comparison measurable rather than impressionistic, and it is what the user asked for
+ * — "aerial photos of rome versus aerial photos of the layout".
+ *
+ * Each triple is also composited into a side-by-side and a 50/50 blend, and annotated with
+ * a 250 m world graticule plus a marker per landmark at its *projected* position, so the
+ * residual between marker and masonry is the layout solver's drift read straight off the
+ * picture.
+ */
+const AERIALS = {
+  // The whole heightfield, so anything standing in the battlefield is in frame.
+  field: { desc: 'Whole heightfield from directly overhead', minX: -1400, maxX: 1400, minZ: -1400, maxZ: 1400, px: 1600 },
+  // The city band: everything behind the wall crest.
+  city: { desc: 'The city behind the wall, plan view', minX: -1400, maxX: 1400, minZ: 380, maxZ: 1400, px: 2000 },
+  // The monumental core, where the survey is densest and the solver works hardest.
+  core: { desc: 'Capitol, Fora, Palatine, Colosseum, Circus', minX: -200, maxX: 1200, minZ: 560, maxZ: 1340, px: 1800 },
+};
+const AERIAL_SHOT = 'aerial';
+
 const args = new Map(
   process.argv.slice(2).map((a) => {
     const m = a.match(/^--([^=]+)(?:=(.*))?$/);
@@ -79,11 +111,129 @@ const requested = args.get('shots')
   : Object.keys(SHOTS);
 
 for (const s of requested) {
-  if (s === PLAN_SHOT) continue;
+  if (s === PLAN_SHOT || s === AERIAL_SHOT) continue;
   if (!SHOTS[s]) {
     console.error(`Unknown shot "${s}". Available: ${Object.keys(SHOTS).join(', ')}`);
     process.exit(2);
   }
+}
+
+/**
+ * Render the plan-view triples and measure the per-landmark residual.
+ *
+ * The three images of each rectangle are pixel-registered by construction — same camera,
+ * same projection — so `sharp` can composite them directly into a side-by-side and a
+ * blend. The annotation draws, in world metres:
+ *
+ *  - a 250 m graticule, labelled, so any distance in the frame can be read off;
+ *  - a hollow square at each landmark's *projected* position (`worldOf` of the survey) and
+ *    a filled dot at where it was actually built, joined by a line. The length of that line
+ *    in metres is the overlap solver's drift, and it is printed in `aerial.json`.
+ */
+async function shootAerials(browser, base, out, refId, consoleErrors, lod = 0) {
+  const page = await browser.newPage({ viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1 });
+  page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(`aerial: ${m.text()}`); });
+  page.on('pageerror', (e) => consoleErrors.push(`aerial pageerror: ${e.message}`));
+  const url = `${base}/src/city/preview.html?quality=ultra&w=1600&h=900`;
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await page.waitForFunction(() => window.__city && window.__city.ready === true, { timeout: 240000 });
+  const marks = await page.evaluate(() => window.__city.landmarkTable());
+  const hasRef = await page.evaluate((id) => window.__city.setOverlay(id, { mode: 'ground' }), refId);
+  if (!hasRef) console.log(`  · reference raster "${refId}" not present — skipping the overlay images`);
+  const results = [];
+
+  for (const [name, a] of Object.entries(AERIALS)) {
+    const w = a.px;
+    const h = Math.round((a.px * (a.maxZ - a.minZ)) / (a.maxX - a.minX));
+    await page.setViewportSize({ width: w, height: h });
+    const files = {};
+    for (const layer of hasRef ? ['city', 'ref', 'both'] : ['city']) {
+      const info = await page.evaluate(async ({ a, layer, w, h, lod }) => {
+        const g = window.__city;
+        g.setSize(w, h);
+        g.setOverlayVisible(layer !== 'city');
+        g.setCityVisible(layer !== 'ref');
+        g.planView({ minX: a.minX, maxX: a.maxX, minZ: a.minZ, maxZ: a.maxZ }, lod);
+        for (let i = 0; i < 12; i++) g.engine.frame(performance.now() + i * 16.7);
+        const st = g.engine.stats();
+        return { draws: st.calls, tris: st.tris, ms: g.engine.time.frameMs };
+      }, { a, layer, w, h, lod });
+      const f = path.join(out, `aerial-${name}-${layer}${lod ? `-lod${lod}` : ''}.png`);
+      await page.screenshot({ path: f, type: 'png' });
+      files[layer] = f;
+      if (layer === 'city') results.push({ name, ...info, desc: a.desc, mPerPx: (a.maxX - a.minX) / w });
+    }
+    await page.evaluate(() => { window.__city.setCityVisible(true); });
+
+    // Annotate the city render, then compose the comparisons.
+    const mpp = (a.maxX - a.minX) / w;
+    await sharp(files.city)
+      .composite([{ input: Buffer.from(annotate(a, w, h, marks)), top: 0, left: 0 }])
+      .png().toFile(path.join(out, `aerial-${name}-city-marked${lod ? `-lod${lod}` : ''}.png`));
+    if (files.ref) {
+      await sharp(files.ref)
+        .composite([{ input: Buffer.from(annotate(a, w, h, marks)), top: 0, left: 0 }])
+        .png().toFile(path.join(out, `aerial-${name}-ref-marked.png`));
+      // Side by side, plan left, render right.
+      const gap = 12;
+      await sharp({ create: { width: w * 2 + gap, height: h, channels: 3, background: '#101010' } })
+        .composite([
+          { input: await sharp(files.ref).png().toBuffer(), left: 0, top: 0 },
+          { input: await sharp(files.city).png().toBuffer(), left: w + gap, top: 0 },
+        ])
+        .png().toFile(path.join(out, `aerial-${name}-side.png`));
+      // 50/50 blend: registration error shows as doubling.
+      await sharp(files.ref)
+        .composite([{ input: await sharp(files.city).ensureAlpha(0.5).png().toBuffer(), blend: 'over' }])
+        .png().toFile(path.join(out, `aerial-${name}-blend.png`));
+    }
+    console.log(`  ✓ ${`aerial:${name}`.padEnd(16)} ${w}x${h}  ${mpp.toFixed(3)} m/px  ${files.ref ? 'city+ref+blend' : 'city only'}`);
+  }
+
+  const drift = marks
+    .map((m) => ({ id: m.id, drift: +Math.hypot(m.x - m.idealX, m.z - m.idealZ).toFixed(1), x: +m.x.toFixed(1), z: +m.z.toFixed(1), idealX: +m.idealX.toFixed(1), idealZ: +m.idealZ.toFixed(1) }))
+    .sort((p, q) => q.drift - p.drift);
+  const mean = drift.reduce((t, d) => t + d.drift, 0) / drift.length;
+  console.log(`  · projection residual: mean ${mean.toFixed(1)} m, worst ${drift[0].drift} m (${drift[0].id})`);
+  const stray = await page.evaluate(() => window.__city.city.stats());
+  console.log(`  · stray geometry offenders: ${stray.strayGeometry}`);
+  await writeFile(path.join(out, 'aerial.json'), JSON.stringify({ at: new Date().toISOString(), rects: AERIALS, shots: results, drift, meanDrift: +mean.toFixed(1), cityStats: stray }, null, 2));
+  await page.close();
+}
+
+/** SVG annotation for a plan-view rectangle: world graticule and landmark residuals. */
+function annotate(a, w, h, marks) {
+  const sx = w / (a.maxX - a.minX);
+  const sz = h / (a.maxZ - a.minZ);
+  const px = (x) => (x - a.minX) * sx;
+  const py = (z) => (z - a.minZ) * sz;
+  const step = 250;
+  let g = '';
+  for (let x = Math.ceil(a.minX / step) * step; x <= a.maxX; x += step) {
+    g += `<line x1="${px(x)}" y1="0" x2="${px(x)}" y2="${h}" stroke="#00e5ff" stroke-width="1" opacity="0.35"/>`;
+    g += `<text x="${px(x) + 3}" y="16" font-size="13" font-family="monospace" fill="#00e5ff">x${x}</text>`;
+  }
+  for (let z = Math.ceil(a.minZ / step) * step; z <= a.maxZ; z += step) {
+    g += `<line x1="0" y1="${py(z)}" x2="${w}" y2="${py(z)}" stroke="#00e5ff" stroke-width="1" opacity="0.35"/>`;
+    g += `<text x="3" y="${py(z) - 4}" font-size="13" font-family="monospace" fill="#00e5ff">z${z}</text>`;
+  }
+  // The battlefield line: nothing of the city may cross it.
+  if (a.minZ < 250 && a.maxZ > 250) {
+    g += `<line x1="0" y1="${py(250)}" x2="${w}" y2="${py(250)}" stroke="#ff2d55" stroke-width="2.5" stroke-dasharray="14 8"/>`;
+    g += `<text x="8" y="${py(250) - 8}" font-size="16" font-family="monospace" fill="#ff2d55">battlefield limit z=250</text>`;
+  }
+  for (const m of marks) {
+    const bx = px(m.x);
+    const bz = py(m.z);
+    const ix = px(m.idealX);
+    const iz = py(m.idealZ);
+    if (bx < -60 || bx > w + 60 || bz < -60 || bz > h + 60) continue;
+    g += `<line x1="${ix}" y1="${iz}" x2="${bx}" y2="${bz}" stroke="#ffd60a" stroke-width="2"/>`;
+    g += `<rect x="${ix - 6}" y="${iz - 6}" width="12" height="12" fill="none" stroke="#ffd60a" stroke-width="2"/>`;
+    g += `<circle cx="${bx}" cy="${bz}" r="4.5" fill="#ff9f0a" stroke="#20160a" stroke-width="1.5"/>`;
+    g += `<text x="${bx + 8}" y="${bz - 6}" font-size="14" font-family="monospace" fill="#1c1206" stroke="#ffe9a8" stroke-width="3.5" paint-order="stroke">${m.id}</text>`;
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">${g}</svg>`;
 }
 
 async function waitForServer(url, timeoutMs) {
@@ -157,6 +307,20 @@ try {
     requested.splice(requested.indexOf(PLAN_SHOT), 1);
     if (requested.length === 0) {
       await writeFile(path.join(OUT, 'report.json'), JSON.stringify({ at: new Date().toISOString(), plan, consoleErrors: [...new Set(consoleErrors)] }, null, 2));
+      if (consoleErrors.length) {
+        failed++;
+        console.error(`\n⚠ ${consoleErrors.length} console error(s):`);
+        for (const e of [...new Set(consoleErrors)].slice(0, 15)) console.error(`   ${e}`);
+      }
+      throw { __done: true };
+    }
+  }
+
+  // ---- orthographic plan views, through the engine -----------------------
+  if (requested.includes(AERIAL_SHOT)) {
+    await shootAerials(browser, base, OUT, args.get('ref') ?? 'lanciani', consoleErrors, Number(args.get('lod') ?? 0));
+    requested.splice(requested.indexOf(AERIAL_SHOT), 1);
+    if (requested.length === 0) {
       if (consoleErrors.length) {
         failed++;
         console.error(`\n⚠ ${consoleErrors.length} console error(s):`);

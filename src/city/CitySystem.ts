@@ -17,6 +17,7 @@ import {
   WALL,
 } from './layout';
 import { CITY_MAT_KEYS, CityMaterials } from './materials';
+import { buildReferenceOverlay, type OverlayOptions, type ReferencePlan } from './overlay';
 import { buildTreeChunks } from './props';
 import { buildWall, type CityChunkSpec, type GateOut, type TreeRequest, type WallSegmentOut } from './wall';
 
@@ -46,6 +47,8 @@ interface Chunk {
   cy: number;
   cz: number;
   radius: number;
+  /** Distant scenery: the horizon ring, which is meant to be off the map. */
+  scenery: boolean;
   levels: LodLevel[];
   /** Distance at which level i+1 takes over from level i. */
   switchAt: number[];
@@ -66,6 +69,26 @@ interface Chunk {
  * shadow actually carries the mass of the masonry.
  */
 const SHADOW_CUTOFF = 700;
+
+/**
+ * North edge of the city. The battlefield is z < 250 and must stay completely clear of
+ * masonry: `assertNoStrayGeometry` enforces it against every baked vertex.
+ */
+const BATTLEFIELD_Z = 250;
+
+/**
+ * How far past its declared radius a chunk's geometry may reach before it is reported.
+ * A chunk's radius is computed from its members' centres and clearances, and a monument's
+ * own steps and precinct paving legitimately overhang that a little.
+ */
+const STRAY_RADIUS_TOLERANCE = 1.35;
+
+interface StrayReport {
+  ok: boolean;
+  /** Worst overshoot past a chunk's declared radius, metres. */
+  worst: number;
+  offenders: { chunk: string; level: number; kind: string; x: number; z: number }[];
+}
 
 /** Cell size of the masonry occupancy grid, in metres. */
 const OCC_CELL = 4;
@@ -96,6 +119,12 @@ export class CitySystem implements Subsystem {
   private overlaps: ReturnType<typeof assertNoFootprintOverlaps> = { ok: true, count: 0, worst: 0, pairs: [] };
   private topology: ReturnType<typeof assertTopology> = { ok: true, checks: 0, failures: [] };
   private amphitheatres: ReturnType<typeof assertOneAmphitheatre> = { ok: true, count: 1, ids: ['colosseum'] };
+  private stray: StrayReport = { ok: true, worst: 0, offenders: [] };
+  /** Diagnostics only: see `debugForceLod`. */
+  private forcedLod: number | null = null;
+  private overlay: THREE.Mesh | null = null;
+  /** Terrain sampler kept for the debug overlay, which is built after `init`. */
+  private overlayGround: ((x: number, z: number) => number) | null = null;
 
   async init(ctx: EngineContext): Promise<void> {
     const terrain = ctx.get<TerrainSystem>('terrain');
@@ -106,6 +135,7 @@ export class CitySystem implements Subsystem {
 
     this.root.name = 'city';
     ctx.scene.add(this.root);
+    this.overlayGround = heightAt;
 
     // ---- plan ---------------------------------------------------------------
     const wall = buildWall(heightAt, 'aurelian-271');
@@ -166,6 +196,17 @@ export class CitySystem implements Subsystem {
     // ---- bake ---------------------------------------------------------------
     for (const spec of specs) this.bakeChunk(spec, heightAt);
 
+    // ---- build-time proof that nothing stands in the battlefield ------------
+    this.stray = this.assertNoStrayGeometry();
+    if (!this.stray.ok) {
+      console.warn(
+        `[city] ${this.stray.offenders.length} stray-geometry offender(s): ` +
+          this.stray.offenders
+            .map((o) => `${o.chunk}/lod${o.level} ${o.kind} @ (${o.x.toFixed(0)}, ${o.z.toFixed(0)})`)
+            .join('; ')
+      );
+    }
+
     // ---- movement blocking --------------------------------------------------
     for (const b of wall.blockers) this.markSegment(b.x1, b.z1, b.x2, b.z2, b.halfW);
     // Tower footprints project beyond the curtain.
@@ -219,7 +260,11 @@ export class CitySystem implements Subsystem {
       levels.push({ group, triangles: batch.triangleCount });
       this.totalTris += batch.triangleCount;
       this.root.add(group);
-      if (i < wanted.length - 1) switchAt.push(spec.lodSwitch[i]);
+      // Indexed by the *tier that takes over*, not by array position: `lodSwitch[0]` is where
+      // mid detail replaces full and `lodSwitch[1]` where far replaces mid. A spec that skips
+      // the mid tier used to take its only switch distance from `lodSwitch[0]`, so its far
+      // tier could never appear.
+      if (i < wanted.length - 1) switchAt.push(spec.lodSwitch[wanted[i + 1] === 1 ? 0 : 1]);
     }
 
     this.chunks.push({
@@ -228,6 +273,7 @@ export class CitySystem implements Subsystem {
       cy: heightAt(spec.cx, spec.cz) + 8,
       cz: spec.cz,
       radius: spec.radius,
+      scenery: spec.scenery === true,
       levels,
       switchAt,
       current: 0,
@@ -237,10 +283,82 @@ export class CitySystem implements Subsystem {
   }
 
   /**
+   * Build-time proof that no city geometry stands in the battlefield or outside the chunk
+   * whose bounding volume culls it — **at every detail level, not just the one a screenshot
+   * happens to show.**
+   *
+   * This is the assertion the user's report needed and the build did not have. Rome is
+   * behind the wall at z > 450; the battlefield is z < 250 and both armies deploy in it. A
+   * monument emitted at the world origin therefore stands in the middle of the parade
+   * ground — and because the fault was in the *mid* and *far* detail levels only, it was
+   * invisible from anywhere near the city and appeared out of nowhere as the camera pulled
+   * back. Checking vertices rather than bounding boxes is deliberate: a bounding box wide
+   * enough to hold a district also holds the origin, so a box test proves nothing.
+   *
+   * Costs one pass over the baked position buffers, about 4 ms for the whole city.
+   */
+  private assertNoStrayGeometry(): StrayReport {
+    const offenders: { chunk: string; level: number; kind: string; x: number; z: number }[] = [];
+    let worst = 0;
+    for (const c of this.chunks) {
+      for (let li = 0; li < c.levels.length; li++) {
+        for (const child of c.levels[li].group.children) {
+          const mesh = child as THREE.Mesh;
+          if (!mesh.isMesh) continue;
+          const pos = mesh.geometry.getAttribute('position');
+          if (!pos) continue;
+          const arr = pos.array as ArrayLike<number>;
+          let inField = 0;
+          let onMap = 0;
+          let far = 0;
+          let fx = 0;
+          let fz = 0;
+          let farD = 0;
+          for (let i = 0; i < pos.count; i++) {
+            const x = arr[i * 3];
+            const z = arr[i * 3 + 2];
+            const d = Math.hypot(x - c.cx, z - c.cz);
+            if (d > farD) {
+              farD = d;
+              fx = x;
+              fz = z;
+            }
+            if (c.scenery) {
+              // The horizon ring must lie wholly outside the heightfield.
+              if (Math.abs(x) < HALF_EXTENT && Math.abs(z) < HALF_EXTENT) onMap++;
+            } else if (z < BATTLEFIELD_Z && z > -HALF_EXTENT && Math.abs(x) < HALF_EXTENT) {
+              inField++;
+            }
+          }
+          if (farD > c.radius * STRAY_RADIUS_TOLERANCE + 12) far++;
+          if (inField > 0) {
+            offenders.push({ chunk: c.name, level: li, kind: `${inField} vertices in the battlefield`, x: fx, z: fz });
+          }
+          if (onMap > 0) {
+            offenders.push({ chunk: c.name, level: li, kind: `${onMap} scenery vertices on the heightfield`, x: fx, z: fz });
+          }
+          if (far > 0) {
+            offenders.push({
+              chunk: c.name,
+              level: li,
+              kind: `${farD.toFixed(0)} m from the chunk centre, radius ${c.radius.toFixed(0)} m`,
+              x: fx,
+              z: fz,
+            });
+          }
+          worst = Math.max(worst, farD - c.radius);
+        }
+      }
+    }
+    return { ok: offenders.length === 0, worst: +worst.toFixed(1), offenders };
+  }
+
+  /**
    * Swap detail levels by camera distance. Hysteresis of 12 % stops a chunk flipping
    * back and forth while the camera hovers on a threshold.
    */
   preRender(ctx: EngineContext): void {
+    if (this.forcedLod !== null) return;
     const cam = ctx.camera.position;
     for (const c of this.chunks) {
       const dx = cam.x - c.cx;
@@ -263,8 +381,9 @@ export class CitySystem implements Subsystem {
       if (c.levels.length < 2) continue;
       let want = c.levels.length - 1;
       for (let i = 0; i < c.switchAt.length; i++) {
-        const t = c.switchAt[i] * (want === i ? 1 : 1);
-        if (d < t * (c.current > i ? 0.88 : 1.0)) {
+        // 12 % hysteresis, applied only when coming *back* to a nearer level, so a camera
+        // hovering on a threshold does not flip the chunk every frame.
+        if (d < c.switchAt[i] * (c.current > i ? 0.88 : 1.0)) {
           want = i;
           break;
         }
@@ -369,6 +488,63 @@ export class CitySystem implements Subsystem {
   }
 
   /**
+   * Diagnostics only: pin every chunk to one detail level, or `null` to resume
+   * distance-based swapping. The plan view looks at the whole city from 1.5 km up, where
+   * distance culling would drop all of it to silhouettes and there would be nothing to
+   * measure. Not called from the game.
+   */
+  debugForceLod(level: number | null): void {
+    this.forcedLod = level;
+    if (level === null) return;
+    for (const c of this.chunks) {
+      const want = clamp(level, 0, c.levels.length - 1);
+      if (want === c.current) continue;
+      c.levels[c.current].group.visible = false;
+      c.levels[want].group.visible = true;
+      c.current = want;
+    }
+  }
+
+  /** Diagnostics only: hide the whole city, for a reference-plan-only plan view. */
+  setDebugVisible(on: boolean): void {
+    this.root.visible = on;
+  }
+
+  /** Diagnostics only: show or hide the reference overlay without rebuilding its texture. */
+  setOverlayVisible(on: boolean): void {
+    if (this.overlay) this.overlay.visible = on;
+  }
+
+  /**
+   * Diagnostics only: drape a georeferenced archaeological plan of Rome over the ground,
+   * projected through the same `worldOf` the city is built with, so the layout can be
+   * graded against the real plan from directly overhead. See `overlay.ts`.
+   *
+   * Refuses outside a dev server, and the rasters live in gitignored `reference/`, so
+   * there is no shipping code path and no shipping asset. Returns false when the raster
+   * is not present, which is the normal state of a clean checkout.
+   */
+  async setReferenceOverlay(
+    plan: ReferencePlan | null,
+    opts?: OverlayOptions
+  ): Promise<boolean> {
+    if (this.overlay) {
+      this.overlay.removeFromParent();
+      this.overlay.geometry.dispose();
+      const m = this.overlay.material as THREE.MeshBasicMaterial;
+      m.map?.dispose();
+      m.dispose();
+      this.overlay = null;
+    }
+    if (!plan || !import.meta.env.DEV || !this.overlayGround) return false;
+    const mesh = await buildReferenceOverlay(plan, this.overlayGround, opts);
+    if (!mesh) return false;
+    this.overlay = mesh;
+    this.root.parent?.add(mesh);
+    return true;
+  }
+
+  /**
    * Build statistics for the debug overlay. `visibleMeshes` is the city's own upper
    * bound on draw calls this frame (before frustum culling), which is the number the
    * performance budget actually cares about.
@@ -389,6 +565,8 @@ export class CitySystem implements Subsystem {
     topologyChecks: number;
     /** Count of Flavian-Amphitheatre-form buildings. Must be 1. */
     amphitheatres: number;
+    /** Chunks with geometry in the battlefield or outside their own bounding volume. */
+    strayGeometry: number;
   } {
     let visibleMeshes = 0;
     let visibleTriangles = 0;
@@ -410,7 +588,13 @@ export class CitySystem implements Subsystem {
       topologyPass: this.topology.checks - this.topology.failures.length,
       topologyChecks: this.topology.checks,
       amphitheatres: this.amphitheatres.count,
+      strayGeometry: this.stray.offenders.length,
     };
+  }
+
+  /** Full stray-geometry report, for the plan diagnostic. */
+  get strayReport(): StrayReport {
+    return this.stray;
   }
 
   /** Texture attribution gathered from the asset manifest, for ASSETS.md. */
@@ -501,6 +685,7 @@ export class CitySystem implements Subsystem {
       }
     }
     this.chunks.length = 0;
+    void this.setReferenceOverlay(null);
     this.root.removeFromParent();
     this.mats.dispose();
   }

@@ -29,10 +29,13 @@ import {
  * dimensions, a real long-axis bearing and a citation per entry. What this file adds is
  * the three things the projection cannot do on its own:
  *
- *  1. **Rectangular footprints.** A landmark reserves an *oriented box* the size of the
+ *  1. **Rectangular footprints.** A landmark reserves an *oriented box* the shape of the
  *     real building, not a circle. The Circus Maximus is 621 × 118 m; the circle of
  *     radius 101 m the previous revision reserved for it covered a sixth of its area,
  *     which is why insulae, the Palatine and a forum all grew through the middle of it.
+ *     The box is scaled in plan by `PLAN_SCALE`, and so is the geometry — see that constant
+ *     for the arithmetic that says a 1:1 monument cannot fit in a plan compressed 4.5× in
+ *     depth, and for the measured drift at each scale.
  *  2. **Overlap resolution.** Compressing Rome's depth 4.5× while keeping every building
  *     at true scale necessarily makes neighbours collide — in the real city the Palatine's
  *     north scarp stands directly over the Forum. `resolveOverlaps` separates the
@@ -111,6 +114,12 @@ export interface LandmarkPlacement {
   hw: number;
   /** Half-extent across the local long axis. */
   hd: number;
+  /**
+   * Plan compression applied to this monument's masonry — `PLAN_SCALE`, or 1 for landscape.
+   * `hw`, `hd`, `clear` and `moundRadius` are **world** extents and already carry it; the
+   * geometry builders work in the monument's own frame and need them divided back out.
+   */
+  planScale: number;
   /**
    * Radius of the precinct around the monument — the footprint's circumradius plus a
    * margin. Used for tree scatter and as the coarse circle the movement grid stamps.
@@ -251,6 +260,40 @@ const PRECINCT = 1.07;
 /** Extra metres of street between two reserved footprints. */
 const STREET_GAP = 7;
 
+/**
+ * Plan scale of monumental masonry, measured rather than chosen.
+ *
+ * **A monument at 1:1 does not fit in this plan, and that is arithmetic, not taste.** The
+ * projection compresses position by `KX` = 0.443 east–west and `KZ` = 0.222 north–south —
+ * a geometric mean of 0.314 — while a building keeps its true footprint, so every monument
+ * covers `(1/0.314)² ≈ 10×` its real share of the ground. Summed over the survey, the 30
+ * masonry monuments come to 727,000 m² of plan; the buildable city is about 1.7 M m². They
+ * are 49 % of Rome at 1:1 against 5.3 % of the real walled area, before a single street or
+ * insula. The overlap resolver then has no choice but to rearrange the city, and it did:
+ *
+ * | footprint scale | mean drift from the projected position | worst | insulae built |
+ * |---|---|---|---|
+ * | 1.00 (with 7 m streets) | **174 m** | 384 m | 1,428 |
+ * | 1.00, precinct 1.0 and *zero* street gap | 125 m | 269 m | 1,157 |
+ * | 0.80 | 85 m | 205 m | 1,827 |
+ * | **0.65** | **43 m** | 130 m | 2,270 |
+ * | 0.55 | 26 m | 88 m | 2,534 |
+ *
+ * The second row is the floor for 1:1 buildings: even packed with no street between them
+ * the plan still has to move every monument 125 world metres on average, which is 560 real
+ * metres of depth. That is a different city, and it is why the Circus Maximus, the Forum and
+ * the Campus Martius were all in the wrong place however the solver was tuned.
+ *
+ * 0.65 brings monumental coverage to 21 %, halves the residual four times over, and adds
+ * 60 % more insulae because the fabric gets the ground back. It is also still monumental:
+ * the Colosseum is 123 × 101 m in plan at its full 48 m height — heights are **not** scaled,
+ * only the plan — so it remains six times the height of the curtain beside it.
+ *
+ * Landscape (`soft`) is exempt: gardens, a planted ridge and an island are *areas*, and an
+ * area is already compressed by the map exactly as a district is.
+ */
+export const PLAN_SCALE = 0.65;
+
 function place(m: RomeMonument): LandmarkPlacement {
   const w = worldOf(m.e, m.n);
   let x = w.x;
@@ -261,8 +304,9 @@ function place(m: RomeMonument): LandmarkPlacement {
   // bath block, Z for a temple, a theatre or the Pantheon, whose axial plan runs from the
   // portico at −Z to the back wall at +Z.
   const alongZ = (m.axis ?? 'x') === 'z';
-  const hw = (alongZ ? m.wid : m.len) * 0.5 * PRECINCT;
-  const hd = (alongZ ? m.len : m.wid) * 0.5 * PRECINCT;
+  const planScale = m.soft ? 1 : PLAN_SCALE;
+  const hw = (alongZ ? m.wid : m.len) * 0.5 * PRECINCT * planScale;
+  const hd = (alongZ ? m.len : m.wid) * 0.5 * PRECINCT * planScale;
   return {
     id: m.id,
     name: m.name,
@@ -271,9 +315,10 @@ function place(m: RomeMonument): LandmarkPlacement {
     rot: worldRot(m.bearing, m.axis ?? 'x'),
     hw,
     hd,
+    planScale,
     clear: Math.hypot(hw, hd),
     mound: m.mound,
-    moundRadius: m.moundRadius,
+    moundRadius: m.moundRadius === undefined ? undefined : m.moundRadius * planScale,
     where: m.where,
     farBank: m.farBank,
     onRiver: m.onRiver,
@@ -951,6 +996,21 @@ const DISTRICT_PLAN: {
   density: number;
   grandeur: number;
   fray: number;
+  /**
+   * Pinned to the Tiber's **east** bank rather than to the projected position.
+   *
+   * The projection cannot put both the Porta Flaminia and the Tiber where the terrain has
+   * them: the gate is fixed at x ≈ 72 because that is where the Via Flaminia crosses the
+   * crest, the modelled channel runs at x ≈ −580 to −900, and in the real city those two are
+   * only 280 m apart, not 700. So the affine map leaves a 640 m strip of empty ground along
+   * the whole east bank — a third of the wall's frontage, and the most conspicuous hole in
+   * the plan seen from above. These quarters are what actually occupied that ground: the
+   * Navalia and the Trigarium on the Campus Martius shore, the Forum Boarium and the
+   * Velabrum below the Capitol, the Emporium's warehouses under the Aventine. Because a
+   * district is an *area* of fabric rather than a surveyed building, moving it to the water
+   * costs nothing the survey can measure and gains the whole riverside.
+   */
+  eastBank?: boolean;
 }[] = [
   // Campus Martius, north to south along the Via Lata.
   { id: 'campus-flaminia', e: -420, n: 1780, he: 330, hn: 250, minFloors: 2, maxFloors: 4, density: 0.74, grandeur: 0.12, fray: 0.55 },
@@ -968,8 +1028,16 @@ const DISTRICT_PLAN: {
   { id: 'velabrum', e: -120, n: -300, he: 250, hn: 200, minFloors: 3, maxFloors: 5, density: 0.86, grandeur: 0.14, fray: 0.35 },
   { id: 'caelian', e: 1020, n: -600, he: 320, hn: 250, minFloors: 2, maxFloors: 4, density: 0.56, grandeur: 0.3, fray: 0.55 },
   { id: 'aventine', e: -300, n: -1180, he: 280, hn: 230, minFloors: 2, maxFloors: 4, density: 0.56, grandeur: 0.36, fray: 0.55 },
-  // The Emporium: the river port under the Aventine, all warehouses.
-  { id: 'emporium', e: -560, n: -900, he: 200, hn: 260, minFloors: 1, maxFloors: 3, density: 0.8, grandeur: 0.06, fray: 0.45 },
+  // The Emporium: the river port under the Aventine, all warehouses. On the water by
+  // definition — the *horrea* backed onto the quays.
+  { id: 'emporium', e: -560, n: -900, he: 200, hn: 260, minFloors: 1, maxFloors: 3, density: 0.8, grandeur: 0.06, fray: 0.45, eastBank: true },
+  // The Tiber shore of the Campus Martius: the Navalia (the naval sheds), the Trigarium
+  // exercise ground and the Tarentum, from the Pons Neronianus up to the Mausoleum. Low,
+  // loose and workaday — sheds and yards, not tenements.
+  { id: 'ripa-campi', e: -800, n: 900, he: 220, hn: 420, minFloors: 1, maxFloors: 3, density: 0.62, grandeur: 0.06, fray: 0.6, eastBank: true },
+  // The Forum Boarium and the Portus Tiberinus below the Capitol: the cattle market, the
+  // round temple of Hercules Victor, the Pons Aemilius and the river gate.
+  { id: 'forum-boarium', e: -430, n: -320, he: 200, hn: 250, minFloors: 2, maxFloors: 4, density: 0.82, grandeur: 0.12, fray: 0.4, eastBank: true },
   // Trans Tiberim, on the far bank — placed against the terrain's river below.
   { id: 'trastevere', e: -1150, n: 100, he: 240, hn: 420, minFloors: 2, maxFloors: 4, density: 0.72, grandeur: 0.1, fray: 0.5 },
   { id: 'vaticanus', e: -1500, n: 1100, he: 260, hn: 300, minFloors: 1, maxFloors: 3, density: 0.4, grandeur: 0.18, fray: 0.7 },
@@ -992,6 +1060,8 @@ export const DISTRICTS: DistrictSpec[] = DISTRICT_PLAN.map((d) => {
   const farBank = d.id === 'trastevere' || d.id === 'vaticanus';
   if (farBank) {
     x = FAR_BANK(z, 60 + hw);
+  } else if (d.eastBank) {
+    x = EAST_BANK(z) + 16 + hw;
   } else {
     // Follow the monuments. The resolver moves them by up to 500 m, and a district authored
     // against the projected plan would sit in the wrong place relative to its own quarter —

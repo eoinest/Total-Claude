@@ -53,6 +53,13 @@ import { clamp } from '../util/math';
  * apart, which is where `KX` comes from rather than being a taste decision. `KZ = 0.22`
  * is then the largest value that fits the Baths of Caracalla inside the heightfield.
  *
+ * A monument's *footprint* is compressed too, by `PLAN_SCALE` in layout.ts, and only there.
+ * Positions compress by 0.443 × 0.222 and a building at 1:1 therefore covers ten times its
+ * real share of the ground: summed over this table the masonry comes to 727,000 m² against
+ * about 1.7 M m² of buildable city, and the overlap resolver had to move every monument 174
+ * world metres on average — 560 real metres of depth — to make it fit. Heights are untouched.
+ * The measurement behind the number is tabulated at `PLAN_SCALE`.
+ *
  * Anisotropy rotates plan angles, so `worldBearing` transforms the long axis through
  * the same map instead of copying the compass bearing — otherwise the Circus Maximus
  * would sit at its true 142° in a frame that has squashed north–south by 2× relative

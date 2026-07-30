@@ -7,12 +7,23 @@
  * in the block. Projection is recomputed here from the camera's matrices rather than
  * borrowed from the HUD, so a bug in the HUD's projection cannot hide behind this test.
  *
+ * Two phases, because a formation at rest and a formation coming apart are different
+ * problems:
+ *
+ *  1. **Stations** — a zoom x yaw sweep with the battle essentially still. Catches gross
+ *     anchor errors and the vertical clearance rules.
+ *  2. **Motion** — per-frame tracking, in the page, while the AI fights the battle:
+ *     marching, charging, in melee and routing, each classified from the sim's own state
+ *     rather than assumed from the clock. A plaque that is 2 px off at rest and 60 px off
+ *     mid-charge is a bug that phase 1 cannot see.
+ *
  * Also exercises the banner as a hit target: hover, click-to-select and shift-click.
  *
  * Usage:
  *   node tools/banner-check.mjs --port=5363
  *   node tools/banner-check.mjs --dpr=2 --quality=high --w=1920 --h=1080
  *   node tools/banner-check.mjs --json=/tmp/before.json     # save for a before/after diff
+ *   node tools/banner-check.mjs --only=motion --frames=150  # skip the station sweep
  */
 
 import { chromium } from 'playwright';
@@ -37,6 +48,22 @@ const QUALITY = args.get('quality') ?? 'ultra';
 const PORT = Number(args.get('port') ?? 5199);
 const JSON_OUT = args.get('json');
 const AT = Number(args.get('at') ?? 3);
+/** `stations`, `motion` or `all`. */
+const ONLY = args.get('only') ?? 'all';
+/** Frames tracked per motion phase. 120 at a nominal 60 Hz is two seconds of battle. */
+const FRAMES = Number(args.get('frames') ?? 120);
+
+/**
+ * Motion phases. `at` is the simulated second the battle is wound forward to, `mode`
+ * picks what the camera frames and `yawRate` is radians of camera rotation per frame —
+ * a still camera would hide any per-frame lag between the plaque and the men.
+ */
+const PHASES = [
+  { name: 'march',  at: 26,  mode: 'own',    zoom: 0.50, yawRate: 0.0018 },
+  { name: 'charge', at: 66,  mode: 'charge', zoom: 0.44, yawRate: 0.0012 },
+  { name: 'melee',  at: 96,  mode: 'melee',  zoom: 0.40, yawRate: 0.0009 },
+  { name: 'rout',   at: 180, mode: 'rout',   zoom: 0.46, yawRate: 0.0015 },
+];
 
 /** Camera stations: zoom 0..1 crossed with a few compass yaws. */
 const STATIONS = [];
@@ -261,6 +288,210 @@ const MEASURE = ({ }) => {
 };
 
 // ---------------------------------------------------------------------------
+// In-page: per-frame tracking while the battle is in motion
+// ---------------------------------------------------------------------------
+
+/**
+ * Steps `engine.frame` at a nominal 60 Hz and, after every step, compares each visible
+ * plaque's measured DOM box against the mean screen position of that unit's living men —
+ * interpolated with the same `alpha` the soldier renderer uses, so the comparison is
+ * against the men as *drawn*, not as last ticked.
+ *
+ * Every sample is labelled with the unit's state, so the answer is a table rather than a
+ * single number: a stale shape offset is invisible on a marching cohort and glaring on a
+ * routing one, and averaging the two together is how the previous pass came out clean
+ * while the game still looked wrong.
+ */
+const MOTION = ({ frames, zoom, yawRate, mode }) => {
+  const g = window.__game;
+  const cam = g.engine.context.camera;
+  const canvas = g.engine.renderer.domElement;
+  const cr = canvas.getBoundingClientRect();
+  const battle = g.battle;
+  const pool = battle.pool;
+  const MAN = 1.75, LIFT = 1.15, CLEAR = 3.6;
+  const ROUT = 5, DYING = 10, DEAD = 11;
+
+  // Allocation-free: this runs a couple of million times per phase, and returning a fresh
+  // object per point buried the measurement in garbage collection.
+  const M = new Float64Array(16);
+  const OUT = { px: 0, py: 0, ok: false };
+  const composeVP = () => {
+    const a = cam.projectionMatrix.elements;
+    const b = cam.matrixWorldInverse.elements;
+    for (let c = 0; c < 4; c++) {
+      for (let r = 0; r < 4; r++) {
+        M[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1]
+                     + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3];
+      }
+    }
+  };
+  const project = (x, y, z) => {
+    const w = M[3] * x + M[7] * y + M[11] * z + M[15];
+    OUT.ok = w > 1e-9;
+    if (!OUT.ok) return OUT;
+    const inv = 1 / w;
+    OUT.px = cr.left + ((M[0] * x + M[4] * y + M[8] * z + M[12]) * inv * 0.5 + 0.5) * cr.width;
+    OUT.py = cr.top + (-(M[1] * x + M[5] * y + M[9] * z + M[13]) * inv * 0.5 + 0.5) * cr.height;
+    return OUT;
+  };
+
+  // Frame whatever this phase is about. Hand-picked coordinates cannot follow an
+  // emergent rout, so the focus is the living centre of mass of the matching units.
+  const wanted = (u) => {
+    if (u.destroyed || u.alive === 0) return false;
+    if (mode === 'rout') return u.order === ROUT;
+    if (mode === 'melee') return u.engaged;
+    if (mode === 'charge') return u.charging || u.chargeTimer > 0;
+    return u.faction === 0;
+  };
+  let fx = 0, fz = 0, fn = 0;
+  for (const pass of [wanted, (u) => !u.destroyed && u.alive > 0]) {
+    for (const u of battle.units) {
+      if (!pass(u)) continue;
+      fx += u.x * u.alive; fz += u.z * u.alive; fn += u.alive;
+    }
+    if (fn) break;
+  }
+  let yaw = g.engine.rig.yaw;
+  g.setCamera(fn ? fx / fn : 0, fn ? fz / fn : 0, zoom, yaw);
+  const focusX = g.engine.rig.focus.x;
+  const focusZ = g.engine.rig.focus.z;
+
+  const acc = new Map();
+  const bucket = (k) => {
+    let b = acc.get(k);
+    if (!b) {
+      b = { n: 0, dx: [], frac: [], dy: [], gapMin: Infinity, gapSum: 0, worst: null, units: new Set() };
+      acc.set(k, b);
+    }
+    return b;
+  };
+  /** EMA of anchor speed per unit: the sim moves anchors at 30 Hz, frames run at 60. */
+  const track = new Map();
+
+  /** `.bnr` elements are rebuilt only when the roster changes, so cache and revalidate. */
+  const els = new Map();
+  const elFor = (id) => {
+    let e = els.get(id);
+    if (e === undefined || !e.isConnected) {
+      e = document.querySelector(`.bnr[data-unit="${id}"]`);
+      els.set(id, e);
+    }
+    return e;
+  };
+
+  let t = g.engine.time.elapsed * 1000;
+  for (let f = 0; f < frames; f++) {
+    yaw += yawRate;
+    g.engine.rig.jumpTo(focusX, focusZ, zoom, yaw);
+    t += 1000 / 60;
+    g.engine.frame(t);
+    // After the frame, so the matrices are the ones the plaques were placed against.
+    composeVP();
+    const alpha = g.engine.time.alpha;
+
+    for (const u of battle.units) {
+      if (u.destroyed || u.alive === 0) continue;
+      const tr = track.get(u.id) ?? { x: u.x, z: u.z, fac: u.facing, spd: 0, turn: 0 };
+      const step = Math.hypot(u.x - tr.x, u.z - tr.z) * 60;
+      let df = u.facing - tr.fac;
+      while (df > Math.PI) df -= Math.PI * 2;
+      while (df < -Math.PI) df += Math.PI * 2;
+      tr.spd = tr.spd * 0.85 + step * 0.15;
+      tr.turn = tr.turn * 0.85 + Math.abs(df) * 60 * 0.15;
+      tr.x = u.x; tr.z = u.z; tr.fac = u.facing;
+      track.set(u.id, tr);
+
+      const bnr = elFor(u.id);
+      if (!bnr || bnr.classList.contains('off')) continue;
+      const r = bnr.getBoundingClientRect();
+      if (r.width < 2) continue;
+
+      const cls = battle.typeOf(u).unitClass;
+      const lift = cls === 'heavy-cavalry' || cls === 'light-cavalry' ? LIFT : 0;
+      let sumX = 0, sumClearY = 0, n = 0, dist = 0;
+      const xs = [], ys = [];
+      for (let k = 0; k < u.members.length; k++) {
+        const i = u.members[k];
+        const st = pool.state[i];
+        if (st === DEAD || st === DYING) continue;
+        // Interpolated exactly as `UnitRenderSystem` does it, so "where the men are" means
+        // where they are on screen this frame and not where the last tick left them.
+        const mx = pool.px[i] + (pool.x[i] - pool.px[i]) * alpha;
+        const my = pool.py[i] + (pool.y[i] - pool.py[i]) * alpha;
+        const mz = pool.pz[i] + (pool.z[i] - pool.pz[i]) * alpha;
+        if (!project(mx, my + MAN + lift, mz).ok) continue;
+        const hx = OUT.px, hy = OUT.py;
+        if (!project(mx, my + CLEAR + lift, mz).ok) continue;
+        sumX += hx; sumClearY += OUT.py; n++;
+        xs.push(hx); ys.push(hy);
+        dist += Math.hypot(cam.position.x - mx, cam.position.y - my, cam.position.z - mz);
+      }
+      if (n < 2) continue;
+      xs.sort((a, b) => a - b);
+      ys.sort((a, b) => a - b);
+      const pct = (a, q) => a[Math.min(a.length - 1, Math.max(0, Math.round(q * (a.length - 1))))];
+      const wantX = sumX / n;
+      const wantY = sumClearY / n;
+      const spanLo = pct(xs, 0.05);
+      const spanHi = pct(xs, 0.95);
+      // A three-pixel-wide block cannot be missed by a meaningful fraction of itself, so
+      // the denominator is floored: below that the absolute figure is the only honest one.
+      const widthPx = Math.max(8, spanHi - spanLo);
+      const gotCx = r.left + r.width / 2;
+      const dx = gotCx - wantX;
+      const dy = r.bottom - wantY;
+      const gap = pct(ys, 0.5) - r.bottom;
+
+      const state = u.order === ROUT ? 'routing'
+        : u.charging || u.chargeTimer > 0 ? 'charging'
+        : u.engaged ? 'melee'
+        : tr.spd > 0.35 || tr.turn > 0.08 ? 'marching'
+        : 'idle';
+      for (const key of [state, 'ALL']) {
+        const b = bucket(key);
+        b.n++;
+        b.dx.push(Math.abs(dx));
+        b.frac.push(Math.abs(dx) / widthPx);
+        b.dy.push(Math.abs(dy));
+        b.gapSum += gap;
+        if (gap < b.gapMin) b.gapMin = gap;
+        b.units.add(u.id);
+        if (!b.worst || Math.abs(dx) > Math.abs(b.worst.dx)) {
+          b.worst = {
+            id: u.id, typeId: u.typeId, frame: f, men: n,
+            dx: +dx.toFixed(1), dy: +dy.toFixed(1), widthPx: +widthPx.toFixed(0),
+            frac: +(Math.abs(dx) / widthPx).toFixed(3),
+            dist: +(dist / n).toFixed(0),
+            spd: +tr.spd.toFixed(2), turnDegPerS: +(tr.turn * 57.3).toFixed(1),
+          };
+        }
+      }
+    }
+  }
+
+  const stats = (b) => {
+    const s = (a) => a.slice().sort((p, q) => p - q);
+    const dx = s(b.dx), fr = s(b.frac), dy = s(b.dy);
+    const at = (a, q) => (a.length ? a[Math.min(a.length - 1, Math.round(q * (a.length - 1)))] : 0);
+    const mean = (a) => (a.length ? a.reduce((p, q) => p + q, 0) / a.length : 0);
+    return {
+      samples: b.n, units: b.units.size,
+      dxMean: +mean(dx).toFixed(2), dxP95: +at(dx, 0.95).toFixed(1), dxMax: +at(dx, 1).toFixed(1),
+      fracMean: +mean(fr).toFixed(3), fracP95: +at(fr, 0.95).toFixed(3), fracMax: +at(fr, 1).toFixed(3),
+      dyMean: +mean(dy).toFixed(2), dyMax: +at(dy, 1).toFixed(1),
+      gapMean: +(b.gapSum / Math.max(1, b.n)).toFixed(1),
+      gapMin: +(b.gapMin === Infinity ? 0 : b.gapMin).toFixed(1),
+      worst: b.worst,
+    };
+  };
+  const out = {};
+  for (const [k, b] of acc) out[k] = stats(b);
+  return { byState: out, frames, zoom, focus: { x: +focusX.toFixed(0), z: +focusZ.toFixed(0) } };
+};
+
+// ---------------------------------------------------------------------------
 
 const rows = [];
 let browser = null;
@@ -292,7 +523,7 @@ try {
 
   console.log(`banner-check  ${W}x${H}  dpr=${DPR}  quality=${QUALITY}`);
 
-  for (const st of STATIONS) {
+  for (const st of ONLY === 'motion' ? [] : STATIONS) {
     await page.evaluate(({ zoom, yaw }) => {
       const g = window.__game;
       const b = g.battle;
@@ -555,6 +786,89 @@ try {
     (hudMsNoBanners !== null ? `  (${hudMsNoBanners.toFixed(3)} with the banner layer off)` : '')
   );
 
+  // ---- Motion: per-frame error while the battle is actually being fought ----
+  // A second page with `autoplay=1`, because the AI has to drive both sides for anything
+  // to charge, break or rout — the first page deliberately leaves Rome to the player so
+  // that selection means something.
+  const motion = [];
+  if (ONLY !== 'stations') {
+    // The first page has to go first. Both pages run their own `requestAnimationFrame`
+    // loop over 9,000 animated men, and leaving two of them contending for one GPU took
+    // a two-second phase past twenty minutes.
+    await page.close();
+    const mpage = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: DPR });
+    mpage.on('console', (m) => { if (m.type() === 'error') errors.push(`motion: ${m.text()}`); });
+    mpage.on('pageerror', (e) => errors.push(`motion pageerror: ${e.message}`));
+    await mpage.goto(`${base}/?harness=1&autoplay=1&quality=${QUALITY}&w=${W}&h=${H}`,
+      { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await mpage.waitForFunction(() => window.__game && window.__game.ready === true, { timeout: 120000 });
+    console.log(`\nmotion: ${FRAMES} frames per phase, error sampled every frame`);
+
+    for (const ph of PHASES) {
+      // Wound forward on a fixed grid so a phase reaches the same battle state on every
+      // run, and with a 100 ms frame step so 180 s of battle does not cost 10,800 renders:
+      // `Time` accumulates and runs three fixed ticks per step, well inside its own cap.
+      const ff = Date.now();
+      await mpage.evaluate(async (at) => {
+        const g = window.__game;
+        while (g.simTime() < at - 1e-6) {
+          g.engine.advance(Math.min(0.6, at - g.simTime()), 100);
+        }
+      }, ph.at);
+      process.stdout.write(`  → t+${ph.at}s reached in ${((Date.now() - ff) / 1000).toFixed(0)}s\n`);
+      // Real time, so the opacity transition on a plaque that just came into view has
+      // finished before its box is measured.
+      await mpage.waitForTimeout(400);
+      const m = await mpage.evaluate(MOTION, {
+        frames: FRAMES, zoom: ph.zoom, yawRate: ph.yawRate, mode: ph.mode,
+      });
+      motion.push({ phase: ph.name, at: ph.at, ...m });
+      const keys = ['marching', 'charging', 'melee', 'routing', 'idle', 'ALL'];
+      console.log(`  t+${String(ph.at).padStart(3)}s ${ph.name.padEnd(7)} zoom ${ph.zoom} ` +
+                  `focus ${m.focus.x},${m.focus.z}`);
+      for (const k of keys) {
+        const s = m.byState[k];
+        if (!s) continue;
+        console.log(
+          `      ${k.padEnd(9)} ${String(s.samples).padStart(5)} samples ${String(s.units).padStart(2)}u  ` +
+          `|dx| mean ${String(s.dxMean).padStart(6)} p95 ${String(s.dxP95).padStart(6)} max ${String(s.dxMax).padStart(6)} px  ` +
+          `frac mean ${String(s.fracMean).padStart(5)} max ${String(s.fracMax).padStart(5)}  ` +
+          `|dy| mean ${String(s.dyMean).padStart(5)} max ${String(s.dyMax).padStart(6)}  ` +
+          `gap min ${String(s.gapMin).padStart(6)}` +
+          (s.worst ? `  worst ${s.worst.typeId}#${s.worst.id} dx=${s.worst.dx} w=${s.worst.widthPx}px @${s.worst.dist}m spd=${s.worst.spd}` : '')
+        );
+      }
+    }
+
+    // The HUD's cost with the army scattered and every plaque on screen, which is where
+    // per-frame sampling of the men is at its most expensive.
+    try {
+      const c = await mpage.evaluate(() => {
+        const g = window.__game;
+        const hud = g.engine.context.tryGet('hud');
+        const sample = () => {
+          let best = Infinity;
+          for (let s = 0; s < 40; s++) {
+            for (let i = 0; i < 15; i++) g.engine.frame(g.engine.time.elapsed * 1000 + 16.7);
+            if (hud && hud.hudMs < best) best = hud.hudMs;
+          }
+          return best === Infinity ? null : best;
+        };
+        sample();
+        const on = sample();
+        let men = 0;
+        for (const u of g.battle.units) men += u.alive;
+        return { on, men, units: g.battle.units.filter((u) => !u.destroyed).length };
+      });
+      console.log(`  hud during motion: ${c.on === null ? 'n/a' : c.on.toFixed(3)} ms/frame ` +
+                  `(${c.men} men, ${c.units} live units)`);
+      motion.push({ phase: 'hudCost', hudMs: c.on, men: c.men, units: c.units });
+    } catch (e) {
+      console.error(`  motion hud cost failed: ${e.message}`);
+    }
+    await mpage.close();
+  }
+
   if (errors.length) {
     failed++;
     console.error(`\n⚠ console errors:\n  ${[...new Set(errors)].slice(0, 10).join('\n  ')}`);
@@ -570,7 +884,7 @@ try {
     outOfSpan: withShown.reduce((s, r) => s + (r.all.n - r.all.inSpan), 0),
     totalMeasured: withShown.reduce((s, r) => s + r.all.n, 0),
     unexplainedHidden: rows.reduce((s, r) => s + r.why.unexplained, 0),
-    rows, interaction, errors: [...new Set(errors)],
+    rows, motion, interaction, errors: [...new Set(errors)],
   };
   console.log(
     `\nover ${summary.totalMeasured} banner placements: worst |dx| ${summary.dxMaxOverall.toFixed(1)} px ` +
