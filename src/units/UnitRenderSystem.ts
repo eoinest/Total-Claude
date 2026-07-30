@@ -16,6 +16,7 @@ import {
   renderImpostorAtlas, buildImpostorGeometry, makeImpostorMaterial, type ImpostorAtlas,
 } from './impostor';
 import type { SkySystem } from '../render/SkySystem';
+import { makeCorpsePose, type CorpsePose, type RagdollSystem } from '../sim/Ragdoll';
 
 /**
  * Soldier rendering: GPU-skinned instances, distance LODs and a billboard far tier.
@@ -51,6 +52,7 @@ const enum Stride {
   Kit = 2,
   Col0 = 4,
   Col1 = 4,
+  Quat = 4,
 }
 
 const LOD_COUNT = 3;
@@ -75,6 +77,7 @@ interface InstanceBuffers {
   kit: Float32Array;
   col0: Float32Array;
   col1: Float32Array;
+  quat: Float32Array;
   count: number;
 }
 
@@ -89,6 +92,7 @@ interface Tier {
     kit: THREE.InstancedBufferAttribute;
     col0: THREE.InstancedBufferAttribute;
     col1: THREE.InstancedBufferAttribute;
+    quat: THREE.InstancedBufferAttribute;
   };
   buf: InstanceBuffers;
 }
@@ -103,7 +107,24 @@ interface ClipFacts {
   invDuration: number;
   /** Metres per second at rate 1; 0 for a stationary clip. */
   rootSpeed: number;
+  /**
+   * Take the playhead from `pool.animTime` rather than running our own.
+   *
+   * The combat system writes `animTime` for a man in melee so the blow lands on the
+   * weapon's contact frame, and the ragdoll system reads it while a corpse falls. For
+   * those clips the sim is the authority; for idles and locomotion it has no clip table
+   * and we are.
+   */
+  simDriven: boolean;
 }
+
+/** Clips whose timing belongs to the simulation, not the renderer. */
+const SIM_DRIVEN = new Set([
+  'attackThrust', 'attackOverhead', 'attackSlash', 'shieldBash', 'block', 'parry',
+  'stagger', 'throwPilum', 'drawBow', 'releaseBow',
+  'deathBack', 'deathForward', 'deathSide', 'deathKneel',
+  'rideCharge', 'rideDeath', 'rear', 'death',
+]);
 
 function clipFacts(set: typeof MAN_CLIP_SET): ClipFacts[] {
   return set.clips.map((c, i) => ({
@@ -112,6 +133,7 @@ function clipFacts(set: typeof MAN_CLIP_SET): ClipFacts[] {
     loop: c.loop,
     invDuration: 1 / Math.max(0.05, c.duration),
     rootSpeed: c.rootSpeed > 0.1 ? c.rootSpeed : 0,
+    simDriven: !c.loop || SIM_DRIVEN.has(c.name),
   }));
 }
 
@@ -163,11 +185,14 @@ export class UnitRenderSystem implements Subsystem {
   private elapsed = 0;
   private warmed = false;
   private sky?: SkySystem;
+  private ragdoll?: RagdollSystem;
+  private corpse: CorpsePose = makeCorpsePose();
   private kitScratch: ResolvedKit = emptyKit();
 
   init(ctx: EngineContext): void {
     this.battle = ctx.get<BattleSystem>('battle');
     this.sky = ctx.tryGet<SkySystem>('sky');
+    this.ragdoll = ctx.tryGet<RagdollSystem>('ragdoll');
     const cap = ctx.quality.maxSoldiers;
 
     this.atlas = buildSoldierAtlas(Math.min(8, ctx.renderer.capabilities.getMaxAnisotropy()));
@@ -301,6 +326,7 @@ export class UnitRenderSystem implements Subsystem {
       kit: new Float32Array(cap * Stride.Kit),
       col0: new Float32Array(cap * Stride.Col0),
       col1: new Float32Array(cap * Stride.Col1),
+      quat: new Float32Array(cap * Stride.Quat),
       count: 0,
     };
     const attr = (a: Float32Array, n: number): THREE.InstancedBufferAttribute => {
@@ -316,6 +342,7 @@ export class UnitRenderSystem implements Subsystem {
       kit: attr(buf.kit, Stride.Kit),
       col0: attr(buf.col0, Stride.Col0),
       col1: attr(buf.col1, Stride.Col1),
+      quat: attr(buf.quat, Stride.Quat),
     };
     geometry.setAttribute('iPos', attrs.pos);
     geometry.setAttribute('iOrient', attrs.orient);
@@ -324,6 +351,7 @@ export class UnitRenderSystem implements Subsystem {
     geometry.setAttribute('iKit', attrs.kit);
     geometry.setAttribute('iCol0', attrs.col0);
     geometry.setAttribute('iCol1', attrs.col1);
+    geometry.setAttribute('iQuat', attrs.quat);
     geometry.instanceCount = 0;
 
     const mesh = new THREE.Mesh(geometry, mat.material);
@@ -393,6 +421,7 @@ export class UnitRenderSystem implements Subsystem {
       kit: new Float32Array(0),
       col0: new Float32Array(cap * Stride.Col0),
       col1: new Float32Array(0),
+      quat: new Float32Array(0),
       count: 0,
     };
     const pos = new THREE.InstancedBufferAttribute(buf.pos, 3);
@@ -415,7 +444,7 @@ export class UnitRenderSystem implements Subsystem {
       geometry: quad,
       attrs: {
         pos, orient, col0,
-        animA: pos, animB: pos, kit: pos, col1: pos,
+        animA: pos, animB: pos, kit: pos, col1: pos, quat: pos,
       },
       buf,
     };
@@ -471,9 +500,10 @@ export class UnitRenderSystem implements Subsystem {
       }
 
       const facts = this.manFacts[this.curClip[i]];
-      if (!facts.loop) {
-        // One-shots stay locked to the simulation's own playhead.
-        this.phase[i] = Math.min(1, p.animTime[i]);
+      if (facts.simDriven) {
+        // The sim owns this one: a blow has to land on the frame the combat system timed
+        // it to, and a corpse has to reach the ground when the ragdoll says it has.
+        this.phase[i] = facts.loop ? p.animTime[i] % 1 : Math.min(1, p.animTime[i]);
       } else {
         let rate = facts.invDuration;
         if (facts.rootSpeed > 0) {
@@ -584,8 +614,20 @@ export class UnitRenderSystem implements Subsystem {
 
         let facing = b.renderFacing(i, alpha);
         const dying = state === SoldierState.Dying || state === SoldierState.Dead;
-        if (dying && (p.deathDirX[i] !== 0 || p.deathDirZ[i] !== 0)) {
-          // Corpses fall away from the blow: turn the man so the clip's own fall direction
+
+        // ---- corpses ------------------------------------------------------
+        // The ragdoll system solves the fall — a verlet body for the deaths nearest the
+        // camera and a tip-over for the rest — and publishes a rigid transform. Using it
+        // means the corpse lies where the physics put it rather than where a clip guessed,
+        // and it is the same call for both of its tiers.
+        let hasCorpse = false;
+        if (dying && this.ragdoll?.getCorpsePose(i, this.corpse)) {
+          hasCorpse = true;
+          rp.x = this.corpse.x;
+          rp.y = this.corpse.y;
+          rp.z = this.corpse.z;
+        } else if (dying && (p.deathDirX[i] !== 0 || p.deathDirZ[i] !== 0)) {
+          // No ragdoll available: turn the man so his death clip's own fall direction
           // points where the blow pushed him.
           const target = Math.atan2(-p.deathDirX[i], -p.deathDirZ[i]);
           let d = (target - facing) % (Math.PI * 2);
@@ -613,7 +655,7 @@ export class UnitRenderSystem implements Subsystem {
           this.pushHorse(i, lod, rp.x, rp.y, rp.z, facing, horseClip, hf);
           lean += 0.06;
         }
-        this.pushSoldier(tier, i, rp.x, y, rp.z, facing, lean, state, selected, coarse);
+        this.pushSoldier(tier, i, rp.x, y, rp.z, facing, lean, state, selected, coarse, hasCorpse);
       }
     }
 
@@ -632,7 +674,8 @@ export class UnitRenderSystem implements Subsystem {
     lean: number,
     state: SoldierState,
     selected: boolean,
-    coarse: boolean
+    coarse: boolean,
+    hasCorpse: boolean
   ): void {
     const buf = tier.buf;
     const n = buf.count;
@@ -649,7 +692,21 @@ export class UnitRenderSystem implements Subsystem {
     buf.orient[o + 2] = lean;
     buf.orient[o + 3] = p.grime[i];
 
-    this.writeAnim(buf.animA, buf.animB, n, i, this.manFacts, p.variant[i]);
+    const q = n * Stride.Quat;
+    if (hasCorpse) {
+      buf.quat[q] = this.corpse.qx;
+      buf.quat[q + 1] = this.corpse.qy;
+      buf.quat[q + 2] = this.corpse.qz;
+      buf.quat[q + 3] = this.corpse.qw;
+    } else {
+      buf.quat[q] = 0; buf.quat[q + 1] = 0; buf.quat[q + 2] = 0; buf.quat[q + 3] = 0;
+    }
+
+    // A settling corpse holds its death clip near the start of the fall. The ragdoll owns
+    // the tipping over, so letting the clip run all the way to its own prone pose as well
+    // would fold the body twice.
+    const holdBack = hasCorpse ? 1 - 0.86 * Math.min(1, this.corpse.settle) : 1;
+    this.writeAnim(buf.animA, buf.animB, n, i, this.manFacts, p.variant[i], holdBack);
 
     // Melee variant swaps the missile in the hand for the drawn blade; a routing man
     // throws his shield and his javelins away. The far tier takes the eight-group mask
@@ -783,10 +840,11 @@ export class UnitRenderSystem implements Subsystem {
     n: number,
     i: number,
     facts: ClipFacts[],
-    variant: number
+    variant: number,
+    phaseScale = 1
   ): void {
     const cur = facts[this.curClip[i]] ?? facts[0];
-    const ph = this.phase[i];
+    const ph = this.phase[i] * phaseScale;
     const f = ph * cur.frames;
     const f0 = Math.min(cur.frames - 1, Math.floor(f));
     const f1 = cur.loop ? (f0 + 1) % cur.frames : Math.min(f0 + 1, cur.frames - 1);
@@ -825,6 +883,7 @@ export class UnitRenderSystem implements Subsystem {
         mark(t.attrs.animB, Stride.AnimB);
         mark(t.attrs.kit, Stride.Kit);
         mark(t.attrs.col1, Stride.Col1);
+        mark(t.attrs.quat, Stride.Quat);
       }
     };
     for (const row of this.soldierTiers) for (const t of row) push(t, true);

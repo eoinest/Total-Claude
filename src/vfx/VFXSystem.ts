@@ -133,7 +133,15 @@ export class VFXSystem implements Subsystem {
   /** Per-unit contact bookkeeping, for deriving clashes the sim has not announced. */
   private prevEngaged = new Map<number, number>();
   private battleOver = false;
-  private cpuMs = 0;
+  /**
+   * Ring of recent per-frame CPU costs. Reported as a median, not a mean: one long
+   * frame — a shader compile, a GC pause, a harness clock jump — poisons a mean for
+   * as long as it stays in the window, and a wrong number in a debug readout is worse
+   * than no number at all.
+   */
+  private cpuRing = new Float32Array(31);
+  private cpuRingHead = 0;
+  private cpuSorted = new Float32Array(31);
 
   // -------------------------------------------------------------------------
   // Init
@@ -351,7 +359,25 @@ export class VFXSystem implements Subsystem {
     this.fires.update(sdt, this.particles, this.damage, cam.x, cam.z);
     this.weather.emit(this.particles, sdt, cam.x, cam.y, cam.z, (x, z) => this.groundAt(x, z));
 
-    this.cpuMs = performance.now() - t0;
+    this.cpuRing[this.cpuRingHead] = performance.now() - t0;
+    this.cpuRingHead = (this.cpuRingHead + 1) % this.cpuRing.length;
+  }
+
+  /** Median of the CPU-cost ring. Insertion sort: 31 entries, called only for stats. */
+  private cpuMedian(): number {
+    const n = this.cpuRing.length;
+    this.cpuSorted.set(this.cpuRing);
+    const s = this.cpuSorted;
+    for (let i = 1; i < n; i++) {
+      const v = s[i];
+      let j = i - 1;
+      while (j >= 0 && s[j] > v) {
+        s[j + 1] = s[j];
+        j--;
+      }
+      s[j + 1] = v;
+    }
+    return s[n >> 1];
   }
 
   /**
@@ -444,7 +470,10 @@ export class VFXSystem implements Subsystem {
     litter: number;
     banners: number;
     perchedCrows: number;
+    /** Median per-frame CPU cost over the last 31 frames, in milliseconds. */
     cpuMs: number;
+    /** Worst frame in the same window — the number that matters for a hitch. */
+    cpuPeakMs: number;
   } {
     return {
       particles: this.particles.liveCount(),
@@ -456,7 +485,8 @@ export class VFXSystem implements Subsystem {
       litter: this.litter.count,
       banners: this.banners.count,
       perchedCrows: this.birds.perched,
-      cpuMs: this.cpuMs,
+      cpuMs: this.cpuMedian(),
+      cpuPeakMs: Math.max(...this.cpuRing),
     };
   }
 

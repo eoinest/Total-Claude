@@ -25,6 +25,14 @@ const FLAVOUR_DRAW = [
   'Both hosts have bled themselves white. The dead lie in windrows where the lines met, and nobody holds the ground.',
 ];
 
+/**
+ * The screenshot harness is a measurement rig, not a player: a cinematic title card and
+ * a victory overlay sitting across the middle of a frame make every shot unusable for
+ * judging the battlefield. Both are suppressed there.
+ */
+const CINEMATIC =
+  typeof location === 'undefined' || new URLSearchParams(location.search).get('harness') !== '1';
+
 export class BattleFlow {
   private title!: HTMLElement;
   private results!: HTMLElement;
@@ -51,6 +59,7 @@ export class BattleFlow {
 
     this.offs.push(
       ctx.events.on('battleStarted', () => {
+        if (!CINEMATIC) return;
         this.titleShownAt = ctx.time.elapsed;
         this.titleGone = false;
         this.title.style.display = '';
@@ -80,9 +89,9 @@ export class BattleFlow {
   tick(ctx: EngineContext): void {
     if (this.titleGone || this.titleShownAt < 0) return;
     const age = ctx.time.elapsed - this.titleShownAt;
-    const IN = 0.9;
-    const LIFE = 4.2;
-    const OUT = 0.8;
+    const IN = 0.7;
+    const LIFE = 2.9;
+    const OUT = 0.9;
     let a: number;
     if (age < IN) a = age / IN;
     else if (age < LIFE) a = 1;
@@ -107,6 +116,8 @@ export class BattleFlow {
    */
   checkOutcome(ctx: EngineContext, model: HudModel): void {
     if (this.resultsOpen || ctx.time.simTime < 20) return;
+    // `BattleFlowSystem` owns the verdict when it is registered.
+    if (ctx.tryGet('battleFlow')) return;
     const rome = model.unitsLeft[Faction.Rome] - model.routing[Faction.Rome];
     const germ = model.unitsLeft[Faction.Germanic] - model.routing[Faction.Germanic];
     if (rome > 0 && germ > 0) return;
@@ -119,9 +130,22 @@ export class BattleFlow {
   }
 
   private showResults(ctx: EngineContext, victor: number, reason: string): void {
-    if (this.resultsOpen) return;
+    if (this.resultsOpen || !CINEMATIC) return;
     this.resultsOpen = true;
     const m = this.model;
+
+    // `BattleFlowSystem` keeps the authoritative tally; prefer it over anything the HUD
+    // can reconstruct from the surviving unit groups.
+    const flow = ctx.tryGet('battleFlow') as unknown as {
+      result?: {
+        victor: number;
+        reason: string;
+        casualties: Record<number, number>;
+        survivors: Record<number, number>;
+        at: number;
+      } | null;
+    } | undefined;
+    const tally = flow?.result ?? null;
 
     const player = victor === PLAYER_FACTION;
     const verdict = victor < 0 ? 'Stalemate' : player ? 'Victory' : 'Defeat';
@@ -140,9 +164,9 @@ export class BattleFlow {
 
     const column = (f: Faction): string => {
       const fui = FACTION_UI[f];
-      const init = m.initialStrength[f];
-      const left = m.strength[f];
-      const lost = Math.max(0, init - left);
+      const left = tally ? (tally.survivors[f] ?? m.strength[f]) : m.strength[f];
+      const lost = tally ? (tally.casualties[f] ?? 0) : Math.max(0, m.initialStrength[f] - left);
+      const init = tally ? left + lost : m.initialStrength[f];
       const pct = init ? Math.round((lost / init) * 100) : 0;
       const units = m.views.filter((v) => v.faction === f);
       const destroyed = units.filter((v) => v.destroyed).length;
@@ -181,7 +205,7 @@ export class BattleFlow {
       `<div class="rs-panel hud-panel">
          <div class="rs-verdict ${verdict.toLowerCase()}">${verdict}</div>
          <div class="rs-reason">${reasonText[reason] ?? reason}</div>
-         <div class="rs-clock">${fmtClock(ctx.time.simTime)} on the field</div>
+         <div class="rs-clock">${fmtClock(tally?.at ?? ctx.time.simTime)} on the field</div>
          <div class="rs-cols">${column(Faction.Rome)}<div class="rs-vs">${icon(ICON.swords, 'rs-vs-ic')}</div>${column(Faction.Germanic)}</div>
          <div class="rs-honours">
            <div class="sec-head">Roll of honour</div>

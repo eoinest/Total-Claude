@@ -14,6 +14,7 @@
  *   - the tick runs off unscaled wall-clock time so the HUD stays alive while paused
  */
 
+import type * as THREE from 'three';
 import type { EngineContext, QualityTier, Subsystem } from '../core/Engine';
 import type { BattleSystem } from '../sim/BattleSystem';
 import { Banners } from './Banners';
@@ -71,12 +72,23 @@ export class HudSystem implements Subsystem {
   private battle?: BattleSystem;
   private heightAt: (x: number, z: number) => number = () => 0;
   private tickAcc = TICK;
-  private pendingSelectArmy = false;
   private debugOn = true;
   private relayoutIn = 0;
 
   /** Smoothed main-thread cost of the HUD, in milliseconds. */
   hudMs = 0;
+
+  /**
+   * Frame times measured here rather than read from `time.fps`. That mean is poisoned
+   * for a full second by any single long frame — a load hitch, or the harness settling
+   * its clock — and a wrong number in the corner of a screenshot misleads review. A
+   * median over a short ring buffer ignores outliers entirely.
+   */
+  private frameRing = new Float32Array(48);
+  private frameRingAt = 0;
+  private frameRingN = 0;
+  private lastFrameAt = -1;
+  private readonly ringSort = new Float32Array(48);
 
   constructor(private opts: HudOptions = {}) {}
 
@@ -119,7 +131,7 @@ export class HudSystem implements Subsystem {
     this.command.attach(bottom, ctx);
     this.cards.attach(bottom);
     this.minimap.attach(this.root, ctx);
-    this.settings.attach(this.root, ctx, {
+    this.settings.attach(this.topbar.toolSlot, ctx, {
       setQuality: this.opts.engine ? (t) => this.opts.engine!.setQuality(t) : undefined,
       onBannersChanged: (on) => {
         this.banners.enabled = on;
@@ -134,13 +146,26 @@ export class HudSystem implements Subsystem {
       debugOn: () => this.debugOn,
     });
     this.flow.attach(this.root, ctx);
+    this.controller.attachEvents(ctx);
 
-    // Open the battle with the player's army selected, the way a Total War deployment
-    // phase does: the command plaque is populated, the ground markers show every
-    // formation's footprint and facing, and the first order needs no click to set up.
-    ctx.events.on('battleStarted', () => {
-      this.pendingSelectArmy = true;
-    });
+    // Optional integrations: both are duck-typed so the HUD still works on its own.
+    const morale = ctx.tryGet('morale') as unknown as
+      { moraleTerms?: (id: number) => Record<string, number> } | undefined;
+    if (morale && typeof morale.moraleTerms === 'function') {
+      this.tooltip.moraleProbe = (id) => {
+        try {
+          return morale.moraleTerms!(id);
+        } catch {
+          return null;
+        }
+      };
+    }
+    const vfx = ctx.tryGet('vfx') as unknown as
+      { standardOf?: (id: number, out: THREE.Vector3) => boolean } | undefined;
+    if (vfx && typeof vfx.standardOf === 'function') {
+      this.banners.standardOf = (id, out) => vfx.standardOf!(id, out);
+    }
+
 
     this.perfLine = el('div', 'hud-perf', this.root);
     setText(this.perfLine, 'hud —');
@@ -156,6 +181,16 @@ export class HudSystem implements Subsystem {
    * the only system that already has a toggle, a place to put it and the HUD's own cost.
    * Everything comes off `EngineContext`, so no engine reference is needed.
    */
+  /** Median frame time in ms over the ring buffer, or 0 until it fills a little. */
+  private medianFrameMs(): number {
+    const n = this.frameRingN;
+    if (n < 4) return 0;
+    const a = this.ringSort.subarray(0, n);
+    a.set(this.frameRing.subarray(0, n));
+    a.sort();
+    return a[n >> 1];
+  }
+
   private writeDebug(ctx: EngineContext): void {
     const t = ctx.time;
     const info = ctx.renderer.info;
@@ -166,10 +201,14 @@ export class HudSystem implements Subsystem {
       units++;
       men += v.alive;
     }
-    const fps = t.fps.toFixed(0).padStart(3);
+    const med = this.medianFrameMs();
+    // Below ~1.6 ms per frame we are not in a display-driven loop at all — the
+    // screenshot harness pumps `engine.frame()` back to back — so a frame *rate* would
+    // be a fiction. The interval is always honest, so that is what leads.
+    const fps = med >= 1.6 ? Math.round(1000 / med).toString().padStart(4) : '   —';
     setText(
       this.perfLine,
-      `${fps} fps  ${t.frameMs.toFixed(1)} ms   hud ${this.hudMs.toFixed(2)} ms\n` +
+      `${med.toFixed(1)} ms/f  ${fps} fps   hud ${this.hudMs.toFixed(2)} ms\n` +
         `draws ${info.render.calls}   tris ${(info.render.triangles / 1000).toFixed(0)}k\n` +
         `men ${men}   units ${units}   sel ${this.model.selection.length}\n` +
         `${t.paused ? 'PAUSED' : `${t.gameSpeed}x`}   t+${t.simTime.toFixed(0)}s`
@@ -190,16 +229,23 @@ export class HudSystem implements Subsystem {
     // Wall-clock, not scaled: the HUD must keep working while the battle is paused.
     const wall = ctx.time.frameDt;
 
+    if (this.lastFrameAt >= 0) {
+      const dt = t0 - this.lastFrameAt;
+      // Anything over a third of a second is a hitch, not a frame rate.
+      if (dt > 0.05 && dt < 333) {
+        this.frameRing[this.frameRingAt] = dt;
+        this.frameRingAt = (this.frameRingAt + 1) % this.frameRing.length;
+        if (this.frameRingN < this.frameRing.length) this.frameRingN++;
+      }
+    }
+    this.lastFrameAt = t0;
+
     this.hotkeys(ctx);
 
     this.tickAcc += wall;
     if (this.tickAcc >= TICK) {
       this.tickAcc = 0;
       this.model.refresh(this.battle, ctx.time.simTime);
-      if (this.pendingSelectArmy && this.model.views.length > 0) {
-        this.pendingSelectArmy = false;
-        this.controller.selectArmy(ctx);
-      }
       if (this.model.pruneSelection()) {
         ctx.events.emit('selectionChanged', { unitIds: this.model.selection.slice() });
       }
@@ -283,6 +329,7 @@ export class HudSystem implements Subsystem {
   }
 
   dispose(): void {
+    this.controller.dispose();
     this.ptr.dispose();
     this.overlay.dispose();
     this.cards.dispose();

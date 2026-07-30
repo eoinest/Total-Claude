@@ -98,9 +98,29 @@ function rowsFor(v: UnitView): Array<{ head: string; rows: Row[] }> {
   return groups;
 }
 
+/** Player-facing names for `Morale.TERM_NAMES`, in the order that reads best. */
+const MORALE_TERMS: Array<[string, string]> = [
+  ['casualties', 'Men falling'],
+  ['attrition', 'Losses so far'],
+  ['flanked', 'Flanked'],
+  ['exchange', 'Losing the exchange'],
+  ['cavalry', 'Horse in the rear'],
+  ['fatigue', 'Exhaustion'],
+  ['missiles', 'Under missiles'],
+  ['witness', 'Friends breaking'],
+  ['ground', 'Uphill'],
+  ['army', 'Army morale'],
+  ['recovery', 'Recovering'],
+];
+
+/** Supplied by the HUD when a morale system is registered. */
+export type MoraleProbe = (unitId: number) => Record<string, number> | null;
+
 export class Tooltip {
   private root: HTMLElement;
   private shownFor = -1;
+  /** Set by the HUD so the tooltip can explain *why* a unit is wavering. */
+  moraleProbe: MoraleProbe | null = null;
 
   constructor(parent: HTMLElement) {
     this.root = document.createElement('div');
@@ -152,6 +172,26 @@ export class Tooltip {
       })
       .join('');
 
+    // Why is this cohort wavering? The morale system publishes its pressure breakdown,
+    // which is far more use to a player than the single number.
+    let moraleHtml = '';
+    const terms = this.moraleProbe?.(v.id) ?? null;
+    if (terms) {
+      const rows: string[] = [];
+      for (const [key, label] of MORALE_TERMS) {
+        const raw = terms[key];
+        if (typeof raw !== 'number' || Math.abs(raw) < 0.25) continue;
+        const good = raw > 0;
+        rows.push(
+          `<div class="mt-row${good ? ' up' : ' down'}">` +
+            `<span>${label}</span><b>${good ? '+' : '−'}${Math.abs(raw).toFixed(1)}</b></div>`
+        );
+      }
+      if (rows.length) {
+        moraleHtml = `<div class="tip-morale"><div class="tip-head">Morale pressure</div>${rows.slice(0, 6).join('')}</div>`;
+      }
+    }
+
     const mor = MORALE_UI[v.morale];
     html(
       this.root,
@@ -176,6 +216,7 @@ export class Tooltip {
          </div>
        </div>
        <div class="tip-stats">${statHtml}</div>
+       ${moraleHtml}
        <div class="tip-flavour">${d.description}</div>
        <div class="tip-chips"><div class="tip-head">Formations</div>${forms}</div>
        ${abils ? `<div class="tip-chips"><div class="tip-head">Abilities</div>${abils}</div>` : ''}`

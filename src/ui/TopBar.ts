@@ -30,6 +30,9 @@ export class TopBar {
   private unitsG!: HTMLElement;
   private speedBtns = new Map<string, HTMLElement>();
   private lastPhase = '';
+  /** Where the settings stud lives, so it reads as part of the plaque rather than as a
+   *  lone button floating in the corner. */
+  toolSlot!: HTMLElement;
 
   constructor(private model: HudModel) {}
 
@@ -74,9 +77,11 @@ export class TopBar {
            <span class="tb-adv">Even</span>
          </div>
        </div>
-       ${side(Faction.Germanic, 'jut')}`
+       ${side(Faction.Germanic, 'jut')}
+       <div class="tb-tools"></div>`
     );
 
+    this.toolSlot = this.root.querySelector('.tb-tools') as HTMLElement;
     this.clock = this.root.querySelector('.tb-clock') as HTMLElement;
     this.phase = this.root.querySelector('.tb-phase') as HTMLElement;
     this.note = this.root.querySelector('.tb-note') as HTMLElement;

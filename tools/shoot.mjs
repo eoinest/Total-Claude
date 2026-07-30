@@ -52,21 +52,22 @@ const SHOTS = {
     x: -20, z: -186, zoom: 0.18, yaw: Math.PI * 0.1, at: 2,
   },
   clash: {
-    // The contact line settles around x -60..-10, z -5..+10, so (0,0) sat in the seam
-    // between Cohorts II and III and framed empty grass.
+    // Auto-framed: hand-picked coordinates kept missing, because where the lines
+    // actually meet is an emergent property of the AI's chosen ground and shifts by
+    // tens of metres between passes. `follow` resolves the focus at shoot time.
     desc: 'The moment the lines meet, mid-height, oblique',
-    x: -30, z: 2, zoom: 0.30, yaw: Math.PI * 1.2, at: 72,
+    follow: 'contact', zoom: 0.30, at: 72,
   },
   melee: {
     desc: 'Ground level inside the melee — the hardest test of animation and gore',
-    x: -30, z: 2, zoom: 0.08, yaw: Math.PI * 1.15, at: 88,
+    follow: 'contact', zoom: 0.09, at: 88,
   },
   cavalry: {
     // The old camera (210, 60) at yaw 1.6pi looked north-west into the Roman rear, with
     // every cavalry action 25-40 m behind it. This framing was verified by the AI agent
     // to put the wedge on the wing with the battle line receding into the dust behind.
     desc: 'The cavalry wing sweeping the flank',
-    x: 190, z: 0, zoom: 0.5, yaw: Math.PI * 1.25, at: 62,
+    follow: 'cavalry', zoom: 0.42, at: 62,
   },
   city: {
     desc: 'Necropolis, road, Aurelian Wall and the city beyond',
@@ -98,7 +99,7 @@ const SHOTS = {
   },
   aftermath: {
     desc: 'Late battle: corpses, routs, dust and blood on the ground',
-    x: 0, z: 40, zoom: 0.4, yaw: Math.PI * 1.3, at: 190,
+    follow: 'corpses', zoom: 0.34, at: 190,
   },
 };
 
@@ -254,7 +255,57 @@ try {
           const g = window.__game;
           const need = s.at - g.simTime();
           if (need > 0) g.advance(need);
-          g.setCamera(s.x, s.z, s.zoom, s.yaw);
+
+          // Resolve an auto-framed shot against the live battle. Hand-picked focus
+          // points drift out of date every time the AI or the terrain changes where the
+          // armies choose to meet, which repeatedly produced beautiful photographs of
+          // empty grass.
+          let fx = s.x, fz = s.z, fyaw = s.yaw;
+          if (s.follow) {
+            const b = g.battle;
+            const p = b.pool;
+            let sx = 0, sz = 0, n = 0;
+            // Faction centroids, used to look along the axis between the two armies.
+            const cx = [0, 0], cz = [0, 0], cn = [0, 0];
+
+            for (let i = 0; i < p.count; i++) {
+              const st = p.state[i];
+              const f = p.faction[i];
+              if (st !== 11 && st !== 10) { cx[f] += p.x[i]; cz[f] += p.z[i]; cn[f]++; }
+              let take = false;
+              if (s.follow === 'contact') take = st === 4;            // Fighting
+              else if (s.follow === 'corpses') take = st === 11 || st === 10;
+              if (take) { sx += p.x[i]; sz += p.z[i]; n++; }
+            }
+
+            if (s.follow === 'cavalry') {
+              // Centroid of the mounted units still in the fight.
+              for (const u of b.units) {
+                if (u.destroyed || u.alive === 0) continue;
+                const cls = b.typeOf(u).unitClass;
+                if (cls !== 'heavy-cavalry' && cls !== 'light-cavalry') continue;
+                sx += u.x * u.alive; sz += u.z * u.alive; n += u.alive;
+              }
+            }
+
+            if (n > 0) { fx = sx / n; fz = sz / n; }
+            else {
+              // Nothing matched (too early, or everyone already dead): fall back to the
+              // midpoint between the two armies rather than to a stale constant.
+              const ax = cn[0] ? cx[0] / cn[0] : 0, az = cn[0] ? cz[0] / cn[0] : 0;
+              const bx = cn[1] ? cx[1] / cn[1] : 0, bz = cn[1] ? cz[1] / cn[1] : 0;
+              fx = (ax + bx) / 2; fz = (az + bz) / 2;
+            }
+
+            // Look along the axis between the armies, swung 55 degrees off so the shot is
+            // oblique to the line of battle rather than straight down it.
+            if (cn[0] && cn[1]) {
+              const ax = cx[0] / cn[0], az = cz[0] / cn[0];
+              const bx = cx[1] / cn[1], bz = cz[1] / cn[1];
+              fyaw = Math.atan2(bx - ax, bz - az) + 0.96;
+            }
+          }
+          g.setCamera(fx, fz, s.zoom, fyaw);
 
           // Settle on the *synthetic* clock. Feeding `performance.now()` here would
           // jump Time's accumulator forward by however long the fast-forward took,
@@ -297,6 +348,7 @@ try {
           const st = g.engine.stats();
           return {
             simTime: g.simTime(), men, units, corpses,
+            focusX: Math.round(fx), focusZ: Math.round(fz), yaw: +fyaw.toFixed(2),
             draws: st.calls, tris: st.tris, programs: st.programs,
             msPerFrame, fps: 1000 / msPerFrame,
           };
@@ -311,7 +363,7 @@ try {
         `  ✓ ${name.padEnd(14)} t+${String(Math.round(info.simTime)).padStart(3)}s  ` +
         `${String(info.men).padStart(5)} men  ${String(info.units).padStart(2)} units  ` +
         `${String(info.draws).padStart(4)} draws  ${(info.tris / 1e6).toFixed(2)}M tris  ` +
-        `${info.msPerFrame.toFixed(2)}ms/f (${info.fps.toFixed(0)} fps)`
+        `${info.msPerFrame.toFixed(2)}ms/f  @(${info.focusX},${info.focusZ})`
       );
     } catch (err) {
       failed++;

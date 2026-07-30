@@ -360,11 +360,16 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
       b.revolve([[0.102, -0.014], [0.111, -0.026], [0.111, -0.044], [0.1, -0.05]], d.head, bronzeUv);
       b.setPiece(Piece.HelmGallic, Tint.Metal);
       // Neck flange, angled down and back.
+      // Neck guard. Flared down and back, and the single feature that tells you a
+      // helmeted man is Roman when you are looking at the back of his head.
       const flange = new THREE.Matrix4()
-        .makeRotationX(-52 * DEG)
-        .premultiply(new THREE.Matrix4().makeTranslation(0, -0.02, -0.085));
+        .makeRotationX(-58 * DEG)
+        .premultiply(new THREE.Matrix4().makeTranslation(0, -0.018, -0.082));
       b.setMatrix(headM.clone().multiply(flange));
-      b.box(0, -0.045, 0, 0.185, 0.09, 0.014, plateUv);
+      b.box(0, -0.055, 0, 0.215, 0.115, 0.014, plateUv);
+      b.setPiece(Piece.HelmGallic, Tint.Atlas);
+      b.box(0, -0.115, 0, 0.215, 0.022, 0.02, bronzeUv);
+      b.setPiece(Piece.HelmGallic, Tint.Metal);
       b.setMatrix(headM);
       // Cheek pieces, hinged forward of the ears.
       for (const s of [-1, 1]) {
@@ -398,8 +403,15 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
         b.box(0, 0, 0, 0.022, 0.125, 0.09, plateUv);
         b.setMatrix(headM);
       }
-      // Nasal.
+      // Nasal, and a neck guard of its own — the ridge helmet's is narrower than the
+      // Gallic bowl's but still flares.
       b.box(0, -0.048, 0.094, 0.024, 0.075, 0.014, plateUv);
+      const rflange = new THREE.Matrix4()
+        .makeRotationX(-64 * DEG)
+        .premultiply(new THREE.Matrix4().makeTranslation(0, -0.026, -0.078));
+      b.setMatrix(headM.clone().multiply(rflange));
+      b.box(0, -0.045, 0, 0.18, 0.095, 0.013, plateUv);
+      b.setMatrix(headM);
     }
 
     // Coolus: a plain bronze-or-iron bowl with a small knob and a token neck guard. The
@@ -773,14 +785,25 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
 
     // Caligae: a hobnailed sandal-boot cut from one piece of leather. The strap pattern is
     // its silhouette, so even LOD2 keeps the sole and the ankle band.
+    // Caligae: a hobnailed sole with an openwork upper of cut leather straps. The strap
+    // pattern IS the silhouette, and without it a foot is a black blob — which is exactly
+    // how it reads at LOD0 if you only build a shoe-shaped box.
     b.setPiece(Piece.Boots, Tint.Atlas);
     b.setBone(foot);
     b.setMatrix(new THREE.Matrix4().makeTranslation(hipX, ankleY, MAN_RIG.restT[foot * 3 + 2]));
-    b.box(0, -0.03, 0.045, 0.088, 0.045, 0.235, darkLeatherUv);
+    // Sole: pale, thick, and proud of the upper, so the foot has a readable ground line.
+    b.box(0, -0.052, 0.048, 0.092, 0.028, 0.245, ropeUv);
+    b.box(0, -0.028, 0.045, 0.086, 0.028, 0.235, darkLeatherUv);
     if (d.medium) {
-      b.box(0, 0.02, -0.02, 0.082, 0.075, 0.09, darkLeatherUv);
+      // Heel cup and ankle straps.
+      b.box(0, 0.012, -0.028, 0.08, 0.062, 0.075, leatherUv);
+      const straps = d.fine ? 3 : 2;
+      for (let k = 0; k < straps; k++) {
+        b.box(0, 0.02 + k * 0.035, 0.02 + k * 0.012, 0.086, 0.016, 0.09, leatherUv);
+      }
       b.setBone(toe, foot, 0.7);
-      b.box(0, -0.035, 0.155, 0.07, 0.035, 0.07, darkLeatherUv);
+      b.box(0, -0.03, 0.16, 0.072, 0.03, 0.075, darkLeatherUv);
+      if (d.fine) b.box(0, 0.006, 0.115, 0.076, 0.016, 0.055, leatherUv);
     }
     b.setMatrix(null);
     void s;

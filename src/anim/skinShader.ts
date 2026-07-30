@@ -51,6 +51,7 @@ attribute vec4 iAnimB;      // row0, row1, frac, variant     (clip being faded o
 attribute vec2 iKit;        // piece mask, bits 0-23 and 24-47
 attribute vec4 iCol0;       // tunic rgb, shield emblem index
 attribute vec4 iCol1;       // leg rgb, metal wear
+attribute vec4 iQuat;       // full-body orientation for a corpse; zero for the living
 
 vec4 soldierFetch( float bone, float row, float slot ) {
   return texture2D( uAnimTex, vec2(
@@ -128,21 +129,28 @@ const body = (withNormal: boolean): string => /* glsl */ `
 
   sp *= iOrient.y;
 
-  // Lean is a bend, not a tilt: the rotation ramps in with height so the feet stay
-  // planted while the shoulders go forward. A rigid tilt slides a running man's feet
-  // through the ground, which is instantly readable as wrong.
-  float bendT = clamp( sp.y / SOLDIER_LEAN_H, 0.0, 1.0 );
-  float lean = iOrient.z * bendT * bendT;
-  // A slow, per-man sway on top. Nothing in a crowd is ever perfectly still, and the
-  // phase comes from the man's stable hash so it never resynchronises.
-  lean += sin( uTime * 0.55 + iAnimB.w * 43.0 ) * 0.014 * bendT * bendT;
-  float cl = cos( lean ), sl = sin( lean );
-  sp = vec3( sp.x, sp.y * cl - sp.z * sl, sp.y * sl + sp.z * cl );
-  ${withNormal ? 'sn = vec3( sn.x, sn.y * cl - sn.z * sl, sn.y * sl + sn.z * cl );' : ''}
+  if ( dot( iQuat, iQuat ) > 0.0001 ) {
+    // A corpse: the ragdoll solver owns the whole body's orientation, yaw included, so
+    // the lean-and-yaw path is bypassed entirely rather than composed with it.
+    sp = soldierQRot( iQuat, sp );
+    ${withNormal ? 'sn = soldierQRot( iQuat, sn );' : ''}
+  } else {
+    // Lean is a bend, not a tilt: the rotation ramps in with height so the feet stay
+    // planted while the shoulders go forward. A rigid tilt slides a running man's feet
+    // through the ground, which is instantly readable as wrong.
+    float bendT = clamp( sp.y / SOLDIER_LEAN_H, 0.0, 1.0 );
+    float lean = iOrient.z * bendT * bendT;
+    // A slow, per-man sway on top. Nothing in a crowd is ever perfectly still, and the
+    // phase comes from the man's stable hash so it never resynchronises.
+    lean += sin( uTime * 0.55 + iAnimB.w * 43.0 ) * 0.014 * bendT * bendT;
+    float cl = cos( lean ), sl = sin( lean );
+    sp = vec3( sp.x, sp.y * cl - sp.z * sl, sp.y * sl + sp.z * cl );
+    ${withNormal ? 'sn = vec3( sn.x, sn.y * cl - sn.z * sl, sn.y * sl + sn.z * cl );' : ''}
 
-  float cy = cos( iOrient.x ), sy = sin( iOrient.x );
-  sp = vec3( sp.x * cy + sp.z * sy, sp.y, -sp.x * sy + sp.z * cy );
-  ${withNormal ? 'sn = vec3( sn.x * cy + sn.z * sy, sn.y, -sn.x * sy + sn.z * cy );' : ''}
+    float cy = cos( iOrient.x ), sy = sin( iOrient.x );
+    sp = vec3( sp.x * cy + sp.z * sy, sp.y, -sp.x * sy + sp.z * cy );
+    ${withNormal ? 'sn = vec3( sn.x * cy + sn.z * sy, sn.y, -sn.x * sy + sn.z * cy );' : ''}
+  }
 
   gSoldierPos = sp + iPos;
   ${withNormal ? 'objectNormal = normalize( sn );' : ''}
@@ -153,9 +161,13 @@ const TINT_BODY = /* glsl */ `
 {
   float slot = aPieceTint.y;
   float v = iAnimB.w;
-  // Skin: a spread from Mediterranean to northern, since this army is Italian, Syrian
-  // and Gallic in the same battle line.
-  vec3 skin = mix( vec3( 0.66, 0.48, 0.35 ), vec3( 0.36, 0.24, 0.17 ), fract( v * 7.13 ) );
+  // Skin. The atlas tile is a mid-grey with pore and crease detail; the tone comes from
+  // here. The range lands on roughly 0.30 down to 0.14 linear once the sRGB tile is
+  // decoded and multiplied in — Mediterranean through to weathered Gallic, warm, and
+  // never near white, which is the single most damaging error a crowd of bare arms and
+  // legs can have. The man's own variant hash drives it, so a rank is visibly many men.
+  float tone = fract( v * 7.13 );
+  vec3 skin = mix( vec3( 0.30, 0.18, 0.11 ), vec3( 0.30, 0.18, 0.11 ), tone * tone );
   // Hair and beards: black through to the reddish blond Tacitus keeps remarking on.
   vec3 hair = mix( vec3( 0.13, 0.09, 0.07 ), vec3( 0.52, 0.34, 0.15 ), fract( v * 13.7 ) );
   vec3 tint;
@@ -169,7 +181,7 @@ const TINT_BODY = /* glsl */ `
   else                    tint = vec3( 0.72 + iCol1.w * 0.36 );
   // Cloth was dyed in small batches and faded in the sun; a few percent of per-man value
   // variation is the single cheapest thing that stops a rank reading as one repeated man.
-  tint *= 0.88 + fract( v * 31.1 ) * 0.24;
+  tint *= 0.86 + fract( v * 31.1 ) * 0.28;
   vSoldierTint = tint;
   vSoldierGrime = iOrient.w;
 

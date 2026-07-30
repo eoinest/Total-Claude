@@ -317,20 +317,26 @@ const MATS: Record<Mat, MatDef> = {
     metalness: 0,
     bump: 0.3,
   },
-  // Skin is tinted per man in the shader; the tile carries only pore and shading detail.
+  // Skin is tinted per man in the shader; the tile carries pore, blotch and — importantly —
+  // the crease shading at the elbow and knee. Limb tubes run V from the hip or shoulder to
+  // the extremity, so bands at v = 0.42 and 0.58 land on the joint on both arms and legs,
+  // which is the cheapest possible way to stop a bare limb reading as a smooth dowel.
   [Mat.Skin]: {
     colour(u, v, out) {
-      const pore = fbm(u * 40, v * 40, 3, 40, 47) * 0.1;
-      const blotch = fbm(u * 7, v * 7, 3, 7, 53) * 0.14;
-      // Kept mid-grey: the per-man skin tone is applied as a tint, and a bright tile
-      // would blow the whole face out once the sun and the tint are both on it.
-      const g = 0.72 + pore - blotch * 0.5;
-      out[0] = Math.min(1, g); out[1] = Math.min(1, g * 0.97); out[2] = Math.min(1, g * 0.94);
+      const pore = fbm(u * 40, v * 40, 3, 40, 47) * 0.12;
+      const blotch = fbm(u * 7, v * 7, 3, 7, 53) * 0.16;
+      const crease = Math.exp(-((v - 0.5) ** 2) / 0.0032) * 0.22
+        + Math.exp(-((v - 0.94) ** 2) / 0.0018) * 0.16;
+      // 0.56 in sRGB is about 0.27 linear, which is where Mediterranean skin actually sits.
+      const g = 0.56 + pore - blotch * 0.5 - crease;
+      out[0] = Math.min(1, g); out[1] = Math.min(1, g * 0.955); out[2] = Math.min(1, g * 0.9);
     },
-    height: (u, v) => fbm(u * 44, v * 44, 3, 44, 47),
-    roughness: 0.62,
+    height: (u, v) =>
+      fbm(u * 44, v * 44, 3, 44, 47) * 0.7
+      + (1 - Math.exp(-((v - 0.5) ** 2) / 0.0032)) * 0.3,
+    roughness: 0.58,
     metalness: 0,
-    bump: 0.12,
+    bump: 0.3,
   },
   // Hair and beard: strands, tinted per man.
   [Mat.Hair]: {

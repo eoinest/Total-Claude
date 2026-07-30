@@ -13,6 +13,7 @@
  * player wants the battle, not the interface — and dim again at extreme range.
  */
 
+import * as THREE from 'three';
 import type { EngineContext } from '../core/Engine';
 import { el, html, icon, setClass, setFill } from './dom';
 import { standardGlyph, UNIT_CLASS_ICON } from './icons';
@@ -32,6 +33,7 @@ interface BannerEls {
 }
 
 const PROJECTED: Projected = { x: 0, y: 0, distance: 0, visible: false };
+const ANCHOR = new THREE.Vector3();
 
 export class Banners {
   private layer!: HTMLElement;
@@ -45,6 +47,12 @@ export class Banners {
    * into it are dropped rather than left half-buried under the panel.
    */
   bottomReserve = 0;
+  /**
+   * World position of the top of a unit's standard, when the VFX system is registered.
+   * Hanging the plaque off the actual pole beats hanging it off a computed centroid: it
+   * moves with the standard bearer and sits at the height the art already establishes.
+   */
+  standardOf: ((unitId: number, out: THREE.Vector3) => boolean) | null = null;
 
   constructor(private model: HudModel) {}
 
@@ -140,9 +148,19 @@ export class Banners {
       const v = b.view;
       let hide = v.destroyed;
 
+      // Hang the plaque off the real standard when the VFX system offers one; otherwise
+      // 2.4 m above the block's centre, which clears a raised standard anyway.
+      let ax = v.cx;
+      let ay = v.cy + 2.4;
+      let az = v.cz;
+      if (!hide && this.standardOf && this.standardOf(v.id, ANCHOR)) {
+        ax = ANCHOR.x;
+        ay = ANCHOR.y + 0.6;
+        az = ANCHOR.z;
+      }
+
       if (!hide) {
-        // 2.4 m clears a raised standard; the banner then hangs just above the unit.
-        projectPoint(ctx.camera, v.cx, v.cy + 2.4, v.cz, w, h, PROJECTED);
+        projectPoint(ctx.camera, ax, ay, az, w, h, PROJECTED);
         hide =
           !PROJECTED.visible ||
           PROJECTED.x < -80 || PROJECTED.x > w + 80 ||
@@ -151,26 +169,24 @@ export class Banners {
 
       if (!hide) {
         const d = PROJECTED.distance;
-        // Ramp in from 14 m. The camera's zoom curve puts the eye only ~15 m from the
-        // focus at the low end, so a later ramp would strip the plaques off the whole
-        // mid-range where most of a battle is actually watched from.
-        const near = Math.min(1, Math.max(0, (d - 14) / 22));
+        // Nothing inside 28 m: down at eye level the player wants men, not markers, and
+        // a plaque sitting on the contact line is the worst thing the HUD can do.
+        const near = Math.min(1, Math.max(0, (d - 28) / 42));
         const far = 1 - Math.min(0.62, Math.max(0, (d - 900) / 900));
         const alpha = near * far;
         if (alpha < 0.02) hide = true;
         else {
-          // Slack grows with range: at a grazing angle across rolling ground the
-          // sample line clips hillocks that do not actually hide the standard.
           // Slack grows fast with range. At a grazing angle the eight-sample line
           // clips every hillock between here and there, and a battlefield where the
           // banners vanish whenever the camera drops is worse than one where a banner
           // occasionally shows through a rise.
-          if (testOcclusion && terrainOccludes(ctx.camera, v.cx, v.cy + 3.2, v.cz, heightAt, 4 + d * 0.06)) {
+          if (testOcclusion && terrainOccludes(ctx.camera, ax, ay, az, heightAt, 4 + d * 0.06)) {
             hide = true;
           } else {
-            // Near-constant screen size, easing down slightly at long range so a
-            // distant wing reads as distant.
-            const s = Math.max(0.62, Math.min(1.12, 1.12 - d / 2400));
+            // Near-constant screen size, easing down at long range so a distant wing
+            // reads as distant, and growing in with the fade so the last thing to leave
+            // a close-up is a small mark rather than a full-size icon.
+            const s = Math.max(0.62, Math.min(1.12, 1.12 - d / 2400)) * (0.6 + 0.4 * near);
             const t = `translate3d(${PROJECTED.x.toFixed(1)}px, ${PROJECTED.y.toFixed(1)}px, 0) translate(-50%, -100%) scale(${s.toFixed(3)})`;
             if (t !== b.transform) {
               b.transform = t;

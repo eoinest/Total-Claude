@@ -507,14 +507,12 @@ export class MoraleSystem implements Subsystem {
     if (this.collapseTimer < DECISIVE_HOLD) return;
 
     this.battleOver = true;
-    const victor = romeBeaten ? (germTotal > 0 ? Faction.Germanic : -1)
-      : (romeTotal > 0 ? Faction.Rome : -1);
-    const loserAnnihilated = romeBeaten ? romeTotal === 0 : germTotal === 0;
-    this.ctx.events.emit('battleEnded', {
-      victor,
-      reason: loserAnnihilated ? 'annihilation' : 'rout',
-    });
-    this.ctx.events.emit('musicCue', { id: victor === Faction.Rome ? 'victory' : 'defeat' });
+    // The announcement is deliberately NOT made here. `BattleFlowSystem` (order 50) is
+    // the single authority for the result: it carries the casualty and survivor tallies
+    // the post-battle screen needs, handles the timeout case, and sets the winners to
+    // cheer. Both systems reach the same verdict within a few seconds of each other, so
+    // emitting from both fired `battleEnded` twice and showed the results panel twice.
+    // `decided` and `bandOf`/`moraleTerms` remain the read API for the UI.
   }
 
   // -------------------------------------------------------------------------

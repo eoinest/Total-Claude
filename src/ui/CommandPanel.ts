@@ -227,13 +227,16 @@ export class CommandPanel {
     const now = ctx.time.simTime;
     for (const [id, b] of this.abilButtons) {
       let frac = 0;
+      let live = false;
       for (const v of sel) {
         if (!v.def.abilities.includes(id)) continue;
         frac = Math.max(frac, this.controller.cooldownFrac(v.id, id, now));
+        if (this.controller.isAbilityActive(v.id, id)) live = true;
       }
       const q = frac.toFixed(2);
       if (b.style.getPropertyValue('--cd') !== q) b.style.setProperty('--cd', q);
       setClass(b, 'cooling', frac > 0);
+      setClass(b, 'live', live);
     }
 
     setClass(this.runBtn, 'on', this.controller.runByDefault);

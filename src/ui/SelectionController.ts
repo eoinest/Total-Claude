@@ -50,6 +50,9 @@ export class SelectionController {
   runByDefault = false;
   /** Ability cooldown expiry times, keyed `unitId:abilityId`, in sim seconds. */
   private cooldowns = new Map<string, number>();
+  /** Abilities the sim reports as currently running, keyed `unitId:abilityId`. */
+  private active = new Set<string>();
+  private offs: Array<() => void> = [];
 
   private marquee!: HTMLElement;
   private hint!: HTMLElement;
@@ -76,6 +79,30 @@ export class SelectionController {
     private overlay: WorldOverlay,
     private ptr: PointerTracker
   ) {}
+
+  /**
+   * The ability system owns activation and duration; the HUD only mirrors it. Cooldowns
+   * are still timed here because nothing publishes them yet.
+   */
+  attachEvents(ctx: EngineContext): void {
+    this.offs.push(
+      ctx.events.on('abilityActivated', (e) => {
+        const key = `${e.unitId}:${e.ability}`;
+        if (e.active) this.active.add(key);
+        else this.active.delete(key);
+        this.cooldowns.set(key, ctx.time.simTime + this.abilityCooldown(e.ability));
+      })
+    );
+    this.offs.push(
+      ctx.events.on('abilityExpired', (e) => {
+        this.active.delete(`${e.unitId}:${e.ability}`);
+      })
+    );
+  }
+
+  isAbilityActive(unitId: number, ability: string): boolean {
+    return this.active.has(`${unitId}:${ability}`);
+  }
 
   attach(root: HTMLElement): void {
     this.marquee = el('div', 'marquee', root);
@@ -625,6 +652,11 @@ export class SelectionController {
       this.cursor = c;
       document.body.dataset.cur = c;
     }
+  }
+
+  dispose(): void {
+    for (const off of this.offs) off();
+    this.offs.length = 0;
   }
 
   /** True while a right-drag order is in progress; the HUD dims to keep the field clear. */
