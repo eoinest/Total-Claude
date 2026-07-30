@@ -369,7 +369,12 @@ export function resolveKit(def: UnitTypeDef, variant: number, out: ResolvedKit):
   ];
   const tunic = desaturate(srgbToLinear(
     germanic ? GERMANIC_CLOTH[Math.floor(r(18) * GERMANIC_CLOTH.length)] : ap.tunicColour
-  ), 0.24);
+  // Pulled a good way toward its own luminance. A vegetable-dyed red at full saturation has
+  // effectively no green or blue, and a channel that starts at zero stays at zero however it
+  // is lit — which is measurably why a tunic read as black: the men's median rendered
+  // luminance was 0.014 display-linear. Desaturating lifts the dead channels without
+  // pretending the dye was brighter than it was.
+  ), 0.34);
   const leg = desaturate(srgbToLinear(
     germanic ? GERMANIC_LEG[Math.floor(r(19) * GERMANIC_LEG.length)] : ap.legColour
   ), 0.1);
@@ -380,10 +385,12 @@ export function resolveKit(def: UnitTypeDef, variant: number, out: ResolvedKit):
   const d1 = (r(11) - 0.5) * spread;
   const d2 = (r(12) - 0.5) * spread;
   const dl = (r(13) - 0.5) * spread;
+  // Wool takes dye better than the display value suggests: 1.3x puts a madder tunic in the
+  // 0.10-0.25 linear band that a surviving textile measures at.
   out.tunic = [
-    Math.max(0.01, tunic[0] * (1 + d0)),
-    Math.max(0.01, tunic[1] * (1 + d1)),
-    Math.max(0.01, tunic[2] * (1 + d2)),
+    Math.max(0.01, tunic[0] * (1 + d0) * 1.3),
+    Math.max(0.01, tunic[1] * (1 + d1) * 1.3),
+    Math.max(0.01, tunic[2] * (1 + d2) * 1.3),
   ];
   // Undyed wool and linen swatches are pale, but a legionary's bracae after three days on
   // the Via Flaminia are not. Soiling is a *warm* multiply, not a scalar one: road dust is

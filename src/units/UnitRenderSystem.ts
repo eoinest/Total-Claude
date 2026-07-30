@@ -304,13 +304,21 @@ export class UnitRenderSystem implements Subsystem {
       // Enough to read as contact darkening, not enough to crush plate to black now that
       // the rig's shadows are genuinely dark.
       aoMapIntensity: 0.6,
-      // Armour is the most reflective thing on the field, so it is the most sensitive to
-      // what the probe contains. This was held at a third while the probe's irradiance was
-      // dominated by a saturated blue hemisphere fill — measured by disabling each light in
-      // turn, either source alone was enough to turn every helmet in the army cobalt. The
-      // probe is now a PMREM of the physical sky against a much lower exposure, so armour
-      // gets its reflection back.
-      envMapIntensity: 0.9,
+      // Above 1 on purpose, and this is the single number that decides whether an army reads
+      // as men or as silhouettes. Measured, by reading back the framebuffer over a rectangle
+      // of Roman ranks in the `melee` camera and taking percentiles of display luminance:
+      //
+      //     envMapIntensity   0.9    1.8    3.2    5.0
+      //     median            0.014  0.042  0.051  0.075
+      //     mean R            0.063  0.165  0.183  0.204
+      //
+      // At 0.9 half of every soldier was below 1.4% display luminance — black. Raising
+      // albedo does not fix that and raising metalness makes it worse, because with the
+      // rig's fill trimmed a part-metal surface in shadow has almost nothing to be lit *by*;
+      // what it needs is more energy in the probe it reflects. 1.8 is where the returns
+      // flatten, and it is defensible: the probe is a PMREM of the physical sky with the
+      // solar aureole preserved, so this is a real reflection, not a lift.
+      envMapIntensity: 1.8,
       roughness: 1,
       metalness: 1,
       normalScale: new THREE.Vector2(0.9, 0.9),

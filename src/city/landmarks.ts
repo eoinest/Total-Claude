@@ -1903,17 +1903,26 @@ function planRoadTombs(heightAt: Ground, rng: Rng): { sites: TombSite[]; trees: 
 }
 
 function buildRoadTombs(batch: Batch, detail: number, heightAt: Ground, sites: TombSite[]): void {
+  // Every stream this builder can touch, resolved up front and pushed together — the same
+  // rule `buildLandmark` follows, and for the same reason.
+  //
+  // The aedicula branch used to reach for `batch.s('roof')` inline, inside the pushed region
+  // but without ever pushing it, so its gable was emitted in *unshifted local coordinates*:
+  // both aedicula roofs ended up stacked at the world origin at 20–30 m altitude, which is
+  // dead centre of the battlefield. That is the pair of terracotta planes floating in mid-air
+  // over open ground in every strategic frame. An unpushed stream fails silently and puts the
+  // geometry somewhere plausible-looking, which is why it survived several passes.
   const stone = batch.s('stone');
   const brick = batch.s('brick');
   const metal = batch.s('metal');
+  const roof = batch.s('roof');
+  const pushed = [stone, brick, metal, roof];
 
   for (let i = 0; i < sites.length; i++) {
     const site = sites[i];
     const g = heightAt(site.x, site.z);
     const m = new THREE.Matrix4().makeRotationY(site.rot).setPosition(site.x, 0, site.z);
-    stone.push(m);
-    brick.push(m);
-    metal.push(m);
+    for (const st of pushed) st.push(m);
     const kind = site.kind;
     // Roadside tombs are tufa, travertine and brick, and half of them were rendered and
     // painted. Marble was for the very rich, and a whole necropolis of it reads as snow.
@@ -2003,7 +2012,7 @@ function buildRoadTombs(batch: Batch, detail: number, heightAt: Ground, sites: T
       box(stone, -w - 0.25, g + 6.6, -w * 0.85, w + 0.25, g + 7.3, w * 0.85, new THREE.Color().copy(PAL.travertine).multiplyScalar(0.94), { topGain: 1.16 });
       pediment(stone, (w + 0.25) * 2, g + 7.3, w * 1.7, new THREE.Color().copy(PAL.travertine).multiplyScalar(0.94), 0.26);
       // A pediment with nothing behind it is a flat-topped box with a triangle on it.
-      gableRoof(stone, batch.s('roof'), (w + 0.25) * 2 - 0.4, w * 1.7 - 0.4, g + 7.3, (w + 0.25) * 0.26, 0.3, PAL.roofTileOld, false);
+      gableRoof(stone, roof, (w + 0.25) * 2 - 0.4, w * 1.7 - 0.4, g + 7.3, (w + 0.25) * 0.26, 0.3, PAL.roofTileOld, false);
       if (detail >= 1) box(stone, -0.5, g + 2.4, -w * 0.2, 0.5, g + 5.4, w * 0.3, new THREE.Color(0.04, 0.036, 0.03));
     } else if (kind === 'tumulus') {
       const r = site.size;
@@ -2022,8 +2031,6 @@ function buildRoadTombs(batch: Batch, detail: number, heightAt: Ground, sites: T
       if (detail >= 2) box(metal, -0.3, g + h + 0.28, -0.3, 0.3, g + h + 1.1, 0.3, PAL.bronze);
     }
 
-    stone.pop();
-    brick.pop();
-    metal.pop();
+    for (const st of pushed) st.pop();
   }
 }

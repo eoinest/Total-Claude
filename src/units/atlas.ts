@@ -197,7 +197,7 @@ const MATS: Record<Mat, MatDef> = {
     // up where iron belongs. The warm F0 in the shader's metal tint still biases what comes
     // back toward steel rather than sky.
     roughness: 0.46,
-    metalness: 0.6,
+    metalness: 0.82,
     bump: 0.5,
   },
   // Cleaner plate for helmets and bosses.
@@ -213,8 +213,8 @@ const MATS: Record<Mat, MatDef> = {
     // Hammered and burnished, so tighter than the worn iron: this is the helmet bowl and
     // the shield boss, the two things on a man that catch the sun. Low roughness is what
     // gives the tight crown highlight; metalness stays moderate for the reason above.
-    roughness: 0.3,
-    metalness: 0.74,
+    roughness: 0.28,
+    metalness: 0.94,
     bump: 0.25,
   },
   // Gilded bronze: praetorian fittings, helmet trim, harness bosses.
@@ -228,8 +228,8 @@ const MATS: Record<Mat, MatDef> = {
     height: (u, v) => fbm(u * 10, v * 10, 3, 10, 9),
     // Bronze can afford more metalness than iron: it is warm, so what it reflects comes
     // back warm and the sky does not take it over.
-    roughness: 0.26,
-    metalness: 0.86,
+    roughness: 0.24,
+    metalness: 0.96,
     bump: 0.3,
   },
   [Mat.Mail]: {
@@ -242,8 +242,8 @@ const MATS: Record<Mat, MatDef> = {
     // Mail is thousands of small curved surfaces, so it scatters — rough, and mostly
     // self-shadowed. High metalness rendered a hamata as a black net, because a metal with
     // a dark albedo and nothing bright to reflect has no colour left at all.
-    roughness: 0.58,
-    metalness: 0.56,
+    roughness: 0.54,
+    metalness: 0.78,
     bump: 1.0,
   },
   // Lorica squamata: overlapping bronze-washed scales wired to a linen backing.
@@ -273,8 +273,8 @@ const MATS: Record<Mat, MatDef> = {
       const side = 1 - Math.abs(fx - 0.5) * 1.7;
       return Math.max(0, Math.min(1, (1 - fy * 0.85) * Math.max(0, side)));
     },
-    roughness: 0.31,
-    metalness: 0.7,
+    roughness: 0.3,
+    metalness: 0.88,
     bump: 0.9,
   },
   [Mat.LeatherBrown]: {
@@ -461,8 +461,8 @@ const MATS: Record<Mat, MatDef> = {
       const dr = Math.hypot(rx - Math.floor(rx) - 0.5, (fy - 0.22) * bands * 0.5);
       return Math.min(1, plate + (dr < 0.2 ? (1 - dr / 0.2) * 0.5 : 0));
     },
-    roughness: 0.34,
-    metalness: 0.64,
+    roughness: 0.32,
+    metalness: 0.88,
     bump: 0.9,
   },
   [Mat.HideBay]: {
@@ -892,7 +892,13 @@ export function buildSoldierAtlas(anisotropy: number): SoldierAtlas {
         const h = heights[y * TILE + x];
         const ao = 0.3 + h * 0.7;
         ormData.data[o] = Math.round(Math.min(1, ao) * 255);
-        ormData.data[o + 1] = Math.round(Math.min(1, def.roughness * (0.85 + (1 - h) * 0.3)) * 255);
+        // Roughness varies *widely* across the surface, not by fifteen percent. A helmet
+        // bowl is burnished on the high spots and pitted in the hollows, and it is that
+        // spread — a tight glint next to a broad dull sheen a millimetre away — that makes a
+        // surface read as metal at all. A near-constant roughness reads as painted plastic
+        // however high the metalness is.
+        ormData.data[o + 1] =
+          Math.round(Math.max(0.04, Math.min(1, def.roughness * (0.5 + (1 - h) * 1.05))) * 255);
         ormData.data[o + 2] = Math.round(def.metalness * 255);
         ormData.data[o + 3] = 255;
       }

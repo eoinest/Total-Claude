@@ -355,7 +355,7 @@ const TINT_BODY = /* glsl */ `
   // neighbours differ in hue and not only in value.
   float tone = fract( v * 7.13 );
   float ruddy = fract( v * 23.91 ) - 0.5;
-  vec3 skin = mix( vec3( 1.62, 1.06, 0.66 ), vec3( 1.12, 0.68, 0.42 ), tone );
+  vec3 skin = mix( vec3( 1.66, 1.10, 0.70 ), vec3( 1.24, 0.78, 0.50 ), tone );
   skin *= vec3( 1.0 + ruddy * 0.22, 1.0, 1.0 - ruddy * 0.2 );
   // ---- hair ----------------------------------------------------------------
   // Black through to the reddish blond Tacitus keeps remarking on, with a few grey heads:

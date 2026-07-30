@@ -282,6 +282,24 @@ export class UnitCards {
     const GAP = 0.28 * em;
     const FLOOR = 3.4 * em;
 
+    /**
+     * The width available to cards, measured from `.hud-bottom` rather than from the card
+     * holder.
+     *
+     * This matters: both panels are `width: fit-content`, so their own `clientWidth` is
+     * the width of the cards already in them. Feeding that back in makes the card width a
+     * function of itself — it happens to settle while the result is clamped to the cap, and
+     * silently loses a card to a second row when it is not. `.hud-bottom` has a definite
+     * width from its `left`/`right` offsets, so it is the only sound thing to measure.
+     * `chromeEm` is the panel's own furniture in em, matching the CSS above.
+     */
+    const availFrom = (chromeEm: number, bands: number): number => {
+      const host = this.root.parentElement;
+      const hostW = host ? host.clientWidth : this.inner.clientWidth;
+      // 3 px of borders, 2 px of slack against sub-pixel rounding.
+      return hostW - chromeEm * em - 5 - bands * (1.15 * em + GAP);
+    };
+
     const n = this.cards.length;
     if (n > 0) {
       // A compact card's height is set by its width — the portrait is square — so the cap
@@ -291,8 +309,8 @@ export class UnitCards {
       const compactByCount = n > COMPACT_ABOVE;
       const max = (compactByCount ? 5 : 7.4) * em;
       const bands = Number(this.inner.dataset.bands ?? 0);
-      // Band dividers are 1.15em columns with 0.28em of flex gap on each side.
-      const avail = this.inner.clientWidth - bands * (1.15 * em + GAP);
+      // 0.44em padding either side, the 1.9em standard tab, and the 0.34em gap after it.
+      const avail = availFrom(0.44 * 2 + 1.9 + 0.34, bands);
       let per = (avail - GAP * (n - 1)) / n;
       let rows = 1;
       // The floor is only reached past ~37 cards — larger than any Total War order of
@@ -313,7 +331,8 @@ export class UnitCards {
     if (fn > 0) {
       // Slimmer still: the enemy strip is an overlay on the battle, so twenty of these
       // must cost less than the player's own row does.
-      const per = Math.max(3 * em, Math.min(3.9 * em, (this.foeHolder.clientWidth - 1.2 * em - GAP * (fn - 1)) / fn));
+      const avail = availFrom(0.4 * 2, 0);
+      const per = Math.max(3 * em, Math.min(3.9 * em, (avail - GAP * (fn - 1)) / fn));
       this.foeHolder.style.setProperty('--cw', `${per.toFixed(1)}px`);
     }
 
