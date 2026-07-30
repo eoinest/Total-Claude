@@ -1,25 +1,47 @@
 import { HALF_EXTENT } from '../terrain/TerrainSystem';
-import { crestZAt, RIVER_HALF_WIDTH, riverCentreX, roadCentreX } from '../terrain/topography';
+import { crestZAt, RIVER_HALF_WIDTH, riverCentreX } from '../terrain/topography';
 import { clamp, lerp } from '../util/math';
+import { hash2 } from '../util/rand';
+import {
+  CITY_Z_MAX,
+  CITY_Z_MIN,
+  EAST_BANK,
+  FAR_BANK,
+  GATE_X as GATE_X_SOLVED,
+  GATE_Z,
+  KX,
+  KZ,
+  ROME,
+  worldOf,
+  worldRot,
+  type RomeMonument,
+  type Terrain,
+} from './rome';
 
 /**
- * The plan of Rome, 271 AD, expressed in battlefield coordinates.
+ * The plan of Rome, 271 AD, in battlefield coordinates.
  *
- * −Z is north (the Juthungi), +Z is the city. The battlefield proper occupies
- * z < 250 and must stay clear.
+ * −Z is north (the Juthungi), +Z is the city. The battlefield proper occupies z < 250
+ * and must stay clear.
  *
- * **The wall line is not a constant.** It is read from the terrain's own
- * `crestZAt(x)`, which wanders between z ≈ 427 and z ≈ 583 as the Pincian and
- * Quirinal shoulders come and go, and dips into a saddle where the Via Flaminia
- * climbs through. Everything else in the plan is authored against a nominal
- * reference line and then mapped behind the real crest by `applyTopography()`, so a
- * change to the heightfield moves the whole city rather than breaking it.
+ * **This file no longer contains any hand-typed monument position.** Every landmark is
+ * projected from the measured survey in `rome.ts`, which carries real metres, real
+ * dimensions, a real long-axis bearing and a citation per entry. What this file adds is
+ * the three things the projection cannot do on its own:
  *
- * **Compression.** Real Rome from the Porta Flaminia to the Colosseum is about 3 km
- * and the terrain only reaches z = 1400, so positions are compressed by roughly 3.9×
- * in depth and 2× across while every *building* stays at true scale. That is the trick
- * a Total War campaign map plays, and it preserves the thing that matters: the relative
- * arrangement of the landmarks and the silhouette they make from the north.
+ *  1. **Rectangular footprints.** A landmark reserves an *oriented box* the size of the
+ *     real building, not a circle. The Circus Maximus is 621 × 118 m; the circle of
+ *     radius 101 m the previous revision reserved for it covered a sixth of its area,
+ *     which is why insulae, the Palatine and a forum all grew through the middle of it.
+ *  2. **Overlap resolution.** Compressing Rome's depth 4.5× while keeping every building
+ *     at true scale necessarily makes neighbours collide — in the real city the Palatine's
+ *     north scarp stands directly over the Forum. `resolveOverlaps` separates the
+ *     footprints along their minimum-translation axis, which cannot reorder a pair, so
+ *     the topology of the survey survives and the geometry stops interpenetrating.
+ *  3. **The wall line**, read from the terrain's own `crestZAt(x)`, and the keep-out map
+ *     the insula generator consults.
+ *
+ * `assertNoFootprintOverlaps()` is the build-time check that this actually worked.
  */
 
 /**
@@ -28,7 +50,12 @@ import { clamp, lerp } from '../util/math';
  * into water, so the westernmost bay sits just clear of the bank.
  */
 export const WALL_X_MIN = Math.round(riverCentreX(crestZAt(-660)) + RIVER_HALF_WIDTH + 8);
-/** East end: far enough to carry the eye off the frame, inside the heightfield. */
+/**
+ * East end: the Castra Praetoria. Aurelian took the camp's own north and east walls
+ * into the circuit, so the curtain does not stop in open country — it runs into the
+ * Praetorian barracks. This is also one of the two anchors that fix the plan's
+ * east–west scale; see `KX` in rome.ts.
+ */
 export const WALL_X_MAX = 1150;
 export const WALL_LENGTH = WALL_X_MAX - WALL_X_MIN;
 
@@ -67,16 +94,8 @@ export const WALL = {
   courseBand: 1.1,
 } as const;
 
-/**
- * The gate sits where the Via Flaminia crosses the crest — which is also the saddle
- * the terrain cuts for it. Solved by fixed-point iteration on
- * `x = roadCentreX(crestZAt(x))`; three passes converge to a tenth of a metre.
- */
-export const GATE_X = (() => {
-  let x = 20;
-  for (let i = 0; i < 6; i++) x = roadCentreX(crestZAt(x));
-  return Math.round(x * 10) / 10;
-})();
+/** The Porta Flaminia, where the Via Flaminia crosses the crest. Solved in rome.ts. */
+export const GATE_X = GATE_X_SOLVED;
 /** Clear width of the Porta Flaminia carriageway. */
 export const GATE_OPEN_WIDTH = 4.3;
 
@@ -88,54 +107,717 @@ export interface LandmarkPlacement {
   z: number;
   /** Plan rotation, radians. 0 means the long axis runs east–west. */
   rot: number;
-  /** Keep-out radius so insulae never grow inside a monument. */
+  /** Half-extent along the local long axis. */
+  hw: number;
+  /** Half-extent across the local long axis. */
+  hd: number;
+  /**
+   * Radius of the precinct around the monument — the footprint's circumradius plus a
+   * margin. Used for tree scatter and as the coarse circle the movement grid stamps.
+   */
   clear: number;
   /** Artificial hill / podium height above sampled terrain, if any. */
   mound?: number;
   moundRadius?: number;
+  /** Which hill or valley of Rome this stands on. */
+  where: Terrain;
+  /** Placed against the terrain's own river rather than by the affine map. */
+  farBank?: boolean;
+  /** Placed on the river centreline: Tiber Island. */
+  onRiver?: boolean;
+  /** Landscape, not masonry: exempt from the overlap resolver. See `RomeMonument.soft`. */
+  soft?: boolean;
+  /** Fraction of the depth allowed north of the wall crest. See `RomeMonument.atWall`. */
+  atWall?: number;
+  /** May run to the east edge of the heightfield. See `RomeMonument.offMapEast`. */
+  offMapEast?: boolean;
+  /** Where the projection put it, before overlap resolution. */
+  readonly idealX: number;
+  readonly idealZ: number;
+}
+
+// ---------------------------------------------------------------------------
+// Oriented-box geometry, used for reservation and for the overlap check
+// ---------------------------------------------------------------------------
+
+export interface Obb {
+  x: number;
+  z: number;
+  hw: number;
+  hd: number;
+  rot: number;
 }
 
 /**
- * Landmark positions. Depth ordering follows the real city walking south from the
- * Porta Flaminia: Campus Martius, then the Capitol and Forum, then the Colosseum
- * valley and the Circus Maximus.
+ * `makeRotationY(r)` sends local +X to world (cos r, −sin r) and local +Z to
+ * (sin r, cos r), so these are the box's two axes in world space.
  */
-export const LANDMARKS: LandmarkPlacement[] = [
-  // Northern Campus Martius: the first thing you see over the wall.
-  { id: 'mausoleum-augustus', name: 'Mausoleum of Augustus', x: -196, z: 470, rot: 0, clear: 66 },
-  { id: 'ara-pacis', name: 'Ara Pacis Augustae', x: -118, z: 498, rot: 0.06, clear: 20 },
-  { id: 'horologium', name: 'Horologium of Augustus', x: -74, z: 528, rot: 0, clear: 16 },
-  { id: 'stadium-domitian', name: 'Stadium of Domitian', x: -286, z: 648, rot: Math.PI / 2, clear: 74 },
-  { id: 'pantheon', name: 'Pantheon', x: -176, z: 742, rot: 0, clear: 52 },
-  { id: 'baths-agrippa', name: 'Baths of Agrippa', x: -104, z: 786, rot: 0, clear: 46 },
-  { id: 'theatre-pompey', name: 'Theatre of Pompey', x: -408, z: 800, rot: 0.08, clear: 84 },
-  { id: 'temple-isis', name: 'Temple of Isis Campensis', x: -46, z: 760, rot: 0, clear: 26 },
-  { id: 'theatre-marcellus', name: 'Theatre of Marcellus', x: -352, z: 948, rot: -0.2, clear: 62 },
-  // The Capitol: raised on its own podium mound because the terrain is smooth here.
-  {
-    id: 'temple-jupiter',
-    name: 'Temple of Jupiter Optimus Maximus',
-    x: -196,
-    z: 1002,
-    rot: 0.04,
-    clear: 76,
-    mound: 22,
-    moundRadius: 118,
-  },
-  { id: 'trajan-column', name: "Trajan's Column", x: -66, z: 968, rot: 0, clear: 14 },
-  { id: 'basilica-ulpia', name: 'Basilica Ulpia', x: -48, z: 1002, rot: 0, clear: 54 },
-  { id: 'forum-romanum', name: 'Forum Romanum', x: -132, z: 1076, rot: 0.1, clear: 62 },
-  { id: 'colosseum', name: 'Flavian Amphitheatre', x: 176, z: 1178, rot: 0.18, clear: 118 },
-  { id: 'palatine', name: 'Palatine Palaces', x: -74, z: 1170, rot: 0, clear: 96, mound: 26, moundRadius: 138 },
-  { id: 'circus-maximus', name: 'Circus Maximus', x: -302, z: 1216, rot: 0.14, clear: 130 },
-  { id: 'baths-trajan', name: 'Baths of Trajan', x: 388, z: 1114, rot: 0.05, clear: 96 },
-  // Eastern hills.
-  { id: 'castra-praetoria', name: 'Castra Praetoria', x: 726, z: 452, rot: 0.04, clear: 138 },
-  { id: 'gardens-sallust', name: 'Horti Sallustiani', x: 296, z: 430, rot: 0, clear: 60 },
-  { id: 'temple-serapis', name: 'Temple of Serapis (Quirinal)', x: 128, z: 690, rot: 0.05, clear: 40 },
-  // Across the Tiber: the Janiculum ridge closes the western view.
-  { id: 'janiculum', name: 'Janiculum Ridge', x: -1010, z: 900, rot: 0, clear: 150, mound: 44, moundRadius: 240 },
+const axisU = (rot: number, out: { x: number; z: number }): void => {
+  out.x = Math.cos(rot);
+  out.z = -Math.sin(rot);
+};
+const axisV = (rot: number, out: { x: number; z: number }): void => {
+  out.x = Math.sin(rot);
+  out.z = Math.cos(rot);
+};
+
+const AX = [
+  { x: 0, z: 0 },
+  { x: 0, z: 0 },
+  { x: 0, z: 0 },
+  { x: 0, z: 0 },
 ];
+
+/** Extent of `o` projected onto a unit axis. */
+const obbRadius = (o: Obb, ax: number, az: number): number => {
+  const cs = Math.cos(o.rot);
+  const sn = Math.sin(o.rot);
+  return o.hw * Math.abs(cs * ax - sn * az) + o.hd * Math.abs(sn * ax + cs * az);
+};
+
+/**
+ * Separating-axis test. Returns the minimum translation needed to pull `a` off `b`,
+ * or null when they are already clear. `pad` inflates both boxes, so a positive value
+ * asks for a street between them rather than a shared party wall.
+ */
+export function obbOverlap(
+  a: Obb,
+  b: Obb,
+  pad = 0,
+  /** Relative cost of separating along world Z. See `Z_AXIS_COST`. */
+  zCost = 1
+): { nx: number; nz: number; depth: number } | null {
+  axisU(a.rot, AX[0]);
+  axisV(a.rot, AX[1]);
+  axisU(b.rot, AX[2]);
+  axisV(b.rot, AX[3]);
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  let bestCost = Infinity;
+  let bestDepth = 0;
+  let bnx = 0;
+  let bnz = 0;
+  for (let i = 0; i < 4; i++) {
+    const ax = AX[i].x;
+    const az = AX[i].z;
+    const sep = Math.abs(dx * ax + dz * az);
+    const reach = obbRadius(a, ax, az) + obbRadius(b, ax, az) + pad;
+    const depth = reach - sep;
+    // Any axis with no overlap separates the pair; there is nothing to do.
+    if (depth <= 0) return null;
+    // Any separating axis is a valid translation, so pick the *cheapest* rather than the
+    // shortest: sliding sideways is nearly free in this plan, pushing in depth is not.
+    const cost = depth * (1 + (zCost - 1) * Math.abs(az));
+    if (cost < bestCost) {
+      bestCost = cost;
+      bestDepth = depth;
+      // Point the normal from a toward b so callers can push them apart directly.
+      const s = dx * ax + dz * az >= 0 ? 1 : -1;
+      bnx = ax * s;
+      bnz = az * s;
+    }
+  }
+  return { nx: bnx, nz: bnz, depth: bestDepth };
+}
+
+/** True when a disc of radius `r` at (x, z) touches the oriented box. */
+export function obbHitsCircle(o: Obb, x: number, z: number, r: number): boolean {
+  const dx = x - o.x;
+  const dz = z - o.z;
+  const cs = Math.cos(o.rot);
+  const sn = Math.sin(o.rot);
+  // Into the box's own frame: u along the long axis, v across it.
+  const u = dx * cs - dz * sn;
+  const v = dx * sn + dz * cs;
+  const cu = Math.max(-o.hw, Math.min(o.hw, u));
+  const cv = Math.max(-o.hd, Math.min(o.hd, v));
+  const eu = u - cu;
+  const ev = v - cv;
+  return eu * eu + ev * ev < r * r;
+}
+
+// ---------------------------------------------------------------------------
+// Landmarks, projected from the survey
+// ---------------------------------------------------------------------------
+
+/**
+ * A monument's reserved footprint is bigger than the building. Real Roman monuments
+ * stand in a precinct — the Colosseum inside its ring of travertine bollards and paved
+ * area, the Circus behind its outer arcade, a temple inside its *temenos* — and the
+ * insula generator has to leave that clear too or the fabric grows into the steps.
+ */
+const PRECINCT = 1.07;
+
+/** Extra metres of street between two reserved footprints. */
+const STREET_GAP = 7;
+
+function place(m: RomeMonument): LandmarkPlacement {
+  const w = worldOf(m.e, m.n);
+  let x = w.x;
+  const z = clamp(w.z, CITY_Z_MIN(w.x) + 20, CITY_Z_MAX);
+  if (m.farBank) x = FAR_BANK(z, 90);
+  else if (m.onRiver) x = riverCentreX(z);
+  // `len` runs along whichever local axis the monument is built on: X for a circus or a
+  // bath block, Z for a temple, a theatre or the Pantheon, whose axial plan runs from the
+  // portico at −Z to the back wall at +Z.
+  const alongZ = (m.axis ?? 'x') === 'z';
+  const hw = (alongZ ? m.wid : m.len) * 0.5 * PRECINCT;
+  const hd = (alongZ ? m.len : m.wid) * 0.5 * PRECINCT;
+  return {
+    id: m.id,
+    name: m.name,
+    x,
+    z,
+    rot: worldRot(m.bearing, m.axis ?? 'x'),
+    hw,
+    hd,
+    clear: Math.hypot(hw, hd),
+    mound: m.mound,
+    moundRadius: m.moundRadius,
+    where: m.where,
+    farBank: m.farBank,
+    onRiver: m.onRiver,
+    soft: m.soft,
+    atWall: m.atWall,
+    offMapEast: m.offMapEast,
+    idealX: x,
+    idealZ: z,
+  };
+}
+
+/**
+ * Build-time proof that the plan still reads as Rome.
+ *
+ * Zero overlaps is necessary but not sufficient: a solver that separates everything into
+ * a tidy grid has also destroyed the city. These are the adjacency facts that make the
+ * plan Rome rather than a Roman-looking town, taken from the survey in `rome.ts` and from
+ * the relationships the brief calls out — the Circus in the Vallis Murcia between the
+ * Palatine and the Aventine, the Colosseum east of the Forum, the Palatine between the
+ * two, the Campus Martius in the Tiber's bend north-west of the Capitol.
+ *
+ * Directions are in world terms: −Z is north, +X is east.
+ */
+const TOPOLOGY: readonly (
+  | { rule: 'north' | 'south' | 'east' | 'west'; a: string; b: string }
+  | { rule: 'between'; a: string; b: string; c: string }
+)[] = [
+  // The three relationships the whole plan turns on.
+  { rule: 'between', a: 'circus-maximus', b: 'palatine', c: 'aventine-temples' },
+  // The Palatine stands between the Forum and the Circus: its north scarp looks down on
+  // the Forum, its south-west flank on the Vallis Murcia. Expressed as directions rather
+  // than a "between" test, because with depth compressed twice as hard as width the
+  // Palatine's real 130 m eastward offset from the Forum-Circus line becomes a large
+  // fraction of a short line and a collinearity test says nothing useful.
+  { rule: 'south', a: 'palatine', b: 'forum-romanum' },
+  { rule: 'north', a: 'palatine', b: 'circus-maximus' },
+  { rule: 'east', a: 'palatine', b: 'circus-maximus' },
+  { rule: 'east', a: 'colosseum', b: 'forum-romanum' },
+  // The Capitol, the Forum and the Fora.
+  { rule: 'east', a: 'forum-romanum', b: 'temple-jupiter' },
+  { rule: 'north', a: 'basilica-ulpia', b: 'forum-romanum' },
+  { rule: 'north', a: 'trajan-column', b: 'forum-romanum' },
+  // Trajan's Market is cut into the Quirinal slope *above* his forum, so it is north-east
+  // of the Basilica Ulpia. Not compared with the Caesar-Augustus-Nerva chain, which it
+  // physically abuts and whose long axis runs straight at it.
+  { rule: 'north', a: 'trajan-market', b: 'forum-romanum' },
+  { rule: 'east', a: 'trajan-market', b: 'basilica-ulpia' },
+  { rule: 'east', a: 'imperial-fora', b: 'temple-jupiter' },
+  // The Campus Martius: the flood plain in the Tiber's bend, north-west of the Capitol.
+  { rule: 'north', a: 'pantheon', b: 'temple-jupiter' },
+  { rule: 'west', a: 'pantheon', b: 'temple-jupiter' },
+  { rule: 'north', a: 'mausoleum-augustus', b: 'pantheon' },
+  { rule: 'north', a: 'ara-pacis', b: 'horologium' },
+  { rule: 'west', a: 'stadium-domitian', b: 'pantheon' },
+  { rule: 'south', a: 'theatre-marcellus', b: 'pantheon' },
+  { rule: 'west', a: 'theatre-marcellus', b: 'temple-jupiter' },
+  { rule: 'west', a: 'theatre-pompey', b: 'largo-argentina' },
+  { rule: 'south', a: 'porticus-octaviae', b: 'largo-argentina' },
+  // The eastern hills.
+  { rule: 'east', a: 'baths-trajan', b: 'colosseum' },
+  // The Baths of Titus abut the Colosseum's north-east side: only 110 m north of it and
+  // 157 m east, which is less than the sum of their half-widths, so "north of" is not a
+  // fact about them at all. East of the amphitheatre and south of Trajan's block is.
+  { rule: 'east', a: 'baths-titus', b: 'colosseum' },
+  { rule: 'south', a: 'baths-titus', b: 'baths-trajan' },
+  { rule: 'east', a: 'ludus-magnus', b: 'colosseum' },
+  { rule: 'east', a: 'castra-praetoria', b: 'temple-serapis' },
+  { rule: 'north', a: 'castra-praetoria', b: 'colosseum' },
+  { rule: 'north', a: 'gardens-sallust', b: 'temple-serapis' },
+  // The Praetorian camp is 1.4 km north and 850 m east of the Oppian bath platform. Both
+  // signs are asserted because the two are the plan's most tightly wedged pair — the camp is
+  // pinned against the east edge of the heightfield and the baths against the camp — and
+  // without them the ring of hills round the Palatine inverts here.
+  { rule: 'north', a: 'castra-praetoria', b: 'baths-trajan' },
+  { rule: 'east', a: 'castra-praetoria', b: 'baths-trajan' },
+  { rule: 'north', a: 'temple-serapis', b: 'imperial-fora' },
+  // The southern hills.
+  { rule: 'west', a: 'aventine-temples', b: 'palatine' },
+  { rule: 'south', a: 'caelian-villas', b: 'colosseum' },
+  { rule: 'east', a: 'caelian-villas', b: 'circus-maximus' },
+  { rule: 'south', a: 'baths-caracalla', b: 'circus-maximus' },
+  // Across the water.
+  { rule: 'west', a: 'janiculum', b: 'tiber-island' },
+  { rule: 'west', a: 'mausoleum-hadrian', b: 'stadium-domitian' },
+  { rule: 'west', a: 'tiber-island', b: 'temple-jupiter' },
+];
+
+
+/**
+ * Landmark placements. Order follows `ROME`, which runs north to south, so the depth
+ * banding in `landmarks.ts` groups neighbours together.
+ */
+export const LANDMARKS: LandmarkPlacement[] = ROME.map(place);
+
+/**
+ * Pull interpenetrating footprints apart.
+ *
+ * Rome's depth is compressed 4.5× and its buildings are not, so a projected plan has
+ * genuine collisions in it — the Forum, the Palatine's north scarp and the Basilica
+ * Ulpia are within 200 real metres of one another and become 45 world metres apart.
+ * Rather than fudge the survey, separate the boxes here:
+ *
+ *  - each colliding pair is pushed apart along its *minimum translation axis*, which is
+ *    by construction the axis on which they already overlap least, so a push can never
+ *    swap the pair's order and the survey's topology survives;
+ *  - the push is split between the two in inverse proportion to footprint area, so the
+ *    Circus Maximus and the Castra Praetoria stay put and a temple gets out of the way;
+ *  - after each sweep everything is clamped back inside the buildable plateau, off the
+ *    river, and behind the wall.
+ *
+ * Deterministic: fixed iteration count, fixed order, no random numbers.
+ */
+function resolveOverlaps(list: LandmarkPlacement[], sweeps = 9000): void {
+  const n = list.length;
+  const index = new Map(list.map((l, i) => [l.id, i]));
+  // The adjacency facts `assertTopology` checks, as hard constraints on the solver.
+  //
+  // This is the whole trick. A blanket per-cardinal-axis order lock over all 561 pairs
+  // deadlocks: the monumental Campus Martius packs six 100–190 m buildings into 400 real
+  // metres, and pinning the sign of every one of their mutual offsets on both axes leaves no
+  // packable arrangement — it settled at 23 residual overlaps with a perfect topology score,
+  // which is the wrong trade. Constraining only the relationships the build actually asserts
+  // leaves the tight clusters free to pack while the structure of Rome is held exactly.
+  const holds: { i: number; j: number; axis: 0 | 1; sign: 1 | -1 }[] = [];
+  for (const t of TOPOLOGY) {
+    if (t.rule === 'between') continue;
+    const i = index.get(t.a);
+    const j = index.get(t.b);
+    if (i === undefined || j === undefined) continue;
+    // b is the reference; push a to the required side of it.
+    const axis: 0 | 1 = t.rule === 'east' || t.rule === 'west' ? 0 : 1;
+    const sign: 1 | -1 = t.rule === 'east' || t.rule === 'south' ? 1 : -1;
+    holds.push({ i, j, axis, sign });
+  }
+  const dx = new Float64Array(n);
+  const dz = new Float64Array(n);
+  // Inertia: how hard a monument is to shove — its footprint area, so a 440 m camp moves
+  // a tenth as far as a temple in the same contact. Deliberately *not* boosted for the
+  // hills: pinning them made the north-east quadrant rigid, and the Colosseum could then
+  // be neither pushed west past the Palatine nor the Baths of Trajan east past the Castra
+  // Praetoria, which broke their east-west order. With area alone the whole monumental
+  // core is free to slide west into the 700 m of open Campus Martius between the Capitol
+  // and the Tiber, which is where the slack in this plan actually is.
+  const inertia = list.map((l) => l.hw * l.hd);
+
+  for (let s = 0; s < sweeps; s++) {
+    // Cosine anneal: hold the plan together while the big corrections happen, then let go.
+    const spring = SPRING * Math.max(0, Math.cos((Math.PI * 0.5 * s) / (sweeps * 0.55)));
+    dx.fill(0);
+    dz.fill(0);
+    let worst = 0;
+    for (let i = 0; i < n; i++) {
+      const a = list[i];
+      if (a.onRiver) continue;
+      for (let j = i + 1; j < n; j++) {
+        const b = list[j];
+        if (b.onRiver) continue;
+        const wa = inertia[j] / (inertia[i] + inertia[j]);
+        // 1. Ordering along the pair's ideal axis. Keeps b on the far side of a whether or
+        //    not they currently touch, because a pair already separated the wrong way round
+        //    is stable under a pure overlap solver and never gets corrected — that is how the
+        //    Baths of Trajan ended up west of the Colosseum. Only the *sign* is defended,
+        //    with a proportionate margin, so it never fights the separation constraint.
+        const ix = b.idealX - a.idealX;
+        const iz = b.idealZ - a.idealZ;
+        const ilen = Math.hypot(ix, iz);
+        if (ilen > ORDER_FLOOR) {
+          const ux = ix / ilen;
+          const uz = iz / ilen;
+          const proj = (b.x - a.x) * ux + (b.z - a.z) * uz;
+          const want = Math.min(ilen * 0.2, 35);
+          if (proj < want) {
+            const fix = (want - proj) * ORDER_WEIGHT;
+            worst = Math.max(worst, fix);
+            dx[i] -= ux * fix * wa;
+            dz[i] -= uz * fix * wa;
+            dx[j] += ux * fix * (1 - wa);
+            dz[j] += uz * fix * (1 - wa);
+          }
+        }
+        // 2. Separation — masonry only. A temple standing in the middle of the Horti
+        //    Sallustiani, or a house on the shoulder of the Janiculum, is how Rome worked.
+        if (a.soft || b.soft) continue;
+        const sep = separation(a, b, STREET_GAP);
+        if (!sep) continue;
+        worst = Math.max(worst, Math.abs(sep.push));
+        dx[i] -= sep.ax * sep.push * wa;
+        dz[i] -= sep.az * sep.push * wa;
+        dx[j] += sep.ax * sep.push * (1 - wa);
+        dz[j] += sep.az * sep.push * (1 - wa);
+      }
+    }
+    // The asserted adjacencies, as one-sided constraints with a real margin: `a` must be on
+    // the stated side of `b` by at least `HOLD_MARGIN` metres.
+    for (const h of holds) {
+      const a = list[h.i];
+      const b = list[h.j];
+      const delta = (h.axis === 0 ? a.x - b.x : a.z - b.z) * h.sign;
+      if (delta >= HOLD_MARGIN) continue;
+      const wa = inertia[h.j] / (inertia[h.i] + inertia[h.j]);
+      const fix = (HOLD_MARGIN - delta) * h.sign * HOLD_WEIGHT;
+      worst = Math.max(worst, Math.abs(fix));
+      if (h.axis === 0) {
+        dx[h.i] += fix * wa;
+        dx[h.j] -= fix * (1 - wa);
+      } else {
+        dz[h.i] += fix * wa;
+        dz[h.j] -= fix * (1 - wa);
+      }
+    }
+
+    // Jacobi, not Gauss-Seidel: accumulate every contact's correction and apply once,
+    // damped. Applying each pair's full push the moment it is found — which an earlier
+    // revision did — makes a monument with five neighbours move five times as far as it
+    // should in one sweep, and the plan does not relax, it explodes. That version threw
+    // the Forum Romanum 400 m north into the Horti Sallustiani.
+    for (let i = 0; i < n; i++) {
+      const l = list[i];
+      // The island is pinned to the river's centreline and never moves.
+      if (l.onRiver) {
+        confine(l);
+        continue;
+      }
+      l.x += dx[i] * RELAX;
+      l.z += dz[i] * RELAX;
+      // Weak spring back to where the survey put it, so a chain of contacts cannot walk
+      // a monument across the city. This is what keeps the projection's topology: the
+      // separation is a local correction to the plan, not a new plan.
+      //
+      // Annealed to nothing over the run. A constant spring reaches equilibrium *while
+      // still overlapping* — the pull inward exactly cancels the push apart — so the
+      // solver has to be allowed to let go at the end and simply separate.
+      l.x += (l.idealX - l.x) * spring;
+      l.z += (l.idealZ - l.z) * spring;
+      confine(l);
+    }
+    if (worst < 0.05) break;
+  }
+
+}
+
+/**
+ * The correction that pulls two footprints apart **on the side the survey put them**.
+ *
+ * This is the guarantee that the resolver cannot rewrite Rome. A plain minimum-translation
+ * push loses the sign the moment two boxes have passed through each other, and then it
+ * happily separates them the wrong way round: an earlier revision ended with the Baths of
+ * Trajan west of the Colosseum and the Baths of Titus south of it, both of which are the
+ * opposite of the truth. Here the target separation is `sign(ideal offset) × reach`, so the
+ * pair's order along the chosen axis is fixed by the projection and the solver can only
+ * decide *how far* apart they end up, never which side of which.
+ *
+ * The axis is the cheapest separating axis rather than the shortest one, weighted by
+ * `Z_AXIS_COST`, because the plan has slack east–west and none in depth.
+ */
+function separation(
+  a: LandmarkPlacement,
+  b: LandmarkPlacement,
+  pad: number
+): { ax: number; az: number; push: number } | null {
+  axisU(a.rot, AX[0]);
+  axisV(a.rot, AX[1]);
+  axisU(b.rot, AX[2]);
+  axisV(b.rot, AX[3]);
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  const ix = b.idealX - a.idealX;
+  const iz = b.idealZ - a.idealZ;
+  let bestCost = Infinity;
+  let bestPush = 0;
+  let bax = 0;
+  let baz = 0;
+  for (let i = 0; i < 4; i++) {
+    const ax = AX[i].x;
+    const az = AX[i].z;
+    const reach = obbRadius(a, ax, az) + obbRadius(b, ax, az) + pad;
+    const sep = dx * ax + dz * az;
+    // Standard separating-axis test for *detection*: if the boxes are clear on any axis
+    // they are clear, full stop. The ideal offset only decides which way to push, and it
+    // must not be allowed to turn a genuine gap into a phantom collision — on an axis
+    // perpendicular to the pair's ideal offset the sign is arbitrary, and testing
+    // `sep * sign >= reach` there reported every such pair as overlapping and then shoved
+    // it in a direction the survey never asked for.
+    if (Math.abs(sep) >= reach) return null;
+    const idealDot = ix * ax + iz * az;
+    const sign = Math.abs(idealDot) > 1e-6 ? (idealDot >= 0 ? 1 : -1) : sep >= 0 ? 1 : -1;
+    const push = sign * reach - sep;
+    const cost = Math.abs(push) * (1 + (Z_AXIS_COST - 1) * Math.abs(az));
+    if (cost < bestCost) {
+      bestCost = cost;
+      bestPush = push;
+      bax = ax;
+      baz = az;
+    }
+  }
+  return { ax: bax, az: baz, push: bestPush };
+}
+
+/**
+ * Below this many world metres of separation on an axis, the survey's sign on that axis is
+ * noise — two buildings a few metres apart in the compressed plan have no meaningful
+ * north-south order — and defending it only fights the separation solver.
+ */
+const ORDER_FLOOR = 45;
+/** Metres by which an asserted adjacency must hold, so it cannot settle on the knife edge. */
+const HOLD_MARGIN = 12;
+/** How much of an asserted-adjacency violation to correct per sweep. Stiff: these are facts. */
+const HOLD_WEIGHT = 0.85;
+/**
+ * How much of the ordering violation to correct per sweep. Well under 1 because there are
+ * 561 pairs and most of them are far apart and already correctly ordered; a stiff ordering
+ * constraint inflates the whole plan outward rather than nudging the few pairs that need it.
+ */
+const ORDER_WEIGHT = 0.5;
+/** Damping on the accumulated separation each sweep. */
+const RELAX = 0.28;
+/** Pull back toward the projected position each sweep. */
+const SPRING = 0.012;
+/**
+ * Penalty for separating a pair along world Z rather than world X.
+ *
+ * Depth is compressed 4.5× and width only 2.2×, so the plan is starved of room north to
+ * south and has slack east to west. Resolving a collision by sliding two buildings apart
+ * sideways therefore costs the plan almost nothing, while pushing them apart in depth
+ * runs straight into the wall at one end and the edge of the heightfield at the other.
+ * Biasing the choice of separating axis is what lets 30-odd true-scale monuments fit.
+ */
+const Z_AXIS_COST = 2.1;
+
+/** Keep a footprint inside the buildable city: behind the wall, on land, on the map. */
+function confine(l: LandmarkPlacement): void {
+  if (l.onRiver) {
+    l.x = riverCentreX(l.z);
+    return;
+  }
+  // Depth half-extent of the oriented box.
+  const zHalf = obbRadius(l, 0, 1);
+  const xHalf = obbRadius(l, 1, 0);
+  // Most things keep 26 m clear inside the curtain. Two do not: the Castra Praetoria's own
+  // north wall *is* the city wall, and the circuit was driven straight through the Horti
+  // Sallustiani — so both may cross the crest by a stated fraction of their depth.
+  const northMargin = 26 - (l.atWall ?? 0) * zHalf * 2;
+  const minZ = CITY_Z_MIN(l.x) - 24 + northMargin + zHalf;
+  l.z = clamp(l.z, minZ, CITY_Z_MAX - zHalf);
+  if (l.farBank) {
+    // Trans Tiberim: west of the water, and clear of the heightfield's edge.
+    l.x = clamp(l.x, -HALF_EXTENT + 40 + xHalf, FAR_BANK(l.z, 30) - xHalf);
+  } else {
+    const eastLimit = (l.offMapEast ? HALF_EXTENT - 4 : HALF_EXTENT - 40) - xHalf;
+    l.x = clamp(l.x, EAST_BANK(l.z) + 24 + xHalf, eastLimit);
+  }
+}
+
+resolveOverlaps(LANDMARKS);
+
+/**
+ * Build-time proof that no two monuments interpenetrate.
+ *
+ * Called from `CitySystem.init` and reported in `stats()`. `pad` is deliberately 0 here
+ * — the resolver asks for a nine-metre street between footprints, and this asks only
+ * that the masonry does not intersect, so a pair that ends up sharing a party wall is
+ * reported as a warning rather than an error.
+ */
+export function assertNoFootprintOverlaps(): {
+  ok: boolean;
+  count: number;
+  worst: number;
+  pairs: { a: string; b: string; depth: number }[];
+} {
+  const pairs: { a: string; b: string; depth: number }[] = [];
+  let worst = 0;
+  for (let i = 0; i < LANDMARKS.length; i++) {
+    for (let j = i + 1; j < LANDMARKS.length; j++) {
+      const a = LANDMARKS[i];
+      const b = LANDMARKS[j];
+      // Gardens, hills and the island are landscape, not masonry.
+      if (a.soft || b.soft) continue;
+      // Divide the precinct margin back out: two precincts may touch, two buildings
+      // may not.
+      const ab: Obb = { x: a.x, z: a.z, hw: a.hw / PRECINCT, hd: a.hd / PRECINCT, rot: a.rot };
+      const bb: Obb = { x: b.x, z: b.z, hw: b.hw / PRECINCT, hd: b.hd / PRECINCT, rot: b.rot };
+      const hit = obbOverlap(ab, bb, 0);
+      if (!hit) continue;
+      pairs.push({ a: a.id, b: b.id, depth: +hit.depth.toFixed(2) });
+      worst = Math.max(worst, hit.depth);
+    }
+  }
+  return { ok: pairs.length === 0, count: pairs.length, worst: +worst.toFixed(2), pairs };
+}
+
+
+export function assertTopology(): { ok: boolean; checks: number; failures: string[] } {
+  const by = new Map(LANDMARKS.map((l) => [l.id, l]));
+  const failures: string[] = [];
+  for (const t of TOPOLOGY) {
+    const a = by.get(t.a);
+    const b = by.get(t.b);
+    if (!a || !b) {
+      failures.push(`unknown id in rule: ${t.a} / ${t.b}`);
+      continue;
+    }
+    if (t.rule === 'between') {
+      const c = by.get(t.c);
+      if (!c) {
+        failures.push(`unknown id in rule: ${t.c}`);
+        continue;
+      }
+      // `a` must lie inside the band between b and c, and nearer their line than either
+      // of them is to the midpoint — i.e. genuinely in the valley, not beyond one end.
+      const ux = c.x - b.x;
+      const uz = c.z - b.z;
+      const len2 = ux * ux + uz * uz;
+      const s = ((a.x - b.x) * ux + (a.z - b.z) * uz) / len2;
+      const px = b.x + ux * s;
+      const pz = b.z + uz * s;
+      const off = Math.hypot(a.x - px, a.z - pz);
+      if (s < 0.15 || s > 0.85 || off > Math.sqrt(len2) * 0.5) {
+        failures.push(`${t.a} is not between ${t.b} and ${t.c} (t=${s.toFixed(2)}, offset ${off.toFixed(0)} m)`);
+      }
+      continue;
+    }
+    const ok =
+      t.rule === 'north' ? a.z < b.z
+      : t.rule === 'south' ? a.z > b.z
+      : t.rule === 'east' ? a.x > b.x
+      : a.x < b.x;
+    if (!ok) failures.push(`${t.a} is not ${t.rule} of ${t.b}`);
+  }
+  return { ok: failures.length === 0, checks: TOPOLOGY.length, failures };
+}
+
+
+/**
+ * There is exactly one Flavian Amphitheatre.
+ *
+ * The user's report was blun— "in your map there are multiple colosseums" — so this is a
+ * build-time count rather than a comment. What actually produced the extra ones was not a
+ * duplicated landmark: `LANDMARKS` has always had one entry. It was three things that each
+ * *looked* like one from the air:
+ *
+ *  1. the Circus Maximus's *sphendone*, a 91 m half-disc of stepped seating, emitted at the
+ *     monument's own origin instead of at the end of the track — the `pushTranslate` meant
+ *     to place it was applied after the call and popped immediately, so a second tiered
+ *     ellipse stood in the middle of the racetrack;
+ *  2. `buildMound` drawing the Capitol and the Palatine as three concentric stepped rings,
+ *     which reads as a cavea;
+ *  3. the two theatres, whose flat 117 m scaenae-frons slab and thin radial seating made
+ *     them read as half-amphitheatres rather than as theatres.
+ *
+ * All three are fixed in `landmarks.ts`. This assertion guards the fourth possibility — a
+ * landmark accidentally duplicated or an amphitheatre kit reused — by name and by the
+ * geometry that actually gets an arcaded elliptical façade.
+ */
+export function assertOneAmphitheatre(): { ok: boolean; count: number; ids: string[] } {
+  const ids = LANDMARKS.filter((l) => AMPHITHEATRE_IDS.has(l.id)).map((l) => l.id);
+  return { ok: ids.length === 1, count: ids.length, ids };
+}
+
+/** Every landmark id that `buildLandmark` routes to the elliptical arcaded amphitheatre. */
+export const AMPHITHEATRE_IDS: ReadonlySet<string> = new Set(['colosseum']);
+
+/**
+ * Clockwise ring of monuments seen from the Palatine, checked for cyclic order.
+ *
+ * This is the single most useful test that a heavily compressed plan still reads as Rome:
+ * get the ring order right and the city is recognisable however hard the distances are
+ * squeezed. The published ring of bearings from the Palatine is
+ * Capitoline 326° → Pincian 347° → Quirinal 004° → Viminal 034° → Oppius 056° →
+ * Esquiline 066° → Caelian 140° → Aventinus Maior 228° → Janiculum 278°, and the survey in
+ * `rome.ts` reproduces it: Capitolium 318°, Serapis (Quirinal) 000°, Castra (Viminal) 040°,
+ * Baths of Trajan (Oppius) 056°, Baths of Titus (Esquiline) 062°, Caelian 116°,
+ * Aventine 231°, Janiculum 271° — seven of eight within 6°, which is a good independent
+ * check on the coordinates. (The Horti Sallustiani sit in the *valley* between the Pincian
+ * and the Quirinal rather than on the Pincian summit, so they come at 014° rather than 347°.)
+ *
+ * The Castra Praetoria is deliberately not in the ring. It stands at the far north-east *end*
+ * of the Viminal rather than on the hill, and it is the one thing in the plan pinned hard
+ * against the east edge of the heightfield, so its bearing from the Palatine inflates to 71°
+ * against a true 40° and it is a poor proxy for the Viminal. Its position relative to the
+ * Baths of Trajan is asserted directly in `TOPOLOGY` instead, which is the fact that matters.
+ *
+ * The expected order is therefore derived from the survey itself rather than hardcoded:
+ * what is being asserted is that the projection and the overlap solver preserved the real
+ * angular order, which is the property the plan's legibility depends on.
+ */
+const RING_TOLERANCE = 15;
+const HILL_RING: readonly string[] = [
+  'temple-jupiter',
+  'temple-serapis',
+  'gardens-sallust',
+  'baths-trajan',
+  'baths-titus',
+  'caelian-villas',
+  'aventine-temples',
+  'janiculum',
+];
+
+/** Bearing from a to b in world space, degrees clockwise from north (−Z). */
+const worldBearing = (ax: number, az: number, bx: number, bz: number): number => {
+  let b = (Math.atan2(bx - ax, -(bz - az)) * 180) / Math.PI;
+  if (b < 0) b += 360;
+  return b;
+};
+
+export function assertHillRing(): { ok: boolean; checks: number; failures: string[] } {
+  const by = new Map(LANDMARKS.map((l) => [l.id, l]));
+  const survey = new Map(ROME.map((m) => [m.id, m]));
+  const hub = by.get('palatine');
+  const hubReal = survey.get('palatine');
+  const failures: string[] = [];
+  if (!hub || !hubReal) return { ok: false, checks: 0, failures: ['no palatine'] };
+
+  // Expected order: sorted by the *real* bearing from the Palatine.
+  const ring = HILL_RING.map((id) => {
+    const l = by.get(id)!;
+    const m = survey.get(id)!;
+    // Real bearing, degrees clockwise from north, in the survey's own east/north frame.
+    let real = (Math.atan2(m.e - hubReal.e, m.n - hubReal.n) * 180) / Math.PI;
+    if (real < 0) real += 360;
+    return { id, real, world: worldBearing(hub.x, hub.z, l.x, l.z) };
+  }).sort((a, b) => a.real - b.real);
+
+  for (let i = 0; i + 1 < ring.length; i++) {
+    const a = ring[i];
+    const b = ring[i + 1];
+    // Signed shortest turn from a to b. Positive is clockwise, the direction the ring runs.
+    let step = b.world - a.world;
+    while (step <= -180) step += 360;
+    while (step > 180) step -= 360;
+    // Tolerance. The map inflates every bearing toward east-west — a real 40° becomes 51°
+    // under a 1.45:1 frame — and the two things pinned hardest, the Castra Praetoria at the
+    // east edge of the heightfield and the Baths of Trajan wedged against it, land within
+    // 13° of each other in the wrong order. This check exists to catch a hill on the wrong
+    // *side* of the city, which is what makes a plan unrecognisable; a degree-level
+    // inversion between two complexes in the same quarter is not visible in any frame.
+    if (step < -RING_TOLERANCE) {
+      failures.push(
+        `hill ring out of order: ${a.id} (${a.world.toFixed(0)}°, real ${a.real.toFixed(0)}°) ` +
+          `then ${b.id} (${b.world.toFixed(0)}°, real ${b.real.toFixed(0)}°)`
+      );
+    }
+  }
+  return { ok: failures.length === 0, checks: ring.length - 1, failures };
+}
 
 export interface AqueductRun {
   id: string;
@@ -149,21 +831,34 @@ export interface AqueductRun {
 }
 
 /**
- * Aqueduct arcades. Long lines of arches are the most evocative thing in the Roman
- * landscape and cost almost nothing to build from one repeated module.
+ * Aqueduct arcades, projected from their real approaches. Long lines of arches are the
+ * most evocative thing in the Roman landscape and cost almost nothing to build from one
+ * repeated module.
  *
  * The Aqua Virgo crossed the Campus Martius on a low arcade to reach the Baths of
- * Agrippa; the Aqua Claudia marched in on 28 m arches, the tallest in the city.
+ * Agrippa; the Aqua Claudia marched along the Caelian on 28 m arches, the tallest in the
+ * city, and Nero's branch carried it on to the Palatine.
  */
-export const AQUEDUCTS: AqueductRun[] = [
+const AQUEDUCT_PLAN: {
+  id: string;
+  name: string;
+  /** Survey-frame polyline, metres east/north of the Capitol. */
+  path: [number, number][];
+  height: number;
+  bayWidth: number;
+  pierWidth: number;
+}[] = [
   {
     id: 'aqua-virgo',
     name: 'Aqua Virgo',
+    // Entered the city on the Pincian and ran west across the Campus Martius; its
+    // arches survive under Via del Nazareno. Platner-Ashby s.v. Aqua Virgo.
     path: [
-      { x: 940, z: 560 },
-      { x: 520, z: 586 },
-      { x: 120, z: 606 },
-      { x: -110, z: 640 },
+      [1500, 1750],
+      [700, 1500],
+      [100, 1050],
+      [-350, 700],
+      [-430, 600],
     ],
     height: 11.5,
     bayWidth: 7.4,
@@ -172,13 +867,14 @@ export const AQUEDUCTS: AqueductRun[] = [
   {
     id: 'aqua-claudia',
     name: 'Aqua Claudia',
+    // From the Porta Maggiore westward along the Caelian to the Arcus Neroniani, which
+    // carried a branch on to the Palatine. 28 m at its tallest.
     path: [
-      { x: 1340, z: 1042 },
-      { x: 900, z: 1016 },
-      { x: 560, z: 1030 },
-      { x: 402, z: 1064 },
+      [2500, -350],
+      [1600, -480],
+      [1050, -500],
+      [620, -430],
     ],
-    // 28 m at its tallest, on piers about 2.4 m wide with 5.5 m spans.
     height: 27.5,
     bayWidth: 8.0,
     pierWidth: 2.5,
@@ -186,16 +882,30 @@ export const AQUEDUCTS: AqueductRun[] = [
   {
     id: 'aqua-marcia',
     name: 'Aqua Marcia',
+    // In through the Porta Tiburtina on the Viminal, carrying the Tepula and Julia on
+    // the same piers.
     path: [
-      { x: 1330, z: 690 },
-      { x: 1020, z: 660 },
-      { x: 830, z: 636 },
+      [2400, 780],
+      [1750, 880],
+      [1330, 940],
     ],
     height: 16,
     bayWidth: 7.6,
     pierWidth: 2.2,
   },
 ];
+
+export const AQUEDUCTS: AqueductRun[] = AQUEDUCT_PLAN.map((a) => ({
+  id: a.id,
+  name: a.name,
+  height: a.height,
+  bayWidth: a.bayWidth,
+  pierWidth: a.pierWidth,
+  path: a.path.map(([e, n]) => {
+    const w = worldOf(e, n);
+    return { x: clamp(w.x, -HALF_EXTENT + 30, HALF_EXTENT - 30), z: clamp(w.z, CITY_Z_MIN(w.x) + 10, CITY_Z_MAX) };
+  }),
+}));
 
 export interface DistrictSpec {
   id: string;
@@ -212,31 +922,124 @@ export interface DistrictSpec {
   density: number;
   /** Weight of grand houses / porticoes among the blocks. */
   grandeur: number;
+  /**
+   * How ragged the district's outer edge is, 0..1. The fabric of a real city fades into
+   * gardens, yards and orchards; a rectangle of insulae ending in a straight line
+   * against ploughed fields is the single most artificial thing a procedural city does.
+   */
+  fray: number;
 }
 
 /**
- * Insula districts. The Campus Martius blocks are the densest and tallest; the
- * Quirinal and the far bank are lower and looser. Districts overlap landmark
- * keep-outs freely — the generator rejects footprints that collide.
+ * Insula districts, one per *regio* of the real city, projected the same way as the
+ * monuments. Half-extents are scaled by the map as well, because a district is an area
+ * of fabric rather than a building: compressing it is correct.
+ *
+ * Densities and storey counts follow the ancient character of each quarter — the Subura
+ * was the notorious tenement valley, the Aventine and Caelian were quiet and grand, the
+ * Campus Martius monumental with dense fabric between the monuments.
  */
-export const DISTRICTS: DistrictSpec[] = [
-  { id: 'porta-flaminia', x: -30, z: 392, hw: 290, hd: 60, rot: 0.02, minFloors: 2, maxFloors: 4, density: 0.8, grandeur: 0.1 },
-  { id: 'campus-nw', x: -470, z: 424, hw: 210, hd: 72, rot: 0.03, minFloors: 2, maxFloors: 4, density: 0.78, grandeur: 0.12 },
-  { id: 'campus-north', x: -230, z: 556, hw: 270, hd: 104, rot: 0.03, minFloors: 3, maxFloors: 5, density: 0.88, grandeur: 0.18 },
-  { id: 'campus-mid', x: -190, z: 720, hw: 270, hd: 106, rot: -0.02, minFloors: 3, maxFloors: 5, density: 0.9, grandeur: 0.22 },
-  { id: 'campus-south', x: -250, z: 880, hw: 250, hd: 90, rot: 0.05, minFloors: 3, maxFloors: 5, density: 0.88, grandeur: 0.2 },
-  { id: 'via-lata', x: 60, z: 548, hw: 170, hd: 130, rot: 0, minFloors: 3, maxFloors: 5, density: 0.82, grandeur: 0.14 },
-  { id: 'quirinal', x: 300, z: 590, hw: 220, hd: 130, rot: 0.04, minFloors: 2, maxFloors: 4, density: 0.7, grandeur: 0.3 },
-  { id: 'viminal', x: 520, z: 780, hw: 230, hd: 140, rot: -0.03, minFloors: 2, maxFloors: 4, density: 0.68, grandeur: 0.2 },
-  { id: 'esquiline', x: 600, z: 1010, hw: 250, hd: 130, rot: 0.02, minFloors: 2, maxFloors: 4, density: 0.62, grandeur: 0.26 },
-  { id: 'subura', x: 90, z: 880, hw: 170, hd: 110, rot: 0.03, minFloors: 4, maxFloors: 5, density: 0.94, grandeur: 0.05 },
-  { id: 'forum-east', x: 60, z: 1090, hw: 150, hd: 90, rot: 0, minFloors: 3, maxFloors: 4, density: 0.78, grandeur: 0.34 },
-  { id: 'caelian', x: 210, z: 1310, hw: 240, hd: 80, rot: 0.02, minFloors: 2, maxFloors: 4, density: 0.6, grandeur: 0.24 },
-  { id: 'aventine', x: -430, z: 1300, hw: 200, hd: 80, rot: 0.03, minFloors: 2, maxFloors: 4, density: 0.58, grandeur: 0.32 },
-  { id: 'trastevere', x: -930, z: 640, hw: 150, hd: 190, rot: 0.02, minFloors: 2, maxFloors: 4, density: 0.72, grandeur: 0.08 },
-  { id: 'vaticanus', x: -1050, z: 340, hw: 190, hd: 90, rot: 0.02, minFloors: 1, maxFloors: 3, density: 0.42, grandeur: 0.2 },
-  { id: 'east-suburb', x: 960, z: 700, hw: 200, hd: 180, rot: 0.02, minFloors: 1, maxFloors: 3, density: 0.5, grandeur: 0.12 },
+const DISTRICT_PLAN: {
+  id: string;
+  /** Survey-frame centre and half-extents, metres. */
+  e: number;
+  n: number;
+  he: number;
+  hn: number;
+  minFloors: number;
+  maxFloors: number;
+  density: number;
+  grandeur: number;
+  fray: number;
+}[] = [
+  // Campus Martius, north to south along the Via Lata.
+  { id: 'campus-flaminia', e: -420, n: 1780, he: 330, hn: 250, minFloors: 2, maxFloors: 4, density: 0.74, grandeur: 0.12, fray: 0.55 },
+  { id: 'campus-augusti', e: -430, n: 1250, he: 320, hn: 230, minFloors: 3, maxFloors: 5, density: 0.84, grandeur: 0.2, fray: 0.35 },
+  { id: 'campus-medius', e: -520, n: 700, he: 340, hn: 260, minFloors: 3, maxFloors: 5, density: 0.9, grandeur: 0.22, fray: 0.3 },
+  { id: 'campus-flaminius', e: -520, n: 160, he: 330, hn: 250, minFloors: 3, maxFloors: 5, density: 0.86, grandeur: 0.24, fray: 0.4 },
+  // The Via Lata's east side, under the Quirinal scarp.
+  { id: 'via-lata', e: -80, n: 1150, he: 260, hn: 420, minFloors: 3, maxFloors: 5, density: 0.8, grandeur: 0.16, fray: 0.35 },
+  { id: 'quirinal', e: 430, n: 900, he: 320, hn: 300, minFloors: 2, maxFloors: 4, density: 0.66, grandeur: 0.34, fray: 0.45 },
+  { id: 'viminal', e: 950, n: 700, he: 330, hn: 300, minFloors: 2, maxFloors: 4, density: 0.66, grandeur: 0.22, fray: 0.5 },
+  // The Subura: the tenement valley between the Quirinal, Viminal and Esquiline.
+  { id: 'subura', e: 560, n: 280, he: 250, hn: 220, minFloors: 4, maxFloors: 6, density: 0.94, grandeur: 0.04, fray: 0.2 },
+  { id: 'esquiline', e: 1330, n: 280, he: 340, hn: 330, minFloors: 2, maxFloors: 4, density: 0.6, grandeur: 0.26, fray: 0.6 },
+  // The Velabrum and Forum Boarium, between the Capitol, the river and the Palatine.
+  { id: 'velabrum', e: -120, n: -300, he: 250, hn: 200, minFloors: 3, maxFloors: 5, density: 0.86, grandeur: 0.14, fray: 0.35 },
+  { id: 'caelian', e: 1020, n: -600, he: 320, hn: 250, minFloors: 2, maxFloors: 4, density: 0.56, grandeur: 0.3, fray: 0.55 },
+  { id: 'aventine', e: -300, n: -1180, he: 280, hn: 230, minFloors: 2, maxFloors: 4, density: 0.56, grandeur: 0.36, fray: 0.55 },
+  // The Emporium: the river port under the Aventine, all warehouses.
+  { id: 'emporium', e: -560, n: -900, he: 200, hn: 260, minFloors: 1, maxFloors: 3, density: 0.8, grandeur: 0.06, fray: 0.45 },
+  // Trans Tiberim, on the far bank — placed against the terrain's river below.
+  { id: 'trastevere', e: -1150, n: 100, he: 240, hn: 420, minFloors: 2, maxFloors: 4, density: 0.72, grandeur: 0.1, fray: 0.5 },
+  { id: 'vaticanus', e: -1500, n: 1100, he: 260, hn: 300, minFloors: 1, maxFloors: 3, density: 0.4, grandeur: 0.18, fray: 0.7 },
 ];
+
+export const DISTRICTS: DistrictSpec[] = DISTRICT_PLAN.map((d) => {
+  const w = worldOf(d.e, d.n);
+  // Districts are *inflated* well beyond the compressed survey extent, for two reasons.
+  // A monument keeps its true size while its position compresses, so the overlap resolver
+  // spreads the monumental core over far more ground than the scaled plan asked for and the
+  // gaps between monuments are correspondingly wider. And the fabric is what fills those
+  // gaps: the generator rejects any plot that hits a keep-out, so an over-large district
+  // costs nothing but a bald one leaves a quarter of the city as empty field. The first
+  // version of this file scaled the districts by KX and KZ like the positions, and produced
+  // 256 insulae for the whole of Rome.
+  const hw = Math.max(120, d.he * KX * 1.5);
+  const hd = Math.max(95, d.hn * KZ * 2.6);
+  let x = w.x;
+  let z = clamp(w.z, CITY_Z_MIN(w.x) + hd + 6, CITY_Z_MAX);
+  const farBank = d.id === 'trastevere' || d.id === 'vaticanus';
+  if (farBank) {
+    x = FAR_BANK(z, 60 + hw);
+  } else {
+    // Follow the monuments. The resolver moves them by up to 500 m, and a district authored
+    // against the projected plan would sit in the wrong place relative to its own quarter —
+    // the Subura wants to be between the Fora and the Esquiline wherever those ended up.
+    const drift = nearbyDrift(w.x, w.z);
+    x = Math.max(w.x + drift.x, EAST_BANK(z) + 20 + hw);
+    z = w.z + drift.z;
+  }
+  // Districts are broad and shallow after the depth compression; a slight rotation off
+  // the map axes keeps the street grid from reading as graph paper.
+  const rot = (hash2(Math.round(d.e), Math.round(d.n), 0x5c1) - 0.5) * 0.16;
+  z = clamp(z, CITY_Z_MIN(x) + hd * 0.5, CITY_Z_MAX - hd * 0.5);
+  return {
+    id: d.id,
+    x,
+    z,
+    hw,
+    hd,
+    rot,
+    minFloors: d.minFloors,
+    maxFloors: d.maxFloors,
+    density: d.density,
+    grandeur: d.grandeur,
+    fray: d.fray,
+  };
+});
+
+/**
+ * Mean displacement the overlap resolver applied to the monuments nearest a point.
+ *
+ * Inverse-square weighted over the whole set rather than a k-nearest search, so it is a
+ * smooth field: two adjacent districts can never be dragged in opposite directions by a
+ * tie-break.
+ */
+function nearbyDrift(x: number, z: number): { x: number; z: number } {
+  let wx = 0;
+  let wz = 0;
+  let wt = 0;
+  for (const l of LANDMARKS) {
+    if (l.onRiver || l.farBank) continue;
+    const d2 = (x - l.idealX) * (x - l.idealX) + (z - l.idealZ) * (z - l.idealZ);
+    const w = 1 / Math.max(6400, d2);
+    wx += (l.x - l.idealX) * w;
+    wz += (l.z - l.idealZ) * w;
+    wt += w;
+  }
+  return wt > 0 ? { x: wx / wt, z: wz / wt } : { x: 0, z: 0 };
+}
 
 export interface StreetSpec {
   id: string;
@@ -247,142 +1050,140 @@ export interface StreetSpec {
 }
 
 /**
- * The streets that matter to the silhouette and to the keep-out map. The Via Lata
- * (the urban continuation of the Via Flaminia, today's Corso) runs dead straight
- * south from the gate; everything else grows off it.
+ * The streets that matter to the silhouette and to the keep-out map, in survey metres.
+ *
+ * The Via Lata — the urban continuation of the Via Flaminia, and today's Corso — runs
+ * dead straight south from the Porta Flaminia to the foot of the Capitol; everything
+ * else in the Campus Martius grows off it. The Via Sacra crosses the Forum and climbs
+ * the Velia to the Colosseum valley, and the Vicus Patricius is the spine of the Subura.
  */
-export const STREETS: StreetSpec[] = [
+const STREET_PLAN: { id: string; path: [number, number][]; width: number; paved: boolean }[] = [
   {
     id: 'via-lata',
     path: [
-      { x: GATE_X, z: 336 },
-      { x: GATE_X - 4, z: 520 },
-      { x: GATE_X - 14, z: 780 },
-      { x: -40, z: 980 },
-      { x: -96, z: 1080 },
+      [-497, 2045],
+      [-470, 1560],
+      [-440, 1080],
+      [-400, 620],
+      [-340, 240],
+      [-180, 40],
     ],
     width: 9,
     paved: true,
   },
   {
-    id: 'via-recta',
-    path: [
-      { x: -620, z: 700 },
-      { x: -300, z: 690 },
-      { x: -40, z: 700 },
-      { x: 260, z: 686 },
-      { x: 700, z: 660 },
-    ],
-    width: 8,
-    paved: true,
-  },
-  {
-    id: 'vicus-salutis',
-    path: [
-      { x: 210, z: 340 },
-      { x: 250, z: 560 },
-      { x: 300, z: 820 },
-      { x: 330, z: 1060 },
-    ],
-    width: 7,
-    paved: true,
-  },
-  {
     id: 'via-sacra',
+    // Out of the Forum, over the Velia, past the Meta Sudans into the Colosseum valley.
     path: [
-      { x: -150, z: 1064 },
-      { x: -20, z: 1120 },
-      { x: 120, z: 1160 },
+      [120, 30],
+      [300, -30],
+      [520, -140],
+      [700, -230],
     ],
     width: 8,
     paved: true,
   },
   {
-    id: 'via-tecta',
+    id: 'via-recta',
+    // The east–west spine of the Campus Martius, modern Via dei Coronari.
     path: [
-      { x: -430, z: 470 },
-      { x: -300, z: 600 },
-      { x: -230, z: 800 },
-      { x: -280, z: 1010 },
+      [-1000, 520],
+      [-620, 590],
+      [-300, 600],
+      [-40, 540],
+    ],
+    width: 8,
+    paved: true,
+  },
+  {
+    id: 'vicus-patricius',
+    // Up the Subura from the Fora onto the Viminal.
+    path: [
+      [330, 120],
+      [560, 340],
+      [820, 640],
+      [1080, 900],
     ],
     width: 7,
     paved: true,
   },
   {
-    id: 'vicus-portae',
+    id: 'alta-semita',
+    // Along the Quirinal ridge to the Porta Salaria.
     path: [
-      { x: -520, z: 380 },
-      { x: -180, z: 372 },
-      { x: 180, z: 366 },
-      { x: 560, z: 380 },
+      [330, 640],
+      [700, 1020],
+      [1150, 1330],
+      [1500, 1620],
+    ],
+    width: 7,
+    paved: true,
+  },
+  {
+    id: 'via-appia',
+    // South out of the city between the Palatine and the Caelian, past the Circus.
+    path: [
+      [430, -520],
+      [560, -900],
+      [700, -1320],
+      [800, -1620],
+    ],
+    width: 8,
+    paved: true,
+  },
+  {
+    id: 'vicus-iugarius',
+    // Round the foot of the Capitol from the Forum to the Forum Boarium and the river.
+    path: [
+      [180, -40],
+      [-40, -180],
+      [-260, -300],
+      [-470, -420],
+    ],
+    width: 7,
+    paved: true,
+  },
+  {
+    id: 'via-labicana',
+    // East from the Colosseum between the Esquiline and the Caelian.
+    path: [
+      [900, -230],
+      [1300, -180],
+      [1750, -140],
     ],
     width: 8,
     paved: true,
   },
 ];
 
+export const STREETS: StreetSpec[] = STREET_PLAN.map((s) => ({
+  id: s.id,
+  width: s.width,
+  paved: s.paved,
+  path: s.path.map(([e, n]) => {
+    const w = worldOf(e, n);
+    const x = clamp(w.x, -HALF_EXTENT + 20, HALF_EXTENT - 20);
+    return { x, z: clamp(w.z, CITY_Z_MIN(x) - 18, CITY_Z_MAX) };
+  }),
+}));
+
 /**
- * Map the nominal plan onto the real hill.
- *
- * Everything above is authored against a reference wall at z = 322 and a gate on the
- * x = 0 axis, which is how the plan was laid out. The terrain then put the crest 200 m
- * further south, gave it a 150 m wobble and moved the road saddle to x ≈ 72. Rather
- * than re-typing two hundred coordinates, remap them once at module load:
- *
- *  - shift and gently compress z so the deepest monument still fits inside the
- *    heightfield,
- *  - slide x with the gate so the Via Flaminia axis stays the spine of the city,
- *  - and push anything that would end up on the *slope* back onto the plateau behind
- *    the local crest.
- *
- * Deterministic, runs once, and the whole city follows the next heightfield rewrite.
+ * The Via Lata has to leave the gate on the road's own centreline, whatever the survey
+ * says, or the paving stops at a blank curtain. The first node is pinned to the gate and
+ * the next two are eased onto the projected line.
  */
-const PLAN_REF_WALL_Z = 322;
-const PLAN_REF_DEEPEST_Z = 1320;
-
-function applyTopography(): void {
-  // Compress so the deepest thing in the plan lands just inside the heightfield, using
-  // the *highest* the crest gets as the worst case.
-  let crestMax = 0;
-  for (let x = WALL_X_MIN; x <= WALL_X_MAX; x += 25) crestMax = Math.max(crestMax, crestZAt(x));
-  const scale = clamp((HALF_EXTENT - 60 - crestMax - 40) / (PLAN_REF_DEEPEST_Z - PLAN_REF_WALL_Z), 0.4, 1.0);
-  const mapX = (x: number): number => x + GATE_X * 0.6;
-  // Depth is measured from the local crest, so the fabric hugs the wall along its whole
-  // length instead of leaving a field wherever the hill front runs further north.
-  const mapZ = (x: number, z: number, clearR: number): number =>
-    wallCrestZ(x) + 30 + clearR * 0.45 + (z - PLAN_REF_WALL_Z) * scale;
-
-  for (const l of LANDMARKS) {
-    l.x = mapX(l.x);
-    l.z = mapZ(l.x, l.z, l.clear);
-  }
-  for (const d of DISTRICTS) {
-    d.x = mapX(d.x);
-    d.hd = Math.max(30, d.hd * Math.max(scale, 0.72));
-    d.z = mapZ(d.x, d.z, d.hd);
-  }
-  for (const st of STREETS) {
-    for (const p of st.path) {
-      p.x = mapX(p.x);
-      p.z = Math.max(mapZ(p.x, p.z, 0), wallCrestZ(p.x) + 6);
-    }
-  }
-  for (const aq of AQUEDUCTS) {
-    for (const p of aq.path) {
-      p.x = mapX(p.x);
-      p.z = mapZ(p.x, p.z, 30);
-    }
-  }
-  // The Via Lata leaves the gate on the road's own centreline.
+{
   const lata = STREETS.find((s) => s.id === 'via-lata');
   if (lata) {
-    lata.path[0] = { x: GATE_X, z: crestZAt(GATE_X) + 10 };
-    for (let i = 1; i < lata.path.length; i++) {
-      lata.path[i].x = lerp(GATE_X, lata.path[i].x, Math.min(1, i / 2));
+    lata.path[0] = { x: GATE_X, z: GATE_Z + 8 };
+    for (let i = 1; i < Math.min(3, lata.path.length); i++) {
+      lata.path[i] = {
+        x: lerp(GATE_X, lata.path[i].x, i / 3),
+        z: lata.path[i].z,
+      };
     }
   }
 }
-applyTopography();
 
 /** Rectangular keep-out, used for landmarks and street corridors. */
 export interface KeepOutCircle {
@@ -391,13 +1192,25 @@ export interface KeepOutCircle {
   r: number;
 }
 
-/** Collision map so procedural insulae never grow through a monument or a street. */
+/**
+ * Collision map so procedural insulae never grow through a monument or a street.
+ *
+ * Landmarks reserve **oriented boxes**, not circles. That is the whole point: a circle
+ * of radius 101 m nominally covered the Circus Maximus while leaving five sixths of its
+ * 621 × 118 m footprint free for insulae to grow through, which is exactly what
+ * happened.
+ */
 export class KeepOut {
   private circles: KeepOutCircle[] = [];
+  private boxes: Obb[] = [];
   private segs: { x1: number; z1: number; x2: number; z2: number; halfW: number }[] = [];
 
   addCircle(x: number, z: number, r: number): void {
     this.circles.push({ x, z, r });
+  }
+
+  addRect(x: number, z: number, hw: number, hd: number, rot: number): void {
+    this.boxes.push({ x, z, hw, hd, rot });
   }
 
   addPath(path: { x: number; z: number }[], halfW: number): void {
@@ -408,6 +1221,9 @@ export class KeepOut {
 
   /** True when a disc of radius `r` at (x,z) intersects anything reserved. */
   blocked(x: number, z: number, r: number): boolean {
+    for (const b of this.boxes) {
+      if (obbHitsCircle(b, x, z, r)) return true;
+    }
     for (const c of this.circles) {
       const dx = x - c.x;
       const dz = z - c.z;

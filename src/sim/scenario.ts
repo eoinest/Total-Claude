@@ -47,19 +47,19 @@ export const UNIT_SIZE_SCALE = 2.0;
  * before the first man is created. Keep in step with the deployment below.
  */
 const ORDER_OF_BATTLE: readonly string[] = [
-  ...Array(6).fill('legio-cohort'),        // first line
-  ...Array(4).fill('legio-cohort'),        // second line
+  ...Array(6).fill('legio-cohort'),
   'praetorian-cohort', 'praetorian-cohort',
   'urban-cohort', 'urban-cohort',
-  'sagittarii', 'sagittarii', 'sagittarii',
+  'sagittarii', 'sagittarii',
   'equites', 'equites', 'equites',
   'scorpio',
   ...Array(3).fill('juthungi-skirmishers'),
   'juthungi-warband', 'juthungi-spears', 'juthungi-warband',
-  'juthungi-spears', 'juthungi-warband', 'juthungi-spears',
+  'juthungi-warband', 'juthungi-spears', 'juthungi-warband',
+  'juthungi-warband', 'juthungi-spears', 'juthungi-warband',
   'juthungi-chosen', 'juthungi-chosen',
   'juthungi-berserkers', 'juthungi-berserkers',
-  'juthungi-riders', 'juthungi-riders',
+  'juthungi-riders', 'juthungi-riders', 'juthungi-riders',
 ];
 
 /**
@@ -90,60 +90,65 @@ export function deploySiegeOfRome(battle: BattleSystem, ctx: EngineContext): Sce
   };
 
   // ---------------------------------------------------------------------
-  // Roman line — two legions drawn up in the classic triplex-derived depth:
-  // a broad first line of cohorts, a second line covering its seams, spears
-  // refusing both flanks, missiles on the rise, cavalry on the wings.
+  // Roman line — a field army, not a garrison parade: one line of cohorts with
+  // spears refusing both flanks, archers on the rise, the Praetorians held back
+  // as the only reserve, cavalry on the wings.
+  //
+  // It is deliberately **outnumbered and out-fronted**. Aurelian's field army was a
+  // detachment; the Juthungi came as a people. With Rome fielding 5,264 against 3,680
+  // the battle had no question in it — Rome had more men, better armour, better morale
+  // and better discipline, so it won on its own with the player asleep, which is what
+  // the report of "Rome automatically wins immediately" was. The Roman answer to being
+  // outnumbered is drill, ground and a reserve used at the right moment, and all three
+  // of those are decisions the player has to make.
   // ---------------------------------------------------------------------
   const romanZ = 130;
-  const ROMAN_NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+  const ROMAN_NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI'];
 
-  // First line: six legionary cohorts across ~570 m. A 320-man cohort in `line` is about
-  // 38 m of frontage, so 96 m centres leave a real interval — the gaps the second line
-  // exists to plug.
-  const cohortSpacing = 96;
+  // Six legionary cohorts. A 320-man cohort in `line` is about 35 m of frontage, so 64 m
+  // centres leave a half-cohort interval — the seams a Germanic wedge will aim at. Six and
+  // not seven: at seven the Roman line covered nearly the whole Germanic frontage, nothing
+  // was left over to turn either flank, and a Rome that did literally nothing still won on
+  // armour and archery alone. The overlap is the tactical problem the player is here to
+  // solve.
+  const cohortSpacing = 64;
   for (let k = 0; k < 6; k++) {
     const x = (k - 2.5) * cohortSpacing;
     push(roman, battle.spawnUnit('legio-cohort', x, romanZ, NORTH, 'line'),
       `Cohort ${ROMAN_NUMERALS[k]}`);
   }
 
-  // Second line, offset half an interval so it covers the first line's seams.
-  for (let k = 0; k < 4; k++) {
-    const x = (k - 1.5) * cohortSpacing + cohortSpacing * 0.5;
-    push(roman, battle.spawnUnit('legio-cohort', x, romanZ + 58, NORTH, 'line'),
-      `Cohort ${ROMAN_NUMERALS[k + 6]}`);
-  }
-
   // Praetorians: the reserve proper, held behind the centre and committed by hand.
-  push(roman, battle.spawnUnit('praetorian-cohort', -46, romanZ + 104, NORTH, 'line'), 'Praetorian Guard I');
-  push(roman, battle.spawnUnit('praetorian-cohort', 46, romanZ + 104, NORTH, 'line'), 'Praetorian Guard II');
+  push(roman, battle.spawnUnit('praetorian-cohort', -44, romanZ + 86, NORTH, 'line'), 'Praetorian Guard I');
+  push(roman, battle.spawnUnit('praetorian-cohort', 44, romanZ + 86, NORTH, 'line'), 'Praetorian Guard II');
 
   // Urban cohorts refuse both flanks with a hedge of spears.
-  push(roman, battle.spawnUnit('urban-cohort', -330, romanZ - 8, NORTH, 'shieldwall'), 'Urban Cohort I');
-  push(roman, battle.spawnUnit('urban-cohort', 330, romanZ - 8, NORTH, 'shieldwall'), 'Urban Cohort II');
+  push(roman, battle.spawnUnit('urban-cohort', -250, romanZ - 8, NORTH, 'shieldwall'), 'Urban Cohort I');
+  push(roman, battle.spawnUnit('urban-cohort', 250, romanZ - 8, NORTH, 'shieldwall'), 'Urban Cohort II');
 
   // Archers on the rise, shooting over the line.
-  push(roman, battle.spawnUnit('sagittarii', -136, romanZ + 92, NORTH, 'loose'), 'Syrian Archers');
-  push(roman, battle.spawnUnit('sagittarii', 0, romanZ + 92, NORTH, 'loose'), 'Cretan Archers');
-  push(roman, battle.spawnUnit('sagittarii', 136, romanZ + 92, NORTH, 'loose'), 'Ituraean Archers');
+  push(roman, battle.spawnUnit('sagittarii', -104, romanZ + 78, NORTH, 'loose'), 'Syrian Archers');
+  push(roman, battle.spawnUnit('sagittarii', 104, romanZ + 78, NORTH, 'loose'), 'Cretan Archers');
 
   // Cavalry on both wings. The right is the heavier, held for the counter-blow.
-  push(roman, battle.spawnUnit('equites', 402, romanZ + 34, NORTH, 'wedge'), 'Equites Singulares');
-  push(roman, battle.spawnUnit('equites', 452, romanZ + 60, NORTH, 'wedge'), 'Equites Promoti');
-  push(roman, battle.spawnUnit('equites', -402, romanZ + 34, NORTH, 'wedge'), 'Equites Stablesiani');
+  push(roman, battle.spawnUnit('equites', 300, romanZ + 34, NORTH, 'wedge'), 'Equites Singulares');
+  push(roman, battle.spawnUnit('equites', 352, romanZ + 60, NORTH, 'wedge'), 'Equites Promoti');
+  push(roman, battle.spawnUnit('equites', -300, romanZ + 34, NORTH, 'wedge'), 'Equites Stablesiani');
 
   // Bolt-throwers sited to sweep the whole approach.
-  push(roman, battle.spawnUnit('scorpio', 0, romanZ + 148, NORTH, 'line'), 'Scorpion Battery');
+  push(roman, battle.spawnUnit('scorpio', 0, romanZ + 132, NORTH, 'line'), 'Scorpion Battery');
 
   // ---------------------------------------------------------------------
-  // Juthungi host — a deep, ragged mass 320 m out, facing the city.
+  // Juthungi host — a deep, ragged mass 320 m out, facing the city. Nine kindreds in
+  // the battle line, which is half again the Roman frontage: the flanks are the whole
+  // Germanic plan and refusing them is the whole Roman problem.
   // ---------------------------------------------------------------------
   const germZ = -190;
 
   // Skirmishers screening the whole frontage — the host's youths, sent to draw the first
   // volleys and then melt back through the intervals.
   for (let k = 0; k < 3; k++) {
-    const x = (k - 1) * 210;
+    const x = (k - 1) * 180;
     push(germanic, battle.spawnUnit('juthungi-skirmishers', x, germZ + 68, SOUTH, 'skirmish'),
       ['Skirmishers of the Ford', 'Youths of the Host', 'Framea-Throwers'][k]);
   }
@@ -151,25 +156,29 @@ export function deploySiegeOfRome(battle: BattleSystem, ctx: EngineContext): Sce
   // Main battle line: warbands massed in depth with spear blocks stiffening the joints.
   // Germanic armies fought by kindred, so the line is a row of named warbands rather than
   // an evenly-drilled front.
-  const bandNames = ['Warband of Semno', 'Ash-Spears', 'Warband of Vadomar',
-    'Oath-Spears', 'Warband of Gundomad', 'Elm-Spears'];
-  for (let k = 0; k < 6; k++) {
-    const x = (k - 2.5) * 112;
-    const spears = k % 2 === 1;
+  const bandNames = [
+    'Warband of Semno', 'Ash-Spears', 'Warband of Vadomar',
+    'Warband of Hariobaud', 'Oath-Spears', 'Warband of Gundomad',
+    'Warband of Suomar', 'Elm-Spears', 'Warband of Agenar',
+  ];
+  for (let k = 0; k < 9; k++) {
+    const x = (k - 4) * 46;
+    const spears = k % 3 === 1;
     push(germanic, battle.spawnUnit(
       spears ? 'juthungi-spears' : 'juthungi-warband',
       x, germZ + (spears ? 0 : 6), SOUTH, spears ? 'line' : 'horde'), bandNames[k]);
   }
 
   // Chosen and fanatics form the striking wedges behind the centre.
-  push(germanic, battle.spawnUnit('juthungi-chosen', -84, germZ - 58, SOUTH, 'wedge'), "Chieftain's Chosen");
-  push(germanic, battle.spawnUnit('juthungi-chosen', 84, germZ - 58, SOUTH, 'wedge'), 'Sworn Companions');
-  push(germanic, battle.spawnUnit('juthungi-berserkers', -170, germZ - 52, SOUTH, 'horde'), 'Naked Fanatics');
-  push(germanic, battle.spawnUnit('juthungi-berserkers', 170, germZ - 52, SOUTH, 'horde'), 'Wolf-Coats');
+  push(germanic, battle.spawnUnit('juthungi-chosen', -70, germZ - 58, SOUTH, 'wedge'), "Chieftain's Chosen");
+  push(germanic, battle.spawnUnit('juthungi-chosen', 70, germZ - 58, SOUTH, 'wedge'), 'Sworn Companions');
+  push(germanic, battle.spawnUnit('juthungi-berserkers', -150, germZ - 52, SOUTH, 'horde'), 'Naked Fanatics');
+  push(germanic, battle.spawnUnit('juthungi-berserkers', 150, germZ - 52, SOUTH, 'horde'), 'Wolf-Coats');
 
   // Horse raiders sweeping wide on both wings, looking for an open flank.
-  push(germanic, battle.spawnUnit('juthungi-riders', -420, germZ + 46, SOUTH, 'loose'), 'Left-Wing Raiders');
-  push(germanic, battle.spawnUnit('juthungi-riders', 420, germZ + 46, SOUTH, 'loose'), 'Right-Wing Raiders');
+  push(germanic, battle.spawnUnit('juthungi-riders', -330, germZ + 46, SOUTH, 'loose'), 'Left-Wing Raiders');
+  push(germanic, battle.spawnUnit('juthungi-riders', 330, germZ + 46, SOUTH, 'loose'), 'Right-Wing Raiders');
+  push(germanic, battle.spawnUnit('juthungi-riders', 386, germZ + 12, SOUTH, 'loose'), 'Raiders of Vithimir');
 
   // Both sides start holding their ground; the AI takes it from here.
   for (const u of battle.units) u.order = UnitOrder.Hold;

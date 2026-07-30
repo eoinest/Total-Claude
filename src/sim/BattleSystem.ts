@@ -1,7 +1,9 @@
 import type { EngineContext, Subsystem } from '../core/Engine';
 import { Rng } from '../util/rand';
 import { clamp, clamp01, damp, turnToward, wrapAngle } from '../util/math';
-import { formation, ranksFor } from './formations';
+import {
+  closestPointOnSegment, formation, frontSegment, makeSegment, ranksFor, segmentDistance,
+} from './formations';
 import { unitType, isCavalry } from '../units/roster';
 import type { TerrainSystem } from '../terrain/TerrainSystem';
 import {
@@ -24,6 +26,44 @@ import {
  */
 
 const SCRATCH = { x: 0, z: 0 };
+const AIM = { x: 0, z: 0 };
+const SEG_SELF = makeSegment();
+const SEG_OTHER = makeSegment();
+
+/**
+ * Front-to-front distance at which two formations are locked together and stop
+ * advancing. 1.0 m of centre-to-centre separation with a 0.84 m body diameter is
+ * shields touching — the point at which a Rome II line stops and starts grinding.
+ */
+const CONTACT_ENTER = 1.6;
+/** And the distance it must open back up to before either is free to advance again. */
+const CONTACT_EXIT = 4.5;
+/** Metres the anchors are held apart while locked, so ranks never interpenetrate. */
+const CONTACT_GAP = 1.0;
+/**
+ * How fast an unengaged man closes up into the press, in metres per second. A rank
+ * three men back covers the 3 m to the front line in about three seconds, which is
+ * what fills the hole a dead front-ranker leaves.
+ */
+const PRESS_RATE = 1.1;
+/** And how fast the block opens back out into ranks once the fight is over. */
+const PRESS_RELAX = 1.6;
+/**
+ * How deep the press may reach, in **ranks**.
+ *
+ * Bounded, because unbounded it is not a press but a collapse: every rank walks onto the
+ * contact line, the two blocks interleave, and both units fight with every man at once.
+ * Two and a half ranks closing up is what fills the hole a dead front-ranker leaves; the
+ * ranks behind that stay in formation and wait, which is what a formation is for.
+ *
+ * In ranks and not metres, because the two are wildly different for cavalry: a horse
+ * occupies 2.95 m of depth against an infantryman's 1.02. A flat 2.5 m limit let a
+ * wedge's second row close up by less than one horse-length, so once its leading two rows
+ * had been killed on a spear wall the remaining fifty riders physically could not reach
+ * anything — measured as a dead stop with the fronts half a metre apart, zero men on
+ * either side fighting, and the engagement never resolving.
+ */
+const PRESS_RANKS = 2.5;
 
 export class BattleSystem implements Subsystem {
   readonly name = 'battle';
@@ -45,6 +85,7 @@ export class BattleSystem implements Subsystem {
     this.terrain = ctx.tryGet<TerrainSystem>('terrain');
     this.pool = new SoldierPool(ctx.quality.maxSoldiers);
     this.mounted = new Uint8Array(ctx.quality.maxSoldiers);
+    this.press = new Float32Array(ctx.quality.maxSoldiers);
     this.hash = new SpatialHash(1500, 3.5);
 
     ctx.events.on('orderIssued', (o) => this.applyOrder(o));
@@ -301,55 +342,183 @@ export class BattleSystem implements Subsystem {
     this.updateAnimationState(dt, ctx);
   }
 
+  /**
+   * Front-to-front distance to the nearest enemy formation, metres, refreshed every
+   * tick. Kept here rather than on `UnitGroupState` so the shape of the shared unit
+   * record — which several subsystems construct in tests — does not grow.
+   */
+  private frontGaps = new Float32Array(64).fill(Infinity);
+  private frontEnemies = new Int32Array(64).fill(-1);
+  /** The direction a broken unit committed to running in. Zero when it is not routing. */
+  private routDirX = new Float32Array(64);
+  private routDirZ = new Float32Array(64);
+  /** Seconds before a broken unit may pick a new direction to run in. */
+  private routHold = new Float32Array(64);
+
+  private growUnitScratch(n: number): void {
+    if (this.frontGaps.length >= n) return;
+    const size = Math.max(n, this.frontGaps.length * 2);
+    const g = new Float32Array(size).fill(Infinity);
+    g.set(this.frontGaps);
+    this.frontGaps = g;
+    const e = new Int32Array(size).fill(-1);
+    e.set(this.frontEnemies);
+    this.frontEnemies = e;
+    const rx = new Float32Array(size);
+    rx.set(this.routDirX);
+    this.routDirX = rx;
+    const rz = new Float32Array(size);
+    rz.set(this.routDirZ);
+    this.routDirZ = rz;
+    const rh = new Float32Array(size);
+    rh.set(this.routHold);
+    this.routHold = rh;
+  }
+
+  /** Metres between this unit's front rank and the nearest enemy's. */
+  frontGapOf(unitId: number): number {
+    return this.frontGaps[unitId] ?? Infinity;
+  }
+
+  /** The enemy unit whose front rank is nearest, or -1. */
+  frontEnemyOf(unitId: number): number {
+    return this.frontEnemies[unitId] ?? -1;
+  }
+
+  /** Half the frontage of a unit's front rank, in metres. */
+  frontHalf(u: UnitGroupState): number {
+    const men = Math.max(1, Math.min(u.width, u.alive));
+    return Math.max(1.2, men * formation(u.formationId).frontMul * u.spacingX * 0.5);
+  }
+
+  /**
+   * Front-to-front distance to the nearest enemy formation, and the unit id it belongs
+   * to. Anchors lie about contact: two cohorts standing shoulder to shoulder have
+   * anchors twenty metres apart and front ranks touching, while two blocks that have
+   * slid through each other have coincident anchors and are fighting nobody in front.
+   * Everything about meeting an enemy is measured between the front-rank *segments*.
+   */
+  private nearestEnemyFront(u: UnitGroupState): { dist: number; id: number } {
+    frontSegment(u.x, u.z, u.facing, this.frontHalf(u), SEG_SELF);
+    let best = Infinity;
+    let bestId = -1;
+    for (const o of this.units) {
+      if (o.destroyed || o.faction === u.faction || o.alive === 0) continue;
+      if (o.order === UnitOrder.Rout) continue;
+      // Cheap reject before the segment maths.
+      const cx = o.x - u.x;
+      const cz = o.z - u.z;
+      const reach = 60 + this.frontHalf(u) + this.frontHalf(o);
+      if (cx * cx + cz * cz > reach * reach) continue;
+      frontSegment(o.x, o.z, o.facing, this.frontHalf(o), SEG_OTHER);
+      const d = segmentDistance(SEG_SELF, SEG_OTHER);
+      if (d < best) {
+        best = d;
+        bestId = o.id;
+      }
+    }
+    return { dist: best, id: bestId };
+  }
+
   /** Move the formation anchor toward its objective and consume waypoints. */
   private updateUnitOrder(u: UnitGroupState, dt: number): void {
     const def = this.typeOf(u);
+    const routing = u.order === UnitOrder.Rout;
 
-    // Chasing a specific enemy unit: re-target the anchor at it every tick.
+    // ---- contact lock -------------------------------------------------------
+    // Geometric, hysteretic, and owned here rather than in Combat: this is the flag
+    // that stops a formation advancing, and the advance lives in this function. Combat
+    // mirrors it onto the shared blackboard and adds the blows-are-landing case.
+    this.growUnitScratch(u.id + 1);
+    const near = routing ? { dist: Infinity, id: -1 } : this.nearestEnemyFront(u);
+    this.frontGaps[u.id] = near.dist;
+    this.frontEnemies[u.id] = near.id;
+    if (routing) {
+      u.contactLock = false;
+    } else if (u.contactLock) {
+      if (near.dist > CONTACT_EXIT) {
+        u.contactLock = false;
+        // Release with the anchor where the shoving match left it, not where the order
+        // that brought the unit here was aiming.
+        if (u.order === UnitOrder.Hold) {
+          u.targetX = u.x;
+          u.targetZ = u.z;
+        }
+      }
+    } else if (near.dist < CONTACT_ENTER) {
+      u.contactLock = true;
+    }
+
+    // Chasing a specific enemy unit: aim at the nearest point of its frontage.
     if (u.order === UnitOrder.AttackUnit) {
       const t = this.unitById(u.targetUnitId);
-      if (!t || t.destroyed) {
+      if (!t || t.destroyed || t.alive === 0) {
         u.order = UnitOrder.Hold;
         u.targetUnitId = -1;
-      } else {
-        const dx = t.x - u.x;
-        const dz = t.z - u.z;
+        u.targetX = u.x;
+        u.targetZ = u.z;
+      } else if (!u.contactLock) {
+        frontSegment(t.x, t.z, t.facing, this.frontHalf(t), SEG_OTHER);
+        closestPointOnSegment(u.x, u.z, SEG_OTHER, AIM);
+        const dx = AIM.x - u.x;
+        const dz = AIM.z - u.z;
         const d = Math.hypot(dx, dz) || 1;
-        // Stop just short so the ranks meet rather than interpenetrating. Kept tight:
-        // combined with the arrival tolerance below, anything larger leaves the two front
-        // ranks further apart than the weapons can reach and the units stare at each other.
-        const standoff = def.reach + 0.15;
-        u.targetX = t.x - (dx / d) * standoff;
-        u.targetZ = t.z - (dz / d) * standoff;
+        // Stop with the fronts a shield's width apart. `resolveCrowding` and the press
+        // then close the last few centimetres, which is what makes the seam ragged.
+        const standoff = CONTACT_GAP;
+        u.targetX = AIM.x - (dx / d) * standoff;
+        u.targetZ = AIM.z - (dz / d) * standoff;
         u.targetFacing = Math.atan2(dx, dz);
       }
     }
 
-    if (u.order === UnitOrder.Rout) {
+    if (routing) {
       u.routTimer += dt;
-      // Flee directly away from the enemy's centre of mass.
+      // Flee away from the enemy's centre of mass — but commit to a direction. Recomputed
+      // every tick, the threat bearing swings as pursuing cavalry rides around the mob,
+      // and the unit turns at the rate limit for the whole flight: measured 68 degrees a
+      // second of pure spin on broken warbands. Men running for their lives run in a
+      // straight line; they only change their minds when something gets in the way.
       const away = this.threatDirection(u);
-      u.targetX = u.x + away.x * 60;
-      u.targetZ = u.z + away.z * 60;
-      u.targetFacing = Math.atan2(away.x, away.z);
+      const cx = this.routDirX[u.id];
+      const cz = this.routDirZ[u.id];
+      const committed = cx !== 0 || cz !== 0;
+      // 0.34 is about 70 degrees: a genuinely new threat, not the same one drifting. And
+      // never more than once every three seconds, because a horseman circling a broken mob
+      // can drag the threat bearing past 70 degrees again and again, and each re-aim costs
+      // the whole unit another turn.
+      this.routHold[u.id] = Math.max(0, this.routHold[u.id] - dt);
+      if (!committed || (this.routHold[u.id] <= 0 && away.x * cx + away.z * cz < 0.34)) {
+        this.routDirX[u.id] = away.x;
+        this.routDirZ[u.id] = away.z;
+        this.routHold[u.id] = 3;
+      }
+      u.targetX = u.x + this.routDirX[u.id] * 60;
+      u.targetZ = u.z + this.routDirZ[u.id] * 60;
+      u.targetFacing = Math.atan2(this.routDirX[u.id], this.routDirZ[u.id]);
+    } else if (this.routDirX[u.id] !== 0 || this.routDirZ[u.id] !== 0) {
+      this.routDirX[u.id] = 0;
+      this.routDirZ[u.id] = 0;
     }
 
     const dx = u.targetX - u.x;
     const dz = u.targetZ - u.z;
     const distToTarget = Math.hypot(dx, dz);
 
-    // Locked in contact: hold the anchor and only pivot. Combat owns this flag.
-    if (u.contactLock && u.order !== UnitOrder.Rout) {
-      u.facing = turnToward(u.facing, u.targetFacing, dt * 1.1);
+    // Locked in contact: hold the anchor and only pivot, slowly. `Combat.resolvePush`
+    // is the only thing allowed to move the anchor from here, so a line that is losing
+    // gives ground and a line that is winning walks forward, and neither slides
+    // sideways chasing the other's centre.
+    if (u.contactLock) {
+      u.facing = turnToward(u.facing, u.targetFacing, dt * 0.35);
       const drain = u.engaged ? dt / (def.stamina * 2.4) : -dt / 26;
       u.fatigue = clamp01(u.fatigue + drain);
       if (u.chargeTimer > 0) u.chargeTimer = Math.max(0, u.chargeTimer - dt);
       return;
     }
 
-    // Arrived: pop the next queued waypoint, else settle. The tolerance is tight because
-    // it stacks on top of the attack standoff above.
-    if (distToTarget < 0.25) {
+    // Arrived: pop the next queued waypoint, else settle.
+    if (distToTarget < 0.35) {
       if (u.waypoints.length >= 3) {
         u.targetX = u.waypoints.shift()!;
         u.targetZ = u.waypoints.shift()!;
@@ -359,29 +528,52 @@ export class BattleSystem implements Subsystem {
       }
     } else {
       const f = formation(u.formationId);
-      const routing = u.order === UnitOrder.Rout;
       const base = routing ? def.runSpeed * 1.06
         : u.charging ? def.chargeSpeed
         : u.running ? def.runSpeed
         : def.walkSpeed;
       // Fatigue and formation drag both bite into speed.
       const speed = base * f.mods.speed * (1 - u.fatigue * 0.42);
-      const step = Math.min(distToTarget, speed * dt);
-      u.x += (dx / distToTarget) * step;
-      u.z += (dz / distToTarget) * step;
 
       // Face the direction of travel while moving; hold the ordered facing on arrival.
       const travelFacing = Math.atan2(dx, dz);
       const wantFacing = distToTarget > 4 ? travelFacing : u.targetFacing;
       u.facing = turnToward(u.facing, wantFacing, dt * 1.9);
+
+      // A formation wheels; it does not strafe. Translating the anchor at full speed in
+      // any direction while the heading independently chases a moving target is exactly
+      // the recipe for a cyclic-pursuit spiral, and it is what made two units that met
+      // orbit each other instead of fighting. Scaling the step by how much of the
+      // heading points at the objective means a unit must turn before it can move, and
+      // the path straightens out.
+      const align = Math.cos(wrapAngle(u.facing - travelFacing));
+      const heading = align > 0 ? 0.25 + 0.75 * align : Math.max(0.06, 0.25 + align * 0.19);
+      let step = Math.min(distToTarget, speed * heading * dt);
+
+      // Block collision: never walk the front rank through an enemy's. Routing units
+      // are exempt — broken men go through anything — and so is anyone whose objective
+      // takes them away from the enemy in front of them.
+      if (!routing && near.dist < Infinity) {
+        const closing = (dx / distToTarget) * Math.sin(u.targetFacing)
+          + (dz / distToTarget) * Math.cos(u.targetFacing);
+        if (closing > -0.2) step = Math.min(step, Math.max(0, near.dist - CONTACT_GAP));
+      }
+
+      u.x += (dx / distToTarget) * step;
+      u.z += (dz / distToTarget) * step;
     }
 
-    if (distToTarget <= 0.25) {
-      u.facing = turnToward(u.facing, u.targetFacing, dt * 1.5);
+    if (distToTarget <= 0.35) {
+      // A formation standing still wheels *slowly* — 0.6 rad/s is a 180-degree about-face
+      // in five seconds, which is about right for several hundred men and, more to the
+      // point, bounds how badly a jittery facing order can read. At 1.5 rad/s a unit whose
+      // ordered facing flipped between two threats span on the spot at 86 degrees a second
+      // for the whole battle; that was measured at 2,578 degrees over thirty seconds.
+      u.facing = turnToward(u.facing, u.targetFacing, dt * 0.6);
     }
 
     // Fatigue: running and fighting drain, standing still recovers.
-    const exerting = distToTarget > 0.8 && (u.running || u.order === UnitOrder.Rout);
+    const exerting = distToTarget > 0.8 && (u.running || routing);
     const drain = exerting ? dt / Math.max(8, def.stamina) : u.engaged ? dt / (def.stamina * 2.4) : -dt / 26;
     u.fatigue = clamp01(u.fatigue + drain);
 
@@ -466,18 +658,36 @@ export class BattleSystem implements Subsystem {
 
       const s = Math.sin(u.facing);
       const c = Math.cos(u.facing);
+      // A formation in contact is a press, not a parade. Men behind the fighting line
+      // close up into it, which is the only thing that fills the hole a dead
+      // front-ranker leaves: on slot-seeking alone the second rank stays 1 m back, out
+      // of every weapon's reach, and a unit whose front rank has been killed stops
+      // fighting altogether while still nominally engaged.
+      const pressing = u.contactLock && !routing;
+      const pressLimit = PRESS_RANKS * u.spacingZ;
 
       for (const i of u.members) {
         const st = p.state[i] as SoldierState;
         if (st === SoldierState.Dead || st === SoldierState.Dying) continue;
         // A man locked in melee holds his ground rather than chasing his slot.
         if (st === SoldierState.Fighting) {
+          this.press[i] = 0;
           p.vx[i] = damp(p.vx[i], 0, 9, dt);
           p.vz[i] = damp(p.vz[i], 0, 9, dt);
           continue;
         }
 
         f.offset(SCRATCH, p.slot[i], u.width, ranks, u.spacingX, u.spacingZ);
+        if (pressing) {
+          // Creep forward, but never in front of the front rank: `-SCRATCH.z` is this
+          // man's own setback, so the press closes his own gap and no more. Crowd
+          // separation stops him walking into the back of the man ahead.
+          this.press[i] = Math.min(-SCRATCH.z, pressLimit, this.press[i] + PRESS_RATE * dt);
+          SCRATCH.z += this.press[i];
+        } else if (this.press[i] > 0) {
+          this.press[i] = Math.max(0, this.press[i] - PRESS_RELAX * dt);
+          SCRATCH.z += this.press[i];
+        }
         const tx = u.x + SCRATCH.x * c + SCRATCH.z * s;
         const tz = u.z - SCRATCH.x * s + SCRATCH.z * c;
 
@@ -552,6 +762,8 @@ export class BattleSystem implements Subsystem {
 
   /** 1 if this soldier is mounted. Set at spawn; read in the crowd-separation inner loop. */
   private mounted!: Uint8Array;
+  /** Metres this man has closed up into the press, forward of his formation slot. */
+  private press!: Float32Array;
 
   /** Cache of soldier index -> unit, rebuilt lazily. */
   private soldierUnitCache: (UnitGroupState | undefined)[] = [];

@@ -1,0 +1,165 @@
+- generic [active] [ref=e1]:
+  - link "Skip to main content" [ref=e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - banner [ref=e5]:
+        - link "Smithsonian main website" [ref=e11] [cursor=pointer]:
+          - /url: https://si.edu
+        - generic [ref=e15]:
+          - link "SI Yellow sunburst with blue background Smithsonian 3d Digitization" [ref=e18] [cursor=pointer]:
+            - /url: /
+            - img "SI Yellow sunburst with blue background" [ref=e20]
+            - generic [ref=e23]:
+              - text: Smithsonian
+              - generic [ref=e24]: 3d Digitization
+          - navigation "Open Main navigation" [ref=e27]:
+            - list [ref=e28]:
+              - listitem [ref=e29]:
+                - link "Explore" [ref=e30] [cursor=pointer]:
+                  - /url: /explore
+              - listitem [ref=e31]:
+                - link "Collections" [ref=e32] [cursor=pointer]:
+                  - /url: /collections
+              - listitem [ref=e33]:
+                - link "About " [ref=e34] [cursor=pointer]:
+                  - /url: /about
+              - listitem [ref=e35]:
+                - link "Labs" [ref=e36] [cursor=pointer]:
+                  - /url: /labs
+              - listitem [ref=e37]:
+                - link "Sponsors" [ref=e38] [cursor=pointer]:
+                  - /url: /sponsors
+              - listitem [ref=e39]:
+                - button "Toggle search form, esc to close" [ref=e40] [cursor=pointer]:
+                  - img "search" [ref=e41]
+      - main [ref=e46]:
+        - generic [ref=e48]:
+          - generic [ref=e49]:
+            - heading "Explore" [level=1] [ref=e50]
+            - generic [ref=e51]:
+              - generic [ref=e52]:
+                - generic [ref=e54]:
+                  - generic [ref=e55]: Search
+                  - searchbox "Search" [ref=e56]: ancient rome
+                - generic [ref=e58]:
+                  - checkbox "Only return Open Access Media (CC0) search results" [ref=e59]
+                  - generic [ref=e60]: Only return Open Access Media (CC0) search results
+              - generic [ref=e61]:
+                - button "Search" [ref=e62] [cursor=pointer]:
+                  - img "search" [ref=e63]
+                - button "Reset" [ref=e66] [cursor=pointer]:
+                  - img "reset form" [ref=e67]
+            - paragraph [ref=e69]:
+              - text: Displaying 6 of 6 results for
+              - emphasis [ref=e70]: ancient rome
+          - link "Skip to facets for narrowing search results" [ref=e71] [cursor=pointer]:
+            - /url: "#edan-search-facets"
+          - generic [ref=e72]:
+            - list [ref=e73]:
+              - listitem [ref=e74]:
+                - link "3d model of Helen Ruthven Waterston Helen Ruthven Waterston" [ref=e75] [cursor=pointer]:
+                  - /url: /object/3d/helen-ruthven-waterston:d825c526-69dd-472a-8d47-7da7fbe88fb7
+                  - img "3d model of Helen Ruthven Waterston" [ref=e77]
+                  - generic [ref=e78]: Helen Ruthven Waterston
+              - listitem [ref=e80]:
+                - link "3d model of Cuneiform Tablet from Iraq Cuneiform Tablet from Iraq" [ref=e81] [cursor=pointer]:
+                  - /url: /object/3d/cuneiform-tablet-iraq:761f8e4b-f943-44c4-bcc9-43795999566d
+                  - img "3d model of Cuneiform Tablet from Iraq" [ref=e83]
+                  - generic [ref=e84]: Cuneiform Tablet from Iraq
+              - listitem [ref=e86]:
+                - link "3d model of Old Arrow Maker Old Arrow Maker" [ref=e87] [cursor=pointer]:
+                  - /url: /object/3d/old-arrow-maker:082c87e9-1fe0-4772-b4c6-fe6d59bd6e74
+                  - img "3d model of Old Arrow Maker" [ref=e89]
+                  - generic [ref=e90]: Old Arrow Maker
+              - listitem [ref=e92]:
+                - link "3d model of The Dying Tecumseh The Dying Tecumseh" [ref=e93] [cursor=pointer]:
+                  - /url: /object/3d/dying-tecumseh:a572abe8-d60a-4ad5-aa86-6609e85ec4a6
+                  - img "3d model of The Dying Tecumseh" [ref=e95]
+                  - generic [ref=e96]: The Dying Tecumseh
+              - listitem [ref=e98]:
+                - link "3d model of Armchair with slip seat Armchair with slip seat" [ref=e99] [cursor=pointer]:
+                  - /url: /object/3d/armchair-slip-seat:2632d078-a354-412c-825e-e70d2f546793
+                  - img "3d model of Armchair with slip seat" [ref=e101]
+                  - generic [ref=e102]: Armchair with slip seat
+              - listitem [ref=e104]:
+                - link "3d model of Side Chair Side Chair" [ref=e105] [cursor=pointer]:
+                  - /url: /object/3d/side-chair:57d30b85-3549-40dc-99c3-255249867462
+                  - img "3d model of Side Chair" [ref=e107]
+                  - generic [ref=e108]: Side Chair
+            - generic [ref=e110]:
+              - generic [ref=e111]:
+                - paragraph [ref=e112]: "Clear facet(s):"
+                - list [ref=e113]:
+                  - listitem [ref=e114]:
+                    - 'link "Clear Search term: ancient rome" [ref=e115] [cursor=pointer]':
+                      - /url: https://3d.si.edu/explore?
+                      - generic [ref=e116]: Clear
+                      - text: "Search term: ancient rome"
+              - list [ref=e119]:
+                - listitem [ref=e120]:
+                  - button "Museum" [ref=e121] [cursor=pointer]
+                - listitem [ref=e123]:
+                  - button "Topic" [ref=e124] [cursor=pointer]
+                - listitem [ref=e126]:
+                  - button "Location" [ref=e127] [cursor=pointer]
+                - listitem [ref=e129]:
+                  - button "Media Usage" [ref=e130] [cursor=pointer]
+                - listitem [ref=e132]:
+                  - button "AR Enabled" [ref=e133] [cursor=pointer]
+      - contentinfo [ref=e135]:
+        - generic [ref=e137]:
+          - generic [ref=e138]:
+            - navigation [ref=e139]:
+              - heading "Social Media" [level=2] [ref=e140]
+              - list [ref=e141]:
+                - listitem [ref=e142]:
+                  - link " Facebook (link is external)" [ref=e143] [cursor=pointer]:
+                    - /url: https://www.facebook.com/3d.si.edu/
+                    - text: 
+                    - generic [ref=e144]: Facebook
+                    - img "(link is external)" [ref=e145]
+                - listitem [ref=e148]:
+                  - link " Instagram (link is external)" [ref=e149] [cursor=pointer]:
+                    - /url: https://www.instagram.com/smithsonian3d/?hl=en
+                    - text: 
+                    - generic [ref=e150]: Instagram
+                    - img "(link is external)" [ref=e151]
+                - listitem [ref=e154]:
+                  - link " Twitter (link is external)" [ref=e155] [cursor=pointer]:
+                    - /url: https://twitter.com/Smithsonian3D
+                    - text: 
+                    - generic [ref=e156]: Twitter
+                    - img "(link is external)" [ref=e157]
+                - listitem [ref=e160]:
+                  - link " YouTube (link is external)" [ref=e161] [cursor=pointer]:
+                    - /url: https://www.youtube.com/@SmithsonianDigital
+                    - text: 
+                    - generic [ref=e162]: YouTube
+                    - img "(link is external)" [ref=e163]
+                - listitem [ref=e166]:
+                  - link "Voyager GitHub (link is external)" [ref=e167] [cursor=pointer]:
+                    - /url: https://smithsonian.github.io/dpo-voyager/
+                    - generic [ref=e168]: Voyager GitHub
+                    - img "(link is external)" [ref=e169]
+                - listitem [ref=e172]:
+                  - link "Cook GitHub (link is external)" [ref=e173] [cursor=pointer]:
+                    - /url: https://smithsonian.github.io/dpo-cook/
+                    - generic [ref=e174]: Cook GitHub
+                    - img "(link is external)" [ref=e175]
+            - link "Smithsonian main website" [ref=e180] [cursor=pointer]:
+              - /url: https://si.edu
+          - navigation [ref=e184]:
+            - heading "Footer" [level=2] [ref=e185]
+            - list [ref=e186]:
+              - listitem [ref=e187]:
+                - link "Digitization Program Office" [ref=e188] [cursor=pointer]:
+                  - /url: https://dpo.si.edu/
+              - listitem [ref=e189]:
+                - link "Privacy" [ref=e190] [cursor=pointer]:
+                  - /url: https://www.si.edu/privacy
+              - listitem [ref=e191]:
+                - link "Terms of Use" [ref=e192] [cursor=pointer]:
+                  - /url: https://www.si.edu/Termsofuse
+    - link "Back to Top" [ref=e193] [cursor=pointer]:
+      - /url: "#main-content"

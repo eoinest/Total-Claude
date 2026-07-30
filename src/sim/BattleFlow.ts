@@ -21,9 +21,15 @@ const COLLAPSE_STRENGTH = 0.22;
 /** Seconds a faction must stay collapsed before the result is called, so a momentary
  *  wobble mid-melee does not end the battle prematurely. */
 const CONFIRM_SECONDS = 6;
-/** Hard stop, in simulated seconds. Historical field battles of this scale were decided
- *  in well under an hour; 20 minutes of sim is generous and stops a stalemate hanging. */
-const TIMEOUT_SECONDS = 1200;
+/**
+ * Hard stop, in simulated seconds.
+ *
+ * Raised from 1200 once break depth was fixed. Units now fight to 33-52% casualties
+ * instead of 12-28%, and an evenly-matched AI-vs-AI battle was still genuinely contested
+ * at t+500 - so a 20-minute ceiling would have started deciding battles by timeout rather
+ * than by anyone breaking, which is the one outcome this system exists to avoid.
+ */
+const TIMEOUT_SECONDS = 2400;
 
 interface Side {
   faction: Faction;

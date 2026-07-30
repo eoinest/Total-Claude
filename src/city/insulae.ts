@@ -61,6 +61,8 @@ interface Plot {
   hd: number;
   /** Which side faces the widest street; tabernae and balconies go there. */
   frontSide: 1 | -1;
+  /** 1 in the heart of the district, falling to 0 at its frayed edge. */
+  edge: number;
 }
 
 /** Recursive binary subdivision with jittered cuts and a gap for the street. */
@@ -88,6 +90,34 @@ function subdivide(r: Rect, rng: Rng, maxSize: number, gap: number, out: Rect[],
   }
 }
 
+/**
+ * How built-up a district is at a point in its own frame, 1 in the middle and 0 outside.
+ *
+ * A district authored as a rectangle of insulae ends at a straight line, and against the
+ * terrain's ploughed fields that line is the single most artificial thing a procedural
+ * city does — the QA pass called it out as "the city stops at a rectangular seam". Real
+ * fabric fades: the last blocks get shorter, the plots get bigger, walled gardens and
+ * orchards take over, and the boundary wanders. So the district's extent is a *lobed*
+ * superellipse rather than a box, and density, storey count and ground surface all ramp
+ * down through the last fifth of it.
+ */
+function districtMask(d: DistrictSpec, u: number, v: number): number {
+  const tu = Math.abs(u) / d.hw;
+  const tv = Math.abs(v) / d.hd;
+  // Superellipse: rounded corners, so no district has a right-angle boundary.
+  const t = Math.pow(Math.pow(tu, 4) + Math.pow(tv, 4), 0.25);
+  const seed = Rng.hashString(d.id);
+  const ph1 = hash2(seed & 0xff, 1, 0x3a) * Math.PI * 2;
+  const ph2 = hash2(seed & 0xff, 2, 0x3b) * Math.PI * 2;
+  const ang = Math.atan2(v * d.hw, u * d.hd);
+  // Two incommensurate lobes push the boundary in and out along its length.
+  const lobe = d.fray * (0.17 * Math.sin(ang * 3 + ph1) + 0.1 * Math.sin(ang * 7 + ph2));
+  const outer = 1 + d.fray * 0.34 + lobe;
+  const inner = outer - (0.2 + d.fray * 0.42);
+  const s = clamp((outer - t) / Math.max(0.05, outer - inner), 0, 1);
+  return s * s * (3 - 2 * s);
+}
+
 export function buildDistricts(
   heightAt: Ground,
   keepOut: KeepOut,
@@ -108,8 +138,11 @@ export function buildDistricts(
     const sn = Math.sin(d.rot);
     const blocks: Rect[] = [];
     // Blocks of 40–75 m separated by streets 7 m wide, then each block cut into
-    // building plots separated by 2 m alleys.
-    subdivide({ u: 0, v: 0, hu: d.hw, hv: d.hd }, drng, lerp(78, 46, d.density), 7.5, blocks);
+    // building plots separated by 2 m alleys. The subdivided area overshoots the
+    // district by the fray margin, so the outer blocks exist to be thinned rather than
+    // the boundary being a hard cut.
+    const grow = 1 + d.fray * 0.34;
+    subdivide({ u: 0, v: 0, hu: d.hw * grow, hv: d.hd * grow }, drng, lerp(78, 46, d.density), 7.5, blocks);
 
     for (const blk of blocks) {
       const plotsIn: Rect[] = [];
@@ -122,7 +155,9 @@ export function buildDistricts(
         if (keepOut.blocked(wx, wz, r * 0.82)) continue;
         if (wz < wallZAt(wx) + 12) continue;
         if (Math.min(p.hu, p.hv) < 3.2) continue;
-        if (drng.next() > 0.62 + d.density * 0.38) continue;
+        const mask = districtMask(d, p.u, p.v);
+        if (mask <= 0.02) continue;
+        if (drng.next() > (0.62 + d.density * 0.38) * (0.35 + 0.65 * mask)) continue;
         const plot: Plot = {
           x: wx,
           z: wz,
@@ -130,6 +165,7 @@ export function buildDistricts(
           hw: Math.max(2.6, p.hu - drng.range(0.05, 0.32)),
           hd: Math.max(2.6, p.hv - drng.range(0.05, 0.32)),
           frontSide: drng.bool() ? 1 : -1,
+          edge: mask,
         };
         plots.push(plot);
         footprints.push({ x: wx, z: wz, hw: plot.hw, hd: plot.hd, rot: plot.rot });
@@ -139,13 +175,20 @@ export function buildDistricts(
 
     // Courtyard trees and street planting: cypress in gardens, umbrella pine in
     // squares. Density falls with how packed the district is.
-    const nTrees = Math.round(d.hw * d.hd * 0.0008 * (1.4 - d.density));
+    // Courtyard trees inside, orchards and garden plots on the frayed margin — which is
+    // what actually made the edge of a Roman city, and it hides the transition to fields.
+    const nTrees = Math.round(d.hw * d.hd * 0.0022 * (1.4 - d.density));
     for (let i = 0; i < nTrees; i++) {
-      const u = drng.range(-d.hw, d.hw);
-      const v = drng.range(-d.hd, d.hd);
+      const u = drng.range(-d.hw * grow, d.hw * grow);
+      const v = drng.range(-d.hd * grow, d.hd * grow);
       const wx = d.x + u * cs - v * sn;
       const wz = d.z + u * sn + v * cs;
       if (wz < wallZAt(wx) + 14) continue;
+      const mask = districtMask(d, u, v);
+      if (mask < 0.02) continue;
+      // Sparse in the packed heart, thick round the edges.
+      if (drng.next() > 1.15 - mask) continue;
+      if (keepOut.blocked(wx, wz, 5)) continue;
       trees.push({ x: wx, z: wz, kind: drng.pick(['cypress', 'pine', 'umbrella'] as const), scale: drng.range(0.75, 1.25) });
     }
   }
@@ -232,6 +275,10 @@ function buildDistrictGround(batch: Batch, detail: number, d: DistrictSpec, heig
   const nrm = new THREE.Vector3(0, 1, 0);
   const c = new THREE.Color();
 
+  const grow = 1 + d.fray * 0.34;
+  const HW = d.hw * grow;
+  const HD = d.hd * grow;
+
   const at = (u: number, v: number, out: THREE.Vector3): boolean => {
     const wx = d.x + u * cs - v * sn;
     const wz = d.z + u * sn + v * cs;
@@ -241,10 +288,14 @@ function buildDistrictGround(batch: Batch, detail: number, d: DistrictSpec, heig
 
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {
-      const u0 = lerp(-d.hw, d.hw, i / n);
-      const u1 = lerp(-d.hw, d.hw, (i + 1) / n);
-      const v0 = lerp(-d.hd, d.hd, j / n);
-      const v1 = lerp(-d.hd, d.hd, (j + 1) / n);
+      const u0 = lerp(-HW, HW, i / n);
+      const u1 = lerp(-HW, HW, (i + 1) / n);
+      const v0 = lerp(-HD, HD, j / n);
+      const v1 = lerp(-HD, HD, (j + 1) / n);
+      // The paving follows the same lobed boundary as the buildings, so the yards and
+      // streets stop where the fabric does rather than at a rectangle.
+      const mask = districtMask(d, (u0 + u1) * 0.5, (v0 + v1) * 0.5);
+      if (mask < 0.34 + hash2(i, j, 0x9e1) * 0.3) continue;
       const ok = at(u0, v0, p0) && at(u1, v0, p1) && at(u1, v1, p2) && at(u0, v1, p3);
       if (!ok) continue;
       const seed = Rng.hashString(d.id) & 0xffff;
@@ -259,7 +310,8 @@ function buildDistrictGround(batch: Batch, detail: number, d: DistrictSpec, heig
       // hundred metres of district floor resolved to one flat plate, which from a strategic
       // camera was the largest featureless area in the frame.
       const base = h < 0.34 ? PAL.basalt : h < 0.72 ? PAL.dust : PAL.terraDirty;
-      c.copy(base).multiplyScalar(0.68 + t * 0.44);
+      // Toward the edge the surface is beaten earth rather than paving.
+      c.copy(base).lerp(PAL.terraDirty, (1 - mask) * 0.7).multiplyScalar(0.68 + t * 0.44);
       st.quadN(nrm, p0, p1, p2, p3, c);
     }
   }
@@ -306,10 +358,12 @@ function buildBuilding(batch: Batch, detail: number, plot: Plot, d: DistrictSpec
   const w = plot.hw * 2;
   const dep = plot.hd * 2;
   const area = w * dep;
-  const grand = rng.next() < d.grandeur && area > 240;
-  const floors = grand
-    ? Math.max(1, d.minFloors - 1)
-    : clamp(rng.int(d.minFloors - 1, d.maxFloors) + (rng.next() < 0.14 ? 1 : 0), 1, 6);
+  // Grand houses cluster on the outskirts, where the land was cheap enough for a garden.
+  const grand = rng.next() < d.grandeur + (1 - plot.edge) * 0.3 && area > 240;
+  const tall = clamp(rng.int(d.minFloors - 1, d.maxFloors) + (rng.next() < 0.14 ? 1 : 0), 1, 6);
+  // The last blocks are one and two storeys: nobody built a six-storey tenement facing
+  // open fields, and the height ramp is what makes the city's edge read as a fade.
+  const floors = grand ? Math.max(1, d.minFloors - 1) : Math.max(1, Math.round(tall * (0.44 + 0.56 * plot.edge)));
 
   if (detail === 0) {
     // Far silhouette: one prism and one roof plane. Everything the eye keeps at a

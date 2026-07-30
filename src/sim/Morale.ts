@@ -21,12 +21,24 @@ import { modsOf, signalsOf } from './combatShared';
  *   can see them, enemies routing where you can see them, a general's presence,
  *   the ground you are standing on, and whatever the formation and abilities add.
  *
- * `discipline` divides all of it: a praetorian at 1.7 takes barely half the morale
- * damage a warband at 0.82 does from the same event.
+ * `discipline` divides all of it: a praetorian at 1.42 takes about a third less morale
+ * damage than a warband at 0.98 from the same event.
  *
  * Bands: steady → wavering → broken. Broken units rout. A routed unit that gets
  * clear, is not pursued and recovers its nerve re-forms and can fight again. And
  * routs are contagious, which is what turns one broken cohort into a lost battle.
+ *
+ * Two structural rules keep the contagion a cascade rather than an avalanche, and they
+ * matter more than any individual coefficient:
+ *
+ *   - the army-level term is computed from **casualties**, which cannot run away, rather
+ *     than from how many units are still standing in order, which feeds back on itself;
+ *   - the net fall is **rate-limited** (`MAX_FALL_RATE`), so no pile-up of simultaneous
+ *     horrors can empty a full-strength unit's nerve in a second.
+ *
+ * Without them, a measured battle had three full-strength Juthungi spear blocks break at
+ * 97% strength with an attrition term of 0.01, and 1,517 men routing inside twelve
+ * seconds of first contact.
  */
 
 // ---------------------------------------------------------------------------
@@ -35,8 +47,21 @@ import { modsOf, signalsOf } from './combatShared';
 
 /** Fraction of max morale below which a unit visibly wavers. */
 const WAVER_FRAC = 0.5;
-/** Fraction of max morale below which it breaks. */
-const BREAK_FRAC = 0.18;
+/**
+ * Fraction of max morale below which it breaks.
+ *
+ * Together with the attrition curve below, this is what sets **how deep a unit fights
+ * before it runs**, and that — not the damage curve — is what actually decides how long a
+ * battle lasts. Reconstructing Divide et Impera's much-advertised damage, armour and
+ * health cuts shows they very nearly cancel: hits-to-kill moves from 6.00 to 6.15. Its
+ * 20-40 minute battles come from routing at 50-60% casualties where vanilla routs at
+ * 15-20%. Creative Assembly reached the same conclusion the hard way — Patch 3 raised
+ * health and cut damage, Patch 9 cut all three hit-chance constants, and neither worked;
+ * only at Patch 15, when they finally edited the morale table, did the notes read "the
+ * pace of battles and combat has been reduced, and morale values adjusted so battles last
+ * longer and are more dynamic".
+ */
+const BREAK_FRAC = 0.12;
 /** Fraction it must climb back to before a routed unit will re-form. */
 const RALLY_FRAC = 0.34;
 /** Metres a routed unit must put between itself and the enemy before it can rally. */
@@ -45,10 +70,47 @@ const RALLY_CLEAR = 95;
 const RALLY_DELAY = 12;
 /** How far a rout is visible and infectious, in metres. */
 const CONTAGION_RANGE = 145;
-/** Morale points a friendly unit breaking within arm's reach costs you, once. */
-const CONTAGION_SHOCK = 11;
+/**
+ * Morale points a friendly unit breaking within arm's reach costs you, once.
+ *
+ * Was 11, which was most of the way to breaking a warband (62 morale, routs at 11) from
+ * three neighbours going. Combined with the army term below it cascaded 1,500 men in
+ * about twelve seconds. A cascade is right; a cascade inside one tick is not.
+ */
+const CONTAGION_SHOCK = 4;
 /** Minimum change before another `unitMoraleChanged` is published. */
 const EMIT_THRESHOLD = 3;
+
+/**
+ * Hard ceiling on how fast morale may fall, in points per second.
+ *
+ * The single most important number in this file. Every individual term can be argued
+ * about; what actually broke the battle was that they *summed* to twenty-odd points a
+ * second, so a full-strength unit went from steady to broken in three seconds and took
+ * its neighbours with it. Ancient battles are decided by morale over minutes: Rome II's
+ * own melees run one to three minutes before a line gives. At 5 points a second even the
+ * worst imaginable situation — half the unit dead, surrounded, cavalry in the rear,
+ * general down — takes ten seconds to break a 60-morale unit, and an ordinary losing
+ * fight takes one to three minutes. Rises are not capped: recovering nerve should feel
+ * immediate when a unit is pulled out.
+ */
+const MAX_FALL_RATE = 5;
+
+/**
+ * Time constant, in seconds, of the low-pass on morale pressure.
+ *
+ * Total War does not apply a morale modifier the instant it appears: `_kv_morale` carries
+ * `percent_update_per_tick = 0.15`, so the value chases its target and a step change
+ * takes several seconds to land in full. That single mechanism is why a Rome II army
+ * coming apart *looks* like a cascade — units start to waver visibly before they go —
+ * rather than like a switch being thrown. Four seconds reproduces the same feel at our
+ * tick rate, and it composes with the hard fall-rate cap above: the cap bounds the worst
+ * case, the smoothing shapes the approach to it.
+ *
+ * One-shot shocks (a neighbour breaking, a war cry) deliberately bypass this and hit
+ * `morale` directly. A shock is supposed to feel like a shock.
+ */
+const PRESSURE_TAU = 4.0;
 
 /**
  * Every break leaves a mark. A unit that has already run once holds far less well the
@@ -60,40 +122,89 @@ const MAX_RALLIES = 1;
 /** Morale points permanently lost per break. */
 const SHAKEN_PENALTY = 9;
 
-// Pressure coefficients, in morale points per second before discipline. Tuned so a
-// losing unit of average discipline breaks after roughly a minute of melee having
-// lost a quarter to a third of its men — Rome II's pacing, not a fight to the death.
-const P_ATTRITION = 10;
-const P_ATTRITION_EXP = 1.9;
+// Pressure coefficients, in morale points per second before discipline.
+//
+// The attrition curve is cubic and deliberately almost flat at the bottom: 0.18 pts/s at
+// 20% losses, 0.59 at 30%, 1.41 at 40%, 2.75 at 50%, 4.75 at 60%. Below about a third of
+// the unit it does not even overcome the in-contact recovery, so pure attrition cannot
+// break a formation early; past half it folds in seconds. Creative Assembly flattened the
+// same curve deliberately — Patch 2: "the low level casualty morale penalties have been
+// significantly reduced in battles" — and it is what makes a unit fight to 40-55% instead
+// of running at 15-20%.
+//
+// The consequence is that *tactics* break units and grinding does not: a flanked or
+// surrounded unit is under 8-17 pts/s and folds inside a minute, while the same unit
+// fought frontally holds for three. That asymmetry is the whole game.
+const P_ATTRITION = 22;
+const P_ATTRITION_EXP = 3.0;
 const P_CASUALTY = 0.22;
-const P_FLANKED = 6;
-const P_SURROUNDED = 7;
+/**
+ * Being taken in the flank and being surrounded, in points per second at full exposure.
+ *
+ * Deliberately the harshest situational terms in the file, because refusing a flank is the
+ * decision the player is here to make. Rome II applies *three* simultaneous penalties to a
+ * flanked unit and rates a rear attack at -30 morale on a base of 40-60; ours is a rate, so
+ * a unit taking most of its blows from the side loses its nerve in well under a minute
+ * while the same unit fought frontally holds for two or three.
+ */
+const P_FLANKED = 8;
+const P_SURROUNDED = 9;
+/**
+ * Share of blows that must be arriving off the front before any of it counts.
+ *
+ * Not cosmetic. In a real press a quarter to a third of blows always land at an angle:
+ * the two front ranks interleave along the seam, men turn to meet whoever is nearest, and
+ * `aspectOf` — which deliberately measures against the *unit's* facing so a cohort being
+ * rolled up cannot hide behind its individuals turning round — reports those as flank
+ * hits. Without a deadband that noise was worth over two morale points a second in a
+ * head-on fight, and it is what actually made units break at ten to twenty per cent
+ * casualties with an attrition term of almost nothing: a warband fighting an urban cohort
+ * frontally broke at 12% losses. Being *flanked* means most of the blows are off the
+ * front, not a few of them.
+ */
+const FLANK_DEADBAND = 0.28;
 /**
  * How much the local exchange matters. This term is signed, so a unit that is killing
  * faster than it is dying gains nerve. Without a strong enough coupling here every
  * unit in a long melee eventually breaks regardless of whether it is winning, which
  * inverts the whole battle: the better army breaks first because it fights longest.
  */
-const P_EXCHANGE = 2.4;
+const P_EXCHANGE = 3.0;
 /** Softening constant in the exchange ratio; small so modest edges still register. */
 const P_EXCHANGE_FLOOR = 0.6;
 const P_CAVALRY = 4.5;
 const P_FATIGUE = 0.45;
 const P_MISSILE = 0.14;
-const P_MISSILE_CAP = 3.5;
+const P_MISSILE_CAP = 3.0;
 /**
  * Army morale. Men know whether their side is winning, not just whether their own
  * cohort is, and an army that has been beaten across the field comes apart even in the
  * places that are still holding. Without this term a battle never finishes: the last
  * intact units of a broken army stand about indefinitely because nothing local is
  * happening to them.
+ *
+ * It is measured from **casualties**, not from how many units are currently standing in
+ * order, and that distinction is the whole fix. The old version divided living men in
+ * unbroken units by the deployed strength, so the instant one unit routed the entire
+ * army's denominator-to-numerator ratio jumped and *every* unit's pressure rose — which
+ * made the next rout more likely, which raised it again. Measured 8.5 points per second
+ * of pure army-mood pressure on Juthungi units that had lost three per cent of their men
+ * and were not in contact with anything: three full-strength spear blocks broke at 97%
+ * strength with an attrition term of 0.01. Casualties cannot run away like that.
  */
-const P_ARMY = 8;
+const P_ARMY = 3.0;
 /** A winning army's steadiness bonus is worth less than a losing one's dread. */
 const P_ARMY_WINNING = 0.4;
-const P_WITNESS_FRIEND = 2.8;
-const P_WITNESS_ENEMY = 3.0;
-const P_WITNESS_CAP = 5;
+/**
+ * Separate, and capped: the dread of watching your own army come apart. Scales with the
+ * share of the army that has broken, so it moves in steps as units go rather than
+ * compounding, and it can never exceed the cap however bad things get.
+ */
+const P_ARMY_BROKEN = 4.0;
+const P_ARMY_BROKEN_CAP = 2.2;
+const P_WITNESS_FRIEND = 1.5;
+const P_WITNESS_ENEMY = 2.2;
+const P_WITNESS_CAP = 3.0;
 const P_PURSUED = 2.2;
 
 /**
@@ -102,7 +213,7 @@ const P_PURSUED = 2.2;
  * asymmetry is what makes morale a resource a commander manages by pulling units out,
  * rather than a spring that always pushes back toward the baseline.
  */
-const R_ENGAGED = 0.5;
+const R_ENGAGED = 0.9;
 const R_CLEAR = 2.4;
 const R_CLEAR_SPRING = 0.06;
 const R_RALLYING = 3.4;
@@ -148,6 +259,8 @@ export class MoraleSystem implements Subsystem {
   private band = new Uint8Array(0);
   /** One-shot contagion shock queued for next tick, per unit id. */
   private shock = new Float32Array(0);
+  /** Low-passed total pressure per unit; see `PRESSURE_TAU`. */
+  private smoothed = new Float32Array(0);
   /** How many times each unit has broken. Each time costs it permanent nerve. */
   private routCount = new Uint8Array(0);
   /**
@@ -161,8 +274,10 @@ export class MoraleSystem implements Subsystem {
   private collapseTimer = 0;
   /** Men each faction deployed with, for the collapse test. */
   private deployed: [number, number] = [0, 0];
-  /** Share of its deployed strength each faction still has standing and willing. */
+  /** Share of its deployed strength each faction still has alive, routing or not. */
   private power: [number, number] = [1, 1];
+  /** Share of each faction's surviving units that are currently broken. */
+  private brokenShare: [number, number] = [0, 0];
 
   lastCostMs = 0;
 
@@ -191,6 +306,9 @@ export class MoraleSystem implements Subsystem {
     const t = new Float32Array(size * TERM_COUNT);
     t.set(this.terms);
     this.terms = t;
+    const sm = new Float32Array(size);
+    sm.set(this.smoothed);
+    this.smoothed = sm;
   }
 
   fixedUpdate(dt: number, ctx: EngineContext): void {
@@ -203,21 +321,36 @@ export class MoraleSystem implements Subsystem {
 
     if (this.deployed[0] === 0 && this.deployed[1] === 0) {
       for (let k = 0; k < units.length; k++) {
+        // Units already gone were never part of *this* order of battle. Only matters
+        // after `redeploy`, but getting it wrong there makes every army-level morale
+        // reading meaningless.
+        if (units[k].destroyed) continue;
         this.deployed[units[k].faction === Faction.Rome ? 0 : 1] += units[k].initialStrength;
       }
     }
 
-    // Army-level standing first, since every unit's morale reads it.
+    // Army-level state first, since every unit's morale reads it. Two separate
+    // measurements, because they behave completely differently: men still alive (slow,
+    // monotonic, cannot be undone by a rally) and units currently broken (steps up and
+    // down, and is capped where it is read).
     let rome = 0;
     let germ = 0;
+    const brokenN: [number, number] = [0, 0];
+    const totalN: [number, number] = [0, 0];
     for (let k = 0; k < units.length; k++) {
       const u = units[k];
-      if (u.destroyed || u.alive === 0 || u.order === UnitOrder.Rout) continue;
+      if (u.destroyed) continue;
+      const f = u.faction === Faction.Rome ? 0 : 1;
+      totalN[f]++;
+      if (u.order === UnitOrder.Rout) brokenN[f]++;
+      if (u.alive === 0) continue;
       if (u.faction === Faction.Rome) rome += u.alive;
       else germ += u.alive;
     }
     this.power[0] = rome / Math.max(1, this.deployed[0]);
     this.power[1] = germ / Math.max(1, this.deployed[1]);
+    this.brokenShare[0] = brokenN[0] / Math.max(1, totalN[0]);
+    this.brokenShare[1] = brokenN[1] / Math.max(1, totalN[1]);
 
     for (let k = 0; k < units.length; k++) {
       const u = units[k];
@@ -259,7 +392,8 @@ export class MoraleSystem implements Subsystem {
     // Being outflanked and being surrounded are separate horrors.
     const surrounded = this.isSurrounded(s);
     s.surrounded = surrounded;
-    const tFlank = s.flankedFraction * P_FLANKED + (surrounded ? P_SURROUNDED : 0);
+    const flanked = Math.max(0, s.flankedFraction - FLANK_DEADBAND) / (1 - FLANK_DEADBAND);
+    const tFlank = flanked * P_FLANKED + (surrounded ? P_SURROUNDED : 0);
 
     // Who is winning the exchange in front of you.
     const exch = (s.killPulse - s.casualtyPulse)
@@ -287,15 +421,22 @@ export class MoraleSystem implements Subsystem {
     // Being chased is its own pressure; a rout that is not pursued calms down.
     if (routing && s.nearestEnemy < 60) tGround += P_PURSUED;
 
-    // How the battle as a whole is going. Positive when the other side has more of
-    // its army still in hand than you do.
-    const own = u.faction === Faction.Rome ? this.power[0] : this.power[1];
-    const foe = u.faction === Faction.Rome ? this.power[1] : this.power[0];
+    // How the battle as a whole is going. Positive when we have been bled harder than
+    // they have, plus a capped step term for how much of our own army has already run.
+    const side = u.faction === Faction.Rome ? 0 : 1;
+    const own = this.power[side];
+    const foe = this.power[1 - side];
     const gap = clamp(foe - own, -0.6, 1);
-    const tArmy = gap * P_ARMY * (gap > 0 ? 1 : P_ARMY_WINNING);
+    const tArmy = gap * P_ARMY * (gap > 0 ? 1 : P_ARMY_WINNING)
+      + Math.min(P_ARMY_BROKEN_CAP, this.brokenShare[side] * P_ARMY_BROKEN);
 
-    let p = tAttrition + tCasualty + tFlank + tExchange + tCavalry
+    const raw = tAttrition + tCasualty + tFlank + tExchange + tCavalry
       + tFatigue + tMissile + tWitness + tGround + tArmy;
+    // Chase the instantaneous pressure rather than applying it, so a step change in the
+    // situation ramps in over a few seconds. See `PRESSURE_TAU`.
+    const k = 1 - Math.exp(-dt / PRESSURE_TAU);
+    this.smoothed[u.id] += (raw - this.smoothed[u.id]) * k;
+    let p = this.smoothed[u.id];
 
     const resist = Math.max(0.3, def.discipline * mods.moraleResist);
 
@@ -328,7 +469,10 @@ export class MoraleSystem implements Subsystem {
     this.terms[to + 9] = tArmy / resist;
     this.terms[to + 10] = recovery;
 
-    u.morale = clamp(u.morale + (recovery - p / resist) * dt, 0, baseline * 1.05);
+    // The rate limiter. Applied to the net, after discipline, so no combination of
+    // simultaneous horrors can empty a unit's nerve inside a second or two.
+    const net = Math.max(-MAX_FALL_RATE, recovery - p / resist);
+    u.morale = clamp(u.morale + net * dt, 0, baseline * 1.05);
 
     if (mods.unbreakable) {
       // Fanatics who stripped to the waist to prove they did not expect to return
@@ -416,7 +560,8 @@ export class MoraleSystem implements Subsystem {
    * behind while the front is still fighting is not ambiguous.
    */
   private isSurrounded(s: { flankedFraction: number; rearFraction: number }): boolean {
-    return s.flankedFraction > 0.45 && s.rearFraction > 0.12;
+    // Both thresholds sit above the seam noise a head-on melee generates on its own.
+    return s.flankedFraction > 0.58 && s.rearFraction > 0.2;
   }
 
   /** A unit has broken: everyone nearby who can see it takes an immediate knock. */
@@ -547,5 +692,26 @@ export class MoraleSystem implements Subsystem {
   /** True once one side has been decided. */
   get decided(): boolean {
     return this.battleOver;
+  }
+
+  /**
+   * Forget the current order of battle. Called when a scenario is torn down and a new
+   * one deployed into the same running engine — the balance harness does exactly that,
+   * and without it every unit reads army-level morale off the *previous* battle's
+   * headcount and breaks for no visible reason.
+   */
+  redeploy(): void {
+    this.deployed[0] = 0;
+    this.deployed[1] = 0;
+    this.power[0] = 1;
+    this.power[1] = 1;
+    this.battleOver = false;
+    this.collapseTimer = 0;
+    this.emitted.fill(0);
+    this.band.fill(0);
+    this.shock.fill(0);
+    this.routCount.fill(0);
+    this.terms.fill(0);
+    this.smoothed.fill(0);
   }
 }

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { hash2 } from '../util/rand';
 import type { CityMatKey, CityMaterials } from './materials';
 
 /**
@@ -1143,6 +1144,297 @@ export function crenellation(
         dark,
         dark
       );
+    }
+  }
+}
+
+export interface CaveaOpts {
+  /** Stepped divisions across the bank. Few and deep, not one per seat row — see below. */
+  rows: number;
+  /** Angular divisions of the whole sweep. */
+  seg: number;
+  /** Row boundaries carrying a *praecinctio*: a level walkway behind a parapet wall. */
+  breaks?: readonly number[];
+  /** Parapet height of a praecinctio, metres. */
+  balteus?: number;
+  /** Number of radial stairways (*scalaria*) dividing the bank into wedges. */
+  scalaria?: number;
+  tread: THREE.Color;
+  riser: THREE.Color;
+  /** Deterministic salt for the per-row tone jitter. */
+  salt?: number;
+}
+
+/**
+ * Elliptical stepped seating between an inner and an outer ellipse.
+ *
+ * Two things this fixes over a naive annulus. First, the *ratio* of the semi-axes is
+ * not constant across a cavea: the Colosseum's arena is 83 × 48 m (a/b = 1.73) inside a
+ * building that is 189 × 156 m (a/b = 1.21), so a bank drawn as `sin θ · b/a` at every
+ * radius leaves a crescent of open ground between the arena wall and the first row —
+ * which is exactly how you ended up seeing grass and a tree through the middle of the
+ * amphitheatre. Interpolating both semi-axes per row makes the inner edge land on the
+ * arena ellipse by construction.
+ *
+ * Second, *step depth*. A real cavea is 30-odd 0.7 m seat rows, and drawing them
+ * literally puts a 1-pixel light/dark pair every screen pixel at any strategic camera
+ * distance: pure moiré, and it shimmers as the camera moves. Roman seating was actually
+ * built as a few deep concrete steps carrying wooden or marble benches, and grouped into
+ * *maeniana* separated by walkways. Emitting the maenianum steps — 2.5–4 m treads with a
+ * praecinctio wall between blocks — is both cheaper and closer to the archaeology, and it
+ * gives the eye the strong horizontal bands the real building has.
+ */
+export function ellipseCavea(
+  st: GeoStream,
+  aIn: number,
+  bIn: number,
+  aOut: number,
+  bOut: number,
+  y0: number,
+  yTop: number,
+  from: number,
+  to: number,
+  o: CaveaOpts
+): void {
+  const rows = Math.max(1, o.rows);
+  const seg = Math.max(3, o.seg);
+  const breaks = o.breaks ?? [];
+  const balteus = o.balteus ?? 1.5;
+  const rise = (yTop - y0) / rows;
+  const shade = C_TMP.copy(o.riser).clone();
+  const salt = o.salt ?? 0;
+  const cTread = new THREE.Color();
+  const scal = o.scalaria ?? 0;
+  const pale = new THREE.Color().copy(o.tread).multiplyScalar(1.16);
+
+  const ax = (t: number): number => aIn + (aOut - aIn) * t;
+  const bx = (t: number): number => bIn + (bOut - bIn) * t;
+
+  let y = y0;
+  for (let r = 0; r < rows; r++) {
+    const t0 = r / rows;
+    const t1 = (r + 1) / rows;
+    const a0 = ax(t0);
+    const b0 = bx(t0);
+    const a1 = ax(t1);
+    const b1 = bx(t1);
+    // Per-row tone drift. Without it the bank is a run of identical rings, and identical
+    // rings at sub-pixel spacing are what the eye reads as moiré even when the geometry
+    // is coarse.
+    const tone = 0.9 + hash2(r, 0, 811 + salt) * 0.2;
+    cTread.copy(o.tread).multiplyScalar(tone);
+    for (let i = 0; i < seg; i++) {
+      const u0 = from + ((to - from) * i) / seg;
+      const u1 = from + ((to - from) * (i + 1)) / seg;
+      const um = (u0 + u1) * 0.5;
+      const c0 = Math.cos(u0);
+      const s0 = Math.sin(u0);
+      const c1 = Math.cos(u1);
+      const s1 = Math.sin(u1);
+      // Tread.
+      q[0].set(c0 * a0, y, s0 * b0);
+      q[1].set(c1 * a0, y, s1 * b0);
+      q[2].set(c1 * a1, y, s1 * b1);
+      q[3].set(c0 * a1, y, s0 * b1);
+      st.quadN(N_UP, q[0], q[1], q[2], q[3], cTread);
+      // Riser at the outer edge of the tread.
+      q[0].set(c0 * a1, y, s0 * b1);
+      q[1].set(c1 * a1, y, s1 * b1);
+      q[2].set(c1 * a1, y + rise, s1 * b1);
+      q[3].set(c0 * a1, y + rise, s0 * b1);
+      NH.set(-Math.cos(um) * b1, 0, -Math.sin(um) * a1);
+      st.quadN(NH, q[0], q[1], q[2], q[3], shade);
+    }
+    y += rise;
+    // Praecinctio: the tread above this row is a walkway, and its parapet is the single
+    // most legible line on a cavea from any distance.
+    if (breaks.includes(r + 1) && r + 1 < rows) {
+      for (let i = 0; i < seg; i++) {
+        const u0 = from + ((to - from) * i) / seg;
+        const u1 = from + ((to - from) * (i + 1)) / seg;
+        const um = (u0 + u1) * 0.5;
+        const c0 = Math.cos(u0);
+        const s0 = Math.sin(u0);
+        const c1 = Math.cos(u1);
+        const s1 = Math.sin(u1);
+        const a1b = ax(t1);
+        const b1b = bx(t1);
+        q[0].set(c0 * a1b, y, s0 * b1b);
+        q[1].set(c1 * a1b, y, s1 * b1b);
+        q[2].set(c1 * a1b, y + balteus, s1 * b1b);
+        q[3].set(c0 * a1b, y + balteus, s0 * b1b);
+        NH.set(-Math.cos(um) * b1b, 0, -Math.sin(um) * a1b);
+        st.quadN(NH, q[0], q[1], q[2], q[3], pale);
+        q[0].set(c0 * a1b, y + balteus, s0 * b1b);
+        q[1].set(c1 * a1b, y + balteus, s1 * b1b);
+        q[2].set(c1 * (a1b + 0.5), y + balteus, s1 * (b1b + 0.5));
+        q[3].set(c0 * (a1b + 0.5), y + balteus, s0 * (b1b + 0.5));
+        st.quadN(N_UP, q[0], q[1], q[2], q[3], pale);
+      }
+      y += balteus;
+    }
+  }
+
+  // Scalaria. Drawn as raised radial strips rather than modelled flights: from every
+  // camera that can see a whole cavea they are a pattern of pale radial lines, and that
+  // pattern — not the individual steps — is what identifies the building.
+  if (scal > 0) {
+    const half = ((to - from) / seg) * 0.28;
+    for (let k = 0; k < scal; k++) {
+      const u = from + ((to - from) * (k + 0.5)) / scal;
+      for (let r = 0; r < rows; r++) {
+        const t0 = r / rows;
+        const t1 = (r + 1) / rows;
+        const yy = y0 + rise * r + 0.22;
+        for (const [ua, ub] of [[u - half, u + half]] as const) {
+          q[0].set(Math.cos(ua) * ax(t0), yy, Math.sin(ua) * bx(t0));
+          q[1].set(Math.cos(ub) * ax(t0), yy, Math.sin(ub) * bx(t0));
+          q[2].set(Math.cos(ub) * ax(t1), yy, Math.sin(ub) * bx(t1));
+          q[3].set(Math.cos(ua) * ax(t1), yy, Math.sin(ua) * bx(t1));
+          st.quadN(N_UP, q[0], q[1], q[2], q[3], pale);
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Straight stepped seating bank running along local X, rising away from the track.
+ *
+ * `zInner` is the signed z of the front row and `side` is +1 for a bank on the +Z side of
+ * the arena, −1 for the −Z side. **`depth` is unsigned**: the direction comes from `side`
+ * alone. An earlier revision took a signed depth *and* multiplied by `side`, so the two
+ * cancelled and the −Z bank of every circus and stadium grew *inward across the arena* —
+ * one bank of the Circus Maximus was laid over its own racetrack, which is a large part of
+ * what "the Circus Maximus is overlapping multiple buildings" looked like from the air.
+ *
+ * Same maenianum treatment as `ellipseCavea`, for the long sides of a circus or stadium.
+ */
+export function straightCavea(
+  st: GeoStream,
+  halfLen: number,
+  zInner: number,
+  depth: number,
+  y0: number,
+  yTop: number,
+  side: 1 | -1,
+  o: CaveaOpts
+): void {
+  const rows = Math.max(1, o.rows);
+  const rise = (yTop - y0) / rows;
+  const rowD = Math.abs(depth) / rows;
+  const breaks = o.breaks ?? [];
+  const balteus = o.balteus ?? 1.5;
+  const salt = o.salt ?? 0;
+  const cTread = new THREE.Color();
+  const pale = new THREE.Color().copy(o.tread).multiplyScalar(1.16);
+  const nOut = side > 0 ? N_NZ : N_PZ;
+  // Longitudinal cells as well as rows: one 560 m quad per step is a single enormous
+  // untextured band, and the vertex-colour drift that keeps a surface alive needs
+  // somewhere to live.
+  const cells = Math.max(2, Math.round(halfLen / 22));
+
+  let y = y0;
+  for (let r = 0; r < rows; r++) {
+    const z0 = zInner + side * rowD * r;
+    const z1 = z0 + side * rowD;
+    for (let i = 0; i < cells; i++) {
+      const x0 = -halfLen + (halfLen * 2 * i) / cells;
+      const x1 = -halfLen + (halfLen * 2 * (i + 1)) / cells;
+      cTread.copy(o.tread).multiplyScalar(0.9 + hash2(r, i, 613 + salt) * 0.2);
+      q[0].set(x0, y, Math.min(z0, z1));
+      q[1].set(x1, y, Math.min(z0, z1));
+      q[2].set(x1, y, Math.max(z0, z1));
+      q[3].set(x0, y, Math.max(z0, z1));
+      st.quadN(N_UP, q[0], q[1], q[2], q[3], cTread);
+      q[0].set(x0, y, z1);
+      q[1].set(x1, y, z1);
+      q[2].set(x1, y + rise, z1);
+      q[3].set(x0, y + rise, z1);
+      st.quadN(nOut, q[0], q[1], q[2], q[3], o.riser);
+    }
+    y += rise;
+    if (breaks.includes(r + 1) && r + 1 < rows) {
+      const zb = zInner + side * rowD * (r + 1);
+      box(st, -halfLen, y, Math.min(zb, zb + side * 0.6), halfLen, y + balteus, Math.max(zb, zb + side * 0.6), pale, {
+        bottom: false,
+      });
+      y += balteus;
+    }
+  }
+}
+
+/**
+ * A large paved area emitted as cells with per-cell tone drift.
+ *
+ * A forum is 100 m across. As one quad it is one flat plate of vertex colour, and from
+ * a strategic camera the biggest featureless region in the frame — which is precisely
+ * the note the QA pass raised about the piazzas. Real paving is slabs of slightly
+ * different stone laid over centuries, patched and rutted, so cutting it into 4-6 m
+ * cells and drifting each one costs a few hundred triangles and buys the surface back.
+ */
+export function pavedField(
+  st: GeoStream,
+  hw: number,
+  hd: number,
+  y: number,
+  cell: number,
+  col: THREE.Color,
+  salt: number,
+  spread = 0.16
+): void {
+  const nx = Math.max(1, Math.round((hw * 2) / cell));
+  const nz = Math.max(1, Math.round((hd * 2) / cell));
+  const c = new THREE.Color();
+  for (let j = 0; j < nz; j++) {
+    for (let i = 0; i < nx; i++) {
+      const x0 = -hw + (hw * 2 * i) / nx;
+      const x1 = -hw + (hw * 2 * (i + 1)) / nx;
+      const z0 = -hd + (hd * 2 * j) / nz;
+      const z1 = -hd + (hd * 2 * (j + 1)) / nz;
+      c.copy(col).multiplyScalar(1 - spread * 0.5 + hash2(i, j, salt) * spread);
+      q[0].set(x0, y, z0);
+      q[1].set(x1, y, z0);
+      q[2].set(x1, y, z1);
+      q[3].set(x0, y, z1);
+      st.quadN(N_UP, q[0], q[1], q[2], q[3], c);
+    }
+  }
+}
+
+/** Elliptical paved / sanded surface, cell-varied like `pavedField`. Arena floors. */
+export function pavedEllipse(
+  st: GeoStream,
+  a: number,
+  b: number,
+  y: number,
+  rings: number,
+  seg: number,
+  col: THREE.Color,
+  salt: number,
+  spread = 0.14
+): void {
+  const c = new THREE.Color();
+  const centre = new THREE.Vector3(0, y, 0);
+  for (let r = 0; r < rings; r++) {
+    const t0 = r / rings;
+    const t1 = (r + 1) / rings;
+    for (let i = 0; i < seg; i++) {
+      const u0 = (Math.PI * 2 * i) / seg;
+      const u1 = (Math.PI * 2 * (i + 1)) / seg;
+      c.copy(col).multiplyScalar(1 - spread * 0.5 + hash2(r, i, salt) * spread);
+      if (r === 0) {
+        q[0].copy(centre);
+        q[1].set(Math.cos(u0) * a * t1, y, Math.sin(u0) * b * t1);
+        q[2].set(Math.cos(u1) * a * t1, y, Math.sin(u1) * b * t1);
+        st.triN(N_UP, q[0], q[1], q[2], c);
+        continue;
+      }
+      q[0].set(Math.cos(u0) * a * t0, y, Math.sin(u0) * b * t0);
+      q[1].set(Math.cos(u1) * a * t0, y, Math.sin(u1) * b * t0);
+      q[2].set(Math.cos(u1) * a * t1, y, Math.sin(u1) * b * t1);
+      q[3].set(Math.cos(u0) * a * t1, y, Math.sin(u0) * b * t1);
+      st.quadN(N_UP, q[0], q[1], q[2], q[3], c);
     }
   }
 }

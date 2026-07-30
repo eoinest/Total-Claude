@@ -1,0 +1,145 @@
+- generic [active] [ref=e1]:
+  - link "Skip to main content" [ref=e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - banner [ref=e5]:
+        - link "Smithsonian main website" [ref=e11] [cursor=pointer]:
+          - /url: https://si.edu
+        - generic [ref=e15]:
+          - link "SI Yellow sunburst with blue background Smithsonian 3d Digitization" [ref=e18] [cursor=pointer]:
+            - /url: /
+            - img "SI Yellow sunburst with blue background" [ref=e20]
+            - generic [ref=e23]:
+              - text: Smithsonian
+              - generic [ref=e24]: 3d Digitization
+          - navigation "Open Main navigation" [ref=e27]:
+            - list [ref=e28]:
+              - listitem [ref=e29]:
+                - link "Explore" [ref=e30] [cursor=pointer]:
+                  - /url: /explore
+              - listitem [ref=e31]:
+                - link "Collections" [ref=e32] [cursor=pointer]:
+                  - /url: /collections
+              - listitem [ref=e33]:
+                - link "About " [ref=e34] [cursor=pointer]:
+                  - /url: /about
+              - listitem [ref=e35]:
+                - link "Labs" [ref=e36] [cursor=pointer]:
+                  - /url: /labs
+              - listitem [ref=e37]:
+                - link "Sponsors" [ref=e38] [cursor=pointer]:
+                  - /url: /sponsors
+              - listitem [ref=e39]:
+                - button "Toggle search form, esc to close" [ref=e40] [cursor=pointer]:
+                  - img "search" [ref=e41]
+      - main [ref=e46]:
+        - generic [ref=e48]:
+          - generic [ref=e49]:
+            - heading "Explore" [level=1] [ref=e50]
+            - generic [ref=e51]:
+              - generic [ref=e52]:
+                - generic [ref=e54]:
+                  - generic [ref=e55]: Search
+                  - searchbox "Search" [ref=e56]: roman architecture
+                - generic [ref=e58]:
+                  - checkbox "Only return Open Access Media (CC0) search results" [ref=e59]
+                  - generic [ref=e60]: Only return Open Access Media (CC0) search results
+              - generic [ref=e61]:
+                - button "Search" [ref=e62] [cursor=pointer]:
+                  - img "search" [ref=e63]
+                - button "Reset" [ref=e66] [cursor=pointer]:
+                  - img "reset form" [ref=e67]
+            - paragraph [ref=e69]:
+              - text: Displaying 2 of 2 results for
+              - emphasis [ref=e70]: roman architecture
+          - link "Skip to facets for narrowing search results" [ref=e71] [cursor=pointer]:
+            - /url: "#edan-search-facets"
+          - generic [ref=e72]:
+            - list [ref=e73]:
+              - listitem [ref=e74]:
+                - link "3d model of Funerary relief bust Funerary relief bust" [ref=e75] [cursor=pointer]:
+                  - /url: /object/3d/funerary-relief-bust:7bc195a7-385f-43be-93c8-79a6bb46ff4b
+                  - img "3d model of Funerary relief bust" [ref=e77]
+                  - generic [ref=e78]: Funerary relief bust
+              - listitem [ref=e80]:
+                - link "3d model of Side Chair Side Chair" [ref=e81] [cursor=pointer]:
+                  - /url: /object/3d/side-chair:57d30b85-3549-40dc-99c3-255249867462
+                  - img "3d model of Side Chair" [ref=e83]
+                  - generic [ref=e84]: Side Chair
+            - generic [ref=e86]:
+              - generic [ref=e87]:
+                - paragraph [ref=e88]: "Clear facet(s):"
+                - list [ref=e89]:
+                  - listitem [ref=e90]:
+                    - 'link "Clear Search term: roman architecture" [ref=e91] [cursor=pointer]':
+                      - /url: https://3d.si.edu/explore?
+                      - generic [ref=e92]: Clear
+                      - text: "Search term: roman architecture"
+              - list [ref=e95]:
+                - listitem [ref=e96]:
+                  - button "Museum" [ref=e97] [cursor=pointer]
+                - listitem [ref=e99]:
+                  - button "Topic" [ref=e100] [cursor=pointer]
+                - listitem [ref=e102]:
+                  - button "Location" [ref=e103] [cursor=pointer]
+                - listitem [ref=e105]:
+                  - button "Media Usage" [ref=e106] [cursor=pointer]
+                - listitem [ref=e108]:
+                  - button "AR Enabled" [ref=e109] [cursor=pointer]
+      - contentinfo [ref=e111]:
+        - generic [ref=e113]:
+          - generic [ref=e114]:
+            - navigation [ref=e115]:
+              - heading "Social Media" [level=2] [ref=e116]
+              - list [ref=e117]:
+                - listitem [ref=e118]:
+                  - link " Facebook (link is external)" [ref=e119] [cursor=pointer]:
+                    - /url: https://www.facebook.com/3d.si.edu/
+                    - text: 
+                    - generic [ref=e120]: Facebook
+                    - img "(link is external)" [ref=e121]
+                - listitem [ref=e124]:
+                  - link " Instagram (link is external)" [ref=e125] [cursor=pointer]:
+                    - /url: https://www.instagram.com/smithsonian3d/?hl=en
+                    - text: 
+                    - generic [ref=e126]: Instagram
+                    - img "(link is external)" [ref=e127]
+                - listitem [ref=e130]:
+                  - link " Twitter (link is external)" [ref=e131] [cursor=pointer]:
+                    - /url: https://twitter.com/Smithsonian3D
+                    - text: 
+                    - generic [ref=e132]: Twitter
+                    - img "(link is external)" [ref=e133]
+                - listitem [ref=e136]:
+                  - link " YouTube (link is external)" [ref=e137] [cursor=pointer]:
+                    - /url: https://www.youtube.com/@SmithsonianDigital
+                    - text: 
+                    - generic [ref=e138]: YouTube
+                    - img "(link is external)" [ref=e139]
+                - listitem [ref=e142]:
+                  - link "Voyager GitHub (link is external)" [ref=e143] [cursor=pointer]:
+                    - /url: https://smithsonian.github.io/dpo-voyager/
+                    - generic [ref=e144]: Voyager GitHub
+                    - img "(link is external)" [ref=e145]
+                - listitem [ref=e148]:
+                  - link "Cook GitHub (link is external)" [ref=e149] [cursor=pointer]:
+                    - /url: https://smithsonian.github.io/dpo-cook/
+                    - generic [ref=e150]: Cook GitHub
+                    - img "(link is external)" [ref=e151]
+            - link "Smithsonian main website" [ref=e156] [cursor=pointer]:
+              - /url: https://si.edu
+          - navigation [ref=e160]:
+            - heading "Footer" [level=2] [ref=e161]
+            - list [ref=e162]:
+              - listitem [ref=e163]:
+                - link "Digitization Program Office" [ref=e164] [cursor=pointer]:
+                  - /url: https://dpo.si.edu/
+              - listitem [ref=e165]:
+                - link "Privacy" [ref=e166] [cursor=pointer]:
+                  - /url: https://www.si.edu/privacy
+              - listitem [ref=e167]:
+                - link "Terms of Use" [ref=e168] [cursor=pointer]:
+                  - /url: https://www.si.edu/Termsofuse
+    - link "Back to Top" [ref=e169] [cursor=pointer]:
+      - /url: "#main-content"

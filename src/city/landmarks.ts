@@ -10,11 +10,15 @@ import {
   crenellation,
   cylinder,
   dome,
+  ellipseCavea,
   gableRoof,
   hipRoof,
+  pavedEllipse,
+  pavedField,
   pediment,
   quadPrism,
   seatingBank,
+  straightCavea,
   statue,
   steps,
   type Batch,
@@ -38,8 +42,13 @@ import { cylinderBetween, type CityChunkSpec, type TreeRequest } from './wall';
 export interface LandmarkOutput {
   chunks: CityChunkSpec[];
   trees: TreeRequest[];
-  /** Circular footprints, for `blocksMovement` and for the insula generator. */
-  footprints: { x: number; z: number; r: number }[];
+  /**
+   * Oriented rectangular footprints, for `blocksMovement` and for the insula generator.
+   * Rectangles, not circles: a circle sized to the Circus Maximus's *width* leaves five
+   * sixths of its 621 m length free for the fabric to grow through, and a circle sized to
+   * its length swallows the Palatine and the Aventine whole.
+   */
+  footprints: { x: number; z: number; hw: number; hd: number; rot: number }[];
 }
 
 type Ground = (x: number, z: number) => number;
@@ -96,39 +105,47 @@ function planLandmarkTrees(l: LandmarkPlacement, heightAt: Ground, rng: Rng, out
     }
     return;
   }
-  if (l.id === 'palatine') {
-    for (let i = 0; i < 26; i++) {
-      push(rng.range(-100, 100), rng.range(-60, 82), rng.bool(0.5) ? 'cypress' : 'pine', rng.range(0.9, 1.4), g);
+  // The hilltops: planted throughout, because that is what made them desirable
+  // addresses. Trees go on the mound top, hence the explicit `g`.
+  if (l.id === 'palatine' || l.id === 'aventine-temples' || l.id === 'caelian-villas') {
+    const n = l.id === 'palatine' ? 26 : 34;
+    for (let i = 0; i < n; i++) {
+      push(rng.range(-l.hw * 0.8, l.hw * 0.8), rng.range(-l.hd * 0.8, l.hd * 0.8), rng.bool(0.5) ? 'cypress' : 'pine', rng.range(0.9, 1.4), g);
     }
     return;
   }
-  if (l.id === 'forum-romanum') {
-    for (let i = 0; i < 9; i++) push(rng.range(-42, 42), rng.range(-32, 24), 'umbrella', rng.range(0.9, 1.3), g);
+  if (l.id === 'forum-romanum' || l.id === 'imperial-fora') {
+    for (let i = 0; i < 9; i++) push(rng.range(-l.hw * 0.7, l.hw * 0.7), rng.range(-l.hd * 0.6, l.hd * 0.6), 'umbrella', rng.range(0.9, 1.3), g);
     return;
   }
   if (l.id === 'gardens-sallust' || l.id === 'janiculum') {
-    const R = l.clear * 0.9;
-    const n = Math.round(R * 0.8);
+    const R = Math.max(l.hw, l.hd) * 0.95;
+    const n = Math.round(R * 0.75);
     for (let i = 0; i < n; i++) {
       const a = rng.range(0, Math.PI * 2);
       const r = R * Math.sqrt(rng.next());
-      push(Math.cos(a) * r, Math.sin(a) * r, rng.pick(['cypress', 'pine', 'umbrella'] as const), rng.range(0.85, 1.5), l.mound ? undefined : undefined);
+      push(Math.cos(a) * r, Math.sin(a) * r * (l.hd / Math.max(1, l.hw)), rng.pick(['cypress', 'pine', 'umbrella'] as const), rng.range(0.85, 1.5), l.mound ? g : undefined);
     }
     return;
   }
+  if (l.id === 'tiber-island') return; // an island of stone, not of trees
   // Temples, theatres and baths get a light scatter round their precinct wall.
-  const n = Math.max(3, Math.round(l.clear * 0.12));
+  const n = Math.max(3, Math.round(l.clear * 0.1));
   for (let i = 0; i < n; i++) {
     const a = rng.range(0, Math.PI * 2);
-    const r = l.clear * rng.range(0.78, 1.0);
-    push(Math.cos(a) * r, Math.sin(a) * r, rng.bool(0.55) ? 'cypress' : 'pine', rng.range(0.8, 1.25));
+    const rr = rng.range(1.0, 1.22);
+    push(Math.cos(a) * l.hw * rr, Math.sin(a) * l.hd * rr, rng.bool(0.55) ? 'cypress' : 'pine', rng.range(0.8, 1.25));
   }
 }
 
 export function buildLandmarks(heightAt: Ground, seed: string): LandmarkOutput {
   const rng = new Rng(seed);
-  const footprints: { x: number; z: number; r: number }[] = [];
-  for (const l of LANDMARKS) footprints.push({ x: l.x, z: l.z, r: l.clear * 0.78 });
+  const footprints: { x: number; z: number; hw: number; hd: number; rot: number }[] = [];
+  for (const l of LANDMARKS) {
+    // Slightly inside the reserved precinct: the precinct includes the steps and the
+    // paved area round the building, which a man may walk on.
+    footprints.push({ x: l.x, z: l.z, hw: l.hw * 0.88, hd: l.hd * 0.88, rot: l.rot });
+  }
 
   // Planting and tomb layout are *planned* here, not emitted from the geometry
   // builders. Chunk builders run once per detail level, so anything that appends to a
@@ -139,12 +156,17 @@ export function buildLandmarks(heightAt: Ground, seed: string): LandmarkOutput {
   for (const l of LANDMARKS) planLandmarkTrees(l, heightAt, rng.fork(`plant-${l.id}`), trees);
 
   // Group monuments into depth bands so a whole band shares one LOD and one set of
-  // merged meshes. Individual LODs per monument would triple the draw count.
+  // merged meshes. Individual LODs per monument would triple the draw count. The cuts
+  // are derived from the plan rather than hardcoded, because the projection in `rome.ts`
+  // decides where the monuments actually land: a fixed band edge silently produced an
+  // empty chunk and a 500 m-radius one the last time the plan moved.
+  const zs = LANDMARKS.map((l) => l.z).sort((a, b) => a - b);
+  const q = (t: number): number => zs[Math.min(zs.length - 1, Math.floor(t * zs.length))];
   const bands: { name: string; from: number; to: number }[] = [
-    { name: 'monuments-a', from: 0, to: 560 },
-    { name: 'monuments-b', from: 560, to: 820 },
-    { name: 'monuments-c', from: 820, to: 1060 },
-    { name: 'monuments-d', from: 1060, to: 4000 },
+    { name: 'monuments-a', from: -1e9, to: q(0.25) },
+    { name: 'monuments-b', from: q(0.25), to: q(0.5) },
+    { name: 'monuments-c', from: q(0.5), to: q(0.75) },
+    { name: 'monuments-d', from: q(0.75), to: 1e9 },
   ];
 
   const chunks: CityChunkSpec[] = [];
@@ -242,12 +264,33 @@ function buildLandmark(batch: Batch, detail: number, m: LandmarkPlacement, heigh
   const mat = new THREE.Matrix4().makeRotationY(m.rot).setPosition(m.x, 0, m.z);
   // Every stream the monument builders might touch has to share the placement
   // transform. Unused streams cost nothing: empty ones are dropped when baking.
-  const keys: Parameters<Batch['s']>[0][] = ['stone', 'brick', 'stucco', 'roof', 'metal', 'timber', 'road'];
+  // EVERY material key, not a hand-kept subset. A builder that reaches for a stream missing
+  // from this list gets an *untransformed* stream and emits its geometry at the world
+  // origin — which is in the middle of the battlefield. That is exactly what happened when
+  // `buildMound` began using `concrete` for the natural hills: the Janiculum's 230 m earth
+  // bank was drawn at (0, 0), a 40 m tan mass across the whole approach that occluded the
+  // Roman line in every establishing shot. Enumerate the union, not the guess.
+  const keys: Parameters<Batch['s']>[0][] = [
+    'stone',
+    'brick',
+    'stucco',
+    'roof',
+    'metal',
+    'timber',
+    'road',
+    'concrete',
+    'foliage',
+  ];
   for (const k of keys) batch.s(k).push(mat);
 
   let podium = g;
+  if (!m.mound) podium = buildSubstructure(batch, detail, m, heightAt, g);
   if (m.mound) {
-    buildMound(batch, detail, m.moundRadius ?? 100, m.mound, g, heightAt, m.x, m.z, m.rot);
+    // The Capitol and the Palatine stood on monumental substructures and read as
+    // masonry; the Aventine, the Caelian and the Janiculum are natural hills and read
+    // as earth and planting.
+    const built = m.id === 'temple-jupiter' || m.id === 'palatine';
+    buildMound(batch, detail, m.moundRadius ?? m.clear, m.mound, g, heightAt, m.x, m.z, m.rot, built);
     podium = g + m.mound;
   }
 
@@ -260,6 +303,34 @@ function buildLandmark(batch: Batch, detail: number, m: LandmarkPlacement, heigh
       break;
     case 'circus-maximus':
       buildCircusMaximus(batch, detail, podium, rng);
+      break;
+    case 'ludus-magnus':
+      buildLudus(batch, detail, podium, 135, 100, rng);
+      break;
+    case 'tabularium':
+      buildTabularium(batch, detail, podium, 73, 34);
+      break;
+    case 'trajan-market':
+      buildMarket(batch, detail, podium, 120, 70);
+      break;
+    case 'imperial-fora':
+      buildPrecinct(batch, detail, podium, 250, 130, rng, { temples: 2, colH: 9.2, wall: false });
+      break;
+    case 'porticus-octaviae':
+      buildPrecinct(batch, detail, podium, 132, 119, rng, { temples: 2, colH: 10.5, wall: true });
+      break;
+    case 'largo-argentina':
+      buildPrecinct(batch, detail, podium, 90, 60, rng, { temples: 3, colH: 7.4, wall: false });
+      break;
+    case 'aventine-temples':
+    case 'caelian-villas':
+      buildHillQuarter(batch, detail, podium, m.hw * 1.6, m.hd * 1.6, rng, m.id === 'aventine-temples');
+      break;
+    case 'tiber-island':
+      buildTiberIsland(batch, detail, podium, heightAt, m);
+      break;
+    case 'mausoleum-hadrian':
+      buildHadrianeum(batch, detail, podium, rng);
       break;
     case 'temple-jupiter':
       // Podium 63 × 53 m, hexastyle with a three-deep Etruscan porch, columns of
@@ -310,16 +381,30 @@ function buildLandmark(batch: Batch, detail: number, m: LandmarkPlacement, heigh
     case 'forum-romanum':
       buildForum(batch, detail, podium, rng);
       break;
+    // Every bath block is the same plan at a different size: precinct wall, vaulted
+    // frigidarium, domed caldarium on the sunny side, palaestrae either flank. The
+    // dimensions are each monument's real precinct, from `ROME`.
     case 'baths-trajan':
-      // Platform 330 × 215 m on the Esquiline.
-      buildBaths(batch, detail, podium, 250, 170, rng);
+      buildBaths(batch, detail, podium, 330, 215, rng);
+      break;
+    case 'baths-diocletian':
+      buildBaths(batch, detail, podium, 376, 361, rng);
+      break;
+    case 'baths-caracalla':
+      buildBaths(batch, detail, podium, 337, 328, rng);
+      break;
+    case 'baths-titus':
+      buildBaths(batch, detail, podium, 120, 105, rng);
+      break;
+    case 'baths-nero':
+      buildBaths(batch, detail, podium, 190, 120, rng);
       break;
     case 'baths-agrippa':
-      buildBaths(batch, detail, podium, 110, 90, rng);
+      buildBaths(batch, detail, podium, 120, 100, rng);
       break;
     case 'castra-praetoria':
       // 440 × 380 m, brick curtain about 4.7 m high in its original phase.
-      buildCastra(batch, detail, podium, 380, 300, heightAt, m);
+      buildCastra(batch, detail, podium, 440, 380, heightAt, m);
       break;
     case 'horologium':
       // The obelisk of Psammetichus II, 21.8 m of red granite on a 5 m base.
@@ -347,14 +432,16 @@ function buildLandmark(batch: Batch, detail: number, m: LandmarkPlacement, heigh
       buildObelisk(batch, detail, podium, 9.2, 0.85);
       break;
     case 'temple-serapis':
+      // Caracalla's temple on the Quirinal summit: a 98 m-wide podium carrying a
+      // hexastyle front with the largest columns in Rome after the Pantheon's.
       buildTemple(batch, detail, podium, {
-        w: 34,
-        d: 46,
-        podiumH: 4.4,
-        colH: 14,
-        colR: 0.8,
-        colsFront: 6,
-        colsSide: 5,
+        w: 62,
+        d: 92,
+        podiumH: 7.5,
+        colH: 21,
+        colR: 1.05,
+        colsFront: 8,
+        colsSide: 6,
         porchRows: 2,
         order: 'corinthian',
         roofCol: PAL.bronze,
@@ -379,6 +466,126 @@ function buildLandmark(batch: Batch, detail: number, m: LandmarkPlacement, heigh
   for (const k of keys) batch.s(k).pop();
 }
 
+
+/**
+ * The substructure under a large flat monument.
+ *
+ * A Roman public building has a level floor, and the ground it stands on does not. The
+ * Circus Maximus is 621 m long across a valley whose floor moves several metres, the Baths
+ * of Trajan are a 330 m platform on a hillside, and every one of them was built up on
+ * vaulted substructures for exactly this reason. Without one, the geometry is a flat plane
+ * at the height sampled at the monument's centre and the terrain simply comes up through
+ * it: the racetrack had grass growing through the sand at both ends.
+ *
+ * So sample `heightAt` across the footprint, put the floor a little *above* the highest
+ * point in it, and fill down to the lowest with a battered masonry plinth. Both halves
+ * matter: taking the floor from the centre sample instead of the maximum is what left grass
+ * growing through the middle of the racetrack. Returns the floor level. Cost is a couple of
+ * hundred triangles; the alternative is a building that either floats or leaks.
+ */
+function buildSubstructure(
+  batch: Batch,
+  detail: number,
+  m: LandmarkPlacement,
+  heightAt: Ground,
+  ground: number
+): number {
+  // Only things with a real floor plate. A column, an obelisk or an altar sits on its own
+  // steps and needs nothing.
+  const area = m.hw * m.hd * 4;
+  if (area < 2600 || m.farBank || m.onRiver || m.soft) return ground;
+
+  const st = batch.s('stone');
+  const cs = Math.cos(m.rot);
+  const sn = Math.sin(m.rot);
+  // The building, not the precinct: the plinth should not swallow the paved area around it.
+  const hw = m.hw / 1.07;
+  const hd = m.hd / 1.07;
+  const nu = Math.max(2, Math.round(hw / 24));
+  const nv = Math.max(2, Math.round(hd / 24));
+  let low = Infinity;
+  let high = -Infinity;
+  for (let j = 0; j <= nv; j++) {
+    for (let i = 0; i <= nu; i++) {
+      const u = -hw + (hw * 2 * i) / nu;
+      const v = -hd + (hd * 2 * j) / nv;
+      const h = heightAt(m.x + u * cs - v * sn, m.z + u * sn + v * cs);
+      low = Math.min(low, h);
+      high = Math.max(high, h);
+    }
+  }
+  // The floor clears the highest ground in the footprint. Capped so a monument that happens
+  // to straddle a spur does not end up on a ten-metre pedestal.
+  const podium = Math.min(high + 0.35, ground + 6.5);
+  if (podium - (low - 1.1) < 0.6) return podium;
+
+  // Walk the four sides as segments so the face can be toned per bay and, at close range,
+  // carry the blind arcading a real substructure has.
+  const corners: [number, number][] = [
+    [-hw, -hd],
+    [hw, -hd],
+    [hw, hd],
+    [-hw, hd],
+  ];
+  const col = new THREE.Color();
+  for (let c = 0; c < 4; c++) {
+    const [x0, z0] = corners[c];
+    const [x1, z1] = corners[(c + 1) % 4];
+    const len = Math.hypot(x1 - x0, z1 - z0);
+    const segs = Math.max(1, Math.round(len / 26));
+    const dx = (x1 - x0) / len;
+    const dz = (z1 - z0) / len;
+    for (let i = 0; i < segs; i++) {
+      const ax = x0 + (x1 - x0) * (i / segs);
+      const az = z0 + (z1 - z0) * (i / segs);
+      const bx = x0 + (x1 - x0) * ((i + 1) / segs);
+      const bz = z0 + (z1 - z0) * ((i + 1) / segs);
+      // Foot of this bay follows the ground, so the plinth is only as deep as it must be.
+      const g0 = Math.min(
+        heightAt(m.x + ax * cs - az * sn, m.z + ax * sn + az * cs),
+        heightAt(m.x + bx * cs - bz * sn, m.z + bx * sn + bz * cs)
+      ) - 1.1;
+      col.copy(PAL.peperino).multiplyScalar(0.9 + hash2(c, i, 0x5f1) * 0.2);
+      quadPrism(st, ax, az, bx, bz, -dz, dx, 0.9, g0, podium, col, PAL.travertineDirty, {
+        top: false,
+        ends: false,
+      });
+      // A substructure more than four metres tall was arcaded, and its arches held shops —
+      // the Circus Maximus's own outer vaults were famously let to tradesmen. Without them
+      // a monument on falling ground presents fifteen metres of blank ashlar to anyone in
+      // the street beside it, which is what the low camera found.
+      const h = podium - g0;
+      if (detail >= 1 && h > 4.2) {
+        const bays = Math.max(1, Math.round((len / segs) / 7.2));
+        const bw = (len / segs) / bays;
+        for (let b = 0; b < bays; b++) {
+          const t = (b + 0.5) / bays;
+          const px = ax + (bx - ax) * t;
+          const pz = az + (bz - az) * t;
+          st.push(new THREE.Matrix4().makeRotationY(Math.atan2(-dz, dx) + Math.PI * 0.5).setPosition(px, g0, pz));
+          archPanel(st, bw + 0.04, h, col, {
+            depth: 1.1,
+            spring: Math.min(h * 0.52, bw * 0.66),
+            openWidth: Math.min(bw * 0.58, h * 0.42),
+            segments: detail >= 2 ? 7 : 4,
+            voidCol: PAL.voidDark,
+          });
+          st.pop();
+        }
+      }
+    }
+  }
+  // Cap: the floor plate itself, so nothing can show through from below.
+  UP.set(0, 1, 0);
+  const q0 = new THREE.Vector3(-hw, podium - 0.06, -hd);
+  const q1 = new THREE.Vector3(hw, podium - 0.06, -hd);
+  const q2 = new THREE.Vector3(hw, podium - 0.06, hd);
+  const q3 = new THREE.Vector3(-hw, podium - 0.06, hd);
+  st.quadN(UP, q0, q1, q2, q3, PAL.dust);
+  void detail;
+  return podium;
+}
+
 // ---------------------------------------------------------------------------
 // Artificial hills. The Capitol and the Palatine stood on massive substructures;
 // where the battlefield terrain is smooth, the mound *is* the substructure.
@@ -393,26 +600,39 @@ function buildMound(
   heightAt: Ground,
   wx: number,
   wz: number,
-  rot: number
+  rot: number,
+  built: boolean
 ): void {
-  const st = batch.s('stone');
-  const seg = detail >= 1 ? 26 : 12;
-  const rings = detail >= 1 ? 3 : 2;
+  const st = batch.s(built ? 'stone' : 'concrete');
+  const seg = detail >= 1 ? 30 : 14;
   const cs = Math.cos(rot);
   const sn = Math.sin(rot);
+  // A *built* substructure is one tall battered retaining wall with a broad platform on
+  // top, as on the Capitol and the Palatine. Three concentric rings, which is what this
+  // used to emit, reads from above as a stepped cavea — the Capitol was being mistaken
+  // for a theatre in the plan-view diagnostic.
+  const rings = built ? 2 : 4;
+  const groundCol = built ? PAL.peperino : PAL.terraDirty;
+  const deckCol = built ? PAL.dust : PAL.terraDirty;
 
   for (let r = 0; r < rings; r++) {
     const t0 = r / rings;
     const t1 = (r + 1) / rings;
-    // Terraced: each ring is a retaining wall with a planted platform behind it.
-    // Most of the shrink happens in the first ring, so the profile is a steep bank
-    // with a broad platform on top rather than a stepped cone.
-    const shrink = (t: number): number => 1 - (0.34 * t + 0.24 * t * t);
+    // Built: nearly all of the rise in the first ring, so the profile is a wall.
+    // Natural: a smooth convex bank, most of the *shrink* near the top.
+    const shrink = built
+      ? (t: number): number => 1 - (0.2 * t + 0.14 * t * t)
+      : (t: number): number => Math.cos((t * Math.PI) / 2) * 0.42 + (1 - t) * 0.58;
+    const lift = built
+      ? (t: number): number => Math.min(1, t * 1.9)
+      : (t: number): number => Math.sin((t * Math.PI) / 2);
     const r0 = radius * shrink(t0);
     const r1 = radius * shrink(t1);
-    const y0 = g + height * t0;
-    const y1 = g + height * t1;
-    const shade = new THREE.Color().copy(r % 2 === 0 ? PAL.peperino : PAL.tufa).multiplyScalar(0.94);
+    const y0 = g + height * lift(t0);
+    const y1 = g + height * lift(t1);
+    const face = new THREE.Color()
+      .copy(built ? (r % 2 === 0 ? PAL.peperino : PAL.tufa) : groundCol)
+      .multiplyScalar(built ? 0.94 : 0.82 + r * 0.05);
     for (let i = 0; i < seg; i++) {
       const a0 = (Math.PI * 2 * i) / seg;
       const a1 = (Math.PI * 2 * (i + 1)) / seg;
@@ -423,6 +643,8 @@ function buildMound(
         const lz = Math.sin(a) * rr;
         return Math.min(y0, heightAt(wx + lx * cs - lz * sn, wz + lx * sn + lz * cs) - 1.5);
       };
+      // Per-facet tone so a 130 m bank is not one flat plate of colour.
+      const shade = new THREE.Color().copy(face).multiplyScalar(0.93 + hash2(i, r, 0x71a) * 0.14);
       quadPrism(
         st,
         Math.cos(a0) * r0,
@@ -448,11 +670,11 @@ function buildMound(
       const p2 = new THREE.Vector3(c1 * r1, y1, s1 * r1);
       const p3 = new THREE.Vector3(c0 * r1, y1, s0 * r1);
       UP.set(0, 1, 0);
-      st.quadN(UP, p0, p1, p2, p3, PAL.dust);
+      st.quadN(UP, p0, p1, p2, p3, new THREE.Color().copy(deckCol).multiplyScalar(0.92 + hash2(i, r, 0x4d3) * 0.16));
     }
   }
   // Ramped approach on the north face so the hill reads as accessible.
-  if (detail >= 1) {
+  if (detail >= 1 && built) {
     const w = Math.min(18, radius * 0.24);
     st.pushTranslate(0, 0, -radius * 0.34);
     steps(st, w, g, -radius * 0.66 + radius * 0.34, Math.round(height / 0.34), 0.34, radius * 0.32 / Math.max(1, Math.round(height / 0.34)), PAL.travertineDirty);
@@ -673,32 +895,62 @@ function buildColosseum(batch: Batch, detail: number, g: number): void {
   ellipseRing(stone, a * 0.976 + 0.9, b * 0.976 + 0.9, a * 0.976 - wallT, b * 0.976 - wallT, y + atticH, 1.1, bays, PAL.travertine);
 
   // ---- interior: cavea and arena ------------------------------------------
+  //
+  // The arena is 83 × 48 m (a/b = 1.73) inside a building that is 189 × 156 (a/b = 1.21),
+  // so the cavea's semi-axes have to *interpolate* between the two ellipses. The previous
+  // revision scaled one radius by a single b/a factor, which left a crescent of open
+  // ground between the arena wall and the first row — you could see the fields and a
+  // cypress through the middle of the amphitheatre.
   const caveaOuterA = a - wallT - 1;
+  const caveaOuterB = b - wallT - 1;
+  // Arena 86 × 54 m.
   const arenaA = 43;
   const arenaB = 27;
-  seatingBank(
+  const podiumH = 3.6;
+  const arenaY = g + 2.4;
+  const caveaY = arenaY + podiumH;
+  // Arena floor: sand over the hypogeum, cell-varied so it is not a flat tan plate.
+  // Warm sand, not the grey-olive of the generic dust: the arena floor is 3,100 m² of the
+  // brightest surface in the building and it read as a lawn.
+  const sand = new THREE.Color().copy(PAL.dust).lerp(PAL.ochrePale, 0.42);
+  pavedEllipse(concrete, arenaA, arenaB, arenaY, detail >= 1 ? 5 : 2, detail >= 1 ? 32 : 14, sand, 0x0c05, 0.18);
+  if (detail >= 1) {
+    // The hypogeum's service corridors showing through the boards, as they do today.
+    for (let i = -3; i <= 3; i++) {
+      const zz = (i / 3.4) * arenaB * 0.78;
+      box(concrete, -arenaA * 0.82, arenaY, zz - 0.55, arenaA * 0.82, arenaY + 0.28, zz + 0.55, PAL.peperino);
+    }
+    box(concrete, -1.1, arenaY, -arenaB * 0.8, 1.1, arenaY + 0.28, arenaB * 0.8, PAL.peperino);
+  }
+  // Arena wall (*podium*): the 3.6 m barrier protecting the front rows, on the arena
+  // ellipse exactly, which is also the cavea's inner edge.
+  ellipseRing(concrete, arenaA + 1.6, arenaB + 1.6, arenaA, arenaB, arenaY, podiumH, bays, PAL.marbleShadow);
+  ellipseCavea(
     concrete,
-    arenaA + 3,
+    arenaA + 1.6,
+    arenaB + 1.6,
     caveaOuterA,
-    g + 3.2,
-    (y + atticH - g - 6) / (detail >= 1 ? 34 : 12),
-    detail >= 1 ? 34 : 12,
-    bays,
+    caveaOuterB,
+    caveaY,
+    g + 38.5,
     0,
     Math.PI * 2,
-    PAL.travertineDirty,
-    (b - wallT - 1) / caveaOuterA
-  );
-  // Arena floor and the hypogeum walls showing through the sand.
-  ellipseDisc(concrete, arenaA, arenaB, g + 2.6, bays, PAL.dust);
-  if (detail >= 1) {
-    for (let i = -4; i <= 4; i++) {
-      const zz = (i / 4) * arenaB * 0.7;
-      box(concrete, -arenaA * 0.8, g + 2.6, zz - 0.5, arenaA * 0.8, g + 3.0, zz + 0.5, PAL.peperino);
+    {
+      // Maenianum *steps*, not seat rows. Thirty-four 1.2 m rings resolve to a
+      // one-pixel light/dark pair at any strategic camera distance, which is textbook
+      // moiré and shimmers as the camera moves; the real cavea was built as deep
+      // concrete steps in three blocks divided by walled walkways, and emitting those
+      // is both cheaper and closer to the archaeology.
+      rows: detail >= 1 ? 18 : 7,
+      seg: detail >= 1 ? 48 : 20,
+      breaks: detail >= 1 ? [6, 13] : [],
+      balteus: 1.7,
+      scalaria: detail >= 2 ? 16 : 0,
+      tread: PAL.travertineDirty,
+      riser: new THREE.Color().copy(PAL.travertineDirty).multiplyScalar(0.68),
+      salt: 0x21a,
     }
-  }
-  // Arena wall (*podium*) protecting the front rows.
-  ellipseRing(concrete, arenaA + 3, arenaB + 3, arenaA, arenaB, g + 2.6, 3.6, bays, PAL.marbleShadow);
+  );
 }
 
 /** Elliptical annulus prism — platforms and entablature rings. */
@@ -769,45 +1021,155 @@ function buildCircusMaximus(batch: Batch, detail: number, g: number, rng: Rng): 
   const stone = batch.s('stone');
   const concrete = batch.s('stone');
   const brick = batch.s('brick');
+  // 621 × 118 m is the *track* — the sanded arena between the seating. The survey's `wid`
+  // of 190 is the whole structure including the banks and the outer arcade, which is what
+  // the reserved footprint has to cover; the builder needs the track. Confusing the two put
+  // a 264 m-wide circus on the ground with a 190 m track, which from above read as a flat
+  // corrugated ramp rather than a racecourse.
   const L = 621;
   const W = 118;
-  const seatDepth = 32;
-  const tiers = detail >= 1 ? 26 : 10;
+  const seatDepth = 34;
   const facadeH = 28;
+  // Three storeys of arcaded travertine, as on the Severan plan and as reconstructed in
+  // the Gismondi model: the lower two arcaded, the third a colonnaded gallery.
+  const STOREYS = [
+    { h: 9.6, order: 'tuscan' as ColumnOrder },
+    { h: 9.4, order: 'ionic' as ColumnOrder },
+    { h: 9.0, order: 'corinthian' as ColumnOrder },
+  ];
+  // The straight run of the seating: the sphendone takes the eastern end.
+  const straightHalf = L / 2 - W / 2 - 10;
 
-  // Arena floor, sanded.
-  box(concrete, -L / 2 + 20, g, -W / 2, L / 2 - 20, g + 0.1, W / 2, PAL.dust);
+  // Arena floor, sanded and rutted: from the face of the carceres to the inner edge of
+  // the sphendone's seating.
+  const arenaX0 = -L / 2 + 15;
+  const arenaX1 = straightHalf + W / 2;
+  concrete.pushTranslate((arenaX0 + arenaX1) / 2, 0, 0);
+  pavedField(concrete, (arenaX1 - arenaX0) / 2, W / 2, g + 0.08, 17, new THREE.Color().copy(PAL.dust).lerp(PAL.ochrePale, 0.38), 0x3b71, 0.2);
+  concrete.pop();
 
-  // Seating banks either side, plus the curved *sphendone* at the south-east end.
-  for (const s of [-1, 1]) {
-    const z0 = (s * W) / 2;
-    const rows = tiers;
-    const rise = (facadeH - 4) / rows;
-    for (let r = 0; r < rows; r++) {
-      const zz = z0 + s * (seatDepth * r) / rows;
-      const yy = g + 2 + rise * r;
-      box(concrete, -L / 2 + 20, yy, Math.min(zz, zz + s * (seatDepth / rows)), L / 2 - 30, yy + rise, Math.max(zz, zz + s * (seatDepth / rows)), PAL.travertineDirty, {
-        topGain: 1.06,
-      });
+  const bayW = 6.9;
+  const facade = (
+    st: GeoStream,
+    x0: number,
+    x1: number,
+    zf: number,
+    faceRot: number
+  ): void => {
+    const len = x1 - x0;
+    const bays = Math.max(2, Math.round(len / bayW / (detail >= 1 ? 1 : 3)));
+    const bw = len / bays;
+    let y = 0;
+    for (let s = 0; s < STOREYS.length; s++) {
+      const sto = STOREYS[s];
+      st.push(new THREE.Matrix4().makeRotationY(faceRot).setPosition((x0 + x1) / 2, g + y, zf));
+      if (s < 2) {
+        arcade(st, bays, bw, sto.h, s === 0 ? PAL.travertine : PAL.travertineDirty, {
+          depth: 3.2,
+          spring: sto.h * 0.5,
+          openWidth: Math.min(bw * 0.62, sto.h * 0.46),
+          segments: detail >= 2 ? 8 : 4,
+          archivolt: detail >= 2 ? 0.18 : 0,
+          voidCol: PAL.voidDark,
+        });
+      } else {
+        // Top gallery: a colonnade under a flat roof rather than a third arcade, which
+        // is what the fragments of the Circus's own façade show.
+        box(st, -len / 2, 0, 0, len / 2, sto.h * 0.28, 3.2, PAL.travertineDirty, { topGain: 1.08 });
+        if (detail >= 1) {
+          for (let i = 0; i <= bays; i++) {
+            column(st, -len / 2 + bw * i, sto.h * 0.28, 1.4, 0.42, sto.h * 0.66, sto.order, PAL.travertine, detail - 1);
+          }
+        }
+        box(st, -len / 2, sto.h * 0.94, -0.3, len / 2, sto.h, 3.5, PAL.travertine, { topGain: 1.14 });
+      }
+      // Engaged half-columns between the bays give the façade its vertical rhythm.
+      if (detail >= 1 && s < 2) {
+        for (let i = 0; i <= bays; i++) {
+          column(st, -len / 2 + bw * i, 0, -0.5, 0.44, sto.h - 1.1, sto.order, PAL.travertine, detail - 1);
+        }
+      }
+      st.pop();
+      y += sto.h;
     }
-    // Arcaded outer façade.
-    const zf = z0 + s * (seatDepth + 4);
-    const bays = detail >= 1 ? 62 : 24;
-    brick.push(new THREE.Matrix4().makeRotationY(s > 0 ? Math.PI : 0).setPosition(0, g, zf));
-    arcade(brick, bays, (L - 60) / bays, facadeH * 0.52, PAL.travertineDirty, {
-      depth: 3.4,
-      spring: 4.6,
-      openWidth: Math.min(4.0, ((L - 60) / bays) * 0.6),
-      segments: detail >= 2 ? 8 : 4,
-      archivolt: detail >= 2 ? 0.18 : 0,
+  };
+
+  // Seating banks either side of the track, with the arcaded façade behind them.
+  for (const s of [-1, 1] as const) {
+    straightCavea(concrete, straightHalf, (s * W) / 2, seatDepth, g + 2.2, g + facadeH - 2, s, {
+      rows: detail >= 1 ? 11 : 5,
+      seg: 0,
+      breaks: detail >= 1 ? [4, 8] : [],
+      balteus: 1.5,
+      tread: PAL.travertineDirty,
+      riser: new THREE.Color().copy(PAL.travertineDirty).multiplyScalar(0.7),
+      salt: s > 0 ? 0x51 : 0x52,
     });
-    box(brick, -(L - 60) / 2, facadeH * 0.52, 0, (L - 60) / 2, facadeH, 3.4, PAL.brick, { topGain: 1.1 });
-    brick.pop();
+    facade(brick, -straightHalf, straightHalf, (s * W) / 2 + s * (seatDepth + 3), s > 0 ? Math.PI : 0);
   }
-  // Curved end.
-  const endX = L / 2 - 30;
-  seatingBank(concrete, W / 2 - 6, W / 2 + seatDepth, g + 2, (facadeH - 4) / tiers, tiers, detail >= 1 ? 20 : 9, -Math.PI / 2, Math.PI / 2, PAL.travertineDirty);
+
+  // ---- the *sphendone*: the curved end, at the END of the track ------------
+  //
+  // This used to be emitted at the monument's own origin — the `pushTranslate(endX)`
+  // that was meant to place it was applied *after* the call and popped immediately — so
+  // a 91 m half-disc of seating stood in the middle of the racetrack. From the air it
+  // read as a second amphitheatre, which is a large part of why the city appeared to
+  // have several Colosseums.
+  const endX = straightHalf;
   concrete.pushTranslate(endX, 0, 0);
+  brick.pushTranslate(endX, 0, 0);
+  ellipseCavea(
+    concrete,
+    W / 2,
+    W / 2,
+    W / 2 + seatDepth,
+    W / 2 + seatDepth,
+    g + 2.2,
+    g + facadeH - 2,
+    -Math.PI / 2,
+    Math.PI / 2,
+    {
+      rows: detail >= 1 ? 11 : 5,
+      seg: detail >= 1 ? 22 : 10,
+      breaks: detail >= 1 ? [4, 8] : [],
+      balteus: 1.5,
+      scalaria: detail >= 2 ? 7 : 0,
+      tread: PAL.travertineDirty,
+      riser: new THREE.Color().copy(PAL.travertineDirty).multiplyScalar(0.7),
+      salt: 0x53,
+    }
+  );
+  // Arcaded curve outside it, in the same three storeys as the straights.
+  {
+    const rr = W / 2 + seatDepth + 3;
+    const nb = detail >= 1 ? 26 : 11;
+    for (let i = 0; i < nb; i++) {
+      const a0 = -Math.PI / 2 + (Math.PI * i) / nb;
+      const a1 = -Math.PI / 2 + (Math.PI * (i + 1)) / nb;
+      const am = (a0 + a1) / 2;
+      const bw = 2 * rr * Math.sin(Math.PI / (2 * nb));
+      let y = 0;
+      for (let s = 0; s < STOREYS.length; s++) {
+        const sto = STOREYS[s];
+        brick.push(new THREE.Matrix4().makeRotationY(-am - Math.PI * 0.5).setPosition(Math.cos(am) * rr, g + y, Math.sin(am) * rr));
+        if (s < 2) {
+          archPanel(brick, bw + 0.05, sto.h, s === 0 ? PAL.travertine : PAL.travertineDirty, {
+            depth: 3.2,
+            spring: sto.h * 0.5,
+            openWidth: Math.min(bw * 0.6, sto.h * 0.46),
+            segments: detail >= 2 ? 7 : 4,
+            archivolt: detail >= 2 ? 0.16 : 0,
+            voidCol: PAL.voidDark,
+          });
+        } else {
+          box(brick, -bw / 2, 0, 0, bw / 2, sto.h, 3.2, PAL.travertineDirty, { topGain: 1.12 });
+        }
+        brick.pop();
+        y += sto.h;
+      }
+    }
+  }
+  brick.pop();
   concrete.pop();
 
   // ---- spina --------------------------------------------------------------
@@ -1267,69 +1629,92 @@ function buildTheatre(batch: Batch, detail: number, g: number, radius: number, h
     brick.pop();
   }
 
-  // Cavea seating inside.
-  seatingBank(
-    concrete,
-    radius * 0.28,
-    radius - 4.5,
-    g + 2.4,
-    (height - 8) / (detail >= 1 ? 28 : 10),
-    detail >= 1 ? 28 : 10,
-    detail >= 1 ? 26 : 12,
-    Math.PI,
-    Math.PI * 2,
-    new THREE.Color().copy(PAL.travertineDirty).multiplyScalar(1.06)
-  );
-  // *Scalaria*: radial stairways dividing the cavea into wedges. From above they are
-  // the single most identifiable feature of a Roman cavea.
-  if (detail >= 1) {
-    const cunei = 12;
-    for (let i = 1; i < cunei; i++) {
-      const a = Math.PI + (Math.PI * i) / cunei;
-      const rise = (height - 8) / 28;
-      for (let r2 = 0; r2 < 28; r2++) {
-        const rr = radius * 0.28 + ((radius - 4.5 - radius * 0.28) * r2) / 28;
-        const yy = g + 2.4 + rise * r2;
-        const w2 = 0.55;
-        const tx = -Math.sin(a) * w2;
-        const tz = Math.cos(a) * w2;
-        box(
-          concrete,
-          Math.cos(a) * rr + Math.min(0, tx),
-          yy,
-          Math.sin(a) * rr + Math.min(0, tz),
-          Math.cos(a) * rr + Math.max(0.2, tx),
-          yy + rise * 0.55,
-          Math.sin(a) * rr + Math.max(0.2, tz),
-          new THREE.Color().copy(PAL.travertine).multiplyScalar(1.08),
-          { bottom: false }
-        );
-      }
-    }
-  }
-  // Orchestra and stage.
-  ellipseDisc(concrete, radius * 0.3, radius * 0.3, g + 2.4, 18, PAL.marbleShadow);
+  // Cavea seating inside. Deep maenianum steps with two praecinctiones, for the same
+  // reason as the amphitheatre's: 28 thin rings alias into shimmering corduroy at any
+  // distance from which the whole cavea is in frame.
+  const orchR = radius * 0.3;
+  ellipseCavea(concrete, orchR + 2.5, orchR + 2.5, radius - 4.5, radius - 4.5, g + 3.4, g + height - 4, Math.PI, Math.PI * 2, {
+    rows: detail >= 1 ? 12 : 5,
+    seg: detail >= 1 ? 30 : 14,
+    breaks: detail >= 1 ? [4, 8] : [],
+    balteus: 1.5,
+    scalaria: detail >= 2 ? 11 : 0,
+    tread: new THREE.Color().copy(PAL.travertineDirty).multiplyScalar(1.06),
+    riser: new THREE.Color().copy(PAL.travertineDirty).multiplyScalar(0.72),
+    salt: Math.round(radius),
+  });
+  // The *balteus* wall round the orchestra, and the orchestra's own marble paving.
+  ellipseRing(concrete, orchR + 2.5, orchR + 2.5, orchR, orchR, g + 2.4, 1.4, detail >= 1 ? 24 : 12, PAL.marble);
+  concrete.pushTranslate(0, 0, 0);
+  pavedEllipse(concrete, orchR, orchR, g + 2.4, detail >= 1 ? 3 : 1, detail >= 1 ? 22 : 10, PAL.marbleShadow, Math.round(radius) * 7, 0.12);
+  concrete.pop();
+  // *Pulpitum*: the raised stage platform.
   box(concrete, -radius * 0.72, g + 2.4, 0, radius * 0.72, g + 4.0, radius * 0.2, PAL.marbleShadow, { topGain: 1.1 });
-  // Scaenae frons: a tall columnar screen closing the stage.
+
+  // ---- scaenae frons -------------------------------------------------------
+  //
+  // Not a slab. A Roman stage building is an articulated screen: three storeys of
+  // projecting and receding *aediculae* with columns in front of them, and a roof over
+  // the stage. The previous revision emitted one 117 × 30 × 4.5 m box, which from any
+  // aerial camera read as a grey concrete bridge dropped across the theatre and was the
+  // ugliest object in the city.
   const sfY = g + 4.0;
-  box(stone, -radius * 0.78, sfY, radius * 0.2, radius * 0.78, g + height * 0.92, radius * 0.2 + 4.5, PAL.marbleShadow, { topGain: 1.06 });
-  if (detail >= 1) {
-    const n = Math.max(6, Math.round(radius / 6));
-    for (let i = 0; i < n; i++) {
-      const px = lerp(-radius * 0.72, radius * 0.72, i / (n - 1));
-      column(stone, px, sfY, radius * 0.2 - 0.9, 0.55, 11.5, 'corinthian', PAL.marble, detail - 1);
-      column(stone, px, sfY + 12.4, radius * 0.2 - 0.9, 0.46, 9.5, 'corinthian', PAL.marble, detail - 1);
+  const sfTop = g + height * 0.94;
+  const sfZ = radius * 0.2;
+  const sfHalf = radius * 0.78;
+  const bays2 = Math.max(5, Math.round(sfHalf / 7));
+  const roofSt = batch.s('roof');
+  for (let i = 0; i < bays2; i++) {
+    const x0 = lerp(-sfHalf, sfHalf, i / bays2);
+    const x1 = lerp(-sfHalf, sfHalf, (i + 1) / bays2);
+    // Alternating projection: the three great doorways (*valva regia* and *hospitalia*)
+    // sit in recesses, the piers between them come forward.
+    const isDoor = i === Math.floor(bays2 / 2) || i === 1 || i === bays2 - 2;
+    const proj = isDoor ? 0 : 2.6;
+    const h = isDoor ? sfTop - sfY - 3.5 : sfTop - sfY;
+    box(stone, x0, sfY, sfZ, x1, sfY + h, sfZ + 4.6 + proj, PAL.marbleShadow, { topGain: 1.08 });
+    if (isDoor && detail >= 1) {
+      stone.push(new THREE.Matrix4().makeRotationY(Math.PI).setPosition((x0 + x1) / 2, sfY, sfZ + 0.1));
+      archPanel(stone, x1 - x0 - 0.4, h, PAL.marble, {
+        depth: 1.4,
+        spring: h * 0.44,
+        openWidth: Math.min((x1 - x0) * 0.52, h * 0.4),
+        segments: detail >= 2 ? 8 : 4,
+        voidCol: PAL.voidDark,
+      });
+      stone.pop();
+    }
+    // Columnar orders in front, two storeys, as at Orange and Sabratha.
+    if (detail >= 1) {
+      for (const px of [x0 + (x1 - x0) * 0.22, x0 + (x1 - x0) * 0.78]) {
+        column(stone, px, sfY, sfZ + 4.6 + proj + 0.7, 0.52, 10.5, 'corinthian', PAL.marble, detail - 1);
+        column(stone, px, sfY + 11.6, sfZ + 4.6 + proj + 0.7, 0.44, 9.0, 'corinthian', PAL.marble, detail - 1);
+      }
+      box(stone, x0, sfY + 10.5, sfZ + 4.6 + proj, x1, sfY + 11.6, sfZ + 6.4 + proj, PAL.marble, { topGain: 1.14 });
     }
   }
+  // Tiled roof over the stage, sloping back over the scene building.
+  box(roofSt, -sfHalf - 1, sfTop, sfZ - 1, sfHalf + 1, sfTop + 1.1, sfZ + 9, PAL.roofTile, { topGain: 1.12 });
+
   // Porticus behind the stage, the *quadriporticus* every big theatre had.
   if (detail >= 1) {
-    const pz = radius * 0.2 + 5;
+    const pz = sfZ + 11;
+    const pd = radius * 0.9;
     for (const side of [-1, 1]) {
       const n = 12;
       for (let i = 0; i < n; i++) {
-        column(stone, side * radius * 0.8, g + 1.2, pz + i * 6.5, 0.48, 8.5, 'ionic', PAL.marble, detail - 1);
+        column(stone, side * radius * 0.8, g + 1.2, pz + (pd * i) / (n - 1), 0.48, 8.5, 'ionic', PAL.marble, detail - 1);
       }
+      box(stone, side * radius * 0.8 - 1.2, g + 9.7, pz, side * radius * 0.8 + 1.2, g + 11.2, pz + pd, PAL.marble, { topGain: 1.12 });
     }
+    for (let i = 0; i < 14; i++) {
+      column(stone, lerp(-radius * 0.8, radius * 0.8, i / 13), g + 1.2, pz + pd, 0.48, 8.5, 'ionic', PAL.marble, detail - 1);
+    }
+    // The garden court inside the quadriporticus.
+    const road = batch.s('road');
+    road.pushTranslate(0, 0, pz + pd * 0.5);
+    pavedField(road, radius * 0.74, pd * 0.44, g + 1.3, 7, PAL.dust, Math.round(radius) * 13, 0.18);
+    road.pop();
   }
 }
 
@@ -1341,8 +1726,11 @@ function buildStadium(batch: Batch, detail: number, g: number, L: number, W: num
   const facadeH = 22;
   const tiers = detail >= 1 ? 18 : 8;
 
-  box(concrete, -L / 2 + 24, g, -W / 2 + seatDepth, L / 2 - 24, g + 0.1, W / 2 - seatDepth, PAL.dust);
-  for (const s of [-1, 1]) {
+  const bankLen = (L - 60) / 2;
+  concrete.pushTranslate(0, 0, 0);
+  pavedField(concrete, bankLen, W / 2 - seatDepth, g + 0.08, 12, PAL.dust, 0x71c3, 0.18);
+  concrete.pop();
+  for (const s of [-1, 1] as const) {
     const bays = detail >= 1 ? 34 : 14;
     const bw = (L - 60) / bays;
     stone.push(new THREE.Matrix4().makeRotationY(s > 0 ? Math.PI : 0).setPosition(0, g, (s * W) / 2));
@@ -1353,44 +1741,57 @@ function buildStadium(batch: Batch, detail: number, g: number, L: number, W: num
       segments: detail >= 2 ? 8 : 4,
       archivolt: detail >= 2 ? 0.18 : 0,
     });
-    box(stone, -(L - 60) / 2, facadeH * 0.55, 0, (L - 60) / 2, facadeH, 3.2, PAL.travertineDirty, { topGain: 1.12 });
+    // Second storey: a colonnaded gallery, which is how the Severan plan's fragment of
+    // the stadium shows it, rather than a blank attic.
+    box(stone, -(L - 60) / 2, facadeH * 0.55, 0, (L - 60) / 2, facadeH * 0.66, 3.2, PAL.travertineDirty, { topGain: 1.1 });
+    if (detail >= 1) {
+      for (let i = 0; i <= bays; i++) {
+        column(stone, -(L - 60) / 2 + bw * i, facadeH * 0.66, 1.4, 0.4, facadeH * 0.28, 'ionic', PAL.travertine, detail - 1);
+      }
+    }
+    box(stone, -(L - 60) / 2, facadeH * 0.94, -0.3, (L - 60) / 2, facadeH, 3.5, PAL.travertine, { topGain: 1.14 });
     stone.pop();
 
-    // Straight-side seating: a stepped rank along the track.
-    //
-    // `seatingBank` is an *annular* fan about the stream's local origin. Called here with
-    // two angular segments, as an earlier revision did, it drew a single 200 m wedge right
-    // across the arena — which is why the Stadium of Domitian read as a grey circus tent
-    // on the skyline. A stadium's long sides are straight; they need steps, not an arc.
-    const bankLen = (L - 60) / 2;
-    const rowD = (seatDepth - 3) / tiers;
-    const rise = (facadeH - 6) / tiers;
-    for (let r = 0; r < tiers; r++) {
-      const zA = s * (W / 2 - seatDepth + rowD * r);
-      const zB = s * (W / 2 - seatDepth + rowD * (r + 1));
-      const y = g + 2 + rise * r;
-      box(concrete, -bankLen, y, Math.min(zA, zB), bankLen, y + rise, Math.max(zA, zB), PAL.travertineDirty, {
-        bottom: false,
-        topGain: 1.08,
-      });
-    }
+    // Straight-side seating. A stadium's long sides are straight; they need steps, not
+    // an arc — an earlier revision called the annular `seatingBank` here with two
+    // angular segments and drew a single 200 m wedge across the arena, which is why the
+    // Stadium of Domitian read as a grey circus tent on the skyline.
+    straightCavea(concrete, bankLen, s * (W / 2 - seatDepth), seatDepth - 3, g + 2, g + facadeH - 4, s, {
+      rows: detail >= 1 ? 9 : 4,
+      seg: 0,
+      breaks: detail >= 1 ? [4] : [],
+      balteus: 1.3,
+      tread: PAL.travertineDirty,
+      riser: new THREE.Color().copy(PAL.travertineDirty).multiplyScalar(0.72),
+      salt: s > 0 ? 0x81 : 0x82,
+    });
   }
-  // The *sphendone*: the semicircular closed end, at the north of the track rather than
-  // wrapped round the middle of it.
-  concrete.pushTranslate(-(L - 60) / 2, 0, 0);
-  seatingBank(
+  // The *sphendone*: the semicircular closed end, at the north end of the track rather
+  // than wrapped round the middle of it.
+  concrete.pushTranslate(-bankLen, 0, 0);
+  ellipseCavea(
     concrete,
     W / 2 - seatDepth,
+    W / 2 - seatDepth,
+    W / 2 - 3,
     W / 2 - 3,
     g + 2,
-    (facadeH - 6) / tiers,
-    tiers,
-    detail >= 1 ? 16 : 8,
+    g + facadeH - 4,
     Math.PI / 2,
     Math.PI * 1.5,
-    PAL.travertineDirty
+    {
+      rows: detail >= 1 ? 9 : 4,
+      seg: detail >= 1 ? 18 : 8,
+      breaks: detail >= 1 ? [4] : [],
+      balteus: 1.3,
+      scalaria: detail >= 2 ? 6 : 0,
+      tread: PAL.travertineDirty,
+      riser: new THREE.Color().copy(PAL.travertineDirty).multiplyScalar(0.72),
+      salt: 0x83,
+    }
   );
   concrete.pop();
+  void tiers;
 }
 
 // ---------------------------------------------------------------------------
@@ -1433,39 +1834,50 @@ function buildBasilica(batch: Batch, detail: number, g: number, L: number, W: nu
   }
 }
 
-/** A colonnaded forum square with temples, arches and honorific columns. */
+/**
+ * The Forum Romanum: a paved square 200 × 90 m running NW–SE between the Capitoline and
+ * the Velia, closed by porticoes on the long sides, with the Rostra and the Arch of
+ * Septimius Severus at the Capitoline end and a temple at the other.
+ *
+ * `L` runs along local +X, which is the monument's long axis — the same convention every
+ * other builder here uses, and the axis `worldRot` orients.
+ */
 function buildForum(batch: Batch, detail: number, g: number, rng: Rng): void {
   const stone = batch.s('stone');
   const road = batch.s('road');
-  const W = 96;
-  const D = 132;
+  const L = 200;
+  const W = 90;
 
-  // Paved piazza.
-  box(road, -W / 2, g, -D / 2, W / 2, g + 0.12, D / 2, PAL.marbleShadow, { topGain: 1.05 });
-  // Porticoes on three sides.
+  // Paved piazza, in slabs. As one quad it was 18,000 m² of unmodulated tan and the
+  // largest featureless region in any strategic frame.
+  pavedField(road, L / 2, W / 2, g + 0.12, 5.5, PAL.marbleShadow, 0x40c1, 0.2);
+
+  // Porticoes down both long sides, two columns deep with a tiled lean-to roof.
   const colH = 8.6;
-  for (const side of [-1, 1]) {
-    const n = Math.round(D / 5.4);
+  for (const side of [-1, 1] as const) {
+    const n = Math.round(L / 5.4);
     for (let i = 0; i < n; i++) {
-      const zz = lerp(-D / 2 + 3, D / 2 - 3, i / (n - 1));
-      column(stone, (side * W) / 2, g + 0.7, zz, 0.5, colH, 'corinthian', PAL.marble, detail - 1);
-      if (detail >= 1) column(stone, side * (W / 2 + 7), g + 0.7, zz, 0.5, colH, 'corinthian', PAL.marbleShadow, detail - 1);
+      const px = lerp(-L / 2 + 3, L / 2 - 3, i / (n - 1));
+      column(stone, px, g + 0.7, (side * W) / 2, 0.5, colH, 'corinthian', PAL.marble, detail - 1);
+      if (detail >= 1) column(stone, px, g + 0.7, side * (W / 2 + 7), 0.5, colH, 'corinthian', PAL.marbleShadow, detail - 1);
     }
-    box(stone, (side * W) / 2 - side * 0.9, g + 0.7 + colH, -D / 2, (side * W) / 2 + side * 8.2, g + 0.7 + colH + 1.9, D / 2, PAL.marble, {
+    box(stone, -L / 2, g + 0.7 + colH, (side * W) / 2 - side * 0.9, L / 2, g + 0.7 + colH + 1.9, (side * W) / 2 + side * 8.2, PAL.marble, {
       topGain: 1.12,
     });
-    box(batch.s('roof'), (side * W) / 2 - side * 1.2, g + 0.7 + colH + 1.9, -D / 2, (side * W) / 2 + side * 9, g + 0.7 + colH + 3.4, D / 2, PAL.roofTile, {
+    box(batch.s('roof'), -L / 2, g + 0.7 + colH + 1.9, (side * W) / 2 - side * 1.2, L / 2, g + 0.7 + colH + 3.4, (side * W) / 2 + side * 9, PAL.roofTile, {
       topGain: 1.1,
     });
   }
-  // A temple closing the north end, facing down the square.
-  stone.pushTranslate(0, 0, D / 2 - 26);
+
+  // The Temple of Divus Iulius closing the south-east end, facing back down the square.
+  stone.pushTranslate(L / 2 - 26, 0, 0);
+  stone.push(new THREE.Matrix4().makeRotationY(Math.PI / 2));
   buildTemple(batch, detail, g, {
-    w: 26,
-    d: 40,
-    podiumH: 3.4,
-    colH: 12,
-    colR: 0.66,
+    w: 30,
+    d: 44,
+    podiumH: 3.6,
+    colH: 12.5,
+    colR: 0.68,
     colsFront: 6,
     colsSide: 5,
     porchRows: 2,
@@ -1476,16 +1888,19 @@ function buildForum(batch: Batch, detail: number, g: number, rng: Rng): void {
     cellae: 1,
   });
   stone.pop();
-  // Rostra, honorific columns and a triumphal arch.
-  box(stone, -16, g + 0.12, -D / 2 + 8, 16, g + 3.2, -D / 2 + 16, PAL.marbleShadow, { topGain: 1.1 });
+  stone.pop();
+
+  // The Rostra, the honorific columns of the Comitium end, and the triumphal arch.
+  box(stone, -L / 2 + 8, g + 0.12, -18, -L / 2 + 17, g + 3.2, 18, PAL.marbleShadow, { topGain: 1.1 });
   if (detail >= 1) {
     for (let i = 0; i < 7; i++) {
-      const px = lerp(-W / 2 + 12, W / 2 - 12, i / 6);
-      column(stone, px, g + 0.12, -D / 2 + 26, 0.55, 11.5, 'corinthian', PAL.marble, detail - 1);
-      statue(batch.s('metal'), px, g + 12.5, -D / 2 + 26, 3.0, PAL.gilt, Math.PI, detail >= 1 ? 7 : 5);
+      const pz = lerp(-W / 2 + 12, W / 2 - 12, i / 6);
+      column(stone, -L / 2 + 26, g + 0.12, pz, 0.55, 11.5, 'corinthian', PAL.marble, detail - 1);
+      statue(batch.s('metal'), -L / 2 + 26, g + 12.5, pz, 3.0, PAL.gilt, Math.PI * 0.5, detail >= 1 ? 7 : 5);
     }
-    // Triumphal arch on the axis.
-    stone.pushTranslate(0, 0, -D / 2 - 4);
+    // Triumphal arch on the axis, at the foot of the Capitol.
+    stone.pushTranslate(-L / 2 - 4, 0, 0);
+    stone.push(new THREE.Matrix4().makeRotationY(Math.PI / 2));
     archPanel(stone, 22, 18, PAL.marble, { depth: 7, spring: 7.5, openWidth: 6.6, segments: detail >= 2 ? 12 : 6, backFace: true, archivolt: 0.4 });
     box(stone, -11.6, g + 18, -0.7, 11.6, g + 22, 7.7, PAL.marble, { topGain: 1.14 });
     for (let k = 0; k < 4; k++) {
@@ -1493,49 +1908,583 @@ function buildForum(batch: Batch, detail: number, g: number, rng: Rng): void {
       box(batch.s('metal'), hx - 0.7, g + 22, 2.2, hx + 0.7, g + 24.6, 4.4, PAL.gilt);
     }
     stone.pop();
+    stone.pop();
+  }
+  // The Basilica Aemilia and the Basilica Iulia, the two long halls that actually walled
+  // the square in; without them the forum reads as a bare slab with a colonnade.
+  for (const side of [-1, 1] as const) {
+    const bz = side * (W / 2 + 20);
+    box(stone, -L / 2 + 20, g, bz - side * 10, L / 2 - 40, g + 15, bz + side * 10, PAL.marbleShadow, { topGain: 1.06 });
+    const roof = batch.s('roof');
+    roof.pushTranslate((-L / 2 + 20 + L / 2 - 40) / 2, 0, bz);
+    hipRoof(roof, L - 60, 20, g + 15, 3.4, 0.9, PAL.roofTileOld);
+    roof.pop();
+  }
+  void rng;
+}
+
+/**
+ * Imperial baths: a vaulted block in a walled precinct.
+ *
+ * `W` runs along local X (the long axis of the precinct), `D` across it. The plan is the
+ * one every great *thermae* shares, and it is what makes them recognisable from the air:
+ *
+ *  - a rectangular precinct wall carrying exedrae and a monumental entrance, with the
+ *    *cisterns* along the back;
+ *  - inside it, the bathing block on the cross axis — *natatio* (open-air pool) at the cool
+ *    end, *frigidarium* under three great cross-vaults in the middle, *tepidarium*, then the
+ *    domed *caldarium* projecting on the sunny side;
+ *  - a colonnaded *palaestra* either flank of the block;
+ *  - the whole precinct paved, with gardens between the wall and the block.
+ *
+ * An earlier revision emitted a plain 165 × 95 × 22 m brick box with three bare half-cylinders
+ * on top inside a thin 8.5 m fence, standing on unpaved terrain. From a strategic camera that
+ * is a farmyard with three sheds in it, and it was the single ugliest object in the city.
+ */
+function buildBaths(batch: Batch, detail: number, g: number, W: number, D: number, rng: Rng): void {
+  const brick = batch.s('brick');
+  const concrete = batch.s('concrete');
+  const stone = batch.s('stone');
+  const roof = batch.s('roof');
+  const road = batch.s('road');
+  const wallH = Math.min(13, 8 + W * 0.012);
+  const t = 2.4;
+
+  // Paved precinct. Bare ground inside a bath enclosure was what made it read as a yard.
+  pavedField(road, W / 2 - t, D / 2 - t, g + 0.1, 6.5, PAL.dust, Math.round(W * 3), 0.2);
+
+  // ---- precinct wall, with exedrae and a monumental entrance ---------------
+  for (const s of [-1, 1] as const) {
+    box(brick, -W / 2, g, (s * D) / 2 - s * t, W / 2, g + wallH, (s * D) / 2, PAL.brick, { topGain: 1.08, groundShade: 0.16 });
+    box(brick, (s * W) / 2 - s * t, g, -D / 2, (s * W) / 2, g + wallH, D / 2, PAL.brick, { topGain: 1.08, groundShade: 0.16 });
+    // Blind arcading on the inner face: every surviving thermae precinct has it, and it is
+    // what stops 300 m of wall reading as a fence.
+    if (detail >= 1) {
+      const n = Math.max(6, Math.round(W / 9));
+      for (let i = 0; i < n; i++) {
+        const px = lerp(-W / 2 + 6, W / 2 - 6, i / (n - 1));
+        brick.push(new THREE.Matrix4().makeRotationY(s > 0 ? 0 : Math.PI).setPosition(px, g, (s * D) / 2 - s * t));
+        archPanel(brick, W / n - 0.4, wallH - 1.2, PAL.brickPale, {
+          depth: 0.7,
+          spring: (wallH - 1.2) * 0.5,
+          openWidth: Math.min((W / n) * 0.6, 4.2),
+          segments: detail >= 2 ? 7 : 4,
+          voidCol: PAL.voidDark,
+          blockTo: wallH,
+        });
+        brick.pop();
+      }
+    }
+    // Semicircular exedrae on the short ends — lecture halls and nymphaea.
+    cylinder(brick, (s * W) / 2 - s * 2, g, 0, D * 0.16, D * 0.16, wallH + 3, detail >= 1 ? 16 : 8, PAL.brickPale, {
+      arcFrom: s < 0 ? -Math.PI / 2 : Math.PI / 2,
+      arcTo: s < 0 ? Math.PI / 2 : Math.PI * 1.5,
+      shadeLow: 0.14,
+    });
+    dome(concrete, (s * W) / 2 - s * 2, g + wallH + 3, 0, D * 0.16, detail >= 1 ? 16 : 8, 4, PAL.concrete, { heightScale: 0.5 });
+  }
+  // Monumental entrance on the long side facing the city.
+  box(brick, -W * 0.09, g, -D / 2 - 3, W * 0.09, g + wallH + 6, -D / 2 + t, PAL.brickPale, { topGain: 1.1 });
+  brick.pushTranslate(0, 0, -D / 2 - 3);
+  archPanel(brick, W * 0.18, wallH + 6, PAL.travertine, {
+    depth: 3 + t,
+    spring: (wallH + 6) * 0.44,
+    openWidth: Math.min(W * 0.1, 9),
+    segments: detail >= 2 ? 10 : 5,
+    backFace: true,
+    archivolt: detail >= 2 ? 0.3 : 0,
+    voidCol: PAL.voidDark,
+  });
+  brick.pop();
+
+  // ---- the bathing block, on the cross axis -------------------------------
+  const bw = W * 0.52; // along X: natatio .. frigidarium .. caldarium
+  const bd = D * 0.4; // across
+  const blockH = 24 + W * 0.012;
+  // Substructure and the block's brick mass, in three stepped masses rather than one box.
+  box(brick, -bw / 2, g, -bd / 2, bw / 2, g + 3, bd / 2, PAL.brickDark, { topGain: 1.04 });
+  box(brick, -bw / 2, g + 3, -bd / 2, bw / 2, g + blockH * 0.62, bd / 2, PAL.brick, { topGain: 1.04, groundShade: 0.1 });
+  // The frigidarium hall rises above the aisles: a clerestory band with big windows.
+  const hallHalf = bd * 0.3;
+  box(brick, -bw * 0.3, g + blockH * 0.62, -hallHalf, bw * 0.3, g + blockH, hallHalf, PAL.brickPale, { topGain: 1.06 });
+  if (detail >= 1) {
+    // Great thermal windows in the clerestory, and the aisle windows below.
+    const n = 3;
+    for (let i = 0; i < n; i++) {
+      const px = lerp(-bw * 0.24, bw * 0.24, i / (n - 1));
+      for (const s of [-1, 1] as const) {
+        box(brick, px - bw * 0.06, g + blockH * 0.7, s * hallHalf - s * 0.15, px + bw * 0.06, g + blockH * 0.93, s * hallHalf + s * 0.1, PAL.voidDark);
+      }
+    }
+    const m = Math.max(4, Math.round(bw / 11));
+    for (let i = 0; i < m; i++) {
+      const px = lerp(-bw / 2 + 5, bw / 2 - 5, i / (m - 1));
+      for (const s of [-1, 1] as const) {
+        box(brick, px - 2.2, g + blockH * 0.3, s * (bd / 2) - s * 0.15, px + 2.2, g + blockH * 0.55, s * (bd / 2) + s * 0.1, PAL.voidDark);
+      }
+    }
+  }
+  // Tiled lean-to roofs over the aisles, so the block's shoulders are roof and not a flat
+  // plate of brick the size of the building.
+  for (const s of [-1, 1] as const) {
+    const z0 = s * hallHalf;
+    const z1 = s * (bd / 2);
+    box(roof, -bw / 2, g + blockH * 0.62 - 0.3, Math.min(z0, z1), bw / 2, g + blockH * 0.62 + 0.5, Math.max(z0, z1), PAL.roofTileOld, {
+      topGain: 1.1,
+    });
+  }
+  // Three cross-vaults over the frigidarium, spanning the hall. Pale concrete, not brick:
+  // the vaults were rendered and they are the one part of a thermae that reads from a
+  // distance. No ribs — an earlier revision drew them as full-height boxes from the vault
+  // springing to its crown, which is a solid 22 m wall standing across the roof.
+  const vaultSeg = detail >= 1 ? 18 : 8;
+  const bayLen = (bw * 0.62) / 3;
+  for (let i = 0; i < 3; i++) {
+    const px = (i - 1) * bayLen;
+    const vm = new THREE.Matrix4().makeRotationX(Math.PI / 2).setPosition(px, g + blockH, 0);
+    concrete.push(vm);
+    cylinder(concrete, 0, -hallHalf * 0.98, 0, hallHalf, hallHalf, hallHalf * 1.96, vaultSeg, PAL.mortar, {
+      arcFrom: 0,
+      arcTo: Math.PI,
+    });
+    concrete.pop();
+    // A transverse arch band between bays, standing barely proud of the vault surface.
+    if (detail >= 1) {
+      const bm = new THREE.Matrix4().makeRotationX(Math.PI / 2).setPosition(px + bayLen * 0.5, g + blockH, 0);
+      concrete.push(bm);
+      cylinder(concrete, 0, -0.45, 0, hallHalf + 0.5, hallHalf + 0.5, 0.9, vaultSeg, PAL.concrete, { arcFrom: 0, arcTo: Math.PI });
+      concrete.pop();
+    }
+  }
+  // Natatio: the open-air swimming pool at the cool end, walled and columned.
+  const npx = -bw / 2 - W * 0.11;
+  box(stone, npx - W * 0.09, g + 0.2, -bd * 0.42, npx + W * 0.09, g + 1.0, bd * 0.42, PAL.marbleShadow, { topGain: 1.08 });
+  box(stone, npx - W * 0.075, g + 0.4, -bd * 0.36, npx + W * 0.075, g + 0.9, bd * 0.36, new THREE.Color(0.09, 0.19, 0.22), { topGain: 1.0 });
+  if (detail >= 1) {
+    for (let i = 0; i < 7; i++) {
+      const pz = lerp(-bd * 0.4, bd * 0.4, i / 6);
+      column(stone, npx - W * 0.1, g + 1.0, pz, 0.5, 9.5, 'corinthian', PAL.marble, detail - 1);
+    }
+  }
+  // Caldarium: the domed rotunda projecting on the sunny (south) side.
+  const cr = Math.min(24, bd * 0.34);
+  const cpx = bw / 2 + cr * 0.55;
+  cylinder(brick, cpx, g, 0, cr, cr, blockH * 0.68, detail >= 1 ? 22 : 10, PAL.brick, { shadeLow: 0.16 });
+  cylinder(stone, cpx, g + blockH * 0.68 - 0.6, 0, cr + 0.5, cr + 0.5, 0.9, detail >= 1 ? 22 : 10, PAL.travertine, { top: true });
+  dome(concrete, cpx, g + blockH * 0.68, 0, cr, detail >= 1 ? 22 : 10, detail >= 1 ? 8 : 3, PAL.concrete, { heightScale: 0.78 });
+
+  // ---- palaestrae: colonnaded courts either flank --------------------------
+  if (detail >= 1) {
+    for (const s of [-1, 1] as const) {
+      const pz = (s * (bd / 2 + D * 0.5)) / 2;
+      const phw = bw * 0.42;
+      const phd = Math.abs(pz - s * bd / 2) * 0.7;
+      road.pushTranslate(0, 0, pz);
+      // Sanded, not basalt: a palaestra is an exercise ground. Paved dark it read as tarmac.
+      pavedField(road, phw, phd, g + 0.18, 5.5, new THREE.Color().copy(PAL.dust).lerp(PAL.terraDirty, 0.4), Math.round(W * 5) + (s > 0 ? 1 : 0), 0.26);
+      road.pop();
+      const n = Math.max(6, Math.round(phw / 5));
+      for (let i = 0; i < n; i++) {
+        const px = lerp(-phw, phw, i / (n - 1));
+        column(stone, px, g + 0.3, pz - phd, 0.46, 8.5, 'corinthian', PAL.marble, detail - 1);
+        column(stone, px, g + 0.3, pz + phd, 0.46, 8.5, 'corinthian', PAL.marble, detail - 1);
+      }
+      for (const zz of [pz - phd, pz + phd]) {
+        box(stone, -phw - 1, g + 8.8, zz - 1.4, phw + 1, g + 10.2, zz + 1.4, PAL.marble, { topGain: 1.12 });
+        box(roof, -phw - 1.6, g + 10.2, zz - 2.2, phw + 1.6, g + 11.4, zz + 2.2, PAL.roofTile, { topGain: 1.1 });
+      }
+    }
+  }
+  void rng;
+}
+
+/**
+ * The Ludus Magnus: the gladiatorial school east of the Colosseum across the Via
+ * Labicana.
+ *
+ * Deliberately *not* amphitheatre-shaped in its envelope. It is a rectangular
+ * porticoed block four storeys high with a small practice arena in its courtyard —
+ * an oval of sand 62 × 45 m with three shallow ranks of seating, not an arcaded
+ * ellipse. Rome had exactly one Flavian Amphitheatre and the reading of the skyline
+ * depends on nothing else looking like it.
+ */
+function buildLudus(batch: Batch, detail: number, g: number, L: number, W: number, rng: Rng): void {
+  const brick = batch.s('brick');
+  const stucco = batch.s('stucco');
+  const roof = batch.s('roof');
+  const concrete = batch.s('concrete');
+  const wing = 15;
+  const h = 15.5;
+
+  for (const [x0, z0, x1, z1] of [
+    [-L / 2, -W / 2, L / 2, -W / 2 + wing],
+    [-L / 2, W / 2 - wing, L / 2, W / 2],
+    [-L / 2, -W / 2 + wing, -L / 2 + wing, W / 2 - wing],
+    [L / 2 - wing, -W / 2 + wing, L / 2, W / 2 - wing],
+  ] as const) {
+    box(brick, x0, g, z0, x1, g + h, z1, PAL.brick, { topGain: 1.06, groundShade: 0.18 });
+    roof.pushTranslate((x0 + x1) / 2, 0, (z0 + z1) / 2);
+    hipRoof(roof, x1 - x0 + 1.4, z1 - z0 + 1.4, g + h, Math.min(x1 - x0, z1 - z0) * 0.16, 0.8, PAL.roofTileOld);
+    roof.pop();
+    if (detail >= 1) {
+      // Arched cells along the inner face: the gladiators' quarters.
+      const along = x1 - x0 > z1 - z0;
+      const n = Math.max(3, Math.round((along ? x1 - x0 : z1 - z0) / 4.2));
+      for (let i = 0; i < n; i++) {
+        const t = (i + 0.5) / n;
+        const px = along ? lerp(x0, x1, t) : (x0 + x1) / 2;
+        const pz = along ? (z0 + z1) / 2 : lerp(z0, z1, t);
+        const faceZ = along ? (z0 < 0 ? z1 : z0) : pz;
+        const faceX = along ? px : x0 < 0 ? x1 : x0;
+        stucco.push(
+          new THREE.Matrix4()
+            .makeRotationY(along ? (z0 < 0 ? Math.PI : 0) : z0 < 0 ? Math.PI / 2 : -Math.PI / 2)
+            .setPosition(along ? faceX : faceX, g, along ? faceZ : faceZ)
+        );
+        archPanel(stucco, (along ? (x1 - x0) / n : (z1 - z0) / n) + 0.04, 4.6, PAL.terraDirty, {
+          depth: 0.5,
+          spring: 2.6,
+          openWidth: 1.9,
+          segments: detail >= 2 ? 6 : 3,
+          voidCol: PAL.voidDark,
+        });
+        stucco.pop();
+      }
+    }
+  }
+  // The practice arena: sand, a low podium wall and three ranks of seating.
+  pavedEllipse(concrete, 31, 22.5, g + 0.3, detail >= 1 ? 3 : 1, detail >= 1 ? 22 : 10, PAL.dust, 0x9a12, 0.2);
+  ellipseRing(concrete, 32.4, 23.9, 31, 22.5, g + 0.3, 1.9, detail >= 1 ? 22 : 10, PAL.marbleShadow);
+  ellipseCavea(concrete, 32.4, 23.9, 40, 31, g + 2.2, g + 5.4, 0, Math.PI * 2, {
+    rows: detail >= 1 ? 4 : 2,
+    seg: detail >= 1 ? 22 : 10,
+    tread: PAL.travertineDirty,
+    riser: new THREE.Color().copy(PAL.travertineDirty).multiplyScalar(0.72),
+    salt: 0x9b,
+  });
+  void rng;
+}
+
+/**
+ * The Tabularium: the record office of 78 BC closing the west end of the Forum, a
+ * two-storey arcaded façade on a battered tufa substructure. Still the base of the
+ * Palazzo Senatorio.
+ */
+function buildTabularium(batch: Batch, detail: number, g: number, L: number, W: number): void {
+  const stone = batch.s('stone');
+  const bays = detail >= 1 ? 11 : 5;
+  const bw = L / bays;
+  // Substructure, battered, in blocks of Gabine stone.
+  box(stone, -L / 2, g - 8, -W / 2, L / 2, g + 1.2, W / 2, PAL.peperino, { batter: 0.05, topGain: 1.05 });
+  for (let s = 0; s < 2; s++) {
+    const y = g + 1.2 + s * 7.6;
+    stone.push(new THREE.Matrix4().setPosition(0, y, -W / 2));
+    arcade(stone, bays, bw, 7.6, s === 0 ? PAL.travertine : PAL.travertineDirty, {
+      depth: 4.5,
+      spring: 3.9,
+      openWidth: Math.min(bw * 0.6, 3.6),
+      segments: detail >= 2 ? 8 : 4,
+      voidCol: PAL.voidDark,
+    });
+    if (detail >= 1) {
+      for (let i = 0; i <= bays; i++) {
+        column(stone, -L / 2 + bw * i, 0, -0.6, 0.46, 6.6, s === 0 ? 'tuscan' : 'ionic', PAL.travertine, detail - 1);
+      }
+    }
+    stone.pop();
+  }
+  box(stone, -L / 2, g + 16.4, -W / 2, L / 2, g + 18.4, W / 2, PAL.travertineDirty, { topGain: 1.14 });
+  box(batch.s('roof'), -L / 2 - 0.8, g + 18.4, -W / 2 - 0.8, L / 2 + 0.8, g + 19.2, W / 2 + 0.8, PAL.roofTile, { topGain: 1.1 });
+}
+
+/**
+ * Trajan's Market: a hemicycle of *tabernae* cut into the flank of the Quirinal above
+ * the Forum of Trajan, stepping up the hillside in six storeys. The curve faces the
+ * forum, so it opens along local −Z.
+ */
+function buildMarket(batch: Batch, detail: number, g: number, L: number, W: number): void {
+  const brick = batch.s('brick');
+  const roof = batch.s('roof');
+  const R = L * 0.5;
+  const tiers = 3;
+  for (let t = 0; t < tiers; t++) {
+    const rr = R - t * (W / tiers) * 0.86;
+    const y = g + t * 8.2;
+    const n = detail >= 1 ? 20 : 9;
+    for (let i = 0; i < n; i++) {
+      const a0 = Math.PI + (Math.PI * i) / n;
+      const a1 = Math.PI + (Math.PI * (i + 1)) / n;
+      const am = (a0 + a1) / 2;
+      const bw = 2 * rr * Math.sin(Math.PI / (2 * n));
+      brick.push(new THREE.Matrix4().makeRotationY(-am + Math.PI * 0.5).setPosition(Math.cos(am) * rr, y, Math.sin(am) * rr));
+      archPanel(brick, bw + 0.05, 8.2, t === 0 ? PAL.brick : PAL.brickPale, {
+        depth: 8,
+        spring: 4.2,
+        openWidth: Math.min(bw * 0.56, 3.4),
+        segments: detail >= 2 ? 7 : 4,
+        voidCol: PAL.voidDark,
+      });
+      brick.pop();
+    }
+    // The terrace behind each tier.
+    if (t === tiers - 1) {
+      roof.pushTranslate(0, 0, (R - W) * 0.5);
+      hipRoof(roof, L * 0.6, W * 0.5, y + 8.2, 3.0, 0.8, PAL.roofTileOld);
+      roof.pop();
+    }
+  }
+  // The tall market hall behind the hemicycle.
+  box(brick, -L * 0.22, g + 8.2, -W * 0.1, L * 0.22, g + 30, W * 0.42, PAL.brickPale, { topGain: 1.08 });
+  box(roof, -L * 0.23, g + 30, -W * 0.11, L * 0.23, g + 31, W * 0.43, PAL.roofTileOld, { topGain: 1.1 });
+}
+
+export interface PrecinctOpts {
+  /** Number of temples inside, side by side facing along −Z. */
+  temples: number;
+  colH: number;
+  /** A closed precinct wall behind the colonnade (Porticus Octaviae) or an open one. */
+  wall: boolean;
+}
+
+/**
+ * A colonnaded precinct with temples in it: the Imperial Fora, the Porticus Octaviae,
+ * the Area Sacra at Largo Argentina. One builder because that *is* one Roman building
+ * type — a walled rectangle of paving with a colonnade round it and podium temples
+ * standing in the middle.
+ */
+function buildPrecinct(batch: Batch, detail: number, g: number, L: number, W: number, rng: Rng, o: PrecinctOpts): void {
+  const stone = batch.s('stone');
+  const road = batch.s('road');
+  const roof = batch.s('roof');
+  pavedField(road, L / 2, W / 2, g + 0.14, 5.5, PAL.marbleShadow, Math.round(L * 7), 0.2);
+
+  // Colonnade all the way round, on a low stylobate.
+  const colH = o.colH;
+  const pitch = 5.0;
+  const along = (n: number, fx: (t: number) => [number, number]): void => {
+    for (let i = 0; i < n; i++) {
+      const [px, pz] = fx(n === 1 ? 0.5 : i / (n - 1));
+      column(stone, px, g + 0.8, pz, 0.5, colH, 'corinthian', PAL.marble, detail - 1);
+    }
+  };
+  const nx = Math.max(2, Math.round(L / pitch));
+  const nz = Math.max(2, Math.round(W / pitch));
+  for (const s of [-1, 1] as const) {
+    along(nx, (t) => [lerp(-L / 2, L / 2, t), (s * W) / 2]);
+    along(nz, (t) => [(s * L) / 2, lerp(-W / 2, W / 2, t)]);
+    box(stone, -L / 2 - 1, g + 0.8 + colH, (s * W) / 2 - side1(s) * 1.0, L / 2 + 1, g + 0.8 + colH + 1.8, (s * W) / 2 + side1(s) * 7.5, PAL.marble, { topGain: 1.12 });
+    box(roof, -L / 2 - 1.4, g + 0.8 + colH + 1.8, (s * W) / 2 - side1(s) * 1.3, L / 2 + 1.4, g + 0.8 + colH + 3.2, (s * W) / 2 + side1(s) * 8.2, PAL.roofTile, { topGain: 1.1 });
+    box(stone, (s * L) / 2 - side1(s) * 1.0, g + 0.8 + colH, -W / 2, (s * L) / 2 + side1(s) * 7.5, g + 0.8 + colH + 1.8, W / 2, PAL.marble, { topGain: 1.12 });
+    box(roof, (s * L) / 2 - side1(s) * 1.3, g + 0.8 + colH + 1.8, -W / 2 - 1.4, (s * L) / 2 + side1(s) * 8.2, g + 0.8 + colH + 3.2, W / 2 + 1.4, PAL.roofTileOld, { topGain: 1.1 });
+    if (o.wall) {
+      box(stone, -L / 2 - 8, g, (s * W) / 2 + side1(s) * 7.5, L / 2 + 8, g + colH + 5.0, (s * W) / 2 + side1(s) * 9.0, PAL.marbleShadow, { topGain: 1.1 });
+      box(stone, (s * L) / 2 + side1(s) * 7.5, g, -W / 2 - 8, (s * L) / 2 + side1(s) * 9.0, g + colH + 5.0, W / 2 + 8, PAL.marbleShadow, { topGain: 1.1 });
+    }
+  }
+
+  // Temples on podia, standing in a row along the long axis.
+  const tw = Math.min(30, (L / o.temples) * 0.62);
+  for (let i = 0; i < o.temples; i++) {
+    const px = o.temples === 1 ? 0 : lerp(-L / 2 + tw * 0.9, L / 2 - tw * 0.9, i / (o.temples - 1));
+    stone.pushTranslate(px, 0, W * 0.1);
+    buildTemple(batch, detail, g, {
+      w: tw,
+      d: tw * 1.4,
+      podiumH: 3.0 + (i % 2) * 0.8,
+      colH: colH * 1.25,
+      colR: 0.6,
+      colsFront: tw > 22 ? 6 : 4,
+      colsSide: 5,
+      porchRows: 2,
+      order: 'corinthian',
+      roofCol: i % 2 === 0 ? PAL.roofTile : PAL.bronze,
+      roofMat: 'roof',
+      wallCol: PAL.marble,
+      cellae: 1,
+    });
+    stone.pop();
+  }
+  void rng;
+}
+
+const side1 = (s: number): number => (s < 0 ? -1 : 1);
+
+/**
+ * A hilltop quarter: the Aventine and the Caelian. By the third century both were
+ * quiet, grand and green — great courtyard houses and a temple or two among gardens,
+ * not tenements. Built here rather than in `insulae.ts` because the whole hill is
+ * reserved as one landmark footprint.
+ */
+function buildHillQuarter(batch: Batch, detail: number, g: number, L: number, W: number, rng: Rng, temple: boolean): void {
+  const stucco = batch.s('stucco');
+  const roof = batch.s('roof');
+  const stone = batch.s('stone');
+  const road = batch.s('road');
+  // A paved terrace under the whole quarter, so the houses do not stand on grass.
+  pavedField(road, L * 0.5, W * 0.5, g + 0.08, 14, PAL.dust, Math.round(L * 11), 0.22);
+
+  const cols = Math.max(2, Math.round(L / 62));
+  const rows = Math.max(2, Math.round(W / 58));
+  for (let j = 0; j < rows; j++) {
+    for (let i = 0; i < cols; i++) {
+      const cx = lerp(-L / 2 + L / cols / 2, L / 2 - L / cols / 2, cols === 1 ? 0.5 : i / (cols - 1));
+      const cz = lerp(-W / 2 + W / rows / 2, W / 2 - W / rows / 2, rows === 1 ? 0.5 : j / (rows - 1));
+      if (rng.bool(0.18)) continue; // a garden instead
+      const hw = rng.range(16, 24);
+      const hd = rng.range(13, 20);
+      const h = rng.range(6.5, 11);
+      const paint = rng.pickWeighted([PAL.limeWhite, PAL.ochrePale, PAL.terraDirty], [0.5, 0.32, 0.18]);
+      const tile = rng.pickWeighted([PAL.roofTile, PAL.roofTileOld], [0.6, 0.4]);
+      // A courtyard house: four wings round a peristyle.
+      const wing = Math.min(7.5, Math.min(hw, hd) * 0.42);
+      for (const [x0, z0, x1, z1] of [
+        [-hw, -hd, hw, -hd + wing],
+        [-hw, hd - wing, hw, hd],
+        [-hw, -hd + wing, -hw + wing, hd - wing],
+        [hw - wing, -hd + wing, hw, hd - wing],
+      ] as const) {
+        box(stucco, cx + x0, g, cz + z0, cx + x1, g + h, cz + z1, new THREE.Color().copy(paint).multiplyScalar(rng.range(0.86, 1.1)), {
+          groundShade: 0.2,
+        });
+        roof.pushTranslate(cx + (x0 + x1) / 2, 0, cz + (z0 + z1) / 2);
+        hipRoof(roof, x1 - x0 + 1.4, z1 - z0 + 1.4, g + h, Math.min(x1 - x0, z1 - z0) * 0.2, 0.8, tile);
+        roof.pop();
+      }
+      if (detail >= 1) {
+        const cw = hw - wing;
+        const cd = hd - wing;
+        box(stone, cx - cw, g + 0.12, cz - cd, cx + cw, g + 0.2, cz + cd, PAL.marbleShadow, { bottom: false });
+        for (let k = 0; k < 6; k++) {
+          const t = k / 5;
+          column(stone, cx + lerp(-cw + 1, cw - 1, t), g + 0.2, cz - cd + 1, 0.26, 3.6, 'corinthian', PAL.marble, detail - 1);
+          column(stone, cx + lerp(-cw + 1, cw - 1, t), g + 0.2, cz + cd - 1, 0.26, 3.6, 'corinthian', PAL.marble, detail - 1);
+        }
+      }
+    }
+  }
+  if (temple) {
+    // The Aventine's temples: Juno Regina and Diana on the ridge.
+    stone.pushTranslate(0, 0, -W * 0.36);
+    buildTemple(batch, detail, g, {
+      w: 26,
+      d: 40,
+      podiumH: 3.4,
+      colH: 11.5,
+      colR: 0.64,
+      colsFront: 6,
+      colsSide: 5,
+      porchRows: 2,
+      order: 'corinthian',
+      roofCol: PAL.roofTile,
+      roofMat: 'roof',
+      wallCol: PAL.marble,
+      cellae: 1,
+    });
+    stone.pop();
   }
 }
 
-/** Imperial baths: a vaulted block in a walled precinct, unmistakable from above. */
-function buildBaths(batch: Batch, detail: number, g: number, W: number, D: number, rng: Rng): void {
-  const brick = batch.s('brick');
-  const concrete = batch.s('stone');
+/**
+ * Insula Tiberina: the boat-shaped island between the Capitoline and the Aventine,
+ * revetted in travertine, with the Temple of Aesculapius on it and a bridge to each
+ * bank. Placed on the terrain's own river centreline, so the water is the datum.
+ */
+function buildTiberIsland(batch: Batch, detail: number, g: number, heightAt: Ground, m: LandmarkPlacement): void {
   const stone = batch.s('stone');
+  const road = batch.s('road');
+  const L = m.hw * 0.9;
+  const W = m.hd * 0.82;
+  const deck = Math.max(g, WATER + 4.2);
 
-  // Precinct wall with exedrae.
-  box(brick, -W / 2, g, -D / 2, W / 2, g + 8.5, -D / 2 + 2.2, PAL.brick, { topGain: 1.08 });
-  box(brick, -W / 2, g, D / 2 - 2.2, W / 2, g + 8.5, D / 2, PAL.brick, { topGain: 1.08 });
-  box(brick, -W / 2, g, -D / 2, -W / 2 + 2.2, g + 8.5, D / 2, PAL.brick, { topGain: 1.08 });
-  box(brick, W / 2 - 2.2, g, -D / 2, W / 2, g + 8.5, D / 2, PAL.brick, { topGain: 1.08 });
-
-  // Central block: frigidarium with three cross-vaults, caldarium apse to the south.
-  const bw = W * 0.5;
-  const bd = D * 0.44;
-  box(brick, -bw / 2, g, -bd / 2, bw / 2, g + 22, bd / 2, PAL.brick, { topGain: 1.06 });
-  const vaultSeg = detail >= 1 ? 14 : 7;
-  for (let i = 0; i < 3; i++) {
-    const px = (i - 1) * (bw / 3);
-    // Barrel vault as a half-cylinder lying along Z.
-    const vm = new THREE.Matrix4().makeRotationX(Math.PI / 2).setPosition(px, g + 22, 0);
-    concrete.push(vm);
-    cylinder(concrete, 0, -bd / 2, 0, bw / 6.4, bw / 6.4, bd, vaultSeg, PAL.concrete, { arcFrom: 0, arcTo: Math.PI });
-    concrete.pop();
+  // The travertine revetment, cut to a point at each end like a ship's prow.
+  const seg = detail >= 1 ? 22 : 10;
+  for (let i = 0; i < seg; i++) {
+    const a0 = (Math.PI * 2 * i) / seg;
+    const a1 = (Math.PI * 2 * (i + 1)) / seg;
+    // A superellipse: blunt-sided and sharp-ended, which is the island's actual plan.
+    const px = (a: number): number => Math.sign(Math.cos(a)) * Math.pow(Math.abs(Math.cos(a)), 0.72) * L;
+    const pz = (a: number): number => Math.sign(Math.sin(a)) * Math.pow(Math.abs(Math.sin(a)), 1.5) * W;
+    quadPrism(stone, px(a0), pz(a0), px(a1), pz(a1), Math.cos((a0 + a1) / 2), Math.sin((a0 + a1) / 2), 0.01, WATER - 1.5, deck, PAL.travertineDirty, PAL.travertine, {
+      top: false,
+      ends: false,
+    });
+    const p0 = new THREE.Vector3(px(a0), deck, pz(a0));
+    const p1 = new THREE.Vector3(px(a1), deck, pz(a1));
+    const p2 = new THREE.Vector3(0, deck, 0);
+    UP.set(0, 1, 0);
+    stone.triN(UP, p0, p1, p2, PAL.dust);
   }
-  // Caldarium: a domed rotunda on the sunny side.
-  cylinder(brick, 0, g, bd / 2 + 14, 15, 15, 18, detail >= 1 ? 20 : 10, PAL.brick, { shadeLow: 0.16 });
-  dome(concrete, 0, g + 18, bd / 2 + 14, 15, detail >= 1 ? 20 : 10, detail >= 1 ? 7 : 3, PAL.concrete, { heightScale: 0.8 });
-  // Palaestrae: colonnaded courts either side.
-  if (detail >= 1) {
-    for (const s of [-1, 1]) {
-      const px = (s * W) / 2 - s * 22;
-      for (let i = 0; i < 8; i++) {
-        const zz = lerp(-bd / 2, bd / 2, i / 7);
-        column(stone, px, g + 0.6, zz, 0.5, 7.5, 'corinthian', PAL.marble, detail - 1);
-      }
+  pavedField(road, L * 0.6, W * 0.55, deck + 0.1, 6, PAL.basalt, 0x1b1a, 0.24);
+  // The Temple of Aesculapius at the downstream end.
+  stone.pushTranslate(L * 0.34, 0, 0);
+  stone.push(new THREE.Matrix4().makeRotationY(Math.PI / 2));
+  buildTemple(batch, detail, deck, {
+    w: 18,
+    d: 28,
+    podiumH: 2.6,
+    colH: 9.0,
+    colR: 0.52,
+    colsFront: 4,
+    colsSide: 5,
+    porchRows: 2,
+    order: 'corinthian',
+    roofCol: PAL.roofTile,
+    roofMat: 'roof',
+    wallCol: PAL.marble,
+    cellae: 1,
+  });
+  stone.pop();
+  stone.pop();
+  // Pons Fabricius to the east bank and Pons Cestius to the west: four arches each.
+  for (const s of [-1, 1] as const) {
+    const span = 62;
+    const n = 4;
+    for (let i = 0; i < n; i++) {
+      const zz = s * (W + 6 + (span * (i + 0.5)) / n);
+      const wx = m.x;
+      const wz = m.z + zz;
+      const gg = heightAt(wx, wz);
+      stone.push(new THREE.Matrix4().makeRotationY(Math.PI / 2).setPosition(0, Math.max(gg, WATER - 1.0), zz));
+      archPanel(stone, span / n + 0.05, deck - Math.max(gg, WATER - 1.0), PAL.travertine, {
+        depth: 7.4,
+        spring: Math.max(2.2, deck - Math.max(gg, WATER - 1.0) - span / n * 0.5),
+        openWidth: (span / n) * 0.78,
+        segments: detail >= 2 ? 9 : 5,
+        backFace: true,
+        archivolt: detail >= 2 ? 0.2 : 0,
+      });
+      stone.pop();
     }
-    // Great semicircular exedra in the back wall.
-    cylinder(brick, 0, g, -D / 2 + 1, 22, 22, 11, 14, PAL.brick, { arcFrom: 0, arcTo: Math.PI });
   }
+}
+
+/** Tiber low-water surface, from the terrain contract. */
+const WATER = 5.0;
+
+/**
+ * The Mausoleum of Hadrian on the far bank: a 64 m drum on an 89 m square podium,
+ * planted on top with a quadriga above. The imperial mausoleum in 271.
+ */
+function buildHadrianeum(batch: Batch, detail: number, g: number, rng: Rng): void {
+  const stone = batch.s('stone');
+  const metal = batch.s('metal');
+  const seg = detail >= 1 ? 30 : 14;
+  box(stone, -44.5, g - 1, -44.5, 44.5, g + 10.5, 44.5, PAL.travertineDirty, { topGain: 1.06, batter: 0.01 });
+  if (detail >= 1) {
+    // Pilasters and garlands round the podium.
+    for (let i = 0; i < 32; i++) {
+      const t = (i % 8) / 7;
+      const s = Math.floor(i / 8);
+      const px = s === 0 ? lerp(-42, 42, t) : s === 1 ? 44.6 : s === 2 ? lerp(42, -42, t) : -44.6;
+      const pz = s === 0 ? -44.6 : s === 1 ? lerp(-42, 42, t) : s === 2 ? 44.6 : lerp(42, -42, t);
+      box(stone, px - 1.1, g, pz - 1.1, px + 1.1, g + 10.5, pz + 1.1, PAL.travertine);
+    }
+  }
+  cylinder(stone, 0, g + 10.5, 0, 32, 32, 21, seg, PAL.travertine, { shadeLow: 0.1, top: true });
+  cylinder(stone, 0, g + 31.5, 0, 32.8, 32.8, 1.4, seg, PAL.travertineDirty, { top: true });
+  cylinder(stone, 0, g + 32.9, 0, 15, 15, 8.5, seg, PAL.marbleShadow, { top: true });
+  statue(metal, 0, g + 41.4, 0, 5.5, PAL.gilt, Math.PI, seg);
+  void rng;
 }
 
 /** Castra Praetoria: the Praetorian barracks, a fortified brick camp. */

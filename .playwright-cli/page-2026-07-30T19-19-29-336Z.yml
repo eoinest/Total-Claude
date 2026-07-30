@@ -1,0 +1,220 @@
+- generic [active] [ref=e1]:
+  - link "Skip to main content" [ref=e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - banner [ref=e5]:
+        - link "Smithsonian main website" [ref=e11] [cursor=pointer]:
+          - /url: https://si.edu
+        - generic [ref=e15]:
+          - link "SI Yellow sunburst with blue background Smithsonian 3d Digitization" [ref=e18] [cursor=pointer]:
+            - /url: /
+            - img "SI Yellow sunburst with blue background" [ref=e20]
+            - generic [ref=e23]:
+              - text: Smithsonian
+              - generic [ref=e24]: 3d Digitization
+          - navigation "Open Main navigation" [ref=e27]:
+            - list [ref=e28]:
+              - listitem [ref=e29]:
+                - link "Explore" [ref=e30] [cursor=pointer]:
+                  - /url: /explore
+              - listitem [ref=e31]:
+                - link "Collections" [ref=e32] [cursor=pointer]:
+                  - /url: /collections
+              - listitem [ref=e33]:
+                - link "About " [ref=e34] [cursor=pointer]:
+                  - /url: /about
+              - listitem [ref=e35]:
+                - link "Labs" [ref=e36] [cursor=pointer]:
+                  - /url: /labs
+              - listitem [ref=e37]:
+                - link "Sponsors" [ref=e38] [cursor=pointer]:
+                  - /url: /sponsors
+              - listitem [ref=e39]:
+                - button "Toggle search form, esc to close" [ref=e40] [cursor=pointer]:
+                  - img "search" [ref=e41]
+      - main [ref=e46]:
+        - generic [ref=e48]:
+          - generic [ref=e49]:
+            - heading "Funerary relief bust" [level=1] [ref=e50]
+            - generic [ref=e51]:
+              - button "Click to expand social media share options" [ref=e52] [cursor=pointer]
+              - link "Copy Link" [ref=e60] [cursor=pointer]:
+                - /url: /#copy_link
+              - link "Email" [ref=e62] [cursor=pointer]:
+                - /url: /#email
+              - link "Print" [ref=e64] [cursor=pointer]:
+                - /url: /#print
+          - generic [ref=e68]:
+            - heading "Object Details" [level=2] [ref=e69]
+            - generic [ref=e70]:
+              - term [ref=e71]: Description
+              - definition [ref=e72]: Head and bust of a woman in high relief. The left hand grasps her garment while the right, with two fingers extended, touchers her face. Her expression is pensive. She wears three necklaces, earrings and two rings on her left little finger. A brooch with a six-pointed ornament is affixed to her garment. Behind her is a draped cloth supported by two medallions adorned with sheaths of wheat, in front of a patterned background.
+              - term [ref=e73]: Inscriptions
+              - definition [ref=e74]: The inscriptions carved on this relief bust, written in Aramaic, identify the figure as a woman named Haliphat and date her death to the year 231.
+              - term [ref=e75]: Label
+              - definition [ref=e76]: The inscriptions carved on this relief bust, written in Aramaic, identify the figure as a woman named Haliphat and date her death to the year 231 C.E. The bust is from Palmyra, a city in southern Syria that flourished during the Roman Empire as a caravan oasis on the trade route linking the Mediterranean with West and Central Asia.
+              - definition [ref=e77]: Many members of Palmyra's prosperous merchant class commissioned such funerary busts depicting fashionably dressed individuals; women often wear elaborate jewelry. The busts covered the openings of burial compartments in family tombs located in the desert outside Palmyra.
+              - term [ref=e78]: Provenance
+              - definition [ref=e79]: To 1908
+              - definition [ref=e80]: Joseph Marcopoli, Aleppo, Syria, to 1908 [1]
+              - definition [ref=e81]: From 1908 to 1919
+              - definition [ref=e82]: Charles Lang Freer (1854-1919), purchased from Joseph Marcopoli, Aleppo, in 1908 [2]
+              - definition [ref=e83]: From 1920
+              - definition [ref=e84]: Freer Gallery of Art, gift of Charles Lang Freer in 1920 [3]
+              - definition [ref=e85]: "Notes:"
+              - definition [ref=e86]: "[1] See Reserved Miscellaneous List, R. 5601, Freer Gallery of Art and Arthur M. Sackler Gallery Archives."
+              - definition [ref=e87]: "[2] See note 1."
+              - definition [ref=e88]: "[3] The original deed of Charles Lang Freer's gift was signed in 1906. The collection was received in 1920 upon the completion of the Freer Gallery."
+              - term [ref=e89]: Collection
+              - definition [ref=e90]: Freer Gallery of Art Collection
+              - term [ref=e91]: Exhibition History
+              - definition [ref=e92]: Palmyra (June 5 to December 14, 2015; August 13, 2018 - ongoing)
+              - definition [ref=e93]: "Facing East: Portraits from Asia (July 1 to September 4, 2006)"
+              - definition [ref=e94]: America Meets Asia at the Freer Gallery of Art (May 9, 1993 to August 8, 1994)
+              - definition [ref=e95]: Christian Art (January 1, 1963 to May 15, 1968)
+              - definition [ref=e96]: Untitled Exhibition, Armenian and Byzantine Art (July 28, 1958 to January 1, 1963)
+              - definition [ref=e97]: Centennial Exhibition, Gallery 6 Alcove (February 25, 1956 to July 22, 1958)
+              - definition [ref=e98]: Untitled Exhibition, Ancient Near Eastern Art, East Corridor (October 26 to November 10, 1955)
+              - definition [ref=e99]: Special Exhibition, Armenian Manuscripts and East Christian Art (February 15, 1955 to April 13, 1955)
+              - definition [ref=e100]: Untitled Exhibition, Ancient Near Eastern Art, 1947 (June 18, 1947 to October 26, 1955)
+              - term [ref=e101]: Previous custodian or owner
+              - definition [ref=e102]: Joseph Marcopoli (C.L. Freer source)
+              - definition [ref=e103]: Charles Lang Freer (1854-1919)
+            - generic [ref=e104]:
+              - term [ref=e105]: Date
+              - definition [ref=e106]: 3rd century (dated 231 CE)
+            - generic [ref=e107]:
+              - term [ref=e108]: Origin
+              - definition [ref=e109]: Palmyra, Homs, Syria
+            - generic [ref=e110]:
+              - term [ref=e111]: Topic
+              - definition [ref=e112]: stone
+              - definition [ref=e113]: portrait
+              - definition [ref=e114]: funerary
+              - definition [ref=e115]: woman
+              - definition [ref=e116]: Syria
+              - definition [ref=e117]: Ancient Near Eastern Art
+              - definition [ref=e118]: Charles Lang Freer collection
+            - generic [ref=e119]:
+              - term [ref=e120]: On View
+              - definition [ref=e121]: West Building (Freer Gallery of Art), North Corridor
+              - term [ref=e122]: Related Online Resources
+              - definition [ref=e123]: Google Arts & Culture
+              - term [ref=e124]: See more items in
+              - definition [ref=e125]: National Museum of Asian Art
+            - generic [ref=e126]:
+              - term [ref=e127]: Credit Line
+              - definition [ref=e128]: Gift of Charles Lang Freer
+            - generic [ref=e129]:
+              - term [ref=e130]: Data Source
+              - definition [ref=e131]: National Museum of Asian Art
+            - generic [ref=e132]:
+              - term [ref=e133]: Accession Number
+              - definition [ref=e134]: F1908.236
+            - generic [ref=e135]:
+              - term [ref=e136]: Type
+              - definition [ref=e137]: Sculpture
+            - generic [ref=e138]:
+              - term [ref=e139]: Restrictions & Rights
+              - definition [ref=e140]: Usage conditions apply
+            - generic [ref=e141]:
+              - term [ref=e142]: Medium
+              - definition [ref=e143]: Limestone
+              - term [ref=e144]: Dimensions
+              - definition [ref=e145]: "H x W x D (overall): 60.1 x 55.3 x 23 cm (23 11/16 x 21 3/4 x 9 1/16 in)"
+            - generic [ref=e146]:
+              - term [ref=e147]: Metadata Usage
+              - definition [ref=e148]: Usage conditions apply
+            - generic [ref=e149]:
+              - term [ref=e150]: GUID
+              - definition [ref=e151]:
+                - link [ref=e152] [cursor=pointer]:
+                  - /url: http://n2t.net/ark:/65665/ye38850b338-a2ee-4673-be9c-28e68e80d7c9
+                  - text: http://n2t.net/ark:/65665/ye38850b338-a2ee-4673-be9c-28e68e80d7c9
+                  - img "(link is external)" [ref=e153]
+            - generic [ref=e156]:
+              - term [ref=e157]: Record ID
+              - definition [ref=e158]: fsg_F1908.236
+          - generic [ref=e160]:
+            - figure [ref=e162]:
+              - iframe [ref=e163]:
+                
+            - generic [ref=e166]:
+              - button "Usage Conditions Apply Click for more information." [ref=e168] [cursor=pointer]:
+                - generic [ref=e169]:
+                  - text: Usage Conditions Apply
+                  - generic [ref=e170]: Click for more information.
+              - button "Click to view download files download" [ref=e172] [cursor=pointer]:
+                - generic [ref=e173]: Click to view download files
+                - img "download" [ref=e174]
+              - button "Click to view IIIF info" [ref=e177] [cursor=pointer]
+            - region [ref=e188]:
+              - generic [ref=e190]:
+                - tabpanel "1 of 3" [ref=e191]:
+                  - generic [ref=e192]:
+                    - img "3d model of Funerary relief bust" [ref=e193]
+                    - generic [ref=e194]: 3D Model
+                - tabpanel "2 of 3" [ref=e196]:
+                  - 'img "Figure: human" [ref=e198]'
+                - tabpanel "3 of 3" [ref=e199]:
+                  - 'img "Figure: human" [ref=e201]'
+              - generic:
+                - button "Previous slide" [disabled] [ref=e202] [cursor=pointer]
+                - button "Next slide" [disabled] [ref=e205] [cursor=pointer]
+      - contentinfo [ref=e208]:
+        - generic [ref=e210]:
+          - generic [ref=e211]:
+            - navigation [ref=e212]:
+              - heading "Social Media" [level=2] [ref=e213]
+              - list [ref=e214]:
+                - listitem [ref=e215]:
+                  - link " Facebook (link is external)" [ref=e216] [cursor=pointer]:
+                    - /url: https://www.facebook.com/3d.si.edu/
+                    - text: 
+                    - generic [ref=e217]: Facebook
+                    - img "(link is external)" [ref=e218]
+                - listitem [ref=e221]:
+                  - link " Instagram (link is external)" [ref=e222] [cursor=pointer]:
+                    - /url: https://www.instagram.com/smithsonian3d/?hl=en
+                    - text: 
+                    - generic [ref=e223]: Instagram
+                    - img "(link is external)" [ref=e224]
+                - listitem [ref=e227]:
+                  - link " Twitter (link is external)" [ref=e228] [cursor=pointer]:
+                    - /url: https://twitter.com/Smithsonian3D
+                    - text: 
+                    - generic [ref=e229]: Twitter
+                    - img "(link is external)" [ref=e230]
+                - listitem [ref=e233]:
+                  - link " YouTube (link is external)" [ref=e234] [cursor=pointer]:
+                    - /url: https://www.youtube.com/@SmithsonianDigital
+                    - text: 
+                    - generic [ref=e235]: YouTube
+                    - img "(link is external)" [ref=e236]
+                - listitem [ref=e239]:
+                  - link "Voyager GitHub (link is external)" [ref=e240] [cursor=pointer]:
+                    - /url: https://smithsonian.github.io/dpo-voyager/
+                    - generic [ref=e241]: Voyager GitHub
+                    - img "(link is external)" [ref=e242]
+                - listitem [ref=e245]:
+                  - link "Cook GitHub (link is external)" [ref=e246] [cursor=pointer]:
+                    - /url: https://smithsonian.github.io/dpo-cook/
+                    - generic [ref=e247]: Cook GitHub
+                    - img "(link is external)" [ref=e248]
+            - link "Smithsonian main website" [ref=e253] [cursor=pointer]:
+              - /url: https://si.edu
+          - navigation [ref=e257]:
+            - heading "Footer" [level=2] [ref=e258]
+            - list [ref=e259]:
+              - listitem [ref=e260]:
+                - link "Digitization Program Office" [ref=e261] [cursor=pointer]:
+                  - /url: https://dpo.si.edu/
+              - listitem [ref=e262]:
+                - link "Privacy" [ref=e263] [cursor=pointer]:
+                  - /url: https://www.si.edu/privacy
+              - listitem [ref=e264]:
+                - link "Terms of Use" [ref=e265] [cursor=pointer]:
+                  - /url: https://www.si.edu/Termsofuse
+    - link "Back to Top" [ref=e266] [cursor=pointer]:
+      - /url: "#main-content"

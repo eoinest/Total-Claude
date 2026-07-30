@@ -623,3 +623,127 @@ f137ee67bd565244f7441f35b5594a597588cda8b60ab109e2041cf13c58e1dd  assets/models/
 e49f8ec0f8a7de72dd26b1c01e6413c9a87a9116eeee21f9364ccd36bc286335  assets/models/characters/Worker.gltf
 659c7d84dcea8c6331698c3430484861944c83e629389425664b782d4aecd17c  assets/models/characters/King.gltf
 ```
+
+---
+
+## Historical reference maps — `reference/rome-plans/` (research only, not shipped)
+
+These are **not shipped** and are not loaded at runtime. They live in the gitignored
+`reference/` tree and were used only to derive and check the coordinates, dimensions and
+long-axis bearings in `src/city/rome.ts`. Nothing in `public/assets/` comes from them and
+the built game does not read them. They are recorded here because the coordinates in the
+source *are* derived from them, and because the licences differ.
+
+The two Lanciani plate bearings quoted in `rome.ts` (the Circus Maximus at 119° and the
+Colosseum's major axis at 68°) were measured off item 5 below by converting the survey's
+lat/lon to pixel coordinates against that image's stated bounding box.
+
+### 1. Plan of Ancient Rome (Clarke, 1830)
+- **Creator:** William Barnard Clarke; Society for the Diffusion of Useful Knowledge;
+  engraved by J. & C. Walker; published by Baldwin & Cradock. 1830.
+- **Asset page:** https://commons.wikimedia.org/wiki/File:1830_Plan_of_Ancient_Rome._By_W.B._Clarke,_Archt.jpg
+- **File:** https://upload.wikimedia.org/wikipedia/commons/d/de/1830_Plan_of_Ancient_Rome._By_W.B._Clarke%2C_Archt.jpg
+- **Licence (verbatim, `{{PD-Art|PD-old-100-expired}}`):** "This work is in the public
+  domain in its country of origin and other countries and areas where the copyright term is
+  the author's life plus 100 years or fewer." Also: "This work is in the public domain in
+  the United States because it was published … before January 1, 1930."
+- 9531 × 7617 JPEG. Not georeferenced. Scan credited raremaps.com.
+- Local: `reference/rome-plans/clarke-1830-sduk-plan-of-ancient-rome-9531px.jpg`
+
+### 2–4. Rodolfo Lanciani, *Forma Urbis Romae* — Synopsis 1, Tavola 29, Tavola 35
+- **Creator:** Rodolfo Lanciani (1845–1929), Milan 1893–1901, 1:1000.
+- **Asset pages:**
+  - https://commons.wikimedia.org/wiki/File:Rodolfo_Lanciani_-_Forma_Urbis_Romae_-_Synopsis_1.jpg
+  - https://commons.wikimedia.org/wiki/File:Rodolfo_Lanciani_-_Forma_Urbis_Romae_-_Tavola_29.jpg (Forum, Palatine, Colosseum)
+  - https://commons.wikimedia.org/wiki/File:Rodolfo_Lanciani_-_Forma_Urbis_Romae_-_Tavola_35.jpg (Circus Maximus)
+- **Files:** the `.../thumb/<hash>/<name>/3840px-<name>` renditions of the above.
+- **Licence (verbatim, `{{PD-old}}{{PD-ineligible}}`):** "This work is in the public domain
+  in its country of origin and other countries and areas where the copyright term is the
+  author's life plus 70 years or fewer." / "This file has been identified as being free of
+  known restrictions under copyright law, including all related and neighboring rights."
+- Note: Commons' Credit field says davidrumsey.com (David Rumsey licenses *his own* scans
+  CC BY-NC-SA 3.0) while the licence field is public domain under the PD-Art doctrine, which
+  EU DSM Directive Art. 14 codifies. Recorded here because the two statements coexist.
+- Local: `lanciani-1901-synopsis1-index-plan-3840.jpg`,
+  `lanciani-1901-tavola29-forum-palatine-colosseum-3840.jpg`,
+  `lanciani-1901-tavola35-circus-maximus-3840.jpg`
+
+### 5. Lanciani, *Forma Urbis Romae* — georectified WMS render
+- **Creator:** Lanciani (source map); georectification by Gruppo di lavoro SITAR,
+  Soprintendenza Speciale Archeologia Belle Arti e Paesaggio di Roma (SSABAP-RM).
+- **Asset page:** https://www.archeositarproject.it/geoservizi/
+- **File:** GeoServer WMS `GetMap` on layer
+  `cartografia_storica:Forma Urbis Romae - Lanciani`,
+  `srs=EPSG:3004`, `bbox=2307658.1627,4638582.868607,2314671.3719,4643263.3909`,
+  `width=4096&height=2734&format=image/png`, host
+  `https://repositar.archeositarproject.it/geoserver/wms`
+- **Licence (verbatim, SITAR `/open-data/`):** "La Piattaforma Digitale SITAR mette a
+  disposizione degli utenti la possibilità di fruire di geoservizi di rete allineati agli
+  standard OGC rilasciati con licenza CC-BY-SA 4.0." GetCapabilities declares
+  AccessConstraints NONE, Fees NONE.
+  **Caveat:** SITAR's `/termini-e-condizioni/` carves *scanned imagery* out of the open
+  licence — "Per l'uso delle immagini e di specifici contenuti documentali, l'utente è
+  vincolato a quanto previsto dall'etichetta Beni Culturali Standard (BCS)" — so the safe
+  reading is: map content public domain by age (author d. 1929), georectification
+  CC-BY-SA 4.0 to SSABAP-RM. Not shipped, so neither term is triggered.
+- **CRS / extent:** EPSG:3004 (Monte Mario, Italy zone 2, metres); 7013.21 × 4680.52 m at
+  1.7122 m/px. WGS84 equivalent bbox
+  `12.439575163, 41.870577811, 12.525687221, 41.914545675`.
+- Local: `lanciani-georef-EPSG3004-2307658_4638583_2314671_4643263-4096px.png`
+
+### 6. Forma Urbis Severiana — digitised vector (Severan Marble Plan, AD 203–211)
+- **Creator:** digitised and georeferenced by Riccardo Montalbano for Gruppo di lavoro
+  SITAR, SSABAP-RM (2020-12-19). Source monument AD 203–211.
+- **Asset page:** https://www.archeositarproject.it/geoservizi/
+- **File:** GeoServer WFS `GetFeature`, `typeNames=sitar:forma_urbis`,
+  `outputFormat=application/json`, `srsName=EPSG:4326`, host
+  `https://repositar.archeositarproject.it/geoserver/ows`
+- **Licence:** contradictory on the two SITAR pages — `/termini-e-condizioni/` states
+  "tutti i dati grezzi e i metadati descrittivi pubblicati sul portale WebGIS SITAR sono
+  rilasciati sotto i termini della licenza Creative Commons Attribuzione 4.0 Internazionale
+  (CC BY 4.0)" while `/open-data/` says CC-BY-SA 4.0. **Treated as CC-BY-SA 4.0**, the
+  stricter of the two. Vector geometry is explicitly in the open bucket.
+- **Required citation:** "Scheda [OI/PA/UA] cod. [codice identificativo], Anno dell'indagine
+  archeologica [20xx], Data di ultima consultazione [20xx], Fonte: ArcheoSITARproject –
+  WebGIS SITAR, SSABAP-RM."
+- 8,150 MultiPolygon features, EPSG:4326, bbox
+  `12.463268, 41.875187, 12.500995, 41.902367`. No monument-name field: properties are
+  `admapkey`, `layer` (`001_fum_frammenti` = 280 fragment outlines,
+  `002_fum_caratt_interna` = 7,870 interior lines) and a leaked `path`. Coordinates are 3D
+  with a constant Z = 0.
+- Local: `sitar-forma-urbis-severiana-vector-EPSG4326.geo.json`
+
+### 7. Piano Topografico di Roma e Suburbio 1908–1924 — 1 m contours
+- **Creator:** survey by the Istituto Geografico Militare, 1908–1924; layer published by
+  ArcheoSITARproject (SSABAP-RM). Scientific supervision Mirella Serlorenzi, Rocco
+  Bochicchio; validation Università La Sapienza, Dipartimento di Scienze della Terra.
+- **Asset page:** https://www.archeositarproject.it/geoservizi/
+- **File:** GeoServer WFS `GetFeature`,
+  `typeNames=sitar_potenziale:p_1924_contour_lines_ptrs`, `srsName=EPSG:4326`, bbox
+  `2308500,4639000,2312500,4642000,urn:ogc:def:crs:EPSG::3004`
+- **Licence and required citation:** as item 6.
+- 2,871 MultiLineString features; elevation in the `altitudine` field (integer metres
+  a.s.l., 8–88). Used to check the survey's hill elevations: the Aventine reads 45.0 m
+  against 46 expected, the Caelian 43.8 against 48, the Janiculum 76.3 against 82 and Tiber
+  Island 12.9, wherever the nearest contour is within 60 m; on the flat Campus Martius the
+  contours are too sparse to interpolate and everything reads ~10 m.
+- Local: `sitar-ptrs-1924-contours-1m-central-rome-EPSG4326.geo.json`
+
+### Referenced but deliberately NOT used
+- **Stanford Digital Forma Urbis Romae** (formaurbis.stanford.edu) — its meshes and photos
+  are fetchable without authentication, but `docs/FURcopyright.html` states they "may not be
+  copied, downloaded and stored, forwarded, reproduced or published in any form … without
+  express written permission". **All rights reserved. Not downloaded.**
+- **Digital Augustan Rome** (digitalaugustanrome.org) — has an undocumented JSON API with
+  352 full-precision WGS84 records and a georeferenced tile pyramid, and is the best fitting
+  dataset found, but carries **no licence statement anywhere**; only an attribution request,
+  and the paper maps are sold. Treated as all rights reserved. Not downloaded, not used.
+- **mappingrome.com** — all rights reserved.
+- **Pleiades** (CC-BY 3.0) and **OpenHistoricalMap** (CC0) were consulted only as a
+  cross-check on individual point coordinates — e.g. Pleiades place 285857974 gives the
+  Amphitheatrum Flavium at 12.49234831, 41.89025089, which agrees with the 12.4922, 41.8902
+  used in `rome.ts` to within 12 m. **No OHM or Pleiades data ships**, and none of it is
+  loaded at runtime; if any ever does, note that OHM is CC0 but many Pleiades intra-urban
+  geometries are traced from OSM and therefore ODbL-derived upstream despite the CC-BY label.
+- **DARE** is CC BY-**SA** 3.0 (not CC-BY) and has no intra-urban Rome content.
+  **AWMC** is ODbL for GIS and CC BY-NC 4.0 for finished maps, and has no Rome city plan.

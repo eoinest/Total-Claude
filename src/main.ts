@@ -8,7 +8,6 @@ import { CitySystem } from './city/CitySystem';
 
 // --- simulation ---
 import { BattleSystem } from './sim/BattleSystem';
-import { AutoEngageSystem } from './sim/AutoEngage';
 import { CombatSystem } from './sim/Combat';
 import { ProjectileSystem } from './sim/Projectiles';
 import { MoraleSystem } from './sim/Morale';
@@ -87,7 +86,6 @@ engine.add(new TerrainSystem());
 engine.add(new CitySystem());
 
 const battle = engine.add(new BattleSystem());
-engine.add(new AutoEngageSystem());
 engine.add(new CombatSystem());
 engine.add(new ProjectileSystem());
 engine.add(new MoraleSystem());

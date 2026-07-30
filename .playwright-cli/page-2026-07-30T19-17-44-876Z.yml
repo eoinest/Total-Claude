@@ -1,0 +1,170 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e7]:
+      - link "MyMiniFactory home" [ref=e9] [cursor=pointer]:
+        - /url: https://www.myminifactory.com
+      - generic [ref=e14]:
+        - searchbox "SEARCH BY WORD OR TAG" [ref=e15]
+        - button "Search" [ref=e16] [cursor=pointer]
+      - generic [ref=e19]:
+        - generic [ref=e22]:
+          - link "TABLETOP" [ref=e23] [cursor=pointer]:
+            - /url: https://www.myminifactory.com/category/tabletop?store=1
+          - link "TOYS" [ref=e24] [cursor=pointer]:
+            - /url: https://www.myminifactory.com/category/toys-and-games?store=1
+          - link "PDF" [ref=e25] [cursor=pointer]:
+            - /url: https://www.myminifactory.com/category/pdf
+        - button "Open menu" [ref=e27] [cursor=pointer]
+      - generic "Cart icon" [ref=e34] [cursor=pointer]
+      - button "Login button" [ref=e38] [cursor=pointer]: Login
+  - generic [ref=e40]:
+    - generic:
+      - generic [ref=e41]:
+        - generic [ref=e43]:
+          - img "Loader" [ref=e45]
+          - generic [ref=e46] [cursor=pointer]: 3D
+          - generic "Report the Image" [ref=e47]: 
+        - generic [ref=e50]:
+          - generic:
+            - list:
+              - listitem [ref=e51]:
+                - link "Scan the World" [ref=e52] [cursor=pointer]:
+                  - /url: https://www.myminifactory.com/category/scan-the-world
+                - text: ">"
+              - listitem [ref=e53]:
+                - link "Europe" [ref=e54] [cursor=pointer]:
+                  - /url: https://www.myminifactory.com/category/europe
+                - text: ">"
+              - listitem [ref=e55]:
+                - link "United Kingdom" [ref=e56] [cursor=pointer]:
+                  - /url: https://www.myminifactory.com/category/united-kingdom
+                - text: ">"
+              - listitem [ref=e57]:
+                - link "London" [ref=e58] [cursor=pointer]:
+                  - /url: https://www.myminifactory.com/category/london
+        - generic [ref=e59]:
+          - generic [ref=e62]:
+            - generic [ref=e63]: 
+            - text: Scan The World
+          - generic [ref=e64]:
+            - generic "Views" [ref=e65]: 1,649 views
+            - generic "Number Of Downloads" [ref=e66]: 91 downloads
+        - generic:
+          - insertion
+        - generic [ref=e68]:
+          - generic [ref=e69]:
+            - generic [ref=e70]: 
+            - text: Community Prints
+          - generic "Upload Prints for A Roman marble relief fragment" [ref=e71]:
+            - generic [ref=e72]: 
+            - text: Add your picture
+          - separator [ref=e73]
+          - generic [ref=e74]: Be the first to share a picture of this printed object
+        - generic [ref=e76]:
+          - generic [ref=e77]:
+            - generic [ref=e78]: 
+            - text: 0 comments
+          - separator [ref=e79]
+          - generic [ref=e81]:
+            - generic [ref=e82]:
+              - textbox "comment" [ref=e87]
+              - button "Comment" [ref=e93] [cursor=pointer]
+            - generic:
+              - generic:
+                - list
+            - generic [ref=e94]: Loading comments...
+      - generic [ref=e97]:
+        - generic [ref=e99]:
+          - generic [ref=e101]:
+            - heading "A Roman marble relief fragment" [level=1] [ref=e102]
+            - generic [ref=e104]:
+              - img "3D File Logo" [ref=e105]
+              - text: 3D
+            - paragraph [ref=e106]: Published 2018-09-05T16:25:25+00:00
+          - generic [ref=e107]:
+            - generic [ref=e108]:
+              - link [ref=e109] [cursor=pointer]:
+                - /url: /users/Scan%20The%20World
+              - generic [ref=e110]:
+                - paragraph [ref=e111]:
+                  - link "Scan The World" [ref=e112] [cursor=pointer]:
+                    - /url: /users/Scan%20The%20World
+                  - img "The Adventure Subscriber" [ref=e113]
+                - paragraph [ref=e114]:
+                  - link "@Scan The World" [ref=e115] [cursor=pointer]:
+                    - /url: /users/Scan%20The%20World
+                - paragraph [ref=e116]:
+                  - generic [ref=e117]: 
+                  - link "12,446 objects" [ref=e118] [cursor=pointer]:
+                    - /url: /users/Scan%20The%20World
+                - generic [ref=e119]:
+                  - generic "Click to follow" [ref=e120] [cursor=pointer]:
+                    - generic [ref=e121]: 
+                    - generic [ref=e122]: 12,467 Followers
+                  - generic "Send message to Scan The World" [ref=e123] [cursor=pointer]: 
+                - button "Support Me" [ref=e127] [cursor=pointer]
+            - button "Download" [ref=e132] [cursor=pointer]:
+              - generic [ref=e133]: 
+              - text: Download
+          - generic [ref=e136]:
+            - generic "2 likes" [ref=e137] [cursor=pointer]:
+              - generic [ref=e138]: 
+              - text: "2"
+            - generic "0 comments" [ref=e139] [cursor=pointer]:
+              - generic [ref=e140]: 
+              - text: "0"
+            - generic "Save for Later" [ref=e141] [cursor=pointer]: 
+            - generic [ref=e143] [cursor=pointer]: Add to Collection
+            - generic "Share" [ref=e144] [cursor=pointer]: 
+            - generic "Report 3D Object" [ref=e146] [cursor=pointer]: 
+          - generic [ref=e149]:
+            - generic [ref=e150] [cursor=pointer]: Description -
+            - paragraph [ref=e153]: This is a marble decorative relief fragment of the building. Preserved parts of relief depict a brick-like structure and a drapery.
+          - generic [ref=e155]:
+            - generic [ref=e156] [cursor=pointer]: License -
+            - table [ref=e158]:
+              - rowgroup [ref=e159]:
+                - row [ref=e160]:
+                  - cell [ref=e161]:
+                    - link "BY-NC-SA" [ref=e162] [cursor=pointer]:
+                      - /url: https://www.myminifactory.com/object-licensing
+                  - cell [ref=e163]:
+                    - link [ref=e164] [cursor=pointer]:
+                      - /url: https://creativecommons.org/licenses/by-nc-sa/4.0/
+                      - img "Creative Commons License" [ref=e165]
+                      - img "Credit the designer when sharing this object." [ref=e166]
+                      - img "If you remix, transform, or build upon the object, you must distribute your contributions under the same license as the original." [ref=e167]
+                      - img "You may not use the object for commercial purposes" [ref=e168]
+                      - img "You can remix this object and share your remix" [ref=e169]
+                    - link "Learn more about licenses" [ref=e170] [cursor=pointer]:
+                      - /url: https://www.myminifactory.com/object-licensing
+                      - generic [ref=e171]: 
+          - generic [ref=e172]: Technical Information +
+          - generic [ref=e175]: More Information +
+          - generic [ref=e179]:
+            - generic [ref=e180] [cursor=pointer]: Object Parts +
+            - text:  
+          - generic [ref=e182]:
+            - generic [ref=e183]: Tags
+            - generic [ref=e184]:
+              - link "architecture" [ref=e185] [cursor=pointer]:
+                - /url: /search?tags%5B0%5D=architecture&sortBy=popularity
+              - link "sculpture" [ref=e186] [cursor=pointer]:
+                - /url: /search?tags%5B0%5D=sculpture&sortBy=popularity
+              - link "Marble" [ref=e187] [cursor=pointer]:
+                - /url: /search?tags%5B0%5D=Marble&sortBy=popularity
+              - link "Relief" [ref=e188] [cursor=pointer]:
+                - /url: /search?tags%5B0%5D=Relief&sortBy=popularity
+              - link "fragment" [ref=e189] [cursor=pointer]:
+                - /url: /search?tags%5B0%5D=fragment&sortBy=popularity
+        - insertion [ref=e191]
+        - generic [ref=e196]:
+          - generic [ref=e197]:
+            - text: Remixes
+            - link "" [ref=e198] [cursor=pointer]:
+              - /url: https://myminifactory.com/pages/remix
+          - link "Add your Remix" [ref=e201] [cursor=pointer]:
+            - /url: /upload/object?parent_object=74104
+            - generic [ref=e202]: 
+            - text: Add your Remix
+        - generic [ref=e206]: Interesting objects for you

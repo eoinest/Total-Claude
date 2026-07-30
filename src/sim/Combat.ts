@@ -5,7 +5,7 @@ import type { ClipInfo, SoldierPool, UnitGroupState, UnitTypeDef } from './types
 import { formation } from './formations';
 import type { FormationDef } from './formations';
 import { isCavalry } from '../units/roster';
-import { clamp, clamp01, turnToward } from '../util/math';
+import { clamp, clamp01, turnToward, wrapAngle } from '../util/math';
 import { hash01 } from '../util/rand';
 import type { Rng } from '../util/rand';
 import {
@@ -25,11 +25,15 @@ import type { UnitMods } from './combatShared';
  *     opponent until it dies or slips out of reach. Acquisition is striped across
  *     ticks and goes through the battle's spatial hash — never an O(n²) sweep.
  *
- *  2. **Front rank only.** Reach *is* the front-rank rule: a man with nobody inside
- *     1.1 m simply has no target, so he presses forward and waits. When the man in
- *     front of him dies, the press plus the crowd separation in `BattleSystem` walks
- *     him into the gap and he acquires. A whole block flailing at once is the single
- *     biggest tell that a melee is fake.
+ *  2. **Only the men who can reach.** Three limits, in order of authority: a man needs
+ *     an enemy inside his weapon's reach; no opponent may have more than
+ *     `CROWD_HARD_CAP` men on him; and a formation may put no more men into the fight
+ *     than `ENGAGE_PER_WIDTH` per metre of its own frontage. The last is the one that
+ *     makes frontage decide a melee, which is how Total War works — without it two
+ *     blocks that have pressed into each other interleave and fight with every man at
+ *     once, and a whole block flailing is the single biggest tell that a melee is fake.
+ *     Men behind the fighting line close up into it (`BattleSystem`'s press), so the
+ *     hole a dead front-ranker leaves is filled rather than ending the fight.
  *
  *  3. **Blows timed to the animation.** A swing starts when the attack cooldown
  *     expires, and the blow lands at `clipInfo(AttackThrust).hitFrame` through it, so
@@ -42,9 +46,16 @@ import type { UnitMods } from './combatShared';
  *     contact and scales with closing speed. Spears get their anti-cavalry bonus as
  *     mostly-AP damage, which is what makes a horse die on a hedge of ash.
  *
- *  5. **Push.** The heavier, denser, better-nerved formation displaces the other. The
- *     displacement goes into the unit anchor and into individual velocities, so the
- *     line bends and gives way instead of standing in a neat row.
+ *  5. **Push.** The heavier, denser, better-nerved formation displaces the other, along
+ *     the *contact normal* averaged over every man who has an opponent — not along the
+ *     bearing to the enemy's anchor, which is a different direction once two blocks have
+ *     met off-centre and which made a pair of units rotate about each other instead of
+ *     one giving ground. The displacement goes into the unit anchor and into individual
+ *     velocities, so the line bends and gives way instead of standing in a neat row.
+ *
+ * The contact *lock* itself is not owned here — `BattleSystem` sets `u.contactLock` from
+ * front-rank-to-front-rank geometry, because that is where the advance lives. This file
+ * mirrors it onto the shared blackboard and adds the "blows are landing" case.
  */
 
 // ---------------------------------------------------------------------------
@@ -61,6 +72,17 @@ const DEFAULT_ATTACK_DURATION = 0.9;
 const FRONT_BIAS = 1.6;
 /** How many men may pile onto one opponent before he stops looking attractive. */
 const CROWD_SOFT_CAP = 2;
+/**
+ * And how many may pile on before he is simply unreachable.
+ *
+ * A hard cap, not a preference. Melee in Total War is *paired*: two entities lock into a
+ * duel and the men behind them wait. Without a ceiling here, two 160-man blocks that have
+ * pressed into each other interleave along the seam until every man on both sides has
+ * somebody within reach, and 63% of both units fight at once — which triples the kill rate
+ * and turns a two-minute grind into a twenty-second massacre. Three is the most that can
+ * physically get at one man.
+ */
+const CROWD_HARD_CAP = 4;
 /** Unit-anchor separation under which we look for individual contact at all. */
 const CONTACT_SCAN_RANGE = 90;
 /** Seconds of no contact before a pinned formation is released to advance again. */
@@ -71,6 +93,33 @@ const HIT_EVENT_BUDGET = 22;
 const HIT_EVENT_CEILING = 52;
 /** Minimum speed at which a horse's contact counts as a charge impact. */
 const TRAMPLE_SPEED = 3.0;
+/**
+ * Share of engagements that become a *matched duel* rather than two men independently
+ * swinging at each other's position.
+ *
+ * Rome II ships `matched_combat_percentage = 25`, and CA's own description of the feature
+ * is "a single animation with two entities" — a quarter of pairs lock into one
+ * choreographed strike-and-parry exchange with a roll deciding the outcome. It is the
+ * single biggest reason a Rome II contact line reads as men *fighting* rather than as two
+ * crowds overlapping. This is the cheap version of it: the pair stops dead, faces each
+ * other exactly, is exempt from being shoved about by the push, and has its two swing
+ * clocks phased half an interval apart so one is striking while the other covers.
+ */
+const MATCHED_COMBAT_SHARE = 0.25;
+/** Floor and ceiling on melee hit chance. Rome II ships 0.15 and 0.75. */
+const HIT_FLOOR = 0.15;
+const HIT_CEIL = 0.75;
+/**
+ * How many men a formation can get into the fight, as a multiple of its front-rank
+ * width. Frontage is what decides a Total War melee: a measured Rome II engagement puts
+ * about 35 of a 160-man unit in contact — roughly 1.2 men per metre of frontage — and the
+ * rest wait their turn. Without this ceiling two blocks that have pressed into each other
+ * interleave along the seam until 60% of both units is swinging, which triples the kill
+ * rate and finishes a fight in twenty seconds instead of ninety. Spears reach past the
+ * man in front, so they get a deeper share; that is the entire point of a spear.
+ */
+const ENGAGE_PER_WIDTH = 1.2;
+const ENGAGE_PER_WIDTH_SPEAR = 1.8;
 
 // ---------------------------------------------------------------------------
 // Module-scope scratch. Hoisted so the per-soldier loops allocate nothing at all:
@@ -104,6 +153,7 @@ const acquireVisit = (j: number): void => {
   const d = Math.sqrt(d2);
   const dot = (dx * ACQ_FX + dz * ACQ_FZ) / d;
   const crowd = ACQ_COUNTS![j];
+  if (crowd >= CROWD_HARD_CAP) return;
   let score = -d + dot * FRONT_BIAS;
   if (crowd >= CROWD_SOFT_CAP) score -= (crowd - CROWD_SOFT_CAP + 1) * 1.15;
   if (score > ACQ_BEST_SCORE) {
@@ -155,6 +205,42 @@ const trampleVisit = (j: number): void => {
   TRAMPLE_HITS[TRAMPLE_N++] = j;
 };
 
+/**
+ * Tally of which enemy units this unit's men are actually fighting. Four slots is
+ * plenty — a formation in contact with five different enemies at once is already
+ * surrounded, and the modal answer is all this is for. Module scope so the fight loop
+ * allocates nothing.
+ */
+const VOTE_ID = new Int32Array(4);
+const VOTE_COUNT = new Int32Array(4);
+let VOTE_N = 0;
+
+const voteFor = (id: number): void => {
+  for (let k = 0; k < VOTE_N; k++) {
+    if (VOTE_ID[k] === id) {
+      VOTE_COUNT[k]++;
+      return;
+    }
+  }
+  if (VOTE_N < VOTE_ID.length) {
+    VOTE_ID[VOTE_N] = id;
+    VOTE_COUNT[VOTE_N] = 1;
+    VOTE_N++;
+  }
+};
+
+const modalVote = (): number => {
+  let best = VOTE_ID[0];
+  let bestN = VOTE_COUNT[0];
+  for (let k = 1; k < VOTE_N; k++) {
+    if (VOTE_COUNT[k] > bestN) {
+      bestN = VOTE_COUNT[k];
+      best = VOTE_ID[k];
+    }
+  }
+  return best;
+};
+
 /** The subset of an animation system this file needs, resolved defensively. */
 interface AnimationProvider extends Subsystem {
   clipInfo(clip: Clip): ClipInfo;
@@ -204,6 +290,8 @@ export class CombatSystem implements Subsystem {
   private approach = new Float32Array(0);
   /** How many men are currently attacking each soldier. */
   private attackers = new Int16Array(0);
+  /** Partner in a matched duel, or -1. See `MATCHED_COMBAT_SHARE`. */
+  private matchedWith = new Int32Array(0);
 
   // Per-unit scratch, indexed by unit id.
   private nearestEnemyUnit = new Int32Array(0);
@@ -211,6 +299,16 @@ export class CombatSystem implements Subsystem {
   /** Unit direction toward the enemy it is fighting or closing on. */
   private enemyDirX = new Float32Array(0);
   private enemyDirZ = new Float32Array(0);
+  /**
+   * The direction the fight actually is, averaged over every man who has an opponent.
+   * The bearing to the enemy *anchor* is not the same thing once two blocks have met
+   * off-centre, and using it made a unit pivot toward a point that was not in front of
+   * it, then push along that bearing, then pivot again — the pair rotated.
+   */
+  private normalX = new Float32Array(0);
+  private normalZ = new Float32Array(0);
+  /** Decaying peak anchor speed, so a charge braked by contact still counts as a charge. */
+  private approachSpeed = new Float32Array(0);
   /** Seconds since this unit last had front-line contact. */
   private clearFor = new Float32Array(0);
   /** Closing speed measured at the instant of contact; scales the charge bonus. */
@@ -258,6 +356,7 @@ export class CombatSystem implements Subsystem {
     this.impacted = new Uint8Array(cap);
     this.approach = new Float32Array(cap);
     this.attackers = new Int16Array(cap);
+    this.matchedWith = new Int32Array(cap).fill(-1);
     POOL = this.battle.pool;
     ACQ_COUNTS = this.attackers;
 
@@ -277,6 +376,7 @@ export class CombatSystem implements Subsystem {
       const i = e.index;
       this.swing[i] = -1;
       this.attackers[i] = 0;
+      this.breakPair(i);
     });
     ctx.events.on('unitRouted', (e) => this.releaseUnit(e.unitId));
   }
@@ -295,6 +395,9 @@ export class CombatSystem implements Subsystem {
     this.nearestEnemyDist = f(this.nearestEnemyDist);
     this.enemyDirX = f(this.enemyDirX);
     this.enemyDirZ = f(this.enemyDirZ);
+    this.normalX = f(this.normalX);
+    this.normalZ = f(this.normalZ);
+    this.approachSpeed = f(this.approachSpeed);
     this.clearFor = f(this.clearFor);
     this.impactSpeed = f(this.impactSpeed);
     this.lastAnchorX = f(this.lastAnchorX);
@@ -322,6 +425,7 @@ export class CombatSystem implements Subsystem {
         if (this.attackers[t] > 0) this.attackers[t]--;
       }
       this.swing[i] = -1;
+      this.breakPair(i);
     }
     signalsOf(unitId).contactLock = false;
   }
@@ -406,6 +510,10 @@ export class CombatSystem implements Subsystem {
       const anchorSpeed = Math.hypot(adx, adz) / dt;
       this.lastAnchorX[id] = u.x;
       this.lastAnchorZ[id] = u.z;
+      // Peak-hold with a two-second half-life, so the speed a unit was making when it
+      // began its final bound survives the deceleration into contact.
+      const decayed = this.approachSpeed[id] * 0.985;
+      this.approachSpeed[id] = anchorSpeed > decayed ? anchorSpeed : decayed;
 
       // Nearest enemy formation. O(units²) with a couple of dozen units.
       let best = -1;
@@ -434,44 +542,43 @@ export class CombatSystem implements Subsystem {
 
       const def = b.typeOf(u);
       const routing = u.order === UnitOrder.Rout;
-      let contact = false;
-      // A broken unit is never "in contact": it must be free to run, and pinning its
-      // anchor here would trap it in the fight it has already given up on.
+      const frontGap = b.frontGapOf(id);
+
+      // Distance to the nearest enemy *man*, which is what abilities and the skirmish
+      // logic want. The unit-level contact test itself is front-segment geometry and
+      // lives in `BattleSystem`; a single hash probe at the anchor cannot see a
+      // formation that has met this one edge to edge.
       if (!routing && bestD < CONTACT_SCAN_RANGE) {
-        // One hash probe per unit at the front-rank centre decides contact.
         NEAR_X = u.x;
         NEAR_Z = u.z;
         NEAR_ENEMY = u.faction === 0 ? 1 : 0;
-        const probe = def.reach + 1.5;
+        const probe = Math.max(def.reach + 1.5, Math.min(40, frontGap + 6));
         NEAR_BEST_D2 = probe * probe;
         NEAR_BEST = -1;
         b.hash.query(u.x, u.z, probe, nearestEnemyVisit);
-        if (NEAR_BEST >= 0) {
-          contact = true;
-          s.nearestEnemy = Math.sqrt(NEAR_BEST_D2);
-        } else {
-          s.nearestEnemy = bestD;
-        }
+        s.nearestEnemy = NEAR_BEST >= 0 ? Math.sqrt(NEAR_BEST_D2) : Math.min(bestD, frontGap);
       } else {
-        s.nearestEnemy = bestD;
+        s.nearestEnemy = Math.min(bestD, frontGap);
       }
 
-      // A probe at the front-rank centre misses a formation whose ranks have been
-      // shredded and spread out, so once men are actually swinging, that counts as
-      // contact too. Without this, a chewed-up unit stops pressing and stops being
-      // treated as engaged even while its men are dying.
-      if (!routing && !contact && s.engagedFraction > 0.03) contact = true;
+      // `BattleSystem` owns the geometric lock; blows landing count as contact too, so
+      // a formation whose ranks have been shredded and spread out is still engaged.
+      const contact = !routing && (u.contactLock || s.engagedFraction > 0.02);
 
       if (contact) {
         if (this.clearFor[id] > CONTACT_RELEASE || !s.contactLock) {
-          // Fresh contact: bank the closing speed and open the charge window.
-          this.impactSpeed[id] = anchorSpeed;
+          // Fresh contact: bank the closing speed and open the charge window. The peak
+          // approach speed is used rather than this tick's, because the block-collision
+          // clamp has already braked the anchor by the time the fronts actually touch —
+          // sampling the instantaneous speed here threw the charge bonus away.
+          this.impactSpeed[id] = Math.max(anchorSpeed, this.approachSpeed[id]);
           if (u.chargeTimer <= 0.01) u.chargeTimer = CHARGE_WINDOW;
           if (this.clashCooldown[id] <= 0) {
             const other = best >= 0 ? this.unitById(best) : undefined;
             const mass = def.mass * Math.max(1, u.alive);
             const otherMass = other ? b.typeOf(other).mass * Math.max(1, other.alive) : mass;
-            const intensity = clamp01(Math.min(mass, otherMass) / 9000) * clamp01(0.35 + anchorSpeed / 5);
+            const intensity = clamp01(Math.min(mass, otherMass) / 9000)
+              * clamp01(0.35 + this.impactSpeed[id] / 5);
             this.ctx.events.emit('linesClashed', {
               x: u.x, z: u.z, intensity, attackerFaction: u.faction,
             });
@@ -482,7 +589,6 @@ export class CombatSystem implements Subsystem {
         this.clearFor[id] = 0;
         s.contactSeconds += dt;
         s.contactLock = true;
-        s.meleeEnemy = best;
         u.engaged = true;
       } else {
         this.clearFor[id] += dt;
@@ -493,17 +599,6 @@ export class CombatSystem implements Subsystem {
             s.meleeEnemy = -1;
           }
           u.engaged = false;
-        }
-      }
-
-      // While pinned, hold the anchor exactly where it is so `BattleSystem` stops
-      // walking the formation into the enemy. `resolvePush` then moves the anchor
-      // itself, which is what makes a losing line visibly give ground.
-      if (s.contactLock) {
-        if (u.order !== UnitOrder.Rout) {
-          u.order = UnitOrder.Hold;
-          u.waypoints.length = 0;
-          if (best >= 0) u.targetFacing = Math.atan2(this.enemyDirX[id], this.enemyDirZ[id]);
         }
       }
     }
@@ -539,12 +634,25 @@ export class CombatSystem implements Subsystem {
       const keepR = def.reach + 0.9;
       const keepR2 = keepR * keepR;
       const loose = u.spacingX > 1.3;
-      const edx = this.enemyDirX[id];
-      const edz = this.enemyDirZ[id];
+      // Press along the direction the fight is in if we know it, else at the enemy
+      // formation we are closing on.
+      const haveNormal = this.normalX[id] !== 0 || this.normalZ[id] !== 0;
+      const edx = haveNormal ? this.normalX[id] : this.enemyDirX[id];
+      const edz = haveNormal ? this.normalZ[id] : this.enemyDirZ[id];
       const chargeF = this.chargeFactor(u, def, f, mods, id);
       const rate = def.attackRate * mods.attackRate * f.mods.attack;
       const members = u.members;
+      const engageCap = Math.max(
+        6,
+        Math.round(Math.min(u.width, u.alive)
+          * (def.reach >= 2.2 ? ENGAGE_PER_WIDTH_SPEAR : ENGAGE_PER_WIDTH))
+      );
       let engaged = 0;
+      let holding = this.engagedNow(u);
+      // Accumulators for this tick's contact normal and for who we are actually fighting.
+      let nx = 0;
+      let nz = 0;
+      VOTE_N = 0;
 
       for (let m = 0; m < members.length; m++) {
         const i = members[m];
@@ -591,7 +699,7 @@ export class CombatSystem implements Subsystem {
         }
 
         // --- acquire, striped across ticks ---
-        if (t < 0) {
+        if (t < 0 && holding < engageCap) {
           // Front ranks and anyone in a loose order look every 8 ticks; deep ranks
           // only every 32, because they almost never have anything in reach and the
           // hash probe is the most expensive thing in this loop.
@@ -612,6 +720,7 @@ export class CombatSystem implements Subsystem {
             if (t >= 0) {
               p.target[i] = t;
               this.attackers[t]++;
+              holding++;
             }
           }
         }
@@ -640,15 +749,40 @@ export class CombatSystem implements Subsystem {
           engaged++;
           const tx = p.x[t];
           const tz = p.z[t];
+          nx += tx - p.x[i];
+          nz += tz - p.z[i];
+          voteFor(p.unitId[t]);
           const want = Math.atan2(tx - p.x[i], tz - p.z[i]);
-          p.facing[i] = turnToward(p.facing[i], want, dt * 6.5);
+
+          // Matched combat. Only a mutual pairing can become a duel, and only a fixed
+          // share of them do, chosen from the pair's own stable hash so the same two men
+          // always reach the same answer without either needing to see the other's roll.
+          const mutual = p.target[t] === i;
+          const lead = i < t ? i : t;
+          const duel = mutual && hash01(lead, 313) < MATCHED_COMBAT_SHARE;
+          const fat = p.fatigue[i];
+          const interval = 1 / Math.max(0.08, rate * (1 - 0.45 * fat));
+          if (duel) {
+            if (this.matchedWith[i] !== t) {
+              this.matchedWith[i] = t;
+              // The follower's clock starts half a beat late, so the exchange alternates
+              // strike and parry instead of both men flailing in unison.
+              if (i !== lead) p.attackCooldown[i] += interval * 0.5;
+            }
+            // Locked: a duel does not drift. Facing is snapped, not eased, because the two
+            // men are squared up on each other by definition.
+            p.vx[i] = 0;
+            p.vz[i] = 0;
+            p.facing[i] = want;
+          } else {
+            if (this.matchedWith[i] >= 0) this.matchedWith[i] = -1;
+            p.facing[i] = turnToward(p.facing[i], want, dt * 6.5);
+          }
           if (st !== SoldierState.Fighting) p.setState(i, SoldierState.Fighting);
 
           // Fatigue drains while fighting; the melee visibly slows as it wears on.
           p.fatigue[i] = clamp01(p.fatigue[i] + dt / Math.max(10, def.stamina * 1.5));
 
-          const fat = p.fatigue[i];
-          const interval = 1 / Math.max(0.08, rate * (1 - 0.45 * fat));
           const dur = Math.min(this.attackDuration, interval * 0.85);
           const hitAt = dur * this.attackHitFrame;
 
@@ -678,6 +812,7 @@ export class CombatSystem implements Subsystem {
           }
         } else {
           this.swing[i] = -1;
+          if (this.matchedWith[i] >= 0) this.matchedWith[i] = -1;
           // Free of an opponent: the next contact can be a fresh charge.
           this.impacted[i] = 0;
           if (st === SoldierState.Fighting) {
@@ -686,18 +821,15 @@ export class CombatSystem implements Subsystem {
           if (mods.braced && st !== SoldierState.Bracing) {
             p.setState(i, SoldierState.Bracing);
           }
-          // Press into the fight.
+          // Close the last few metres.
           //
-          // Two jobs. Inside a contact this walks a rear-ranker into the gap a dead
-          // front-ranker leaves, without a second spatial query. Outside one it closes
-          // the last few metres: `BattleSystem` halts a formation with its anchor
-          // `reach + 0.6` from the enemy anchor and calls it arrived within 0.8 m, so a
-          // unit can come to rest with its front rank further away than any weapon can
-          // strike — cavalry worst of all, because a horse's standoff is largest.
-          // Without this, two units stand three metres apart indefinitely.
-          const closing = !s.contactLock && s.nearestEnemy < (cav ? 34 : 9);
-          if (!mods.braced && !mods.skirmishing && (s.contactLock || closing)) {
-            if (cav && closing) {
+          // `BattleSystem` stops a formation with its front rank `CONTACT_GAP` from the
+          // enemy's and, once locked, moves the men up through the press. What is left
+          // for this to do is the approach: a unit that has come to rest just outside
+          // weapon range, and cavalry, whose whole value is the speed it arrives at.
+          const closing = !s.contactLock && s.nearestEnemy < (cav ? 34 : 7);
+          if (!mods.braced && !mods.skirmishing && closing) {
+            if (cav) {
               // A horse covers the last thirty metres at the gallop; that speed is
               // the entire point of cavalry and it has to survive to the impact.
               p.vx[i] += edx * 7 * dt;
@@ -712,12 +844,12 @@ export class CombatSystem implements Subsystem {
             } else {
               const nerve = s.nerve;
               // A wavering unit shuffles backwards instead of pressing forward.
-              const push = nerve < 0.32 ? -1.4 : 2.6 * (0.45 + 0.55 * nerve);
+              const push = nerve < 0.32 ? -1.2 : 2.2 * (0.45 + 0.55 * nerve);
               p.vx[i] += edx * push * dt;
               p.vz[i] += edz * push * dt;
               const sp = Math.hypot(p.vx[i], p.vz[i]);
-              if (sp > 1.35) {
-                const g = 1.35 / sp;
+              if (sp > 1.1) {
+                const g = 1.1 / sp;
                 p.vx[i] *= g;
                 p.vz[i] *= g;
               }
@@ -734,7 +866,49 @@ export class CombatSystem implements Subsystem {
       s.flankedFraction = blows > 0 ? this.flankBlows[id] / blows : 0;
       s.rearFraction = blows > 0 ? this.rearBlows[id] / blows : 0;
       s.cavalryPressure = blows > 0 ? clamp01(this.cavalryBlows[id] / blows) : 0;
+
+      // Publish where the fight is and who it is against. Both are low-passed: the
+      // instantaneous average over a few dozen duels jitters, and a unit that re-aims on
+      // the jitter wheels on the spot instead of fighting.
+      const nl = Math.hypot(nx, nz);
+      if (nl > 1e-3) {
+        const k = 0.12;
+        this.normalX[id] += (nx / nl - this.normalX[id]) * k;
+        this.normalZ[id] += (nz / nl - this.normalZ[id]) * k;
+        const l2 = Math.hypot(this.normalX[id], this.normalZ[id]) || 1;
+        this.normalX[id] /= l2;
+        this.normalZ[id] /= l2;
+      } else if (!s.contactLock) {
+        this.normalX[id] = 0;
+        this.normalZ[id] = 0;
+      }
+      // Who we are fighting is whoever most of our men have their hands on, not whichever
+      // enemy anchor happens to be nearest. With the nearest-anchor answer two units in
+      // the same melee could each name a *different* opponent, and `resolvePush` then
+      // shoved them along two unrelated axes — a pair of blocks that rotated about each
+      // other rather than one giving ground to the other.
+      s.meleeEnemy = VOTE_N > 0 ? modalVote() : b.frontEnemyOf(id);
+
+      // Pivot to face the fight, with a deadband so small asymmetries in the seam do not
+      // keep the block turning. `BattleSystem` turns at 0.35 rad/s while locked, so this
+      // is a target, not a snap.
+      if (s.contactLock && (this.normalX[id] !== 0 || this.normalZ[id] !== 0)) {
+        const want = Math.atan2(this.normalX[id], this.normalZ[id]);
+        if (Math.abs(wrapAngle(want - u.targetFacing)) > 0.26) u.targetFacing = want;
+      }
     }
+  }
+
+  /** How many of a unit's living men currently have an opponent. */
+  private engagedNow(u: UnitGroupState): number {
+    const p = this.battle.pool;
+    const members = u.members;
+    let n = 0;
+    for (let m = 0; m < members.length; m++) {
+      const i = members[m];
+      if (p.target[i] >= 0 && p.aliveAt(i)) n++;
+    }
+    return n;
   }
 
   /** Units with nothing near them: bleed swings and recover wind. */
@@ -765,7 +939,12 @@ export class CombatSystem implements Subsystem {
     if (u.chargeTimer <= 0) return 0;
     const window = clamp01(u.chargeTimer / CHARGE_WINDOW);
     const speed = clamp(this.impactSpeed[id] / Math.max(1, def.chargeSpeed), 0.2, 1.25);
-    return window * speed * f.mods.charge * mods.charge;
+    // Capped. The multipliers compound — a wedge (1.45) with the charge ability (1.4)
+    // arriving above its own charge speed reached 2.5, and at that value a heavy
+    // cavalry charge added a hundred points of attack skill and sixty of damage, which
+    // killed better than half a formed cohort on the tick of impact. A charge should
+    // shock a line, not delete it.
+    return Math.min(1.6, window * speed * f.mods.charge * mods.charge);
   }
 
   // -------------------------------------------------------------------------
@@ -822,7 +1001,13 @@ export class CombatSystem implements Subsystem {
     dfn *= ASPECT_DEFENCE[aspect];
     if (dmods.braced && attackerIsCavalry) dfn *= 1.15;
 
-    const hitChance = clamp(0.5 + 0.5 * (atk - dfn) / (atk + dfn + 1e-3), 0.07, 0.93);
+    // Rome II clamps melee hit chance to a floor and a ceiling, and the *floor* is the
+    // dominant term in every lopsided or heavily-armoured matchup — it is the first knob
+    // CA changed (Patch 9: "Reduced minimum hit chance, base hit chance and maximum hit
+    // chance for melee combat") and the first knob every battle-pacing mod changes. The
+    // documented vanilla triple is base 40, min 15, max 75. Ours was 7 to 93, which let a
+    // favourable matchup land nine blows in ten and finish a unit in seconds.
+    const hitChance = clamp(0.5 + 0.5 * (atk - dfn) / (atk + dfn + 1e-3), HIT_FLOOR, HIT_CEIL);
     const roll = this.rng.next();
 
     const hx = p.x[t];
@@ -918,7 +1103,12 @@ export class CombatSystem implements Subsystem {
     const nz = dz / d;
 
     const momentum = clamp(speed / Math.max(1, def.chargeSpeed), 0.3, 1.2);
-    let power = def.chargeBonus * (0.5 + chargeF) * momentum * mods.charge;
+    // The physical impact, on top of the rider's own blow. Deliberately sub-linear in
+    // the charge factor: at `(0.5 + chargeF)` a wedge with the charge ability arrived at
+    // over 200 points of impact damage, which killed every man it touched and took better
+    // than half a cohort off the field in one second. A charge should stagger a line and
+    // kill its front rank, not delete the formation.
+    let power = def.chargeBonus * (0.35 + chargeF * 0.55) * momentum * mods.charge;
 
     if (braced) {
       // The counter-charge: the spearman's blow lands on the horse at full force,
@@ -1027,14 +1217,21 @@ export class CombatSystem implements Subsystem {
       const balance = clamp(physical * 0.5 + nerveDiff * 0.7 + killDiff * 0.6, -1, 1);
       s.pushBalance = balance;
 
-      // 1.1 m/s at total dominance: a broken line gives ground at a walking pace.
-      const speed = balance * 1.1;
-      const edx = this.enemyDirX[id];
-      const edz = this.enemyDirZ[id];
+      // 0.42 m/s at total dominance. A Rome II line that is losing gives ground at a
+      // slow shuffle, not a walking pace: at 1.1 m/s a beaten cohort travelled 60 m in a
+      // minute, which walked the whole engagement across the field and pulled units out
+      // of contact faster than the melee could kill anyone.
+      const speed = balance * 0.42;
+      // Push along the contact normal — where our men's hands actually are. Using the
+      // bearing to the enemy anchor let two units in one melee push along two different
+      // axes, which rotates the pair instead of moving one backwards.
+      const edx = this.normalX[id] || this.enemyDirX[id];
+      const edz = this.normalZ[id] || this.enemyDirZ[id];
       u.x += edx * speed * dt;
       u.z += edz * speed * dt;
-      u.targetX = u.x;
-      u.targetZ = u.z;
+      // Deliberately NOT writing `u.targetX/targetZ`: while `contactLock` holds,
+      // `BattleSystem` does not read them, and clobbering them every tick destroyed the
+      // standing order the unit will resume the moment the lock releases.
 
       // Local buckling: front-rank men inherit the push with a fixed per-man bias,
       // so the contact line reads as an irregular seam rather than a ruled edge.
@@ -1042,6 +1239,7 @@ export class CombatSystem implements Subsystem {
       for (let m = 0; m < members.length; m++) {
         const i = members[m];
         if (p.state[i] !== SoldierState.Fighting) continue;
+        if (this.matchedWith[i] >= 0) continue;
         const bias = 0.55 + hash01(i, 91) * 0.9;
         p.vx[i] += edx * speed * bias * 2.2 * dt;
         p.vz[i] += edz * speed * bias * 2.2 * dt;
@@ -1055,7 +1253,11 @@ export class CombatSystem implements Subsystem {
     const def = b.typeOf(u);
     const s = signalsOf(u.id);
     const density = clamp(0.86 / Math.max(0.3, u.spacingX), 0.45, 1.8);
-    const front = Math.max(1, Math.min(u.width, u.alive));
+    // Men actually leaning on the enemy, not the formation's widest row. A wedge counted
+    // its full width here, and since a horse weighs 520 to an infantryman's 86, sixty
+    // riders in a wedge out-shoved a hundred and seventy spearmen and walked a set spear
+    // wall backwards.
+    const front = Math.max(1, Math.min(u.width, u.alive) * formation(u.formationId).frontMul);
     const local = clamp(1 + (this.blowsDealt[u.id] - this.blowsTaken[u.id]) * 0.02, 0.7, 1.3);
     return def.mass * front * density
       * (0.35 + 0.65 * clamp01(s.nerve))
@@ -1075,6 +1277,23 @@ export class CombatSystem implements Subsystem {
   /** How many men are currently attacking this soldier. */
   attackerCount(i: number): number {
     return this.attackers[i] ?? 0;
+  }
+
+  /**
+   * The soldier this man is locked in a matched duel with, or -1.
+   *
+   * Exposed for the animation system: a genuine paired clip (one shared strike-and-parry
+   * animation driven from the leader's playhead) is what Rome II does with these pairs,
+   * and it needs to know which men are in one.
+   */
+  duelPartner(i: number): number {
+    return this.matchedWith[i] ?? -1;
+  }
+
+  private breakPair(i: number): void {
+    const partner = this.matchedWith[i];
+    if (partner >= 0 && this.matchedWith[partner] === i) this.matchedWith[partner] = -1;
+    this.matchedWith[i] = -1;
   }
 
   dispose(): void {

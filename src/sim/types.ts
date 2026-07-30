@@ -272,10 +272,11 @@ export interface UnitGroupState {
   /** Seconds since the charge began; drives the charge damage bonus. */
   chargeTimer: number;
   /**
-   * Set by the combat system once the formation is in contact. While true the movement
-   * code must not translate the anchor — a unit locked shield-to-shield stops advancing
-   * and only pivots. Without this the anchor keeps walking into the enemy and the two
-   * blocks interpenetrate.
+   * Set by `BattleSystem` once this formation's front rank has met an enemy's. While
+   * true the movement code must not translate the anchor — a unit locked shield to
+   * shield stops advancing and only pivots, and only `Combat.resolvePush` may move it.
+   * Without this the anchor keeps walking into the enemy, the two blocks interpenetrate,
+   * and each ends up chasing a point inside the other: mutual pursuit, which spirals.
    */
   contactLock: boolean;
   /** True while the charge window is open, so movement uses `chargeSpeed` not `runSpeed`. */

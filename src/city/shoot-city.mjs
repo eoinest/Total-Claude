@@ -40,7 +40,22 @@ const SHOTS = {
   necropolis: { desc: 'The Via Flaminia necropolis with the wall beyond', x: 60, z: 400, zoom: 0.62, yaw: 0.0 },
   deep: { desc: 'Deep city: Capitol, Forum, Colosseum, Circus', x: -20, z: 1050, zoom: 0.86, yaw: Math.PI * 0.1 },
   campus: { desc: 'The Campus Martius: Mausoleum, Pantheon, theatres', x: -180, z: 780, zoom: 0.8, yaw: Math.PI * 0.05 },
+  // Low obliques on the three monuments the user's report named. Coordinates come from the
+  // plan diagnostic's own output (screenshots/*/plan.json), so they track the layout solver
+  // rather than going stale the moment a footprint moves.
+  colosseum: { desc: 'The Flavian Amphitheatre, low oblique — arena floor and cavea', x: 681, z: 1032, zoom: 0.68, yaw: Math.PI * 1.15 },
+  circus: { desc: 'The Circus Maximus along its length — arcaded façade and banks', x: 286, z: 1153, zoom: 0.8, yaw: Math.PI * 1.35 },
+  circusflank: { desc: 'The Circus Maximus from outside its south flank — three arcaded storeys', x: 250, z: 1256, zoom: 0.52, yaw: Math.PI * 0.55 },
+  baths: { desc: 'The Baths of Trajan — precinct, vaulted block, palaestrae', x: 728, z: 741, zoom: 0.7, yaw: Math.PI * 0.15 },
 };
+
+/**
+ * The plan-view diagnostic is a different page: `plan.html` draws the layout as a
+ * labelled SVG at a known scale so it can be compared with Lanciani's Forma Urbis Romae
+ * side by side, and prints the footprint-overlap assertion. Run it with
+ * `--shots=plan`.
+ */
+const PLAN_SHOT = 'plan';
 
 const args = new Map(
   process.argv.slice(2).map((a) => {
@@ -64,6 +79,7 @@ const requested = args.get('shots')
   : Object.keys(SHOTS);
 
 for (const s of requested) {
+  if (s === PLAN_SHOT) continue;
   if (!SHOTS[s]) {
     console.error(`Unknown shot "${s}". Available: ${Object.keys(SHOTS).join(', ')}`);
     process.exit(2);
@@ -113,10 +129,42 @@ try {
   browser = await chromium.launch({
     args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--disable-dev-shm-usage', '--hide-scrollbars'],
   });
-  const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
   const consoleErrors = [];
+  const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
   page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
   page.on('pageerror', (e) => consoleErrors.push(`pageerror: ${e.message}`));
+
+  // ---- the plan-view diagnostic, on its own page ------------------------
+  if (requested.includes(PLAN_SHOT)) {
+    const planPage = await browser.newPage({ viewport: { width: 1620, height: 1600 }, deviceScaleFactor: 1 });
+    planPage.on('pageerror', (e) => consoleErrors.push(`plan pageerror: ${e.message}`));
+    await planPage.goto(`${base}/src/city/plan.html`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await planPage.waitForFunction(() => window.__plan && window.__plan.ready === true, { timeout: 60000 });
+    const plan = await planPage.evaluate(() => window.__plan);
+    const wrap = await planPage.$('#wrap');
+    await planPage.screenshot({ path: path.join(OUT, 'plan.png'), type: 'png', fullPage: true });
+    if (wrap) await wrap.screenshot({ path: path.join(OUT, 'plan-map.png'), type: 'png' });
+    await writeFile(path.join(OUT, 'plan.json'), JSON.stringify(plan, null, 2));
+    console.log(
+      `  ✓ ${'plan'.padEnd(13)} ${plan.rows.length} landmarks  ` +
+      `overlaps ${plan.overlaps.count} (worst ${plan.overlaps.worst} m)  ` +
+      `amphitheatres ${plan.amphitheatres.count}  ` +
+      `topology ${plan.topology.checks - plan.topology.failures.length}/${plan.topology.checks}`
+    );
+    for (const pr of plan.overlaps.pairs) console.log(`      ! ${pr.a} x ${pr.b}  ${pr.depth} m`);
+    for (const f of plan.topology.failures) console.log(`      ! ${f}`);
+    await planPage.close();
+    requested.splice(requested.indexOf(PLAN_SHOT), 1);
+    if (requested.length === 0) {
+      await writeFile(path.join(OUT, 'report.json'), JSON.stringify({ at: new Date().toISOString(), plan, consoleErrors: [...new Set(consoleErrors)] }, null, 2));
+      if (consoleErrors.length) {
+        failed++;
+        console.error(`\n⚠ ${consoleErrors.length} console error(s):`);
+        for (const e of [...new Set(consoleErrors)].slice(0, 15)) console.error(`   ${e}`);
+      }
+      throw { __done: true };
+    }
+  }
 
   const procedural = args.has('procedural') ? '&procedural=1' : '';
   const url = `${base}/src/city/preview.html?quality=${QUALITY}&w=${W}&h=${H}${procedural}`;
@@ -161,8 +209,10 @@ try {
   await writeFile(path.join(OUT, 'report.json'), JSON.stringify({ at: new Date().toISOString(), width: W, height: H, shots: results, consoleErrors: [...new Set(consoleErrors)] }, null, 2));
   console.log(`\n→ ${results.length}/${requested.length} shots in ${path.relative(ROOT, OUT)}/`);
 } catch (err) {
-  console.error(`FATAL: ${err.stack ?? err.message}`);
-  failed++;
+  if (!err || !err.__done) {
+    console.error(`FATAL: ${err.stack ?? err.message}`);
+    failed++;
+  }
 } finally {
   if (browser) await browser.close().catch(() => {});
   if (server && !args.has('keep')) server.kill('SIGTERM');

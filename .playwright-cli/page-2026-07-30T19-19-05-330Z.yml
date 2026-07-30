@@ -1,0 +1,100 @@
+- generic [active] [ref=e1]:
+  - link "Skip to main content" [ref=e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - banner [ref=e5]:
+        - link "Smithsonian main website" [ref=e11] [cursor=pointer]:
+          - /url: https://si.edu
+        - generic [ref=e15]:
+          - link "SI Yellow sunburst with blue background Smithsonian 3d Digitization" [ref=e18] [cursor=pointer]:
+            - /url: /
+            - img "SI Yellow sunburst with blue background" [ref=e20]
+            - generic [ref=e23]:
+              - text: Smithsonian
+              - generic [ref=e24]: 3d Digitization
+          - navigation "Open Main navigation" [ref=e27]:
+            - list [ref=e28]:
+              - listitem [ref=e29]:
+                - link "Explore" [ref=e30] [cursor=pointer]:
+                  - /url: /explore
+              - listitem [ref=e31]:
+                - link "Collections" [ref=e32] [cursor=pointer]:
+                  - /url: /collections
+              - listitem [ref=e33]:
+                - link "About " [ref=e34] [cursor=pointer]:
+                  - /url: /about
+              - listitem [ref=e35]:
+                - link "Labs" [ref=e36] [cursor=pointer]:
+                  - /url: /labs
+              - listitem [ref=e37]:
+                - link "Sponsors" [ref=e38] [cursor=pointer]:
+                  - /url: /sponsors
+              - listitem [ref=e39]:
+                - button "Toggle search form, esc to close" [ref=e40] [cursor=pointer]:
+                  - img "search" [ref=e41]
+      - main [ref=e46]:
+        - generic [ref=e49]:
+          - heading "Explore" [level=1] [ref=e50]
+          - generic [ref=e51]:
+            - generic [ref=e52]:
+              - generic [ref=e54]:
+                - generic [ref=e55]: Search
+                - searchbox "Search" [ref=e56]: colosseum
+              - generic [ref=e58]:
+                - checkbox "Only return Open Access Media (CC0) search results" [ref=e59]
+                - generic [ref=e60]: Only return Open Access Media (CC0) search results
+            - generic [ref=e61]:
+              - button "Search" [ref=e62] [cursor=pointer]:
+                - img "search" [ref=e63]
+              - button "Reset" [ref=e66] [cursor=pointer]:
+                - img "reset form" [ref=e67]
+          - paragraph [ref=e69]: Your search found no results
+      - contentinfo [ref=e70]:
+        - generic [ref=e72]:
+          - generic [ref=e73]:
+            - navigation [ref=e74]:
+              - heading "Social Media" [level=2] [ref=e75]
+              - list [ref=e76]:
+                - listitem [ref=e77]:
+                  - link " Facebook" [ref=e78] [cursor=pointer]:
+                    - /url: https://www.facebook.com/3d.si.edu/
+                    - text: 
+                    - generic [ref=e79]: Facebook
+                - listitem [ref=e80]:
+                  - link " Instagram" [ref=e81] [cursor=pointer]:
+                    - /url: https://www.instagram.com/smithsonian3d/?hl=en
+                    - text: 
+                    - generic [ref=e82]: Instagram
+                - listitem [ref=e83]:
+                  - link " Twitter" [ref=e84] [cursor=pointer]:
+                    - /url: https://twitter.com/Smithsonian3D
+                    - text: 
+                    - generic [ref=e85]: Twitter
+                - listitem [ref=e86]:
+                  - link " YouTube" [ref=e87] [cursor=pointer]:
+                    - /url: https://www.youtube.com/@SmithsonianDigital
+                    - text: 
+                    - generic [ref=e88]: YouTube
+                - listitem [ref=e89]:
+                  - link "Voyager GitHub" [ref=e90] [cursor=pointer]:
+                    - /url: https://smithsonian.github.io/dpo-voyager/
+                - listitem [ref=e92]:
+                  - link "Cook GitHub" [ref=e93] [cursor=pointer]:
+                    - /url: https://smithsonian.github.io/dpo-cook/
+            - link "Smithsonian main website" [ref=e97] [cursor=pointer]:
+              - /url: https://si.edu
+          - navigation [ref=e101]:
+            - heading "Footer" [level=2] [ref=e102]
+            - list [ref=e103]:
+              - listitem [ref=e104]:
+                - link "Digitization Program Office" [ref=e105] [cursor=pointer]:
+                  - /url: https://dpo.si.edu/
+              - listitem [ref=e106]:
+                - link "Privacy" [ref=e107] [cursor=pointer]:
+                  - /url: https://www.si.edu/privacy
+              - listitem [ref=e108]:
+                - link "Terms of Use" [ref=e109] [cursor=pointer]:
+                  - /url: https://www.si.edu/Termsofuse
+    - link "Back to Top" [ref=e110] [cursor=pointer]:
+      - /url: "#main-content"

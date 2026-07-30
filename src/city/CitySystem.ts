@@ -5,7 +5,17 @@ import { clamp } from '../util/math';
 import { Batch } from './build';
 import { buildDistricts } from './insulae';
 import { buildLandmarks } from './landmarks';
-import { AQUEDUCTS, KeepOut, LANDMARKS, STREETS, WALL } from './layout';
+import {
+  AQUEDUCTS,
+  assertHillRing,
+  assertNoFootprintOverlaps,
+  assertOneAmphitheatre,
+  assertTopology,
+  KeepOut,
+  LANDMARKS,
+  STREETS,
+  WALL,
+} from './layout';
 import { CITY_MAT_KEYS, CityMaterials } from './materials';
 import { buildTreeChunks } from './props';
 import { buildWall, type CityChunkSpec, type GateOut, type TreeRequest, type WallSegmentOut } from './wall';
@@ -83,6 +93,9 @@ export class CitySystem implements Subsystem {
   private occ = new Uint8Array(OCC_RES * OCC_RES);
   private totalTris = 0;
   private meshCount = 0;
+  private overlaps: ReturnType<typeof assertNoFootprintOverlaps> = { ok: true, count: 0, worst: 0, pairs: [] };
+  private topology: ReturnType<typeof assertTopology> = { ok: true, checks: 0, failures: [] };
+  private amphitheatres: ReturnType<typeof assertOneAmphitheatre> = { ok: true, count: 1, ids: ['colosseum'] };
 
   async init(ctx: EngineContext): Promise<void> {
     const terrain = ctx.get<TerrainSystem>('terrain');
@@ -99,10 +112,45 @@ export class CitySystem implements Subsystem {
     this.segments = wall.segments;
     this.gateList = wall.gates;
 
+    // Reserve every landmark's *oriented rectangular* footprint before a single insula
+    // is generated. A circle is not good enough: the Circus Maximus is 621 × 118 m, and
+    // the circle that used to stand in for it left five sixths of its footprint free for
+    // the fabric to grow through — which is precisely what happened.
     const keepOut = new KeepOut();
-    for (const l of LANDMARKS) keepOut.addCircle(l.x, l.z, l.clear);
+    for (const l of LANDMARKS) {
+      keepOut.addRect(l.x, l.z, l.hw, l.hd, l.rot);
+      // A mound is bigger in plan than the building on it.
+      if (l.mound) keepOut.addCircle(l.x, l.z, (l.moundRadius ?? l.clear) * 1.02);
+    }
     for (const s of STREETS) keepOut.addPath(s.path, s.width * 0.5 + 2.5);
     for (const a of AQUEDUCTS) keepOut.addPath(a.path, 8);
+
+    // Build-time assertion: no two monuments interpenetrate. Reported in `stats()` and
+    // logged once, because a layout regression is otherwise invisible until someone
+    // notices a temple inside a racetrack.
+    this.overlaps = assertNoFootprintOverlaps();
+    if (!this.overlaps.ok) {
+      console.warn(
+        `[city] ${this.overlaps.count} landmark footprint overlap(s), worst ${this.overlaps.worst} m: ` +
+          this.overlaps.pairs.map((p) => `${p.a}/${p.b}`).join(', ')
+      );
+    }
+    // ...and that separating them did not destroy the plan.
+    this.topology = assertTopology();
+    const ring = assertHillRing();
+    this.topology = {
+      ok: this.topology.ok && ring.ok,
+      checks: this.topology.checks + ring.checks,
+      failures: [...this.topology.failures, ...ring.failures],
+    };
+    if (!this.topology.ok) {
+      console.warn(`[city] topology check failed: ${this.topology.failures.join('; ')}`);
+    }
+    // Exactly one Flavian Amphitheatre. See `assertOneAmphitheatre`.
+    this.amphitheatres = assertOneAmphitheatre();
+    if (!this.amphitheatres.ok) {
+      console.warn(`[city] expected 1 amphitheatre, found ${this.amphitheatres.count}: ${this.amphitheatres.ids.join(', ')}`);
+    }
 
     const landmarks = buildLandmarks(heightAt, 'rome-monuments');
     const districts = buildDistricts(heightAt, keepOut, 'rome-fabric', wall.wallZAt);
@@ -124,7 +172,7 @@ export class CitySystem implements Subsystem {
     for (const seg of this.segments) {
       this.markCircle(seg.x1, seg.z1, WALL.towerWidth * 0.5);
     }
-    for (const f of landmarks.footprints) this.markCircle(f.x, f.z, f.r);
+    for (const f of landmarks.footprints) this.markRect(f.x, f.z, f.hw, f.hd, f.rot);
     for (const f of districts.footprints) this.markRect(f.x, f.z, f.hw, f.hd, f.rot);
     // The gate passage is open: clear it again so units can march through.
     for (const gate of this.gateList) {
@@ -333,6 +381,14 @@ export class CitySystem implements Subsystem {
     triangles: number;
     materials: number;
     usedManifest: boolean;
+    /** Result of the build-time landmark footprint-overlap assertion. */
+    footprintOverlaps: number;
+    footprintOverlapWorst: number;
+    /** Adjacency checks passed / total, from `assertTopology`. */
+    topologyPass: number;
+    topologyChecks: number;
+    /** Count of Flavian-Amphitheatre-form buildings. Must be 1. */
+    amphitheatres: number;
   } {
     let visibleMeshes = 0;
     let visibleTriangles = 0;
@@ -349,6 +405,11 @@ export class CitySystem implements Subsystem {
       triangles: this.totalTris,
       materials: CITY_MAT_KEYS.length,
       usedManifest: this.mats.usedManifest,
+      footprintOverlaps: this.overlaps.count,
+      footprintOverlapWorst: this.overlaps.worst,
+      topologyPass: this.topology.checks - this.topology.failures.length,
+      topologyChecks: this.topology.checks,
+      amphitheatres: this.amphitheatres.count,
     };
   }
 

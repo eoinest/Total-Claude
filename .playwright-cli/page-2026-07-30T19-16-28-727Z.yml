@@ -1,0 +1,131 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e5]:
+      - generic [ref=e9]:
+        - paragraph [ref=e12] [cursor=pointer]:
+          - strong [ref=e13]: Discover thrilling PDFs on MyMiniFactory!
+          - text: — 5e adventures, one-shots, battle maps, card models, and more…
+        - button "EXPLORE NOW >" [ref=e14] [cursor=pointer]
+      - generic [ref=e19]:
+        - link "MyMiniFactory home" [ref=e21] [cursor=pointer]:
+          - /url: https://www.myminifactory.com
+        - generic [ref=e26]:
+          - searchbox "SEARCH BY WORD OR TAG" [ref=e27]
+          - button "Search" [ref=e28] [cursor=pointer]
+        - generic [ref=e31]:
+          - generic [ref=e34]:
+            - link "TABLETOP" [ref=e35] [cursor=pointer]:
+              - /url: https://www.myminifactory.com/category/tabletop?store=1
+            - link "TOYS" [ref=e36] [cursor=pointer]:
+              - /url: https://www.myminifactory.com/category/toys-and-games?store=1
+            - link "PDF" [ref=e37] [cursor=pointer]:
+              - /url: https://www.myminifactory.com/category/pdf
+          - button "Open menu" [ref=e39] [cursor=pointer]
+        - generic "Cart icon" [ref=e46] [cursor=pointer]
+        - button "Login button" [ref=e50] [cursor=pointer]: Login
+  - generic [ref=e58]:
+    - generic [ref=e59]:
+      - generic [ref=e60]:
+        - img "Discover gift cards image" [ref=e62]
+        - generic [ref=e63]: Give someone the perfect gift.
+      - link [ref=e64] [cursor=pointer]:
+        - /url: https://www.myminifactory.com/gift-cards
+    - heading [level=2] [ref=e68]:
+      - progressbar [ref=e69]
+    - generic [ref=e70]:
+      - heading [level=2] [ref=e71]:
+        - progressbar [ref=e72]
+      - list [ref=e74]:
+        - generic [ref=e75]:
+          - article [ref=e76]:
+            - generic [ref=e77]:
+              - progressbar [ref=e79]
+              - generic [ref=e81]:
+                - generic [ref=e82]:
+                  - progressbar [ref=e83]
+                  - progressbar [ref=e84]
+                - generic [ref=e85]:
+                  - generic [ref=e86]:
+                    - progressbar [ref=e87]
+                    - progressbar [ref=e88]
+                  - generic [ref=e89]:
+                    - progressbar [ref=e90]
+                    - progressbar [ref=e91]
+          - article [ref=e92]:
+            - generic [ref=e93]:
+              - progressbar [ref=e95]
+              - generic [ref=e97]:
+                - generic [ref=e98]:
+                  - progressbar [ref=e99]
+                  - progressbar [ref=e100]
+                - generic [ref=e101]:
+                  - generic [ref=e102]:
+                    - progressbar [ref=e103]
+                    - progressbar [ref=e104]
+                  - generic [ref=e105]:
+                    - progressbar [ref=e106]
+                    - progressbar [ref=e107]
+          - article [ref=e108]:
+            - generic [ref=e109]:
+              - progressbar [ref=e111]
+              - generic [ref=e113]:
+                - generic [ref=e114]:
+                  - progressbar [ref=e115]
+                  - progressbar [ref=e116]
+                - generic [ref=e117]:
+                  - generic [ref=e118]:
+                    - progressbar [ref=e119]
+                    - progressbar [ref=e120]
+                  - generic [ref=e121]:
+                    - progressbar [ref=e122]
+                    - progressbar [ref=e123]
+          - article [ref=e124]:
+            - generic [ref=e125]:
+              - progressbar [ref=e127]
+              - generic [ref=e129]:
+                - generic [ref=e130]:
+                  - progressbar [ref=e131]
+                  - progressbar [ref=e132]
+                - generic [ref=e133]:
+                  - generic [ref=e134]:
+                    - progressbar [ref=e135]
+                    - progressbar [ref=e136]
+                  - generic [ref=e137]:
+                    - progressbar [ref=e138]
+                    - progressbar [ref=e139]
+  - generic [ref=e143]:
+    - generic [ref=e144]:
+      - link "MyMiniFactory logo":
+        - /url: https://www.myminifactory.com/
+        - img "MyMiniFactory logo"
+      - generic [ref=e145]:
+        - link "About us" [ref=e146] [cursor=pointer]:
+          - /url: /pages/about_us
+        - link "SoulCrafted" [ref=e147] [cursor=pointer]:
+          - /url: https://www.soulcrafted.it
+        - link "Funding and M&A" [ref=e148] [cursor=pointer]:
+          - /url: https://www.myminifactory.com/pages/funding-m-and-a
+        - link "open a store" [ref=e149] [cursor=pointer]:
+          - /url: https://www.myminifactory.com/join-the-store
+        - link "Deals" [ref=e150] [cursor=pointer]:
+          - /url: https://www.myminifactory.com/deals
+        - link "Blog" [ref=e151] [cursor=pointer]:
+          - /url: https://www.myminifactory.com/blog
+        - link "Forum" [ref=e152] [cursor=pointer]:
+          - /url: https://tavern.myminifactory.com
+        - generic [ref=e153]:
+          - paragraph [ref=e154]: newsletter
+          - generic [ref=e155]:
+            - textbox [ref=e156]
+            - button [ref=e157]
+    - generic [ref=e162]:
+      - paragraph [ref=e163]: Copyright, MyMiniFactory, 2026 / 51-53 Rivington Street, London, EC2A 3QB, United Kingdom
+      - generic [ref=e164]:
+        - link "Help/FAQ" [ref=e165] [cursor=pointer]:
+          - /url: /pages/faq
+        - link "T&C" [ref=e166] [cursor=pointer]:
+          - /url: /pages/terms-and-conditions
+        - link "Privacy Policy" [ref=e167] [cursor=pointer]:
+          - /url: /pages/privacy-policy
+        - link "Advertize" [ref=e168] [cursor=pointer]:
+          - /url: /pages/advertize-with-us

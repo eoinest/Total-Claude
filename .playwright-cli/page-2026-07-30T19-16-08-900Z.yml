@@ -1,0 +1,70 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e7]:
+      - link "MyMiniFactory home" [ref=e9] [cursor=pointer]:
+        - /url: https://www.myminifactory.com
+      - generic [ref=e14]:
+        - searchbox "SEARCH BY WORD OR TAG" [ref=e15]
+        - button "Search" [ref=e16] [cursor=pointer]
+      - generic [ref=e19]:
+        - generic [ref=e22]:
+          - link "TABLETOP" [ref=e23] [cursor=pointer]:
+            - /url: https://www.myminifactory.com/category/tabletop?store=1
+          - link "TOYS" [ref=e24] [cursor=pointer]:
+            - /url: https://www.myminifactory.com/category/toys-and-games?store=1
+          - link "PDF" [ref=e25] [cursor=pointer]:
+            - /url: https://www.myminifactory.com/category/pdf
+        - button "Open menu" [ref=e27] [cursor=pointer]
+      - generic "Cart icon" [ref=e34] [cursor=pointer]
+      - button "Login button" [ref=e38] [cursor=pointer]: Login
+  - generic [ref=e40]:
+    - generic [ref=e41]:
+      - generic [ref=e42]:
+        - img "profile image" [ref=e44]
+        - button "Support Me" [ref=e47] [cursor=pointer]
+      - generic [ref=e49]:
+        - generic [ref=e51]:
+          - heading [level=2] [ref=e53]:
+            - text: Scan The World
+            - img "The Adventure Subscriber" [ref=e54]
+            - img "Designer" [ref=e55]
+            - img "Verified Curator" [ref=e56]
+            - img "Verified Maker" [ref=e57]
+          - generic [ref=e58]:
+            - text: "Username: Scan The World"
+            - generic "Report the User" [ref=e60]: 
+            - generic [ref=e62]: "3D Printing since: January 0001"
+        - generic [ref=e63]: Scan the World enables metaReverse with a conscience; an ecosystem for everyone to freely share digital, 3D scanned cultural artefacts for physical 3D printing.
+    - list [ref=e65]:
+      - listitem [ref=e66]:
+        - link [ref=e67] [cursor=pointer]:
+          - /url: https://www.myminifactory.com/canvas?search=Scan+The+World
+          - img "mmf canvas" [ref=e68]
+          - text: Community Prints & Paints
+      - listitem [ref=e69]: 137,295,894 Views
+      - listitem [ref=e70]: 190,175 Likes
+      - listitem [ref=e71]: Follow
+      - listitem [ref=e72]: Private Message
+      - listitem [ref=e73]:
+        - link [ref=e74] [cursor=pointer]:
+          - /url: https://www.facebook.com/Scan-the-World-1656114977977499/
+          - img "Facebook" [ref=e75]
+        - link [ref=e76] [cursor=pointer]:
+          - /url: https://twitter.com/scan_the_world
+          - img "Twitter" [ref=e77]
+        - link [ref=e78] [cursor=pointer]:
+          - /url: http://blog.myminifactory.com/
+          - img "Tumblr" [ref=e79]
+        - link [ref=e80] [cursor=pointer]:
+          - /url: https://www.instagram.com/scantheworld/
+          - img "Instagram" [ref=e81]
+    - generic [ref=e82]:
+      - tablist [ref=e83]:
+        - tab "Store (12,446)" [ref=e84] [cursor=pointer]
+        - tab "Campaigns (1)" [ref=e85] [cursor=pointer]
+        - tab "Prints (12)" [selected] [ref=e86] [cursor=pointer]
+        - tab "Collections (51)" [ref=e87] [cursor=pointer]
+        - tab "Followers (12,467)" [ref=e88] [cursor=pointer]
+        - tab "Following (25)" [ref=e89] [cursor=pointer]
+        - tab "Stories (95)" [ref=e90] [cursor=pointer]
+      - tabpanel [ref=e92]
