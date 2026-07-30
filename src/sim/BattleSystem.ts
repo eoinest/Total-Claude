@@ -562,6 +562,54 @@ export class BattleSystem implements Subsystem {
     }
   }
 
+  /**
+   * Choose a melee clip for a man who is fighting.
+   *
+   * Every fighting man used to play `AttackThrust`, which meant a thousand-man melee was
+   * a thousand identical underarm stabs — and it left `AttackOverhead`, `AttackSlash`,
+   * `ShieldBash`, `Block` and `Parry` authored, baked and never once selected.
+   *
+   * The choice is driven by the weapon, because the weapon really does dictate the
+   * stroke: a gladius behind a scutum is a short thrust into the gap, a Germanic axe or a
+   * long spatha is swung overhead, and a spear is levelled. Within that, the man's stable
+   * per-man hash picks a variant so neighbours differ, and men who are engaged but not
+   * currently swinging defend instead of attacking — which is what actually happens in a
+   * press, and what makes a line read as fighting rather than as a row of windmills.
+   */
+  private meleeClipFor(i: number): Clip {
+    const p = this.pool;
+    const u = this.unitOfSoldier(i);
+    const weapon = u ? this.typeOf(u).appearance.weapon : 'gladius';
+    const v = p.variant[i];
+
+    // Only a fraction of an engaged rank is mid-stroke at any instant; the rest are
+    // covering, recovering or shoving. `attackCooldown` is the sim's own notion of that.
+    const swinging = p.attackCooldown[i] <= 0.42;
+    if (!swinging) {
+      // Split the non-swinging men between a braced guard and an active parry so the
+      // defensive half of the line is not uniform either.
+      return v < 0.62 ? Clip.Block : Clip.Parry;
+    }
+
+    switch (weapon) {
+      case 'axe':
+      case 'club':
+        // Overhead is the natural axe stroke; occasionally a wide slash.
+        return v < 0.72 ? Clip.AttackOverhead : Clip.AttackSlash;
+      case 'spatha':
+        return v < 0.45 ? Clip.AttackSlash : v < 0.85 ? Clip.AttackOverhead : Clip.AttackThrust;
+      case 'spear':
+      case 'pike':
+        // A spear is thrust, always — a levelled point is the whole reason to carry one.
+        return Clip.AttackThrust;
+      case 'gladius':
+      default:
+        // Shield-forward fighting: mostly the short thrust, with the boss used as a
+        // weapon often enough to see it happen.
+        return v < 0.68 ? Clip.AttackThrust : v < 0.86 ? Clip.ShieldBash : Clip.AttackSlash;
+    }
+  }
+
   /** Pick the clip each soldier should be playing and advance its playhead. */
   private updateAnimationState(dt: number, ctx: EngineContext): void {
     const p = this.pool;
@@ -582,7 +630,7 @@ export class BattleSystem implements Subsystem {
           clip = (Clip.DeathBack + (p.deathVariant[i] % 4)) as Clip;
           break;
         case SoldierState.Fighting:
-          clip = Clip.AttackThrust;
+          clip = this.meleeClipFor(i);
           break;
         case SoldierState.Bracing:
           clip = Clip.IdleBrace;

@@ -99,7 +99,9 @@ vfx.grimeSink = (i, amt) => {
 // second listener would double every impact.
 engine.add(new UnitRenderSystem());
 engine.add(new AudioEngine());
-engine.add(new HudSystem());
+// The HUD needs the engine itself, not just the context: `setQuality` lives on
+// Engine, so the quality-tier buttons are inert without this.
+engine.add(new HudSystem({ engine }));
 
 // Post-processing last: it takes over the final present, so everything it composites
 // must already exist.

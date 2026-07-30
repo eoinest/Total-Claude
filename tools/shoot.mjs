@@ -37,7 +37,9 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 const SHOTS = {
   establishing: {
     desc: 'Opening wide shot from behind the Roman line, both armies in frame',
-    x: 0, z: -20, zoom: 0.82, yaw: Math.PI, at: 1,
+    // zoom 0.82 is a ~395 m orbit, which puts a man at ~5 px and reduces both armies to
+    // dust-coloured bands no amount of model detail can rescue. 0.55 gives ~12 px.
+    x: 0, z: -20, zoom: 0.55, yaw: Math.PI, at: 1,
   },
   wide: {
     desc: 'High three-quarter view of the whole battlefield and the city behind',
@@ -49,7 +51,10 @@ const SHOTS = {
   },
   germanhorde: {
     desc: 'Into the Juthungi mass at eye level — reads variety and disorder',
-    x: -20, z: -186, zoom: 0.18, yaw: Math.PI * 0.1, at: 2,
+    // The Juthungi face +Z and formations put rank N at z = anchor - N*spacing, so the
+    // mass occupies z <= -190. The old camera sat at z ~ -190 looking +Z, i.e. out of the
+    // front of the formation with every man behind it, and showed nothing at all.
+    x: -34, z: -188, zoom: 0.14, yaw: Math.PI, at: 2,
   },
   clash: {
     // Auto-framed: hand-picked coordinates kept missing, because where the lines

@@ -137,8 +137,16 @@ export class Input {
       // Don't swallow browser shortcuts or typing in text fields.
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-      if (e.metaKey || e.ctrlKey) return;
       const code = e.code;
+      // Record the modifier itself before bailing out. Returning early on `e.ctrlKey`
+      // meant `ControlLeft`/`ControlRight` never entered the key set, so `input.ctrl` was
+      // permanently false and ctrl-click add-to-selection could never work.
+      const isModifier = code === 'ControlLeft' || code === 'ControlRight'
+        || code === 'MetaLeft' || code === 'MetaRight'
+        || code === 'AltLeft' || code === 'AltRight'
+        || code === 'ShiftLeft' || code === 'ShiftRight';
+      // Still refuse to swallow genuine browser shortcuts (cmd/ctrl + a letter).
+      if (!isModifier && (e.metaKey || e.ctrlKey)) return;
       if (!this.keys.has(code)) this.keysPressed.add(code);
       this.keys.add(code);
       if (code === 'Space' || code.startsWith('Arrow') || code === 'Tab') e.preventDefault();

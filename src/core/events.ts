@@ -28,6 +28,8 @@ export interface GameEvents {
     targetUnitId?: number;
     formation?: string;
     ability?: string;
+    /** Men per rank, set by a right-click-drag frontage order. */
+    width?: number;
     /** Shift-queued rather than replacing the current order. */
     queued?: boolean;
     /** Run instead of walk (double-click / Alt). */
