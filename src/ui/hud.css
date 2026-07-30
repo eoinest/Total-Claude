@@ -816,6 +816,10 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   position: relative;
   width: fit-content;
   max-width: 100%;
+  /* A hard ceiling on the whole bar, in viewport units. Whatever goes wrong inside it, the
+     card bar cannot take more than a fifth of the frame from the battle. */
+  max-height: 20vh;
+  overflow: hidden;
   padding: 0.34em 0.44em 0.4em;
   display: flex;
   align-items: stretch;
@@ -945,6 +949,8 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   width: fit-content;
   max-width: 100%;
   min-width: 14em;
+  max-height: 14vh;
+  overflow: hidden;
   padding: 0.3em 0.4em 0.34em;
   border-radius: 0 3px 3px 3px;
 }
@@ -959,6 +965,9 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   /* A flex item's automatic minimum size is its min-content width, which the native
      name (a nowrap line) would set far above the computed card width. */
   min-width: 0;
+  /* A card is a card. Nothing about a broken parent may let one become a panel. */
+  max-width: 9em;
+  max-height: 14em;
   display: flex;
   flex-direction: column;
   padding: 0.16em 0.14em 0.2em;
@@ -1011,10 +1020,20 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
 .card.mini { cursor: default; }
 .card.mini .card-bar { margin-top: 0.2em; height: 0.44em; }
 
+/* The portrait's height comes from `--cw` — the same length that sets the card width — and
+   never from `aspect-ratio`.
+   This used to be `aspect-ratio: 1/1.04`, which makes the height a function of the element's
+   own width and therefore unbounded. Any layout accident that let a card become
+   block-width — a flex parent that lost `display:flex`, a stylesheet arriving a beat after
+   the markup that needs it — produced a 1400 x 1456 portrait canvas covering the entire
+   viewport. A length with a `var()` fallback cannot do that: if nothing ever sets `--cw`
+   the portrait is 6.9em, and `max-height` catches even a nonsense value. */
 .card-por {
   position: relative;
   width: 100%;
-  aspect-ratio: 1 / 1.04;
+  height: calc(var(--cw, 6.6em) * 1.04);
+  max-height: 9em;
+  flex: none;
   overflow: hidden;
   border: 1px solid rgba(0, 0, 0, 0.7);
   border-radius: 1px;
@@ -1223,6 +1242,13 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   display: flex;
   align-items: stretch;
   gap: 0.7em;
+  /* Every panel that paints a background carries its own ceiling, so no layout accident
+     inside one can let it cover the battle. `.hud-bottom` cannot take the same treatment:
+     this plaque is positioned outside its box and `overflow: hidden` there would clip it
+     away entirely. */
+  max-width: 96vw;
+  max-height: 34vh;
+  overflow: hidden;
   padding: 0.5em 0.7em;
   opacity: 0;
   transform: translateY(0.9em);
@@ -1736,6 +1762,11 @@ input[type='checkbox']:checked::after { opacity: 1; }
   top: 0;
   z-index: 60;
   width: 37em;
+  /* Bounded on both axes. A hover panel that can outgrow the frame it floats over is a
+     panel waiting to cover it. */
+  max-width: 42vw;
+  max-height: 76vh;
+  overflow: hidden;
   padding: 0.8em 0.9em 0.9em;
   pointer-events: none;
   background:

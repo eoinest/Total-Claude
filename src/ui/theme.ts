@@ -59,6 +59,18 @@ export const FACTION_UI: Record<Faction, FactionUI> = {
 /** The side the player commands. Everything selectable belongs to it. */
 export const PLAYER_FACTION = Faction.Rome;
 
+/**
+ * True when the page is being driven by `tools/shoot.mjs` rather than by a player.
+ *
+ * The harness is a measurement rig: every frame it grabs is used to judge the *battlefield*,
+ * so nothing transient may cover it. Title card, results dispatch, hover tooltip and the
+ * enemy order-of-battle strip are all suppressed under it. One flag, read once, so every
+ * panel makes the same decision — an earlier pass had this test copied into a single module
+ * and the panels added later did not get it.
+ */
+export const HARNESS =
+  typeof location !== 'undefined' && new URLSearchParams(location.search).get('harness') === '1';
+
 // ---------------------------------------------------------------------------
 // Morale
 // ---------------------------------------------------------------------------

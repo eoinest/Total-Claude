@@ -181,10 +181,12 @@ float grassHeightAt(vec2 wxz) {
 }
 
 // The centuriated field lattice, kept numerically identical to fieldPattern() in
-// TerrainMaterial.ts. The ground shader paints roughly a third of the strips as fallow
-// earth; grass has to know about that or it grows a lush sward straight out of a ploughed
-// field, which is the fastest way to break the illusion that the two systems are looking
-// at the same landscape. Returns the strip hash in x, headland proximity in y.
+// TerrainMaterial.ts — including its exact, undisplaced 94 m cells and its boundary
+// convention (1 *on* a field line, 0 in the middle of a strip). The ground shader paints
+// the fallow strips as bare earth and the field lines as beaten track; grass has to agree
+// about where those are, or it grows a lush sward straight out of a ploughed field, which
+// is the fastest way to break the illusion that the two systems are looking at the same
+// landscape. Returns the strip use hash in x, boundary proximity in y.
 vec2 grassField(vec2 wxz) {
   vec2 fu = vec2(wxz.x * 0.97740 - wxz.y * 0.21140, wxz.x * 0.21140 + wxz.y * 0.97740) / 94.0;
   vec2 cell = floor(fu);
@@ -192,9 +194,10 @@ vec2 grassField(vec2 wxz) {
   float h = fract(sin(dot(cell, vec2(41.317, 78.233))) * 43758.5453);
   float strips = 2.0 + floor(fract(sin(dot(cell + 17.0, vec2(41.317, 78.233))) * 43758.5453) * 2.5);
   float sub = floor(f.y * strips);
-  float hs = fract(h + sub * 0.3719 + fract(sin(dot(cell + 41.0, vec2(41.317, 78.233))) * 43758.5453) * 0.21);
+  float use = fract(h + sub * 0.3719 + fract(sin(dot(cell + 41.0, vec2(41.317, 78.233))) * 43758.5453) * 0.21);
   vec2 e = abs(f - 0.5);
-  return vec2(hs, 1.0 - smoothstep(0.40, 0.492, max(e.x, e.y)));
+  float edge = max(max(e.x, e.y), abs(fract(f.y * strips) - 0.5));
+  return vec2(fract(use * 3.71 + h * 0.613), smoothstep(0.40, 0.496, edge));
 }
 `;
 
@@ -225,9 +228,12 @@ export class GrassField {
         // Three cards at 60° rather than two at 90°: a two-card cross has a bearing from
         // which it reads as a single flat plane, and at this density that shows up as
         // corduroy banding across the sward.
-        // 0.46 m tall. Rome II's pasture reaches a man's mid-calf and in places swallows
-        // his shins, so 0.30 m — barely over a boot top — was far too short to read.
-        geo: crossedCards(3, 2, 0.58, 0.46),
+        // 0.54 m is the *tallest* a clump can be, not the height of the sward: the two
+        // height populations in the vertex shader put the general mat at 0.32–0.40 m and
+        // only a fifth of clumps near this bound. Rome II's pasture reaches a man's
+        // mid-calf and in places swallows his shins, which is where the mat sits; running
+        // every clump at that height made the grass the subject of the frame.
+        geo: crossedCards(3, 2, 0.58, 0.54),
         grid: NEAR_GRID,
         spacing: NEAR_SPACING,
         // Jitter over 1 means a clump can leave its own cell. Below that the lattice stays
@@ -246,7 +252,7 @@ export class GrassField {
     );
     this.rings.push(
       this.makeRing(ctx, heightMap, controlMap, tex, {
-        geo: crossedCards(2, 1, 1.7, 0.56),
+        geo: crossedCards(2, 1, 1.7, 0.50),
         grid: FAR_GRID,
         spacing: FAR_SPACING,
         jitter: 1.05,
@@ -363,10 +369,11 @@ export class GrassField {
   // out where the splat map is turning to mud or bare rock.
   float cover = (1.0 - smoothstep(0.26, 0.52, sl))
               * (1.0 - paved * 0.95)
-              // Trampling thins the sward, it does not shave it: men standing in ranks
-              // beat grass down and wear scrapes between the files, and 0.9 here left the
-              // whole parade ground bald at eye level.
-              * (1.0 - gctl.b * 0.55)
+              // Trampling *shortens* the sward — see trodden, below — far more than it
+              // thins it. Men standing in ranks beat grass down and wear scrapes between
+              // the files; they do not shave it. 0.9 here left the whole parade ground bald,
+              // and even 0.55 opened the mat into sparse stubble once height came down too.
+              * (1.0 - gctl.b * 0.34)
               * (1.0 - gctl.g * 0.85)
               * (1.0 - smoothstep(0.74, 0.99, gctl.r) * 0.7)
               * step(uWaterLevel + 0.35, gh);
@@ -380,8 +387,8 @@ export class GrassField {
   // pasture, so a fallow strip there must not strip the sward off it either.
   vec2 gfld = grassField(gpos);
   float gCampus = 1.0 - smoothstep(420.0, 800.0, length(vec2(gpos.x * 0.86, (gpos.y + 40.0) * 1.9)));
-  cover *= 1.0 - smoothstep(0.60, 0.74, gfld.x) * 0.88 * (1.0 - gCampus * 0.88);
-  cover *= 1.0 - gfld.y * 0.45 * (1.0 - gCampus * 0.55);
+  cover *= 1.0 - smoothstep(0.66, 0.79, gfld.x) * 0.88 * (1.0 - gCampus * 0.88);
+  cover *= 1.0 - gfld.y * 0.55 * (1.0 - gCampus * 0.55);
 
   float dist = length(gpos - uCamXZ);
   float fadeNear = uFadeIn < 0.5 ? 1.0 : smoothstep(uFadeIn, uFadeIn + 30.0, dist);
@@ -390,7 +397,23 @@ export class GrassField {
   // One clump in twelve is a thistle or a stand of dead grass: taller and straw
   // coloured. Ground cover that is all one plant is the giveaway of a shader field.
   float weed = uWeeds * step(0.918, h2);
-  float scale = keep * fade * (0.74 + 0.5 * h1) * uHeightScale * (1.0 + weed * 0.7);
+
+  // Height and width are scaled *separately*, and height has two populations.
+  //
+  // Grazed pasture is short — ankle deep — with a scatter of taller tussocks the sheep
+  // missed. One uniform height reads as a wheat field, and at a four-metre camera half a
+  // metre of card occludes everything behind it for tens of metres: it buried the Roman
+  // front rank in its own grass and made the ground the subject of the frame instead of the
+  // army. Width stays nearly constant so a short clump still spreads into its neighbours
+  // and the mat does not open up into gaps as the sward gets shorter.
+  float hPop = step(0.80, fract(h1 * 7.31 + h3 * 3.17));
+  float hVar = mix(0.60 + h1 * 0.14, 0.98 + h1 * 0.20, hPop);
+  // Trampling shortens the sward far harder than it thins it. Ground five thousand men have
+  // been standing on is beaten flat — which is both what actually happens and what lets the
+  // men read against it.
+  float trodden = 1.0 - smoothstep(0.05, 0.32, gctl.b) * 0.45;
+  float wScale = keep * fade * (0.88 + 0.30 * h1);
+  float hScale = keep * fade * hVar * trodden * uHeightScale * (1.0 + weed * 0.8);
 
   // --- card shape and wind ----------------------------------------------
   float bt = aBlade.x;
@@ -409,7 +432,7 @@ export class GrassField {
   local.xz += windDir * bend * 0.16;
   local.y -= abs(bend) * 0.04;
 
-  vec3 gWorld = vec3(gpos.x, gh, gpos.y) + local * scale;
+  vec3 gWorld = vec3(gpos.x, gh, gpos.y) + local * vec3(wScale, hScale, wScale);
   vBladeT = bt;
 
   // Darker at the root, and converging on the ground colour as the clump shrinks away,

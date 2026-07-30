@@ -11,7 +11,7 @@ import { Faction } from '../sim/types';
 import { el, fmtClock, fmtCount, html, icon, setClass } from './dom';
 import { ICON, standardGlyph } from './icons';
 import type { HudModel } from './model';
-import { FACTION_UI, PLAYER_FACTION } from './theme';
+import { FACTION_UI, HARNESS, PLAYER_FACTION } from './theme';
 
 const FLAVOUR_VICTORY = [
   'The Juthungi host is broken. What is left of it runs north up the Via Flaminia, and Rome keeps her walls unfinished a little longer.',
@@ -28,10 +28,10 @@ const FLAVOUR_DRAW = [
 /**
  * The screenshot harness is a measurement rig, not a player: a cinematic title card and
  * a victory overlay sitting across the middle of a frame make every shot unusable for
- * judging the battlefield. Both are suppressed there.
+ * judging the battlefield. Both are suppressed there. The test itself lives in `theme.ts`
+ * so that every overlay in the HUD makes the same call from one place.
  */
-const CINEMATIC =
-  typeof location === 'undefined' || new URLSearchParams(location.search).get('harness') !== '1';
+const CINEMATIC = !HARNESS;
 
 export class BattleFlow {
   private title!: HTMLElement;

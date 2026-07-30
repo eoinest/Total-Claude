@@ -11,7 +11,7 @@ import { html, icon } from './dom';
 import { abilityIcon, formationGlyph, standardGlyph, UNIT_CLASS_ICON } from './icons';
 import type { UnitView } from './model';
 import { drawPortrait } from './portrait';
-import { abilityUI, FACTION_UI, MORALE_UI, ORDER_LABEL, UNIT_CLASS_LABEL } from './theme';
+import { abilityUI, FACTION_UI, HARNESS, MORALE_UI, ORDER_LABEL, UNIT_CLASS_LABEL } from './theme';
 
 /** Ceilings used to normalise the stat bars, taken from the top of the roster's range. */
 const MAX = {
@@ -139,6 +139,9 @@ export class Tooltip {
    * on top of the static stat block.
    */
   show(v: UnitView, anchor: DOMRect, viewW: number, viewH: number): void {
+    // The screenshot harness has no player to hover anything deliberately, and a stat
+    // block across a frame taken to judge the battlefield makes that frame useless.
+    if (HARNESS) return;
     const d = v.def;
     const fui = FACTION_UI[v.faction];
     const groups = rowsFor(v);

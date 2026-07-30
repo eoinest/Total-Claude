@@ -93,7 +93,7 @@ export class LightingSystem implements Subsystem {
    * its own luminance. Luminance-preserving, so it costs no contrast: it moves
    * colour only.
    */
-  private static readonly FILL_CHROMA_GAIN = 1.35;
+  private static readonly FILL_CHROMA_GAIN = 1.2;
 
   private csm?: CSM;
   private sky?: SkySystem;
@@ -358,11 +358,19 @@ export class LightingSystem implements Subsystem {
       this.fill.intensity = 0.22;
 
       // Bounce comes from the ground on the far side of the sun, i.e. the sun
-      // direction mirrored through the horizon plane. Kept to a whisper: it exists
-      // to stop a shadowed side going perfectly flat, not to relight it.
-      this.bounce.position.set(-sky.sunDirection.x, -0.45, -sky.sunDirection.z).multiplyScalar(300);
+      // direction mirrored through the horizon plane — so it lands on exactly the
+      // surfaces the sun cannot reach.
+      //
+      // Nearly horizontal (-0.2, not the -0.45 that reads as a physical mirror)
+      // because the surfaces that need it are *vertical*: a cohort seen from the
+      // shaded side is a wall of anti-sun normals, and with a 26 deg sun and the
+      // ambient trimmed it was landing near 0.12 display and reading as a navy
+      // silhouette. A low, warm, unshadowed fill lifts precisely that and barely
+      // touches level ground, where cos falls away — which is what lets the
+      // ground's own lit:shadow ratio stay at 8:1 while the men come back.
+      this.bounce.position.set(-sky.sunDirection.x, -0.2, -sky.sunDirection.z).multiplyScalar(300);
       this.bounce.color.copy(sky.sunColour);
-      this.bounce.intensity = sky.sunIntensity * 0.03;
+      this.bounce.intensity = sky.sunIntensity * 0.11;
     }
 
     // The camera's projection changes every frame (RTSCamera couples fov, near

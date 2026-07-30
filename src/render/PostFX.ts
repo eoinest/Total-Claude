@@ -785,7 +785,7 @@ export class PostFXSystem implements Subsystem {
         // — warm light, cool shade, and red clearly above green in the sun. Ours
         // measured 1.05/1.03/0.93 and 0.87/1.03/1.10, so the tints carry the frame
         // the rest of the way warm without touching the physical light.
-        uShadowTint: { value: new THREE.Vector3(0.88, 0.955, 1.24) },
+        uShadowTint: { value: new THREE.Vector3(0.9, 0.96, 1.18) },
         uHighlightTint: { value: new THREE.Vector3(1.18, 0.985, 0.82) },
         uSplit: { value: new THREE.Vector2(0.05, 0.48) },
         uShoulder: { value: new THREE.Vector2(0.92, 1.7) },

@@ -100,7 +100,12 @@ export class DustEmitter {
       this.trampleTimer = new Float32Array(battle.units.length + 64);
     }
 
-    const density = this.budget.density * this.wetness;
+    // Occupancy governor. Emission is per man, so the natural failure mode is that the
+    // rate is fine at 2,500 men and saturates the pool at 9,500 — which reads as a white
+    // sheet over the battle and costs a whole frame budget in fill rate. Taper to zero as
+    // the soft layer fills so the ceiling is structural, not a tuning constant.
+    const govern = clamp01((0.78 - ps.occupancy) / 0.30);
+    const density = this.budget.density * this.wetness * govern;
     if (density <= 0.001) return;
 
     // Beyond ~520 m a puff is a couple of pixels: spend the budget where it reads.

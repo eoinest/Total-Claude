@@ -280,10 +280,16 @@ export class UnitRenderSystem implements Subsystem {
       // fetch is a cache hit.
       aoMap: this.atlas.orm,
       aoMapIntensity: 0.85,
-      // The environment probe is a daylight sky, so it is overwhelmingly blue. At full
-      // strength it takes over every part-metal surface on a man; pulled back it still
-      // gives armour somewhere to reflect without painting the army cobalt.
-      envMapIntensity: 0.72,
+      // The environment probe is a daylight sky, so its irradiance is overwhelmingly blue,
+      // and armour is the most reflective thing on the field. Measured by disabling each
+      // light in turn: at full strength the probe alone turns every helmet in the army
+      // cobalt, and the hemisphere fill does the same to anything in the formation's own
+      // shadow. Pulled back to a third, armour still has somewhere to reflect and the iron
+      // albedo carries the colour instead.
+      //
+      // This is a mitigation, not a fix. The fix is a warmer, less saturated specular probe
+      // and shadow fill in src/render/ — reported to that owner.
+      envMapIntensity: 0.38,
       roughness: 1,
       metalness: 1,
       normalScale: new THREE.Vector2(0.9, 0.9),
@@ -742,6 +748,16 @@ export class UnitRenderSystem implements Subsystem {
           if (d < -Math.PI) d += Math.PI * 2;
           facing += d * Math.min(1, p.animTime[i] * 2.5);
         }
+
+        // A settled corpse is drawn one tier coarser than his distance would give. Lying
+        // prone he presents no silhouette to preserve — no upright profile, no crest against
+        // the sky, nothing a player reads a unit type off — and by the late battle there are
+        // a thousand of them under the camera, which was on its own pushing the frame past
+        // the triangle budget. The tier he *would* have had stays in `lodOf`, so a corpse
+        // the camera walks up to refines exactly as a living man does.
+        // Never as far as the impostor tier: that billboard is a standing man, and a corpse
+        // promoted into it would get up off the ground.
+        if (hasCorpse && this.corpse.settle > 0.6 && lod < 2) lod++;
 
         if (lod === 3) {
           this.pushImpostor(i, rp.x, rp.y, rp.z, facing, u.faction, selected);

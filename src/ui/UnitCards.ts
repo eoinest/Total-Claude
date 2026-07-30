@@ -24,7 +24,7 @@ import { el, html, icon, pulse, setClass, setFill, setText, sizeCanvas } from '.
 import { ICON, standardGlyph, UNIT_CLASS_ICON } from './icons';
 import type { HudModel, UnitView } from './model';
 import { drawPortrait } from './portrait';
-import { FACTION_UI, MORALE_UI, PLAYER_FACTION, type MoraleState } from './theme';
+import { FACTION_UI, HARNESS, MORALE_UI, PLAYER_FACTION, type MoraleState } from './theme';
 import type { SelectionController } from './SelectionController';
 import type { Tooltip } from './Tooltip';
 
@@ -137,6 +137,9 @@ export class UnitCards {
 
   /** Show or hide the enemy strip. Bound to J and to the tab itself. */
   toggleFoes(): void {
+    // Locked shut in the harness: it is an overlay on the battlefield, and the battlefield
+    // is what those frames exist to show.
+    if (HARNESS) return;
     this.foeOpen = !this.foeOpen;
     setClass(this.foeBar, 'open', this.foeOpen);
     // Portraits in a `display:none` strip measured zero and never painted.

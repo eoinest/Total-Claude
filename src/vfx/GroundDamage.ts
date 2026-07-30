@@ -129,7 +129,7 @@ void main() {
   float scorch = d.b * grain;
 
   float wB = blood * 2.3;
-  float wT = tramp * 1.25;
+  float wT = tramp * 1.6;
   float wS = scorch * 2.0;
   float total = wB + wT + wS;
   if (total < 0.010) discard;

@@ -7,6 +7,7 @@
 import type { EngineContext, QualityTier } from '../core/Engine';
 import { el, html, icon, setClass, setText } from './dom';
 import { ICON } from './icons';
+import { HARNESS } from './theme';
 
 interface SkyLike {
   setTimeOfDay?: (h: number) => void;
@@ -157,6 +158,8 @@ export class SettingsPanel {
   }
 
   toggle(): void {
+    // Another overlay that must never be able to open across a measurement frame.
+    if (HARNESS) return;
     this.open = !this.open;
     setClass(this.panel, 'open', this.open);
   }

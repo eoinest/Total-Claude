@@ -343,6 +343,9 @@ export class ParticleSystem {
   private spawnsThisFrame = 0;
   /** Rolling per-particle seed, packed into the tile field. 0..1023. */
   private seed = 0;
+  /** Soft-layer occupancy 0..1, refreshed periodically for the emission governor. */
+  private occ = 0;
+  private occFrame = 0;
 
   constructor(atlas: THREE.Texture, height: HeightTexture, opts: ParticleSystemOptions) {
     this.atlas = atlas;
@@ -526,6 +529,15 @@ export class ParticleSystem {
     near: number,
     far: number
   ): void {
+    if (++this.occFrame >= 24) {
+      this.occFrame = 0;
+      const l = this.layers[PLayer.Soft];
+      const e = l.expiry;
+      let n = 0;
+      for (let i = 0; i < l.cap; i++) if (e[i] > this.time) n++;
+      this.occ = n / l.cap;
+    }
+
     for (const l of this.layers) {
       const u = l.mat.uniforms;
       u.uTime.value = this.time;
@@ -553,6 +565,22 @@ export class ParticleSystem {
       }
     }
     this.spawnsThisFrame = 0;
+  }
+
+  /**
+   * Fraction of the soft layer currently alive, 0..1.
+   *
+   * Emitters divide their rate by this so the system's cost is bounded by construction
+   * rather than by the emitters happening to be tuned correctly for the current army
+   * size. Without it, a per-man emission rate silently becomes a fill-rate bomb the day
+   * somebody triples the number of men on the field — which is exactly what happened,
+   * and it cost 20 ms a frame before anyone noticed.
+   *
+   * Recomputed every 24 frames, not every frame: the answer changes slowly and a full
+   * scan of the expiry array is the only way to get it without maintaining a heap.
+   */
+  get occupancy(): number {
+    return this.occ;
   }
 
   /** Global opacity, used to dial particles back when quality drops. */
