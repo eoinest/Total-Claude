@@ -42,11 +42,19 @@ import { Weather, type WeatherKind } from './Weather';
  * pool is not this agent's file to write.
  */
 
-const QUALITY_SCALE: Record<string, { soft: number; add: number; density: number; decals: number; birds: number }> = {
-  low: { soft: 5000, add: 1600, density: 0.35, decals: 200, birds: 8 },
-  medium: { soft: 10000, add: 3200, density: 0.65, decals: 380, birds: 12 },
-  high: { soft: 18000, add: 5200, density: 1, decals: 640, birds: 16 },
-  ultra: { soft: 22000, add: 6400, density: 1.1, decals: 820, birds: 20 },
+/**
+ * Soft-layer capacity is sized for the melee, not the march. Contact dust lives six to
+ * ten seconds so that a modest spawn rate integrates into an opaque bank, and that
+ * trades particle *count* for fill rate deliberately: 30k live billboards of 2–6 m at
+ * battle range is ~4× screen overdraw, which on the measured budget costs well under a
+ * millisecond, while the same optical depth from short-lived puffs would need five times
+ * the spawn rate.
+ */
+const QUALITY_SCALE: Record<string, { soft: number; add: number; density: number; decals: number; birds: number; litter: number; spawns: number }> = {
+  low: { soft: 6000, add: 1600, density: 0.32, decals: 200, birds: 8, litter: 900, spawns: 180 },
+  medium: { soft: 14000, add: 3200, density: 0.62, decals: 380, birds: 12, litter: 1800, spawns: 520 },
+  high: { soft: 26000, add: 5200, density: 1, decals: 640, birds: 16, litter: 3000, spawns: 1000 },
+  ultra: { soft: 34000, add: 6400, density: 1.15, decals: 820, birds: 20, litter: 3600, spawns: 1400 },
 };
 
 export class VFXSystem implements Subsystem {
@@ -182,7 +190,7 @@ export class VFXSystem implements Subsystem {
     this.decals = new DecalPool(this.decalTex, this.height, q.decals);
     ctx.scene.add(this.decals.mesh);
 
-    this.litter = new LitterField(1100, this.terrain);
+    this.litter = new LitterField(q.litter, this.terrain);
     ctx.scene.add(this.litter.mesh);
 
     this.banners = new BannerSystem(this.bannerTex, 40);
@@ -193,7 +201,7 @@ export class VFXSystem implements Subsystem {
     ctx.scene.add(this.birds.mesh);
 
     this.dust.budget.density = q.density;
-    this.dust.budget.maxSpawnsPerFrame = ctx.quality.tier === 'low' ? 120 : 340;
+    this.dust.budget.maxSpawnsPerFrame = q.spawns;
 
     if (this.battle) {
       this.combat.init(ctx, this.battle, this.particles, this.damage, this.decals, this.litter);
@@ -419,9 +427,11 @@ export class VFXSystem implements Subsystem {
       // Match the scene's directional light: three's physical lights divide diffuse by
       // pi, so the same 3.1-intensity sun lands at ~0.99 on a lambert surface.
       this.sunColour.copy(this.sky.sunColour).multiplyScalar(0.99);
-      // Deliberately light on ambient: the sky fill is blue, and too much of it turns
-      // warm ochre dust into grey steam.
-      this.ambient.copy(this.sky.ambientColour).multiplyScalar(0.22);
+      // Enough sky fill that the shadowed side of a dust cloud takes a cool blue-grey
+      // instead of going black — the warm/cool split inside the dust is what makes it
+      // read as a volume rather than a tinted sprite. Still well under the sun term so
+      // ochre dust never turns to grey steam.
+      this.ambient.copy(this.sky.ambientColour).multiplyScalar(0.55);
     }
     // Sun direction in view space; the particle shader lights billboards with it.
     this.sunView.copy(sunDir).transformDirection(ctx.camera.matrixWorldInverse);

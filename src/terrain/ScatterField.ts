@@ -16,6 +16,7 @@ import {
   HALF_EXTENT,
   QUARRIES,
   WATER_LEVEL,
+  crestZAt,
   germanDeployMask,
   riseToeZ,
   riverCentreX,
@@ -46,6 +47,22 @@ import type { TerrainSystem } from './TerrainSystem';
 const NEAR_DIST = 115;
 const MID_DIST = 440;
 const NEAR_CAPACITY = 340;
+
+/**
+ * Keep-out around the Aurelian Wall, measured from `crestZAt(x)` — the line the city
+ * agent builds the curtain along.
+ *
+ * Outward: a besieged city clears its glacis. Aurelian's engineers demolished and felled
+ * everything within bowshot of the new circuit, and the frames showed 20 m umbrella pines
+ * standing *through* the curtain, which is both a defensive absurdity and a hard clipping
+ * artefact. Inward: everything behind the crest is the city's ground, and `CitySystem`
+ * plants its own cypresses and garden trees there.
+ */
+const WALL_CLEAR_OUT = 30;
+/** Understorey scrub may grow closer than a tree — it cannot poke through masonry. */
+const WALL_CLEAR_SCRUB_OUT = 11;
+/** Loose stone is allowed right up to the footing, but never on a city street. */
+const WALL_CLEAR_ROCK_OUT = 2;
 
 interface Placed {
   x: number;
@@ -130,16 +147,37 @@ export class ScatterField {
   // Placement
   // ---------------------------------------------------------------------
 
-  /** True where nothing should be planted: parade ground, carriageway, water, quarry. */
-  private excluded(x: number, z: number, h: number, slope: number): boolean {
+  /**
+   * True where nothing should be planted: parade ground, carriageway, water, quarry, and
+   * the cleared strip either side of the city wall.
+   *
+   * `clearOut` lets scrub creep closer to the masonry than a 20 m pine may.
+   */
+  private excluded(
+    x: number,
+    z: number,
+    h: number,
+    slope: number,
+    clearOut = WALL_CLEAR_OUT
+  ): boolean {
     if (h < WATER_LEVEL + 0.7) return true;
     if (slope > 0.78) return true;
     if (Math.max(germanDeployMask(x, z), romanDeployMask(x, z)) > 0.12) return true;
     if (Math.abs(x - roadCentreX(z)) < 10.5) return true;
+    // Everything from the cleared glacis inward belongs to the city.
+    if (z > crestZAt(x) - clearOut) return true;
     for (const q of QUARRIES) {
       if (Math.hypot((x - q.x) / q.radius, (z - q.z) / (q.radius * 0.8)) < 1.25) return true;
     }
     return false;
+  }
+
+  /**
+   * Distance from a point to the wall line, negative inside the city. Exposed for the
+   * shot-side assertion that the keep-out actually holds.
+   */
+  wallClearance(x: number, z: number): number {
+    return crestZAt(x) - z;
   }
 
   private placeTrees(): Map<Species, Placed[]> {
@@ -313,13 +351,13 @@ export class ScatterField {
         // Reeds stand in the water's edge and along the drainage stream, where the
         // deployment exclusion does not apply — nobody forms up in a reed bed anyway.
         if ((above > -0.4 && above < 1.15 && dRiver < 150) || (dStream < 9 && above > 0)) {
-          if (h3 < 0.62) {
+          if (h3 < 0.62 && z < crestZAt(x) - WALL_CLEAR_SCRUB_OUT) {
             reeds.push({ x, y: h, z, yaw: hash2(gi, gj, 181) * Math.PI * 2, scale: 0.7 + h1 * 0.8 });
           }
           continue;
         }
 
-        if (this.excluded(x, z, h, slope)) continue;
+        if (this.excluded(x, z, h, slope, WALL_CLEAR_SCRUB_OUT)) continue;
         this.terrain.controlAt(x, z, ctl);
         if (ctl.b > 0.45) continue;
 
@@ -360,6 +398,7 @@ export class ScatterField {
         const h = this.terrain.heightAt(x, z);
         const slope = this.terrain.slopeAt(x, z);
         if (h < WATER_LEVEL - 0.6) continue;
+        if (z > crestZAt(x) - WALL_CLEAR_ROCK_OUT) continue;
         this.terrain.controlAt(x, z, ctl);
         // Stone shows where the ground has been scoured, on steep faces, on the river's
         // gravel bars, and in the quarry spoil.

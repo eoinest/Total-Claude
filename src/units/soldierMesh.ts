@@ -5,7 +5,7 @@ import { MAN_CLIP_SET } from '../anim/clips';
 import { sampleGlobals } from '../anim/pose';
 import { Mat, matUv, type UvRect } from './atlas';
 import { Coarse, Piece, Tint } from './kit';
-import { MeshBuilder } from './meshBuilder';
+import { MeshBuilder, type SheetPoint } from './meshBuilder';
 
 /**
  * Procedural soldier meshes, built in the rig's rest T-pose.
@@ -816,39 +816,28 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
   // and bottom to the pelvis, so it swings a little with the torso instead of being a
   // rigid board.
   b.setPiece(Piece.Cloak, Tint.Cloak);
-  {
-    const rows = d.fine ? 5 : 3;
-    const cols = d.fine ? 5 : 3;
-    const grid: number[][] = [];
-    for (let r = 0; r <= rows; r++) {
-      const t = r / rows;
+  b.sheet(
+    d.fine ? 5 : 3,
+    d.fine ? 5 : 3,
+    (tu: number, tv: number, out: SheetPoint) => {
       // A sagum reaches the back of the knee, not the ankle, and hangs from the shoulders
       // rather than swallowing the man. Too long or too wide and a rank of cloaked warriors
       // reads as a row of monks.
-      const y = chestY + 0.05 - t * (chestY + 0.05 - 0.74);
-      const halfW = 0.17 + t * 0.09;
-      const bind = spineBind(Math.max(0.95, y));
-      b.setBone(bind.bone, bind.bone2, bind.w);
-      const row: number[] = [];
-      for (let c = 0; c <= cols; c++) {
-        const sx = (c / cols) * 2 - 1;
-        // Wrap the cloth around the back and flare it at the hem.
-        const x = sx * halfW;
-        const z = -0.105 - (1 - sx * sx) * (0.045 + t * 0.05);
-        const flare = Math.sin(t * Math.PI) * 0.02 * Math.sin(sx * 5);
-        const [u, v] = MeshBuilder.tileUv(clothUv, (sx + 1) / 2, t, 2, 3);
-        row.push(b.vert(x, y + flare, z, sx * 0.5, 0.1, -1, u, v));
-      }
-      grid.push(row);
-    }
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        b.quad(grid[r][c], grid[r][c + 1], grid[r + 1][c + 1], grid[r + 1][c]);
-        // Double-sided: a cloak seen from in front shows its inside.
-        b.quad(grid[r][c], grid[r + 1][c], grid[r + 1][c + 1], grid[r][c + 1]);
-      }
-    }
-  }
+      const sx = tu * 2 - 1;
+      const halfW = 0.17 + tv * 0.1;
+      const y = chestY + 0.05 - tv * (chestY + 0.05 - 0.74);
+      out.x = sx * halfW;
+      out.y = y + Math.sin(tv * Math.PI) * 0.02 * Math.sin(sx * 5);
+      out.z = -0.105 - (1 - sx * sx) * (0.045 + tv * 0.05);
+      // Normal follows the wrap, so the cloth catches the light around the shoulders
+      // instead of reading as one flat plane.
+      out.nx = sx * 1.6;
+      out.ny = 0.12;
+      out.nz = -1;
+    },
+    (tv: number) => spineBind(Math.max(0.95, chestY + 0.05 - tv * (chestY + 0.05 - 0.74))),
+    clothUv, 2, 3
+  );
 
   // Torc: twisted bronze at the throat, the mark of a Germanic warrior of standing.
   if (germanic && d.medium) {

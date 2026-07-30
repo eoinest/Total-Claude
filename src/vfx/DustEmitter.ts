@@ -11,23 +11,31 @@ import type { GroundDamageLayer } from './GroundDamage';
 /**
  * Formation dust — the signature Total War effect.
  *
- * Dust is derived straight from `battle.pool` velocities rather than from events, so it
- * works whether or not the combat systems are emitting anything. Three tiers stack to
- * give the effect its depth:
+ * Dust is derived straight from `battle.pool` state rather than from events, so it works
+ * whether or not the combat systems are emitting anything. Two independent sources feed
+ * it, and both matter:
  *
- *   grit    small, fast, short-lived puffs at the heel — reads as individual footfalls
- *   haze    medium puffs a metre up, blending into a continuous trail behind a cohort
- *   billow  rare, large, long-lived clouds that roll and merge into the wall of dust a
- *           cavalry charge throws up
+ *   **locomotion** — men and horses moving over dry ground. Three tiers stack:
+ *      grit    small, fast, short-lived puffs at the heel — individual footfalls
+ *      haze    medium puffs a metre up, blending into a trail behind a cohort
+ *      billow  large, long-lived clouds that roll into the wall a charge throws up
  *
- * Emission scales with speed³ᐟ² (a walk barely disturbs the ground, a gallop tears it
- * open), with unit mass (a horse displaces five times an infantryman's weight of soil),
- * and with a large-scale dryness field so the same march is dustier on the baked flat
- * than on the river meadow.
+ *   **contact** — the melee itself. This is the one that is easy to miss and the one
+ *      that decides whether a battle looks violent, because a melee has almost no
+ *      *locomotion*: two thousand men grinding against each other at 0.2 m/s. Driving
+ *      dust from velocity alone therefore produces a completely clean contact line at
+ *      the exact moment the frame should be at its dirtiest. Contact dust is emitted per
+ *      fighting man instead, low and slow and long-lived so it accumulates into a
+ *      standing haze bank over the fighting rather than a puff that blows away.
  *
- * Standing formations still work the ground: every unit periodically stamps a trample
- * splat into the accumulation buffer, so a line that has held for ten minutes leaves a
- * visibly churned footprint.
+ * Locomotion emission scales with speed³ᐟ² (a walk barely disturbs the ground, a gallop
+ * tears it open), with unit mass (a horse displaces several times an infantryman's
+ * weight of soil), and with a large-scale dryness field so the same march is dustier on
+ * the baked flat than on the river meadow.
+ *
+ * Standing formations also work the ground: every unit periodically stamps trample
+ * splats into the accumulation buffer, heavily where men are in contact, so the strip
+ * where the lines ground together is permanently churned.
  */
 
 /**
@@ -52,9 +60,12 @@ export class DustEmitter {
   wetness = 1;
 
   private carry = new Float32Array(0);
+  /** Separate accumulator for contact dust so it cannot be starved by locomotion. */
+  private fightCarry = new Float32Array(0);
   private trampleTimer = new Float32Array(0);
   private frame = 0;
   private spawned = 0;
+  private fightSpawned = 0;
 
   /** Two-octave dryness field: the flat bakes hard, hollows stay damp. */
   private drynessAt(x: number, z: number): number {
@@ -75,11 +86,13 @@ export class DustEmitter {
     if (dt <= 0) return;
     this.frame++;
     this.spawned = 0;
+    this.fightSpawned = 0;
 
     const p = battle.pool;
     const n = p.count;
     if (this.carry.length < battle.units.length + 1) {
       this.carry = new Float32Array(battle.units.length + 64);
+      this.fightCarry = new Float32Array(battle.units.length + 64);
       this.trampleTimer = new Float32Array(battle.units.length + 64);
     }
 
@@ -111,7 +124,131 @@ export class DustEmitter {
       const sizeK = 1 + (1 - near) * 0.9;
 
       this.emitForUnit(dt, battle, u, ui, ps, horse, rate, sizeK, cullR2, camX, camZ);
+      this.emitContactDust(dt, battle, u, ui, ps, horse, density * (0.35 + 0.65 * near), sizeK);
       this.trample(dt, battle, u, ui, damage, terrain);
+    }
+    void n;
+  }
+
+  /**
+   * Dust raised by the fighting itself.
+   *
+   * Kept deliberately different in character from footfall dust: it barely rises, it
+   * lives four to ten seconds, and it is emitted at *waist* height rather than at the
+   * heel, because what the eye reads at a contact line is not individual puffs but a
+   * standing bank of illuminated air the height of a man's chest, thickening as the
+   * fight goes on. Long lifetimes are what let a modest spawn rate integrate into a
+   * genuinely opaque haze without paying for thousands of particles per second.
+   */
+  private emitContactDust(
+    dt: number,
+    battle: BattleSystem,
+    u: UnitGroupState,
+    ui: number,
+    ps: ParticleSystem,
+    horse: boolean,
+    rate: number,
+    sizeK: number
+  ): void {
+    const p = battle.pool;
+    const members = u.members;
+    const salt = this.frame * 197 + ui * 23;
+
+    // Count the men actually in contact and find their centroid: the front rank, not
+    // the whole block, is where the ground is being destroyed.
+    let fighters = 0;
+    let fx = 0;
+    let fz = 0;
+    for (let m = 0; m < members.length; m++) {
+      const i = members[m];
+      if (p.state[i] !== SoldierState.Fighting) continue;
+      fighters++;
+      fx += p.x[i];
+      fz += p.z[i];
+    }
+    if (fighters === 0) return;
+    fx /= fighters;
+    fz /= fighters;
+
+    // ~0.28 puffs per fighting man per second at full density. With ~600 men in contact
+    // across the field and a 4 s mean life that is ~700 live particles in the band —
+    // enough for a legible haze with the men still reading through it. Four times this
+    // buries the entire army in fog, which is a different failure from having no dust but
+    // scores no better.
+    this.fightCarry[ui] += fighters * 0.28 * rate * dt;
+    let count = this.fightCarry[ui] | 0;
+    if (count <= 0) return;
+    this.fightCarry[ui] -= count;
+    count = Math.min(count, 12);
+
+    const remaining = this.budget.maxSpawnsPerFrame - this.spawned - this.fightSpawned;
+    if (remaining <= 0) return;
+    count = Math.min(count, remaining);
+
+    for (let k = 0; k < count; k++) {
+      // Sample a fighting man; fall back to the contact centroid rather than skipping,
+      // so a thin frontage still gets its share of the emission.
+      let i = -1;
+      for (let tries = 0; tries < 4; tries++) {
+        const j = members[(hash2(k * 5 + tries, salt, 17) * members.length) | 0];
+        if (j !== undefined && p.state[j] === SoldierState.Fighting) { i = j; break; }
+      }
+      const ex = i >= 0 ? p.x[i] : fx;
+      const ez = i >= 0 ? p.z[i] : fz;
+      const ey = i >= 0 ? p.y[i] : battle.groundAt(ex, ez);
+
+      const h1 = hash01(k * 7 + ui, salt);
+      const h2 = hash01(k * 11 + ui, salt + 1);
+      const h3 = hash01(k * 13 + ui, salt + 2);
+      const h4 = hash01(k * 17 + ui, salt + 3);
+
+      const dry = this.drynessAt(ex, ez);
+      // A quarter of the emission is the big slow stuff that forms the bank; the rest is
+      // mid-scale so the bank has visible internal structure instead of reading as fog.
+      const big = h4 < 0.30;
+
+      const rec = ps.reset(PLayer.Soft, big ? PT.dustBillow : h4 < 0.72 ? PT.smokeSoft : PT.dustWisp);
+      // Spread across a couple of metres and lifted only to knee height. The dust that
+      // reads is the band from the ground to a man's chest: raise the emission any higher
+      // and the formation disappears into it instead of standing in it.
+      rec.x = ex + (h1 - 0.5) * 3.2;
+      rec.z = ez + (h2 - 0.5) * 3.2;
+      rec.y = ey + 0.10 + h3 * 0.55;
+      rec.ground = PGround.Ride;
+
+      // Almost no directed velocity — this dust is stirred, not kicked.
+      rec.vx = (h3 - 0.5) * 1.5;
+      rec.vz = (h1 - 0.5) * 1.5;
+      rec.vy = 0.14 + h2 * 0.34;
+
+      if (big) {
+        rec.life = 5.0 + h3 * 3.4;
+        rec.size0 = (2.0 + h1 * 1.7) * (horse ? 1.4 : 1) * sizeK;
+        rec.size1 = rec.size0 * (1.7 + h2 * 0.8);
+        rec.a = 0.048 + 0.040 * dry;
+        rec.drag = 0.45;
+        rec.gravity = 0.16;
+        rec.turb = 1.5;
+      } else {
+        rec.life = 3.2 + h3 * 2.4;
+        rec.size0 = (1.1 + h1 * 1.1) * (horse ? 1.35 : 1) * sizeK;
+        rec.size1 = rec.size0 * (2.0 + h2 * 1.1);
+        rec.a = 0.072 + 0.058 * dry;
+        rec.drag = 0.8;
+        rec.gravity = 0.30;
+        rec.turb = 1.05;
+      }
+
+      rec.spin = (h4 - 0.5) * 0.30;
+      const tint = 0.86 + dry * 0.24;
+      rec.r = DUST_R * tint;
+      rec.g = DUST_G * tint;
+      rec.b = DUST_B * (0.9 + dry * 0.18);
+      // Contact dust is heavy with grit and hangs in the crush; the wind gets less
+      // purchase on it than on a clean footfall puff.
+      rec.windFactor = 0.55;
+      ps.push();
+      this.fightSpawned++;
     }
   }
 
@@ -139,7 +276,10 @@ export class DustEmitter {
       const st = p.state[i] as SoldierState;
       if (st === SoldierState.Dead || st === SoldierState.Dying) continue;
       const sp = Math.hypot(p.vx[i], p.vz[i]);
-      if (sp < 0.45) continue;
+      // 0.2 m/s, not 0.45: a line dressing its ranks or a unit shuffling under missile
+      // fire still scuffs the ground, and that low-level haze under a stationary army is
+      // half of what makes a Rome II field look inhabited rather than staged.
+      if (sp < 0.20) continue;
       want += Math.pow(sp, 1.5);
     }
     if (want <= 0) return;
@@ -147,13 +287,13 @@ export class DustEmitter {
     // Calibrated against fill rate, not particle count. Fewer, more opaque puffs give
     // the same optical depth as many faint ones for a fraction of the blended
     // fragments, and fill is the only thing a particle system ever runs out of.
-    this.carry[ui] += want * 0.058 * rate * dt;
+    this.carry[ui] += want * 0.165 * rate * dt;
     let count = this.carry[ui] | 0;
     if (count <= 0) return;
     this.carry[ui] -= count;
-    count = Math.min(count, horse ? 28 : 15);
+    count = Math.min(count, horse ? 44 : 24);
 
-    const remaining = this.budget.maxSpawnsPerFrame - this.spawned;
+    const remaining = this.budget.maxSpawnsPerFrame - this.spawned - this.fightSpawned;
     if (remaining <= 0) return;
     count = Math.min(count, remaining);
 
@@ -172,7 +312,7 @@ export class DustEmitter {
           i = j;
         }
       }
-      if (i < 0 || bestSp < 0.45) continue;
+      if (i < 0 || bestSp < 0.20) continue;
 
       const dx = p.x[i] - camX;
       const dz = p.z[i] - camZ;
@@ -212,28 +352,28 @@ export class DustEmitter {
       rec.vy = (tier === 0 ? 0.9 : 0.32) * (0.5 + speedN) + h2 * 0.3;
 
       if (tier === 0) {
-        rec.life = 1.0 + h3 * 1.1;
-        rec.size0 = (0.45 + h1 * 0.45) * (horse ? 1.8 : 1) * sizeK;
-        rec.size1 = rec.size0 * (2.6 + h2 * 1.4);
-        rec.a = 0.18 + 0.20 * dry * speedN;
+        rec.life = 1.3 + h3 * 1.3;
+        rec.size0 = (0.55 + h1 * 0.55) * (horse ? 1.8 : 1) * sizeK;
+        rec.size1 = rec.size0 * (2.8 + h2 * 1.5);
+        rec.a = 0.24 + 0.24 * dry * speedN;
         rec.drag = 1.9;
         rec.gravity = 1.1;
         rec.turb = 0.35;
       } else if (tier === 1) {
-        rec.life = 2.6 + h3 * 2.2;
-        rec.size0 = (1.3 + h1 * 1.3) * (horse ? 1.85 : 1) * sizeK;
-        rec.size1 = rec.size0 * (2.3 + h2 * 1.3);
-        rec.a = 0.095 + 0.135 * dry * (0.4 + speedN);
+        rec.life = 3.4 + h3 * 2.8;
+        rec.size0 = (1.5 + h1 * 1.5) * (horse ? 1.85 : 1) * sizeK;
+        rec.size1 = rec.size0 * (2.5 + h2 * 1.4);
+        rec.a = 0.145 + 0.165 * dry * (0.4 + speedN);
         rec.drag = 1.1;
         rec.gravity = 0.48;
         rec.turb = 0.8;
       } else {
-        rec.life = 4.4 + h3 * 3.8;
-        rec.size0 = (2.6 + h1 * 2.4) * (horse ? 1.95 : 1) * sizeK;
-        rec.size1 = rec.size0 * (1.8 + h2 * 1.0);
-        rec.a = 0.048 + 0.082 * dry * (0.3 + speedN);
+        rec.life = 6.0 + h3 * 4.6;
+        rec.size0 = (3.0 + h1 * 2.8) * (horse ? 1.95 : 1) * sizeK;
+        rec.size1 = rec.size0 * (2.0 + h2 * 1.1);
+        rec.a = 0.078 + 0.105 * dry * (0.3 + speedN);
         rec.drag = 0.60;
-        rec.gravity = 0.30;
+        rec.gravity = 0.24;
         rec.turb = 1.3;
       }
 
@@ -251,7 +391,13 @@ export class DustEmitter {
 
   /**
    * Churn under a formation. Men standing shoulder to shoulder destroy grass fast, so
-   * even a stationary line leaves a mark; a moving one smears a wide band.
+   * even a stationary line leaves a mark; a moving one smears a wide band; a line in
+   * contact grinds the turf away completely.
+   *
+   * The accumulation buffer is RGBA8, so per-splat increments have to clear the 1/255
+   * quantisation floor by a healthy margin after the brush's own falloff — an increment
+   * of 0.011 through a 0.4 mask lands at 1.1/255 and rounds most of the brush away,
+   * which is how a system that stamps twenty thousand splats can leave a spotless field.
    */
   private trample(
     dt: number,
@@ -272,7 +418,7 @@ export class DustEmitter {
     if (members.length === 0) return;
     const salt = this.frame * 29 + ui;
 
-    // Two samples per tick keeps a fast unit's trail continuous.
+    // Two samples per tick keeps a fast unit's trail continuous across its frontage.
     for (let s = 0; s < 2; s++) {
       const i = members[(hash2(s, salt, 3) * members.length) | 0];
       if (i === undefined) continue;
@@ -280,22 +426,29 @@ export class DustEmitter {
       if (st === SoldierState.Dead) continue;
       const sp = Math.hypot(p.vx[i], p.vz[i]);
       const dry = this.drynessAt(p.x[i], p.z[i]);
-      // Wet ground churns to mud faster than dry ground scuffs. Small per-splat
-      // increments on purpose: a line that has stood ten minutes should saturate, a
-      // unit that marched through once should leave a faint band.
-      const amount = (0.011 + clamp(sp * 0.005, 0, 0.02)) * (1.35 - dry * 0.45);
+      const fighting = st === SoldierState.Fighting;
+      // Wet ground churns to mud faster than dry ground scuffs. Calibrated so that at
+       // ~1.2 brush hits per texel per second a unit which marched through once leaves a
+      // band around 0.13, one that has stood for a minute reaches ~0.7, and one that has
+      // been *fighting* saturates inside twenty seconds — which is what produces the
+      // dark strip along the contact line rather than a uniform brown field.
+      const amount =
+        (0.020 + clamp(sp * 0.012, 0, 0.05) + (fighting ? 0.045 : 0)) * (1.35 - dry * 0.45);
       const slope = terrain?.slopeAt(p.x[i], p.z[i]) ?? 0;
-      const radius = 1.3 + sp * 0.35 + slope * 1.5;
+      const radius = 2.4 + sp * 0.8 + slope * 2.0 + (fighting ? 0.8 : 0);
+      // Smear along the direction of travel: a marching column leaves an elongated
+      // scuff, not a row of circular dots.
+      const rot = sp > 0.6 ? Math.atan2(p.vx[i], p.vz[i]) : hash2(i, salt, 9) * Math.PI * 2;
       damage.splat(
         p.x[i],
         p.z[i],
         radius,
         sp > 2 ? DT.dirtScuff : DT.trampleSoft,
-        hash2(i, salt, 9) * Math.PI * 2,
+        rot,
         0,
         amount,
         0,
-        0.8 + hash2(i, salt, 13) * 0.6
+        sp > 0.6 ? 0.55 + hash2(i, salt, 13) * 0.3 : 0.8 + hash2(i, salt, 13) * 0.6
       );
     }
   }

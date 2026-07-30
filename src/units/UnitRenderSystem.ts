@@ -5,9 +5,14 @@ import { Clip, Faction, SoldierState, type UnitTypeDef } from '../sim/types';
 import { unitType, isCavalry } from './roster';
 import {
   MAN_CLIP_SET, HORSE_CLIP_SET, FOOT_CLIP_MAP, RIDE_CLIP_MAP, HORSE_CLIP_MAP,
+  FOOT_CLIP_VARIANT_MAP, FOOT_VARIANTS,
 } from '../anim/clips';
+import { hash01 } from '../util/rand';
 import { bakeAnimTexture, type AnimTexture } from '../anim/animTexture';
-import { makeSoldierMaterial, type SoldierMaterialSet } from '../anim/skinShader';
+import { MAN_RIG, MB, restPos } from '../anim/rig';
+import {
+  makeSoldierMaterial, type SoldierMaterialSet, type PoseVaryBones,
+} from '../anim/skinShader';
 import { buildSoldierAtlas, EMBLEM_ORIGIN, EMBLEM_TILE, type SoldierAtlas } from './atlas';
 import { buildSoldierGeometry, type Lod } from './soldierMesh';
 import { buildHorseGeometry, saddleOffset, HORSE_MASK_LO } from './horseMesh';
@@ -99,6 +104,25 @@ interface Tier {
 
 const rp = { x: 0, y: 0, z: 0 };
 
+/**
+ * Bone chains and pivots the per-man pose variation acts on, read off the man rig itself so
+ * a re-bake that reorders bones cannot silently start bending the wrong limb.
+ *
+ * The chains are contiguous by construction: the rig is topologically sorted and the arms
+ * hang off the chest, so `clavL..handL` and `clavR..handR` are each four consecutive
+ * indices, and everything from `spineLow` to `handR` is the whole upper body.
+ */
+const MAN_POSE_VARY: PoseVaryBones = {
+  upper: [MB.spineLow, MB.handR],
+  head: [MB.neck, MB.head],
+  leftArm: [MB.clavL, MB.handL],
+  rightArm: [MB.clavR, MB.handR],
+  neckPivot: restPos(MAN_RIG, MB.neck, [0, 0, 0]),
+  leftShoulder: restPos(MAN_RIG, MB.upperArmL, [0, 0, 0]),
+  rightShoulder: restPos(MAN_RIG, MB.upperArmR, [0, 0, 0]),
+  hipY: MAN_RIG.restT[MB.pelvis * 3 + 1],
+};
+
 /** Precomputed playback facts per packed clip, so the hot loop does no lookups. */
 interface ClipFacts {
   rowBase: number;
@@ -118,9 +142,17 @@ interface ClipFacts {
   simDriven: boolean;
 }
 
-/** Clips whose timing belongs to the simulation, not the renderer. */
+/**
+ * Clips whose timing belongs to the simulation, not the renderer.
+ *
+ * Every shape variant of an attack has to be in here alongside its base clip. A variant
+ * left out would run on the renderer's own playhead, and the blow would land wherever that
+ * happened to be rather than on the frame the combat system timed the damage to — weapon
+ * and wound visibly out of agreement, which is worse than no variant at all.
+ */
 const SIM_DRIVEN = new Set([
-  'attackThrust', 'attackOverhead', 'attackSlash', 'shieldBash', 'block', 'parry',
+  'attackThrust', 'attackThrustHigh', 'attackOverhead', 'attackOverheadCross',
+  'attackSlash', 'shieldBash', 'block', 'parry',
   'stagger', 'throwPilum', 'drawBow', 'releaseBow',
   'deathBack', 'deathForward', 'deathSide', 'deathKneel',
   'rideCharge', 'rideDeath', 'rear', 'death',
@@ -168,9 +200,15 @@ export class UnitRenderSystem implements Subsystem {
   private kitTunic!: Float32Array;
   private kitLeg!: Float32Array;
   private kitEmblem!: Float32Array;
-  private kitWear!: Float32Array;
+  private kitMetal!: Float32Array;
   private kitReady!: Uint8Array;
   private typeIndex!: Int32Array;
+  /** Stable per-man playhead offset, 0..1 of a cycle. */
+  private phaseOff!: Float32Array;
+  /** Stable per-man rate multiplier, applied to stationary clips only. */
+  private rateMul!: Float32Array;
+  /** Which shape variant of a clip this man plays, 0..FOOT_VARIANTS-1. */
+  private clipBucket!: Uint8Array;
 
   private types: UnitTypeDef[] = [];
   private typeIsCav: boolean[] = [];
@@ -215,9 +253,13 @@ export class UnitRenderSystem implements Subsystem {
     this.kitTunic = new Float32Array(cap * 3);
     this.kitLeg = new Float32Array(cap * 3);
     this.kitEmblem = new Float32Array(cap);
-    this.kitWear = new Float32Array(cap);
+    this.kitMetal = new Float32Array(cap);
     this.kitReady = new Uint8Array(cap);
     this.typeIndex = new Int32Array(cap).fill(-1);
+    this.phaseOff = new Float32Array(cap);
+    // Zero means "not yet resolved"; `ensureGait` fills it on first sight.
+    this.rateMul = new Float32Array(cap);
+    this.clipBucket = new Uint8Array(cap);
 
     const baseParams: THREE.MeshStandardMaterialParameters = {
       map: this.atlas.albedo,
@@ -241,6 +283,7 @@ export class UnitRenderSystem implements Subsystem {
       emblemTile: EMBLEM_TILE,
       // Lean ramps in over the full height of a man so his feet stay on the ground.
       leanHeight: 1.5,
+      poseVary: MAN_POSE_VARY,
     });
     const horseMat = makeSoldierMaterial(baseParams, {
       anim: this.horseAnim,
@@ -391,7 +434,7 @@ export class UnitRenderSystem implements Subsystem {
       geometry.setAttribute('iAnimB', one([captureRow, captureRow, 0, 0.37], 4));
       geometry.setAttribute('iKit', one([kit.maskLo, kit.maskHi], 2));
       geometry.setAttribute('iCol0', one([...kit.tunic, kit.emblem], 4));
-      geometry.setAttribute('iCol1', one([...kit.leg, kit.wear], 4));
+      geometry.setAttribute('iCol1', one([...kit.leg, kit.metal], 4));
       geometry.instanceCount = 1;
       return {
         geometry,
@@ -480,9 +523,13 @@ export class UnitRenderSystem implements Subsystem {
       const state = p.state[i] as SoldierState;
       if (state === SoldierState.Dead) continue;
 
+      this.ensureGait(i);
       const cav = this.isCavalry(i);
-      const map = cav ? RIDE_CLIP_MAP : FOOT_CLIP_MAP;
-      const want = map[p.animClip[i]] ?? map[Clip.IdleAlert];
+      const clip = p.animClip[i];
+      const want = cav
+        ? (RIDE_CLIP_MAP[clip] ?? RIDE_CLIP_MAP[Clip.IdleAlert])
+        : (FOOT_CLIP_VARIANT_MAP[clip * FOOT_VARIANTS + this.clipBucket[i]]
+          ?? FOOT_CLIP_MAP[Clip.IdleAlert]);
       if (this.curClip[i] !== want) {
         if (this.curClip[i] !== 255) {
           this.prevClip[i] = this.curClip[i];
@@ -491,12 +538,15 @@ export class UnitRenderSystem implements Subsystem {
         } else {
           this.prevClip[i] = want;
           this.blend[i] = 1;
+          this.phase[i] = this.phaseOff[i];
         }
         this.curClip[i] = want;
         const f = this.manFacts[want];
-        // Locomotion resumes mid-cycle so a stop-start never resets the gait; everything
-        // else starts from the top so a strike begins with its wind-up.
-        if (f.rootSpeed === 0) this.phase[i] = 0;
+        // Locomotion resumes mid-cycle so a stop-start never resets the gait. Everything
+        // else restarts from the man's own stable offset rather than from zero: a cohort
+        // that halts together must not land on one shared pose, which is exactly what
+        // starting every idle at frame 0 produced.
+        if (f.rootSpeed === 0) this.phase[i] = this.phaseOff[i];
       }
 
       const facts = this.manFacts[this.curClip[i]];
@@ -504,21 +554,21 @@ export class UnitRenderSystem implements Subsystem {
         // The sim owns this one: a blow has to land on the frame the combat system timed
         // it to, and a corpse has to reach the ground when the ragdoll says it has.
         this.phase[i] = facts.loop ? p.animTime[i] % 1 : Math.min(1, p.animTime[i]);
+      } else if (facts.rootSpeed > 0) {
+        // Stride over ground speed, unjittered, so the foot that is down stays down.
+        const speed = Math.hypot(p.vx[i], p.vz[i]);
+        const rate = Math.min(1.9, Math.max(0.55, speed / facts.rootSpeed)) * facts.invDuration;
+        this.phase[i] = (this.phase[i] + dt * rate) % 1;
       } else {
-        let rate = facts.invDuration;
-        if (facts.rootSpeed > 0) {
-          const speed = Math.hypot(p.vx[i], p.vz[i]);
-          rate = Math.min(1.9, Math.max(0.55, speed / facts.rootSpeed)) * facts.invDuration;
-        }
-        this.phase[i] = (this.phase[i] + dt * rate * p.animRate[i]) % 1;
+        const rate = facts.invDuration * p.animRate[i] * this.rateMul[i];
+        this.phase[i] = (this.phase[i] + dt * rate) % 1;
       }
       if (this.blend[i] < 1) {
         // 0.16 s cross-fade: long enough to hide a pose change, short enough that a blow
         // still lands on its hit frame.
         this.blend[i] = Math.min(1, this.blend[i] + dt / 0.16);
         const pf = this.manFacts[this.prevClip[i]];
-        const prate = pf.rootSpeed > 0 ? pf.invDuration : pf.invDuration;
-        if (pf.loop) this.prevPhase[i] = (this.prevPhase[i] + dt * prate * p.animRate[i]) % 1;
+        if (pf.loop) this.prevPhase[i] = (this.prevPhase[i] + dt * pf.invDuration) % 1;
       }
     }
     void ctx;
@@ -546,6 +596,39 @@ export class UnitRenderSystem implements Subsystem {
     return t;
   }
 
+  /**
+   * Resolve the three numbers that decorrelate a man's animation from his neighbours'.
+   *
+   * `pool.animRate` is only +-8%, which after a few seconds still leaves a rank clustered
+   * inside a fifth of a cycle — visibly in step — and every man's playhead starts at zero,
+   * so a formation that halts together stands in exactly one pose. These are what actually
+   * break a rank up:
+   *
+   *   `phaseOff`   a full-cycle offset, so a rank is spread across the whole clip the
+   *                instant it enters it rather than converging on the same pose.
+   *   `rateMul`    a wide breathing-rate spread, applied to stationary clips only. A
+   *                locomotion clip's rate is ground speed over measured stride, and
+   *                jittering that slides the feet; cadence variation comes from the
+   *                stride-length clip variants instead, which is honest.
+   *   `clipBucket` which shape variant of the clip he plays.
+   *
+   * All three come from `variant[i]`, so a man's gait is his for the whole battle.
+   * Resolved on first sight rather than at spawn because the render system is handed a
+   * pool it did not fill.
+   */
+  private ensureGait(i: number): void {
+    if (this.rateMul[i] !== 0) return;
+    const t = this.typeOf(i);
+    const variance = t >= 0 ? this.types[t].appearance.variance : 0.5;
+    const seed = Math.floor(this.battle.pool.variant[i] * 16777216);
+    this.phaseOff[i] = hash01(seed, 71);
+    // A drilled cohort breathes closer to together than a warband does, so the roster's own
+    // `variance` scales the spread — but nobody is within 6% of his neighbour.
+    const spread = 0.14 + variance * 0.2;
+    this.rateMul[i] = 1 + (hash01(seed, 72) - 0.5) * 2 * spread;
+    this.clipBucket[i] = Math.min(FOOT_VARIANTS - 1, Math.floor(hash01(seed, 73) * FOOT_VARIANTS));
+  }
+
   private ensureKit(i: number, def: UnitTypeDef): void {
     if (this.kitReady[i]) return;
     const k = resolveKit(def, this.battle.pool.variant[i], this.kitScratch);
@@ -560,7 +643,7 @@ export class UnitRenderSystem implements Subsystem {
     this.kitLeg[i * 3 + 1] = k.leg[1];
     this.kitLeg[i * 3 + 2] = k.leg[2];
     this.kitEmblem[i] = k.emblem;
-    this.kitWear[i] = k.wear;
+    this.kitMetal[i] = k.metal;
     this.kitReady[i] = 1;
   }
 
@@ -733,7 +816,7 @@ export class UnitRenderSystem implements Subsystem {
     buf.col1[c] = this.kitLeg[i * 3];
     buf.col1[c + 1] = this.kitLeg[i * 3 + 1];
     buf.col1[c + 2] = this.kitLeg[i * 3 + 2];
-    buf.col1[c + 3] = this.kitWear[i];
+    buf.col1[c + 3] = this.kitMetal[i];
 
     buf.count = n + 1;
   }

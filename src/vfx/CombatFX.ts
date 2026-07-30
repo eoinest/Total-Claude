@@ -8,7 +8,7 @@ import { PGround, PLayer, type ParticleSystem } from './ParticleSystem';
 import { DT, PT } from './atlas';
 import type { GroundDamageLayer } from './GroundDamage';
 import type { DecalPool } from './DecalPool';
-import type { LitterField } from './Litter';
+import type { LitterField, ShaftKind } from './Litter';
 
 /**
  * Blood, impacts and the shock of contact.
@@ -94,6 +94,8 @@ export class CombatFX {
   private lastRealHit = -100;
   private lastRealClash = -100;
   private derivedHitCarry = 0;
+  /** Monotonic seed for spent shafts, so no two share a length, lean or colour. */
+  private shaftSeed = 1;
   private impactsThisFrame = 0;
   private hitsSeen = 0;
   private deathsSeen = 0;
@@ -126,7 +128,7 @@ export class CombatFX {
     });
     e.on('projectileImpact', (h) => {
       if (!h) return;
-      this.projectileImpact(h.x, h.y, h.z, h.material, h.hitTarget);
+      this.projectileImpact(h.x, h.y, h.z, h.material, h.hitTarget, h.kind);
     });
     e.on('soldierDied', (d) => {
       if (!d) return;
@@ -272,13 +274,16 @@ export class CombatFX {
       rec.vx = dx * 1.1;
       rec.vz = dz * 1.1;
       rec.vy = 0.5;
-      rec.life = 0.6 + h1 * 0.55;
-      rec.size0 = 0.36 + h2 * 0.30;
-      rec.size1 = rec.size0 * 3.0;
+      rec.life = 0.42 + h1 * 0.38;
+      // Kept under half a metre. A blood mist puff scaled to two metres stops being mist
+      // and becomes a discrete red ball floating over the ranks — the exact "flat unlit
+      // billboard" read the whole layer is meant to avoid.
+      rec.size0 = 0.16 + h2 * 0.16;
+      rec.size1 = rec.size0 * 2.1;
       rec.r = BLOOD_R * 1.5;
       rec.g = BLOOD_G * 1.7;
       rec.b = BLOOD_B * 1.7;
-      rec.a = 0.42 * clamp01(amount);
+      rec.a = 0.34 * clamp01(amount);
       rec.gravity = 1.2;
       rec.drag = 3.2;
       rec.turb = 0.2;
@@ -296,10 +301,10 @@ export class CombatFX {
       this.damage.splat(
         x + dx * d + (h2 - 0.5) * 0.9,
         z + dz * d + (h1 - 0.5) * 0.9,
-        0.42 + h2 * 0.5,
+        0.85 + h2 * 0.9,
         DT.bloodDrops,
         h1 * 6.283,
-        (arterial ? 0.30 : 0.16) * clamp01(amount),
+        (arterial ? 0.44 : 0.24) * clamp01(amount),
         0,
         0
       );
@@ -423,9 +428,9 @@ export class CombatFX {
       rec.y = y + (h2 - 0.5) * 0.2;
       rec.z = z + (h2 - 0.5) * 0.2;
       rec.vy = 0.7 + h1 * 0.6;
-      rec.life = 0.4 + h2 * 0.4;
-      rec.size0 = size * (0.7 + h1 * 0.6);
-      rec.size1 = rec.size0 * 2.6;
+      rec.life = 0.34 + h2 * 0.32;
+      rec.size0 = size * (0.5 + h1 * 0.45);
+      rec.size1 = rec.size0 * 2.0;
       rec.r = r; rec.g = g; rec.b = b;
       rec.a = alpha;
       rec.gravity = 0.4;
@@ -472,9 +477,24 @@ export class CombatFX {
   projectileImpact(
     x: number, y: number, z: number,
     material: 'ground' | 'shield' | 'flesh' | 'armour' | 'stone' | 'wood',
-    hitTarget: boolean
+    hitTarget: boolean,
+    kind: ShaftKind = 'arrow'
   ): void {
     const salt = ((this.t * 4409 + x * 3) | 0) ^ 0x2f1d;
+    // Every missile that is not a sling stone leaves its shaft behind. Ground misses
+    // stand where they fell; a shaft that glanced off a shield or a helmet drops at the
+    // man's feet. Four thousand volleyed missiles over a battle is what fills a Rome II
+    // field with spent kit, and it is the single most legible record of the fight.
+    if (material === 'ground') {
+      this.litter.plantShaft(kind, x, z, this.shaftSeed++);
+    } else if (material === 'shield' || material === 'armour' || material === 'wood') {
+      if (hash01(this.shaftSeed, 0x9e3) < 0.5) {
+        const a = hash01(this.shaftSeed, 0x7f1) * 6.283;
+        const r = 0.5 + hash01(this.shaftSeed, 0x5a3) * 1.1;
+        this.litter.plantShaft(kind, x + Math.cos(a) * r, z + Math.sin(a) * r, this.shaftSeed);
+      }
+      this.shaftSeed++;
+    }
     switch (material) {
       case 'ground': {
         // Dirt kicked up, plus a lasting scuff where the shaft went in.
@@ -498,7 +518,7 @@ export class CombatFX {
           rec.windFactor = 0.3;
           ps.push();
         }
-        this.damage.splat(x, z, 0.4, DT.dirtScuff, hash01(1, salt) * 6.283, 0, 0.14, 0);
+        this.damage.splat(x, z, 0.9, DT.dirtScuff, hash01(1, salt) * 6.283, 0, 0.20, 0);
         break;
       }
       case 'flesh':
@@ -562,8 +582,9 @@ export class CombatFX {
     this.bloodSpray(x, y + 1.0, z, dx / l, dz / l, 1.35, true);
     this.hooks.grimeSink?.(index, 0.5);
 
-    // The pool arrives as the body settles, not the instant he is hit.
-    if (this.poolCount < 128) {
+    // The pool arrives as the body settles, not the instant he is hit. The queue has to
+    // be deep enough to absorb a rout, where a hundred men can fall inside a second.
+    if (this.poolCount < 384) {
       const rec = this.pools[this.poolCount] ?? { t: 0, x: 0, z: 0, seed: 0 };
       rec.t = this.t + 0.7 + hash01(index, 3) * 0.9;
       rec.x = x + (dx / l) * 0.4;
@@ -586,9 +607,13 @@ export class CombatFX {
     const y = b.groundAt(x, z);
     const salt = ((this.t * 6151 + x) | 0) ^ 0x1a3b;
     const k = clamp(intensity, 0.15, 3);
-    const n = Math.round((cavalry ? 54 : 34) * clamp(k, 0.3, 2));
+    const n = Math.round((cavalry ? 130 : 90) * clamp(k, 0.35, 2));
 
     // Ring of dust thrown outward and up: reads as displaced air, not an explosion.
+    // Deliberately over-scaled relative to the clods and sparks, because the shockwave's
+    // whole job is to make one frame of the battle unmistakably the frame where the lines
+    // met — from a strategic camera the individual debris is two pixels and the dust is
+    // the only thing that carries the event.
     for (let i = 0; i < n; i++) {
       const h1 = hash01(i, salt);
       const h2 = hash01(i, salt + 1);
@@ -596,22 +621,25 @@ export class CombatFX {
       const a = (i / n) * Math.PI * 2 + (h1 - 0.5) * 0.7;
       const speed = (cavalry ? 6.5 : 4.2) * (0.4 + h2 * 1.2) * k;
       const rec = ps.reset(PLayer.Soft, h3 < 0.45 ? PT.dustBillow : PT.smokeSoft);
-      const r0 = (cavalry ? 2.4 : 1.6) * (0.3 + h3);
-      rec.x = x + Math.cos(a) * r0;
+      // Thrown along the whole frontage, not out of a point: two lines meet over tens of
+      // metres, and a circular puff at the centroid reads as a grenade.
+      const r0 = (cavalry ? 5.5 : 4.0) * (0.3 + h3 * 1.5);
+      rec.x = x + Math.cos(a) * r0 * 2.2;
       rec.z = z + Math.sin(a) * r0;
       rec.y = y + 0.15 + h1 * 0.4;
       rec.vx = Math.cos(a) * speed;
       rec.vz = Math.sin(a) * speed;
       rec.vy = 1.4 + h2 * 3.2;
-      rec.life = 2.6 + h3 * 3.6;
-      rec.size0 = (cavalry ? 1.5 : 1.0) * (0.6 + h1 * 1.1);
+      rec.life = 4.2 + h3 * 5.0;
+      rec.size0 = (cavalry ? 2.4 : 1.7) * (0.6 + h1 * 1.1);
       rec.size1 = rec.size0 * (3.4 + h2 * 2.6);
       rec.spin = (h3 - 0.5) * 0.5;
-      rec.r = 0.71; rec.g = 0.625; rec.b = 0.48;
-      rec.a = 0.09 + 0.06 * k;
+      rec.r = 1.12; rec.g = 0.90; rec.b = 0.60;
+      rec.a = 0.15 + 0.10 * k;
       rec.gravity = 0.5;
       rec.drag = 0.85;
       rec.turb = 1.1;
+      rec.windFactor = 0.7;
       ps.push();
     }
 
@@ -642,8 +670,8 @@ export class CombatFX {
     }
 
     // Ground churned by the collision, permanently.
-    const rad = cavalry ? 7 : 4.5;
-    for (let i = 0; i < 5; i++) {
+    const rad = cavalry ? 16 : 11;
+    for (let i = 0; i < 12; i++) {
       const h1 = hash01(i, salt + 21);
       const h2 = hash01(i, salt + 22);
       const a = h1 * Math.PI * 2;
@@ -651,11 +679,11 @@ export class CombatFX {
       this.damage.splat(
         x + Math.cos(a) * d,
         z + Math.sin(a) * d,
-        2.4 + h2 * 3.5,
+        3.0 + h2 * 4.0,
         cavalry ? DT.hoofScuff : DT.dirtScuff,
         a,
         0,
-        0.14 + 0.1 * k,
+        0.16 + 0.12 * k,
         0
       );
     }
@@ -705,15 +733,15 @@ export class CombatFX {
       // roughly two metres across before it stops moving.
       this.decals.add(
         c.x, c.z,
-        1.4 + h1 * 1.1,
-        1.6 + h2 * 1.2,
+        1.8 + h1 * 1.3,
+        2.0 + h2 * 1.4,
         h3 * 6.283,
         DT.bloodPool,
         0.145, 0.032, 0.026,
-        0.90,
+        0.95,
         900
       );
-      this.damage.splat(c.x, c.z, 2.2 + h1 * 1.6, DT.bloodPool, h3 * 6.283, 0.58, 0.10, 0);
+      this.damage.splat(c.x, c.z, 2.6 + h1 * 1.8, DT.bloodPool, h3 * 6.283, 0.85, 0.14, 0);
       // Satellites: the ground around a body is never a clean disc.
       for (let k = 0; k < 3; k++) {
         const a = hash01(c.seed * 3 + k, 83) * 6.283;
@@ -721,12 +749,16 @@ export class CombatFX {
         this.damage.splat(
           c.x + Math.cos(a) * r,
           c.z + Math.sin(a) * r,
-          1.0 + hash01(c.seed * 3 + k, 97) * 1.2,
+          1.5 + hash01(c.seed * 3 + k, 97) * 1.6,
           k === 0 ? DT.bloodStreak : DT.bloodDrops,
           a,
-          0.26, 0.05, 0
+          0.38, 0.07, 0
         );
       }
+      // A wide, faint soak beyond the pool. This is what turns a scatter of discs into
+      // one continuous stained area where the fighting was heaviest — the read that
+      // separates "a battle happened here" from "someone stamped some decals".
+      this.damage.splat(c.x, c.z, 5.5 + h2 * 3.0, DT.trampleSoft, h1 * 6.283, 0.11, 0.09, 0);
       this.pools[i] = this.pools[this.poolCount - 1];
       this.pools[this.poolCount - 1] = c;
       this.poolCount--;

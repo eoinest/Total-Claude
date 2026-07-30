@@ -28,6 +28,34 @@ export interface SoldierShaderOptions {
   emblemTile: [number, number];
   /** Height in metres over which body lean ramps in from the feet. */
   leanHeight: number;
+  /**
+   * Bone ranges and pivots for the per-man pose micro-variation. Omit for a rig that has
+   * no arms and no head to vary — the horse.
+   */
+  poseVary?: PoseVaryBones;
+}
+
+/**
+ * The bone chains the pose variation acts on, as inclusive `[first, last]` index ranges
+ * into the rig, plus the world-space rest pivots it rotates about.
+ *
+ * Ranges rather than heights because a bone range is pose-independent: a crouched man's
+ * head is at 1.40 m and a height ramp would leave him alone, which is exactly the man
+ * standing in a braced rank where the repetition shows most.
+ */
+export interface PoseVaryBones {
+  /** Everything above the hips: spine, neck, head and both arms. */
+  upper: [number, number];
+  /** Neck and head. */
+  head: [number, number];
+  leftArm: [number, number];
+  rightArm: [number, number];
+  /** Rest position of the neck joint. */
+  neckPivot: [number, number, number];
+  leftShoulder: [number, number, number];
+  rightShoulder: [number, number, number];
+  /** Rest height of the pelvis — the pivot the shoulder-line roll turns about. */
+  hipY: number;
 }
 
 /** Uniforms shared by the colour, depth and distance variants of one soldier material. */
@@ -112,6 +140,111 @@ bool soldierPieceVisible() {
   float bit = pid < 24.0 ? pid : pid - 24.0;
   return mod( floor( bits / exp2( bit ) ), 2.0 ) >= 0.5;
 }
+
+#ifdef SOLDIER_POSE_VARY
+// Skin weight this vertex has on an inclusive bone range — the mask for one body part.
+// Weighted rather than a hard test so a shoulder vertex, which blends chest and upper arm,
+// takes half the arm's delta instead of tearing away from the torso.
+float soldierChain( float lo, float hi ) {
+  return step( lo - 0.5, aSkin.x ) * step( aSkin.x, hi + 0.5 ) * aSkin.z
+       + step( lo - 0.5, aSkin.y ) * step( aSkin.y, hi + 0.5 ) * aSkin.w;
+}
+
+// A rotation taken to first order. Every angle below is under 12 degrees, where dropping
+// the cosine costs 2% of scale — a third of a millimetre on a forearm — and saves two
+// transcendentals per axis on what is by a wide margin the busiest vertex shader in the
+// frame. The k argument is the angle in radians, already scaled by the part's skin weight.
+#define SOLDIER_TILT( a, b, k ) { float t_ = a; a = t_ + (k) * (b); b = b - (k) * t_; }
+
+/**
+ * Per-man pose micro-variation.
+ *
+ * Phase offsets and clip variants stop a rank from being in the same pose at the same
+ * moment. They cannot stop any two men from being the same *shape*, because there is one
+ * mesh and a handful of clips. So every man is bent slightly differently, from his stable
+ * hash, in the six ways an eye actually reads off a crowd at twenty metres:
+ *
+ *   build          torso and limb girth, and shoulder width, a few percent either way.
+ *   arm carriage   each arm rotated about its own shoulder. This is the one that moves
+ *                  kit, because a scutum is skinned to the left forearm and a gladius to
+ *                  the right hand, so the shield presents at its own angle and the weapon
+ *                  rides at its own height.
+ *   head           yaw and pitch about the neck. Carries the helmet and its crest.
+ *   torso          a few degrees of yaw about the spine, plus a shoulder-line roll.
+ *   plumb          the whole body listing a fraction of a degree off vertical. Nobody
+ *                  stands plumb, and a rank of men who all do reads as a fence.
+ *
+ * Angles are deliberately small. At ten degrees of head yaw a man is looking somewhere; at
+ * thirty he is looking at something, and two thousand men each looking at their own
+ * something reads as noise rather than as an army.
+ */
+void soldierPoseVary( float v, inout vec3 sp, inout vec3 sn ) {
+  // Nine decorrelated draws from the one stored hash. The multipliers are coprime-ish so
+  // no two of these correlate and produce a visible stripe across a file.
+  float hBuild = fract( v * 3.71 ) - 0.5;
+  float hWidth = fract( v * 11.31 ) - 0.5;
+  float hTwist = fract( v * 19.73 ) - 0.5;
+  float hRoll  = fract( v * 29.31 ) - 0.5;
+  float hHeadY = fract( v * 41.17 ) - 0.5;
+  float hHeadX = fract( v * 53.93 ) - 0.5;
+  float hArmR  = fract( v * 67.31 ) - 0.5;
+  float hArmL  = fract( v * 79.13 ) - 0.5;
+  float hLift  = fract( v * 91.77 ) - 0.5;
+
+  // ---- build: girth and shoulder width ----
+  // Y is untouched, so a stockier man is stockier without leaving the ground.
+  sp.x *= 1.0 + hBuild * 0.07 + hWidth * 0.055;
+  sp.z *= 1.0 + hBuild * 0.07;
+
+  // ---- arm carriage ----
+  float wR = soldierChain( SOLDIER_ARM_R0, SOLDIER_ARM_R1 );
+  if ( wR > 0.001 ) {
+    vec3 d = sp - SOLDIER_SHOULDER_R;
+    SOLDIER_TILT( d.x, d.y, hArmR * 0.22 * wR )
+    SOLDIER_TILT( d.z, d.y, hLift * 0.20 * wR )
+    sp = d + SOLDIER_SHOULDER_R;
+    SOLDIER_TILT( sn.x, sn.y, hArmR * 0.22 * wR )
+    SOLDIER_TILT( sn.z, sn.y, hLift * 0.20 * wR )
+  }
+  float wL = soldierChain( SOLDIER_ARM_L0, SOLDIER_ARM_L1 );
+  if ( wL > 0.001 ) {
+    vec3 d = sp - SOLDIER_SHOULDER_L;
+    SOLDIER_TILT( d.x, d.y, hArmL * 0.19 * wL )
+    SOLDIER_TILT( d.z, d.x, hArmL * 0.17 * wL )
+    sp = d + SOLDIER_SHOULDER_L;
+    SOLDIER_TILT( sn.x, sn.y, hArmL * 0.19 * wL )
+    SOLDIER_TILT( sn.z, sn.x, hArmL * 0.17 * wL )
+  }
+
+  // ---- head ----
+  float wH = soldierChain( SOLDIER_HEAD0, SOLDIER_HEAD1 );
+  if ( wH > 0.001 ) {
+    vec3 d = sp - SOLDIER_NECK;
+    SOLDIER_TILT( d.x, d.z, hHeadY * 0.34 * wH )
+    SOLDIER_TILT( d.y, d.z, hHeadX * 0.16 * wH )
+    sp = d + SOLDIER_NECK;
+    SOLDIER_TILT( sn.x, sn.z, hHeadY * 0.34 * wH )
+    SOLDIER_TILT( sn.y, sn.z, hHeadX * 0.16 * wH )
+  }
+
+  // ---- torso yaw and shoulder roll ----
+  float wU = soldierChain( SOLDIER_UPPER0, SOLDIER_UPPER1 );
+  if ( wU > 0.001 ) {
+    SOLDIER_TILT( sp.x, sp.z, hTwist * 0.17 * wU )
+    SOLDIER_TILT( sn.x, sn.z, hTwist * 0.17 * wU )
+    float y = sp.y - SOLDIER_HIP_Y;
+    SOLDIER_TILT( sp.x, y, hRoll * 0.075 * wU )
+    sp.y = y + SOLDIER_HIP_Y;
+    SOLDIER_TILT( sn.x, sn.y, hRoll * 0.075 * wU )
+  }
+
+  // ---- plumb ----
+  // About the feet, so a fraction of a degree of list moves the head two centimetres and
+  // the boots not at all.
+  SOLDIER_TILT( sp.x, sp.y, hWidth * 0.017 )
+  SOLDIER_TILT( sn.x, sn.y, hWidth * 0.017 )
+}
+#endif
 `;
 
 /**
@@ -122,6 +255,12 @@ const body = (withNormal: boolean): string => /* glsl */ `
 {
   vec3 sp, sn;
   soldierSkin( position, ${withNormal ? 'objectNormal' : 'vec3( 0.0, 1.0, 0.0 )'}, sp, sn );
+
+#ifdef SOLDIER_POSE_VARY
+  // Skipped for a corpse: the ragdoll solver owns every joint of a fallen body, and
+  // bending it afterwards would push a limb through the ground it was solved against.
+  if ( dot( iQuat, iQuat ) <= 0.0001 ) soldierPoseVary( iAnimB.w, sp, sn );
+#endif
 
   if ( !soldierPieceVisible() ) {
     sp = vec3( 0.0 );
@@ -161,27 +300,70 @@ const TINT_BODY = /* glsl */ `
 {
   float slot = aPieceTint.y;
   float v = iAnimB.w;
-  // Skin. The atlas tile is a mid-grey with pore and crease detail; the tone comes from
-  // here. The range lands on roughly 0.30 down to 0.14 linear once the sRGB tile is
-  // decoded and multiplied in — Mediterranean through to weathered Gallic, warm, and
-  // never near white, which is the single most damaging error a crowd of bare arms and
-  // legs can have. The man's own variant hash drives it, so a rank is visibly many men.
+  // ---- skin ----------------------------------------------------------------
+  // The atlas tile is a mid-grey — sRGB 0.60, so 0.32 linear — carrying pore, blotch and
+  // the elbow and knee creases. These multipliers put the product between roughly 0.20 and
+  // 0.33 linear luminance, which is the band a reflectance chart gives for Fitzpatrick III
+  // through V, and strongly red-biased, because skin is: R runs about two and a half times
+  // B on a real forearm and getting that ratio right is what stops a bare limb reading as
+  // painted plaster however bright it is.
+  //
+  // The *distribution* matters as much as the endpoints. The previous curve squared its
+  // selector, which crowded two thirds of any rank into the lightest third of the range —
+  // which is exactly why a line of legionaries read as one pale man repeated. The tone term
+  // is now used raw, and a second independent hash shifts each man toward ruddy or olive so
+  // neighbours differ in hue and not only in value.
   float tone = fract( v * 7.13 );
-  vec3 skin = mix( vec3( 0.30, 0.18, 0.11 ), vec3( 0.30, 0.18, 0.11 ), tone * tone );
-  // Hair and beards: black through to the reddish blond Tacitus keeps remarking on.
-  vec3 hair = mix( vec3( 0.13, 0.09, 0.07 ), vec3( 0.52, 0.34, 0.15 ), fract( v * 13.7 ) );
+  float ruddy = fract( v * 23.91 ) - 0.5;
+  vec3 skin = mix( vec3( 1.44, 0.99, 0.67 ), vec3( 0.86, 0.55, 0.37 ), tone );
+  skin *= vec3( 1.0 + ruddy * 0.17, 1.0, 1.0 - ruddy * 0.15 );
+  // ---- hair ----------------------------------------------------------------
+  // Black through to the reddish blond Tacitus keeps remarking on, with a few grey heads:
+  // a warband is fathers and sons, not a cohort of twenty-year-olds.
+  float hh = fract( v * 13.7 );
+  vec3 hair = mix( vec3( 0.13, 0.09, 0.07 ), vec3( 0.58, 0.36, 0.15 ), hh );
+  hair = mix( hair, vec3( 0.44, 0.42, 0.40 ), smoothstep( 0.9, 1.0, fract( v * 5.29 ) ) );
+  // ---- metal ---------------------------------------------------------------
+  // iCol1.w carries the man's metal packed into one float: the integer part is what his
+  // ironmongery is made of and the fraction is how well he keeps it. See resolveKit in
+  // units/kit.ts: the reasoning for who gets bronze and who gets a pitted heirloom lives
+  // there, next to the rest of the kit decisions.
+  float mcls = floor( iCol1.w );
+  float polish = fract( iCol1.w ) * 1.1111;
+  vec3 metal =
+      mcls < 0.5 ? vec3( 0.72, 0.70, 0.68 )      // iron, faintly warm grey
+    : mcls < 1.5 ? vec3( 1.22, 0.94, 0.46 )      // bronze and brass, the older kit
+    : mcls < 2.5 ? vec3( 0.40, 0.385, 0.375 )    // blackened, pitted or heavily rusted
+    :              vec3( 1.06, 1.07, 1.12 );     // tinned or silvered, the parade finish
+  metal *= 0.62 + polish * 0.52;
+  // ---- cloth batch variation ----------------------------------------------
+  // Cloth was dyed in small lots and faded in the sun, so a value spread belongs on the
+  // dyed slots only. Applying it to metal as well, as this used to, doubled up on polish,
+  // and applying it to skin fought the tone curve above.
+  float batch = 0.84 + fract( v * 31.1 ) * 0.32;
   vec3 tint;
   if ( slot < 0.5 )       tint = vec3( 1.0 );
-  else if ( slot < 1.5 )  tint = iCol0.rgb;
-  else if ( slot < 2.5 )  tint = iCol1.rgb;
+  else if ( slot < 1.5 )  tint = iCol0.rgb * batch;
+  else if ( slot < 2.5 )  tint = iCol1.rgb * batch;
   else if ( slot < 3.5 )  tint = skin;
   else if ( slot < 4.5 )  tint = hair;
-  else if ( slot < 5.5 )  tint = iCol0.rgb * 0.78 + vec3( 0.05, 0.045, 0.04 );
-  else if ( slot < 6.5 )  tint = vec3( 1.0 );
-  else                    tint = vec3( 0.72 + iCol1.w * 0.36 );
-  // Cloth was dyed in small batches and faded in the sun; a few percent of per-man value
-  // variation is the single cheapest thing that stops a rank reading as one repeated man.
-  tint *= 0.86 + fract( v * 31.1 ) * 0.28;
+  else if ( slot < 5.5 ) {
+    // The sagum was bought, not issued. Start from the tunic's dye lot, then pull a good
+    // way toward undyed brown wool on a per-man basis, so a rank has red cloaks, brown
+    // cloaks and everything between rather than one repeated colour.
+    vec3 dyed = iCol0.rgb * 0.78 + vec3( 0.05, 0.045, 0.04 );
+    tint = mix( dyed, vec3( 0.16, 0.125, 0.095 ), fract( v * 61.7 ) * 0.85 ) * batch;
+  }
+  else if ( slot < 6.5 ) {
+    // Shield facing. A legion's scuta were painted by the unit and drift a few percent;
+    // a tribal board was painted by the man who carried it and drifts a great deal. Which
+    // case this is falls straight out of the emblem index — tiles 4 and up are the tribal
+    // devices — so it needs no attribute of its own.
+    float spread = iCol0.w > 3.5 ? 0.52 : 0.13;
+    tint = vec3( 1.0 ) + vec3(
+      fract( v * 97.1 ) - 0.5, fract( v * 103.7 ) - 0.5, fract( v * 109.3 ) - 0.5 ) * spread;
+  }
+  else                    tint = metal;
   vSoldierTint = tint;
   vSoldierGrime = iOrient.w;
 
@@ -206,8 +388,11 @@ const FRAG_BODY = /* glsl */ `
 diffuseColor.rgb *= vSoldierTint;
 #ifdef USE_MAP
   if ( vSoldierEmblem.z > 0.5 ) {
+    // The emblem tile replaces the plank colour rather than multiplying it — paint covers
+    // wood — but it still takes the man's own facing tint, which is what gives a tribal
+    // host two hundred differently-painted boards out of four devices.
     vec4 emblem = texture2D( map, vSoldierEmblem.xy );
-    diffuseColor.rgb = mix( diffuseColor.rgb, emblem.rgb, emblem.a );
+    diffuseColor.rgb = mix( diffuseColor.rgb, emblem.rgb * vSoldierTint, emblem.a );
   }
 #endif
 // Blood and dust: pull value and saturation down toward a dry earth colour rather than
@@ -218,12 +403,34 @@ diffuseColor.rgb = mix(
   clamp( vSoldierGrime, 0.0, 1.0 ) );
 `;
 
+const v3 = (p: readonly [number, number, number]): string =>
+  `vec3(${p[0].toFixed(4)}, ${p[1].toFixed(4)}, ${p[2].toFixed(4)})`;
+
 function defines(o: SoldierShaderOptions): string {
-  return [
+  const out = [
     `#define SOLDIER_LEAN_H ${o.leanHeight.toFixed(3)}`,
     `#define SOLDIER_EMBLEM_ORIGIN vec2(${o.emblemOrigin[0].toFixed(6)}, ${o.emblemOrigin[1].toFixed(6)})`,
     `#define SOLDIER_EMBLEM_TILE vec2(${o.emblemTile[0].toFixed(6)}, ${o.emblemTile[1].toFixed(6)})`,
-  ].join('\n');
+  ];
+  const pv = o.poseVary;
+  if (pv) {
+    out.push(
+      '#define SOLDIER_POSE_VARY 1',
+      `#define SOLDIER_UPPER0 ${pv.upper[0]}.0`,
+      `#define SOLDIER_UPPER1 ${pv.upper[1]}.0`,
+      `#define SOLDIER_HEAD0 ${pv.head[0]}.0`,
+      `#define SOLDIER_HEAD1 ${pv.head[1]}.0`,
+      `#define SOLDIER_ARM_L0 ${pv.leftArm[0]}.0`,
+      `#define SOLDIER_ARM_L1 ${pv.leftArm[1]}.0`,
+      `#define SOLDIER_ARM_R0 ${pv.rightArm[0]}.0`,
+      `#define SOLDIER_ARM_R1 ${pv.rightArm[1]}.0`,
+      `#define SOLDIER_NECK ${v3(pv.neckPivot)}`,
+      `#define SOLDIER_SHOULDER_L ${v3(pv.leftShoulder)}`,
+      `#define SOLDIER_SHOULDER_R ${v3(pv.rightShoulder)}`,
+      `#define SOLDIER_HIP_Y ${pv.hipY.toFixed(4)}`
+    );
+  }
+  return out.join('\n');
 }
 
 function makeUniforms(o: SoldierShaderOptions): SoldierUniforms {
@@ -281,8 +488,11 @@ function patch(
     }
   };
   // Two soldier materials must not share a compiled program with anything else, and the
-  // two variants must not share with each other.
-  material.customProgramCacheKey = () => `soldier-skin-v2-${variant}`;
+  // two variants must not share with each other. The pose-variation flag is part of the key
+  // because it changes the injected source: the man has it and the horse does not, and
+  // colliding here would give one of them the other's vertex shader.
+  const rig = o.poseVary ? 'vary' : 'plain';
+  material.customProgramCacheKey = () => `soldier-skin-v3-${variant}-${rig}`;
 }
 
 export interface SoldierMaterialSet {

@@ -77,6 +77,30 @@ const FOOT_NAMES: Record<Clip, string> = {
   [Clip.Count]: 'idleAlertReady',
 };
 
+/**
+ * Shape variants of the infantry clips, chosen per man from his stable hash.
+ *
+ * Bucket 0 is always the clip named in `FOOT_NAMES`, so anything that does not list
+ * variants here simply resolves to the same clip three times over and the renderer needs
+ * no special case. The clips that *do* list variants are the ones a formation spends its
+ * time in — standing, walking, and the two blows that get thrown most often — because
+ * that is where a repeated silhouette is visible for long enough to be noticed.
+ */
+export const FOOT_VARIANTS = 3;
+
+const FOOT_VARIANT_NAMES: Partial<Record<Clip, readonly string[]>> = {
+  [Clip.IdleRelaxed]: ['idleRelaxedReady', 'idleRelaxedLean', 'idleAlertShift'],
+  [Clip.IdleAlert]: ['idleAlertReady', 'idleAlertShift', 'idleAlertWatch'],
+  [Clip.IdleBrace]: ['idleBrace', 'idleBraceLow', 'idleBrace'],
+  [Clip.Walk]: ['walkLoose', 'walkLooseRoll', 'marchShort'],
+  [Clip.March]: ['march', 'marchShort', 'marchLong'],
+  [Clip.Run]: ['runReady', 'runLow', 'runReady'],
+  [Clip.Charge]: ['charge', 'chargeHigh', 'charge'],
+  [Clip.Flee]: ['flee', 'fleeOther', 'flee'],
+  [Clip.AttackThrust]: ['attackThrust', 'attackThrustHigh', 'attackThrust'],
+  [Clip.AttackOverhead]: ['attackOverhead', 'attackOverheadCross', 'attackOverhead'],
+};
+
 /** Riders: seated variants. A mounted man never plays a footed locomotion clip. */
 const RIDE_NAMES: Record<Clip, string> = {
   [Clip.IdleRelaxed]: 'rideIdle',
@@ -142,7 +166,9 @@ const HORSE_NAMES: Record<Clip, string> = {
  */
 const HIT_FRAMES: Record<string, number> = {
   attackThrust: 0.46,
+  attackThrustHigh: 0.46,
   attackOverhead: 0.44,
+  attackOverheadCross: 0.44,
   attackSlash: 0.42,
   shieldBash: 0.4,
   throwPilum: 0.52,
@@ -193,7 +219,11 @@ function packSet(rig: Rig, source: Map<string, PoseClip>, used: readonly string[
   };
 }
 
-const manUsed = [...Object.values(FOOT_NAMES), ...Object.values(RIDE_NAMES)];
+const manUsed = [
+  ...Object.values(FOOT_NAMES),
+  ...Object.values(RIDE_NAMES),
+  ...Object.values(FOOT_VARIANT_NAMES).flat(),
+];
 export const MAN_CLIP_SET = packSet(MAN_RIG, manClips, manUsed);
 export const HORSE_CLIP_SET = packSet(HORSE_RIG, horseClips, Object.values(HORSE_NAMES));
 
@@ -205,6 +235,23 @@ const mapTo = (set: ClipSet, names: Record<Clip, string>): Int32Array => {
 
 /** `Clip` -> index into `MAN_CLIP_SET.clips`, for a man on foot. */
 export const FOOT_CLIP_MAP = mapTo(MAN_CLIP_SET, FOOT_NAMES);
+
+/**
+ * `Clip * FOOT_VARIANTS + bucket` -> index into `MAN_CLIP_SET.clips`, for a man on foot.
+ * Bucket 0 always equals `FOOT_CLIP_MAP`.
+ */
+export const FOOT_CLIP_VARIANT_MAP = ((): Int32Array => {
+  const out = new Int32Array(Clip.Count * FOOT_VARIANTS);
+  for (let c = 0; c < Clip.Count; c++) {
+    const names = FOOT_VARIANT_NAMES[c as Clip];
+    for (let v = 0; v < FOOT_VARIANTS; v++) {
+      out[c * FOOT_VARIANTS + v] = names
+        ? MAN_CLIP_SET.index(names[v % names.length])
+        : FOOT_CLIP_MAP[c];
+    }
+  }
+  return out;
+})();
 /** `Clip` -> index into `MAN_CLIP_SET.clips`, for a mounted man. */
 export const RIDE_CLIP_MAP = mapTo(MAN_CLIP_SET, RIDE_NAMES);
 /** `Clip` -> index into `HORSE_CLIP_SET.clips`. */

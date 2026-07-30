@@ -17,6 +17,16 @@ import type { UvRect } from './atlas';
 const V = new THREE.Vector3();
 const N = new THREE.Vector3();
 
+/** One point of a swept sheet: position plus the outward normal of the front face. */
+export interface SheetPoint {
+  x: number;
+  y: number;
+  z: number;
+  nx: number;
+  ny: number;
+  nz: number;
+}
+
 export class MeshBuilder {
   readonly pos: number[] = [];
   readonly nrm: number[] = [];
@@ -425,6 +435,48 @@ export class MeshBuilder {
     for (let r = 0; r < rows; r++) {
       this.quad(front[r][0], front[r + 1][0], back[r + 1][0], back[r][0]);
       this.quad(front[r + 1][cols], front[r][cols], back[r][cols], back[r + 1][cols]);
+    }
+  }
+
+  /**
+   * A double-sided sheet: cloak, mane, banner.
+   *
+   * Emitted as two independent windings with opposite normals rather than one winding drawn
+   * with `DoubleSide`. That matters because the material culls backfaces for fill-rate
+   * reasons, and because a reversed triangle sharing a front-facing normal lights as a flat
+   * slab — which is exactly how a cloak reads if you get this wrong.
+   */
+  sheet(
+    rows: number,
+    cols: number,
+    at: (u: number, v: number, out: SheetPoint) => void,
+    bindOf: (v: number) => { bone: number; bone2: number; w: number },
+    uv: UvRect,
+    repeatU = 1,
+    repeatV = 1
+  ): void {
+    const p: SheetPoint = { x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 1 };
+    for (const facing of [1, -1]) {
+      const grid: number[][] = [];
+      for (let r = 0; r <= rows; r++) {
+        const tv = r / rows;
+        const bind = bindOf(tv);
+        this.setBone(bind.bone, bind.bone2, bind.w);
+        const row: number[] = [];
+        for (let c = 0; c <= cols; c++) {
+          const tu = c / cols;
+          at(tu, tv, p);
+          const [u, v] = MeshBuilder.tileUv(uv, tu, tv, repeatU, repeatV);
+          row.push(this.vert(p.x, p.y, p.z, p.nx * facing, p.ny * facing, p.nz * facing, u, v));
+        }
+        grid.push(row);
+      }
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (facing > 0) this.quad(grid[r][c], grid[r][c + 1], grid[r + 1][c + 1], grid[r + 1][c]);
+          else this.quad(grid[r][c], grid[r + 1][c], grid[r + 1][c + 1], grid[r][c + 1]);
+        }
+      }
     }
   }
 

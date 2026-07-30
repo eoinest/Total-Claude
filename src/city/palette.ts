@@ -15,37 +15,56 @@ import * as THREE from 'three';
 
 const srgb = (hex: number): THREE.Color => new THREE.Color().setHex(hex, THREE.SRGBColorSpace);
 
+/**
+ * Albedo discipline. These are *reflectances*, and the numbers matter: a surface
+ * authored two stops bright cannot be rescued by the tone mapper, it just goes chalky
+ * and loses its shadow detail. Linear luminance targets, from measured values —
+ * fired brick 0.10–0.14, travertine 0.35–0.45, Luna marble 0.50, terracotta 0.10,
+ * lime stucco 0.55 at its whitest. An earlier revision put travertine at 0.47 linear
+ * *red*, which read as bleached bone against the photographed ground.
+ */
 export const PAL = {
   /** Fired-clay brick face. Roman wall brick fires orange-red to buff. */
-  brick: srgb(0xa96b47),
-  brickPale: srgb(0xc09070),
-  brickDark: srgb(0x8a5236),
+  brick: srgb(0x9a6242),
+  brickPale: srgb(0xb08064),
+  brickDark: srgb(0x7d4a31),
   /** Lime mortar and the exposed *opus caementicium* core. */
-  mortar: srgb(0xbdb49b),
-  concrete: srgb(0x9d9682),
+  mortar: srgb(0xb2a992),
+  concrete: srgb(0x948d7a),
   /** Travertine — the cream Tivoli limestone of the footings and gate dressings. */
-  travertine: srgb(0xc4b592),
-  travertineDirty: srgb(0x93876c),
+  travertine: srgb(0xb6a888),
+  travertineDirty: srgb(0x8b7f66),
   /** Luna (Carrara) marble for temple orders and statuary. */
-  marble: srgb(0xcdc6b2),
-  marbleShadow: srgb(0xaaa494),
+  marble: srgb(0xc4bda9),
+  // Marble in shade, and the default for large secondary surfaces — orchestras, stage
+  // buildings, aisle walls. Kept *warm*: a neutral grey here is what made the monumental
+  // core read as concrete rather than as stone in the first skyline pass.
+  marbleShadow: srgb(0xa89e88),
   /** Tufa and peperino, the cheap local volcanic building stones. */
-  tufa: srgb(0xc4b189),
-  peperino: srgb(0x8d8878),
+  tufa: srgb(0xb8a680),
+  peperino: srgb(0x847f70),
   /** Painted stucco: the everyday street palette. */
   pompeianRed: srgb(0x9c2f26),
   romanRed: srgb(0xa8202a),
-  ochre: srgb(0xc8974a),
-  ochrePale: srgb(0xd9b878),
-  limeWhite: srgb(0xe7dfc9),
-  ochreDeep: srgb(0xa8763a),
-  terraDirty: srgb(0xb08e6a),
+  ochre: srgb(0xbc8c44),
+  ochrePale: srgb(0xcfae70),
+  // Lime render, weathered. Fresh limewash measures about 0.75 linear; nothing on a
+  // third-century street was fresh, and an earlier 0xe7dfc9 read as snow next to the
+  // photographed ground.
+  limeWhite: srgb(0xd8cfb6),
+  ochreDeep: srgb(0x9d6d34),
+  terraDirty: srgb(0xa58462),
   /** Terracotta roofing. */
-  roofTile: srgb(0x9d5334),
-  roofTileOld: srgb(0x82492f),
-  roofTileDark: srgb(0x653c28),
-  /** Terracotta bonding courses through the brick face. */
-  tileCourse: srgb(0xa15c3a),
+  roofTile: srgb(0x94502f),
+  roofTileOld: srgb(0x7c452b),
+  roofTileDark: srgb(0x603824),
+  /**
+   * Terracotta bonding courses through the brick face. Deliberately *paler and more
+   * orange* than the brick around them: the bipedales are a different, finer clay and
+   * they are what gives the Aurelian curtain its horizontal rhythm. Matching them to the
+   * brick, as an earlier pass did, left the string courses reading only as shadow lines.
+   */
+  tileCourse: srgb(0xb2734a),
   /** Metals. Gilded bronze roof tiles crowned the Capitoline temple. */
   gilt: srgb(0xd0a52e),
   bronze: srgb(0x8a6a34),

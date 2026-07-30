@@ -34,18 +34,32 @@ import type { SkySystem } from './SkySystem';
  */
 
 /** Shadowed distance. Beyond this a man's shadow is under a pixel wide and the
- *  resolution is better spent close in. */
-const SHADOW_DISTANCE = 620;
+ *  resolution is better spent close in. 460 m rather than 620 because the fourth
+ *  cascade's texel footprint is what limits how far a *man*-sized shadow
+ *  survives, and 460 m puts it at ~0.22 m instead of ~0.30 m. */
+const SHADOW_DISTANCE = 460;
 /** Nominal near plane for the split distribution — roughly a soldier's boot. */
 const SPLIT_NEAR = 1.5;
-/** 0 = uniform splits, 1 = logarithmic. 0.82 puts cascade 0 at ~32 m, which is
+/** 0 = uniform splits, 1 = logarithmic. 0.82 puts cascade 0 at ~24 m, which is
  *  where the camera sits for the close shots, so contact shadows get the texels. */
 const SPLIT_LAMBDA = 0.82;
 /** Blur radius in shadow texels. Constant in texels (not metres) so the
  *  penumbra automatically widens with distance as the cascades coarsen — that is
  *  the read that makes feet look planted and distant ranks look atmospheric. */
-const PCF_RADIUS_NEAR = 2.4;
-const PCF_RADIUS_FAR = 3.4;
+const PCF_RADIUS_NEAR = 1.7;
+const PCF_RADIUS_FAR = 3.0;
+/**
+ * Ceiling on the normal-offset bias, in metres.
+ *
+ * Normal offset has to scale with the cascade's texel footprint to kill acne, but
+ * the outer cascade's texel is a quarter of a metre and 1.6 of them is 0.4 m —
+ * comfortably wider than a man. Every shadow past ~140 m was being pushed off
+ * its caster and vanishing, which is most of the crowd in any shot wide enough
+ * to see a battle line. 0.09 m is under a boot length, so it still cannot lift a
+ * contact shadow visibly, and the depth bias plus PCF absorbs the acne the
+ * shortfall would otherwise let through.
+ */
+const MAX_NORMAL_BIAS = 0.09;
 
 export class LightingSystem implements Subsystem {
   readonly name = 'lighting';
@@ -56,6 +70,18 @@ export class LightingSystem implements Subsystem {
   /** A weak, unshadowed sun-opposed light: the classic single-bounce cheat that
    *  keeps shadowed sides from collapsing into one flat ambient value. */
   readonly bounce = new THREE.DirectionalLight(0xffd9a8, 0.24);
+  /**
+   * Extra saturation applied to the sky fill's chromaticity, at constant
+   * luminance.
+   *
+   * The Rayleigh integral's cosine-weighted hemisphere mean is genuinely a
+   * desaturated pale blue — it averages the deep zenith with the near-white
+   * horizon — and used raw it puts almost no blue into a shadow. Rome II's
+   * shadows are unmistakably blue-grey, so the fill's chroma is stretched about
+   * its own luminance. Luminance-preserving, so it costs no contrast: it moves
+   * colour only.
+   */
+  private static readonly FILL_CHROMA_GAIN = 1.55;
 
   private csm?: CSM;
   private sky?: SkySystem;
@@ -123,6 +149,17 @@ export class LightingSystem implements Subsystem {
     this.installShaderChunks();
     this.syncBreakUniforms();
     this.discoverMaterials(ctx.scene);
+  }
+
+  /** Stretch a colour's chroma about its own luminance by `FILL_CHROMA_GAIN`. */
+  private saturate(src: THREE.Color, out: THREE.Color): void {
+    const l = src.r * 0.2126 + src.g * 0.7152 + src.b * 0.0722;
+    const k = LightingSystem.FILL_CHROMA_GAIN;
+    out.setRGB(
+      Math.max(0, l + (src.r - l) * k),
+      Math.max(0, l + (src.g - l) * k),
+      Math.max(0, l + (src.b - l) * k),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -289,25 +326,29 @@ export class LightingSystem implements Subsystem {
         l.intensity = sky.sunIntensity;
         l.castShadow = lit;
       }
-      this.fill.color.copy(sky.skyFillColour);
+      this.saturate(sky.skyFillColour, this.fill.color);
       // Ground bounce: the plain's albedo lit by the sun, plus the sky it sees.
-      const a = sky.preset.groundAlbedo * 2.2;
+      // Held down hard on purpose — this term is the enemy of A1. It is the only
+      // warm light reaching a shadowed surface, and at its old weight it
+      // neutralised the sky bounce completely, which is how 2 500 men in shadow
+      // ended up exactly the same hue as the same men in sun.
+      const a = sky.preset.groundAlbedo * 0.9;
       this.fill.groundColor.setRGB(
-        sky.sunColour.r * sky.sunIntensity * a * 0.35 + sky.skyFillColour.r * 0.4,
-        sky.sunColour.g * sky.sunIntensity * a * 0.32 + sky.skyFillColour.g * 0.4,
-        sky.sunColour.b * sky.sunIntensity * a * 0.26 + sky.skyFillColour.b * 0.4,
+        sky.sunColour.r * sky.sunIntensity * a * 0.35 + this.fill.color.r * 0.5,
+        sky.sunColour.g * sky.sunIntensity * a * 0.32 + this.fill.color.g * 0.5,
+        sky.sunColour.b * sky.sunIntensity * a * 0.26 + this.fill.color.b * 0.5,
       );
       // Deliberately small. `scene.environment` already delivers the sky's
-      // irradiance at the physically correct level, so this is only a top-up for
-      // materials that ignore IBL — and every unit of extra ambient is a unit of
-      // directional contrast lost.
-      this.fill.intensity = 0.3;
+      // irradiance, so this is only a top-up for materials that ignore IBL —
+      // and every unit of extra ambient is a unit of directional contrast lost.
+      this.fill.intensity = 0.22;
 
       // Bounce comes from the ground on the far side of the sun, i.e. the sun
-      // direction mirrored through the horizon plane.
+      // direction mirrored through the horizon plane. Kept to a whisper: it exists
+      // to stop a shadowed side going perfectly flat, not to relight it.
       this.bounce.position.set(-sky.sunDirection.x, -0.45, -sky.sunDirection.z).multiplyScalar(300);
       this.bounce.color.copy(sky.sunColour);
-      this.bounce.intensity = sky.sunIntensity * 0.075;
+      this.bounce.intensity = sky.sunIntensity * 0.03;
     }
 
     // The camera's projection changes every frame (RTSCamera couples fov, near
@@ -328,8 +369,9 @@ export class LightingSystem implements Subsystem {
       // without lifting the contact shadow off the feet.
       l.shadow.bias = -(texel * 0.6) / (cam.far - cam.near);
       // Normal offset does the heavy lifting: pushing the sample 1.6 texels
-      // along the surface normal removes acne independently of slope.
-      l.shadow.normalBias = texel * 1.6;
+      // along the surface normal removes acne independently of slope — but see
+      // MAX_NORMAL_BIAS for why it cannot be allowed to scale freely.
+      l.shadow.normalBias = Math.min(texel * 1.6, MAX_NORMAL_BIAS);
       const t = n > 1 ? i / (n - 1) : 0;
       l.shadow.radius = PCF_RADIUS_NEAR + (PCF_RADIUS_FAR - PCF_RADIUS_NEAR) * t;
     }

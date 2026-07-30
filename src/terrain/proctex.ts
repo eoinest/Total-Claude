@@ -294,36 +294,53 @@ export function generateMacroVariation(size = 512, seed = 7): Uint8Array {
 /**
  * Fine detail normal, tiled at half a metre. Without this the ground turns to mush the
  * moment the camera drops to eye level in a melee, no matter how good the splat is.
+ *
+ * RG carry the normal. **B carries the height field itself**, which the ground shader
+ * multiplies into albedo near the camera: the pebbles and clods need to be visible as
+ * light and shade as well as as relief, because a low sun leaves half of them facing
+ * away from the light where a pure normal perturbation does nothing at all. A carries a
+ * sparser, harder threshold of the same field — the individual small stones.
  */
 export function generateDetailNormal(size = 256, seed = 13): Uint8Array {
   const data = new Uint8Array(size * size * 4);
   const h = new Float32Array(size * size);
+  const stone = new Float32Array(size * size);
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const u = x / size;
       const v = y / size;
-      h[y * size + x] =
-        tileFbm(u, v, 4, 12, seed) * 0.5 +
-        0.5 +
-        Math.max(0, tileRidged(u, v, 2, 42, seed + 5) - 0.7) * 1.4;
+      // Three bands: clods at ~8 cm, granularity at ~2 cm, and a sparse ridged field
+      // thresholded into discrete stones.
+      const clod = tileFbm(u, v, 4, 12, seed) * 0.5 + 0.5;
+      const grain = tileFbm(u, v, 3, 58, seed + 9) * 0.5 + 0.5;
+      const st = Math.max(0, tileRidged(u, v, 2, 42, seed + 5) - 0.66) * 2.9;
+      stone[y * size + x] = sat(st);
+      h[y * size + x] = clod * 0.72 + grain * 0.28 + st * 0.85;
     }
   }
+  let lo = 1e9;
+  let hi = -1e9;
+  for (let i = 0; i < h.length; i++) {
+    if (h[i] < lo) lo = h[i];
+    if (h[i] > hi) hi = h[i];
+  }
+  const span = 1 / Math.max(1e-4, hi - lo);
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const xm = (x - 1 + size) % size;
       const xp = (x + 1) % size;
       const ym = (y - 1 + size) % size;
       const yp = (y + 1) % size;
-      let nx = (h[y * size + xm] - h[y * size + xp]) * 2.4;
-      let ny = (h[ym * size + x] - h[yp * size + x]) * 2.4;
+      let nx = (h[y * size + xm] - h[y * size + xp]) * 2.9;
+      let ny = (h[ym * size + x] - h[yp * size + x]) * 2.9;
       const len = Math.hypot(nx, ny, 1);
       nx /= len;
       ny /= len;
       const o = (y * size + x) * 4;
       data[o] = clamp255((nx * 0.5 + 0.5) * 255);
       data[o + 1] = clamp255((ny * 0.5 + 0.5) * 255);
-      data[o + 2] = 255;
-      data[o + 3] = 255;
+      data[o + 2] = clamp255((h[y * size + x] - lo) * span * 255);
+      data[o + 3] = clamp255(stone[y * size + x] * 255);
     }
   }
   return data;
@@ -338,28 +355,38 @@ export function generateDetailNormal(size = 256, seed = 13): Uint8Array {
  * metre, and instanced strip geometry runs out of triangles two orders of magnitude
  * short of that.
  */
-export function generateGrassCards(cellSize = 256, cells = 2): { data: Uint8Array; width: number; height: number } {
+export function generateGrassCards(cellSize = 256, cells = 3): { data: Uint8Array; width: number; height: number } {
   const w = cellSize * cells;
   const h = cellSize;
   const data = new Uint8Array(w * h * 4);
 
+  // Straw dominant, with a few surviving green blades and some bleached-white dead ones.
+  // The mean of this set has to sit close to the dry-grass ground albedo or every clump
+  // reads as a foreign object stuck into the dirt.
   const bladeCols: [number, number, number][] = [
-    [138, 130, 74],
-    [166, 158, 96],
-    [112, 118, 58],
-    [186, 176, 118],
-    [96, 104, 52],
+    [150, 141, 92],
+    [172, 162, 108],
+    [118, 124, 66],
+    [190, 180, 132],
+    [102, 108, 56],
+    [163, 150, 96],
   ];
 
   for (let c = 0; c < cells; c++) {
     const x0 = c * cellSize;
-    const blades = 13;
+    // 34 blades, of which the short two thirds form a basal mat. A card with a dozen
+    // tall blades and nothing underneath leaves daylight between every clump, which is
+    // exactly what made the sward read as isolated tufts.
+    const blades = 34;
     for (let b = 0; b < blades; b++) {
-      const seed = c * 97 + b;
-      const rootX = (b + 0.5 + (tileFbm((b + 1) / blades, 0.5, 1, 3, seed) * 0.5)) * (cellSize / blades);
-      const tipDx = (hashF(seed, 1) - 0.5) * cellSize * 0.44;
-      const tall = (0.52 + hashF(seed, 2) * 0.46) * cellSize;
-      const baseW = (2.6 + hashF(seed, 3) * 2.6) * (cellSize / 256);
+      const seed = c * 197 + b * 7;
+      const rootX = (hashF(seed, 11) * 0.94 + 0.03) * cellSize;
+      const tipDx = (hashF(seed, 1) - 0.5) * cellSize * 0.5;
+      // Two populations: a low mat and a scatter of full-height blades.
+      const tall = b % 3 === 0
+        ? (0.58 + hashF(seed, 2) * 0.42) * cellSize
+        : (0.16 + hashF(seed, 2) * 0.34) * cellSize;
+      const baseW = (2.2 + hashF(seed, 3) * 2.4) * (cellSize / 256);
       const col = bladeCols[(hashF(seed, 4) * bladeCols.length) | 0];
       // Quadratic arc from root to tip: grass leans, it does not stand to attention.
       const steps = Math.ceil(tall);
@@ -369,7 +396,7 @@ export function generateGrassCards(cellSize = 256, cells = 2): { data: Uint8Arra
         const cy = tall * t;
         const halfW = (baseW * (1 - t * t * 0.94)) * 0.5;
         // Blades are lighter toward the tip and toward the light-facing side.
-        const shade = 0.62 + 0.5 * t;
+        const shade = 0.6 + 0.52 * t;
         for (let dx = -Math.ceil(halfW) - 1; dx <= Math.ceil(halfW) + 1; dx++) {
           const px = Math.round(cx) + dx;
           const py = Math.round(cy);
@@ -387,14 +414,32 @@ export function generateGrassCards(cellSize = 256, cells = 2): { data: Uint8Arra
         }
       }
     }
+    // A band of dead thatch across the bottom eighth: the litter layer every real
+    // pasture has, and what visually welds a clump to the ground it grows out of.
+    const matTop = Math.max(3, Math.round(cellSize * 0.1));
+    for (let py = 0; py < matTop; py++) {
+      const fade = 1 - py / matTop;
+      for (let px = 0; px < cellSize; px++) {
+        const n = tileFbm(px / cellSize, py / cellSize, 3, 26, 611) * 0.5 + 0.5;
+        const cov = clamp255((n * 1.45 - 0.28) * fade * 255);
+        const o = (py * w + x0 + px) * 4;
+        if (cov > data[o + 3]) {
+          const sh = 0.56 + n * 0.4;
+          data[o] = clamp255(158 * sh);
+          data[o + 1] = clamp255(147 * sh);
+          data[o + 2] = clamp255(98 * sh);
+          data[o + 3] = cov;
+        }
+      }
+    }
     // Fill the gaps with the mean blade colour so mip levels do not fade to black.
     for (let py = 0; py < h; py++) {
       for (let px = 0; px < cellSize; px++) {
         const o = ((py * w) + x0 + px) * 4;
         if (data[o + 3] === 0) {
-          data[o] = 140;
-          data[o + 1] = 134;
-          data[o + 2] = 80;
+          data[o] = 150;
+          data[o + 1] = 142;
+          data[o + 2] = 92;
         }
       }
     }

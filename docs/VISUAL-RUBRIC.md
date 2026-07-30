@@ -88,7 +88,8 @@ A subsystem passes at **mean ≥ 3.0 with no criterion below 2**.
 | # | Criterion | The specific tell |
 |---|---|---|
 | G1 | Composition | A still frame is *photographic* — it has a subject and depth layers. |
-| G2 | Colour grade | Sun-bleached, slightly desaturated, cohesive. Not oversaturated, not orange-teal. |
+| G2 | Colour grade | **Warm, rich and saturated**, with a coherent grade. Corrected after checking real Rome II frames: an earlier draft of this rubric said "sun-bleached, slightly desaturated", and that was wrong as a target. Rome II puts gold helmets, white linen, red and ochre shields, green pasture and a deep blue-grey sky in one image. A monochrome dust-beige frame is a far worse error than mild over-saturation. Still avoid orange-teal. |
+| G2b | Dynamic range | Deep near-black shadows and clipping highlights coexist in one frame. If nothing in the image is below ~15% or above ~90% luminance, the range is too narrow. |
 | G3 | Anti-aliasing | No stair-stepping on wall edges or spear shafts; no shimmer on distant ranks. |
 | G4 | Post restraint | Bloom on genuine highlights only. Subtle vignette and grain. No lens-flare spam. |
 | G5 | Believability | The instinctive reaction is "screenshot from a game I could buy", not "impressive for a browser". |

@@ -55,13 +55,25 @@ export class BattleSystem implements Subsystem {
   // -------------------------------------------------------------------------
 
   /**
+   * Global multiplier on every unit's roster strength — the equivalent of Total War's
+   * unit-size setting. The roster's numbers are authored at a readable baseline; a
+   * scenario raises this to fill the field. Set before spawning; changing it afterwards
+   * has no effect on units already deployed.
+   */
+  unitSizeScale = 1;
+
+  /**
    * Spawn a unit group with its front rank centred on (x, z), facing `facing`.
    * Returns the new unit's id, or -1 if the soldier pool is full.
    */
   spawnUnit(typeId: string, x: number, z: number, facing: number, formationId?: string): number {
     const def = unitType(typeId);
     const fdef = formation(formationId ?? def.formations[0]);
-    const width = fdef.width(def.strength);
+    // Artillery crews are a fixed establishment — a scorpion needs two men whatever the
+    // unit-size setting — so they do not scale.
+    const scale = def.unitClass === 'artillery' ? 1 : this.unitSizeScale;
+    const strength = Math.max(1, Math.round(def.strength * scale));
+    const width = fdef.width(strength);
 
     const u: UnitGroupState = {
       id: this.nextUnitId++,
@@ -69,7 +81,7 @@ export class BattleSystem implements Subsystem {
       faction: def.faction,
       members: [],
       alive: 0,
-      initialStrength: def.strength,
+      initialStrength: strength,
       x, z, facing,
       targetX: x, targetZ: z, targetFacing: facing,
       order: UnitOrder.Hold,
@@ -95,11 +107,11 @@ export class BattleSystem implements Subsystem {
       concealed: false,
     };
 
-    const ranks = ranksFor(def.strength, width);
+    const ranks = ranksFor(strength, width);
     const rng = this.rng.fork(`unit${u.id}`);
     const mounted = isCavalry(def);
 
-    for (let s = 0; s < def.strength; s++) {
+    for (let s = 0; s < strength; s++) {
       const i = this.pool.alloc();
       if (i < 0) break;
       u.members.push(i);

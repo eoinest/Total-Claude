@@ -36,31 +36,49 @@ export interface GroundLayerSpec {
   detailMix: number;
   /** Base roughness; modulated by surface height in the shader. */
   roughness: number;
-  /** Albedo multiplier, used to pull pack textures toward the Roman campagna palette. */
-  tint: readonly [number, number, number];
+  /**
+   * Authored albedo, sRGB 0–255. The layer's own mean is divided out and replaced by
+   * this, so the palette is under our control rather than the photographer's — see
+   * `recolourLayer`. Linear luminance is held in 0.09–0.36, which is where real ground
+   * sits; anything brighter looks chalky the moment the sun comes round.
+   */
+  albedo: readonly [number, number, number];
+  /** Micro-contrast gain. >1 makes individual stones and blades read; 1 is neutral. */
+  contrast: number;
+  /** How much of the photograph's own hue variation survives the recolour, 0–1. */
+  chroma: number;
   /** Added to the layer's surface height during height-blending — lets gravel win over grass. */
   heightBias: number;
 }
 
 /**
  * Layer order is fixed: the shader's rule set and the control texture both index it.
- * Scales are in metres per tile, chosen from the real size of the thing depicted —
- * a 2048² grass photo covers about eight metres of ground, paving stones about a third
- * of a metre each.
+ *
+ * `farScale` and `detailScale` are metres per tile. **They must stay close to the real
+ * size of the thing photographed.** The CC0 ground set covers 0.5–1 m per image
+ * (`tiling` in the manifest); an earlier revision ran the 1 m dry-grass thatch at 8.5 m
+ * per tile, which magnified every straw eight times and turned a beautiful mat of dead
+ * grass into featureless mottled brown at eye level. Two incommensurate scales per layer
+ * (a ratio near 3.7, never an integer) plus the macro colour bands are what hide the
+ * repeat; stretching the texture is not.
+ *
+ * Albedos are authored so that no two layers likely to meet share a value *or* a hue:
+ * straw 0.30 warm, meadow 0.16 green, dirt 0.16 brown, mud 0.09 dark, gravel 0.29
+ * neutral, limestone 0.35 cool, sand 0.34 pale, basalt 0.12 cold. Without that spread the
+ * splat can be perfect and the ground still reads as one wash.
  */
 export const GROUND_LAYERS: readonly GroundLayerSpec[] = [
-  // The pack's "dry grass" is a pinkish tan that reads as bare dirt; the tint pulls it
-  // back to the olive-straw of an Italian pasture at the end of summer.
-  { name: 'dry grass',   kind: 'dryGrass',       manifestId: 'dry-grass',       farScale: 8.5,  detailScale: 1.9,  detailMix: 0.42, roughness: 0.94, tint: [0.84, 0.86, 0.56], heightBias: 0.0 },
-  { name: 'meadow grass',kind: 'meadowGrass',    manifestId: 'meadow-grass',    farScale: 7.5,  detailScale: 1.7,  detailMix: 0.42, roughness: 0.92, tint: [0.82, 0.94, 0.62], heightBias: 0.02 },
-  { name: 'trampled dirt',kind: 'compactedEarth',manifestId: null,              farScale: 6.0,  detailScale: 1.35, detailMix: 0.40, roughness: 0.95, tint: [1.02, 0.94, 0.80], heightBias: 0.06 },
-  { name: 'mud',         kind: 'mud',            manifestId: 'mud',             farScale: 5.0,  detailScale: 1.15, detailMix: 0.38, roughness: 0.74, tint: [0.90, 0.84, 0.70], heightBias: 0.04 },
-  { name: 'gravel',      kind: 'gravel',         manifestId: 'dirt-gravel',     farScale: 4.4,  detailScale: 1.0,  detailMix: 0.40, roughness: 0.96, tint: [0.98, 0.92, 0.80], heightBias: 0.12 },
-  { name: 'limestone',   kind: 'limestone',      manifestId: null,              farScale: 11.0, detailScale: 2.5,  detailMix: 0.36, roughness: 0.86, tint: [1.06, 1.02, 0.94], heightBias: 0.22 },
-  { name: 'river sand',  kind: 'sand',           manifestId: 'sand',            farScale: 5.5,  detailScale: 1.25, detailMix: 0.38, roughness: 0.88, tint: [1.08, 1.00, 0.88], heightBias: -0.04 },
+  { name: 'dry grass',   kind: 'dryGrass',       manifestId: 'dry-grass',       farScale: 4.3,  detailScale: 1.15, detailMix: 0.50, roughness: 0.94, albedo: [158, 148, 104], contrast: 1.10, chroma: 0.50, heightBias: 0.0 },
+  { name: 'meadow grass',kind: 'meadowGrass',    manifestId: 'meadow-grass',    farScale: 3.9,  detailScale: 1.05, detailMix: 0.50, roughness: 0.92, albedo: [100, 116,  64], contrast: 1.10, chroma: 0.50, heightBias: 0.02 },
+  { name: 'trampled dirt',kind: 'compactedEarth',manifestId: null,              farScale: 4.6,  detailScale: 1.30, detailMix: 0.45, roughness: 0.95, albedo: [132, 110,  84], contrast: 1.15, chroma: 0.40, heightBias: 0.06 },
+  { name: 'mud',         kind: 'mud',            manifestId: 'mud',             farScale: 2.6,  detailScale: 0.72, detailMix: 0.45, roughness: 0.74, albedo: [ 92,  80,  64], contrast: 1.05, chroma: 0.35, heightBias: 0.04 },
+  { name: 'gravel',      kind: 'gravel',         manifestId: 'dirt-gravel',     farScale: 2.3,  detailScale: 0.62, detailMix: 0.50, roughness: 0.96, albedo: [152, 144, 128], contrast: 1.40, chroma: 0.55, heightBias: 0.12 },
+  { name: 'limestone',   kind: 'limestone',      manifestId: null,              farScale: 6.0,  detailScale: 1.70, detailMix: 0.40, roughness: 0.86, albedo: [164, 160, 146], contrast: 1.30, chroma: 0.40, heightBias: 0.22 },
+  { name: 'river sand',  kind: 'sand',           manifestId: 'sand',            farScale: 2.8,  detailScale: 0.78, detailMix: 0.45, roughness: 0.88, albedo: [168, 156, 128], contrast: 1.15, chroma: 0.40, heightBias: -0.04 },
   // Consular roads were paved in basalt (silex) — a cool dark grey, not the pale
-  // limestone cobbles the pack ships.
-  { name: 'paving',      kind: 'cobbles',        manifestId: 'cobblestone-road',farScale: 3.4,  detailScale: 3.4,  detailMix: 0.0,  roughness: 0.80, tint: [0.56, 0.57, 0.60], heightBias: 0.30 },
+  // limestone setts the pack ships. 1.1 m per tile puts the polygons at ~35 cm, which is
+  // the size they are on the surviving stretch outside the Porta Appia.
+  { name: 'paving',      kind: 'cobbles',        manifestId: 'cobblestone-road',farScale: 1.1,  detailScale: 1.1,  detailMix: 0.0,  roughness: 0.80, albedo: [ 96,  96,  98], contrast: 1.30, chroma: 0.30, heightBias: 0.30 },
 ];
 
 export const LAYER_COUNT = GROUND_LAYERS.length;
@@ -179,6 +197,113 @@ function upsampleInto(
   }
 }
 
+// sRGB transfer, tabulated: the recolour touches 8 M texels and a `Math.pow` per channel
+// would cost about a second of boot on its own.
+const SRGB_TO_LIN = new Float32Array(256);
+for (let i = 0; i < 256; i++) {
+  const c = i / 255;
+  SRGB_TO_LIN[i] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+}
+const LIN_TO_SRGB = new Uint8Array(4096);
+for (let i = 0; i < 4096; i++) {
+  const c = i / 4095;
+  const s = c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+  LIN_TO_SRGB[i] = (s * 255 + 0.5) | 0;
+}
+const encode = (v: number): number => LIN_TO_SRGB[v <= 0 ? 0 : v >= 1 ? 4095 : (v * 4095) | 0];
+
+/**
+ * Re-centre one layer's albedo on its authored colour.
+ *
+ * The photograph (or the procedural substitute) supplies *structure*: which texels are
+ * straw and which are the leaf lying on top of it. What it must not supply is the overall
+ * colour, because two photographs of different things routinely land within a few per
+ * cent of each other — the CC0 dry-grass and meadow-grass plates both average to the same
+ * olive tan, and no amount of clever splatting can make two identically-coloured layers
+ * read as two materials.
+ *
+ * So: divide out the layer's own mean, keep the relative luminance (raised to `contrast`
+ * to sharpen or soften the micro-detail), keep a fraction of the chroma deviation so the
+ * result is not a monochrome tint, and multiply by the target. The mean of the output is
+ * the target by construction.
+ */
+function recolourLayer(data: Uint8Array, offset: number, count: number, spec: GroundLayerSpec): void {
+  const lum = new Float32Array(count);
+  const dr = new Float32Array(count);
+  const dg = new Float32Array(count);
+  const db = new Float32Array(count);
+  let mr = 0;
+  let mg = 0;
+  let mb = 0;
+  for (let i = 0; i < count; i++) {
+    const o = offset + i * 4;
+    const r = SRGB_TO_LIN[data[o]];
+    const g = SRGB_TO_LIN[data[o + 1]];
+    const b = SRGB_TO_LIN[data[o + 2]];
+    dr[i] = r;
+    dg[i] = g;
+    db[i] = b;
+    mr += r;
+    mg += g;
+    mb += b;
+  }
+  const inv = 1 / count;
+  mr = Math.max(1e-4, mr * inv);
+  mg = Math.max(1e-4, mg * inv);
+  mb = Math.max(1e-4, mb * inv);
+
+  let meanL = 0;
+  for (let i = 0; i < count; i++) {
+    // Ratio space: each channel relative to its own mean, so a warm photograph does not
+    // bias the luminance it reports.
+    const r = dr[i] / mr;
+    const g = dg[i] / mg;
+    const b = db[i] / mb;
+    const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    lum[i] = l;
+    dr[i] = r - l;
+    dg[i] = g - l;
+    db[i] = b - l;
+    meanL += l;
+  }
+  meanL = Math.max(1e-4, meanL * inv);
+
+  // Contrast is applied about the mean, then the whole field is renormalised so the
+  // gain does not also change the layer's brightness.
+  const gamma = spec.contrast;
+  const POW_N = 1024;
+  const POW_MAX = 6;
+  const powLut = new Float32Array(POW_N + 1);
+  for (let i = 0; i <= POW_N; i++) powLut[i] = Math.pow((i / POW_N) * POW_MAX, gamma);
+  const powOf = (v: number): number => {
+    const t = v <= 0 ? 0 : v >= POW_MAX ? POW_MAX : v;
+    const f = (t / POW_MAX) * POW_N;
+    const i0 = f | 0;
+    const i1 = i0 < POW_N ? i0 + 1 : POW_N;
+    const fr = f - i0;
+    return powLut[i0] + (powLut[i1] - powLut[i0]) * fr;
+  };
+  let meanP = 0;
+  for (let i = 0; i < count; i++) {
+    const p = powOf(lum[i]);
+    lum[i] = p;
+    meanP += p;
+  }
+  const renorm = meanL / Math.max(1e-4, meanP * inv);
+
+  const tr = SRGB_TO_LIN[spec.albedo[0]] / meanL;
+  const tg = SRGB_TO_LIN[spec.albedo[1]] / meanL;
+  const tb = SRGB_TO_LIN[spec.albedo[2]] / meanL;
+  const k = spec.chroma;
+  for (let i = 0; i < count; i++) {
+    const l = lum[i] * renorm;
+    const o = offset + i * 4;
+    data[o] = encode(tr * (l + dr[i] * k));
+    data[o + 1] = encode(tg * (l + dg[i] * k));
+    data[o + 2] = encode(tb * (l + db[i] * k));
+  }
+}
+
 export async function loadGroundTextures(): Promise<GroundTextures> {
   const manifest = await loadManifest();
   const byId = new Map<string, ManifestTexture>();
@@ -209,26 +334,25 @@ export async function loadGroundTextures(): Promise<GroundTextures> {
         const proc = generateLayer(spec.kind, 17 + layer * 31);
         upsampleInto(proc.albedo, proc.size, albedoData, albOff, ALBEDO_SIZE);
         nrmData.set(proc.nrm, nrmOff);
+        // Procedural layers go through the same recolour as photographed ones, so the
+        // palette above is the single place layer colour is decided.
+        recolourLayer(albedoData, albOff, ALBEDO_SIZE * ALBEDO_SIZE, spec);
         return;
       }
 
       sourced.push(spec.name);
-      const [tr, tg, tb] = spec.tint;
       for (let i = 0; i < ALBEDO_SIZE * ALBEDO_SIZE; i++) {
-        const r = alb[i * 4] * tr;
-        const g = alb[i * 4 + 1] * tg;
-        const b = alb[i * 4 + 2] * tb;
-        // A touch of desaturation across the board: the Rome II palette is dusty, and
-        // photographic ground textures are almost always too saturated for it.
-        const luma = r * 0.299 + g * 0.587 + b * 0.114;
         const o = albOff + i * 4;
-        albedoData[o] = clamp255(r + (luma - r) * 0.07);
-        albedoData[o + 1] = clamp255(g + (luma - g) * 0.07);
-        albedoData[o + 2] = clamp255(b + (luma - b) * 0.07);
+        albedoData[o] = alb[i * 4];
+        albedoData[o + 1] = alb[i * 4 + 1];
+        albedoData[o + 2] = alb[i * 4 + 2];
         // Surface height for height-blending: the displacement map if the pack has one,
         // otherwise luma, which correlates well enough for ground materials.
-        albedoData[o + 3] = disp ? disp[i * 4] : clamp255(luma);
+        albedoData[o + 3] = disp
+          ? disp[i * 4]
+          : clamp255(alb[i * 4] * 0.299 + alb[i * 4 + 1] * 0.587 + alb[i * 4 + 2] * 0.114);
       }
+      recolourLayer(albedoData, albOff, ALBEDO_SIZE * ALBEDO_SIZE, spec);
 
       if (nor) {
         for (let i = 0; i < NRM_SIZE * NRM_SIZE; i++) {

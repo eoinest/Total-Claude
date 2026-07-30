@@ -232,9 +232,15 @@ void main() {
 
 #ifdef LIT
   // Light the billboard as a sphere: the fake normal is what stops dust reading as a
-  // flat decal stuck to the screen. Radius-clamped so the rim stays soft.
+  // flat decal stuck to the screen.
+  //
+  // The z term must stay strictly positive and the normal must be normalised. An
+  // unnormalised vec3(vQuad, sqrt(1 - rr)) has a first-derivative discontinuity exactly
+  // on the quad's inscribed circle, where the clamp bites — and that shows up in the
+  // frame as a hard bright ring, i.e. every puff reads as a shaded ball with a visible
+  // outline. Which is the precise artefact the fake normal exists to avoid.
   float rr = min(dot(vQuad, vQuad), 1.0);
-  vec3 n = vec3(vQuad, sqrt(max(0.0, 1.0 - rr)));
+  vec3 n = normalize(vec3(vQuad, 0.55 + 0.8 * sqrt(1.0 - rr)));
 
   // Heavy wrap-around: dust and smoke are strongly forward-scattering media, so the
   // terminator is soft and the shadow side is never black.
@@ -249,12 +255,15 @@ void main() {
   // Sky light arrives from above, so the crown of the puff is cooler and brighter.
   float skyW = 0.40 + 0.60 * vUv.y;
 
-  // Gains kept below unity on purpose. Dust wants to sit a shade brighter and warmer
-  // than the ground it came off, not blow out to white — an overdriven dust layer is
-  // indistinguishable from steam, and the warm tint is the first thing it costs you.
-  vec3 lit = uAmbient * skyW * 0.6 + uSunColour * (diff * 0.62 + fwd * 0.32);
-  // Atlas RGB carries internal density; darker cores read as depth in the cloud.
-  base *= lit * (0.58 + 0.5 * tex.r);
+  // Gains above unity, and this is the whole ballgame. Airborne mineral dust has a
+  // single-scatter albedo near 0.9 and is illuminated from every side by multiple
+  // scattering, so *sunlit dust is brighter than the ground that produced it*. Tuned
+  // below unity it lands at the same luminance as dry grass and disappears into the
+  // field — which is exactly how a technically-correct dust system scores zero.
+  vec3 lit = uAmbient * skyW * 0.85 + uSunColour * (diff * 0.98 + fwd * 0.38);
+  // Atlas RGB carries internal density; darker cores read as depth in the cloud. Kept
+  // shallow: too much and the puff turns into a lumpy grey rock.
+  base *= lit * (0.74 + 0.36 * tex.r);
 #else
   base *= tex.rgb;
   // Additive sprites cool as they age — a spark is white-hot then dull orange.

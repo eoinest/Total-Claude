@@ -120,6 +120,43 @@ vec3 terrainSurface(vec2 wxz, out float curv) {
   return normalize(vec3(hl - hr, 2.0 * e, hd - hu));
 }
 
+/**
+ * The centuriated field lattice: 94 m squares on a bearing of 12.2°, the same grid the
+ * heightfield banks its field edges on and the vegetation scatter hangs its hedgerows
+ * from. Returns the cell hash in x (what this field is doing this year) and the distance
+ * to the nearest headland in y, 0 at the boundary and 0.5 at the field centre.
+ *
+ * This is the strongest anti-tiling and material-variety measure in the shader: from a
+ * high camera the plain reads as a worked patchwork of straw, stubble, fallow earth and
+ * green pasture, and no amount of texture-level cleverness substitutes for it.
+ */
+const float FIELD_COS = 0.97740;
+const float FIELD_SIN = 0.21140;
+const float FIELD_PERIOD = 94.0;
+
+float fieldHash(vec2 c) {
+  return fract(sin(dot(c, vec2(41.317, 78.233))) * 43758.5453);
+}
+
+vec3 fieldPattern(vec2 wxz, float jitter) {
+  vec2 fu = vec2(wxz.x * FIELD_COS - wxz.y * FIELD_SIN, wxz.x * FIELD_SIN + wxz.y * FIELD_COS)
+          / FIELD_PERIOD;
+  // A field is never a perfect rectangle: bow the cell boundaries with the macro noise
+  // so the patchwork reads as ditches and hedges rather than as a checkerboard.
+  fu += (jitter - 0.5) * 0.16;
+  vec2 cell = floor(fu);
+  vec2 f = fract(fu);
+  float h = fieldHash(cell);
+  // Fields are subdivided into two or three strips along their long axis, as the
+  // gromatici actually laid them out.
+  float strips = 2.0 + floor(fieldHash(cell + 17.0) * 2.5);
+  float sub = floor(f.y * strips);
+  float hs = fract(h + sub * 0.3719 + fieldHash(cell + 41.0) * 0.21);
+  vec2 e = abs(f - 0.5);
+  float edge = 1.0 - smoothstep(0.40, 0.492, max(e.x, e.y));
+  return vec3(hs, edge, h);
+}
+
 vec3 triWeights(vec3 n) {
   vec3 bw = abs(n);
   bw = bw * bw;
@@ -197,7 +234,7 @@ export function createTerrainMaterial(
     uDetailMix: { value: detailMix },
     uHeightBias: { value: heightBias },
     uWaterLevel: { value: WATER_LEVEL },
-    uDetailStrength: { value: 0.55 },
+    uDetailStrength: { value: 0.78 },
     // Height-blend depth in surface-height units. Small values interlock hard; too
     // small and the transition aliases into single-texel noise.
     uBlendDepth: { value: 0.2 },
@@ -283,6 +320,14 @@ ${SPLAT_GLSL}`
   float hollow = max(tCurv, 0.0);
   float nose = max(-tCurv, 0.0);
 
+  // Worked land: fld.x is what this strip is doing, fld.y the headland at its edge.
+  // Suppressed on the hills and in the river valley, where nobody ploughed.
+  vec3 fld = fieldPattern(wp.xz, macroMid.a);
+  float farmed = (1.0 - smoothstep(0.22, 0.48, tSlope)) * smoothstep(3.0, 9.0, tAbove);
+  float fallow = smoothstep(0.60, 0.74, fld.x) * farmed;    // ploughed or grazed to earth
+  float stubble = smoothstep(0.30, 0.44, fld.x) * (1.0 - smoothstep(0.56, 0.68, fld.x)) * farmed;
+  float headland = fld.y * farmed;
+
   float w[${LAYER_COUNT}];
   // 0 dry grass and 1 meadow grass share the plain, driven by the *same* large-scale
   // mask in opposition so the ground breaks into readable blocks of straw and green
@@ -295,21 +340,27 @@ ${SPLAT_GLSL}`
   // Biased below the mean so straw dominates and green is the exception: this is the
   // Campus Martius at the end of a Roman summer. The small-scale term makes the boundary
   // ragged instead of a smooth amoeba outline.
-  float grassMix = smoothstep(0.40, 0.56, nzBig * 0.6 + macroMid.a * 0.28 + nzSmall * 0.12);
-  w[0] = (0.3 + 2.7 * grassMix) * (1.0 - grassKill) * (1.0 - paved);
+  float grassMix = smoothstep(0.38, 0.58,
+    nzBig * 0.5 + macroMid.a * 0.22 + nzSmall * 0.10 + fld.x * 0.18);
+  w[0] = (0.3 + 2.7 * grassMix + stubble * 1.6) * (1.0 - grassKill) * (1.0 - paved);
   w[1] = (0.3 + 2.5 * (1.0 - grassMix) + cWet * 1.8 + hollow * 0.5)
-       * (1.0 - grassKill) * (1.0 - paved);
-  // 2 trampled earth: army grounds, road verges, tracks.
-  w[2] = cTramp * 2.4 + verge * 1.0 + nzSmall * 0.25;
+       * (1.0 - grassKill) * (1.0 - paved) * (1.0 - fallow * 0.75);
+  // 2 trampled earth: army grounds, road verges, tracks, ploughed and fallow strips and
+  // the headlands the carts turned on. The field terms are what put readable blocks of
+  // bare earth on the plain — without them the whole map is grass against grass.
+  w[2] = cTramp * 2.4 + verge * 1.0 + nzSmall * 0.25
+       + fallow * 3.1 + headland * 1.5;
   // 3 mud: where drainage really concentrates and the ground never dries.
   w[3] = smoothstep(0.68, 0.98, cWet) * 2.1 + hollow * 0.45
        + cSilt * 0.6 * (1.0 - smoothstep(0.8, 4.5, tAbove));
-  // 4 gravel and scree: eroded ground, moderate slopes, road margins, worn patches.
-  // The bare-patch mask is taken at ~96 m rather than ~23 m so it survives minification
-  // and still breaks up the plain when seen from a strategic camera.
+  // 4 gravel and scree: eroded ground, moderate slopes, road margins, worn patches, and
+  // the stony rises the plough turned up. The bare-patch mask is taken at ~96 m rather
+  // than ~23 m so it survives minification and still breaks up the plain from a
+  // strategic camera.
   w[4] = cBare * 1.2 + smoothstep(0.13, 0.40, tSlope) * 1.75 + verge * 1.35 + nose * 0.7
        + smoothstep(0.6, 0.88, macroMid.b) * 1.5 * (1.0 - paved)
-       + smoothstep(0.78, 0.97, nzSmall) * 0.5 * (1.0 - paved);
+       + smoothstep(0.78, 0.97, nzSmall) * 0.5 * (1.0 - paved)
+       + fallow * nose * 1.4 + headland * 0.7;
   // 5 exposed limestone: steep faces, quarry cuts, the noses of ridges.
   w[5] = smoothstep(0.32, 0.60, tSlope) * 2.9
        + cBare * smoothstep(0.18, 0.45, tSlope) * 2.2 + nose * 0.5;
@@ -370,10 +421,16 @@ ${SPLAT_GLSL}`
     tAOAcc += nr.w * bw;
   }
 
-  // 0.5 m detail normal, faded out with distance so it does not alias into sparkle.
+  // Detail relief at two scales, faded with distance so neither aliases into sparkle.
+  // The coarse band survives to 130 m because at that range it is the only thing keeping
+  // the middle distance from going smooth; the 0.5 m band would shimmer long before.
   float camDist = length(vViewPosition);
-  float detFade = 1.0 - smoothstep(16.0, 58.0, camDist);
-  tNxy += (texture2D(uDetailNormal, wp.xz * 2.0).xy * 2.0 - 1.0) * 0.9 * detFade;
+  float detFade = 1.0 - smoothstep(22.0, 74.0, camDist);
+  float midFade = 1.0 - smoothstep(60.0, 190.0, camDist);
+  vec4 det = texture2D(uDetailNormal, wp.xz * 2.0);
+  vec4 detMid = texture2D(uDetailNormal, wp.xz * 0.41 + vec2(0.31, 0.67));
+  tNxy += (det.xy * 2.0 - 1.0) * 1.25 * detFade;
+  tNxy += (detMid.xy * 2.0 - 1.0) * 0.55 * midFade;
 
   vec3 tNormal = perturbNormal(tGeoN, tNxy, uDetailStrength);
   float tRough = clamp(tRoughAcc, 0.25, 1.0);
@@ -385,6 +442,13 @@ ${SPLAT_GLSL}`
   // Only R and G of the mid band are colour; B is reserved as a splat mask and has far
   // too much contrast to tint with.
   tCol *= mix(vec3(1.0), vec3(macroMid.r, macroMid.g, macroMid.g) * 2.0, 0.3);
+  // Near-field shading from the detail height, and a scatter of small stones. A normal
+  // perturbation alone leaves the ground looking sanded smooth under a low sun, because
+  // half the clods face away from it; this is the light-and-shade half of the same relief.
+  tCol *= mix(1.0, 0.70 + 0.66 * det.z, detFade * 0.85);
+  tCol *= mix(1.0, 0.86 + 0.30 * detMid.z, midFade * 0.5);
+  // Stones read as pale, cool flecks sitting on top of whatever the ground is.
+  tCol = mix(tCol, mix(tCol, vec3(0.30, 0.29, 0.265), 0.72), det.w * detFade * 0.55);
   diffuseColor.rgb *= tCol;
 `
       )

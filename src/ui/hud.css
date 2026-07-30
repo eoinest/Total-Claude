@@ -248,8 +248,8 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   text-shadow: 0 1px 3px #000;
   line-height: 1.55;
   padding: 7px 11px;
-  background: rgba(8, 10, 14, 0.55);
-  border-left: 2px solid rgba(217, 178, 95, 0.45);
+  background: rgba(8, 10, 14, 0.74);
+  border-left: 2px solid rgba(217, 178, 95, 0.5);
   border-radius: 2px;
   white-space: pre;
   pointer-events: none;
@@ -949,6 +949,7 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
 }
 
 .card.dead { filter: grayscale(0.85) brightness(0.55); }
+.card.dead .card-count { text-decoration: line-through; text-decoration-color: rgba(217, 74, 60, 0.9); }
 .card.dead .card-x { opacity: 1; }
 .card.routing { border-color: rgba(217, 74, 60, 0.6); }
 

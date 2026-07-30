@@ -327,8 +327,7 @@ const MATS: Record<Mat, MatDef> = {
       const blotch = fbm(u * 7, v * 7, 3, 7, 53) * 0.16;
       const crease = Math.exp(-((v - 0.5) ** 2) / 0.0032) * 0.22
         + Math.exp(-((v - 0.94) ** 2) / 0.0018) * 0.16;
-      // 0.56 in sRGB is about 0.27 linear, which is where Mediterranean skin actually sits.
-      const g = 0.56 + pore - blotch * 0.5 - crease;
+      const g = 0.6 + pore - blotch * 0.5 - crease;
       out[0] = Math.min(1, g); out[1] = Math.min(1, g * 0.955); out[2] = Math.min(1, g * 0.9);
     },
     height: (u, v) =>

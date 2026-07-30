@@ -3,7 +3,7 @@ import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import type { EngineContext, Subsystem } from '../core/Engine';
 import { ATMOSPHERE_GLSL } from '../shaders/atmosphere.glsl';
 import { CLOUDS_GLSL, CLOUD_FIELD_GLSL } from '../shaders/clouds.glsl';
-import { clamp01 } from '../util/math';
+import { clamp, clamp01 } from '../util/math';
 import {
   blendPresets,
   horizonRadiance,
@@ -52,11 +52,24 @@ const CIRRUS_UV_SCALE = 0.00005;
  *  enough that 256 (0.35 deg/texel) interpolates without visible banding. */
 const SKY_CUBE_SIZE = 256;
 
+/**
+ * Environment (IBL) intensity. Deliberately below the physically correct 1.0.
+ *
+ * A clear sky's diffuse irradiance really is about a quarter of the sun's, and
+ * rendering it at that level is what produced the flat, milky frames this pass
+ * exists to fix: it lifts every shadow to within 4:1 of full sun, which after a
+ * filmic curve is barely a stop and a half. Rome II's shadows sit nearer 8:1.
+ * Trimming the fill and paying for it with exposure buys that stop back, and
+ * physically it is defensible — half the sky hemisphere is occluded by the man
+ * in front of you and none of this pipeline knows that.
+ */
+const AMBIENT_TRIM = 0.6;
+
 export class SkySystem implements Subsystem {
   readonly name = 'sky';
   readonly order = -90;
 
-  readonly sunDirection = new THREE.Vector3(0.61, 0.66, 0.44).normalize();
+  readonly sunDirection = new THREE.Vector3(-0.55, 0.43, 0.71).normalize();
   readonly sunColour = new THREE.Color(1, 0.94, 0.82);
   readonly ambientColour = new THREE.Color(0.42, 0.5, 0.66);
   /** Perpendicular sun irradiance in render units — the directional intensity. */
@@ -66,10 +79,16 @@ export class SkySystem implements Subsystem {
   /** Average horizon radiance. The aerial-perspective and fallback fog tint. */
   readonly horizonColour = new THREE.Color(0.7, 0.75, 0.8);
 
-  /** Hours past midnight, 0..24. */
-  timeOfDay = 8.8;
+  /**
+   * Hours past midnight, 0..24. 14:18 is the default because that is where the
+   * autumn sun's azimuth (218 deg) crosses the battle camera's view axis: the
+   * light rakes across the frame instead of over the player's shoulder, which is
+   * the difference between shadows you can read and shadows hidden behind the men
+   * casting them. See `SEASON_DECLINATION` in `atmosphere.ts`.
+   */
+  timeOfDay = 14.3;
   /** Active atmospheric parameters. PostFX reads `haze*` and `exposure`. */
-  preset: SkyPreset = { ...SKY_PRESETS.morning };
+  preset: SkyPreset = { ...SKY_PRESETS.afternoon };
 
   /** PMREM-processed environment for IBL. */
   environmentTexture: THREE.Texture | null = null;
@@ -87,7 +106,7 @@ export class SkySystem implements Subsystem {
   /** Uniforms shared *by reference* with every patched scene material. */
   readonly cloudUniformA = new THREE.Vector4(CLOUD_UV_SCALE, 0, 0, 0.53);
   readonly cloudUniformB = new THREE.Vector4(0.17, 0.55, CLOUD_ALTITUDE, 0);
-  readonly cloudSunDir = new THREE.Vector3(0.61, 0.66, 0.44);
+  readonly cloudSunDir = new THREE.Vector3(-0.55, 0.43, 0.71);
 
   private atmos: AtmosParams = {
     sunDir: this.sunDirection,
@@ -531,7 +550,7 @@ export class SkySystem implements Subsystem {
       this.pmremRT = next;
       this.environmentTexture = next.texture;
       ctx.scene.environment = next.texture;
-      ctx.scene.environmentIntensity = 1;
+      ctx.scene.environmentIntensity = AMBIENT_TRIM;
     }
   }
 
@@ -558,10 +577,13 @@ export class SkySystem implements Subsystem {
     if (entries.length === 0) return;
 
     // Match on the sun elevation we are actually rendering, not the hour, so a
-    // preset change picks a sensible plate.
+    // preset change picks a sensible plate. The bands are deliberately biased
+    // toward the blue-sky plate: this project's whole clear-weather range sits
+    // between 8 and 34 deg, and the sunset plate's orange hemisphere would carry
+    // straight into the shadows and kill the warm/cool split the grade depends on.
     const elev = Math.asin(clamp01(this.sunDirection.y)) * (180 / Math.PI);
     const overcast = this.preset.turbidity > 6;
-    const want = overcast ? 'afternoon' : elev < 12 ? 'dawn' : elev < 28 ? 'sunset' : 'midday';
+    const want = overcast ? 'afternoon' : elev < 6 ? 'dawn' : elev < 12 ? 'sunset' : 'midday';
     const pick =
       entries.find((e) => e.timeOfDay === want && (overcast ? e.weather === 'overcast' : true)) ??
       entries.find((e) => e.timeOfDay === want) ??
@@ -587,8 +609,9 @@ export class SkySystem implements Subsystem {
       this.hdriEnv = rt.texture;
       this.environmentTexture = rt.texture;
       ctx.scene.environment = rt.texture;
-      // The plate has been normalised to our own sky's irradiance.
-      ctx.scene.environmentIntensity = 1;
+      // The plate has been normalised to our own sky's irradiance, so it takes
+      // the same trim as the procedural cube.
+      ctx.scene.environmentIntensity = AMBIENT_TRIM;
       this.applyEnvRotation(ctx);
     } catch {
       /* keep the procedural PMREM */
@@ -608,9 +631,15 @@ export class SkySystem implements Subsystem {
    *     once by the environment and once by the directional light — and the
    *     environment's copy arrives as a soft, shadowless wash from roughly the
    *     right direction, which is precisely what destroys directional contrast.
-   *  2. **Match our own sky's level.** Measured, the raw plate delivered ~3.6x
-   *     the sun's irradiance: the scene ended up lit almost entirely by flat
-   *     ambient, giving milky mid-greys, no black point and invisible shadows.
+   *  2. **Match our own sky's level *per channel*.** Measured, the raw plate
+   *     delivered ~3.6x the sun's irradiance: the scene ended up lit almost
+   *     entirely by flat ambient, giving milky mid-greys, no black point and
+   *     invisible shadows. Matching only its luminance is not enough either —
+   *     a plate's chromaticity is whatever the photographer's white balance was,
+   *     and a warm one cancels the cool sky bounce that separates shadow from
+   *     sun. Fitting all three channels to `skyFillColour` chromatically adapts
+   *     the plate to our own atmosphere while keeping its directional structure,
+   *     which is the only part we actually wanted from it.
    */
   private conditionHdri(tex: THREE.DataTexture): number {
     const img = tex.image as { width: number; height: number; data: Float32Array };
@@ -679,14 +708,19 @@ export class SkySystem implements Subsystem {
         }
       }
     }
-    const clampedLum = (cr * 0.2126 + cg * 0.7152 + cb * 0.0722) / wsum;
-    const target =
-      this.skyFillColour.r * 0.2126 + this.skyFillColour.g * 0.7152 + this.skyFillColour.b * 0.0722;
-    const k = clampedLum > 1e-6 ? target / clampedLum : 1;
+    // Per-channel gain onto our own hemisphere mean. A von-Kries adaptation in
+    // RGB: crude colorimetrically, exact for the thing that matters here, which
+    // is that the plate's diffuse irradiance equals `skyFillColour` in all three
+    // channels rather than only in luminance.
+    const fit = (mean: number, want: number): number =>
+      mean > 1e-6 ? clamp(want / mean, 0.02, 50) : 1;
+    const kr = fit(cr / wsum, this.skyFillColour.r);
+    const kg = fit(cg / wsum, this.skyFillColour.g);
+    const kb = fit(cb / wsum, this.skyFillColour.b);
     for (let i = 0; i < data.length; i += ch) {
-      data[i] *= k;
-      data[i + 1] *= k;
-      data[i + 2] *= k;
+      data[i] *= kr;
+      data[i + 1] *= kg;
+      data[i + 2] *= kb;
     }
     tex.needsUpdate = true;
 
@@ -724,7 +758,9 @@ export class SkySystem implements Subsystem {
 
   /** Blend the daylight presets by hour so `setTimeOfDay` stays coherent. */
   private presetForHour(h: number): SkyPreset {
-    const keys: Array<keyof typeof SKY_PRESETS> = ['dawn', 'morning', 'noon', 'goldenHour'];
+    const keys: Array<keyof typeof SKY_PRESETS> = [
+      'dawn', 'morning', 'noon', 'afternoon', 'goldenHour',
+    ];
     const hours = keys.map((k) => SKY_PRESETS[k].hour);
     if (h <= hours[0]) return { ...SKY_PRESETS[keys[0]], hour: h };
     for (let i = 0; i < keys.length - 1; i++) {

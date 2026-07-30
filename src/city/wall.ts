@@ -391,15 +391,24 @@ function buildCurtainBay(
       // low-frequency hash so the face is blotchy at the metre scale, not just the
       // millimetre scale the texture handles.
       const patch = hash2(Math.floor(s / 3), Math.floor(k / 2) + bay.index * 5, 811);
-      const tone = clamp(
-        0.8 + ((by0 - gm) / Math.max(1, topY - gm)) * 0.3 + hash2(s, k * 13 + bay.index, 3) * 0.1 + patch * 0.26,
-        0.62,
-        1.3
-      );
-      // Each lift is darkest where the course above overhangs it: baked occlusion,
-      // which is the only thing that shows relief on a backlit face.
-      const cLo = new THREE.Color().copy(k === 0 ? brickLow : PAL.brick).multiplyScalar(tone * 0.7);
-      const cHi = new THREE.Color().copy(by1 > topY - 1.3 ? brickHigh : PAL.brick).multiplyScalar(tone * 1.1);
+      // Weathering, top to bottom: sun-bleached at the parapet, rain-washed through the
+      // middle, and a metre of splash-back dirt at the footing. This is the *only*
+      // vertical gradient the face should carry, and it runs over the whole 6.5 m.
+      const fLo = (by0 - y0) / Math.max(1, topY - y0);
+      const fHi = (by1 - y0) / Math.max(1, topY - y0);
+      const weather = (f: number): number =>
+        0.72 + 0.30 * Math.min(1, f * 3.4) + 0.12 * f;
+      const tone = clamp(0.86 + hash2(s, k * 13 + bay.index, 3) * 0.08 + patch * 0.2, 0.74, 1.16);
+      // Per-lift shading is now *slight*. At 1.1 m per lift a strong low-to-high ramp
+      // stacks into six pale-and-dark stripes up the wall, and that banding, not the
+      // brickwork, becomes what the eye reads — the single worst thing about the first
+      // pass of this curtain.
+      const cLo = new THREE.Color()
+        .copy(k === 0 ? brickLow : PAL.brick)
+        .multiplyScalar(tone * weather(fLo) * 0.97);
+      const cHi = new THREE.Color()
+        .copy(by1 > topY - 1.3 ? brickHigh : PAL.brick)
+        .multiplyScalar(tone * weather(fHi) * 1.03);
       facePanel(brick, ax, az, bx, bz, nx, nz, outerOff(by0, y0) + proud, outerOff(by1, y0) + proud, by0, by1, cLo, cHi, 1);
       facePanel(brick, ax, az, bx, bz, nx, nz, -T * 0.5, -T * 0.5, by0, by1, cLo, cHi, -1);
     }

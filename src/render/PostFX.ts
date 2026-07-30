@@ -320,17 +320,21 @@ export class PostFXSystem implements Subsystem {
       uniform vec2 uStep;      // blur direction * texel
       varying vec2 vUv;
       void main() {
-        float dc = tcLinear01( texture2D( tDepth, vUv ).x );
+        float dc = -tcViewZ( texture2D( tDepth, vUv ).x );
         float sum = 0.0;
         float wsum = 0.0;
+        // Edge-stopping tolerance in *metres*, proportional to distance so it
+        // tracks the depth-buffer's own precision. Expressing it as a fraction of
+        // the far plane was the bug that erased every contact shadow in the game:
+        // RTSCamera's far plane is never nearer than 2 600 m, so a tolerance of
+        // 0.004 far was 10 m of slop and the filter cheerfully averaged a man's
+        // feet together with the ground four ranks behind him.
+        float tol = 0.06 + dc * 0.012;
         for ( int i = -3; i <= 3; i ++ ) {
           vec2 uv = vUv + uStep * float( i );
-          float ds = tcLinear01( texture2D( tDepth, uv ).x );
-          // Gaussian in screen space times an edge-stopping term in depth. The
-          // 0.004 (of the far plane) tolerance keeps AO from leaking across a
-          // soldier's silhouette onto the ground behind him.
+          float ds = -tcViewZ( texture2D( tDepth, uv ).x );
           float wg = exp( -float( i * i ) * 0.22 );
-          float we = exp( -abs( ds - dc ) / 0.004 );
+          float we = exp( -abs( ds - dc ) / tol );
           float w = wg * we;
           sum += texture2D( tSrc, uv ).r * w;
           wsum += w;
@@ -362,16 +366,18 @@ export class PostFXSystem implements Subsystem {
         return ( 1.0 - g2 ) / ( 12.566371 * max( 1e-4, dd * sqrt( max( 1e-4, dd ) ) ) );
       }
 
-      // Bilateral upsample of the half-resolution AO.
+      // Bilateral upsample of the half-resolution AO. Tolerance in metres — see
+      // the blur pass for why a fraction of the far plane does not work here.
       float aoAt( float dc ) {
         vec2 t = uTexel * 2.0;
         float sum = 0.0;
         float wsum = 0.0;
+        float tol = 0.04 + dc * 0.008;
         for ( int y = 0; y < 2; y ++ ) {
           for ( int x = 0; x < 2; x ++ ) {
             vec2 uv = vUv + ( vec2( float( x ), float( y ) ) - 0.5 ) * t;
-            float ds = tcLinear01( texture2D( tDepth, uv ).x );
-            float w = exp( -abs( ds - dc ) / 0.002 ) + 1e-3;
+            float ds = -tcViewZ( texture2D( tDepth, uv ).x );
+            float w = exp( -abs( ds - dc ) / tol ) + 1e-3;
             sum += texture2D( tAo, uv ).r * w;
             wsum += w;
           }
@@ -389,7 +395,7 @@ export class PostFXSystem implements Subsystem {
           return;
         }
 
-        float dc = tcLinear01( d );
+        float dc = -tcViewZ( d );
         // Never let AO reach zero: it stands in for occluded *indirect* light and
         // crushing it to black is the classic SSAO tell.
         col *= max( aoAt( dc ), uHaze.w );
@@ -678,6 +684,10 @@ export class PostFXSystem implements Subsystem {
       uniform vec4 uGrade;
       uniform vec3 uShadowTint;
       uniform vec3 uHighlightTint;
+      // x: luminance where the shadow tint ends, y: where the highlight tint starts
+      uniform vec2 uSplit;
+      // x: shoulder knee, y: shoulder strength
+      uniform vec2 uShoulder;
       varying vec2 vUv;
 
       void main() {
@@ -700,13 +710,23 @@ export class PostFXSystem implements Subsystem {
         float l = tcLuma( c );
         // Warm the highlights, cool the shadows. This warm/cool split across the
         // lit/shadow boundary is the single most recognisable thing about the
-        // Rome II palette.
-        c *= mix( uShadowTint, uHighlightTint, smoothstep( 0.1, 0.68, l ) );
-        // Desaturate the shadows more than the highlights: dust and haze in
-        // shade read almost neutral.
-        float sat = mix( uGrade.z, uGrade.w, smoothstep( 0.0, 0.5, l ) );
+        // Rome II palette. The crossover has to sit *below* the scene's own median
+        // or the whole frame lands on the same side of it and the split does
+        // nothing at all — which is exactly what happened at 0.1..0.68.
+        float split = smoothstep( uSplit.x, uSplit.y, l );
+        c *= mix( uShadowTint, uHighlightTint, split );
+        // Desaturate the shadows a little more than the highlights: dust in shade
+        // reads muted. Not far, though — the cool cast is the point of A1 and
+        // pulling shadows toward grey is the fastest way to throw it away.
+        float sat = mix( uGrade.z, uGrade.w, split );
         c = mix( vec3( l ), c, sat );
         c = max( c, vec3( 0.0 ) );
+
+        // Soft shoulder so a warmed highlight rolls off instead of clipping to a
+        // flat plate of white. Per channel, above a knee, hyperbolic — the same
+        // shape as a film shoulder and it cannot exceed 1 for any finite input.
+        vec3 over = max( c - uShoulder.x, vec3( 0.0 ) );
+        c = min( c, vec3( uShoulder.x ) ) + over / ( 1.0 + over * uShoulder.y );
 
         gl_FragColor = vec4( tcLinearToSRGB( c ), 1.0 );
       }
@@ -719,12 +739,14 @@ export class PostFXSystem implements Subsystem {
         uBloom: { value: BLOOM_STRENGTH },
         uGodRays: { value: 1 },
         // x: S-curve blend, y: black point, z: shadow saturation, w: highlight
-        // saturation. The black point is set just above AgX's toe (~0.008 for a
-        // zero input) so true black lands on true black without clipping shadow
-        // detail that is genuinely above it.
-        uGrade: { value: new THREE.Vector4(0.4, 0.014, 0.72, 1.08) },
-        uShadowTint: { value: new THREE.Vector3(0.86, 0.955, 1.2) },
-        uHighlightTint: { value: new THREE.Vector3(1.09, 1.01, 0.87) },
+        // saturation. The black point has to be well clear of AgX's toe or the
+        // darkest thing in the frame is a 20 % grey and the image has no anchor;
+        // 0.05 is where the deepest crevice between two men reaches zero.
+        uGrade: { value: new THREE.Vector4(0.62, 0.05, 0.9, 1.04) },
+        uShadowTint: { value: new THREE.Vector3(0.78, 0.925, 1.32) },
+        uHighlightTint: { value: new THREE.Vector3(1.11, 1.015, 0.83) },
+        uSplit: { value: new THREE.Vector2(0.05, 0.5) },
+        uShoulder: { value: new THREE.Vector2(0.84, 3.5) },
       },
     );
 

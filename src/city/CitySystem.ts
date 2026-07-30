@@ -130,13 +130,23 @@ export class CitySystem implements Subsystem {
     for (let i = 0; i < wanted.length; i++) {
       const detail = wanted[i];
       // The cheapest level collapses into one material, so a whole district or a whole
-      // stretch of wall becomes one mesh at long range.
-      const batch = new Batch(this.mats, detail === 0 ? (spec.farMaterial ?? 'stone') : undefined);
+      // stretch of wall becomes one mesh at long range. The middle level folds the trim
+      // materials away, which halves its mesh count for no visible loss — see
+      // `TRIM_MERGE` in build.ts.
+      const batch = new Batch(
+        this.mats,
+        detail === 0 ? (spec.farMaterial ?? 'stone') : undefined,
+        detail === 1
+      );
       spec.build(batch, detail);
       const group = new THREE.Group();
       group.name = `${spec.name}-lod${i}`;
       group.visible = i === 0;
-      const meshes = batch.toMeshes(spec.name, spec.castShadow && detail >= 1);
+      // Only the nearest level casts. A chunk at its mid level is beyond its own
+      // `lodSwitch[0]` — several hundred metres — where its shadow is already inside the
+      // outer cascades' texel footprint, and re-rendering it four times to blur it away
+      // was costing more calls than the whole city's main pass.
+      const meshes = batch.toMeshes(spec.name, spec.castShadow && detail >= 2);
       for (const mesh of meshes) group.add(mesh);
       this.meshCount += meshes.length;
       levels.push({ group, triangles: batch.triangleCount });

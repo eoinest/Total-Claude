@@ -6,3 +6,7 @@ dist/
 screenshots/**/*.png
 screenshots/**/report.json
 !screenshots/keep/**
+
+# Local-only visual reference material. Copyrighted third-party screenshots used
+# for side-by-side critique; never committed or redistributed.
+reference/

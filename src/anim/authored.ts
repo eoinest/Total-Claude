@@ -76,10 +76,28 @@ const SHIELD_REST: BoneTrack[] = [
   absTr(MB.lowerArmL, [[0, 0, -96, -12]]),
 ];
 
+/** Shield dropped to the ribs — the carry of a man who has been standing a while. */
+const SHIELD_MID: BoneTrack[] = [
+  absTr(MB.upperArmL, [[0, 0, -44, -78]]),
+  absTr(MB.lowerArmL, [[0, 0, -110, -4]]),
+];
+
 /** Right hand at the hip, pilum or spear shouldered. The default carry. */
 const HAND_CARRY: BoneTrack[] = [
   absTr(MB.upperArmR, [[0, 0, -20, 72]]),
   absTr(MB.lowerArmR, [[0, 0, 97, 33]]),
+];
+
+/** Right hand hanging lower and looser, weapon butt near the knee. */
+const HAND_SLACK: BoneTrack[] = [
+  absTr(MB.upperArmR, [[0, 0, -12, 81]]),
+  absTr(MB.lowerArmR, [[0, 0, 86, 24]]),
+];
+
+/** Weapon carried up by the shoulder, ready but not aimed. */
+const HAND_SHOULDERED: BoneTrack[] = [
+  absTr(MB.upperArmR, [[0, 0, -32, 56]]),
+  absTr(MB.lowerArmR, [[0, 0, 108, 46]]),
 ];
 
 /** Sword hand drawn back past the hip, coiled for the thrust. */
@@ -285,6 +303,239 @@ const idleBrace: OverlayDef = {
 };
 
 // ---------------------------------------------------------------------------
+// Pose variants
+// ---------------------------------------------------------------------------
+/**
+ * Shape variants of the clips a formation actually spends its time in.
+ *
+ * A per-man phase offset decorrelates *when* a man is in a pose. It cannot stop two
+ * hundred men from being in the *same* pose at different moments — scan a rank and every
+ * silhouette is still the one silhouette. So each of the standing and walking clips ships
+ * in two or three versions and the renderer picks one per man from his stable hash.
+ *
+ * The differences are chosen to be the ones an eye picks up at twenty metres:
+ *
+ *   - where his weight is (hips rolled, a lateral sway in the root, one knee soft),
+ *   - how high he carries the shield and the weapon,
+ *   - whether he is looking straight ahead or over the rim,
+ *   - and for locomotion, **stride length** — because the renderer divides ground speed
+ *     by the clip's measured stride to get playback rate, a longer-strided variant walks
+ *     at a genuinely slower cadence next to a shorter-strided one. That is cadence
+ *     variation with the feet still planted, which rate jitter cannot give you.
+ */
+
+/**
+ * Standing at ease with the weight over one hip and slowly transferring it back.
+ *
+ * Contrapposto: the loaded hip rides high, the spine counter-curves to bring the
+ * shoulders back to level, and the free knee goes soft. The root sways 1.8 cm across the
+ * cycle, which is what actually reads as a man shifting his weight rather than a statue.
+ */
+const idleAlertShift: OverlayDef = {
+  name: 'idleAlertShift',
+  frames: 26,
+  duration: 3.45,
+  loop: true,
+  root: [[0, 0.014, 0, 0], [0.5, -0.008, -0.004, 0], [1, 0.014, 0, 0]],
+  tracks: [
+    tr(MB.pelvis, [[0, 0, 0, -6], [0.5, 0, 0, -2], [1, 0, 0, -6]]),
+    tr(MB.spineLow, [[0, -2, 0, 5], [0.5, -2, 0, 2], [1, -2, 0, 5]]),
+    tr(MB.chest, [[0, 0, 0, 2]]),
+    tr(MB.thighL, [[0, -5, 3, 5]]),
+    tr(MB.shinL, [[0, 6, 0, -3]]),
+    tr(MB.thighR, [[0, 1, -2, 0]]),
+    hold(MB.head),
+    ...SHIELD_MID,
+    ...HAND_SLACK,
+    ...FEET_FLAT,
+  ],
+};
+
+/**
+ * Watching the enemy over the shield rim: chest and head turned to his own left, shield
+ * hoisted, weapon hand up by the shoulder. The head yaw drifts across the cycle so he is
+ * visibly glancing rather than frozen mid-turn.
+ */
+const idleAlertWatch: OverlayDef = {
+  name: 'idleAlertWatch',
+  frames: 26,
+  duration: 2.9,
+  loop: true,
+  tracks: [
+    tr(MB.pelvis, [[0, 0, 4, 3]]),
+    tr(MB.spineLow, [[0, -4, 5, -2]]),
+    tr(MB.chest, [[0, -2, 7, 0]]),
+    tr(MB.neck, [[0, 2, 12, 0], [0.35, 3, 23, 0], [0.7, 1, 19, 0], [1, 2, 12, 0]]),
+    tr(MB.thighR, [[0, -4, -4, -4]]),
+    tr(MB.shinR, [[0, 5, 0, 3]]),
+    ...SHIELD_HIGH,
+    ...HAND_SHOULDERED,
+    ...FEET_FLAT,
+  ],
+};
+
+/** At ease, leaning into the grounded shield with the head down. */
+const idleRelaxedLean: OverlayDef = {
+  name: 'idleRelaxedLean',
+  frames: 26,
+  duration: 4.1,
+  loop: true,
+  root: [[0, -0.012, -0.006, 0], [0.5, 0.006, -0.002, 0], [1, -0.012, -0.006, 0]],
+  tracks: [
+    tr(MB.pelvis, [[0, 0, -3, 7]]),
+    tr(MB.spineLow, [[0, 3, -4, -6]]),
+    tr(MB.chest, [[0, 5, -2, -3]]),
+    tr(MB.neck, [[0, 9, -10, 0], [0.5, 7, -14, 0], [1, 9, -10, 0]]),
+    tr(MB.thighR, [[0, -6, -3, -6]]),
+    tr(MB.shinR, [[0, 7, 0, 4]]),
+    absTr(MB.upperArmL, [[0, 0, -18, -86]]),
+    absTr(MB.lowerArmL, [[0, 0, -88, -18]]),
+    ...HAND_SLACK,
+    ...FEET_FLAT,
+  ],
+};
+
+/** Braced lower and tighter, head tucked right behind the rim. */
+const idleBraceLow: OverlayDef = {
+  name: 'idleBraceLow',
+  frames: 24,
+  duration: 2.7,
+  loop: true,
+  root: [[0, 0, -0.1, 0.03], [0.5, 0, -0.115, 0.03], [1, 0, -0.1, 0.03]],
+  tracks: [
+    tr(MB.thighL, [[0, -31, 5, 0]]),
+    tr(MB.shinL, [[0, 55, 0, 0]]),
+    tr(MB.thighR, [[0, -17, -5, 0], [0.5, -16, -5, 0], [1, -17, -5, 0]]),
+    tr(MB.shinR, [[0, 36, 0, 0]]),
+    tr(MB.pelvis, [[0, 0, 18, 0]]),
+    tr(MB.spineLow, [[0, -19, 8, 0]]),
+    tr(MB.chest, [[0, -11, 5, 0]]),
+    tr(MB.neck, [[0, 12, -6, 0]]),
+    absTr(MB.upperArmL, [[0, -10, -66, -44]]),
+    absTr(MB.lowerArmL, [[0, 0, -126, 8]]),
+    ...HAND_COCKED,
+    ...FEET_FLAT,
+  ],
+};
+
+/**
+ * A shorter, quicker pace. Stride amplitude 0.92 of the base, so at the same ground speed
+ * this man takes about 9% more steps a minute than his neighbour on `march`.
+ */
+const marchShort: OverlayDef = {
+  name: 'marchShort',
+  frames: 30,
+  duration: 0.96,
+  loop: true,
+  amp: [[MB.thighL, 0.92], [MB.thighR, 0.92], [MB.shinL, 0.94], [MB.shinR, 0.94]],
+  tracks: [
+    tr(MB.spineLow, [[0, -1, 0, 2]]),
+    tr(MB.chest, [[0, -1, 0, -2]]),
+    hold(MB.head),
+    absTr(MB.upperArmL, [[0, 0, -46, -75], [0.5, 0, -49, -74], [1, 0, -46, -75]]),
+    absTr(MB.lowerArmL, [[0, 0, -112, -2]]),
+    absTr(MB.upperArmR, [[0, 0, -28, 76], [0.5, 0, -10, 76], [1, 0, -28, 76]]),
+    absTr(MB.lowerArmR, [[0, 0, 98, 30], [0.5, 0, 84, 30], [1, 0, 98, 30]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/** A long, heavy pace: stride amplitude 1.09, shield up, more weight forward. */
+const marchLong: OverlayDef = {
+  name: 'marchLong',
+  frames: 30,
+  duration: 1.06,
+  loop: true,
+  amp: [[MB.thighL, 1.09], [MB.thighR, 1.09], [MB.shinL, 1.05], [MB.shinR, 1.05]],
+  tracks: [
+    tr(MB.spineLow, [[0, -5, 0, -2]]),
+    tr(MB.chest, [[0, -3, 0, 2]]),
+    tr(MB.neck, [[0, -2, -6, 0]]),
+    absTr(MB.upperArmL, [[0, -6, -60, -60], [0.5, -6, -63, -60], [1, -6, -60, -60]]),
+    absTr(MB.lowerArmL, [[0, 0, -120, 6]]),
+    absTr(MB.upperArmR, [[0, 0, -40, 66], [0.5, 0, -6, 68], [1, 0, -40, 66]]),
+    absTr(MB.lowerArmR, [[0, 0, 110, 38], [0.5, 0, 88, 34], [1, 0, 110, 38]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/** A walk with more shoulder roll and a shorter step — a man not keeping anyone's time. */
+const walkLooseRoll: OverlayDef = {
+  name: 'walkLooseRoll',
+  frames: 30,
+  duration: 1.08,
+  loop: true,
+  amp: [[MB.thighL, 0.93], [MB.thighR, 0.93]],
+  tracks: [
+    tr(MB.pelvis, [[0, 0, 5, 0], [0.5, 0, -5, 0], [1, 0, 5, 0]]),
+    tr(MB.spineLow, [[0, 0, -4, 3], [0.5, 0, 4, -3], [1, 0, -4, 3]]),
+    hold(MB.head),
+    absTr(MB.upperArmL, [[0, 0, -28, -82], [0.5, 0, -40, -78], [1, 0, -28, -82]]),
+    absTr(MB.lowerArmL, [[0, 0, -102, -8]]),
+    absTr(MB.upperArmR, [[0, 0, -24, 78], [0.5, 0, 4, 78], [1, 0, -24, 78]]),
+    absTr(MB.lowerArmR, [[0, 0, 96, 26], [0.5, 0, 78, 26], [1, 0, 96, 26]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/** Running with the shield low across the hips instead of up under the chin. */
+const runLow: OverlayDef = {
+  name: 'runLow',
+  frames: 26,
+  duration: 0.75,
+  loop: true,
+  amp: [[MB.thighL, 0.94], [MB.thighR, 0.94]],
+  tracks: [
+    tr(MB.spineLow, [[0, -7, 0, 3]]),
+    tr(MB.spineUp, [[0, -4, 0, -3]]),
+    hold(MB.head),
+    ...SHIELD_MID,
+    absTr(MB.upperArmR, [[0, 0, -42, 70], [0.5, 0, -14, 74], [1, 0, -42, 70]]),
+    absTr(MB.lowerArmR, [[0, 0, 80, 38], [0.5, 0, 100, 32], [1, 0, 80, 38]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/** Charging with the weapon already overhead rather than cocked at the hip. */
+const chargeHigh: OverlayDef = {
+  name: 'chargeHigh',
+  frames: 26,
+  duration: 0.72,
+  loop: true,
+  amp: [[MB.thighL, 1.14], [MB.thighR, 1.14]],
+  tracks: [
+    tr(MB.pelvis, [[0, -5, -4, 0]]),
+    tr(MB.spineLow, [[0, -11, 10, 0]]),
+    tr(MB.spineUp, [[0, -6, 7, 0]]),
+    hold(MB.head),
+    ...SHIELD_HIGH,
+    absTr(MB.upperArmR, [[0, 0, -50, -46], [0.5, 0, -58, -54], [1, 0, -50, -46]]),
+    absTr(MB.lowerArmR, [[0, 0, -70, -14]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/** Fleeing with the head thrown over the other shoulder. */
+const fleeOther: OverlayDef = {
+  name: 'fleeOther',
+  frames: 26,
+  duration: 0.7,
+  loop: true,
+  amp: [[MB.thighL, 1.02], [MB.thighR, 1.02]],
+  tracks: [
+    tr(MB.pelvis, [[0, -3, -6, 0]]),
+    tr(MB.spineLow, [[0, -8, 12, -4]]),
+    tr(MB.chest, [[0, 0, 15, 3]]),
+    tr(MB.neck, [[0, -4, 30, 0], [0.5, -2, 38, 0], [1, -4, 30, 0]]),
+    absTr(MB.upperArmL, [[0, 0, -20, 62], [0.5, 0, -33, 49], [1, 0, -20, 62]]),
+    absTr(MB.lowerArmL, [[0, 0, -50, 50]]),
+    absTr(MB.upperArmR, [[0, 0, 20, -62], [0.5, 0, 33, -49], [1, 0, 20, -62]]),
+    absTr(MB.lowerArmR, [[0, 0, 50, -50]]),
+    ...FEET_FLAT,
+  ],
+};
+
+// ---------------------------------------------------------------------------
 // Melee
 // ---------------------------------------------------------------------------
 
@@ -332,6 +583,48 @@ const attackThrust: OverlayDef = {
 };
 
 /**
+ * The same thrust delivered over the rim at throat height, off a shorter step.
+ *
+ * Every beat time is identical to `attackThrust` — guard, load at 0.30, impact at 0.46 —
+ * because the combat system times the blow against `hitFrame` and a variant that landed
+ * at a different moment would put damage and weapon out of agreement.
+ */
+const attackThrustHigh: OverlayDef = {
+  name: 'attackThrustHigh',
+  frames: 26,
+  duration: 1.0,
+  loop: true,
+  hitFrame: 0.46,
+  root: [
+    [0, 0, -0.02, 0], [0.3, 0, -0.035, -0.03], [0.46, 0, -0.03, 0.1],
+    [0.62, 0, -0.03, 0.09], [1, 0, -0.02, 0],
+  ],
+  tracks: [
+    tr(MB.pelvis, [
+      [0, 0, 10, 0], [0.3, 0, 22, 0], [0.46, 0, -14, 0], [0.62, 0, -11, 0], [1, 0, 10, 0],
+    ]),
+    tr(MB.spineLow, [
+      [0, -4, 7, -2], [0.3, 0, 18, -3], [0.46, -8, -16, 3], [0.62, -7, -13, 2], [1, -4, 7, -2],
+    ]),
+    tr(MB.chest, [[0, -2, 5, 0], [0.3, 0, 14, 0], [0.46, -4, -13, 0], [1, -2, 5, 0]]),
+    hold(MB.head),
+    absTr(MB.upperArmL, [[0, -8, -60, -56], [0.46, -10, -68, -50], [1, -8, -60, -56]]),
+    absTr(MB.lowerArmL, [[0, 0, -122, 6], [0.46, 0, -118, 9], [1, 0, -122, 6]]),
+    absTr(MB.upperArmR, [
+      [0, 0, -14, 66], [0.3, 0, -36, 58], [0.46, 0, 66, -8], [0.62, 0, 62, -6], [1, 0, -14, 66],
+    ]),
+    absTr(MB.lowerArmR, [
+      [0, 0, 92, 38], [0.3, 0, 58, 44], [0.46, 0, 80, -6], [0.62, 0, 79, -4], [1, 0, 92, 38],
+    ]),
+    tr(MB.thighL, [[0, -6, 0, 0], [0.3, -2, 0, 0], [0.46, -20, 0, 0], [1, -6, 0, 0]]),
+    tr(MB.shinL, [[0, 12, 0, 0], [0.3, 6, 0, 0], [0.46, 30, 0, 0], [1, 12, 0, 0]]),
+    tr(MB.thighR, [[0, 8, 0, 0], [0.3, 15, 0, 0], [0.46, 16, 0, 0], [1, 8, 0, 0]]),
+    tr(MB.shinR, [[0, 15, 0, 0], [0.46, 22, 0, 0], [1, 15, 0, 0]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/**
  * Overhead chop — the Germanic axe and the cavalry spatha. Full commitment: the weapon goes
  * up past vertical, the whole trunk uncoils, and the follow-through carries the shoulder
  * down and across.
@@ -361,6 +654,40 @@ const attackOverhead: OverlayDef = {
     tr(MB.thighL, [[0, -8, 0, 0], [0.44, -26, 0, 0], [1, -8, 0, 0]]),
     tr(MB.shinL, [[0, 14, 0, 0], [0.44, 40, 0, 0], [1, 14, 0, 0]]),
     tr(MB.thighR, [[0, 6, 0, 0], [0.44, 18, 0, 0], [1, 6, 0, 0]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/**
+ * The chop brought down diagonally from the far shoulder instead of straight overhead —
+ * how a man who has a shield on his left and an enemy on his right actually swings. Beats
+ * match `attackOverhead` exactly.
+ */
+const attackOverheadCross: OverlayDef = {
+  name: 'attackOverheadCross',
+  frames: 26,
+  duration: 1.0,
+  loop: true,
+  hitFrame: 0.44,
+  root: [[0, 0, -0.02, 0], [0.28, 0.03, 0.02, -0.03], [0.44, -0.02, -0.06, 0.11], [1, 0, -0.02, 0]],
+  tracks: [
+    tr(MB.pelvis, [[0, 0, 12, 0], [0.28, 0, 26, 0], [0.44, 0, -20, 0], [1, 0, 12, 0]]),
+    tr(MB.spineLow, [
+      [0, -6, 9, 4], [0.28, 8, 22, 12], [0.44, -22, -18, -8], [0.7, -16, -10, -5], [1, -6, 9, 4],
+    ]),
+    tr(MB.chest, [[0, -3, 6, 3], [0.28, 6, 17, 8], [0.44, -15, -13, -6], [1, -3, 6, 3]]),
+    hold(MB.head),
+    absTr(MB.upperArmL, [[0, 0, -48, -70], [0.28, 0, -36, -78], [0.44, 0, -62, -60], [1, 0, -48, -70]]),
+    absTr(MB.lowerArmL, [[0, 0, -110, 0]]),
+    absTr(MB.upperArmR, [
+      [0, 0, -22, 56], [0.28, 0, -34, -72], [0.44, 0, 62, 20], [0.68, 0, 56, 26], [1, 0, -22, 56],
+    ]),
+    absTr(MB.lowerArmR, [
+      [0, 0, 84, 34], [0.28, 0, -58, -34], [0.44, 0, 104, 4], [1, 0, 84, 34],
+    ]),
+    tr(MB.thighL, [[0, -10, 0, 0], [0.44, -22, 0, 0], [1, -10, 0, 0]]),
+    tr(MB.shinL, [[0, 16, 0, 0], [0.44, 34, 0, 0], [1, 16, 0, 0]]),
+    tr(MB.thighR, [[0, 4, 0, 0], [0.44, 21, 0, 0], [1, 4, 0, 0]]),
     ...FEET_FLAT,
   ],
 };
@@ -875,8 +1202,21 @@ export const MAN_OVERLAYS: { base: string; def: OverlayDef }[] = [
   { base: 'idleRelaxed', def: idleRelaxed },
   { base: 'idleAlert', def: idleAlert },
   { base: 'idleAlert', def: idleBrace },
+  // Shape variants; see "Pose variants" above.
+  { base: 'idleAlert', def: idleAlertShift },
+  { base: 'idleAlert', def: idleAlertWatch },
+  { base: 'idleRelaxed', def: idleRelaxedLean },
+  { base: 'idleAlert', def: idleBraceLow },
+  { base: 'walk', def: marchShort },
+  { base: 'walk', def: marchLong },
+  { base: 'walk', def: walkLooseRoll },
+  { base: 'run', def: runLow },
+  { base: 'run', def: chargeHigh },
+  { base: 'run', def: fleeOther },
   { base: 'idleAlert', def: attackThrust },
+  { base: 'idleAlert', def: attackThrustHigh },
   { base: 'idleAlert', def: attackOverhead },
+  { base: 'idleAlert', def: attackOverheadCross },
   { base: 'slash', def: attackSlash },
   { base: 'punch', def: shieldBash },
   { base: 'idleAlert', def: block },

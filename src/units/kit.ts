@@ -122,8 +122,15 @@ export interface ResolvedKit {
   emblem: number;
   tunic: [number, number, number];
   leg: [number, number, number];
-  /** 0 rusty .. 1 bright, for the metal tint slot. */
-  wear: number;
+  /**
+   * The man's metal, packed into one float for the shader's metal tint slot: the integer
+   * part is the class (0 iron, 1 bronze, 2 blackened or pitted, 3 tinned or silvered) and
+   * the fraction is `polish * 0.9`, 0 dull to 0.9 bright.
+   *
+   * Packed rather than given two lanes because the instance attributes are full, and
+   * because the two are decided together — nobody polishes a rusted heirloom.
+   */
+  metal: number;
 }
 
 const bit = (p: number): number => (p < 24 ? 2 ** p : 2 ** (p - 24));
@@ -174,51 +181,67 @@ export function resolveKit(def: UnitTypeDef, variant: number, out: ResolvedKit):
   }
 
   let helmet: Piece | -1 = -1;
+  const hr = r(3);
   switch (ap.helmet) {
     case 'imperial-gallic':
       // 271 AD is mid-transition: the older Imperial Gallic bowl is still in the ranks
-      // alongside the new two-piece ridge helmet the reforms brought in.
-      helmet = r(3) < 0.62 ? Piece.HelmGallic : Piece.HelmRidge;
+      // alongside the new two-piece ridge helmet the reforms brought in, and a few men
+      // have dug an even older bronze Coolus out of stores.
+      helmet = hr < 0.5 ? Piece.HelmGallic : hr < 0.9 ? Piece.HelmRidge : Piece.HelmCoolus;
       break;
     case 'intercisa':
-      helmet = Piece.HelmRidge;
+      helmet = hr < 0.86 ? Piece.HelmRidge : Piece.HelmGallic;
       break;
     case 'coolus':
-      helmet = r(3) < 0.75 ? Piece.HelmCoolus : Piece.HelmGallic;
+      helmet = hr < 0.62 ? Piece.HelmCoolus : hr < 0.9 ? Piece.HelmGallic : Piece.HelmRidge;
       break;
     case 'spangenhelm':
       // Iron was expensive in the barbaricum; even a chosen man's warband is not
-      // uniformly helmeted.
-      helmet = r(3) < 0.72 ? Piece.HelmSpangen : -1;
+      // uniformly helmeted, and a fur cap does duty for the rest.
+      helmet = hr < 0.62 ? Piece.HelmSpangen : hr < 0.8 ? Piece.HelmFur : -1;
       break;
     case 'fur-cap':
-      helmet = r(3) < 0.55 ? Piece.HelmFur : -1;
+      helmet = hr < 0.5 ? Piece.HelmFur : hr < 0.62 ? Piece.HelmSpangen : -1;
       break;
     case 'none':
-      // A minority of tribesmen have looted or inherited a helmet.
-      helmet = r(3) < variance * 0.22 ? Piece.HelmSpangen : -1;
+      // A minority of tribesmen have looted, inherited or traded for a head covering.
+      helmet = hr < variance * 0.2 ? Piece.HelmSpangen
+        : hr < variance * 0.46 ? Piece.HelmFur : -1;
       break;
   }
   if (helmet >= 0) add(helmet);
 
   if (helmet >= 0) {
+    const crestRoll = r(4);
     switch (ap.crest) {
-      case 'transverse': add(Piece.CrestTransverse); break;
-      case 'longitudinal': add(Piece.CrestLongitudinal); break;
-      case 'plume': add(Piece.CrestPlume); break;
-      case 'horns': if (r(4) < 0.45) add(Piece.CrestHorns); break;
-      case 'feather': add(Piece.CrestPlume); break;
-      case 'none': break;
+      case 'transverse': if (crestRoll < 0.9) add(Piece.CrestTransverse); break;
+      case 'longitudinal': if (crestRoll < 0.74) add(Piece.CrestLongitudinal); break;
+      case 'plume': if (crestRoll < 0.82) add(Piece.CrestPlume); break;
+      case 'horns': if (crestRoll < 0.45) add(Piece.CrestHorns); break;
+      case 'feather': if (crestRoll < 0.7) add(Piece.CrestPlume); break;
+      case 'none':
+        // Crest boxes and feather tubes turn up on third-century helmets even where a
+        // plume was not issue kit, and the reconstruction drawings of Intercisa finds show
+        // them fitted. About one man in seven, which is enough to break up a helmet line
+        // without turning a cohort into a parade.
+        if (!germanic && crestRoll < 0.15) add(Piece.CrestPlume);
+        break;
     }
   }
 
   // ---- torso ---------------------------------------------------------------
-  if (ap.bareChested) {
+  // Some tribesmen fought stripped whatever their warband's habit; Tacitus and the
+  // Antonine column both show it. It is the biggest single change to a silhouette
+  // available for one hash draw.
+  const bare = ap.bareChested || (germanic && r(17) < variance * 0.15);
+  if (bare) {
     add(Piece.TorsoBare);
     if (r(5) < 0.75) add(Piece.Torc);
   } else {
     add(Piece.Tunic);
     if (!germanic) add(Piece.Focale);
+    // A torc is a mark of standing, not of nakedness.
+    else if (r(5) < variance * 0.24) add(Piece.Torc);
   }
 
   switch (ap.armour) {
@@ -236,15 +259,19 @@ export function resolveKit(def: UnitTypeDef, variant: number, out: ResolvedKit):
     case 'none': break;
   }
 
-  if (ap.cloak && r(7) < 0.55 + variance * 0.4) add(Piece.Cloak);
-  else if (!ap.cloak && germanic && r(7) < variance * 0.28) add(Piece.Cloak);
+  // A cloak is bought, not issued. High `variance` makes it *less* certain, not more: a
+  // warband where nine men in ten wear the same sagum reads as uniform, which is the one
+  // thing a warband is not.
+  if (ap.cloak && r(7) < (germanic ? 0.44 + variance * 0.18 : 0.55 + variance * 0.4)) {
+    add(Piece.Cloak);
+  } else if (!ap.cloak && germanic && r(7) < variance * 0.3) add(Piece.Cloak);
 
   // ---- legs ----------------------------------------------------------------
   // Bracae reached Italy with the auxiliaries and by the late third century were normal
   // even in the legions, so the line is a mix of bare-legged and trousered men.
-  const trousers = germanic ? r(8) < 0.94 : r(8) < 0.38;
+  const trousers = germanic ? r(8) < 0.9 : r(8) < 0.42;
   add(trousers ? Piece.LegsTrousers : Piece.LegsBare);
-  if (!ap.bareChested || r(9) < 0.6) add(Piece.Boots);
+  if (!bare || r(9) < 0.6) add(Piece.Boots);
 
   // ---- shield --------------------------------------------------------------
   switch (ap.shield) {
@@ -306,13 +333,26 @@ export function resolveKit(def: UnitTypeDef, variant: number, out: ResolvedKit):
   if (melee === Piece.WeaponSword) meleeHi &= ~bit(Piece.SwordSheathed);
 
   // ---- colour --------------------------------------------------------------
-  const tunic = srgbToLinear(ap.tunicColour);
-  const leg = srgbToLinear(ap.legColour);
-  // Cloth was dyed in small lots from whatever was to hand, and a tribal host had no dyer
-  // at all. The spread is therefore scaled by the unit's `variance`: a praetorian cohort
-  // drifts a few percent and reads as issued kit, a warband drifts a third and reads as
-  // two hundred men who each dressed themselves.
-  const spread = 0.08 + variance * 0.34;
+  // A tribal host had no dyer and no quartermaster, so a Germanic man's cloth comes from a
+  // palette of plausible dye lots rather than from one roster colour nudged a few percent:
+  // undyed grey-brown wool, madder red-brown, weld ochre, woad-over-yellow green, and the
+  // near-black of an iron-mordanted lot. Roman units keep the roster colour, because an
+  // issued tunic is exactly what makes a cohort read as a cohort.
+  const GERMANIC_CLOTH: readonly number[] = [
+    0x6e6552, 0x7a4b34, 0x8a7440, 0x4e5a3f, 0x3b3730, 0x5c6349, 0x6b4a3a,
+  ];
+  const GERMANIC_LEG: readonly number[] = [
+    0x6b5a44, 0x574b3c, 0x7b6448, 0x4a4034, 0x6e5f4a,
+  ];
+  const tunic = srgbToLinear(
+    germanic ? GERMANIC_CLOTH[Math.floor(r(18) * GERMANIC_CLOTH.length)] : ap.tunicColour
+  );
+  const leg = srgbToLinear(
+    germanic ? GERMANIC_LEG[Math.floor(r(19) * GERMANIC_LEG.length)] : ap.legColour
+  );
+  // On top of the lot, per-man fading. Scaled by the unit's `variance`: a praetorian cohort
+  // drifts a few percent and reads as issued kit, a warband drifts by half.
+  const spread = 0.10 + variance * 0.5;
   const d0 = (r(10) - 0.5) * spread;
   const d1 = (r(11) - 0.5) * spread;
   const d2 = (r(12) - 0.5) * spread;
@@ -322,14 +362,41 @@ export function resolveKit(def: UnitTypeDef, variant: number, out: ResolvedKit):
     Math.max(0.01, tunic[1] * (1 + d1)),
     Math.max(0.01, tunic[2] * (1 + d2)),
   ];
+  // Undyed wool and linen swatches are pale, but a legionary's bracae after three days on
+  // the Via Flaminia are not: knock the roster's nominal colour well down so they read as
+  // dirty cloth in sunlight rather than as white tights.
+  const soil = 0.5;
   out.leg = [
-    Math.max(0.01, leg[0] * (1 + dl)),
-    Math.max(0.01, leg[1] * (1 + dl * 0.6)),
-    Math.max(0.01, leg[2] * (1 - dl * 0.4)),
+    Math.max(0.01, leg[0] * (1 + dl) * soil),
+    Math.max(0.01, leg[1] * (1 + dl * 0.6) * soil),
+    Math.max(0.01, leg[2] * (1 - dl * 0.4) * soil),
   ];
-  // Praetorians and cavalry keep their kit bright; a tribesman's iron is pitted.
-  const polish = germanic ? 0.32 : def.armour > 60 ? 0.95 : 0.68;
-  out.wear = Math.max(0, Math.min(1, polish * (0.6 + r(14) * 0.8)));
+
+  // ---- metal ---------------------------------------------------------------
+  // Which metal, and how well kept. A single dark iron for every helmet on the field is the
+  // reason a Roman line reads as one man repeated two thousand times, and the fix is not
+  // subtle shading — it is that these men genuinely did not all own the same helmet.
+  //
+  //   praetorians   tinned and silvered helmets, gilt fittings: the parade end.
+  //   legionaries   mostly plain iron ridge helmets, but the older Imperial Gallic bowls
+  //                 carry brass trim and a handful of Coolus helmets are solid bronze.
+  //   second line   iron, going rusty, with whatever bronze was to hand.
+  //   germanic      most iron in the barbaricum is a generation old and pitted; bronze
+  //                 fittings arrive by trade and by looting.
+  const mr = r(16);
+  let metalClass: number;
+  if (germanic) {
+    metalClass = mr < 0.44 ? 2 : mr < 0.8 ? 0 : 1;
+  } else if (def.armour > 60) {
+    metalClass = mr < 0.4 ? 3 : mr < 0.74 ? 1 : 0;
+  } else if (def.armour > 45) {
+    metalClass = mr < 0.54 ? 0 : mr < 0.74 ? 1 : mr < 0.88 ? 3 : 2;
+  } else {
+    metalClass = mr < 0.48 ? 0 : mr < 0.64 ? 1 : 2;
+  }
+  const polish = germanic ? 0.5 : def.armour > 60 ? 1 : 0.8;
+  const kept = Math.max(0.05, Math.min(1, polish * (0.55 + r(14) * 0.85)));
+  out.metal = metalClass + kept * 0.9;
 
   out.maskLo = lo;
   out.maskHi = hi;
@@ -364,7 +431,7 @@ export function resolveKit(def: UnitTypeDef, variant: number, out: ResolvedKit):
 
 export const emptyKit = (): ResolvedKit => ({
   maskLo: 0, maskHi: 0, maskHiMelee: 0, maskCoarse: 0, emblem: 0,
-  tunic: [1, 1, 1], leg: [1, 1, 1], wear: 0.7,
+  tunic: [1, 1, 1], leg: [1, 1, 1], metal: 0.7,
 });
 
 /** Pieces a routing man throws away. Shields first — every source says so. */

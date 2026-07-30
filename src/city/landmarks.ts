@@ -1763,7 +1763,18 @@ function buildRoadTombs(batch: Batch, detail: number, heightAt: Ground, sites: T
     // Roadside tombs are tufa, travertine and brick, and half of them were rendered and
     // painted. Marble was for the very rich, and a whole necropolis of it reads as snow.
     const stock = hash2(i, 3, 617);
-    const base = stock < 0.42 ? PAL.travertineDirty : stock < 0.7 ? PAL.tufa : stock < 0.88 ? PAL.peperino : PAL.limeWhite;
+    // Tufa and peperino were cheap and got rendered; the render got painted. Ostia and the
+    // Isola Sacra necropolis are full of ochre and red-washed tombs, and a street of bare
+    // grey stone — which is what the first pass of this necropolis was — is both wrong and
+    // the dullest possible frame.
+    const base =
+      stock < 0.30 ? PAL.travertineDirty
+      : stock < 0.50 ? PAL.tufa
+      : stock < 0.62 ? PAL.peperino
+      : stock < 0.74 ? PAL.limeWhite
+      : stock < 0.86 ? PAL.ochrePale
+      : stock < 0.95 ? PAL.terraDirty
+      : PAL.pompeianRed;
     const weathered = new THREE.Color().copy(base).multiplyScalar(site.tone * 0.86);
 
     if (kind === 'drum') {

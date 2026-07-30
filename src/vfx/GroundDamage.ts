@@ -122,11 +122,11 @@ void main() {
   float tramp = d.g * (0.78 + 0.42 * nMid.r);
   float scorch = d.b * grain;
 
-  float wB = blood * 3.0;
-  float wT = tramp * 0.95;
+  float wB = blood * 3.4;
+  float wT = tramp * 1.25;
   float wS = scorch * 2.0;
   float total = wB + wT + wS;
-  if (total < 0.012) discard;
+  if (total < 0.010) discard;
 
   // Oxidised blood on soil: dark maroon-brown, going almost black where it has pooled.
   // Bright red is paint; blood on earth is nearly the colour of the earth.
@@ -136,7 +136,7 @@ void main() {
   vec3 scorchCol = vec3(0.026, 0.022, 0.020);
 
   vec3 c = (bloodCol * wB + trampCol * wT + scorchCol * wS) / max(total, 1e-4);
-  float a = clamp(1.0 - exp(-total * 1.15), 0.0, 0.90) * uFade;
+  float a = clamp(1.0 - exp(-total * 1.15), 0.0, 0.94) * uFade;
 
   // Sit inside the scene lighting; an unlit decal floats off the ground instantly.
   vec3 nrm = normalize(vNormal);
@@ -174,7 +174,13 @@ export class GroundDamageLayer {
   private aAmt: THREE.InstancedBufferAttribute;
   private showMat: THREE.ShaderMaterial;
   private pending = 0;
-  private readonly maxSplats = 384;
+  /**
+   * One frame's splat budget. A mass rout drains hundreds of queued corpse pools in a
+   * single frame — four splats each — so a small cap silently throws away exactly the
+   * blood that the aftermath shot is supposed to show. 1024 instances of 10 floats is
+   * 40 KB and still one draw call.
+   */
+  private readonly maxSplats = 1024;
   private cleared = false;
   private totalSplats = 0;
 

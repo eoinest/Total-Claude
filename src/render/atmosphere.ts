@@ -44,9 +44,27 @@ const SOLAR_IRRADIANCE = new THREE.Vector3(1.775, 1.775, 1.775);
  */
 export const RADIANCE_SCALE = 2.1;
 
-/** Peak solar elevation. Rome sits at 41.9 deg N; ~52 deg is a spring/autumn
- *  midday sun, which gives shadows long enough to read the formations. */
-const MAX_ELEVATION = (52 * Math.PI) / 180;
+/** Rome, 41.9 deg N. */
+const SITE_LATITUDE = (41.9 * Math.PI) / 180;
+/**
+ * Solar declination for the campaign season, and the single most important
+ * number in this file.
+ *
+ * The Juthungi were driven off Italy across the autumn of 271, so a declination
+ * of -14 deg — roughly the first week of November — is period-correct. It is
+ * also the art direction: at Rome's latitude it caps the sun at 34 deg even at
+ * local noon and puts it at 26 deg by mid-afternoon, which is a 3.6 m shadow for
+ * a 1.75 m man. A summer sun (declination +23) reaches 71 deg and throws a 0.6 m
+ * shadow that disappears under the man casting it, which is exactly how a
+ * battlefield ends up looking flat and shadowless.
+ *
+ * The second half of it is azimuth. The battle camera looks north, up the
+ * Juthungi approach, and a real mid-latitude sun is always in the southern sky —
+ * so at noon it sits directly behind the camera and front-lights everything.
+ * Only a few hours either side of noon does the azimuth swing far enough
+ * (218 deg at 14:18) to cross the view axis and rake shadows across the frame.
+ */
+const SEASON_DECLINATION = (-14 * Math.PI) / 180;
 
 export interface AtmosParams {
   /** Unit vector, ground -> sun. */
@@ -76,9 +94,10 @@ export interface SkyPreset {
   /** Scale height of the ground haze, metres. */
   hazeHeight: number;
   /**
-   * Tone-map exposure. Art direction, not physics. Calibrated so a lit dry-grass
-   * ground (linear radiance ~0.24) lands near 0.5 sRGB, with the darker trampled
-   * and river-plain materials still legible rather than crushed.
+   * Tone-map exposure. Art direction, not physics. Calibrated so lit dry grass
+   * lands near 0.55 sRGB and the same grass in shadow near 0.20, which is the
+   * ~7:1 lit:shadow split a Rome II frame shows. It has to rise as the sun drops
+   * because a 26 deg sun delivers only 0.43 of its irradiance to level ground.
    */
   exposure: number;
   /** How much of the direct sun a full cloud removes. */
@@ -89,27 +108,37 @@ export interface SkyPreset {
  * Presets. Turbidity is the Linke turbidity factor: 1 is an impossible pristine
  * atmosphere, 2.2 a clear continental day, 4-6 a hazy summer afternoon over a
  * dusty plain, 8+ overcast, 11 a storm front.
+ *
+ * Hours are constrained by `SEASON_DECLINATION`: the sun is only above the
+ * horizon between 06:52 and 17:08, so `dawn` and `goldenHour` sit just inside
+ * those limits and everything else is spaced across the useful arc.
+ * `afternoon` is the default look — see `SkySystem.timeOfDay`.
  */
 export const SKY_PRESETS: Record<string, SkyPreset> = {
   dawn: {
-    hour: 6.35, turbidity: 3.4, groundAlbedo: 0.11, msScale: 0.36,
+    hour: 7.5, turbidity: 3.4, groundAlbedo: 0.11, msScale: 0.36,
     cloudCoverage: 0.5, cloudSoftness: 0.1, cloudDensity: 7.0, cirrusCoverage: 0.62,
-    hazeDensity: 0.00062, hazeHeight: 430, exposure: 1.34, cloudShadowStrength: 0.34,
+    hazeDensity: 0.00062, hazeHeight: 430, exposure: 2.05, cloudShadowStrength: 0.34,
   },
   morning: {
-    hour: 8.8, turbidity: 2.7, groundAlbedo: 0.13, msScale: 0.29,
+    hour: 9.8, turbidity: 2.7, groundAlbedo: 0.13, msScale: 0.29,
     cloudCoverage: 0.54, cloudSoftness: 0.09, cloudDensity: 8.0, cirrusCoverage: 0.66,
-    hazeDensity: 0.00029, hazeHeight: 640, exposure: 1.18, cloudShadowStrength: 0.34,
+    hazeDensity: 0.00029, hazeHeight: 640, exposure: 1.5, cloudShadowStrength: 0.34,
   },
   noon: {
-    hour: 12.4, turbidity: 2.3, groundAlbedo: 0.14, msScale: 0.27,
+    hour: 12.0, turbidity: 2.3, groundAlbedo: 0.14, msScale: 0.27,
     cloudCoverage: 0.57, cloudSoftness: 0.08, cloudDensity: 8.5, cirrusCoverage: 0.7,
-    hazeDensity: 0.00024, hazeHeight: 780, exposure: 1.06, cloudShadowStrength: 0.36,
+    hazeDensity: 0.00024, hazeHeight: 780, exposure: 1.24, cloudShadowStrength: 0.36,
+  },
+  afternoon: {
+    hour: 14.3, turbidity: 2.6, groundAlbedo: 0.13, msScale: 0.28,
+    cloudCoverage: 0.55, cloudSoftness: 0.085, cloudDensity: 8.2, cirrusCoverage: 0.68,
+    hazeDensity: 0.00032, hazeHeight: 620, exposure: 1.5, cloudShadowStrength: 0.34,
   },
   goldenHour: {
-    hour: 17.0, turbidity: 3.1, groundAlbedo: 0.12, msScale: 0.34,
+    hour: 16.4, turbidity: 3.1, groundAlbedo: 0.12, msScale: 0.34,
     cloudCoverage: 0.52, cloudSoftness: 0.1, cloudDensity: 7.5, cirrusCoverage: 0.6,
-    hazeDensity: 0.00052, hazeHeight: 500, exposure: 1.08, cloudShadowStrength: 0.32,
+    hazeDensity: 0.00052, hazeHeight: 500, exposure: 1.85, cloudShadowStrength: 0.32,
   },
   overcast: {
     hour: 13.5, turbidity: 7.5, groundAlbedo: 0.12, msScale: 0.72,
@@ -125,15 +154,30 @@ export const SKY_PRESETS: Record<string, SkyPreset> = {
 
 export type SkyPresetName = keyof typeof SKY_PRESETS;
 
-/** Sun direction for an hour of the day, on a Rome-latitude arc. */
+/**
+ * Sun direction for an hour of the day: the real equatorial-to-horizontal
+ * transform at `SITE_LATITUDE` and `SEASON_DECLINATION`.
+ *
+ * Written as three dot products rather than an elevation/azimuth pair because
+ * the azimuth formula needs a quadrant fix-up that is easy to get wrong, and
+ * because the components fall straight out in world axes: **-Z is north** (the
+ * Juthungi approach), so +Z is south, +X is east and +Y is up.
+ *
+ * At declination -14 deg the sun is up between 06:52 and 17:08; outside that the
+ * y component goes negative and `sunIrradiance` correctly returns zero.
+ */
 export function sunDirectionForHour(hours: number, out: THREE.Vector3): THREE.Vector3 {
-  const t = (hours - 6) / 12; // 0 at sunrise, 1 at sunset
-  const elev = MAX_ELEVATION * Math.sin(Math.PI * t);
-  // Azimuth sweeps east (t=0) -> south (t=0.5) -> west (t=1). In world axes
-  // -Z is north (the Juthungi approach), so +Z is south and +X is east.
-  const az = Math.PI * t;
-  const ce = Math.cos(elev);
-  return out.set(ce * Math.cos(az), Math.sin(elev), ce * Math.sin(az)).normalize();
+  // Hour angle: 15 deg per hour, zero at local noon, positive in the afternoon.
+  const H = ((hours - 12) * 15 * Math.PI) / 180;
+  const sp = Math.sin(SITE_LATITUDE);
+  const cp = Math.cos(SITE_LATITUDE);
+  const sd = Math.sin(SEASON_DECLINATION);
+  const cd = Math.cos(SEASON_DECLINATION);
+  const cH = Math.cos(H);
+  const up = sp * sd + cp * cd * cH;
+  const south = -cp * sd + sp * cd * cH;
+  const east = -cd * Math.sin(H);
+  return out.set(east, up, south).normalize();
 }
 
 function density(h: number): [number, number, number] {

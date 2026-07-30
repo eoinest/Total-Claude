@@ -31,13 +31,18 @@ import type { TerrainSystem } from './TerrainSystem';
 /**
  * Ring extents. A ring's fade-out distance must sit *inside* half its lattice extent, or
  * the lattice runs out before the fade does and the grass stops at a hard circular edge.
- *   near: 170 × 0.55 m = 94 m across, so ±47 m — fade out by 44 m.
- *   far:  260 × 1.6 m  = 416 m across, so ±208 m — fade out by 200 m.
+ *   near: 216 × 0.375 m = 81 m across, so ±40 m — fade out by 40 m.
+ *   far:  300 × 1.35 m  = 405 m across, so ±202 m — fade out by 195 m.
+ *
+ * The near lattice was 0.55 m, which gave at most three clumps per square metre before
+ * the cover test thinned it, and at eye level that reads as a scatter of individual
+ * tussocks standing in bare earth rather than as ground cover. 0.375 m is 7.1 candidate
+ * clumps per m², which is the density at which the cards start to overlap and merge.
  */
-const NEAR_GRID = 170;
-const NEAR_SPACING = 0.55;
-const FAR_GRID = 260;
-const FAR_SPACING = 1.6;
+const NEAR_GRID = 216;
+const NEAR_SPACING = 0.375;
+const FAR_GRID = 300;
+const FAR_SPACING = 1.35;
 
 interface Ring {
   mesh: THREE.Mesh;
@@ -172,6 +177,23 @@ float grassHeightAt(vec2 wxz) {
   vec2 uv = (wxz + uHalfExtent) / (2.0 * uHalfExtent);
   return texture2D(uHeightMap, clamp(uv, 0.0, 1.0)).r;
 }
+
+// The centuriated field lattice, kept numerically identical to fieldPattern() in
+// TerrainMaterial.ts. The ground shader paints roughly a third of the strips as fallow
+// earth; grass has to know about that or it grows a lush sward straight out of a ploughed
+// field, which is the fastest way to break the illusion that the two systems are looking
+// at the same landscape. Returns the strip hash in x, headland proximity in y.
+vec2 grassField(vec2 wxz) {
+  vec2 fu = vec2(wxz.x * 0.97740 - wxz.y * 0.21140, wxz.x * 0.21140 + wxz.y * 0.97740) / 94.0;
+  vec2 cell = floor(fu);
+  vec2 f = fract(fu);
+  float h = fract(sin(dot(cell, vec2(41.317, 78.233))) * 43758.5453);
+  float strips = 2.0 + floor(fract(sin(dot(cell + 17.0, vec2(41.317, 78.233))) * 43758.5453) * 2.5);
+  float sub = floor(f.y * strips);
+  float hs = fract(h + sub * 0.3719 + fract(sin(dot(cell + 41.0, vec2(41.317, 78.233))) * 43758.5453) * 0.21);
+  vec2 e = abs(f - 0.5);
+  return vec2(hs, 1.0 - smoothstep(0.40, 0.492, max(e.x, e.y)));
+}
 `;
 
 export class GrassField {
@@ -185,7 +207,7 @@ export class GrassField {
     const density = Math.max(0, ctx.quality.grassDensity);
     if (density <= 0.001) return;
 
-    const cards = generateGrassCards(256, 2);
+    const cards = generateGrassCards(256, 3);
     const tex = new THREE.DataTexture(cards.data, cards.width, cards.height, THREE.RGBAFormat);
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
@@ -198,34 +220,37 @@ export class GrassField {
 
     this.rings.push(
       this.makeRing(ctx, heightMap, controlMap, tex, {
-        geo: crossedCards(2, 3, 0.42, 0.33),
+        // Three cards at 60° rather than two at 90°: a two-card cross has a bearing from
+        // which it reads as a single flat plane, and at this density that shows up as
+        // corduroy banding across the sward.
+        geo: crossedCards(3, 2, 0.52, 0.30),
         grid: NEAR_GRID,
         spacing: NEAR_SPACING,
-        jitter: 1.2,
+        jitter: 1.3,
         fadeIn: 0,
         fadeStart: 26,
-        fadeEnd: 44,
+        fadeEnd: 40,
         heightScale: 1,
         weeds: true,
-        cards: 2,
+        cards: 3,
         density,
         name: 'grass-near',
       })
     );
     this.rings.push(
       this.makeRing(ctx, heightMap, controlMap, tex, {
-        geo: crossedCards(1, 1, 1.8, 0.48),
+        geo: crossedCards(2, 1, 1.7, 0.44),
         grid: FAR_GRID,
         spacing: FAR_SPACING,
         jitter: 1.05,
         // Fades in where the near ring fades out, so neither ring is ever the only
         // cover and the hand-off leaves no ring of density on the ground.
-        fadeIn: 22,
-        fadeStart: 140,
-        fadeEnd: 200,
+        fadeIn: 12,
+        fadeStart: 136,
+        fadeEnd: 195,
         heightScale: 1.2,
         weeds: false,
-        cards: 2,
+        cards: 3,
         density: Math.min(1.1, density),
         name: 'grass-far',
       })
@@ -336,7 +361,12 @@ export class GrassField {
   // Real pasture grows in patches: bare scrapes, thick tussocky ground, and everything
   // between. Two scales of clustering noise, and damp ground grows thicker.
   float clumpBig = grassHash(floor(gpos / 19.0)) * 0.5 + grassHash(floor(gpos / 6.5)) * 0.5;
-  cover *= 0.34 + 1.15 * clumpBig + gctl.r * 0.45;
+  cover *= 0.52 + 1.05 * clumpBig + gctl.r * 0.4;
+  // Ploughed and fallow strips carry no sward, and the headland the carts turned on is
+  // beaten down to half. Matches the ground shader's own field pattern.
+  vec2 gfld = grassField(gpos);
+  cover *= 1.0 - smoothstep(0.60, 0.74, gfld.x) * 0.9;
+  cover *= 1.0 - gfld.y * 0.45;
 
   float dist = length(gpos - uCamXZ);
   float fadeNear = uFadeIn < 0.5 ? 1.0 : smoothstep(uFadeIn, uFadeIn + 30.0, dist);

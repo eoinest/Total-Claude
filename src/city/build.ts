@@ -300,16 +300,38 @@ const TRANS = new THREE.Matrix4();
  * and therefore a single draw call. At a kilometre the surface texture is below a
  * pixel and only the vertex colour survives, so nothing is lost.
  */
+/**
+ * Trim materials folded away at mid detail.
+ *
+ * Because the city's colour lives in vertex attributes and not in its textures, merging
+ * two materials costs only the surface *micro*-detail — the hue is untouched. Beyond a
+ * few hundred metres a scaffold pole's plank grain and a gate hinge's hammer marks are
+ * well under a pixel, so every one of these is a draw call bought for nothing. Folding
+ * them saves four meshes per wall chunk in the main pass and the same again in every
+ * shadow cascade, which is where a city goes over a 220-call budget.
+ */
+const TRIM_MERGE: Partial<Record<CityMatKey, CityMatKey>> = {
+  metal: 'stone',
+  road: 'stone',
+  concrete: 'stone',
+  timber: 'brick',
+};
+
+/** Materials whose geometry contributes nothing to a shadow silhouette. */
+const NO_SHADOW: ReadonlySet<CityMatKey> = new Set<CityMatKey>(['metal', 'road']);
+
 export class Batch {
   private streams = new Map<CityMatKey, GeoStream>();
 
   constructor(
     private readonly mats: CityMaterials,
-    private readonly collapseTo?: CityMatKey
+    private readonly collapseTo?: CityMatKey,
+    /** Fold the trim materials into their structural neighbours. */
+    private readonly mergeTrim = false
   ) {}
 
   s(key: CityMatKey): GeoStream {
-    const k = this.collapseTo ?? key;
+    const k = this.collapseTo ?? (this.mergeTrim ? (TRIM_MERGE[key] ?? key) : key);
     let st = this.streams.get(k);
     if (!st) {
       st = new GeoStream();
@@ -348,7 +370,7 @@ export class Batch {
       if (!g) continue;
       const mesh = new THREE.Mesh(g, this.mats.get(key));
       mesh.name = `${namePrefix}-${key}`;
-      mesh.castShadow = castShadow;
+      mesh.castShadow = castShadow && !NO_SHADOW.has(key);
       mesh.receiveShadow = receiveShadow;
       mesh.matrixAutoUpdate = false;
       mesh.updateMatrix();

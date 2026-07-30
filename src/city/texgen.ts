@@ -239,18 +239,25 @@ export function brickFace(size = 512): GeneratedMaps {
       f.height[o] = inMortar ? 0.16 + grit * 0.5 : proud * edge + 0.2 * (1 - edge) + grit - chip;
 
       if (inMortar) {
-        // Lime mortar reads pale and slightly greenish-grey; keep it brighter than brick.
-        f.lum[o] = 0.72 + grit * 2.5;
+        // The joint is recessed 15 mm of a 55 mm pitch. Lime mortar is pale *stone*, but
+        // what the eye sees at any range beyond a few metres is the shadow standing in
+        // the recess, so the albedo has to carry that: a joint authored brighter than the
+        // brick cancels against the normal map and the whole face mips out to flat, which
+        // is why the first pass of this wall had no visible courses at all.
+        // Deeper toward the top of the joint, where the brick above overhangs it.
+        const occ = 0.34 + 0.42 * (dvBottom < dvTop ? 1 : 0.45);
+        f.lum[o] = occ + grit * 1.1;
         f.rough[o] = 0.94;
       } else {
-        // Brick luminance varies course to course — kilns were uneven.
+        // Brick luminance varies brick to brick and course to course — kilns were uneven,
+        // and stretches of the curtain were let to different gangs.
         const kiln = hash2(col * 7, row * 13, 71);
-        f.lum[o] = 0.44 + brickN * 0.16 + kiln * 0.1 + grit * 1.6 - chip * 0.5;
+        f.lum[o] = 0.62 + brickN * 0.3 + kiln * 0.18 + grit * 1.6 - chip * 0.8;
         f.rough[o] = 0.78 + brickN * 0.1;
       }
       // Salt efflorescence and rain streaks running down the face.
       const streak = fbm(u * 7, v * 1.4, 4, 7, 12);
-      f.lum[o] *= 0.86 + streak * 0.28;
+      f.lum[o] *= 0.84 + streak * 0.32;
     }
   }
   return assemble(f, size, world, 2.6, 0.0);
