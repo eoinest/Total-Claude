@@ -1,0 +1,17 @@
+{
+  "shots": [
+    {
+      "name": "overview",
+      "simTime": 3.4666666666666646,
+      "men": 1520,
+      "units": 21,
+      "draws": 59,
+      "tris": 3269140,
+      "hudMs": 0.08052029061359865
+    }
+  ],
+  "interaction": [],
+  "consoleErrors": [
+    "Failed to load resource: net::ERR_FAILED"
+  ]
+}

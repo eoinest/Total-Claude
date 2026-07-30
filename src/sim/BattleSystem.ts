@@ -44,6 +44,7 @@ export class BattleSystem implements Subsystem {
     this.ctx = ctx;
     this.terrain = ctx.tryGet<TerrainSystem>('terrain');
     this.pool = new SoldierPool(ctx.quality.maxSoldiers);
+    this.mounted = new Uint8Array(ctx.quality.maxSoldiers);
     this.hash = new SpatialHash(1500, 3.5);
 
     ctx.events.on('orderIssued', (o) => this.applyOrder(o));
@@ -85,6 +86,8 @@ export class BattleSystem implements Subsystem {
       ammo: def.missile?.ammo ?? 0,
       engaged: false,
       chargeTimer: 0,
+      contactLock: false,
+      charging: false,
       routTimer: 0,
       kills: 0,
       destroyed: false,
@@ -94,6 +97,7 @@ export class BattleSystem implements Subsystem {
 
     const ranks = ranksFor(def.strength, width);
     const rng = this.rng.fork(`unit${u.id}`);
+    const mounted = isCavalry(def);
 
     for (let s = 0; s < def.strength; s++) {
       const i = this.pool.alloc();
@@ -143,6 +147,7 @@ export class BattleSystem implements Subsystem {
       p.deathVariant[i] = rng.int(0, 3);
       p.deathDirX[i] = 0;
       p.deathDirZ[i] = 0;
+      this.mounted[i] = mounted ? 1 : 0;
     }
 
     u.alive = u.members.length;
@@ -287,8 +292,10 @@ export class BattleSystem implements Subsystem {
         const dx = t.x - u.x;
         const dz = t.z - u.z;
         const d = Math.hypot(dx, dz) || 1;
-        // Stop just short so the ranks meet rather than interpenetrating.
-        const standoff = def.reach + 0.6;
+        // Stop just short so the ranks meet rather than interpenetrating. Kept tight:
+        // combined with the arrival tolerance below, anything larger leaves the two front
+        // ranks further apart than the weapons can reach and the units stare at each other.
+        const standoff = def.reach + 0.15;
         u.targetX = t.x - (dx / d) * standoff;
         u.targetZ = t.z - (dz / d) * standoff;
         u.targetFacing = Math.atan2(dx, dz);
@@ -308,8 +315,18 @@ export class BattleSystem implements Subsystem {
     const dz = u.targetZ - u.z;
     const distToTarget = Math.hypot(dx, dz);
 
-    // Arrived: pop the next queued waypoint, else settle.
-    if (distToTarget < 0.8) {
+    // Locked in contact: hold the anchor and only pivot. Combat owns this flag.
+    if (u.contactLock && u.order !== UnitOrder.Rout) {
+      u.facing = turnToward(u.facing, u.targetFacing, dt * 1.1);
+      const drain = u.engaged ? dt / (def.stamina * 2.4) : -dt / 26;
+      u.fatigue = clamp01(u.fatigue + drain);
+      if (u.chargeTimer > 0) u.chargeTimer = Math.max(0, u.chargeTimer - dt);
+      return;
+    }
+
+    // Arrived: pop the next queued waypoint, else settle. The tolerance is tight because
+    // it stacks on top of the attack standoff above.
+    if (distToTarget < 0.25) {
       if (u.waypoints.length >= 3) {
         u.targetX = u.waypoints.shift()!;
         u.targetZ = u.waypoints.shift()!;
@@ -321,6 +338,7 @@ export class BattleSystem implements Subsystem {
       const f = formation(u.formationId);
       const routing = u.order === UnitOrder.Rout;
       const base = routing ? def.runSpeed * 1.06
+        : u.charging ? def.chargeSpeed
         : u.running ? def.runSpeed
         : def.walkSpeed;
       // Fatigue and formation drag both bite into speed.
@@ -335,7 +353,7 @@ export class BattleSystem implements Subsystem {
       u.facing = turnToward(u.facing, wantFacing, dt * 1.9);
     }
 
-    if (distToTarget <= 0.8) {
+    if (distToTarget <= 0.25) {
       u.facing = turnToward(u.facing, u.targetFacing, dt * 1.5);
     }
 
@@ -378,10 +396,20 @@ export class BattleSystem implements Subsystem {
       this.ctx.events.emit('unitDestroyed', { unitId: u.id, faction: u.faction });
       return;
     }
-    // A unit that has fled far enough is off the field.
-    if (u.order === UnitOrder.Rout && u.routTimer > 24) {
-      const far = Math.abs(u.x) > 1280 || Math.abs(u.z) > 1280;
-      if (far) {
+    // A routed unit leaves the field once it is genuinely out of the fight. Requiring it
+    // to reach the map edge (±1280 m) took over three minutes of flight at 4.4 m/s, so
+    // broken units loitered mid-field for the rest of the battle and the engagement never
+    // resolved. "Escaped" is better defined as distance from the nearest enemy: a unit
+    // 260 m clear with nobody chasing it has left the battle in every sense that matters.
+    if (u.order === UnitOrder.Rout && u.routTimer > 18) {
+      const edge = Math.abs(u.x) > 1180 || Math.abs(u.z) > 1180;
+      let nearestEnemy = Infinity;
+      for (const o of this.units) {
+        if (o.destroyed || o.faction === u.faction || o.order === UnitOrder.Rout) continue;
+        const d = Math.hypot(o.x - u.x, o.z - u.z);
+        if (d < nearestEnemy) nearestEnemy = d;
+      }
+      if (edge || nearestEnemy > 260) {
         u.destroyed = true;
         this.ctx.events.emit('unitDestroyed', { unitId: u.id, faction: u.faction });
       }
@@ -398,8 +426,10 @@ export class BattleSystem implements Subsystem {
       const ranks = ranksFor(u.members.length, u.width);
       const routing = u.order === UnitOrder.Rout;
 
-      const maxSpeed = (routing ? def.runSpeed * 1.06 : u.running ? def.runSpeed : def.walkSpeed)
-        * f.mods.speed * (1 - u.fatigue * 0.42);
+      const maxSpeed = (routing ? def.runSpeed * 1.06
+        : u.charging ? def.chargeSpeed
+        : u.running ? def.runSpeed
+        : def.walkSpeed) * f.mods.speed * (1 - u.fatigue * 0.42);
       const accel = maxSpeed * 5.5;
 
       const s = Math.sin(u.facing);
@@ -468,9 +498,11 @@ export class BattleSystem implements Subsystem {
         const overlap = diameter - d;
         const nx = dx / d;
         const nz = dz / d;
-        // Split the correction by inverse mass.
-        const mi = isCavalry(unitType(this.unitOfSoldier(i)!.typeId)) ? 5 : 1;
-        const mj = isCavalry(unitType(this.unitOfSoldier(j)!.typeId)) ? 5 : 1;
+        // Split the correction by inverse mass. Mounted/foot is baked per soldier at
+        // spawn: resolving the unit and then its type for both members of every
+        // neighbour pair was the single most expensive thing in the tick.
+        const mi = this.mounted[i] ? 5 : 1;
+        const mj = this.mounted[j] ? 5 : 1;
         const total = mi + mj;
         const si = (overlap * (mj / total)) * 0.5;
         const sj = (overlap * (mi / total)) * 0.5;
@@ -485,6 +517,9 @@ export class BattleSystem implements Subsystem {
     }
     void dt;
   }
+
+  /** 1 if this soldier is mounted. Set at spawn; read in the crowd-separation inner loop. */
+  private mounted!: Uint8Array;
 
   /** Cache of soldier index -> unit, rebuilt lazily. */
   private soldierUnitCache: (UnitGroupState | undefined)[] = [];
@@ -649,6 +684,27 @@ export class BattleSystem implements Subsystem {
       if (p.aliveAt(i)) p.setState(i, SoldierState.Routing);
     }
     this.ctx.events.emit('unitRouted', { unitId: u.id, faction: u.faction });
+  }
+
+  /**
+   * Bring a broken unit back into order. The counterpart to `rout`, called by the morale
+   * system once a routed unit has got clear, recovered its nerve and is not being chased.
+   */
+  rally(u: UnitGroupState): void {
+    if (u.destroyed || u.order !== UnitOrder.Rout) return;
+    u.order = UnitOrder.Hold;
+    u.routTimer = 0;
+    u.contactLock = false;
+    u.charging = false;
+    u.targetX = u.x;
+    u.targetZ = u.z;
+    const p = this.pool;
+    for (const i of u.members) {
+      if (p.aliveAt(i)) p.setState(i, SoldierState.Idle);
+    }
+    // Re-form on the spot rather than teleporting back to the line.
+    this.setFormation(u, u.formationId);
+    this.ctx.events.emit('unitRallied', { unitId: u.id, faction: u.faction });
   }
 
   /** Units of a faction that are still fighting. */

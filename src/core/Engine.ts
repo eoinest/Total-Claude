@@ -90,7 +90,12 @@ export const QUALITY_PRESETS: Record<QualityTier, QualitySettings> = {
     tier: 'ultra', maxPixelRatio: 2, shadowMapSize: 4096, shadowCascades: 4,
     ssao: true, bloom: true, motionBlur: true, volumetricLight: true,
     depthOfField: true, maxSoldiers: 10000, lodFarDistance: 320,
-    grassDensity: 1.5, antialias: 'taa',
+    // SMAA rather than TAA. Soldiers are GPU-skinned instances animated entirely in
+    // the vertex shader, so there are no per-object motion vectors to reproject with;
+    // TAA's history clamp cannot distinguish a moving man from a disoccluded background
+    // and smears a dense melee into mush. TAA can come back once the unit renderer
+    // emits a velocity buffer.
+    grassDensity: 1.5, antialias: 'smaa',
   },
 };
 

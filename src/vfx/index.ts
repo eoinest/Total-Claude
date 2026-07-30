@@ -1,0 +1,13 @@
+export { VFXSystem } from './VFXSystem';
+export { ParticleSystem, PLayer, PGround, type SpawnRecord } from './ParticleSystem';
+export { GroundDamageLayer, DamageChannel } from './GroundDamage';
+export { DecalPool } from './DecalPool';
+export { DustEmitter } from './DustEmitter';
+export { CombatFX, type MeleeKind } from './CombatFX';
+export { BannerSystem } from './BannerSystem';
+export { BirdFlock } from './BirdFlock';
+export { LitterField } from './Litter';
+export { SmokeFire, EmitterKind } from './SmokeFire';
+export { Weather, WEATHER, type WeatherKind, type WeatherPreset } from './Weather';
+export { PT, DT, makeParticleAtlas, makeDecalAtlas, makeNoiseTexture, makeBannerTexture } from './atlas';
+export { buildHeightTexture, HEIGHT_GLSL, type HeightTexture } from './heightField';

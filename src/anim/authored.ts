@@ -1,0 +1,908 @@
+import { MB, HB } from './rig';
+import type { OverlayDef, BoneTrack } from './pose';
+
+/**
+ * Hand-authored animation content.
+ *
+ * Every clip is an overlay on a retargeted base clip. The base supplies the legs, hips and
+ * spine — the retargeted weight and secondary motion that is genuinely hard to hand-key —
+ * and the tracks here supply everything Roman about it.
+ *
+ * ## Two kinds of track
+ * *Relative* tracks give a rotation in degrees about the world axes of the rest pose, and
+ * accumulate down the bone chain: leaning the chest carries the arms with it. Used for the
+ * spine, hips and legs, where the base clip already has the motion and only needs shaping.
+ *
+ * *Absolute* tracks (`absTr`) set a bone's world orientation outright, ignoring the base.
+ * Every arm pose is absolute, and that is not a stylistic choice: the rest pose is a T-pose,
+ * so a relative arm delta means whatever the base clip's arm happened to be doing, and any
+ * attempt to damp an arm's swing drags it back toward sticking out sideways — which lays a
+ * 10 kg scutum flat like a tea tray. Absolute poses also mean the shield and the weapons
+ * sit in the same place in every clip, which is what makes one socket per item work.
+ *
+ * ## Axes
+ * The model faces +Z with +Y up, so its own right hand is at -X. Euler is applied Z, then
+ * Y, then X (THREE's 'XYZ' quaternion order), and for an arm the useful reading is:
+ *   left arm  rest +X:  Z lowers it to the side, Y swings it forward, X rolls it
+ *   right arm rest -X:  Z raises it,             Y swings it forward
+ * Downward-pointing limbs (thighs, hanging arms) go backwards on +X and forwards on -X.
+ */
+
+const tr = (
+  bone: number,
+  keys: readonly (readonly [number, number, number, number])[]
+): BoneTrack => ({ bone, keys });
+
+/** An absolute world orientation for a bone, measured from the rest T-pose. */
+const absTr = (
+  bone: number,
+  keys: readonly (readonly [number, number, number, number])[]
+): BoneTrack => ({ bone, keys, abs: true });
+
+/** Hold this bone's base world orientation whatever the parents do. */
+const hold = (bone: number): BoneTrack => ({ bone, keys: [], stab: true });
+
+/** Feet flat on the ground whatever the legs do above them. */
+const FEET_FLAT: BoneTrack[] = [hold(MB.footL), hold(MB.footR)];
+
+// ---------------------------------------------------------------------------
+// Arm pose library
+// ---------------------------------------------------------------------------
+// Reusable absolute arm poses. Every clip picks one for each arm, so a shield is in the
+// same place relative to the forearm everywhere and the attachment sockets solved against
+// `march` hold for the whole set.
+
+/** Scutum across the body, rim from thigh to chin, elbow tucked. The default carry. */
+const SHIELD_CARRY: BoneTrack[] = [
+  absTr(MB.upperArmL, [[0, 0, -55, -68]]),
+  absTr(MB.lowerArmL, [[0, 0, -117, 3]]),
+];
+
+/** Shield up and forward: receiving a charge, or covering the head from above. */
+const SHIELD_HIGH: BoneTrack[] = [
+  absTr(MB.upperArmL, [[0, -8, -62, -50]]),
+  absTr(MB.lowerArmL, [[0, 0, -122, 6]]),
+];
+
+/** Shield driven ahead as a battering surface. */
+const SHIELD_PUNCH: BoneTrack[] = [
+  absTr(MB.upperArmL, [[0, 0, -78, -58]]),
+  absTr(MB.lowerArmL, [[0, 0, -104, 0]]),
+];
+
+/** Shield slung low and loose: relaxed, resting on the ground beside the foot. */
+const SHIELD_REST: BoneTrack[] = [
+  absTr(MB.upperArmL, [[0, 0, -22, -82]]),
+  absTr(MB.lowerArmL, [[0, 0, -96, -12]]),
+];
+
+/** Right hand at the hip, pilum or spear shouldered. The default carry. */
+const HAND_CARRY: BoneTrack[] = [
+  absTr(MB.upperArmR, [[0, 0, -20, 72]]),
+  absTr(MB.lowerArmR, [[0, 0, 97, 33]]),
+];
+
+/** Sword hand drawn back past the hip, coiled for the thrust. */
+const HAND_COCKED: BoneTrack[] = [
+  absTr(MB.upperArmR, [[0, 0, -44, 66]]),
+  absTr(MB.lowerArmR, [[0, 0, 62, 40]]),
+];
+
+/** Full extension, blade level and forward. */
+const HAND_THRUST: BoneTrack[] = [
+  absTr(MB.upperArmR, [[0, 0, 74, 20]]),
+  absTr(MB.lowerArmR, [[0, 0, 87, 3]]),
+];
+
+/** Weapon up and behind the head, ready to come down. */
+const HAND_OVERHEAD: BoneTrack[] = [
+  absTr(MB.upperArmR, [[0, 0, -54, -58]]),
+  absTr(MB.lowerArmR, [[0, 0, -77, -17]]),
+];
+
+/** Follow-through of a downward blow: arm across the body, low. */
+const HAND_FOLLOW: BoneTrack[] = [
+  absTr(MB.upperArmR, [[0, 0, 52, 34]]),
+  absTr(MB.lowerArmR, [[0, 0, 96, 14]]),
+];
+
+const BOW_HOLD: BoneTrack[] = [
+  absTr(MB.upperArmL, [[0, 0, -90, -4]]),
+  absTr(MB.lowerArmL, [[0, 0, -92, 0]]),
+];
+const BOW_DRAWN: BoneTrack[] = [
+  absTr(MB.upperArmR, [[0, 0, -60, 6]]),
+  absTr(MB.lowerArmR, [[0, 0, 128, -27]]),
+];
+const BOW_LOOSED: BoneTrack[] = [
+  absTr(MB.upperArmR, [[0, 0, -74, 2]]),
+  absTr(MB.lowerArmR, [[0, 0, 146, -34]]),
+];
+
+/**
+ * Marching arm swing. The shield arm barely moves — a scutum weighs 7 to 10 kg and nobody
+ * swings it — while the free arm swings a few degrees opposed to the legs. Two keys plus a
+ * closing key so the loop meets.
+ */
+const MARCH_ARMS: BoneTrack[] = [
+  absTr(MB.upperArmL, [[0, 0, -53, -68], [0.5, 0, -57, -68], [1, 0, -53, -68]]),
+  absTr(MB.lowerArmL, [[0, 0, -117, 3]]),
+  absTr(MB.upperArmR, [[0, 0, -34, 72], [0.5, 0, -4, 72], [1, 0, -34, 72]]),
+  absTr(MB.lowerArmR, [[0, 0, 106, 33], [0.5, 0, 86, 33], [1, 0, 106, 33]]),
+];
+
+// ---------------------------------------------------------------------------
+// Locomotion
+// ---------------------------------------------------------------------------
+
+/**
+ * The Roman march.
+ *
+ * A century marching in step is the single most recognisable thing about a Roman army.
+ * Cadence is 120 paces a minute over a 1.55 m stride: Vegetius times the *gradus militaris*
+ * at twenty Roman miles in five summer hours, which is exactly this pace. The legs come
+ * from the retargeted walk, amplitude-tuned in the baker to that stride.
+ */
+const march: OverlayDef = {
+  name: 'march',
+  frames: 30,
+  duration: 1.0,
+  loop: true,
+  tracks: [
+    tr(MB.spineLow, [[0, -3, 0, 0]]),
+    tr(MB.chest, [[0, -2, 0, 0]]),
+    hold(MB.head),
+    ...MARCH_ARMS,
+    ...FEET_FLAT,
+  ],
+};
+
+/** A looser walk for troops not keeping step. */
+const walkLoose: OverlayDef = {
+  name: 'walkLoose',
+  frames: 30,
+  duration: 1.15,
+  loop: true,
+  tracks: [
+    hold(MB.head),
+    absTr(MB.upperArmL, [[0, 0, -34, -76], [0.5, 0, -44, -74], [1, 0, -34, -76]]),
+    absTr(MB.lowerArmL, [[0, 0, -108, -4]]),
+    absTr(MB.upperArmR, [[0, 0, -30, 74], [0.5, 0, -2, 74], [1, 0, -30, 74]]),
+    absTr(MB.lowerArmR, [[0, 0, 102, 30], [0.5, 0, 84, 30], [1, 0, 102, 30]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/** Run: shield up, weapon cocked, torso forward over the hips. */
+const run: OverlayDef = {
+  name: 'runReady',
+  frames: 26,
+  duration: 0.71,
+  loop: true,
+  tracks: [
+    tr(MB.spineLow, [[0, -9, 0, 0]]),
+    tr(MB.spineUp, [[0, -5, 0, 0]]),
+    hold(MB.head),
+    ...SHIELD_HIGH,
+    absTr(MB.upperArmR, [[0, 0, -50, 62], [0.5, 0, -22, 66], [1, 0, -50, 62]]),
+    absTr(MB.lowerArmR, [[0, 0, 74, 42], [0.5, 0, 96, 36], [1, 0, 74, 42]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/**
+ * Charge: committed and asymmetric. Deeper lean, longer reach, shield driven ahead of the
+ * body, sword hand drawn back past the hip ready to come through on contact. The right
+ * shoulder leads, because that is the arm that will strike.
+ */
+const charge: OverlayDef = {
+  name: 'charge',
+  frames: 26,
+  duration: 0.68,
+  loop: true,
+  amp: [[MB.thighL, 1.1], [MB.thighR, 1.1]],
+  tracks: [
+    tr(MB.pelvis, [[0, -4, -6, 0]]),
+    tr(MB.spineLow, [[0, -13, 8, 0]]),
+    tr(MB.spineUp, [[0, -7, 6, 0]]),
+    hold(MB.head),
+    ...SHIELD_PUNCH,
+    ...HAND_COCKED,
+    ...FEET_FLAT,
+  ],
+};
+
+/**
+ * Flight. Arms up and flailing, shield abandoned (the piece mask drops it), torso twisted
+ * with the head thrown over the shoulder to see the pursuit. A routing man is not running,
+ * he is escaping, and the asymmetry is the whole difference.
+ */
+const flee: OverlayDef = {
+  name: 'flee',
+  frames: 26,
+  duration: 0.66,
+  loop: true,
+  amp: [[MB.thighL, 1.06], [MB.thighR, 1.06]],
+  tracks: [
+    tr(MB.pelvis, [[0, -3, 6, 0]]),
+    tr(MB.spineLow, [[0, -8, -14, 4]]),
+    tr(MB.chest, [[0, 0, -16, -3]]),
+    tr(MB.neck, [[0, -4, -34, 0], [0.5, -2, -42, 0], [1, -4, -34, 0]]),
+    absTr(MB.upperArmL, [[0, 0, -33, 49], [0.5, 0, -20, 62], [1, 0, -33, 49]]),
+    absTr(MB.lowerArmL, [[0, 0, -58, 44]]),
+    absTr(MB.upperArmR, [[0, 0, 33, -49], [0.5, 0, 20, -62], [1, 0, 33, -49]]),
+    absTr(MB.lowerArmR, [[0, 0, 58, -44]]),
+    ...FEET_FLAT,
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Idles
+// ---------------------------------------------------------------------------
+
+/** At ease: shield grounded, weight on one hip. Breathing comes from the base clip. */
+const idleRelaxed: OverlayDef = {
+  name: 'idleRelaxedReady',
+  frames: 26,
+  duration: 3.6,
+  loop: true,
+  tracks: [hold(MB.head), ...SHIELD_REST, ...HAND_CARRY, ...FEET_FLAT],
+};
+
+/** Formed up and watching: shield across the body, weapon ready. */
+const idleAlert: OverlayDef = {
+  name: 'idleAlertReady',
+  frames: 26,
+  duration: 3.1,
+  loop: true,
+  tracks: [hold(MB.head), ...SHIELD_CARRY, ...HAND_CARRY, ...FEET_FLAT],
+};
+
+/**
+ * Braced. The testudo, and the pose for receiving a charge: knees bent with the weight low
+ * over the front foot, shield rim at eye level, shoulder behind the boss so the impact goes
+ * into the ground rather than into the arm.
+ */
+const idleBrace: OverlayDef = {
+  name: 'idleBrace',
+  frames: 24,
+  duration: 3.0,
+  loop: true,
+  root: [[0, 0, -0.075, 0.02], [0.5, 0, -0.09, 0.02], [1, 0, -0.075, 0.02]],
+  tracks: [
+    tr(MB.thighL, [[0, -24, 4, 0]]),
+    tr(MB.shinL, [[0, 44, 0, 0]]),
+    tr(MB.thighR, [[0, -12, -4, 0], [0.5, -11, -4, 0], [1, -12, -4, 0]]),
+    tr(MB.shinR, [[0, 28, 0, 0]]),
+    tr(MB.pelvis, [[0, 0, 14, 0]]),
+    tr(MB.spineLow, [[0, -14, 6, 0]]),
+    tr(MB.chest, [[0, -8, 4, 0]]),
+    tr(MB.neck, [[0, 6, -8, 0]]),
+    ...SHIELD_HIGH,
+    ...HAND_COCKED,
+    ...FEET_FLAT,
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Melee
+// ---------------------------------------------------------------------------
+
+/**
+ * The gladius thrust — the blow the legions actually killed with.
+ *
+ * Not a fencing lunge: the shield stays up and the point comes out low under its rim,
+ * driven by the hips and a short step, with the elbow finishing barely past the ribs.
+ * Beats: guard, loaded at 0.30, impact at 0.46, point held, recover.
+ */
+const attackThrust: OverlayDef = {
+  name: 'attackThrust',
+  frames: 26,
+  duration: 1.0,
+  loop: true,
+  hitFrame: 0.46,
+  root: [
+    [0, 0, -0.03, 0], [0.3, 0, -0.05, -0.05], [0.46, 0, -0.04, 0.14],
+    [0.62, 0, -0.04, 0.12], [1, 0, -0.03, 0],
+  ],
+  tracks: [
+    tr(MB.pelvis, [
+      [0, 0, 12, 0], [0.3, 0, 26, 0], [0.46, 0, -12, 0], [0.62, 0, -10, 0], [1, 0, 12, 0],
+    ]),
+    tr(MB.spineLow, [
+      [0, -8, 8, 0], [0.3, -4, 20, 0], [0.46, -14, -14, 0], [0.62, -12, -12, 0], [1, -8, 8, 0],
+    ]),
+    tr(MB.chest, [[0, -4, 6, 0], [0.3, -2, 16, 0], [0.46, -8, -12, 0], [1, -4, 6, 0]]),
+    hold(MB.head),
+    // The shield holds station across the body throughout. That is the point of a scutum.
+    absTr(MB.upperArmL, [[0, 0, -55, -68], [0.46, 0, -62, -62], [1, 0, -55, -68]]),
+    absTr(MB.lowerArmL, [[0, 0, -117, 3], [0.46, 0, -112, 6], [1, 0, -117, 3]]),
+    absTr(MB.upperArmR, [
+      [0, 0, -20, 72], [0.3, 0, -44, 66], [0.46, 0, 74, 20], [0.62, 0, 70, 22], [1, 0, -20, 72],
+    ]),
+    absTr(MB.lowerArmR, [
+      [0, 0, 97, 33], [0.3, 0, 62, 40], [0.46, 0, 87, 3], [0.62, 0, 86, 5], [1, 0, 97, 33],
+    ]),
+    tr(MB.thighL, [[0, -10, 0, 0], [0.3, -4, 0, 0], [0.46, -30, 0, 0], [1, -10, 0, 0]]),
+    tr(MB.shinL, [[0, 18, 0, 0], [0.3, 10, 0, 0], [0.46, 44, 0, 0], [1, 18, 0, 0]]),
+    tr(MB.thighR, [[0, 6, 0, 0], [0.3, 14, 0, 0], [0.46, 20, 0, 0], [1, 6, 0, 0]]),
+    tr(MB.shinR, [[0, 12, 0, 0], [0.46, 26, 0, 0], [1, 12, 0, 0]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/**
+ * Overhead chop — the Germanic axe and the cavalry spatha. Full commitment: the weapon goes
+ * up past vertical, the whole trunk uncoils, and the follow-through carries the shoulder
+ * down and across.
+ */
+const attackOverhead: OverlayDef = {
+  name: 'attackOverhead',
+  frames: 26,
+  duration: 1.0,
+  loop: true,
+  hitFrame: 0.44,
+  root: [[0, 0, -0.02, 0], [0.28, 0, 0.03, -0.04], [0.44, 0, -0.07, 0.12], [1, 0, -0.02, 0]],
+  tracks: [
+    tr(MB.pelvis, [[0, 0, 8, 0], [0.28, 0, 22, 0], [0.44, 0, -16, 0], [1, 0, 8, 0]]),
+    tr(MB.spineLow, [
+      [0, -6, 6, 0], [0.28, 10, 18, -6], [0.44, -26, -14, 6], [0.7, -18, -8, 4], [1, -6, 6, 0],
+    ]),
+    tr(MB.chest, [[0, -4, 4, 0], [0.28, 8, 14, -4], [0.44, -18, -10, 4], [1, -4, 4, 0]]),
+    hold(MB.head),
+    absTr(MB.upperArmL, [[0, 0, -52, -66], [0.28, 0, -40, -74], [0.44, 0, -66, -56], [1, 0, -52, -66]]),
+    absTr(MB.lowerArmL, [[0, 0, -114, 2]]),
+    absTr(MB.upperArmR, [
+      [0, 0, -26, 60], [0.28, 0, -54, -58], [0.44, 0, 52, 34], [0.68, 0, 46, 40], [1, 0, -26, 60],
+    ]),
+    absTr(MB.lowerArmR, [
+      [0, 0, 88, 30], [0.28, 0, -77, -17], [0.44, 0, 96, 14], [1, 0, 88, 30],
+    ]),
+    tr(MB.thighL, [[0, -8, 0, 0], [0.44, -26, 0, 0], [1, -8, 0, 0]]),
+    tr(MB.shinL, [[0, 14, 0, 0], [0.44, 40, 0, 0], [1, 14, 0, 0]]),
+    tr(MB.thighR, [[0, 6, 0, 0], [0.44, 18, 0, 0], [1, 6, 0, 0]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/** Horizontal cut across the body, shield pinned. */
+const attackSlash: OverlayDef = {
+  name: 'attackSlash',
+  frames: 24,
+  duration: 1.0,
+  loop: true,
+  hitFrame: 0.42,
+  tracks: [
+    tr(MB.pelvis, [[0, 0, 18, 0], [0.42, 0, -20, 0], [1, 0, 18, 0]]),
+    tr(MB.spineLow, [[0, -6, 14, 0], [0.42, -10, -16, 0], [1, -6, 14, 0]]),
+    hold(MB.head),
+    ...SHIELD_CARRY,
+    absTr(MB.upperArmR, [
+      [0, 0, -56, 40], [0.24, 0, -70, 22], [0.42, 0, 40, 40], [0.62, 0, 66, 44], [1, 0, -56, 40],
+    ]),
+    absTr(MB.lowerArmR, [
+      [0, 0, 46, 46], [0.24, 0, 18, 44], [0.42, 0, 92, 22], [1, 0, 46, 46],
+    ]),
+    tr(MB.thighL, [[0, -8, 0, 0], [0.42, -22, 0, 0], [1, -8, 0, 0]]),
+    tr(MB.shinL, [[0, 14, 0, 0], [0.42, 34, 0, 0], [1, 14, 0, 0]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/**
+ * Shield bash. The boss of a scutum is an iron dome designed to break faces; the blow is a
+ * step and a shoulder drive, not an arm swing, so the hips and the front leg carry it.
+ */
+const shieldBash: OverlayDef = {
+  name: 'shieldBash',
+  frames: 22,
+  duration: 0.86,
+  loop: true,
+  hitFrame: 0.4,
+  root: [[0, 0, -0.03, -0.04], [0.24, 0, -0.05, -0.1], [0.4, 0, -0.03, 0.2], [1, 0, -0.03, -0.04]],
+  tracks: [
+    tr(MB.pelvis, [[0, 0, -18, 0], [0.24, 0, -30, 0], [0.4, 0, 16, 0], [1, 0, -18, 0]]),
+    tr(MB.spineLow, [[0, -8, -14, 0], [0.24, -2, -26, 0], [0.4, -18, 18, 0], [1, -8, -14, 0]]),
+    tr(MB.chest, [[0, -4, -10, 0], [0.4, -10, 14, 0], [1, -4, -10, 0]]),
+    hold(MB.head),
+    absTr(MB.upperArmL, [
+      [0, 0, -48, -70], [0.24, 0, -38, -74], [0.4, 0, -78, -58], [1, 0, -48, -70],
+    ]),
+    absTr(MB.lowerArmL, [[0, 0, -122, 0], [0.4, 0, -100, 2], [1, 0, -122, 0]]),
+    ...HAND_COCKED,
+    tr(MB.thighL, [[0, -6, 0, 0], [0.4, -32, 0, 0], [1, -6, 0, 0]]),
+    tr(MB.shinL, [[0, 12, 0, 0], [0.4, 48, 0, 0], [1, 12, 0, 0]]),
+    tr(MB.thighR, [[0, 8, 0, 0], [0.4, 24, 0, 0], [1, 8, 0, 0]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/** Shield up into the blow, head tucked behind the rim, weight settling back. */
+const block: OverlayDef = {
+  name: 'block',
+  frames: 20,
+  duration: 0.8,
+  loop: true,
+  root: [[0, 0, -0.05, -0.03], [0.25, 0, -0.09, -0.07], [1, 0, -0.05, -0.03]],
+  tracks: [
+    tr(MB.pelvis, [[0, 0, 16, 0]]),
+    tr(MB.spineLow, [[0, -16, 10, 0], [0.25, -22, 12, 0], [1, -16, 10, 0]]),
+    tr(MB.chest, [[0, -10, 6, 0]]),
+    tr(MB.neck, [[0, 12, -10, 0]]),
+    absTr(MB.upperArmL, [[0, -12, -66, -42], [0.25, -16, -70, -36], [1, -12, -66, -42]]),
+    absTr(MB.lowerArmL, [[0, 0, -126, 8]]),
+    ...HAND_COCKED,
+    tr(MB.thighL, [[0, -20, 0, 0]]),
+    tr(MB.shinL, [[0, 36, 0, 0]]),
+    tr(MB.thighR, [[0, -10, 0, 0]]),
+    tr(MB.shinR, [[0, 24, 0, 0]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/** Parry: the blade sweeps across to turn a strike aside, weight rocking back. */
+const parry: OverlayDef = {
+  name: 'parry',
+  frames: 20,
+  duration: 0.72,
+  loop: true,
+  root: [[0, 0, -0.03, 0], [0.3, 0, -0.04, -0.06], [1, 0, -0.03, 0]],
+  tracks: [
+    tr(MB.pelvis, [[0, 0, 10, 0], [0.3, 0, -8, 0], [1, 0, 10, 0]]),
+    tr(MB.spineLow, [[0, -8, 8, 0], [0.3, -6, -12, 0], [1, -8, 8, 0]]),
+    hold(MB.head),
+    ...SHIELD_CARRY,
+    absTr(MB.upperArmR, [[0, 0, -20, 72], [0.3, 0, 34, -6], [0.55, 0, 28, 0], [1, 0, -20, 72]]),
+    absTr(MB.lowerArmR, [[0, 0, 97, 33], [0.3, 0, 118, -10], [1, 0, 97, 33]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/** Knocked off balance: the base clip's hit reaction with the kit still where it belongs. */
+const stagger: OverlayDef = {
+  name: 'stagger',
+  frames: 18,
+  duration: 0.62,
+  loop: false,
+  hitFrame: 0.18,
+  tracks: [
+    absTr(MB.upperArmL, [[0, 0, -55, -68], [0.3, 0, -34, -78], [1, 0, -50, -70]]),
+    absTr(MB.lowerArmL, [[0, 0, -117, 3], [0.3, 0, -96, -8], [1, 0, -112, 0]]),
+    absTr(MB.upperArmR, [[0, 0, -20, 72], [0.3, 0, -6, 84], [1, 0, -18, 74]]),
+    absTr(MB.lowerArmR, [[0, 0, 97, 33], [0.3, 0, 78, 46], [1, 0, 94, 36]]),
+    ...FEET_FLAT,
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Missiles
+// ---------------------------------------------------------------------------
+
+/**
+ * Pilum throw.
+ *
+ * The sequence runs from the ground up: cross-step onto the left foot, hips open, trunk
+ * rotates, and only then does the arm come through. That lag is what makes a throw look
+ * like a throw. A pilum weighs about 2 kg and was thrown 25 to 30 m, so the whole body is
+ * in it. Release at 0.52, as the hand passes the head.
+ */
+const throwPilum: OverlayDef = {
+  name: 'throwPilum',
+  frames: 30,
+  duration: 1.15,
+  loop: true,
+  hitFrame: 0.52,
+  root: [
+    [0, 0, -0.02, 0], [0.34, 0.03, -0.05, -0.12], [0.52, -0.02, -0.02, 0.14],
+    [0.72, 0, -0.03, 0.1], [1, 0, -0.02, 0],
+  ],
+  tracks: [
+    tr(MB.pelvis, [
+      [0, 0, 6, 0], [0.34, 0, 42, 0], [0.52, 0, -22, 0], [0.72, 0, -18, 0], [1, 0, 6, 0],
+    ]),
+    tr(MB.spineLow, [
+      [0, -4, 6, 0], [0.34, 6, 40, -8], [0.52, -18, -26, 8], [0.72, -14, -20, 6], [1, -4, 6, 0],
+    ]),
+    tr(MB.chest, [[0, -2, 4, 0], [0.34, 4, 34, -6], [0.52, -12, -24, 6], [1, -2, 4, 0]]),
+    tr(MB.neck, [[0, 0, -4, 0], [0.34, -4, -26, 0], [0.52, -6, 12, 0], [1, 0, -4, 0]]),
+    // Left arm points out at the target for aim, then drops as the right comes through.
+    absTr(MB.upperArmL, [
+      [0, 0, -55, -60], [0.34, 0, -84, -30], [0.52, 0, -40, -72], [1, 0, -55, -60],
+    ]),
+    absTr(MB.lowerArmL, [[0, 0, -110, 0], [0.34, 0, -90, -6], [1, 0, -110, 0]]),
+    // Right arm: cocked back behind the shoulder with the elbow high, then whipped through.
+    absTr(MB.upperArmR, [
+      [0, 0, -34, 56], [0.34, 0, -96, -34], [0.52, 0, 22, -44], [0.72, 0, 56, 18],
+      [1, 0, -34, 56],
+    ]),
+    absTr(MB.lowerArmR, [
+      [0, 0, 92, 34], [0.34, 0, -46, -30], [0.52, 0, 74, -10], [0.72, 0, 92, 18], [1, 0, 92, 34],
+    ]),
+    tr(MB.thighL, [[0, -8, 0, 0], [0.34, -4, 8, 0], [0.52, -34, 4, 0], [1, -8, 0, 0]]),
+    tr(MB.shinL, [[0, 14, 0, 0], [0.52, 46, 0, 0], [1, 14, 0, 0]]),
+    tr(MB.thighR, [[0, 6, 0, 0], [0.34, -18, -6, 0], [0.52, 26, 0, 0], [1, 6, 0, 0]]),
+    tr(MB.shinR, [[0, 10, 0, 0], [0.34, 34, 0, 0], [0.52, 20, 0, 0], [1, 10, 0, 0]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/**
+ * Archery form for a composite recurve: side-on stance, bow arm locked out at shoulder
+ * height, draw hand to the corner of the mouth. Sagittarii drew 60 to 80 lb, so the back
+ * does the work and the elbow finishes behind the line of the arrow.
+ */
+const drawBow: OverlayDef = {
+  name: 'drawBow',
+  frames: 26,
+  duration: 1.1,
+  loop: true,
+  tracks: [
+    tr(MB.pelvis, [[0, 0, 48, 0]]),
+    tr(MB.spineLow, [[0, -2, -12, 0], [0.6, -4, -16, 0], [1, -2, -12, 0]]),
+    tr(MB.chest, [[0, 0, -14, 0], [0.6, 2, -20, 0], [1, 0, -14, 0]]),
+    tr(MB.neck, [[0, -2, -16, 0]]),
+    ...BOW_HOLD,
+    absTr(MB.upperArmR, [[0, 0, -44, 22], [0.35, 0, -56, 10], [0.6, 0, -60, 6], [1, 0, -44, 22]]),
+    absTr(MB.lowerArmR, [[0, 0, 96, 6], [0.35, 0, 118, -18], [0.6, 0, 128, -27], [1, 0, 96, 6]]),
+    tr(MB.thighL, [[0, -6, 14, 0]]),
+    tr(MB.thighR, [[0, 4, -14, 0]]),
+    ...FEET_FLAT,
+  ],
+};
+
+const releaseBow: OverlayDef = {
+  name: 'releaseBow',
+  frames: 22,
+  duration: 0.9,
+  loop: true,
+  hitFrame: 0.34,
+  tracks: [
+    tr(MB.pelvis, [[0, 0, 48, 0]]),
+    tr(MB.spineLow, [[0, -4, -16, 0], [0.34, -2, -10, 0], [1, -4, -16, 0]]),
+    tr(MB.chest, [[0, 2, -20, 0], [0.34, 0, -12, 0], [1, 2, -20, 0]]),
+    tr(MB.neck, [[0, -2, -16, 0]]),
+    ...BOW_HOLD,
+    absTr(MB.upperArmR, [
+      [0, 0, -60, 6], [0.34, 0, -74, 2], [0.6, 0, -70, 4], [1, 0, -60, 6],
+    ]),
+    absTr(MB.lowerArmR, [[0, 0, 128, -27], [0.34, 0, 146, -34], [1, 0, 128, -27]]),
+    tr(MB.thighL, [[0, -6, 14, 0]]),
+    tr(MB.thighR, [[0, 4, -14, 0]]),
+    ...FEET_FLAT,
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Deaths
+// ---------------------------------------------------------------------------
+
+/**
+ * Falls collapse rather than rotate: the knees go first, the spine folds, and only then
+ * does the body reach the ground. Each variant ends flat, because the corpse holds the
+ * last frame for the rest of the battle.
+ */
+const deathBack: OverlayDef = {
+  name: 'deathBack',
+  frames: 30,
+  duration: 1.15,
+  loop: false,
+  tracks: [
+    // Arms let go of everything on the way down.
+    absTr(MB.upperArmL, [[0, 0, -55, -68], [0.4, 0, -20, -96], [1, 0, 14, -104]]),
+    absTr(MB.lowerArmL, [[0, 0, -117, 3], [0.4, 0, -80, -20], [1, 0, -30, -40]]),
+    absTr(MB.upperArmR, [[0, 0, -20, 72], [0.4, 0, 10, 98], [1, 0, -14, 106]]),
+    absTr(MB.lowerArmR, [[0, 0, 97, 33], [0.4, 0, 70, 22], [1, 0, 26, 44]]),
+  ],
+};
+
+const deathForward: OverlayDef = {
+  name: 'deathForward',
+  frames: 28,
+  duration: 1.2,
+  loop: false,
+  root: [
+    [0, 0, 0, 0], [0.22, 0, -0.16, 0.06], [0.5, 0, -0.5, 0.3],
+    [0.78, 0, -0.78, 0.5], [1, 0, -0.82, 0.55],
+  ],
+  tracks: [
+    tr(MB.thighL, [[0, 0, 0, 0], [0.22, -32, 0, 0], [0.5, -6, 6, 0], [1, 14, 8, 0]]),
+    tr(MB.shinL, [[0, 0, 0, 0], [0.22, 58, 0, 0], [0.5, 30, 0, 0], [1, 4, 0, 0]]),
+    tr(MB.thighR, [[0, 0, 0, 0], [0.22, -26, 0, 0], [0.5, -2, -8, 0], [1, 18, -10, 0]]),
+    tr(MB.shinR, [[0, 0, 0, 0], [0.22, 48, 0, 0], [1, 10, 0, 0]]),
+    tr(MB.pelvis, [[0, 0, 0, 0], [0.22, -18, 0, 0], [0.5, -52, 4, 0], [0.78, -84, 6, 0], [1, -88, 6, 0]]),
+    tr(MB.spineLow, [[0, 0, 0, 0], [0.5, -14, 0, 0], [1, -6, 0, 0]]),
+    tr(MB.chest, [[0, 0, 0, 0], [0.5, -10, 0, 0], [1, 8, 0, 0]]),
+    tr(MB.neck, [[0, 0, 0, 0], [0.4, 14, 0, 0], [1, 22, 0, 6]]),
+    absTr(MB.upperArmL, [[0, 0, -55, -68], [0.4, 0, -84, -34], [1, 0, -104, -8]]),
+    absTr(MB.lowerArmL, [[0, 0, -117, 3], [0.4, 0, -94, -6], [1, 0, -86, 6]]),
+    absTr(MB.upperArmR, [[0, 0, -20, 72], [0.4, 0, 84, 34], [1, 0, 104, 8]]),
+    absTr(MB.lowerArmR, [[0, 0, 97, 33], [0.4, 0, 94, 6], [1, 0, 86, -6]]),
+    ...FEET_FLAT,
+  ],
+};
+
+const deathKneel: OverlayDef = {
+  name: 'deathKneel',
+  frames: 30,
+  duration: 1.35,
+  loop: false,
+  root: [
+    [0, 0, 0, 0], [0.3, 0, -0.28, 0.04], [0.55, 0, -0.55, 0.08],
+    [0.85, 0, -0.7, 0.26], [1, 0, -0.74, 0.32],
+  ],
+  tracks: [
+    tr(MB.thighL, [[0, 0, 0, 0], [0.3, -48, 4, 0], [0.55, -74, 6, 0], [1, -70, 8, 0]]),
+    tr(MB.shinL, [[0, 0, 0, 0], [0.3, 84, 0, 0], [0.55, 128, 0, 0], [1, 126, 0, 0]]),
+    tr(MB.thighR, [[0, 0, 0, 0], [0.3, -40, -4, 0], [0.55, -70, -6, 0], [1, -66, -8, 0]]),
+    tr(MB.shinR, [[0, 0, 0, 0], [0.3, 76, 0, 0], [0.55, 124, 0, 0], [1, 122, 0, 0]]),
+    tr(MB.pelvis, [[0, 0, 0, 0], [0.3, 8, 0, 0], [0.55, -6, 4, 0], [0.85, -44, 8, 0], [1, -56, 10, 0]]),
+    tr(MB.spineLow, [[0, 0, 0, 0], [0.3, 6, 0, 0], [0.85, -22, 0, 0], [1, -28, 0, 0]]),
+    tr(MB.chest, [[0, 0, 0, 0], [0.55, -8, 0, 0], [1, -20, 0, 0]]),
+    tr(MB.neck, [[0, 0, 0, 0], [0.3, -14, 0, 0], [1, -34, 0, 0]]),
+    absTr(MB.upperArmL, [[0, 0, -55, -68], [0.55, 0, -32, -84], [1, 0, -14, -92]]),
+    absTr(MB.lowerArmL, [[0, 0, -117, 3], [1, 0, -74, -14]]),
+    absTr(MB.upperArmR, [[0, 0, -20, 72], [0.55, 0, -6, 86], [1, 0, 4, 92]]),
+    absTr(MB.lowerArmR, [[0, 0, 97, 33], [1, 0, 74, 18]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/** Sideways collapse: the base backward fall twisted onto one shoulder. */
+const deathSide: OverlayDef = {
+  name: 'deathSide',
+  frames: 30,
+  duration: 1.25,
+  loop: false,
+  root: [[0, 0, 0, 0], [0.4, -0.14, 0, 0], [1, -0.42, 0, -0.08]],
+  tracks: [
+    tr(MB.pelvis, [[0, 0, 0, 0], [0.35, 0, -22, -20], [1, 0, -58, -46]]),
+    tr(MB.spineLow, [[0, 0, 0, 0], [1, 0, -8, -12]]),
+    absTr(MB.upperArmL, [[0, 0, -55, -68], [1, 0, -30, -96]]),
+    absTr(MB.lowerArmL, [[0, 0, -117, 3], [1, 0, -70, -22]]),
+    absTr(MB.upperArmR, [[0, 0, -20, 72], [0.5, 0, 30, 90], [1, 0, 56, 100]]),
+    absTr(MB.lowerArmR, [[0, 0, 97, 33], [1, 0, 52, 40]]),
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Misc
+// ---------------------------------------------------------------------------
+
+/** Weapon and shield raised, shouting. */
+const cheer: OverlayDef = {
+  name: 'cheer',
+  frames: 28,
+  duration: 1.4,
+  loop: true,
+  tracks: [
+    tr(MB.spineLow, [[0, 4, 0, 0], [0.5, 7, 0, 0], [1, 4, 0, 0]]),
+    tr(MB.neck, [[0, -14, 0, 0]]),
+    absTr(MB.upperArmL, [[0, 0, -14, 74], [0.5, 0, -10, 86], [1, 0, -14, 74]]),
+    absTr(MB.lowerArmL, [[0, 0, -30, 70]]),
+    absTr(MB.upperArmR, [[0, 0, 14, -74], [0.5, 0, 10, -86], [1, 0, 14, -74]]),
+    absTr(MB.lowerArmR, [[0, 0, 30, -70]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/** Ladder climb: opposed reach, weight hanging from the arms. */
+const climbLadder: OverlayDef = {
+  name: 'climbLadder',
+  frames: 26,
+  duration: 1.3,
+  loop: true,
+  root: [[0, 0, -0.03, 0.16], [0.5, 0, 0.03, 0.16], [1, 0, -0.03, 0.16]],
+  tracks: [
+    tr(MB.pelvis, [[0, -14, 0, 0]]),
+    tr(MB.spineLow, [[0, -8, 0, 0]]),
+    tr(MB.neck, [[0, -16, 0, 0]]),
+    absTr(MB.upperArmL, [[0, 0, -20, 76], [0.5, 0, -34, 22], [1, 0, -20, 76]]),
+    absTr(MB.lowerArmL, [[0, 0, -46, 68], [0.5, 0, -60, 18], [1, 0, -46, 68]]),
+    absTr(MB.upperArmR, [[0, 0, 34, -22], [0.5, 0, 20, -76], [1, 0, 34, -22]]),
+    absTr(MB.lowerArmR, [[0, 0, 60, -18], [0.5, 0, 46, -68], [1, 0, 60, -18]]),
+    tr(MB.thighL, [[0, -78, 6, 0], [0.5, -30, 4, 0], [1, -78, 6, 0]]),
+    tr(MB.shinL, [[0, 66, 0, 0], [0.5, 34, 0, 0], [1, 66, 0, 0]]),
+    tr(MB.thighR, [[0, -30, -4, 0], [0.5, -78, -6, 0], [1, -30, -4, 0]]),
+    tr(MB.shinR, [[0, 34, 0, 0], [0.5, 66, 0, 0], [1, 34, 0, 0]]),
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Mounted
+// ---------------------------------------------------------------------------
+
+/**
+ * Seated on a horse with no stirrups — which Rome did not have. The rider grips with the
+ * thighs against the four horns of the saddle, so the legs sit further forward and less
+ * bent than a modern seat, with the heel driven down for purchase.
+ */
+const rideLegs = (flex: number, abduct: number): BoneTrack[] => [
+  tr(MB.thighL, [[0, -54 - flex, 6, -abduct]]),
+  tr(MB.shinL, [[0, 40 + flex, -4, abduct * 0.4]]),
+  tr(MB.thighR, [[0, -54 - flex, -6, abduct]]),
+  tr(MB.shinR, [[0, 40 + flex, 4, -abduct * 0.4]]),
+  tr(MB.footL, [[0, -18, 0, 0]]),
+  tr(MB.footR, [[0, -18, 0, 0]]),
+];
+
+/** Reins in the shield hand, weapon hand low. */
+const RIDE_ARMS: BoneTrack[] = [
+  absTr(MB.upperArmL, [[0, 0, -46, -62]]),
+  absTr(MB.lowerArmL, [[0, 0, -102, 8]]),
+  absTr(MB.upperArmR, [[0, 0, -24, 68]]),
+  absTr(MB.lowerArmR, [[0, 0, 104, 26]]),
+];
+
+const rideIdle: OverlayDef = {
+  name: 'rideIdle',
+  frames: 24,
+  duration: 3.2,
+  loop: true,
+  root: [[0, 0, 0.02, -0.02]],
+  tracks: [...rideLegs(0, 14), tr(MB.spineLow, [[0, 2, 0, 0]]), ...RIDE_ARMS],
+};
+
+const rideMove: OverlayDef = {
+  name: 'rideMove',
+  frames: 24,
+  duration: 1.05,
+  loop: true,
+  // Rising and falling with the horse's back, a beat behind it.
+  root: [
+    [0, 0, 0.02, -0.02], [0.25, 0, 0.055, -0.01], [0.5, 0, 0.02, -0.02],
+    [0.75, 0, 0.055, -0.01], [1, 0, 0.02, -0.02],
+  ],
+  tracks: [
+    ...rideLegs(2, 14),
+    tr(MB.spineLow, [[0, -4, 0, 0], [0.5, 0, 0, 0], [1, -4, 0, 0]]),
+    ...RIDE_ARMS,
+  ],
+};
+
+const rideGallop: OverlayDef = {
+  name: 'rideGallop',
+  frames: 22,
+  duration: 0.62,
+  loop: true,
+  root: [[0, 0, 0.03, 0.0], [0.3, 0, 0.075, 0.03], [0.6, 0, 0.02, -0.01], [1, 0, 0.03, 0.0]],
+  tracks: [
+    ...rideLegs(6, 16),
+    // Up out of the saddle and forward over the withers.
+    tr(MB.pelvis, [[0, -14, 0, 0], [0.3, -20, 0, 0], [1, -14, 0, 0]]),
+    tr(MB.spineLow, [[0, -12, 0, 0]]),
+    hold(MB.head),
+    ...RIDE_ARMS,
+  ],
+};
+
+/** Spear couched under the arm, body low over the neck. */
+const rideCharge: OverlayDef = {
+  name: 'rideCharge',
+  frames: 22,
+  duration: 0.6,
+  loop: true,
+  hitFrame: 0.5,
+  root: [[0, 0, 0.02, 0.04], [0.3, 0, 0.06, 0.07], [1, 0, 0.02, 0.04]],
+  tracks: [
+    ...rideLegs(8, 16),
+    tr(MB.pelvis, [[0, -20, -8, 0], [0.3, -26, -8, 0], [1, -20, -8, 0]]),
+    tr(MB.spineLow, [[0, -18, 6, 0]]),
+    hold(MB.head),
+    absTr(MB.upperArmL, [[0, 0, -52, -60]]),
+    absTr(MB.lowerArmL, [[0, 0, -108, 6]]),
+    // Spear arm forward and level, hand at chest height.
+    absTr(MB.upperArmR, [[0, 0, 44, 34]]),
+    absTr(MB.lowerArmR, [[0, 0, 84, 8]]),
+  ],
+};
+
+const rideDeath: OverlayDef = {
+  name: 'rideDeath',
+  frames: 26,
+  duration: 1.1,
+  loop: false,
+  root: [[0, 0, 0.02, 0], [0.35, 0.18, -0.1, -0.05], [1, 0.9, -0.85, -0.2]],
+  tracks: [
+    ...rideLegs(4, 18),
+    tr(MB.pelvis, [[0, 0, 0, 0], [0.35, 6, -20, -34], [1, 20, -66, -96]]),
+    tr(MB.spineLow, [[0, 0, 0, 0], [1, 10, -14, -20]]),
+    absTr(MB.upperArmL, [[0, 0, -46, -62], [1, 0, -12, -100]]),
+    absTr(MB.upperArmR, [[0, 0, -24, 68], [1, 0, 40, 98]]),
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Horse
+// ---------------------------------------------------------------------------
+
+const htr = (
+  bone: number,
+  keys: readonly (readonly [number, number, number, number])[]
+): BoneTrack => ({ bone, keys });
+
+/**
+ * Trot, made from the walk by re-phasing the limbs.
+ *
+ * A walk is four-beat (LH, LF, RH, RF); a trot is two-beat with the diagonal pairs moving
+ * together. Shifting the left fore and the right hind half a cycle turns one into the
+ * other, which is far more reliable than hand-keying a gait and keeps the source's weight
+ * and hoof trajectory intact.
+ */
+const horseTrot: OverlayDef = {
+  name: 'trot',
+  frames: 26,
+  duration: 0.78,
+  loop: true,
+  phase: [
+    [HB.fShoulderL, 0.5], [HB.fUpperL, 0.5], [HB.fLowerL, 0.5], [HB.fHoofL, 0.5],
+    [HB.bHipR, 0.5], [HB.bFemurR, 0.5], [HB.bTibiaR, 0.5], [HB.bCannonR, 0.5], [HB.bHoofR, 0.5],
+  ],
+  amp: [
+    [HB.fUpperL, 1.25], [HB.fUpperR, 1.25], [HB.fLowerL, 1.15], [HB.fLowerR, 1.15],
+    [HB.bFemurL, 1.2], [HB.bFemurR, 1.2],
+  ],
+  root: [
+    [0, 0, 0.02, 0], [0.25, 0, 0.055, 0], [0.5, 0, 0.02, 0], [0.75, 0, 0.055, 0], [1, 0, 0.02, 0],
+  ],
+  tracks: [
+    htr(HB.neck1, [[0, -6, 0, 0]]),
+    htr(HB.head, [[0, 4, 0, 0]]),
+    htr(HB.tail1, [[0, -10, 0, 0]]),
+  ],
+};
+
+/** Charge: gallop with the neck stretched out and the stride opened up. */
+const horseCharge: OverlayDef = {
+  name: 'charge',
+  frames: 22,
+  duration: 0.6,
+  loop: true,
+  amp: [[HB.fUpperL, 1.1], [HB.fUpperR, 1.1], [HB.bFemurL, 1.1], [HB.bFemurR, 1.1]],
+  tracks: [
+    htr(HB.neck1, [[0, 16, 0, 0]]),
+    htr(HB.neck2, [[0, 10, 0, 0]]),
+    htr(HB.head, [[0, -16, 0, 0]]),
+    htr(HB.tail1, [[0, -26, 0, 0]]),
+  ],
+};
+
+export const MAN_OVERLAYS: { base: string; def: OverlayDef }[] = [
+  { base: 'walk', def: march },
+  { base: 'walk', def: walkLoose },
+  { base: 'run', def: run },
+  { base: 'run', def: charge },
+  { base: 'run', def: flee },
+  { base: 'idleRelaxed', def: idleRelaxed },
+  { base: 'idleAlert', def: idleAlert },
+  { base: 'idleAlert', def: idleBrace },
+  { base: 'idleAlert', def: attackThrust },
+  { base: 'idleAlert', def: attackOverhead },
+  { base: 'slash', def: attackSlash },
+  { base: 'punch', def: shieldBash },
+  { base: 'idleAlert', def: block },
+  { base: 'idleAlert', def: parry },
+  { base: 'hitReact', def: stagger },
+  { base: 'idleAlert', def: throwPilum },
+  { base: 'idleAlert', def: drawBow },
+  { base: 'idleAlert', def: releaseBow },
+  { base: 'death', def: deathBack },
+  { base: 'idleAlert', def: deathForward },
+  { base: 'idleAlert', def: deathKneel },
+  { base: 'death', def: deathSide },
+  { base: 'wave', def: cheer },
+  { base: 'idleAlert', def: climbLadder },
+  { base: 'idleAlert', def: rideIdle },
+  { base: 'idleAlert', def: rideMove },
+  { base: 'idleAlert', def: rideGallop },
+  { base: 'idleAlert', def: rideCharge },
+  { base: 'idleAlert', def: rideDeath },
+];
+
+export const HORSE_OVERLAYS: { base: string; def: OverlayDef }[] = [
+  { base: 'walk', def: horseTrot },
+  { base: 'gallop', def: horseCharge },
+];
+
+/** Bones whose ground contact defines a clip's stride, per rig. */
+export const MAN_CONTACTS = [MB.footL, MB.footR];
+export const HORSE_CONTACTS = [HB.fHoofL, HB.fHoofR, HB.bHoofL, HB.bHoofR];

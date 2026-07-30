@@ -271,6 +271,15 @@ export interface UnitGroupState {
   engaged: boolean;
   /** Seconds since the charge began; drives the charge damage bonus. */
   chargeTimer: number;
+  /**
+   * Set by the combat system once the formation is in contact. While true the movement
+   * code must not translate the anchor — a unit locked shield-to-shield stops advancing
+   * and only pivots. Without this the anchor keeps walking into the enemy and the two
+   * blocks interpenetrate.
+   */
+  contactLock: boolean;
+  /** True while the charge window is open, so movement uses `chargeSpeed` not `runSpeed`. */
+  charging: boolean;
   /** Seconds the unit has been routing. */
   routTimer: number;
   /** Kills scored, for the post-battle report. */

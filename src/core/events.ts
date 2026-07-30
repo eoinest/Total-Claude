@@ -58,6 +58,10 @@ export interface GameEvents {
   linesClashed: { x: number; z: number; intensity: number; attackerFaction: number };
   cavalryCharge: { x: number; z: number; intensity: number; unitId: number };
 
+  /** An ability came into effect on a unit, or was toggled. */
+  abilityActivated: { unitId: number; ability: string; active: boolean };
+  abilityExpired: { unitId: number; ability: string };
+
   soldierDied: { x: number; y: number; z: number; unitId: number; faction: number; index: number };
   unitRouted: { unitId: number; faction: number };
   unitRallied: { unitId: number; faction: number };

@@ -52,28 +52,47 @@ const SHOTS = {
     x: -20, z: -186, zoom: 0.18, yaw: Math.PI * 0.1, at: 2,
   },
   clash: {
+    // The contact line settles around x -60..-10, z -5..+10, so (0,0) sat in the seam
+    // between Cohorts II and III and framed empty grass.
     desc: 'The moment the lines meet, mid-height, oblique',
-    x: 0, z: 0, zoom: 0.36, yaw: Math.PI * 1.2, at: 62,
+    x: -30, z: 2, zoom: 0.30, yaw: Math.PI * 1.2, at: 72,
   },
   melee: {
     desc: 'Ground level inside the melee — the hardest test of animation and gore',
-    x: 0, z: 0, zoom: 0.06, yaw: Math.PI * 1.15, at: 78,
+    x: -30, z: 2, zoom: 0.08, yaw: Math.PI * 1.15, at: 88,
   },
   cavalry: {
+    // The emergent cavalry melee lands near (217, 70); the old yaw looked away from it.
     desc: 'The cavalry wing sweeping the flank',
-    x: 210, z: 60, zoom: 0.3, yaw: Math.PI * 1.6, at: 55,
+    x: 205, z: 50, zoom: 0.34, yaw: Math.PI * 1.19, at: 70,
   },
   city: {
-    desc: 'The Aurelian Wall and the city skyline behind the Roman line',
-    x: 0, z: 320, zoom: 0.5, yaw: 0.0, at: 2,
+    desc: 'Necropolis, road, Aurelian Wall and the city beyond',
+    x: 60, z: 400, zoom: 0.62, yaw: 0.0, at: 2,
+  },
+  wall: {
+    desc: 'Close along the Aurelian Wall - brick courses, towers, scaffolding',
+    x: -120, z: 470, zoom: 0.58, yaw: 0.0, at: 2,
   },
   skyline: {
-    desc: 'Rome from the north-west with the hills and landmarks silhouetted',
-    x: -300, z: 420, zoom: 0.72, yaw: Math.PI * 1.75, at: 2,
+    desc: 'Rome behind the wall - Mausoleum, Pantheon, theatres',
+    x: -180, z: 780, zoom: 0.80, yaw: Math.PI * 0.05, at: 2,
+  },
+  deepcity: {
+    desc: 'Deep into the city - insulae density and landmark silhouettes',
+    x: -20, z: 1050, zoom: 0.86, yaw: Math.PI * 0.1, at: 2,
   },
   terrain: {
     desc: 'Empty countryside — judges terrain material, vegetation and lighting alone',
     x: -560, z: -420, zoom: 0.44, yaw: Math.PI * 0.4, at: 2,
+  },
+  river: {
+    desc: 'The Tiber, its cut bank, flood terrace and sand bars',
+    x: -760, z: -300, zoom: 0.72, yaw: Math.PI * 0.15, at: 2,
+  },
+  ford: {
+    desc: 'The gravel ford across the Tiber',
+    x: -820, z: -520, zoom: 0.42, yaw: Math.PI * 0.9, at: 2,
   },
   aftermath: {
     desc: 'Late battle: corpses, routs, dust and blood on the ground',
@@ -143,7 +162,7 @@ async function startServer() {
   server = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
     cwd: ROOT,
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, FORCE_COLOR: '0' },
+    env: { ...process.env, FORCE_COLOR: '0', TC_NO_HMR: '1' },
   });
   let serverLog = '';
   server.stdout.on('data', (d) => { serverLog += d.toString(); });
@@ -229,21 +248,56 @@ try {
     const t0 = Date.now();
     try {
       const info = await page.evaluate(
-        ({ s }) => {
+        async ({ s }) => {
           const g = window.__game;
           const need = s.at - g.simTime();
           if (need > 0) g.advance(need);
           g.setCamera(s.x, s.z, s.zoom, s.yaw);
-          // A handful of extra frames lets smoothing, LOD and any temporal
-          // accumulation (TAA, motion vectors) settle before we grab the frame.
-          for (let i = 0; i < 12; i++) g.engine.frame(performance.now() + i * 16.7);
+
+          // Settle on the *synthetic* clock. Feeding `performance.now()` here would
+          // jump Time's accumulator forward by however long the fast-forward took,
+          // producing one clamped 250 ms frame that poisons the rolling fps average
+          // for every subsequent measurement. `advance` keeps the clock continuous.
+          // 0.25 s ≈ 15 frames, enough for camera smoothing, LOD hysteresis and TAA
+          // history to converge.
+          g.advance(0.25);
+
+          // Measure real cost rather than trusting the in-engine average. Frame inputs
+          // stay on the synthetic clock so Time's accumulator is never jumped.
+          //
+          // `gl.finish()` is not a reliable barrier here: under ANGLE-on-Metal it
+          // returns before the GPU has drained, which reported 0.25 ms/frame for a
+          // 1.3 M-triangle scene. A 1x1 `readPixels` forces a genuine round trip,
+          // because the result cannot be produced until the pipeline has flushed.
+          const N = 30;
+          const gl = g.engine.renderer.getContext();
+          const px = new Uint8Array(4);
+          const sync = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+
+          g.engine.frame(g.engine.time.elapsed * 1000 + 16.7);
+          sync();
+          const t0 = performance.now();
+          for (let i = 0; i < N; i++) {
+            g.engine.frame(g.engine.time.elapsed * 1000 + 16.7);
+          }
+          sync();
+          const msPerFrame = (performance.now() - t0) / N;
+
           let men = 0;
           let units = 0;
+          let corpses = 0;
           for (const u of g.battle.units) {
             if (!u.destroyed) { units++; men += u.alive; }
           }
+          const pool = g.battle.pool;
+          for (let i = 0; i < pool.count; i++) if (pool.state[i] === 11) corpses++;
+
           const st = g.engine.stats();
-          return { simTime: g.simTime(), men, units, draws: st.calls, tris: st.tris, fps: g.engine.time.fps };
+          return {
+            simTime: g.simTime(), men, units, corpses,
+            draws: st.calls, tris: st.tris, programs: st.programs,
+            msPerFrame, fps: 1000 / msPerFrame,
+          };
         },
         { s: shot }
       );
@@ -255,7 +309,7 @@ try {
         `  ✓ ${name.padEnd(14)} t+${String(Math.round(info.simTime)).padStart(3)}s  ` +
         `${String(info.men).padStart(5)} men  ${String(info.units).padStart(2)} units  ` +
         `${String(info.draws).padStart(4)} draws  ${(info.tris / 1e6).toFixed(2)}M tris  ` +
-        `${(Date.now() - t0)}ms`
+        `${info.msPerFrame.toFixed(2)}ms/f (${info.fps.toFixed(0)} fps)`
       );
     } catch (err) {
       failed++;

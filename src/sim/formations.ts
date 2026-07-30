@@ -116,12 +116,20 @@ export const FORMATIONS: Record<string, FormationDef> = {
     spacingZMul: 0.95,
     width: (s) => Math.max(6, Math.round(Math.sqrt(s * 1.9))),
     offset(out, slot, width, _ranks, sx, sz) {
-      const rank = Math.floor(slot / width);
-      const file = slot % width;
-      // Each rank back is wider, forming a triangle with the point forward.
-      const rankWidth = Math.min(width, 2 + rank * 2);
-      const f = file % rankWidth;
-      out.x = centredX(f, rankWidth, sx);
+      // A triangle has to be filled by walking the slot index through rows of
+      // increasing width, not by bucketing a fixed-width grid. The old version took
+      // `slot % width` for the file and then wrapped it into the row with
+      // `file % rankWidth`, so every man in row 0 of a 22-wide cavalry wedge landed on
+      // one of two x positions and crowd separation had to untangle the pile.
+      let rank = 0;
+      let remaining = slot;
+      let rowWidth = 2;
+      while (remaining >= rowWidth) {
+        remaining -= rowWidth;
+        rank++;
+        rowWidth = Math.min(width, 2 + rank * 2);
+      }
+      out.x = centredX(remaining, rowWidth, sx);
       out.z = -rank * sz;
     },
     mods: { shield: 0.9, attack: 1.12, speed: 1.04, missileTaken: 1.1, charge: 1.45, morale: 4 },

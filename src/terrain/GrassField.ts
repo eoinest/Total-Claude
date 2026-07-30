@@ -1,0 +1,444 @@
+import * as THREE from 'three';
+import type { EngineContext } from '../core/Engine';
+import { generateGrassCards } from './proctex';
+import { HALF_EXTENT, WATER_LEVEL, TOPO_GLSL } from './topography';
+import type { TerrainSystem } from './TerrainSystem';
+
+/**
+ * Ground cover.
+ *
+ * Two instanced rings, each one draw call, each with its instance positions generated
+ * entirely in the vertex shader from `gl_InstanceID`. There are no per-instance buffers
+ * and nothing is uploaded when the camera moves: instance *i* maps to a cell of a
+ * jittered lattice in world space, and the lattice is addressed relative to a
+ * camera-snapped origin, so the ring recycles around the camera for the cost of a
+ * two-float uniform.
+ *
+ * Each instance is a pair of crossed alpha cards carrying about a dozen painted blades.
+ * Strip geometry per blade cannot reach pasture density — a real sward is hundreds of
+ * blades per square metre — so a card buys twelve blades for two triangles, and the
+ * cross gives it a silhouette from any bearing.
+ *
+ * Whether an instance exists at all is decided in the vertex shader from the same inputs
+ * the ground material splats with — slope, wetness, trampling, the road mask, height
+ * above the river — so grass only grows where the splat map says grass. Rejected clumps
+ * are scaled to zero, which costs a degenerate triangle and no fill.
+ *
+ * Clumps fade by shrinking rather than by popping, and their colour converges on the
+ * ground colour as they shrink, so there is no ring of density at the cut-off.
+ */
+
+/**
+ * Ring extents. A ring's fade-out distance must sit *inside* half its lattice extent, or
+ * the lattice runs out before the fade does and the grass stops at a hard circular edge.
+ *   near: 170 × 0.55 m = 94 m across, so ±47 m — fade out by 44 m.
+ *   far:  260 × 1.6 m  = 416 m across, so ±208 m — fade out by 200 m.
+ */
+const NEAR_GRID = 170;
+const NEAR_SPACING = 0.55;
+const FAR_GRID = 260;
+const FAR_SPACING = 1.6;
+
+interface Ring {
+  mesh: THREE.Mesh;
+  geo: THREE.InstancedBufferGeometry;
+  uniforms: Record<string, THREE.IUniform>;
+  spacing: number;
+}
+
+/**
+ * One card: a vertical strip of `segments` quads so the wind can curve it. `aBlade`
+ * carries (t along the card, side) for the bend and the root shading.
+ */
+function cardGeometry(segments: number, width: number, height: number): THREE.BufferGeometry {
+  const rows = segments + 1;
+  const pos = new Float32Array(rows * 2 * 3);
+  const nor = new Float32Array(rows * 2 * 3);
+  const uv = new Float32Array(rows * 2 * 2);
+  const blade = new Float32Array(rows * 2 * 2);
+  for (let r = 0; r < rows; r++) {
+    const t = r / segments;
+    for (let s = 0; s < 2; s++) {
+      const i = r * 2 + s;
+      pos[i * 3] = (s === 0 ? -0.5 : 0.5) * width;
+      pos[i * 3 + 1] = t * height;
+      pos[i * 3 + 2] = 0;
+      // Normals point up and slightly outward. A true face normal makes a field of cards
+      // flicker between lit and unlit as the camera turns; a soft upward normal lights
+      // the mass the way a sward actually behaves.
+      nor[i * 3] = (s === 0 ? -0.24 : 0.24);
+      nor[i * 3 + 1] = 0.95;
+      nor[i * 3 + 2] = 0.19;
+      uv[i * 2] = s;
+      uv[i * 2 + 1] = t;
+      blade[i * 2] = t;
+      blade[i * 2 + 1] = s === 0 ? -1 : 1;
+    }
+  }
+  const idx: number[] = [];
+  for (let r = 0; r < segments; r++) {
+    const a = r * 2;
+    idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  geo.setAttribute('aBlade', new THREE.BufferAttribute(blade, 2));
+  geo.setIndex(idx);
+  return geo;
+}
+
+/** `count` cards crossed about the vertical axis. */
+function crossedCards(count: number, segments: number, width: number, height: number): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  for (let k = 0; k < count; k++) {
+    const g = cardGeometry(segments, width, height);
+    g.rotateY((k / count) * Math.PI);
+    parts.push(g);
+  }
+  return mergeCards(parts);
+}
+
+/** Minimal geometry merge for the two static pieces this module builds. */
+function mergeCards(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  let vCount = 0;
+  let iCount = 0;
+  for (const p of parts) {
+    vCount += p.attributes.position.count;
+    iCount += p.index ? p.index.count : 0;
+  }
+  const pos = new Float32Array(vCount * 3);
+  const nor = new Float32Array(vCount * 3);
+  const uv = new Float32Array(vCount * 2);
+  const blade = new Float32Array(vCount * 2);
+  const idx = new Uint16Array(iCount);
+  let vo = 0;
+  let io = 0;
+  for (const p of parts) {
+    pos.set(p.attributes.position.array as Float32Array, vo * 3);
+    nor.set(p.attributes.normal.array as Float32Array, vo * 3);
+    uv.set(p.attributes.uv.array as Float32Array, vo * 2);
+    blade.set(p.attributes.aBlade.array as Float32Array, vo * 2);
+    const pi = p.index!.array;
+    for (let i = 0; i < pi.length; i++) idx[io + i] = pi[i] + vo;
+    vo += p.attributes.position.count;
+    io += pi.length;
+    p.dispose();
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  geo.setAttribute('aBlade', new THREE.BufferAttribute(blade, 2));
+  geo.setIndex(new THREE.BufferAttribute(idx, 1));
+  return geo;
+}
+
+const GRASS_GLSL = /* glsl */ `
+attribute vec2 aBlade;
+uniform sampler2D uHeightMap;
+uniform sampler2D uControl;
+uniform float uHalfExtent;
+uniform float uHeightSpacing;
+uniform vec2 uCentre;
+uniform vec2 uCamXZ;
+uniform float uSpacing;
+uniform float uGrid;
+uniform float uJitter;
+uniform float uDensity;
+uniform float uFadeIn;
+uniform float uFadeStart;
+uniform float uFadeEnd;
+uniform float uHeightScale;
+uniform float uWeeds;
+uniform float uCards;
+uniform float uTime;
+uniform float uWaterLevel;
+uniform vec3 uDryColour;
+uniform vec3 uWetColour;
+uniform vec3 uGroundColour;
+varying float vBladeT;
+
+${TOPO_GLSL}
+
+float grassHash(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+float grassHeightAt(vec2 wxz) {
+  vec2 uv = (wxz + uHalfExtent) / (2.0 * uHalfExtent);
+  return texture2D(uHeightMap, clamp(uv, 0.0, 1.0)).r;
+}
+`;
+
+export class GrassField {
+  private rings: Ring[] = [];
+  private time = 0;
+  private cardTex?: THREE.DataTexture;
+
+  constructor(private readonly terrain: TerrainSystem) {}
+
+  init(ctx: EngineContext, heightMap: THREE.Texture, controlMap: THREE.Texture): void {
+    const density = Math.max(0, ctx.quality.grassDensity);
+    if (density <= 0.001) return;
+
+    const cards = generateGrassCards(256, 2);
+    const tex = new THREE.DataTexture(cards.data, cards.width, cards.height, THREE.RGBAFormat);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.generateMipmaps = true;
+    tex.anisotropy = 4;
+    tex.needsUpdate = true;
+    this.cardTex = tex;
+
+    this.rings.push(
+      this.makeRing(ctx, heightMap, controlMap, tex, {
+        geo: crossedCards(2, 3, 0.42, 0.33),
+        grid: NEAR_GRID,
+        spacing: NEAR_SPACING,
+        jitter: 1.2,
+        fadeIn: 0,
+        fadeStart: 26,
+        fadeEnd: 44,
+        heightScale: 1,
+        weeds: true,
+        cards: 2,
+        density,
+        name: 'grass-near',
+      })
+    );
+    this.rings.push(
+      this.makeRing(ctx, heightMap, controlMap, tex, {
+        geo: crossedCards(1, 1, 1.8, 0.48),
+        grid: FAR_GRID,
+        spacing: FAR_SPACING,
+        jitter: 1.05,
+        // Fades in where the near ring fades out, so neither ring is ever the only
+        // cover and the hand-off leaves no ring of density on the ground.
+        fadeIn: 22,
+        fadeStart: 140,
+        fadeEnd: 200,
+        heightScale: 1.2,
+        weeds: false,
+        cards: 2,
+        density: Math.min(1.1, density),
+        name: 'grass-far',
+      })
+    );
+  }
+
+  private makeRing(
+    ctx: EngineContext,
+    heightMap: THREE.Texture,
+    controlMap: THREE.Texture,
+    cardTex: THREE.Texture,
+    opt: {
+      geo: THREE.BufferGeometry;
+      grid: number;
+      spacing: number;
+      jitter: number;
+      fadeIn: number;
+      fadeStart: number;
+      fadeEnd: number;
+      heightScale: number;
+      weeds: boolean;
+      cards: number;
+      density: number;
+      name: string;
+    }
+  ): Ring {
+    const geo = new THREE.InstancedBufferGeometry();
+    geo.index = opt.geo.index;
+    for (const key of Object.keys(opt.geo.attributes)) {
+      geo.setAttribute(key, opt.geo.attributes[key]);
+    }
+    geo.instanceCount = opt.grid * opt.grid;
+    geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e5);
+
+    const uniforms: Record<string, THREE.IUniform> = {
+      uHeightMap: { value: heightMap },
+      uControl: { value: controlMap },
+      uHalfExtent: { value: HALF_EXTENT },
+      uHeightSpacing: { value: this.terrain.heightField.spacing },
+      uCentre: { value: new THREE.Vector2() },
+      uCamXZ: { value: new THREE.Vector2() },
+      uSpacing: { value: opt.spacing },
+      uGrid: { value: opt.grid },
+      uJitter: { value: opt.jitter },
+      uDensity: { value: opt.density },
+      uFadeIn: { value: opt.fadeIn },
+      uFadeStart: { value: opt.fadeStart },
+      uFadeEnd: { value: opt.fadeEnd },
+      uHeightScale: { value: opt.heightScale },
+      uWeeds: { value: opt.weeds ? 1 : 0 },
+      uCards: { value: opt.cards },
+      uTime: { value: 0 },
+      uWaterLevel: { value: WATER_LEVEL },
+      // These are *tints* multiplied into the card texture, not colours: the card is
+      // already painted straw-green, so a colour here would darken it twice over.
+      uDryColour: { value: new THREE.Color(1.14, 1.02, 0.72) },
+      uWetColour: { value: new THREE.Color(0.72, 1.04, 0.5) },
+      uGroundColour: { value: new THREE.Color(1.0, 0.95, 0.84) },
+    };
+
+    const mat = new THREE.MeshStandardMaterial({
+      map: cardTex,
+      alphaTest: 0.34,
+      roughness: 0.88,
+      metalness: 0,
+      side: THREE.DoubleSide,
+      vertexColors: true,
+    });
+    mat.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, uniforms);
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', `#include <common>\n${GRASS_GLSL}`)
+        .replace(
+          '#include <color_vertex>',
+          /* glsl */ `
+  // --- instance placement ------------------------------------------------
+  float gi = float(gl_InstanceID);
+  float gx = mod(gi, uGrid);
+  float gz = floor(gi / uGrid);
+  vec2 cell = uCentre + (vec2(gx, gz) - uGrid * 0.5) * uSpacing;
+  // Hash from the world cell index, so the jitter is fixed to the ground and the field
+  // does not crawl when the ring recentres.
+  vec2 ci = floor(cell / uSpacing + 0.5);
+  float h1 = grassHash(ci);
+  float h2 = grassHash(ci + vec2(37.1, 11.7));
+  float h3 = grassHash(ci + vec2(5.3, 91.2));
+  vec2 gpos = cell + (vec2(h1, h2) - 0.5) * uSpacing * uJitter;
+
+  float gh = grassHeightAt(gpos);
+  float e = uHeightSpacing;
+  float sl = length(vec2(
+    grassHeightAt(gpos + vec2(e, 0.0)) - grassHeightAt(gpos - vec2(e, 0.0)),
+    grassHeightAt(gpos + vec2(0.0, e)) - grassHeightAt(gpos - vec2(0.0, e))
+  )) / (2.0 * e);
+
+  vec4 gctl = texture2D(uControl, clamp((gpos + uHalfExtent) / (2.0 * uHalfExtent), 0.0, 1.0));
+  float roadD = abs(gpos.x - topoRoadCentreX(gpos.y));
+  float paved = 1.0 - smoothstep(3.0, 7.5, roadD);
+
+  // Grass grows on gentle, untrampled, unpaved ground above the water line, and thins
+  // out where the splat map is turning to mud or bare rock.
+  float cover = (1.0 - smoothstep(0.26, 0.52, sl))
+              * (1.0 - paved * 0.95)
+              * (1.0 - gctl.b * 0.9)
+              * (1.0 - gctl.g * 0.85)
+              * (1.0 - smoothstep(0.74, 0.99, gctl.r) * 0.7)
+              * step(uWaterLevel + 0.35, gh);
+  // Real pasture grows in patches: bare scrapes, thick tussocky ground, and everything
+  // between. Two scales of clustering noise, and damp ground grows thicker.
+  float clumpBig = grassHash(floor(gpos / 19.0)) * 0.5 + grassHash(floor(gpos / 6.5)) * 0.5;
+  cover *= 0.34 + 1.15 * clumpBig + gctl.r * 0.45;
+
+  float dist = length(gpos - uCamXZ);
+  float fadeNear = uFadeIn < 0.5 ? 1.0 : smoothstep(uFadeIn, uFadeIn + 30.0, dist);
+  float fade = (1.0 - smoothstep(uFadeStart, uFadeEnd, dist)) * fadeNear;
+  float keep = step(h3, cover * uDensity);
+  // One clump in twelve is a thistle or a stand of dead grass: taller and straw
+  // coloured. Ground cover that is all one plant is the giveaway of a shader field.
+  float weed = uWeeds * step(0.918, h2);
+  float scale = keep * fade * (0.74 + 0.5 * h1) * uHeightScale * (1.0 + weed * 0.7);
+
+  // --- card shape and wind ----------------------------------------------
+  float bt = aBlade.x;
+  vec3 local = position;
+  float yaw = h1 * 6.2831853;
+  float cs = cos(yaw); float sn = sin(yaw);
+  local = vec3(local.x * cs - local.z * sn, local.y, local.x * sn + local.z * cs);
+
+  // Two frequencies: a slow gust field travelling across the map, and a faster
+  // per-clump flutter phased by the instance hash so no two move together.
+  float gust = sin(uTime * 0.42 + gpos.x * 0.031 + gpos.y * 0.021) * 0.5 + 0.5;
+  float phase = h1 * 6.2831853;
+  float flutter = sin(uTime * 1.9 + phase) * 0.6 + sin(uTime * 3.4 + phase * 1.7) * 0.3;
+  float bend = (0.35 + 0.9 * gust) * flutter * bt * bt;
+  vec2 windDir = normalize(vec2(0.82, 0.57));
+  local.xz += windDir * bend * 0.16;
+  local.y -= abs(bend) * 0.04;
+
+  vec3 gWorld = vec3(gpos.x, gh, gpos.y) + local * scale;
+  vBladeT = bt;
+
+  // Darker at the root, and converging on the ground colour as the clump shrinks away,
+  // so the cut-off leaves no visible ring of density.
+  vec3 gcol = mix(uDryColour, uWetColour, clamp(gctl.r * 1.5 + (h2 - 0.5) * 0.5, 0.0, 1.0));
+  gcol = mix(gcol, uDryColour * 1.2, weed);
+  gcol *= 0.74 + 0.34 * bt;
+  gcol = mix(uGroundColour, gcol, clamp(fade * 1.6, 0.0, 1.0));
+  vColor = vec4(gcol, 1.0);
+
+  // Pick one of the card variants per clump so the field is not one image stamped
+  // everywhere. Overrides the UV that <uv_vertex> set a few lines earlier.
+  vMapUv = vec2((uv.x + floor(h2 * uCards)) / uCards, uv.y);
+`
+        )
+        .replace('#include <begin_vertex>', 'vec3 transformed = gWorld;')
+        .replace('#include <beginnormal_vertex>', 'vec3 objectNormal = vec3(normal);');
+
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying float vBladeT;')
+        .replace(
+          '#include <normal_fragment_begin>',
+          `#include <normal_fragment_begin>
+  // Cards are double-sided so a clump reads from any bearing, but the default
+  // DOUBLE_SIDED handling flips the normal on back faces, which points half of every
+  // clump at the ground and renders it black. Grass is a translucent mass, not a solid
+  // surface: keep the upward normal on both faces.
+  normal = normalize(vNormal);
+  nonPerturbedNormal = normal;`
+        )
+        // A little translucency: grass lit from behind glows rather than going black.
+        .replace(
+          '#include <emissivemap_fragment>',
+          'totalEmissiveRadiance += diffuseColor.rgb * 0.2 * vBladeT;'
+        );
+    };
+    mat.customProgramCacheKey = () => 'terrain-grass-cards-v1';
+
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.name = opt.name;
+    // Always centred on the camera, so culling it would be wrong as well as pointless.
+    mesh.frustumCulled = false;
+    mesh.castShadow = false;
+    mesh.receiveShadow = true;
+    mesh.matrixAutoUpdate = false;
+    mesh.updateMatrix();
+    ctx.scene.add(mesh);
+
+    return { mesh, geo, uniforms, spacing: opt.spacing };
+  }
+
+  update(dt: number): void {
+    this.time += dt;
+    for (const r of this.rings) r.uniforms.uTime.value = this.time;
+  }
+
+  preRender(ctx: EngineContext): void {
+    const cam = ctx.camera.position;
+    for (const r of this.rings) {
+      // Snap the lattice origin to its own spacing so clumps stay welded to the ground.
+      const cx = Math.round(cam.x / r.spacing) * r.spacing;
+      const cz = Math.round(cam.z / r.spacing) * r.spacing;
+      (r.uniforms.uCentre.value as THREE.Vector2).set(cx, cz);
+      (r.uniforms.uCamXZ.value as THREE.Vector2).set(cam.x, cam.z);
+    }
+  }
+
+  dispose(): void {
+    for (const r of this.rings) {
+      r.mesh.parent?.remove(r.mesh);
+      (r.mesh.material as THREE.Material).dispose();
+      r.geo.dispose();
+    }
+    this.rings.length = 0;
+    this.cardTex?.dispose();
+  }
+}

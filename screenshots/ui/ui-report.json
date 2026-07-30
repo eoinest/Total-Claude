@@ -1,0 +1,197 @@
+{
+  "shots": [
+    {
+      "name": "overview",
+      "simTime": 3.699999999999998,
+      "men": 2544,
+      "units": 21,
+      "draws": 173,
+      "tris": 4880967,
+      "hudMs": 0.09889441012126304
+    }
+  ],
+  "interaction": [
+    {
+      "step": "hover over cohort I",
+      "screen": [
+        713,
+        388
+      ],
+      "hoveredId": 1,
+      "cursor": "friend"
+    },
+    {
+      "step": "left click selects",
+      "selection": [
+        1
+      ]
+    },
+    {
+      "step": "box select",
+      "count": 10,
+      "titles": [
+        "Legionary Cohort I",
+        "Legionary Cohort II",
+        "Legionary Cohort III",
+        "Legionary Cohort IV",
+        "Praetorian Guard",
+        "Urban Cohort I",
+        "Urban Cohort II",
+        "Auxiliary Archers I",
+        "Auxiliary Archers II",
+        "Scorpion Battery"
+      ]
+    },
+    {
+      "step": "double click selects type",
+      "count": 4,
+      "titles": [
+        "Legionary Cohort I",
+        "Legionary Cohort II",
+        "Legionary Cohort III",
+        "Legionary Cohort IV"
+      ]
+    },
+    {
+      "step": "mid right-drag",
+      "suppressDrag": true,
+      "frontage": 280.7,
+      "ordering": true
+    },
+    {
+      "step": "after right-drag",
+      "before": [
+        {
+          "id": 0,
+          "targetX": -61.2,
+          "targetZ": -15,
+          "facing": 2.977,
+          "targetFacing": 3.136,
+          "width": 26
+        },
+        {
+          "id": 1,
+          "targetX": -31.1,
+          "targetZ": -14.7,
+          "facing": 3.12,
+          "targetFacing": 3.136,
+          "width": 26
+        },
+        {
+          "id": 2,
+          "targetX": 12.2,
+          "targetZ": -14.5,
+          "facing": -3,
+          "targetFacing": 3.136,
+          "width": 26
+        },
+        {
+          "id": 3,
+          "targetX": 48.3,
+          "targetZ": -14.3,
+          "facing": -2.896,
+          "targetFacing": 3.136,
+          "width": 26
+        }
+      ],
+      "after": [
+        {
+          "id": 0,
+          "targetX": -105.9,
+          "targetZ": 71,
+          "targetFacing": 3.078,
+          "width": 80,
+          "order": 1
+        },
+        {
+          "id": 1,
+          "targetX": -35.3,
+          "targetZ": 75.5,
+          "targetFacing": 3.078,
+          "width": 80,
+          "order": 1
+        },
+        {
+          "id": 2,
+          "targetX": 35.3,
+          "targetZ": 79.9,
+          "targetFacing": 3.078,
+          "width": 80,
+          "order": 1
+        },
+        {
+          "id": 3,
+          "targetX": 105.8,
+          "targetZ": 84.4,
+          "targetFacing": 3.078,
+          "width": 80,
+          "order": 1
+        }
+      ]
+    },
+    {
+      "step": "right click enemy",
+      "cursor": "attack",
+      "screen": [
+        688,
+        331
+      ],
+      "orders": [
+        {
+          "id": 0,
+          "order": 3,
+          "targetUnitId": 11
+        },
+        {
+          "id": 1,
+          "order": 3,
+          "targetUnitId": 11
+        },
+        {
+          "id": 2,
+          "order": 3,
+          "targetUnitId": 11
+        },
+        {
+          "id": 3,
+          "order": 3,
+          "targetUnitId": 11
+        }
+      ]
+    },
+    {
+      "0": {
+        "id": 0,
+        "formation": "line",
+        "width": 26
+      },
+      "step": "formation button"
+    },
+    {
+      "step": "tooltip",
+      "visible": true
+    },
+    {
+      "step": "minimap click",
+      "camBefore": {
+        "x": 0,
+        "z": -40
+      },
+      "camAfter": {
+        "x": -232,
+        "z": -255.2
+      }
+    },
+    {
+      "step": "hud cost",
+      "selfMeasuredHudMs": 0.116,
+      "directHudMsPerFrame": 0.057,
+      "wholeFrameMs": 2.766,
+      "selected": 11,
+      "bannersVisible": 20
+    }
+  ],
+  "consoleErrors": [
+    "Failed to load resource: net::ERR_FAILED"
+  ]
+}
