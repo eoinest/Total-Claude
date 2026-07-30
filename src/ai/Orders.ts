@@ -17,10 +17,21 @@ import { angleDelta } from '../util/math';
 
 /** Re-issue a move only when the destination has shifted at least this far. */
 const MOVE_EPS = 4.0;
-/** Re-issue a facing order only past this angular change (about 11 degrees). */
-const FACING_EPS = 0.2;
-/** And never more often than every third of a second. */
-const FACING_REISSUE_TICKS = 10;
+/**
+ * Re-issue a facing order only past this angular change.
+ *
+ * Raised from 0.2 rad (11 degrees) to 0.45 (26 degrees). A formation wheels at about
+ * 34 deg/s, so an 11-degree threshold is reachable in a third of a second and let ordinary
+ * threat-assessment noise re-aim a cohort continuously. A wheel is a commitment: it should
+ * take a real change of situation to order one, not a neighbour shifting a few metres.
+ */
+const FACING_EPS = 0.45;
+/**
+ * And never more often than this. Raised from 10 ticks to 45 (1.5 s at 30 Hz) for the same
+ * reason: a cohort that re-aims three times a second never finishes turning, so it presents
+ * its flank to everything for the whole battle instead of squaring up to one thing.
+ */
+const FACING_REISSUE_TICKS = 45;
 /** Never re-issue the same kind of order more often than this, whatever changed. */
 const MIN_REISSUE_TICKS = 6;
 

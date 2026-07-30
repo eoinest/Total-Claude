@@ -26,6 +26,7 @@ import {
  */
 
 const SCRATCH = { x: 0, z: 0 };
+
 const AIM = { x: 0, z: 0 };
 const SEG_SELF = makeSegment();
 const SEG_OTHER = makeSegment();

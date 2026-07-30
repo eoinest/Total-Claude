@@ -99,6 +99,12 @@ export interface UnitInfo {
   flankThreat: number;
   /** Bearing of the worst flank threat, or NaN. */
   flankBearing: number;
+  /**
+   * Weight of the strongest flanking threat seen this tick, so `flankBearing` can be the
+   * bearing of the *worst* one rather than of whichever enemy the iterator happened to
+   * visit last. Reset every tick alongside `flankBearing`.
+   */
+  flankWorst: number;
   /** Enemy missile weight that can currently reach us. */
   missilePressure: number;
 
@@ -316,7 +322,7 @@ export class AIWorld {
           inContact: false, contactEnemyId: -1, contactCount: 0,
           nearestEnemyId: -1, nearestEnemyDist: Infinity, nearestLineEnemyDist: Infinity,
           closingEnemyId: -1, closingDist: Infinity,
-          threat: 0, flankThreat: 0, flankBearing: NaN, missilePressure: 0,
+          threat: 0, flankThreat: 0, flankBearing: NaN, flankWorst: 0, missilePressure: 0,
           leftGap: Infinity, rightGap: Infinity, leftNeighbour: -1, rightNeighbour: -1,
           heightEdge: 0, badGround: false,
         };
@@ -338,6 +344,7 @@ export class AIWorld {
       rec.threat = 0;
       rec.flankThreat = 0;
       rec.flankBearing = NaN;
+      rec.flankWorst = 0;
       rec.missilePressure = 0;
       rec.leftGap = Infinity;
       rec.rightGap = Infinity;
@@ -546,7 +553,14 @@ export class AIWorld {
           const rel = Math.abs(angleDelta(u.facing, bearing));
           if (rel > FLANK_ANGLE && gap < 150) {
             rec.flankThreat += w;
-            if (Number.isNaN(rec.flankBearing) || w > 0) rec.flankBearing = bearing;
+            // `w` is a product of three positive quantities, so the old `w > 0` test was
+            // always true and this reduced to "take the last flanking enemy the iterator
+            // visits". RefuseFlank then re-aimed at an unrelated bearing several times a
+            // second. Keep the bearing of the strongest threat instead.
+            if (Number.isNaN(rec.flankBearing) || w > rec.flankWorst) {
+              rec.flankWorst = w;
+              rec.flankBearing = bearing;
+            }
           }
         }
 
