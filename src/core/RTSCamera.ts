@@ -215,11 +215,20 @@ export class RTSCamera {
         fy /= len;
       }
       // Pan in the camera's ground plane, not world axes.
+      //
+      // `place()` puts the eye at focus - (sin yaw, cos yaw) * r, so the direction the
+      // camera is looking — screen "up" on the ground plane — is +(sin yaw, cos yaw), and
+      // screen-right is its perpendicular (cos yaw, -sin yaw), which is +X at yaw 0.
+      //
+      // The previous form applied (-sin, +cos) for forward, i.e. with X negated. That is
+      // identical to the correct vector at yaw 0 and yaw PI, and mirrored everywhere else,
+      // which is exactly why W felt right facing north or south and sent the camera
+      // sideways on any other heading.
       const s = Math.sin(this.yaw);
       const c = Math.cos(this.yaw);
       const rate = this.panRate * dt;
-      this.focus.x += (fx * c - fy * s) * rate;
-      this.focus.z += (fx * s + fy * c) * rate;
+      this.focus.x += (fx * c + fy * s) * rate;
+      this.focus.z += (fy * c - fx * s) * rate;
     }
   }
 
