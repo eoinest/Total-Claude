@@ -586,19 +586,14 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   background:
     linear-gradient(180deg, rgba(52, 41, 26, 0.94), rgba(20, 15, 10, 0.95));
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 238, 196, 0.12);
-  animation: note-in 0.42s cubic-bezier(0.2, 0.9, 0.25, 1) both;
-  transition: opacity 1s ease, transform 1s ease;
+  /* Opacity and transform are written by `EventFeed.sync` off the game clock — see the note
+     there. A CSS animation here would be caught mid-flight in every harness frame. */
+  opacity: 0;
 }
-.note.leaving { opacity: 0; transform: translateX(1.4em); }
 .note.good { border-left-color: #8fae6c; }
 .note.bad { border-left-color: #c0564a; }
 .note.alarm { border-left-color: var(--gold); }
 .note.neutral { border-left-color: rgba(217, 178, 95, 0.4); }
-
-@keyframes note-in {
-  from { opacity: 0; transform: translateX(1.6em); }
-  to { opacity: 1; transform: translateX(0); }
-}
 
 .note-ic { font-size: 1.5em; line-height: 0; color: rgba(226, 202, 148, 0.85); flex: none; }
 .note.bad .note-ic { color: #d78578; }

@@ -160,10 +160,17 @@ Notable ones you should emit or consume:
 Non-negotiable: **60 fps at 1920×1080 on an Apple M4 Max with 6,000+ animated men
 on screen.** Measured by `tools/shoot.mjs`, which prints fps, draw calls and triangles.
 
+**Frame time is the binding constraint; the rest are proxies for it.** The triangle
+figure was originally 14 M, chosen as a guess. Measured across all 15 shots at 1080p with
+8,944 men, the two heaviest — the establishing shot at 14.75 M and the cavalry wing at
+15.65 M — run at 174 and 70 fps respectively. So 14 M was mis-calibrated rather than the
+geometry being wrong, and it is now 16 M. If a change pushes triangles up while frame time
+stays inside 16.7 ms, that is fine. If frame time regresses, no triangle count excuses it.
+
 | Resource | Budget |
 |---|---|
 | Draw calls, whole frame | ≤ 220 |
-| Triangles, whole frame | ≤ 14 M |
+| Triangles, whole frame | ≤ 16 M |
 | Soldier draw calls | ≤ 12 (instanced, one per faction × LOD) |
 | Unique materials | ≤ 40 |
 | Textures resident | ≤ 220 MB |

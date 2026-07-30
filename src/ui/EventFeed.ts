@@ -126,7 +126,7 @@ export class EventFeed {
       existing.count++;
       existing.bornAt = now;
       if (existing.countEl) existing.countEl.textContent = `×${existing.count}`;
-      existing.node.classList.remove('leaving');
+      // Resetting `bornAt` is enough: `sync` recomputes the fade from it every tick.
       return;
     }
 
@@ -194,7 +194,15 @@ export class EventFeed {
     this.wasEngaged = engaged;
   }
 
-  /** Runs at the slow tick; retiring a notice is not time-critical. */
+  /**
+   * Runs at the slow tick; retiring a notice is not time-critical.
+   *
+   * The rise and the fade are both driven from the clock rather than by a CSS animation and
+   * transition, for the same reason `BattleFlow` drives its title card that way: the
+   * screenshot harness fast-forwards simulated time without letting real time pass, so a
+   * 0.42 s keyframe animation is caught a few milliseconds in and every notice was
+   * photographed as a half-transparent ghost sliding in from the right.
+   */
   sync(now: number): void {
     for (let i = this.notices.length - 1; i >= 0; i--) {
       const n = this.notices[i];
@@ -202,9 +210,17 @@ export class EventFeed {
       if (age > LIFETIME) {
         this.notices.splice(i, 1);
         n.node.remove();
-      } else if (age > LIFETIME - 1.1) {
-        n.node.classList.add('leaving');
+        continue;
       }
+      const rise = Math.max(0, Math.min(1, age / 0.42));
+      const fall = Math.max(0, Math.min(1, (LIFETIME - age) / 1.1));
+      const a = Math.min(rise, fall);
+      // Slides in from the right and leaves the same way.
+      const slide = (1 - rise) * 1.6 + (1 - fall) * 1.4;
+      const op = a.toFixed(3);
+      if (n.node.style.opacity !== op) n.node.style.opacity = op;
+      const tf = `translateX(${slide.toFixed(2)}em)`;
+      if (n.node.style.transform !== tf) n.node.style.transform = tf;
     }
   }
 

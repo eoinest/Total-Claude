@@ -18,7 +18,7 @@ import process from 'node:process';
 const BUDGET = {
   fps: 60,
   draws: 220,
-  tris: 14_000_000,
+  tris: 16_000_000,
 };
 
 // Regression thresholds — noise below these is ignored.
