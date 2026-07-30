@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TOTAL CLAUDE — Siege of Rome</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="stylesheet" href="/src/ui/hud.css" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="viewport"></canvas>
+      <div id="hud-root"></div>
+      <div id="loading">
+        <div class="load-inner">
+          <div class="eagle">
+            <svg viewBox="0 0 64 64" width="88" height="88" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M32 4l4 8 10-4-3 9 11 1-8 6 8 6-11 1 3 9-10-4-4 8-4-8-10 4 3-9-11-1 8-6-8-6 11-1-3-9 10 4z"
+                opacity=".85"
+              />
+            </svg>
+          </div>
+          <h1>TOTAL CLAUDE</h1>
+          <h2>The Siege of Rome &middot; 271 AD</h2>
+          <div class="bar"><i id="load-bar"></i></div>
+          <p id="load-text">Mustering the legions&hellip;</p>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,30 @@
+{
+  "name": "total-claude",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eoinest/Total-Claude.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/eoinest/Total-Claude/issues"
+  },
+  "homepage": "https://github.com/eoinest/Total-Claude#readme",
+  "dependencies": {
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.185.1",
+    "playwright": "^1.62.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.5"
+  }
+}
