@@ -49,9 +49,19 @@ import { makeCorpsePose, type CorpsePose, type RagdollSystem } from '../sim/Ragd
  * the sim has no clip table to consult. That is fine for a one-shot but wrong for
  * everything else: an idle breathes at three times life, and a marching man's feet skate
  * because his stride is not his ground speed. So for looping clips this system runs its
- * own phase, advanced by `groundSpeed / clip.rootSpeed` for locomotion and `1 / duration`
- * otherwise. One-shot clips (the four deaths) still read `pool.animTime` directly, because
- * the sim flips Dying to Dead when that reaches 1 and the pose must arrive with it.
+ * own phase, advanced by `groundSpeed / (clip.rootSpeed * scale)` for locomotion and
+ * `1 / duration` otherwise. One-shot clips (the four deaths) still read `pool.animTime`
+ * directly, because the sim flips Dying to Dead when that reaches 1 and the pose must
+ * arrive with it.
+ *
+ * ## Mounted men
+ * A rider is two instances that have to agree to the centimetre. The horse owns the shared
+ * gait phase — chosen from a speed ladder and advanced at `groundSpeed / stride`, so a hoof
+ * never skates — and the rider is placed against the saddle's *animated* height, baked per
+ * animation row by `bakePointTrack`, less the mean pelvis height of his own clip. That
+ * decomposition is what matters: the saddle track carries the horse's back rising and falling
+ * through a gallop, and subtracting a per-clip mean rather than a per-frame value leaves the
+ * rider's own rise out of the saddle intact on top of it.
  */
 
 /** Per-instance float layout. Must match the attribute declarations in skinShader.ts. */
@@ -74,8 +84,24 @@ const LOD_COUNT = 3;
  * three thousand men in it cost under a million triangles — cheap enough that pushing the
  * billboard tier out past 600 m costs nothing and keeps real geometry, with real
  * silhouettes and real shadows, over the whole range a player actually watches from.
+ *
+ * The middle edge was 0.5, and that is where the triangle budget was going. Measured at the
+ * `cavalry` camera by `tools/probe-rider.mjs --lod`, which reports instance counts per tier:
+ *
+ *     edge   LOD0   LOD1   LOD2   soldier tris   whole frame
+ *     0.50    218   1950   2947      6.30 M        19.6 M
+ *     0.40    218    ~900  ~3900     ~4.3 M        13.6 M
+ *     0.34    218    420   4477      3.40 M        11.5 M
+ *
+ * LOD1 is 2,012-2,314 triangles against LOD2's 313, so a man who crosses that edge gets
+ * seven times cheaper — which is why nineteen hundred of them at LOD1 were most of the frame.
+ * At 0.40 x 220 m the edge is 88 m, where a 1.75 m man is 35 px tall at 1080p, and comparing
+ * frames at 0.34, 0.40 and 0.50 across establishing, cavalry, romanline, germanhorde, clash
+ * and melee found no visible difference at all: germanhorde and clash are byte-identical
+ * because every man in them is inside 88 m either way. 0.40 rather than 0.34 only because it
+ * keeps a marginal 10 m of real geometry for nothing at 1080p.
  */
-const LOD_FRACTION = [0.14, 0.5, 2.0];
+const LOD_FRACTION = [0.14, 0.4, 2.0];
 /** Hysteresis as a fraction of the band distance: a man must cross well past a boundary
  *  before he changes LOD, otherwise a slow camera pan pops a whole rank back and forth. */
 const LOD_HYSTERESIS = 0.12;

@@ -82,8 +82,11 @@ const SHOTS = {
     // The old camera (210, 60) at yaw 1.6pi looked north-west into the Roman rear, with
     // every cavalry action 25-40 m behind it. This framing was verified by the AI agent
     // to put the wedge on the wing with the battle line receding into the dust behind.
+    // `follow: 'cavalry'` averages every mounted unit, and with three Roman wings plus
+    // four Juthungi raider bands spread across a 900 m front that centroid lands in the
+    // infantry between them. Framed on the single largest surviving mounted unit instead.
     desc: 'The cavalry wing sweeping the flank',
-    follow: 'cavalry', zoom: 0.42, at: 62,
+    follow: 'cavalryUnit', zoom: 0.30, at: 70,
   },
   city: {
     // Was (60, 400) zoom 0.62, which put the camera *inside* the Via Flaminia tomb field
@@ -451,6 +454,23 @@ try {
                 fz = (seg.z1 + seg.z2) / 2 - 6;
                 fyaw = Math.atan2(seg.x2 - seg.x1, seg.z2 - seg.z1) + 0.62;
                 n = -1; // signal: focus already resolved, skip the centroid paths
+              }
+            }
+
+            if (s.follow === 'cavalryUnit') {
+              // Biggest living mounted unit, and look at its front obliquely.
+              let best = null;
+              for (const u of b.units) {
+                if (u.destroyed || u.alive === 0) continue;
+                const cls = b.typeOf(u).unitClass;
+                if (cls !== 'heavy-cavalry' && cls !== 'light-cavalry') continue;
+                if (!best || u.alive > best.alive) best = u;
+              }
+              if (best) {
+                fx = best.x;
+                fz = best.z;
+                fyaw = best.facing + Math.PI + 0.7;
+                n = -1;
               }
             }
 

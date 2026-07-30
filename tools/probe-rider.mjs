@@ -507,6 +507,110 @@ if (SHOT) {
 }
 
 // ---------------------------------------------------------------------------
+// Per-LOD instance counts. Settles "which tier is the triangle spike in" in one shot.
+// ---------------------------------------------------------------------------
+if (args.get('lod')) {
+  const CASES = [
+    { name: 'marching   (romanline t+2)', at: 2, zoom: 0.36, follow: 'romanFront' },
+    { name: 'melee      (contact t+94)', at: 94, zoom: 0.30, follow: 'contact' },
+    { name: 'rout       (routing unit)', at: 150, zoom: 0.55, follow: 'rout' },
+    { name: 'rout close (routing unit)', at: 150, zoom: 0.30, follow: 'rout' },
+    { name: 'cavalry    (graded shot)', at: 150, zoom: 0.42, x: 97, z: -23, yaw: Math.PI * 1.6 },
+  ];
+  console.log('\n=== per-LOD instance counts and soldier triangles, 1600x900 ===');
+  let prev = 0;
+  for (const c of CASES) {
+    const r = await page.evaluate(async ({ c, prev }) => {
+      const g = window.__game;
+      const b = g.battle;
+      if (c.at > prev) g.advance(c.at - prev);
+      // Resolve the focus the same way the shot harness does: on the live formation.
+      let fx = 0;
+      let fz = 0;
+      let n = 0;
+      const want = (u) => {
+        if (c.follow === 'rout') return u.routTimer > 0;
+        if (c.follow === 'romanFront') return u.faction === 0 && u.routTimer <= 0;
+        return true;
+      };
+      let best = null;
+      for (const u of b.units) {
+        if (!want(u)) continue;
+        let m = 0;
+        let sx = 0;
+        let sz = 0;
+        for (const i of u.members) {
+          if (!b.pool.aliveAt(i)) continue;
+          m++; sx += b.pool.x[i]; sz += b.pool.z[i];
+        }
+        if (m < 20) continue;
+        if (c.follow === 'contact') { fx += sx / m; fz += sz / m; n++; continue; }
+        if (!best || m > best.m) best = { m, x: sx / m, z: sz / m };
+      }
+      if (best) { fx = best.x; fz = best.z; n = 1; }
+      if (c.x !== undefined) { fx = c.x; fz = c.z; n = 1; }
+      if (!n) return null;
+      g.setCamera(fx / n, fz / n, c.zoom, c.yaw ?? Math.PI);
+      g.advance(0.35);
+      g.engine.frame(g.engine.time.elapsed * 1000 + 16.7);
+
+      const tiers = [];
+      g.engine.ctx.scene.traverse((o) => {
+        if (!o.isMesh || !/soldiers|horses/.test(o.name)) return;
+        const gm = o.geometry;
+        const per = gm.index ? gm.index.count / 3 : gm.attributes.position.count / 3;
+        tiers.push({ name: o.name, per, count: gm.instanceCount ?? 0, vis: !!o.visible });
+      });
+      const states = {};
+      let routing = 0;
+      for (let i = 0; i < b.pool.count; i++) {
+        const s = b.pool.state[i];
+        states[s] = (states[s] ?? 0) + 1;
+        if (s === 12) routing++;
+      }
+      // Attribution by top-level scene node, so an over-budget frame names an owner.
+      const scene = g.engine.ctx.scene;
+      const rows = new Map();
+      const visible = (o) => { let m = o; while (m) { if (!m.visible) return false; m = m.parent; } return true; };
+      const owner = (o) => { let m = o; while (m.parent && m.parent !== scene) m = m.parent; return m.name || m.type; };
+      scene.traverse((o) => {
+        if (!o.isMesh && !o.isLine && !o.isPoints) return;
+        if (!visible(o)) return;
+        const gm = o.geometry;
+        let t = gm?.index ? gm.index.count / 3 : gm?.attributes?.position ? gm.attributes.position.count / 3 : 0;
+        t *= o.isInstancedMesh ? o.count : (gm?.instanceCount ?? 1);
+        const k = owner(o);
+        const rec = rows.get(k) ?? { draws: 0, tris: 0 };
+        rec.draws++; rec.tris += t;
+        rows.set(k, rec);
+      });
+      const info = g.engine.renderer.info.render;
+      return {
+        tiers, routing,
+        attr: [...rows.entries()].map(([k, v]) => ({ k, ...v })).sort((a, b) => b.tris - a.tris).slice(0, 8),
+        frameDraws: info.calls, frameTris: info.triangles,
+        focus: [Math.round(fx / n), Math.round(fz / n)],
+      };
+    }, { c, prev });
+    prev = Math.max(prev, c.at);
+    if (!r) { console.log(`  ${c.name}: no matching unit`); continue; }
+    const soldierTris = r.tiers.reduce((a, t) => a + t.per * t.count, 0);
+    console.log(`\n  ${c.name}  focus (${r.focus.join(',')})  routing ${r.routing}`);
+    console.log(`    whole frame ${r.frameDraws} draws / ${(r.frameTris / 1e6).toFixed(2)}M tris` +
+      `    soldier geometry ${(soldierTris / 1e6).toFixed(2)}M tris`);
+    for (const t of r.tiers) {
+      if (!t.count) continue;
+      console.log(`      ${t.name.padEnd(26)} ${String(t.per).padStart(6)} tris x ${String(t.count).padStart(5)} = ` +
+        `${((t.per * t.count) / 1e6).toFixed(2)}M`);
+    }
+    console.log('    whole-frame attribution by owner:');
+    for (const a of r.attr) {
+      console.log(`      ${String(a.draws).padStart(4)} draws ${((a.tris) / 1e6).toFixed(2).padStart(7)}M  ${a.k}`);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Frame cost, measured as the *minimum* over many blocks.
 //
 // shoot.mjs times one block of 30 frames, which on a machine running other work reports

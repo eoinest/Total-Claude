@@ -167,10 +167,16 @@ figure was originally 14 M, chosen as a guess. Measured across all 15 shots at 1
 geometry being wrong, and it is now 16 M. If a change pushes triangles up while frame time
 stays inside 16.7 ms, that is fine. If frame time regresses, no triangle count excuses it.
 
+**`renderer.info.render.triangles` counts every pass, not unique geometry.** Measured at
+the cavalry camera, unique visible geometry was 10.6 M while the counter reported 35.5 M —
+roughly 3.3x, because shadow cascades and the depth prepass each re-draw the scene. So the
+budget above is a budget on the *reported* figure, which is the honest way to read it: it
+is a proxy for total vertex work, not a model complexity count.
+
 | Resource | Budget |
 |---|---|
 | Draw calls, whole frame | ≤ 220 |
-| Triangles, whole frame | ≤ 16 M |
+| Triangles, whole frame | ≤ 16 M as reported by `renderer.info` |
 | Soldier draw calls | ≤ 12 (instanced, one per faction × LOD) |
 | Unique materials | ≤ 40 |
 | Textures resident | ≤ 220 MB |
