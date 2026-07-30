@@ -12,7 +12,8 @@
     "shoot": "node tools/shoot.mjs",
     "trace": "node tools/trace.mjs",
     "perfdiff": "node tools/perfdiff.mjs",
-    "assets": "node tools/fetch-assets.mjs"
+    "assets": "node tools/fetch-assets.mjs",
+    "deploy": "npm run build && node tools/deploy-vercel.mjs --name total-claude"
   },
   "repository": {
     "type": "git",

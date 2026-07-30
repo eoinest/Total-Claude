@@ -7,6 +7,56 @@ Roman field army drawn up in front of the unfinished Aurelian Wall.
 
 Everything renders from code and CC0 assets — no game rips, no commercial content.
 
+**Play it:** [total-claude.vercel.app](https://total-claude.vercel.app)
+
+![Two lines locked in contact on the Campus Martius](docs/images/clash.jpg)
+
+*Roman cohorts in shield wall on the left, a Juthungi warband on the right, dust rising from
+the contact corridor between them. 8,561 men simulated, 109 draw calls.*
+
+---
+
+## More
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/romanline.jpg" alt="A legionary cohort in line"></td>
+<td width="50%"><img src="docs/images/germanhorde.jpg" alt="A Juthungi warband"></td>
+</tr>
+<tr>
+<td><b>Roman line.</b> Segmentata banding, ring mail, cheek-guarded <i>galea</i>, the painted
+<i>scutum</i>, and the cohort's <i>vexillum</i>. Every man's shield colour, helmet variant,
+crest, skin tone and kit wear is drawn from a stable per-soldier hash, so no two adjacent
+men are the same.</td>
+<td><b>Juthungi warband.</b> Round limewood shields in different colours with painted
+spirals, sunwheels and wolf-heads — men who equipped themselves rather than a quartermaster
+who equipped them.</td>
+</tr>
+<tr>
+<td><img src="docs/images/melee.jpg" alt="Inside the melee"></td>
+<td><img src="docs/images/aftermath.jpg" alt="The field after the battle"></td>
+</tr>
+<tr>
+<td><b>The melee.</b> Only men who can actually reach an enemy fight; rear ranks press
+forward and step into the gaps the dead leave. A quarter of engagements pair two soldiers
+into a single shared animation, as Rome II's own <code>matched_combat_percentage</code> does.</td>
+<td><b>Aftermath.</b> Blood soaked into the soil, earth churned along the whole contact line,
+spent pila and arrows standing where they fell, dropped shields and helmets. Ground damage
+accumulates into a persistent buffer and is never cleared.</td>
+</tr>
+<tr>
+<td><img src="docs/images/wall.jpg" alt="The Aurelian Wall under construction"></td>
+<td><img src="docs/images/wide.jpg" alt="The battlefield from above"></td>
+</tr>
+<tr>
+<td><b>The Aurelian Wall, 271 AD.</b> Brick-faced concrete on a travertine footing, square
+towers at one Roman <i>actus</i> (35.5 m), a stair to the wall-walk, and behind it painted
+insulae with terracotta roofs. In front, the Via Flaminia necropolis and its cypresses.</td>
+<td><b>Strategic view.</b> Centuriated fields on a 94 m lattice, the Via Flaminia running
+north, and the two armies as legible blocks trailing dust.</td>
+</tr>
+</table>
+
 ---
 
 ## The setting is real
@@ -67,10 +117,17 @@ npm run build        # typecheck → vite build → asset optimisation
 npm run preview      # check the production build locally
 ```
 
-**Vercel:** import the repo and accept the defaults — `vercel.json` is committed. Or:
+**Live at [total-claude.vercel.app](https://total-claude.vercel.app).**
+
+**Vercel:** import the repo and accept the defaults — `vercel.json` is committed.
+
+Note that the CLI cannot deploy to a *personal* Vercel account non-interactively: it
+demands an explicit `--scope` and rejects a personal account there outright, offering only
+your teams. `tools/deploy-vercel.mjs` goes via the REST API instead, uploading `dist/` as a
+prebuilt static deployment:
 
 ```bash
-npx vercel --prod
+npm run build && node tools/deploy-vercel.mjs --name total-claude
 ```
 
 The build step cuts the deployed payload from **213 MB to 24 MB**:
