@@ -48,6 +48,9 @@ export class BattleFlowSystem implements Subsystem {
     reason: 'annihilation' | 'rout' | 'timeout' | 'objective';
     casualties: Record<number, number>;
     survivors: Record<number, number>;
+    /** Units destroyed, broken, or reduced below a quarter strength. */
+    unitsLost: Record<number, number>;
+    unitsTotal: Record<number, number>;
     at: number;
   } | null = null;
 
@@ -129,13 +132,26 @@ export class BattleFlowSystem implements Subsystem {
     const b = this.battle;
     const casualties: Record<number, number> = {};
     const survivors: Record<number, number> = {};
+    const unitsLost: Record<number, number> = {};
+    const unitsTotal: Record<number, number> = {};
     for (const side of this.sides) {
       const own = b.units.filter((u) => u.faction === side.faction);
       const alive = own.reduce((a, u) => a + (u.destroyed ? 0 : u.alive), 0);
       survivors[side.faction] = alive;
       casualties[side.faction] = Math.max(0, side.initialMen - alive);
+      unitsTotal[side.faction] = own.length;
+      // A unit counts as lost if it is gone, if it has broken, or if it has been reduced
+      // below a quarter of its establishment. Snapshotting only `destroyed` at the instant
+      // of victory reported "0 of 21 lost" on a battle whose roll of honour listed cohorts
+      // at 18 of 320 men and flagged ROUTED — units are flagged destroyed later, as they
+      // leave the field, long after the result is called.
+      unitsLost[side.faction] = own.filter(
+        (u) => u.destroyed || u.order === UnitOrder.Rout || u.alive < u.initialStrength * 0.25
+      ).length;
     }
-    this.result = { victor, reason, casualties, survivors, at: this.elapsed };
+    this.result = {
+      victor, reason, casualties, survivors, unitsLost, unitsTotal, at: this.elapsed,
+    };
 
     ctx.events.emit('battleEnded', { victor: victor as number, reason });
     ctx.events.emit('musicCue', {

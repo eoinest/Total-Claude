@@ -310,6 +310,24 @@ const body = (withNormal: boolean): string => /* glsl */ `
     // the lean-and-yaw path is bypassed entirely rather than composed with it.
     sp = soldierQRot( iQuat, sp );
     ${withNormal ? 'sn = soldierQRot( iQuat, sn );' : ''}
+    // Settle the body against the ground.
+    //
+    // The solver tips a man over as one rigid piece and the death clip is held part-way
+    // through its collapse, so a settled corpse keeps an arm and a knee up in the air at the
+    // angle they were at when the fall started. A heap of those reads as spikes and splayed
+    // parts rather than as dead men, and it is also most of why bodies appear to pass through
+    // each other — the vertical extent is twice what a corpse's should be.
+    //
+    // A squash along world Y, about the mesh origin (which is on the ground), pulls exactly
+    // those raised limbs down and leaves everything already touching the ground where it is.
+    // The factor rides in iOrient.z, the lane a living man uses for lean and a corpse has no
+    // use for, so it can ramp in with the fall without costing an attribute. Normals take the
+    // reciprocal, which is the inverse transpose of a diagonal scale.
+    // Named the long way round because "flat" is a reserved interpolation qualifier in GLSL,
+    // and a shader that fails to compile silently draws nothing at all.
+    float settleFlat = clamp( iOrient.z, 0.35, 1.0 );
+    sp.y *= settleFlat;
+    ${withNormal ? 'sn.y /= settleFlat;' : ''}
   } else {
     // Lean is a bend, not a tilt: the rotation ramps in with height so the feet stay
     // planted while the shoulders go forward. A rigid tilt slides a running man's feet
@@ -433,20 +451,29 @@ const TINT_BODY = /* glsl */ `
       // unit identifiable at a glance — but the paint is not: a fresh madder lot next to one
       // gone brown in the sun, a brick repaint over an older board, a much-scrubbed shield
       // gone dark, and the occasional board issued out of a dead man's kit that never
-      // matched. Adjacent men therefore carry visibly different reds, which is exactly what
-      // the reference frames show and is the cheapest crowd-variety win left on a Roman.
+      // matched.
+      //
+      // These lots differ in *hue*, not only in value, and that is only possible because the
+      // Roman tiles are now drawn on a warm mid-tone field rather than a saturated red. A
+      // multiply cannot move the hue of a field whose green and blue are already near zero:
+      // 0x8e1f24 is (0.270, 0.014, 0.019) linear, so every lot came back some value of the
+      // same red and a rank of them read as one repeated shield. With the field drawn at
+      // roughly a third grey the multiply has all three channels to work in, and the median
+      // lot is what puts the cohort back at Roman red.
       float pick = fract( v * 97.1 );
       vec3 lot =
-          pick < 0.32 ? vec3( 1.04, 0.96, 0.92 )   // the issue lot, still fresh
-        : pick < 0.56 ? vec3( 0.78, 0.62, 0.54 )   // sun-faded, gone brown
-        : pick < 0.76 ? vec3( 1.18, 0.88, 0.66 )   // a warmer brick repaint
-        : pick < 0.90 ? vec3( 0.60, 0.55, 0.56 )   // scrubbed dark, years of service
-        :               vec3( 1.10, 1.14, 1.2 );   // out of another unit's stores
-      tint = lot * ( 0.84 + fract( v * 103.7 ) * 0.34 );
+          pick < 0.26 ? vec3( 0.98, 0.50, 0.44 )   // the issue lot: madder red, still fresh
+        : pick < 0.44 ? vec3( 0.74, 0.52, 0.42 )   // sun-faded, gone brown
+        : pick < 0.60 ? vec3( 1.10, 0.62, 0.40 )   // a warmer brick repaint
+        : pick < 0.72 ? vec3( 1.02, 1.02, 0.56 )   // a weld-ochre board
+        : pick < 0.82 ? vec3( 0.60, 0.46, 0.40 )   // scrubbed dark, years of service
+        : pick < 0.92 ? vec3( 1.16, 1.02, 0.86 )   // limewashed, an old board reissued
+        :               vec3( 0.54, 0.64, 0.74 );  // out of another unit's stores entirely
+      tint = lot * ( 0.82 + fract( v * 103.7 ) * 0.38 );
     }
   }
   else if ( slot < 7.5 )  tint = metal;
-  else {
+  else if ( slot < 8.5 ) {
     // Focale. Madder red is the commonest, but a man bought his own: undyed linen, weld
     // yellow and woad blue-grey all turn up, and four collars instead of one is the whole
     // difference between a rank of men and a rank of one man.
@@ -455,6 +482,55 @@ const TINT_BODY = /* glsl */ `
            : fp < 0.68 ? vec3( 0.66, 0.62, 0.52 )
            : fp < 0.86 ? vec3( 0.52, 0.36, 0.13 )
            :             vec3( 0.20, 0.24, 0.31 ) ) * batch;
+  }
+  else if ( slot < 9.5 ) {
+    // ---- the inside of a shield ----
+    // The largest single surface a soldier presents to a camera behind his own line: 11.9%
+    // of the romanline frame, measured by difference, against 4.0% for his armour. It was
+    // untinted plank, so it was one repeated tan corrugation across the whole cohort and it
+    // was also the brightest thing on the shaded side of the army, which is a double loss —
+    // maximum uniformity on maximum area.
+    //
+    // A scutum was hide-faced and the facing is whatever the man had: oiled leather, the
+    // field paint carried round the rim, felt, or bare board gone grey. Weighted toward the
+    // dark end because that is what the reference frames show from behind a Roman line, and
+    // because a dark inside is what lets the painted front read as the bright side.
+    //
+    // A tribal board is planks with a hide rim and no facing worth the name, so it keeps the
+    // pale end of the range. Same discriminator as the front — emblem tiles 4 and up are the
+    // tribal devices — so it still costs no attribute.
+    // Multipliers on the neutral 0.34-linear shield-back tile, so the products span 0.05 to
+    // 0.37 linear — pitch at one end, raw hide at the other. That whole span matters: this
+    // surface is 12% of the frame, and a narrow one is a wall of one colour however carefully
+    // the hue is chosen.
+    float sp = fract( v * 109.3 );
+    vec3 face = iCol0.w > 3.5
+      ? ( sp < 0.30 ? vec3( 0.95, 0.86, 0.66 )   // bare limewood, dirty
+        : sp < 0.54 ? vec3( 0.70, 0.64, 0.52 )   // older board, weathered grey-brown
+        : sp < 0.76 ? vec3( 0.46, 0.36, 0.27 )   // hide backing, greased
+        :             vec3( 0.82, 0.70, 0.44 ) ) // limewood gone yellow with pitch
+      : ( sp < 0.22 ? vec3( 0.24, 0.20, 0.17 )   // oiled hide, near black in shadow
+        : sp < 0.42 ? vec3( 0.72, 0.30, 0.24 )   // the field paint carried over the rim
+        : sp < 0.60 ? vec3( 0.52, 0.50, 0.46 )   // grey felt lining
+        : sp < 0.80 ? vec3( 0.86, 0.72, 0.50 )   // bare board, dirty
+        : sp < 0.92 ? vec3( 1.10, 1.00, 0.82 )   // raw hide, pale
+        :             vec3( 0.17, 0.15, 0.16 ) );// pitch, to keep the damp out
+    tint = face * ( 0.80 + fract( v * 113.9 ) * 0.42 );
+  }
+  else {
+    // ---- crest ----
+    // A crest sits above the helmet line with nothing in front of it, so it is the most
+    // visible square centimetre on a man and the least forgiving of repetition. Rome II's
+    // legionary ranks carry black feather pairs, undyed white horsehair and madder red in the
+    // same cohort, plus the occasional black-and-white pair; four choices instead of one is
+    // most of what breaks up a helmet line seen from behind.
+    float cp = fract( v * 127.1 );
+    vec3 crest =
+        cp < 0.34 ? vec3( 0.055, 0.048, 0.055 )   // black feathers, the commonest
+      : cp < 0.62 ? vec3( 0.31, 0.055, 0.045 )    // madder-dyed horsehair
+      : cp < 0.84 ? vec3( 0.60, 0.575, 0.50 )     // undyed white horsehair
+      :             vec3( 0.20, 0.155, 0.09 );    // brown, an old crest gone dusty
+    tint = crest * ( 0.82 + fract( v * 131.7 ) * 0.36 );
   }
   vSoldierTint = tint;
   vSoldierGrime = iOrient.w;

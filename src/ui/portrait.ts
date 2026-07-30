@@ -49,7 +49,11 @@ const T = {
   horn: ['#ddd2b0', '#4b422c'],
   shaft: ['#9b7749', '#332616'],
   blade: ['#dfe2d6', '#565850'],
-  horse: ['#8b6a49', '#291e12'],
+  // Lighter than a real bay, deliberately: the mount is the whole reason a cavalry card
+  // reads as cavalry, and at a 50 px compact card the old tone sank into the dark plate.
+  horse: ['#a67f56', '#241a0f'],
+  mane: ['#4b3520', '#150e07'],
+  muzzle: ['#c2a079', '#5c4227'],
 } as const;
 
 type Tone = readonly [string, string];
@@ -384,25 +388,103 @@ function weaponHead(g: G, def: UnitTypeDef): boolean {
   return true;
 }
 
+/**
+ * The mount, in profile over the rider's right shoulder.
+ *
+ * The previous head pointed its muzzle *left*, into design x 56-71 — which is exactly where
+ * the rider's own head and neck guard are, and the man is painted after the horse. So the
+ * one feature that identifies the animal was occluded on every card, and all that survived
+ * at a 50 px portrait was an unreadable brown slab up the right edge. Everything here is
+ * kept inside x 66-101, clear of the rider, and below y 9 so the ordinal badge in the
+ * corner does not sit on the ears.
+ */
 function horseHead(g: G): void {
-  g.moveTo(101, BOX + 8);
-  g.quadraticCurveTo(92, 78, 78, 62);
-  g.quadraticCurveTo(68, 52, 70.4, 36);
-  g.quadraticCurveTo(72, 23.6, 80, 17.6);
-  g.quadraticCurveTo(85.4, 13.6, 87, 5.4);
-  g.lineTo(85.6, -4);
-  g.lineTo(91, 5);
-  g.lineTo(95, -2.6);
-  g.lineTo(95.4, 9);
-  g.quadraticCurveTo(99, 20, 101, 36);
+  g.moveTo(77.5, 25);
+  g.lineTo(78.6, 9.5); // left ear
+  g.lineTo(82.4, 26);
+  g.quadraticCurveTo(84.5, 24.4, 86.4, 26.5);
+  g.lineTo(87.6, 10.5); // right ear
+  g.lineTo(91.2, 27.5);
+  g.quadraticCurveTo(97, 33, 100, 45); // poll and cheek
+  g.quadraticCurveTo(101.6, 72, 101, BOX + 8); // neck, back edge
+  g.lineTo(85, BOX + 8);
+  g.quadraticCurveTo(80.5, 82, 76, 70); // throat
+  g.quadraticCurveTo(73.4, 67.4, 71, 65); // jaw
+  g.quadraticCurveTo(68.2, 62, 69.2, 57); // chin to nose tip
+  g.quadraticCurveTo(71.6, 44, 75, 32); // nose bridge
+  g.quadraticCurveTo(76.4, 27.4, 77.5, 25);
   g.closePath();
 }
 
+/** The pale patch over the nose, which is what makes the muzzle end read as a muzzle. */
 function horseMuzzle(g: G): void {
-  g.moveTo(70.6, 36);
-  g.quadraticCurveTo(58.6, 33.4, 56.4, 43);
-  g.quadraticCurveTo(61, 50.6, 71.4, 48);
+  ellipse(g, 72.6, 59.4, 4.4, 5.6, -0.5);
+}
+
+/** The mane, laid along the back of the neck behind the ears. */
+function horseMane(g: G): void {
+  g.moveTo(90.6, 26);
+  g.quadraticCurveTo(96.4, 40, 97.6, 66);
+  g.quadraticCurveTo(98.6, 90, 99.6, BOX + 8);
+  g.lineTo(92, BOX + 8);
+  g.quadraticCurveTo(92.6, 84, 91.6, 62);
+  g.quadraticCurveTo(90.6, 40, 86.6, 28);
   g.closePath();
+}
+
+/**
+ * The features that make a brown polygon a horse: an eye with a catchlight, a nostril, and
+ * the browband-and-cheekpiece of a bridle with a bronze junction boss — Roman cavalry
+ * harness was decorated, and the boss is the one warm accent that catches the eye at card
+ * size.
+ */
+function horseTack(g: G): void {
+  g.save();
+  // Clipped to the head so no strap can stray onto the plate if the profile is ever moved.
+  g.beginPath();
+  horseHead(g);
+  g.clip();
+
+  g.strokeStyle = 'rgba(48, 31, 16, 0.92)';
+  g.lineWidth = 2.3;
+  g.lineCap = 'round';
+  // Browband, across the face below the ears.
+  g.beginPath();
+  g.moveTo(75.6, 33.4);
+  g.quadraticCurveTo(82, 34.6, 89, 38.4);
+  g.stroke();
+  // Cheekpiece, down the side of the face to the noseband.
+  g.beginPath();
+  g.moveTo(77.6, 34.6);
+  g.quadraticCurveTo(75.6, 44, 74, 52.6);
+  g.stroke();
+  // Noseband, around the muzzle.
+  g.beginPath();
+  g.moveTo(70.4, 51.4);
+  g.quadraticCurveTo(75, 52.4, 78.4, 56);
+  g.stroke();
+
+  g.fillStyle = 'rgba(230, 190, 112, 0.92)';
+  g.beginPath();
+  g.arc(77.2, 34.2, 2, 0, Math.PI * 2);
+  g.fill();
+
+  // Eye, set on the cheek behind the browband.
+  g.fillStyle = 'rgba(12, 8, 4, 0.95)';
+  g.beginPath();
+  g.ellipse(83.4, 43.6, 2.7, 2.2, -0.35, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = 'rgba(255, 244, 214, 0.72)';
+  g.beginPath();
+  g.arc(82.5, 42.7, 0.85, 0, Math.PI * 2);
+  g.fill();
+
+  // Nostril, at the front of the muzzle.
+  g.fillStyle = 'rgba(22, 13, 6, 0.88)';
+  g.beginPath();
+  g.ellipse(71.6, 58.4, 2.2, 1.6, 0.5, 0, Math.PI * 2);
+  g.fill();
+  g.restore();
 }
 
 function scorpioFrame(g: G): void {
@@ -534,7 +616,9 @@ function drawFigure(g: G, def: UnitTypeDef): void {
 
   if (mounted) {
     paint(g, T.horse, horseHead, 1.7);
-    paint(g, T.horse, horseMuzzle, 1.4);
+    paint(g, T.mane, horseMane, 1.2);
+    paint(g, T.muzzle, horseMuzzle, 0);
+    horseTack(g);
   }
 
   if (ap.cloak) paint(g, rome ? T.cloakRome : T.cloakGerm, cloak, 1.6);

@@ -160,7 +160,14 @@ function shadeTile(tile: number, u: number, v: number, p: number, q: number): vo
       a *= 0.72 + 0.28 * f2;
       out.a = a;
       // Internal density variation; the shader uses .r as a light-scattering modulation.
-      out.r = out.g = out.b = clamp01(0.42 + 0.58 * (f * 0.65 + f2 * 0.35));
+      //
+      // Wide on purpose. This is the tile that carries most of the dust in the game, and a
+      // bank built from dozens of overlapping puffs integrates toward the *mean* of this
+      // field — so a narrow range gives a bank with the right optical depth and no interior
+      // at all, which is what turns a charge's dust into a flat ochre wash. The mean is
+      // unchanged; only the contrast is raised, so the cloud has lit crowns and shadowed
+      // hollows without becoming any thinner.
+      out.r = out.g = out.b = clamp01(0.20 + 0.98 * (f * 0.65 + f2 * 0.35));
       break;
     }
     case PT.dustWisp: {
@@ -616,10 +623,25 @@ export function makeBannerTexture(): THREE.DataTexture {
           // Heavier soiling than a Roman standard: this one lives outdoors.
           lum = 0.62 + 0.38 * f;
         } else {
-          a = 1;
+          // The spare tile. Deliberately *empty*, not a plain square of cloth.
+          //
+          // Nothing assigns `BANNER_TILE.plain`, but a fully-opaque 256 px square with
+          // `lum` near 1 sitting next to the vexillum is a loaded gun: this atlas is
+          // mip-mapped and anisotropically filtered, and cloth is nearly always viewed at a
+          // glancing angle, so a banner samples across the tile seam at coarse mip levels
+          // and pulls in whatever the neighbour holds. With alpha 1 that defeated the
+          // `t.a < 0.4` discard and painted an opaque mottled quad per cloth cell — pale,
+          // hard-edged, roughly ten pixels across. Keeping the luminance but zeroing the
+          // alpha means the worst a seam can now do is trim a distant banner slightly.
+          a = 0;
           lum = weave;
           device = 0;
         }
+
+        // Fade alpha to zero inside the tile border, exactly as the particle atlas does,
+        // so mip generation cannot bleed one standard's silhouette into another's.
+        const edge = Math.min(Math.min(p, 1 - p), Math.min(q, 1 - q));
+        a *= smoothstep(edge * 26);
 
         const o = ((by + py) * size + bx + px) * 4;
         data[o] = (clamp01(lum) * 255) | 0;

@@ -274,9 +274,12 @@ void main() {
   // below unity it lands at the same luminance as dry grass and disappears into the
   // field — which is exactly how a technically-correct dust system scores zero.
   vec3 lit = uAmbient * skyW * 0.85 + uSunColour * (diff * 0.90 + fwd * 0.22);
-  // Atlas RGB carries internal density; darker cores read as depth in the cloud. Kept
-  // shallow: too much and the puff turns into a lumpy grey rock.
-  base *= lit * (0.66 + 0.40 * tex.r);
+  // Atlas RGB carries internal density; darker cores read as depth in the cloud. The range
+  // is what buys the cloud an interior: a dust bank is the sum of dozens of overlapping
+  // sprites, so it converges on the mean of this term, and a narrow range produces a bank
+  // with correct optical depth and no visible structure — the flat ochre wash that gives a
+  // billboard system away. Mean unchanged at 0.86, range roughly doubled.
+  base *= lit * (0.46 + 0.72 * tex.r);
 #else
   base *= tex.rgb;
   // Additive sprites cool as they age — a spark is white-hot then dull orange. The birth

@@ -209,8 +209,8 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   font-size: 0.78em;
   letter-spacing: 0.24em;
   text-transform: uppercase;
-  color: rgba(217, 178, 95, 0.7);
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+  color: rgba(226, 190, 112, 0.92);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
   white-space: nowrap;
 }
 
@@ -327,10 +327,17 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   background: rgba(217, 178, 95, 0.28);
 }
 
+/* Secondary label alphas throughout this sheet were raised in one pass after the render
+   critic lifted scene contrast and dropped exposure. Measured against freshly shot 1600x900
+   output, every label sitting at 0.5-0.7 alpha came in under 3:1 against its own plate —
+   legible on the old washed-out frame, a grey whisper on the new one. Raising the alpha of
+   type costs the battle no screen area and no luminous mass, which is the only kind of
+   contrast a HUD is allowed to buy. */
 .tb-units {
   font-size: 0.86em;
-  color: rgba(226, 214, 190, 0.5);
+  color: rgba(230, 219, 197, 0.78);
   letter-spacing: 0.06em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
 }
 
 .tb-mid {
@@ -377,7 +384,7 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   appearance: none;
   border: 1px solid rgba(217, 178, 95, 0.24);
   background: linear-gradient(180deg, rgba(86, 68, 42, 0.6), rgba(28, 21, 14, 0.7));
-  color: rgba(226, 214, 190, 0.62);
+  color: rgba(232, 222, 202, 0.86);
   border-radius: 2px;
   width: 1.9em;
   height: 1.6em;
@@ -468,14 +475,16 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   font-size: 0.84em;
   font-style: italic;
   letter-spacing: 0.06em;
-  color: rgba(226, 214, 190, 0.5);
+  color: rgba(230, 219, 197, 0.8);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
 }
 
 .tb-adv {
   font-size: 0.8em;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(226, 214, 190, 0.55);
+  color: rgba(230, 219, 197, 0.82);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
 }
 .tb-adv.good { color: #d9a86a; }
 .tb-adv.bad { color: #cf7d70; }
@@ -612,7 +621,7 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   font-size: 0.8em;
   font-style: italic;
   letter-spacing: 0.04em;
-  color: rgba(226, 214, 190, 0.5);
+  color: rgba(230, 219, 197, 0.8);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -817,9 +826,15 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   width: fit-content;
   max-width: 100%;
   /* A hard ceiling on the whole bar, in viewport units. Whatever goes wrong inside it, the
-     card bar cannot take more than a fifth of the frame from the battle. */
+     card bar cannot take more than a fifth of the frame from the battle.
+     `clip` rather than `hidden` because the ceiling must not also eat legitimate
+     decoration: `hidden` cut the selected card's glow off square at the plinth edge, and
+     a previous pass lost the selection marker to it entirely. `overflow-clip-margin` says
+     exactly how far a child may bleed — enough for a glow, nowhere near enough for a
+     runaway panel. */
   max-height: 20vh;
-  overflow: hidden;
+  overflow: clip;
+  overflow-clip-margin: 0.6em;
   padding: 0.34em 0.44em 0.4em;
   display: flex;
   align-items: stretch;
@@ -852,7 +867,8 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   font-size: 0.76em;
   letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: rgba(239, 230, 210, 0.5);
+  color: rgba(239, 230, 210, 0.78);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
   white-space: nowrap;
 }
 
@@ -918,7 +934,8 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   font-size: 0.86em;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: rgba(200, 214, 226, 0.62);
+  color: rgba(214, 226, 238, 0.86);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
   background: linear-gradient(180deg, rgba(26, 22, 17, 0.82), rgba(12, 10, 7, 0.88));
   border: 1px solid rgba(217, 178, 95, 0.2);
   border-radius: 2px 2px 0 0;
@@ -936,7 +953,7 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   letter-spacing: 0;
   color: var(--gold);
 }
-.obat-u { font-size: 0.86em; letter-spacing: 0.12em; opacity: 0.66; }
+.obat-u { font-size: 0.86em; letter-spacing: 0.12em; opacity: 0.85; }
 /* Points the way the strip will move: up to open, down to put it away again. */
 .obat-chev { font-size: 1.1em; line-height: 0; transition: transform 0.22s; }
 .obat.open .obat-chev { transform: rotate(180deg); }
@@ -950,7 +967,8 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   max-width: 100%;
   min-width: 14em;
   max-height: 14vh;
-  overflow: hidden;
+  overflow: clip;
+  overflow-clip-margin: 0.5em;
   padding: 0.3em 0.4em 0.34em;
   border-radius: 0 3px 3px 3px;
 }
@@ -990,19 +1008,25 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
     0 5px 16px rgba(0, 0, 0, 0.65),
     0 0 18px rgba(242, 221, 158, 0.3),
     inset 0 1px 0 rgba(255, 245, 214, 0.24);
-  transform: translateY(-0.34em);
+  transform: translateY(-0.2em);
 }
+/* A struck gold wedge driven into the top edge of the card, drawn *inside* it.
+   This was a diamond hanging below the card, which the bar's clip cut in half; the pass
+   after that made it a cap along the top edge, which simply merged with the selected
+   card's gold border and marked nothing. A wedge points, sits clear of the pennant and
+   the ordinal, and cannot leave the card whatever the bar does. */
 .card.sel::before {
   content: '';
   position: absolute;
   left: 50%;
-  bottom: -0.42em;
-  width: 0.5em;
-  height: 0.5em;
-  margin-left: -0.25em;
-  background: var(--gold-bright);
-  transform: rotate(45deg);
-  box-shadow: 0 0 8px rgba(242, 221, 158, 0.8);
+  top: 0;
+  width: 1em;
+  height: 0.46em;
+  margin-left: -0.5em;
+  background: linear-gradient(180deg, #fff6da, var(--gold));
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.9));
+  z-index: 2;
 }
 
 .card.dead { filter: grayscale(0.85) brightness(0.55); }
@@ -1019,6 +1043,13 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
 
 .card.mini { cursor: default; }
 .card.mini .card-bar { margin-top: 0.2em; height: 0.44em; }
+/* A mini card is barely three ems wide, and an arm glyph at full size plus a three-digit
+   headcount does not fit across it — the count was being clipped to "22" and "3(". Both
+   come down until the pair measures inside the foot. */
+.card.mini .card-cls { padding: 0; background: none; font-size: 1.06em; }
+.card.mini .card-flags { margin-left: 0.1em; }
+.card.mini .card-count { font-size: 0.92em; }
+.card.mini .card-foot { padding: 0.12em 0.16em; }
 
 /* The portrait's height comes from `--cw` — the same length that sets the card width — and
    never from `aspect-ratio`.
@@ -1096,11 +1127,17 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   pointer-events: none;
 }
 
+/* The arm glyph sits in the bottom-left corner of the portrait, which is exactly where the
+   drawn figure carries its shield — two shields stacked read as neither. A struck tab
+   behind it separates the interface from the picture. */
 .card-cls {
   flex: none;
+  padding: 0.1em 0.12em;
+  border-radius: 1px;
   font-size: 1.28em;
   line-height: 0;
-  color: rgba(255, 243, 216, 0.9);
+  color: #fff8e4;
+  background: rgba(8, 6, 4, 0.6);
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.95));
 }
 
@@ -1183,7 +1220,8 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   font-size: 0.8em;
   font-style: italic;
   letter-spacing: 0.01em;
-  color: rgba(217, 178, 95, 0.66);
+  color: rgba(226, 190, 112, 0.86);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.85);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1249,7 +1287,9 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   max-width: 96vw;
   max-height: 34vh;
   overflow: hidden;
-  padding: 0.5em 0.7em;
+  /* Tightened after measuring: the plaque is transient, but it was adding six per cent of
+     the frame on top of the card bar's five, and every one of these lengths was loose. */
+  padding: 0.42em 0.6em;
   opacity: 0;
   transform: translateY(0.9em);
   transition: opacity 0.24s ease, transform 0.3s cubic-bezier(0.2, 0.9, 0.25, 1);
@@ -1257,12 +1297,12 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
 }
 .cmd.open { opacity: 1; transform: translateY(0); pointer-events: auto; }
 
-.cmd-id { display: flex; gap: 0.6em; min-width: 20em; }
+.cmd-id { display: flex; gap: 0.52em; min-width: 17.4em; }
 
 .cmd-por {
   position: relative;
-  width: 6.4em;
-  height: 8em;
+  width: 5.6em;
+  height: 7em;
   flex: none;
   border: 1px solid rgba(217, 178, 95, 0.4);
   border-radius: 2px;
@@ -1288,7 +1328,7 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
 }
 .cmd-badge.on { display: block; }
 
-.cmd-txt { display: flex; flex-direction: column; gap: 0.16em; min-width: 0; }
+.cmd-txt { display: flex; flex-direction: column; gap: 0.1em; min-width: 0; }
 
 .cmd-name {
   font-size: 1.34em;
@@ -1305,7 +1345,8 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   font-size: 0.92em;
   font-style: italic;
   letter-spacing: 0.03em;
-  color: rgba(217, 178, 95, 0.7);
+  color: rgba(226, 190, 112, 0.9);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1319,16 +1360,17 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   font-size: 0.86em;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: rgba(239, 230, 210, 0.7);
+  color: rgba(243, 236, 222, 0.9);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
   margin-top: 0.16em;
 }
-.cmd-sep { color: rgba(217, 178, 95, 0.5); }
+.cmd-sep { color: rgba(226, 190, 112, 0.7); }
 
 .cmd-grid {
   display: flex;
   flex-direction: column;
-  gap: 0.24em;
-  margin-top: 0.44em;
+  gap: 0.18em;
+  margin-top: 0.34em;
 }
 
 .cg-row { display: flex; align-items: center; gap: 0.5em; }
@@ -1339,7 +1381,8 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   font-size: 0.8em;
   letter-spacing: 0.11em;
   text-transform: uppercase;
-  color: rgba(226, 214, 190, 0.52);
+  color: rgba(230, 219, 197, 0.82);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
 }
 .cg-row b {
   flex: none;
@@ -1355,14 +1398,15 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
 
 .cmd-nums {
   display: flex;
-  gap: 1.2em;
-  margin-top: 0.42em;
-  padding-top: 0.36em;
+  gap: 1.1em;
+  margin-top: 0.3em;
+  padding-top: 0.26em;
   border-top: 1px solid rgba(217, 178, 95, 0.14);
   font-size: 0.8em;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: rgba(226, 214, 190, 0.5);
+  color: rgba(230, 219, 197, 0.8);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
 }
 .cmd-nums b {
   font-family: var(--num);
@@ -1544,11 +1588,12 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   appearance: none;
   padding: 0.06em 0.4em;
   font-family: var(--num);
-  font-size: 0.72em;
+  font-size: 0.78em;
   font-weight: 600;
   letter-spacing: 0.14em;
-  color: rgba(240, 228, 200, 0.78);
-  background: rgba(10, 8, 5, 0.66);
+  color: rgba(246, 236, 212, 0.96);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95);
+  background: rgba(8, 6, 4, 0.82);
   border: 1px solid rgba(217, 178, 95, 0.34);
   border-radius: 2px;
   cursor: pointer;
@@ -1751,7 +1796,7 @@ input[type='checkbox']:checked::after { opacity: 1; }
 .set-keys span {
   font-size: 0.8em;
   letter-spacing: 0.04em;
-  color: rgba(226, 214, 190, 0.55);
+  color: rgba(230, 219, 197, 0.84);
 }
 
 /* ---------------------------------------------------------------- tooltip -- */
@@ -1850,7 +1895,8 @@ input[type='checkbox']:checked::after { opacity: 1; }
   font-size: 0.76em;
   letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: rgba(217, 178, 95, 0.66);
+  color: rgba(226, 190, 112, 0.9);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
   margin-bottom: 0.12em;
 }
 
@@ -2051,7 +2097,7 @@ input[type='checkbox']:checked::after { opacity: 1; }
 .rs-long {
   font-size: 0.86em;
   font-style: italic;
-  color: rgba(226, 214, 190, 0.5);
+  color: rgba(230, 219, 197, 0.8);
   margin-top: 0.2em;
 }
 .rs-stats { margin: 1em 0 0; display: flex; flex-direction: column; gap: 0.3em; }
@@ -2067,7 +2113,7 @@ input[type='checkbox']:checked::after { opacity: 1; }
   font-size: 0.84em;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: rgba(226, 214, 190, 0.55);
+  color: rgba(230, 219, 197, 0.84);
 }
 .rs-stats dd {
   margin: 0;
@@ -2077,7 +2123,7 @@ input[type='checkbox']:checked::after { opacity: 1; }
   color: var(--parchment);
 }
 .rs-stats .loss dd { color: #dd8b7e; }
-.rs-stats dd span { font-size: 0.72em; color: rgba(226, 214, 190, 0.5); }
+.rs-stats dd span { font-size: 0.72em; color: rgba(230, 219, 197, 0.78); }
 
 .rs-vs { display: grid; place-items: center; color: rgba(217, 178, 95, 0.5); }
 .rs-vs-ic { font-size: 2.6em; }
@@ -2129,7 +2175,7 @@ input[type='checkbox']:checked::after { opacity: 1; }
   font-size: 0.82em;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(226, 214, 190, 0.5);
+  color: rgba(230, 219, 197, 0.8);
   text-align: right;
 }
 

@@ -92,9 +92,14 @@ uniform vec3 uAmbient;
 varying float vShade;
 void main() {
   // Corvid black is never actually black: it is a very dark blue-grey with a sheen.
+  //
+  // But it must stay *darker than the field it flies over*. The gains here previously
+  // summed to about 0.13 linear against grass at 0.10, so a carrion crow read as a pale
+  // grey speck — the opposite of the silhouette that makes a bird legible against ground or
+  // sky. 0.06 keeps the wing sheen and puts the body well below the turf.
   vec3 base = vec3(0.035, 0.036, 0.045);
   vec3 lit = uAmbient * 1.5 + uSunColour * vShade * 0.55;
-  gl_FragColor = vec4(base * 2.2 * lit + uSunColour * pow(vShade, 6.0) * 0.06, 1.0);
+  gl_FragColor = vec4(base * 1.15 * lit + uSunColour * pow(vShade, 6.0) * 0.028, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
   gl_FragColor.a = 1.0;

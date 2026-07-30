@@ -1,0 +1,110 @@
+{
+  "results": [
+    {
+      "name": "click-select",
+      "pass": true,
+      "what": "left-click at (800,680) on unit 0 (legio-cohort)",
+      "changed": "selectionChanged → [0]",
+      "note": ""
+    },
+    {
+      "name": "marquee-select",
+      "pass": true,
+      "what": "left-drag 79,294 → 639,720, a box drawn round 5 projected unit anchors (10 on screen)",
+      "changed": "selectionChanged → 5 units [2,6,7,10,15]",
+      "note": ""
+    },
+    {
+      "name": "double-click type",
+      "pass": true,
+      "what": "double-click unit 0 (legio-cohort); 10 of that type alive",
+      "changed": "selectionChanged → 10 units",
+      "note": ""
+    },
+    {
+      "name": "right-click move",
+      "pass": false,
+      "what": "right-click empty ground at (1528,617) with unit 0 selected — instant right-click: NO order; 140 ms held right-click: orderIssued move",
+      "changed": "orderIssued kind=move to (-204,57); unit.order MoveTo→MoveTo, unit.target (-205.57,52.26)→(-204.37,57) = 4.9 m",
+      "note": ""
+    },
+    {
+      "name": "player order survives AI",
+      "pass": false,
+      "what": "after the move order, advance 10 s and watch unit 0's target",
+      "changed": "AI overrode it after ~2s: target drifted 47 m from the ordered point (26 orderIssued events touched this unit: t+15.37 move, t+16.7 move, t+17.03 move, t+19.7 move, t+20.37 move, t+20.7 move, t+21.03 move, t+21.37 move, t+22.03 move, t+22.37 move, t+22.7 move, t+23.03 move, t+23.37 move, t+23.7 move, t+24.03 move, t+24.37 move, t+24.7 move, t+25.03 move, t+25.5 move, t+25.7 move, t+26.03 move, t+26.37 move, t+26.73 move, t+27.03 move, t+27.37 move, t+27.7 move)",
+      "note": ""
+    },
+    {
+      "name": "right-click attack",
+      "pass": false,
+      "what": "right-click enemy unit 24 (juthungi-warband, 195 m away) with unit 0 selected; cursor read \"attack\"",
+      "changed": "orderIssued kind=attack target=24; unit.order MoveTo→MoveTo targetUnitId -1→-1",
+      "note": ""
+    },
+    {
+      "name": "right-drag frontage",
+      "pass": true,
+      "what": "right-button drag 610,504 → 1005,504 (~140 m of ground) with unit 0 selected",
+      "changed": "orderIssued kind=move width=147 facing=0.0002318531543280066; unit.width 37→147, unit.targetFacing -2.8101→0.0002",
+      "note": ""
+    },
+    {
+      "name": "command panel gating",
+      "pass": true,
+      "what": "read the command panel with the current selection",
+      "changed": "selection [0], 4 formation / 2 ability buttons",
+      "note": ""
+    },
+    {
+      "name": "formation button",
+      "pass": false,
+      "what": "click the \"Wedge\" formation button (index 1 of 4) with unit 1 selected, currently in \"line\"",
+      "changed": "emitted wedge→[1]; unit.formationId while still paused = \"wedge\" (sim DID apply it); over the next 2 s of sim: line; re-issued by another system: line@37.43 (wanted \"wedge\")",
+      "note": ""
+    },
+    {
+      "name": "ability button",
+      "pass": true,
+      "what": "click ability button 1 of 2 (\"Testudo — Shields to the front and overhead. Near-immune to missiles, nearly helpless in melee.\") with unit 1 selected",
+      "changed": "orderIssued kind=ability ability=testudo units=[1]; abilityActivated unit=1 ability=testudo active=true",
+      "note": ""
+    },
+    {
+      "name": "speed keys 1/2/3",
+      "pass": true,
+      "what": "press Digit2, Digit3, Digit1 over the canvas",
+      "changed": "Digit2→2x (want 2x), Digit3→4x (want 4x), Digit1→1x (want 1x)",
+      "note": ""
+    },
+    {
+      "name": "Space pause",
+      "pass": true,
+      "what": "press Space, wait 500 ms, press Space",
+      "changed": "paused true then false; simTime froze at 50.87→50.87",
+      "note": ""
+    },
+    {
+      "name": "F3 AI debug overlay",
+      "pass": true,
+      "what": "press F3 over the canvas",
+      "changed": "ai-debug enabled false→true, group visible null→true, children null→0",
+      "note": ""
+    },
+    {
+      "name": "L perf overlay",
+      "pass": true,
+      "what": "press L twice over the canvas",
+      "changed": ".hud-perf display \"block\" → \"none\" → \"block\"; text: \"8.4 ms/f  119 fps  hud 0.06\ndraws 153  tris 7596k\nmen 8944  units 36  sel 1  1x t+53s\"",
+      "note": ""
+    },
+    {
+      "name": "minimap click",
+      "pass": true,
+      "what": "click minimap canvas at 25%,25% of its 160×160 box",
+      "changed": "camera focus (-167.51,59) → (-400,-400), moved 514.5 m",
+      "note": ""
+    }
+  ],
+  "consoleErrors": []
+}

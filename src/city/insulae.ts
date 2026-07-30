@@ -220,7 +220,9 @@ export function buildDistricts(
  */
 function buildDistrictGround(batch: Batch, detail: number, d: DistrictSpec, heightAt: Ground, wallZAt: (x: number) => number): void {
   const st = batch.s('stone');
-  const n = detail >= 1 ? 12 : 5;
+  // 22 cells across a 540 m district is ~25 m a cell — about a city block, which is the scale
+  // at which the surface actually changes from paving to yard to beaten earth.
+  const n = detail >= 1 ? 22 : 8;
   const cs = Math.cos(d.rot);
   const sn = Math.sin(d.rot);
   const p0 = new THREE.Vector3();
@@ -245,20 +247,37 @@ function buildDistrictGround(batch: Batch, detail: number, d: DistrictSpec, heig
       const v1 = lerp(-d.hd, d.hd, (j + 1) / n);
       const ok = at(u0, v0, p0) && at(u1, v0, p1) && at(u1, v1, p2) && at(u0, v1, p3);
       if (!ok) continue;
-      const h = hash2(i, j, Rng.hashString(d.id) & 0xffff);
-      // Paved alleys read darker, trodden yards a little paler, but neither is bright:
-      // a whole district floor at travertine albedo bleaches the roofscape out.
-      c.copy(h > 0.5 ? PAL.basalt : PAL.dust).multiplyScalar(0.66 + h * 0.34);
+      const seed = Rng.hashString(d.id) & 0xffff;
+      const h = hash2(i, j, seed);
+      const t = hash2(i, j, seed ^ 0x5bd1);
+      // Three surfaces, because a Roman district floor is not one material: basalt paving in
+      // the streets, beaten earth in the yards, and dust everywhere in between.
+      //
+      // The *tone* hash has to be independent of the *type* hash. Both used to be `h`, so
+      // dark basalt cells always got the bright end of the 0.66–1.0 multiplier and pale dust
+      // cells always got the dark end — the two converged on the same value and several
+      // hundred metres of district floor resolved to one flat plate, which from a strategic
+      // camera was the largest featureless area in the frame.
+      const base = h < 0.34 ? PAL.basalt : h < 0.72 ? PAL.dust : PAL.terraDirty;
+      c.copy(base).multiplyScalar(0.68 + t * 0.44);
       st.quadN(nrm, p0, p1, p2, p3, c);
     }
   }
 }
 
-/** Pick a paint colour. Roman street façades were mostly red and ochre. */
+/**
+ * Pick a paint colour. Roman street façades were mostly red and ochre.
+ *
+ * Lime white is down from a fifth of frontages to an eighth. It is the least saturated entry
+ * by a wide margin, and at 20 % it was the reason a district read grey from a strategic
+ * camera even though two thirds of its buildings were painted: the white ones cluster and the
+ * eye averages them. The rubric is explicit that the everyday palette is reds and ochres with
+ * cheap lime white as the *minority* note, and Ostia bears that out.
+ */
 function paintColour(rng: Rng): THREE.Color {
   const base = rng.pickWeighted(
     [PAL.pompeianRed, PAL.ochre, PAL.limeWhite, PAL.ochreDeep, PAL.terraDirty, PAL.romanRed],
-    [0.24, 0.24, 0.2, 0.13, 0.13, 0.06]
+    [0.27, 0.26, 0.125, 0.15, 0.115, 0.08]
   );
   return new THREE.Color().copy(base).multiplyScalar(rng.range(0.78, 1.18));
 }

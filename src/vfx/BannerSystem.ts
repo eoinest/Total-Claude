@@ -63,6 +63,8 @@ interface Banner {
   presence: number;
   seed: number;
   tintWritten: boolean;
+  /** Set once the vertex fades have been zeroed, so a dead standard stops costing. */
+  faded: boolean;
 }
 
 const CLOTH_VERT = /* glsl */ `
@@ -138,6 +140,20 @@ export class BannerSystem {
   private banners: Banner[] = [];
   private byUnit = new Map<number, Banner>();
   private constraints: Constraint[] = [];
+  /**
+   * The constraint list again, flattened.
+   *
+   * The relaxation loop is the hottest code in the whole effects layer — 220 constraints
+   * x 3 passes x 40 standards is 26,400 iterations a frame — and reading `con.a`,
+   * `con.b`, `con.stiff` off an object per iteration costs more than the arithmetic does.
+   * `cA`/`cB` hold the *component* offset (index x 3) so the inner loop does no
+   * multiplies either.
+   */
+  private cA!: Int32Array;
+  private cB!: Int32Array;
+  private cStiff!: Float32Array;
+  /** Bit 0: `a` is on the pinned top row. Bit 1: `b` is. */
+  private cPin!: Uint8Array;
   private maxBanners: number;
 
   private posAttr: THREE.BufferAttribute;
@@ -235,26 +251,47 @@ export class BannerSystem {
     // per faction would be simpler but costs a main draw plus one per shadow cascade,
     // and the effects layer has better uses for five draw calls than that.
     const poleGeo = this.buildStandardGeometry();
+    // Per-vertex metalness, because this one mesh carries both metals and dielectrics.
+    //
+    // A single blanket `metalness: 0.55` was the brightest thing on the battlefield: it
+    // routes over half of a *cream* albedo (bone, ash staff) into specular F0 and gives it
+    // a broad lobe on curved cones, so the aurochs horns and the aquila's wings picked up a
+    // highlight that cleared PostFX's 0.95 bloom threshold against a scene sitting at 0.10
+    // — and AgX then desaturates anything that bright toward white. That is the whole
+    // mechanism behind pale blobs over the ranks. Bone and wood are dielectrics and must
+    // read as dielectrics; gold and iron keep their gleam.
     const poleMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.44,
-      metalness: 0.55,
+      roughness: 1,
+      metalness: 1,
     });
     poleMat.onBeforeCompile = (shader) => {
       shader.vertexShader = shader.vertexShader
         .replace(
           '#include <common>',
-          '#include <common>\nattribute float aMask;\nattribute float aVariant;'
+          '#include <common>\nattribute float aMask;\nattribute float aVariant;\nattribute float aMetal;\nvarying float vMetal;'
         )
         .replace(
           '#include <begin_vertex>',
           '#include <begin_vertex>\n' +
+          'vMetal = aMetal;\n' +
           '// Collapse the other faction\'s finial to a degenerate point: zero pixels,\n' +
           '// no branch divergence worth measuring, one draw call for both armies.\n' +
           'if (aMask > 0.5 && abs(aMask - aVariant) > 0.5) transformed = vec3(0.0);'
         );
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying float vMetal;')
+        .replace(
+          '#include <metalnessmap_fragment>',
+          '#include <metalnessmap_fragment>\nmetalnessFactor *= vMetal;'
+        )
+        // Gilded bronze takes a polish; bone and a weathered ash staff do not.
+        .replace(
+          '#include <roughnessmap_fragment>',
+          '#include <roughnessmap_fragment>\nroughnessFactor *= mix(0.86, 0.36, vMetal);'
+        );
     };
-    poleMat.customProgramCacheKey = () => 'vfx-standard-variant';
+    poleMat.customProgramCacheKey = () => 'vfx-standard-variant-metal';
 
     this.poleVariant = new THREE.InstancedBufferAttribute(new Float32Array(maxBanners), 1);
     this.poleVariant.setUsage(THREE.DynamicDrawUsage);
@@ -291,6 +328,19 @@ export class BannerSystem {
         if (y < GY - 2) push(at(x, y), at(x, y + 2), 0, 2, 0.16);
       }
     }
+
+    const n = this.constraints.length;
+    this.cA = new Int32Array(n);
+    this.cB = new Int32Array(n);
+    this.cStiff = new Float32Array(n);
+    this.cPin = new Uint8Array(n);
+    for (let i = 0; i < n; i++) {
+      const c = this.constraints[i];
+      this.cA[i] = c.a * 3;
+      this.cB[i] = c.b * 3;
+      this.cStiff[i] = c.stiff;
+      this.cPin[i] = (c.a < GX ? 1 : 0) | (c.b < GX ? 2 : 0);
+    }
   }
 
   /**
@@ -302,6 +352,7 @@ export class BannerSystem {
   private buildStandardGeometry(): THREE.BufferGeometry {
     const parts: THREE.BufferGeometry[] = [];
     const masks: number[] = [];
+    const metals: number[] = [];
     const add = (g: THREE.BufferGeometry, x: number, y: number, z: number, hex: number, mask: number): void => {
       g.translate(x, y, z);
       const c = new THREE.Color(hex);
@@ -315,11 +366,15 @@ export class BannerSystem {
       g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
       parts.push(g);
       masks.push(mask);
+      metals.push(hex === GOLD || hex === IRON ? 1 : 0);
     };
 
     const WOOD = 0x4a3520;
     const GOLD = 0xc7973a;
-    const BONE = 0xa89a7a;
+    // Weathered aurochs skull, not fresh ivory: this totem has been carried through
+    // several summers, and a cream that bright is the one value on the field that reads as
+    // a rendering error rather than as bone.
+    const BONE = 0x8e8265;
     const IRON = 0x6a6a70;
 
     // Shared staff.
@@ -375,6 +430,7 @@ export class BannerSystem {
     const nrm = new Float32Array(vTotal * 3);
     const col = new Float32Array(vTotal * 3);
     const msk = new Float32Array(vTotal);
+    const met = new Float32Array(vTotal);
     const idx = new Uint16Array(iTotal);
     let vo = 0;
     let io = 0;
@@ -387,6 +443,7 @@ export class BannerSystem {
       nrm.set(gn.array as Float32Array, vo * 3);
       col.set(gc.array as Float32Array, vo * 3);
       msk.fill(masks[pi], vo, vo + gp.count);
+      met.fill(metals[pi], vo, vo + gp.count);
       if (g.index) {
         const gi = g.index.array;
         for (let k = 0; k < gi.length; k++) idx[io + k] = gi[k] + vo;
@@ -404,6 +461,7 @@ export class BannerSystem {
     out.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
     out.setAttribute('color', new THREE.BufferAttribute(col, 3));
     out.setAttribute('aMask', new THREE.BufferAttribute(msk, 1));
+    out.setAttribute('aMetal', new THREE.BufferAttribute(met, 1));
     out.setIndex(new THREE.BufferAttribute(idx, 1));
     out.computeBoundingSphere();
     return out;
@@ -413,10 +471,10 @@ export class BannerSystem {
   // Per-frame
   // -------------------------------------------------------------------------
 
-  update(dt: number, battle: BattleSystem, wind: THREE.Vector3): void {
+  update(dt: number, battle: BattleSystem, wind: THREE.Vector3, camX: number, camZ: number): void {
     this.t += dt;
     this.sync(battle, dt);
-    this.simulate(dt, wind);
+    this.simulate(dt, wind, camX, camZ);
     this.writeGeometry();
     this.writePoles();
   }
@@ -479,6 +537,7 @@ export class BannerSystem {
       presence: 0,
       seed: u.id * 7 + 13,
       tintWritten: false,
+      faded: false,
     };
 
     // Start already hanging so the cloth does not snap into place on frame one.
@@ -520,11 +579,18 @@ export class BannerSystem {
    * to the flow *through* it, which is why cloth luffs: as a panel turns edge-on the
    * force collapses and the panel falls back into the wind.
    */
-  private simulate(dt: number, wind: THREE.Vector3): void {
+  private simulate(dt: number, wind: THREE.Vector3, camX: number, camZ: number): void {
     // Fixed substep. Verlet with a variable dt is unstable, and cloth that explodes on
     // one dropped frame is worse than cloth that is momentarily a little slow.
+    //
+    // Capped at two substeps, and that cap is a safety property rather than a tuning
+    // knob: the substep count is derived from the *frame time*, so an uncapped loop turns
+    // any slow frame into a slower one — a 100 ms hitch asks for six substeps of cloth,
+    // which lengthens the frame, which asks for six again. Cloth running at half speed
+    // for two frames after a hitch is invisible; a feedback loop that pins the frame rate
+    // is not.
     const h = 1 / 60;
-    let budget = clamp(dt, 0, 0.1);
+    let budget = Math.min(clamp(dt, 0, 0.1), h * 2);
 
     while (budget > 1e-4) {
       const step = Math.min(h, budget);
@@ -536,7 +602,7 @@ export class BannerSystem {
       // oscillates at a few hertz. That, not the mean wind, is what makes a banner
       // *snap*, and a quasi-static aerodynamic model on an 8x6 grid will never
       // produce it on its own — so it is injected as an oscillating cross-flow.
-      const wl = Math.hypot(wind.x, wind.z) || 1e-3;
+      const wl = Math.sqrt(wind.x * wind.x + wind.z * wind.z) || 1e-3;
       const perpX = -wind.z / wl;
       const perpZ = wind.x / wl;
 
@@ -604,7 +670,7 @@ export class BannerSystem {
             let nx = e1y * e2z - e1z * e2y;
             let ny = e1z * e2x - e1x * e2z;
             let nz = e1x * e2y - e1y * e2x;
-            const nl = Math.hypot(nx, ny, nz);
+            const nl = Math.sqrt(nx * nx + ny * ny + nz * nz);
             if (nl < 1e-7) continue;
             nx /= nl;
             ny /= nl;
@@ -624,31 +690,45 @@ export class BannerSystem {
           }
         }
 
-        // Constraint relaxation. Three passes is the classic accuracy/cost trade.
-        const cons = this.constraints;
+        // Constraint relaxation. Three passes is the classic accuracy/cost trade close
+        // to the camera; further out the passes buy detail nothing can see. A standard
+        // 400 m away is six pixels of cloth, and the difference between a three-pass and
+        // a one-pass sheet at six pixels is nothing at all — while the cost is the
+        // dominant term in the whole effects layer. Distance is measured to the anchor,
+        // which is where the cloth is.
+        const dx0 = b.anchorX - camX;
+        const dz0 = b.anchorZ - camZ;
+        const d2 = dx0 * dx0 + dz0 * dz0;
+        const passes = d2 < 140 * 140 ? 3 : d2 < 340 * 340 ? 2 : 1;
+
+        const cA = this.cA;
+        const cB = this.cB;
+        const cStiff = this.cStiff;
+        const cPin = this.cPin;
+        const nCon = cA.length;
         const rest = b.rest;
-        for (let pass = 0; pass < 3; pass++) {
-          for (let ci = 0; ci < cons.length; ci++) {
-            const con = cons[ci];
-            const ai = con.a * 3;
-            const bj = con.b * 3;
+        for (let pass = 0; pass < passes; pass++) {
+          for (let ci = 0; ci < nCon; ci++) {
+            const pin = cPin[ci];
+            // Both ends pinned to the crossbar: nothing to relax.
+            if (pin === 3) continue;
+            const ai = cA[ci];
+            const bj = cB[ci];
             let dx = p[bj] - p[ai];
             let dy = p[bj + 1] - p[ai + 1];
             let dz = p[bj + 2] - p[ai + 2];
-            const l = Math.hypot(dx, dy, dz);
-            if (l < 1e-7) continue;
-            const diff = ((l - rest[ci]) / l) * con.stiff * 0.5;
+            const l2 = dx * dx + dy * dy + dz * dz;
+            if (l2 < 1e-14) continue;
+            const l = Math.sqrt(l2);
+            const diff = ((l - rest[ci]) / l) * cStiff[ci] * 0.5;
             dx *= diff;
             dy *= diff;
             dz *= diff;
-            const aPinned = con.a < GX;
-            const bPinned = con.b < GX;
-            if (aPinned && bPinned) continue;
-            if (aPinned) {
+            if (pin === 1) {
               p[bj] -= dx * 2;
               p[bj + 1] -= dy * 2;
               p[bj + 2] -= dz * 2;
-            } else if (bPinned) {
+            } else if (pin === 2) {
               p[ai] += dx * 2;
               p[ai + 1] += dy * 2;
               p[ai + 2] += dz * 2;
@@ -678,9 +758,15 @@ export class BannerSystem {
       const b = this.banners[bi];
       const vo = bi * NP;
       if (!b.active) {
+        // Zero once. Banners are never removed from the list, so by the end of a battle
+        // most of them are dead — and rewriting their vertex fades every frame forever is
+        // work whose only effect is to keep an already-invisible standard invisible.
+        if (b.faded) continue;
+        b.faded = true;
         for (let i = 0; i < NP; i++) fade[vo + i] = 0;
         continue;
       }
+      b.faded = false;
       for (let i = 0; i < NP; i++) {
         const s = (vo + i) * 3;
         const v = i * 3;
@@ -695,7 +781,14 @@ export class BannerSystem {
         const f = FACTIONS[b.faction];
         this.tmpColour.setHex(b.tile === BANNER_TILE.totem ? f.clothColour : f.colour);
         // Roman devices are gilded bronze; Germanic ones are crude dark paint.
-        if (b.faction === Faction.Rome) this.tmpDevice.setHex(f.accent).multiplyScalar(1.35);
+        //
+        // 0.92, not 1.35. The fragment shader already multiplies the device by up to 1.20
+        // for the weave and then by the ~1.2 sun term, so a gain of 1.35 on an accent whose
+        // red channel is already 0.66 linear put the wreath at ~1.31 — past PostFX's 0.95
+        // bloom threshold, in a frame whose grass sits at 0.10. AgX desaturates anything
+        // that far over toward white, so the gilding came back as cream. At 0.92 it peaks
+        // near 0.85: still the brightest thing on the field, still unmistakably gold.
+        if (b.faction === Faction.Rome) this.tmpDevice.setHex(f.accent).multiplyScalar(0.92);
         else this.tmpDevice.setRGB(0.09, 0.07, 0.055);
         // Per-unit variation: no two standards are the same shade of dye.
         const k = 0.8 + hash01(b.seed, 91) * 0.4;
@@ -729,9 +822,15 @@ export class BannerSystem {
     for (const b of this.banners) {
       if (!b.active || n >= cap) continue;
       this.tmpQuat.setFromAxisAngle(this.up, b.facing);
-      this.tmpPos.set(b.anchorX, b.anchorY, b.anchorZ);
+      // Fade by sinking, not by squashing. `InstancedMesh` transforms normals with
+      // `mat3(instanceMatrix)` and no inverse transpose, so a non-uniform scale skews them
+      // — and a Y scale going to zero flattens every normal in the finial into the
+      // horizontal plane, which points the horns and the aquila's wings straight at the sun
+      // for the half-second a standard is appearing or falling. Dropping the staff into the
+      // ground is both cheaper and the right read: the standard goes down with its bearer.
       const s = 0.94 + hash01(b.seed, 17) * 0.14;
-      this.tmpScale.set(s, s * b.presence, s);
+      this.tmpPos.set(b.anchorX, b.anchorY - (1 - b.presence) * 3.7, b.anchorZ);
+      this.tmpScale.set(s, s, s);
       this.tmpMat.compose(this.tmpPos, this.tmpQuat, this.tmpScale);
       mesh.setMatrixAt(n, this.tmpMat);
       this.poleVariant.array[n] = b.faction === Faction.Rome ? 1 : 2;

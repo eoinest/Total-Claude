@@ -46,20 +46,27 @@ export class LitterField {
   private head = 0;
   private live = 0;
   private terrain?: TerrainSystem;
+  private dirtyLo: number;
+  private dirtyHi = -1;
+  private wrote = 0;
+  private wroteLast = 0;
 
   constructor(capacity: number, terrain: TerrainSystem | undefined) {
     this.cap = capacity;
+    this.dirtyLo = capacity;
     this.terrain = terrain;
 
     const geo = this.buildGeometry();
-    // Metalness stays at zero. Most litter is limewood, leather and ash shafts, and a
-    // metallic slice of a blue sky IBL turns a brown shaft into a navy splinter — which
-    // is exactly what it did. The few steel objects lose a little sheen; a field of
-    // blue-black spikes loses the whole effect.
-    const mat = new THREE.MeshStandardMaterial({
+    // Lambert, not Standard. Every one of these is a sub-metre object seen from tens of
+    // metres away; the PBR terms that MeshStandardMaterial adds — IBL, split-sum
+    // specular, roughness — are per-fragment work that cannot resolve on something two
+    // pixels wide. Lambert keeps the sun, the ambient and the received shadow, which is
+    // all that reads, at a fraction of the fragment cost for thousands of instances.
+    //
+    // Metalness is gone for a second reason too: a metallic slice of a blue sky IBL turned
+    // every brown ash shaft into a navy splinter.
+    const mat = new THREE.MeshLambertMaterial({
       vertexColors: true,
-      roughness: 0.86,
-      metalness: 0.0,
     });
     this.mesh = new THREE.InstancedMesh(geo, mat, capacity);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -218,8 +225,58 @@ export class LitterField {
     tmpMat.compose(tmpPos, tmpQuat, tmpScale);
     this.mesh.setMatrixAt(i, tmpMat);
     this.mesh.setColorAt(i, tmpColour);
-    this.mesh.instanceMatrix.needsUpdate = true;
-    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+    this.touch(i);
+  }
+
+  /**
+   * Mark one instance dirty, accumulating a contiguous span for the frame.
+   *
+   * `needsUpdate = true` with no update range re-uploads the *entire* instance buffer: at
+   * 7,000 instances that is 448 KB of matrices plus 84 KB of colours across the bus on
+   * every frame in which a single man drops his shield — which, in a battle, is most of
+   * them. But ranges have to *accumulate*: clearing them per item means that when six men
+   * die in one frame, only the sixth item's matrix is uploaded and the other five keep
+   * whatever was in the buffer before, which for a slot never written is the zero matrix —
+   * and a zero matrix collapses an instance to a point at the world origin, i.e. litter
+   * that silently does not exist.
+   *
+   * Placement walks a ring buffer, so a frame's writes are contiguous apart from the one
+   * wrap; a single low..high span covers them with at most a few stale instances re-sent,
+   * which is far cheaper than either a full upload or a per-item range list.
+   */
+  private touch(i: number): void {
+    if (i < this.dirtyLo) this.dirtyLo = i;
+    if (i > this.dirtyHi) this.dirtyHi = i;
+    this.wrote++;
+  }
+
+  /**
+   * Upload this frame's placements. Must be called once per frame, after emission.
+   */
+  flush(): void {
+    if (this.dirtyHi < this.dirtyLo) return;
+    const lo = this.dirtyLo;
+    const n = this.dirtyHi - lo + 1;
+    const m = this.mesh.instanceMatrix;
+    const c = this.mesh.instanceColor;
+    m.clearUpdateRanges();
+    if (c) c.clearUpdateRanges();
+    // A span covering more than half the buffer costs more to describe than to send whole.
+    if (n < this.cap * 0.5) {
+      m.addUpdateRange(lo * 16, n * 16);
+      if (c) c.addUpdateRange(lo * 3, n * 3);
+    }
+    m.needsUpdate = true;
+    if (c) c.needsUpdate = true;
+    this.dirtyLo = this.cap;
+    this.dirtyHi = -1;
+    this.wroteLast = this.wrote;
+    this.wrote = 0;
+  }
+
+  /** Items placed on the last flushed frame. Diagnostic only. */
+  get placedLastFrame(): number {
+    return this.wroteLast;
   }
 
   private place(kind: Kind, x: number, z: number, yaw: number, faction: number, seed: number): void {
@@ -262,8 +319,7 @@ export class LitterField {
     tmpMat.compose(tmpPos, tmpQuat, tmpScale);
     this.mesh.setMatrixAt(i, tmpMat);
     this.mesh.setColorAt(i, tmpColour);
-    this.mesh.instanceMatrix.needsUpdate = true;
-    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+    this.touch(i);
   }
 
   get count(): number {

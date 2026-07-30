@@ -8,7 +8,7 @@
 
 import { formation } from '../sim/formations';
 import { html, icon } from './dom';
-import { abilityIcon, formationGlyph, standardGlyph, UNIT_CLASS_ICON } from './icons';
+import { abilityIcon, formationGlyph, standardGlyph } from './icons';
 import type { UnitView } from './model';
 import { drawPortrait } from './portrait';
 import { abilityUI, FACTION_UI, HARNESS, MORALE_UI, ORDER_LABEL, UNIT_CLASS_LABEL } from './theme';
@@ -121,6 +121,12 @@ export class Tooltip {
   private shownFor = -1;
   /** Set by the HUD so the tooltip can explain *why* a unit is wavering. */
   moraleProbe: MoraleProbe | null = null;
+  /**
+   * A panel the tooltip must not cover, set by the HUD to the command plaque. The plaque
+   * sits directly above the card bar, so a tooltip anchored to its own card lands on top
+   * of it every time.
+   */
+  avoid: HTMLElement | null = null;
 
   constructor(parent: HTMLElement) {
     this.root = document.createElement('div');
@@ -249,6 +255,19 @@ export class Tooltip {
     let left = anchor.left + anchor.width * 0.5 - r.width * 0.5;
     left = Math.max(8, Math.min(viewW - r.width - 8, left));
     let top = anchor.top - r.height - 12;
+
+    // Clear the command plaque rather than land on it. Sliding sideways is tried first
+    // because it keeps the tooltip next to the card it belongs to; only if there is no room
+    // either side does it go above the plaque instead.
+    const keep = this.avoidRect();
+    if (keep && top < keep.bottom && top + r.height > keep.top) {
+      const rightOf = keep.right + 10;
+      const leftOf = keep.left - r.width - 10;
+      if (rightOf + r.width <= viewW - 8) left = rightOf;
+      else if (leftOf >= 8) left = leftOf;
+      else top = keep.top - r.height - 12;
+    }
+
     if (top < 8) top = Math.min(viewH - r.height - 8, anchor.bottom + 12);
     this.root.style.transform = `translate3d(${Math.round(left)}px, ${Math.round(top)}px, 0)`;
     this.root.style.visibility = 'visible';
@@ -257,5 +276,15 @@ export class Tooltip {
 
   get visibleFor(): number {
     return this.shownFor;
+  }
+
+  /** The keep-out rectangle, or null when the panel is absent or faded out. */
+  private avoidRect(): DOMRect | null {
+    const el = this.avoid;
+    if (!el) return null;
+    // The plaque fades rather than unmounting, so `display` is not the test.
+    if (Number(getComputedStyle(el).opacity) < 0.5) return null;
+    const r = el.getBoundingClientRect();
+    return r.width > 4 && r.height > 4 ? r : null;
   }
 }

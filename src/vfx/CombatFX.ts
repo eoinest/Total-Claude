@@ -777,10 +777,10 @@ export class CombatFX {
       const h2 = hash01(i, 1093);
       // A body soaks a patch roughly its own length across, and the ground it is lying on
       // has been fought over — so trample goes down with the blood.
-      this.damage.splat(x, z, 1.9 + h1 * 1.3, DT.bloodPool, h2 * 6.283, 0.62, 0.22, 0);
+      this.damage.splat(x, z, 2.6 + h1 * 1.6, DT.bloodPool, h2 * 6.283, 0.88, 0.30, 0);
       this.damage.splat(
         x + (h1 - 0.5) * 2.4, z + (h2 - 0.5) * 2.4,
-        3.2 + h2 * 2.0, DT.trampleSoft, h1 * 6.283, 0.085, 0.16, 0
+        4.5 + h2 * 3.0, DT.trampleSoft, h1 * 6.283, 0.13, 0.30, 0
       );
     }
   }
@@ -843,9 +843,12 @@ export class CombatFX {
         );
       }
       // A wide, faint soak beyond the pool, joining neighbouring pools into one stained
-      // area. Deliberately small: at 0.11 a heap of three hundred men accumulates past
-      // saturation over twenty metres and composites as a single flat red blob.
-      this.damage.splat(c.x, c.z, 4.0 + h2 * 2.2, DT.trampleSoft, h1 * 6.283, 0.042, 0.085, 0);
+      // area. This is what makes a heap of dead read as lying *in* blood rather than each
+      // corpse sitting on its own tidy disc — and the disc-per-corpse look is the tell that
+      // the effect was authored per object instead of accumulated. Kept faint per corpse and
+      // left to integrate: it is the sum over neighbours that stains the ground, and the
+      // shader's heavy blood mottling is what stops the sum reading as one flat red field.
+      this.damage.splat(c.x, c.z, 4.2 + h2 * 2.4, DT.trampleSoft, h1 * 6.283, 0.062, 0.085, 0);
       this.pools[i] = this.pools[this.poolCount - 1];
       this.pools[this.poolCount - 1] = c;
       this.poolCount--;

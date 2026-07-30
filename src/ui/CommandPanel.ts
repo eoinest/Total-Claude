@@ -242,6 +242,15 @@ export class CommandPanel {
     setClass(this.runBtn, 'on', this.controller.runByDefault);
   }
 
+  /**
+   * The plaque itself, so the tooltip can place itself clear of it. Anchoring the tooltip
+   * to the card it came from put a 450 px stat block straight across the plaque's identity
+   * block — the two panels that most want reading at once, one on top of the other.
+   */
+  get element(): HTMLElement {
+    return this.root;
+  }
+
   dispose(): void {
     this.root.remove();
   }

@@ -45,7 +45,7 @@ export function createAI(opts: AIOptions = {}): AIBundle {
   const commanded = opts.commanded ?? [Faction.Rome, Faction.Germanic];
   const world = new AIWorld();
   const pathfinding = new PathfindingSystem();
-  const tactical = new TacticalAISystem(world, difficulty);
+  const tactical = new TacticalAISystem(world, difficulty, commanded);
   const general = new GeneralAISystem(world, difficulty, commanded);
   const debug = new AIDebugSystem(world, tactical, general);
   return { world, pathfinding, tactical, general, debug, all: [pathfinding, tactical, general, debug] };

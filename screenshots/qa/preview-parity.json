@@ -1,0 +1,211 @@
+{
+  "payload": {
+    "pubAssets": {
+      "bytes": 223904184,
+      "files": 173
+    },
+    "distAssets": {
+      "bytes": 25185574,
+      "files": 77
+    },
+    "distBundle": {
+      "bytes": 7717673,
+      "files": 6
+    },
+    "dist": {
+      "bytes": 32904526,
+      "files": 84
+    },
+    "mapBytes": 6103866,
+    "mapFiles": 2
+  },
+  "previewRequests": [
+    {
+      "p": "manifest.json",
+      "status": 200
+    },
+    {
+      "p": "manifest.json",
+      "status": 200
+    },
+    {
+      "p": "textures/dry-grass/albedo.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/dry-grass/normal.webp",
+      "status": 200
+    },
+    {
+      "p": "hdri/midday-partly-cloudy-2k.hdr",
+      "status": 200
+    },
+    {
+      "p": "textures/dry-grass/displacement.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/meadow-grass/albedo.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/meadow-grass/normal.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/meadow-grass/displacement.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/mud/displacement.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/mud/normal.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/mud/albedo.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/dirt-gravel/albedo.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/dirt-gravel/normal.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/dirt-gravel/displacement.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/sand/displacement.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/sand/normal.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/sand/albedo.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/cobblestone-road/albedo.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/cobblestone-road/normal.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/cobblestone-road/displacement.webp",
+      "status": 200
+    },
+    {
+      "p": "manifest.json",
+      "status": 200
+    },
+    {
+      "p": "textures/roman-travertine-blocks/albedo.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/roman-travertine-blocks/normal.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/roman-travertine-blocks/roughness.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/painted-plaster/albedo.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/painted-plaster/normal.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/painted-plaster/roughness.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/terracotta-roof-tiles/albedo.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/terracotta-roof-tiles/normal.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/terracotta-roof-tiles/roughness.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/weathered-wood-planks/albedo.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/weathered-wood-planks/normal.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/weathered-wood-planks/roughness.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/worn-iron/albedo.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/worn-iron/normal.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/worn-iron/roughness.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/cobblestone-road/albedo.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/cobblestone-road/normal.webp",
+      "status": 200
+    },
+    {
+      "p": "textures/cobblestone-road/roughness.webp",
+      "status": 200
+    }
+  ],
+  "pixels": {
+    "diffPx": 7511,
+    "px": 921600,
+    "pct": 0.8149956597222223,
+    "meanDelta": 3.3978819444444444,
+    "maxDelta": 380
+  },
+  "dev": {
+    "simTime": 2.2,
+    "men": 8944,
+    "draws": 110,
+    "tris": 8121126,
+    "programs": 53,
+    "textures": 72,
+    "geometries": 72,
+    "env": true
+  },
+  "preview": {
+    "simTime": 2.2,
+    "men": 8944,
+    "draws": 110,
+    "tris": 8121126,
+    "programs": 53,
+    "textures": 72,
+    "geometries": 72,
+    "env": true
+  }
+}

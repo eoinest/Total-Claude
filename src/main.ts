@@ -27,6 +27,7 @@ import { HudSystem } from './ui/HudSystem';
 import { PostFXSystem } from './render/PostFX';
 
 import { deploySiegeOfRome } from './sim/scenario';
+import { Faction } from './sim/types';
 
 /**
  * Entry point. Builds the engine, registers every subsystem, deploys the scenario
@@ -45,6 +46,18 @@ const params = new URLSearchParams(location.search);
 const harness = params.get('harness') === '1';
 const qualityParam = (params.get('quality') as QualityTier | null) ?? (harness ? 'ultra' : 'high');
 const difficulty = (params.get('difficulty') as 'easy' | 'normal' | 'hard' | 'legendary' | null) ?? 'hard';
+/**
+ * Which side the player commands. The other is left to the AI.
+ *
+ * `?autoplay=1` hands both armies to the AI, which is what the screenshot harness wants:
+ * its shots need a battle that fights itself. Interactive play must never do this, or the
+ * AI will fight the player for control of their own units.
+ */
+// Explicit `?autoplay=0` wins over the harness default, so an interaction test can load
+// the harness (for `window.__game`) while still leaving Rome under player control.
+const autoplay = params.has('autoplay') ? params.get('autoplay') === '1' : harness;
+const playerFaction = Faction.Rome;
+const aiFaction = Faction.Germanic;
 
 const canvas = document.getElementById('viewport') as HTMLCanvasElement;
 const loading = document.getElementById('loading') as HTMLElement | null;
@@ -85,7 +98,18 @@ engine.add(new BattleFlowSystem());
 // Four AI subsystems sharing one blackboard: nav grid, per-unit utility selector,
 // per-faction plan, debug overlay. Registered as a bundle so their relative update
 // order stays owned by the AI module rather than by this file.
-await installAI(engine, { difficulty });
+//
+// `commanded` is the important argument and it is not optional in practice. Left to
+// its default the AI takes BOTH factions, and since it re-plans every few ticks it
+// overwrites the player's orders within half a second — a move order drifted 46 m off
+// target and was re-issued 23 times in ten seconds, an attack order reverted to MoveTo
+// after 500 ms, and a formation change was undone as soon as the clock was unpaused.
+// The player's army must be commanded by the player.
+// In autoplay/harness mode the AI takes both sides so the battle fights itself.
+await installAI(engine, {
+  difficulty,
+  commanded: autoplay ? [playerFaction, aiFaction] : [aiFaction],
+});
 
 const vfx = engine.add(new VFXSystem());
 // VFX cannot write the soldier pool (not its file), so blood only dirties men once

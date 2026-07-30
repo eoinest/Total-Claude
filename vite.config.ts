@@ -16,7 +16,10 @@ export default defineConfig({
   },
   build: {
     target: 'esnext',
-    sourcemap: true,
+    // Source maps ship the entire TypeScript source and were 5.82 MiB of a 31 MiB
+    // deployment - a quarter of the payload, and more than the whole optimised asset set.
+    // Opt in with SOURCEMAP=1 when debugging a production build.
+    sourcemap: process.env.SOURCEMAP === '1',
     chunkSizeWarningLimit: 4096,
     // NOT the default 'assets'. `public/assets/` holds the downloaded texture and HDRI
     // set, which Vite copies verbatim into the output root — so leaving the bundle

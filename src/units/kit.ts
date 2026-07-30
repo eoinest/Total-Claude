@@ -100,6 +100,28 @@ export const enum Tint {
    * loud a uniformity tell as twenty identical helmets.
    */
   Focale = 8,
+  /**
+   * The inside of a shield.
+   *
+   * Its own slot because it is, by a wide margin, the largest single surface a soldier
+   * presents to a camera standing behind his line: measured by difference over the
+   * `romanline` frame, shield pixels are 11.9% of the whole image — three times the armour
+   * and four times the helmets. Left untinted it was one repeated tan plank texture across
+   * every man in the cohort, which is the loudest uniformity tell the Roman frames had.
+   * Real scuta were hide-faced front and back and the facing was whatever the owner could
+   * get: oiled leather, red-brown paint carried round the rim, grey felt, bare limewood.
+   */
+  ShieldBack = 9,
+  /**
+   * Helmet crest, plume and feather.
+   *
+   * Its own slot because the atlas can only hold one strand texture and a crest is the most
+   * conspicuous thing on a man: it sits above the helmet line where nothing occludes it. Left
+   * on the atlas colour every crested legionary in the army wore the same madder-red
+   * horsehair, where the reference frames show black feather pairs, white horsehair and red
+   * within one cohort. The tile is therefore drawn neutral and coloured from here.
+   */
+  Crest = 10,
 }
 
 /** Emblem tile order in the atlas; index is what the shader receives. */
@@ -471,6 +493,31 @@ export const emptyKit = (): ResolvedKit => ({
 export const ROUT_DROP_HI =
   bit(Piece.ShieldScutum) | bit(Piece.ShieldOval) | bit(Piece.ShieldRound) |
   bit(Piece.Pilum) | bit(Piece.JavelinBundle);
+
+/**
+ * What leaves a dead man's hands.
+ *
+ * The VFX litter system already lays a dropped shield on the ground beside roughly three
+ * deaths in five, so a corpse that also keeps the one on his arm double-counts — and the
+ * result is the single loudest defect in the aftermath frame: a heap in which large flat
+ * boards at every angle outnumber the bodies, so the eye reads a pile of parts rather than
+ * a field of dead men. Dropping the arm shield at a matching rate leaves the same number of
+ * shields on the ground and lets the men underneath read as men.
+ */
+export const CORPSE_DROP_HI =
+  bit(Piece.ShieldScutum) | bit(Piece.ShieldOval) | bit(Piece.ShieldRound) |
+  bit(Piece.Pilum) | bit(Piece.JavelinBundle);
+
+/** A helmet comes off in a fall often enough to be worth the variety. */
+export const CORPSE_DROP_LO =
+  bit(Piece.HelmGallic) | bit(Piece.HelmRidge) | bit(Piece.HelmCoolus) |
+  bit(Piece.HelmSpangen) | bit(Piece.HelmFur) |
+  bit(Piece.CrestTransverse) | bit(Piece.CrestLongitudinal) |
+  bit(Piece.CrestPlume) | bit(Piece.CrestHorns);
+
+/** Coarse-tier equivalents of the two masks above, for the far mesh's eight groups. */
+export const CORPSE_DROP_COARSE = (1 << Coarse.ShieldBig) | (1 << Coarse.ShieldRound);
+export const CORPSE_DROP_COARSE_HELM = 1 << Coarse.Helmet;
 
 /** Whether this unit type is drawn mounted. */
 export const mounted = (def: UnitTypeDef): boolean => isCavalry(def);

@@ -140,8 +140,17 @@ export class HudSystem implements Subsystem {
     this.bottomPanel = bottom;
     this.command.attach(bottom, ctx);
     this.cards.attach(bottom);
+    // A card's tooltip is anchored above that card, and the plaque is directly above the
+    // card bar, so without this the stat block covers the plaque every time.
+    this.tooltip.avoid = this.command.element;
     this.minimap.attach(this.root, ctx);
     this.settings.attach(this.topbar.toolSlot, ctx, {
+      // Verified end to end: the button reaches `Engine.setQuality` and `ctx.quality.tier`
+      // really changes. What follows is outside the HUD — `setQuality` swaps the shadow
+      // cascade count without invalidating any material, so every shader compiled against
+      // the old `NUM_DIR_LIGHT_SHADOWS` fails to link and the world renders empty until
+      // reload. That is an engine/render fix, not a HUD one; do not "fix" it by taking the
+      // buttons away.
       setQuality: this.opts.engine ? (t) => this.opts.engine!.setQuality(t) : undefined,
       onBannersChanged: (on) => {
         this.banners.enabled = on;

@@ -151,6 +151,8 @@ export class VFXSystem implements Subsystem {
    * than no number at all.
    */
   private cpuRing = new Float32Array(31);
+  /** Last frame's cost of each part of `update`, in ms. Reported by `stats()`. */
+  private bucket = { dust: 0, combat: 0, contacts: 0, banners: 0, birds: 0, weather: 0, flush: 0 };
   private cpuRingHead = 0;
   private cpuSorted = new Float32Array(31);
 
@@ -186,7 +188,12 @@ export class VFXSystem implements Subsystem {
       centreX: 0,
       centreZ: 0,
       resolution: 1024,
-      segments: 168,
+      // 2.9 m per segment. The overlay conforms to the ground by sampling the heightfield
+      // at its vertices, so its fidelity is set here and nowhere else: at the old 6.5 m
+      // the interpolated surface sagged metres below the terrain on any real slope and the
+      // whole layer was depth-rejected. 295k triangles for one discard-early draw is a
+      // cheap price for the layer actually existing.
+      segments: 384,
     });
     ctx.scene.add(this.damage.mesh);
 
@@ -340,6 +347,27 @@ export class VFXSystem implements Subsystem {
     return this.banners.anchorOf(unitId, out);
   }
 
+  /**
+   * The persistent ground-damage buffer and the square of world it covers.
+   *
+   * Offered to the terrain/vegetation system, which is the only place the last part of this
+   * effect can live: an overlay painted on the soil is drawn *behind* the grass blades, so
+   * on a dense sward most of the blood and churn is hidden by greenery standing in front of
+   * it. Grass that reads the buffer and shortens, browns and desaturates itself where
+   * `trample` is high — and darkens where `blood` is — is what turns a stain into a
+   * trampled killing ground. `r` blood, `g` trample, `b` scorch, all 0..1.
+   *
+   *     vec2 uv = (worldXZ - vec2(centreX, centreZ)) / extent + 0.5;
+   */
+  get groundDamage(): { texture: THREE.Texture; centreX: number; centreZ: number; extent: number } {
+    return {
+      texture: this.damage.texture,
+      centreX: this.damage.centreX,
+      centreZ: this.damage.centreZ,
+      extent: this.damage.extent,
+    };
+  }
+
   // -------------------------------------------------------------------------
   // Frame
   // -------------------------------------------------------------------------
@@ -358,19 +386,37 @@ export class VFXSystem implements Subsystem {
     this.gust = this.weather.gust;
 
     const cam = ctx.camera.position;
+    // Per-part timings, kept permanently. A subsystem that can be 0.2 ms or 7 ms
+    // depending on the minute of the battle is not debuggable from an aggregate.
+    const b = this.bucket;
 
     if (this.battle) {
+      let m = performance.now();
       this.dust.driftX = this.wind.x;
       this.dust.driftZ = this.wind.z;
       this.dust.update(sdt, this.battle, this.terrain, this.particles, this.damage, cam.x, cam.z);
+      b.dust = performance.now() - m;
+      m = performance.now();
       this.combat.update(sdt);
+      b.combat = performance.now() - m;
+      m = performance.now();
       this.deriveContacts(sdt);
-      this.banners.update(sdt, this.battle, this.wind);
+      b.contacts = performance.now() - m;
+      m = performance.now();
+      this.banners.update(sdt, this.battle, this.wind, cam.x, cam.z);
+      b.banners = performance.now() - m;
+      m = performance.now();
       this.birds.update(sdt, this.battle, cam.x, cam.z, (x, z) => this.groundAt(x, z));
+      b.birds = performance.now() - m;
     }
 
+    const m2 = performance.now();
     this.fires.update(sdt, this.particles, this.damage, cam.x, cam.z);
     this.weather.emit(this.particles, sdt, cam.x, cam.y, cam.z, (x, z) => this.groundAt(x, z));
+    b.weather = performance.now() - m2;
+
+    // One accumulated instance-buffer upload for everything dropped this frame.
+    this.litter.flush();
 
     this.cpuRing[this.cpuRingHead] = performance.now() - t0;
     this.cpuRingHead = (this.cpuRingHead + 1) % this.cpuRing.length;
@@ -425,6 +471,7 @@ export class VFXSystem implements Subsystem {
 
   preRender(ctx: EngineContext): void {
     if (!this.enabled) return;
+    const pr0 = performance.now();
 
     // ---- Lighting, pulled from the sky each frame so effects track time of day ----
     const sunDir = this.sky?.sunDirection ?? DEFAULT_SUN;
@@ -462,6 +509,7 @@ export class VFXSystem implements Subsystem {
     // Offscreen accumulation. Runs here, before the engine resets its draw counters,
     // so the splat pass is not charged against the visible draw budget.
     this.damage.commit(ctx.renderer);
+    this.bucket.flush = performance.now() - pr0;
 
     // After the battle the field settles: no more dust, and the crows come down.
     if (this.battleOver) {
@@ -489,6 +537,8 @@ export class VFXSystem implements Subsystem {
     cpuMs: number;
     /** Worst frame in the same window — the number that matters for a hitch. */
     cpuPeakMs: number;
+    /** Per-part breakdown of the last frame, in ms. */
+    parts: { dust: number; combat: number; contacts: number; banners: number; birds: number; weather: number; flush: number };
   } {
     return {
       particles: this.particles.liveCount(),
@@ -502,6 +552,7 @@ export class VFXSystem implements Subsystem {
       perchedCrows: this.birds.perched,
       cpuMs: this.cpuMedian(),
       cpuPeakMs: Math.max(...this.cpuRing),
+      parts: this.bucket,
     };
   }
 

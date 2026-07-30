@@ -73,11 +73,9 @@ void main() {
 
 const SHOW_VERT = /* glsl */ `
 precision highp float;
-varying vec2 vUv;
 varying vec3 vNormal;
 varying vec3 vWorld;
 void main() {
-  vUv = uv;
   vNormal = normal;
   vec4 wp = modelMatrix * vec4(position, 1.0);
   vWorld = wp.xyz;
@@ -93,15 +91,28 @@ uniform vec3 uSun;
 uniform vec3 uSunColour;
 uniform vec3 uAmbient;
 uniform float uFade;
-varying vec2 vUv;
+/** (centreX, centreZ, extent) — must match the splat camera exactly. See uv below. */
+uniform vec3 uFrame;
 varying vec3 vNormal;
 varying vec3 vWorld;
 
 void main() {
+  // Buffer lookup derived from world position, never from the mesh's own uv attribute.
+  //
+  // The splat pass writes through an orthographic camera at the buffer centre, so a splat
+  // at world (x,z) lands at texture (0.5 + (x-cx)/extent, 0.5 + (z-cz)/extent). A
+  // PlaneGeometry rotated -90 degrees about X has v = 0.5 - (z-cz)/extent instead, because
+  // rotateX maps the plane's +Y to world -Z. Sampling with that attribute therefore
+  // displayed the whole buffer mirrored about the z axis: every stain appeared 2|z| metres
+  // away on the wrong side of the field, which is why a buffer holding two hundred thousand
+  // splats composited as clean grass wherever anyone had actually fought. Deriving the
+  // coordinate from vWorld makes the two passes agree by construction.
+  vec2 dUv = (vWorld.xz - uFrame.xy) / uFrame.z + 0.5;
+
   // Cheap conservative reject first. This layer spans the whole fighting ground, so on
   // most frames the majority of its fragments are over untouched turf; paying for four
   // texture fetches before finding that out is the difference between 0.2 ms and 2 ms.
-  vec4 d0 = texture2D(uDamage, vUv);
+  vec4 d0 = texture2D(uDamage, dUv);
   if (d0.r + d0.g + d0.b < 0.004) discard;
 
   // Three decorrelated noise lookups on incommensurate, rotated bases. Axis-aligned
@@ -113,37 +124,56 @@ void main() {
   vec4 nFine = texture2D(uNoise, rot.yx * 0.317);
 
   vec2 warp = (vec2(nBig.r, nMid.g) - 0.5) * 0.0026;
-  vec4 d = texture2D(uDamage, vUv + warp);
+  vec4 d = texture2D(uDamage, dUv + warp);
 
   // Gentle modulation only: heavy grain turns broad staining into leopard spots.
   float grain = 0.74 + 0.52 * (nFine.r * 0.5 + nMid.g * 0.3 + nBig.g * 0.2);
 
-  // Blood gets a much harder break-up than trample does, and needs it. Hundreds of men
-  // dying inside twenty metres saturate the channel across the whole area, and a
-  // saturated flat channel composites as one continuous 40 m amoeba of solid red —
-  // legible from the strategic camera as a paint spill, not as a killing ground. The
-  // extra octaves at low weight put back the mottling that makes it read as soaked soil.
-  float bloodGrain = 0.30 + 1.28 * (nFine.g * 0.42 + nMid.b * 0.34 + nBig.r * 0.24);
-  float blood = d.r * bloodGrain;
+  // Multi-octave field used to break the blood up. Mean ~0.5, and it has to be applied to
+  // *coverage* rather than to the channel, for the reason below.
+  float bMott = nFine.g * 0.42 + nMid.b * 0.34 + nBig.r * 0.24;
+  float blood = d.r;
   float tramp = d.g * (0.78 + 0.42 * nMid.r);
   float scorch = d.b * grain;
 
-  float wB = blood * 2.3;
-  float wT = tramp * 1.6;
+  float wT = tramp * 2.4;
   float wS = scorch * 2.0;
-  float total = wB + wT + wS;
+  // Coverage, not weight: blood *soaks over* soil rather than averaging with it.
+  //
+  // A three-way weighted mean was the reason blood was invisible even once the buffer was
+  // being read from the right place. Where hundreds of men have died the trample channel is
+  // saturated too — the ground under a corpse heap has been fought over for minutes — so a
+  // mean of a 0.05-luminance oxblood and a 0.21-luminance churned brown, at comparable
+  // weights, lands on plain dark brown every time. Physically the blood is *on top of*
+  // the churned earth and opaque where it has pooled, and compositing it that way is what
+  // makes a killing ground read as a killing ground rather than as mud.
+  float bCov = clamp(1.0 - exp(-blood * 2.9), 0.0, 1.0);
+  // Break the *fringe* up hard and leave the pools solid.
+  //
+  // Modulating the channel instead would have been wrong in a way worth recording: over a
+  // heap of a thousand dead the buffer is pinned at 1.0 across forty metres, so any
+  // monotonic function of it is a constant and the area composites dead flat however much
+  // noise is folded into the amount. The structure has to come from noise applied *after*
+  // the coverage curve, weighted toward the low-accumulation fringe — which is also where
+  // it belongs physically: a pool is a pool, but its margins are spatter and soaked soil
+  // with churned earth still showing through.
+  bCov *= mix(0.22 + 1.10 * bMott, 1.0, clamp(blood * 1.5 - 0.42, 0.0, 1.0));
+  bCov = clamp(bCov, 0.0, 1.0);
+  float total = wT + wS + blood * 2.4;
   if (total < 0.010) discard;
 
-  // Oxidised blood on soil: dark maroon-brown, deepening where it has pooled. It must
-  // *stay red* at saturation — taken all the way to near-black it stops reading as blood
-  // and reads as a hole in the terrain, which is worse than not being there.
-  vec3 bloodCol = mix(vec3(0.105, 0.041, 0.031), vec3(0.052, 0.023, 0.019), clamp(blood * 1.1, 0.0, 1.0));
+  // Oxidised blood on soil: dark maroon, deepening where it has pooled. It must *stay red*
+  // at saturation — taken all the way to near-black it stops reading as blood and reads as
+  // a hole in the terrain, which is worse than not being there.
+  vec3 bloodCol = mix(vec3(0.118, 0.038, 0.030), vec3(0.055, 0.014, 0.013), clamp(blood * 1.1, 0.0, 1.0));
   // Churned earth, not soot: a dry brown that reads as exposed subsoil.
   vec3 trampCol = vec3(0.215, 0.168, 0.116) * (0.82 + 0.36 * nFine.g);
   vec3 scorchCol = vec3(0.026, 0.022, 0.020);
 
-  vec3 c = (bloodCol * wB + trampCol * wT + scorchCol * wS) / max(total, 1e-4);
-  float a = clamp(1.0 - exp(-total * 1.15), 0.0, 0.94) * uFade;
+  float wSoil = wT + wS;
+  vec3 soil = wSoil > 1e-4 ? (trampCol * wT + scorchCol * wS) / wSoil : trampCol;
+  vec3 c = mix(soil, bloodCol, bCov);
+  float a = clamp(1.0 - exp(-total * 1.15), 0.0, 0.96) * uFade;
 
   // Sit inside the scene lighting; an unlit decal floats off the ground instantly.
   vec3 nrm = normalize(vNormal);
@@ -269,14 +299,22 @@ export class GroundDamageLayer {
     const pos = geo.attributes.position as THREE.BufferAttribute;
     const nrm = geo.attributes.normal as THREE.BufferAttribute;
     const tmp = new THREE.Vector3();
-    // Bake terrain height and normal. 12 cm of lift clears the terrain mesh's own
-    // triangle sag (< 3 cm on this heightfield) without reading as a floating sheet.
+    // Bake terrain height and normal.
+    //
+    // The lift has to beat this mesh's *own* chord sag, not the terrain mesh's. A
+    // ground-conforming plane samples the heightfield only at its vertices and then
+    // interpolates linearly, so across a segment of length d over ground of curvature
+    // radius R it sags by roughly d²/8R below the true surface — and wherever that sag
+    // exceeds the lift, the overlay is behind the terrain in depth and simply vanishes.
+    // At 6.5 m segments this measured 4.7 m of sag against a 12 cm lift, which is why a
+    // buffer holding two hundred thousand splats composited as nothing at all. Short
+    // segments do the real work; the lift is only there for the residual.
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i) + this.centreX;
       const z = pos.getZ(i) + this.centreZ;
       pos.setX(i, x);
       pos.setZ(i, z);
-      pos.setY(i, (terrain?.heightAt(x, z) ?? 0) + 0.12);
+      pos.setY(i, (terrain?.heightAt(x, z) ?? 0) + 0.24);
       if (terrain) {
         terrain.normalAt(x, z, tmp);
         nrm.setXYZ(i, tmp.x, tmp.y, tmp.z);
@@ -296,6 +334,7 @@ export class GroundDamageLayer {
         uSunColour: { value: new THREE.Color(1, 0.94, 0.82) },
         uAmbient: { value: new THREE.Color(0.2, 0.25, 0.33) },
         uFade: { value: 1 },
+        uFrame: { value: new THREE.Vector3(this.centreX, this.centreZ, this.extent) },
       },
       transparent: true,
       depthTest: true,
@@ -400,6 +439,23 @@ export class GroundDamageLayer {
 
   get splatCount(): number {
     return this.totalSplats;
+  }
+
+  /**
+   * The accumulation buffer itself, for any system that should *react* to battle damage
+   * rather than merely be overlaid by it.
+   *
+   * The obvious consumer is vegetation: grass that has had a cohort standing on it for two
+   * minutes should be flattened and brown, and grass in a blood pool should be dark. An
+   * overlay drawn on the soil can never express that, because the blades are drawn in
+   * front of it. Sample as
+   *
+   *     vec2 uv = (worldXZ - damageCentre) / damageExtent + 0.5;
+   *
+   * and read `.r` for blood, `.g` for trample, `.b` for scorch, each 0..1.
+   */
+  get texture(): THREE.Texture {
+    return this.rt.texture;
   }
 
   dispose(): void {

@@ -203,6 +203,12 @@ export class SelectionController {
     if (ids.length) ctx.events.emit('orderIssued', { unitIds: ids, kind: 'halt' });
   }
 
+  /**
+   * Note when testing this: the order lands — `BattleSystem.setFormation` applies it on the
+   * same tick — but `TacticalAI` currently commands *both* armies, and within a second or so
+   * it re-issues its own formation for the same unit and the player's choice is gone. The
+   * HUD half is correct; the AI needs to stand off units the player is driving.
+   */
   issueFormation(id: string, ctx: EngineContext): void {
     const ids = this.model.selectedViews
       .filter((v) => !v.routing && v.def.formations.includes(id))

@@ -31,6 +31,14 @@ export interface FactionUI {
   /** Darkened plate colour behind portraits and blips. */
   deep: string;
   raw: number;
+  /**
+   * A lit version of the faction colour, mirroring `--rome-lit` / `--germanic-lit`.
+   *
+   * Canvas drawing brightens by strength, and mixing toward white for that turns Roman
+   * oxblood into salmon and Juthungi blue into ice — at three pixels the two sides stop
+   * being red and blue. Mixing toward this instead raises the value and leaves the hue.
+   */
+  litRaw: number;
 }
 
 export const FACTION_UI: Record<Faction, FactionUI> = {
@@ -43,6 +51,7 @@ export const FACTION_UI: Record<Faction, FactionUI> = {
     accent: hexOf(FACTIONS[Faction.Rome].accent),
     deep: '#3a1113',
     raw: FACTIONS[Faction.Rome].colour,
+    litRaw: 0xd4444d,
   },
   [Faction.Germanic]: {
     id: Faction.Germanic,
@@ -53,6 +62,7 @@ export const FACTION_UI: Record<Faction, FactionUI> = {
     accent: hexOf(FACTIONS[Faction.Germanic].accent),
     deep: '#13212f',
     raw: FACTIONS[Faction.Germanic].colour,
+    litRaw: 0x5b93c4,
   },
 };
 

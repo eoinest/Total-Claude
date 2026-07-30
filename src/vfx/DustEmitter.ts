@@ -238,6 +238,12 @@ export class DustEmitter {
       // A quarter of the emission is the big slow stuff that forms the bank; the rest is
       // mid-scale so the bank has visible internal structure instead of reading as fog.
       const big = h4 < 0.30;
+      // Per-puff optical thickness, mean 1. Identical alpha on every sprite is the other
+      // half of why an overlapping field integrates to a featureless wash: the sum of many
+      // equal terms is smooth by the central limit theorem, whichever texture they carry.
+      // Spreading the thickness three-to-one leaves the mean — and so the depth of the bank
+      // — untouched while giving it dense knots and thin gaps.
+      const lump = 0.52 + 0.96 * hash01(k * 23 + ui, salt + 5);
 
       // Distant dust uses only the softest silhouette in the atlas. `dustBillow` and
       // `dustWisp` have readable lumpy outlines that sell a puff close up and give away
@@ -265,7 +271,7 @@ export class DustEmitter {
         rec.life = 4.0 + h3 * 2.4;
         rec.size0 = (2.6 + h1 * 2.2) * (horse ? 1.4 : 1) * sizeK;
         rec.size1 = rec.size0 * (1.7 + h2 * 0.8);
-        rec.a = (0.086 + 0.094 * dry) * alphaK;
+        rec.a = (0.086 + 0.094 * dry) * alphaK * lump;
         rec.drag = 0.45;
         rec.gravity = 0.22;
         rec.turb = 1.5;
@@ -273,7 +279,7 @@ export class DustEmitter {
         rec.life = 2.8 + h3 * 1.9;
         rec.size0 = (1.45 + h1 * 1.45) * (horse ? 1.35 : 1) * sizeK;
         rec.size1 = rec.size0 * (2.0 + h2 * 1.1);
-        rec.a = (0.145 + 0.120 * dry) * alphaK;
+        rec.a = (0.145 + 0.120 * dry) * alphaK * lump;
         rec.drag = 0.8;
         rec.gravity = 0.34;
         rec.turb = 1.05;
@@ -486,7 +492,7 @@ export class DustEmitter {
       // been *fighting* saturates inside twenty seconds — which is what produces the
       // dark strip along the contact line rather than a uniform brown field.
       const amount =
-        (0.030 + clamp(sp * 0.012, 0, 0.05) + (fighting ? 0.095 : 0)) * (1.35 - dry * 0.45);
+        (0.034 + clamp(sp * 0.014, 0, 0.055) + (fighting ? 0.155 : 0)) * (1.35 - dry * 0.45);
       const slope = terrain?.slopeAt(p.x[i], p.z[i]) ?? 0;
       // A man shoving in a shieldwall works a patch several metres across, not the
       // half-metre his feet occupy: he braces, slips, steps over the fallen and is pushed

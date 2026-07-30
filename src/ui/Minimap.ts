@@ -217,9 +217,13 @@ export class Minimap {
         // Hypsometric tint: the map is a bronze plate with the ground etched into it, not
         // a satellite photograph, so colour stays subordinate to the blips — but the range
         // has to be wide enough that the plate reads as terrain rather than as mud.
-        const r0 = 42 + t * 104;
-        const g0 = 40 + t * 90;
-        const b0 = 30 + t * 58;
+        // Measured: the plate used to sit at 0.069 relative luminance against blips that
+        // peaked near 0.14, so the ground was competing with the army for the eye. Pulling
+        // the top of the ramp down and the blips up puts the order of battle on top, which
+        // is the only thing this panel exists to show.
+        const r0 = 34 + t * 84;
+        const g0 = 32 + t * 73;
+        const b0 = 24 + t * 47;
         // Lambert from the north-west, the same quarter the scene sun comes from.
         const hl = heights[k - 1 >= j * RELIEF ? k - 1 : k];
         const hu = heights[k - RELIEF >= 0 ? k - RELIEF : k];
@@ -282,9 +286,12 @@ export class Minimap {
     }
 
     // ---- City walls ----
+    // Deliberately quiet. At 0.85 alpha the Aurelian curtain was the brightest line on the
+    // plate — brighter than any unit — and the eye went to the architecture instead of to
+    // the army. It is a landmark, not a combatant.
     if (this.walls.length) {
-      g.strokeStyle = 'rgba(232, 216, 178, 0.85)';
-      g.lineWidth = 1.6;
+      g.strokeStyle = 'rgba(226, 208, 168, 0.42)';
+      g.lineWidth = 1.3;
       g.beginPath();
       for (const w of this.walls) {
         g.moveTo(this.mx(w.x1), this.my(w.z1));
@@ -305,11 +312,12 @@ export class Minimap {
         const own = v.faction === PLAYER_FACTION;
         if ((own ? 0 : 1) !== pass) continue;
         const fui = FACTION_UI[v.faction];
-        // Lightened toward white by strength, but only a little: mixing better than half
-        // way turned Roman red into salmon and cost the two sides their only difference at
-        // this size. A fresh unit is bright, a spent one is dark, both are still faction red.
-        const bright = 0.12 + v.strengthFrac * 0.26;
-        const col = v.routing ? mixHex(fui.raw, 0x000000, 0.45) : mixHex(fui.raw, 0xffffff, bright);
+        // Brightened by surviving strength toward the faction's own lit tone rather than
+        // toward white: white took Roman oxblood to salmon and cost the two sides the only
+        // difference they have at three pixels. A fresh unit is bright, a spent one is dark,
+        // both stay unmistakably red or blue.
+        const bright = 0.2 + v.strengthFrac * 0.75;
+        const col = v.routing ? mixHex(fui.raw, 0x000000, 0.45) : mixHex(fui.raw, fui.litRaw, bright);
 
         const px = this.mx(v.cx);
         const py = this.my(v.cz);
@@ -318,8 +326,8 @@ export class Minimap {
         // spent cohort that draws two thirds the size of a fresh one both tells the truth
         // and leaves the gap that makes the cluster countable.
         const scale = 0.6 + 0.4 * v.strengthFrac;
-        const w = Math.max(2.4, (v.frontage / mPerPx) * scale);
-        const d = Math.max(1.8, (v.depth / mPerPx) * scale);
+        const w = Math.max(3.2, (v.frontage / mPerPx) * scale);
+        const d = Math.max(2.4, (v.depth / mPerPx) * scale);
         const sel = this.model.isSelected(v.id);
 
         g.save();
@@ -331,14 +339,16 @@ export class Minimap {
         g.fillRect(-w * 0.5, -d * 0.5, w, d);
         g.globalAlpha = 1;
         // The dark outline is what actually separates two touching blips, so it is drawn
-        // even when the blip is barely two pixels across.
+        // even when the blip is barely three pixels across — but *outside* the fill, not
+        // straddling its edge. A centred 1 px stroke on a 3 px blip eats two thirds of the
+        // faction colour, which is exactly how a line of cohorts turned into a grey smear.
         g.lineWidth = 1;
         g.strokeStyle = 'rgba(6, 5, 3, 0.95)';
-        g.strokeRect(-w * 0.5, -d * 0.5, w, d);
+        g.strokeRect(-w * 0.5 - 0.5, -d * 0.5 - 0.5, w + 1, d + 1);
         if (sel) {
           g.strokeStyle = '#f2dd9e';
           g.lineWidth = 1.5;
-          g.strokeRect(-w * 0.5 - 1.4, -d * 0.5 - 1.4, w + 2.8, d + 2.8);
+          g.strokeRect(-w * 0.5 - 2, -d * 0.5 - 2, w + 4, d + 4);
         }
         // A tick on the leading edge shows which way it faces. Only worth drawing when
         // the blip is big enough for the tick to belong to it rather than to its neighbour.

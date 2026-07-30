@@ -22,6 +22,15 @@ const srgb = (hex: number): THREE.Color => new THREE.Color().setHex(hex, THREE.S
  * fired brick 0.10–0.14, travertine 0.35–0.45, Luna marble 0.50, terracotta 0.10,
  * lime stucco 0.55 at its whitest. An earlier revision put travertine at 0.47 linear
  * *red*, which read as bleached bone against the photographed ground.
+ *
+ * **Saturation is a second, independent budget.** Measured against real Rome II frames the
+ * whole stone family sat at 0.15–0.27 HSV saturation against their 0.32–0.33, which is why
+ * the mausolea and the monumental core read as concrete rather than as warm Italian stone.
+ * Each of the values below has since been re-authored at 0.24–0.35 saturation *holding its
+ * linear luminance within one per cent*, so the correction is purely chromatic and does not
+ * fight the exposure. Luna marble and lime wash are deliberately left lower than the rest:
+ * they are genuinely near-neutral, and pushing white render to 0.33 makes it look like
+ * sandstone.
  */
 export const PAL = {
   /** Fired-clay brick face. Roman wall brick fires orange-red to buff. */
@@ -29,23 +38,23 @@ export const PAL = {
   brickPale: srgb(0xb08064),
   brickDark: srgb(0x7d4a31),
   /** Lime mortar and the exposed *opus caementicium* core. */
-  mortar: srgb(0xb2a992),
-  concrete: srgb(0x948d7a),
+  mortar: srgb(0xb9a687),
+  concrete: srgb(0xa39176),
   /** Travertine — the cream Tivoli limestone of the footings and gate dressings. */
-  travertine: srgb(0xb6a888),
-  travertineDirty: srgb(0x8b7f66),
+  travertine: srgb(0xc0a57f),
+  travertineDirty: srgb(0x947c65),
   /** Luna (Carrara) marble for temple orders and statuary. */
   // Luna marble. 0.44 linear luminance: bright, but a large sunlit temple front at the 0.49
   // an earlier value gave sat right on the shoulder of the tone curve and lost its cornice
   // and flute shadows to it.
-  marble: srgb(0xb5ad99),
+  marble: srgb(0xbaad8d),
   // Marble in shade, and the default for large secondary surfaces — orchestras, stage
   // buildings, aisle walls. Kept *warm*: a neutral grey here is what made the monumental
   // core read as concrete rather than as stone in the first skyline pass.
-  marbleShadow: srgb(0xa89e88),
+  marbleShadow: srgb(0xb09c7c),
   /** Tufa and peperino, the cheap local volcanic building stones. */
-  tufa: srgb(0xb8a680),
-  peperino: srgb(0x847f70),
+  tufa: srgb(0xbba679),
+  peperino: srgb(0x8c8068),
   /** Painted stucco: the everyday street palette. */
   pompeianRed: srgb(0x9c2f26),
   romanRed: srgb(0xa8202a),
@@ -54,7 +63,7 @@ export const PAL = {
   // Lime render, weathered. Fresh limewash measures about 0.75 linear; nothing on a
   // third-century street was fresh, and an earlier 0xe7dfc9 read as snow next to the
   // photographed ground.
-  limeWhite: srgb(0xd8cfb6),
+  limeWhite: srgb(0xdccdae),
   ochreDeep: srgb(0x9d6d34),
   terraDirty: srgb(0xa58462),
   /** Terracotta roofing. */

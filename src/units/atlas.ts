@@ -53,7 +53,18 @@ export const enum Mat {
   Mane = 21,
   Bone = 22,
   ClothFine = 23,
-  Count = 24,
+  /**
+   * The inside of a shield: hide facing, stitched rim turn-over, horizontal grip.
+   *
+   * Its own tile because it is the largest single surface a soldier presents to a camera
+   * behind his own line — 11.9% of the romanline frame by difference, three times his armour.
+   * It used to borrow the plank tile, whose six hard seams became the same corrugation on
+   * every shield in the cohort, and then the leather tile, which is far too dark and far too
+   * red for a per-man tint to reach the pale end of the range from. This one is drawn neutral
+   * and mid-value on purpose, so a multiply can put it anywhere from pitch to raw hide.
+   */
+  ShieldBack = 24,
+  Count = 25,
 }
 
 export interface UvRect {
@@ -188,16 +199,19 @@ const MATS: Record<Mat, MatDef> = {
       mix3(out, RUST, Math.min(0.7, rust), out);
     },
     height: (u, v) => fbm(u * 14, v * 14, 3, 14, 3) * 0.6 + vnoise(u * 3, v * 40, 3, 11) * 0.4,
-    // Metalness short of 1 despite iron being a metal, but only a little. A pure metal has
-    // no diffuse term at all, so its whole colour is the environment reflection; while the
-    // rig ran a bright saturated hemisphere fill that turned every helmet on the field into
-    // a cobalt mirror, and these were held down near 0.3 to let the albedo carry the iron
-    // instead. Exposure has come down and `scene.environment` is now a PMREM of the physical
-    // sky, so metal has something real and correctly-coloured to reflect and these are back
-    // up where iron belongs. The warm F0 in the shader's metal tint still biases what comes
-    // back toward steel rather than sky.
-    roughness: 0.46,
-    metalness: 0.82,
+    // Metalness well short of 1, and this is a measured decision rather than a physical one.
+    //
+    // A fully metallic surface has no diffuse response at all: its entire colour is what it
+    // reflects. Probed over the `romanline` frame by difference (tools/probe-units.mjs),
+    // armour pixels came back at a median of 0.0135 display-linear and helmets at 0.0116 —
+    // black — with an effective IBL gain of 1.08 and a camera standing on the shaded side of
+    // the cohort, where the only thing a helmet has to reflect is 26 degrees of low sky. That
+    // is why raising metalness made armour *darker*, which is exactly backwards from the
+    // usual intuition. At 0.45 the surface keeps a real specular from an F0 the metal tint
+    // still warms toward steel, and gains a diffuse term the sun, the sky probe and the
+    // ground bounce can all light. Games do this to metal for crowds as a matter of course.
+    roughness: 0.42,
+    metalness: 0.45,
     bump: 0.5,
   },
   // Cleaner plate for helmets and bosses.
@@ -209,12 +223,23 @@ const MATS: Record<Mat, MatDef> = {
       // Under-darkening the plate is what left helmets reading as grey plastic.
       mix3([0.4, 0.383, 0.354], [0.82, 0.8, 0.745], n * 0.7 + brush * 0.3, out);
     },
-    height: (u, v) => vnoise(u * 56, v * 2, 56, 7) * 0.35 + fbm(u * 8, v * 8, 3, 8, 5) * 0.65,
+    // Three scales on purpose. The brush marks and the medium fbm give the pitting; the
+    // period-3 term is the one that matters, because roughness is derived from this height
+    // field and a *coherent* smooth zone about a third of the tile across is what puts one
+    // readable burnished highlight on a helmet crown. High-frequency roughness noise alone
+    // averages, at helmet size on screen, to a flat sheen — which is what every helmet in
+    // the Roman frames had instead of a glint.
+    height: (u, v) =>
+      vnoise(u * 56, v * 2, 56, 7) * 0.22
+      + fbm(u * 8, v * 8, 3, 8, 5) * 0.46
+      + fbm(u * 3, v * 3, 2, 3, 151) * 0.32,
     // Hammered and burnished, so tighter than the worn iron: this is the helmet bowl and
     // the shield boss, the two things on a man that catch the sun. Low roughness is what
-    // gives the tight crown highlight; metalness stays moderate for the reason above.
-    roughness: 0.28,
-    metalness: 0.94,
+    // gives the tight crown highlight; metalness comes down for the reason above, and the
+    // plate has the brightest albedo on the man so it has the most to gain from a diffuse
+    // term.
+    roughness: 0.24,
+    metalness: 0.5,
     bump: 0.25,
   },
   // Gilded bronze: praetorian fittings, helmet trim, harness bosses.
@@ -227,9 +252,10 @@ const MATS: Record<Mat, MatDef> = {
     },
     height: (u, v) => fbm(u * 10, v * 10, 3, 10, 9),
     // Bronze can afford more metalness than iron: it is warm, so what it reflects comes
-    // back warm and the sky does not take it over.
+    // back warm and the sky does not take it over, and gilt fittings are the one thing on a
+    // man that should read as a mirror.
     roughness: 0.24,
-    metalness: 0.96,
+    metalness: 0.74,
     bump: 0.3,
   },
   [Mat.Mail]: {
@@ -241,9 +267,10 @@ const MATS: Record<Mat, MatDef> = {
     height: (u, v) => mailHeight(u, v, 18),
     // Mail is thousands of small curved surfaces, so it scatters — rough, and mostly
     // self-shadowed. High metalness rendered a hamata as a black net, because a metal with
-    // a dark albedo and nothing bright to reflect has no colour left at all.
-    roughness: 0.54,
-    metalness: 0.78,
+    // a dark albedo and nothing bright to reflect has no colour left at all: this is the
+    // material the measurement above condemns hardest, so it takes the largest cut.
+    roughness: 0.5,
+    metalness: 0.36,
     bump: 1.0,
   },
   // Lorica squamata: overlapping bronze-washed scales wired to a linen backing.
@@ -274,7 +301,7 @@ const MATS: Record<Mat, MatDef> = {
       return Math.max(0, Math.min(1, (1 - fy * 0.85) * Math.max(0, side)));
     },
     roughness: 0.3,
-    metalness: 0.88,
+    metalness: 0.52,
     bump: 0.9,
   },
   [Mat.LeatherBrown]: {
@@ -404,12 +431,14 @@ const MATS: Record<Mat, MatDef> = {
     metalness: 0,
     bump: 1.0,
   },
-  // Dyed horsehair crest.
+  // Horsehair and feather. Drawn *neutral* — the strand structure only — because the colour
+  // comes from the per-man crest tint: a cohort has black feather pairs, white horsehair and
+  // madder red in it, and a red tile can only ever be multiplied into a darker red.
   [Mat.Plume]: {
     colour(u, v, out) {
       const strand = vnoise(u * 90, v * 6, 90, 83);
-      const g = 0.5 + strand * 0.5;
-      out[0] = g * 0.72; out[1] = g * 0.1; out[2] = g * 0.11;
+      const g = 0.52 + strand * 0.48;
+      out[0] = g; out[1] = g * 0.98; out[2] = g * 0.95;
     },
     height: (u, v) => vnoise(u * 90, v * 6, 90, 83),
     roughness: 0.82,
@@ -461,8 +490,8 @@ const MATS: Record<Mat, MatDef> = {
       const dr = Math.hypot(rx - Math.floor(rx) - 0.5, (fy - 0.22) * bands * 0.5);
       return Math.min(1, plate + (dr < 0.2 ? (1 - dr / 0.2) * 0.5 : 0));
     },
-    roughness: 0.32,
-    metalness: 0.88,
+    roughness: 0.3,
+    metalness: 0.48,
     bump: 0.9,
   },
   [Mat.HideBay]: {
@@ -558,6 +587,38 @@ const MATS: Record<Mat, MatDef> = {
     metalness: 0,
     bump: 0.25,
   },
+  [Mat.ShieldBack]: {
+    colour(u, v, out) {
+      // Hide grain over a neutral mid-value base. 0.62 sRGB is 0.34 linear, which is the
+      // middle of the range a per-man tint has to reach both ends of.
+      const grain = fbm(u * 13, v * 13, 4, 13, 157);
+      const scuff = Math.max(0, fbm(u * 5, v * 5, 3, 5, 163) - 0.55) * 1.8;
+      mix3([0.44, 0.40, 0.35], [0.72, 0.67, 0.60], grain, out);
+      mix3(out, [0.34, 0.30, 0.26], Math.min(0.55, scuff), out);
+      // The grip: every shield of every pattern has one horizontal handgrip across the
+      // middle, so a band at v = 0.5 lands on it whatever the board's outline. It is real
+      // structure rather than a repeat — the alternative is a featureless slab.
+      const grip = Math.exp(-((v - 0.5) ** 2) / 0.0016);
+      mix3(out, [0.30, 0.24, 0.18], grip * 0.85, out);
+      // Stitched hide turned over the rim, all four edges.
+      const rim = Math.max(
+        Math.exp(-(u ** 2) / 0.0022) + Math.exp(-((1 - u) ** 2) / 0.0022),
+        Math.exp(-(v ** 2) / 0.0022) + Math.exp(-((1 - v) ** 2) / 0.0022)
+      );
+      mix3(out, [0.26, 0.21, 0.17], Math.min(0.8, rim), out);
+    },
+    height(u, v) {
+      const grip = Math.exp(-((v - 0.5) ** 2) / 0.0016);
+      const rim = Math.max(
+        Math.exp(-(u ** 2) / 0.0022) + Math.exp(-((1 - u) ** 2) / 0.0022),
+        Math.exp(-(v ** 2) / 0.0022) + Math.exp(-((1 - v) ** 2) / 0.0022)
+      );
+      return Math.min(1, fbm(u * 16, v * 16, 3, 16, 157) * 0.5 + grip * 0.5 + Math.min(0.6, rim) * 0.5);
+    },
+    roughness: 0.72,
+    metalness: 0.02,
+    bump: 0.45,
+  },
   [Mat.Count]: {
     colour(_u, _v, out) { out[0] = 0.5; out[1] = 0.5; out[2] = 0.5; },
     height: () => 0.5,
@@ -612,8 +673,16 @@ function drawEmblem(ctx: CanvasRenderingContext2D, name: string, size: number): 
       // Red field with a gilt winged thunderbolt: the device on the Dura-Europos scutum and
       // the one every reconstruction uses. Drawn broad and simple, because at 40 m a shield
       // is 20 px across and fine linework turns to mush.
-      field('#8e1f24', '#5d4522');
-      const gold = '#d8ae48';
+      //
+      // The field is a *warm mid-tone*, not the saturated 0x8e1f24 it looks like it should
+      // be, for the same reason the tribal tiles are drawn pale: the shader gives each man
+      // his own paint by multiplying the whole facing, and a multiply cannot move the hue of
+      // a colour whose green and blue are already at 0.014 linear. Every lot came back some
+      // value of one red and a century of them read as one repeated shield. At a third grey
+      // the multiply has all three channels to work in — and the lot weighting in
+      // `skinShader.ts` is what puts the cohort back at Roman red.
+      field('#a8695f', '#6d5a34');
+      const gold = '#e6c268';
       ctx.strokeStyle = gold;
       ctx.fillStyle = gold;
       // A pair of wings sweeping the full width from behind the boss.
@@ -644,8 +713,8 @@ function drawEmblem(ctx: CanvasRenderingContext2D, name: string, size: number): 
     }
     case 'praetorian-scorpion': {
       // Dark red with the scorpion of the praetorians (Tiberius' birth sign).
-      field('#6d161c', '#7a5c26');
-      ctx.strokeStyle = '#d9c07a';
+      field('#8f544e', '#7a6636');
+      ctx.strokeStyle = '#e2cd93';
       ctx.lineWidth = size * 0.04;
       ctx.beginPath();
       ctx.ellipse(0, size * 0.02, size * 0.075, size * 0.17, 0, 0, Math.PI * 2);
@@ -674,8 +743,8 @@ function drawEmblem(ctx: CanvasRenderingContext2D, name: string, size: number): 
     }
     case 'urban-wreath': {
       // Ochre field with a laurel wreath: the city cohorts, a civic device.
-      field('#a9622f', '#54401f');
-      ctx.strokeStyle = '#dcd0a4';
+      field('#a9754f', '#5b4b2c');
+      ctx.strokeStyle = '#e0d6b0';
       ctx.lineWidth = size * 0.038;
       ctx.beginPath();
       ctx.arc(0, 0, size * 0.3, Math.PI * 0.62, Math.PI * 2.38);
@@ -692,8 +761,8 @@ function drawEmblem(ctx: CanvasRenderingContext2D, name: string, size: number): 
     }
     case 'equites-star': {
       // Blue-green field with an eight-pointed star, a common cavalry device.
-      field('#25493f', '#5d4522');
-      ctx.fillStyle = '#d8c273';
+      field('#547d70', '#6d5a34');
+      ctx.fillStyle = '#ddca87';
       for (let i = 0; i < 8; i++) {
         const a = (i / 8) * Math.PI * 2;
         ctx.beginPath();
@@ -781,18 +850,43 @@ function drawEmblem(ctx: CanvasRenderingContext2D, name: string, size: number): 
     default: {
       // Plain limewood with a painted rim ring and the plank lines showing through — the
       // commonest shield in the host, and the one that reads as "this man made his own kit".
-      field('#cdbe9e', '#42331f');
-      ctx.strokeStyle = '#5a3320';
-      ctx.lineWidth = size * 0.05;
-      ctx.beginPath();
-      ctx.arc(0, 0, size * 0.34, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.globalAlpha = 0.5;
-      for (let i = 0; i < 6; i++) {
-        ctx.fillStyle = '#8c7a58';
-        ctx.fillRect(-c, -c + (i * size) / 6, size, size * 0.012);
+      //
+      // Drawn with real structure rather than as a pale disc with a hint of a line. It is the
+      // commonest board in the army *and* the one the whitewash paint lands on, so it was
+      // reading in the corpse frames as a blank white sheet — the flattest surface in the
+      // image. Full-strength plank seams, an inner and outer rim ring, and a scatter of
+      // hacks and gouges: this is a board that has been used.
+      field('#c6b795', '#42331f');
+      ctx.globalAlpha = 0.85;
+      for (let i = 0; i <= 6; i++) {
+        ctx.fillStyle = '#7d6a49';
+        ctx.fillRect(-c, -c + (i * size) / 6 - size * 0.008, size, size * 0.017);
+        ctx.fillStyle = '#ded0ad';
+        ctx.fillRect(-c, -c + (i * size) / 6 + size * 0.009, size, size * 0.01);
       }
       ctx.globalAlpha = 1;
+      ctx.strokeStyle = '#5a3320';
+      ctx.lineWidth = size * 0.055;
+      ctx.beginPath();
+      ctx.arc(0, 0, size * 0.375, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = '#6f4a2c';
+      ctx.lineWidth = size * 0.022;
+      ctx.beginPath();
+      ctx.arc(0, 0, size * 0.20, 0, Math.PI * 2);
+      ctx.stroke();
+      // Cuts taken in the shield wall, dark and short.
+      ctx.strokeStyle = '#4a3a26';
+      ctx.lineWidth = size * 0.016;
+      for (let i = 0; i < 9; i++) {
+        const a = hash2(i, 7, 5) * Math.PI * 2;
+        const r = size * (0.1 + hash2(i, 8, 5) * 0.3);
+        const l = size * (0.04 + hash2(i, 9, 5) * 0.09);
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+        ctx.lineTo(Math.cos(a) * r + Math.cos(a + 1.2) * l, Math.sin(a) * r + Math.sin(a + 1.2) * l);
+        ctx.stroke();
+      }
       break;
     }
   }

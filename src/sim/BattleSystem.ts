@@ -428,6 +428,15 @@ export class BattleSystem implements Subsystem {
       }
       if (edge || nearestEnemy > 260) {
         u.destroyed = true;
+        // Its men have quit the field, so retire them from the simulation rather than
+        // leaving them alive-but-unsteered. `steerSoldiers` skips destroyed units, so
+        // without this the unit's anchor stops tracking its men — one unit's anchor was
+        // measured 770 m away from where its soldiers actually were — while 2,220 living
+        // men stayed in the spatial hash and in every faction strength tally.
+        for (const i of u.members) {
+          if (p.aliveAt(i)) p.setState(i, SoldierState.Dead);
+        }
+        u.alive = 0;
         this.ctx.events.emit('unitDestroyed', { unitId: u.id, faction: u.faction });
       }
     }

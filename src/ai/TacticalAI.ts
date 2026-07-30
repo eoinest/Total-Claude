@@ -1,6 +1,6 @@
 import type { EngineContext, Subsystem } from '../core/Engine';
 import type { BattleSystem } from '../sim/BattleSystem';
-import { enemyOf, UnitOrder, type UnitGroupState, type UnitTypeDef } from '../sim/types';
+import { Faction, enemyOf, UnitOrder, type UnitGroupState, type UnitTypeDef } from '../sim/types';
 import { angleDelta } from '../util/math';
 import type { Rng } from '../util/rand';
 import { AIWorld, isLineUnit, type UnitInfo } from './AIWorld';
@@ -833,7 +833,19 @@ export class TacticalAISystem implements Subsystem {
 
   readonly stats = { thinks: 0, forcedThinks: 0 };
 
-  constructor(world: AIWorld, difficulty: Difficulty = 'hard') {
+  /**
+   * Factions this layer issues orders for. Anything not listed is left alone.
+   *
+   * Without this the tactical layer commanded *every* unit on the field regardless of
+   * side, so a human player's orders were overwritten within half a second — a move order
+   * was re-issued 25 times in ten seconds and drifted 46 m off the ordered point, and a
+   * formation change was undone as soon as the clock was unpaused. `commanded` was being
+   * passed to `GeneralAISystem` and silently dropped here.
+   */
+  private commanded: Set<Faction>;
+
+  constructor(world: AIWorld, difficulty: Difficulty = 'hard', commanded: Faction[] = [Faction.Rome, Faction.Germanic]) {
+    this.commanded = new Set(commanded);
     this.world = world;
     this.difficulty = difficulty;
   }
@@ -870,6 +882,8 @@ export class TacticalAISystem implements Subsystem {
     for (const info of this.world.info.values()) {
       const u = info.unit;
       if (u.destroyed) continue;
+      // Not our army — the player, or another controller, owns this unit.
+      if (!this.commanded.has(u.faction)) continue;
       // A broken unit takes no orders; the sim drives it off the field.
       if (u.order === UnitOrder.Rout) continue;
 

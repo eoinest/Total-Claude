@@ -1,0 +1,136 @@
+{
+  "last": {
+    "t": 300,
+    "isOver": true,
+    "result": {
+      "victor": 0,
+      "reason": "rout",
+      "casualties": {
+        "0": 406,
+        "1": 536
+      },
+      "survivors": {
+        "0": 4858,
+        "1": 3144
+      },
+      "at": 136.96666666666147
+    },
+    "endedEvents": [
+      {
+        "at": 136.9999999999948,
+        "victor": 0,
+        "reason": "rout"
+      }
+    ],
+    "cues": [
+      {
+        "at": 136.9999999999948,
+        "id": "victory"
+      }
+    ],
+    "poolAlive": [
+      4687,
+      2887
+    ],
+    "poolDead": [
+      577,
+      793
+    ],
+    "poolRouting": [
+      16,
+      2835
+    ],
+    "unitAlive": [
+      4687,
+      2887
+    ],
+    "unitAliveNotDestroyed": [
+      4687,
+      667
+    ],
+    "destroyedWithMen": [
+      {
+        "id": 21,
+        "typeId": "juthungi-skirmishers",
+        "faction": 1,
+        "alive": 220,
+        "initial": 220
+      },
+      {
+        "id": 22,
+        "typeId": "juthungi-skirmishers",
+        "faction": 1,
+        "alive": 220,
+        "initial": 220
+      },
+      {
+        "id": 23,
+        "typeId": "juthungi-skirmishers",
+        "faction": 1,
+        "alive": 220,
+        "initial": 220
+      },
+      {
+        "id": 24,
+        "typeId": "juthungi-warband",
+        "faction": 1,
+        "alive": 360,
+        "initial": 360
+      },
+      {
+        "id": 26,
+        "typeId": "juthungi-warband",
+        "faction": 1,
+        "alive": 195,
+        "initial": 360
+      },
+      {
+        "id": 27,
+        "typeId": "juthungi-spears",
+        "faction": 1,
+        "alive": 216,
+        "initial": 340
+      },
+      {
+        "id": 28,
+        "typeId": "juthungi-warband",
+        "faction": 1,
+        "alive": 291,
+        "initial": 360
+      },
+      {
+        "id": 30,
+        "typeId": "juthungi-chosen",
+        "faction": 1,
+        "alive": 170,
+        "initial": 200
+      },
+      {
+        "id": 31,
+        "typeId": "juthungi-chosen",
+        "faction": 1,
+        "alive": 141,
+        "initial": 200
+      },
+      {
+        "id": 34,
+        "typeId": "juthungi-riders",
+        "faction": 1,
+        "alive": 93,
+        "initial": 100
+      },
+      {
+        "id": 35,
+        "typeId": "juthungi-riders",
+        "faction": 1,
+        "alive": 94,
+        "initial": 100
+      }
+    ],
+    "poolCount": 8944,
+    "resultsScreenText": "",
+    "resultsVisible": false
+  },
+  "firstOverAt": 150,
+  "consoleErrors": []
+}

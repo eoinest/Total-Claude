@@ -208,6 +208,7 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
   const leatherUv = matUv(Mat.LeatherBrown);
   const darkLeatherUv = matUv(Mat.LeatherDark);
   const woodUv = matUv(Mat.WoodPlank);
+  const shieldBackUv = matUv(Mat.ShieldBack);
   const furUv = matUv(Mat.Fur);
   const plumeUv = matUv(Mat.Plume);
   const ropeUv = matUv(Mat.Rope);
@@ -485,7 +486,7 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
   // =========================================================================
   if (d.medium) {
     // Longitudinal horsehair crest, fore and aft — the praetorian and officer marker.
-    b.setPiece(Piece.CrestLongitudinal, Tint.Atlas);
+    b.setPiece(Piece.CrestLongitudinal, Tint.Crest);
     b.setMatrix(headM);
     const crestRows = d.fine ? 5 : 3;
     for (let i = 0; i < crestRows; i++) {
@@ -495,7 +496,7 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
       b.box(0, 0.15 + h * 0.5, z, 0.02, h, 0.19 / crestRows + 0.004, plumeUv);
     }
     // Transverse crest, ear to ear — the centurion's.
-    b.setPiece(Piece.CrestTransverse, Tint.Atlas);
+    b.setPiece(Piece.CrestTransverse, Tint.Crest);
     for (let i = 0; i < crestRows; i++) {
       const t = i / (crestRows - 1);
       const x = -0.1 + t * 0.2;
@@ -503,7 +504,7 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
       b.box(x, 0.15 + h * 0.5, 0, 0.2 / crestRows + 0.004, h, 0.022, plumeUv);
     }
     // Plume: a single tuft in a socket at the crown, for cavalry.
-    b.setPiece(Piece.CrestPlume, Tint.Atlas);
+    b.setPiece(Piece.CrestPlume, Tint.Crest);
     b.tube(
       [
         { y: 0.14, rx: 0.016, rz: 0.016 },
@@ -888,7 +889,11 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     b.setBone(MB.lowerArmL).setMatrix(scutumM);
     b.shieldPanel(
       0.33, 0.53, 0.135, 0.022, d.shieldCols, d.shieldRows,
-      matUv(Mat.WoodPlank), woodUv, Tint.Emblem, Tint.Atlas,
+      // Inside faced in hide, not bare planks. The Dura-Europos scutum is leather-faced on
+      // both sides, and the plank tile's six hard seams were the same corrugation repeated
+      // on every shield in the cohort — the one texture a camera behind the line sees most
+      // of. `Tint.ShieldBack` then gives each man his own facing.
+      matUv(Mat.WoodPlank), shieldBackUv, Tint.Emblem, Tint.ShieldBack,
       // Rectangular, as the Dura-Europos find is: 1.06 m by 0.66 m of curved plywood.
       () => 1,
       Piece.ShieldScutum
@@ -909,7 +914,7 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     b.setMatrix(roundM);
     b.shieldPanel(
       0.34, 0.5, 0.075, 0.02, d.shieldCols, d.shieldRows,
-      matUv(Mat.WoodPlank), woodUv, Tint.Emblem, Tint.Atlas,
+      matUv(Mat.WoodPlank), shieldBackUv, Tint.Emblem, Tint.ShieldBack,
       (_sx, sy) => Math.sqrt(Math.max(0.02, 1 - sy * sy * 0.92)),
       Piece.ShieldOval
     );
@@ -925,7 +930,10 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
   b.setBone(MB.lowerArmL).setMatrix(roundM);
   b.shieldPanel(
     0.4, 0.4, 0.05, 0.018, d.shieldCols, d.shieldRows,
-    matUv(Mat.WoodPlank), woodUv, Tint.Emblem, Tint.Atlas,
+    // Same hide-faced back as the scutum, tinted toward bare limewood for a tribal board by
+    // the shader. The plank tile that used to be here put the identical six-seam corrugation
+    // on every board in the host.
+    matUv(Mat.WoodPlank), shieldBackUv, Tint.Emblem, Tint.ShieldBack,
     (_sx, sy) => Math.sqrt(Math.max(0.02, 1 - sy * sy)),
     Piece.ShieldRound
   );
@@ -1211,12 +1219,12 @@ function buildFarGeometry(faction: Faction): THREE.InstancedBufferGeometry {
   b.setBone(MB.lowerArmL).setMatrix(shieldM);
   b.shieldPanel(
     0.33, 0.52, 0.11, 0.02, 2, 2,
-    woodUv, woodUv, Tint.Emblem, Tint.Atlas,
+    woodUv, matUv(Mat.ShieldBack), Tint.Emblem, Tint.ShieldBack,
     () => 1, Coarse.ShieldBig
   );
   b.shieldPanel(
     0.4, 0.4, 0.05, 0.018, 2, 2,
-    woodUv, woodUv, Tint.Emblem, Tint.Atlas,
+    woodUv, matUv(Mat.ShieldBack), Tint.Emblem, Tint.ShieldBack,
     (_sx, sy) => Math.sqrt(Math.max(0.05, 1 - sy * sy)), Coarse.ShieldRound
   );
   b.setMatrix(null);

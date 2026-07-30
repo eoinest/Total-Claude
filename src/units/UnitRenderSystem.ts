@@ -16,7 +16,10 @@ import {
 import { buildSoldierAtlas, EMBLEM_ORIGIN, EMBLEM_TILE, type SoldierAtlas } from './atlas';
 import { buildSoldierGeometry, type Lod } from './soldierMesh';
 import { buildHorseGeometry, saddleOffset, HORSE_MASK_LO } from './horseMesh';
-import { resolveKit, emptyKit, ROUT_DROP_HI, Piece, type ResolvedKit } from './kit';
+import {
+  resolveKit, emptyKit, ROUT_DROP_HI, CORPSE_DROP_HI, CORPSE_DROP_LO,
+  CORPSE_DROP_COARSE, CORPSE_DROP_COARSE_HELM, Piece, type ResolvedKit,
+} from './kit';
 import {
   renderImpostorAtlas, buildImpostorGeometry, makeImpostorMaterial, type ImpostorAtlas,
 } from './impostor';
@@ -225,6 +228,15 @@ export class UnitRenderSystem implements Subsystem {
   private heightMul!: Float32Array;
   /** Lateral nudge and lift resolved once per corpse, 3 floats per soldier. */
   private corpseNudge!: Float32Array;
+  /**
+   * Roll about the corpse's own spine, radians, resolved once with the nudge.
+   *
+   * The solver tips a body over about a horizontal axis taken from the blow that killed it
+   * and stops there, so every corpse ends up belly-down along its line of fall and a field
+   * of them reads as one shape repeated. Men die face down, face up and on either side; this
+   * is the cheapest way to say so, and unlike the lateral push it costs nothing in the sim.
+   */
+  private corpseRoll!: Float32Array;
   private corpseNudged!: Uint8Array;
   /**
    * How many settled corpses occupy each cell of a coarse ground grid.
@@ -289,6 +301,7 @@ export class UnitRenderSystem implements Subsystem {
     this.clipBucket = new Uint8Array(cap);
     this.heightMul = new Float32Array(cap).fill(1);
     this.corpseNudge = new Float32Array(cap * 3);
+    this.corpseRoll = new Float32Array(cap);
     this.corpseNudged = new Uint8Array(cap);
 
     const baseParams: THREE.MeshStandardMaterialParameters = {
@@ -315,10 +328,16 @@ export class UnitRenderSystem implements Subsystem {
       // At 0.9 half of every soldier was below 1.4% display luminance — black. Raising
       // albedo does not fix that and raising metalness makes it worse, because with the
       // rig's fill trimmed a part-metal surface in shadow has almost nothing to be lit *by*;
-      // what it needs is more energy in the probe it reflects. 1.8 is where the returns
-      // flatten, and it is defensible: the probe is a PMREM of the physical sky with the
-      // solar aureole preserved, so this is a real reflection, not a lift.
-      envMapIntensity: 1.8,
+      // what it needs is more energy in the probe it reflects.
+      //
+      // `tools/probe-units.mjs` then settled the remaining question — whether the probe was
+      // reaching this material at all — by zeroing `scene.environmentIntensity` and
+      // re-rendering: mean frame luminance fell from 0.0662 to 0.0471, so the environment is
+      // bound and supplies 29% of the frame. It is not the wiring, it is the level. The scene
+      // trims the probe to 0.6 for the lighting rig's own contrast reasons, so 2.9 here is an
+      // effective gain of 1.74 — and it is defensible: the probe is a PMREM of the physical
+      // sky with the solar aureole preserved, so this is a real reflection, not a lift.
+      envMapIntensity: 2.9,
       roughness: 1,
       metalness: 1,
       normalScale: new THREE.Vector2(0.9, 0.9),
@@ -695,52 +714,135 @@ export class UnitRenderSystem implements Subsystem {
     return cx * 8192 + cz;
   }
 
+  /** Settled corpses whose footprint covers a ground cell. */
+  private cellOcc(x: number, z: number): number {
+    return this.corpseCells.get(UnitRenderSystem.cellKey(x, z)) ?? 0;
+  }
+
   /**
    * Resolve a settled corpse's separation from the bodies already lying around it.
    *
    * Called once, on the frame a body stops moving, and then cached for the rest of the
-   * battle so a corpse never crawls. Two effects, both of which the reference frames show
-   * and neither of which the solver can know about:
+   * battle so a corpse never crawls. Three effects, all of which the reference frames show
+   * and none of which the solver can know about:
    *
-   *   - a lateral push away from whichever neighbouring cells are already occupied, growing
-   *     with how crowded they are, so bodies end up beside each other rather than inside
-   *     each other;
-   *   - a lift proportional to how many are already in this cell, so the fourth man to fall
-   *     on a spot lies across the three under him instead of through them.
+   *   - a push *sideways*, across the body's own long axis. This is the whole point. A
+   *     displacement along a corpse's length leaves it inside the man beneath it, because a
+   *     body is 1.8 m long and the overlap is along that direction; half a metre across the
+   *     axis puts it beside him, laid like cordwood, which is what a real heap looks like.
+   *     The side chosen is whichever of the two has fewer bodies on it.
+   *   - a lift proportional to how many are already under his *footprint*, so the third man
+   *     to fall on a spot lies across the two below instead of through them. Capped near two
+   *     bodies' thickness, because a corpse floating higher than the heap it is on is a worse
+   *     error than one slightly inside it.
+   *   - a roll about his own spine, so the field has men face down, face up and on their
+   *     sides rather than one tipped-over shape repeated.
+   *
+   * Occupancy is registered over three cells along the body's axis rather than one, because
+   * a man lying down covers about 1.8 m by 0.5 m and a single-cell footprint told every later
+   * corpse that two thirds of him was empty ground.
    *
    * Visual only. The sim's corpse position is untouched, so nothing that queries the pool
    * sees these metres.
    */
-  private resolveCorpseNudge(i: number, x: number, z: number): void {
-    let ox = 0;
-    let oz = 0;
-    let neighbours = 0;
+  private resolveCorpseNudge(i: number, x: number, z: number, ux: number, uz: number): void {
+    // Left perpendicular to the body's long axis, in the ground plane.
+    const nx = -uz;
+    const nz = ux;
     let here = 0;
-    for (let dx = -1; dx <= 1; dx++) {
-      for (let dz = -1; dz <= 1; dz++) {
-        const n = this.corpseCells.get(UnitRenderSystem.cellKey(x + dx * CORPSE_CELL, z + dz * CORPSE_CELL)) ?? 0;
-        if (n === 0) continue;
-        neighbours += n;
-        if (dx === 0 && dz === 0) here = n;
-        else { ox -= dx * n; oz -= dz * n; }
-      }
+    let left = 0;
+    let right = 0;
+    for (let s = 0; s < 3; s++) {
+      const d = 0.4 + s * 0.55;
+      const px = x + ux * d;
+      const pz = z + uz * d;
+      here += this.cellOcc(px, pz);
+      left += this.cellOcc(px + nx * CORPSE_CELL, pz + nz * CORPSE_CELL);
+      right += this.cellOcc(px - nx * CORPSE_CELL, pz - nz * CORPSE_CELL);
     }
+
     const seed = Math.floor(this.battle.pool.variant[i] * 16777216);
-    let len = Math.hypot(ox, oz);
-    if (len < 1e-4) {
-      // Nothing to push away from, or pushed equally on all sides: pick a stable direction
-      // from the man's own hash so a clump still fans out instead of stacking on one axis.
-      const a = hash01(seed, 81) * Math.PI * 2;
-      ox = Math.cos(a); oz = Math.sin(a); len = 1;
-    }
-    const push = Math.min(1.5, 0.22 + 0.16 * Math.min(6, neighbours)) * (0.7 + hash01(seed, 82) * 0.6);
+    const side = left <= right ? 1 : -1;
+    const crowd = here + Math.min(left, right);
+    // Spread hard and stack shallow. The two are alternatives: every metre of lateral push is
+    // a body that does not need lifting, and a corpse lifted above the heap it is supposed to
+    // be lying on reads far worse than one slightly inside it. Rome II's dead cover ground;
+    // they do not build a mound. The cap runs to 2 m because the sim kills men within a metre
+    // or two of one contact point and the renderer is the only thing that can fan them out.
+    const push = Math.min(2.0, 0.16 + 0.19 * Math.min(11, crowd)) * (0.7 + hash01(seed, 82) * 0.6);
+    // A stagger along the axis as well, so heads and feet do not line up in rows.
+    const along = (hash01(seed, 84) - 0.5) * 1.1;
+
     const o = i * 3;
-    this.corpseNudge[o] = (ox / len) * push;
-    this.corpseNudge[o + 1] = Math.min(0.55, 0.15 * Math.min(4, here)) * (0.8 + hash01(seed, 83) * 0.4);
-    this.corpseNudge[o + 2] = (oz / len) * push;
-    const key = UnitRenderSystem.cellKey(x + this.corpseNudge[o], z + this.corpseNudge[o + 2]);
-    this.corpseCells.set(key, (this.corpseCells.get(key) ?? 0) + 1);
+    const dx = nx * side * push + ux * along;
+    const dz = nz * side * push + uz * along;
+    this.corpseNudge[o] = dx;
+    // 0.22 m is a man's thickness through the chest, and the constant floor is clearance for
+    // the roll below: a body turned onto its side puts its shoulder where its belly was.
+    this.corpseNudge[o + 1] =
+      0.05 + Math.min(0.33, 0.22 * Math.min(2, here)) * (0.85 + hash01(seed, 83) * 0.3);
+    this.corpseNudge[o + 2] = dz;
+
+    // Roll, pulled 45% of the way toward the nearest of face-down and face-up. Uniform roll
+    // leaves too many bodies balanced on a shoulder; the bias is what a battlefield photograph
+    // shows, and it keeps the shield either under the man or flat on top of him.
+    const r = (hash01(seed, 85) - 0.5) * 2 * Math.PI;
+    const nearest = Math.abs(r) < Math.PI / 2 ? 0 : Math.sign(r) * Math.PI;
+    this.corpseRoll[i] = r + (nearest - r) * 0.45;
+
+    for (let s = 0; s < 3; s++) {
+      const d = 0.4 + s * 0.55;
+      const key = UnitRenderSystem.cellKey(x + dx + ux * d, z + dz + uz * d);
+      this.corpseCells.set(key, (this.corpseCells.get(key) ?? 0) + 1);
+    }
     this.corpseNudged[i] = 1;
+  }
+
+  /**
+   * Apply the settled-corpse offsets to `this.corpse`: the lateral push, the lift and the
+   * roll about the body's own spine.
+   *
+   * The roll is composed on the right — `pose * roll` — so it turns the body about its own
+   * long axis rather than about a world axis, which is what keeps the feet where the solver
+   * put them. It fades in with `settle` so a body in flight is not seen to spin.
+   *
+   * A note for whoever tries the obvious next step: cancelling the solver's rigid tip and
+   * letting the death clip lay the body down instead does *not* work, and was measured not
+   * to. Two of the four death clips are overlays on a retargeted mocap `death` base whose
+   * final frame is a slump rather than a prone body, so with the tip removed those corpses
+   * sit up out of the grass with their legs under the terrain — visibly worse than the
+   * splayed limbs the clip hold-back produces.
+   */
+  private resolveCorpse(i: number): void {
+    const c = this.corpse;
+    if (c.settle <= 0.92) return;
+
+    // Image of the body's own up axis under the pose quaternion — the long axis of a man
+    // lying down, since the solver has rotated his spine into the ground plane. Column 1 of
+    // the rotation matrix, projected to the ground.
+    const ax = 2 * (c.qx * c.qy - c.qz * c.qw);
+    const az = 2 * (c.qx * c.qw + c.qy * c.qz);
+    let len = Math.hypot(ax, az);
+    let ux = 1;
+    let uz = 0;
+    if (len > 1e-3) { ux = ax / len; uz = az / len; }
+
+    if (!this.corpseNudged[i]) this.resolveCorpseNudge(i, c.x, c.z, ux, uz);
+    const o = i * 3;
+    c.x += this.corpseNudge[o];
+    c.y += this.corpseNudge[o + 1];
+    c.z += this.corpseNudge[o + 2];
+
+    const t = Math.min(1, Math.max(0, (c.settle - 0.55) / 0.4));
+    const a = this.corpseRoll[i] * t * 0.5;
+    const s = Math.sin(a);
+    const k = Math.cos(a);
+    const qx = c.qx * k + c.qz * s;
+    const qy = c.qy * k + c.qw * s;
+    const qz = c.qz * k - c.qx * s;
+    const qw = c.qw * k - c.qy * s;
+    len = Math.hypot(qx, qy, qz, qw) || 1;
+    c.qx = qx / len; c.qy = qy / len; c.qz = qz / len; c.qw = qw / len;
   }
 
   private ensureKit(i: number, def: UnitTypeDef): void {
@@ -788,6 +890,37 @@ export class UnitRenderSystem implements Subsystem {
         this.ensureKit(i, def);
         b.renderPos(i, alpha, rp);
 
+        let facing = b.renderFacing(i, alpha);
+        const dying = state === SoldierState.Dying || state === SoldierState.Dead;
+
+        // ---- corpses ------------------------------------------------------
+        // The ragdoll system solves the fall — a verlet body for the deaths nearest the
+        // camera and a tip-over for the rest — and publishes a rigid transform. Using it
+        // means the corpse lies where the physics put it rather than where a clip guessed,
+        // and it is the same call for both of its tiers.
+        //
+        // Resolved *before* the cull and before the LOD distance, both of which used to run
+        // against the man's pre-death standing position. That was wrong twice over: a body
+        // that fell two metres forward was culled by where he was standing, so heaps at the
+        // frame edge popped in and out; and the separation grid never saw a corpse that
+        // settled off camera, so the next man to die there had nothing to avoid.
+        let hasCorpse = false;
+        if (dying && this.ragdoll?.getCorpsePose(i, this.corpse)) {
+          hasCorpse = true;
+          this.resolveCorpse(i);
+          rp.x = this.corpse.x;
+          rp.y = this.corpse.y;
+          rp.z = this.corpse.z;
+        } else if (dying && (p.deathDirX[i] !== 0 || p.deathDirZ[i] !== 0)) {
+          // No ragdoll available: turn the man so his death clip's own fall direction
+          // points where the blow pushed him.
+          const target = Math.atan2(-p.deathDirX[i], -p.deathDirZ[i]);
+          let d = (target - facing) % (Math.PI * 2);
+          if (d > Math.PI) d -= Math.PI * 2;
+          if (d < -Math.PI) d += Math.PI * 2;
+          facing += d * Math.min(1, p.animTime[i] * 2.5);
+        }
+
         const dx = rp.x - camX;
         const dy = rp.y + 0.9 - camY;
         const dz = rp.z - camZ;
@@ -805,40 +938,11 @@ export class UnitRenderSystem implements Subsystem {
         this.lodOf[i] = lod;
 
         // ---- cull ---------------------------------------------------------
-        this.sphere.center.set(rp.x, rp.y + 0.9, rp.z);
-        this.sphere.radius = cav ? 1.9 : 1.25;
+        // A settled body lies within a metre of the ground and reaches 1.8 m along it, so
+        // its bound is centred lower and is wider than a standing man's.
+        this.sphere.center.set(rp.x, rp.y + (hasCorpse ? 0.4 : 0.9), rp.z);
+        this.sphere.radius = cav ? 1.9 : hasCorpse ? 1.5 : 1.25;
         if (!this.frustum.intersectsSphere(this.sphere)) continue;
-
-        let facing = b.renderFacing(i, alpha);
-        const dying = state === SoldierState.Dying || state === SoldierState.Dead;
-
-        // ---- corpses ------------------------------------------------------
-        // The ragdoll system solves the fall — a verlet body for the deaths nearest the
-        // camera and a tip-over for the rest — and publishes a rigid transform. Using it
-        // means the corpse lies where the physics put it rather than where a clip guessed,
-        // and it is the same call for both of its tiers.
-        let hasCorpse = false;
-        if (dying && this.ragdoll?.getCorpsePose(i, this.corpse)) {
-          hasCorpse = true;
-          rp.x = this.corpse.x;
-          rp.y = this.corpse.y;
-          rp.z = this.corpse.z;
-          if (this.corpse.settle > 0.92) {
-            if (!this.corpseNudged[i]) this.resolveCorpseNudge(i, rp.x, rp.z);
-            const o = i * 3;
-            rp.x += this.corpseNudge[o];
-            rp.y += this.corpseNudge[o + 1];
-            rp.z += this.corpseNudge[o + 2];
-          }
-        } else if (dying && (p.deathDirX[i] !== 0 || p.deathDirZ[i] !== 0)) {
-          // No ragdoll available: turn the man so his death clip's own fall direction
-          // points where the blow pushed him.
-          const target = Math.atan2(-p.deathDirX[i], -p.deathDirZ[i]);
-          let d = (target - facing) % (Math.PI * 2);
-          if (d > Math.PI) d -= Math.PI * 2;
-          if (d < -Math.PI) d += Math.PI * 2;
-          facing += d * Math.min(1, p.animTime[i] * 2.5);
-        }
 
         // A settled corpse is drawn one tier coarser than his distance would give. Lying
         // prone he presents no silhouette to preserve — no upright profile, no crest against
@@ -903,10 +1007,23 @@ export class UnitRenderSystem implements Subsystem {
     buf.pos[n * 3 + 1] = y;
     buf.pos[n * 3 + 2] = z;
 
+    // Corpse hash, wanted three times below: for what he has dropped and for how flat he
+    // settles. Resolved from `variant` so none of it ever flickers.
+    const seed = hasCorpse ? Math.floor(p.variant[i] * 16777216) : 0;
+
     const o = n * Stride.Orient;
     buf.orient[o] = facing;
     buf.orient[o + 1] = p.scale[i] * this.heightMul[i];
-    buf.orient[o + 2] = lean;
+    // The lean lane doubles as the corpse squash — see the corpse branch in skinShader.ts.
+    // Ramped over the second half of the fall so a body compresses as it comes to rest rather
+    // than deflating the moment it is hit.
+    if (hasCorpse) {
+      const t = Math.min(1, Math.max(0, (this.corpse.settle - 0.35) / 0.5));
+      const target = 0.66 + hash01(seed, 88) * 0.22;
+      buf.orient[o + 2] = 1 - (1 - target) * t;
+    } else {
+      buf.orient[o + 2] = lean;
+    }
     buf.orient[o + 3] = p.grime[i];
 
     const q = n * Stride.Quat;
@@ -931,16 +1048,28 @@ export class UnitRenderSystem implements Subsystem {
     // Melee variant swaps the missile in the hand for the drawn blade; a routing man
     // throws his shield and his javelins away. The far tier takes the eight-group mask
     // instead, because its geometry is built to that vocabulary.
+    // What a corpse has let go of. Resolved from his stable hash so it never flickers, and
+    // only once he is down: a man mid-fall still has his shield on his arm.
+    const settled = hasCorpse && this.corpse.settle > 0.75;
+    const dropShield = settled && hash01(seed, 86) < 0.58;
+    const dropHelm = settled && hash01(seed, 87) < 0.16;
+
     const k = n * Stride.Kit;
     if (coarse) {
-      buf.kit[k] = this.kitCoarse[i];
+      let c = this.kitCoarse[i];
+      if (dropShield) c &= ~CORPSE_DROP_COARSE;
+      if (dropHelm) c &= ~CORPSE_DROP_COARSE_HELM;
+      buf.kit[k] = c;
       buf.kit[k + 1] = 0;
     } else {
       const melee = state === SoldierState.Fighting || state === SoldierState.Staggered ||
         (p.animClip[i] >= Clip.AttackOverhead && p.animClip[i] <= Clip.Parry);
       let hi = melee ? this.kitHiMelee[i] : this.kitHi[i];
       if (state === SoldierState.Routing) hi = this.kitHi[i] & ~ROUT_DROP_HI;
-      buf.kit[k] = this.kitLo[i];
+      let lo = this.kitLo[i];
+      if (dropShield) hi &= ~CORPSE_DROP_HI;
+      if (dropHelm) lo &= ~CORPSE_DROP_LO;
+      buf.kit[k] = lo;
       buf.kit[k + 1] = hi;
     }
 

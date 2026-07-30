@@ -1,0 +1,150 @@
+{
+  "last": {
+    "t": 300,
+    "isOver": true,
+    "result": {
+      "victor": 0,
+      "reason": "rout",
+      "casualties": {
+        "0": 406,
+        "1": 536
+      },
+      "survivors": {
+        "0": 4858,
+        "1": 3144
+      },
+      "at": 136.96666666666147
+    },
+    "endedEvents": [
+      {
+        "at": 136.9999999999948,
+        "victor": 0,
+        "reason": "rout"
+      }
+    ],
+    "cues": [
+      {
+        "at": 136.9999999999948,
+        "id": "victory"
+      }
+    ],
+    "poolAlive": [
+      4687,
+      2887
+    ],
+    "poolDead": [
+      577,
+      793
+    ],
+    "poolRouting": [
+      16,
+      2835
+    ],
+    "unitAlive": [
+      4687,
+      2887
+    ],
+    "unitAliveNotDestroyed": [
+      4687,
+      667
+    ],
+    "destroyedWithMen": [
+      {
+        "id": 21,
+        "typeId": "juthungi-skirmishers",
+        "faction": 1,
+        "alive": 220,
+        "initial": 220
+      },
+      {
+        "id": 22,
+        "typeId": "juthungi-skirmishers",
+        "faction": 1,
+        "alive": 220,
+        "initial": 220
+      },
+      {
+        "id": 23,
+        "typeId": "juthungi-skirmishers",
+        "faction": 1,
+        "alive": 220,
+        "initial": 220
+      },
+      {
+        "id": 24,
+        "typeId": "juthungi-warband",
+        "faction": 1,
+        "alive": 360,
+        "initial": 360
+      },
+      {
+        "id": 26,
+        "typeId": "juthungi-warband",
+        "faction": 1,
+        "alive": 195,
+        "initial": 360
+      },
+      {
+        "id": 27,
+        "typeId": "juthungi-spears",
+        "faction": 1,
+        "alive": 216,
+        "initial": 340
+      },
+      {
+        "id": 28,
+        "typeId": "juthungi-warband",
+        "faction": 1,
+        "alive": 291,
+        "initial": 360
+      },
+      {
+        "id": 30,
+        "typeId": "juthungi-chosen",
+        "faction": 1,
+        "alive": 170,
+        "initial": 200
+      },
+      {
+        "id": 31,
+        "typeId": "juthungi-chosen",
+        "faction": 1,
+        "alive": 141,
+        "initial": 200
+      },
+      {
+        "id": 34,
+        "typeId": "juthungi-riders",
+        "faction": 1,
+        "alive": 93,
+        "initial": 100
+      },
+      {
+        "id": 35,
+        "typeId": "juthungi-riders",
+        "faction": 1,
+        "alive": 94,
+        "initial": 100
+      }
+    ],
+    "escaped": {
+      "frozen": 0,
+      "moving": 2220,
+      "maxStepMetres": 0.259521,
+      "sample": {
+        "unit": 21,
+        "i": 5264,
+        "x": -162.04,
+        "z": -1015.73,
+        "state": 12,
+        "stepped": 0.177694
+      }
+    },
+    "poolCount": 8944,
+    "resultsScreenText": "Victory By rout — the enemy has quit the field 02:16 on the field ROME Senatus Populusque Romanus Committed5 264 Surviving4 858 Fallen406 (8%) Units lost0 of 21 JUTHUNGI Juthungi Confederation Committed3 680 Surviving3 144 Fallen536 (15%) Units lost0 of 15 Roll of honour Naked Fanatics IIBerhtjos 292 52/160 Held Legionary Cohort IVCohors Legionaria 192 266/320 Held Legionary Cohort VCohors Legionaria 130 18/320 Routed Legionary Cohort IXCohors Legionaria 125 319/320 Held Naked Fanatics IBerhtjos 46 132/160 Held Legionary Cohort XCohors Legionaria 31 285/320 Held Tribal Warband IIIJuthungi Harjis 28 291/360 Routed Roman Cavalry IIEquites Legionis 21 119/120 Held The Juthungi host is broken. What is left of it runs north up the Via Flaminia, and Rome keeps her walls unfinished a little longer. Dismiss",
+    "resultsVisible": true,
+    "resultsDisplay": "grid"
+  },
+  "firstOverAt": 150,
+  "consoleErrors": []
+}

@@ -302,7 +302,7 @@ Field semantics that are not self-evident:
 | `textures[].maps.*` | Either a root-relative path or `null`. `null` means that map was deliberately not fetched; do not construct the path yourself. |
 | `textures[].colorSpace` | Per-map colour space. Only `albedo` is `srgb`; set `texture.colorSpace = THREE.SRGBColorSpace` on it and leave the rest linear (`NoColorSpace`). |
 | `textures[].normalMapConvention` | Always `"opengl"` for the Poly Haven sets - +Y green channel, matching Three.js. No channel flip needed. |
-| `textures[].resolutionPx` | Nominal square resolution. Two sets are actually 2048x2052 upstream (`limestone-wall-blocks`, `cobblestone-road`); non-power-of-two height is fine for `RepeatWrapping` in WebGL2. |
+| `textures[].resolutionPx` | Nominal square resolution. Exactly one set is 2048x2052 upstream - `rough-linen` (all four maps); non-power-of-two height is fine for `RepeatWrapping` in WebGL2. Every other Poly Haven map on disk measures 2048x2048, `limestone-wall-blocks` and `cobblestone-road` included. Verified per file with `sharp().metadata()` across all 72 images: 66 at 2048x2048, 4 at 2048x2052, plus the two ruins maps at 768x768 (`Bark_Texture.jpg`) and 512x512 (`Leaf_Texture.png`). |
 | `hdris[].timeOfDay` | One of `dawn`, `midday`, `afternoon`, `sunset` - normalised from Poly Haven's `attributes.time_of_day`. |
 | `hdris[].weather` | One of `partly-cloudy`, `overcast` - normalised from `attributes.weather`. |
 | `models[].format` | `"gltf"` -> `GLTFLoader`; `"fbx"` -> `FBXLoader` from `three/examples/jsm/loaders/FBXLoader.js`. |

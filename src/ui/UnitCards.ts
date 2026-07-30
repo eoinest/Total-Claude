@@ -330,9 +330,11 @@ export class UnitCards {
     const fn = this.foeCards.length;
     if (fn > 0) {
       // Slimmer still: the enemy strip is an overlay on the battle, so twenty of these
-      // must cost less than the player's own row does.
+      // must cost less than the player's own row does. The floor is 3.3em rather than 3em
+      // because below that the arm glyph and a three-digit headcount stop fitting across
+      // the card foot and the count gets clipped mid-digit.
       const avail = availFrom(0.4 * 2, 0);
-      const per = Math.max(3 * em, Math.min(3.9 * em, (avail - GAP * (fn - 1)) / fn));
+      const per = Math.max(3.3 * em, Math.min(3.9 * em, (avail - GAP * (fn - 1)) / fn));
       this.foeHolder.style.setProperty('--cw', `${per.toFixed(1)}px`);
     }
 

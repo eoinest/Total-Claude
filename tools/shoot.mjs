@@ -107,13 +107,23 @@ const SHOTS = {
     desc: 'Empty countryside — judges terrain material, vegetation and lighting alone',
     x: -560, z: -420, zoom: 0.44, yaw: Math.PI * 0.4, at: 2,
   },
+  // Both river shots are auto-framed on the live water, for the same reason the combat
+  // shots are auto-framed on the live engagement. The hardcoded focus points these two
+  // shipped with were ~110 m east of the channel — `riverCentreX(z)` in
+  // src/terrain/topography.ts is a two-term meander, so the Tiber sits at x ≈ -868 at
+  // z = -300 and x ≈ -930 at the ford, not at the -760/-820 these shots asked for. The
+  // result was two photographs of dry fields with the water in a corner, which is how a
+  // hand-built Tiber went un-inspected. `follow` probes `heightAt` against `waterLevel`
+  // and cannot go stale when the meander is retuned.
   river: {
     desc: 'The Tiber, its cut bank, flood terrace and sand bars',
-    x: -760, z: -300, zoom: 0.72, yaw: Math.PI * 0.15, at: 2,
+    // `z` is the line the water probe walks; `yawOffset` swings off the channel bearing so
+    // the shot is oblique to the water rather than straight down it.
+    follow: 'water', x: -760, z: -300, zoom: 0.72, yaw: Math.PI * 0.15, yawOffset: 0.55, at: 2,
   },
   ford: {
     desc: 'The gravel ford across the Tiber',
-    x: -820, z: -520, zoom: 0.42, yaw: Math.PI * 0.9, at: 2,
+    follow: 'water', x: -820, z: -520, zoom: 0.42, yaw: Math.PI * 0.9, yawOffset: 1.35, at: 2,
   },
   aftermath: {
     desc: 'Late battle: corpses, routs, dust and blood on the ground',
@@ -292,6 +302,7 @@ try {
           // armies choose to meet, which repeatedly produced beautiful photographs of
           // empty grass.
           let fx = s.x, fz = s.z, fyaw = s.yaw;
+          let waterDebug = null;
           if (s.follow) {
             const b = g.battle;
             const p = b.pool;
@@ -348,6 +359,50 @@ try {
                 // ranks rather than a flat elevation.
                 fyaw = best.facing + Math.PI + 0.6;
                 n = -1;
+              }
+            }
+
+            if (s.follow === 'water') {
+              // Walk the terrain across the map at this z and find the open water: the span
+              // where the ground sits below the river's surface. Derived from the live
+              // heightfield, so retuning the meander cannot leave this shot photographing
+              // a dry field again.
+              const terrain = g.engine.context.tryGet('terrain');
+              const level = terrain?.waterLevel;
+              if (terrain && typeof level === 'number' && typeof terrain.heightAt === 'function') {
+                // Widest span of x at this z where the ground sits below the water surface.
+                // `start` is null when no run is open: a numeric sentinel like -1 is wrong
+                // here because world x is itself negative on this side of the map.
+                const widestWetSpan = (z) => {
+                  let bestA = null, bestB = null, start = null;
+                  const close = (end) => {
+                    if (start === null) return;
+                    if (bestA === null || end - start > bestB - bestA) { bestA = start; bestB = end; }
+                    start = null;
+                  };
+                  for (let x = -1380; x <= 1380; x += 4) {
+                    if (terrain.heightAt(x, z) < level) { if (start === null) start = x; }
+                    else close(x);
+                  }
+                  close(1380);
+                  return bestA === null ? null : { a: bestA, b: bestB, centre: (bestA + bestB) / 2 };
+                };
+                const here = widestWetSpan(s.z);
+                if (here) {
+                  // Channel bearing from the wet centre 60 m up- and downstream, so the yaw
+                  // is oblique to the water rather than square to the map axes.
+                  const up = widestWetSpan(s.z + 60)?.centre ?? here.centre;
+                  const down = widestWetSpan(s.z - 60)?.centre ?? here.centre;
+                  fx = here.centre;
+                  fz = s.z;
+                  fyaw = Math.atan2(up - down, 120) + (s.yawOffset ?? 0.6);
+                  waterDebug = { z: s.z, span: [here.a, here.b], width: here.b - here.a, centre: here.centre };
+                  n = -1;
+                } else {
+                  waterDebug = { z: s.z, span: null, note: 'no ground below waterLevel on this line' };
+                }
+              } else {
+                waterDebug = { note: 'terrain subsystem or waterLevel unavailable' };
               }
             }
 
@@ -456,7 +511,7 @@ try {
 
           const st = g.engine.stats();
           return {
-            simTime: g.simTime(), men, units, corpses,
+            simTime: g.simTime(), men, units, corpses, waterDebug,
             focusX: Math.round(fx), focusZ: Math.round(fz), yaw: +fyaw.toFixed(2),
             draws: st.calls, tris: st.tris, programs: st.programs,
             msPerFrame, fps: 1000 / msPerFrame,

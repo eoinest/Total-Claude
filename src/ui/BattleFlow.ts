@@ -170,6 +170,11 @@ export class BattleFlow {
       const pct = init ? Math.round((lost / init) * 100) : 0;
       const units = m.views.filter((v) => v.faction === f);
       const destroyed = units.filter((v) => v.destroyed).length;
+      // A battle of this period is decided by cohesion, not corpses — `BattleFlowSystem`
+      // calls the result on units that stopped being units. Reporting only the destroyed
+      // count read "0 of 21" beside a roll of honour full of routed cohorts, which is true
+      // and useless: broken is how an army is actually lost.
+      const broken = units.filter((v) => !v.destroyed && v.routing).length;
       return `<div class="rs-col" data-f="${fui.key}">
           <div class="rs-std">${icon(standardGlyph(f), 'rs-std-ic')}</div>
           <div class="rs-army">${fui.short}</div>
@@ -178,7 +183,8 @@ export class BattleFlow {
             <div><dt>Committed</dt><dd>${fmtCount(init)}</dd></div>
             <div><dt>Surviving</dt><dd>${fmtCount(left)}</dd></div>
             <div class="loss"><dt>Fallen</dt><dd>${fmtCount(lost)} <span>(${pct}%)</span></dd></div>
-            <div><dt>Units lost</dt><dd>${destroyed} of ${units.length}</dd></div>
+            <div><dt>Units destroyed</dt><dd>${destroyed} <span>of ${units.length}</span></dd></div>
+            <div class="${broken ? 'loss' : ''}"><dt>Units broken</dt><dd>${broken} <span>of ${units.length}</span></dd></div>
           </dl>
         </div>`;
     };
