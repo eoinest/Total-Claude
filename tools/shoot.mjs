@@ -54,7 +54,7 @@ const SHOTS = {
     // order of battle, the terrain or the deployment changes, and it did: the line ended
     // up in the top-left corner with 90% of the frame full of grass.
     desc: 'Low telephoto along the Roman front rank — reads armour, shields, ranks',
-    follow: 'romanFront', zoom: 0.19, at: 2,
+    follow: 'romanFront', zoom: 0.36, at: 2,
   },
   germanhorde: {
     desc: 'Into the Juthungi mass at eye level — reads variety and disorder',
@@ -72,7 +72,7 @@ const SHOTS = {
   },
   melee: {
     desc: 'Ground level inside the melee — the hardest test of animation and gore',
-    follow: 'contact', zoom: 0.09, at: 88,
+    follow: 'contact', zoom: 0.24, at: 88,
   },
   cavalry: {
     // The old camera (210, 60) at yaw 1.6pi looked north-west into the Roman rear, with
@@ -309,24 +309,30 @@ try {
             }
 
             if (s.follow === 'romanFront' || s.follow === 'germanFront') {
-              // Frame the *front rank* of one army obliquely. Averaging the whole unit
-              // would put the focus inside the block; taking rank 0 only, of the infantry
-              // units nearest the enemy, puts it on the face of the line where the kit
-              // reads. Look along the line rotated 40 degrees off, so ranks recede.
+              // Frame ONE front-line infantry unit, not the army's centroid. Averaging
+              // rank 0 across a 660 m frontage plus the second line and the archers put
+              // the focus in open ground between the lines, with the nearest cohort in a
+              // corner. A single block fills the frame and is what the shot is for.
               const want = s.follow === 'romanFront' ? 0 : 1;
-              let fsx = 0, fsz = 0, fn = 0;
-              for (let i = 0; i < p.count; i++) {
-                if (p.faction[i] !== want) continue;
-                if (p.rank[i] > 1) continue;
-                const st = p.state[i];
-                if (st === 10 || st === 11) continue;
-                fsx += p.x[i]; fsz += p.z[i]; fn++;
+              let best = null;
+              for (const u of b.units) {
+                if (u.destroyed || u.faction !== want || u.alive === 0) continue;
+                const cls = b.typeOf(u).unitClass;
+                // Heavy infantry only. The rule "nearest the enemy" otherwise picks the
+                // urban cohorts refusing the flanks, since they sit a few metres forward
+                // of the main line — and the legionary cohort is the unit whose kit this
+                // shot exists to show.
+                if (want === 0 ? cls !== 'heavy-infantry' : cls !== 'light-infantry') continue;
+                // "Frontmost" = nearest the enemy. Rome faces -Z, the Juthungi face +Z.
+                if (!best || (want === 0 ? u.z < best.z : u.z > best.z)) best = u;
               }
-              if (fn > 0) {
-                fx = fsx / fn;
-                fz = fsz / fn;
-                // Stand off along the line and look down it at an angle.
-                fyaw = (want === 0 ? Math.PI * 1.5 : Math.PI * 0.5) + 0.7;
+              if (best) {
+                fx = best.x;
+                fz = best.z;
+                // A unit's front faces along `facing`, so put the camera on that side and
+                // look back at it, swung 0.6 rad off square for an oblique read of the
+                // ranks rather than a flat elevation.
+                fyaw = best.facing + Math.PI + 0.6;
                 n = -1;
               }
             }
