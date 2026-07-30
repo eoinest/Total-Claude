@@ -74,6 +74,13 @@ const LOD_FRACTION = [0.14, 0.5, 2.0];
  *  before he changes LOD, otherwise a slow camera pan pops a whole rank back and forth. */
 const LOD_HYSTERESIS = 0.12;
 
+/**
+ * Side of the corpse occupancy grid, metres. A man lying down is about 1.8 m by 0.5 m, so a
+ * 0.7 m cell is roughly "one body's worth of ground" — fine enough that two men in the same
+ * cell really are overlapping, coarse enough that the neighbourhood test stays 9 lookups.
+ */
+const CORPSE_CELL = 0.7;
+
 interface InstanceBuffers {
   pos: Float32Array;
   orient: Float32Array;
@@ -216,6 +223,19 @@ export class UnitRenderSystem implements Subsystem {
   private clipBucket!: Uint8Array;
   /** Extra stature multiplier on top of `pool.scale`. */
   private heightMul!: Float32Array;
+  /** Lateral nudge and lift resolved once per corpse, 3 floats per soldier. */
+  private corpseNudge!: Float32Array;
+  private corpseNudged!: Uint8Array;
+  /**
+   * How many settled corpses occupy each cell of a coarse ground grid.
+   *
+   * The ragdoll solver settles each body where its owner fell and has no notion of the
+   * bodies already lying there, so in the heaviest fighting thirty men come to rest inside
+   * two metres and the result reads as a heap of parts rather than a field of dead men. This
+   * grid is the renderer's answer: it is consulted once, when a body stops moving, to push it
+   * clear of its neighbours and let it lie on top of them rather than through them.
+   */
+  private corpseCells = new Map<number, number>();
 
   private types: UnitTypeDef[] = [];
   private typeIsCav: boolean[] = [];
@@ -268,6 +288,8 @@ export class UnitRenderSystem implements Subsystem {
     this.rateMul = new Float32Array(cap);
     this.clipBucket = new Uint8Array(cap);
     this.heightMul = new Float32Array(cap).fill(1);
+    this.corpseNudge = new Float32Array(cap * 3);
+    this.corpseNudged = new Uint8Array(cap);
 
     const baseParams: THREE.MeshStandardMaterialParameters = {
       map: this.atlas.albedo,
@@ -658,6 +680,61 @@ export class UnitRenderSystem implements Subsystem {
     this.heightMul[i] = 1 + (hash01(seed, 74) - 0.5) * 0.075;
   }
 
+  /** Grid cell key for a ground position. Biased so negative coordinates pack cleanly. */
+  private static cellKey(x: number, z: number): number {
+    const cx = Math.floor(x / CORPSE_CELL) + 4096;
+    const cz = Math.floor(z / CORPSE_CELL) + 4096;
+    return cx * 8192 + cz;
+  }
+
+  /**
+   * Resolve a settled corpse's separation from the bodies already lying around it.
+   *
+   * Called once, on the frame a body stops moving, and then cached for the rest of the
+   * battle so a corpse never crawls. Two effects, both of which the reference frames show
+   * and neither of which the solver can know about:
+   *
+   *   - a lateral push away from whichever neighbouring cells are already occupied, growing
+   *     with how crowded they are, so bodies end up beside each other rather than inside
+   *     each other;
+   *   - a lift proportional to how many are already in this cell, so the fourth man to fall
+   *     on a spot lies across the three under him instead of through them.
+   *
+   * Visual only. The sim's corpse position is untouched, so nothing that queries the pool
+   * sees these metres.
+   */
+  private resolveCorpseNudge(i: number, x: number, z: number): void {
+    let ox = 0;
+    let oz = 0;
+    let neighbours = 0;
+    let here = 0;
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        const n = this.corpseCells.get(UnitRenderSystem.cellKey(x + dx * CORPSE_CELL, z + dz * CORPSE_CELL)) ?? 0;
+        if (n === 0) continue;
+        neighbours += n;
+        if (dx === 0 && dz === 0) here = n;
+        else { ox -= dx * n; oz -= dz * n; }
+      }
+    }
+    const seed = Math.floor(this.battle.pool.variant[i] * 16777216);
+    let len = Math.hypot(ox, oz);
+    if (len < 1e-4) {
+      // Nothing to push away from, or pushed equally on all sides: pick a stable direction
+      // from the man's own hash so a clump still fans out instead of stacking on one axis.
+      const a = hash01(seed, 81) * Math.PI * 2;
+      ox = Math.cos(a); oz = Math.sin(a); len = 1;
+    }
+    const push = Math.min(1.5, 0.22 + 0.16 * Math.min(6, neighbours)) * (0.7 + hash01(seed, 82) * 0.6);
+    const o = i * 3;
+    this.corpseNudge[o] = (ox / len) * push;
+    this.corpseNudge[o + 1] = Math.min(0.55, 0.15 * Math.min(4, here)) * (0.8 + hash01(seed, 83) * 0.4);
+    this.corpseNudge[o + 2] = (oz / len) * push;
+    const key = UnitRenderSystem.cellKey(x + this.corpseNudge[o], z + this.corpseNudge[o + 2]);
+    this.corpseCells.set(key, (this.corpseCells.get(key) ?? 0) + 1);
+    this.corpseNudged[i] = 1;
+  }
+
   private ensureKit(i: number, def: UnitTypeDef): void {
     if (this.kitReady[i]) return;
     const k = resolveKit(def, this.battle.pool.variant[i], this.kitScratch);
@@ -738,6 +815,13 @@ export class UnitRenderSystem implements Subsystem {
           rp.x = this.corpse.x;
           rp.y = this.corpse.y;
           rp.z = this.corpse.z;
+          if (this.corpse.settle > 0.92) {
+            if (!this.corpseNudged[i]) this.resolveCorpseNudge(i, rp.x, rp.z);
+            const o = i * 3;
+            rp.x += this.corpseNudge[o];
+            rp.y += this.corpseNudge[o + 1];
+            rp.z += this.corpseNudge[o + 2];
+          }
         } else if (dying && (p.deathDirX[i] !== 0 || p.deathDirZ[i] !== 0)) {
           // No ragdoll available: turn the man so his death clip's own fall direction
           // points where the blow pushed him.

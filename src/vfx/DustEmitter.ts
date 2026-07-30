@@ -486,9 +486,12 @@ export class DustEmitter {
       // been *fighting* saturates inside twenty seconds — which is what produces the
       // dark strip along the contact line rather than a uniform brown field.
       const amount =
-        (0.028 + clamp(sp * 0.012, 0, 0.05) + (fighting ? 0.055 : 0)) * (1.35 - dry * 0.45);
+        (0.030 + clamp(sp * 0.012, 0, 0.05) + (fighting ? 0.095 : 0)) * (1.35 - dry * 0.45);
       const slope = terrain?.slopeAt(p.x[i], p.z[i]) ?? 0;
-      const radius = 2.4 + sp * 0.8 + slope * 2.0 + (fighting ? 0.8 : 0);
+      // A man shoving in a shieldwall works a patch several metres across, not the
+      // half-metre his feet occupy: he braces, slips, steps over the fallen and is pushed
+      // back and forward across the whole depth of the contact strip.
+      const radius = 2.4 + sp * 0.8 + slope * 2.0 + (fighting ? 2.4 : 0);
       // Smear along the direction of travel: a marching column leaves an elongated
       // scuff, not a row of circular dots.
       const rot = sp > 0.6 ? Math.atan2(p.vx[i], p.vz[i]) : hash2(i, salt, 9) * Math.PI * 2;

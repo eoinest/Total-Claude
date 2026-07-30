@@ -279,8 +279,11 @@ void main() {
   base *= lit * (0.66 + 0.40 * tex.r);
 #else
   base *= tex.rgb;
-  // Additive sprites cool as they age — a spark is white-hot then dull orange.
-  base *= mix(1.35, 0.55, vAgeN);
+  // Additive sprites cool as they age — a spark is white-hot then dull orange. The birth
+  // gain stays near unity: pushed to 1.35 on a tint already above 1.5 the result clips
+  // every channel equally, which is white, and white is the one colour nothing on a
+  // battlefield is.
+  base *= mix(1.10, 0.45, vAgeN);
 #endif
 
   // Soft particles: fade where the billboard would visibly cut into scene geometry.

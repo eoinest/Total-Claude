@@ -89,6 +89,9 @@ export class CombatFX {
   private deathSeen!: Uint8Array;
   /** Previous soldier state, for deriving transitions the sim does not announce. */
   private prevState!: Uint8Array;
+  /** One byte per soldier: has his resting place been stained yet. */
+  private settled!: Uint8Array;
+  private settleCursor = 0;
 
   private t = 0;
   private lastRealHit = -100;
@@ -118,6 +121,7 @@ export class CombatFX {
     const cap = battle.pool.capacity;
     this.deathSeen = new Uint8Array(cap);
     this.prevState = new Uint8Array(cap);
+    this.settled = new Uint8Array(cap);
 
     const e = ctx.events;
     e.on('meleeHit', (h) => {
@@ -199,11 +203,11 @@ export class CombatFX {
     switch (kind) {
       case 'armour':
         this.sparks(x, hy, z, dx, dz, 1, salt);
-        this.dullPuff(x, hy, z, 0.30, 0.085, salt, 0.70, 0.64, 0.54);
+        this.dullPuff(x, hy, z, 0.26, 0.075, salt, 0.44, 0.38, 0.30);
         break;
       case 'shield':
         this.splinters(x, hy, z, dx, dz, salt);
-        this.dullPuff(x, hy, z, 0.46, 0.105, salt, 0.80, 0.70, 0.52);
+        this.dullPuff(x, hy, z, 0.38, 0.090, salt, 0.50, 0.41, 0.28);
         break;
       case 'parry':
         this.parryRing(x, hy, z, salt);
@@ -377,8 +381,8 @@ export class CombatFX {
       rec.vx = ox * speed;
       rec.vz = oz * speed;
       rec.vy = 1.4 + h3 * 4.2;
-      rec.life = 0.22 + h2 * 0.38;
-      rec.size0 = 0.13 + h1 * 0.20;
+      rec.life = 0.18 + h2 * 0.30;
+      rec.size0 = 0.040 + h1 * 0.055;
       rec.size1 = rec.size0 * 0.45;
       rec.spin = (h3 - 0.5) * 2;
       rec.r = 1.7; rec.g = 1.05; rec.b = 0.42;
@@ -388,16 +392,19 @@ export class CombatFX {
       rec.windFactor = 0.05;
       ps.push();
     }
-    // The strike flash itself: one frame of white-hot contact, which is what the eye
-    // actually catches in a crush where individual sparks are only a few pixels.
+    // The strike flash: one frame of hot contact, and it has to stay a *point*. `PT.glow`
+    // is a bare radial gradient, so any size that reads at all reads as a perfectly
+    // circular soft-edged disc — and at 0.58 m and alpha 0.7 with an rgb over 1.9 on the
+    // additive layer, ninety of those per frame is a melee full of white bokeh. Small,
+    // dim and orange is the whole difference between a spark and lens dirt.
     const flash = ps.reset(PLayer.Additive, PT.glow);
     flash.ground = PGround.Free;
     flash.x = x; flash.y = y; flash.z = z;
-    flash.life = 0.09;
-    flash.size0 = 0.42 * scale + 0.16;
-    flash.size1 = 0.12;
-    flash.r = 1.9; flash.g = 1.35; flash.b = 0.72;
-    flash.a = 0.7 * scale;
+    flash.life = 0.075;
+    flash.size0 = 0.085 * scale + 0.045;
+    flash.size1 = 0.035;
+    flash.r = 1.25; flash.g = 0.74; flash.b = 0.30;
+    flash.a = 0.30 * scale;
     flash.gravity = 0;
     flash.drag = 6;
     flash.windFactor = 0;
@@ -406,7 +413,7 @@ export class CombatFX {
 
   private splinters(x: number, y: number, z: number, dx: number, dz: number, salt: number): void {
     const ps = this.ps;
-    for (let k = 0; k < 7; k++) {
+    for (let k = 0; k < 5; k++) {
       const h1 = hash01(k, salt + 5);
       const h2 = hash01(k, salt + 6);
       const h3 = hash01(k, salt + 7);
@@ -419,13 +426,15 @@ export class CombatFX {
       rec.vx = (dx * cs - dz * sn) * (2.4 + h2 * 4);
       rec.vz = (dx * sn + dz * cs) * (2.4 + h2 * 4);
       rec.vy = 1.6 + h3 * 3.4;
-      rec.life = 0.7 + h3 * 0.7;
-      rec.size0 = 0.10 + h1 * 0.15;
+      rec.life = 0.55 + h3 * 0.5;
+      // A shield splinter is a centimetre of wood. At 25 cm and full opacity it is a
+      // cream-coloured petal floating over the ranks, which is what it looked like.
+      rec.size0 = 0.032 + h1 * 0.052;
       rec.size1 = rec.size0;
       rec.spin = (h2 - 0.5) * 22;
-      // Limewood shield board: pale, slightly yellow.
-      rec.r = 0.78; rec.g = 0.68; rec.b = 0.50;
-      rec.a = 1;
+      // Limewood shield board, raw and dusty — the sun term brightens it plenty.
+      rec.r = 0.30; rec.g = 0.255; rec.b = 0.175;
+      rec.a = 0.92;
       rec.gravity = 11;
       rec.drag = 1.2;
       rec.windFactor = 0.08;
@@ -467,11 +476,11 @@ export class CombatFX {
     rec.ground = PGround.Free;
     rec.x = x; rec.y = y; rec.z = z;
     rec.life = 0.10;
-    rec.size0 = 0.12;
-    rec.size1 = 0.52;
+    rec.size0 = 0.08;
+    rec.size1 = 0.34;
     rec.spin = (hash01(0, salt) - 0.5) * 6;
-    rec.r = 1.6; rec.g = 1.5; rec.b = 1.28;
-    rec.a = 0.42;
+    rec.r = 1.15; rec.g = 1.02; rec.b = 0.82;
+    rec.a = 0.24;
     rec.gravity = 0;
     rec.drag = 4;
     rec.windFactor = 0;
@@ -480,11 +489,11 @@ export class CombatFX {
     const flash = ps.reset(PLayer.Additive, PT.glow);
     flash.ground = PGround.Free;
     flash.x = x; flash.y = y; flash.z = z;
-    flash.life = 0.09;
-    flash.size0 = 0.38;
-    flash.size1 = 0.12;
-    flash.r = 1.7; flash.g = 1.5; flash.b = 1.2;
-    flash.a = 0.5;
+    flash.life = 0.075;
+    flash.size0 = 0.075;
+    flash.size1 = 0.03;
+    flash.r = 1.2; flash.g = 1.04; flash.b = 0.82;
+    flash.a = 0.24;
     flash.gravity = 0;
     flash.drag = 6;
     flash.windFactor = 0;
@@ -529,7 +538,7 @@ export class CombatFX {
           rec.vz = (h2 - 0.5) * 2.6;
           rec.vy = 1.8 + h2 * 2.4;
           rec.life = 0.6 + h2 * 0.6;
-          rec.size0 = 0.11 + h1 * 0.2;
+          rec.size0 = 0.05 + h1 * 0.085;
           rec.size1 = rec.size0 * 2.4;
           rec.spin = (h2 - 0.5) * 12;
           rec.r = 0.52; rec.g = 0.44; rec.b = 0.33;
@@ -680,7 +689,7 @@ export class CombatFX {
       rec.vz = Math.sin(a) * (3 + h3 * 7);
       rec.vy = 3.5 + h3 * 5.5;
       rec.life = 1.1 + h1 * 0.9;
-      rec.size0 = 0.1 + h2 * 0.24;
+      rec.size0 = 0.05 + h2 * 0.11;
       rec.size1 = rec.size0;
       rec.spin = (h3 - 0.5) * 20;
       rec.r = 0.44; rec.g = 0.37; rec.b = 0.27;
@@ -730,7 +739,50 @@ export class CombatFX {
     this.runPulses();
     this.runPools();
     this.deriveDeaths();
+    this.stampSettledCorpses();
     this.deriveMelee(dt);
+  }
+
+  /**
+   * Lay blood and churned earth under every corpse at the position it actually came to
+   * rest.
+   *
+   * The death-time stamp is not enough on its own. `soldierDied` fires where the man was
+   * *hit*, then the ragdoll carries him — under a charge, metres — and the bodies also
+   * end up shoved into heaps as the fight moves over them. The result is blood in the
+   * shape of the line as it was two minutes ago and clean grass under the actual heap of
+   * dead, which is precisely the "bodies dropped onto a lawn" read.
+   *
+   * So: sweep the pool continuously and stamp each corpse once more, at rest. One byte
+   * per soldier guarantees exactly one extra stamp each, and the sweep is throughput
+   * limited so a whole army breaking cannot spike the splat budget.
+   */
+  private stampSettledCorpses(): void {
+    const p = this.battle.pool;
+    const n = p.count;
+    if (n === 0) return;
+    let scanned = 0;
+    let budget = 20;
+    while (scanned < 640 && budget > 0) {
+      const i = this.settleCursor;
+      this.settleCursor = (this.settleCursor + 1) % n;
+      scanned++;
+      if (this.settled[i] || p.state[i] !== SoldierState.Dead) continue;
+      this.settled[i] = 1;
+      budget--;
+
+      const x = p.x[i];
+      const z = p.z[i];
+      const h1 = hash01(i, 1091);
+      const h2 = hash01(i, 1093);
+      // A body soaks a patch roughly its own length across, and the ground it is lying on
+      // has been fought over — so trample goes down with the blood.
+      this.damage.splat(x, z, 1.9 + h1 * 1.3, DT.bloodPool, h2 * 6.283, 0.62, 0.22, 0);
+      this.damage.splat(
+        x + (h1 - 0.5) * 2.4, z + (h2 - 0.5) * 2.4,
+        3.2 + h2 * 2.0, DT.trampleSoft, h1 * 6.283, 0.085, 0.16, 0
+      );
+    }
   }
 
   private runPulses(): void {
@@ -883,7 +935,7 @@ export class CombatFX {
           break;
         case 'shield':
           this.splinters(hx, hy, hz, dx, dz, salt + k);
-          this.dullPuff(hx, hy, hz, 0.42, 0.10, salt + k, 0.80, 0.70, 0.52);
+          this.dullPuff(hx, hy, hz, 0.36, 0.085, salt + k, 0.50, 0.41, 0.28);
           break;
         case 'parry':
           this.parryRing(hx, hy, hz, salt + k);

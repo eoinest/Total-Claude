@@ -186,8 +186,14 @@ float grassHeightAt(vec2 wxz) {
 // the fallow strips as bare earth and the field lines as beaten track; grass has to agree
 // about where those are, or it grows a lush sward straight out of a ploughed field, which
 // is the fastest way to break the illusion that the two systems are looking at the same
-// landscape. Returns the strip use hash in x, boundary proximity in y.
-vec2 grassField(vec2 wxz) {
+// landscape.
+//
+// Returns:
+//   x  the raw strip use hash — the same value the ground shader feeds into its straw /
+//      pasture mix, so a clump growing on a straw strip can be tinted straw
+//   y  boundary proximity, 1 on a field line
+//   z  the decorrelated fallow hash — which strips are ploughed to bare earth
+vec3 grassField(vec2 wxz) {
   vec2 fu = vec2(wxz.x * 0.97740 - wxz.y * 0.21140, wxz.x * 0.21140 + wxz.y * 0.97740) / 94.0;
   vec2 cell = floor(fu);
   vec2 f = fract(fu);
@@ -197,7 +203,7 @@ vec2 grassField(vec2 wxz) {
   float use = fract(h + sub * 0.3719 + fract(sin(dot(cell + 41.0, vec2(41.317, 78.233))) * 43758.5453) * 0.21);
   vec2 e = abs(f - 0.5);
   float edge = max(max(e.x, e.y), abs(fract(f.y * strips) - 0.5));
-  return vec2(fract(use * 3.71 + h * 0.613), smoothstep(0.40, 0.496, edge));
+  return vec3(use, smoothstep(0.40, 0.496, edge), fract(use * 3.71 + h * 0.613));
 }
 `;
 
@@ -385,10 +391,14 @@ export class GrassField {
   // beaten down to half. Matches the ground shader's own field pattern.
   // Matches the ground shader, including its campus suppression: the fighting ground is
   // pasture, so a fallow strip there must not strip the sward off it either.
-  vec2 gfld = grassField(gpos);
+  vec3 gfld = grassField(gpos);
   float gCampus = 1.0 - smoothstep(420.0, 800.0, length(vec2(gpos.x * 0.86, (gpos.y + 40.0) * 1.9)));
-  cover *= 1.0 - smoothstep(0.66, 0.79, gfld.x) * 0.88 * (1.0 - gCampus * 0.88);
+  cover *= 1.0 - smoothstep(0.66, 0.79, gfld.z) * 0.88 * (1.0 - gCampus * 0.88);
   cover *= 1.0 - gfld.y * 0.55 * (1.0 - gCampus * 0.55);
+  // The ground shader's own straw / pasture threshold, so a clump standing on a straw strip
+  // is straw and one standing on pasture is green. Without this the two systems disagree
+  // about the same field and green tufts sprout out of dry stubble.
+  float gStraw = smoothstep(0.42, 0.64, gfld.x * 0.62 + 0.19);
 
   float dist = length(gpos - uCamXZ);
   float fadeNear = uFadeIn < 0.5 ? 1.0 : smoothstep(uFadeIn, uFadeIn + 30.0, dist);
@@ -439,7 +449,7 @@ export class GrassField {
   // so the cut-off leaves no visible ring of density. Biased toward the green end: the
   // straw tint is the minority state, matching the ground shader's own grass mix.
   vec3 gcol = mix(uDryColour, uWetColour,
-    clamp(0.58 + gctl.r * 1.1 + (h2 - 0.5) * 0.8 - smoothstep(0.5, 0.8, gfld.x) * 0.5, 0.0, 1.0));
+    clamp(0.62 + gctl.r * 1.1 + (h2 - 0.5) * 0.8 - gStraw * 0.85, 0.0, 1.0));
   gcol = mix(gcol, uDryColour * 1.2, weed);
   gcol *= 0.74 + 0.34 * bt;
   gcol = mix(uGroundColour, gcol, clamp(fade * 1.6, 0.0, 1.0));
