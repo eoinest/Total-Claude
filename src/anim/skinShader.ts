@@ -428,8 +428,21 @@ const TINT_BODY = /* glsl */ `
         :               vec3( 0.24, 0.22, 0.20 );  // pitch black
       tint = paint * ( 0.86 + fract( v * 103.7 ) * 0.28 );
     } else {
-      tint = vec3( 1.0 ) + vec3(
-        fract( v * 97.1 ) - 0.5, fract( v * 103.7 ) - 0.5, fract( v * 109.3 ) - 0.5 ) * 0.14;
+      // A legion's scuta were painted by the century, not by a factory. The device is the
+      // same on every board — that is the whole point of a device, and it is what keeps the
+      // unit identifiable at a glance — but the paint is not: a fresh madder lot next to one
+      // gone brown in the sun, a brick repaint over an older board, a much-scrubbed shield
+      // gone dark, and the occasional board issued out of a dead man's kit that never
+      // matched. Adjacent men therefore carry visibly different reds, which is exactly what
+      // the reference frames show and is the cheapest crowd-variety win left on a Roman.
+      float pick = fract( v * 97.1 );
+      vec3 lot =
+          pick < 0.32 ? vec3( 1.04, 0.96, 0.92 )   // the issue lot, still fresh
+        : pick < 0.56 ? vec3( 0.78, 0.62, 0.54 )   // sun-faded, gone brown
+        : pick < 0.76 ? vec3( 1.18, 0.88, 0.66 )   // a warmer brick repaint
+        : pick < 0.90 ? vec3( 0.60, 0.55, 0.56 )   // scrubbed dark, years of service
+        :               vec3( 1.10, 1.14, 1.2 );   // out of another unit's stores
+      tint = lot * ( 0.84 + fract( v * 103.7 ) * 0.34 );
     }
   }
   else if ( slot < 7.5 )  tint = metal;

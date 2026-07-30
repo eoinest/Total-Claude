@@ -971,22 +971,44 @@ export function column(
 export function pediment(st: GeoStream, w: number, y0: number, depth: number, col: THREE.Color, pitch = 0.24): void {
   const h = (w / 2) * pitch;
   const cornice = Math.max(0.35, w * 0.022);
-  q[0].set(-w / 2, y0, depth / 2);
-  q[1].set(w / 2, y0, depth / 2);
-  q[2].set(0, y0 + h, depth / 2);
-  st.triN(N_PZ, q[0], q[1], q[2], col);
-  q[0].set(-w / 2, y0, -depth / 2);
-  q[1].set(w / 2, y0, -depth / 2);
-  q[2].set(0, y0 + h, -depth / 2);
-  st.triN(N_NZ, q[0], q[1], q[2], col);
   const bright = new THREE.Color().copy(col).multiplyScalar(1.16);
-  for (const s of [-1, 1]) {
-    q[0].set(s * (w / 2), y0, -depth / 2 - cornice * 0.5);
-    q[1].set(s * (w / 2), y0, depth / 2 + cornice * 0.5);
-    q[2].set(0, y0 + h + cornice, depth / 2 + cornice * 0.5);
-    q[3].set(0, y0 + h + cornice, -depth / 2 - cornice * 0.5);
-    NH.set(s * pitch, 1, 0);
-    st.quadN(NH, q[0], q[1], q[2], q[3], bright);
+  // Rake direction, for the top face's normal.
+  const rl = Math.hypot(w / 2, h) || 1;
+  for (const face of [-1, 1]) {
+    const zIn = (face * depth) / 2;
+    const zOut = zIn + face * cornice;
+    // Tympanum: the triangular field the sculpture sits in.
+    q[0].set(-w / 2, y0, zIn);
+    q[1].set(w / 2, y0, zIn);
+    q[2].set(0, y0 + h, zIn);
+    st.triN(face > 0 ? N_PZ : N_NZ, q[0], q[1], q[2], col);
+
+    // Raking cornice: a moulding *along each sloping edge of the gable*, one cornice-width
+    // deep and one cornice-width tall, on the front and back faces only.
+    //
+    // Emitted full-depth — as an earlier revision did, with a single quad per rake spanning
+    // the whole building from front to back — it is not a moulding at all but a plane laid
+    // over the entire roof: on the Capitoline temple that was two 1,800 m² slabs of marble
+    // covering the tiling completely, and at marble albedo times 1.16 they clipped through
+    // the top of the filmic curve into a blank white sheet. That sheet was the one visibly
+    // broken building on the skyline, and it was hiding a correct roof underneath.
+    for (const s of [-1, 1]) {
+      const ex = s * (w / 2);
+      // Outward face of the moulding.
+      q[0].set(ex, y0, zOut);
+      q[1].set(ex, y0 + cornice, zOut);
+      q[2].set(0, y0 + h + cornice, zOut);
+      q[3].set(0, y0 + h, zOut);
+      NH.set(0, 0, face);
+      st.quadN(NH, q[0], q[1], q[2], q[3], bright);
+      // Sloping top of the moulding. Normal is perpendicular to the rake, in the xy plane.
+      q[0].set(ex, y0 + cornice, zIn);
+      q[1].set(ex, y0 + cornice, zOut);
+      q[2].set(0, y0 + h + cornice, zOut);
+      q[3].set(0, y0 + h + cornice, zIn);
+      NH.set((s * h) / rl, (w / 2) / rl, 0);
+      st.quadN(NH, q[0], q[1], q[2], q[3], bright);
+    }
   }
 }
 

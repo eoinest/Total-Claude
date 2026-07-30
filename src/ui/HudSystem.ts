@@ -83,6 +83,11 @@ export class HudSystem implements Subsystem {
     return this.model.hoveredId;
   }
 
+  /** Re-measure the card bar. Exposed so a driver can size-test an order of battle. */
+  relayoutCards(): void {
+    this.cards.relayout();
+  }
+
   /**
    * Frame times measured here rather than read from `time.fps`. That mean is poisoned
    * for a full second by any single long frame — a load hitch, or the harness settling

@@ -754,9 +754,12 @@ export class UnitRenderSystem implements Subsystem {
         // a thousand of them under the camera, which was on its own pushing the frame past
         // the triangle budget. The tier he *would* have had stays in `lodOf`, so a corpse
         // the camera walks up to refines exactly as a living man does.
-        // Never as far as the impostor tier: that billboard is a standing man, and a corpse
-        // promoted into it would get up off the ground.
-        if (hasCorpse && this.corpse.settle > 0.6 && lod < 2) lod++;
+        // Only out of LOD0, and never as far as the impostor tier — that billboard is a
+        // standing man and a corpse promoted into it would get up off the ground. Stopping at
+        // LOD1 keeps almost all of the saving (4,135 triangles down to 2,314) while never
+        // putting a body on the eight-group coarse mesh sooner than distance alone would,
+        // because a heap of coarse bodies is what reads as a pile of parts.
+        if (hasCorpse && this.corpse.settle > 0.6 && lod === 0) lod = 1;
 
         if (lod === 3) {
           this.pushImpostor(i, rp.x, rp.y, rp.z, facing, u.faction, selected);
@@ -824,10 +827,13 @@ export class UnitRenderSystem implements Subsystem {
       buf.quat[q] = 0; buf.quat[q + 1] = 0; buf.quat[q + 2] = 0; buf.quat[q + 3] = 0;
     }
 
-    // A settling corpse holds its death clip near the start of the fall. The ragdoll owns
-    // the tipping over, so letting the clip run all the way to its own prone pose as well
-    // would fold the body twice.
-    const holdBack = hasCorpse ? 1 - 0.86 * Math.min(1, this.corpse.settle) : 1;
+    // A settling corpse holds its death clip part-way into the fall. The ragdoll owns the
+    // tipping over, so running the clip all the way to its own prone pose as well would fold
+    // the body twice — but holding it at the very start leaves a rigid standing man laid on
+    // his side, and a heap of those reads as scaffolding rather than as dead men. A third of
+    // the clip gets the arms down, the knees soft and the spine curled before the solver's
+    // orientation is applied on top.
+    const holdBack = hasCorpse ? 1 - 0.62 * Math.min(1, this.corpse.settle) : 1;
     this.writeAnim(buf.animA, buf.animB, n, i, this.manFacts, p.variant[i], holdBack);
 
     // Melee variant swaps the missile in the hand for the drawn blade; a routing man
