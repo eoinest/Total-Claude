@@ -52,10 +52,14 @@ export class LitterField {
     this.terrain = terrain;
 
     const geo = this.buildGeometry();
+    // Metalness stays at zero. Most litter is limewood, leather and ash shafts, and a
+    // metallic slice of a blue sky IBL turns a brown shaft into a navy splinter — which
+    // is exactly what it did. The few steel objects lose a little sheen; a field of
+    // blue-black spikes loses the whole effect.
     const mat = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.78,
-      metalness: 0.22,
+      roughness: 0.86,
+      metalness: 0.0,
     });
     this.mesh = new THREE.InstancedMesh(geo, mat, capacity);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -174,28 +178,30 @@ export class LitterField {
     let elev: number;
     switch (kind) {
       case 'pilum':
-        len = 1.25 + h1 * 0.55;
+        len = 1.05 + h1 * 0.45;
         elev = 0.62 + h2 * 0.55;
-        tmpColour.setRGB(0.30, 0.245, 0.175);
+        tmpColour.setRGB(0.52, 0.42, 0.28);
         break;
       case 'javelin':
-        len = 1.05 + h1 * 0.5;
+        len = 0.90 + h1 * 0.40;
         elev = 0.68 + h2 * 0.52;
-        tmpColour.setRGB(0.33, 0.27, 0.19);
+        tmpColour.setRGB(0.56, 0.46, 0.31);
         break;
       case 'bolt':
-        len = 0.55 + h1 * 0.25;
+        len = 0.48 + h1 * 0.20;
         elev = 0.85 + h2 * 0.5;
-        tmpColour.setRGB(0.27, 0.22, 0.16);
+        tmpColour.setRGB(0.48, 0.39, 0.26);
         break;
       default: // arrow
-        len = 0.60 + h1 * 0.32;
+        len = 0.52 + h1 * 0.26;
         elev = 0.95 + h2 * 0.45;
-        tmpColour.setRGB(0.38, 0.32, 0.22);
+        tmpColour.setRGB(0.62, 0.52, 0.34);
         break;
     }
-    // Weathered wood in sunlight, varied so a cluster is not a uniform grey mat.
-    tmpColour.multiplyScalar(0.8 + h3 * 0.5);
+    // Sun-bleached ash and hazel, varied so a cluster is not a uniform mat. Pale enough
+    // to read as a light note against churned earth, which is how a field of spent
+    // shafts actually looks — the opposite of the dark spikes a dark albedo produces.
+    tmpColour.multiplyScalar(0.85 + h3 * 0.4);
 
     // Rotate the dish's long axis (+Z) up by `elev`, then yaw it about the vertical.
     tmpQuat.setFromAxisAngle(X_AXIS, -elev);

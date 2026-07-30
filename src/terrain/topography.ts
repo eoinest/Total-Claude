@@ -126,17 +126,23 @@ const rectMask = (
 
 /**
  * Where the armies form up. Terrain inside these boxes is flattened onto the regional
- * plane so that a 40-man-wide cohort cannot be broken in half by a hillock.
- * Bounds cover the full deployment from `sim/scenario.ts` plus the cavalry wings.
+ * plane so that a 40-man-wide cohort cannot be broken in half by a hillock, they carry
+ * the trampled-ground channel of the control texture, and vegetation is excluded from
+ * them so no tree stands inside a formation.
+ *
+ * Half-widths of 490 m: with Rome II-scale unit sizes the Roman line is eight cohorts on
+ * 70 m centres plus urban cohorts refusing both flanks — about ±320 m — and the cavalry
+ * wings sit out at ±450. The earlier 275/300 m boxes left the outer third of both lines
+ * standing on ungraded ground with trees in it.
  */
 export const germanDeployMask = (x: number, z: number): number =>
-  rectMask(x, z, 0, -196, 300, 118, 70);
+  rectMask(x, z, 0, -196, 490, 130, 80);
 export const romanDeployMask = (x: number, z: number): number =>
-  rectMask(x, z, 10, 150, 275, 105, 60);
+  rectMask(x, z, 10, 150, 490, 120, 80);
 
 /** The whole fighting corridor. High-frequency relief is damped here, swells are kept. */
 export const battleCoreMask = (x: number, z: number): number =>
-  rectMask(x, z, 0, -30, 380, 340, 150);
+  rectMask(x, z, 0, -30, 540, 360, 170);
 
 /** Quarry workings: tufa and travertine were cut from the hill flanks outside the city. */
 export const QUARRIES: readonly { x: number; z: number; radius: number; depth: number }[] = [

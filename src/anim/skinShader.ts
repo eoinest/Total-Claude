@@ -56,6 +56,12 @@ export interface PoseVaryBones {
   rightShoulder: [number, number, number];
   /** Rest height of the pelvis — the pivot the shoulder-line roll turns about. */
   hipY: number;
+  /** Rest position of the weapon hand — the pivot a carried weapon swings about. */
+  weaponHand: [number, number, number];
+  /** Piece ids of pole arms, which get a wide fan. */
+  poleWeapons: readonly number[];
+  /** Piece ids of blades and hafted weapons, which get a narrow one. */
+  bladeWeapons: readonly number[];
 }
 
 /** Uniforms shared by the colour, depth and distance variants of one soldier material. */

@@ -331,16 +331,17 @@ ${SPLAT_GLSL}`
   float w[${LAYER_COUNT}];
   // 0 dry grass and 1 meadow grass share the plain, driven by the *same* large-scale
   // mask in opposition so the ground breaks into readable blocks of straw and green
-  // rather than averaging into one tone. This is grazing land in August: mostly burnt
-  // off, green where the water sits.
+  // rather than averaging into one tone.
   // Pushed through a *narrow* smoothstep. fBm output crowds around its mean, so a wide
   // transition band leaves nearly the whole map in the blend zone — and two near-equal
   // weights interlock at texel scale, which from any distance averages straight back
   // into one flat tone. A tight band gives decisive blocks with clean seams.
-  // Biased below the mean so straw dominates and green is the exception: this is the
-  // Campus Martius at the end of a Roman summer. The small-scale term makes the boundary
-  // ragged instead of a smooth amoeba outline.
-  float grassMix = smoothstep(0.38, 0.58,
+  // Biased *above* the mean, so green pasture is the ground state and burnt-off straw the
+  // exception. Reversing that — on the argument that this is the Campus Martius in
+  // August — produced a plain of uniform straw, which measured against real Rome II
+  // frames is simply not how their ground looks: theirs is green with dry patches through
+  // it. The small-scale term makes the boundary ragged instead of a smooth amoeba outline.
+  float grassMix = smoothstep(0.52, 0.72,
     nzBig * 0.5 + macroMid.a * 0.22 + nzSmall * 0.10 + fld.x * 0.18);
   w[0] = (0.3 + 2.7 * grassMix + stubble * 1.6) * (1.0 - grassKill) * (1.0 - paved);
   w[1] = (0.3 + 2.5 * (1.0 - grassMix) + cWet * 1.8 + hollow * 0.5)

@@ -1,7 +1,9 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  base: './',
+  // Served from the domain root on Vercel, and the runtime fetches
+  // `/assets/manifest.json` absolutely, so the base must be absolute too.
+  base: '/',
   server: {
     port: 5173,
     host: '127.0.0.1',
@@ -16,6 +18,12 @@ export default defineConfig({
     target: 'esnext',
     sourcemap: true,
     chunkSizeWarningLimit: 4096,
+    // NOT the default 'assets'. `public/assets/` holds the downloaded texture and HDRI
+    // set, which Vite copies verbatim into the output root — so leaving the bundle
+    // directory at its default would have Vite's own JS and CSS share a directory with
+    // them, and `tools/optimize-assets.mjs` (which clears and rewrites `dist/assets`)
+    // would delete the application bundle along with the originals.
+    assetsDir: 'bundle',
   },
   assetsInclude: ['**/*.hdr', '**/*.glb', '**/*.gltf', '**/*.ktx2', '**/*.bin'],
 });

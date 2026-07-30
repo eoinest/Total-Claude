@@ -31,16 +31,18 @@ import type { TerrainSystem } from './TerrainSystem';
 /**
  * Ring extents. A ring's fade-out distance must sit *inside* half its lattice extent, or
  * the lattice runs out before the fade does and the grass stops at a hard circular edge.
- *   near: 216 × 0.375 m = 81 m across, so ±40 m — fade out by 40 m.
+ *   near: 244 × 0.335 m = 82 m across, so ±41 m — fade out by 40 m.
  *   far:  300 × 1.35 m  = 405 m across, so ±202 m — fade out by 195 m.
  *
  * The near lattice was 0.55 m, which gave at most three clumps per square metre before
  * the cover test thinned it, and at eye level that reads as a scatter of individual
- * tussocks standing in bare earth rather than as ground cover. 0.375 m is 7.1 candidate
- * clumps per m², which is the density at which the cards start to overlap and merge.
+ * tussocks standing in bare earth rather than as ground cover. 0.335 m is 8.9 candidate
+ * clumps per m², which with a 0.58 m card is enough overlap that neighbouring clumps
+ * merge into a continuous mass — the state real Rome II frames are in, where a man's
+ * shins disappear into the sward.
  */
-const NEAR_GRID = 216;
-const NEAR_SPACING = 0.375;
+const NEAR_GRID = 244;
+const NEAR_SPACING = 0.335;
 const FAR_GRID = 300;
 const FAR_SPACING = 1.35;
 
@@ -223,7 +225,9 @@ export class GrassField {
         // Three cards at 60° rather than two at 90°: a two-card cross has a bearing from
         // which it reads as a single flat plane, and at this density that shows up as
         // corduroy banding across the sward.
-        geo: crossedCards(3, 2, 0.52, 0.30),
+        // 0.46 m tall. Rome II's pasture reaches a man's mid-calf and in places swallows
+        // his shins, so 0.30 m — barely over a boot top — was far too short to read.
+        geo: crossedCards(3, 2, 0.58, 0.46),
         grid: NEAR_GRID,
         spacing: NEAR_SPACING,
         jitter: 1.3,
@@ -239,7 +243,7 @@ export class GrassField {
     );
     this.rings.push(
       this.makeRing(ctx, heightMap, controlMap, tex, {
-        geo: crossedCards(2, 1, 1.7, 0.44),
+        geo: crossedCards(2, 1, 1.7, 0.56),
         grid: FAR_GRID,
         spacing: FAR_SPACING,
         jitter: 1.05,
@@ -305,10 +309,12 @@ export class GrassField {
       uTime: { value: 0 },
       uWaterLevel: { value: WATER_LEVEL },
       // These are *tints* multiplied into the card texture, not colours: the card is
-      // already painted straw-green, so a colour here would darken it twice over.
-      uDryColour: { value: new THREE.Color(1.14, 1.02, 0.72) },
-      uWetColour: { value: new THREE.Color(0.72, 1.04, 0.5) },
-      uGroundColour: { value: new THREE.Color(1.0, 0.95, 0.84) },
+      // already painted green, so a colour here would darken it twice over. The dry end
+      // pulls toward straw and the wet end toward chlorophyll; the card's own mean sits
+      // between them.
+      uDryColour: { value: new THREE.Color(1.24, 1.06, 0.62) },
+      uWetColour: { value: new THREE.Color(0.78, 1.1, 0.56) },
+      uGroundColour: { value: new THREE.Color(0.98, 0.98, 0.86) },
     };
 
     const mat = new THREE.MeshStandardMaterial({
@@ -361,7 +367,7 @@ export class GrassField {
   // Real pasture grows in patches: bare scrapes, thick tussocky ground, and everything
   // between. Two scales of clustering noise, and damp ground grows thicker.
   float clumpBig = grassHash(floor(gpos / 19.0)) * 0.5 + grassHash(floor(gpos / 6.5)) * 0.5;
-  cover *= 0.52 + 1.05 * clumpBig + gctl.r * 0.4;
+  cover *= 0.72 + 0.95 * clumpBig + gctl.r * 0.4;
   // Ploughed and fallow strips carry no sward, and the headland the carts turned on is
   // beaten down to half. Matches the ground shader's own field pattern.
   vec2 gfld = grassField(gpos);
@@ -398,8 +404,10 @@ export class GrassField {
   vBladeT = bt;
 
   // Darker at the root, and converging on the ground colour as the clump shrinks away,
-  // so the cut-off leaves no visible ring of density.
-  vec3 gcol = mix(uDryColour, uWetColour, clamp(gctl.r * 1.5 + (h2 - 0.5) * 0.5, 0.0, 1.0));
+  // so the cut-off leaves no visible ring of density. Biased toward the green end: the
+  // straw tint is the minority state, matching the ground shader's own grass mix.
+  vec3 gcol = mix(uDryColour, uWetColour,
+    clamp(0.58 + gctl.r * 1.1 + (h2 - 0.5) * 0.8 - smoothstep(0.5, 0.8, gfld.x) * 0.5, 0.0, 1.0));
   gcol = mix(gcol, uDryColour * 1.2, weed);
   gcol *= 0.74 + 0.34 * bt;
   gcol = mix(uGroundColour, gcol, clamp(fade * 1.6, 0.0, 1.0));

@@ -360,16 +360,18 @@ export function generateGrassCards(cellSize = 256, cells = 3): { data: Uint8Arra
   const h = cellSize;
   const data = new Uint8Array(w * h * 4);
 
-  // Straw dominant, with a few surviving green blades and some bleached-white dead ones.
-  // The mean of this set has to sit close to the dry-grass ground albedo or every clump
-  // reads as a foreign object stuck into the dirt.
+  // Green dominant, with straw and bleached dead blades through it. Measured against real
+  // Rome II frames the sward is unmistakably *green* — chlorophyll, not beige — with dry
+  // stems mixed in; an earlier straw-dominant set left the ground cover indistinguishable
+  // from the dirt it stood in. The mean still has to sit near the ground albedo, or every
+  // clump reads as a foreign object stuck into the soil.
   const bladeCols: [number, number, number][] = [
-    [150, 141, 92],
-    [172, 162, 108],
-    [118, 124, 66],
-    [190, 180, 132],
-    [102, 108, 56],
-    [163, 150, 96],
+    [106, 128, 58],
+    [132, 152, 76],
+    [ 84, 106, 46],
+    [152, 162, 92],
+    [ 70,  92, 42],
+    [168, 152, 96],
   ];
 
   for (let c = 0; c < cells; c++) {
@@ -425,9 +427,9 @@ export function generateGrassCards(cellSize = 256, cells = 3): { data: Uint8Arra
         const o = (py * w + x0 + px) * 4;
         if (cov > data[o + 3]) {
           const sh = 0.56 + n * 0.4;
-          data[o] = clamp255(158 * sh);
-          data[o + 1] = clamp255(147 * sh);
-          data[o + 2] = clamp255(98 * sh);
+          data[o] = clamp255(146 * sh);
+          data[o + 1] = clamp255(140 * sh);
+          data[o + 2] = clamp255(86 * sh);
           data[o + 3] = cov;
         }
       }
@@ -437,9 +439,9 @@ export function generateGrassCards(cellSize = 256, cells = 3): { data: Uint8Arra
       for (let px = 0; px < cellSize; px++) {
         const o = ((py * w) + x0 + px) * 4;
         if (data[o + 3] === 0) {
-          data[o] = 150;
-          data[o + 1] = 142;
-          data[o + 2] = 92;
+          data[o] = 118;
+          data[o + 1] = 134;
+          data[o + 2] = 72;
         }
       }
     }

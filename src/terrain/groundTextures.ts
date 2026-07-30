@@ -63,22 +63,27 @@ export interface GroundLayerSpec {
  * repeat; stretching the texture is not.
  *
  * Albedos are authored so that no two layers likely to meet share a value *or* a hue:
- * straw 0.30 warm, meadow 0.16 green, dirt 0.16 brown, mud 0.09 dark, gravel 0.29
- * neutral, limestone 0.35 cool, sand 0.34 pale, basalt 0.12 cold. Without that spread the
- * splat can be perfect and the ground still reads as one wash.
+ * straw 0.26 yellow-ochre, meadow 0.16 green, dirt 0.15 red-brown, mud 0.08 dark, gravel
+ * 0.26 cool neutral, limestone 0.38 pale cool, sand 0.32 warm pale, basalt 0.11 cold.
+ *
+ * **These are chromatic on purpose.** Judged against real Rome II frames the ground is
+ * warm and *colourful* — green pasture, yellow-brown stubble, pale grey rock and bare
+ * red-brown earth all separated in one shot — and an earlier "sun-bleached, slightly
+ * desaturated" reading of the art direction collapsed the whole plain into one dust-beige
+ * wash. Value separation alone is not enough; the hues have to part company too.
  */
 export const GROUND_LAYERS: readonly GroundLayerSpec[] = [
-  { name: 'dry grass',   kind: 'dryGrass',       manifestId: 'dry-grass',       farScale: 4.3,  detailScale: 1.15, detailMix: 0.50, roughness: 0.94, albedo: [158, 148, 104], contrast: 1.10, chroma: 0.50, heightBias: 0.0 },
-  { name: 'meadow grass',kind: 'meadowGrass',    manifestId: 'meadow-grass',    farScale: 3.9,  detailScale: 1.05, detailMix: 0.50, roughness: 0.92, albedo: [100, 116,  64], contrast: 1.10, chroma: 0.50, heightBias: 0.02 },
-  { name: 'trampled dirt',kind: 'compactedEarth',manifestId: null,              farScale: 4.6,  detailScale: 1.30, detailMix: 0.45, roughness: 0.95, albedo: [132, 110,  84], contrast: 1.15, chroma: 0.40, heightBias: 0.06 },
-  { name: 'mud',         kind: 'mud',            manifestId: 'mud',             farScale: 2.6,  detailScale: 0.72, detailMix: 0.45, roughness: 0.74, albedo: [ 92,  80,  64], contrast: 1.05, chroma: 0.35, heightBias: 0.04 },
-  { name: 'gravel',      kind: 'gravel',         manifestId: 'dirt-gravel',     farScale: 2.3,  detailScale: 0.62, detailMix: 0.50, roughness: 0.96, albedo: [152, 144, 128], contrast: 1.40, chroma: 0.55, heightBias: 0.12 },
-  { name: 'limestone',   kind: 'limestone',      manifestId: null,              farScale: 6.0,  detailScale: 1.70, detailMix: 0.40, roughness: 0.86, albedo: [164, 160, 146], contrast: 1.30, chroma: 0.40, heightBias: 0.22 },
-  { name: 'river sand',  kind: 'sand',           manifestId: 'sand',            farScale: 2.8,  detailScale: 0.78, detailMix: 0.45, roughness: 0.88, albedo: [168, 156, 128], contrast: 1.15, chroma: 0.40, heightBias: -0.04 },
+  { name: 'dry grass',   kind: 'dryGrass',       manifestId: 'dry-grass',       farScale: 4.3,  detailScale: 1.15, detailMix: 0.50, roughness: 0.94, albedo: [152, 138,  88], contrast: 1.18, chroma: 0.55, heightBias: 0.0 },
+  { name: 'meadow grass',kind: 'meadowGrass',    manifestId: 'meadow-grass',    farScale: 3.9,  detailScale: 1.05, detailMix: 0.50, roughness: 0.92, albedo: [ 94, 118,  56], contrast: 1.18, chroma: 0.55, heightBias: 0.02 },
+  { name: 'trampled dirt',kind: 'compactedEarth',manifestId: null,              farScale: 4.6,  detailScale: 1.30, detailMix: 0.45, roughness: 0.95, albedo: [134, 104,  74], contrast: 1.20, chroma: 0.45, heightBias: 0.06 },
+  { name: 'mud',         kind: 'mud',            manifestId: 'mud',             farScale: 2.6,  detailScale: 0.72, detailMix: 0.45, roughness: 0.74, albedo: [ 88,  76,  58], contrast: 1.05, chroma: 0.35, heightBias: 0.04 },
+  { name: 'gravel',      kind: 'gravel',         manifestId: 'dirt-gravel',     farScale: 2.3,  detailScale: 0.62, detailMix: 0.50, roughness: 0.96, albedo: [146, 141, 128], contrast: 1.45, chroma: 0.60, heightBias: 0.12 },
+  { name: 'limestone',   kind: 'limestone',      manifestId: null,              farScale: 6.0,  detailScale: 1.70, detailMix: 0.40, roughness: 0.86, albedo: [168, 166, 152], contrast: 1.35, chroma: 0.40, heightBias: 0.22 },
+  { name: 'river sand',  kind: 'sand',           manifestId: 'sand',            farScale: 2.8,  detailScale: 0.78, detailMix: 0.45, roughness: 0.88, albedo: [166, 152, 122], contrast: 1.18, chroma: 0.40, heightBias: -0.04 },
   // Consular roads were paved in basalt (silex) — a cool dark grey, not the pale
   // limestone setts the pack ships. 1.1 m per tile puts the polygons at ~35 cm, which is
   // the size they are on the surviving stretch outside the Porta Appia.
-  { name: 'paving',      kind: 'cobbles',        manifestId: 'cobblestone-road',farScale: 1.1,  detailScale: 1.1,  detailMix: 0.0,  roughness: 0.80, albedo: [ 96,  96,  98], contrast: 1.30, chroma: 0.30, heightBias: 0.30 },
+  { name: 'paving',      kind: 'cobbles',        manifestId: 'cobblestone-road',farScale: 1.1,  detailScale: 1.1,  detailMix: 0.0,  roughness: 0.80, albedo: [ 94,  94,  97], contrast: 1.30, chroma: 0.30, heightBias: 0.30 },
 ];
 
 export const LAYER_COUNT = GROUND_LAYERS.length;

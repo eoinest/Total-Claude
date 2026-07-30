@@ -30,12 +30,16 @@ const NORTH = Math.PI; // facing toward -Z
 const SOUTH = 0; // facing toward +Z
 
 /**
- * Unit-size multiplier, the analogue of Total War's unit-size setting. At 1.6 a legionary
- * cohort fields 256 men, which is close to Rome II's "ultra" infantry unit and puts about
- * 9,500 men on the field between the two armies — enough that the line of battle reads as
- * a mass rather than as a row of blocks.
+ * Unit-size multiplier, the analogue of Total War's unit-size setting. At 2.0 a legionary
+ * cohort fields 320 men and the two armies together put about 9,500 on the field.
+ *
+ * Deliberately biased toward *fewer, larger* units rather than many small ones. Total War
+ * caps an army at 20 units for a reason: beyond that a player cannot hold the whole order
+ * of battle in their head, and the unit cards stop fitting on screen. An earlier pass at
+ * 1.6 needed 48 units to reach the same headcount and the card bar ate a third of the
+ * viewport.
  */
-export const UNIT_SIZE_SCALE = 1.6;
+export const UNIT_SIZE_SCALE = 2.0;
 
 export function deploySiegeOfRome(battle: BattleSystem, ctx: EngineContext): ScenarioResult {
   const roman: DeployedUnit[] = [];
@@ -57,18 +61,20 @@ export function deploySiegeOfRome(battle: BattleSystem, ctx: EngineContext): Sce
   // First line: eight legionary cohorts shoulder to shoulder across ~560 m. A cohort in
   // `line` is about 27 m of frontage, so 70 m centres leave a deliberate interval — the
   // gaps the second line exists to plug.
-  const cohortSpacing = 70;
-  for (let k = 0; k < 8; k++) {
-    const x = (k - 3.5) * cohortSpacing;
+  // A cohort of 320 in `line` is about 38 m of frontage, so 96 m centres leave a real
+  // interval — the gaps the second line exists to plug.
+  const cohortSpacing = 96;
+  for (let k = 0; k < 6; k++) {
+    const x = (k - 2.5) * cohortSpacing;
     push(roman, battle.spawnUnit('legio-cohort', x, romanZ, NORTH, 'line'),
       `Cohort ${ROMAN_NUMERALS[k]}`);
   }
 
   // Second line, offset half an interval so it covers the first line's seams.
-  for (let k = 0; k < 5; k++) {
-    const x = (k - 2) * cohortSpacing + cohortSpacing * 0.5;
-    push(roman, battle.spawnUnit('legio-cohort', x, romanZ + 52, NORTH, 'line'),
-      `Cohort ${ROMAN_NUMERALS[k + 8] ?? String(k + 9)}`);
+  for (let k = 0; k < 4; k++) {
+    const x = (k - 1.5) * cohortSpacing + cohortSpacing * 0.5;
+    push(roman, battle.spawnUnit('legio-cohort', x, romanZ + 58, NORTH, 'line'),
+      `Cohort ${ROMAN_NUMERALS[k + 6]}`);
   }
 
   // Praetorians: the reserve proper, held behind the centre and committed by hand.
@@ -76,16 +82,13 @@ export function deploySiegeOfRome(battle: BattleSystem, ctx: EngineContext): Sce
   push(roman, battle.spawnUnit('praetorian-cohort', 46, romanZ + 104, NORTH, 'line'), 'Praetorian Guard II');
 
   // Urban cohorts refuse both flanks with a hedge of spears.
-  push(roman, battle.spawnUnit('urban-cohort', -318, romanZ - 8, NORTH, 'shieldwall'), 'Urban Cohort I');
-  push(roman, battle.spawnUnit('urban-cohort', -256, romanZ - 4, NORTH, 'shieldwall'), 'Urban Cohort II');
-  push(roman, battle.spawnUnit('urban-cohort', 256, romanZ - 4, NORTH, 'shieldwall'), 'Urban Cohort III');
-  push(roman, battle.spawnUnit('urban-cohort', 318, romanZ - 8, NORTH, 'shieldwall'), 'Urban Cohort IV');
+  push(roman, battle.spawnUnit('urban-cohort', -330, romanZ - 8, NORTH, 'shieldwall'), 'Urban Cohort I');
+  push(roman, battle.spawnUnit('urban-cohort', 330, romanZ - 8, NORTH, 'shieldwall'), 'Urban Cohort II');
 
   // Archers on the rise, shooting over the line.
-  push(roman, battle.spawnUnit('sagittarii', -140, romanZ + 82, NORTH, 'loose'), 'Syrian Archers');
-  push(roman, battle.spawnUnit('sagittarii', -48, romanZ + 82, NORTH, 'loose'), 'Cretan Archers');
-  push(roman, battle.spawnUnit('sagittarii', 48, romanZ + 82, NORTH, 'loose'), 'Osrhoene Archers');
-  push(roman, battle.spawnUnit('sagittarii', 140, romanZ + 82, NORTH, 'loose'), 'Ituraean Archers');
+  push(roman, battle.spawnUnit('sagittarii', -136, romanZ + 92, NORTH, 'loose'), 'Syrian Archers');
+  push(roman, battle.spawnUnit('sagittarii', 0, romanZ + 92, NORTH, 'loose'), 'Cretan Archers');
+  push(roman, battle.spawnUnit('sagittarii', 136, romanZ + 92, NORTH, 'loose'), 'Ituraean Archers');
 
   // Cavalry on both wings. The right is the heavier, held for the counter-blow.
   push(roman, battle.spawnUnit('equites', 402, romanZ + 34, NORTH, 'wedge'), 'Equites Singulares');
@@ -93,8 +96,7 @@ export function deploySiegeOfRome(battle: BattleSystem, ctx: EngineContext): Sce
   push(roman, battle.spawnUnit('equites', -402, romanZ + 34, NORTH, 'wedge'), 'Equites Stablesiani');
 
   // Bolt-throwers sited to sweep the whole approach.
-  push(roman, battle.spawnUnit('scorpio', -80, romanZ + 138, NORTH, 'line'), 'Scorpion Battery I');
-  push(roman, battle.spawnUnit('scorpio', 80, romanZ + 138, NORTH, 'line'), 'Scorpion Battery II');
+  push(roman, battle.spawnUnit('scorpio', 0, romanZ + 148, NORTH, 'line'), 'Scorpion Battery');
 
   // ---------------------------------------------------------------------
   // Juthungi host — a deep, ragged mass 320 m out, facing the city.
@@ -103,19 +105,19 @@ export function deploySiegeOfRome(battle: BattleSystem, ctx: EngineContext): Sce
 
   // Skirmishers screening the whole frontage — the host's youths, sent to draw the first
   // volleys and then melt back through the intervals.
-  for (let k = 0; k < 4; k++) {
-    const x = (k - 1.5) * 150;
+  for (let k = 0; k < 3; k++) {
+    const x = (k - 1) * 210;
     push(germanic, battle.spawnUnit('juthungi-skirmishers', x, germZ + 68, SOUTH, 'skirmish'),
-      ['Skirmishers of the Ford', 'Youths of the Host', 'Framea-Throwers', 'Boys of Vadomar'][k]);
+      ['Skirmishers of the Ford', 'Youths of the Host', 'Framea-Throwers'][k]);
   }
 
   // Main battle line: warbands massed in depth with spear blocks stiffening the joints.
   // Germanic armies fought by kindred, so the line is a row of named warbands rather than
   // an evenly-drilled front.
-  const bandNames = ['Warband of Semno', 'Ash-Spears', 'Warband of Vadomar', 'Oath-Spears',
-    'Warband of Gundomad', 'Elm-Spears', 'Warband of Rando', 'Shield-Sworn'];
-  for (let k = 0; k < 8; k++) {
-    const x = (k - 3.5) * 82;
+  const bandNames = ['Warband of Semno', 'Ash-Spears', 'Warband of Vadomar',
+    'Oath-Spears', 'Warband of Gundomad', 'Elm-Spears'];
+  for (let k = 0; k < 6; k++) {
+    const x = (k - 2.5) * 112;
     const spears = k % 2 === 1;
     push(germanic, battle.spawnUnit(
       spears ? 'juthungi-spears' : 'juthungi-warband',
@@ -129,10 +131,8 @@ export function deploySiegeOfRome(battle: BattleSystem, ctx: EngineContext): Sce
   push(germanic, battle.spawnUnit('juthungi-berserkers', 170, germZ - 52, SOUTH, 'horde'), 'Wolf-Coats');
 
   // Horse raiders sweeping wide on both wings, looking for an open flank.
-  push(germanic, battle.spawnUnit('juthungi-riders', -404, germZ + 38, SOUTH, 'loose'), 'Left-Wing Raiders');
-  push(germanic, battle.spawnUnit('juthungi-riders', -452, germZ + 66, SOUTH, 'loose'), 'Left-Wing Outriders');
-  push(germanic, battle.spawnUnit('juthungi-riders', 404, germZ + 38, SOUTH, 'loose'), 'Right-Wing Raiders');
-  push(germanic, battle.spawnUnit('juthungi-riders', 452, germZ + 66, SOUTH, 'loose'), 'Right-Wing Outriders');
+  push(germanic, battle.spawnUnit('juthungi-riders', -420, germZ + 46, SOUTH, 'loose'), 'Left-Wing Raiders');
+  push(germanic, battle.spawnUnit('juthungi-riders', 420, germZ + 46, SOUTH, 'loose'), 'Right-Wing Raiders');
 
   // Both sides start holding their ground; the AI takes it from here.
   for (const u of battle.units) u.order = UnitOrder.Hold;
