@@ -76,7 +76,7 @@ const SHOTS = {
   },
   melee: {
     desc: 'Ground level inside the melee — the hardest test of animation and gore',
-    follow: 'contact', zoom: 0.24, at: 88,
+    follow: 'contact', zoom: 0.30, at: 88,
   },
   cavalry: {
     // The old camera (210, 60) at yaw 1.6pi looked north-west into the Roman rear, with
@@ -463,17 +463,15 @@ try {
 
             if (n === -1) { /* already resolved above */ }
             else if (cells.size > 0) {
-              // Take the densest 40 m cell, then average it with its neighbours so the
-              // camera sits at the heart of the largest melee rather than on one man.
+              // Take the densest 40 m cell and use ITS OWN centroid. Averaging it with its
+              // neighbours was fine when the battle was one short clash, but now that it
+              // lasts minutes and spreads along a 600 m front there are several contact
+              // clusters, and blending the best cell with its neighbours pulled the focus
+              // into the empty ground between two of them.
               let bestKey = -1, bestN = 0;
               for (const [k, c] of cells) if (c.n > bestN) { bestN = c.n; bestKey = k; }
-              let ax = 0, az = 0, an = 0;
-              const bx = bestKey % 128, bz = Math.floor(bestKey / 128);
-              for (const [k, c] of cells) {
-                const cx2 = k % 128, cz2 = Math.floor(k / 128);
-                if (Math.abs(cx2 - bx) <= 1 && Math.abs(cz2 - bz) <= 1) { ax += c.x; az += c.z; an += c.n; }
-              }
-              fx = ax / an; fz = az / an;
+              const best = cells.get(bestKey);
+              fx = best.x / best.n; fz = best.z / best.n;
             }
             else if (n > 0) { fx = sx / n; fz = sz / n; }
             else {
