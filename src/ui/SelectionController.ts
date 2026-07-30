@@ -61,6 +61,16 @@ export class SelectionController {
    * are the fallback for a HUD running against a sim that has no ability system at all.
    */
   abilityProbe: AbilityProbe | null = null;
+  /**
+   * Unit whose banner covers a screen point, installed by `HudSystem`. A banner is the
+   * thing a player aims at to pull one cohort out of a melee, so it is a first-class hit
+   * target: hovering one highlights the unit and names it, clicking selects it, and
+   * shift- or ctrl-clicking adds to or removes from the selection. Right-clicking an
+   * enemy's banner attacks it, which falls out of the existing order path for free.
+   */
+  bannerAt: ((x: number, y: number) => number) | null = null;
+  /** Unit under the cursor's banner this frame, or -1. */
+  private overBanner = -1;
   /** Ability cooldown expiry times, keyed `unitId:abilityId`, in sim seconds. */
   private cooldowns = new Map<string, number>();
   /** Abilities the sim reports as currently running, keyed `unitId:abilityId`. */
@@ -247,7 +257,11 @@ export class SelectionController {
 
   update(ctx: EngineContext, heightAt: (x: number, z: number) => number): void {
     const input = ctx.input;
-    input.uiCapture = this.ptr.overUi;
+    this.overBanner = this.bannerAt ? this.bannerAt(this.ptr.x, this.ptr.y) : -1;
+    // Published so no other system treats a click aimed at a plaque as a click on the
+    // ground behind it. It is only ever true while the cursor is genuinely inside a
+    // plaque's box, so the field stays clickable everywhere else.
+    input.uiCapture = this.ptr.overUi || this.overBanner >= 0;
 
     this.updateGround(ctx, heightAt);
     const hovered = this.pickUnit(ctx);
@@ -269,9 +283,14 @@ export class SelectionController {
     }
   }
 
-  /** Nearest unit whose formation footprint contains the cursor, or -1. */
+  /** Nearest unit whose banner or formation footprint contains the cursor, or -1. */
   private pickUnit(ctx: EngineContext): number {
-    if (!this.groundValid || this.ptr.overUi) return -1;
+    if (this.ptr.overUi) return -1;
+    // Banners are tested first, and before `groundValid`: a plaque floats above the block
+    // and is very often over sky or over a hillside behind the unit, where the cursor ray
+    // never lands on the ground the unit is standing on.
+    if (this.overBanner >= 0) return this.overBanner;
+    if (!this.groundValid) return -1;
     // A few pixels of slack in world units keeps thin skirmish lines pickable when
     // zoomed out, without making close-up picking sloppy.
     const slack = Math.min(9, ctx.rig.metresPerPixel(ctx.viewH) * 7);

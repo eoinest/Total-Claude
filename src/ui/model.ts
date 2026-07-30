@@ -48,6 +48,19 @@ export interface UnitView {
   cx: number;
   cy: number;
   cz: number;
+  /**
+   * Where the living men actually stand, as an offset from `cx/cz`.
+   *
+   * The formation rectangle is where a unit is *supposed* to be. A cavalry wedge spreads
+   * well beyond it and a routed unit's men scatter over a hundred metres while the
+   * formation anchor keeps marching, so the banner tracks the mass rather than the plan:
+   * the offset is a shape property that changes slowly, and adding it to the live
+   * 30 Hz formation anchor gives a centroid that is both accurate and current.
+   */
+  massDx: number;
+  massDz: number;
+  /** Highest ground any living man in the unit stands on — the top of the block's mass. */
+  massTopY: number;
   frontage: number;
   depth: number;
   /** True while the player owns this unit and may give it orders. */
@@ -143,6 +156,10 @@ export class HudModel {
       let fighting = 0;
       let bracing = 0;
       let shooting = 0;
+      let mx = 0;
+      let mz = 0;
+      let mn = 0;
+      let top = -Infinity;
       if (!u.destroyed) {
         for (let k = 0; k < u.members.length; k++) {
           const i = u.members[k];
@@ -150,6 +167,14 @@ export class HudModel {
           if (st === SoldierState.Fighting) fighting++;
           else if (st === SoldierState.Bracing) bracing++;
           else if (st === SoldierState.Shooting || st === SoldierState.Throwing) shooting++;
+          if (st === SoldierState.Dead || st === SoldierState.Dying) continue;
+          mx += pool.x[i];
+          mz += pool.z[i];
+          mn++;
+          // `pool.y` is the ground under a man's feet, so the largest of them is the
+          // highest ground the block covers — better than sampling the heightfield at
+          // the formation rectangle, which is not where a scattered unit is standing.
+          if (pool.y[i] > top) top = pool.y[i];
         }
       }
       v.fighting = fighting;
@@ -164,6 +189,9 @@ export class HudModel {
       v.cx = u.x - s * v.depth * 0.5;
       v.cz = u.z - c * v.depth * 0.5;
       v.cy = battle.groundAt(v.cx, v.cz);
+      v.massDx = mn > 0 ? mx / mn - v.cx : 0;
+      v.massDz = mn > 0 ? mz / mn - v.cz : 0;
+      v.massTopY = top > -Infinity ? top : v.cy;
 
       if (!u.destroyed) {
         this.strength[u.faction] += u.alive;
@@ -219,6 +247,9 @@ export class HudModel {
         cx: u.x,
         cy: 0,
         cz: u.z,
+        massDx: 0,
+        massDz: 0,
+        massTopY: 0,
         frontage: u.width * u.spacingX,
         depth: 4,
         own: u.faction === PLAYER_FACTION,

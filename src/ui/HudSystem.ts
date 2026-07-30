@@ -14,7 +14,6 @@
  *   - the tick runs off unscaled wall-clock time so the HUD stays alive while paused
  */
 
-import type * as THREE from 'three';
 import type { EngineContext, QualityTier, Subsystem } from '../core/Engine';
 import type { BattleSystem } from '../sim/BattleSystem';
 import { Banners } from './Banners';
@@ -118,6 +117,12 @@ export class HudSystem implements Subsystem {
     this.overlay.init(ctx.scene);
 
     this.controller = new SelectionController(this.model, this.overlay, this.ptr);
+    // Deliberately NOT anchored to `VFXSystem.standardOf`, which returns the top of the
+    // unit's physical cloth standard. That pole stands in rank two — 1.05 m behind the
+    // front-rank midpoint, so roughly 3.5 m *in front of* the centre of a nine-rank-deep
+    // cohort — and projecting it put the plaque off the leading edge of the block by up to
+    // 49 px at zoom 0.62, in a direction that swung round with the camera yaw. `Banners`
+    // projects the block's own centroid instead; see the comment on `place`.
     this.tooltip = new Tooltip(this.root);
     this.cards = new UnitCards(this.model, this.controller, this.tooltip);
     this.command = new CommandPanel(this.model, this.controller);
@@ -130,6 +135,11 @@ export class HudSystem implements Subsystem {
 
     // Banners sit behind the panels but in front of the canvas.
     this.banners.attach(this.root);
+    // Hit testing in screen space rather than through `pointer-events`: `core/Input`
+    // listens on the canvas, so a DOM element that accepts the pointer also eats the
+    // wheel and the right button, and three dozen plaques scattered over the field would
+    // leave the player unable to zoom or rotate wherever the cursor happened to rest.
+    this.controller.bannerAt = (x, y) => this.banners.unitAt(x, y);
     this.controller.attach(this.root);
     this.topbar.attach(this.root, ctx);
     this.feed.attach(this.root, ctx);
@@ -160,6 +170,8 @@ export class HudSystem implements Subsystem {
         this.root.style.setProperty('--ui-scale', String(s));
         // Canvases are sized in CSS pixels, so a scale change needs a repaint.
         this.relayoutIn = 2;
+        // Every plaque just changed size, so its hit box has to be re-measured.
+        this.banners.remeasure();
       },
       bannersOn: () => this.banners.enabled,
       debugOn: () => this.debugOn,
@@ -178,11 +190,6 @@ export class HudSystem implements Subsystem {
           return null;
         }
       };
-    }
-    const vfx = ctx.tryGet('vfx') as unknown as
-      { standardOf?: (id: number, out: THREE.Vector3) => boolean } | undefined;
-    if (vfx && typeof vfx.standardOf === 'function') {
-      this.banners.standardOf = (id, out) => vfx.standardOf!(id, out);
     }
     // Real cooldowns rather than the HUD's own guesses, when the ability system is registered.
     const abilities = ctx.tryGet('abilities') as unknown as
@@ -364,6 +371,7 @@ export class HudSystem implements Subsystem {
     this.ptr.measure();
     this.tooltip.hide();
     this.relayoutIn = 2;
+    this.banners.remeasure();
   }
 
   dispose(): void {
