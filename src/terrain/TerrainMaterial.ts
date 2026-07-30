@@ -361,7 +361,11 @@ ${SPLAT_GLSL}`
   w[4] = cBare * 1.2 + smoothstep(0.13, 0.40, tSlope) * 1.75 + verge * 1.35 + nose * 0.7
        + smoothstep(0.6, 0.88, macroMid.b) * 1.5 * (1.0 - paved)
        + smoothstep(0.78, 0.97, nzSmall) * 0.5 * (1.0 - paved)
-       + fallow * nose * 1.4 + headland * 0.7;
+       + fallow * nose * 1.4 + headland * 0.7
+       // Traffic wears the fines out of a track and leaves the stones standing. Without
+       // this, trodden ground — army camps, the glacis, the ford approach — is a sheet of
+       // featureless chocolate mud wherever it is not grass.
+       + cTramp * cTramp * 1.5;
   // 5 exposed limestone: steep faces, quarry cuts, the noses of ridges.
   w[5] = smoothstep(0.32, 0.60, tSlope) * 2.9
        + cBare * smoothstep(0.18, 0.45, tSlope) * 2.2 + nose * 0.5;

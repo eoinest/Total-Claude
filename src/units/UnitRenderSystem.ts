@@ -16,7 +16,7 @@ import {
 import { buildSoldierAtlas, EMBLEM_ORIGIN, EMBLEM_TILE, type SoldierAtlas } from './atlas';
 import { buildSoldierGeometry, type Lod } from './soldierMesh';
 import { buildHorseGeometry, saddleOffset, HORSE_MASK_LO } from './horseMesh';
-import { resolveKit, emptyKit, ROUT_DROP_HI, type ResolvedKit } from './kit';
+import { resolveKit, emptyKit, ROUT_DROP_HI, Piece, type ResolvedKit } from './kit';
 import {
   renderImpostorAtlas, buildImpostorGeometry, makeImpostorMaterial, type ImpostorAtlas,
 } from './impostor';
@@ -121,6 +121,11 @@ const MAN_POSE_VARY: PoseVaryBones = {
   leftShoulder: restPos(MAN_RIG, MB.upperArmL, [0, 0, 0]),
   rightShoulder: restPos(MAN_RIG, MB.upperArmR, [0, 0, 0]),
   hipY: MAN_RIG.restT[MB.pelvis * 3 + 1],
+  weaponHand: restPos(MAN_RIG, MB.handR, [0, 0, 0]),
+  // A hedge of spears fans; a rank of drawn blades varies much less, because a man
+  // thrusting is pointing at something.
+  poleWeapons: [Piece.WeaponSpear, Piece.Pilum, Piece.JavelinBundle],
+  bladeWeapons: [Piece.WeaponSword, Piece.WeaponAxe],
 };
 
 /** Precomputed playback facts per packed clip, so the hot loop does no lookups. */

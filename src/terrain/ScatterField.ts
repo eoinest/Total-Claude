@@ -116,6 +116,27 @@ export class ScatterField {
       metalness: 0,
       side: THREE.DoubleSide,
     });
+    foliage.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader
+        .replace(
+          '#include <normal_fragment_begin>',
+          `#include <normal_fragment_begin>
+  // Leaf cards are double-sided so a crown reads from every bearing, but three's
+  // DOUBLE_SIDED handling flips the normal on back faces — which pointed half of every
+  // canopy away from the sun and rendered it flat black, so an olive read as a
+  // half-white, half-black blob. A canopy is a translucent mass of leaves, not a solid
+  // surface: keep the authored outward normal on both faces.
+  normal = normalize(vNormal);
+  nonPerturbedNormal = normal;`
+        )
+        // Leaves lit from behind glow rather than going dark. Small, because these are
+        // holm oak and olive, not birch.
+        .replace(
+          '#include <emissivemap_fragment>',
+          'totalEmissiveRadiance += diffuseColor.rgb * 0.16;'
+        );
+    };
+    foliage.customProgramCacheKey = () => 'veg-foliage-twosided-v1';
     this.materials.push(foliage);
 
     const trees = this.placeTrees();

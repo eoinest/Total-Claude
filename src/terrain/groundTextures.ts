@@ -75,7 +75,7 @@ export interface GroundLayerSpec {
 export const GROUND_LAYERS: readonly GroundLayerSpec[] = [
   { name: 'dry grass',   kind: 'dryGrass',       manifestId: 'dry-grass',       farScale: 4.3,  detailScale: 1.15, detailMix: 0.50, roughness: 0.94, albedo: [152, 138,  88], contrast: 1.18, chroma: 0.55, heightBias: 0.0 },
   { name: 'meadow grass',kind: 'meadowGrass',    manifestId: 'meadow-grass',    farScale: 3.9,  detailScale: 1.05, detailMix: 0.50, roughness: 0.92, albedo: [ 94, 118,  56], contrast: 1.18, chroma: 0.55, heightBias: 0.02 },
-  { name: 'trampled dirt',kind: 'compactedEarth',manifestId: null,              farScale: 4.6,  detailScale: 1.30, detailMix: 0.45, roughness: 0.95, albedo: [134, 104,  74], contrast: 1.20, chroma: 0.45, heightBias: 0.06 },
+  { name: 'trampled dirt',kind: 'compactedEarth',manifestId: null,              farScale: 4.6,  detailScale: 1.30, detailMix: 0.45, roughness: 0.95, albedo: [146, 116,  84], contrast: 1.25, chroma: 0.45, heightBias: 0.06 },
   { name: 'mud',         kind: 'mud',            manifestId: 'mud',             farScale: 2.6,  detailScale: 0.72, detailMix: 0.45, roughness: 0.74, albedo: [ 88,  76,  58], contrast: 1.05, chroma: 0.35, heightBias: 0.04 },
   { name: 'gravel',      kind: 'gravel',         manifestId: 'dirt-gravel',     farScale: 2.3,  detailScale: 0.62, detailMix: 0.50, roughness: 0.96, albedo: [146, 141, 128], contrast: 1.45, chroma: 0.60, heightBias: 0.12 },
   { name: 'limestone',   kind: 'limestone',      manifestId: null,              farScale: 6.0,  detailScale: 1.70, detailMix: 0.40, roughness: 0.86, albedo: [168, 166, 152], contrast: 1.35, chroma: 0.40, heightBias: 0.22 },

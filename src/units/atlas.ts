@@ -188,8 +188,12 @@ const MATS: Record<Mat, MatDef> = {
       mix3(out, RUST, Math.min(0.7, rust), out);
     },
     height: (u, v) => fbm(u * 14, v * 14, 3, 14, 3) * 0.6 + vnoise(u * 3, v * 40, 3, 11) * 0.4,
-    roughness: 0.55,
-    metalness: 0.42,
+    // Iron is a metal, and a metal's albedo *is* its specular colour: at metalness 0.42 a
+    // helmet had no reflection to speak of and read as painted plastic. With a real
+    // environment map bound, near-full metalness is both correct and what gives the tight
+    // bright crown highlight a Rome II helmet has.
+    roughness: 0.5,
+    metalness: 0.88,
     bump: 0.5,
   },
   // Cleaner plate for helmets and bosses.
@@ -200,8 +204,10 @@ const MATS: Record<Mat, MatDef> = {
       mix3([0.24, 0.235, 0.222], [0.52, 0.505, 0.475], n * 0.7 + brush * 0.3, out);
     },
     height: (u, v) => vnoise(u * 56, v * 2, 56, 7) * 0.35 + fbm(u * 8, v * 8, 3, 8, 5) * 0.65,
-    roughness: 0.42,
-    metalness: 0.5,
+    // Hammered and burnished, so tighter than the worn iron: this is the helmet bowl and
+    // the shield boss, the two things on a man that catch the sun.
+    roughness: 0.31,
+    metalness: 0.95,
     bump: 0.25,
   },
   // Gilded bronze: praetorian fittings, helmet trim, harness bosses.
@@ -213,8 +219,8 @@ const MATS: Record<Mat, MatDef> = {
       mix3(out, [0.34, 0.5, 0.4], Math.min(0.45, patina), out);
     },
     height: (u, v) => fbm(u * 10, v * 10, 3, 10, 9),
-    roughness: 0.34,
-    metalness: 0.5,
+    roughness: 0.28,
+    metalness: 0.96,
     bump: 0.3,
   },
   [Mat.Mail]: {
@@ -224,8 +230,11 @@ const MATS: Record<Mat, MatDef> = {
       mix3([0.2, 0.195, 0.185], [0.54, 0.53, 0.5], h * (0.7 + grime * 0.3), out);
     },
     height: (u, v) => mailHeight(u, v, 18),
-    roughness: 0.6,
-    metalness: 0.4,
+    // Mail is thousands of small curved surfaces, so it scatters: rougher than plate, but
+    // still a metal, and the ring highlights are what make it read as iron rather than as
+    // grey knitwear.
+    roughness: 0.55,
+    metalness: 0.9,
     bump: 1.0,
   },
   // Lorica squamata: overlapping bronze-washed scales wired to a linen backing.
@@ -255,8 +264,8 @@ const MATS: Record<Mat, MatDef> = {
       const side = 1 - Math.abs(fx - 0.5) * 1.7;
       return Math.max(0, Math.min(1, (1 - fy * 0.85) * Math.max(0, side)));
     },
-    roughness: 0.42,
-    metalness: 0.4,
+    roughness: 0.34,
+    metalness: 0.92,
     bump: 0.9,
   },
   [Mat.LeatherBrown]: {
@@ -330,10 +339,14 @@ const MATS: Record<Mat, MatDef> = {
       const g = 0.6 + pore - blotch * 0.5 - crease;
       out[0] = Math.min(1, g); out[1] = Math.min(1, g * 0.955); out[2] = Math.min(1, g * 0.9);
     },
+    // Elbow at v = 0.5 and wrist or knee at v = 0.94: both cut into the height field so the
+    // cavity AO darkens them, which is the cheapest thing that stops a bare limb reading as
+    // a smooth dowel.
     height: (u, v) =>
-      fbm(u * 44, v * 44, 3, 44, 47) * 0.7
-      + (1 - Math.exp(-((v - 0.5) ** 2) / 0.0032)) * 0.3,
-    roughness: 0.58,
+      fbm(u * 44, v * 44, 3, 44, 47) * 0.55
+      + (1 - Math.exp(-((v - 0.5) ** 2) / 0.0032)) * 0.3
+      + (1 - Math.exp(-((v - 0.94) ** 2) / 0.0018)) * 0.15,
+    roughness: 0.55,
     metalness: 0,
     bump: 0.3,
   },
@@ -417,7 +430,10 @@ const MATS: Record<Mat, MatDef> = {
       // Lit along the top of each plate, shadowed in the overlap at the bottom.
       const shade = 0.55 + (1 - fy) * 0.55;
       mix3(IRON_DARK, IRON, Math.min(1, shade * (0.75 + n * 0.35)), out);
-      if (fy > 0.86) mix3(out, [0.08, 0.07, 0.06], 0.75, out);
+      // The overlap between plates is a real gap with a real shadow in it. A wide, near
+      // black separation line is most of what makes segmentata read as assembled bands
+      // rather than as a ribbed tube.
+      if (fy > 0.8) mix3(out, [0.035, 0.032, 0.03], 0.88, out);
       // Rivets: a row of bright dots near the top edge of every plate.
       const rivets = 9;
       const rx = u * rivets;
@@ -430,14 +446,14 @@ const MATS: Record<Mat, MatDef> = {
       const bands = 7;
       const gy = v * bands;
       const fy = gy - Math.floor(gy);
-      const plate = fy > 0.88 ? 0 : 0.4 + (1 - fy) * 0.6;
+      const plate = fy > 0.8 ? 0 : 0.4 + (1 - fy) * 0.6;
       const rivets = 9;
       const rx = u * rivets;
       const dr = Math.hypot(rx - Math.floor(rx) - 0.5, (fy - 0.22) * bands * 0.5);
       return Math.min(1, plate + (dr < 0.2 ? (1 - dr / 0.2) * 0.5 : 0));
     },
-    roughness: 0.46,
-    metalness: 0.45,
+    roughness: 0.36,
+    metalness: 0.93,
     bump: 0.9,
   },
   [Mat.HideBay]: {
@@ -680,9 +696,15 @@ function drawEmblem(ctx: CanvasRenderingContext2D, name: string, size: number): 
       }
       break;
     }
+    // The tribal boards are drawn pale-field-dark-device on purpose. The shader gives each
+    // man his own paint by multiplying the whole facing, and a multiply preserves contrast
+    // ratios — so a dark spiral on pale limewood stays a dark spiral whether the man
+    // whitewashed his board, put ochre on it or left the wood bare, while a *pale* device on
+    // a dark field (which is how these used to be drawn) collapses the moment you tint it.
+    // It is also what the Illerup Adal and Thorsberg finds actually are.
     case 'germanic-spiral': {
-      field('#5a6b4a', '#3a2c1c');
-      ctx.strokeStyle = '#d6cbb0';
+      field('#cfc0a0', '#4a3a26');
+      ctx.strokeStyle = '#5c2a20';
       ctx.lineWidth = size * 0.05;
       ctx.beginPath();
       for (let i = 0; i <= 220; i++) {
@@ -698,8 +720,8 @@ function drawEmblem(ctx: CanvasRenderingContext2D, name: string, size: number): 
       break;
     }
     case 'germanic-sunwheel': {
-      field('#7a4526', '#31251a');
-      ctx.strokeStyle = '#e0d4b4';
+      field('#d3c6a6', '#413324');
+      ctx.strokeStyle = '#2a231c';
       ctx.lineWidth = size * 0.055;
       ctx.beginPath();
       ctx.arc(0, 0, size * 0.32, 0, Math.PI * 2);
@@ -715,8 +737,8 @@ function drawEmblem(ctx: CanvasRenderingContext2D, name: string, size: number): 
     }
     case 'germanic-wolf': {
       // A wolf's head, stylised down to what survives on a shield at 30 m.
-      field('#3f4a3c', '#2a1f15');
-      ctx.fillStyle = '#cdbfa2';
+      field('#c9bb9c', '#3a2c1f');
+      ctx.fillStyle = '#41281c';
       ctx.beginPath();
       ctx.moveTo(-size * 0.24, -size * 0.06);
       ctx.lineTo(-size * 0.3, -size * 0.3);
@@ -729,13 +751,13 @@ function drawEmblem(ctx: CanvasRenderingContext2D, name: string, size: number): 
       ctx.lineTo(-size * 0.22, size * 0.18);
       ctx.closePath();
       ctx.fill();
-      ctx.fillStyle = '#3f4a3c';
+      ctx.fillStyle = '#c9bb9c';
       for (const s of [-1, 1]) {
         ctx.beginPath();
         ctx.ellipse(s * size * 0.1, -size * 0.04, size * 0.045, size * 0.03, 0, 0, Math.PI * 2);
         ctx.fill();
       }
-      ctx.fillStyle = '#efe6d0';
+      ctx.fillStyle = '#e8dcc2';
       for (let i = 0; i < 4; i++) {
         const x = -size * 0.1 + i * size * 0.07;
         ctx.beginPath();
@@ -748,18 +770,18 @@ function drawEmblem(ctx: CanvasRenderingContext2D, name: string, size: number): 
       break;
     }
     default: {
-      // Plain limewood with a painted rim and a bare iron boss — the commonest shield in
-      // the host, and the one that reads as "this man made his own kit".
-      field('#8a6a42', '#39291a');
-      ctx.strokeStyle = '#6d3a24';
+      // Plain limewood with a painted rim ring and the plank lines showing through — the
+      // commonest shield in the host, and the one that reads as "this man made his own kit".
+      field('#cdbe9e', '#42331f');
+      ctx.strokeStyle = '#5a3320';
       ctx.lineWidth = size * 0.05;
       ctx.beginPath();
       ctx.arc(0, 0, size * 0.34, 0, Math.PI * 2);
       ctx.stroke();
       ctx.globalAlpha = 0.5;
       for (let i = 0; i < 6; i++) {
-        ctx.fillStyle = '#5f4a2e';
-        ctx.fillRect(-c, -c + (i * size) / 6, size, size * 0.01);
+        ctx.fillStyle = '#8c7a58';
+        ctx.fillRect(-c, -c + (i * size) / 6, size, size * 0.012);
       }
       ctx.globalAlpha = 1;
       break;
@@ -855,8 +877,11 @@ export function buildSoldierAtlas(anisotropy: number): SoldierAtlas {
         // Cavity AO from the height field: crevices between mail rings and under the
         // overlap of plate bands are what make armour read as assembled rather than
         // painted on.
+        // Cavity AO. The floor was 0.55, which is barely a shadow; at 0.3 a mail crevice
+        // and the gap between two girdle plates actually go dark, which is what the
+        // reference frames show and what the rubric's contact-darkening item is asking for.
         const h = heights[y * TILE + x];
-        const ao = 0.55 + h * 0.45;
+        const ao = 0.3 + h * 0.7;
         ormData.data[o] = Math.round(Math.min(1, ao) * 255);
         ormData.data[o + 1] = Math.round(Math.min(1, def.roughness * (0.85 + (1 - h) * 0.3)) * 255);
         ormData.data[o + 2] = Math.round(def.metalness * 255);

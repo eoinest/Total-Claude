@@ -163,6 +163,32 @@ float soldierChain( float lo, float hi ) {
 #define SOLDIER_TILT( a, b, k ) { float t_ = a; a = t_ + (k) * (b); b = b - (k) * t_; }
 
 /**
+ * Carried-weapon angle jitter.
+ *
+ * A rank in which every pilum is exactly parallel reads as instanced geometry more loudly
+ * than anything else in the frame. A real hedge of spears fans across twenty-odd degrees
+ * and no two shafts are parallel.
+ *
+ * Applied to the *rest* position, about the rest position of the hand that holds the
+ * weapon, before skinning. Conjugating a rotation by the bone transform preserves its
+ * angle, so a fan authored here is the same size of fan in the posed frame, and it costs
+ * no extra bone fetches — the weapon is already rigidly bound to the hand.
+ */
+void soldierWeaponJitter( float v, inout vec3 p, inout vec3 n ) {
+  float pid = aPieceTint.x;
+  float k = SOLDIER_IS_POLE( pid ) ? 0.30 : SOLDIER_IS_BLADE( pid ) ? 0.13 : 0.0;
+  if ( k <= 0.0 ) return;
+  float a = ( fract( v * 131.71 ) - 0.5 ) * k;
+  float b = ( fract( v * 149.33 ) - 0.5 ) * k;
+  vec3 d = p - SOLDIER_HAND;
+  SOLDIER_TILT( d.y, d.z, a )
+  SOLDIER_TILT( d.x, d.y, b )
+  p = d + SOLDIER_HAND;
+  SOLDIER_TILT( n.y, n.z, a )
+  SOLDIER_TILT( n.x, n.y, b )
+}
+
+/**
  * Per-man pose micro-variation.
  *
  * Phase offsets and clip variants stop a rank from being in the same pose at the same
@@ -260,7 +286,12 @@ void soldierPoseVary( float v, inout vec3 sp, inout vec3 sn ) {
 const body = (withNormal: boolean): string => /* glsl */ `
 {
   vec3 sp, sn;
-  soldierSkin( position, ${withNormal ? 'objectNormal' : 'vec3( 0.0, 1.0, 0.0 )'}, sp, sn );
+  vec3 restP = position;
+  vec3 restN = ${withNormal ? 'objectNormal' : 'vec3( 0.0, 1.0, 0.0 )'};
+#ifdef SOLDIER_POSE_VARY
+  soldierWeaponJitter( iAnimB.w, restP, restN );
+#endif
+  soldierSkin( restP, restN, sp, sn );
 
 #ifdef SOLDIER_POSE_VARY
   // Skipped for a corpse: the ragdoll solver owns every joint of a fallen body, and
@@ -361,13 +392,36 @@ const TINT_BODY = /* glsl */ `
     tint = mix( dyed, vec3( 0.16, 0.125, 0.095 ), fract( v * 61.7 ) * 0.85 ) * batch;
   }
   else if ( slot < 6.5 ) {
-    // Shield facing. A legion's scuta were painted by the unit and drift a few percent;
-    // a tribal board was painted by the man who carried it and drifts a great deal. Which
-    // case this is falls straight out of the emblem index — tiles 4 and up are the tribal
-    // devices — so it needs no attribute of its own.
-    float spread = iCol0.w > 3.5 ? 0.52 : 0.13;
-    tint = vec3( 1.0 ) + vec3(
-      fract( v * 97.1 ) - 0.5, fract( v * 103.7 ) - 0.5, fract( v * 109.3 ) - 0.5 ) * spread;
+    // ---- shield facing ----
+    // A legion's scuta were painted by the century from one pot and are near-identical:
+    // a few percent of drift, no more, which is exactly what a Rome II legion looks like.
+    //
+    // A tribal board is the opposite. Tacitus says the Germans painted their shields in
+    // colours of their own choosing, the Illerup and Thorsberg boards are pale limewood
+    // with a dark device, and the paint a man could get hold of was whitewash, ochre,
+    // madder, woad or pitch. So a tribal facing draws a whole paint from that list rather
+    // than nudging one colour, which is what actually gives a host of two thousand men two
+    // thousand different shields.
+    //
+    // Which case this is falls straight out of the emblem index — tiles 4 and up are the
+    // tribal devices — so it costs no attribute of its own. The tribal tiles are drawn
+    // pale-field-dark-device precisely so that a multiply can recolour the field while
+    // leaving the device legible: multiplication preserves contrast ratios.
+    if ( iCol0.w > 3.5 ) {
+      float pick = fract( v * 97.1 );
+      vec3 paint =
+          pick < 0.20 ? vec3( 1.02, 0.96, 0.84 )   // bare limewood, oiled
+        : pick < 0.36 ? vec3( 1.16, 1.13, 1.04 )   // whitewash
+        : pick < 0.54 ? vec3( 1.10, 0.74, 0.30 )   // yellow ochre
+        : pick < 0.72 ? vec3( 0.98, 0.30, 0.21 )   // madder red
+        : pick < 0.85 ? vec3( 0.40, 0.50, 0.70 )   // woad blue-grey
+        : pick < 0.94 ? vec3( 0.38, 0.50, 0.31 )   // green earth
+        :               vec3( 0.24, 0.22, 0.20 );  // pitch black
+      tint = paint * ( 0.86 + fract( v * 103.7 ) * 0.28 );
+    } else {
+      tint = vec3( 1.0 ) + vec3(
+        fract( v * 97.1 ) - 0.5, fract( v * 103.7 ) - 0.5, fract( v * 109.3 ) - 0.5 ) * 0.14;
+    }
   }
   else                    tint = metal;
   vSoldierTint = tint;
@@ -412,6 +466,11 @@ diffuseColor.rgb = mix(
 const v3 = (p: readonly [number, number, number]): string =>
   `vec3(${p[0].toFixed(4)}, ${p[1].toFixed(4)}, ${p[2].toFixed(4)})`;
 
+/** A GLSL predicate matching any of a set of piece ids. Exact equality is safe: the ids are
+ *  small integers and reach the shader through a float attribute unchanged. */
+const pieceTest = (ids: readonly number[]): string =>
+  ids.length ? ids.map((i) => `(p) == ${i}.0`).join(' || ') : 'false';
+
 function defines(o: SoldierShaderOptions): string {
   const out = [
     `#define SOLDIER_LEAN_H ${o.leanHeight.toFixed(3)}`,
@@ -433,7 +492,10 @@ function defines(o: SoldierShaderOptions): string {
       `#define SOLDIER_NECK ${v3(pv.neckPivot)}`,
       `#define SOLDIER_SHOULDER_L ${v3(pv.leftShoulder)}`,
       `#define SOLDIER_SHOULDER_R ${v3(pv.rightShoulder)}`,
-      `#define SOLDIER_HIP_Y ${pv.hipY.toFixed(4)}`
+      `#define SOLDIER_HIP_Y ${pv.hipY.toFixed(4)}`,
+      `#define SOLDIER_HAND ${v3(pv.weaponHand)}`,
+      `#define SOLDIER_IS_POLE(p) (${pieceTest(pv.poleWeapons)})`,
+      `#define SOLDIER_IS_BLADE(p) (${pieceTest(pv.bladeWeapons)})`
     );
   }
   return out.join('\n');

@@ -203,12 +203,15 @@ export function generateFoliageAtlas(): Uint8Array {
       rx: 13,
       ry: 3.8,
       spread: 0.44,
-      // Olive: the silver underside of the leaf is the whole point of the tree.
+      // Olive: the silver underside of the leaf is the whole point of the tree — but it is
+      // *silver-green*, not white. An earlier set topped out at sRGB 190, a linear albedo
+      // of 0.52, which is brighter than travertine: in a sunlit frame a quarter of every
+      // olive crown clipped to white and the tree read as a snowball.
       cols: [
-        [124, 130, 98],
-        [158, 162, 130],
-        [190, 192, 166],
-        [96, 104, 76],
+        [ 84,  94,  66],
+        [106, 116,  86],
+        [132, 140, 112],
+        [ 62,  72,  52],
       ],
     },
     {

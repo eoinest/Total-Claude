@@ -220,11 +220,14 @@ export function resolveKit(def: UnitTypeDef, variant: number, out: ResolvedKit):
       case 'horns': if (crestRoll < 0.45) add(Piece.CrestHorns); break;
       case 'feather': if (crestRoll < 0.7) add(Piece.CrestPlume); break;
       case 'none':
-        // Crest boxes and feather tubes turn up on third-century helmets even where a
-        // plume was not issue kit, and the reconstruction drawings of Intercisa finds show
-        // them fitted. About one man in seven, which is enough to break up a helmet line
-        // without turning a cohort into a parade.
-        if (!germanic && crestRoll < 0.15) add(Piece.CrestPlume);
+        // Crest boxes and feather tubes turn up on third-century helmets even where a plume
+        // was not issue kit, and the Rome II reference frames show roughly a quarter of a
+        // legionary line crested — some with a black feather pair, some with a horsehair
+        // ridge. That proportion is what actually breaks up a helmet line.
+        if (!germanic) {
+          if (crestRoll < 0.16) add(Piece.CrestPlume);
+          else if (crestRoll < 0.26) add(Piece.CrestLongitudinal);
+        }
         break;
     }
   }
