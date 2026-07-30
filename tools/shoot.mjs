@@ -50,8 +50,11 @@ const SHOTS = {
     x: 0, z: 90, zoom: 0.72, yaw: Math.PI * 0.82, at: 2,
   },
   romanline: {
+    // Auto-framed on the actual front rank. A hand-placed focus goes stale the moment the
+    // order of battle, the terrain or the deployment changes, and it did: the line ended
+    // up in the top-left corner with 90% of the frame full of grass.
     desc: 'Low telephoto along the Roman front rank — reads armour, shields, ranks',
-    x: -20, z: 128, zoom: 0.16, yaw: Math.PI * 1.42, at: 2,
+    follow: 'romanFront', zoom: 0.19, at: 2,
   },
   germanhorde: {
     desc: 'Into the Juthungi mass at eye level — reads variety and disorder',
@@ -89,7 +92,7 @@ const SHOTS = {
     // surface. An oblique view down the wall line puts the sun raking across the
     // brickwork and shows the tower spacing at the same time.
     desc: 'Along the Aurelian Wall - raking light on brick courses, towers, scaffolding',
-    x: -120, z: 458, zoom: 0.44, yaw: Math.PI * 0.5, at: 2,
+    follow: 'wall', zoom: 0.62, at: 2,
   },
   skyline: {
     desc: 'Rome behind the wall - Mausoleum, Pantheon, theatres',
@@ -305,7 +308,52 @@ try {
               if (take) { sx += p.x[i]; sz += p.z[i]; n++; }
             }
 
-            if (s.follow === 'cavalry') {
+            if (s.follow === 'romanFront' || s.follow === 'germanFront') {
+              // Frame the *front rank* of one army obliquely. Averaging the whole unit
+              // would put the focus inside the block; taking rank 0 only, of the infantry
+              // units nearest the enemy, puts it on the face of the line where the kit
+              // reads. Look along the line rotated 40 degrees off, so ranks recede.
+              const want = s.follow === 'romanFront' ? 0 : 1;
+              let fsx = 0, fsz = 0, fn = 0;
+              for (let i = 0; i < p.count; i++) {
+                if (p.faction[i] !== want) continue;
+                if (p.rank[i] > 1) continue;
+                const st = p.state[i];
+                if (st === 10 || st === 11) continue;
+                fsx += p.x[i]; fsz += p.z[i]; fn++;
+              }
+              if (fn > 0) {
+                fx = fsx / fn;
+                fz = fsz / fn;
+                // Stand off along the line and look down it at an angle.
+                fyaw = (want === 0 ? Math.PI * 1.5 : Math.PI * 0.5) + 0.7;
+                n = -1;
+              }
+            }
+
+            if (n === 0 && s.follow === 'wall') {
+              // Frame a real wall bay rather than a guessed coordinate. The curtain
+              // follows the hill crest, so its z varies by 130 m across the map and a
+              // hardcoded point lands on open ground as easily as on masonry.
+              const city = g.engine.context.tryGet('city');
+              const segs = city?.getWallSegments?.() ?? [];
+              if (segs.length) {
+                // Pick a bay left of the gate: far enough along the curtain that several
+                // towers recede into the distance behind it.
+                const seg = segs[Math.max(0, Math.floor(segs.length * 0.3))];
+                // Focus on the masonry itself, lifted to mid-height so the camera is not
+                // pitched into the grass, and look at the curtain obliquely rather than
+                // along it: a pure end-on view is mostly foreshortened tower, while ~35
+                // degrees off the wall axis shows the face, the courses and the towers
+                // receding at once.
+                fx = (seg.x1 + seg.x2) / 2;
+                fz = (seg.z1 + seg.z2) / 2 - 6;
+                fyaw = Math.atan2(seg.x2 - seg.x1, seg.z2 - seg.z1) + 0.62;
+                n = -1; // signal: focus already resolved, skip the centroid paths
+              }
+            }
+
+            if (n === 0 && s.follow === 'cavalry') {
               // Centroid of the mounted units still in the fight.
               for (const u of b.units) {
                 if (u.destroyed || u.alive === 0) continue;
@@ -315,7 +363,8 @@ try {
               }
             }
 
-            if (n > 0) { fx = sx / n; fz = sz / n; }
+            if (n === -1) { /* already resolved above */ }
+            else if (n > 0) { fx = sx / n; fz = sz / n; }
             else {
               // Nothing matched (too early, or everyone already dead): fall back to the
               // midpoint between the two armies rather than to a stale constant.
@@ -326,7 +375,7 @@ try {
 
             // Look along the axis between the armies, swung 55 degrees off so the shot is
             // oblique to the line of battle rather than straight down it.
-            if (cn[0] && cn[1]) {
+            if (n !== -1 && cn[0] && cn[1]) {
               const ax = cx[0] / cn[0], az = cz[0] / cn[0];
               const bx = cx[1] / cn[1], bz = cz[1] / cn[1];
               fyaw = Math.atan2(bx - ax, bz - az) + 0.96;
