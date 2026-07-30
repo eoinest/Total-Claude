@@ -65,6 +65,12 @@ const PRESS_RELAX = 1.6;
  * either side fighting, and the engagement never resolving.
  */
 const PRESS_RANKS = 2.5;
+/**
+ * Seconds an order suppresses the contact lock. Long enough to clear CONTACT_EXIT (4.5 m)
+ * at a walk — a disengaging formation needs about three seconds — and short enough that a
+ * unit ordered *into* a fight still locks up promptly on arrival.
+ */
+const ORDER_GRACE = 3.2;
 
 export class BattleSystem implements Subsystem {
   readonly name = 'battle';
@@ -86,6 +92,8 @@ export class BattleSystem implements Subsystem {
     this.terrain = ctx.tryGet<TerrainSystem>('terrain');
     this.pool = new SoldierPool(ctx.quality.maxSoldiers);
     this.mounted = new Uint8Array(ctx.quality.maxSoldiers);
+    this.orderGrace = new Float32Array(256);
+    this.breakingOff = new Uint8Array(256);
     this.press = new Float32Array(ctx.quality.maxSoldiers);
     this.hash = new SpatialHash(1500, 3.5);
 
@@ -252,6 +260,15 @@ export class BattleSystem implements Subsystem {
       const u = this.unitById(id);
       if (!u || u.destroyed) continue;
 
+      // Any order that changes the unit's destination breaks contact. Without this the
+      // geometric lock re-asserts on the next tick and the order is silently discarded.
+      if (o.kind === 'move' || o.kind === 'attackMove' || o.kind === 'attack' || o.kind === 'halt') {
+        this.growUnitScratch(u.id + 1);
+        u.contactLock = false;
+        u.charging = false;
+        this.orderGrace[u.id] = ORDER_GRACE;
+      }
+
       switch (o.kind) {
         case 'move':
         case 'attackMove': {
@@ -374,6 +391,12 @@ export class BattleSystem implements Subsystem {
     const rh = new Float32Array(size);
     rh.set(this.routHold);
     this.routHold = rh;
+    const og = new Float32Array(size);
+    og.set(this.orderGrace);
+    this.orderGrace = og;
+    const bo = new Uint8Array(size);
+    bo.set(this.breakingOff);
+    this.breakingOff = bo;
   }
 
   /** Metres between this unit's front rank and the nearest enemy's. */
@@ -434,7 +457,10 @@ export class BattleSystem implements Subsystem {
     const near = routing ? { dist: Infinity, id: -1 } : this.nearestEnemyFront(u);
     this.frontGaps[u.id] = near.dist;
     this.frontEnemies[u.id] = near.id;
-    if (routing) {
+    const grace = this.orderGrace[u.id] > 0;
+    if (grace) this.orderGrace[u.id] = Math.max(0, this.orderGrace[u.id] - dt);
+
+    if (routing || grace) {
       u.contactLock = false;
     } else if (u.contactLock) {
       if (near.dist > CONTACT_EXIT) {
@@ -510,7 +536,29 @@ export class BattleSystem implements Subsystem {
     // is the only thing allowed to move the anchor from here, so a line that is losing
     // gives ground and a line that is winning walks forward, and neither slides
     // sideways chasing the other's centre.
-    if (u.contactLock) {
+    //
+    // But the lock exists to stop two lines walking *through* each other, not to pin a
+    // unit that has been told to leave. If the order sends it away from the enemy it is
+    // locked with, let it go — otherwise a pursued unit is frozen the instant its pursuer
+    // catches up, and a withdraw order can never be carried out. A timed grace was not
+    // enough: the unit broke off, moved five metres, was caught, and stopped again.
+    let breakingOff = false;
+    if (u.contactLock && distToTarget > 0.35) {
+      const eid = this.frontEnemies[u.id];
+      const e = eid >= 0 ? this.unitById(eid) : undefined;
+      if (!e) breakingOff = true;
+      else {
+        // Positive dot = the ordered move closes on the enemy; negative = it opens away.
+        const toE = Math.hypot(e.x - u.x, e.z - u.z) || 1;
+        const dot = ((e.x - u.x) / toE) * (dx / distToTarget)
+                  + ((e.z - u.z) / toE) * (dz / distToTarget);
+        breakingOff = dot < -0.25;
+      }
+    }
+
+    this.breakingOff[u.id] = breakingOff ? 1 : 0;
+
+    if (u.contactLock && !breakingOff) {
       u.facing = turnToward(u.facing, u.targetFacing, dt * 0.35);
       const drain = u.engaged ? dt / (def.stamina * 2.4) : -dt / 26;
       u.fatigue = clamp01(u.fatigue + drain);
@@ -666,16 +714,31 @@ export class BattleSystem implements Subsystem {
       // fighting altogether while still nominally engaged.
       const pressing = u.contactLock && !routing;
       const pressLimit = PRESS_RANKS * u.spacingZ;
+      // While an order is breaking contact, men in melee must follow their slot like
+      // everyone else. Holding them made a withdraw order physically impossible: the
+      // anchor crept away but every front-ranker stayed where he was, so the unit moved
+      // 1.8 m in three seconds, never cleared CONTACT_EXIT, and re-locked — which is what
+      // "the units would not always listen to me" was.
+      // Fighting men follow their slot while the unit is breaking contact — either inside
+      // the post-order window, or because its orders are actively taking it away.
+      const disengaging = this.orderGrace[u.id] > 0 || this.breakingOff[u.id] === 1;
 
       for (const i of u.members) {
         const st = p.state[i] as SoldierState;
         if (st === SoldierState.Dead || st === SoldierState.Dying) continue;
-        // A man locked in melee holds his ground rather than chasing his slot.
-        if (st === SoldierState.Fighting) {
+        // A man locked in melee holds his ground rather than chasing his slot — unless he
+        // has been ordered out of it.
+        if (st === SoldierState.Fighting && !disengaging) {
           this.press[i] = 0;
           p.vx[i] = damp(p.vx[i], 0, 9, dt);
           p.vz[i] = damp(p.vz[i], 0, 9, dt);
           continue;
+        }
+        if (st === SoldierState.Fighting && disengaging) {
+          // Break off: drop the opponent and let the state machine pick a locomotion clip,
+          // so the man visibly turns and walks out instead of swinging at nothing.
+          p.target[i] = -1;
+          p.setState(i, u.running ? SoldierState.Running : SoldierState.Marching);
         }
 
         f.offset(SCRATCH, p.slot[i], u.width, ranks, u.spacingX, u.spacingZ);
@@ -760,6 +823,24 @@ export class BattleSystem implements Subsystem {
     }
     void dt;
   }
+
+  /**
+   * Seconds of immunity from the geometric contact lock, per unit.
+   *
+   * A locked formation ignores its move target — that is what stops two lines walking
+   * through each other. But the lock is set from front-to-front distance alone, so once a
+   * unit was engaged it could never be ordered out: the player's order cleared the flag and
+   * the very next tick re-set it, because the enemy was still a metre and a half away. The
+   * unit went on pursuing whatever it had hold of and read as disobedient, which is exactly
+   * how it was reported.
+   *
+   * An order now buys a window in which the lock cannot re-assert, long enough to physically
+   * walk out of contact. An order is the player overriding the situation; the situation must
+   * not immediately override the order.
+   */
+  private orderGrace!: Float32Array;
+  /** 1 while a unit's current order is taking it away from the enemy it is locked with. */
+  private breakingOff!: Uint8Array;
 
   /** 1 if this soldier is mounted. Set at spawn; read in the crowd-separation inner loop. */
   private mounted!: Uint8Array;

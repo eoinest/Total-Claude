@@ -118,9 +118,25 @@ export class RTSCamera {
     this.yawTarget = yaw;
   }
 
+  /**
+   * Global scale on every incoming shake request.
+   *
+   * The effects system asks for amplitudes calibrated to a single dramatic impact, but a
+   * battle fires `cameraShake` continuously — every cavalry charge and every line clash —
+   * and `Math.max` means they never cancel, they only ever raise. The result reads as a
+   * permanently unsteady camera rather than as impacts. Scaling here rather than at each
+   * call site keeps one place to tune, and leaves the relative weight of a cavalry charge
+   * against a shield crash intact.
+   */
+  shakeScale = 0.35;
+  /** Ceiling on accumulated amplitude, in metres of eye displacement. */
+  private readonly shakeMax = 0.34;
+
   shake(amplitude: number, decay = 3.2): void {
-    this.shakeAmp = Math.max(this.shakeAmp, amplitude);
-    this.shakeDecay = decay;
+    this.shakeAmp = Math.min(this.shakeMax, Math.max(this.shakeAmp, amplitude * this.shakeScale));
+    // Decay faster than requested as well: a shake that lingers past the impact that
+    // caused it stops reading as cause and effect.
+    this.shakeDecay = Math.max(decay, 4.5);
   }
 
   setCinematic(on: boolean): void {
@@ -216,19 +232,19 @@ export class RTSCamera {
       }
       // Pan in the camera's ground plane, not world axes.
       //
-      // `place()` puts the eye at focus - (sin yaw, cos yaw) * r, so the direction the
-      // camera is looking — screen "up" on the ground plane — is +(sin yaw, cos yaw), and
-      // screen-right is its perpendicular (cos yaw, -sin yaw), which is +X at yaw 0.
+      // `place()` puts the eye at focus - (sin yaw, cos yaw) * r, so the view direction —
+      // screen "up" projected onto the ground — is forward = +(sin yaw, cos yaw).
       //
-      // The previous form applied (-sin, +cos) for forward, i.e. with X negated. That is
-      // identical to the correct vector at yaw 0 and yaw PI, and mirrored everywhere else,
-      // which is exactly why W felt right facing north or south and sent the camera
-      // sideways on any other heading.
+      // Screen-right is NOT the naive perpendicular (cos yaw, -sin yaw). Three's camera
+      // basis is right-handed with x = right, y = up, z = -forward, so it must satisfy
+      // right x up = -forward, which gives right = (-cos yaw, sin yaw) — the negation of
+      // the naive form. Getting this wrong inverts A and D at every heading while leaving
+      // W and S correct, which is exactly how it was reported.
       const s = Math.sin(this.yaw);
       const c = Math.cos(this.yaw);
       const rate = this.panRate * dt;
-      this.focus.x += (fx * c + fy * s) * rate;
-      this.focus.z += (fy * c - fx * s) * rate;
+      this.focus.x += (fy * s - fx * c) * rate;
+      this.focus.z += (fy * c + fx * s) * rate;
     }
   }
 
