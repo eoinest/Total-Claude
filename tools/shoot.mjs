@@ -294,8 +294,16 @@ try {
       const info = await page.evaluate(
         async ({ s }) => {
           const g = window.__game;
-          const need = s.at - g.simTime();
-          if (need > 0) g.advance(need);
+          // Advance in fixed 0.5 s steps rather than one variable jump to the target.
+          // `advance(n)` divides n into frames, so the number and size of steps depended
+          // on how far the previous shot had already got — which meant the same shot
+          // reached a *different* battle state depending on which other shots were
+          // requested alongside it. Two runs of `aftermath` reached 6,329 and 6,892 men.
+          // A fixed grid makes any subset of shots follow the same path.
+          const STEP = 0.5;
+          while (g.simTime() < s.at - 1e-6) {
+            g.advance(Math.min(STEP, s.at - g.simTime()));
+          }
 
           // Resolve an auto-framed shot against the live battle. Hand-picked focus
           // points drift out of date every time the AI or the terrain changes where the
