@@ -138,6 +138,29 @@ const SHOTS = {
     desc: 'Late battle: corpses, routs, dust and blood on the ground',
     follow: 'corpses', zoom: 0.34, at: 190,
   },
+  // A wide camera during the collapse was the one combination the other fourteen missed:
+  // `wide` is wide but fires at t+2 when nobody has routed, and `aftermath` is late but sits
+  // at zoom 0.34 following the corpse pile. Neither puts thousands of scattered men in frame
+  // at once, which is precisely the geometry the LOD1 band is worst at — a rout spreads a
+  // unit over 120 m, so men who would have been one tight LOD2 clump straddle the boundary.
+  // A pass that never renders this frame cannot see the spike it produces.
+  // Pinned to the worst frame a 5-point sweep of zoom x time could find, so the pass guards
+  // its own ceiling rather than a frame that merely looks busy. Measured reported triangles:
+  //
+  //     t+130 z0.60  15.03 M      t+156 z0.74  16.30 M
+  //     t+136 z0.68  14.45 M      t+162 z0.52  13.82 M
+  //     t+171 z0.60  18.30 M  <-- this one
+  //
+  // Note it gets worse as men *die*: 7,879 men at t+130 render fewer triangles than 7,010 at
+  // t+171. Headcount is not the driver — a rout spreads a unit over ~120 m, so men who were
+  // one tight clump at LOD2 end up straddling the LOD1 boundary, and the shadow cascades
+  // stretch to cover a wider spread. Attribution at this frame (probe-rider --lod) is
+  // soldiers 2.47 M, city 2.31 M, grass 1.30 M, terrain 0.41 M: 6.97 M unique against
+  // 18.30 M reported, i.e. ~2.6x for cascades and the depth prepass. It runs at 13.65 ms.
+  rout: {
+    desc: 'Wide view mid-collapse — the pass\'s triangle ceiling, 18.3 M reported / 6.97 M unique',
+    x: 0, z: 60, zoom: 0.60, yaw: Math.PI * 0.82, at: 171,
+  },
 };
 
 const args = new Map(

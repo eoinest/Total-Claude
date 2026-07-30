@@ -173,6 +173,24 @@ roughly 3.3x, because shadow cascades and the depth prepass each re-draw the sce
 budget above is a budget on the *reported* figure, which is the honest way to read it: it
 is a proxy for total vertex work, not a model complexity count.
 
+**The `rout` shot exceeds the triangle proxy on purpose, and that is not a bug to fix.**
+It reports 18.3 M against the 16 M line while carrying only 6.97 M of unique geometry
+(soldiers 2.47 M, city 2.31 M, grass 1.30 M, terrain 0.41 M) and running at 13.65 ms — 73
+fps, inside the binding constraint with room to spare. The multiplier is not a constant:
+it ranges from ~2.3x to ~3.3x with how much of the scene the cascades happen to span, so a
+fixed absolute line on the reported figure cannot mean the same thing in two frames.
+`tools/perfdiff.mjs` therefore treats an absolute triangle overage as a reported warning
+rather than a failure, while still failing a triangle *regression* against a baseline —
+a 25% jump means LOD selection, a culling test or a cascade bound broke, even when frame
+time absorbs it. Proxies are trustworthy as derivatives, not as absolutes.
+
+This shot exists because the other fifteen could not see the frame: `wide` is wide but
+fires at t+2 before anyone has routed, and `aftermath` is late but sits at zoom 0.34 on the
+corpse pile. Neither puts thousands of scattered men on screen at once. The frame also gets
+*heavier as men die* — 7,879 men at t+130 render 15.03 M, 7,010 at t+171 render 18.30 M —
+because a rout spreads a unit over ~120 m and pushes men who were a tight LOD2 clump across
+the LOD1 boundary. Headcount is the wrong thing to reason from.
+
 | Resource | Budget |
 |---|---|
 | Draw calls, whole frame | ≤ 220 |

@@ -516,6 +516,10 @@ if (args.get('lod')) {
     { name: 'rout       (routing unit)', at: 150, zoom: 0.55, follow: 'rout' },
     { name: 'rout close (routing unit)', at: 150, zoom: 0.30, follow: 'rout' },
     { name: 'cavalry    (graded shot)', at: 150, zoom: 0.42, x: 97, z: -23, yaw: Math.PI * 1.6 },
+    // The frame the 15-shot pass never renders: wide camera, late, mid-collapse. Measured
+    // 18.30 M against a 16 M budget by `shoot.mjs --shots=routC`, and it gets *worse* as men
+    // die, which rules out headcount as the cause and needs an owner named.
+    { name: 'rout wide  (over budget)', at: 171, zoom: 0.60, x: 0, z: 60, yaw: Math.PI * 0.82 },
   ];
   console.log('\n=== per-LOD instance counts and soldier triangles, 1600x900 ===');
   let prev = 0;
