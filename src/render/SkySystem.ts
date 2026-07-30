@@ -681,10 +681,13 @@ export class SkySystem implements Subsystem {
     const meanLum = (wr * 0.2126 + wg * 0.7152 + wb * 0.0722) / wsum;
     if (!(meanLum > 1e-6)) return 0;
 
-    // Pass 2: clip, then rescale. 14x the hemisphere mean keeps every bright
-    // cloud edge (a sunlit cumulus rim runs 4-8x the mean) and removes only the
-    // disc and its immediate aureole.
-    const ceil = meanLum * 14;
+    // Pass 2: clip, then rescale. 40x the hemisphere mean removes the solar disc
+    // (thousands of times the mean) but keeps the aureole around it, which is the
+    // only bright directional thing a polished helmet has to reflect — clip at 14x
+    // and every piece of metal in the army goes matte. The renormalisation below
+    // fixes the total irradiance either way, so a higher ceiling just moves energy
+    // from the whole sky into the sun's quarter of it, where it belongs.
+    const ceil = meanLum * 40;
     let cr = 0;
     let cg = 0;
     let cb = 0;

@@ -620,18 +620,22 @@ export function drawPortrait(g: G, w: number, h: number, def: UnitTypeDef): void
   g.clearRect(0, 0, w, h);
 
   // ---- Plate ----
+  // Deliberately dark. Twenty-one of these tile the bottom of the screen, and at the
+  // brighter oxblood they used to carry the card row was the most luminous mass in the
+  // frame — the HUD winning a fight it is not supposed to be in. The faction is still
+  // read from the tint, the figure and the hairline along the bottom edge.
   const bg = g.createLinearGradient(0, 0, w * 0.4, h);
-  bg.addColorStop(0, rome ? '#5c2124' : '#1b3145');
-  bg.addColorStop(0.5, rome ? '#331416' : '#101d29');
-  bg.addColorStop(1, '#0a0806');
+  bg.addColorStop(0, rome ? '#48191c' : '#152634');
+  bg.addColorStop(0.5, rome ? '#260f10' : '#0c161f');
+  bg.addColorStop(1, '#070505');
   g.fillStyle = bg;
   g.fillRect(0, 0, w, h);
 
   // A halo behind where the head will sit. Without it the lower half of the bust sinks
   // into the plate and the whole card reads as a dark smudge.
   const halo = g.createRadialGradient(w * 0.5, h * 0.4, h * 0.04, w * 0.5, h * 0.42, h * 0.66);
-  halo.addColorStop(0, rome ? 'rgba(158, 74, 58, 0.5)' : 'rgba(78, 116, 152, 0.5)');
-  halo.addColorStop(0.62, rome ? 'rgba(92, 40, 32, 0.3)' : 'rgba(42, 68, 94, 0.3)');
+  halo.addColorStop(0, rome ? 'rgba(148, 68, 54, 0.36)' : 'rgba(72, 108, 142, 0.36)');
+  halo.addColorStop(0.62, rome ? 'rgba(86, 37, 30, 0.2)' : 'rgba(38, 62, 86, 0.2)');
   halo.addColorStop(1, 'rgba(0, 0, 0, 0)');
   g.fillStyle = halo;
   g.fillRect(0, 0, w, h);

@@ -1232,10 +1232,42 @@ function buildStadium(batch: Batch, detail: number, g: number, L: number, W: num
     });
     box(stone, -(L - 60) / 2, facadeH * 0.55, 0, (L - 60) / 2, facadeH, 3.2, PAL.travertineDirty, { topGain: 1.12 });
     stone.pop();
-    seatingBank(concrete, W / 2 - seatDepth, W / 2 - 3, g + 2, (facadeH - 6) / tiers, tiers, 2, s > 0 ? 0 : Math.PI, s > 0 ? Math.PI : Math.PI * 2, PAL.travertineDirty, 1);
+
+    // Straight-side seating: a stepped rank along the track.
+    //
+    // `seatingBank` is an *annular* fan about the stream's local origin. Called here with
+    // two angular segments, as an earlier revision did, it drew a single 200 m wedge right
+    // across the arena — which is why the Stadium of Domitian read as a grey circus tent
+    // on the skyline. A stadium's long sides are straight; they need steps, not an arc.
+    const bankLen = (L - 60) / 2;
+    const rowD = (seatDepth - 3) / tiers;
+    const rise = (facadeH - 6) / tiers;
+    for (let r = 0; r < tiers; r++) {
+      const zA = s * (W / 2 - seatDepth + rowD * r);
+      const zB = s * (W / 2 - seatDepth + rowD * (r + 1));
+      const y = g + 2 + rise * r;
+      box(concrete, -bankLen, y, Math.min(zA, zB), bankLen, y + rise, Math.max(zA, zB), PAL.travertineDirty, {
+        bottom: false,
+        topGain: 1.08,
+      });
+    }
   }
-  // Curved end.
-  seatingBank(concrete, W / 2 - seatDepth, W / 2 - 3, g + 2, (facadeH - 6) / tiers, tiers, detail >= 1 ? 16 : 8, -Math.PI / 2, Math.PI / 2, PAL.travertineDirty);
+  // The *sphendone*: the semicircular closed end, at the north of the track rather than
+  // wrapped round the middle of it.
+  concrete.pushTranslate(-(L - 60) / 2, 0, 0);
+  seatingBank(
+    concrete,
+    W / 2 - seatDepth,
+    W / 2 - 3,
+    g + 2,
+    (facadeH - 6) / tiers,
+    tiers,
+    detail >= 1 ? 16 : 8,
+    Math.PI / 2,
+    Math.PI * 1.5,
+    PAL.travertineDirty
+  );
+  concrete.pop();
 }
 
 // ---------------------------------------------------------------------------

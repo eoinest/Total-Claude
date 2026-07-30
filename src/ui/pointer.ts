@@ -1,14 +1,18 @@
 /**
- * Cursor and modifier tracking for the HUD.
+ * Cursor tracking for the HUD.
  *
- * `core/Input` only sees events that reach the canvas, so the moment the cursor moves
- * over a HUD panel its position goes stale — which is exactly when the HUD needs to
- * know where the cursor is. It also drops every `keydown` carrying ctrl or meta, so
- * `input.ctrl` never becomes true and ctrl-click could not be read from it.
+ * `core/Input` only sees events that reach the canvas, so the moment the cursor moves over
+ * a HUD panel its position goes stale — which is exactly when the HUD needs to know where
+ * the cursor is, and whether what is under it is a panel or the field.
+ *
+ * Live modifier state is *not* tracked here: `Input` records `ControlLeft`/`ControlRight`
+ * now, so `input.ctrl`, `.shift` and `.alt` are all trustworthy. What is kept is the
+ * modifier snapshot taken at pointerdown, because the meaning of a click is fixed when the
+ * button goes down — releasing shift mid-drag must not turn an add-to-selection into a
+ * replace — and a mouse event is the only source that reports it for certain.
  *
  * This listens at the window in the capture phase, changes nothing and preventDefaults
- * nothing; it only records state. Modifier flags come off the events themselves, which
- * is the one source that is always correct.
+ * nothing; it only records state.
  */
 
 export class PointerTracker {
@@ -19,9 +23,6 @@ export class PointerTracker {
   overUi = false;
   /** The `.interactive` element under the cursor, if any. */
   uiElement: HTMLElement | null = null;
-  ctrl = false;
-  shift = false;
-  alt = false;
   /** Modifier snapshot taken on the most recent pointerdown. */
   downCtrl = false;
   downShift = false;
@@ -35,14 +36,7 @@ export class PointerTracker {
     this.el = canvas;
     this.measure();
 
-    const mods = (e: MouseEvent | KeyboardEvent): void => {
-      this.ctrl = e.ctrlKey || e.metaKey;
-      this.shift = e.shiftKey;
-      this.alt = e.altKey;
-    };
-
     const onMove = (e: PointerEvent): void => {
-      mods(e);
       this.x = e.clientX - this.rect.left;
       this.y = e.clientY - this.rect.top;
       const t = e.target as Element | null;
@@ -53,22 +47,14 @@ export class PointerTracker {
 
     const onDown = (e: PointerEvent): void => {
       onMove(e);
-      this.downCtrl = this.ctrl;
-      this.downShift = this.shift;
-      this.downAlt = this.alt;
-    };
-
-    const onKey = (e: KeyboardEvent): void => mods(e);
-    const onBlur = (): void => {
-      this.ctrl = this.shift = this.alt = false;
+      this.downCtrl = e.ctrlKey || e.metaKey;
+      this.downShift = e.shiftKey;
+      this.downAlt = e.altKey;
     };
 
     this.add('pointermove', onMove as EventListener);
     this.add('pointerdown', onDown as EventListener);
     this.add('pointerup', onMove as EventListener);
-    this.add('keydown', onKey as EventListener);
-    this.add('keyup', onKey as EventListener);
-    this.add('blur', onBlur as EventListener);
   }
 
   private add(type: string, fn: EventListener): void {

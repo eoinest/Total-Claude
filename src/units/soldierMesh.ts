@@ -179,7 +179,12 @@ interface Detail {
 // almost none of the silhouette past 45 m. LOD2 is a different mesh entirely.
 const DETAIL: Record<Lod, Detail> = {
   0: { torso: 10, limb: 7, head: 10, rings: 4, shieldCols: 5, shieldRows: 6, fine: true, medium: true },
-  1: { torso: 7, limb: 5, head: 7, rings: 3, shieldCols: 3, shieldRows: 3, fine: false, medium: false },
+  // LOD1 keeps `medium`. Those pieces are not decoration, they are the *silhouette*: the
+  // flared neck guard is what tells you a helmeted man is Roman from behind, and the ridge
+  // crest and the Coolus knob are what tell three helmet types apart. Dropping them at 45 m
+  // both flattened kit variety across most of the army and made the LOD0 boundary visible,
+  // because a man's neck guard vanished as he crossed it.
+  1: { torso: 7, limb: 5, head: 7, rings: 3, shieldCols: 3, shieldRows: 3, fine: false, medium: true },
   2: { torso: 5, limb: 4, head: 5, rings: 2, shieldCols: 2, shieldRows: 2, fine: false, medium: false },
 };
 
@@ -350,25 +355,27 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     // pictures when they picture a legionary.
     b.setPiece(Piece.HelmGallic, Tint.Metal);
     b.revolve(
-      [[0.001, 0.138], [0.05, 0.128], [0.086, 0.09], [0.098, 0.035], [0.101, 0.0], [0.102, -0.016]],
+      [[0.001, 0.124], [0.058, 0.117], [0.094, 0.086], [0.105, 0.034], [0.108, 0.0], [0.109, -0.016]],
       d.head, plateUv
     );
     if (d.medium) {
       // Rim reinforce. Every galea has a thickened brow band, and without it the bowl
       // reads as a swimming cap.
       b.setPiece(Piece.HelmGallic, Tint.Atlas);
-      b.revolve([[0.102, -0.014], [0.111, -0.026], [0.111, -0.044], [0.1, -0.05]], d.head, bronzeUv);
+      b.revolve([[0.109, -0.014], [0.118, -0.026], [0.118, -0.044], [0.107, -0.05]], d.head, bronzeUv);
       b.setPiece(Piece.HelmGallic, Tint.Metal);
       // Neck flange, angled down and back.
       // Neck guard. Flared down and back, and the single feature that tells you a
       // helmeted man is Roman when you are looking at the back of his head.
+      // Nearly horizontal, and wide: the Gallic neck guard is a shelf, and exaggerating it
+      // is what makes this helmet identifiable at forty metres against the ridge helmet.
       const flange = new THREE.Matrix4()
-        .makeRotationX(-58 * DEG)
-        .premultiply(new THREE.Matrix4().makeTranslation(0, -0.018, -0.082));
+        .makeRotationX(-42 * DEG)
+        .premultiply(new THREE.Matrix4().makeTranslation(0, -0.014, -0.086));
       b.setMatrix(headM.clone().multiply(flange));
-      b.box(0, -0.055, 0, 0.215, 0.115, 0.014, plateUv);
+      b.box(0, -0.062, 0, 0.25, 0.13, 0.014, plateUv);
       b.setPiece(Piece.HelmGallic, Tint.Atlas);
-      b.box(0, -0.115, 0, 0.215, 0.022, 0.02, bronzeUv);
+      b.box(0, -0.13, 0, 0.25, 0.024, 0.022, bronzeUv);
       b.setPiece(Piece.HelmGallic, Tint.Metal);
       b.setMatrix(headM);
       // Cheek pieces, hinged forward of the ears.
@@ -385,14 +392,17 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     // Intercisa / ridge helmet: two iron halves joined by a raised central ridge, the new
     // pattern of the late third century. Taller and more angular than the Gallic bowl.
     b.setPiece(Piece.HelmRidge, Tint.Metal);
+    // Markedly taller and more conical than the Gallic bowl, which is both what the
+    // Intercisa and Berkasovo finds are and what makes the two read apart in a crowd.
     b.revolve(
-      [[0.001, 0.155], [0.042, 0.142], [0.08, 0.098], [0.095, 0.04], [0.1, 0.0], [0.101, -0.018]],
+      [[0.001, 0.198], [0.026, 0.186], [0.06, 0.146], [0.086, 0.084], [0.097, 0.028],
+        [0.1, 0.0], [0.101, -0.018]],
       d.head, plateUv
     );
     if (d.medium) {
       b.setPiece(Piece.HelmRidge, Tint.Atlas);
       // The ridge itself, fore and aft along the crown, plus the brow band.
-      b.box(0, 0.125, 0, 0.022, 0.05, 0.2, bronzeUv);
+      b.box(0, 0.166, 0, 0.026, 0.062, 0.21, bronzeUv);
       b.revolve([[0.101, -0.016], [0.109, -0.028], [0.109, -0.046], [0.099, -0.052]], d.head, bronzeUv);
       b.setPiece(Piece.HelmRidge, Tint.Metal);
       for (const s of [-1, 1]) {
@@ -418,13 +428,15 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     // cheapest helmet in the army, which is why the city cohorts have it.
     b.setPiece(Piece.HelmCoolus, Tint.Metal);
     b.revolve(
-      [[0.001, 0.128], [0.052, 0.12], [0.088, 0.085], [0.099, 0.035], [0.102, 0.0], [0.103, -0.014]],
+      [[0.001, 0.112], [0.06, 0.107], [0.092, 0.08], [0.101, 0.033], [0.104, 0.0], [0.105, -0.014]],
       Math.max(5, d.head - 2), plateUv
     );
     if (d.medium) {
       b.setPiece(Piece.HelmCoolus, Tint.Atlas);
-      b.revolve([[0.001, 0.152], [0.016, 0.143], [0.016, 0.13], [0.001, 0.126]], 6, bronzeUv);
-      b.revolve([[0.103, -0.012], [0.111, -0.024], [0.111, -0.04], [0.101, -0.046]],
+      // The knob is this helmet's whole silhouette signature, so it is drawn big enough
+      // to survive a mip level.
+      b.revolve([[0.001, 0.152], [0.026, 0.138], [0.026, 0.116], [0.001, 0.108]], 6, bronzeUv);
+      b.revolve([[0.105, -0.012], [0.113, -0.024], [0.113, -0.04], [0.103, -0.046]],
         Math.max(5, d.head - 2), bronzeUv);
       b.setPiece(Piece.HelmCoolus, Tint.Metal);
       const guard = new THREE.Matrix4()
@@ -584,7 +596,7 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
   } else {
     // Focale: the neck scarf that stopped mail and plate chafing the throat. Small, but
     // it is on every relief and its absence is felt.
-    b.setPiece(Piece.Focale, Tint.Tunic);
+    b.setPiece(Piece.Focale, Tint.Focale);
     b.setBone(MB.chest, MB.neck, 0.5);
     b.tube(
       [

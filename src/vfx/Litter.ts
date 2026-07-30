@@ -178,30 +178,30 @@ export class LitterField {
     let elev: number;
     switch (kind) {
       case 'pilum':
-        len = 1.05 + h1 * 0.45;
+        len = 1.45 + h1 * 0.60;
         elev = 0.62 + h2 * 0.55;
-        tmpColour.setRGB(0.52, 0.42, 0.28);
+        tmpColour.setRGB(0.30, 0.245, 0.165);
         break;
       case 'javelin':
-        len = 0.90 + h1 * 0.40;
+        len = 1.20 + h1 * 0.50;
         elev = 0.68 + h2 * 0.52;
-        tmpColour.setRGB(0.56, 0.46, 0.31);
+        tmpColour.setRGB(0.33, 0.27, 0.18);
         break;
       case 'bolt':
-        len = 0.48 + h1 * 0.20;
+        len = 0.62 + h1 * 0.26;
         elev = 0.85 + h2 * 0.5;
-        tmpColour.setRGB(0.48, 0.39, 0.26);
+        tmpColour.setRGB(0.28, 0.23, 0.155);
         break;
       default: // arrow
-        len = 0.52 + h1 * 0.26;
+        len = 0.70 + h1 * 0.34;
         elev = 0.95 + h2 * 0.45;
-        tmpColour.setRGB(0.62, 0.52, 0.34);
+        tmpColour.setRGB(0.37, 0.31, 0.20);
         break;
     }
-    // Sun-bleached ash and hazel, varied so a cluster is not a uniform mat. Pale enough
-    // to read as a light note against churned earth, which is how a field of spent
-    // shafts actually looks — the opposite of the dark spikes a dark albedo produces.
-    tmpColour.multiplyScalar(0.85 + h3 * 0.4);
+    // Weathered ash and hazel, varied so a cluster is not a uniform mat. The dish's face
+    // normal points sideways once the shaft is tilted, so most shafts are edge-lit and
+    // land darker than their albedo suggests; the extra gain compensates.
+    tmpColour.multiplyScalar(1.05 + h3 * 0.5);
 
     // Rotate the dish's long axis (+Z) up by `elev`, then yaw it about the vertical.
     tmpQuat.setFromAxisAngle(X_AXIS, -elev);
@@ -209,8 +209,9 @@ export class LitterField {
     tmpQuat.premultiply(tmpQuat2);
 
     // Section thick enough to survive a couple of pixels at battle range; a
-    // geometrically honest 25 mm shaft is a shimmering sub-pixel line.
-    tmpScale.set(0.135, 0.62, len);
+    // geometrically honest 25 mm shaft is a shimmering sub-pixel line. Anything fatter
+    // than this stops reading as a shaft and starts reading as a pale blade lying flat.
+    tmpScale.set(0.075, 0.44, len);
     // The dish is centred on its long axis, so lift the centre by half the vertical
     // component to leave the head buried and the butt in the air.
     tmpPos.set(x, ground + Math.sin(elev) * len * 0.5, z);

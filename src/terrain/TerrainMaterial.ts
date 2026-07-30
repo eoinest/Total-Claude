@@ -107,7 +107,14 @@ ${TOPO_GLSL}
  */
 vec3 terrainSurface(vec2 wxz, out float curv) {
   float fw = max(length(vec2(dFdx(wxz.x), dFdy(wxz.x))), length(vec2(dFdx(wxz.y), dFdy(wxz.y))));
-  float e = max(uHeightSpacing, max(fw * 1.15, vLevelSpacing));
+  // The level-spacing term is weighted down to 0.6. It exists so the shading normal stays
+  // consistent with the geometry the depth buffer was written from — but this mesh has
+  // castShadow disabled, so it cannot self-shadow and the acne that motivated a full
+  // weight cannot occur. At full weight the term steps by a factor of two across every
+  // clipmap ring boundary, and since those boundaries are axis-aligned squares centred on
+  // the camera the result is a visible straight seam across the middle distance, which the
+  // stronger detail normals made obvious.
+  float e = max(uHeightSpacing, max(fw * 1.35, vLevelSpacing * 0.6));
   float lod = log2(max(e / uHeightSpacing, 1.0));
   float hc = terrainHeightLod(wxz, lod);
   float hl = terrainHeightLod(wxz - vec2(e, 0.0), lod);
@@ -324,9 +331,19 @@ ${SPLAT_GLSL}`
   // Suppressed on the hills and in the river valley, where nobody ploughed.
   vec3 fld = fieldPattern(wp.xz, macroMid.a);
   float farmed = (1.0 - smoothstep(0.22, 0.48, tSlope)) * smoothstep(3.0, 9.0, tAbove);
-  float fallow = smoothstep(0.60, 0.74, fld.x) * farmed;    // ploughed or grazed to earth
+  // The Campus Martius itself was *ager publicus* — pasture, parade ground and monuments,
+  // never ploughed; the centuriated arable begins beyond it. So the bare-earth half of the
+  // patchwork is suppressed over the fighting ground, which is both correct and what stops
+  // the eye-level camera in the Roman line from standing in a ploughed field. The straw /
+  // green / stubble half of the pattern stays, so the plain keeps its blocky variety.
+  // Weighted hard along z: the ager publicus is the flood plain inside the Tiber bend, so
+  // the exemption has to stop short of the necropolis and the hill approach at z > 300,
+  // which are trodden, dusty, tomb-lined ground and not pasture. It also has to let the
+  // outer flanks of the frontage keep some arable, or a high camera sees one green wash.
+  float campus = 1.0 - smoothstep(420.0, 800.0, length(vec2(wp.x * 0.86, (wp.z + 40.0) * 1.9)));
+  float fallow = smoothstep(0.60, 0.74, fld.x) * farmed * (1.0 - campus * 0.88);
   float stubble = smoothstep(0.30, 0.44, fld.x) * (1.0 - smoothstep(0.56, 0.68, fld.x)) * farmed;
-  float headland = fld.y * farmed;
+  float headland = fld.y * farmed * (1.0 - campus * 0.55);
 
   float w[${LAYER_COUNT}];
   // 0 dry grass and 1 meadow grass share the plain, driven by the *same* large-scale
@@ -341,15 +358,15 @@ ${SPLAT_GLSL}`
   // August — produced a plain of uniform straw, which measured against real Rome II
   // frames is simply not how their ground looks: theirs is green with dry patches through
   // it. The small-scale term makes the boundary ragged instead of a smooth amoeba outline.
-  float grassMix = smoothstep(0.52, 0.72,
+  float grassMix = smoothstep(0.44, 0.62,
     nzBig * 0.5 + macroMid.a * 0.22 + nzSmall * 0.10 + fld.x * 0.18);
-  w[0] = (0.3 + 2.7 * grassMix + stubble * 1.6) * (1.0 - grassKill) * (1.0 - paved);
+  w[0] = (0.3 + 2.7 * grassMix + stubble * 2.0) * (1.0 - grassKill) * (1.0 - paved);
   w[1] = (0.3 + 2.5 * (1.0 - grassMix) + cWet * 1.8 + hollow * 0.5)
        * (1.0 - grassKill) * (1.0 - paved) * (1.0 - fallow * 0.75);
   // 2 trampled earth: army grounds, road verges, tracks, ploughed and fallow strips and
   // the headlands the carts turned on. The field terms are what put readable blocks of
   // bare earth on the plain — without them the whole map is grass against grass.
-  w[2] = cTramp * 2.4 + verge * 1.0 + nzSmall * 0.25
+  w[2] = cTramp * 1.7 + verge * 1.0 + nzSmall * 0.25
        + fallow * 3.1 + headland * 1.5;
   // 3 mud: where drainage really concentrates and the ground never dries.
   w[3] = smoothstep(0.68, 0.98, cWet) * 2.1 + hollow * 0.45
@@ -359,13 +376,16 @@ ${SPLAT_GLSL}`
   // than ~23 m so it survives minification and still breaks up the plain from a
   // strategic camera.
   w[4] = cBare * 1.2 + smoothstep(0.13, 0.40, tSlope) * 1.75 + verge * 1.35 + nose * 0.7
-       + smoothstep(0.6, 0.88, macroMid.b) * 1.5 * (1.0 - paved)
+       // Held to 1.1: this is a soft ~60 m organic blob, and pushed hard enough to beat the
+       // grass it stops reading as stony ground and starts reading as camouflage. Blocky
+       // variety belongs to the field lattice, which has straight edges.
+       + smoothstep(0.64, 0.90, macroMid.b) * 1.1 * (1.0 - paved)
        + smoothstep(0.78, 0.97, nzSmall) * 0.5 * (1.0 - paved)
        + fallow * nose * 1.4 + headland * 0.7
        // Traffic wears the fines out of a track and leaves the stones standing. Without
        // this, trodden ground — army camps, the glacis, the ford approach — is a sheet of
        // featureless chocolate mud wherever it is not grass.
-       + cTramp * cTramp * 1.5;
+       + smoothstep(0.12, 0.55, cTramp) * 1.3;
   // 5 exposed limestone: steep faces, quarry cuts, the noses of ridges.
   w[5] = smoothstep(0.32, 0.60, tSlope) * 2.9
        + cBare * smoothstep(0.18, 0.45, tSlope) * 2.2 + nose * 0.5;
@@ -431,7 +451,10 @@ ${SPLAT_GLSL}`
   // the middle distance from going smooth; the 0.5 m band would shimmer long before.
   float camDist = length(vViewPosition);
   float detFade = 1.0 - smoothstep(22.0, 74.0, camDist);
-  float midFade = 1.0 - smoothstep(60.0, 190.0, camDist);
+  // The 2.4 m band is *not* faded in from the near field: at that wavelength it is clods
+  // and hollows, not grain, and a boot-level camera needs them as much as a mid-distance
+  // one. Only its far cut-off matters, where it would start to alias.
+  float midFade = 1.0 - smoothstep(150.0, 340.0, camDist);
   vec4 det = texture2D(uDetailNormal, wp.xz * 2.0);
   vec4 detMid = texture2D(uDetailNormal, wp.xz * 0.41 + vec2(0.31, 0.67));
   tNxy += (det.xy * 2.0 - 1.0) * 1.25 * detFade;

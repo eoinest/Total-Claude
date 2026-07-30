@@ -34,12 +34,13 @@ import type { SkySystem } from './SkySystem';
  * distance read, and it is why this is not a `FogExp2`.
  */
 
-/** Bloom threshold in linear render units. Lit dry grass sits near 0.35 and the
- *  brightest cloud edge near 1.2, so 1.45 keeps bloom on genuine highlights:
- *  the sun disc, specular hits on helmets, and cloud rims. */
-const BLOOM_THRESHOLD = 1.45;
-const BLOOM_KNEE = 0.55;
-const BLOOM_STRENGTH = 0.055;
+/** Bloom threshold in linear render units. With a 26 deg sun lit dry grass now
+ *  measures ~0.10 and the brightest cloud edge ~1.1, so 0.95 keeps bloom on
+ *  genuine highlights — the sun disc, specular hits on helmets and cloud rims —
+ *  while being low enough that a polished helmet crown actually reaches it. */
+const BLOOM_THRESHOLD = 0.95;
+const BLOOM_KNEE = 0.4;
+const BLOOM_STRENGTH = 0.07;
 /** AO sampling radius in metres. A man is 1.75 m; 1.1 m darkens the gaps between
  *  ranks and the contact under a shield without haloing whole formations. */
 const AO_RADIUS = 1.1;
@@ -682,6 +683,9 @@ export class PostFXSystem implements Subsystem {
       uniform float uGodRays;
       // x: contrast, y: pivot, z: shadow saturation, w: highlight saturation
       uniform vec4 uGrade;
+      // x: scene-linear contrast exponent, y: its pivot in render units,
+      // z: veiling-glare pedestal
+      uniform vec3 uContrast;
       uniform vec3 uShadowTint;
       uniform vec3 uHighlightTint;
       // x: luminance where the shadow tint ends, y: where the highlight tint starts
@@ -694,6 +698,35 @@ export class PostFXSystem implements Subsystem {
         vec3 hdr = texture2D( tSrc, vUv ).rgb;
         hdr += texture2D( tBloom, vUv ).rgb * uBloom;
         hdr += texture2D( tGod, vUv ).rgb * uGodRays;
+
+        // --- scene-linear contrast, before the tone map ---
+        // This is where dynamic range has to come from. AgX is a log-domain
+        // compressor: by the time it has folded 16 stops into 0..1 the ratio
+        // between a sunlit surface and a shadowed one is already fixed, and a
+        // display-referred S-curve can only shuffle values around inside the band
+        // AgX chose — measured, it moved a 6:1 frame to 7:1. A power law about a
+        // mid-grey pivot multiplies the *stop* range instead, which is what an
+        // OCIO/ACES contrast control does and the only knob that turns a 6:1
+        // frame into the ~18:1 a Rome II frame measures.
+        //
+        // On luminance, not per channel. Per-channel it is the same curve applied
+        // to three different numbers, so it stretches channel *ratios* too: at an
+        // exponent of 1.6 it took measured saturation from 0.48 to 0.70 and pushed
+        // the blue in a shadow from 0.68 to 0.35 of neutral. Scaling by a
+        // luminance ratio leaves chromaticity untouched.
+        float y0 = max( tcLuma( hdr ), 1e-6 );
+        float y1 = uContrast.y * pow( y0 / uContrast.y, uContrast.x );
+        hdr *= y1 / y0;
+
+        // Veiling glare. A power law about a pivot amplifies everything below the
+        // pivot as hard as it lifts everything above it, so at an exponent of 1.75
+        // the ground inside the Aurelian Wall's shadow went to literal zero and
+        // 72 % of that frame was black — an S-curve failure mode, not an artistic
+        // choice. Real lenses and real air both scatter a little light into the
+        // shadows and that is what keeps film blacks off the floor, so the same
+        // pedestal goes in here: enough to put the deepest shadow near 8 % display,
+        // which is where Rome II's 5th percentile actually sits.
+        hdr += uContrast.z;
 
         vec3 c = tcAgX( hdr, uExposure );
 
@@ -742,11 +775,20 @@ export class PostFXSystem implements Subsystem {
         // saturation. The black point has to be well clear of AgX's toe or the
         // darkest thing in the frame is a 20 % grey and the image has no anchor;
         // 0.05 is where the deepest crevice between two men reaches zero.
-        uGrade: { value: new THREE.Vector4(0.62, 0.05, 0.9, 1.04) },
-        uShadowTint: { value: new THREE.Vector3(0.78, 0.925, 1.32) },
-        uHighlightTint: { value: new THREE.Vector3(1.11, 1.015, 0.83) },
-        uSplit: { value: new THREE.Vector2(0.05, 0.5) },
-        uShoulder: { value: new THREE.Vector2(0.84, 3.5) },
+        uGrade: { value: new THREE.Vector4(0.42, 0.006, 1.02, 1.3) },
+        // Pivot at 0.16 render units: measured, that is where a dry-grass ground
+        // in full sun sits, so raising the exponent pivots the frame about the
+        // subject rather than about the sky.
+        uContrast: { value: new THREE.Vector3(1.8, 0.16, 0.0026) },
+        // Measured against twelve real Rome II frames: their lit surfaces average
+        // an r/g/b chromaticity of 1.25/0.96/0.79 and their shadows 1.06/0.90/1.02
+        // — warm light, cool shade, and red clearly above green in the sun. Ours
+        // measured 1.05/1.03/0.93 and 0.87/1.03/1.10, so the tints carry the frame
+        // the rest of the way warm without touching the physical light.
+        uShadowTint: { value: new THREE.Vector3(0.88, 0.955, 1.24) },
+        uHighlightTint: { value: new THREE.Vector3(1.18, 0.985, 0.82) },
+        uSplit: { value: new THREE.Vector2(0.05, 0.48) },
+        uShoulder: { value: new THREE.Vector2(0.92, 1.7) },
       },
     );
 
@@ -900,7 +942,7 @@ export class PostFXSystem implements Subsystem {
         tSrc: { value: null },
         uTexel: { value: new THREE.Vector2() },
         uSharpen: { value: 0.32 },
-        uVignette: { value: 0.3 },
+        uVignette: { value: 0.2 },
         uGrain: { value: 0.016 },
         uTime: { value: 0 },
       },

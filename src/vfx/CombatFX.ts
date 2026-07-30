@@ -216,6 +216,21 @@ export class CombatFX {
     if (lethal && kind !== 'flesh') {
       this.bloodSpray(x, hy, z, dx, dz, 1.2, true);
     }
+
+    // Dirty the men standing where the blow landed. A legionary twenty minutes into a
+    // melee is filthy — blood on the shield face, mud to the knee — and without this the
+    // grime channel only ever rises on men who are already dying, so the living line
+    // stays parade-clean however long it has been fighting.
+    if (this.hooks.grimeSink) {
+      const p = this.battle.pool;
+      const amt = kind === 'flesh' ? (lethal ? 0.20 : 0.075) : 0.028;
+      let touched = 0;
+      this.battle.hash.query(x, z, 1.5, (i) => {
+        if (touched >= 3 || !p.aliveAt(i)) return;
+        touched++;
+        this.hooks.grimeSink?.(i, amt);
+      });
+    }
   }
 
   /**
@@ -225,7 +240,7 @@ export class CombatFX {
   bloodSpray(x: number, y: number, z: number, dx: number, dz: number, amount: number, arterial: boolean): void {
     const ps = this.ps;
     const salt = ((this.t * 7919 + x * 13 + z * 7) | 0) ^ 0x5bd1;
-    const n = Math.min(26, Math.round((arterial ? 14 : 6) * amount));
+    const n = Math.min(12, Math.round((arterial ? 7 : 3) * amount));
 
     // Cone of droplets. Blood leaves a wound fast and decelerates hard in air.
     for (let k = 0; k < n; k++) {
@@ -241,21 +256,25 @@ export class CombatFX {
       const oz = dx * sn + dz * cs;
       const speed = (arterial ? 4.2 : 2.6) * (0.45 + h2 * 1.15) * amount;
 
-      const rec = ps.reset(PLayer.Soft, h3 < 0.4 ? PT.bloodSpray : PT.bloodDrop);
+      // Mostly the elongated cast-off tile, not the round drop. A round blob 14 cm across
+      // held for a second reads as a berry hanging over the ranks; a short dark streak
+      // reads as thrown fluid. Blood in flight is the one effect where being *smaller and
+      // briefer than feels right* is what makes it convincing.
+      const rec = ps.reset(PLayer.Soft, h3 < 0.78 ? PT.bloodSpray : PT.bloodDrop);
       rec.x = x + ox * 0.22;
       rec.y = y + (h4 - 0.4) * 0.32;
       rec.z = z + oz * 0.22;
       rec.vx = ox * speed;
       rec.vz = oz * speed;
       rec.vy = 1.1 + h2 * 2.6 + (arterial ? 1.4 : 0);
-      rec.life = 0.55 + h3 * 0.6;
-      rec.size0 = 0.055 + h1 * 0.085;
+      rec.life = 0.30 + h3 * 0.34;
+      rec.size0 = 0.035 + h1 * 0.048;
       rec.size1 = rec.size0 * 1.25;
       rec.spin = (h4 - 0.5) * 9;
       rec.r = arterial ? ART_R : BLOOD_R;
       rec.g = arterial ? ART_G : BLOOD_G;
       rec.b = arterial ? ART_B : BLOOD_B;
-      rec.a = 0.88;
+      rec.a = 0.92;
       rec.gravity = 9.81;
       rec.drag = 1.5;
       rec.windFactor = 0.12;
@@ -442,15 +461,17 @@ export class CombatFX {
 
   private parryRing(x: number, y: number, z: number, salt: number): void {
     const ps = this.ps;
+    // Small and brief. An expanding ring a metre across held for a sixth of a second
+    // reads as a hard white circle drawn over the ranks — a HUD element, not a parry.
     const rec = ps.reset(PLayer.Additive, PT.ring);
     rec.ground = PGround.Free;
     rec.x = x; rec.y = y; rec.z = z;
-    rec.life = 0.17;
-    rec.size0 = 0.20;
-    rec.size1 = 1.15;
+    rec.life = 0.10;
+    rec.size0 = 0.12;
+    rec.size1 = 0.52;
     rec.spin = (hash01(0, salt) - 0.5) * 6;
     rec.r = 1.6; rec.g = 1.5; rec.b = 1.28;
-    rec.a = 0.85;
+    rec.a = 0.42;
     rec.gravity = 0;
     rec.drag = 4;
     rec.windFactor = 0;
@@ -459,11 +480,11 @@ export class CombatFX {
     const flash = ps.reset(PLayer.Additive, PT.glow);
     flash.ground = PGround.Free;
     flash.x = x; flash.y = y; flash.z = z;
-    flash.life = 0.11;
-    flash.size0 = 0.62;
-    flash.size1 = 0.2;
+    flash.life = 0.09;
+    flash.size0 = 0.38;
+    flash.size1 = 0.12;
     flash.r = 1.7; flash.g = 1.5; flash.b = 1.2;
-    flash.a = 0.65;
+    flash.a = 0.5;
     flash.gravity = 0;
     flash.drag = 6;
     flash.windFactor = 0;
@@ -583,8 +604,9 @@ export class CombatFX {
     this.hooks.grimeSink?.(index, 0.5);
 
     // The pool arrives as the body settles, not the instant he is hit. The queue has to
-    // be deep enough to absorb a rout, where a hundred men can fall inside a second.
-    if (this.poolCount < 384) {
+    // be deep enough to absorb a whole army breaking, because anything that does not fit
+    // is a body that bleeds nowhere for the rest of the battle.
+    if (this.poolCount < 4096) {
       const rec = this.pools[this.poolCount] ?? { t: 0, x: 0, z: 0, seed: 0 };
       rec.t = this.t + 0.7 + hash01(index, 3) * 0.9;
       rec.x = x + (dx / l) * 0.4;
@@ -634,8 +656,8 @@ export class CombatFX {
       rec.size0 = (cavalry ? 2.4 : 1.7) * (0.6 + h1 * 1.1);
       rec.size1 = rec.size0 * (3.4 + h2 * 2.6);
       rec.spin = (h3 - 0.5) * 0.5;
-      rec.r = 1.12; rec.g = 0.90; rec.b = 0.60;
-      rec.a = 0.15 + 0.10 * k;
+      rec.r = 0.82; rec.g = 0.64; rec.b = 0.37;
+      rec.a = 0.20 + 0.13 * k;
       rec.gravity = 0.5;
       rec.drag = 0.85;
       rec.turb = 1.1;
@@ -722,10 +744,23 @@ export class CombatFX {
     }
   }
 
+  /**
+   * Lay down the blood under bodies that have finished settling.
+   *
+   * Throughput-limited on purpose. Each pool costs five splats, and the accumulation
+   * buffer accepts a bounded number per frame; a rout that kills three hundred men in a
+   * second queues fifteen hundred splats into a frame that can take a thousand, and the
+   * surplus is *silently discarded* — so the bloodiest thirty seconds of the battle used
+   * to deposit the least blood, which is why the aftermath field had clean grass under
+   * the corpse heaps. Deferring instead of dropping costs a few tenths of a second of
+   * latency on a stain nobody is watching appear.
+   */
   private runPools(): void {
+    let budget = 48;
     for (let i = this.poolCount - 1; i >= 0; i--) {
       const c = this.pools[i];
       if (c.t > this.t) continue;
+      if (budget-- <= 0) break;
       const h1 = hash01(c.seed, 71);
       const h2 = hash01(c.seed, 73);
       const h3 = hash01(c.seed, 79);
@@ -755,10 +790,10 @@ export class CombatFX {
           0.38, 0.07, 0
         );
       }
-      // A wide, faint soak beyond the pool. This is what turns a scatter of discs into
-      // one continuous stained area where the fighting was heaviest — the read that
-      // separates "a battle happened here" from "someone stamped some decals".
-      this.damage.splat(c.x, c.z, 5.5 + h2 * 3.0, DT.trampleSoft, h1 * 6.283, 0.11, 0.09, 0);
+      // A wide, faint soak beyond the pool, joining neighbouring pools into one stained
+      // area. Deliberately small: at 0.11 a heap of three hundred men accumulates past
+      // saturation over twenty metres and composites as a single flat red blob.
+      this.damage.splat(c.x, c.z, 4.0 + h2 * 2.2, DT.trampleSoft, h1 * 6.283, 0.042, 0.085, 0);
       this.pools[i] = this.pools[this.poolCount - 1];
       this.pools[this.poolCount - 1] = c;
       this.poolCount--;

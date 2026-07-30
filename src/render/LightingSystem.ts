@@ -33,11 +33,23 @@ import type { SkySystem } from './SkySystem';
  * Contract: `sun` is the primary `DirectionalLight` (cascade 0's light).
  */
 
-/** Shadowed distance. Beyond this a man's shadow is under a pixel wide and the
- *  resolution is better spent close in. 460 m rather than 620 because the fourth
- *  cascade's texel footprint is what limits how far a *man*-sized shadow
- *  survives, and 460 m puts it at ~0.22 m instead of ~0.30 m. */
-const SHADOW_DISTANCE = 460;
+/**
+ * Shadowed distance, at the close end of the zoom range. Beyond this a man's
+ * shadow is under a pixel wide and the resolution is better spent close in;
+ * 460 m puts the fourth cascade's texel at ~0.22 m, which is still narrower than
+ * a man.
+ *
+ * It cannot be a constant, though. `RTSCamera` lifts the eye past 1 km at
+ * strategic zoom, where a fixed 460 m put *every* pixel in the frame outside the
+ * cascades and the whole battlefield went shadowless — the one view where a
+ * raking sun should be at its most legible, because from above a long shadow is
+ * the only thing that gives the ground relief. So the far end is driven off the
+ * orbit radius instead: `SHADOW_FAR_MIN` close in, `SHADOW_FAR_MAX` at full
+ * zoom-out, where men's shadows are sub-pixel anyway and the readable shadows are
+ * the ones cast by hills, walls and buildings.
+ */
+const SHADOW_FAR_MIN = 460;
+const SHADOW_FAR_MAX = 2100;
 /** Nominal near plane for the split distribution — roughly a soldier's boot. */
 const SPLIT_NEAR = 1.5;
 /** 0 = uniform splits, 1 = logarithmic. 0.82 puts cascade 0 at ~24 m, which is
@@ -46,8 +58,8 @@ const SPLIT_LAMBDA = 0.82;
 /** Blur radius in shadow texels. Constant in texels (not metres) so the
  *  penumbra automatically widens with distance as the cascades coarsen — that is
  *  the read that makes feet look planted and distant ranks look atmospheric. */
-const PCF_RADIUS_NEAR = 1.7;
-const PCF_RADIUS_FAR = 3.0;
+const PCF_RADIUS_NEAR = 2.2;
+const PCF_RADIUS_FAR = 4.0;
 /**
  * Ceiling on the normal-offset bias, in metres.
  *
@@ -81,7 +93,7 @@ export class LightingSystem implements Subsystem {
    * its own luminance. Luminance-preserving, so it costs no contrast: it moves
    * colour only.
    */
-  private static readonly FILL_CHROMA_GAIN = 1.55;
+  private static readonly FILL_CHROMA_GAIN = 1.35;
 
   private csm?: CSM;
   private sky?: SkySystem;
@@ -89,7 +101,8 @@ export class LightingSystem implements Subsystem {
 
   /** Shared by reference with every patched material, so one write updates all. */
   private readonly breaks: THREE.Vector2[] = [];
-  private readonly csmDepth = new THREE.Vector2(SPLIT_NEAR, SHADOW_DISTANCE);
+  private readonly csmDepth = new THREE.Vector2(SPLIT_NEAR, SHADOW_FAR_MIN);
+  private shadowFar = SHADOW_FAR_MIN;
   private patched = new WeakSet<THREE.Material>();
   private readonly invView = new THREE.Matrix4();
   private cloudShadowsEnabled = true;
@@ -118,16 +131,17 @@ export class LightingSystem implements Subsystem {
       camera: ctx.camera,
       parent: ctx.scene,
       cascades: this.cascades,
-      maxFar: SHADOW_DISTANCE,
+      maxFar: SHADOW_FAR_MIN,
       mode: 'custom',
       shadowMapSize: mapSize,
       lightIntensity: 3,
-      lightDirection: new THREE.Vector3(-0.61, -0.66, -0.44).normalize(),
+      lightDirection: new THREE.Vector3(0.55, -0.43, -0.71).normalize(),
       lightNear: 1,
-      // Ortho depth is linear, so a generous range costs nothing in precision
-      // and guarantees a 60 m wall never falls outside the shadow frustum.
-      lightFar: 2200,
-      lightMargin: 260,
+      // Ortho depth is linear, so a generous range costs nothing in precision and
+      // guarantees neither a 60 m wall nor a 2 km outer cascade under a 26 deg sun
+      // falls outside the shadow frustum.
+      lightFar: 6000,
+      lightMargin: 400,
       customSplitsCallback: (cascades, _near, far, target) => {
         this.computeSplits(cascades, far, target);
       },
@@ -353,10 +367,18 @@ export class LightingSystem implements Subsystem {
 
     // The camera's projection changes every frame (RTSCamera couples fov, near
     // and far to zoom), so the frustum split has to be refitted every frame.
+    // Refit the cascade range to the camera's height before the frustum split, so
+    // a zoomed-out view still gets shadows and a zoomed-in one still gets texels.
+    const want = clamp(220 + ctx.rig.orbitRadius * 1.5, SHADOW_FAR_MIN, SHADOW_FAR_MAX);
+    if (Math.abs(want - this.shadowFar) > 4) {
+      this.shadowFar = want;
+      csm.maxFar = want;
+    }
+
     csm.updateFrustums();
     csm.update();
     this.syncBreakUniforms();
-    this.csmDepth.set(SPLIT_NEAR, SHADOW_DISTANCE);
+    this.csmDepth.set(SPLIT_NEAR, this.shadowFar);
 
     // Per-cascade bias from the *actual* fitted extents.
     const n = csm.lights.length;

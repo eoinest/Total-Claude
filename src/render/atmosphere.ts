@@ -118,37 +118,37 @@ export const SKY_PRESETS: Record<string, SkyPreset> = {
   dawn: {
     hour: 7.5, turbidity: 3.4, groundAlbedo: 0.11, msScale: 0.36,
     cloudCoverage: 0.5, cloudSoftness: 0.1, cloudDensity: 7.0, cirrusCoverage: 0.62,
-    hazeDensity: 0.00062, hazeHeight: 430, exposure: 2.05, cloudShadowStrength: 0.34,
+    hazeDensity: 0.00062, hazeHeight: 430, exposure: 5.1, cloudShadowStrength: 0.34,
   },
   morning: {
     hour: 9.8, turbidity: 2.7, groundAlbedo: 0.13, msScale: 0.29,
     cloudCoverage: 0.54, cloudSoftness: 0.09, cloudDensity: 8.0, cirrusCoverage: 0.66,
-    hazeDensity: 0.00029, hazeHeight: 640, exposure: 1.5, cloudShadowStrength: 0.34,
+    hazeDensity: 0.00029, hazeHeight: 640, exposure: 3.7, cloudShadowStrength: 0.34,
   },
   noon: {
     hour: 12.0, turbidity: 2.3, groundAlbedo: 0.14, msScale: 0.27,
     cloudCoverage: 0.57, cloudSoftness: 0.08, cloudDensity: 8.5, cirrusCoverage: 0.7,
-    hazeDensity: 0.00024, hazeHeight: 780, exposure: 1.24, cloudShadowStrength: 0.36,
+    hazeDensity: 0.00024, hazeHeight: 780, exposure: 3.05, cloudShadowStrength: 0.36,
   },
   afternoon: {
     hour: 14.3, turbidity: 2.6, groundAlbedo: 0.13, msScale: 0.28,
     cloudCoverage: 0.55, cloudSoftness: 0.085, cloudDensity: 8.2, cirrusCoverage: 0.68,
-    hazeDensity: 0.00032, hazeHeight: 620, exposure: 1.5, cloudShadowStrength: 0.34,
+    hazeDensity: 0.00032, hazeHeight: 620, exposure: 3.7, cloudShadowStrength: 0.34,
   },
   goldenHour: {
     hour: 16.4, turbidity: 3.1, groundAlbedo: 0.12, msScale: 0.34,
     cloudCoverage: 0.52, cloudSoftness: 0.1, cloudDensity: 7.5, cirrusCoverage: 0.6,
-    hazeDensity: 0.00052, hazeHeight: 500, exposure: 1.85, cloudShadowStrength: 0.32,
+    hazeDensity: 0.00052, hazeHeight: 500, exposure: 4.5, cloudShadowStrength: 0.32,
   },
   overcast: {
     hour: 13.5, turbidity: 7.5, groundAlbedo: 0.12, msScale: 0.72,
     cloudCoverage: 0.2, cloudSoftness: 0.22, cloudDensity: 11.0, cirrusCoverage: 0.34,
-    hazeDensity: 0.00085, hazeHeight: 900, exposure: 1.14, cloudShadowStrength: 0.5,
+    hazeDensity: 0.00085, hazeHeight: 900, exposure: 2.8, cloudShadowStrength: 0.5,
   },
   storm: {
     hour: 16.2, turbidity: 10.5, groundAlbedo: 0.1, msScale: 0.62,
     cloudCoverage: 0.1, cloudSoftness: 0.26, cloudDensity: 14.0, cirrusCoverage: 0.26,
-    hazeDensity: 0.00125, hazeHeight: 800, exposure: 1.32, cloudShadowStrength: 0.62,
+    hazeDensity: 0.00125, hazeHeight: 800, exposure: 3.25, cloudShadowStrength: 0.62,
   },
 };
 

@@ -85,7 +85,9 @@ const SPECS: Record<CityMatKey, MatSpec> = {
     manifestId: null,
     gen: brickFace,
     worldSize: 1.1,
-    normalScale: 1.15,
+    // The curtain's brick face is the one surface a besieging camera gets close to, and
+    // its courses have to survive being two screen texels tall from 40 m.
+    normalScale: 1.5,
     roughnessMul: 1.0,
     metalness: 0,
     side: THREE.FrontSide,

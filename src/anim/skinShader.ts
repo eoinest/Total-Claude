@@ -365,14 +365,20 @@ const TINT_BODY = /* glsl */ `
   // ironmongery is made of and the fraction is how well he keeps it. See resolveKit in
   // units/kit.ts: the reasoning for who gets bronze and who gets a pitted heirloom lives
   // there, next to the rest of the kit decisions.
+  //
+  // These are warm on purpose. For a part-metal surface the albedo is also its F0, so it
+  // tints the environment reflection — and the environment here is a blue sky. Neutral-grey
+  // iron came back off the GPU as saturated blue helmets across the whole field, which is a
+  // worse uniformity tell than the flat grey it replaced. Warm F0 pulls that reflection back
+  // toward steel and leaves the four classes distinguishable.
   float mcls = floor( iCol1.w );
   float polish = fract( iCol1.w ) * 1.1111;
   vec3 metal =
-      mcls < 0.5 ? vec3( 0.72, 0.70, 0.68 )      // iron, faintly warm grey
-    : mcls < 1.5 ? vec3( 1.22, 0.94, 0.46 )      // bronze and brass, the older kit
-    : mcls < 2.5 ? vec3( 0.40, 0.385, 0.375 )    // blackened, pitted or heavily rusted
-    :              vec3( 1.06, 1.07, 1.12 );     // tinned or silvered, the parade finish
-  metal *= 0.62 + polish * 0.52;
+      mcls < 0.5 ? vec3( 1.02, 0.90, 0.75 )      // iron, warm grey
+    : mcls < 1.5 ? vec3( 1.34, 0.98, 0.44 )      // bronze and brass, the older kit
+    : mcls < 2.5 ? vec3( 0.56, 0.50, 0.44 )      // blackened, pitted or heavily rusted
+    :              vec3( 1.24, 1.22, 1.14 );     // tinned or silvered, the parade finish
+  metal *= 0.74 + polish * 0.5;
   // ---- cloth batch variation ----------------------------------------------
   // Cloth was dyed in small lots and faded in the sun, so a value spread belongs on the
   // dyed slots only. Applying it to metal as well, as this used to, doubled up on polish,
@@ -423,7 +429,17 @@ const TINT_BODY = /* glsl */ `
         fract( v * 97.1 ) - 0.5, fract( v * 103.7 ) - 0.5, fract( v * 109.3 ) - 0.5 ) * 0.14;
     }
   }
-  else                    tint = metal;
+  else if ( slot < 7.5 )  tint = metal;
+  else {
+    // Focale. Madder red is the commonest, but a man bought his own: undyed linen, weld
+    // yellow and woad blue-grey all turn up, and four collars instead of one is the whole
+    // difference between a rank of men and a rank of one man.
+    float fp = fract( v * 71.3 );
+    tint = ( fp < 0.44 ? vec3( 0.30, 0.065, 0.055 )
+           : fp < 0.68 ? vec3( 0.66, 0.62, 0.52 )
+           : fp < 0.86 ? vec3( 0.52, 0.36, 0.13 )
+           :             vec3( 0.20, 0.24, 0.31 ) ) * batch;
+  }
   vSoldierTint = tint;
   vSoldierGrime = iOrient.w;
 

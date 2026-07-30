@@ -1,9 +1,17 @@
 /**
- * The bottom bar: one card per unit, grouped by army.
+ * The bottom bar: one card per unit of the player's own army.
  *
- * Each card carries a procedurally drawn bust, the roster name and native name, a
- * strength bar, a morale pennant that changes state and pulses when it does, fatigue
- * and ammunition meters, and status flags for charging, melee, braced and routed.
+ * Total War never lines the enemy's twenty cards along the bottom edge, and neither do we:
+ * the card bar is the player's order of battle, the enemy lives on the field, on the
+ * minimap and in the top plaque's balance. The enemy roster is still one keypress away in
+ * a collapsed strip above the bar (J), because reading a warband's morale before you
+ * commit is genuinely useful — it just is not worth a third of the viewport by default.
+ *
+ * Each card carries a procedurally drawn bust, a strength bar, a morale pennant that
+ * changes state and pulses when it does, fatigue and ammunition meters, the unit ordinal
+ * and status flags for charging, melee, braced, shooting and routed. Past ~14 units the
+ * bar drops the written name — the row would otherwise have to wrap — and the name moves
+ * to the hover tooltip and to the command plaque, which is where Rome II keeps it too.
  *
  * Performance shape: the DOM is built once, then `sync()` runs at 10 Hz and writes only
  * the leaves whose value actually changed. Bars are `scaleX` transforms with a CSS
@@ -11,12 +19,12 @@
  */
 
 import type { EngineContext } from '../core/Engine';
-import { Faction } from '../sim/types';
+import { Faction, type UnitClass } from '../sim/types';
 import { el, html, icon, pulse, setClass, setFill, setText, sizeCanvas } from './dom';
 import { ICON, standardGlyph, UNIT_CLASS_ICON } from './icons';
 import type { HudModel, UnitView } from './model';
 import { drawPortrait } from './portrait';
-import { FACTION_UI, MORALE_UI, type MoraleState } from './theme';
+import { FACTION_UI, MORALE_UI, PLAYER_FACTION, type MoraleState } from './theme';
 import type { SelectionController } from './SelectionController';
 import type { Tooltip } from './Tooltip';
 
@@ -24,13 +32,12 @@ interface CardEls {
   view: UnitView;
   root: HTMLElement;
   canvas: HTMLCanvasElement;
-  name: HTMLElement;
   count: HTMLElement;
   pennant: HTMLElement;
   strFill: HTMLElement;
-  fatFill: HTMLElement;
-  ammoFill: HTMLElement;
-  ammoWrap: HTMLElement;
+  fatFill: HTMLElement | null;
+  ammoFill: HTMLElement | null;
+  ammoWrap: HTMLElement | null;
   flags: Record<string, HTMLElement>;
   last: {
     alive: number;
@@ -47,15 +54,47 @@ interface CardEls {
     hovered: boolean;
     dead: boolean;
   };
-  drawnAt: number;
 }
 
 const FLAG_KEYS = ['charging', 'melee', 'braced', 'shooting', 'routing'] as const;
 
+/**
+ * Above this many cards the bar goes compact: the written name is dropped so the row
+ * still fits on one line at a legible card width. A late-Roman field army of 21 units is
+ * comfortably past it; a small scenario of a dozen keeps its names.
+ */
+const COMPACT_ABOVE = 14;
+
+/**
+ * Cards are grouped by arm, the way an order of battle is actually written out, with a
+ * labelled hairline between bands. It costs three columns of width and makes a
+ * twenty-card row scannable instead of a wall of identical busts.
+ */
+const CLASS_BAND: Record<UnitClass, number> = {
+  general: 0,
+  'heavy-infantry': 0,
+  'spear-infantry': 0,
+  'light-infantry': 0,
+  'shock-infantry': 0,
+  'missile-infantry': 1,
+  'heavy-cavalry': 2,
+  'light-cavalry': 2,
+  artillery: 3,
+};
+const BAND_NAME = ['Foot', 'Missile', 'Horse', 'Engines'];
+
 export class UnitCards {
   private root!: HTMLElement;
-  private groups = new Map<Faction, HTMLElement>();
+  private inner!: HTMLElement;
   private cards: CardEls[] = [];
+
+  /** The enemy order of battle: collapsed to a tab until asked for. */
+  private foeBar!: HTMLElement;
+  private foeHolder!: HTMLElement;
+  private foeCount!: HTMLElement;
+  private foeCards: CardEls[] = [];
+  private foeOpen = false;
+
   private generation = -1;
   private hoverTimer = 0;
   private hoverCard: CardEls | null = null;
@@ -67,57 +106,93 @@ export class UnitCards {
   ) {}
 
   attach(parent: HTMLElement): void {
+    const foeFui = FACTION_UI[PLAYER_FACTION === Faction.Rome ? Faction.Germanic : Faction.Rome];
+    this.foeBar = el('div', 'obat', parent);
+    html(
+      this.foeBar,
+      `<button class="obat-tab interactive" type="button" title="Enemy order of battle (J)">
+         ${icon(standardGlyph(foeFui.id), 'obat-std')}
+         <span class="obat-lab">${foeFui.short}</span>
+         <span class="obat-n">0</span>
+         <span class="obat-u">units</span>
+         ${icon(ICON.chevronUp, 'obat-chev')}
+       </button>
+       <div class="obat-cards hud-panel interactive"></div>`
+    );
+    this.foeHolder = this.foeBar.querySelector('.obat-cards') as HTMLElement;
+    this.foeCount = this.foeBar.querySelector('.obat-n') as HTMLElement;
+    (this.foeBar.querySelector('.obat-tab') as HTMLElement).addEventListener('click', () =>
+      this.toggleFoes()
+    );
+
+    const own = FACTION_UI[PLAYER_FACTION];
     this.root = el('div', 'cardbar hud-panel interactive', parent);
     html(
       this.root,
-      `<div class="cardbar-inner"></div>
-       <div class="cardbar-rule"></div>`
+      `<div class="cb-tab">${icon(standardGlyph(own.id), 'cb-std')}<span class="cb-name">${own.short}</span></div>
+       <div class="cardbar-inner"></div>`
     );
+    this.inner = this.root.querySelector('.cardbar-inner') as HTMLElement;
+  }
+
+  /** Show or hide the enemy strip. Bound to J and to the tab itself. */
+  toggleFoes(): void {
+    this.foeOpen = !this.foeOpen;
+    setClass(this.foeBar, 'open', this.foeOpen);
+    // Portraits in a `display:none` strip measured zero and never painted.
+    if (this.foeOpen) this.relayout();
   }
 
   /** Rebuild the card DOM. Called once the scenario has deployed, and never per frame. */
   private build(ctx: EngineContext): void {
-    const inner = this.root.querySelector('.cardbar-inner') as HTMLElement;
-    inner.textContent = '';
-    this.groups.clear();
+    this.inner.textContent = '';
+    this.foeHolder.textContent = '';
     this.cards.length = 0;
+    this.foeCards.length = 0;
 
-    const order: Faction[] = [Faction.Rome, Faction.Germanic];
-    for (let gi = 0; gi < order.length; gi++) {
-      const f = order[gi];
-      const views = this.model.views.filter((v) => v.faction === f);
-      if (views.length === 0) continue;
-      if (gi > 0) el('div', 'grp-div', inner);
+    // Stable sort into bands so each divider separates one arm from the next.
+    const own = this.model.views
+      .filter((v) => v.own)
+      .map((v, i) => ({ v, i }))
+      .sort((a, b) => CLASS_BAND[a.v.def.unitClass] - CLASS_BAND[b.v.def.unitClass] || a.i - b.i);
 
-      const fui = FACTION_UI[f];
-      const grp = el('div', 'cgrp', inner);
-      grp.dataset.f = fui.key;
-      // Share the bar by unit count, so cards are the same width in both armies.
-      grp.style.flexGrow = String(views.length);
-      html(
-        grp,
-        `<div class="cgrp-tab">${icon(standardGlyph(f), 'cgrp-std')}<span class="cgrp-name">${fui.short}</span></div>
-         <div class="cgrp-cards"></div>`
-      );
-      const holder = grp.querySelector('.cgrp-cards') as HTMLElement;
-      this.groups.set(f, holder);
-      for (const v of views) this.cards.push(this.makeCard(v, holder, ctx));
+    let band = -1;
+    let bands = 0;
+    for (const { v } of own) {
+      const b = CLASS_BAND[v.def.unitClass];
+      if (band >= 0 && b !== band) {
+        const d = el('div', 'band-div', this.inner);
+        el('span', 'band-lab', d).textContent = BAND_NAME[b];
+        bands++;
+      }
+      band = b;
+      this.cards.push(this.makeCard(v, this.inner, ctx, false));
     }
+    this.inner.dataset.bands = String(bands);
+
+    const foes = this.model.views.filter((v) => !v.own);
+    for (const v of foes) this.foeCards.push(this.makeCard(v, this.foeHolder, ctx, true));
+    setText(this.foeCount, String(foes.length));
+    setClass(this.foeBar, 'none', foes.length === 0);
+
     this.relayout();
   }
 
-  private makeCard(v: UnitView, parent: HTMLElement, ctx: EngineContext): CardEls {
-    const root = el('div', 'card', parent);
+  private makeCard(v: UnitView, parent: HTMLElement, ctx: EngineContext, foe: boolean): CardEls {
+    const root = el('div', foe ? 'card mini' : 'card', parent);
     root.dataset.f = FACTION_UI[v.faction].key;
     if (!v.own) root.classList.add('foe');
     root.setAttribute('role', 'button');
     root.setAttribute('aria-label', `${v.title}, ${v.def.nativeName}`);
 
+    // The mini card is portrait, pennant, ordinal, count and strength only: it exists to
+    // be scanned, and the tooltip carries the detail.
     html(
       root,
       `<div class="card-por">
          <canvas></canvas>
          <span class="card-pen">${icon(ICON.flag, 'pen-ic')}</span>
+         ${v.ordinal ? `<span class="card-ord">${v.ordinal}</span>` : ''}
          <span class="card-foot">
            <span class="card-cls">${icon(UNIT_CLASS_ICON[v.def.unitClass], 'cls-ic')}</span>
            <span class="card-flags">
@@ -131,13 +206,13 @@ export class UnitCards {
          </span>
          <span class="card-x">${icon(ICON.skull)}</span>
        </div>
-       <div class="card-name">${v.title}</div>
-       <div class="card-native">${v.def.nativeName}</div>
+       ${foe ? '' : `<div class="card-name">${v.title}</div>
+       <div class="card-native">${v.def.nativeName}</div>`}
        <div class="card-bar str"><i></i></div>
-       <div class="card-meters">
+       ${foe ? '' : `<div class="card-meters">
          <span class="card-meter fat" title="Fatigue"><i></i></span>
          <span class="card-meter ammo" title="Ammunition"><i></i></span>
-       </div>`
+       </div>`}`
     );
 
     const flags: Record<string, HTMLElement> = {};
@@ -147,22 +222,20 @@ export class UnitCards {
       view: v,
       root,
       canvas: root.querySelector('canvas') as HTMLCanvasElement,
-      name: root.querySelector('.card-name') as HTMLElement,
       count: root.querySelector('.card-count') as HTMLElement,
       pennant: root.querySelector('.card-pen') as HTMLElement,
       strFill: root.querySelector('.card-bar.str > i') as HTMLElement,
-      fatFill: root.querySelector('.card-meter.fat > i') as HTMLElement,
-      ammoFill: root.querySelector('.card-meter.ammo > i') as HTMLElement,
-      ammoWrap: root.querySelector('.card-meter.ammo') as HTMLElement,
+      fatFill: root.querySelector('.card-meter.fat > i'),
+      ammoFill: root.querySelector('.card-meter.ammo > i'),
+      ammoWrap: root.querySelector('.card-meter.ammo'),
       flags,
       last: {
         alive: -1, str: -1, morale: 'steady', fatigue: -1, ammo: -1,
         charging: false, melee: false, braced: false, routing: false, shooting: false,
         selected: false, hovered: false, dead: false,
       },
-      drawnAt: 0,
     };
-    if (!v.hasMissiles) c.ammoWrap.classList.add('none');
+    if (!v.hasMissiles) c.ammoWrap?.classList.add('none');
 
     root.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
@@ -171,7 +244,8 @@ export class UnitCards {
       if (e.shiftKey || e.ctrlKey || e.metaKey) this.controller.toggle(v.id, ctx);
       else this.controller.selectOnly(v.id, ctx);
     });
-    // Total War's convention: double-clicking a card takes the camera to the unit.
+    // Total War's convention: double-clicking a card takes the camera to the unit. It
+    // works on an enemy card too — inspecting the far wing is the point of the strip.
     root.addEventListener('dblclick', () => {
       ctx.rig.jumpTo(v.cx, v.cz, Math.min(0.34, ctx.rig.zoom));
     });
@@ -194,53 +268,64 @@ export class UnitCards {
   /**
    * Decide the card width and repaint every portrait. Resize and UI-scale changes only.
    *
-   * Flexbox cannot express "shrink the cards, and only wrap to a second row once they
-   * would be too small to read" — it breaks lines at the flex basis, before shrinking.
-   * So the width is computed here: each army's strip already gets a share of the bar
-   * proportional to its unit count, so dividing that share by the number of cards gives
-   * the same card width in both armies, and a second row is used only when one row would
-   * force cards below the legibility floor.
+   * Flexbox cannot express "shrink the cards, and only wrap once they would be too small
+   * to read" — it breaks lines at the flex basis, before shrinking — so the width is
+   * computed here. One row is the design: a 21-unit army lands near 6em a card, and even
+   * 30 stays above the floor. Wrapping is the last resort for an army no Total War title
+   * would field, not the normal case it used to be.
    */
   relayout(): void {
-    const inner = this.root.querySelector('.cardbar-inner') as HTMLElement | null;
-    if (inner && this.cards.length > 0) {
-      const em = parseFloat(getComputedStyle(this.root).fontSize) || 10;
-      const gap = 0.3 * em;
-      const min = 4.7 * em;
-      const max = 7.8 * em;
-      const groups = this.groups.size;
+    const em = parseFloat(getComputedStyle(this.root).fontSize) || 10;
+    const GAP = 0.28 * em;
+    const FLOOR = 3.4 * em;
 
-      // Everything in the bar that is not a card: the vertical army tabs, the divider
-      // between armies, and the gaps around them.
-      let overhead = 0;
-      for (const tab of Array.from(inner.querySelectorAll('.cgrp-tab'))) {
-        overhead += (tab as HTMLElement).offsetWidth + 0.4 * em;
+    const n = this.cards.length;
+    if (n > 0) {
+      // A compact card's height is set by its width — the portrait is square — so the cap
+      // is what actually decides how much of the frame the bar eats. 5em is close to Rome
+      // II's own card at this resolution and keeps the whole bar under 7% of the viewport;
+      // a full-size named card is allowed to be wider because there are fewer of them.
+      const compactByCount = n > COMPACT_ABOVE;
+      const max = (compactByCount ? 5 : 7.4) * em;
+      const bands = Number(this.inner.dataset.bands ?? 0);
+      // Band dividers are 1.15em columns with 0.28em of flex gap on each side.
+      const avail = this.inner.clientWidth - bands * (1.15 * em + GAP);
+      let per = (avail - GAP * (n - 1)) / n;
+      let rows = 1;
+      // The floor is only reached past ~37 cards — larger than any Total War order of
+      // battle — and a second short row is a far better failure than illegible cards.
+      while (per < FLOOR && rows < 3) {
+        rows++;
+        const rowCards = Math.ceil(n / rows);
+        per = (avail - GAP * (rowCards - 1)) / rowCards;
       }
-      const div = inner.querySelector('.grp-div') as HTMLElement | null;
-      if (div) overhead += div.offsetWidth + 0.3 * em * 2;
-      overhead += 0.5 * em * Math.max(0, groups + (div ? 1 : 0) - 1);
-
-      const n = this.cards.length;
-      const avail = inner.clientWidth - overhead;
-      let per = (avail - gap * (n - groups)) / n;
-      if (per < min) {
-        // Two rows: size the cards so half the army fits across the bar.
-        const rowCards = Math.ceil(n / 2);
-        per = (avail - gap * (rowCards - groups)) / rowCards;
-      }
-      per = Math.max(3.6 * em, Math.min(max, per));
-      inner.style.setProperty('--cw', `${per.toFixed(1)}px`);
+      per = Math.max(FLOOR, Math.min(max, per));
+      this.inner.style.setProperty('--cw', `${per.toFixed(1)}px`);
+      // Names need roughly 5.2em of card to set on two lines without hyphen soup, so a
+      // narrow row drops to the compact card even below the count threshold.
+      this.root.dataset.mode = compactByCount || per < 5.2 * em ? 'compact' : 'full';
     }
 
-    for (const c of this.cards) {
-      const r = c.canvas.getBoundingClientRect();
-      if (r.width < 2 || r.height < 2) continue;
-      const dpr = sizeCanvas(c.canvas, r.width, r.height);
-      const g = c.canvas.getContext('2d');
-      if (!g) continue;
-      g.setTransform(dpr, 0, 0, dpr, 0, 0);
-      drawPortrait(g, r.width, r.height, c.view.def);
+    const fn = this.foeCards.length;
+    if (fn > 0) {
+      // Slimmer still: the enemy strip is an overlay on the battle, so twenty of these
+      // must cost less than the player's own row does.
+      const per = Math.max(3 * em, Math.min(3.9 * em, (this.foeHolder.clientWidth - 1.2 * em - GAP * (fn - 1)) / fn));
+      this.foeHolder.style.setProperty('--cw', `${per.toFixed(1)}px`);
     }
+
+    for (const c of this.cards) this.paint(c);
+    for (const c of this.foeCards) this.paint(c);
+  }
+
+  private paint(c: CardEls): void {
+    const r = c.canvas.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) return;
+    const dpr = sizeCanvas(c.canvas, r.width, r.height);
+    const g = c.canvas.getContext('2d');
+    if (!g) return;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawPortrait(g, r.width, r.height, c.view.def);
   }
 
   /** Per-frame, cheap: only advances the tooltip hover delay. */
@@ -249,7 +334,7 @@ export class UnitCards {
     if (this.tooltip.visibleFor === this.hoverCard.view.id) return;
     this.hoverTimer += dt;
     // A short dwell keeps tooltips from strobing as the cursor crosses the bar.
-    if (this.hoverTimer > 0.18) {
+    if (this.hoverTimer > 0.16) {
       const c = this.hoverCard;
       this.tooltip.show(c.view, c.root.getBoundingClientRect(), ctx.viewW, ctx.viewH);
     }
@@ -262,54 +347,59 @@ export class UnitCards {
       this.build(ctx);
     }
     const hoveredId = this.model.hoveredId;
-    for (const c of this.cards) {
-      const v = c.view;
-      const L = c.last;
+    for (const c of this.cards) this.syncCard(c, hoveredId);
+    // A collapsed strip is `display:none`; writing to it would be work nobody sees.
+    if (this.foeOpen) for (const c of this.foeCards) this.syncCard(c, hoveredId);
+  }
 
-      if (v.alive !== L.alive) {
-        L.alive = v.alive;
-        setText(c.count, String(v.alive));
-      }
-      if (Math.abs(v.strengthFrac - L.str) > 0.002) {
-        L.str = v.strengthFrac;
-        setFill(c.strFill, v.strengthFrac);
-        // Below half strength the bar shifts warm, so a spent unit is obvious.
-        setClass(c.root, 'weak', v.strengthFrac < 0.5);
-        setClass(c.root, 'spent', v.strengthFrac < 0.25);
-      }
-      if (v.morale !== L.morale) {
-        L.morale = v.morale;
-        c.pennant.dataset.m = v.morale;
-        c.pennant.style.setProperty('--mor', MORALE_UI[v.morale].colour);
-        pulse(c.pennant);
-      }
-      if (Math.abs(v.fatigue - L.fatigue) > 0.01) {
-        L.fatigue = v.fatigue;
-        setFill(c.fatFill, v.fatigue);
-        setClass(c.fatFill.parentElement as HTMLElement, 'hot', v.fatigue > 0.66);
-      }
-      if (v.hasMissiles && Math.abs(v.ammoFrac - L.ammo) > 0.01) {
-        L.ammo = v.ammoFrac;
-        setFill(c.ammoFill, v.ammoFrac);
-        setClass(c.ammoWrap, 'hot', v.ammoFrac <= 0.001);
-      }
+  private syncCard(c: CardEls, hoveredId: number): void {
+    const v = c.view;
+    const L = c.last;
 
-      const melee = v.fighting > 0;
-      if (v.charging !== L.charging) { L.charging = v.charging; setClass(c.flags.charging, 'on', v.charging); }
-      if (melee !== L.melee) { L.melee = melee; setClass(c.flags.melee, 'on', melee); }
-      if (v.braced !== L.braced) { L.braced = v.braced; setClass(c.flags.braced, 'on', v.braced); }
-      if (v.shooting !== L.shooting) { L.shooting = v.shooting; setClass(c.flags.shooting, 'on', v.shooting); }
-      if (v.routing !== L.routing) { L.routing = v.routing; setClass(c.flags.routing, 'on', v.routing); setClass(c.root, 'routing', v.routing); }
-
-      const sel = this.model.isSelected(v.id);
-      if (sel !== L.selected) { L.selected = sel; setClass(c.root, 'sel', sel); }
-      const hov = hoveredId === v.id;
-      if (hov !== L.hovered) { L.hovered = hov; setClass(c.root, 'hov', hov); }
-      if (v.destroyed !== L.dead) { L.dead = v.destroyed; setClass(c.root, 'dead', v.destroyed); }
+    if (v.alive !== L.alive) {
+      L.alive = v.alive;
+      setText(c.count, String(v.alive));
     }
+    if (Math.abs(v.strengthFrac - L.str) > 0.002) {
+      L.str = v.strengthFrac;
+      setFill(c.strFill, v.strengthFrac);
+      // Below half strength the bar shifts warm, so a spent unit is obvious.
+      setClass(c.root, 'weak', v.strengthFrac < 0.5);
+      setClass(c.root, 'spent', v.strengthFrac < 0.25);
+    }
+    if (v.morale !== L.morale) {
+      L.morale = v.morale;
+      c.pennant.dataset.m = v.morale;
+      c.pennant.style.setProperty('--mor', MORALE_UI[v.morale].colour);
+      pulse(c.pennant);
+    }
+    if (c.fatFill && Math.abs(v.fatigue - L.fatigue) > 0.01) {
+      L.fatigue = v.fatigue;
+      setFill(c.fatFill, v.fatigue);
+      setClass(c.fatFill.parentElement as HTMLElement, 'hot', v.fatigue > 0.66);
+    }
+    if (c.ammoFill && c.ammoWrap && v.hasMissiles && Math.abs(v.ammoFrac - L.ammo) > 0.01) {
+      L.ammo = v.ammoFrac;
+      setFill(c.ammoFill, v.ammoFrac);
+      setClass(c.ammoWrap, 'hot', v.ammoFrac <= 0.001);
+    }
+
+    const melee = v.fighting > 0;
+    if (v.charging !== L.charging) { L.charging = v.charging; setClass(c.flags.charging, 'on', v.charging); }
+    if (melee !== L.melee) { L.melee = melee; setClass(c.flags.melee, 'on', melee); }
+    if (v.braced !== L.braced) { L.braced = v.braced; setClass(c.flags.braced, 'on', v.braced); }
+    if (v.shooting !== L.shooting) { L.shooting = v.shooting; setClass(c.flags.shooting, 'on', v.shooting); }
+    if (v.routing !== L.routing) { L.routing = v.routing; setClass(c.flags.routing, 'on', v.routing); setClass(c.root, 'routing', v.routing); }
+
+    const sel = this.model.isSelected(v.id);
+    if (sel !== L.selected) { L.selected = sel; setClass(c.root, 'sel', sel); }
+    const hov = hoveredId === v.id;
+    if (hov !== L.hovered) { L.hovered = hov; setClass(c.root, 'hov', hov); }
+    if (v.destroyed !== L.dead) { L.dead = v.destroyed; setClass(c.root, 'dead', v.destroyed); }
   }
 
   dispose(): void {
     this.root.remove();
+    this.foeBar.remove();
   }
 }

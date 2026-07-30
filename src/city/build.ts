@@ -317,8 +317,16 @@ const TRIM_MERGE: Partial<Record<CityMatKey, CityMatKey>> = {
   timber: 'brick',
 };
 
-/** Materials whose geometry contributes nothing to a shadow silhouette. */
-const NO_SHADOW: ReadonlySet<CityMatKey> = new Set<CityMatKey>(['metal', 'road']);
+/**
+ * Materials whose geometry contributes nothing worth four shadow passes.
+ *
+ * `road` and `stone` paving are flat on the ground and cast onto themselves. `metal` is
+ * gate fittings and ballista ironwork, centimetres across. `concrete` is the poured core,
+ * which is always behind a brick face that casts the same silhouette — the one exception
+ * being the exposed core at a footing site, where the brick face has not been built yet
+ * and the loss is a soft edge on a 3 m stub.
+ */
+const NO_SHADOW: ReadonlySet<CityMatKey> = new Set<CityMatKey>(['metal', 'road', 'concrete']);
 
 export class Batch {
   private streams = new Map<CityMatKey, GeoStream>();

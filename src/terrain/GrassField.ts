@@ -31,7 +31,7 @@ import type { TerrainSystem } from './TerrainSystem';
 /**
  * Ring extents. A ring's fade-out distance must sit *inside* half its lattice extent, or
  * the lattice runs out before the fade does and the grass stops at a hard circular edge.
- *   near: 244 × 0.335 m = 82 m across, so ±41 m — fade out by 40 m.
+ *   near: 280 × 0.335 m = 94 m across, so ±47 m — fade out by 46 m.
  *   far:  300 × 1.35 m  = 405 m across, so ±202 m — fade out by 195 m.
  *
  * The near lattice was 0.55 m, which gave at most three clumps per square metre before
@@ -41,7 +41,7 @@ import type { TerrainSystem } from './TerrainSystem';
  * merge into a continuous mass — the state real Rome II frames are in, where a man's
  * shins disappear into the sward.
  */
-const NEAR_GRID = 244;
+const NEAR_GRID = 280;
 const NEAR_SPACING = 0.335;
 const FAR_GRID = 300;
 const FAR_SPACING = 1.35;
@@ -230,10 +230,13 @@ export class GrassField {
         geo: crossedCards(3, 2, 0.58, 0.46),
         grid: NEAR_GRID,
         spacing: NEAR_SPACING,
-        jitter: 1.3,
+        // Jitter over 1 means a clump can leave its own cell. Below that the lattice stays
+        // readable as rows and files across the sward, which at this density was the
+        // clearest remaining tell that the ground cover is a shader and not a field.
+        jitter: 1.9,
         fadeIn: 0,
-        fadeStart: 26,
-        fadeEnd: 40,
+        fadeStart: 32,
+        fadeEnd: 46,
         heightScale: 1,
         weeds: true,
         cards: 3,
@@ -360,7 +363,10 @@ export class GrassField {
   // out where the splat map is turning to mud or bare rock.
   float cover = (1.0 - smoothstep(0.26, 0.52, sl))
               * (1.0 - paved * 0.95)
-              * (1.0 - gctl.b * 0.9)
+              // Trampling thins the sward, it does not shave it: men standing in ranks
+              // beat grass down and wear scrapes between the files, and 0.9 here left the
+              // whole parade ground bald at eye level.
+              * (1.0 - gctl.b * 0.55)
               * (1.0 - gctl.g * 0.85)
               * (1.0 - smoothstep(0.74, 0.99, gctl.r) * 0.7)
               * step(uWaterLevel + 0.35, gh);
@@ -370,9 +376,12 @@ export class GrassField {
   cover *= 0.72 + 0.95 * clumpBig + gctl.r * 0.4;
   // Ploughed and fallow strips carry no sward, and the headland the carts turned on is
   // beaten down to half. Matches the ground shader's own field pattern.
+  // Matches the ground shader, including its campus suppression: the fighting ground is
+  // pasture, so a fallow strip there must not strip the sward off it either.
   vec2 gfld = grassField(gpos);
-  cover *= 1.0 - smoothstep(0.60, 0.74, gfld.x) * 0.9;
-  cover *= 1.0 - gfld.y * 0.45;
+  float gCampus = 1.0 - smoothstep(420.0, 800.0, length(vec2(gpos.x * 0.86, (gpos.y + 40.0) * 1.9)));
+  cover *= 1.0 - smoothstep(0.60, 0.74, gfld.x) * 0.88 * (1.0 - gCampus * 0.88);
+  cover *= 1.0 - gfld.y * 0.45 * (1.0 - gCampus * 0.55);
 
   float dist = length(gpos - uCamXZ);
   float fadeNear = uFadeIn < 0.5 ? 1.0 : smoothstep(uFadeIn, uFadeIn + 30.0, dist);

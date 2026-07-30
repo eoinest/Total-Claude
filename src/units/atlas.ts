@@ -188,12 +188,19 @@ const MATS: Record<Mat, MatDef> = {
       mix3(out, RUST, Math.min(0.7, rust), out);
     },
     height: (u, v) => fbm(u * 14, v * 14, 3, 14, 3) * 0.6 + vnoise(u * 3, v * 40, 3, 11) * 0.4,
-    // Iron is a metal, and a metal's albedo *is* its specular colour: at metalness 0.42 a
-    // helmet had no reflection to speak of and read as painted plastic. With a real
-    // environment map bound, near-full metalness is both correct and what gives the tight
-    // bright crown highlight a Rome II helmet has.
-    roughness: 0.5,
-    metalness: 0.88,
+    // Metalness deliberately far short of 1 despite iron being a metal, and this is a
+    // deliberate trade rather than an oversight. A pure metal has no diffuse term at all, so
+    // its whole colour is the environment reflection — and the only bright thing in this
+    // environment is a blue sky, which turned every helmet on the field into a saturated
+    // cobalt mirror. That is a worse uniformity tell than the flat grey it replaced, because
+    // it is the same wrong colour on two thousand men.
+    //
+    // So: a low metalness lets the albedo carry the iron, a low roughness keeps the tight
+    // sun highlight on the crown that makes it read as metal at all, and the warm F0 in the
+    // shader's metal tint pulls what reflection remains back toward steel. If the render
+    // rig ever gains a warmer, less sky-dominated specular probe, these should go back up.
+    roughness: 0.48,
+    metalness: 0.28,
     bump: 0.5,
   },
   // Cleaner plate for helmets and bosses.
@@ -201,13 +208,16 @@ const MATS: Record<Mat, MatDef> = {
     colour(u, v, out) {
       const n = fbm(u * 6, v * 6, 3, 6, 5);
       const brush = vnoise(u * 60, v * 2, 60, 7);
-      mix3([0.24, 0.235, 0.222], [0.52, 0.505, 0.475], n * 0.7 + brush * 0.3, out);
+      // Burnished iron is a bright surface: 0.66 sRGB at the top of the range, not 0.52.
+      // Under-darkening the plate is what left helmets reading as grey plastic.
+      mix3([0.34, 0.325, 0.3], [0.72, 0.7, 0.65], n * 0.7 + brush * 0.3, out);
     },
     height: (u, v) => vnoise(u * 56, v * 2, 56, 7) * 0.35 + fbm(u * 8, v * 8, 3, 8, 5) * 0.65,
     // Hammered and burnished, so tighter than the worn iron: this is the helmet bowl and
-    // the shield boss, the two things on a man that catch the sun.
-    roughness: 0.31,
-    metalness: 0.95,
+    // the shield boss, the two things on a man that catch the sun. Low roughness is what
+    // gives the tight crown highlight; metalness stays moderate for the reason above.
+    roughness: 0.32,
+    metalness: 0.3,
     bump: 0.25,
   },
   // Gilded bronze: praetorian fittings, helmet trim, harness bosses.
@@ -219,8 +229,10 @@ const MATS: Record<Mat, MatDef> = {
       mix3(out, [0.34, 0.5, 0.4], Math.min(0.45, patina), out);
     },
     height: (u, v) => fbm(u * 10, v * 10, 3, 10, 9),
-    roughness: 0.28,
-    metalness: 0.96,
+    // Bronze can afford more metalness than iron: it is warm, so what it reflects comes
+    // back warm and the sky does not take it over.
+    roughness: 0.27,
+    metalness: 0.55,
     bump: 0.3,
   },
   [Mat.Mail]: {
@@ -230,11 +242,11 @@ const MATS: Record<Mat, MatDef> = {
       mix3([0.2, 0.195, 0.185], [0.54, 0.53, 0.5], h * (0.7 + grime * 0.3), out);
     },
     height: (u, v) => mailHeight(u, v, 18),
-    // Mail is thousands of small curved surfaces, so it scatters: rougher than plate, but
-    // still a metal, and the ring highlights are what make it read as iron rather than as
-    // grey knitwear.
-    roughness: 0.55,
-    metalness: 0.9,
+    // Mail is thousands of small curved surfaces, so it scatters — rough, and mostly
+    // self-shadowed. High metalness rendered a hamata as a black net, because a metal with
+    // a dark albedo and nothing bright to reflect has no colour left at all.
+    roughness: 0.6,
+    metalness: 0.26,
     bump: 1.0,
   },
   // Lorica squamata: overlapping bronze-washed scales wired to a linen backing.
@@ -264,8 +276,8 @@ const MATS: Record<Mat, MatDef> = {
       const side = 1 - Math.abs(fx - 0.5) * 1.7;
       return Math.max(0, Math.min(1, (1 - fy * 0.85) * Math.max(0, side)));
     },
-    roughness: 0.34,
-    metalness: 0.92,
+    roughness: 0.32,
+    metalness: 0.42,
     bump: 0.9,
   },
   [Mat.LeatherBrown]: {
@@ -452,8 +464,8 @@ const MATS: Record<Mat, MatDef> = {
       const dr = Math.hypot(rx - Math.floor(rx) - 0.5, (fy - 0.22) * bands * 0.5);
       return Math.min(1, plate + (dr < 0.2 ? (1 - dr / 0.2) * 0.5 : 0));
     },
-    roughness: 0.36,
-    metalness: 0.93,
+    roughness: 0.35,
+    metalness: 0.3,
     bump: 0.9,
   },
   [Mat.HideBay]: {

@@ -214,41 +214,20 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   white-space: nowrap;
 }
 
-/* Debug/perf readout, top-left. */
-#perf {
-  position: absolute;
-  top: 10px;
-  left: 12px;
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-  font-size: 11px;
-  line-height: 1.55;
-  letter-spacing: 0.02em;
-  color: rgba(210, 226, 236, 0.72);
-  text-shadow: 0 1px 3px #000;
-  padding: 7px 11px;
-  background: rgba(8, 10, 14, 0.55);
-  border-left: 2px solid rgba(217, 178, 95, 0.5);
-  border-radius: 2px;
-  white-space: pre;
-  pointer-events: none;
-}
-
-#perf b { color: var(--gold); font-weight: 600; }
-#perf .warn { color: #e8a33d; }
-#perf .bad { color: #e2564b; }
-
+/* Debug/perf readout, top-left. Written by `HudSystem`; there is no `#perf` element in the
+   document and nothing outside the HUD reports frame stats. */
 .hud-perf {
   position: absolute;
-  top: 10px;
-  left: 12px;
+  top: 9px;
+  left: 10px;
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-  font-size: 11px;
-  letter-spacing: 0.02em;
-  color: rgba(217, 178, 95, 0.72);
+  font-size: 10px;
+  letter-spacing: 0.01em;
+  color: rgba(224, 190, 116, 0.8);
   text-shadow: 0 1px 3px #000;
-  line-height: 1.55;
-  padding: 7px 11px;
-  background: rgba(8, 10, 14, 0.74);
+  line-height: 1.45;
+  padding: 4px 8px;
+  background: rgba(8, 10, 14, 0.72);
   border-left: 2px solid rgba(217, 178, 95, 0.5);
   border-radius: 2px;
   white-space: pre;
@@ -825,16 +804,22 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
 .hud-bottom {
   position: absolute;
   left: 1em;
-  right: 20em;
-  bottom: 0.8em;
+  right: 19.4em;
+  bottom: 0.7em;
   pointer-events: none;
 }
 
+/* `fit-content` matters: with the cards capped at 5em a full-width plinth would leave a
+   quarter of itself as empty bronze, which is exactly the dead space the three-row bar
+   used to have. The panel hugs its cards and the field keeps the rest. */
 .cardbar {
   position: relative;
-  padding: 0.5em 0.6em 0.55em;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0.34em 0.44em 0.4em;
   display: flex;
   align-items: stretch;
+  gap: 0.34em;
   animation: rise-in 0.75s cubic-bezier(0.2, 0.9, 0.25, 1) both;
 }
 
@@ -843,66 +828,129 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   to { opacity: 1; transform: translateY(0); }
 }
 
-.cardbar-inner {
-  display: flex;
-  align-items: stretch;
-  gap: 0.5em;
-  width: 100%;
-  min-width: 0;
-}
-
-.grp-div {
-  width: 2px;
-  align-self: stretch;
-  background: linear-gradient(180deg, transparent, rgba(217, 178, 95, 0.42), transparent);
+/* The army's own standard, once, at the left end of its row. */
+.cb-tab {
   flex: none;
-  margin: 0 0.15em;
-}
-
-.cgrp {
-  display: flex;
-  align-items: stretch;
-  gap: 0.4em;
-  min-width: 0;
-}
-.cgrp:first-child { flex: 1 1 auto; }
-.cgrp:last-child { flex: 1 1 auto; }
-
-.cgrp-tab {
-  flex: none;
-  width: 2em;
+  width: 1.9em;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
-  gap: 0.5em;
-  padding: 0.3em 0;
+  justify-content: center;
+  gap: 0.45em;
+  color: #e2b96a;
   border-right: 1px solid rgba(217, 178, 95, 0.14);
 }
-.cgrp[data-f='rome'] .cgrp-tab { color: #e2b96a; }
-.cgrp[data-f='juthungi'] .cgrp-tab { color: #b9c8d4; }
-
-.cgrp-std { font-size: 1.9em; line-height: 0; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.9)); }
-
-.cgrp-name {
+.cb-std { font-size: 1.7em; line-height: 0; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.9)); }
+.cb-name {
   writing-mode: vertical-rl;
   text-orientation: mixed;
   transform: rotate(180deg);
-  font-size: 0.8em;
-  letter-spacing: 0.24em;
+  font-size: 0.76em;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: rgba(239, 230, 210, 0.55);
+  color: rgba(239, 230, 210, 0.5);
   white-space: nowrap;
 }
 
-.cgrp-cards {
+.cardbar-inner {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   align-content: flex-end;
-  gap: 0.3em;
-  min-width: 0;
+  gap: 0.28em;
   flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Divider between arms — foot | missile | horse | engines. */
+.band-div {
+  flex: none;
+  width: 1.15em;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, transparent, rgba(217, 178, 95, 0.3) 22%, rgba(217, 178, 95, 0.3) 78%, transparent);
+  background-size: 1px 100%;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+/* Condensed sans, not the serif: at three-quarters of the base size a Palatino small-cap
+   is a smear, and this label has to survive being 7 px tall on a 1080p screen. */
+.band-lab {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  font-family: var(--num);
+  font-weight: 600;
+  font-size: 0.76em;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: rgba(226, 192, 118, 0.82);
+  text-shadow: 0 1px 2px #000;
+  background: linear-gradient(180deg, rgba(20, 15, 10, 0) 0%, rgba(20, 15, 10, 0.92) 14%, rgba(20, 15, 10, 0.92) 86%, rgba(20, 15, 10, 0) 100%);
+  padding: 0.4em 0;
+}
+
+/* ---- The enemy order of battle: a tab until it is asked for ---- */
+
+.obat {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-bottom: 0.34em;
+}
+.obat.none { display: none; }
+
+.obat-tab {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.16em 0.6em 0.16em 0.44em;
+  font-family: var(--serif);
+  font-size: 0.86em;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(200, 214, 226, 0.62);
+  background: linear-gradient(180deg, rgba(26, 22, 17, 0.82), rgba(12, 10, 7, 0.88));
+  border: 1px solid rgba(217, 178, 95, 0.2);
+  border-radius: 2px 2px 0 0;
+  border-bottom: none;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.obat-tab:hover { color: #eef4fa; border-color: rgba(217, 178, 95, 0.5); }
+.obat-std { font-size: 1.5em; line-height: 0; color: #b9c8d4; }
+.obat-n {
+  font-family: var(--num);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 1.05em;
+  letter-spacing: 0;
+  color: var(--gold);
+}
+.obat-u { font-size: 0.86em; letter-spacing: 0.12em; opacity: 0.66; }
+/* Points the way the strip will move: up to open, down to put it away again. */
+.obat-chev { font-size: 1.1em; line-height: 0; transition: transform 0.22s; }
+.obat.open .obat-chev { transform: rotate(180deg); }
+
+.obat-cards {
+  display: none;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.28em;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 14em;
+  padding: 0.3em 0.4em 0.34em;
+  border-radius: 0 3px 3px 3px;
+}
+.obat.open .obat-cards {
+  display: flex;
+  animation: rise-in 0.34s cubic-bezier(0.2, 0.9, 0.25, 1) both;
 }
 
 .card {
@@ -913,7 +961,7 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   min-width: 0;
   display: flex;
   flex-direction: column;
-  padding: 0.2em 0.18em 0.26em;
+  padding: 0.16em 0.14em 0.2em;
   border: 1px solid rgba(217, 178, 95, 0.26);
   border-radius: 2px;
   background: linear-gradient(180deg, rgba(60, 47, 30, 0.9), rgba(22, 17, 11, 0.94));
@@ -952,6 +1000,16 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
 .card.dead .card-count { text-decoration: line-through; text-decoration-color: rgba(217, 74, 60, 0.9); }
 .card.dead .card-x { opacity: 1; }
 .card.routing { border-color: rgba(217, 74, 60, 0.6); }
+
+/* Compact bar: the written name goes to the tooltip and the plaque, the ordinal stays on
+   the card, and the whole row loses roughly a third of its height. */
+.cardbar[data-mode='compact'] .card-name,
+.cardbar[data-mode='compact'] .card-native { display: none; }
+.cardbar[data-mode='compact'] .card-bar { margin-top: 0.2em; height: 0.5em; }
+.cardbar[data-mode='compact'] .card-meters { margin-top: 0.16em; }
+
+.card.mini { cursor: default; }
+.card.mini .card-bar { margin-top: 0.2em; height: 0.44em; }
 
 .card-por {
   position: relative;
@@ -992,6 +1050,31 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
 @keyframes pen-flash {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
+}
+
+/* The cohort number. On a compact card it is the only thing distinguishing the fourth
+   legionary cohort from the fifth, so it reads at full gold rather than as a whisper —
+   and it gets the same struck tab the morale pennant has, because bare type over the
+   pilum shafts in the portrait turned VIII into a smear. */
+.card-ord {
+  position: absolute;
+  right: 0;
+  top: 0;
+  min-width: 1.5em;
+  padding: 0.02em 0.22em 0.06em;
+  font-family: var(--num);
+  font-weight: 600;
+  font-size: 0.82em;
+  line-height: 1.24;
+  letter-spacing: 0.02em;
+  text-align: center;
+  color: #f7e6bd;
+  background: linear-gradient(180deg, rgba(10, 8, 5, 0.9), rgba(10, 8, 5, 0.66));
+  border-left: 1px solid rgba(217, 178, 95, 0.24);
+  border-bottom: 1px solid rgba(217, 178, 95, 0.24);
+  border-bottom-left-radius: 2px;
+  text-shadow: 0 1px 1px #000;
+  pointer-events: none;
 }
 
 .card-cls {
@@ -1386,15 +1469,15 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
 .minimap {
   position: absolute;
   right: 1em;
-  bottom: 0.8em;
-  padding: 0.5em;
+  bottom: 0.7em;
+  padding: 0.42em;
   animation: rise-in 0.75s cubic-bezier(0.2, 0.9, 0.25, 1) both;
 }
 
 .mm-frame {
   position: relative;
-  width: 17.6em;
-  height: 17.6em;
+  width: 16.2em;
+  height: 16.2em;
   border: 1px solid rgba(217, 178, 95, 0.5);
   border-radius: 2px;
   overflow: hidden;
@@ -1420,13 +1503,32 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
 .mm-n {
   position: absolute;
   left: 0.4em;
-  top: 0.24em;
-  font-size: 0.86em;
+  top: 0.2em;
+  font-size: 0.9em;
   letter-spacing: 0.18em;
-  color: rgba(255, 246, 224, 0.72);
-  text-shadow: 0 1px 3px #000;
+  color: rgba(255, 248, 226, 0.92);
+  text-shadow: 0 0 4px #000, 0 1px 3px #000;
   pointer-events: none;
 }
+
+.mm-zoom {
+  position: absolute;
+  left: 0.34em;
+  bottom: 0.28em;
+  appearance: none;
+  padding: 0.06em 0.4em;
+  font-family: var(--num);
+  font-size: 0.72em;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: rgba(240, 228, 200, 0.78);
+  background: rgba(10, 8, 5, 0.66);
+  border: 1px solid rgba(217, 178, 95, 0.34);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.mm-zoom:hover { color: #fff6e0; border-color: rgba(242, 221, 158, 0.8); }
 
 .mm-rivet {
   position: absolute;

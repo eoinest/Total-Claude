@@ -30,6 +30,15 @@ const VIEWS = {
   midplain: { x: -300, z: -150, zoom: 0.62, yaw: Math.PI * 0.35, desc: 'plain from 200 m' },
   wallfoot: { x: -120, z: 430, zoom: 0.22, yaw: 0.0, desc: 'wall foot — vegetation keep-out' },
   roadside: { x: 40, z: 300, zoom: 0.12, yaw: Math.PI * 0.02, desc: 'Via Flaminia paving and verge' },
+  // Mirrors of the graded cameras in tools/shoot.mjs, so the same framings can be judged
+  // with the HUD out of the way.
+  gwide: { x: 0, z: 90, zoom: 0.95, yaw: Math.PI * 0.82, desc: 'graded: wide' },
+  gterrain: { x: -560, z: -420, zoom: 0.44, yaw: Math.PI * 0.4, desc: 'graded: terrain' },
+  gcity: { x: 60, z: 400, zoom: 0.62, yaw: 0.0, desc: 'graded: city' },
+  gwall: { x: -120, z: 470, zoom: 0.58, yaw: 0.0, desc: 'graded: wall' },
+  gskyline: { x: -180, z: 780, zoom: 0.8, yaw: Math.PI * 0.05, desc: 'graded: skyline' },
+  gdeepcity: { x: -20, z: 1050, zoom: 0.86, yaw: Math.PI * 0.1, desc: 'graded: deepcity' },
+  gline: { x: -20, z: 128, zoom: 0.16, yaw: Math.PI * 1.42, desc: 'graded: romanline' },
 };
 
 const args = new Map(
@@ -147,7 +156,45 @@ for (const name of requested) {
   );
   const buf = await page.screenshot({ type: 'png' });
   await writeFile(path.join(OUT, `${name}.png`), buf);
-  console.log(`  ✓ ${name.padEnd(10)} ${v.desc}`);
+
+  // A/B the cost of the ground stack against the rest of the frame. Same camera, same
+  // frame count, `readPixels` barrier — the only honest way to tell whether a slow frame
+  // is the grass or somebody else's system.
+  const perf = await page.evaluate(() => {
+    const g = window.__game;
+    const gl = g.engine.ctx.renderer.getContext();
+    const px = new Uint8Array(4);
+    const sync = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    const time = (n) => {
+      g.engine.frame(g.engine.time.elapsed * 1000 + 16.7);
+      sync();
+      const t0 = performance.now();
+      for (let i = 0; i < n; i++) g.engine.frame(g.engine.time.elapsed * 1000 + 16.7);
+      sync();
+      return (performance.now() - t0) / n;
+    };
+    const named = (re) => {
+      const out = [];
+      g.engine.ctx.scene.traverse((o) => {
+        if ((o.isMesh || o.isInstancedMesh) && re.test(o.name || '') && o.visible) out.push(o);
+      });
+      return out;
+    };
+    const all = time(24);
+    const grass = named(/^grass-/);
+    for (const o of grass) o.visible = false;
+    const noGrass = time(24);
+    for (const o of grass) o.visible = true;
+    const veg = named(/^veg-/);
+    for (const o of veg) o.visible = false;
+    const noVeg = time(24);
+    for (const o of veg) o.visible = true;
+    return { all, noGrass, noVeg, draws: g.engine.stats().calls };
+  });
+  console.log(
+    `  ✓ ${name.padEnd(10)} ${v.desc.padEnd(34)} ${perf.all.toFixed(2)}ms ` +
+      `(−grass ${perf.noGrass.toFixed(2)}, −veg ${perf.noVeg.toFixed(2)}, ${perf.draws} draws)`
+  );
 }
 
 await browser.close();

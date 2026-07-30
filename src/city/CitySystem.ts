@@ -40,7 +40,22 @@ interface Chunk {
   /** Distance at which level i+1 takes over from level i. */
   switchAt: number[];
   current: number;
+  /** Which of this chunk's meshes may cast, and whether they currently do. */
+  casters: THREE.Mesh[];
+  casting: boolean;
 }
+
+/**
+ * Beyond this distance a chunk stops casting.
+ *
+ * Every shadow-casting mesh is re-rendered once per cascade, so the shadow passes, not the
+ * colour pass, are where a city of this size spends its draw calls. At three quarters of a
+ * kilometre an insula's shadow is a couple of texels of the outermost cascade and its
+ * contribution is a slightly darker smudge; the four extra draw calls buy nothing. Near
+ * geometry — the curtain, its towers, the scaffolding — keeps casting, which is where
+ * shadow actually carries the mass of the masonry.
+ */
+const SHADOW_CUTOFF = 700;
 
 /** Cell size of the masonry occupancy grid, in metres. */
 const OCC_CELL = 4;
@@ -121,6 +136,7 @@ export class CitySystem implements Subsystem {
   private bakeChunk(spec: CityChunkSpec, heightAt: (x: number, z: number) => number): void {
     const levels: LodLevel[] = [];
     const switchAt: number[] = [];
+    const casters: THREE.Mesh[] = [];
     // Only build the levels the switch distances actually reach.
     const wanted: number[] = [2];
     if (spec.lodSwitch[0] < 1e8) wanted.push(1);
@@ -147,7 +163,10 @@ export class CitySystem implements Subsystem {
       // outer cascades' texel footprint, and re-rendering it four times to blur it away
       // was costing more calls than the whole city's main pass.
       const meshes = batch.toMeshes(spec.name, spec.castShadow && detail >= 2);
-      for (const mesh of meshes) group.add(mesh);
+      for (const mesh of meshes) {
+        group.add(mesh);
+        if (mesh.castShadow) casters.push(mesh);
+      }
       this.meshCount += meshes.length;
       levels.push({ group, triangles: batch.triangleCount });
       this.totalTris += batch.triangleCount;
@@ -164,6 +183,8 @@ export class CitySystem implements Subsystem {
       levels,
       switchAt,
       current: 0,
+      casters,
+      casting: true,
     });
   }
 
@@ -174,13 +195,24 @@ export class CitySystem implements Subsystem {
   preRender(ctx: EngineContext): void {
     const cam = ctx.camera.position;
     for (const c of this.chunks) {
-      if (c.levels.length < 2) continue;
       const dx = cam.x - c.cx;
       const dy = cam.y - c.cy;
       const dz = cam.z - c.cz;
       // Distance to the chunk's surface, not its centre: a 1 km-wide district should
       // not drop to silhouette just because its midpoint is far away.
       const d = Math.max(0, Math.sqrt(dx * dx + dy * dy + dz * dz) - c.radius * 0.55);
+
+      // Shadow casting by distance, with 15 % hysteresis so a hovering camera does not
+      // flip a district's shadow on and off.
+      if (c.casters.length > 0) {
+        const want = d < SHADOW_CUTOFF * (c.casting ? 1.15 : 1.0);
+        if (want !== c.casting) {
+          c.casting = want;
+          for (const m of c.casters) m.castShadow = want;
+        }
+      }
+
+      if (c.levels.length < 2) continue;
       let want = c.levels.length - 1;
       for (let i = 0; i < c.switchAt.length; i++) {
         const t = c.switchAt[i] * (want === i ? 1 : 1);

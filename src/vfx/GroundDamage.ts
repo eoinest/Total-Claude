@@ -118,19 +118,26 @@ void main() {
   // Gentle modulation only: heavy grain turns broad staining into leopard spots.
   float grain = 0.74 + 0.52 * (nFine.r * 0.5 + nMid.g * 0.3 + nBig.g * 0.2);
 
-  float blood = d.r * grain;
+  // Blood gets a much harder break-up than trample does, and needs it. Hundreds of men
+  // dying inside twenty metres saturate the channel across the whole area, and a
+  // saturated flat channel composites as one continuous 40 m amoeba of solid red —
+  // legible from the strategic camera as a paint spill, not as a killing ground. The
+  // extra octaves at low weight put back the mottling that makes it read as soaked soil.
+  float bloodGrain = 0.30 + 1.28 * (nFine.g * 0.42 + nMid.b * 0.34 + nBig.r * 0.24);
+  float blood = d.r * bloodGrain;
   float tramp = d.g * (0.78 + 0.42 * nMid.r);
   float scorch = d.b * grain;
 
-  float wB = blood * 3.4;
+  float wB = blood * 2.3;
   float wT = tramp * 1.25;
   float wS = scorch * 2.0;
   float total = wB + wT + wS;
   if (total < 0.010) discard;
 
-  // Oxidised blood on soil: dark maroon-brown, going almost black where it has pooled.
-  // Bright red is paint; blood on earth is nearly the colour of the earth.
-  vec3 bloodCol = mix(vec3(0.098, 0.030, 0.023), vec3(0.030, 0.010, 0.009), clamp(blood * 1.6, 0.0, 1.0));
+  // Oxidised blood on soil: dark maroon-brown, deepening where it has pooled. It must
+  // *stay red* at saturation — taken all the way to near-black it stops reading as blood
+  // and reads as a hole in the terrain, which is worse than not being there.
+  vec3 bloodCol = mix(vec3(0.105, 0.041, 0.031), vec3(0.052, 0.023, 0.019), clamp(blood * 1.1, 0.0, 1.0));
   // Churned earth, not soot: a dry brown that reads as exposed subsoil.
   vec3 trampCol = vec3(0.215, 0.168, 0.116) * (0.82 + 0.36 * nFine.g);
   vec3 scorchCol = vec3(0.026, 0.022, 0.020);

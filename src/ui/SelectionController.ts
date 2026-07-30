@@ -27,7 +27,7 @@ import {
   type Footprint, type Projected,
 } from './picking';
 import type { PointerTracker } from './pointer';
-import { PLAYER_FACTION } from './theme';
+import { abilityUI, PLAYER_FACTION } from './theme';
 import type { GhostSpec, WorldOverlay } from './WorldOverlay';
 
 export type CursorKind = 'default' | 'move' | 'attack' | 'friend' | 'select';
@@ -44,10 +44,23 @@ const PROJECTED: Projected = { x: 0, y: 0, distance: 0, visible: false };
 const GROUND = { x: 0, y: 0, z: 0 };
 const CORNER = { x: 0, z: 0 };
 
+/** What the HUD needs from `AbilitySystem`. Duck-typed so the HUD runs without it. */
+export interface AbilityProbe {
+  /** 0 = ready, 1 = just used. */
+  cooldownFraction(unitId: number, ability: string): number;
+  activeOn(unitId: number): string[];
+}
+
 export class SelectionController {
   cursor: CursorKind = 'default';
   /** Move orders run by default while this is on (toggled with R). */
   runByDefault = false;
+  /**
+   * The sim's own cooldown and duration bookkeeping, installed by `HudSystem` when
+   * `AbilitySystem` is registered. When it is present the two maps below go unread — they
+   * are the fallback for a HUD running against a sim that has no ability system at all.
+   */
+  abilityProbe: AbilityProbe | null = null;
   /** Ability cooldown expiry times, keyed `unitId:abilityId`, in sim seconds. */
   private cooldowns = new Map<string, number>();
   /** Abilities the sim reports as currently running, keyed `unitId:abilityId`. */
@@ -81,8 +94,8 @@ export class SelectionController {
   ) {}
 
   /**
-   * The ability system owns activation and duration; the HUD only mirrors it. Cooldowns
-   * are still timed here because nothing publishes them yet.
+   * Mirror of ability state for the fallback path. `AbilitySystem` publishes the real
+   * numbers through `abilityProbe`; these events keep the plaque honest without it.
    */
   attachEvents(ctx: EngineContext): void {
     this.offs.push(
@@ -90,7 +103,7 @@ export class SelectionController {
         const key = `${e.unitId}:${e.ability}`;
         if (e.active) this.active.add(key);
         else this.active.delete(key);
-        this.cooldowns.set(key, ctx.time.simTime + this.abilityCooldown(e.ability));
+        this.cooldowns.set(key, ctx.time.simTime + abilityUI(e.ability).cooldown);
       })
     );
     this.offs.push(
@@ -101,6 +114,7 @@ export class SelectionController {
   }
 
   isAbilityActive(unitId: number, ability: string): boolean {
+    if (this.abilityProbe) return this.abilityProbe.activeOn(unitId).includes(ability);
     return this.active.has(`${unitId}:${ability}`);
   }
 
@@ -201,39 +215,24 @@ export class SelectionController {
     const ids: number[] = [];
     for (const v of this.model.selectedViews) {
       if (!v.def.abilities.includes(id)) continue;
-      if (this.cooldownLeft(v.id, id, now) > 0) continue;
+      if (this.cooldownFrac(v.id, id, now) > 0) continue;
       ids.push(v.id);
     }
     if (!ids.length) return;
     ctx.events.emit('orderIssued', { unitIds: ids, kind: 'ability', ability: id });
-    for (const uid of ids) this.cooldowns.set(`${uid}:${id}`, now + this.abilityCooldown(id));
-  }
-
-  private abilityCooldown(id: string): number {
-    // Kept here rather than in the roster: cooldowns are a UI affordance until the
-    // ability system lands and can own them.
-    switch (id) {
-      case 'inspire': return 70;
-      case 'arrow-storm': return 90;
-      case 'frenzy': return 80;
-      case 'warcry': return 54;
-      case 'charge': return 46;
-      case 'pilum-volley':
-      case 'framea-volley': return 32;
-      case 'testudo': return 26;
-      default: return 14;
+    // Optimistic only on the fallback path; with the probe installed the sim's next tick
+    // reports the real cooldown and this map is never read.
+    if (!this.abilityProbe) {
+      for (const uid of ids) this.cooldowns.set(`${uid}:${id}`, now + abilityUI(id).cooldown);
     }
   }
 
-  cooldownLeft(unitId: number, ability: string, now: number): number {
-    const t = this.cooldowns.get(`${unitId}:${ability}`);
-    return t === undefined ? 0 : Math.max(0, t - now);
-  }
-
   cooldownFrac(unitId: number, ability: string, now: number): number {
-    const left = this.cooldownLeft(unitId, ability, now);
-    if (left <= 0) return 0;
-    return Math.min(1, left / this.abilityCooldown(ability));
+    if (this.abilityProbe) return this.abilityProbe.cooldownFraction(unitId, ability);
+    const t = this.cooldowns.get(`${unitId}:${ability}`);
+    if (t === undefined) return 0;
+    const total = Math.max(1, abilityUI(ability).cooldown);
+    return Math.min(1, Math.max(0, t - now) / total);
   }
 
   // -------------------------------------------------------------------------
@@ -422,7 +421,7 @@ export class SelectionController {
         this.showHint(
           len >= FRONTAGE_MIN_M
             ? `${Math.round(len)} m frontage · ${wide} per rank`
-            : this.ptr.shift ? 'Queue move order' : 'Move here',
+            : ctx.input.shift ? 'Queue move order' : 'Move here',
           'move'
         );
       }
@@ -550,9 +549,9 @@ export class SelectionController {
   private issueDragOrder(ctx: EngineContext, dragPx: number): void {
     const sel = this.model.selectedViews.filter((v) => !v.routing);
     if (sel.length === 0) return;
-    const queued = this.ptr.shift;
-    const running = this.ptr.alt || this.runByDefault;
-    const attackMove = this.ptr.ctrl;
+    const queued = ctx.input.shift;
+    const running = ctx.input.alt || this.runByDefault;
+    const attackMove = ctx.input.ctrl;
 
     // Attacking a specific unit overrides any frontage the drag implied.
     if (this.dragHostileId >= 0 && dragPx < DRAG_PX * 3) {
@@ -566,17 +565,19 @@ export class SelectionController {
 
     this.buildGhosts(ctx, dragPx);
     for (const g of this.ghosts) {
-      const u = g.unit;
-      // The sim has no frontage field on `orderIssued` yet, so the width the drag
-      // implied is written straight onto the unit. `width` is only read by the
-      // formation slot layout, so this cannot desynchronise anything.
-      if (g.width !== u.width) u.width = g.width;
+      // `orderIssued.width` is the contract for a frontage order, but
+      // `BattleSystem.applyOrder` does not read it yet, so the width is also written
+      // through until it does. `width` is only consumed by the formation slot layout, so
+      // the duplicate cannot desynchronise anything; delete the assignment, not the
+      // event field, once the sim honours it.
+      if (g.width !== g.unit.width) g.unit.width = g.width;
       ctx.events.emit('orderIssued', {
-        unitIds: [u.id],
+        unitIds: [g.unit.id],
         kind: attackMove ? 'attackMove' : 'move',
         x: g.x,
         z: g.z,
         facing: g.facing,
+        width: g.width,
         queued,
         running,
       });
@@ -608,11 +609,21 @@ export class SelectionController {
     }
   }
 
-  /** Formations every selected unit can adopt, in roster order. */
+  /**
+   * Formations every selected unit can adopt, in roster order.
+   *
+   * Ids that are also one of the unit's *abilities* are excluded. `testudo` is listed in
+   * both lists in the roster, and `AbilitySystem` owns it: it sets the formation on
+   * activation, holds it for the ability's duration and restores the previous one on
+   * expiry, along with the missile resistance and melee penalty that make the tortoise
+   * mean anything. A formation button for the same id issued the change without any of
+   * that and was silently undone — two controls for one thing, one of them a lie.
+   */
   commonFormations(sel: UnitView[]): string[] {
     if (sel.length === 0) return [];
     const out: string[] = [];
     for (const id of sel[0].def.formations) {
+      if (sel.some((v) => v.def.abilities.includes(id))) continue;
       if (sel.every((v) => v.def.formations.includes(id))) out.push(id);
     }
     return out;

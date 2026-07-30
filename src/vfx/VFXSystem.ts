@@ -43,18 +43,21 @@ import { Weather, type WeatherKind } from './Weather';
  */
 
 /**
- * Soft-layer capacity is sized for the melee, not the march. Contact dust lives six to
- * ten seconds so that a modest spawn rate integrates into an opaque bank, and that
- * trades particle *count* for fill rate deliberately: 30k live billboards of 2–6 m at
- * battle range is ~4× screen overdraw, which on the measured budget costs well under a
- * millisecond, while the same optical depth from short-lived puffs would need five times
- * the spawn rate.
+ * `spawns` is the per-frame emission cap, and it is the single most important number
+ * here. Optical depth comes from alpha × overlap, not from particle count, so the right
+ * shape of this system is *few, opaque, long-lived* puffs: 130 spawns/frame at a 3.5 s
+ * mean life settles at ~4,500 live billboards, which is a legible dust bank. Ten times
+ * that — which is what a per-man emission rate reaches with 9,500 men on the field —
+ * costs 5 ms of fill and renders the battle as a white sheet.
+ *
+ * `litter` is deliberately generous: it is one instanced draw of a 20-triangle dish, and
+ * the spent shafts are the cheapest legible record of the whole battle.
  */
 const QUALITY_SCALE: Record<string, { soft: number; add: number; density: number; decals: number; birds: number; litter: number; spawns: number }> = {
-  low: { soft: 6000, add: 1600, density: 0.32, decals: 200, birds: 8, litter: 900, spawns: 180 },
-  medium: { soft: 14000, add: 3200, density: 0.62, decals: 380, birds: 12, litter: 1800, spawns: 520 },
-  high: { soft: 26000, add: 5200, density: 1, decals: 640, birds: 16, litter: 3000, spawns: 1000 },
-  ultra: { soft: 34000, add: 6400, density: 1.15, decals: 820, birds: 20, litter: 3600, spawns: 1400 },
+  low: { soft: 3500, add: 1600, density: 0.32, decals: 200, birds: 8, litter: 1400, spawns: 30 },
+  medium: { soft: 7000, add: 3200, density: 0.62, decals: 380, birds: 12, litter: 3000, spawns: 60 },
+  high: { soft: 12000, add: 5200, density: 1, decals: 640, birds: 16, litter: 5000, spawns: 105 },
+  ultra: { soft: 15000, add: 6400, density: 1.15, decals: 820, birds: 20, litter: 7000, spawns: 130 },
 };
 
 export class VFXSystem implements Subsystem {
@@ -269,7 +272,7 @@ export class VFXSystem implements Subsystem {
       rec.life = 2 + h1 * 2.5;
       rec.size0 = radius * 0.35 * (0.6 + h2 * 0.8);
       rec.size1 = rec.size0 * 3.2;
-      rec.r = 0.70; rec.g = 0.62; rec.b = 0.48;
+      rec.r = 0.74; rec.g = 0.58; rec.b = 0.34;
       rec.a = 0.08 + 0.06 * clamp01(strength);
       rec.gravity = 0.4;
       rec.drag = 1;

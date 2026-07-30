@@ -172,6 +172,12 @@ void main() {
   float fadeOut = pow(1.0 - age, 1.35);
 
   vec4 mv = viewMatrix * vec4(wp, 1.0);
+
+  // Near fade. Without a depth prepass to soften against, the worst artefact a large
+  // soft billboard can produce is filling the screen when the camera walks into the
+  // cloud — one puff, one flat disc, whole frame. Fading out anything closer than a
+  // couple of its own radii removes that entirely and costs one smoothstep.
+  float nearFade = smoothstep(0.6, 2.2 + mix(aS.x, aS.y, grow) * 1.1, -mv.z);
   float rot = ph + aS.z * t;
   float cs = cos(rot);
   float sn = sin(rot);
@@ -180,7 +186,7 @@ void main() {
 
   vUv = uv;
   vQuad = position.xy * 2.0;
-  vCol = vec4(aC.rgb, aC.a * fadeIn * fadeOut);
+  vCol = vec4(aC.rgb, aC.a * fadeIn * fadeOut * nearFade);
   vTile = tile;
   vViewZ = mv.z;
   vAgeN = age;
@@ -260,10 +266,10 @@ void main() {
   // scattering, so *sunlit dust is brighter than the ground that produced it*. Tuned
   // below unity it lands at the same luminance as dry grass and disappears into the
   // field — which is exactly how a technically-correct dust system scores zero.
-  vec3 lit = uAmbient * skyW * 0.85 + uSunColour * (diff * 0.98 + fwd * 0.38);
+  vec3 lit = uAmbient * skyW * 0.85 + uSunColour * (diff * 0.90 + fwd * 0.22);
   // Atlas RGB carries internal density; darker cores read as depth in the cloud. Kept
   // shallow: too much and the puff turns into a lumpy grey rock.
-  base *= lit * (0.74 + 0.36 * tex.r);
+  base *= lit * (0.66 + 0.40 * tex.r);
 #else
   base *= tex.rgb;
   // Additive sprites cool as they age — a spark is white-hot then dull orange.

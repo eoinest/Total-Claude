@@ -94,6 +94,12 @@ export const enum Tint {
   Emblem = 6,
   /** Iron with per-man wear. */
   Metal = 7,
+  /**
+   * The neck scarf. Its own slot rather than the tunic's, because it was the one piece of
+   * kit a legionary bought for himself and twenty identical scarlet collars in a row is as
+   * loud a uniformity tell as twenty identical helmets.
+   */
+  Focale = 8,
 }
 
 /** Emblem tile order in the atlas; index is what the shader receives. */
@@ -140,6 +146,20 @@ const isHi = (p: number): boolean => p >= 24;
 const srgbToLinear = (c: number): [number, number, number] => {
   const f = (v: number): number => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
   return [f(((c >> 16) & 255) / 255), f(((c >> 8) & 255) / 255), f((c & 255) / 255)];
+};
+
+/**
+ * Pull a colour part-way toward its own luminance.
+ *
+ * A hex value that looks like a good red on screen is a *display* colour; converted to
+ * linear it is far more saturated than dyed wool ever is. Roman red at 0xa8262b comes out
+ * as (0.40, 0.019, 0.025) linear — green and blue effectively zero — and a channel that is
+ * zero stays zero however it is lit, so the tunic renders black in anything but direct sun.
+ * A madder or kermes dye measured off surviving textile is nowhere near that pure.
+ */
+const desaturate = (c: [number, number, number], k: number): [number, number, number] => {
+  const l = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  return [c[0] + (l - c[0]) * k, c[1] + (l - c[1]) * k, c[2] + (l - c[2]) * k];
 };
 
 /**
@@ -347,12 +367,12 @@ export function resolveKit(def: UnitTypeDef, variant: number, out: ResolvedKit):
   const GERMANIC_LEG: readonly number[] = [
     0x6b5a44, 0x574b3c, 0x7b6448, 0x4a4034, 0x6e5f4a,
   ];
-  const tunic = srgbToLinear(
+  const tunic = desaturate(srgbToLinear(
     germanic ? GERMANIC_CLOTH[Math.floor(r(18) * GERMANIC_CLOTH.length)] : ap.tunicColour
-  );
-  const leg = srgbToLinear(
+  ), 0.24);
+  const leg = desaturate(srgbToLinear(
     germanic ? GERMANIC_LEG[Math.floor(r(19) * GERMANIC_LEG.length)] : ap.legColour
-  );
+  ), 0.18);
   // On top of the lot, per-man fading. Scaled by the unit's `variance`: a praetorian cohort
   // drifts a few percent and reads as issued kit, a warband drifts by half.
   const spread = 0.10 + variance * 0.5;
@@ -368,7 +388,7 @@ export function resolveKit(def: UnitTypeDef, variant: number, out: ResolvedKit):
   // Undyed wool and linen swatches are pale, but a legionary's bracae after three days on
   // the Via Flaminia are not: knock the roster's nominal colour well down so they read as
   // dirty cloth in sunlight rather than as white tights.
-  const soil = 0.5;
+  const soil = 0.62;
   out.leg = [
     Math.max(0.01, leg[0] * (1 + dl) * soil),
     Math.max(0.01, leg[1] * (1 + dl * 0.6) * soil),

@@ -206,7 +206,11 @@ export function brickFace(size = 512): GeneratedMaps {
   const courses = 20; // 1.10 m / 0.055 m
   const perRow = 5; // 1.10 m / 0.22 m
   const f = fields(size);
-  const mortarPx = size / courses * 0.28; // ~15 mm of the 55 mm pitch
+  // 18 mm of the 55 mm pitch. At the ranges the curtain is actually seen from, roughly
+  // two screen texels per course, only the *proportion* of the pitch that is joint
+  // survives mipping — a hairline joint averages away to a flat face, which is why the
+  // first pass of this wall showed no courses at all from 40 m.
+  const mortarPx = (size / courses) * 0.33;
   for (let j = 0; j < size; j++) {
     const v = j / size;
     const row = Math.floor(v * courses);
@@ -260,7 +264,7 @@ export function brickFace(size = 512): GeneratedMaps {
       f.lum[o] *= 0.84 + streak * 0.32;
     }
   }
-  return assemble(f, size, world, 2.6, 0.0);
+  return assemble(f, size, world, 4.2, 0.0);
 }
 
 /**

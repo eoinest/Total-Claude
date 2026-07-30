@@ -24,6 +24,8 @@ export interface UnitView {
   faction: Faction;
   /** "Legionary Cohort II" — the roster name plus an ordinal when there is more than one. */
   title: string;
+  /** Just the ordinal — "II", or '' when the type is unique. Compact cards show only this. */
+  ordinal: string;
   alive: number;
   initial: number;
   strengthFrac: number;
@@ -189,12 +191,14 @@ export class HudModel {
       const n = (seen.get(u.typeId) ?? 0) + 1;
       seen.set(u.typeId, n);
       const many = (total.get(u.typeId) ?? 1) > 1;
+      const ordinal = many ? String(ROMAN_NUMERALS[n - 1] ?? n) : '';
       const v: UnitView = {
         id: u.id,
         unit: u,
         def,
         faction: u.faction,
-        title: many ? `${def.name} ${ROMAN_NUMERALS[n - 1] ?? n}` : def.name,
+        title: ordinal ? `${def.name} ${ordinal}` : def.name,
+        ordinal,
         alive: u.alive,
         initial: u.initialStrength || def.strength,
         strengthFrac: 1,

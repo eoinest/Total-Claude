@@ -42,8 +42,12 @@ const SHOTS = {
     x: 0, z: -20, zoom: 0.55, yaw: Math.PI, at: 1,
   },
   wide: {
+    // 0.95 is very nearly full zoom-out: an almost top-down strategic view in which the
+    // armies are a few pixels tall and the ground's field patchwork is the only thing
+    // legible. 0.72 keeps the whole line of battle in frame while men still read as men,
+    // which is what this shot is for.
     desc: 'High three-quarter view of the whole battlefield and the city behind',
-    x: 0, z: 90, zoom: 0.95, yaw: Math.PI * 0.82, at: 2,
+    x: 0, z: 90, zoom: 0.72, yaw: Math.PI * 0.82, at: 2,
   },
   romanline: {
     desc: 'Low telephoto along the Roman front rank — reads armour, shields, ranks',
@@ -79,8 +83,13 @@ const SHOTS = {
     x: 60, z: 400, zoom: 0.62, yaw: 0.0, at: 2,
   },
   wall: {
-    desc: 'Close along the Aurelian Wall - brick courses, towers, scaffolding',
-    x: -120, z: 470, zoom: 0.58, yaw: 0.0, at: 2,
+    // Looking *along* the curtain rather than square at it. The wall's outer face points
+    // north (-Z, toward the battlefield) and Rome is at 41.9N, so that face is in shade at
+    // every hour of the day - brick courses cannot read on a permanently shadowed
+    // surface. An oblique view down the wall line puts the sun raking across the
+    // brickwork and shows the tower spacing at the same time.
+    desc: 'Along the Aurelian Wall - raking light on brick courses, towers, scaffolding',
+    x: -120, z: 458, zoom: 0.44, yaw: Math.PI * 0.5, at: 2,
   },
   skyline: {
     desc: 'Rome behind the wall - Mausoleum, Pantheon, theatres',
@@ -130,6 +139,10 @@ const requested = args.get('shots')
   ? String(args.get('shots')).split(',').map((s) => s.trim()).filter(Boolean)
   : Object.keys(SHOTS);
 const PORT = Number(args.get('port') ?? 5199);
+// Hide the DOM HUD. Terrain, city, lighting and VFX criteria are all judged on the world,
+// and a HUD panel across the frame makes them ungradeable — one critic had to write its
+// own DOM-stripping harness to get around it. This is that, built in.
+const NO_HUD = args.has('nohud');
 // Parallel agents each pass their own --port so they never fight over one server.
 // Leaving it running is opt-in, because an orphaned vite holds the port for everyone.
 const KEEP_SERVER = args.has('keep');
@@ -248,6 +261,15 @@ try {
   console.log(`• webgl2: ${gl.ok ? `${gl.vendor} / ${gl.renderer}` : 'UNAVAILABLE'}`);
   if (!gl.ok) throw new Error('WebGL2 unavailable in the harness browser');
 
+  if (NO_HUD) {
+    // Belt and braces: hide the HUD root outright, and re-hide it before every shot in
+    // case a subsystem re-creates or unhides its own nodes.
+    await page.addStyleTag({
+      content: '#hud-root, #loading { display: none !important; visibility: hidden !important; }',
+    });
+    console.log('• --nohud: DOM HUD hidden, grading the world only');
+  }
+
   // Shoot in ascending sim time so we only ever fast-forward.
   const ordered = [...requested].sort((a, b) => SHOTS[a].at - SHOTS[b].at);
 
@@ -361,6 +383,12 @@ try {
         { s: shot }
       );
 
+      if (NO_HUD) {
+        await page.evaluate(() => {
+          const r = document.getElementById('hud-root');
+          if (r) r.style.setProperty('display', 'none', 'important');
+        });
+      }
       const file = path.join(OUT, `${name}.png`);
       await page.screenshot({ path: file, type: 'png' });
       results.push({ name, file, ...info, ms: Date.now() - t0, desc: shot.desc });

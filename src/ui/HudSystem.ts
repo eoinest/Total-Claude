@@ -78,6 +78,11 @@ export class HudSystem implements Subsystem {
   /** Smoothed main-thread cost of the HUD, in milliseconds. */
   hudMs = 0;
 
+  /** Unit under the cursor, or -1. Exposed so a headless driver can verify picking. */
+  get hoveredUnitId(): number {
+    return this.model.hoveredId;
+  }
+
   /**
    * Frame times measured here rather than read from `time.fps`. That mean is poisoned
    * for a full second by any single long frame — a load hitch, or the harness settling
@@ -165,6 +170,22 @@ export class HudSystem implements Subsystem {
     if (vfx && typeof vfx.standardOf === 'function') {
       this.banners.standardOf = (id, out) => vfx.standardOf!(id, out);
     }
+    // Real cooldowns rather than the HUD's own guesses, when the ability system is registered.
+    const abilities = ctx.tryGet('abilities') as unknown as
+      {
+        cooldownFraction?: (unitId: number, ability: string) => number;
+        activeOn?: (unitId: number) => string[];
+      } | undefined;
+    if (
+      abilities &&
+      typeof abilities.cooldownFraction === 'function' &&
+      typeof abilities.activeOn === 'function'
+    ) {
+      this.controller.abilityProbe = {
+        cooldownFraction: (u, a) => abilities.cooldownFraction!(u, a),
+        activeOn: (u) => abilities.activeOn!(u),
+      };
+    }
 
 
     this.perfLine = el('div', 'hud-perf', this.root);
@@ -206,19 +227,20 @@ export class HudSystem implements Subsystem {
     // screenshot harness pumps `engine.frame()` back to back — so a frame *rate* would
     // be a fiction. The interval is always honest, so that is what leads.
     const fps = med >= 1.6 ? Math.round(1000 / med).toString().padStart(4) : '   —';
+    // Packed into three short lines rather than four long ones: this sits over the sky in
+    // every screenshot taken of the game, and a debug readout has no business occluding
+    // more of the frame than it must.
     setText(
       this.perfLine,
-      `${med.toFixed(1)} ms/f  ${fps} fps   hud ${this.hudMs.toFixed(2)} ms\n` +
-        `draws ${info.render.calls}   tris ${(info.render.triangles / 1000).toFixed(0)}k\n` +
-        `men ${men}   units ${units}   sel ${this.model.selection.length}\n` +
-        `${t.paused ? 'PAUSED' : `${t.gameSpeed}x`}   t+${t.simTime.toFixed(0)}s`
+      `${med.toFixed(1)} ms/f ${fps} fps  hud ${this.hudMs.toFixed(2)}\n` +
+        `draws ${info.render.calls}  tris ${(info.render.triangles / 1000).toFixed(0)}k\n` +
+        `men ${men}  units ${units}  sel ${this.model.selection.length}  ` +
+        `${t.paused ? 'PAUSED' : `${t.gameSpeed}x`} t+${t.simTime.toFixed(0)}s`
     );
   }
 
   private setDebug(on: boolean): void {
     this.debugOn = on;
-    const perf = document.getElementById('perf');
-    if (perf) perf.style.display = on ? '' : 'none';
     this.perfLine.style.display = on ? '' : 'none';
   }
 
@@ -301,6 +323,8 @@ export class HudSystem implements Subsystem {
     if (input.keyPressed('KeyO')) this.settings.toggle();
     if (input.keyPressed('KeyL')) this.setDebug(!this.debugOn);
     if (input.keyPressed('KeyN')) this.banners.enabled = !this.banners.enabled;
+    if (input.keyPressed('KeyJ')) this.cards.toggleFoes();
+    if (input.keyPressed('KeyM')) this.minimap.cycleZoom();
 
     // Game speed, Total War style. The HUD owns these because it owns the buttons that
     // show their state; nothing else in the engine binds them.

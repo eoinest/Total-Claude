@@ -39,13 +39,17 @@ import type { GroundDamageLayer } from './GroundDamage';
  */
 
 /**
- * Warm ochre, and deliberately near-white in the red channel. Airborne dust has a
- * very high single-scatter albedo, so sunlit dust is *brighter* than the ground that
- * produced it — get this wrong and the dust vanishes into the field it came from.
+ * Warm ochre at a physical albedo. Airborne dust scatters strongly, so sunlit dust is
+ * brighter than the ground that produced it — but only by a factor of two or three, not
+ * ten. Pushed past an albedo of 1 it clips the red channel, crosses the bloom threshold
+ * and comes back as white cotton wool, which at strategic zoom is the single most
+ * recognisable "particle demo" artefact there is. Keep the *ratio* to the ground, not an
+ * absolute level: everything here is proportional to `uSunColour`, so it tracks whatever
+ * exposure the lighting system settles on.
  */
-const DUST_R = 1.12;
-const DUST_G = 0.87;
-const DUST_B = 0.56;
+const DUST_R = 0.78;
+const DUST_G = 0.60;
+const DUST_B = 0.335;
 
 export interface DustBudget {
   /** Hard cap on dust spawns per frame, protecting the CPU and the fill rate. */
@@ -116,15 +120,28 @@ export class DustEmitter {
       // Mass relative to a legionary at 96 kg, softened so cavalry is ~2.3x not 5x.
       const massK = Math.pow(def.mass / 96, 0.52);
 
-      // Distance trade: far units get fewer but proportionally larger puffs. Screen
-      // coverage stays the same while the fill rate — which is what actually limits a
-      // particle system — falls with the square of the count.
+      // Distance trade: far units get somewhat fewer, slightly larger, fainter puffs.
+      //
+      // The obvious version of this optimisation — few, big, full-opacity puffs far away
+      // — is wrong, and wrong in a way that is invisible up close and ruins the strategic
+      // view: a unit is only a few dozen pixels wide from up there, so a handful of large
+      // opaque billboards on top of it reads as three balls of cotton wool rather than as
+      // haze. Keep the size growth small and take the saving in alpha instead, which
+      // integrates rather than popping.
       const near = clamp01(1 - (Math.sqrt(d2) - 140) / 420);
-      const rate = (horse ? 3.1 : 1.0) * massK * density * (0.30 + 0.70 * near);
-      const sizeK = 1 + (1 - near) * 0.9;
+      const rate = (horse ? 3.1 : 1.0) * massK * density * (0.55 + 0.45 * near);
+      // Optical depth per unit of path is what should stay constant with distance, so a
+      // puff grown to cover the same screen area from twice as far must be proportionally
+      // *thinner*. Dividing alpha by the size growth enforces that, and the squared
+      // near-term makes the mid field fall away fast. Without this a far unit is covered
+      // by four 50-pixel billboards at 0.45 opacity each, and 1 − 0.55⁴ = 0.91: an opaque
+      // white lump of cotton wool sitting on the formation.
+      const nf = near * near;
+      const sizeK = 1 + (1 - near) * 1.1;
+      const alphaK = (0.14 + 0.86 * nf) / sizeK;
 
-      this.emitForUnit(dt, battle, u, ui, ps, horse, rate, sizeK, cullR2, camX, camZ);
-      this.emitContactDust(dt, battle, u, ui, ps, horse, density * (0.35 + 0.65 * near), sizeK);
+      this.emitForUnit(dt, battle, u, ui, ps, horse, rate, sizeK, alphaK, cullR2, camX, camZ);
+      this.emitContactDust(dt, battle, u, ui, ps, horse, density * (0.5 + 0.5 * near), sizeK, alphaK);
       this.trample(dt, battle, u, ui, damage, terrain);
     }
     void n;
@@ -148,7 +165,8 @@ export class DustEmitter {
     ps: ParticleSystem,
     horse: boolean,
     rate: number,
-    sizeK: number
+    sizeK: number,
+    alphaK: number
   ): void {
     const p = battle.pool;
     const members = u.members;
@@ -170,16 +188,17 @@ export class DustEmitter {
     fx /= fighters;
     fz /= fighters;
 
-    // ~0.28 puffs per fighting man per second at full density. With ~600 men in contact
-    // across the field and a 4 s mean life that is ~700 live particles in the band —
-    // enough for a legible haze with the men still reading through it. Four times this
-    // buries the entire army in fog, which is a different failure from having no dust but
-    // scores no better.
-    this.fightCarry[ui] += fighters * 0.28 * rate * dt;
+    // ~0.10 puffs per fighting man per second at full density. With ~2,000 men in
+    // contact across a 640 m front and a 4 s mean life that is ~800 live particles in the
+    // band. Sounds thin; it is not, because optical depth comes from *alpha × overlap*,
+    // not from count, and raising alpha is free while raising count costs fill rate
+    // linearly. Four times this buries the entire army in fog — a different failure from
+    // having no dust, and it scores no better.
+    this.fightCarry[ui] += fighters * 0.145 * rate * dt;
     let count = this.fightCarry[ui] | 0;
     if (count <= 0) return;
     this.fightCarry[ui] -= count;
-    count = Math.min(count, 12);
+    count = Math.min(count, 8);
 
     const remaining = this.budget.maxSpawnsPerFrame - this.spawned - this.fightSpawned;
     if (remaining <= 0) return;
@@ -207,33 +226,42 @@ export class DustEmitter {
       // mid-scale so the bank has visible internal structure instead of reading as fog.
       const big = h4 < 0.30;
 
-      const rec = ps.reset(PLayer.Soft, big ? PT.dustBillow : h4 < 0.72 ? PT.smokeSoft : PT.dustWisp);
+      // Distant dust uses only the softest silhouette in the atlas. `dustBillow` and
+      // `dustWisp` have readable lumpy outlines that sell a puff close up and give away
+      // the billboard from a strategic camera, where the whole cloud is 40 pixels.
+      const soft = alphaK < 0.34;
+      const rec = ps.reset(
+        PLayer.Soft,
+        soft ? PT.smokeSoft : big ? PT.dustBillow : h4 < 0.72 ? PT.smokeSoft : PT.dustWisp
+      );
       // Spread across a couple of metres and lifted only to knee height. The dust that
       // reads is the band from the ground to a man's chest: raise the emission any higher
       // and the formation disappears into it instead of standing in it.
       rec.x = ex + (h1 - 0.5) * 3.2;
       rec.z = ez + (h2 - 0.5) * 3.2;
-      rec.y = ey + 0.10 + h3 * 0.55;
+      rec.y = ey + 0.12 + h3 * 0.85;
       rec.ground = PGround.Ride;
 
-      // Almost no directed velocity — this dust is stirred, not kicked.
+      // Almost no directed velocity — this dust is stirred, not kicked. A little more
+      // lift than a footfall puff, so the bank reaches shoulder height over the fight
+      // rather than staying a carpet round the shins.
       rec.vx = (h3 - 0.5) * 1.5;
       rec.vz = (h1 - 0.5) * 1.5;
-      rec.vy = 0.14 + h2 * 0.34;
+      rec.vy = 0.24 + h2 * 0.55;
 
       if (big) {
-        rec.life = 5.0 + h3 * 3.4;
+        rec.life = 4.0 + h3 * 2.4;
         rec.size0 = (2.0 + h1 * 1.7) * (horse ? 1.4 : 1) * sizeK;
         rec.size1 = rec.size0 * (1.7 + h2 * 0.8);
-        rec.a = 0.048 + 0.040 * dry;
+        rec.a = (0.20 + 0.22 * dry) * alphaK;
         rec.drag = 0.45;
         rec.gravity = 0.16;
         rec.turb = 1.5;
       } else {
-        rec.life = 3.2 + h3 * 2.4;
+        rec.life = 2.8 + h3 * 1.9;
         rec.size0 = (1.1 + h1 * 1.1) * (horse ? 1.35 : 1) * sizeK;
         rec.size1 = rec.size0 * (2.0 + h2 * 1.1);
-        rec.a = 0.072 + 0.058 * dry;
+        rec.a = (0.34 + 0.28 * dry) * alphaK;
         rec.drag = 0.8;
         rec.gravity = 0.30;
         rec.turb = 1.05;
@@ -261,6 +289,7 @@ export class DustEmitter {
     horse: boolean,
     rate: number,
     sizeK: number,
+    alphaK: number,
     cullR2: number,
     camX: number,
     camZ: number
@@ -287,11 +316,14 @@ export class DustEmitter {
     // Calibrated against fill rate, not particle count. Fewer, more opaque puffs give
     // the same optical depth as many faint ones for a fraction of the blended
     // fragments, and fill is the only thing a particle system ever runs out of.
-    this.carry[ui] += want * 0.165 * rate * dt;
+    // Emission is *per man*, so this coefficient has to fall as army size rises or a
+    // 9,500-man approach march fills the whole pool with billows before contact and every
+    // subsequent frame is white. Sized for ~600 spawns/s across the field on the march.
+    this.carry[ui] += want * 0.030 * rate * dt;
     let count = this.carry[ui] | 0;
     if (count <= 0) return;
     this.carry[ui] -= count;
-    count = Math.min(count, horse ? 44 : 24);
+    count = Math.min(count, horse ? 18 : 9);
 
     const remaining = this.budget.maxSpawnsPerFrame - this.spawned - this.fightSpawned;
     if (remaining <= 0) return;
@@ -335,9 +367,10 @@ export class DustEmitter {
       // gallop earns a real billow.
       const tier = h4 < 0.05 + speedN * (horse ? 0.24 : 0.09) ? 2 : h4 < 0.44 ? 1 : 0;
 
+      const soft = alphaK < 0.34;
       const rec = ps.reset(
         PLayer.Soft,
-        tier === 2 ? PT.dustBillow : tier === 1 ? PT.smokeSoft : PT.dustWisp
+        soft || tier === 1 ? PT.smokeSoft : tier === 2 ? PT.dustBillow : PT.dustWisp
       );
       rec.x = p.x[i] + (h1 - 0.5) * (horse ? 1.5 : 0.7);
       rec.z = p.z[i] + (h2 - 0.5) * (horse ? 1.5 : 0.7);
@@ -355,23 +388,23 @@ export class DustEmitter {
         rec.life = 1.3 + h3 * 1.3;
         rec.size0 = (0.55 + h1 * 0.55) * (horse ? 1.8 : 1) * sizeK;
         rec.size1 = rec.size0 * (2.8 + h2 * 1.5);
-        rec.a = 0.24 + 0.24 * dry * speedN;
+        rec.a = (0.30 + 0.30 * dry * speedN) * alphaK;
         rec.drag = 1.9;
         rec.gravity = 1.1;
         rec.turb = 0.35;
       } else if (tier === 1) {
-        rec.life = 3.4 + h3 * 2.8;
+        rec.life = 3.0 + h3 * 2.2;
         rec.size0 = (1.5 + h1 * 1.5) * (horse ? 1.85 : 1) * sizeK;
         rec.size1 = rec.size0 * (2.5 + h2 * 1.4);
-        rec.a = 0.145 + 0.165 * dry * (0.4 + speedN);
+        rec.a = (0.20 + 0.24 * dry * (0.4 + speedN)) * alphaK;
         rec.drag = 1.1;
         rec.gravity = 0.48;
         rec.turb = 0.8;
       } else {
-        rec.life = 6.0 + h3 * 4.6;
+        rec.life = 4.2 + h3 * 3.0;
         rec.size0 = (3.0 + h1 * 2.8) * (horse ? 1.95 : 1) * sizeK;
         rec.size1 = rec.size0 * (2.0 + h2 * 1.1);
-        rec.a = 0.078 + 0.105 * dry * (0.3 + speedN);
+        rec.a = (0.11 + 0.15 * dry * (0.3 + speedN)) * alphaK;
         rec.drag = 0.60;
         rec.gravity = 0.24;
         rec.turb = 1.3;
@@ -418,8 +451,12 @@ export class DustEmitter {
     if (members.length === 0) return;
     const salt = this.frame * 29 + ui;
 
-    // Two samples per tick keeps a fast unit's trail continuous across its frontage.
-    for (let s = 0; s < 2; s++) {
+    // Samples scale with unit size. Two samples cover a 60-man unit; a 256-man cohort is
+    // sixty metres of frontage, and two 2.4 m brushes per tick paint a dotted line down
+    // it instead of a churned band. This is why a system stamping tens of thousands of
+    // splats was leaving under 0.5% of the field marked.
+    const samples = Math.min(10, 2 + (members.length / 40) | 0);
+    for (let s = 0; s < samples; s++) {
       const i = members[(hash2(s, salt, 3) * members.length) | 0];
       if (i === undefined) continue;
       const st = p.state[i] as SoldierState;
@@ -433,7 +470,7 @@ export class DustEmitter {
       // been *fighting* saturates inside twenty seconds — which is what produces the
       // dark strip along the contact line rather than a uniform brown field.
       const amount =
-        (0.020 + clamp(sp * 0.012, 0, 0.05) + (fighting ? 0.045 : 0)) * (1.35 - dry * 0.45);
+        (0.028 + clamp(sp * 0.012, 0, 0.05) + (fighting ? 0.055 : 0)) * (1.35 - dry * 0.45);
       const slope = terrain?.slopeAt(p.x[i], p.z[i]) ?? 0;
       const radius = 2.4 + sp * 0.8 + slope * 2.0 + (fighting ? 0.8 : 0);
       // Smear along the direction of travel: a marching column leaves an elongated

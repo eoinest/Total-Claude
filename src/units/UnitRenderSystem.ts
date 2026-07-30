@@ -214,6 +214,8 @@ export class UnitRenderSystem implements Subsystem {
   private rateMul!: Float32Array;
   /** Which shape variant of a clip this man plays, 0..FOOT_VARIANTS-1. */
   private clipBucket!: Uint8Array;
+  /** Extra stature multiplier on top of `pool.scale`. */
+  private heightMul!: Float32Array;
 
   private types: UnitTypeDef[] = [];
   private typeIsCav: boolean[] = [];
@@ -265,12 +267,23 @@ export class UnitRenderSystem implements Subsystem {
     // Zero means "not yet resolved"; `ensureGait` fills it on first sight.
     this.rateMul = new Float32Array(cap);
     this.clipBucket = new Uint8Array(cap);
+    this.heightMul = new Float32Array(cap).fill(1);
 
     const baseParams: THREE.MeshStandardMaterialParameters = {
       map: this.atlas.albedo,
       normalMap: this.atlas.normal,
       roughnessMap: this.atlas.orm,
       metalnessMap: this.atlas.orm,
+      // The atlas packs cavity AO in the same texture's red channel and it was never bound,
+      // so every crevice the generator carefully darkened — between girdle plates, inside a
+      // mail ring, at the elbow crease — was being thrown away. Same texture, so the extra
+      // fetch is a cache hit.
+      aoMap: this.atlas.orm,
+      aoMapIntensity: 0.85,
+      // The environment probe is a daylight sky, so it is overwhelmingly blue. At full
+      // strength it takes over every part-metal surface on a man; pulled back it still
+      // gives armour somewhere to reflect without painting the army cobalt.
+      envMapIntensity: 0.72,
       roughness: 1,
       metalness: 1,
       normalScale: new THREE.Vector2(0.9, 0.9),
@@ -632,6 +645,12 @@ export class UnitRenderSystem implements Subsystem {
     const spread = 0.14 + variance * 0.2;
     this.rateMul[i] = 1 + (hash01(seed, 72) - 0.5) * 2 * spread;
     this.clipBucket[i] = Math.min(FOOT_VARIANTS - 1, Math.floor(hash01(seed, 73) * FOOT_VARIANTS));
+    // Stature. `pool.scale` spreads a man only +-3.5%, which is under one standard
+    // deviation of adult male height and leaves a rank of 160 men looking cut to a
+    // template. Widening it here to about +-7% puts the tallest at 1.88 m and the shortest
+    // at 1.62 m, which is what a hundred and sixty conscripts actually look like, and it
+    // is a stable per-man appearance choice so it belongs on `variant`.
+    this.heightMul[i] = 1 + (hash01(seed, 74) - 0.5) * 0.075;
   }
 
   private ensureKit(i: number, def: UnitTypeDef): void {
@@ -776,7 +795,7 @@ export class UnitRenderSystem implements Subsystem {
 
     const o = n * Stride.Orient;
     buf.orient[o] = facing;
-    buf.orient[o + 1] = p.scale[i];
+    buf.orient[o + 1] = p.scale[i] * this.heightMul[i];
     buf.orient[o + 2] = lean;
     buf.orient[o + 3] = p.grime[i];
 
@@ -909,7 +928,7 @@ export class UnitRenderSystem implements Subsystem {
     buf.pos[n * 3 + 2] = z;
     const o = n * Stride.Orient;
     buf.orient[o] = facing;
-    buf.orient[o + 1] = p.scale[i];
+    buf.orient[o + 1] = p.scale[i] * this.heightMul[i];
     buf.orient[o + 2] = 0;
     buf.orient[o + 3] = p.grime[i];
     const c = n * Stride.Col0;

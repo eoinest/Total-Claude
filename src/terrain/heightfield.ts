@@ -452,7 +452,14 @@ export function buildTerrain(seedLabel = 'campus-martius-271'): TerrainData {
         0.34 +
         0.44 * (0.5 + 0.5 * gnoise(wx * 0.009, wz * 0.009, seed + 92)) +
         0.3 * (0.5 + 0.5 * gnoise(wx * 0.038, wz * 0.038, seed + 93));
-      let tramp = Math.max(germanDeployMask(wx, wz), romanDeployMask(wx, wz)) * 0.72 * churn;
+      // 0.34 rather than 0.72: the deployment boxes now reach ±490 m to cover the widened
+      // frontage, and at the old strength that turned the whole battlefield into a sheet
+      // of bare trodden earth — measured at eye level in the Roman line it was chocolate
+      // mud from foreground to horizon. Real Rome II frames keep a sward growing between
+      // the ranks and break it with trodden scrapes, not the reverse. Combat wear on top
+      // of this is `vfx/GroundDamage`'s job, and it accumulates where men actually fight
+      // rather than everywhere they might stand.
+      let tramp = Math.max(germanDeployMask(wx, wz), romanDeployMask(wx, wz)) * 0.34 * churn;
       tramp = Math.max(tramp, (1 - sstep(AGGER_HALF_WIDTH, AGGER_HALF_WIDTH + 9, Math.abs(wx - rx))) * 0.8);
       const fordTrack = (1 - sstep(9, 30, Math.abs(wz + 520))) * (1 - sstep(90, 320, Math.abs(wx - cx)));
       tramp = Math.max(tramp, fordTrack * 0.75 * churn);

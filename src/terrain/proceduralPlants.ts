@@ -259,10 +259,27 @@ export function generateFoliageAtlas(): Uint8Array {
       const t = hash01(i, 1301);
       // The spire is widest at a third of its height and comes to a point.
       const halfW = Math.sin(Math.pow(t, 0.62) * Math.PI) * CELL_PX * 0.21 + 4;
-      const cx = CELL_PX * 0.5 + (hash01(i, 1302) - 0.5) * 2 * halfW;
+      // Lateral placement biased toward the axis, so coverage thins out toward the outline
+      // and the material's alpha test carves a ragged edge. A uniform fill gave near-solid
+      // alpha right up to the boundary, and a cypress rendered as a flat dark cone —
+      // which is the single most obvious "tech demo" tell in any Italian landscape.
+      const u = hash01(i, 1302) * 2 - 1;
+      const cx = CELL_PX * 0.5 + Math.sign(u) * Math.pow(Math.abs(u), 0.62) * halfW;
       const cy = t * (CELL_PX - 8) + 4;
       const col = cols[(hash01(i, 1303) * 4) | 0];
       stampLeaf(acc, cx, cy, 7 + hash01(i, 1304) * 5, 3.5 + hash01(i, 1305) * 3, hash01(i, 1306) * 3, col);
+    }
+    // Sprigs breaking the outline. A cypress is not a cone: individual branchlets stand
+    // clear of the mass, and a handful of them is what separates the silhouette from a
+    // solid shape at any distance the tree is still geometry rather than a billboard.
+    for (let i = 0; i < 90; i++) {
+      const t = 0.08 + hash01(i, 1311) * 0.9;
+      const halfW = Math.sin(Math.pow(t, 0.62) * Math.PI) * CELL_PX * 0.21 + 4;
+      const side = hash01(i, 1312) < 0.5 ? -1 : 1;
+      const cx = CELL_PX * 0.5 + side * (halfW + 1.5 + hash01(i, 1313) * 6);
+      const cy = t * (CELL_PX - 8) + 4;
+      const col = cols[(hash01(i, 1314) * 4) | 0];
+      stampLeaf(acc, cx, cy, 5 + hash01(i, 1315) * 4, 2.2, side * (0.5 + hash01(i, 1316)), col);
     }
     resolveCell(acc, data, 'spire');
   }
@@ -473,12 +490,15 @@ function buildOlive(detail: boolean): THREE.BufferGeometry {
     const yaw = (i / limbs) * Math.PI * 2;
     b.trunk(place(Math.cos(yaw) * 0.14, 1.35, Math.sin(yaw) * 0.14, yaw, 0, -0.42), 0.2, 0.1, 2.1, 4);
   }
-  const cards = detail ? 11 : 5;
+  // Many small cards rather than a few large ones. Eleven 4 m cards on a 5 m tree is one
+  // card per face of the crown, so each card's own rectangle shows through and the tree
+  // reads as a cabbage; 24 at 2 m overlap enough to give a broken, foliage-like edge.
+  const cards = detail ? 24 : 8;
   for (let i = 0; i < cards; i++) {
     const yaw = hash01(i, 51) * Math.PI * 2;
-    const rad = 0.7 + hash01(i, 52) * 1.7;
-    const y = 2.5 + hash01(i, 53) * 2.0;
-    const s = 3.2 + hash01(i, 54) * 1.8;
+    const rad = 0.5 + hash01(i, 52) * 2.0;
+    const y = 2.2 + hash01(i, 53) * 2.4;
+    const s = 1.8 + hash01(i, 54) * 1.4;
     b.quad(place(Math.cos(yaw) * rad, y, Math.sin(yaw) * rad, yaw + 0.9, (hash01(i, 55) - 0.5) * 0.7), s, s * 0.78, 'olive', 0.04, 0.5);
   }
   return b.build();
