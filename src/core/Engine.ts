@@ -299,9 +299,29 @@ export class Engine {
   }
 
   setQuality(tier: QualityTier): void {
+    const before = this.quality;
     this.quality = { ...QUALITY_PRESETS[tier] };
     const dpr = Math.min(window.devicePixelRatio || 1, this.quality.maxPixelRatio);
     this.renderer.setPixelRatio(dpr);
+
+    // Changing the cascade count changes `NUM_DIR_LIGHT_SHADOWS`, which is compiled into
+    // every lit shader. Without invalidating them, three reuses the cached programs and
+    // every one fails to link — the whole world went grey until a reload. Forcing a
+    // recompile is expensive (a visible hitch of a few hundred ms) but it is a deliberate
+    // user action from the settings panel, and a hitch beats a grey screen.
+    if (before.shadowCascades !== this.quality.shadowCascades) {
+      const seen = new Set<THREE.Material>();
+      this.scene.traverse((o) => {
+        const m = (o as THREE.Mesh).material;
+        if (!m) return;
+        for (const mat of Array.isArray(m) ? m : [m]) {
+          if (seen.has(mat)) continue;
+          seen.add(mat);
+          mat.needsUpdate = true;
+        }
+      });
+    }
+
     this.events.emit('qualityChanged', { quality: this.quality });
     for (const s of this.systems) s.resize?.(this.viewW, this.viewH, this.ctx);
   }

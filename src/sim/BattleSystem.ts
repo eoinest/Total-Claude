@@ -203,6 +203,7 @@ export class BattleSystem implements Subsystem {
     kind: string;
     x?: number; z?: number; facing?: number;
     targetUnitId?: number; formation?: string;
+    width?: number;
     queued?: boolean; running?: boolean;
   }): void {
     for (const id of o.unitIds) {
@@ -225,6 +226,11 @@ export class BattleSystem implements Subsystem {
           u.order = o.kind === 'attackMove' ? UnitOrder.AttackMove : UnitOrder.MoveTo;
           u.running = !!o.running;
           u.targetUnitId = -1;
+          // A right-click-drag sets frontage as well as destination. Reading it here means
+          // the UI no longer has to reach in and write `u.width` itself.
+          if (o.width !== undefined && o.width > 0) {
+            u.width = Math.max(1, Math.round(o.width));
+          }
           break;
         }
         case 'attack': {

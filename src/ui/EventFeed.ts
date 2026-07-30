@@ -31,8 +31,16 @@ interface Notice {
   countEl: HTMLElement | null;
 }
 
-const LIFETIME = 7.5;
-const MAX_VISIBLE = 5;
+const LIFETIME = 6.5;
+/**
+ * Three, not five.
+ *
+ * A rout cascades: half a dozen warbands break inside ten seconds and the feed filled with
+ * five simultaneous dispatches down the right edge — measured at 275 x 166 px, three per cent
+ * of the frame, and nobody reads five at once anyway. Three is what Rome II shows, and the
+ * fourth dispatch has been superseded by the time it would have been read.
+ */
+const MAX_VISIBLE = 3;
 
 export class EventFeed {
   private root!: HTMLElement;

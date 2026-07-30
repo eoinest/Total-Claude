@@ -12,7 +12,11 @@ export default defineConfig({
     // destroys the execution context mid-run, which surfaces as a spurious "page
     // crashed" at a random simulation time. Harness runs set TC_NO_HMR=1.
     hmr: process.env.TC_NO_HMR === '1' ? false : undefined,
-    watch: process.env.TC_NO_HMR === '1' ? { ignored: ['**/*'] } : undefined,
+    // Deliberately NOT `watch: { ignored: ['**/*'] }`. Ignoring every file stops Vite
+    // invalidating its module graph, so a long-lived dev server keeps serving stale TS
+    // transforms indefinitely — an agent measured an "after" shot that was silently
+    // still the "before" code. Disabling HMR alone is enough: the client never gets a
+    // reload pushed at it mid-run, but each fresh page load still gets fresh transforms.
   },
   build: {
     target: 'esnext',
