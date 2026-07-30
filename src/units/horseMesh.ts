@@ -260,9 +260,17 @@ export function buildHorseGeometry(lod: Lod): THREE.InstancedBufferGeometry {
     b.setBone(HB.barrel, HB.loin, 0.6);
     // Saddle cloth, then the four-horned saddle itself. The horns are the whole reason a
     // stirrupless rider could stay on through a charge.
+    //
+    // The cloth takes the dyed-cloth tint slot rather than the atlas untouched. `ClothFine`
+    // is a near-white linen weave — 0.6 to 1.0 linear — so an untinted blanket rendered as a
+    // white slab 60 cm square on the flank of every horse on the field, which was the
+    // brightest thing in a cavalry frame. A wing's cloths came from the same dye lots as its
+    // scarves, so the same four colours are exactly right.
+    b.setPiece(HorsePiece.Tack, Tint.Focale);
     b.setMatrix(new THREE.Matrix4().makeTranslation(0, s.y - 0.3, s.z));
     b.box(0, 0.06, 0, 0.62, 0.42, 0.6, clothUv, 2);
     b.setMatrix(null);
+    b.setPiece(HorsePiece.Tack, Tint.Atlas);
     b.setMatrix(new THREE.Matrix4().makeTranslation(0, s.y - 0.05, s.z));
     b.box(0, 0, 0, 0.44, 0.11, 0.46, leatherUv);
     if (d.medium) {

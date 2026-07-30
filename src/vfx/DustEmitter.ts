@@ -62,6 +62,14 @@ export class DustEmitter {
   budget: DustBudget = { maxSpawnsPerFrame: 320, density: 1 };
   /** Multiplier from the weather preset — wet ground raises almost nothing. */
   wetness = 1;
+  /**
+   * Ambient wind, in m/s, copied in each frame by the owner. Dust is given a fraction of
+   * it as an initial velocity as well as riding `uWind` in the shader, so a cloud leans
+   * downwind from the moment it is born instead of only drifting later — which is what
+   * makes it read as a wake rather than a stationary bank.
+   */
+  driftX = 0;
+  driftZ = 0;
 
   private carry = new Float32Array(0);
   /** Separate accumulator for contact dust so it cannot be starved by locomotion. */
@@ -323,11 +331,11 @@ export class DustEmitter {
     // Emission is *per man*, so this coefficient has to fall as army size rises or a
     // 9,500-man approach march fills the whole pool with billows before contact and every
     // subsequent frame is white. Sized for ~600 spawns/s across the field on the march.
-    this.carry[ui] += want * 0.030 * rate * dt;
+    this.carry[ui] += want * 0.075 * rate * dt;
     let count = this.carry[ui] | 0;
     if (count <= 0) return;
     this.carry[ui] -= count;
-    count = Math.min(count, horse ? 18 : 9);
+    count = Math.min(count, horse ? 34 : 20);
 
     const remaining = this.budget.maxSpawnsPerFrame - this.spawned - this.fightSpawned;
     if (remaining <= 0) return;
@@ -376,41 +384,45 @@ export class DustEmitter {
         PLayer.Soft,
         soft || tier === 1 ? PT.smokeSoft : tier === 2 ? PT.dustBillow : PT.dustWisp
       );
-      rec.x = p.x[i] + (h1 - 0.5) * (horse ? 1.5 : 0.7);
-      rec.z = p.z[i] + (h2 - 0.5) * (horse ? 1.5 : 0.7);
-      rec.y = p.y[i] + 0.06;
+      // Born behind the heel, not under the man: the bigger the puff the further back it
+      // starts, so a marching block drags a wake instead of wearing a hat. `bx/bz` already
+      // points backwards along the direction of travel.
+      const trail = tier === 0 ? 0.3 : tier === 1 ? 1.4 : 2.6;
+      rec.x = p.x[i] + bx * trail + (h1 - 0.5) * (horse ? 2.2 : 1.3);
+      rec.z = p.z[i] + bz * trail + (h2 - 0.5) * (horse ? 2.2 : 1.3);
+      rec.y = p.y[i] + 0.04;
       rec.ground = PGround.Ride;
 
       const kickSpeed = (tier === 0 ? 1.5 : 0.85) * (0.4 + speedN * 1.5) * (horse ? 1.7 : 1);
-      rec.vx = bx * kickSpeed + (h3 - 0.5) * 1.1;
-      rec.vz = bz * kickSpeed + (h1 - 0.5) * 1.1;
+      rec.vx = bx * kickSpeed + (h3 - 0.5) * 1.1 + this.driftX * 0.3;
+      rec.vz = bz * kickSpeed + (h1 - 0.5) * 1.1 + this.driftZ * 0.3;
       // Dust barely lifts: it is heavy mineral grit, not steam. Keeping the vertical
       // component low is what makes it hug the ranks instead of forming a cloud bank.
-      rec.vy = (tier === 0 ? 0.9 : 0.32) * (0.5 + speedN) + h2 * 0.3;
+      rec.vy = (tier === 0 ? 0.55 : 0.16) * (0.5 + speedN) + h2 * 0.18;
 
       if (tier === 0) {
         rec.life = 1.3 + h3 * 1.3;
         rec.size0 = (0.55 + h1 * 0.55) * (horse ? 1.8 : 1) * sizeK;
         rec.size1 = rec.size0 * (2.8 + h2 * 1.5);
-        rec.a = (0.30 + 0.30 * dry * speedN) * alphaK;
+        rec.a = (0.16 + 0.16 * dry * speedN) * alphaK;
         rec.drag = 1.9;
         rec.gravity = 1.1;
         rec.turb = 0.35;
       } else if (tier === 1) {
         rec.life = 3.0 + h3 * 2.2;
-        rec.size0 = (1.5 + h1 * 1.5) * (horse ? 1.85 : 1) * sizeK;
+        rec.size0 = (1.9 + h1 * 1.9) * (horse ? 1.85 : 1) * sizeK;
         rec.size1 = rec.size0 * (2.5 + h2 * 1.4);
-        rec.a = (0.20 + 0.24 * dry * (0.4 + speedN)) * alphaK;
+        rec.a = (0.095 + 0.115 * dry * (0.4 + speedN)) * alphaK;
         rec.drag = 1.1;
-        rec.gravity = 0.48;
+        rec.gravity = 0.40;
         rec.turb = 0.8;
       } else {
         rec.life = 4.2 + h3 * 3.0;
-        rec.size0 = (3.0 + h1 * 2.8) * (horse ? 1.95 : 1) * sizeK;
+        rec.size0 = (3.8 + h1 * 3.4) * (horse ? 1.95 : 1) * sizeK;
         rec.size1 = rec.size0 * (2.0 + h2 * 1.1);
-        rec.a = (0.11 + 0.15 * dry * (0.3 + speedN)) * alphaK;
+        rec.a = (0.052 + 0.070 * dry * (0.3 + speedN)) * alphaK;
         rec.drag = 0.60;
-        rec.gravity = 0.24;
+        rec.gravity = 0.20;
         rec.turb = 1.3;
       }
 

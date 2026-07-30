@@ -276,7 +276,12 @@ function buildLandmark(batch: Batch, detail: number, m: LandmarkPlacement, heigh
         porchRows: 3,
         order: 'corinthian',
         roofCol: PAL.gilt,
-        roofMat: 'metal',
+        // Gilded *tiles*, not sheet: the tile material's normal and roughness maps give the
+        // pan-and-cover relief, and the gold comes from the vertex colour. The metal material
+        // is a near-mirror at metalness 1, and on 3,300 m² of upward-facing roof it reflected
+        // the whole sky dome and clipped to a blank white sheet — no amount of tilting the
+        // course normals helps, because every upward direction sees bright sky.
+        roofMat: 'roof',
         wallCol: PAL.marble,
         cellae: 3,
       });
@@ -353,7 +358,7 @@ function buildLandmark(batch: Batch, detail: number, m: LandmarkPlacement, heigh
         porchRows: 2,
         order: 'corinthian',
         roofCol: PAL.bronze,
-        roofMat: 'metal',
+        roofMat: 'roof',
         wallCol: PAL.marble,
         cellae: 1,
       });
@@ -925,7 +930,12 @@ function tiledGable(
       const alt = k % 2 === 0 ? 1.0 : 0.93;
       cLo.copy(col).multiplyScalar(alt * (0.9 + 0.1 * (k / courses)));
       cHi.copy(col).multiplyScalar(alt * (1.0 + 0.1 * (k / courses)));
-      NH.set(sx * slope, 1, 0).normalize();
+      // Alternate courses are shaded as if tilted 8° toward the eave and toward the ridge.
+      // Roman roofing is pan-and-cover: flat *tegulae* with raised semicircular *imbrices*
+      // over the joints, so the surface is a sawtooth, not a plane, and shading it as one
+      // gives the eye the rows without any extra geometry.
+      const tilt = k % 2 === 0 ? 0.14 : -0.14;
+      NH.set(sx * (slope + tilt), 1, 0).normalize();
       P0.set(x0, y0, -od);
       P1.set(x0, y0, od);
       P2.set(x1, y1, od);
@@ -1461,7 +1471,7 @@ function buildForum(batch: Batch, detail: number, g: number, rng: Rng): void {
     porchRows: 2,
     order: 'corinthian',
     roofCol: PAL.bronze,
-    roofMat: 'metal',
+    roofMat: 'roof',
     wallCol: PAL.marble,
     cellae: 1,
   });

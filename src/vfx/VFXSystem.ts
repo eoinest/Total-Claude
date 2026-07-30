@@ -54,10 +54,10 @@ import { Weather, type WeatherKind } from './Weather';
  * the spent shafts are the cheapest legible record of the whole battle.
  */
 const QUALITY_SCALE: Record<string, { soft: number; add: number; density: number; decals: number; birds: number; litter: number; spawns: number }> = {
-  low: { soft: 3500, add: 1600, density: 0.32, decals: 200, birds: 8, litter: 1400, spawns: 30 },
-  medium: { soft: 7000, add: 3200, density: 0.62, decals: 380, birds: 12, litter: 3000, spawns: 60 },
-  high: { soft: 12000, add: 5200, density: 1, decals: 640, birds: 16, litter: 5000, spawns: 105 },
-  ultra: { soft: 15000, add: 6400, density: 1.15, decals: 820, birds: 20, litter: 7000, spawns: 130 },
+  low: { soft: 5000, add: 1600, density: 0.32, decals: 200, birds: 8, litter: 1400, spawns: 60 },
+  medium: { soft: 10000, add: 3200, density: 0.62, decals: 380, birds: 12, litter: 3000, spawns: 130 },
+  high: { soft: 17000, add: 5200, density: 1, decals: 640, birds: 16, litter: 5000, spawns: 220 },
+  ultra: { soft: 22000, add: 6400, density: 1.15, decals: 820, birds: 20, litter: 7000, spawns: 280 },
 };
 
 export class VFXSystem implements Subsystem {
@@ -360,6 +360,8 @@ export class VFXSystem implements Subsystem {
     const cam = ctx.camera.position;
 
     if (this.battle) {
+      this.dust.driftX = this.wind.x;
+      this.dust.driftZ = this.wind.z;
       this.dust.update(sdt, this.battle, this.terrain, this.particles, this.damage, cam.x, cam.z);
       this.combat.update(sdt);
       this.deriveContacts(sdt);

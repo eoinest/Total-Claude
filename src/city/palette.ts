@@ -35,7 +35,10 @@ export const PAL = {
   travertine: srgb(0xb6a888),
   travertineDirty: srgb(0x8b7f66),
   /** Luna (Carrara) marble for temple orders and statuary. */
-  marble: srgb(0xc4bda9),
+  // Luna marble. 0.44 linear luminance: bright, but a large sunlit temple front at the 0.49
+  // an earlier value gave sat right on the shoulder of the tone curve and lost its cornice
+  // and flute shadows to it.
+  marble: srgb(0xb5ad99),
   // Marble in shade, and the default for large secondary surfaces — orchestras, stage
   // buildings, aisle walls. Kept *warm*: a neutral grey here is what made the monumental
   // core read as concrete rather than as stone in the first skyline pass.
@@ -66,7 +69,12 @@ export const PAL = {
    */
   tileCourse: srgb(0xb2734a),
   /** Metals. Gilded bronze roof tiles crowned the Capitoline temple. */
-  gilt: srgb(0xd0a52e),
+  // Gilded bronze, weathered. 0.18 linear luminance, not the 0.44 an earlier 0xd0a52e gave:
+  // that is a *specular* metal's reflectance being authored as a diffuse albedo, and on the
+  // Capitoline temple's 3,300 m² of sunward roof it clipped straight through the top of the
+  // filmic curve — which desaturates as it rolls off, so the roof resolved to a blank white
+  // sheet and was the one visibly broken building on the skyline from every city camera.
+  gilt: srgb(0x907327),
   bronze: srgb(0x8a6a34),
   iron: srgb(0x4b4842),
   lead: srgb(0x6d6f70),
