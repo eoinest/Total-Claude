@@ -239,6 +239,11 @@ export class BattleSystem implements Subsystem {
           if (o.formation) this.setFormation(u, o.formation);
           break;
         }
+        case 'ability':
+          // Deliberately a no-op here: AbilitySystem subscribes to `orderIssued`
+          // directly and owns cooldowns, durations and stat modifiers. Listed so the
+          // contract is explicit rather than looking like an unhandled case.
+          break;
       }
     }
   }

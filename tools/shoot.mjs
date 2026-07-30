@@ -62,9 +62,11 @@ const SHOTS = {
     x: -30, z: 2, zoom: 0.08, yaw: Math.PI * 1.15, at: 88,
   },
   cavalry: {
-    // The emergent cavalry melee lands near (217, 70); the old yaw looked away from it.
+    // The old camera (210, 60) at yaw 1.6pi looked north-west into the Roman rear, with
+    // every cavalry action 25-40 m behind it. This framing was verified by the AI agent
+    // to put the wedge on the wing with the battle line receding into the dust behind.
     desc: 'The cavalry wing sweeping the flank',
-    x: 205, z: 50, zoom: 0.34, yaw: Math.PI * 1.19, at: 70,
+    x: 190, z: 0, zoom: 0.5, yaw: Math.PI * 1.25, at: 62,
   },
   city: {
     desc: 'Necropolis, road, Aurelian Wall and the city beyond',

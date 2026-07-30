@@ -572,7 +572,7 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
   } else {
     // Focale: the neck scarf that stopped mail and plate chafing the throat. Small, but
     // it is on every relief and its absence is felt.
-    b.setPiece(Piece.Focale, Tint.Legs);
+    b.setPiece(Piece.Focale, Tint.Tunic);
     b.setBone(MB.chest, MB.neck, 0.5);
     b.tube(
       [

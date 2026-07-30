@@ -87,7 +87,16 @@ engine.add(new BattleFlowSystem());
 // order stays owned by the AI module rather than by this file.
 await installAI(engine, { difficulty });
 
-engine.add(new VFXSystem());
+const vfx = engine.add(new VFXSystem());
+// VFX cannot write the soldier pool (not its file), so blood only dirties men once
+// this sink is wired. `grime` drives a detail-texture blend in the unit renderer.
+vfx.grimeSink = (i, amt) => {
+  const g = battle.pool.grime;
+  g[i] = Math.min(1, g[i] + amt);
+};
+// `cameraShake` is deliberately NOT handled here. VFXSystem already forwards it to
+// `rig.shake()` internally and does not expose a switch to turn that off, so adding a
+// second listener would double every impact.
 engine.add(new UnitRenderSystem());
 engine.add(new AudioEngine());
 engine.add(new HudSystem());

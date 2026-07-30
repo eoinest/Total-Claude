@@ -653,7 +653,7 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   transition: opacity 0.8s ease;
 }
 /* While the opening title holds the screen the banners step back out of its way. */
-.bnr-layer.hushed { opacity: 0.3; }
+.bnr-layer.hushed { opacity: 0.62; }
 
 .bnr {
   position: absolute;

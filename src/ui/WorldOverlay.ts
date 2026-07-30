@@ -194,9 +194,13 @@ export class WorldOverlay {
 
   constructor(private heightAt: Height) {}
 
-  /** Line width in metres for a target thickness in screen pixels. */
-  private px(pixels: number): number {
-    return Math.max(0.12, this.metresPerPixel * pixels);
+  /**
+   * Line width in metres for a target thickness in screen pixels, with a world-space
+   * ceiling. Without the ceiling a strategic-zoom camera turns every marker into a slab
+   * wide enough to bury the men it is marking — and the bloom pass then blows it out.
+   */
+  private px(pixels: number, maxMetres = 1.1): number {
+    return Math.min(maxMetres, Math.max(0.12, this.metresPerPixel * pixels));
   }
 
   init(scene: THREE.Scene): void {
@@ -297,7 +301,7 @@ export class WorldOverlay {
     seg(brx, brz, brx + fx * dcut, brz + fz * dcut);
 
     // Facing chevron ahead of the centre of the front rank.
-    const tip = Math.max(2.6, Math.min(9, frontage * 0.12));
+    const tip = Math.max(Math.min(2.6, frontage * 0.2), Math.min(7, frontage * 0.1));
     const halfSpan = tip * 0.95;
     const ax = x + fx * (tip * 1.9);
     const az = z + fz * (tip * 1.9);
@@ -315,13 +319,13 @@ export class WorldOverlay {
 
   selectionMarker(v: UnitView): void {
     const u = v.unit;
-    this.block(this.ground, u.x, u.z, u.facing, v.frontage, v.depth, this.px(2.8), GOLD, 1, 0.2);
+    this.block(this.ground, u.x, u.z, u.facing, v.frontage, v.depth, this.px(2.6, 1), GOLD, 1, 0.07);
   }
 
   hoverMarker(v: UnitView, hostile: boolean): void {
     const u = v.unit;
     const col = hostile ? RED : PALE;
-    this.block(this.ground, u.x, u.z, u.facing, v.frontage, v.depth, this.px(1.8), col, 0.7, 0.07);
+    this.block(this.ground, u.x, u.z, u.facing, v.frontage, v.depth, this.px(1.8, 0.7), col, 0.7, 0.05);
   }
 
   /** Dashed path from the unit to its objective, plus any queued waypoints. */
@@ -333,8 +337,8 @@ export class WorldOverlay {
     const target = hostileTarget ?? { x: u.targetX, z: u.targetZ };
     if (Math.hypot(target.x - px, target.z - pz) < 1.2 && u.waypoints.length === 0) return;
 
-    const lw = this.px(2.2);
-    const dash = Math.max(2.4, this.px(9));
+    const lw = this.px(2.2, 0.8);
+    const dash = this.px(9, 6);
     this.air.dashed(px, pz, target.x, target.z, lw, dash, col[0], col[1], col[2], 0.75);
     px = target.x;
     pz = target.z;
@@ -342,11 +346,11 @@ export class WorldOverlay {
       const wx = u.waypoints[i];
       const wz = u.waypoints[i + 1];
       this.air.dashed(px, pz, wx, wz, lw, dash, GOLD[0], GOLD[1], GOLD[2], 0.55);
-      this.node(wx, wz, this.px(5), GOLD, 0.8);
+      this.node(wx, wz, this.px(5, 1.6), GOLD, 0.8);
       px = wx;
       pz = wz;
     }
-    this.node(px, pz, this.px(7), col, 0.9);
+    this.node(px, pz, this.px(7, 2.1), col, 0.9);
   }
 
   /** A small diamond marker on the ground. */
@@ -364,10 +368,10 @@ export class WorldOverlay {
     const frontage = width * u.spacingX;
     const depth = Math.max(1.4, (ranks - 1) * u.spacingZ + 1.3);
 
-    this.block(this.ground, spec.x, spec.z, spec.facing, frontage, depth, this.px(2.4), col, 0.95, 0.18);
+    this.block(this.ground, spec.x, spec.z, spec.facing, frontage, depth, this.px(2.4, 1), col, 0.95, 0.12);
 
     // Dashed lead-in from where the unit is now.
-    this.air.dashed(u.x, u.z, spec.x, spec.z, this.px(2), Math.max(2.4, this.px(9)), col[0], col[1], col[2], 0.6);
+    this.air.dashed(u.x, u.z, spec.x, spec.z, this.px(2, 0.8), this.px(9, 6), col[0], col[1], col[2], 0.6);
 
     if (!spec.detail) return;
 
@@ -377,7 +381,7 @@ export class WorldOverlay {
     // Cap the drawn men: past a couple of hundred dots the shape is already legible
     // and the vertex budget is better spent elsewhere.
     const n = Math.min(alive, 220);
-    const r = Math.max(0.3, this.px(1.6));
+    const r = this.px(1.6, 0.6);
     for (let slot = 0; slot < n; slot++) {
       f.offset(SCRATCH, slot, width, ranks, u.spacingX, u.spacingZ);
       const wx = spec.x + SCRATCH.x * c + SCRATCH.z * s;

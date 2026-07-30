@@ -197,7 +197,7 @@ const MATS: Record<Mat, MatDef> = {
     colour(u, v, out) {
       const n = fbm(u * 6, v * 6, 3, 6, 5);
       const brush = vnoise(u * 60, v * 2, 60, 7);
-      mix3([0.3, 0.295, 0.28], [0.6, 0.585, 0.55], n * 0.7 + brush * 0.3, out);
+      mix3([0.24, 0.235, 0.222], [0.52, 0.505, 0.475], n * 0.7 + brush * 0.3, out);
     },
     height: (u, v) => vnoise(u * 56, v * 2, 56, 7) * 0.35 + fbm(u * 8, v * 8, 3, 8, 5) * 0.65,
     roughness: 0.42,
