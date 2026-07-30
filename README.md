@@ -46,14 +46,27 @@ accumulates into a persistent buffer and is never cleared.</td>
 </tr>
 <tr>
 <td><img src="docs/images/wall.jpg" alt="The Aurelian Wall under construction"></td>
-<td><img src="docs/images/wide.jpg" alt="The battlefield from above"></td>
+<td><img src="docs/images/cavalry.jpg" alt="Cavalry at the gallop"></td>
 </tr>
 <tr>
 <td><b>The Aurelian Wall, 271 AD.</b> Brick-faced concrete on a travertine footing, square
 towers at one Roman <i>actus</i> (35.5 m), a stair to the wall-walk, and behind it painted
 insulae with terracotta roofs. In front, the Via Flaminia necropolis and its cypresses.</td>
-<td><b>Strategic view.</b> Centuriated fields on a 94 m lattice, the Via Flaminia running
-north, and the two armies as legible blocks trailing dust.</td>
+<td><b>Cavalry.</b> The gallop's phase is owned by the horse and advanced at its own speed
+divided by its measured 5.36 m stride, so hoof slip averages 0.000 m/s instead of the
+2.7&ndash;4.1 m/s it started at &mdash; a third of ground speed.</td>
+</tr>
+<tr>
+<td><img src="docs/images/wide.jpg" alt="The battlefield from above"></td>
+<td><img src="docs/images/establishing.jpg" alt="The Roman order of battle"></td>
+</tr>
+<tr>
+<td><b>Strategic view.</b> Centuriated fields on a 94&nbsp;m lattice &mdash; the layout is
+georeferenced against Lanciani's <i>Forma Urbis Romae</i>, with per-landmark positional
+error measured at a mean of 45&nbsp;m.</td>
+<td><b>The order of battle.</b> Rome fields 3,784 against 4,860, out-fronted 248&nbsp;m to
+334&nbsp;m. Do nothing and you lose: a passive Rome takes 37% casualties and ends the battle
+with Juthungi wedges behind its line.</td>
 </tr>
 </table>
 
