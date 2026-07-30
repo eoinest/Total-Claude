@@ -21,7 +21,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { mkdir, rename, rm, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, rename, rm, readFile, writeFile } from 'node:fs/promises';
 import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 

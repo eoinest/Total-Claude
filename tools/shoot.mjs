@@ -103,7 +103,9 @@ const requested = args.get('shots')
   ? String(args.get('shots')).split(',').map((s) => s.trim()).filter(Boolean)
   : Object.keys(SHOTS);
 const PORT = Number(args.get('port') ?? 5199);
-const KEEP_SERVER = args.has('port');
+// Parallel agents each pass their own --port so they never fight over one server.
+// Leaving it running is opt-in, because an orphaned vite holds the port for everyone.
+const KEEP_SERVER = args.has('keep');
 
 for (const s of requested) {
   if (!SHOTS[s]) {

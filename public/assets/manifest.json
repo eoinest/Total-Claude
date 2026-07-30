@@ -1,0 +1,2977 @@
+{
+  "hdris": [
+    {
+      "id": "midday-partly-cloudy",
+      "name": "Midday Partly Cloudy Sky",
+      "path": "/assets/hdri/midday-partly-cloudy-2k.hdr",
+      "author": "Greg Zaal, Jarod Guest",
+      "license": "CC0-1.0",
+      "timeOfDay": "midday",
+      "weather": "partly-cloudy",
+      "sourceId": "kloofendal_48d_partly_cloudy_puresky",
+      "sourceUrl": "https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky",
+      "licenseUrl": "https://polyhaven.com/license",
+      "resolutionPx": 2048,
+      "format": "hdr",
+      "openSky": true,
+      "sha256": "5244534e9cf5b606f2ff513aa00ddb161b0a4826ffd88a0d3bd03ac29247d198"
+    },
+    {
+      "id": "golden-hour-sunset",
+      "name": "Golden Hour Sunset Sky",
+      "path": "/assets/hdri/golden-hour-sunset-2k.hdr",
+      "author": "Greg Zaal, Jarod Guest",
+      "license": "CC0-1.0",
+      "timeOfDay": "sunset",
+      "weather": "partly-cloudy",
+      "sourceId": "kloppenheim_06_puresky",
+      "sourceUrl": "https://polyhaven.com/a/kloppenheim_06_puresky",
+      "licenseUrl": "https://polyhaven.com/license",
+      "resolutionPx": 2048,
+      "format": "hdr",
+      "openSky": true,
+      "sha256": "99451201586489ef3288c97bfac2a2ac232a5491c51a1faf0ec8ea39f3ccd533"
+    },
+    {
+      "id": "overcast-afternoon",
+      "name": "Overcast Afternoon Sky",
+      "path": "/assets/hdri/overcast-afternoon-2k.hdr",
+      "author": "Greg Zaal",
+      "license": "CC0-1.0",
+      "timeOfDay": "afternoon",
+      "weather": "overcast",
+      "sourceId": "kloofendal_overcast_puresky",
+      "sourceUrl": "https://polyhaven.com/a/kloofendal_overcast_puresky",
+      "licenseUrl": "https://polyhaven.com/license",
+      "resolutionPx": 2048,
+      "format": "hdr",
+      "openSky": true,
+      "sha256": "312b1b04b7f10057a4f1418abc59d1166c8933cc93fc72051502edaf8d6b2fcd"
+    },
+    {
+      "id": "dawn-sunrise",
+      "name": "Dawn Sunrise Sky",
+      "path": "/assets/hdri/dawn-sunrise-2k.hdr",
+      "author": "Greg Zaal",
+      "license": "CC0-1.0",
+      "timeOfDay": "dawn",
+      "weather": "partly-cloudy",
+      "sourceId": "kiara_1_dawn",
+      "sourceUrl": "https://polyhaven.com/a/kiara_1_dawn",
+      "licenseUrl": "https://polyhaven.com/license",
+      "resolutionPx": 2048,
+      "format": "hdr",
+      "openSky": true,
+      "sha256": "7261c613b35a9b760ed5c7846ec8182532b90d89f6a8385c42bb743883159a66"
+    }
+  ],
+  "textures": [
+    {
+      "id": "roman-travertine-blocks",
+      "name": "Roman Travertine / Cream Ashlar Blocks",
+      "author": "Rob Tuytel",
+      "license": "CC0-1.0",
+      "maps": {
+        "albedo": "/assets/textures/roman-travertine-blocks/albedo.jpg",
+        "normal": "/assets/textures/roman-travertine-blocks/normal.jpg",
+        "roughness": "/assets/textures/roman-travertine-blocks/roughness.jpg",
+        "ao": "/assets/textures/roman-travertine-blocks/ao.jpg",
+        "displacement": null
+      },
+      "resolutionPx": 2048,
+      "tiling": 0.5,
+      "colorSpace": {
+        "albedo": "srgb",
+        "normal": "linear",
+        "roughness": "linear",
+        "ao": "linear",
+        "displacement": "linear"
+      },
+      "normalMapConvention": "opengl",
+      "tags": [
+        "stone",
+        "wall",
+        "temple",
+        "ashlar",
+        "travertine-substitute"
+      ],
+      "sourceId": "sandstone_blocks_08",
+      "sourceUrl": "https://polyhaven.com/a/sandstone_blocks_08",
+      "licenseUrl": "https://polyhaven.com/license",
+      "sha256": {
+        "albedo": "da2f453c7c3683f5b01ca8b365ccf81ebce488afab7661adecd83208fc9aec97",
+        "normal": "735f205de2d44f2e7edddf22d6b7dca5cd2ace000f3f637546302508dd9616c2",
+        "roughness": "676d9f00b54f303dc19856123312110be3859066661b224dececc3bc857c8f21",
+        "ao": "8c77ecef52727a13a3e6afa731390c37c285692de9703da426402fe1e61b611f"
+      }
+    },
+    {
+      "id": "white-marble",
+      "name": "White / Cream Marble",
+      "author": "Rob Tuytel",
+      "license": "CC0-1.0",
+      "maps": {
+        "albedo": "/assets/textures/white-marble/albedo.jpg",
+        "normal": "/assets/textures/white-marble/normal.jpg",
+        "roughness": "/assets/textures/white-marble/roughness.jpg",
+        "ao": "/assets/textures/white-marble/ao.jpg",
+        "displacement": null
+      },
+      "resolutionPx": 2048,
+      "tiling": 0.5,
+      "colorSpace": {
+        "albedo": "srgb",
+        "normal": "linear",
+        "roughness": "linear",
+        "ao": "linear",
+        "displacement": "linear"
+      },
+      "normalMapConvention": "opengl",
+      "tags": [
+        "stone",
+        "marble",
+        "floor",
+        "temple",
+        "statue"
+      ],
+      "sourceId": "marble_01",
+      "sourceUrl": "https://polyhaven.com/a/marble_01",
+      "licenseUrl": "https://polyhaven.com/license",
+      "sha256": {
+        "albedo": "d403786171716f86718bdd67eba923d4fb6125c0636bacef0e6a21dd5d623a48",
+        "normal": "d5e17ccb2913adbf28fcb781fddf0aa711259ddea6c1c918442f9a3589aa4660",
+        "roughness": "1b970e033856c93ee7390d947da5340e101b489fc8c1463354ea9e6655ce039a",
+        "ao": "e0d535b591430f1ebfd8ffa38086949bb074ae470f6fec7f3dcd55f594f52d4e"
+      }
+    },
+    {
+      "id": "limestone-wall-blocks",
+      "name": "Rough Limestone Wall Blocks",
+      "author": "Rob Tuytel",
+      "license": "CC0-1.0",
+      "maps": {
+        "albedo": "/assets/textures/limestone-wall-blocks/albedo.jpg",
+        "normal": "/assets/textures/limestone-wall-blocks/normal.jpg",
+        "roughness": "/assets/textures/limestone-wall-blocks/roughness.jpg",
+        "ao": "/assets/textures/limestone-wall-blocks/ao.jpg",
+        "displacement": null
+      },
+      "resolutionPx": 2048,
+      "tiling": 0.25,
+      "colorSpace": {
+        "albedo": "srgb",
+        "normal": "linear",
+        "roughness": "linear",
+        "ao": "linear",
+        "displacement": "linear"
+      },
+      "normalMapConvention": "opengl",
+      "tags": [
+        "stone",
+        "wall",
+        "city-wall",
+        "fortification"
+      ],
+      "sourceId": "large_sandstone_blocks_01",
+      "sourceUrl": "https://polyhaven.com/a/large_sandstone_blocks_01",
+      "licenseUrl": "https://polyhaven.com/license",
+      "sha256": {
+        "albedo": "87e5f9404e8aa572d6a21ba86e57a67d17c71e39dfcd9ca0699393a1d116d425",
+        "normal": "10980fa925525e08450779599756b3852370640010b29b59a583609917d92047",
+        "roughness": "5e8294a1954d5aec314159822ccb0d06b198784b617511d86ea77f635265c423",
+        "ao": "80ffa0f03d975b36a5d74a46212365a5570fc5b9f75233178aada35e1ead86bf"
+      }
+    },
+    {
+      "id": "terracotta-roof-tiles",
+      "name": "Terracotta Roof Tiles",
+      "author": "Amal Kumar",
+      "license": "CC0-1.0",
+      "maps": {
+        "albedo": "/assets/textures/terracotta-roof-tiles/albedo.jpg",
+        "normal": "/assets/textures/terracotta-roof-tiles/normal.jpg",
+        "roughness": "/assets/textures/terracotta-roof-tiles/roughness.jpg",
+        "ao": "/assets/textures/terracotta-roof-tiles/ao.jpg",
+        "displacement": null
+      },
+      "resolutionPx": 2048,
+      "tiling": 1,
+      "colorSpace": {
+        "albedo": "srgb",
+        "normal": "linear",
+        "roughness": "linear",
+        "ao": "linear",
+        "displacement": "linear"
+      },
+      "normalMapConvention": "opengl",
+      "tags": [
+        "roof",
+        "clay",
+        "terracotta",
+        "building"
+      ],
+      "sourceId": "clay_roof_tiles_02",
+      "sourceUrl": "https://polyhaven.com/a/clay_roof_tiles_02",
+      "licenseUrl": "https://polyhaven.com/license",
+      "sha256": {
+        "albedo": "570e1878985993bf81433d785b4fa2d4ab9f6d32447706193089b11ff0851731",
+        "normal": "762e2f18ba063fe3c587955be9f8a0a6e8e75cee4057e188970d1ec70a880194",
+        "roughness": "a70d571203b80f763a6bcd4463330d8e2a5480ee6e29b559d1a05f1a61d5a81e",
+        "ao": "c49e8cc0175ed764ca3e25c4bfeb71184acb80049570959be8def17e271e943e"
+      }
+    },
+    {
+      "id": "painted-plaster",
+      "name": "Painted Plaster / Stucco Wall",
+      "author": "Amal Kumar",
+      "license": "CC0-1.0",
+      "maps": {
+        "albedo": "/assets/textures/painted-plaster/albedo.jpg",
+        "normal": "/assets/textures/painted-plaster/normal.jpg",
+        "roughness": "/assets/textures/painted-plaster/roughness.jpg",
+        "ao": "/assets/textures/painted-plaster/ao.jpg",
+        "displacement": null
+      },
+      "resolutionPx": 2048,
+      "tiling": 0.5,
+      "colorSpace": {
+        "albedo": "srgb",
+        "normal": "linear",
+        "roughness": "linear",
+        "ao": "linear",
+        "displacement": "linear"
+      },
+      "normalMapConvention": "opengl",
+      "tags": [
+        "plaster",
+        "stucco",
+        "wall",
+        "building"
+      ],
+      "sourceId": "painted_plaster_wall",
+      "sourceUrl": "https://polyhaven.com/a/painted_plaster_wall",
+      "licenseUrl": "https://polyhaven.com/license",
+      "sha256": {
+        "albedo": "6fd812ed8dd5be1873c29aeef38ce9bf1fb30a22c6d4b3a12db725e98c26a1be",
+        "normal": "2d601a46ed5ce2af866741c53cafa3cba472620c272e633b6484d4de16a80eb1",
+        "roughness": "35aad595469533cc3b7cc209cc6c7e065d660211f02c867f4492d3b371b1fee1",
+        "ao": "3d89b5ea1f9d93d611ab0015d887b620ec9c6623e19effadba84ee9345c4c6fc"
+      }
+    },
+    {
+      "id": "cobblestone-road",
+      "name": "Cobblestone Road",
+      "author": "Rob Tuytel",
+      "license": "CC0-1.0",
+      "maps": {
+        "albedo": "/assets/textures/cobblestone-road/albedo.jpg",
+        "normal": "/assets/textures/cobblestone-road/normal.jpg",
+        "roughness": "/assets/textures/cobblestone-road/roughness.jpg",
+        "ao": "/assets/textures/cobblestone-road/ao.jpg",
+        "displacement": "/assets/textures/cobblestone-road/displacement.jpg"
+      },
+      "resolutionPx": 2048,
+      "tiling": 0.5,
+      "colorSpace": {
+        "albedo": "srgb",
+        "normal": "linear",
+        "roughness": "linear",
+        "ao": "linear",
+        "displacement": "linear"
+      },
+      "normalMapConvention": "opengl",
+      "tags": [
+        "road",
+        "paving",
+        "street",
+        "ground"
+      ],
+      "sourceId": "cobblestone_floor_08",
+      "sourceUrl": "https://polyhaven.com/a/cobblestone_floor_08",
+      "licenseUrl": "https://polyhaven.com/license",
+      "sha256": {
+        "albedo": "9aaf7db7f660f03d0c5c129c11e83caa828fb8bca63f8cd5154d450ffc4c340f",
+        "normal": "42dd5fc2da4a858f9c076c9ac5002857a1c064f8f4c4ffb12fafecffb84e96cc",
+        "roughness": "3bc645ec45543c704fe1042f7b81f9bad4f88a8567760c4898c82bc2a134e093",
+        "ao": "f409fa52dceac782dcb625af914fd592105595749651f396547e8355867b6a5c",
+        "displacement": "503cf1444d98526e4105b065112c36258c0063e0fa0a86c573c29f45eecebe88"
+      }
+    },
+    {
+      "id": "dry-grass",
+      "name": "Dry Withered Grass",
+      "author": "Charlotte Baglioni",
+      "license": "CC0-1.0",
+      "maps": {
+        "albedo": "/assets/textures/dry-grass/albedo.jpg",
+        "normal": "/assets/textures/dry-grass/normal.jpg",
+        "roughness": "/assets/textures/dry-grass/roughness.jpg",
+        "ao": "/assets/textures/dry-grass/ao.jpg",
+        "displacement": "/assets/textures/dry-grass/displacement.jpg"
+      },
+      "resolutionPx": 2048,
+      "tiling": 1,
+      "colorSpace": {
+        "albedo": "srgb",
+        "normal": "linear",
+        "roughness": "linear",
+        "ao": "linear",
+        "displacement": "linear"
+      },
+      "normalMapConvention": "opengl",
+      "tags": [
+        "ground",
+        "grass",
+        "dry",
+        "summer",
+        "terrain"
+      ],
+      "sourceId": "withered_grass",
+      "sourceUrl": "https://polyhaven.com/a/withered_grass",
+      "licenseUrl": "https://polyhaven.com/license",
+      "sha256": {
+        "albedo": "0cf0fca68cbf4277199a2b9b7b3a8013357e4087247b1367f86d4a53b4fafa7e",
+        "normal": "5fd42baf06224086cb9afcb2f7a3b9f26feddd719bf1f9aed65ec49c586e7ff9",
+        "roughness": "86adb8d6f24d0a38eb96c6b625f2dd027b805f59af46fe2a05ffe29f633e33c8",
+        "ao": "b91ec4cab6fdd8034c928647a4ad9a09a5b99744db8d18c0743ead407c8d1b93",
+        "displacement": "2e9ade0a66c6d6b9990ce19ead20b155e1aed7969e4e86f8210fc7595dd2983d"
+      }
+    },
+    {
+      "id": "meadow-grass",
+      "name": "Green Meadow Grass",
+      "author": "Charlotte Baglioni",
+      "license": "CC0-1.0",
+      "maps": {
+        "albedo": "/assets/textures/meadow-grass/albedo.jpg",
+        "normal": "/assets/textures/meadow-grass/normal.jpg",
+        "roughness": "/assets/textures/meadow-grass/roughness.jpg",
+        "ao": "/assets/textures/meadow-grass/ao.jpg",
+        "displacement": "/assets/textures/meadow-grass/displacement.jpg"
+      },
+      "resolutionPx": 2048,
+      "tiling": 1,
+      "colorSpace": {
+        "albedo": "srgb",
+        "normal": "linear",
+        "roughness": "linear",
+        "ao": "linear",
+        "displacement": "linear"
+      },
+      "normalMapConvention": "opengl",
+      "tags": [
+        "ground",
+        "grass",
+        "green",
+        "terrain"
+      ],
+      "sourceId": "leafy_grass",
+      "sourceUrl": "https://polyhaven.com/a/leafy_grass",
+      "licenseUrl": "https://polyhaven.com/license",
+      "sha256": {
+        "albedo": "8e1c6d21365d4b89bc5a35ab664da98a78dbc3ab9ba6100474881c8619a5b113",
+        "normal": "df0cf0ce96e653f033e5b934d5b12995464bda027aa53bd12e329be889aa9f45",
+        "roughness": "34e1733bf4064b6950a575ff57e78c8b7ff71b63749eb48a49221bd65de6fb4f",
+        "ao": "bcce4368f6a1affe11b4a643e14cfed7dfb46abf6bb9e6a28a3b87c2de2ddb11",
+        "displacement": "de34be0f135a3c92fe6e55cca9501a4cc40e02e84de9cc4c7fefded1da5bd3f3"
+      }
+    },
+    {
+      "id": "mud",
+      "name": "Churned Wet Mud",
+      "author": "Rob Tuytel",
+      "license": "CC0-1.0",
+      "maps": {
+        "albedo": "/assets/textures/mud/albedo.jpg",
+        "normal": "/assets/textures/mud/normal.jpg",
+        "roughness": "/assets/textures/mud/roughness.jpg",
+        "ao": "/assets/textures/mud/ao.jpg",
+        "displacement": "/assets/textures/mud/displacement.jpg"
+      },
+      "resolutionPx": 2048,
+      "tiling": 0.5,
+      "colorSpace": {
+        "albedo": "srgb",
+        "normal": "linear",
+        "roughness": "linear",
+        "ao": "linear",
+        "displacement": "linear"
+      },
+      "normalMapConvention": "opengl",
+      "tags": [
+        "ground",
+        "mud",
+        "wet",
+        "terrain",
+        "battle-churn"
+      ],
+      "sourceId": "brown_mud_03",
+      "sourceUrl": "https://polyhaven.com/a/brown_mud_03",
+      "licenseUrl": "https://polyhaven.com/license",
+      "sha256": {
+        "albedo": "57a87dae26769677578ab53b8829fe9b1e4dfec1ae1726f2942ce99fc73f400b",
+        "normal": "4d9ea1c9321618dbde7bdb2287fae85b646e4bd7b27c294a3475096d30b33880",
+        "roughness": "d4beda6f00e1d0bd431360037569cb7807c38a4f3a5102c256f3c24a4bc0e860",
+        "ao": "4ac0ed146a261a00fb6007844841395962304b7382e37c7ed2ca90d1b184d4a4",
+        "displacement": "295bc090d6c436a84fa2e3402f37b8637ea5c6478b71f6fe892d237ab33cd2f4"
+      }
+    },
+    {
+      "id": "dirt-gravel",
+      "name": "Dirt and Gravel",
+      "author": "Dario Barresi",
+      "license": "CC0-1.0",
+      "maps": {
+        "albedo": "/assets/textures/dirt-gravel/albedo.jpg",
+        "normal": "/assets/textures/dirt-gravel/normal.jpg",
+        "roughness": "/assets/textures/dirt-gravel/roughness.jpg",
+        "ao": "/assets/textures/dirt-gravel/ao.jpg",
+        "displacement": "/assets/textures/dirt-gravel/displacement.jpg"
+      },
+      "resolutionPx": 2048,
+      "tiling": 0.5,
+      "colorSpace": {
+        "albedo": "srgb",
+        "normal": "linear",
+        "roughness": "linear",
+        "ao": "linear",
+        "displacement": "linear"
+      },
+      "normalMapConvention": "opengl",
+      "tags": [
+        "ground",
+        "dirt",
+        "gravel",
+        "terrain"
+      ],
+      "sourceId": "gravelly_sand",
+      "sourceUrl": "https://polyhaven.com/a/gravelly_sand",
+      "licenseUrl": "https://polyhaven.com/license",
+      "sha256": {
+        "albedo": "cdab7130a67bc70f8c241b9ab2cd41b731d2baf1ec533939a333573b80070dd6",
+        "normal": "191985454de9403961aab2a6ffd33b6ca1e4c2715712e03f3c928a8140322719",
+        "roughness": "da39087ed3beced52f7ca68f77610ecaa048113c33e49a47cb6e7d930733fcaa",
+        "ao": "e98b986061c0919cb09cf7494cf142094c602690e496752cc2a876b3f0a32a71",
+        "displacement": "1708db581f6a915b25af3711a923e4b7e7da79ba0828f113797e42d4bd308a08"
+      }
+    },
+    {
+      "id": "sand",
+      "name": "Compacted Sand",
+      "author": "Rob Tuytel",
+      "license": "CC0-1.0",
+      "maps": {
+        "albedo": "/assets/textures/sand/albedo.jpg",
+        "normal": "/assets/textures/sand/normal.jpg",
+        "roughness": "/assets/textures/sand/roughness.jpg",
+        "ao": "/assets/textures/sand/ao.jpg",
+        "displacement": "/assets/textures/sand/displacement.jpg"
+      },
+      "resolutionPx": 2048,
+      "tiling": 0.5,
+      "colorSpace": {
+        "albedo": "srgb",
+        "normal": "linear",
+        "roughness": "linear",
+        "ao": "linear",
+        "displacement": "linear"
+      },
+      "normalMapConvention": "opengl",
+      "tags": [
+        "ground",
+        "sand",
+        "desert",
+        "arena",
+        "terrain"
+      ],
+      "sourceId": "sand_01",
+      "sourceUrl": "https://polyhaven.com/a/sand_01",
+      "licenseUrl": "https://polyhaven.com/license",
+      "sha256": {
+        "albedo": "f311767ab68e132cb9de4160493a71ff17ec765c699d411facd5154d9a9a9c18",
+        "normal": "b784b6a0526b79c81635bf423be9bc517ad36278ae5d68a4ff30f46eac56f0e3",
+        "roughness": "60ec73993d245be5dab83f9debb67cab4303a0af9d4cec3f28868a58f939f8db",
+        "ao": "869cb6a93c2fb37fbe37236b33e386871134a5b154354396c7ba000f1be09b22",
+        "displacement": "3edaf84b5075600a0c26665d69e4c45dc8bf9df045f126fd18686d0688448a5f"
+      }
+    },
+    {
+      "id": "weathered-wood-planks",
+      "name": "Weathered Wood Planks",
+      "author": "Dimitrios Savva, Rico Cilliers",
+      "license": "CC0-1.0",
+      "maps": {
+        "albedo": "/assets/textures/weathered-wood-planks/albedo.jpg",
+        "normal": "/assets/textures/weathered-wood-planks/normal.jpg",
+        "roughness": "/assets/textures/weathered-wood-planks/roughness.jpg",
+        "ao": "/assets/textures/weathered-wood-planks/ao.jpg",
+        "displacement": null
+      },
+      "resolutionPx": 2048,
+      "tiling": 0.5,
+      "colorSpace": {
+        "albedo": "srgb",
+        "normal": "linear",
+        "roughness": "linear",
+        "ao": "linear",
+        "displacement": "linear"
+      },
+      "normalMapConvention": "opengl",
+      "tags": [
+        "wood",
+        "planks",
+        "palisade",
+        "siege-engine",
+        "cart"
+      ],
+      "sourceId": "weathered_brown_planks",
+      "sourceUrl": "https://polyhaven.com/a/weathered_brown_planks",
+      "licenseUrl": "https://polyhaven.com/license",
+      "sha256": {
+        "albedo": "070ebc4c56a6729ca73a791f7cd3bab7670eb03bfa9ac0218864a554228bcc30",
+        "normal": "1c4882afd62de8da66b6e0730894e1a08db1e0cdd2370bd8bce77a6935d8812b",
+        "roughness": "6897855d0e2758b612fd8cf478aed01b4992d856987a8b4951e5758a48003df2",
+        "ao": "69d2aa676f199365dd63253b36db7e1ac78eafbb835055528856c9c3d16d3e5f"
+      }
+    },
+    {
+      "id": "worn-iron",
+      "name": "Worn Corroded Iron",
+      "author": "Dimitrios Savva, Rico Cilliers",
+      "license": "CC0-1.0",
+      "maps": {
+        "albedo": "/assets/textures/worn-iron/albedo.jpg",
+        "normal": "/assets/textures/worn-iron/normal.jpg",
+        "roughness": "/assets/textures/worn-iron/roughness.jpg",
+        "ao": "/assets/textures/worn-iron/ao.jpg",
+        "displacement": null
+      },
+      "resolutionPx": 2048,
+      "tiling": 2,
+      "colorSpace": {
+        "albedo": "srgb",
+        "normal": "linear",
+        "roughness": "linear",
+        "ao": "linear",
+        "displacement": "linear"
+      },
+      "normalMapConvention": "opengl",
+      "tags": [
+        "metal",
+        "iron",
+        "rust",
+        "weapon",
+        "armour"
+      ],
+      "sourceId": "rust_coarse_01",
+      "sourceUrl": "https://polyhaven.com/a/rust_coarse_01",
+      "licenseUrl": "https://polyhaven.com/license",
+      "sha256": {
+        "albedo": "5b8801674fa53ff1b6f7853300f50aa7a1b31e69278554803bd957fe9fa7e392",
+        "normal": "495d3c87da059827ffaf49dae59f967cb3e0b187f4426ab0a47088c3fa83e50b",
+        "roughness": "652eaa2e668c4d24b038716e01c460e6614429634f67ddbcd7f9593296a24885",
+        "ao": "4340b7de13e1690b2132234ec631d9b1166c70ae2c8076b2d32cf51808bad7f5"
+      }
+    },
+    {
+      "id": "steel-plate",
+      "name": "Worn Steel Plate",
+      "author": "Rob Tuytel",
+      "license": "CC0-1.0",
+      "maps": {
+        "albedo": "/assets/textures/steel-plate/albedo.jpg",
+        "normal": "/assets/textures/steel-plate/normal.jpg",
+        "roughness": "/assets/textures/steel-plate/roughness.jpg",
+        "ao": "/assets/textures/steel-plate/ao.jpg",
+        "displacement": null
+      },
+      "resolutionPx": 2048,
+      "tiling": 2,
+      "colorSpace": {
+        "albedo": "srgb",
+        "normal": "linear",
+        "roughness": "linear",
+        "ao": "linear",
+        "displacement": "linear"
+      },
+      "normalMapConvention": "opengl",
+      "tags": [
+        "metal",
+        "steel",
+        "plate",
+        "armour",
+        "shield-boss"
+      ],
+      "sourceId": "metal_plate",
+      "sourceUrl": "https://polyhaven.com/a/metal_plate",
+      "licenseUrl": "https://polyhaven.com/license",
+      "sha256": {
+        "albedo": "864c9a653acd1f5034c9bbe7f955b18cc9687a81bbdfa805e7a2319939676910",
+        "normal": "146f8c00874a584bcc4a184643e72f160da2a7568d469198e02b26c9ff93cf43",
+        "roughness": "3cdc139df4ec5b304dd986278c1fb026c67c42e6623f0ee5caa7f373d51c7bef",
+        "ao": "31e586f0bde9f28331077b30495f0f324aa9f91a9d656205d03242d1d3e2e439"
+      }
+    },
+    {
+      "id": "rough-linen",
+      "name": "Rough Linen / Hessian Cloth",
+      "author": "colormass, Rico Cilliers",
+      "license": "CC0-1.0",
+      "maps": {
+        "albedo": "/assets/textures/rough-linen/albedo.jpg",
+        "normal": "/assets/textures/rough-linen/normal.jpg",
+        "roughness": "/assets/textures/rough-linen/roughness.jpg",
+        "ao": "/assets/textures/rough-linen/ao.jpg",
+        "displacement": null
+      },
+      "resolutionPx": 2048,
+      "tiling": 4,
+      "colorSpace": {
+        "albedo": "srgb",
+        "normal": "linear",
+        "roughness": "linear",
+        "ao": "linear",
+        "displacement": "linear"
+      },
+      "normalMapConvention": "opengl",
+      "tags": [
+        "fabric",
+        "linen",
+        "tunic",
+        "tent",
+        "sail"
+      ],
+      "sourceId": "rough_linen",
+      "sourceUrl": "https://polyhaven.com/a/rough_linen",
+      "licenseUrl": "https://polyhaven.com/license",
+      "sha256": {
+        "albedo": "e71016e08dfebea1dd4e8a2a675e3b617a889a782af782f1abb795906f4db1b4",
+        "normal": "c5733ad50cfe0f90c546f3d4076590c1c78a4fd1a83c967cc9c92dc8175b99e6",
+        "roughness": "48400d48fa203882bf5d984d5beb2f95edb1550309924601c018f2c4f3f80731",
+        "ao": "277399dfd364393c506fb35f7b868a2d3c0c388400439c327829cf787bc7c315"
+      }
+    },
+    {
+      "id": "brown-leather",
+      "name": "Brown Leather",
+      "author": "Rob Tuytel",
+      "license": "CC0-1.0",
+      "maps": {
+        "albedo": "/assets/textures/brown-leather/albedo.jpg",
+        "normal": "/assets/textures/brown-leather/normal.jpg",
+        "roughness": "/assets/textures/brown-leather/roughness.jpg",
+        "ao": "/assets/textures/brown-leather/ao.jpg",
+        "displacement": null
+      },
+      "resolutionPx": 2048,
+      "tiling": 4,
+      "colorSpace": {
+        "albedo": "srgb",
+        "normal": "linear",
+        "roughness": "linear",
+        "ao": "linear",
+        "displacement": "linear"
+      },
+      "normalMapConvention": "opengl",
+      "tags": [
+        "leather",
+        "armour",
+        "strap",
+        "harness",
+        "lorica"
+      ],
+      "sourceId": "brown_leather",
+      "sourceUrl": "https://polyhaven.com/a/brown_leather",
+      "licenseUrl": "https://polyhaven.com/license",
+      "sha256": {
+        "albedo": "b0de2403a31efa31e501b0028c0bd8e504d5bd6318f4a5ce90c550c3067f96d8",
+        "normal": "3386277290af50b4d464dc9a9f195bbf8dd6f137b9ae0274552397d2f0135c98",
+        "roughness": "8a47afca2630310849034fe40ca9497db0956c67c0d933e6efd49d3cd2befe83",
+        "ao": "0f1f8753775779d4e25512f4d08aec1e7dbb73b1d0dc98df66af2071fe8bfa77"
+      }
+    },
+    {
+      "id": "ruins-bark-albedo",
+      "name": "Ruins Kit Bark Albedo",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "maps": {
+        "albedo": "/assets/models/ruins/Bark_Texture.jpg",
+        "normal": null,
+        "roughness": null,
+        "ao": null,
+        "displacement": null
+      },
+      "resolutionPx": 768,
+      "tiling": 1,
+      "colorSpace": {
+        "albedo": "srgb",
+        "normal": null,
+        "roughness": null,
+        "ao": null,
+        "displacement": null
+      },
+      "normalMapConvention": null,
+      "tags": [
+        "support-texture",
+        "ruins-kit"
+      ],
+      "sourceId": "ultimatemodularruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sha256": {
+        "albedo": "d6fdb3cbf6df624bfe8e5d45fe7b5b1a05ec6d7b1fdb0fa4cc4774b4119bf017"
+      },
+      "note": "Single albedo map shipped with the Quaternius ruins kit; the FBX materials resolve it by filename, so it must stay in /assets/models/ruins/. Not a full PBR set."
+    },
+    {
+      "id": "ruins-leaf-albedo",
+      "name": "Ruins Kit Leaf Albedo (alpha-cutout)",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "maps": {
+        "albedo": "/assets/models/ruins/Leaf_Texture.png",
+        "normal": null,
+        "roughness": null,
+        "ao": null,
+        "displacement": null
+      },
+      "resolutionPx": 512,
+      "tiling": 1,
+      "colorSpace": {
+        "albedo": "srgb",
+        "normal": null,
+        "roughness": null,
+        "ao": null,
+        "displacement": null
+      },
+      "normalMapConvention": null,
+      "tags": [
+        "support-texture",
+        "ruins-kit"
+      ],
+      "sourceId": "ultimatemodularruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sha256": {
+        "albedo": "34649aec779adde617568fc89e6ed24277d2bc5b254f592cdf26627f29fe63e0"
+      },
+      "note": "Single albedo map shipped with the Quaternius ruins kit; the FBX materials resolve it by filename, so it must stay in /assets/models/ruins/. Not a full PBR set."
+    }
+  ],
+  "models": [
+    {
+      "id": "nature-common-tree-1",
+      "name": "CommonTree 1",
+      "path": "/assets/models/nature/CommonTree_1.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "tree"
+      ],
+      "sha256": "0b744c9092a09bfb7228d5ecce26c665363e0f22725d3d89e356dc13789498c3",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-common-tree-2",
+      "name": "CommonTree 2",
+      "path": "/assets/models/nature/CommonTree_2.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "tree"
+      ],
+      "sha256": "b3ca339781adc90ca0714d5d3fb081e5432f4a0e47f2697b7865a907b39c93cc",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-common-tree-3",
+      "name": "CommonTree 3",
+      "path": "/assets/models/nature/CommonTree_3.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "tree"
+      ],
+      "sha256": "c6c09a4d4797d2b0651cdf8e56ea7baecefd8eb4b4a79fc680ef17747c42b70e",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-common-tree-4",
+      "name": "CommonTree 4",
+      "path": "/assets/models/nature/CommonTree_4.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "tree"
+      ],
+      "sha256": "611134a64de288ba485ba429478978b8572ff9d74e5d1798f7389b4bbacf43d7",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-common-tree-5",
+      "name": "CommonTree 5",
+      "path": "/assets/models/nature/CommonTree_5.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "tree"
+      ],
+      "sha256": "65f4b9dd21c242d311199406afbd7e6e20785cc66c57ee4db76d5a7c38d3dd4a",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-common-tree-dead-1",
+      "name": "CommonTree Dead 1",
+      "path": "/assets/models/nature/CommonTree_Dead_1.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "tree",
+        "dead"
+      ],
+      "sha256": "e8b1abbacb9f77f2535670c64a0ebe1e9526c5e591f1509067794630124f6591",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-common-tree-dead-2",
+      "name": "CommonTree Dead 2",
+      "path": "/assets/models/nature/CommonTree_Dead_2.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "tree",
+        "dead"
+      ],
+      "sha256": "d5c3d823d515cbfddb0305c5046136348d43230bf5bfc1cbf5951f0632a16b00",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-common-tree-dead-3",
+      "name": "CommonTree Dead 3",
+      "path": "/assets/models/nature/CommonTree_Dead_3.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "tree",
+        "dead"
+      ],
+      "sha256": "67ca71199a30e8d61b8c1c5094be60dec2cb90c2b597e890d3fc8bfce0343ddd",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-pine-tree-1",
+      "name": "PineTree 1",
+      "path": "/assets/models/nature/PineTree_1.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "tree",
+        "conifer"
+      ],
+      "sha256": "5627e2f33577398ea13ab63f4263afb6cdd4839bf6b4e5d288d6174ff2887266",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-pine-tree-2",
+      "name": "PineTree 2",
+      "path": "/assets/models/nature/PineTree_2.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "tree",
+        "conifer"
+      ],
+      "sha256": "afc20aab8e9c35ea5e5edf1366d312f8f94948f4d00a40445feb9367cd3e06a3",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-pine-tree-3",
+      "name": "PineTree 3",
+      "path": "/assets/models/nature/PineTree_3.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "tree",
+        "conifer"
+      ],
+      "sha256": "e4f038ab6bc8390a5a387bc99fb6b917bb93b6d673d1ac8c22a07521300c1ffc",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-pine-tree-4",
+      "name": "PineTree 4",
+      "path": "/assets/models/nature/PineTree_4.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "tree",
+        "conifer"
+      ],
+      "sha256": "7451481e4ae14102b01632bd74e04072cf22b9ce84819175e45220e0ac8bda4f",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-pine-tree-5",
+      "name": "PineTree 5",
+      "path": "/assets/models/nature/PineTree_5.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "tree",
+        "conifer"
+      ],
+      "sha256": "f48c82f590fd94e9dd265575232f867963d08e1d57c9b473e4e1e069220e5536",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-willow-1",
+      "name": "Willow 1",
+      "path": "/assets/models/nature/Willow_1.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "tree"
+      ],
+      "sha256": "4490d814ed6f744e2390e635a1be31faf461806bfb25b0e15a1203cf4660cb60",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-willow-2",
+      "name": "Willow 2",
+      "path": "/assets/models/nature/Willow_2.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "tree"
+      ],
+      "sha256": "9614a514370a608493aaf2cf04340c57334672804bb06528103ad65dfc73fa3e",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-willow-3",
+      "name": "Willow 3",
+      "path": "/assets/models/nature/Willow_3.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "tree"
+      ],
+      "sha256": "3a29483120f919f803604cbcbb0cad6bdf240e3c012143e56875495662d79a33",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-palm-tree-1",
+      "name": "PalmTree 1",
+      "path": "/assets/models/nature/PalmTree_1.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "tree"
+      ],
+      "sha256": "bcf142d8a1ceae00edcf4036de1b4cdb43239c578bbd693737b9ed5fa8818df6",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-palm-tree-2",
+      "name": "PalmTree 2",
+      "path": "/assets/models/nature/PalmTree_2.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "tree"
+      ],
+      "sha256": "716e9e71270e56a8d2eeb69e48014a8ae390d20383e5f3b8f2c50a4d1dd4d815",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-rock-1",
+      "name": "Rock 1",
+      "path": "/assets/models/nature/Rock_1.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "rock",
+        "scatter"
+      ],
+      "sha256": "8a6e150e2d71dd601daf48d7967e273e940347a4826c2004b71ed1a9fa99c962",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-rock-2",
+      "name": "Rock 2",
+      "path": "/assets/models/nature/Rock_2.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "rock",
+        "scatter"
+      ],
+      "sha256": "5a06ef3ec0b90098666407792fd2ea03879a10d3d0b0fe09b47f0df3a04025a1",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-rock-3",
+      "name": "Rock 3",
+      "path": "/assets/models/nature/Rock_3.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "rock",
+        "scatter"
+      ],
+      "sha256": "4144136bd6c313ac7c48a08548504d7d30b7d628f35ce9dcd290ebe84e10e734",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-rock-4",
+      "name": "Rock 4",
+      "path": "/assets/models/nature/Rock_4.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "rock",
+        "scatter"
+      ],
+      "sha256": "a914a59150ad1c12ff01ffc11de22b826fee9d52dabeb703fb43e7bde1f04e1d",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-rock-5",
+      "name": "Rock 5",
+      "path": "/assets/models/nature/Rock_5.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "rock",
+        "scatter"
+      ],
+      "sha256": "a335cfa716e962010450026884f19c7474967682334635286ca315eef3490c94",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-rock-6",
+      "name": "Rock 6",
+      "path": "/assets/models/nature/Rock_6.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "rock",
+        "scatter"
+      ],
+      "sha256": "36f79bdcae803b60e5968487f4a9b26f589490817ace655a1045b960d1af81f3",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-rock-7",
+      "name": "Rock 7",
+      "path": "/assets/models/nature/Rock_7.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "rock",
+        "scatter"
+      ],
+      "sha256": "a7e68ae16e6e7af933ad81249a1a7eadf5940d3528eeea9963751a3b3efd8129",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-rock-moss-1",
+      "name": "Rock Moss 1",
+      "path": "/assets/models/nature/Rock_Moss_1.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "rock",
+        "scatter",
+        "mossy"
+      ],
+      "sha256": "94ea25751e2ce17ca55ab0ddf3a70d5fda1fca4f308d883f9e51451162faf20e",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-rock-moss-2",
+      "name": "Rock Moss 2",
+      "path": "/assets/models/nature/Rock_Moss_2.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "rock",
+        "scatter",
+        "mossy"
+      ],
+      "sha256": "9e6bb49e692da8c21c6cf5cdb77bcf6b9956edb55e1719a265524f7007fc717c",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-rock-moss-3",
+      "name": "Rock Moss 3",
+      "path": "/assets/models/nature/Rock_Moss_3.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "rock",
+        "scatter",
+        "mossy"
+      ],
+      "sha256": "5f51b88bb9fe3c1a77e504521fca0fe03dc055d406aa2586bd543ef0413aad0e",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-bush-1",
+      "name": "Bush 1",
+      "path": "/assets/models/nature/Bush_1.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "groundcover"
+      ],
+      "sha256": "ef4fd15c36fd95a19aa769a15b4acde2a22bbfea4ada7144ece5fd82c2e05a0f",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-bush-2",
+      "name": "Bush 2",
+      "path": "/assets/models/nature/Bush_2.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "groundcover"
+      ],
+      "sha256": "73a9aa512b2967ad333451ffb4b4e460f400a7a17a73a0b90fc1656404273388",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-bush-berries-1",
+      "name": "BushBerries 1",
+      "path": "/assets/models/nature/BushBerries_1.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "groundcover"
+      ],
+      "sha256": "1e70f836ae535b5e8bc7096abfa5f7fe2517ea8baa6d06964eff5296e39d7edc",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-bush-berries-2",
+      "name": "BushBerries 2",
+      "path": "/assets/models/nature/BushBerries_2.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "groundcover"
+      ],
+      "sha256": "02c360d6c2738e3ef42610aee3b00604ff2c5722cb6b773e23fa78f6d38cece4",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-grass",
+      "name": "Grass",
+      "path": "/assets/models/nature/Grass.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "groundcover"
+      ],
+      "sha256": "849a2ca44c4765b47414bfd83eb8d276835db43c33d2755f7407006f5bb53c7e",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-grass-2",
+      "name": "Grass 2",
+      "path": "/assets/models/nature/Grass_2.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "groundcover"
+      ],
+      "sha256": "c7d84984661f8330d1c8e1f21f2cb0ede457586526b6bd38306d133d7c4f38c3",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-grass-short",
+      "name": "Grass Short",
+      "path": "/assets/models/nature/Grass_Short.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "groundcover"
+      ],
+      "sha256": "7244d7d8a30eb51e11e454083714f39d3b7d1d2512dd395b2acca787c064a7fa",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-flowers",
+      "name": "Flowers",
+      "path": "/assets/models/nature/Flowers.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "groundcover"
+      ],
+      "sha256": "ffd9ad6299f0058855a97fcc819640ebed7131796c71a2eacb60b53d0d28d4c7",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-plant-1",
+      "name": "Plant 1",
+      "path": "/assets/models/nature/Plant_1.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "groundcover"
+      ],
+      "sha256": "14fc5f5b4c29451e21da9626795125f59343952ea700217826a1061b46ea386f",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-plant-2",
+      "name": "Plant 2",
+      "path": "/assets/models/nature/Plant_2.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "groundcover"
+      ],
+      "sha256": "dac0f960bfd59ecf9b9f449b57556e20dc113908d20f042772e79ed87336f6d7",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-plant-3",
+      "name": "Plant 3",
+      "path": "/assets/models/nature/Plant_3.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "groundcover"
+      ],
+      "sha256": "dbf8f891b383b761953c9f497bb7e5dcdecf31de562944625af8181425064b31",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-plant-4",
+      "name": "Plant 4",
+      "path": "/assets/models/nature/Plant_4.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "groundcover"
+      ],
+      "sha256": "6495b56100a2e2cc2b87f5f809daf55fe9119ec3af8d613cfd3c7c659c15c7c3",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-plant-5",
+      "name": "Plant 5",
+      "path": "/assets/models/nature/Plant_5.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "groundcover"
+      ],
+      "sha256": "c1708097421a206f2309efee097038cd2896d9a22da13dd44e948fd2e32e013f",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-tree-stump",
+      "name": "TreeStump",
+      "path": "/assets/models/nature/TreeStump.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "debris",
+        "wood"
+      ],
+      "sha256": "bb2f526c4259a915b49102ad374b9065d87153181c9dfb88a029068826fc88cb",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-tree-stump-moss",
+      "name": "TreeStump Moss",
+      "path": "/assets/models/nature/TreeStump_Moss.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "debris",
+        "wood"
+      ],
+      "sha256": "53197f0637f5729af6f6cc4f20125b0575bdf8fa53ed21106430a80de0b35dec",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-wood-log",
+      "name": "WoodLog",
+      "path": "/assets/models/nature/WoodLog.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "debris",
+        "wood"
+      ],
+      "sha256": "efc0eacf35939e10b6ca13cac145fda682ae65a624448fd43faebc84d98dbb02",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-wood-log-moss",
+      "name": "WoodLog Moss",
+      "path": "/assets/models/nature/WoodLog_Moss.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "debris",
+        "wood"
+      ],
+      "sha256": "5a18bfd817959e886d0e781efd8c2134801a70c45a86fa000df34b8c09b2a1cf",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "nature-wheat",
+      "name": "Wheat",
+      "path": "/assets/models/nature/Wheat.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "nature",
+      "pack": "Ultimate Nature Pack",
+      "sourceUrl": "https://quaternius.com/packs/ultimatenature.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "vegetation",
+        "crop",
+        "farmland"
+      ],
+      "sha256": "590e4345e08fde9b0a5ba6cba205ecc6c6ba7279734325df9412a47621081f18",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-arch-round",
+      "name": "Arch Round",
+      "path": "/assets/models/ruins/Arch_Round.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular",
+        "roman-order"
+      ],
+      "sha256": "0fa77eafe953ac058e63aedca68ce1a82f02b6bbe009f53a0d3f7fc0120abcc8",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-arch-round-round-column",
+      "name": "Arch Round RoundColumn",
+      "path": "/assets/models/ruins/Arch_Round_RoundColumn.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular",
+        "roman-order"
+      ],
+      "sha256": "039670b60b4648a269884cd8378f0bbf0ec13b2f424887f8a90dee7f6fca20e2",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-column-round",
+      "name": "Column Round",
+      "path": "/assets/models/ruins/Column_Round.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular",
+        "roman-order"
+      ],
+      "sha256": "c9b3f643c5eca4b39e3490023555a053d0b490ae81a1838ed10940d1c3244d3e",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-column-round-short",
+      "name": "Column Round Short",
+      "path": "/assets/models/ruins/Column_Round_Short.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular",
+        "roman-order"
+      ],
+      "sha256": "f9c66da3c80b2576163afc2beee1e6dcbfbb3d65dc9307fb1a134163b9421ad0",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-column-square",
+      "name": "Column Square",
+      "path": "/assets/models/ruins/Column_Square.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular",
+        "roman-order"
+      ],
+      "sha256": "df263445e20b73c2f5983036d55d0c6287984500be5700327b7208eed2e2dcbe",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-column-bridge-support",
+      "name": "Column BridgeSupport",
+      "path": "/assets/models/ruins/Column_BridgeSupport.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular",
+        "roman-order"
+      ],
+      "sha256": "fd951b16e2e9d0d13ad0b3fea92a374b7a9b89ffee8737386d17a0979e122938",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-wall",
+      "name": "Wall",
+      "path": "/assets/models/ruins/Wall.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular"
+      ],
+      "sha256": "6a37475da866a457f6b2872052c409576c6f7be5838a95cca3a51fbb75e19605",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-wall-half",
+      "name": "Wall Half",
+      "path": "/assets/models/ruins/Wall_Half.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular"
+      ],
+      "sha256": "7f70fddb4008eea87da8aee398ecda3f7f6ad4a4248f0695a1c9b3d0a0708077",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-wall-broken",
+      "name": "Wall Broken",
+      "path": "/assets/models/ruins/Wall_Broken.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular",
+        "ruined"
+      ],
+      "sha256": "6a4383be9c0b2101e1d471d8bb2a33e8b36ca95ca5b86e6b775b12b09ae76439",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-wall-hole",
+      "name": "Wall Hole",
+      "path": "/assets/models/ruins/Wall_Hole.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular",
+        "ruined"
+      ],
+      "sha256": "b5c5e7dbce3b07f9d46c94466820f5127008815e284b85298061384c6df86095",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-wall-double-broken",
+      "name": "Wall Double Broken",
+      "path": "/assets/models/ruins/Wall_Double_Broken.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular",
+        "ruined"
+      ],
+      "sha256": "9d5351f316f73577593fa80e0ca495766308a136b79e98411fd71d086bb80693",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-wall-arch-round",
+      "name": "Wall ArchRound",
+      "path": "/assets/models/ruins/Wall_ArchRound.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular"
+      ],
+      "sha256": "3e9f6c6a498e9c585ad462e608bb498f0591fc6b80214de7b9281b28c3f857b5",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-wall-arch-round-broken",
+      "name": "Wall ArchRound Broken",
+      "path": "/assets/models/ruins/Wall_ArchRound_Broken.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular",
+        "ruined"
+      ],
+      "sha256": "1ee949732ccc1599411c8cc6fa2ed7cacf983967695d90f78b3813fdb732d7e8",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-wall-overgrown",
+      "name": "Wall Overgrown",
+      "path": "/assets/models/ruins/Wall_Overgrown.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular",
+        "ruined"
+      ],
+      "sha256": "c0ea1ec251962e5cd04afee5d444cc9019faa1a7b1caed0033ce318dc3f04beb",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-floor-standard",
+      "name": "Floor Standard",
+      "path": "/assets/models/ruins/Floor_Standard.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular"
+      ],
+      "sha256": "5114ce65e16d4f404cc31294dbae8c1874e7cfefab6bec46ca790f7eba767f36",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-floor-standard-half",
+      "name": "Floor Standard Half",
+      "path": "/assets/models/ruins/Floor_Standard_Half.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular"
+      ],
+      "sha256": "2ebd309c037122fdacbbc8925b56a699ed328afa3d1734e30ecdb160bf410e42",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-floor-square-large",
+      "name": "Floor SquareLarge",
+      "path": "/assets/models/ruins/Floor_SquareLarge.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular"
+      ],
+      "sha256": "8f4ae42df3f5990127b1c0b27886deebb411b747ee09c856e88cbcb86bd8cceb",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-floor-squares",
+      "name": "Floor Squares",
+      "path": "/assets/models/ruins/Floor_Squares.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular"
+      ],
+      "sha256": "6aa3d8ebae6dccf5ede7b213eebbfe629db089c336b7dafca2b2b9c9f42d1d62",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-floor-diamond",
+      "name": "Floor Diamond",
+      "path": "/assets/models/ruins/Floor_Diamond.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular"
+      ],
+      "sha256": "ff22d69fdd431c0e783afd6df7475a0932a0f6fee941884c8c04fe095a510f8a",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-stairs",
+      "name": "Stairs",
+      "path": "/assets/models/ruins/Stairs.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular"
+      ],
+      "sha256": "b2e9bcbbfb966d43e5800b72a5ac45afd3c11901f5d3d65f9beb2ad127dc4552",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-stairs-2",
+      "name": "Stairs 2",
+      "path": "/assets/models/ruins/Stairs_2.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular"
+      ],
+      "sha256": "c1b646e1e8d4f37d9cea9fe289b1dda0bbdaaff2336b215233e6c4b7a5e7e5c1",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-bridge-section",
+      "name": "BridgeSection",
+      "path": "/assets/models/ruins/BridgeSection.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular"
+      ],
+      "sha256": "c26c4a11e868dfe3b342facd1a48aebe8b8fe3b49239fe649509753522deb960",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-brick",
+      "name": "Brick",
+      "path": "/assets/models/ruins/Brick.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular"
+      ],
+      "sha256": "645a4a1aea7a9da72609cdff285f701629ee4cb6429c64ef1d1a96853772e4b8",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-bricks",
+      "name": "Bricks",
+      "path": "/assets/models/ruins/Bricks.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular"
+      ],
+      "sha256": "7f7d77c199b75e3c7cbb1534ed1c528215c08101b3d567f2a987c25feac273fa",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-barrel",
+      "name": "Barrel",
+      "path": "/assets/models/ruins/Barrel.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "prop",
+        "container"
+      ],
+      "sha256": "22f3f4fdb6296fff10dcb59f42eb28dd7ceff02982efc67a5df9e33c657d8df4",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-crate",
+      "name": "Crate",
+      "path": "/assets/models/ruins/Crate.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "prop",
+        "container"
+      ],
+      "sha256": "7418c22870df0c8181996712515abda96d5a0c50f2cb3ee938e69f47dec8a4b9",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-cart",
+      "name": "Cart",
+      "path": "/assets/models/ruins/Cart.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "prop",
+        "container"
+      ],
+      "sha256": "04d89e1d53bb01888aac3450103d45517ee4e63b1584ffc97d7375a177a74b16",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-pot1",
+      "name": "Pot1",
+      "path": "/assets/models/ruins/Pot1.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "prop",
+        "container"
+      ],
+      "sha256": "35fc7a2d293b9635f4ec6711e88ce7cb96fcf7f1a95c268454fb9cf30e999662",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-pot2",
+      "name": "Pot2",
+      "path": "/assets/models/ruins/Pot2.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "prop",
+        "container"
+      ],
+      "sha256": "23ef6465a25cac19fd3e2b84a0ec61a0d7c530dcb5a77f0aa17867dda7e534bc",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-pot3",
+      "name": "Pot3",
+      "path": "/assets/models/ruins/Pot3.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "prop",
+        "container"
+      ],
+      "sha256": "3e2bc8d77c498b49cf055b8aef6f729b6acf5be308ea4fce81aefeed816c8337",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-pot1-broken",
+      "name": "Pot1 Broken",
+      "path": "/assets/models/ruins/Pot1_Broken.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "prop",
+        "ruined",
+        "container"
+      ],
+      "sha256": "e318cc8c9ae246206d1c3528dd035d70da7ac9245a1f8aeadda8b14bfdc7b08b",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-pot2-broken",
+      "name": "Pot2 Broken",
+      "path": "/assets/models/ruins/Pot2_Broken.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "prop",
+        "ruined",
+        "container"
+      ],
+      "sha256": "b3de2b520aa45d4866a529eafd9ae7532f169c9d102bfb2f47a42c0abf8ec610",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-torch",
+      "name": "Torch",
+      "path": "/assets/models/ruins/Torch.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "prop"
+      ],
+      "sha256": "f2c06f7c23f88b528a4229354d17e5d04350daa1f8ed3c2fa0df69558826bcc2",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-rail-straight",
+      "name": "Rail Straight",
+      "path": "/assets/models/ruins/Rail_Straight.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular"
+      ],
+      "sha256": "b5f85de7fb062e76e6a5ddc82f42a7d219449addf5a005842ba866073ea47d0a",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-rail-corner",
+      "name": "Rail Corner",
+      "path": "/assets/models/ruins/Rail_Corner.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular"
+      ],
+      "sha256": "fe16c399bafc4232fe260174f773890506230be8edc67b0651cb1a51422cc5f9",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-support-center",
+      "name": "Support Center",
+      "path": "/assets/models/ruins/Support_Center.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular"
+      ],
+      "sha256": "84fbc233888cd6e2680646e92526b69eabbbb3245fb84f99a8df5bda67f2b76c",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-support-left",
+      "name": "Support Left",
+      "path": "/assets/models/ruins/Support_Left.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular"
+      ],
+      "sha256": "0435e636f0d24c48d6d3220257a5750f98546bed064cd9117f537280edad1019",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-support-right",
+      "name": "Support Right",
+      "path": "/assets/models/ruins/Support_Right.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular"
+      ],
+      "sha256": "fc8115bcdf26b14e4d1435c33309588570b76022e6a352ba26307f2657c9c6ae",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-support-tall",
+      "name": "Support Tall",
+      "path": "/assets/models/ruins/Support_Tall.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular"
+      ],
+      "sha256": "46c01b4b258249997d6892517ffc4d3b298e3cbdaf0928f3f5dad4fed2c79a99",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-doors-round-arch",
+      "name": "Doors RoundArch",
+      "path": "/assets/models/ruins/Doors_RoundArch.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular"
+      ],
+      "sha256": "4534d98ed94418f65b3ca1137437fc303bfd9fd604bdf3f83cf37241986c412d",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-window-open",
+      "name": "Window Open",
+      "path": "/assets/models/ruins/Window_Open.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular"
+      ],
+      "sha256": "cedb47fe8a0c59384e3d6a0a0bf15e7b1ee7eab5dd8ee4ed1ce294b85f0cc7ff",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "ruins-window-bars",
+      "name": "Window Bars",
+      "path": "/assets/models/ruins/Window_Bars.fbx",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "ruins",
+      "pack": "Ultimate Modular Ruins",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularruins.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "fbx",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "architecture",
+        "modular"
+      ],
+      "sha256": "8f93ea6a05a5ec114dec9339e9c300497129a9d2e243ee89da1fb6b24b25d5de",
+      "texturesEmbedded": false
+    },
+    {
+      "id": "animal-horse",
+      "name": "Horse (brown)",
+      "path": "/assets/models/animals/Horse.gltf",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "animals",
+      "pack": "Ultimate Animated Animals",
+      "sourceUrl": "https://quaternius.com/packs/ultimateanimatedanimals.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "gltf",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "animal",
+        "rigged",
+        "animated"
+      ],
+      "sha256": "3deb61550dff1d2786d04b6e8559d63ad3907d6ab606ba28ce0af074ed96341b",
+      "skinned": true,
+      "animations": [
+        "Attack_Headbutt",
+        "Attack_Kick",
+        "Death",
+        "Eating",
+        "Gallop",
+        "Gallop_Jump",
+        "Idle",
+        "Idle_2",
+        "Idle_Headlow",
+        "Idle_HitReact1",
+        "Idle_HitReact2",
+        "Jump_toIdle",
+        "Walk"
+      ],
+      "materials": [
+        "Main",
+        "Main_Dark",
+        "Main_Light",
+        "Hooves",
+        "Hair",
+        "Muzzle",
+        "Eye_White",
+        "Eye_Black"
+      ],
+      "embeddedBuffers": true
+    },
+    {
+      "id": "animal-horse-white",
+      "name": "Horse (white)",
+      "path": "/assets/models/animals/Horse_White.gltf",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "animals",
+      "pack": "Ultimate Animated Animals",
+      "sourceUrl": "https://quaternius.com/packs/ultimateanimatedanimals.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "gltf",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "animal",
+        "rigged",
+        "animated"
+      ],
+      "sha256": "f137ee67bd565244f7441f35b5594a597588cda8b60ab109e2041cf13c58e1dd",
+      "skinned": true,
+      "animations": [
+        "Attack_Headbutt",
+        "Attack_Kick",
+        "Death",
+        "Eating",
+        "Gallop",
+        "Gallop_Jump",
+        "Idle",
+        "Idle_2",
+        "Idle_Headlow",
+        "Idle_HitReact1",
+        "Idle_HitReact2",
+        "Jump_toIdle",
+        "Walk"
+      ],
+      "materials": [
+        "Main",
+        "Main_Light",
+        "Hooves",
+        "Hair",
+        "Muzzle",
+        "Eye_White",
+        "Eye_Black"
+      ],
+      "embeddedBuffers": true
+    },
+    {
+      "id": "animal-donkey",
+      "name": "Donkey / mule",
+      "path": "/assets/models/animals/Donkey.gltf",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "animals",
+      "pack": "Ultimate Animated Animals",
+      "sourceUrl": "https://quaternius.com/packs/ultimateanimatedanimals.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "gltf",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "animal",
+        "rigged",
+        "animated"
+      ],
+      "sha256": "4cbb2eb7d057789c945b6445d99d0c73b76c0caf7ac9b37ce88a04ca718be2ff",
+      "skinned": true,
+      "animations": [
+        "Attack_Headbutt",
+        "Attack_Kick",
+        "Death",
+        "Eating",
+        "Gallop",
+        "Gallop_Jump",
+        "Idle",
+        "Idle_2",
+        "Idle_Headlow",
+        "Idle_HitReact1",
+        "Idle_HitReact2",
+        "Jump_toIdle",
+        "Walk"
+      ],
+      "materials": [
+        "Main",
+        "Main_Light",
+        "Main_Dark",
+        "Hooves",
+        "Hair",
+        "Muzzle",
+        "Eye_Dark",
+        "Eye_White"
+      ],
+      "embeddedBuffers": true
+    },
+    {
+      "id": "animal-bull",
+      "name": "Bull",
+      "path": "/assets/models/animals/Bull.gltf",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "animals",
+      "pack": "Ultimate Animated Animals",
+      "sourceUrl": "https://quaternius.com/packs/ultimateanimatedanimals.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "gltf",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "animal",
+        "rigged",
+        "animated"
+      ],
+      "sha256": "535da2992eb125d517725159a2eddeb520b72595bcb3021985fc43d2c84bff76",
+      "skinned": true,
+      "animations": [
+        "Attack_Headbutt",
+        "Attack_Kick",
+        "Death",
+        "Eating",
+        "Gallop",
+        "Gallop_Jump",
+        "Idle",
+        "Idle_2",
+        "Idle_Headlow",
+        "Idle_HitReact1",
+        "Idle_HitReact2",
+        "Jump_toIdle",
+        "Walk"
+      ],
+      "materials": [
+        "Main",
+        "Main_Light",
+        "Hooves",
+        "Muzzle",
+        "Eye_Black",
+        "Eye_White",
+        "Horns"
+      ],
+      "embeddedBuffers": true
+    },
+    {
+      "id": "character-adventurer",
+      "name": "Humanoid base - Adventurer",
+      "path": "/assets/models/characters/Adventurer.gltf",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "characters",
+      "pack": "Ultimate Modular Characters",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularcharacters.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "gltf",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "humanoid",
+        "rigged",
+        "animated",
+        "character-base"
+      ],
+      "sha256": "21f7a61afb6bd6cef6961490c367594e3c2fc01ec1f041662131172ce763063e",
+      "skinned": true,
+      "animations": [
+        "Death",
+        "Gun_Shoot",
+        "HitRecieve",
+        "HitRecieve_2",
+        "Idle",
+        "Idle_Gun",
+        "Idle_Gun_Pointing",
+        "Idle_Gun_Shoot",
+        "Idle_Neutral",
+        "Idle_Sword",
+        "Interact",
+        "Kick_Left",
+        "Kick_Right",
+        "Punch_Left",
+        "Punch_Right",
+        "Roll",
+        "Run",
+        "Run_Back",
+        "Run_Left",
+        "Run_Right",
+        "Run_Shoot",
+        "Sword_Slash",
+        "Walk",
+        "Wave"
+      ],
+      "materials": [
+        "Skin",
+        "Green",
+        "LightGreen",
+        "Grey",
+        "Black",
+        "Eyebrows",
+        "Hair",
+        "Eye",
+        "Brown",
+        "Brown2",
+        "Gold"
+      ],
+      "embeddedBuffers": true
+    },
+    {
+      "id": "character-farmer",
+      "name": "Humanoid base - Farmer",
+      "path": "/assets/models/characters/Farmer.gltf",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "characters",
+      "pack": "Ultimate Modular Characters",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularcharacters.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "gltf",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "humanoid",
+        "rigged",
+        "animated",
+        "character-base"
+      ],
+      "sha256": "46d3e85fa8d848ee479ab8e4672c16724ee4ea51f3af5733705a153937f93555",
+      "skinned": true,
+      "animations": [
+        "Death",
+        "Gun_Shoot",
+        "HitRecieve",
+        "HitRecieve_2",
+        "Idle",
+        "Idle_Gun",
+        "Idle_Gun_Pointing",
+        "Idle_Gun_Shoot",
+        "Idle_Neutral",
+        "Idle_Sword",
+        "Interact",
+        "Kick_Left",
+        "Kick_Right",
+        "Punch_Left",
+        "Punch_Right",
+        "Roll",
+        "Run",
+        "Run_Back",
+        "Run_Left",
+        "Run_Right",
+        "Run_Shoot",
+        "Sword_Slash",
+        "Walk",
+        "Wave"
+      ],
+      "materials": [
+        "Skin",
+        "LightBlue",
+        "Brown",
+        "Beige",
+        "Brown2",
+        "Eyebrows",
+        "Red",
+        "Eye"
+      ],
+      "embeddedBuffers": true
+    },
+    {
+      "id": "character-worker",
+      "name": "Humanoid base - Worker",
+      "path": "/assets/models/characters/Worker.gltf",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "characters",
+      "pack": "Ultimate Modular Characters",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularcharacters.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "gltf",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "humanoid",
+        "rigged",
+        "animated",
+        "character-base"
+      ],
+      "sha256": "e49f8ec0f8a7de72dd26b1c01e6413c9a87a9116eeee21f9364ccd36bc286335",
+      "skinned": true,
+      "animations": [
+        "Death",
+        "Gun_Shoot",
+        "HitRecieve",
+        "HitRecieve_2",
+        "Idle",
+        "Idle_Gun",
+        "Idle_Gun_Pointing",
+        "Idle_Gun_Shoot",
+        "Idle_Neutral",
+        "Idle_Sword",
+        "Interact",
+        "Kick_Left",
+        "Kick_Right",
+        "Punch_Left",
+        "Punch_Right",
+        "Roll",
+        "Run",
+        "Run_Back",
+        "Run_Left",
+        "Run_Right",
+        "Run_Shoot",
+        "Sword_Slash",
+        "Walk",
+        "Wave"
+      ],
+      "materials": [
+        "Skin",
+        "Worker_Yellow",
+        "Worker_Vest",
+        "LightBrown",
+        "Grey",
+        "Black",
+        "Eyebrows",
+        "Moustache",
+        "Eye",
+        "Brown",
+        "Brown2"
+      ],
+      "embeddedBuffers": true
+    },
+    {
+      "id": "character-king",
+      "name": "Humanoid base - King / officer",
+      "path": "/assets/models/characters/King.gltf",
+      "author": "Quaternius",
+      "license": "CC0-1.0",
+      "category": "characters",
+      "pack": "Ultimate Modular Characters",
+      "sourceUrl": "https://quaternius.com/packs/ultimatemodularcharacters.html",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "format": "gltf",
+      "upAxis": "Y",
+      "unitScaleFactor": 1,
+      "tags": [
+        "humanoid",
+        "rigged",
+        "animated",
+        "character-base"
+      ],
+      "sha256": "659c7d84dcea8c6331698c3430484861944c83e629389425664b782d4aecd17c",
+      "skinned": true,
+      "animations": [
+        "Death",
+        "Gun_Shoot",
+        "HitRecieve",
+        "HitRecieve_2",
+        "Idle",
+        "Idle_Gun",
+        "Idle_Gun_Pointing",
+        "Idle_Gun_Shoot",
+        "Idle_Neutral",
+        "Idle_Sword",
+        "Interact",
+        "Kick_Left",
+        "Kick_Right",
+        "Punch_Left",
+        "Punch_Right",
+        "Roll",
+        "Run",
+        "Run_Back",
+        "Run_Left",
+        "Run_Right",
+        "Run_Shoot",
+        "Sword_Slash",
+        "Walk",
+        "Wave"
+      ],
+      "materials": [
+        "Skin",
+        "Blue",
+        "Metal",
+        "Beige",
+        "Metal_Dark",
+        "Hair_White",
+        "Gold",
+        "Eye",
+        "DarkBrown"
+      ],
+      "embeddedBuffers": true
+    }
+  ]
+}
