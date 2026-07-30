@@ -1,9 +1,17 @@
 /**
  * Unit banners: the thing that lets a player read a Total War battlefield at a glance.
  *
- * One small plaque per unit, projected from the centre of its block and floated above
+ * One small plaque per unit, pinned to the visual centre of its block and floated above
  * the men — faction standard, unit-class device, a strength bar and a morale strip,
  * with the unit's name appearing on hover, selection or while Alt is held.
+ *
+ * Placement is the whole problem. The anchor is the mean of the *screen* positions of the
+ * unit's living men, read from the soldier pool at the frame's own interpolation alpha —
+ * not the projection of their world centroid, and not anything out of the HUD's 10 Hz
+ * digest. Both of those shortcuts were tried and both read as detached: projecting a
+ * centroid puts the plaque up to 21 px off the middle of a wide block seen obliquely,
+ * because perspective is nonlinear, and a 100 ms-old shape offset lags a unit that is
+ * breaking or wheeling. See `centre`.
  *
  * Projection is DOM rather than sprites so the type stays vector-crisp at any zoom.
  * Only a `transform` is written per frame, which the compositor absorbs; content is
@@ -22,11 +30,28 @@
  */
 
 import type { EngineContext } from '../core/Engine';
+import type { BattleSystem } from '../sim/BattleSystem';
+import { SoldierState, type UnitGroupState } from '../sim/types';
 import { el, html, icon, setClass, setFill } from './dom';
 import { standardGlyph, UNIT_CLASS_ICON } from './icons';
 import type { HudModel, UnitView } from './model';
-import { projectPoint, terrainOccludes, type Projected } from './picking';
+import { ScreenProjector, terrainOccludes, type ScreenPoint } from './picking';
 import { FACTION_UI, MORALE_UI, type MoraleState } from './theme';
+
+/**
+ * One bay of the Aurelian Wall: its ground-plan line and the absolute height of its top.
+ *
+ * `CitySystem.getWallSegments` reports `height` as the masonry's rise above its own
+ * footing — 1.1 m for a bare footing, 6.5 m for finished curtain — so the ground under the
+ * bay has to be added before it can be compared with a sight line's world y.
+ */
+export interface WallSegment {
+  x1: number;
+  z1: number;
+  x2: number;
+  z2: number;
+  topY: number;
+}
 
 interface BannerEls {
   view: UnitView;
@@ -47,20 +72,35 @@ interface BannerEls {
   last: { str: number; morale: MoraleState; selected: boolean; hovered: boolean; routing: boolean };
 }
 
-const PROJECTED: Projected = { x: 0, y: 0, distance: 0, visible: false };
+/** Scratch for one man's head and the plaque plane above it; reused, never allocated. */
+const HEAD: ScreenPoint = { x: 0, y: 0, inRange: false };
+const TOP: ScreenPoint = { x: 0, y: 0, inRange: false };
 
 /**
- * A man is 1.75 m and the standard he carries tops out at ~3.4 m (a 3.1 m staff plus
- * its finial), so this clears both: the plaque's spike starts just above the tallest
- * thing in the block and the men are never behind it.
+ * Height of the plaque plane above a man's feet.
+ *
+ * A man is 1.75 m and the standard he carries tops out at ~3.4 m (a 3.1 m staff plus its
+ * finial), so the plaque's spike is planted just clear of the tallest thing a soldier
+ * carries. Averaged over the block, that puts the spike at the top of the crowd and the
+ * plate itself well above it.
  */
 const CLEAR_M = 3.6;
+/** Standing height of a man, i.e. the top of the block's silhouette. */
+const HEAD_M = 1.75;
 /** Riders sit ~1.1 m higher, and so do their standards. */
 const MOUNTED_LIFT_M = 1.15;
 /** Pixels of slack around a plaque's box, so a 25 px target is not a pixel hunt. */
 const HIT_PAD_PX = 3;
 /** Below this opacity a plaque is fading out of a close-up and stops being clickable. */
 const HIT_MIN_ALPHA = 0.25;
+/**
+ * Minimum pixels between the bottom of the plaque and the mean head in the block.
+ *
+ * Only bites when the projection flattens vertical offsets to nothing — a block at
+ * extreme range, or a near-overhead camera — where 3.6 m of world clearance is worth less
+ * than three pixels and the plaque would otherwise land on the men.
+ */
+const HEAD_GAP_PX = 3;
 
 export class Banners {
   private layer!: HTMLElement;
@@ -78,6 +118,27 @@ export class Banners {
    * into it are dropped rather than left half-buried under the panel.
    */
   bottomReserve = 0;
+  /**
+   * The city's wall bays, when `CitySystem` is registered.
+   *
+   * The terrain occlusion test works off the heightfield, and the Aurelian Wall is
+   * geometry rather than terrain, so without this a cohort standing inside the city shows
+   * its plaque straight through eight metres of masonry.
+   */
+  wallSegments: readonly WallSegment[] = [];
+
+  /** View-projection formed once per frame and applied to every man. */
+  private readonly proj = new ScreenProjector();
+  /**
+   * Output of `centre`: the plaque's screen anchor in CSS pixels, plus a world point that
+   * stands in for the block where the fade needs a range and the occlusion test a sight
+   * line.
+   */
+  private anchorX = 0;
+  private anchorY = 0;
+  private anchorWx = 0;
+  private anchorWy = 0;
+  private anchorWz = 0;
 
   constructor(private model: HudModel) {}
 
@@ -191,13 +252,127 @@ export class Banners {
   }
 
   /**
+   * Screen-space centre of a unit's living men, written into `this.anchor*`.
+   *
+   * Returns the number of men projected, or 0 when none of them are in front of the eye.
+   *
+   * Two decisions here, both of which cost something and both of which were arrived at by
+   * measurement rather than taste:
+   *
+   * **Every living man, not a sample.** A subsample's mean is only unbiased if its phase
+   * is random, and `members` runs in slot order: a 24-man golden-ratio sample of a
+   * twenty-file cohort came out 1.3 files off centre, which is 46 px on a block 670 px
+   * wide — worse than the error it was there to remove. Randomising the phase per frame
+   * trades bias for shimmer, and per unit leaves the bias in place. Enumerating is exact,
+   * needs no assumption about how the sim lays out slots, and gives an anchor that does not
+   * step when a man dies. It costs one pass over the army per frame, in the same order as
+   * the pass the unit renderer already makes.
+   *
+   * **Read from the pool at the frame's own alpha**, i.e. the positions
+   * `UnitRenderSystem` is drawing the men at — not the HUD's 10 Hz digest. A marching
+   * cohort barely deforms in 100 ms, but a routing unit's men scatter while its formation
+   * anchor keeps walking, and a wheeling or charging one changes shape inside a single
+   * tick. Sampling per frame removes that whole class of staleness rather than arguing
+   * about its size.
+   */
+  private centre(battle: BattleSystem, u: UnitGroupState, alpha: number, lift: number): number {
+    const pool = battle.pool;
+    const members = u.members;
+    const px = pool.px;
+    const py = pool.py;
+    const pz = pool.pz;
+    const cx = pool.x;
+    const cy = pool.y;
+    const cz = pool.z;
+    const state = pool.state;
+    const headM = HEAD_M + lift;
+
+    let sumHeadX = 0;
+    let sumHeadY = 0;
+    let sumTopY = 0;
+    let n = 0;
+    let wx = 0;
+    let wz = 0;
+    let footTop = -Infinity;
+    for (let k = 0; k < members.length; k++) {
+      const i = members[k];
+      const st = state[i];
+      if (st === SoldierState.Dead || st === SoldierState.Dying) continue;
+      const x = px[i] + (cx[i] - px[i]) * alpha;
+      const y = py[i] + (cy[i] - py[i]) * alpha;
+      const z = pz[i] + (cz[i] - pz[i]) * alpha;
+      // The top of his head, which is what the eye reads as the block, and the plaque
+      // plane above it, where the spike is planted. One transform serves both.
+      if (!this.proj.projectPair(x, y + headM, z, CLEAR_M - HEAD_M, HEAD, TOP)) continue;
+      if (!HEAD.inRange) continue;
+      sumHeadX += HEAD.x;
+      sumHeadY += HEAD.y;
+      sumTopY += TOP.y;
+      wx += x;
+      wz += z;
+      if (y > footTop) footTop = y;
+      n++;
+    }
+    if (n === 0) return 0;
+
+    const inv = 1 / n;
+    // Horizontal: the mean of the men's own screen positions, which is the visual centre
+    // of the block by construction — at any frontage, camera pitch or perspective.
+    this.anchorX = sumHeadX * inv;
+    // Vertical: the mean of the plaque plane, floored so it always clears the mean head.
+    this.anchorY = Math.min(sumTopY * inv, sumHeadY * inv - HEAD_GAP_PX);
+    this.anchorWx = wx * inv;
+    this.anchorWz = wz * inv;
+    this.anchorWy = footTop + CLEAR_M + lift;
+    return n;
+  }
+
+  /**
+   * True when the Aurelian Wall stands between the eye and the plaque.
+   *
+   * A ground-plan segment intersection per bay, and then one height comparison at the
+   * crossing — so a camera raised high enough to look over the parapet still sees the
+   * plaques of the units behind it, which a plan-only test would wrongly hide. Compared
+   * against the wall-walk rather than the merlons on purpose: erring towards showing a
+   * plaque is much cheaper than a battlefield whose markers blink out near the city.
+   */
+  private wallOccludes(
+    ex: number, ey: number, ez: number,
+    tx: number, ty: number, tz: number
+  ): boolean {
+    const segs = this.wallSegments;
+    const rx = tx - ex;
+    const rz = tz - ez;
+    for (let i = 0; i < segs.length; i++) {
+      const s = segs[i];
+      const bx = s.x2 - s.x1;
+      const bz = s.z2 - s.z1;
+      const den = rx * bz - rz * bx;
+      if (den === 0) continue;
+      const qx = s.x1 - ex;
+      const qz = s.z1 - ez;
+      const t = (qx * bz - qz * bx) / den;
+      if (t <= 0 || t >= 1) continue;
+      const u = (qx * rz - qz * rx) / den;
+      if (u < 0 || u > 1) continue;
+      if (ey + (ty - ey) * t < s.topY) return true;
+    }
+    return false;
+  }
+
+  /**
    * Per-frame projection. `showNames` comes from the Alt key.
    *
    * Called from `preRender`, after `Engine.frame` has finalised the camera and called
    * `updateMatrixWorld` — projecting in `update` leaves every plaque one frame stale,
    * which reads as the whole HUD sliding behind the world while the camera pans.
    */
-  place(ctx: EngineContext, heightAt: (x: number, z: number) => number, showNames: boolean): void {
+  place(
+    ctx: EngineContext,
+    battle: BattleSystem,
+    heightAt: (x: number, z: number) => number,
+    showNames: boolean
+  ): void {
     if (!this.enabled) {
       if (this.layer.style.display !== 'none') this.layer.style.display = 'none';
       for (const b of this.items) b.hit = false;
@@ -216,79 +391,85 @@ export class Banners {
     // sight line grazes the ground and every hillock reads as a blocker, so the test is
     // skipped there — the distance fade already keeps close-quarters views clear.
     const testOcclusion = ctx.rig.zoom > 0.45;
+    const cam = ctx.camera;
+    const alpha = ctx.time.alpha;
+    this.proj.begin(cam, w, h);
     for (const b of this.items) {
       const v = b.view;
-      b.hit = false;
-      let hide = v.destroyed;
-
-      // The anchor is the centroid of the unit's own mass, at the height of the top of the
-      // standard it carries, above the highest ground any of its men stands on.
-      //
-      // The formation anchor is read from `unit` rather than from the 10 Hz view digest so
-      // the plaque tracks a charging cohort at the sim's own 30 Hz instead of stepping
-      // after it; `massDx/massDz` corrects the plan to where the men actually are.
       const u = v.unit;
-      const sf = Math.sin(u.facing);
-      const cf = Math.cos(u.facing);
-      // `u.x/u.z` is the midpoint of the front rank; the ranks extend backwards.
-      const ax = u.x - sf * v.depth * 0.5 + v.massDx;
-      const az = u.z - cf * v.depth * 0.5 + v.massDz;
-      let ay = 0;
-      if (!hide) {
-        // The ground under the centroid, floored by the highest man's feet: the map rises
-        // 25-40 m across the battlefield, so a cohort drawn up across a slope has its
-        // tallest man metres above its own centre and a single sample would bury the
-        // plaque in the uphill ranks.
-        let g = heightAt(ax, az);
-        if (v.massTopY > g) g = v.massTopY;
-        const mounted = v.def.unitClass === 'heavy-cavalry' || v.def.unitClass === 'light-cavalry';
-        ay = g + CLEAR_M + (mounted ? MOUNTED_LIFT_M : 0);
+      b.hit = false;
+      // Read live rather than from the 10 Hz digest: a wiped-out unit must lose its plaque
+      // on the frame it dies, not up to 100 ms later.
+      let hide = u.destroyed || u.alive === 0;
 
-        projectPoint(ctx.camera, ax, ay, az, w, h, PROJECTED);
-        hide =
-          !PROJECTED.visible ||
-          PROJECTED.x < -80 || PROJECTED.x > w + 80 ||
-          PROJECTED.y < -60 || PROJECTED.y > h - this.bottomReserve;
+      let ax = 0;
+      let ay = 0;
+      let az = 0;
+      let px = 0;
+      let py = 0;
+      let d = 0;
+      if (!hide) {
+        const mounted = v.def.unitClass === 'heavy-cavalry' || v.def.unitClass === 'light-cavalry';
+        if (this.centre(battle, u, alpha, mounted ? MOUNTED_LIFT_M : 0) === 0) hide = true;
+        else {
+          px = this.anchorX;
+          py = this.anchorY;
+          ax = this.anchorWx;
+          az = this.anchorWz;
+          // The fade and the sight line want a world point, and the highest of the sampled
+          // men's feet is the right one: the map rises 25-40 m across the battlefield, so a
+          // cohort drawn up across a slope has its uphill file metres above its own centre,
+          // and a sight line aimed at the mean would clip its own hillside.
+          ay = Math.max(this.anchorWy, heightAt(ax, az) + CLEAR_M);
+          d = Math.hypot(cam.position.x - ax, cam.position.y - ay, cam.position.z - az);
+          hide =
+            px < -80 || px > w + 80 ||
+            py < -60 || py > h - this.bottomReserve;
+        }
       }
 
       if (!hide) {
-        const d = PROJECTED.distance;
         // Nothing inside 28 m: down at eye level the player wants men, not markers, and
         // a plaque sitting on the contact line is the worst thing the HUD can do.
         const near = Math.min(1, Math.max(0, (d - 28) / 42));
         const far = 1 - Math.min(0.62, Math.max(0, (d - 900) / 900));
-        const alpha = near * far;
-        if (alpha < 0.02) hide = true;
+        const opacity = near * far;
+        if (opacity < 0.02) hide = true;
         else {
           // Slack grows fast with range. At a grazing angle the eight-sample line
           // clips every hillock between here and there, and a battlefield where the
           // banners vanish whenever the camera drops is worse than one where a banner
-          // occasionally shows through a rise.
-          if (testOcclusion && terrainOccludes(ctx.camera, ax, ay, az, heightAt, 4 + d * 0.06)) {
+          // occasionally shows through a rise. The wall test carries no such slack
+          // because it is exact geometry rather than a heightfield guess, so it runs at
+          // every zoom.
+          if (
+            (testOcclusion && terrainOccludes(cam, ax, ay, az, heightAt, 4 + d * 0.06)) ||
+            this.wallOccludes(cam.position.x, cam.position.y, cam.position.z, ax, ay, az)
+          ) {
             hide = true;
           } else {
             // Near-constant screen size, easing down at long range so a distant wing
             // reads as distant, and growing in with the fade so the last thing to leave
             // a close-up is a small mark rather than a full-size icon.
             const s = Math.max(0.62, Math.min(1.12, 1.12 - d / 2400)) * (0.6 + 0.4 * near);
-            const t = `translate3d(${PROJECTED.x.toFixed(1)}px, ${PROJECTED.y.toFixed(1)}px, 0) translate(-50%, -100%) scale(${s.toFixed(3)})`;
+            const t = `translate3d(${px.toFixed(1)}px, ${py.toFixed(1)}px, 0) translate(-50%, -100%) scale(${s.toFixed(3)})`;
             if (t !== b.transform) {
               b.transform = t;
               b.root.style.transform = t;
             }
-            const a = alpha.toFixed(2);
+            const a = opacity.toFixed(2);
             if (b.root.style.opacity !== a) b.root.style.opacity = a;
 
             // `transform-origin` is the box's bottom centre and the two translates put
             // that point on the anchor, so the scaled box is symmetric about it. No
             // layout read: the unscaled box was measured once.
-            if (alpha >= HIT_MIN_ALPHA) {
+            if (opacity >= HIT_MIN_ALPHA) {
               const bw = this.baseW * s * 0.5 + HIT_PAD_PX;
               const bh = this.baseH * s + HIT_PAD_PX;
-              b.hx0 = PROJECTED.x - bw;
-              b.hx1 = PROJECTED.x + bw;
-              b.hy0 = PROJECTED.y - bh;
-              b.hy1 = PROJECTED.y + HIT_PAD_PX;
+              b.hx0 = px - bw;
+              b.hx1 = px + bw;
+              b.hy0 = py - bh;
+              b.hy1 = py + HIT_PAD_PX;
               b.dist = d;
               b.hit = true;
             }

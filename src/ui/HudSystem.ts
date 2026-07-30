@@ -16,7 +16,7 @@
 
 import type { EngineContext, QualityTier, Subsystem } from '../core/Engine';
 import type { BattleSystem } from '../sim/BattleSystem';
-import { Banners } from './Banners';
+import { Banners, type WallSegment } from './Banners';
 import { BattleFlow } from './BattleFlow';
 import { CommandPanel } from './CommandPanel';
 import { el, setText } from './dom';
@@ -122,7 +122,7 @@ export class HudSystem implements Subsystem {
     // front-rank midpoint, so roughly 3.5 m *in front of* the centre of a nine-rank-deep
     // cohort — and projecting it put the plaque off the leading edge of the block by up to
     // 49 px at zoom 0.62, in a direction that swung round with the camera yaw. `Banners`
-    // projects the block's own centroid instead; see the comment on `place`.
+    // averages the men's own screen positions instead; see the comment on `centre`.
     this.tooltip = new Tooltip(this.root);
     this.cards = new UnitCards(this.model, this.controller, this.tooltip);
     this.command = new CommandPanel(this.model, this.controller);
@@ -178,6 +178,25 @@ export class HudSystem implements Subsystem {
     });
     this.flow.attach(this.root, ctx);
     this.controller.attachEvents(ctx);
+
+    // The Aurelian Wall is geometry, not heightfield, so the banners' terrain sight line
+    // cannot see it. Duck-typed like the rest: the HUD runs with no city.
+    //
+    // Snapshotted once, with the bay's ground folded into the height: the wall's build
+    // stages are fixed at construction and 50 heightfield samples per unit per frame would
+    // not be. Terrain (order -50) and the city (-20) have both initialised by the time this
+    // system (700) does, so `this.heightAt` is already the real heightfield.
+    const city = ctx.tryGet('city') as unknown as
+      { getWallSegments?: () => { x1: number; z1: number; x2: number; z2: number; height: number }[] }
+      | undefined;
+    if (city && typeof city.getWallSegments === 'function') {
+      this.banners.wallSegments = city.getWallSegments().map(
+        (s): WallSegment => ({
+          x1: s.x1, z1: s.z1, x2: s.x2, z2: s.z2,
+          topY: this.heightAt((s.x1 + s.x2) * 0.5, (s.z1 + s.z2) * 0.5) + s.height,
+        })
+      );
+    }
 
     // Optional integrations: both are duck-typed so the HUD still works on its own.
     const morale = ctx.tryGet('morale') as unknown as
@@ -335,7 +354,7 @@ export class HudSystem implements Subsystem {
     if (!this.battle) return;
     const t0 = performance.now();
     // Placed after the camera is final, or banners lag the view by a frame.
-    this.banners.place(ctx, this.heightAt, ctx.input.alt);
+    this.banners.place(ctx, this.battle, this.heightAt, ctx.input.alt);
     this.hudMs += (performance.now() - t0) * 0.1;
   }
 

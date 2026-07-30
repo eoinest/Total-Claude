@@ -4,8 +4,9 @@ import type { BattleSystem } from '../sim/BattleSystem';
 import { Clip, Faction, SoldierState, type UnitTypeDef } from '../sim/types';
 import { unitType, isCavalry } from './roster';
 import {
-  MAN_CLIP_SET, HORSE_CLIP_SET, FOOT_CLIP_MAP, RIDE_CLIP_MAP, HORSE_CLIP_MAP,
-  FOOT_CLIP_VARIANT_MAP, FOOT_VARIANTS,
+  MAN_CLIP_SET, HORSE_CLIP_SET, FOOT_CLIP_MAP, RIDE_CLIP_MAP,
+  HORSE_GAIT_LADDER, HORSE_GAIT_STRIDE, HORSE_CHARGE_CLIP, HORSE_STATE_MAP, HORSE_CHARGE_MASK,
+  FOOT_CLIP_VARIANT_MAP, FOOT_VARIANTS, bakePointTrack, meanPointOverClip,
 } from '../anim/clips';
 import { hash01 } from '../util/rand';
 import { bakeAnimTexture, type AnimTexture } from '../anim/animTexture';
@@ -15,7 +16,9 @@ import {
 } from '../anim/skinShader';
 import { buildSoldierAtlas, EMBLEM_ORIGIN, EMBLEM_TILE, type SoldierAtlas } from './atlas';
 import { buildSoldierGeometry, type Lod } from './soldierMesh';
-import { buildHorseGeometry, saddleOffset, HORSE_MASK_LO } from './horseMesh';
+import {
+  buildHorseGeometry, HORSE_MASK_LO, SADDLE_BONES, SADDLE_SEAT, HORSE_GROUND_LIFT,
+} from './horseMesh';
 import {
   resolveKit, emptyKit, ROUT_DROP_HI, CORPSE_DROP_HI, CORPSE_DROP_LO,
   CORPSE_DROP_COARSE, CORPSE_DROP_COARSE_HELM, Piece, type ResolvedKit,
@@ -83,6 +86,44 @@ const LOD_HYSTERESIS = 0.12;
  * cell really are overlapping, coarse enough that the neighbourhood test stays 9 lookups.
  */
 const CORPSE_CELL = 0.7;
+
+/**
+ * Hysteresis either side of a gait crossover, as a fraction of the crossover speed. The gap
+ * is what stops a horse whose speed sits on an edge from flickering between two gaits.
+ */
+const GAIT_HYST = 0.10;
+
+/** Below this ground speed a mount is standing about rather than walking, metres/second. */
+const GAIT_IDLE_EDGE = 0.45;
+
+/**
+ * Playback bounds for a mount's gait, in cycles per second.
+ *
+ * Cycles per second is ground speed over stride length — no clip duration in it, because
+ * stride already carries the geometry. The bounds only exist so a horse shuffling in a melee
+ * does not freeze mid-stride and a bolting one does not blur; between them the hoof is
+ * planted exactly. 2.2 covers the fastest thing in the roster (10.2 m/s over a 5.36 m stride
+ * needs 1.90) with headroom, so nothing on the field skates.
+ */
+const GAIT_RATE_MIN = 0.28;
+const GAIT_RATE_MAX = 2.2;
+
+/** Rider clearance: how far the hip joint rides above the top of the saddle, metres. */
+const SEAT_RISE = 0.07;
+
+/**
+ * How much of a man's formation slot he is allowed to stand off from, metres.
+ *
+ * A rank at attention is not a ruler. These are visual only — the simulation's position is
+ * untouched, so collision, combat reach and the spatial hash all still see the slot the
+ * formation gave him — and they are drawn from his stable hash, so a man's own untidiness is
+ * his for the whole battle. Lateral is kept well under the 0.86 m file spacing so a rank
+ * still reads as a rank; the longitudinal term is larger and scales with speed, because a
+ * marching column straggles and a halted one closes up.
+ */
+const SLOT_LATERAL = 0.11;
+const SLOT_ALONG = 0.13;
+const SLOT_STRAGGLE = 0.30;
 
 interface InstanceBuffers {
   pos: Float32Array;
@@ -222,10 +263,19 @@ export class UnitRenderSystem implements Subsystem {
   private phaseOff!: Float32Array;
   /** Stable per-man rate multiplier, applied to stationary clips only. */
   private rateMul!: Float32Array;
+  /** Which gait of `HORSE_GAIT_LADDER` this man's mount is in; the ladder rung, not a clip. */
+  private gaitRung!: Uint8Array;
+  /** Horse clip currently playing, the one being faded out, and the fade, per rider. */
+  private horseCur!: Uint8Array;
+  private horsePrev!: Uint8Array;
+  private horseBlend!: Float32Array;
+  private horsePrevPhase!: Float32Array;
   /** Which shape variant of a clip this man plays, 0..FOOT_VARIANTS-1. */
   private clipBucket!: Uint8Array;
   /** Extra stature multiplier on top of `pool.scale`. */
   private heightMul!: Float32Array;
+  /** Per-man stand-off from his formation slot: lateral, longitudinal, straggle. */
+  private slotOff!: Float32Array;
   /** Lateral nudge and lift resolved once per corpse, 3 floats per soldier. */
   private corpseNudge!: Float32Array;
   /**
@@ -253,7 +303,14 @@ export class UnitRenderSystem implements Subsystem {
   private typeIsCav: boolean[] = [];
   private manFacts!: ClipFacts[];
   private horseFacts!: ClipFacts[];
-  private saddle = { y: 1.3, z: 0 };
+  /** Animated saddle seat, 3 floats per horse animation row. See `bakePointTrack`. */
+  private saddleTrack!: Float32Array;
+  /** Mean pelvis height and fore-aft offset per man clip — where his seat is in his own mesh. */
+  private riderSeatY!: Float32Array;
+  private riderSeatZ!: Float32Array;
+  /** Ground speed at which a mount changes up from rung r to r+1, and drops back, m/s. */
+  private gaitUp!: Float32Array;
+  private gaitDown!: Float32Array;
   private lodDist: number[] = [40, 120, 480];
   private lodEdges = [40, 120, 220];
   private frustum = new THREE.Frustum();
@@ -277,7 +334,45 @@ export class UnitRenderSystem implements Subsystem {
     this.horseAnim = bakeAnimTexture(HORSE_CLIP_SET, 'horse');
     this.manFacts = clipFacts(MAN_CLIP_SET);
     this.horseFacts = clipFacts(HORSE_CLIP_SET);
-    this.saddle = saddleOffset();
+
+    // Where the saddle actually is on every frame of every gait, and where each rider clip
+    // puts his own seat. Seating him is then one subtraction rather than a guessed constant.
+    this.saddleTrack = bakePointTrack(
+      HORSE_CLIP_SET,
+      [0, SADDLE_SEAT.y, SADDLE_SEAT.z],
+      SADDLE_BONES.bone0, SADDLE_BONES.bone1, SADDLE_BONES.weight0
+    );
+    const pelvisRest = restPos(MAN_RIG, MB.pelvis, [0, 0, 0]);
+    const pelvisTrack = bakePointTrack(MAN_CLIP_SET, pelvisRest, MB.pelvis);
+    this.riderSeatY = new Float32Array(MAN_CLIP_SET.clips.length);
+    this.riderSeatZ = new Float32Array(MAN_CLIP_SET.clips.length);
+    for (let c = 0; c < MAN_CLIP_SET.clips.length; c++) {
+      // The *mean* over the clip, not the per-frame value: subtracting the per-frame pelvis
+      // would cancel the rider's own rise out of the saddle, which is half of what a gallop
+      // looks like. The mean pins his seat to the saddle and leaves his bounce intact.
+      const m = meanPointOverClip(MAN_CLIP_SET, pelvisTrack, c);
+      this.riderSeatY[c] = m[1];
+      this.riderSeatZ[c] = m[2];
+    }
+
+    // Gait crossovers, from the strides the clips were measured to have rather than from
+    // guessed speeds. The crossover sits at the *geometric mean* of two adjacent strides, so
+    // both gaits are the same factor away from their own tempo either side of it: walk and
+    // trot swap at 2.15 m/s where one plays at 1.23 and the other at 0.81, and trot and gallop
+    // at 3.76 m/s at 1.42 and 0.70. Nothing on the field ever plays a gait at half speed,
+    // which is what a fixed fraction of the faster gait's stride produced — a horse cantering
+    // in slow motion beside a walking one.
+    const rungs = HORSE_GAIT_LADDER.length;
+    this.gaitUp = new Float32Array(rungs - 1);
+    this.gaitDown = new Float32Array(rungs - 1);
+    for (let r = 0; r < rungs - 1; r++) {
+      const slow = HORSE_GAIT_STRIDE[r];
+      const fast = HORSE_GAIT_STRIDE[r + 1];
+      // The idle has no stride at all, so the bottom edge is a plain "is he moving" test.
+      const cross = slow > 0.05 ? Math.sqrt(slow * fast) : GAIT_IDLE_EDGE;
+      this.gaitUp[r] = cross * (1 + GAIT_HYST);
+      this.gaitDown[r] = cross * (1 - GAIT_HYST);
+    }
 
     this.phase = new Float32Array(cap);
     this.prevPhase = new Float32Array(cap);
@@ -298,8 +393,14 @@ export class UnitRenderSystem implements Subsystem {
     this.phaseOff = new Float32Array(cap);
     // Zero means "not yet resolved"; `ensureGait` fills it on first sight.
     this.rateMul = new Float32Array(cap);
+    this.gaitRung = new Uint8Array(cap);
+    this.horseCur = new Uint8Array(cap).fill(255);
+    this.horsePrev = new Uint8Array(cap);
+    this.horseBlend = new Float32Array(cap).fill(1);
+    this.horsePrevPhase = new Float32Array(cap);
     this.clipBucket = new Uint8Array(cap);
     this.heightMul = new Float32Array(cap).fill(1);
+    this.slotOff = new Float32Array(cap * 3);
     this.corpseNudge = new Float32Array(cap * 3);
     this.corpseRoll = new Float32Array(cap);
     this.corpseNudged = new Uint8Array(cap);
@@ -583,10 +684,18 @@ export class UnitRenderSystem implements Subsystem {
   /**
    * Advance each man's playhead.
    *
-   * Locomotion rate comes from his actual ground speed divided by the clip's measured
-   * stride speed, which is what makes feet stay planted. The rate is clamped: the source
-   * gallop under-reaches badly and letting the ratio run free would spin a horse's legs
-   * into a blur, which reads far worse than a little slide.
+   * Locomotion rate comes from his actual ground speed divided by the clip's measured stride
+   * speed *and his own stature*, which is what makes feet stay planted. Stature belongs in
+   * that division and was missing: a man drawn 7% larger has a 7% longer leg, so his foot
+   * drifts 7% faster through the same clip, and dividing by his scale is the difference
+   * between a rank of men who each keep their own cadence and a rank running to one
+   * metronome. It is exact, not a jitter — the foot plants either way.
+   *
+   * For a mounted man the playhead is the *horse's* gait phase, because that is what an eye
+   * reads, and the rider's clip is authored to the same normalised cycle. Its rate comes from
+   * the horse's stride, not the rider's clip, whose `rootSpeed` is zero — which is why a
+   * charge used to advance at a flat 1.6 cycles a second whatever the animal's speed and the
+   * hooves skated by a third of it.
    */
   private advancePlayheads(dt: number, ctx: EngineContext): void {
     const p = this.battle.pool;
@@ -598,6 +707,11 @@ export class UnitRenderSystem implements Subsystem {
       this.ensureGait(i);
       const cav = this.isCavalry(i);
       const clip = p.animClip[i];
+      // `Math.hypot` is a builtin with subnormal and overflow handling that costs several
+      // times a plain square root, and this is 8,600 calls a frame.
+      const vx = p.vx[i];
+      const vz = p.vz[i];
+      const speed = Math.sqrt(vx * vx + vz * vz);
       const want = cav
         ? (RIDE_CLIP_MAP[clip] ?? RIDE_CLIP_MAP[Clip.IdleAlert])
         : (FOOT_CLIP_VARIANT_MAP[clip * FOOT_VARIANTS + this.clipBucket[i]]
@@ -618,18 +732,21 @@ export class UnitRenderSystem implements Subsystem {
         // else restarts from the man's own stable offset rather than from zero: a cohort
         // that halts together must not land on one shared pose, which is exactly what
         // starting every idle at frame 0 produced.
-        if (f.rootSpeed === 0) this.phase[i] = this.phaseOff[i];
+        if (f.rootSpeed === 0 && !cav) this.phase[i] = this.phaseOff[i];
       }
 
       const facts = this.manFacts[this.curClip[i]];
-      if (facts.simDriven) {
+      if (cav) {
+        this.advanceMount(i, dt, clip, speed, facts);
+      } else if (facts.simDriven) {
         // The sim owns this one: a blow has to land on the frame the combat system timed
         // it to, and a corpse has to reach the ground when the ragdoll says it has.
         this.phase[i] = facts.loop ? p.animTime[i] % 1 : Math.min(1, p.animTime[i]);
       } else if (facts.rootSpeed > 0) {
-        // Stride over ground speed, unjittered, so the foot that is down stays down.
-        const speed = Math.hypot(p.vx[i], p.vz[i]);
-        const rate = Math.min(1.9, Math.max(0.55, speed / facts.rootSpeed)) * facts.invDuration;
+        // Stride over ground speed over stature, unjittered, so the foot that is down
+        // stays down.
+        const stride = facts.rootSpeed * p.scale[i] * this.heightMul[i];
+        const rate = Math.min(1.9, Math.max(0.55, speed / stride)) * facts.invDuration;
         this.phase[i] = (this.phase[i] + dt * rate) % 1;
       } else {
         const rate = facts.invDuration * p.animRate[i] * this.rateMul[i];
@@ -644,6 +761,84 @@ export class UnitRenderSystem implements Subsystem {
       }
     }
     void ctx;
+  }
+
+  /**
+   * Choose a mount's gait from its own speed and advance the shared playhead at that gait's
+   * cadence.
+   *
+   * Gait selection walks `HORSE_GAIT_LADDER` with hysteresis, so a horse hovering on a band
+   * edge does not flicker; the rung is remembered per man. A one-shot state — a rear, a fall —
+   * overrides the ladder and takes its timing from the simulation, which is what makes a
+   * dying horse hit the ground when its rider does.
+   */
+  private advanceMount(
+    i: number,
+    dt: number,
+    clip: Clip,
+    speed: number,
+    riderFacts: ClipFacts
+  ): void {
+    const p = this.battle.pool;
+    const forced = HORSE_STATE_MAP[clip] ?? -1;
+    let want: number;
+    let rate: number;
+
+    if (forced >= 0) {
+      want = forced;
+      const hf = this.horseFacts[forced];
+      rate = hf.invDuration;
+      // The sim's own playhead, so the rear and the fall land with the rider's.
+      this.setHorseClip(i, want);
+      this.phase[i] = hf.loop ? p.animTime[i] % 1 : Math.min(1, p.animTime[i]);
+      this.tickHorseBlend(i, dt);
+      return;
+    }
+
+    // ---- ladder with hysteresis ----
+    let rung = this.gaitRung[i];
+    while (rung + 1 < HORSE_GAIT_LADDER.length && speed > this.gaitUp[rung]) rung++;
+    while (rung > 0 && speed < this.gaitDown[rung - 1]) rung--;
+    this.gaitRung[i] = rung;
+    // Top of the ladder plus the intent to run somebody down is a charge, not a gallop.
+    want = rung === HORSE_GAIT_LADDER.length - 1 && HORSE_CHARGE_MASK[clip]
+      ? HORSE_CHARGE_CLIP
+      : HORSE_GAIT_LADDER[rung];
+    this.setHorseClip(i, want);
+
+    const stride = HORSE_GAIT_STRIDE[rung];
+    if (stride > 0.05) {
+      rate = Math.min(GAIT_RATE_MAX, Math.max(GAIT_RATE_MIN, speed / stride));
+    } else {
+      // Standing: the idle breathes at the rider's own stable rate.
+      rate = this.horseFacts[want].invDuration * this.rateMul[i];
+    }
+    this.phase[i] = (this.phase[i] + dt * rate) % 1;
+    this.tickHorseBlend(i, dt);
+    void riderFacts;
+  }
+
+  /** Start a cross-fade on the mount if its gait changed. */
+  private setHorseClip(i: number, want: number): void {
+    if (this.horseCur[i] === want) return;
+    if (this.horseCur[i] === 255) {
+      this.horsePrev[i] = want;
+      this.horseBlend[i] = 1;
+    } else {
+      this.horsePrev[i] = this.horseCur[i];
+      this.horsePrevPhase[i] = this.phase[i];
+      this.horseBlend[i] = 0;
+    }
+    this.horseCur[i] = want;
+  }
+
+  private tickHorseBlend(i: number, dt: number): void {
+    if (this.horseBlend[i] >= 1) return;
+    // Slower than the rider's fade: a change of gait is a change of the whole animal's
+    // rhythm, and 0.16 s of it reads as a jump cut.
+    this.horseBlend[i] = Math.min(1, this.horseBlend[i] + dt / 0.24);
+    const pf = this.horseFacts[this.horsePrev[i]];
+    if (pf.loop) this.horsePrevPhase[i] = (this.horsePrevPhase[i] + dt * pf.invDuration) % 1;
   }
 
   private isCavalry(i: number): boolean {
@@ -699,6 +894,13 @@ export class UnitRenderSystem implements Subsystem {
     const spread = 0.14 + variance * 0.2;
     this.rateMul[i] = 1 + (hash01(seed, 72) - 0.5) * 2 * spread;
     this.clipBucket[i] = Math.min(FOOT_VARIANTS - 1, Math.floor(hash01(seed, 73) * FOOT_VARIANTS));
+    // How untidily he holds his slot. Scaled by the roster's own variance, so a praetorian
+    // cohort dresses its line and a warband does not, and resolved here rather than per frame
+    // because it never changes.
+    const ragged = 0.55 + variance;
+    this.slotOff[i * 3] = (hash01(seed, 91) - 0.5) * 2 * SLOT_LATERAL * ragged;
+    this.slotOff[i * 3 + 1] = (hash01(seed, 92) - 0.5) * 2 * SLOT_ALONG * ragged;
+    this.slotOff[i * 3 + 2] = (hash01(seed, 93) - 0.5) * 2 * SLOT_STRAGGLE * ragged;
     // Stature. `pool.scale` spreads a man only +-3.5%, which is under one standard
     // deviation of adult male height and leaves a rank of 160 men looking cut to a
     // template. Widening it here to about +-7% puts the tallest at 1.88 m and the shortest
@@ -884,6 +1086,11 @@ export class UnitRenderSystem implements Subsystem {
       const def = unitType(u.typeId);
       const cav = isCavalry(def);
       const selected = u.selected;
+      // Slot stand-off is expressed in *formation* space, so the trig is once per unit rather
+      // than 8,600 times a frame. A rank dresses to the unit's front, not to each man's own
+      // heading, so this is also the more correct frame to offset in.
+      const uc = Math.cos(u.facing);
+      const us = Math.sin(u.facing);
 
       for (const i of u.members) {
         const state = p.state[i] as SoldierState;
@@ -957,6 +1164,13 @@ export class UnitRenderSystem implements Subsystem {
         // because a heap of coarse bodies is what reads as a pile of parts.
         if (hasCorpse && this.corpse.settle > 0.6 && lod === 0) lod = 1;
 
+        // A mounted man never reaches the billboard tier. The impostor sheet is a standing
+        // infantryman and no horse is drawn behind it, so a wing crossing that boundary lost
+        // its horses and dropped its riders to the ground — a hard pop on the one unit type a
+        // player is always watching. Holding cavalry at LOD2 costs about 300 triangles a man
+        // over a few hundred men, which is nothing against a 16 M frame.
+        if (lod === 3 && cav) lod = 2;
+
         if (lod === 3) {
           this.pushImpostor(i, rp.x, rp.y, rp.z, facing, u.faction, selected);
           continue;
@@ -965,18 +1179,45 @@ export class UnitRenderSystem implements Subsystem {
         const tier = this.soldierTiers[u.faction][lod];
         const coarse = lod === 2;
         let y = rp.y;
+        let x = rp.x;
+        let z = rp.z;
         let lean = p.lean[i];
         if (cav) {
-          const horseClip = HORSE_CLIP_MAP[p.animClip[i]] ?? HORSE_CLIP_MAP[Clip.IdleAlert];
+          const horseClip = this.horseCur[i] === 255 ? HORSE_GAIT_LADDER[0] : this.horseCur[i];
           const hf = this.horseFacts[horseClip];
           const hFrame = Math.min(hf.frames - 1, Math.floor(this.phase[i] * hf.frames));
-          const hClip = HORSE_CLIP_SET.clips[horseClip];
-          // Seat the rider on the saddle and let him rise and fall with the horse's back.
-          y += this.saddle.y + hClip.rootT[hFrame * 3 + 1];
-          this.pushHorse(i, lod, rp.x, rp.y, rp.z, facing, horseClip, hf);
-          lean += 0.06;
+          const seat = (hf.rowBase + hFrame) * 3;
+          this.pushHorse(i, lod, rp.x, rp.y + HORSE_GROUND_LIFT, rp.z, facing, hf);
+          // A body the ragdoll has thrown is on the ground where the solver put it; adding a
+          // saddle height to that is how a dead cavalryman came to lie in mid-air.
+          if (!hasCorpse) {
+            const sc = p.scale[i] * this.heightMul[i];
+            // Seat the rider *on* the saddle: put his own pelvis at the saddle's animated
+            // height plus a hip's clearance, rather than putting his boots there — which is
+            // what adding a rest-pose saddle height to a mesh whose origin is the ground did,
+            // and it left him a measured 0.95 m in the air.
+            y += HORSE_GROUND_LIFT + this.saddleTrack[seat + 1] + SEAT_RISE
+              - this.riderSeatY[this.curClip[i]] * sc;
+            // And back onto the seat: the saddle sits 0.15 m behind the withers while a man's
+            // rig has his pelvis at z = 0, so without this he rides the horse's shoulders.
+            const dz = this.saddleTrack[seat + 2] - this.riderSeatZ[this.curClip[i]] * sc;
+            x += Math.sin(facing) * dz;
+            z += Math.cos(facing) * dz;
+            lean += 0.06;
+          }
+        } else if (!hasCorpse) {
+          // Ragged ranks. See SLOT_LATERAL: visual only, stable per man, and the straggle
+          // term scales with his speed so a halted formation still dresses its line.
+          const o = i * 3;
+          const vx = p.vx[i];
+          const vz = p.vz[i];
+          const lat = this.slotOff[o];
+          const along = this.slotOff[o + 1]
+            + this.slotOff[o + 2] * Math.min(1, Math.sqrt(vx * vx + vz * vz) * 0.6);
+          x += lat * uc + along * us;
+          z += -lat * us + along * uc;
         }
-        this.pushSoldier(tier, i, rp.x, y, rp.z, facing, lean, state, selected, coarse, hasCorpse);
+        this.pushSoldier(tier, i, x, y, z, facing, lean, state, selected, coarse, hasCorpse);
       }
     }
 
@@ -1092,7 +1333,6 @@ export class UnitRenderSystem implements Subsystem {
     lod: number,
     x: number, y: number, z: number,
     facing: number,
-    clipIndex: number,
     facts: ClipFacts
   ): void {
     const tier = this.horseTiers[lod];
@@ -1118,10 +1358,17 @@ export class UnitRenderSystem implements Subsystem {
     buf.animA[a] = facts.rowBase + f0;
     buf.animA[a + 1] = facts.rowBase + f1;
     buf.animA[a + 2] = f - Math.floor(f);
-    buf.animA[a + 3] = 1;
-    buf.animB[a] = facts.rowBase + f0;
-    buf.animB[a + 1] = facts.rowBase + f0;
-    buf.animB[a + 2] = 0;
+    buf.animA[a + 3] = this.horseBlend[i];
+    // The gait being left behind. The lane was already uploaded and was being filled with a
+    // copy of the current frame, so a change of gait cut hard from one leg position to
+    // another — the most obvious pop a cavalry wing had. Costs nothing extra to blend.
+    const pf = this.horseFacts[this.horsePrev[i]] ?? facts;
+    const pfr = this.horsePrevPhase[i] * pf.frames;
+    const p0 = Math.min(pf.frames - 1, Math.floor(pfr));
+    const p1 = pf.loop ? (p0 + 1) % pf.frames : Math.min(p0 + 1, pf.frames - 1);
+    buf.animB[a] = pf.rowBase + p0;
+    buf.animB[a + 1] = pf.rowBase + p1;
+    buf.animB[a + 2] = pfr - Math.floor(pfr);
     buf.animB[a + 3] = p.variant[i];
 
     const k = n * Stride.Kit;
@@ -1148,7 +1395,6 @@ export class UnitRenderSystem implements Subsystem {
     buf.col1[c + 1] = coat[1] * 0.45;
     buf.col1[c + 2] = coat[2] * 0.5;
     buf.col1[c + 3] = 0.5;
-    void clipIndex;
     buf.count = n + 1;
   }
 

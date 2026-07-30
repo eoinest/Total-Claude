@@ -2,7 +2,8 @@ import { Clip, type ClipInfo } from '../sim/types';
 import { MAN_BAKED } from './generated/manBaked.gen';
 import { HORSE_BAKED } from './generated/horseBaked.gen';
 import { MAN_RIG, HORSE_RIG, type Rig } from './rig';
-import { decodeBaked, buildOverlay, measureRootSpeed, type PoseClip } from './pose';
+import { decodeBaked, buildOverlay, measureRootSpeed, frameGlobals, type PoseClip } from './pose';
+import { qrotate } from './quat';
 import {
   MAN_OVERLAYS, HORSE_OVERLAYS, MAN_CONTACTS, HORSE_CONTACTS,
 } from './authored';
@@ -94,9 +95,15 @@ const FOOT_VARIANT_NAMES: Partial<Record<Clip, readonly string[]>> = {
   [Clip.IdleBrace]: ['idleBrace', 'idleBraceLow', 'idleBrace'],
   [Clip.Walk]: ['walkLoose', 'walkLooseRoll', 'marchShort'],
   [Clip.March]: ['march', 'marchShort', 'marchLong'],
-  [Clip.Run]: ['runReady', 'runLow', 'runReady'],
-  [Clip.Charge]: ['charge', 'chargeHigh', 'charge'],
-  [Clip.Flee]: ['flee', 'fleeOther', 'flee'],
+  // Every locomotion clip lists three *distinct* variants with three different measured
+  // strides. A repeated name is not a free pass: playback rate is ground speed over stride,
+  // so two men on the same clip in the same unit run at exactly the same cadence and their
+  // relative phase never drifts. That frozen phase relationship is what a rank in lockstep
+  // looks like, and it is why Run, Charge and Flee — which used to name two clips between
+  // three buckets — were the worst offenders.
+  [Clip.Run]: ['runReady', 'runLow', 'runLong'],
+  [Clip.Charge]: ['charge', 'chargeHigh', 'chargeLow'],
+  [Clip.Flee]: ['flee', 'fleeOther', 'fleePanic'],
   [Clip.AttackThrust]: ['attackThrust', 'attackThrustHigh', 'attackThrust'],
   [Clip.AttackOverhead]: ['attackOverhead', 'attackOverheadCross', 'attackOverhead'],
 };
@@ -130,34 +137,42 @@ const RIDE_NAMES: Record<Clip, string> = {
   [Clip.Count]: 'rideIdle',
 };
 
-/** The horse's own gait, chosen from what its rider is doing. */
-const HORSE_NAMES: Record<Clip, string> = {
-  [Clip.IdleRelaxed]: 'idle',
-  [Clip.IdleAlert]: 'idle',
-  [Clip.IdleBrace]: 'idle',
-  [Clip.Walk]: 'walk',
-  [Clip.March]: 'walk',
-  [Clip.Run]: 'trot',
-  [Clip.Charge]: 'charge',
-  [Clip.AttackOverhead]: 'walk',
-  [Clip.AttackThrust]: 'walk',
-  [Clip.AttackSlash]: 'walk',
-  [Clip.ShieldBash]: 'walk',
-  [Clip.Block]: 'idle',
-  [Clip.Parry]: 'walk',
+/**
+ * The horse's gait ladder, slowest first.
+ *
+ * A mount's gait belongs to its *speed*, not to its rider's state. Mapping it off the
+ * rider — as this used to — puts a horse into a trot because the man on it is in
+ * `Clip.Run`, which for the roster's cavalry means 7.4 m/s: two and a half times what a
+ * horse trots at. Playback rate is ground speed over measured stride, so the trot then had
+ * to run at 2.2x to keep the hooves planted and the animal became a sewing machine.
+ *
+ * With a ladder the renderer picks the gait whose own tempo is closest to how fast the
+ * animal is actually going, and every gait plays near rate 1. The band edges live in the
+ * render system, with hysteresis, because that is where the measured speed is.
+ */
+const HORSE_GAIT_NAMES = ['idle', 'walk', 'trot', 'gallopOpen'] as const;
+
+/**
+ * The charge is the gallop with a different carriage, and it is chosen by intent rather
+ * than speed: a horse driven at a line of men stretches its neck out, one merely running
+ * away does not.
+ */
+const HORSE_CHARGE_NAME = 'charge';
+
+/** Where the rider's state, not his speed, settles what the animal does. */
+const HORSE_STATE_NAMES: Partial<Record<Clip, string>> = {
   [Clip.Stagger]: 'rear',
-  [Clip.ThrowPilum]: 'walk',
-  [Clip.DrawBow]: 'walk',
-  [Clip.ReleaseBow]: 'walk',
   [Clip.DeathBack]: 'death',
   [Clip.DeathForward]: 'death',
   [Clip.DeathSide]: 'death',
   [Clip.DeathKneel]: 'death',
-  [Clip.Flee]: 'gallop',
-  [Clip.Cheer]: 'idle',
-  [Clip.ClimbLadder]: 'idle',
-  [Clip.Count]: 'idle',
 };
+
+/** Rider states that call for the charge carriage once the animal is up to speed. */
+const HORSE_CHARGE_CLIPS: readonly Clip[] = [
+  Clip.Charge, Clip.AttackOverhead, Clip.AttackThrust, Clip.AttackSlash,
+  Clip.ShieldBash, Clip.ThrowPilum,
+];
 
 /**
  * Impact timing the combat system needs. The baked clips carry no hit frame of their own
@@ -225,7 +240,11 @@ const manUsed = [
   ...Object.values(FOOT_VARIANT_NAMES).flat(),
 ];
 export const MAN_CLIP_SET = packSet(MAN_RIG, manClips, manUsed);
-export const HORSE_CLIP_SET = packSet(HORSE_RIG, horseClips, Object.values(HORSE_NAMES));
+export const HORSE_CLIP_SET = packSet(HORSE_RIG, horseClips, [
+  ...HORSE_GAIT_NAMES,
+  HORSE_CHARGE_NAME,
+  ...Object.values(HORSE_STATE_NAMES),
+]);
 
 const mapTo = (set: ClipSet, names: Record<Clip, string>): Int32Array => {
   const out = new Int32Array(Clip.Count);
@@ -254,8 +273,115 @@ export const FOOT_CLIP_VARIANT_MAP = ((): Int32Array => {
 })();
 /** `Clip` -> index into `MAN_CLIP_SET.clips`, for a mounted man. */
 export const RIDE_CLIP_MAP = mapTo(MAN_CLIP_SET, RIDE_NAMES);
-/** `Clip` -> index into `HORSE_CLIP_SET.clips`. */
-export const HORSE_CLIP_MAP = mapTo(HORSE_CLIP_SET, HORSE_NAMES);
+
+/**
+ * Gait ladder as indices into `HORSE_CLIP_SET.clips`, slowest first, with the natural
+ * ground speed each one was measured to cover. The render system walks this against a
+ * mount's own speed; `HORSE_GAIT_STRIDE[g]` is the metres one cycle covers, so cycles per
+ * second is simply speed / stride.
+ */
+export const HORSE_GAIT_LADDER: Int32Array =
+  Int32Array.from(HORSE_GAIT_NAMES, (n) => HORSE_CLIP_SET.index(n));
+export const HORSE_GAIT_STRIDE: Float32Array = Float32Array.from(HORSE_GAIT_LADDER, (i) => {
+  const c = HORSE_CLIP_SET.clips[i];
+  return c.rootSpeed * c.duration;
+});
+/** Index of the charge carriage; substituted for the top gait when the rider means it. */
+export const HORSE_CHARGE_CLIP = HORSE_CLIP_SET.index(HORSE_CHARGE_NAME);
+/**
+ * `Clip` -> index into `HORSE_CLIP_SET.clips`, or -1 when the mount's own speed decides.
+ * Positive entries are one-shots (a rear, a fall) and must not be rate-matched.
+ */
+export const HORSE_STATE_MAP: Int32Array = ((): Int32Array => {
+  const out = new Int32Array(Clip.Count).fill(-1);
+  for (const [c, name] of Object.entries(HORSE_STATE_NAMES)) {
+    out[Number(c) as Clip] = HORSE_CLIP_SET.index(name as string);
+  }
+  return out;
+})();
+/** Rider clips that want the charge carriage rather than the plain gallop. */
+export const HORSE_CHARGE_MASK: Uint8Array = ((): Uint8Array => {
+  const out = new Uint8Array(Clip.Count);
+  for (const c of HORSE_CHARGE_CLIPS) out[c] = 1;
+  return out;
+})();
+
+/**
+ * Where a point rigidly bound to one or two bones ends up, on every frame of every packed
+ * clip. Three floats per animation row, indexed exactly as the animation texture is:
+ * `(set.rows[clip] + frame) * 3`.
+ *
+ * This exists because the renderer has to place one instanced mesh against a moving point
+ * on another — the rider on the saddle. The saddle is skinned to the horse's barrel and
+ * loin, so where it *is* on a given frame is only knowable by running the horse's forward
+ * kinematics, and the horse's back rises and falls by 15 cm through a gallop. Pinning the
+ * rider to a rest-pose offset instead leaves him floating on the way down and sunk on the
+ * way up, which is exactly what a static offset looked like.
+ *
+ * A rigid point needs no skinning matrix: express it once in the bone's rest frame and it
+ * is a rotate-and-add per frame. Baked at init, ~170 rows for the horse, and read with two
+ * array lookups in the hot loop.
+ */
+export function bakePointTrack(
+  set: ClipSet,
+  point: readonly [number, number, number],
+  bone0: number,
+  bone1 = bone0,
+  weight0 = 1
+): Float32Array {
+  const rig = set.rig;
+  const n = rig.boneCount;
+  const out = new Float32Array(set.totalRows * 3);
+  const worldQ = new Float32Array(n * 4);
+  const worldT = new Float32Array(n * 3);
+  const p = Float32Array.from(point);
+  // The point in each bone's rest frame: bindInv applied once.
+  const local = new Float32Array(6);
+  const bones = [bone0, bone1];
+  for (let k = 0; k < 2; k++) {
+    const b = bones[k];
+    qrotate(local, k * 3, rig.bindInvQ, b * 4, p, 0);
+    local[k * 3] += rig.bindInvT[b * 3];
+    local[k * 3 + 1] += rig.bindInvT[b * 3 + 1];
+    local[k * 3 + 2] += rig.bindInvT[b * 3 + 2];
+  }
+  const w = [weight0, 1 - weight0];
+  const tmp = new Float32Array(3);
+  for (let ci = 0; ci < set.clips.length; ci++) {
+    const clip = set.clips[ci];
+    for (let f = 0; f < clip.frames; f++) {
+      frameGlobals(rig, clip, f, worldQ, worldT);
+      const o = (set.rows[ci] + f) * 3;
+      for (let k = 0; k < 2; k++) {
+        if (w[k] <= 0) continue;
+        const b = bones[k];
+        qrotate(tmp, 0, worldQ, b * 4, local, k * 3);
+        out[o] += (tmp[0] + worldT[b * 3]) * w[k];
+        out[o + 1] += (tmp[1] + worldT[b * 3 + 1]) * w[k];
+        out[o + 2] += (tmp[2] + worldT[b * 3 + 2]) * w[k];
+      }
+    }
+  }
+  return out;
+}
+
+/** Mean of a baked point track over one clip — the clip's resting value for that point. */
+export function meanPointOverClip(
+  set: ClipSet,
+  track: Float32Array,
+  clipIndex: number
+): [number, number, number] {
+  const frames = set.clips[clipIndex].frames;
+  const row = set.rows[clipIndex];
+  let x = 0;
+  let y = 0;
+  let z = 0;
+  for (let f = 0; f < frames; f++) {
+    const o = (row + f) * 3;
+    x += track[o]; y += track[o + 1]; z += track[o + 2];
+  }
+  return [x / frames, y / frames, z / frames];
+}
 
 /**
  * Clip metadata for the simulation and combat systems.

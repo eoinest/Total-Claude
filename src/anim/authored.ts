@@ -496,6 +496,32 @@ const runLow: OverlayDef = {
   ],
 };
 
+/**
+ * A long-legged run: stride amplitude 1.13, torso further over the hips.
+ *
+ * The third bucket of `Clip.Run` used to be `runReady` again, so two thirds of a running
+ * cohort shared one silhouette *and* one cadence — and cadence is what makes a rank read as
+ * a machine, because the renderer sets playback from ground speed over measured stride and
+ * two men on the same clip get the same number. A 13% longer stride is 13% fewer steps a
+ * minute at the same speed, with the foot still planted where the ground is.
+ */
+const runLong: OverlayDef = {
+  name: 'runLong',
+  frames: 26,
+  duration: 0.79,
+  loop: true,
+  amp: [[MB.thighL, 1.13], [MB.thighR, 1.13], [MB.shinL, 1.06], [MB.shinR, 1.06]],
+  tracks: [
+    tr(MB.spineLow, [[0, -11, 0, -2]]),
+    tr(MB.spineUp, [[0, -6, 0, 2]]),
+    tr(MB.neck, [[0, -3, 4, 0]]),
+    ...SHIELD_CARRY,
+    absTr(MB.upperArmR, [[0, 0, -56, 56], [0.5, 0, -26, 60], [1, 0, -56, 56]]),
+    absTr(MB.lowerArmR, [[0, 0, 70, 46], [0.5, 0, 92, 40], [1, 0, 70, 46]]),
+    ...FEET_FLAT,
+  ],
+};
+
 /** Charging with the weapon already overhead rather than cocked at the hip. */
 const chargeHigh: OverlayDef = {
   name: 'chargeHigh',
@@ -511,6 +537,26 @@ const chargeHigh: OverlayDef = {
     ...SHIELD_HIGH,
     absTr(MB.upperArmR, [[0, 0, -50, -46], [0.5, 0, -58, -54], [1, 0, -50, -46]]),
     absTr(MB.lowerArmR, [[0, 0, -70, -14]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/** Charging low and short: knees under him, shield up, weapon already coming across. */
+const chargeLow: OverlayDef = {
+  name: 'chargeLow',
+  frames: 26,
+  duration: 0.64,
+  loop: true,
+  amp: [[MB.thighL, 0.94], [MB.thighR, 0.94]],
+  root: [[0, 0, -0.05, 0], [0.5, 0, -0.065, 0], [1, 0, -0.05, 0]],
+  tracks: [
+    tr(MB.pelvis, [[0, -2, -8, 0]]),
+    tr(MB.spineLow, [[0, -16, 6, 0]]),
+    tr(MB.spineUp, [[0, -9, 4, 0]]),
+    tr(MB.neck, [[0, 8, -4, 0]]),
+    ...SHIELD_HIGH,
+    absTr(MB.upperArmR, [[0, 0, -34, 48], [0.5, 0, -20, 40], [1, 0, -34, 48]]),
+    absTr(MB.lowerArmR, [[0, 0, 74, 30], [0.5, 0, 66, 22], [1, 0, 74, 30]]),
     ...FEET_FLAT,
   ],
 };
@@ -531,6 +577,26 @@ const fleeOther: OverlayDef = {
     absTr(MB.lowerArmL, [[0, 0, -50, 50]]),
     absTr(MB.upperArmR, [[0, 0, 20, -62], [0.5, 0, 33, -49], [1, 0, 20, -62]]),
     absTr(MB.lowerArmR, [[0, 0, 50, -50]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/** Outright panic: short choppy steps, both arms up, no thought of the pursuit behind. */
+const fleePanic: OverlayDef = {
+  name: 'fleePanic',
+  frames: 26,
+  duration: 0.61,
+  loop: true,
+  amp: [[MB.thighL, 0.9], [MB.thighR, 0.9], [MB.shinL, 0.95], [MB.shinR, 0.95]],
+  tracks: [
+    tr(MB.pelvis, [[0, -2, 0, 0]]),
+    tr(MB.spineLow, [[0, -12, 4, 0], [0.5, -14, -4, 0], [1, -12, 4, 0]]),
+    tr(MB.chest, [[0, -4, 3, 0]]),
+    tr(MB.neck, [[0, -10, 6, 0], [0.5, -12, -6, 0], [1, -10, 6, 0]]),
+    absTr(MB.upperArmL, [[0, 0, -12, 78], [0.5, 0, -8, 90], [1, 0, -12, 78]]),
+    absTr(MB.lowerArmL, [[0, 0, -26, 74]]),
+    absTr(MB.upperArmR, [[0, 0, 12, -78], [0.5, 0, 8, -90], [1, 0, 12, -78]]),
+    absTr(MB.lowerArmR, [[0, 0, 26, -74]]),
     ...FEET_FLAT,
   ],
 };
@@ -1042,14 +1108,30 @@ const climbLadder: OverlayDef = {
  * Seated on a horse with no stirrups — which Rome did not have. The rider grips with the
  * thighs against the four horns of the saddle, so the legs sit further forward and less
  * bent than a modern seat, with the heel driven down for purchase.
+ *
+ * `abduct` opens the legs across the barrel and the sign of it matters more than the size.
+ * It used to be negative on the left thigh and positive on the right, which *adducted* both
+ * legs: measured on the rig, the boots ended up 0.12 m apart — closer together than the hip
+ * joints, i.e. crossed inside a barrel 0.52 m wide, so both legs were buried in the horse.
+ *
+ * Sign the other way round, the size follows from the barrel. The knee inevitably ends up
+ * level with the rib cage's widest station, which on this animal is 0.26 m from the spine, so
+ * 20 degrees puts it at 0.32 m — clear by 6 cm, a leg lying on the horse's side rather than
+ * one inside it. More than that and the man does the splits: at 26 degrees the thigh reads as
+ * horizontal from behind.
+ *
+ * The shin then counter-rotates by slightly more than the thigh's flexion, so the lower leg
+ * hangs a few degrees behind vertical and the heel finishes just below the belly line. That
+ * long straight leg is the giveaway of a stirrupless seat and it is what the reliefs show;
+ * a shin left 14 degrees forward of vertical, as it was, is a modern jumping seat.
  */
 const rideLegs = (flex: number, abduct: number): BoneTrack[] => [
-  tr(MB.thighL, [[0, -54 - flex, 6, -abduct]]),
-  tr(MB.shinL, [[0, 40 + flex, -4, abduct * 0.4]]),
-  tr(MB.thighR, [[0, -54 - flex, -6, abduct]]),
-  tr(MB.shinR, [[0, 40 + flex, 4, -abduct * 0.4]]),
-  tr(MB.footL, [[0, -18, 0, 0]]),
-  tr(MB.footR, [[0, -18, 0, 0]]),
+  tr(MB.thighL, [[0, -48 - flex, 6, abduct]]),
+  tr(MB.shinL, [[0, 52 + flex, -4, -abduct * 0.35]]),
+  tr(MB.thighR, [[0, -48 - flex, -6, -abduct]]),
+  tr(MB.shinR, [[0, 52 + flex, 4, abduct * 0.35]]),
+  tr(MB.footL, [[0, -14, 0, 0]]),
+  tr(MB.footR, [[0, -14, 0, 0]]),
 ];
 
 /** Reins in the shield hand, weapon hand low. */
@@ -1066,7 +1148,7 @@ const rideIdle: OverlayDef = {
   duration: 3.2,
   loop: true,
   root: [[0, 0, 0.02, -0.02]],
-  tracks: [...rideLegs(0, 14), tr(MB.spineLow, [[0, 2, 0, 0]]), ...RIDE_ARMS],
+  tracks: [...rideLegs(0, 20), tr(MB.spineLow, [[0, 2, 0, 0]]), ...RIDE_ARMS],
 };
 
 const rideMove: OverlayDef = {
@@ -1080,7 +1162,7 @@ const rideMove: OverlayDef = {
     [0.75, 0, 0.055, -0.01], [1, 0, 0.02, -0.02],
   ],
   tracks: [
-    ...rideLegs(2, 14),
+    ...rideLegs(2, 20),
     tr(MB.spineLow, [[0, -4, 0, 0], [0.5, 0, 0, 0], [1, -4, 0, 0]]),
     ...RIDE_ARMS,
   ],
@@ -1093,7 +1175,7 @@ const rideGallop: OverlayDef = {
   loop: true,
   root: [[0, 0, 0.03, 0.0], [0.3, 0, 0.075, 0.03], [0.6, 0, 0.02, -0.01], [1, 0, 0.03, 0.0]],
   tracks: [
-    ...rideLegs(6, 16),
+    ...rideLegs(6, 21),
     // Up out of the saddle and forward over the withers.
     tr(MB.pelvis, [[0, -14, 0, 0], [0.3, -20, 0, 0], [1, -14, 0, 0]]),
     tr(MB.spineLow, [[0, -12, 0, 0]]),
@@ -1111,7 +1193,7 @@ const rideCharge: OverlayDef = {
   hitFrame: 0.5,
   root: [[0, 0, 0.02, 0.04], [0.3, 0, 0.06, 0.07], [1, 0, 0.02, 0.04]],
   tracks: [
-    ...rideLegs(8, 16),
+    ...rideLegs(8, 22),
     tr(MB.pelvis, [[0, -20, -8, 0], [0.3, -26, -8, 0], [1, -20, -8, 0]]),
     tr(MB.spineLow, [[0, -18, 6, 0]]),
     hold(MB.head),
@@ -1130,7 +1212,7 @@ const rideDeath: OverlayDef = {
   loop: false,
   root: [[0, 0, 0.02, 0], [0.35, 0.18, -0.1, -0.05], [1, 0.9, -0.85, -0.2]],
   tracks: [
-    ...rideLegs(4, 18),
+    ...rideLegs(4, 19),
     tr(MB.pelvis, [[0, 0, 0, 0], [0.35, 6, -20, -34], [1, 20, -66, -96]]),
     tr(MB.spineLow, [[0, 0, 0, 0], [1, 10, -14, -20]]),
     absTr(MB.upperArmL, [[0, 0, -46, -62], [1, 0, -12, -100]]),
@@ -1178,18 +1260,64 @@ const horseTrot: OverlayDef = {
   ],
 };
 
-/** Charge: gallop with the neck stretched out and the stride opened up. */
+/**
+ * The gallop, opened up — and this is the clip the cavalry actually gallops on.
+ *
+ * Playback rate is ground speed over measured stride, so a short-strided clip does not
+ * slide, it *sprints*: the legs cycle at whatever frequency it takes to cover the ground.
+ * The retargeted source covers 4.27 m per cycle (measured: `tools/probe-gait.mjs`), which at
+ * the roster's 9.6 m/s charge is 2.25 strides a second. A real horse at a hand gallop does
+ * 1.6 to 2.0 strides a second over 5 to 6 m, so the source runs a third too fast and reads
+ * as a wind-up toy.
+ *
+ * Stride is a purely geometric property of a clip — the backward drift of a planted hoof
+ * divided by the fraction of the cycle it is down — so the only honest way to lengthen it is
+ * to swing the limbs further. Amplifying the shoulders and hips (not the whole leg: amplifying
+ * the cannon and pastern folds the hoof up past the belly without reaching any further
+ * forward) was swept from 1.0 to 1.8 and measured:
+ *
+ *     amp      1.00   1.10   1.20   1.30   1.40   1.60   1.80
+ *     stride   4.27   4.85   5.36   4.58   4.98   5.79   6.59
+ *     hoof up  0.55   0.66   0.78   0.90   1.02   1.24   1.41
+ *
+ * 1.20 is the knee of that curve: 5.36 m, 1.79 strides a second at charge speed — playback
+ * rate 1.07, i.e. very nearly the clip's own tempo — with the hoof folding to 0.78 m, which
+ * is a galloping horse's tuck and not a cartwheel. The dip at 1.30 is the stride measurement
+ * latching onto a different hoof's contact window, which is a good reason not to sit there.
+ */
+const horseGallopOpen: OverlayDef = {
+  name: 'gallopOpen',
+  frames: 22,
+  duration: 0.6,
+  loop: true,
+  amp: [
+    [HB.fShoulderL, 1.2], [HB.fShoulderR, 1.2], [HB.fUpperL, 1.2], [HB.fUpperR, 1.2],
+    [HB.bHipL, 1.2], [HB.bHipR, 1.2], [HB.bFemurL, 1.2], [HB.bFemurR, 1.2],
+  ],
+  tracks: [
+    htr(HB.neck1, [[0, 8, 0, 0]]),
+    htr(HB.head, [[0, -8, 0, 0]]),
+    htr(HB.tail1, [[0, -20, 0, 0]]),
+  ],
+};
+
+/**
+ * Charge: the opened gallop with the neck stretched right out and the tail streaming.
+ *
+ * The legs are left exactly as `gallopOpen` left them — amplifying on top of it lands on
+ * the 1.30 dip above and shortens the stride — so the difference between a horse running
+ * and a horse charging is carriage, which is where it is on a real animal.
+ */
 const horseCharge: OverlayDef = {
   name: 'charge',
   frames: 22,
   duration: 0.6,
   loop: true,
-  amp: [[HB.fUpperL, 1.1], [HB.fUpperR, 1.1], [HB.bFemurL, 1.1], [HB.bFemurR, 1.1]],
   tracks: [
     htr(HB.neck1, [[0, 16, 0, 0]]),
     htr(HB.neck2, [[0, 10, 0, 0]]),
-    htr(HB.head, [[0, -16, 0, 0]]),
-    htr(HB.tail1, [[0, -26, 0, 0]]),
+    htr(HB.head, [[0, -18, 0, 0]]),
+    htr(HB.tail1, [[0, -30, 0, 0]]),
   ],
 };
 
@@ -1211,8 +1339,11 @@ export const MAN_OVERLAYS: { base: string; def: OverlayDef }[] = [
   { base: 'walk', def: marchLong },
   { base: 'walk', def: walkLooseRoll },
   { base: 'run', def: runLow },
+  { base: 'run', def: runLong },
   { base: 'run', def: chargeHigh },
+  { base: 'run', def: chargeLow },
   { base: 'run', def: fleeOther },
+  { base: 'run', def: fleePanic },
   { base: 'idleAlert', def: attackThrust },
   { base: 'idleAlert', def: attackThrustHigh },
   { base: 'idleAlert', def: attackOverhead },
@@ -1240,7 +1371,9 @@ export const MAN_OVERLAYS: { base: string; def: OverlayDef }[] = [
 
 export const HORSE_OVERLAYS: { base: string; def: OverlayDef }[] = [
   { base: 'walk', def: horseTrot },
-  { base: 'gallop', def: horseCharge },
+  // Order matters: `charge` is built on the opened gallop, so that has to exist first.
+  { base: 'gallop', def: horseGallopOpen },
+  { base: 'gallopOpen', def: horseCharge },
 ];
 
 /** Bones whose ground contact defines a clip's stride, per rig. */

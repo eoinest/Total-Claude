@@ -28,7 +28,7 @@
 
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
-import { writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -50,6 +50,14 @@ const JSON_OUT = args.get('json');
 const AT = Number(args.get('at') ?? 3);
 /** `stations`, `motion` or `all`. */
 const ONLY = args.get('only') ?? 'all';
+/**
+ * Directory for one frame grab per motion phase.
+ *
+ * `tools/shoot.mjs` cannot cover this: its combat shots sit at zoom 0.30, inside the near
+ * fade, where the plaques are deliberately gone. The states this pass exists to fix —
+ * a unit breaking, a unit wheeling into contact — are only visible from a playing height.
+ */
+const PNG_DIR = args.get('png');
 /** Frames tracked per motion phase. 120 at a nominal 60 Hz is two seconds of battle. */
 const FRAMES = Number(args.get('frames') ?? 120);
 
@@ -57,12 +65,19 @@ const FRAMES = Number(args.get('frames') ?? 120);
  * Motion phases. `at` is the simulated second the battle is wound forward to, `mode`
  * picks what the camera frames and `yawRate` is radians of camera rotation per frame —
  * a still camera would hide any per-frame lag between the plaque and the men.
+ *
+ * Each is measured from two stations. 0.72 is a normal playing height and puts most of the
+ * order of battle in frame; 0.55 is close enough that a block fills 200-400 px, which is
+ * where a perspective error in the anchor is at its largest. Anything closer than about
+ * 0.5 and the near fade legitimately takes the plaques away and there is nothing to
+ * measure.
  */
+const ZOOMS = [0.72, 0.55];
 const PHASES = [
-  { name: 'march',  at: 26,  mode: 'own',    zoom: 0.50, yawRate: 0.0018 },
-  { name: 'charge', at: 66,  mode: 'charge', zoom: 0.44, yawRate: 0.0012 },
-  { name: 'melee',  at: 96,  mode: 'melee',  zoom: 0.40, yawRate: 0.0009 },
-  { name: 'rout',   at: 180, mode: 'rout',   zoom: 0.46, yawRate: 0.0015 },
+  { name: 'march',  at: 26,  mode: 'own',    yawRate: 0.0018 },
+  { name: 'charge', at: 66,  mode: 'charge', yawRate: 0.0012 },
+  { name: 'melee',  at: 96,  mode: 'melee',  yawRate: 0.0009 },
+  { name: 'rout',   at: 180, mode: 'rout',   yawRate: 0.0015 },
 ];
 
 /** Camera stations: zoom 0..1 crossed with a few compass yaws. */
@@ -381,7 +396,10 @@ const MOTION = ({ frames, zoom, yawRate, mode }) => {
     return e;
   };
 
-  let t = g.engine.time.elapsed * 1000;
+  // A clock we own, monotonic by construction. See `stepTo` for why `Engine.advance`
+  // cannot be used here.
+  g.engine.time.resync();
+  let t = performance.now();
   for (let f = 0; f < frames; f++) {
     yaw += yawRate;
     g.engine.rig.jumpTo(focusX, focusZ, zoom, yaw);
@@ -755,13 +773,18 @@ try {
     const cost = await page.evaluate(() => {
       const g = window.__game;
       const hud = g.engine.context.tryGet('hud');
+      // Monotonic clock, or `Time.beginFrame` clamps every delta to zero: the frames still
+      // render but `frameDt` stays 0, the HUD's 10 Hz tick never fires and the figure
+      // measures only the per-frame path.
+      g.engine.time.resync();
+      let t = performance.now();
       // The HUD's own figure is an exponential average, and this machine is shared with
       // other builds, so take the minimum over many samples: interference can only ever
       // push a sample up.
       const sample = () => {
         let best = Infinity;
         for (let s = 0; s < 40; s++) {
-          for (let i = 0; i < 15; i++) g.engine.frame(g.engine.time.elapsed * 1000 + 16.7);
+          for (let i = 0; i < 15; i++) { t += 16.7; g.engine.frame(t); }
           if (hud && hud.hudMs < best) best = hud.hudMs;
         }
         return best === Infinity ? null : best;
@@ -802,43 +825,115 @@ try {
     await mpage.goto(`${base}/?harness=1&autoplay=1&quality=${QUALITY}&w=${W}&h=${H}`,
       { waitUntil: 'domcontentloaded', timeout: 60000 });
     await mpage.waitForFunction(() => window.__game && window.__game.ready === true, { timeout: 120000 });
+    // Every frame from here is driven by hand, so the page's own `requestAnimationFrame`
+    // loop is only a source of nondeterminism and of contention for the GPU.
+    await mpage.evaluate(() => window.__game.engine.stop());
     console.log(`\nmotion: ${FRAMES} frames per phase, error sampled every frame`);
 
     for (const ph of PHASES) {
-      // Wound forward on a fixed grid so a phase reaches the same battle state on every
-      // run, and with a 100 ms frame step so 180 s of battle does not cost 10,800 renders:
-      // `Time` accumulates and runs three fixed ticks per step, well inside its own cap.
+      // 100 ms per frame, which `Time` turns into exactly three fixed ticks — so 180 s of
+      // battle costs 1,800 renders rather than 10,800, on a grid that is the same on
+      // every run.
+      //
+      // Deliberately NOT `Engine.advance`: it restarts its timestamps from `Time.elapsed`,
+      // which falls behind the real clock every time a frame delta is clamped. Once it is
+      // behind by more than one step, `beginFrame` clamps the negative delta to zero, the
+      // simulation stops advancing at all, and `while (simTime < target)` never returns —
+      // which is exactly how this hung for twenty minutes. `resync` drops the stale
+      // timestamp; after that a clock we own is monotonic by construction.
       const ff = Date.now();
-      await mpage.evaluate(async (at) => {
+      const reached = await mpage.evaluate(({ at, stepMs }) => {
         const g = window.__game;
-        while (g.simTime() < at - 1e-6) {
-          g.engine.advance(Math.min(0.6, at - g.simTime()), 100);
+        g.engine.time.resync();
+        let t = performance.now();
+        let frames = 0;
+        while (g.simTime() < at - 1e-6 && frames < 40000) {
+          t += stepMs;
+          g.engine.frame(t);
+          frames++;
         }
-      }, ph.at);
-      process.stdout.write(`  → t+${ph.at}s reached in ${((Date.now() - ff) / 1000).toFixed(0)}s\n`);
-      // Real time, so the opacity transition on a plaque that just came into view has
-      // finished before its box is measured.
-      await mpage.waitForTimeout(400);
-      const m = await mpage.evaluate(MOTION, {
-        frames: FRAMES, zoom: ph.zoom, yawRate: ph.yawRate, mode: ph.mode,
-      });
-      motion.push({ phase: ph.name, at: ph.at, ...m });
-      const keys = ['marching', 'charging', 'melee', 'routing', 'idle', 'ALL'];
-      console.log(`  t+${String(ph.at).padStart(3)}s ${ph.name.padEnd(7)} zoom ${ph.zoom} ` +
-                  `focus ${m.focus.x},${m.focus.z}`);
-      for (const k of keys) {
-        const s = m.byState[k];
-        if (!s) continue;
-        console.log(
-          `      ${k.padEnd(9)} ${String(s.samples).padStart(5)} samples ${String(s.units).padStart(2)}u  ` +
-          `|dx| mean ${String(s.dxMean).padStart(6)} p95 ${String(s.dxP95).padStart(6)} max ${String(s.dxMax).padStart(6)} px  ` +
-          `frac mean ${String(s.fracMean).padStart(5)} max ${String(s.fracMax).padStart(5)}  ` +
-          `|dy| mean ${String(s.dyMean).padStart(5)} max ${String(s.dyMax).padStart(6)}  ` +
-          `gap min ${String(s.gapMin).padStart(6)}` +
-          (s.worst ? `  worst ${s.worst.typeId}#${s.worst.id} dx=${s.worst.dx} w=${s.worst.widthPx}px @${s.worst.dist}m spd=${s.worst.spd}` : '')
-        );
+        return { simTime: +g.simTime().toFixed(2), frames };
+      }, { at: ph.at, stepMs: 100 });
+      process.stdout.write(
+        `  → t+${reached.simTime}s in ${reached.frames} frames, ${((Date.now() - ff) / 1000).toFixed(0)}s wall\n`);
+      for (const zoom of ZOOMS) {
+        // Real time, so the opacity transition on a plaque that just came into view has
+        // finished before its box is measured.
+        await mpage.waitForTimeout(400);
+        const m = await mpage.evaluate(MOTION, {
+          frames: FRAMES, zoom, yawRate: ph.yawRate, mode: ph.mode,
+        });
+        motion.push({ phase: ph.name, at: ph.at, ...m });
+        if (PNG_DIR) {
+          // `.bnr` fades in over 0.25 s of wall time and the tracking loop consumes none,
+          // so without a real pause every plaque that came into view during the phase is
+          // still transparent and the frame looks as if half the army had no marker.
+          await mpage.waitForTimeout(500);
+          await mkdir(path.resolve(ROOT, PNG_DIR), { recursive: true });
+          await mpage.screenshot({
+            path: path.resolve(ROOT, PNG_DIR, `${ph.name}-z${String(zoom).replace('.', '')}.png`),
+          });
+        }
+        const keys = ['marching', 'charging', 'melee', 'routing', 'idle', 'ALL'];
+        console.log(`  t+${String(ph.at).padStart(3)}s ${ph.name.padEnd(7)} zoom ${zoom} ` +
+                    `focus ${m.focus.x},${m.focus.z}`);
+        if (!m.byState.ALL) {
+          console.log('      no plaque on screen — nothing measured');
+          failed++;
+        }
+        for (const k of keys) {
+          const s = m.byState[k];
+          if (!s) continue;
+          console.log(
+            `      ${k.padEnd(9)} ${String(s.samples).padStart(5)} samples ${String(s.units).padStart(2)}u  ` +
+            `|dx| mean ${String(s.dxMean).padStart(6)} p95 ${String(s.dxP95).padStart(6)} max ${String(s.dxMax).padStart(6)} px  ` +
+            `frac mean ${String(s.fracMean).padStart(5)} max ${String(s.fracMax).padStart(5)}  ` +
+            `|dy| mean ${String(s.dyMean).padStart(5)} max ${String(s.dyMax).padStart(6)}  ` +
+            `gap min ${String(s.gapMin).padStart(6)}` +
+            (s.worst ? `  worst ${s.worst.typeId}#${s.worst.id} dx=${s.worst.dx} w=${s.worst.widthPx}px @${s.worst.dist}m spd=${s.worst.spd}` : '')
+          );
+        }
       }
     }
+
+    // Roll-up across all phases and both stations, which is the number to quote.
+    const roll = new Map();
+    for (const m of motion) {
+      if (!m.byState) continue;
+      for (const [k, s] of Object.entries(m.byState)) {
+        const r = roll.get(k) ?? { n: 0, dxSum: 0, dxMax: 0, frSum: 0, frMax: 0,
+                                   dySum: 0, dyMax: 0, gapMin: Infinity, worst: null };
+        r.n += s.samples;
+        r.dxSum += s.dxMean * s.samples;
+        r.frSum += s.fracMean * s.samples;
+        r.dySum += s.dyMean * s.samples;
+        if (s.dxMax > r.dxMax) r.dxMax = s.dxMax;
+        if (s.fracMax > r.frMax) r.frMax = s.fracMax;
+        if (s.dyMax > r.dyMax) r.dyMax = s.dyMax;
+        if (s.gapMin < r.gapMin) r.gapMin = s.gapMin;
+        if (s.worst && (!r.worst || Math.abs(s.worst.dx) > Math.abs(r.worst.dx))) r.worst = s.worst;
+        roll.set(k, r);
+      }
+    }
+    console.log('\nmotion roll-up — |banner centre − mean screen x of the unit\'s men|');
+    for (const k of ['marching', 'charging', 'melee', 'routing', 'idle', 'ALL']) {
+      const r = roll.get(k);
+      if (!r) continue;
+      console.log(
+        `  ${k.padEnd(9)} ${String(r.n).padStart(6)} samples  ` +
+        `mean ${(r.dxSum / r.n).toFixed(2).padStart(6)} px  max ${String(r.dxMax).padStart(6)} px  ` +
+        `mean ${(r.frSum / r.n * 100).toFixed(2).padStart(5)}%  max ${(r.frMax * 100).toFixed(1).padStart(5)}% of block width  ` +
+        `|dy| mean ${(r.dySum / r.n).toFixed(2).padStart(5)} max ${String(r.dyMax).padStart(6)}  ` +
+        `head gap min ${String(r.gapMin).padStart(6)} px`
+      );
+    }
+    motion.push({ phase: 'rollUp', byState: Object.fromEntries([...roll].map(([k, r]) => [k, {
+      samples: r.n,
+      dxMean: +(r.dxSum / r.n).toFixed(2), dxMax: r.dxMax,
+      fracMean: +(r.frSum / r.n).toFixed(4), fracMax: r.frMax,
+      dyMean: +(r.dySum / r.n).toFixed(2), dyMax: r.dyMax,
+      gapMin: r.gapMin, worst: r.worst,
+    }])) });
 
     // The HUD's cost with the army scattered and every plaque on screen, which is where
     // per-frame sampling of the men is at its most expensive.
@@ -846,23 +941,47 @@ try {
       const c = await mpage.evaluate(() => {
         const g = window.__game;
         const hud = g.engine.context.tryGet('hud');
+        // Zoomed out so every plaque on the field is being placed, which is the expensive
+        // case: the per-frame cost is one pass over each unit's roster.
+        let sx = 0, sz = 0, n = 0;
+        for (const u of g.battle.units) {
+          if (u.destroyed || !u.alive) continue;
+          sx += u.x * u.alive; sz += u.z * u.alive; n += u.alive;
+        }
+        g.setCamera(n ? sx / n : 0, n ? sz / n : 0, 0.9, Math.PI * 0.8);
+        g.engine.time.resync();
+        let t = performance.now();
+        const pump = (k) => { for (let i = 0; i < k; i++) { t += 16.7; g.engine.frame(t); } };
+        // The HUD's own figure is an exponential average and this machine is shared, so
+        // take the minimum over many samples: interference can only push a sample up.
         const sample = () => {
           let best = Infinity;
           for (let s = 0; s < 40; s++) {
-            for (let i = 0; i < 15; i++) g.engine.frame(g.engine.time.elapsed * 1000 + 16.7);
+            pump(15);
             if (hud && hud.hudMs < best) best = hud.hudMs;
           }
           return best === Infinity ? null : best;
         };
         sample();
         const on = sample();
-        let men = 0;
+        const b = hud && hud.banners;
+        if (b) b.enabled = false;
+        sample();
+        const off = sample();
+        if (b) b.enabled = true;
+        sample();
+        let men = 0, shown = 0;
         for (const u of g.battle.units) men += u.alive;
-        return { on, men, units: g.battle.units.filter((u) => !u.destroyed).length };
+        for (const e of document.querySelectorAll('.bnr')) {
+          if (!e.classList.contains('off')) shown++;
+        }
+        return { on, off, men, shown, units: g.battle.units.filter((u) => !u.destroyed).length };
       });
       console.log(`  hud during motion: ${c.on === null ? 'n/a' : c.on.toFixed(3)} ms/frame ` +
-                  `(${c.men} men, ${c.units} live units)`);
-      motion.push({ phase: 'hudCost', hudMs: c.on, men: c.men, units: c.units });
+                  `(${c.off === null ? 'n/a' : c.off.toFixed(3)} with the banner layer off) — ` +
+                  `${c.men} men, ${c.units} live units, ${c.shown} plaques placed`);
+      motion.push({ phase: 'hudCost', hudMs: c.on, hudMsNoBanners: c.off,
+                    men: c.men, units: c.units, plaques: c.shown });
     } catch (e) {
       console.error(`  motion hud cost failed: ${e.message}`);
     }

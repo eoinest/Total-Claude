@@ -154,6 +154,72 @@ export function projectPoint(
   return out;
 }
 
+export interface ScreenPoint {
+  /** CSS pixels from the canvas top-left. */
+  x: number;
+  y: number;
+  /** True when the point lies between the near and far clip planes. */
+  inRange: boolean;
+}
+
+/**
+ * Batched screen projection.
+ *
+ * `projectPoint` forms the view-projection product inside `Vector3.project` on every call,
+ * which is fine for one point per unit and wasteful for the thousands per frame that
+ * finding a block's *visual* centre needs: the projection of a formation's centroid is not
+ * the centroid of its projections — the two are 20 px apart on a wide block seen obliquely
+ * — so the centre has to be averaged over the men themselves. Forming the product once per
+ * frame turns each man into a single matrix-vector multiply.
+ *
+ * `begin` must be called after the camera's `matrixWorldInverse` is final, i.e. from
+ * `preRender`.
+ */
+export class ScreenProjector {
+  private readonly vp = new THREE.Matrix4();
+  private halfW = 0;
+  private halfH = 0;
+
+  begin(camera: THREE.PerspectiveCamera, viewW: number, viewH: number): void {
+    this.vp.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    this.halfW = viewW * 0.5;
+    this.halfH = viewH * 0.5;
+  }
+
+  /**
+   * Two points on one vertical line — `(x, y, z)` and `(x, y + dy, z)` — in a single pass.
+   * Returns false when either is at or behind the eye, leaving the outputs untouched.
+   *
+   * Clip coordinates are linear in world y, so the raised point costs three multiplies and
+   * a divide instead of a second full transform. That is the difference between one and
+   * two matrix products per man, and the banners do this for every man in the army every
+   * frame. `inRange` is decided by the lower point; the upper one sits a few metres above
+   * it and cannot cross a clip plane on its own at any battle distance.
+   */
+  projectPair(
+    x: number, y: number, z: number, dy: number,
+    lower: ScreenPoint, upper: ScreenPoint
+  ): boolean {
+    const e = this.vp.elements;
+    const w = e[3] * x + e[7] * y + e[11] * z + e[15];
+    if (!(w > 1e-6)) return false;
+    const cx = e[0] * x + e[4] * y + e[8] * z + e[12];
+    const cy = e[1] * x + e[5] * y + e[9] * z + e[13];
+    const inv = 1 / w;
+    lower.x = this.halfW + cx * inv * this.halfW;
+    lower.y = this.halfH - cy * inv * this.halfH;
+    const nz = (e[2] * x + e[6] * y + e[10] * z + e[14]) * inv;
+    lower.inRange = nz > -1 && nz < 1;
+    const w2 = w + e[7] * dy;
+    if (!(w2 > 1e-6)) return false;
+    const inv2 = 1 / w2;
+    upper.x = this.halfW + (cx + e[4] * dy) * inv2 * this.halfW;
+    upper.y = this.halfH - (cy + e[5] * dy) * inv2 * this.halfH;
+    upper.inRange = lower.inRange;
+    return true;
+  }
+}
+
 /**
  * Rough terrain occlusion: sample the ground along the eye-to-target segment and see
  * whether a ridge rises above the line of sight. Eight samples is enough to catch a

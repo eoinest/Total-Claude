@@ -60,13 +60,49 @@ const DETAIL: Record<Lod, HorseDetail> = {
   2: { body: 5, leg: 3, fine: false, medium: false },
 };
 
-/** Saddle position, so the render system can seat the rider without guessing. */
-export function saddleOffset(): { y: number; z: number } {
-  const barrel = p3(HB.barrel);
-  const loin = p3(HB.loin);
-  // Just behind the withers, on top of the barrel. 0.30 m clears the ribs plus the blanket.
-  return { y: (barrel[1] + loin[1]) * 0.5 + 0.3, z: (barrel[2] + loin[2]) * 0.5 - 0.02 };
-}
+/**
+ * The body sweep's cross-section over the saddle, shared by the barrel and by the tack so
+ * the two cannot drift apart.
+ *
+ * `rz` is the ring's *vertical* half-axis, because `sweep` builds each ring perpendicular to
+ * the path and the barrel's path runs fore and aft: so the back surface at this station is
+ * exactly `p[1] + rz`. Getting that wrong is how the saddle came to be buried — the old
+ * anchor added a flat 0.30 m to the spine against a rib cage 0.34 m deep, putting the seat
+ * 2 cm *inside* the horse.
+ */
+const SADDLE_STATION = {
+  p: lerp3(p3(HB.loin), p3(HB.barrel), 0.5),
+  rx: 0.26,
+  rz: 0.34,
+};
+
+/** Bones the saddle, and therefore the rider, is rigidly bound to. */
+export const SADDLE_BONES = { bone0: HB.barrel, bone1: HB.loin, weight0: 0.6 } as const;
+
+/**
+ * Top of the saddle seat in the rest pose — the surface a rider's weight rests on, and the
+ * point the render system seats him against once the horse is animated.
+ *
+ * Back surface, plus 20 mm of folded blanket, plus 35 mm of saddle panel and tree. On this
+ * rig that lands at 1.585 m, and the animated seat runs 1.42 to 1.57 m through a gallop:
+ * a real cavalry saddle sits 1.40 to 1.55 m off the ground, so the animal is honest scale.
+ */
+export const SADDLE_SEAT = {
+  y: SADDLE_STATION.p[1] + SADDLE_STATION.rz + 0.055,
+  z: SADDLE_STATION.p[2] - 0.02,
+} as const;
+
+/**
+ * How far the mesh sits above its own origin, metres — subtract it to put the hooves on the
+ * ground.
+ *
+ * The retargeted rig's stance hoof reaches 0.075 m *below* y = 0 (measured over the walk,
+ * trot and gallop cycles by `tools/probe-rider.mjs`), so a horse drawn at ground height had
+ * its feet buried to the fetlock. Registering the deepest stance hoof to the ground is the
+ * right convention: during a gallop's suspension phase all four feet are 0.1 m up anyway,
+ * and that is what a galloping horse does.
+ */
+export const HORSE_GROUND_LIFT = 0.075;
 
 export function buildHorseGeometry(lod: Lod): THREE.InstancedBufferGeometry {
   const b = new MeshBuilder();
@@ -101,7 +137,10 @@ export function buildHorseGeometry(lod: Lod): THREE.InstancedBufferGeometry {
       { p: croup, rx: 0.26, rz: 0.3, bone: HB.croup },
       { p: lerp3(croup, loin, 0.5), rx: 0.25, rz: 0.31, bone: HB.croup, bone2: HB.loin, w: 0.5 },
       { p: loin, rx: 0.23, rz: 0.31, bone: HB.loin },
-      { p: lerp3(loin, barrel, 0.5), rx: 0.26, rz: 0.34, bone: HB.loin, bone2: HB.barrel, w: 0.5 },
+      {
+        p: SADDLE_STATION.p, rx: SADDLE_STATION.rx, rz: SADDLE_STATION.rz,
+        bone: HB.loin, bone2: HB.barrel, w: 0.5,
+      },
       { p: barrel, rx: 0.275, rz: 0.36, bone: HB.barrel },
       { p: lerp3(barrel, withers, 0.55), rx: 0.25, rz: 0.35, bone: HB.barrel, bone2: HB.withers, w: 0.5 },
       { p: withers, rx: 0.19, rz: 0.27, bone: HB.withers },
@@ -256,22 +295,56 @@ export function buildHorseGeometry(lod: Lod): THREE.InstancedBufferGeometry {
   // =========================================================================
   b.setPiece(HorsePiece.Tack, Tint.Atlas);
   {
-    const s = saddleOffset();
-    b.setBone(HB.barrel, HB.loin, 0.6);
+    const seatY = SADDLE_SEAT.y;
+    const seatZ = SADDLE_SEAT.z;
+    b.setBone(SADDLE_BONES.bone0, SADDLE_BONES.bone1, SADDLE_BONES.weight0);
     // Saddle cloth, then the four-horned saddle itself. The horns are the whole reason a
     // stirrupless rider could stay on through a charge.
     //
+    // The cloth used to be a 0.62 x 0.42 x 0.6 box centred inside the barrel, so all a
+    // camera ever saw of it was two pale rectangles poking out of the ribs — it read as a
+    // crate strapped to the flank. It is now a saddle-shaped sheet: it follows the back
+    // surface across the spine and hangs down the flanks the depth a folded blanket does.
+    //
     // The cloth takes the dyed-cloth tint slot rather than the atlas untouched. `ClothFine`
     // is a near-white linen weave — 0.6 to 1.0 linear — so an untinted blanket rendered as a
-    // white slab 60 cm square on the flank of every horse on the field, which was the
-    // brightest thing in a cavalry frame. A wing's cloths came from the same dye lots as its
-    // scarves, so the same four colours are exactly right.
+    // white slab on the flank of every horse on the field, which was the brightest thing in a
+    // cavalry frame. A wing's cloths came from the same dye lots as its scarves, so the same
+    // four colours are exactly right.
     b.setPiece(HorsePiece.Tack, Tint.Focale);
-    b.setMatrix(new THREE.Matrix4().makeTranslation(0, s.y - 0.3, s.z));
-    b.box(0, 0.06, 0, 0.62, 0.42, 0.6, clothUv, 2);
-    b.setMatrix(null);
+    {
+      // A sheet laid over the back, following the barrel's own cross-section 12 mm off it and
+      // hanging a hand's width below the widest point of the ribs. Two quad strips, no
+      // interior. It has to follow the ellipse rather than tent across it: the sweep's ring is
+      // ten-sided, so a straight ridge over the spine floats 3 cm clear of the faceted surface
+      // and reads as a pale chevron hovering over the rump.
+      const halfZ = 0.33;
+      const skirt = 0.11;
+      const across = [-78, -42, 0, 42, 78].map((deg, c) => {
+        const a = (deg * Math.PI) / 180;
+        const s = Math.sin(a);
+        const k = Math.cos(a);
+        const edge = c === 0 || c === 4 ? skirt : 0;
+        return {
+          x: (SADDLE_STATION.rx + 0.012) * s,
+          y: SADDLE_STATION.p[1] + (SADDLE_STATION.rz + 0.012) * k - edge,
+          nx: s,
+          ny: k,
+        };
+      });
+      const grid = [-halfZ, halfZ].map((dz, r) => across.map((pt, c) => {
+        const [u, v] = MeshBuilder.tileUv(clothUv, c / 4, r, 2, 1);
+        return b.vert(pt.x, pt.y, seatZ + dz, pt.nx, pt.ny, 0, u, v);
+      }));
+      for (let c = 0; c < across.length - 1; c++) {
+        b.quad(grid[0][c], grid[0][c + 1], grid[1][c + 1], grid[1][c]);
+        b.quad(grid[0][c], grid[1][c], grid[1][c + 1], grid[0][c + 1]);
+      }
+    }
     b.setPiece(HorsePiece.Tack, Tint.Atlas);
-    b.setMatrix(new THREE.Matrix4().makeTranslation(0, s.y - 0.05, s.z));
+    // The saddle itself: seat top at SADDLE_SEAT.y, so the rider's seat height and the
+    // geometry he sits on are the same number and cannot disagree.
+    b.setMatrix(new THREE.Matrix4().makeTranslation(0, seatY - 0.055, seatZ));
     b.box(0, 0, 0, 0.44, 0.11, 0.46, leatherUv);
     if (d.medium) {
       for (const sx of [-1, 1]) {
@@ -309,7 +382,9 @@ export function buildHorseGeometry(lod: Lod): THREE.InstancedBufferGeometry {
           [
             { p: [hp[0] + sx * 0.08, hp[1] - 0.1, hp[2] + 0.06], rx: 0.011, rz: 0.011 },
             { p: [neck2[0] + sx * 0.12, neck2[1] - 0.02, neck2[2]], rx: 0.011, rz: 0.011 },
-            { p: [withers[0] + sx * 0.14, withers[1] + 0.16, withers[2] - 0.04], rx: 0.011, rz: 0.011 },
+            // Ends where the rider's hands are, which is above the seat and not above the
+            // withers — the old endpoint was 0.45 m below his fists.
+            { p: [sx * 0.15, SADDLE_SEAT.y + 0.17, withers[2] - 0.06], rx: 0.011, rz: 0.011 },
           ],
           UP, 4, leatherUv
         );

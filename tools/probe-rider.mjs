@@ -66,7 +66,7 @@ page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
 await page.goto(`${base}/?harness=1&quality=ultra&w=${SHOT_W}&h=${SHOT_H}`, { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 180000 });
 
-const geom = await page.evaluate(async () => {
+const geom = args.get('geom') === 'false' ? null : await page.evaluate(async () => {
   const [rig, clips, pose, horse] = await Promise.all([
     import('/src/anim/rig.ts'),
     import('/src/anim/clips.ts'),
@@ -266,6 +266,7 @@ const geom = await page.evaluate(async () => {
 });
 
 const f = (v, w = 7, d = 3) => String(v.toFixed(d)).padStart(w);
+if (geom) {
 console.log('\n=== gait stride (stride = rootSpeed x duration; cadence = v / stride) ===');
 console.log('  clip      frames  dur   rootSpeed  stride   strides/s@9.6  cycle_s@9.6  playbackRate@9.6');
 for (const g of geom.gaits) {
@@ -300,6 +301,8 @@ for (const p of geom.pairs) {
     `back ${Math.min(...backs).toFixed(3)}..${Math.max(...backs).toFixed(3)}   ` +
     `head ${Math.min(...heads).toFixed(3)}..${Math.max(...heads).toFixed(3)}   ` +
     `bootSpread ${Math.abs(p.rows[0].footSpread).toFixed(3)}  bootY ${p.rows[0].footLY.toFixed(3)}`);
+}
+
 }
 
 // ---------------------------------------------------------------------------
@@ -362,8 +365,36 @@ if (SIM) {
         cad: cv(cad), flat: cv(cadFlat),
       });
     }
-    return { t: g.simTime(), rows };
-  }, 24);
+
+    // --- mounts: does the gait chosen actually cover the ground? --------------
+    const { HORSE_CLIP_SET, HORSE_GAIT_LADDER, HORSE_GAIT_STRIDE } = await import('/src/anim/clips.ts');
+    const mounts = [];
+    for (const u of b.units) {
+      const def = b.typeOf(u);
+      if (def.mass < 300) continue;
+      const rec = { unit: u.typeId, n: 0, speed: 0, gaits: {}, slipAbs: 0, slipMax: 0 };
+      for (const i of u.members) {
+        if (!b.pool.aliveAt(i)) continue;
+        const v = Math.hypot(p.vx[i], p.vz[i]);
+        const rung = ur.gaitRung[i];
+        const stride = HORSE_GAIT_STRIDE[rung];
+        const name = HORSE_CLIP_SET.clips[ur.horseCur[i]]?.name ?? '?';
+        rec.gaits[name] = (rec.gaits[name] ?? 0) + 1;
+          rec.rate = (rec.rate ?? 0) + (stride > 0.05 ? Math.min(2.2, Math.max(0.28, v / stride)) : 0);
+        rec.n++;
+        rec.speed += v;
+        if (stride > 0.05) {
+          // Exactly the renderer's clamp; residual is the metres per second the hooves skate.
+          const rate = Math.min(2.2, Math.max(0.28, v / stride));
+          const slip = v - rate * stride;
+          rec.slipAbs += Math.abs(slip);
+          if (Math.abs(slip) > Math.abs(rec.slipMax)) rec.slipMax = slip;
+        }
+      }
+      if (rec.n) { rec.speed /= rec.n; rec.slipAbs /= rec.n; rec.rate = (rec.rate ?? 0) / rec.n; mounts.push(rec); }
+    }
+    return { t: g.simTime(), rows, mounts };
+  }, Number(args.get('simat') ?? 24));
   console.log(`\n=== gait phase and cadence across moving units, t=${stats.t.toFixed(1)}s ===`);
   console.log('  R    = circular concentration of phase: 1.0 = perfect lockstep, 0.0 = spread evenly');
   console.log('  cadCV = spread of playback cadence within the unit; uniq = distinct cadences');
@@ -373,6 +404,13 @@ if (SIM) {
     console.log(`  ${r.unit.padEnd(22)} ${String(r.n).padStart(4)} ${f(r.speed, 6, 2)} ${f(r.spdSpread, 7, 3)} ` +
       `${f(r.R, 6, 3)}  ${String(r.clips).padStart(3)}  ${f(r.cad.cv, 6, 4)} ${String(r.cad.uniq).padStart(4)} | ` +
       `${f(r.flat.cv, 6, 4)} ${String(r.flat.uniq).padStart(4)}  [${r.oct.map((v) => String(v).padStart(3)).join(' ')}]`);
+  }
+  console.log('\n=== mounts: gait chosen, and the hoof slip it leaves (m/s; 0 = planted) ===');
+  console.log('  unit                       n  speed   meanSlip  worstSlip  cyc/s  gaits');
+  for (const m of stats.mounts) {
+    console.log(`  ${m.unit.padEnd(22)} ${String(m.n).padStart(4)} ${f(m.speed, 6, 2)}   ` +
+      `${f(m.slipAbs, 7, 3)}  ${f(m.slipMax, 8, 3)} ${f(m.rate, 6, 2)}  ` +
+      Object.entries(m.gaits).map(([k, v]) => `${k}:${v}`).join(' '));
   }
 }
 
@@ -466,6 +504,62 @@ if (SHOT) {
   });
   await writeFile(SHOT, await page.screenshot({ type: 'png' }));
   console.log(`  wrote ${SHOT}`);
+}
+
+// ---------------------------------------------------------------------------
+// Frame cost, measured as the *minimum* over many blocks.
+//
+// shoot.mjs times one block of 30 frames, which on a machine running other work reports
+// anything from 8 to 22 ms for the same scene — useless for a before/after. The minimum over
+// ten blocks is the cost when nothing else is competing, which is the number a change is
+// actually responsible for.
+// ---------------------------------------------------------------------------
+if (args.get('perf')) {
+  const CAMS = [
+    { name: 'cavalry', x: 97, z: -23, zoom: 0.42, yaw: 0, at: 62 },
+    { name: 'melee', x: -29, z: -37, zoom: 0.30, yaw: 0, at: 88 },
+  ];
+  let prev = 0;
+  console.log('\n=== frame cost, min of 10 blocks of 30 frames, 1600x900 ===');
+  for (const c of CAMS) {
+    const r = await page.evaluate(async ({ c, prev }) => {
+      const g = window.__game;
+      if (c.at > prev) g.advance(c.at - prev);
+      g.setCamera(c.x, c.z, c.zoom, c.yaw);
+      g.advance(0.4);
+      const gl = g.engine.renderer.getContext();
+      const px = new Uint8Array(4);
+      const sync = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      const N = 30;
+      const blocks = [];
+      for (let b = 0; b < 10; b++) {
+        g.engine.frame(g.engine.time.elapsed * 1000 + 16.7);
+        sync();
+        const t0 = performance.now();
+        for (let i = 0; i < N; i++) g.engine.frame(g.engine.time.elapsed * 1000 + 16.7);
+        sync();
+        blocks.push((performance.now() - t0) / N);
+      }
+      blocks.sort((a, b) => a - b);
+      const info = g.engine.renderer.info.render;
+      let soldierDraws = 0;
+      let soldierTris = 0;
+      g.engine.ctx.scene.traverse((o) => {
+        if (!o.isMesh || !o.visible || !/soldiers|horses/.test(o.name)) return;
+        const gm = o.geometry;
+        if (!gm?.instanceCount) return;
+        soldierDraws++;
+        soldierTris += (gm.index ? gm.index.count / 3 : gm.attributes.position.count / 3) * gm.instanceCount;
+      });
+      return {
+        min: blocks[0], med: blocks[5], max: blocks[9],
+        draws: info.calls, tris: info.triangles, soldierDraws, soldierTris,
+      };
+    }, { c, prev });
+    prev = Math.max(prev, c.at);
+    console.log(`  ${c.name.padEnd(10)} min ${f(r.min, 6, 2)} ms   median ${f(r.med, 6, 2)} ms   max ${f(r.max, 6, 2)} ms   ` +
+      `${r.draws} draws  ${(r.tris / 1e6).toFixed(2)}M tris  |  soldier ${r.soldierDraws} draws ${(r.soldierTris / 1e6).toFixed(2)}M tris`);
+  }
 }
 
 if (errors.length) console.log('\nPAGE ERRORS:\n' + errors.join('\n'));
