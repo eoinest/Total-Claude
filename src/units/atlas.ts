@@ -170,8 +170,8 @@ const mailHeight = (u: number, v: number, rings: number): number => {
   return Math.min(1, ring * 0.95 + 0.05);
 };
 
-const IRON: Rgb = [0.5, 0.485, 0.45];
-const IRON_DARK: Rgb = [0.26, 0.25, 0.235];
+const IRON: Rgb = [0.6, 0.582, 0.54];
+const IRON_DARK: Rgb = [0.31, 0.3, 0.282];
 const RUST: Rgb = [0.36, 0.22, 0.14];
 const BRONZE: Rgb = [0.72, 0.56, 0.26];
 const BRONZE_DARK: Rgb = [0.4, 0.29, 0.12];
@@ -188,19 +188,16 @@ const MATS: Record<Mat, MatDef> = {
       mix3(out, RUST, Math.min(0.7, rust), out);
     },
     height: (u, v) => fbm(u * 14, v * 14, 3, 14, 3) * 0.6 + vnoise(u * 3, v * 40, 3, 11) * 0.4,
-    // Metalness deliberately far short of 1 despite iron being a metal, and this is a
-    // deliberate trade rather than an oversight. A pure metal has no diffuse term at all, so
-    // its whole colour is the environment reflection — and the only bright thing in this
-    // environment is a blue sky, which turned every helmet on the field into a saturated
-    // cobalt mirror. That is a worse uniformity tell than the flat grey it replaced, because
-    // it is the same wrong colour on two thousand men.
-    //
-    // So: a low metalness lets the albedo carry the iron, a low roughness keeps the tight
-    // sun highlight on the crown that makes it read as metal at all, and the warm F0 in the
-    // shader's metal tint pulls what reflection remains back toward steel. If the render
-    // rig ever gains a warmer, less sky-dominated specular probe, these should go back up.
-    roughness: 0.48,
-    metalness: 0.28,
+    // Metalness short of 1 despite iron being a metal, but only a little. A pure metal has
+    // no diffuse term at all, so its whole colour is the environment reflection; while the
+    // rig ran a bright saturated hemisphere fill that turned every helmet on the field into
+    // a cobalt mirror, and these were held down near 0.3 to let the albedo carry the iron
+    // instead. Exposure has come down and `scene.environment` is now a PMREM of the physical
+    // sky, so metal has something real and correctly-coloured to reflect and these are back
+    // up where iron belongs. The warm F0 in the shader's metal tint still biases what comes
+    // back toward steel rather than sky.
+    roughness: 0.46,
+    metalness: 0.6,
     bump: 0.5,
   },
   // Cleaner plate for helmets and bosses.
@@ -210,14 +207,14 @@ const MATS: Record<Mat, MatDef> = {
       const brush = vnoise(u * 60, v * 2, 60, 7);
       // Burnished iron is a bright surface: 0.66 sRGB at the top of the range, not 0.52.
       // Under-darkening the plate is what left helmets reading as grey plastic.
-      mix3([0.34, 0.325, 0.3], [0.72, 0.7, 0.65], n * 0.7 + brush * 0.3, out);
+      mix3([0.4, 0.383, 0.354], [0.82, 0.8, 0.745], n * 0.7 + brush * 0.3, out);
     },
     height: (u, v) => vnoise(u * 56, v * 2, 56, 7) * 0.35 + fbm(u * 8, v * 8, 3, 8, 5) * 0.65,
     // Hammered and burnished, so tighter than the worn iron: this is the helmet bowl and
     // the shield boss, the two things on a man that catch the sun. Low roughness is what
     // gives the tight crown highlight; metalness stays moderate for the reason above.
-    roughness: 0.32,
-    metalness: 0.3,
+    roughness: 0.3,
+    metalness: 0.74,
     bump: 0.25,
   },
   // Gilded bronze: praetorian fittings, helmet trim, harness bosses.
@@ -231,22 +228,22 @@ const MATS: Record<Mat, MatDef> = {
     height: (u, v) => fbm(u * 10, v * 10, 3, 10, 9),
     // Bronze can afford more metalness than iron: it is warm, so what it reflects comes
     // back warm and the sky does not take it over.
-    roughness: 0.27,
-    metalness: 0.55,
+    roughness: 0.26,
+    metalness: 0.86,
     bump: 0.3,
   },
   [Mat.Mail]: {
     colour(u, v, out) {
       const h = mailHeight(u, v, 18);
       const grime = fbm(u * 5, v * 5, 3, 5, 13);
-      mix3([0.2, 0.195, 0.185], [0.54, 0.53, 0.5], h * (0.7 + grime * 0.3), out);
+      mix3([0.25, 0.243, 0.23], [0.63, 0.618, 0.583], h * (0.7 + grime * 0.3), out);
     },
     height: (u, v) => mailHeight(u, v, 18),
     // Mail is thousands of small curved surfaces, so it scatters — rough, and mostly
     // self-shadowed. High metalness rendered a hamata as a black net, because a metal with
     // a dark albedo and nothing bright to reflect has no colour left at all.
-    roughness: 0.6,
-    metalness: 0.26,
+    roughness: 0.58,
+    metalness: 0.56,
     bump: 1.0,
   },
   // Lorica squamata: overlapping bronze-washed scales wired to a linen backing.
@@ -276,8 +273,8 @@ const MATS: Record<Mat, MatDef> = {
       const side = 1 - Math.abs(fx - 0.5) * 1.7;
       return Math.max(0, Math.min(1, (1 - fy * 0.85) * Math.max(0, side)));
     },
-    roughness: 0.32,
-    metalness: 0.42,
+    roughness: 0.31,
+    metalness: 0.7,
     bump: 0.9,
   },
   [Mat.LeatherBrown]: {
@@ -464,8 +461,8 @@ const MATS: Record<Mat, MatDef> = {
       const dr = Math.hypot(rx - Math.floor(rx) - 0.5, (fy - 0.22) * bands * 0.5);
       return Math.min(1, plate + (dr < 0.2 ? (1 - dr / 0.2) * 0.5 : 0));
     },
-    roughness: 0.35,
-    metalness: 0.3,
+    roughness: 0.34,
+    metalness: 0.64,
     bump: 0.9,
   },
   [Mat.HideBay]: {

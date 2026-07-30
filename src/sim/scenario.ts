@@ -1,5 +1,6 @@
 import type { EngineContext } from '../core/Engine';
 import type { BattleSystem } from './BattleSystem';
+import { unitType } from '../units/roster';
 import { Faction, UnitOrder } from './types';
 
 /**
@@ -41,10 +42,48 @@ const SOUTH = 0; // facing toward +Z
  */
 export const UNIT_SIZE_SCALE = 2.0;
 
+/**
+ * Every unit this scenario deploys, in spawn order, so the total headcount can be known
+ * before the first man is created. Keep in step with the deployment below.
+ */
+const ORDER_OF_BATTLE: readonly string[] = [
+  ...Array(6).fill('legio-cohort'),        // first line
+  ...Array(4).fill('legio-cohort'),        // second line
+  'praetorian-cohort', 'praetorian-cohort',
+  'urban-cohort', 'urban-cohort',
+  'sagittarii', 'sagittarii', 'sagittarii',
+  'equites', 'equites', 'equites',
+  'scorpio',
+  ...Array(3).fill('juthungi-skirmishers'),
+  'juthungi-warband', 'juthungi-spears', 'juthungi-warband',
+  'juthungi-spears', 'juthungi-warband', 'juthungi-spears',
+  'juthungi-chosen', 'juthungi-chosen',
+  'juthungi-berserkers', 'juthungi-berserkers',
+  'juthungi-riders', 'juthungi-riders',
+];
+
+/**
+ * The largest unit-size multiplier whose army still fits the quality tier's soldier pool.
+ *
+ * This matters more than it looks. `spawnUnit` stops allocating when the pool is full, and
+ * Rome deploys first — so at `low` (1,600 men) and `medium` (3,200) an 8,944-man order of
+ * battle exhausted the pool partway through the Roman line and **the entire Juthungi army
+ * was spawned with zero men**. The two sides then stood 130 m apart for the whole battle
+ * with nobody in contact, which read as a broken AI rather than a broken pool.
+ *
+ * Scaling every unit down keeps all 36 units present and the tactical picture intact at
+ * every tier; losing an army does not. The 6% headroom absorbs the artillery crews, which
+ * `spawnUnit` deliberately does not scale.
+ */
+export function fittedUnitScale(maxSoldiers: number): number {
+  const base = ORDER_OF_BATTLE.reduce((sum, id) => sum + unitType(id).strength, 0);
+  return Math.min(UNIT_SIZE_SCALE, (maxSoldiers * 0.94) / base);
+}
+
 export function deploySiegeOfRome(battle: BattleSystem, ctx: EngineContext): ScenarioResult {
   const roman: DeployedUnit[] = [];
   const germanic: DeployedUnit[] = [];
-  battle.unitSizeScale = UNIT_SIZE_SCALE;
+  battle.unitSizeScale = fittedUnitScale(ctx.quality.maxSoldiers);
 
   const push = (arr: DeployedUnit[], id: number, label: string) => {
     if (id >= 0) arr.push({ unitId: id, label });
@@ -58,11 +97,9 @@ export function deploySiegeOfRome(battle: BattleSystem, ctx: EngineContext): Sce
   const romanZ = 130;
   const ROMAN_NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
 
-  // First line: eight legionary cohorts shoulder to shoulder across ~560 m. A cohort in
-  // `line` is about 27 m of frontage, so 70 m centres leave a deliberate interval — the
-  // gaps the second line exists to plug.
-  // A cohort of 320 in `line` is about 38 m of frontage, so 96 m centres leave a real
-  // interval — the gaps the second line exists to plug.
+  // First line: six legionary cohorts across ~570 m. A 320-man cohort in `line` is about
+  // 38 m of frontage, so 96 m centres leave a real interval — the gaps the second line
+  // exists to plug.
   const cohortSpacing = 96;
   for (let k = 0; k < 6; k++) {
     const x = (k - 2.5) * cohortSpacing;

@@ -184,7 +184,7 @@ const DETAIL: Record<Lod, Detail> = {
   // crest and the Coolus knob are what tell three helmet types apart. Dropping them at 45 m
   // both flattened kit variety across most of the army and made the LOD0 boundary visible,
   // because a man's neck guard vanished as he crossed it.
-  1: { torso: 7, limb: 5, head: 7, rings: 3, shieldCols: 3, shieldRows: 3, fine: false, medium: true },
+  1: { torso: 6, limb: 4, head: 6, rings: 3, shieldCols: 3, shieldRows: 3, fine: false, medium: true },
   2: { torso: 5, limb: 4, head: 5, rings: 2, shieldCols: 2, shieldRows: 2, fine: false, medium: false },
 };
 
@@ -663,9 +663,11 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
           void s;
         }
       }
-      // Pteruges: the leather strips hanging from the shoulders and waist.
+      // Pteruges: the leather strips hanging from the shoulders and waist. LOD0 only —
+      // they are the one `medium` piece that contributes nothing to the silhouette, and at
+      // 45 m a 4 cm strip is under a pixel.
       b.setPiece(Piece.ArmourSegmentata, Tint.Atlas);
-      const strips = d.fine ? 10 : 6;
+      const strips = d.fine ? 10 : 0;
       for (let i = 0; i < strips; i++) {
         const a = (i / strips) * Math.PI * 2;
         const bind = spineBind(0.97);

@@ -372,7 +372,7 @@ export function resolveKit(def: UnitTypeDef, variant: number, out: ResolvedKit):
   ), 0.24);
   const leg = desaturate(srgbToLinear(
     germanic ? GERMANIC_LEG[Math.floor(r(19) * GERMANIC_LEG.length)] : ap.legColour
-  ), 0.18);
+  ), 0.1);
   // On top of the lot, per-man fading. Scaled by the unit's `variance`: a praetorian cohort
   // drifts a few percent and reads as issued kit, a warband drifts by half.
   const spread = 0.10 + variance * 0.5;
@@ -386,13 +386,16 @@ export function resolveKit(def: UnitTypeDef, variant: number, out: ResolvedKit):
     Math.max(0.01, tunic[2] * (1 + d2)),
   ];
   // Undyed wool and linen swatches are pale, but a legionary's bracae after three days on
-  // the Via Flaminia are not: knock the roster's nominal colour well down so they read as
-  // dirty cloth in sunlight rather than as white tights.
-  const soil = 0.62;
+  // the Via Flaminia are not. Soiling is a *warm* multiply, not a scalar one: road dust is
+  // ochre, so dirty wool goes tan, and knocking all three channels down equally is exactly
+  // what left these reading as pale grey trousers. The dust load varies per man, because a
+  // front-ranker's legs and a rear-ranker's are not equally filthy.
+  const dust = 0.86 + r(20) * 0.3;
+  const soil: [number, number, number] = [0.78 * dust, 0.7 * dust, 0.56 * dust];
   out.leg = [
-    Math.max(0.01, leg[0] * (1 + dl) * soil),
-    Math.max(0.01, leg[1] * (1 + dl * 0.6) * soil),
-    Math.max(0.01, leg[2] * (1 - dl * 0.4) * soil),
+    Math.max(0.01, leg[0] * (1 + dl) * soil[0]),
+    Math.max(0.01, leg[1] * (1 + dl * 0.6) * soil[1]),
+    Math.max(0.01, leg[2] * (1 - dl * 0.4) * soil[2]),
   ];
 
   // ---- metal ---------------------------------------------------------------

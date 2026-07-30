@@ -279,17 +279,16 @@ export class UnitRenderSystem implements Subsystem {
       // mail ring, at the elbow crease — was being thrown away. Same texture, so the extra
       // fetch is a cache hit.
       aoMap: this.atlas.orm,
-      aoMapIntensity: 0.85,
-      // The environment probe is a daylight sky, so its irradiance is overwhelmingly blue,
-      // and armour is the most reflective thing on the field. Measured by disabling each
-      // light in turn: at full strength the probe alone turns every helmet in the army
-      // cobalt, and the hemisphere fill does the same to anything in the formation's own
-      // shadow. Pulled back to a third, armour still has somewhere to reflect and the iron
-      // albedo carries the colour instead.
-      //
-      // This is a mitigation, not a fix. The fix is a warmer, less saturated specular probe
-      // and shadow fill in src/render/ — reported to that owner.
-      envMapIntensity: 0.38,
+      // Enough to read as contact darkening, not enough to crush plate to black now that
+      // the rig's shadows are genuinely dark.
+      aoMapIntensity: 0.6,
+      // Armour is the most reflective thing on the field, so it is the most sensitive to
+      // what the probe contains. This was held at a third while the probe's irradiance was
+      // dominated by a saturated blue hemisphere fill — measured by disabling each light in
+      // turn, either source alone was enough to turn every helmet in the army cobalt. The
+      // probe is now a PMREM of the physical sky against a much lower exposure, so armour
+      // gets its reflection back.
+      envMapIntensity: 0.9,
       roughness: 1,
       metalness: 1,
       normalScale: new THREE.Vector2(0.9, 0.9),

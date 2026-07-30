@@ -339,11 +339,14 @@ const TINT_BODY = /* glsl */ `
   float v = iAnimB.w;
   // ---- skin ----------------------------------------------------------------
   // The atlas tile is a mid-grey — sRGB 0.60, so 0.32 linear — carrying pore, blotch and
-  // the elbow and knee creases. These multipliers put the product between roughly 0.20 and
-  // 0.33 linear luminance, which is the band a reflectance chart gives for Fitzpatrick III
-  // through V, and strongly red-biased, because skin is: R runs about two and a half times
-  // B on a real forearm and getting that ratio right is what stops a bare limb reading as
-  // painted plaster however bright it is.
+  // the elbow and knee creases. These multipliers put the product between 0.22 and 0.35
+  // linear luminance, which is the band a reflectance chart gives for Fitzpatrick III
+  // through V, with R about three times B, because that is the ratio on a real forearm and
+  // getting it right is what stops a bare limb reading as grey plaster however bright it is.
+  //
+  // These were held about a third lower while the lighting rig ran a bright hemisphere fill
+  // that pushed a chart-correct forearm past 1.0 and out the top of the tone curve. Exposure
+  // has since come down, so they are back where a reflectance chart puts them.
   //
   // The *distribution* matters as much as the endpoints. The previous curve squared its
   // selector, which crowded two thirds of any rank into the lightest third of the range —
@@ -352,8 +355,8 @@ const TINT_BODY = /* glsl */ `
   // neighbours differ in hue and not only in value.
   float tone = fract( v * 7.13 );
   float ruddy = fract( v * 23.91 ) - 0.5;
-  vec3 skin = mix( vec3( 1.44, 0.99, 0.67 ), vec3( 0.86, 0.55, 0.37 ), tone );
-  skin *= vec3( 1.0 + ruddy * 0.17, 1.0, 1.0 - ruddy * 0.15 );
+  vec3 skin = mix( vec3( 1.62, 1.06, 0.66 ), vec3( 1.12, 0.68, 0.42 ), tone );
+  skin *= vec3( 1.0 + ruddy * 0.22, 1.0, 1.0 - ruddy * 0.2 );
   // ---- hair ----------------------------------------------------------------
   // Black through to the reddish blond Tacitus keeps remarking on, with a few grey heads:
   // a warband is fathers and sons, not a cohort of twenty-year-olds.
@@ -374,11 +377,11 @@ const TINT_BODY = /* glsl */ `
   float mcls = floor( iCol1.w );
   float polish = fract( iCol1.w ) * 1.1111;
   vec3 metal =
-      mcls < 0.5 ? vec3( 1.02, 0.90, 0.75 )      // iron, warm grey
-    : mcls < 1.5 ? vec3( 1.34, 0.98, 0.44 )      // bronze and brass, the older kit
-    : mcls < 2.5 ? vec3( 0.56, 0.50, 0.44 )      // blackened, pitted or heavily rusted
-    :              vec3( 1.24, 1.22, 1.14 );     // tinned or silvered, the parade finish
-  metal *= 0.74 + polish * 0.5;
+      mcls < 0.5 ? vec3( 1.20, 1.08, 0.92 )      // iron, warm grey
+    : mcls < 1.5 ? vec3( 1.52, 1.12, 0.50 )      // bronze and brass, the older kit
+    : mcls < 2.5 ? vec3( 0.76, 0.68, 0.58 )      // blackened, pitted or heavily rusted
+    :              vec3( 1.44, 1.42, 1.32 );     // tinned or silvered, the parade finish
+  metal *= 0.9 + polish * 0.55;
   // ---- cloth batch variation ----------------------------------------------
   // Cloth was dyed in small lots and faded in the sun, so a value spread belongs on the
   // dyed slots only. Applying it to metal as well, as this used to, doubled up on polish,

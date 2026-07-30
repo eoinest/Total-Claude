@@ -164,8 +164,15 @@ void main() {
 
   if (groundMode < 0.5) {
     // Sit the puff on the surface instead of letting it sink through a slope.
+    //
+    // The clearance fraction matters more than it looks. At 0.33 a six-metre billow is
+    // forced two metres into the air, so the *large* puffs — the ones carrying most of the
+    // optical depth — all float at chest-to-head height and the dust reads as a bank of
+    // fog the unit is standing inside rather than as grit off its boots. Real formation
+    // dust is densest in the first half metre. 0.14 lets a billow's lower half bury
+    // itself in the ground, which is what keeps the density profile bottom-heavy.
     float ground = terrainHeight(wp.xz);
-    wp.y = max(wp.y, ground + size * 0.33);
+    wp.y = max(wp.y, ground + size * 0.14);
   }
 
   float fadeIn = smoothstep(0.0, 0.10, age);

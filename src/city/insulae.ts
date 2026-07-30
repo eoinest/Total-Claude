@@ -404,6 +404,17 @@ function buildWing(
   // Ground storey: often left as bare brick or a darker render, as at Ostia.
   const groundPaint = new THREE.Color().copy(P.bareGround ? PAL.terraDirty : paint).multiplyScalar(P.groundTone);
   box(stucco, x0, g - 0.6, z0, x1, g + groundH, z1, groundPaint, { groundShade: 0.24 });
+  // Splash-back dado. `groundShade` ramps the whole storey, which over four metres reads as
+  // a soft vignette rather than as dirt; the line where cart wheels, rain off the eaves and
+  // a public street actually stain a façade is a crisp band about a metre up, and every
+  // surviving Ostian frontage has one. Proud of the wall by 40 mm so it reads in section
+  // as well as in tone.
+  const dado = new THREE.Color().copy(groundPaint).multiplyScalar(0.62).lerp(PAL.dust, 0.22);
+  box(stucco, x0 - 0.04, g - 0.5, z0 - 0.04, x1 + 0.04, g + 1.05, z1 + 0.04, dado, {
+    bottom: false,
+    top: false,
+    groundShade: 0.26,
+  });
   // Upper storeys, each a fraction lighter than the one below (rain-washed).
   for (let f = 1; f < floors; f++) {
     const y0 = g + groundH + storeyH * (f - 1);

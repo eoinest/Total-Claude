@@ -193,17 +193,17 @@ export class DustEmitter {
     fx /= fighters;
     fz /= fighters;
 
-    // ~0.10 puffs per fighting man per second at full density. With ~2,000 men in
-    // contact across a 640 m front and a 4 s mean life that is ~800 live particles in the
-    // band. Sounds thin; it is not, because optical depth comes from *alpha × overlap*,
-    // not from count, and raising alpha is free while raising count costs fill rate
-    // linearly. Four times this buries the entire army in fog — a different failure from
-    // having no dust, and it scores no better.
-    this.fightCarry[ui] += fighters * 0.145 * rate * dt;
+    // ~0.34 puffs per fighting man per second at full density.
+    //
+    // Optical depth is alpha × overlap, so a given haze can be built from few thick
+    // sprites or many thin ones. Many thin ones is strictly better looking: the cloud has
+    // internal structure, men stay visible through it, and no single billboard ever
+    // announces itself. It costs fill rate linearly, which the occupancy governor bounds.
+    this.fightCarry[ui] += fighters * 0.34 * rate * dt;
     let count = this.fightCarry[ui] | 0;
     if (count <= 0) return;
     this.fightCarry[ui] -= count;
-    count = Math.min(count, 8);
+    count = Math.min(count, 16);
 
     const remaining = this.budget.maxSpawnsPerFrame - this.spawned - this.fightSpawned;
     if (remaining <= 0) return;
@@ -239,36 +239,35 @@ export class DustEmitter {
         PLayer.Soft,
         soft ? PT.smokeSoft : big ? PT.dustBillow : h4 < 0.72 ? PT.smokeSoft : PT.dustWisp
       );
-      // Spread across a couple of metres and lifted only to knee height. The dust that
-      // reads is the band from the ground to a man's chest: raise the emission any higher
-      // and the formation disappears into it instead of standing in it.
-      rec.x = ex + (h1 - 0.5) * 3.2;
-      rec.z = ez + (h2 - 0.5) * 3.2;
-      rec.y = ey + 0.12 + h3 * 0.85;
+      // Broad and low. The spread deliberately exceeds the unit's own footprint — a
+      // cohort's dust hangs well outside the block — and the spawn height is at the ankle,
+      // because that is where boots meet soil. Everything about the vertical profile is
+      // arranged to keep density bottom-heavy: low spawn, almost no lift, and a small
+      // positive gravity so it settles rather than climbing.
+      rec.x = ex + (h1 - 0.5) * 6.4;
+      rec.z = ez + (h2 - 0.5) * 6.4;
+      rec.y = ey + 0.02 + h3 * 0.26;
       rec.ground = PGround.Ride;
 
-      // Almost no directed velocity — this dust is stirred, not kicked. A little more
-      // lift than a footfall puff, so the bank reaches shoulder height over the fight
-      // rather than staying a carpet round the shins.
-      rec.vx = (h3 - 0.5) * 1.5;
-      rec.vz = (h1 - 0.5) * 1.5;
-      rec.vy = 0.24 + h2 * 0.55;
+      rec.vx = (h3 - 0.5) * 1.5 + this.driftX * 0.35;
+      rec.vz = (h1 - 0.5) * 1.5 + this.driftZ * 0.35;
+      rec.vy = 0.05 + h2 * 0.20;
 
       if (big) {
         rec.life = 4.0 + h3 * 2.4;
-        rec.size0 = (2.0 + h1 * 1.7) * (horse ? 1.4 : 1) * sizeK;
+        rec.size0 = (2.6 + h1 * 2.2) * (horse ? 1.4 : 1) * sizeK;
         rec.size1 = rec.size0 * (1.7 + h2 * 0.8);
-        rec.a = (0.20 + 0.22 * dry) * alphaK;
+        rec.a = (0.086 + 0.094 * dry) * alphaK;
         rec.drag = 0.45;
-        rec.gravity = 0.16;
+        rec.gravity = 0.22;
         rec.turb = 1.5;
       } else {
         rec.life = 2.8 + h3 * 1.9;
-        rec.size0 = (1.1 + h1 * 1.1) * (horse ? 1.35 : 1) * sizeK;
+        rec.size0 = (1.45 + h1 * 1.45) * (horse ? 1.35 : 1) * sizeK;
         rec.size1 = rec.size0 * (2.0 + h2 * 1.1);
-        rec.a = (0.34 + 0.28 * dry) * alphaK;
+        rec.a = (0.145 + 0.120 * dry) * alphaK;
         rec.drag = 0.8;
-        rec.gravity = 0.30;
+        rec.gravity = 0.34;
         rec.turb = 1.05;
       }
 

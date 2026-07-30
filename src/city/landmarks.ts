@@ -882,6 +882,119 @@ interface TempleOpts {
   cellae: number;
 }
 
+/**
+ * A temple roof emitted in tile courses instead of as one plane, with a ridge cap.
+ *
+ * The Capitoline temple's roof is 53 × 63 m. As a single quad per slope that is 3,300 m² of
+ * unmodulated surface, and with gilded bronze's high environment intensity it resolved to a
+ * blank cream sheet sitting on the Capitol — the one obviously broken building on the
+ * skyline, visible from every city camera. A Roman roof of any material reads as *rows*:
+ * banding the slope gives the eye tile courses, a ridge and eaves to hold onto, and the
+ * per-course tone variation is what stops a specular surface reading as a mirror. Ridge runs
+ * along Z, matching the Italic temple's axial plan.
+ *
+ * Costs `courses * 4 + 6` triangles — a few dozen — against four for the flat version.
+ */
+function tiledGable(
+  st: GeoStream,
+  roofSt: GeoStream,
+  w: number,
+  d: number,
+  baseY: number,
+  ridgeH: number,
+  overhang: number,
+  col: THREE.Color,
+  detail: number
+): void {
+  const ow = w / 2 + overhang;
+  const od = d / 2 + overhang;
+  // Roman pan-and-cover tiling runs about 0.55 m to a course; below three metres per band
+  // the courses stop resolving from any camera that can see the whole roof at once.
+  const courses = detail >= 1 ? Math.max(4, Math.min(20, Math.round(ow / 1.9))) : 3;
+  const slope = ridgeH / Math.max(0.01, ow);
+  const cLo = new THREE.Color();
+  const cHi = new THREE.Color();
+  for (const sx of [-1, 1]) {
+    for (let k = 0; k < courses; k++) {
+      const x0 = sx * ow * (1 - k / courses);
+      const x1 = sx * ow * (1 - (k + 1) / courses);
+      const y0 = baseY + ridgeH * (k / courses);
+      const y1 = baseY + ridgeH * ((k + 1) / courses);
+      // Alternating courses, plus a gentle darkening toward the eaves where rain and dust
+      // collect. Both are small: this is a roof, not a chequerboard.
+      const alt = k % 2 === 0 ? 1.0 : 0.93;
+      cLo.copy(col).multiplyScalar(alt * (0.9 + 0.1 * (k / courses)));
+      cHi.copy(col).multiplyScalar(alt * (1.0 + 0.1 * (k / courses)));
+      NH.set(sx * slope, 1, 0).normalize();
+      P0.set(x0, y0, -od);
+      P1.set(x0, y0, od);
+      P2.set(x1, y1, od);
+      P3.set(x1, y1, -od);
+      roofSt.quadN(NH, P0, P1, P2, P3, cLo, cLo, cHi, cHi);
+    }
+    // Gable end, in stone: the tympanum face behind the pediment.
+    P0.set(sx * ow, baseY, sx * od);
+    P1.set(0, baseY + ridgeH, sx * od);
+    P2.set(-sx * ow, baseY, sx * od);
+    st.triN(sx > 0 ? PZ : NZ, P0, P1, P2, col);
+  }
+  // Ridge cap: a run of *imbrices* over the joint, and the strongest line on the roof.
+  const cap = new THREE.Color().copy(col).multiplyScalar(1.14);
+  box(roofSt, -ow * 0.045, baseY + ridgeH - 0.12, -od, ow * 0.045, baseY + ridgeH + 0.26, od, cap, {
+    bottom: false,
+  });
+}
+
+/**
+ * A band of weather staining on the four faces of a square monument.
+ *
+ * Emitted 30 mm proud of the face it sits on so it needs no z-fight tolerance, and graded
+ * from dirty at the wet end to clean at the dry end. `wetAtTop` picks which end that is:
+ * true under a cornice, where the water sheds off the overhang and runs back down the wall,
+ * false at a plinth, where the road splashes up it.
+ */
+function dripStain(
+  st: GeoStream,
+  half: number,
+  y0: number,
+  height: number,
+  base: THREE.Color,
+  strength: number,
+  wetAtTop: boolean
+): void {
+  const wet = new THREE.Color().copy(base).multiplyScalar(1 - strength).lerp(PAL.voidWarm, 0.16);
+  const dry = new THREE.Color().copy(base).multiplyScalar(1 - strength * 0.16);
+  const h = half + 0.03;
+  for (const [nx, nz] of [
+    [0, -1],
+    [0, 1],
+    [-1, 0],
+    [1, 0],
+  ]) {
+    const ax = nz !== 0 ? -h : nx * h;
+    const az = nx !== 0 ? -h : nz * h;
+    const bx = nz !== 0 ? h : nx * h;
+    const bz = nx !== 0 ? h : nz * h;
+    STAIN_N.set(nx, 0, nz);
+    P0.set(ax, y0, az);
+    P1.set(bx, y0, bz);
+    P2.set(bx, y0 + height, bz);
+    P3.set(ax, y0 + height, az);
+    const lo = wetAtTop ? dry : wet;
+    const hi = wetAtTop ? wet : dry;
+    st.quadN(STAIN_N, P0, P1, P2, P3, lo, lo, hi, hi);
+  }
+}
+
+const STAIN_N = new THREE.Vector3();
+const PZ = new THREE.Vector3(0, 0, 1);
+const NZ = new THREE.Vector3(0, 0, -1);
+const P0 = new THREE.Vector3();
+const P1 = new THREE.Vector3();
+const P2 = new THREE.Vector3();
+const P3 = new THREE.Vector3();
+const NH = new THREE.Vector3();
+
 /** Italic temple: high podium, frontal steps, deep porch, walled cella. */
 function buildTemple(batch: Batch, detail: number, g: number, o: TempleOpts): void {
   const stone = batch.s('stone');
@@ -941,7 +1054,7 @@ function buildTemple(batch: Batch, detail: number, g: number, o: TempleOpts): vo
 
   const roofBase = entY + colR * 3.0;
   pediment(stone, w + 2.2, roofBase, d + 2.2, PAL.marble, 0.24);
-  gableRoof(stone, roofSt, w + 1.0, d + 1.0, roofBase, ((w + 2.2) / 2) * 0.24, 0.5, o.roofCol, false);
+  tiledGable(stone, roofSt, w + 1.0, d + 1.0, roofBase, ((w + 2.2) / 2) * 0.24, 0.5, o.roofCol, detail);
   // Acroteria on the ridge and the pediment corners.
   if (detail >= 1) {
     const metal = batch.s('metal');
@@ -1832,6 +1945,12 @@ function buildRoadTombs(batch: Batch, detail: number, heightAt: Ground, sites: T
       const h = site.size * 1.35;
       box(stone, -w * 1.25, g - 0.4, -w * 1.25, w * 1.25, g + 0.7, w * 1.25, weathered, { topGain: 1.1 });
       box(stone, -w, g + 0.7, -w, w, g + h, w, new THREE.Color().copy(weathered).multiplyScalar(1.12), { topGain: 1.12 });
+      // Drip staining under the cornice, and dirt splashed up off the road onto the plinth.
+      // Water sheds off a projecting cornice and runs back onto the face below it, so a
+      // monument is dark in a band immediately under its overhang and dark again at its
+      // foot, and pale and sun-bleached in between. Nothing sells cut stone as *old* faster.
+      dripStain(stone, w, g + h - w * 0.42, w * 0.42, weathered, 0.60, true);
+      dripStain(stone, w * 1.25, g - 0.3, 0.85, weathered, 0.52, false);
       box(stone, -w * 1.16, g + h, -w * 1.16, w * 1.16, g + h + 0.55, w * 1.16, new THREE.Color().copy(PAL.travertine).multiplyScalar(0.92), { topGain: 1.2 });
       if (detail >= 1) {
         // Inscription panel and a portrait niche.
@@ -1851,6 +1970,8 @@ function buildRoadTombs(batch: Batch, detail: number, heightAt: Ground, sites: T
       const d = site.size * 0.92;
       const h = site.size * 1.5;
       box(brick, -w, g - 0.5, -d, w, g + h, d, new THREE.Color().copy(PAL.brick).multiplyScalar(site.tone * 0.92), { groundShade: 0.26, topGain: 1.06 });
+      // Brick stains harder than stone: the whole top third under the cornice goes dark.
+      dripStain(brick, Math.min(w, d), g + h - h * 0.3, h * 0.3, new THREE.Color().copy(PAL.brick).multiplyScalar(site.tone * 0.92), 0.44, true);
       box(stone, -w - 0.3, g + h, -d - 0.3, w + 0.3, g + h + 0.4, d + 0.3, new THREE.Color().copy(PAL.travertine).multiplyScalar(0.9), { topGain: 1.18 });
       if (detail >= 1) {
         brick.pushTranslate(0, g, -d);

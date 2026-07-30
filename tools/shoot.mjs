@@ -57,11 +57,12 @@ const SHOTS = {
     follow: 'romanFront', zoom: 0.36, at: 2,
   },
   germanhorde: {
+    // Auto-framed on the frontmost warband, like romanline. Every hand-placed value this
+    // shot has had photographed empty grass: formations put rank N at
+    // z = anchor - N*spacing, so a coordinate that looks like it is "at" the mass is
+    // usually just outside it, facing the wrong way.
     desc: 'Into the Juthungi mass at eye level — reads variety and disorder',
-    // The Juthungi face +Z and formations put rank N at z = anchor - N*spacing, so the
-    // mass occupies z <= -190. The old camera sat at z ~ -190 looking +Z, i.e. out of the
-    // front of the formation with every man behind it, and showed nothing at all.
-    x: -34, z: -188, zoom: 0.14, yaw: Math.PI, at: 2,
+    follow: 'germanFront', zoom: 0.36, at: 2,
   },
   clash: {
     // Auto-framed: hand-picked coordinates kept missing, because where the lines
@@ -295,6 +296,7 @@ try {
             const b = g.battle;
             const p = b.pool;
             let sx = 0, sz = 0, n = 0;
+            const cells = new Map();
             // Faction centroids, used to look along the axis between the two armies.
             const cx = [0, 0], cz = [0, 0], cn = [0, 0];
 
@@ -305,7 +307,19 @@ try {
               let take = false;
               if (s.follow === 'contact') take = st === 4;            // Fighting
               else if (s.follow === 'corpses') take = st === 11 || st === 10;
-              if (take) { sx += p.x[i]; sz += p.z[i]; n++; }
+              if (take) {
+                sx += p.x[i]; sz += p.z[i]; n++;
+                // Also bucket into a coarse grid, because a battle usually has more than
+                // one contact: the cavalry meet on a flank well before the main lines do,
+                // and the centroid of two separate fights lands in the empty ground
+                // between them. The densest cell is the fight worth photographing.
+                const gx = Math.floor((p.x[i] + 1400) / 40);
+                const gz = Math.floor((p.z[i] + 1400) / 40);
+                const key = gz * 128 + gx;
+                const cell = cells.get(key);
+                if (cell) { cell.x += p.x[i]; cell.z += p.z[i]; cell.n++; }
+                else cells.set(key, { x: p.x[i], z: p.z[i], n: 1 });
+              }
             }
 
             if (s.follow === 'romanFront' || s.follow === 'germanFront') {
@@ -370,6 +384,19 @@ try {
             }
 
             if (n === -1) { /* already resolved above */ }
+            else if (cells.size > 0) {
+              // Take the densest 40 m cell, then average it with its neighbours so the
+              // camera sits at the heart of the largest melee rather than on one man.
+              let bestKey = -1, bestN = 0;
+              for (const [k, c] of cells) if (c.n > bestN) { bestN = c.n; bestKey = k; }
+              let ax = 0, az = 0, an = 0;
+              const bx = bestKey % 128, bz = Math.floor(bestKey / 128);
+              for (const [k, c] of cells) {
+                const cx2 = k % 128, cz2 = Math.floor(k / 128);
+                if (Math.abs(cx2 - bx) <= 1 && Math.abs(cz2 - bz) <= 1) { ax += c.x; az += c.z; an += c.n; }
+              }
+              fx = ax / an; fz = az / an;
+            }
             else if (n > 0) { fx = sx / n; fz = sz / n; }
             else {
               // Nothing matched (too early, or everyone already dead): fall back to the
