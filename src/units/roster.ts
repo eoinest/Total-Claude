@@ -1,4 +1,5 @@
 import { Faction, type UnitTypeDef } from '../sim/types';
+import { SIEGE_UNITS } from './siegeUnits';
 
 /**
  * Unit roster for the Siege of Rome, 271 AD.
@@ -306,7 +307,8 @@ export const GERMANIC_UNITS: UnitTypeDef[] = [
   },
 ];
 
-export const ALL_UNITS: UnitTypeDef[] = [...ROMAN_UNITS, ...GERMANIC_UNITS];
+// Siege engines live in their own module purely as an ownership seam — see siegeUnits.ts.
+export const ALL_UNITS: UnitTypeDef[] = [...ROMAN_UNITS, ...GERMANIC_UNITS, ...SIEGE_UNITS];
 
 const BY_ID = new Map<string, UnitTypeDef>(ALL_UNITS.map((u) => [u.id, u]));
 
