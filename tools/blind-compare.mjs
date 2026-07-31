@@ -10,10 +10,20 @@
  * Every image — ours and theirs — goes through the identical pipeline, because any asymmetry
  * is a tell:
  *
- *   - **Bottom crop.** Rome II press shots carry a logo in the bottom-right; r2-04's
- *     "ROME II / THE BATTLE OF PYDNA" wordmark occupies most of the lower band. Cropping a
- *     fixed fraction off the bottom of *both* sets removes it without leaving our frames
- *     visibly taller. Our frames are shot with `--nohud`, so nothing of ours is lost.
+ *   - **Bottom crop, and it must be 20%.** Every one of the Rome II plates carries a
+ *     burned-in wordmark in the lower band — six "EMPEROR EDITION" lockups, four
+ *     "WIKI.TOTALWAR.COM", one "THE BATTLE OF PYDNA". The first draft of this file cropped
+ *     14%, which cuts at 86% of frame height while the Emperor Edition wordmark begins at
+ *     about 82%. So a legible "TOTAL WAR / ROME II" fragment survived on six of the ten
+ *     plates and the "blind" deck could be sorted by watermark rather than by render
+ *     quality. It was verified against r2-04 alone, whose Pydna lockup sits lowest and was
+ *     the single frame where the leak did not show — a bad sample generalised into a bad
+ *     default. Measured across all ten: nothing intrudes above 80%, so 20% clears every
+ *     wordmark with margin. Do not reduce it without re-measuring all ten.
+ *   - **Top crop, off by default.** The press plates are clean along the top edge, so
+ *     cropping there would throw away image for nothing. In-game captures are not: the
+ *     wall-garrison reference carries a "Start Battle" banner and a gilt eagle across the
+ *     top centre. Pass `--topCrop=0.14` for any deck containing in-game captures.
  *   - **One resolution.** Rome II press assets are 1920x1080; ours may be anything. Everything
  *     is resized to a common height and centre-cropped to 16:9, so aspect ratio and pixel
  *     density cannot be used to sort the deck.
@@ -31,6 +41,11 @@
  *
  * Reference frames are local-only and gitignored; nothing from `reference/` is ever copied
  * anywhere tracked, and the deck directory should be treated the same way.
+ *
+ * `reference/rome2/` holds ten UI-free battle plates. The two campaign-map screenshots that
+ * came with the set live in `reference/rome2-campaign/` and are deliberately out of the deck
+ * path: their HUD — unit cards, a general's portrait, a minimap — runs well above any
+ * sensible crop line and no amount of trimming makes them usable as blind plates.
  */
 
 import { readdir, mkdir, writeFile, rm } from 'node:fs/promises';
@@ -52,7 +67,9 @@ const OUT = args.get('out');
 const SEED = Number(args.get('seed') ?? 1);
 const HEIGHT = Number(args.get('height') ?? 1080);
 /** Fraction of the frame height removed from the bottom, where wordmarks sit. */
-const BOTTOM_CROP = Number(args.get('bottomCrop') ?? 0.14);
+const BOTTOM_CROP = Number(args.get('bottomCrop') ?? 0.20);
+/** Fraction removed from the top, where in-game captures carry banners and buttons. */
+const TOP_CROP = Number(args.get('topCrop') ?? 0);
 const QUALITY = Number(args.get('quality') ?? 88);
 
 if (!OURS || !OUT) {
@@ -107,9 +124,10 @@ for (const [i, entry] of deck.entries()) {
   const name = `frame-${String(i + 1).padStart(2, '0')}.jpg`;
   const img = sharp(entry.src, { failOn: 'none' });
   const meta = await img.metadata();
-  const keepH = Math.max(1, Math.round(meta.height * (1 - BOTTOM_CROP)));
+  const top = Math.round(meta.height * TOP_CROP);
+  const keepH = Math.max(1, Math.round(meta.height * (1 - BOTTOM_CROP - TOP_CROP)));
   await img
-    .extract({ left: 0, top: 0, width: meta.width, height: keepH })
+    .extract({ left: 0, top, width: meta.width, height: keepH })
     // `cover` + centre keeps the composition and guarantees identical output dimensions,
     // so no frame can be identified by its shape.
     .resize(W, HEIGHT, { fit: 'cover', position: 'centre' })
@@ -123,10 +141,10 @@ for (const [i, entry] of deck.entries()) {
 // One directory up, so an agent given the deck path cannot list its way to the answers.
 const keyPath = path.join(path.dirname(outAbs), `${path.basename(outAbs)}.key.json`);
 await writeFile(keyPath, JSON.stringify({
-  seed: SEED, height: HEIGHT, bottomCrop: BOTTOM_CROP, quality: QUALITY,
+  seed: SEED, height: HEIGHT, topCrop: TOP_CROP, bottomCrop: BOTTOM_CROP, quality: QUALITY,
   ours: ours.length, rome2: refs.length, key,
 }, null, 2));
 
 console.log(`deck: ${deck.length} frames (${ours.length} ours, ${refs.length} Rome II) → ${path.relative(ROOT, outAbs)}`);
-console.log(`all ${W}x${HEIGHT}, bottom ${Math.round(BOTTOM_CROP * 100)}% cropped, jpeg q${QUALITY}, metadata stripped`);
+console.log(`all ${W}x${HEIGHT}, top ${Math.round(TOP_CROP * 100)}% + bottom ${Math.round(BOTTOM_CROP * 100)}% cropped, jpeg q${QUALITY}, metadata stripped`);
 console.log(`key (do NOT give this to the critic): ${path.relative(ROOT, keyPath)}`);
