@@ -128,7 +128,10 @@ export class TerrainSystem implements Subsystem {
 
     this.grass = new GrassField(this, { ...map.terrain.grass, roadGlsl: map.terrain.roadGlsl },
       map.terrain.waterLevel);
-    this.grass.init(ctx, this.heightTex, this.controlTex);
+    // The macro texture goes to the grass as well as the ground: both have to decide
+    // straw-versus-pasture from the same noise, or a clump can be green on ground the splat
+    // shader has painted as stubble.
+    this.grass.init(ctx, this.heightTex, this.controlTex, this.textures.macro);
 
     this.stats.buildMs = this.data.buildMs;
     this.stats.triangles = clipmapTriangles();

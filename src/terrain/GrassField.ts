@@ -146,6 +146,7 @@ const grassGlsl = (roadGlsl: string): string => /* glsl */ `
 attribute vec2 aBlade;
 uniform sampler2D uHeightMap;
 uniform sampler2D uControl;
+uniform sampler2D uMacro;
 uniform float uHalfExtent;
 uniform float uHeightSpacing;
 uniform vec2 uCentre;
@@ -176,6 +177,28 @@ float grassHash(vec2 p) {
   return fract((p3.x + p3.y) * p3.z);
 }
 
+/**
+ * Smooth value noise on the same hash.
+ *
+ * The clustering that decides where the sward is thick used 'grassHash(floor(gpos / 6.5))'
+ * and 'grassHash(floor(gpos / 19.0))', i.e. a *constant per square*. That is not "patches of
+ * pasture": it is a chequerboard of hard-edged 6.5 m and 19 m squares of grass density with
+ * an infinite gradient at every square's edge, and it is the kind of thing that reads as a
+ * lattice from any camera low enough to see two squares at once. Interpolating the same
+ * hashes costs three extra taps per instance in the *vertex* stage — no fragment cost at
+ * all — and turns the squares into drifting patches.
+ */
+float grassNoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = p - i;
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(
+    mix(grassHash(i), grassHash(i + vec2(1.0, 0.0)), f.x),
+    mix(grassHash(i + vec2(0.0, 1.0)), grassHash(i + vec2(1.0, 1.0)), f.x),
+    f.y
+  );
+}
+
 float grassHeightAt(vec2 wxz) {
   vec2 uv = (wxz + uHalfExtent) / (2.0 * uHalfExtent);
   return texture2D(uHeightMap, clamp(uv, 0.0, 1.0)).r;
@@ -194,17 +217,41 @@ float grassHeightAt(vec2 wxz) {
 //      pasture mix, so a clump growing on a straw strip can be tinted straw
 //   y  boundary proximity, 1 on a field line
 //   z  the decorrelated fallow hash — which strips are ploughed to bare earth
+float grassFieldHash(vec2 c) {
+  return fract(sin(dot(c, vec2(41.317, 78.233))) * 43758.5453);
+}
+
+// Mirrors fieldParcel() in TerrainMaterial.ts exactly.
+vec2 grassParcel(vec2 fu) {
+  vec2 cell = floor(fu);
+  vec2 f = fu - cell;
+  float century = grassFieldHash(cell);
+  float strips = 2.0 + floor(grassFieldHash(cell + 17.0) * 2.5);
+  float sub = floor(f.y * strips);
+  float use = fract(century + sub * 0.3719 + grassFieldHash(cell + 41.0) * 0.21);
+  return vec2(use, fract(use * 3.71 + century * 0.613));
+}
+
 vec3 grassField(vec2 wxz) {
   vec2 fu = vec2(wxz.x * 0.97740 - wxz.y * 0.21140, wxz.x * 0.21140 + wxz.y * 0.97740) / 94.0;
   vec2 cell = floor(fu);
-  vec2 f = fract(fu);
-  float h = fract(sin(dot(cell, vec2(41.317, 78.233))) * 43758.5453);
-  float strips = 2.0 + floor(fract(sin(dot(cell + 17.0, vec2(41.317, 78.233))) * 43758.5453) * 2.5);
-  float sub = floor(f.y * strips);
-  float use = fract(h + sub * 0.3719 + fract(sin(dot(cell + 41.0, vec2(41.317, 78.233))) * 43758.5453) * 0.21);
+  vec2 f = fu - cell;
+  float strips = 2.0 + floor(grassFieldHash(cell + 17.0) * 2.5);
   vec2 e = abs(f - 0.5);
-  float edge = max(max(e.x, e.y), abs(fract(f.y * strips) - 0.5));
-  return vec3(use, smoothstep(0.40, 0.496, edge), fract(use * 3.71 + h * 0.613));
+  float es = abs(fract(f.y * strips) - 0.5);
+  float edge = max(max(e.x, e.y), es);
+  // The ground shader now averages land use across the nearest parcel line over a 5.2 m
+  // margin. The sward has to average it the same way or the two systems disagree about
+  // where a field ends, and the disagreement shows up as a green sward standing on ploughed
+  // earth exactly where the boundary used to be hard.
+  vec2 dir;
+  if (edge == e.x) dir = vec2(sign(f.x - 0.5), 0.0);
+  else if (edge == e.y) dir = vec2(0.0, sign(f.y - 0.5));
+  else dir = vec2(0.0, sign(fract(f.y * strips) - 0.5) / strips);
+  vec2 here = grassParcel(fu);
+  vec2 there = grassParcel(fu + dir * 0.07);
+  vec2 uses = here + smoothstep(0.445, 0.5, edge) * 0.5 * (there - here);
+  return vec3(uses.x, smoothstep(0.40, 0.496, edge), uses.y);
 }
 `;
 
@@ -230,7 +277,13 @@ export class GrassField {
     private readonly waterLevel: number,
   ) {}
 
-  init(ctx: EngineContext, heightMap: THREE.Texture, controlMap: THREE.Texture): void {
+  init(
+    ctx: EngineContext,
+    heightMap: THREE.Texture,
+    controlMap: THREE.Texture,
+    /** The ground material's macro-variation texture, so the sward reads the same noise. */
+    macroMap: THREE.Texture,
+  ): void {
     const density = Math.max(0, ctx.quality.grassDensity) * this.profile.densityScale;
     if (density <= 0.001) return;
 
@@ -246,7 +299,7 @@ export class GrassField {
     this.cardTex = tex;
 
     this.rings.push(
-      this.makeRing(ctx, heightMap, controlMap, tex, {
+      this.makeRing(ctx, heightMap, controlMap, macroMap, tex, {
         // Three cards at 60° rather than two at 90°: a two-card cross has a bearing from
         // which it reads as a single flat plane, and at this density that shows up as
         // corduroy banding across the sward.
@@ -258,10 +311,25 @@ export class GrassField {
         geo: crossedCards(3, 2, 0.58, 0.54),
         grid: NEAR_GRID,
         spacing: NEAR_SPACING,
-        // Jitter over 1 means a clump can leave its own cell. Below that the lattice stays
-        // readable as rows and files across the sward, which at this density was the
-        // clearest remaining tell that the ground cover is a shader and not a field.
-        jitter: 1.9,
+        // Exactly 2.0, and the exactness is the whole point.
+        //
+        // Displacing a lattice by a uniform random offset does not destroy the lattice; it
+        // attenuates each Bragg peak by sinc²(k·A), where A is the half-width of the offset
+        // and k = 2π/spacing. That factor is zero only when A is an exact multiple of the
+        // spacing — jitter 1.0, 2.0, 3.0 — and merely small in between. Measured on the real
+        // placement arithmetic (tools/probe-terrain.mjs --place), with the cover test thinning
+        // to 40 %:
+        //
+        //     jitter 1.00   S(1,0) 1.33   S(0,1) 0.45      (Poisson control 1.00)
+        //     jitter 1.90   S(1,0) 11.82  S(0,1) 8.63      (control 0.43)  <- was here
+        //     jitter 2.00   S(1,0) 0.22   S(0,1) 0.07      (control 0.57)
+        //
+        // So 1.9 left the first-order peak twenty-seven times the non-lattice background,
+        // which is what "you can count the rows" is measuring. 2.0 puts it *below* the
+        // background: the offset then covers exactly one period, so the clump positions are
+        // uniform modulo the lattice and every order vanishes at once. Same instance count,
+        // same cost, one character.
+        jitter: 2.0,
         fadeIn: 0,
         fadeStart: 32,
         fadeEnd: 46,
@@ -273,11 +341,15 @@ export class GrassField {
       })
     );
     this.rings.push(
-      this.makeRing(ctx, heightMap, controlMap, tex, {
+      this.makeRing(ctx, heightMap, controlMap, macroMap, tex, {
         geo: crossedCards(2, 1, 1.7, 0.50),
         grid: FAR_GRID,
         spacing: FAR_SPACING,
-        jitter: 1.05,
+        // On the null for the same reason as the near ring. 1.05 sat just off it and left
+        // S(0,1) at 11.78 against a control of 1.05 — the far ring was the more visible
+        // lattice of the two, because at 136-195 m its 1.35 m cells subtend a few pixels and
+        // land straight in the eye's most sensitive band for periodic structure.
+        jitter: 2.0,
         // Fades in where the near ring fades out, so neither ring is ever the only
         // cover and the hand-off leaves no ring of density on the ground.
         fadeIn: 12,
@@ -296,6 +368,7 @@ export class GrassField {
     ctx: EngineContext,
     heightMap: THREE.Texture,
     controlMap: THREE.Texture,
+    macroMap: THREE.Texture,
     cardTex: THREE.Texture,
     opt: {
       geo: THREE.BufferGeometry;
@@ -323,6 +396,7 @@ export class GrassField {
     const uniforms: Record<string, THREE.IUniform> = {
       uHeightMap: { value: heightMap },
       uControl: { value: controlMap },
+      uMacro: { value: macroMap },
       uHalfExtent: { value: HALF_EXTENT },
       uHeightSpacing: { value: this.terrain.heightField.spacing },
       uCentre: { value: new THREE.Vector2() },
@@ -416,8 +490,9 @@ export class GrassField {
               * (1.0 - smoothstep(0.74, 0.99, gctl.r) * 0.7)
               * step(uWaterLevel + 0.35, gh);
   // Real pasture grows in patches: bare scrapes, thick tussocky ground, and everything
-  // between. Two scales of clustering noise, and damp ground grows thicker.
-  float clumpBig = grassHash(floor(gpos / 19.0)) * 0.5 + grassHash(floor(gpos / 6.5)) * 0.5;
+  // between. Two scales of clustering noise, and damp ground grows thicker. Interpolated,
+  // not quantised per square — see grassNoise.
+  float clumpBig = grassNoise(gpos / 19.0) * 0.5 + grassNoise(gpos / 6.5) * 0.5;
   cover *= 0.72 + 0.95 * clumpBig + gctl.r * 0.4;
   // Ploughed and fallow strips carry no sward, and the headland the carts turned on is
   // beaten down to half. Matches the ground shader's own field pattern.
@@ -430,7 +505,16 @@ export class GrassField {
   // The ground shader's own straw / pasture threshold, so a clump standing on a straw strip
   // is straw and one standing on pasture is green. Without this the two systems disagree
   // about the same field and green tufts sprout out of dry stubble.
-  float gStraw = smoothstep(0.42, 0.64, gfld.x * 0.62 + 0.19);
+  //
+  // The two macro-noise taps are the ground's own, sampled at the ground's own scales and
+  // offsets, rather than replaced by the constant 0.19 that used to stand in for their mean.
+  // A constant makes the sward agree with the ground *on average* and disagree by up to
+  // ±0.19 of the mix anywhere in particular — enough to flip a whole parcel, which is why
+  // the raking camera photographed a green sward standing on ground measuring 90 % orange
+  // and 0 % green. These are vertex-stage taps, one per clump, not per pixel.
+  float gNzBig = texture2D(uMacro, gpos * (1.0 / 620.0) + vec2(0.71, 0.29)).a;
+  float gNzMid = texture2D(uMacro, gpos * (1.0 / 96.0) + vec2(0.37, 0.61)).a;
+  float gStraw = smoothstep(0.42, 0.64, gfld.x * 0.62 + gNzBig * 0.22 + gNzMid * 0.16);
 
   float dist = length(gpos - uCamXZ);
   float fadeNear = uFadeIn < 0.5 ? 1.0 : smoothstep(uFadeIn, uFadeIn + 30.0, dist);
@@ -545,7 +629,7 @@ export class GrassField {
     // in rather than branched on. Without the suffix three would hand the second map the
     // first map's program and the straw conversion would silently not happen.
     const dryKey = this.profile.dryness > 0.001 ? '-dry' : '';
-    mat.customProgramCacheKey = () => `terrain-grass-cards-v2${dryKey}`;
+    mat.customProgramCacheKey = () => `terrain-grass-cards-v3${dryKey}`;
 
     const mesh = new THREE.Mesh(geo, mat);
     mesh.name = opt.name;

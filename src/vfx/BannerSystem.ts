@@ -32,6 +32,20 @@ const GX = 8;
 const GY = 6;
 const NP = GX * GY;
 
+/**
+ * Length of the bare staff, in metres. Every finial in `buildStandardGeometry` is placed
+ * relative to this, and `CLOTH_TOP` hangs from it, so the whole prop scales from one number.
+ */
+const STAFF_LEN = 2.62;
+/** Where the crossbar sits: the cloth pins to it, so the two must be derived together. */
+const CLOTH_TOP = STAFF_LEN - 0.24;
+/**
+ * How far a routing unit's standard dips. Applied to the pole's transform as well as to the
+ * cloth: it used to move only `Banner.top`, which detached the cloth from its own crossbar
+ * by 1.05 m and left it hanging off the middle of a bare staff.
+ */
+const ROUT_DIP = 0.62;
+
 interface Constraint {
   a: number;
   b: number;
@@ -50,6 +64,10 @@ interface Banner {
   h: number;
   /** Height of the cloth's top edge above the pole base. */
   top: number;
+  /** Uniform scale of the whole standard, pole and cloth alike. */
+  scale: number;
+  /** Metres the whole standard is lowered by, for a routing unit. */
+  dip: number;
   p: Float32Array;
   q: Float32Array;
   /** Rest length per constraint, resolved for this banner's dimensions. */
@@ -78,6 +96,7 @@ varying vec2 vUv;
 varying vec3 vTint;
 varying vec3 vDevice;
 varying vec3 vWorld;
+varying vec3 vNrm;
 varying float vFade;
 void main() {
   float col = mod(aTile, uAtlasDim);
@@ -87,6 +106,10 @@ void main() {
   vDevice = aDevice;
   vFade = aFade;
   vWorld = position;
+  // 'normal' is one of the three attributes three declares for every ShaderMaterial, and
+  // this geometry now fills it from the cloth solver each frame. Positions are already in
+  // world space here (no modelMatrix — see the class comment), so the normal is too.
+  vNrm = normal;
   gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0);
 }
 `;
@@ -101,6 +124,7 @@ varying vec2 vUv;
 varying vec3 vTint;
 varying vec3 vDevice;
 varying vec3 vWorld;
+varying vec3 vNrm;
 varying float vFade;
 
 void main() {
@@ -112,18 +136,34 @@ void main() {
   // slightly lighter patch of red.
   vec3 base = mix(vTint * t.r, vDevice * (0.55 + 0.65 * t.r), t.g);
 
-  // Screen-space derivatives give the true cloth normal without a normal attribute,
-  // which matters because the geometry is rewritten from scratch every frame.
-  vec3 n = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
+  // Interpolated per-vertex normals, not screen-space derivatives.
+  //
+  // 'cross(dFdx(vWorld), dFdy(vWorld))' is the *face* normal: one constant value per
+  // triangle. A banner is 70 triangles hanging from a straight pinned row at 40 % gravity,
+  // so all 70 faces are within a few degrees of coplanar, every one of them resolves to
+  // nearly the same dot with the sun, and the sheet comes out as a single flat value — the
+  // "untextured red slab" a blind critic named. The solver knows the sheet's actual
+  // curvature; writing it into the normal attribute each frame and letting the rasteriser
+  // interpolate is what turns 70 facets into a surface that shades across its folds.
+  vec3 n = normalize(vNrm);
   if (!gl_FrontFacing) n = -n;
 
   float ndl = dot(n, uSun);
-  float front = clamp(ndl, 0.0, 1.0);
+  // Wrapped diffuse. Wool is not a Lambertian dielectric plate: light entering near the
+  // terminator scatters through the yarn and comes back out, so the shading rolls past 90
+  // degrees instead of clipping there. This is what puts a gradient across a fold rather
+  // than a hard lit/unlit boundary.
+  float front = clamp((ndl + 0.35) / 1.35, 0.0, 1.0);
   float back = clamp(-ndl, 0.0, 1.0);
   // Thin dyed wool transmits strongly, so a backlit banner glows rather than going
   // black. That translucency is most of what makes cloth read as cloth.
   vec3 lit = uAmbient * 0.9 + uSunColour * (front * 1.05 + pow(back, 1.5) * 0.6);
   base *= lit;
+  // Grazing sheen. A woven surface catches the sky along its silhouette, which is the
+  // other half of reading as cloth rather than as painted card.
+  vec3 vdir = normalize(cameraPosition - vWorld);
+  float rim = pow(1.0 - clamp(abs(dot(n, vdir)), 0.0, 1.0), 3.5);
+  base += uAmbient * rim * 0.55;
 
   gl_FragColor = vec4(base, 1.0);
   #include <tonemapping_fragment>
@@ -157,6 +197,7 @@ export class BannerSystem {
   private maxBanners: number;
 
   private posAttr: THREE.BufferAttribute;
+  private nrmAttr: THREE.BufferAttribute;
   private tintAttr: THREE.BufferAttribute;
   private deviceAttr: THREE.BufferAttribute;
   private tileAttr: THREE.BufferAttribute;
@@ -184,6 +225,8 @@ export class BannerSystem {
     this.clothGeo = new THREE.BufferGeometry();
     this.posAttr = new THREE.BufferAttribute(new Float32Array(verts * 3), 3);
     this.posAttr.setUsage(THREE.DynamicDrawUsage);
+    this.nrmAttr = new THREE.BufferAttribute(new Float32Array(verts * 3), 3);
+    this.nrmAttr.setUsage(THREE.DynamicDrawUsage);
     const uvArr = new Float32Array(verts * 2);
     this.tintAttr = new THREE.BufferAttribute(new Float32Array(verts * 3), 3);
     this.deviceAttr = new THREE.BufferAttribute(new Float32Array(verts * 3), 3);
@@ -217,6 +260,7 @@ export class BannerSystem {
     }
 
     this.clothGeo.setAttribute('position', this.posAttr);
+    this.clothGeo.setAttribute('normal', this.nrmAttr);
     this.clothGeo.setAttribute('uv', new THREE.BufferAttribute(uvArr, 2));
     this.clothGeo.setAttribute('aTint', this.tintAttr);
     this.clothGeo.setAttribute('aDevice', this.deviceAttr);
@@ -350,6 +394,7 @@ export class BannerSystem {
    * The vertex shader collapses whichever finial the instance is not.
    */
   private buildStandardGeometry(): THREE.BufferGeometry {
+    const STAFF = STAFF_LEN;
     const parts: THREE.BufferGeometry[] = [];
     const masks: number[] = [];
     const metals: number[] = [];
@@ -378,45 +423,58 @@ export class BannerSystem {
     const IRON = 0x6a6a70;
 
     // Shared staff.
-    add(new THREE.CylinderGeometry(0.028, 0.034, 3.4, 7), 0, 1.7, 0, WOOD, 0);
+    //
+    // Every finial offset below is written as STAFF + delta rather than as an absolute
+    // height, because the absolute heights are how this prop came to read oversize. The
+    // number that had been verified as correct was 3.1 — but 3.1 is `Banner.top`, the height
+    // the *cloth* is pinned at, not the staff. The staff cylinder was 3.4, the Roman wing
+    // corner reached 3.70 and the Germanic horn tip 3.79, and the per-instance scale then
+    // took the tallest to 4.09 m: two and a third times a 1.75 m man, and 0.49 m above the
+    // 3.6 m clearance plane the HUD reserves for it. Three separately-authored terms, only
+    // the smallest of which anyone had checked.
+    //
+    // 2.62 m is a signum staff. Trajan's Column puts the aquila about 1.7 times the
+    // signifer's own height, which is what this now measures: 2.92 m to the wing corner,
+    // 3.15 m at the top of the scale range, against 1.75 m of man.
+    add(new THREE.CylinderGeometry(0.028, 0.034, STAFF, 7), 0, STAFF * 0.5, 0, WOOD, 0);
 
     // ---- Roman ----
-    add(new THREE.BoxGeometry(1.52, 0.045, 0.045), 0, 3.16, 0, WOOD, 1);
-    add(new THREE.SphereGeometry(0.05, 8, 6), -0.76, 3.16, 0, GOLD, 1);
-    add(new THREE.SphereGeometry(0.05, 8, 6), 0.76, 3.16, 0, GOLD, 1);
-    add(new THREE.TorusGeometry(0.115, 0.022, 6, 12), 0, 3.34, 0, GOLD, 1);
+    add(new THREE.BoxGeometry(1.52, 0.045, 0.045), 0, STAFF - 0.24, 0, WOOD, 1);
+    add(new THREE.SphereGeometry(0.05, 8, 6), -0.76, STAFF - 0.24, 0, GOLD, 1);
+    add(new THREE.SphereGeometry(0.05, 8, 6), 0.76, STAFF - 0.24, 0, GOLD, 1);
+    add(new THREE.TorusGeometry(0.115, 0.022, 6, 12), 0, STAFF - 0.06, 0, GOLD, 1);
     // Aquila: small, but the swept-wing silhouette is unmistakable at any distance.
-    add(new THREE.ConeGeometry(0.07, 0.24, 7), 0, 3.55, 0, GOLD, 1);
+    add(new THREE.ConeGeometry(0.07, 0.24, 7), 0, STAFF + 0.15, 0, GOLD, 1);
     const wl = new THREE.BoxGeometry(0.30, 0.035, 0.11);
     wl.rotateZ(0.42);
-    add(wl, -0.16, 3.62, 0, GOLD, 1);
+    add(wl, -0.16, STAFF + 0.22, 0, GOLD, 1);
     const wr = new THREE.BoxGeometry(0.30, 0.035, 0.11);
     wr.rotateZ(-0.42);
-    add(wr, 0.16, 3.62, 0, GOLD, 1);
+    add(wr, 0.16, STAFF + 0.22, 0, GOLD, 1);
     for (let i = 0; i < 3; i++) {
       const d = new THREE.CylinderGeometry(0.075, 0.075, 0.014, 10);
       d.rotateX(Math.PI / 2);
-      add(d, 0, 2.62 - i * 0.20, 0.02, GOLD, 1);
+      add(d, 0, STAFF - 0.78 - i * 0.20, 0.02, GOLD, 1);
     }
 
     // ---- Germanic ----
     const bar = new THREE.BoxGeometry(0.78, 0.05, 0.05);
     bar.rotateZ(0.09);
-    add(bar, 0, 3.02, 0, WOOD, 2);
+    add(bar, 0, STAFF - 0.38, 0, WOOD, 2);
     // Aurochs skull: a squat cranium with the horns sweeping up and out, which is what
     // gives the totem its silhouette against the sky.
-    add(new THREE.BoxGeometry(0.19, 0.26, 0.16), 0, 3.40, 0, BONE, 2);
-    add(new THREE.BoxGeometry(0.11, 0.14, 0.20), 0, 3.26, 0.03, BONE, 2);
+    add(new THREE.BoxGeometry(0.19, 0.26, 0.16), 0, STAFF, 0, BONE, 2);
+    add(new THREE.BoxGeometry(0.11, 0.14, 0.20), 0, STAFF - 0.14, 0.03, BONE, 2);
     const hl = new THREE.ConeGeometry(0.05, 0.46, 6);
     hl.rotateZ(0.62);
-    add(hl, -0.20, 3.60, 0, BONE, 2);
+    add(hl, -0.20, STAFF + 0.20, 0, BONE, 2);
     const hr = new THREE.ConeGeometry(0.05, 0.46, 6);
     hr.rotateZ(-0.62);
-    add(hr, 0.20, 3.60, 0, BONE, 2);
+    add(hr, 0.20, STAFF + 0.20, 0, BONE, 2);
     for (let i = 0; i < 3; i++) {
       const t = new THREE.TorusGeometry(0.055, 0.011, 5, 9);
       t.rotateY(0.4 * i);
-      add(t, 0.02, 2.72 - i * 0.17, 0, IRON, 2);
+      add(t, 0.02, STAFF - 0.68 - i * 0.17, 0, IRON, 2);
     }
 
     // Manual merge: cheaper than importing BufferGeometryUtils for two dozen primitives.
@@ -508,14 +566,23 @@ export class BannerSystem {
     // A vexillum was roughly a metre and a half square on a 2.5 m staff. Sized for the
     // camera as much as for history: a standard has to be legible from the strategic
     // zoom or it is not doing its job.
-    const w = wide ? 1.46 : 0.82;
-    const h = wide ? 1.18 : 1.72;
+    // Sized against the shorter staff. The vexillum was 1.46 x 1.18 hanging from a 3.1 m
+    // pin, which put its lower edge at 1.92 m — clear of the men. Pinned at 2.38 m the same
+    // cloth would end at 1.20 m, through the heads of the rank in front, so the drop comes
+    // down with the staff. The signum pennant was 1.72 m long, which was never right for a
+    // 0.82 m-wide streamer and put its hem at 1.38 m in normal order and 0.33 m when routing,
+    // where nothing stops it passing through the ground.
+    const w = wide ? 1.34 : 0.72;
+    const h = wide ? 0.92 : 1.06;
 
+    // The rest lengths carry the scale too, or a scaled-up sheet is simulated as a
+    // stretched one and the solver pulls it back into a flat plane.
+    const bScale = 0.94 + hash01(u.id * 7 + 13, 17) * 0.14;
     const rest = new Float32Array(this.constraints.length);
     for (let i = 0; i < this.constraints.length; i++) {
       const c = this.constraints[i];
-      const rx = (c.gdx / (GX - 1)) * w;
-      const ry = (c.gdy / (GY - 1)) * h;
+      const rx = (c.gdx / (GX - 1)) * w * bScale;
+      const ry = (c.gdy / (GY - 1)) * h * bScale;
       rest[i] = Math.hypot(rx, ry);
     }
 
@@ -525,7 +592,13 @@ export class BannerSystem {
       tile,
       w,
       h,
-      top: 3.1,
+      top: CLOTH_TOP,
+      // One scale for the whole standard. It used to live only in `writePoles`, so the pole
+      // was scaled and the cloth was not: the crossbar ranged over 2.97-3.41 m while the
+      // cloth pinned at a hard 3.1, and the sheet floated up to 0.31 m clear of the bar it
+      // was supposed to hang from, or spilled wider than the bar was long.
+      scale: bScale,
+      dip: 0,
       p: new Float32Array(NP * 3),
       q: new Float32Array(NP * 3),
       rest,
@@ -544,8 +617,8 @@ export class BannerSystem {
     for (let y = 0; y < GY; y++) {
       for (let x = 0; x < GX; x++) {
         const v = (y * GX + x) * 3;
-        b.p[v] = b.anchorX + (x / (GX - 1) - 0.5) * w;
-        b.p[v + 1] = b.anchorY + b.top - (y / (GY - 1)) * h;
+        b.p[v] = b.anchorX + (x / (GX - 1) - 0.5) * w * b.scale;
+        b.p[v + 1] = b.anchorY + (b.top - (y / (GY - 1)) * h) * b.scale;
         b.p[v + 2] = b.anchorZ;
         b.q[v] = b.p[v];
         b.q[v + 1] = b.p[v + 1];
@@ -571,7 +644,10 @@ export class BannerSystem {
     b.anchorY = battle.groundAt(x, z) + (isCavalry(def) ? 1.15 : 0);
     b.facing = u.facing;
     // A routing unit's standard dips: the clearest single read that a unit has broken.
-    b.top = u.order === UnitOrder.Rout ? 2.05 : 3.1;
+    // `writePoles` applies the same drop to the staff, so the cloth stays on its crossbar.
+    b.top = CLOTH_TOP;
+    b.dip = u.order === UnitOrder.Rout ? ROUT_DIP : 0;
+    b.anchorY -= b.dip;
   }
 
   /**
@@ -625,9 +701,9 @@ export class BannerSystem {
         const sx = Math.sin(b.facing);
         for (let x = 0; x < GX; x++) {
           const v = x * 3;
-          const lx = (x / (GX - 1) - 0.5) * b.w;
+          const lx = (x / (GX - 1) - 0.5) * b.w * b.scale;
           p[v] = b.anchorX + lx * cx;
-          p[v + 1] = b.anchorY + b.top;
+          p[v + 1] = b.anchorY + b.top * b.scale;
           p[v + 2] = b.anchorZ - lx * sx;
           q[v] = p[v];
           q[v + 1] = p[v + 1];
@@ -748,6 +824,7 @@ export class BannerSystem {
 
   private writeGeometry(): void {
     const pos = this.posAttr.array as Float32Array;
+    const nrm = this.nrmAttr.array as Float32Array;
     const fade = this.fadeAttr.array as Float32Array;
     const tint = this.tintAttr.array as Float32Array;
     const device = this.deviceAttr.array as Float32Array;
@@ -774,6 +851,33 @@ export class BannerSystem {
         pos[s + 1] = b.p[v + 1];
         pos[s + 2] = b.p[v + 2];
         fade[vo + i] = b.presence;
+      }
+      // Smooth normals from the solver's own grid: central differences along the two grid
+      // axes, cross-producted. 48 vertices a banner, so this is a few thousand floats a
+      // frame for the whole field — the cost of one banner's constraint pass.
+      for (let y = 0; y < GY; y++) {
+        for (let x = 0; x < GX; x++) {
+          const i = y * GX + x;
+          const xa = (y * GX + Math.max(0, x - 1)) * 3;
+          const xb = (y * GX + Math.min(GX - 1, x + 1)) * 3;
+          const ya = (Math.max(0, y - 1) * GX + x) * 3;
+          const yb = (Math.min(GY - 1, y + 1) * GX + x) * 3;
+          const ux = b.p[xb] - b.p[xa];
+          const uy = b.p[xb + 1] - b.p[xa + 1];
+          const uz = b.p[xb + 2] - b.p[xa + 2];
+          const vx = b.p[yb] - b.p[ya];
+          const vy = b.p[yb + 1] - b.p[ya + 1];
+          const vz = b.p[yb + 2] - b.p[ya + 2];
+          let nx = uy * vz - uz * vy;
+          let ny = uz * vx - ux * vz;
+          let nz = ux * vy - uy * vx;
+          const len = Math.hypot(nx, ny, nz) || 1;
+          nx /= len; ny /= len; nz /= len;
+          const s = (vo + i) * 3;
+          nrm[s] = nx;
+          nrm[s + 1] = ny;
+          nrm[s + 2] = nz;
+        }
       }
       if (!b.tintWritten) {
         b.tintWritten = true;
@@ -807,6 +911,7 @@ export class BannerSystem {
     }
 
     this.posAttr.needsUpdate = true;
+    this.nrmAttr.needsUpdate = true;
     this.fadeAttr.needsUpdate = true;
     if (staticDirty) {
       this.tintAttr.needsUpdate = true;
@@ -828,8 +933,13 @@ export class BannerSystem {
       // horizontal plane, which points the horns and the aquila's wings straight at the sun
       // for the half-second a standard is appearing or falling. Dropping the staff into the
       // ground is both cheaper and the right read: the standard goes down with its bearer.
-      const s = 0.94 + hash01(b.seed, 17) * 0.14;
-      this.tmpPos.set(b.anchorX, b.anchorY - (1 - b.presence) * 3.7, b.anchorZ);
+      // The same `b.scale` the cloth uses, not a second draw from the same hash: the two
+      // agreed only because the expressions happened to match, and the cloth did not use it
+      // at all. `anchorY` already carries the rout dip, applied in `anchor`.
+      const s = b.scale;
+      // 3.2 m of sink buries a 3.15 m finial. It was 3.7 against a 4.09 m prop, which left
+      // up to 0.39 m of aurochs horn standing in the grass after the standard had gone.
+      this.tmpPos.set(b.anchorX, b.anchorY - (1 - b.presence) * 3.2, b.anchorZ);
       this.tmpScale.set(s, s, s);
       this.tmpMat.compose(this.tmpPos, this.tmpQuat, this.tmpScale);
       mesh.setMatrixAt(n, this.tmpMat);

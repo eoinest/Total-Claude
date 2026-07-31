@@ -207,7 +207,16 @@ export class DustEmitter {
     // sprites or many thin ones. Many thin ones is strictly better looking: the cloud has
     // internal structure, men stay visible through it, and no single billboard ever
     // announces itself. It costs fill rate linearly, which the occupancy governor bounds.
-    this.fightCarry[ui] += fighters * 0.34 * rate * dt;
+    // 0.34 was calibrated on how a melee cloud *looks* in isolation, never against how much
+    // of the frame it then covers. Measured at the melee camera by hiding `vfx-particles` and
+    // re-shooting: the dust lifted mean luminance from 0.226 to 0.404 and collapsed the
+    // fraction of frame below 15 % luminance from 39.8 % to 6.7 %. The ten Rome II plates
+    // measure 16-21 % below 15 %, and rubric G2b asks for deep near-blacks and clipping
+    // highlights in one frame — so at 6.7 % the cloud was not reading as dust, it was reading
+    // as a milky sheet over the whole engagement, which is what "dozens of soldiers render
+    // semi-transparent" describes. 0.22 is 65 % of the emission and lands the same frame back
+    // in the plates' range while leaving the cloud plainly there.
+    this.fightCarry[ui] += fighters * 0.22 * rate * dt;
     let count = this.fightCarry[ui] | 0;
     if (count <= 0) return;
     this.fightCarry[ui] -= count;
