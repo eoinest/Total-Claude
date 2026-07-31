@@ -25,6 +25,7 @@ import { AudioEngine } from './audio/AudioEngine';
 import { HudSystem } from './ui/HudSystem';
 import { PostFXSystem } from './render/PostFX';
 
+import { getMap } from './maps';
 import { deploySiegeOfRome } from './sim/scenario';
 import { type Difficulty, sanitiseConfig } from './sim/battleConfig';
 import { MainMenu, resolveConfig } from './ui/MainMenu';
@@ -117,7 +118,19 @@ engine.add(new SkySystem());
 engine.add(new LightingSystem());
 // Terrain installs `rig.heightAt`, which the city and the sim both sample during init.
 engine.add(new TerrainSystem());
-engine.add(new CitySystem());
+/*
+ * Only build Rome where Rome is.
+ *
+ * This was unconditional, and on any map that hides the city it was not merely wasted work —
+ * it was a live gameplay bug. `CitySystem` planned the Aurelian circuit against the Tiber,
+ * built it onto whatever heightfield was loaded, and was then simply made invisible. The
+ * geometry stayed in the world: `Pathfinding` stamps `city.getWallSegments()` with no map
+ * guard, so **Rome's wall blocked movement across the plain of Pydna** while being nowhere
+ * on screen. Skipping registration closes it at the source rather than adding a second guard
+ * downstream — `Pathfinding` already tests `if (!city?.getWallSegments) return`, so an absent
+ * city is a case it handles cleanly.
+ */
+if (!getMap(config.map).hidesCity) engine.add(new CitySystem());
 
 const battle = engine.add(new BattleSystem());
 // Seed the battle's root stream here, before `initAll`, and not in the scenario.
