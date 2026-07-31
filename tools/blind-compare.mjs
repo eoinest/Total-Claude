@@ -71,6 +71,13 @@ const BOTTOM_CROP = Number(args.get('bottomCrop') ?? 0.20);
 /** Fraction removed from the top, where in-game captures carry banners and buttons. */
 const TOP_CROP = Number(args.get('topCrop') ?? 0);
 const QUALITY = Number(args.get('quality') ?? 88);
+/*
+ * `cover` centre-crops to 16:9, which is right for battle frames and wrong for a siege
+ * tower: towers are tall, and only 2 of 11 reconstruction photographs survived the crop with
+ * the machine still in frame. A 2-plate deck is not a measurement. `--fit=contain` letterboxes
+ * onto a neutral grey instead, losing nothing; applied to every frame it is not a tell.
+ */
+const FIT = args.get('fit') === 'contain' ? 'contain' : 'cover';
 
 if (!OURS || !OUT) {
   console.error('usage: blind-compare.mjs --ours=<dir> --out=<dir> [--refs=reference/rome2] [--seed=N]');
@@ -105,9 +112,16 @@ const outAbs = path.resolve(ROOT, OUT);
 await rm(outAbs, { recursive: true, force: true });
 await mkdir(outAbs, { recursive: true });
 
+/*
+ * Label reference frames by the directory they came from, not the string "rome2".
+ * The first version hardcoded it, so an engine deck built from reference/engines/deck-pool
+ * still reported every plate as `origin: "rome2"` in the key — which quietly turns the
+ * answer key into a wrong answer key. Read `source` if you need the exact file.
+ */
+const REF_LABEL = args.get('refLabel') ?? path.basename(path.resolve(ROOT, REFS));
 const deck = [
   ...ours.map((f) => ({ src: f, origin: 'ours' })),
-  ...refs.map((f) => ({ src: f, origin: 'rome2' })),
+  ...refs.map((f) => ({ src: f, origin: REF_LABEL })),
 ];
 
 // Fisher-Yates with the seeded stream.
@@ -130,10 +144,18 @@ for (const [i, entry] of deck.entries()) {
     .extract({ left: 0, top, width: meta.width, height: keepH })
     // `cover` + centre keeps the composition and guarantees identical output dimensions,
     // so no frame can be identified by its shape.
-    .resize(W, HEIGHT, { fit: 'cover', position: 'centre' })
+    .resize(W, HEIGHT, {
+      fit: FIT,
+      position: 'centre',
+      background: { r: 82, g: 82, b: 82 },
+    })
     .jpeg({ quality: QUALITY, mozjpeg: true })
-    // Strip EXIF/ICC: the software tag alone would name the renderer.
-    .withMetadata({})
+    // Strip EXIF/ICC. sharp drops input metadata by default; calling `.withMetadata()` would
+    // *re-attach* it, which is the opposite of what is wanted here. Reference photographs
+    // carry camera make/model, lens and editing software (e.g. "Canon EOS 5D Mark II",
+    // "Adobe Photoshop Lightroom"), and our renders carry almost none — so preserving
+    // metadata lets a critic sort the entire deck with exiftool without viewing one pixel.
+    // JPEG density travels the same way (300 for a camera file, 72 for a render).
     .toFile(path.join(outAbs, name));
   key.push({ frame: name, origin: entry.origin, source: path.relative(ROOT, entry.src) });
 }
@@ -142,9 +164,9 @@ for (const [i, entry] of deck.entries()) {
 const keyPath = path.join(path.dirname(outAbs), `${path.basename(outAbs)}.key.json`);
 await writeFile(keyPath, JSON.stringify({
   seed: SEED, height: HEIGHT, topCrop: TOP_CROP, bottomCrop: BOTTOM_CROP, quality: QUALITY,
-  ours: ours.length, rome2: refs.length, key,
+  fit: FIT, refs: REFS, refLabel: REF_LABEL, ours: ours.length, reference: refs.length, key,
 }, null, 2));
 
-console.log(`deck: ${deck.length} frames (${ours.length} ours, ${refs.length} Rome II) → ${path.relative(ROOT, outAbs)}`);
+console.log(`deck: ${deck.length} frames (${ours.length} ours, ${refs.length} ${REF_LABEL}) → ${path.relative(ROOT, outAbs)}`);
 console.log(`all ${W}x${HEIGHT}, top ${Math.round(TOP_CROP * 100)}% + bottom ${Math.round(BOTTOM_CROP * 100)}% cropped, jpeg q${QUALITY}, metadata stripped`);
 console.log(`key (do NOT give this to the critic): ${path.relative(ROOT, keyPath)}`);
