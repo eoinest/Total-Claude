@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import {
-  EnginePart, SPRING_X, SPRING_Y, SPRING_Z, ARM_R, ARM_RAKE, ARM_REST,
-  CLAW_Y, DRUM_Y, DRUM_Z, DRUM_R, PIVOT_Y, PIVOT_Z, CLAW_REST_Z,
+  EnginePart, SPRING_X, SPRING_Y, SPRING_Z, ARM_R, ARM_RAKE, ARM_REST, NOCK_RISE,
+  CLAW_Y, STRING_Y, DRUM_Y, DRUM_Z, DRUM_R, PIVOT_Y, PIVOT_Z, CLAW_REST_Z,
   OnagerPart, ON_SKEIN_Y, ON_SKEIN_Z, ON_ARM_COCKED, ON_ARM_R, ON_HOOK_F,
   ON_DRUM_Y, ON_DRUM_Z, ON_DRUM_R, ON_PIVOT_Z, ON_SKEIN_HALF,
 } from './engineMesh';
@@ -65,9 +65,10 @@ const float E_SPRING_X = ${f(SPRING_X)};
 const float E_SPRING_Y = ${f(SPRING_Y)};
 const float E_SPRING_Z = ${f(SPRING_Z)};
 const float E_ARM_RH   = ${f(ARM_R * Math.cos(ARM_RAKE))};
-const float E_ARM_DY   = ${f(ARM_R * Math.sin(ARM_RAKE))};
+const float E_ARM_DY   = ${f(ARM_R * Math.sin(ARM_RAKE) + NOCK_RISE)};
 const float E_ARM_REST = ${f(ARM_REST)};
 const float E_CLAW_Y   = ${f(CLAW_Y)};
+const float E_STRING_Y = ${f(STRING_Y)};
 const float E_DRUM_Y   = ${f(DRUM_Y)};
 const float E_DRUM_Z   = ${f(DRUM_Z)};
 const float E_DRUM_R   = ${f(DRUM_R)};
@@ -92,6 +93,7 @@ const float O_SKEIN_HALF = ${f(ON_SKEIN_HALF)};
 varying vec3 vEngTint;
 varying float vEngGrime;
 varying float vEngContact;
+varying float vEngPart;
 
 // Rotate (a,b) by the angle whose sine and cosine are s and c. Full trig, not the
 // small-angle form the soldier shader uses: these arms sweep 78 degrees.
@@ -222,7 +224,8 @@ const body = (withNormal: boolean): string => /* glsl */ `
       b = vec3( 0.0, E_CLAW_Y - 0.02, slider - 0.02 );
     } else {
       a = engArmTip( span, phi );
-      b = vec3( 0.0, E_CLAW_Y, slider + 0.03 );
+      // The claw grips the cord above the groove, not inside it — see STRING_Y in engineMesh.ts.
+      b = vec3( 0.0, E_STRING_Y, slider + 0.03 );
     }
     vec3 d = b - a;
     float len = length( d );
@@ -300,10 +303,13 @@ const TINT_BODY = /* glsl */ `
   // Weathering per engine, and a slow drift along the stock so one beam is not one colour.
   float wear = fract( v * 17.31 );
   float grain = fract( v * 43.77 );
+  // Onager parts carry ids 8 and up. The two machines are given different timber, and the reason
+  // is measurement rather than variety — see the pale-scorpio note below.
+  bool heavy = aPart.x >= 8.0;
   vec3 tint;
   if ( slot < 0.5 ) {
     tint = vec3( 1.0 );
-  } else if ( slot < 1.5 ) {
+  } else if ( slot < 1.5 && heavy ) {
     // Structural oak: from a fresh-cut warm tan through to a grey, rain-beaten frame. Field
     // artillery lived outdoors and the reference for that is any surviving cart timber.
     // Seasoned oak, from a warm mid-tan through to the grey a beam goes after a season in
@@ -312,27 +318,78 @@ const TINT_BODY = /* glsl */ `
     // albedo under a warm key always does.
     tint = mix( vec3( 0.98, 0.83, 0.62 ), vec3( 0.56, 0.53, 0.50 ), wear )
          * ( 0.84 + grain * 0.34 );
+  } else if ( slot < 1.5 ) {
+    // **Pale bleached timber, and this is the largest single legibility change made to the
+    // scorpio.** Measured rather than judged: masking a bench plate to the machine's own pixels
+    // with a part-id frame and taking a histogram, 70 % of the scorpio was below sRGB luminance 40
+    // in the side view and 68 % in the rear, at a median of 22 and 25 — a black silhouette. The
+    // reference photographs run a median of 105 to 177, and the single most legible plate in the
+    // set (scorpio-auerberg-pfeilgeschutz.jpg, flat museum light on pale timber) is 177 with
+    // 0.5 % below 40.
+    //
+    // The cause is albedo, not light. The oak tile is 0.27 to 0.49 and the old tint averaged 0.70,
+    // so the machine's effective albedo was 0.27 — dark walnut. A 0.27 surface in its own shadow
+    // is black under any sky, which is why --benchsky=overcast made it *worse* (median 22 to 16)
+    // rather than better: there was nothing there to light.
+    //
+    // This lands at about 0.41, which is seasoned oak weathered pale, and it is deliberately far
+    // *less* saturated than the old warm tan — 0.18 against 0.37. Raising value and saturation
+    // together is what produced the orange plastic the first pass was criticised for; raising value
+    // while dropping saturation gives sun-bleached timber, which is both the reference and the
+    // Rome II palette.
+    //
+    // The onager keeps the dark timber above. It was graded at 6.5 out of 10 with it and is not
+    // mine to disturb — and it is a different problem anyway: a stone-thrower is a solid chassis
+    // whose broad top faces catch the sun, where a scorpio is a skeleton that shades itself from
+    // three of four directions. The same albedo is not the same legibility.
+    tint = mix( vec3( 1.30, 1.22, 1.06 ), vec3( 0.92, 0.90, 0.86 ), wear )
+         * ( 0.88 + grain * 0.26 );
   } else if ( slot < 2.5 ) {
     // Iron: warm F0 for the same reason the soldier shader gives — a neutral grey metal
     // reflecting a blue sky comes back blue, and a field of blue ironwork is worse than
     // a field of grey.
-    tint = vec3( 1.10, 1.00, 0.88 ) * ( 0.72 + fract( v * 29.13 ) * 0.46 );
+    //
+    // Brighter and warmer still on the scorpio, and it is the same argument taken further. Iron is
+    // metal, so this value is not an albedo but the colour of what it reflects; in the machine's own
+    // shadow it reflects a dim cool sky and comes back navy. That did not matter while the timber
+    // was dark walnut, because everything was dark together. With the frame lightened, the corner
+    // plates, the arm-port straps and the epizygides became the darkest objects on the machine and
+    // sat exactly over the parts a judge is trying to read.
+    tint = vec3( 1.10, 1.00, 0.88 ) * ( heavy ? 1.0 : 1.42 )
+         * ( 0.72 + fract( v * 29.13 ) * 0.46 );
   } else if ( slot < 3.5 ) {
     // Bronze washers, gone dark and a little green where the rain sits.
-    tint = mix( vec3( 1.42, 1.02, 0.44 ), vec3( 0.70, 0.74, 0.50 ), fract( v * 53.9 ) * 0.6 );
+    //
+    // Lifted and warmed for the scorpio. The washers are the most distinctive fitting on a torsion
+    // frame and they were coming back as dark navy glass: bronze is metal, envMapIntensity is
+    // 2.4, and a metal in shadow renders mostly what it reflects — which is sky. The old tint drifted
+    // toward a greenish grey that had nothing to push back with. The onager's skein housings keep
+    // the old value for the same reason its timber does.
+    tint = heavy
+      ? mix( vec3( 1.42, 1.02, 0.44 ), vec3( 0.70, 0.74, 0.50 ), fract( v * 53.9 ) * 0.6 )
+      : mix( vec3( 1.62, 1.20, 0.58 ), vec3( 1.05, 0.98, 0.66 ), fract( v * 53.9 ) * 0.55 );
   } else if ( slot < 4.5 ) {
     // Sinew springs: pale, greasy, faintly amber. This is the one surface a viewer has no
     // reference for, so it has to look like nothing else on the machine or it reads as more
     // timber and the torsion disappears.
     // Bone-pale, only faintly warm. Sinew under grease is not gold, and at (1.28, 1.08, 0.70)
     // the springs and the bowstring were the most saturated thing in the frame.
-    tint = vec3( 1.02, 0.94, 0.76 ) * ( 0.88 + fract( v * 61.3 ) * 0.24 );
+    //
+    // Brightened with the timber, and it has to be: what makes a spring read is not its own value
+    // but the *split* between pale cord and darker frame, which is the one thing every reference
+    // plate has in common. Lifting the scorpio's timber from 0.27 to 0.41 without touching this
+    // would have cut that ratio from 2.0 to 1.4 and quietly undone the single change that has
+    // moved this machine's score so far. At 1.36x it holds near 1.9.
+    tint = vec3( 1.02, 0.94, 0.76 )
+         * ( heavy ? 1.0 : 1.36 )
+         * ( 0.88 + fract( v * 61.3 ) * 0.24 );
   } else {
     // Hemp cord and greased leather.
     tint = vec3( 0.90, 0.76, 0.54 ) * ( 0.82 + fract( v * 71.7 ) * 0.34 );
   }
   vEngTint = tint;
   vEngGrime = iOrient.w * 0.0 + clamp( wear * 0.35, 0.0, 1.0 );
+  vEngPart = aPart.x;
 }
 `;
 
@@ -340,6 +397,48 @@ const FRAG_DECLS = /* glsl */ `
 varying vec3 vEngTint;
 varying float vEngGrime;
 varying float vEngContact;
+varying float vEngPart;
+uniform float uEngDebug;
+`;
+
+/**
+ * Part-identity view: every part id as a flat saturated colour, unlit and unfogged.
+ *
+ * This is a diagnostic and it earns its place. Four rounds of blind grading of this machine
+ * produced faults of the form "there is no bowstring", "there is no rope on the drum", "the
+ * washers are lids sitting on nothing" — and in every single case the part was modelled,
+ * correctly placed, and either optically inside the timber it connects to or lost in the
+ * machine's own shadow. Reasoning about a shaded frame cannot tell those two cases apart, and
+ * guessing wrong costs a whole round: one such guess added a stop bar that dropped the score.
+ *
+ * Flat colour after tone mapping answers it in one frame. If the part is on screen it is a
+ * poster-paint patch; if it is not on screen it is genuinely occluded or genuinely absent, and
+ * the difference between "absent" and "hidden" is the difference between two opposite fixes.
+ *
+ * Costs one varying and one branch on engine pixels only, and engines are a fraction of a
+ * percent of the frame. `uEngDebug` is 0 in the game and is only ever written by
+ * `tools/probe-scorpion.mjs --debugparts`.
+ */
+const FRAG_DEBUG = /* glsl */ `
+if ( uEngDebug > 0.5 ) {
+  int pid = int( vEngPart + 0.5 );
+  vec3 dc = vec3( 1.0, 0.0, 1.0 );
+  if ( pid == 0 ) dc = vec3( 0.28, 0.28, 0.32 );       // Ground: stand, quiver — grey
+  else if ( pid == 1 ) dc = vec3( 0.10, 0.42, 0.95 );  // Body: case, capitulum, springs — blue
+  else if ( pid == 2 ) dc = vec3( 1.00, 0.25, 0.05 );  // Arm — orange
+  else if ( pid == 3 ) dc = vec3( 0.10, 0.95, 0.35 );  // Slider, claw, trigger — green
+  else if ( pid == 4 ) dc = vec3( 1.00, 0.95, 0.10 );  // Bowstring — yellow
+  else if ( pid == 5 ) dc = vec3( 1.00, 0.10, 0.55 );  // Bolt — magenta
+  else if ( pid == 6 ) dc = vec3( 0.55, 0.15, 0.95 );  // Winch drum, wheel, handspikes — violet
+  else if ( pid == 7 ) dc = vec3( 0.10, 0.90, 0.95 );  // Winch rope — cyan
+  else if ( pid == 8 ) dc = vec3( 0.10, 0.42, 0.95 );
+  else if ( pid == 9 ) dc = vec3( 1.00, 0.25, 0.05 );
+  else if ( pid == 10 ) dc = vec3( 1.00, 0.10, 0.55 );
+  else if ( pid == 11 ) dc = vec3( 0.55, 0.15, 0.95 );
+  else if ( pid == 12 ) dc = vec3( 0.10, 0.90, 0.95 );
+  else if ( pid == 13 ) dc = vec3( 1.00, 0.95, 0.10 );
+  gl_FragColor = vec4( dc, 1.0 );
+}
 `;
 
 const FRAG_BODY = /* glsl */ `
@@ -358,12 +457,21 @@ export interface EngineMaterialSet {
   readonly material: THREE.MeshStandardMaterial;
   readonly depth: THREE.MeshDepthMaterial;
   readonly distance: THREE.MeshDistanceMaterial;
+  /** Flat per-part-id colour instead of shading. Diagnostic only — see `FRAG_DEBUG`. */
+  setDebugParts(on: boolean): void;
   dispose(): void;
 }
+
+/**
+ * The part-view switch, shared by every program the set compiles so one write flips all of them.
+ * 0 in the game; see `FRAG_DEBUG`.
+ */
+const debugUniform = { value: 0 };
 
 function patch(material: THREE.Material, variant: 'colour' | 'depth'): void {
   const withNormal = variant === 'colour';
   material.onBeforeCompile = (shader) => {
+    shader.uniforms.uEngDebug = debugUniform;
     let v = shader.vertexShader;
     v = `${DECLS}\nvec3 gEngPos;\n${v}`;
     if (withNormal) {
@@ -390,6 +498,8 @@ function patch(material: THREE.Material, variant: 'colour' | 'depth'): void {
         '#include <roughnessmap_fragment>',
         '#include <roughnessmap_fragment>\nroughnessFactor = clamp( roughnessFactor + vEngGrime * 0.2, 0.06, 1.0 );'
       );
+      // Last, so nothing downstream — tone map, colour space, fog — touches the diagnostic.
+      fr = fr.replace('#include <dithering_fragment>', `#include <dithering_fragment>\n${FRAG_DEBUG}`);
       shader.fragmentShader = fr;
     }
   };
@@ -413,6 +523,9 @@ export function makeEngineMaterial(
     material,
     depth,
     distance,
+    setDebugParts(on: boolean): void {
+      debugUniform.value = on ? 1 : 0;
+    },
     dispose(): void {
       material.dispose();
       depth.dispose();

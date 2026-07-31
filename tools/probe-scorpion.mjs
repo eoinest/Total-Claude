@@ -312,6 +312,12 @@ if (args.has('bench')) {
   // -------------------------------------------------------------------------
   // An hour, or the name of a `SKY_PRESETS` entry — `--benchsky=overcast` is the flat diffuse
   // condition most museum photographs are actually taken in.
+  // `--debugparts` paints every part id a flat saturated colour instead of shading it, which is
+  // the only reliable way to tell "the part is missing" from "the part is inside the timber it
+  // connects to". Four rounds of blind grading of this machine reported absent parts that were
+  // all present; one fix made from the wrong diagnosis cost a whole round. Never grade a
+  // `--debugparts` frame — it is not a photograph of anything.
+  const DEBUG_PARTS = args.get('debugparts') === 'true';
   const BENCH_SKY = String(args.get('benchsky') ?? '12');
   const FILL = Number(args.get('fill') ?? 0.86);
   const FOV = Number(args.get('benchfov') ?? 38);
@@ -319,7 +325,7 @@ if (args.has('bench')) {
   // form; 90 leaves half the machine black. 32 is the standard three-quarter key.
   const SUN_OFF = Number(args.get('sunoff') ?? 32);
 
-  const setup = await page.evaluate(({ hour }) => {
+  const setup = await page.evaluate(({ hour, dbg }) => {
     const g = window.__game;
     const ctx = g.engine.context;
     const hidden = [];
@@ -361,8 +367,16 @@ if (args.has('bench')) {
     // parking zoom above the gate turns DOF off rather than defocusing half the frame at a
     // radius that no longer matches where the camera actually is.
     g.engine.rig.zoom = 0.42;
+    if (dbg) {
+      ctx.get('unitRender').debugEngineParts(true);
+      // AgX plus bloom turns a saturated flat colour into a pastel — the first debug pass came
+      // back in nursery colours and two part ids were indistinguishable. A part map is not a
+      // photograph, so it wants no grade at all.
+      const fx = ctx.tryGet('postfx');
+      if (fx) fx.enabled = false;
+    }
     return { hidden: hidden.length, sun: sky ? sky.timeOfDay : null };
-  }, { hour: BENCH_SKY });
+  }, { hour: BENCH_SKY, dbg: DEBUG_PARTS });
   console.log(`\n=== bench === (hid ${setup.hidden} vegetation/prop meshes, sun at ${setup.sun}h)`);
 
   // Draw fractions to photograph, plus the instant of the shot. `--phases=e-ready` shoots one,

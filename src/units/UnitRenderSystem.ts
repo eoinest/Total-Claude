@@ -110,6 +110,17 @@ const LOD_COUNT = 3;
  * keeps a marginal 10 m of real geometry for nothing at 1080p.
  */
 const LOD_FRACTION = [0.14, 0.4, 2.0];
+
+/**
+ * Metres of slop added to the per-instance cull sphere, purely so shadows survive it.
+ *
+ * The cull below is against the camera frustum and a culled man is never written to any
+ * instance buffer, so he is absent from the shadow cascades as well as from the colour
+ * pass. With the sun at 27 deg a 1.8 m man throws 3.5 m of shadow, so a man up to that far
+ * outside the frustum still owns pixels inside it. 4.5 m covers the lowest sun the presets
+ * reach with margin, and admits well under 1 % extra instances at any battle camera.
+ */
+const SHADOW_CULL_MARGIN = 4.5;
 /** Hysteresis as a fraction of the band distance: a man must cross well past a boundary
  *  before he changes LOD, otherwise a slow camera pan pops a whole rank back and forth. */
 const LOD_HYSTERESIS = 0.12;
@@ -579,12 +590,15 @@ export class UnitRenderSystem implements Subsystem {
     // thousands of a thing do not cost thousands of times its triangles, and there are at
     // most a couple of dozen machines on the field.
     //
-    // Measured: 6.3 k triangles for a scorpio and 5.5 k for an onager, up from 1.1 k each,
-    // almost all of it spent on the torsion skeins — a spring is now nine to thirteen
-    // individually modelled cords a lobe instead of one swept tube, because every blind critic of
-    // these machines led with the springs being unreadable. A four-gun battery is 25 k triangles
-    // and the 64-machine ceiling is 400 k, against a 16 M frame. It is the right thing to spend
-    // geometry on: nothing else on the machine is load-bearing for whether it reads as a machine.
+    // Measured: 8.2 k triangles for a scorpio and 4.7 k for an onager, up from 1.1 k each,
+    // much of it spent on the torsion skeins — a spring is eleven to thirteen individually
+    // modelled cords a lobe instead of one swept tube, because every blind critic of these
+    // machines led with the springs being unreadable. The scorpio's later growth is the arm ports
+    // cut through the outer posts, the windlass standards, the second ratchet wheel and the cord
+    // wrapping each arm butt, all of which answer named faults. A four-gun battery is 33 k
+    // triangles and the 64-machine ceiling is 525 k, against a 16 M frame. It is the right thing
+    // to spend geometry on: nothing else on the machine is load-bearing for whether it reads as
+    // a machine.
     this.engineMat = makeEngineMaterial({
       ...baseParams,
       // Timber and cord are dielectric; only the fittings are metal, and the ORM tile's
@@ -742,6 +756,14 @@ export class UnitRenderSystem implements Subsystem {
    * instances are written.
    */
   benchOnly: { unit: number; k: number } | null = null;
+
+  /**
+   * Draw the engines as flat per-part colours, for `tools/probe-scorpion.mjs --debugparts`.
+   * Not used by the game. See `FRAG_DEBUG` in `engineMaterial.ts` for why it exists.
+   */
+  debugEngineParts(on: boolean): void {
+    this.engineMat?.setDebugParts(on);
+  }
 
   /** Battery state for `tools/probe-scorpion.mjs`. Not used by the game. */
   debugEngines(): unknown {
@@ -1629,7 +1651,7 @@ export class UnitRenderSystem implements Subsystem {
         // A settled body lies within a metre of the ground and reaches 1.8 m along it, so
         // its bound is centred lower and is wider than a standing man's.
         this.sphere.center.set(rp.x, rp.y + (hasCorpse ? 0.4 : 0.9), rp.z);
-        this.sphere.radius = cav ? 1.9 : hasCorpse ? 1.5 : 1.25;
+        this.sphere.radius = (cav ? 1.9 : hasCorpse ? 1.5 : 1.25) + SHADOW_CULL_MARGIN;
         if (!this.frustum.intersectsSphere(this.sphere)) continue;
 
         // A settled corpse is drawn one tier coarser than his distance would give. Lying
