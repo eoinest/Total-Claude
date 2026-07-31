@@ -138,6 +138,34 @@ const SHOTS = {
     desc: 'Late battle: corpses, routs, dust and blood on the ground',
     follow: 'corpses', zoom: 0.34, at: 190,
   },
+  /*
+   * Raking light. Added because the shading workstream measured that **no camera in this
+   * table rakes**: sun-versus-camera bearing is -174 deg at `clash`, +138 at `romanline` and
+   * `midcrowd`, -114 at `wide`. At `clash` the sun sits almost directly behind the viewer, so
+   * every shadow in the frame falls away from camera and is invisible — the shot list was
+   * hiding the shadow work it was meant to grade. This framing measures 84 deg, which is the
+   * only near-broadside angle found, and is the frame to judge contact shadows and penumbra on.
+   */
+  raking: {
+    desc: 'Raking sun across the Roman line — the only shot where shadows face the camera',
+    x: -20, z: 120, zoom: 0.22, yaw: Math.PI * 1.72, at: 2,
+  },
+  /*
+   * A frame with a horizon in it.
+   *
+   * Two workstreams independently found that essentially none of our frames contain sky: at
+   * zoom >= 0.6 the RTS camera's pitch fills the viewport with ground, on both maps, so the
+   * Pydna agent could not compose anything comparable to the sky-and-mountains reference plate
+   * and the shading agent measured 0.03% of frame above 90% luminance against 0.61% across the
+   * plates — a 20x gap it correctly attributed to composition rather than to the tone curve,
+   * since not one of our graded frames contained sky or fire while all ten plates did. Zoom is
+   * the lever: pitch runs 39 deg at 0.58 and 54 deg at 0.82, so a low zoom is the only way to
+   * put the horizon in shot.
+   */
+  horizon: {
+    desc: 'Low camera with sky and horizon — the highlight and aerial-perspective control',
+    x: -420, z: -120, zoom: 0.12, yaw: Math.PI * 0.62, at: 2,
+  },
   // A wide camera during the collapse was the one combination the other fourteen missed:
   // `wide` is wide but fires at t+2 when nobody has routed, and `aftermath` is late but sits
   // at zoom 0.34 following the corpse pile. Neither puts thousands of scattered men in frame
@@ -558,6 +586,25 @@ try {
           // returns before the GPU has drained, which reported 0.25 ms/frame for a
           // 1.3 M-triangle scene. A 1x1 `readPixels` forces a genuine round trip,
           // because the result cannot be produced until the pipeline has flushed.
+          // MEASURED, because a report claimed the opposite and the opposite would matter.
+          //
+          // The claim was that `ctx.time.frameDt` stays at 0.25 s through this loop, pinning
+          // PostFX's motion-blur shutter to its 1.2 maximum in every graded frame and running
+          // the battle 7.5 s past `at:`. Probed directly: after `advance(0.25)` frameDt is
+          // 0.0167, and after the first `engine.frame` below it is **0** and stays 0 for all
+          // thirty. So the shutter sits at its *floor* of 0.15, not its ceiling, and sim time
+          // moved 0.22 s rather than 7.5 s.
+          //
+          // frameDt reaches zero for a reason already documented on this project: `advance`
+          // restarts the clock from `Time.elapsed`, which drifts behind `lastNow` until
+          // `beginFrame` clamps every subsequent delta to zero. Here that is a feature — the
+          // world is frozen while the thirty frames are timed, which is what makes the timing
+          // reproducible at all.
+          //
+          // One real consequence is worth knowing and is NOT fixed here: with dt at zero the
+          // fixed step does not run during the timing loop, so `msPerFrame` is render cost and
+          // excludes per-tick simulation. Every fps figure this harness has ever printed should
+          // be read that way.
           const N = 30;
           const gl = g.engine.renderer.getContext();
           const px = new Uint8Array(4);

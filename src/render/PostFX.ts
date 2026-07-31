@@ -46,6 +46,27 @@ const BLOOM_STRENGTH = 0.07;
 const AO_RADIUS = 1.1;
 const AO_STRENGTH = 0.72;
 /** 8-sample Halton(2,3) jitter, the standard TAA sequence. */
+/*
+ * Sky is tested with `>= 1.0`, not with an epsilon.
+ *
+ * A depth-*value* epsilon is not a distance. Window depth is 1 - (n/(f-n))(f/z - 1), so the
+ * metres a fixed epsilon spans scale with f squared over n. At the `horizon` camera
+ * (near 0.08, far 2694.68) `d >= 1.0` classified **the last 87.8 m before the far
+ * plane as sky** — which is exactly where the far-hills scenery ring stands, so a 3.4 km
+ * stone ridge was skipped by aerial perspective and rendered as a hard dark wedge against a
+ * hazed sky. Two blind critics called it "an unculled black polygon intruding from the
+ * top-left corner: a shipping bug".
+ *
+ * Bisected rather than guessed, after three wrong guesses: hiding scene subtrees one at a
+ * time removed the dark pixels only for `city > far-hills-lod0 > far-hills-stone`, and
+ * pinning the camera near plane from 0.08 to 5 made the wedge vanish while 0.02 doubled its
+ * dark-pixel count from 7,303 to 14,645 — precisely what the epsilon-band arithmetic
+ * predicts. It only ever showed at `horizon` because that is the project's only low-zoom
+ * frame, and low zoom is what pulls the far plane in.
+ *
+ * The depth attachment is UNSIGNED_INT_24_8, so cleared sky reads back as exactly 1.0 and an
+ * exact comparison is safe.
+ */
 const HALTON: ReadonlyArray<readonly [number, number]> = [
   [0.5, 0.333333], [0.25, 0.666667], [0.75, 0.111111], [0.125, 0.444444],
   [0.625, 0.777778], [0.375, 0.222222], [0.875, 0.555556], [0.0625, 0.888889],
@@ -277,7 +298,7 @@ export class PostFXSystem implements Subsystem {
 
       void main() {
         float d = texture2D( tDepth, vUv ).x;
-        if ( d >= 0.999999 ) { gl_FragColor = vec4( 1.0 ); return; }
+        if ( d >= 1.0 ) { gl_FragColor = vec4( 1.0 ); return; }
         vec3 P = tcViewPos( vUv, d );
         vec3 N = tcNormalFromDepth( vUv, uTexel, d, P );
 
@@ -300,7 +321,7 @@ export class PostFXSystem implements Subsystem {
             float t = ( float( s ) - 0.5 + tcIGN( gl_FragCoord.yx ) ) / float( STEPS );
             vec2 suv = vUv + dir * rad * t;
             float sd = texture2D( tDepth, suv ).x;
-            if ( sd >= 0.999999 ) continue;
+            if ( sd >= 1.0 ) continue;
             vec3 S = tcViewPos( suv, sd );
             vec3 V = S - P;
             float len2 = dot( V, V );
@@ -388,7 +409,7 @@ export class PostFXSystem implements Subsystem {
 
       void main() {
         float d = texture2D( tDepth, vUv ).x;
-        if ( d >= 0.999999 ) { gl_FragColor = vec4( 1.0 ); return; }
+        if ( d >= 1.0 ) { gl_FragColor = vec4( 1.0 ); return; }
         vec3 P = tcViewPos( vUv, d );
         vec3 N = tcNormalFromDepth( vUv, uTexel, d, P );
 
@@ -412,7 +433,7 @@ export class PostFXSystem implements Subsystem {
           vec2 suv = clip.xy / clip.w * 0.5 + 0.5;
           if ( any( lessThan( suv, vec2( 0.0 ) ) ) || any( greaterThan( suv, vec2( 1.0 ) ) ) ) break;
           float sd = texture2D( tDepth, suv ).x;
-          if ( sd >= 0.999999 ) continue;
+          if ( sd >= 1.0 ) continue;
           // Both in metres along -Z, so the comparison is a real distance rather than a
           // non-linear depth difference that means different things near and far.
           float zRay = -S.z;
@@ -489,7 +510,7 @@ export class PostFXSystem implements Subsystem {
         float d = texture2D( tDepth, vUv ).x;
         vec3 col = texture2D( tScene, vUv ).rgb;
 
-        if ( d >= 0.999999 ) {
+        if ( d >= 1.0 ) {
           // Sky: the background pass already produced the correct radiance.
           gl_FragColor = vec4( col, 1.0 );
           return;
@@ -598,7 +619,7 @@ export class PostFXSystem implements Subsystem {
         for ( int i = 0; i < 28; i ++ ) {
           p += delta;
           float d = texture2D( tDepth, clamp( p, vec2( 0.0 ), vec2( 1.0 ) ) ).x;
-          acc += step( 0.999999, d ) * illum;
+          acc += step( 1.0, d ) * illum;
           illum *= uParams.y;
         }
         acc /= 28.0;
@@ -970,7 +991,7 @@ export class PostFXSystem implements Subsystem {
         float blend = uBlend * exp( -vel * 0.06 );
         // Sky pixels reproject as if they were at the far plane, but the clouds
         // on them actually drift, so trust the history less there.
-        blend *= mix( 1.0, 0.72, step( 0.999999, d ) );
+        blend *= mix( 1.0, 0.72, step( 1.0, d ) );
         gl_FragColor = vec4( mix( cur, hist, blend ), 1.0 );
       }
       `,
