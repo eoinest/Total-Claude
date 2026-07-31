@@ -32,6 +32,18 @@
  *     EXIF/software tags name the renderer outright.
  *   - **Shuffled, seeded.** Filenames are `frame-01..NN` in an order derived from `--seed`,
  *     so a run is reproducible without being guessable from the ordering.
+ *   - **One byte budget.** Encoding every frame at one *quality* sounds symmetric and is not:
+ *     quality is a ratio, so at fixed q88 the file size reports how much high-frequency detail
+ *     an image carries. Our renders carry far more of it — fine grass over the whole frame,
+ *     grain, thousands of instanced men — while the press plates are web assets already
+ *     compressed once before we saw them. Measured on a 6-ours/10-plate deck: mean 672,830
+ *     bytes for ours against 349,225 for the plates, and the nine smallest files in the
+ *     directory were all plates. `wc -c *.jpg | sort -n` decoded the deck without viewing a
+ *     pixel. Round-tripping our PNGs through a JPEG generation first does NOT fix it
+ *     (633,746 vs 349,225) — the asymmetry is content, not provenance. So each frame's quality
+ *     is binary-searched to land inside a common byte window. It runs in both directions,
+ *     which is what makes it fair rather than punitive: plates are re-encoded *up*, spending
+ *     more bytes on the same content without adding any, and ours down.
  *
  * The answer key is written to `key.json` in the *parent* of the deck directory, so an agent
  * pointed at the deck cannot read it by listing its own working directory.
@@ -48,7 +60,7 @@
  * sensible crop line and no amount of trimming makes them usable as blind plates.
  */
 
-import { readdir, mkdir, writeFile, rm } from 'node:fs/promises';
+import { readdir, mkdir, writeFile, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import sharp from 'sharp';
@@ -71,6 +83,8 @@ const BOTTOM_CROP = Number(args.get('bottomCrop') ?? 0.20);
 /** Fraction removed from the top, where in-game captures carry banners and buttons. */
 const TOP_CROP = Number(args.get('topCrop') ?? 0);
 const QUALITY = Number(args.get('quality') ?? 88);
+/** Set 0 to skip byte-budget normalisation. Anything else overrides the computed target. */
+const BYTES = args.get('bytes') === undefined ? null : Number(args.get('bytes'));
 /*
  * `cover` centre-crops to 16:9, which is right for battle frames and wrong for a siege
  * tower: towers are tall, and only 2 of 11 reconstruction photographs survived the crop with
@@ -160,6 +174,41 @@ for (const [i, entry] of deck.entries()) {
   key.push({ frame: name, origin: entry.origin, source: path.relative(ROOT, entry.src) });
 }
 
+/*
+ * Byte-budget pass. Target the midpoint of the two sides' means so neither is degraded
+ * relative to the other, then binary-search each frame's quality to land within 3%.
+ */
+let byteReport = 'byte normalisation skipped';
+if (BYTES !== 0) {
+  const sizeOf = async (f) => (await stat(path.join(outAbs, f))).size;
+  const before = { ours: [], ref: [] };
+  for (const e of key) before[e.origin === 'ours' ? 'ours' : 'ref'].push(await sizeOf(e.frame));
+  const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
+  const target = BYTES ?? Math.round((mean(before.ours) + mean(before.ref)) / 2);
+  const missed = [];
+  for (const e of key) {
+    const src = path.join(outAbs, e.frame);
+    const raw = await sharp(src).raw().toBuffer({ resolveWithObject: true });
+    let lo = 20, hi = 100, best = null;
+    for (let i = 0; i < 8; i++) {
+      const q = Math.round((lo + hi) / 2);
+      const buf = await sharp(raw.data, { raw: raw.info }).jpeg({ quality: q, mozjpeg: true }).toBuffer();
+      if (best === null || Math.abs(buf.length - target) < Math.abs(best.len - target)) {
+        best = { q, len: buf.length, buf };
+      }
+      if (buf.length > target) hi = q - 1; else lo = q + 1;
+      if (lo > hi) break;
+    }
+    await writeFile(src, best.buf);
+    if (Math.abs(best.len - target) / target > 0.03) missed.push(`${e.frame} ${best.len} (q${best.q})`);
+  }
+  const after = { ours: [], ref: [] };
+  for (const e of key) after[e.origin === 'ours' ? 'ours' : 'ref'].push(await sizeOf(e.frame));
+  byteReport = `bytes: target ${target}, ours ${Math.round(mean(before.ours))}→${Math.round(mean(after.ours))}, `
+    + `${REF_LABEL} ${Math.round(mean(before.ref))}→${Math.round(mean(after.ref))}`
+    + (missed.length ? `; ${missed.length} outside 3%: ${missed.slice(0, 3).join(', ')}` : '; all inside 3%');
+}
+
 // One directory up, so an agent given the deck path cannot list its way to the answers.
 const keyPath = path.join(path.dirname(outAbs), `${path.basename(outAbs)}.key.json`);
 await writeFile(keyPath, JSON.stringify({
@@ -169,4 +218,5 @@ await writeFile(keyPath, JSON.stringify({
 
 console.log(`deck: ${deck.length} frames (${ours.length} ours, ${refs.length} ${REF_LABEL}) → ${path.relative(ROOT, outAbs)}`);
 console.log(`all ${W}x${HEIGHT}, top ${Math.round(TOP_CROP * 100)}% + bottom ${Math.round(BOTTOM_CROP * 100)}% cropped, jpeg q${QUALITY}, metadata stripped`);
+console.log(byteReport);
 console.log(`key (do NOT give this to the critic): ${path.relative(ROOT, keyPath)}`);
