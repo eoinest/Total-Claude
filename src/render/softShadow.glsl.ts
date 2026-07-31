@@ -69,6 +69,12 @@ const PEN_MAX = 0.42;
 const PEN_MIN = 0.025;
 /** Cost bound on the wide probe, in texels. */
 const RADIUS_MAX_TEXELS = 9.0;
+/**
+ * Radius, in texels, for the fixed-width fallback compiled in under `TC_SOFT_OFF`.
+ * This is three's own PCF filter — the one this file replaced — kept as a compiled arm so
+ * the throw-dependent path's cost can be measured against it rather than estimated.
+ */
+const PCF_FALLBACK_TEXELS = 2.0;
 
 /**
  * `tcSoftShadow` — drop-in replacement for three's directional `getShadow`, plus the
@@ -87,6 +93,7 @@ uniform vec2 tcShadowGeom[ CSM_CASCADES ];
 #define TC_PEN_MAX ${PEN_MAX}
 #define TC_PEN_MIN ${PEN_MIN}
 #define TC_RADIUS_MAX_TEXELS ${RADIUS_MAX_TEXELS.toFixed(1)}
+#define TC_PCF_FALLBACK ${PCF_FALLBACK_TEXELS.toFixed(1)}
 
 // Three taps of the five-tap disc, reused at each binary-search depth. Three is enough to
 // tell "the whole neighbourhood is clear of this plane" from "some of it is not", and the
@@ -111,6 +118,21 @@ float tcSoftShadow(
   if ( ! inFrustum || shadowCoord.z > 1.0 ) return 1.0;
 
   float texel = 1.0 / shadowMapSize.x;
+
+#ifdef TC_SOFT_OFF
+
+  // Fixed-texel PCF: the filter this file replaced, compiled in as a reference arm.
+  float phiF = interleavedGradientNoise( gl_FragCoord.xy ) * PI2;
+  float sumF = 0.0;
+  for ( int k = 0; k < 5; k ++ ) {
+    sumF += texture( shadowMap, vec3(
+      shadowCoord.xy + vogelDiskSample( k, 5, phiF ) * TC_PCF_FALLBACK * texel, shadowCoord.z
+    ) );
+  }
+  return mix( 1.0, sumF * 0.2, shadowIntensity );
+
+#else
+
   // Guarded: a material that reached here without tcShadowGeom ever being written would
   // divide by zero and blow the radius bounds out to infinity.
   float mPerTexel = max( geom.x, 1e-4 );
@@ -158,6 +180,8 @@ float tcSoftShadow(
     shadow += texture( shadowMap, vec3( uv + vogelDiskSample( k, 8, phi ) * radius * texel, shadowCoord.z ) );
   }
   return mix( 1.0, shadow * 0.125, shadowIntensity );
+
+#endif
 }
 
 #endif

@@ -21,6 +21,12 @@
  *   crowd      the soldier/horse/engine tiers only, vs the same frame with their
  *              `castShadow` cleared. This is the number the critics were reading.
  *   ao         the HBAO pass, vs `quality.ssao = false`.
+ *   contact    the screen-space contact pass alone, vs `postfx.contactShadows = false`.
+ *              Reported separately from `ao` because the two are composited with a `min`:
+ *              wherever HBAO is already the darker term, the contact pass changes nothing
+ *              and the `ao` arm cannot tell you whether it contributed at all. Blind critics
+ *              kept naming absent contact shadowing while this pass was demonstrably
+ *              running, and only measuring it on its own settles that.
  *
  * Also dumps, per cascade, the fitted ortho extent and its texel footprint in metres. A man
  * is ~0.5 m across, so a cascade whose texel exceeds ~0.25 m cannot hold his silhouette at
@@ -294,6 +300,25 @@ for (const name of requested) {
   await step();
   const ao = await darkFraction(noAo, A);
 
+  // --- the screen-space contact pass ----------------------------------------
+  // Separated from `hbao` because they are composited with a `min`, so the AO arm above
+  // cannot tell you whether the contact term contributed anything of its own: wherever HBAO
+  // is already the darker of the two, switching contact off changes nothing. Three blind
+  // critics have now named absent contact shadowing while this pass was demonstrably
+  // running, and the only way to settle that is to measure the pass on its own.
+  await page.evaluate(() => {
+    const p = window.__game.engine.context.tryGet('postfx');
+    if (p) p.contactShadows = false;
+  });
+  await step();
+  const noContact = await shot(`${name}-nocontact`);
+  await page.evaluate(() => {
+    const p = window.__game.engine.context.tryGet('postfx');
+    if (p) p.contactShadows = true;
+  });
+  await step();
+  const contact = await darkFraction(noContact, A);
+
   const lv = await levels(A);
   const pc = (x) => `${(x * 100).toFixed(2)}%`;
   const row = (label, r, extra = '') => console.log(
@@ -302,8 +327,12 @@ for (const name of requested) {
   row('all shadows', allShadow);
   row('crowd shadows', crowd, `(${flipped} tiers flipped)`);
   row('hbao', ao);
+  row('contact ss', contact, '(min-composited with hbao, so this is its own marginal share)');
   console.log(`levels p01 ${lv.p01} p05 ${lv.p05} p50 ${lv.p50} p95 ${lv.p95} p99 ${lv.p99}`);
-  summary.push({ name, noise, allShadow, crowd, ao, levels: lv, cascades: info.cascades, sunRelDeg: info.sunRelDeg });
+  summary.push({
+    name, noise, allShadow, crowd, ao, contact,
+    levels: lv, cascades: info.cascades, sunRelDeg: info.sunRelDeg,
+  });
 }
 
 await writeFile(path.join(OUT, `${TAG || 'run'}summary.json`), JSON.stringify(summary, null, 2));

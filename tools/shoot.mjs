@@ -586,36 +586,49 @@ try {
           // returns before the GPU has drained, which reported 0.25 ms/frame for a
           // 1.3 M-triangle scene. A 1x1 `readPixels` forces a genuine round trip,
           // because the result cannot be produced until the pipeline has flushed.
-          // MEASURED, because a report claimed the opposite and the opposite would matter.
-          //
-          // The claim was that `ctx.time.frameDt` stays at 0.25 s through this loop, pinning
-          // PostFX's motion-blur shutter to its 1.2 maximum in every graded frame and running
-          // the battle 7.5 s past `at:`. Probed directly: after `advance(0.25)` frameDt is
-          // 0.0167, and after the first `engine.frame` below it is **0** and stays 0 for all
-          // thirty. So the shutter sits at its *floor* of 0.15, not its ceiling, and sim time
-          // moved 0.22 s rather than 7.5 s.
-          //
-          // frameDt reaches zero for a reason already documented on this project: `advance`
-          // restarts the clock from `Time.elapsed`, which drifts behind `lastNow` until
-          // `beginFrame` clamps every subsequent delta to zero. Here that is a feature — the
-          // world is frozen while the thirty frames are timed, which is what makes the timing
-          // reproducible at all.
-          //
-          // One real consequence is worth knowing and is NOT fixed here: with dt at zero the
-          // fixed step does not run during the timing loop, so `msPerFrame` is render cost and
-          // excludes per-tick simulation. Every fps figure this harness has ever printed should
-          // be read that way.
+          /*
+           * Drive the clock from our own counter, not from `Time.elapsed`.
+           *
+           * `Time.beginFrame` does `raw = now - lastNow; lastNow = now; frameDt = clamp(raw,
+           * 0, 0.25)`. Feeding it `elapsed * 1000 + 16.7` — a timestamp recomputed from the
+           * clock the previous call just advanced — makes `raw` come out as *exactly the
+           * previous frameDt*. It is a fixed point, and it holds for all thirty frames.
+           *
+           * Which value it locks onto is bistable and depends on whether synthetic `elapsed`
+           * has outrun `performance.now()` when the loop starts. Early in a deck it pins at 0.
+           * Later — after fast-forwarding to t+78 s, which costs 78 s of `elapsed` but only a
+           * few wall seconds on an idle machine — it pins at the 0.25 s clamp, which is five
+           * fixed sim steps per rendered frame at the `maxStepsPerFrame` cap.
+           *
+           * So the harness charged **five 30 Hz ticks to every rendered frame** and reported
+           * render+5x-sim as if it were frame cost. At `melee`, identical code: 22.68 ms that
+           * way against 9.37 ms at a true 1/60 s frame — 14.04 ms of it simulation, about
+           * 2.8 ms a tick at 8,128 men, which is inside the 4 ms budget and merely counted
+           * five times. Corroborated across 493 historical shot records: `clash` at 0.23 s of
+           * overshoot ran 3.1-9.4 ms over 15 runs, and at 5.80-5.87 s of overshoot ran
+           * 20.4-24.0 ms over 15 runs. Same shot, same camera.
+           *
+           * The perverse consequence, which is why this survived so long: the faster and
+           * quieter the machine, the further `elapsed` outruns the wall clock, the more likely
+           * the 0.25 s branch, and **the worse the number reported**. A run on a loaded machine
+           * looked healthy and a run on an idle one looked like a 30% regression.
+           *
+           * `resync()` drops `lastNow`, and the counter below then supplies real 1/60 s deltas
+           * that owe nothing to `elapsed`.
+           */
           const N = 30;
           const gl = g.engine.renderer.getContext();
           const px = new Uint8Array(4);
           const sync = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
 
-          g.engine.frame(g.engine.time.elapsed * 1000 + 16.7);
+          g.engine.time.resync();
+          let clock = g.engine.time.elapsed * 1000;
+          const step = () => { clock += 1000 / 60; g.engine.frame(clock); };
+
+          step();
           sync();
           const t0 = performance.now();
-          for (let i = 0; i < N; i++) {
-            g.engine.frame(g.engine.time.elapsed * 1000 + 16.7);
-          }
+          for (let i = 0; i < N; i++) step();
           sync();
           const msPerFrame = (performance.now() - t0) / N;
 

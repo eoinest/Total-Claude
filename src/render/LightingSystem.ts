@@ -119,12 +119,34 @@ export class LightingSystem implements Subsystem {
   private readonly csmDepth = new THREE.Vector2(SPLIT_NEAR, SHADOW_FAR_MIN);
   private shadowFar = SHADOW_FAR_MIN;
   private patched = new WeakSet<THREE.Material>();
+  /** Same membership as `patched`, kept iterable so a define can be re-flipped on all of
+   *  them at once. Cleared wholesale by `rebuild`, so it cannot outlive its materials. */
+  private patchedList: THREE.Material[] = [];
+  private softOn = true;
   private readonly invView = new THREE.Matrix4();
   private cloudShadowsEnabled = true;
   private traverseTimer = 0;
 
   get sun(): THREE.DirectionalLight {
     return this.csm ? this.csm.lights[0] : this.bounce;
+  }
+
+  /**
+   * Throw-dependent penumbra on or off. Off compiles the fixed-texel PCF this replaced,
+   * which is what the lower quality tiers want and what an A/B measures against.
+   */
+  get softShadows(): boolean {
+    return this.softOn;
+  }
+
+  set softShadows(on: boolean) {
+    if (on === this.softOn) return;
+    this.softOn = on;
+    for (const m of this.patchedList) {
+      if (on) delete m.defines?.TC_SOFT_OFF;
+      else if (m.defines) m.defines.TC_SOFT_OFF = '';
+      m.needsUpdate = true;
+    }
   }
 
   init(ctx: EngineContext): void {
@@ -138,6 +160,12 @@ export class LightingSystem implements Subsystem {
     ctx.renderer.shadowMap.type = THREE.PCFShadowMap;
 
     this.cascades = clamp(Math.round(q.shadowCascades), 1, 4);
+    // The blocker search buys a penumbra that widens with throw distance. That is worth
+    // paying for where there are texels to resolve it — measured at 0.46 ms of an 8.22 ms
+    // frame at the `clash` camera on ultra — and not worth it on the tiers that ship 2
+    // cascades into a 1024 map, where the near cascade's texel is already wider than the
+    // penumbra being searched for.
+    this.softOn = q.tier === 'high' || q.tier === 'ultra';
     // 4 cascades at 4096 would be 268 MB of shadow memory for no visible gain
     // once the splits are this tight; 2048 gives ~2.4 cm/texel in cascade 0.
     const mapSize = Math.min(q.shadowMapSize, 2048);
@@ -291,11 +319,13 @@ export class LightingSystem implements Subsystem {
   private setupMaterial(mat: THREE.Material): void {
     if (this.patched.has(mat)) return;
     this.patched.add(mat);
+    this.patchedList.push(mat);
 
     mat.defines = mat.defines ?? {};
     mat.defines.USE_CSM = 1;
     mat.defines.CSM_CASCADES = this.cascades;
     mat.defines.CSM_FADE = '';
+    if (!this.softOn) mat.defines.TC_SOFT_OFF = '';
     if (this.cloudShadowsEnabled) mat.defines.TC_CLOUD_SHADOW = '';
 
     const prev = mat.onBeforeCompile;
@@ -496,6 +526,7 @@ export class LightingSystem implements Subsystem {
     // The cascade count lives in every material's defines, so they all have to
     // be re-patched with the new value.
     this.patched = new WeakSet<THREE.Material>();
+    this.patchedList = [];
     this.init(ctx);
   }
 
