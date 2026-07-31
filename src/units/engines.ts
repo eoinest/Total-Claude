@@ -1,9 +1,10 @@
 import type { UnitTypeDef } from '../sim/types';
 import { Clip } from '../sim/types';
 import { hash01 } from '../util/rand';
+import type { Silhouette } from './engineMesh';
 import {
   ARM_DRAWN, ARM_REST, CLAW_DRAWN_Z, CLAW_REST_Z, ON_ARM_COCKED, ON_ARM_RELEASED,
-  ON_ARM_R, onArmPoint,
+  ON_ARM_R, ONAGER_SILHOUETTE, SCORPIO_SILHOUETTE, onArmPoint,
 } from './engineMesh';
 
 /**
@@ -173,6 +174,12 @@ export const CREW_STATIONS: readonly CrewStation[] = [
 export const STATIONS_OF: Record<EngineKind, readonly CrewStation[]> = {
   [EngineKind.Scorpio]: CREW_STATIONS,
   [EngineKind.Onager]: ONAGER_STATIONS,
+};
+
+/** The outline points of each kind, for the bench camera's framing solve. */
+export const SILHOUETTE_OF: Record<EngineKind, Silhouette> = {
+  [EngineKind.Scorpio]: SCORPIO_SILHOUETTE,
+  [EngineKind.Onager]: ONAGER_SILHOUETTE,
 };
 
 // ---------------------------------------------------------------------------

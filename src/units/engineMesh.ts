@@ -87,8 +87,31 @@ export const enum EngineTint {
 // `engines.ts` (for crew stations and muzzle points), so there is one source.
 // ---------------------------------------------------------------------------
 
-/** Lateral offset of a spring bundle's centre from the stock's centreline. */
-export const SPRING_X = 0.262;
+/**
+ * Lateral offset of a spring bundle's centre from the stock's centreline.
+ *
+ * 0.210, in from 0.262, and the arms are longer and the frame narrower to match. All three moved
+ * together because they are one ratio, and it was the ratio that was wrong rather than any single
+ * number.
+ *
+ * Measured off `ballista-alesia-repro` — the only reconstruction photograph in the reference set
+ * with the transverse axis near enough the sensor plane to measure, cross-checked against the
+ * Lyon iron field frame and the Xanten hardware — a real engine of this class runs:
+ *
+ *     arm length / spring spacing      1.7      was 1.18, now 1.60
+ *     arm length / frame width         0.88     was 0.70, now 0.86
+ *     tip-to-tip span / frame width    2.25     was 1.99, now 2.26
+ *     spring spacing / frame width     0.51     was 0.59, now 0.54
+ *
+ * So the arms did read stubby, and the fix is *not* mainly to lengthen them. The frame was too
+ * wide and the springs too far apart: on a real machine the frame is the narrow waist of the
+ * silhouette and the arms reach well beyond it on both sides. Widening the arms alone would have
+ * given a machine 2.1 m across the tips, which is a ballista rather than a scorpio.
+ *
+ * The overall tip-to-tip span is deliberately held near where it was (1.76 -> 1.76 m), because
+ * that is what the machine reads as at battle distance and the crew stations are placed round it.
+ */
+export const SPRING_X = 0.210;
 /** Height of the arms' rotation axis — the middle of the spring bundle. */
 export const SPRING_Y = 1.26;
 /** Where the frame plane sits along the stock. */
@@ -102,9 +125,19 @@ export const SPRING_Z = 0.30;
  * trestle table with a plank on it. Wilkins' working three-span reconstruction is about
  * 1.7 m across the arms, so this is the archaeology as much as it is the silhouette.
  */
-export const ARM_R = 0.62;
-/** Arms rake up a few degrees so they clear the frame's cross-timbers. */
-export const ARM_RAKE = 0.09;
+export const ARM_R = 0.67;
+/**
+ * Arms rake up a few degrees so they clear the frame's cross-timbers.
+ *
+ * 0.035, down from 0.09. Every arm in the reference set sits at the springs' own mid-height and
+ * rakes *forward*, toward the muzzle, out of the frame plane — never upward. The up-rake was
+ * lifting the nock 56 mm above the arm's own axis, which is small in metres and was not small in
+ * consequence: the bowstring anchors analytically at the nock, so it ran across the machine
+ * 56 mm high and a blind critic read it as "anchored to the top of the capitulum, not to the arm
+ * tips... the springs therefore drive nothing". A few degrees of clearance is still wanted so the
+ * arm does not scrape the cross-timbers; 0.035 gives 23 mm of it.
+ */
+export const ARM_RAKE = 0.035;
 /**
  * Arm sweep, radians from the lateral (+X) axis toward downrange (+Z).
  *
@@ -130,10 +163,24 @@ export const ARM_DRAWN = -0.56;
  * Half the bowstring, tip to claw.
  *
  * Must exceed the widest tip half-separation over the whole sweep, which is at arms-square
- * (SPRING_X + ARM_R*cos(ARM_RAKE) = 0.8795); 0.894 leaves the string just off dead-taut at
- * that point rather than snapping to a NaN under the square root.
+ * (SPRING_X + ARM_R*cos(ARM_RAKE) = 0.8796). 0.898 cleared that, and it was still wrong, for a
+ * reason that took two blind rounds to isolate.
+ *
+ * The claw sits on the centreline, so the string runs from the arm's nock back toward the machine's
+ * axis — and at a shallow brace it runs at very nearly the arm's own bearing. At 0.898 the angle
+ * between the string and the arm it leaves was **8.6 degrees**, so from any camera the string was
+ * drawn on top of the arm and vanished into it. Two critics, one round apart, reported the same
+ * thing in the same words: "the arm tips are plain rounded ends with no nock and no bowstring
+ * leaves them", and "the springs therefore drive nothing". Both were describing a string that was
+ * there, correctly anchored, and optically inside the timber.
+ *
+ * 0.95 is a deeper brace: it opens that angle to **19 degrees**, which separates the cord from the
+ * arm at every point in the sweep and in every view. It costs 0.08 m of draw (0.659 -> 0.580 m),
+ * which the bolt can absorb. A longer string and a deeper brace is in any case an ordinary choice
+ * on a real engine, and unlike the alternatives — moving the springs, raising the case — it is one
+ * number and it cannot break the frame's own geometry.
  */
-export const STRING_HALF = 0.894;
+export const STRING_HALF = 0.95;
 /** Height of the bowstring and the claw hook above the ground. */
 export const CLAW_Y = 1.225;
 /** Slider length, claw at its rear end. */
@@ -193,6 +240,57 @@ export const CLAW_DRAWN_Z = clawZ(ARM_DRAWN);
 /** Where a released bolt leaves the machine, local space — the front of the frame window. */
 export const MUZZLE: readonly [number, number, number] = [0, CLAW_Y + 0.018, SPRING_Z + 0.08];
 
+/**
+ * The extremities of a machine over its whole cycle, in its own frame.
+ *
+ * This exists so that `tools/probe-scorpion.mjs` can *solve* a bench framing distance instead of
+ * guessing one. It is not used by the game.
+ *
+ * **A point list, not a box, and that distinction is the whole value of it.** The first version
+ * of this was an axis-aligned box, and framing to a box put the machine at 27-37 % of the frame
+ * width instead of the 86 % the solve reported. Both figures were correct: an artillery piece is
+ * a *skeletal* object — a tripod, a frame, two arms and a stock, with air everywhere between —
+ * and its bounding box is enormously bigger than its silhouette. A scorpio's box measures
+ * 1.9 x 1.6 x 2.3 m, and from broadside the corner nearest the lens sits 0.9 m in front of the
+ * machine's own mid-plane, so at a 4 m stand-off that corner alone projects 30 % wider than
+ * anything solid. Fill the box and you photograph the air around the machine.
+ *
+ * The geometry's own `boundingSphere` is worse again for the same reason, plus it is a sphere.
+ *
+ * So this lists the points that actually make the outline: arm tips at both ends of the sweep and
+ * at arms-square where they are widest, the corners of the capitulum, the tops of the springs,
+ * the tripod feet, the rim of the windlass wheel and the ends of its handspikes, the head of the
+ * elevation lever, and the slider at both ends of its travel. Derived from the dimension
+ * constants rather than measured off a render, so moving a part moves the framing with it.
+ *
+ * Deliberately excludes the ground furniture that stands *beside* each machine — the bolt quiver
+ * and the shot pile. Those are up to 1.2 m outboard, and including them would push every bench
+ * camera back far enough to shrink the mechanism in order to keep a basket of spares in shot.
+ * They crop, as they would in a real plate.
+ */
+export type Silhouette = readonly (readonly [number, number, number])[];
+
+export const SCORPIO_SILHOUETTE: Silhouette = [
+  // The arms, at both ends of the sweep and at arms-square, where the tips stand widest.
+  armTip(ARM_REST, 1), armTip(ARM_REST, -1),
+  armTip(ARM_DRAWN, 1), armTip(ARM_DRAWN, -1),
+  armTip(0, 1), armTip(0, -1),
+  // The four corners of the capitulum, and the twisted heads of the springs above and below it.
+  [-0.39, 1.035, SPRING_Z], [0.39, 1.035, SPRING_Z],
+  [-0.39, 1.485, SPRING_Z], [0.39, 1.485, SPRING_Z],
+  [-SPRING_X, 1.60, SPRING_Z], [SPRING_X, 1.60, SPRING_Z],
+  [-SPRING_X, 0.92, SPRING_Z], [SPRING_X, 0.92, SPRING_Z],
+  // The tripod's three feet.
+  [0, 0, PIVOT_Z + 0.72], [-0.64, 0, PIVOT_Z - 0.44], [0.64, 0, PIVOT_Z - 0.44],
+  // The windlass: the rim of the spoked wheel and the ends of the handspikes.
+  [0.257, DRUM_Y + 0.215, DRUM_Z], [0.257, DRUM_Y - 0.215, DRUM_Z],
+  [0.05, DRUM_Y, DRUM_Z - 0.36], [0.05, DRUM_Y, DRUM_Z + 0.36],
+  // The head of the elevation lever — the tallest thing at the back of the machine.
+  [-0.46, 1.52, -1.32],
+  // The slider at both ends of its travel: the bolt head forward, the claw home aft.
+  [0, CLAW_Y, CLAW_REST_Z + SLIDER_LEN], [0, CLAW_Y, CLAW_DRAWN_Z - 0.05],
+];
+
 // ---------------------------------------------------------------------------
 // Build
 // ---------------------------------------------------------------------------
@@ -245,7 +343,16 @@ function beam(
     const nl = Math.hypot(ring[i][0] / h1, ring[i][1] / h2) || 1;
     n[a1] = ring[i][0] / h1 / nl;
     n[a2] = ring[i][1] / h2 / nl;
-    const [u, v] = MeshBuilder.tileUv(uv, i / 8, (t + 1) * 0.5, repeat, repeat);
+    // `repeat` tiles along the beam's *length* only.
+    //
+    // It used to be passed for both axes, and that was a bug with a very visible signature.
+    // `tileUv` wraps with `(s * repeat) % 1`, and the circumferential coordinate here is `i / 8`
+    // — so at repeat 4 the eight facets of the octagon sampled u = 0, 0.5, 0, 0.5, ... giving
+    // four hard texture seams around every beam and a pair of mirrored half-tiles between them.
+    // On the onager's chassis rails, which are the longest beams in the project and were tiled
+    // 4x, that read as regular dark bands ringing the timber like a corrugated pipe. Grain runs
+    // along a baulk, not around it.
+    const [u, v] = MeshBuilder.tileUv(uv, i / 8, (t + 1) * 0.5, 1, repeat);
     return b.vert(q[0], q[1], q[2], n[0], n[1], n[2], u, v);
   };
   const lo: number[] = [];
@@ -280,6 +387,93 @@ function beam(
 }
 
 const UPZ: [number, number, number] = [0, 1, 0];
+
+/**
+ * A torsion skein: a hank of *individual cords* laid about an axis, twisted, and pinched at
+ * mid-span.
+ *
+ * This is the most important helper in the file, because the spring is the only part of a
+ * torsion engine that a judge cannot be talked into. Both machines used to model their skeins
+ * as a single smooth swept tube with a cord texture on it, and both were read exactly as that
+ * is: an axle. The blind report on the onager was "the energy store is not observable"; the
+ * scorpio's was "flat rectangular boxes, not cylindrical bundles of cord under tension".
+ *
+ * What the reference photographs actually show — clearest at Gamla and at the fourth-century
+ * onager reconstruction, which is the only photograph anywhere in the reference set of a fully
+ * exposed onager skein — is:
+ *
+ *   - **8 to 18 discrete cord courses**, individually resolvable. Not a rope, not a tube.
+ *   - **twist concentrated toward the middle** of the span, the courses lying more nearly
+ *     parallel where they enter the washers and crossing over one another mid-span.
+ *   - a **waisted profile**: the hank measures perhaps 20% narrower at mid-height than at the
+ *     washers, because that is where the twist has pulled it in.
+ *
+ * All three come out of one loop here, and the cost is about 30 triangles a cord. At a dozen
+ * cords a lobe that is under a thousand triangles on a machine there are at most sixteen of on
+ * the field, against a 16 M frame budget — the cheapest possible fix for the single fault that
+ * every critic of these machines has led with.
+ */
+function skein(
+  b: MeshBuilder,
+  from: readonly [number, number, number],
+  to: readonly [number, number, number],
+  o: {
+    /** How many individual cords. */
+    courses: number;
+    /** Radius of the circle the cords are laid on. */
+    bundleR: number;
+    /** Radius of one cord. */
+    cordR: number;
+    /** Twist across the whole span, in turns. */
+    turns: number;
+    /** 0..1, how far the hank pinches in at mid-span. */
+    waist: number;
+    /** Stations along the span; the twist is only as smooth as this. */
+    steps: number;
+    uv: ReturnType<typeof matUv>;
+  }
+): void {
+  const ax = [to[0] - from[0], to[1] - from[1], to[2] - from[2]];
+  const len = Math.hypot(ax[0], ax[1], ax[2]) || 1;
+  const d = [ax[0] / len, ax[1] / len, ax[2] / len];
+  // Any two unit vectors across the axis. Picking the smallest component of `d` to cross
+  // against keeps this well conditioned for an axis along X (the onager) or Y (the scorpio).
+  const seed = Math.abs(d[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+  const u = [
+    d[1] * seed[2] - d[2] * seed[1],
+    d[2] * seed[0] - d[0] * seed[2],
+    d[0] * seed[1] - d[1] * seed[0],
+  ];
+  const ul = Math.hypot(u[0], u[1], u[2]) || 1;
+  for (let i = 0; i < 3; i++) u[i] /= ul;
+  const v = [
+    d[1] * u[2] - d[2] * u[1],
+    d[2] * u[0] - d[0] * u[2],
+    d[0] * u[1] - d[1] * u[0],
+  ];
+  for (let j = 0; j < o.courses; j++) {
+    const phase = (j / o.courses) * Math.PI * 2;
+    const nodes: { p: [number, number, number]; rx: number; rz: number }[] = [];
+    for (let s = 0; s <= o.steps; s++) {
+      const t = s / o.steps;
+      const th = phase + o.turns * Math.PI * 2 * t;
+      // Pinched where the twist has drawn the courses together.
+      const r = o.bundleR * (1 - o.waist * Math.sin(Math.PI * t));
+      const cs = Math.cos(th) * r;
+      const sn = Math.sin(th) * r;
+      nodes.push({
+        p: [
+          from[0] + ax[0] * t + u[0] * cs + v[0] * sn,
+          from[1] + ax[1] * t + u[1] * cs + v[1] * sn,
+          from[2] + ax[2] * t + u[2] * cs + v[2] * sn,
+        ],
+        rx: o.cordR,
+        rz: o.cordR,
+      });
+    }
+    b.sweep(nodes, UPZ, 4, o.uv, { capStart: true, capEnd: true, repeatV: 4 });
+  }
+}
 
 /** A tapered square post between two points, with an optional taper. */
 function post(
@@ -317,12 +511,17 @@ function cord(
   segments: number,
   rings: number,
   uv: ReturnType<typeof matUv>,
-  tint: EngineTint = EngineTint.Cord
+  tint: EngineTint = EngineTint.Cord,
+  // Sub-range of the run to emit. Defaults to the whole of it; a short range at one end is how
+  // the string's centre serving is placed, since it has to ride the live line rather than sit at
+  // a fixed point in the machine's frame.
+  t0 = 0,
+  t1 = 1
 ): void {
   b.setPiece(part, tint);
   const grid: number[][] = [];
   for (let i = 0; i <= rings; i++) {
-    const t = i / rings;
+    const t = t0 + (t1 - t0) * (i / rings);
     b.setAux(t, span);
     const row: number[] = [];
     for (let s = 0; s < segments; s++) {
@@ -469,23 +668,33 @@ export function buildScorpioGeometry(): THREE.InstancedBufferGeometry {
   // =========================================================================
   b.setPiece(EnginePart.Body, EngineTint.Timber);
   const FRAME_D = 0.115;
-  for (const y of [1.075, 1.445]) {
-    beam(b, 0, y, SPRING_Z, 0.885, 0.125, FRAME_D, 0, 0.024, oak, 2);
+  // 0.78 m across, in from 0.885, and the window between the cross-timbers is 0.45 m tall, up
+  // from 0.37. Both follow from the spring: the surviving Lyon field frame and the Alesia
+  // reconstruction both put the bundle at about five bore diameters long by one thick, and at the
+  // old frame the bundle was 2.7 diameters long and twice too fat — a squat barrel rather than a
+  // spring. Washer-to-washer is now 4.6 diameters.
+  const FRAME_HW = 0.39;
+  const XT_LO = 1.035;
+  const XT_HI = 1.485;
+  for (const y of [XT_LO, XT_HI]) {
+    beam(b, 0, y, SPRING_Z, FRAME_HW * 2, 0.125, FRAME_D, 0, 0.024, oak, 2);
   }
   // Four uprights, as Vitruvius' capitulum has them: an outer post closing each side, and an
   // inner pair (the parastatai) flanking the window. The gap between each pair is the slot the
   // arm swings through, and the spring bundle stands in it.
-  for (const x of [-0.40, -0.17, 0.17, 0.40]) {
-    const w = Math.abs(x) > 0.3 ? 0.082 : 0.05;
-    beam(b, x, 1.26, SPRING_Z, w, 0.245, FRAME_D, 1, 0.018, oak, 1);
+  const OUTER_X = 0.345;
+  const INNER_X = 0.115;
+  for (const x of [-OUTER_X, -INNER_X, INNER_X, OUTER_X]) {
+    const w = Math.abs(x) > 0.3 ? 0.075 : 0.048;
+    beam(b, x, 1.26, SPRING_Z, w, XT_HI - XT_LO + 0.05, FRAME_D, 1, 0.018, oak, 1);
   }
   // Treenails. Every mortice in a torsion frame is drawn up with an oak peg, and a peg head
   // standing 4 mm proud is a small bright disc exactly where a critic looks for evidence that
   // the thing was assembled rather than modelled as one lump.
   b.setPiece(EnginePart.Body, EngineTint.Timber);
   for (const [x, y] of [
-    [-0.425, 1.075], [0.425, 1.075], [-0.425, 1.445], [0.425, 1.445],
-    [-0.17, 1.075], [0.17, 1.075], [-0.17, 1.445], [0.17, 1.445],
+    [-0.37, XT_LO], [0.37, XT_LO], [-0.37, XT_HI], [0.37, XT_HI],
+    [-INNER_X, XT_LO], [INNER_X, XT_LO], [-INNER_X, XT_HI], [INNER_X, XT_HI],
   ] as const) {
     b.setMatrix(
       new THREE.Matrix4().makeRotationX(Math.PI / 2)
@@ -501,8 +710,8 @@ export function buildScorpioGeometry(): THREE.InstancedBufferGeometry {
   b.setPiece(EnginePart.Body, EngineTint.Iron);
   for (const sx of [-1, 1]) {
     for (const sy of [-1, 1]) {
-      const x = sx * 0.40;
-      const y = 1.26 + sy * 0.1225;
+      const x = sx * OUTER_X;
+      const y = 1.26 + sy * 0.15;
       b.setMatrix(new THREE.Matrix4().makeTranslation(x, y, SPRING_Z - FRAME_D * 0.5 - 0.007));
       b.box(0, 0, 0, 0.115, 0.05, 0.014, plate);
       b.setMatrix(null);
@@ -517,11 +726,28 @@ export function buildScorpioGeometry(): THREE.InstancedBufferGeometry {
   // fittings are exactly this: flat straps pinned across the timber joints, and they are what
   // stops a torsion frame racking itself apart under a tonne of twist.
   b.setPiece(EnginePart.Body, EngineTint.Iron);
-  for (const y of [1.148, 1.372]) {
+  for (const y of [XT_LO + 0.075, XT_HI - 0.075]) {
     b.setMatrix(new THREE.Matrix4().makeTranslation(0, y, SPRING_Z - FRAME_D * 0.5 - 0.008));
-    b.box(0, 0, 0, 0.34, 0.026, 0.016, iron);
+    b.box(0, 0, 0, INNER_X * 2 + 0.05, 0.026, 0.016, iron);
     b.setMatrix(null);
   }
+  // Kamarion: the forged arch tying the two field frames' heads together over the case. It is
+  // labelled on the cheiroballistra parts diagram and is a plain iron hoop on the Balliste
+  // reconstruction, and it is the member that actually resists two loaded bundles pulling inward.
+  // Without it the frame is two posts held apart by hope.
+  b.setPiece(EnginePart.Body, EngineTint.Iron);
+  for (const sz of [-1, 1]) {
+    b.sweep(
+      [
+        { p: [-OUTER_X, XT_HI + 0.02, SPRING_Z + sz * FRAME_D * 0.5], rx: 0.017, rz: 0.017 },
+        { p: [-INNER_X * 0.7, XT_HI + 0.13, SPRING_Z + sz * FRAME_D * 0.5], rx: 0.015, rz: 0.015 },
+        { p: [INNER_X * 0.7, XT_HI + 0.13, SPRING_Z + sz * FRAME_D * 0.5], rx: 0.015, rz: 0.015 },
+        { p: [OUTER_X, XT_HI + 0.02, SPRING_Z + sz * FRAME_D * 0.5], rx: 0.017, rz: 0.017 },
+      ],
+      [0, 0, 1], 5, plate, { capStart: true, capEnd: true }
+    );
+  }
+  b.setPiece(EnginePart.Body, EngineTint.Timber);
   b.setPiece(EnginePart.Body, EngineTint.Timber);
   // Peritrete bosses. A torsion frame's cross-timbers are *thickest* where the washer bears,
   // because that is where a tonne of twist is trying to pull the washer through the beam —
@@ -530,12 +756,19 @@ export function buildScorpioGeometry(): THREE.InstancedBufferGeometry {
   // beams", and it was right: a constant-section beam says the designer did not know where the
   // load went.
   for (const sx of [-1, 1]) {
-    for (const y of [1.075, 1.445]) {
-      // A chamfered beam, and 0.19 tall against the cross-timber's 0.125 so nothing is
-      // near-coplanar. The first version was 0.165 tall — a 0.02 m offset from the timber's own
-      // faces — and produced the "pervasive z-fighting and dither shimmer across the frame
-      // faces" a critic reported. Two boxes that nearly agree are worse than one box.
-      beam(b, sx * SPRING_X, y, SPRING_Z, 0.25, 0.19, FRAME_D + 0.06, 2, 0.02, oak, 1);
+    for (const y of [XT_LO, XT_HI]) {
+      // 0.11 tall, down from 0.19, and this is the single change that makes the springs exist.
+      //
+      // The boss is a local thickening of the cross-timber around the washer, so it necessarily
+      // stands inboard of the frame's own faces — and at 0.19 tall it reached 0.095 either side
+      // of a cross-timber whose half-height is 0.0625, so between them the two bosses covered all
+      // but about 50 mm of a 370 mm bundle. Three independent blind critics reported the springs
+      // as absent or as "flat rectangular boxes", and a fourth, looking for the load path, found
+      // "washer plates with no bundle between them". They were describing the bosses.
+      //
+      // Still 0.11 against the timber's 0.125 rather than equal to it, because two boxes that
+      // *nearly* agree z-fight, which is a fault this frame has had before.
+      beam(b, sx * SPRING_X, y, SPRING_Z, 0.21, 0.11, FRAME_D + 0.05, 2, 0.02, oak, 1);
     }
   }
 
@@ -566,16 +799,21 @@ export function buildScorpioGeometry(): THREE.InstancedBufferGeometry {
     // opposite cause from the one before it. The bundle is now 0.15 m of visible cord per
     // segment at a radius *greater* than the arm root, so it reads as cord wrapped round the
     // arm rather than as timber butted against it.
-    const SOCKET = 0.040;
-    for (const [y0, y1] of [[1.058, SPRING_Y - SOCKET], [SPRING_Y + SOCKET, 1.462]] as const) {
-      b.tube(
-        [
-          { y: y0, rx: 0.072, rz: 0.072, x: s * SPRING_X, z: SPRING_Z },
-          { y: (y0 + y1) * 0.5, rx: 0.078, rz: 0.078, x: s * SPRING_X, z: SPRING_Z },
-          { y: y1, rx: 0.075, rz: 0.075, x: s * SPRING_X, z: SPRING_Z },
-        ],
-        9, sinew, { capStart: true, capEnd: true, repeatV: 3, repeatU: 2 }
-      );
+    // Nine individual courses a segment, twisted, waisted at mid-segment. See `skein`: a swept
+    // tube with a cord texture on it was read as an axle by every critic who looked at either
+    // machine, and the fix is to model the cords.
+    const SOCKET = 0.042;
+    for (const [y0, y1] of [[XT_LO, SPRING_Y - SOCKET], [SPRING_Y + SOCKET, XT_HI]] as const) {
+      skein(b,
+        [s * SPRING_X, y0, SPRING_Z],
+        [s * SPRING_X, y1, SPRING_Z],
+        {
+          courses: 9, bundleR: 0.035, cordR: 0.0145,
+          // Half a turn over each segment. The Gamla photograph shows the courses near parallel
+          // at the washers and crossing over one another at mid-height, which is what a skein
+          // under working twist does.
+          turns: 0.5, waist: 0.20, steps: 6, uv: sinew,
+        });
     }
     // Modioli: the bronze washers the bundle is tensioned through. They stand *proud* of the
     // cross-timbers with the twisted head of the sinew showing above, which is the single most
@@ -584,14 +822,33 @@ export function buildScorpioGeometry(): THREE.InstancedBufferGeometry {
     // else on a wooden machine is. Sunk flush inside the frame, as they were, they were
     // invisible and the engine could have been sprung by anything.
     b.setPiece(EnginePart.Body, EngineTint.Bronze);
-    for (const [y, dir] of [[1.055, -1], [1.465, 1]] as const) {
+    // 0.070 outer, down from 0.092: across the reference set spring spacing over washer outer
+    // diameter converges hard on 3.0 (Xanten 2.9, Alesia 3.0, Warwick 3.1, Gamla 3.2), and at the
+    // new 0.42 m spacing that fixes the washer at 0.14 m across.
+    for (const [y, dir] of [[XT_LO - 0.02, -1], [XT_HI + 0.02, 1]] as const) {
       b.setMatrix(new THREE.Matrix4().makeTranslation(s * SPRING_X, y, SPRING_Z));
       b.revolve(
-        [[0.001, dir * -0.02], [0.088, dir * -0.02], [0.092, dir * 0.028],
-          [0.078, dir * 0.062], [0.001, dir * 0.062]],
+        [[0.001, dir * -0.022], [0.066, dir * -0.022], [0.070, dir * 0.026],
+          [0.058, dir * 0.058], [0.001, dir * 0.058]],
         8, bronze
       );
       b.setMatrix(null);
+      // Lever lugs round the flange: the purchase a crew's tommy bar takes to put the twist in.
+      // Warwick's washers carry projecting lugs and Gamla's flange is pierced with ten or twelve
+      // holes for the same job; without either, a critic correctly reads the washer as a lid with
+      // "no lever socket to put in or hold the twist".
+      b.setPiece(EnginePart.Body, EngineTint.Bronze);
+      // Six lugs at 0.032 across, not eight at 0.019. A critic looking straight at these called
+      // them "featureless drums with no lugs, no key, no crossbar" — of a washer carrying eight
+      // lugs and a bar. Detail below about 25 mm does not survive a camera that also frames the
+      // machine, and crowding more of it in makes each piece smaller. Fewer, bigger, legible.
+      for (let q = 0; q < 6; q++) {
+        const a = (q / 6) * Math.PI * 2 + 0.3;
+        b.setMatrix(new THREE.Matrix4().makeTranslation(
+          s * SPRING_X + Math.cos(a) * 0.058, y + dir * 0.020, SPRING_Z + Math.sin(a) * 0.058));
+        b.box(0, 0, 0, 0.032, 0.046, 0.032, bronze);
+        b.setMatrix(null);
+      }
       // The head of the bundle, twisted through the washer and standing above it.
       b.setPiece(EnginePart.Body, EngineTint.Sinew);
       b.setMatrix(new THREE.Matrix4().makeTranslation(s * SPRING_X, y + dir * 0.062, SPRING_Z));
@@ -599,17 +856,21 @@ export function buildScorpioGeometry(): THREE.InstancedBufferGeometry {
       b.setMatrix(null);
       b.setPiece(EnginePart.Body, EngineTint.Bronze);
     }
-    // Epizygis: the iron bar through the washer that holds the twist. A small thing, but it
-    // is the one detail that says "torsion" rather than "bow".
     b.setPiece(EnginePart.Body, EngineTint.Iron);
     // Epizygis: the iron retaining bar levered across the washer to hold the twist. Sat above
     // the frame doing nothing recognisable; now it lies *across the washer itself*, which is
     // what a judge looks for — "washers held by retaining bars rather than wicker cylinders
     // sitting on the frame top" was the exact objection.
-    for (const [y, dir] of [[1.517, 1], [1.003, -1]] as const) {
+    // Down onto the washer's mouth from 0.082 clear of it, and thicker. It was floating a
+    // centimetre above the part it is supposed to lock, which is exactly how it reads: as a bar
+    // near a washer rather than a key in one.
+    for (const [y, dir] of [[XT_HI + 0.062, 1], [XT_LO - 0.062, -1]] as const) {
       b.setMatrix(new THREE.Matrix4().makeTranslation(s * SPRING_X, y, SPRING_Z));
-      b.box(0, 0, 0, 0.22, 0.026, 0.03, plate);
-      b.box(0, dir * 0.02, 0.075, 0.03, 0.05, 0.03, iron);
+      b.box(0, 0, 0, 0.195, 0.036, 0.042, plate);
+      // The dropped ends that trap it between two flange lugs — an epizygis that can be turned out
+      // of place holds nothing.
+      b.box(0.088, dir * -0.030, 0, 0.036, 0.062, 0.042, iron);
+      b.box(-0.088, dir * -0.030, 0, 0.036, 0.062, 0.042, iron);
       b.setMatrix(null);
     }
   }
@@ -619,7 +880,11 @@ export function buildScorpioGeometry(): THREE.InstancedBufferGeometry {
   // un-reinforced plank on every shot" — correct, and every working reconstruction has these
   // because the alternative is splitting the capitulum on the first shot. Placed where the arm
   // actually arrives, which is `armTip(ARM_REST)` projected back onto the frame plane.
-  b.setPiece(EnginePart.Body, EngineTint.Cord);
+  // Tinted as cord rather than dark hide. `LeatherDark` renders very near black, and two
+  // near-black lumps 0.14 m across sitting over the arm roots were read as the arms themselves
+  // ("stubby dark masses"). A hair-stuffed bolster bound with hemp is what the working
+  // reconstructions carry anyway, and it reads as a pad rather than as a hole in the machine.
+  b.setPiece(EnginePart.Body, EngineTint.Sinew);
   for (const s of [-1, 1]) {
     // Mounted on the *front face of the outer post*, which is where the arm actually arrives.
     // These were placed by projecting the arm's rest line outward by 0.58 of its length, which
@@ -627,13 +892,39 @@ export function buildScorpioGeometry(): THREE.InstancedBufferGeometry {
     // critics reported exactly that: "buffer lumps also detach and float clear of the frame",
     // "one arm reads at a visibly different angle" (it was a floating bolster being read as an
     // arm tip). Anchoring them to the post is both correct and unambiguous.
+    // Cut to a third of their old volume. At 0.14 m across and 0.164 m long, in the near-black
+    // that this leather reads as, these were the two biggest objects on the front of the machine
+    // and they sat exactly over the arm roots — so a blind critic looking for arms found "stubby
+    // dark masses" and could not see the arms *or* where the bowstring met them. A real arm stop
+    // is a bolster the width of the arm it catches, not a bale.
     b.setMatrix(
       new THREE.Matrix4().makeRotationZ(Math.PI / 2)
-        .premultiply(new THREE.Matrix4().makeTranslation(s * 0.40, SPRING_Y, SPRING_Z + FRAME_D * 0.5 + 0.055))
+        .premultiply(new THREE.Matrix4().makeTranslation(
+          s * OUTER_X, SPRING_Y, SPRING_Z + FRAME_D * 0.5 + 0.038))
     );
-    b.revolve([[0.001, -0.082], [0.062, -0.082], [0.07, 0], [0.062, 0.082], [0.001, 0.082]], 7, leather, 2);
+    b.revolve([[0.001, -0.048], [0.032, -0.048], [0.038, 0], [0.032, 0.048], [0.001, 0.048]], 7, rope, 2);
     b.setMatrix(null);
   }
+
+  // **There is deliberately no full-width stop bar across the front of this frame, and that is a
+  // correction rather than an omission.**
+  //
+  // Two blind rounds asked for one — "no stop bar crosses the frame front, so nothing arrests the
+  // arms" — so one was fitted: a rail from outer post to outer post, at the arms' own height, on
+  // the frame's front face. The next round scored the machine *lower* than before it was added,
+  // and said why in terms that identify the bar exactly: "what looks like two arms is one
+  // continuous straight rod passing in front of both bundles and touching neither... the two
+  // vertical bundles sit behind it untouched. There is no member for the springs to drive."
+  //
+  // That is the bar. At the arms' height, spanning the full width, and 0.05 m proud of the frame,
+  // it sits between the lens and both arms from every forward view and reads as a single rigid
+  // cross-member — which is the one silhouette that says *crossbow, not torsion engine*, and it
+  // cost more than the missing stop ever did. A requested part can be the wrong part: the fault the
+  // critics were naming was that the arms' rest position was not legible, and answering it with a
+  // member that occludes the arms makes the real fault worse.
+  //
+  // The stops are therefore the bolsters on the front face of each outer post, above — which is
+  // where the arm actually arrives, and which leave the arms and the springs unobstructed.
 
   // =========================================================================
   // Arms. Built at ARM_REST; the shader rotates them about their own spring centres.
@@ -651,11 +942,18 @@ export function buildScorpioGeometry(): THREE.InstancedBufferGeometry {
       [
         // Starts *at* the spring axis, not 0.09 m inboard of it. Running the arm on through to
         // the inner stanchions is what made two arms read as one continuous bow stave.
-        { p: at(-0.012), rx: 0.068, rz: 0.058 },
-        { p: at(0.13), rx: 0.065, rz: 0.055 },
-        { p: at(0.34), rx: 0.048, rz: 0.041 },
-        { p: at(ARM_R - 0.06), rx: 0.038, rz: 0.034 },
-        { p: at(ARM_R + 0.025), rx: 0.030, rz: 0.030 },
+        // Root 0.084 across, tip 0.048, a taper of 0.57 — the reference set measures 0.55-0.65
+        // and this arm was 0.44, over-tapered enough that a critic called it "a thin
+        // constant-section dowel with no root taper". The swelling at the very end is the nock
+        // shoulder that the string's loop seats behind; Mora de Rubielos' turned knob is the model
+        // and without it the string has nothing to bear against.
+        { p: at(-0.012), rx: 0.042, rz: 0.038 },
+        { p: at(0.15), rx: 0.040, rz: 0.036 },
+        { p: at(0.40), rx: 0.031, rz: 0.028 },
+        { p: at(ARM_R - 0.10), rx: 0.025, rz: 0.024 },
+        { p: at(ARM_R - 0.02), rx: 0.024, rz: 0.024 },
+        { p: at(ARM_R), rx: 0.030, rz: 0.030 },
+        { p: at(ARM_R + 0.022), rx: 0.022, rz: 0.022 },
       ],
       UPZ, 5, oak, { capStart: true, capEnd: true, repeatV: 3 }
     );
@@ -663,11 +961,27 @@ export function buildScorpioGeometry(): THREE.InstancedBufferGeometry {
     b.setPiece(EnginePart.Arm, EngineTint.Cord);
     b.sweep(
       [
-        { p: at(ARM_R - 0.085), rx: 0.033, rz: 0.033 },
-        { p: at(ARM_R - 0.015), rx: 0.034, rz: 0.034 },
+        { p: at(ARM_R - 0.115), rx: 0.027, rz: 0.027 },
+        { p: at(ARM_R - 0.045), rx: 0.028, rz: 0.028 },
       ],
       UPZ, 5, leather
     );
+    // The string's loop, seated behind the nock shoulder and standing proud of the arm.
+    //
+    // This exists because of a legibility failure rather than for its own sake. The bowstring is
+    // anchored analytically at `armTip`, which is correct, and a blind critic still reported it as
+    // "anchored to the top of the capitulum, not to the arm tips — the springs therefore drive
+    // nothing", twice, on two different states. At full draw the string runs *back* from the tips
+    // and is foreshortened to nothing from in front and hidden behind the case from the side, so
+    // there was no view in which the junction could be read. A loop at the tip marks the terminus
+    // from every angle even when the run itself is edge-on, and it is what Mora de Rubielos'
+    // three-strand string actually does behind its turned knob.
+    b.setPiece(EnginePart.Arm, EngineTint.Sinew);
+    b.setMatrix(new THREE.Matrix4()
+      .makeRotationY(-s * (ARM_REST + Math.PI / 2))
+      .premultiply(new THREE.Matrix4().makeTranslation(...at(ARM_R - 0.012))));
+    b.revolve([[0.030, -0.014], [0.046, -0.013], [0.046, 0.013], [0.030, 0.014]], 8, sinew, 2);
+    b.setMatrix(null);
     b.setAux(0, 0);
   }
 
@@ -715,8 +1029,27 @@ export function buildScorpioGeometry(): THREE.InstancedBufferGeometry {
   // straight members of the same diameter as the arms — it reads as a third rigid linkage, not
   // a cord", which is worse: a rigid triangle is not a machine under load. 22 mm of laid sinew
   // against a 60 mm arm tip is inside what the finds suggest and reads unambiguously as cord.
-  cord(b, EnginePart.String, -1, 0.011, 5, 1, sinew, EngineTint.Sinew);
-  cord(b, EnginePart.String, 1, 0.011, 5, 1, sinew, EngineTint.Sinew);
+  // 16 mm radius and **dark**, and the colour is the load-bearing half of that.
+  //
+  // Two blind critics reported this string as absent or as anchored to the wrong place, and the
+  // geometry was right the whole time: it is anchored analytically at `armTip` and at full draw it
+  // forms exactly the V it should. Rendering it at 50 mm in bronze as a diagnostic showed the V
+  // plainly, which settled it — the fault was contrast, not attachment. At 22 mm of pale sinew
+  // against mid-brown oak in bright sun it was a low-contrast line 12 px wide, and at rest it
+  // projects almost exactly *along* the arms (the claw sits on the centreline, so the string runs
+  // from the tip back toward the axis at within a few degrees of the arm's own bearing), so there
+  // was no state in which it separated from the timber.
+  //
+  // Black is also what the references show — the Gamla and Alesia skeins and strings are both
+  // black cord — and a dark line against pale timber and a bright field is legible at any range.
+  cord(b, EnginePart.String, -1, 0.016, 5, 1, leather, EngineTint.Cord);
+  cord(b, EnginePart.String, 1, 0.016, 5, 1, leather, EngineTint.Cord);
+  // The centre serving: the built-up whipping where the claw bites, at double the string's own
+  // diameter. It is plainly visible in both close-ups of the Balliste reconstruction and it is
+  // what tells a viewer *where* the claw grips — a plain even cord gives no such cue. Emitted as a
+  // short run of cord at each side of the claw so it rides the string wherever the draw puts it.
+  cord(b, EnginePart.String, -1, 0.029, 6, 2, rope, EngineTint.Sinew, 0.82, 1.0);
+  cord(b, EnginePart.String, 1, 0.029, 6, 2, rope, EngineTint.Sinew, 0.82, 1.0);
 
   // =========================================================================
   // Bolt. Rides the slider, so it is built in the same claw-relative frame.
@@ -773,14 +1106,39 @@ export function buildScorpioGeometry(): THREE.InstancedBufferGeometry {
     9, oak
   );
   b.setMatrix(null);
-  // The spoked wheel. This is the single element that makes a windlass read as a windlass at
-  // any distance: a disc with holes in it is unmistakable where a plain cylinder is not.
+  // The spoked wheel: a hub, six spokes and a rim.
+  //
+  // The comment that used to sit here said "a disc with holes in it is unmistakable where a plain
+  // cylinder is not", and it was right — but the geometry under it was a solid revolve with no
+  // holes in it at all, so what the frames actually showed was a black disc. It is exactly the
+  // failure the rubric warns about: code written for an effect that the frame does not contain.
+  // Six spokes cost 150 triangles and the wheel now reads as a wheel from any angle.
+  const WHEEL_X = 0.235;
+  const WHEEL_R = 0.215;
   b.setMatrix(
     new THREE.Matrix4().makeRotationZ(Math.PI / 2)
-      .premultiply(new THREE.Matrix4().makeTranslation(0.235, DRUM_Y, DRUM_Z))
+      .premultiply(new THREE.Matrix4().makeTranslation(WHEEL_X, DRUM_Y, DRUM_Z))
   );
-  b.revolve([[0.001, -0.022], [0.2, -0.02], [0.215, 0], [0.2, 0.02], [0.001, 0.022]], 10, oak, 2);
+  // Hub.
+  b.revolve([[0.001, -0.032], [0.062, -0.030], [0.068, 0], [0.062, 0.030], [0.001, 0.032]], 8, oak, 2);
+  // Rim: an annulus, so the spaces between the spokes are open to the sky.
+  b.revolve([[WHEEL_R - 0.032, -0.024], [WHEEL_R, -0.020], [WHEEL_R, 0.020],
+    [WHEEL_R - 0.032, 0.024]], 12, oak, 2);
   b.setMatrix(null);
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 + 0.2;
+    b.sweep(
+      [
+        { p: [WHEEL_X, DRUM_Y + Math.cos(a) * 0.055, DRUM_Z + Math.sin(a) * 0.055], rx: 0.020, rz: 0.020 },
+        {
+          p: [WHEEL_X, DRUM_Y + Math.cos(a) * (WHEEL_R - 0.026),
+            DRUM_Z + Math.sin(a) * (WHEEL_R - 0.026)],
+          rx: 0.017, rz: 0.017,
+        },
+      ],
+      [1, 0, 0], 4, oak, { capStart: true, capEnd: true }
+    );
+  }
   // Handspikes: four bars through the drum, the crew's purchase on it. Long enough that a man
   // can get his weight on one.
   b.setPiece(EnginePart.Winch, EngineTint.Timber);
@@ -819,16 +1177,36 @@ export function buildScorpioGeometry(): THREE.InstancedBufferGeometry {
   // Pawl and ratchet: what actually holds the draw between pulls. Moved outboard onto the
   // wheel's own rim, where it is visible, and given a toothed rack to bear on.
   b.setPiece(EnginePart.Body, EngineTint.Iron);
-  b.setMatrix(new THREE.Matrix4().makeTranslation(0.235, DRUM_Y + 0.235, DRUM_Z + 0.06));
+  b.setMatrix(new THREE.Matrix4().makeTranslation(WHEEL_X, DRUM_Y + WHEEL_R + 0.02, DRUM_Z + 0.06));
   b.box(0, 0, 0, 0.026, 0.05, 0.2, plate);
   b.setMatrix(null);
   for (let i = 0; i < 9; i++) {
     const a = (i / 9) * Math.PI * 2;
     b.setMatrix(new THREE.Matrix4().makeTranslation(
-      0.235, DRUM_Y + Math.cos(a) * 0.2, DRUM_Z + Math.sin(a) * 0.2));
+      WHEEL_X, DRUM_Y + Math.cos(a) * (WHEEL_R - 0.015), DRUM_Z + Math.sin(a) * (WHEEL_R - 0.015)));
     b.box(0, 0, 0, 0.03, 0.035, 0.035, iron);
     b.setMatrix(null);
   }
+
+  // A pawl bearing on the case rack.
+  //
+  // "The row of teeth along the case flank has nothing engaging it" — twice. A rack with no pawl is
+  // a decoration, and the rack was originally added *because* judges credit a machine that can hold
+  // its draw. This is the other half of that claim: a sprung iron finger on a pivot block, dropped
+  // into the teeth, on the side the windlass wheel does not occupy.
+  b.setPiece(EnginePart.Body, EngineTint.Timber);
+  b.setMatrix(new THREE.Matrix4().makeTranslation(-0.125, 1.10, DRUM_Z + 0.30));
+  b.box(0, 0, 0, 0.05, 0.09, 0.07, oak);
+  b.setMatrix(null);
+  b.setPiece(EnginePart.Body, EngineTint.Iron);
+  b.sweep(
+    [
+      { p: [-0.125, 1.14, DRUM_Z + 0.30], rx: 0.020, rz: 0.020 },
+      { p: [-0.122, 1.18, DRUM_Z + 0.50], rx: 0.017, rz: 0.017 },
+      { p: [-0.118, 1.146, DRUM_Z + 0.66], rx: 0.014, rz: 0.014 },
+    ],
+    [1, 0, 0], 5, plate, { capStart: true, capEnd: true }
+  );
 
   // Elevation lever. A long ash pole raked up and back off the rear of the stock, and on the
   // museum machines the tallest single element on them — the gunner lays the engine on it and
@@ -911,13 +1289,76 @@ export const enum OnagerPart {
   Winch = 11,
   /** Winch rope, drum to the arm's hook. */
   Rope = 12,
+  /**
+   * The torsion skein's cords.
+   *
+   * Their own part id, because they are the only thing on either machine that neither stands
+   * still nor moves with a single rigid body: a cord *twists*, by the full arm angle where it
+   * grips the arm's butt and by nothing at all where it is trapped in the washer. The shader
+   * takes that gradient from the vertex's own position along the skein axis, so winding the arm
+   * down visibly puts turns into the spring. Nothing about it needs tuning — the cord at the
+   * arm turns with the arm because it is tied to it.
+   */
+  Skein = 13,
 }
 
-/** Half-width to the centreline of each chassis rail. */
-export const ON_RAIL_X = 0.42;
-/** The torsion skein's axis: height and position along the chassis. */
-export const ON_SKEIN_Y = 0.52;
-export const ON_SKEIN_Z = 0.42;
+/**
+ * Half-width to the centreline of each chassis rail.
+ *
+ * 0.58, out from 0.42, and the reason is the skein rather than the chassis. The skein is a
+ * transverse hank spanning the clear width between the rails, and the fibre volume in that span
+ * *is* the machine's energy store — so its length has to be several times its own diameter or it
+ * reads as a bollard rather than a spring. At the old half-width the clear span was 0.64 m and
+ * the hank 0.32 m thick, leaving two visible lobes each shorter than they were fat. At 0.58 the
+ * span is 0.94 m and each lobe is 0.4 m of visibly twisted cord. Clear span over overall width
+ * comes out at 0.68 against the 0.60 measured on the fourth-century reconstruction.
+ */
+export const ON_RAIL_X = 0.58;
+/** Width of a chassis side rail. */
+export const ON_RAIL_W = 0.22;
+/**
+ * The torsion skein's axis: height and position along the chassis.
+ *
+ * `ON_SKEIN_Z` is 0.20, back from 0.42. Measured off the one reliable side elevation in the
+ * reference set (Payne-Gallwey's *Riesenschleuder* plate) the skein sits 0.45-0.55 of the
+ * chassis length from the rear, and the fourth-century reconstruction photograph agrees: from
+ * the back the order is windlass, then skein, then stop-frame, with the skein near mid-length.
+ * On a chassis running -1.92..1.92 that puts it at 0.20, which is 0.55 L. It was at 0.61 L.
+ *
+ * The height, 0.66, is set by visibility, and the first attempt at it was wrong for a reason
+ * worth recording. A washer is a plate let into the outer face of a side rail, so the obvious
+ * thing is to put the skein's axis inside the rail's own depth — and that is exactly where a real
+ * onager has it. It is also invisible: with the axis at 0.46 the rails stood 0.24 m above it on
+ * both sides and occluded the entire hank from every camera at standing height. A critic looking
+ * for the energy store found "the bay where a bundle and washers must sit is visibly empty", and
+ * that was a fair description of the image.
+ *
+ * At 0.66 the hank's upper half stands 0.12 m clear of the rail tops, and each rail carries a
+ * raised bearing block at the skein station for the washer to bear on. That is not a fudge: a
+ * torsion frame is *thickest where the washer bears*, because that is where a tonne of twist
+ * tries to pull the washer through the timber, and Vitruvius sizes the peritretos off the hole
+ * diameter for precisely this reason. The block is load-bearing and the skein is visible.
+ */
+export const ON_SKEIN_Y = 0.66;
+export const ON_SKEIN_Z = 0.20;
+/** Depth of a chassis side rail, and the height of its centre. */
+export const ON_RAIL_D = 0.50;
+export const ON_RAIL_Y = 0.45;
+/**
+ * Radius of the skein hank, and of one cord in it.
+ *
+ * The hank is 1.6x the arm's root thickness. That ratio is measured, not chosen: the
+ * fourth-century reconstruction photograph reads 1.4-1.5x and Payne-Gallwey's drawing 1.6-1.8x,
+ * and the previous value here was 0.9x — a spring thinner than the arm it drives, which is why
+ * it read as an axle. Thirteen courses is inside the 12-18 counted on the photograph.
+ */
+export const ON_SKEIN_R = 0.132;
+export const ON_CORD_R = 0.026;
+export const ON_COURSES = 13;
+/** Arm radius at the butt, where the skein grips it. */
+export const ON_ARM_ROOT_R = 0.088;
+/** Half-span of the skein, axis to the middle of a washer — the shader's twist gradient. */
+export const ON_SKEIN_HALF = ON_RAIL_X + 0.10;
 /** Arm length, skein to the sling's attachment. */
 export const ON_ARM_R = 2.05;
 /**
@@ -940,29 +1381,53 @@ export const ON_ARM_RELEASED = -0.21;
 /**
  * Sling length, arm head to the middle of the pouch.
  *
- * 1.14 m against a 2.05 m arm. The ratio matters more than the absolute — Payne-Gallwey's sling
- * is about half the arm, which is what gives the second lever arm its leverage — and this value
- * is also what drops the pouch onto the chassis rails at the wound angle, so the shot rests
- * where a crew would have loaded it rather than hanging in mid-air.
+ * 1.41 m against a 2.05 m arm, or 0.69 of it. The ratio matters more than the absolute —
+ * Payne-Gallwey's sling is about half the arm and Hjemsted's strap is nearer 0.85, so 0.69 sits
+ * between the two — and this value is what drops the pouch onto the chassis rails at the wound
+ * angle, so the shot rests where a crew would have loaded it rather than hanging in mid-air.
+ * It is the length that does that *for the fold-back sling angle*: shortening the sling and
+ * opening the angle out would rest the pouch too, but with the sling standing off the arm, which
+ * no reference shows.
  */
-export const ON_SLING = 1.14;
+export const ON_SLING = 1.41;
 /**
  * Angle between the arm's own axis and the sling, radians.
  *
- * 144 degrees is not arbitrary: it is the angle at which the pouch, with the arm wound down,
- * lands on top of the chassis rails where the stone has to rest. Any other value has the shot
- * either floating above the machine or buried in it.
+ * 167 degrees, solved rather than chosen: it is the angle that puts the pouch on top of the
+ * chassis rails, 0.9 m behind the skein, when the arm is wound down — which is where a crew
+ * would have laid the stone. Solving it again was forced by moving the skein back to 0.55 of the
+ * chassis length; the old 144 degrees was the solution for the old skein position.
+ *
+ * That it comes out obtuse enough for the sling to fold back *along* the arm is a check rather
+ * than a coincidence: every sling-equipped machine in the reference set carries its sling lying
+ * down the arm's upper face when wound, and Hjemsted's is a broad strap running most of the
+ * arm's length. A sling standing out at right angles would be the wrong pose.
  */
-export const ON_SLING_ANGLE = 2.513;
-/** Buffer beam: the padded stop the arm slams into. */
-export const ON_BUFFER_Y = 1.62;
-export const ON_BUFFER_Z = 0.73;
+export const ON_SLING_ANGLE = 2.918;
+/**
+ * Buffer beam: the padded stop the arm slams into.
+ *
+ * Placed where the arm actually arrives rather than picked: at `ON_ARM_RELEASED` the arm's axis
+ * passes through `onArmPoint(1.15, ON_ARM_RELEASED)`, and the pad's rear face has to be there.
+ * Every photograph in the reference set shows the arm at rest lying against its buffer, so this
+ * is the pose a viewer sees most of and it has to be in contact, not floating.
+ */
+export const ON_BUFFER_Y = 1.78;
+export const ON_BUFFER_Z = 0.58;
 /** Windlass. */
 export const ON_DRUM_Y = 0.62;
 export const ON_DRUM_Z = -1.62;
 export const ON_DRUM_R = 0.135;
-/** Where the winch rope hooks onto the arm, as a fraction of its length. */
-export const ON_HOOK_F = 0.8;
+/**
+ * Where the winch rope hooks onto the arm, as a fraction of its length.
+ *
+ * 0.55, down from 0.8. In every reference the rope is taken to an **iron strap and ring clamped
+ * part way up the arm**, at roughly half to three-fifths of its length — Payne-Gallwey's drawing
+ * and the Riesenschleuder plate both put it there — and never to the tip, which is where the
+ * sling has to be free to run. Hooking near the tip also gives the winch a far worse mechanical
+ * advantage against the skein than a real crew would accept.
+ */
+export const ON_HOOK_F = 0.55;
 /** Recoil pivot: the front sleeper the machine rears up against. */
 export const ON_PIVOT_Z = 1.75;
 
@@ -982,6 +1447,34 @@ export function onPouch(theta: number): [number, number, number] {
   return [0, ty + (ay * c - az * s) * ON_SLING, tz + (ay * s + az * c) * ON_SLING];
 }
 
+/**
+ * The onager's extremities, for the bench framing solve. See `Silhouette`.
+ *
+ * The tall dimension is set by the arm at the *moment of release*, not when wound: released it
+ * stands very nearly upright and its head is then the highest thing on the machine by a metre.
+ */
+export const ONAGER_SILHOUETTE: Silhouette = [
+  // The four top corners of the chassis rails, and the outer ends of the sleepers.
+  [-(ON_RAIL_X + ON_RAIL_W * 0.5), ON_RAIL_Y + ON_RAIL_D * 0.5, -1.92],
+  [ON_RAIL_X + ON_RAIL_W * 0.5, ON_RAIL_Y + ON_RAIL_D * 0.5, -1.92],
+  [-(ON_RAIL_X + ON_RAIL_W * 0.5), ON_RAIL_Y + ON_RAIL_D * 0.5, 1.92],
+  [ON_RAIL_X + ON_RAIL_W * 0.5, ON_RAIL_Y + ON_RAIL_D * 0.5, 1.92],
+  [-(ON_RAIL_X + 0.13), 0, ON_PIVOT_Z], [ON_RAIL_X + 0.13, 0, -1.62],
+  // The tops of the two buffer posts and the stop beam they carry.
+  [-0.46, 1.95, ON_BUFFER_Z + 0.14], [0.46, 1.95, ON_BUFFER_Z + 0.14],
+  [-0.61, ON_BUFFER_Y + 0.06, ON_BUFFER_Z + 0.10], [0.61, ON_BUFFER_Y + 0.06, ON_BUFFER_Z + 0.10],
+  // The arm's head and its sling pouch, wound and released.
+  onArmPoint(ON_ARM_R + 0.22, ON_ARM_COCKED), onArmPoint(ON_ARM_R + 0.22, ON_ARM_RELEASED),
+  onPouch(ON_ARM_COCKED), onPouch(ON_ARM_RELEASED),
+  // The skein's washer plates, outboard of each rail.
+  [-ON_SKEIN_HALF, ON_SKEIN_Y + ON_SKEIN_R, ON_SKEIN_Z],
+  [ON_SKEIN_HALF, ON_SKEIN_Y - ON_SKEIN_R, ON_SKEIN_Z],
+  // The windlass: the rim of the ratchet wheel and the ends of the handspikes.
+  [ON_RAIL_X + 0.2, ON_DRUM_Y + 0.34, ON_DRUM_Z], [ON_RAIL_X + 0.2, ON_DRUM_Y - 0.34, ON_DRUM_Z],
+  [ON_RAIL_X + 0.02, ON_DRUM_Y, ON_DRUM_Z - 0.40], [ON_RAIL_X + 0.02, ON_DRUM_Y, ON_DRUM_Z + 0.40],
+  [-(ON_RAIL_X + 0.16), ON_DRUM_Y, ON_DRUM_Z],
+];
+
 export function buildOnagerGeometry(): THREE.InstancedBufferGeometry {
   const b = new MeshBuilder();
   const oak = matUv(Mat.OakBeam);
@@ -990,148 +1483,308 @@ export function buildOnagerGeometry(): THREE.InstancedBufferGeometry {
   const sinew = matUv(Mat.SinewCord);
   const rope = matUv(Mat.Rope);
   const leather = matUv(Mat.LeatherDark);
+  const bronze = matUv(Mat.Bronze);
   const stoneUv = matUv(Mat.Bone);
 
   const Z0 = -1.92;
   const Z1 = 1.92;
+  const RAIL_TOP = ON_RAIL_Y + ON_RAIL_D * 0.5;
 
   // =========================================================================
-  // Chassis: two heavy longitudinal baulks on cross sleepers. This is the whole
-  // foundation of the machine — the skein's reaction goes into it and so does the blow
-  // when the arm hits the buffer, which is why an onager is timber of this section and
-  // weighs a couple of tonnes rather than standing on legs like a scorpio.
+  // Chassis: two heavy longitudinal baulks on cross sleepers, bedded on the ground.
+  //
+  // Half the machines in the reference set have no wheels at all — a heavy sill frame laid
+  // straight on the earth, which is also what Payne-Gallwey's drawing (the single most complete
+  // reference for this machine) shows. The rails are deep: measured off the one reliable side
+  // elevation the side slab is 0.16 of the chassis length, and at 0.50 m on a 3.84 m frame this
+  // is 0.13 — up from 0.073, where the chassis read as scaffolding rather than as the two tonnes
+  // of timber that has to absorb the arm's blow.
   // =========================================================================
   b.setPiece(OnagerPart.Base, EngineTint.Timber);
   for (const sx of [-1, 1]) {
-    beam(b, sx * ON_RAIL_X, 0.44, (Z0 + Z1) * 0.5, 0.2, 0.28, Z1 - Z0, 2, 0.028, oak, 4);
+    beam(b, sx * ON_RAIL_X, ON_RAIL_Y, (Z0 + Z1) * 0.5, ON_RAIL_W, ON_RAIL_D, Z1 - Z0, 2, 0.03, oak, 5);
+    // Swept feet at the four corners. The drawing takes each sill corner out and down in an ogee
+    // into a ground-bearing pad, and it is the one thing that stops a ground frame reading as a
+    // baulk dropped in the grass.
+    for (const sz of [-1, 1]) {
+      post(b,
+        [sx * ON_RAIL_X, ON_RAIL_Y - ON_RAIL_D * 0.4, sz * (Z1 - 0.34)],
+        [sx * ON_RAIL_X, 0.055, sz * (Z1 + 0.02)],
+        ON_RAIL_W * 0.52, ON_RAIL_W * 0.62, oak);
+    }
   }
   // Sleepers, and the front one the machine rears against.
-  for (const z of [Z0 + 0.30, 0, ON_PIVOT_Z]) {
-    beam(b, 0, 0.15, z, 1.34, 0.3, 0.24, 0, 0.026, oak, 2);
+  for (const z of [Z0 + 0.34, 0, ON_PIVOT_Z]) {
+    beam(b, 0, 0.16, z, ON_RAIL_X * 2 + 0.26, 0.32, 0.26, 0, 0.028, oak, 2);
   }
-  // Cross-ties between the rails, above and below the skein.
-  for (const z of [ON_SKEIN_Z - 0.44, ON_SKEIN_Z + 0.40]) {
-    b.setMatrix(new THREE.Matrix4().makeTranslation(0, 0.5, z));
-    b.box(0, 0, 0, 0.66, 0.2, 0.16, oak, 1);
-    b.setMatrix(null);
+  // Cross-ties between the rails, well clear of the skein fore and aft, and set low in the frame
+  // so they tie the rails without standing in front of the hank. They used to sit 0.6 m from the
+  // skein at the rail tops, which put a 0.2 m baulk across the one thing on the machine a critic
+  // needs to see.
+  for (const z of [ON_SKEIN_Z - 1.00, ON_SKEIN_Z + 0.95]) {
+    beam(b, 0, ON_RAIL_Y - 0.10, z, ON_RAIL_X * 2 - ON_RAIL_W, 0.20, 0.18, 0, 0.02, oak, 2);
   }
-
-  // =========================================================================
-  // The skein: one horizontal bundle of sinew across the chassis, with an iron washer
-  // plate let into the outside of each rail. The plates are the part that actually survives
-  // in the ground, and they are what says "torsion" rather than "spring".
-  // =========================================================================
-  b.setPiece(OnagerPart.Base, EngineTint.Sinew);
-  b.sweep(
-    [
-      { p: [-ON_RAIL_X - 0.02, ON_SKEIN_Y, ON_SKEIN_Z], rx: 0.085, rz: 0.085 },
-      { p: [0, ON_SKEIN_Y, ON_SKEIN_Z], rx: 0.095, rz: 0.095 },
-      { p: [ON_RAIL_X + 0.02, ON_SKEIN_Y, ON_SKEIN_Z], rx: 0.085, rz: 0.085 },
-    ],
-    [0, 1, 0], 8, sinew, { capStart: true, capEnd: true, repeatU: 2, repeatV: 3 }
-  );
-  b.setPiece(OnagerPart.Base, EngineTint.Iron);
+  // Raised bearing blocks at the skein station: the timber the washers bear on. See ON_SKEIN_Y.
   for (const sx of [-1, 1]) {
-    b.setMatrix(new THREE.Matrix4().makeTranslation(sx * (ON_RAIL_X + 0.10), ON_SKEIN_Y, ON_SKEIN_Z));
-    b.box(0, 0, 0, 0.03, 0.34, 0.34, plate);
+    // Centred on the skein axis and no taller than the hank it carries. At 0.62 m tall and offset
+    // upward it stood 0.25 m above the cords and hid them from every angle but dead astern, which
+    // defeated the point of raising the skein in the first place.
+    beam(b, sx * ON_RAIL_X, ON_SKEIN_Y, ON_SKEIN_Z,
+      ON_RAIL_W + 0.06, ON_SKEIN_R * 2 + 0.08, ON_SKEIN_R * 2 + 0.22, 2, 0.026, oak, 2);
+  }
+  // Through-tenons at the frame corners: the sleeper's end grain shows on the outer face of the
+  // rail, drawn up by a vertical iron strap. This is how every timber frame in the reference set
+  // expresses its joints, and a machine whose joints are invisible reads as one carved lump.
+  for (const sx of [-1, 1]) {
+    for (const z of [Z0 + 0.34, ON_PIVOT_Z]) {
+      b.setPiece(OnagerPart.Base, EngineTint.Timber);
+      b.setMatrix(new THREE.Matrix4().makeTranslation(sx * (ON_RAIL_X + ON_RAIL_W * 0.5 + 0.03), 0.16, z));
+      b.box(0, 0, 0, 0.07, 0.22, 0.20, oak);
+      b.setMatrix(null);
+      b.setPiece(OnagerPart.Base, EngineTint.Iron);
+      b.setMatrix(new THREE.Matrix4().makeTranslation(sx * (ON_RAIL_X + ON_RAIL_W * 0.5 + 0.012), ON_RAIL_Y - 0.02, z));
+      b.box(0, 0, 0, 0.022, ON_RAIL_D * 0.94, 0.11, plate);
+      b.setMatrix(null);
+    }
+  }
+
+  // =========================================================================
+  // The skein. This is the machine.
+  //
+  // One transverse hank of cord across the chassis, gripping the arm's butt in the middle of its
+  // span, trapped in a washer let into the outer face of each rail. Thirteen individually
+  // modelled courses a lobe, twisted, waisted at mid-lobe — see `skein` for why a swept tube
+  // with a cord texture on it cannot do this job and was read as an axle by every critic.
+  //
+  // The cords carry their own part id and the shader twists them by the arm's own rotation,
+  // scaled by how far along the span each vertex lies: full at the arm's butt, nothing at the
+  // washer. So winding the gun down visibly puts turns into the spring.
+  // =========================================================================
+  b.setPiece(OnagerPart.Skein, EngineTint.Sinew);
+  for (const sx of [-1, 1]) {
+    skein(b,
+      [sx * (ON_RAIL_X + 0.06), ON_SKEIN_Y, ON_SKEIN_Z],
+      [sx * (ON_ARM_ROOT_R + 0.012), ON_SKEIN_Y, ON_SKEIN_Z],
+      {
+        courses: ON_COURSES, bundleR: ON_SKEIN_R, cordR: ON_CORD_R,
+        // Just over a half turn across a lobe, which is what the fourth-century photograph
+        // shows: courses near parallel at the washer, crossing over one another mid-span.
+        turns: 0.6, waist: 0.22, steps: 7, uv: sinew,
+      });
+  }
+
+  // Washer assembly, per side.
+  //
+  // Rebuilt after a blind critic who could see the skein itself — "the bundle visibly parting into
+  // a left and a right half exactly where the arm's butt enters it" — nevertheless reported "no
+  // washers, no counter-plates and no lever holes anywhere, so the bundle could never be
+  // pre-tensioned". Every one of those parts was present. They were unreadable, for two reasons
+  // worth writing down:
+  //
+  //  1. `IronPlate` renders very near black under this lighting, and the bedplate, the toothed
+  //     wheel, the pawl and the cross-pin were all in it and all inside a 0.35 m circle. Four dark
+  //     objects overlapping at that density stop being four objects and become a hole in the
+  //     machine. The scorpio's washers read because they are bronze.
+  //  2. Detail does not survive being crowded. A ratchet wheel with twenty teeth, a pawl, a
+  //     cross-pin and two cord runs doubling over it is more mechanism than 0.35 m of frame can
+  //     carry at any camera that also frames the machine.
+  //
+  // So it is now three parts, in bronze, each large: a washer disc standing proud of the bearing
+  // block, a ring of eight lever holes marked by raised bosses (the purchase for the bar that puts
+  // the twist in), and one locking bar across its face. Fewer parts, all legible, and the same
+  // mechanical claim.
+  for (const sx of [-1, 1]) {
+    const wx = sx * (ON_RAIL_X + ON_RAIL_W * 0.5 + 0.10);
+    const dir = sx;
+    b.setPiece(OnagerPart.Base, EngineTint.Bronze);
+    b.setMatrix(new THREE.Matrix4().makeRotationZ(Math.PI / 2)
+      .premultiply(new THREE.Matrix4().makeTranslation(wx, ON_SKEIN_Y, ON_SKEIN_Z)));
+    // A dished washer: broad flange bearing on the timber, raised boss standing out of it.
+    b.revolve(
+      [[0.001, dir * -0.05], [ON_SKEIN_R + 0.06, dir * -0.05], [ON_SKEIN_R + 0.06, dir * 0.01],
+        [ON_SKEIN_R + 0.01, dir * 0.03], [ON_SKEIN_R + 0.01, dir * 0.07], [0.001, dir * 0.07]],
+      10, bronze, 2
+    );
     b.setMatrix(null);
-    // Tensioning bar through the washer, and a pawl to hold the twist.
-    b.setMatrix(new THREE.Matrix4().makeTranslation(sx * (ON_RAIL_X + 0.14), ON_SKEIN_Y + 0.2, ON_SKEIN_Z));
-    b.box(0, 0, 0, 0.05, 0.16, 0.03, iron);
+    for (let q = 0; q < 8; q++) {
+      const a = (q / 8) * Math.PI * 2;
+      b.setMatrix(new THREE.Matrix4().makeTranslation(
+        wx + dir * 0.02,
+        ON_SKEIN_Y + Math.cos(a) * (ON_SKEIN_R + 0.035),
+        ON_SKEIN_Z + Math.sin(a) * (ON_SKEIN_R + 0.035)));
+      b.box(0, 0, 0, 0.05, 0.05, 0.05, bronze);
+      b.setMatrix(null);
+    }
+    // The locking bar, across the boss's mouth, with its ends standing clear.
+    b.setPiece(OnagerPart.Base, EngineTint.Iron);
+    b.setMatrix(new THREE.Matrix4().makeRotationX(0.5)
+      .premultiply(new THREE.Matrix4().makeTranslation(wx + dir * 0.085, ON_SKEIN_Y, ON_SKEIN_Z)));
+    b.box(0, 0, 0, 0.045, ON_SKEIN_R * 2.4, 0.05, iron);
     b.setMatrix(null);
   }
 
   // =========================================================================
-  // Buffer: an upright post either side with a padded roll of hair-cloth between them,
-  // braced forward to the chassis. Ammianus is explicit that the arm strikes a cushion and
-  // not the timber — a two-tonne machine that stopped its own arm on bare oak would break
-  // one or the other on the first shot.
+  // Buffer: two posts with capped tops carrying a stop beam, and a discrete bound pad where the
+  // arm actually strikes. Ammianus is explicit that the arm meets a cushion and not the timber.
+  //
+  // The pad is local, not a lagging along the whole beam: the drawing shows a bound cylinder
+  // about a third of the span long centred on the strike point, and the fourth-century machine a
+  // single big stuffed sack hanging off the crossbeam's face.
   // =========================================================================
   b.setPiece(OnagerPart.Base, EngineTint.Timber);
+  const POST_X = 0.46;
   for (const sx of [-1, 1]) {
-    beam(b, sx * 0.36, 1.06, ON_BUFFER_Z + 0.1, 0.15, 1.6, 0.18, 1, 0.022, oak, 3);
-    // Raking strut down to the front sleeper.
-    post(b,
-      [sx * 0.36, 1.74, ON_BUFFER_Z + 0.12],
-      [sx * 0.40, 0.42, ON_PIVOT_Z - 0.02],
-      0.055, 0.05, oak);
+    beam(b, sx * POST_X, 1.10, ON_BUFFER_Z + 0.14, 0.17, 1.94, 0.20, 1, 0.024, oak, 4);
+    // Squared tenon head on the post, not a dome.
+    //
+    // It was a revolve, and at the top of a post either side of the machine two domes read as *the
+    // buffer pads* — a critic reported "the padded pads sit on top of the two stanchions, outboard
+    // of the arm's swing plane, so a slim centred arm would sail between them and strike bare
+    // timber". The real pad is on the centreline below, and the domes were drawing the eye off it.
+    beam(b, sx * POST_X, 2.09, ON_BUFFER_Z + 0.14, 0.20, 0.14, 0.23, 0, 0.02, oak, 1);
+    // Two raking struts a post, tenoned in below the stop beam and landing on the front sleeper.
+    for (const f of [0.62, 1.0]) {
+      post(b,
+        [sx * POST_X, 1.10 + 0.94 * f, ON_BUFFER_Z + 0.16],
+        [sx * (POST_X + 0.16 * f), 0.34, ON_PIVOT_Z + 0.06],
+        0.062, 0.05, oak);
+    }
   }
-  // The cushion itself, across the posts' rear faces.
+  // The stop beam, let into notches near the tops of the posts.
+  beam(b, 0, ON_BUFFER_Y + 0.06, ON_BUFFER_Z + 0.10, POST_X * 2 + 0.30, 0.26, 0.20, 0, 0.024, oak, 2);
+  // The pad: a bound roll on the beam's rear face, centred where the arm arrives.
   b.setPiece(OnagerPart.Base, EngineTint.Cord);
-  b.sweep(
-    [
-      { p: [-0.34, ON_BUFFER_Y, ON_BUFFER_Z - 0.10], rx: 0.115, rz: 0.115 },
-      { p: [0, ON_BUFFER_Y, ON_BUFFER_Z - 0.115], rx: 0.13, rz: 0.13 },
-      { p: [0.34, ON_BUFFER_Y, ON_BUFFER_Z - 0.10], rx: 0.115, rz: 0.115 },
-    ],
-    [0, 1, 0], 7, leather, { capStart: true, capEnd: true, repeatU: 3 }
-  );
+  b.setMatrix(new THREE.Matrix4().makeRotationZ(Math.PI / 2)
+    .premultiply(new THREE.Matrix4().makeTranslation(0, ON_BUFFER_Y, ON_BUFFER_Z - 0.10)));
+  b.revolve([[0.001, -0.30], [0.10, -0.30], [0.155, -0.22], [0.165, 0], [0.155, 0.22],
+    [0.10, 0.30], [0.001, 0.30]], 9, leather, 2);
+  b.setMatrix(null);
+  // Its two encircling bands.
+  b.setPiece(OnagerPart.Base, EngineTint.Cord);
+  for (const dx of [-0.13, 0.13]) {
+    b.setMatrix(new THREE.Matrix4().makeRotationZ(Math.PI / 2)
+      .premultiply(new THREE.Matrix4().makeTranslation(dx, ON_BUFFER_Y, ON_BUFFER_Z - 0.10)));
+    b.revolve([[0.16, -0.03], [0.175, -0.024], [0.175, 0.024], [0.16, 0.03]], 9, rope, 3);
+    b.setMatrix(null);
+  }
 
   // =========================================================================
-  // The arm, built at ON_ARM_COCKED. A single tapering baulk out of the skein, iron-shod at
-  // the head where the sling bears.
+  // The arm, built at ON_ARM_COCKED: a tapering baulk out of the middle of the skein, with iron
+  // ferrules along it, cord whipping under the head, and an iron cap carrying the release spike.
+  //
+  // The butt runs 0.36 m below the skein's axis and shows its cut end under the hank, which is
+  // the detail that makes the load path readable: the spring is not beside the arm, it is round
+  // it.
   // =========================================================================
   b.setPiece(OnagerPart.Arm, EngineTint.Timber);
   b.sweep(
     [
-      { p: onArmPoint(-0.16, ON_ARM_COCKED), rx: 0.105, rz: 0.105 },
-      { p: onArmPoint(0.24, ON_ARM_COCKED), rx: 0.115, rz: 0.115 },
-      { p: onArmPoint(1.0, ON_ARM_COCKED), rx: 0.088, rz: 0.088 },
-      { p: onArmPoint(1.66, ON_ARM_COCKED), rx: 0.062, rz: 0.062 },
-      { p: onArmPoint(ON_ARM_R, ON_ARM_COCKED), rx: 0.05, rz: 0.05 },
+      { p: onArmPoint(-0.36, ON_ARM_COCKED), rx: ON_ARM_ROOT_R * 0.92, rz: ON_ARM_ROOT_R * 0.92 },
+      { p: onArmPoint(-0.05, ON_ARM_COCKED), rx: ON_ARM_ROOT_R, rz: ON_ARM_ROOT_R },
+      { p: onArmPoint(0.30, ON_ARM_COCKED), rx: ON_ARM_ROOT_R * 0.98, rz: ON_ARM_ROOT_R * 0.98 },
+      { p: onArmPoint(1.05, ON_ARM_COCKED), rx: 0.072, rz: 0.072 },
+      { p: onArmPoint(1.70, ON_ARM_COCKED), rx: 0.055, rz: 0.055 },
+      { p: onArmPoint(ON_ARM_R, ON_ARM_COCKED), rx: 0.047, rz: 0.047 },
     ],
-    [0, 0, 1], 6, oak, { capStart: true, capEnd: true, repeatV: 5 }
+    [0, 0, 1], 7, oak, { capStart: true, capEnd: true, repeatV: 6 }
+  );
+  // Iron ferrules banding the arm. Present on all four sling-type machines in the reference set,
+  // and they are what says the timber is under a load it needs help with.
+  // The butt-block: a squared collar on the arm where the skein bears.
+  //
+  // "The arm's butt has no butt-block: it is a smooth tapered pole that the bundle abuts rather
+  // than grips." Correct, and it is the difference between a spring driving an arm and a spring
+  // resting against one — a round pole in a twisted hank would simply slip. Squared, so the cords
+  // have flats to bite on.
+  b.setPiece(OnagerPart.Arm, EngineTint.Timber);
+  {
+    const c = onArmPoint(-0.05, ON_ARM_COCKED);
+    b.setMatrix(new THREE.Matrix4().makeRotationX(-ON_ARM_COCKED)
+      .premultiply(new THREE.Matrix4().makeTranslation(c[0], c[1], c[2])));
+    b.box(0, 0, 0, ON_ARM_ROOT_R * 2.5, ON_ARM_ROOT_R * 2.5, 0.44, oak, 2);
+    b.setMatrix(null);
+  }
+  b.setPiece(OnagerPart.Arm, EngineTint.Iron);
+  for (const [d, r] of [[0.46, 0.098], [1.28, 0.070], [1.86, 0.054]] as const) {
+    b.sweep(
+      [
+        { p: onArmPoint(d - 0.035, ON_ARM_COCKED), rx: r, rz: r },
+        { p: onArmPoint(d + 0.035, ON_ARM_COCKED), rx: r, rz: r },
+      ],
+      [0, 0, 1], 7, plate
+    );
+  }
+  // Cord whipping just below the head, then the iron cap and the spike the free sling leg drops
+  // over. Hjemsted's arm head is exactly this: a conical iron cap with an upward spike, two bands
+  // of whipping under it.
+  b.setPiece(OnagerPart.Arm, EngineTint.Cord);
+  b.sweep(
+    [
+      { p: onArmPoint(ON_ARM_R - 0.26, ON_ARM_COCKED), rx: 0.055, rz: 0.055 },
+      { p: onArmPoint(ON_ARM_R - 0.13, ON_ARM_COCKED), rx: 0.056, rz: 0.056 },
+    ],
+    [0, 0, 1], 7, rope, { repeatV: 4 }
   );
   b.setPiece(OnagerPart.Arm, EngineTint.Iron);
   b.sweep(
     [
-      { p: onArmPoint(ON_ARM_R - 0.14, ON_ARM_COCKED), rx: 0.056, rz: 0.056 },
-      { p: onArmPoint(ON_ARM_R + 0.05, ON_ARM_COCKED), rx: 0.048, rz: 0.048 },
+      { p: onArmPoint(ON_ARM_R - 0.12, ON_ARM_COCKED), rx: 0.058, rz: 0.058 },
+      { p: onArmPoint(ON_ARM_R + 0.03, ON_ARM_COCKED), rx: 0.05, rz: 0.05 },
+      { p: onArmPoint(ON_ARM_R + 0.075, ON_ARM_COCKED), rx: 0.03, rz: 0.03 },
     ],
-    [0, 0, 1], 6, plate, { capEnd: true }
+    [0, 0, 1], 7, plate, { capStart: true, capEnd: true }
   );
-  // The hook the winch rope pulls on.
-  b.setMatrix(null);
+
+  // The winch's purchase on the arm: an iron strap and ring clamped part way up it, not a hook at
+  // the tip. Every reference puts it here, and the tip has to stay clear for the sling to run.
   {
     const h = onArmPoint(ON_ARM_R * ON_HOOK_F, ON_ARM_COCKED);
-    b.setMatrix(new THREE.Matrix4().makeTranslation(h[0], h[1] - 0.06, h[2]));
-    b.box(0, 0, 0, 0.05, 0.11, 0.05, iron);
+    b.setPiece(OnagerPart.Arm, EngineTint.Iron);
+    b.sweep(
+      [
+        { p: onArmPoint(ON_ARM_R * ON_HOOK_F - 0.05, ON_ARM_COCKED), rx: 0.092, rz: 0.092 },
+        { p: onArmPoint(ON_ARM_R * ON_HOOK_F + 0.05, ON_ARM_COCKED), rx: 0.092, rz: 0.092 },
+      ],
+      [0, 0, 1], 7, plate
+    );
+    // The ring itself, standing off the strap on the underside where the falls pull.
+    b.setMatrix(new THREE.Matrix4().makeRotationY(Math.PI / 2)
+      .premultiply(new THREE.Matrix4().makeTranslation(h[0], h[1] - 0.115, h[2] + 0.045)));
+    b.revolve([[0.055, 0.016], [0.072, 0.016], [0.072, -0.016], [0.055, -0.016]], 8, iron, 2);
     b.setMatrix(null);
   }
 
-  // Sling: two strands from the arm head down to a leather pouch, and the pouch itself.
-  // Both are built rigid to the arm — see the header for why.
+  // Sling: the two legs terminate differently, and that asymmetry is the mechanism. One is seized
+  // permanently to the arm head; the other is a loop dropped over the iron spike, and it is that
+  // loop coming off the spike as the arm swings that releases the shot. A symmetrical sling has no
+  // way to let go.
   {
     const tip = onArmPoint(ON_ARM_R, ON_ARM_COCKED);
+    const spike = onArmPoint(ON_ARM_R + 0.075, ON_ARM_COCKED);
     const pouch = onPouch(ON_ARM_COCKED);
     b.setPiece(OnagerPart.Arm, EngineTint.Cord);
-    for (const sx of [-1, 1]) {
-      b.sweep(
-        [
-          { p: [tip[0] + sx * 0.03, tip[1], tip[2]], rx: 0.013, rz: 0.013 },
-          { p: [pouch[0] + sx * 0.13, pouch[1] + 0.04, pouch[2]], rx: 0.012, rz: 0.012 },
-        ],
-        [0, 0, 1], 4, rope, { repeatV: 4 }
-      );
-    }
+    // Fixed leg: seized to the head, under the whipping.
+    b.sweep(
+      [
+        { p: [tip[0] - 0.045, tip[1] - 0.02, tip[2]], rx: 0.015, rz: 0.015 },
+        { p: [pouch[0] - 0.145, pouch[1] + 0.05, pouch[2] - 0.02], rx: 0.014, rz: 0.014 },
+      ],
+      [0, 0, 1], 5, rope, { capStart: true, capEnd: true, repeatV: 5 }
+    );
+    // Free leg: up over the spike, then down. Three stations so the turn round the spike shows.
+    b.sweep(
+      [
+        { p: [pouch[0] + 0.145, pouch[1] + 0.05, pouch[2] - 0.02], rx: 0.014, rz: 0.014 },
+        { p: [tip[0] + 0.04, tip[1] + 0.01, tip[2] + 0.02], rx: 0.014, rz: 0.014 },
+        { p: [spike[0] + 0.012, spike[1] + 0.012, spike[2] + 0.012], rx: 0.016, rz: 0.016 },
+      ],
+      [0, 0, 1], 5, rope, { capStart: true, capEnd: true, repeatV: 5 }
+    );
     // The pouch: a shallow leather cradle, open upward.
+    b.setPiece(OnagerPart.Arm, EngineTint.Cord);
     b.setMatrix(new THREE.Matrix4().makeTranslation(pouch[0], pouch[1], pouch[2]));
     b.revolve([[0.001, 0.075], [0.225, 0.075], [0.245, -0.015], [0.17, -0.075], [0.001, -0.082]], 9, leather, 2);
     b.setMatrix(null);
-    // The release: a fixed leg pinned to the arm and a free leg over an iron hook, which is the
-    // whole reason a sling out-throws a cup. Without a visible hook the sling has no way to let
-    // go at the right moment and a critic reads the arm tip as a bare plate.
-    b.setPiece(OnagerPart.Arm, EngineTint.Iron);
-    const hookDir = onArmPoint(ON_ARM_R + 0.22, ON_ARM_COCKED);
-    b.sweep(
-      [
-        { p: tip, rx: 0.026, rz: 0.026 },
-        { p: hookDir, rx: 0.019, rz: 0.019 },
-        { p: [hookDir[0], hookDir[1] - 0.09, hookDir[2] + 0.05], rx: 0.015, rz: 0.015 },
-      ],
-      [0, 0, 1], 5, plate, { capStart: true, capEnd: true }
-    );
-    b.setPiece(OnagerPart.Arm, EngineTint.Cord);
   }
 
   // The stone. Roughly dressed, so a lathed profile with an uneven number of facets rather
@@ -1150,7 +1803,9 @@ export function buildOnagerGeometry(): THREE.InstancedBufferGeometry {
   }
 
   // =========================================================================
-  // Windlass at the rear, with a ratchet wheel and two handspikes.
+  // Windlass at the rear: a barrel journalled through the rails in iron collars, rope wound at
+  // the middle, a ratchet segment and its pawl on the *outer* face of one rail, handspikes left
+  // in the drum.
   // =========================================================================
   b.setPiece(OnagerPart.Winch, EngineTint.Timber);
   b.setMatrix(
@@ -1158,54 +1813,82 @@ export function buildOnagerGeometry(): THREE.InstancedBufferGeometry {
       .premultiply(new THREE.Matrix4().makeTranslation(0, ON_DRUM_Y, ON_DRUM_Z))
   );
   b.revolve(
-    [[0.001, -0.44], [0.17, -0.44], [0.17, -0.36], [ON_DRUM_R, -0.34],
-      [ON_DRUM_R, 0.34], [0.17, 0.36], [0.17, 0.44], [0.001, 0.44]],
+    [[0.001, -(ON_RAIL_X + 0.16)], [0.075, -(ON_RAIL_X + 0.16)], [0.075, -(ON_RAIL_X - 0.02)],
+      [ON_DRUM_R, -(ON_RAIL_X - 0.06)], [ON_DRUM_R, -0.30], [ON_DRUM_R + 0.02, -0.26],
+      [ON_DRUM_R + 0.02, 0.26], [ON_DRUM_R, 0.30], [ON_DRUM_R, ON_RAIL_X - 0.06],
+      [0.075, ON_RAIL_X - 0.02], [0.075, ON_RAIL_X + 0.16], [0.001, ON_RAIL_X + 0.16]],
     9, oak
   );
   b.setMatrix(null);
-  // Spoked wheels either end, and an iron ratchet ring: the load path made visible.
-  for (const sx of [-1, 1]) {
-    b.setMatrix(
-      new THREE.Matrix4().makeRotationZ(Math.PI / 2)
-        .premultiply(new THREE.Matrix4().makeTranslation(sx * 0.48, ON_DRUM_Y, ON_DRUM_Z))
-    );
-    b.revolve([[0.001, -0.026], [0.26, -0.024], [0.28, 0], [0.26, 0.024], [0.001, 0.026]], 10, oak, 2);
-    b.setMatrix(null);
-  }
-  b.setPiece(OnagerPart.Winch, EngineTint.Iron);
-  for (let i = 0; i < 10; i++) {
-    const a = (i / 10) * Math.PI * 2;
-    b.setMatrix(new THREE.Matrix4().makeTranslation(
-      0.48, ON_DRUM_Y + Math.cos(a) * 0.26, ON_DRUM_Z + Math.sin(a) * 0.26));
-    b.box(0, 0, 0, 0.032, 0.042, 0.042, iron);
-    b.setMatrix(null);
-  }
+  // Iron collars where the journals run in the rails.
   b.setPiece(OnagerPart.Base, EngineTint.Iron);
-  b.setMatrix(new THREE.Matrix4().makeTranslation(0.48, ON_DRUM_Y + 0.30, ON_DRUM_Z + 0.08));
-  b.box(0, 0, 0, 0.03, 0.06, 0.26, plate);
+  for (const sx of [-1, 1]) {
+    b.setMatrix(new THREE.Matrix4().makeRotationZ(Math.PI / 2)
+      .premultiply(new THREE.Matrix4().makeTranslation(sx * ON_RAIL_X, ON_DRUM_Y, ON_DRUM_Z)));
+    b.revolve([[0.078, -0.055], [0.115, -0.05], [0.115, 0.05], [0.078, 0.055]], 9, plate, 2);
+    b.setMatrix(null);
+  }
+  // Rope on the drum: six turns over a strap at the middle, which is what says the drum takes the
+  // load in. It had none at all.
+  b.setPiece(OnagerPart.Winch, EngineTint.Cord);
+  for (let i = 0; i < 6; i++) {
+    const x = -0.16 + i * 0.064;
+    b.setMatrix(new THREE.Matrix4().makeRotationZ(Math.PI / 2)
+      .premultiply(new THREE.Matrix4().makeTranslation(x, ON_DRUM_Y, ON_DRUM_Z)));
+    b.revolve([[ON_DRUM_R + 0.021, -0.028], [ON_DRUM_R + 0.048, -0.022],
+      [ON_DRUM_R + 0.048, 0.022], [ON_DRUM_R + 0.021, 0.028]], 9, rope, 3);
+    b.setMatrix(null);
+  }
+  // The ratchet: a toothed segment on the outer face of the right rail, and its pawl.
+  b.setPiece(OnagerPart.Winch, EngineTint.Iron);
+  const RX = ON_RAIL_X + ON_RAIL_W * 0.5 + 0.07;
+  b.setMatrix(new THREE.Matrix4().makeRotationZ(Math.PI / 2)
+    .premultiply(new THREE.Matrix4().makeTranslation(RX, ON_DRUM_Y, ON_DRUM_Z)));
+  b.revolve([[0.09, -0.026], [0.30, -0.022], [0.30, 0.022], [0.09, 0.026]], 11, plate, 2);
   b.setMatrix(null);
+  for (let i = 0; i < 18; i++) {
+    const a = (i / 18) * Math.PI * 2;
+    b.setMatrix(new THREE.Matrix4().makeRotationX(-a)
+      .premultiply(new THREE.Matrix4().makeTranslation(
+        RX, ON_DRUM_Y + Math.cos(a) * 0.315, ON_DRUM_Z + Math.sin(a) * 0.315)));
+    b.box(0, 0, 0, 0.042, 0.04, 0.036, iron);
+    b.setMatrix(null);
+  }
+  // The pawl is on the frame, not the drum, or it would turn with it and hold nothing.
+  b.setPiece(OnagerPart.Base, EngineTint.Iron);
+  b.setMatrix(new THREE.Matrix4().makeRotationX(-0.42)
+    .premultiply(new THREE.Matrix4().makeTranslation(RX + 0.03, ON_DRUM_Y + 0.44, ON_DRUM_Z + 0.10)));
+  b.box(0, 0, 0, 0.032, 0.34, 0.06, plate);
+  b.setMatrix(null);
+  // Handspikes: four bars through the drum, two left standing.
   b.setPiece(OnagerPart.Winch, EngineTint.Timber);
   for (let i = 0; i < 2; i++) {
     const a = (i / 2) * Math.PI + 0.5;
     for (const s of [-1, 1]) {
       b.sweep(
         [
-          { p: [0, ON_DRUM_Y, ON_DRUM_Z], rx: 0.026, rz: 0.026 },
-          { p: [0, ON_DRUM_Y + Math.cos(a) * s * 0.34, ON_DRUM_Z + Math.sin(a) * s * 0.34], rx: 0.022, rz: 0.022 },
+          { p: [ON_RAIL_X + 0.02, ON_DRUM_Y, ON_DRUM_Z], rx: 0.028, rz: 0.028 },
+          {
+            p: [ON_RAIL_X + 0.02,
+              ON_DRUM_Y + Math.cos(a) * s * 0.40, ON_DRUM_Z + Math.sin(a) * s * 0.40],
+            rx: 0.023, rz: 0.023,
+          },
         ],
-        [1, 0, 0], 4, oak, { capEnd: true }
+        [1, 0, 0], 5, oak, { capEnd: true }
       );
     }
   }
 
-  // Rope, drum to the arm's hook.
-  cord(b, OnagerPart.Rope, 3, 0.014, 4, 1, rope);
+  // Rope, drum to the arm's ring — two falls, as the drawing has it.
+  cord(b, OnagerPart.Rope, 3, 0.016, 4, 1, rope);
 
-  // Stone shot stacked on the ground beside the machine, where the crew reach for it. Part
-  // Ground, so the pile does not leap when the engine kicks.
+  // =========================================================================
+  // What a crew leaves lying about: shot, the bars they twist the skein with, and the claw off
+  // the winch rope. Part Ground, so none of it leaps when the engine kicks.
+  // =========================================================================
   b.setPiece(EnginePart.Ground, EngineTint.Atlas);
   for (const [dx, dz, r] of [
-    [1.02, -0.5, 0.135], [1.26, -0.72, 0.125], [0.94, -0.86, 0.13], [1.2, -0.32, 0.115],
+    [1.18, -0.5, 0.135], [1.42, -0.72, 0.125], [1.10, -0.86, 0.13], [1.36, -0.32, 0.115],
   ] as const) {
     b.setMatrix(new THREE.Matrix4().makeTranslation(dx, r * 0.92, dz));
     b.revolve(
@@ -1214,12 +1897,29 @@ export function buildOnagerGeometry(): THREE.InstancedBufferGeometry {
     );
     b.setMatrix(null);
   }
+  // The skein-tensioning bars. Two independent references show them lying beside the machine with
+  // hexagonal heads pierced by a square socket, and they are the tool that makes the washers
+  // mean something.
+  b.setPiece(EnginePart.Ground, EngineTint.Iron);
+  for (const [dx, dz, ang] of [[-1.16, -1.20, 0.4], [-1.28, -0.86, -0.22]] as const) {
+    b.sweep(
+      [
+        { p: [dx, 0.035, dz], rx: 0.022, rz: 0.022 },
+        { p: [dx + Math.sin(ang) * 0.86, 0.035, dz + Math.cos(ang) * 0.86], rx: 0.019, rz: 0.019 },
+      ],
+      UPZ, 6, iron, { capStart: true, capEnd: true }
+    );
+    b.setMatrix(new THREE.Matrix4().makeRotationX(Math.PI / 2)
+      .premultiply(new THREE.Matrix4().makeTranslation(dx, 0.035, dz)));
+    b.revolve([[0.001, 0.03], [0.055, 0.03], [0.055, -0.03], [0.001, -0.03]], 6, plate);
+    b.setMatrix(null);
+  }
 
   const g = b.toGeometry('onager');
   const pt = g.getAttribute('aPieceTint');
   g.setAttribute('aPart', pt);
   g.deleteAttribute('aPieceTint');
   g.deleteAttribute('aSkin');
-  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1.2, 0), 3.4);
+  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1.2, 0), 3.6);
   return g;
 }

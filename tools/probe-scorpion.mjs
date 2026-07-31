@@ -21,6 +21,23 @@
  *   crewwork   low and close behind a gun, crew serving it
  *   overwatch  high oblique with the battery in the foreground and the battle beyond
  *   downrange  from in front of the battery looking back at the muzzles
+ *
+ * `--bench` is a second, different pass, and the distinction matters. The shots above photograph
+ * a battery *in a battle*; the bench photographs **one machine as an object**, to be graded on
+ * mechanical coherence against the museum photographs in `reference/engines/`. It therefore breaks
+ * every rule the shots above follow: it takes `RTSCamera` out of the loop and drives the camera
+ * directly, solves its own stand-off so the machine fills the frame, hides the crew and the
+ * neighbouring guns, sets a neutral high sun, and turns the machine on its stand so the light
+ * lands over the camera's shoulder. See the block comment at the bench for why each of those is
+ * necessary rather than convenient — every one of them was a fault a blind critic reported as
+ * though it were a fault in the machine.
+ *
+ *   node tools/probe-scorpion.mjs --bench --only=engine
+ *   node tools/probe-scorpion.mjs --bench --onager=1 --focus=onager --phases=e-ready
+ *
+ * Bench flags: `--phases=a,b` shoots a subset of the cycle, `--fill` the fraction of the frame the
+ * machine's outline should occupy, `--benchfov` the lens, `--sunoff` the key-light offset in
+ * degrees, `--benchsky` an hour or a `SKY_PRESETS` name (`overcast` is flat museum light).
  */
 
 import { chromium } from 'playwright';
@@ -63,7 +80,21 @@ const SHOTS = {
   // edge and cropped", "a flat green rectangle terminated by a hard LOD density seam". A wide
   // camera on a twelve-man battery in an empty meadow photographs the meadow. Every shot below
   // now has the guns filling the near third with something legible behind them.
-  battery:   { dx: 1.2,  dz: 7,   zoom: 0.27, yaw: Math.PI * 0.90, at: AT },
+  // `dz` 1.4, in from 7, and `zoom` 0.34 out from 0.27.
+  //
+  // At the old numbers this shot photographed bare grass and nothing else — no gun, no horizon,
+  // 1920x1080 of turf — and the comment above claimed the guns filled the near third. Worked
+  // through: the eye ends up at `focus.z + r*cos(pitch)`, so `dz = 7` at `r = 8.2` put it 1.3 m
+  // behind the gun line, i.e. standing among the guns with the nearest one under the lens and
+  // below the bottom edge. The min-clearance clamp then held the eye 5.3 m up while the look-at
+  // sat 1.3 m off the ground 8 m away, tipping the view 27 degrees down so the horizon fell
+  // outside the frame entirely.
+  //
+  // A battery of four on 4.4 m centres is 13.2 m of frontage, which needs about 12 m of stand-off
+  // at this FOV. Pulling `dz` in moves the *focus* toward the guns, which pushes the *eye* back
+  // away from them, and opening the zoom lengthens the orbit: together they put the eye ~12 m
+  // behind the line with all four guns across the middle of the frame.
+  battery:   { dx: 1.2,  dz: 1.4, zoom: 0.34, yaw: Math.PI * 0.90, at: AT },
   engine:    { dx: -5.4, dz: 1.6, zoom: 0.14, yaw: Math.PI * 0.30, at: AT },
   crewwork:  { dx: 1.7,  dz: 1.1, zoom: 0.12, yaw: Math.PI * 0.86, at: AT },
   overwatch: { dx: 0,    dz: 22,  zoom: 0.40, yaw: Math.PI * 0.97, at: AT },
@@ -243,23 +274,100 @@ for (const name of names) {
 if (args.has('bench')) {
   const dir = path.join(OUT, 'bench');
   await mkdir(dir, { recursive: true });
-  const setup = await page.evaluate(() => {
+
+  // -------------------------------------------------------------------------
+  // Two things about the old bench were depressing the mechanical-coherence score for reasons
+  // that had nothing to do with the machine, and both are fixed here.
+  //
+  // 1. **Framing.** The engine occupied the left third of the frame and the other two thirds
+  //    was empty pasture. Every museum reference plate is a machine-centred close-up, so the
+  //    asymmetry was both a tell and an unfair penalty on a test whose whole purpose is to
+  //    grade the object. The cause was structural: `setCamera` aims `RTSCamera` at a *ground*
+  //    focus and the bench passed `dx`/`dz` offsets into that focus, so the camera was aimed
+  //    1.9 m to one side of the machine by construction, and then looked 1.55 m above the
+  //    ground (`place()` raises the look-at when close), which put the machine low and left.
+  //    On top of that the offsets were still computed on a 3.6 m engine pitch after
+  //    `ENGINE_PITCH` went to 4.4, so the "engine" shot was aimed 1.2 m off the gun.
+  //
+  //    The rig is therefore taken out of the loop for the bench only, and the camera is driven
+  //    directly: aimed at the middle of the machine's own outline and stood off at a distance
+  //    solved so that outline fills a fixed fraction of the frame. Nothing is guessed and
+  //    nothing goes stale when a part moves.
+  //
+  // 2. **Lighting.** The frames were shot under the battle's low warm sun, so the machine was
+  //    a dark low-contrast silhouette against bright ground with metre-long raking shadows
+  //    across the mechanism. Museum photographs are evenly lit. The bench now sets a high
+  //    neutral sun. The battle's own lighting is deliberate and is not touched: this is a
+  //    runtime call on the sky system inside a screenshot pass, not a change to the look.
+  //
+  //    A high sun is not enough on its own, and it cannot be. `atmosphere.ts` fixes the site at
+  //    Rome, 41.9 deg N, declination -14 deg, which caps the sun at 34 deg even at local noon —
+  //    deliberately, because that is the shadow length the art direction wants. So the sun sits
+  //    on one bearing all day, and of four views round a machine one is always front-lit and one
+  //    is always a silhouette. The bench therefore **turns the machine on its stand** for each
+  //    view, so that the light always arrives from `--sunoff` degrees off the camera axis. That
+  //    is exactly what a museum photographer does with an exhibit, it changes nothing about the
+  //    machine's own geometry or the relative camera angle that defines each view, and unlike
+  //    moving the sun it leaves the sky and the shading agreeing with each other.
+  // -------------------------------------------------------------------------
+  // An hour, or the name of a `SKY_PRESETS` entry — `--benchsky=overcast` is the flat diffuse
+  // condition most museum photographs are actually taken in.
+  const BENCH_SKY = String(args.get('benchsky') ?? '12');
+  const FILL = Number(args.get('fill') ?? 0.86);
+  const FOV = Number(args.get('benchfov') ?? 38);
+  // Degrees between the camera axis and the sun's bearing. 0 is flat frontal light, which kills
+  // form; 90 leaves half the machine black. 32 is the standard three-quarter key.
+  const SUN_OFF = Number(args.get('sunoff') ?? 32);
+
+  const setup = await page.evaluate(({ hour }) => {
     const g = window.__game;
+    const ctx = g.engine.context;
     const hidden = [];
-    g.engine.context.scene.traverse((o) => {
+    ctx.scene.traverse((o) => {
       if (!o.isMesh && !o.isInstancedMesh && !o.isPoints) return;
       const n = o.name || '';
-      // Everything except the engines, the terrain and the soldiers standing at them.
-      if (/grass|veg|scatter|tree|foliage|litter|banner|standard/i.test(n) && o.visible) {
+      // Everything except the engine and the ground it stands on.
+      //
+      // The crew go too, and that is the point rather than a shortcut. A crew of three stands
+      // *behind* its machine, so from the rear and rear-three-quarter views — which are the ones
+      // that show the winch, the rack, the claw and the groove, the whole reason those views
+      // exist — a man's back fills a third of the frame and the mechanism is behind him. The
+      // reference plates this is graded against are unmanned museum reconstructions, so an
+      // unmanned plate is the like-for-like comparison. The battery, engine and crewwork shots
+      // above still photograph the machine served.
+      // `bird` and `projectile` are in the list because both put objects between the lens and the
+      // machine: the flock's billboards read at close range as a flat dark parallelogram in the
+      // sky (which is a real fault in `src/vfx/BirdFlock.ts`, not this probe's business to fix),
+      // and a scorpio volley in flight strews forty bolts across the frame.
+      if (/grass|veg|scatter|tree|foliage|litter|banner|standard|soldier|horse|corpse|impostor|bird|projectile/i
+        .test(n) && o.visible) {
         o.visible = false;
         hidden.push(n);
       }
     });
-    return hidden.length;
-  });
-  console.log(`\n=== bench === (hid ${setup} vegetation/prop meshes)`);
+    const sky = ctx.tryGet('sky');
+    if (sky) {
+      // A named preset if one was asked for by name, otherwise an hour.
+      const h = Number(hour);
+      if (Number.isFinite(h)) sky.setTimeOfDay(h);
+      else sky.setPreset(hour);
+    }
+    // Take the RTS rig out of the loop. `Engine.tick` calls `rig.update` every frame and it
+    // would otherwise put the camera straight back on its orbit; with it stubbed, whatever the
+    // bench writes into the camera survives to the render.
+    g.engine.rig.update = () => {};
+    // `PostFX` gates depth of field on `rig.zoom < 0.28` and focuses at `rig.orbitRadius`. A
+    // bench plate exists to be read for mechanism, so the whole machine has to be sharp:
+    // parking zoom above the gate turns DOF off rather than defocusing half the frame at a
+    // radius that no longer matches where the camera actually is.
+    g.engine.rig.zoom = 0.42;
+    return { hidden: hidden.length, sun: sky ? sky.timeOfDay : null };
+  }, { hour: BENCH_SKY });
+  console.log(`\n=== bench === (hid ${setup.hidden} vegetation/prop meshes, sun at ${setup.sun}h)`);
 
-  // Draw fractions to photograph, plus the instant of the shot.
+  // Draw fractions to photograph, plus the instant of the shot. `--phases=e-ready` shoots one,
+  // which is what an iteration on the geometry or the light actually needs.
+  const WANT = args.get('phases') ? String(args.get('phases')).split(',') : null;
   const FRAMES = [
     { name: 'a-released', since: 0.35 },
     { name: 'b-wind-25', since: 0.9 + 13.5 * 0.25 },
@@ -267,49 +375,158 @@ if (args.has('bench')) {
     { name: 'd-loading', since: 0.9 + 13.5 + 0.5 },
     { name: 'e-ready', since: 0.9 + 13.5 + 2.2 },
     { name: 'f-recoil', since: 0.06 },
-  ];
-  // An onager is a 3.8 m chassis with a 2 m arm over it against a scorpio's 1.4 m stock, so
-  // the bench has to stand off further and wider for one or it photographs a corner of it.
-  const big = FOCUS === 'onager';
-  const K = big ? 2.6 : 1;
-  const Z = big ? 0.235 : 0.135;
-  const views = [
-    { tag: 'q', dx: -1.6 * K, dz: 1.0 * K, zoom: Z, yaw: Math.PI * 0.24 },
-    { tag: 'side', dx: -2.2 * K, dz: 0.3 * K, zoom: Z, yaw: Math.PI * 0.5 },
-    { tag: 'rear', dx: 0.05, dz: 0.9 * K, zoom: Z, yaw: Math.PI * 1.0 },
-    // Downrange of the muzzle looking back. `dz` is downrange-positive and the camera sits
-    // `r` behind its focus along the yaw, so a negative dz here put the focus *behind* the eye
-    // and the shot photographed empty pasture — a critic correctly reported "e-ready-front.png
-    // is a wasted frame, no machine in shot at all". The focus has to be short of the muzzle
-    // with the eye beyond it.
-    { tag: 'front', dx: 0.05, dz: -0.6 * K, zoom: Z, yaw: Math.PI * 0.02 },
-  ];
-  // The right-hand engine of the battery, so the camera offsets are relative to a known
-  // machine. The unit faces -Z, so its local +X maps to world -X: engine 3's local
-  // +1.5 * ENGINE_PITCH lands at world x = centre.x - 5.4.
-  const eng0 = big
-    ? { x: centre.x - 6.2 * 0.5, z: centre.z - 1.35 }
-    : { x: centre.x - 3.6 * 1.5, z: centre.z - 0.55 };
+  ].filter((f) => !WANT || WANT.includes(f.name));
 
-  for (const fr of FRAMES) {
-    await page.evaluate((since) => {
-      const g = window.__game;
-      const ur = g.engine.context.get('unitRender');
-      for (const bat of ur.batteries.values()) bat.sinceShot.fill(since);
-    }, fr.since);
-    for (const v of views) {
-      await page.evaluate(({ v, e }) => {
-        const g = window.__game;
-        g.setCamera(e.x + v.dx, e.z - v.dz, v.zoom, v.yaw);
-        // Half a second, not a frame: `RTSCamera` damps its focus *height* toward the
-        // terrain, so a camera aimed one frame after a jump is still looking at y = 0 and
-        // photographs the ground in front of its subject.
-        g.advance(0.5);
-      }, { v, e: eng0 });
-      const file = path.join(dir, `${fr.name}-${v.tag}.png`);
-      await writeFile(file, await page.screenshot({ type: 'png' }));
+  /**
+   * Views, as a bearing of the *eye* in the machine's own frame and an elevation above its
+   * centre. 0 deg is downrange of the muzzle looking back; 180 deg is behind the winch. The
+   * machine's yaw is read out of the renderer, so these hold whichever way the battery faces.
+   *
+   * The elevations are a standing photographer's: 12-16 deg puts the eye above the stock so
+   * the groove, the rack and the top of the capitulum are all open to the lens, which is what
+   * the reference plates do. Dead level hides the bed.
+   */
+  const views = [
+    { tag: 'q', az: 38, el: 14 },
+    { tag: 'side', az: 90, el: 12 },
+    { tag: 'rear', az: 158, el: 16 },
+    { tag: 'front', az: 4, el: 10 },
+  ];
+
+  // The machine to photograph: the end gun of the focused battery, so it has a neighbour on
+  // one side only. Read from the renderer's own placement rather than recomputed here.
+  const bench = await page.evaluate((typeId) => {
+    const g = window.__game;
+    const ur = g.engine.context.get('unitRender');
+    const bats = ur.debugEngines();
+    const bat = bats.find((b) => !typeId || b.type === typeId) ?? bats[0];
+    if (!bat) return null;
+    const e = bat.engines[bat.engines.length - 1];
+    return {
+      unit: bat.unit, type: bat.type, k: e.k, sil: bat.silhouette,
+      x: e.x, y: e.y, z: e.z, yaw: e.yaw,
+    };
+  }, FOCUS ?? null);
+  if (!bench) {
+    console.log('  (no battery to bench)');
+  } else {
+    // Draw this machine alone. See `UnitRenderSystem.benchOnly`.
+    await page.evaluate(({ unit, k }) => {
+      window.__game.engine.context.get('unitRender').benchOnly = { unit, k };
+    }, { unit: bench.unit, k: bench.k });
+    const ext = (i) => {
+      const v = bench.sil.map((p) => p[i]);
+      return Math.max(...v) - Math.min(...v);
+    };
+    console.log(`  subject: ${bench.type} unit ${bench.unit} engine ${bench.k}` +
+      ` at (${bench.x.toFixed(2)}, ${bench.y.toFixed(2)}, ${bench.z.toFixed(2)}) yaw ${bench.yaw.toFixed(3)}` +
+      `  ${bench.sil.length} outline points spanning` +
+      ` ${ext(0).toFixed(2)} x ${ext(1).toFixed(2)} x ${ext(2).toFixed(2)} m`);
+
+    for (const fr of FRAMES) {
+      for (const v of views) {
+        const info = await page.evaluate(({ v, e, fill, fov, since, sunOff }) => {
+          const g = window.__game;
+          const ctx = g.engine.context;
+          const cam = ctx.camera;
+          // Force the phase per *view*, not per phase-group. The battle is still running under
+          // the bench, so a volley between two views of the same phase would reset `sinceShot`
+          // from the crew's ammunition and the four angles would not be of the same machine
+          // state. Re-forcing costs nothing and makes the set internally consistent.
+          const ur = ctx.get('unitRender');
+          for (const bat of ur.batteries.values()) bat.sinceShot.fill(since);
+
+          // Turn the machine so the sun lands `sunOff` degrees off the camera axis.
+          //
+          // The eye sits at bearing `az` in the machine's own frame, and a yaw of `y` puts that
+          // at world bearing `az + y` — so `y = sunBearing + sunOff - az` aims the camera into
+          // the sun's own bearing plus the key offset. `yawJit` is the renderer's per-engine yaw
+          // stand-off, added to the unit's facing, so writing it is the supported way to turn
+          // one machine without touching the unit.
+          const sun = ctx.get('sky').sunDirection;
+          const sunBearing = Math.atan2(sun.x, sun.z);
+          const yaw = sunBearing + (sunOff * Math.PI) / 180 - (v.az * Math.PI) / 180;
+          const unit = g.battle.unitById(e.unit);
+          const bat = ur.batteries.get(e.unit);
+          if (unit && bat) bat.yawJit[e.k] = yaw - unit.facing;
+
+          // `THREE` is not a page global, but every Object3D carries its own classes.
+          const Vec3 = cam.position.constructor;
+          const cy = Math.cos(yaw);
+          const sy = Math.sin(yaw);
+          // Local -> world exactly as the engine shader does it: Ry(yaw) then translate.
+          const toWorld = (lx, ly, lz) => new Vec3(
+            e.x + lx * cy + lz * sy, e.y + ly, e.z - lx * sy + lz * cy
+          );
+          // The machine's outline, in world space, plus the middle of it to aim at. Aiming at
+          // the middle of the *outline* rather than at a ground focus is what centres the
+          // subject; the old bench aimed at a ground point 1.9 m to one side of the machine and
+          // then looked 1.55 m above that, which put the gun low and left by construction.
+          const pts = e.sil.map((p) => toWorld(p[0], p[1], p[2]));
+          const lo = [0, 1, 2].map((i) => Math.min(...e.sil.map((p) => p[i])));
+          const hi = [0, 1, 2].map((i) => Math.max(...e.sil.map((p) => p[i])));
+          const mid = toWorld((lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2);
+
+          // Eye bearing in the machine's frame, lifted by the view's elevation.
+          const a = (v.az * Math.PI) / 180;
+          const el = (v.el * Math.PI) / 180;
+          const dl = [Math.sin(a), 0, Math.cos(a)];
+          const dir = new Vec3(
+            (dl[0] * cy + dl[2] * sy) * Math.cos(el),
+            Math.sin(el),
+            (-dl[0] * sy + dl[2] * cy) * Math.cos(el)
+          );
+
+          cam.fov = fov;
+          cam.near = 0.25;
+          cam.far = 2400;
+          cam.updateProjectionMatrix();
+
+          // Solve the stand-off: place, project the outline, scale the distance by how much of
+          // the frame it actually filled. Converges in three passes from a generous start
+          // because projected extent goes as 1/d; six is belt and braces.
+          const diag = Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
+          let d = diag * 2.2;
+          let worst = 0;
+          for (let it = 0; it < 6; it++) {
+            cam.position.set(mid.x + dir.x * d, mid.y + dir.y * d, mid.z + dir.z * d);
+            cam.lookAt(mid);
+            cam.updateMatrixWorld(true);
+            worst = 0;
+            for (const c of pts) {
+              const p = c.clone().project(cam);
+              worst = Math.max(worst, Math.abs(p.x), Math.abs(p.y));
+            }
+            if (!Number.isFinite(worst) || worst <= 0) break;
+            const next = d * (worst / fill);
+            if (Math.abs(next - d) < 0.004) { d = next; break; }
+            d = next;
+          }
+          cam.position.set(mid.x + dir.x * d, mid.y + dir.y * d, mid.z + dir.z * d);
+          cam.lookAt(mid);
+          cam.updateMatrixWorld(true);
+          // One frame so shadow cascades, LOD selection and the fog pass all see the final
+          // camera. The rig is stubbed, so this cannot move it back.
+          g.advance(1 / 30);
+          const r = g.engine.context.renderer;
+          return {
+            d: +d.toFixed(2),
+            fill: +worst.toFixed(3),
+            yawDeg: +((yaw * 180) / Math.PI).toFixed(1),
+            eyeY: +cam.position.y.toFixed(2),
+            draws: r.info.render.calls,
+            tris: r.info.render.triangles,
+          };
+        }, { v, e: bench, fill: FILL, fov: FOV, since: fr.since, sunOff: SUN_OFF });
+        const file = path.join(dir, `${fr.name}-${v.tag}.png`);
+        await writeFile(file, await page.screenshot({ type: 'png' }));
+        if (fr.name === FRAMES[0].name) {
+          console.log(`    ${v.tag.padEnd(5)} stand-off ${info.d} m  eye ${info.eyeY} m` +
+            `  machine yaw ${info.yawDeg} deg  frame fill ${info.fill}  draws=${info.draws}`);
+        }
+      }
+      console.log(`  ✓ ${fr.name}`);
     }
-    console.log(`  ✓ ${fr.name}`);
   }
 }
 

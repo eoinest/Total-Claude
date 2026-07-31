@@ -29,9 +29,9 @@ import {
 import { buildScorpioGeometry, buildOnagerGeometry } from './engineMesh';
 import { makeEngineMaterial, type EngineMaterialSet } from './engineMaterial';
 import {
-  ABANDONED, CREW_OF, FORWARD_OF, PITCH_OF, STATIONS_OF, EngineKind, armStateOf, crewClip,
-  engineKindOf, enginePose, emptyPose, initialSinceShot, isEngineUnit, onArmTip, sliderZOf,
-  stationJitter,
+  ABANDONED, CREW_OF, FORWARD_OF, PITCH_OF, STATIONS_OF, EngineKind, armStateOf,
+  crewClip, engineKindOf, enginePose, emptyPose, initialSinceShot, isEngineUnit, onArmTip,
+  sliderZOf, stationJitter, SILHOUETTE_OF,
   type EnginePose,
 } from './engines';
 import type { SkySystem } from '../render/SkySystem';
@@ -577,8 +577,14 @@ export class UnitRenderSystem implements Subsystem {
 
     // Siege engines. One geometry, no LOD chain and no impostor: LOD exists so that
     // thousands of a thing do not cost thousands of times its triangles, and there are at
-    // most a couple of dozen machines on the field. At 1.1 k triangles each that is under
-    // 20 k for every engine in the battle, against a 16 M frame.
+    // most a couple of dozen machines on the field.
+    //
+    // Measured: 6.3 k triangles for a scorpio and 5.5 k for an onager, up from 1.1 k each,
+    // almost all of it spent on the torsion skeins — a spring is now nine to thirteen
+    // individually modelled cords a lobe instead of one swept tube, because every blind critic of
+    // these machines led with the springs being unreadable. A four-gun battery is 25 k triangles
+    // and the 64-machine ceiling is 400 k, against a 16 M frame. It is the right thing to spend
+    // geometry on: nothing else on the machine is load-bearing for whether it reads as a machine.
     this.engineMat = makeEngineMaterial({
       ...baseParams,
       // Timber and cord are dielectric; only the fittings are metal, and the ORM tile's
@@ -725,11 +731,24 @@ export class UnitRenderSystem implements Subsystem {
     return Math.min(0.42, Math.max(ELEV_IDLE, Math.atan((v2 - Math.sqrt(disc)) / (GRAVITY * best))));
   }
 
+  /**
+   * Draw one machine and no others, for `tools/probe-scorpion.mjs`'s bench. Not used by the game.
+   *
+   * A mechanism plate has to be of one machine. Photographed in place, a battery on 4.4 m centres
+   * puts the next gun's arms and tripod inside the subject's own silhouette from every three-
+   * quarter angle, and the reference plates this is graded against are single museum
+   * reconstructions — so a frame with four overlapping engines in it is not being compared with
+   * like. The engines share one `InstancedMesh`, so hiding the neighbours has to happen where the
+   * instances are written.
+   */
+  benchOnly: { unit: number; k: number } | null = null;
+
   /** Battery state for `tools/probe-scorpion.mjs`. Not used by the game. */
   debugEngines(): unknown {
     const out: unknown[] = [];
     for (const [id, bat] of this.batteries) {
       const u = this.battle.unitById(id);
+      if (!u) continue;
       const engines = [];
       for (let k = 0; k < bat.count; k++) {
         const pose = enginePose(bat.sinceShot[k], this.reloadOf(id), this.pose);
@@ -739,6 +758,12 @@ export class UnitRenderSystem implements Subsystem {
         const moving = bat.kind === EngineKind.Onager
           ? { armRad: +armStateOf(bat.kind, pose.draw).toFixed(3), tip: onArmTip(pose.draw) }
           : { armRad: +armStateOf(bat.kind, pose.draw).toFixed(3), sliderZ: +sliderZOf(pose.draw).toFixed(3) };
+        // Where this machine actually stands, and which way it points. The probe's bench camera
+        // needs the machine's own frame to aim at it, and reconstructing the layout arithmetic
+        // outside this file would go stale the moment the pitch or the stand-off changed — as it
+        // had: the bench was still framing on a 3.6 m pitch after `ENGINE_PITCH` went to 4.4, so
+        // it aimed 1.2 m to one side of the gun it thought it was photographing.
+        const place = this.enginePlace(u, bat, k);
         engines.push({
           k,
           sinceShot: +bat.sinceShot[k].toFixed(2),
@@ -747,14 +772,36 @@ export class UnitRenderSystem implements Subsystem {
           loaded: pose.loaded,
           phase: pose.phase,
           ...moving,
+          ...place,
         });
       }
       out.push({
         unit: id, type: u?.typeId, kind: bat.kind, crew: bat.crew, count: bat.count,
-        elevDeg: +((bat.elev * 180) / Math.PI).toFixed(2), engines,
+        elevDeg: +((bat.elev * 180) / Math.PI).toFixed(2),
+        silhouette: SILHOUETTE_OF[bat.kind], engines,
       });
     }
     return out;
+  }
+
+  /**
+   * Where engine `k` of a battery stands in the world, and its yaw.
+   *
+   * The single source of the layout: `pushBattery` writes the instance from this and
+   * `debugEngines` reports it, so a camera aimed with these numbers is aimed at the machine the
+   * renderer actually drew.
+   */
+  private enginePlace(
+    u: UnitGroupState,
+    bat: Battery,
+    k: number
+  ): { x: number; y: number; z: number; yaw: number } {
+    const uc = Math.cos(u.facing);
+    const us = Math.sin(u.facing);
+    const lx = (k - (bat.count - 1) * 0.5) * bat.pitch;
+    const x = u.x + lx * uc + bat.forward * us;
+    const z = u.z - lx * us + bat.forward * uc;
+    return { x, y: this.battle.groundAt(x, z), z, yaw: u.facing + bat.yawJit[k] };
   }
 
   /**
@@ -769,7 +816,9 @@ export class UnitRenderSystem implements Subsystem {
     if (!tier) return;
     const p = this.battle.pool;
     const reload = this.reloadOf(u.id);
+    const only = this.benchOnly;
     for (let k = 0; k < bat.count && tier.count < MAX_ENGINES; k++) {
+      if (only && (only.unit !== u.id || only.k !== k)) continue;
       let alive = 0;
       for (let c = 0; c < bat.crew; c++) {
         const i = u.members[k * bat.crew + c];
@@ -779,10 +828,7 @@ export class UnitRenderSystem implements Subsystem {
       // empty, muzzle down. It is not removed — a wrecked battery is one of the things that
       // makes a late-battle field read as a battle rather than as a tidy simulation.
       const pose = alive > 0 ? enginePose(bat.sinceShot[k], reload, this.pose) : ABANDONED;
-      const lx = (k - (bat.count - 1) * 0.5) * bat.pitch;
-      const x = u.x + lx * uc + bat.forward * us;
-      const z = u.z - lx * us + bat.forward * uc;
-      const y = this.battle.groundAt(x, z);
+      const { x, y, z, yaw } = this.enginePlace(u, bat, k);
 
       // An onager is a 3.8 m chassis with a 2 m arm over it, so it needs a bound to match.
       const big = bat.kind === EngineKind.Onager;
@@ -795,7 +841,7 @@ export class UnitRenderSystem implements Subsystem {
       tier.pos[n * 3 + 1] = y;
       tier.pos[n * 3 + 2] = z;
       const o = n * 4;
-      tier.orient[o] = u.facing + bat.yawJit[k];
+      tier.orient[o] = yaw;
       tier.orient[o + 1] = 1;
       tier.orient[o + 2] = alive > 0 ? bat.elev : -0.06;
       tier.orient[o + 3] = bat.variant[k];
@@ -1897,8 +1943,14 @@ export class UnitRenderSystem implements Subsystem {
   }
 
   private flush(): void {
+    // With the bench active nobody is drawn but the one machine. Enforced here rather than at
+    // emission because `push` rewrites `mesh.visible` from the instance count every frame, so a
+    // probe that reached in and set `visible = false` would have it restored on the next tick —
+    // which is exactly what happened, and produced a "single machine" plate with the whole crew
+    // still standing in front of it.
+    const men = this.benchOnly ? 0 : -1;
     const push = (t: Tier, full: boolean): void => {
-      const n = t.buf.count;
+      const n = men === 0 ? 0 : t.buf.count;
       t.geometry.instanceCount = n;
       t.mesh.visible = n > 0;
       if (n === 0) return;

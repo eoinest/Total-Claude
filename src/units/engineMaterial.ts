@@ -3,7 +3,7 @@ import {
   EnginePart, SPRING_X, SPRING_Y, SPRING_Z, ARM_R, ARM_RAKE, ARM_REST,
   CLAW_Y, DRUM_Y, DRUM_Z, DRUM_R, PIVOT_Y, PIVOT_Z, CLAW_REST_Z,
   OnagerPart, ON_SKEIN_Y, ON_SKEIN_Z, ON_ARM_COCKED, ON_ARM_R, ON_HOOK_F,
-  ON_DRUM_Y, ON_DRUM_Z, ON_DRUM_R, ON_PIVOT_Z,
+  ON_DRUM_Y, ON_DRUM_Z, ON_DRUM_R, ON_PIVOT_Z, ON_SKEIN_HALF,
 } from './engineMesh';
 
 /**
@@ -87,6 +87,7 @@ const float O_DRUM_Z  = ${f(ON_DRUM_Z)};
 const float O_DRUM_R  = ${f(ON_DRUM_R)};
 const float O_PIVOT_Z = ${f(ON_PIVOT_Z)};
 const float O_RECOIL_PITCH = ${f(ON_RECOIL_PITCH)};
+const float O_SKEIN_HALF = ${f(ON_SKEIN_HALF)};
 
 varying vec3 vEngTint;
 varying float vEngGrime;
@@ -177,6 +178,25 @@ const body = (withNormal: boolean): string => /* glsl */ `
     ${withNormal ? 'engRot( n.y, n.z, s, c );' : ''}
     // A shot that has been thrown is not still in the pouch.
     if ( part == ${OnagerPart.Shot}.0 && iState.w < 0.5 ) p = vec3( 0.0 );
+  } else if ( part == ${OnagerPart.Skein}.0 ) {
+    // The skein twists. Every other moving part on either machine is a rigid body on one hinge;
+    // a torsion spring is the exception, because it is tied to the arm at one end and trapped in
+    // a washer at the other, so it has to shear along its own length.
+    //
+    // The gradient comes out of the vertex's own position along the skein axis rather than out of
+    // an authored weight: 1 at the arm's butt, 0 at the washer. And the scale needs no tuning
+    // either — the cord where it grips the arm turns *exactly* as much as the arm does, because
+    // it is fastened to it. So winding the gun down puts visible turns into the spring and
+    // letting go takes them out, and the number that does it is the arm angle itself.
+    float w = clamp( 1.0 - abs( p.x ) / O_SKEIN_HALF, 0.0, 1.0 );
+    float a = ( O_COCKED - phi ) * w;
+    float s = sin( a ), c = cos( a );
+    float dy = p.y - O_SKEIN_Y;
+    float dz = p.z - O_SKEIN_Z;
+    engRot( dy, dz, s, c );
+    p.y = O_SKEIN_Y + dy;
+    p.z = O_SKEIN_Z + dz;
+    ${withNormal ? 'engRot( n.y, n.z, s, c );' : ''}
   } else if ( part == ${OnagerPart.Winch}.0 ) {
     // The onager's drum takes in rope as the arm comes down, so its angle follows the arm.
     float turn = ( O_COCKED - phi ) * O_HOOK_D / O_DRUM_R;
