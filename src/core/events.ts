@@ -9,6 +9,18 @@ export interface GameEvents {
   [key: string]: unknown;
 
   resize: { w: number; h: number };
+  /**
+   * Emitted by `Engine.setQuality`. **Subscribe to this for anything tier-dependent.**
+   *
+   * For a long time it was declared here, emitted once, and consumed by nobody, while the
+   * only thing that actually propagated a tier change was the `s.resize?.()` call on the
+   * next line of `setQuality`. That is a trap: `resize` also fires on every window resize,
+   * so a subsystem that scales itself there does expensive work for the wrong reason, and a
+   * subsystem that does not implement `resize` at all silently keeps its boot-time tier
+   * forever. Three did — VFX capacities, grass density and the audio detail level were all
+   * frozen at whatever tier the game booted on, so dropping to `low` did not reduce their
+   * cost by a single unit.
+   */
   qualityChanged: { quality: QualitySettings };
 
   /** Loading progress for the splash screen. */
