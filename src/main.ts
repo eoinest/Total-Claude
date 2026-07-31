@@ -27,7 +27,7 @@ import { PostFXSystem } from './render/PostFX';
 
 import { getMap } from './maps';
 import { deploySiegeOfRome } from './sim/scenario';
-import { type Difficulty, sanitiseConfig } from './sim/battleConfig';
+import { type Difficulty, type ScenarioId, sanitiseConfig } from './sim/battleConfig';
 import { MainMenu, resolveConfig } from './ui/MainMenu';
 import { Faction } from './sim/types';
 
@@ -71,8 +71,14 @@ let config = resolveConfig(params, !harness);
 {
   const q = params.get('quality') as QualityTier | null;
   const d = params.get('difficulty') as Difficulty | null;
+  // `?scenario=assault` alongside `?quality=` and `?difficulty=`: an override the harness
+  // and the siege probe can set without carrying a whole `?battle=` token, on the same
+  // footing as the other two. `sanitiseConfig` still has the last word, so it cannot select
+  // an assault on a map with no wall.
+  const sc = params.get('scenario') as ScenarioId | null;
   if (q) config = { ...config, quality: q };
   if (d) config = { ...config, difficulty: d };
+  if (sc) config = { ...config, scenario: sc };
   config = sanitiseConfig(config);
 }
 if (!skipMenu) {
@@ -203,7 +209,9 @@ async function boot(): Promise<void> {
   const sky = engine.context.tryGet('sky') as { setTimeOfDay?: (h: number) => void } | undefined;
   sky?.setTimeOfDay?.(config.timeOfDay);
 
-  const result = deploySiegeOfRome(battle, engine.context, config);
+  // The scenario is passed explicitly rather than left to `scenario.ts` to read out of
+  // `location.search`, which is what it did while that file could not be edited from here.
+  const result = deploySiegeOfRome(battle, engine.context, config, config.scenario);
   const f = result.cameraFocus;
   engine.rig.jumpTo(f.x, f.z, f.zoom, f.yaw);
 

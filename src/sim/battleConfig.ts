@@ -25,6 +25,62 @@ import { unitType } from '../units/roster';
 export type Difficulty = 'easy' | 'normal' | 'hard' | 'legendary';
 
 // ---------------------------------------------------------------------------
+// Scenario
+// ---------------------------------------------------------------------------
+
+/**
+ * Which battle is being fought.
+ *
+ * `field` is the one the game has always opened on: two armies drawn up on the Campus
+ * Martius with the wall a distant backdrop. `assault` is the storming of the curtain — a
+ * garrison on the parapet, towers, ladders and a ram coming at it.
+ *
+ * Declared here rather than in `scenario.ts` because `scenario.ts` imports this module and
+ * the dependency must not run both ways. `scenario.ts` re-exports it as `ScenarioVariant`,
+ * which is the name its deployment functions have always used.
+ */
+export type ScenarioId = 'field' | 'assault';
+
+export interface ScenarioDef {
+  id: ScenarioId;
+  label: string;
+  subtitle: string;
+  blurb: string;
+  /**
+   * True when the battle needs Rome's wall on the map.
+   *
+   * `main.ts` only registers `CitySystem` when the map does not hide the city, so on Pydna
+   * there is no curtain, no gate and no parapet — an assault there would deploy a garrison
+   * onto nothing. `sanitiseConfig` enforces the pairing rather than leaving it to the menu,
+   * so a hand-made `?battle=` token cannot ask for the impossible one either.
+   */
+  needsCity: boolean;
+}
+
+export const SCENARIOS: readonly ScenarioDef[] = [
+  {
+    id: 'field',
+    label: 'Field Battle',
+    subtitle: 'The Campus Martius',
+    blurb: 'Two armies in the open north of the city. Aurelian’s field army stands between '
+      + 'the Juthungi host and the unfinished wall behind it.',
+    needsCity: false,
+  },
+  {
+    id: 'assault',
+    label: 'Assault',
+    subtitle: 'Storming the Aurelian Wall',
+    blurb: 'The host comes at the curtain itself: siege towers against the finished bays, '
+      + 'ladders where the parapet has not been raised, a ram at the Porta Flaminia, and a '
+      + 'garrison of ballistarii shooting down into it.',
+    needsCity: true,
+  },
+];
+
+export const scenarioDef = (id: ScenarioId): ScenarioDef =>
+  SCENARIOS.find((s) => s.id === id) ?? SCENARIOS[0];
+
+// ---------------------------------------------------------------------------
 // Unit size
 // ---------------------------------------------------------------------------
 
@@ -84,8 +140,35 @@ export const JUTHUNGI_ROSTER: readonly string[] = [
   'juthungi-chosen', 'juthungi-berserkers', 'juthungi-riders',
 ];
 
-export const rosterFor = (f: Faction): readonly string[] =>
-  f === Faction.Rome ? ROME_ROSTER : JUTHUNGI_ROSTER;
+/**
+ * The assault's own orders of battle, which share almost nothing with the field's.
+ *
+ * A siege is not the same army doing something else. Rome fields wall troops — short-reach
+ * missile units the siege system pins along the parapet, plus carroballistae behind it and a
+ * cohort or two inside the gate to plug a breach; there is no cavalry on a wall-walk and no
+ * use for a wedge. The Juthungi field the machines and the parties that serve them, and their
+ * warbands stand in the open waiting their turn. Offering a player ram crews for a battle on
+ * open grass, or refusing them one for a storm, would be worse than offering no editor at all,
+ * so the roster rows follow the scenario and `rosterFor` takes it as an argument rather than
+ * defaulting — a wrong default here is silent and the typecheck would not catch it.
+ *
+ * Order is deployment order, as in the field rosters: for Rome the bays nearest the gate are
+ * filled first, so the row order decides which type holds the finished curtain and which the
+ * unfinished stretch.
+ */
+export const SIEGE_ROME_ROSTER: readonly string[] = [
+  'ballistarii', 'wall-slingers', 'carroballista', 'legio-cohort',
+];
+
+export const SIEGE_JUTHUNGI_ROSTER: readonly string[] = [
+  'tower-assault', 'escalade-party', 'ram-crew', 'onager',
+  'juthungi-warband', 'juthungi-riders',
+];
+
+export const rosterFor = (f: Faction, s: ScenarioId): readonly string[] => {
+  if (s === 'assault') return f === Faction.Rome ? SIEGE_ROME_ROSTER : SIEGE_JUTHUNGI_ROSTER;
+  return f === Faction.Rome ? ROME_ROSTER : JUTHUNGI_ROSTER;
+};
 
 /**
  * Hard cap on units per side.
@@ -112,9 +195,25 @@ export interface BattleConfig {
    * battle the game shipped with.
    */
   map: MapId;
+  /**
+   * Which battle. Defaults to `field`, so a stored preference written by a build that
+   * predates this field, and every `?battle=` token already in the wild, decode to exactly
+   * the battle they always did.
+   */
+  scenario: ScenarioId;
   unitSize: UnitSizeId;
   rome: ArmyComposition;
   juthungi: ArmyComposition;
+  /**
+   * The assault's compositions, held separately rather than reusing `rome`/`juthungi`.
+   *
+   * The two rosters are disjoint, so one pair of fields could not hold both: switching
+   * scenario would zero every row and the player would lose the order of battle they had
+   * just built on the other side of the switch. Two pairs cost eight numbers in the token
+   * and mean a player can flip between the two battles without losing either.
+   */
+  siegeRome: ArmyComposition;
+  siegeJuthungi: ArmyComposition;
   quality: QualityTier;
   difficulty: Difficulty;
   /** Hour of day, 4..21, matching the SkySystem's own range. */
@@ -133,6 +232,7 @@ export interface BattleConfig {
  */
 export const DEFAULT_CONFIG: BattleConfig = {
   map: DEFAULT_MAP_ID,
+  scenario: 'field',
   unitSize: 'ultra',
   rome: {
     'legio-cohort': 6,
@@ -150,6 +250,33 @@ export const DEFAULT_CONFIG: BattleConfig = {
     'juthungi-berserkers': 2,
     'juthungi-riders': 3,
   },
+  /**
+   * The assault's default order of battle, which is the one `deployAssault` hardcoded before
+   * the menu could reach it: eight units of wall troops holding the eight bays either side of
+   * the Porta Flaminia, two carroballistae behind the parapet and two cohorts inside the gate.
+   */
+  siegeRome: {
+    ballistarii: 5,
+    'wall-slingers': 3,
+    carroballista: 2,
+    'legio-cohort': 2,
+  },
+  /**
+   * And the storm: four towers, four ladder parties at three ladders apiece (the twelve
+   * `tools/probe-siege.mjs` measures), one ram, three onager batteries and the host behind.
+   *
+   * Twenty units is exactly `MAX_UNITS_PER_SIDE`, so the Juthungi start the assault full: a
+   * player adding a fifth tower has to give up something, which is the correct shape for the
+   * decision and not an accident of the numbers.
+   */
+  siegeJuthungi: {
+    'tower-assault': 4,
+    'escalade-party': 4,
+    'ram-crew': 1,
+    onager: 3,
+    'juthungi-warband': 6,
+    'juthungi-riders': 2,
+  },
   quality: 'ultra',
   difficulty: 'hard',
   timeOfDay: 10,
@@ -161,8 +288,18 @@ export const DEFAULT_CONFIG: BattleConfig = {
   seed: 4265438264,
 };
 
-export const compositionFor = (c: BattleConfig, f: Faction): ArmyComposition =>
-  f === Faction.Rome ? c.rome : c.juthungi;
+/**
+ * A side's composition for one scenario. Defaults to the config's own scenario, which is
+ * what every display path wants; the deployment passes the variant explicitly because
+ * `deployAssault` falls back to the field battle on a map with no wall and must then read
+ * the field's composition rather than the siege one.
+ */
+export const compositionFor = (
+  c: BattleConfig, f: Faction, s: ScenarioId = c.scenario
+): ArmyComposition => {
+  if (s === 'assault') return f === Faction.Rome ? c.siegeRome : c.siegeJuthungi;
+  return f === Faction.Rome ? c.rome : c.juthungi;
+};
 
 /** Units in a side's composition, ignoring rows set to zero. */
 export const unitCount = (comp: ArmyComposition): number =>
@@ -174,20 +311,20 @@ export const unitCount = (comp: ArmyComposition): number =>
  * The deployment and the pool-fitting maths both walk this, which is what keeps them from
  * disagreeing about how many men the battle needs.
  */
-export function spawnList(c: BattleConfig, f: Faction): string[] {
-  const comp = compositionFor(c, f);
+export function spawnList(c: BattleConfig, f: Faction, s: ScenarioId = c.scenario): string[] {
+  const comp = compositionFor(c, f, s);
   const out: string[] = [];
-  for (const id of rosterFor(f)) {
+  for (const id of rosterFor(f, s)) {
     for (let k = 0; k < Math.max(0, comp[id] ?? 0); k++) out.push(id);
   }
   return out;
 }
 
 /** Unscaled establishment of a whole battle, both sides, artillery included. */
-export function baseStrength(c: BattleConfig): number {
+export function baseStrength(c: BattleConfig, s: ScenarioId = c.scenario): number {
   let sum = 0;
   for (const f of [Faction.Rome, Faction.Germanic]) {
-    for (const id of spawnList(c, f)) sum += unitType(id).strength;
+    for (const id of spawnList(c, f, s)) sum += unitType(id).strength;
   }
   return sum;
 }
@@ -205,16 +342,39 @@ export function baseStrength(c: BattleConfig): number {
  * tier; losing an army does not. The 6% headroom absorbs the artillery crews, which
  * `spawnUnit` deliberately does not scale.
  */
-export function fittedUnitScale(c: BattleConfig, maxSoldiers: number): number {
-  const asked = unitSizePreset(c.unitSize).scale;
-  const base = baseStrength(c);
+export function fittedUnitScale(
+  c: BattleConfig, maxSoldiers: number, s: ScenarioId = c.scenario
+): number {
+  const asked = scaleAppliesTo(s) ? unitSizePreset(c.unitSize).scale : 1;
+  const base = baseStrength(c, s);
   if (base <= 0) return asked;
   return Math.min(asked, (maxSoldiers * 0.94) / base);
 }
 
+/**
+ * Whether the battle-size multiplier means anything for this scenario. It does not for the
+ * assault, and that is a measurement rather than an opinion.
+ *
+ * A garrison is not laid out in a formation; `Siege.layOutGarrison` packs it along the
+ * wall-walk, one continuous run per unit, at `WALL_RANK_PITCH` 0.72 m in at most
+ * `MAX_WALL_RANKS` = 3 ranks, and a bay run is about 28 stations — roughly 84 places. A
+ * 108-man ballistarii unit already fills that. Doubling it to 216 at `ultra` does not put
+ * more men on the wall, because `slotAt` clamps a man's offset between the walkway's inner
+ * and outer edges: the surplus ranks all resolve to the same inner line and the unit renders
+ * as men standing inside each other. The wall holds what it holds.
+ *
+ * So the assault deploys at establishment and the size knob is greyed with a reason. The
+ * customisation that *is* real for a storm is how many units — more ballistarii hold more
+ * bays, more ladder parties pitch more ladders — and that is exactly what the roster rows do.
+ */
+export const scaleAppliesTo = (s: ScenarioId): boolean => s !== 'assault';
+
 /** True when the pool forced a smaller battle than the menu asked for. */
-export const isScaleClamped = (c: BattleConfig, maxSoldiers: number): boolean =>
-  fittedUnitScale(c, maxSoldiers) < unitSizePreset(c.unitSize).scale - 1e-6;
+export const isScaleClamped = (
+  c: BattleConfig, maxSoldiers: number, s: ScenarioId = c.scenario
+): boolean =>
+  scaleAppliesTo(s)
+  && fittedUnitScale(c, maxSoldiers, s) < unitSizePreset(c.unitSize).scale - 1e-6;
 
 /**
  * Headcount above which the 60 fps floor has been measured to fail.
@@ -240,8 +400,11 @@ export const isScaleClamped = (c: BattleConfig, maxSoldiers: number): boolean =>
 export const PERF_VALIDATED_MEN = 9000;
 
 /** Total men both sides field at the fitted scale. */
-export const totalMen = (c: BattleConfig, maxSoldiers: number): number =>
-  summarise(c, Faction.Rome, maxSoldiers).men + summarise(c, Faction.Germanic, maxSoldiers).men;
+export const totalMen = (
+  c: BattleConfig, maxSoldiers: number, s: ScenarioId = c.scenario
+): number =>
+  summarise(c, Faction.Rome, maxSoldiers, s).men
+  + summarise(c, Faction.Germanic, maxSoldiers, s).men;
 
 /**
  * The types that stand in the main battle line, for the line-width figure.
@@ -265,6 +428,24 @@ const LINE_TYPES: ReadonlySet<string> = new Set([
   'juthungi-warband', 'juthungi-spears',
 ]);
 
+/**
+ * The same idea for the assault, where "the line" means two different things per side.
+ *
+ * Rome's line is the garrison strung along the parapet, and its width is the useful figure a
+ * player is actually choosing: **how many metres of curtain they can hold**. The reserve
+ * cohorts and the carroballistae are behind it and hold no wall. The Juthungi's line is the
+ * warbands waiting in the open; the towers, ladder parties, ram and onagers are the assault
+ * itself and stand in no line at all, so counting them would report a front the host never
+ * forms. `MainMenu` labels the two cases differently for the same reason.
+ */
+const SIEGE_LINE_TYPES: ReadonlySet<string> = new Set([
+  'ballistarii', 'wall-slingers',
+  'juthungi-warband',
+]);
+
+export const lineTypesFor = (s: ScenarioId): ReadonlySet<string> =>
+  s === 'assault' ? SIEGE_LINE_TYPES : LINE_TYPES;
+
 export interface SideSummary {
   units: number;
   men: number;
@@ -280,16 +461,19 @@ export interface SideSummary {
  * than approximating, so the numbers on the menu are the numbers the battle produces. An
  * earlier draft estimated both and was out by 400 men at `small`.
  */
-export function summarise(c: BattleConfig, f: Faction, maxSoldiers: number): SideSummary {
-  const scale = fittedUnitScale(c, maxSoldiers);
+export function summarise(
+  c: BattleConfig, f: Faction, maxSoldiers: number, sc: ScenarioId = c.scenario
+): SideSummary {
+  const scale = fittedUnitScale(c, maxSoldiers, sc);
+  const line = lineTypesFor(sc);
   let men = 0;
   let frontage = 0;
-  const list = spawnList(c, f);
+  const list = spawnList(c, f, sc);
   for (const id of list) {
     const def = unitType(id);
     const s = Math.max(1, Math.round(def.strength * (def.unitClass === 'artillery' ? 1 : scale)));
     men += s;
-    if (LINE_TYPES.has(id)) frontage += formation(def.formations[0]).width(s);
+    if (line.has(id)) frontage += formation(def.formations[0]).width(s);
   }
   return { units: list.length, men, frontage: Math.round(frontage) };
 }
@@ -314,18 +498,18 @@ const clampInt = (n: unknown, lo: number, hi: number, fallback: number): number 
  */
 export function sanitiseConfig(raw: unknown): BattleConfig {
   const o = (raw ?? {}) as Partial<BattleConfig>;
-  const side = (v: unknown, f: Faction): ArmyComposition => {
+  const side = (v: unknown, f: Faction, sc: ScenarioId): ArmyComposition => {
     const src = (v ?? {}) as Record<string, unknown>;
     const out: Record<string, number> = {};
     let total = 0;
-    for (const id of rosterFor(f)) {
+    for (const id of rosterFor(f, sc)) {
       const n = clampInt(src[id], 0, MAX_PER_TYPE, 0);
       // Respect the per-side cap even if the input ignored it, trimming later rows first.
       const room = Math.max(0, MAX_UNITS_PER_SIDE - total);
       out[id] = Math.min(n, room);
       total += out[id];
     }
-    if (total === 0) return compositionFor(DEFAULT_CONFIG, f);
+    if (total === 0) return compositionFor(DEFAULT_CONFIG, f, sc);
     return out;
   };
   // Resolved first: the map decides the default hour, because 10:00 is the right opening
@@ -334,14 +518,34 @@ export function sanitiseConfig(raw: unknown): BattleConfig {
   // falls back to the map's own.
   const map: MapId = isMapId(o.map) ? o.map : DEFAULT_MAP_ID;
   const defaultHour = getMap(map).sky.defaultHour;
+  /**
+   * The scenario, and the one pairing that cannot exist.
+   *
+   * Absent means `field`, which is what makes every `?battle=` token written before this
+   * field existed decode to the battle it always described. An assault is then refused on any
+   * map that hides the city: `main.ts` does not register `CitySystem` there, so Pydna has no
+   * curtain, no gate and no parapet, and `deployAssault` would find zero garrison bays. It
+   * already falls back to the field battle in that case, but silently — the player would ask
+   * for a storm and be given a field battle with no explanation. Resolving it here means the
+   * config never carries the impossible pairing at all, so the menu can *show* the constraint
+   * instead of the deployment quietly working around it.
+   */
+  const askedScenario: ScenarioId = o.scenario === 'assault' ? 'assault' : 'field';
+  const scenario: ScenarioId =
+    askedScenario === 'assault' && getMap(map).hidesCity ? 'field' : askedScenario;
   const sizes = UNIT_SIZES.map((p) => p.id) as string[];
   const tiers: QualityTier[] = ['low', 'medium', 'high', 'ultra'];
   const diffs: Difficulty[] = ['easy', 'normal', 'hard', 'legendary'];
   return {
     map,
+    scenario,
     unitSize: sizes.includes(String(o.unitSize)) ? (o.unitSize as UnitSizeId) : DEFAULT_CONFIG.unitSize,
-    rome: side(o.rome, Faction.Rome),
-    juthungi: side(o.juthungi, Faction.Germanic),
+    // Both orders of battle are always sanitised and always carried, whichever one is being
+    // fought, so switching scenario in the menu never destroys the other one.
+    rome: side(o.rome, Faction.Rome, 'field'),
+    juthungi: side(o.juthungi, Faction.Germanic, 'field'),
+    siegeRome: side(o.siegeRome, Faction.Rome, 'assault'),
+    siegeJuthungi: side(o.siegeJuthungi, Faction.Germanic, 'assault'),
     quality: tiers.includes(o.quality as QualityTier) ? (o.quality as QualityTier) : DEFAULT_CONFIG.quality,
     difficulty: diffs.includes(o.difficulty as Difficulty)
       ? (o.difficulty as Difficulty)

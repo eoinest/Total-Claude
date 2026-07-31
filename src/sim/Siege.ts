@@ -230,6 +230,8 @@ const TMP_P = new THREE.Vector3();
 const TMP_S = new THREE.Vector3(1, 1, 1);
 const TMP_E = new THREE.Euler();
 const TMP_C = new THREE.Color();
+/** Read-back scratch for the diagnostics, kept clear of the ones `setInstance` writes. */
+const TMP_R = new THREE.Vector3();
 
 interface CityView {
   getGarrisonBays(): readonly {
@@ -1531,11 +1533,30 @@ export class Siege implements ElevationOwner {
   private writeLadders(): void {
     let n = 0;
     for (const l of this.ladders) {
-      // The geometry runs up +Y, so a negative pitch tips its head toward -Z local, which is
-      // the wall. Scaled by the *slant* length so the head arrives at the right height once
-      // the lean has been applied, not the vertical rise.
+      /**
+       * Yawed by `facing + PI`, and that half turn is the whole ladder.
+       *
+       * `buildLadder` authors the rails up +Y with the iron hooks running from the head
+       * toward local **−Z**, the same "business end along −Z" convention as `buildTowerRamp`
+       * and `buildRamTrunk`. `setInstance` composes `Ry(yaw)·Rx(pitch)`, under which local −Z
+       * lands on world `(−sin yaw, −cos yaw)` — the *opposite* of the bearing `yaw` names. And
+       * `l.facing` is `atan2(−nx, −nz)`, which points from the ladder **at** the wall, because
+       * the escalade party musters behind the foot looking at the masonry.
+       *
+       * Drawn at `yaw = l.facing`, therefore, the negative pitch tipped the head and its hooks
+       * the wrong way down the normal: measured off the instance matrix, all twelve heads stood
+       * 4 to 9 m *out* from the wall, at exactly the right height and against nothing, the
+       * ladders raking backwards into the open field. The men still climbed correctly, because
+       * `updateLadders` builds their path from the station rather than from this transform, so
+       * the only thing wrong was the object they appeared to be climbing — which is precisely
+       * how it was reported. `writeRams` applies the same half turn to the trunk for the same
+       * authoring reason; see `engineReport` for the assertion that now measures this.
+       *
+       * Scaled by the *slant* length, so the head arrives at the right height once the lean
+       * has been applied, not the vertical rise.
+       */
       const rise = Math.max(1, l.headY - l.footY);
-      this.setInstance(this.mLadder, n, l.x, l.footY, l.z, l.facing,
+      this.setInstance(this.mLadder, n, l.x, l.footY, l.z, l.facing + Math.PI,
         1, rise / Math.cos(l.lean), 1, -l.lean);
       this.tint(this.mLadder, n, n * 7 + 3);
       n++;
@@ -1610,11 +1631,43 @@ export class Siege implements ElevationOwner {
     });
   }
 
+  /**
+   * Where ladder `n`'s head has actually been *drawn*, read back out of the instance matrix
+   * the renderer wrote rather than recomputed from the numbers that produced it.
+   *
+   * The distinction is the entire lesson of this diagnostic. The first version of
+   * `ladderHeadMiss` derived the head analytically as `foot − run` along the wall normal —
+   * which is where a correctly pitched ladder puts it — and duly reported all twelve heads
+   * within 4 cm of the masonry while `writeLadders` was raking every one of them the other
+   * way, heads 4 to 9 m out in the open air. A twenty-four-assertion suite sat green on top of
+   * a ladder a player could see was wrong, because the check and the bug were computing the
+   * same wrong thing from the same inputs. Transforming the local head through the matrix that
+   * reaches the GPU is the only version of this that cannot agree with the renderer's mistake.
+   *
+   * Returns false before the first frame, when there is no matrix to read; the probe treats a
+   * head it could not measure as a failure rather than as a pass.
+   */
+  private drawnLadderHead(n: number, out: THREE.Vector3): boolean {
+    if (!this.mLadder || n >= this.mLadder.count) return false;
+    this.mLadder.getMatrixAt(n, TMP_M);
+    // (0, 1, 0) is the top of the rails in `buildLadder`, before the per-instance stretch.
+    out.set(0, 1, 0).applyMatrix4(TMP_M);
+    return Number.isFinite(out.x) && Number.isFinite(out.y) && Number.isFinite(out.z);
+  }
+
   engineReport(): {
     shots: number; hits: number; kills: number; ramBlows: number; gateHp: number;
     ladders: number; laddersCrossed: number;
     /** Per ladder: how far its head misses the wall face and the parapet, in metres. */
-    ladderHeadMiss: { face: number; crest: number; leanDeg: number }[];
+    ladderHeadMiss: {
+      face: number; crest: number; leanDeg: number;
+      /** Foot and drawn head, as signed offsets along the bay's outward normal. */
+      footOff: number; headOff: number;
+      /** How far inboard of the foot the lean says the head must be: `rise · tan(lean)`. */
+      rake: number;
+      /** False when there was no instance matrix to measure, which is not a pass. */
+      drawn: boolean;
+    }[];
   } {
     return {
       shots: this.artilleryShots,
@@ -1624,19 +1677,27 @@ export class Siege implements ElevationOwner {
       gateHp: Math.max(0, 1 - this.gateBlows / GATE_BLOWS),
       ladders: this.ladders.length,
       laddersCrossed: this.ladders.reduce((a, l) => a + l.crossed, 0),
-      ladderHeadMiss: this.ladders.map((l) => {
+      ladderHeadMiss: this.ladders.map((l, n) => {
         const st = l.station;
         const rise = Math.max(1, l.headY - l.footY);
-        const run = Math.tan(l.lean) * rise;
         const dx = l.x - this.sx[st];
         const dz = l.z - this.sz[st];
         const footOff = dx * this.snx[st] + dz * this.snz[st];
+        const drawn = this.drawnLadderHead(n, TMP_R);
+        const headOff = drawn
+          ? (TMP_R.x - this.sx[st]) * this.snx[st] + (TMP_R.z - this.sz[st]) * this.snz[st]
+          : NaN;
         return {
           // Positive means the head stops short of the wall face; negative means it is
-          // buried in the masonry.
-          face: footOff - run - this.sFace[st],
-          crest: l.footY + rise - (this.sy[st] + 0.9),
+          // biting over the merlon. Measured from the drawn head, so a ladder pointing the
+          // wrong way reports the 9 m miss it really has instead of a tidy 25 cm.
+          face: headOff - this.sFace[st],
+          crest: (drawn ? TMP_R.y : NaN) - (this.sy[st] + 0.9),
           leanDeg: (l.lean * 180) / Math.PI,
+          footOff,
+          headOff,
+          rake: rise * Math.tan(l.lean),
+          drawn,
         };
       }),
     };

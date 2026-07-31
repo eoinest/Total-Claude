@@ -483,3 +483,62 @@
   .map-blurb { margin-left: 0; }
   .map-opts button { min-width: 9rem; }
 }
+
+/* --- scenario picker ------------------------------------------------------
+   The same shape as the battlefield picker directly above it, deliberately: the
+   two are one decision made twice — where, then what — and giving them different
+   chrome would imply they belong to different parts of the screen. */
+
+.scen-row { border-bottom: none; padding-bottom: 0.5rem; }
+.scen-opts button { min-width: 11.5rem; }
+.scen-opts button i {
+  font-size: 0.66rem;
+  letter-spacing: 0.045em;
+  white-space: nowrap;
+}
+
+/*
+ * A scenario the current map cannot carry.
+ *
+ * Dimmed and non-interactive, but still *drawn* — the assault has to stay visible on Pydna
+ * or a player who has never opened the Campus Martius will not know the game has a siege in
+ * it. The reason goes on `.scen-blurb`, which is always on screen, rather than only in the
+ * `title` tooltip: a disabled control that explains itself only on hover explains itself to
+ * nobody on a first read.
+ */
+.scen-opts button.off,
+.scen-opts button.off:hover {
+  opacity: 0.3;
+  cursor: not-allowed;
+  border-color: var(--gold-dim);
+  color: var(--travertine);
+  background: linear-gradient(180deg, rgba(60, 50, 38, 0.28), rgba(24, 20, 15, 0.5));
+}
+
+.scen-blurb {
+  margin: 0 0 0.9rem 14.4rem;
+  font-family: var(--num);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--travertine);
+  opacity: 0.6;
+  max-width: 42rem;
+  border-bottom: 1px solid rgba(217, 178, 95, 0.14);
+  padding-bottom: 0.85rem;
+}
+
+/* A whole row that does not apply to the chosen battle. Battle size is the only one. */
+.menu-row.inert .menu-opts button {
+  opacity: 0.26;
+  cursor: not-allowed;
+}
+.menu-row.inert .menu-opts button:hover {
+  border-color: var(--gold-dim);
+  color: var(--travertine);
+}
+.menu-row.inert .lab-main { opacity: 0.5; }
+
+@media (max-width: 900px) {
+  .scen-blurb { margin-left: 0; }
+  .scen-opts button { min-width: 9rem; }
+}

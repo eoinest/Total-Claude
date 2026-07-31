@@ -600,9 +600,38 @@ try {
       engines.laddersCrossed > 0,
       `${engines.ladders} ladders, ${engines.laddersCrossed} men over the parapet by escalade`);
     if (engines.ladderHeadMiss?.length) {
-      const face = engines.ladderHeadMiss.map((l) => l.face);
-      const crest = engines.ladderHeadMiss.map((l) => Math.abs(l.crest));
-      const lean = engines.ladderHeadMiss.map((l) => l.leanDeg);
+      const L = engines.ladderHeadMiss;
+      const face = L.map((l) => l.face);
+      const crest = L.map((l) => Math.abs(l.crest));
+      const lean = L.map((l) => l.leanDeg);
+
+      /**
+       * The signed check, and the reason the rest of this file cannot be trusted on its own.
+       *
+       * A ladder leans **into** the wall: its foot stands further out along the bay's outward
+       * normal than its head does, by `rise · tan(lean)`. Every other assertion here is an
+       * unsigned distance or a magnitude, and a ladder pitched the wrong way satisfies all of
+       * them — the head is at the right height, the lean is a plausible 21 degrees, men still
+       * cross, because the climbing path is built from the wall and not from the mesh. That is
+       * exactly the state this suite passed 24/24 in while a player was looking at twelve
+       * ladders raked backwards into the open field, heads 4 to 9 m clear of the masonry.
+       *
+       * `footOff` and `headOff` are measured from the instance matrix the renderer wrote, so
+       * this fails if the drawn ladder disagrees with the intended one for any reason — a
+       * flipped yaw, a flipped pitch, a swapped foot and head, or a change of Euler order.
+       * A head that could not be measured at all fails too.
+       */
+      const unmeasured = L.filter((l) => !l.drawn).length;
+      const worstRake = Math.max(...L.map((l) => Math.abs((l.footOff - l.headOff) - l.rake)));
+      const minDrop = Math.min(...L.map((l) => l.footOff - l.headOff));
+      check('every ladder leans into the wall, foot further out than head',
+        unmeasured === 0 && minDrop > 0 && worstRake <= 0.05,
+        `${unmeasured} of ${L.length} heads unmeasurable; foot stands ` +
+        `${minDrop.toFixed(2)}..${Math.max(...L.map((l) => l.footOff - l.headOff)).toFixed(2)} m ` +
+        `further out than the head (must be positive), against the ` +
+        `${Math.min(...L.map((l) => l.rake)).toFixed(2)}..${Math.max(...L.map((l) => l.rake)).toFixed(2)} m ` +
+        `that rise x tan(lean) demands — worst disagreement ${(worstRake * 100).toFixed(1)} cm`);
+
       check('every ladder head actually reaches the wall',
         Math.max(...face) <= 0.05 && Math.min(...face) > -0.7,
         `head lands ${Math.min(...face).toFixed(2)}..${Math.max(...face).toFixed(2)} m from the ` +

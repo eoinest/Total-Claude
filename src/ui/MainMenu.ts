@@ -16,10 +16,10 @@
 
 import type { QualityTier } from '../core/Engine';
 import {
-  type BattleConfig, type Difficulty, DEFAULT_CONFIG, MAX_PER_TYPE, MAX_UNITS_PER_SIDE,
-  UNIT_SIZES, type UnitSizeId, baseStrength, compositionFor, decodeConfig, encodeConfig,
-  PERF_VALIDATED_MEN, fittedUnitScale, isScaleClamped, loadStoredConfig, rosterFor,
-  sanitiseConfig, storeConfig,
+  type BattleConfig, type Difficulty, type ScenarioId, DEFAULT_CONFIG, MAX_PER_TYPE,
+  MAX_UNITS_PER_SIDE, SCENARIOS, UNIT_SIZES, type UnitSizeId, baseStrength, compositionFor,
+  decodeConfig, encodeConfig, PERF_VALIDATED_MEN, fittedUnitScale, isScaleClamped,
+  loadStoredConfig, rosterFor, sanitiseConfig, scaleAppliesTo, scenarioDef, storeConfig,
   summarise, unitCount, unitSizePreset,
 } from '../sim/battleConfig';
 import { QUALITY_PRESETS } from '../core/Engine';
@@ -37,9 +37,33 @@ const SIDE_LABEL: Record<number, string> = {
   [Faction.Germanic]: 'JUTHUNGI',
 };
 
-const SIDE_SUB: Record<number, string> = {
-  [Faction.Rome]: 'Aurelian&rsquo;s field army &middot; defending',
-  [Faction.Germanic]: 'The host of the Juthungi &middot; attacking',
+/**
+ * The strapline under each army's name, which is not the same sentence in the two battles:
+ * in the field Rome's army stands in the open, in the assault it stands on the wall. A menu
+ * that offered ballistarii under the heading "Aurelian's field army" would be describing the
+ * wrong battle.
+ */
+const SIDE_SUB: Record<ScenarioId, Record<number, string>> = {
+  field: {
+    [Faction.Rome]: 'Aurelian&rsquo;s field army &middot; defending',
+    [Faction.Germanic]: 'The host of the Juthungi &middot; attacking',
+  },
+  assault: {
+    [Faction.Rome]: 'The garrison of the Aurelian Wall &middot; holding',
+    [Faction.Germanic]: 'The storming parties &middot; assaulting',
+  },
+};
+
+/** What the third figure in an army's totals means, which the scenario decides. */
+const FRONTAGE_LABEL: Record<ScenarioId, Record<number, { unit: string; title: string }>> = {
+  field: {
+    [Faction.Rome]: { unit: 'm of line', title: 'Combined width of the battle-line units — how much front this army can form. Excludes reserves, wings and artillery.' },
+    [Faction.Germanic]: { unit: 'm of line', title: 'Combined width of the battle-line units — how much front this army can form. Excludes reserves, wings and artillery.' },
+  },
+  assault: {
+    [Faction.Rome]: { unit: 'm of wall held', title: 'Combined width of the wall troops — how much curtain this garrison can line. Excludes the reserve cohorts and the carroballistae, which hold no parapet.' },
+    [Faction.Germanic]: { unit: 'm of line', title: 'Combined width of the warbands waiting in the open. The towers, ladder parties, ram and onagers form no line.' },
+  },
 };
 
 /**
@@ -106,8 +130,11 @@ export class MainMenu {
   private tierBtns = new Map<QualityTier, HTMLElement>();
   private diffBtns = new Map<Difficulty, HTMLElement>();
   private mapBtns = new Map<MapId, HTMLElement>();
+  private scenBtns = new Map<ScenarioId, HTMLElement>();
   private countCells = new Map<string, HTMLElement>();
   private stepBtns: Array<{ el: HTMLButtonElement; f: Faction; id: string; d: number }> = [];
+  /** Set when picking a map without a wall has just taken the assault away from the player. */
+  private droppedAssault = false;
 
   constructor(initial: BattleConfig) {
     this.cfg = sanitiseConfig(initial);
@@ -160,6 +187,21 @@ export class MainMenu {
          </section>
          <p class="map-blurb" data-map-blurb></p>
 
+         <section class="menu-row scen-row">
+           <div class="menu-lab">
+             <span class="lab-main">Battle</span>
+             <span class="lab-sub">Which engagement is fought</span>
+           </div>
+           <div class="menu-opts scen-opts">
+             ${SCENARIOS.map((s) => `
+               <button type="button" data-scen="${s.id}">
+                 <b>${s.label}</b>
+                 <i>${s.subtitle}</i>
+               </button>`).join('')}
+           </div>
+         </section>
+         <p class="scen-blurb" data-scen-blurb></p>
+
          <section class="menu-row size-row">
            <div class="menu-lab">
              <span class="lab-main">Battle size</span>
@@ -174,33 +216,7 @@ export class MainMenu {
            </div>
          </section>
 
-         <div class="menu-armies">
-           ${[Faction.Rome, Faction.Germanic].map((f) => `
-             <section class="army army-${f === Faction.Rome ? 'rome' : 'germanic'}" data-side="${f}">
-               <div class="army-head">
-                 <span class="army-name">${SIDE_LABEL[f]}</span>
-                 <span class="army-sub">${SIDE_SUB[f]}</span>
-               </div>
-               <div class="army-rows">
-                 ${rosterFor(f).map((id) => {
-                   const d = unitType(id);
-                   return `
-                   <div class="urow" data-side="${f}" data-unit="${id}">
-                     <span class="uname">
-                       <b>${d.name}</b>
-                       <i>${CLASS_LABEL[d.unitClass]} &middot; ${d.strength} base</i>
-                     </span>
-                     <span class="ustep">
-                       <button type="button" class="minus" data-side="${f}" data-unit="${id}" data-d="-1" aria-label="fewer">&minus;</button>
-                       <b class="ucount" data-count="${f}:${id}">0</b>
-                       <button type="button" class="plus" data-side="${f}" data-unit="${id}" data-d="1" aria-label="more">+</button>
-                     </span>
-                   </div>`;
-                 }).join('')}
-               </div>
-               <div class="army-tot" data-tot="${f}"></div>
-             </section>`).join('')}
-         </div>
+         <div class="menu-armies"></div>
 
          <div class="menu-warn" data-warn hidden></div>
 
@@ -244,6 +260,8 @@ export class MainMenu {
        </div>`
     );
 
+    this.buildArmies();
+
     for (const b of this.qsa('[data-map]')) {
       const id = b.dataset.map as MapId;
       this.mapBtns.set(id, b);
@@ -254,7 +272,30 @@ export class MainMenu {
         // broadside 26 deg sun is the whole point — and carrying one map's hour onto the
         // other reliably produces the flat, shadowless frame both were tuned to avoid.
         // A player who then moves the slider keeps their choice until they switch again.
-        this.cfg = { ...this.cfg, map: id, timeOfDay: getMap(id).sky.defaultHour };
+        //
+        // `sanitiseConfig` also drops the assault when the new map has no wall, which is why
+        // it runs here and not only at Begin: the roster rows have to follow immediately, and
+        // `refresh` puts the reason on screen. Switching *away* from the map does not restore
+        // the assault, which is the honest behaviour — the player would not see it happen.
+        const before = this.cfg.scenario;
+        this.cfg = sanitiseConfig({ ...this.cfg, map: id, timeOfDay: getMap(id).sky.defaultHour });
+        this.droppedAssault = before === 'assault' && this.cfg.scenario !== 'assault';
+        this.buildArmies();
+        this.refresh();
+      });
+    }
+    for (const b of this.qsa('[data-scen]')) {
+      const id = b.dataset.scen as ScenarioId;
+      this.scenBtns.set(id, b);
+      b.addEventListener('click', () => {
+        if (this.cfg.scenario === id || this.scenarioBlocked(id)) return;
+        this.cfg = { ...this.cfg, scenario: id };
+        this.droppedAssault = false;
+        // The two orders of battle are different lists of unit types, so the rows themselves
+        // change, not just their numbers. Both compositions survive the switch — see
+        // `siegeRome`/`siegeJuthungi` in `battleConfig` — so flipping back and forth costs
+        // the player nothing.
+        this.buildArmies();
         this.refresh();
       });
     }
@@ -282,17 +323,6 @@ export class MainMenu {
         this.refresh();
       });
     }
-    for (const c of this.qsa('[data-count]')) {
-      this.countCells.set(c.dataset.count as string, c);
-    }
-    for (const b of this.qsa('.ustep button')) {
-      const f = Number(b.dataset.side) as Faction;
-      const id = b.dataset.unit as string;
-      const d = Number(b.dataset.d);
-      this.stepBtns.push({ el: b as HTMLButtonElement, f, id, d });
-      b.addEventListener('click', () => this.step(f, id, d));
-    }
-
     const tod = this.q<HTMLInputElement>('.tod');
     tod.addEventListener('input', () => {
       this.cfg = { ...this.cfg, timeOfDay: Number(tod.value) };
@@ -310,7 +340,13 @@ export class MainMenu {
       this.refresh();
     });
     this.q('.restore').addEventListener('click', () => {
-      this.cfg = DEFAULT_CONFIG;
+      // Restores the historical order of battle *for the battle on screen*, not the whole
+      // config: a player who has chosen the assault and then wants the shipped assault back
+      // should not be silently returned to the field battle on a different map.
+      this.cfg = { ...DEFAULT_CONFIG, map: this.cfg.map, scenario: this.cfg.scenario,
+        quality: this.cfg.quality, difficulty: this.cfg.difficulty,
+        timeOfDay: this.cfg.timeOfDay, seed: this.cfg.seed };
+      this.buildArmies();
       this.refresh();
     });
     this.q('.share').addEventListener('click', () => this.share());
@@ -319,6 +355,71 @@ export class MainMenu {
     this.root.addEventListener('keydown', (e) => {
       if ((e as KeyboardEvent).key === 'Enter') this.commit();
     });
+  }
+
+  /**
+   * Render the two army panels for the current scenario and wire their steppers.
+   *
+   * Rebuilt rather than repainted when the scenario changes, because the rows are different
+   * unit types and not different numbers: the field battle has cohorts and equites, the
+   * assault has ram crews and onagers, and neither list is a subset of the other. Both
+   * `countCells` and `stepBtns` index DOM nodes that this replaces, so both are cleared first
+   * — leaving them would keep a live click handler on a detached row, which is how a menu
+   * ends up silently editing an army the player is no longer looking at.
+   */
+  private buildArmies(): void {
+    const sc = this.cfg.scenario;
+    this.countCells.clear();
+    this.stepBtns.length = 0;
+    html(
+      this.q('.menu-armies'),
+      [Faction.Rome, Faction.Germanic].map((f) => `
+        <section class="army army-${f === Faction.Rome ? 'rome' : 'germanic'}" data-side="${f}">
+          <div class="army-head">
+            <span class="army-name">${SIDE_LABEL[f]}</span>
+            <span class="army-sub">${SIDE_SUB[sc][f]}</span>
+          </div>
+          <div class="army-rows">
+            ${rosterFor(f, sc).map((id) => {
+              const d = unitType(id);
+              return `
+              <div class="urow" data-side="${f}" data-unit="${id}">
+                <span class="uname">
+                  <b>${d.name}</b>
+                  <i>${CLASS_LABEL[d.unitClass]} &middot; ${d.strength} base</i>
+                </span>
+                <span class="ustep">
+                  <button type="button" class="minus" data-side="${f}" data-unit="${id}" data-d="-1" aria-label="fewer">&minus;</button>
+                  <b class="ucount" data-count="${f}:${id}">0</b>
+                  <button type="button" class="plus" data-side="${f}" data-unit="${id}" data-d="1" aria-label="more">+</button>
+                </span>
+              </div>`;
+            }).join('')}
+          </div>
+          <div class="army-tot" data-tot="${f}"></div>
+        </section>`).join('')
+    );
+    for (const c of this.qsa('[data-count]')) {
+      this.countCells.set(c.dataset.count as string, c);
+    }
+    for (const b of this.qsa('.ustep button')) {
+      const f = Number(b.dataset.side) as Faction;
+      const id = b.dataset.unit as string;
+      const d = Number(b.dataset.d);
+      this.stepBtns.push({ el: b as HTMLButtonElement, f, id, d });
+      b.addEventListener('click', () => this.step(f, id, d));
+    }
+  }
+
+  /** Why this scenario cannot be chosen right now, or null when it can. */
+  private scenarioBlocked(id: ScenarioId): string | null {
+    const def = scenarioDef(id);
+    const map = getMap(this.cfg.map);
+    if (def.needsCity && map.hidesCity) {
+      return `${map.label} is open ground — there is no wall on it to storm. `
+        + 'Choose the Campus Martius for the assault.';
+    }
+    return null;
   }
 
   private q<T extends HTMLElement>(sel: string): T {
@@ -337,7 +438,12 @@ export class MainMenu {
     if (next < 0 || next > MAX_PER_TYPE) return;
     if (d > 0 && total >= MAX_UNITS_PER_SIDE) return;
     comp[id] = next;
-    this.cfg = f === Faction.Rome ? { ...this.cfg, rome: comp } : { ...this.cfg, juthungi: comp };
+    // Four fields, not two: the stepper writes into whichever pair belongs to the scenario
+    // on screen, so editing a siege never touches the field order of battle or the reverse.
+    const key = this.cfg.scenario === 'assault'
+      ? (f === Faction.Rome ? 'siegeRome' : 'siegeJuthungi')
+      : (f === Faction.Rome ? 'rome' : 'juthungi');
+    this.cfg = { ...this.cfg, [key]: comp };
     this.refresh();
   }
 
@@ -350,15 +456,44 @@ export class MainMenu {
    * stale total next to a fresh one.
    */
   private refresh(): void {
+    const sc = this.cfg.scenario;
+    const scDef = scenarioDef(sc);
     for (const [id, b] of this.mapBtns) setClass(b, 'on', id === this.cfg.map);
     for (const [id, b] of this.sizeBtns) setClass(b, 'on', id === this.cfg.unitSize);
     const mapDef = getMap(this.cfg.map);
     setText(this.q('[data-map-blurb]'), `${mapDef.blurb} ${mapDef.site.season}.`);
-    // The heading follows the battlefield, so the screen never claims to be a battle the
-    // player has just navigated away from.
-    html(this.q('.menu-head h2'), mapDef.subtitle);
+    // The heading follows the battlefield and the battle, so the screen never claims to be
+    // an engagement the player has just navigated away from.
+    html(this.q('.menu-head h2'), `${mapDef.subtitle} &middot; ${scDef.label}`);
+
+    // The scenario row, and the one pairing that cannot be had. A blocked option is disabled
+    // and *says why* on the blurb line rather than being hidden or silently ignored — a
+    // greyed button with no reason is the same bug as no button at all.
+    let scenNote = scDef.blurb;
+    for (const [id, b] of this.scenBtns) {
+      const why = this.scenarioBlocked(id);
+      setClass(b, 'on', id === sc);
+      setClass(b, 'off', why !== null);
+      (b as HTMLButtonElement).disabled = why !== null;
+      b.title = why ?? '';
+      if (why) scenNote = why;
+    }
+    if (this.droppedAssault) {
+      scenNote = `${mapDef.label} has no wall, so the battle has gone back to the field. ${scDef.blurb}`;
+    }
+    setText(this.q('[data-scen-blurb]'), scenNote);
+
     for (const [t, b] of this.tierBtns) setClass(b, 'on', t === this.cfg.quality);
     for (const [d, b] of this.diffBtns) setClass(b, 'on', d === this.cfg.difficulty);
+
+    // Battle size is inert in a storm — see `scaleAppliesTo`. Greying the row is honest about
+    // that; leaving it live would let a player set Ultra and get establishment anyway.
+    const sizeLive = scaleAppliesTo(sc);
+    setClass(this.q('.size-row'), 'inert', !sizeLive);
+    for (const [, b] of this.sizeBtns) (b as HTMLButtonElement).disabled = !sizeLive;
+    setText(this.q('.size-row .lab-sub'), sizeLive
+      ? 'Multiplies every unit’s establishment'
+      : 'Not used in a storm — the wall holds what it holds');
 
     const pool = QUALITY_PRESETS[this.cfg.quality].maxSoldiers;
     const tod = this.q<HTMLInputElement>('.tod');
@@ -371,7 +506,7 @@ export class MainMenu {
       const comp = compositionFor(this.cfg, f);
       const s = summarise(this.cfg, f, pool);
       grand += s.men;
-      for (const id of rosterFor(f)) {
+      for (const id of rosterFor(f, sc)) {
         const cell = this.countCells.get(`${f}:${id}`);
         if (cell) {
           setText(cell, String(comp[id] ?? 0));
@@ -380,10 +515,11 @@ export class MainMenu {
       }
       const tot = this.root.querySelector(`[data-tot="${f}"]`) as HTMLElement;
       const full = s.units >= MAX_UNITS_PER_SIDE;
+      const fr = FRONTAGE_LABEL[sc][f];
       html(tot, `
         <span><b>${s.units}</b> units${full ? ' <i class="cap">(max)</i>' : ''}</span>
         <span><b>${fmt(s.men)}</b> men</span>
-        <span title="Combined width of the battle-line units — how much front this army can form. Excludes reserves, wings and artillery."><b>${fmt(s.frontage)}</b> m of line</span>`);
+        <span title="${fr.title}"><b>${fmt(s.frontage)}</b> ${fr.unit}</span>`);
     }
 
     // Steppers grey out at their own limits so the caps are visible before they bite.
