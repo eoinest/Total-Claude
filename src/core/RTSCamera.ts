@@ -209,7 +209,10 @@ export class RTSCamera {
     if (input.key('KeyA') || input.key('ArrowLeft')) fx -= 1;
     if (input.key('KeyD') || input.key('ArrowRight')) fx += 1;
 
-    if (this.edgePanEnabled && input.hovering && !input.lmb.down) {
+    // `pointerSeen` as well as `hovering`: see the note on `pointerenter` in Input.ts. Without
+    // it the camera edge-pans from a default cursor position of 0,0 — the top-left corner —
+    // the instant the canvas reports a hover, which the pre-battle menu closing does.
+    if (this.edgePanEnabled && input.hovering && input.pointerSeen && !input.lmb.down) {
       const margin = 14;
       if (input.mouseX < margin) fx -= 1 - input.mouseX / margin;
       else if (input.mouseX > viewW - margin) fx += 1 - (viewW - input.mouseX) / margin;

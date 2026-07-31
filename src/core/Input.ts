@@ -43,6 +43,14 @@ export class Input {
   ndcY = 0;
   /** True while the cursor is over the canvas. */
   hovering = false;
+  /**
+   * True once a real pointer position has been observed on the canvas.
+   *
+   * Edge-panning is gated on this as well as `hovering`, as a second line of defence: any
+   * future path that sets `hovering` without a position must not be able to drive the camera
+   * from a default of 0,0, which reads as the top-left corner and pans without being asked.
+   */
+  pointerSeen = false;
 
   private keys = new Set<string>();
   private keysPressed = new Set<string>();
@@ -112,6 +120,7 @@ export class Input {
       const [x, y] = rectXY(e);
       this.mouseX = x;
       this.mouseY = y;
+      this.pointerSeen = true;
       for (const p of this.pointer) {
         if (p.down) {
           p.dragDist += Math.hypot(x - p.x, y - p.y);
@@ -121,7 +130,25 @@ export class Input {
       }
     });
 
-    this.listen(this.el, 'pointerenter', () => { this.hovering = true; });
+    /*
+     * `pointerenter` carries a position, and it must be used.
+     *
+     * `hovering` alone used to enable edge-panning while `mouseX/mouseY` were still their
+     * initial 0,0 — which is the top-left *corner*, so the camera edge-panned up and to the
+     * left on its own with the cursor sitting harmlessly in the middle of the screen. It only
+     * showed up once the pre-battle menu existed: the browser fires `pointerenter` on the
+     * canvas the moment the menu overlay above it is removed, and no `pointermove` has
+     * happened over the canvas yet, so the stale corner position was live for as long as the
+     * player left the mouse still. It drifted the focus from (0, 120) to (-319, 9) in under
+     * three seconds of play.
+     */
+    this.listen(this.el, 'pointerenter', (e: PointerEvent) => {
+      const [x, y] = rectXY(e);
+      this.mouseX = x;
+      this.mouseY = y;
+      this.pointerSeen = true;
+      this.hovering = true;
+    });
     this.listen(this.el, 'pointerleave', () => { this.hovering = false; });
 
     this.listen(this.el, 'wheel', (e: WheelEvent) => {

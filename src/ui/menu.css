@@ -1,0 +1,453 @@
+/*
+ * Pre-battle menu.
+ *
+ * Reuses hud.css's custom properties so the menu cannot drift from the in-battle chrome —
+ * same gold, same oxblood, same panel gradient, same two typefaces. Sized in `rem` against
+ * the document root rather than in `em` against `--ui-scale`: the HUD scale control is a
+ * gameplay preference for reading unit cards at a distance, and blowing the setup screen up
+ * with it made the army panels overflow at 1.35 on a 1280-wide window.
+ *
+ * Everything is inside one scrolling sheet, so a short viewport gets a scrollbar rather than
+ * a clipped Begin button.
+ */
+
+/*
+ * The container must NOT hit-test. It is full-screen, fixed, and above the canvas, so while
+ * it accepted pointer events it swallowed every click, drag and wheel aimed at the game for
+ * the rest of the session — the menu itself worked, the keyboard worked (key events are not
+ * hit-tested), and the mouse was simply dead. `#hud-root` had this right from the start with
+ * `pointer-events: none` plus children opting back in; this file did not copy it.
+ *
+ * `.menu` opts back in so the setup screen still captures the pointer while it is open, which
+ * is also what stops a click landing on the battlefield behind it.
+ */
+#menu-root {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.menu { pointer-events: auto; }
+
+/*
+ * The loading panel is z-index 100, above the menu, and `#loading` sets `display: grid`,
+ * which beats the UA's `[hidden] { display: none }`. Without this rule the menu is built
+ * underneath an opaque sheet and the screen looks frozen on "Mustering the legions".
+ */
+#loading[hidden] { display: none; }
+
+.menu {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transition: opacity 0.45s ease;
+  font-family: var(--serif);
+  color: var(--parchment);
+}
+
+.menu.in { opacity: 1; }
+.menu.out { opacity: 0; pointer-events: none; }
+
+.menu-bg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(58, 40, 22, 0.55), transparent 70%),
+    linear-gradient(180deg, #0a0906 0%, #12100b 45%, #070604 100%);
+}
+
+.menu-sheet {
+  position: relative;
+  width: min(1180px, 94vw);
+  max-height: 94vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1.6rem 1.9rem 1.4rem;
+  background: var(--panel-bg);
+  border: var(--panel-edge);
+  border-radius: 3px;
+  box-shadow: var(--shadow-deep);
+}
+
+/* Thin gold rule inside the frame, as the HUD panels have. */
+.menu-sheet::before {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border: 1px solid rgba(217, 178, 95, 0.14);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.menu-sheet::-webkit-scrollbar { width: 9px; }
+.menu-sheet::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.35); }
+.menu-sheet::-webkit-scrollbar-thumb {
+  background: var(--bronze);
+  border: 1px solid var(--gold-dim);
+}
+
+/* --- head --- */
+
+.menu-head {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid var(--gold-dim);
+}
+
+.menu-eagle { color: var(--gold); flex: 0 0 auto; }
+.menu-ic { width: 46px; height: 46px; }
+
+.menu-head h1 {
+  margin: 0;
+  font-size: 1.65rem;
+  letter-spacing: 0.24em;
+  color: var(--gold-bright);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
+}
+
+.menu-head h2 {
+  margin: 0.15rem 0 0;
+  font-size: 0.82rem;
+  font-weight: 400;
+  letter-spacing: 0.15em;
+  color: var(--travertine);
+  opacity: 0.72;
+}
+
+/* --- generic labelled row --- */
+
+.menu-row {
+  display: flex;
+  align-items: center;
+  gap: 1.4rem;
+  padding: 0.95rem 0;
+  border-bottom: 1px solid rgba(217, 178, 95, 0.14);
+}
+
+.menu-lab { flex: 0 0 13rem; display: flex; flex-direction: column; gap: 0.15rem; }
+.lab-main { font-size: 0.92rem; letter-spacing: 0.11em; color: var(--gold); }
+.lab-sub {
+  font-family: var(--num);
+  font-size: 0.72rem;
+  color: var(--travertine);
+  opacity: 0.55;
+}
+
+.menu-opts { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+
+.menu-opts button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  min-width: 6.4rem;
+  padding: 0.45rem 0.7rem;
+  background: linear-gradient(180deg, rgba(72, 56, 34, 0.5), rgba(30, 23, 15, 0.7));
+  border: 1px solid var(--gold-dim);
+  border-radius: 2px;
+  color: var(--travertine);
+  font-family: var(--serif);
+  cursor: pointer;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
+}
+
+.menu-opts button b { font-size: 0.84rem; letter-spacing: 0.08em; }
+.menu-opts button i {
+  font-family: var(--num);
+  font-style: normal;
+  font-size: 0.68rem;
+  opacity: 0.6;
+}
+
+.menu-opts button:hover { border-color: var(--gold); color: var(--parchment); }
+
+/*
+ * The UA focus ring on a just-clicked option reads as a second selection next to the real
+ * `.on` fill, which made it look as though two battle sizes were active at once. Suppressed
+ * for pointer focus and replaced with an unambiguous inset ring for keyboard focus, so the
+ * menu is still traversable by Tab.
+ */
+.menu button:focus { outline: none; }
+.menu button:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--gold-bright);
+}
+
+.menu-opts button.on {
+  background: linear-gradient(180deg, rgba(168, 129, 74, 0.62), rgba(88, 66, 36, 0.8));
+  border-color: var(--gold-bright);
+  color: var(--gold-bright);
+  box-shadow: inset 0 0 12px rgba(242, 221, 158, 0.16);
+}
+
+.menu-opts.small button {
+  min-width: 0;
+  padding: 0.3rem 0.62rem;
+  text-transform: capitalize;
+  font-size: 0.78rem;
+}
+
+/* --- armies --- */
+
+.menu-armies {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.1rem;
+  padding: 1rem 0 0.2rem;
+}
+
+.army {
+  border: 1px solid var(--gold-dim);
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.army-rome { border-top: 2px solid var(--rome); }
+.army-germanic { border-top: 2px solid var(--germanic); }
+
+.army-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.6rem 0.8rem 0.5rem;
+  border-bottom: 1px solid rgba(217, 178, 95, 0.16);
+}
+
+.army-name { font-size: 1rem; letter-spacing: 0.2em; color: var(--gold-bright); }
+.army-rome .army-name { color: var(--rome-lit); }
+.army-germanic .army-name { color: var(--germanic-lit); }
+
+.army-sub {
+  font-family: var(--num);
+  font-size: 0.7rem;
+  color: var(--travertine);
+  opacity: 0.55;
+}
+
+.army-rows { padding: 0.25rem 0.35rem; }
+
+.urow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.32rem 0.45rem;
+  border-radius: 2px;
+}
+
+.urow:nth-child(odd) { background: rgba(255, 255, 255, 0.022); }
+
+.uname { display: flex; flex-direction: column; gap: 0.05rem; min-width: 0; }
+.uname b {
+  font-size: 0.82rem;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.uname i {
+  font-family: var(--num);
+  font-style: normal;
+  font-size: 0.66rem;
+  color: var(--travertine);
+  opacity: 0.5;
+}
+
+.ustep { display: flex; align-items: center; gap: 0.3rem; flex: 0 0 auto; }
+
+.ustep button {
+  width: 1.55rem;
+  height: 1.55rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: linear-gradient(180deg, rgba(72, 56, 34, 0.55), rgba(28, 21, 14, 0.75));
+  border: 1px solid var(--gold-dim);
+  border-radius: 2px;
+  color: var(--gold);
+  font-family: var(--num);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ustep button:hover:not(:disabled) { border-color: var(--gold); color: var(--gold-bright); }
+.ustep button:disabled { opacity: 0.26; cursor: default; }
+
+.ucount {
+  min-width: 1.5rem;
+  text-align: center;
+  font-family: var(--num);
+  font-size: 0.98rem;
+  color: var(--parchment);
+}
+
+.ucount.zero { opacity: 0.32; }
+
+.army-tot {
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+  padding: 0.5rem 0.85rem 0.55rem;
+  border-top: 1px solid rgba(217, 178, 95, 0.16);
+  font-family: var(--num);
+  font-size: 0.74rem;
+  color: var(--travertine);
+  opacity: 0.85;
+}
+
+.army-tot b { color: var(--gold-bright); font-weight: 600; }
+.army-tot .cap { font-style: normal; color: var(--warn); opacity: 0.9; }
+
+/* --- clamp warning --- */
+
+.menu-warn {
+  margin: 0.7rem 0 0;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid rgba(227, 182, 76, 0.45);
+  border-left: 3px solid var(--warn);
+  border-radius: 2px;
+  background: rgba(227, 182, 76, 0.09);
+  font-family: var(--num);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--parchment);
+}
+
+.menu-warn b { color: var(--warn); }
+.menu-warn[hidden] { display: none; }
+
+/* Two notes can apply at once, so they stack with a rule between rather than merging. */
+.menu-warn p { margin: 0; }
+.menu-warn p + p {
+  margin-top: 0.45rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid rgba(227, 182, 76, 0.24);
+}
+
+/* The performance note is advisory, not a limit, so it reads warmer than the clamp. */
+.menu-warn .note-perf b { color: var(--hot); }
+
+/* --- conditions --- */
+
+.cond-row { align-items: flex-start; }
+
+.cond-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem 1.4rem;
+}
+
+.cond {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.8rem;
+  color: var(--travertine);
+}
+
+.cond > span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 0 0 7.2rem;
+  opacity: 0.8;
+}
+
+.cond-ic { width: 13px; height: 13px; color: var(--gold); }
+
+.cond input[type='range'] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--gold);
+  height: 2px;
+}
+
+.cond input[type='number'] {
+  width: 7rem;
+  padding: 0.24rem 0.4rem;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--gold-dim);
+  border-radius: 2px;
+  color: var(--parchment);
+  font-family: var(--num);
+  font-size: 0.8rem;
+}
+
+.cond .tod-val {
+  flex: 0 0 3rem;
+  text-align: right;
+  font-family: var(--num);
+  color: var(--gold-bright);
+}
+
+.reroll {
+  width: 1.7rem;
+  height: 1.7rem;
+  background: linear-gradient(180deg, rgba(72, 56, 34, 0.55), rgba(28, 21, 14, 0.75));
+  border: 1px solid var(--gold-dim);
+  border-radius: 2px;
+  color: var(--gold);
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.reroll:hover { border-color: var(--gold); color: var(--gold-bright); }
+
+/* --- foot --- */
+
+.menu-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding-top: 1rem;
+}
+
+.foot-spacer { flex: 1; }
+
+.menu-foot .ghost {
+  padding: 0.45rem 0.85rem;
+  background: transparent;
+  border: 1px solid var(--gold-dim);
+  border-radius: 2px;
+  color: var(--travertine);
+  font-family: var(--num);
+  font-size: 0.76rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.menu-foot .ghost:hover { border-color: var(--gold); color: var(--parchment); }
+
+.menu-foot .begin {
+  padding: 0.62rem 2.1rem;
+  background: linear-gradient(180deg, var(--oxblood-lit), var(--oxblood));
+  border: 1px solid var(--gold);
+  border-radius: 2px;
+  color: var(--gold-bright);
+  font-family: var(--serif);
+  font-size: 0.95rem;
+  letter-spacing: 0.2em;
+  cursor: pointer;
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.5), inset 0 0 14px rgba(0, 0, 0, 0.28);
+  transition: filter 0.14s;
+}
+
+.menu-foot .begin:hover { filter: brightness(1.16); }
+.menu-foot .begin:active { filter: brightness(0.94); }
+
+/* Stack the armies once two columns of unit rows stop fitting side by side. */
+@media (max-width: 900px) {
+  .menu-armies { grid-template-columns: 1fr; }
+  .cond-grid { grid-template-columns: 1fr; }
+  .menu-row { flex-direction: column; align-items: stretch; gap: 0.6rem; }
+  .menu-lab { flex: none; }
+}

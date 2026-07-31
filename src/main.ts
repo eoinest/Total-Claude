@@ -26,6 +26,8 @@ import { HudSystem } from './ui/HudSystem';
 import { PostFXSystem } from './render/PostFX';
 
 import { deploySiegeOfRome } from './sim/scenario';
+import { type Difficulty, sanitiseConfig } from './sim/battleConfig';
+import { MainMenu, resolveConfig } from './ui/MainMenu';
 import { Faction } from './sim/types';
 
 /**
@@ -43,19 +45,45 @@ import { Faction } from './sim/types';
 
 const params = new URLSearchParams(location.search);
 const harness = params.get('harness') === '1';
+const canvas = document.getElementById('viewport') as HTMLCanvasElement;
+const loading = document.getElementById('loading') as HTMLElement | null;
+const loadBar = document.getElementById('load-bar') as HTMLElement | null;
+const loadText = document.getElementById('load-text') as HTMLElement | null;
+
 /**
- * Ultra by default, for players as well as the harness.
+ * Pre-battle menu, before anything is built.
  *
- * The 16-shot pass measures every graded camera at ultra on an M4 Max and the slowest is
- * 64 fps, so the tier the game is actually tuned and judged at is the one it should open
- * on; `high` was a hedge that shipped a worse-looking game than the one being graded.
- * Ultra differs from high in shadow map size (4096 vs 2048), max pixel ratio (2 vs 1.5),
- * grass density (1.5 vs 1) and LOD far distance (320 m vs 220 m) — all cost, no behaviour,
- * so nothing about the simulation changes with it. `?quality=high` still overrides, which
- * is the escape hatch for weaker hardware, and the Settings panel can drop tier at runtime.
+ * Two of the things it configures cannot be changed afterwards: the quality tier fixes the
+ * soldier pool and the shadow cascade count at `init`, and the AI's `commanded` set is bound
+ * when `installAI` runs. So the menu resolves first and the engine is constructed from its
+ * answer — the same order Total War uses, configure then load then fight, which also means a
+ * player who wants a small battle never waits for a big one's assets.
+ *
+ * Skipped entirely under `?harness=1` or `?menu=0`. Ultra is the default tier for players as
+ * well as the harness: the 16-shot pass measures every graded camera at ultra and the
+ * slowest is 61-64 fps, so the tier the game is tuned and judged at is the one it opens on.
+ * `?quality=` and `?difficulty=` still override, which is what the harness uses and the
+ * escape hatch for weaker hardware.
  */
-const qualityParam = (params.get('quality') as QualityTier | null) ?? 'ultra';
-const difficulty = (params.get('difficulty') as 'easy' | 'normal' | 'hard' | 'legendary' | null) ?? 'hard';
+const skipMenu = harness || params.get('menu') === '0';
+let config = resolveConfig(params, !harness);
+{
+  const q = params.get('quality') as QualityTier | null;
+  const d = params.get('difficulty') as Difficulty | null;
+  if (q) config = { ...config, quality: q };
+  if (d) config = { ...config, difficulty: d };
+  config = sanitiseConfig(config);
+}
+if (!skipMenu) {
+  const menuHost = document.getElementById('menu-root') as HTMLElement;
+  // The loading panel sits at z-index 100, above the menu, so it has to leave the layer
+  // rather than merely fade — otherwise the menu is built underneath an opaque sheet.
+  if (loading) loading.hidden = true;
+  const chosen = await new MainMenu(config).show(menuHost);
+  config = chosen.config;
+  if (loading) loading.hidden = false;
+}
+const difficulty = config.difficulty;
 /**
  * Which side the player commands. The other is left to the AI.
  *
@@ -69,14 +97,9 @@ const autoplay = params.has('autoplay') ? params.get('autoplay') === '1' : harne
 const playerFaction = Faction.Rome;
 const aiFaction = Faction.Germanic;
 
-const canvas = document.getElementById('viewport') as HTMLCanvasElement;
-const loading = document.getElementById('loading') as HTMLElement | null;
-const loadBar = document.getElementById('load-bar') as HTMLElement | null;
-const loadText = document.getElementById('load-text') as HTMLElement | null;
-
 const engine = new Engine({
   canvas,
-  quality: qualityParam,
+  quality: config.quality,
   fixedSize: harness
     ? { w: Number(params.get('w') ?? 1920), h: Number(params.get('h') ?? 1080) }
     : undefined,
@@ -97,6 +120,14 @@ engine.add(new TerrainSystem());
 engine.add(new CitySystem());
 
 const battle = engine.add(new BattleSystem());
+// Seed the battle's root stream here, before `initAll`, and not in the scenario.
+// GeneralAI, TacticalAI and Projectiles each fork a private stream off this one during their
+// own `init`, and a fork is derived from the parent's state at the moment it is taken — so a
+// seed applied at deploy time (which runs after `initAll`) would leave all three on the
+// default stream and the menu's seed field would quietly do almost nothing. Mutated in place
+// rather than replaced for the same reason: the forks hold no reference to this object, but
+// anything that later captures `battle.rng` would be left pointing at the discarded instance.
+battle.rng.setState(config.seed === 0 ? 0x9e3779b9 : config.seed >>> 0);
 engine.add(new CombatSystem());
 engine.add(new ProjectileSystem());
 engine.add(new MoraleSystem());
@@ -152,7 +183,14 @@ async function boot(): Promise<void> {
     engine.events.emit('loadProgress', { frac, label });
   });
 
-  const result = deploySiegeOfRome(battle, engine.context);
+  // Time of day before deployment, so the first frame the player sees is already lit for the
+  // hour they chose. SkySystem rebuilds its scattering cube and the PMREM environment from
+  // this, and LightingSystem reads the sun colour back out of it, so setting it later would
+  // show one frame of 10:00 light whatever the menu said.
+  const sky = engine.context.tryGet('sky') as { setTimeOfDay?: (h: number) => void } | undefined;
+  sky?.setTimeOfDay?.(config.timeOfDay);
+
+  const result = deploySiegeOfRome(battle, engine.context, config);
   const f = result.cameraFocus;
   engine.rig.jumpTo(f.x, f.z, f.zoom, f.yaw);
 

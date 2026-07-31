@@ -103,6 +103,29 @@ against pinned SHA-256s):
 npm run assets
 ```
 
+### Setting up a battle
+
+The game opens on a Total War-style custom-battle screen before anything loads, so a small
+battle never waits for a big one's assets.
+
+- **Battle size** — Small / Normal / Large / Ultra / Extreme, Total War's own ladder. It
+  multiplies every unit's establishment, so a legionary cohort is 80 men at Small and 480 at
+  Extreme. Artillery crews do not scale; a scorpion needs two men whatever the setting.
+- **Army composition** — a row per unit type per side with steppers, capped at **20 units a
+  side** (Total War's limit, and past it the card bar stops fitting on screen) and 12 of any
+  one type. Live totals show units, men and metres of battle line for each army.
+- **Conditions** — time of day, difficulty, graphics tier, and the seed. Same seed and same
+  composition replays identically.
+
+Two things it tells you rather than deciding for you. If the chosen size needs more men than
+the graphics tier's soldier pool holds, every unit is scaled down to fit — all units stay
+present — and it says by how much. And past about 9,000 men it warns that a heavy frame drops
+under 60 fps, with the measured numbers, because it does: on an M4 Max at 1920×1080 a rout
+frame costs 13.4 ms at 8,644 men, 16.1 ms at 9,584 and 19.2 ms at 11,255.
+
+"Historical order of battle" restores the 271 AD deployment. "Copy link to this battle" puts
+the whole setup in the URL so it can be shared or replayed. `?menu=0` skips the screen.
+
 ### Controls
 
 | | |

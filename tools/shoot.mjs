@@ -285,7 +285,12 @@ try {
   });
   page.on('pageerror', (err) => consoleErrors.push(`pageerror: ${err.message}`));
 
-  const url = `${base}/?harness=1&quality=${QUALITY}&w=${W}&h=${H}`;
+  // `--battle=<token>` grades a configured order of battle rather than the historical one.
+  // Needed because the pre-battle menu lets a player field materially more men than the
+  // default 8,644 that every figure in docs/ARCHITECTURE.md was measured at, and a budget
+  // validated only at the default says nothing about the configurations the menu offers.
+  const battleArg = args.get('battle') ? `&battle=${args.get('battle')}` : '';
+  const url = `${base}/?harness=1&quality=${QUALITY}&w=${W}&h=${H}${battleArg}`;
   console.log(`• loading ${url}`);
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 

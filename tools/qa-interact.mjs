@@ -257,7 +257,10 @@ else {
   const setup = await page.evaluate(() => {
     const g = window.__game;
     const u = g.battle.units.find((v) => v.faction === 0 && !v.destroyed && v.alive > 100);
-    g.setCamera(u.x, u.z + 40, 0.5, Math.PI);
+    // Focus the unit itself, not 40 m behind it. The old framing put its anchor at y 231 —
+    // high in the frame, under the enlarged top bar — and pushed every world-space
+    // destination candidate off the bottom of the viewport (one projected to y 1471).
+    g.setCamera(u.x, u.z, 0.42, Math.PI);
     g.advance(0.4);
     return { id: u.id };
   });
@@ -267,12 +270,81 @@ else {
   await settle(350);
   const before = await page.evaluate((id) => window.__unit(id), setup.id);
   mark = await page.evaluate(() => window.__tapeMark());
-  // A point ~45 m behind the unit, projected.
+  /*
+   * A destination clear of the HUD, of the viewport edges, and of every unit on screen.
+   *
+   * **`right-click move` and `right-click attack` fail at HEAD as well as here** — verified by
+   * stashing all other work and re-running, which gives 13/15 with exactly these two red. They
+   * are a genuine pre-existing defect in the click path, not a consequence of the pre-battle
+   * menu or of the HUD scale, and three plausible-sounding explanations for them turned out to
+   * be wrong: the HUD occluding the point, the point landing inside the unit's own ranks, and
+   * the point projecting off-screen. Do not attribute them to the menu.
+   *
+   * The framing work below is kept anyway, because it fixes a real fragility even though it
+   * does not fix the failure. The check used to use one fixed world offset of (+20, +55), which
+   * projected to 1561,706 — underneath the 217 px minimap once the default HUD scale went to
+   * 1.35, where `Input.uiCapture` suppresses world clicks by design. So the check was one HUD
+   * tweak away from failing for a second, entirely different reason on top of the first.
+   */
   const dest = await page.evaluate((id) => {
     const g = window.__game;
     const u = g.battle.unitById(id);
-    return window.__project(u.x + 20, g.battle.groundAt(u.x + 20, u.z + 55), u.z + 55);
+    const rects = Array.from(document.querySelectorAll('#hud-root .interactive'))
+      .map((e) => e.getBoundingClientRect())
+      .filter((r) => r.width > 0 && r.height > 0);
+    // Screen positions of every unit that could intercept the click. A right-click *on* a
+    // unit is a target order, not a move, so "empty ground" has to mean empty on screen too —
+    // the first version of this only avoided the HUD and picked a point 8 px from the selected
+    // cohort's own anchor, which issued no move order and looked like a broken right-click.
+    const anchors = [];
+    for (const v of g.battle.units) {
+      if (v.destroyed) continue;
+      const p = window.__project(v.x, g.battle.groundAt(v.x, v.z) + 1, v.z);
+      if (p) anchors.push(p);
+    }
+    const clear = (p) => {
+      if (!p) return false;
+      const m = 24;
+      if (p.x < m || p.y < m || p.x > g.engine.context.viewW - m || p.y > g.engine.context.viewH - m) return false;
+      if (rects.some((r) => p.x >= r.left - 8 && p.x <= r.right + 8 && p.y >= r.top - 8 && p.y <= r.bottom + 8)) return false;
+      return !anchors.some((a) => Math.hypot(a.x - p.x, a.y - p.y) < 90);
+    };
+    /*
+     * Offsets are in SCREEN pixels from the unit's own anchor, not in world metres.
+     *
+     * World-space offsets are the wrong tool here: how far 55 m of ground travels on screen
+     * depends on the zoom, the pitch and the terrain under it, so a fixed metre offset landed
+     * on a HUD panel at one HUD scale and 471 px below the bottom of the window at another.
+     * A screen offset is by construction on screen, and because the camera looks down at the
+     * ground, a point below the unit is always ground in front of it.
+     */
+    const self = window.__project(u.x, g.battle.groundAt(u.x, u.z) + 1, u.z);
+    if (!self) return null;
+    /*
+     * Upward first: a cohort faces the enemy at -Z and the camera looks along -Z too, so the
+     * unit's own nine ranks extend *toward* the camera, downward on screen, while above the
+     * anchor is the open ground between the two armies. The 90 px anchor test cannot separate
+     * those on its own, because it measures distance to a unit's centre and a 320-man cohort is
+     * wider and deeper than 90 px at this zoom.
+     *
+     * Tried as a fix for the failure above and it was not one — the order is still not issued
+     * at a point 183 px clear of the formation. Kept because aiming at open ground is the right
+     * thing for the check to do regardless.
+     */
+    const px = [
+      [0, -170], [0, -220], [-160, -140], [160, -140], [-240, -70], [240, -70], [0, -270],
+      [-300, 0], [300, 0], [0, 200], [-200, 180], [200, 180],
+    ];
+    for (const [dx, dy] of px) {
+      const p = { x: self.x + dx, y: self.y + dy };
+      if (clear(p)) return p;
+    }
+    return null;
   }, setup.id);
+  // Fail loudly rather than carry on and misattribute the result: everything after this
+  // point assumes a usable ground point, and eight candidate offsets covering both sides and
+  // three depths should always find one. If none does, the framing is wrong, not the game.
+  if (!dest) throw new Error('qa-interact: no HUD-clear ground point found behind the unit');
   await page.mouse.move(dest.x, dest.y);
   await settle(250);
   // Two attempts, reported separately. An instant click puts `pressed` and `released` in the
@@ -734,6 +806,129 @@ async function reselect() {
 }
 
 if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, 'hud-final.png') });
+
+// ---------------------------------------------------------------------------
+// Starting through the pre-battle menu
+// ---------------------------------------------------------------------------
+/*
+ * Every check above loads with `?harness=1`, which skips the menu — so none of them could
+ * see either of the two bugs that shipping the menu introduced, and a player found both in
+ * the first minute:
+ *
+ *   1. `#menu-root` is full-screen, fixed and above the canvas, and kept `pointer-events:
+ *      auto` after the menu closed, so the empty container swallowed every click, drag and
+ *      wheel for the rest of the session. The keyboard still worked, because key events are
+ *      not hit-tested, which is exactly how it was reported.
+ *   2. The browser fires `pointerenter` on the canvas the moment that overlay is removed,
+ *      while `Input.mouseX/mouseY` were still their initial 0,0 — the top-left *corner* — so
+ *      the camera edge-panned on its own from (0, 120) to (-319, 9) in under three seconds
+ *      with the cursor sitting still in the middle of the screen.
+ *
+ * So this runs the real path a player takes: no harness flag, press Begin, then drive the
+ * mouse. A separate page, because the flags differ from the rest of the file.
+ */
+{
+  const mp = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
+  mp.on('pageerror', (e) => consoleErrors.push(`pageerror(menu): ${e.message}`));
+  mp.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(`menu: ${m.text()}`); });
+  await mp.goto(`${base}/?autoplay=0&quality=high`, { waitUntil: 'domcontentloaded' });
+
+  const sawMenu = await mp.waitForSelector('.menu.in', { timeout: 60000 }).then(() => true).catch(() => false);
+  record('menu appears', sawMenu, 'load with no harness flag and wait for the setup screen',
+    sawMenu ? 'the menu rendered and faded in' : 'no .menu.in appeared');
+
+  if (sawMenu) {
+    await mp.click('.begin');
+    await mp.waitForFunction(() => window.__game?.ready === true, null, { timeout: 180000 });
+    // Long enough for the intro fade to finish and the menu node to be removed.
+    await mp.waitForTimeout(2600);
+
+    const layer = await mp.evaluate(() => {
+      const mr = document.getElementById('menu-root');
+      const hit = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
+      return {
+        pe: getComputedStyle(mr).pointerEvents,
+        kids: mr.children.length,
+        at: hit ? `${hit.tagName.toLowerCase()}${hit.id ? '#' + hit.id : ''}` : 'nothing',
+      };
+    });
+    record('menu releases the pointer', layer.at === 'canvas#viewport',
+      'after Begin, ask the browser what is under the centre of the screen',
+      `#menu-root pointer-events:${layer.pe}, ${layer.kids} children, elementFromPoint → ${layer.at}`);
+
+    // The camera must sit still when nothing is touching it.
+    const drift = await mp.evaluate(async () => {
+      const r = window.__game.engine.rig;
+      const a = { x: r.focus.x, z: r.focus.z };
+      await new Promise((res) => setTimeout(res, 2000));
+      return { a, b: { x: r.focus.x, z: r.focus.z } };
+    });
+    const d = Math.hypot(drift.b.x - drift.a.x, drift.b.z - drift.a.z);
+    record('camera holds still', d < 2,
+      'leave the mouse untouched for 2 s after the menu closes',
+      `focus moved ${d.toFixed(1)} m — (${drift.a.x.toFixed(0)},${drift.a.z.toFixed(0)}) → (${drift.b.x.toFixed(0)},${drift.b.z.toFixed(0)})`);
+
+    const rig = () => mp.evaluate(() => {
+      const r = window.__game.engine.rig;
+      return { zoom: +r.zoom.toFixed(4), yaw: +r.yaw.toFixed(4) };
+    });
+
+    const z0 = await rig();
+    await mp.mouse.move(W * 0.5, H * 0.5);
+    for (let i = 0; i < 6; i++) { await mp.mouse.wheel(0, 240); await mp.waitForTimeout(60); }
+    await mp.waitForTimeout(700);
+    const z1 = await rig();
+    record('wheel zooms after menu', z1.zoom !== z0.zoom, 'six wheel notches over the canvas',
+      `zoom ${z0.zoom} → ${z1.zoom}`);
+
+    await mp.mouse.move(W * 0.5, H * 0.5);
+    await mp.mouse.down({ button: 'right' });
+    await mp.mouse.move(W * 0.5 + 240, H * 0.5, { steps: 12 });
+    await mp.mouse.up({ button: 'right' });
+    await mp.waitForTimeout(700);
+    const z2 = await rig();
+    record('right-drag rotates after menu', z2.yaw !== z1.yaw, 'right-drag 240 px across the canvas',
+      `yaw ${z1.yaw} → ${z2.yaw}`);
+
+    const selCount = async () => mp.evaluate(() => {
+      const t = document.querySelector('.hud-perf')?.textContent ?? '';
+      return Number(t.match(/sel (\d+)/)?.[1] ?? -1);
+    });
+    // Frame a unit, then click it. `setCamera` is the harness hook, not an input path, so the
+    // click itself is still a real one at real coordinates.
+    // Project the same way `window.__unitScreen` above does — lifted to the terrain height
+    // plus a metre. A first draft assumed y = 0, which on sloped ground put the click tens of
+    // pixels off the unit and reported selection as broken when it was not.
+    const spot = await mp.evaluate(() => {
+      const g = window.__game;
+      const u = g.battle.units.find((v) => v.faction === 0 && !v.destroyed && v.alive > 100);
+      g.setCamera(u.x, u.z, 0.34, u.facing + Math.PI);
+      g.advance(0.4);
+      const cam = g.engine.context.camera;
+      const v = cam.position.clone();
+      v.set(u.x, g.battle.groundAt(u.x, u.z) + 1, u.z).project(cam);
+      if (v.z > 1) return null;
+      return {
+        px: (v.x * 0.5 + 0.5) * g.engine.context.viewW,
+        py: (-v.y * 0.5 + 0.5) * g.engine.context.viewH,
+      };
+    });
+    if (!spot) {
+      record('click selects after menu', false, 'frame a Roman cohort and click it',
+        'the unit anchor never projected in front of the camera');
+    } else {
+      const s0 = await selCount();
+      await mp.mouse.click(spot.px, spot.py);
+      await mp.waitForTimeout(500);
+      const s1 = await selCount();
+      record('click selects after menu', s1 > 0,
+        `click a framed Roman cohort at ${spot.px.toFixed(0)},${spot.py.toFixed(0)}`,
+        `selected ${s0} → ${s1}`);
+    }
+  }
+  if (SHOT_DIR) await mp.screenshot({ path: path.join(SHOT_DIR, 'after-menu.png') });
+  await mp.close();
+}
 
 console.log(`\n${results.filter((r) => r.pass).length}/${results.length} interactions passed`);
 if (consoleErrors.length) {
