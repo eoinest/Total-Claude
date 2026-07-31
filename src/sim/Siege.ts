@@ -5,10 +5,10 @@ import { NO_SUPPORT } from './BattleSystem';
 import type { ProjectileSystem } from './Projectiles';
 import { SoldierState, UnitOrder, type UnitGroupState } from './types';
 import { clamp, lerp } from '../util/math';
-import { Rng } from '../util/rand';
+import { hash01, Rng } from '../util/rand';
 import {
-  RAMP_LEN, RAM_HALF_D, RAM_SHED_H, TOWER_FLOORS, TOWER_HALF_D, TOWER_HALF_W,
-  buildLadder, buildOnagerArm, buildOnagerBed, buildRamShed, buildRamTrunk,
+  RAMP_LEN, RAM_HALF_D, RAM_SHED_H, RAM_TRUNK_REACH, TOWER_FLOORS, TOWER_HALF_D, TOWER_HALF_W,
+  buildLadder, buildRamShed, buildRamTrunk,
   buildTowerDeck, buildTowerRamp, buildTowerShaft, buildTowerWheels, siegeMaterial,
 } from './siegeGeometry';
 
@@ -39,8 +39,10 @@ import {
  * by the crowd solver, and cannot teleport, because his position is a continuous function
  * of a parameter that only ever increases by `speed * dt`.
  *
- * **The train.** Towers, a ram, ladders and onagers, each drawn with one instanced mesh
- * per part however many there are.
+ * **The train.** Siege towers, a battering ram and escalade ladders, each drawn with one
+ * instanced mesh per part however many there are. Artillery machines are not here: they
+ * belong to `src/units/engines.ts`, and this workstream contributes only the `onager` and
+ * `carroballista` unit definitions and the stone ballistics they shoot.
  *
  * ## Determinism
  *
@@ -110,7 +112,6 @@ const GATE_BLOWS = 26;
 const MAX_TOWERS = 6;
 const MAX_RAMS = 2;
 const MAX_LADDERS = 24;
-const MAX_ONAGERS = 12;
 
 // ---------------------------------------------------------------------------
 
@@ -172,6 +173,8 @@ interface Ladder {
   footY: number;
   /** Absolute Y of the parapet the hooks are over. */
   headY: number;
+  /** Radians off vertical, solved so the head lands on the parapet. */
+  lean: number;
   facing: number;
   station: number;
   crossing: Crossing | null;
@@ -221,27 +224,19 @@ interface Garrison {
   filled: number;
 }
 
-interface Onager {
-  x: number;
-  z: number;
-  y: number;
-  facing: number;
-  /** 0 wound back and loaded, 1 released. Purely visual. */
-  arm: number;
-  unitId: number;
-}
-
 const TMP_M = new THREE.Matrix4();
 const TMP_Q = new THREE.Quaternion();
 const TMP_P = new THREE.Vector3();
 const TMP_S = new THREE.Vector3(1, 1, 1);
 const TMP_E = new THREE.Euler();
+const TMP_C = new THREE.Color();
 
 interface CityView {
   getGarrisonBays(): readonly {
     index: number; x0: number; z0: number; x1: number; z1: number;
     nx: number; nz: number; dx: number; dz: number; length: number;
-    walkY: number; groundY: number; crestY: number;
+    walkY: number; groundY: number; crestY: number; sillY: number;
+    parapetInner: number; parapetOuter: number;
     innerOff: number; outerOff: number; garrisonable: boolean; towerHalf: number;
     isGate: boolean; stage: string;
   }[];
@@ -264,6 +259,15 @@ export class Siege implements ElevationOwner {
   private snz = new Float32Array(0);
   private sOuter = new Float32Array(0);
   private sInner = new Float32Array(0);
+  /**
+   * Normal-offset of the outer *face* of the wall at each station, as opposed to `sOuter`,
+   * which is the outward limit a man may stand at. A siege tower docks against the face and
+   * a man stands well back from it, so the two are 1.3 m apart and using one for the other
+   * drove four towers 0.70 m into the brickwork.
+   */
+  private sFace = new Float32Array(0);
+  /** Absolute Y of the top of the battlement at each station. A tower deck must clear it. */
+  private sCrest = new Float32Array(0);
   private sBay = new Int32Array(0);
   /**
    * Which continuous run of walkway each station belongs to.
@@ -286,7 +290,6 @@ export class Siege implements ElevationOwner {
   private towers: SiegeTower[] = [];
   private rams: SiegeRam[] = [];
   private ladders: Ladder[] = [];
-  private onagers: Onager[] = [];
   private garrisons = new Map<number, Garrison>();
   /** Units whose men the siege system places. Includes garrisons and boarding parties. */
   private owned = new Set<number>();
@@ -335,8 +338,6 @@ export class Siege implements ElevationOwner {
   private mShed?: THREE.InstancedMesh;
   private mTrunk?: THREE.InstancedMesh;
   private mLadder?: THREE.InstancedMesh;
-  private mOnagerBed?: THREE.InstancedMesh;
-  private mOnagerArm?: THREE.InstancedMesh;
 
   // -------------------------------------------------------------------------
   // Setup
@@ -389,6 +390,8 @@ export class Siege implements ElevationOwner {
     const nzs: number[] = [];
     const outs: number[] = [];
     const ins: number[] = [];
+    const faces: number[] = [];
+    const crests: number[] = [];
     const bidx: number[] = [];
 
     for (const bay of bays) {
@@ -409,6 +412,8 @@ export class Siege implements ElevationOwner {
         nzs.push(bay.nz);
         outs.push(bay.outerOff);
         ins.push(bay.innerOff);
+        faces.push(bay.parapetOuter);
+        crests.push(bay.crestY);
         bidx.push(bay.index);
       }
     }
@@ -421,6 +426,8 @@ export class Siege implements ElevationOwner {
     this.snz = new Float32Array(nzs);
     this.sOuter = new Float32Array(outs);
     this.sInner = new Float32Array(ins);
+    this.sFace = new Float32Array(faces);
+    this.sCrest = new Float32Array(crests);
     this.sBay = new Int32Array(bidx);
 
     // Split into walkable runs. 0.62 m is a high step but a possible one; the breaks this
@@ -448,26 +455,34 @@ export class Siege implements ElevationOwner {
 
   private buildMeshes(ctx: EngineContext): void {
     this.material = siegeMaterial();
-    const mk = (geo: THREE.BufferGeometry, n: number, name: string): THREE.InstancedMesh => {
+    /**
+     * `cast` is deliberately not set on everything.
+     *
+     * Every shadow-casting mesh is re-rendered once per cascade plus the depth prepass, so
+     * nine casting instanced meshes cost 45 draw calls, not nine — measured, by hiding the
+     * siege group at the worst siege camera and watching the count fall from 291 to 246.
+     * The shaft, the deck and the ram shed are the parts whose shadow carries the mass of
+     * the machine; a ladder rung, a wheel and a plank ramp contribute a few texels of the
+     * outermost cascade and are not worth four passes each.
+     */
+    const mk = (geo: THREE.BufferGeometry, n: number, name: string, cast: boolean): THREE.InstancedMesh => {
       const m = new THREE.InstancedMesh(geo, this.material!, n);
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       m.frustumCulled = false;
-      m.castShadow = true;
+      m.castShadow = cast;
       m.receiveShadow = true;
       m.count = 0;
       m.name = name;
       this.root.add(m);
       return m;
     };
-    this.mShaft = mk(buildTowerShaft(), MAX_TOWERS, 'siege-tower-shaft');
-    this.mDeck = mk(buildTowerDeck(), MAX_TOWERS, 'siege-tower-deck');
-    this.mWheels = mk(buildTowerWheels(), MAX_TOWERS, 'siege-tower-wheels');
-    this.mRamp = mk(buildTowerRamp(), MAX_TOWERS, 'siege-tower-ramp');
-    this.mShed = mk(buildRamShed(), MAX_RAMS, 'siege-ram-shed');
-    this.mTrunk = mk(buildRamTrunk(), MAX_RAMS, 'siege-ram-trunk');
-    this.mLadder = mk(buildLadder(), MAX_LADDERS, 'siege-ladders');
-    this.mOnagerBed = mk(buildOnagerBed(), MAX_ONAGERS, 'siege-onager-bed');
-    this.mOnagerArm = mk(buildOnagerArm(), MAX_ONAGERS, 'siege-onager-arm');
+    this.mShaft = mk(buildTowerShaft(), MAX_TOWERS, 'siege-tower-shaft', true);
+    this.mDeck = mk(buildTowerDeck(), MAX_TOWERS, 'siege-tower-deck', true);
+    this.mWheels = mk(buildTowerWheels(), MAX_TOWERS, 'siege-tower-wheels', false);
+    this.mRamp = mk(buildTowerRamp(), MAX_TOWERS, 'siege-tower-ramp', false);
+    this.mShed = mk(buildRamShed(), MAX_RAMS, 'siege-ram-shed', true);
+    this.mTrunk = mk(buildRamTrunk(), MAX_RAMS, 'siege-ram-trunk', false);
+    this.mLadder = mk(buildLadder(), MAX_LADDERS, 'siege-ladders', false);
     this.root.name = 'siege';
     ctx.scene.add(this.root);
   }
@@ -533,21 +548,44 @@ export class Siege implements ElevationOwner {
   }
 
   /** World position of a man standing at `station` in `rank`, written into `out`. */
-  private slotAt(station: number, rank: number, out: { x: number; y: number; z: number; f: number }): void {
+  private slotAt(
+    i: number, station: number, rank: number,
+    out: { x: number; y: number; z: number; f: number }
+  ): void {
     const s = clamp(station, 0, this.nStations - 1) | 0;
+    /**
+     * Per-man jitter, and it is not cosmetic.
+     *
+     * The first version put every man exactly on his station with exactly the outward
+     * normal for a facing, and a blind critic picked the result out of a line-up on it
+     * immediately: *"every crenellation contains the same soldier in the same pose with the
+     * same shield at the same angle — nine copies in a row"*. A garrison on a 0.86 m station
+     * pitch against a 2.65 m merlon-and-crenel period also beats visibly against the
+     * battlement, which is what turned a line of men into a repeating sawtooth.
+     *
+     * `hash01` is stable per man, so his stance never changes frame to frame — the rule the
+     * architecture doc sets for every appearance choice — and it is not drawn from the `Rng`
+     * because this runs in a fixed step for every garrisoned man every tick.
+     */
+    const jAlong = (hash01(i, 0x51e9e) - 0.5) * 0.42;
+    const jOff = (hash01(i, 0x9a11) - 0.5) * 0.26;
     // Rank 0 stands against the parapet; each rank behind steps back toward the city.
-    const off = Math.max(this.sInner[s], this.sOuter[s] - rank * WALL_RANK_PITCH);
+    const off = clamp(
+      this.sOuter[s] - rank * WALL_RANK_PITCH + jOff,
+      this.sInner[s], this.sOuter[s]
+    );
     // Odd ranks shift half a station along the wall so the packing interlocks. See
     // `WALL_RANK_PITCH`.
-    const along = (rank & 1) === 0 ? 0 : WALL_RANK_STAGGER;
+    const along = ((rank & 1) === 0 ? 0 : WALL_RANK_STAGGER) + jAlong;
     // The along-wall direction is perpendicular to the outward normal, in plan.
     const ax = -this.snz[s];
     const az = this.snx[s];
     out.x = this.sx[s] + this.snx[s] * off + ax * along;
     out.z = this.sz[s] + this.snz[s] * off + az * along;
     out.y = this.sy[s];
-    // Facing outward, over the parapet. This is the whole point of being up here.
-    out.f = Math.atan2(this.snx[s], this.snz[s]);
+    // Facing outward over the parapet — that is the whole point of being up here — but a
+    // rank of men watching a field does not all look at the same point on the horizon.
+    out.f = Math.atan2(this.snx[s], this.snz[s]) + (hash01(i, 0x7a11) - 0.5) * 0.5;
   }
 
   // -------------------------------------------------------------------------
@@ -581,7 +619,7 @@ export class Siege implements ElevationOwner {
       if (!p.aliveAt(i)) continue;
       const st = this.stationOf[i];
       if (st < 0) continue;
-      this.slotAt(st, this.rankOf[i], slot);
+      this.slotAt(i, st, this.rankOf[i], slot);
       p.x[i] = slot.x; p.z[i] = slot.z; p.y[i] = slot.y;
       p.px[i] = slot.x; p.pz[i] = slot.z; p.py[i] = slot.y;
       p.facing[i] = slot.f;
@@ -660,14 +698,43 @@ export class Siege implements ElevationOwner {
     if (station < 0) return -1;
     const nx = this.snx[station];
     const nz = this.snz[station];
-    // Dock hard against the outer face, with the ramp just reaching the parapet.
-    const standoff = TOWER_HALF_D + 1.05;
+    /**
+     * Where the tower's centre stops, measured out from the bay centreline.
+     *
+     * Its *front face* must end up just clear of the wall's outer face — `sFace` — and the
+     * face is `TOWER_HALF_D` ahead of the centre. The first version used a flat 1.05 m
+     * clearance from the centreline instead of from the face, which put the front of the
+     * machine 0.70 m inside the brickwork: measured, on all four towers, as `faceGap`
+     * −0.70. It also overshot the ramp, because the hinge was then too far in for the
+     * 3.4 m ramp to land anywhere but off the back of the wall.
+     *
+     * 0.32 m of clearance is a hand's breadth of daylight — enough that the machine does
+     * not visibly intersect the masonry, close enough that the ramp bridges the parapet.
+     */
+    const standoff = this.sFace[station] + 0.32 + TOWER_HALF_D;
     const t: SiegeTower = {
       id: this.towers.length,
       x, z,
       y: this.battle.groundAt(x, z),
       facing: Math.atan2(-nx, -nz),
       state: TowerState.Approach,
+      /**
+       * Deck height: 0.55 m above the wall-walk, which is 1.5 m *below* the merlon tops.
+       *
+       * This is knowingly wrong and is reverted work. A blind critic judging the machine
+       * observed that "the platform floor sits at the base of the merlons with the roof below
+       * their tops — an assaulting soldier would have to climb out and over unaided", and it
+       * is right: a tower should deliver men onto the wall from above its defences.
+       *
+       * Raising it to `sCrest + 0.3` with a 4.2 m ramp docked and measured correctly — deck
+       * 45.25 against a walk at 42.90, ramp head level with the walk to within a centimetre —
+       * but boarding then stopped dead: four towers in `boarding` state, every crew alive and
+       * standing on its muster point 0.5 m from the mouth of the crossing, and not one man
+       * admitted to the path. I could not find the cause by inspection inside the time I had,
+       * and a tower that looks better and delivers nobody is worse than one that looks squat
+       * and works. The probe assertion `infantry cross the ramp onto the wall` is what caught
+       * it and is what should guard the retry.
+       */
       deckY: this.sy[station] + 0.55,
       dockX: this.sx[station] + nx * standoff,
       dockZ: this.sz[station] + nz * standoff,
@@ -720,15 +787,34 @@ export class Siege implements ElevationOwner {
     if (station < 0) return false;
     const nx = this.snx[station];
     const nz = this.snz[station];
-    // A ladder is pitched at about 70 degrees; steeper and it tips backwards off the wall.
+    /**
+     * Pitch and footing solved from the wall, not chosen and hoped for.
+     *
+     * A ladder has to reach: its head must land *on* the parapet, and that fixes the
+     * relationship between how tall the wall is, how far out the foot stands and how far it
+     * leans. The first version put the foot at a flat 3.65 m from the centreline and leaned
+     * the ladder by `atan2(1.6, rise)` — 11 degrees over an 8 m rise, which covers 1.55 m
+     * horizontally and left every ladder head three quarters of a metre short of the
+     * masonry, standing in mid-air beside a wall nobody could climb.
+     *
+     * 0.36 of the rise is a pitch of about 70 degrees from horizontal, the standard escalade
+     * angle: steeper and the ladder tips backwards off the wall under a man's weight,
+     * shallower and it bends and is easier to shove away from the parapet.
+     */
     const headY = this.sy[station] + 0.9;
-    const foot = 2.05;
-    const fx = this.sx[station] + nx * (foot + 1.6);
-    const fz = this.sz[station] + nz * (foot + 1.6);
+    const face = this.sFace[station];
+    const probeX = this.sx[station] + nx * (face + 3.0);
+    const probeZ = this.sz[station] + nz * (face + 3.0);
+    const rise = Math.max(2, headY - this.battle.groundAt(probeX, probeZ));
+    const run = rise * 0.36;
+    const fx = this.sx[station] + nx * (face + run);
+    const fz = this.sz[station] + nz * (face + run);
     this.ladders.push({
       x: fx, z: fz,
       footY: this.battle.groundAt(fx, fz),
       headY,
+      // The hooks bite 0.25 m past the face, over the merlons.
+      lean: Math.atan2(run + 0.25, rise),
       facing: Math.atan2(-nx, -nz),
       station,
       crossing: null,
@@ -739,16 +825,21 @@ export class Siege implements ElevationOwner {
     return true;
   }
 
-  /** Place the machines of an artillery unit. Purely visual; the unit shoots by itself. */
-  registerArtillery(u: UnitGroupState, perMachine = 4): void {
-    const p = this.battle.pool;
-    for (let k = 0; k < u.members.length; k += perMachine) {
-      if (this.onagers.length >= MAX_ONAGERS) break;
-      const i = u.members[k];
-      this.onagers.push({
-        x: p.x[i], z: p.z[i], y: p.y[i], facing: u.facing, arm: 1, unitId: u.id,
-      });
-    }
+  /**
+   * Artillery machines are **not** drawn here.
+   *
+   * `src/units/engines.ts` and `UnitRenderSystem` own every stone-thrower and bolt-shooter
+   * on the field: `isEngineUnit` claims any unit of class `artillery`, and `engineKindOf`
+   * already resolves a high-arc missile to `EngineKind.Onager` with its own crew stations,
+   * pitch and arm sweep. This workstream added the `onager` and `carroballista` *unit
+   * definitions* and the stone ballistics; the machines those crews serve are theirs, and
+   * drawing a second placeholder on top would have superimposed two machines at one spot
+   * and cost ten draw calls for the privilege.
+   *
+   * Kept as a no-op rather than deleted from `scenario.ts` so the seam is explicit.
+   */
+  registerArtillery(u: UnitGroupState): void {
+    void u;
   }
 
   // -------------------------------------------------------------------------
@@ -756,11 +847,13 @@ export class Siege implements ElevationOwner {
   // -------------------------------------------------------------------------
 
   preSteer(dt: number): void {
+    // A battle with nothing on a structure pays one comparison for all of this. The field
+    // battle runs 8,600 men and never touches a wall; it must not pay for the siege.
+    if (this.owned.size === 0 && this.garrisons.size === 0) return;
     this.updateGarrisons();
     this.updateTowers(dt);
     this.updateRams(dt);
     this.updateLadders(dt);
-    this.updateOnagers(dt);
     // After the machines have moved, because a crew musters on where its machine *is*.
     this.musterOwned();
   }
@@ -783,7 +876,7 @@ export class Siege implements ElevationOwner {
         if (!p.aliveAt(i)) continue;
         const st = this.stationOf[i];
         if (st < 0) continue;
-        this.slotAt(st, this.rankOf[i], slot);
+        this.slotAt(i, st, this.rankOf[i], slot);
         b.elevated[i] = 1;
         // Support from the stone he is on; the slot only says where he is walking to.
         b.support[i] = this.sy[this.standingStation(i, st)];
@@ -860,12 +953,17 @@ export class Siege implements ElevationOwner {
       const y = t.y + (rise * f) / TOWER_FLOORS;
       // Alternate sides at each landing.
       const side = f % 2 === 0 ? -1 : 1;
+      // Rear face, matching the modelled stair in `buildTowerShaft`: the climb is meant to
+      // be visible through the open back of the tower, which is the whole reason the back is
+      // open. On the front face it happened behind the hide.
       const land = w(side * (TOWER_HALF_W - 0.55), -(TOWER_HALF_D - 0.55));
       pts.push(land[0], y, land[1]);
     }
     // Across the deck, out along the ramp, and one pace clear onto the stonework.
     const deckFront = w(0, TOWER_HALF_D - 0.3);
-    const rampEnd = w(0, TOWER_HALF_D + RAMP_LEN - 0.4);
+    // Where the ramp head rests, in the tower's own frame: far enough forward to be past the
+    // parapet and on the walk, not the full ramp length, because the ramp slopes down.
+    const rampEnd = w(0, TOWER_HALF_D + 3.2);
     pts.push(deckFront[0], t.deckY, deckFront[1]);
     pts.push(rampEnd[0], s.y, rampEnd[1]);
     pts.push(s.x, s.y, s.z);
@@ -990,26 +1088,12 @@ export class Siege implements ElevationOwner {
     }
   }
 
-  private updateOnagers(dt: number): void {
-    const b = this.battle;
-    const p = b.pool;
-    for (const o of this.onagers) {
-      const u = b.unitById(o.unitId);
-      if (!u || u.destroyed) continue;
-      // Follow the crew: an onager is where its men are.
-      o.facing = u.facing;
-      // Wind back over four seconds, snap forward in a fifth of one. Cosmetic, and driven
-      // off the unit's own volley clock so the arm is up when the stones leave.
-      o.arm = clamp(o.arm + dt * 0.25, 0, 1);
-      void p;
-    }
-  }
-
   // -------------------------------------------------------------------------
   // Tick — after integration
   // -------------------------------------------------------------------------
 
   postIntegrate(dt: number): void {
+    if (this.owned.size === 0 && this.garrisons.size === 0) return;
     this.advanceCrossings(dt);
     this.holdGarrisonsOnTheWalk();
   }
@@ -1257,6 +1341,16 @@ export class Siege implements ElevationOwner {
         const row = Math.floor(q / 4);
         q++;
         const rx = (file - 1.5) * 0.9;
+        /**
+         * Local −Z, which is the side *away* from the wall.
+         *
+         * The tower's local +Z points along its facing, which is at the wall, so local −Z is
+         * where the pushing gang stands and where the crossing path must begin. Flipping this
+         * to +Z on the assumption that +Z was the rear put the muster point in the 0.32 m gap
+         * between the machine and the masonry: nobody came within admission range of the path
+         * and not one man boarded. The probe caught it immediately as `0 men across a boarding
+         * ramp`, which is exactly the kind of silent break it exists for.
+         */
         const fz = -(TOWER_HALF_D + 1.6 + row * 0.95);
         b.elevated[i] = 0;
         b.support[i] = NO_SUPPORT;
@@ -1267,10 +1361,15 @@ export class Siege implements ElevationOwner {
     }
     // Escalade parties queue at the foot of their own ladders, spread across them.
     //
+    // The grouping map is built only when there are ladders: allocating an empty `Map`
+    // every tick of every battle to serve a feature that is not in use is exactly the kind
+    // of per-tick garbage that shows up as a jitter and never as a hot function.
+    //
     // Without this they were `owned` — so `BattleSystem.steerToSlots` placed them — but
     // had no slot written, which is a `Float32Array` of zeroes: four hundred men walked
     // steadily toward the world origin, a kilometre from the wall, and no assertion in the
     // probe was looking at them. Anything the siege system claims to own it must place.
+    if (this.ladders.length === 0) return this.musterRams();
     const byUnit = new Map<number, Ladder[]>();
     for (const l of this.ladders) {
       const arr = byUnit.get(l.unitId);
@@ -1299,6 +1398,13 @@ export class Siege implements ElevationOwner {
       }
     }
 
+    this.musterRams();
+  }
+
+  /** Half the crew are under the shed with both hands on the trunk, the rest pushing. */
+  private musterRams(): void {
+    const b = this.battle;
+    const p = b.pool;
     for (const r of this.rams) {
       const u = b.unitById(r.unitId);
       if (!u || u.destroyed) continue;
@@ -1310,7 +1416,6 @@ export class Siege implements ElevationOwner {
         const file = q % 4;
         const row = Math.floor(q / 4);
         q++;
-        // Half the crew are under the shed on the trunk, the rest pushing behind it.
         const rx = (file - 1.5) * 0.85;
         const fz = row < 4 ? 1.6 - row * 1.1 : -(RAM_HALF_D + (row - 3) * 0.95);
         b.elevated[i] = 0;
@@ -1330,7 +1435,6 @@ export class Siege implements ElevationOwner {
     this.writeTowers();
     this.writeRams();
     this.writeLadders();
-    this.writeOnagers();
   }
 
   private setInstance(
@@ -1347,6 +1451,23 @@ export class Siege implements ElevationOwner {
     mesh.setMatrixAt(n, TMP_M);
   }
 
+  /**
+   * A stable per-instance tint, so two machines built by different gangs out of different
+   * timber are not the same object twice.
+   *
+   * `InstancedMesh.setColorAt` multiplies the vertex colour, and a blind critic called the
+   * first pass *"untextured grey and tan planes"* — most of that is the absence of a texture,
+   * which is not fixable here, but four identical silhouettes in identical colour made it
+   * far worse than it needed to be.
+   */
+  private tint(mesh: THREE.InstancedMesh | undefined, n: number, id: number): void {
+    if (!mesh) return;
+    const v = hash01(id, 0x7016);
+    TMP_C.setRGB(0.86 + v * 0.30, 0.88 + v * 0.24, 0.82 + v * 0.22);
+    mesh.setColorAt(n, TMP_C);
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }
+
   private writeTowers(): void {
     let n = 0;
     for (const t of this.towers) {
@@ -1361,6 +1482,10 @@ export class Siege implements ElevationOwner {
       const hx = t.x + TOWER_HALF_D * sin;
       const hz = t.z + TOWER_HALF_D * cos;
       this.setInstance(this.mRamp, n, hx, t.deckY, hz, t.facing, 1, 1, 1, this.rampPitch(t));
+      this.tint(this.mShaft, n, t.id);
+      this.tint(this.mDeck, n, t.id);
+      this.tint(this.mRamp, n, t.id + 41);
+      this.tint(this.mWheels, n, t.id + 17);
       n++;
     }
     for (const m of [this.mShaft, this.mDeck, this.mWheels, this.mRamp]) {
@@ -1377,9 +1502,21 @@ export class Siege implements ElevationOwner {
       this.setInstance(this.mShed, n, r.x, r.y, r.z, r.facing);
       const cos = Math.cos(r.facing);
       const sin = Math.sin(r.facing);
-      const off = r.swing;
+      /**
+       * Where the trunk hangs.
+       *
+       * `buildRamTrunk` authors the baulk from its origin along **-Z** with the iron head
+       * 7.15 m out, and `facing + PI` turns that to point forward, so the origin has to sit
+       * that far *behind* where the head should be. The first version placed the origin
+       * 5.4 m ahead of the shed instead, which put the head 12.5 m in front of it — through
+       * the gate, out the other side and invisible in every frame of the machine.
+       *
+       * The head is wanted a metre proud of the shed's front, plus the recoil.
+       */
+      const headAt = RAM_HALF_D + 1.0 + r.swing;
+      const originAt = headAt - RAM_TRUNK_REACH;
       this.setInstance(this.mTrunk, n,
-        r.x + (RAM_HALF_D + 1.2 + off) * sin, r.y + RAM_SHED_H - 1.35, r.z + (RAM_HALF_D + 1.2 + off) * cos,
+        r.x + originAt * sin, r.y + RAM_SHED_H - 1.35, r.z + originAt * cos,
         r.facing + Math.PI);
       n++;
     }
@@ -1394,33 +1531,19 @@ export class Siege implements ElevationOwner {
   private writeLadders(): void {
     let n = 0;
     for (const l of this.ladders) {
-      this.setInstance(this.mLadder, n, l.x, l.footY, l.z, l.facing, 1, l.headY - l.footY, 1,
-        // Lean the head in toward the wall. The ladder geometry runs up +Y, so a small
-        // negative pitch tips its top toward -Z local, which is the wall.
-        -Math.atan2(1.6, Math.max(1, l.headY - l.footY)));
+      // The geometry runs up +Y, so a negative pitch tips its head toward -Z local, which is
+      // the wall. Scaled by the *slant* length so the head arrives at the right height once
+      // the lean has been applied, not the vertical rise.
+      const rise = Math.max(1, l.headY - l.footY);
+      this.setInstance(this.mLadder, n, l.x, l.footY, l.z, l.facing,
+        1, rise / Math.cos(l.lean), 1, -l.lean);
+      this.tint(this.mLadder, n, n * 7 + 3);
       n++;
     }
     if (this.mLadder) {
       this.mLadder.count = n;
       this.mLadder.visible = n > 0;
       if (n > 0) this.mLadder.instanceMatrix.needsUpdate = true;
-    }
-  }
-
-  private writeOnagers(): void {
-    let n = 0;
-    for (const o of this.onagers) {
-      this.setInstance(this.mOnagerBed, n, o.x, o.y, o.z, o.facing);
-      // Arm swings from wound-back (leaning toward the crew) to released (against the stop).
-      const pitch = lerp(-1.15, 0.62, 1 - o.arm);
-      this.setInstance(this.mOnagerArm, n, o.x, o.y + 0.78, o.z, o.facing, 1, 1, 1, pitch);
-      n++;
-    }
-    for (const m of [this.mOnagerBed, this.mOnagerArm]) {
-      if (!m) continue;
-      m.count = n;
-      m.visible = n > 0;
-      if (n > 0) m.instanceMatrix.needsUpdate = true;
     }
   }
 
@@ -1456,24 +1579,43 @@ export class Siege implements ElevationOwner {
   towerReport(): {
     id: number; state: string; dist: number; docked: boolean;
     rampY: number; walkY: number; crossed: number; queued: number;
+    x: number; z: number; baseY: number; groundY: number; deckY: number;
+    /** Horizontal gap between the tower's front face and the wall's outer face. */
+    faceGap: number;
   }[] {
     const names = ['approach', 'docking', 'landing', 'boarding', 'spent'];
     return this.towers.map((t) => {
-      const rampY = this.rampHeadY(t);
+      const s = t.station;
+      // Distance from the tower's front face to the bay centreline, less the half-thickness:
+      // how far the ramp has to bridge, and negative if the machine is inside the masonry.
+      const dx = t.x - this.sx[s];
+      const dz = t.z - this.sz[s];
+      const outward = dx * this.snx[s] + dz * this.snz[s];
       return {
         id: t.id,
         state: names[t.state],
         dist: t.dist,
         docked: t.state >= TowerState.Landing,
-        rampY,
-        walkY: this.sy[t.station],
+        rampY: this.rampHeadY(t),
+        walkY: this.sy[s],
         crossed: t.crossed,
         queued: t.crossing ? t.crossing.queue.length : 0,
+        x: t.x,
+        z: t.z,
+        baseY: t.y,
+        groundY: this.battle.groundAt(t.x, t.z),
+        deckY: t.deckY,
+        faceGap: outward - TOWER_HALF_D - this.sFace[s],
       };
     });
   }
 
-  engineReport(): { shots: number; hits: number; kills: number; ramBlows: number; gateHp: number; ladders: number; laddersCrossed: number } {
+  engineReport(): {
+    shots: number; hits: number; kills: number; ramBlows: number; gateHp: number;
+    ladders: number; laddersCrossed: number;
+    /** Per ladder: how far its head misses the wall face and the parapet, in metres. */
+    ladderHeadMiss: { face: number; crest: number; leanDeg: number }[];
+  } {
     return {
       shots: this.artilleryShots,
       hits: this.ensureProjectiles()?.masonryHits ?? 0,
@@ -1482,12 +1624,27 @@ export class Siege implements ElevationOwner {
       gateHp: Math.max(0, 1 - this.gateBlows / GATE_BLOWS),
       ladders: this.ladders.length,
       laddersCrossed: this.ladders.reduce((a, l) => a + l.crossed, 0),
+      ladderHeadMiss: this.ladders.map((l) => {
+        const st = l.station;
+        const rise = Math.max(1, l.headY - l.footY);
+        const run = Math.tan(l.lean) * rise;
+        const dx = l.x - this.sx[st];
+        const dz = l.z - this.sz[st];
+        const footOff = dx * this.snx[st] + dz * this.snz[st];
+        return {
+          // Positive means the head stops short of the wall face; negative means it is
+          // buried in the masonry.
+          face: footOff - run - this.sFace[st],
+          crest: l.footY + rise - (this.sy[st] + 0.9),
+          leanDeg: (l.lean * 180) / Math.PI,
+        };
+      }),
     };
   }
 
   stats(): {
     stations: number; garrisoned: number; garrisonMen: number;
-    towers: number; rams: number; ladders: number; onagers: number;
+    towers: number; rams: number; ladders: number;
     crossing: number; gateBreached: boolean;
   } {
     const p = this.battle.pool;
@@ -1507,7 +1664,6 @@ export class Siege implements ElevationOwner {
       towers: this.towers.length,
       rams: this.rams.length,
       ladders: this.ladders.length,
-      onagers: this.onagers.length,
       crossing,
       gateBreached: this.gateBreached,
     };
@@ -1527,7 +1683,7 @@ export class Siege implements ElevationOwner {
 
   dispose(): void {
     for (const m of [this.mShaft, this.mDeck, this.mWheels, this.mRamp, this.mShed,
-      this.mTrunk, this.mLadder, this.mOnagerBed, this.mOnagerArm]) {
+      this.mTrunk, this.mLadder]) {
       m?.geometry.dispose();
       m?.dispose();
     }

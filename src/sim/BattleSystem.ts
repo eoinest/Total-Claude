@@ -97,6 +97,21 @@ export const SAME_LEVEL_DY = 1.9;
 export const NO_SUPPORT = -1e9;
 
 /**
+ * Most metres crowd separation may move one man in one tick. See `resolveCrowding`.
+ *
+ * Separation is a positional fix-up, not a force, so its magnitude is the sum of a man's
+ * overlaps — and where many men are jammed into a small area that sum has no ceiling. On
+ * open ground it never mattered, because formations cannot stack that hard. On a 3.45 m
+ * wall-walk with a lodgement coming over a boarding ramp into a garrison already standing
+ * there, it very much can: measured at 58 cm of purely lateral movement in a single 33 ms
+ * tick, which is 17 m/s and reads as a man being flung along the parapet.
+ *
+ * 0.22 m at 30 Hz is 6.6 m/s — far faster than anyone needs to be pushed, and slow enough
+ * that clearing a bad overlap takes a few frames instead of one.
+ */
+const MAX_SEPARATION_STEP = 0.22;
+
+/**
  * What a soldier standing on something other than the ground needs the sim to know.
  *
  * Implemented by `Siege`, which owns every structure a man can stand on. Kept as an
@@ -164,6 +179,7 @@ export class BattleSystem implements Subsystem {
     this.orderGrace = new Float32Array(256);
     this.breakingOff = new Uint8Array(256);
     this.press = new Float32Array(ctx.quality.maxSoldiers);
+    this.sepUsed = new Float32Array(ctx.quality.maxSoldiers);
     this.hash = new SpatialHash(1500, 3.5);
 
     const cap = ctx.quality.maxSoldiers;
@@ -957,6 +973,9 @@ export class BattleSystem implements Subsystem {
     const n = p.count;
     const radius = 0.42;
     const diameter = radius * 2;
+    // Displacement budget, reset each tick. See `MAX_SEPARATION_STEP`.
+    const used = this.sepUsed;
+    used.fill(0, 0, n);
 
     for (let i = 0; i < n; i++) {
       if (!p.aliveAt(i)) continue;
@@ -990,12 +1009,43 @@ export class BattleSystem implements Subsystem {
         const sj = (overlap * (mi / total)) * 0.5;
         pushX -= nx * si;
         pushZ -= nz * si;
-        p.x[j] += nx * sj;
-        p.z[j] += nz * sj;
+        // The neighbour is displaced immediately so later pairs see him where he now is —
+        // Gauss-Seidel, which is what makes this converge in one pass. But it means a man
+        // in a dense stack is written once per neighbour, and *that* side of the correction
+        // had no bound at all: only the accumulator for `i` was clamped, so a man being
+        // shoved by twenty others still moved 58 cm in a tick. Spending from a per-man
+        // budget bounds both sides without changing the iteration order, so the result stays
+        // deterministic and is identical whenever nothing is stacked hard enough to matter.
+        // `sj` is a magnitude, never negative: `overlap` is positive by the test above and
+        // both masses are positive. So no `Math.abs`, and the divide only happens on the
+        // rare pair that actually exhausts the budget — this is the innermost line of the
+        // whole tick and it runs a few hundred thousand times a second.
+        const uj = used[j];
+        if (uj < MAX_SEPARATION_STEP) {
+          const room = MAX_SEPARATION_STEP - uj;
+          if (sj <= room) {
+            p.x[j] += nx * sj;
+            p.z[j] += nz * sj;
+            used[j] = uj + sj;
+          } else {
+            const k = room / sj;
+            p.x[j] += nx * sj * k;
+            p.z[j] += nz * sj * k;
+            used[j] = MAX_SEPARATION_STEP;
+          }
+        }
       });
 
-      p.x[i] += pushX;
-      p.z[i] += pushZ;
+      // And bound this man's own accumulated correction against the same budget.
+      const push2 = pushX * pushX + pushZ * pushZ;
+      if (push2 > 1e-12) {
+        const mag = Math.sqrt(push2);
+        const room = Math.max(0, MAX_SEPARATION_STEP - used[i]);
+        const k = mag > room ? room / mag : 1;
+        p.x[i] += pushX * k;
+        p.z[i] += pushZ * k;
+        used[i] += mag * k;
+      }
     }
     void dt;
   }
@@ -1022,6 +1072,8 @@ export class BattleSystem implements Subsystem {
   private mounted!: Uint8Array;
   /** Metres this man has closed up into the press, forward of his formation slot. */
   private press!: Float32Array;
+  /** Metres of crowd separation already spent on each man this tick. */
+  private sepUsed!: Float32Array;
 
   /** Cache of soldier index -> unit, rebuilt lazily. */
   private soldierUnitCache: (UnitGroupState | undefined)[] = [];

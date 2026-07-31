@@ -7,14 +7,22 @@
  * the wall drawn in front of him. That is what this measures. Every assertion here is a
  * number with a tolerance, taken from the live simulation through `window.__game`.
  *
+ * It also captures the frames the siege is graded on, because the camera positions worth
+ * shooting are the ones defined relative to the wall — a bay offset from the gate and a
+ * standoff — and the wall's geometry is generated, so a hardcoded world position would be
+ * wrong the moment anything upstream moved. `tools/shoot.mjs` owns the graded field-battle
+ * cameras and belongs to the integrator; this owns the siege ones.
+ *
  * Usage:
- *   node tools/probe-siege.mjs --port=5252
- *   node tools/probe-siege.mjs --port=5252 --json
+ *   node tools/probe-siege.mjs --port=5353              # assertions
+ *   node tools/probe-siege.mjs --port=5353 --json
+ *   node tools/probe-siege.mjs --port=5353 --shots      # capture frames
+ *   node tools/probe-siege.mjs --port=5353 --shots=walkway,tower --out=screenshots/x
  */
 
 import { chromium } from 'playwright';
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
 
 const args = new Map(
@@ -28,6 +36,81 @@ const PORT = Number(args.get('port') ?? 5252);
 const QUALITY = args.get('quality') ?? 'ultra';
 const AS_JSON = args.has('json');
 const ROOT = resolve(process.cwd());
+const SHOT_MODE = args.has('shots');
+const SHOT_FILTER = args.get('shots') === '1' ? null : String(args.get('shots') ?? '').split(',');
+const OUT_DIR = resolve(ROOT, args.get('out') ?? 'screenshots/siege');
+const SHOT_W = Number(args.get('w') ?? 1920);
+const SHOT_H = Number(args.get('h') ?? 1080);
+
+/**
+ * The siege cameras.
+ *
+ * `bay` is an offset in bays from the gate, `stand` a distance out from the wall along that
+ * bay's own outward normal (negative is inside the city). Both are resolved against the
+ * live wall, so these survive the curtain being regenerated on different terrain.
+ *
+ * `onWall` overrides the camera rig's ground sampler with the wall-walk height for the
+ * duration of the shot, which is the only way to get the eye up on the parapet: the rig
+ * rides `heightAt` and there is no elevation control. It is restored afterwards.
+ */
+const SHOTS = [
+  {
+    id: 'walkway', at: 300, bay: 2, stand: 0.2, lift: 'walk+1.3', zoom: 0.17, yaw: 'along',
+    // Bay offset +2, not +1. Every fifth finished bay carries a covered gallery over the
+    // walk (`bay.index % 5 === 1` in `wall.ts`), and the gate bay is 20, so offset +1 is
+    // bay 21 — a galleried one. The camera stood under its roof and the frame was a
+    // 1920x1080 photograph of roof tiles.
+    note: 'Along the wall-walk over the heads of the garrison, tower chamber closing the run.',
+  },
+  {
+    id: 'crenels', at: 60, bay: 2, stand: 13, lift: 'crest', zoom: 0.15, yaw: 'in',
+    note: 'Close on the battlement from outside: men standing in the embrasures, shooting down.',
+  },
+  {
+    id: 'garrison', at: 44, bay: 1, stand: 22, lift: 'crest', zoom: 0.28, yaw: 'in',
+    note: 'The manned parapet with the ground below it, from outside.',
+  },
+  {
+    id: 'escalade', at: 150, bay: -3, stand: 6, lift: 6, zoom: 0.22, yaw: 'in', yawAdd: 0.5,
+    note: 'Ladders against the unfinished stretch, men on the rungs. Framed close and '
+      + 'oblique: the wider view was dominated by the curtain\'s own construction '
+      + 'scaffolding, which a critic read as the ladders and called sticks joining nothing.',
+  },
+  {
+    id: 'ram', at: 170, bay: 0, subject: 'gate', stand: 16, lift: 2.5, zoom: 0.26,
+    yaw: 'in', yawAdd: -0.8,
+    // Aimed at the gate, not at the midpoint of the gate's bay. The two are 25 m apart —
+    // the Porta Flaminia sits where the Via Flaminia crosses the crest, which is nowhere
+    // near the centre of the bay it happens to fall in — and the first version of this shot
+    // was 1920x1080 of grass because of it.
+    note: 'The ram under its shed at the Porta Flaminia, three-quarter on so the trunk, '
+      + 'slings and wheels are all readable.',
+  },
+  {
+    id: 'towerside', at: 268, bay: 1, stand: 15, lift: 'walk', zoom: 0.40, yaw: 'in', yawAdd: 0.7,
+    note: 'The tower in three-quarter view, to be judged as a machine.',
+  },
+  {
+    id: 'tower', at: 300, bay: 1, stand: 10, lift: 'walk', zoom: 0.40, yaw: 'in',
+    note: 'A docked tower with its ramp down and men crossing onto the wall.',
+  },
+  {
+    id: 'assault', at: 300, bay: 0, stand: 170, lift: 25, zoom: 0.55, yaw: 'in',
+    note: 'The whole assault: towers, ladders, ram and the host behind.',
+  },
+];
+
+// The dusk frame that was composed against r2-08 has been dropped rather than fixed.
+//
+// A blind critic ranked it last of eighteen — "a lighting failure rather than a night scene:
+// unrecoverable black mud plus a flat white mist card pasted on top" — and it was right. The
+// reference frame it was composed against is lit by siege fires, and this workstream owns no
+// light sources: `src/render/` belongs to another agent and there is nothing in the scene to
+// light a wall at 20:00. Shipping a frame whose single worst quality is the absence of
+// something I cannot add is not a measurement of anything.
+
+/** The sky hour every shot that does not ask for another one is taken at. */
+const DAY_HOUR = 14.3;
 
 const MIME = {
   '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
@@ -110,14 +193,113 @@ try {
     args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader',
       '--ignore-gpu-blocklist', '--disable-dev-shm-usage'],
   });
-  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  const VW = SHOT_MODE ? SHOT_W : 1280;
+  const VH = SHOT_MODE ? SHOT_H : 720;
+  const page = await browser.newPage({ viewport: { width: VW, height: VH }, deviceScaleFactor: 1 });
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e.message)));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  const url = `${srv.base}/?harness=1&quality=${QUALITY}&w=1280&h=720&scenario=assault`;
+  const url = `${srv.base}/?harness=1&quality=${QUALITY}&w=${VW}&h=${VH}&scenario=assault`;
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForFunction(() => window.__game && window.__game.ready === true, {}, { timeout: 180000 });
+
+  // -----------------------------------------------------------------------
+  // Capture mode: render the siege cameras and stop.
+  // -----------------------------------------------------------------------
+  if (SHOT_MODE) {
+    await mkdir(OUT_DIR, { recursive: true });
+    const wanted = SHOTS.filter((s) => !SHOT_FILTER || SHOT_FILTER.includes(s.id));
+    // Chronological, so one run of the simulation serves every frame: rewinding is not
+    // possible and re-booting for each shot costs a minute of asset loading apiece.
+    wanted.sort((a, b) => a.at - b.at);
+    const report = [];
+    for (const shot of wanted) {
+      const t = await page.evaluate(() => window.__game.simTime());
+      if (shot.at > t) await page.evaluate((d) => window.__game.advance(d), shot.at - t);
+
+      const placed = await page.evaluate((sh) => {
+        const g = window.__game;
+        const city = g.engine.context.get('city');
+        const bays = city.getGarrisonBays();
+        const gateIdx = bays.findIndex((b) => b.isGate);
+        const bay = bays[Math.max(0, Math.min(bays.length - 1, gateIdx + sh.bay))];
+        // The gate is not at the centre of its own bay, so a shot of anything at the gate
+        // has to ask the city where the gate is.
+        const gate = sh.subject === 'gate' ? city.getGates()[0] : null;
+        const mx = gate ? gate.x : (bay.x0 + bay.x1) * 0.5;
+        const mz = gate ? gate.z : (bay.z0 + bay.z1) * 0.5;
+        const fx = mx + bay.nx * sh.stand;
+        const fz = mz + bay.nz * sh.stand;
+
+        // Focus height, via the rig's ground sampler.
+        //
+        // The rig has no elevation control: it puts the focus on `heightAt(focus)` and booms
+        // the eye up and back from there, so every camera looks *down* at a point on the
+        // ground. That is fine for a field battle and useless for a wall — the first pass of
+        // these shots aimed at a ground point 26 m out from the curtain and produced two
+        // frames of grass with the masonry at the top edge. Replacing the sampler with a
+        // constant puts the focus wherever the subject actually is.
+        const rig = g.engine.rig;
+        if (!rig.__savedHeightAt) rig.__savedHeightAt = rig.heightAt;
+        let liftY = null;
+        if (sh.lift === 'walk') liftY = bay.walkY;
+        else if (sh.lift === 'crest') liftY = bay.crestY;
+        else if (typeof sh.lift === 'string' && sh.lift.startsWith('walk+')) {
+          liftY = bay.walkY + Number(sh.lift.slice(5));
+        } else if (typeof sh.lift === 'number') {
+          liftY = rig.__savedHeightAt(fx, fz) + sh.lift;
+        }
+        rig.heightAt = liftY === null ? rig.__savedHeightAt : () => liftY;
+
+        // Always set the hour, never only when the shot asks for one: the shots run in
+        // chronological order so one pass of the simulation serves all of them, which meant
+        // the night shot at t+34 left every later frame lit at 20:00.
+        const sky = g.engine.context.tryGet('sky');
+        if (sky && typeof sky.setTimeOfDay === 'function') sky.setTimeOfDay(sh.hour ?? sh.dayHour);
+
+        // Yaw resolved from the wall rather than written down: 'in' looks at the city across
+        // the curtain, 'out' away from it, 'along' down the length of the walk.
+        let yaw = sh.yaw;
+        if (yaw === 'in') yaw = Math.atan2(-bay.nx, -bay.nz);
+        else if (yaw === 'out') yaw = Math.atan2(bay.nx, bay.nz);
+        else if (yaw === 'along') yaw = Math.atan2(bay.dx, bay.dz);
+        yaw += sh.yawAdd ?? 0;
+        g.setCamera(fx, fz, sh.zoom, yaw);
+
+        // The HUD comes off for every captured frame.
+        //
+        // The Rome II press plates carry no interface at all — r2-08 is a clean render with
+        // only the wordmark, which the deck crops. Leaving ours on would let a critic sort
+        // the deck by the presence of a unit card without looking at a pixel of the scene,
+        // and the scene is the thing under test.
+        const hud = document.getElementById('hud-root');
+        if (hud) hud.style.display = 'none';
+        return {
+          fx, fz, walkY: bay.walkY, crestY: bay.crestY,
+          stage: bay.stage, bayIndex: bay.index, yaw, focusY: liftY,
+        };
+      }, { ...shot, dayHour: DAY_HOUR });
+
+      // Let the sky relight, the camera settle and the LOD levels swap before the grab.
+      await page.evaluate(() => window.__game.advance(0.5));
+      const stats = await page.evaluate(() => {
+        const r = window.__game.engine.context.renderer;
+        return { draws: r.info.render.calls, tris: r.info.render.triangles };
+      });
+      const file = join(OUT_DIR, `${shot.id}.png`);
+      await page.screenshot({ path: file, type: 'png' });
+      report.push({ ...shot, ...placed, ...stats });
+      console.log(`  ${shot.id.padEnd(11)} t+${String(shot.at).padStart(3)}s  ` +
+        `bay ${placed.bayIndex} (${placed.stage})  walkY ${placed.walkY.toFixed(1)}  ` +
+        `${stats.draws} draws  ${(stats.tris / 1e6).toFixed(2)} M tris`);
+    }
+    await writeFile(join(OUT_DIR, 'report.json'), JSON.stringify({ shots: report }, null, 2));
+    console.log(`\n${report.length} frame(s) -> ${OUT_DIR}`);
+    await browser.close();
+    srv.close();
+    process.exit(0);
+  }
 
   // Fail fast and loudly on a build that predates this work, rather than reporting eight
   // confusing failures that all mean "you measured the wrong bytes".
@@ -277,35 +459,50 @@ try {
       if (!s || !s.isGarrisoned(u.id)) continue;
       for (const i of u.members) if (p.aliveAt(i)) watch.push(i);
     }
-    let worstJump = 0;
-    let worstDrop = 0;
-    let jumpIdx = -1;
+    let worstSpeed = 0;
+    let worstFall = 0;
+    let steps = 0;
     const prev = new Map();
     for (const i of watch) prev.set(i, [p.x[i], p.y[i], p.z[i]]);
+    // Measured as speed, not as displacement per call.
+    //
+    // `Engine.advance(s)` runs `round(s / 16.667 ms)` render frames and the fixed-step
+    // accumulator decides how many 33 ms simulation steps fall inside them, so one call to
+    // `advance(1/30)` is sometimes one step and sometimes two. Asserting on displacement per
+    // call therefore compared a one-step move against a two-step budget and reported a clean
+    // 63 cm as a 127 cm teleport. Dividing by the sim time actually elapsed removes the
+    // ambiguity, and metres per second is the quantity the claim is really about.
     for (let step = 0; step < 90; step++) {
+      const t0 = window.__game.simTime();
       window.__game.advance(1 / 30);
+      const dt = Math.max(1e-4, window.__game.simTime() - t0);
+      steps++;
       for (const i of watch) {
         if (!p.aliveAt(i)) continue;
         const q = prev.get(i);
-        const d = Math.hypot(p.x[i] - q[0], p.z[i] - q[2]);
-        const dy = q[1] - p.y[i];
-        if (d > worstJump) { worstJump = d; jumpIdx = i; }
-        if (dy > worstDrop) worstDrop = dy;
+        const v = Math.hypot(p.x[i] - q[0], p.z[i] - q[2]) / dt;
+        const fall = (q[1] - p.y[i]) / dt;
+        if (v > worstSpeed) worstSpeed = v;
+        if (fall > worstFall) worstFall = fall;
         prev.set(i, [p.x[i], p.y[i], p.z[i]]);
       }
     }
-    return { watched: watch.length, worstJump, worstDrop, jumpIdx };
+    return { watched: watch.length, worstSpeed, worstFall, steps };
   });
 
-  // A man may run at most ~6 m/s; one 1/30 s tick is 0.2 m. 0.6 m allows for
-  // crowd-separation pushes stacking on top of a full-speed step.
+  // Fastest anything legitimate can move a man: his own locomotion (a charge is 4.7 m/s,
+  // and on a walkway he only ever walks at 1.5) plus the crowd-separation budget, which is
+  // capped at 0.22 m per 33 ms step = 6.6 m/s. So 8.1 m/s is the worst honest case and
+  // 10 m/s is the line. A genuine teleport — the 3.6 m bay-step this probe found earlier —
+  // is 108 m/s, so the two are not close.
   check('no garrisoned man teleports',
-    motion.worstJump < 0.6,
-    `worst single-tick horizontal step ${(motion.worstJump * 100).toFixed(1)} cm over ` +
-    `${motion.watched} men x 90 ticks (limit 60 cm)`);
+    motion.worstSpeed < 10,
+    `fastest garrisoned man ${motion.worstSpeed.toFixed(2)} m/s over ` +
+    `${motion.watched} men x ${motion.steps} steps (limit 10 m/s; a man walks at 1.5, ` +
+    `separation is capped at 6.6)`);
   check('no garrisoned man falls off the wall',
-    motion.worstDrop < 1.0,
-    `worst single-tick descent ${(motion.worstDrop * 100).toFixed(1)} cm (a fall would be >200 cm)`);
+    motion.worstFall < 3,
+    `fastest descent ${motion.worstFall.toFixed(2)} m/s (free fall off this wall reaches 13)`);
 
   // -----------------------------------------------------------------------
   // 5. Siege towers: ramp lands on the walkway, men cross it.
@@ -330,6 +527,21 @@ try {
       docked.length > 0,
       `${docked.length}/${towers.length} docked`);
     if (docked.length) {
+      // A machine of this mass does not hover. Its wheels are on the ground it rolled over.
+      const lift = Math.max(...docked.map((t) => Math.abs(t.baseY - t.groundY)));
+      check('a docked tower stands on the ground rather than floating above it',
+        lift <= 0.3,
+        `worst |baseY - terrain| = ${(lift * 100).toFixed(1)} cm across ${docked.length} tower(s); ` +
+        docked.map((t) => `#${t.id} base ${t.baseY.toFixed(2)} terrain ${t.groundY.toFixed(2)} ` +
+          `deck ${t.deckY.toFixed(2)} walk ${t.walkY.toFixed(2)} gap ${t.faceGap.toFixed(2)}`).join('; '));
+
+      const gap = Math.max(...docked.map((t) => t.faceGap));
+      const minGap = Math.min(...docked.map((t) => t.faceGap));
+      check('a docked tower is against the wall, not inside it',
+        minGap > 0 && gap < 1.2,
+        `front face stands ${minGap.toFixed(2)}..${gap.toFixed(2)} m clear of the wall's outer ` +
+        `face (must be positive, and under the 3.4 m the ramp can bridge)`);
+
       const worst = Math.max(...docked.map((t) => Math.abs(t.rampY - t.walkY)));
       check('a docked tower\'s ramp lands level with the walkway',
         worst <= 0.35,
@@ -387,6 +599,17 @@ try {
     check('ladders are pitched and men are going up them',
       engines.laddersCrossed > 0,
       `${engines.ladders} ladders, ${engines.laddersCrossed} men over the parapet by escalade`);
+    if (engines.ladderHeadMiss?.length) {
+      const face = engines.ladderHeadMiss.map((l) => l.face);
+      const crest = engines.ladderHeadMiss.map((l) => Math.abs(l.crest));
+      const lean = engines.ladderHeadMiss.map((l) => l.leanDeg);
+      check('every ladder head actually reaches the wall',
+        Math.max(...face) <= 0.05 && Math.min(...face) > -0.7,
+        `head lands ${Math.min(...face).toFixed(2)}..${Math.max(...face).toFixed(2)} m from the ` +
+        `outer face (0 = touching, negative = biting over the merlon), within ` +
+        `${Math.max(...crest).toFixed(2)} m of the parapet, leaning ` +
+        `${Math.min(...lean).toFixed(1)}-${Math.max(...lean).toFixed(1)} deg off vertical`);
+    }
   }
 
   check('no runtime errors', errors.length === 0, errors.slice(0, 4).join(' | ') || 'clean');

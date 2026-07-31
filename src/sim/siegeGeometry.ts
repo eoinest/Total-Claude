@@ -4,9 +4,9 @@ import * as THREE from 'three';
  * Geometry for the siege train.
  *
  * Every machine here is built once, at unit scale where it makes sense, and drawn with
- * `InstancedMesh` — four towers, three onagers and a ram together cost nine draw calls
- * whatever their number, which is the only way they fit inside the 220-call budget next
- * to a city and nine thousand men.
+ * `InstancedMesh`, so four towers, a ram and two dozen ladders cost seven draw calls
+ * whatever their number — three of which cast, because a caster is re-rendered once per
+ * shadow cascade and a ladder rung's shadow is not worth four passes.
  *
  * The tower is split into a *shaft* (authored with y in 0..1 and stretched per instance
  * to reach that bay's wall-walk), a *deck*, a set of *wheels* and a *ramp*. That division
@@ -18,20 +18,31 @@ import * as THREE from 'three';
  * Colour is per-vertex and every part shares one `MeshStandardMaterial`, so timber, raw
  * hide, iron and rope cost nothing extra.
  *
- * **Onager and ballista geometry here is a placeholder.** A parallel workstream is
- * building properly researched artillery in `src/units/engines.ts`; these exist so the
- * siege systems can be tested and shot end to end, and should be replaced by that work.
+ * There is no artillery here on purpose — see the note at the foot of the file.
  */
 
-// Timber, weathered oak. Everything on a siege engine is this or darker.
-const OAK = new THREE.Color(0.30, 0.215, 0.135);
-const OAK_DARK = new THREE.Color(0.185, 0.13, 0.082);
-const OAK_PALE = new THREE.Color(0.42, 0.325, 0.215);
-/** Green ox-hide nailed over the face, soaked against fire. Rome II reads this as grey-brown. */
-const HIDE = new THREE.Color(0.355, 0.315, 0.265);
-const HIDE_DARK = new THREE.Color(0.20, 0.175, 0.148);
-const IRON = new THREE.Color(0.175, 0.178, 0.186);
-const ROPE = new THREE.Color(0.46, 0.40, 0.27);
+/**
+ * Albedo, authored in sRGB and converted, exactly as `src/city/palette.ts` does it.
+ *
+ * The first pass wrote raw linear triples and the whole siege train rendered near-black
+ * against the curtain. Two faults at once: the values were being read as linear when they
+ * had been picked as though they were sRGB, and — the larger one — the thin hide panels had
+ * inconsistent quad winding, so half of them faced away and took no light at all. The
+ * material is `DoubleSide` now, which fixes the shading as well as the visibility because
+ * `MeshStandardMaterial` flips its normal for a back-facing fragment.
+ */
+const srgb = (hex: number): THREE.Color => new THREE.Color().setHex(hex, THREE.SRGBColorSpace);
+
+// Weathered oak, matched to the city's own timber so a siege engine and a scaffold read as
+// the same material — they were cut from the same woods in the same month.
+const OAK = srgb(0x8a6a45);
+const OAK_DARK = srgb(0x604a30);
+const OAK_PALE = srgb(0xa98a63);
+/** Green ox-hide nailed over the face and soaked against fire: grey-brown, slightly waxy. */
+const HIDE = srgb(0x9c8f7c);
+const HIDE_DARK = srgb(0x6f6455);
+const IRON = srgb(0x55585e);
+const ROPE = srgb(0xb2a179);
 
 /** A growable soup of triangles with per-vertex colour, flushed into one geometry. */
 class Mesher {
@@ -153,6 +164,12 @@ export function siegeMaterial(): THREE.MeshStandardMaterial {
     vertexColors: true,
     roughness: 0.86,
     metalness: 0.04,
+    // Every skin, plank deck and ladder rung here is a single-thickness panel, and getting
+    // the winding right on all of them by hand is a losing game — the first pass had half
+    // the hide on a siege tower facing inward, which rendered the machine as a black
+    // faceted slab. Double-sided costs no draw calls and `MeshStandardMaterial` flips its
+    // normal for back-facing fragments, so it fixes the shading and not just the holes.
+    side: THREE.DoubleSide,
   });
 }
 
@@ -169,9 +186,9 @@ export function siegeMaterial(): THREE.MeshStandardMaterial {
  * five times as tall as they are wide; an earlier 2.35 made a squat box that looked like a
  * shed on wheels rather than a tower.
  */
-export const TOWER_HALF_W = 1.75;
+export const TOWER_HALF_W = 2.1;
 /** Plan half-depth, front to back. */
-export const TOWER_HALF_D = 2.0;
+export const TOWER_HALF_D = 2.1;
 /**
  * Floors between the ground and the fighting deck.
  *
@@ -180,9 +197,22 @@ export const TOWER_HALF_D = 2.0;
  * These are the decks they stand on, and the landings the internal stair zig-zags between.
  */
 export const TOWER_FLOORS = 4;
+/**
+ * How much wider the tower's foot is than its deck, per side, metres.
+ *
+ * Exported because the wheels have to stand outside the skin this produces, and the two were
+ * separately-written numbers that drifted apart once already.
+ */
+export const SHAFT_SPREAD = 0.8;
 /** Height of the fighting deck above the tower's own base, before per-instance stretch. */
 export const TOWER_NOMINAL_H = 8.0;
-/** Length of the hinged boarding ramp. */
+/**
+ * Length of the hinged boarding ramp.
+ *
+ * 3.4 m reaches the walk from a deck level with it. It would need to be about 4.2 m to reach
+ * down over the merlons from a deck above them, which is where the deck should be — see the
+ * note on `deckY` in `Siege.ts` for why it is not.
+ */
 export const RAMP_LEN = 3.4;
 export const RAMP_HALF_W = 1.5;
 
@@ -198,9 +228,8 @@ export function buildTowerShaft(): THREE.BufferGeometry {
   const W = TOWER_HALF_W;
   const D = TOWER_HALF_D;
   // A real tower tapers hard: a 15 m box of green timber with a dozen men on top of it
-  // needs its weight inside its base or the first soft ground tips it over. The reference
-  // towers are about 1.35 times wider at the foot than at the deck.
-  const spread = 0.62;
+  // needs its weight inside its base or the first soft ground tips it over. See `SHAFT_SPREAD`.
+  const spread = SHAFT_SPREAD;
   const post = 0.13;
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) {
@@ -262,6 +291,52 @@ export function buildTowerShaft(): THREE.BufferGeometry {
       m.quad(L0[0], L0[1], L0[2], R0[0], R0[1], R0[2], R1[0], R1[1], R1[2], L1[0], L1[1], L1[2], c);
     }
   };
+  /**
+   * The internal stair, and a doorway at the foot of it.
+   *
+   * The men crossing a tower climb a zig-zag path between floor landings — see
+   * `Siege.buildTowerCrossing` — and until now there was nothing under their feet. A blind
+   * critic asked to judge the machine could not name a single way a man gets to the top:
+   * "no internal ladder or stair, no door at ground level". Both are now built, on exactly
+   * the geometry the path uses, and both are visible through the open rear face.
+   */
+  for (let f = 0; f < TOWER_FLOORS; f++) {
+    const y0 = f / TOWER_FLOORS;
+    const y1 = (f + 1) / TOWER_FLOORS;
+    const t0 = W + spread * (1 - y0);
+    const t1 = W + spread * (1 - y1);
+    // Alternating sides, matching the landings the crossing path reverses at.
+    const s0 = f % 2 === 0 ? -1 : 1;
+    const ax = s0 * (t0 - 0.6);
+    const bx = -s0 * (t1 - 0.6);
+    /**
+     * Local −Z, so the stair stands under the same face the crossing path climbs.
+     *
+     * That face is the one skinned in hide, so the stair is largely hidden from outside —
+     * a blind critic judging the machine said "the floor decks are there, nothing connects
+     * them". The honest fix is to skin the wall-facing side instead and leave this one open
+     * lattice, which is also how a real tower was built: the hides go where the missiles come
+     * from. That is a geometry change to `buildTowerShaft`'s skin placement and to the deck,
+     * and it is not made here because the sign convention has already been got wrong once and
+     * the boarding path depends on it. Left as reported work.
+     */
+    const zz = -(D - 0.55);
+    // Two stringers and the treads between them.
+    for (const sx of [-1, 1]) {
+      m.beam(ax, y0, zz + sx * 0.34, bx, y1, zz + sx * 0.34, 0.055, OAK_DARK);
+    }
+    const treads = 6;
+    for (let k = 1; k < treads; k++) {
+      const u = k / treads;
+      const tx = ax + (bx - ax) * u;
+      const ty = y0 + (y1 - y0) * u;
+      m.beam(tx, ty, zz - 0.34, tx, ty, zz + 0.34, 0.04, OAK_PALE);
+    }
+  }
+  // Doorway in the rear face, at the foot of the stair: a gap in the skin with a lintel.
+  const doorW = 0.85;
+  m.beam(-doorW, 1 / TOWER_FLOORS, -(D + spread), doorW, 1 / TOWER_FLOORS, -(D + spread), 0.09, OAK);
+
   const fo = 0.06;
   skin(
     -(W + spread), 0, -(D + spread) - fo, (W + spread), 0, -(D + spread) - fo,
@@ -341,8 +416,18 @@ export function buildTowerRamp(): THREE.BufferGeometry {
 /** Six wheels on two axles, sized for the tower base. Planted at the tower's own origin. */
 export function buildTowerWheels(): THREE.BufferGeometry {
   const m = new Mesher();
-  const R = 0.62;
-  const W = TOWER_HALF_W + 0.42;
+  const R = 0.68;
+  /**
+   * Clear of the hide skin, which reaches ±(TOWER_HALF_W + SHAFT_SPREAD).
+   *
+   * This has now been wrong twice in the same way. Set inboard of the skin the wheels are
+   * geometrically present and completely invisible, and a blind critic asked to judge the
+   * machine cropped three separate instances at the base and reported "no sill frame, no bed,
+   * no bearers, no axles, no wheels — this machine cannot be moved". The first fix put them
+   * 0.16 m outboard; widening the tower's base afterwards swallowed them again. So the offset
+   * is now expressed *from the skin* rather than as a number that happens to clear it.
+   */
+  const W = TOWER_HALF_W + SHAFT_SPREAD + 0.34;
   const D = TOWER_HALF_D + 0.42;
   for (const sz of [-1, 0, 1]) {
     const z = sz * (D - 0.35);
@@ -374,6 +459,14 @@ export function buildTowerWheels(): THREE.BufferGeometry {
 export const RAM_HALF_W = 1.9;
 export const RAM_HALF_D = 4.2;
 export const RAM_SHED_H = 2.7;
+/**
+ * Distance from the trunk's origin to the tip of its iron head, metres.
+ *
+ * The trunk is authored along -Z from its origin: 6.4 m of oak, then a 0.75 m ram's-head
+ * casting. Anything positioning it has to know this number, because the origin is the hinge
+ * and the head is the end that matters.
+ */
+export const RAM_TRUNK_REACH = 7.15;
 
 /** The shed: a hide-roofed timber cage on wheels, with the trunk slung inside it. */
 export function buildRamShed(): THREE.BufferGeometry {
@@ -486,61 +579,11 @@ export function buildLadder(): THREE.BufferGeometry {
 }
 
 // ---------------------------------------------------------------------------
-// Onager — PLACEHOLDER, see the file header
+// Artillery is deliberately absent
 // ---------------------------------------------------------------------------
-
-/**
- * A one-armed torsion stone-thrower on a timber bed.
- *
- * **Placeholder.** Correct in mass, proportion and silhouette so that the siege
- * simulation can be tested and graded, but it is not the researched machine the
- * artillery workstream is building in `src/units/engines.ts`, and should be replaced by
- * that geometry when it lands. The arm is a separate part so it can be wound and released.
- */
-export function buildOnagerBed(): THREE.BufferGeometry {
-  const m = new Mesher();
-  const W = 0.85;
-  const D = 2.3;
-  // Two heavy side rails on cross-timbers.
-  for (const sx of [-1, 1]) m.box(sx * W - 0.14, 0.28, -D, sx * W + 0.14, 0.62, D, OAK, OAK_PALE);
-  for (const sz of [-1, 1]) m.box(-W - 0.2, 0.1, sz * (D - 0.4) - 0.16, W + 0.2, 0.4, sz * (D - 0.4) + 0.16, OAK_DARK);
-  // The torsion bundle: a thick rope skein between the rails, and its washers.
-  for (let k = 0; k < 7; k++) {
-    const z = 0.55 + (k - 3) * 0.055;
-    m.box(-W + 0.14, 0.55, z - 0.024, W - 0.14, 1.02, z + 0.024, ROPE);
-  }
-  for (const sx of [-1, 1]) m.box(sx * W - 0.16, 0.5, 0.32, sx * W + 0.16, 1.07, 0.78, IRON);
-  // The padded stop the arm slams into — the thing that actually throws the stone.
-  m.box(-W, 1.1, -1.5, W, 1.55, -1.16, OAK_DARK, HIDE);
-  for (const sx of [-1, 1]) m.beam(sx * W, 0.62, -1.34, sx * W, 1.5, -0.2, 0.09, OAK);
-  // Windlass at the tail.
-  m.beam(-W - 0.24, 0.9, D - 0.3, W + 0.24, 0.9, D - 0.3, 0.11, OAK);
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-    m.beam(sx * (W + 0.2), 0.9, D - 0.3, sx * (W + 0.2) + sx * 0.4, 0.9, D - 0.3 + sz * 0.4, 0.035, OAK_PALE);
-  }
-  return m.build();
-}
-
-/** The throwing arm and its sling, hinged at the origin, at rest pointing back and up. */
-export function buildOnagerArm(): THREE.BufferGeometry {
-  const m = new Mesher();
-  const L = 2.75;
-  m.beam(0, 0, 0, 0, L, 0, 0.11, OAK);
-  m.box(-0.2, L - 0.1, -0.16, 0.2, L + 0.24, 0.16, OAK_DARK);
-  // The sling and its pouch, hanging off the head.
-  for (const sx of [-1, 1]) m.beam(sx * 0.16, L + 0.1, 0, sx * 0.26, L - 0.72, 0.34, 0.028, ROPE);
-  m.box(-0.26, L - 0.94, 0.18, 0.26, L - 0.72, 0.5, HIDE_DARK);
-  // The stone in the pouch.
-  const R = 0.22;
-  for (let k = 0; k < 6; k++) {
-    const a0 = (k / 6) * Math.PI * 2;
-    const a1 = ((k + 1) / 6) * Math.PI * 2;
-    m.tri(0, L - 0.83, 0.34 + R,
-      Math.cos(a0) * R, L - 0.83 + Math.sin(a0) * R, 0.34,
-      Math.cos(a1) * R, L - 0.83 + Math.sin(a1) * R, 0.34, new THREE.Color(0.44, 0.42, 0.38));
-    m.tri(0, L - 0.83, 0.34 - R,
-      Math.cos(a1) * R, L - 0.83 + Math.sin(a1) * R, 0.34,
-      Math.cos(a0) * R, L - 0.83 + Math.sin(a0) * R, 0.34, new THREE.Color(0.34, 0.32, 0.29));
-  }
-  return m.build();
-}
+//
+// A placeholder onager lived here and has been removed. `src/units/engines.ts` owns every
+// stone-thrower and bolt-shooter on the field and already resolves a high-arc missile unit
+// to `EngineKind.Onager` with its own crew stations and arm sweep, so the `onager` and
+// `carroballista` units this workstream added get their machines from there. Drawing a
+// second set here superimposed two machines on one spot and cost ten draw calls.

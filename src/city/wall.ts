@@ -590,7 +590,16 @@ function buildCurtainBay(
       // Brick came from many kilns and stretches were patched: vary each panel by a
       // low-frequency hash so the face is blotchy at the metre scale, not just the
       // millimetre scale the texture handles.
-      const patch = hash2(Math.floor(s / 3), Math.floor(k / 2) + bay.index * 5, 811);
+      // Halved from 0.2.
+      //
+      // A blind critic separated our frames from Rome II's on exactly this surface, and the
+      // strongest thing it named was "a flat diffuse brick tile with visible horizontal UV
+      // seams". The missing normal map is in `city/materials.ts` and not this workstream's to
+      // add, but the *seams* it read are partly authored here: a per-panel tone drawn from a
+      // hash on `floor(s / 3)` steps in value every third sub-bay, which at 16 sub-bays to a
+      // 35.5 m run puts a visible vertical join every 6.7 m along the wall and makes adjacent
+      // panels look offset. The blotchiness is worth having; this much of it is not.
+      const patch = hash2(Math.floor(s / 3), Math.floor(k / 2) + bay.index * 5, 811) * 0.5;
       // Weathering, top to bottom: sun-bleached at the parapet, rain-washed through the
       // middle, and a metre of splash-back dirt at the footing. This is the *only*
       // vertical gradient the face should carry, and it runs over the whole 6.5 m.
@@ -598,7 +607,7 @@ function buildCurtainBay(
       const fHi = (by1 - y0) / Math.max(1, topY - y0);
       const weather = (f: number): number =>
         0.72 + 0.30 * Math.min(1, f * 3.4) + 0.12 * f;
-      const tone = clamp(0.86 + hash2(s, k * 13 + bay.index, 3) * 0.08 + patch * 0.2, 0.74, 1.16);
+      const tone = clamp(0.90 + hash2(s, k * 13 + bay.index, 3) * 0.05 + patch * 0.2, 0.82, 1.10);
       // Per-lift shading is now *slight*. At 1.1 m per lift a strong low-to-high ramp
       // stacks into six pale-and-dark stripes up the wall, and that banding, not the
       // brickwork, becomes what the eye reads — the single worst thing about the first
