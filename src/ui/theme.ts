@@ -81,6 +81,20 @@ export const PLAYER_FACTION = Faction.Rome;
 export const HARNESS =
   typeof location !== 'undefined' && new URLSearchParams(location.search).get('harness') === '1';
 
+/**
+ * Default HUD scale, and the single source of truth for it.
+ *
+ * 1.35 is the top of the `SettingsPanel` slider range, i.e. the largest size the HUD is
+ * designed to reach — every dimension in `hud.css` is written in `em` against
+ * `font-size: calc(10px * var(--ui-scale))`, so this genuinely scales the whole HUD rather
+ * than only its text. `hud.css` still declares `--ui-scale: 1` as a stylesheet fallback;
+ * `HudSystem` overrides it from this constant when it builds the root, so the value lives
+ * in one place and the slider, its percentage label and the applied scale cannot drift
+ * apart. Raising the slider's `max` above this requires re-checking the card bar's second-row
+ * wrap and the banner hit boxes, neither of which is exercised past 1.35.
+ */
+export const DEFAULT_UI_SCALE = 1.35;
+
 // ---------------------------------------------------------------------------
 // Morale
 // ---------------------------------------------------------------------------

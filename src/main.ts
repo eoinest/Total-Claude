@@ -43,7 +43,18 @@ import { Faction } from './sim/types';
 
 const params = new URLSearchParams(location.search);
 const harness = params.get('harness') === '1';
-const qualityParam = (params.get('quality') as QualityTier | null) ?? (harness ? 'ultra' : 'high');
+/**
+ * Ultra by default, for players as well as the harness.
+ *
+ * The 16-shot pass measures every graded camera at ultra on an M4 Max and the slowest is
+ * 64 fps, so the tier the game is actually tuned and judged at is the one it should open
+ * on; `high` was a hedge that shipped a worse-looking game than the one being graded.
+ * Ultra differs from high in shadow map size (4096 vs 2048), max pixel ratio (2 vs 1.5),
+ * grass density (1.5 vs 1) and LOD far distance (320 m vs 220 m) — all cost, no behaviour,
+ * so nothing about the simulation changes with it. `?quality=high` still overrides, which
+ * is the escape hatch for weaker hardware, and the Settings panel can drop tier at runtime.
+ */
+const qualityParam = (params.get('quality') as QualityTier | null) ?? 'ultra';
 const difficulty = (params.get('difficulty') as 'easy' | 'normal' | 'hard' | 'legendary' | null) ?? 'hard';
 /**
  * Which side the player commands. The other is left to the AI.

@@ -26,6 +26,7 @@ import { Minimap } from './Minimap';
 import { PointerTracker } from './pointer';
 import { SelectionController } from './SelectionController';
 import { SettingsPanel } from './SettingsPanel';
+import { DEFAULT_UI_SCALE } from './theme';
 import { Tooltip } from './Tooltip';
 import { TopBar } from './TopBar';
 import { UnitCards } from './UnitCards';
@@ -105,6 +106,9 @@ export class HudSystem implements Subsystem {
     const host = document.getElementById('hud-root');
     if (!host) throw new Error('[hud] #hud-root is missing from the document');
     this.root = el('div', 'hud', host);
+    // Applied before any panel attaches, so every canvas and hit box is measured at the
+    // final scale once instead of being laid out at 1.0 and then relaid out.
+    this.root.style.setProperty('--ui-scale', String(DEFAULT_UI_SCALE));
 
     const terrain = ctx.tryGet('terrain') as unknown as TerrainLike | undefined;
     if (terrain && typeof terrain.heightAt === 'function') {

@@ -7,7 +7,7 @@
 import type { EngineContext, QualityTier } from '../core/Engine';
 import { el, html, icon, setClass, setText } from './dom';
 import { ICON } from './icons';
-import { HARNESS } from './theme';
+import { DEFAULT_UI_SCALE, HARNESS } from './theme';
 
 interface SkyLike {
   setTimeOfDay?: (h: number) => void;
@@ -72,8 +72,8 @@ export class SettingsPanel {
 
          <div class="set-row">
            <span class="set-lab">HUD scale</span>
-           <input class="set-scale" type="range" min="0.8" max="1.35" step="0.05" value="1" />
-           <span class="set-val scale-val">100%</span>
+           <input class="set-scale" type="range" min="0.8" max="1.35" step="0.05" value="${DEFAULT_UI_SCALE}" />
+           <span class="set-val scale-val">${Math.round(DEFAULT_UI_SCALE * 100)}%</span>
          </div>
 
          <div class="set-row toggles">

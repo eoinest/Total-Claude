@@ -190,7 +190,25 @@ export function deploySiegeOfRome(battle: BattleSystem, ctx: EngineContext): Sce
     germanic,
     // Open looking north from behind the Roman line — the classic Total War
     // "here is your army, there is theirs" establishing shot.
-    cameraFocus: { x: 0, z: 40, zoom: 0.66, yaw: Math.PI },
+    //
+    // This is derived from `romanZ` rather than hardcoded because the hardcoded version was
+    // wrong and nothing caught it: at z 40 / zoom 0.66 the boom is 116 m long, which put the
+    // eye at z 156 — *inside* the Roman deployment, which spans z 122 to 262. Measured with
+    // live projection, ZERO of the player's 16 units had their centroid on screen, stable
+    // over 24 s, and the only troops visible were enemy slivers at the top edge. A player
+    // opened on empty grass and had to go looking for their own army. The graded
+    // `establishing` shot never caught it because the harness auto-frames on `ownLine`
+    // instead of using this value.
+    //
+    // Sweeping focus z against zoom and counting unit centroids inside the frustum: the eye
+    // must sit behind z 122 for the line to be in frame at all, and because this camera
+    // couples zoom to pitch (39 deg at 0.58, rising to 54 deg at 0.82) seeing the enemy
+    // 320 m beyond the line needs at least 0.78. At 0.78 with the focus 10 m in front of the
+    // front rank the eye lands at z 308: 15 of 16 own units in frame with men still reading
+    // as ranked blocks rather than specks, and the leading Juthungi banners visible along the
+    // top edge. 0.82 fits more of the enemy but shrinks the line and pushes their banners up
+    // behind the top bar.
+    cameraFocus: { x: 0, z: romanZ - 10, zoom: 0.78, yaw: Math.PI },
   };
 }
 
