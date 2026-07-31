@@ -160,11 +160,15 @@ export class HudSystem implements Subsystem {
     this.minimap.attach(this.root, ctx);
     this.settings.attach(this.topbar.toolSlot, ctx, {
       // Verified end to end: the button reaches `Engine.setQuality` and `ctx.quality.tier`
-      // really changes. What follows is outside the HUD — `setQuality` swaps the shadow
-      // cascade count without invalidating any material, so every shader compiled against
-      // the old `NUM_DIR_LIGHT_SHADOWS` fails to link and the world renders empty until
-      // reload. That is an engine/render fix, not a HUD one; do not "fix" it by taking the
-      // buttons away.
+      // really changes.
+      //
+      // These buttons used to leave the world empty. The cause was never the HUD and never
+      // the buttons: `LightingSystem.rebuild` disposed the cascaded-shadow rig without
+      // detaching its lights, so a tier with a different cascade count ended up with both
+      // sets in the scene and `NUM_DIR_LIGHT_SHADOWS` outran `CSM_CASCADES`, failing every
+      // lit shader. The HUD survived because it is DOM, which is why the symptom reached
+      // players as "the unit banners only work on ultra" — the plaques were the only thing
+      // still drawn over the grey. Fixed in `LightingSystem`; see the note on `rebuild`.
       setQuality: this.opts.engine ? (t) => this.opts.engine!.setQuality(t) : undefined,
       onBannersChanged: (on) => {
         this.banners.enabled = on;

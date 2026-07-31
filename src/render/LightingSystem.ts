@@ -122,6 +122,16 @@ export class LightingSystem implements Subsystem {
   /** Same membership as `patched`, kept iterable so a define can be re-flipped on all of
    *  them at once. Cleared wholesale by `rebuild`, so it cannot outlive its materials. */
   private patchedList: THREE.Material[] = [];
+  /**
+   * Each material's own `onBeforeCompile`, as it was before this system first wrapped it.
+   *
+   * `rebuild` clears `patched`, so every material is patched again on every quality switch.
+   * Wrapping whatever is currently there would wrap the previous wrapper, stacking one
+   * closure per switch and re-running the owning system's hook once per level on every
+   * shader compile. Re-wrapping the original keeps the chain one deep however many times a
+   * player cycles the tier buttons.
+   */
+  private readonly baseCompile = new WeakMap<THREE.Material, THREE.Material['onBeforeCompile']>();
   private softOn = true;
   private readonly invView = new THREE.Matrix4();
   private cloudShadowsEnabled = true;
@@ -325,12 +335,25 @@ export class LightingSystem implements Subsystem {
     mat.defines.USE_CSM = 1;
     mat.defines.CSM_CASCADES = this.cascades;
     mat.defines.CSM_FADE = '';
-    if (!this.softOn) mat.defines.TC_SOFT_OFF = '';
+    // Both of these are set *and cleared*, because a material outlives any number of
+    // quality switches and a define that is only ever added is a one-way door. Adding
+    // `TC_SOFT_OFF` on the way down to low without deleting it on the way back up left
+    // ultra rendering with the cheap fixed-texel PCF: a round trip
+    // ultra -> low -> ultra came back 1.34/255 away from a cold boot at ultra, all of it
+    // the missing penumbra, and every further switch preserved the wrong state.
+    if (this.softOn) delete mat.defines.TC_SOFT_OFF;
+    else mat.defines.TC_SOFT_OFF = '';
     if (this.cloudShadowsEnabled) mat.defines.TC_CLOUD_SHADOW = '';
+    else delete mat.defines.TC_CLOUD_SHADOW;
 
-    const prev = mat.onBeforeCompile;
+    let prev = this.baseCompile.get(mat);
+    if (prev === undefined) {
+      prev = mat.onBeforeCompile;
+      this.baseCompile.set(mat, prev);
+    }
+    const base = prev;
     mat.onBeforeCompile = (shader, renderer) => {
-      prev.call(mat, shader, renderer);
+      base.call(mat, shader, renderer);
       // Assigned by reference: `onBeforeCompile` writes straight into the
       // material's live uniform object, so no cloning happens and updating the
       // shared objects below updates every material at once.
@@ -519,6 +542,19 @@ export class LightingSystem implements Subsystem {
   }
 
   private rebuild(ctx: EngineContext): void {
+    // `CSM.remove()` is what detaches the cascade lights and their targets from the scene;
+    // `CSM.dispose()` only frees GPU resources and clears CSM's own shader bookkeeping.
+    // Disposing without removing left every previous cascade set parented to the world, and
+    // the next `new CSM` added its own on top. Measured on ultra -> medium: shadow-casting
+    // directional lights went 4 -> 7, so three unrolled the cascade loop
+    // `NUM_DIR_LIGHT_SHADOWS` = 7 times while `CSM_CASCADES` had been rewritten to 3, and
+    // every lit material failed to link with "'[]' : array index out of range". The entire
+    // world then rendered empty — no terrain, no city, no men — leaving only the DOM HUD
+    // and its unit banners floating over grey. That is the whole of "the banners only work
+    // on ultra": ultra is the tier the game boots at, so it is the only one a player ever
+    // sees with the world still drawn. ultra -> high never broke because both carry 4
+    // cascades, which is why the fault looked tier-specific rather than switch-specific.
+    this.csm?.remove();
     this.csm?.dispose();
     this.csm = undefined;
     ctx.scene.remove(this.bounce);
@@ -531,6 +567,7 @@ export class LightingSystem implements Subsystem {
   }
 
   dispose(): void {
+    this.csm?.remove();
     this.csm?.dispose();
     this.fill.dispose();
     this.bounce.dispose();

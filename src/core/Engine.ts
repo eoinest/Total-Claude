@@ -305,10 +305,16 @@ export class Engine {
     this.renderer.setPixelRatio(dpr);
 
     // Changing the cascade count changes `NUM_DIR_LIGHT_SHADOWS`, which is compiled into
-    // every lit shader. Without invalidating them, three reuses the cached programs and
-    // every one fails to link — the whole world went grey until a reload. Forcing a
-    // recompile is expensive (a visible hitch of a few hundred ms) but it is a deliberate
-    // user action from the settings panel, and a hitch beats a grey screen.
+    // every lit shader, so they all have to be recompiled against the new light count.
+    //
+    // This traversal was added to cure a grey world after a tier switch and did not,
+    // because a stale program cache was never the cause. `LightingSystem.rebuild` disposed
+    // the cascade rig without detaching its lights, so the old and the new set both stayed
+    // in the scene and the recompile forced here ran against 7 shadow lights for a
+    // 3-cascade define — measured, not inferred. Fixed at the source in `LightingSystem`.
+    // Kept as belt and braces for any lit material the lighting system does not reach: a
+    // recompile costs a visible hitch of a few hundred ms, but this is a deliberate press
+    // of a settings button and a hitch beats a wrong frame.
     if (before.shadowCascades !== this.quality.shadowCascades) {
       const seen = new Set<THREE.Material>();
       this.scene.traverse((o) => {
