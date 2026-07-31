@@ -102,7 +102,12 @@ export const PYDNA: MapDefinition = {
     // 0.34 rather than the Campus Martius' 0.62. That map has a 94 m rectilinear survey
     // lattice to converge away; this one has organic land use and needs the distance to stay
     // legible instead. Measured, 0.62 here put the whole plain under a milky wash.
-    aerialStrength: 0.34,
+    // 0.34 -> 0.16. Two independent blind critics called the distance a "uniform sepia wash"
+    // and "everything past mid-distance is the same beige", which is what converging ground
+    // onto a single warm mean does when the strength is high and the ramp is near. The mean
+    // itself is right — a real aerial view does resolve to one — but it is the *last* few
+    // per cent of the read, not most of it.
+    aerialStrength: 0.16,
     hasRiver: false,
     roadGlsl: `${PYDNA_TOPO_GLSL}\nfloat grassRoadCentreX(float z) { return pydRoadCentreX(z); }`,
     // Taller, thinner and drier than Latian turf: this is a standing crop of grass that

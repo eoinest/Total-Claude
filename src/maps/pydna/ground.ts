@@ -45,8 +45,12 @@ export const PYDNA_LAYERS: readonly GroundLayerSpec[] = [
   //    summer is the coarse rush and sedge of a damp bottom, not upland turf.
   {
     name: 'summer pasture', kind: 'meadowGrass', manifestId: 'meadow-grass',
+    // Muted to a khaki olive from [92,116,54]/chroma 0.62. Where green does survive a
+    // Pierian June it is coarse sedge going over, not spring turf, and a saturated green
+    // here is what made the plain read as camouflage even after its *area* was cut — a
+    // minority state that loud is still the thing the eye finds first.
     farScale: 3.7, detailScale: 1.02, detailMix: 0.5, roughness: 0.9,
-    albedo: [92, 116, 54], contrast: 1.42, chroma: 0.62, heightBias: 0.03,
+    albedo: [100, 110, 66], contrast: 1.42, chroma: 0.44, heightBias: 0.03,
   },
   // 2. The plain's own soil where the grass has been walked off it. Warm buff, sun-bleached
   //    — a stop lighter than the Rome path's trampled dirt, which is a wetter red-brown.
@@ -144,7 +148,17 @@ void tcMapSplat(
   // earth below is under the actual trees. The macro band only softens the boundary by a
   // few metres — it must not move it, or the two disagree.
   float grove = smoothstep(0.58, 0.76, pydGroveField(wp.xz) + (macroMid.a - 0.5) * 0.09);
-  float terrace = smoothstep(-490.0, -650.0, wp.x) * (1.0 - smoothstep(-1120.0, -1310.0, wp.x));
+  // The terraced belt. Its bounds are thresholds on x, which — taken literally — draws the
+  // edge of the olive terraces as a perfectly straight north-south meridian 2.8 km long, and
+  // a straight line that long across a landscape is unmistakably machine-drawn. It showed in
+  // the frames as a hard diagonal with a squared corner where it met the grove sweep. The
+  // belt edge now wanders +-90 m on the macro bands, which is the width a real cultivation
+  // limit varies by as it follows the break of slope. Wobbling only the shader and not
+  // PYDNA_SCATTER.tree's own terrace test is safe in a way the grove field is not: this
+  // term feeds the terra rossa and limestone weights, not where a tree stands, so the two
+  // disagreeing by less than a grove's width costs nothing visible.
+  float terraceX = wp.x + (macroMid.a - 0.5) * 130.0 + (nzBig - 0.5) * 50.0;
+  float terrace = smoothstep(-490.0, -650.0, terraceX) * (1.0 - smoothstep(-1120.0, -1310.0, terraceX));
 
   // --- Aridity, the master variable ----------------------------------------
   //
@@ -168,7 +182,6 @@ void tcMapSplat(
   // relief legible through *albedo* rather than only through shading. A 3 % grade moves N·L
   // by about 5 % at this sun elevation, which is nearly invisible; it moves this term by 0.4,
   // which is not.
-  float slopeMag = max(length(tGeoN.xz), 1e-4);
   // +X is east, -Z is north. East-facing and north-facing hold water; west-facing bakes.
   float aspect = clamp((tGeoN.x * 0.45 - tGeoN.z * 0.9) * 9.0, -1.0, 1.0);
   float wetness = cWet * 1.5 + hollow * 0.55;
@@ -178,16 +191,43 @@ void tcMapSplat(
   // floating blotches with nothing under them. The 96 m band is close to the relief's own
   // wavelength, so it varies the colour *within* a swell, which is what real ground does.
   float drift = (nzBig - 0.5) * 0.16 + (macroMid.a - 0.5) * 0.4;
-  float green = clamp(0.30 + aspect * 0.54 + wetness + drift
+  //
+  //  3. And a third failure mode, which is the one that was actually shipping. Demoting the
+  //     620 m noise band was right but it was not sufficient, because it left *aspect* as the
+  //     leading term — and on a plain whose relief is 2-4 m swells at a 130 m wavelength,
+  //     aspect paints blobs at 130 m. The mechanism changed and the picture did not. Measured
+  //     on the frames: green averaged ~0.35, which puts w[0]:w[1] near 64:36, so the plain
+  //     rendered as two nearly equal-weight hues alternating at the swell wavelength. Frame
+  //     hue histograms came back 20-26 % yellow-green; r2-03, r2-04 and r2-09 all carry
+  //     **0 %**. Not "less green than we thought" — none.
+  //
+  // So green is now a genuine minority and it is driven by *water*: the runnel bottoms, the
+  // braid wash and the hollows. Aspect and noise are left in at a third of their old weight,
+  // enough to keep the boundary organic, not enough to decide land use.
+  float green = clamp(0.02 + aspect * 0.17 + wetness * 0.92 + drift * 0.45
                     - smoothstep(0.12, 0.36, tSlope) * 0.34, 0.0, 1.0);
-  green = max(green, wash * 0.55);
+  green = max(green, wash * 0.5);
+  // The relief still has to read from a strategic camera, and under the old rules it read
+  // because aspect switched between two saturated hues. It now reads through the *bare-earth*
+  // fraction instead: the west-facing crown of a swell takes the full afternoon sun and burns
+  // through to soil first, so the same 2 m swell is still legible from altitude. Straw against
+  // buff soil is a low-chroma contrast, which is what a dry plain actually looks like; straw
+  // against saturated pasture is camouflage.
+  float bake = clamp(-aspect, 0.0, 1.0);
 
   // --- Aerial convergence ---------------------------------------------------
   // A real aerial view resolves mixed sub-pixel ground to its mean. Weaker than the Rome
   // path needs (0.55 against 0.78) because without a survey lattice there is far less
   // variance to converge away in the first place. Track and bare rock are exempt: a worn
   // road really is a pale line from altitude and a limestone scarp really is a white one.
-  aerial = smoothstep(340.0, 1250.0, camDist) * (1.0 - track) * (1.0 - smoothstep(0.20, 0.46, tSlope));
+  // The ramp starts at 340 m, which is inside the fighting ground, and a blind critic named
+  // the result exactly: "fog is a uniform sepia wash with no depth-dependent variation —
+  // everything past mid-distance is the same beige". Convergence onto a single mean is the
+  // right idea and it was reaching too near the camera to be depth *information*; by 600 m
+  // the whole middle distance had already arrived at one colour, so there was nothing left
+  // for the next kilometre to do. Pushed out to 750-2400 m, which is where a real aerial view
+  // stops resolving ground detail, and paired with a weaker strength in pydna.ts.
+  aerial = smoothstep(750.0, 2400.0, camDist) * (1.0 - track) * (1.0 - smoothstep(0.20, 0.46, tSlope));
 
   // --- Weights -------------------------------------------------------------
   // 0 burnt grass is the ground state and 1 pasture the exception — the inverse of the
@@ -203,8 +243,22 @@ void tcMapSplat(
        // Sun-scorched crowns of the swells: the driest ground on the plain burns through to
        // soil by midsummer, and it is the one term that follows the relief, so it is also
        // what makes a 2 m swell legible from a strategic camera.
-       + smoothstep(0.55, 0.95, dry) * nose * 2.2
-       + smoothstep(0.72, 1.0, dry) * 0.85;
+       //
+       // **Both thresholds are keyed to where dry actually sits, and it moved.** Under the
+       // old green rules dry averaged 0.65, so a ramp starting at 0.72 fired only on the
+       // genuinely scorched crowns. Cutting the green mosaic pushed dry to ~0.90 across the
+       // whole plain, which turned these two terms on everywhere at once and swapped one
+       // failure for another: the sward came back as thin olive tufts standing on open sand.
+       // Re-keyed to the new distribution, so they mean what they say again.
+       + smoothstep(0.80, 1.0, dry) * nose * 2.0
+       + smoothstep(0.90, 1.0, dry) * 0.5
+       // The west-facing faces, which is what now carries the relief. See bake, above.
+       // 0.45 and not the 0.95 this started at: at the higher weight the plain came back as
+       // dark olive tufts standing on pale bare buff, which is the "isolated tufts on bare
+       // earth" failure the grass density was raised to 1.18 to escape in the first place.
+       // The relief still reads; the sward stays a continuous mat, which is what the
+       // reference frames show.
+       + bake * 0.3;
   // 3 terra rossa: the terraces, and the red clay the plough turns on the lower slope.
   // Held off the braid, where any fines are grey river silt rather than residual clay.
   w[3] = (terrace * 1.9 + smoothstep(0.22, 0.50, tSlope) * 0.85 + grove * macroMid.b * 0.5)

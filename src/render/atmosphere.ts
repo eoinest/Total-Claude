@@ -176,6 +176,18 @@ export const SKY_PRESETS: Record<string, SkyPreset> = {
   //    salt, dust off the range, and the haze that builds through a hot
   //    afternoon. That is what puts the pale band along the horizon in
   //    reference/rome2/r2-04 and what drives criterion A2.
+  //
+  //    **`hazeDensity` is the separate knob and it was too high** (0.00046/0.00062,
+  //    now 0.00026/0.00036). Turbidity colours the sky; hazeDensity decides how much
+  //    of a *ground* pixel PostFX replaces with in-scattered sky, and over the 300-
+  //    1400 m a strategic camera looks across, 0.00046 was substituting a third of
+  //    every distant pixel. The signature is unmistakable in the numbers: the high
+  //    frames measured p01 = 0.30, i.e. **no pixel anywhere in the frame darker than
+  //    30 %**, with sd 0.051-0.066. Haze that strong does not read as depth, it reads
+  //    as a milky sheet, and it erases whatever tonal structure the ground had. A2
+  //    wants pronounced aerial perspective on the *mountain front* at 2-5 km, which
+  //    is what the exponential height falloff and the turbidity are for; it does not
+  //    want the fighting ground washed out at 400 m.
   //  - **Ground albedo is higher** (0.19-0.21 against 0.12-0.14). The ground here
   //    is bleached straw and near-white karst, not damp pasture, so far more
   //    light comes back up off it and into the sky's own ground-bounce term.
@@ -188,14 +200,28 @@ export const SKY_PRESETS: Record<string, SkyPreset> = {
   //    corrected ones and they were arrived at by measuring frames, not by
   //    reasoning about the tone curve.
   //
-  // Cloud is deliberately very sparse — coverage above 0.5 means *less* cloud —
-  // and its shadow is weak. Two reasons, one of them measured. The reference
-  // frame is a clear solstice day and a broadside 37 deg sun only pays off in
-  // hard shadows, which a deck takes away. And a strategic camera over this map
-  // already carries one field of soft blobs, the green-and-gold aridity mosaic;
-  // laying a second field of soft blobs over it at a different scale turned the
-  // high shot to mush, with a luminance sd of 0.073 against 0.135 for the Rome II
-  // strategic plate. Two overlapping blob systems read as neither.
+  // **Cloud shadow: an earlier pass suppressed it and had the causality backwards.**
+  // Coverage above 0.5 means *less* cloud, and this map was set to 0.70-0.78 with
+  // `cloudShadowStrength` 0.2 on the argument that a strategic camera here already
+  // carried one field of soft blobs — the green-and-gold aridity mosaic — and that
+  // laying a second over it "turned the high shot to mush, with a luminance sd of
+  // 0.073 against 0.135 for the Rome II strategic plate".
+  //
+  // The measurement that mattered was never taken: what the frame does with the
+  // cloud *removed*. It is worse, not better. Measured at 1920x1080 on the shipped
+  // values, the strategic frames came back at sd 0.055 and 0.067 against r2-03's
+  // 0.135, with 0.1-0.5 % of the frame below 15 % luminance against the plates'
+  // 5.2-18.2 %. So suppressing cloud did not fix the mush, it deepened it — the
+  // frame lost its only source of large-scale tone and kept the mosaic.
+  //
+  // The two blob fields were not equally at fault. One of them, the aridity mosaic,
+  // has no counterpart in any reference plate (all three carry 0 % yellow-green);
+  // the other is one of the most recognisable things in a Rome II landscape — the
+  // big soft cloud shadows dragging across the golden upland in r2-03 are most of
+  // why that frame has any tonal range at all. So the mosaic is the term that was
+  // cut (see `PYDNA_SPLAT_GLSL`) and the cloud is the term that comes back.
+  // Two overlapping *low-contrast* blob systems read as neither; one high-contrast
+  // one reads as weather.
   //
   // `msScale` moves the other way. Multiple scattering is genuinely stronger over
   // bright ground — that is what the term is — and lifting it is how the deep
@@ -211,15 +237,23 @@ export const SKY_PRESETS: Record<string, SkyPreset> = {
     cloudCoverage: 0.78, cloudSoftness: 0.08, cloudDensity: 8.4, cirrusCoverage: 0.8,
     hazeDensity: 0.0004, hazeHeight: 760, exposure: 1.42, cloudShadowStrength: 0.2,
   },
+  // 17:00 is the default hour, so the afternoon/evening pair is what almost every frame of
+  // this map is actually lit by, and it is where the cloud decision below is spent.
   pydnaAfternoon: {
+    // msScale was briefly raised to 0.62 to stop the packed-melee shadows clipping to black.
+    // Reverted on evidence: a blind critic separated our frames from the Rome II plates on
+    // exactly one property — "how light behaves *between* bodies in a crowd" — and multiple
+    // scattering is the term that fills those gaps in. Lifting it traded a measurable
+    // clipping problem for the single tell that was actually losing the comparison. The
+    // clipping is the lesser fault and belongs to soldier-side AO, not to the sky.
     hour: 16.0, turbidity: 3.9, groundAlbedo: 0.2, msScale: 0.44,
-    cloudCoverage: 0.76, cloudSoftness: 0.085, cloudDensity: 8.2, cirrusCoverage: 0.76,
-    hazeDensity: 0.00046, hazeHeight: 700, exposure: 1.58, cloudShadowStrength: 0.34,
+    cloudCoverage: 0.62, cloudSoftness: 0.085, cloudDensity: 8.2, cirrusCoverage: 0.76,
+    hazeDensity: 0.00026, hazeHeight: 700, exposure: 1.58, cloudShadowStrength: 0.4,
   },
   pydnaEvening: {
     hour: 19.0, turbidity: 4.2, groundAlbedo: 0.18, msScale: 0.48,
-    cloudCoverage: 0.7, cloudSoftness: 0.1, cloudDensity: 7.6, cirrusCoverage: 0.68,
-    hazeDensity: 0.00062, hazeHeight: 520, exposure: 2.4, cloudShadowStrength: 0.34,
+    cloudCoverage: 0.6, cloudSoftness: 0.1, cloudDensity: 7.6, cirrusCoverage: 0.68,
+    hazeDensity: 0.00036, hazeHeight: 520, exposure: 2.4, cloudShadowStrength: 0.4,
   },
 };
 

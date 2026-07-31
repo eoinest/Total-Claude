@@ -54,7 +54,12 @@ export const PYDNA_SCATTER: ScatterProfile = {
   // clearance stones and river shingle, not quarry spoil: the tail is cubed, so this caps the
   // rare biggest one and the typical stone is nearer 25 cm. Anything larger has to earn its
   // place with real geometry, and these do not have it.
-  rockMaxScale: 0.46,
+  // Dropped again from 0.46. `buildRock` produces an untextured flat-shaded convex solid, and
+  // at 0.46 the largest stones came out near a metre — big enough to read as *an object*, at
+  // which point the eye starts asking what its surface is made of and gets no answer. A
+  // faceted grey lump on open ground was the most artificial thing in the terrain frame. At
+  // 0.3 the tail caps around 60 cm and stone reads as ground cover rather than as props.
+  rockMaxScale: 0.3,
 
   excluded(x, z, _h, slope, _clearance) {
     // Nothing forms up in a wood and nothing is planted where an army stands.

@@ -164,6 +164,7 @@ uniform float uTime;
 uniform float uWaterLevel;
 uniform vec3 uDryColour;
 uniform vec3 uWetColour;
+uniform float uDryness;
 uniform vec3 uGroundColour;
 varying float vBladeT;
 
@@ -346,6 +347,14 @@ export class GrassField {
       // Campus Martius' November pasture; at 0.72 it gets Pieria on the solstice, where
       // even the damp ground is only half green and the rest is standing hay.
       uDryColour: { value: new THREE.Color(1.24, 1.06, 0.62) },
+      // The tints above are only half the story: which of them a blade actually gets is
+      // decided by the mix factor in the vertex shader, and that factor carried a hard
+      // +0.62 bias toward the wet end. So a map could ask for straw, get its `uWetColour`
+      // nudged a little warmer, and still render a green sward — measured on Pydna, whose
+      // frames came back 20-26 % yellow-green where all three Rome II reference plates
+      // carry 0 %. Passing dryness through lets it move the *distribution*, not just the
+      // endpoint. At 0 the bias is exactly the 0.62 the Campus Martius has always had.
+      uDryness: { value: this.profile.dryness },
       uWetColour: {
         value: new THREE.Color(0.78, 1.1, 0.56).lerp(
           new THREE.Color(1.1, 1.02, 0.66),
@@ -471,8 +480,12 @@ export class GrassField {
   // Darker at the root, and converging on the ground colour as the clump shrinks away,
   // so the cut-off leaves no visible ring of density. Biased toward the green end: the
   // straw tint is the minority state, matching the ground shader's own grass mix.
+  // uDryness slides the whole distribution toward straw, and it also damps the wetness
+  // channel's authority: on a plain in midsummer drought a damp hollow is *less* green than
+  // the same hollow in November, not equally green. Both terms vanish at dryness 0.
   vec3 gcol = mix(uDryColour, uWetColour,
-    clamp(0.62 + gctl.r * 1.1 + (h2 - 0.5) * 0.8 - gStraw * 0.85, 0.0, 1.0));
+    clamp(0.62 - uDryness * 1.15 + gctl.r * 1.1 * (1.0 - uDryness * 0.72)
+        + (h2 - 0.5) * 0.8 - gStraw * 0.85, 0.0, 1.0));
   gcol = mix(gcol, uDryColour * 1.2, weed);
   gcol *= 0.74 + 0.34 * bt;
   gcol = mix(uGroundColour, gcol, clamp(fade * 1.6, 0.0, 1.0));
@@ -486,8 +499,32 @@ export class GrassField {
         .replace('#include <begin_vertex>', 'vec3 transformed = gWorld;')
         .replace('#include <beginnormal_vertex>', 'vec3 objectNormal = vec3(normal);');
 
+      // Whether this map wants the straw conversion at all. It has to be a compile-time
+      // decision, not a uniform the shader multiplies by zero: grass fill is the largest
+      // single fragment cost in any ground-level frame, and adding three unconditional
+      // instructions to it cost the Campus Martius — which asks for none of this — 26 % of
+      // its frame time on the four grass-heavy shots (melee 62 -> 46 fps, measured, and
+      // reproduced). Draw calls and triangles were unchanged, which is the signature of a
+      // per-pixel regression rather than a geometric one.
+      const dryGrass = this.profile.dryness > 0.001;
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', '#include <common>\nvarying float vBladeT;')
+        .replace('#include <common>', `#include <common>\nvarying float vBladeT;${dryGrass ? '\nuniform float uDryness;' : ''}`)
+        // Straw has almost no chroma left, and the tint uniforms cannot get there on their
+        // own. They are multiplied into a card texture that is painted green, and green times
+        // a warm tint is olive, not hay — so a map could set dryness to 0.72 and still render
+        // an olive sward standing on straw-coloured ground, each disagreeing with the other
+        // about what season it was. Desaturating the *product* and re-warming it is the only
+        // place in the chain where a green blade can actually become a dead one. Vanishes at
+        // dryness 0, so the Campus Martius sward is untouched.
+        .replace(
+          '#include <color_fragment>',
+          dryGrass
+            ? `#include <color_fragment>
+  float gDsat = uDryness * 0.62;
+  float gLum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(gLum) * vec3(1.16, 1.02, 0.72), gDsat);`
+            : '#include <color_fragment>'
+        )
         .replace(
           '#include <normal_fragment_begin>',
           `#include <normal_fragment_begin>
@@ -504,7 +541,11 @@ export class GrassField {
           'totalEmissiveRadiance += diffuseColor.rgb * 0.2 * vBladeT;'
         );
     };
-    mat.customProgramCacheKey = () => 'terrain-grass-cards-v1';
+    // v2, and the dry variant is a *separate program*, because the desaturation is compiled
+    // in rather than branched on. Without the suffix three would hand the second map the
+    // first map's program and the straw conversion would silently not happen.
+    const dryKey = this.profile.dryness > 0.001 ? '-dry' : '';
+    mat.customProgramCacheKey = () => `terrain-grass-cards-v2${dryKey}`;
 
     const mesh = new THREE.Mesh(geo, mat);
     mesh.name = opt.name;

@@ -250,8 +250,8 @@ export class MainMenu {
       b.addEventListener('click', () => {
         if (this.cfg.map === id) return;
         // The hour moves with the map. Each battlefield's default is the light it was
-        // designed around — 10:00 over the Campus Martius, 16:00 over Pydna, where a
-        // broadside 37 deg sun is the whole point — and carrying one map's hour onto the
+        // designed around — 10:00 over the Campus Martius, 17:00 over Pydna, where a
+        // broadside 26 deg sun is the whole point — and carrying one map's hour onto the
         // other reliably produces the flat, shadowless frame both were tuned to avoid.
         // A player who then moves the slider keeps their choice until they switch again.
         this.cfg = { ...this.cfg, map: id, timeOfDay: getMap(id).sky.defaultHour };

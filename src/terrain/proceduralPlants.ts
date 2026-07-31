@@ -435,9 +435,15 @@ function buildPine(detail: boolean): THREE.BufferGeometry {
   for (let i = 0; i < cards; i++) {
     const yaw = (i / cards) * Math.PI * 2 + 0.3;
     const r = 1.6 + (i % 3) * 0.9;
-    const y = top - 0.5 + (i % 2) * 1.1;
-    // Nearly horizontal cards, tipped up at the outer edge: the parasol.
-    b.quad(place(Math.cos(yaw) * r * 0.5, y, Math.sin(yaw) * r * 0.5, yaw, -1.28), 9.0, 6.6, 'needle', 0.03, 0.5);
+    // The parasol is a *dome*, not a plate. This was 10 cards at pitch -1.28 rad — 17 deg
+    // off horizontal — all within 1.1 m of the same height, and every camera this project
+    // uses looks down. Seen from above, ten coplanar 9x6.6 m plates are one 11 m disc of
+    // flat needle texture, which is why the umbrella pine read as a painted parasol. The
+    // pitch now sweeps -1.24..-0.62 across the ring and the cards are spread over 3.4 m of
+    // height, so the crown has a lit upper surface and a shaded underside like a real one.
+    const pitch = -1.24 + (i % 5) * 0.155;
+    const y = top - 1.1 + (i % 5) * 0.68 + (i % 2) * 0.5;
+    b.quad(place(Math.cos(yaw) * r * 0.5, y, Math.sin(yaw) * r * 0.5, yaw, pitch), 9.0, 6.6, 'needle', 0.03, 0.5);
   }
   if (detail) {
     for (let i = 0; i < 4; i++) {
@@ -469,8 +475,14 @@ function buildOak(detail: boolean): THREE.BufferGeometry {
     const rad = 1.0 + hash01(i, 42) * 2.3;
     const y = h * 0.5 + hash01(i, 43) * h * 0.45;
     const s = 4.6 + hash01(i, 44) * 2.8;
+    // Pitch spread widened from +-0.4 rad to +-1.02. A crown whose cards are all within 23
+    // deg of vertical is fine from a camera at eye level and wrong from every camera this
+    // project actually uses: looking down at 40-50 deg, near-vertical cards turn edge-on and
+    // the tree resolves into a handful of flat slivers with nothing between them. Spreading
+    // the pitch over a hemisphere means some card always faces the lens, so the crown reads
+    // as a mass from above and in silhouette both.
     b.quad(
-      place(Math.cos(yaw) * rad, y, Math.sin(yaw) * rad, yaw + 1.2, (hash01(i, 45) - 0.5) * 0.8),
+      place(Math.cos(yaw) * rad, y, Math.sin(yaw) * rad, yaw + 1.2, (hash01(i, 45) - 0.5) * 1.36),
       s,
       s * 0.84,
       'broadleaf',
@@ -499,7 +511,15 @@ function buildOlive(detail: boolean): THREE.BufferGeometry {
     const rad = 0.5 + hash01(i, 52) * 2.0;
     const y = 2.2 + hash01(i, 53) * 2.4;
     const s = 1.8 + hash01(i, 54) * 1.4;
-    b.quad(place(Math.cos(yaw) * rad, y, Math.sin(yaw) * rad, yaw + 0.9, (hash01(i, 55) - 0.5) * 0.7), s, s * 0.78, 'olive', 0.04, 0.5);
+    // Same hemisphere spread as the oak, and for the same reason — the olive is the tree of
+    // this map and there are 2,200 of them, so whatever it does wrong it does everywhere.
+    //
+    // Both were pushed to +-1.0 rad first and that overshot: at full hemisphere spread the
+    // cards splay far enough that their own rectangular edges start showing face-on, and the
+    // oak went from flat slivers to a visibly shredded cabbage. +-0.68/+-0.75 is the middle
+    // of the two failures — enough that no camera angle catches a whole crown edge-on,
+    // little enough that no single card reads as a quad.
+    b.quad(place(Math.cos(yaw) * rad, y, Math.sin(yaw) * rad, yaw + 0.9, (hash01(i, 55) - 0.5) * 1.5), s, s * 0.78, 'olive', 0.04, 0.5);
   }
   return b.build();
 }
