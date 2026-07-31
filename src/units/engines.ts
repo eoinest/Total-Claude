@@ -1,7 +1,26 @@
 import type { UnitTypeDef } from '../sim/types';
 import { Clip } from '../sim/types';
 import { hash01 } from '../util/rand';
-import { ARM_DRAWN, ARM_REST, CLAW_DRAWN_Z, CLAW_REST_Z } from './engineMesh';
+import {
+  ARM_DRAWN, ARM_REST, CLAW_DRAWN_Z, CLAW_REST_Z, ON_ARM_COCKED, ON_ARM_RELEASED,
+  ON_ARM_R, onArmPoint,
+} from './engineMesh';
+
+/**
+ * Which machine a battery is made of.
+ *
+ * Discriminated on the roster's own missile arc rather than on a unit id, because the arc *is*
+ * the distinction: a bolt-thrower shoots flat at a man and a stone-thrower lobs at a wall, and
+ * everything else about the two machines follows from that. A new artillery type needs no
+ * change here.
+ */
+export const enum EngineKind {
+  Scorpio = 0,
+  Onager = 1,
+}
+
+export const engineKindOf = (def: UnitTypeDef): EngineKind =>
+  def.missile?.arc === 'high' ? EngineKind.Onager : EngineKind.Scorpio;
 
 /**
  * Siege engines as *units*: how many machines a battery fields, where its crew stand, and
@@ -44,13 +63,51 @@ import { ARM_DRAWN, ARM_REST, CLAW_DRAWN_Z, CLAW_REST_Z } from './engineMesh';
 export const CREW_PER_ENGINE = 3;
 
 /**
+ * Men to a machine, by kind.
+ *
+ * An onager takes four where a scorpio takes three, and that is the low end: Vegetius wants
+ * eight to eleven on a stone-thrower, because winding a two-tonne machine down against its
+ * skein is not a two-man job and somebody has to carry a 4 kg stone to it. Four is what fits
+ * round the chassis without men standing inside the arm's sweep.
+ */
+export const CREW_OF: Record<EngineKind, number> = {
+  [EngineKind.Scorpio]: 3,
+  [EngineKind.Onager]: 4,
+};
+
+/**
  * Metres between engines in a battery.
  *
- * Wide enough to swing a handspike and pass a bolt between two guns, narrow enough that the
- * battery still reads as one object in a wide shot — and close to the frontage the sim's own
- * `line` formation gives the crew, which is what keeps the visual offset small.
+ * 4.4 m, up from 3.6. A critic measuring the battery off crew height objected that at the old
+ * interval "adjacent arms nearly touch and crews foul each other", and the arithmetic backs it:
+ * the arms span 1.9 m tip to tip and two crews work the ground between two guns, so 3.6 m left
+ * about 0.85 m a side. The cost is that the machines now stand further from the formation slots
+ * the simulation gave their crews — see the note on visual-only placement above — and about
+ * 3 m of divergence at the wings is the price of a battery that reads as workable.
  */
-export const ENGINE_PITCH = 3.6;
+export const ENGINE_PITCH = 4.4;
+
+/**
+ * Metres between engines, by kind. An onager's chassis is 3.8 m long and 1.1 m wide and its arm
+ * sweeps the full height of the machine, so two of them on a scorpio's 3.6 m pitch would be
+ * winding into each other.
+ */
+export const PITCH_OF: Record<EngineKind, number> = {
+  [EngineKind.Scorpio]: ENGINE_PITCH,
+  [EngineKind.Onager]: 6.2,
+};
+
+/**
+ * How far forward of the unit anchor each kind's machine stands.
+ *
+ * The crew stations are all behind their engine, so the machine sits forward of the anchor to
+ * bring the men back onto the formation slots the simulation actually gave them. An onager is
+ * far longer than a scorpio and its crew work at the rear, so it needs more.
+ */
+export const FORWARD_OF: Record<EngineKind, number> = {
+  [EngineKind.Scorpio]: 0.55,
+  [EngineKind.Onager]: 1.35,
+};
 
 /** Is this unit type drawn as machines with crews rather than as men in ranks? */
 export const isEngineUnit = (def: UnitTypeDef): boolean => def.unitClass === 'artillery';
@@ -82,6 +139,22 @@ export interface CrewStation {
   readonly role: 'windlass' | 'loader' | 'server';
 }
 
+/**
+ * Onager crew stations.
+ *
+ * Two men on the windlass at the rear, which is where the work is; one at the shot pile on the
+ * right, where `buildOnagerGeometry` stacks the stones; one forward on the left beside the
+ * buffer frame, clear of the arm's sweep. Nobody stands inside the plane the arm travels
+ * through — an onager's arm goes from lying over the windlass to vertical in a tenth of a
+ * second and it would take a man's head off.
+ */
+export const ONAGER_STATIONS: readonly CrewStation[] = [
+  { x: -0.52, z: -2.35, turn: 0.22, role: 'windlass' },
+  { x: 0.56, z: -2.35, turn: -0.22, role: 'windlass' },
+  { x: 1.62, z: -0.62, turn: -1.72, role: 'server' },
+  { x: -1.46, z: 0.72, turn: 1.44, role: 'loader' },
+];
+
 export const CREW_STATIONS: readonly CrewStation[] = [
   // On the centreline behind the drum, where his weight goes onto the handspikes and where
   // he can sight down the groove. This is also the station that keeps the sim's bolt origin
@@ -89,10 +162,18 @@ export const CREW_STATIONS: readonly CrewStation[] = [
   // the machine's axis is the one who should be shooting.
   { x: 0, z: -1.42, turn: 0, role: 'windlass' },
   // Outboard of the arm sweep on the left, turned in to the groove.
-  { x: -1.02, z: -0.26, turn: 1.30, role: 'loader' },
+  // Well outboard of the arm sweep, which reaches x = 0.75 at z = -0.08 at full draw. At
+  // -1.02 a critic read him as "standing inside the arms' swing arc"; -1.32 puts a clear half
+  // metre between his chest and the arm at its widest.
+  { x: -1.32, z: -0.44, turn: 1.24, role: 'loader' },
   // At the bolt basket, half turned toward the gun.
   { x: 1.08, z: -0.94, turn: -1.85, role: 'server' },
 ];
+
+export const STATIONS_OF: Record<EngineKind, readonly CrewStation[]> = {
+  [EngineKind.Scorpio]: CREW_STATIONS,
+  [EngineKind.Onager]: ONAGER_STATIONS,
+};
 
 // ---------------------------------------------------------------------------
 // The cycle
@@ -165,6 +246,22 @@ export function enginePose(t: number, reload: number, out: EnginePose): EnginePo
   return out;
 }
 
+/**
+ * Where in its cycle a gun starts when the battery is first seen.
+ *
+ * Not "wound and loaded", which is what it was, because that made every machine in a battery
+ * identical until the first volley and a blind critic read it straight off the frame: "the same
+ * helmet/tunic/pose triple repeats verbatim across all three weapon crews". The crews' poses
+ * come from their engine's phase, so identical engines mean identical crews.
+ *
+ * Spread across the whole visible cycle instead, from just after a shot to fully wound. A
+ * battery that has been in position for any length of time is genuinely like this — guns get
+ * re-laid, a skein gets re-tensioned, one crew is always slower — and it means a battery
+ * photographed at a random moment shows one gun wound, one loading and one on the winch.
+ */
+export const initialSinceShot = (h: number): number =>
+  RECOVER + h * (WIND_MAX + LOAD_TIME + 5);
+
 export const emptyPose = (): EnginePose => ({
   draw: 1, recoil: 0, loaded: 1, phase: EnginePhase.Ready,
 });
@@ -173,9 +270,35 @@ export const emptyPose = (): EnginePose => ({
 export const sliderZOf = (draw: number): number =>
   CLAW_REST_Z + (CLAW_DRAWN_Z - CLAW_REST_Z) * draw;
 
-/** Arm sweep for a draw fraction, radians. */
+/** Scorpio arm sweep for a draw fraction, radians. */
 export const armPhiOf = (draw: number): number =>
   ARM_REST + (ARM_DRAWN - ARM_REST) * draw;
+
+/** Onager arm sweep for a draw fraction, radians off vertical. */
+export const onagerArmOf = (draw: number): number =>
+  ON_ARM_RELEASED + (ON_ARM_COCKED - ON_ARM_RELEASED) * draw;
+
+/**
+ * The value the shader reads out of `iState.x`, whichever machine this is.
+ *
+ * One instance attribute serves both because both articulate on exactly one angle; the shader
+ * knows which frame that angle is in from the part id, so the renderer only has to agree on
+ * the number.
+ */
+export const armStateOf = (kind: EngineKind, draw: number): number =>
+  kind === EngineKind.Onager ? onagerArmOf(draw) : armPhiOf(draw);
+
+/**
+ * An onager's arm tip, in the machine's own frame, for a draw fraction.
+ *
+ * Exists so `tools/probe-scorpion.mjs` can answer "does the arm move, and through what arc?"
+ * with metres rather than with a pixel diff — a diff of two rendered frames of a battery is
+ * swamped by the crew's own animation and by cloud shadow crossing the field.
+ */
+export const onArmTip = (draw: number): [number, number, number] => {
+  const p = onArmPoint(ON_ARM_R, onagerArmOf(draw));
+  return [+p[0].toFixed(3), +p[1].toFixed(3), +p[2].toFixed(3)];
+};
 
 /** An engine whose crew are all dead: string forward, groove empty, nobody serving it. */
 export const ABANDONED: EnginePose = {
@@ -195,8 +318,9 @@ export const ABANDONED: EnginePose = {
  * `ThrowPilum` is a whole-body wind-up and heave, which is a windlass stroke; `AttackThrust`
  * is a forward lunge with both hands, which is a bolt going home in the groove.
  */
-export function crewClip(station: number, phase: EnginePhase): Clip {
-  const role = CREW_STATIONS[station % CREW_STATIONS.length].role;
+export function crewClip(kind: EngineKind, station: number, phase: EnginePhase): Clip {
+  const table = STATIONS_OF[kind];
+  const role = table[station % table.length].role;
   if (role === 'windlass') {
     return phase === EnginePhase.Wind ? Clip.ThrowPilum
       : phase === EnginePhase.Recover ? Clip.IdleAlert

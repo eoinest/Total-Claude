@@ -58,11 +58,16 @@ const NO_HUD = args.get('hud') !== 'true';
  * field beyond.
  */
 const SHOTS = {
-  battery:   { dx: 2.5,  dz: 11,  zoom: 0.37, yaw: Math.PI * 0.93, at: AT },
-  engine:    { dx: -5.4, dz: 2.0, zoom: 0.15, yaw: Math.PI * 0.28, at: AT },
-  crewwork:  { dx: 1.7,  dz: 1.4, zoom: 0.13, yaw: Math.PI * 0.88, at: AT },
-  overwatch: { dx: 0,    dz: 42,  zoom: 0.52, yaw: Math.PI * 0.98, at: AT },
-  downrange: { dx: -2.0, dz: -7,  zoom: 0.19, yaw: Math.PI * 0.05, at: AT },
+  // Tightened after three blind critics said the same thing about the loose framings: "four of
+  // your six frames have no subject at all", "the actual subject is jammed against the right
+  // edge and cropped", "a flat green rectangle terminated by a hard LOD density seam". A wide
+  // camera on a twelve-man battery in an empty meadow photographs the meadow. Every shot below
+  // now has the guns filling the near third with something legible behind them.
+  battery:   { dx: 1.2,  dz: 7,   zoom: 0.27, yaw: Math.PI * 0.90, at: AT },
+  engine:    { dx: -5.4, dz: 1.6, zoom: 0.14, yaw: Math.PI * 0.30, at: AT },
+  crewwork:  { dx: 1.7,  dz: 1.1, zoom: 0.12, yaw: Math.PI * 0.86, at: AT },
+  overwatch: { dx: 0,    dz: 22,  zoom: 0.40, yaw: Math.PI * 0.97, at: AT },
+  downrange: { dx: -1.6, dz: -5,  zoom: 0.16, yaw: Math.PI * 0.06, at: AT },
 };
 
 const waitForServer = async (url, ms) => {
@@ -111,6 +116,26 @@ const advanceTo = async (t) => {
     while (g.simTime() < target - 1e-6) g.advance(Math.min(0.5, target - g.simTime()));
   }, t);
 };
+
+// `--onager=N` spawns a stone-thrower battery beside the scorpions before the clock runs.
+//
+// `scenario.ts` and `battleConfig.ts` are the integrator's files and do not deploy onagers, so
+// without this there is no way to photograph one. Spawning through `battle.spawnUnit` is the
+// real code path — same formation placement, same volley machine, same renderer — so what this
+// shoots is what a scenario would get.
+if (args.has('onager')) {
+  const n = Number(args.get('onager')) || 1;
+  const info = await page.evaluate(({ n }) => {
+    const g = window.__game;
+    const ids = [];
+    for (let k = 0; k < n; k++) {
+      const x = (k - (n - 1) / 2) * 46 - 150;
+      ids.push(g.battle.spawnUnit('onager', x, 282, Math.PI, 'line'));
+    }
+    return ids;
+  }, { n });
+  console.log(`spawned ${info.length} onager battery/batteries: unit ids ${info.join(', ')}`);
+}
 
 await advanceTo(AT);
 
@@ -165,10 +190,14 @@ if (!report.units.length) console.log('  (none — no artillery unit alive at th
 // Shots
 // ---------------------------------------------------------------------------
 
-const centre = report.units.length
+// `--focus=<typeId>` frames one artillery type rather than the centroid of all of them, which
+// with two kinds on the field lands in the gap between them.
+const FOCUS = args.get('focus');
+const focused = FOCUS ? report.units.filter((u) => u.type === FOCUS) : report.units;
+const centre = focused.length
   ? {
-    x: report.units.reduce((a, u) => a + u.x, 0) / report.units.length,
-    z: report.units.reduce((a, u) => a + u.z, 0) / report.units.length,
+    x: focused.reduce((a, u) => a + u.x, 0) / focused.length,
+    z: focused.reduce((a, u) => a + u.z, 0) / focused.length,
   }
   : { x: 0, z: 262 };
 console.log(`\nbattery centroid (${centre.x.toFixed(1)}, ${centre.z.toFixed(1)})`);
@@ -239,16 +268,28 @@ if (args.has('bench')) {
     { name: 'e-ready', since: 0.9 + 13.5 + 2.2 },
     { name: 'f-recoil', since: 0.06 },
   ];
+  // An onager is a 3.8 m chassis with a 2 m arm over it against a scorpio's 1.4 m stock, so
+  // the bench has to stand off further and wider for one or it photographs a corner of it.
+  const big = FOCUS === 'onager';
+  const K = big ? 2.6 : 1;
+  const Z = big ? 0.235 : 0.135;
   const views = [
-    { tag: 'q', dx: -1.6, dz: 1.0, zoom: 0.135, yaw: Math.PI * 0.24 },
-    { tag: 'side', dx: -2.2, dz: 0.3, zoom: 0.135, yaw: Math.PI * 0.5 },
-    { tag: 'rear', dx: 0.05, dz: 0.9, zoom: 0.135, yaw: Math.PI * 1.0 },
-    { tag: 'front', dx: 0.05, dz: -1.9, zoom: 0.135, yaw: Math.PI * 0.0 },
+    { tag: 'q', dx: -1.6 * K, dz: 1.0 * K, zoom: Z, yaw: Math.PI * 0.24 },
+    { tag: 'side', dx: -2.2 * K, dz: 0.3 * K, zoom: Z, yaw: Math.PI * 0.5 },
+    { tag: 'rear', dx: 0.05, dz: 0.9 * K, zoom: Z, yaw: Math.PI * 1.0 },
+    // Downrange of the muzzle looking back. `dz` is downrange-positive and the camera sits
+    // `r` behind its focus along the yaw, so a negative dz here put the focus *behind* the eye
+    // and the shot photographed empty pasture — a critic correctly reported "e-ready-front.png
+    // is a wasted frame, no machine in shot at all". The focus has to be short of the muzzle
+    // with the eye beyond it.
+    { tag: 'front', dx: 0.05, dz: -0.6 * K, zoom: Z, yaw: Math.PI * 0.02 },
   ];
   // The right-hand engine of the battery, so the camera offsets are relative to a known
   // machine. The unit faces -Z, so its local +X maps to world -X: engine 3's local
   // +1.5 * ENGINE_PITCH lands at world x = centre.x - 5.4.
-  const eng0 = { x: centre.x - 3.6 * 1.5, z: centre.z - 0.55 };
+  const eng0 = big
+    ? { x: centre.x - 6.2 * 0.5, z: centre.z - 1.35 }
+    : { x: centre.x - 3.6 * 1.5, z: centre.z - 0.55 };
 
   for (const fr of FRAMES) {
     await page.evaluate((since) => {

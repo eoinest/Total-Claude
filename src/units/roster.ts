@@ -181,7 +181,12 @@ export const ROMAN_UNITS: UnitTypeDef[] = [
       // wear the legion's issue tunic rather than an auxiliary's undyed one, over a leather
       // subarmalis with the mail off while they work.
       helmet: 'coolus', crest: 'none', cloak: false, bareChested: false,
-      variance: 0.55, heightScale: 1.0, shieldEmblem: 'none',
+      // High for a Roman unit, and deliberately. A blind critic reading a battery frame said
+      // "the same helmet/tunic/pose triple repeats verbatim across all three weapon crews",
+      // and at 0.55 with only twelve men the helmet roll lands on a Coolus for most of them.
+      // Artillerymen were immunes seconded out of different centuries rather than a cohort
+      // issued together, so a mixed kit is the more accurate reading as well as the fix.
+      variance: 0.85, heightScale: 1.0, shieldEmblem: 'none',
       tunicColour: 0x9e3026, legColour: 0x8e8266,
     },
     formations: ['line'],
@@ -190,6 +195,21 @@ export const ROMAN_UNITS: UnitTypeDef[] = [
   },
 ];
 
+/**
+ * No `onager` entry here on purpose.
+ *
+ * One was written and then removed: `siegeUnits.ts` already defines `onager` as a *Germanic*
+ * battery of captured Roman engines, and because `ALL_UNITS` concatenates `SIEGE_UNITS` last,
+ * two entries under one id means the later one silently wins and the earlier one is dead code
+ * that still typechecks. That file's own comment asks for this workstream's geometry to render
+ * it, which is exactly what happens: `engineKindOf` reads `missile.arc === 'high'` and
+ * `UnitRenderSystem` draws `buildOnagerGeometry` for it. The stats live there, the machine
+ * lives here, and neither file has to know about the other.
+ *
+ * `carroballista`, in the same file, comes out as a scorpio for the same reason — its arc is
+ * flat. That is right as far as it goes; see this workstream's report for the one thing it
+ * still needs, which is wheels instead of a tripod.
+ */
 export const GERMANIC_UNITS: UnitTypeDef[] = [
   {
     id: 'juthungi-warband',

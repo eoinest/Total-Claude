@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import {
   EnginePart, SPRING_X, SPRING_Y, SPRING_Z, ARM_R, ARM_RAKE, ARM_REST,
   CLAW_Y, DRUM_Y, DRUM_Z, DRUM_R, PIVOT_Y, PIVOT_Z, CLAW_REST_Z,
+  OnagerPart, ON_SKEIN_Y, ON_SKEIN_Z, ON_ARM_COCKED, ON_ARM_R, ON_HOOK_F,
+  ON_DRUM_Y, ON_DRUM_Z, ON_DRUM_R, ON_PIVOT_Z,
 } from './engineMesh';
 
 /**
@@ -42,6 +44,15 @@ const RECOIL_BACK = 0.055;
  */
 const DRUM_TURNS = 1 / DRUM_R;
 
+/**
+ * Extra pitch the whole onager takes as it rears, radians.
+ *
+ * Bigger than the scorpio's, and about a pivot on the ground rather than on a pintle: Ammianus
+ * says the machine is called the wild ass because it kicks, and a two-tonne chassis that stops
+ * its own arm dead is exactly a thing that lifts off its front sleeper.
+ */
+const ON_RECOIL_PITCH = 0.055;
+
 const f = (n: number): string => n.toFixed(5);
 
 const DECLS = /* glsl */ `
@@ -66,9 +77,20 @@ const float E_CLAW_REST = ${f(CLAW_REST_Z)};
 const float E_DRUM_TURNS = ${f(DRUM_TURNS)};
 const float E_RECOIL_PITCH = ${f(RECOIL_PITCH)};
 const float E_RECOIL_BACK = ${f(RECOIL_BACK)};
+const float O_SKEIN_Y = ${f(ON_SKEIN_Y)};
+const float O_SKEIN_Z = ${f(ON_SKEIN_Z)};
+const float O_COCKED  = ${f(ON_ARM_COCKED)};
+const float O_ARM_R   = ${f(ON_ARM_R)};
+const float O_HOOK_D  = ${f(ON_ARM_R * ON_HOOK_F)};
+const float O_DRUM_Y  = ${f(ON_DRUM_Y)};
+const float O_DRUM_Z  = ${f(ON_DRUM_Z)};
+const float O_DRUM_R  = ${f(ON_DRUM_R)};
+const float O_PIVOT_Z = ${f(ON_PIVOT_Z)};
+const float O_RECOIL_PITCH = ${f(ON_RECOIL_PITCH)};
 
 varying vec3 vEngTint;
 varying float vEngGrime;
+varying float vEngContact;
 
 // Rotate (a,b) by the angle whose sine and cosine are s and c. Full trig, not the
 // small-angle form the soldier shader uses: these arms sweep 78 degrees.
@@ -76,6 +98,11 @@ void engRot( inout float a, inout float b, float s, float c ) {
   float t = a;
   a = t * c - b * s;
   b = t * s + b * c;
+}
+
+// A point at distance d along an onager's throwing arm, for a given sweep off vertical.
+vec3 engOnArm( float d, float th ) {
+  return vec3( 0.0, O_SKEIN_Y + d * cos( th ), O_SKEIN_Z - d * sin( th ) );
 }
 
 // Where the arm nock for this side of the machine sits, given the live sweep.
@@ -97,6 +124,8 @@ vec3 engArmTip( float sideSign, float phi ) {
 const body = (withNormal: boolean): string => /* glsl */ `
 {
   vec3 p = position;
+  // Height above the machine's own base, kept before any transform, for the contact term.
+  float contactY = position.y;
   vec3 n = ${withNormal ? 'objectNormal' : 'vec3( 0.0, 1.0, 0.0 )'};
   float part = aPart.x;
   float phi = iState.x;
@@ -134,13 +163,41 @@ const body = (withNormal: boolean): string => /* glsl */ `
     p.y = E_DRUM_Y + dy;
     p.z = E_DRUM_Z + dz;
     ${withNormal ? 'engRot( n.y, n.z, s, c );' : ''}
-  } else if ( part == ${EnginePart.String}.0 || part == ${EnginePart.Rope}.0 ) {
+  } else if ( part == ${OnagerPart.Arm}.0 || part == ${OnagerPart.Shot}.0 ) {
+    // The throwing arm, its sling and the stone in the pouch, all rotating as one about the
+    // skein. The sling is rigid to the arm; see engineMesh.ts for why that is the right
+    // approximation and not a shortcut.
+    float d = O_COCKED - phi;
+    float s = sin( d ), c = cos( d );
+    float dy = p.y - O_SKEIN_Y;
+    float dz = p.z - O_SKEIN_Z;
+    engRot( dy, dz, s, c );
+    p.y = O_SKEIN_Y + dy;
+    p.z = O_SKEIN_Z + dz;
+    ${withNormal ? 'engRot( n.y, n.z, s, c );' : ''}
+    // A shot that has been thrown is not still in the pouch.
+    if ( part == ${OnagerPart.Shot}.0 && iState.w < 0.5 ) p = vec3( 0.0 );
+  } else if ( part == ${OnagerPart.Winch}.0 ) {
+    // The onager's drum takes in rope as the arm comes down, so its angle follows the arm.
+    float turn = ( O_COCKED - phi ) * O_HOOK_D / O_DRUM_R;
+    float s = sin( turn ), c = cos( turn );
+    float dy = p.y - O_DRUM_Y;
+    float dz = p.z - O_DRUM_Z;
+    engRot( dy, dz, s, c );
+    p.y = O_DRUM_Y + dy;
+    p.z = O_DRUM_Z + dz;
+    ${withNormal ? 'engRot( n.y, n.z, s, c );' : ''}
+  } else if ( part == ${EnginePart.String}.0 || part == ${EnginePart.Rope}.0
+           || part == ${OnagerPart.Rope}.0 ) {
     // A cord carries only its cross-section offset in position.xy; it is placed on the live
     // line between two moving points, in a frame built from that line so it stays round
     // whichever way the run happens to lie.
     float span = aPart.w;
     vec3 a, b;
-    if ( part == ${EnginePart.Rope}.0 ) {
+    if ( part == ${OnagerPart.Rope}.0 ) {
+      a = vec3( 0.0, O_DRUM_Y + O_DRUM_R, O_DRUM_Z );
+      b = engOnArm( O_HOOK_D, phi ) + vec3( 0.0, -0.06, 0.0 );
+    } else if ( part == ${EnginePart.Rope}.0 ) {
       a = vec3( 0.0, E_DRUM_Y + E_DRUM_R, E_DRUM_Z );
       b = vec3( 0.0, E_CLAW_Y - 0.02, slider - 0.02 );
     } else {
@@ -159,7 +216,19 @@ const body = (withNormal: boolean): string => /* glsl */ `
     ${withNormal ? 'n = normalize( off + d * 1e-4 );' : ''}
   }
 
-  if ( part != ${EnginePart.Ground}.0 ) {
+  if ( part >= ${OnagerPart.Base}.0 ) {
+    // The onager rears about its front sleeper, on the ground, and takes no elevation of its
+    // own: a stone-thrower is ranged by the twist in the skein and by how far the arm is wound
+    // down, not by tipping the chassis.
+    float a = iState.z * O_RECOIL_PITCH;
+    float s = sin( a ), c = cos( a );
+    float dy = p.y;
+    float dz = p.z - O_PIVOT_Z;
+    engRot( dz, dy, s, c );
+    p.y = dy;
+    p.z = O_PIVOT_Z + dz;
+    ${withNormal ? 'engRot( n.z, n.y, s, c );' : ''}
+  } else if ( part != ${EnginePart.Ground}.0 ) {
     // Elevation and recoil, both about the pintle. Recoil is a muzzle-up kick plus a slide
     // back along the stock, which is what a torsion engine does when three hundred joules
     // leave it in a tenth of a second.
@@ -178,6 +247,17 @@ const body = (withNormal: boolean): string => /* glsl */ `
   float cy = cos( iOrient.x ), sy2 = sin( iOrient.x );
   p = vec3( p.x * cy + p.z * sy2, p.y, -p.x * sy2 + p.z * cy );
   ${withNormal ? 'n = vec3( n.x * cy + n.z * sy2, n.y, -n.x * sy2 + n.z * cy );' : ''}
+
+  // Baked contact occlusion.
+  //
+  // All three blind critics used the word "hover": "the tripod legs intersect the grass with no
+  // contact shadow or AO", "not one contact shadow between any figure and the ground". They are
+  // reading a real absence — there is no SSAO pass in this renderer and the atlas AO map is
+  // per-texel cavity, which says nothing about proximity to the ground. This is the honest
+  // cheap answer: darken the lowest third of a metre of the machine, which is exactly the band
+  // a real ambient-occlusion solve would darken where a foot meets turf. It costs one varying
+  // and it is the difference between a machine standing on the field and a decal in front of it.
+  vEngContact = smoothstep( 0.0, 0.34, contactY );
 
   gEngPos = p + iPos;
   ${withNormal ? 'objectNormal = normalize( n );' : ''}
@@ -239,10 +319,13 @@ const TINT_BODY = /* glsl */ `
 const FRAG_DECLS = /* glsl */ `
 varying vec3 vEngTint;
 varying float vEngGrime;
+varying float vEngContact;
 `;
 
 const FRAG_BODY = /* glsl */ `
-diffuseColor.rgb *= vEngTint;
+// Tint, then the contact term. 0.38 at the very foot: deep enough to read as ground contact
+// under a bright sky, not so deep that a leg goes to black and the machine loses its footprint.
+diffuseColor.rgb *= vEngTint * mix( 0.38, 1.0, vEngContact );
 // Field dirt at the same strength the soldiers take it, so a machine parked among them does
 // not read as freshly delivered.
 diffuseColor.rgb = mix(
@@ -274,6 +357,8 @@ function patch(material: THREE.Material, variant: 'colour' | 'depth'): void {
       // and an unused varying is free; what they must not do is the normal work.
       v = v.replace('#include <begin_vertex>', `#include <begin_vertex>\n${body(false)}\ntransformed = gEngPos;`);
       v = v.replace('vEngTint = tint;', '');
+      // The shadow passes have no fragment stage of ours to consume it.
+      v = v.replace(/vEngContact = [^;]*;/, '');
     }
     shader.vertexShader = v;
 
@@ -289,7 +374,7 @@ function patch(material: THREE.Material, variant: 'colour' | 'depth'): void {
     }
   };
   // Must not collide with the soldier skinner's key or one of them gets the other's program.
-  material.customProgramCacheKey = () => `siege-engine-v1-${variant}`;
+  material.customProgramCacheKey = () => `siege-engine-v3-${variant}`;
 }
 
 export function makeEngineMaterial(

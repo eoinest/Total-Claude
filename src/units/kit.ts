@@ -349,10 +349,13 @@ export function resolveKit(def: UnitTypeDef, variant: number, out: ResolvedKit):
 
   let melee: Piece;
   let inHand: Piece | -1;
-  if (ap.weapon === 'bolt') {
-    // An artilleryman's weapon is the machine. Both hands are on a handspike or a bolt, so
-    // he carries nothing: sword on the hip, nothing drawn until something reaches the
-    // battery. `maskHiMelee` still draws the blade, so a crew overrun fights with it.
+  if (ap.weapon === 'bolt' || ap.weapon === 'boulder') {
+    // An artilleryman's weapon is the machine. Both hands are on a handspike, a bolt or a
+    // 26 kg stone, so he carries nothing: sidearm on the hip, nothing drawn until something
+    // reaches the battery. `maskHiMelee` still draws it, so a crew overrun fights with it.
+    //
+    // `boulder` is here for the stone-thrower crews in `siegeUnits.ts`. Left out, they fell
+    // through to the general case and served an onager with a drawn sword in one hand.
     melee = meleeOf(ap.sidearm ?? 'gladius');
     inHand = -1;
     if (melee === Piece.WeaponSword) add(Piece.SwordSheathed);

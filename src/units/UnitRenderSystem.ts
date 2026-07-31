@@ -26,11 +26,12 @@ import {
 import {
   renderImpostorAtlas, buildImpostorGeometry, makeImpostorMaterial, type ImpostorAtlas,
 } from './impostor';
-import { buildScorpioGeometry } from './engineMesh';
+import { buildScorpioGeometry, buildOnagerGeometry } from './engineMesh';
 import { makeEngineMaterial, type EngineMaterialSet } from './engineMaterial';
 import {
-  ABANDONED, CREW_PER_ENGINE, CREW_STATIONS, armPhiOf, crewClip, engineCount,
-  engineOffsetX, enginePose, emptyPose, isEngineUnit, sliderZOf, stationJitter,
+  ABANDONED, CREW_OF, FORWARD_OF, PITCH_OF, STATIONS_OF, EngineKind, armStateOf, crewClip,
+  engineKindOf, enginePose, emptyPose, initialSinceShot, isEngineUnit, onArmTip, sliderZOf,
+  stationJitter,
   type EnginePose,
 } from './engines';
 import type { SkySystem } from '../render/SkySystem';
@@ -164,16 +165,6 @@ const SLOT_STRAGGLE = 0.30;
  */
 const MAX_ENGINES = 64;
 
-/**
- * How far forward of the unit anchor the machines stand, metres.
- *
- * The sim puts rank 0 on the anchor and stacks the rest behind it, and the crew stations are
- * all *behind* their engine, so the machines have to sit forward of the anchor for the crew
- * to end up near the slots the sim gave them. Half a metre puts the windlass man half a metre
- * behind the anchor, which is inside the formation's own 1.02 m rank spacing.
- */
-const ENGINE_FORWARD = 0.55;
-
 /** Muzzle velocity of a bolt, m/s, and gravity — for the elevation solution. Mirrors
  *  `PHYSICS.bolt.speed` and `GRAVITY` in `sim/Projectiles.ts`; visual only, so a drift
  *  between the two moves the barrels a degree and nothing else. */
@@ -187,6 +178,11 @@ const ELEV_IDLE = 0.05;
  * concept of a machine. Keyed by unit id and allocated on first sight.
  */
 interface Battery {
+  kind: EngineKind;
+  /** Men to a machine, and metres between machines, for this kind. */
+  crew: number;
+  pitch: number;
+  forward: number;
   count: number;
   /** Seconds since each engine last let go. */
   sinceShot: Float32Array;
@@ -331,7 +327,8 @@ export class UnitRenderSystem implements Subsystem {
   private impostors?: ImpostorAtlas;
   private impostorMat?: THREE.MeshBasicMaterial;
   private group = new THREE.Group();
-  private engineTier?: EngineTier;
+  /** One tier per `EngineKind`: same material and therefore the same program, own geometry. */
+  private engineTiers: (EngineTier | undefined)[] = [];
   private engineMat?: EngineMaterialSet;
   /** Machine state per artillery unit; see `Battery`. */
   private batteries = new Map<number, Battery>();
@@ -588,7 +585,10 @@ export class UnitRenderSystem implements Subsystem {
       // blue channel already says which is which per texel.
       envMapIntensity: 2.4,
     });
-    this.engineTier = this.makeEngineTier(buildScorpioGeometry(), this.engineMat);
+    this.engineTiers[EngineKind.Scorpio] =
+      this.makeEngineTier(buildScorpioGeometry(), this.engineMat, 'siege-scorpio');
+    this.engineTiers[EngineKind.Onager] =
+      this.makeEngineTier(buildOnagerGeometry(), this.engineMat, 'siege-onager');
 
     ctx.scene.add(this.group);
     this.buildImpostors(ctx, cap);
@@ -597,7 +597,8 @@ export class UnitRenderSystem implements Subsystem {
 
   private makeEngineTier(
     geometry: THREE.InstancedBufferGeometry,
-    mat: EngineMaterialSet
+    mat: EngineMaterialSet,
+    name: string
   ): EngineTier {
     const pos = new Float32Array(MAX_ENGINES * 3);
     const orient = new Float32Array(MAX_ENGINES * 4);
@@ -614,7 +615,7 @@ export class UnitRenderSystem implements Subsystem {
     geometry.instanceCount = 0;
 
     const mesh = new THREE.Mesh(geometry, mat.material);
-    mesh.name = 'siege-engines';
+    mesh.name = name;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.frustumCulled = false;
@@ -626,16 +627,21 @@ export class UnitRenderSystem implements Subsystem {
   }
 
   /** Machine state for a unit, allocated on first sight. */
-  private batteryOf(u: { id: number; members: number[] }): Battery {
+  private batteryOf(u: { id: number; members: number[] }, def: UnitTypeDef): Battery {
     let bat = this.batteries.get(u.id);
-    const want = engineCount(u.members.length);
-    if (bat && bat.count === want) return bat;
+    const kind = engineKindOf(def);
+    const crew = CREW_OF[kind];
+    const want = Math.max(1, Math.round(u.members.length / crew));
+    if (bat && bat.count === want && bat.kind === kind) return bat;
     bat = {
+      kind,
+      crew,
+      pitch: PITCH_OF[kind],
+      forward: FORWARD_OF[kind],
       count: want,
-      // A battery deploys wound and loaded. Starting at zero would have every gun on the
-      // field play its recovery and a full winch cycle in the first twenty seconds of a
-      // battle, in step, which is exactly the lockstep tell this project keeps fixing.
-      sinceShot: new Float32Array(want).fill(1e4),
+      // Spread across the cycle rather than all wound and loaded together — see
+      // `initialSinceShot`, which is where the reasoning lives.
+      sinceShot: new Float32Array(want),
       lastAmmo: new Int32Array(want).fill(-1),
       elev: ELEV_IDLE,
       aimTimer: 0,
@@ -644,6 +650,7 @@ export class UnitRenderSystem implements Subsystem {
     };
     for (let k = 0; k < want; k++) {
       const seed = u.id * 977 + k * 131;
+      bat.sinceShot[k] = initialSinceShot(hash01(seed, 153));
       // No two guns in a battery are laid on exactly the same bearing.
       bat.yawJit[k] = (hash01(seed, 151) - 0.5) * 0.09;
       bat.variant[k] = hash01(seed, 152);
@@ -670,11 +677,11 @@ export class UnitRenderSystem implements Subsystem {
     for (const u of b.units) {
       const def = unitType(u.typeId);
       if (!isEngineUnit(def)) continue;
-      const bat = this.batteryOf(u);
+      const bat = this.batteryOf(u, def);
       for (let k = 0; k < bat.count; k++) {
         let ammo = 0;
-        for (let c = 0; c < CREW_PER_ENGINE; c++) {
-          const i = u.members[k * CREW_PER_ENGINE + c];
+        for (let c = 0; c < bat.crew; c++) {
+          const i = u.members[k * bat.crew + c];
           if (i !== undefined && p.aliveAt(i)) ammo += p.ammo[i];
         }
         if (bat.lastAmmo[k] >= 0 && ammo < bat.lastAmmo[k]) bat.sinceShot[k] = 0;
@@ -726,6 +733,12 @@ export class UnitRenderSystem implements Subsystem {
       const engines = [];
       for (let k = 0; k < bat.count; k++) {
         const pose = enginePose(bat.sinceShot[k], this.reloadOf(id), this.pose);
+        // The articulation, in the machine's own frame. A still cannot answer "does the arm
+        // actually move?" — crew animation and cloud shadow swamp a pixel diff — so the probe
+        // reads the moving part's position out of the same function the shader is fed.
+        const moving = bat.kind === EngineKind.Onager
+          ? { armRad: +armStateOf(bat.kind, pose.draw).toFixed(3), tip: onArmTip(pose.draw) }
+          : { armRad: +armStateOf(bat.kind, pose.draw).toFixed(3), sliderZ: +sliderZOf(pose.draw).toFixed(3) };
         engines.push({
           k,
           sinceShot: +bat.sinceShot[k].toFixed(2),
@@ -733,11 +746,11 @@ export class UnitRenderSystem implements Subsystem {
           recoil: +pose.recoil.toFixed(3),
           loaded: pose.loaded,
           phase: pose.phase,
-          sliderZ: +sliderZOf(pose.draw).toFixed(3),
+          ...moving,
         });
       }
       out.push({
-        unit: id, type: u?.typeId, count: bat.count,
+        unit: id, type: u?.typeId, kind: bat.kind, crew: bat.crew, count: bat.count,
         elevDeg: +((bat.elev * 180) / Math.PI).toFixed(2), engines,
       });
     }
@@ -752,27 +765,29 @@ export class UnitRenderSystem implements Subsystem {
    * close to the formation slots the simulation actually gave the men. See `engines.ts`.
    */
   private pushBattery(u: UnitGroupState, bat: Battery, uc: number, us: number): void {
-    const tier = this.engineTier;
+    const tier = this.engineTiers[bat.kind];
     if (!tier) return;
     const p = this.battle.pool;
     const reload = this.reloadOf(u.id);
     for (let k = 0; k < bat.count && tier.count < MAX_ENGINES; k++) {
       let alive = 0;
-      for (let c = 0; c < CREW_PER_ENGINE; c++) {
-        const i = u.members[k * CREW_PER_ENGINE + c];
+      for (let c = 0; c < bat.crew; c++) {
+        const i = u.members[k * bat.crew + c];
         if (i !== undefined && p.aliveAt(i)) alive++;
       }
       // A gun whose crew are all dead is abandoned where it stood: string forward, groove
       // empty, muzzle down. It is not removed — a wrecked battery is one of the things that
       // makes a late-battle field read as a battle rather than as a tidy simulation.
       const pose = alive > 0 ? enginePose(bat.sinceShot[k], reload, this.pose) : ABANDONED;
-      const lx = engineOffsetX(k, bat.count);
-      const x = u.x + lx * uc + ENGINE_FORWARD * us;
-      const z = u.z - lx * us + ENGINE_FORWARD * uc;
+      const lx = (k - (bat.count - 1) * 0.5) * bat.pitch;
+      const x = u.x + lx * uc + bat.forward * us;
+      const z = u.z - lx * us + bat.forward * uc;
       const y = this.battle.groundAt(x, z);
 
-      this.sphere.center.set(x, y + 0.85, z);
-      this.sphere.radius = 1.8;
+      // An onager is a 3.8 m chassis with a 2 m arm over it, so it needs a bound to match.
+      const big = bat.kind === EngineKind.Onager;
+      this.sphere.center.set(x, y + (big ? 1.3 : 0.85), z);
+      this.sphere.radius = big ? 3.4 : 1.8;
       if (!this.frustum.intersectsSphere(this.sphere)) continue;
 
       const n = tier.count;
@@ -784,7 +799,7 @@ export class UnitRenderSystem implements Subsystem {
       tier.orient[o + 1] = 1;
       tier.orient[o + 2] = alive > 0 ? bat.elev : -0.06;
       tier.orient[o + 3] = bat.variant[k];
-      tier.state[o] = armPhiOf(pose.draw);
+      tier.state[o] = armStateOf(bat.kind, pose.draw);
       tier.state[o + 1] = sliderZOf(pose.draw);
       tier.state[o + 2] = pose.recoil;
       tier.state[o + 3] = pose.loaded;
@@ -820,11 +835,12 @@ export class UnitRenderSystem implements Subsystem {
     if (t <= 0.002) return facing;
 
     const slot = p.slot[i];
-    const k = Math.min(bat.count - 1, Math.floor(slot / CREW_PER_ENGINE));
-    const st = CREW_STATIONS[slot % CREW_PER_ENGINE];
+    const k = Math.min(bat.count - 1, Math.floor(slot / bat.crew));
+    const table = STATIONS_OF[bat.kind];
+    const st = table[slot % table.length];
     stationJitter(p.variant[i], this.jitter);
-    const lx = engineOffsetX(k, bat.count) + st.x + this.jitter[0];
-    const lz = ENGINE_FORWARD + st.z + this.jitter[1];
+    const lx = (k - (bat.count - 1) * 0.5) * bat.pitch + st.x + this.jitter[0];
+    const lz = bat.forward + st.z + this.jitter[1];
     const wx = u.x + lx * uc + lz * us;
     const wz = u.z - lx * us + lz * uc;
     out.x += (wx - out.x) * t;
@@ -883,9 +899,10 @@ export class UnitRenderSystem implements Subsystem {
     }
     // The engine tier has its own attribute layout, so it cannot ride the loop above; but it
     // is a distinct program and the first frame that needs it stalls exactly the same way.
-    const eng = this.engineTier;
-    const engSaved = eng ? { count: eng.geometry.instanceCount, visible: eng.mesh.visible } : null;
-    if (eng && engSaved && eng.count === 0) {
+    const engs = this.engineTiers.filter((t): t is EngineTier => !!t);
+    const engSaved = engs.map((e) => ({ count: e.geometry.instanceCount, visible: e.mesh.visible }));
+    for (const eng of engs) {
+      if (eng.count !== 0) continue;
       eng.geometry.instanceCount = 1;
       eng.pos[0] = ctx.camera.position.x;
       eng.pos[1] = ctx.camera.position.y - 60;
@@ -903,10 +920,10 @@ export class UnitRenderSystem implements Subsystem {
       t.geometry.instanceCount = saved[i].count;
       t.mesh.visible = saved[i].visible;
     });
-    if (eng && engSaved) {
-      eng.geometry.instanceCount = engSaved.count;
-      eng.mesh.visible = engSaved.visible;
-    }
+    engs.forEach((e, i) => {
+      e.geometry.instanceCount = engSaved[i].count;
+      e.mesh.visible = engSaved[i].visible;
+    });
     target.dispose();
   }
 
@@ -1224,9 +1241,9 @@ export class UnitRenderSystem implements Subsystem {
     const bat = this.batteries.get(u.id);
     if (!bat) return clip;
     const slot = p.slot[i];
-    const k = Math.min(bat.count - 1, Math.floor(slot / CREW_PER_ENGINE));
+    const k = Math.min(bat.count - 1, Math.floor(slot / bat.crew));
     const pose = enginePose(bat.sinceShot[k], this.reloadOf(u.id), this.pose);
-    return crewClip(slot % CREW_PER_ENGINE, pose.phase);
+    return crewClip(bat.kind, slot % bat.crew, pose.phase);
   }
 
   /** Start a cross-fade on the mount if its gait changed. */
@@ -1486,7 +1503,7 @@ export class UnitRenderSystem implements Subsystem {
     for (const row of this.soldierTiers) for (const t of row) t.buf.count = 0;
     for (const t of this.horseTiers) t.buf.count = 0;
     if (this.impostorTier) this.impostorTier.buf.count = 0;
-    if (this.engineTier) this.engineTier.count = 0;
+    for (const t of this.engineTiers) if (t) t.count = 0;
 
     this.projView.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
     this.frustum.setFromProjectionMatrix(this.projView);
@@ -1504,7 +1521,7 @@ export class UnitRenderSystem implements Subsystem {
       // heading, so this is also the more correct frame to offset in.
       const uc = Math.cos(u.facing);
       const us = Math.sin(u.facing);
-      const battery = isEngineUnit(def) ? this.batteryOf(u) : undefined;
+      const battery = isEngineUnit(def) ? this.batteryOf(u, def) : undefined;
       if (battery) this.pushBattery(u, battery, uc, us);
 
       for (const i of u.members) {
@@ -1905,18 +1922,17 @@ export class UnitRenderSystem implements Subsystem {
     for (const t of this.horseTiers) push(t, true);
     if (this.impostorTier) push(this.impostorTier, false);
 
-    const e = this.engineTier;
-    if (e) {
+    for (const e of this.engineTiers) {
+      if (!e) continue;
       e.geometry.instanceCount = e.count;
       e.mesh.visible = e.count > 0;
-      if (e.count > 0) {
-        for (const [a, stride] of [
-          [e.attrs.pos, 3], [e.attrs.orient, 4], [e.attrs.state, 4],
-        ] as const) {
-          a.clearUpdateRanges();
-          a.addUpdateRange(0, e.count * stride);
-          a.needsUpdate = true;
-        }
+      if (e.count === 0) continue;
+      for (const [a, stride] of [
+        [e.attrs.pos, 3], [e.attrs.orient, 4], [e.attrs.state, 4],
+      ] as const) {
+        a.clearUpdateRanges();
+        a.addUpdateRange(0, e.count * stride);
+        a.needsUpdate = true;
       }
     }
   }
@@ -1927,7 +1943,7 @@ export class UnitRenderSystem implements Subsystem {
     this.impostorTier?.geometry.dispose();
     this.impostorMat?.dispose();
     this.impostors?.dispose();
-    this.engineTier?.geometry.dispose();
+    for (const t of this.engineTiers) t?.geometry.dispose();
     this.engineMat?.dispose();
     for (const m of this.mats) m.dispose();
     this.manAnim.dispose();
