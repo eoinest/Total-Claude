@@ -23,6 +23,7 @@ import {
   summarise, unitCount, unitSizePreset,
 } from '../sim/battleConfig';
 import { QUALITY_PRESETS } from '../core/Engine';
+import { MAPS, getMap, setActiveMap, type MapId } from '../maps';
 import { Faction, type UnitClass } from '../sim/types';
 import { unitType } from '../units/roster';
 import { el, html, icon, setClass, setText } from './dom';
@@ -84,11 +85,17 @@ export interface MenuResult {
  */
 export function resolveConfig(params: URLSearchParams, useStored = true): BattleConfig {
   const token = params.get('battle');
-  if (token) {
-    const decoded = decodeConfig(token);
-    if (decoded) return decoded;
-  }
-  return (useStored ? loadStoredConfig() : null) ?? DEFAULT_CONFIG;
+  const decoded = token ? decodeConfig(token) : null;
+  const cfg = decoded ?? (useStored ? loadStoredConfig() : null) ?? DEFAULT_CONFIG;
+  // Publish the choice to `src/maps` here, and again in `commit`.
+  //
+  // `main.ts` constructs every subsystem with no arguments and `EngineContext` carries no
+  // configuration field, so a module singleton is the only channel by which a map choice can
+  // reach the terrain — and this function is the one point every non-interactive path goes
+  // through (the harness, `?menu=0`, and a shared `?battle=` link). It runs before the engine
+  // exists, let alone `TerrainSystem.init`. See `setActiveMap` for the full ordering argument.
+  setActiveMap(cfg.map);
+  return cfg;
 }
 
 export class MainMenu {
@@ -98,6 +105,7 @@ export class MainMenu {
   private sizeBtns = new Map<UnitSizeId, HTMLElement>();
   private tierBtns = new Map<QualityTier, HTMLElement>();
   private diffBtns = new Map<Difficulty, HTMLElement>();
+  private mapBtns = new Map<MapId, HTMLElement>();
   private countCells = new Map<string, HTMLElement>();
   private stepBtns: Array<{ el: HTMLButtonElement; f: Faction; id: string; d: number }> = [];
 
@@ -136,6 +144,21 @@ export class MainMenu {
              <h2>The Siege of Rome &middot; 271 AD</h2>
            </div>
          </header>
+
+         <section class="menu-row map-row">
+           <div class="menu-lab">
+             <span class="lab-main">Battlefield</span>
+             <span class="lab-sub">Terrain, season and light</span>
+           </div>
+           <div class="menu-opts map-opts">
+             ${MAPS.map((m) => `
+               <button type="button" data-map="${m.id}">
+                 <b>${m.label}</b>
+                 <i>${m.subtitle}</i>
+               </button>`).join('')}
+           </div>
+         </section>
+         <p class="map-blurb" data-map-blurb></p>
 
          <section class="menu-row size-row">
            <div class="menu-lab">
@@ -221,6 +244,20 @@ export class MainMenu {
        </div>`
     );
 
+    for (const b of this.qsa('[data-map]')) {
+      const id = b.dataset.map as MapId;
+      this.mapBtns.set(id, b);
+      b.addEventListener('click', () => {
+        if (this.cfg.map === id) return;
+        // The hour moves with the map. Each battlefield's default is the light it was
+        // designed around — 10:00 over the Campus Martius, 16:00 over Pydna, where a
+        // broadside 37 deg sun is the whole point — and carrying one map's hour onto the
+        // other reliably produces the flat, shadowless frame both were tuned to avoid.
+        // A player who then moves the slider keeps their choice until they switch again.
+        this.cfg = { ...this.cfg, map: id, timeOfDay: getMap(id).sky.defaultHour };
+        this.refresh();
+      });
+    }
     for (const b of this.qsa('[data-size]')) {
       const id = b.dataset.size as UnitSizeId;
       this.sizeBtns.set(id, b);
@@ -313,7 +350,13 @@ export class MainMenu {
    * stale total next to a fresh one.
    */
   private refresh(): void {
+    for (const [id, b] of this.mapBtns) setClass(b, 'on', id === this.cfg.map);
     for (const [id, b] of this.sizeBtns) setClass(b, 'on', id === this.cfg.unitSize);
+    const mapDef = getMap(this.cfg.map);
+    setText(this.q('[data-map-blurb]'), `${mapDef.blurb} ${mapDef.site.season}.`);
+    // The heading follows the battlefield, so the screen never claims to be a battle the
+    // player has just navigated away from.
+    html(this.q('.menu-head h2'), mapDef.subtitle);
     for (const [t, b] of this.tierBtns) setClass(b, 'on', t === this.cfg.quality);
     for (const [d, b] of this.diffBtns) setClass(b, 'on', d === this.cfg.difficulty);
 
@@ -400,6 +443,9 @@ export class MainMenu {
   private commit(): void {
     const cfg = sanitiseConfig(this.cfg);
     storeConfig(cfg);
+    // The interactive counterpart of the call in `resolveConfig`: this is the only path on
+    // which the player can have changed the map since that ran.
+    setActiveMap(cfg.map);
     this.root.classList.remove('in');
     this.root.classList.add('out');
     // Let the fade finish before the DOM node goes, but resolve immediately so asset

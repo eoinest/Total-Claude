@@ -59,6 +59,11 @@ const PHYSICS: Record<string, MissilePhysics> = {
   framea: { speed: 23, drag: 0.0014, length: 1.45, dragComp: 0.0007, event: 'javelin' },
   pilum: { speed: 21, drag: 0.0011, length: 1.95, dragComp: 0.0004, event: 'pilum' },
   bolt: { speed: 78, drag: 0.0011, length: 0.62, dragComp: 0.0009, event: 'bolt' },
+  // A one-talent onager stone is about 26 kg. Vitruvius X.11 gives the sling length and
+  // arm travel; the muzzle velocity that follows puts a stone of that mass out to roughly
+  // 220 m, which is the range in the unit definition. Very low drag for its speed because
+  // the ballistic coefficient of a rounded 26 kg tufa ball is enormous next to an arrow's.
+  boulder: { speed: 46, drag: 0.00022, length: 0.44, dragComp: 0.0003, event: 'sling' },
 };
 
 const physicsOf = (kind: WeaponKind): MissilePhysics => PHYSICS[kind] ?? PHYSICS.javelin;
@@ -165,6 +170,11 @@ export class ProjectileSystem implements Subsystem {
   private battle!: BattleSystem;
   private ctx!: EngineContext;
   private rng!: Rng;
+  /**
+   * The city, if there is one, for the masonry collision test. Duck-typed and optional so
+   * a battle on open ground — and every unit test — needs no city at all.
+   */
+  private city: { masonryTopAt(x: number, z: number): number } | null = null;
 
   // ---- projectile pool (structure of arrays) ----
   private px = new Float32Array(MAX_PROJECTILES);
@@ -184,6 +194,14 @@ export class ProjectileSystem implements Subsystem {
   private len = new Float32Array(MAX_PROJECTILES);
   private kindIdx = new Uint8Array(MAX_PROJECTILES);
   private ownerUnit = new Int32Array(MAX_PROJECTILES);
+  /**
+   * 1 when the man who loosed this was standing on a structure rather than the ground.
+   *
+   * Carried on the projectile because the shooter's index is not kept and he may be dead
+   * by the time it lands. It is the only honest way to answer "did the garrison kill
+   * anybody", which is the assertion the siege probe is built around.
+   */
+  private fromWall = new Uint8Array(MAX_PROJECTILES);
   private alive = new Uint8Array(MAX_PROJECTILES);
   private freeList = new Int32Array(MAX_PROJECTILES);
   private freeCount = 0;
@@ -236,6 +254,10 @@ export class ProjectileSystem implements Subsystem {
     this.battle = ctx.get<BattleSystem>('battle');
     this.rng = this.battle.rng.fork('projectiles');
     POOL = this.battle.pool;
+    const city = ctx.tryGet('city') as unknown as { masonryTopAt?: (x: number, z: number) => number } | undefined;
+    this.city = city && typeof city.masonryTopAt === 'function'
+      ? (city as { masonryTopAt(x: number, z: number): number })
+      : null;
 
     this.firedSerial = new Int32Array(this.battle.pool.capacity);
     this.growUnits(64);
@@ -481,7 +503,14 @@ export class ProjectileSystem implements Subsystem {
       d = Math.hypot(tx - sx, tz - sz);
       tof = d / Math.max(6, phys.speed * 0.8);
     }
-    const ty = b.groundAt(tx, tz) + 1.0;
+    // Aim at the man, not at the ground he is nominally over. This read used to be
+    // `groundAt(tx, tz) + 1.0`, which is the same answer for everybody standing on the
+    // terrain and wrong by the full height of the masonry for anybody on a wall: every
+    // arrow shot at a garrison was solved for a point 7 m below him and buried itself in
+    // the brickwork, and every arrow shot *by* one was solved for a point at its own
+    // feet. Predicted forward the same way the XZ aim point is, so a man walking a
+    // boarding ramp is led correctly in all three axes.
+    const ty = p.y[t] + p.vy[t] * tof + 1.0;
 
     // ---- line of fire ----
     const dirX = (tx - sx) / (d || 1);
@@ -548,8 +577,79 @@ export class ProjectileSystem implements Subsystem {
     this.len[idx] = phys.length;
     this.kindIdx[idx] = this.kindIndexOf(m.kind);
     this.ownerUnit[idx] = u.id;
+    const elevated = b.elevated[i] !== 0;
+    this.fromWall[idx] = elevated ? 1 : 0;
+    if (elevated) b.siege.noteWallShot();
+    if (m.kind === 'boulder') b.siege.noteArtillery(1, 0);
 
     if (p.ammo[i] > 0) p.ammo[i]--;
+  }
+
+  /**
+   * Throw one projectile from an arbitrary point at an arbitrary point.
+   *
+   * The volley state machine above is built around a unit of men each shooting at a man,
+   * which is not what a siege engine is: an onager is one machine served by a crew, it
+   * shoots at a *place* — a stretch of parapet, a gate, a knot of men — and it does so on
+   * its own clock. Rather than bend the volley machine into a shape that fits both, this
+   * exposes the ballistics, the pool and the collision sweep directly.
+   *
+   * Returns false when the pool is full or the solve has no answer at this range.
+   */
+  launchBallistic(opts: {
+    kind: WeaponKind;
+    fromX: number; fromY: number; fromZ: number;
+    toX: number; toY: number; toZ: number;
+    damage: number; apDamage: number;
+    /** Angular scatter, radians. Applied to yaw and, at 0.8x, to pitch. */
+    spread: number;
+    ownerUnit: number;
+    /** Draw from a forked stream so the caller keeps determinism under its own control. */
+    rng: Rng;
+    /** Loft it like a stone-thrower rather than taking the flat root. */
+    lofted?: boolean;
+  }): boolean {
+    const phys = physicsOf(opts.kind);
+    const dx = opts.toX - opts.fromX;
+    const dz = opts.toZ - opts.fromZ;
+    const d = Math.hypot(dx, dz);
+    if (d < 1) return false;
+    const h = opts.toY - opts.fromY;
+    const dComp = d * (1 + phys.dragComp * d);
+    let v = phys.speed;
+    let theta: number;
+    if (opts.lofted) {
+      const c = Math.cos(LOFT);
+      const need = (GRAVITY * dComp * dComp) / (2 * c * c * (dComp * Math.tan(LOFT) - h));
+      if (need > 0 && need <= v * v) {
+        v = Math.sqrt(need);
+        theta = LOFT;
+      } else {
+        theta = this.lowRoot(v, dComp, h);
+      }
+    } else {
+      theta = this.lowRoot(v, dComp, h);
+    }
+
+    const idx = this.spawn();
+    if (idx < 0) return false;
+    const yaw = Math.atan2(dx / d, dz / d) + opts.rng.normal(0, opts.spread);
+    const pitch = theta + opts.rng.normal(0, opts.spread * 0.8);
+    const cp = Math.cos(pitch);
+    this.px[idx] = opts.fromX; this.py[idx] = opts.fromY; this.pz[idx] = opts.fromZ;
+    this.ox[idx] = opts.fromX; this.oy[idx] = opts.fromY; this.oz[idx] = opts.fromZ;
+    this.vx[idx] = v * cp * Math.sin(yaw);
+    this.vy[idx] = v * Math.sin(pitch);
+    this.vz[idx] = v * cp * Math.cos(yaw);
+    this.life[idx] = 0;
+    this.dmg[idx] = opts.damage;
+    this.apDmg[idx] = opts.apDamage;
+    this.drag[idx] = phys.drag;
+    this.len[idx] = phys.length;
+    this.kindIdx[idx] = this.kindIndexOf(opts.kind);
+    this.ownerUnit[idx] = opts.ownerUnit;
+    this.fromWall[idx] = 0;
+    return true;
   }
 
   /** Flattest of the two ballistic solutions; 45 degrees when the target is out of reach. */
@@ -629,6 +729,19 @@ export class ProjectileSystem implements Subsystem {
         }
       }
 
+      // ---- masonry ----
+      // A wall is 6.5 m of brick that a shaft has to clear or stick in. Without this test
+      // an arrow aimed over the parapet carried straight through the curtain and planted
+      // itself in the turf on the city side, and a boulder passed through the gatehouse.
+      // O(1) — see `CitySystem.masonryTopAt`.
+      if (this.city !== null) {
+        const top = this.city.masonryTopAt(x1, z1);
+        if (y1 <= top) {
+          this.impactMasonry(i, x1, Math.min(y0, top), z1);
+          continue;
+        }
+      }
+
       // ---- ground ----
       const ground = b.groundAt(x1, z1);
       if (y1 <= ground) {
@@ -639,6 +752,31 @@ export class ProjectileSystem implements Subsystem {
       if (this.life[i] > 14 || Math.abs(x1) > 1390 || Math.abs(z1) > 1390) this.release(i);
     }
   }
+
+  /**
+   * A shaft or a stone striking masonry.
+   *
+   * Stones shatter and are gone; arrows and pila lodge in the mortar joints, which is
+   * what makes a besieged wall face look besieged after a few minutes of shooting.
+   */
+  private impactMasonry(i: number, x: number, y: number, z: number): void {
+    const weapon = this.kinds[this.kindIdx[i]];
+    const kind = physicsOf(weapon).event;
+    this.ctx.events.emit('projectileImpact', {
+      x, y, z, kind, hitTarget: false, material: 'stone',
+    });
+    this.masonryHits++;
+    if (weapon === 'boulder') {
+      // A hundred-kilo stone does not stand up in a wall; it breaks and falls.
+      this.release(i);
+      return;
+    }
+    this.plant(i, x, y, z, -1, 0, 0, 0);
+    this.release(i);
+  }
+
+  /** Missiles that have struck the city's masonry this battle. Read by the siege probe. */
+  masonryHits = 0;
 
   private impactGround(i: number, x: number, y: number, z: number): void {
     const kind = physicsOf(this.kinds[this.kindIdx[i]]).event;
@@ -694,6 +832,8 @@ export class ProjectileSystem implements Subsystem {
     dsig.missilePulse += 1;
     if (lethal) {
       signalsOf(this.ownerUnit[i]).killPulse += 1;
+      if (this.fromWall[i] !== 0) b.siege.noteWallKill();
+      if (this.kinds[this.kindIdx[i]] === 'boulder') b.siege.noteArtillery(0, 1);
       p.vx[j] = -bx * 1.3;
       p.vz[j] = -bz * 1.3;
     }

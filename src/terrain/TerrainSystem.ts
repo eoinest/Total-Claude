@@ -9,16 +9,21 @@ import {
 } from './clipmap';
 import { buildControlTexture, buildHeightTexture } from './fieldTextures';
 import { loadGroundTextures, type GroundTextures } from './groundTextures';
-import { buildTerrain, type TerrainData } from './heightfield';
+import { type TerrainData } from './heightfield';
 import { createTerrainMaterial, type TerrainMaterialSet } from './TerrainMaterial';
-import { HALF_EXTENT, WATER_LEVEL } from './topography';
+import { HALF_EXTENT } from './topography';
+import { activeMap } from '../maps';
+import type { MapDefinition } from '../maps/types';
 import { GrassField } from './GrassField';
 import { ScatterField } from './ScatterField';
 import { RiverWater } from './RiverWater';
 
 /**
- * Battlefield terrain: the Campus Martius flood plain and the northern approach to
- * Rome, rising toward the Quirinal and Pincian hills where the Aurelian Walls stand.
+ * Battlefield terrain for whichever map this session selected.
+ *
+ * The map is resolved from `activeMap()` — a module singleton in `src/maps/`, written by
+ * `resolveConfig` and `MainMenu.commit` before any subsystem is constructed. See the comment
+ * on `setActiveMap` for why that is the only available channel and why the ordering is safe.
  *
  * Owns the whole ground stack — heightfield, clipmap geometry, splat material,
  * vegetation, scatter and the Tiber's water surface — so `main.ts` needs no extra
@@ -57,8 +62,13 @@ export class TerrainSystem implements Subsystem {
   /** Diagnostics surfaced in the console at boot. */
   stats = { buildMs: 0, triangles: 0, layersFromPack: '' };
 
+  /** The map this instance built. Read by the shot harness and the probes. */
+  map!: MapDefinition;
+
   async init(ctx: EngineContext): Promise<void> {
-    this.data = buildTerrain();
+    const map = activeMap();
+    this.map = map;
+    this.data = map.terrain.build(map.terrain.seedLabel);
     this.heights = this.data.heights;
     this.res = this.data.res;
     this.spacing = this.data.spacing;
@@ -70,17 +80,22 @@ export class TerrainSystem implements Subsystem {
 
     this.heightTex = buildHeightTexture(this.heights, this.res);
     this.controlTex = buildControlTexture(this.data.control, this.data.controlRes);
-    this.textures = await loadGroundTextures();
+    this.textures = await loadGroundTextures(map.terrain.layers);
 
-    // Distant ground drifts to a little above the plain so the world reads as continuing
-    // countryside rather than ending at the battlefield boundary.
-    const farHeight = 13.5;
     this.matSet = createTerrainMaterial(
       this.textures,
       this.heightTex,
       this.controlTex,
       this.spacing,
-      farHeight
+      map.terrain.farHeight,
+      {
+        layers: map.terrain.layers,
+        splatGlsl: map.terrain.splatGlsl,
+        cacheKey: map.terrain.splatCacheKey,
+        waterLevel: map.terrain.waterLevel,
+        aerialMean: map.terrain.aerialMean,
+        aerialStrength: map.terrain.aerialStrength,
+      }
     );
 
     const geo = buildClipmapGeometry();
@@ -100,13 +115,19 @@ export class TerrainSystem implements Subsystem {
     this.mesh.name = 'terrain';
     ctx.scene.add(this.mesh);
 
-    this.water = new RiverWater(this);
-    await this.water.init(ctx, this.textures, this.heightTex);
+    // Open water is per-map. Pydna is a June plain draining to a gulf past the map edge:
+    // its one watercourse is a dry shingle braid, so it carries no water surface at all and
+    // skipping the system saves both its draw call and its reflection work.
+    if (map.terrain.hasRiver) {
+      this.water = new RiverWater(this);
+      await this.water.init(ctx, this.textures, this.heightTex);
+    }
 
-    this.scatter = new ScatterField(this);
+    this.scatter = new ScatterField(this, map.terrain.scatter, !map.hidesCity);
     this.scatter.init(ctx);
 
-    this.grass = new GrassField(this);
+    this.grass = new GrassField(this, { ...map.terrain.grass, roadGlsl: map.terrain.roadGlsl },
+      map.terrain.waterLevel);
     this.grass.init(ctx, this.heightTex, this.controlTex);
 
     this.stats.buildMs = this.data.buildMs;
@@ -115,7 +136,7 @@ export class TerrainSystem implements Subsystem {
     // One line at boot is worth having: it is the only way to tell whether the asset
     // pack was found without opening the network panel.
     console.info(
-      `[terrain] ${this.res}² field in ${this.data.buildMs.toFixed(0)} ms, ` +
+      `[terrain] ${map.id} ${this.res}² field in ${this.data.buildMs.toFixed(0)} ms, ` +
         `${(this.stats.triangles / 1000).toFixed(0)}k clipmap tris, ` +
         `pack layers: ${this.stats.layersFromPack}`
     );
@@ -126,7 +147,39 @@ export class TerrainSystem implements Subsystem {
     this.grass?.update(dt);
   }
 
+  /** One-shot: the city can only be reached after its own `init` has run. */
+  private cityChecked = false;
+
+  /**
+   * Take Rome off a map that is not Rome.
+   *
+   * `main.ts` does `engine.add(new CitySystem())` unconditionally and `CitySystem.init` has
+   * no early-out — neither file belongs to this workstream — so on the plain of Pydna the
+   * Aurelian Wall would otherwise stand across the southern horizon. `setDebugVisible` is a
+   * public method on `CitySystem` and hiding the root is enough to keep it out of every
+   * frame and out of the draw call count.
+   *
+   * **This is a workaround and not the fix.** It still pays the city's several-second build
+   * at boot and still leaves its wall segments stamped into the AI nav grid past z ≈ 500.
+   * Nothing fights up there so neither is visible, but the correct change is one line in
+   * `main.ts` making the registration conditional. It is written up in the hand-off notes.
+   *
+   * Runs in `preRender` rather than `init` because terrain initialises at order −50 and the
+   * city at −20: at our own init the city does not exist yet.
+   */
+  private hideCityIfForeign(ctx: EngineContext): void {
+    if (this.cityChecked) return;
+    this.cityChecked = true;
+    if (!this.map.hidesCity) return;
+    const city = ctx.tryGet('city') as unknown as { setDebugVisible?(on: boolean): void } | undefined;
+    if (city?.setDebugVisible) {
+      city.setDebugVisible(false);
+      console.info(`[terrain] ${this.map.id}: city of Rome hidden (see hideCityIfForeign)`);
+    }
+  }
+
   preRender(ctx: EngineContext): void {
+    this.hideCityIfForeign(ctx);
     const cam = ctx.camera.position;
     // Snap the clipmap centre so every level's grid stays aligned with every other's;
     // that alignment is what makes the level seams watertight.
@@ -209,9 +262,9 @@ export class TerrainSystem implements Subsystem {
     out.a = c[o + 3] / 255;
   }
 
-  /** Water surface height of the Tiber. Constant: it is a river, not a lake. */
+  /** Water surface height for this map's datum. Constant: a river, not a tide. */
   get waterLevel(): number {
-    return WATER_LEVEL;
+    return this.map.terrain.waterLevel;
   }
 
   /** Finest clipmap triangle edge in metres — used by the grass to size its patches. */

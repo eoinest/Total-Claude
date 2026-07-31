@@ -341,6 +341,22 @@ export class LightingSystem implements Subsystem {
         l.castShadow = lit;
       }
       this.saturate(sky.skyFillColour, this.fill.color);
+
+      // How much light this map's ground throws back up, relative to the Campus Martius'
+      // damp November plain.
+      //
+      // This is the one term that must not be a constant across maps. Every fill level in
+      // this file was calibrated against a ground of albedo 0.13; the plain of Pydna is
+      // bleached straw and pale karst at 0.20, so a real scene there has roughly half again
+      // as much bounce lifting everything the sun cannot reach. Holding the fill constant and
+      // dropping exposure to suit the brighter ground is what crushed the shadowed half of a
+      // melee to pure black — measured at 70 % of the clash frame below 0.15 display and a
+      // 5th percentile of exactly 0.000, which is a hard clip and a rubric failure outright.
+      //
+      // Scaling it here rather than raising exposure is the difference between lifting the
+      // shadows and lifting the whole image: exposure would re-blow the ground that the
+      // palette was just calibrated to.
+      const bounceGain = clamp(sky.preset.groundAlbedo / 0.13, 0.7, 1.9);
       // Ground bounce: the plain's albedo lit by the sun, plus the sky it sees.
       // Held down hard on purpose — this term is the enemy of A1. It is the only
       // warm light reaching a shadowed surface, and at its old weight it
@@ -355,7 +371,7 @@ export class LightingSystem implements Subsystem {
       // Deliberately small. `scene.environment` already delivers the sky's
       // irradiance, so this is only a top-up for materials that ignore IBL —
       // and every unit of extra ambient is a unit of directional contrast lost.
-      this.fill.intensity = 0.22;
+      this.fill.intensity = 0.22 * bounceGain;
 
       // Bounce comes from the ground on the far side of the sun, i.e. the sun
       // direction mirrored through the horizon plane — so it lands on exactly the
@@ -370,7 +386,7 @@ export class LightingSystem implements Subsystem {
       // ground's own lit:shadow ratio stay at 8:1 while the men come back.
       this.bounce.position.set(-sky.sunDirection.x, -0.2, -sky.sunDirection.z).multiplyScalar(300);
       this.bounce.color.copy(sky.sunColour);
-      this.bounce.intensity = sky.sunIntensity * 0.11;
+      this.bounce.intensity = sky.sunIntensity * 0.11 * bounceGain;
     }
 
     // The camera's projection changes every frame (RTSCamera couples fov, near

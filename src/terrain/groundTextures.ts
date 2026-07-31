@@ -97,9 +97,25 @@ export const GROUND_LAYERS: readonly GroundLayerSpec[] = [
   { name: 'paving',      kind: 'cobbles',        manifestId: 'cobblestone-road',farScale: 1.1,  detailScale: 1.1,  detailMix: 0.0,  roughness: 0.80, albedo: [ 94,  94,  97], contrast: 1.30, chroma: 0.30, heightBias: 0.30 },
 ];
 
-export const LAYER_COUNT = GROUND_LAYERS.length;
+/**
+ * Splat layers per map. Fixed, not derived from `GROUND_LAYERS.length`, because it sizes the
+ * GLSL arrays that every map's rule set writes into — a map that shipped seven layers would
+ * compile against an eight-element array and read one uninitialised weight. `assertLayerSet`
+ * holds every map to it at load.
+ */
+export const LAYER_COUNT = 8;
 const ALBEDO_SIZE = 1024;
 const NRM_SIZE = 512;
+
+/** Fail loudly at boot rather than rendering a map with a garbage eighth weight. */
+export function assertLayerSet(layers: readonly GroundLayerSpec[], mapId: string): void {
+  if (layers.length !== LAYER_COUNT) {
+    throw new Error(
+      `[terrain] map "${mapId}" declares ${layers.length} ground layers; the splat shader is ` +
+        `compiled for exactly ${LAYER_COUNT}`,
+    );
+  }
+}
 
 export interface GroundTextures {
   albedo: THREE.DataArrayTexture;
@@ -320,7 +336,16 @@ function recolourLayer(data: Uint8Array, offset: number, count: number, spec: Gr
   }
 }
 
-export async function loadGroundTextures(): Promise<GroundTextures> {
+/**
+ * Assemble the array textures for one map's layer set.
+ *
+ * `layers` defaults to the Campus Martius palette so the original call site is unchanged;
+ * a second map passes its own eight specs and gets its own array textures built through the
+ * identical recolour path, which is what keeps the two palettes comparable.
+ */
+export async function loadGroundTextures(
+  layers: readonly GroundLayerSpec[] = GROUND_LAYERS,
+): Promise<GroundTextures> {
   const manifest = await loadManifest();
   const byId = new Map<string, ManifestTexture>();
   for (const t of manifest?.textures ?? []) byId.set(t.id, t);
@@ -330,7 +355,7 @@ export async function loadGroundTextures(): Promise<GroundTextures> {
   const sourced: string[] = [];
 
   await Promise.all(
-    GROUND_LAYERS.map(async (spec, layer) => {
+    layers.map(async (spec, layer) => {
       const entry = spec.manifestId ? byId.get(spec.manifestId) : undefined;
       const albOff = layer * ALBEDO_SIZE * ALBEDO_SIZE * 4;
       const nrmOff = layer * NRM_SIZE * NRM_SIZE * 4;

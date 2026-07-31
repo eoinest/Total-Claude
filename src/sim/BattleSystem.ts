@@ -10,6 +10,7 @@ import {
   Clip, Faction, SoldierPool, SoldierState, SpatialHash, UnitOrder,
   isAlive, type UnitGroupState, type UnitTypeDef,
 } from './types';
+import { Siege } from './Siege';
 
 /**
  * The battle simulation hub.
@@ -72,6 +73,45 @@ const PRESS_RANKS = 2.5;
  */
 const ORDER_GRACE = 3.2;
 
+/**
+ * Vertical separation, in metres, beyond which two men are treated as not sharing a
+ * space at all — no shoving, no melee, no formation contact.
+ *
+ * The spatial hash is a two-dimensional uniform grid and always has been: it buckets on
+ * (x, z) and never reads `y`. That was harmless while every man stood on the terrain and
+ * catastrophic the moment one stood on a wall-walk, because a defender 7 m up and an
+ * attacker at the foot of the masonry are neighbours in the grid. Measured before this
+ * gate existed: garrison and besiegers shoved each other apart through three and a half
+ * metres of brick, and the front rank of both fought a melee through the wall.
+ *
+ * Rebuilding the hash in three dimensions would cost every query on the field to fix a
+ * case that affects a few hundred men, so the gate is applied in the visitors instead:
+ * one `y` read per candidate, in loops that already read four other arrays.
+ *
+ * 1.9 m is a little over a man's height — two men on the same walkway differ by
+ * centimetres, and a walkway is never within 1.9 m of the ground beneath it.
+ */
+export const SAME_LEVEL_DY = 1.9;
+
+/** `support[i]` when a man is standing on the terrain rather than on a structure. */
+export const NO_SUPPORT = -1e9;
+
+/**
+ * What a soldier standing on something other than the ground needs the sim to know.
+ *
+ * Implemented by `Siege`, which owns every structure a man can stand on. Kept as an
+ * interface so `BattleSystem` does not depend on the siege module's internals, and so a
+ * battle with no siege in it allocates nothing and branches once.
+ */
+export interface ElevationOwner {
+  /** Runs before steering: refresh support heights and slot targets. */
+  preSteer(dt: number): void;
+  /** Runs after integration: hold men on their surface and off the edges. */
+  postIntegrate(dt: number): void;
+  /** True while this unit's men are placed by the siege system rather than by a formation. */
+  ownsUnit(unitId: number): boolean;
+}
+
 export class BattleSystem implements Subsystem {
   readonly name = 'battle';
   readonly order = 10;
@@ -80,6 +120,35 @@ export class BattleSystem implements Subsystem {
   units: UnitGroupState[] = [];
   hash!: SpatialHash;
   rng = new Rng('battle-271');
+
+  // -------------------------------------------------------------------------
+  // Elevation — men who are not standing on the terrain
+  // -------------------------------------------------------------------------
+
+  /**
+   * 1 while this man stands on a structure. Zero for the overwhelming majority, which is
+   * why this is a byte array tested in the hot loop rather than a callback.
+   */
+  elevated!: Uint8Array;
+  /** Absolute Y of the surface under his feet while `elevated`; `NO_SUPPORT` otherwise. */
+  support!: Float32Array;
+  /** World-space position he is steering toward while `elevated`. */
+  slotX!: Float32Array;
+  slotZ!: Float32Array;
+  /** Yaw he should hold while `elevated` — outward over the parapet, not at his slot. */
+  slotFacing!: Float32Array;
+  /** Set by whoever owns the structures. Null in a battle with no siege. */
+  elevation: ElevationOwner | null = null;
+  /**
+   * Siege warfare: wall garrisons, towers, ladders, rams and artillery.
+   *
+   * Owned here rather than registered as its own subsystem because it has to run at two
+   * precise points *inside* the soldier tick — see the header of `Siege.ts`. Constructing
+   * it here also keeps `main.ts`, which this workstream does not own, unchanged.
+   */
+  readonly siege = new Siege();
+  /** Representative surface height per unit, for the formation-contact test. */
+  private unitY = new Float32Array(64);
 
   private terrain?: TerrainSystem;
   private ctx!: EngineContext;
@@ -96,6 +165,15 @@ export class BattleSystem implements Subsystem {
     this.breakingOff = new Uint8Array(256);
     this.press = new Float32Array(ctx.quality.maxSoldiers);
     this.hash = new SpatialHash(1500, 3.5);
+
+    const cap = ctx.quality.maxSoldiers;
+    this.elevated = new Uint8Array(cap);
+    this.support = new Float32Array(cap).fill(NO_SUPPORT);
+    this.slotX = new Float32Array(cap);
+    this.slotZ = new Float32Array(cap);
+    this.slotFacing = new Float32Array(cap);
+
+    this.siege.init(ctx, this);
 
     ctx.events.on('orderIssued', (o) => this.applyOrder(o));
   }
@@ -300,6 +378,19 @@ export class BattleSystem implements Subsystem {
           u.waypoints.length = 0;
           break;
         }
+        case 'garrison': {
+          // The order the enum has carried since the beginning with nothing behind it.
+          // `Siege` decides whether there is a wall at that point and lays the unit out
+          // along it; if there is not, the order degrades to a move, which is the least
+          // surprising thing for a misclick to do.
+          if (o.x === undefined || o.z === undefined) break;
+          if (!this.siege.garrison(u, o.x, o.z)) {
+            u.order = UnitOrder.MoveTo;
+            u.targetX = o.x;
+            u.targetZ = o.z;
+          }
+          break;
+        }
         case 'halt': {
           u.order = UnitOrder.Hold;
           u.targetX = u.x;
@@ -347,6 +438,10 @@ export class BattleSystem implements Subsystem {
     this.strength[Faction.Rome] = 0;
     this.strength[Faction.Germanic] = 0;
 
+    // Structures resolve first: a man's support height and his slot on a wall-walk have
+    // to be current before anything steers him or asks how far away an enemy is.
+    this.elevation?.preSteer(dt);
+
     for (const u of this.units) {
       if (u.destroyed) continue;
       this.updateUnitOrder(u, dt);
@@ -357,6 +452,9 @@ export class BattleSystem implements Subsystem {
     this.steerSoldiers(dt);
     this.resolveCrowding(dt);
     this.integrate(dt);
+    // Crowd separation and integration both move men in the XZ plane with no idea that
+    // some of them are on a ledge 3.45 m wide. This puts them back on it.
+    this.elevation?.postIntegrate(dt);
     this.updateAnimationState(dt, ctx);
   }
 
@@ -397,6 +495,14 @@ export class BattleSystem implements Subsystem {
     const bo = new Uint8Array(size);
     bo.set(this.breakingOff);
     this.breakingOff = bo;
+    const uy = new Float32Array(size);
+    uy.set(this.unitY);
+    this.unitY = uy;
+  }
+
+  /** Mean foot height of a unit's living men. Terrain height for everyone on the ground. */
+  levelOf(unitId: number): number {
+    return this.unitY[unitId] ?? 0;
   }
 
   /** Metres between this unit's front rank and the nearest enemy's. */
@@ -426,9 +532,16 @@ export class BattleSystem implements Subsystem {
     frontSegment(u.x, u.z, u.facing, this.frontHalf(u), SEG_SELF);
     let best = Infinity;
     let bestId = -1;
+    const selfY = this.unitY[u.id] ?? 0;
     for (const o of this.units) {
       if (o.destroyed || o.faction === u.faction || o.alive === 0) continue;
       if (o.order === UnitOrder.Rout) continue;
+      // Two formations at different heights are not in contact whatever their frontages
+      // say. Without this a garrison on the wall-walk locks against the besiegers at the
+      // foot of it, stops advancing (it was not going anywhere) and — much worse — the
+      // volley state machine reads the lock as "in melee" and the garrison stops shooting,
+      // which is the one thing it is up there to do.
+      if (Math.abs((this.unitY[o.id] ?? 0) - selfY) > SAME_LEVEL_DY) continue;
       // Cheap reject before the segment maths.
       const cx = o.x - u.x;
       const cz = o.z - u.z;
@@ -652,8 +765,18 @@ export class BattleSystem implements Subsystem {
   private updateUnitCohesion(u: UnitGroupState): void {
     const p = this.pool;
     let alive = 0;
-    for (const i of u.members) if (isAlive(p.state[i] as SoldierState)) alive++;
+    let sumY = 0;
+    for (const i of u.members) {
+      if (!isAlive(p.state[i] as SoldierState)) continue;
+      alive++;
+      sumY += p.y[i];
+    }
     u.alive = alive;
+    this.growUnitScratch(u.id + 1);
+    // Mean foot height of the living, used by the formation-contact test. A mean rather
+    // than a sample because a unit half-across a boarding ramp is genuinely spread over
+    // the two levels, and either endpoint alone would lie about it.
+    if (alive > 0) this.unitY[u.id] = sumY / alive;
 
     if (alive === 0 && !u.destroyed) {
       u.destroyed = true;
@@ -692,9 +815,17 @@ export class BattleSystem implements Subsystem {
   /** Drive each soldier toward his formation slot. */
   private steerSoldiers(dt: number): void {
     const p = this.pool;
+    const owner = this.elevation;
     for (const u of this.units) {
       if (u.destroyed) continue;
       const def = this.typeOf(u);
+      // A unit on a structure is not in a formation in any sense this code understands:
+      // its men stand in a line dictated by the stonework, broken at every tower, and
+      // stepping between bays. `Siege` has already written each man's world slot.
+      if (owner !== null && owner.ownsUnit(u.id)) {
+        this.steerToSlots(u, def, dt);
+        continue;
+      }
       const f = formation(u.formationId);
       const ranks = ranksFor(u.members.length, u.width);
       const routing = u.order === UnitOrder.Rout;
@@ -777,6 +908,47 @@ export class BattleSystem implements Subsystem {
   }
 
   /**
+   * Arrive-steer every man toward the absolute world slot the elevation owner gave him.
+   *
+   * The same easing as the formation path, minus everything that assumes a rectangular
+   * block: no press, no rank offsets, no wheeling. A man on a wall-walk who is locked in
+   * melee holds his ground exactly as he would on the flat, because a garrison that walks
+   * back to its slot mid-fight steps off a 3.45 m ledge to do it.
+   */
+  private steerToSlots(u: UnitGroupState, def: UnitTypeDef, dt: number): void {
+    const p = this.pool;
+    // Men shuffling along a walkway move at a walk whatever the unit's orders say. There
+    // is no room up there to run and nowhere to run to.
+    const maxSpeed = def.walkSpeed * (1 - u.fatigue * 0.42);
+    const accel = maxSpeed * 5.5;
+    for (const i of u.members) {
+      const st = p.state[i] as SoldierState;
+      if (st === SoldierState.Dead || st === SoldierState.Dying) continue;
+      if (st === SoldierState.Fighting) {
+        p.vx[i] = damp(p.vx[i], 0, 9, dt);
+        p.vz[i] = damp(p.vz[i], 0, 9, dt);
+        continue;
+      }
+      const dx = this.slotX[i] - p.x[i];
+      const dz = this.slotZ[i] - p.z[i];
+      const d = Math.hypot(dx, dz);
+      if (d < 0.06) {
+        p.vx[i] = damp(p.vx[i], 0, 11, dt);
+        p.vz[i] = damp(p.vz[i], 0, 11, dt);
+        // Standing at his post, a defender faces the way the wall faces, not the way he
+        // last walked. `integrate` only turns a man who is actually moving, so this is
+        // the only thing that aims a static garrison over the parapet.
+        p.facing[i] = turnToward(p.facing[i], this.slotFacing[i], dt * 2.2);
+      } else {
+        const want = Math.min(maxSpeed, d * 2.6);
+        const k = 1 - Math.exp(-(accel / Math.max(0.2, maxSpeed)) * dt);
+        p.vx[i] += ((dx / d) * want - p.vx[i]) * k;
+        p.vz[i] += ((dz / d) * want - p.vz[i]) * k;
+      }
+    }
+  }
+
+  /**
    * Soft body separation. Men are pushed apart so ranks never occupy the same metre,
    * with mass deciding who yields — a horse displaces an infantryman, not the reverse.
    */
@@ -790,12 +962,16 @@ export class BattleSystem implements Subsystem {
       if (!p.aliveAt(i)) continue;
       const xi = p.x[i];
       const zi = p.z[i];
+      const yi = p.y[i];
       let pushX = 0;
       let pushZ = 0;
 
       this.hash.query(xi, zi, diameter, (j) => {
         if (j <= i) return;
         if (!p.aliveAt(j)) return;
+        // The hash is 2D: a man on the wall-walk and a man at the foot of the masonry
+        // land in the same cell. See `SAME_LEVEL_DY`.
+        if (Math.abs(p.y[j] - yi) > SAME_LEVEL_DY) return;
         const dx = p.x[j] - xi;
         const dz = p.z[j] - zi;
         const d2 = dx * dx + dz * dz;
@@ -867,8 +1043,11 @@ export class BattleSystem implements Subsystem {
       p.x[i] += p.vx[i] * dt;
       p.z[i] += p.vz[i] * dt;
 
-      const ground = this.groundAt(p.x[i], p.z[i]);
       // Feet stay planted; the vertical is snapped rather than simulated for the living.
+      // A man on a structure is snapped to *its* surface instead of the terrain — this
+      // one line is the difference between garrisoning a wall and being teleported to the
+      // grass under it on the next tick.
+      const ground = this.elevated[i] !== 0 ? this.support[i] : this.groundAt(p.x[i], p.z[i]);
       p.y[i] = st === SoldierState.Dying ? Math.max(ground, p.y[i] - 1.8 * dt) : ground;
 
       // Face the direction of travel, but only once actually moving.
@@ -972,6 +1151,12 @@ export class BattleSystem implements Subsystem {
           break;
         case SoldierState.Staggered:
           clip = Clip.Stagger;
+          break;
+        case SoldierState.Climbing:
+          // Both `SoldierState.Climbing` and `Clip.ClimbLadder` were authored, baked and
+          // never once selected, because nothing in the game could put a man on a ladder.
+          // The siege system's crossings now can.
+          clip = Clip.ClimbLadder;
           break;
         default: {
           if (speed > 2.6) {
@@ -1099,5 +1284,13 @@ export class BattleSystem implements Subsystem {
   renderFacing(i: number, alpha: number): number {
     const p = this.pool;
     return p.prevFacing[i] + wrapAngle(p.facing[i] - p.prevFacing[i]) * alpha;
+  }
+
+  preRender(): void {
+    this.siege.preRender();
+  }
+
+  dispose(): void {
+    this.siege.dispose();
   }
 }

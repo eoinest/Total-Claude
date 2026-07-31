@@ -349,7 +349,14 @@ export function resolveKit(def: UnitTypeDef, variant: number, out: ResolvedKit):
 
   let melee: Piece;
   let inHand: Piece | -1;
-  if (ap.weapon === 'bow' || ap.weapon === 'sling') {
+  if (ap.weapon === 'bolt') {
+    // An artilleryman's weapon is the machine. Both hands are on a handspike or a bolt, so
+    // he carries nothing: sword on the hip, nothing drawn until something reaches the
+    // battery. `maskHiMelee` still draws the blade, so a crew overrun fights with it.
+    melee = meleeOf(ap.sidearm ?? 'gladius');
+    inHand = -1;
+    if (melee === Piece.WeaponSword) add(Piece.SwordSheathed);
+  } else if (ap.weapon === 'bow' || ap.weapon === 'sling') {
     add(Piece.WeaponBow);
     add(Piece.Quiver);
     // An archer's sidearm stays sheathed until something reaches him.

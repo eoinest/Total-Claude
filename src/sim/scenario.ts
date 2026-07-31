@@ -125,11 +125,43 @@ const RAIDER_NAMES = [
 const nameAt = (names: readonly string[], k: number, stem: string): string =>
   names[k] ?? `${stem} ${ROMAN_NUMERALS[k] ?? k + 1}`;
 
+/**
+ * Which order of battle to deploy.
+ *
+ * `field` is the historical one this file has always produced: Rome's field army drawn up
+ * on the Campus Martius at z 130, the Juthungi host at z −190, and the wall a distant
+ * backdrop 400 m further south. `assault` is the storming of the curtain itself.
+ *
+ * They are separate scenarios and not two phases of one because the measured geometry says
+ * they have to be: **the wall stands at z 430 to 555 and both armies of the field battle
+ * deploy between z −248 and +262.** Nothing in the shipped deployment is within 170 m of
+ * the masonry, so a garrison placed on it would spend the battle shooting at nothing and a
+ * siege tower would need twenty-five minutes of real time to reach it. Making the assault a
+ * later phase of the same battle is the right eventual answer and it is a scenario-design
+ * problem, not a siege-mechanics one.
+ */
+export type ScenarioVariant = 'field' | 'assault';
+
+/**
+ * Read the variant from the query string.
+ *
+ * `main.ts` belongs to the integrator and this workstream must not edit it, so the choice
+ * is made here rather than at the call site. `?scenario=assault` selects the storm; the
+ * default is unchanged, which is what keeps every existing screenshot, perf baseline and
+ * figure in `docs/` describing the battle it was measured on.
+ */
+function variantFromLocation(): ScenarioVariant {
+  if (typeof location === 'undefined') return 'field';
+  return new URLSearchParams(location.search).get('scenario') === 'assault' ? 'assault' : 'field';
+}
+
 export function deploySiegeOfRome(
   battle: BattleSystem,
   ctx: EngineContext,
-  config: BattleConfig = DEFAULT_CONFIG
+  config: BattleConfig = DEFAULT_CONFIG,
+  variant: ScenarioVariant = variantFromLocation()
 ): ScenarioResult {
+  if (variant === 'assault') return deployAssault(battle, ctx);
   const roman: DeployedUnit[] = [];
   const germanic: DeployedUnit[] = [];
   battle.unitSizeScale = fittedUnitScale(config, ctx.quality.maxSoldiers);
@@ -304,6 +336,207 @@ export function deploySiegeOfRome(
     // top edge. 0.82 fits more of the enemy but shrinks the line and pushes their banners up
     // behind the top bar.
     cameraFocus: { x: 0, z: romanZ - 10, zoom: 0.78, yaw: Math.PI },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The assault — storming the unfinished curtain
+// ---------------------------------------------------------------------------
+
+/**
+ * The Juthungi storm the Aurelian Wall either side of the Porta Flaminia.
+ *
+ * Everything about this deployment is read from the wall itself at run time rather than
+ * written down here, because the wall's geometry is generated: the bays are on a 35.5 m
+ * pitch from a `WALL_X_MIN` that is solved from where the Tiber happens to run, their
+ * construction stages are a function of their distance from the gate, and the wall-walk
+ * steps in height with the ground under it. A hardcoded x would be wrong the first time
+ * anything upstream changed, and would be wrong silently.
+ *
+ * The tactical picture:
+ *
+ *  - Rome holds the finished bays either side of the gate with ballistarii and slingers,
+ *    with two cohorts in reserve inside the walls to plug whatever gets over.
+ *  - The Juthungi bring four towers against the finished curtain, ladders against the
+ *    no-parapet stretch west of the gate — the obvious weak point, and visibly so — and a
+ *    ram at the gate itself.
+ *  - The onagers stand off at 200 m and shoot at the parapet.
+ *  - The rest of the host waits in the open behind them, which is what an assault
+ *    reserve actually looks like and is also what fills the frame.
+ */
+function deployAssault(battle: BattleSystem, ctx: EngineContext): ScenarioResult {
+  const roman: DeployedUnit[] = [];
+  const germanic: DeployedUnit[] = [];
+  // Explicit strengths, not the menu's: an assault is a different kind of engagement and
+  // the fitted scale for a field battle has nothing to say about it.
+  battle.unitSizeScale = 1;
+
+  const siege = battle.siege;
+  const city = ctx.tryGet('city') as unknown as {
+    getGarrisonBays?: () => readonly {
+      index: number; x0: number; z0: number; x1: number; z1: number;
+      nx: number; nz: number; walkY: number; garrisonable: boolean;
+      isGate: boolean; stage: string;
+    }[];
+    getGates?: () => { id: string; x: number; z: number; facing: number }[];
+  } | undefined;
+  const bays = city?.getGarrisonBays?.() ?? [];
+  const gate = city?.getGates?.()?.[0];
+
+  const push = (arr: DeployedUnit[], id: number, label: string) => {
+    if (id >= 0) arr.push({ unitId: id, label });
+  };
+
+  // Fall back to the field battle if there is no wall to storm — a battle on open ground,
+  // or a test harness with no city registered.
+  if (bays.length === 0 || !gate) return deploySiegeOfRome(battle, ctx, DEFAULT_CONFIG, 'field');
+
+  const gateBay = bays.find((b) => b.isGate) ?? bays[Math.floor(bays.length / 2)];
+  const at = (k: number) => bays[Math.max(0, Math.min(bays.length - 1, gateBay.index + k))];
+  /** Midpoint of a bay, which is where anything aimed at it should be aimed. */
+  const mid = (k: number): { x: number; z: number; y: number; nx: number; nz: number } => {
+    const b = at(k);
+    return { x: (b.x0 + b.x1) * 0.5, z: (b.z0 + b.z1) * 0.5, y: b.walkY, nx: b.nx, nz: b.nz };
+  };
+  /** A point `d` metres out from the middle of bay `k`, on the attackers' side. */
+  const out = (k: number, d: number): [number, number] => {
+    const m = mid(k);
+    return [m.x + m.nx * d, m.z + m.nz * d];
+  };
+
+  // ---- Rome: the garrison ------------------------------------------------
+  // Six units of ballistarii holding the finished bays each side of the gate, and slingers
+  // on the unfinished stretch to the west where there is no parapet to shoot from but a
+  // sling does not need one.
+  const wallUnits: [number, string, string][] = [
+    [-1, 'ballistarii', 'Ballistarii of the Gate'],
+    [1, 'ballistarii', 'Ballistarii II'],
+    [2, 'ballistarii', 'Ballistarii III'],
+    [-2, 'ballistarii', 'Ballistarii IV'],
+    [3, 'ballistarii', 'Ballistarii V'],
+    [-3, 'wall-slingers', 'Slingers of the Suburra'],
+    [-4, 'wall-slingers', 'Slingers of the Aventine'],
+    [4, 'wall-slingers', 'Slingers of Trastevere'],
+  ];
+  for (const [k, type, label] of wallUnits) {
+    const b = at(k);
+    if (!b.garrisonable) continue;
+    const m = mid(k);
+    // Spawned on the ground under the bay and then lifted onto it: `spawnUnit` snaps every
+    // man to the terrain, and `Siege.garrison` is the only thing in the sim that can put
+    // him anywhere else.
+    const id = battle.spawnUnit(type, m.x, m.z, Math.atan2(m.nx, m.nz), 'line');
+    const u = battle.unitById(id);
+    if (!u) continue;
+    if (!siege.garrison(u, m.x, m.z)) continue;
+    push(roman, id, label);
+  }
+
+  // Carroballistae behind the parapet on the gate bay's flanks.
+  for (const k of [-2, 2]) {
+    const [cx, cz] = out(k, -14);
+    push(roman, battle.spawnUnit('carroballista', cx, cz, Math.atan2(mid(k).nx, mid(k).nz), 'line'),
+      `Carroballista ${k < 0 ? 'I' : 'II'}`);
+  }
+
+  // Two cohorts in reserve inside the walls, to plug whatever gets over.
+  for (const [i, k] of [-1, 2].entries()) {
+    const [rx, rz] = out(k, -46);
+    push(roman, battle.spawnUnit('legio-cohort', rx, rz, Math.atan2(mid(k).nx, mid(k).nz), 'line'),
+      `Cohort ${ROMAN_NUMERALS[i]}`);
+  }
+
+  // ---- The Juthungi: the assault -----------------------------------------
+  // Towers against the finished curtain, where the parapet fight will be worth watching.
+  const towerBays = [1, 2, -1, -2];
+  for (const [i, k] of towerBays.entries()) {
+    const m = mid(k);
+    const [sx, sz] = out(k, 74 + i * 9);
+    const id = battle.spawnUnit('tower-assault', sx, sz - m.nz * 12, Math.atan2(-m.nx, -m.nz), 'line');
+    if (id < 0) continue;
+    siege.spawnTower(sx, sz, m.x, m.z, id);
+    push(germanic, id, `Tower Party ${ROMAN_NUMERALS[i]}`);
+  }
+
+  // Ladders against the stretch with no parapet raised yet. It is the obvious place to go
+  // over and it is obvious from the ground, which is the point of building the wall
+  // unfinished in the first place.
+  const ladderBays = [-3, -4, 3, 5];
+  for (const [i, k] of ladderBays.entries()) {
+    const b = at(k);
+    if (!b.garrisonable) continue;
+    const m = mid(k);
+    const [sx, sz] = out(k, 26);
+    const id = battle.spawnUnit('escalade-party', sx, sz, Math.atan2(-m.nx, -m.nz), 'loose');
+    if (id < 0) continue;
+    // Three ladders per party, spread across the bay's frontage.
+    for (let j = -1; j <= 1; j++) {
+      siege.spawnLadder(m.x + (-m.nz) * j * 7, m.z + m.nx * j * 7, id);
+    }
+    push(germanic, id, `Ladder Party ${ROMAN_NUMERALS[i]}`);
+  }
+
+  // The ram, on the axis of the Via Flaminia.
+  {
+    const gx = gate.x + Math.sin(gate.facing) * 62;
+    const gz = gate.z + Math.cos(gate.facing) * 62;
+    const id = battle.spawnUnit('ram-crew', gx, gz, gate.facing + Math.PI, 'line');
+    if (id >= 0) {
+      siege.spawnRam(gx, gz, id);
+      push(germanic, id, 'The Widder');
+    }
+  }
+
+  // Onagers standing off at 200 m, shooting at the parapet.
+  for (const [i, k] of [-2, 0, 2].entries()) {
+    const m = mid(k);
+    const [ox, oz] = out(k, 196);
+    const id = battle.spawnUnit('onager', ox, oz, Math.atan2(-m.nx, -m.nz), 'line');
+    if (id < 0) continue;
+    const u = battle.unitById(id);
+    if (u) siege.registerArtillery(u);
+    push(germanic, id, `Onager Battery ${ROMAN_NUMERALS[i]}`);
+  }
+
+  // The host, waiting its turn in the open. An assault is mostly men standing about
+  // watching other men die on a ladder, and leaving them out makes the field look empty.
+  const bandNames = ['Warband of Semno', 'Warband of Vadomar', 'Warband of Hariobaud',
+    'Warband of Gundomad', 'Warband of Suomar', 'Warband of Agenar'];
+  for (let i = 0; i < 6; i++) {
+    const k = i - 2.5;
+    const m = mid(0);
+    const alongX = -m.nz;
+    const alongZ = m.nx;
+    const [bx, bz] = out(0, 132);
+    push(germanic, battle.spawnUnit('juthungi-warband',
+      bx + alongX * k * 62, bz + alongZ * k * 62, Math.atan2(-m.nx, -m.nz), 'horde'),
+      bandNames[i]);
+  }
+  for (let i = 0; i < 2; i++) {
+    const m = mid(0);
+    const [bx, bz] = out(0, 178);
+    push(germanic, battle.spawnUnit('juthungi-riders',
+      bx + (-m.nz) * (i === 0 ? -240 : 240), bz + m.nx * (i === 0 ? -240 : 240),
+      Math.atan2(-m.nx, -m.nz), 'loose'),
+      i === 0 ? 'Left-Wing Raiders' : 'Right-Wing Raiders');
+  }
+
+  for (const u of battle.units) {
+    // The garrison keeps the order the siege system gave it; everyone else holds until
+    // the AI or the player says otherwise.
+    if (u.order !== UnitOrder.Garrison) u.order = UnitOrder.Hold;
+  }
+
+  ctx.events.emit('battleStarted', { seed: battle.rng.getState(), scenario: 'assault-of-rome-271' });
+
+  const focus = mid(1);
+  return {
+    roman,
+    germanic,
+    // Outside the wall looking south at it, from about where the towers are coming from:
+    // the curtain across the frame, the gate on the left, the assault in the middle
+    // distance. Yaw 0 looks toward +Z, which is the city.
+    cameraFocus: { x: focus.x, z: focus.z - 96, zoom: 0.52, yaw: 0 },
   };
 }
 

@@ -19,7 +19,9 @@ import {
 import { CITY_MAT_KEYS, CityMaterials } from './materials';
 import { buildReferenceOverlay, type OverlayOptions, type ReferencePlan } from './overlay';
 import { buildTreeChunks } from './props';
-import { buildWall, type CityChunkSpec, type GateOut, type TreeRequest, type WallSegmentOut } from './wall';
+import {
+  buildWall, type CityChunkSpec, type GarrisonBay, type GateOut, type TreeRequest, type WallSegmentOut,
+} from './wall';
 
 /**
  * Rome, 271 AD: the Aurelian Wall under construction and the city behind it.
@@ -113,6 +115,14 @@ export class CitySystem implements Subsystem {
   private chunks: Chunk[] = [];
   private segments: WallSegmentOut[] = [];
   private gateList: GateOut[] = [];
+  private bays: GarrisonBay[] = [];
+  /**
+   * Bay index by x, for the O(1) masonry lookup a projectile needs. Bays are on a fixed
+   * `WALL.towerSpacing` pitch from `WALL_X_MIN`, so the index is arithmetic, not a search:
+   * a search over fifty segments per arrow per tick, at two thousand arrows, is not free.
+   */
+  private bayPitch = 1;
+  private bayX0 = 0;
   private occ = new Uint8Array(OCC_RES * OCC_RES);
   private totalTris = 0;
   private meshCount = 0;
@@ -141,6 +151,11 @@ export class CitySystem implements Subsystem {
     const wall = buildWall(heightAt, 'aurelian-271');
     this.segments = wall.segments;
     this.gateList = wall.gates;
+    this.bays = wall.garrisonBays;
+    if (this.bays.length > 1) {
+      this.bayX0 = this.bays[0].x0;
+      this.bayPitch = this.bays[1].x0 - this.bays[0].x0;
+    }
 
     // Reserve every landmark's *oriented rectangular* footprint before a single insula
     // is generated. A circle is not good enough: the Circus Maximus is 621 × 118 m, and
@@ -462,7 +477,75 @@ export class CitySystem implements Subsystem {
     return false;
   }
 
-  /** Height of the wall-walk above the datum nearest a point, or 0 outside the wall. */
+  /**
+   * Every bay of the curtain, described as a place a man can stand. See `GarrisonBay`.
+   *
+   * `walkY` is **absolute**, and is produced by the same function that emits the wall-walk
+   * geometry, so a garrison cannot drift out of register with the stone it stands on.
+   */
+  getGarrisonBays(): readonly GarrisonBay[] {
+    return this.bays;
+  }
+
+  /** The bay whose run contains `x`, or undefined off either end of the circuit. */
+  bayAt(x: number): GarrisonBay | undefined {
+    if (this.bays.length === 0) return undefined;
+    const i = Math.floor((x - this.bayX0) / this.bayPitch);
+    return i >= 0 && i < this.bays.length ? this.bays[i] : undefined;
+  }
+
+  /**
+   * Absolute Y of the top of the masonry at a point, or `-Infinity` where there is none.
+   *
+   * This is what makes an arrow stop at a wall instead of passing through it and burying
+   * itself in the terrain on the far side. O(1): the bay index is arithmetic in x, and the
+   * cross-section test is a distance to the bay centreline.
+   *
+   * The gate bay reports its own block height across the whole 25 m of the gatehouse and
+   * ignores the carriageway, which is deliberate — a missile through the open gate is a
+   * one-in-a-thousand shot and not worth a second branch in a per-projectile hot path.
+   */
+  masonryTopAt(x: number, z: number): number {
+    const bay = this.bayAt(x);
+    if (!bay) return -Infinity;
+    // Signed perpendicular offset from the bay centreline, positive outward.
+    const t = (x - bay.x0) * bay.dx + (z - bay.z0) * bay.dz;
+    const px = bay.x0 + bay.dx * t;
+    const pz = bay.z0 + bay.dz * t;
+    const off = (x - px) * bay.nx + (z - pz) * bay.nz;
+
+    // Gate block: 25 m of solid masonry across the run, 11 m front to back.
+    if (bay.isGate) return Math.abs(off) <= 5.6 ? bay.crestY + 6.3 : -Infinity;
+    if (Math.abs(off) > WALL.thickness * 0.5) return -Infinity;
+    if (!bay.garrisonable) return bay.crestY;
+
+    // Inboard of the parapet it is the walking surface — which is what a lofted shot
+    // aimed over the battlement has to land on, and what a stone from an onager breaks on.
+    if (off < bay.parapetInner) return bay.walkY;
+
+    /**
+     * In the parapet band, alternate merlon and crenel along the run.
+     *
+     * This is not decoration. With the parapet modelled as a solid 2.05 m barrier, a
+     * defender's own bolts — released at 1.45 m above his feet — struck it on the way out,
+     * and every stone lobbed at the garrison broke on the battlement instead of landing
+     * among them. Measured before this: 491 missile impacts on our own masonry in one
+     * minute of a battle in which the garrison never once had a clear lane.
+     *
+     * The period matches the `crenellation()` call in `wall.ts` exactly: 1.7 m merlons on
+     * 0.95 m gaps. `hash2`-free and purely arithmetic, because this runs per projectile
+     * per tick.
+     */
+    const period = 1.7 + 0.95;
+    const phase = t - Math.floor(t / period) * period;
+    return phase < 1.7 ? bay.crestY : bay.sillY;
+  }
+
+  /**
+   * Deprecated in favour of `getGarrisonBays`. Returns the masonry's rise above its own
+   * footing, which is what `WallSegmentOut.height` has always meant — **not** an absolute
+   * Y. The name reads as though it were one, and something did use it that way.
+   */
   wallHeightNear(x: number, z: number): number {
     let best = 0;
     let bestD = Infinity;

@@ -371,10 +371,13 @@ export class RagdollSystem implements Subsystem {
           this.sp[ob + 2] -= czz;
         }
 
-        // ---- the ground, which is not flat ----
+        // ---- the ground, which is not flat — or the stonework, which is ----
+        const owner = this.slotOwner[slot];
+        const onStructure = owner >= 0 && b.elevated[owner] !== 0;
+        const deck = onStructure ? b.support[owner] + PARTICLE_RADIUS : 0;
         for (let k = 0; k < PARTICLES; k++) {
           const o = base + k * 3;
-          const floor = b.groundAt(this.sp[o], this.sp[o + 2]) + PARTICLE_RADIUS;
+          const floor = onStructure ? deck : b.groundAt(this.sp[o], this.sp[o + 2]) + PARTICLE_RADIUS;
           if (this.sp[o + 1] < floor) {
             this.sp[o + 1] = floor;
             // Friction: a body that lands stops sliding almost at once.
@@ -455,10 +458,10 @@ export class RagdollSystem implements Subsystem {
     // Tip in world space, after the yaw: qB * qA.
     qB.multiply(qA);
 
-    this.conformToSlope(qB, this.cx[i], this.cz[i], settle);
+    this.conformToSlope(qB, i, this.cx[i], this.cz[i], settle);
 
     this.pose[o] = this.cx[i];
-    this.pose[o + 1] = this.battle.groundAt(this.cx[i], this.cz[i]) + settle * 0.15;
+    this.pose[o + 1] = this.surfaceFor(i, this.cx[i], this.cz[i]) + settle * 0.15;
     this.pose[o + 2] = this.cz[i];
     this.pose[o + 3] = qB.x;
     this.pose[o + 4] = qB.y;
@@ -528,13 +531,36 @@ export class RagdollSystem implements Subsystem {
     this.pose[o + 7] = clamp01(1 - Math.abs(vUp.y));
   }
 
+
+  /**
+   * The surface a *particular* body should come to rest on.
+   *
+   * `groundAt` is the terrain, and until men could stand on a wall that was the same
+   * thing. It is not any more: a man killed on the wall-walk keeps `elevated` and
+   * `support` from the moment he died — nothing clears them for the dead — so his corpse
+   * lies on the stonework instead of dropping seven metres to the grass at the foot of
+   * the masonry, which is what every corpse on the wall used to do.
+   *
+   * Reference: `reference/siege/the-dead-on-the-wall.jpg`, where the dead of a parapet
+   * fight pile several deep along the walk and drape over its outer lip.
+   */
+  private surfaceFor(i: number, x: number, z: number): number {
+    const b = this.battle;
+    return b.elevated[i] !== 0 ? b.support[i] : b.groundAt(x, z);
+  }
+
   /**
    * A body lying across a slope should follow it. The long axis of the corpse is now
    * roughly horizontal, so project it into the ground plane and rotate to match.
+   *
+   * A body on a wall-walk is lying on dressed stone, which is flat, so the slope solve is
+   * skipped entirely for the elevated — sampling the terrain four metres below him would
+   * tilt a corpse on a parapet to match a hillside he is nowhere near.
    */
-  private conformToSlope(q: THREE.Quaternion, x: number, z: number, settle: number): void {
+  private conformToSlope(q: THREE.Quaternion, i: number, x: number, z: number, settle: number): void {
     if (settle < 0.5) return;
     const b = this.battle;
+    if (b.elevated[i] !== 0) return;
     const e = 1.2;
     const hL = b.groundAt(x - e, z);
     const hR = b.groundAt(x + e, z);
@@ -642,7 +668,11 @@ export class RagdollSystem implements Subsystem {
       if (this.tier[i] === Tier.None) continue;
       if (p.state[i] !== SoldierState.Dead && p.state[i] !== SoldierState.Dying) continue;
       const o = i * 8;
-      const g = b.groundAt(this.pose[o], this.pose[o + 2]);
+      // Measured against the surface this man actually died on, not against the terrain:
+      // every corpse on a wall-walk is legitimately 7 m off the ground and reporting all
+      // of them as errors would make this self-test useless in exactly the scenario it is
+      // most worth having.
+      const g = this.surfaceFor(i, this.pose[o], this.pose[o + 2]);
       if (Math.abs(this.pose[o + 1] - g) > tolerance) bad++;
     }
     return bad;

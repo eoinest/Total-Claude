@@ -151,7 +151,20 @@ export const ROMAN_UNITS: UnitTypeDef[] = [
     nativeName: 'Scorpiones',
     faction: Faction.Rome,
     unitClass: 'artillery',
-    strength: 24,
+    /**
+     * Four engines of three men, not two dozen infantrymen.
+     *
+     * This was 24 with a `bow` appearance, and it rendered as what it said: two dozen
+     * archers standing in a line with no machine anywhere. A Rome II artillery unit is a
+     * *small number of engines* each with a crew — the men exist to serve the machine, and
+     * the machine is the unit. `engines.ts` divides the strength by `CREW_PER_ENGINE`, so
+     * this number and the number of scorpions on the field are the same fact.
+     *
+     * `BattleSystem.spawnUnit` exempts artillery from the unit-size multiplier, so a battery
+     * is four engines at every battle-size setting, which is right: a legion's artillery
+     * establishment did not scale with how many men you felt like fielding.
+     */
+    strength: 12,
     meleeAttack: 14, meleeDamage: 6, apDamage: 1, meleeDefence: 16,
     armour: 22, shieldDefence: 0, chargeBonus: 0, bonusVsCavalry: 0,
     attackRate: 0.5, reach: 0.9,
@@ -159,14 +172,21 @@ export const ROMAN_UNITS: UnitTypeDef[] = [
     walkSpeed: 0.9, runSpeed: 1.5, chargeSpeed: 1.5, mass: 240, stamina: 40,
     morale: 40, discipline: 1.05,
     appearance: {
-      weapon: 'bow', sidearm: 'gladius', shield: 'none', armour: 'leather',
+      // `bolt` means "his weapon is the machine": `resolveKit` gives him a sheathed spatha
+      // and empty hands, because a man working a windlass is not also holding a bow. The
+      // whole reason this unit read as archers was that `weapon: 'bow'` put a composite bow
+      // and a quiver on all twenty-four of them.
+      weapon: 'bolt', sidearm: 'spatha', shield: 'none', armour: 'leather',
+      // Artillerymen were legionary immunes — skilled tradesmen excused fatigues — so they
+      // wear the legion's issue tunic rather than an auxiliary's undyed one, over a leather
+      // subarmalis with the mail off while they work.
       helmet: 'coolus', crest: 'none', cloak: false, bareChested: false,
-      variance: 0.4, heightScale: 1.0, shieldEmblem: 'none',
-      tunicColour: 0xb9a684, legColour: 0x8e8266,
+      variance: 0.55, heightScale: 1.0, shieldEmblem: 'none',
+      tunicColour: 0x9e3026, legColour: 0x8e8266,
     },
     formations: ['line'],
     abilities: ['fire-at-will'],
-    description: 'Bolt-throwers on the wall. A single shot punches through a shield, the man behind it, and the man behind him.',
+    description: 'Torsion bolt-throwers served by legionary immunes. A single shot punches through a shield, the man behind it, and the man behind him.',
   },
 ];
 

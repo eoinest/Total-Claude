@@ -196,7 +196,7 @@ export const riverProfile = (d: number, z: number, plainH: number): number => {
   const ad = Math.abs(d);
 
   // The current runs fastest round the outside of a bend, so that bank is undercut
-  // while the inside of the bend silts up into a bar. `side` is the cut-bank side.
+  // while the inside of the bend silts up into a bar. side is the cut-bank side.
   const side = riverCurvature(z) > 0 ? 1 : -1;
   const onCutBank = d * side > 0;
 

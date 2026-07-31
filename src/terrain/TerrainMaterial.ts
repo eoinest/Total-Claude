@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import { CLIP_BASE_SPACING, CLIP_CELLS, CLIP_MORPH_BAND } from './clipmap';
-import { GROUND_LAYERS, LAYER_COUNT, type GroundTextures } from './groundTextures';
+import {
+  GROUND_LAYERS,
+  LAYER_COUNT,
+  type GroundLayerSpec,
+  type GroundTextures,
+} from './groundTextures';
 import { HALF_EXTENT, TOPO_GLSL, WATER_LEVEL } from './topography';
 
 /**
@@ -39,6 +44,28 @@ export interface TerrainMaterialSet {
   depthMaterial: THREE.MeshDepthMaterial;
   uniforms: Record<string, THREE.IUniform>;
   dispose(): void;
+}
+
+/**
+ * The part of the ground shading that belongs to a map rather than to the engine.
+ *
+ * Everything here is compiled into the program, so two maps cost two programs and neither
+ * pays a per-pixel branch for the other's rules. `cacheKey` must be unique per map or three
+ * hands the second map the first one's compiled shader.
+ */
+export interface TerrainShading {
+  readonly layers: readonly GroundLayerSpec[];
+  /** GLSL defining `void tcMapSplat(...)`. See `CAMPUS_SPLAT_GLSL` for the signature. */
+  readonly splatGlsl: string;
+  readonly cacheKey: string;
+  readonly waterLevel: number;
+  readonly aerialMean: readonly [number, number, number];
+  /**
+   * How hard distant ground is pulled onto `aerialMean`. The Campus Martius needs 0.62 to
+   * stop its 94 m survey lattice reading as camouflage from altitude; a map with no lattice
+   * has far less variance to converge and the same figure only makes it milky.
+   */
+  readonly aerialStrength: number;
 }
 
 /** Height sampling + clipmap vertex placement. Shared by the colour and depth passes. */
@@ -93,8 +120,6 @@ uniform float uWaterLevel;
 uniform float uDetailStrength;
 uniform float uBlendDepth;
 
-${TOPO_GLSL}
-
 /**
  * Surface normal and curvature from the heightfield.
  *
@@ -126,6 +151,57 @@ vec3 terrainSurface(vec2 wxz, out float curv) {
   curv = clamp(((hl + hr + hd + hu) * 0.25 - hc) * 2.0 / e, -1.0, 1.0);
   return normalize(vec3(hl - hr, 2.0 * e, hd - hu));
 }
+
+vec3 triWeights(vec3 n) {
+  vec3 bw = abs(n);
+  bw = bw * bw;
+  bw = bw * bw;
+  return bw / (bw.x + bw.y + bw.z + 1e-5);
+}
+
+vec4 sampleAlbedo(int idx, float scale, vec3 wp, vec3 bw, float tri) {
+  float fi = float(idx);
+  vec4 c = texture(uAlbedoArray, vec3(wp.xz / scale, fi));
+  if (tri > 0.01) {
+    vec4 cx = texture(uAlbedoArray, vec3(wp.zy / scale, fi));
+    vec4 cz = texture(uAlbedoArray, vec3(wp.xy / scale, fi));
+    c = mix(c, cx * bw.x + c * bw.y + cz * bw.z, tri);
+  }
+  return c;
+}
+
+vec4 sampleNrm(int idx, float scale, vec3 wp, vec3 bw, float tri) {
+  float fi = float(idx);
+  vec4 c = texture(uNrmArray, vec3(wp.xz / scale, fi));
+  if (tri > 0.01) {
+    vec4 cx = texture(uNrmArray, vec3(wp.zy / scale, fi));
+    vec4 cz = texture(uNrmArray, vec3(wp.xy / scale, fi));
+    c = mix(c, cx * bw.x + c * bw.y + cz * bw.z, tri);
+  }
+  return c;
+}
+
+/**
+ * Perturb a world normal by a tangent-space offset. Ground UVs are the world XZ plane,
+ * so the tangent frame is +X / +Z Gram-Schmidted against the surface normal.
+ */
+vec3 perturbNormal(vec3 n, vec2 dxy, float strength) {
+  vec3 t = normalize(vec3(1.0, 0.0, 0.0) - n * n.x);
+  vec3 b = cross(n, t);
+  return normalize(t * dxy.x * strength + b * dxy.y * strength + n);
+}
+`;
+
+/**
+ * The Campus Martius rule set, unchanged in behaviour and lifted verbatim behind the
+ * `tcMapSplat` interface so a second map can supply its own.
+ *
+ * Contract: the shared preamble in `map_fragment` has already established every input below;
+ * fill `w` and `aerial` and touch nothing else. Compiled into the program, so the two maps
+ * never branch per pixel and neither pays for the other's rules.
+ */
+export const CAMPUS_SPLAT_GLSL = /* glsl */ `
+${TOPO_GLSL}
 
 /**
  * The centuriated field lattice: exact 94 m squares on a bearing of 12.2°, the same grid
@@ -178,62 +254,139 @@ vec3 fieldPattern(vec2 wxz, float edgeNoise) {
   return vec3(use, smoothstep(0.40, 0.496, edge), century);
 }
 
-vec3 triWeights(vec3 n) {
-  vec3 bw = abs(n);
-  bw = bw * bw;
-  bw = bw * bw;
-  return bw / (bw.x + bw.y + bw.z + 1e-5);
-}
+void tcMapSplat(
+  vec3 wp, vec3 tGeoN, float tSlope, float tCurv, float tAbove,
+  float cWet, float cBare, float cTramp, float cSilt,
+  vec4 macroMid, float nzSmall, float nzBig,
+  float grassKill, float hollow, float nose, float camDist,
+  out float w[${LAYER_COUNT}], out float aerial
+) {
+  // The Via Flaminia, evaluated analytically so the paving edge stays crisp at any zoom.
+  float roadD = abs(wp.x - topoRoadCentreX(wp.z));
+  // Kerb line broken up along its length: after two centuries of carts the edge of a
+  // consular road is ragged, and a mathematically straight one looks printed on.
+  float kerb = 2.75 + 0.28 * (nzSmall - 0.5) * 2.0;
+  float paved = 1.0 - smoothstep(kerb, kerb + 0.7, roadD);
+  float verge = 1.0 - smoothstep(3.2, 8.0, roadD);
 
-vec4 sampleAlbedo(int idx, float scale, vec3 wp, vec3 bw, float tri) {
-  float fi = float(idx);
-  vec4 c = texture(uAlbedoArray, vec3(wp.xz / scale, fi));
-  if (tri > 0.01) {
-    vec4 cx = texture(uAlbedoArray, vec3(wp.zy / scale, fi));
-    vec4 cz = texture(uAlbedoArray, vec3(wp.xy / scale, fi));
-    c = mix(c, cx * bw.x + c * bw.y + cz * bw.z, tri);
-  }
-  return c;
-}
+  // Worked land: fld.x is what this strip is doing, fld.y its boundary line.
+  // Suppressed on the hills and in the river valley, where nobody ploughed.
+  vec3 fld = fieldPattern(wp.xz, macroMid.a);
+  float farmed = (1.0 - smoothstep(0.22, 0.48, tSlope)) * smoothstep(3.0, 9.0, tAbove);
+  // The Campus Martius itself was *ager publicus* — pasture, parade ground and monuments,
+  // never ploughed; the centuriated arable begins beyond it. So the bare-earth half of the
+  // patchwork is suppressed over the fighting ground, which is both correct and what stops
+  // the eye-level camera in the Roman line from standing in a ploughed field. The straw /
+  // green / stubble half of the pattern stays, so the plain keeps its blocky variety.
+  // Weighted hard along z: the ager publicus is the flood plain inside the Tiber bend, so
+  // the exemption has to stop short of the necropolis and the hill approach at z > 300,
+  // which are trodden, dusty, tomb-lined ground and not pasture. It also has to let the
+  // outer flanks of the frontage keep some arable, or a high camera sees one green wash.
+  float campus = 1.0 - smoothstep(420.0, 800.0, length(vec2(wp.x * 0.86, (wp.z + 40.0) * 1.9)));
+  // Aerial convergence. A real aerial photograph *converges*: haze and sub-pixel mixing
+  // pull everything toward a common tone as distance grows. This shader diverged instead,
+  // which is half of why the strategic view read as camouflage — and the same variance is
+  // what aliases when a 94 m cell shrinks toward a few pixels. Roads and rock are exempt,
+  // because a basalt carriageway really is a dark line from two kilometres up.
+  aerial = smoothstep(300.0, 1150.0, camDist)
+         * (1.0 - paved) * (1.0 - smoothstep(0.18, 0.42, tSlope));
+  // Land use is decided per strip, and only *two* states are allowed to be strong: green
+  // pasture and burnt-off straw. Bare earth and stone are accents keyed to the fallow
+  // strips, the boundary lines and real slope. Four equally-loud states across one plain
+  // is what turns worked land into DPM.
+  float useDecorr = fract(fld.x * 3.71 + fld.z * 0.613);
+  float fieldGain = 1.0 - aerial * 0.78;
+  float fallow = smoothstep(0.66, 0.79, useDecorr) * farmed * (1.0 - campus * 0.88) * fieldGain;
+  float stubble = smoothstep(0.30, 0.44, fld.x) * (1.0 - smoothstep(0.56, 0.68, fld.x)) * farmed;
+  // The headland: a beaten track a few metres wide *on* the field line, where the carts
+  // turned and the plough could not reach. It straddles the boundary, so the change of
+  // land use either side of it passes through a third material instead of being a hard
+  // albedo step — which is what lets the lattice be rectilinear without aliasing.
+  //
+  // Deliberately *not* subject to the aerial field gain. Boundary lines are the one part of a
+  // patchwork that a real aerial view resolves more sharply, not less: hedges, ditches and
+  // farm tracks are the first thing you read off an air photograph. Converging them away
+  // with distance left the fields as flat colour rectangles butting directly together.
+  float headland = fld.y * farmed * (1.0 - campus * 0.55);
 
-vec4 sampleNrm(int idx, float scale, vec3 wp, vec3 bw, float tri) {
-  float fi = float(idx);
-  vec4 c = texture(uNrmArray, vec3(wp.xz / scale, fi));
-  if (tri > 0.01) {
-    vec4 cx = texture(uNrmArray, vec3(wp.zy / scale, fi));
-    vec4 cz = texture(uNrmArray, vec3(wp.xy / scale, fi));
-    c = mix(c, cx * bw.x + c * bw.y + cz * bw.z, tri);
-  }
-  return c;
-}
-
-/**
- * Perturb a world normal by a tangent-space offset. Ground UVs are the world XZ plane,
- * so the tangent frame is +X / +Z Gram-Schmidted against the surface normal.
- */
-vec3 perturbNormal(vec3 n, vec2 dxy, float strength) {
-  vec3 t = normalize(vec3(1.0, 0.0, 0.0) - n * n.x);
-  vec3 b = cross(n, t);
-  return normalize(t * dxy.x * strength + b * dxy.y * strength + n);
+  // 0 dry grass and 1 meadow grass share the plain in opposition, so the ground breaks
+  // into readable blocks of straw and green rather than averaging into one tone.
+  //
+  // **Dominated by the strip hash, not by noise.** The regions have to *be* the fields:
+  // when the mix was 82 % macro noise and 18 % field hash the outlines were fractal and
+  // the result was camouflage. Noise now supplies only a gentle drift within each strip,
+  // so a field is not a flat colour but its identity and its edges come from the lattice.
+  //
+  // Biased so green pasture is the ground state and burnt-off straw the exception, which
+  // is how real Rome II ground looks — green with dry patches through it, not the reverse.
+  // The straw share is pulled toward the mean with distance along with everything else.
+  float useMix = fld.x * 0.62 + nzBig * 0.22 + macroMid.a * 0.16;
+  float grassMix = mix(smoothstep(0.42, 0.64, useMix), 0.34, aerial * 0.78);
+  w[0] = (0.3 + 2.7 * grassMix + stubble * 1.6) * (1.0 - grassKill) * (1.0 - paved);
+  w[1] = (0.3 + 2.5 * (1.0 - grassMix) + cWet * 1.8 + hollow * 0.5)
+       * (1.0 - grassKill) * (1.0 - paved) * (1.0 - fallow * 0.75);
+  // 2 trampled earth: army grounds, road verges, the tracks on the field lines and the
+  // ploughed and fallow strips. An accent, not a fourth co-equal state.
+  w[2] = cTramp * 1.7 + verge * 1.0
+       + fallow * 2.6 + headland * 1.9;
+  // 3 mud: where drainage really concentrates and the ground never dries.
+  w[3] = smoothstep(0.68, 0.98, cWet) * 2.1 + hollow * 0.45
+       + cSilt * 0.6 * (1.0 - smoothstep(0.8, 4.5, tAbove));
+  // 4 gravel and scree: eroded ground, real slope, road margins, quarry spoil, and the
+  // stony rises the plough turned up.
+  //
+  // Every term here is tied to something *structural* — slope, curvature, the erosion
+  // control map, the road. The free-floating macro-noise patches this used to carry were
+  // soft ~60 m blobs of pale grey-tan, and on a green plain they were half of the
+  // camouflage read; they survive only as a weak, high-threshold accent on ground the
+  // plough has actually turned over.
+  w[4] = cBare * 1.2 + smoothstep(0.13, 0.40, tSlope) * 1.75 + verge * 1.35 + nose * 0.7
+       + smoothstep(0.78, 0.95, macroMid.b) * 0.6 * fallow * (1.0 - paved)
+       + fallow * nose * 1.4 + headland * 0.5
+       // Traffic wears the fines out of a track and leaves the stones standing. Without
+       // this, trodden ground — army camps, the glacis, the ford approach — is a sheet of
+       // featureless chocolate mud wherever it is not grass.
+       + smoothstep(0.12, 0.55, cTramp) * 1.3;
+  // 5 exposed limestone: steep faces, quarry cuts, the noses of ridges.
+  w[5] = smoothstep(0.32, 0.60, tSlope) * 2.9
+       + cBare * smoothstep(0.18, 0.45, tSlope) * 2.2 + nose * 0.5;
+  // 6 river sand and gravel: the bed, the bars and the water's edge.
+  w[6] = (1.0 - smoothstep(0.3, 3.2, tAbove)) * 2.5
+       + cSilt * (1.0 - smoothstep(0.0, 4.0, tAbove)) * 1.7;
+  // 7 basalt paving.
+  w[7] = paved * 9.0;
 }
 `;
+
+/** The Campus Martius profile — the default, so the original call site is unchanged. */
+export const CAMPUS_SHADING: TerrainShading = {
+  layers: GROUND_LAYERS,
+  splatGlsl: CAMPUS_SPLAT_GLSL,
+  cacheKey: 'campus-martius',
+  waterLevel: WATER_LEVEL,
+  // 55 % pasture, 30 % straw, 10 % turned earth, 5 % stone, in linear.
+  aerialMean: [0.199, 0.207, 0.07],
+  aerialStrength: 0.62,
+};
 
 export function createTerrainMaterial(
   tex: GroundTextures,
   heightMap: THREE.Texture,
   controlMap: THREE.Texture,
   heightSpacing: number,
-  farHeight: number
+  farHeight: number,
+  shading: TerrainShading = CAMPUS_SHADING
 ): TerrainMaterialSet {
+  const layers = shading.layers;
   const farScale = new Float32Array(LAYER_COUNT);
   const detailScale = new Float32Array(LAYER_COUNT);
   const detailMix = new Float32Array(LAYER_COUNT);
   const heightBias = new Float32Array(LAYER_COUNT);
   for (let i = 0; i < LAYER_COUNT; i++) {
-    farScale[i] = GROUND_LAYERS[i].farScale;
-    detailScale[i] = GROUND_LAYERS[i].detailScale;
-    detailMix[i] = GROUND_LAYERS[i].detailMix;
-    heightBias[i] = GROUND_LAYERS[i].heightBias;
+    farScale[i] = layers[i].farScale;
+    detailScale[i] = layers[i].detailScale;
+    detailMix[i] = layers[i].detailMix;
+    heightBias[i] = layers[i].heightBias;
   }
 
   const uniforms: Record<string, THREE.IUniform> = {
@@ -254,7 +407,7 @@ export function createTerrainMaterial(
     uDetailScale: { value: detailScale },
     uDetailMix: { value: detailMix },
     uHeightBias: { value: heightBias },
-    uWaterLevel: { value: WATER_LEVEL },
+    uWaterLevel: { value: shading.waterLevel },
     uDetailStrength: { value: 0.78 },
     // Height-blend depth in surface-height units. Small values interlock hard; too
     // small and the transition aliases into single-texel noise.
@@ -305,7 +458,8 @@ ${CLIPMAP_GLSL}`
 varying vec3 vTerrain;
 varying float vLevelSpacing;
 ${CLIPMAP_GLSL}
-${SPLAT_GLSL}`
+${SPLAT_GLSL}
+${shading.splatGlsl}`
       )
       .replace(
         '#include <map_fragment>',
@@ -329,105 +483,17 @@ ${SPLAT_GLSL}`
   float nzSmall = texture2D(uMacro, wp.xz * (1.0 / 23.0) + vec2(0.13, 0.77)).a;
   float nzBig = texture2D(uMacro, wp.xz * (1.0 / 620.0) + vec2(0.71, 0.29)).a;
 
-  // The Via Flaminia, evaluated analytically so the paving edge stays crisp at any zoom.
-  float roadD = abs(wp.x - topoRoadCentreX(wp.z));
-  // Kerb line broken up along its length: after two centuries of carts the edge of a
-  // consular road is ragged, and a mathematically straight one looks printed on.
-  float kerb = 2.75 + 0.28 * (nzSmall - 0.5) * 2.0;
-  float paved = 1.0 - smoothstep(kerb, kerb + 0.7, roadD);
-  float verge = 1.0 - smoothstep(3.2, 8.0, roadD);
-
   float grassKill = smoothstep(0.30, 0.60, tSlope);
   float hollow = max(tCurv, 0.0);
   float nose = max(-tCurv, 0.0);
+  float camDist = length(vViewPosition);
 
-  // Worked land: fld.x is what this strip is doing, fld.y its boundary line.
-  // Suppressed on the hills and in the river valley, where nobody ploughed.
-  vec3 fld = fieldPattern(wp.xz, macroMid.a);
-  float farmed = (1.0 - smoothstep(0.22, 0.48, tSlope)) * smoothstep(3.0, 9.0, tAbove);
-  // The Campus Martius itself was *ager publicus* — pasture, parade ground and monuments,
-  // never ploughed; the centuriated arable begins beyond it. So the bare-earth half of the
-  // patchwork is suppressed over the fighting ground, which is both correct and what stops
-  // the eye-level camera in the Roman line from standing in a ploughed field. The straw /
-  // green / stubble half of the pattern stays, so the plain keeps its blocky variety.
-  // Weighted hard along z: the ager publicus is the flood plain inside the Tiber bend, so
-  // the exemption has to stop short of the necropolis and the hill approach at z > 300,
-  // which are trodden, dusty, tomb-lined ground and not pasture. It also has to let the
-  // outer flanks of the frontage keep some arable, or a high camera sees one green wash.
-  float campus = 1.0 - smoothstep(420.0, 800.0, length(vec2(wp.x * 0.86, (wp.z + 40.0) * 1.9)));
-  // Aerial convergence. A real aerial photograph *converges*: haze and sub-pixel mixing
-  // pull everything toward a common tone as distance grows. This shader diverged instead,
-  // which is half of why the strategic view read as camouflage — and the same variance is
-  // what aliases when a 94 m cell shrinks toward a few pixels. Roads and rock are exempt,
-  // because a basalt carriageway really is a dark line from two kilometres up.
-  float aerial = smoothstep(300.0, 1150.0, length(vViewPosition))
-               * (1.0 - paved) * (1.0 - smoothstep(0.18, 0.42, tSlope));
-  // Land use is decided per strip, and only *two* states are allowed to be strong: green
-  // pasture and burnt-off straw. Bare earth and stone are accents keyed to the fallow
-  // strips, the boundary lines and real slope. Four equally-loud states across one plain
-  // is what turns worked land into DPM.
-  float useDecorr = fract(fld.x * 3.71 + fld.z * 0.613);
-  float fieldGain = 1.0 - aerial * 0.78;
-  float fallow = smoothstep(0.66, 0.79, useDecorr) * farmed * (1.0 - campus * 0.88) * fieldGain;
-  float stubble = smoothstep(0.30, 0.44, fld.x) * (1.0 - smoothstep(0.56, 0.68, fld.x)) * farmed;
-  // The headland: a beaten track a few metres wide *on* the field line, where the carts
-  // turned and the plough could not reach. It straddles the boundary, so the change of
-  // land use either side of it passes through a third material instead of being a hard
-  // albedo step — which is what lets the lattice be rectilinear without aliasing.
-  //
-  // Deliberately *not* subject to the aerial field gain. Boundary lines are the one part of a
-  // patchwork that a real aerial view resolves more sharply, not less: hedges, ditches and
-  // farm tracks are the first thing you read off an air photograph. Converging them away
-  // with distance left the fields as flat colour rectangles butting directly together.
-  float headland = fld.y * farmed * (1.0 - campus * 0.55);
-
+  // The map's own rule set decides which materials go where. Compiled in, so the two maps
+  // never branch per pixel and neither carries the other's terms.
   float w[${LAYER_COUNT}];
-  // 0 dry grass and 1 meadow grass share the plain in opposition, so the ground breaks
-  // into readable blocks of straw and green rather than averaging into one tone.
-  //
-  // **Dominated by the strip hash, not by noise.** The regions have to *be* the fields:
-  // when the mix was 82 % macro noise and 18 % field hash the outlines were fractal and
-  // the result was camouflage. Noise now supplies only a gentle drift within each strip,
-  // so a field is not a flat colour but its identity and its edges come from the lattice.
-  //
-  // Biased so green pasture is the ground state and burnt-off straw the exception, which
-  // is how real Rome II ground looks — green with dry patches through it, not the reverse.
-  // The straw share is pulled toward the mean with distance along with everything else.
-  float useMix = fld.x * 0.62 + nzBig * 0.22 + macroMid.a * 0.16;
-  float grassMix = mix(smoothstep(0.42, 0.64, useMix), 0.34, aerial * 0.78);
-  w[0] = (0.3 + 2.7 * grassMix + stubble * 1.6) * (1.0 - grassKill) * (1.0 - paved);
-  w[1] = (0.3 + 2.5 * (1.0 - grassMix) + cWet * 1.8 + hollow * 0.5)
-       * (1.0 - grassKill) * (1.0 - paved) * (1.0 - fallow * 0.75);
-  // 2 trampled earth: army grounds, road verges, the tracks on the field lines and the
-  // ploughed and fallow strips. An accent, not a fourth co-equal state.
-  w[2] = cTramp * 1.7 + verge * 1.0
-       + fallow * 2.6 + headland * 1.9;
-  // 3 mud: where drainage really concentrates and the ground never dries.
-  w[3] = smoothstep(0.68, 0.98, cWet) * 2.1 + hollow * 0.45
-       + cSilt * 0.6 * (1.0 - smoothstep(0.8, 4.5, tAbove));
-  // 4 gravel and scree: eroded ground, real slope, road margins, quarry spoil, and the
-  // stony rises the plough turned up.
-  //
-  // Every term here is tied to something *structural* — slope, curvature, the erosion
-  // control map, the road. The free-floating macro-noise patches this used to carry were
-  // soft ~60 m blobs of pale grey-tan, and on a green plain they were half of the
-  // camouflage read; they survive only as a weak, high-threshold accent on ground the
-  // plough has actually turned over.
-  w[4] = cBare * 1.2 + smoothstep(0.13, 0.40, tSlope) * 1.75 + verge * 1.35 + nose * 0.7
-       + smoothstep(0.78, 0.95, macroMid.b) * 0.6 * fallow * (1.0 - paved)
-       + fallow * nose * 1.4 + headland * 0.5
-       // Traffic wears the fines out of a track and leaves the stones standing. Without
-       // this, trodden ground — army camps, the glacis, the ford approach — is a sheet of
-       // featureless chocolate mud wherever it is not grass.
-       + smoothstep(0.12, 0.55, cTramp) * 1.3;
-  // 5 exposed limestone: steep faces, quarry cuts, the noses of ridges.
-  w[5] = smoothstep(0.32, 0.60, tSlope) * 2.9
-       + cBare * smoothstep(0.18, 0.45, tSlope) * 2.2 + nose * 0.5;
-  // 6 river sand and gravel: the bed, the bars and the water's edge.
-  w[6] = (1.0 - smoothstep(0.3, 3.2, tAbove)) * 2.5
-       + cSilt * (1.0 - smoothstep(0.0, 4.0, tAbove)) * 1.7;
-  // 7 basalt paving.
-  w[7] = paved * 9.0;
+  float aerial;
+  tcMapSplat(wp, tGeoN, tSlope, tCurv, tAbove, cWet, cBare, cTramp, cSilt,
+             macroMid, nzSmall, nzBig, grassKill, hollow, nose, camDist, w, aerial);
 
   int bi0 = 0; int bi1 = 0; int bi2 = 0;
   float bm0 = -1.0; float bm1 = -1.0; float bm2 = -1.0;
@@ -483,7 +549,7 @@ ${SPLAT_GLSL}`
   // Detail relief at two scales, faded with distance so neither aliases into sparkle.
   // The coarse band survives to 130 m because at that range it is the only thing keeping
   // the middle distance from going smooth; the 0.5 m band would shimmer long before.
-  float camDist = length(vViewPosition);
+  // camDist is hoisted above the splat call, which needs it for aerial convergence.
   float detFade = 1.0 - smoothstep(22.0, 74.0, camDist);
   // The 2.4 m band is *not* faded in from the near field: at that wavelength it is clods
   // and hollows, not grain, and a boot-level camera needs them as much as a mid-distance
@@ -529,11 +595,11 @@ ${SPLAT_GLSL}`
   // from the mean *hue* is compressed, so distant ground still reads light where it is
   // straw and dark where it is turned earth — it simply stops reading as two paints.
   //
-  // AERIAL_MEAN is 55 % pasture, 30 % straw, 10 % turned earth, 5 % stone, in linear.
-  const vec3 AERIAL_MEAN = vec3(0.199, 0.207, 0.070);
+  // The map's own area-weighted mean ground colour, in linear.
+  const vec3 AERIAL_MEAN = vec3(${shading.aerialMean.map((v) => v.toFixed(4)).join(', ')});
   float tLum = dot(tCol, vec3(0.2126, 0.7152, 0.0722));
   vec3 tMean = AERIAL_MEAN * (tLum / max(dot(AERIAL_MEAN, vec3(0.2126, 0.7152, 0.0722)), 1e-4));
-  tCol = mix(tCol, tMean, aerial * 0.62);
+  tCol = mix(tCol, tMean, aerial * ${shading.aerialStrength.toFixed(3)});
   diffuseColor.rgb *= tCol;
 `
       )
@@ -563,7 +629,7 @@ ${SPLAT_GLSL}`
       );
   };
   // Distinguishes this program from any other patched MeshStandardMaterial in the scene.
-  material.customProgramCacheKey = () => 'terrain-clipmap-splat-v1';
+  material.customProgramCacheKey = () => `terrain-clipmap-splat-v2-${shading.cacheKey}`;
 
   // ---------------------------------------------------------------------
   // Shadow pass. The clipmap's displacement lives in the vertex shader, so the default
@@ -576,7 +642,7 @@ ${SPLAT_GLSL}`
       .replace('#include <common>', `#include <common>\n${CLIPMAP_GLSL}`)
       .replace('#include <begin_vertex>', 'vec3 transformed = clipmapVertex(position);');
   };
-  depthMaterial.customProgramCacheKey = () => 'terrain-clipmap-depth-v1';
+  depthMaterial.customProgramCacheKey = () => 'terrain-clipmap-depth-v2';
 
   return {
     material,

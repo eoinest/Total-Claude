@@ -7,6 +7,7 @@ import { clamp, clamp01 } from '../util/math';
 import {
   blendPresets,
   horizonRadiance,
+  setSolarSite,
   skyFillRadiance,
   sunDirectionForHour,
   sunIrradiance,
@@ -15,6 +16,7 @@ import {
   type AtmosParams,
   type SkyPreset,
 } from './atmosphere';
+import { activeMap } from '../maps';
 
 /**
  * Physical sky, cloud layers and image-based lighting.
@@ -65,6 +67,17 @@ const SKY_CUBE_SIZE = 256;
  */
 const AMBIENT_TRIM = 0.6;
 
+/**
+ * Ground albedo the `AMBIENT_TRIM` above was calibrated against — the Campus Martius'
+ * afternoon preset. A map whose ground is brighter genuinely does return more light to
+ * everything in shadow, and the IBL has to carry its share of that or the trim silently
+ * becomes a much deeper cut on a bright map than on a dark one. Bounded, because this is a
+ * correction for a first-order effect and not a full interreflection solve.
+ */
+const TRIM_REFERENCE_ALBEDO = 0.13;
+const ambientTrimFor = (groundAlbedo: number): number =>
+  AMBIENT_TRIM * clamp(groundAlbedo / TRIM_REFERENCE_ALBEDO, 0.8, 1.55);
+
 export class SkySystem implements Subsystem {
   readonly name = 'sky';
   readonly order = -90;
@@ -89,6 +102,12 @@ export class SkySystem implements Subsystem {
   timeOfDay = 14.3;
   /** Active atmospheric parameters. PostFX reads `haze*` and `exposure`. */
   preset: SkyPreset = { ...SKY_PRESETS.afternoon };
+  /**
+   * The active map's daylight presets, in ascending hour order. `setTimeOfDay` blends
+   * between adjacent entries, so a map states its own weather across the day rather than
+   * borrowing another site's.
+   */
+  private dayCycle: readonly string[] = ['dawn', 'morning', 'noon', 'afternoon', 'goldenHour'];
 
   /** PMREM-processed environment for IBL. */
   environmentTexture: THREE.Texture | null = null;
@@ -142,6 +161,15 @@ export class SkySystem implements Subsystem {
   private readonly rayMatrix = new THREE.Matrix4();
 
   init(ctx: EngineContext): void {
+    // The site has to be installed before the first applyTime, because every colour in
+    // this system falls out of the sun's elevation and there is no later chance to correct
+    // it: the PMREM IBL, the fog tint and PostFX's aerial perspective are all baked from it.
+    const map = activeMap();
+    setSolarSite(map.site.latitudeDeg, map.site.declinationDeg);
+    this.dayCycle = map.sky.dayCycle;
+    this.timeOfDay = map.sky.defaultHour;
+    this.preset = { ...(SKY_PRESETS[this.dayCycle[0]] ?? SKY_PRESETS.afternoon) };
+
     this.makeCloudNoise();
     this.buildBakeScene(ctx);
     this.buildBackground(ctx);
@@ -233,11 +261,11 @@ export class SkySystem implements Subsystem {
     tex.needsUpdate = true;
     this.cloudNoiseTexture = tex;
 
-    // Float copy so `cloudShadowAt` can answer CPU-side queries with the same field.
+    // Float copy so cloudShadowAt can answer CPU-side queries with the same field.
     this.noiseData = new Float32Array(N * N * 4);
     for (let i = 0; i < data.length; i++) this.noiseData[i] = data[i] / 255;
 
-    // Measure the fBm's spread so `cloudCoverage` can be expressed in units of
+    // Measure the fBm's spread so cloudCoverage can be expressed in units of
     // standard deviation instead of raw noise values. Without this the preset
     // numbers only mean anything for one particular hash.
     const w = SkySystem.OCTAVE_W;
@@ -254,7 +282,7 @@ export class SkySystem implements Subsystem {
     const mean = sum / n;
     // Include the detail term's contribution (weight 0.22, same distribution).
     const sigma = Math.sqrt(Math.max(1e-8, sum2 / n - mean * mean)) * 1.024;
-    // COVERAGE_SIGMA units per 1.0 of preset `cloudCoverage`: a preset value of
+    // COVERAGE_SIGMA units per 1.0 of preset cloudCoverage: a preset value of
     // 0.5 is the median (about half the sky), 0.65 is +1 sigma (~16 %).
     this.covScale = sigma / 0.15;
   }
@@ -318,7 +346,7 @@ export class SkySystem implements Subsystem {
     const base = this.fbm(u, v);
     this.sampleNoise(u * 0.37, v * 0.37, this.nTmp2);
     const detail = this.fbm(u * 3.7 + (this.nTmp2[1] - 0.5) * 0.06, v * 3.7 + (this.nTmp2[2] - 0.5) * 0.06);
-    // Must match `tcCloudCoverage` exactly.
+    // Must match tcCloudCoverage exactly.
     const shape = base + (detail - 0.5) * 0.22;
     const c0 = this.cloudUniformA.w;
     const c1 = c0 + this.cloudUniformB.x;
@@ -334,7 +362,7 @@ export class SkySystem implements Subsystem {
     return {
       uSunDir: { value: this.sunDirection },
       // Neutral chromaticity, luminance preserved — see SOLAR_IRRADIANCE in
-      // `atmosphere.ts` for why three spectral samples must not be used as RGB.
+      // atmosphere.ts for why three spectral samples must not be used as RGB.
       uSunIrradiance: { value: new THREE.Vector3(1.775, 1.775, 1.775) },
       uTurbidity: { value: this.atmos.turbidity },
       uGroundAlbedo: { value: this.atmos.groundAlbedo },
@@ -550,7 +578,7 @@ export class SkySystem implements Subsystem {
       this.pmremRT = next;
       this.environmentTexture = next.texture;
       ctx.scene.environment = next.texture;
-      ctx.scene.environmentIntensity = AMBIENT_TRIM;
+      ctx.scene.environmentIntensity = ambientTrimFor(this.preset.groundAlbedo);
     }
   }
 
@@ -611,7 +639,7 @@ export class SkySystem implements Subsystem {
       ctx.scene.environment = rt.texture;
       // The plate has been normalised to our own sky's irradiance, so it takes
       // the same trim as the procedural cube.
-      ctx.scene.environmentIntensity = AMBIENT_TRIM;
+      ctx.scene.environmentIntensity = ambientTrimFor(this.preset.groundAlbedo);
       this.applyEnvRotation(ctx);
     } catch {
       /* keep the procedural PMREM */
@@ -650,7 +678,7 @@ export class SkySystem implements Subsystem {
     const ch = data.length / (w * h);
 
     // Pass 1: cosine-weighted mean radiance of the upper hemisphere — that is
-    // irradiance / pi, directly comparable to `skyFillColour` — plus the azimuth
+    // irradiance / pi, directly comparable to skyFillColour — plus the azimuth
     // of the brightest texel.
     let wr = 0;
     let wg = 0;
@@ -713,7 +741,7 @@ export class SkySystem implements Subsystem {
     }
     // Per-channel gain onto our own hemisphere mean. A von-Kries adaptation in
     // RGB: crude colorimetrically, exact for the thing that matters here, which
-    // is that the plate's diffuse irradiance equals `skyFillColour` in all three
+    // is that the plate's diffuse irradiance equals skyFillColour in all three
     // channels rather than only in luminance.
     const fit = (mean: number, want: number): number =>
       mean > 1e-6 ? clamp(want / mean, 0.02, 50) : 1;
@@ -759,11 +787,10 @@ export class SkySystem implements Subsystem {
     this.dirty = true;
   }
 
-  /** Blend the daylight presets by hour so `setTimeOfDay` stays coherent. */
+  /** Blend the active map's daylight presets by hour so `setTimeOfDay` stays coherent. */
   private presetForHour(h: number): SkyPreset {
-    const keys: Array<keyof typeof SKY_PRESETS> = [
-      'dawn', 'morning', 'noon', 'afternoon', 'goldenHour',
-    ];
+    const keys = this.dayCycle.filter((k) => SKY_PRESETS[k]);
+    if (keys.length === 0) return { ...SKY_PRESETS.afternoon, hour: h };
     const hours = keys.map((k) => SKY_PRESETS[k].hour);
     if (h <= hours[0]) return { ...SKY_PRESETS[keys[0]], hour: h };
     for (let i = 0; i < keys.length - 1; i++) {
@@ -787,7 +814,7 @@ export class SkySystem implements Subsystem {
     this.sunIntensity = sunIrradiance(this.atmos, 40, this.sunColour);
     skyFillRadiance(this.atmos, 40, this.skyFillColour);
     horizonRadiance(this.atmos, 40, this.horizonColour);
-    // `ambientColour` is the historical contract name; it is the sky fill.
+    // ambientColour is the historical contract name; it is the sky fill.
     this.ambientColour.copy(this.skyFillColour);
 
     // Clouds are lit by the sun's spectral colour at its full irradiance.

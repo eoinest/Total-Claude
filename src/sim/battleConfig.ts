@@ -17,6 +17,7 @@
  */
 
 import type { QualityTier } from '../core/Engine';
+import { DEFAULT_MAP_ID, getMap, isMapId, type MapId } from '../maps';
 import { formation } from './formations';
 import { Faction } from './types';
 import { unitType } from '../units/roster';
@@ -105,6 +106,12 @@ export const MAX_PER_TYPE = 12;
 // ---------------------------------------------------------------------------
 
 export interface BattleConfig {
+  /**
+   * Which battlefield. Defaults to the Campus Martius, so an existing player's stored
+   * preference and every harness run that does not ask for anything else get exactly the
+   * battle the game shipped with.
+   */
+  map: MapId;
   unitSize: UnitSizeId;
   rome: ArmyComposition;
   juthungi: ArmyComposition;
@@ -125,6 +132,7 @@ export interface BattleConfig {
  * 3,784 against 4,860, 248 m of frontage against 334 m.
  */
 export const DEFAULT_CONFIG: BattleConfig = {
+  map: DEFAULT_MAP_ID,
   unitSize: 'ultra',
   rome: {
     'legio-cohort': 6,
@@ -320,10 +328,17 @@ export function sanitiseConfig(raw: unknown): BattleConfig {
     if (total === 0) return compositionFor(DEFAULT_CONFIG, f);
     return out;
   };
+  // Resolved first: the map decides the default hour, because 10:00 is the right opening
+  // light on the Campus Martius and a high, flat, shadowless one over a Macedonian plain on
+  // the solstice. An *explicitly supplied* hour is always respected — only an absent one
+  // falls back to the map's own.
+  const map: MapId = isMapId(o.map) ? o.map : DEFAULT_MAP_ID;
+  const defaultHour = getMap(map).sky.defaultHour;
   const sizes = UNIT_SIZES.map((p) => p.id) as string[];
   const tiers: QualityTier[] = ['low', 'medium', 'high', 'ultra'];
   const diffs: Difficulty[] = ['easy', 'normal', 'hard', 'legendary'];
   return {
+    map,
     unitSize: sizes.includes(String(o.unitSize)) ? (o.unitSize as UnitSizeId) : DEFAULT_CONFIG.unitSize,
     rome: side(o.rome, Faction.Rome),
     juthungi: side(o.juthungi, Faction.Germanic),
@@ -331,7 +346,7 @@ export function sanitiseConfig(raw: unknown): BattleConfig {
     difficulty: diffs.includes(o.difficulty as Difficulty)
       ? (o.difficulty as Difficulty)
       : DEFAULT_CONFIG.difficulty,
-    timeOfDay: clampInt(o.timeOfDay, 4, 21, DEFAULT_CONFIG.timeOfDay),
+    timeOfDay: o.timeOfDay === undefined ? defaultHour : clampInt(o.timeOfDay, 4, 21, defaultHour),
     // Full unsigned 32-bit: the generator's state is a uint32 and the historical default
     // seed (4,265,438,264) is above 0x7fffffff, so a signed clamp silently rewrote it.
     seed: clampInt(o.seed, 0, 0xffffffff, DEFAULT_CONFIG.seed),

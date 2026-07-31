@@ -52,7 +52,70 @@ export interface WallSegmentOut {
   z1: number;
   x2: number;
   z2: number;
+  /**
+   * Rise of the masonry above its own footing, **not** an absolute Y. A consumer that
+   * wants the height of the wall-walk above the datum must add the ground height under
+   * the bay — or, better, read `GarrisonBay.walkY`, which is absolute and is the same
+   * number the geometry is actually built at.
+   */
   height: number;
+  /** True for the bay the gate passage runs through: masonry, but with a hole in it. */
+  gate: boolean;
+  /** Half-thickness of the curtain, so a consumer stamping an obstacle gets it right. */
+  halfThickness: number;
+}
+
+/**
+ * A bay of the curtain described as somewhere a man can stand.
+ *
+ * This is the contract between the wall geometry and the siege simulation, and it exists
+ * because the two were derived independently once and disagreed. `walkY` is **absolute**
+ * and is produced by the same function the wall-walk quad is built from, so a garrisoned
+ * man cannot be at a different height from the stone under his feet.
+ *
+ * Offsets are along the bay's outward normal: negative is cityward. The clear standing
+ * band runs from `innerOff` (nearest the city) to `outerOff` (up against the parapet).
+ */
+export interface GarrisonBay {
+  index: number;
+  x0: number;
+  z0: number;
+  x1: number;
+  z1: number;
+  /** Outward (northward) unit normal of the run. */
+  nx: number;
+  nz: number;
+  /** Unit vector along the run, x0 -> x1. */
+  dx: number;
+  dz: number;
+  length: number;
+  stage: BayStage;
+  /** Absolute Y of the surface a man's feet rest on. */
+  walkY: number;
+  /** Ground under the bay — the lower of its two ends. */
+  groundY: number;
+  /** Absolute Y of the top of the merlons. What a flat shot must clear. */
+  crestY: number;
+  /**
+   * Absolute Y of the sill between the merlons — the bottom of a crenel.
+   *
+   * A defender shoots *through* the embrasure, not over the battlement: the merlons are
+   * 1.45 m of brick on top of a 0.6 m sill, and a 1.75 m man behind a merlon cannot see
+   * out at all. Equal to `walkY` where there is no parapet raised yet.
+   */
+  sillY: number;
+  /** Normal-offsets of the parapet's inner and outer faces. Equal where there is none. */
+  parapetInner: number;
+  parapetOuter: number;
+  /** Normal-offset of the cityward limit of the clear standing band. */
+  innerOff: number;
+  /** Normal-offset of the outward limit, clear of the parapet or the merlon stacks. */
+  outerOff: number;
+  /** False for footing and gap bays, which have no walkway to stand on. */
+  garrisonable: boolean;
+  /** Half-length of the tower footprint at `x0`, which the walkway does not pass through. */
+  towerHalf: number;
+  isGate: boolean;
 }
 
 export interface GateOut {
@@ -110,6 +173,8 @@ export interface WallBuildOutput {
   trees: TreeRequest[];
   towerCount: number;
   bayStages: BayStage[];
+  /** Every bay described as a place to stand. See `GarrisonBay`. */
+  garrisonBays: GarrisonBay[];
   /** Where the wall line sits, for the insula generator to build up against. */
   wallZAt: (x: number) => number;
 }
@@ -157,6 +222,104 @@ function frameOf(x0: number, z0: number, x1: number, z1: number): Frame {
   return { nx, nz, dx, dz, len, rotY: Math.atan2(-nx, -nz) };
 }
 
+/**
+ * Where the top of this bay is, and where on it a man can stand.
+ *
+ * **The single source of truth for the wall-walk's height**, called both by the geometry
+ * builder that emits the stone and by the garrison API that puts men on it. They used to
+ * derive it separately and disagreed: `Bay.topY` is the quantised construction level, but
+ * a half-built bay is built at `max(g0,g1) + 3.4` instead and then carries 0.3 m of
+ * exposed rubble core on top, so a garrison placed at `topY` stood a third of a metre
+ * inside the masonry on exactly the bays the assault is aimed at.
+ *
+ * Offsets are measured along the outward normal from the bay centreline.
+ */
+function walkGeometry(bay: Bay): {
+  walkY: number;
+  crestY: number;
+  sillY: number;
+  parapetInner: number;
+  parapetOuter: number;
+  innerOff: number;
+  outerOff: number;
+  garrisonable: boolean;
+} {
+  const T = WALL.thickness;
+  const gMin = Math.min(bay.g0, bay.g1);
+  const stage = bay.stage;
+  // Matches `buildCurtainBay` exactly.
+  const topY = stage === 'half-built' ? Math.max(bay.g0, bay.g1) + 3.4 : bay.topY;
+  // Outer face leans back 1-in-30 over the lift, so the walkway's outer lip is inboard
+  // of the nominal half-thickness by the batter times the rise.
+  const walkOuter = T * 0.5 - WALL.batter * Math.max(0, topY - (gMin + WALL.plinthHeight));
+  // Body radius of a man, from `resolveCrowding`. He may not overlap the stonework.
+  const BODY = 0.42;
+  // The inner lip of the walk quad, less the walk's own 25 mm inset.
+  const innerLip = -(T * 0.5 - 0.025);
+
+  if (stage === 'footing' || stage === 'gap') {
+    // No walkway: a footing is a knee-high concrete pour and a gap is an earth rampart
+    // with a palisade on it. Both are places to fight *at*, not on.
+    return {
+      walkY: topY, crestY: topY, sillY: topY,
+      parapetInner: 0, parapetOuter: 0,
+      innerOff: 0, outerOff: 0, garrisonable: false,
+    };
+  }
+
+  if (stage === 'half-built') {
+    // Standing on the exposed rubble core, which is 0.3 m proud of the finished lift and
+    // 2.95 m wide. No parapet at all, so keep men back from both lips.
+    const half = (T - 0.55) * 0.5;
+    return {
+      walkY: topY + 0.3,
+      crestY: topY + 0.3,
+      sillY: topY + 0.3,
+      parapetInner: half,
+      parapetOuter: half,
+      innerOff: -half + BODY,
+      outerOff: half - BODY - 0.25,
+      garrisonable: true,
+    };
+  }
+
+  if (stage === 'no-parapet') {
+    // Parapet not raised yet: dressed merlon blocks are stacked on the walk 1.1 m in
+    // from the outer lip and are 0.8 m across, so the outward limit is inboard of them.
+    return {
+      walkY: topY,
+      crestY: topY + 1.26,
+      sillY: topY,
+      // The stacked merlon blocks waiting to be set: 0.8 m across, 1.1 m in from the lip.
+      parapetInner: walkOuter - 1.5,
+      parapetOuter: walkOuter - 0.7,
+      innerOff: innerLip + BODY,
+      outerOff: walkOuter - 1.1 - 0.4 - BODY,
+      garrisonable: true,
+    };
+  }
+
+  // Finished. The parapet occupies [walkOuter - parapetThickness, walkOuter], and the
+  // front rank stands with its shoulders against the inner face of it, which is what
+  // shooting over a merlon looks like.
+  //
+  // Bays carrying the covered gallery have piers 0.6 m across on the centre of the
+  // cityward half, spanning offsets [-1.55, -0.95]. The cityward limit is pulled in
+  // clear of them rather than letting the rear rank stand inside a colonnade.
+  const gallery = bay.index % 5 === 1;
+  return {
+    walkY: topY,
+    crestY: topY + WALL.parapetHeight,
+    // `buildCurtainBay` lays a solid 0.6 m sill and stands the merlons on top of it.
+    sillY: topY + 0.6,
+    parapetInner: walkOuter - WALL.parapetThickness,
+    parapetOuter: walkOuter,
+    innerOff: gallery ? -0.88 : innerLip + BODY,
+    outerOff: walkOuter - WALL.parapetThickness - BODY,
+    garrisonable: true,
+  };
+}
+
 export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: string): WallBuildOutput {
   const rng = new Rng(rngSeed);
   const path = fitWallPath(heightAt);
@@ -200,6 +363,7 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
   const blockers: Blocker[] = [];
   const bayStages: BayStage[] = [];
   const trees: TreeRequest[] = [];
+  const garrisonBays: GarrisonBay[] = [];
 
   for (let b = 0; b < nBays; b++) {
     const x0 = WALL_X_MIN + b * WALL.towerSpacing;
@@ -221,11 +385,41 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
     bays.push(bay);
     bayStages.push(stage);
     const h = stage === 'footing' ? 1.1 : stage === 'gap' ? 3.1 : stage === 'half-built' ? 3.4 : WALL.height;
-    segments.push({ x1: bay.x0, z1: bay.z0, x2: bay.x1, z2: bay.z1, height: h });
+    segments.push({
+      x1: bay.x0, z1: bay.z0, x2: bay.x1, z2: bay.z1, height: h,
+      gate: isGate,
+      halfThickness: WALL.thickness * 0.5,
+    });
     // A bare footing does not stop a man; everything else does.
     if (stage !== 'footing') {
       blockers.push({ x1: bay.x0, z1: bay.z0, x2: bay.x1, z2: bay.z1, halfW: WALL.thickness * 0.5 });
     }
+
+    const f = frameOf(bay.x0, bay.z0, bay.x1, bay.z1);
+    const walk = walkGeometry(bay);
+    // A tower stands at the west end of every bay except beside the gate, and its ballista
+    // chamber occupies the walkway there, so the garrison line is broken at each one.
+    const prevIsGate = b > 0 && b - 1 === gateBay;
+    const hasTower = !isGate && !prevIsGate;
+    garrisonBays.push({
+      index: b,
+      x0: bay.x0, z0: bay.z0, x1: bay.x1, z1: bay.z1,
+      nx: f.nx, nz: f.nz, dx: f.dx, dz: f.dz, length: f.len,
+      stage,
+      walkY: walk.walkY,
+      groundY: Math.min(bay.g0, bay.g1),
+      crestY: walk.crestY,
+      sillY: walk.sillY,
+      parapetInner: walk.parapetInner,
+      parapetOuter: walk.parapetOuter,
+      innerOff: walk.innerOff,
+      outerOff: walk.outerOff,
+      // The gate block is 25 m of solid masonry with its own battlements at a different
+      // level; it is not a stretch of curtain and the garrison logic must not treat it as one.
+      garrisonable: walk.garrisonable && !isGate,
+      towerHalf: hasTower ? WALL.towerWidth * 0.5 : 0,
+      isGate,
+    });
   }
 
   const gateBayRef = bays[gateBay];
@@ -288,7 +482,7 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
     });
   }
 
-  return { path, chunks, segments, gates, blockers, trees, towerCount, bayStages, wallZAt: zAt };
+  return { path, chunks, segments, gates, blockers, trees, towerCount, bayStages, garrisonBays, wallZAt: zAt };
 }
 
 // ---------------------------------------------------------------------------

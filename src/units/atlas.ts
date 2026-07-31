@@ -64,7 +64,26 @@ export const enum Mat {
    * and mid-value on purpose, so a multiply can put it anywhere from pitch to raw hide.
    */
   ShieldBack = 24,
-  Count = 25,
+  /**
+   * Structural oak: a heavy squared timber, not a shield board.
+   *
+   * `WoodPlank` is six thin planks with hard seams every 21 mm of tile, which is right for a
+   * scutum and wrong for the beams of a siege engine — at engine scale those seams tile into
+   * a corrugation across a 0.88 m cross-timber and read as clapboard. This is one baulk of
+   * open-grain oak with adze facets, a couple of shakes and a black knot, drawn on a warm
+   * mid-value field so a per-engine tint can take it from fresh-cut to grey and weathered.
+   */
+  OakBeam = 25,
+  /**
+   * Sinew spring cord.
+   *
+   * The one surface on a torsion engine a viewer has no reference for, and the one that has
+   * to say "this is not a bow". Hundreds of parallel strands laid vertically, not laid up as
+   * a rope: a spring bundle is combed sinew under a tonne of twist, so it reads as a tight
+   * pale column with fine axial fibre and none of `Rope`'s helical barber-pole.
+   */
+  SinewCord = 26,
+  Count = 27,
 }
 
 export interface UvRect {
@@ -618,6 +637,60 @@ const MATS: Record<Mat, MatDef> = {
     roughness: 0.72,
     metalness: 0.02,
     bump: 0.45,
+  },
+  // A squared oak baulk: open grain running the length of the tile, the shallow facets an
+  // adze leaves, two shakes and a knot. Deliberately *not* planked — see the enum comment.
+  [Mat.OakBeam]: {
+    colour(u, v, out) {
+      // Grain: rings stretched hard along V so a beam textured with repeatV reads as one
+      // continuous length of timber rather than as a series of tiles.
+      const ring = vnoise(u * 7, v * 2.5, 7, 173);
+      const fine = vnoise(u * 34, v * 5, 34, 179);
+      const grain = ring * 0.72 + fine * 0.28;
+      mix3([0.36, 0.27, 0.175], [0.62, 0.49, 0.32], grain, out);
+      // Adze facets: broad shallow flats across the beam, the mark of a hand-worked timber.
+      const facet = Math.abs(((u * 3.4) % 1) - 0.5) * 2;
+      const k = 0.9 + facet * 0.16;
+      out[0] *= k; out[1] *= k; out[2] *= k;
+      // A shake — a split following the grain — and one knot.
+      const shake = Math.exp(-((u - 0.31) ** 2) / 0.00035) * (0.6 + fine * 0.6);
+      mix3(out, [0.16, 0.115, 0.07], Math.min(0.85, shake), out);
+      const knot = Math.exp(-(((u - 0.72) ** 2 + (v - 0.38) ** 2)) / 0.0022);
+      mix3(out, [0.19, 0.12, 0.06], Math.min(0.9, knot), out);
+    },
+    height(u, v) {
+      const ring = vnoise(u * 7, v * 2.5, 7, 173);
+      const fine = vnoise(u * 34, v * 5, 34, 179);
+      const shake = Math.exp(-((u - 0.31) ** 2) / 0.00035);
+      const knot = Math.exp(-(((u - 0.72) ** 2 + (v - 0.38) ** 2)) / 0.0022);
+      return Math.min(1, Math.max(0, ring * 0.5 + fine * 0.32 + 0.18 - shake * 0.7 + knot * 0.25));
+    },
+    roughness: 0.86,
+    metalness: 0,
+    bump: 0.55,
+  },
+  // Combed sinew under torsion: parallel axial strands, greasy, pale amber. High-frequency
+  // in U (across the bundle) and almost nothing in V, which is what separates a twisted
+  // spring from a laid rope at a glance.
+  [Mat.SinewCord]: {
+    colour(u, v, out) {
+      const strand = vnoise(u * 64, v * 3, 64, 181);
+      const shade = vnoise(u * 9, v * 2, 9, 187);
+      const g = 0.46 + strand * 0.40 + shade * 0.16;
+      // Warm and slightly translucent-looking; grease darkens the hollows between strands.
+      out[0] = g * 0.98; out[1] = g * 0.88; out[2] = g * 0.63;
+      // A binding of thread every so often up the bundle, as the finds show.
+      const wrap = Math.exp(-((((v * 5) % 1) - 0.5) ** 2) / 0.004);
+      mix3(out, [0.34, 0.27, 0.17], Math.min(0.7, wrap * 0.8), out);
+    },
+    height(u, v) {
+      const strand = vnoise(u * 64, v * 3, 64, 181);
+      const wrap = Math.exp(-((((v * 5) % 1) - 0.5) ** 2) / 0.004);
+      return Math.min(1, strand * 0.8 + 0.1 + wrap * 0.35);
+    },
+    roughness: 0.74,
+    metalness: 0,
+    bump: 0.8,
   },
   [Mat.Count]: {
     colour(_u, _v, out) { out[0] = 0.5; out[1] = 0.5; out[2] = 0.5; },

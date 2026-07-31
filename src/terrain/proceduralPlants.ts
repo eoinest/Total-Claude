@@ -629,10 +629,21 @@ export function buildReeds(): THREE.BufferGeometry {
  * the boulder's real half-width in metres. Colour is baked into the vertices so rocks
  * share one untextured material.
  */
-export function buildRock(seed: number): THREE.BufferGeometry {
-  // Subdivision 1 (80 faces) is plenty: these are boulders a metre across seen from at
-  // least a few metres away, and there are well over a thousand of them.
-  const geo = new THREE.IcosahedronGeometry(1, 1).toNonIndexed();
+export function buildRock(
+  seed: number,
+  /**
+   * Base linear colour of the stone. Travertine and tufa outside Rome are a warm pale grey;
+   * Pierian karst is paler and cooler, and a boulder on a bleached plain under a strong sun
+   * has to be authored *darker* than it looks or it clips to a white blob — measured, the
+   * first Pydna pass put unlit rock faces above 0.85 display.
+   */
+  tint: readonly [number, number, number] = [0.52, 0.5, 0.45],
+): THREE.BufferGeometry {
+  // Subdivision 2 (320 faces) rather than 1. At 80 faces the facets are large enough that a
+  // stone in the foreground of a low camera reads as a folded paper shape rather than as
+  // rock, which was the single most obvious artificial object in the first Pydna frames.
+  // Four times the triangles on ~1,400 instances is 450 k, and they cast no shadow.
+  const geo = new THREE.IcosahedronGeometry(1, 2).toNonIndexed();
   const pos = geo.attributes.position as THREE.BufferAttribute;
   const col = new Float32Array(pos.count * 3);
   for (let i = 0; i < pos.count; i++) {
@@ -643,14 +654,18 @@ export function buildRock(seed: number): THREE.BufferGeometry {
     const d =
       1 +
       tileFbm((x + 2) * 0.19, (z + 2) * 0.19, 3, 4, seed) * 0.34 +
-      tileFbm((y + 3) * 0.5, (x + 1) * 0.5, 2, 9, seed + 3) * 0.12;
+      tileFbm((y + 3) * 0.5, (x + 1) * 0.5, 2, 9, seed + 3) * 0.12 +
+      // A third, finer band the extra subdivision can actually carry: this is the chipped,
+      // pitted surface that separates weathered limestone from a smooth pebble.
+      tileFbm((x + 7) * 1.35, (y + 4) * 1.35, 2, 17, seed + 11) * 0.055;
     // Squash: boulders sit lower than they are wide.
     pos.setXYZ(i, x * d, y * d * 0.66, z * d);
-    const shade = 0.78 + tileFbm((x + 5) * 0.7, (z + 5) * 0.7, 2, 7, seed + 9) * 0.3;
-    // Travertine and tufa: warm pale grey.
-    col[i * 3] = 0.52 * shade;
-    col[i * 3 + 1] = 0.5 * shade;
-    col[i * 3 + 2] = 0.45 * shade;
+    // Wider shading range than the old 0.78-1.08: baked variation is the only thing giving
+    // an untextured stone any surface, and a narrow band left it reading as flat plastic.
+    const shade = 0.62 + tileFbm((x + 5) * 0.7, (z + 5) * 0.7, 2, 7, seed + 9) * 0.52;
+    col[i * 3] = tint[0] * shade;
+    col[i * 3 + 1] = tint[1] * shade;
+    col[i * 3 + 2] = tint[2] * shade;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
   geo.computeVertexNormals();

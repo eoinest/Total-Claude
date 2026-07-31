@@ -12,18 +12,8 @@ import {
   type AtlasCell,
   type Species,
 } from './proceduralPlants';
-import {
-  HALF_EXTENT,
-  QUARRIES,
-  WATER_LEVEL,
-  crestZAt,
-  germanDeployMask,
-  riseToeZ,
-  riverCentreX,
-  roadCentreX,
-  romanDeployMask,
-  streamDistance,
-} from './topography';
+import { HALF_EXTENT, crestZAt } from './topography';
+import type { ScatterProfile } from '../maps/types';
 import type { TerrainSystem } from './TerrainSystem';
 
 /**
@@ -36,9 +26,11 @@ import type { TerrainSystem } from './TerrainSystem';
  * which is what stops vegetation from looking sprinkled: it is the exclusions, not the
  * distribution, that make a landscape read as used.
  *
- * Species follow the ground: willows and reeds on the Tiber's terrace, cypresses lining
- * the Via Flaminia and clustered by the city, umbrella pine and holm oak on the hills,
- * olives in groves on the centuriated plain.
+ * **Which species goes where is the map's decision, not this file's.** A `ScatterProfile`
+ * supplies the placement rules; this class owns only the lattice, the exclusion bookkeeping,
+ * the instancing and the three detail tiers. On the Campus Martius that means willows on the
+ * Tiber terrace and cypresses along the Via Flaminia; on the plain of Pydna it means terraced
+ * olive groves and an all-but-empty pasture. Neither set of rules lives here.
  *
  * Three detail tiers. Every tree is in exactly one of them each frame, reassigned only
  * when the camera has moved far enough to matter.
@@ -81,13 +73,6 @@ interface SpeciesGroup {
   billboard: AtlasCell;
 }
 
-const SPECIES_LIST: readonly Species[] = ['cypress', 'pine', 'oak', 'olive', 'willow'];
-
-/** Must match the centuriation lattice the heightfield banks the field edges on. */
-const FIELD_ANGLE = 0.213;
-const FIELD_COS = Math.cos(FIELD_ANGLE);
-const FIELD_SIN = Math.sin(FIELD_ANGLE);
-const FIELD_PERIOD = 94;
 
 export class ScatterField {
   private groups: SpeciesGroup[] = [];
@@ -102,7 +87,20 @@ export class ScatterField {
   private v3 = new THREE.Vector3();
   private s3 = new THREE.Vector3();
 
-  constructor(private readonly terrain: TerrainSystem) {}
+  /**
+   * Whether this map has a city wall to keep clear of. The Aurelian curtain is fitted to the
+   * `crestZAt` line, so on the Campus Martius nothing may be planted or dropped past it; on a
+   * field battle there is no wall and the whole map is plantable.
+   */
+  private readonly hasWall: boolean;
+
+  constructor(
+    private readonly terrain: TerrainSystem,
+    private readonly profile: ScatterProfile,
+    hasWall: boolean,
+  ) {
+    this.hasWall = hasWall;
+  }
 
   init(ctx: EngineContext): void {
     this.atlas = createFoliageAtlas();
@@ -141,7 +139,7 @@ export class ScatterField {
 
     const trees = this.placeTrees();
 
-    for (const species of SPECIES_LIST) {
+    for (const species of this.profile.species as readonly Species[]) {
       const items = trees.get(species) ?? [];
       if (items.length === 0) continue;
       const geo = buildSpecies(species);
@@ -181,29 +179,21 @@ export class ScatterField {
     slope: number,
     clearOut = WALL_CLEAR_OUT
   ): boolean {
-    if (h < WATER_LEVEL + 0.7) return true;
-    if (slope > 0.78) return true;
-    if (Math.max(germanDeployMask(x, z), romanDeployMask(x, z)) > 0.12) return true;
-    if (Math.abs(x - roadCentreX(z)) < 10.5) return true;
-    // Everything from the cleared glacis inward belongs to the city.
-    if (z > crestZAt(x) - clearOut) return true;
-    for (const q of QUARRIES) {
-      if (Math.hypot((x - q.x) / q.radius, (z - q.z) / (q.radius * 0.8)) < 1.25) return true;
-    }
-    return false;
+    return this.profile.excluded(x, z, h, slope, clearOut);
   }
 
   /**
    * Distance from a point to the wall line, negative inside the city. Exposed for the
-   * shot-side assertion that the keep-out actually holds.
+   * shot-side assertion that the keep-out actually holds. Meaningless on a map with no city,
+   * where it reports everything as clear.
    */
   wallClearance(x: number, z: number): number {
-    return crestZAt(x) - z;
+    return this.profile.species.length > 0 && this.hasWall ? crestZAt(x) - z : Infinity;
   }
 
   private placeTrees(): Map<Species, Placed[]> {
     const out = new Map<Species, Placed[]>();
-    for (const s of SPECIES_LIST) out.set(s, []);
+    for (const s of this.profile.species as readonly Species[]) out.set(s, []);
     const ctl = { r: 0, g: 0, b: 0, a: 0 };
 
     // 21 m lattice: about 17,700 candidates over the field, of which a few per cent
@@ -222,57 +212,13 @@ export class ScatterField {
         const slope = this.terrain.slopeAt(x, z);
         if (this.excluded(x, z, h, slope)) continue;
         this.terrain.controlAt(x, z, ctl);
-        if (ctl.b > 0.5) continue; // heavily trodden ground
 
-        const toe = riseToeZ(x);
-        const onHill = z > toe - 50;
-        const dRiver = Math.abs(x - riverCentreX(z));
-        const dRoad = Math.abs(x - roadCentreX(z));
-        const above = h - WATER_LEVEL;
+        const pick = this.profile.tree(x, z, h, slope, ctl, h3);
+        if (!pick || h4 > pick.density) continue;
+        const bucket = out.get(pick.species as Species);
+        if (!bucket) continue;
 
-        let species: Species;
-        let density: number;
-        if (dRiver < 175 && above < 5.4) {
-          // The Tiber's water meadow: willow and poplar thickets. Kept below a third
-          // because willow crowns are wide alpha-tested cards and a solid thicket of
-          // them is the most expensive fill in the frame.
-          species = 'willow';
-          density = 0.32;
-        } else if (dRoad < 44 && dRoad > 10.5) {
-          // A cypress avenue along the Via Flaminia — unmistakably Italian, and it gives
-          // the road a readable line from a high camera.
-          species = h3 < 0.82 ? 'cypress' : 'oak';
-          density = 0.5;
-        } else if (onHill) {
-          species = h3 < 0.42 ? 'pine' : h3 < 0.82 ? 'oak' : 'cypress';
-          // Denser on the flanks, thinning on the crest where the city begins.
-          density = 0.34 * (1 - sstep(toe + 260, toe + 620, z) * 0.6);
-        } else {
-          // The centuriated plain: olive groves in blocks, hedgerow trees along the
-          // field boundaries, and copses in between. Uniform scatter over farmland is
-          // the clearest tell that nobody has ever worked the ground.
-          const grove = fbm(x, z, 2, 1 / 235, 9091) * 0.5 + 0.5;
-          if (grove > 0.58) {
-            species = 'olive';
-            density = 0.42;
-          } else {
-            species = h3 < 0.7 ? 'oak' : 'olive';
-            // Same lattice the heightfield banks the field edges on, so the trees line
-            // up with the boundaries rather than ignoring them.
-            const u = x * FIELD_COS - z * FIELD_SIN;
-            const v = x * FIELD_SIN + z * FIELD_COS;
-            const du = Math.abs(((u % FIELD_PERIOD) + FIELD_PERIOD * 1.5) % FIELD_PERIOD - FIELD_PERIOD * 0.5);
-            const dv = Math.abs(((v % FIELD_PERIOD) + FIELD_PERIOD * 1.5) % FIELD_PERIOD - FIELD_PERIOD * 0.5);
-            const hedge = 1 - sstep(3, 12, Math.min(du, dv));
-            const copse = fbm(x, z, 3, 1 / 130, 7717) * 0.5 + 0.5;
-            density = 0.02 + 0.34 * hedge + 0.22 * sstep(0.6, 0.85, copse);
-          }
-        }
-        // Nothing grows on scoured bedrock.
-        density *= 1 - ctl.g * 0.75;
-        if (h4 > density) continue;
-
-        out.get(species)!.push({
+        bucket.push({
           x,
           y: h,
           z,
@@ -365,33 +311,20 @@ export class ScatterField {
         const z = -HALF_EXTENT + (gj + 0.5) * cell + (h2 - 0.5) * cell;
         const h = this.terrain.heightAt(x, z);
         const slope = this.terrain.slopeAt(x, z);
-        const above = h - WATER_LEVEL;
-        const dRiver = Math.abs(x - riverCentreX(z));
-        const dStream = z > -220 && z < 420 && x > -880 && x < 280 ? streamDistance(x, z) : 999;
+        this.terrain.controlAt(x, z, ctl);
 
-        // Reeds stand in the water's edge and along the drainage stream, where the
-        // deployment exclusion does not apply — nobody forms up in a reed bed anyway.
-        if ((above > -0.4 && above < 1.15 && dRiver < 150) || (dStream < 9 && above > 0)) {
-          if (h3 < 0.62 && z < crestZAt(x) - WALL_CLEAR_SCRUB_OUT) {
+        const pick = this.profile.understorey(x, z, h, slope, ctl, h3);
+        if (!pick) continue;
+        // Reed beds are exempt from the planting exclusions — nobody forms up in one — so
+        // the profile decides them before the exclusion test rather than after it.
+        if (pick.kind === 'reeds') {
+          if (h3 < pick.density) {
             reeds.push({ x, y: h, z, yaw: hash2(gi, gj, 181) * Math.PI * 2, scale: 0.7 + h1 * 0.8 });
           }
           continue;
         }
-
         if (this.excluded(x, z, h, slope, WALL_CLEAR_SCRUB_OUT)) continue;
-        this.terrain.controlAt(x, z, ctl);
-        if (ctl.b > 0.45) continue;
-
-        const toe = riseToeZ(x);
-        const onHill = z > toe - 40;
-        // Maquis clings to the broken ground of the slopes; the plain is grazed bare.
-        let d = onHill ? 0.3 : 0.05;
-        d += sstep(0.16, 0.5, slope) * 0.3;
-        d *= 1 - ctl.g * 0.6;
-        // Nothing woody roots in a river bar: those are reworked every flood. The silt
-        // channel of the control map is exactly where that is true.
-        d *= 1 - sstep(0.25, 0.55, ctl.a);
-        if (h3 < d) {
+        if (h3 < pick.density) {
           bushes.push({ x, y: h, z, yaw: hash2(gi, gj, 197) * Math.PI * 2, scale: 0.7 + h1 * 0.95 });
         }
       }
@@ -418,13 +351,9 @@ export class ScatterField {
         const z = -HALF_EXTENT + (gj + 0.5) * cell + (h2 - 0.5) * cell;
         const h = this.terrain.heightAt(x, z);
         const slope = this.terrain.slopeAt(x, z);
-        if (h < WATER_LEVEL - 0.6) continue;
-        if (z > crestZAt(x) - WALL_CLEAR_ROCK_OUT) continue;
+        if (this.hasWall && z > crestZAt(x) - WALL_CLEAR_ROCK_OUT) continue;
         this.terrain.controlAt(x, z, ctl);
-        // Stone shows where the ground has been scoured, on steep faces, on the river's
-        // gravel bars, and in the quarry spoil.
-        const bar = ctl.a * (1 - sstep(0.2, 2.2, h - WATER_LEVEL));
-        const d = ctl.g * 0.55 + sstep(0.2, 0.62, slope) * 0.4 + bar * 0.5;
+        const d = this.profile.rock(x, z, h, slope, ctl);
         if (h3 > d) continue;
         items.push({
           x,
@@ -432,14 +361,14 @@ export class ScatterField {
           z,
           yaw: hash2(gi, gj, 251) * Math.PI * 2,
           // Mostly cobbles and small blocks with the occasional boulder.
-          scale: 0.24 + Math.pow(hash2(gi, gj, 263), 3) * 2.1,
+          scale: 0.24 + Math.pow(hash2(gi, gj, 263), 3) * this.profile.rockMaxScale,
         });
       }
     }
     // No shadow casting: most of these are sub-metre stones whose shadow is a few
     // pixels, and multiplying 1,400 instances across four shadow cascades is two million
     // triangles for nothing.
-    this.addSimple(ctx, buildRock(5), mat, items, 'veg-rocks', false);
+    this.addSimple(ctx, buildRock(5, this.profile.rockTint), mat, items, 'veg-rocks', false);
   }
 
   private addSimple(

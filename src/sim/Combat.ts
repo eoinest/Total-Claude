@@ -1,4 +1,5 @@
 import type { EngineContext, Subsystem } from '../core/Engine';
+import { SAME_LEVEL_DY } from './BattleSystem';
 import type { BattleSystem } from './BattleSystem';
 import { Clip, SoldierState, UnitOrder } from './types';
 import type { ClipInfo, SoldierPool, UnitGroupState, UnitTypeDef } from './types';
@@ -131,6 +132,14 @@ let POOL: SoldierPool | null = null;
 
 let ACQ_X = 0;
 let ACQ_Z = 0;
+/**
+ * Foot height of the man doing the looking.
+ *
+ * The spatial hash buckets on (x, z) only, so without this a defender on the wall-walk
+ * acquires an attacker standing at the foot of the masonry 7 m below him and the two
+ * fight a melee through three and a half metres of brick. See `SAME_LEVEL_DY`.
+ */
+let ACQ_Y = 0;
 let ACQ_FX = 0;
 let ACQ_FZ = 0;
 let ACQ_R = 1;
@@ -146,6 +155,7 @@ const acquireVisit = (j: number): void => {
   if (p.faction[j] !== ACQ_ENEMY) return;
   const st = p.state[j];
   if (st === SoldierState.Dead || st === SoldierState.Dying) return;
+  if (Math.abs(p.y[j] - ACQ_Y) > SAME_LEVEL_DY) return;
   const dx = p.x[j] - ACQ_X;
   const dz = p.z[j] - ACQ_Z;
   const d2 = dx * dx + dz * dz;
@@ -165,6 +175,7 @@ const acquireVisit = (j: number): void => {
 /** Nearest-enemy probe used for contact detection; distance only, no scoring. */
 let NEAR_X = 0;
 let NEAR_Z = 0;
+let NEAR_Y = 0;
 let NEAR_ENEMY = 0;
 let NEAR_BEST_D2 = 0;
 let NEAR_BEST = -1;
@@ -174,6 +185,7 @@ const nearestEnemyVisit = (j: number): void => {
   if (p.faction[j] !== NEAR_ENEMY) return;
   const st = p.state[j];
   if (st === SoldierState.Dead || st === SoldierState.Dying) return;
+  if (Math.abs(p.y[j] - NEAR_Y) > SAME_LEVEL_DY) return;
   const dx = p.x[j] - NEAR_X;
   const dz = p.z[j] - NEAR_Z;
   const d2 = dx * dx + dz * dz;
@@ -188,6 +200,7 @@ const TRAMPLE_HITS = new Int32Array(3);
 let TRAMPLE_N = 0;
 let TRA_X = 0;
 let TRA_Z = 0;
+let TRA_Y = 0;
 let TRA_R2 = 0;
 let TRA_ENEMY = 0;
 let TRA_SKIP = -1;
@@ -199,6 +212,7 @@ const trampleVisit = (j: number): void => {
   if (p.faction[j] !== TRA_ENEMY) return;
   const st = p.state[j];
   if (st === SoldierState.Dead || st === SoldierState.Dying) return;
+  if (Math.abs(p.y[j] - TRA_Y) > SAME_LEVEL_DY) return;
   const dx = p.x[j] - TRA_X;
   const dz = p.z[j] - TRA_Z;
   if (dx * dx + dz * dz > TRA_R2) return;
@@ -551,6 +565,7 @@ export class CombatSystem implements Subsystem {
       if (!routing && bestD < CONTACT_SCAN_RANGE) {
         NEAR_X = u.x;
         NEAR_Z = u.z;
+        NEAR_Y = b.levelOf(u.id);
         NEAR_ENEMY = u.faction === 0 ? 1 : 0;
         const probe = Math.max(def.reach + 1.5, Math.min(40, frontGap + 6));
         NEAR_BEST_D2 = probe * probe;
@@ -689,7 +704,9 @@ export class CombatSystem implements Subsystem {
           } else {
             const dx = p.x[t] - p.x[i];
             const dz = p.z[t] - p.z[i];
-            if (dx * dx + dz * dz > keepR2) t = -1;
+            // Dropped as soon as he is out of reach *or* no longer on the same surface:
+            // a man who has just been pushed off a boarding ramp is not still in melee.
+            if (dx * dx + dz * dz > keepR2 || Math.abs(p.y[t] - p.y[i]) > SAME_LEVEL_DY) t = -1;
           }
           if (t < 0) {
             const old = p.target[i];
@@ -708,6 +725,7 @@ export class CombatSystem implements Subsystem {
           if (due) {
             ACQ_X = p.x[i];
             ACQ_Z = p.z[i];
+            ACQ_Y = p.y[i];
             ACQ_FX = Math.sin(p.facing[i]);
             ACQ_FZ = Math.cos(p.facing[i]);
             ACQ_R = acquireR;
@@ -1144,6 +1162,7 @@ export class CombatSystem implements Subsystem {
     if (!braced) {
       TRA_X = p.x[t] + nx * 0.9;
       TRA_Z = p.z[t] + nz * 0.9;
+      TRA_Y = p.y[t];
       TRA_R2 = 1.1 * 1.1;
       TRA_ENEMY = u.faction === 0 ? 1 : 0;
       TRA_SKIP = t;

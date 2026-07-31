@@ -44,27 +44,42 @@ const SOLAR_IRRADIANCE = new THREE.Vector3(1.775, 1.775, 1.775);
  */
 export const RADIANCE_SCALE = 2.1;
 
-/** Rome, 41.9 deg N. */
-const SITE_LATITUDE = (41.9 * Math.PI) / 180;
 /**
- * Solar declination for the campaign season, and the single most important
- * number in this file.
+ * Site and season, and between them the single most important pair of numbers in
+ * this file: they decide how low the sun can get and from what bearing, and
+ * therefore whether a frame has any relief in it at all.
  *
- * The Juthungi were driven off Italy across the autumn of 271, so a declination
- * of -14 deg — roughly the first week of November — is period-correct. It is
- * also the art direction: at Rome's latitude it caps the sun at 34 deg even at
- * local noon and puts it at 26 deg by mid-afternoon, which is a 3.6 m shadow for
- * a 1.75 m man. A summer sun (declination +23) reaches 71 deg and throws a 0.6 m
- * shadow that disappears under the man casting it, which is exactly how a
- * battlefield ends up looking flat and shadowless.
+ * Rome, 41.9 deg N, declination -14 deg. The Juthungi were driven off Italy
+ * across the autumn of 271, so roughly the first week of November is
+ * period-correct. It is also the art direction: at Rome's latitude it caps the
+ * sun at 34 deg even at local noon and puts it at 26 deg by mid-afternoon, which
+ * is a 3.6 m shadow for a 1.75 m man. A summer sun at that latitude reaches
+ * 71 deg and throws a 0.6 m shadow that disappears under the man casting it,
+ * which is exactly how a battlefield ends up looking flat and shadowless.
  *
  * The second half of it is azimuth. The battle camera looks north, up the
- * Juthungi approach, and a real mid-latitude sun is always in the southern sky —
- * so at noon it sits directly behind the camera and front-lights everything.
- * Only a few hours either side of noon does the azimuth swing far enough
- * (218 deg at 14:18) to cross the view axis and rake shadows across the frame.
+ * attackers' approach, and a real mid-latitude sun is always in the southern sky
+ * — so at noon it sits behind the camera and front-lights everything. Only a few
+ * hours either side of noon does the azimuth swing far enough to cross the view
+ * axis and rake shadows across the frame: 218 deg at 14:18 for Rome, and 267 deg
+ * at 16:00 for Pydna, which is a solstice sun at 40.35 deg N and lands almost
+ * exactly broadside.
  */
-const SEASON_DECLINATION = (-14 * Math.PI) / 180;
+export interface SolarSite {
+  latitude: number;
+  declination: number;
+}
+
+const deg = (d: number): number => (d * Math.PI) / 180;
+
+export const ROME_AUTUMN: SolarSite = { latitude: deg(41.9), declination: deg(-14) };
+
+/** Set by `SkySystem` from the active map before the first `applyTime`. */
+let site: SolarSite = ROME_AUTUMN;
+
+export function setSolarSite(latitudeDeg: number, declinationDeg: number): void {
+  site = { latitude: deg(latitudeDeg), declination: deg(declinationDeg) };
+}
 
 export interface AtmosParams {
   /** Unit vector, ground -> sun. */
@@ -150,13 +165,69 @@ export const SKY_PRESETS: Record<string, SkyPreset> = {
     cloudCoverage: 0.1, cloudSoftness: 0.26, cloudDensity: 14.0, cirrusCoverage: 0.26,
     hazeDensity: 0.00125, hazeHeight: 800, exposure: 3.25, cloudShadowStrength: 0.62,
   },
+
+  // --- Pydna, 22 June 168 BC -----------------------------------------------
+  //
+  // A Pierian coastal summer, which is a genuinely different atmosphere from a
+  // Latian autumn and not a re-tint of one. Three things move together:
+  //
+  //  - **Turbidity is higher** (3.4-4.2 against 2.3-3.1). A Mediterranean coast
+  //    in June carries far more aerosol than an inland plain in November — sea
+  //    salt, dust off the range, and the haze that builds through a hot
+  //    afternoon. That is what puts the pale band along the horizon in
+  //    reference/rome2/r2-04 and what drives criterion A2.
+  //  - **Ground albedo is higher** (0.19-0.21 against 0.12-0.14). The ground here
+  //    is bleached straw and near-white karst, not damp pasture, so far more
+  //    light comes back up off it and into the sky's own ground-bounce term.
+  //  - **Exposure is much lower.** A 37 deg solstice sun delivers 1.39x the
+  //    irradiance of Rome's 26 deg one to level ground, and this map's ground is
+  //    half a stop paler on top of that. Measured against reference/rome2/r2-04:
+  //    a first pass at exposure 2.8 rendered a median display luminance of 0.70
+  //    where the reference frame sits at 0.31, and compressed the 5th-to-95th
+  //    percentile into 0.21 against the reference's 0.58. These values are the
+  //    corrected ones and they were arrived at by measuring frames, not by
+  //    reasoning about the tone curve.
+  //
+  // Cloud is deliberately very sparse — coverage above 0.5 means *less* cloud —
+  // and its shadow is weak. Two reasons, one of them measured. The reference
+  // frame is a clear solstice day and a broadside 37 deg sun only pays off in
+  // hard shadows, which a deck takes away. And a strategic camera over this map
+  // already carries one field of soft blobs, the green-and-gold aridity mosaic;
+  // laying a second field of soft blobs over it at a different scale turned the
+  // high shot to mush, with a luminance sd of 0.073 against 0.135 for the Rome II
+  // strategic plate. Two overlapping blob systems read as neither.
+  //
+  // `msScale` moves the other way. Multiple scattering is genuinely stronger over
+  // bright ground — that is what the term is — and lifting it is how the deep
+  // shadows in a packed melee stop clipping to pure black without raising
+  // exposure and re-blowing the ground.
+  pydnaMorning: {
+    hour: 8.5, turbidity: 3.4, groundAlbedo: 0.19, msScale: 0.42,
+    cloudCoverage: 0.74, cloudSoftness: 0.09, cloudDensity: 8.0, cirrusCoverage: 0.78,
+    hazeDensity: 0.00036, hazeHeight: 620, exposure: 1.62, cloudShadowStrength: 0.2,
+  },
+  pydnaNoon: {
+    hour: 12.5, turbidity: 3.6, groundAlbedo: 0.21, msScale: 0.4,
+    cloudCoverage: 0.78, cloudSoftness: 0.08, cloudDensity: 8.4, cirrusCoverage: 0.8,
+    hazeDensity: 0.0004, hazeHeight: 760, exposure: 1.42, cloudShadowStrength: 0.2,
+  },
+  pydnaAfternoon: {
+    hour: 16.0, turbidity: 3.9, groundAlbedo: 0.2, msScale: 0.44,
+    cloudCoverage: 0.76, cloudSoftness: 0.085, cloudDensity: 8.2, cirrusCoverage: 0.76,
+    hazeDensity: 0.00046, hazeHeight: 700, exposure: 1.58, cloudShadowStrength: 0.34,
+  },
+  pydnaEvening: {
+    hour: 19.0, turbidity: 4.2, groundAlbedo: 0.18, msScale: 0.48,
+    cloudCoverage: 0.7, cloudSoftness: 0.1, cloudDensity: 7.6, cirrusCoverage: 0.68,
+    hazeDensity: 0.00062, hazeHeight: 520, exposure: 2.4, cloudShadowStrength: 0.34,
+  },
 };
 
 export type SkyPresetName = keyof typeof SKY_PRESETS;
 
 /**
  * Sun direction for an hour of the day: the real equatorial-to-horizontal
- * transform at `SITE_LATITUDE` and `SEASON_DECLINATION`.
+ * transform at the active site's latitude and declination.
  *
  * Written as three dot products rather than an elevation/azimuth pair because
  * the azimuth formula needs a quadrant fix-up that is easy to get wrong, and
@@ -169,10 +240,10 @@ export type SkyPresetName = keyof typeof SKY_PRESETS;
 export function sunDirectionForHour(hours: number, out: THREE.Vector3): THREE.Vector3 {
   // Hour angle: 15 deg per hour, zero at local noon, positive in the afternoon.
   const H = ((hours - 12) * 15 * Math.PI) / 180;
-  const sp = Math.sin(SITE_LATITUDE);
-  const cp = Math.cos(SITE_LATITUDE);
-  const sd = Math.sin(SEASON_DECLINATION);
-  const cd = Math.cos(SEASON_DECLINATION);
+  const sp = Math.sin(site.latitude);
+  const cp = Math.cos(site.latitude);
+  const sd = Math.sin(site.declination);
+  const cd = Math.cos(site.declination);
   const cH = Math.cos(H);
   const up = sp * sd + cp * cd * cH;
   const south = -cp * sd + sp * cd * cH;

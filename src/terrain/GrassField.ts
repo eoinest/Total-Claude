@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { EngineContext } from '../core/Engine';
 import { generateGrassCards } from './proctex';
-import { HALF_EXTENT, WATER_LEVEL, TOPO_GLSL } from './topography';
+import { HALF_EXTENT } from './topography';
 import type { TerrainSystem } from './TerrainSystem';
 
 /**
@@ -142,7 +142,7 @@ function mergeCards(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
   return geo;
 }
 
-const GRASS_GLSL = /* glsl */ `
+const grassGlsl = (roadGlsl: string): string => /* glsl */ `
 attribute vec2 aBlade;
 uniform sampler2D uHeightMap;
 uniform sampler2D uControl;
@@ -167,7 +167,7 @@ uniform vec3 uWetColour;
 uniform vec3 uGroundColour;
 varying float vBladeT;
 
-${TOPO_GLSL}
+${roadGlsl}
 
 float grassHash(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -212,10 +212,25 @@ export class GrassField {
   private time = 0;
   private cardTex?: THREE.DataTexture;
 
-  constructor(private readonly terrain: TerrainSystem) {}
+  constructor(
+    private readonly terrain: TerrainSystem,
+    /**
+     * Per-map sward character: how tall it stands, how thickly, and how far toward straw
+     * the whole field is pushed. Latian pasture in November and Pierian grass on the
+     * solstice are the same plant in two completely different states.
+     */
+    private readonly profile: {
+      heightScale: number;
+      densityScale: number;
+      dryness: number;
+      /** GLSL defining `float grassRoadCentreX(float z)` — the road the sward keeps off. */
+      roadGlsl: string;
+    },
+    private readonly waterLevel: number,
+  ) {}
 
   init(ctx: EngineContext, heightMap: THREE.Texture, controlMap: THREE.Texture): void {
-    const density = Math.max(0, ctx.quality.grassDensity);
+    const density = Math.max(0, ctx.quality.grassDensity) * this.profile.densityScale;
     if (density <= 0.001) return;
 
     const cards = generateGrassCards(256, 3);
@@ -318,17 +333,25 @@ export class GrassField {
       uFadeIn: { value: opt.fadeIn },
       uFadeStart: { value: opt.fadeStart },
       uFadeEnd: { value: opt.fadeEnd },
-      uHeightScale: { value: opt.heightScale },
+      uHeightScale: { value: opt.heightScale * this.profile.heightScale },
       uWeeds: { value: opt.weeds ? 1 : 0 },
       uCards: { value: opt.cards },
       uTime: { value: 0 },
-      uWaterLevel: { value: WATER_LEVEL },
+      uWaterLevel: { value: this.waterLevel },
       // These are *tints* multiplied into the card texture, not colours: the card is
       // already painted green, so a colour here would darken it twice over. The dry end
       // pulls toward straw and the wet end toward chlorophyll; the card's own mean sits
       // between them.
+      // dryness slides the whole sward toward the straw end. At 0 the map gets the
+      // Campus Martius' November pasture; at 0.72 it gets Pieria on the solstice, where
+      // even the damp ground is only half green and the rest is standing hay.
       uDryColour: { value: new THREE.Color(1.24, 1.06, 0.62) },
-      uWetColour: { value: new THREE.Color(0.78, 1.1, 0.56) },
+      uWetColour: {
+        value: new THREE.Color(0.78, 1.1, 0.56).lerp(
+          new THREE.Color(1.1, 1.02, 0.66),
+          this.profile.dryness,
+        ),
+      },
       uGroundColour: { value: new THREE.Color(0.98, 0.98, 0.86) },
     };
 
@@ -343,7 +366,7 @@ export class GrassField {
     mat.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, uniforms);
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', `#include <common>\n${GRASS_GLSL}`)
+        .replace('#include <common>', `#include <common>\n${grassGlsl(this.profile.roadGlsl)}`)
         .replace(
           '#include <color_vertex>',
           /* glsl */ `
@@ -368,7 +391,7 @@ export class GrassField {
   )) / (2.0 * e);
 
   vec4 gctl = texture2D(uControl, clamp((gpos + uHalfExtent) / (2.0 * uHalfExtent), 0.0, 1.0));
-  float roadD = abs(gpos.x - topoRoadCentreX(gpos.y));
+  float roadD = abs(gpos.x - grassRoadCentreX(gpos.y));
   float paved = 1.0 - smoothstep(3.0, 7.5, roadD);
 
   // Grass grows on gentle, untrampled, unpaved ground above the water line, and thins

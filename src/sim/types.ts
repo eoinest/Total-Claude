@@ -112,7 +112,11 @@ export type UnitClass =
 
 export type WeaponKind =
   | 'gladius' | 'spatha' | 'spear' | 'pike' | 'axe' | 'club'
-  | 'bow' | 'sling' | 'javelin' | 'pilum' | 'framea' | 'bolt';
+  | 'bow' | 'sling' | 'javelin' | 'pilum' | 'framea' | 'bolt'
+  /** A stone-thrower's shot. Not carried by a man — served by a crew. */
+  | 'boulder'
+  /** The head of a battering ram. Never launched; it exists so a ram can be a unit. */
+  | 'ram';
 export type ShieldKind = 'scutum' | 'oval' | 'round' | 'hexagonal' | 'none';
 export type ArmourKind = 'segmentata' | 'hamata' | 'squamata' | 'leather' | 'cloth' | 'none';
 export type HelmetKind = 'imperial-gallic' | 'intercisa' | 'coolus' | 'spangenhelm' | 'fur-cap' | 'none';
