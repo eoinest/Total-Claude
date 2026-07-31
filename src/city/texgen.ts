@@ -196,30 +196,74 @@ function assemble(f: FieldSet, size: number, worldSize: number, normalStrength: 
 /**
  * *Opus testaceum* — the brick face of the Aurelian Wall.
  *
- * Roman wall bricks of this date are *bessales* cut into triangles, laid with a
- * finished course pitch of about 55 mm (roughly 40 mm of brick to 15 mm of mortar)
- * and about 200 mm of exposed face length. The texture covers 1.10 m so exactly
- * 20 courses and 5 stretchers fit, which keeps it seamless when tiled per metre.
+ * ## The tile is 3.3 m, not 1.1 m, and that is the whole point
+ *
+ * A blind critic measured this surface as "a flat diffuse brick tile … an entire
+ * multi-storey wall has one value across its whole face and the only variation in it is the
+ * UV seam". The seam was the evidence: at 3 m of wall height per UV repeat the curtain
+ * showed six repeats top to bottom and nothing else, because everything the tile contained
+ * was finer than a screen pixel.
+ *
+ * The course pitch itself was never the problem, and the arithmetic is worth stating so it
+ * is not "fixed" backwards later. Roman wall brick of this date is *bessales* and *pedales*
+ * — roughly 197 mm and 296 mm on the face — laid about 40 mm thick with a 15-25 mm lime
+ * joint, giving a finished course pitch near 55 mm. On a 7 m curtain that is 127 courses.
+ * Photographed from 40 m at 28 screen pixels per metre a course is 1.5 px, so individual
+ * courses *cannot* resolve, and a real photograph of the Aurelian wall from that range does
+ * not show them either. Authoring them coarser to make them visible would put 250 mm bricks
+ * on a Roman wall, which is a worse error than the one being fixed.
+ *
+ * What makes real masonry read at that range is the *metre*-scale structure, and the tile
+ * had none. So the tile now covers 3.3 m — exactly 60 courses of 55 mm and 11 stretchers of
+ * 300 mm, one *pedalis* — at 1024², which is 3.2 mm per texel, and carries three things
+ * that survive mipping because they are larger than a pixel:
+ *
+ *   - **Putlog holes.** The square scaffold-beam sockets left in the finished face, 120 mm
+ *     across on a ~1.1 m grid. They are the single most recognisable feature of Roman
+ *     brick-faced concrete and they read as dark points from 100 m.
+ *   - **Gang patches.** The curtain was let to different work gangs and rebuilt in
+ *     stretches; each mixed its own clay and levelled its own courses. A low-frequency
+ *     field shifts brick tone, course jitter and roughness in patches of ~1 m, which is
+ *     what breaks the single-value face.
+ *   - **Weathering with a scale.** Rain streaking and salt efflorescence at 0.5 m, and
+ *     soot and splash-back mottling under it.
  */
-export function brickFace(size = 512): GeneratedMaps {
-  const world = 1.1;
-  const courses = 20; // 1.10 m / 0.055 m
-  const perRow = 5; // 1.10 m / 0.22 m
+export function brickFace(size = 1024): GeneratedMaps {
+  const world = 3.3;
+  const courses = 60; // 3.30 m / 0.055 m — 40 mm of brick to an 18 mm joint
+  const perRow = 11; // 3.30 m / 0.300 m — a pedalis on the face
+  /** Putlog sockets per tile edge: a 1.1 m horizontal by 1.65 m vertical grid. */
+  const putlogCols = 3;
+  const putlogRows = 2;
   const f = fields(size);
   // 18 mm of the 55 mm pitch. At the ranges the curtain is actually seen from, roughly
   // two screen texels per course, only the *proportion* of the pitch that is joint
   // survives mipping — a hairline joint averages away to a flat face, which is why the
   // first pass of this wall showed no courses at all from 40 m.
   const mortarPx = (size / courses) * 0.33;
+  const putlogHalf = 0.06 / world; // 120 mm socket, as a fraction of the tile
   for (let j = 0; j < size; j++) {
     const v = j / size;
     const row = Math.floor(v * courses);
     const rowF = v * courses - row;
     // Alternate courses offset half a brick, as in every Roman brick face.
     const off = row % 2 === 0 ? 0 : 0.5;
-    const rowJit = hash2(row, 3, 91) * 0.22 - 0.11;
     for (let i = 0; i < size; i++) {
       const u = i / size;
+      // Which gang laid this stretch. Multiplier and period must match or the field stops
+      // tiling. 2 lattice cells over 3.3 m, not 3: at 3 the patches were 1.1 m across and a
+      // blind critic read them *as the brick unit* — "the individual bricks come out around
+      // a metre across, so they are cyclopean blocks pretending to be brick". At the range
+      // the curtain is photographed a 55 mm course is 1.5 px and cannot resolve, so whatever
+      // structure *is* resolvable gets read as the masonry module. The patches therefore
+      // have to be unmistakably larger than any brick could be, and low enough in contrast
+      // that they read as tonal variation rather than as joints.
+      const gang = fbm(u * 2, v * 2, 3, 2, 313);
+      const gangHi = smoothstep((gang - 0.46) * 5);
+      // Course jitter is a property of the gang, not of the course: a careful crew laid
+      // level, a hasty one wandered.
+      const rowJit = (hash2(row, 3, 91) * 0.22 - 0.11) * (0.4 + gangHi * 1.4);
+
       const col = Math.floor(u * perRow + off);
       const colF = (u * perRow + off) - col;
       const o = j * size + i;
@@ -232,6 +276,20 @@ export function brickFace(size = 512): GeneratedMaps {
       const dJoint = Math.min(dvBottom, dvTop, duLeft, duRight);
       const inMortar = dJoint < mortarPx;
 
+      // Putlog socket: a square hole on a coarse grid, jittered a course either way so the
+      // rows do not read as a machine-drilled grid.
+      const px = u * putlogCols;
+      const py = v * putlogRows;
+      const pxi = Math.floor(px);
+      const pyi = Math.floor(py);
+      const jitterU = (hash2(pxi, pyi, 617) - 0.5) * 0.16;
+      const jitterV = (hash2(pxi, pyi, 811) - 0.5) * 0.10;
+      const dpu = Math.abs((px - pxi - 0.5) / putlogCols - jitterU / putlogCols);
+      const dpv = Math.abs((py - pyi - 0.5) / putlogRows - jitterV / putlogRows);
+      // Two of every three sockets were filled in when the scaffold came down.
+      const open = hash2(pxi, pyi, 409) > 0.62;
+      const inPutlog = open && dpu < putlogHalf && dpv < putlogHalf;
+
       const brickN = hash2(col, row, 17);
       // Faces are hand-laid: each brick sits a fraction of a millimetre proud.
       const proud = 0.62 + brickN * 0.16 + rowJit * 0.5;
@@ -243,7 +301,7 @@ export function brickFace(size = 512): GeneratedMaps {
       f.height[o] = inMortar ? 0.16 + grit * 0.5 : proud * edge + 0.2 * (1 - edge) + grit - chip;
 
       if (inMortar) {
-        // The joint is recessed 15 mm of a 55 mm pitch. Lime mortar is pale *stone*, but
+        // The joint is recessed 18 mm of a 55 mm pitch. Lime mortar is pale *stone*, but
         // what the eye sees at any range beyond a few metres is the shadow standing in
         // the recess, so the albedo has to carry that: a joint authored brighter than the
         // brick cancels against the normal map and the whole face mips out to flat, which
@@ -254,17 +312,51 @@ export function brickFace(size = 512): GeneratedMaps {
         f.rough[o] = 0.94;
       } else {
         // Brick luminance varies brick to brick and course to course — kilns were uneven,
-        // and stretches of the curtain were let to different gangs.
+        // and stretches of the curtain were let to different gangs. `gang` carries the
+        // stretch-scale tone difference, which is the term that survives mipping.
         const kiln = hash2(col * 7, row * 13, 71);
-        f.lum[o] = 0.62 + brickN * 0.3 + kiln * 0.18 + grit * 1.6 - chip * 0.8;
-        f.rough[o] = 0.78 + brickN * 0.1;
+        f.lum[o] = (0.62 + brickN * 0.26 + kiln * 0.15 + grit * 1.6 - chip * 0.8)
+          * (0.93 + gang * 0.15);
+        f.rough[o] = 0.78 + brickN * 0.1 + gangHi * 0.06;
       }
-      // Salt efflorescence and rain streaks running down the face.
-      const streak = fbm(u * 7, v * 1.4, 4, 7, 12);
-      f.lum[o] *= 0.84 + streak * 0.32;
+
+      if (inPutlog) {
+        // A socket is a void: the height drops to the back of the hole and the albedo goes
+        // to the shadow standing in it, which is what makes it legible at 100 m.
+        const wall = smoothstep((Math.min(putlogHalf - dpu, putlogHalf - dpv) / putlogHalf) * 4);
+        f.height[o] = 0.02 + (1 - wall) * 0.3;
+        f.lum[o] *= 0.30 + (1 - wall) * 0.35;
+        f.rough[o] = 0.96;
+      }
+
+      // Rain streaks and salt efflorescence, plus a coarser splash-back mottle beneath.
+      //
+      // `fbm` tiles only when the coordinate multiplier equals the lattice period, because
+      // `vnoise` wraps the *integer* lattice index modulo `period`. The previous streak
+      // field was `fbm(u * 6, v * 1.5, 4, 6, 12)`: v = 0 landed on lattice row 0 and v = 1
+      // on row 1, so the top and bottom edges of the tile hashed differently and every
+      // vertical repeat carried a hard horizontal discontinuity. That is almost certainly
+      // the artefact behind a blind critic's "an entire multi-storey wall has one value
+      // across its whole face and the only variation in it is the UV seam" — the seam was
+      // the strongest feature in the texture because it was the only one with an edge.
+      //
+      // Vertical elongation, which is what makes a streak a streak, is recovered instead by
+      // averaging four samples of one isotropic field offset by whole lattice rows. Integer
+      // offsets wrap exactly, so the sum tiles, and averaging along v smears the field in v
+      // and only in v.
+      const streak = 0.25 * (
+        fbm(u * 8, v * 8, 3, 8, 12)
+        + fbm(u * 8, v * 8 + 2, 3, 8, 12)
+        + fbm(u * 8, v * 8 + 4, 3, 8, 12)
+        + fbm(u * 8, v * 8 + 6, 3, 8, 12)
+      );
+      const splash = fbm(u * 4, v * 4, 3, 4, 907);
+      f.lum[o] *= (0.84 + streak * 0.32) * (0.88 + splash * 0.24);
     }
   }
-  return assemble(f, size, world, 4.2, 0.0);
+  // 5.0 rather than 4.2: the joint recess is the whole read on this surface and the tile is
+  // now three times coarser in world terms, so each texel covers less of the pitch.
+  return assemble(f, size, world, 5.0, 0.0);
 }
 
 /**

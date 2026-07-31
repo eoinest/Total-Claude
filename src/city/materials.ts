@@ -84,14 +84,20 @@ const SPECS: Record<CityMatKey, MatSpec> = {
   brick: {
     manifestId: null,
     gen: brickFace,
-    worldSize: 1.1,
+    // Must agree with `brickFace`'s own `world`: 60 courses of 55 mm and 11 stretchers of
+    // 300 mm. Tripled from 1.10 m because a critic could read the *UV seam* on the curtain
+    // and nothing else — at 1.1 m the tile repeated six times over a 7 m wall while
+    // everything inside it was finer than a pixel. See the note in `texgen.brickFace`.
+    worldSize: 3.3,
     // The curtain's brick face is the one surface a besieging camera gets close to, and
     // its courses have to survive being two screen texels tall from 40 m.
     normalScale: 1.5,
     roughnessMul: 1.0,
     metalness: 0,
     side: THREE.FrontSide,
-    texSize: 512,
+    // 1024 at 3.3 m is 3.2 mm per texel, which keeps the 18 mm mortar joint five texels
+    // wide — the width it needs to survive the mip chain rather than average to flat.
+    texSize: 1024,
   },
   stone: {
     manifestId: 'roman-travertine-blocks',

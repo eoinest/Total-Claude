@@ -55,11 +55,19 @@ attribute vec3 aPos;
 attribute vec3 aParams;   // yaw, flapPhase, flapRate
 attribute vec2 aScale;    // scale, wing amplitude (0 when perched)
 attribute float aWing;    // -1 left panel, 0 body, +1 right panel
+attribute vec3 aNrm;      // smooth object-space normal
 
-varying float vShade;
+varying vec3 vNrm;
+varying vec3 vView;
+
+/** Rotate about the fore-aft (local Z) axis — the wing hinge. */
+vec3 tcHinge(vec3 p, float c, float s) {
+  return vec3(p.x * c - p.y * s, p.x * s + p.y * c, p.z);
+}
 
 void main() {
   vec3 lp = position * aScale.x;
+  vec3 ln = aNrm;
 
   if (abs(aWing) > 0.5) {
     // Wings hinge about the bird's own fore-aft (local Z) axis.
@@ -70,18 +78,41 @@ void main() {
     float ang = a * sign(aWing);
     float c = cos(ang);
     float s = sin(ang);
-    vec3 r = vec3(lp.x * c - lp.y * s, lp.x * s + lp.y * c, lp.z + abs(lp.x) * sweep);
-    lp = r;
+    lp = tcHinge(lp, c, s) + vec3(0.0, 0.0, abs(lp.x) * sweep);
+    ln = tcHinge(ln, c, s);
   }
 
   float cy = cos(aParams.x);
   float sy = sin(aParams.x);
   vec3 wp = aPos + vec3(lp.x * cy + lp.z * sy, lp.y, -lp.x * sy + lp.z * cy);
+  vec3 wn = normalize(vec3(ln.x * cy + ln.z * sy, ln.y, -ln.x * sy + ln.z * cy));
 
-  // Wings catch a little light on the upstroke; bodies stay dark.
-  vShade = 0.55 + 0.45 * clamp(lp.y * 3.0 + 0.5, 0.0, 1.0);
+  // Shade from the *surface normal*, not from the vertex's height.
+  //
+  // This is the fix for a defect reported as "a dark parallelogram in the sky of every
+  // frame". A crow here is not a billboard — it is twelve triangles of real geometry — but
+  // the shading term was 0.55 + 0.45 * clamp(lp.y * 3.0 + 0.5, 0, 1) -- a function of a
+  // vertex's own local height and nothing else. A wing panel is very nearly flat, so every
+  // vertex on it produced the same number and the panel rendered as a single uniform dark
+  // value over its whole area. Opaque, double-sided, hard-edged and unshaded is the
+  // definition of a parallelogram rather than a wing, and it gets worse the larger the bird
+  // is on screen — which is precisely when one glides down to a corpse near the camera.
+  //
+  // A dark bird against a bright sky is lit almost entirely by the sky dome, so N.y is the
+  // dominant term and it costs nothing: the topside of a wing takes sky, the underside goes
+  // to silhouette, and the panel acquires the gradient that reads as a wing.
+  //
+  // The shade itself is resolved in the fragment stage, because the material is DoubleSide
+  // and a wing is one sheet of triangles. Evaluating N.y here would give the *underside* of
+  // a wing the topside's sky value, and a ground camera sees circling birds from below far
+  // more often than from above — which is the case that matters.
+  vNrm = wn;
+  vView = cameraPosition - wp;
 
-  gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
+  // modelMatrix rather than the identity it happens to be today: instance positions are
+  // world-space only because this mesh is parented straight to the scene, and nothing in
+  // the file guaranteed that.
+  gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(wp, 1.0);
 }
 `;
 
@@ -89,22 +120,84 @@ const FRAG = /* glsl */ `
 precision highp float;
 uniform vec3 uSunColour;
 uniform vec3 uAmbient;
-varying float vShade;
+varying vec3 vNrm;
+varying vec3 vView;
 void main() {
+  // Outward normal of the face actually being seen. gl_FrontFacing makes this correct
+  // whichever way the wing panels happen to be wound, so it needs no assumption about the
+  // index order in buildBirdGeometry.
+  vec3 N = normalize(vNrm);
+  if (!gl_FrontFacing) N = -N;
+  float vShade = 0.30 + 0.70 * clamp(N.y * 0.5 + 0.5, 0.0, 1.0);
+  // Corvid plumage is glossy. A grazing-angle term puts a sheen along the edge a wing turns
+  // through on each beat, which is the other half of what stops a flat panel looking flat.
+  float vRim = pow(1.0 - abs(dot(N, normalize(vView))), 4.0);
   // Corvid black is never actually black: it is a very dark blue-grey with a sheen.
   //
   // But it must stay *darker than the field it flies over*. The gains here previously
   // summed to about 0.13 linear against grass at 0.10, so a carrion crow read as a pale
   // grey speck — the opposite of the silhouette that makes a bird legible against ground or
-  // sky. 0.06 keeps the wing sheen and puts the body well below the turf.
+  // sky. 0.06 keeps the wing sheen and puts the body well below the turf. The level is
+  // deliberately unchanged from that calibration; only its *distribution over the surface*
+  // has changed, because a flat distribution was the actual defect.
   vec3 base = vec3(0.035, 0.036, 0.045);
   vec3 lit = uAmbient * 1.5 + uSunColour * vShade * 0.55;
-  gl_FragColor = vec4(base * 1.15 * lit + uSunColour * pow(vShade, 6.0) * 0.028, 1.0);
+  gl_FragColor = vec4(
+    base * 1.15 * lit
+      + uSunColour * pow(vShade, 6.0) * 0.028
+      + uAmbient * vRim * 0.09,
+    1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
   gl_FragColor.a = 1.0;
 }
 `;
+
+/**
+ * Area-weighted smooth normals from a position array and an index list.
+ *
+ * `BufferGeometry.computeVertexNormals` would do this, but it writes into the reserved
+ * `normal` attribute, and three's `ShaderMaterial` path would then require the shader to
+ * consume it under that name while this one transforms it through the wing hinge itself.
+ * Emitting `aNrm` keeps the naming symmetric with the other custom attributes.
+ *
+ * Wing panels are wound so their normals point up at rest, which is what makes the sky term
+ * in the vertex shader land on the topside.
+ */
+function smoothNormals(pos: number[], idx: number[]): Float32Array {
+  const n = new Float32Array(pos.length);
+  for (let t = 0; t < idx.length; t += 3) {
+    const a = idx[t] * 3;
+    const b = idx[t + 1] * 3;
+    const c = idx[t + 2] * 3;
+    const e1x = pos[b] - pos[a];
+    const e1y = pos[b + 1] - pos[a + 1];
+    const e1z = pos[b + 2] - pos[a + 2];
+    const e2x = pos[c] - pos[a];
+    const e2y = pos[c + 1] - pos[a + 1];
+    const e2z = pos[c + 2] - pos[a + 2];
+    // Unnormalised cross product, so the accumulation is area-weighted.
+    const fx = e1y * e2z - e1z * e2y;
+    const fy = e1z * e2x - e1x * e2z;
+    const fz = e1x * e2y - e1y * e2x;
+    for (const o of [a, b, c]) {
+      n[o] += fx;
+      n[o + 1] += fy;
+      n[o + 2] += fz;
+    }
+  }
+  for (let i = 0; i < n.length; i += 3) {
+    const l = Math.hypot(n[i], n[i + 1], n[i + 2]);
+    if (l > 1e-9) {
+      n[i] /= l;
+      n[i + 1] /= l;
+      n[i + 2] /= l;
+    } else {
+      n[i + 1] = 1;
+    }
+  }
+  return n;
+}
 
 export class BirdFlock {
   readonly mesh: THREE.Mesh;
@@ -229,6 +322,7 @@ export class BirdFlock {
 
     this.geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     this.geo.setAttribute('aWing', new THREE.Float32BufferAttribute(wing, 1));
+    this.geo.setAttribute('aNrm', new THREE.Float32BufferAttribute(smoothNormals(pos, idx), 3));
     this.geo.setIndex(idx);
   }
 

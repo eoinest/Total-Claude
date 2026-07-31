@@ -3,6 +3,7 @@ import { CSM } from 'three/addons/csm/CSM.js';
 import type { EngineContext, Subsystem } from '../core/Engine';
 import { CLOUD_FIELD_GLSL, CLOUD_SHADOW_GLSL } from '../shaders/clouds.glsl';
 import { clamp } from '../util/math';
+import { CSM_GET_SHADOW_CALL, CSM_SOFT_SHADOW_CALL, SOFT_SHADOW_GLSL } from './softShadow.glsl';
 import type { SkySystem } from './SkySystem';
 
 /**
@@ -55,11 +56,16 @@ const SPLIT_NEAR = 1.5;
 /** 0 = uniform splits, 1 = logarithmic. 0.82 puts cascade 0 at ~24 m, which is
  *  where the camera sits for the close shots, so contact shadows get the texels. */
 const SPLIT_LAMBDA = 0.82;
-/** Blur radius in shadow texels. Constant in texels (not metres) so the
- *  penumbra automatically widens with distance as the cascades coarsen — that is
- *  the read that makes feet look planted and distant ranks look atmospheric. */
-const PCF_RADIUS_NEAR = 2.2;
-const PCF_RADIUS_FAR = 4.0;
+/**
+ * Fallback blur radius, in shadow texels, for the non-CSM `getShadow` path.
+ *
+ * The cascaded path no longer uses it: `tcSoftShadow` in `softShadow.glsl.ts` derives its
+ * own radius per pixel from the blocker's distance, because a radius in *texels* means a
+ * blur in *metres* that scales with the cascade's footprint. Measured at the `wide` camera
+ * the old ramp put 2.01 m of blur on cascade 3 against a man 0.45 m across, which is why a
+ * battle line photographed from any useful distance cast nothing at all. See that file.
+ */
+const PCF_RADIUS_FALLBACK = 2.0;
 /**
  * Ceiling on the normal-offset bias, in metres.
  *
@@ -92,8 +98,14 @@ export class LightingSystem implements Subsystem {
    * shadows are unmistakably blue-grey, so the fill's chroma is stretched about
    * its own luminance. Luminance-preserving, so it costs no contrast: it moves
    * colour only.
+   *
+   * Raised from 1.20 on a measurement, not a preference. Twelve real Rome II frames
+   * average a shadow chromaticity of 1.06/0.90/1.02, i.e. blue at 0.96 of red. Sampled
+   * over the deepest 5 % of the pixels a soldier's own cast shadow darkens, ours measured
+   * blue at 0.79 of red at the midcrowd camera — cool, but not as cool as the target, and
+   * the fill is the only term that reaches those surfaces.
    */
-  private static readonly FILL_CHROMA_GAIN = 1.2;
+  private static readonly FILL_CHROMA_GAIN = 1.35;
 
   private csm?: CSM;
   private sky?: SkySystem;
@@ -101,6 +113,9 @@ export class LightingSystem implements Subsystem {
 
   /** Shared by reference with every patched material, so one write updates all. */
   private readonly breaks: THREE.Vector2[] = [];
+  /** Per cascade: (metres per shadow texel, metres per unit shadowCoord.z). Feeds
+   *  `tcSoftShadow`, which needs both to turn a blocker distance into a filter radius. */
+  private readonly shadowGeom: THREE.Vector2[] = [];
   private readonly csmDepth = new THREE.Vector2(SPLIT_NEAR, SHADOW_FAR_MIN);
   private shadowFar = SHADOW_FAR_MIN;
   private patched = new WeakSet<THREE.Material>();
@@ -150,7 +165,7 @@ export class LightingSystem implements Subsystem {
     this.csm.updateFrustums();
 
     for (const l of this.csm.lights) {
-      l.shadow.radius = PCF_RADIUS_NEAR;
+      l.shadow.radius = PCF_RADIUS_FALLBACK;
       l.shadow.intensity = 1;
     }
 
@@ -221,8 +236,31 @@ export class LightingSystem implements Subsystem {
    * rebuilds — the CSM constructor always restores the pristine text first.
    */
   private installShaderChunks(): void {
+    // `shadowmap_pars_fragment` is not one of the chunks CSM rewrites, so unlike the two
+    // below it is not restored to pristine text on a rebuild — appending unconditionally
+    // would stack a second copy of the function on every quality switch.
+    if (!THREE.ShaderChunk.shadowmap_pars_fragment.includes('tcSoftShadow')) {
+      THREE.ShaderChunk.shadowmap_pars_fragment += SOFT_SHADOW_GLSL;
+    }
+
     const cloudTap = 'directLight.color *= tcCloudShadow( geometryPosition );';
     let frag = THREE.ShaderChunk.lights_fragment_begin;
+    // Swap CSM's directional shadow lookup for the throw-dependent one. The call text is
+    // identical in the CSM_FADE and non-fade branches, so one split/join reaches both.
+    //
+    // It must NOT reach the third copy. CSMShader's chunk ends with a
+    // `!defined( USE_CSM )` fallback loop for materials that never opted in, and
+    // `tcSoftShadow` is declared only under `USE_CSM` — replacing it there took out every
+    // such material with `'tcSoftShadow' : no matching overloaded function found`. So the
+    // rewrite is confined to the text before that guard.
+    const FALLBACK_GUARD = '!defined( USE_CSM ) && !defined( CSM_CASCADES )';
+    const cut = frag.indexOf(FALLBACK_GUARD);
+    const head = cut < 0 ? frag : frag.slice(0, cut);
+    const softened = head.split(CSM_GET_SHADOW_CALL).join(CSM_SOFT_SHADOW_CALL);
+    if (softened === head) {
+      throw new Error('[lighting] CSM getShadow call not found — softShadow.glsl.ts is stale');
+    }
+    frag = softened + (cut < 0 ? '' : frag.slice(cut));
     frag = frag.split('getDirectionalLightInfo( directionalLight, directLight );').join(
       `getDirectionalLightInfo( directionalLight, directLight );\n\t\t\t${cloudTap}`,
     );
@@ -268,6 +306,7 @@ export class LightingSystem implements Subsystem {
       // shared objects below updates every material at once.
       shader.uniforms.CSM_cascades = { value: this.breaks };
       shader.uniforms.tcCsmDepth = { value: this.csmDepth };
+      shader.uniforms.tcShadowGeom = { value: this.shadowGeom };
       const sky = this.sky;
       if (this.cloudShadowsEnabled && sky) {
         shader.uniforms.tcCloudNoise = { value: sky.cloudNoiseTexture };
@@ -364,14 +403,25 @@ export class LightingSystem implements Subsystem {
       // ended up exactly the same hue as the same men in sun.
       const a = sky.preset.groundAlbedo * 0.9;
       this.fill.groundColor.setRGB(
-        sky.sunColour.r * sky.sunIntensity * a * 0.35 + this.fill.color.r * 0.5,
-        sky.sunColour.g * sky.sunIntensity * a * 0.32 + this.fill.color.g * 0.5,
-        sky.sunColour.b * sky.sunIntensity * a * 0.26 + this.fill.color.b * 0.5,
+        sky.sunColour.r * sky.sunIntensity * a * 0.26 + this.fill.color.r * 0.5,
+        sky.sunColour.g * sky.sunIntensity * a * 0.24 + this.fill.color.g * 0.5,
+        sky.sunColour.b * sky.sunIntensity * a * 0.19 + this.fill.color.b * 0.5,
       );
-      // Deliberately small. `scene.environment` already delivers the sky's
-      // irradiance, so this is only a top-up for materials that ignore IBL —
-      // and every unit of extra ambient is a unit of directional contrast lost.
-      this.fill.intensity = 0.22 * bounceGain;
+      // Raised from 0.22, and the warm ground term above cut by a quarter to pay for it, so
+      // the *added* light is the cool sky half rather than the warm bounce half.
+      //
+      // The reason is a blind critic's verbatim first finding on this build: "the entire
+      // unit renders as near-black silhouettes while the grass 40 cm away is fully lit —
+      // there is no ambient/indirect term at all, so shadow sides crush to zero". Measured,
+      // the frame as a whole is not the problem: 15.9 % of our pixels sit below 15 %
+      // display against 20.9 % across the ten Rome II plates, so we are if anything less
+      // crushed overall. What is wrong is the *ratio between a man and the ground he stands
+      // on*, and a man in a rank is a wall of anti-sun normals that only this term reaches.
+      //
+      // Spending it on the sky half rather than raising exposure or the bounce is what
+      // keeps A1: it lifts the shadow while making it bluer, which is the direction the
+      // measurement above says our shadows need to move anyway.
+      this.fill.intensity = 0.34 * bounceGain;
 
       // Bounce comes from the ground on the far side of the sun, i.e. the sun
       // direction mirrored through the horizon plane — so it lands on exactly the
@@ -404,8 +454,10 @@ export class LightingSystem implements Subsystem {
     this.syncBreakUniforms();
     this.csmDepth.set(SPLIT_NEAR, this.shadowFar);
 
-    // Per-cascade bias from the *actual* fitted extents.
+    // Per-cascade bias and filter geometry from the *actual* fitted extents.
     const n = csm.lights.length;
+    while (this.shadowGeom.length < n) this.shadowGeom.push(new THREE.Vector2());
+    this.shadowGeom.length = n;
     for (let i = 0; i < n; i++) {
       const l = csm.lights[i];
       const cam = l.shadow.camera;
@@ -418,8 +470,10 @@ export class LightingSystem implements Subsystem {
       // along the surface normal removes acne independently of slope — but see
       // MAX_NORMAL_BIAS for why it cannot be allowed to scale freely.
       l.shadow.normalBias = Math.min(texel * 1.6, MAX_NORMAL_BIAS);
-      const t = n > 1 ? i / (n - 1) : 0;
-      l.shadow.radius = PCF_RADIUS_NEAR + (PCF_RADIUS_FAR - PCF_RADIUS_NEAR) * t;
+      // The light camera is orthographic, so its depth is linear and one unit of
+      // `shadowCoord.z` is exactly the whole near..far range in metres. That is what lets
+      // `tcSoftShadow` turn a depth difference straight into a throw distance.
+      this.shadowGeom[i].set(texel, cam.far - cam.near);
     }
 
     // Shared with every patched material for the cloud-shadow world lookup.
