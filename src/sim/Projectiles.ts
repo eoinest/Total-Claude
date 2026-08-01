@@ -10,6 +10,10 @@ import type { Rng } from '../util/rand';
 import {
   ARMOUR_BITE, armourReduction, modsOf, shieldCoverage, signalsOf,
 } from './combatShared';
+import {
+  CREW_OF, EngineKind, MUZZLE_OF, engineAnchor, engineCountOf, engineKindOf, engineReadyAt,
+  isEngineUnit, type EngineSite,
+} from '../units/engines';
 
 /**
  * Missiles: real ballistics, ragged volleys, and arrows you can see stuck in the turf
@@ -37,12 +41,37 @@ import {
 // Physical parameters per weapon
 // ---------------------------------------------------------------------------
 
+/**
+ * Which mesh draws a missile.
+ *
+ * There used to be exactly one — a fletched arrow — and every kind was instanced from it with
+ * only its length scaled. A 26 kg onager stone was therefore drawn as a 0.44 m arrow, a lead
+ * sling bullet as a 0.10 m arrow, and a ballista bolt as a short arrow of an archer's own
+ * thickness. That is the whole of the "the scorpions and catapults shoot a volley of arrows"
+ * report as far as the *geometry* goes; the other half is in the emitter, see `fireBattery`.
+ *
+ * Three classes rather than one per kind, because a draw call per weapon is not worth it and
+ * the within-class differences (an arrow against a pilum) are honestly carried by girth and
+ * tint, while the between-class ones (a shaft against a stone) are not carried by anything.
+ */
+const enum Visual {
+  /** A fletched shaft: arrow, javelin, framea, pilum. */
+  Shaft = 0,
+  /** A ballista bolt: short, thick, square-sectioned, with a long iron head and stiff vanes. */
+  Bolt = 1,
+  /** A stone or a sling bullet: no shaft, no head, no fletching, and it tumbles. */
+  Stone = 2,
+}
+
+const VISUAL_NAME = ['shaft', 'bolt', 'stone'] as const;
+const VISUAL_COUNT = 3;
+
 interface MissilePhysics {
   /** Muzzle / release speed in metres per second at full power. */
   speed: number;
   /** Quadratic drag coefficient, 1/m: a = -k·|v|·v. */
   drag: number;
-  /** Shaft length in metres, for rendering. */
+  /** Shaft length in metres — or, for `Visual.Stone`, the stone's diameter. */
   length: number;
   /**
    * Range compensation. The launch solve is drag-free, so we aim past the target by
@@ -50,20 +79,96 @@ interface MissilePhysics {
    */
   dragComp: number;
   event: 'pilum' | 'arrow' | 'javelin' | 'sling' | 'bolt';
+  /** Which mesh draws it. */
+  visual: Visual;
+  /**
+   * Radial multiplier on the shaft geometry, which is authored at an arrow's 13.5 mm. A pilum's
+   * shaft is a man's thumb and a javelin's is close behind it; drawing all of them at an
+   * arrow's thickness is the second reason a pilum volley and an arrow volley looked identical.
+   * Ignored by `Visual.Stone`, which is sized by `length` alone.
+   */
+  girth: number;
+  /** Per-instance tint over the geometry's own vertex colours, so one mesh serves four kinds. */
+  tint: number;
+  /**
+   * Radius in metres over which the impact hurts men other than the one struck, 0 for none.
+   *
+   * A 26 kg stone arriving at 50 m/s carries about 33 kJ, which is roughly a rifle round times
+   * forty, and it does not stop at the first man: Josephus (BJ V.6.3) has a single stone from
+   * a Roman engine carry off several men at once, and Ammianus XXIII.4.5 says the same. A
+   * one-man hit test is why an onager measured 334 shots for about one kill.
+   */
+  blast: number;
+  /**
+   * Fraction of a blocked shot that still hurts the man behind the shield.
+   *
+   * An arrow that hits a scutum is in the scutum and that is the end of it, so 0 is right for
+   * everything with a point. A sling bullet is the exception the weapon is famous for: it is a
+   * 50 g lead ovoid arriving at 50 m/s with no penetrating geometry at all, so what it delivers
+   * is impulse, and plywood and hide transmit impulse. Xenophon (Anabasis III.3) has Rhodian
+   * slingers driving off shielded Persian cavalry that archers could not touch, and Livy has
+   * Balearic shot breaking limbs through cover.
+   *
+   * Measured, this is the difference between a unit that does literally nothing and one that
+   * works: against a legionary cohort the scutum was stopping 87% of every volley outright.
+   */
+  shieldBypass: number;
+  /**
+   * How many further men the missile can pass through after killing one.
+   *
+   * The scorpio's own roster line is "a single shot punches through a shield, the man behind
+   * it, and the man behind him", and until now it stopped at the first man like an arrow. A
+   * three-span bolt leaves at 78 m/s and arrives at nearly 60; Caesar (BG VII.82) has one pin a
+   * man to the ground through his shield, and Procopius (Wars I.21) describes one carrying a
+   * man off his horse and pinning him to a tree. Over-penetration is the whole reason a
+   * bolt-thrower is worth its crew against a formed line rather than a skirmish screen.
+   */
+  pierce: number;
 }
 
 const PHYSICS: Record<string, MissilePhysics> = {
-  bow: { speed: 55, drag: 0.0026, length: 0.72, dragComp: 0.0016, event: 'arrow' },
-  sling: { speed: 32, drag: 0.0020, length: 0.10, dragComp: 0.0012, event: 'sling' },
-  javelin: { speed: 24, drag: 0.0013, length: 1.55, dragComp: 0.0007, event: 'javelin' },
-  framea: { speed: 23, drag: 0.0014, length: 1.45, dragComp: 0.0007, event: 'javelin' },
-  pilum: { speed: 21, drag: 0.0011, length: 1.95, dragComp: 0.0004, event: 'pilum' },
-  bolt: { speed: 78, drag: 0.0011, length: 0.62, dragComp: 0.0009, event: 'bolt' },
-  // A one-talent onager stone is about 26 kg. Vitruvius X.11 gives the sling length and
-  // arm travel; the muzzle velocity that follows puts a stone of that mass out to roughly
-  // 220 m, which is the range in the unit definition. Very low drag for its speed because
-  // the ballistic coefficient of a rounded 26 kg tufa ball is enormous next to an arrow's.
-  boulder: { speed: 46, drag: 0.00022, length: 0.44, dragComp: 0.0003, event: 'sling' },
+  bow: {
+    speed: 55, drag: 0.0026, length: 0.72, dragComp: 0.0016, event: 'arrow',
+    visual: Visual.Shaft, girth: 1, tint: 0xf4ecd8, blast: 0, shieldBypass: 0, pierce: 0,
+  },
+  // 50 m/s, up from 32, and the change is a bug fix rather than a buff — see `maxRange`. At 32
+  // the physical ceiling was 104 m against a roster range of 180, so a Balearic slinger firing
+  // at anything past about 110 m was throwing stones into empty grass and could not be told.
+  // 50 m/s with a lead glans is at the top of what a slinger achieves but it is inside it;
+  // the distance records the weapon is famous for need more than this, not less.
+  sling: {
+    speed: 50, drag: 0.0020, length: 0.055, dragComp: 0.0012, event: 'sling',
+    visual: Visual.Stone, girth: 1, tint: 0x9a978f, blast: 0, shieldBypass: 0.45, pierce: 0,
+  },
+  javelin: {
+    speed: 24, drag: 0.0013, length: 1.55, dragComp: 0.0007, event: 'javelin',
+    visual: Visual.Shaft, girth: 1.5, tint: 0xd9bb8a, blast: 0, shieldBypass: 0, pierce: 0,
+  },
+  framea: {
+    speed: 23, drag: 0.0014, length: 1.45, dragComp: 0.0007, event: 'javelin',
+    visual: Visual.Shaft, girth: 1.45, tint: 0xbfa478, blast: 0, shieldBypass: 0, pierce: 0,
+  },
+  // Cool grey: most of a pilum's length is the iron shank, and that is what the silhouette
+  // should read as. Volleyed against the sky it is the one missile that is not wood-coloured.
+  pilum: {
+    speed: 21, drag: 0.0011, length: 1.95, dragComp: 0.0004, event: 'pilum',
+    visual: Visual.Shaft, girth: 1.7, tint: 0xa9abb1, blast: 0, shieldBypass: 0, pierce: 0,
+  },
+  bolt: {
+    speed: 78, drag: 0.0011, length: 0.62, dragComp: 0.0009, event: 'bolt',
+    visual: Visual.Bolt, girth: 1, tint: 0xffffff, blast: 0, shieldBypass: 0, pierce: 2,
+  },
+  // A one-talent onager stone is about 26 kg, which at tufa's density is a ball 0.30 m across;
+  // 0.34 is the top of the class and the smallest that reads at the range these are shot from.
+  //
+  // 52 m/s, up from 46. The old figure could not reach the unit's own 220 m at any elevation —
+  // 46 m/s tops out at 215 m in vacuum and the solve gave up and fired at 45 degrees, so the
+  // stones fell short and the shortfall was invisible. Very low drag for its speed because the
+  // ballistic coefficient of a rounded 26 kg ball is enormous next to an arrow's.
+  boulder: {
+    speed: 52, drag: 0.00022, length: 0.34, dragComp: 0.0003, event: 'sling',
+    visual: Visual.Stone, girth: 1, tint: 0xffffff, blast: 2.4, shieldBypass: 0, pierce: 0,
+  },
 };
 
 const physicsOf = (kind: WeaponKind): MissilePhysics => PHYSICS[kind] ?? PHYSICS.javelin;
@@ -71,6 +176,28 @@ const physicsOf = (kind: WeaponKind): MissilePhysics => PHYSICS[kind] ?? PHYSICS
 const GRAVITY = 9.81;
 /** Elevation a lofted shot is fired at, in radians (34 degrees). */
 const LOFT = 0.6;
+
+/**
+ * The furthest a weapon can actually throw, in metres, drag-free and over level ground.
+ *
+ * This exists because `PHYSICS.speed` and `missile.range` were independent numbers that nobody
+ * had ever compared, and for both `arc: 'high'` weapons they disagreed badly: a sling could
+ * reach 104 m and claimed 180, an onager 215 m and claimed 220. The launch solve's response to
+ * an unreachable target is to fall through to `lowRoot`, whose discriminant is negative, which
+ * returns a flat 45 degrees — so the shot leaves at full power on the maximum-range elevation
+ * and lands as far short as the numbers disagree, every time, silently.
+ *
+ * A lofted weapon is held to the 45-degree maximum rather than to `LOFT`'s 34, because the
+ * solve legitimately steepens toward 45 as it runs out of reach.
+ */
+export const maxRange = (kind: WeaponKind): number => {
+  const p = physicsOf(kind);
+  // d_compensated = d(1 + c·d) is what the solve actually has to satisfy, so invert it to get
+  // the true ground distance the weapon covers.
+  const dComp = (p.speed * p.speed) / GRAVITY;
+  const c = p.dragComp;
+  return c > 0 ? (Math.sqrt(1 + 4 * c * dComp) - 1) / (2 * c) : dComp;
+};
 /** Soldier torso radius for a projectile intersection, metres. */
 const HIT_RADIUS = 0.4;
 /** Top of the hittable volume above a man's feet. */
@@ -135,8 +262,11 @@ let SEG_Z1 = 0;
 let SEG_Y1 = 0;
 let SEG_BEST_T = 2;
 let SEG_BEST = -1;
+/** A man this shot has already passed through, so an over-penetrating bolt cannot re-hit him. */
+let SEG_SKIP = -1;
 
 const segmentVisit = (j: number): void => {
+  if (j === SEG_SKIP) return;
   const p = POOL!;
   const st = p.state[j];
   if (st === SoldierState.Dead || st === SoldierState.Dying) return;
@@ -156,12 +286,123 @@ const segmentVisit = (j: number): void => {
 
 // ---------------------------------------------------------------------------
 
+/**
+ * Blast gather: everyone standing near where a stone came down.
+ *
+ * Collected first and damaged after, because `BattleSystem.damage` can kill a man and a kill
+ * mutates the structures the spatial hash query is walking.
+ */
+let BLAST_X = 0;
+let BLAST_Y = 0;
+let BLAST_Z = 0;
+let BLAST_R2 = 0;
+let BLAST_SKIP = -1;
+let BLAST_N = 0;
+const BLAST_MAX = 48;
+const BLAST_HIT = new Int32Array(BLAST_MAX);
+
+const blastVisit = (j: number): void => {
+  if (BLAST_N >= BLAST_MAX || j === BLAST_SKIP) return;
+  const p = POOL!;
+  const st = p.state[j];
+  if (st === SoldierState.Dead || st === SoldierState.Dying) return;
+  const dx = p.x[j] - BLAST_X;
+  const dz = p.z[j] - BLAST_Z;
+  // Vertical too: a stone that comes down in the ditch does not hurt the wall-walk above it.
+  const dy = p.y[j] + 0.9 - BLAST_Y;
+  if (dx * dx + dz * dz + dy * dy > BLAST_R2) return;
+  BLAST_HIT[BLAST_N++] = j;
+};
+
+/**
+ * A flat-shaded triangle soup builder, shared by the three projectile geometries.
+ *
+ * Flat rather than smooth throughout: everything here is a faceted object at a few centimetres
+ * and a per-face normal is both cheaper and more legible at the range these are seen from.
+ */
+const triBuffer = (): {
+  pos: number[]; nrm: number[]; col: number[]; idx: number[];
+  pushTri(
+    ax: number, ay: number, az: number, bx: number, by: number, bz: number,
+    cx: number, cy: number, cz: number, r: number, g: number, bl: number
+  ): void;
+} => {
+  const pos: number[] = [];
+  const nrm: number[] = [];
+  const col: number[] = [];
+  const idx: number[] = [];
+  const pushTri = (
+    ax: number, ay: number, az: number,
+    bx: number, by: number, bz: number,
+    cx: number, cy: number, cz: number,
+    r: number, g: number, bl: number
+  ): void => {
+    const ux = bx - ax, uy = by - ay, uz = bz - az;
+    const vx2 = cx - ax, vy2 = cy - ay, vz2 = cz - az;
+    let nx = uy * vz2 - uz * vy2;
+    let ny = uz * vx2 - ux * vz2;
+    let nz = ux * vy2 - uy * vx2;
+    const l = Math.hypot(nx, ny, nz) || 1;
+    nx /= l; ny /= l; nz /= l;
+    const base = pos.length / 3;
+    pos.push(ax, ay, az, bx, by, bz, cx, cy, cz);
+    for (let k = 0; k < 3; k++) {
+      nrm.push(nx, ny, nz);
+      col.push(r, g, bl);
+    }
+    idx.push(base, base + 1, base + 2);
+  };
+  return { pos, nrm, col, idx, pushTri };
+};
+
+const finishGeometry = (
+  pos: number[], nrm: number[], col: number[], idx: number[]
+): THREE.BufferGeometry => {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(nrm), 3));
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(col), 3));
+  g.setIndex(idx);
+  g.computeBoundingSphere();
+  return g;
+};
+
 const tmpMat = new THREE.Matrix4();
 const tmpQuat = new THREE.Quaternion();
 const tmpPos = new THREE.Vector3();
 const tmpScale = new THREE.Vector3(1, 1, 1);
 const tmpDir = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
+
+/** One battery's firing state, one entry per machine. See `ProjectileSystem.batteries`. */
+interface FiringBattery {
+  kind: EngineKind;
+  crew: number;
+  count: number;
+  /** Seconds since machine k released. */
+  sinceShot: Float32Array;
+  /** Enemy unit this machine is laid on, or -1. Re-solved once a cycle, not once a tick. */
+  target: Int32Array;
+  /**
+   * Ranging: which target the correction belongs to, how many consecutive shots have gone onto
+   * it, and where it was when this machine last fired.
+   *
+   * A gun crew does not shoot its whole allowance at the opening elevation. It fires, watches
+   * the fall of shot and corrects — Ammianus XXIII.4 describes exactly that — which is why a
+   * battery that has been engaging one block for a minute is dangerous and one that has just
+   * been re-laid is not. Modelled as a shrinking spread rather than as a bias correction,
+   * because scatter is what a bracket actually removes.
+   *
+   * It is also the honest answer to a measurement: an onager at 180 m with `accuracy: 0.045`
+   * scatters with a standard deviation of about 12 m, and a 2.4 m blast inside a 12 m scatter
+   * almost never lands on the formation. Tightening the roster constant instead would have made
+   * the first shot as accurate as the fourth, which is the wrong shape for the fix.
+   */
+  rangedOn: Int32Array;
+  onTarget: Int32Array;
+  lastAimX: Float32Array;
+  lastAimZ: Float32Array;
+}
 
 export class ProjectileSystem implements Subsystem {
   readonly name = 'projectiles';
@@ -170,6 +411,14 @@ export class ProjectileSystem implements Subsystem {
   private battle!: BattleSystem;
   private ctx!: EngineContext;
   private rng!: Rng;
+  /**
+   * A separate forked stream for the engines.
+   *
+   * A battery fires on its own clock, not inside the volley window, so its draws would
+   * otherwise interleave with the infantry's in an order that depends on how many machines
+   * happened to be ready on a given tick. Forked, both streams stay reproducible on their own.
+   */
+  private artRng!: Rng;
   /**
    * The city, if there is one, for the masonry collision test. Duck-typed and optional so
    * a battle on open ground — and every unit test — needs no city at all.
@@ -195,6 +444,17 @@ export class ProjectileSystem implements Subsystem {
   private kindIdx = new Uint8Array(MAX_PROJECTILES);
   private ownerUnit = new Int32Array(MAX_PROJECTILES);
   /**
+   * The point the launch solve was aimed at. Carried so a landing can be scored against its
+   * own intent: "the slingers do no damage" has two completely different causes — the stones
+   * land on the enemy and are stopped, or they never get there — and the distance between
+   * this and the impact separates them in one number.
+   */
+  private aimX = new Float32Array(MAX_PROJECTILES);
+  private aimZ = new Float32Array(MAX_PROJECTILES);
+  /** Men this shot may still pass through, and the last one it struck. */
+  private pierceLeft = new Uint8Array(MAX_PROJECTILES);
+  private lastHit = new Int32Array(MAX_PROJECTILES);
+  /**
    * 1 when the man who loosed this was standing on a structure rather than the ground.
    *
    * Carried on the projectile because the shooter's index is not kept and he may be dead
@@ -211,6 +471,30 @@ export class ProjectileSystem implements Subsystem {
   /** Distinct missile kinds, so a projectile can carry a one-byte kind index. */
   private kinds: WeaponKind[] = [];
 
+  /**
+   * Per-kind census, for `tools/probe-artillery.mjs`.
+   *
+   * "The scorpions shoot arrows" is a claim about what is *drawn*, and eyeballing a frame
+   * cannot separate "the wrong geometry was chosen" from "the wrong weapon was fired". These
+   * counters are indexed by the same `kindIdx` the renderer routes on, so a census of them
+   * against a census of instances per mesh answers both halves separately.
+   *
+   * Simulation-visible only in that it counts; nothing reads these back into the sim, so they
+   * cannot perturb the hash.
+   */
+  private cLaunched = new Int32Array(32);
+  private cHitMan = new Int32Array(32);
+  private cBlocked = new Int32Array(32);
+  private cKilled = new Int32Array(32);
+  private cGround = new Int32Array(32);
+  private cMasonry = new Int32Array(32);
+  private cDamage = new Float64Array(32);
+  /** Summed metres between where a shot came down and the man it was solved for. */
+  private cMiss = new Float64Array(32);
+  private cMissN = new Int32Array(32);
+  /** Shots the launch solve refused because the target was beyond the weapon's real reach. */
+  private cUnreachable = new Int32Array(32);
+
   // ---- spent projectiles ----
   private sx = new Float32Array(MAX_STUCK);
   private sy = new Float32Array(MAX_STUCK);
@@ -221,6 +505,15 @@ export class ProjectileSystem implements Subsystem {
   private sdz = new Float32Array(MAX_STUCK);
   private slen = new Float32Array(MAX_STUCK);
   /** Soldier this one is stuck in, or -1 for planted in the ground. */
+  /**
+   * Which mesh draws it, how thick, and what tint — the spent ring outlives the projectile that
+   * made it, so its appearance has to be copied out of the kind rather than looked up from it.
+   */
+  private sVis = new Uint8Array(MAX_STUCK);
+  private sGirth = new Float32Array(MAX_STUCK);
+  private sTintR = new Float32Array(MAX_STUCK);
+  private sTintG = new Float32Array(MAX_STUCK);
+  private sTintB = new Float32Array(MAX_STUCK);
   private sAttach = new Int32Array(MAX_STUCK);
   /** Offset from the soldier's origin, in his local frame. */
   private sOffX = new Float32Array(MAX_STUCK);
@@ -242,10 +535,15 @@ export class ProjectileSystem implements Subsystem {
   private nextSerial = 1;
 
   // ---- rendering ----
-  private flightMesh?: THREE.InstancedMesh;
-  private stuckMesh?: THREE.InstancedMesh;
-  private geometry?: THREE.BufferGeometry;
+  /** Flight and spent instanced meshes, one pair per `Visual`. */
+  private flightMesh: (THREE.InstancedMesh | undefined)[] = [];
+  private stuckMesh: (THREE.InstancedMesh | undefined)[] = [];
+  private geometries: THREE.BufferGeometry[] = [];
   private material?: THREE.Material;
+  /** Per-kind-index lookups, so the render loop reads one array rather than a hash. */
+  private kindVisual = new Uint8Array(32);
+  private kindGirth = new Float32Array(32);
+  private kindTint = new Float32Array(32 * 3);
 
   lastCostMs = 0;
 
@@ -253,11 +551,26 @@ export class ProjectileSystem implements Subsystem {
     this.ctx = ctx;
     this.battle = ctx.get<BattleSystem>('battle');
     this.rng = this.battle.rng.fork('projectiles');
+    this.artRng = this.battle.rng.fork('artillery');
     POOL = this.battle.pool;
     const city = ctx.tryGet('city') as unknown as { masonryTopAt?: (x: number, z: number) => number } | undefined;
     this.city = city && typeof city.masonryTopAt === 'function'
       ? (city as { masonryTopAt(x: number, z: number): number })
       : null;
+    const b = this.battle;
+    const masonry = this.city;
+    this.site = masonry
+      ? {
+        groundAt: (x, z) => b.groundAt(x, z),
+        masonryTopAt: (x, z) => masonry.masonryTopAt(x, z),
+      }
+      : { groundAt: (x, z) => b.groundAt(x, z) };
+
+    // Register every kind up front rather than on first shot. A projectile's one-byte kind
+    // index then depends only on this table's declaration order, not on which unit happened to
+    // loose first — which is one fewer thing for a replay to disagree about, and it means the
+    // census can be read before a battle has started.
+    for (const kind of Object.keys(PHYSICS)) this.kindIndexOf(kind as WeaponKind);
 
     this.firedSerial = new Int32Array(this.battle.pool.capacity);
     this.growUnits(64);
@@ -282,6 +595,12 @@ export class ProjectileSystem implements Subsystem {
     if (k < 0) {
       k = this.kinds.length;
       this.kinds.push(kind);
+      const phys = physicsOf(kind);
+      this.kindVisual[k] = phys.visual;
+      this.kindGirth[k] = phys.girth;
+      this.kindTint[k * 3] = ((phys.tint >> 16) & 0xff) / 255;
+      this.kindTint[k * 3 + 1] = ((phys.tint >> 8) & 0xff) / 255;
+      this.kindTint[k * 3 + 2] = (phys.tint & 0xff) / 255;
     }
     return k;
   }
@@ -292,8 +611,9 @@ export class ProjectileSystem implements Subsystem {
 
   fixedUpdate(dt: number, ctx: EngineContext): void {
     const t0 = performance.now();
-    POOL = this.battle.pool;
-    const units = this.battle.units;
+    const b = this.battle;
+    POOL = b.pool;
+    const units = b.units;
     let maxId = 0;
     for (let k = 0; k < units.length; k++) if (units[k].id > maxId) maxId = units[k].id;
     this.growUnits(maxId + 1);
@@ -301,7 +621,12 @@ export class ProjectileSystem implements Subsystem {
     for (let k = 0; k < units.length; k++) {
       const u = units[k];
       if (u.destroyed) continue;
-      this.updateVolley(u, dt);
+      // Artillery is not a unit of men each shooting at a man. It is N machines, each on its
+      // own cycle, each firing once from its own muzzle. Running both paths over a battery is
+      // what put twelve bolts in the air for four engines — the other half of "they shoot a
+      // volley of arrows".
+      if (isEngineUnit(b.typeOf(u))) this.updateBattery(u, dt);
+      else this.updateVolley(u, dt);
     }
     this.integrate(dt);
     void ctx;
@@ -330,7 +655,7 @@ export class ProjectileSystem implements Subsystem {
     // ---- pick a target formation ----
     if (this.phase[id] === Phase.Idle || this.phase[id] === Phase.Reloading) {
       let best = -1;
-      let bestD = m.range;
+      let bestD = this.effectiveRange(m.kind, m.range);
       const units = b.units;
       for (let k = 0; k < units.length; k++) {
         const o = units[k];
@@ -427,6 +752,287 @@ export class ProjectileSystem implements Subsystem {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Artillery: N machines, each on its own clock
+  // -------------------------------------------------------------------------
+
+  /**
+   * A battery's firing state, one entry per machine.
+   *
+   * This is the simulation's copy of the cycle `UnitRenderSystem` animates. It used to be the
+   * other way round: the renderer kept the clock and reset it whenever the crew's ammunition
+   * fell, because the shot could happen at any moment inside a 0.92 s hashed volley window and
+   * no independent timer could stay inside it. That worked as well as it could and was still
+   * wrong in three ways — three bolts left one gun per volley (one per crewman), each from the
+   * crewman's own formation slot up to 3 m off the machine, and each reset the recoil so the
+   * string was seen to let go up to three times for one shot.
+   *
+   * With the sim owning the clock, all three collapse: the machine fires once, from its own
+   * muzzle, on the tick `sinceShot` resets — and the renderer reads that same number.
+   */
+  private batteries = new Map<number, FiringBattery>();
+
+  /** Read by `UnitRenderSystem` so the animation and the shot cannot drift apart. */
+  engineCycle(unitId: number): Readonly<Float32Array> | undefined {
+    return this.batteries.get(unitId)?.sinceShot;
+  }
+
+  /**
+   * The enemy unit each machine is currently laid on, or -1.
+   *
+   * So the renderer can traverse the machine onto the thing it is actually going to shoot at
+   * rather than leaving it square to its formation. "It should be able to aim" was part of the
+   * report, and a gun that never moves off its unit's facing does not look like one that is.
+   */
+  engineTargets(unitId: number): Readonly<Int32Array> | undefined {
+    return this.batteries.get(unitId)?.target;
+  }
+
+  private batteryState(u: UnitGroupState, def: UnitTypeDef): FiringBattery {
+    const kind = engineKindOf(def);
+    const count = engineCountOf(kind, u.members.length);
+    let bat = this.batteries.get(u.id);
+    if (!bat || bat.count !== count || bat.kind !== kind) {
+      bat = {
+        kind, crew: CREW_OF[kind], count,
+        sinceShot: new Float32Array(count),
+        target: new Int32Array(count).fill(-1),
+        rangedOn: new Int32Array(count).fill(-1),
+        onTarget: new Int32Array(count),
+        lastAimX: new Float32Array(count),
+        lastAimZ: new Float32Array(count),
+      };
+      // Stagger the guns across the cycle so a battery does not fire as one salvo and then
+      // stand idle for twenty seconds. Deterministic in the unit id, not drawn from the rng,
+      // so a battery's rhythm is the same in every replay.
+      for (let k = 0; k < count; k++) bat.sinceShot[k] = hash01(u.id * 977 + k * 131, 153) * 14;
+      this.batteries.set(u.id, bat);
+    }
+    return bat;
+  }
+
+  /**
+   * Advance every machine in a battery and fire the ones that are wound, loaded and laid.
+   *
+   * The release condition is `sinceShot >= max(reload, readyAt)`, and it matters that both
+   * terms are there. `readyAt` is when `enginePose` finishes winding and loading, so a machine
+   * physically cannot shoot before it; `reload` is the roster's own rate, so a machine that is
+   * ready early waits at `EnginePhase.Ready` — wound, loaded, waiting for the order — rather
+   * than firing faster than its establishment allows.
+   */
+  private updateBattery(u: UnitGroupState, dt: number): void {
+    const b = this.battle;
+    const p = b.pool;
+    const def = b.typeOf(u);
+    const m = def.missile;
+    if (!m) return;
+    const bat = this.batteryState(u, def);
+    const mods = modsOf(u.id);
+    const sig = signalsOf(u.id);
+
+    // A crew fighting for its life is not winding. The machine stays wherever it was.
+    if (u.order === UnitOrder.Rout || sig.contactLock || sig.engagedFraction > 0.18
+      || u.alive === 0) {
+      return;
+    }
+
+    const rate = Math.max(0.4, m.rate * mods.missileRate);
+    const reload = (60 / rate) * (1 + u.fatigue * 0.5);
+    const fireAt = Math.max(reload, engineReadyAt(reload));
+    const range = this.effectiveRange(m.kind, m.range);
+    const lofted = m.arc === 'high';
+
+    for (let k = 0; k < bat.count; k++) {
+      bat.sinceShot[k] += dt;
+      if (bat.sinceShot[k] < fireAt) continue;
+      if (!(mods.fireAtWill || mods.orderedVolleys > 0)) continue;
+
+      // Which man serves this gun, and has he a shot left? A machine whose crew are all down
+      // is abandoned where it stands, which is what the renderer already draws.
+      let server = -1;
+      for (let c = 0; c < bat.crew; c++) {
+        const i = u.members[k * bat.crew + c];
+        if (i !== undefined && p.aliveAt(i) && p.ammo[i] > 0) { server = i; break; }
+      }
+      if (server < 0) continue;
+
+      const target = this.pickBatteryTarget(u, bat.kind, range);
+      bat.target[k] = target ? target.id : -1;
+      if (!target) continue;
+      if (this.fireEngine(u, bat, k, m, target, server, range, lofted)) {
+        bat.sinceShot[k] = 0;
+        if (mods.orderedVolleys > 0) mods.orderedVolleys--;
+      }
+    }
+    this.refreshAmmo(u);
+  }
+
+  /**
+   * What a machine lays on.
+   *
+   * A bolt-thrower is a precision weapon and takes the nearest enemy, which is what it did
+   * before and is right. A stone-thrower is not: 26 kg of tufa is wasted on a skirmish screen
+   * and ruinous on a packed block, so it scores by how many men are standing in the beaten
+   * zone, discounted by range. It also discounts a target on a wall heavily — a stone lobbed at
+   * a parapet mostly takes a merlon, which is exactly what an earlier measurement found when an
+   * onager put 334 shots into 1,049 masonry impacts and about one kill.
+   */
+  private pickBatteryTarget(
+    u: UnitGroupState, kind: EngineKind, range: number
+  ): UnitGroupState | null {
+    const b = this.battle;
+    const units = b.units;
+    const stone = kind === EngineKind.Onager;
+    let best: UnitGroupState | null = null;
+    let bestScore = -Infinity;
+    for (let k = 0; k < units.length; k++) {
+      const o = units[k];
+      if (o.destroyed || o.faction === u.faction || o.alive === 0) continue;
+      const d = Math.hypot(o.x - u.x, o.z - u.z);
+      if (d > range) continue;
+      let score: number;
+      if (stone) {
+        score = o.alive / (1 + d / range);
+        if (this.mostlyElevated(o)) score *= 0.3;
+      } else {
+        score = -d;
+      }
+      if (score > bestScore) { bestScore = score; best = o; }
+    }
+    return best;
+  }
+
+  /** Is most of this unit standing on masonry rather than on the ground? */
+  private mostlyElevated(o: UnitGroupState): boolean {
+    const b = this.battle;
+    const p = b.pool;
+    let up = 0;
+    let n = 0;
+    // Every eighth man is plenty to tell a wall detachment from a field block.
+    for (let k = 0; k < o.members.length; k += 8) {
+      const i = o.members[k];
+      if (!p.aliveAt(i)) continue;
+      n++;
+      if (b.elevated[i] !== 0) up++;
+    }
+    return n > 0 && up / n > 0.5;
+  }
+
+  /** Loose one shot from machine `k`. Returns false if the solve had no answer. */
+  private fireEngine(
+    u: UnitGroupState,
+    bat: FiringBattery,
+    k: number,
+    m: NonNullable<UnitTypeDef['missile']>,
+    target: UnitGroupState,
+    server: number,
+    range: number,
+    lofted: boolean
+  ): boolean {
+    const b = this.battle;
+    const p = b.pool;
+    const phys = physicsOf(m.kind);
+
+    engineAnchor(u.x, u.z, u.facing, bat.kind, k, bat.count, this.anchor, this.site);
+    const muzzle = MUZZLE_OF[bat.kind];
+    const c = Math.cos(u.facing);
+    const s = Math.sin(u.facing);
+    const fx = this.anchor.x + muzzle[0] * c + muzzle[2] * s;
+    const fz = this.anchor.z - muzzle[0] * s + muzzle[2] * c;
+    const fy = b.groundAt(fx, fz) + muzzle[1];
+
+    // What to lay on. A bolt is aimed at a man; a stone is laid on the mass, because its
+    // blast radius makes the middle of the formation the highest-value point on the field.
+    let tx: number;
+    let tz: number;
+    let ty: number;
+    let tvx = 0;
+    let tvz = 0;
+    if (phys.blast > 0) {
+      tx = target.x; tz = target.z;
+      ty = b.groundAt(tx, tz) + 1.0;
+      const mid = target.members[(target.members.length >> 1)];
+      if (mid !== undefined && p.aliveAt(mid)) {
+        tvx = p.vx[mid]; tvz = p.vz[mid];
+        ty = p.y[mid] + 1.0;
+      }
+    } else {
+      let man = -1;
+      for (let a = 0; a < 3 && man < 0; a++) {
+        const cand = target.members[this.artRng.int(0, target.members.length - 1)];
+        if (p.aliveAt(cand)) man = cand;
+      }
+      if (man < 0) return false;
+      tx = p.x[man]; tz = p.z[man];
+      tvx = p.vx[man]; tvz = p.vz[man];
+      ty = p.y[man] + 1.0;
+    }
+
+    // Two passes of lead, same as the volley solve.
+    let d = Math.hypot(tx - fx, tz - fz);
+    for (let pass = 0; pass < 2; pass++) {
+      const tof = d / Math.max(6, phys.speed * 0.8);
+      const lx = tx + tvx * tof;
+      const lz = tz + tvz * tof;
+      d = Math.hypot(lx - fx, lz - fz);
+      if (pass === 1) { tx = lx; tz = lz; }
+    }
+    if (d < 8 || d > range) return false;
+
+    // ---- ranging ----
+    // The correction survives only while this machine keeps shooting at the same block and
+    // that block stays roughly where it was. A target that has moved 18 m has moved further
+    // than the bracket is worth, and the crew starts again.
+    const moved = Math.hypot(tx - bat.lastAimX[k], tz - bat.lastAimZ[k]);
+    if (bat.rangedOn[k] !== target.id || moved > 18) {
+      bat.rangedOn[k] = target.id;
+      bat.onTarget[k] = 0;
+    }
+    bat.lastAimX[k] = tx;
+    bat.lastAimZ[k] = tz;
+    const ranged = 1 / (1 + 0.9 * Math.min(bat.onTarget[k], 3));
+
+    const mods = modsOf(u.id);
+    const spread = m.accuracy * mods.missileSpread * (1 + 0.55 * (d / range)) * ranged;
+    const ok = this.launchBallistic({
+      kind: m.kind,
+      fromX: fx, fromY: fy, fromZ: fz,
+      toX: tx, toY: ty, toZ: tz,
+      damage: m.damage * mods.volleyPower,
+      apDamage: m.apDamage * mods.volleyPower,
+      spread,
+      ownerUnit: u.id,
+      rng: this.artRng,
+      lofted,
+    });
+    if (!ok) return false;
+    bat.onTarget[k]++;
+
+    if (p.ammo[server] > 0) p.ammo[server]--;
+    if (b.elevated[server] !== 0) b.siege.noteWallShot();
+    if (m.kind === 'boulder') b.siege.noteArtillery(1, 0);
+    this.ctx.events.emit('volleyFired', {
+      x: fx, y: fy, z: fz, count: 1, kind: phys.event,
+    });
+    return true;
+  }
+
+  /** Scratch for `engineAnchor`. */
+  private anchor = { x: 0, z: 0 };
+
+  /**
+   * The ground an engine is standing on, for `engineAnchor`'s masonry test.
+   *
+   * Assembled from the battle and the city rather than passed in, so a scenario with no city
+   * simply has no `masonryTopAt` and every machine sites where it was put.
+   */
+  private site!: EngineSite;
+
+  /** Where machine `k` of a battery stands, for anything outside that needs it. */
+  engineSite(): EngineSite {
+    return this.site;
+  }
+
   /** Put a whole unit into a state without disturbing anyone locked in melee. */
   private setUnitState(u: UnitGroupState, state: SoldierState): void {
     const p = this.battle.pool;
@@ -495,7 +1101,21 @@ export class ProjectileSystem implements Subsystem {
     let tx = p.x[t];
     let tz = p.z[t];
     let d = Math.hypot(tx - sx, tz - sz);
-    if (d > m.range * 1.08 || d < 1.5) return;
+    // Both bounds, and the second is the fix for the Balearic slingers. `m.range` is what the
+    // roster claims; `effectiveRange` is what the physics can actually deliver, and for the two
+    // `arc: 'high'` weapons those disagreed — a sling could throw 104 m and claimed 180. Past
+    // its real reach the lofted solve's discriminant goes negative and `lowRoot` returns a flat
+    // 45 degrees, so the stone left at full power on the maximum-range elevation and buried
+    // itself in the turf as far short as the two numbers differ. Nothing reported it: the shot
+    // was fired, the ammunition was spent, and the impact was a plausible-looking divot.
+    // The 8% over the roster range is the tolerance that was always here — a man on the wing
+    // shoots at someone slightly beyond the unit's nominal reach. Only the *physical* bound is
+    // new, and it is the one that has to be hard.
+    if (d < 1.5) return;
+    if (d > this.effectiveRange(m.kind, m.range * 1.08)) {
+      this.cUnreachable[this.kindIndexOf(m.kind)]++;
+      return;
+    }
     let tof = d / Math.max(6, phys.speed * 0.8);
     for (let pass = 0; pass < 2; pass++) {
       tx = p.x[t] + p.vx[t] * tof;
@@ -575,8 +1195,14 @@ export class ProjectileSystem implements Subsystem {
     this.apDmg[idx] = m.apDamage * power;
     this.drag[idx] = phys.drag;
     this.len[idx] = phys.length;
-    this.kindIdx[idx] = this.kindIndexOf(m.kind);
+    const ki = this.kindIndexOf(m.kind);
+    this.kindIdx[idx] = ki;
     this.ownerUnit[idx] = u.id;
+    this.aimX[idx] = tx;
+    this.aimZ[idx] = tz;
+    this.cLaunched[ki]++;
+    this.pierceLeft[idx] = phys.pierce;
+    this.lastHit[idx] = -1;
     const elevated = b.elevated[i] !== 0;
     this.fromWall[idx] = elevated ? 1 : 0;
     if (elevated) b.siege.noteWallShot();
@@ -646,11 +1272,35 @@ export class ProjectileSystem implements Subsystem {
     this.apDmg[idx] = opts.apDamage;
     this.drag[idx] = phys.drag;
     this.len[idx] = phys.length;
-    this.kindIdx[idx] = this.kindIndexOf(opts.kind);
+    const ki = this.kindIndexOf(opts.kind);
+    this.kindIdx[idx] = ki;
     this.ownerUnit[idx] = opts.ownerUnit;
+    this.aimX[idx] = opts.toX;
+    this.aimZ[idx] = opts.toZ;
+    this.cLaunched[ki]++;
+    this.pierceLeft[idx] = phys.pierce;
+    this.lastHit[idx] = -1;
     this.fromWall[idx] = 0;
     return true;
   }
+
+  /**
+   * The shorter of what the roster claims and what the weapon can physically throw, less a
+   * small margin so the last few metres of reach are not fired at a 45-degree elevation that
+   * lands every shot on the same point.
+   *
+   * Memoised because it takes a square root and is asked once per unit per target search.
+   */
+  private effectiveRange(kind: WeaponKind, rosterRange: number): number {
+    let r = this.rangeCache.get(kind);
+    if (r === undefined) {
+      r = maxRange(kind) * 0.97;
+      this.rangeCache.set(kind, r);
+    }
+    return Math.min(rosterRange, r);
+  }
+
+  private rangeCache = new Map<WeaponKind, number>();
 
   /** Flattest of the two ballistic solutions; 45 degrees when the target is out of reach. */
   private lowRoot(v: number, d: number, h: number): number {
@@ -722,6 +1372,7 @@ export class ProjectileSystem implements Subsystem {
         SEG_X1 = x1; SEG_Z1 = z1; SEG_Y1 = y1;
         SEG_BEST_T = 2;
         SEG_BEST = -1;
+        SEG_SKIP = this.lastHit[i];
         b.hash.query(midX, midZ, half + HIT_RADIUS + 0.2, segmentVisit);
         if (SEG_BEST >= 0) {
           this.impactSoldier(i, SEG_BEST, SEG_BEST_T);
@@ -766,8 +1417,12 @@ export class ProjectileSystem implements Subsystem {
       x, y, z, kind, hitTarget: false, material: 'stone',
     });
     this.masonryHits++;
-    if (weapon === 'boulder') {
-      // A hundred-kilo stone does not stand up in a wall; it breaks and falls.
+    this.cMasonry[this.kindIdx[i]]++;
+    this.noteMiss(i, x, z);
+    if (physicsOf(weapon).blast > 0) {
+      // A stone does not stand up in a wall; it breaks, and the splinters and the shock take
+      // whoever is standing on the walk behind the merlon it struck.
+      this.applyBlast(i, x, y, z, -1);
       this.release(i);
       return;
     }
@@ -778,11 +1433,76 @@ export class ProjectileSystem implements Subsystem {
   /** Missiles that have struck the city's masonry this battle. Read by the siege probe. */
   masonryHits = 0;
 
+  /**
+   * A stone coming down among men.
+   *
+   * Not an explosion — there is no chemistry in a torsion engine — but a 26 kg ball arriving at
+   * 50 m/s carries about 33 kJ and does not stop at the first man it meets. Josephus (BJ V.6.3)
+   * watched one carry off several at a stroke and Ammianus XXIII.4.5 says the same. Modelling it
+   * as one man hit is why an onager measured 334 shots for about one kill, which made the most
+   * expensive unit on the field the least useful.
+   *
+   * The falloff is deliberately steep — `(1 - d/R)²` peaking at 0.7 of the direct hit — so a
+   * stone into a line at 0.86 m spacing hurts four or five men badly rather than the fifteen a
+   * flat 2.4 m disc would contain. Armour and formation still apply; shields do not, because a
+   * scutum against a one-talent stone is a splinter shower.
+   */
+  private applyBlast(i: number, x: number, y: number, z: number, skip: number): void {
+    const phys = physicsOf(this.kinds[this.kindIdx[i]]);
+    const R = phys.blast;
+    if (R <= 0) return;
+    const b = this.battle;
+    const p = b.pool;
+    BLAST_X = x; BLAST_Y = y + 0.35; BLAST_Z = z;
+    BLAST_R2 = R * R;
+    BLAST_SKIP = skip;
+    BLAST_N = 0;
+    b.hash.query(x, z, R, blastVisit);
+
+    for (let n = 0; n < BLAST_N; n++) {
+      const j = BLAST_HIT[n];
+      const dv = this.unitById(p.unitId[j]);
+      if (!dv) continue;
+      const d = Math.hypot(p.x[j] - x, p.z[j] - z);
+      const t = 1 - Math.min(1, d / R);
+      const f = t * t * 0.7;
+      if (f < 0.02) continue;
+      const ddef = b.typeOf(dv);
+      const dmods = modsOf(dv.id);
+      const df = formation(dv.formationId);
+      const through = 1 - armourReduction(ddef.armour * dmods.armour) * ARMOUR_BITE;
+      const total = (this.dmg[i] * through + this.apDmg[i]) * f
+        * df.mods.missileTaken * dmods.missileTaken * this.rng.range(0.8, 1.2);
+      const lethal = b.damage(j, total, x, z, this.ownerUnit[i]);
+      this.cDamage[this.kindIdx[i]] += total;
+      signalsOf(dv.id).missilePulse += 1;
+      if (lethal) {
+        this.cKilled[this.kindIdx[i]]++;
+        signalsOf(this.ownerUnit[i]).killPulse += 1;
+        b.siege.noteArtillery(0, 1);
+      }
+      // Knocked off their feet, away from where it landed.
+      const inv = 1 / Math.max(0.3, d);
+      p.vx[j] += (p.x[j] - x) * inv * 2.1 * f;
+      p.vz[j] += (p.z[j] - z) * inv * 2.1 * f;
+    }
+  }
+
+  /** Score a landing against the point it was solved for. See `aimX`. */
+  private noteMiss(i: number, x: number, z: number): void {
+    const k = this.kindIdx[i];
+    this.cMiss[k] += Math.hypot(x - this.aimX[i], z - this.aimZ[i]);
+    this.cMissN[k]++;
+  }
+
   private impactGround(i: number, x: number, y: number, z: number): void {
+    this.cGround[this.kindIdx[i]]++;
+    this.noteMiss(i, x, z);
     const kind = physicsOf(this.kinds[this.kindIdx[i]]).event;
     this.ctx.events.emit('projectileImpact', {
       x, y, z, kind, hitTarget: false, material: 'ground',
     });
+    this.applyBlast(i, x, y, z, -1);
     this.plant(i, x, y, z, -1, 0, 0, 0);
     this.release(i);
   }
@@ -813,21 +1533,36 @@ export class ProjectileSystem implements Subsystem {
     // A scutum held into a volley stops most of it; edge-on it stops nothing.
     const block = clamp01((ddef.shieldDefence / 46) * cover);
 
-    if (ddef.shieldDefence > 4 && this.rng.next() < Math.min(0.9, block)) {
+    this.cHitMan[this.kindIdx[i]]++;
+    this.noteMiss(i, hx, hz);
+    // A shield stops an arrow and a pilum. It does not stop a stone from an engine, so a
+    // weapon with a blast radius skips the block roll entirely.
+    const phys = physicsOf(this.kinds[this.kindIdx[i]]);
+    const stoppable = phys.blast === 0;
+    let bypass = 1;
+    if (stoppable && ddef.shieldDefence > 4 && this.rng.next() < Math.min(0.9, block)) {
+      this.cBlocked[this.kindIdx[i]]++;
       this.ctx.events.emit('projectileImpact', {
         x: hx, y: hy, z: hz, kind, hitTarget: true, material: 'shield',
       });
-      // Pila stuck in a shield are the whole point of the weapon.
-      const lx = -0.28;
-      this.plant(i, hx, hy, hz, j, lx, hy - p.y[j], 0.16);
-      this.release(i);
-      return;
+      // Anything with a point is now in the shield and out of the fight — pila stuck in a
+      // scutum are the whole purpose of the weapon. A blunt missile is not stopped, only
+      // blunted: see `shieldBypass`.
+      if (phys.shieldBypass <= 0) {
+        this.plant(i, hx, hy, hz, j, -0.28, hy - p.y[j], 0.16);
+        this.release(i);
+        return;
+      }
+      bypass = phys.shieldBypass;
     }
 
     const taken = df.mods.missileTaken * dmods.missileTaken;
     const through = 1 - armourReduction(ddef.armour * dmods.armour) * ARMOUR_BITE;
-    const total = (this.dmg[i] * through + this.apDmg[i]) * taken * this.rng.range(0.85, 1.15);
+    const total = (this.dmg[i] * through + this.apDmg[i]) * taken * bypass
+      * this.rng.range(0.85, 1.15);
     const lethal = b.damage(j, total, this.ox[i], this.oz[i], this.ownerUnit[i]);
+    this.cDamage[this.kindIdx[i]] += total;
+    if (lethal) this.cKilled[this.kindIdx[i]]++;
     const dsig = signalsOf(dv.id);
     dsig.missilePulse += 1;
     if (lethal) {
@@ -842,6 +1577,21 @@ export class ProjectileSystem implements Subsystem {
       x: hx, y: hy, z: hz, kind, hitTarget: true,
       material: ddef.armour > 34 ? 'armour' : 'flesh',
     });
+    this.applyBlast(i, hx, hy, hz, j);
+
+    // Over-penetration. A bolt that has just killed a man keeps going, at a cost — see
+    // `pierce`. It only carries on through a man it actually *killed*: a shot stopped by
+    // armour or by a shield has already spent itself, and letting a survivable hit continue
+    // would turn every glancing blow into a burst.
+    if (lethal && this.pierceLeft[i] > 0) {
+      this.pierceLeft[i]--;
+      this.lastHit[i] = j;
+      this.dmg[i] *= 0.55;
+      this.apDmg[i] *= 0.55;
+      // Bleed a little speed so the second man is hit measurably harder than the third.
+      this.vx[i] *= 0.86; this.vy[i] *= 0.86; this.vz[i] *= 0.86;
+      return;
+    }
     this.release(i);
   }
 
@@ -854,6 +1604,9 @@ export class ProjectileSystem implements Subsystem {
     attach: number, offX: number, offY: number, offZ: number
   ): void {
     if (attach >= 0 && this.attachedCount >= MAX_ATTACHED) attach = -1;
+    const k = this.kindIdx[i];
+    // A stone does not lodge in a shield; it breaks the arm behind it and drops.
+    if (this.kindVisual[k] === Visual.Stone) attach = -1;
     const s = this.stuckCursor;
     if (this.sAttach[s] >= 0) this.attachedCount--;
     this.stuckCursor = (s + 1) % MAX_STUCK;
@@ -867,6 +1620,11 @@ export class ProjectileSystem implements Subsystem {
     this.sdy[s] = this.vy[i] / sp;
     this.sdz[s] = this.vz[i] / sp;
     this.slen[s] = this.len[i];
+    this.sVis[s] = this.kindVisual[k];
+    this.sGirth[s] = this.kindGirth[k];
+    this.sTintR[s] = this.kindTint[k * 3];
+    this.sTintG[s] = this.kindTint[k * 3 + 1];
+    this.sTintB[s] = this.kindTint[k * 3 + 2];
     this.sAttach[s] = attach;
     this.sOffX[s] = offX;
     this.sOffY[s] = offY;
@@ -884,31 +1642,55 @@ export class ProjectileSystem implements Subsystem {
   // Rendering — two instanced draw calls, whatever is in the air
   // -------------------------------------------------------------------------
 
+  /**
+   * Six instanced meshes: a flight and a spent pair for each `Visual`, all on one material.
+   *
+   * Six rather than two costs four draw calls out of a 220 budget, and only when more than one
+   * class is in the air at once — an empty `InstancedMesh` is set invisible below and a hidden
+   * mesh is not drawn. Against that, it is the only way a stone can be a stone: geometry cannot
+   * be selected per instance without a shader, and a shader for six hundred projectiles is a
+   * worse trade than four draws.
+   */
   private buildMeshes(ctx: EngineContext): void {
-    const geo = this.buildShaftGeometry();
-    this.geometry = geo;
+    this.geometries[Visual.Shaft] = this.buildShaftGeometry();
+    this.geometries[Visual.Bolt] = this.buildBoltGeometry();
+    this.geometries[Visual.Stone] = this.buildStoneGeometry();
     this.material = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness: 0.68,
       metalness: 0.2,
     });
 
-    this.flightMesh = new THREE.InstancedMesh(geo, this.material, MAX_PROJECTILES);
-    this.flightMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.flightMesh.frustumCulled = false;
-    this.flightMesh.castShadow = false;
-    this.flightMesh.count = 0;
-    this.flightMesh.name = 'projectiles-flight';
-    ctx.scene.add(this.flightMesh);
+    const add = (v: Visual, cap: number, spent: boolean): THREE.InstancedMesh => {
+      const m = new THREE.InstancedMesh(this.geometries[v], this.material!, cap);
+      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      // One tint per weapon kind over the geometry's own vertex colours, so a pilum's iron
+      // shank, a javelin's honey ash and an arrow's bleached one come off one mesh.
+      m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3);
+      m.instanceColor.setUsage(THREE.DynamicDrawUsage);
+      m.frustumCulled = false;
+      m.castShadow = false;
+      m.receiveShadow = false;
+      m.count = 0;
+      m.visible = false;
+      m.name = `projectiles-${spent ? 'spent' : 'flight'}-${VISUAL_NAME[v]}`;
+      ctx.scene.add(m);
+      return m;
+    };
+    for (let v = 0; v < VISUAL_COUNT; v++) {
+      this.flightMesh[v] = add(v, MAX_PROJECTILES, false);
+      this.stuckMesh[v] = add(v, MAX_STUCK, true);
+    }
+  }
 
-    this.stuckMesh = new THREE.InstancedMesh(geo, this.material, MAX_STUCK);
-    this.stuckMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.stuckMesh.frustumCulled = false;
-    this.stuckMesh.castShadow = false;
-    this.stuckMesh.receiveShadow = false;
-    this.stuckMesh.count = 0;
-    this.stuckMesh.name = 'projectiles-spent';
-    ctx.scene.add(this.stuckMesh);
+  /** Instances written per mesh on the last frame, for `debugProjectiles`. */
+  private meshInfo(): unknown {
+    const out: Record<string, number> = {};
+    for (let v = 0; v < VISUAL_COUNT; v++) {
+      out[`flight-${VISUAL_NAME[v]}`] = this.flightMesh[v]?.count ?? 0;
+      out[`spent-${VISUAL_NAME[v]}`] = this.stuckMesh[v]?.count ?? 0;
+    }
+    return out;
   }
 
   /**
@@ -918,32 +1700,7 @@ export class ProjectileSystem implements Subsystem {
    * material and therefore one draw call.
    */
   private buildShaftGeometry(): THREE.BufferGeometry {
-    const pos: number[] = [];
-    const nrm: number[] = [];
-    const col: number[] = [];
-    const idx: number[] = [];
-
-    const pushTri = (
-      ax: number, ay: number, az: number,
-      bx: number, by: number, bz: number,
-      cx: number, cy: number, cz: number,
-      r: number, g: number, bl: number
-    ): void => {
-      const ux = bx - ax, uy = by - ay, uz = bz - az;
-      const vx2 = cx - ax, vy2 = cy - ay, vz2 = cz - az;
-      let nx = uy * vz2 - uz * vy2;
-      let ny = uz * vx2 - ux * vz2;
-      let nz = ux * vy2 - uy * vx2;
-      const l = Math.hypot(nx, ny, nz) || 1;
-      nx /= l; ny /= l; nz /= l;
-      const base = pos.length / 3;
-      pos.push(ax, ay, az, bx, by, bz, cx, cy, cz);
-      for (let k = 0; k < 3; k++) {
-        nrm.push(nx, ny, nz);
-        col.push(r, g, bl);
-      }
-      idx.push(base, base + 1, base + 2);
-    };
+    const { pos, nrm, col, idx, pushTri } = triBuffer();
 
     // Shaft: a 5-sided prism from y=-1 to y=-0.09.
     const R = 0.0135;
@@ -977,44 +1734,170 @@ export class ProjectileSystem implements Subsystem {
       pushTri(0, -0.99, 0, -fx, -0.95, -fz, -fx * 0.7, -0.82, -fz * 0.7, 0.85, 0.82, 0.74);
     }
 
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
-    g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(nrm), 3));
-    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(col), 3));
-    g.setIndex(idx);
-    g.computeBoundingSphere();
-    return g;
+    return finishGeometry(pos, nrm, col, idx);
+  }
+
+  /**
+   * A ballista bolt, on the same -Y unit-length convention as the shaft.
+   *
+   * Not an arrow. The Dura-Europos and Vindonissa finds are square-sectioned shafts a good deal
+   * thicker than an arrow's, carrying a long pyramidal iron head with a pronounced shoulder over
+   * a bronze socket, and three stiff flights that are cut from wood or leather rather than
+   * feathered — a bolt spends its flight at 78 m/s and a feather would strip. The head is 30% of
+   * the length here against an arrow's 12%, which is the proportion that reads at thirty metres
+   * and is roughly what the finds show once the socket is counted.
+   */
+  private buildBoltGeometry(): THREE.BufferGeometry {
+    const { pos, nrm, col, idx, pushTri } = triBuffer();
+    const OAK = [0.35, 0.26, 0.16] as const;
+    const IRON = [0.44, 0.46, 0.50] as const;
+    const BRONZE = [0.55, 0.44, 0.24] as const;
+
+    /** A square box between two y planes, tapering from `r0` to `r1`, rotated 45 deg per level. */
+    const box = (y0: number, y1: number, r0: number, r1: number, c: readonly number[]): void => {
+      for (let s = 0; s < 4; s++) {
+        const a0 = (s / 4) * Math.PI * 2 + Math.PI / 4;
+        const a1 = ((s + 1) / 4) * Math.PI * 2 + Math.PI / 4;
+        const x0 = Math.cos(a0), z0 = Math.sin(a0);
+        const x1 = Math.cos(a1), z1 = Math.sin(a1);
+        pushTri(x0 * r0, y0, z0 * r0, x1 * r0, y0, z1 * r0, x1 * r1, y1, z1 * r1, c[0], c[1], c[2]);
+        pushTri(x0 * r0, y0, z0 * r0, x1 * r1, y1, z1 * r1, x0 * r1, y1, z0 * r1, c[0], c[1], c[2]);
+      }
+    };
+
+    // Shaft, 22 mm across the flats.
+    box(-1, -0.34, 0.0110, 0.0115, OAK);
+    // Bronze socket collar — the visual break between wood and iron, and where the eye reads
+    // "this is a machine's ammunition" rather than "this is a long arrow".
+    box(-0.35, -0.295, 0.0170, 0.0165, BRONZE);
+    // The head: a long square-section pyramid with a shoulder, closing on the origin.
+    box(-0.295, -0.24, 0.0155, 0.0250, IRON);
+    box(-0.24, 0, 0.0250, 0.0006, IRON);
+    // Three stiff rectangular flights, standing well proud of a 22 mm shaft so they survive the
+    // distance an arrow's soft fletching does not.
+    const FL = 0.062;
+    for (let v = 0; v < 3; v++) {
+      const a = (v / 3) * Math.PI * 2;
+      const fx = Math.cos(a) * FL;
+      const fz = Math.sin(a) * FL;
+      const bx = Math.cos(a) * 0.011;
+      const bz = Math.sin(a) * 0.011;
+      // The vane as a quad, then the same two triangles wound the other way so it reads from
+      // either face — a flat vane culled from behind flickers as the bolt rolls.
+      const quad = [
+        [bx, -1.0, bz], [fx, -0.97, fz], [fx, -0.845, fz], [bx, -0.795, bz],
+      ] as const;
+      const tris: readonly (readonly number[])[][] = [
+        [quad[0], quad[1], quad[2]], [quad[0], quad[2], quad[3]],
+        [quad[2], quad[1], quad[0]], [quad[3], quad[2], quad[0]],
+      ];
+      for (const t of tris) {
+        pushTri(
+          t[0][0], t[0][1], t[0][2], t[1][0], t[1][1], t[1][2], t[2][0], t[2][1], t[2][2],
+          0.30, 0.23, 0.15
+        );
+      }
+    }
+    return finishGeometry(pos, nrm, col, idx);
+  }
+
+  /**
+   * A stone of unit diameter, so the instance scale is the stone's own size in metres.
+   *
+   * A subdivided icosahedron with its radius pushed about by a smooth function of direction —
+   * smooth rather than hashed per vertex because the base geometry is non-indexed, so a shared
+   * corner appears three or four times and a per-vertex random would tear the surface open. The
+   * result is a faceted, slightly lumpy ball that reads as dressed tufa rather than as a marble,
+   * which is what an onager actually threw: Rome's own engines fired local tufa and travertine.
+   */
+  private buildStoneGeometry(): THREE.BufferGeometry {
+    const base = new THREE.IcosahedronGeometry(0.5, 1);
+    const p = base.getAttribute('position') as THREE.BufferAttribute;
+    const col = new Float32Array(p.count * 3);
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      const l = Math.hypot(x, y, z) || 1;
+      const ux = x / l, uy = y / l, uz = z / l;
+      // Two octaves of a direction-only lumpiness. Continuous in direction, so every copy of a
+      // shared corner lands on exactly the same point.
+      const lump = 1
+        + 0.155 * Math.sin(3.1 * ux + 1.7) * Math.cos(2.7 * uy + 0.4)
+        + 0.095 * Math.sin(4.3 * uz + 2.2) * Math.cos(3.7 * ux - 1.1);
+      const r = 0.5 * lump;
+      p.setXYZ(i, ux * r, uy * r, uz * r);
+      // Pale warm grey with a little mottle, again from direction so it is stable.
+      const m = 0.055 * Math.sin(5.9 * ux + 2.1) * Math.sin(4.7 * uz - 0.6);
+      col[i * 3] = 0.70 + m;
+      col[i * 3 + 1] = 0.665 + m;
+      col[i * 3 + 2] = 0.60 + m * 0.8;
+    }
+    base.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    base.computeVertexNormals();
+    base.computeBoundingSphere();
+    return base;
   }
 
   preRender(ctx: EngineContext): void {
-    const flight = this.flightMesh;
-    const stuck = this.stuckMesh;
-    if (!flight || !stuck) return;
+    if (this.flightMesh.length === 0) return;
     const alpha = ctx.time.alpha;
+    const counts = this.visCount;
 
-    let n = 0;
-    for (let i = 0; i < this.highWater && n < MAX_PROJECTILES; i++) {
+    counts.fill(0);
+    for (let i = 0; i < this.highWater; i++) {
       if (this.alive[i] === 0) continue;
+      const k = this.kindIdx[i];
+      const v = this.kindVisual[k];
+      const mesh = this.flightMesh[v];
+      if (!mesh) continue;
       const x = this.ox[i] + (this.px[i] - this.ox[i]) * alpha;
       const y = this.oy[i] + (this.py[i] - this.oy[i]) * alpha;
       const z = this.oz[i] + (this.pz[i] - this.oz[i]) * alpha;
-      tmpDir.set(this.vx[i], this.vy[i], this.vz[i]);
-      if (tmpDir.lengthSq() < 1e-6) tmpDir.set(0, -1, 0);
-      tmpDir.normalize();
-      tmpQuat.setFromUnitVectors(UP, tmpDir);
-      tmpPos.set(x, y, z);
       const l = this.len[i];
-      tmpScale.set(1, l, 1);
+      if (v === Visual.Stone) {
+        // A stone does not point where it is going; it tumbles, and that is the single
+        // clearest signal that what is in the air is not a shaft. Axis and rate from the
+        // projectile's slot, which is stable for its whole flight, and the angle from its
+        // own age — visual-only, so `hash01` here is inside the rules.
+        const ax = hash01(i, 0x51e) - 0.5;
+        const ay = hash01(i, 0x52f) - 0.5;
+        const az = hash01(i, 0x53a) - 0.5;
+        tmpDir.set(ax, ay, az);
+        if (tmpDir.lengthSq() < 1e-6) tmpDir.set(0, 1, 0);
+        tmpDir.normalize();
+        tmpQuat.setFromAxisAngle(tmpDir, (this.life[i] + alpha * 0.033) * (3.2 + hash01(i, 0x54b) * 5.5));
+        tmpScale.set(l, l, l);
+      } else {
+        tmpDir.set(this.vx[i], this.vy[i], this.vz[i]);
+        if (tmpDir.lengthSq() < 1e-6) tmpDir.set(0, -1, 0);
+        tmpDir.normalize();
+        tmpQuat.setFromUnitVectors(UP, tmpDir);
+        const g = this.kindGirth[k];
+        tmpScale.set(g, l, g);
+      }
+      tmpPos.set(x, y, z);
       tmpMat.compose(tmpPos, tmpQuat, tmpScale);
-      flight.setMatrixAt(n++, tmpMat);
+      const n = counts[v]++;
+      mesh.setMatrixAt(n, tmpMat);
+      const c = mesh.instanceColor!;
+      c.setXYZ(n, this.kindTint[k * 3], this.kindTint[k * 3 + 1], this.kindTint[k * 3 + 2]);
     }
-    flight.count = n;
-    flight.visible = n > 0;
-    if (n > 0) flight.instanceMatrix.needsUpdate = true;
+    for (let v = 0; v < VISUAL_COUNT; v++) {
+      const m = this.flightMesh[v];
+      if (!m) continue;
+      m.count = counts[v];
+      m.visible = counts[v] > 0;
+      if (counts[v] > 0) {
+        m.instanceMatrix.needsUpdate = true;
+        m.instanceColor!.needsUpdate = true;
+      }
+    }
 
     const p = this.battle.pool;
-    let sn = 0;
-    for (let s = 0; s < this.stuckCount && sn < MAX_STUCK; s++) {
+    counts.fill(0);
+    for (let s = 0; s < this.stuckCount; s++) {
+      const v = this.sVis[s];
+      const mesh = this.stuckMesh[v];
+      if (!mesh) continue;
       const at = this.sAttach[s];
       let x = this.sx[s];
       let y = this.sy[s];
@@ -1028,19 +1911,41 @@ export class ProjectileSystem implements Subsystem {
         z = p.z[at] - this.sOffX[s] * si + this.sOffZ[s] * c;
         y = p.y[at] + this.sOffY[s];
       }
-      tmpDir.set(this.sdx[s], this.sdy[s], this.sdz[s]);
-      if (tmpDir.lengthSq() < 1e-6) tmpDir.set(0, -1, 0);
-      tmpDir.normalize();
-      tmpQuat.setFromUnitVectors(UP, tmpDir);
+      const g = this.sGirth[s];
+      if (v === Visual.Stone) {
+        // Settled where it stopped rolling, in whatever attitude it came to rest in.
+        tmpDir.set(hash01(s, 0x61e) - 0.5, hash01(s, 0x62f) - 0.5, hash01(s, 0x63a) - 0.5);
+        if (tmpDir.lengthSq() < 1e-6) tmpDir.set(0, 1, 0);
+        tmpDir.normalize();
+        tmpQuat.setFromAxisAngle(tmpDir, hash01(s, 0x64b) * 6.283);
+        tmpScale.set(this.slen[s], this.slen[s], this.slen[s]);
+      } else {
+        tmpDir.set(this.sdx[s], this.sdy[s], this.sdz[s]);
+        if (tmpDir.lengthSq() < 1e-6) tmpDir.set(0, -1, 0);
+        tmpDir.normalize();
+        tmpQuat.setFromUnitVectors(UP, tmpDir);
+        tmpScale.set(g, this.slen[s], g);
+      }
       tmpPos.set(x, y, z);
-      tmpScale.set(1, this.slen[s], 1);
       tmpMat.compose(tmpPos, tmpQuat, tmpScale);
-      stuck.setMatrixAt(sn++, tmpMat);
+      const n = counts[v]++;
+      mesh.setMatrixAt(n, tmpMat);
+      mesh.instanceColor!.setXYZ(n, this.sTintR[s], this.sTintG[s], this.sTintB[s]);
     }
-    stuck.count = sn;
-    stuck.visible = sn > 0;
-    if (sn > 0) stuck.instanceMatrix.needsUpdate = true;
+    for (let v = 0; v < VISUAL_COUNT; v++) {
+      const m = this.stuckMesh[v];
+      if (!m) continue;
+      m.count = counts[v];
+      m.visible = counts[v] > 0;
+      if (counts[v] > 0) {
+        m.instanceMatrix.needsUpdate = true;
+        m.instanceColor!.needsUpdate = true;
+      }
+    }
   }
+
+  /** Scratch for `preRender`'s per-mesh instance counters. */
+  private visCount = new Int32Array(VISUAL_COUNT);
 
   // -------------------------------------------------------------------------
   // Read API
@@ -1056,10 +1961,70 @@ export class ProjectileSystem implements Subsystem {
     return this.stuckCount;
   }
 
+  /**
+   * Everything `tools/probe-artillery.mjs` needs to answer "what is actually being drawn, and
+   * where do the shots go" without reading a pixel. Not used by the game.
+   *
+   * `visual` is the name of the instanced mesh the kind's live projectiles were routed into on
+   * the last `preRender`, counted rather than inferred — the whole reason this exists is that a
+   * still frame cannot distinguish a stone drawn as an arrow from an arrow.
+   */
+  debugProjectiles(): unknown {
+    const kinds = this.kinds.map((kind, k) => {
+      const phys = physicsOf(kind);
+      return {
+        kind,
+        event: phys.event,
+        visual: VISUAL_NAME[phys.visual],
+        speed: phys.speed,
+        drag: phys.drag,
+        length: phys.length,
+        maxRangeM: +maxRange(kind).toFixed(1),
+        launched: this.cLaunched[k],
+        unreachable: this.cUnreachable[k],
+        hitMan: this.cHitMan[k],
+        blockedByShield: this.cBlocked[k],
+        killed: this.cKilled[k],
+        intoGround: this.cGround[k],
+        intoMasonry: this.cMasonry[k],
+        damage: +this.cDamage[k].toFixed(1),
+        meanMissM: this.cMissN[k] ? +(this.cMiss[k] / this.cMissN[k]).toFixed(2) : null,
+      };
+    });
+    return {
+      kinds,
+      inFlight: this.liveCount,
+      spent: this.stuckCount,
+      // Instances actually written per mesh on the last frame. This is the counted answer to
+      // "which visual does each weapon emit".
+      meshes: this.meshInfo(),
+      batteries: [...this.batteries].map(([unit, b]) => ({
+        unit,
+        kind: b.kind === EngineKind.Onager ? 'onager' : 'scorpio',
+        machines: b.count,
+        sinceShot: [...b.sinceShot].map((v) => +v.toFixed(2)),
+        target: [...b.target],
+        shotsOnTarget: [...b.onTarget],
+      })),
+    };
+  }
+
+  /** Reset the census, so a probe can measure one interval rather than the whole battle. */
+  debugResetCensus(): void {
+    this.cLaunched.fill(0); this.cHitMan.fill(0); this.cBlocked.fill(0);
+    this.cKilled.fill(0); this.cGround.fill(0); this.cMasonry.fill(0);
+    this.cDamage.fill(0); this.cMiss.fill(0); this.cMissN.fill(0);
+    this.cUnreachable.fill(0);
+    this.masonryHits = 0;
+  }
+
   dispose(): void {
-    this.flightMesh?.dispose();
-    this.stuckMesh?.dispose();
-    this.geometry?.dispose();
+    for (const m of this.flightMesh) m?.dispose();
+    for (const m of this.stuckMesh) m?.dispose();
+    for (const g of this.geometries) g.dispose();
+    this.flightMesh.length = 0;
+    this.stuckMesh.length = 0;
+    this.geometries.length = 0;
     this.material?.dispose();
     POOL = null;
   }

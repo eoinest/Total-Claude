@@ -3,8 +3,8 @@ import { Clip } from '../sim/types';
 import { hash01 } from '../util/rand';
 import type { Silhouette } from './engineMesh';
 import {
-  ARM_DRAWN, ARM_REST, CLAW_DRAWN_Z, CLAW_REST_Z, ON_ARM_COCKED, ON_ARM_RELEASED,
-  ON_ARM_R, ONAGER_SILHOUETTE, SCORPIO_SILHOUETTE, onArmPoint,
+  ARM_DRAWN, ARM_REST, CLAW_DRAWN_Z, CLAW_REST_Z, MUZZLE, ON_ARM_COCKED, ON_ARM_RELEASED,
+  ON_ARM_R, ON_SLING, ONAGER_SILHOUETTE, SCORPIO_SILHOUETTE, onArmPoint,
 } from './engineMesh';
 
 /**
@@ -117,9 +117,123 @@ export const isEngineUnit = (def: UnitTypeDef): boolean => def.unitClass === 'ar
 export const engineCount = (crew: number): number =>
   Math.max(1, Math.round(crew / CREW_PER_ENGINE));
 
+/** How many machines a battery of this many men fields, for a given machine. */
+export const engineCountOf = (kind: EngineKind, men: number): number =>
+  Math.max(1, Math.round(men / CREW_OF[kind]));
+
 /** Lateral offset of engine `k` of `n`, in the unit's own frame. */
 export const engineOffsetX = (k: number, n: number): number =>
   (k - (n - 1) * 0.5) * ENGINE_PITCH;
+
+/**
+ * Where engine `k` of `n` stands, given its unit's anchor and facing.
+ *
+ * The single source of the battery's layout. It lives here rather than in the renderer because
+ * it stopped being a purely visual fact the moment the shot started leaving the *machine*
+ * instead of leaving whichever crewman the volley loop happened to reach: the muzzle is now a
+ * simulation position, and a renderer that computed it separately would draw the string letting
+ * go somewhere the stone did not come from.
+ */
+export function engineAnchor(
+  ux: number, uz: number, facing: number, kind: EngineKind, k: number, n: number,
+  out: { x: number; z: number },
+  site?: EngineSite
+): void {
+  const c = Math.cos(facing);
+  const s = Math.sin(facing);
+  const lx = (k - (n - 1) * 0.5) * PITCH_OF[kind];
+  const fwd = FORWARD_OF[kind];
+  out.x = ux + lx * c + fwd * s;
+  out.z = uz - lx * s + fwd * c;
+  if (site) siteEngine(out, s, c, kind, site);
+}
+
+/**
+ * What a machine needs to know about the ground it is being put on.
+ *
+ * Duck-typed and optional, so a battle on open grass — and every unit test, and the model
+ * viewer — needs no city at all. `masonryTopAt` is `CitySystem`'s O(1) query.
+ */
+export interface EngineSite {
+  groundAt(x: number, z: number): number;
+  masonryTopAt?(x: number, z: number): number;
+}
+
+/** How far a machine will walk itself backwards to get off masonry, and in what steps. */
+const SITE_STEP = 1.3;
+const SITE_TRIES = 8;
+/** Metres of stone above the terrain before a spot counts as "on the wall" rather than "on a kerb". */
+const SITE_CLEARANCE = 0.7;
+
+/**
+ * Refuse to emplace a machine on masonry, and step it back until it is on open ground.
+ *
+ * The player's report was that the big catapults "should not be located on the walls", and he is
+ * right twice over: an onager is a field engine that Rome II sites behind the line, and a 3.8 m
+ * chassis that rears against its own front sleeper cannot be worked on a wall-walk at all.
+ *
+ * Done as a *runtime query against whatever masonry exists* rather than as a coordinate rule,
+ * because the curtain is being widened and its stairs rebuilt by another workstream while this
+ * is being written. Any position hard-coded against today's wall would be wrong within the day;
+ * "not standing on stone" stays true whatever shape the stone is.
+ *
+ * The machine walks backwards along its unit's own facing, which is the direction its crew came
+ * from, so a battery pushed off a rampart ends up behind it rather than beside it.
+ */
+function siteEngine(
+  out: { x: number; z: number },
+  sinFacing: number, cosFacing: number,
+  kind: EngineKind,
+  site: EngineSite
+): void {
+  const top = site.masonryTopAt;
+  if (!top) return;
+  // A scorpio on a tripod is a two-man lift and Roman practice really did put carroballistae on
+  // towers and wall-walks; Trajan's Column shows exactly that. Only the stone-thrower is barred.
+  if (kind !== EngineKind.Onager) return;
+  for (let i = 0; i < SITE_TRIES; i++) {
+    if (top.call(site, out.x, out.z) <= site.groundAt(out.x, out.z) + SITE_CLEARANCE) return;
+    out.x -= sinFacing * SITE_STEP;
+    out.z -= cosFacing * SITE_STEP;
+  }
+}
+
+/**
+ * Where the shot actually leaves each machine, in the machine's own frame: `x` lateral,
+ * `y` above the ground it stands on, `z` downrange.
+ *
+ * A scorpio's bolt leaves the front of the slider case, a little above the stock and on the
+ * centreline. An onager's stone leaves the sling at the top of the arm's sweep, which is high
+ * and slightly forward of the chassis — that is the whole reason a stone-thrower can shoot over
+ * a friendly line and a bolt-thrower cannot.
+ *
+ * These were previously nowhere: every missile in the game left from `pool.y[i] + 1.45`, the
+ * chest of whichever man in the crew the volley loop had got to, and for a battery on 4.4 m
+ * centres that is up to three metres from the gun and never the muzzle.
+ */
+export const MUZZLE_OF: Record<EngineKind, readonly [number, number, number]> = {
+  // The front of the scorpio's frame window, read out of the mesh so it cannot go stale when a
+  // part moves.
+  [EngineKind.Scorpio]: MUZZLE,
+  // The onager's is *not* `onPouch(ON_ARM_RELEASED)`, which is where the pouch hangs when the
+  // arm is home against its buffer — 1.39 m up and behind the arm tip. The stone does not leave
+  // from there. The arm stops dead on the padded buffer and the loaded sling keeps going,
+  // whipping up and over until one end lifts off the release pin with the sling roughly in line
+  // with the arm; that is three quarters of a sling-length beyond the tip, and it is the reason
+  // a stone-thrower can shoot over a friendly line while a bolt-thrower cannot. 3.7 m.
+  [EngineKind.Onager]: onArmPoint(ON_ARM_R + ON_SLING * 0.75, ON_ARM_RELEASED),
+};
+
+/**
+ * Seconds from a shot until the machine is wound, loaded and waiting.
+ *
+ * The cycle in `enginePose` is derived from the reload rather than the other way round, so this
+ * is what the pose function will report as `EnginePhase.Ready` — the sim uses it to hold fire
+ * until the machine actually is ready, which is the difference between a bolt leaving on the
+ * release frame and a bolt leaving on an arbitrary tick.
+ */
+export const engineReadyAt = (reload: number): number =>
+  RECOVER + Math.min(WIND_MAX, Math.max(2.5, reload * WIND_FRACTION)) + LOAD_TIME;
 
 /**
  * A crew station: where a man stands relative to his engine, and which way he faces.
