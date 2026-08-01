@@ -22,7 +22,8 @@ import { CITY_MAT_KEYS, CityMaterials } from './materials';
 import { buildReferenceOverlay, type OverlayOptions, type ReferencePlan } from './overlay';
 import { buildTreeChunks } from './props';
 import {
-  buildWall, type CityChunkSpec, type GarrisonBay, type GateOut, type TreeRequest, type WallSegmentOut,
+  buildWall, unfinishedTopAt, type CityChunkSpec, type GarrisonBay, type GateBlockOut, type GateOut,
+  type TreeRequest, type WallSegmentOut,
 } from './wall';
 
 /**
@@ -135,6 +136,8 @@ export class CitySystem implements Subsystem {
   private chunks: Chunk[] = [];
   private segments: WallSegmentOut[] = [];
   private gateList: GateOut[] = [];
+  /** Where the gatehouse masonry stands. Straddles two bays; see `GateBlockOut`. */
+  private gateBlock: GateBlockOut | null = null;
   private bays: GarrisonBay[] = [];
   /**
    * Bay index by x, for the O(1) masonry lookup a projectile needs. Bays are on a fixed
@@ -151,8 +154,13 @@ export class CitySystem implements Subsystem {
   /**
    * Bumped whenever `getObstacles()` changes shape — a gate opening, a wall breached — so
    * consumers holding a spatial index know to rebuild it.
+   *
+   * Started at 2, not 1: the initial set changed shape when the hole beside the Porta
+   * Flaminia was closed. It gained a tower at the east end of the gate bay and its curtain
+   * boxes now have stone standing in them, so any index cached against generation 1 is
+   * describing a different city.
    */
-  obstacleGeneration = 1;
+  obstacleGeneration = 2;
   private totalTris = 0;
   private meshCount = 0;
   private overlaps: ReturnType<typeof assertNoFootprintOverlaps> = { ok: true, count: 0, worst: 0, pairs: [] };
@@ -164,6 +172,11 @@ export class CitySystem implements Subsystem {
   private overlay: THREE.Mesh | null = null;
   /** Terrain sampler kept for the debug overlay, which is built after `init`. */
   private overlayGround: ((x: number, z: number) => number) | null = null;
+  /**
+   * Terrain sampler, for the stages of the wall that follow the ground instead of a
+   * construction level. See `unfinishedTopAt`.
+   */
+  private groundAt: ((x: number, z: number) => number) | null = null;
 
   async init(ctx: EngineContext): Promise<void> {
     const terrain = ctx.get<TerrainSystem>('terrain');
@@ -175,11 +188,13 @@ export class CitySystem implements Subsystem {
     this.root.name = 'city';
     ctx.scene.add(this.root);
     this.overlayGround = heightAt;
+    this.groundAt = heightAt;
 
     // ---- plan ---------------------------------------------------------------
     const wall = buildWall(heightAt, 'aurelian-271');
     this.segments = wall.segments;
     this.gateList = wall.gates;
+    this.gateBlock = wall.gateBlock;
     this.bays = wall.garrisonBays;
     if (this.bays.length > 1) {
       this.bayX0 = this.bays[0].x0;
@@ -292,7 +307,10 @@ export class CitySystem implements Subsystem {
       const mx = (b.x1 + b.x2) * 0.5;
       const bay = bayOf(mx);
       // A gap bay is rubble and a palisade — no walkway, so its top is the rampart crest.
-      const top = bay ? (bay.garrisonable ? bay.walkY : bay.crestY) : this.masonryTopAt(mx, (b.z1 + b.z2) * 0.5);
+      // `walkable`, not `garrisonable`: the gate bay carries a wall-walk on both flanks of
+      // the gatehouse and no garrison, and taking its top from `crestY` buried the walking
+      // surface two metres inside the merlons.
+      const top = bay ? (bay.walkable ? bay.walkY : bay.crestY) : this.masonryTopAt(mx, (b.z1 + b.z2) * 0.5);
       const topY = Number.isFinite(top) ? top : 1e4;
       this.pushWallBox(out, b.x1, b.z1, b.x2, b.z2, b.halfW, topY);
     }
@@ -304,7 +322,9 @@ export class CitySystem implements Subsystem {
     // through the base.
     for (const seg of this.segments) {
       const bay = this.bayAt(seg.x1);
-      if (!bay || bay.towerHalf <= 0) continue;
+      // `hasTower`, not `towerHalf > 0`: `towerHalf` also carries the gatehouse's
+      // intrusion into the bay it lands in, and a tower box there would be a phantom.
+      if (!bay || !bay.hasTower) continue;
       const top = (Number.isFinite(bay.crestY) ? bay.crestY : 0) + WALL.towerChamberHeight;
       out.push({
         x: seg.x1, z: seg.z1,
@@ -608,7 +628,7 @@ export class CitySystem implements Subsystem {
     for (const b of this.wallBlockers) {
       const mx = (b.x1 + b.x2) * 0.5;
       const bay = this.bayAt(mx);
-      const top = bay ? (bay.garrisonable ? bay.walkY : bay.crestY) : this.masonryTopAt(mx, (b.z1 + b.z2) * 0.5);
+      const top = bay ? (bay.walkable ? bay.walkY : bay.crestY) : this.masonryTopAt(mx, (b.z1 + b.z2) * 0.5);
       this.pushWallBox(walls, b.x1, b.z1, b.x2, b.z2, b.halfW, Number.isFinite(top) ? top : 1e4);
     }
     this.obstacles = walls.concat(kept);
@@ -682,11 +702,23 @@ export class CitySystem implements Subsystem {
    * itself in the terrain on the far side. O(1): the bay index is arithmetic in x, and the
    * cross-section test is a distance to the bay centreline.
    *
-   * The gate bay reports its own block height across the whole 25 m of the gatehouse and
-   * ignores the carriageway, which is deliberate — a missile through the open gate is a
+   * The gatehouse reports its block height across the whole 25 m of the block and ignores
+   * the carriageway, which is deliberate — a missile through the open gate is a
    * one-in-a-thousand shot and not worth a second branch in a per-projectile hot path.
+   *
+   * The block is tested as its own oriented box rather than as "the bay flagged `isGate`".
+   * It is 25 m long, centred on where the Via Flaminia actually crosses, and straddles two
+   * 35.5 m bays; reading it off the flagged bay reported a fifteen-metre gatehouse standing
+   * over 23 m of open grass and reported nothing at all over the half of the block that
+   * stands in the bay next door.
    */
   masonryTopAt(x: number, z: number): number {
+    const gb = this.gateBlock;
+    if (gb) {
+      const gt = (x - gb.x) * gb.dx + (z - gb.z) * gb.dz;
+      const goff = (x - gb.x) * gb.nx + (z - gb.z) * gb.nz;
+      if (Math.abs(gt) <= gb.halfRun && Math.abs(goff) <= gb.halfDepth) return gb.topY;
+    }
     const bay = this.bayAt(x);
     if (!bay) return -Infinity;
     // Signed perpendicular offset from the bay centreline, positive outward.
@@ -695,10 +727,25 @@ export class CitySystem implements Subsystem {
     const pz = bay.z0 + bay.dz * t;
     const off = (x - px) * bay.nx + (z - pz) * bay.nz;
 
-    // Gate block: 25 m of solid masonry across the run, 11 m front to back.
-    if (bay.isGate) return Math.abs(off) <= 5.6 ? bay.crestY + 6.3 : -Infinity;
     if (Math.abs(off) > WALL.thickness * 0.5) return -Infinity;
-    if (!bay.garrisonable) return bay.crestY;
+    // `walkable`, not `garrisonable`: the gate bay's curtain is ordinary finished wall with
+    // a walk and a battlement, and treating it as a solid block to `crestY` put an arrow's
+    // stopping height two metres above the surface it should have landed on.
+    //
+    // A footing or a gap has no level to report: the work follows the ground across 35.5 m
+    // of terrain that can vary by ten metres, so it is evaluated here rather than read off
+    // the bay. `bay.crestY` is the maximum over the run and is what an obstacle box has to
+    // use; it is not what is standing at this particular point.
+    if (!bay.walkable) {
+      const gnd = this.groundAt ? this.groundAt(x, z) : bay.groundY;
+      return unfinishedTopAt(bay.stage, bay.groundY, gnd);
+    }
+
+    // A bay whose parapet has not been raised has no battlement to alternate: the dressed
+    // merlon blocks are five stacks waiting on the walk, not a continuous crest. Running
+    // the crenellation model over it stopped an arrow 1.26 m above bare travertine along
+    // two thirds of every unfinished stretch — which is where the escalade goes in.
+    if (bay.stage === 'no-parapet') return bay.walkY;
 
     // Inboard of the parapet it is the walking surface — which is what a lofted shot
     // aimed over the battlement has to land on, and what a stone from an onager breaks on.

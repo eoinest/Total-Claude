@@ -111,10 +111,30 @@ export interface GarrisonBay {
   innerOff: number;
   /** Normal-offset of the outward limit, clear of the parapet or the merlon stacks. */
   outerOff: number;
-  /** False for footing and gap bays, which have no walkway to stand on. */
+  /**
+   * False for footing and gap bays, which have no walkway to stand on, and false for the
+   * bay the gatehouse stands in — that bay *has* a walkway either side of the block, but
+   * the block breaks the run in two and a garrison rank must not be laid across it.
+   */
   garrisonable: boolean;
+  /**
+   * True where there is a wall-walk at `walkY`, whether or not a garrison is posted on it.
+   *
+   * This, not `garrisonable`, is what the movement grid takes an obstacle's top from: the
+   * gate bay's curtain is a walking surface at `walkY` and stamping it to `crestY` put its
+   * top two metres inside the merlons.
+   */
+  walkable: boolean;
   /** Half-length of the tower footprint at `x0`, which the walkway does not pass through. */
   towerHalf: number;
+  /**
+   * Whether a curtain tower actually stands at `x0`.
+   *
+   * Not the same question as `towerHalf > 0`, and kept separate because the two were
+   * conflated: the movement grid decided whether to stamp a tower box from `towerHalf`,
+   * which is a *standing* offset and can be non-zero for reasons that are not a tower.
+   */
+  hasTower: boolean;
   isGate: boolean;
 }
 
@@ -124,6 +144,34 @@ export interface GateOut {
   z: number;
   facing: number;
   open: boolean;
+}
+
+/**
+ * The gatehouse as a solid: an oriented box on the wall line, with the carriageway
+ * through it.
+ *
+ * Separate from the bays on purpose. The block is 25 m long and centred on where the Via
+ * Flaminia actually crosses, so it straddles two bays; anything that reads it off the bay
+ * flagged `isGate` gets the wrong 35.5 m of ground. That is precisely how `masonryTopAt`
+ * came to report a fifteen-metre gatehouse standing over 23 m of open grass.
+ */
+export interface GateBlockOut {
+  /** Centre of the carriageway, on the wall line. */
+  x: number;
+  z: number;
+  /** Outward normal and along-run direction of the block, matching the bay's. */
+  nx: number;
+  nz: number;
+  dx: number;
+  dz: number;
+  /** Half-extent along the run. */
+  halfRun: number;
+  /** Half-extent across the run, front face to back face. */
+  halfDepth: number;
+  /** Absolute Y of the top of the block's battlements. */
+  topY: number;
+  /** Half the clear width of the carriageway. */
+  openHalf: number;
 }
 
 export interface Blocker {
@@ -169,6 +217,8 @@ export interface WallBuildOutput {
   chunks: CityChunkSpec[];
   segments: WallSegmentOut[];
   gates: GateOut[];
+  /** Where the gatehouse masonry actually stands. See `GateBlockOut`. */
+  gateBlock: GateBlockOut;
   blockers: Blocker[];
   trees: TreeRequest[];
   towerCount: number;
@@ -189,8 +239,92 @@ interface Bay {
   topY: number;
   g0: number;
   g1: number;
+  /** Highest terrain anywhere under the run, not only at its two ends. */
+  gMax: number;
   stage: BayStage;
   isGate: boolean;
+  /**
+   * True for the piece of a run that carries the bay's one-off construction dressing —
+   * the scaffold, the material yard, the shuttering. A run cut in two by the gatehouse
+   * would otherwise put two cranes on one bay. See `curtainSpans`.
+   */
+  dress: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// The gatehouse block, as a span the curtain has to make room for
+// ---------------------------------------------------------------------------
+
+/**
+ * Along-run width of the Porta Flaminia's masonry block. `buildGate` builds to this.
+ *
+ * The block is centred on `GATE_X` — where the Via Flaminia crosses the crest, solved
+ * from the Lanciani georeference — and `GATE_X` is not a bay boundary and need not even
+ * lie in the bay the gate is booked to. So the curtain is *cut* to receive the block
+ * rather than one whole bay being replaced by it.
+ *
+ * Replacing a whole bay is what this fixes. The gate is at x = 72, which falls in bay 19,
+ * while `gateBay` rounds to 20 — so `buildGate` ran instead of `buildCurtainBay` for the
+ * 35.5 m of bay 20, covered 5.5 m of it with the east end of the block, and left 28.4 m
+ * of open grass immediately east of the Porta Flaminia. Meanwhile bay 19's curtain was
+ * built straight through the middle of the gate passage, so the one way into Rome was
+ * bricked up 3.75 m behind the doors.
+ */
+const GATE_BLOCK_W = 25;
+/** Front-to-back depth of the block, so the passage is a real tunnel. */
+const GATE_BLOCK_D = 11;
+/** Clear height of the carriageway to the springing of the vault. */
+const GATE_PASS_H = 8.4;
+/** The attic above the arch, carrying the dedicatory inscription. */
+const GATE_ATTIC = 4.8;
+/** Merlon height on the gate block's crown. */
+const GATE_MERLON_H = 2.0;
+/**
+ * Half-width of the span the curtain is cut out of, 0.3 m inside the block's own face so
+ * the curtain dies *inside* the brick and no seam can open between the two.
+ */
+const GATE_CLIP_HALF = GATE_BLOCK_W * 0.5 - 0.3;
+
+/** True where the gatehouse block stands, so nothing else may be built there. */
+function inGateBlock(x: number): boolean {
+  return Math.abs(x - GATE_X) <= GATE_CLIP_HALF;
+}
+
+/**
+ * The parts of a run from `x0` to `x1` that the gatehouse does not stand in: the whole
+ * run, one piece of it, or the two flanks either side of the block.
+ */
+function curtainSpans(x0: number, x1: number, out: [number, number][]): [number, number][] {
+  out.length = 0;
+  const a = GATE_X - GATE_CLIP_HALF;
+  const b = GATE_X + GATE_CLIP_HALF;
+  if (b <= x0 || a >= x1) {
+    out.push([x0, x1]);
+    return out;
+  }
+  if (x0 < a) out.push([x0, Math.min(a, x1)]);
+  if (x1 > b) out.push([Math.max(b, x0), x1]);
+  return out;
+}
+
+/**
+ * One piece of a bay, as a bay in its own right.
+ *
+ * `topY`, `g0`, `g1` and `gMax` are deliberately the *parent's*: the wall-walk is level
+ * across a whole bay by construction, and `walkGeometry` has to give the piece the same
+ * answer it gives the garrison API for the bay, or the two disagree again.
+ */
+function clipBay(bay: Bay, ax: number, bx: number, dress: boolean): Bay {
+  if (ax === bay.x0 && bx === bay.x1 && dress) return bay;
+  const span = bay.x1 - bay.x0;
+  return {
+    ...bay,
+    x0: ax,
+    z0: lerp(bay.z0, bay.z1, (ax - bay.x0) / span),
+    x1: bx,
+    z1: lerp(bay.z0, bay.z1, (bx - bay.x0) / span),
+    dress,
+  };
 }
 
 const OUT = new THREE.Vector3();
@@ -220,6 +354,28 @@ function frameOf(x0: number, z0: number, x1: number, z1: number): Frame {
   const nx = dz;
   const nz = -dx;
   return { nx, nz, dx, dz, len, rotY: Math.atan2(-nx, -nz) };
+}
+
+/**
+ * Absolute top of the built work on a stage that has no construction level — a bare
+ * footing or a rubble gap — at a point where the terrain stands at `localGround`.
+ *
+ * Exported because two things need the same answer and derived it separately once
+ * already: `walkGeometry`, which reports one number per bay, and `CitySystem.masonryTopAt`,
+ * which is asked per point and must not answer with the bay's maximum. Bay 2 crosses a
+ * knoll and its footing runs from 10.4 m at the ends to 19.5 m over the rise, so a single
+ * number for the bay is nine metres wrong at one end of it whichever number you pick.
+ */
+export function unfinishedTopAt(stage: BayStage, bayGroundY: number, localGround: number): number {
+  return stage === 'footing'
+    // A footing is two things at two references, and the top is whichever is higher here:
+    // `buildFootingSite`'s concrete pour, *level* across the whole bay at
+    // `min(g0,g1) + plinthHeight + 1`, and `buildCurtainBay`'s travertine plinth, which
+    // follows the ground.
+    ? Math.max(bayGroundY + WALL.plinthHeight + 1.0, localGround + WALL.plinthHeight)
+    // `buildGapBarricade`: rammed earth and rubble, crest 2.5..3.4 m over the ground it
+    // sits on, which it follows. The palisade above it is stakes, not a surface.
+    : localGround + 3.4;
 }
 
 /**
@@ -260,8 +416,20 @@ function walkGeometry(bay: Bay): {
   if (stage === 'footing' || stage === 'gap') {
     // No walkway: a footing is a knee-high concrete pour and a gap is an earth rampart
     // with a palisade on it. Both are places to fight *at*, not on.
+    //
+    // The height reported is what has been *built*, not `bay.topY`, which is the level
+    // the finished wall will eventually reach. Those are the same number nowhere on this
+    // circuit and forty metres apart on the Tiber bank, where bay 2's footing is a pour
+    // at ground + 2.35 and its construction level is 48.4 because the level is held over
+    // pairs of bays and its neighbour climbs a hill. `masonryTopAt` reported the latter,
+    // so an arrow shot at an ankle-high footing stopped dead in clear air above it, and a
+    // gap bay's obstacle box was a forty-metre invisible tower.
+    //
+    // One number for a whole bay, so it is the bay-wide *maximum*: `unfinishedTopAt`
+    // evaluated at the highest ground in the run. `masonryTopAt` re-evaluates it per point.
+    const built = unfinishedTopAt(stage, gMin, bay.gMax);
     return {
-      walkY: topY, crestY: topY, sillY: topY,
+      walkY: built, crestY: built, sillY: built,
       parapetInner: 0, parapetOuter: 0,
       innerOff: 0, outerOff: 0, garrisonable: false,
     };
@@ -339,6 +507,15 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
   // --- bays, and a stepped wall-walk level for each --------------------------
   const nBays = towerCount - 1;
   const need = new Float64Array(nBays);
+  /**
+   * Highest terrain under each run, on a 1.5 m sample.
+   *
+   * Deliberately *not* the same seven samples `need` uses. `need` sets the quantised
+   * construction level and changing its sampling moves the whole circuit's heights, but
+   * the stages that follow the ground rather than a level — a footing's plinth, a gap's
+   * rampart — need the real peak, and seven samples over 35.5 m misses it by a metre.
+   */
+  const gMaxOf = new Float64Array(nBays);
   for (let b = 0; b < nBays; b++) {
     const x0 = WALL_X_MIN + b * WALL.towerSpacing;
     const x1 = x0 + WALL.towerSpacing;
@@ -349,6 +526,13 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
       if (g > gmax) gmax = g;
     }
     need[b] = gmax + WALL.height;
+    let fine = gmax;
+    for (let s = 0; s <= 24; s++) {
+      const x = lerp(x0, x1, s / 24);
+      const g = heightAt(x, zAt(x));
+      if (g > fine) fine = g;
+    }
+    gMaxOf[b] = fine;
   }
   // Quantise to 0.55 m construction increments, held over pairs of bays: flat runs
   // of ~71 m with a visible step between them.
@@ -379,8 +563,10 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
       topY: level[b],
       g0: heightAt(x0, zAt(x0)),
       g1: heightAt(x1, zAt(x1)),
+      gMax: gMaxOf[b],
       stage,
       isGate,
+      dress: true,
     };
     bays.push(bay);
     bayStages.push(stage);
@@ -397,10 +583,15 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
 
     const f = frameOf(bay.x0, bay.z0, bay.x1, bay.z1);
     const walk = walkGeometry(bay);
-    // A tower stands at the west end of every bay except beside the gate, and its ballista
-    // chamber occupies the walkway there, so the garrison line is broken at each one.
-    const prevIsGate = b > 0 && b - 1 === gateBay;
-    const hasTower = !isGate && !prevIsGate;
+    // A tower stands at the west end of every bay, and its ballista chamber occupies the
+    // walkway there, so the garrison line is broken at each one. The only exception is a
+    // west end that falls inside the gatehouse block, which has its own flanking towers.
+    //
+    // Keyed on where the block *is*, not on which bay is flagged `isGate`. The old rule
+    // suppressed the towers at both ends of the gate bay, and the east one — 42.5 m from
+    // the gate, in open curtain — was simply missing: the wall east of the Porta Flaminia
+    // ended in a bare vertical face with nothing on it.
+    const hasTower = !inGateBlock(bay.x0);
     garrisonBays.push({
       index: b,
       x0: bay.x0, z0: bay.z0, x1: bay.x1, z1: bay.z1,
@@ -414,10 +605,20 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
       parapetOuter: walk.parapetOuter,
       innerOff: walk.innerOff,
       outerOff: walk.outerOff,
-      // The gate block is 25 m of solid masonry with its own battlements at a different
-      // level; it is not a stretch of curtain and the garrison logic must not treat it as one.
+      // The gate block interrupts this run with monumental masonry whose crown is at its
+      // own level, so no rank may be laid across it and the bay stands down as a whole.
+      //
+      // The 30 m of curtain this fix restored east of the block *is* an ordinary walk and
+      // could carry a rank — pushing `towerHalf` past the block is enough to express it,
+      // and it was tried. It is deliberately not done: bay 20's walk stands 14.50 m over
+      // its own ground, because the construction level is held over the pair 20/21 and
+      // bay 21 climbs to 36 m while bay 20's west end is at 28. `probe-siege` requires
+      // every bay within five of the gate to be under 14 m so an escalade can reach it,
+      // and manning a bay the ladders cannot take is worse than leaving it empty.
       garrisonable: walk.garrisonable && !isGate,
+      walkable: walk.garrisonable,
       towerHalf: hasTower ? WALL.towerWidth * 0.5 : 0,
+      hasTower,
       isGate,
     });
   }
@@ -428,6 +629,19 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
   const gates: GateOut[] = [
     { id: 'porta-flaminia', x: GATE_X, z: gateCz, facing: Math.atan2(gFrame.nx, gFrame.nz), open: true },
   ];
+  // The gatehouse as a solid, for the consumers that need to know where the masonry is.
+  // Held separately from the bays because the block straddles two of them: reading it off
+  // `bay.isGate` reported the block over 35.5 m of ground it does not stand on and missed
+  // the 12.5 m of it that stands in the bay next door.
+  const gateBlock: GateBlockOut = {
+    x: GATE_X,
+    z: gateCz,
+    nx: gFrame.nx, nz: gFrame.nz, dx: gFrame.dx, dz: gFrame.dz,
+    halfRun: GATE_BLOCK_W * 0.5,
+    halfDepth: GATE_BLOCK_D * 0.5 + 0.45,
+    topY: heightAt(GATE_X, gateCz) + GATE_PASS_H + GATE_ATTIC + GATE_MERLON_H,
+    openHalf: GATE_OPEN_WIDTH * 0.5,
+  };
 
   // --- chunk the curtain for culling and LOD --------------------------------
   const BAYS_PER_CHUNK = 8;
@@ -448,14 +662,28 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
       lodSwitch: [340, 940],
       build: (batch, detail) => {
         batch.setUvOrigin(cx, 0, cz);
+        const spans: [number, number][] = [];
         for (const bay of slice) {
+          // Curtain everywhere the gatehouse is not, *including* across the gate bay.
+          // The gate does not replace a bay; it is cut into one.
+          curtainSpans(bay.x0, bay.x1, spans);
+          for (let i = 0; i < spans.length; i++) {
+            const [ax, bx] = spans[i];
+            // A sliver shorter than a course band is not worth a panel.
+            if (bx - ax < 0.5) continue;
+            buildCurtainBay(
+              batch, detail, clipBay(bay, ax, bx, i === 0), heightAt,
+              rng.fork(i === 0 ? `bay-${bay.index}` : `bay-${bay.index}-${i}`)
+            );
+          }
           if (bay.isGate) buildGate(batch, detail, bay, heightAt, rng.fork(`gate-${bay.index}`));
-          else buildCurtainBay(batch, detail, bay, heightAt, rng.fork(`bay-${bay.index}`));
         }
         // A tower at the west end of every bay, plus the far end of the last chunk.
+        // A west end swallowed by the gatehouse gets none: the gate carries its own pair
+        // of semicircular towers instead.
         for (const bay of slice) {
+          if (inGateBlock(bay.x0)) continue;
           const prev = bays[bay.index - 1];
-          if (bay.isGate || (prev && prev.isGate)) continue;
           const topY = Math.max(bay.topY, prev ? prev.topY : bay.topY);
           buildTower(batch, detail, bay.x0, bay.z0, topY, heightAt, bay.index, bay.stage, frameOf(bay.x0, bay.z0, bay.x1, bay.z1));
         }
@@ -482,7 +710,10 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
     });
   }
 
-  return { path, chunks, segments, gates, blockers, trees, towerCount, bayStages, garrisonBays, wallZAt: zAt };
+  return {
+    path, chunks, segments, gates, gateBlock, blockers, trees,
+    towerCount, bayStages, garrisonBays, wallZAt: zAt,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -551,10 +782,19 @@ function buildCurtainBay(
     const az = lerp(bay.z0, bay.z1, t0);
     const bx = lerp(bay.x0, bay.x1, t1);
     const bz = lerp(bay.z0, bay.z1, t1);
-    const gm = Math.min(heightAt(ax, az), heightAt(bx, bz));
+    const gA = heightAt(ax, az);
+    const gB = heightAt(bx, bz);
+    const gm = Math.min(gA, gB);
     const dirty = new THREE.Color().copy(PAL.travertineDirty).multiplyScalar(0.88 + hash2(s, bay.index, 7) * 0.24);
-    // Sunk 1.8 m so no gap can open if the heightfield is regenerated under us.
-    quadPrism(stone, ax, az, bx, bz, nx, nz, T + WALL.plinthProject * 2, gm - 1.8, plinthTop(gm), dirty, PAL.travertine, {
+    // Sunk 1.8 m so no gap can open if the heightfield is regenerated under us, and
+    // topped from the *higher* end of the sub-bay, not the lower.
+    //
+    // Taking the top from `gm` meant that wherever the ground climbed more than the
+    // 1.35 m plinth across one 2.2 m sub-bay, the course was buried and nothing stood
+    // above the turf. On the Tiber bank, where bay 2's footing crosses a knoll, that
+    // erased nine metres of the circuit: rays cast across the wall at a metre above the
+    // ground came out the other side. A footing follows the slope; it does not drown in it.
+    quadPrism(stone, ax, az, bx, bz, nx, nz, T + WALL.plinthProject * 2, gm - 1.8, Math.max(gA, gB) + WALL.plinthHeight, dirty, PAL.travertine, {
       ends: false,
     });
   }
@@ -653,8 +893,15 @@ function buildCurtainBay(
     const aw = len / nArch;
     for (let i = 0; i < nArch; i++) {
       const t = (i + 0.5) / nArch;
-      const px = lerp(bay.x0, bay.x1, t) - nx * (T * 0.5);
-      const pz = lerp(bay.z0, bay.z1, t) - nz * (T * 0.5);
+      // 6 mm proud of the inner face, not flush with it.
+      //
+      // `archPanel` draws its own solid field around the opening, and at `T * 0.5` exactly
+      // that field is coplanar with the curtain's inner face quad. Two coplanar surfaces
+      // z-fight, and the arcading — the strongest thing you see looking along the inside of
+      // the wall — dissolved into checkerboard stipple at every distance. A reviewer given
+      // only the renders named it the most repeated blemish on the circuit.
+      const px = lerp(bay.x0, bay.x1, t) - nx * (T * 0.5 + 0.006);
+      const pz = lerp(bay.z0, bay.z1, t) - nz * (T * 0.5 + 0.006);
       const gA = heightAt(px, pz);
       const y0 = plinthTop(gA) + 0.5;
       const h = topY - 0.9 - y0;
@@ -736,8 +983,10 @@ function buildCurtainBay(
     quadPrism(core, bay.x0, bay.z0, bay.x1, bay.z1, nx, nz, T - 0.55, topY - 0.06, topY + 0.3, PAL.concrete, PAL.mortar, {
       ends: false,
     });
-    buildScaffold(batch, detail, bay, heightAt, topY, rng);
-    buildYard(batch, detail, bay, heightAt, rng);
+    if (bay.dress) {
+      buildScaffold(batch, detail, bay, heightAt, topY, rng);
+      buildYard(batch, detail, bay, heightAt, rng);
+    }
     return;
   }
 
@@ -778,8 +1027,10 @@ function buildCurtainBay(
         );
       }
     }
-    buildScaffold(batch, detail, bay, heightAt, topY, rng);
-    buildYard(batch, detail, bay, heightAt, rng);
+    if (bay.dress) {
+      buildScaffold(batch, detail, bay, heightAt, topY, rng);
+      buildYard(batch, detail, bay, heightAt, rng);
+    }
   }
 
   // Covered gallery over the wall-walk on some finished stretches. Strictly this
@@ -888,8 +1139,37 @@ function buildTower(
   box(stone, cx0, topY - 0.12, cz0, cx1, topY, cz1, PAL.travertineDirty, { topGain: 1.06 });
   const chTone = (k: number): THREE.Color =>
     new THREE.Color().copy(PAL.brick).multiplyScalar(0.82 + hash2(index, k, 331) * 0.34);
-  box(brick, cx0, topY, cz0, cx0 + wallT, chTop, cz1, chTone(1), { topGain: 1.1, groundShade: 0.14 });
-  box(brick, cx1 - wallT, topY, cz0, cx1, chTop, cz1, chTone(2), { topGain: 1.1, groundShade: 0.14 });
+  /**
+   * The chamber's two side walls, pierced on the line of the wall-walk.
+   *
+   * They used to be solid, so the walk ran into 0.75 m of blank brick at every one of
+   * forty-eight towers — a reviewer reading only the frames called it a dead end, and it
+   * is: the only way in was a doorway on the *city* face, which a man walking the parapet
+   * cannot reach. A chamber astride the walk has to be walked through.
+   *
+   * The opening spans the clear standing band `walkGeometry` publishes — from the inner
+   * face of the parapet to the walk's cityward lip — rather than being centred on the
+   * chamber, whose centre is 1.75 m outboard of the walk over the tower's projection.
+   */
+  const doorOuter = -0.35;
+  const doorInner = 1.35;
+  const doorHead = topY + 2.25;
+  for (const sx of [-1, 1]) {
+    const a = sx < 0 ? cx0 : cx1 - wallT;
+    const b = sx < 0 ? cx0 + wallT : cx1;
+    const tone = chTone(sx < 0 ? 1 : 2);
+    if (detail < 1) {
+      box(brick, a, topY, cz0, b, chTop, cz1, tone, { topGain: 1.1, groundShade: 0.14 });
+      continue;
+    }
+    box(brick, a, topY, cz0, b, chTop, doorOuter, tone, { topGain: 1.1, groundShade: 0.14 });
+    box(brick, a, topY, doorInner, b, chTop, cz1, tone, { topGain: 1.1, groundShade: 0.14 });
+    box(brick, a, doorHead, doorOuter, b, chTop, doorInner, tone, { topGain: 1.1, groundShade: 0.14 });
+    // Travertine lintel over the opening, so the head reads as dressed rather than sawn.
+    box(stone, a - 0.06, doorHead - 0.22, doorOuter - 0.06, b + 0.06, doorHead, doorInner + 0.06, PAL.travertine, {
+      topGain: 1.16,
+    });
+  }
   box(brick, cx0 + wallT, topY, cz1 - wallT, cx1 - wallT, chTop, cz1, chTone(3), { topGain: 1.1, groundShade: 0.14 });
 
   // Front wall pierced by the ballista embrasure.
@@ -968,16 +1248,32 @@ function buildGate(batch: Batch, detail: number, bay: Bay, heightAt: (x: number,
   const used = batch.pushAll(GATE_KEYS, m);
 
   // 11 m of masonry front to back so the passage is a real tunnel, and an attic
-  // above the arch for the dedicatory inscription.
-  const blockW = 25;
-  const blockD = 11;
-  const passH = 8.4;
-  const attic = 4.8;
+  // above the arch for the dedicatory inscription. The curtain is cut back to leave this
+  // span clear — see `GATE_BLOCK_W` and `curtainSpans`.
+  const blockW = GATE_BLOCK_W;
+  const blockD = GATE_BLOCK_D;
+  const passH = GATE_PASS_H;
+  const attic = GATE_ATTIC;
   const blockTop = g + passH + attic;
   const zF = -blockD * 0.5;
 
-  box(stone, -blockW / 2 - 0.45, g - 2.4, zF - 0.45, blockW / 2 + 0.45, g + 1.15, blockD * 0.5 + 0.45, PAL.travertineDirty, {
-    topGain: 1.08,
+  // Travertine socle, in two piers with the carriageway between them.
+  //
+  // It used to be one box across the whole 25 m, which put 1.15 m of solid stone across
+  // the passage: the brick face starts at `g + 1.15` and the socle filled everything
+  // below it, so the one road into Rome had a chest-high step in it, 3.4 m behind the
+  // doors where no camera could see it. A ray down the centreline at 0.5 m struck it.
+  const socleHalf = blockW / 2 + 0.45;
+  const openHalf = GATE_OPEN_WIDTH * 0.5;
+  for (const s of [-1, 1]) {
+    box(stone, s > 0 ? openHalf : -socleHalf, g - 2.4, zF - 0.45, s > 0 ? socleHalf : -openHalf, g + 1.15, blockD * 0.5 + 0.45, PAL.travertineDirty, {
+      topGain: 1.08,
+    });
+  }
+  // A threshold slab in the opening: a real gate has one, worn into ruts, and it caps the
+  // ground under the tunnel so the terrain cannot show through the basalt.
+  box(stone, -openHalf, g - 2.4, zF - 0.45, openHalf, g + 0.12, blockD * 0.5 + 0.45, PAL.travertineDirty, {
+    topGain: 1.14,
   });
 
   brick.pushTranslate(0, g + 1.15, zF);
@@ -991,6 +1287,24 @@ function buildGate(batch: Batch, detail: number, bay: Bay, heightAt: (x: number,
     voidCol: new THREE.Color(0.028, 0.026, 0.022),
   });
   brick.pop();
+
+  /**
+   * End walls closing the block.
+   *
+   * `archPanel` builds a front face, a back face and the reveals between them — it has no
+   * end caps, so the 25 x 11 m gate block was a shell open along both of its 11 m ends.
+   * The curtain only covers 3.5 m of that, which left roughly 4 m of full-height daylight
+   * either side of it: from an oblique camera east or west of the gate you looked straight
+   * in one end of the gatehouse and out of the other. The cornice caps the top and the
+   * socle the bottom, so only the storey between them needs closing.
+   */
+  for (const s of [-1, 1]) {
+    const ex = (s * blockW) / 2;
+    box(brick, Math.min(ex, ex - s * 0.09), g + 1.15, zF, Math.max(ex, ex - s * 0.09), blockTop, blockD * 0.5, PAL.brick, {
+      groundShade: 0.18,
+      topGain: 1.04,
+    });
+  }
 
   // Travertine voussoirs framing the arch. The gate was dressed in stone even where
   // the curtain is bare brick, because it is the face the city shows the world.
@@ -1047,7 +1361,7 @@ function buildGate(batch: Batch, detail: number, bay: Bay, heightAt: (x: number,
   box(stone, -blockW / 2 - 0.65, blockTop - 0.55, zF - 0.65, blockW / 2 + 0.65, blockTop, blockD * 0.5 + 0.65, PAL.travertine, {
     topGain: 1.18,
   });
-  crenellation(brick, -blockW / 2, zF + 0.5, blockW / 2, zF + 0.5, blockTop, 2.0, 0.9, PAL.brick, 1.5, 0.8, detail >= 1);
+  crenellation(brick, -blockW / 2, zF + 0.5, blockW / 2, zF + 0.5, blockTop, GATE_MERLON_H, 0.9, PAL.brick, 1.5, 0.8, detail >= 1);
 
   // ---- flanking semicircular towers ---------------------------------------
   // Aurelian's major gates were flanked by semicircular towers rising well above the
@@ -1079,10 +1393,13 @@ function buildGate(batch: Batch, detail: number, bay: Bay, heightAt: (x: number,
       for (let k = 1; k < nb; k++) {
         const y = g + 1.3 + ((towerTop - g - 1.3) * k) / nb;
         const rr = drumR(y) + 0.16;
+        // `bottom` as well as `top`: these project 0.16 m past the drum and an open
+        // underside is the same daylight sliver the cornice had, thirty times over.
         cylinder(brick, tx, y - 0.14, tz, rr, rr, 0.14, seg, PAL.tileCourse, {
           arcFrom: Math.PI,
           arcTo: Math.PI * 2,
           top: true,
+          bottom: true,
         });
       }
       // Arched windows lighting the tower chambers. Set 0.3 m proud of the drum so the
@@ -1101,6 +1418,18 @@ function buildGate(batch: Batch, detail: number, bay: Bay, heightAt: (x: number,
         brick.pop();
       }
     }
+    /**
+     * Crowning cornice, splayed out of the drum rather than perched on it.
+     *
+     * The ring alone was 1.08 R over a drum that tapers to 0.94 R, and `cylinder` emits no
+     * bottom face unless asked: 0.65 m of open annulus with the sky behind it, all the way
+     * round. From any low camera outside the gate it read as a crack straight through the
+     * tower, right under the battlement. The cavetto closes the soffit.
+     */
+    cylinder(stone, tx, towerTop - 0.28, tz, towerR * 0.94, towerR * 1.08, 0.28, seg, PAL.travertine, {
+      arcFrom: Math.PI,
+      arcTo: Math.PI * 2,
+    });
     cylinder(stone, tx, towerTop, tz, towerR * 1.08, towerR * 1.08, 0.6, seg, PAL.travertine, {
       arcFrom: Math.PI,
       arcTo: Math.PI * 2,
@@ -1360,7 +1689,7 @@ function buildRiverTerminus(
       const t = k / nb;
       const y = g + 0.9 + (top - g - 0.9) * t;
       const rr = R + 0.7 + (R * 0.92 - R - 0.7) * t + 0.15;
-      cylinder(brick, cx, y - 0.12, cz, rr, rr, 0.12, seg, PAL.tileCourse, { top: true });
+      cylinder(brick, cx, y - 0.12, cz, rr, rr, 0.12, seg, PAL.tileCourse, { top: true, bottom: true });
     }
     // Postern for the towpath, facing the water.
     brick.push(new THREE.Matrix4().makeRotationY(Math.atan2(-1, 0.2)).setPosition(cx - R * 0.9, g + 0.9, cz));
@@ -1375,6 +1704,9 @@ function buildRiverTerminus(
     brick.pop();
   }
   // Cornice, then a crenellated crown and a tiled cap over the guard chamber.
+  // Splayed out of the drum, for the same reason as the gate towers': a ring at 1.02 R
+  // over a drum tapering to 0.92 R has 0.76 m of open soffit and shows sky through it.
+  cylinder(stone, cx, top - 0.3, cz, R * 0.92, R * 1.02, 0.3, seg, PAL.travertine);
   cylinder(stone, cx, top, cz, R * 1.02, R * 1.02, 0.7, seg, PAL.travertine, { top: true });
   const nm = detail >= 1 ? 14 : 7;
   for (let k = 0; k < nm; k++) {
@@ -1695,7 +2027,7 @@ function buildFootingSite(
     PAL.mortar,
     { ends: false }
   );
-  buildYard(batch, detail, bay, heightAt, rng);
+  if (bay.dress) buildYard(batch, detail, bay, heightAt, rng);
 }
 
 /**

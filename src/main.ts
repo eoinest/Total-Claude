@@ -29,7 +29,7 @@ import { getMap } from './maps';
 import { deploySiegeOfRome } from './sim/scenario';
 import { type Difficulty, type ScenarioId, sanitiseConfig } from './sim/battleConfig';
 import { MainMenu, resolveConfig } from './ui/MainMenu';
-import { Faction } from './sim/types';
+import { ALL_FACTIONS, Faction } from './sim/types';
 
 /**
  * Entry point. Builds the engine, registers every subsystem, deploys the scenario
@@ -102,7 +102,6 @@ const difficulty = config.difficulty;
 // the harness (for `window.__game`) while still leaving Rome under player control.
 const autoplay = params.has('autoplay') ? params.get('autoplay') === '1' : harness;
 const playerFaction = Faction.Rome;
-const aiFaction = Faction.Germanic;
 
 const engine = new Engine({
   canvas,
@@ -165,9 +164,18 @@ engine.add(new BattleFlowSystem());
 // after 500 ms, and a formation change was undone as soon as the clock was unpaused.
 // The player's army must be commanded by the player.
 // In autoplay/harness mode the AI takes both sides so the battle fights itself.
+/*
+ * Every faction the player is not commanding, derived rather than named.
+ *
+ * This was `[playerFaction, aiFaction]` against a single `aiFaction = Faction.Germanic`, and a
+ * third faction therefore arrived uncommanded — Carthage spawned with a full perception view,
+ * 828 strength and `plan NONE`, sitting on the field doing nothing but whatever explicit orders
+ * its scenario issued. `installAI` and both AI subsystems now default to all factions, but this
+ * call passes an explicit list and an explicit list wins, so the fix has to be here.
+ */
 await installAI(engine, {
   difficulty,
-  commanded: autoplay ? [playerFaction, aiFaction] : [aiFaction],
+  commanded: autoplay ? [...ALL_FACTIONS] : ALL_FACTIONS.filter((f) => f !== playerFaction),
 });
 
 const vfx = engine.add(new VFXSystem());
