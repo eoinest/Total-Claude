@@ -148,6 +148,12 @@ Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`
   is *inverted* — more energy at pixel scale than at structure scale, the signature of missing AA,
   mip and specular filtering. Symptoms two graders reached independently: untapered aliased spear
   lines, flat quadrilateral shields, grass legible to the horizon then stopping at a hard seam.
+  **The ratio is one blur away from being gamed and must never be quoted alone.** A Gaussian of
+  σ ≈ 0.6-0.8 px takes it from 1.656 to 0.464 — straight through the whole gap — because it is
+  dominated by the final image's sub-pixel point-spread function and cannot tell "well filtered"
+  from "slightly soft". Cross-check every movement against `tools/probe-shimmer.mjs`, which
+  measures sub-pixel temporal stability and which a blur cannot fake, and **treat a sudden
+  collapse in the ratio as suspicious rather than as progress.**
 - **Do not raise ambient.** Darkest-quartile luminance: **ours 0.159, Rome II 0.122** — our shadows
   are already 30% brighter. Warm/cool separation, (b/r in darkest quartile) ÷ (b/r elsewhere):
   **ours 1.11, Rome II 1.85**. So the defect is *hue muddle at too high a level*, not darkness:
@@ -222,33 +228,127 @@ Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`
 
 ## Grading
 
-`tools/blind-compare.mjs` against `reference/rome2/` (ten Rome II press plates). It has been fixed
-four times for leaking a wordmark, camera EXIF, a mislabelled key, and file size. `reference/siege/`
-(25 user images) and `reference/rome3d/` (YouTube stills) are **mechanics and layout reference
-only, never blind-deck plates** — mixed provenance would flatter or unfairly penalise us.
+`tools/blind-compare.mjs` against `reference/rome2/` (ten Rome II press plates), built from
+`tools/shoot.mjs --set=deck`. `reference/siege/` (25 user images) and `reference/rome3d/` (YouTube
+stills) are **mechanics and layout reference only, never blind-deck plates** — mixed provenance
+would flatter or unfairly penalise us.
 
-**Twenty-one blind rounds have run and every one has separated the deck.** Round 21 was 20/20 for
-an adversarial grader *and* 20/20 for an independent cold grader with no repo context — 40 of 40.
-No workstream has reached parity. The named cause has moved five times: contact shadowing,
-material-boundary blend, crowd clone repetition, luminance, and now **aliasing**, which is the
-first to separate cleanly as a single scalar. Say this plainly rather than letting a clean round
-imply parity.
+### The separation record, audited — do not quote the old number
 
-**The harness has now leaked five times, and the fifth was created by the fix for the fourth.**
-Wordmark, EXIF, mislabelled key, file size — and then equalising size by binary-searching each
-frame's JPEG *quality*, which wrote provenance into the quantisation tables (luma DQT sum: ours
-mean 1426, Rome II mean 977; 72-78% separation from the header alone). Worse than what it
-replaced, because quality is visible: our frames carry more high-frequency detail, so equal bytes
-bought them fewer bits, and **the harness was manufacturing the artefacts it then asked a critic
-to grade.** Fixed at `51d50be` — one quality for all frames, length padded past the EOI marker.
-Any deck run before `51d50be` is void.
+**"Twenty-three rounds, twenty-three separations" was in every workstream's brief and it is not
+a defensible claim.** It was audited frame by frame at `dd77a5f` because leak six raised the
+possibility that some of those rounds had graded a UI overlay rather than a renderer. Here is
+what the audit actually found, and it is a mixed answer.
+
+**The HUD did not corrupt the record.** Every deck still on disk was measured with a detector
+calibrated on a known HUD-bearing pass — per origin, the pixels static across every frame *and*
+structured, minus the other origin's. The 18-shot pass with the interface up scores **0.837% of
+frame**. All nineteen surviving decks score **0.000%**, and `screenshots/wallgeo-deck` was checked
+by eye before its owner deleted it. So twenty decks are clean by measurement, not by assertion.
+
+**But the denominator is wrong in three ways, and all three inflate it.**
+
+1. **Nine of the nineteen surviving decks graded our renders against photographs**, not against
+   Rome II — `eng-mech`, `mech-1/2/3`, and the engine agent's `deck-r0/r1/r2/r3/on`. A photograph
+   and a render separate on sensor noise and depth of field whatever the renderer does. Those are
+   real *accuracy* measurements ("does our scorpion match the archaeology") and they are not
+   evidence about rendering. `blind-compare.mjs` now detects a photographic reference pool from
+   source EXIF and prints `countsAsSeparationRound: false` into the key.
+2. **Ten decks came from seven distinct shot passes.** `round1/2/3` are three seeds of the same
+   eight siege frames; `rq-2903/5177/7331` are three seeds of the same six. Reshuffling a deck
+   measures grader consistency, not the renderer.
+3. **No ledger has ever existed.** There is no record anywhere in the repo of what the twenty-one
+   or twenty-three rounds *were*. Roughly nine deck directories that existed at the start of this
+   session — `blind-c1/c2/c3`, `blind-wall`, `critic1`, `plandeck-r1/r2/r3` — were deleted by
+   their owners under the screenshot-cleanup rule and cannot be audited at all. One of them, a
+   lighting deck, is independently known to be void: it was shot without `--nohud` and all three
+   of its graders sorted on the faction-strength bar.
+
+**The honest statement is: seven or eight independent render-quality passes against the Rome II
+plates, every auditable one of which separated, plus one known void round and about nine rounds
+with no surviving evidence either way.** That is still a real and consistent result — no
+workstream has reached parity — but it is a seventh of the weight the old number implied. Quote
+it that way. The named cause has moved five times: contact shadowing, material-boundary blend,
+crowd clone repetition, luminance, and now **aliasing**, the first to separate cleanly as a single
+scalar. A clean round does not imply parity and never has.
+
+### The harness refuses decks now, rather than reminding people
+
+**Seven leaks, and five were found by someone who was not looking for them.** Wordmark, camera
+EXIF, a mislabelled key, file size, the quantisation tables that the file-size *fix* introduced,
+the HUD, and the letterbox bars. Each was closed by a person resolving to be careful and the next
+one arrived regardless, so `2cba66d` and `dd77a5f` replace care with refusal. Three gates, any of
+which exits 3 and deletes the frames:
+
+1. **Provenance.** `tools/shoot.mjs` now hides the HUD *by default* (`--hud` opts back in;
+   `--nohud` still works and is a no-op) and records `hud: <bool>`, the tool, the argv, the dpr
+   and the commit into `report.json`. `blind-compare` refuses any `--ours` directory whose record
+   is missing or says true. **Missing is refused as firmly as true** — "nobody wrote it down" is
+   exactly the state that produced leak six. Use `--pick=a,b,c` to grade a subset in place;
+   copying frames to a new directory throws the record away and the deck will be refused.
+2. **Overlay audit**, thresholds above. It also names the two other things that produce the same
+   signature: a letterbox bar, and a side whose frames all share one camera.
+3. **Invariants.** `bytes`, both quantisation-table sums and letterbox depth must be *identical*
+   on every frame — an exact test, not a threshold, because with `--bytes=0` the raw sizes score
+   0.850 balanced accuracy and slid under a 0.95 bar.
+
+Leak seven was live when the audit ran: **`--fit=contain` letterboxes only the frames whose aspect
+differs from 16:9**, which in `mech-1/2/3` is every reference photograph and none of our renders.
+The comment claiming it "is not a tell" was wrong. Gate 3 catches it now.
+
+**Leak eight is open and cannot be closed here.** Padding past the EOI defeats `wc -c`, not a JPEG
+parser: scanning forward from SOS recovers the true compressed length in ten lines, and it sorts
+the deck at **0.850** (ours 560,302 bytes against 349,225). Equalising it means either spending
+fewer bits on our side — which is leak five, and manufactured the artefacts the critic was then
+asked to grade — or burying the aliasing signal under matched grain. It is printed on every run
+and it closes when the renderer stops carrying 1.7x the pixel-scale energy of a press plate. Note
+that 1.7x and the harshness ratio of 1.137 against 0.427 are the same physical fact measured
+twice; whoever closes the aliasing gap closes this leak for free.
 
 Verified clean, so stop re-checking: the 20% bottom crop clears all ten wordmarks, and no EXIF or
-ICC survives. Known and accepted: the deck is not ten independent trials — our ten frames share
-one map, one grass asset, one helmet and one time of day, and the near-duplicate pairs are on our
-side only, which inflates any grader's apparent accuracy.
+ICC survives.
+
+### Two biases in the instrument that run *against* us, both still open
+
+- **Every graded plate in this project's history was rendered at one sample per pixel.**
+  `ultra.maxPixelRatio` is 2, but the engine takes the minimum of that and
+  `window.devicePixelRatio`, which headless Chromium reports as 1. The deck has been
+  photographing a configuration the product does not ship, in the direction that flatters the
+  reference — one sample per pixel is the worst case for the aliasing separator. `shoot.mjs
+  --dpr=2` shoots the other arm; the default stays 1 so rounds stay comparable, and the value is
+  recorded in `report.json` either way. **Nobody has measured the dpr-2 arm yet.**
+- **The deck's 20% bottom crop removes our harshest band**, which is why the harness's own
+  harshness numbers run about 1.2x lower than `tools/probe-harshness.mjs` measured on the
+  uncropped frames. The crop is load-bearing for the wordmarks and must not be reduced, so the
+  blind deck systematically *understates* the aliasing gap.
+
+### Known limitation, left open deliberately
+
+`--set=deck` (`dd77a5f`) fixes deck independence on the shot side: ten frames, no two sharing a
+follow target, six on the Campus Martius and four at Pydna, hours 07:30 to 16:24 against the
+single 17:00 every earlier frame shared, and one frame at `high` rather than ultra. It was used
+for the final round and nothing else has been. **The old sixteen-shot pool is still what every
+earlier round used, so no round before this one was ten independent trials**, and their accuracy
+figures are inflated by family resemblance to an unknown degree.
+
+Two things were tried inside that set and rejected — do not retry them. Pydna at its 19:00 preset
+renders at a few percent luminance with a blown sun blob and nothing else legible, which a grader
+sorts as "the dark one". And the honest non-ultra frame must be `high`, not `low`: `maxSoldiers`
+is 1,600 at low and 3,200 at medium against an order of battle of 8,632, so a low-tier frame
+photographs a different battle and is sorted on headcount rather than filtering.
 
 `reference/museum/` holds 41 licence-verified photographs (PD/CC0/CC BY/CC BY-SA, provenance in
 `ASSETS.md`) for **accuracy only** — a grader separates photography from rendering on sensor noise
 alone. `reference/rome2/` remains the sole battle-plate pool, still only ten plates, and that is
-the weakest part of the instrument.
+the weakest part of the instrument. Widening it was considered and not attempted: it needs
+licence verification on each individual asset page, official sources only, and it is the single
+highest-value thing left undone here.
+
+### Reading a grader's answer
+
+Ask for a label, a confidence *and the mechanism*, and then check the mechanism. A fresh critic
+sorting an earlier deck gave "no normal or roughness maps" as its runner-up cue and was simply
+wrong — both are present, and it was reading flatness as absence. A grader that gets the label
+right for a false reason is a different result from one that names a real defect, and only the
+second is a work item. Allow "I cannot tell" per frame and count it honestly; a forced binary on
+twenty frames turns a coin flip into evidence.
