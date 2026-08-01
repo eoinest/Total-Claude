@@ -638,6 +638,45 @@ varying vec2 vSoldierSurf;
 varying vec3 vSoldierEmblem;
 `;
 
+/**
+ * Geometric specular anti-aliasing (Tokuyoshi and Kaplanyan's formulation of the
+ * Kaplanyan filtering idea).
+ *
+ * A helmet bowl at forty metres is a curved mirror a few pixels wide. Its normal turns
+ * through tens of degrees inside a single pixel, so the specular lobe — which for polished
+ * bronze at roughness 0.22 is narrower than that — is either hit or missed depending on
+ * where the sample lands. Across a rank of three hundred men that is a field of white
+ * pinpoints that flip on and off with the camera, and it is a large part of the pixel-scale
+ * energy in any frame containing a crowd. Neither MSAA nor a post-AA pass can fix it: the
+ * signal is genuinely below the sample rate, and the only correct answer is to widen the
+ * lobe until it *is* representable, which is what a roughness increase does.
+ *
+ * The variance of the interpolated normal over the pixel footprint is estimated from its
+ * screen-space derivatives, converted to an equivalent increase in GGX alpha, and added in
+ * quadrature to the material's own. Where the surface is flat across a pixel it adds
+ * nothing, so a helmet filling the frame keeps its tight highlight and its full range.
+ *
+ * This is deliberately a *pixel-scale* filter and it is measured as such. It should reduce
+ * the harshness ratio and, at block scale, pull the crowd's local contrast toward the
+ * reference's rather than away from it: the reference gets legible men out of smooth
+ * gradients over a form, not out of high-amplitude sparkle. If block-scale spread moved the
+ * wrong way that would be a genuine trade against the lighting workstream and would have to
+ * be reported as one.
+ *
+ * SIGMA2 0.25 and KAPPA 0.18 are the paper's suggested screen-space variance and clamp; the
+ * clamp is what stops a silhouette edge, where the derivative is meaningless, from turning
+ * the rim of every man fully rough.
+ */
+const SPEC_AA = /* glsl */ `
+{
+  vec3 tcDNdx = dFdx( normal );
+  vec3 tcDNdy = dFdy( normal );
+  float tcVariance = 0.25 * ( dot( tcDNdx, tcDNdx ) + dot( tcDNdy, tcDNdy ) );
+  float tcKernel = min( 2.0 * tcVariance, 0.18 );
+  roughnessFactor = sqrt( clamp( roughnessFactor * roughnessFactor + tcKernel, 0.0, 1.0 ) );
+}
+`;
+
 const FRAG_BODY = /* glsl */ `
 diffuseColor.rgb *= vSoldierTint;
 #ifdef USE_MAP
@@ -753,6 +792,13 @@ function patch(
         '#include <roughnessmap_fragment>',
         '#include <roughnessmap_fragment>\nroughnessFactor = clamp( roughnessFactor + vSoldierSurf.x * 0.22 + vSoldierSurf.y, 0.035, 1.0 );'
       );
+      // Specular anti-aliasing has to come after the normal chunks, not with the roughness
+      // ones: three includes <roughnessmap_fragment> before <normal_fragment_begin>, so at
+      // that point there is no shading normal to take a derivative of. Nothing between the
+      // two reads roughnessFactor — <lights_physical_fragment> is the first consumer — so
+      // raising it here is equivalent, and it gets the normal-mapped normal, which is the
+      // one that carries the sub-pixel detail we are trying to filter.
+      f = f.replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>\n${SPEC_AA}`);
       shader.fragmentShader = f;
     }
   };
@@ -761,7 +807,7 @@ function patch(
   // because it changes the injected source: the man has it and the horse does not, and
   // colliding here would give one of them the other's vertex shader.
   const rig = o.poseVary ? 'vary' : 'plain';
-  material.customProgramCacheKey = () => `soldier-skin-v4-${variant}-${rig}`;
+  material.customProgramCacheKey = () => `soldier-skin-v5-${variant}-${rig}`;
 }
 
 export interface SoldierMaterialSet {
