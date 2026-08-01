@@ -3,7 +3,15 @@ dist/
 .DS_Store
 *.log
 .vite/
+# Every raster format, not just PNG. This listed `*.png` alone, and a review agent
+# writing JPEG comparison plates into `screenshots/` put frames derived from
+# copyrighted press material onto a committable path. It caught itself; the next one
+# might not.
 screenshots/**/*.png
+screenshots/**/*.jpg
+screenshots/**/*.jpeg
+screenshots/**/*.webp
+screenshots/**/*.avif
 screenshots/**/report.json
 !screenshots/keep/**
 

@@ -904,7 +904,25 @@ export class CombatSystem implements Subsystem {
       // the jitter wheels on the spot instead of fighting.
       const nl = Math.hypot(nx, nz);
       if (nl > 1e-3) {
-        const k = 0.12;
+        /*
+         * How hard to low-pass the contact normal.
+         *
+         * 0.12 is a time constant of about a quarter of a second, which is far too quick
+         * when the normal is being averaged over a handful of men. In a gate carriageway
+         * only a few of a cohort's men can touch the enemy at all, the set of them turns
+         * over constantly, and the mean bearing over five duels swings wildly — so the
+         * unit re-aimed, turned, re-aimed at the new average and turned back. Measured in
+         * the Porta Flaminia: 3.86 degrees per second of unit yaw, sustained, which is the
+         * "units start rotating when they collide in that choke point" in the report.
+         *
+         * Scaling the gain by the *number* of men in contact — a count, deliberately, not
+         * `engagedFraction` — makes the filter as confident as its evidence. The bearing is
+         * a mean over that many samples and its standard error falls as one over the root
+         * of it, so the count is the statistic that matters and a small unit in full contact
+         * genuinely does have a noisy normal. A full contact line across thirty men still
+         * re-aims in a quarter of a second; five men jammed in an archway barely move it.
+         */
+        const k = 0.03 + 0.09 * clamp01(engaged / 12);
         this.normalX[id] += (nx / nl - this.normalX[id]) * k;
         this.normalZ[id] += (nz / nl - this.normalZ[id]) * k;
         const l2 = Math.hypot(this.normalX[id], this.normalZ[id]) || 1;
@@ -926,7 +944,13 @@ export class CombatSystem implements Subsystem {
       // is a target, not a snap.
       if (s.contactLock && (this.normalX[id] !== 0 || this.normalZ[id] !== 0)) {
         const want = Math.atan2(this.normalX[id], this.normalZ[id]);
-        if (Math.abs(wrapAngle(want - u.targetFacing)) > 0.26) u.targetFacing = want;
+        // Deadband widened from 0.26 rad to 0.35 for every unit, and widened *further* the
+        // fewer men are engaged — again on the count, for the reason given above. The
+        // deadband is the only thing between a noisy bearing and a block that wheels for the
+        // whole battle: measured in the Porta Flaminia carriageway, a unit was turning 3.86
+        // degrees a second, continuously, with a handful of men in contact.
+        const band = engaged >= 12 ? 0.35 : 0.35 + 0.5 * (1 - engaged / 12);
+        if (Math.abs(wrapAngle(want - u.targetFacing)) > band) u.targetFacing = want;
       }
     }
   }

@@ -755,7 +755,24 @@ export class SelectionController {
     if (input.keyPressed('Escape')) this.clear(ctx);
     if (input.keyPressed('KeyF')) this.selectArmy(ctx);
     if (input.keyPressed('KeyH')) this.issueHalt(ctx);
-    if (input.keyPressed('KeyR')) this.runByDefault = !this.runByDefault;
+    /*
+     * R has to reach units that are already marching, not just arm the next order.
+     *
+     * This flipped `runByDefault` and stopped, and that latch is only read when a move
+     * order is built — so pressing R while a unit walked across the field changed nothing
+     * the player could see, which is exactly the complaint. Measured sim-side, a marching
+     * unit went 1.55 -> 3.383 m/s once the order was actually issued.
+     *
+     * Routing units are excluded: a rout already runs, and overriding its gait would let
+     * the player countermand a morale state through a movement key.
+     */
+    if (input.keyPressed('KeyR')) {
+      this.runByDefault = !this.runByDefault;
+      const ids = this.model.selectedViews.filter((v) => !v.routing).map((v) => v.id);
+      if (ids.length) {
+        ctx.events.emit('orderIssued', { unitIds: ids, kind: 'gait', running: this.runByDefault });
+      }
+    }
     if (input.keyPressed('Tab')) this.cycle(ctx);
 
     const sel = this.model.selectedViews;

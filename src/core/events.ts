@@ -32,7 +32,15 @@ export interface GameEvents {
   /** Player issued a move/attack order. `formation` is a formation id or null to keep current. */
   orderIssued: {
     unitIds: number[];
-    kind: 'move' | 'attack' | 'attackMove' | 'halt' | 'formation' | 'facing' | 'ability';
+    /**
+     * `garrison` was already handled by `applyOrder` but never typed, and `gait` is new:
+     * pressing R used to flip a UI latch that was only read at the *next* right-click, so
+     * the key did nothing to a unit already marching. Both belong here or the emit sites
+     * do not compile.
+     */
+    kind:
+      | 'move' | 'attack' | 'attackMove' | 'halt' | 'formation' | 'facing' | 'ability'
+      | 'gait' | 'garrison';
     x?: number;
     z?: number;
     facing?: number;

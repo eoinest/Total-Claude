@@ -1,5 +1,5 @@
 import type { EngineContext, Subsystem } from '../core/Engine';
-import { Rng } from '../util/rand';
+import { Rng, hash01 } from '../util/rand';
 import { clamp, clamp01, damp, turnToward, wrapAngle } from '../util/math';
 import {
   closestPointOnSegment, formation, frontSegment, makeSegment, ranksFor, segmentDistance,
@@ -173,6 +173,8 @@ const SIM_ROUTE_ID = 1_000_000;
  */
 
 const SCRATCH = { x: 0, z: 0 };
+/** Second scratch, for the rally lookup that runs inside the slot loop. */
+const SCRATCH2 = { x: 0, z: 0 };
 /** Scratch for the formation anchor's collision test; see `updateUnitOrder`. */
 const ANCHOR_HIT: Resolved = { x: 0, z: 0, hit: false, blockedX: false, blockedZ: false };
 
@@ -190,6 +192,81 @@ const CONTACT_ENTER = 1.6;
 const CONTACT_EXIT = 4.5;
 /** Metres the anchors are held apart while locked, so ranks never interpenetrate. */
 const CONTACT_GAP = 1.0;
+/**
+ * Front-to-front distance inside which a formation closes the last stride into contact by
+ * itself, even standing under a Hold order. See `closeToContact`.
+ *
+ * Deliberately *larger* than `CONTACT_EXIT`, which is the opposite of the obvious choice.
+ * Setting it below the release distance looks like sensible hysteresis and quietly
+ * recreates the very bug this exists to kill: the loser of a shoving match gives ground
+ * until the fronts are `CONTACT_EXIT` apart, the lock drops, `resolvePush` stops (it only
+ * runs while locked) — and if closing cannot reach that far, both units are left standing
+ * 4.5 m apart under long-satisfied orders with nothing to bring them back together. A
+ * fight would simply stop, mid-fight, and never restart.
+ *
+ * Re-attaching is the *correct* behaviour for two units with no orders: it is what
+ * "these two are fighting each other" means. A unit that has genuinely been told to leave
+ * is held off by `breakingOff` and `orderGrace` instead, which is where that decision
+ * belongs.
+ */
+const ENGAGE_REACH = 5.0;
+/**
+ * And how fast it takes that stride, in metres per second.
+ *
+ * Half a walking pace. This is men leaning into a fight that is already at their faces,
+ * not an advance — at anything brisk a Hold order stops reading as "hold".
+ */
+const ENGAGE_CLOSE_SPEED = 0.8;
+
+/**
+ * Breadcrumbs kept per unit, and the metres of anchor travel between them.
+ *
+ * 28 at five metres is 140 m of history. The first cut of this was eight at six — 42 m —
+ * which sounded ample and was useless: a cohort marching out of the Porta Flaminia covers
+ * 115 m, so by the time it is clear of the wall *every* crumb is already outside, a man
+ * stranded on the inside can see none of them through the curtain, and the rally falls
+ * back to the behaviour it was written to replace. Measured, that cut changed the stranded
+ * count from 49 to 58, which is to say it did nothing. The trail has to be longer than the
+ * journey, not longer than the obstacle.
+ */
+const TRAIL_LEN = 28;
+const TRAIL_SPACING = 5;
+/**
+ * Metres from his formation slot beyond which a man is treated as *separated* and allowed
+ * to route back along his unit's trail rather than walk straight at a slot he cannot reach.
+ *
+ * A formation in good order never approaches this: a 320-man cohort is about 35 m across
+ * and 8 deep, and a man closing up into the press is a metre or two out. 14 m means he is
+ * not in the block at all. Measured on a gate transit before this existed: 49 of one
+ * cohort's 160 men finished more than 30 m from the body, the furthest 71 m away, 94 of
+ * them still on the wrong side of the curtain — and sixty further seconds under a halt
+ * order moved not one of them, because `steerSoldiers` walks a man in a straight line at
+ * his slot and `integrate` slides him along the masonry into a corner and leaves him there.
+ */
+const STRAGGLER_DIST = 14;
+/** Seconds between re-plans of a separated man's rally point. */
+const RALLY_REPLAN = 0.6;
+/** Most breadcrumbs given a corridor trace on one re-plan. See `rallyPoint`. */
+const RALLY_SCAN = 8;
+/**
+ * Metres a unit may drift from the last position it was *ordered* to hold, closing on
+ * enemies of its own accord.
+ *
+ * A radius about a remembered point, not a decrementing allowance, and the difference
+ * matters. The allowance had to be refilled by something, and the only available signal —
+ * the enemy stepping back beyond `ENGAGE_REACH` — is one a skirmisher generates on purpose
+ * twice a minute, so a Hold cohort could be walked off a gate eight metres at a time,
+ * indefinitely. Against a remembered point there is nothing to refill: the unit may stand
+ * up to eight metres from where the player put it, and the only thing that moves the point
+ * is another order.
+ *
+ * The honest cost of this design: a unit ordered to withdraw to a spot that happens to be
+ * within a stride of an enemy will still turn and fight rather than stand with its back
+ * turned. The alternative safeguard would have been `breakingOff`, and it cannot serve —
+ * it is only ever assigned inside `u.contactLock && distToTarget > 0.35`, while this runs
+ * under `!u.contactLock && distToTarget < 0.35`, so at this call site it is always false.
+ */
+const ENGAGE_BUDGET = 8;
 /**
  * How fast an unengaged man closes up into the press, in metres per second. A rank
  * three men back covers the 3 m to the front line in about three seconds, which is
@@ -278,6 +355,16 @@ const ANCHOR_RADIUS = 0.6;
  * that clearing a bad overlap takes a few frames instead of one.
  */
 const MAX_SEPARATION_STEP = 0.22;
+
+/**
+ * And the same budget for a man who is in melee, metres per tick.
+ *
+ * 0.08 m at 30 Hz is 2.4 m/s — still far quicker than anything needs to be pushed, and
+ * still enough to clear a bad overlap in two or three frames, but a third of what a loose
+ * body gets. Together with the mass term in `resolveCrowding` this is what stops the
+ * fighting line being steered sideways by the press behind it.
+ */
+const MAX_SEPARATION_FIGHTING = 0.08;
 
 /**
  * What a soldier standing on something other than the ground needs the sim to know.
@@ -387,6 +474,10 @@ export class BattleSystem implements Subsystem {
     this.breakingOff = new Uint8Array(256);
     this.press = new Float32Array(ctx.quality.maxSoldiers);
     this.sepUsed = new Float32Array(ctx.quality.maxSoldiers);
+    this.rallyX = new Float32Array(ctx.quality.maxSoldiers);
+    this.rallyZ = new Float32Array(ctx.quality.maxSoldiers);
+    this.rallyOn = new Uint8Array(ctx.quality.maxSoldiers);
+    this.rallyUntil = new Float32Array(ctx.quality.maxSoldiers);
     this.hash = new SpatialHash(1500, 3.5);
 
     const cap = ctx.quality.maxSoldiers;
@@ -671,6 +762,12 @@ export class BattleSystem implements Subsystem {
     const ranks = ranksFor(strength, width);
     const rng = this.rng.fork(`unit${u.id}`);
     const mounted = isCavalry(def);
+    // Where it was deployed counts as where it was told to stand, so a unit that is never
+    // given an order still has a point to measure its self-initiated drift against.
+    this.growUnitScratch(u.id + 1);
+    this.holdX[u.id] = u.x;
+    this.holdZ[u.id] = u.z;
+    this.holdSet[u.id] = 1;
 
     for (let s = 0; s < strength; s++) {
       const i = this.pool.alloc();
@@ -778,6 +875,11 @@ export class BattleSystem implements Subsystem {
         u.contactLock = false;
         u.charging = false;
         this.orderGrace[u.id] = ORDER_GRACE;
+        // An order re-plants the point this unit is allowed to wander from. For a move that
+        // is the destination it has been sent to, not where it is standing now.
+        this.holdX[u.id] = o.x ?? u.x;
+        this.holdZ[u.id] = o.z ?? u.z;
+        this.holdSet[u.id] = 1;
       }
 
       switch (o.kind) {
@@ -851,6 +953,25 @@ export class BattleSystem implements Subsystem {
           this.routeGoals.delete(u.id);
           break;
         }
+        case 'gait': {
+          /*
+           * Change pace without changing anything else.
+           *
+           * The run toggle used to be a latch on the *next* order: pressing R set a flag in
+           * the selection controller that was read the next time the player right-clicked.
+           * So R pressed while a cohort was already marching did nothing whatsoever — no
+           * order was issued, `u.running` was never written, and the unit carried on at
+           * `walkSpeed`. Measured, walking and running legs of an already-moving unit came
+           * out at the same speed to three decimal places, which is exactly the report:
+           * "when I hit R they seem to move at the same pace".
+           *
+           * This is deliberately *not* one of the kinds that clears `contactLock` and buys
+           * `ORDER_GRACE` above: changing pace is not a change of mind about where to go,
+           * and letting it break a unit out of a melee would make R an escape button.
+           */
+          if (o.running !== undefined) u.running = !!o.running;
+          break;
+        }
         case 'facing': {
           if (o.facing !== undefined) u.targetFacing = o.facing;
           break;
@@ -902,6 +1023,7 @@ export class BattleSystem implements Subsystem {
     for (const u of this.units) {
       if (u.destroyed) continue;
       this.updateUnitOrder(u, dt);
+      this.layTrail(u);
       this.updateUnitCohesion(u);
       this.strength[u.faction] += u.alive;
     }
@@ -939,6 +1061,30 @@ export class BattleSystem implements Subsystem {
   private attackRouteAt = new Float32Array(64).fill(-1e9);
   /** Consecutive ticks a unit under a move order has failed to advance. See `STALL_TICKS`. */
   private stallTicks = new Float32Array(64);
+  /**
+   * A breadcrumb trail of where each unit's anchor has been, newest last.
+   *
+   * Flat, `TRAIL_LEN` slots per unit, so it costs two floats per breadcrumb and no objects.
+   * `trailN` is how many are valid; once full it shifts down by one, which is `TRAIL_LEN`
+   * copies on the rare tick a crumb is laid and nothing at all otherwise.
+   */
+  private trailX = new Float32Array(64 * TRAIL_LEN);
+  private trailZ = new Float32Array(64 * TRAIL_LEN);
+  private trailN = new Int32Array(64);
+  /** The last position a unit was *ordered* to hold. See `ENGAGE_BUDGET`. */
+  private holdX = new Float32Array(64);
+  private holdZ = new Float32Array(64);
+  private holdSet = new Uint8Array(64);
+  /**
+   * Where a separated man is currently heading to get back, and when to re-plan.
+   *
+   * `rallyOn` is a flag rather than a sentinel coordinate: (0, 0) is the centre of the
+   * battlefield, not a value that can mean "none".
+   */
+  private rallyX!: Float32Array;
+  private rallyZ!: Float32Array;
+  private rallyOn!: Uint8Array;
+  private rallyUntil!: Float32Array;
 
   private growUnitScratch(n: number): void {
     if (this.frontGaps.length >= n) return;
@@ -967,6 +1113,24 @@ export class BattleSystem implements Subsystem {
     const stl = new Float32Array(size);
     stl.set(this.stallTicks);
     this.stallTicks = stl;
+    const tx = new Float32Array(size * TRAIL_LEN);
+    tx.set(this.trailX);
+    this.trailX = tx;
+    const tz = new Float32Array(size * TRAIL_LEN);
+    tz.set(this.trailZ);
+    this.trailZ = tz;
+    const tn = new Int32Array(size);
+    tn.set(this.trailN);
+    this.trailN = tn;
+    const hx = new Float32Array(size);
+    hx.set(this.holdX);
+    this.holdX = hx;
+    const hz = new Float32Array(size);
+    hz.set(this.holdZ);
+    this.holdZ = hz;
+    const hs = new Uint8Array(size);
+    hs.set(this.holdSet);
+    this.holdSet = hs;
     const bo = new Uint8Array(size);
     bo.set(this.breakingOff);
     this.breakingOff = bo;
@@ -1045,6 +1209,11 @@ export class BattleSystem implements Subsystem {
     const near = routing ? { dist: Infinity, id: -1 } : this.nearestEnemyFront(u);
     this.frontGaps[u.id] = near.dist;
     this.frontEnemies[u.id] = near.id;
+    if (this.holdSet[u.id] === 0) {
+      this.holdX[u.id] = u.x;
+      this.holdZ[u.id] = u.z;
+      this.holdSet[u.id] = 1;
+    }
     const grace = this.orderGrace[u.id] > 0;
     if (grace) this.orderGrace[u.id] = Math.max(0, this.orderGrace[u.id] - dt);
 
@@ -1181,6 +1350,14 @@ export class BattleSystem implements Subsystem {
         // that stopped short of it and should plan again from here.
         if (!this.resumeRoute(u)) u.order = UnitOrder.Hold;
       }
+      // Standing still with an enemy a stride away: take the stride. Re-checking the
+      // distance to target catches the case where `resumeRoute` just installed a new leg,
+      // which is a unit with somewhere to be rather than one standing about.
+      if (!routing && !breakingOff && !u.contactLock && this.orderGrace[u.id] <= 0
+        && u.waypoints.length < 3
+        && Math.hypot(u.targetX - u.x, u.targetZ - u.z) < 0.35) {
+        this.closeToContact(u, near.dist, near.id, dt);
+      }
     } else {
       moving = true;
       const f = formation(u.formationId);
@@ -1249,6 +1426,270 @@ export class BattleSystem implements Subsystem {
     u.fatigue = clamp01(u.fatigue + drain);
 
     if (u.chargeTimer > 0) u.chargeTimer = Math.max(0, u.chargeTimer - dt);
+  }
+
+  /**
+   * Drop a breadcrumb where the anchor is, if it has moved far enough since the last one.
+   *
+   * The trail is the route the unit demonstrably walked, so it is walkable by construction
+   * — which is the whole point. A man who has been left on the wrong side of a wall does
+   * not need a pathfinder; he needs to know where his unit came from, and his unit has
+   * just been there.
+   */
+  private layTrail(u: UnitGroupState): void {
+    const id = u.id;
+    const base = id * TRAIL_LEN;
+    const n = this.trailN[id];
+    if (n > 0) {
+      const lx = this.trailX[base + n - 1];
+      const lz = this.trailZ[base + n - 1];
+      if ((u.x - lx) * (u.x - lx) + (u.z - lz) * (u.z - lz) < TRAIL_SPACING * TRAIL_SPACING) return;
+    }
+    if (n < TRAIL_LEN) {
+      this.trailX[base + n] = u.x;
+      this.trailZ[base + n] = u.z;
+      this.trailN[id] = n + 1;
+      return;
+    }
+    for (let k = 1; k < TRAIL_LEN; k++) {
+      this.trailX[base + k - 1] = this.trailX[base + k];
+      this.trailZ[base + k - 1] = this.trailZ[base + k];
+    }
+    this.trailX[base + TRAIL_LEN - 1] = u.x;
+    this.trailZ[base + TRAIL_LEN - 1] = u.z;
+  }
+
+  /**
+   * Where should a separated man walk to get back to his unit?
+   *
+   * The newest breadcrumb he has an unobstructed line to. Walking to that puts him
+   * somewhere his unit stood recently, from which the *next* breadcrumb is visible, and so
+   * on up the trail — which is string-pulling along a route already proven walkable, for
+   * one corridor test per man per `RALLY_REPLAN` instead of a path search per man.
+   *
+   * Returns false when there is no trail or no crumb is reachable, in which case the
+   * caller falls back to walking at the slot: no worse than before, and correct on every
+   * map with no city on it, where `nav` is null and nothing can be blocked anyway.
+   */
+  private rallyPoint(i: number, u: UnitGroupState, out: { x: number; z: number }): boolean {
+    const nav = this.nav;
+    if (!nav) return false;
+    const id = u.id;
+    const n = this.trailN[id];
+    if (n === 0) return false;
+    const base = id * TRAIL_LEN;
+    const p = this.pool;
+    let nearest = -1;
+    let nearestD2 = Infinity;
+    /*
+     * Only the newest few crumbs get a corridor trace. Each `directRouteClear` is a lattice
+     * walk plus a DDA over the city's occupancy grid, and scanning all 28 for every
+     * stranded man was ~29 traces each — with a hundred men stuck at a gate and their
+     * replan clocks all started on the same tick, that lands as ~4,500 traces on one tick
+     * in every eighteen, against 0.34 ms of headroom. A spike like that never shows up in a
+     * mean. The distance fallback below needs no traces at all, so bounding the scan costs
+     * accuracy only in the case where a far-back crumb is visible and a recent one is not.
+     */
+    const scanFrom = Math.max(0, n - RALLY_SCAN);
+    for (let k = n - 1; k >= 0; k--) {
+      if (k < scanFrom) {
+        // Still worth knowing which is nearest, but not worth a corridor trace.
+        const cx2 = this.trailX[base + k];
+        const cz2 = this.trailZ[base + k];
+        const dx2 = cx2 - p.x[i];
+        const dz2 = cz2 - p.z[i];
+        if (this.crumbIsAhead(u, cx2, cz2, i)) {
+          const dd = dx2 * dx2 + dz2 * dz2;
+          if (dd < nearestD2) { nearestD2 = dd; nearest = k; }
+        }
+        continue;
+      }
+      const cx = this.trailX[base + k];
+      const cz = this.trailZ[base + k];
+      if (nav.directRouteClear(p.x[i], p.z[i], cx, cz, SOLDIER_RADIUS)) {
+        out.x = cx;
+        out.z = cz;
+        return true;
+      }
+      if (this.crumbIsAhead(u, cx, cz, i)) {
+        const dx = cx - p.x[i];
+        const dz = cz - p.z[i];
+        const d2 = dx * dx + dz * dz;
+        if (d2 < nearestD2) {
+          nearestD2 = d2;
+          nearest = k;
+        }
+      }
+    }
+    /*
+     * Nothing visible. Head for the closest crumb anyway.
+     *
+     * This is not a fallback for tidiness; without it the rally almost never fires. A man
+     * left behind at a gate is by definition jammed against masonry, and a corridor test
+     * that starts inside — or within a body radius of — solid geometry fails against every
+     * target, visible or not. Measured on a Porta Flaminia transit: of 99 men far enough
+     * from their slot to qualify, 6 had a clear line to the slot itself and **91 could not
+     * see a single one of the 25 breadcrumbs**, so the rally engaged for one man in the
+     * whole cohort and the fix did nothing at all.
+     *
+     * A crumb is a place the unit's own anchor stood, so it is somewhere a body fits. The
+     * worst case of walking at one blind is that `integrate` slides him along a wall on the
+     * way — which is exactly what he would do anyway, except now he is sliding toward
+     * somewhere his unit has actually been instead of at a slot on the far side of a
+     * curtain wall.
+     */
+    if (nearest >= 0) {
+      out.x = this.trailX[base + nearest];
+      out.z = this.trailZ[base + nearest];
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Is this breadcrumb *towards* the unit, rather than further back down the trail?
+   *
+   * The blind fallback picks the nearest crumb, and without this a man who has dropped off
+   * the back of a column picks the one he has already walked past: he turns round, walks to
+   * it, re-plans, picks the same one, and stands there while his unit marches away. Which
+   * is to say the mechanism written to recover stragglers would manufacture them.
+   */
+  private crumbIsAhead(u: UnitGroupState, cx: number, cz: number, i: number): boolean {
+    const p = this.pool;
+    const mine = (u.x - p.x[i]) * (u.x - p.x[i]) + (u.z - p.z[i]) * (u.z - p.z[i]);
+    return (u.x - cx) * (u.x - cx) + (u.z - cz) * (u.z - cz) <= mine;
+  }
+
+  /**
+   * Close the last stride into contact.
+   *
+   * **Nothing else in the tick does this**, and that is why two formations could stand and
+   * look at each other indefinitely. Every mechanism that closes distance stops short:
+   *
+   *  - the anchor stops the moment its order is satisfied, and a Hold order is satisfied
+   *    where the unit is standing;
+   *  - the geometric lock only engages inside `CONTACT_ENTER`, so it cannot *create*
+   *    contact, only recognise it;
+   *  - the press moves the rear ranks up and by construction cannot move the front one —
+   *    a front-ranker's slot offset is zero, so `press[i]` is `min(-0, …)`, which is zero;
+   *  - and `Combat`'s closing nudge is not overwritten but *balanced*: it runs at order 20,
+   *    after this system's integrate at order 10, so the next tick's `steerSoldiers` lerps
+   *    the velocity back toward the slot at `k = 1 - exp(-5.5 dt) = 0.1675`. The two settle
+   *    at a fixed point, and solving it gives 0.140 m of forward creep — which is what the
+   *    front rank was measured holding, to three figures.
+   *
+   * Measured on open ground, both units on Hold, fronts 3.5, 4, 5 and 7 m apart: zero men
+   * in melee after sixty seconds, the front-to-front gap unchanged to the centimetre, and
+   * the front rank crept 0.14 m forward and stopped dead there — against a gladius reach
+   * of 1.1 m. The player's report was "the units are right in front of each other just
+   * standing there not fighting"; this is precisely that, and it is why the *only* thing
+   * that reliably started a fight was an order actively driving an anchor forward.
+   *
+   * So a formation takes the last few metres itself. Deliberately short-ranged and slow:
+   * it closes a gap it is already touching, it does not cross a field, and it is
+   * suppressed entirely while an order is taking the unit somewhere else.
+   */
+  private closeToContact(u: UnitGroupState, dist: number, enemyId: number, dt: number): void {
+    if (enemyId < 0 || dist <= CONTACT_GAP || dist > ENGAGE_REACH) return;
+    // Cheapest gate first, before any geometry: has this unit already wandered as far from
+    // its ordered position as it is allowed to? See `ENGAGE_BUDGET`.
+    const wx = u.x - this.holdX[u.id];
+    const wz = u.z - this.holdZ[u.id];
+    if (wx * wx + wz * wz >= ENGAGE_BUDGET * ENGAGE_BUDGET) return;
+    // A unit the siege system places is not steered by its anchor at all — `steerToSlots`
+    // drives each man to a world slot on the stonework — so closing the anchor would move
+    // a point nothing reads and that `trackOwnedAnchors` overwrites at the end of the tick.
+    if (this.siege.ownsUnit(u.id)) return;
+    const e = this.unitById(enemyId);
+    if (!e || e.destroyed || e.alive === 0 || e.order === UnitOrder.Rout) return;
+
+    // Aim at the nearest point of his frontage, not at his centre. Two laterally-offset
+    // blocks each crabbing onto the other's centre is mutual pursuit, whose solution curve
+    // is a spiral — the same reason `AttackUnit` projects onto the segment.
+    frontSegment(e.x, e.z, e.facing, this.frontHalf(e), SEG_OTHER);
+    closestPointOnSegment(u.x, u.z, SEG_OTHER, AIM);
+    const dx = AIM.x - u.x;
+    const dz = AIM.z - u.z;
+    const d = Math.hypot(dx, dz);
+    if (d < 1e-3) return;
+    const want = Math.atan2(dx, dz);
+
+    /*
+     * Is there anything between us?
+     *
+     * `nearestEnemyFront` compares front segments and knows nothing about masonry, so two
+     * units either side of the 6 m Aurelian curtain can have anchors 5 m apart and pass
+     * every other test here. Without a check the anchor grinds into the wall (harmless) and
+     * `targetFacing` is written (not harmless) — the block turns to face an enemy through
+     * three metres of brick, overriding a facing the player set, at exactly the chokepoint
+     * this whole change exists to improve.
+     *
+     * Marched against `masonry` rather than asked of the pathfinder, and that distinction
+     * decides whether this works at all. `nav.directRouteClear` tests the navigation grid's
+     * *tight* mask, which carries a pad of up to 5.25 m around a curtain bay and 2.6 m
+     * around every insula, and it samples from `s = 0` — so a unit whose own anchor sits in
+     * that pad fails the test against every target in every direction. Pressed against the
+     * curtain, behind a gate jamb, or in any street narrower than about five metres, the
+     * whole behaviour would have switched itself off. That is not hypothetical: it is the
+     * measured failure `rallyPoint` needed a distance fallback for, 91 men in 99.
+     * `ObstacleField` is the exact oriented-box geometry the men are actually collided
+     * against, it is already indexed, and half a metre of step cannot miss a wall.
+     */
+    if (!this.masonry.empty) {
+      const y = this.unitY[u.id] ?? this.groundAt(u.x, u.z);
+      const steps = Math.max(2, Math.ceil(d / 0.5));
+      for (let k = 1; k <= steps; k++) {
+        const t = k / steps;
+        if (this.masonry.blocked(u.x + dx * t, u.z + dz * t, y, ANCHOR_RADIUS)) return;
+      }
+    }
+
+    // Forwards only. A block meets a flank attack by wheeling, and the wheel is the
+    // deliberately slow one at the bottom of `updateUnitOrder`.
+    if ((dx / d) * Math.sin(u.facing) + (dz / d) * Math.cos(u.facing) < 0.26) {
+      if (Math.abs(wrapAngle(want - u.targetFacing)) > 0.26) u.targetFacing = want;
+      return;
+    }
+
+    /*
+     * How far a unit may close on its own initiative before it has to be told to do
+     * something. Without a bound this is a pursuit: `ENGAGE_CLOSE_SPEED` is 0.8 m/s and a
+     * shieldwall withdraws at `1.55 * 0.5 = 0.775`, a testudo at `1.55 * 0.36 = 0.558`, so
+     * an idle unit with no orders at all would follow either of them across the entire map
+     * and they could never break away. The budget is refilled by an order, or by the enemy
+     * getting further off than `ENGAGE_REACH` — that is, by the situation actually changing.
+     */
+    /*
+     * Wheel, do not strafe.
+     *
+     * The movement branch scales its step by how much of the heading points at the
+     * objective, and says why: translating an anchor at full speed in a direction the block
+     * is not facing is what made two units that met orbit each other instead of fighting.
+     * Closing had the same freedom — up to 75 degrees off the bow at the full rate — so it
+     * broke that invariant at the one moment two formations are closest together. Scaling
+     * by the same alignment means a unit turns onto its enemy before it walks at him.
+     */
+    const align = (dx / d) * Math.sin(u.facing) + (dz / d) * Math.cos(u.facing);
+    const step = Math.min(dist - CONTACT_GAP, ENGAGE_CLOSE_SPEED * align * dt);
+    if (step <= 0) return;
+    const ax = u.x + (dx / d) * step;
+    const az = u.z + (dz / d) * step;
+    if (!this.masonry.empty && !this.siege.ownsUnit(u.id)) {
+      this.masonry.resolve(
+        u.x, u.z, ax, az, this.unitY[u.id] ?? this.groundAt(u.x, u.z), ANCHOR_RADIUS, ANCHOR_HIT
+      );
+      u.x = ANCHOR_HIT.x;
+      u.z = ANCHOR_HIT.z;
+    } else {
+      u.x = ax;
+      u.z = az;
+    }
+    // Adopt the new position as the standing order. Without this the unit walks a
+    // centimetre forward and then spends the next tick walking back to where the Hold
+    // order says it should be, which is an oscillation rather than an advance.
+    u.targetX = u.x;
+    u.targetZ = u.z;
+    if (Math.abs(wrapAngle(want - u.targetFacing)) > 0.26) u.targetFacing = want;
   }
 
   /**
@@ -1527,14 +1968,65 @@ export class BattleSystem implements Subsystem {
           // Creep forward, but never in front of the front rank: `-SCRATCH.z` is this
           // man's own setback, so the press closes his own gap and no more. Crowd
           // separation stops him walking into the back of the man ahead.
-          this.press[i] = Math.min(-SCRATCH.z, pressLimit, this.press[i] + PRESS_RATE * dt);
+          /*
+           * Never negative.
+           *
+           * `-SCRATCH.z` is a man's own setback, and it is zero or positive only for the
+           * *ranked* formations. Four are not ranked: `horde` carries a bulge of up to
+           * `1.4 * spacingZ` plus `+-0.75 * spacingZ` of jitter, and `loose` and `skirmish`
+           * carry jitter alone — so their foremost men have a slot **in front of** their own
+           * anchor. Computed maxima: horde +2.19 m on foot, skirmish +3.74 m mounted,
+           * loose +2.37 m mounted. `Math.min` bounds from above, so a negative result
+           * bypassed `PRESS_RATE` entirely and arrived whole: those men were retargeted onto
+           * the anchor line the instant the unit locked, and walked back to it — away from
+           * an enemy they had not yet acquired, which is a way of never acquiring him.
+           *
+           * Clamping keeps the bulge at contact instead of flattening it, so it does change
+           * who can reach whom in the centre files of a warband. That is a balance change,
+           * not a free correction, and `tools/matchup.mjs` is the thing that says so.
+           */
+          this.press[i] = Math.max(0,
+            Math.min(-SCRATCH.z, pressLimit, this.press[i] + PRESS_RATE * dt));
           SCRATCH.z += this.press[i];
         } else if (this.press[i] > 0) {
           this.press[i] = Math.max(0, this.press[i] - PRESS_RELAX * dt);
           SCRATCH.z += this.press[i];
         }
-        const tx = u.x + SCRATCH.x * c + SCRATCH.z * s;
-        const tz = u.z - SCRATCH.x * s + SCRATCH.z * c;
+        let tx = u.x + SCRATCH.x * c + SCRATCH.z * s;
+        let tz = u.z - SCRATCH.x * s + SCRATCH.z * c;
+
+        // Separated, and the way home may be through a wall. Walk the unit's own trail
+        // back instead of leaning on the masonry until the battle ends. Re-planned twice a
+        // second and only for men who are genuinely adrift, so in a formation that is
+        // holding together this costs one distance compare per man.
+        // Manhattan first because it is two subtractions and never *under*-estimates the
+        // real distance, so it cannot miss a straggler; the exact test then runs only for
+        // the handful it lets through, instead of a square root for every man every tick.
+        if (Math.abs(tx - p.x[i]) + Math.abs(tz - p.z[i]) > STRAGGLER_DIST
+          && Math.hypot(tx - p.x[i], tz - p.z[i]) > STRAGGLER_DIST) {
+          const now = this.tickCount * dt;
+          if (now >= this.rallyUntil[i]) {
+            // Phase-jittered per man from his own stable hash, so a cohort that is stranded
+            // together does not re-plan in lockstep for the rest of the battle. Stable and
+            // deterministic: `hash01` of the soldier index, not of anything clock-derived.
+            this.rallyUntil[i] = now + RALLY_REPLAN * (0.6 + 0.8 * hash01(i, 17));
+            if (this.nav && !this.nav.directRouteClear(p.x[i], p.z[i], tx, tz, SOLDIER_RADIUS)
+              && this.rallyPoint(i, u, SCRATCH2)) {
+              this.rallyX[i] = SCRATCH2.x;
+              this.rallyZ[i] = SCRATCH2.z;
+              this.rallyOn[i] = 1;
+            } else {
+              this.rallyOn[i] = 0;
+            }
+          }
+          if (this.rallyOn[i] !== 0) {
+            tx = this.rallyX[i];
+            tz = this.rallyZ[i];
+          }
+        } else if (this.rallyOn[i] !== 0) {
+          // Back in the block: drop the rally point so he dresses on his slot again.
+          this.rallyOn[i] = 0;
+        }
 
         const dx = tx - p.x[i];
         const dz = tz - p.z[i];
@@ -1610,12 +2102,22 @@ export class BattleSystem implements Subsystem {
     // Displacement budget, reset each tick. See `MAX_SEPARATION_STEP`.
     const used = this.sepUsed;
     used.fill(0, 0, n);
+    const solids = this.masonry;
+    const collide = !solids.empty;
+    const hit = this.hitScratch;
 
     for (let i = 0; i < n; i++) {
       if (!p.aliveAt(i)) continue;
       const xi = p.x[i];
       const zi = p.z[i];
       const yi = p.y[i];
+      // Matched to `budgetJ` below, including the mounted case: a horse in a melee is
+      // still a horse and keeps the loose-body budget. Testing only `Fighting` here while
+      // the neighbour side tested `mounted ? 5 : fighting ? 3 : 1` gave a mounted fighter a
+      // 0.08 budget as `i` and 0.22 as `j` against the same `used[i]` counter, so once his
+      // neighbours had spent the smaller figure his own correction was silently dropped.
+      const budgetI = !this.mounted[i] && p.state[i] === SoldierState.Fighting
+        ? MAX_SEPARATION_FIGHTING : MAX_SEPARATION_STEP;
       let pushX = 0;
       let pushZ = 0;
 
@@ -1636,8 +2138,19 @@ export class BattleSystem implements Subsystem {
         // Split the correction by inverse mass. Mounted/foot is baked per soldier at
         // spawn: resolving the unit and then its type for both members of every
         // neighbour pair was the single most expensive thing in the tick.
-        const mi = this.mounted[i] ? 5 : 1;
-        const mj = this.mounted[j] ? 5 : 1;
+        //
+        // A man in melee counts as heavier, because a man in melee is *set*: feet planted,
+        // shoulder behind the shield, leaning into someone. He is not a loose body to be
+        // slid about by whoever walks into the back of him. Without this the front rank of
+        // a formation jammed into a gate is shoved sideways by the whole weight of the
+        // column behind it — measured in the Porta Flaminia carriageway at 0.202 m of
+        // purely lateral movement per fighting man per second, which over a thirty-second
+        // engagement is six metres of sideways wander and is exactly the "snake like
+        // pattern when fighting" in the report. Two men who are both fighting still split
+        // it evenly, so a contact line still gives and buckles; it is the crowd *behind*
+        // that stops steering it.
+        const mi = this.mounted[i] ? 5 : p.state[i] === SoldierState.Fighting ? 3 : 1;
+        const mj = this.mounted[j] ? 5 : p.state[j] === SoldierState.Fighting ? 3 : 1;
         const total = mi + mj;
         const si = (overlap * (mj / total)) * 0.5;
         const sj = (overlap * (mi / total)) * 0.5;
@@ -1654,19 +2167,25 @@ export class BattleSystem implements Subsystem {
         // both masses are positive. So no `Math.abs`, and the divide only happens on the
         // rare pair that actually exhausts the budget — this is the innermost line of the
         // whole tick and it runs a few hundred thousand times a second.
+        // `mj === 3` is exactly "on foot and in melee"; see the mass term above.
+        const budgetJ = mj === 3 ? MAX_SEPARATION_FIGHTING : MAX_SEPARATION_STEP;
         const uj = used[j];
-        if (uj < MAX_SEPARATION_STEP) {
-          const room = MAX_SEPARATION_STEP - uj;
-          if (sj <= room) {
-            p.x[j] += nx * sj;
-            p.z[j] += nz * sj;
-            used[j] = uj + sj;
-          } else {
-            const k = room / sj;
-            p.x[j] += nx * sj * k;
-            p.z[j] += nz * sj * k;
-            used[j] = MAX_SEPARATION_STEP;
+        if (uj < budgetJ) {
+          const room = budgetJ - uj;
+          const kj = sj <= room ? 1 : room / sj;
+          const jx = p.x[j] + nx * sj * kj;
+          const jz = p.z[j] + nz * sj * kj;
+          // The neighbour half of the Gauss-Seidel correction needs the same masonry guard
+          // as a man's own accumulator, and by net displacement it needs it *more*: the
+          // accumulator sums vectorially so opposite neighbours cancel, while these land
+          // one at a time and do not. Guarding only the accumulator left the tunnelling
+          // path open on the writes that actually move men into a gate jamb.
+          if (!collide || sj * kj <= 0.01 || this.elevated[j] !== 0
+            || !solids.blocked(jx, jz, p.y[j], SOLDIER_RADIUS)) {
+            p.x[j] = jx;
+            p.z[j] = jz;
           }
+          used[j] = uj + sj * kj;
         }
       });
 
@@ -1674,10 +2193,47 @@ export class BattleSystem implements Subsystem {
       const push2 = pushX * pushX + pushZ * pushZ;
       if (push2 > 1e-12) {
         const mag = Math.sqrt(push2);
-        const room = Math.max(0, MAX_SEPARATION_STEP - used[i]);
+        const room = Math.max(0, budgetI - used[i]);
         const k = mag > room ? room / mag : 1;
-        p.x[i] += pushX * k;
-        p.z[i] += pushZ * k;
+        /*
+         * Separation is a positional write, and it was the one place in the tick that
+         * could put a man somewhere solid. `integrate` collides the *velocity* step and
+         * takes whatever position separation left behind as its starting point, so a man
+         * shoved into a gate jamb by the column behind him began the next tick inside the
+         * stone and was then dug back out at `escape`'s pace — two systems fighting over
+         * the same metre, every tick, for as long as the crush lasted. And `escape` takes
+         * the *shortest* way out, which for a man pushed past the middle of a wall is the
+         * far side: that is a tunnelling mechanism, not just jitter. Measured in the Porta
+         * Flaminia carriageway before this: men were inside masonry for 312 of every 1,000
+         * man-ticks spent within 12 m of the arch, and 28 of 158 crossings of the wall
+         * plane happened more than 2.23 m off the carriageway — through the jamb.
+         */
+        // Only worth asking when the shove is big enough to matter. A dressed formation
+        // stands at 0.86 m with a 0.84 m body, so almost every man has a millimetre of
+        // overlap with a neighbour every tick and testing all of them against the city
+        // would cost a broadphase query per man per tick for nothing. A centimetre is the
+        // line between "the rank is breathing" and "he is being pushed somewhere".
+        if (collide && mag * k > 0.01 && this.elevated[i] === 0) {
+          // Ask only whether the *destination* is solid, and if it is, decline to shove
+          // him at all. The obvious form — handing `resolve` the whole step — takes the
+          // "already inside" branch whenever he is already in stone, which is the premise
+          // here, and that branch calls `escape`: it discards the requested displacement
+          // and moves him up to `MAX_PUSH` = 1.1 m, five times the loose-body budget and
+          // fourteen times the fighting one, off a single centimetre of intended shove.
+          // `blocked` is that question and only that question — one `solidAt`, no `escape`,
+          // no `Resolved` to write. Digging a man out is `integrate`'s job, once per tick,
+          // against its own budget; and if the shove happens to move him *out* of stone,
+          // the destination is clear, so it is applied.
+          const tx2 = xi + pushX * k;
+          const tz2 = zi + pushZ * k;
+          if (!solids.blocked(tx2, tz2, p.y[i], SOLDIER_RADIUS)) {
+            p.x[i] = tx2;
+            p.z[i] = tz2;
+          }
+        } else {
+          p.x[i] += pushX * k;
+          p.z[i] += pushZ * k;
+        }
         used[i] += mag * k;
       }
     }
