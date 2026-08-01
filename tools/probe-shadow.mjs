@@ -285,12 +285,60 @@ for (const name of requested) {
   const noise = await darkFraction(A, A2);
 
   // --- everything that casts ------------------------------------------------
-  await page.evaluate(() => { window.__game.engine.context.renderer.shadowMap.enabled = false; });
+  /*
+   * `shadowMap.enabled` is a *compile-time* switch: three writes USE_SHADOWMAP into every
+   * program from it. Flipping the flag alone leaves the shaders sampling the last shadow map
+   * rendered, which is still resident, so the frame does not change at all — this arm reported
+   * dLum 0.000/255 over 0.00% of the frame while the crowd-only arm beside it reported 9.7,
+   * which is self-contradictory and is what gave it away. Every material has to be marked for
+   * recompile on the way in and on the way out.
+   */
+  const markAll = (on) => page.evaluate((v) => {
+    const ctx = window.__game.engine.context;
+    ctx.renderer.shadowMap.enabled = v;
+    ctx.scene.traverse((o) => {
+      if (!o.isMesh) return;
+      for (const m of (Array.isArray(o.material) ? o.material : [o.material])) if (m) m.needsUpdate = true;
+    });
+  }, on);
+  await markAll(false);
   await step();
   const noAll = await shot(`${name}-noshadow`);
-  await page.evaluate(() => { window.__game.engine.context.renderer.shadowMap.enabled = true; });
+  await markAll(true);
   await step();
   const allShadow = await darkFraction(noAll, A);
+
+  /*
+   * Blocker-search radius, A/B'd in this same session.
+   *
+   * It has to be in-session. Two runs of this probe at identical configuration differ on
+   * 50-70 % of pixels with a mean of 17-27/255, because the dust and particle VFX reseed per
+   * session even with the sim clock paused — so a before/after built from two separate runs
+   * cannot resolve a shadow filter change, and an eye comparison across them is worthless.
+   * TC_SEARCH_TEXELS is guarded by #ifndef precisely so it can be overridden here.
+   */
+  const setSearch = (v) => page.evaluate((val) => {
+    const ctx = window.__game.engine.context;
+    let n = 0;
+    ctx.scene.traverse((o) => {
+      if (!o.isMesh) return;
+      for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+        if (!m) continue;
+        m.defines = m.defines || {};
+        if (val === null) delete m.defines.TC_SEARCH_TEXELS;
+        else m.defines.TC_SEARCH_TEXELS = val;
+        m.needsUpdate = true;
+        n++;
+      }
+    });
+    return n;
+  }, v);
+  const nSearch = await setSearch('3.0');
+  await step();
+  const searchNarrow = await shot(`${name}-search3`);
+  await setSearch(null);
+  await step();
+  const searchWide = await darkFraction(searchNarrow, A);
 
   // --- the crowd only -------------------------------------------------------
   const flipped = await page.evaluate(() => {
@@ -345,6 +393,7 @@ for (const name of requested) {
     `${label.padEnd(16)} dLum ${r.dLum.toFixed(3).padStart(7)}/255   area ${pc(r.frac).padStart(7)}  depth ${r.meanDepth.toFixed(1).padStart(5)}/255  survives ${r.ratio.toFixed(3)} ${extra}`);
   row('noise floor', noise, '(the floor the rest must clear)');
   row('all shadows', allShadow);
+  row('search 9->3', searchWide, `(blocker-search disc narrowed on ${nSearch} materials, in-session)`);
   row('crowd shadows', crowd, `(${flipped} tiers flipped)`);
   row('hbao', ao);
   row('contact ss', contact, '(min-composited with hbao, so this is its own marginal share)');

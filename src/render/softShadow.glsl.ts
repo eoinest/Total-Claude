@@ -42,10 +42,12 @@
  *      linear, so `shadowCoord.z` is a plain fraction of the light's near..far range and a
  *      search over the first `TC_THROW_MAX` metres of it converges in four steps. The
  *      hardware comparison sampler cannot return a depth, but it can answer "is anything
- *      in front of this plane", which is all a binary search needs. The search runs on the
- *      *same wide disc* as the probe rather than on the centre tap, which is what keeps the
- *      lit side of a penumbra from collapsing to a hard edge — both sides of the boundary
- *      see the same neighbourhood and therefore agree on the radius.
+ *      in front of this plane", which is all a binary search needs. The search runs on a
+ *      *narrow* disc rather than on the centre tap: a disc keeps the lit side of a penumbra
+ *      from collapsing to a hard edge, because both sides of the boundary see the same
+ *      neighbourhood and therefore agree on the radius. Whether that disc is *too* wide inside
+ *      a crowd was the leading theory for the merged-wedge defect; it was tested in-session and
+ *      ruled out. See `SEARCH_TEXELS`.
  *   3. **An 8-tap Vogel filter at the radius that implies.**
  *
  * Bounds. `TC_PEN_MIN` keeps a contact shadow from aliasing into stair-steps; `TC_PEN_MAX`
@@ -70,6 +72,36 @@ const PEN_MIN = 0.025;
 /** Cost bound on the wide probe, in texels. */
 const RADIUS_MAX_TEXELS = 9.0;
 /**
+ * Radius of the *blocker search* disc, in texels. Currently equal to the cost bound, so
+ * `min( rMax, TC_SEARCH_TEXELS )` is `rMax` and this changes no behaviour — it exists as a
+ * separate, overridable knob because it was the leading suspect for a real defect and had to
+ * be ruled out by measurement rather than by argument.
+ *
+ * The hypothesis, which was wrong. A blind critic found that a formation drops one merged grey
+ * wedge in which you cannot count men, while grass a metre away casts crisp shadows. The search
+ * probes at `rMax` — up to 9 texels, and at cascade 1's 4.2 cm texel a 38 cm disc, about the
+ * gap between two men in a rank. So inside a formation the disc should straddle a neighbour at
+ * every depth tested, `tcDiscLit` should never return "all lit", the binary search should never
+ * narrow, `hi` should stay 1, and `throwM` should saturate at `TC_THROW_MAX` — giving every
+ * pixel of a crowd's cast shadow the widest filter in the shader, a 38 cm blur across a 45 cm
+ * man. It fits the symptom exactly, including why an isolated grass tuft with open sky around
+ * it stays sharp.
+ *
+ * Measured in-session, narrowing this to 3 texels across all 231 materials moves the frame by
+ * **0.009/255 at romanline and 0.017/255 at raking, over 0.00 % of the frame**, against a
+ * measured noise floor of 0.000 and a crowd-shadow signal of 9.8/255. The search is not
+ * saturating, or if it is, the saturation is not what is softening the shadow. Hypothesis dead.
+ *
+ * It had to be measured in-session because it cannot be measured any other way: two runs of
+ * `probe-shadow.mjs` at identical configuration differ on 50-70 % of pixels with a mean of
+ * 17-27/255, since the dust and particle VFX reseed per session even with the sim clock paused.
+ * A cross-session before/after of a shadow filter is pure noise, and an eye comparison across
+ * two runs is worse — one such comparison of a `THROW_MAX` change looked convincing and was
+ * entirely session reseeding. The `#ifndef` guard below exists so the probe can override this
+ * from a material define and keep the comparison inside one session.
+ */
+const SEARCH_TEXELS = 9.0;
+/**
  * Radius, in texels, for the fixed-width fallback compiled in under `TC_SOFT_OFF`.
  * This is three's own PCF filter — the one this file replaced — kept as a compiled arm so
  * the throw-dependent path's cost can be measured against it rather than estimated.
@@ -93,6 +125,12 @@ uniform vec2 tcShadowGeom[ CSM_CASCADES ];
 #define TC_PEN_MAX ${PEN_MAX}
 #define TC_PEN_MIN ${PEN_MIN}
 #define TC_RADIUS_MAX_TEXELS ${RADIUS_MAX_TEXELS.toFixed(1)}
+// Overridable from a material define so the probe can A/B it in one session. Cross-session
+// frame comparison cannot resolve this: two runs of identical configuration differ on ~60 % of
+// pixels because the dust and particle VFX reseed per session even with the sim clock paused.
+#ifndef TC_SEARCH_TEXELS
+#define TC_SEARCH_TEXELS ${SEARCH_TEXELS.toFixed(1)}
+#endif
 #define TC_PCF_FALLBACK ${PCF_FALLBACK_TEXELS.toFixed(1)}
 
 // Three taps of the five-tap disc, reused at each binary-search depth. Three is enough to
@@ -161,12 +199,16 @@ float tcSoftShadow(
   // zWin is TC_THROW_MAX metres expressed in shadowCoord.z. Sampling at z - o asks whether
   // anything lies between the receiver and a plane o nearer the light; the smallest o for
   // which the answer is no is the throw distance.
+  //
+  // Overridable search radius so the probe can A/B it in one session; equal to rMax by
+  // default, so this is the original behaviour. See TC_SEARCH_TEXELS for what was ruled out.
+  float rSearch = min( rMax, TC_SEARCH_TEXELS );
   float zWin = min( TC_THROW_MAX / mPerZ, shadowCoord.z );
   float lo = 0.0;
   float hi = 1.0;
   for ( int s = 0; s < 4; s ++ ) {
     float mid = ( lo + hi ) * 0.5;
-    float lit = tcDiscLit( shadowMap, uv, shadowCoord.z - zWin * mid, rMax * texel, phi );
+    float lit = tcDiscLit( shadowMap, uv, shadowCoord.z - zWin * mid, rSearch * texel, phi );
     if ( lit > 0.99 ) hi = mid; else lo = mid;
   }
   float throwM = hi * zWin * mPerZ;
