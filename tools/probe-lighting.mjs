@@ -228,6 +228,61 @@ function quartilePopulation(ref, solMask) {
   };
 }
 
+/**
+ * Intra-figure luminance spread, in stops.
+ *
+ * Critic D's separating observation was that the reference carries roughly **4 stops of range
+ * inside a single figure** — helmet crowns clipping bright against near-black interstices —
+ * where ours holds under 1.5 and a rank collapses into one grey-brown mat. That is a different
+ * quantity from the mask-wide p05..p95 spread, which is dominated by the difference between
+ * sunlit and shadowed men rather than by structure within one man.
+ *
+ * Measured in blocks rather than pixel neighbourhoods, by agreement with the anti-aliasing
+ * workstream. Their harshness ratio is explicitly a pixel-scale measure and their mip and
+ * specular filtering is *designed* to reduce high-frequency variance; if this instrument used
+ * a 3x3 local standard deviation the two workstreams would cancel on paper while both
+ * improving the image. A block a few tens of pixels across sits well above the 1-4 px aliasing
+ * scale, so edge filtering does not register here as lost contrast.
+ *
+ * Reported at several block sizes because the honest answer is scale-dependent and a single
+ * number would hide that. At the `raking` camera a man is roughly 40-80 px tall, so 32 px is
+ * the figure-scale headline; 16 px is sub-figure and 64 px starts mixing neighbours.
+ */
+function figureSpread(ref, solMask, sizes = [16, 32, 64]) {
+  const W = ref.info.width, H = ref.info.height;
+  const lum = new Float64Array(W * H);
+  for (let i = 0; i < W * H; i++) lum[i] = lumAt(ref.data, ref.info, i) / 255;
+  const out = {};
+  for (const B of sizes) {
+    const stops = [];
+    for (let by = 0; by + B <= H; by += B) {
+      for (let bx = 0; bx + B <= W; bx += B) {
+        const v = [];
+        for (let y = by; y < by + B; y++) {
+          for (let x = bx; x < bx + B; x++) {
+            const i = y * W + x;
+            if (solMask[i] === 1) v.push(lum[i]);
+          }
+        }
+        // Only blocks that are mostly figure, so this measures range *within* a man and not
+        // the step from his silhouette to the field behind him.
+        if (v.length < B * B * 0.7) continue;
+        v.sort((a, b) => a - b);
+        const lo = Math.max(1e-4, v[Math.floor(v.length * 0.05)]);
+        const hi = Math.max(1e-4, v[Math.floor(v.length * 0.95)]);
+        stops.push(Math.log2(hi / lo));
+      }
+    }
+    stops.sort((a, b) => a - b);
+    out[B] = {
+      blocks: stops.length,
+      meanStops: stops.length ? stops.reduce((a, b) => a + b, 0) / stops.length : 0,
+      medianStops: stops.length ? stops[Math.floor(stops.length / 2)] : 0,
+    };
+  }
+  return out;
+}
+
 /** Mean / percentiles of display luminance over a boolean mask, in 0..1 display units. */
 function statsOver(ref, mask) {
   const n = ref.info.width * ref.info.height;
@@ -608,6 +663,7 @@ for (const name of requested) {
       frame: statsOver(r, all),
       quartile: quartileStats(r),
       population: quartilePopulation(r, sol.mask),
+      spread: figureSpread(r, sol.mask),
     };
     await restore();
     await step(4);
@@ -652,6 +708,13 @@ for (const name of requested) {
   const pop = res.base.population;
   console.log(`  POPULATION  soldiers are ${(pop.soldierShareOfFrame * 100).toFixed(1)}% of the frame but ${(pop.soldierShareOfDarkQ * 100).toFixed(1)}% of its darkest quartile; ${(pop.soldierPixelsInDarkQ * 100).toFixed(1)}% of soldier pixels fall inside that quartile`);
   console.log(`              ${pop.soldierShareOfDarkQ > 0.5 ? 'men DOMINATE the darkest quartile — lifting them moves the critic\'s frame metric too' : "men are a MINORITY of the darkest quartile — a man-selective lift barely touches the critic's frame metric"}`);
+
+  const sp = res.base.spread;
+  console.log(`  SPREAD      intra-figure luminance range, p05..p95 within figure-scale blocks (reference ~4.0 stops, ours had ~1.5):`);
+  for (const B of [16, 32, 64]) {
+    const e = sp[B];
+    console.log(`                ${String(B).padStart(2)}px blocks  ${e.meanStops.toFixed(2)} stops mean, ${e.medianStops.toFixed(2)} median  (${e.blocks} blocks >=70% figure)`);
+  }
 
   const tArm = res.notint;
   if (tArm) {
