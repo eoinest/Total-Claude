@@ -8,6 +8,7 @@
  *
  * Usage:
  *   node tools/shoot.mjs                          # every shot in the default set
+ *   node tools/shoot.mjs --set=deck               # the ten-frame blind deck, varied
  *   node tools/shoot.mjs --shots=wide,closeup     # a subset
  *   node tools/shoot.mjs --out=screenshots/pass3  # alternate output directory
  *   node tools/shoot.mjs --w=2560 --h=1440        # resolution
@@ -202,6 +203,111 @@ const SHOTS = {
     desc: 'Wide view mid-collapse — the pass\'s triangle ceiling, 18.3 M reported / 6.97 M unique',
     x: 0, z: 60, zoom: 0.60, yaw: Math.PI * 0.82, at: 171,
   },
+
+  /*
+   * ---------------------------------------------------------------------------
+   * The blind deck: ten frames that are ten trials.
+   * ---------------------------------------------------------------------------
+   *
+   * `node tools/shoot.mjs --set=deck` shoots exactly these, and nothing above should be
+   * used to build a blind deck again.
+   *
+   * The problem this fixes is not resolution or framing, it is that the ten frames the
+   * critic has been grading were never independent. They shared one map, one grass asset,
+   * one helmet, one hour of one afternoon and one quality tier, and three of the ten pairs
+   * were near-duplicates of each other — `establishing`/`wide` differ by 0.02 zoom,
+   * `clash`/`melee` are the same follow target sixteen seconds apart, `raking`/`romanline`
+   * both look along the Roman line. The Rome II pool has no such structure: ten plates from
+   * ten battles. So a grader who identifies two of ours gets the other eight for free on
+   * family resemblance, and reports 10/10 for a renderer that might only have failed twice.
+   * Nothing about the harness's crop, encode or byte pass touches that.
+   *
+   * What varies here, deliberately, one axis at a time where possible:
+   *
+   *   map        six Campus Martius, four Pydna — different terrain, ground textures,
+   *              vegetation and latitude. Pydna is 40.3N in June against Rome's 41.9N in
+   *              March, so even at the same clock hour the sun sits elsewhere.
+   *   hour       07:30 to 19:00 across the set, against the single 17:00 default that every
+   *              graded frame before this shared. Low sun, high sun, and dusk.
+   *   quality    `deck-rout` is shot at `high`, not ultra. Every graded frame in this
+   *              project's history was ultra, so the deck has never contained an honest
+   *              picture of what most players are actually looking at, and a tier nobody
+   *              photographs is a tier nobody fixes.
+   *
+   *              It is `high` rather than `low`, and the reason is worth recording because
+   *              `low` was tried first and was wrong. The tiers do not only change render
+   *              settings: `maxSoldiers` is 1,600 at low and 3,200 at medium against an
+   *              order of battle of 8,632. A low-tier frame therefore photographs a
+   *              different battle — the shot came back with 1,189 men where ultra has
+   *              8,632 — and headcount, not filtering, is what a grader would sort on. That
+   *              is a confound dressed up as honesty. `high` caps at 10,000, so every man
+   *              stays on the field, and it still turns the dial down properly: shadow maps
+   *              at a quarter the area, grass density 1 against 1.5, and the pixel ratio at
+   *              1.5 rather than 2.
+   *   subject    one frame per scene family. No two frames here share a follow target.
+   *
+   * Anything with a `map` or `hour` costs a page load — see the grouping note below. Ten
+   * frames land in eight loads, about four minutes.
+   */
+  'deck-line': {
+    desc: 'DECK: behind the Roman line at first light, looking north at the host',
+    follow: 'ownLine', zoom: 0.70, at: 1, hour: 7.5,
+  },
+  'deck-horde': {
+    desc: 'DECK: into the Juthungi mass under a high sun — variety and disorder',
+    follow: 'germanFront', zoom: 0.36, at: 2, hour: 12.0,
+  },
+  'deck-clash': {
+    desc: 'DECK: the lines meeting, mid-afternoon',
+    follow: 'contact', zoom: 0.30, at: 72, hour: 14.3,
+  },
+  'deck-cavalry': {
+    desc: 'DECK: the cavalry wing sweeping the flank, late light',
+    follow: 'cavalryUnit', zoom: 0.30, at: 70, hour: 16.4,
+  },
+  'deck-city': {
+    desc: 'DECK: the Aurelian Wall with the city behind it',
+    x: 40, z: 620, zoom: 0.74, yaw: Math.PI * 0.06, at: 2, hour: 9.8,
+  },
+  'deck-aftermath': {
+    desc: 'DECK: late battle — corpses, routs, dust and blood on the ground',
+    follow: 'corpses', zoom: 0.34, at: 190, hour: 16.4,
+  },
+  // Pydna: different ground, different vegetation, different latitude and season. Its own
+  // default hour is 17:00 and its presets run 08:30 to 19:00.
+  'deck-pydna-horizon': {
+    // 16:00, not the 19:00 preset. At 19:00 the frame came back at a few percent luminance
+    // with a blown sun blob on the skyline and nothing else legible — a frame a grader
+    // sorts as "the dark one" without looking at the rendering, which is the same class of
+    // mistake as leaving the HUD up.
+    desc: 'DECK: Pydna in the late afternoon, low camera with sky and horizon',
+    map: 'pydna', hour: 16.0,
+    x: -420, z: -120, zoom: 0.12, yaw: Math.PI * 0.62, at: 2,
+  },
+  'deck-pydna-line': {
+    desc: 'DECK: Pydna, telephoto along the front rank in the morning',
+    map: 'pydna', hour: 8.5,
+    follow: 'romanFront', zoom: 0.36, at: 2,
+  },
+  'deck-pydna-terrain': {
+    desc: 'DECK: Pydna countryside at noon — terrain, vegetation and lighting alone',
+    map: 'pydna', hour: 12.5,
+    x: -560, z: -420, zoom: 0.44, yaw: Math.PI * 0.4, at: 2,
+  },
+  'deck-rout': {
+    // The honest non-ultra frame. Captured, not simulated: the engine builds a different
+    // shadow cascade set and a different grass density at this tier, so downscaling an
+    // ultra render would be a picture of something the game never draws.
+    desc: 'DECK: wide view mid-collapse, shot at the HIGH quality tier',
+    quality: 'high', hour: 16.2,
+    x: 0, z: 60, zoom: 0.60, yaw: Math.PI * 0.82, at: 171,
+  },
+};
+
+/** Named shot sets. `--set=deck` is the only pool a blind round should be built from. */
+const SETS = {
+  deck: Object.keys(SHOTS).filter((k) => k.startsWith('deck-')),
+  all: Object.keys(SHOTS).filter((k) => !k.startsWith('deck-')),
 };
 
 const args = new Map(
@@ -213,8 +319,10 @@ const args = new Map(
 
 if (args.has('list')) {
   for (const [k, v] of Object.entries(SHOTS)) {
-    console.log(`${k.padEnd(14)} t+${String(v.at).padStart(3)}s  ${v.desc}`);
+    const world = [v.map ?? '', v.hour !== undefined ? `${v.hour}h` : '', v.quality ?? ''].filter(Boolean).join(' ');
+    console.log(`${k.padEnd(20)} t+${String(v.at).padStart(3)}s  ${world.padEnd(16)} ${v.desc}`);
   }
+  console.log(`\nsets: ${Object.entries(SETS).map(([k, v]) => `${k} (${v.length})`).join(', ')}`);
   process.exit(0);
 }
 
@@ -224,8 +332,14 @@ const OUT = path.resolve(ROOT, args.get('out') ?? 'screenshots');
 const QUALITY = args.get('quality') ?? 'ultra';
 const requested = args.get('shots')
   ? String(args.get('shots')).split(',').map((s) => s.trim()).filter(Boolean)
-  : Object.keys(SHOTS);
+  : (SETS[args.get('set') ?? 'all'] ?? null);
+if (!requested) {
+  console.error(`Unknown set "${args.get('set')}". Available: ${Object.keys(SETS).join(', ')}`);
+  process.exit(2);
+}
 const PORT = Number(args.get('port') ?? 5199);
+/** Device pixel ratio. 1 is what every historical plate was shot at — see the note at `newPage`. */
+const DPR = Number(args.get('dpr') ?? 1);
 /*
  * The HUD is OFF by default, and turning it on costs you a keystroke.
  *
@@ -336,9 +450,26 @@ try {
     ],
   });
 
+  /*
+   * Device pixel ratio, and the reason this is a flag rather than a constant.
+   *
+   * `QUALITY_PRESETS.ultra.maxPixelRatio` is 2, but the engine takes
+   * `min(maxPixelRatio, window.devicePixelRatio)` and a headless Chromium reports 1. So
+   * **every graded plate this project has ever produced was rendered at one sample per
+   * pixel**, while a player on the retina display this is developed on gets two. The blind
+   * deck has been photographing a configuration the product does not ship, and in the
+   * direction that flatters the reference: one sample per pixel is exactly the condition
+   * under which the aliasing separator is worst.
+   *
+   * The default stays 1 so that round 22 is comparable with the twenty-one before it — a
+   * measurement that changes two things at once measures neither. `--dpr=2` shoots the
+   * other arm, and the value is recorded in `report.json` so a deck can never again be
+   * silently one thing or the other. A dpr-2 pass writes a WxH screenshot at the same
+   * nominal size; the extra samples are spent inside the renderer, not on the file.
+   */
   const page = await browser.newPage({
     viewport: { width: W, height: H },
-    deviceScaleFactor: 1,
+    deviceScaleFactor: DPR,
   });
 
   const consoleErrors = [];
@@ -347,33 +478,102 @@ try {
   });
   page.on('pageerror', (err) => consoleErrors.push(`pageerror: ${err.message}`));
 
-  // `--battle=<token>` grades a configured order of battle rather than the historical one.
-  // Needed because the pre-battle menu lets a player field materially more men than the
-  // default 8,644 that every figure in docs/ARCHITECTURE.md was measured at, and a budget
-  // validated only at the default says nothing about the configurations the menu offers.
-  const battleArg = args.get('battle') ? `&battle=${args.get('battle')}` : '';
-  const url = `${base}/?harness=1&quality=${QUALITY}&w=${W}&h=${H}${battleArg}`;
-  console.log(`• loading ${url}`);
-  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  /*
+   * ---------------------------------------------------------------------------
+   * Scene groups: one page load per distinct world.
+   * ---------------------------------------------------------------------------
+   *
+   * Every graded frame this project has ever produced came off one map, at one hour, in
+   * one season, at one quality tier. That is not ten trials, it is one trial photographed
+   * ten times, and it inflates a grader's apparent accuracy: identify two or three of ours
+   * and the rest fall by family resemblance — same grass, same helmet, same low sun, same
+   * hazy distance. The near-duplicate pairs make it worse and they are on our side only,
+   * because the ten press plates come from ten different battles.
+   *
+   * `map`, `hour`, `scenario` and `quality` are fixed before the engine is constructed —
+   * the tier sizes the soldier pool and the shadow cascades at `init`, and the map is
+   * published to `src/maps` by `resolveConfig` before `TerrainSystem.init` runs — so they
+   * cannot be changed on a live page. Shots carrying any of them are therefore grouped and
+   * each group gets its own load. A shot table with none of them (which is every shot
+   * defined above) collapses to exactly one group and one page load, so nothing changes
+   * for the six other tools and agents that drive this file.
+   *
+   * `hour` alone *is* live-settable — `SkySystem.setTimeOfDay` re-derives the sun direction
+   * from the real equatorial-to-horizontal transform and `LightingSystem` reads
+   * `sky.sunDirection` every frame — but it is folded into the group key anyway. Doing it
+   * at load means the HDRI probe and the sky preset are chosen for that hour rather than
+   * blended onto a rig built for another one.
+   */
+  const groupKey = (s) => JSON.stringify([s.map ?? null, s.hour ?? null, s.scenario ?? null, s.quality ?? QUALITY]);
+  const groups = new Map();
+  for (const name of requested) {
+    const k = groupKey(SHOTS[name]);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(name);
+  }
 
-  // Wait for the engine to finish async init.
-  await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 120000 });
+  /**
+   * `?battle=` is base64url of a partial config; `sanitiseConfig` refills the rest. The
+   * same encoding `MainMenu.encodeConfig` writes and `tools/shoot-carthage.mjs` uses.
+   */
+  const battleToken = (o) => Buffer.from(JSON.stringify(o)).toString('base64')
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
-  // Confirm we actually got a hardware-ish GL context, not a stub.
-  const gl = await page.evaluate(() => {
-    const c = document.createElement('canvas');
-    const g = c.getContext('webgl2');
-    if (!g) return { ok: false };
-    const dbg = g.getExtension('WEBGL_debug_renderer_info');
-    return {
-      ok: true,
-      renderer: dbg ? g.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : 'unknown',
-      vendor: dbg ? g.getParameter(dbg.UNMASKED_VENDOR_WEBGL) : 'unknown',
-    };
-  });
-  console.log(`• webgl2: ${gl.ok ? `${gl.vendor} / ${gl.renderer}` : 'UNAVAILABLE'}`);
-  if (!gl.ok) throw new Error('WebGL2 unavailable in the harness browser');
+  let gl = null;
+  async function loadScene(shot) {
+    const cfg = {};
+    if (shot.map) cfg.map = shot.map;
+    if (shot.hour !== undefined) cfg.timeOfDay = shot.hour;
+    if (shot.scenario) cfg.scenario = shot.scenario;
+    // `--battle=<token>` still grades a configured order of battle rather than the
+    // historical one, and wins over the per-shot fields when both are given: it is the
+    // caller being explicit about the whole config.
+    const battleArg = args.get('battle')
+      ? `&battle=${args.get('battle')}`
+      : (Object.keys(cfg).length ? `&battle=${battleToken(cfg)}` : '');
+    const q = shot.quality ?? QUALITY;
+    const url = `${base}/?harness=1&quality=${q}&w=${W}&h=${H}${battleArg}`;
+    console.log(`• loading ${url}`);
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    // A `{ timeout }` object in the *argument* slot is silently treated as page data and
+    // the wait falls back to the 30 s default — nineteen tools in this repo had that bug.
+    // Third positional, always.
+    await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 180000 });
 
+    if (!gl) {
+      // Confirm we actually got a hardware-ish GL context, not a stub. Once is enough.
+      gl = await page.evaluate(() => {
+        const c = document.createElement('canvas');
+        const g = c.getContext('webgl2');
+        if (!g) return { ok: false };
+        const dbg = g.getExtension('WEBGL_debug_renderer_info');
+        return {
+          ok: true,
+          renderer: dbg ? g.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : 'unknown',
+          vendor: dbg ? g.getParameter(dbg.UNMASKED_VENDOR_WEBGL) : 'unknown',
+        };
+      });
+      console.log(`• webgl2: ${gl.ok ? `${gl.vendor} / ${gl.renderer}` : 'UNAVAILABLE'}`);
+      if (!gl.ok) throw new Error('WebGL2 unavailable in the harness browser');
+    }
+
+    // The hour is applied again on the live page as well as through the token, because
+    // `sanitiseConfig` is entitled to reject a value the token asked for and a silently
+    // ignored hour would put two frames in the deck under the same sun.
+    if (shot.hour !== undefined) {
+      const got = await page.evaluate((h) => {
+        const sky = window.__game?.engine?.context?.tryGet?.('sky');
+        if (!sky || typeof sky.setTimeOfDay !== 'function') return null;
+        sky.setTimeOfDay(h);
+        return sky.timeOfDay;
+      }, shot.hour);
+      if (got === null) throw new Error('sky subsystem has no setTimeOfDay; cannot honour a per-shot hour');
+      if (Math.abs(got - shot.hour) > 0.01) throw new Error(`hour ${shot.hour} was not applied (sky reports ${got})`);
+    }
+    await applyHudPolicy();
+  }
+
+  async function applyHudPolicy() {
   if (!SHOW_HUD) {
     // Belt and braces: hide the HUD root outright, and re-hide it before every shot in
     // case a subsystem re-creates or unhides its own nodes.
@@ -400,14 +600,21 @@ try {
   } else {
     console.log('• --hud: INTERFACE VISIBLE. These frames must never enter a blind deck.');
   }
+  }
 
-  // Shoot in ascending sim time so we only ever fast-forward.
-  const ordered = [...requested].sort((a, b) => SHOTS[a].at - SHOTS[b].at);
+  // Shoot in ascending sim time within each group, so we only ever fast-forward.
+  const ordered = [...groups.values()].flatMap((names) => [...names].sort((a, b) => SHOTS[a].at - SHOTS[b].at));
+  let loadedKey = null;
 
   for (const name of ordered) {
     const shot = SHOTS[name];
     const t0 = Date.now();
     try {
+      // Inside the try, so a group whose world fails to build costs that group and not the
+      // rest of the pass. `loadedKey` is only advanced on success, so the next shot in a
+      // broken group retries rather than shooting whatever happens to be on screen.
+      const k = groupKey(shot);
+      if (k !== loadedKey) { await loadScene(shot); loadedKey = k; }
       const info = await page.evaluate(
         async ({ s }) => {
           const g = window.__game;
@@ -749,6 +956,7 @@ try {
         tool: 'tools/shoot.mjs',
         argv: process.argv.slice(2),
         hud: SHOW_HUD,
+        dpr: DPR,
         worldOverlay: overlayHidden,
         blindSafe: !SHOW_HUD,
         commit: COMMIT,
