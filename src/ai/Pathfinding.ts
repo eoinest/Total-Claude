@@ -1,7 +1,7 @@
 import type { EngineContext, Subsystem } from '../core/Engine';
 import type { TerrainSystem } from '../terrain/TerrainSystem';
 import { HALF_EXTENT } from '../terrain/TerrainSystem';
-import { formation, FORMATIONS } from '../sim/formations';
+import { BASE_SPACING_X, formation, FORMATIONS } from '../sim/formations';
 import type { UnitGroupState, UnitTypeDef } from '../sim/types';
 import { isCavalry } from '../units/roster';
 import { profileBegin, profileEnd } from './profile';
@@ -773,7 +773,7 @@ export const footprintOf = (u: UnitGroupState, def: UnitTypeDef): Footprint => {
   const hit = FOOTPRINT_CACHE.get(key);
   if (hit) return hit;
 
-  const baseX = isCavalry(def) ? 1.95 : 0.86;
+  const baseX = isCavalry(def) ? BASE_SPACING_X.mounted : BASE_SPACING_X.foot;
   const cur = formation(u.formationId);
   const max = cur.width(strength) * baseX * cur.spacingXMul * 0.5;
   let min = max;
@@ -792,7 +792,7 @@ export const footprintOf = (u: UnitGroupState, def: UnitTypeDef): Footprint => {
 export const narrowestFormation = (def: UnitTypeDef, strength: number): string => {
   let best = def.formations[0];
   let bestW = Infinity;
-  const baseX = isCavalry(def) ? 1.95 : 0.86;
+  const baseX = isCavalry(def) ? BASE_SPACING_X.mounted : BASE_SPACING_X.foot;
   for (const id of def.formations) {
     const f = FORMATIONS[id];
     if (!f) continue;

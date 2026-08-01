@@ -58,6 +58,13 @@ export interface FormationDef {
   idlePose: 'relaxed' | 'alert' | 'brace';
 }
 
+/**
+ * Metres between men before a formation's multipliers, so every system that estimates a
+ * footprint agrees with the one that actually places the men.
+ */
+export const BASE_SPACING_X = { foot: 0.95, mounted: 1.95 } as const;
+export const BASE_SPACING_Z = { foot: 1.32, mounted: 3.1 } as const;
+
 /** Centre a rank so the formation's anchor sits at the middle of its front. */
 const centredX = (file: number, width: number, spacingX: number): number =>
   (file - (width - 1) * 0.5) * spacingX;
@@ -88,8 +95,11 @@ export const FORMATIONS: Record<string, FormationDef> = {
     id: 'shieldwall',
     name: 'Shield Wall',
     description: 'Shields locked edge to edge. Far tougher to break, but slow and rigid.',
-    spacingXMul: 0.74,
-    spacingZMul: 0.86,
+    // Tight, but never inside the 0.84 m body the separation pass enforces: at 0.74 the
+    // slot a man was sent to was closer than his own shoulders, so the wall spent the
+    // whole battle being shoved back out of itself and the men interpenetrated.
+    spacingXMul: 0.9,
+    spacingZMul: 0.9,
     width: (s) => Math.max(8, Math.round(Math.sqrt(s * 3.0))),
     offset(out, slot, width, _ranks, sx, sz) {
       const rank = Math.floor(slot / width);
@@ -107,8 +117,9 @@ export const FORMATIONS: Record<string, FormationDef> = {
     id: 'testudo',
     name: 'Testudo',
     description: 'The tortoise. Shields to the front and overhead — near-immune to missiles, nearly helpless in melee.',
-    spacingXMul: 0.6,
-    spacingZMul: 0.62,
+    // The tightest formation in the game and still not tighter than a man is wide.
+    spacingXMul: 0.9,
+    spacingZMul: 0.68,
     width: (s) => Math.max(6, Math.round(Math.sqrt(s * 1.5))),
     offset(out, slot, width, _ranks, sx, sz) {
       const rank = Math.floor(slot / width);
@@ -156,8 +167,11 @@ export const FORMATIONS: Record<string, FormationDef> = {
     id: 'loose',
     name: 'Loose',
     description: 'Spread out to blunt arrows and artillery. Weak in a shoving match.',
-    spacingXMul: 1.95,
-    spacingZMul: 1.8,
+    // The scattered orders set their own spacing, so these multipliers hold the absolute
+    // figure across the change to the base: their jitter scales with it, and a mob 30% deeper
+    // has 30% fewer men per metre of seam, which quietly emptied the fighting line.
+    spacingXMul: 1.77,
+    spacingZMul: 1.4,
     width: (s) => Math.max(8, Math.round(Math.sqrt(s * 3.4))),
     offset(out, slot, width, _ranks, sx, sz) {
       const rank = Math.floor(slot / width);
@@ -177,8 +191,8 @@ export const FORMATIONS: Record<string, FormationDef> = {
     id: 'skirmish',
     name: 'Skirmish',
     description: 'A thin screen with room to throw and run. Nothing to hold a line with.',
-    spacingXMul: 2.4,
-    spacingZMul: 2.1,
+    spacingXMul: 2.17,
+    spacingZMul: 1.63,
     width: (s) => Math.max(10, Math.round(Math.sqrt(s * 6.5))),
     offset(out, slot, width, _ranks, sx, sz) {
       const rank = Math.floor(slot / width);
@@ -197,8 +211,8 @@ export const FORMATIONS: Record<string, FormationDef> = {
     id: 'horde',
     name: 'Horde',
     description: 'No order at all — a mass of men pressing forward. Fast, ferocious, uncontrollable.',
-    spacingXMul: 1.15,
-    spacingZMul: 1.0,
+    spacingXMul: 1.05,
+    spacingZMul: 0.78,
     // A mob is broad, not a column. At sqrt(s*1.5) a 360-man warband was 23 men across
     // and *sixteen* ranks deep, so barely a third of the men a Roman cohort of the same
     // size could bring to bear ever reached the fighting — a warband lost every melee on

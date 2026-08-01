@@ -1,6 +1,6 @@
 import type { EngineContext, Subsystem } from '../core/Engine';
 import type { BattleSystem } from './BattleSystem';
-import { Clip, SoldierState, UnitOrder } from './types';
+import { Clip, MeleeAction, SoldierState, UnitOrder } from './types';
 import type { ClipInfo, SoldierPool, UnitGroupState, UnitTypeDef } from './types';
 import { formation } from './formations';
 import type { FormationDef } from './formations';
@@ -13,7 +13,7 @@ import {
   Aspect, armourReduction, aspectOf, decaySignals, modsOf, resetCombatShared,
   shieldCoverage, signalsOf,
 } from './combatShared';
-import type { UnitMods } from './combatShared';
+import type { UnitMods, UnitSignals } from './combatShared';
 
 /**
  * Soldier-level melee.
@@ -120,6 +120,33 @@ const HIT_CEIL = 0.75;
  */
 const ENGAGE_PER_WIDTH = 1.2;
 const ENGAGE_PER_WIDTH_SPEAR = 1.8;
+
+/** Share of blows a man not already mid-stroke reads in time to answer. See `telegraph`. */
+const READ_CHANCE = 0.6;
+/** And how many of those a shielded man answers with the shield rather than the blade. */
+const SHIELD_ANSWER = 0.62;
+const PARRY_RECOVER = 0.44;
+const FAILED_PARRY_RECOVER = 0.3;
+/** Damage above which a blow knocks a surviving man off his stroke. */
+const STAGGER_DAMAGE = 24;
+const HEAVY_RECOVER = 0.36;
+const CLOSE_QUARTER = 0.88;
+const BLOCK_BONUS = 1.4;
+const PARRY_BONUS = 1.2;
+const UNREADY_PENALTY = 0.88;
+const BLOCK_PEAK = 0.25;
+const PARRY_PEAK = 0.3;
+const GUARD_HOLD = 0.22;
+/**
+ * Blows per second, as a multiple of the roster's rate.
+ *
+ * The fighting line is a line again: ranks hold a real interval instead of collapsing onto
+ * the seam, so half as many men are trading blows as when the two blocks interleaved. A
+ * melee has to resolve on roughly the same clock either way, and the honest place to pay for
+ * that is tempo, not damage: 1.5x of an 0.6/s roster rate is a blow every 1.1 s, which is
+ * what Rome II's own melee interval is.
+ */
+const MELEE_TEMPO = 1.5;
 
 // ---------------------------------------------------------------------------
 // Module-scope scratch. Hoisted so the per-soldier loops allocate nothing at all:
@@ -241,6 +268,14 @@ const modalVote = (): number => {
   return best;
 };
 
+/** Which clip each striking action is timed against. Defensive actions are not timed. */
+const ACTION_CLIP: readonly [MeleeAction, Clip][] = [
+  [MeleeAction.Thrust, Clip.AttackThrust],
+  [MeleeAction.Overhead, Clip.AttackOverhead],
+  [MeleeAction.Slash, Clip.AttackSlash],
+  [MeleeAction.Bash, Clip.ShieldBash],
+];
+
 /** The subset of an animation system this file needs, resolved defensively. */
 interface AnimationProvider extends Subsystem {
   clipInfo(clip: Clip): ClipInfo;
@@ -292,6 +327,20 @@ export class CombatSystem implements Subsystem {
   private attackers = new Int16Array(0);
   /** Partner in a matched duel, or -1. See `MATCHED_COMBAT_SHARE`. */
   private matchedWith = new Int32Array(0);
+  /** The stroke a man is in the middle of, as a `MeleeAction`. */
+  private swingAction = new Uint8Array(0);
+  /** Tick at which the blow now on its way to this man lands. */
+  private threatTick = new Int32Array(0);
+  /** Who threw it: only that man's blow can be answered by the guard below. */
+  private threatFrom = new Int32Array(0);
+  /** The answer he has committed to, or `MeleeAction.None` if he never saw it. */
+  private guardAction = new Uint8Array(0);
+  /** Tick until which he cannot strike, and how long that window is, for the recoil pose. */
+  private recoverTick = new Int32Array(0);
+  private recoverSpan = new Int32Array(0);
+  /** Clip length and hit point per `MeleeAction`, so a bash is not played at a thrust's tempo. */
+  private actionDuration = new Float32Array(8);
+  private actionHit = new Float32Array(8);
 
   // Per-unit scratch, indexed by unit id.
   private nearestEnemyUnit = new Int32Array(0);
@@ -336,6 +385,8 @@ export class CombatSystem implements Subsystem {
   attackDuration = DEFAULT_ATTACK_DURATION;
 
   private tick = 0;
+  /** The fixed step, cached so the exchange can express its windows in ticks. */
+  private dt = 1 / 30;
   private hitEvents = 0;
   private hitBudget = 0;
 
@@ -357,17 +408,31 @@ export class CombatSystem implements Subsystem {
     this.approach = new Float32Array(cap);
     this.attackers = new Int16Array(cap);
     this.matchedWith = new Int32Array(cap).fill(-1);
+    this.swingAction = new Uint8Array(cap);
+    this.threatTick = new Int32Array(cap).fill(-1);
+    this.threatFrom = new Int32Array(cap).fill(-1);
+    this.guardAction = new Uint8Array(cap);
+    this.recoverTick = new Int32Array(cap);
+    this.recoverSpan = new Int32Array(cap).fill(1);
     POOL = this.battle.pool;
     ACQ_COUNTS = this.attackers;
 
     this.growUnitArrays(64);
 
     const clipInfo = await resolveClipInfo(ctx);
+    this.actionDuration.fill(DEFAULT_ATTACK_DURATION);
+    this.actionHit.fill(DEFAULT_HIT_FRAME);
     if (clipInfo) {
       const info = clipInfo(Clip.AttackThrust);
       if (info) {
         this.attackDuration = info.duration > 0.05 ? info.duration : DEFAULT_ATTACK_DURATION;
         this.attackHitFrame = info.hitFrame ?? DEFAULT_HIT_FRAME;
+      }
+      for (const [action, clip] of ACTION_CLIP) {
+        const ci = clipInfo(clip);
+        if (!ci) continue;
+        this.actionDuration[action] = ci.duration > 0.05 ? ci.duration : DEFAULT_ATTACK_DURATION;
+        this.actionHit[action] = ci.hitFrame ?? DEFAULT_HIT_FRAME;
       }
     }
 
@@ -376,6 +441,9 @@ export class CombatSystem implements Subsystem {
       const i = e.index;
       this.swing[i] = -1;
       this.attackers[i] = 0;
+      this.recoverTick[i] = 0;
+      this.threatFrom[i] = -1;
+      this.guardAction[i] = MeleeAction.None;
       this.breakPair(i);
     });
     ctx.events.on('unitRouted', (e) => this.releaseUnit(e.unitId));
@@ -425,6 +493,9 @@ export class CombatSystem implements Subsystem {
         if (this.attackers[t] > 0) this.attackers[t]--;
       }
       this.swing[i] = -1;
+      this.recoverTick[i] = 0;
+      this.guardAction[i] = MeleeAction.None;
+      p.meleeAction[i] = MeleeAction.None;
       this.breakPair(i);
     }
     signalsOf(unitId).contactLock = false;
@@ -449,6 +520,7 @@ export class CombatSystem implements Subsystem {
     POOL = p;
     ACQ_COUNTS = this.attackers;
     this.tick++;
+    this.dt = dt;
     this.hitEvents = 0;
     this.hitBudget = HIT_EVENT_BUDGET;
 
@@ -630,7 +702,13 @@ export class CombatSystem implements Subsystem {
       const s = signalsOf(id);
       const enemyFaction = u.faction === 0 ? 1 : 0;
       const cav = isCavalry(def);
-      const acquireR = def.reach + 0.25;
+      const shielded = def.appearance.shield !== 'none';
+      // Reach is the gap a weapon crosses *between bodies*, and separation holds two men 0.84 m
+      // apart centre to centre, so the acquire radius is reach plus a body. At reach alone a
+      // gladius could not touch the man it was already shield to shield with, and a second
+      // rank could never reach past the first even though reaching past the first is the whole
+      // job of a second rank. It agrees with `keepR` on purpose: one figure, one place.
+      const acquireR = def.reach + 0.86;
       const keepR = def.reach + 0.9;
       const keepR2 = keepR * keepR;
       const loose = u.spacingX > 1.3;
@@ -640,7 +718,7 @@ export class CombatSystem implements Subsystem {
       const edx = haveNormal ? this.normalX[id] : this.enemyDirX[id];
       const edz = haveNormal ? this.normalZ[id] : this.enemyDirZ[id];
       const chargeF = this.chargeFactor(u, def, f, mods, id);
-      const rate = def.attackRate * mods.attackRate * f.mods.attack;
+      const rate = def.attackRate * mods.attackRate * f.mods.attack * MELEE_TEMPO;
       const members = u.members;
       const engageCap = Math.max(
         6,
@@ -762,13 +840,13 @@ export class CombatSystem implements Subsystem {
           const duel = mutual && hash01(lead, 313) < MATCHED_COMBAT_SHARE;
           const fat = p.fatigue[i];
           const interval = 1 / Math.max(0.08, rate * (1 - 0.45 * fat));
+          if (duel && this.matchedWith[i] !== t) {
+            // A duel's two clocks start half a beat apart, so the pair alternates strike and
+            // answer instead of both men flailing in unison.
+            this.matchedWith[i] = t;
+            if (i !== lead) p.attackCooldown[i] += interval * 0.5;
+          }
           if (duel) {
-            if (this.matchedWith[i] !== t) {
-              this.matchedWith[i] = t;
-              // The follower's clock starts half a beat late, so the exchange alternates
-              // strike and parry instead of both men flailing in unison.
-              if (i !== lead) p.attackCooldown[i] += interval * 0.5;
-            }
             // Locked: a duel does not drift. Facing is snapped, not eased, because the two
             // men are squared up on each other by definition.
             p.vx[i] = 0;
@@ -783,36 +861,43 @@ export class CombatSystem implements Subsystem {
           // Fatigue drains while fighting; the melee visibly slows as it wears on.
           p.fatigue[i] = clamp01(p.fatigue[i] + dt / Math.max(10, def.stamina * 1.5));
 
-          const dur = Math.min(this.attackDuration, interval * 0.85);
-          const hitAt = dur * this.attackHitFrame;
-
           let sw = this.swing[i];
+          const held = this.recoverTick[i] > this.tick;
           if (sw < 0) {
             p.attackCooldown[i] -= dt;
-            if (p.attackCooldown[i] <= 0) {
+            if (!held && p.attackCooldown[i] <= 0) {
               sw = 0;
               this.swing[i] = 0;
               this.swingFired[i] = 0;
+              const act = this.chooseAttack(i, t, u, def, f, s);
+              this.swingAction[i] = act;
+              this.telegraph(i, t, this.hitTime(act, interval), duel);
             }
           }
+          const action = this.swingAction[i] as MeleeAction;
+          const dur = this.strokeTime(action, interval);
           if (sw >= 0) {
+            const hitAt = dur * this.actionHit[action];
             const prev = sw;
             sw += dt;
             this.swing[i] = sw;
             if (this.swingFired[i] === 0 && (prev < hitAt ? sw >= hitAt : sw >= dur)) {
               this.swingFired[i] = 1;
               this.resolveBlow(i, t, u, def, f, mods, chargeF, cav);
+              // A parry can end the stroke before it finishes.
+              sw = this.swing[i];
             }
             if (sw >= dur) {
               this.swing[i] = -1;
               p.attackCooldown[i] = Math.max(0, interval - dur);
+              sw = -1;
             }
-            // Drive the visible swing so the blow and the animation coincide.
-            p.animTime[i] = clamp01(sw / Math.max(0.05, dur));
           }
+          this.poseFighter(i, sw, dur, action, shielded);
         } else {
           this.swing[i] = -1;
           if (this.matchedWith[i] >= 0) this.matchedWith[i] = -1;
+          p.meleeAction[i] = MeleeAction.None;
           // Free of an opponent: the next contact can be a fresh charge.
           this.impacted[i] = 0;
           if (st === SoldierState.Fighting) {
@@ -897,6 +982,130 @@ export class CombatSystem implements Subsystem {
         if (Math.abs(wrapAngle(want - u.targetFacing)) > 0.26) u.targetFacing = want;
       }
     }
+  }
+
+  /** Knock a man off his stroke: the swing is abandoned and he spends `seconds` recovering. */
+  private beat(i: number, seconds: number): void {
+    const span = this.ticksFor(seconds);
+    this.recoverTick[i] = this.tick + span;
+    this.recoverSpan[i] = span;
+    this.swing[i] = -1;
+    this.swingFired[i] = 1;
+    this.guardAction[i] = MeleeAction.None;
+    this.battle.pool.attackCooldown[i] = 0;
+  }
+
+  /** Ticks in `seconds`, at least one, so a window is never skipped between ticks. */
+  private ticksFor(seconds: number): number {
+    return Math.max(1, Math.round(seconds / this.dt));
+  }
+
+  /** A stroke's own clip length, capped so it fits inside this man's swing cycle. */
+  private strokeTime(action: MeleeAction, interval: number): number {
+    return Math.min(this.actionDuration[action] || this.attackDuration, interval * 0.85);
+  }
+
+  private hitTime(action: MeleeAction, interval: number): number {
+    return this.strokeTime(action, interval) * this.actionHit[action];
+  }
+
+  /**
+   * Which stroke a man throws. The weapon dictates the blow; four situations override it: no
+   * room to cut, an opponent off balance, a formation locked shield to shield, and a charge.
+   */
+  private chooseAttack(
+    i: number, t: number, u: UnitGroupState, def: UnitTypeDef, f: FormationDef, s: UnitSignals
+  ): MeleeAction {
+    const p = this.battle.pool;
+    const v = p.variant[i];
+    const weapon = def.appearance.weapon;
+    const shielded = def.appearance.shield !== 'none';
+    // No room for a wide swing in a locked formation, which is what `attack` under 0.9 means.
+    const tight = f.mods.attack < 0.9;
+    const swings = weapon !== 'spear' && weapon !== 'pike';
+
+    if (shielded) {
+      const dx = p.x[t] - p.x[i];
+      const dz = p.z[t] - p.z[i];
+      const close = def.reach > 1.6 ? def.reach * 0.62 : CLOSE_QUARTER;
+      if (dx * dx + dz * dz < close * close) return MeleeAction.Bash;
+      if (s.pushBalance > 0.3 && v < 0.22) return MeleeAction.Bash;
+    }
+    if (!swings) return MeleeAction.Thrust;
+    if (tight) return v < 0.82 || !shielded ? MeleeAction.Thrust : MeleeAction.Bash;
+    if (u.chargeTimer > CHARGE_WINDOW * 0.6) return MeleeAction.Overhead;
+    const off = this.recoverTick[t] > this.tick || p.state[t] === SoldierState.Staggered;
+    if (off) return v < 0.7 ? MeleeAction.Overhead : MeleeAction.Slash;
+
+    const fat = p.fatigue[i];
+    switch (weapon) {
+      case 'axe':
+      case 'club':
+        return v < 0.68 - fat * 0.3 ? MeleeAction.Overhead : MeleeAction.Slash;
+      case 'spatha':
+        return v < 0.42 ? MeleeAction.Slash
+          : v < 0.8 - fat * 0.25 ? MeleeAction.Overhead : MeleeAction.Thrust;
+      default:
+        return v < 0.66 ? MeleeAction.Thrust
+          : v < 0.86 && shielded ? MeleeAction.Bash : MeleeAction.Slash;
+    }
+  }
+
+  /**
+   * Announce a blow to the man it is aimed at and let him commit to an answer. O(1) and
+   * one-way, which is the point: a per-pair negotiation is how this goes quadratic. The answer
+   * is fixed at the start of the stroke and read at the hit frame, so he is committed to it.
+   */
+  private telegraph(i: number, t: number, hitAt: number, duel: boolean): void {
+    const p = this.battle.pool;
+    this.threatTick[t] = this.tick + this.ticksFor(hitAt);
+    this.threatFrom[t] = i;
+    this.guardAction[t] = MeleeAction.None;
+    if (this.swing[t] >= 0 || this.recoverTick[t] > this.tick) return;
+    const dv = this.unitById(p.unitId[t]);
+    if (!dv) return;
+    const ddef = this.battle.typeOf(dv);
+    if (!duel) {
+      const read = clamp01(READ_CHANCE + ddef.meleeDefence * 0.003 - p.fatigue[t] * 0.35);
+      if (this.rng.next() > read) return;
+    }
+    const shielded = ddef.appearance.shield !== 'none' && ddef.shieldDefence > 3;
+    this.guardAction[t] = shielded && this.rng.next() < SHIELD_ANSWER
+      ? MeleeAction.Block : MeleeAction.Parry;
+  }
+
+  /**
+   * The playhead: a stroke lands its blow on the frame the sim timed it to, a recoil plays
+   * once, a defence is phased so the cover is fullest as the blow lands, a guard is left alone.
+   */
+  private poseFighter(
+    i: number, sw: number, dur: number, action: MeleeAction, shielded: boolean
+  ): void {
+    const p = this.battle.pool;
+    const left = this.recoverTick[i] - this.tick;
+    if (left > 0) {
+      p.meleeAction[i] = MeleeAction.Recover;
+      p.animTime[i] = clamp01(1 - left / Math.max(1, this.recoverSpan[i]));
+      return;
+    }
+    if (sw >= 0) {
+      p.meleeAction[i] = action;
+      p.animTime[i] = clamp01(sw / Math.max(0.05, dur));
+      return;
+    }
+    const guard = this.guardAction[i] as MeleeAction;
+    if (guard !== MeleeAction.None && this.threatTick[i] > this.tick - this.ticksFor(GUARD_HOLD)) {
+      const tti = (this.threatTick[i] - this.tick) * this.dt;
+      const peak = guard === MeleeAction.Block ? BLOCK_PEAK : PARRY_PEAK;
+      const span = this.actionDuration[guard] || 0.78;
+      p.meleeAction[i] = guard;
+      p.animTime[i] = clamp01(peak - tti / span);
+      return;
+    }
+    // Whose guard he keeps between blows is his own habit, not the situation's: a third of
+    // shielded men hold the blade ready instead of the boss, so a rank waiting its turn is
+    // not one repeated silhouette.
+    p.meleeAction[i] = shielded && p.variant[i] > 0.32 ? MeleeAction.Block : MeleeAction.Parry;
   }
 
   /** How many of a unit's living men currently have an opponent. */
@@ -996,8 +1205,14 @@ export class CombatSystem implements Subsystem {
     if (attackerIsCavalry && defenderIsSpear && (dmods.braced || df.mods.shield > 1.2)) atk *= 0.7;
 
     // ---- defence skill ----
+    // What the defender committed to when this blow was telegraphed. Only the man who threw
+    // it can be answered: of four men on one, three catch him with his guard elsewhere.
+    const answer = this.threatFrom[t] === i ? this.guardAction[t] as MeleeAction : MeleeAction.None;
     let dfn = ddef.meleeDefence * dmods.defence * (1 - 0.30 * fatT);
-    dfn += ddef.shieldDefence * dmods.shield * df.mods.shield * cover;
+    dfn += ddef.shieldDefence * dmods.shield * df.mods.shield * cover
+      * (answer === MeleeAction.Block ? BLOCK_BONUS : 1);
+    if (answer === MeleeAction.Parry) dfn *= PARRY_BONUS;
+    else if (answer === MeleeAction.None) dfn *= UNREADY_PENALTY;
     dfn *= ASPECT_DEFENCE[aspect];
     if (dmods.braced && attackerIsCavalry) dfn *= 1.15;
 
@@ -1022,11 +1237,23 @@ export class CombatSystem implements Subsystem {
     this.blowsDealt[u.id] += 1;
 
     if (roll >= hitChance) {
-      // Where did it go? Shields first, then a parry, then clean air.
+      if (answer === MeleeAction.Parry) {
+        // A parry is not a miss: it beats the weapon aside and costs the attacker his tempo,
+        // and the man who made it gets his own blow in while the other is recovering.
+        this.beat(i, PARRY_RECOVER);
+        if (p.attackCooldown[t] > 0.2) p.attackCooldown[t] = 0.2;
+        this.emitHit(hx, hy, hz, 'parry', false, u.faction);
+        return;
+      }
+      if (answer === MeleeAction.Block) {
+        this.emitHit(hx, hy, hz, 'shield', false, u.faction);
+        return;
+      }
+      // Nobody's guard was there: shields still stop a share of it by standing in the way.
       const r2 = this.rng.next();
       const kind: 'shield' | 'parry' | 'miss' =
-        cover > 0.35 && ddef.shieldDefence > 4 && r2 < 0.55 ? 'shield'
-          : r2 < 0.78 ? 'parry' : 'miss';
+        cover > 0.35 && ddef.shieldDefence > 4 && r2 < 0.5 ? 'shield'
+          : r2 < 0.72 ? 'parry' : 'miss';
       this.emitHit(hx, hy, hz, kind, false, u.faction);
       return;
     }
@@ -1057,6 +1284,12 @@ export class CombatSystem implements Subsystem {
       const shove = attackerIsCavalry ? 3.4 : 1.0 + total * 0.02;
       p.vx[t] = -bx * shove;
       p.vz[t] = -bz * shove;
+    } else if (answer === MeleeAction.Parry || total > STAGGER_DAMAGE) {
+      // He guessed wrong, or it was simply too heavy: knocked off his stroke and driven back
+      // half a step, which is what makes a line visibly give under a blow it did not stop.
+      this.beat(t, answer === MeleeAction.Parry ? FAILED_PARRY_RECOVER : HEAVY_RECOVER);
+      p.vx[t] -= bx * 0.6;
+      p.vz[t] -= bz * 0.6;
     }
     const kind: 'flesh' | 'armour' = armour > 34 && this.rng.next() < 0.55 ? 'armour' : 'flesh';
     this.emitHit(hx, hy, hz, kind, lethal, u.faction);

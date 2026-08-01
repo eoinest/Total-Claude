@@ -106,6 +106,13 @@ const FOOT_VARIANT_NAMES: Partial<Record<Clip, readonly string[]>> = {
   [Clip.Flee]: ['flee', 'fleeOther', 'fleePanic'],
   [Clip.AttackThrust]: ['attackThrust', 'attackThrustHigh', 'attackThrust'],
   [Clip.AttackOverhead]: ['attackOverhead', 'attackOverheadCross', 'attackOverhead'],
+  // The fighting clips the sim now chooses between. A rank that parries in unison is the same
+  // tell as a rank that marches in unison, and it is worse, because the eye is on the fight.
+  [Clip.AttackSlash]: ['attackSlash', 'attackSlashLow', 'attackSlashBack'],
+  [Clip.ShieldBash]: ['shieldBash', 'shieldBashShoulder', 'shieldBash'],
+  [Clip.Block]: ['block', 'blockHigh', 'blockLow'],
+  [Clip.Parry]: ['parry', 'parryHigh', 'parryLow'],
+  [Clip.Stagger]: ['stagger', 'staggerBack', 'staggerSide'],
 };
 
 /** Riders: seated variants. A mounted man never plays a footed locomotion clip. */
@@ -185,11 +192,16 @@ const HIT_FRAMES: Record<string, number> = {
   attackOverhead: 0.44,
   attackOverheadCross: 0.44,
   attackSlash: 0.42,
+  attackSlashLow: 0.42,
+  attackSlashBack: 0.42,
   shieldBash: 0.4,
+  shieldBashShoulder: 0.4,
   throwPilum: 0.52,
   releaseBow: 0.34,
   rideCharge: 0.5,
   stagger: 0.18,
+  staggerBack: 0.18,
+  staggerSide: 0.18,
 };
 
 /**

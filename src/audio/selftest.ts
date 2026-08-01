@@ -255,7 +255,7 @@ function stubBattle(): BattleView {
       id, typeId, faction, members: [], alive, initialStrength: alive,
       x, z, facing: 0, targetX: x, targetZ: z + 4, targetFacing: 0,
       order: UnitOrder.AttackMove, targetUnitId: -1, waypoints: [], running: false,
-      formationId: 'line', width: 20, spacingX: 0.86, spacingZ: 1.02,
+      formationId: 'line', width: 20, spacingX: 0.95, spacingZ: 1.32,
       morale: 60, maxMorale: 70, fatigue: 0.2, ammo: 0, engaged: true,
       chargeTimer: 0, contactLock: false, charging: false,
       routTimer: 0, kills: 0, destroyed: false, selected: false, concealed: false,

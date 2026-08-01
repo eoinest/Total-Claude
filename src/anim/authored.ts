@@ -867,6 +867,219 @@ const stagger: OverlayDef = {
   ],
 };
 
+/**
+ * Shape variants of the fighting clips.
+ *
+ * Same argument as the standing and walking variants above, and it bites harder here: a rank
+ * that answers every blow with one identical parry is more obviously a loop than a rank that
+ * stands identically, because the eye is watching the fight. Beat times are held exactly, so a
+ * variant lands its blow on the frame the combat system timed the damage to, and a defensive
+ * variant reaches full cover at the same normalised moment as its parent.
+ *
+ * All of them are one-shots. The simulation owns the playhead of every fighting pose now, and
+ * `loop` is how the renderer knows that: a cycling clip it has never heard of would be given a
+ * free-running rate, and a stroke on a free-running rate is the windmill this replaces.
+ */
+
+/** The cut brought in low, at the hip, off a deeper knee. */
+const attackSlashLow: OverlayDef = {
+  name: 'attackSlashLow',
+  frames: 24,
+  duration: 1.0,
+  loop: false,
+  hitFrame: 0.42,
+  root: [[0, 0, -0.04, 0], [0.42, 0, -0.07, 0.1], [1, 0, -0.04, 0]],
+  tracks: [
+    tr(MB.pelvis, [[0, 0, 22, 0], [0.42, 0, -24, 0], [1, 0, 22, 0]]),
+    tr(MB.spineLow, [[0, -12, 16, 0], [0.42, -18, -18, 0], [1, -12, 16, 0]]),
+    hold(MB.head),
+    ...SHIELD_CARRY,
+    absTr(MB.upperArmR, [
+      [0, 0, -48, 54], [0.24, 0, -62, 40], [0.42, 0, 26, 58], [0.62, 0, 48, 60], [1, 0, -48, 54],
+    ]),
+    absTr(MB.lowerArmR, [
+      [0, 0, 52, 52], [0.24, 0, 24, 50], [0.42, 0, 84, 34], [1, 0, 52, 52],
+    ]),
+    tr(MB.thighL, [[0, -14, 0, 0], [0.42, -34, 0, 0], [1, -14, 0, 0]]),
+    tr(MB.shinL, [[0, 22, 0, 0], [0.42, 50, 0, 0], [1, 22, 0, 0]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/** The return cut, backhanded across the body from the shield side. */
+const attackSlashBack: OverlayDef = {
+  name: 'attackSlashBack',
+  frames: 24,
+  duration: 1.0,
+  loop: false,
+  hitFrame: 0.42,
+  root: [[0, 0, -0.03, 0], [0.42, 0, -0.05, 0.08], [1, 0, -0.03, 0]],
+  tracks: [
+    tr(MB.pelvis, [[0, 0, -14, 0], [0.42, 0, 22, 0], [1, 0, -14, 0]]),
+    tr(MB.spineLow, [[0, -6, -12, 0], [0.42, -10, 18, 0], [1, -6, -12, 0]]),
+    hold(MB.head),
+    ...SHIELD_CARRY,
+    absTr(MB.upperArmR, [
+      [0, 0, 40, 34], [0.24, 0, 58, 20], [0.42, 0, -30, 52], [0.62, 0, -44, 58], [1, 0, 40, 34],
+    ]),
+    absTr(MB.lowerArmR, [
+      [0, 0, 88, 26], [0.24, 0, 96, 14], [0.42, 0, 54, 44], [1, 0, 88, 26],
+    ]),
+    tr(MB.thighR, [[0, -8, 0, 0], [0.42, -20, 0, 0], [1, -8, 0, 0]]),
+    tr(MB.shinR, [[0, 14, 0, 0], [0.42, 30, 0, 0], [1, 14, 0, 0]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/** The ram driven off the shoulder rather than the arm: less shield travel, more body. */
+const shieldBashShoulder: OverlayDef = {
+  name: 'shieldBashShoulder',
+  frames: 22,
+  duration: 0.86,
+  loop: false,
+  hitFrame: 0.4,
+  root: [[0, 0, -0.04, -0.05], [0.24, 0, -0.06, -0.12], [0.4, 0, -0.04, 0.24], [1, 0, -0.04, -0.05]],
+  tracks: [
+    tr(MB.pelvis, [[0, 0, -24, 0], [0.24, 0, -36, 0], [0.4, 0, 22, 0], [1, 0, -24, 0]]),
+    tr(MB.spineLow, [[0, -12, -18, 6], [0.24, -6, -30, 10], [0.4, -24, 22, -6], [1, -12, -18, 6]]),
+    tr(MB.chest, [[0, -6, -14, 4], [0.4, -14, 18, -4], [1, -6, -14, 4]]),
+    hold(MB.head),
+    absTr(MB.upperArmL, [
+      [0, 0, -52, -64], [0.24, 0, -46, -68], [0.4, 0, -70, -54], [1, 0, -52, -64],
+    ]),
+    absTr(MB.lowerArmL, [[0, 0, -118, 4], [0.4, 0, -108, 6], [1, 0, -118, 4]]),
+    ...HAND_COCKED,
+    tr(MB.thighL, [[0, -10, 0, 0], [0.4, -38, 0, 0], [1, -10, 0, 0]]),
+    tr(MB.shinL, [[0, 18, 0, 0], [0.4, 54, 0, 0], [1, 18, 0, 0]]),
+    tr(MB.thighR, [[0, 10, 0, 0], [0.4, 28, 0, 0], [1, 10, 0, 0]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/** Shield lifted to meet a blow coming down, head fully behind the rim. */
+const blockHigh: OverlayDef = {
+  name: 'blockHigh',
+  frames: 20,
+  duration: 0.8,
+  loop: false,
+  root: [[0, 0, -0.04, -0.02], [0.25, 0, -0.08, -0.06], [1, 0, -0.04, -0.02]],
+  tracks: [
+    tr(MB.pelvis, [[0, 0, 12, 0]]),
+    tr(MB.spineLow, [[0, -12, 8, 0], [0.25, -18, 10, 0], [1, -12, 8, 0]]),
+    tr(MB.chest, [[0, -8, 5, 0]]),
+    tr(MB.neck, [[0, 16, -8, 0]]),
+    absTr(MB.upperArmL, [[0, -16, -72, -28], [0.25, -20, -76, -22], [1, -16, -72, -28]]),
+    absTr(MB.lowerArmL, [[0, 0, -120, 12]]),
+    ...HAND_COCKED,
+    tr(MB.thighL, [[0, -16, 0, 0]]),
+    tr(MB.shinL, [[0, 30, 0, 0]]),
+    tr(MB.thighR, [[0, -8, 0, 0]]),
+    tr(MB.shinR, [[0, 20, 0, 0]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/** Shield dropped to cover hip and thigh, weight settled forward over it. */
+const blockLow: OverlayDef = {
+  name: 'blockLow',
+  frames: 20,
+  duration: 0.8,
+  loop: false,
+  root: [[0, 0, -0.07, -0.02], [0.25, 0, -0.11, -0.05], [1, 0, -0.07, -0.02]],
+  tracks: [
+    tr(MB.pelvis, [[0, 0, 20, 0]]),
+    tr(MB.spineLow, [[0, -20, 12, 0], [0.25, -26, 14, 0], [1, -20, 12, 0]]),
+    tr(MB.chest, [[0, -12, 7, 0]]),
+    tr(MB.neck, [[0, 8, -12, 0]]),
+    absTr(MB.upperArmL, [[0, -8, -58, -60], [0.25, -12, -62, -54], [1, -8, -58, -60]]),
+    absTr(MB.lowerArmL, [[0, 0, -130, 4]]),
+    ...HAND_COCKED,
+    tr(MB.thighL, [[0, -26, 0, 0]]),
+    tr(MB.shinL, [[0, 44, 0, 0]]),
+    tr(MB.thighR, [[0, -14, 0, 0]]),
+    tr(MB.shinR, [[0, 30, 0, 0]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/** The deflection taken high, above the shoulder, edge turned outward. */
+const parryHigh: OverlayDef = {
+  name: 'parryHigh',
+  frames: 20,
+  duration: 0.72,
+  loop: false,
+  root: [[0, 0, -0.02, 0], [0.3, 0, -0.03, -0.05], [1, 0, -0.02, 0]],
+  tracks: [
+    tr(MB.pelvis, [[0, 0, 8, 0], [0.3, 0, -6, 0], [1, 0, 8, 0]]),
+    tr(MB.spineLow, [[0, -6, 6, 0], [0.3, -2, -10, 0], [1, -6, 6, 0]]),
+    hold(MB.head),
+    ...SHIELD_CARRY,
+    absTr(MB.upperArmR, [[0, 0, -20, 72], [0.3, 0, 42, -36], [0.55, 0, 36, -28], [1, 0, -20, 72]]),
+    absTr(MB.lowerArmR, [[0, 0, 97, 33], [0.3, 0, 104, -32], [1, 0, 97, 33]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/** The blade swept down and across to turn a low cut off the thigh. */
+const parryLow: OverlayDef = {
+  name: 'parryLow',
+  frames: 20,
+  duration: 0.72,
+  loop: false,
+  root: [[0, 0, -0.04, 0], [0.3, 0, -0.06, -0.04], [1, 0, -0.04, 0]],
+  tracks: [
+    tr(MB.pelvis, [[0, 0, 14, 0], [0.3, 0, -4, 0], [1, 0, 14, 0]]),
+    tr(MB.spineLow, [[0, -12, 10, 0], [0.3, -14, -6, 0], [1, -12, 10, 0]]),
+    hold(MB.head),
+    ...SHIELD_CARRY,
+    absTr(MB.upperArmR, [[0, 0, -20, 72], [0.3, 0, 18, 44], [0.55, 0, 14, 50], [1, 0, -20, 72]]),
+    absTr(MB.lowerArmR, [[0, 0, 97, 33], [0.3, 0, 122, 18], [1, 0, 97, 33]]),
+    tr(MB.thighL, [[0, -8, 0, 0], [0.3, -18, 0, 0], [1, -8, 0, 0]]),
+    tr(MB.shinL, [[0, 14, 0, 0], [0.3, 28, 0, 0], [1, 14, 0, 0]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/** Rocked straight back onto the heels. */
+const staggerBack: OverlayDef = {
+  name: 'staggerBack',
+  frames: 18,
+  duration: 0.62,
+  loop: false,
+  hitFrame: 0.18,
+  root: [[0, 0, -0.02, 0], [0.18, 0, -0.03, -0.14], [1, 0, -0.02, -0.05]],
+  tracks: [
+    tr(MB.pelvis, [[0, 0, 0, 0], [0.18, 6, 0, 0], [1, 2, 0, 0]]),
+    tr(MB.spineLow, [[0, 0, 0, 0], [0.18, 16, 0, 0], [1, 6, 0, 0]]),
+    tr(MB.neck, [[0, 0, 0, 0], [0.18, 14, 0, 0], [1, 4, 0, 0]]),
+    absTr(MB.upperArmL, [[0, 0, -55, -68], [0.18, 0, -28, -84], [1, 0, -48, -72]]),
+    absTr(MB.lowerArmL, [[0, 0, -117, 3], [0.18, 0, -90, -12], [1, 0, -110, 0]]),
+    absTr(MB.upperArmR, [[0, 0, -20, 72], [0.18, 0, 2, 88], [1, 0, -16, 76]]),
+    absTr(MB.lowerArmR, [[0, 0, 97, 33], [0.18, 0, 70, 52], [1, 0, 92, 38]]),
+    ...FEET_FLAT,
+  ],
+};
+
+/** Turned off the line of the blow, shoulder dropping away from it. */
+const staggerSide: OverlayDef = {
+  name: 'staggerSide',
+  frames: 18,
+  duration: 0.62,
+  loop: false,
+  hitFrame: 0.18,
+  root: [[0, 0, -0.02, 0], [0.18, -0.09, -0.04, -0.06], [1, -0.03, -0.02, -0.02]],
+  tracks: [
+    tr(MB.pelvis, [[0, 0, 0, 0], [0.18, 0, -14, 10], [1, 0, -5, 3]]),
+    tr(MB.spineLow, [[0, 0, 0, 0], [0.18, 8, -18, 14], [1, 3, -6, 5]]),
+    tr(MB.neck, [[0, 0, 0, 0], [0.18, 6, -16, 8], [1, 2, -5, 2]]),
+    absTr(MB.upperArmL, [[0, 0, -55, -68], [0.18, 0, -40, -80], [1, 0, -50, -70]]),
+    absTr(MB.lowerArmL, [[0, 0, -117, 3], [0.18, 0, -100, -6], [1, 0, -112, 0]]),
+    absTr(MB.upperArmR, [[0, 0, -20, 72], [0.18, 0, -34, 84], [1, 0, -22, 74]]),
+    absTr(MB.lowerArmR, [[0, 0, 97, 33], [0.18, 0, 84, 44], [1, 0, 94, 36]]),
+    ...FEET_FLAT,
+  ],
+};
+
 // ---------------------------------------------------------------------------
 // Missiles
 // ---------------------------------------------------------------------------
@@ -1353,6 +1566,15 @@ export const MAN_OVERLAYS: { base: string; def: OverlayDef }[] = [
   { base: 'idleAlert', def: block },
   { base: 'idleAlert', def: parry },
   { base: 'hitReact', def: stagger },
+  { base: 'slash', def: attackSlashLow },
+  { base: 'slash', def: attackSlashBack },
+  { base: 'punch', def: shieldBashShoulder },
+  { base: 'idleAlert', def: blockHigh },
+  { base: 'idleAlert', def: blockLow },
+  { base: 'idleAlert', def: parryHigh },
+  { base: 'idleAlert', def: parryLow },
+  { base: 'hitReact', def: staggerBack },
+  { base: 'hitReact', def: staggerSide },
   { base: 'idleAlert', def: throwPilum },
   { base: 'idleAlert', def: drawBow },
   { base: 'idleAlert', def: releaseBow },

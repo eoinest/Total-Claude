@@ -2,12 +2,13 @@ import type { EngineContext, Subsystem } from '../core/Engine';
 import { Rng } from '../util/rand';
 import { clamp, clamp01, damp, turnToward, wrapAngle } from '../util/math';
 import {
-  closestPointOnSegment, formation, frontSegment, makeSegment, ranksFor, segmentDistance,
+  BASE_SPACING_X, BASE_SPACING_Z, closestPointOnSegment, formation, frontSegment, makeSegment,
+  ranksFor, segmentDistance,
 } from './formations';
 import { unitType, isCavalry } from '../units/roster';
 import type { TerrainSystem } from '../terrain/TerrainSystem';
 import {
-  Clip, Faction, SoldierPool, SoldierState, SpatialHash, UnitOrder,
+  Clip, Faction, MeleeAction, SoldierPool, SoldierState, SpatialHash, UnitOrder,
   isAlive, type UnitGroupState, type UnitTypeDef,
 } from './types';
 
@@ -39,8 +40,13 @@ const SEG_OTHER = makeSegment();
 const CONTACT_ENTER = 1.6;
 /** And the distance it must open back up to before either is free to advance again. */
 const CONTACT_EXIT = 4.5;
-/** Metres the anchors are held apart while locked, so ranks never interpenetrate. */
-const CONTACT_GAP = 1.0;
+/**
+ * Metres the anchors are held apart while locked. Separation is what stops ranks
+ * interpenetrating now, and it holds a hard 0.84 m, so this no longer has to: at 1.0 m the
+ * front ranks were told to stand further apart than two men can physically be, which left a
+ * lane of open ground down the contact line and half the front rank with nothing in reach.
+ */
+const CONTACT_GAP = 0.55;
 /**
  * How fast an unengaged man closes up into the press, in metres per second. A rank
  * three men back covers the 3 m to the front line in about three seconds, which is
@@ -66,11 +72,61 @@ const PRESS_RELAX = 1.6;
  */
 const PRESS_RANKS = 2.5;
 /**
+ * Rank interval a pressing formation closes *to*, in metres. The press used to let a man
+ * close his whole setback, which puts every rank on the contact line and is not a press but
+ * a heap: measured with 97% of the men in a melee standing inside their neighbour's 0.84 m
+ * body. He now closes to a tight rank rather than onto the back of the man in front.
+ */
+const PRESS_TIGHT_Z = 1.02;
+/**
  * Seconds an order suppresses the contact lock. Long enough to clear CONTACT_EXIT (4.5 m)
  * at a walk — a disengaging formation needs about three seconds — and short enough that a
  * unit ordered *into* a fight still locks up promptly on arrival.
  */
 const ORDER_GRACE = 3.2;
+
+/** Centre to centre at which two men touch. A man is half a metre across the shoulders. */
+const BODY_DIAMETER = 0.84;
+/**
+ * Fraction of an overlap separation removes per tick, and the ceiling on one man's whole
+ * correction. Half was not enough: slot-seeking and the press pull inward every tick, so
+ * equilibrium sat 0.11 m inside contact and a melee compressed into a solid mass. The ceiling
+ * exists because six neighbours mean six corrections at once.
+ */
+const SEPARATION_RELAX = 0.85;
+const SEP_MAX_STEP = 0.16;
+
+let SEP_POOL: SoldierPool | null = null;
+let SEP_MOUNTED: Uint8Array | null = null;
+let SEP_I = -1;
+let SEP_X = 0;
+let SEP_Z = 0;
+let SEP_MI = 1;
+let SEP_PUSH_X = 0;
+let SEP_PUSH_Z = 0;
+
+const separationVisit = (j: number): void => {
+  if (j <= SEP_I) return;
+  const p = SEP_POOL!;
+  const st = p.state[j];
+  if (st === SoldierState.Dead || st === SoldierState.Dying) return;
+  const dx = p.x[j] - SEP_X;
+  const dz = p.z[j] - SEP_Z;
+  const d2 = dx * dx + dz * dz;
+  if (d2 >= BODY_DIAMETER * BODY_DIAMETER || d2 < 1e-8) return;
+  const d = Math.sqrt(d2);
+  const overlap = (BODY_DIAMETER - d) * SEPARATION_RELAX;
+  const nx = dx / d;
+  const nz = dz / d;
+  const mj = SEP_MOUNTED![j] ? 5 : 1;
+  const total = SEP_MI + mj;
+  const si = overlap * (mj / total);
+  const sj = overlap * (SEP_MI / total);
+  SEP_PUSH_X -= nx * si;
+  SEP_PUSH_Z -= nz * si;
+  p.x[j] += nx * sj;
+  p.z[j] += nz * sj;
+};
 
 export class BattleSystem implements Subsystem {
   readonly name = 'battle';
@@ -95,7 +151,10 @@ export class BattleSystem implements Subsystem {
     this.orderGrace = new Float32Array(256);
     this.breakingOff = new Uint8Array(256);
     this.press = new Float32Array(ctx.quality.maxSoldiers);
-    this.hash = new SpatialHash(1500, 3.5);
+    // 2.0 m cells. The separation pass asks for everything within 0.84 m once per man per
+    // tick, and at 3.5 m cells that scanned 37 candidates to find 6. The rebuild can afford
+    // the finer grid because it only ever touches the rectangle the armies stand on.
+    this.hash = new SpatialHash(1500, 2.0);
 
     ctx.events.on('orderIssued', (o) => this.applyOrder(o));
   }
@@ -218,11 +277,17 @@ export class BattleSystem implements Subsystem {
     return u.id;
   }
 
+  /**
+   * 0.95 m laterally is Polybius' three Roman feet per man plus the room to use a sword: at
+   * the 0.86 m this was, a scutum went through the man beside him. 1.32 m front to back
+   * matters more, because a scutum stands 0.75 m off its owner's chest and at 1.02 m of rank
+   * interval it reached into the back of the man in front.
+   */
   private baseSpacingX(def: UnitTypeDef): number {
-    return isCavalry(def) ? 1.95 : 0.86;
+    return isCavalry(def) ? BASE_SPACING_X.mounted : BASE_SPACING_X.foot;
   }
   private baseSpacingZ(def: UnitTypeDef): number {
-    return isCavalry(def) ? 3.1 : 1.02;
+    return isCavalry(def) ? BASE_SPACING_Z.mounted : BASE_SPACING_Z.foot;
   }
 
   /** Transform a formation-local offset into world space. */
@@ -355,8 +420,9 @@ export class BattleSystem implements Subsystem {
     }
 
     this.steerSoldiers(dt);
-    this.resolveCrowding(dt);
     this.integrate(dt);
+    this.resolveCrowding();
+    this.settleSoldiers(dt);
     this.updateAnimationState(dt, ctx);
   }
 
@@ -714,6 +780,18 @@ export class BattleSystem implements Subsystem {
       // fighting altogether while still nominally engaged.
       const pressing = u.contactLock && !routing;
       const pressLimit = PRESS_RANKS * u.spacingZ;
+      // Share of his own setback a man gives up, which is what closes the rank interval from
+      // `spacingZ` to `PRESS_TIGHT_Z`. A fraction rather than a per-rank figure because
+      // `pool.rank` is a grid row and a wedge is a triangle: keyed off `rank`, a wedge's rows
+      // all read as row 0, so the moment its two leading riders died the other fifty-eight
+      // were frozen four metres short and a charge cost the spearmen nobody.
+      //
+      // Mounted units are exempt. A horse is 2.95 m long, so rank interval is not what keeps
+      // horses out of each other; the press is the only thing that gets a second row of them
+      // into reach at all.
+      const pressFrac = isCavalry(def)
+        ? 1
+        : Math.max(0, 1 - PRESS_TIGHT_Z / Math.max(0.1, u.spacingZ));
       // While an order is breaking contact, men in melee must follow their slot like
       // everyone else. Holding them made a withdraw order physically impossible: the
       // anchor crept away but every front-ranker stayed where he was, so the unit moved
@@ -743,10 +821,10 @@ export class BattleSystem implements Subsystem {
 
         f.offset(SCRATCH, p.slot[i], u.width, ranks, u.spacingX, u.spacingZ);
         if (pressing) {
-          // Creep forward, but never in front of the front rank: `-SCRATCH.z` is this
-          // man's own setback, so the press closes his own gap and no more. Crowd
-          // separation stops him walking into the back of the man ahead.
-          this.press[i] = Math.min(-SCRATCH.z, pressLimit, this.press[i] + PRESS_RATE * dt);
+          // Creep forward, but only as far as a tight rank, never past the front rank, and
+          // never more than `pressLimit`.
+          const own = Math.max(0, -SCRATCH.z * pressFrac);
+          this.press[i] = Math.min(own, pressLimit, this.press[i] + PRESS_RATE * dt);
           SCRATCH.z += this.press[i];
         } else if (this.press[i] > 0) {
           this.press[i] = Math.max(0, this.press[i] - PRESS_RELAX * dt);
@@ -776,52 +854,30 @@ export class BattleSystem implements Subsystem {
     }
   }
 
-  /**
-   * Soft body separation. Men are pushed apart so ranks never occupy the same metre,
-   * with mass deciding who yields — a horse displaces an infantryman, not the reverse.
-   */
-  private resolveCrowding(dt: number): void {
+  /** Soft body separation. See `separationVisit` for the strength and why it moved here. */
+  private resolveCrowding(): void {
     const p = this.pool;
     const n = p.count;
-    const radius = 0.42;
-    const diameter = radius * 2;
-
+    SEP_POOL = p;
+    SEP_MOUNTED = this.mounted;
     for (let i = 0; i < n; i++) {
       if (!p.aliveAt(i)) continue;
-      const xi = p.x[i];
-      const zi = p.z[i];
-      let pushX = 0;
-      let pushZ = 0;
-
-      this.hash.query(xi, zi, diameter, (j) => {
-        if (j <= i) return;
-        if (!p.aliveAt(j)) return;
-        const dx = p.x[j] - xi;
-        const dz = p.z[j] - zi;
-        const d2 = dx * dx + dz * dz;
-        if (d2 >= diameter * diameter || d2 < 1e-8) return;
-        const d = Math.sqrt(d2);
-        const overlap = diameter - d;
-        const nx = dx / d;
-        const nz = dz / d;
-        // Split the correction by inverse mass. Mounted/foot is baked per soldier at
-        // spawn: resolving the unit and then its type for both members of every
-        // neighbour pair was the single most expensive thing in the tick.
-        const mi = this.mounted[i] ? 5 : 1;
-        const mj = this.mounted[j] ? 5 : 1;
-        const total = mi + mj;
-        const si = (overlap * (mj / total)) * 0.5;
-        const sj = (overlap * (mi / total)) * 0.5;
-        pushX -= nx * si;
-        pushZ -= nz * si;
-        p.x[j] += nx * sj;
-        p.z[j] += nz * sj;
-      });
-
-      p.x[i] += pushX;
-      p.z[i] += pushZ;
+      SEP_I = i;
+      SEP_X = p.x[i];
+      SEP_Z = p.z[i];
+      SEP_PUSH_X = 0;
+      SEP_PUSH_Z = 0;
+      SEP_MI = this.mounted[i] ? 5 : 1;
+      this.hash.query(SEP_X, SEP_Z, BODY_DIAMETER, separationVisit);
+      const l2 = SEP_PUSH_X * SEP_PUSH_X + SEP_PUSH_Z * SEP_PUSH_Z;
+      if (l2 > SEP_MAX_STEP * SEP_MAX_STEP) {
+        const g = SEP_MAX_STEP / Math.sqrt(l2);
+        SEP_PUSH_X *= g;
+        SEP_PUSH_Z *= g;
+      }
+      p.x[i] += SEP_PUSH_X;
+      p.z[i] += SEP_PUSH_Z;
     }
-    void dt;
   }
 
   /**
@@ -861,11 +917,19 @@ export class BattleSystem implements Subsystem {
     const p = this.pool;
     const n = p.count;
     for (let i = 0; i < n; i++) {
-      const st = p.state[i] as SoldierState;
-      if (st === SoldierState.Dead) continue;
-
+      if (p.state[i] === SoldierState.Dead) continue;
       p.x[i] += p.vx[i] * dt;
       p.z[i] += p.vz[i] * dt;
+    }
+  }
+
+  /** Ground, facing and lean, after separation has had the final say on x and z. */
+  private settleSoldiers(dt: number): void {
+    const p = this.pool;
+    const n = p.count;
+    for (let i = 0; i < n; i++) {
+      const st = p.state[i] as SoldierState;
+      if (st === SoldierState.Dead) continue;
 
       const ground = this.groundAt(p.x[i], p.z[i]);
       // Feet stay planted; the vertical is snapped rather than simulated for the living.
@@ -884,50 +948,20 @@ export class BattleSystem implements Subsystem {
   }
 
   /**
-   * Choose a melee clip for a man who is fighting.
-   *
-   * Every fighting man used to play `AttackThrust`, which meant a thousand-man melee was
-   * a thousand identical underarm stabs — and it left `AttackOverhead`, `AttackSlash`,
-   * `ShieldBash`, `Block` and `Parry` authored, baked and never once selected.
-   *
-   * The choice is driven by the weapon, because the weapon really does dictate the
-   * stroke: a gladius behind a scutum is a short thrust into the gap, a Germanic axe or a
-   * long spatha is swung overhead, and a spear is levelled. Within that, the man's stable
-   * per-man hash picks a variant so neighbours differ, and men who are engaged but not
-   * currently swinging defend instead of attacking — which is what actually happens in a
-   * press, and what makes a line read as fighting rather than as a row of windmills.
+   * The clip for a man in a melee. The *choice* is the combat system's, because only it
+   * knows whether he is striking, covering a blow it has seen coming, or getting his weapon
+   * back after one was turned aside; this is the table that turns that into animation.
    */
   private meleeClipFor(i: number): Clip {
-    const p = this.pool;
-    const u = this.unitOfSoldier(i);
-    const weapon = u ? this.typeOf(u).appearance.weapon : 'gladius';
-    const v = p.variant[i];
-
-    // Only a fraction of an engaged rank is mid-stroke at any instant; the rest are
-    // covering, recovering or shoving. `attackCooldown` is the sim's own notion of that.
-    const swinging = p.attackCooldown[i] <= 0.42;
-    if (!swinging) {
-      // Split the non-swinging men between a braced guard and an active parry so the
-      // defensive half of the line is not uniform either.
-      return v < 0.62 ? Clip.Block : Clip.Parry;
-    }
-
-    switch (weapon) {
-      case 'axe':
-      case 'club':
-        // Overhead is the natural axe stroke; occasionally a wide slash.
-        return v < 0.72 ? Clip.AttackOverhead : Clip.AttackSlash;
-      case 'spatha':
-        return v < 0.45 ? Clip.AttackSlash : v < 0.85 ? Clip.AttackOverhead : Clip.AttackThrust;
-      case 'spear':
-      case 'pike':
-        // A spear is thrust, always — a levelled point is the whole reason to carry one.
-        return Clip.AttackThrust;
-      case 'gladius':
-      default:
-        // Shield-forward fighting: mostly the short thrust, with the boss used as a
-        // weapon often enough to see it happen.
-        return v < 0.68 ? Clip.AttackThrust : v < 0.86 ? Clip.ShieldBash : Clip.AttackSlash;
+    switch (this.pool.meleeAction[i] as MeleeAction) {
+      case MeleeAction.Thrust: return Clip.AttackThrust;
+      case MeleeAction.Overhead: return Clip.AttackOverhead;
+      case MeleeAction.Slash: return Clip.AttackSlash;
+      case MeleeAction.Bash: return Clip.ShieldBash;
+      case MeleeAction.Block: return Clip.Block;
+      case MeleeAction.Parry: return Clip.Parry;
+      case MeleeAction.Recover: return Clip.Stagger;
+      default: return Clip.IdleBrace;
     }
   }
 
