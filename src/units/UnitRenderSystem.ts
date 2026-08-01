@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { EngineContext, Subsystem } from '../core/Engine';
 import type { BattleSystem } from '../sim/BattleSystem';
+import type { ProjectileSystem } from '../sim/Projectiles';
 import {
   ALL_FACTIONS, Clip, Faction, SoldierState, type UnitGroupState, type UnitTypeDef,
 } from '../sim/types';
@@ -41,8 +42,8 @@ import { buildScorpioGeometry, buildOnagerGeometry } from './engineMesh';
 import { makeEngineMaterial, type EngineMaterialSet } from './engineMaterial';
 import {
   ABANDONED, CREW_OF, FORWARD_OF, PITCH_OF, STATIONS_OF, EngineKind, armStateOf,
-  crewClip, engineKindOf, enginePose, emptyPose, initialSinceShot, isEngineUnit, onArmTip,
-  sliderZOf, stationJitter, SILHOUETTE_OF,
+  crewClip, engineAnchor, engineKindOf, enginePose, emptyPose, initialSinceShot, isEngineUnit,
+  onArmTip, sliderZOf, stationJitter, SILHOUETTE_OF,
   type EnginePose,
 } from './engines';
 import type { SkySystem } from '../render/SkySystem';
@@ -236,8 +237,14 @@ interface Battery {
   elev: number;
   /** Seconds until the target range is resolved again. */
   aimTimer: number;
-  /** Per-engine yaw stand-off and stable appearance hash. */
+  /**
+   * Per-engine yaw. `restJit` is the fixed stand-off a gun sits at when it has nothing to shoot
+   * at — no two pieces in a battery are laid on quite the same bearing — and `yawJit` is the
+   * live bearing, eased toward the target by `traverseOnto` and back to `restJit` when the
+   * target is lost.
+   */
   yawJit: Float32Array;
+  restJit: Float32Array;
   variant: Float32Array;
 }
 
@@ -360,6 +367,20 @@ export class UnitRenderSystem implements Subsystem {
   readonly order = 200;
 
   private battle!: BattleSystem;
+  /**
+   * The simulation's own engine clock, when there is one.
+   *
+   * Artillery fires per machine on a deterministic cycle that `ProjectileSystem` owns, so the
+   * animation is a read of that rather than a reconstruction of it. See `updateEngines`.
+   */
+  private projectiles: ProjectileSystem | null = null;
+  /**
+   * Hold every battery's cycle where the caller put it, for `tools/probe-scorpion.mjs --bench`.
+   * A bench plate is a specific point in the cycle photographed from four sides; without this
+   * the sim's clock would advance under the settle frame and the four views would be of four
+   * different machine states. Not used by the game.
+   */
+  freezeEngines = false;
   private atlas!: SoldierAtlas;
   private manAnim!: AnimTexture;
   private horseAnim!: AnimTexture;
@@ -497,6 +518,7 @@ export class UnitRenderSystem implements Subsystem {
     this.battle = ctx.get<BattleSystem>('battle');
     this.sky = ctx.tryGet<SkySystem>('sky');
     this.ragdoll = ctx.tryGet<RagdollSystem>('ragdoll');
+    this.projectiles = ctx.tryGet<ProjectileSystem>('projectiles') ?? null;
     const cap = ctx.quality.maxSoldiers;
 
     this.atlas = buildSoldierAtlas(Math.min(8, ctx.renderer.capabilities.getMaxAnisotropy()));
@@ -625,9 +647,22 @@ export class UnitRenderSystem implements Subsystem {
       // mail ring, at the elbow crease — was being thrown away. Same texture, so the extra
       // fetch is a cache hit.
       aoMap: this.atlas.orm,
-      // Enough to read as contact darkening, not enough to crush plate to black now that
-      // the rig's shadows are genuinely dark.
-      aoMapIntensity: 0.6,
+      /**
+       * Half what it was, and the reason is that this term is subtracting from the only
+       * light a soldier has.
+       *
+       * AO attenuates *indirect* light, which is correct. But measured over the Roman line
+       * (tools/probe-units.mjs), the median soldier pixel is in shadow — helmet 0.0370
+       * display luminance against a whole-frame mean of 0.117 — so indirect is not a small
+       * correction on top of the sun, it is very nearly the whole budget. Taking it to zero
+       * recovered 27.6% on a helmet and 24.5% on a face; those are large numbers to be
+       * spending on crevice definition that is under a pixel at this range.
+       *
+       * 0.3 keeps the girdle-plate gutters and the mail cavities reading while giving back
+       * about half of that. It is not a substitute for the ambient level itself, which is
+       * the lighting rig's and is reported separately.
+       */
+      aoMapIntensity: 0.3,
       // Above 1 on purpose, and this is the single number that decides whether an army reads
       // as men or as silhouettes. Measured, by reading back the framebuffer over a rectangle
       // of Roman ranks in the `melee` camera and taking percentiles of display luminance:
@@ -793,13 +828,15 @@ export class UnitRenderSystem implements Subsystem {
       elev: ELEV_IDLE,
       aimTimer: 0,
       yawJit: new Float32Array(want),
+      restJit: new Float32Array(want),
       variant: new Float32Array(want),
     };
     for (let k = 0; k < want; k++) {
       const seed = u.id * 977 + k * 131;
       bat.sinceShot[k] = initialSinceShot(hash01(seed, 153));
       // No two guns in a battery are laid on exactly the same bearing.
-      bat.yawJit[k] = (hash01(seed, 151) - 0.5) * 0.09;
+      bat.restJit[k] = (hash01(seed, 151) - 0.5) * 0.09;
+      bat.yawJit[k] = bat.restJit[k];
       bat.variant[k] = hash01(seed, 152);
     }
     this.batteries.set(u.id, bat);
@@ -809,11 +846,17 @@ export class UnitRenderSystem implements Subsystem {
   /**
    * Advance every battery's cycle, and detect the shot.
    *
-   * The release is taken from the crew's ammunition rather than from a clock of our own:
-   * `Projectiles.ts` decrements `pool.ammo` on the frame it creates a bolt, so a fall in an
-   * engine's crew total means that engine just let go, and the string is seen to release on
-   * the frame the bolt appears. Anything else drifts — the sim's volley window is 0.92 s of
-   * hashed per-man delay and no independent timer can stay inside that.
+   * **The simulation owns this clock now.** `ProjectileSystem` runs a machine-by-machine
+   * artillery cycle in `fixedUpdate` and resets `sinceShot` on the exact tick a shot is
+   * created, so the animation is a straight read of it and the string cannot let go on a
+   * frame the projectile did not leave on.
+   *
+   * It used to be inferred here, from a fall in the crew's ammunition — the best available
+   * answer when the sim fired per man inside a 0.92 s hashed volley window, and wrong in a way
+   * that could not be fixed from this side: three crewmen each fired, so one gun's ammunition
+   * fell three times per volley and the recoil restarted three times for what should have been
+   * one shot. The fallback below is kept for the case where there is no projectile system at
+   * all, which is the model viewer.
    *
    * Visual only, and in `update` rather than `fixedUpdate`, so none of it can perturb the
    * simulation's hash.
@@ -825,15 +868,20 @@ export class UnitRenderSystem implements Subsystem {
       const def = unitType(u.typeId);
       if (!isEngineUnit(def)) continue;
       const bat = this.batteryOf(u, def);
-      for (let k = 0; k < bat.count; k++) {
-        let ammo = 0;
-        for (let c = 0; c < bat.crew; c++) {
-          const i = u.members[k * bat.crew + c];
-          if (i !== undefined && p.aliveAt(i)) ammo += p.ammo[i];
+      const cycle = this.freezeEngines ? undefined : this.projectiles?.engineCycle(u.id);
+      if (cycle && cycle.length === bat.count) {
+        bat.sinceShot.set(cycle);
+      } else if (!this.freezeEngines) {
+        for (let k = 0; k < bat.count; k++) {
+          let ammo = 0;
+          for (let c = 0; c < bat.crew; c++) {
+            const i = u.members[k * bat.crew + c];
+            if (i !== undefined && p.aliveAt(i)) ammo += p.ammo[i];
+          }
+          if (bat.lastAmmo[k] >= 0 && ammo < bat.lastAmmo[k]) bat.sinceShot[k] = 0;
+          bat.lastAmmo[k] = ammo;
+          bat.sinceShot[k] += dt;
         }
-        if (bat.lastAmmo[k] >= 0 && ammo < bat.lastAmmo[k]) bat.sinceShot[k] = 0;
-        bat.lastAmmo[k] = ammo;
-        bat.sinceShot[k] += dt;
       }
 
       // Elevation. Re-solved twice a second against the nearest enemy anchor in range, then
@@ -843,6 +891,7 @@ export class UnitRenderSystem implements Subsystem {
         bat.aimTimer = 0.5;
         bat.elev = this.elevationFor(u, def);
       }
+      this.traverseOnto(u, bat, dt);
     }
   }
 
@@ -945,12 +994,50 @@ export class UnitRenderSystem implements Subsystem {
     bat: Battery,
     k: number
   ): { x: number; y: number; z: number; yaw: number } {
-    const uc = Math.cos(u.facing);
-    const us = Math.sin(u.facing);
-    const lx = (k - (bat.count - 1) * 0.5) * bat.pitch;
-    const x = u.x + lx * uc + bat.forward * us;
-    const z = u.z - lx * us + bat.forward * uc;
+    // Through `engineAnchor` rather than repeated here, because the simulation now launches
+    // from this same point: a bolt leaves the machine's muzzle, so the renderer and the sim
+    // agreeing about where the machine is stopped being cosmetic.
+    engineAnchor(u.x, u.z, u.facing, bat.kind, k, bat.count, this.anchorScratch,
+      this.projectiles?.engineSite());
+    const { x, z } = this.anchorScratch;
     return { x, y: this.battle.groundAt(x, z), z, yaw: u.facing + bat.yawJit[k] };
+  }
+
+  private anchorScratch = { x: 0, z: 0 };
+
+  /**
+   * Train each machine round onto the unit the simulation has it laid on.
+   *
+   * `yawJit` was a fixed per-gun stand-off — "no two guns in a battery are laid on exactly the
+   * same bearing" — which is true of a battery at rest and wrong of one in action. A crew lays
+   * its piece: it traverses onto the target, and the guns of a battery therefore *converge*
+   * slightly rather than sitting parallel. Reading the target from the sim rather than picking
+   * the nearest enemy here means the barrel points where the shot is actually going.
+   *
+   * Bounded, because these machines traverse by levering the whole carriage round: a tripod
+   * scorpio has a useful arc, an onager chassis very little. Beyond the bound the unit itself
+   * has to turn, which is the order the player would give.
+   */
+  private traverseOnto(u: UnitGroupState, bat: Battery, dt: number): void {
+    if (this.freezeEngines) return;
+    const targets = this.projectiles?.engineTargets(u.id);
+    const limit = bat.kind === EngineKind.Onager ? 0.20 : 0.42;
+    for (let k = 0; k < bat.count; k++) {
+      const id = targets ? targets[k] : -1;
+      let want = bat.restJit[k];
+      if (id >= 0) {
+        const t = this.battle.unitById(id);
+        if (t && !t.destroyed && t.alive > 0) {
+          // Bearing to the target, in the unit's own frame.
+          let d = Math.atan2(t.x - u.x, t.z - u.z) - u.facing;
+          while (d > Math.PI) d -= Math.PI * 2;
+          while (d < -Math.PI) d += Math.PI * 2;
+          want = Math.max(-limit, Math.min(limit, d)) + bat.restJit[k] * 0.35;
+        }
+      }
+      // Ease rather than snap: a crew heaving a carriage round takes a few seconds.
+      bat.yawJit[k] += (want - bat.yawJit[k]) * Math.min(1, dt * 1.6);
+    }
   }
 
   /**

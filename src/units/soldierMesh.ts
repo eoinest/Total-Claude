@@ -861,7 +861,10 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
       out.nz = -1;
     },
     (tv: number) => spineBind(Math.max(0.95, chestY + 0.05 - tv * (chestY + 0.05 - 0.74))),
-    clothUv, 2, 3
+    // 6 mm of fulled wool, with a stitched rim. A sagum built with no thickness has a
+    // silhouette that is a mathematical line, and it is the piece blind critics have named
+    // most often — "zero-thickness cloth", "a rigid unlit cone".
+    clothUv, 2, 3, 0.006
   );
 
   // Torc: twisted bronze at the throat, the mark of a Germanic warrior of standing.

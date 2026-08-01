@@ -152,6 +152,13 @@ void soldierSkin( vec3 inPos, vec3 inNrm, out vec3 outPos, out vec3 outNrm ) {
   }
 }
 
+// A small-angle rotation in one plane, to first order. Declared outside the pose-variation
+// block because the cloak sway needs it on every rig — the horse material is compiled
+// without SOLDIER_POSE_VARY, and a macro that is only defined for the man would leave the
+// horse's shader referring to an undeclared identifier. A shader that fails to compile
+// silently draws nothing at all, which is an expensive way to find out.
+#define SOLDIER_CLOTH_TILT( a, b, k ) { float c_ = a; a = c_ + (k) * (b); b = b - (k) * c_; }
+
 // Kit pieces this man does not wear collapse to a point. All three corners of such a
 // triangle land on the same vertex, so it has zero area and never reaches the rasteriser.
 bool soldierPieceVisible() {
@@ -317,6 +324,34 @@ const body = (withNormal: boolean): string => /* glsl */ `
     sp = vec3( 0.0 );
   }
 
+  // ---- cloak sway ------------------------------------------------------------
+  // Slot 5 is Tint.Cloak, and it is the only slot that uses it, so the test costs nothing
+  // and needs no attribute of its own. Applied in body space, before scale and yaw, so the
+  // wave runs across the man's own back rather than across the world.
+  //
+  // A sagum is skinned to the spine, which means without this it is a board bolted to the
+  // shoulders: it rotates with the torso and does nothing else. Blind critics have called it
+  // "a rigid unlit cone" in more than one round, and rigid is the accurate half of that.
+  //
+  // Two waves at incommensurate rates rather than one, because a single sine moves the whole
+  // hem as one piece, which is a flag and not a cloak. The phase comes from the man's stable
+  // hash so a rank never resynchronises, and the whole term is a function of uTime only —
+  // it is visual, lives outside the fixed step, and cannot perturb the simulation hash.
+  if ( abs( aPieceTint.y - 5.0 ) < 0.5 && dot( iQuat, iQuat ) <= 0.0001 ) {
+    // Ramp from the shoulder line (about 1.50 m) to the hem (0.74 m), squared so the pinned
+    // top stays pinned and only the free cloth moves.
+    float hemT = clamp( ( 1.50 - sp.y ) / 0.76, 0.0, 1.0 );
+    hemT *= hemT;
+    float t = uTime * 1.7 + iAnimB.w * 37.0;
+    float w1 = sin( t + sp.x * 6.0 );
+    float w2 = sin( t * 0.63 + 2.1 + sp.x * 3.0 );
+    sp.x += w1 * 0.030 * hemT;
+    sp.z += w2 * 0.024 * hemT;
+    // A man leaning into a march drags his cloak behind him. iOrient.z is that lean.
+    sp.z -= iOrient.z * 0.22 * hemT;
+    ${withNormal ? 'SOLDIER_CLOTH_TILT( sn.x, sn.z, w1 * 0.22 * hemT )' : ''}
+  }
+
   sp *= iOrient.y;
 
   if ( dot( iQuat, iQuat ) > 0.0001 ) {
@@ -401,19 +436,28 @@ const TINT_BODY = /* glsl */ `
   // units/kit.ts: the reasoning for who gets bronze and who gets a pitted heirloom lives
   // there, next to the rest of the kit decisions.
   //
-  // These are warm on purpose. For a part-metal surface the albedo is also its F0, so it
-  // tints the environment reflection — and the environment here is a blue sky. Neutral-grey
-  // iron came back off the GPU as saturated blue helmets across the whole field, which is a
-  // worse uniformity tell than the flat grey it replaced. Warm F0 pulls that reflection back
-  // toward steel and leaves the four classes distinguishable.
+  // These are warm on purpose. The albedo of a metal *is* its F0, so it tints the
+  // environment reflection — and the environment here is a blue sky. Neutral-grey iron came
+  // back off the GPU as saturated blue helmets across the whole field, which is a worse
+  // uniformity tell than the flat grey it replaced. Warm F0 pulls that reflection back toward
+  // steel and leaves the four classes distinguishable.
+  //
+  // **These are now multipliers about 1.0, not brighteners.** They used to run from 0.68 to
+  // 2.2 because the atlas tile underneath them was charcoal (0.157 linear) and something had
+  // to lift it. The tiles now carry true F0 — iron at 0.56 linear — so the old range would
+  // drive F0 well past 1 and hand the renderer more energy than arrived, which shows up as
+  // white clipped helmets rather than bright ones. What is left here is hue and class.
   float mcls = floor( iCol1.w );
   float polish = fract( iCol1.w ) * 1.1111;
   vec3 metal =
-      mcls < 0.5 ? vec3( 1.20, 1.08, 0.92 )      // iron, warm grey
-    : mcls < 1.5 ? vec3( 1.52, 1.12, 0.50 )      // bronze and brass, the older kit
-    : mcls < 2.5 ? vec3( 0.76, 0.68, 0.58 )      // blackened, pitted or heavily rusted
-    :              vec3( 1.44, 1.42, 1.32 );     // tinned or silvered, the parade finish
-  metal *= 0.9 + polish * 0.55;
+      mcls < 0.5 ? vec3( 1.20, 1.00, 0.82 )      // iron, warmed hard against the sky cast
+    : mcls < 1.5 ? vec3( 1.34, 0.94, 0.48 )      // bronze and brass, the older kit
+    : mcls < 2.5 ? vec3( 0.70, 0.58, 0.47 )      // blackened, pitted or heavily rusted
+    :              vec3( 1.30, 1.22, 1.06 );     // tinned or silvered, the parade finish
+  // Polish moves F0 only a little — an oxide film is thin. Most of what "well kept" means
+  // is *roughness*, and that is applied per man below, because a tight bright glint next to
+  // a broad soft sheen is the difference a rank actually reads.
+  metal *= 0.88 + polish * 0.20;
   // ---- cloth batch variation ----------------------------------------------
   // Cloth was dyed in small lots and faded in the sun, so a value spread belongs on the
   // dyed slots only. Applying it to metal as well, as this used to, doubled up on polish,
@@ -560,7 +604,21 @@ const TINT_BODY = /* glsl */ `
     tint = crest * ( 0.82 + fract( v * 131.7 ) * 0.36 );
   }
   vSoldierTint = tint;
-  vSoldierGrime = iOrient.w;
+  /**
+   * How well this particular man keeps his ironmongery, as a signed roughness offset.
+   *
+   * The polish term already nudges F0 a little above, but an oxide film is thin and F0 is not what
+   * "well kept" looks like. What it looks like is the *width of the highlight*: a burnished
+   * bowl throws one tight glint that tracks the sun, a neglected one throws a broad dull
+   * sheen over the whole crown. A rank in which every helmet has an identical highlight is
+   * the specular equivalent of a rank in which every man has an identical pose, and it is
+   * most of what "effectively zero specular response" means when a critic writes it.
+   *
+   * Metal slots only. Polish is meaningless on linen, and adding a roughness spread to cloth
+   * would just make some men's tunics inexplicably shiny.
+   */
+  float isMetalSlot = step( 6.5, slot ) * step( slot, 7.4 );
+  vSoldierSurf = vec2( iOrient.w, ( 0.5 - polish ) * 0.34 * isMetalSlot );
 
   vSoldierEmblem = vec3( 0.0 );
   if ( slot > 5.5 && slot < 6.5 ) {
@@ -575,7 +633,8 @@ const TINT_BODY = /* glsl */ `
 
 const FRAG_DECLS = /* glsl */ `
 varying vec3 vSoldierTint;
-varying float vSoldierGrime;
+/** x: grime 0..1. y: this man's roughness offset, signed, metal slots only. */
+varying vec2 vSoldierSurf;
 varying vec3 vSoldierEmblem;
 `;
 
@@ -595,7 +654,7 @@ diffuseColor.rgb *= vSoldierTint;
 diffuseColor.rgb = mix(
   diffuseColor.rgb,
   diffuseColor.rgb * 0.5 + vec3( 0.19, 0.15, 0.12 ) * 0.5,
-  clamp( vSoldierGrime, 0.0, 1.0 ) );
+  clamp( vSoldierSurf.x, 0.0, 1.0 ) );
 `;
 
 const v3 = (p: readonly [number, number, number]): string =>
@@ -669,7 +728,7 @@ function patch(
 
     let v = shader.vertexShader;
     v = `${defines(o)}\n${DECLS}\nvec3 gSoldierPos;\n${
-      withNormal ? 'varying vec3 vSoldierTint;\nvarying float vSoldierGrime;\nvarying vec3 vSoldierEmblem;\n' : ''
+      withNormal ? 'varying vec3 vSoldierTint;\nvarying vec2 vSoldierSurf;\nvarying vec3 vSoldierEmblem;\n' : ''
     }${v}`;
 
     if (withNormal) {
@@ -692,7 +751,7 @@ function patch(
       // Dirt and dried blood are matte; they should lift roughness, not just darken.
       f = f.replace(
         '#include <roughnessmap_fragment>',
-        '#include <roughnessmap_fragment>\nroughnessFactor = clamp( roughnessFactor + vSoldierGrime * 0.22, 0.04, 1.0 );'
+        '#include <roughnessmap_fragment>\nroughnessFactor = clamp( roughnessFactor + vSoldierSurf.x * 0.22 + vSoldierSurf.y, 0.035, 1.0 );'
       );
       shader.fragmentShader = f;
     }
@@ -702,7 +761,7 @@ function patch(
   // because it changes the injected source: the man has it and the horse does not, and
   // colliding here would give one of them the other's vertex shader.
   const rig = o.poseVary ? 'vary' : 'plain';
-  material.customProgramCacheKey = () => `soldier-skin-v3-${variant}-${rig}`;
+  material.customProgramCacheKey = () => `soldier-skin-v4-${variant}-${rig}`;
 }
 
 export interface SoldierMaterialSet {

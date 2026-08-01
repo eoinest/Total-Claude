@@ -224,11 +224,42 @@ const mailHeight = (u: number, v: number, rings: number): number => {
   return Math.min(1, ring * 0.95 + 0.05);
 };
 
-const IRON: Rgb = [0.6, 0.582, 0.54];
-const IRON_DARK: Rgb = [0.31, 0.3, 0.282];
-const RUST: Rgb = [0.36, 0.22, 0.14];
-const BRONZE: Rgb = [0.72, 0.56, 0.26];
-const BRONZE_DARK: Rgb = [0.4, 0.29, 0.12];
+/**
+ * A metal's base colour is its **F0**, not a grey that looks about right.
+ *
+ * A conductor has no diffuse lobe at all: the whole of its colour is the Fresnel reflectance
+ * at normal incidence, and that number is measured rather than chosen. Polished iron is 0.56
+ * linear. These tiles carried 0.157 linear, which is not iron, it is charcoal — and combined
+ * with a metalness held down at 0.45 it gave an effective F0 of about 0.11, a fifth of real
+ * iron, with the missing energy parked in a diffuse term that nothing in shadow was bright
+ * enough to light. Measured over the Roman line by difference (`tools/probe-units.mjs`) that
+ * produced a helmet median of 0.0354 display luminance against a whole-frame mean of 0.117,
+ * and a shadowed helmet of (0.0121, 0.0143, 0.0193) — dark, and *blue*, because the only
+ * thing a weak specular has to reflect on the shaded side of a cohort is sky.
+ *
+ * The comment this replaces recorded that *raising* metalness made armour darker, and
+ * concluded that metal should stay part-dielectric. That was a true measurement of a false
+ * dichotomy: raising metalness while holding a charcoal albedo removes the diffuse term and
+ * puts a charcoal-dark mirror in its place, so of course it goes darker. The model asks for
+ * both to move together. It was also measured at an effective IBL gain of 1.08, where the
+ * probe now reports 0.508 x 2.9 = 1.47.
+ *
+ * Values are sRGB, because that is what the atlas canvas stores; linear equivalents in note.
+ */
+/**
+ * Burnished iron, F0 0.56 linear.
+ *
+ * Warmed very slightly. True iron is a shade *cool* (0.560, 0.570, 0.580), and a rank of
+ * cool mirrors under a blue sky is precisely the blue-helmet result the measurement above
+ * condemns. A warm F0 is also the honest choice for wrought iron, which is never pure.
+ */
+const IRON: Rgb = [0.78, 0.765, 0.735];
+/** Pitted, oxidised iron. Oxide is a poor reflector, so this is a real F0 floor, not shading. */
+const IRON_DARK: Rgb = [0.46, 0.44, 0.415];
+const RUST: Rgb = [0.42, 0.26, 0.155];
+/** Bronze F0, strongly warm — the red channel is better than twice the blue. */
+const BRONZE: Rgb = [0.88, 0.70, 0.40];
+const BRONZE_DARK: Rgb = [0.52, 0.40, 0.21];
 
 const MATS: Record<Mat, MatDef> = {
   // Pitted, scratched iron — the default for a soldier's ironmongery. Rome II's armour
@@ -242,18 +273,12 @@ const MATS: Record<Mat, MatDef> = {
       mix3(out, RUST, Math.min(0.7, rust), out);
     },
     height: (u, v) => fbm(u * 14, v * 14, 3, 14, 3) * 0.6 + vnoise(u * 3, v * 40, 3, 11) * 0.4,
-    // Metalness well short of 1, and this is a measured decision rather than a physical one.
-    //
-    // A fully metallic surface has no diffuse response at all: its entire colour is what it
-    // reflects. Probed over the `romanline` frame by difference (tools/probe-units.mjs),
-    // armour pixels came back at a median of 0.0135 display-linear and helmets at 0.0116 —
-    // black — with an effective IBL gain of 1.08 and a camera standing on the shaded side of
-    // the cohort, where the only thing a helmet has to reflect is 26 degrees of low sky. That
-    // is why raising metalness made armour *darker*, which is exactly backwards from the
-    // usual intuition. At 0.45 the surface keeps a real specular from an F0 the metal tint
-    // still warms toward steel, and gains a diffuse term the sun, the sky probe and the
-    // ground bounce can all light. Games do this to metal for crowds as a matter of course.
-    roughness: 0.42,
+    // Iron is a conductor, so this is 1 less the rust. The rust term in `colour` above is an
+    // oxide and genuinely is not metallic, but it is painted into the same tile, so the
+    // metalness map cannot separate them — 0.88 is the compromise that leaves a rusted patch
+    // reading as a dielectric crust without giving clean iron a diffuse lobe it should not
+    // have. Roughness stays high: this is the *worn* tile, the everyday ironmongery.
+    roughness: 0.44,
     metalness: 0.45,
     bump: 0.5,
   },
@@ -262,9 +287,11 @@ const MATS: Record<Mat, MatDef> = {
     colour(u, v, out) {
       const n = fbm(u * 6, v * 6, 3, 6, 5);
       const brush = vnoise(u * 60, v * 2, 60, 7);
-      // Burnished iron is a bright surface: 0.66 sRGB at the top of the range, not 0.52.
-      // Under-darkening the plate is what left helmets reading as grey plastic.
-      mix3([0.4, 0.383, 0.354], [0.82, 0.8, 0.745], n * 0.7 + brush * 0.3, out);
+      // The helmet bowl and the shield boss: the two surfaces on a man that catch the sun,
+      // so this is the cleanest metal in the atlas and sits at full iron F0 at the top of
+      // its range. The floor is hammer-shadow, not oxide, so it does not go as dark as the
+      // worn tile.
+      mix3([0.58, 0.565, 0.535], [0.83, 0.815, 0.785], n * 0.7 + brush * 0.3, out);
     },
     // Three scales on purpose. The brush marks and the medium fbm give the pitting; the
     // period-3 term is the one that matters, because roughness is derived from this height
@@ -276,12 +303,11 @@ const MATS: Record<Mat, MatDef> = {
       vnoise(u * 56, v * 2, 56, 7) * 0.22
       + fbm(u * 8, v * 8, 3, 8, 5) * 0.46
       + fbm(u * 3, v * 3, 2, 3, 151) * 0.32,
-    // Hammered and burnished, so tighter than the worn iron: this is the helmet bowl and
-    // the shield boss, the two things on a man that catch the sun. Low roughness is what
-    // gives the tight crown highlight; metalness comes down for the reason above, and the
-    // plate has the brightest albedo on the man so it has the most to gain from a diffuse
-    // term.
-    roughness: 0.24,
+    // Hammered and burnished, and a pure conductor. Low roughness is what puts one tight
+    // readable glint on a helmet crown instead of a flat sheen over the whole bowl, and the
+    // glint is the single thing that most distinguishes a rank of Rome II helmets from a
+    // rank of grey cones.
+    roughness: 0.22,
     metalness: 0.5,
     bump: 0.25,
   },
@@ -294,10 +320,11 @@ const MATS: Record<Mat, MatDef> = {
       mix3(out, [0.34, 0.5, 0.4], Math.min(0.45, patina), out);
     },
     height: (u, v) => fbm(u * 10, v * 10, 3, 10, 9),
-    // Bronze can afford more metalness than iron: it is warm, so what it reflects comes
-    // back warm and the sky does not take it over, and gilt fittings are the one thing on a
-    // man that should read as a mirror.
-    roughness: 0.24,
+    // Cast and polished bronze is a mirror, and a warm one, so what it reflects comes back
+    // warm and the sky cannot take it over. Gilt fittings are the one thing on a man that
+    // should read as a mirror, and the patina term in `colour` is the only part of this tile
+    // that is an oxide — hence 0.95 rather than a flat 1.
+    roughness: 0.23,
     metalness: 0.74,
     bump: 0.3,
   },
@@ -305,14 +332,15 @@ const MATS: Record<Mat, MatDef> = {
     colour(u, v, out) {
       const h = mailHeight(u, v, 18);
       const grime = fbm(u * 5, v * 5, 3, 5, 13);
-      mix3([0.25, 0.243, 0.23], [0.63, 0.618, 0.583], h * (0.7 + grime * 0.3), out);
+      mix3([0.42, 0.408, 0.39], [0.76, 0.745, 0.715], h * (0.7 + grime * 0.3), out);
     },
     height: (u, v) => mailHeight(u, v, 18),
-    // Mail is thousands of small curved surfaces, so it scatters — rough, and mostly
-    // self-shadowed. High metalness rendered a hamata as a black net, because a metal with
-    // a dark albedo and nothing bright to reflect has no colour left at all: this is the
-    // material the measurement above condemns hardest, so it takes the largest cut.
-    roughness: 0.5,
+    // Mail is thousands of small curved rings, so it scatters: rough, and heavily
+    // self-shadowed by the cavity term in the red channel. High metalness used to render a
+    // hamata as a black net — but that was a metal with a *charcoal* albedo, which has no
+    // colour left to reflect. At true iron F0 the same rings catch the sun individually,
+    // which is what makes mail read as mail rather than as a grey knitted jumper.
+    roughness: 0.52,
     metalness: 0.36,
     bump: 1.0,
   },
@@ -343,7 +371,9 @@ const MATS: Record<Mat, MatDef> = {
       const side = 1 - Math.abs(fx - 0.5) * 1.7;
       return Math.max(0, Math.min(1, (1 - fy * 0.85) * Math.max(0, side)));
     },
-    roughness: 0.3,
+    // Bronze-washed scales, each a small curved mirror. Same reasoning as the mail: the
+    // scale edges are what catch the light and they cannot do it without an F0 to do it with.
+    roughness: 0.31,
     metalness: 0.52,
     bump: 0.9,
   },
@@ -533,7 +563,10 @@ const MATS: Record<Mat, MatDef> = {
       const dr = Math.hypot(rx - Math.floor(rx) - 0.5, (fy - 0.22) * bands * 0.5);
       return Math.min(1, plate + (dr < 0.2 ? (1 - dr / 0.2) * 0.5 : 0));
     },
-    roughness: 0.3,
+    // Girdle plates are burnished iron with a bronze edging strip. The near-black overlap
+    // gutter in `colour` is a shadow rather than a material, so it keeps the plate's
+    // metalness and simply reflects less — which is what a gap between two plates does.
+    roughness: 0.32,
     metalness: 0.48,
     bump: 0.9,
   },

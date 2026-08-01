@@ -445,6 +445,15 @@ export class MeshBuilder {
    * with `DoubleSide`. That matters because the material culls backfaces for fill-rate
    * reasons, and because a reversed triangle sharing a front-facing normal lights as a flat
    * slab — which is exactly how a cloak reads if you get this wrong.
+   *
+   * `thickness` separates the two shells along the surface normal and stitches a rim between
+   * them, which is what turns a sheet into cloth. At zero the two shells are coincident: the
+   * silhouette is then a mathematical line, the edge z-fights with itself, and the garment
+   * reads as an infinitely thin decal wrapped on a cone — which is the specific complaint
+   * ("zero-thickness cloth", "a rigid unlit cone") that blind critics have made about the
+   * sagum in several rounds. A real woollen sagum is 3-5 mm of fulled cloth and hangs with a
+   * visible edge; 6 mm here is deliberately a shade over life size, because a sub-pixel edge
+   * buys nothing and the extra millimetre is what makes the hem catch the light.
    */
   sheet(
     rows: number,
@@ -453,9 +462,12 @@ export class MeshBuilder {
     bindOf: (v: number) => { bone: number; bone2: number; w: number },
     uv: UvRect,
     repeatU = 1,
-    repeatV = 1
+    repeatV = 1,
+    thickness = 0
   ): void {
     const p: SheetPoint = { x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 1 };
+    /** Both shells' rings, so the rim can be stitched between them afterwards. */
+    const shells: number[][][] = [];
     for (const facing of [1, -1]) {
       const grid: number[][] = [];
       for (let r = 0; r <= rows; r++) {
@@ -467,7 +479,13 @@ export class MeshBuilder {
           const tu = c / cols;
           at(tu, tv, p);
           const [u, v] = MeshBuilder.tileUv(uv, tu, tv, repeatU, repeatV);
-          row.push(this.vert(p.x, p.y, p.z, p.nx * facing, p.ny * facing, p.nz * facing, u, v));
+          // Push each shell a half-thickness along its own outward normal.
+          const nl = Math.hypot(p.nx, p.ny, p.nz) || 1;
+          const off = (facing * thickness) / (2 * nl);
+          row.push(this.vert(
+            p.x + p.nx * off, p.y + p.ny * off, p.z + p.nz * off,
+            p.nx * facing, p.ny * facing, p.nz * facing, u, v
+          ));
         }
         grid.push(row);
       }
@@ -477,6 +495,18 @@ export class MeshBuilder {
           else this.quad(grid[r][c], grid[r + 1][c], grid[r + 1][c + 1], grid[r][c + 1]);
         }
       }
+      shells.push(grid);
+    }
+    if (thickness <= 0) return;
+    // Rim. Front shell is shells[0], back is shells[1]; both are indexed [row][col].
+    const [f, bk] = shells;
+    for (let c = 0; c < cols; c++) {
+      this.quad(f[0][c + 1], f[0][c], bk[0][c], bk[0][c + 1]);
+      this.quad(f[rows][c], f[rows][c + 1], bk[rows][c + 1], bk[rows][c]);
+    }
+    for (let r = 0; r < rows; r++) {
+      this.quad(f[r][0], f[r + 1][0], bk[r + 1][0], bk[r][0]);
+      this.quad(f[r + 1][cols], f[r][cols], bk[r][cols], bk[r + 1][cols]);
     }
   }
 
