@@ -670,7 +670,7 @@ try {
   // autoplay=0 so the player still owns Rome and selection is meaningful.
   const url = `${base}/?harness=1&autoplay=0&quality=${QUALITY}&w=${W}&h=${H}`;
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await page.waitForFunction(() => window.__game && window.__game.ready === true, { timeout: 120000 });
+  await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 120000 });
   await page.evaluate((at) => {
     const g = window.__game;
     while (g.simTime() < at - 1e-6) g.advance(Math.min(0.5, at - g.simTime()));
@@ -1043,7 +1043,7 @@ try {
     mpage.on('pageerror', (e) => errors.push(`motion pageerror: ${e.message}`));
     await mpage.goto(`${base}/?harness=1&autoplay=1&quality=${QUALITY}&w=${W}&h=${H}`,
       { waitUntil: 'domcontentloaded', timeout: 60000 });
-    await mpage.waitForFunction(() => window.__game && window.__game.ready === true, { timeout: 120000 });
+    await mpage.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 120000 });
     // Every frame from here is driven by hand, so the page's own `requestAnimationFrame`
     // loop is only a source of nondeterminism and of contention for the GPU.
     await mpage.evaluate(() => window.__game.engine.stop());

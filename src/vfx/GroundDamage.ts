@@ -71,32 +71,51 @@ void main() {
 }
 `;
 
-const SHOW_VERT = /* glsl */ `
-precision highp float;
-varying vec3 vNormal;
-varying vec3 vWorld;
-void main() {
-  vNormal = normal;
-  vec4 wp = modelMatrix * vec4(position, 1.0);
-  vWorld = wp.xyz;
-  gl_Position = projectionMatrix * viewMatrix * wp;
-}
-`;
-
-const SHOW_FRAG = /* glsl */ `
-precision highp float;
+/**
+ * Damage overlay: injected into a `MeshStandardMaterial` rather than shipped as a
+ * `ShaderMaterial`.
+ *
+ * **This layer used to be the reason half the army had no shadow.** It was a raw
+ * `ShaderMaterial` with its own hand-rolled lambert — `uAmbient * 0.55 + uSunColour * ndl` —
+ * which has no shadow term in it at all, drawn *over* a terrain that receives shadows
+ * correctly, at up to 0.96 alpha. So wherever men had churned the ground, the overlay painted
+ * the terrain's shadow back out, and a blind critic reading `romanline` found a hard vertical
+ * boundary running through the crowd with long crisp shadows on one side and none on the
+ * other, exactly on the edge of the damage. It was called the most damning artefact in the set.
+ *
+ * A raw `ShaderMaterial` cannot receive a shadow without re-implementing the shadow pipeline by
+ * hand, and here that pipeline is not the stock one: `LightingSystem` runs four cascades with a
+ * custom soft-shadow tap and a cloud-transmittance term, patched into
+ * `ShaderChunk.lights_fragment_begin`. Re-deriving all of that in a private shader would be
+ * both a large amount of duplicated GLSL and a second thing to keep in step.
+ *
+ * `LightingSystem.discoverMaterials` traverses the scene every sixteen frames and calls
+ * `setupMaterial` on every material whose *type* is one of the lit templates, chaining its
+ * existing `onBeforeCompile` rather than replacing it. So the whole fix is to be a
+ * `MeshStandardMaterial`: cascades, soft shadows, cloud shading, fog and tone mapping all
+ * arrive by themselves, and the damage field below only has to supply albedo and coverage.
+ *
+ * The sun uniforms this used to carry are gone with the hand-rolled lighting — see
+ * `setLighting`, which is now deliberately a no-op.
+ */
+const DAMAGE_PARS = /* glsl */ `
 uniform sampler2D uDamage;
 uniform sampler2D uNoise;
-uniform vec3 uSun;
-uniform vec3 uSunColour;
-uniform vec3 uAmbient;
 uniform float uFade;
 /** (centreX, centreZ, extent) — must match the splat camera exactly. See uv below. */
 uniform vec3 uFrame;
-varying vec3 vNormal;
-varying vec3 vWorld;
+varying vec3 tcWorld;
+`;
 
-void main() {
+/**
+ * Albedo and coverage for one fragment of churned, bloodied, scorched ground.
+ *
+ * Everything that was in the old fragment shader except the lighting, which is now the
+ * template's job. Injected after `<color_fragment>`, so `diffuseColor` is the surface colour
+ * the lighting model will go on to shade — which is precisely the change: the damage is now an
+ * *albedo*, not a finished pixel.
+ */
+const DAMAGE_BODY = /* glsl */ `
   // Buffer lookup derived from world position, never from the mesh's own uv attribute.
   //
   // The splat pass writes through an orthographic camera at the buffer centre, so a splat
@@ -106,8 +125,8 @@ void main() {
   // displayed the whole buffer mirrored about the z axis: every stain appeared 2|z| metres
   // away on the wrong side of the field, which is why a buffer holding two hundred thousand
   // splats composited as clean grass wherever anyone had actually fought. Deriving the
-  // coordinate from vWorld makes the two passes agree by construction.
-  vec2 dUv = (vWorld.xz - uFrame.xy) / uFrame.z + 0.5;
+  // coordinate from the world position makes the two passes agree by construction.
+  vec2 dUv = (tcWorld.xz - uFrame.xy) / uFrame.z + 0.5;
 
   // Cheap conservative reject first. This layer spans the whole fighting ground, so on
   // most frames the majority of its fragments are over untouched turf; paying for four
@@ -118,10 +137,10 @@ void main() {
   // Three decorrelated noise lookups on incommensurate, rotated bases. Axis-aligned
   // lookups at a single scale make the tiling read as a lattice, which is exactly what
   // a virtual-texture ground layer must never do.
-  vec2 rot = vec2(vWorld.x * 0.8763 - vWorld.z * 0.4817, vWorld.x * 0.4817 + vWorld.z * 0.8763);
-  vec4 nBig = texture2D(uNoise, vWorld.xz * 0.0137);
-  vec4 nMid = texture2D(uNoise, rot * 0.0731);
-  vec4 nFine = texture2D(uNoise, rot.yx * 0.317);
+  vec2 tcRot = vec2(tcWorld.x * 0.8763 - tcWorld.z * 0.4817, tcWorld.x * 0.4817 + tcWorld.z * 0.8763);
+  vec4 nBig = texture2D(uNoise, tcWorld.xz * 0.0137);
+  vec4 nMid = texture2D(uNoise, tcRot * 0.0731);
+  vec4 nFine = texture2D(uNoise, tcRot.yx * 0.317);
 
   vec2 warp = (vec2(nBig.r, nMid.g) - 0.5) * 0.0026;
   vec4 d = texture2D(uDamage, dUv + warp);
@@ -172,25 +191,21 @@ void main() {
 
   float wSoil = wT + wS;
   vec3 soil = wSoil > 1e-4 ? (trampCol * wT + scorchCol * wS) / wSoil : trampCol;
-  vec3 c = mix(soil, bloodCol, bCov);
-  float a = clamp(1.0 - exp(-total * 1.15), 0.0, 0.96) * uFade;
 
-  // Sit inside the scene lighting; an unlit decal floats off the ground instantly.
-  vec3 nrm = normalize(vNormal);
-  float ndl = clamp(dot(nrm, uSun), 0.0, 1.0);
-  vec3 lit = uAmbient * 0.55 + uSunColour * ndl * 0.95;
-  c *= lit;
+  // These are *albedos* now, and they were authored as finished pixels under a hand-rolled
+  // lambert that multiplied by roughly 0.75 in full sun. Handing the same numbers to the real
+  // lighting model would render the damage about a third too dark, so they are divided back
+  // out: the layer's brightness in sunlight is preserved and its brightness in shadow becomes
+  // correct for the first time.
+  diffuseColor.rgb = mix(soil, bloodCol, bCov) * 1.34;
+  diffuseColor.a = clamp(1.0 - exp(-total * 1.15), 0.0, 0.96) * uFade;
 
-  // A wet sheen on fresh, heavy blood — the one specular note on the ground.
-  float wet = clamp(blood * 1.7 - 0.35, 0.0, 1.0);
-  c += uSunColour * pow(ndl, 8.0) * wet * 0.10;
-
-  gl_FragColor = vec4(c, 1.0);
-  #include <tonemapping_fragment>
-  #include <colorspace_fragment>
-  gl_FragColor.a = a;
-}
+  // Fresh blood is wet, and wet ground is smoother. The old shader faked this with an
+  // explicit specular lobe; expressing it as roughness lets the standard model produce the
+  // sheen, including its response to a shadow falling across the pool.
+  float tcWet = clamp(blood * 1.7 - 0.35, 0.0, 1.0);
 `;
+
 
 export class GroundDamageLayer {
   /** Side length in metres of the square the buffer covers. */
@@ -209,7 +224,13 @@ export class GroundDamageLayer {
   private aSize: THREE.InstancedBufferAttribute;
   private aRotTile: THREE.InstancedBufferAttribute;
   private aAmt: THREE.InstancedBufferAttribute;
-  private showMat: THREE.ShaderMaterial;
+  private showMat: THREE.MeshStandardMaterial;
+  private showUniforms!: {
+    uDamage: { value: THREE.Texture };
+    uNoise: { value: THREE.Texture };
+    uFade: { value: number };
+    uFrame: { value: THREE.Vector3 };
+  };
   private pending = 0;
   /**
    * One frame's splat budget. A mass rout drains hundreds of queued corpse pools in a
@@ -324,18 +345,18 @@ export class GroundDamageLayer {
     nrm.needsUpdate = true;
     geo.computeBoundingSphere();
 
-    this.showMat = new THREE.ShaderMaterial({
-      vertexShader: SHOW_VERT,
-      fragmentShader: SHOW_FRAG,
-      uniforms: {
-        uDamage: { value: this.rt.texture },
-        uNoise: { value: noise },
-        uSun: { value: new THREE.Vector3(0.4, 0.7, -0.6) },
-        uSunColour: { value: new THREE.Color(1, 0.94, 0.82) },
-        uAmbient: { value: new THREE.Color(0.2, 0.25, 0.33) },
-        uFade: { value: 1 },
-        uFrame: { value: new THREE.Vector3(this.centreX, this.centreZ, this.extent) },
-      },
+    // Held on the instance because `onBeforeCompile` assigns them into the material's live
+    // uniform object by reference; writing through these updates the shader without a recompile.
+    this.showUniforms = {
+      uDamage: { value: this.rt.texture },
+      uNoise: { value: noise },
+      uFade: { value: 1 },
+      uFrame: { value: new THREE.Vector3(this.centreX, this.centreZ, this.extent) },
+    };
+    const showMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.94,
+      metalness: 0,
       transparent: true,
       depthTest: true,
       depthWrite: false,
@@ -344,12 +365,35 @@ export class GroundDamageLayer {
       polygonOffsetUnits: -4,
       side: THREE.FrontSide,
     });
+    showMat.name = 'ground-damage';
+    showMat.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, this.showUniforms);
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', `#include <common>\nvarying vec3 tcWorld;`)
+        // `<begin_vertex>` rather than `<worldpos_vertex>`: the latter is compiled in only
+        // when an envmap, a shadow map or a spot light happens to need it, so anchoring to it
+        // makes the damage layer's world position depend on lighting state.
+        .replace(
+          '#include <begin_vertex>',
+          '#include <begin_vertex>\n  tcWorld = ( modelMatrix * vec4( position, 1.0 ) ).xyz;'
+        );
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `#include <common>\n${DAMAGE_PARS}`)
+        .replace('#include <color_fragment>', `#include <color_fragment>\n${DAMAGE_BODY}`)
+        .replace(
+          '#include <roughnessmap_fragment>',
+          '#include <roughnessmap_fragment>\n  roughnessFactor = mix( roughnessFactor, 0.34, tcWet );'
+        );
+    };
+    this.showMat = showMat;
 
     this.mesh = new THREE.Mesh(geo, this.showMat);
     this.mesh.name = 'vfx-ground-damage';
     this.mesh.renderOrder = 1;
     this.mesh.castShadow = false;
-    this.mesh.receiveShadow = false;
+    // The whole point. A layer drawn over shadowed terrain, at up to 0.96 alpha, with no
+    // shadow of its own, deletes every shadow that falls on churned ground.
+    this.mesh.receiveShadow = true;
     this.mesh.matrixAutoUpdate = false;
     this.mesh.updateMatrix();
   }
@@ -426,15 +470,21 @@ export class GroundDamageLayer {
     this.pending = 0;
   }
 
-  /** Refresh the lighting uniforms so the layer tracks the sun. */
+  /**
+   * Deliberately a no-op, kept so callers do not have to care.
+   *
+   * The layer used to light itself from these three, which is exactly why it had no shadow:
+   * a private lambert cannot know that a soldier is standing between this fragment and the
+   * sun. It is a `MeshStandardMaterial` now, so the sun direction, its colour, the ambient
+   * term, the four shadow cascades and the cloud transmittance all reach it through the
+   * normal lighting path and none of them are this class's business any more.
+   */
   setLighting(sun: THREE.Vector3, sunColour: THREE.Color, ambient: THREE.Color): void {
-    (this.showMat.uniforms.uSun.value as THREE.Vector3).copy(sun);
-    (this.showMat.uniforms.uSunColour.value as THREE.Color).copy(sunColour);
-    (this.showMat.uniforms.uAmbient.value as THREE.Color).copy(ambient);
+    void sun; void sunColour; void ambient;
   }
 
   setFade(f: number): void {
-    this.showMat.uniforms.uFade.value = f;
+    this.showUniforms.uFade.value = f;
   }
 
   get splatCount(): number {

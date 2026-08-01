@@ -278,7 +278,7 @@ const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));
 const mapArg = MAP ? `&map=${MAP}` : '';
 await page.goto(`${base}/?harness=1&quality=ultra&w=${W}&h=${H}${mapArg}`, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => window.__game && window.__game.ready === true, { timeout: 180000 });
+await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 180000 });
 await page.addStyleTag({ content: '#hud-root, #loading { display: none !important; }' });
 await mkdir(OUT, { recursive: true });
 

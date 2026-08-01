@@ -97,7 +97,7 @@ const browser = await chromium.launch({
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
 page.on('pageerror', (e) => console.error('  ! page error:', e.message));
 await page.goto(`${base}/?harness=1&quality=ultra&w=${W}&h=${H}&nohud=1`, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => window.__game && window.__game.ready === true, { timeout: 180000 });
+await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 180000 });
 // The same DOM strip `shoot.mjs --nohud` uses, so the HUD cannot enter the statistics.
 // Hiding `body > *:not(canvas)` instead looks equivalent and is not: the canvas sits inside
 // a wrapper, so that selector hides the render surface and every metric reads a flat 6/255.
@@ -171,14 +171,29 @@ async function levels(png) {
 
 const shot = (name) => page.screenshot({ path: path.join(OUT, `${TAG}${name}.png`) });
 /**
- * Re-render without advancing the world. `Engine.advance(seconds, stepMs)` derives its step
- * count as `seconds * 1000 / stepMs`, so `(1e-6, 1e-3)` is exactly one frame carrying one
- * microsecond of time: the 30 Hz fixed step never fires, dust and men do not move, and the
- * only thing that changes between two calls is the TAA jitter phase. Stepping a real
- * 1/60 s instead put the noise floor at 18-27 % of the frame, which swamped every signal
- * this probe exists to measure — the dust plumes alone move further in one frame than a
- * shadow is wide.
+ * Re-render without advancing the world.
+ *
+ * **The claim this comment used to make was false and every figure below depended on it.**
+ * It said `advance(1e-6, 1e-3)` was "one frame carrying one microsecond of time", so the
+ * fixed step never fired and nothing moved. It is not. `Engine.advance` seeds its timestamp
+ * from `time.elapsed`, a cumulative sum of *clamped* frame deltas, while `Time.beginFrame`
+ * differences its argument against `lastNow`, which holds the previous raw timestamp. Those
+ * are two different clocks, so from the second call onward the difference saturates the
+ * 0.25 s clamp and `maxStepsPerFrame` runs its full five fixed ticks. Measured through
+ * `simTime()`, each call advances the battle by about 0.13 s — men march, dust rolls, and
+ * corpses fall between the two frames this probe calls "no change at all".
+ *
+ * That makes the reported `noise floor` a noise floor *for a moving world*, which is far too
+ * generous: every shadow figure here is declared to clear it, so shadow work has been passing
+ * against a bar that was never valid. Same defect as the shot harness charging five sim ticks
+ * to each rendered frame, which made this project's fps history roughly double the truth.
+ *
+ * `Time.beginFrame` scales its delta by `paused ? 0 : gameSpeed`, so pausing freezes `simTime`
+ * outright and the identical world state is re-rendered — which is what the old comment
+ * described and never delivered. `--nopause` restores the old behaviour so the two can be
+ * compared in one session.
  */
+const PAUSE = !args.has('nopause');
 const SETTLE = Number(args.get('settle') ?? 3);
 const step = (n = SETTLE) => page.evaluate((k) => {
   for (let i = 0; i < k; i++) window.__game.engine.advance(1e-6, 1e-3);
@@ -192,12 +207,17 @@ for (const name of requested) {
   console.log(`\n=== ${name} ===`);
 
   const need = s.at - simTime;
-  if (need > 0.05) {
-    await page.evaluate(async (dt) => { await window.__game.advance(dt); }, need);
-    simTime = s.at;
-  }
-  await page.evaluate((c) => { window.__game.setCamera(c.x, c.z, c.zoom, c.yaw); }, s);
-  await page.evaluate(async () => { await window.__game.advance(0.25); });
+  await page.evaluate(async (dt) => {
+    // Unpaused only to seek: the seek is the one place the world may move.
+    window.__game.engine.time.paused = false;
+    if (dt > 0.05) await window.__game.advance(dt);
+  }, need);
+  if (need > 0.05) simTime = s.at;
+  await page.evaluate(async ([c, pause]) => {
+    window.__game.setCamera(c.x, c.z, c.zoom, c.yaw);
+    await window.__game.advance(0.25);
+    window.__game.engine.time.paused = pause;
+  }, [s, PAUSE]);
 
   const info = await page.evaluate(() => {
     const ctx = window.__game.engine.context;

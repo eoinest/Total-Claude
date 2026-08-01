@@ -156,7 +156,7 @@ for (const [hour, group] of byHour) {
   page.on('pageerror', (e) => console.error('PAGE ERROR:', e.message));
   const url = `${base}/?harness=1&quality=ultra&w=${W}&h=${H}&battle=${PUNIC(hour)}`;
   await page.goto(url, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => window.__game && window.__game.ready === true, { timeout: 150000 });
+  await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 150000 });
 
   /**
    * Neuter the AI, exactly as `tools/matchup.mjs` does.

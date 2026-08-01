@@ -71,7 +71,7 @@ const browser = await chromium.launch({
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
 page.on('pageerror', (e) => console.log('[pageerror]', e.message.slice(0, 300)));
 await page.goto(`${base}/?harness=1&quality=ultra&w=${W}&h=${H}`, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => window.__game && window.__game.ready === true, { timeout: 120000 });
+await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 120000 });
 
 const out = await page.evaluate(async (shot) => {
   const g = window.__game;

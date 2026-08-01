@@ -70,7 +70,7 @@ const browser = await chromium.launch({
 });
 const page = await browser.newPage({ viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1 });
 await page.goto(`${base}/?harness=1&quality=ultra&w=1600&h=900`, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => window.__game && window.__game.ready === true, { timeout: 120000 });
+await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 120000 });
 
 for (const name of requested) {
   const s = SHOTS[name];

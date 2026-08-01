@@ -323,7 +323,7 @@ try {
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
   // Wait for the engine to finish async init.
-  await page.waitForFunction(() => window.__game && window.__game.ready === true, { timeout: 120000 });
+  await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 120000 });
 
   // Confirm we actually got a hardware-ish GL context, not a stub.
   const gl = await page.evaluate(() => {

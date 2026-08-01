@@ -109,7 +109,7 @@ const page = await browser.newPage({ viewport: { width: W, height: H }, deviceSc
 page.setDefaultTimeout(180000);
 page.on('pageerror', (e) => console.log('[page error]', e.message));
 await page.goto(`${base}/?harness=1&quality=ultra&w=${W}&h=${H}`, { waitUntil: 'domcontentloaded', timeout: 120000 });
-await page.waitForFunction(() => window.__game && window.__game.ready === true, { timeout: 180000 });
+await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 180000 });
 await page.evaluate((t) => window.__game.advance(t), AT);
 // Park the camera, then render one real frame so the LOD selection and the instance
 // buffers reflect this viewpoint rather than the rig's opening position.

@@ -512,7 +512,23 @@ export const CARTHAGINIAN_UNITS: UnitTypeDef[] = [
      * armour-piercing where an arrow's is 4 of 20. Against unarmoured tribesmen the archers
      * are the better unit; against a legionary cohort in mail these are, by a wide margin.
      */
-    missile: { kind: 'sling', range: 180, damage: 17, apDamage: 11, rate: 7, ammo: 22, accuracy: 0.055, arc: 'high' },
+    /**
+     * `apDamage` 18, up from 11, and only the armour-piercing half moves.
+     *
+     * Measured against a legionary cohort: 393 stones struck a man over 98 seconds and killed
+     * four of a hundred and sixty. At 17/11 a stone does about 17 points to armour 52 out of a
+     * hundred hit points, so it takes six hits on the *same* man, and the hits are spread over
+     * the whole cohort. Two structural faults were fixed first and neither was enough on its
+     * own: the stones could not physically reach 180 m at all, and the scutum was stopping 87%
+     * of them outright.
+     *
+     * Raising `damage` would have made the unit stronger against everything. Raising only the
+     * armour-piercing half sharpens exactly the matchup the weapon is famous for and leaves it
+     * where it already was against unarmoured tribesmen, which is what the roster note below
+     * claims for it and what Livy and Xenophon both describe: a weapon that beats the shielded,
+     * armoured man other missiles bounce off.
+     */
+    missile: { kind: 'sling', range: 180, damage: 17, apDamage: 18, rate: 7, ammo: 22, accuracy: 0.055, arc: 'high' },
     walkSpeed: 1.7, runSpeed: 4.2, chargeSpeed: 4.4, mass: 64, stamina: 80,
     morale: 44, discipline: 0.9,
     appearance: {

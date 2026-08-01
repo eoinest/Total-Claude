@@ -118,7 +118,7 @@ const browser = await chromium.launch({
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
 page.on('pageerror', (e) => console.error('  ! page error:', e.message));
 await page.goto(`${base}/?harness=1&quality=ultra&w=${W}&h=${H}`, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => window.__game && window.__game.ready === true, { timeout: 180000 });
+await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 180000 });
 await page.addStyleTag({ content: '#hud-root, #loading { display: none !important; }' });
 
 /** The knobs the arms above drive, installed once. */

@@ -67,7 +67,7 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 await page.goto(`${base}/?harness=1&quality=${QUALITY}&autoplay=${AUTOPLAY}&w=640&h=360`, {
   waitUntil: 'domcontentloaded',
 });
-await page.waitForFunction(() => window.__game?.ready === true, { timeout: 120000 });
+await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 120000 });
 
 // Instrument the simulation systems in place: wrap fixedUpdate with a timer, and keep a
 // per-tick history of Fighting-state transitions so flicker is measurable.

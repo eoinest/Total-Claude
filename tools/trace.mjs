@@ -56,7 +56,7 @@ page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
 await page.goto(`${base}/?harness=1&quality=high&w=960&h=540`, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => window.__game?.ready === true, { timeout: 120000 });
+await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 120000 });
 
 const ORDER = ['Hold', 'MoveTo', 'AttackMove', 'AttackUnit', 'Withdraw', 'Rout', 'Garrison'];
 

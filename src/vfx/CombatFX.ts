@@ -508,22 +508,31 @@ export class CombatFX {
     x: number, y: number, z: number,
     material: 'ground' | 'shield' | 'flesh' | 'armour' | 'stone' | 'wood',
     hitTarget: boolean,
-    kind: ShaftKind = 'arrow'
+    kind: ShaftKind | 'stone' = 'arrow'
   ): void {
     const salt = ((this.t * 4409 + x * 3) | 0) ^ 0x2f1d;
-    // Every missile that is not a sling stone leaves its shaft behind. Ground misses
-    // stand where they fell; a shaft that glanced off a shield or a helmet drops at the
-    // man's feet. Four thousand volleyed missiles over a battle is what fills a Rome II
-    // field with spent kit, and it is the single most legible record of the fight.
-    if (material === 'ground') {
-      this.litter.plantShaft(kind, x, z, this.shaftSeed++);
-    } else if (material === 'shield' || material === 'armour' || material === 'wood') {
-      if (hash01(this.shaftSeed, 0x9e3) < 0.5) {
-        const a = hash01(this.shaftSeed, 0x7f1) * 6.283;
-        const r = 0.5 + hash01(this.shaftSeed, 0x5a3) * 1.1;
-        this.litter.plantShaft(kind, x + Math.cos(a) * r, z + Math.sin(a) * r, this.shaftSeed);
+    /*
+     * Shafted missiles leave their shaft behind. Ground misses stand where they fell; a
+     * shaft that glanced off a shield or a helmet drops at the man's feet. Four thousand
+     * volleyed missiles over a battle is what fills a Rome II field with spent kit, and it
+     * is the single most legible record of the fight.
+     *
+     * A `stone` is not one of them. An onager boulder used to travel as `sling` — the only
+     * kind the union offered — so a one-talent stone planted a lead bullet's litter mark and
+     * played its impact sound. It now has its own kind and plants nothing: the crater it
+     * leaves is `GroundDamage`'s to draw, not the litter field's.
+     */
+    if (kind !== 'stone') {
+      if (material === 'ground') {
+        this.litter.plantShaft(kind, x, z, this.shaftSeed++);
+      } else if (material === 'shield' || material === 'armour' || material === 'wood') {
+        if (hash01(this.shaftSeed, 0x9e3) < 0.5) {
+          const a = hash01(this.shaftSeed, 0x7f1) * 6.283;
+          const r = 0.5 + hash01(this.shaftSeed, 0x5a3) * 1.1;
+          this.litter.plantShaft(kind, x + Math.cos(a) * r, z + Math.sin(a) * r, this.shaftSeed);
+        }
+        this.shaftSeed++;
       }
-      this.shaftSeed++;
     }
     switch (material) {
       case 'ground': {

@@ -68,11 +68,16 @@ export interface GameEvents {
   volleyFired: {
     x: number; y: number; z: number;
     count: number;
-    kind: 'pilum' | 'arrow' | 'javelin' | 'sling' | 'bolt';
+    /**
+     * `stone` is separate from `sling` because they are different objects with different
+     * sounds and different litter. Without it a 26 kg onager boulder had to borrow `sling`,
+     * so a siege engine landed with the crack of a lead bullet and left a bullet-sized mark.
+     */
+    kind: 'pilum' | 'arrow' | 'javelin' | 'sling' | 'bolt' | 'stone';
   };
   projectileImpact: {
     x: number; y: number; z: number;
-    kind: 'pilum' | 'arrow' | 'javelin' | 'sling' | 'bolt';
+    kind: 'pilum' | 'arrow' | 'javelin' | 'sling' | 'bolt' | 'stone';
     hitTarget: boolean;
     material: 'ground' | 'shield' | 'flesh' | 'armour' | 'stone' | 'wood';
   };

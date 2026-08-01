@@ -98,7 +98,7 @@ console.log('• pass 1: AudioContext unavailable');
     Object.defineProperty(globalThis, 'AudioContext', { get() { return undefined; }, configurable: true });
   });
   await page.goto(`${base}/?harness=1&quality=high&w=960&h=540`, { waitUntil: 'domcontentloaded' });
-  const booted = await page.waitForFunction(() => window.__game?.ready === true, { timeout: 120000 })
+  const booted = await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 120000 })
     .then(() => true).catch(() => false);
   if (!booted) fail('game did not boot with AudioContext removed');
   else {
@@ -122,7 +122,7 @@ console.log('• pass 1: AudioContext unavailable');
 console.log('\n• pass 2: suspended context, no user gesture');
 const { page, errors } = await newPage(null);
 await page.goto(`${base}/?harness=1&quality=high&w=960&h=540`, { waitUntil: 'domcontentloaded' });
-if (!await page.waitForFunction(() => window.__game?.ready === true, { timeout: 120000 }).then(() => true).catch(() => false)) {
+if (!await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 120000 }).then(() => true).catch(() => false)) {
   fail('game did not boot');
 } else {
   const pre = await page.evaluate(() => {
@@ -148,7 +148,7 @@ if (!await page.waitForFunction(() => window.__game?.ready === true, { timeout: 
   console.log('\n• pass 3: real click gesture, then resume (fresh load)');
   const before = errors.length;
   await page.goto(`${base}/?harness=1&quality=high&w=960&h=540`, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => window.__game?.ready === true, { timeout: 120000 });
+  await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 120000 });
   await page.evaluate(() => window.__game.engine.stop());
   await page.mouse.click(480, 500);
   const resumed = await page.waitForFunction(

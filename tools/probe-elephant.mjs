@@ -66,7 +66,7 @@ const browser = await chromium.launch({
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 page.on('pageerror', (e) => console.error('PAGE ERROR:', e.message));
 await page.goto(`${base}/?harness=1&quality=ultra`, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => window.__game && window.__game.ready === true, { timeout: 120000 });
+await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 120000 });
 
 // ---------------------------------------------------------------------------
 // 1-3: clip-space measurements, straight off the authored poses

@@ -444,10 +444,16 @@ if (args.has('bench')) {
           const ctx = g.engine.context;
           const cam = ctx.camera;
           // Force the phase per *view*, not per phase-group. The battle is still running under
-          // the bench, so a volley between two views of the same phase would reset `sinceShot`
-          // from the crew's ammunition and the four angles would not be of the same machine
-          // state. Re-forcing costs nothing and makes the set internally consistent.
+          // the bench, so a shot between two views of the same phase would reset `sinceShot`
+          // and the four angles would not be of the same machine state. Re-forcing costs
+          // nothing and makes the set internally consistent.
+          //
+          // `freezeEngines` is what makes the forcing stick. The simulation owns the artillery
+          // cycle now — `ProjectileSystem` runs it in `fixedUpdate` and `UnitRenderSystem`
+          // copies it every frame — so a value written here would be overwritten by the settle
+          // frame below. Freezing stops the copy without stopping the battle.
           const ur = ctx.get('unitRender');
+          ur.freezeEngines = true;
           for (const bat of ur.batteries.values()) bat.sinceShot.fill(since);
 
           // Turn the machine so the sun lands `sunOff` degrees off the camera axis.
