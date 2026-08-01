@@ -22,12 +22,18 @@ export interface GeneratedMaps {
   /** Albedo *detail* — mean-normalised luminance, multiplied by vertex colour. */
   albedo: THREE.DataTexture;
   normal: THREE.DataTexture;
-  /** Roughness in G, metalness in B — packed so one sampler serves both. */
+  /**
+   * Horizon openness in R, roughness in G, metalness in B — one sampler serves all three.
+   * See `horizonOpenness` for what R is and why the recess has to live there rather than
+   * in the albedo.
+   */
   orm: THREE.DataTexture;
   /** Reciprocal of the albedo map's linear mean; goes into `material.color`. */
   albedoGain: number;
   /** Metres of wall covered by one UV repeat. */
   worldSize: number;
+  /** Mean of the openness channel — a one-number summary of how deep the surface is. */
+  meanOpenness: number;
 }
 
 // --- noise ------------------------------------------------------------------
@@ -96,7 +102,31 @@ const toSrgbByte = (linear: number): number => {
   return Math.round(s * 255);
 };
 
-/** Convert a heightfield into a tangent-space normal map (OpenGL convention, +Y up). */
+/**
+ * Convert a heightfield into a tangent-space normal map (OpenGL convention, +Y up).
+ *
+ * ## The green channel was inverted, and it cost the wall its coursing
+ *
+ * The line below used to read `out[o + 1] = (-ny / l) * 0.5 + 0.5`, which stores `+dh/dv`
+ * — the DirectX / Y-down convention — under a comment claiming OpenGL. `makeTexture` builds
+ * a `DataTexture`, whose `flipY` is `false`, so row `j` is texture row `v` directly and
+ * `dy` here *is* `dh/dv`; three.js multiplies `mapN.y` by the tangent frame's +V column, so
+ * the map has to carry `-dh/dv`. Two negations cancelled and the V response came out backwards.
+ *
+ * It is worth being precise about what that does, because a sign error in a normal map
+ * changes no magnitude anywhere and so is invisible to every obvious measurement. On an
+ * isotropic surface it is nearly unnoticeable — `travertineAshlar` and `basaltPaving` measured
+ * a paint-versus-relief correlation of -0.01 and +0.03, i.e. nothing. On **brick** it is
+ * exactly the wrong error, because a brick face is a stack of horizontal bands and *all* of
+ * its structure is in V. Measured on the shipped tile at mip 0, the correlation between the
+ * band-passed albedo and the band-passed Lambert term was **-0.260**: the map was lighting
+ * the top of each joint, which is the half the albedo had painted darkest as an overhang
+ * shadow, so paint and relief were subtracting from each other on the way to the screen.
+ *
+ * `src/units/atlas.ts` gets this right by the opposite route — it renders through a canvas,
+ * so its texture has `flipY = true`, `j` runs against `v`, and storing `+dy` there *is*
+ * `-dh/dv`. The two generators looked contradictory and only one of them was wrong.
+ */
 export function normalFromHeight(
   height: Float32Array,
   size: number,
@@ -108,19 +138,128 @@ export function normalFromHeight(
     for (let i = 0; i < size; i++) {
       const dx = (at(i + 1, j) - at(i - 1, j)) * strength;
       const dy = (at(i, j + 1) - at(i, j - 1)) * strength;
-      // Normal of the height surface: (-dh/dx, -dh/dy, 1), normalised.
+      // Normal of the height surface: (-dh/du, -dh/dv, 1), normalised.
       const nx = -dx;
       const ny = -dy;
       const nz = 1;
       const l = Math.hypot(nx, ny, nz);
       const o = (j * size + i) * 4;
       out[o] = Math.round(((nx / l) * 0.5 + 0.5) * 255);
-      out[o + 1] = Math.round(((-ny / l) * 0.5 + 0.5) * 255);
+      out[o + 1] = Math.round(((ny / l) * 0.5 + 0.5) * 255);
       out[o + 2] = Math.round(((nz / l) * 0.5 + 0.5) * 255);
       out[o + 3] = 255;
     }
   }
   return makeTexture(out, size, false);
+}
+
+/**
+ * The metres of relief one unit of a height field stands for.
+ *
+ * `normalFromHeight` never states this, but it is implied by its own arithmetic: it takes a
+ * central difference over two texels and multiplies by `strength` to get a slope, so
+ * `strength * dh_field` over two texels equals `dh_world / du_world`. Solving,
+ * one unit of field height is `strength * 2 * worldSize / size` metres.
+ *
+ * For the brick tile that is 5.0 * 2 * 3.3 / 1024 = **32.2 mm**, and the joint recess of
+ * 0.46 field units is 14.8 mm — which is the right number for a Roman lime joint, so the
+ * strengths already in this file are physically coherent and should not be retuned.
+ */
+export function reliefMetres(size: number, worldSize: number, strength: number): number {
+  return (strength * 2 * worldSize) / size;
+}
+
+/**
+ * Horizon openness: how much of the sky a texel can see past its own microrelief.
+ *
+ * ## Why this map exists
+ *
+ * A blind grader named the leading masonry separator as "every recess is painted rather than
+ * modelled — the sharpest instance being brick coursing that shows **identical contrast in
+ * sunlit and shadowed regions under raking light**". Measured on the live frame by removing
+ * one channel at a time from the brick material and differencing the results, that is
+ * literally true and worse than stated:
+ *
+ *   - at the shipped `wall` camera the normal map contributes **0.00008** of display
+ *     luminance to the sunlit curtain — two hundredths of one 8-bit code value — while the
+ *     albedo detail contributes 0.00045, so what little coursing survives is *entirely* paint;
+ *   - at a close raking camera, where the tile is still legible, the albedo channel's
+ *     sunlit-to-shaded amplitude ratio is **1.152** against the normal channel's **3.151**.
+ *     The paint is the same in sun and in shade, by construction, because it is paint.
+ *
+ * The reason the relief loses is the mip chain, and it is structural rather than a tuning
+ * error. A bump's two slopes are equal and opposite, so averaging four normals cancels them;
+ * a dark band has a non-zero mean, so averaging four albedo texels keeps most of it. Measured
+ * on the shipped tile, mean tangent-space |n.xy| runs 0.271 / 0.254 / 0.237 / 0.144 / 0.043 /
+ * 0.031 down the ladder — **84 % of the relief is gone by mip 4**, which the curtain reaches
+ * at about 40 m, while the albedo's own contrast is still at half strength. No normalScale
+ * fixes that; at mip 5 there is nothing left to scale.
+ *
+ * A *scalar* derived from the height field does not have that problem. Occlusion averages
+ * like brightness: the mean openness of a patch of coursing is a meaningful number, and it
+ * stays meaningful all the way down the ladder. So this map carries, per texel, the sine of
+ * the mean horizon elevation above the tangent plane, stored as **openness = 1 - sin(h)** so
+ * that an unwritten channel (255) means "unoccluded" and every existing map keeps working.
+ * `materials.ts` uses it twice: to gate the *direct* light by whether the sun clears the
+ * local horizon, and to attenuate the *indirect* by the cosine-weighted visible fraction
+ * `1 - sin^2(h)`. The first is strongly directional and the second is not, which is exactly
+ * the asymmetry a real recess has and a painted one cannot.
+ *
+ * ## How it is estimated
+ *
+ * Not by ray-marching: eight directions by sixteen steps over a 1024 tile is 130 M texel
+ * reads at boot, and the city already spends its budget on fbm. Instead the classic
+ * blur-minus-height cavity estimate at three radii, which is two separable box passes each
+ * and O(n) in total. `blur(h, r) - h` is positive inside a recess and its ratio to the world
+ * radius is the mean slope up to the rim, i.e. the tangent of the horizon elevation. Taking
+ * the largest over three radii picks up both the 18 mm joint and the 120 mm putlog socket.
+ */
+export function horizonOpenness(
+  height: Float32Array,
+  size: number,
+  worldSize: number,
+  strength: number
+): Float32Array {
+  const hMetres = reliefMetres(size, worldSize, strength);
+  const texelM = worldSize / size;
+  const out = new Float32Array(size * size);
+  const tmp = new Float32Array(size * size);
+  const acc = new Float32Array(size * size);
+  // Radii in texels. The largest is capped so a small tile does not blur to its own mean,
+  // which would report every texel as sitting in a pit.
+  const radii = [2, 5, 11].filter((r) => r * 2 + 1 <= size / 4);
+  if (!radii.length) radii.push(Math.max(1, Math.floor(size / 8)));
+  const wrap = (v: number) => ((v % size) + size) % size;
+  for (const r of radii) {
+    const w = r * 2 + 1;
+    // Separable box blur, wrapping — the tile is tileable and the horizon must be too.
+    for (let j = 0; j < size; j++) {
+      let s = 0;
+      for (let i = -r; i <= r; i++) s += height[j * size + wrap(i)];
+      for (let i = 0; i < size; i++) {
+        tmp[j * size + i] = s / w;
+        s += height[j * size + wrap(i + r + 1)] - height[j * size + wrap(i - r)];
+      }
+    }
+    for (let i = 0; i < size; i++) {
+      let s = 0;
+      for (let j = -r; j <= r; j++) s += tmp[wrap(j) * size + i];
+      for (let j = 0; j < size; j++) {
+        acc[j * size + i] = s / w;
+        s += tmp[wrap(j + r + 1) * size + i] - tmp[wrap(j - r) * size + i];
+      }
+    }
+    for (let k = 0; k < out.length; k++) {
+      // Mean rise to the rim, as a world slope, converted to sin(elevation).
+      const rise = (acc[k] - height[k]) * hMetres;
+      const slope = rise / (r * texelM);
+      const s = slope > 0 ? slope / Math.sqrt(1 + slope * slope) : 0;
+      if (s > out[k]) out[k] = s;
+    }
+  }
+  // Store openness, so 1.0 (an unwritten 255) is an unoccluded surface.
+  for (let k = 0; k < out.length; k++) out[k] = clamp01(1 - out[k]);
+  return out;
 }
 
 /**
@@ -151,17 +290,24 @@ export function detailFromField(field: Float32Array, size: number): { tex: THREE
   return { tex: makeTexture(out, size, true), gain: 1 / (mean * scale) };
 }
 
-/** Pack roughness (G) and metalness (B) from two fields into one texture. */
+/**
+ * Pack horizon openness (R), roughness (G) and metalness (B) into one texture.
+ *
+ * R was a hard-coded 255 read by nothing, so the openness map is free: no new sampler, no
+ * new texture, no new draw call, and the existing mip chain and anisotropy already apply
+ * to it. `materials.ts` reuses the `texelRoughness` fetch three.js has already made.
+ */
 export function ormFromFields(
   rough: Float32Array,
   size: number,
-  metal: number
+  metal: number,
+  openness?: Float32Array
 ): THREE.DataTexture {
   const out = new Uint8Array(size * size * 4);
   const m = Math.round(clamp01(metal) * 255);
   for (let i = 0; i < rough.length; i++) {
     const o = i * 4;
-    out[o] = 255;
+    out[o] = openness ? Math.round(clamp01(openness[i]) * 255) : 255;
     out[o + 1] = Math.round(clamp01(rough[i]) * 255);
     out[o + 2] = m;
     out[o + 3] = 255;
@@ -182,12 +328,16 @@ function fields(size: number): FieldSet {
 
 function assemble(f: FieldSet, size: number, worldSize: number, normalStrength: number, metal: number): GeneratedMaps {
   const d = detailFromField(f.lum, size);
+  const openness = horizonOpenness(f.height, size, worldSize, normalStrength);
+  let meanOpen = 0;
+  for (let i = 0; i < openness.length; i++) meanOpen += openness[i];
   return {
     albedo: d.tex,
     normal: normalFromHeight(f.height, size, normalStrength),
-    orm: ormFromFields(f.rough, size, metal),
+    orm: ormFromFields(f.rough, size, metal, openness),
     albedoGain: d.gain,
     worldSize,
+    meanOpenness: meanOpen / openness.length,
   };
 }
 
@@ -301,14 +451,32 @@ export function brickFace(size = 1024): GeneratedMaps {
       f.height[o] = inMortar ? 0.16 + grit * 0.5 : proud * edge + 0.2 * (1 - edge) + grit - chip;
 
       if (inMortar) {
-        // The joint is recessed 18 mm of a 55 mm pitch. Lime mortar is pale *stone*, but
-        // what the eye sees at any range beyond a few metres is the shadow standing in
-        // the recess, so the albedo has to carry that: a joint authored brighter than the
-        // brick cancels against the normal map and the whole face mips out to flat, which
-        // is why the first pass of this wall had no visible courses at all.
-        // Deeper toward the top of the joint, where the brick above overhangs it.
-        const occ = 0.34 + 0.42 * (dvBottom < dvTop ? 1 : 0.45);
-        f.lum[o] = occ + grit * 1.1;
+        /*
+         * **The joint's shadow is no longer painted here.**
+         *
+         * This used to read `occ = 0.34 + 0.42 * (dvBottom < dvTop ? 1 : 0.45)`, giving the
+         * joint an albedo of 0.53-0.76 against brick at ~0.87 and a comment explaining that
+         * the recess had to be painted because "what the eye sees at any range beyond a few
+         * metres is the shadow standing in the recess". The observation was right and the
+         * remedy was the defect a blind grader eventually named: a painted shadow is a
+         * shadow that does not know where the sun is, so it shows *identical contrast in
+         * sunlit and shadowed regions*, which no real recess does. Measured on the finished
+         * frame, the albedo channel's sunlit-to-shaded amplitude ratio was 1.152 against the
+         * normal channel's 3.151.
+         *
+         * The reason the painted version was needed — that the normal map dies in the mip
+         * chain — is now answered by the openness channel (see `horizonOpenness`), which is a
+         * scalar and therefore averages down without cancelling. So the joint can carry its
+         * real albedo, which is *pale*: Roman lime-and-pozzolana mortar is a light warm grey
+         * against fired brick, marginally brighter rather than three-quarters darker.
+         *
+         * The metre-scale tonal variation stays exactly where it was. Gang patches, kiln
+         * scatter, rain streaking and splash-back are genuinely albedo — they are stains and
+         * different clay, not geometry — and they are the only part of this tile that
+         * survives to 90 m anyway. What has been removed is specifically the *course-scale*
+         * paint that was standing in for relief.
+         */
+        f.lum[o] = 0.90 + grit * 0.8;
         f.rough[o] = 0.94;
       } else {
         // Brick luminance varies brick to brick and course to course — kilns were uneven,
@@ -321,11 +489,20 @@ export function brickFace(size = 1024): GeneratedMaps {
       }
 
       if (inPutlog) {
-        // A socket is a void: the height drops to the back of the hole and the albedo goes
-        // to the shadow standing in it, which is what makes it legible at 100 m.
+        /*
+         * A socket keeps most of its painted darkness, and the distinction matters.
+         *
+         * A joint is a *recess* — a lit surface set back a few millimetres, whose darkness
+         * is a shadow and therefore belongs to the light. A putlog socket is a *hole*: what
+         * the eye sees is the unlit inside of a beam pocket, and that is dark whether the
+         * sun is on the wall or not. So the albedo is allowed to carry it, and the drop is
+         * eased only from 0.30 to 0.44 because the openness channel now contributes the
+         * rest. This is the one feature on the tile that reads at 100 m, and gutting it to
+         * satisfy a rule about recesses would be applying the rule to the wrong thing.
+         */
         const wall = smoothstep((Math.min(putlogHalf - dpu, putlogHalf - dpv) / putlogHalf) * 4);
         f.height[o] = 0.02 + (1 - wall) * 0.3;
-        f.lum[o] *= 0.30 + (1 - wall) * 0.35;
+        f.lum[o] *= 0.44 + (1 - wall) * 0.30;
         f.rough[o] = 0.96;
       }
 
@@ -394,7 +571,11 @@ export function travertineAshlar(size = 512): GeneratedMaps {
 
       f.height[o] = inJoint ? 0.1 : 0.72 + blockN * 0.06 + grain - pit * 0.35 + bedding;
       if (inJoint) {
-        f.lum[o] = 0.4 + grain;
+        // Was 0.4 against a block at 0.74-0.85, i.e. the joint painted half a stop darker
+        // than the stone on either side of it. An ashlar joint is the *same* travertine set
+        // back 6 mm; every bit of its darkness is shadow, and shadow is now the openness
+        // channel's job. What is left is the lime pointing, which is paler than the stone.
+        f.lum[o] = 0.78 + grain;
         f.rough[o] = 0.95;
       } else {
         f.lum[o] = 0.74 + blockN * 0.1 + grain * 1.5 - pit * 0.3;
@@ -437,12 +618,17 @@ export function roofTiles(size = 512): GeneratedMaps {
       if (inCover) {
         const t = dCover / coverW; // 0 at the ridge line, 1 at the pan
         h = 0.62 + Math.cos(t * Math.PI * 0.5) * 0.34;
-        lum = 0.6 + Math.cos(t * Math.PI * 0.5) * 0.24 + tileN * 0.08;
+        // The cylindrical shading down an imbrex was painted here at +-0.24 of albedo, which
+        // is the same defect as the brick joint in a different costume: a half-round tile
+        // that is bright along its crown whichever way the sun is. Cut to 0.07, which is the
+        // genuine albedo difference (a cover tile is a separate firing from the pan beneath
+        // it); the roundness is the normal map's and the openness channel's to deliver.
+        lum = 0.72 + Math.cos(t * Math.PI * 0.5) * 0.07 + tileN * 0.08;
       } else {
         // Slight dish across the pan, and a step at each tile lap.
         const dish = Math.sin((dCover - coverW) / (0.5 - coverW) * Math.PI) * 0.05;
         h = 0.44 - dish + (lapF < 0.06 ? 0.12 : 0);
-        lum = 0.44 + tileN * 0.1 - dish * 1.2;
+        lum = 0.66 + tileN * 0.1 - dish * 0.5;
       }
       // Weathering: lichen and soot pool along the laps.
       const moss = Math.pow(fbm(u * 9 + 3, v * 9, 4, 9, 55), 2.2);
@@ -564,8 +750,11 @@ export function basaltPaving(size = 256): GeneratedMaps {
       const sn = hash2(id, 3, 17);
       const wear = fbm(u * 20, v * 20, 3, 20, 41) * 0.08;
       f.height[o] = 0.25 + seam * 0.6 + wear - sn * 0.05;
-      // Basalt is near-black; cart wheels polish ruts into it.
-      f.lum[o] = (0.3 + sn * 0.18) * (0.55 + seam * 0.6) + wear;
+      // Basalt is near-black; cart wheels polish ruts into it. The seam keeps *some* painted
+      // darkness — the gap between setts really is filled with a different, dirtier material,
+      // unlike a mortar joint — but the 0.55-to-1.15 swing was three-quarters shadow, and
+      // that part now comes from the openness channel instead. 0.82-to-1.15 is the grit.
+      f.lum[o] = (0.3 + sn * 0.18) * (0.82 + seam * 0.33) + wear;
       f.rough[o] = 0.58 + wear * 2 + (1 - seam) * 0.25;
     }
   }

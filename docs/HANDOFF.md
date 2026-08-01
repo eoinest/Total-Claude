@@ -101,6 +101,38 @@ Everything below came from the player. Items not listed here are done and commit
 - **trampled ground receives no shadows** — artillery (owns `src/vfx/`)
 - soldiers at 2-4% luminance — lighting
 
+### Masonry: what was left on the floor
+
+The named separator — "every recess is painted rather than modelled, the sharpest instance being
+brick coursing that shows identical contrast in sunlit and shadowed regions under raking light" —
+is fixed at the *material* level and the workstream was wound down there. What was found and not
+chased:
+
+- **A 55 mm course cannot resolve at the distance the deck is shot from, and never will.** At the
+  `wall` camera the curtain is 90 m away at ~14 screen px/m, so a course is 0.8 px and the sampler
+  is at mip 4-5. The whole brick tile contributes **1.7% of that frame's visible micro-structure**
+  after the fix and 2.1% before it; the other 98% is geometry and grain. Any further work on the
+  *tile* is invisible at battle range by arithmetic. What reads at 90 m in the reference
+  photographs of the real wall is **metre-scale geometry** — relieving arches, string courses,
+  buttress masses, patch repairs — which is `wall.ts`, not `texgen.ts`.
+- **No geometry in this project carries vertex tangents.** `computeTangents` appears nowhere;
+  three.js falls back to the screen-space derivative frame. That is legal and it measurably works
+  (the relief channel's sunlit-to-shaded ratio is 3.5), so it was not the cause — but it is a
+  standing cost on every normal-mapped surface and nobody has priced it.
+- **The shipped `wall` camera is not a raking camera and its subject is not raked either.** Its
+  sun-versus-camera bearing is +22 deg. Worse, the sun bears 33.2 deg and the curtain's inner face
+  normal bears 21.5 deg, so the sun hits the one large brick surface in the deck **12 deg off
+  normal** — the flattest light available — while the outer face bears 201.5 deg and is in shade at
+  every hour, exactly as the shot table's own comment says. The surfaces that are actually raked
+  are the ones turned 90 deg out of the curtain: tower flanks and merlon returns.
+  `probe-masonry.mjs` carries a `walltowers` framing at +102 deg that photographs both flanks of
+  the same towers, one lit and one shaded. **The deck has no masonry frame that grades masonry.**
+- The de-painting in `travertineAshlar`, `basaltPaving` and `roofTiles` is **inert as shipped**:
+  those keys have a `manifestId` and `public/assets/manifest.json` exists, so they take the
+  photographed path. It only bites with an empty asset folder. The photographed sets get openness
+  from an `ao` map when the manifest lists one, and 255 (unoccluded, a no-op) otherwise — **no
+  manifest entry currently supplies one.**
+
 Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`).
 
 ## Measured facts that must not be re-derived
@@ -160,6 +192,22 @@ Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`
   our lit and shadowed pixels are nearly the same hue. The fix is more contrast between the two
   ambient hemispheres at equal or lower total, which is what the chromatic ground bounce does
   (sky-to-bounce hue contrast 3.55 → 9.3 at luminance 0.1013 → 0.1016).
+- **A procedural normal map is gone by the time anything is 40 m away, and no `normalScale`
+  fixes that.** Measured on the brick tile: mean tangent-space |n.xy| runs 0.271 / 0.254 / 0.237 /
+  0.144 / 0.043 / 0.031 down the mip ladder — **84% of the perturbation is lost by mip 4**, because
+  a bump's two slopes are equal and opposite and cancel under averaging. An albedo band has a
+  non-zero mean and survives. That asymmetry is *why* every recess in this project reads as paint,
+  and it applies to every generator in `texgen.ts`, not just brick. The counter is a **scalar**
+  derived from the same height field: occlusion averages like brightness. `texgen.horizonOpenness`
+  bakes one into the ORM texture's R channel (which was a hard-coded 255 read by nothing) and
+  `materials.MICRO_RELIEF_PARS_GLSL` spends it on the direct light. Landed for masonry; **soldier
+  kit, terrain and engines all have the same defect and none of them have the counter.**
+- **Measuring "painted versus modelled" needs arm differencing, not a single frame.** Band-pass
+  amplitude over a whole frame is dominated by geometry edges and grain — at the shipped `wall`
+  camera the brick tile is only 1.7-2.4% of it — so a real change hides inside the noise.
+  `tools/probe-masonry.mjs` removes one channel at a time from the live material and differences
+  frames of an identical *paused* world; the reproducibility floor of that difference measures
+  **0.00000**, so anything above zero is signal. That technique is general and worth reusing.
 - **The crowd is NOT short of variation.** Read from the uploaded instance buffers: one 320-man
   cohort carries 57-59 kit masks, 119 statures, 229 cadences, 314/320 distinct animation phases,
   252 tunic colours. Adding variation is the wrong fix.
