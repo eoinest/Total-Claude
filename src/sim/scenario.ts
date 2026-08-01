@@ -1,9 +1,10 @@
 import type { EngineContext } from '../core/Engine';
 import type { BattleSystem } from './BattleSystem';
 import {
-  type BattleConfig, type ScenarioId, DEFAULT_CONFIG, compositionFor, fittedUnitScale,
+  type BattleConfig, type ScenarioId, DEFAULT_CONFIG, belligerents, compositionFor,
+  fittedUnitScale,
 } from './battleConfig';
-import { Faction, UnitOrder } from './types';
+import { Faction, UnitOrder, getOpposingFaction, setOpposingFaction } from './types';
 
 /**
  * The Siege of Rome, 271 AD.
@@ -39,6 +40,13 @@ export interface DeployedUnit {
 
 export interface ScenarioResult {
   roman: DeployedUnit[];
+  /**
+   * The non-Roman side, whoever it is.
+   *
+   * Kept under this name rather than renamed: `main.ts` is the only consumer and it reads
+   * nothing but `cameraFocus`, so a rename would be churn in a file this workstream does not
+   * own. It holds the Carthaginian order of battle when Carthage is the opponent.
+   */
   germanic: DeployedUnit[];
   /** Where the camera should open. */
   cameraFocus: { x: number; z: number; zoom: number; yaw: number };
@@ -121,6 +129,37 @@ const RAIDER_NAMES = [
   'Raiders of Hunimund', 'Horse-Thieves', 'Ford-Riders',
 ];
 
+// Carthage's contingents, named for where they were recruited rather than numbered, because
+// that is how Polybius and Livy list them and because the point of this army is that its
+// parts came from different places.
+const LIBYAN_NAMES = [
+  'Libyan Foot of Byrsa', 'Foot of Utica', 'Foot of Hadrumetum', 'Foot of Thapsus',
+  'Foot of Leptis', 'Foot of Hippo',
+];
+const SCUTARII_NAMES = [
+  'Scutarii of the Baetis', 'Scutarii of Ilergetia', 'Oretani Scutarii',
+  'Carpetani Scutarii', 'Edetani Scutarii',
+];
+const GALLIC_NAMES = [
+  'Boii Warband', 'Insubres Warband', 'Cenomani Warband', 'Taurini Warband',
+  'Lingones Warband',
+];
+const CAETRATI_NAMES = [
+  'Lusitani Caetrati', 'Celtiberian Caetrati', 'Vettones Caetrati', 'Turdetani Caetrati',
+];
+const BALEARIC_NAMES = [
+  'Slingers of Ebusus', 'Slingers of Majorica', 'Slingers of Minorica', 'Gymnesian Slingers',
+];
+const NUMIDIAN_NAMES = [
+  'Horse of Massylii', 'Horse of Masaesyli', 'Horse of Cirta', 'Horse of Zama',
+  'Horse of Thugga', 'Horse of Vaga',
+];
+const ELEPHANT_NAMES = [
+  'Elephants of the Bagradas', 'Elephants of Zama', 'Elephants of the Catabathmos',
+  'Elephants of Theveste',
+];
+const SACRED_BAND_NAMES = ['The Sacred Band', 'Second Sacred Band'];
+
 // The assault's own names. The first entries reproduce the labels the hardcoded deployment
 // used, so the frames in screenshots/siege still name the units a critic saw in them.
 const BALLISTARII_NAMES = [
@@ -174,8 +213,19 @@ export function deploySiegeOfRome(
   // battle from the field's order of battle rather than from the siege one.
   battle.unitSizeScale = fittedUnitScale(config, ctx.quality.maxSoldiers, 'field');
 
+  /**
+   * Who Rome is fighting, and the one place the whole battle learns it.
+   *
+   * Set before anything else, because `enemyOf` reads it and the AI and combat both call
+   * that. It is written exactly once per battle, here, outside any fixed step — see the
+   * note on `setOpposingFaction` in `sim/types.ts` for why that is compatible with the
+   * determinism rule.
+   */
+  const foe = belligerents(config)[1];
+  setOpposingFaction(foe);
+
   const rome = compositionFor(config, Faction.Rome, 'field');
-  const juth = compositionFor(config, Faction.Germanic, 'field');
+  const juth = compositionFor(config, foe, 'field');
   const n = (comp: Readonly<Record<string, number>>, id: string): number =>
     Math.max(0, comp[id] ?? 0);
 
@@ -252,6 +302,122 @@ export function deploySiegeOfRome(
   // problem.
   // ---------------------------------------------------------------------
   const germZ = -190;
+
+  // ---------------------------------------------------------------------
+  // Carthage, when Carthage is the enemy.
+  //
+  // A deliberately different shape from the Juthungi host, because it was a deliberately
+  // different army. Hannibal's line at Cannae is the model: the mercenary contingents in
+  // the centre where they were expected to give ground, the Libyan foot on their flanks
+  // where they would close in on a legion that had pushed too far, the Numidians wide, and
+  // the elephants out in front of the whole line rather than in it.
+  // ---------------------------------------------------------------------
+  if (foe === Faction.Carthage) {
+    const punZ = germZ;
+    // The battle line, alternating nationality rather than grouping it. A Punic line was
+    // brigaded by contingent, and interleaving is what makes that legible from the air: a
+    // player looking down sees white Iberian tunics between the Libyan and Gallic blocks
+    // instead of three homogeneous slabs.
+    const line: string[] = [];
+    {
+      let lib = n(juth, 'libyan-spearmen');
+      let ibe = n(juth, 'iberian-scutarii');
+      let gal = n(juth, 'gallic-mercenaries');
+      while (lib > 0 || ibe > 0 || gal > 0) {
+        if (gal > 0) { line.push('gallic-mercenaries'); gal--; }
+        if (ibe > 0) { line.push('iberian-scutarii'); ibe--; }
+        if (lib > 0) { line.push('libyan-spearmen'); lib--; }
+      }
+    }
+    const counters = new Map<string, number>();
+    const nameFor = (id: string): string => {
+      const k = counters.get(id) ?? 0;
+      counters.set(id, k + 1);
+      switch (id) {
+        case 'libyan-spearmen': return nameAt(LIBYAN_NAMES, k, 'Libyan Foot');
+        case 'iberian-scutarii': return nameAt(SCUTARII_NAMES, k, 'Scutarii');
+        case 'gallic-mercenaries': return nameAt(GALLIC_NAMES, k, 'Gallic Warband');
+        case 'iberian-caetrati': return nameAt(CAETRATI_NAMES, k, 'Caetrati');
+        case 'balearic-slingers': return nameAt(BALEARIC_NAMES, k, 'Slingers');
+        case 'numidian-cavalry': return nameAt(NUMIDIAN_NAMES, k, 'Numidian Horse');
+        case 'war-elephants': return nameAt(ELEPHANT_NAMES, k, 'Elephants');
+        default: return nameAt(SACRED_BAND_NAMES, k, 'Sacred Band');
+      }
+    };
+    for (const [k, x] of centred(line.length, 52).entries()) {
+      const id = line[k];
+      push(germanic, battle.spawnUnit(id, x, punZ, SOUTH, 'line'), nameFor(id));
+    }
+
+    // The Sacred Band behind the centre — the only reserve in the army and the only unit in
+    // it whose men are fighting for their own city.
+    for (const [k, x] of centred(n(juth, 'sacred-band'), 90).entries()) {
+      void k;
+      push(germanic, battle.spawnUnit('sacred-band', x, punZ - 62, SOUTH, 'shieldwall'),
+        nameFor('sacred-band'));
+    }
+
+    // Screen: caetrati and slingers ahead of the line. The Balearics stand furthest out
+    // because their 180 m sling out-ranges everything Rome has except the scorpions.
+    for (const [k, x] of centred(n(juth, 'iberian-caetrati'), 150).entries()) {
+      void k;
+      push(germanic, battle.spawnUnit('iberian-caetrati', x, punZ + 58, SOUTH, 'skirmish'),
+        nameFor('iberian-caetrati'));
+    }
+    for (const [k, x] of centred(n(juth, 'balearic-slingers'), 170).entries()) {
+      void k;
+      push(germanic, battle.spawnUnit('balearic-slingers', x, punZ + 40, SOUTH, 'loose'),
+        nameFor('balearic-slingers'));
+    }
+
+    /**
+     * The elephants, in front of the line and not in it.
+     *
+     * This is how they were actually used and it is also the only sensible place to put
+     * them here: `resolveCrowding` splits every separation by inverse mass, and at 4,200 kg
+     * against a man's 90 an elephant standing *inside* the battle line would shove its own
+     * infantry aside 47 to 1 before the enemy ever arrived. In front, that same physics is
+     * the whole point of the unit.
+     */
+    const eleHalf = Math.max(70, (line.length * 52) / 4);
+    for (const [k, x] of centred(n(juth, 'war-elephants'), eleHalf).entries()) {
+      void k;
+      push(germanic, battle.spawnUnit('war-elephants', x, punZ + 96, SOUTH, 'loose'),
+        nameFor('war-elephants'));
+    }
+
+    // Numidians wide on both wings — the arm that won Cannae, and the fastest thing here.
+    const punHalf = Math.max(210, (line.length * 52) / 2 + 118);
+    for (const [k, x] of flanking(n(juth, 'numidian-cavalry'), punHalf, 58).entries()) {
+      push(germanic, battle.spawnUnit('numidian-cavalry',
+        x, punZ + 52 - Math.floor(k / 2) * 30, SOUTH, 'loose'), nameFor('numidian-cavalry'));
+    }
+
+    /**
+     * Both sides advance rather than hold.
+     *
+     * The Juthungi battle opens with everyone on `Hold` and lets the AI take it from there.
+     * That cannot work here yet: `AIWorld.attach` registers perception views for Rome and
+     * the Juthungi only, and `buildPerception` takes a single target faction — so with
+     * Carthage on the field neither army can see the other and both stand still for the
+     * whole battle. The exact patch is in this workstream's report; until it lands, the
+     * deployment issues the order the AI would have. This is a scenario decision and not a
+     * workaround hidden in a system: a player who takes command overrides it immediately.
+     */
+    for (const u of battle.units) {
+      u.order = UnitOrder.AttackMove;
+      u.targetX = u.faction === Faction.Rome ? 0 : 0;
+      u.targetZ = u.faction === Faction.Rome ? punZ + 40 : romanZ - 40;
+    }
+
+    ctx.events.emit('battleStarted', { seed: battle.rng.getState(), scenario: 'carthage-271' });
+    return {
+      roman,
+      germanic,
+      cameraFocus: { x: 0, z: romanZ - 10, zoom: 0.78, yaw: Math.PI },
+    };
+  }
+
 
   // Skirmishers screening the whole frontage — the host's youths, sent to draw the first
   // volleys and then melt back through the intervals.
@@ -618,12 +784,21 @@ function deployAssault(
 /** Simple victory check used until the objective system lands. */
 export function checkVictory(battle: BattleSystem): { over: boolean; victor: Faction | -1; reason: string } {
   const romans = battle.activeUnits(Faction.Rome);
-  const germans = battle.activeUnits(Faction.Germanic);
+  // Whoever is not Rome. `activeUnits(Faction.Germanic)` was exact for two factions and
+  // would have reported a Carthaginian army as annihilated on the first tick, handing Rome
+  // an instant victory against an army that was still standing there.
+  const germans = battle.activeUnits().filter((u) => u.faction !== Faction.Rome);
   const romanMen = romans.reduce((a, u) => a + u.alive, 0);
   const germanMen = germans.reduce((a, u) => a + u.alive, 0);
 
   if (romanMen === 0 && germanMen === 0) return { over: true, victor: -1, reason: 'annihilation' };
   if (germanMen === 0) return { over: true, victor: Faction.Rome, reason: romans.length ? 'rout' : 'annihilation' };
-  if (romanMen === 0) return { over: true, victor: Faction.Germanic, reason: germans.length ? 'rout' : 'annihilation' };
+  if (romanMen === 0) {
+    return {
+      over: true,
+      victor: germans[0]?.faction ?? getOpposingFaction(),
+      reason: germans.length ? 'rout' : 'annihilation',
+    };
+  }
   return { over: false, victor: -1, reason: '' };
 }

@@ -17,7 +17,8 @@
 import type { QualityTier } from '../core/Engine';
 import {
   type BattleConfig, type Difficulty, type ScenarioId, DEFAULT_CONFIG, MAX_PER_TYPE,
-  MAX_UNITS_PER_SIDE, SCENARIOS, UNIT_SIZES, type UnitSizeId, baseStrength, compositionFor,
+  MAX_UNITS_PER_SIDE, SCENARIOS, UNIT_SIZES, type UnitSizeId, baseStrength, belligerents,
+  compositionFor,
   decodeConfig, encodeConfig, PERF_VALIDATED_MEN, fittedUnitScale, isScaleClamped,
   loadStoredConfig, rosterFor, sanitiseConfig, scaleAppliesTo, scenarioDef, storeConfig,
   summarise, unitCount, unitSizePreset,
@@ -25,6 +26,13 @@ import {
 import { QUALITY_PRESETS } from '../core/Engine';
 import { MAPS, getMap, setActiveMap, type MapId } from '../maps';
 import { Faction, type UnitClass } from '../sim/types';
+
+/** CSS class suffix per faction, so `menu.css` can theme each army panel. */
+const FACTION_CLASS: Record<Faction, string> = {
+  [Faction.Rome]: 'rome',
+  [Faction.Germanic]: 'germanic',
+  [Faction.Carthage]: 'carthage',
+};
 import { unitType } from '../units/roster';
 import { el, html, icon, setClass, setText } from './dom';
 import { ICON } from './icons';
@@ -35,6 +43,7 @@ const DIFFICULTIES: readonly Difficulty[] = ['easy', 'normal', 'hard', 'legendar
 const SIDE_LABEL: Record<number, string> = {
   [Faction.Rome]: 'ROME',
   [Faction.Germanic]: 'JUTHUNGI',
+  [Faction.Carthage]: 'QART-HADASHT',
 };
 
 /**
@@ -47,10 +56,15 @@ const SIDE_SUB: Record<ScenarioId, Record<number, string>> = {
   field: {
     [Faction.Rome]: 'Aurelian&rsquo;s field army &middot; defending',
     [Faction.Germanic]: 'The host of the Juthungi &middot; attacking',
+    [Faction.Carthage]: 'A citizen core and six bought contingents &middot; attacking',
   },
   assault: {
     [Faction.Rome]: 'The garrison of the Aurelian Wall &middot; holding',
     [Faction.Germanic]: 'The storming parties &middot; assaulting',
+    // Unreachable: `sanitiseConfig` forces the Juthungi for an assault. Present so the
+    // lookup is total — an absent key here printed the literal string "undefined" as an
+    // army's strapline rather than failing, which is the worst of both.
+    [Faction.Carthage]: 'The storming parties &middot; assaulting',
   },
 };
 
@@ -59,10 +73,12 @@ const FRONTAGE_LABEL: Record<ScenarioId, Record<number, { unit: string; title: s
   field: {
     [Faction.Rome]: { unit: 'm of line', title: 'Combined width of the battle-line units — how much front this army can form. Excludes reserves, wings and artillery.' },
     [Faction.Germanic]: { unit: 'm of line', title: 'Combined width of the battle-line units — how much front this army can form. Excludes reserves, wings and artillery.' },
+    [Faction.Carthage]: { unit: 'm of line', title: 'Combined width of the Libyan, Iberian and Gallic blocks. The Sacred Band is a reserve, the skirmishers a screen, and the elephants stand in front of the line rather than in it.' },
   },
   assault: {
     [Faction.Rome]: { unit: 'm of wall held', title: 'Combined width of the wall troops — how much curtain this garrison can line. Excludes the reserve cohorts and the carroballistae, which hold no parapet.' },
     [Faction.Germanic]: { unit: 'm of line', title: 'Combined width of the warbands waiting in the open. The towers, ladder parties, ram and onagers form no line.' },
+    [Faction.Carthage]: { unit: 'm of line', title: 'Combined width of the warbands waiting in the open.' },
   },
 };
 
@@ -373,8 +389,8 @@ export class MainMenu {
     this.stepBtns.length = 0;
     html(
       this.q('.menu-armies'),
-      [Faction.Rome, Faction.Germanic].map((f) => `
-        <section class="army army-${f === Faction.Rome ? 'rome' : 'germanic'}" data-side="${f}">
+      belligerents(this.cfg).map((f) => `
+        <section class="army army-${FACTION_CLASS[f]}" data-side="${f}">
           <div class="army-head">
             <span class="army-name">${SIDE_LABEL[f]}</span>
             <span class="army-sub">${SIDE_SUB[sc][f]}</span>
@@ -440,9 +456,13 @@ export class MainMenu {
     comp[id] = next;
     // Four fields, not two: the stepper writes into whichever pair belongs to the scenario
     // on screen, so editing a siege never touches the field order of battle or the reverse.
+    // Five fields now, not four: a Carthaginian row edited into `juthungi` would silently
+    // rewrite the Juthungi order of battle, and the player would see their change vanish the
+    // moment they switched opponent back.
     const key = this.cfg.scenario === 'assault'
       ? (f === Faction.Rome ? 'siegeRome' : 'siegeJuthungi')
-      : (f === Faction.Rome ? 'rome' : 'juthungi');
+      : f === Faction.Rome ? 'rome'
+        : f === Faction.Carthage ? 'carthage' : 'juthungi';
     this.cfg = { ...this.cfg, [key]: comp };
     this.refresh();
   }
@@ -502,7 +522,7 @@ export class MainMenu {
     this.q<HTMLInputElement>('.seed').value = String(this.cfg.seed);
 
     let grand = 0;
-    for (const f of [Faction.Rome, Faction.Germanic]) {
+    for (const f of belligerents(this.cfg)) {
       const comp = compositionFor(this.cfg, f);
       const s = summarise(this.cfg, f, pool);
       grand += s.men;

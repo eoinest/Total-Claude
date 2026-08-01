@@ -143,7 +143,19 @@ let ACQ_Y = 0;
 let ACQ_FX = 0;
 let ACQ_FZ = 0;
 let ACQ_R = 1;
-let ACQ_ENEMY = 0;
+/**
+ * The visitor's *own* side, so the test can be "anyone not mine".
+ *
+ * This was `ACQ_ENEMY`, holding the single opposing faction id and matched with `!==`. That
+ * is exact for two factions and silently catastrophic for three: with Carthage on the field,
+ * `u.faction === 0 ? 1 : 0` gives a Roman unit `1`, so a Roman soldier standing against a
+ * Carthaginian simply never acquires him — no target, no blows, no damage, and no error
+ * anywhere. Two of the three possible matchups did literally nothing.
+ *
+ * Storing our own side and rejecting it inverts the question into the one actually being
+ * asked, and it is correct for any number of factions. See `areEnemies` in `sim/types.ts`.
+ */
+let ACQ_OWN_FACTION = 0;
 let ACQ_SELF = -1;
 let ACQ_BEST = -1;
 let ACQ_BEST_SCORE = -1e9;
@@ -152,7 +164,7 @@ let ACQ_COUNTS: Int16Array | null = null;
 const acquireVisit = (j: number): void => {
   const p = POOL!;
   if (j === ACQ_SELF) return;
-  if (p.faction[j] !== ACQ_ENEMY) return;
+  if (p.faction[j] === ACQ_OWN_FACTION) return;
   const st = p.state[j];
   if (st === SoldierState.Dead || st === SoldierState.Dying) return;
   if (Math.abs(p.y[j] - ACQ_Y) > SAME_LEVEL_DY) return;
@@ -176,13 +188,14 @@ const acquireVisit = (j: number): void => {
 let NEAR_X = 0;
 let NEAR_Z = 0;
 let NEAR_Y = 0;
-let NEAR_ENEMY = 0;
+/** Own side, rejected rather than one enemy side matched. See `ACQ_OWN_FACTION`. */
+let NEAR_OWN_FACTION = 0;
 let NEAR_BEST_D2 = 0;
 let NEAR_BEST = -1;
 
 const nearestEnemyVisit = (j: number): void => {
   const p = POOL!;
-  if (p.faction[j] !== NEAR_ENEMY) return;
+  if (p.faction[j] === NEAR_OWN_FACTION) return;
   const st = p.state[j];
   if (st === SoldierState.Dead || st === SoldierState.Dying) return;
   if (Math.abs(p.y[j] - NEAR_Y) > SAME_LEVEL_DY) return;
@@ -202,14 +215,15 @@ let TRA_X = 0;
 let TRA_Z = 0;
 let TRA_Y = 0;
 let TRA_R2 = 0;
-let TRA_ENEMY = 0;
+/** Own side, rejected rather than one enemy side matched. See `ACQ_OWN_FACTION`. */
+let TRA_OWN_FACTION = 0;
 let TRA_SKIP = -1;
 
 const trampleVisit = (j: number): void => {
   if (TRAMPLE_N >= TRAMPLE_HITS.length) return;
   const p = POOL!;
   if (j === TRA_SKIP) return;
-  if (p.faction[j] !== TRA_ENEMY) return;
+  if (p.faction[j] === TRA_OWN_FACTION) return;
   const st = p.state[j];
   if (st === SoldierState.Dead || st === SoldierState.Dying) return;
   if (Math.abs(p.y[j] - TRA_Y) > SAME_LEVEL_DY) return;
@@ -566,7 +580,7 @@ export class CombatSystem implements Subsystem {
         NEAR_X = u.x;
         NEAR_Z = u.z;
         NEAR_Y = b.levelOf(u.id);
-        NEAR_ENEMY = u.faction === 0 ? 1 : 0;
+        NEAR_OWN_FACTION = u.faction;
         const probe = Math.max(def.reach + 1.5, Math.min(40, frontGap + 6));
         NEAR_BEST_D2 = probe * probe;
         NEAR_BEST = -1;
@@ -643,7 +657,7 @@ export class CombatSystem implements Subsystem {
       const f = formation(u.formationId);
       const mods = modsOf(id);
       const s = signalsOf(id);
-      const enemyFaction = u.faction === 0 ? 1 : 0;
+      const ownFaction = u.faction;
       const cav = isCavalry(def);
       const acquireR = def.reach + 0.25;
       const keepR = def.reach + 0.9;
@@ -729,7 +743,7 @@ export class CombatSystem implements Subsystem {
             ACQ_FX = Math.sin(p.facing[i]);
             ACQ_FZ = Math.cos(p.facing[i]);
             ACQ_R = acquireR;
-            ACQ_ENEMY = enemyFaction;
+            ACQ_OWN_FACTION = ownFaction;
             ACQ_SELF = i;
             ACQ_BEST = -1;
             ACQ_BEST_SCORE = -1e9;
@@ -1164,7 +1178,7 @@ export class CombatSystem implements Subsystem {
       TRA_Z = p.z[t] + nz * 0.9;
       TRA_Y = p.y[t];
       TRA_R2 = 1.1 * 1.1;
-      TRA_ENEMY = u.faction === 0 ? 1 : 0;
+      TRA_OWN_FACTION = u.faction;
       TRA_SKIP = t;
       TRAMPLE_N = 0;
       b.hash.query(TRA_X, TRA_Z, 1.1, trampleVisit);

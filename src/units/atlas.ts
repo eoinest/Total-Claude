@@ -7,8 +7,15 @@ import { EMBLEMS } from './kit';
  *
  * One 1024x1024 albedo, one normal and one packed AO/roughness/metalness, laid out as:
  *
- *     canvas rows    0..511    8 x 4 grid of 128 px material tiles
- *     canvas rows  512..1023   4 x 2 grid of 256 px painted shield faces
+ *     canvas rows    0..511     8 x 4 grid of 128 px material tiles
+ *     canvas rows  512..1535    4 x 4 grid of 256 px painted shield faces
+
+ * The sheet is **1024 x 1536, not square.** It was square, with exactly eight emblem slots
+ * in a 4 x 2 grid — and exactly eight emblems, so it was full. A ninth would have been
+ * written at row `floor(8 / 4) = 2`, i.e. canvas y 1024, which is off the bottom of a 1024
+ * px canvas: no error, no warning, and a blank shield on every man carrying it. Carthage
+ * needs six more devices, so the emblem band is now four rows deep. Every UV below is
+ * computed from the two dimensions rather than from one, which is what makes that safe.
  *
  * Everything in the frame therefore samples one texture set, which is what lets a whole
  * faction's infantry — five helmet types, four armours, three shields, seven weapons and
@@ -20,7 +27,10 @@ import { EMBLEMS } from './kit';
  * consistently lit, which a mixture of scanned Poly Haven surfaces cannot.
  */
 
-export const ATLAS_SIZE = 1024;
+export const ATLAS_W = 1024;
+export const ATLAS_H = 1536;
+/** Retained as the width, which is what every caller that used it meant. */
+export const ATLAS_SIZE = ATLAS_W;
 const TILE = 128;
 const TILES_PER_ROW = 8;
 const MAT_ROWS = 4;
@@ -83,7 +93,18 @@ export const enum Mat {
    * pale column with fine axial fibre and none of `Rope`'s helical barber-pole.
    */
   SinewCord = 26,
-  Count = 27,
+  /**
+   * Elephant hide.
+   *
+   * Its own tile rather than a tint on `HideGrey`, which is a horse's coat: short hair over
+   * a smooth hypodermis, and the whole point of an elephant's skin is that it is neither.
+   * It is 2 to 4 cm thick, hairless, and cut everywhere by a network of deep fissures that
+   * hold water — those creases are what an eye reads the animal by, and they run across the
+   * body rather than along it. At 128 px this is the coarsest bump in the atlas on purpose:
+   * a smooth grey elephant looks like an inflatable.
+   */
+  ElephantHide = 27,
+  Count = 28,
 }
 
 export interface UvRect {
@@ -103,11 +124,12 @@ export interface UvRect {
 export function matUv(id: Mat): UvRect {
   const col = id % TILES_PER_ROW;
   const row = Math.floor(id / TILES_PER_ROW);
-  const inset = 3 / ATLAS_SIZE;
-  const u0 = (col * TILE) / ATLAS_SIZE + inset;
-  const u1 = ((col + 1) * TILE) / ATLAS_SIZE - inset;
-  const v1 = 1 - (row * TILE) / ATLAS_SIZE - inset;
-  const v0 = 1 - ((row + 1) * TILE) / ATLAS_SIZE + inset;
+  const insetU = 3 / ATLAS_W;
+  const insetV = 3 / ATLAS_H;
+  const u0 = (col * TILE) / ATLAS_W + insetU;
+  const u1 = ((col + 1) * TILE) / ATLAS_W - insetU;
+  const v1 = 1 - (row * TILE) / ATLAS_H - insetV;
+  const v0 = 1 - ((row + 1) * TILE) / ATLAS_H + insetV;
   return { u0, v0, u1, v1 };
 }
 
@@ -120,12 +142,14 @@ export function matUv(id: Mat): UvRect {
  */
 export const EMBLEM_ORIGIN: [number, number] = [
   0,
-  1 - (EMBLEM_TOP + EMBLEM_TILE_PX) / ATLAS_SIZE,
+  1 - (EMBLEM_TOP + EMBLEM_TILE_PX) / ATLAS_H,
 ];
 export const EMBLEM_TILE: [number, number] = [
-  EMBLEM_TILE_PX / ATLAS_SIZE,
-  EMBLEM_TILE_PX / ATLAS_SIZE,
+  EMBLEM_TILE_PX / ATLAS_W,
+  EMBLEM_TILE_PX / ATLAS_H,
 ];
+/** Emblem tiles across the sheet. The shader's `mod(e, 4)` must agree with this. */
+export const EMBLEM_COLS = 4;
 
 // ---------------------------------------------------------------------------
 // Noise
@@ -692,6 +716,58 @@ const MATS: Record<Mat, MatDef> = {
     metalness: 0,
     bump: 0.8,
   },
+  [Mat.ElephantHide]: {
+    colour(u, v, out) {
+      // Two crossing scales of fissure: a coarse plate structure and a fine crazing inside
+      // each plate, which is what the real skin does.
+      const plate = vnoise(u * 7, v * 6, 7, 211);
+      const crack = vnoise(u * 26, v * 23, 26, 217);
+      const fine = vnoise(u * 61, v * 58, 61, 223);
+      // Fissures are dark because they are in shadow and because they hold dust and water.
+      // Softer and narrower than the first pass. At a fissure weight of 0.55 the network
+      // read as high-contrast veining and, with the bump that went with it, as polished
+      // marble rather than skin — the single worst thing in the first elephant frame.
+      const fissure = Math.max(0, 1 - Math.abs(crack - 0.5) * 3.4) * 0.20
+        + Math.max(0, 1 - Math.abs(fine - 0.5) * 5.0) * 0.10;
+      // Warm grey-brown, not blue-grey: a working elephant is permanently coated in the dust
+      // and dried mud it throws over itself to keep cool, so the base is dun rather than slate.
+      /**
+       * 0.44, after 0.40 read near-black and 0.60 read as a pale inflatable.
+       *
+       * Both misses were the same mistake in opposite directions: judging a *tile* by eye
+       * instead of judging the *rendered animal*. 0.40 sRGB is 0.13 linear, which is what
+       * elephant skin actually measures — and it went black because the only light reaching
+       * a flank at this sun angle is cool sky ambient. 0.60 then blew out under direct sun
+       * and lost every crease. 0.44 with the mottle below holds detail in both.
+       */
+      const mottle = fbm(u * 2.6, v * 2.4, 3, 3, 229);
+      const g = 0.44 + plate * 0.10 + mottle * 0.09 + fine * 0.03 - fissure * 0.16;
+      out[0] = g * 1.05; out[1] = g * 1.00; out[2] = g * 0.92;
+      // Dried mud and dust, which a working elephant throws over itself constantly and which
+      // is what stops the hide reading as one flat grey. Patchy rather than even.
+      mix3(out, [0.60, 0.53, 0.41], Math.max(0, mottle - 0.48) * 0.85, out);
+    },
+    height(u, v) {
+      const plate = vnoise(u * 7, v * 6, 7, 211);
+      const crack = vnoise(u * 26, v * 23, 26, 217);
+      const fine = vnoise(u * 61, v * 58, 61, 223);
+      const fissure = Math.max(0, 1 - Math.abs(crack - 0.5) * 3.4)
+        + Math.max(0, 1 - Math.abs(fine - 0.5) * 5.0) * 0.4;
+      return Math.min(1, Math.max(0, 0.62 + plate * 0.22 - fissure * 0.40));
+    },
+    roughness: 0.96,
+    metalness: 0,
+    /**
+     * 0.45, down from 1.6.
+     *
+     * 1.6 was reasoned from the animal — an elephant's fissures really are centimetres deep
+     * — and it was wrong, because a normal map that steep turns every crease into a hard
+     * specular ridge. The measured result was an animal that looked wet and polished, like
+     * veined marble. Depth on a bump map is a *lighting* parameter and not a measurement of
+     * the subject, which is the general form of the mistake.
+     */
+    bump: 0.45,
+  },
   [Mat.Count]: {
     colour(_u, _v, out) { out[0] = 0.5; out[1] = 0.5; out[2] = 0.5; },
     height: () => 0.5,
@@ -920,6 +996,166 @@ function drawEmblem(ctx: CanvasRenderingContext2D, name: string, size: number): 
       }
       break;
     }
+
+    // ---- Punic band ------------------------------------------------------
+    // Uniform bright fields with a bold device, which is the opposite of the tribal boards
+    // above and is what a paid, quartermastered army looks like. See the band note on
+    // `EMBLEMS` in `kit.ts`: the *index* of these tiles is what tells the shader to paint
+    // them this way, so they must stay contiguous.
+    case 'punic-tanit': {
+      // The sign of Tanit — a trapezoid body, a bar for arms, a disc for a head — on Tyrian
+      // purple. The single most recognisable Carthaginian image there is.
+      field('#5d3070', '#c8a94e');
+      ctx.fillStyle = '#e6dcc4';
+      // Body: a tapering trapezoid, wide at the foot.
+      ctx.beginPath();
+      ctx.moveTo(-size * 0.055, -size * 0.02);
+      ctx.lineTo(size * 0.055, -size * 0.02);
+      ctx.lineTo(size * 0.17, size * 0.33);
+      ctx.lineTo(-size * 0.17, size * 0.33);
+      ctx.closePath();
+      ctx.fill();
+      // Arms: a horizontal bar with the ends turned up, as on the stelae.
+      ctx.strokeStyle = '#e6dcc4';
+      ctx.lineWidth = size * 0.052;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(-size * 0.28, -size * 0.10);
+      ctx.lineTo(size * 0.28, -size * 0.10);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-size * 0.28, -size * 0.10);
+      ctx.lineTo(-size * 0.30, -size * 0.20);
+      ctx.moveTo(size * 0.28, -size * 0.10);
+      ctx.lineTo(size * 0.30, -size * 0.20);
+      ctx.stroke();
+      // Head.
+      ctx.beginPath();
+      ctx.arc(0, -size * 0.22, size * 0.075, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'punic-horse': {
+      // The horse's head from Carthaginian silver: Dido's men dug on the Byrsa and turned up
+      // a horse's skull, which the augurs read as war and plenty.
+      field('#8a3f2c', '#d8c48a');
+      ctx.fillStyle = '#ecdfc0';
+      ctx.beginPath();
+      ctx.moveTo(-size * 0.06, -size * 0.34); // poll
+      ctx.lineTo(size * 0.05, -size * 0.30);
+      ctx.lineTo(size * 0.16, -size * 0.02); // face
+      ctx.lineTo(size * 0.20, size * 0.16);
+      ctx.lineTo(size * 0.09, size * 0.24); // muzzle
+      ctx.lineTo(-size * 0.05, size * 0.18);
+      ctx.lineTo(-size * 0.10, -size * 0.04); // jaw
+      ctx.lineTo(-size * 0.26, -size * 0.10); // neck
+      ctx.lineTo(-size * 0.32, -size * 0.34);
+      ctx.lineTo(-size * 0.18, -size * 0.28);
+      ctx.closePath();
+      ctx.fill();
+      // Ears, pricked.
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(s * size * 0.02 - size * 0.02, -size * 0.32);
+        ctx.lineTo(s * size * 0.03 + size * 0.01, -size * 0.44);
+        ctx.lineTo(s * size * 0.05 + size * 0.04, -size * 0.30);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.fillStyle = '#8a3f2c';
+      ctx.beginPath();
+      ctx.arc(size * 0.04, -size * 0.14, size * 0.028, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'punic-palm': {
+      // *Phoinix* — the Greek pun on "Phoenician" — and the other standing type on the
+      // city's coinage.
+      field('#2f5f52', '#d8c48a');
+      ctx.strokeStyle = '#e2d3ab';
+      ctx.lineWidth = size * 0.038;
+      ctx.beginPath();
+      ctx.moveTo(-size * 0.02, size * 0.36);
+      ctx.quadraticCurveTo(size * 0.02, size * 0.02, 0, -size * 0.14);
+      ctx.stroke();
+      ctx.lineWidth = size * 0.026;
+      for (let i = 0; i < 7; i++) {
+        const a = -Math.PI * 0.5 + (i - 3) * 0.42;
+        ctx.beginPath();
+        ctx.moveTo(0, -size * 0.14);
+        ctx.quadraticCurveTo(
+          Math.cos(a) * size * 0.22, -size * 0.14 + Math.sin(a) * size * 0.22,
+          Math.cos(a) * size * 0.36, -size * 0.14 + Math.sin(a) * size * 0.30 + size * 0.06
+        );
+        ctx.stroke();
+      }
+      // Two dates at the crown, as the coins show.
+      ctx.fillStyle = '#d8b45a';
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.arc(s * size * 0.09, -size * 0.06, size * 0.035, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+    }
+    case 'iberian-white': {
+      // Chalk-whitened linen over the board with a crimson border, which is the detail Livy
+      // and Polybius both stop to describe at the Trebia and at Cannae.
+      field('#ddd6c2', '#8e2230');
+      ctx.strokeStyle = '#9c2733';
+      ctx.lineWidth = size * 0.075;
+      ctx.beginPath();
+      ctx.arc(0, 0, size * 0.375, 0, Math.PI * 2);
+      ctx.stroke();
+      // A plain iron boss rather than a device: these boards were centre-gripped.
+      ctx.fillStyle = '#6d6a64';
+      ctx.beginPath();
+      ctx.arc(0, 0, size * 0.115, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#8e8b83';
+      ctx.beginPath();
+      ctx.arc(-size * 0.03, -size * 0.03, size * 0.07, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'numidian-crescent': {
+      // The crescent of the Numidian kings, still on the flags of the countries that sit
+      // where Numidia was. On undyed hide, because a Numidian's shield was a hide disc.
+      field('#b8a482', '#4d3a24');
+      ctx.fillStyle = '#efe6cc';
+      ctx.beginPath();
+      ctx.arc(0, 0, size * 0.30, 0, Math.PI * 2);
+      ctx.fill();
+      // Bite the crescent out with the field colour.
+      ctx.fillStyle = '#b8a482';
+      ctx.beginPath();
+      ctx.arc(size * 0.13, -size * 0.05, size * 0.26, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'celtic-triskele': {
+      // Three running spirals — La Tène, and the device that separates Hannibal's Gauls from
+      // the Juthungi at a glance without pretending the two peoples painted differently.
+      field('#c9bda0', '#3d2f22');
+      ctx.strokeStyle = '#37281b';
+      ctx.lineWidth = size * 0.048;
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI * 2;
+        ctx.save();
+        ctx.rotate(a);
+        ctx.beginPath();
+        // One arm: out from the hub, then curling back on itself.
+        ctx.moveTo(0, 0);
+        ctx.quadraticCurveTo(size * 0.24, -size * 0.06, size * 0.30, size * 0.14);
+        ctx.quadraticCurveTo(size * 0.32, size * 0.28, size * 0.18, size * 0.26);
+        ctx.quadraticCurveTo(size * 0.10, size * 0.24, size * 0.14, size * 0.16);
+        ctx.stroke();
+        ctx.restore();
+      }
+      break;
+    }
+
     default: {
       // Plain limewood with a painted rim ring and the plank lines showing through — the
       // commonest shield in the host, and the one that reads as "this man made his own kit".
@@ -979,25 +1215,25 @@ export interface SoldierAtlas {
   dispose(): void;
 }
 
-function canvas2d(size: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
+function canvas2d(w: number, h: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
   const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
+  canvas.width = w;
+  canvas.height = h;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) throw new Error('[atlas] 2D canvas unavailable');
   return { canvas, ctx };
 }
 
 export function buildSoldierAtlas(anisotropy: number): SoldierAtlas {
-  const alb = canvas2d(ATLAS_SIZE);
-  const nrm = canvas2d(ATLAS_SIZE);
-  const orm = canvas2d(ATLAS_SIZE);
+  const alb = canvas2d(ATLAS_W, ATLAS_H);
+  const nrm = canvas2d(ATLAS_W, ATLAS_H);
+  const orm = canvas2d(ATLAS_W, ATLAS_H);
 
-  const albData = alb.ctx.createImageData(ATLAS_SIZE, ATLAS_SIZE);
-  const nrmData = nrm.ctx.createImageData(ATLAS_SIZE, ATLAS_SIZE);
-  const ormData = orm.ctx.createImageData(ATLAS_SIZE, ATLAS_SIZE);
+  const albData = alb.ctx.createImageData(ATLAS_W, ATLAS_H);
+  const nrmData = nrm.ctx.createImageData(ATLAS_W, ATLAS_H);
+  const ormData = orm.ctx.createImageData(ATLAS_W, ATLAS_H);
   // Sensible defaults for any part of the atlas nothing writes.
-  for (let i = 0; i < ATLAS_SIZE * ATLAS_SIZE; i++) {
+  for (let i = 0; i < ATLAS_W * ATLAS_H; i++) {
     albData.data[i * 4 + 3] = 255;
     nrmData.data[i * 4] = 128;
     nrmData.data[i * 4 + 1] = 128;
@@ -1030,7 +1266,7 @@ export function buildSoldierAtlas(anisotropy: number): SoldierAtlas {
         const u = (x + 0.5) / TILE;
         const v = (y + 0.5) / TILE;
         def.colour(u, v, rgb);
-        const o = ((oy + y) * ATLAS_SIZE + ox + x) * 4;
+        const o = ((oy + y) * ATLAS_W + ox + x) * 4;
         albData.data[o] = Math.round(Math.min(1, Math.max(0, rgb[0])) * 255);
         albData.data[o + 1] = Math.round(Math.min(1, Math.max(0, rgb[1])) * 255);
         albData.data[o + 2] = Math.round(Math.min(1, Math.max(0, rgb[2])) * 255);
@@ -1079,9 +1315,18 @@ export function buildSoldierAtlas(anisotropy: number): SoldierAtlas {
   // Shield faces are drawn with vector operations — a thunderbolt or a wolf's head is a
   // path, not a noise field — into the lower half of the albedo. Their normal and ORM
   // cells stay at the plank defaults, which is right: paint does not change the surface.
+  if (EMBLEM_TOP + Math.ceil(EMBLEMS.length / EMBLEM_COLS) * EMBLEM_TILE_PX > ATLAS_H) {
+    // The failure this replaces was silent: a device past the last row was drawn off the
+    // bottom of the canvas and rendered as a blank shield. Fail loudly instead.
+    throw new Error(
+      `[atlas] ${EMBLEMS.length} emblems need `
+      + `${EMBLEM_TOP + Math.ceil(EMBLEMS.length / EMBLEM_COLS) * EMBLEM_TILE_PX} px of sheet, `
+      + `have ${ATLAS_H}`
+    );
+  }
   for (let e = 0; e < EMBLEMS.length; e++) {
-    const col = e % 4;
-    const row = Math.floor(e / 4);
+    const col = e % EMBLEM_COLS;
+    const row = Math.floor(e / EMBLEM_COLS);
     alb.ctx.save();
     alb.ctx.translate(col * EMBLEM_TILE_PX, EMBLEM_TOP + row * EMBLEM_TILE_PX);
     drawEmblem(alb.ctx, EMBLEMS[e], EMBLEM_TILE_PX);

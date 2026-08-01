@@ -14,9 +14,19 @@
 // Factions
 // ---------------------------------------------------------------------------
 
+/**
+ * Belligerents.
+ *
+ * **Append only.** `Faction` is written into `pool.faction` (a `Uint8Array`), read back by
+ * the renderer to pick a geometry row, and used as a `Record` key in half a dozen tables.
+ * Renumbering an existing member changes every one of those at once, and silently — the
+ * determinism harness would report a different hash for the shipped battle with nothing in
+ * the diff that looks like a cause. Carthage is 2 for that reason and no other.
+ */
 export enum Faction {
   Rome = 0,
   Germanic = 1,
+  Carthage = 2,
 }
 
 export interface FactionDef {
@@ -53,9 +63,62 @@ export const FACTIONS: Record<Faction, FactionDef> = {
     clothColour: 0x4a5c46,
     warCrySound: 'cry_germanic',
   },
+  [Faction.Carthage]: {
+    id: Faction.Carthage,
+    name: 'Carthaginian Empire',
+    // Punic, not Latin. The city called itself Qart-Hadasht, "New City"; `QRT-HDST` is how
+    // it appears on its own coinage, in an abjad with no written vowels.
+    shortName: 'QART-HADASHT',
+    // Tyrian purple, and it is the one faction colour here that is a *trade good* rather
+    // than a heraldic choice: murex purple was Phoenicia's signature export and Carthage was
+    // Tyre's colony. Pushed violet rather than to the true dye's near-black maroon (0x66023c)
+    // because a HUD blip is three pixels and the true colour is indistinguishable from
+    // Rome's oxblood at that size — the same reasoning as `litRaw` in `ui/theme.ts`.
+    colour: 0x7a3d96,
+    accent: 0xd9c07a,
+    clothColour: 0x4a2f63,
+    warCrySound: 'cry_carthage',
+  },
 };
 
-export const enemyOf = (f: Faction): Faction => (f === Faction.Rome ? Faction.Germanic : Faction.Rome);
+/**
+ * Who is fighting whom.
+ *
+ * With two factions this was a flip. With three it cannot be, because `enemyOf(Rome)` is no
+ * longer a property of Rome — it depends on which army was deployed. The opponent is
+ * therefore declared once, by the scenario, before the first tick.
+ *
+ * This is module state and that deserves justification against the determinism rule. It is
+ * written exactly once per battle, during deployment, and never inside `fixedUpdate`; a given
+ * config always produces the same value; and the default is `Germanic`, so the shipped battle
+ * resolves to precisely what it did when this was a hard-coded ternary. The alternative —
+ * threading the battle through `enemyOf` — would change a signature that `src/ai/*` calls, and
+ * that file is owned by another workstream.
+ */
+let opposingFaction: Faction = Faction.Germanic;
+
+/** Declare the non-Roman side. Called by the scenario at deploy time, never during a tick. */
+export const setOpposingFaction = (f: Faction): void => {
+  opposingFaction = f;
+};
+
+export const getOpposingFaction = (): Faction => opposingFaction;
+
+export const enemyOf = (f: Faction): Faction =>
+  f === Faction.Rome ? opposingFaction : Faction.Rome;
+
+/**
+ * Symmetric hostility test.
+ *
+ * Prefer this to `enemyOf(a) === b` anywhere a *predicate* is what is wanted: it is correct
+ * for any number of factions, needs no notion of a current battle, and cannot be wrong in the
+ * frame between a scenario being chosen and `setOpposingFaction` being called. No two factions
+ * in this game are ever allied, so difference is enmity.
+ */
+export const areEnemies = (a: Faction, b: Faction): boolean => a !== b;
+
+/** Every faction id, in enum order. Use instead of writing a two-element array literal. */
+export const ALL_FACTIONS: readonly Faction[] = [Faction.Rome, Faction.Germanic, Faction.Carthage];
 
 // ---------------------------------------------------------------------------
 // Soldier state machine
@@ -113,13 +176,55 @@ export type UnitClass =
 export type WeaponKind =
   | 'gladius' | 'spatha' | 'spear' | 'pike' | 'axe' | 'club'
   | 'bow' | 'sling' | 'javelin' | 'pilum' | 'framea' | 'bolt'
+  /**
+   * The Iberian forward-curving cleaver. Its own kind rather than a sword variant because
+   * it fights differently — the mass is in the last third of the blade, so it chops rather
+   * than thrusts — and because Livy has the Romans reacting to the wounds it left.
+   */
+  | 'falcata'
   /** A stone-thrower's shot. Not carried by a man — served by a crew. */
   | 'boulder'
   /** The head of a battering ram. Never launched; it exists so a ram can be a unit. */
   | 'ram';
-export type ShieldKind = 'scutum' | 'oval' | 'round' | 'hexagonal' | 'none';
-export type ArmourKind = 'segmentata' | 'hamata' | 'squamata' | 'leather' | 'cloth' | 'none';
-export type HelmetKind = 'imperial-gallic' | 'intercisa' | 'coolus' | 'spangenhelm' | 'fur-cap' | 'none';
+export type ShieldKind =
+  | 'scutum' | 'oval' | 'round' | 'hexagonal'
+  /** The Greek aspis: 0.9 m, deeply dished, carried on a forearm band. Twice a round's area. */
+  | 'hoplon'
+  /** The Iberian caetra: a 0.35-0.5 m centre-gripped buckler, parried with rather than hidden behind. */
+  | 'caetra'
+  | 'none';
+export type ArmourKind =
+  | 'segmentata' | 'hamata' | 'squamata' | 'leather' | 'cloth'
+  /** Glued layered-linen corslet with shoulder yokes and pteruges — the Hellenistic standard. */
+  | 'linothorax'
+  | 'none';
+export type HelmetKind =
+  | 'imperial-gallic' | 'intercisa' | 'coolus' | 'spangenhelm' | 'fur-cap'
+  /** Bronze Attic/Phrygian bowl with a raised volute and hinged cheek pieces. */
+  | 'attic'
+  /** Iberian sinew or leather cap, sometimes with a horsehair topknot. */
+  | 'iberian-sinew'
+  | 'none';
+
+/** What a mounted man rides. Absent means a horse, which is what every cavalryman rode until now. */
+export type MountKind = 'horse' | 'elephant';
+
+/**
+ * Where a man's *habits* come from, as distinct from whose banner he fights under.
+ *
+ * Kit resolution used to key off a single `faction === Germanic` boolean, and for two armies
+ * that was the same question asked twice: a Roman was clean-shaven and issued a tunic, a
+ * Juthungi was long-haired and wore whatever he had dyed himself.
+ *
+ * It stops being the same question at Carthage. A Carthaginian army is a citizen core plus
+ * six bought contingents, and its heterogeneity is not decoration — Polybius makes the point
+ * himself when he says the Punic host had no common language. A Balearic slinger is
+ * bare-headed and near-naked, a Libyan spearman is in captured Roman mail, an Iberian wears a
+ * white linen tunic with a crimson border, a Gaul is long-haired and bare-chested. Rendering
+ * all six as "the purple faction" would be a Roman legion in different colours, which is the
+ * one thing this faction must not be.
+ */
+export type Culture = 'roman' | 'germanic' | 'punic' | 'libyan' | 'iberian' | 'celtic' | 'numidian';
 
 export interface UnitTypeDef {
   id: string;
@@ -205,6 +310,22 @@ export interface UnitTypeDef {
     tunicColour: number;
     /** Trouser / leg wrap tint. */
     legColour: number;
+    /**
+     * What a mounted unit rides. Only read when the unit is cavalry; absent means a horse.
+     *
+     * A discriminator here rather than a new `UnitClass` on purpose. `unitClass` is switched
+     * on throughout `src/ai/*` — `isCavalryClass`, `isLineUnit`, the `matchup` table — and a
+     * new member would need every one of those to grow a case before an elephant could take
+     * a sensible order. Classing a war elephant as heavy cavalry is also what Rome II does,
+     * and it is behaviourally right: charge home, ruin a soft flank, die on a braced spear
+     * wall. So the animal changes and the tactics do not.
+     */
+    mount?: MountKind;
+    /**
+     * Grooming, dress and metalworking habits. Absent falls back to the faction's own —
+     * Rome `roman`, the Juthungi `germanic`, Carthage `punic` — so no existing unit changes.
+     */
+    culture?: Culture;
   };
 
   /** Formation ids this unit may adopt. First entry is the default. */

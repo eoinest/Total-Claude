@@ -1,6 +1,7 @@
 import type { BakedRigData } from './bakedTypes';
 import { MAN_BAKED } from './generated/manBaked.gen';
 import { HORSE_BAKED } from './generated/horseBaked.gen';
+import { ELEPHANT_BAKED } from './elephantSkeleton';
 
 /**
  * Skeletons.
@@ -104,6 +105,11 @@ function makeRig(data: BakedRigData): Rig {
 
 export const MAN_RIG: Rig = makeRig(MAN_BAKED);
 export const HORSE_RIG: Rig = makeRig(HORSE_BAKED);
+/**
+ * The war elephant. Hand-authored rather than retargeted, and with identity rest rotations —
+ * see `elephantSkeleton.ts` for why both of those are deliberate.
+ */
+export const ELEPHANT_RIG: Rig = makeRig(ELEPHANT_BAKED);
 
 /** Semantic bone indices for the man, resolved once. */
 export const MB = {
@@ -165,6 +171,44 @@ export const HB = {
   tail1: HORSE_RIG.bone('tail1'),
   tail2: HORSE_RIG.bone('tail2'),
 } as const;
+
+/** Semantic bone indices for the elephant. */
+export const EB = {
+  root: ELEPHANT_RIG.bone('root'),
+  croup: ELEPHANT_RIG.bone('croup'),
+  loin: ELEPHANT_RIG.bone('loin'),
+  barrel: ELEPHANT_RIG.bone('barrel'),
+  withers: ELEPHANT_RIG.bone('withers'),
+  neck: ELEPHANT_RIG.bone('neck'),
+  head: ELEPHANT_RIG.bone('head'),
+  trunk1: ELEPHANT_RIG.bone('trunk1'),
+  trunk2: ELEPHANT_RIG.bone('trunk2'),
+  trunk3: ELEPHANT_RIG.bone('trunk3'),
+  trunk4: ELEPHANT_RIG.bone('trunk4'),
+  earL: ELEPHANT_RIG.bone('earL'),
+  earR: ELEPHANT_RIG.bone('earR'),
+  fShoulderL: ELEPHANT_RIG.bone('fShoulderL'),
+  fUpperL: ELEPHANT_RIG.bone('fUpperL'),
+  fKneeL: ELEPHANT_RIG.bone('fKneeL'),
+  fFootL: ELEPHANT_RIG.bone('fFootL'),
+  fShoulderR: ELEPHANT_RIG.bone('fShoulderR'),
+  fUpperR: ELEPHANT_RIG.bone('fUpperR'),
+  fKneeR: ELEPHANT_RIG.bone('fKneeR'),
+  fFootR: ELEPHANT_RIG.bone('fFootR'),
+  bHipL: ELEPHANT_RIG.bone('bHipL'),
+  bFemurL: ELEPHANT_RIG.bone('bFemurL'),
+  bHockL: ELEPHANT_RIG.bone('bHockL'),
+  bFootL: ELEPHANT_RIG.bone('bFootL'),
+  bHipR: ELEPHANT_RIG.bone('bHipR'),
+  bFemurR: ELEPHANT_RIG.bone('bFemurR'),
+  bHockR: ELEPHANT_RIG.bone('bHockR'),
+  bFootR: ELEPHANT_RIG.bone('bFootR'),
+  tail1: ELEPHANT_RIG.bone('tail1'),
+  tail2: ELEPHANT_RIG.bone('tail2'),
+} as const;
+
+/** The four bones that touch the ground, for stride measurement. */
+export const ELEPHANT_CONTACTS: readonly number[] = [EB.fFootL, EB.fFootR, EB.bFootL, EB.bFootR];
 
 /** Rest world position of a bone, for mesh authoring. */
 export const restPos = (rig: Rig, bone: number, out: [number, number, number]): [number, number, number] => {

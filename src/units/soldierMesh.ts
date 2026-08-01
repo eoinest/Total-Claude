@@ -193,6 +193,16 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
   const b = new MeshBuilder();
   const d = DETAIL[lod];
   const germanic = faction === Faction.Germanic;
+  /**
+   * Carthage's own kit, and only Carthage's.
+   *
+   * The union mesh grows with every piece in it — an unworn piece collapses to a point and
+   * never rasterises, but its vertices are still transformed — so the nine Punic pieces below
+   * are built for this faction alone. The Roman branch is shared rather than duplicated,
+   * because a Libyan spearman in captured Roman mail with an oval shield genuinely is wearing
+   * Roman kit, which is Livy's whole point about that unit.
+   */
+  const punic = faction === Faction.Carthage;
 
   const skinUv = matUv(Mat.Skin);
   const hairUv = matUv(Mat.Hair);
@@ -886,6 +896,9 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
   if (!germanic) {
     // Scutum: the Dura-Europos find is 1.06 m tall, 0.66 m across the chord, and a
     // section of a cylinder deep enough to wrap the body. Plywood, hide-faced, iron boss.
+    // Roman only — no Carthaginian troop type carries one, and it is the largest single
+    // panel in the mesh, so building it for a faction that never shows it is pure vertex cost.
+    if (!punic) {
     b.setBone(MB.lowerArmL).setMatrix(scutumM);
     b.shieldPanel(
       0.33, 0.53, 0.135, 0.022, d.shieldCols, d.shieldRows,
@@ -907,6 +920,7 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
       b.setPiece(Piece.ShieldScutum, Tint.Atlas);
       b.box(0, 0.28, 0.155, 0.05, 0.28, 0.012, bronzeUv);
       b.box(0, -0.28, 0.155, 0.05, 0.28, 0.012, bronzeUv);
+    }
     }
 
     // Oval shield: the pattern replacing the scutum by the late third century. Flatter,
@@ -1102,7 +1116,274 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
   }
   b.setMatrix(null);
 
-  return b.toGeometry(`soldier-${faction === Faction.Rome ? 'rome' : 'germanic'}-lod${lod}`);
+
+  // =========================================================================
+  // Carthaginian kit
+  // =========================================================================
+  /**
+   * Nine pieces that exist so a Punic line does not read as a legion in purple.
+   *
+   * Every one of them is a silhouette difference rather than a texture difference, because
+   * that is the only kind that survives being seen from the far side of a battle line: a
+   * hoplon is half again the area of any Roman shield, an Attic helmet has a volute standing
+   * off the brow, a linothorax has shoulder yokes standing proud of the shoulders, and a
+   * falcata is bent. A player should be able to tell the two armies apart from behind.
+   */
+  if (punic) {
+    // ---- Attic helmet -----------------------------------------------------
+    // Bronze, with a raised volute scroll over the brow, a short flared neck guard and
+    // hinged cheek pieces that stand away from the face rather than closing on it. r2-00
+    // shows a whole rank of these and the volute is the read at any distance.
+    b.setBone(MB.head).setMatrix(new THREE.Matrix4().makeTranslation(0, headY, 0.006));
+    b.setPiece(Piece.HelmAttic, Tint.Metal);
+    b.revolve(
+      [
+        [0.001, 0.152], [0.052, 0.142], [0.089, 0.112], [0.104, 0.062],
+        [0.108, 0.004], [0.107, -0.05], [0.101, -0.088],
+      ],
+      d.head, bronzeUv
+    );
+    if (d.medium) {
+      // The volute: a raised band standing off the brow, which is the piece of this helmet
+      // that is not on any Roman one.
+      b.setPiece(Piece.HelmAttic, Tint.Metal);
+      const seg = d.fine ? 9 : 6;
+      for (let i = 0; i < seg; i++) {
+        const a = (-0.85 + (i / (seg - 1)) * 1.7);
+        b.box(
+          Math.sin(a) * 0.106, 0.028 + Math.cos(a) * 0.006, Math.cos(a) * 0.100,
+          0.026, 0.036, 0.020, bronzeUv
+        );
+      }
+      // Flared neck guard, short — an Attic helmet does not have the Imperial Gallic's shelf.
+      b.box(0, -0.075, -0.10, 0.16, 0.048, 0.052, bronzeUv);
+      // Cheek pieces, hinged forward and standing clear of the jaw.
+      for (const sx of [-1, 1]) {
+        b.setMatrix(new THREE.Matrix4()
+          .makeRotationZ(sx * 9 * DEG)
+          .premultiply(new THREE.Matrix4().makeTranslation(sx * 0.098, headY - 0.07, 0.024)));
+        b.box(0, -0.045, 0, 0.024, 0.115, 0.088, bronzeUv);
+        b.setMatrix(null);
+      }
+      b.setMatrix(new THREE.Matrix4().makeTranslation(0, headY, 0.006));
+      // The crest stalk. Attic helmets carried a tall crest box and this is what carries it.
+      b.setPiece(Piece.HelmAttic, Tint.Atlas);
+      b.box(0, 0.16, -0.01, 0.022, 0.05, 0.15, bronzeUv);
+    }
+    b.setMatrix(null);
+
+    // ---- Iberian sinew cap ------------------------------------------------
+    // Boiled leather over felt with a horsehair topknot, which Diodorus describes and which
+    // is a completely different silhouette from any metal helmet: rounder, softer, no rim.
+    b.setBone(MB.head).setMatrix(new THREE.Matrix4().makeTranslation(0, headY, 0.004));
+    b.setPiece(Piece.HelmIberian, Tint.Atlas);
+    b.revolve(
+      [[0.001, 0.148], [0.056, 0.138], [0.091, 0.104], [0.101, 0.05], [0.102, -0.012], [0.096, -0.045]],
+      Math.max(5, d.head - 1), darkLeatherUv
+    );
+    if (d.medium) {
+      b.setPiece(Piece.HelmIberian, Tint.Hair);
+      b.revolve([[0.001, 0.24], [0.026, 0.20], [0.030, 0.16], [0.012, 0.145]], 5, matUv(Mat.Hair));
+    }
+    b.setMatrix(null);
+
+    // ---- Hoplon -----------------------------------------------------------
+    // The aspis: 0.90 m across, deeply dished, carried on a forearm band rather than a
+    // centre grip. It is the largest shield on the field by a wide margin — twice a round
+    // shield's area — and that alone makes a Sacred Band line read as a phalanx.
+    b.setBone(MB.lowerArmL).setMatrix(roundM);
+    b.shieldPanel(
+      0.45, 0.45, 0.115, 0.022, d.shieldCols + 1, d.shieldRows + 1,
+      matUv(Mat.WoodPlank), shieldBackUv, Tint.Emblem, Tint.ShieldBack,
+      (_sx, sy) => Math.sqrt(Math.max(0.02, 1 - sy * sy)),
+      Piece.ShieldHoplon
+    );
+    if (d.medium) {
+      // The offset rim — the flat band round an aspis that a hoplite rested on his shoulder.
+      b.setMatrix(roundM.clone().multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)));
+      b.setPiece(Piece.ShieldHoplon, Tint.Metal);
+      b.revolve([[0.40, -0.02], [0.45, -0.03], [0.45, -0.055], [0.40, -0.05]], d.head, bronzeUv);
+      b.setMatrix(null);
+    }
+
+    // ---- Caetra -----------------------------------------------------------
+    // A 0.40 m buckler with a big domed iron boss. Held out from the body and parried with,
+    // not sheltered behind, so it sits further forward than the other shields.
+    const caetraM = socket('march', 0, MB.lowerArmL, new THREE.Vector3(-0.06, -0.10, 0.26), euler(0, 6, 0));
+    b.setBone(MB.lowerArmL).setMatrix(caetraM);
+    b.shieldPanel(
+      0.20, 0.20, 0.035, 0.016, Math.max(2, d.shieldCols - 1), Math.max(2, d.shieldRows - 1),
+      matUv(Mat.WoodPlank), shieldBackUv, Tint.Emblem, Tint.ShieldBack,
+      (_sx, sy) => Math.sqrt(Math.max(0.02, 1 - sy * sy)),
+      Piece.ShieldCaetra
+    );
+    if (d.medium) {
+      b.setMatrix(caetraM.clone().multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)));
+      boss(plateUv, Piece.ShieldCaetra, 0.085, -0.03);
+      b.setMatrix(null);
+    }
+
+    // ---- Falcata ----------------------------------------------------------
+    // Forward-curving, the mass in the last third, with a knuckle guard looping from the
+    // pommel to the blade. Built as four short segments on a curve rather than as a bent box
+    // because the curve *is* the weapon: a straight blade here would be a gladius.
+    const falcM = socket('attackThrust', 0.46, MB.handR, new THREE.Vector3(0, 0, 0.03), euler(78));
+    b.setBone(MB.handR).setMatrix(falcM);
+    b.setPiece(Piece.WeaponFalcata, Tint.Metal);
+    {
+      const segs = d.fine ? 5 : 3;
+      for (let i = 0; i < segs; i++) {
+        const t = (i + 0.5) / segs;
+        // Curves forward and broadens toward the tip, which is where a falcata's weight is.
+        const bend = t * t * 0.20;
+        const wide = 0.038 + t * 0.026;
+        b.box(0, 0.10 + t * 0.36, bend, wide, 0.38 / segs + 0.012, 0.009, plateUv);
+      }
+    }
+    if (d.medium) {
+      b.setPiece(Piece.WeaponFalcata, Tint.Atlas);
+      // Grip and the knuckle guard, which on a falcata is a solid loop and often a
+      // horse-head or bird-head pommel.
+      b.box(0, 0.02, 0, 0.030, 0.10, 0.026, boneUv);
+      const links = d.fine ? 5 : 3;
+      for (let i = 0; i < links; i++) {
+        const a = (i / (links - 1)) * Math.PI;
+        b.box(0, 0.03 - Math.cos(a) * 0.055, 0.062 + Math.sin(a) * 0.028, 0.012, 0.026, 0.014, bronzeUv);
+      }
+      b.setPiece(Piece.WeaponFalcata, Tint.Metal);
+      b.box(0, -0.045, 0.01, 0.030, 0.030, 0.030, bronzeUv);
+    }
+    b.setMatrix(null);
+
+    // ---- Sling ------------------------------------------------------------
+    // Two cords and a leather cradle, held down and back at the ready. Emphatically not a
+    // bow: `kit.ts` records that mapping `weapon: 'sling'` onto `Piece.WeaponBow` would have
+    // put a composite bow and a quiver of arrows on every Balearic islander, which is the
+    // same defect that made an artillery battery render as two dozen archers.
+    const slingM = socket('march', 0, MB.handR, new THREE.Vector3(0.02, -0.05, 0.06), euler(-24));
+    b.setBone(MB.handR).setMatrix(slingM);
+    b.setPiece(Piece.WeaponSling, Tint.Atlas);
+    {
+      // Both cords hang from the fist to the cradle, which swings below and behind.
+      const drop = 0.44;
+      for (const sx of [-1, 1]) {
+        b.tube(
+          [
+            { y: 0, x: sx * 0.012, rx: 0.005, rz: 0.005 },
+            { y: -drop * 0.55, x: sx * 0.030, z: -0.05, rx: 0.005, rz: 0.005 },
+            { y: -drop, x: sx * 0.020, z: -0.09, rx: 0.005, rz: 0.005 },
+          ],
+          4, ropeUv, { repeatV: 4 }
+        );
+      }
+      // The cradle, with a lead bullet in it.
+      b.box(0, -drop - 0.02, -0.10, 0.055, 0.05, 0.035, leatherUv);
+      if (d.medium) {
+        b.setPiece(Piece.WeaponSling, Tint.Metal);
+        b.setMatrix(slingM.clone().multiply(
+          new THREE.Matrix4().makeTranslation(0, -drop - 0.02, -0.10)
+        ));
+        b.revolve([[0.001, 0.028], [0.019, 0.012], [0.019, -0.012], [0.001, -0.028]], 5, plateUv);
+        b.setMatrix(slingM);
+      }
+    }
+    b.setMatrix(null);
+
+    // ---- Shot bag and spare slings ----------------------------------------
+    // Strabo: three slings of different lengths for three ranges, one round the head, one
+    // round the waist, one in the hand. The one round the head is the detail that makes a
+    // Balearic unmistakable, and it costs four boxes.
+    b.setBone(MB.pelvis);
+    b.setMatrix(new THREE.Matrix4().makeTranslation(0.16, 0.98, -0.02));
+    b.setPiece(Piece.SlingPouch, Tint.Atlas);
+    b.revolve([[0.001, 0.09], [0.070, 0.055], [0.080, -0.04], [0.055, -0.095], [0.001, -0.11]], 7, leatherUv);
+    b.setMatrix(null);
+    if (d.medium) {
+      // The waist sling, coiled through the belt.
+      b.setMatrix(new THREE.Matrix4().makeTranslation(-0.05, 1.00, -0.09));
+      b.box(0, 0, 0, 0.18, 0.02, 0.03, ropeUv);
+      b.setMatrix(null);
+      // And the one worn as a headband, which is where the third one lives.
+      b.setBone(MB.head);
+      b.setMatrix(new THREE.Matrix4().makeTranslation(0, headY + 0.06, 0));
+      b.revolve([[0.098, 0.014], [0.104, 0.004], [0.104, -0.012], [0.098, -0.020]], d.head, ropeUv);
+      b.setMatrix(null);
+    }
+
+    // ---- Linothorax -------------------------------------------------------
+    // Glued layered linen: a stiff tube round the chest, shoulder yokes that stand proud
+    // where they are pulled over from the back and tied at the front, and a skirt of
+    // pteruges. Pale, which against Roman iron is most of the read.
+    b.setPiece(Piece.ArmourLinen, Tint.Atlas);
+    {
+      const nodes: TubeNode[] = [
+        { y: 0.96, rx: 0.166, rz: 0.108 },
+        { y: 1.10, rx: 0.172, rz: 0.113 },
+        { y: 1.26, rx: 0.181, rz: 0.121 },
+        { y: 1.40, rx: 0.176, rz: 0.118 },
+      ];
+      for (const n of nodes) {
+        const bind = spineBind(n.y);
+        n.bone = bind.bone; n.bone2 = bind.bone2; n.w = bind.w;
+      }
+      b.setBone(MB.spineMid);
+      b.tube(nodes, d.torso, matUv(Mat.Linen), { repeatV: 2, capStart: false });
+      if (d.medium) {
+        // Shoulder yokes, standing off the shoulders — the piece of this armour that is
+        // visible from behind and that no Roman cuirass has.
+        for (const sx of [-1, 1]) {
+          const bind = spineBind(1.42);
+          b.setBone(bind.bone, bind.bone2, bind.w);
+          b.setMatrix(new THREE.Matrix4()
+            .makeRotationZ(sx * 14 * DEG)
+            .premultiply(new THREE.Matrix4().makeTranslation(sx * 0.115, 1.44, 0.01)));
+          b.box(0, 0.02, 0.02, 0.085, 0.075, 0.135, matUv(Mat.Linen));
+          b.setMatrix(null);
+        }
+        // Pteruges: a skirt of stiffened linen tabs, in two overlapping rows.
+        const bindP = spineBind(0.96);
+        b.setBone(bindP.bone, bindP.bone2, bindP.w);
+        const tabs = d.fine ? 12 : 8;
+        for (let r = 0; r < 2; r++) {
+          for (let i = 0; i < tabs; i++) {
+            const a = (i / tabs) * Math.PI * 2 + (r ? Math.PI / tabs : 0);
+            b.box(
+              Math.sin(a) * 0.163, 0.90 - r * 0.055, Math.cos(a) * 0.106,
+              0.040, 0.11, 0.020, matUv(Mat.Linen)
+            );
+          }
+        }
+      }
+    }
+
+    // ---- Greaves ----------------------------------------------------------
+    // Bronze, sprung onto the calf. A lit metal band at shin height is one of very few kit
+    // differences that survives being seen from the front rank of an enemy line.
+    b.setPiece(Piece.Greaves, Tint.Metal);
+    for (const left of [true, false]) {
+      const shin = left ? MB.shinL : MB.shinR;
+      const foot = left ? MB.footL : MB.footR;
+      const kneeY = MAN_RIG.restT[shin * 3 + 1];
+      const ankleY = MAN_RIG.restT[foot * 3 + 1];
+      const sx = MAN_RIG.restT[shin * 3];
+      b.setBone(shin);
+      b.tube(
+        [
+          { y: ankleY + 0.03, x: sx, rx: 0.058, rz: 0.062 },
+          { y: (ankleY + kneeY) * 0.5, x: sx, rx: 0.070, rz: 0.076 },
+          { y: kneeY - 0.02, x: sx, rx: 0.066, rz: 0.070 },
+        ],
+        Math.max(5, d.limb), bronzeUv, { repeatV: 1 }
+      );
+    }
+  }
+
+  return b.toGeometry(
+    // Named per faction. It used to be a two-way ternary, so a Carthaginian mesh would have
+    // been called `soldier-germanic-lodN` — a name collision that `tools/probe-draws.mjs`
+    // buckets by, so the two factions' draw calls would have been reported as one.
+    `soldier-${faction === Faction.Rome ? 'rome' : faction === Faction.Germanic ? 'germanic' : 'carthage'}-lod${lod}`
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1266,5 +1547,7 @@ function buildFarGeometry(faction: Faction): THREE.InstancedBufferGeometry {
     }
   }
 
-  return b.toGeometry(`soldier-far-${faction === Faction.Rome ? 'rome' : 'germanic'}`);
+  return b.toGeometry(
+    `soldier-far-${faction === Faction.Rome ? 'rome' : faction === Faction.Germanic ? 'germanic' : 'carthage'}`
+  );
 }

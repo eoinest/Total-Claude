@@ -141,6 +141,20 @@ export const JUTHUNGI_ROSTER: readonly string[] = [
 ];
 
 /**
+ * Carthage, in deployment order: line, then the reserve, then the screen and the wings.
+ *
+ * The elephants are last for a reason that is not cosmetic. Order decides which units get
+ * men first when the pool runs short, and an elephant unit is eight pool slots against a
+ * Libyan block's three hundred and twenty — so putting them last costs the army almost
+ * nothing if it is truncated, where putting them first would guarantee eight animals and
+ * then lose a whole spear block off the end.
+ */
+export const CARTHAGE_ROSTER: readonly string[] = [
+  'libyan-spearmen', 'iberian-scutarii', 'gallic-mercenaries', 'sacred-band',
+  'iberian-caetrati', 'balearic-slingers', 'numidian-cavalry', 'war-elephants',
+];
+
+/**
  * The assault's own orders of battle, which share almost nothing with the field's.
  *
  * A siege is not the same army doing something else. Rome fields wall troops — short-reach
@@ -167,6 +181,7 @@ export const SIEGE_JUTHUNGI_ROSTER: readonly string[] = [
 
 export const rosterFor = (f: Faction, s: ScenarioId): readonly string[] => {
   if (s === 'assault') return f === Faction.Rome ? SIEGE_ROME_ROSTER : SIEGE_JUTHUNGI_ROSTER;
+  if (f === Faction.Carthage) return CARTHAGE_ROSTER;
   return f === Faction.Rome ? ROME_ROSTER : JUTHUNGI_ROSTER;
 };
 
@@ -202,8 +217,22 @@ export interface BattleConfig {
    */
   scenario: ScenarioId;
   unitSize: UnitSizeId;
+  /**
+   * Who Rome is fighting.
+   *
+   * Two factions needed no such field: the enemy was whoever Rome was not. Three do, and it
+   * has to be a stored choice rather than something inferred from which composition happens
+   * to be non-empty, because both are always carried — see `siegeRome`/`siegeJuthungi` for
+   * the same argument. Defaults to `Germanic`, so every `?battle=` token written before this
+   * field existed, and `DEFAULT_CONFIG` itself, still describe the battle they always did.
+   *
+   * `assault` ignores it: storming the Aurelian Wall is a Juthungi operation and a
+   * Carthaginian army has no business on the Campus Martius in 271.
+   */
+  opponent: Faction;
   rome: ArmyComposition;
   juthungi: ArmyComposition;
+  carthage: ArmyComposition;
   /**
    * The assault's compositions, held separately rather than reusing `rome`/`juthungi`.
    *
@@ -234,6 +263,7 @@ export const DEFAULT_CONFIG: BattleConfig = {
   map: DEFAULT_MAP_ID,
   scenario: 'field',
   unitSize: 'ultra',
+  opponent: Faction.Germanic,
   rome: {
     'legio-cohort': 6,
     'praetorian-cohort': 2,
@@ -249,6 +279,26 @@ export const DEFAULT_CONFIG: BattleConfig = {
     'juthungi-chosen': 2,
     'juthungi-berserkers': 2,
     'juthungi-riders': 3,
+  },
+  /**
+   * A Punic order of battle in Hannibal's proportions rather than in Rome's.
+   *
+   * Four line units of three different nationalities, a citizen reserve of one, a screen of
+   * skirmishers and slingers, four squadrons of Numidian horse and two units of elephants.
+   * The mercenary contingents outnumber the citizens seven to one, which is the correct
+   * ratio and is the single fact about this army that matters most.
+   *
+   * Only ever deployed when `opponent` is `Carthage`, so it costs the shipped battle nothing.
+   */
+  carthage: {
+    'libyan-spearmen': 4,
+    'iberian-scutarii': 3,
+    'gallic-mercenaries': 3,
+    'sacred-band': 1,
+    'iberian-caetrati': 2,
+    'balearic-slingers': 2,
+    'numidian-cavalry': 3,
+    'war-elephants': 2,
   },
   /**
    * The assault's default order of battle, which is the one `deployAssault` hardcoded before
@@ -298,8 +348,20 @@ export const compositionFor = (
   c: BattleConfig, f: Faction, s: ScenarioId = c.scenario
 ): ArmyComposition => {
   if (s === 'assault') return f === Faction.Rome ? c.siegeRome : c.siegeJuthungi;
+  if (f === Faction.Carthage) return c.carthage;
   return f === Faction.Rome ? c.rome : c.juthungi;
 };
+
+/**
+ * The two factions actually on the field, Rome first.
+ *
+ * Everywhere that used to write `[Faction.Rome, Faction.Germanic]` should ask this instead:
+ * that literal is correct for the shipped battle and silently wrong for any other, and it
+ * appeared in enough places — strength tallies, pool fitting, the menu's army panels — that
+ * a shared accessor is the only way they stay in step.
+ */
+export const belligerents = (c: BattleConfig): readonly [Faction, Faction] =>
+  [Faction.Rome, c.scenario === 'assault' ? Faction.Germanic : c.opponent] as const;
 
 /** Units in a side's composition, ignoring rows set to zero. */
 export const unitCount = (comp: ArmyComposition): number =>
@@ -323,7 +385,7 @@ export function spawnList(c: BattleConfig, f: Faction, s: ScenarioId = c.scenari
 /** Unscaled establishment of a whole battle, both sides, artillery included. */
 export function baseStrength(c: BattleConfig, s: ScenarioId = c.scenario): number {
   let sum = 0;
-  for (const f of [Faction.Rome, Faction.Germanic]) {
+  for (const f of belligerents(c)) {
     for (const id of spawnList(c, f, s)) sum += unitType(id).strength;
   }
   return sum;
@@ -403,8 +465,7 @@ export const PERF_VALIDATED_MEN = 9000;
 export const totalMen = (
   c: BattleConfig, maxSoldiers: number, s: ScenarioId = c.scenario
 ): number =>
-  summarise(c, Faction.Rome, maxSoldiers, s).men
-  + summarise(c, Faction.Germanic, maxSoldiers, s).men;
+  belligerents(c).reduce((n, f) => n + summarise(c, f, maxSoldiers, s).men, 0);
 
 /**
  * The types that stand in the main battle line, for the line-width figure.
@@ -426,6 +487,10 @@ export const totalMen = (
 const LINE_TYPES: ReadonlySet<string> = new Set([
   'legio-cohort', 'urban-cohort',
   'juthungi-warband', 'juthungi-spears',
+  // Carthage's battle line is the three heavy contingents. The Sacred Band is a reserve of
+  // one unit, the caetrati and slingers are a screen, and the elephants stand in front of
+  // the line rather than in it — none of them holds frontage.
+  'libyan-spearmen', 'iberian-scutarii', 'gallic-mercenaries',
 ]);
 
 /**
@@ -542,8 +607,10 @@ export function sanitiseConfig(raw: unknown): BattleConfig {
     unitSize: sizes.includes(String(o.unitSize)) ? (o.unitSize as UnitSizeId) : DEFAULT_CONFIG.unitSize,
     // Both orders of battle are always sanitised and always carried, whichever one is being
     // fought, so switching scenario in the menu never destroys the other one.
+    opponent: o.opponent === Faction.Carthage ? Faction.Carthage : Faction.Germanic,
     rome: side(o.rome, Faction.Rome, 'field'),
     juthungi: side(o.juthungi, Faction.Germanic, 'field'),
+    carthage: side(o.carthage, Faction.Carthage, 'field'),
     siegeRome: side(o.siegeRome, Faction.Rome, 'assault'),
     siegeJuthungi: side(o.siegeJuthungi, Faction.Germanic, 'assault'),
     quality: tiers.includes(o.quality as QualityTier) ? (o.quality as QualityTier) : DEFAULT_CONFIG.quality,

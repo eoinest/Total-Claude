@@ -20,7 +20,7 @@
 
 import { clamp, clamp01, damp, lerp } from '../util/math';
 import { hash01 } from '../util/rand';
-import { Faction, UnitOrder, type UnitGroupState } from '../sim/types';
+import { FACTIONS, Faction, UnitOrder, type UnitGroupState } from '../sim/types';
 import { isCavalry, unitType } from '../units/roster';
 import type { BusName, Mixer } from './Mixer';
 import { Bed } from './Mixer';
@@ -341,7 +341,10 @@ export class BattleAudio {
   /** A faction war cry, rate-limited hard — the barritus is not a sound effect. */
   warCry(faction: number, x: number, z: number, delay = 0): void {
     if (this.cryCooldown > 0) return;
-    const id = faction === Faction.Rome ? 'cry_roma' : 'cry_germanic';
+    // `FactionDef.warCrySound` is the declared home for this and every other caller already
+    // uses it — `Abilities.ts` does. This was the one place that re-derived it from a
+    // two-faction ternary, so a third faction would have shouted the barritus.
+    const id = FACTIONS[faction as Faction]?.warCrySound ?? 'cry_germanic';
     const y = this.groundAt(x, z);
     if (this.mixer.play(id, {
       x, y: y + 1.6, z,
@@ -351,7 +354,9 @@ export class BattleAudio {
       priority: 2.5,
       when: this.mixer.time + delay,
     })) {
-      this.cryCooldown = faction === Faction.Rome ? 7 : 9;
+      // Rome shouts on command and rarely; a barbarian host works itself up and repeats.
+      // Carthage sits between the two, and its cue is the longest of the three.
+      this.cryCooldown = faction === Faction.Rome ? 7 : faction === Faction.Carthage ? 11 : 9;
     }
   }
 

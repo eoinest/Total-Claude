@@ -69,6 +69,23 @@ export function renderImpostorAtlas(
   camera.lookAt(0, 0, 0);
 
   const prevTarget = renderer.getRenderTarget();
+  /**
+   * The viewport has to be *restored*, not reset to the canvas.
+   *
+   * What was here — `setViewport(0, 0, domElement.width, domElement.height)` — mixes two
+   * coordinate systems. `domElement.width/height` are **drawing-buffer** pixels, already
+   * multiplied by the device pixel ratio; `WebGLRenderer.setViewport` takes **CSS** pixels
+   * and multiplies by `_pixelRatio` itself. So the viewport came out `pixelRatio` times too
+   * large, anchored at the GL origin, and since this bake runs during `init` the entire
+   * scene was rasterised that much too big from cold boot: 1.25x at medium, 1.5x at high,
+   * 2.0x at ultra, and 1.0x at low only because its `maxPixelRatio` cap of 1 lets it escape.
+   *
+   * It hid because any runtime quality change repairs it — `setQuality` calls `setPixelRatio`
+   * then `setSize`, which sets the viewport correctly — so it was only ever visible on a
+   * first load, and only on a display with `devicePixelRatio > 1`.
+   */
+  const prevViewport = new THREE.Vector4();
+  renderer.getViewport(prevViewport);
   const prevClear = new THREE.Color();
   renderer.getClearColor(prevClear);
   const prevAlpha = renderer.getClearAlpha();
@@ -97,7 +114,7 @@ export function renderImpostorAtlas(
   }
 
   renderer.setScissorTest(false);
-  renderer.setViewport(0, 0, renderer.domElement.width, renderer.domElement.height);
+  renderer.setViewport(prevViewport);
   renderer.autoClear = prevAutoClear;
   renderer.setClearColor(prevClear, prevAlpha);
   renderer.setRenderTarget(prevTarget);

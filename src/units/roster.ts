@@ -347,8 +347,335 @@ export const GERMANIC_UNITS: UnitTypeDef[] = [
   },
 ];
 
+/**
+ * Carthage — a citizen core and six bought contingents.
+ *
+ * **The heterogeneity is the faction, not decoration on it.** Polybius says the Punic army
+ * had no common language, and Livy lists the contingents by name because their differences
+ * were the interesting thing about the army. Carthage was a mercantile oligarchy that would
+ * far rather spend money than citizens: at Cannae the only Carthaginians in Hannibal's line
+ * of battle were the officers. So this roster is deliberately *not* a legion in purple. Six
+ * of the eight entries below have a `culture` other than `punic`, and that one field drives
+ * hair, beard, trousers, boots, dye lot, metal and shield-painting style through `kit.ts` —
+ * so an Iberian, a Gaul, a Numidian and a Libyan standing in the same battle line are four
+ * visibly different armies that happen to be paid by the same treasury.
+ *
+ * **Dating.** The core is the Second Punic War, 218-202 BC, which is the army everyone means
+ * by "Carthaginian". The Sacred Band is the one anachronism and it is a deliberate one: the
+ * citizen phalanx was cut to pieces at the Krimisos in 341 and does not appear after the
+ * Mercenary War, so a strict 218 roster would have no Carthaginian infantry in it at all.
+ * Rome II makes the same choice, and a faction whose own citizens never appear on its own
+ * battle line is worse history than a fifty-year stretch.
+ *
+ * **Stat scale is the one already established** — see the note at the top of this file.
+ * Damage and rates here were set against `tools/matchup.mjs` and not by eye: the target is a
+ * two-to-four-minute grind for a matched pair of line units and about a minute for a
+ * favourable matchup. `discipline` stays inside the narrow band the Roman/Germanic pass
+ * settled on (0.98-1.2 for line troops), because a wide spread is what previously made one
+ * side unable to ever win a morale contest.
+ */
+export const CARTHAGINIAN_UNITS: UnitTypeDef[] = [
+  {
+    id: 'libyan-spearmen',
+    name: 'Libyan Heavy Spearmen',
+    nativeName: 'Libues Hoplitai',
+    faction: Faction.Carthage,
+    unitClass: 'spear-infantry',
+    strength: 160,
+    // The dependable middle of the army: better armoured than a Juthungi spear block because
+    // the kit is Roman, worse in the attack than a legionary cohort because a long spear in
+    // a deep block is a defensive instrument. Sits deliberately between `urban-cohort`
+    // (30/11/40) and `legio-cohort` (40/13/52) — see the matchup table in the report.
+    meleeAttack: 34, meleeDamage: 12, apDamage: 3, meleeDefence: 38,
+    armour: 46, shieldDefence: 32, chargeBonus: 10, bonusVsCavalry: 40,
+    attackRate: 0.54, reach: 2.5,
+    walkSpeed: 1.52, runSpeed: 3.4, chargeSpeed: 4.0, mass: 92, stamina: 58,
+    morale: 64, discipline: 1.14,
+    appearance: {
+      // Livy, xxii.46: after Trasimene Hannibal re-equipped the African foot out of captured
+      // Roman arms, and at Cannae they were "Romans in everything but the shield". That is
+      // why this unit wears mail, a Montefortino and an oval shield and still reads Punic —
+      // the tunic, the beard and the bare legs are the tell, not the armour.
+      weapon: 'spear', sidearm: 'gladius', shield: 'oval', armour: 'hamata',
+      helmet: 'coolus', crest: 'none', cloak: false, bareChested: false,
+      variance: 0.4, heightScale: 1.0, shieldEmblem: 'punic-horse',
+      tunicColour: 0xb9ac8e, legColour: 0xa89a7c,
+      culture: 'libyan',
+    },
+    formations: ['line', 'shieldwall', 'wedge', 'loose'],
+    abilities: ['brace'],
+    description: 'African veterans in armour stripped from the Roman dead. The one part of the host that will stand all day.',
+  },
+  {
+    id: 'sacred-band',
+    name: 'Sacred Band',
+    nativeName: 'Hieros Lochos',
+    faction: Faction.Carthage,
+    unitClass: 'spear-infantry',
+    strength: 120,
+    // Elite, and elite differently from the Praetorians: the aspis is the largest shield on
+    // the field, so their defence is in the shield (40, above the Praetorians' 38) where a
+    // Praetorian's is in his scale (60 armour against this linen corslet's 44). Two elite
+    // units with the same total defence distributed to opposite sides of the same sum, which
+    // means missiles and armour-piercing blows tell against them very differently.
+    meleeAttack: 46, meleeDamage: 14, apDamage: 4, meleeDefence: 46,
+    armour: 44, shieldDefence: 40, chargeBonus: 14, bonusVsCavalry: 42,
+    attackRate: 0.56, reach: 2.7,
+    walkSpeed: 1.46, runSpeed: 3.2, chargeSpeed: 3.9, mass: 100, stamina: 70,
+    morale: 84, discipline: 1.3,
+    appearance: {
+      weapon: 'spear', sidearm: 'gladius', shield: 'hoplon', armour: 'linothorax',
+      helmet: 'attic', crest: 'longitudinal', cloak: true, bareChested: false,
+      variance: 0.2, heightScale: 1.02, shieldEmblem: 'punic-tanit',
+      // Tyrian purple on the men whose city made it. Murex dye cost more than its weight in
+      // silver and only the citizen body would have been wearing it on a battlefield.
+      tunicColour: 0x6b3a86, legColour: 0xc9bda0,
+      culture: 'punic',
+    },
+    formations: ['line', 'shieldwall', 'wedge'],
+    abilities: ['brace', 'inspire'],
+    description: 'The citizen phalanx of Carthage, drawn from the great houses. Bronze, linen and purple, and the only men in the host fighting for a home.',
+  },
+  {
+    id: 'iberian-scutarii',
+    name: 'Iberian Scutarii',
+    nativeName: 'Scutati Hispani',
+    faction: Faction.Carthage,
+    unitClass: 'heavy-infantry',
+    strength: 150,
+    // The falcata is the point of this unit: heavy in the last third of the blade, so a high
+    // damage and a fast rate but poor defence, because a man swinging a cleaver two-handed
+    // is not behind his shield. Against a legionary cohort it wins the exchange and loses
+    // the grind, which is what a Roman line was for.
+    meleeAttack: 42, meleeDamage: 14, apDamage: 4, meleeDefence: 34,
+    armour: 30, shieldDefence: 30, chargeBonus: 26, bonusVsCavalry: 8,
+    attackRate: 0.64, reach: 1.1,
+    // The soliferrum: a javelin forged in one piece out of iron, four feet of it, which went
+    // through a shield and the arm behind it. Short-ranged and carried two at a time, so it
+    // is the Iberian answer to the pilum and priced like one — heavy AP, almost no range.
+    missile: { kind: 'javelin', range: 24, damage: 38, apDamage: 20, rate: 7, ammo: 2, accuracy: 0.11, arc: 'flat' },
+    walkSpeed: 1.66, runSpeed: 3.9, chargeSpeed: 4.9, mass: 88, stamina: 68,
+    morale: 66, discipline: 1.02,
+    appearance: {
+      weapon: 'falcata', sidearm: 'javelin', shield: 'oval', armour: 'leather',
+      helmet: 'iberian-sinew', crest: 'none', cloak: false, bareChested: false,
+      variance: 0.45, heightScale: 1.0, shieldEmblem: 'iberian-white',
+      tunicColour: 0xc9c1ab, legColour: 0xb0a68c,
+      culture: 'iberian',
+    },
+    formations: ['line', 'wedge', 'loose', 'shieldwall'],
+    abilities: ['warcry'],
+    description: 'Spanish swordsmen in white linen bordered with crimson. The falcata takes a limb off at a stroke; Livy says the wounds frightened the legions more than the losses.',
+  },
+  {
+    id: 'iberian-caetrati',
+    name: 'Iberian Caetrati',
+    nativeName: 'Caetrati',
+    faction: Faction.Carthage,
+    unitClass: 'light-infantry',
+    strength: 130,
+    meleeAttack: 26, meleeDamage: 10, apDamage: 2, meleeDefence: 26,
+    armour: 10, shieldDefence: 16, chargeBonus: 12, bonusVsCavalry: 2,
+    attackRate: 0.62, reach: 1.0,
+    missile: { kind: 'javelin', range: 32, damage: 28, apDamage: 12, rate: 10, ammo: 6, accuracy: 0.1, arc: 'flat' },
+    walkSpeed: 1.92, runSpeed: 4.9, chargeSpeed: 5.4, mass: 68, stamina: 88,
+    morale: 46, discipline: 0.86,
+    appearance: {
+      weapon: 'javelin', sidearm: 'falcata', shield: 'caetra', armour: 'cloth',
+      helmet: 'none', crest: 'none', cloak: false, bareChested: false,
+      variance: 0.9, heightScale: 1.0, shieldEmblem: 'iberian-white',
+      tunicColour: 0xc4bda6, legColour: 0x9d8f74,
+      culture: 'iberian',
+    },
+    formations: ['skirmish', 'loose'],
+    abilities: ['fire-at-will', 'skirmish-mode'],
+    description: 'Hill men with a fistful of javelins and a buckler the size of a dinner plate. They fight the battle before the battle.',
+  },
+  {
+    id: 'balearic-slingers',
+    name: 'Balearic Slingers',
+    nativeName: 'Funditores Baliares',
+    faction: Faction.Carthage,
+    unitClass: 'missile-infantry',
+    strength: 100,
+    meleeAttack: 14, meleeDamage: 6, apDamage: 1, meleeDefence: 18,
+    armour: 4, shieldDefence: 0, chargeBonus: 2, bonusVsCavalry: 0,
+    attackRate: 0.46, reach: 0.9,
+    /**
+     * The best missile troops in the ancient world, and priced as a genuine alternative to
+     * the bow rather than a worse one.
+     *
+     * Longer ranged than the `sagittarii`'s 165 m — a trained slinger out-ranges a bow and
+     * the sources say so plainly — but slower to loose (7 a minute against 9) and much less
+     * total damage per shot. What makes it a real choice is where that damage goes: a lead
+     * *glans* is blunt trauma, and mail is nearly useless against it, so 11 of the 17 is
+     * armour-piercing where an arrow's is 4 of 20. Against unarmoured tribesmen the archers
+     * are the better unit; against a legionary cohort in mail these are, by a wide margin.
+     */
+    missile: { kind: 'sling', range: 180, damage: 17, apDamage: 11, rate: 7, ammo: 22, accuracy: 0.055, arc: 'high' },
+    walkSpeed: 1.7, runSpeed: 4.2, chargeSpeed: 4.4, mass: 64, stamina: 80,
+    morale: 44, discipline: 0.9,
+    appearance: {
+      weapon: 'sling', sidearm: 'gladius', shield: 'none', armour: 'cloth',
+      helmet: 'none', crest: 'none', cloak: false, bareChested: false,
+      variance: 0.95, heightScale: 0.98, shieldEmblem: 'none',
+      tunicColour: 0xb4a98e, legColour: 0x8f8368,
+      culture: 'punic',
+    },
+    formations: ['loose', 'skirmish', 'line'],
+    abilities: ['fire-at-will'],
+    description: 'Islanders who were given a sling before they were given bread. Three lengths of cord for three ranges, and a lead bullet that breaks bone through mail.',
+  },
+  {
+    id: 'numidian-cavalry',
+    name: 'Numidian Cavalry',
+    nativeName: 'Equites Numidae',
+    faction: Faction.Carthage,
+    unitClass: 'light-cavalry',
+    strength: 54,
+    // The fastest thing in the game — faster than the Juthungi raiders at 8.2/10.2 — and the
+    // flimsiest. No bridle, no saddle, no armour: this unit exists to find a flank, empty its
+    // javelins into it and be gone, and it must lose badly to anything that catches it.
+    meleeAttack: 32, meleeDamage: 11, apDamage: 2, meleeDefence: 24,
+    armour: 6, shieldDefence: 12, chargeBonus: 26, bonusVsCavalry: 4,
+    attackRate: 0.6, reach: 1.6,
+    missile: { kind: 'javelin', range: 30, damage: 26, apDamage: 12, rate: 12, ammo: 6, accuracy: 0.12, arc: 'flat' },
+    walkSpeed: 3.1, runSpeed: 8.8, chargeSpeed: 10.6, mass: 430, stamina: 86,
+    morale: 52, discipline: 0.84,
+    appearance: {
+      weapon: 'javelin', sidearm: 'spear', shield: 'round', armour: 'cloth',
+      helmet: 'none', crest: 'none', cloak: false, bareChested: false,
+      variance: 0.9, heightScale: 1.0, shieldEmblem: 'numidian-crescent',
+      tunicColour: 0xc0b49a, legColour: 0xa2937a,
+      culture: 'numidian',
+    },
+    formations: ['loose', 'skirmish', 'wedge'],
+    abilities: ['fire-at-will', 'skirmish-mode', 'charge'],
+    description: 'Riders who steer with a stick and their knees, on horses that have never worn a bit. They won Cannae by being where the legions were not.',
+  },
+  {
+    id: 'gallic-mercenaries',
+    name: 'Gallic Mercenaries',
+    nativeName: 'Galli Mercennarii',
+    faction: Faction.Carthage,
+    unitClass: 'shock-infantry',
+    strength: 160,
+    // Almost the Juthungi Chosen's profile at a fraction of the discipline and morale, which
+    // is exactly the unit Hannibal had: a first charge nothing in the Roman line could hold,
+    // and no staying power at all. He put them in the centre at Cannae *because* he expected
+    // them to give ground, which is the only time in ancient warfare a general planned a
+    // battle around his own troops breaking.
+    meleeAttack: 48, meleeDamage: 17, apDamage: 6, meleeDefence: 26,
+    armour: 16, shieldDefence: 22, chargeBonus: 42, bonusVsCavalry: 4,
+    attackRate: 0.72, reach: 1.2,
+    walkSpeed: 1.8, runSpeed: 4.5, chargeSpeed: 5.6, mass: 90, stamina: 72,
+    morale: 62, discipline: 0.88,
+    appearance: {
+      weapon: 'spatha', sidearm: 'javelin', shield: 'oval', armour: 'leather',
+      helmet: 'spangenhelm', crest: 'none', cloak: true, bareChested: false,
+      variance: 0.95, heightScale: 1.05, shieldEmblem: 'celtic-triskele',
+      tunicColour: 0x8c3a2e, legColour: 0x5b4f3c,
+      culture: 'celtic',
+    },
+    formations: ['wedge', 'horde', 'loose', 'line'],
+    abilities: ['warcry', 'frenzy'],
+    description: 'Boii and Insubres who came down out of the Po valley for Carthaginian silver and a chance at Rome. Their first charge is the heaviest blow the host can throw.',
+  },
+  {
+    id: 'war-elephants',
+    name: 'War Elephants',
+    nativeName: 'Elephanti Africani',
+    faction: Faction.Carthage,
+    unitClass: 'heavy-cavalry',
+    /**
+     * Eight animals, not eight men.
+     *
+     * One entry in the soldier pool is one whole elephant — the beast, its mahout and the
+     * three men in the tower — for the same reason a cavalryman is one entry and not a man
+     * plus a horse: the thing the simulation needs to push, damage and kill is the animal.
+     * `unitSizeScale` still multiplies this, so the shipped `ultra` battle fields sixteen,
+     * which is what a Punic elephant line looked like.
+     */
+    strength: 8,
+    /**
+     * Terrifying in the charge and ruinous to unsupported infantry, which is two different
+     * numbers.
+     *
+     * `chargeBonus` 90 is by far the highest in the game — the next is a legionary charge at
+     * 14 and the Juthungi Chosen at 44 — because everything an elephant is worth happens in
+     * the first six seconds. `apDamage` 20 of 30 is the other half: a four-tonne animal
+     * treading on a man is not meaningfully resisted by mail, so armour is close to
+     * irrelevant against it, and that is precisely why a Roman line could not simply stand.
+     *
+     * The counterweight is `bonusVsCavalry` 20 on top of every spear unit's 36-44 already
+     * applying to it, a slow `attackRate`, and the discipline below.
+     */
+    meleeAttack: 44, meleeDamage: 30, apDamage: 20, meleeDefence: 30,
+    armour: 50, shieldDefence: 0, chargeBonus: 90, bonusVsCavalry: 20,
+    attackRate: 0.5, reach: 2.6,
+    // The tower crew's javelins. Short-ranged and not many, because the tower is a fighting
+    // platform rather than an artillery piece; it exists so the animal is not helpless while
+    // it closes.
+    missile: { kind: 'javelin', range: 34, damage: 30, apDamage: 14, rate: 8, ammo: 8, accuracy: 0.13, arc: 'flat' },
+    // A charging elephant tops out near 25 km/h and cannot jump, so 6.2 m/s is both accurate
+    // and a real tactical difference: it is markedly slower than the 9.6-10.6 m/s of horse,
+    // so a general has time to see it coming and a screen has time to get out of the way.
+    walkSpeed: 1.5, runSpeed: 4.6, chargeSpeed: 6.2, mass: 4200, stamina: 44,
+    /**
+     * **The famous drawback, and it is a mechanic rather than flavour text.**
+     *
+     * 0.55 is the lowest discipline in the game bar the naked fanatics' 0.62, and discipline
+     * divides all incoming morale pressure — so an elephant unit takes nearly twice the
+     * morale damage a legionary cohort does from the same event and breaks early and easily.
+     * What makes that *dangerous to its own side* rather than merely disappointing is
+     * `mass`: at 4,200 kg against a man's 90, `BattleSystem.resolveCrowding` splits every
+     * separation by inverse mass and does not care whose side anyone is on. A routing
+     * elephant turning about therefore ploughs straight back through the Punic line, shoving
+     * men aside 47:1, and nothing had to be written into the combat code to make it happen.
+     * See the report for the measurement.
+     */
+    morale: 50, discipline: 0.55,
+    /**
+     * **This block dresses the crew, not the animal.**
+     *
+     * The elephant's own geometry is `elephantMesh.ts` and takes none of it; the four men on
+     * its back — a mahout on the neck and three in the tower — are the only things that read
+     * `appearance` here, and `UnitRenderSystem.pushElephantCrew` resolves their kit from it.
+     * So it is tuned entirely for how they look three metres up and silhouetted against the
+     * sky, which is the least forgiving place on the field to put a man.
+     *
+     * A javelin bundle in hand because that is what the tower's `missile` throws and what
+     * `r2-08` shows; Attic helmets and cloaks because with `helmet: 'none'` they rendered as
+     * bare-armed men in sleeveless tunics and read as prisoners rather than as crew.
+     */
+    appearance: {
+      weapon: 'javelin', sidearm: 'gladius', shield: 'none', armour: 'leather',
+      helmet: 'attic', crest: 'none', cloak: true, bareChested: false,
+      variance: 0.55, heightScale: 1.0, shieldEmblem: 'none',
+      tunicColour: 0xb8a882, legColour: 0xa2947a,
+      mount: 'elephant',
+      culture: 'punic',
+    },
+    /**
+     * Loose and skirmish only, and that is a spacing constraint rather than a doctrine.
+     *
+     * `BattleSystem.baseSpacing*` gives every cavalry unit 1.95 m laterally and 3.1 m
+     * front-to-back. An elephant is about 2.0 m across and 4.5 m long with its tower, so a
+     * `line` at 1.0x would have them literally inside one another and a `wedge` at 0.6x/0.62x
+     * would be worse. `loose` at 1.95x/1.8x gives 3.80 m and 5.58 m, which leaves 1.8 m
+     * between flanks and 1.1 m between the tail of one and the tusks of the next. Offering a
+     * player a formation that renders as overlapping animals would be offering a bug.
+     */
+    formations: ['loose', 'skirmish'],
+    abilities: ['charge', 'warcry'],
+    description: 'North African forest elephants in bronze head-armour, with a crenellated tower and four men on the back of each. Nothing in a battle line stands in front of them, and nothing behind them is safe once they turn.',
+  },
+];
+
 // Siege engines live in their own module purely as an ownership seam — see siegeUnits.ts.
-export const ALL_UNITS: UnitTypeDef[] = [...ROMAN_UNITS, ...GERMANIC_UNITS, ...SIEGE_UNITS];
+export const ALL_UNITS: UnitTypeDef[] = [
+  ...ROMAN_UNITS, ...GERMANIC_UNITS, ...CARTHAGINIAN_UNITS, ...SIEGE_UNITS,
+];
 
 const BY_ID = new Map<string, UnitTypeDef>(ALL_UNITS.map((u) => [u.id, u]));
 

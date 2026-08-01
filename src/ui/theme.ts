@@ -23,7 +23,7 @@ export function mixHex(a: number, b: number, t: number): string {
 export interface FactionUI {
   id: Faction;
   /** Used as a `data-f` attribute so CSS can theme per side. */
-  key: 'rome' | 'juthungi';
+  key: 'rome' | 'juthungi' | 'carthage';
   short: string;
   long: string;
   colour: string;
@@ -63,6 +63,21 @@ export const FACTION_UI: Record<Faction, FactionUI> = {
     deep: '#13212f',
     raw: FACTIONS[Faction.Germanic].colour,
     litRaw: 0x5b93c4,
+  },
+  [Faction.Carthage]: {
+    id: Faction.Carthage,
+    key: 'carthage',
+    short: FACTIONS[Faction.Carthage].shortName,
+    long: 'Carthaginian Empire',
+    colour: hexOf(FACTIONS[Faction.Carthage].colour),
+    accent: hexOf(FACTIONS[Faction.Carthage].accent),
+    deep: '#2a1436',
+    raw: FACTIONS[Faction.Carthage].colour,
+    // Mixed toward white the way the other two are, and for the same reason: a minimap blip
+    // is three pixels and brightening a purple toward white turns it lilac, at which point it
+    // is neither purple nor distinguishable from Rome's lit oxblood. This raises the value
+    // and keeps the hue.
+    litRaw: 0xa96fc4,
   },
 };
 

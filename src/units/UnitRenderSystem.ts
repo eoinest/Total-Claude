@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import type { EngineContext, Subsystem } from '../core/Engine';
 import type { BattleSystem } from '../sim/BattleSystem';
-import { Clip, Faction, SoldierState, type UnitGroupState, type UnitTypeDef } from '../sim/types';
+import {
+  ALL_FACTIONS, Clip, Faction, SoldierState, type UnitGroupState, type UnitTypeDef,
+} from '../sim/types';
 import { unitType, isCavalry } from './roster';
 import {
   MAN_CLIP_SET, HORSE_CLIP_SET, FOOT_CLIP_MAP, RIDE_CLIP_MAP,
@@ -20,8 +22,17 @@ import {
   buildHorseGeometry, HORSE_MASK_LO, SADDLE_BONES, SADDLE_SEAT, HORSE_GROUND_LIFT,
 } from './horseMesh';
 import {
+  buildElephantGeometry, ELEPHANT_GROUND_LIFT, ELEPHANT_MASK_LO,
+  HOWDAH, HOWDAH_BONES, HOWDAH_STATIONS, MAHOUT_BONES, MAHOUT_SEAT,
+} from './elephantMesh';
+import {
+  ELEPHANT_CLIP, ELEPHANT_CLIP_SET, ELEPHANT_GAIT_LADDER, ELEPHANT_GAIT_STRIDE,
+  ELEPHANT_IDLE_EDGE,
+} from '../anim/elephantClips';
+import {
   resolveKit, emptyKit, ROUT_DROP_HI, CORPSE_DROP_HI, CORPSE_DROP_LO,
-  CORPSE_DROP_COARSE, CORPSE_DROP_COARSE_HELM, Piece, type ResolvedKit,
+  CORPSE_DROP_COARSE, CORPSE_DROP_COARSE_HELM, Piece, ridesElephant,
+  EMBLEM_TRIBAL_FIRST, EMBLEM_PUNIC_FIRST, type ResolvedKit,
 } from './kit';
 import {
   renderImpostorAtlas, buildImpostorGeometry, makeImpostorMaterial, type ImpostorAtlas,
@@ -47,10 +58,19 @@ import { makeCorpsePose, type CorpsePose, type RagdollSystem } from '../sim/Ragd
  * issues a draw of its own.
  *
  * ## Draw calls
- *   2 factions x 3 mesh LODs   = 6
- *   1 horse mesh x 3 LODs      = 3   (both factions ride the same animal)
+ *   3 factions x 3 mesh LODs   = 9
+ *   1 horse mesh x 3 LODs      = 3   (every faction rides the same animal)
+ *   1 war elephant, no LODs    = 1
  *   1 impostor billboard sheet = 1
- *                              = 10, inside the 12 the architecture budgets.
+ *                              = 14 allocated, but that is not what is drawn.
+ *
+ * **A tier with no instances is hidden, so the budget is spent on what is on screen and not
+ * on what exists.** `flush` sets `mesh.visible = count > 0` every frame, so a battle only
+ * pays for the factions actually deployed: Rome against the Juthungi draws the same 10 it
+ * always did, and Rome against Carthage draws 11 — three Roman tiers, three Punic, three
+ * horse, the elephant, and the impostor sheet. Both are inside the 12 the architecture
+ * budgets. Three factions at once cannot occur in a scenario, and `tools/probe-draws.mjs`
+ * measures the realised figure rather than this one.
  *
  * ## Why the renderer keeps its own playhead
  * `pool.animTime` advances at roughly one cycle per second whatever the clip is, because
@@ -110,6 +130,19 @@ const LOD_COUNT = 3;
  * keeps a marginal 10 m of real geometry for nothing at 1080p.
  */
 const LOD_FRACTION = [0.14, 0.4, 2.0];
+
+/** A standing man, metres. The height every screen-space threshold below is measured against. */
+const MAN_HEIGHT_M = 1.75;
+
+/**
+ * Pixel height below which a man stops being a figure and becomes a smudge, and therefore
+ * the height at which it is safe to swap him for a billboard.
+ *
+ * 4.5 px at 1080p and a 43 degree lens puts the edge at 526 m. Above this the impostor is
+ * indistinguishable from the mesh; below it, the swap is what made a whole army vanish under
+ * its own banners at the `high` tier.
+ */
+const IMPOSTOR_MIN_PX = 4.5;
 
 /**
  * Metres of slop added to the per-instance cull sphere, purely so shadows survive it.
@@ -330,10 +363,40 @@ export class UnitRenderSystem implements Subsystem {
   private atlas!: SoldierAtlas;
   private manAnim!: AnimTexture;
   private horseAnim!: AnimTexture;
+  private elephantAnim!: AnimTexture;
   private mats: SoldierMaterialSet[] = [];
   /** [faction][lod] */
   private soldierTiers: Tier[][] = [];
   private horseTiers: Tier[] = [];
+  /** One tier, no LOD chain — see `elephantMesh.ts` for why. */
+  private elephantTier?: Tier;
+  private elephantFacts: ClipFacts[] = [];
+  /** Animated howdah floor and mahout seat, 3 floats per elephant animation row. */
+  private howdahTrack!: Float32Array;
+  private mahoutTrack!: Float32Array;
+  /** Clip, previous clip and fade per elephant, indexed by the animal's pool slot. */
+  private eleCur!: Uint8Array;
+  private elePhase!: Float32Array;
+  /** Gait crossover speeds, m/s. */
+  private eleGaitUp: number[] = [];
+  /**
+   * Kit for the render-only tower crew, resolved once per (unit type, station).
+   *
+   * Bounded by the number of distinct elephants times four, so a couple of hundred entries
+   * at the largest battle the menu can build. `resolveKit` costs about twenty hashes and
+   * this would otherwise run four times per animal per frame.
+   */
+  private crewKit = new Map<string, ResolvedKit>();
+  /**
+   * Simulation seconds, mirrored each frame.
+   *
+   * The tower crew have no pool slot and therefore no `animTime` of their own, so their idle
+   * has to be driven from somewhere. It is `time.simTime` and explicitly not a wall clock:
+   * this is read in a render path that `tools/shoot.mjs` steps deterministically, and
+   * `performance.now()` would make two runs of the harness produce different frames of the
+   * same battle — which is the sort of thing that is only noticed as a flaky screenshot diff.
+   */
+  private animClock = 0;
   private impostorTier?: Tier;
   private impostors?: ImpostorAtlas;
   private impostorMat?: THREE.MeshBasicMaterial;
@@ -405,6 +468,8 @@ export class UnitRenderSystem implements Subsystem {
 
   private types: UnitTypeDef[] = [];
   private typeIsCav: boolean[] = [];
+  /** Parallel to `typeIsCav`: this cavalry type rides an elephant rather than a horse. */
+  private typeIsElephant: boolean[] = [];
   private typeIsEngine: boolean[] = [];
   private manFacts!: ClipFacts[];
   private horseFacts!: ClipFacts[];
@@ -437,8 +502,31 @@ export class UnitRenderSystem implements Subsystem {
     this.atlas = buildSoldierAtlas(Math.min(8, ctx.renderer.capabilities.getMaxAnisotropy()));
     this.manAnim = bakeAnimTexture(MAN_CLIP_SET, 'man');
     this.horseAnim = bakeAnimTexture(HORSE_CLIP_SET, 'horse');
+    this.elephantAnim = bakeAnimTexture(ELEPHANT_CLIP_SET, 'elephant');
     this.manFacts = clipFacts(MAN_CLIP_SET);
     this.horseFacts = clipFacts(HORSE_CLIP_SET);
+    this.elephantFacts = clipFacts(ELEPHANT_CLIP_SET);
+
+    /**
+     * Where the howdah floor and the mahout's seat actually are on every frame.
+     *
+     * The same decomposition as the saddle, and it exists for the same recorded reason: a
+     * rider's boots were once placed *on the saddle* because a 1.490 m rest-pose offset was
+     * added to the ground rather than to the mount, leaving him a measured 0.95 m in the air.
+     * A tower crew is four men on a platform 3.06 m up and the error would be four times as
+     * visible, so neither the crew nor the mahout is ever positioned from a constant: both
+     * are placed against the animated height of the point they are standing on.
+     */
+    this.howdahTrack = bakePointTrack(
+      ELEPHANT_CLIP_SET,
+      [0, HOWDAH.y, HOWDAH.z],
+      HOWDAH_BONES.bone0, HOWDAH_BONES.bone1, HOWDAH_BONES.weight0
+    );
+    this.mahoutTrack = bakePointTrack(
+      ELEPHANT_CLIP_SET,
+      [0, MAHOUT_SEAT.y, MAHOUT_SEAT.z],
+      MAHOUT_BONES.bone0, MAHOUT_BONES.bone1, MAHOUT_BONES.weight0
+    );
 
     // Where the saddle actually is on every frame of every gait, and where each rider clip
     // puts his own seat. Seating him is then one subtraction rather than a guessed constant.
@@ -479,6 +567,23 @@ export class UnitRenderSystem implements Subsystem {
       this.gaitDown[r] = cross * (1 - GAIT_HYST);
     }
 
+    /**
+     * Elephant gait crossover, by the same geometric-mean rule as the horse.
+     *
+     * Two rungs, so one crossover. The strides come from `ELEPHANT_GAIT_STRIDE`, which is
+     * *measured* off the authored clips by `measureRootSpeed` rather than written down — see
+     * the note at the top of `elephantClips.ts`. Writing the crossover as a speed instead
+     * would be the horse's skating-hoof defect wearing a different hat.
+     */
+    this.eleGaitUp = [];
+    for (let r = 0; r < ELEPHANT_GAIT_LADDER.length - 1; r++) {
+      const slow = ELEPHANT_GAIT_STRIDE[r];
+      const fast = ELEPHANT_GAIT_STRIDE[r + 1];
+      this.eleGaitUp.push(Math.sqrt(slow * fast));
+    }
+
+    this.eleCur = new Uint8Array(cap).fill(255);
+    this.elePhase = new Float32Array(cap);
     this.phase = new Float32Array(cap);
     this.prevPhase = new Float32Array(cap);
     this.blend = new Float32Array(cap).fill(1);
@@ -559,6 +664,8 @@ export class UnitRenderSystem implements Subsystem {
       anim: this.manAnim,
       emblemOrigin: EMBLEM_ORIGIN,
       emblemTile: EMBLEM_TILE,
+      emblemTribalFirst: EMBLEM_TRIBAL_FIRST,
+      emblemPunicFirst: EMBLEM_PUNIC_FIRST,
       // Lean ramps in over the full height of a man so his feet stay on the ground.
       leanHeight: 1.5,
       poseVary: MAN_POSE_VARY,
@@ -567,11 +674,25 @@ export class UnitRenderSystem implements Subsystem {
       anim: this.horseAnim,
       emblemOrigin: EMBLEM_ORIGIN,
       emblemTile: EMBLEM_TILE,
+      emblemTribalFirst: EMBLEM_TRIBAL_FIRST,
+      emblemPunicFirst: EMBLEM_PUNIC_FIRST,
       leanHeight: 1.7,
     });
-    this.mats.push(manMat, horseMat);
+    // The elephant gets its own material because it gets its own animation texture — the rig
+    // has 31 bones against the horse's 29 and none of the clips are shared. Same program,
+    // same uniforms, one more texture: no extra material in the budget's sense.
+    const elephantMat = makeSoldierMaterial(baseParams, {
+      anim: this.elephantAnim,
+      emblemOrigin: EMBLEM_ORIGIN,
+      emblemTile: EMBLEM_TILE,
+      emblemTribalFirst: EMBLEM_TRIBAL_FIRST,
+      emblemPunicFirst: EMBLEM_PUNIC_FIRST,
+      // No lean on an animal that weighs four tonnes and does not bank into a turn.
+      leanHeight: 3.0,
+    });
+    this.mats.push(manMat, horseMat, elephantMat);
 
-    for (const faction of [Faction.Rome, Faction.Germanic]) {
+    for (const faction of ALL_FACTIONS) {
       const row: Tier[] = [];
       for (let lod = 0; lod < LOD_COUNT; lod++) {
         const geo = buildSoldierGeometry(faction, lod as Lod);
@@ -585,6 +706,12 @@ export class UnitRenderSystem implements Subsystem {
       const geo = buildHorseGeometry(lod as Lod);
       this.horseTiers.push(this.makeTier(geo, horseMat, horseCap, `horses-lod${lod}`));
     }
+
+    // War elephants. A unit is eight animals at establishment and sixteen at `ultra`, and a
+    // scenario could field two units, so 64 is generous by a factor of two.
+    this.elephantTier = this.makeTier(
+      buildElephantGeometry(), elephantMat, 64, 'war-elephants'
+    );
 
     // Siege engines. One geometry, no LOD chain and no impostor: LOD exists so that
     // thousands of a thing do not cost thousands of times its triangles, and there are at
@@ -1060,9 +1187,18 @@ export class UnitRenderSystem implements Subsystem {
     const facts = this.manFacts[marchIdx];
     const captureRow = facts.rowBase + Math.floor(facts.frames * 0.22);
 
-    const groups = [Faction.Rome, Faction.Germanic].map((faction) => {
+    /** The archetype whose kit is baked into each faction's billboard row. */
+    const ARCHETYPE: Record<Faction, string> = {
+      [Faction.Rome]: 'legio-cohort',
+      [Faction.Germanic]: 'juthungi-warband',
+      // The Libyan spearman rather than a mercenary, because he is the commonest thing in a
+      // Punic line and because at 130 m a billboard is a silhouette: mail, an oval shield
+      // and a long spear is the shape most of that army presents.
+      [Faction.Carthage]: 'libyan-spearmen',
+    };
+    const groups = ALL_FACTIONS.map((faction) => {
       const geometry = buildSoldierGeometry(faction, 1);
-      const def = unitType(faction === Faction.Rome ? 'legio-cohort' : 'juthungi-warband');
+      const def = unitType(ARCHETYPE[faction]);
       const kit = resolveKit(def, 0.37, emptyKit());
       const one = (arr: number[], n: number): THREE.InstancedBufferAttribute => {
         const at = new THREE.InstancedBufferAttribute(new Float32Array(arr), n);
@@ -1133,9 +1269,48 @@ export class UnitRenderSystem implements Subsystem {
     };
   }
 
+  /**
+   * Distance at which a man is `px` pixels tall, from the viewport and the camera's own FOV.
+   *
+   * A perspective camera puts a `MAN_H` metre object at distance `d` across
+   * `viewH * MAN_H / (2 * d * tan(fov/2))` pixels, so inverting it gives the distance for a
+   * wanted pixel height. Derived rather than tabulated because the quantity being chosen is
+   * a *legibility* threshold: it depends on how many pixels the player has and how wide the
+   * lens is, and on nothing else. A constant would be right at one resolution and one FOV.
+   */
+  private distanceForPixelHeight(ctx: EngineContext, px: number): number {
+    const cam = ctx.camera as THREE.PerspectiveCamera;
+    const fov = typeof cam.fov === 'number' && cam.fov > 1 ? cam.fov : 45;
+    const halfTan = Math.tan((fov * Math.PI) / 360);
+    return (ctx.viewH * MAN_HEIGHT_M) / (2 * px * halfTan);
+  }
+
   private applyQuality(ctx: EngineContext): void {
     const far = ctx.quality.lodFarDistance;
-    this.lodDist = [far * LOD_FRACTION[0], far * LOD_FRACTION[1], far * LOD_FRACTION[2]];
+    /**
+     * The billboard edge is a floor, not a fraction of the tier's LOD distance.
+     *
+     * It used to be `far * 2.0`, which gave 180 m at low, 280 at medium, 440 at high and
+     * 640 at ultra. The impostor tier's own docblock justifies itself on the grounds that
+     * "a man is a handful of pixels tall" out there — but at 1080p those edges are 13.2,
+     * 8.5, 5.4 and 3.7 px respectively, so only ultra met the criterion the design was
+     * written against and low fired three and a half times too close. A *legibility*
+     * threshold was being scaled as though it were a *cost* knob, and the consequence was
+     * that 89% of visible men were billboards at `high` against 0% at `ultra` — with the
+     * player reporting that most of their army was invisible under its own banners.
+     *
+     * 4.5 px is the height at which a standing man stops resolving as a figure at all, so
+     * that is the criterion, and the distance comes from the viewport rather than a table.
+     * Counter-intuitively this is also *faster* at the lower tiers despite drawing more
+     * triangles: an alpha-tested billboard costs more per pixel than the opaque LOD2 mesh it
+     * replaces, and near the camera it covers far more pixels.
+     */
+    const impostorEdge = this.distanceForPixelHeight(ctx, IMPOSTOR_MIN_PX);
+    this.lodDist = [
+      far * LOD_FRACTION[0],
+      far * LOD_FRACTION[1],
+      Math.max(far * LOD_FRACTION[2], impostorEdge),
+    ];
   }
 
   resize(_w: number, _h: number, ctx: EngineContext): void {
@@ -1210,7 +1385,14 @@ export class UnitRenderSystem implements Subsystem {
       }
 
       const facts = this.manFacts[this.curClip[i]];
-      if (cav) {
+      // A war elephant runs its own playhead on its own clip set. Deliberately *before* the
+      // cavalry branch: `isCavalry` is true for it — the roster classes it as heavy cavalry
+      // so the AI handles it without a new `UnitClass` — and letting it fall through would
+      // put it on the horse's gait ladder and its stride, which is the exact shape of the
+      // rate-matching defect this whole path is written to avoid.
+      if (this.isElephant(i)) {
+        this.advanceElephant(i, dt, state, speed);
+      } else if (cav) {
         this.advanceMount(i, dt, clip, speed, facts);
       } else if (facts.simDriven) {
         // The sim owns this one: a blow has to land on the frame the combat system timed
@@ -1342,6 +1524,51 @@ export class UnitRenderSystem implements Subsystem {
     return t >= 0 ? this.typeIsCav[t] : false;
   }
 
+  private isElephant(i: number): boolean {
+    const t = this.typeOf(i);
+    return t >= 0 ? this.typeIsElephant[t] : false;
+  }
+
+  /**
+   * What the elephant probe reads. Diagnostic only; nothing in the game calls it.
+   *
+   * Reports the numbers the horse got wrong — the animal's clip and playback rate, the
+   * height of the back, the tower floor and the mahout's seat, and the residual slip of a
+   * planted foot. See `tools/probe-elephant.mjs`.
+   */
+  probeElephant(i: number): {
+    clip: number; rate: number; groundSpeed: number; footSlip: number;
+    backY: number; towerY: number; mahoutY: number;
+  } | null {
+    if (!this.isElephant(i)) return null;
+    const p = this.battle.pool;
+    const speed = Math.sqrt(p.vx[i] * p.vx[i] + p.vz[i] * p.vz[i]);
+    const clip = this.eleCur[i] === 255 ? ELEPHANT_CLIP.idle : this.eleCur[i];
+    const facts = this.elephantFacts[clip];
+    const cps = facts.rootSpeed > 0.05
+      ? (speed * facts.invDuration) / facts.rootSpeed
+      : facts.invDuration;
+    const rate = Math.min(1.9, Math.max(0.2, cps));
+    // Foot slip: how fast a planted foot moves over the ground. The clip depicts
+    // `rootSpeed / invDuration` metres per cycle, so at `rate` cycles a second it depicts
+    // `stride * rate` m/s of travel; the difference from the animal's real ground speed is
+    // exactly what an eye reads as skating.
+    const stride = facts.rootSpeed > 0.05 ? facts.rootSpeed / facts.invDuration : 0;
+    const depicted = stride * rate;
+    const scale = 0.9 + p.variant[i] * 0.2;
+    const frame = Math.min(facts.frames - 1, Math.floor(this.elePhase[i] * facts.frames));
+    const row = (facts.rowBase + frame) * 3;
+    return {
+      clip,
+      rate,
+      groundSpeed: speed,
+      footSlip: stride > 0 ? Math.abs(depicted - speed) : 0,
+      backY: p.y[i] + ELEPHANT_GROUND_LIFT + 2.76 * scale,
+      towerY: p.y[i] + ELEPHANT_GROUND_LIFT + this.howdahTrack[row + 1] * scale,
+      mahoutY: p.y[i] + ELEPHANT_GROUND_LIFT + this.mahoutTrack[row + 1] * scale,
+    };
+  }
+
   /** Cache the unit-type index for a soldier; unit membership never changes. */
   private typeOf(i: number): number {
     let t = this.typeIndex[i];
@@ -1354,6 +1581,7 @@ export class UnitRenderSystem implements Subsystem {
       t = this.types.length;
       this.types.push(def);
       this.typeIsCav.push(isCavalry(def));
+      this.typeIsElephant.push(ridesElephant(def));
       this.typeIsEngine.push(isEngineUnit(def));
     }
     this.typeIndex[i] = t;
@@ -1570,6 +1798,8 @@ export class UnitRenderSystem implements Subsystem {
 
     for (const row of this.soldierTiers) for (const t of row) t.buf.count = 0;
     for (const t of this.horseTiers) t.buf.count = 0;
+    if (this.elephantTier) this.elephantTier.buf.count = 0;
+    this.animClock = ctx.time.simTime;
     if (this.impostorTier) this.impostorTier.buf.count = 0;
     for (const t of this.engineTiers) if (t) t.count = 0;
 
@@ -1583,6 +1813,7 @@ export class UnitRenderSystem implements Subsystem {
     for (const u of b.units) {
       const def = unitType(u.typeId);
       const cav = isCavalry(def);
+      const onElephant = ridesElephant(def);
       const selected = u.selected;
       // Slot stand-off is expressed in *formation* space, so the trig is once per unit rather
       // than 8,600 times a frame. A rank dresses to the unit's front, not to each man's own
@@ -1685,6 +1916,25 @@ export class UnitRenderSystem implements Subsystem {
         let x = rp.x;
         let z = rp.z;
         let lean = p.lean[i];
+        if (onElephant) {
+          /**
+           * One pool soldier is one whole elephant: the animal, its mahout and three men in
+           * the tower. See `war-elephants` in `roster.ts` for why the simulation models it
+           * that way — the thing that needs to be pushed, damaged and killed is the beast.
+           *
+           * So the pool entry draws the animal, and the four men are emitted here as extra
+           * instances rather than being pool soldiers of their own. They cost nothing in the
+           * draw budget because they come out of the Carthaginian soldier tier this unit is
+           * already using, and nothing in the simulation because they do not exist in it.
+           */
+          if (!hasCorpse) {
+            this.pushElephant(i, rp.x, rp.y + ELEPHANT_GROUND_LIFT, rp.z, facing, dying);
+            this.pushElephantCrew(u, def, i, rp.x, rp.y + ELEPHANT_GROUND_LIFT, rp.z, facing, lod, state);
+          }
+          // The animal is the unit. Nothing is drawn at the man's own slot: a legionary-sized
+          // Carthaginian standing inside the elephant's ribs is what the naive path produces.
+          continue;
+        }
         if (cav) {
           const horseClip = this.horseCur[i] === 255 ? HORSE_GAIT_LADDER[0] : this.horseCur[i];
           const hf = this.horseFacts[horseClip];
@@ -1833,6 +2083,299 @@ export class UnitRenderSystem implements Subsystem {
     buf.count = n + 1;
   }
 
+  /**
+   * Choose the animal's gait from its own ground speed and advance its playhead.
+   *
+   * **The rate comes from the elephant's clip, never from a man's.** That sentence is the
+   * whole point of this method: the horse's gallop never took its rate-matched branch
+   * because the rate was read off the rider's clip, every ride clip is an overlay whose
+   * `rootSpeed` is zero, and the hooves skated 2.7-4.1 m/s against a 5.362 m stride. There
+   * is no rider here to get it from — the elephant *is* the pool entry — but the same
+   * mistake is available in the form of using `this.phase[i]`, the man's playhead, so the
+   * animal keeps a separate one in `elePhase`.
+   */
+  private advanceElephant(i: number, dt: number, state: SoldierState, speed: number): number {
+    // Death and rout override speed: a dying elephant goes down and a broken one trumpets,
+    // whatever the ground is doing under it.
+    if (state === SoldierState.Dying || state === SoldierState.Dead) {
+      this.eleCur[i] = ELEPHANT_CLIP.death;
+      // The sim's own playhead, so the collapse lands with `Dying` turning into `Dead`.
+      this.elePhase[i] = Math.min(1, this.battle.pool.animTime[i]);
+      return this.elePhase[i];
+    }
+    let want: number;
+    if (state === SoldierState.Routing) {
+      want = ELEPHANT_CLIP.panic;
+    } else if (state === SoldierState.Fighting) {
+      want = ELEPHANT_CLIP.attack;
+    } else if (speed < ELEPHANT_IDLE_EDGE) {
+      want = ELEPHANT_CLIP.idle;
+    } else {
+      // Two rungs, one crossover, taken at the geometric mean of the two measured strides.
+      want = speed > this.eleGaitUp[0] ? ELEPHANT_GAIT_LADDER[1] : ELEPHANT_GAIT_LADDER[0];
+    }
+    if (this.eleCur[i] !== want) {
+      this.eleCur[i] = want;
+      /**
+       * Start on the animal's own phase, never on zero.
+       *
+       * Zero put every elephant in a unit into identical lockstep — same footfall, same ear
+       * beat, same trunk sway — and three independent blind critics named it without being
+       * prompted: "sixteen units, one mesh, one pose, one heading, no animation offset
+       * between any two of them", "identical stride phase", "one animation frame, N times".
+       * It was the most-cited single defect in the deck.
+       *
+       * The infantry path already does this through `phaseOff`, and its comment says why: a
+       * cohort that halts together must not land on one shared pose. Sixteen four-tonne
+       * animals stepping in time is that failure at sixteen times the size.
+       */
+      this.elePhase[i] = hash01(Math.floor(this.battle.pool.variant[i] * 16777216), 45);
+    } else if (want === ELEPHANT_CLIP.attack && this.elePhase[i] >= 1) {
+      /**
+       * Re-strike rather than freeze.
+       *
+       * `attack` is a one-shot, so the clamp below leaves the playhead at 1 and the animal
+       * holds its last frame — head thrown up and to one side — for as long as the melee
+       * lasts. An elephant frozen mid-toss in the middle of a fight is a worse defect than
+       * no attack animation at all, because it is a *pose* and the eye reads it as broken
+       * rather than as still. Restart from a per-animal offset so a rank of them does not
+       * gore in unison.
+       */
+      this.elePhase[i] = hash01(Math.floor(this.battle.pool.variant[i] * 16777216), 44) * 0.18;
+    }
+    const facts = this.elephantFacts[want];
+    // Locomotion advances at ground speed over the clip's own measured stride; everything
+    // else at one cycle per its authored duration. Stride is `rootSpeed / invDuration`,
+    // i.e. metres per second times seconds per cycle, and both of those come from the clip.
+    const cyclesPerSecond = facts.rootSpeed > 0.05
+      ? (speed * facts.invDuration) / facts.rootSpeed
+      : facts.invDuration;
+    // 1.9 cycles a second is the fastest a real elephant's legs go; below 0.2 it would freeze
+    // mid-stride in a melee shuffle. Neither bound is ever reached at roster speeds — the
+    // charge needs 1.49 — so they exist only to keep a stalled or shoved animal sane.
+    const clamped = Math.min(1.9, Math.max(0.2, cyclesPerSecond));
+    let ph = this.elePhase[i] + clamped * dt;
+    if (facts.loop) ph -= Math.floor(ph);
+    else ph = Math.min(1, ph);
+    this.elePhase[i] = ph;
+    return ph;
+  }
+
+  /** The animal itself: one instance, one geometry, no LOD chain. */
+  private pushElephant(
+    i: number,
+    x: number, y: number, z: number,
+    facing: number,
+    dying: boolean
+  ): void {
+    const tier = this.elephantTier;
+    if (!tier) return;
+    const buf = tier.buf;
+    const n = buf.count;
+    if ((n + 1) * Stride.Pos > buf.pos.length) return;
+    const p = this.battle.pool;
+
+    buf.pos[n * 3] = x;
+    buf.pos[n * 3 + 1] = y;
+    buf.pos[n * 3 + 2] = z;
+    const o = n * Stride.Orient;
+    buf.orient[o] = facing;
+    // Bulls and cows in one herd: a fifth either side of full size, from the stable hash so
+    // an animal's size never changes. Elephants in a line are visibly not all the same size,
+    // and sixteen identical ones is the uniformity tell that a crowd of men would have.
+    buf.orient[o + 1] = 0.9 + p.variant[i] * 0.2;
+    buf.orient[o + 2] = 0;
+    buf.orient[o + 3] = p.grime[i] * 0.7;
+
+    const facts = this.elephantFacts[this.eleCur[i] === 255 ? ELEPHANT_CLIP.idle : this.eleCur[i]];
+    const ph = this.elePhase[i];
+    const f = ph * facts.frames;
+    const f0 = Math.min(facts.frames - 1, Math.floor(f));
+    const f1 = facts.loop ? (f0 + 1) % facts.frames : Math.min(f0 + 1, facts.frames - 1);
+    const a = n * Stride.AnimA;
+    buf.animA[a] = facts.rowBase + f0;
+    buf.animA[a + 1] = facts.rowBase + f1;
+    buf.animA[a + 2] = f - Math.floor(f);
+    buf.animA[a + 3] = 1;
+    buf.animB[a] = facts.rowBase + f0;
+    buf.animB[a + 1] = facts.rowBase + f0;
+    buf.animB[a + 2] = 0;
+    buf.animB[a + 3] = p.variant[i];
+
+    const k = n * Stride.Kit;
+    buf.kit[k] = ELEPHANT_MASK_LO;
+    buf.kit[k + 1] = 0;
+
+    const c = n * Stride.Col0;
+    // The caparison under the tower, which is the one dyed surface on the animal. Punic
+    // crimson and purple, varied per animal because a mercenary army's cloth came from
+    // whatever lots the quartermaster could buy.
+    const v = p.variant[i];
+    const cloth: [number, number, number] = v < 0.34
+      ? [0.20, 0.030, 0.055]
+      : v < 0.68 ? [0.13, 0.022, 0.10] : [0.16, 0.055, 0.032];
+    buf.col0[c] = cloth[0];
+    buf.col0[c + 1] = cloth[1];
+    buf.col0[c + 2] = cloth[2];
+    buf.col0[c + 3] = 0;
+    buf.col1[c] = 0.5; buf.col1[c + 1] = 0.5; buf.col1[c + 2] = 0.5;
+    // Bronze, kept bright: the chamfron is meant to be the brightest thing on the field, and
+    // a war elephant's plate was polished for exactly that reason. Class 1 is bronze and the
+    // fraction is polish. A dead animal's kit stops being maintained.
+    buf.col1[c + 3] = dying ? 1.35 : 1.78;
+
+    buf.count = n + 1;
+  }
+
+  /**
+   * The mahout on the neck and the three men in the tower.
+   *
+   * These are **not pool soldiers** — see the note in `preRender`. They are written straight
+   * into the faction's own soldier tier with kit resolved once per role, which is why they
+   * cost no draw call and no simulation. Their heights come from `howdahTrack` and
+   * `mahoutTrack`, both baked per animation row, so they ride the animal's real back rather
+   * than a rest-pose constant.
+   */
+  private pushElephantCrew(
+    u: UnitGroupState,
+    def: UnitTypeDef,
+    i: number,
+    x: number, y: number, z: number,
+    facing: number,
+    lod: number,
+    state: SoldierState
+  ): void {
+    const tier = this.soldierTiers[u.faction][Math.min(lod, LOD_COUNT - 1)];
+    const p = this.battle.pool;
+    const scale = 0.9 + p.variant[i] * 0.2;
+    const sinF = Math.sin(facing);
+    const cosF = Math.cos(facing);
+
+    const facts = this.elephantFacts[this.eleCur[i] === 255 ? ELEPHANT_CLIP.idle : this.eleCur[i]];
+    const frame = Math.min(facts.frames - 1, Math.floor(this.elePhase[i] * facts.frames));
+    const row = (facts.rowBase + frame) * 3;
+    const floorY = this.howdahTrack[row + 1] * scale;
+    const floorZ = this.howdahTrack[row + 2] * scale;
+    const seatY = this.mahoutTrack[row + 1] * scale;
+    const seatZ = this.mahoutTrack[row + 2] * scale;
+
+    // A crewman throws when the animal's unit is shooting and braces otherwise; the mahout
+    // never fights, he is holding a goad in both hands and steering four tonnes.
+    const shooting = state === SoldierState.Throwing || state === SoldierState.Shooting;
+    const routing = state === SoldierState.Routing;
+    const crewClipId = routing ? Clip.IdleBrace : shooting ? Clip.ThrowPilum : Clip.IdleAlert;
+
+    for (let k = 0; k < HOWDAH_STATIONS.length + 1; k++) {
+      const mahout = k === HOWDAH_STATIONS.length;
+      const st = mahout ? { x: 0, z: 0, turn: 0 } : HOWDAH_STATIONS[k];
+      // Stable per man for the whole battle: his own hash is the animal's, salted by station.
+      const seed = Math.floor(p.variant[i] * 16777216) + k * 7919;
+      const jx = (hash01(seed, 61) - 0.5) * 0.14;
+      const jz = (hash01(seed, 62) - 0.5) * 0.12;
+      const lx = (st.x + jx) * scale;
+      const lz = (mahout ? seatZ : floorZ + st.z + jz) * scale;
+      // A man standing in the tower stands on its floor; the mahout sits astride the neck, so
+      // his hips are at the seat and his legs hang either side.
+      const my = y + (mahout ? seatY - 0.86 * scale : floorY);
+      // The men are their own size, not the animal's. Scaling a crewman by his mount's
+      // `scale` would give the biggest bull the tallest crew, which is backwards — a big
+      // elephant is what makes the men on it look *small*.
+      const manScale = (mahout ? 0.97 : 1.0) * (0.96 + hash01(seed, 63) * 0.09);
+      this.pushCrewman(
+        tier,
+        x + lx * cosF + lz * sinF,
+        my,
+        z - lx * sinF + lz * cosF,
+        facing + st.turn,
+        manScale,
+        def,
+        seed,
+        mahout ? Clip.IdleRelaxed : crewClipId,
+        i
+      );
+    }
+  }
+
+  /**
+   * One render-only man, with his kit resolved from a hash rather than from the pool.
+   *
+   * A sibling of `pushSoldier` rather than a parameterisation of it: that method reads
+   * fourteen per-pool-index arrays, and threading an override through every one of them to
+   * serve four men an elephant would make the hot path — eight thousand calls a frame —
+   * carry a branch it never needs.
+   */
+  private pushCrewman(
+    tier: Tier,
+    x: number, y: number, z: number,
+    facing: number,
+    scale: number,
+    def: UnitTypeDef,
+    seed: number,
+    clip: Clip,
+    hostIndex: number
+  ): void {
+    const buf = tier.buf;
+    const n = buf.count;
+    if ((n + 1) * Stride.Pos > buf.pos.length) return;
+
+    // Resolved once per (unit type, station) and cached, because `resolveKit` does about
+    // twenty hashes and this runs four times per animal per frame.
+    const key = `${def.id}:${seed}`;
+    let kit = this.crewKit.get(key);
+    if (!kit) {
+      kit = resolveKit(def, hash01(seed, 3), emptyKit());
+      this.crewKit.set(key, kit);
+    }
+
+    buf.pos[n * 3] = x;
+    buf.pos[n * 3 + 1] = y;
+    buf.pos[n * 3 + 2] = z;
+    const o = n * Stride.Orient;
+    buf.orient[o] = facing;
+    buf.orient[o + 1] = scale;
+    buf.orient[o + 2] = 0;
+    buf.orient[o + 3] = this.battle.pool.grime[hostIndex] * 0.6;
+    const q = n * Stride.Quat;
+    buf.quat[q] = 0; buf.quat[q + 1] = 0; buf.quat[q + 2] = 0; buf.quat[q + 3] = 0;
+
+    const facts = this.manFacts[FOOT_CLIP_MAP[clip]];
+    // Desynchronised from his own hash: four men on one animal all breathing in time is the
+    // same uniformity tell as a rank of identical legionaries, at four times the magnification
+    // because they are three metres up and silhouetted against the sky.
+    const ph = (hash01(seed, 71) + this.animClock * facts.invDuration) % 1;
+    const f = ph * facts.frames;
+    const f0 = Math.min(facts.frames - 1, Math.floor(f));
+    const f1 = facts.loop ? (f0 + 1) % facts.frames : Math.min(f0 + 1, facts.frames - 1);
+    const a = n * Stride.AnimA;
+    buf.animA[a] = facts.rowBase + f0;
+    buf.animA[a + 1] = facts.rowBase + f1;
+    buf.animA[a + 2] = f - Math.floor(f);
+    buf.animA[a + 3] = 1;
+    buf.animB[a] = facts.rowBase + f0;
+    buf.animB[a + 1] = facts.rowBase + f0;
+    buf.animB[a + 2] = 0;
+    buf.animB[a + 3] = hash01(seed, 3);
+
+    const k = n * Stride.Kit;
+    const coarse = tier === this.soldierTiers[0][2]
+      || tier === this.soldierTiers[1][2]
+      || tier === this.soldierTiers[2][2];
+    buf.kit[k] = coarse ? kit.maskCoarse : kit.maskLo;
+    buf.kit[k + 1] = coarse ? 0 : kit.maskHi;
+
+    const c = n * Stride.Col0;
+    buf.col0[c] = kit.tunic[0];
+    buf.col0[c + 1] = kit.tunic[1];
+    buf.col0[c + 2] = kit.tunic[2];
+    buf.col0[c + 3] = kit.emblem;
+    buf.col1[c] = kit.leg[0];
+    buf.col1[c + 1] = kit.leg[1];
+    buf.col1[c + 2] = kit.leg[2];
+    buf.col1[c + 3] = kit.metal;
+
+    buf.count = n + 1;
+  }
+
   private pushHorse(
     i: number,
     lod: number,
@@ -1929,7 +2472,10 @@ export class UnitRenderSystem implements Subsystem {
     buf.col0[c] = this.kitTunic[i * 3] * boost;
     buf.col0[c + 1] = this.kitTunic[i * 3 + 1] * boost;
     buf.col0[c + 2] = this.kitTunic[i * 3 + 2] * boost;
-    buf.col0[c + 3] = faction === Faction.Rome ? 0 : 1;
+    // The atlas row, which is the faction index. This was `faction === Rome ? 0 : 1`, a
+    // two-row assumption that would have put every distant Carthaginian into the Juthungi
+    // warband billboard — the wrong army, silently, and only past the LOD2 boundary.
+    buf.col0[c + 3] = faction;
     buf.count = n + 1;
   }
 
@@ -1994,6 +2540,7 @@ export class UnitRenderSystem implements Subsystem {
     };
     for (const row of this.soldierTiers) for (const t of row) push(t, true);
     for (const t of this.horseTiers) push(t, true);
+    if (this.elephantTier) push(this.elephantTier, true);
     if (this.impostorTier) push(this.impostorTier, false);
 
     for (const e of this.engineTiers) {

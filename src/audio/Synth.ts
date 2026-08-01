@@ -1649,6 +1649,111 @@ def('cry_germanic', {
 });
 
 /**
+ * `cry_carthage` — a mercenary army has no single war cry, and that is the sound.
+ *
+ * Polybius makes the point directly: the Punic host had no common language, so it could not
+ * be given one word of command, let alone one shout. Livy at the Trebia describes the noise
+ * of Hannibal's line as many cries in many tongues at once.
+ *
+ * So this is deliberately the opposite of `cry_roma`. Where the Roman cry is unison on a
+ * two-beat pulse with a ±10 ms onset spread, this is four overlapping groups at four
+ * unrelated pitches with onsets spread over 700 ms and no shared rhythm at all — plus the
+ * one thing that is unmistakably this army and nobody else's, an elephant trumpeting over
+ * the top of it.
+ */
+def('cry_carthage', {
+  rate: 22050, peak: 0.98,
+  make(sr, rng) {
+    const p = makePcm(sr, 4.4, 2);
+    const L = p.ch[0];
+    const R = p.ch[1];
+    const n = p.len;
+    const mono = new Float32Array(n);
+
+    // Four contingents, each with its own pitch centre, onset and vowel colour. The pitches
+    // are deliberately not harmonically related: a chord would read as one army singing.
+    const groups: readonly [number, number, number][] = [
+      [0.00, 118, 1.05],
+      [0.21, 143, 0.95],
+      [0.47, 97, 1.10],
+      [0.68, 167, 0.85],
+    ];
+    for (const [onset, f0, dur] of groups) {
+      const start = Math.floor(onset * sr);
+      const len = Math.min(n - start, Math.floor(dur * sr));
+      if (len <= 0) continue;
+      // Many throats: 40 voices per group with wide pitch scatter, which is what turns a
+      // shout into a roar rather than a chorus.
+      for (let v = 0; v < 40; v++) {
+        const det = 1 + (rng.next() - 0.5) * 0.13;
+        const skew = Math.floor(rng.next() * 0.09 * sr);
+        const amp = 0.010 + rng.next() * 0.012;
+        let ph = rng.next();
+        const f = f0 * det;
+        for (let i = 0; i < len; i++) {
+          const k = start + i + skew;
+          if (k >= n) break;
+          ph += f / sr;
+          if (ph >= 1) ph -= 1;
+          // A glottal buzz: a sawtooth is the right raw larynx before formants.
+          const t = i / len;
+          const env = Math.min(1, t * 7) * (t < 0.7 ? 1 : Math.pow(1 - (t - 0.7) / 0.3, 1.5));
+          mono[k] += (ph * 2 - 1) * amp * env;
+        }
+      }
+    }
+
+    // Vowel colour, broad and open — these are shouts, not words.
+    runBiquad(mono, peakingC(620, 1.0, 8, sr));
+    runBiquad(mono, peakingC(1180, 1.2, 5, sr));
+    runBiquad(mono, highpassC(95, 0.7, sr));
+
+    /**
+     * The elephant, over the top.
+     *
+     * A trumpet is a rising glissando through roughly 300 to 900 Hz with strong odd
+     * harmonics and a hard rasp, made by forcing air through the trunk. It is the single
+     * most identifiable animal sound there is, and it is the reason this cue can never be
+     * confused with the Juthungi barritus even at low volume across a battlefield.
+     */
+    {
+      const start = Math.floor(0.95 * sr);
+      const len = Math.min(n - start, Math.floor(1.5 * sr));
+      let ph = 0;
+      for (let i = 0; i < len; i++) {
+        const t = i / len;
+        // Up fast, hold, then fall away — the shape of a real trumpet call.
+        const f = 300 + 600 * Math.min(1, t * 3.2) * (1 - t * 0.35);
+        ph += f / sr;
+        if (ph >= 1) ph -= 1;
+        // Odd harmonics only, which is what makes it read as a horn rather than a voice.
+        const sq = ph < 0.5 ? 1 : -1;
+        const saw = ph * 2 - 1;
+        const rasp = (rng.next() - 0.5) * 0.35;
+        const env = Math.min(1, t * 12) * (t < 0.6 ? 1 : Math.pow(1 - (t - 0.6) / 0.4, 1.3));
+        mono[start + i] += (sq * 0.55 + saw * 0.3 + rasp) * 0.30 * env;
+      }
+    }
+
+    runBiquad(mono, lowpassC(5200, 0.7, sr));
+    shapeEnv(mono, (t) => Math.min(1, t * 4) * (t < 0.86 ? 1 : Math.pow(1 - (t - 0.86) / 0.14, 1.4)));
+    softClip(mono, 2.1);
+
+    L.fill(0);
+    R.fill(0);
+    // Wider than the Roman cry and wider than the barritus: this army is not standing in
+    // one place, and the stereo spread is the cheapest way to say so.
+    spreadStereo(L, R, mono, sr, 18, 27, 0.62);
+    schroederTail(L, mono, sr, 1.9, 0.27, 1.35);
+    schroederTail(R, mono, sr, 1.9, 0.27, 1.5);
+    fadeOut(L, sr, 0.3);
+    fadeOut(R, sr, 0.3);
+    return p;
+  },
+});
+
+
+/**
  * A barked order. One officer, close, shouting over a battle: a short sequence of
  * syllables on a falling contour, with the throat pushed hard enough that F1 rises and the
  * bands widen. `crowd` layers the unit shouting the acknowledgement back, which is what

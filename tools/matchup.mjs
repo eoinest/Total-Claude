@@ -93,6 +93,83 @@ const CASES = [
     gap: 90,
     expect: 'B annihilates them — running men cannot fight back',
   },
+  // ---- Carthage ---------------------------------------------------------
+  // Added with the faction. The calibration these are read against is the one stated at the
+  // top of `src/units/roster.ts`: a matched pair of line units grinds for two to four
+  // minutes, a favourable matchup still takes about a minute, and an eighteen-second
+  // massacre means the damage numbers are roughly four times a Total War melee's.
+  {
+    id: 'libyan-vs-cohort',
+    name: 'Libyan Heavy Spearmen vs Legionary Cohort',
+    a: { type: 'libyan-spearmen', form: 'line', order: 'attack' },
+    b: { type: 'legio-cohort', form: 'line', order: 'attack' },
+    gap: 90,
+    expect: 'close — Rome should edge it on attack, but slowly',
+  },
+  {
+    id: 'sacred-vs-praetorian',
+    name: 'Sacred Band vs Praetorian Guard (elite mirror)',
+    a: { type: 'sacred-band', form: 'line', order: 'attack' },
+    b: { type: 'praetorian-cohort', form: 'line', order: 'attack' },
+    gap: 90,
+    expect: 'a long grind — the two elites are priced against each other',
+  },
+  {
+    id: 'scutarii-vs-cohort',
+    name: 'Iberian Scutarii vs Legionary Cohort',
+    a: { type: 'legio-cohort', form: 'line', order: 'hold' },
+    b: { type: 'iberian-scutarii', form: 'wedge', order: 'attack' },
+    gap: 110,
+    expect: 'B hurts on contact and then loses the grind — the falcata trade',
+  },
+  {
+    id: 'gauls-vs-cohort',
+    name: 'Gallic Mercenaries vs Legionary Cohort',
+    a: { type: 'legio-cohort', form: 'line', order: 'hold' },
+    b: { type: 'gallic-mercenaries', form: 'wedge', order: 'attack' },
+    gap: 120,
+    expect: 'B should break the cohort or die trying — Cannae in miniature',
+  },
+  {
+    id: 'elephant-vs-cohort',
+    name: 'War Elephants vs Legionary Cohort',
+    a: { type: 'legio-cohort', form: 'line', order: 'hold' },
+    b: { type: 'war-elephants', form: 'loose', order: 'attack' },
+    gap: 150,
+    expect: 'B ruinous — unsupported infantry is what elephants are for',
+  },
+  {
+    id: 'elephant-vs-spears',
+    name: 'War Elephants vs braced Urban Cohort (spear wall)',
+    a: { type: 'urban-cohort', form: 'shieldwall', order: 'hold', ability: 'brace' },
+    b: { type: 'war-elephants', form: 'loose', order: 'attack' },
+    gap: 150,
+    expect: 'A — a braced spear wall is the answer to elephants and must read as one',
+  },
+  {
+    id: 'balearic-vs-cohort',
+    name: 'Balearic Slingers vs advancing Legionary Cohort',
+    a: { type: 'balearic-slingers', form: 'loose', order: 'hold' },
+    b: { type: 'legio-cohort', form: 'line', order: 'attack' },
+    gap: 200,
+    expect: 'B wins on contact, but the sling should tell against mail on the way in',
+  },
+  {
+    id: 'numidian-vs-archers',
+    name: 'Numidian Cavalry vs Auxiliary Archers',
+    a: { type: 'sagittarii', form: 'loose', order: 'hold' },
+    b: { type: 'numidian-cavalry', form: 'wedge', order: 'attack' },
+    gap: 150,
+    expect: 'B quickly — light horse in the open is death to missile troops',
+  },
+  {
+    id: 'punic-grind',
+    name: 'Libyan Spearmen vs Urban Cohort (matched control)',
+    a: { type: 'libyan-spearmen', form: 'line', order: 'attack' },
+    b: { type: 'urban-cohort', form: 'line', order: 'attack' },
+    gap: 90,
+    expect: 'the Punic pacing benchmark — should sit in the same band as even-grind',
+  },
   {
     id: 'even-grind',
     name: 'Urban Cohort vs Tribal Spearmen (matched control)',

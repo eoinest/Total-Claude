@@ -26,6 +26,20 @@ export interface SoldierShaderOptions {
   emblemOrigin: [number, number];
   /** Size of one emblem tile in UV. */
   emblemTile: [number, number];
+  /**
+   * First emblem index of the tribal and Punic style bands.
+   *
+   * The shader paints a shield's face and back from its emblem index alone, because the
+   * instance attributes are full and there is no lane left for a style code. These two
+   * numbers are the band boundaries, passed in from `units/kit.ts` rather than hard-coded
+   * here — the shader used to test `iCol0.w > 3.5` inline, and a literal in GLSL that has to
+   * agree with an array in TypeScript is a defect waiting for the array to grow.
+   *
+   * Optional, defaulting to the boundaries that were hard-coded before Carthage existed, so
+   * a caller that predates the third band keeps exactly the behaviour it had.
+   */
+  emblemTribalFirst?: number;
+  emblemPunicFirst?: number;
   /** Height in metres over which body lean ramps in from the feet. */
   leanHeight: number;
   /**
@@ -430,11 +444,23 @@ const TINT_BODY = /* glsl */ `
     // than nudging one colour, which is what actually gives a host of two thousand men two
     // thousand different shields.
     //
-    // Which case this is falls straight out of the emblem index — tiles 4 and up are the
-    // tribal devices — so it costs no attribute of its own. The tribal tiles are drawn
+    // A Punic board is a third case and closer to the Roman one: Carthage paid for its army
+    // and quartermastered it, so an Iberian contingent's shields are whitened to one colour
+    // and a Libyan's are painted to one device. But the fields are drawn bright and saturated
+    // in the tile itself, so unlike a Roman board they must NOT be recoloured — a multiply
+    // over Tyrian purple or Iberian white destroys exactly the thing that makes the contingent
+    // recognisable. They take a per-man value jitter and nothing else.
+    //
+    // Which case this is falls straight out of the emblem index — see the band table on
+    // EMBLEMS in units/kit.ts — so it still costs no attribute of its own. It used to be
+    // the single test "> 3.5"; there are now three bands and therefore two tests, and the
+    // boundaries below are the ones that file documents. The tribal tiles are drawn
     // pale-field-dark-device precisely so that a multiply can recolour the field while
     // leaving the device legible: multiplication preserves contrast ratios.
-    if ( iCol0.w > 3.5 ) {
+    if ( iCol0.w > SOLDIER_EMBLEM_PUNIC ) {
+      tint = vec3( 0.86 + fract( v * 97.1 ) * 0.30 );
+    }
+    else if ( iCol0.w > SOLDIER_EMBLEM_TRIBAL ) {
       float pick = fract( v * 97.1 );
       vec3 paint =
           pick < 0.20 ? vec3( 1.02, 0.96, 0.84 )   // bare limewood, oiled
@@ -497,14 +523,15 @@ const TINT_BODY = /* glsl */ `
     // because a dark inside is what lets the painted front read as the bright side.
     //
     // A tribal board is planks with a hide rim and no facing worth the name, so it keeps the
-    // pale end of the range. Same discriminator as the front — emblem tiles 4 and up are the
-    // tribal devices — so it still costs no attribute.
+    // pale end of the range. Same discriminator as the front, and the same three bands: a
+    // Punic board is hide-backed and issued, so it takes the Roman treatment.
     // Multipliers on the neutral 0.34-linear shield-back tile, so the products span 0.05 to
     // 0.37 linear — pitch at one end, raw hide at the other. That whole span matters: this
     // surface is 12% of the frame, and a narrow one is a wall of one colour however carefully
     // the hue is chosen.
     float sp = fract( v * 109.3 );
-    vec3 face = iCol0.w > 3.5
+    bool tribalBack = iCol0.w > SOLDIER_EMBLEM_TRIBAL && iCol0.w < SOLDIER_EMBLEM_PUNIC;
+    vec3 face = tribalBack
       ? ( sp < 0.30 ? vec3( 0.95, 0.86, 0.66 )   // bare limewood, dirty
         : sp < 0.54 ? vec3( 0.70, 0.64, 0.52 )   // older board, weathered grey-brown
         : sp < 0.76 ? vec3( 0.46, 0.36, 0.27 )   // hide backing, greased
@@ -584,6 +611,13 @@ function defines(o: SoldierShaderOptions): string {
     `#define SOLDIER_LEAN_H ${o.leanHeight.toFixed(3)}`,
     `#define SOLDIER_EMBLEM_ORIGIN vec2(${o.emblemOrigin[0].toFixed(6)}, ${o.emblemOrigin[1].toFixed(6)})`,
     `#define SOLDIER_EMBLEM_TILE vec2(${o.emblemTile[0].toFixed(6)}, ${o.emblemTile[1].toFixed(6)})`,
+    // Band boundaries as "last index of the previous band, plus a half", so a float compare
+    // is exact. Fed from `kit.ts` rather than written here, because two files disagreeing
+    // about where the tribal band ends would repaint an army with nothing to show for it.
+    `#define SOLDIER_EMBLEM_TRIBAL ${((o.emblemTribalFirst ?? 4) - 0.5).toFixed(1)}`,
+    // A default far above any real index means "no Punic band", so the two-band behaviour is
+    // exactly recovered for a caller that does not know about the third.
+    `#define SOLDIER_EMBLEM_PUNIC ${((o.emblemPunicFirst ?? 9999) - 0.5).toFixed(1)}`,
   ];
   const pv = o.poseVary;
   if (pv) {
