@@ -300,8 +300,26 @@ export class SelectionController {
     // Pass the city's solids so a click on a wall, a tower or an insula resolves *on* it
     // rather than on the grass behind it. Without this a right-click on a 20 m siege tower
     // issued a move order 13.6 m past it, because the ray only ever met the heightfield.
-    this.refreshSolids(ctx);
-    this.groundValid = screenToGround(ctx.camera, nx, ny, heightAt, GROUND, 4200, this.solids);
+    /*
+     * Solids are DISABLED here pending a proper design, and that is a deliberate revert.
+     *
+     * Passing the city's 1,826 boxes made a click on open ground resolve onto whatever solid
+     * the ray happened to graze on its way down. Measured at one camera over six spread-out
+     * screen positions, every one collapsed onto essentially the same world point — terrain
+     * only gave (24,710) (40,701) (63,683) (16,677) (41,753)... while with solids they all
+     * landed within two metres of (40,753), between 42 and 92 m from where the player had
+     * clicked. That is the "it walks to some random place in the city" report, and I caused
+     * it.
+     *
+     * The mistake was treating one ray as answering one question. It answers two: "what
+     * ground did I click" and "what object did I click", and a rally point in a street wants
+     * the first while an order against a siege tower wants the second. Resolving both through
+     * `screenToGround` means a shallow ray crossing the city at roof height clips a block
+     * long before it reaches the paving the player was aiming at. `screenToGround` keeps its
+     * `solids` parameter and its tests, because targeting a tower genuinely needs it; nothing
+     * passes them here until the two intents are separated.
+     */
+    this.groundValid = screenToGround(ctx.camera, nx, ny, heightAt, GROUND);
     if (this.groundValid) {
       this.groundX = GROUND.x;
       this.groundZ = GROUND.z;
