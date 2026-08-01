@@ -104,7 +104,26 @@ export class RTSCamera {
   }
 
   jumpTo(x: number, z: number, zoom = this.zoomTarget, yaw = this.yawTarget): void {
-    this.focus.set(x, 0, z);
+    /*
+     * Sample the ground here rather than parking the focus at y=0.
+     *
+     * This set `y` to 0 — sea level — and then copied that into `smoothFocus`, so a "jump"
+     * landed the focus *under* the terrain and `update` spent the next second floating it
+     * back up: line ~153 re-reads `heightAt` every frame and `smoothFocus.y` damps toward it
+     * at rate 9. On a 40 m ridge the eye is still 4 m low a quarter-second after the jump
+     * (1 - e^-2.25 = 89.5% converged) and only settles after ~0.8 s.
+     *
+     * Two things that cost real time trace back to this. The screenshot harness treats
+     * `setCamera` as instant and then measures frame cost across 31 frames — which were
+     * being rendered through a still-climbing camera, moving the framing between plates
+     * that are supposed to be identical and polluting the TAA history it waits on. And the
+     * player sees it on every load: `main.ts` calls `jumpTo` once at boot, so the battle
+     * opens with an unrequested upward swoop.
+     *
+     * `heightAt` is installed by TerrainSystem during `initAll`, before any caller reaches
+     * here; the fallback keeps a headless or terrain-less rig working.
+     */
+    this.focus.set(x, this.heightAt ? this.heightAt(x, z) : 0, z);
     this.smoothFocus.copy(this.focus);
     this.zoom = this.zoomTarget = clamp(zoom, 0, 1);
     this.yaw = this.yawTarget = yaw;

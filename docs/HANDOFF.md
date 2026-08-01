@@ -58,8 +58,24 @@ Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`
 
 ## Measured facts that must not be re-derived
 
-- **Soldiers render at 2-4% of display luminance** (helmet 0.0354, tunic 0.0204, face 0.0316)
-  against ground at ~30%; the Rome II plates sit near 25%. This is why the crowd reads as clones.
+- ~~Soldiers render at 2-4% of display luminance.~~ **RETRACTED — a unit error, and it
+  misdirected three rounds of work.** `probe-units.mjs` reports *display-linear* values, as its
+  own header says; 0.0354 / 0.0316 / 0.0204 linear are **0.207 / 0.196 / 0.157 display**. A second
+  independent instrument agrees: soldiers 0.1745 display, ground 0.3126 (which is the "~30%
+  ground" figure, so *that* one was display all along — the comparison mixed two unit systems).
+  Rome II plates measure **0.2957 display / 0.1068 linear**. The true gap is soldiers ~0.17-0.21
+  against ~0.25, about **1.4×, not 8-12×**. This is why three successive fixes each measured a
+  real gain and each still felt like nothing: they were sized against a target 8× too far away.
+  A fix sized for 8× would wreck the frame. There *is* still something to fix — a quarter of
+  soldier pixels sit below 0.059 display and the median is 0.125, genuinely bottom-heavy — but
+  size it for 1.4×.
+- **The hemisphere fill drops a factor of π**, confirmed against three.js shader source.
+  `getIBLIrradiance` returns `PI * envMapColor * envMapIntensity` — an irradiance.
+  `getHemisphereLightIrradiance` returns `mix(ground, sky, w)` with **no** π, so its colour must
+  already be an irradiance. We pass `skyFillColour`, which `atmosphere.ts` computes as a
+  cosine-weighted mean *radiance*. Measured live, the fill delivers **10.9%** of the sky's own
+  physically-derived irradiance (E(up) 0.0494 against π·L = 0.4529). The scattering integral is
+  right; its application is wrong. The two ambient paths in the rig are quoted in different units.
 - **The crowd is NOT short of variation.** Read from the uploaded instance buffers: one 320-man
   cohort carries 57-59 kit masks, 119 statures, 229 cadences, 314/320 distinct animation phases,
   252 tunic colours. Adding variation is the wrong fix.
@@ -85,7 +101,12 @@ Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`
    `TC_NO_HMR=1`.
 4. **Killing vite by `grep -v "port 5173"` misses the dev server**, because `npm run dev` puts no
    port on its command line. This has killed the player's server three times.
-5. Machine load makes frame timing meaningless — an *unchanged* tree has measured slower than a
+5. **`RTSCamera.jumpTo` parked the focus at y=0** — sea level — then let `update` float it up
+   to terrain height at damp rate 9. A quarter-second after a jump the eye is still 10.5% of
+   the terrain height low. Every graded plate was shot through a climbing camera, and the
+   player got an unrequested swoop on every load. **Fixed** — `jumpTo` now samples `heightAt`.
+   Any framing measured before this fix is suspect.
+6. Machine load makes frame timing meaningless — an *unchanged* tree has measured slower than a
    changed one. Use in-session interleaved A/B and report both arms.
 
 ## Grading
