@@ -285,6 +285,21 @@ for (const [hour, group] of byHour) {
   await page.close();
 }
 
-await writeFile(path.join(OUT, 'report.json'), JSON.stringify(report, null, 2));
+/*
+ * Wrapped in the same provenance envelope `tools/shoot.mjs` writes, because
+ * `tools/blind-compare.mjs` refuses to build a blind deck from a directory that cannot
+ * prove it was shot without the interface. This pass strips the HUD unconditionally
+ * (above), so `hud` is a constant false rather than a flag — but it has to be *recorded*,
+ * or a deck built from this directory is indistinguishable from a careless one.
+ */
+await writeFile(path.join(OUT, 'report.json'), JSON.stringify({
+  at: new Date().toISOString(),
+  tool: 'tools/shoot-carthage.mjs',
+  argv: process.argv.slice(2),
+  hud: false,
+  worldOverlay: 'n/a',
+  blindSafe: true,
+  shots: report,
+}, null, 2));
 await browser.close();
 if (server) server.kill('SIGTERM');

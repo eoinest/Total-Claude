@@ -12,19 +12,32 @@
  *   node tools/shoot.mjs --out=screenshots/pass3  # alternate output directory
  *   node tools/shoot.mjs --w=2560 --h=1440        # resolution
  *   node tools/shoot.mjs --list                   # list available shots
+ *   node tools/shoot.mjs --hud                    # WITH the interface — never gradeable
+ *
+ * **The HUD is hidden unless you ask for it.** See `SHOW_HUD` below for why the default was
+ * inverted; the short version is that a blind deck shot with the interface up grades the
+ * interface. Every run records `hud: <bool>` in `report.json`, and `tools/blind-compare.mjs`
+ * refuses to build a deck from a directory whose record is missing or says `true`.
  *
  * Exit code is non-zero if the page logged an uncaught error or any shot failed, so
  * agents can use it as a build gate.
  */
 
 import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
+
+/** Recorded in `report.json` so a deck can be traced back to the tree that produced it. */
+const COMMIT = (() => {
+  try {
+    return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim();
+  } catch { return 'unknown'; }
+})();
 
 // ---------------------------------------------------------------------------
 // Shot definitions. Each is a repeatable camera + time so successive passes are
@@ -213,10 +226,29 @@ const requested = args.get('shots')
   ? String(args.get('shots')).split(',').map((s) => s.trim()).filter(Boolean)
   : Object.keys(SHOTS);
 const PORT = Number(args.get('port') ?? 5199);
-// Hide the DOM HUD. Terrain, city, lighting and VFX criteria are all judged on the world,
-// and a HUD panel across the frame makes them ungradeable — one critic had to write its
-// own DOM-stripping harness to get around it. This is that, built in.
-const NO_HUD = args.has('nohud');
+/*
+ * The HUD is OFF by default, and turning it on costs you a keystroke.
+ *
+ * It used to be the other way round: `--nohud` was opt-in, and `tools/blind-compare.mjs`
+ * never mentioned it. That is leak six. A lighting deck was void because the flag was
+ * omitted, and all three of its graders sorted the deck on the faction-strength bar in the
+ * top plaque — a perfect tell with no relationship whatever to render quality. Five earlier
+ * leaks (wordmark, EXIF, mislabelled key, file size, quantisation tables) were each closed
+ * by somebody resolving to be careful, and a sixth got in anyway. So the default is inverted
+ * rather than documented: the careless invocation now produces the *safe* artefact.
+ *
+ * What the HUD puts in a frame, measured on the 18-shot pass at `95b7f5d`: the top plaque
+ * (ROME / JUTHUNGI, gold eagles, a red-and-blue advantage bar, the phase name, transport
+ * buttons and a settings cog), a top-left debug readout that prints `5.6 ms/f 179 fps
+ * draws 143 tris 9131k men 8632 units 35 sel 0 1x t+2s` in plain text, and a right-hand
+ * event feed. Any one of them decodes the deck.
+ *
+ * Pass `--hud` if you are photographing the interface itself. Whichever way it goes it is
+ * printed on stdout and recorded in `report.json`, and `blind-compare.mjs` refuses any deck
+ * whose frames came from a `--hud` pass or from a directory with no such record at all.
+ * `--nohud` is still accepted, and is now a no-op, so existing invocations keep working.
+ */
+const SHOW_HUD = args.has('hud') && !args.has('nohud');
 // Parallel agents each pass their own --port so they never fight over one server.
 // Leaving it running is opt-in, because an orphaned vite holds the port for everyone.
 const KEEP_SERVER = args.has('keep');
@@ -283,6 +315,8 @@ function stopServer() {
 const results = [];
 let failed = 0;
 let browser = null;
+/** 'hidden' | 'absent' | 'refused' | 'n/a' — recorded, because a silent failure here is a leak. */
+let overlayHidden = 'n/a';
 
 try {
   const base = await startServer();
@@ -340,13 +374,31 @@ try {
   console.log(`• webgl2: ${gl.ok ? `${gl.vendor} / ${gl.renderer}` : 'UNAVAILABLE'}`);
   if (!gl.ok) throw new Error('WebGL2 unavailable in the harness browser');
 
-  if (NO_HUD) {
+  if (!SHOW_HUD) {
     // Belt and braces: hide the HUD root outright, and re-hide it before every shot in
     // case a subsystem re-creates or unhides its own nodes.
     await page.addStyleTag({
-      content: '#hud-root, #loading { display: none !important; visibility: hidden !important; }',
+      content: '#hud-root, #loading, #menu-root { display: none !important; visibility: hidden !important; }',
     });
-    console.log('• --nohud: DOM HUD hidden, grading the world only');
+    /*
+     * A DOM strip does not remove *world-space* interface, and this harness has never
+     * accounted for that. `WorldOverlay` is a THREE.Group added straight to the scene —
+     * selection footprints, facing arrows, order paths, the right-drag formation ghost —
+     * so `#hud-root { display: none }` leaves every one of them rendering. Nothing is
+     * selected under `?autoplay=1`, which is why it has never shown up in a graded frame,
+     * and which is exactly the kind of accident that stops being true one commit later.
+     * TypeScript's `private` is compile-time only, so the group is reachable at runtime.
+     */
+    overlayHidden = await page.evaluate(() => {
+      const hud = window.__game?.engine?.context?.tryGet?.('hud');
+      const ov = hud && hud.overlay;
+      if (!ov) return 'absent';
+      try { ov.visible = false; return ov.visible === false ? 'hidden' : 'refused'; }
+      catch { return 'refused'; }
+    });
+    console.log(`• HUD off (default). DOM stripped, world overlay ${overlayHidden}.`);
+  } else {
+    console.log('• --hud: INTERFACE VISIBLE. These frames must never enter a blind deck.');
   }
 
   // Shoot in ascending sim time so we only ever fast-forward.
@@ -652,10 +704,12 @@ try {
         { s: shot }
       );
 
-      if (NO_HUD) {
+      if (!SHOW_HUD) {
         await page.evaluate(() => {
           const r = document.getElementById('hud-root');
           if (r) r.style.setProperty('display', 'none', 'important');
+          const hud = window.__game?.engine?.context?.tryGet?.('hud');
+          if (hud && hud.overlay) hud.overlay.visible = false;
         });
       }
       const file = path.join(OUT, `${name}.png`);
@@ -680,10 +734,28 @@ try {
     for (const e of [...new Set(consoleErrors)].slice(0, 20)) console.error(`   ${e}`);
   }
 
+  /*
+   * `report.json` is now the shot pass's provenance record as well as its log, and
+   * `tools/blind-compare.mjs` will not build a deck out of a directory that lacks one.
+   * `hud` is the field that matters: false means this directory is safe to grade blind,
+   * true means it is not, and *missing* means nobody knows — all three are distinct, and
+   * the third is the one that produced leak six.
+   */
   await writeFile(
     path.join(OUT, 'report.json'),
     JSON.stringify(
-      { at: new Date().toISOString(), width: W, height: H, quality: QUALITY, gl, shots: results, consoleErrors: [...new Set(consoleErrors)] },
+      {
+        at: new Date().toISOString(),
+        tool: 'tools/shoot.mjs',
+        argv: process.argv.slice(2),
+        hud: SHOW_HUD,
+        worldOverlay: overlayHidden,
+        blindSafe: !SHOW_HUD,
+        commit: COMMIT,
+        width: W, height: H, quality: QUALITY, gl,
+        shots: results,
+        consoleErrors: [...new Set(consoleErrors)],
+      },
       null,
       2
     )
