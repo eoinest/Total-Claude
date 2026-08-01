@@ -158,10 +158,20 @@ class Batch {
   }
 }
 
-const GOLD = [1.0, 0.66, 0.11] as const;
-const GREEN = [0.44, 0.94, 0.36] as const;
-const RED = [0.94, 0.35, 0.28] as const;
-const PALE = [0.94, 0.92, 0.82] as const;
+// HUD colours are display values: taken to scene-linear, and down to a radiance AgX keeps
+// the hue of. At a raw 1.0 the tone map flattened every marker to a white plate.
+const MARKER_RADIANCE = 0.3;
+
+const disp = (r: number, g: number, b: number): readonly number[] =>
+  new THREE.Color()
+    .setRGB(r, g, b, THREE.SRGBColorSpace)
+    .multiplyScalar(MARKER_RADIANCE)
+    .toArray();
+
+const GOLD = disp(1.0, 0.66, 0.11);
+const GREEN = disp(0.44, 0.94, 0.36);
+const RED = disp(0.94, 0.35, 0.28);
+const PALE = disp(0.94, 0.92, 0.82);
 
 export interface GhostSpec {
   unit: UnitGroupState;

@@ -381,7 +381,7 @@ export class Batch {
     const out: GeoStream[] = [];
     for (const key of keys) {
       const st = this.s(key);
-      // Nine keys at most, so a linear scan is cheaper than a Set.
+      // Eleven keys at most, so a linear scan is cheaper than a Set.
       if (!out.includes(st)) out.push(st);
     }
     return out;

@@ -27,7 +27,7 @@ import {
 } from './build';
 import { HALF_EXTENT } from '../terrain/TerrainSystem';
 import { crestZAt, roadCentreX } from '../terrain/topography';
-import type { CityMatKey } from './materials';
+import { CITY_MAT_KEYS, type CityMatKey } from './materials';
 import { AQUEDUCTS, GATE_X, LANDMARKS, type LandmarkPlacement } from './layout';
 import { PAL } from './palette';
 import { cylinderBetween, type CityChunkSpec, type TreeRequest } from './wall';
@@ -289,7 +289,7 @@ function buildLandmark(batch: Batch, detail: number, world: LandmarkPlacement, h
   // Roman line in every establishing shot. Enumerate the union, not the guess.
   //
   // And push through `pushAll`, never by iterating the keys: at mid and far detail several
-  // of these nine keys resolve to the *same* stream, and pushing per key composed the
+  // of these keys resolve to the *same* stream, and pushing per key composed the
   // placement matrix up to four times. See `Batch.distinct`. That is what put the Mausoleum
   // of Augustus, the Horologium, the Iseum Campense and Trajan's Column at exactly (0, 0)
   // whenever the camera was more than 560 m from them.
@@ -501,20 +501,18 @@ function localExtents(m: LandmarkPlacement): LandmarkPlacement {
 }
 
 /**
- * Every material stream a monument builder can reach for. Kept as a named constant so the
- * placement push and any later addition cannot drift apart.
+ * Every material stream a monument builder can reach for: the whole key set, taken from
+ * the material table rather than listed here.
+ *
+ * A hand-kept list drifts, and this one had: `marble` and `granite` were added to the
+ * palette after it was written, so the Pantheon's portico, every temple's colonnade and
+ * every obelisk emitted their marble and granite in the monument's *local* frame and
+ * landed stacked over the world origin, up to 110 m above the middle of the battlefield.
+ * Only at full detail, because `TRIM_MERGE` folds both onto `stone` past the mid switch
+ * and `stone` is pushed. An empty stream is dropped when baking, so naming a key a
+ * monument never uses costs nothing.
  */
-const LANDMARK_KEYS: readonly CityMatKey[] = [
-  'stone',
-  'brick',
-  'stucco',
-  'roof',
-  'metal',
-  'timber',
-  'road',
-  'concrete',
-  'foliage',
-];
+const LANDMARK_KEYS: readonly CityMatKey[] = CITY_MAT_KEYS;
 
 /**
  * The substructure under a large flat monument.
