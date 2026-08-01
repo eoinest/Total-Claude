@@ -4,7 +4,7 @@ import type { Obstacle } from '../sim/Obstacles';
 import { HALF_EXTENT, type TerrainSystem } from '../terrain/TerrainSystem';
 import { clamp } from '../util/math';
 import { Batch } from './build';
-import { buildDistricts } from './insulae';
+import { buildDistricts, type Lane } from './insulae';
 import { buildLandmarks } from './landmarks';
 import {
   AQUEDUCTS,
@@ -140,6 +140,57 @@ interface PlanRect {
  */
 const occRot = (planRot: number): number => -planRot;
 
+/**
+ * How far a flight must stand above its own foot before it stops a man on the ground.
+ *
+ * A wall stair is a ramp, not a wall: at its bottom tread it is 0.29 m of stone that anybody
+ * walks up, and at its head it is six metres of masonry nobody walks through. A single box
+ * over the whole flight would be wrong at one end or the other, and wrong at the bottom is
+ * the dangerous direction — the siege system queues its garrison *at the foot* and clears
+ * `elevated` while they stand there (`Siege.ts`, `footSlot`), so a man waiting his turn is
+ * subject to masonry collision like anyone else. Boxing the foot would shove the queue off
+ * its own staircase, which is a worse bug than the one this fixes.
+ *
+ * 1.2 m is mid-thigh to chest: below it the stone is something to step onto, above it
+ * something to walk round. On this circuit the flights rise 2.2–6 m over 14.2–20.4 m, so
+ * this leaves the bottom 3–4 m of every rake open and makes the remaining three quarters
+ * solid.
+ */
+const STAIR_STEP_OVER = 1.2;
+
+/**
+ * The part of a flight that is solid to a man on the ground, as a thick segment.
+ *
+ * One helper, two consumers: the occupancy raster stamps it and `buildObstacles` pushes it
+ * as an oriented box. `getObstacles()` and `blocksMovement()` disagreeing about the same
+ * masonry is the exact bug this file produced with the gate carriageway, so the geometry is
+ * derived once.
+ *
+ * Foot → head is a straight linear ramp never more than 0.15 m off the stone, so height
+ * above the foot is simply the fraction along times the rise. The direction is taken from
+ * the two endpoints rather than the published `dx/dz`, because the endpoints are what the
+ * stone was built from.
+ */
+function stairSolid(s: WallStair): {
+  x1: number; z1: number; x2: number; z2: number; halfW: number; topY: number;
+} | null {
+  const dx = s.headX - s.footX;
+  const dz = s.headZ - s.footZ;
+  const len = Math.hypot(dx, dz);
+  if (!(len > 1e-3) || !(s.rise > 0)) return null;
+  // Fraction of the rake left open at the foot. Capped at half the flight so a shallow
+  // stair — one that never gets 1.2 m off the ground — still presents a solid upper half
+  // rather than vanishing from the obstacle set altogether.
+  const t0 = Math.min(0.5, STAIR_STEP_OVER / s.rise);
+  return {
+    x1: s.footX + dx * t0, z1: s.footZ + dz * t0,
+    x2: s.headX, z2: s.headZ,
+    halfW: s.width * 0.5,
+    // Solid to the head, not to the sky: a man on the wall-walk is above it and unobstructed.
+    topY: s.headY,
+  };
+}
+
 /** Cell size of the masonry occupancy grid, in metres. */
 const OCC_CELL = 4;
 const OCC_RES = Math.ceil((HALF_EXTENT * 2) / OCC_CELL);
@@ -203,6 +254,8 @@ export class CitySystem implements Subsystem {
   private fabricOverlaps: ReturnType<typeof assertNoFabricOverlaps> = { ok: true, count: 0, worst: 0, buildingsHit: 0 };
   private wayClearance: ReturnType<typeof assertWaysClearOfMonuments> = { ok: true, samples: 0, inside: 0, worst: null };
   private ways: ReturnType<typeof wayMix> = [];
+  /** Every lane the quarters cut for themselves, in world space. See `getLanes`. */
+  private lanes: readonly Lane[] = [];
   private topology: ReturnType<typeof assertTopology> = { ok: true, checks: 0, failures: [] };
   private amphitheatres: ReturnType<typeof assertOneAmphitheatre> = { ok: true, count: 1, ids: ['colosseum'] };
   private stray: StrayReport = { ok: true, worst: 0, offenders: [] };
@@ -320,6 +373,7 @@ export class CitySystem implements Subsystem {
     }
     // The armature *and* the lanes each quarter cut for itself. See `wayMix`.
     this.ways = wayMix(districts.lanes);
+    this.lanes = districts.lanes;
 
     const trees: TreeRequest[] = [...wall.trees, ...landmarks.trees, ...districts.trees];
     const specs: CityChunkSpec[] = [
@@ -348,6 +402,30 @@ export class CitySystem implements Subsystem {
     // Tower footprints project beyond the curtain.
     for (const seg of this.segments) {
       this.markCircle(seg.x1, seg.z1, WALL.towerWidth * 0.5);
+    }
+    /**
+     * The nine flights onto the wall-walk, from the same helper `buildObstacles` uses, so
+     * the raster and the box set cannot disagree about a stair the way they once did about
+     * the gate carriageway.
+     *
+     * The start is pulled further up the rake than the box's, and only here. `markSegment`
+     * paints every cell within `halfW + OCC_CELL/2` of the line — 3.4 m for a 2.8 m flight —
+     * so stamping the box's own extent would bleed back over the open foot and take the
+     * pathfinder's access to it with it. Measured: two of the nine feet stopped being
+     * routable. Backing the raster off by exactly that bleed leaves the same ground open in
+     * both views, which is the whole point of deriving them from one helper.
+     */
+    for (const s of this.stairs) {
+      const solid = stairSolid(s);
+      if (!solid) continue;
+      const dx = solid.x2 - solid.x1;
+      const dz = solid.z2 - solid.z1;
+      const len = Math.hypot(dx, dz);
+      if (len < 0.5) continue;
+      const back = Math.min(0.6, (OCC_CELL * 0.5 + solid.halfW) / len);
+      this.markSegment(
+        solid.x1 + dx * back, solid.z1 + dz * back, solid.x2, solid.z2, solid.halfW
+      );
     }
     for (const f of landmarks.footprints) this.markRect(f.x, f.z, f.hw, f.hd, occRot(f.rot));
     for (const f of districts.footprints) this.markRect(f.x, f.z, f.hw, f.hd, occRot(f.rot));
@@ -421,6 +499,37 @@ export class CitySystem implements Subsystem {
         rot: Math.atan2(seg.x2 - seg.x1, seg.z2 - seg.z1),
         topY: top,
         kind: 'tower',
+      });
+    }
+
+    // ---- wall stairs --------------------------------------------------------
+    /**
+     * The nine flights onto the walkway, which nothing has ever collided with.
+     *
+     * Ground units walked straight through 14–20 m of masonry apiece. That was tolerable
+     * when a flight projected 3.3 m out of a tower's city face; since the rebuild put them
+     * *along* the curtain they are the longest unstamped solids in the city.
+     *
+     * `kind` is `'wall'` rather than a new kind of its own. A flight is built hard against
+     * the inner face and lies wholly within the twelve metres of the centreline that every
+     * consumer already treats as curtain, so calling it anything else would split one piece
+     * of masonry across two categories for no gain — and `ObstacleKind` lives in the sim,
+     * which is not this workstream's to widen.
+     */
+    for (const s of this.stairs) {
+      const solid = stairSolid(s);
+      if (!solid) continue;
+      const dx = solid.x2 - solid.x1;
+      const dz = solid.z2 - solid.z1;
+      const len = Math.hypot(dx, dz);
+      if (len < 0.5) continue;
+      out.push({
+        x: (solid.x1 + solid.x2) * 0.5, z: (solid.z1 + solid.z2) * 0.5,
+        // u along the flight, v across its width — the same convention as a curtain bay.
+        hw: len * 0.5, hd: solid.halfW,
+        rot: Math.atan2(dz, dx),
+        topY: solid.topY,
+        kind: 'wall',
       });
     }
 
@@ -774,6 +883,24 @@ export class CitySystem implements Subsystem {
    */
   getGarrisonBays(): readonly GarrisonBay[] {
     return this.bays;
+  }
+
+  /**
+   * The lanes each quarter cut for itself — the *other* 38 km of Rome's streets.
+   *
+   * `layout.ts`'s exported `WAYS` is the named armature only: twenty-two viae, 11 km. The
+   * district generator then cuts a spine-and-rib lattice per quarter and returns it in
+   * `DistrictOutput.lanes` — 374 lanes and 38 km, more than three times the armature — and
+   * until now nothing outside `wayMix`'s running total could see them.
+   *
+   * That blind spot was not academic. The land audit built its street keep-out from `WAYS`
+   * alone, so every vicus and every local lane in the city was scored as *unbuilt ground*,
+   * and the walled city read 20.5 % built with 35.6 % "free". Roughly 39 hectares of that
+   * free ground is carriageway. Any density judgement made against that ledger is measuring
+   * the generator's own streets as a failure to build.
+   */
+  getLanes(): readonly Lane[] {
+    return this.lanes;
   }
 
   /**

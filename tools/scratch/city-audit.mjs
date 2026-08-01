@@ -41,7 +41,24 @@ try {
         return Math.abs(dx * cs + dz * sn) <= o.hw && Math.abs(-dx * sn + dz * cs) <= o.hd;
       });
       const mk = (fill) => { const k = new L.KeepOut(); fill(k); return k; };
-      const koWays = mk((k) => { for (const w of L.WAYS) k.addPath(w.path, w.width * 0.5 + L.WAY_FRONTAGE[w.cls]); });
+      /**
+       * The **whole** street network, not just the named armature.
+       *
+       * L.WAYS is twenty-two viae and 11 km. The district generator then cuts a
+       * spine-and-rib lattice per quarter — 374 lanes and 38 km, more than three times the
+       * armature — and this scored every one of them as *unbuilt ground*. That is where the
+       * "walled Rome is 20.5 % built, 35.6 % free" figure came from: 39 hectares of
+       * carriageway counted as a failure to build. With the lanes in, the same city reads
+       * 24.9 % ways / 28.1 % free, and roof between street lines goes 53.9 % -> 68.7 %,
+       * which is inside the 60-70 % the AGEA orthophoto gives for the historic core.
+       * CitySystem.getLanes() exists for this.
+       */
+      const lanes = city.getLanes ? city.getLanes() : [];
+      if (!city.getLanes) console.log('WARNING: no getLanes() — district lanes scored as free ground');
+      const koWays = mk((k) => {
+        for (const w of L.WAYS) k.addPath(w.path, w.width * 0.5 + L.WAY_FRONTAGE[w.cls]);
+        for (const l of lanes) k.addPath(l.path, l.width * 0.5 + L.WAY_FRONTAGE[l.cls]);
+      });
       const koMon = mk((k) => { for (const l of L.LANDMARKS) { k.addRect(l.x, l.z, l.hw, l.hd, l.rot); if (l.mound) k.addCircle(l.x, l.z, (l.moundRadius ?? l.clear) * 1.02); } });
       const koPlaza = mk((k) => { for (const pz of L.PLAZAS) k.addRect(pz.x, pz.z, pz.hw + 2, pz.hd + 2, pz.rot); });
       const STEP = 6, A = STEP * STEP;

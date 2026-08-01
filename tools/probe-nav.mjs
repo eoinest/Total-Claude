@@ -2143,15 +2143,48 @@ window.__nav = (() => {
       const depths = [];
       const tight = [];
       const obs = city && city.getObstacles ? city.getObstacles() : [];
-      const kindNear = (x, z) => {
-        let best = '-', bestD = Infinity;
+      /**
+       * Name the intruder by **which box contains the cell**, not by which box centre is
+       * nearest.
+       *
+       * kindNear used to answer with the nearest centre, and that is not the same question.
+       * The Castra Praetoria's footprint is 278 × 262 m, so its centre is 200 m from its own
+       * north-west corner while a 35 m curtain bay's centre is 30 m away — and every cell of
+       * the camp's edge was therefore reported as 'wall'. Four such cells were read as "the
+       * curtain intrudes 40-52 m into the pomerium" and cost a round of work looking for a
+       * misaligned wall that does not exist. Containment cannot make that mistake. The
+       * occupancy grid is a 4 m raster stamped from rect samples, so a blocked cell can sit
+       * up to one cell outside the true box; '~' marks a hit that no box contains but one is
+       * within a cell of, and '-' a hit that is neither.
+       */
+      const kindAt = (x, z) => {
+        let near = null, nearD = Infinity;
         for (const o of obs) {
-          const d = Math.hypot(o.x - x, o.z - z);
-          if (d < bestD) { bestD = d; best = o.kind; }
+          const dx = x - o.x, dz = z - o.z, cs = Math.cos(o.rot), sn = Math.sin(o.rot);
+          const u = Math.abs(dx * cs + dz * sn) - o.hw;
+          const v = Math.abs(-dx * sn + dz * cs) - o.hd;
+          if (u <= 0 && v <= 0) return o.kind;
+          const out = Math.hypot(Math.max(0, u), Math.max(0, v));
+          if (out < nearD) { nearD = out; near = o.kind; }
         }
-        return best;
+        return nearD <= CELL * 1.5 ? '~' + near : '-';
       };
-      for (let x = -650; x <= 1200; x += 8) {
+      /**
+       * Sample only where there **is** a wall.
+       *
+       * This ran -650..1200 against a wallZAt that clamps to the last segment, so x beyond
+       * the circuit's east end (the segments stop at 1144) measured a depth from a frozen
+       * z-line with no masonry anywhere near it — while the terrain crest kept climbing away
+       * from that line. Every one of those samples is a depth from nothing, and they were the
+       * whole of the reported pomerium intrusion. The pomerium is a strip inside a curtain;
+       * where there is no curtain there is no pomerium to violate.
+       */
+      let wx0 = Infinity, wx1 = -Infinity;
+      for (const s of segs) {
+        wx0 = Math.min(wx0, s.x1, s.x2);
+        wx1 = Math.max(wx1, s.x1, s.x2);
+      }
+      for (let x = Math.ceil(wx0); x <= Math.floor(wx1); x += 8) {
         const wzx = wallZAt(x);
         if (wzx === null) continue;
         let d = null;
@@ -2162,7 +2195,7 @@ window.__nav = (() => {
           depths.push(d);
           // What is standing in the pomerium, if anything: insulae respect it, monuments
           // are placed by the survey projection and do not.
-          if (d < 55) tight.push({ x, depth: +d.toFixed(0), kind: kindNear(x, wzx + d) });
+          if (d < 55) tight.push({ x, depth: +d.toFixed(0), kind: kindAt(x, wzx + d) });
         }
       }
       tight.sort((a, b) => a.depth - b.depth);
@@ -2181,6 +2214,9 @@ window.__nav = (() => {
         },
         pomeriumIntruders: tight.slice(0, 8),
         openGroundBehindWall: {
+          // The domain, so a reader can see that a min is a depth from real masonry.
+          xFrom: Number.isFinite(wx0) ? +wx0.toFixed(0) : null,
+          xTo: Number.isFinite(wx1) ? +wx1.toFixed(0) : null,
           samples: depths.length,
           min: depths.length ? +depths[0].toFixed(1) : 0,
           p10: dpct(0.1), median: dpct(0.5), p90: dpct(0.9),
@@ -2291,7 +2327,7 @@ if (want('corridor')) {
   console.log(`  free ground admitting a 16 m column     ${(c.fractionAdmitting.column16m * 100).toFixed(1)}%`);
   console.log(`  free ground admitting a 35 m cohort     ${(c.fractionAdmitting.cohortInLine35m * 100).toFixed(1)}%`);
   const o = c.openGroundBehindWall;
-  console.log(`  open ground behind the wall, m   min ${o.min}  p10 ${o.p10}  median ${o.median}  p90 ${o.p90}  max ${o.max}  (n=${o.samples})`);
+  console.log(`  open ground behind the wall, m   min ${o.min}  p10 ${o.p10}  median ${o.median}  p90 ${o.p90}  max ${o.max}  (n=${o.samples}, x ${o.xFrom}..${o.xTo})`);
   if (c.pomeriumIntruders?.length) {
     console.log(`  standing inside the 60 m pomerium: ` + c.pomeriumIntruders.map((t) => `${t.kind}@x${t.x} (${t.depth} m)`).join(', '));
   } else {

@@ -137,6 +137,31 @@ Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`
 
 ## Measured facts that must not be re-derived
 
+- **Rome is NOT short of roof, and "20.5 % built" was an instrument reading its own streets
+  as failure.** `city-audit.mjs` built its street keep-out from `layout.ts`'s exported
+  `WAYS` — the twenty-two named viae, 11 km. The district generator cuts a further **374
+  lanes and 38 km**, and nothing outside `wayMix`'s running total could see them, so every
+  vicus in the city was scored as unbuilt ground: 39 hectares of carriageway counted as a
+  gap. With the lanes in (`CitySystem.getLanes()`), the same unchanged city reads
+  ways 17.4 → **24.9 %**, free 35.6 → **28.1 %**, and **roof between street lines
+  53.9 → 68.7 %** — inside the 60-70 % the AGEA orthophoto gives for the historic core.
+  Do not "fix" the density; it is in band. Of the free ground that remains, **63 % lies
+  under no district mask at all** (17.7 % of walled land) and only 29 % is inside a
+  quarter's plateau. The real remaining difference from the orthophoto is **grain, not
+  coverage**: AGEA's blocks are smaller and each is punched with 1-4 courts of 10-25 m,
+  where ours are larger with one big court; their vici are 4-8 m and far more numerous.
+  Aim the next pass at finer grain, not more roof.
+- **The 60 m pomerium is met exactly, and `openGroundBehindWall min 40` was the instrument.**
+  `probe-nav` sampled x −650..1200 against a `wallZAt` that clamps to the last segment,
+  but the curtain ends at **x = 1144**. The four reported "intrusions" at x 1174-1198 are
+  30-54 m *past the east end of the wall*, measuring a depth from a frozen z-line with no
+  masonry near it. They were labelled `wall` by nearest-**centre** — the Castra Praetoria's
+  278 × 262 m footprint has its centre 200 m from its own corner, while a curtain bay's is
+  30 m away. Restricted to the wall's real span and labelled by **containment**: min
+  **60.0 m** over 220 samples, zero intruders. Neither `POMERIUM` nor the curtain alignment
+  was wrong. The Castra crosses the crest by **−18.6 m** (it is 18.6 m inside), so even its
+  documented `atWall: 0.02` licence is unused.
+
 - **The crowd is the only thing casting a shadow in a battle frame.** `probe-shadow.mjs`'s
   `all shadows` and `crowd shadows` arms return *identical* figures at both close cameras
   (9.768/255 over 22.80% at `romanline`, 9.851/255 over 17.73% at `raking`). `TerrainSystem`
