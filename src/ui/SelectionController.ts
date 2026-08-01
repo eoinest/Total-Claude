@@ -12,10 +12,6 @@
  *   shift + right         queue the order behind the current one
  *   alt + right           run instead of march
  *   ctrl + right          attack-move
- *
- * The camera also wants the right button for yaw, so the rule is: with something
- * selected the right button belongs to the order system (`rig.suppressDrag` holds the
- * camera off); with an empty selection, or with alt held, it belongs to the camera.
  */
 
 import type { EngineContext } from '../core/Engine';
@@ -30,7 +26,7 @@ import type { PointerTracker } from './pointer';
 import { abilityUI, PLAYER_FACTION } from './theme';
 import type { GhostSpec, WorldOverlay } from './WorldOverlay';
 
-export type CursorKind = 'default' | 'move' | 'attack' | 'friend' | 'select';
+export type CursorKind = 'default' | 'move' | 'attack' | 'friend' | 'select' | 'pan';
 
 /** Pixels of pointer travel before a click becomes a drag. */
 const DRAG_PX = 7;
@@ -38,6 +34,10 @@ const DRAG_PX = 7;
 const DOUBLE_S = 0.34;
 /** Minimum world metres of right-drag before it is read as a frontage command. */
 const FRONTAGE_MIN_M = 6;
+/** Height of a man's chest, the surface unit picking is aimed at. See `screenToGround`. */
+const PICK_LIFT_M = 0.95;
+/** Floor on pick tolerance, in metres: a man's own width, so a near miss still hits. */
+const PICK_SLACK_M = 1.1;
 
 const FOOT: Footprint = { cx: 0, cz: 0, halfW: 1, halfD: 1, cos: 1, sin: 0 };
 const PROJECTED: Projected = { x: 0, y: 0, distance: 0, visible: false };
@@ -92,10 +92,14 @@ export class SelectionController {
   private dragHostileId = -1;
   private ghosts: GhostSpec[] = [];
 
-  /** World point under the cursor this frame, valid when `groundValid`. */
+  /** World point under the cursor this frame, valid when `groundValid`. Order targets. */
   groundX = 0;
   groundZ = 0;
   groundValid = false;
+  /** The same ray taken at chest height, which is what unit picking must test against. */
+  private pickX = 0;
+  private pickZ = 0;
+  private pickValid = false;
 
   constructor(
     private model: HudModel,
@@ -270,7 +274,7 @@ export class SelectionController {
     this.handleLeft(ctx);
     this.handleRight(ctx, hovered);
     this.handleKeys(ctx);
-    this.updateCursor(hovered);
+    this.updateCursor(hovered, input.mmb.down);
   }
 
   private updateGround(ctx: EngineContext, heightAt: (x: number, z: number) => number): void {
@@ -281,6 +285,11 @@ export class SelectionController {
       this.groundX = GROUND.x;
       this.groundZ = GROUND.z;
     }
+    this.pickValid = screenToGround(ctx.camera, nx, ny, heightAt, GROUND, 4200, PICK_LIFT_M);
+    if (this.pickValid) {
+      this.pickX = GROUND.x;
+      this.pickZ = GROUND.z;
+    }
   }
 
   /** Nearest unit whose banner or formation footprint contains the cursor, or -1. */
@@ -290,19 +299,20 @@ export class SelectionController {
     // and is very often over sky or over a hillside behind the unit, where the cursor ray
     // never lands on the ground the unit is standing on.
     if (this.overBanner >= 0) return this.overBanner;
-    if (!this.groundValid) return -1;
+    if (!this.pickValid) return -1;
     // A few pixels of slack in world units keeps thin skirmish lines pickable when
-    // zoomed out, without making close-up picking sloppy.
-    const slack = Math.min(9, ctx.rig.metresPerPixel(ctx.viewH) * 7);
+    // zoomed out, without making close-up picking sloppy. The floor matters at close
+    // zoom, where seven pixels is 13 cm and every click had to be dead on the block.
+    const slack = Math.max(PICK_SLACK_M, Math.min(9, ctx.rig.metresPerPixel(ctx.viewH) * 7));
     let best = -1;
     let bestD = Infinity;
     for (const v of this.model.views) {
       if (v.destroyed) continue;
       footprintOf(v.unit, v.def, FOOT);
-      const d = distanceToFootprint(FOOT, this.groundX, this.groundZ);
+      const d = distanceToFootprint(FOOT, this.pickX, this.pickZ);
       if (d > slack) continue;
       // Inside two footprints at once: prefer the nearer centre.
-      const score = d + Math.hypot(v.cx - this.groundX, v.cz - this.groundZ) * 0.01;
+      const score = d + Math.hypot(v.cx - this.pickX, v.cz - this.pickZ) * 0.01;
       if (score < bestD) {
         bestD = score;
         best = v.id;
@@ -415,7 +425,9 @@ export class SelectionController {
     const p = ctx.input.pointer[2];
     const haveSelection = this.model.selection.length > 0;
 
-    if (p.pressed && !this.ptr.overUi && haveSelection && !this.ptr.downAlt) {
+    // No alt gate: alt + right means run, and it used to also mean "give the button back
+    // to the camera", so the two readings cancelled and a run order was unissuable.
+    if (p.pressed && !this.ptr.overUi && haveSelection) {
       if (this.groundValid) {
         this.dragging = true;
         this.dragStartX = this.groundX;
@@ -427,8 +439,6 @@ export class SelectionController {
     }
 
     if (this.dragging) {
-      // Hold the camera off the right button for the whole gesture.
-      ctx.rig.suppressDrag = true;
       if (this.groundValid) {
         this.dragEndX = this.groundX;
         this.dragEndZ = this.groundZ;
@@ -451,13 +461,11 @@ export class SelectionController {
         );
       }
     } else {
-      ctx.rig.suppressDrag = false;
       this.hideHint();
     }
 
     if (p.released && this.dragging) {
       this.dragging = false;
-      ctx.rig.suppressDrag = false;
       this.issueDragOrder(ctx, p.dragDist);
       this.ghosts.length = 0;
       this.hideHint();
@@ -674,9 +682,10 @@ export class SelectionController {
 
   // ---- Cursor ----
 
-  private updateCursor(hovered: number): void {
+  private updateCursor(hovered: number, panning: boolean): void {
     let c: CursorKind = 'default';
-    if (this.boxing) c = 'select';
+    if (panning) c = 'pan';
+    else if (this.boxing) c = 'select';
     else if (this.ptr.overUi) c = 'default';
     else {
       const v = hovered >= 0 ? this.model.view(hovered) : undefined;

@@ -84,6 +84,11 @@ const RAY_TMP = new THREE.Vector3();
  * Rather than marching, this iterates the fixed point `t = (eyeY - h(p)) / -dir.y`.
  * On terrain this gentle it converges in three or four steps, and it costs four
  * `heightAt` samples instead of the fifty a march would need.
+ *
+ * `lift` raises the surface, in metres. Picking a unit means picking a *man*, whose chest
+ * is ~0.95 m up; against the bare ground the ray under his chest carries on past his feet,
+ * and seen from behind a block that overshoot lands outside the formation footprint, so a
+ * cohort could not be selected by clicking its front rank unless the camera faced it.
  */
 export function screenToGround(
   camera: THREE.PerspectiveCamera,
@@ -91,7 +96,8 @@ export function screenToGround(
   ndcY: number,
   heightAt: (x: number, z: number) => number,
   out: { x: number; y: number; z: number },
-  maxDistance = 4200
+  maxDistance = 4200,
+  lift = 0
 ): boolean {
   RAY_TMP.set(ndcX, ndcY, 0.5).unproject(camera);
   RAY_ORIGIN.copy(camera.position);
@@ -103,12 +109,12 @@ export function screenToGround(
   // Looking at or above the horizon: no ground under the cursor.
   if (RAY_DIR.y > -0.012) return false;
 
-  let t = (RAY_ORIGIN.y - heightAt(RAY_ORIGIN.x, RAY_ORIGIN.z)) / -RAY_DIR.y;
+  let t = (RAY_ORIGIN.y - heightAt(RAY_ORIGIN.x, RAY_ORIGIN.z) - lift) / -RAY_DIR.y;
   t = Math.min(t, maxDistance);
   for (let i = 0; i < 4; i++) {
     const x = RAY_ORIGIN.x + RAY_DIR.x * t;
     const z = RAY_ORIGIN.z + RAY_DIR.z * t;
-    const h = heightAt(x, z);
+    const h = heightAt(x, z) + lift;
     const nt = (RAY_ORIGIN.y - h) / -RAY_DIR.y;
     if (!Number.isFinite(nt)) break;
     t = Math.min(Math.max(nt, 0.1), maxDistance);

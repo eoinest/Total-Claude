@@ -94,6 +94,9 @@ export class Minimap {
   private dragging = false;
   private zoom = DEFAULT_ZOOM;
   private zoomLabel!: HTMLElement;
+  private needle!: HTMLElement;
+  private needleDeg = 999;
+  private offs: Array<() => void> = [];
 
   constructor(private model: HudModel) {}
 
@@ -108,7 +111,10 @@ export class Minimap {
       this.root,
       `<div class="mm-frame">
          <canvas></canvas>
-         <span class="mm-n">N</span>
+         <button class="mm-compass" type="button" title="Drag to turn the view · click for north">
+           <span class="mm-rose"><i>N</i></span>
+           <span class="mm-needle"></span>
+         </button>
          <button class="mm-zoom" type="button" title="Map range (M)">FIELD</button>
          <span class="mm-rivet tl"></span><span class="mm-rivet tr"></span>
          <span class="mm-rivet bl"></span><span class="mm-rivet br"></span>
@@ -116,6 +122,8 @@ export class Minimap {
     );
     this.canvas = this.root.querySelector('canvas') as HTMLCanvasElement;
     this.zoomLabel = this.root.querySelector('.mm-zoom') as HTMLElement;
+    this.needle = this.root.querySelector('.mm-needle') as HTMLElement;
+    this.attachCompass(this.root.querySelector('.mm-compass') as HTMLElement, ctx);
     this.zoomLabel.addEventListener('click', (e) => {
       e.stopPropagation();
       this.cycleZoom();
@@ -148,6 +156,50 @@ export class Minimap {
     };
     this.canvas.addEventListener('pointerup', stop);
     this.canvas.addEventListener('pointercancel', stop);
+  }
+
+  /**
+   * The camera's only mouse route to yaw: drag the rose to turn, click it to face north.
+   *
+   * Rotation cannot ride the right button, which issues orders, and a keyboard-only turn
+   * would leave the camera half unreachable by mouse. 0.014 rad per pixel puts a full
+   * revolution in 450 px of travel, close enough to grab a heading in one gesture.
+   */
+  private attachCompass(el: HTMLElement, ctx: EngineContext): void {
+    let turning = false;
+    let lastX = 0;
+    let travel = 0;
+    const down = (e: PointerEvent): void => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      turning = true;
+      travel = 0;
+      lastX = e.clientX;
+      el.setPointerCapture(e.pointerId);
+      el.classList.add('turning');
+    };
+    const move = (e: PointerEvent): void => {
+      if (!turning) return;
+      const dx = e.clientX - lastX;
+      lastX = e.clientX;
+      travel += Math.abs(dx);
+      ctx.rig.rotateBy(-dx * 0.014);
+    };
+    const up = (e: PointerEvent): void => {
+      if (!turning) return;
+      turning = false;
+      el.releasePointerCapture?.(e.pointerId);
+      el.classList.remove('turning');
+      if (travel < 4) ctx.rig.faceNorth();
+    };
+    const bind = (type: string, fn: (e: PointerEvent) => void): void => {
+      el.addEventListener(type, fn as EventListener);
+      this.offs.push(() => el.removeEventListener(type, fn as EventListener));
+    };
+    bind('pointerdown', down);
+    bind('pointermove', move);
+    bind('pointerup', up);
+    bind('pointercancel', up);
   }
 
   relayout(): void {
@@ -382,34 +434,15 @@ export class Minimap {
     g.lineTo(fx, fz + 4);
     g.stroke();
 
-    // ---- Compass needle ----
-    const cx = s - 15;
-    const cy = 15;
-    g.save();
-    g.translate(cx, cy);
-    g.fillStyle = 'rgba(10, 8, 5, 0.62)';
-    g.beginPath();
-    g.arc(0, 0, 10, 0, Math.PI * 2);
-    g.fill();
-    g.strokeStyle = 'rgba(217, 178, 95, 0.5)';
-    g.lineWidth = 1;
-    g.stroke();
-    g.rotate(-ctx.rig.yaw);
-    g.fillStyle = '#f2dd9e';
-    g.beginPath();
-    g.moveTo(0, -8);
-    g.lineTo(3.4, 5.2);
-    g.lineTo(0, 2.6);
-    g.closePath();
-    g.fill();
-    g.fillStyle = 'rgba(242, 221, 158, 0.45)';
-    g.beginPath();
-    g.moveTo(0, -8);
-    g.lineTo(-3.4, 5.2);
-    g.lineTo(0, 2.6);
-    g.closePath();
-    g.fill();
-    g.restore();
+    // The needle is a DOM element on the rose, because that control is also the grab
+    // handle for turning. The plate is drawn north-up, and the view looks along
+    // +(sin yaw, cos yaw), so an arrow drawn pointing up needs 180 - yaw of clockwise turn
+    // to point where the camera is looking.
+    const deg = Math.round(180 - (ctx.rig.yaw * 180) / Math.PI);
+    if (deg !== this.needleDeg) {
+      this.needleDeg = deg;
+      this.needle.style.transform = `rotate(${deg}deg)`;
+    }
   }
 
   private drawFrustum(ctx: EngineContext, g: CanvasRenderingContext2D): void {
@@ -443,6 +476,8 @@ export class Minimap {
   }
 
   dispose(): void {
+    for (const off of this.offs) off();
+    this.offs.length = 0;
     this.root.remove();
   }
 

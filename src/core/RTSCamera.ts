@@ -9,6 +9,13 @@ import type { Input } from './Input';
  * the pitch flattens and the FOV narrows, so close-ups sit at eye level among the
  * troops while the strategic view looks down from high above. That coupling is what
  * makes Total War's camera feel like a camera rather than a spreadsheet viewport.
+ *
+ * Mouse routes, one gesture per job so none of them has a second meaning:
+ *   wheel                zoom
+ *   middle drag          grab the ground and pull it
+ *   cursor at the edge   pan
+ *   HUD compass drag     turn (see `rotateBy`); the right button belongs to orders
+ * WASD, arrows and Q/E remain as keyboard accelerators for the same three jobs.
  */
 
 export interface CameraLimits {
@@ -58,9 +65,6 @@ export class RTSCamera {
   private shakeDecay = 3.2;
   private shakeTime = 0;
   private cinematic = false;
-
-  /** Set true while an order is being dragged so the camera ignores LMB. */
-  suppressDrag = false;
 
   private tmpV = new THREE.Vector3();
 
@@ -116,6 +120,16 @@ export class RTSCamera {
     this.focus.set(x, 0, z);
     this.zoomTarget = clamp(zoom, 0, 1);
     this.yawTarget = yaw;
+  }
+
+  /** Turn the view. The HUD compass drives this; Q/E are the keyboard equivalent. */
+  rotateBy(radians: number): void {
+    this.yawTarget = wrapAngle(this.yawTarget + radians);
+  }
+
+  /** Look north, keeping focus and zoom. North is -Z, which is yaw = pi (see `place`). */
+  faceNorth(): void {
+    this.yawTarget = Math.PI;
   }
 
   /**
@@ -191,13 +205,7 @@ export class RTSCamera {
       this.zoomTarget = clamp(this.zoomTarget + input.wheel * 0.075, 0, 1);
     }
 
-    // ---- Rotate (RMB drag, or Q/E) ----
-    const rmb = input.rmb;
-    if (rmb.down && !this.suppressDrag) {
-      this.yawTarget -= rmb.dx * 0.0055;
-      // Vertical RMB drag nudges zoom, matching Total War's free-look feel.
-      this.zoomTarget = clamp(this.zoomTarget + rmb.dy * 0.0016, 0, 1);
-    }
+    // ---- Turn (Q/E; the mouse route is the HUD compass, which calls `rotateBy`) ----
     if (input.key('KeyQ')) this.yawTarget += dt * 1.35;
     if (input.key('KeyE')) this.yawTarget -= dt * 1.35;
 
@@ -212,7 +220,9 @@ export class RTSCamera {
     // `pointerSeen` as well as `hovering`: see the note on `pointerenter` in Input.ts. Without
     // it the camera edge-pans from a default cursor position of 0,0 — the top-left corner —
     // the instant the canvas reports a hover, which the pre-battle menu closing does.
-    if (this.edgePanEnabled && input.hovering && input.pointerSeen && !input.lmb.down) {
+    // A held button is a gesture in progress, which edge pan must not drag out from under.
+    const held = input.lmb.down || input.mmb.down || input.rmb.down;
+    if (this.edgePanEnabled && input.hovering && input.pointerSeen && !held) {
       const margin = 14;
       if (input.mouseX < margin) fx -= 1 - input.mouseX / margin;
       else if (input.mouseX > viewW - margin) fx += 1 - (viewW - input.mouseX) / margin;
@@ -220,19 +230,30 @@ export class RTSCamera {
       else if (input.mouseY > viewH - margin) fy -= 1 - (viewH - input.mouseY) / margin;
     }
 
-    const mmb = input.mmb;
-    if (mmb.down) {
-      const k = this.panRate * 0.0042;
-      fx -= mmb.dx * k;
-      fy -= mmb.dy * k;
-    }
-
+    let mRight = 0;
+    let mFwd = 0;
     if (fx !== 0 || fy !== 0) {
       const len = Math.hypot(fx, fy);
       if (len > 1) {
         fx /= len;
         fy /= len;
       }
+      const rate = this.panRate * dt;
+      mRight = fx * rate;
+      mFwd = fy * rate;
+    }
+
+    // Middle drag is a grab, not a throttle: the ground follows the cursor metre for pixel.
+    // A vertical pixel covers 1/sin(pitch) of what a horizontal one does, capped because
+    // near the minimum pitch that ratio passes 10 and the field bolts out from under you.
+    const mmb = input.mmb;
+    if (mmb.down) {
+      const m = this.metresPerPixel(viewH);
+      mRight -= mmb.dx * m;
+      mFwd += mmb.dy * m * Math.min(3, 1 / Math.max(0.2, Math.sin(this.pitch)));
+    }
+
+    if (mRight !== 0 || mFwd !== 0) {
       // Pan in the camera's ground plane, not world axes.
       //
       // `place()` puts the eye at focus - (sin yaw, cos yaw) * r, so the view direction —
@@ -245,9 +266,8 @@ export class RTSCamera {
       // W and S correct, which is exactly how it was reported.
       const s = Math.sin(this.yaw);
       const c = Math.cos(this.yaw);
-      const rate = this.panRate * dt;
-      this.focus.x += (fy * s - fx * c) * rate;
-      this.focus.z += (fy * c + fx * s) * rate;
+      this.focus.x += mFwd * s - mRight * c;
+      this.focus.z += mFwd * c + mRight * s;
     }
   }
 

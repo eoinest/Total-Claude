@@ -103,6 +103,7 @@ body[data-cur='friend'] #viewport {
 }
 
 body[data-cur='select'] #viewport { cursor: crosshair; }
+body[data-cur='pan'] #viewport { cursor: grabbing; }
 
 /* ---------------------------------------------------------------- loading -- */
 
@@ -395,6 +396,15 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   transition: color 0.16s, background 0.16s, box-shadow 0.16s;
 }
 .tb-speed button .ic { font-size: 0.86em; }
+/* Numerals, not two near-identical fast-forward glyphs: at 1.6em nobody can tell a double
+   chevron from a triple, and the multiplier is the whole point of the button. */
+.tb-speed button b {
+  font-family: var(--num);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 0.86em;
+  letter-spacing: 0;
+}
 .tb-speed button:hover { color: var(--gold-bright); border-color: rgba(217, 178, 95, 0.5); }
 .tb-speed button.on {
   color: #211705;
@@ -842,7 +852,8 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* The army's own standard, once, at the left end of its row. */
+/* The army's own standard, once, at the left end of its row. Also the button that selects
+   the whole army, which is otherwise reachable only from the keyboard. */
 .cb-tab {
   flex: none;
   width: 1.9em;
@@ -851,8 +862,18 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   align-items: center;
   justify-content: center;
   gap: 0.45em;
+  appearance: none;
+  padding: 0;
+  background: none;
   color: #e2b96a;
+  border: none;
   border-right: 1px solid rgba(217, 178, 95, 0.14);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.cb-tab:hover {
+  color: var(--gold-bright);
+  background: linear-gradient(180deg, rgba(217, 178, 95, 0.12), transparent);
 }
 .cb-std { font-size: 1.7em; line-height: 0; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.9)); }
 .cb-name {
@@ -940,15 +961,8 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
 }
 .obat-tab:hover { color: #eef4fa; border-color: rgba(217, 178, 95, 0.5); }
 .obat-std { font-size: 1.5em; line-height: 0; color: #b9c8d4; }
-.obat-n {
-  font-family: var(--num);
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  font-size: 1.05em;
-  letter-spacing: 0;
-  color: var(--gold);
-}
-.obat-u { font-size: 0.86em; letter-spacing: 0.12em; opacity: 0.85; }
+.obat-lab { color: var(--gold); }
+.obat-sub { font-size: 0.86em; letter-spacing: 0.12em; opacity: 0.8; }
 /* Points the way the strip will move: up to open, down to put it away again. */
 .obat-chev { font-size: 1.1em; line-height: 0; transition: transform 0.22s; }
 .obat.open .obat-chev { transform: rotate(180deg); }
@@ -1565,14 +1579,56 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.6);
 }
 
-.mm-n {
+/* The compass rose: the mouse route to camera yaw, so it has to be big enough to grab
+   and obviously grabbable. Drag it to turn, click it to face north. */
+.mm-compass {
   position: absolute;
-  left: 0.4em;
-  top: 0.2em;
-  font-size: 0.9em;
-  letter-spacing: 0.18em;
-  color: rgba(255, 248, 226, 0.92);
-  text-shadow: 0 0 4px #000, 0 1px 3px #000;
+  right: 0.3em;
+  top: 0.3em;
+  width: 3.8em;
+  height: 3.8em;
+  appearance: none;
+  padding: 0;
+  border: 1px solid rgba(217, 178, 95, 0.5);
+  border-radius: 50%;
+  background: radial-gradient(circle at 42% 34%, rgba(58, 46, 28, 0.92), rgba(10, 8, 5, 0.92));
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8), 0 1px 4px rgba(0, 0, 0, 0.7);
+  cursor: grab;
+  touch-action: none;
+}
+.mm-compass:hover { border-color: rgba(242, 221, 158, 0.9); }
+.mm-compass.turning { cursor: grabbing; border-color: rgba(242, 221, 158, 0.9); }
+
+.mm-rose {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: start center;
+  padding-top: 0.04em;
+  pointer-events: none;
+}
+.mm-rose i {
+  font-family: var(--serif);
+  font-style: normal;
+  font-size: 0.72em;
+  letter-spacing: 0.06em;
+  color: rgba(255, 248, 226, 0.9);
+  text-shadow: 0 1px 2px #000;
+}
+
+/* Drawn pointing up and pivoting on the rose centre; `Minimap.draw` rotates it to the
+   camera's heading, so the arrow always shows which way the view is looking. */
+.mm-needle {
+  position: absolute;
+  left: 50%;
+  top: 0.85em;
+  width: 0.62em;
+  height: 1.05em;
+  margin-left: -0.31em;
+  transform-origin: 50% 100%;
+  background: linear-gradient(180deg, #f6ead0, #b8913f);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.9));
   pointer-events: none;
 }
 
@@ -1645,7 +1701,8 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   position: absolute;
   right: -0.6em;
   top: 3.2em;
-  width: 36em;
+  /* Wide enough for the control reference's two columns to set without clipping. */
+  width: 42em;
   padding: 0.9em 1em 1em;
   display: flex;
   flex-direction: column;
@@ -1779,9 +1836,12 @@ input[type='checkbox']:checked::after { opacity: 1; }
 }
 .set-keys > div { display: flex; align-items: baseline; gap: 0.44em; }
 .set-keys > div { white-space: nowrap; }
+/* The keyboard rows carry a whole list of shortcuts, so they take the full width and wrap
+   rather than pushing the two-column grid past the panel edge. */
+.set-keys > div.wide { grid-column: 1 / -1; white-space: normal; }
 .set-keys kbd {
   flex: none;
-  min-width: 6em;
+  min-width: 7.4em;
   font-family: var(--num);
   font-size: 0.82em;
   letter-spacing: 0.04em;

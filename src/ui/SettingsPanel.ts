@@ -1,6 +1,6 @@
 /**
  * Settings popover: quality tier, time of day, HUD scale and overlay toggles, plus the
- * keyboard reference. Lives behind a single bronze stud beside the minimap so it costs
+ * control reference. Lives behind a single bronze stud beside the minimap so it costs
  * no screen space until it is wanted.
  */
 
@@ -25,23 +25,26 @@ export interface SettingsHooks {
 
 const TIERS: QualityTier[] = ['low', 'medium', 'high', 'ultra'];
 
-const KEYS: Array<[string, string]> = [
-  ['LMB', 'Select unit'],
-  ['LMB drag', 'Box select'],
-  ['LMB ×2', 'Select all of type'],
-  ['Shift / Ctrl', 'Add or remove'],
-  ['RMB', 'Move · attack'],
-  ['RMB drag', 'Frontage and facing'],
-  ['Shift + RMB', 'Queue order'],
-  ['Alt + RMB', 'Run · free the camera'],
-  ['Ctrl + RMB', 'Attack move'],
-  ['Z X C V B', 'Formations'],
-  ['G T Y', 'Abilities'],
-  ['H · R', 'Halt · run toggle'],
-  ['F · Tab · Esc', 'Army · next · clear'],
-  ['Alt (hold)', 'Show all unit names'],
-  ['Space 1 2 3', 'Pause · 1× · 2× · 4×'],
-  ['O · L · N', 'Settings · debug · banners'],
+/** Mouse first: the keys are accelerators for the same jobs, not the primary binding. */
+const CONTROLS: Array<[string, string]> = [
+  ['Left click', 'Select · bare ground clears'],
+  ['Left drag', 'Box select'],
+  ['Left ×2', 'Select all of that type'],
+  ['Right click', 'Move here, or attack an enemy'],
+  ['Right drag', 'Frontage and facing'],
+  ['Middle drag', 'Grab and drag the ground'],
+  ['Wheel', 'Zoom'],
+  ['Screen edge', 'Pan'],
+  ['Compass', 'Drag to turn · click for north'],
+  ['Minimap', 'Click or drag to move the camera'],
+  ['Army standard', 'Select the whole army'],
+  ['Shift / Ctrl + click', 'Add to or drop from the selection'],
+  ['Shift + right', 'Queue behind the current order'],
+  ['Alt + right', 'Run instead of march'],
+  ['Ctrl + right', 'Attack move'],
+  ['Keys · camera', 'WASD or arrows pan · Q E turn'],
+  ['Keys · orders', 'Z X C V B formations · G T Y abilities · H halt · R run'],
+  ['Keys · other', 'Space 1 2 3 speed · F army · Tab next · Esc clear'],
 ];
 
 export class SettingsPanel {
@@ -81,9 +84,11 @@ export class SettingsPanel {
            <label><input type="checkbox" class="t-debug" checked /><span>Debug readout</span></label>
          </div>
 
-         <div class="set-title sub">Commands</div>
+         <div class="set-title sub">Controls</div>
          <div class="set-keys">
-           ${KEYS.map(([k, d]) => `<div><kbd>${k}</kbd><span>${d}</span></div>`).join('')}
+           ${CONTROLS.map(([k, d]) =>
+             `<div class="${k.startsWith('Keys') ? 'wide' : ''}"><kbd>${k}</kbd><span>${d}</span></div>`
+           ).join('')}
          </div>
        </div>`
     );

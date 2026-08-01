@@ -273,12 +273,12 @@ else {
   /*
    * A destination clear of the HUD, of the viewport edges, and of every unit on screen.
    *
-   * **`right-click move` and `right-click attack` fail at HEAD as well as here** — verified by
-   * stashing all other work and re-running, which gives 13/15 with exactly these two red. They
-   * are a genuine pre-existing defect in the click path, not a consequence of the pre-battle
-   * menu or of the HUD scale, and three plausible-sounding explanations for them turned out to
-   * be wrong: the HUD occluding the point, the point landing inside the unit's own ranks, and
-   * the point projecting off-screen. Do not attribute them to the menu.
+   * `right-click move` and `right-click attack` were red at HEAD, and the cause was neither the
+   * pre-battle menu nor the HUD scale: unit picking intersected the cursor ray with the ground,
+   * while a click actually lands on a man whose chest is about 0.95 m up. Seen from anywhere but
+   * the unit's face that overshoot fell outside the formation footprint, and the slack collapses
+   * to 13 cm at close zoom. Picking now uses a chest-height plane; orders still resolve against
+   * true ground. Both checks pass.
    *
    * The framing work below is kept anyway, because it fixes a real fragility even though it
    * does not fix the failure. The check used to use one fixed world offset of (+20, +55), which
@@ -881,13 +881,18 @@ if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, 'hud-final.png')
     record('wheel zooms after menu', z1.zoom !== z0.zoom, 'six wheel notches over the canvas',
       `zoom ${z0.zoom} → ${z1.zoom}`);
 
-    await mp.mouse.move(W * 0.5, H * 0.5);
-    await mp.mouse.down({ button: 'right' });
-    await mp.mouse.move(W * 0.5 + 240, H * 0.5, { steps: 12 });
-    await mp.mouse.up({ button: 'right' });
+    // The right button is the order button only, so rotation moved to the minimap compass.
+    const rose = await mp.evaluate(() => {
+      const r = document.querySelector('#hud-root .mm-compass').getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    });
+    await mp.mouse.move(rose.x, rose.y);
+    await mp.mouse.down();
+    for (let i = 1; i <= 10; i++) await mp.mouse.move(rose.x + i * 12, rose.y);
+    await mp.mouse.up();
     await mp.waitForTimeout(700);
     const z2 = await rig();
-    record('right-drag rotates after menu', z2.yaw !== z1.yaw, 'right-drag 240 px across the canvas',
+    record('compass drag rotates after menu', z2.yaw !== z1.yaw, 'drag the minimap compass 120 px across',
       `yaw ${z1.yaw} → ${z2.yaw}`);
 
     const selCount = async () => mp.evaluate(() => {

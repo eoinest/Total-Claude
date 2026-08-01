@@ -62,9 +62,9 @@ export class TopBar {
            <span class="tb-phase">Deployment</span>
            <span class="tb-speed">
              <button type="button" data-s="0" title="Pause (Space)">${icon(ICON.pause)}</button>
-             <button type="button" data-s="1" title="Normal speed (1)">${icon(ICON.play)}</button>
-             <button type="button" data-s="2" title="Double speed (2)">${icon(ICON.ffwd)}</button>
-             <button type="button" data-s="4" title="Quadruple speed (3)">${icon(ICON.ffwd4)}</button>
+             <button type="button" data-s="1" title="Normal speed (1)"><b>1&times;</b></button>
+             <button type="button" data-s="2" title="Double speed (2)"><b>2&times;</b></button>
+             <button type="button" data-s="4" title="Quadruple speed (3)"><b>4&times;</b></button>
            </span>
          </div>
          <div class="tb-bal">

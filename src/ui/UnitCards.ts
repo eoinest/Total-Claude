@@ -91,7 +91,6 @@ export class UnitCards {
   /** The enemy order of battle: collapsed to a tab until asked for. */
   private foeBar!: HTMLElement;
   private foeHolder!: HTMLElement;
-  private foeCount!: HTMLElement;
   private foeCards: CardEls[] = [];
   private foeOpen = false;
 
@@ -105,22 +104,26 @@ export class UnitCards {
     private tooltip: Tooltip
   ) {}
 
-  attach(parent: HTMLElement): void {
+  /**
+   * Two labelled strips, and the labels have to say whose they are. The enemy tab used to
+   * read "Juthungi 19 units" directly above the player's own cards, which is the least
+   * helpful place on the screen to name the other army: it read as the bar's heading. It
+   * says "enemy" first now, and drops the unit count, which the top plaque already carries.
+   */
+  attach(parent: HTMLElement, ctx: EngineContext): void {
     const foeFui = FACTION_UI[PLAYER_FACTION === Faction.Rome ? Faction.Germanic : Faction.Rome];
     this.foeBar = el('div', 'obat', parent);
     html(
       this.foeBar,
-      `<button class="obat-tab interactive" type="button" title="Enemy order of battle (J)">
+      `<button class="obat-tab interactive" type="button" title="Show or hide the enemy's units (J)">
          ${icon(standardGlyph(foeFui.id), 'obat-std')}
-         <span class="obat-lab">${foeFui.short}</span>
-         <span class="obat-n">0</span>
-         <span class="obat-u">units</span>
+         <span class="obat-lab">Enemy</span>
+         <span class="obat-sub">${foeFui.short}</span>
          ${icon(ICON.chevronUp, 'obat-chev')}
        </button>
        <div class="obat-cards hud-panel interactive"></div>`
     );
     this.foeHolder = this.foeBar.querySelector('.obat-cards') as HTMLElement;
-    this.foeCount = this.foeBar.querySelector('.obat-n') as HTMLElement;
     (this.foeBar.querySelector('.obat-tab') as HTMLElement).addEventListener('click', () =>
       this.toggleFoes()
     );
@@ -129,10 +132,15 @@ export class UnitCards {
     this.root = el('div', 'cardbar hud-panel interactive', parent);
     html(
       this.root,
-      `<div class="cb-tab">${icon(standardGlyph(own.id), 'cb-std')}<span class="cb-name">${own.short}</span></div>
+      `<button class="cb-tab" type="button" title="Select the whole army">
+         ${icon(standardGlyph(own.id), 'cb-std')}<span class="cb-name">${own.short}</span>
+       </button>
        <div class="cardbar-inner"></div>`
     );
     this.inner = this.root.querySelector('.cardbar-inner') as HTMLElement;
+    (this.root.querySelector('.cb-tab') as HTMLElement).addEventListener('click', () =>
+      this.controller.selectArmy(ctx)
+    );
   }
 
   /** Show or hide the enemy strip. Bound to J and to the tab itself. */
@@ -175,7 +183,6 @@ export class UnitCards {
 
     const foes = this.model.views.filter((v) => !v.own);
     for (const v of foes) this.foeCards.push(this.makeCard(v, this.foeHolder, ctx, true));
-    setText(this.foeCount, String(foes.length));
     setClass(this.foeBar, 'none', foes.length === 0);
 
     this.relayout();

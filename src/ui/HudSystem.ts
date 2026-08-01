@@ -153,7 +153,7 @@ export class HudSystem implements Subsystem {
     const bottom = el('div', 'hud-bottom', this.root);
     this.bottomPanel = bottom;
     this.command.attach(bottom, ctx);
-    this.cards.attach(bottom);
+    this.cards.attach(bottom, ctx);
     // A card's tooltip is anchored above that card, and the plaque is directly above the
     // card bar, so without this the stat block covers the plaque every time.
     this.tooltip.avoid = this.command.element;

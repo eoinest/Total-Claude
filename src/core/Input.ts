@@ -13,7 +13,7 @@ export interface PointerState {
   /** Normalised device coordinates in [-1, 1], y up — ready for raycasting. */
   ndcX: number;
   ndcY: number;
-  /** Movement since the previous frame, in CSS pixels. */
+  /** Movement since the previous frame while this button is held, in CSS pixels. */
   dx: number;
   dy: number;
   down: boolean;
@@ -55,8 +55,16 @@ export class Input {
   private keys = new Set<string>();
   private keysPressed = new Set<string>();
   private keysReleased = new Set<string>();
-  private prevMouseX = 0;
-  private prevMouseY = 0;
+  /**
+   * Per-button position at the previous frame, so `dx/dy` is that button's own travel.
+   *
+   * These used to be derived from one shared cursor position, which is only right while
+   * exactly one button is held: on the frame a button went down its delta was measured
+   * against wherever the cursor had been last frame, so a middle-button grab jumped the
+   * camera by the distance the mouse had travelled before the press.
+   */
+  private btnPrevX = [0, 0, 0];
+  private btnPrevY = [0, 0, 0];
   private el: HTMLElement;
   private disposers: Array<() => void> = [];
   /** Set by the UI layer so world-space clicks are suppressed over HUD panels. */
@@ -103,6 +111,8 @@ export class Input {
       p.dragDist = 0;
       p.x = x;
       p.y = y;
+      this.btnPrevX[b] = x;
+      this.btnPrevY[b] = y;
       this.el.setPointerCapture?.(e.pointerId);
       // Middle-click autoscroll and right-click drag must not scroll the page.
       if (b !== 0) e.preventDefault();
@@ -112,7 +122,13 @@ export class Input {
       const b = e.button;
       if (b >= BUTTONS) return;
       const p = this.pointer[b];
-      if (p.down) p.released = true;
+      if (p.down) {
+        // The release position, so a marquee ended over a HUD panel still ends there.
+        const [x, y] = rectXY(e);
+        p.x = x;
+        p.y = y;
+        p.released = true;
+      }
       p.down = false;
     });
 
@@ -158,7 +174,9 @@ export class Input {
       e.preventDefault();
     }, { passive: false });
 
-    this.listen(this.el, 'contextmenu', (e: Event) => e.preventDefault());
+    // Document-wide, not canvas-only: the right button is the order button, and a player
+    // who aims one at a unit card wants the order, not the browser's menu over the field.
+    this.listen(document, 'contextmenu', (e: Event) => e.preventDefault());
 
     this.listen(window, 'keydown', (e: KeyboardEvent) => {
       // Don't swallow browser shortcuts or typing in text fields.
@@ -223,15 +241,16 @@ export class Input {
     this.ndcX = (this.mouseX / viewW) * 2 - 1;
     this.ndcY = -(this.mouseY / viewH) * 2 + 1;
 
-    for (const p of this.pointer) {
-      p.dx = p.x - this.prevMouseX;
-      p.dy = p.y - this.prevMouseY;
+    for (let b = 0; b < BUTTONS; b++) {
+      const p = this.pointer[b];
+      p.dx = p.down ? p.x - this.btnPrevX[b] : 0;
+      p.dy = p.down ? p.y - this.btnPrevY[b] : 0;
+      this.btnPrevX[b] = p.x;
+      this.btnPrevY[b] = p.y;
       p.ndcX = (p.x / viewW) * 2 - 1;
       p.ndcY = -(p.y / viewH) * 2 + 1;
       if (p.down) p.heldFor += dt;
     }
-    this.prevMouseX = this.mouseX;
-    this.prevMouseY = this.mouseY;
   }
 
   /** Clear one-shot edges. Call once at the very end of the frame. */
