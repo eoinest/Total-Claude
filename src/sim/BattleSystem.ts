@@ -7,7 +7,7 @@ import {
 import { unitType, isCavalry } from '../units/roster';
 import type { TerrainSystem } from '../terrain/TerrainSystem';
 import {
-  Clip, Faction, SoldierPool, SoldierState, SpatialHash, UnitOrder,
+  ALL_FACTIONS, Clip, Faction, SoldierPool, SoldierState, SpatialHash, UnitOrder,
   isAlive, type UnitGroupState, type UnitTypeDef,
 } from './types';
 import { Siege } from './Siege';
@@ -35,12 +35,14 @@ interface ObstacleSource {
  */
 interface NavProvider {
   directRouteClear(x1: number, z1: number, x2: number, z2: number, radius: number): boolean;
+  clearLineFraction(x1: number, z1: number, x2: number, z2: number, radius: number): number;
   requestPath(
     unitId: number, sx: number, sz: number, gx: number, gz: number,
     radius: number, minRadius: number, priority?: number
   ): void;
   pathFor(unitId: number): { pts: number[]; n: number; goalX: number; goalZ: number; ok: boolean } | null;
   pending(unitId: number): boolean;
+  clearPath(unitId: number): void;
   findStandable(x: number, z: number, radius: number, out: { x: number; z: number }): boolean;
 }
 
@@ -49,8 +51,18 @@ interface PendingRoute {
   gx: number;
   gz: number;
   facing: number;
-  /** Ticks left before the request is abandoned and the straight line stands. */
+  /** Ticks left before this attempt is abandoned. */
   ttl: number;
+  /**
+   * Attempts left after this one.
+   *
+   * A player order is worth re-asking for. The pathfinder drops a request whose TTL runs
+   * out and caps a search that runs too long, and either way the caller hears nothing;
+   * without a retry the unit keeps whatever destination the order came in with for the
+   * rest of the battle. Measured before this existed: of eight units ordered across the
+   * Aurelian Wall at once, six were never searched at all.
+   */
+  retries: number;
 }
 
 /**
@@ -72,6 +84,63 @@ const ROUTE_RADIUS = 2.2;
  * is that the correction arrives late.
  */
 const ROUTE_TTL = 120;
+
+/** Times a player order will re-ask for a route before it settles for what it can reach. */
+const ROUTE_RETRIES = 4;
+
+/**
+ * Times a unit that has walked a route to its end, short of where it was sent, will plan
+ * again from where it got to.
+ *
+ * A\* returns the best route it found even when it could not reach the goal, and inside
+ * Rome it very often cannot: the nav grid pads every solid by half a cell, so the narrower
+ * streets are closed in it, and a destination in one of them is unreachable from outside.
+ * The unit used to walk its partial route, run out of waypoints and stop — measured, six of
+ * eight ordered 140 m inside the wall ended between 14 and 190 m short with an empty queue.
+ * A fresh search from 80 m closer is a different and much smaller problem, and usually
+ * solves it. Three attempts, so a genuinely unreachable goal costs three searches and then
+ * the unit settles where it got to, which is the honest answer.
+ */
+const ROUTE_RESUMES = 3;
+
+/** Within this of the ordered destination, a unit has arrived and stops re-planning. */
+const ROUTE_ARRIVE_TOL = 7;
+
+/**
+ * Ticks between two attempts at re-planning the same order.
+ *
+ * Two seconds, and without it the retry budget evaporates in three ticks. A unit whose
+ * straight line is blocked from the very first metre gets `holdShortOfSolid` reach of zero,
+ * so its destination is where it already stands, so it "arrives" on the next tick, so it
+ * re-plans — and the three attempts are gone before the first search has even been popped
+ * off the queue. Measured: **71 of 71 units forced to Hold**, every one of them having spent
+ * its whole budget inside a tenth of a second.
+ */
+const RESUME_COOLDOWN = 60;
+
+/**
+ * Ticks of a move order making no progress before the unit gives up on its current leg.
+ *
+ * A second and a half. The anchor slides along masonry rather than through it, and when
+ * both axes are blocked it stops dead — but `updateUnitOrder` only pops the next waypoint
+ * once the anchor gets within 0.35 m of the current one, so a jammed anchor holds a queue
+ * of legs it will never consume. Measured on eight units funnelled through the Porta
+ * Flaminia at once: four ended the run with 12 to 39 waypoints still queued and 0.0 m of
+ * movement over the previous five seconds, 1.2 to 2.9 m from masonry. Nothing was wrong
+ * with their routes; they simply could not reach the next point on one.
+ */
+const STALL_TICKS = 45;
+/** Metres of anchor movement in a tick that counts as progress. Well under a walk step. */
+const STALL_EPS = 0.02;
+
+/**
+ * How often a unit chasing an enemy re-examines its route, in ticks.
+ *
+ * A second and a half. The target moves, so the route staleness is real, but a formation
+ * that re-plans every tick never commits to a leg — the same reason `OrderBook` holds a
+ * facing order for 45 ticks.
+ */
+const ATTACK_REROUTE_TICKS = 45;
 
 /** Scratch for the standable-goal nudge. */
 const ROUTE_GOAL = { x: 0, z: 0 };
@@ -276,12 +345,38 @@ export class BattleSystem implements Subsystem {
   private nav: NavProvider | null = null;
   /** Player move orders whose route has been asked for and not yet arrived. */
   private readonly pendingRoutes = new Map<number, PendingRoute>();
+  /**
+   * The destination a move order actually named, kept alive after its route is installed.
+   *
+   * `pendingRoutes` is the in-flight request and is deleted the moment a route lands, so it
+   * cannot answer "did this unit get where it was sent". This can.
+   */
+  private readonly routeGoals = new Map<number, {
+    gx: number; gz: number; facing: number; tries: number;
+    /** Earliest tick another attempt may be spent. See `RESUME_COOLDOWN`. */
+    nextTick: number;
+  }>();
+  /**
+   * Fixed steps since the system started. Owned here rather than read off `ctx.time` so
+   * every rate limit in this file counts the same thing whatever drives the clock, and so
+   * nothing in `fixedUpdate` depends on wall time.
+   */
+  private tickCount = 0;
 
   private terrain?: TerrainSystem;
   private ctx!: EngineContext;
   private nextUnitId = 0;
   /** Per-faction living soldier tally, refreshed each tick. */
-  readonly strength: Record<number, number> = { 0: 0, 1: 0 };
+  /*
+   * Typed `Record<Faction, number>` rather than `Record<number, number>` on purpose: the
+   * loose form let `{ 0: 0, 1: 0 }` compile while a third faction existed, so `strength[2]`
+   * was `undefined` and every `+=` against it produced NaN from the first tick. The HUD
+   * reads this and the sim does not, so the symptom was cosmetic — which is exactly why it
+   * needs to be a compile error rather than a number nobody checks.
+   */
+  readonly strength: Record<Faction, number> = Object.fromEntries(
+    ALL_FACTIONS.map((f) => [f, 0])
+  ) as Record<Faction, number>;
 
   init(ctx: EngineContext): void {
     this.ctx = ctx;
@@ -341,6 +436,10 @@ export class BattleSystem implements Subsystem {
     // leg came out of the string-puller, so its corridor is already known clear.
     if (nav.directRouteClear(u.x, u.z, gx, gz, ROUTE_RADIUS)) return;
 
+    // The straight line is not walkable, so the destination `applyOrder` just wrote is an
+    // order to walk into masonry. Hold the anchor short of it until a route arrives.
+    this.holdShortOfSolid(u, gx, gz);
+
     /**
      * Pull the destination onto ground a body can actually stand on before searching.
      *
@@ -355,10 +454,36 @@ export class BattleSystem implements Subsystem {
       gz = ROUTE_GOAL.z;
     }
     const key = u.id + SIM_ROUTE_ID;
+    // Drop any result from a previous order for this unit. `collectRoutes` accepts a path
+    // whose goal is within 8 m of what it asked for, and a stale one can satisfy that test
+    // before this request has even been searched.
+    nav.clearPath(key);
     if (!nav.pending(key)) {
       nav.requestPath(key, u.x, u.z, gx, gz, ROUTE_RADIUS, ROUTE_RADIUS, 3);
     }
-    this.pendingRoutes.set(u.id, { gx, gz, facing, ttl: ROUTE_TTL });
+    this.pendingRoutes.set(u.id, { gx, gz, facing, ttl: ROUTE_TTL, retries: ROUTE_RETRIES });
+  }
+
+  /**
+   * Aim the anchor at the last point on the straight line it can legally reach.
+   *
+   * The invariant this exists to keep is simple and testable: **no order the sim holds
+   * ever points through masonry.** A unit whose route has not arrived yet still walks —
+   * as far as the ground allows — and then waits, rather than pressing its front rank into
+   * the curtain. Backing off by `ROUTE_RADIUS` leaves the formation clear of the face
+   * instead of exactly on it, so the collider is not fighting the order every tick.
+   */
+  private holdShortOfSolid(u: UnitGroupState, gx: number, gz: number): void {
+    const nav = this.nav;
+    if (!nav) return;
+    const dx = gx - u.x;
+    const dz = gz - u.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 1e-3) return;
+    const f = nav.clearLineFraction(u.x, u.z, gx, gz, ROUTE_RADIUS);
+    const reach = Math.max(0, len * f - ROUTE_RADIUS);
+    u.targetX = u.x + (dx / len) * reach;
+    u.targetZ = u.z + (dz / len) * reach;
   }
 
   /**
@@ -376,10 +501,13 @@ export class BattleSystem implements Subsystem {
       const u = this.unitById(id);
       if (!u || u.destroyed) {
         this.pendingRoutes.delete(id);
+        this.routeGoals.delete(id);
         continue;
       }
-      // The unit changed its mind: an attack or a halt supersedes the route.
-      if (u.order !== UnitOrder.MoveTo && u.order !== UnitOrder.AttackMove) {
+      // The unit changed its mind: a halt or a new order supersedes the route. An attack
+      // is not a change of mind — it wants a route too, and used to get none at all.
+      if (u.order !== UnitOrder.MoveTo && u.order !== UnitOrder.AttackMove
+        && u.order !== UnitOrder.AttackUnit) {
         this.pendingRoutes.delete(id);
         continue;
       }
@@ -389,14 +517,34 @@ export class BattleSystem implements Subsystem {
         this.pendingRoutes.delete(id);
         continue;
       }
-      const p = nav.pathFor(id + SIM_ROUTE_ID);
+      const key = id + SIM_ROUTE_ID;
+      const p = nav.pathFor(key);
       // A partial route is accepted. `ok` is false whenever the search did not reach the
       // exact goal cell, but `store` still writes the best route it found, and walking as
       // far toward the objective as the ground allows is what a player expects from a
       // click — certainly more than standing still because the last ten metres are a wall.
       const fresh = p && p.n >= 2 && Math.hypot(p.goalX - req.gx, p.goalZ - req.gz) < 8;
       if (!fresh) {
-        if (--req.ttl <= 0) this.pendingRoutes.delete(id);
+        /*
+         * Nothing is in flight and nothing usable came back, so the pathfinder has given
+         * up on this one — its request TTL expired, or its search was capped, or the goal
+         * was unreachable and the single-point failure marker is all there is. Ask again.
+         *
+         * This is the difference between "the click is being worked on" and "the click was
+         * silently binned", and the sim cannot tell them apart from the outside. Without
+         * the retry, six of eight units ordered across the wall kept their original
+         * straight line for the rest of the battle.
+         */
+        if (--req.ttl <= 0) {
+          if (req.retries > 0 && !nav.pending(key)) {
+            req.retries--;
+            req.ttl = ROUTE_TTL;
+            nav.clearPath(key);
+            nav.requestPath(key, u.x, u.z, req.gx, req.gz, ROUTE_RADIUS, ROUTE_RADIUS, 3);
+          } else {
+            this.pendingRoutes.delete(id);
+          }
+        }
         continue;
       }
       u.targetX = p.pts[2];
@@ -649,6 +797,9 @@ export class BattleSystem implements Subsystem {
             // is what every leg of an AI route is by construction, so this costs the AI
             // one corridor test and never displaces its plan.
             this.requestRoute(u, o.x, o.z, face);
+            this.routeGoals.set(u.id, {
+              gx: o.x, gz: o.z, facing: face, tries: ROUTE_RESUMES, nextTick: this.tickCount,
+            });
           }
           u.order = o.kind === 'attackMove' ? UnitOrder.AttackMove : UnitOrder.MoveTo;
           u.running = !!o.running;
@@ -666,6 +817,15 @@ export class BattleSystem implements Subsystem {
           u.targetUnitId = o.targetUnitId;
           u.running = true;
           u.waypoints.length = 0;
+          this.pendingRoutes.delete(u.id);
+          this.routeGoals.delete(u.id);
+          // Let `steerAttack` route it on the very next tick rather than after the usual
+          // interval. An attack order used to bypass the pathfinder entirely: measured, a
+          // cohort told to attack an enemy 177 m away on the far side of the wall was given
+          // a single straight leg with 8 m of it inside the curtain, and spent 970 of the
+          // next 1,800 ticks with its anchor in masonry without ever crossing.
+          this.growUnitScratch(u.id + 1);
+          this.attackRouteAt[u.id] = -1e9;
           break;
         }
         case 'garrison': {
@@ -687,6 +847,8 @@ export class BattleSystem implements Subsystem {
           u.targetZ = u.z;
           u.targetUnitId = -1;
           u.waypoints.length = 0;
+          this.pendingRoutes.delete(u.id);
+          this.routeGoals.delete(u.id);
           break;
         }
         case 'facing': {
@@ -722,14 +884,14 @@ export class BattleSystem implements Subsystem {
 
   fixedUpdate(dt: number, ctx: EngineContext): void {
     const p = this.pool;
+    this.tickCount++;
     p.savePrevious();
     this.hash.rebuild(p);
     // A gate opening or a wall coming down changes what is solid. One integer compare when
     // nothing has moved, which is every tick but a handful.
     this.refreshObstacles();
 
-    this.strength[Faction.Rome] = 0;
-    this.strength[Faction.Germanic] = 0;
+    for (const f of ALL_FACTIONS) this.strength[f] = 0;
 
     // Structures resolve first: a man's support height and his slot on a wall-walk have
     // to be current before anything steers him or asks how far away an enemy is.
@@ -768,6 +930,15 @@ export class BattleSystem implements Subsystem {
   private routDirZ = new Float32Array(64);
   /** Seconds before a broken unit may pick a new direction to run in. */
   private routHold = new Float32Array(64);
+  /**
+   * Tick at which each unit last examined its route to the enemy it is attacking.
+   *
+   * Filled with a large negative so a unit's first attack order routes immediately rather
+   * than after `ATTACK_REROUTE_TICKS`.
+   */
+  private attackRouteAt = new Float32Array(64).fill(-1e9);
+  /** Consecutive ticks a unit under a move order has failed to advance. See `STALL_TICKS`. */
+  private stallTicks = new Float32Array(64);
 
   private growUnitScratch(n: number): void {
     if (this.frontGaps.length >= n) return;
@@ -790,6 +961,12 @@ export class BattleSystem implements Subsystem {
     const og = new Float32Array(size);
     og.set(this.orderGrace);
     this.orderGrace = og;
+    const ar = new Float32Array(size).fill(-1e9);
+    ar.set(this.attackRouteAt);
+    this.attackRouteAt = ar;
+    const stl = new Float32Array(size);
+    stl.set(this.stallTicks);
+    this.stallTicks = stl;
     const bo = new Uint8Array(size);
     bo.set(this.breakingOff);
     this.breakingOff = bo;
@@ -904,9 +1081,15 @@ export class BattleSystem implements Subsystem {
         // Stop with the fronts a shield's width apart. `resolveCrowding` and the press
         // then close the last few centimetres, which is what makes the seam ragged.
         const standoff = CONTACT_GAP;
-        u.targetX = AIM.x - (dx / d) * standoff;
-        u.targetZ = AIM.z - (dz / d) * standoff;
+        const ax = AIM.x - (dx / d) * standoff;
+        const az = AIM.z - (dz / d) * standoff;
         u.targetFacing = Math.atan2(dx, dz);
+        // Straight at him only if a straight line is something a formation can walk. When
+        // it is not, `steerAttack` owns the destination until a route arrives.
+        if (!this.steerAttack(u, ax, az)) {
+          u.targetX = ax;
+          u.targetZ = az;
+        }
       }
     }
 
@@ -942,6 +1125,12 @@ export class BattleSystem implements Subsystem {
     const dx = u.targetX - u.x;
     const dz = u.targetZ - u.z;
     const distToTarget = Math.hypot(dx, dz);
+    // Where the anchor stood before this step, for the stall watchdog below.
+    const beforeX = u.x;
+    const beforeZ = u.z;
+    let moving = false;
+    /** How much of the heading points at the objective; see the movement branch. */
+    let headingAlign = 1;
 
     // Locked in contact: hold the anchor and only pivot, slowly. `Combat.resolvePush`
     // is the only thing allowed to move the anchor from here, so a line that is losing
@@ -970,6 +1159,10 @@ export class BattleSystem implements Subsystem {
     this.breakingOff[u.id] = breakingOff ? 1 : 0;
 
     if (u.contactLock && !breakingOff) {
+      // Locked in a fight, not stuck. Clear the watchdog so a long engagement does not
+      // leave a nearly-expired count that fires on the first tick after it breaks off.
+      this.growUnitScratch(u.id + 1);
+      this.stallTicks[u.id] = 0;
       u.facing = turnToward(u.facing, u.targetFacing, dt * 0.35);
       const drain = u.engaged ? dt / (def.stamina * 2.4) : -dt / 26;
       u.fatigue = clamp01(u.fatigue + drain);
@@ -984,9 +1177,12 @@ export class BattleSystem implements Subsystem {
         u.targetZ = u.waypoints.shift()!;
         u.targetFacing = u.waypoints.shift()!;
       } else if (u.order === UnitOrder.MoveTo) {
-        u.order = UnitOrder.Hold;
+        // The queue is empty. Either the unit is where it was sent, or it walked a route
+        // that stopped short of it and should plan again from here.
+        if (!this.resumeRoute(u)) u.order = UnitOrder.Hold;
       }
     } else {
+      moving = true;
       const f = formation(u.formationId);
       const base = routing ? def.runSpeed * 1.06
         : u.charging ? def.chargeSpeed
@@ -1007,6 +1203,7 @@ export class BattleSystem implements Subsystem {
       // heading points at the objective means a unit must turn before it can move, and
       // the path straightens out.
       const align = Math.cos(wrapAngle(u.facing - travelFacing));
+      headingAlign = align;
       const heading = align > 0 ? 0.25 + 0.75 * align : Math.max(0.06, 0.25 + align * 0.19);
       let step = Math.min(distToTarget, speed * heading * dt);
 
@@ -1035,6 +1232,8 @@ export class BattleSystem implements Subsystem {
       }
     }
 
+    this.checkStall(u, moving, headingAlign, beforeX, beforeZ, distToTarget);
+
     if (distToTarget <= 0.35) {
       // A formation standing still wheels *slowly* — 0.6 rad/s is a 180-degree about-face
       // in five seconds, which is about right for several hundred men and, more to the
@@ -1050,6 +1249,147 @@ export class BattleSystem implements Subsystem {
     u.fatigue = clamp01(u.fatigue + drain);
 
     if (u.chargeTimer > 0) u.chargeTimer = Math.max(0, u.chargeTimer - dt);
+  }
+
+  /**
+   * Break a unit out of a leg it cannot walk.
+   *
+   * The anchor is stopped by masonry, or wedged behind other cohorts queueing for the same
+   * gate, and the arrival test that pops the next waypoint never fires. Rather than pick a
+   * cause, this watches the only thing that matters — is the unit getting anywhere — and
+   * after `STALL_TICKS` of nothing, drops the leg it is stuck on and takes the next. When
+   * the queue runs out it re-plans from where it actually is, which is a different search
+   * from the one that produced the leg and usually a solvable one.
+   *
+   * Contact is exempt: a unit locked front to front with an enemy is not stuck, it is
+   * fighting, and `contactLock` already holds the anchor deliberately.
+   */
+  private checkStall(
+    u: UnitGroupState, moving: boolean, headingAlign: number,
+    beforeX: number, beforeZ: number, distToTarget: number
+  ): void {
+    this.growUnitScratch(u.id + 1);
+    /*
+     * A wheeling formation is not a stuck one. The step is scaled by how much of the
+     * heading points at the objective, and the floor on that factor is 0.06 — so a cohort
+     * turning through a large angle translates about 6 mm a tick, well under `STALL_EPS`,
+     * for the second or two the turn takes. Counting that as a stall made the watchdog drop
+     * a perfectly good leg mid-wheel: the reach case went from arriving 12 m short to
+     * stopping 53.3 m short, having travelled 66 m less. 0.5 is 60 degrees off the line of
+     * march, by which point the unit is genuinely walking rather than pivoting.
+     */
+    const wanted = moving
+      && headingAlign > 0.5
+      && (u.order === UnitOrder.MoveTo || u.order === UnitOrder.AttackMove || u.order === UnitOrder.AttackUnit)
+      && !u.contactLock
+      && distToTarget > 0.35;
+    if (!wanted) {
+      this.stallTicks[u.id] = 0;
+      return;
+    }
+    if (Math.hypot(u.x - beforeX, u.z - beforeZ) > STALL_EPS) {
+      this.stallTicks[u.id] = 0;
+      return;
+    }
+    if (++this.stallTicks[u.id] < STALL_TICKS) return;
+    this.stallTicks[u.id] = 0;
+    if (u.waypoints.length >= 3) {
+      u.targetX = u.waypoints.shift()!;
+      u.targetZ = u.waypoints.shift()!;
+      u.targetFacing = u.waypoints.shift()!;
+      return;
+    }
+    if (u.order === UnitOrder.MoveTo && this.resumeRoute(u)) return;
+    // Nothing left to try. Settle here rather than lean on the stone for the whole battle.
+    if (u.order === UnitOrder.MoveTo) {
+      u.order = UnitOrder.Hold;
+      u.targetX = u.x;
+      u.targetZ = u.z;
+    }
+  }
+
+  /**
+   * A unit has reached the end of its route without reaching its order. Plan again.
+   *
+   * Returns true when a new attempt is under way, so the caller leaves the order standing;
+   * false when the unit has arrived, has run out of attempts, or was never routed.
+   */
+  private resumeRoute(u: UnitGroupState): boolean {
+    const g = this.routeGoals.get(u.id);
+    if (!g) return false;
+    if (Math.hypot(g.gx - u.x, g.gz - u.z) <= ROUTE_ARRIVE_TOL) {
+      this.routeGoals.delete(u.id);
+      return false;
+    }
+    // A search is already in flight for this unit. Keep the order alive and wait for it
+    // rather than spending another attempt on the same question.
+    if (this.pendingRoutes.has(u.id)) return true;
+    if (this.tickCount < g.nextTick) return true;
+    if (g.tries <= 0) {
+      this.routeGoals.delete(u.id);
+      return false;
+    }
+    g.tries--;
+    g.nextTick = this.tickCount + RESUME_COOLDOWN;
+    this.requestRoute(u, g.gx, g.gz, g.facing);
+    // `requestRoute` short-circuits and queues nothing when the straight line is now clear
+    // — the unit has moved, so it often is — in which case simply finish the job.
+    if (!this.pendingRoutes.has(u.id)) {
+      u.targetX = g.gx;
+      u.targetZ = g.gz;
+      u.targetFacing = g.facing;
+    }
+    return true;
+  }
+
+  /**
+   * Take charge of an attacking unit's destination when it cannot walk straight at its
+   * quarry. Returns true when it has set `targetX/targetZ` itself.
+   *
+   * An attack is a move order with a destination that keeps moving, and it needs the
+   * pathfinder for exactly the same reason a move does. It never had it: `applyOrder` set
+   * `AttackUnit` and the aim above pointed the anchor at the enemy's front rank every
+   * tick, wall or no wall. The player's words were "when I select them to try to attack an
+   * enemy they do try to walk to that enemy in a straight line, which could be through the
+   * wall".
+   *
+   * While a route is being followed this leaves the waypoint queue alone. It only re-checks
+   * the direct line every `ATTACK_REROUTE_TICKS`, because a formation that re-plans every
+   * tick never commits to a leg, and because the check costs a corridor trace.
+   */
+  private steerAttack(u: UnitGroupState, ax: number, az: number): boolean {
+    const nav = this.nav;
+    if (!nav) return false;
+    this.growUnitScratch(u.id + 1);
+    const due = this.tickCount - this.attackRouteAt[u.id] >= ATTACK_REROUTE_TICKS;
+
+    if (u.waypoints.length > 0) {
+      // Following a route. Abandon it the moment the quarry is in the open ahead — the
+      // detour exists to get round something, and holding it after that reads as the unit
+      // ignoring an enemy it could simply walk at.
+      if (due) {
+        this.attackRouteAt[u.id] = this.tickCount;
+        if (nav.directRouteClear(u.x, u.z, ax, az, ROUTE_RADIUS)) {
+          u.waypoints.length = 0;
+          this.pendingRoutes.delete(u.id);
+          return false;
+        }
+      }
+      return true;
+    }
+
+    if (nav.directRouteClear(u.x, u.z, ax, az, ROUTE_RADIUS)) {
+      this.pendingRoutes.delete(u.id);
+      return false;
+    }
+    // Blocked. Walk as far up the straight line as the ground allows, and ask for a route.
+    if (due) {
+      this.attackRouteAt[u.id] = this.tickCount;
+      this.requestRoute(u, ax, az, u.targetFacing);
+      return true;
+    }
+    this.holdShortOfSolid(u, ax, az);
+    return true;
   }
 
   /** Direction pointing away from the nearest enemy mass. */

@@ -60,8 +60,94 @@ const NODE_BUDGET = 2400;
 const FLOW_BUDGET = 2600;
 /** Requests waiting longer than this are dropped — the situation has moved on. */
 const REQUEST_TTL_TICKS = 90;
+/**
+ * A player's own order waits far longer before it is given up on.
+ *
+ * Fifteen seconds against the AI's three. An AI request that ages out is a plan the
+ * commander has already replaced; a player request that ages out is a click that did
+ * nothing, and the unit is meanwhile walking the straight line the order came in on. This
+ * is priority-gated rather than a blanket rise so a busy AI still sheds work.
+ */
+const PLAYER_TTL_TICKS = 450;
+/** Requests at or above this priority are the player's own and get the longer TTL. */
+const PLAYER_PRIORITY = 3;
 /** Hard cap on the request queue so a bug cannot make it grow without bound. */
 const MAX_QUEUE = 48;
+
+/**
+ * Cost ceiling on a route: a multiple of the straight-line estimate, plus a flat allowance.
+ *
+ * Branch and bound, not a heuristic tweak — a cell whose `f` already exceeds what any
+ * acceptable route may cost cannot lie on one, so it is never opened. Without it, eight
+ * units ordered 140 m inside the city queued eight searches, the pathfinder ran flat out at
+ * 2,400 expansions a tick for 100 ticks and spent **240,000 expansions on three searches**
+ * — roughly 80,000 each — and the request TTL then binned the other twenty-one queued
+ * requests in a single tick. Six of the eight player orders were never searched at all and
+ * kept the straight line through the Aurelian Wall they were issued with. The cost is
+ * inherent to an admissible heuristic: it aims every expansion at the curtain, so the whole
+ * Campus Martius is expanded before the gate 200 m to the side is ever considered.
+ *
+ * Both constants are larger than the obvious values, and both were wrong smaller:
+ *
+ *  - **The multiplier is on a cost, not a length.** `g` accumulates `cost[i]`, which is 1 on
+ *    firm level ground, up to 2.6 in the river margin and more on a slope, so a route only
+ *    1.9x longer than the straight line can cost 4x it. At `MAX_DETOUR = 4` a *longer* order
+ *    succeeded while a shorter one over the same ground failed.
+ *  - **A multiplicative bound alone is nonsense for a short order.** A unit 53 m from a spot
+ *    on the far side of the curtain must still walk to the Porta Flaminia and back, several
+ *    hundred metres, and 4x53 does not reach it. Measured: that order returned no route at
+ *    all and the unit stood against the wall — the player's original complaint, still live,
+ *    for every order inside about 80 m of the curtain. The flat allowance is what carries a
+ *    short order to an opening and back; 700 covers the Aurelian circuit's widest span
+ *    between two legal openings, about 630 m.
+ *
+ * Both were tuned against cost, not taste. At 6x + 1400 the bound is so loose that the
+ * queue never empties: 44% of searches hit `MAX_SEARCH_NODES`, and `pathfinding.fixedUpdate`
+ * went from 0.22 ms to **1.45 ms** with `battle.fixedUpdate` following it from 0.89 to 2.04,
+ * for no gain in route legality. At 4x + 700 both short and long orders route legally and
+ * the pathfinder costs 0.265 ms with both commanders live.
+ */
+const MAX_DETOUR = 4;
+const DETOUR_ALLOWANCE = 700;
+
+/**
+ * Expansions one search may spend before it settles for the best route it has found.
+ *
+ * A backstop under `MAX_DETOUR` for the case where the ellipse is still large — a
+ * battlefield-crossing order. Five ticks of the whole budget is already a long time to hold
+ * the queue against every other unit; beyond that the partial route is worth more than the
+ * wait, and `BattleSystem.resumeRoute` will ask again from wherever the unit gets to.
+ * Measured with both commanders live: 16 searches of 1,670 reach it.
+ */
+const MAX_SEARCH_NODES = 12000;
+
+/**
+ * How near a route must pass a gate before it is treated as using it, metres.
+ *
+ * Three fine cells. Closer than that and a route that merely skirts the gatehouse on the
+ * outside would be dragged through the passage; further and a route that genuinely uses
+ * the gate could be missed because A* approached it diagonally.
+ */
+const PORTAL_REACH = 24;
+/**
+ * How far outside the masonry the two locked axis points sit, metres.
+ *
+ * The Aurelian curtain is 3.5 m thick and the gatehouse block is 11 m deep, so 9 m either
+ * side of the gate's own centre puts both points on open ground with the whole passage
+ * between them, and the leg that joins them is perpendicular to the wall by construction.
+ */
+const PORTAL_STANDOFF = 9;
+
+/**
+ * Skirt on the straightening mask, metres.
+ *
+ * A string-pulled leg is walked as a straight line by a body about 2 m across, so 2.6 m of
+ * margin is what it needs — not the half cell the expansion mask uses to guarantee an
+ * unbroken barrier. Measured on eight routes across the city: straightening on the exact
+ * mask left 16.2 m of path inside insulae (one route 14.5 m of it), a full half-cell skirt
+ * cut that to 3.0 m but shattered the routes into 9 to 25 legs and cost an arrival.
+ */
+const TIGHT_PAD = 2.6;
 
 // ---------------------------------------------------------------------------
 // Scratch — hoisted to module scope so the hot paths never allocate
@@ -81,6 +167,8 @@ const SMOOTH_PTS: number[] = [];
 const DIRECT_PTS: number[] = [0, 0, 0, 0];
 /** Flow-field descent polyline. */
 const FLOW_PTS: number[] = [];
+/** Points the string-puller may not skip; parallel to RAW_PTS. See `routeThroughPortals`. */
+const LOCKED: boolean[] = [];
 const FOOTPRINT_CACHE = new Map<string, Footprint>();
 
 // ---------------------------------------------------------------------------
@@ -142,6 +230,16 @@ interface PathRequest {
   minRadius: number;
   priority: number;
   tick: number;
+  /**
+   * Monotonic arrival number, so equal-priority requests are served oldest first.
+   *
+   * Without it `nextRequest` was last-in-first-out among requests queued on the same tick,
+   * which is what a batch of orders always is: it scanned the queue backwards taking any
+   * *strictly* better score, and eight requests with identical priority and identical age
+   * all scored the same, so the newest won every time and the oldest never ran. The
+   * comment on that loop claimed "so nothing starves". It starved everything but the last.
+   */
+  seq: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -220,6 +318,20 @@ export class NavGrid {
   readonly cost: Float32Array;
   /** 0 = passable, 1 = blocked by terrain, 2 = blocked by a structure. */
   readonly blocked: Uint8Array;
+  /**
+   * The same mask stamped conservatively: every solid grown by half a cell.
+   *
+   * Two masks, because expansion and straightening want opposite errors. A\* must expand on
+   * the *exact* footprints or it cannot enter a street narrower than the skirt, and a
+   * player destination in one of those streets is then unreachable — measured, the flat
+   * half-cell skirt called 15.0% of the free ground inside the walls impassable and six of
+   * eight units ordered into it stopped between 14 and 190 m short. The string-puller must
+   * straighten on the *conservative* mask, because a leg it approves is walked in a
+   * straight line by a body 2 m wide, and a cell centre outside a box says nothing about
+   * whether the line between two of them clips its corner — with the exact mask alone,
+   * routes picked up 12 to 47 m inside insulae apiece.
+   */
+  readonly tight: Uint8Array;
   /** Metres from the cell centre to the nearest blocked cell, capped at 400. */
   readonly clearance: Float32Array;
 
@@ -232,6 +344,7 @@ export class NavGrid {
     this.height = new Float32Array(n);
     this.cost = new Float32Array(n);
     this.blocked = new Uint8Array(n);
+    this.tight = new Uint8Array(n);
     this.clearance = new Float32Array(n);
   }
 
@@ -305,6 +418,9 @@ export class NavGrid {
 
         cost[i] = c;
         blocked[i] = block;
+        // Terrain impassability is exact — it is a heightfield sample, not a footprint —
+        // so both masks agree on it and only structures differ.
+        this.tight[i] = block;
       }
     }
   }
@@ -359,11 +475,38 @@ export class NavGrid {
    * still produces a continuous barrier. Under-stamping is the failure that matters here —
    * a one-cell hole in a curtain is a hole an A\* search will happily route a cohort
    * through, and the men will then walk into stone.
+   *
+   * The price is real and is worth stating: the grid calls 15.0% of the free ground inside
+   * the walls impassable, because a half-cell skirt round a 14 m insula closes the narrower
+   * streets. Two cheaper skirts were tried and measured, and both cost holes in the
+   * curtain — padding each axis only to `CELL * 0.5 - h` opened **78 passable samples along
+   * 1,812 m of solid wall** (the per-axis argument is sound for an axis-aligned slab and
+   * every bay of the Aurelian curtain is rotated, because it follows the terrain crest),
+   * and padding to `CELL / sqrt(2) - min(hw, hd)` opened 6 against a baseline of 3 while
+   * dropping wall coverage from 95.0% to 89.8%. A destination in a street the grid has
+   * closed is recovered instead by `BattleSystem.resumeRoute`, which costs nothing here.
+   * `probe-nav --only=stamp` counts holes directly; do not change this without reading it.
    */
   blockBox(cx: number, cz: number, hw: number, hd: number, rot: number): void {
     const c = Math.cos(rot);
     const s = Math.sin(rot);
-    const pad = CELL * 0.5;
+    /*
+     * Two skirts. The conservative one is a flat half cell and always applies, to `tight`.
+     * The one applied to `blocked` is dropped entirely for a box whose inscribed disc is at
+     * least CELL/sqrt(2) across: such a box always covers a lattice point at any offset and
+     * any rotation, so padding it cannot prevent a hole it was never going to have.
+     *
+     * The rotation clause is not decoration. Padding each axis only to `CELL * 0.5 - h` is
+     * sound for an axis-aligned slab and unsound for a rotated one, and every bay of the
+     * Aurelian curtain is rotated because it follows the terrain crest: that rule opened 78
+     * passable samples along 1,812 m of solid wall. This one leaves the count at 3, all of
+     * them inside the gate's own bay, while freeing 6.1% of the city's ground.
+     */
+    const exactPad = Math.min(hw, hd) >= CELL * Math.SQRT1_2 ? 0 : CELL * 0.5;
+    // The straightening skirt only has to hold a formation's centre line clear of the box,
+    // so it is a body's width, not a cell's. Never less than the expansion skirt, which is
+    // what keeps the curtain continuous in both masks.
+    const pad = Math.max(exactPad, TIGHT_PAD);
     const ehw = hw + pad;
     const ehd = hd + pad;
     // World-space AABB of the grown box.
@@ -383,7 +526,10 @@ export class NavGrid {
         if (u < -ehw || u > ehw) continue;
         const v = -dx * s + dz * c;
         if (v < -ehd || v > ehd) continue;
-        this.blocked[row + gx] = 2;
+        this.tight[row + gx] = 2;
+        if (u >= -hw - exactPad && u <= hw + exactPad && v >= -hd - exactPad && v <= hd + exactPad) {
+          this.blocked[row + gx] = 2;
+        }
       }
     }
   }
@@ -407,6 +553,7 @@ export class NavGrid {
         if (Math.hypot(this.toWorld(gx) - x, this.toWorld(gz) - z) > radius) continue;
         const i = gz * this.res + gx;
         if (this.blocked[i] === 2) this.blocked[i] = 0;
+        if (this.tight[i] === 2) this.tight[i] = 0;
       }
     }
   }
@@ -430,6 +577,7 @@ export class NavGrid {
           if (cx < 0 || cx >= this.res) continue;
           if (Math.hypot(this.toWorld(cx) - x, this.toWorld(cz) - z) <= r) {
             this.blocked[cz * this.res + cx] = 2;
+            this.tight[cz * this.res + cx] = 2;
           }
         }
       }
@@ -470,7 +618,9 @@ export class NavGrid {
     for (let s = 0; s <= steps; s++) {
       const t = s / steps;
       const c = this.cellAt(x1 + dx * t, z1 + dz * t);
-      if (this.blocked[c]) return false;
+      // `tight`, not `blocked`: see the field's own comment. A straightened leg is walked
+      // as a straight line, so it must keep the conservative margin the expansion does not.
+      if (this.tight[c]) return false;
       if (this.clearance[c] < radius) return false;
     }
     return true;
@@ -501,6 +651,24 @@ class AStarSearch {
   /** Node closest to the goal seen so far, so a failed search still yields progress. */
   private bestCell = -1;
   private bestH = Infinity;
+  /**
+   * Deepest node reached, kept only so a failed search can report how far it explored.
+   *
+   * It is deliberately **not** used as a route. It was, briefly: the idea was that a route
+   * which must first walk *away* from its goal never improves on `h(start)`, so `bestCell`
+   * stays at the start and the caller gets a one-point path it cannot install. Falling back
+   * to the deepest node fixes that and introduces something worse — the deepest node is the
+   * furthest thing explored, which is in whatever direction the frontier happened to run.
+   * Measured: a 63 m order produced a 332 m route ending **215 m from where the player
+   * clicked**, which is bug (a) wearing bug (b)'s clothes.
+   *
+   * The case it was reaching for is now handled where it belongs, by `MAX_DETOUR` and
+   * `DETOUR_ALLOWANCE` being large enough for a real gate detour, so the search reaches the
+   * goal instead of needing a consolation prize. Orders 30 m and 60 m inside the wall route
+   * legally with this fallback gone.
+   */
+  private deepCell = -1;
+  private deepG = -1;
 
   constructor(grid: NavGrid) {
     this.grid = grid;
@@ -526,6 +694,9 @@ class AStarSearch {
     return (dx + dz + (SQRT2 - 2) * Math.min(dx, dz)) * CELL;
   }
 
+  /** Nothing with an `f` above this is opened; see `MAX_DETOUR`. */
+  private limit = Infinity;
+
   begin(start: number, goal: number, radius: number): void {
     this.searchId++;
     this.start = start;
@@ -540,6 +711,9 @@ class AStarSearch {
     this.from[start] = -1;
     this.bestCell = start;
     this.bestH = this.f[start];
+    this.deepCell = start;
+    this.deepG = 0;
+    this.limit = this.f[start] * MAX_DETOUR + DETOUR_ALLOWANCE;
     this.open.push(start);
   }
 
@@ -576,6 +750,10 @@ class AStarSearch {
         this.bestH = h;
         this.bestCell = current;
       }
+      if (this.g[current] > this.deepG) {
+        this.deepG = this.g[current];
+        this.deepCell = current;
+      }
 
       const cx = current % res;
       const cz = (current - cx) / res;
@@ -598,17 +776,22 @@ class AStarSearch {
         const stepLen = diagonal ? CELL * SQRT2 : CELL;
         const climb = height[n] - hc;
         const tentative = gc + stepLen * (cc + cost[n]) * 0.5 + (climb > 0 ? climb * CLIMB_COST_K : 0);
+        // Branch and bound. `f` is a lower bound on any route through this cell, so a cell
+        // over the limit cannot lie on an acceptable one. Pruning here rather than at pop
+        // keeps it out of the heap entirely, which is where the saving is.
+        const fn = tentative + this.heuristic(n);
+        if (fn > this.limit) continue;
 
         if (this.seen[n] !== id) {
           this.seen[n] = id;
           this.g[n] = tentative;
           this.from[n] = current;
-          this.f[n] = tentative + this.heuristic(n);
+          this.f[n] = fn;
           this.open.push(n);
         } else if (tentative < this.g[n] - 1e-4) {
           this.g[n] = tentative;
           this.from[n] = current;
-          this.f[n] = tentative + this.heuristic(n);
+          this.f[n] = fn;
           this.open.push(n);
         }
       }
@@ -634,9 +817,20 @@ class AStarSearch {
     return out.length;
   }
 
-  /** The node closest to the goal that this search reached. */
+  /**
+   * The node closest to the goal that this search reached.
+   *
+   * When that is the start itself, the honest answer is "no progress" and the caller gets a
+   * one-point path flagged `ok: false`. `BattleSystem` re-asks on that, which is a better
+   * outcome than a confidently wrong route in the wrong direction; see `deepCell`.
+   */
   get best(): number {
     return this.bestCell;
+  }
+
+  /** How far the frontier got, for diagnostics only. */
+  get deepest(): number {
+    return this.deepG;
   }
 }
 
@@ -888,10 +1082,20 @@ export class PathfindingSystem implements Subsystem {
   grid!: NavGrid;
   private search!: AStarSearch;
   private flows = new Map<string, FlowField>();
+  /** Legal crossings the grid is too coarse to represent, read from `city.getGates()`. */
+  private portals: { x: number; z: number; nx: number; nz: number }[] = [];
+  /** The terrain-only mask, kept so a re-stamp does not have to resample the heightfield. */
+  private terrainMask: Uint8Array | null = null;
+  /** `obstacleGeneration` the grid was last stamped against. */
+  private cityGeneration = -1;
   private queue: PathRequest[] = [];
   private results = new Map<number, NavPath>();
   private activeRequest: PathRequest | null = null;
   private tick = 0;
+  /** Monotonic request counter; see `PathRequest.seq`. */
+  private seq = 0;
+  /** Set while finishing a search that hit `MAX_SEARCH_NODES`, to suppress the narrow retry. */
+  private cappedOut = false;
   private city: CityNavProvider | null = null;
   private terrain?: TerrainSystem;
 
@@ -906,6 +1110,30 @@ export class PathfindingSystem implements Subsystem {
     queueDepth: 0,
     flowRebuilds: 0,
     cityObstacles: 0,
+    /**
+     * Requests shed without ever being searched, by TTL or by queue overflow.
+     *
+     * NOT expected to be zero, and an earlier version of this comment claimed it should be.
+     * Shedding is what a bounded queue does under load: measured at 3,074 men with both
+     * commanders live, 112 requests were shed across 362 searches. It was happening before
+     * this counter existed too — the old code spliced them out silently — so the number is
+     * newly visible rather than newly true. What *must* stay at zero is `droppedPlayer`.
+     */
+    dropped: 0,
+    /**
+     * Of those, requests at player priority.
+     *
+     * The whole point of `PLAYER_PRIORITY`, `PLAYER_TTL_TICKS` and the priority ordering in
+     * `evictOne` is that a human's click is never the thing thrown away. That is a claim,
+     * so it is counted.
+     */
+    droppedPlayer: 0,
+    /** Searches stopped at MAX_SEARCH_NODES and settled with a partial route. */
+    capped: 0,
+    /** Times the grid was re-stamped because the city changed under it. */
+    restamps: 0,
+    /** Tick of the most recent re-stamp, for the determinism probe. */
+    lastRestampTick: -1,
   };
 
   init(ctx: EngineContext): void {
@@ -925,6 +1153,28 @@ export class PathfindingSystem implements Subsystem {
     const city = ctx.tryGet('city') as unknown as CityNavProvider | undefined;
     this.city = city ?? null;
     if (!city) return;
+    this.restamp(city);
+  }
+
+  /**
+   * Re-read the city's solids into the grid.
+   *
+   * Run again whenever the city bumps `obstacleGeneration`, because it does that at
+   * runtime: `Siege` rams the Porta Flaminia open mid-battle (`Siege.setGateOpen`), and
+   * `BattleSystem` already re-indexes its collision field on the same signal. Stamping only
+   * at `init` left the pathfinder routing against the world as it was at deployment while
+   * everything else moved on.
+   *
+   * The terrain mask is snapshotted before any structure is stamped, so a re-stamp restores
+   * it rather than rebuilding it from the heightfield.
+   */
+  private restamp(city: CityNavProvider): void {
+    if (this.terrainMask) {
+      this.grid.blocked.set(this.terrainMask);
+      this.grid.tight.set(this.terrainMask);
+    } else {
+      this.terrainMask = this.grid.blocked.slice();
+    }
 
     let stamped = 0;
     try {
@@ -941,6 +1191,33 @@ export class PathfindingSystem implements Subsystem {
       for (const f of this.flows.values()) f.downsample(this.grid);
     }
     this.stats.cityObstacles = stamped;
+    this.cityGeneration = Number(
+      (city as unknown as { obstacleGeneration?: number }).obstacleGeneration ?? 0
+    );
+  }
+
+  /**
+   * One integer compare per tick, which is every tick but the one where a gate gives way.
+   *
+   * A re-stamp costs a memcpy of two masks, 1,827 box stamps and a two-pass distance
+   * transform: **measured at 20.5 ms**, which is one dropped frame. It is deliberately not
+   * amortised. It happens at most once or twice in a battle — the moment the ram breaks the
+   * gate, with the camera already shaking — and a pathfinder that is half-updated for
+   * several frames is a worse thing to own than one frame that runs long.
+   */
+  private watchCity(): void {
+    const city = this.city;
+    if (!city) return;
+    const gen = Number((city as unknown as { obstacleGeneration?: number }).obstacleGeneration ?? 0);
+    if (gen === this.cityGeneration) return;
+    try {
+      this.stats.restamps++;
+      this.stats.lastRestampTick = this.tick;
+      this.restamp(city);
+    } catch (err) {
+      console.warn('[ai/pathfinding] city re-stamp failed, keeping the old grid:', err);
+      this.cityGeneration = gen;
+    }
   }
 
   /**
@@ -1012,6 +1289,7 @@ export class PathfindingSystem implements Subsystem {
    * cohort make itself thin enough to use one.
    */
   private openGates(city: CityNavProvider): void {
+    this.portals.length = 0;
     const gates = city.getGates?.();
     if (!Array.isArray(gates)) return;
     for (const g of gates) {
@@ -1028,7 +1306,79 @@ export class PathfindingSystem implements Subsystem {
       for (let t = -14; t <= 14; t += CELL * 0.5) {
         this.grid.clearStructure(x + nx * t, z + nz * t, CELL * 0.5);
       }
+      this.portals.push({ x, z, nx, nz });
     }
+  }
+
+  /**
+   * Force a route that uses a gate onto the gate's own axis.
+   *
+   * The nav grid cannot express this passage. A cell is 7 m and the Porta Flaminia's
+   * carriageway is 4.3 m, so `clearStructure` opens whichever cells have a centre within
+   * 3.5 m of the axis, `rebuildClearance` then reports 7 m of clearance in them because
+   * that is one cell step to the nearest blocked neighbour, and the string-puller straightens
+   * the route through a corner of the gatehouse in good faith. Measured: four of eight
+   * routes crossed the curtain 4.1 m west of the gate's centreline, and three cohorts then
+   * parked their anchors against the masonry there for the rest of the run — 0.0, 0.2 and
+   * 0.8 m of movement over five seconds while still holding a valid route.
+   *
+   * So the two points either side of the passage are inserted into the raw path and locked
+   * against the smoother. They come from `getGates()`, so a gate that closes, opens, moves
+   * or is joined by a second one changes this without an edit here.
+   *
+   * Returns the number of points written to `RAW_PTS`, and fills `LOCKED` for `smooth`.
+   */
+  private routeThroughPortals(n: number): number {
+    LOCKED.length = 0;
+    for (let i = 0; i < n; i++) LOCKED.push(false);
+    if (this.portals.length === 0 || n < 2) return n;
+    // Locks are spliced alongside the points rather than rebuilt, so a second gate cannot
+    // unlock the first one's axis. Rebuilding the whole mask inside this loop did exactly
+    // that: with two gates, the earlier portal's points were freed and the smoother
+    // straightened the route 20 m along the curtain, through solid masonry.
+    let shifted = false;
+
+    for (const p of this.portals) {
+      // Where does the path come closest to the gate? Only a path that actually uses it
+      // is worth rewriting, and 24 m is three cells either side of the passage.
+      let at = -1;
+      let bestD = PORTAL_REACH;
+      for (let i = 0; i < n; i++) {
+        const d = Math.hypot(RAW_PTS[i * 2] - p.x, RAW_PTS[i * 2 + 1] - p.z);
+        if (d < bestD) { bestD = d; at = i; }
+      }
+      if (at < 0) continue;
+      // The path must genuinely pass through, not merely walk past the gatehouse outside.
+      const sideStart = (RAW_PTS[0] - p.x) * p.nx + (RAW_PTS[1] - p.z) * p.nz;
+      const sideEnd = (RAW_PTS[(n - 1) * 2] - p.x) * p.nx + (RAW_PTS[(n - 1) * 2 + 1] - p.z) * p.nz;
+      if (sideStart * sideEnd > 0) continue;
+
+      // Two points on the axis, outside and inside, ordered to match the direction of travel.
+      const outer = sideStart > 0 ? PORTAL_STANDOFF : -PORTAL_STANDOFF;
+      const ax = p.x + p.nx * outer;
+      const az = p.z + p.nz * outer;
+      const bx = p.x - p.nx * outer;
+      const bz = p.z - p.nz * outer;
+
+      // Replace the run of points nearest the gate. One point either side of `at` as well,
+      // because those are the cell centres that were off-axis in the first place.
+      const lo = Math.max(1, at - 1);
+      const hi = Math.min(n - 2, at + 1);
+      const tail: number[] = RAW_PTS.slice((hi + 1) * 2);
+      RAW_PTS.length = lo * 2;
+      RAW_PTS.push(ax, az, bx, bz);
+      for (const v of tail) RAW_PTS.push(v);
+      LOCKED.splice(lo, hi - lo + 1, true, true);
+      n = RAW_PTS.length >> 1;
+      shifted = true;
+    }
+    // Splices can leave the mask a point short or long if two portals overlapped; the
+    // smoother keys off an exact length match, so make it exact.
+    if (shifted) {
+      while (LOCKED.length < n) LOCKED.push(false);
+      LOCKED.length = n;
+    }
+    return n;
   }
 
   /** Ask the city whether a straight move is blocked, if it offers that service. */
@@ -1079,6 +1429,37 @@ export class PathfindingSystem implements Subsystem {
   directRouteClear(x1: number, z1: number, x2: number, z2: number, radius: number): boolean {
     if (!this.grid.corridorClear(x1, z1, x2, z2, radius)) return false;
     return !this.cityBlocks(x1, z1, x2, z2);
+  }
+
+  /**
+   * How far along a straight line a body of `radius` gets before it meets something, as a
+   * fraction of the whole. 1 when the line is clear, 0 when it is blocked from the start.
+   *
+   * This is what lets an order that cannot be walked in a straight line still be *issued*
+   * legally while its route is searched for. The alternative — leave the destination on the
+   * far side of the wall and let per-man collision sort it out — is what the player was
+   * seeing: measured, an attacking cohort spent 970 of 1,800 ticks with its anchor inside
+   * masonry, grinding against the curtain because the order it held pointed through it.
+   */
+  clearLineFraction(x1: number, z1: number, x2: number, z2: number, radius: number): number {
+    const dx = x2 - x1;
+    const dz = z2 - z1;
+    const len = Math.hypot(dx, dz);
+    if (len < 1e-3) return 1;
+    const steps = Math.max(1, Math.ceil(len / (CELL * 0.5)));
+    let last = 0;
+    for (let s = 1; s <= steps; s++) {
+      const t = s / steps;
+      const x = x1 + dx * t;
+      const z = z1 + dz * t;
+      if (!this.grid.inBounds(x, z)) break;
+      const c = this.grid.cellAt(x, z);
+      if (this.grid.tight[c]) break;
+      if (this.grid.clearance[c] < radius) break;
+      if (this.cityBlocks(x1, z1, x, z)) break;
+      last = t;
+    }
+    return last;
   }
 
   /**
@@ -1150,11 +1531,11 @@ export class PathfindingSystem implements Subsystem {
       this.activeRequest = null;
       this.search.active = false;
     }
-    if (this.queue.length >= MAX_QUEUE) this.queue.shift();
+    if (this.queue.length >= MAX_QUEUE) this.evictOne();
     this.queue.push({
       unitId, sx, sz, gx, gz,
       radius, wantRadius: radius, minRadius,
-      priority, tick: this.tick,
+      priority, tick: this.tick, seq: this.seq++,
     });
   }
 
@@ -1225,6 +1606,8 @@ export class PathfindingSystem implements Subsystem {
     if (!f.ready) return 0;
     const n = f.descend(sx, sz, FLOW_PTS);
     if (n < 2) return 0;
+    // FLOW_PTS, not RAW_PTS, so `smooth` sees no lock mask — which is right: a flow route
+    // never crosses a gate, because a 28 m coarse cell containing one is always blocked.
     return this.smooth(FLOW_PTS, n, radius, out);
   }
 
@@ -1236,6 +1619,7 @@ export class PathfindingSystem implements Subsystem {
     const t0 = profileBegin();
     this.tick++;
     this.stats.nodesLastTick = 0;
+    this.watchCity();
 
     // Finish any flow field that is still building before spending time on A*:
     // a field serves every unit, an A* path serves one.
@@ -1267,7 +1651,22 @@ export class PathfindingSystem implements Subsystem {
       budget -= Math.max(1, used);
       this.stats.nodesLastTick += used;
 
-      if (state === 'running') break;
+      if (state === 'running') {
+        // A search that has spent this much and still not arrived is holding the queue
+        // against every other unit. Settle for its best partial and move on.
+        if (this.search.expansions >= MAX_SEARCH_NODES) {
+          this.stats.capped++;
+          this.search.active = false;
+          // Settle, do not retry. `finishSearch` would otherwise re-queue this at the
+          // narrowest footprint with `priority + 1`, so a capped search costs twice the cap
+          // and an AI request is promoted into the player's priority band and TTL.
+          this.cappedOut = true;
+          this.finishSearch(false);
+          this.cappedOut = false;
+          continue;
+        }
+        break;
+      }
       this.finishSearch(state === 'found');
     }
 
@@ -1275,19 +1674,54 @@ export class PathfindingSystem implements Subsystem {
     profileEnd('pathfinding', t0);
   }
 
+  /**
+   * Make room in a full queue by dropping the least important request, with a marker.
+   *
+   * `shift()` dropped the *oldest*, which is the one the sequence ordering exists to
+   * protect, and did it silently — so a player order evicted by an AI burst simply never
+   * happened, with nothing for `BattleSystem` to re-ask on. Lowest priority first, newest
+   * within a priority, and the same failure marker the TTL path writes.
+   */
+  private evictOne(): void {
+    let worst = 0;
+    for (let i = 1; i < this.queue.length; i++) {
+      const a = this.queue[i];
+      const b = this.queue[worst];
+      if (a.priority < b.priority || (a.priority === b.priority && a.seq > b.seq)) worst = i;
+    }
+    const r = this.queue.splice(worst, 1)[0];
+    this.stats.dropped++;
+    if (r.priority >= PLAYER_PRIORITY) this.stats.droppedPlayer++;
+    DIRECT_PTS[0] = r.sx;
+    DIRECT_PTS[1] = r.sz;
+    this.store(r.unitId, r.gx, r.gz, r.radius, false, DIRECT_PTS, 1, false);
+  }
+
   private nextRequest(): PathRequest | null {
     let best = -1;
-    let bestScore = -Infinity;
+    let bestPriority = -Infinity;
+    let bestSeq = Infinity;
     for (let i = this.queue.length - 1; i >= 0; i--) {
       const r = this.queue[i];
-      if (this.tick - r.tick > REQUEST_TTL_TICKS) {
+      const ttl = r.priority >= PLAYER_PRIORITY ? PLAYER_TTL_TICKS : REQUEST_TTL_TICKS;
+      if (this.tick - r.tick > ttl) {
+        // Leave a mark. A caller that asked and never heard back cannot tell the
+        // difference between "still thinking" and "given up", and `BattleSystem` needs
+        // to know so it can re-ask rather than leave the unit on its straight line.
+        this.stats.dropped++;
+        if (r.priority >= PLAYER_PRIORITY) this.stats.droppedPlayer++;
+        DIRECT_PTS[0] = r.sx;
+        DIRECT_PTS[1] = r.sz;
+        this.store(r.unitId, r.gx, r.gz, r.radius, false, DIRECT_PTS, 1, false);
         this.queue.splice(i, 1);
         continue;
       }
-      // Priority first, age second, so nothing starves.
-      const score = r.priority * 100 + (this.tick - r.tick);
-      if (score > bestScore) {
-        bestScore = score;
+      // Priority first, then strictly oldest-first within a priority. The sequence number
+      // is what makes the second half true: ages tie for every request queued on the same
+      // tick, and a batch of orders is exactly that.
+      if (r.priority > bestPriority || (r.priority === bestPriority && r.seq < bestSeq)) {
+        bestPriority = r.priority;
+        bestSeq = r.seq;
         best = i;
       }
     }
@@ -1300,7 +1734,7 @@ export class PathfindingSystem implements Subsystem {
     this.activeRequest = null;
     if (!r) return;
 
-    if (!found && r.radius > r.minRadius + 0.5) {
+    if (!found && !this.cappedOut && r.radius > r.minRadius + 0.5) {
       // Retry once at the narrowest footprint the unit can adopt: a gap a line
       // cannot enter is often a gap a column can.
       this.stats.narrowRetries++;
@@ -1322,7 +1756,8 @@ export class PathfindingSystem implements Subsystem {
     }
     if (!found) this.stats.failures++;
 
-    const raw = this.cellsToPoints(RAW_CELLS, cells, r.sx, r.sz, r.gx, r.gz, found);
+    let raw = this.cellsToPoints(RAW_CELLS, cells, r.sx, r.sz, r.gx, r.gz, found);
+    raw = this.routeThroughPortals(raw);
     const n = this.smooth(RAW_PTS, raw, r.radius, SMOOTH_PTS);
     this.store(r.unitId, r.gx, r.gz, r.radius, r.radius < r.wantRadius - 0.5, SMOOTH_PTS, n, found);
   }
@@ -1363,6 +1798,7 @@ export class PathfindingSystem implements Subsystem {
     out.push(src[0], src[1]);
     if (n === 1) return 1;
 
+    const locked = src === RAW_PTS && LOCKED.length === n ? LOCKED : null;
     let anchor = 0;
     while (anchor < n - 1) {
       const ax = src[anchor * 2];
@@ -1370,6 +1806,9 @@ export class PathfindingSystem implements Subsystem {
       let last = anchor + 1;
       let probe = anchor + 1;
       while (probe + 1 < n) {
+        // A locked point is a passage the grid cannot see; skipping it straightens the
+        // route through the masonry either side of it.
+        if (locked && locked[probe]) break;
         const nx = src[(probe + 1) * 2];
         const nz = src[(probe + 1) * 2 + 1];
         if (!this.grid.corridorClear(ax, az, nx, nz, radius)) break;

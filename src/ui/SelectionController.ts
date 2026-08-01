@@ -23,7 +23,8 @@ import { Faction, UnitOrder } from '../sim/types';
 import { el } from './dom';
 import type { HudModel, UnitView } from './model';
 import {
-  distanceToFootprint, footprintCorner, footprintOf, type PickSolid, projectPoint, screenToGround,
+  distanceToFootprint, footprintCorner, footprintOf, makeScreenPick, orderPointForSolid,
+  type PickSolid, projectPoint, screenPick, type ScreenPick,
   type Footprint, type Projected,
 } from './picking';
 import type { PointerTracker } from './pointer';
@@ -41,8 +42,20 @@ const FRONTAGE_MIN_M = 6;
 
 const FOOT: Footprint = { cx: 0, cz: 0, halfW: 1, halfD: 1, cos: 1, sin: 0 };
 const PROJECTED: Projected = { x: 0, y: 0, distance: 0, visible: false };
-const GROUND = { x: 0, y: 0, z: 0 };
+const PICK: ScreenPick = makeScreenPick();
+const ORDER_AT = { x: 0, y: 0, z: 0 };
 const CORNER = { x: 0, z: 0 };
+
+/**
+ * Half-extents of a siege tower's footprint, metres.
+ *
+ * Duplicated from `sim/siegeGeometry.TOWER_HALF_W/D` rather than imported: `Siege` does not
+ * publish a footprint with `towerReport()`, only a centre and a deck height, and the UI
+ * taking a build dependency on the siege module's geometry constants for two numbers is
+ * worse than a named constant that is checked by the probe. `probe-nav --only=pick`
+ * measures the resulting hit against the tower's own reported centre.
+ */
+const SIEGE_TOWER_HALF = 2.1;
 
 /** What the HUD needs from `AbilitySystem`. Duck-typed so the HUD runs without it. */
 export interface AbilityProbe {
@@ -92,10 +105,25 @@ export class SelectionController {
   private dragHostileId = -1;
   private ghosts: GhostSpec[] = [];
 
-  /** World point under the cursor this frame, valid when `groundValid`. */
+  /**
+   * The *ground* under the cursor this frame, valid when `groundValid`.
+   *
+   * Terrain only. This is what hit-tests a formation's footprint and what the marquee
+   * reads; it is deliberately not affected by anything standing on that ground.
+   */
   groundX = 0;
   groundZ = 0;
   groundValid = false;
+  /**
+   * Where an *order* aimed at the cursor should send men, valid when `orderValid`.
+   *
+   * Equal to the ground point except when the cursor is over a solid, and true in cases
+   * where `groundValid` is false — a click high on a siege tower produces a ray that never
+   * meets the heightfield at all, and used to issue no order whatsoever.
+   */
+  orderX = 0;
+  orderZ = 0;
+  orderValid = false;
 
   constructor(
     private model: HudModel,
@@ -274,55 +302,121 @@ export class SelectionController {
   }
 
   /**
-   * Solids the cursor can land on, cached because the set only changes when a gate opens or
-   * a bay is breached — `CitySystem` bumps a revision for exactly that. Re-fetching 2,900
-   * boxes on every pointer move would be the one expensive thing in this path.
+   * Solids the cursor can be aimed at, rebuilt when the world's structures change.
+   *
+   * Note what is *not* in here: the city's insulae and monuments. `CitySystem` publishes
+   * `topY: 1e4` for all 1,730 of them because it does not model their heights, and a box
+   * ten kilometres tall is a pillar the cursor cannot help but hit. `picking.raySolid`
+   * rejects them anyway, but building the set from the things a player can actually issue
+   * an order against — the curtain, its towers, and the siege train — says so out loud and
+   * keeps the array small enough that the per-pointer-event linear scan stays free.
+   *
+   * The siege towers move, so the cache is rebuilt whenever their count changes as well as
+   * when `obstacleGeneration` does; their positions are refreshed every frame below.
    */
-  private solids: readonly PickSolid[] = [];
+  private solids: PickSolid[] = [];
+  /**
+   * Everything a man cannot stand in, which is a wider set than the pick set: the insulae
+   * and monuments are not targetable but a formation cannot be sent into one either.
+   */
+  private blockers: PickSolid[] = [];
   private solidsRev = -1;
+  private siegeCount = -1;
+  /** Where in `solids` the siege engines begin, so only they are re-read per frame. */
+  private siegeAt = 0;
+
+  /** The set the cursor is tested against, for the overlay and for `tools/probe-nav.mjs`. */
+  get pickSolids(): readonly PickSolid[] {
+    return this.solids;
+  }
 
   private refreshSolids(ctx: EngineContext): void {
     const city = ctx.tryGet('city') as unknown as {
       obstacleGeneration?: number;
-      getObstacles?: () => readonly PickSolid[];
+      getObstacles?: () => readonly (PickSolid & { kind?: string })[];
     } | undefined;
-    if (!city?.getObstacles) { this.solids = []; return; }
-    const rev = city.obstacleGeneration ?? 0;
-    if (rev !== this.solidsRev) {
-      this.solids = city.getObstacles();
+    const siege = (ctx.tryGet('battle') as unknown as {
+      siege?: { towerReport?: () => { x: number; z: number; baseY: number; deckY: number }[] };
+    } | undefined)?.siege;
+    const towers = siege?.towerReport ? siege.towerReport() : [];
+
+    const rev = city?.obstacleGeneration ?? 0;
+    if (rev !== this.solidsRev || towers.length !== this.siegeCount) {
       this.solidsRev = rev;
+      this.siegeCount = towers.length;
+      this.solids = [];
+      this.blockers = [];
+      if (city?.getObstacles) {
+        for (const o of city.getObstacles()) {
+          this.blockers.push(o);
+          // `CitySystem.buildObstacles` emits only these two of the five declared kinds as
+          // things with a modelled top; monuments and insulae carry the 1e4 sentinel.
+          if (o.kind === 'wall' || o.kind === 'tower') this.solids.push(o);
+        }
+      }
+      this.siegeAt = this.solids.length;
+      for (const t of towers) {
+        const box: PickSolid = {
+          x: t.x, z: t.z, hw: SIEGE_TOWER_HALF, hd: SIEGE_TOWER_HALF, rot: 0,
+          topY: t.deckY, baseY: t.baseY,
+        };
+        this.solids.push(box);
+        this.blockers.push(box);
+      }
+    } else {
+      for (let i = 0; i < towers.length; i++) {
+        const s = this.solids[this.siegeAt + i];
+        const t = towers[i];
+        s.x = t.x;
+        s.z = t.z;
+        s.topY = t.deckY;
+        s.baseY = t.baseY;
+      }
     }
   }
 
+  /**
+   * Resolve the cursor into the two answers the gestures need, and no fewer.
+   *
+   * `groundX/groundZ` is the paving under the pointer and nothing else. `orderX/orderZ` is
+   * where an order aimed here should send men, which is the same point except when a solid
+   * stands in front of it, in which case it is the ground beside that solid.
+   *
+   * They were once the same number, produced by folding the solids into the ground ray, and
+   * that is the bug the player reported as "the location they choose to walk to is not at
+   * all the location i desire, its some random place in the city". Measured at one camera
+   * over six spread-out clicks, all six collapsed to within 2 m of one point, 42 to 92 m
+   * from where the pointer was — the camera stood inside an insula's footprint, that
+   * insula's `topY` was the 1e4 sentinel, so the slab test found the eye already inside the
+   * box and returned the camera's own position as the hit. One ray, one answer, wrong
+   * question.
+   */
   private updateGround(ctx: EngineContext, heightAt: (x: number, z: number) => number): void {
     const nx = (this.ptr.x / Math.max(1, ctx.viewW)) * 2 - 1;
     const ny = -(this.ptr.y / Math.max(1, ctx.viewH)) * 2 + 1;
-    // Pass the city's solids so a click on a wall, a tower or an insula resolves *on* it
-    // rather than on the grass behind it. Without this a right-click on a 20 m siege tower
-    // issued a move order 13.6 m past it, because the ray only ever met the heightfield.
-    /*
-     * Solids are DISABLED here pending a proper design, and that is a deliberate revert.
-     *
-     * Passing the city's 1,826 boxes made a click on open ground resolve onto whatever solid
-     * the ray happened to graze on its way down. Measured at one camera over six spread-out
-     * screen positions, every one collapsed onto essentially the same world point — terrain
-     * only gave (24,710) (40,701) (63,683) (16,677) (41,753)... while with solids they all
-     * landed within two metres of (40,753), between 42 and 92 m from where the player had
-     * clicked. That is the "it walks to some random place in the city" report, and I caused
-     * it.
-     *
-     * The mistake was treating one ray as answering one question. It answers two: "what
-     * ground did I click" and "what object did I click", and a rally point in a street wants
-     * the first while an order against a siege tower wants the second. Resolving both through
-     * `screenToGround` means a shallow ray crossing the city at roof height clips a block
-     * long before it reaches the paving the player was aiming at. `screenToGround` keeps its
-     * `solids` parameter and its tests, because targeting a tower genuinely needs it; nothing
-     * passes them here until the two intents are separated.
-     */
-    this.groundValid = screenToGround(ctx.camera, nx, ny, heightAt, GROUND);
-    if (this.groundValid) {
-      this.groundX = GROUND.x;
-      this.groundZ = GROUND.z;
+    this.refreshSolids(ctx);
+    screenPick(ctx.camera, nx, ny, heightAt, this.solids, PICK);
+
+    this.groundValid = PICK.groundHit;
+    if (PICK.groundHit) {
+      this.groundX = PICK.groundX;
+      this.groundZ = PICK.groundZ;
+    }
+
+    if (PICK.solid >= 0) {
+      // A click on a 20 m siege tower means the tower. Without this the ray only ever met
+      // the heightfield, so the order went to the grass behind it — 13.6 m past, and 138.8 m
+      // past from a low camera, or nothing at all when the ray rose clear of the ground.
+      orderPointForSolid(this.solids, PICK.solid, this.blockers, PICK.solidX, PICK.solidZ, heightAt, ORDER_AT);
+      this.orderX = ORDER_AT.x;
+      this.orderZ = ORDER_AT.z;
+      this.orderValid = true;
+    } else if (PICK.groundHit) {
+      this.orderX = PICK.groundX;
+      this.orderZ = PICK.groundZ;
+      this.orderValid = true;
+    } else {
+      this.orderValid = false;
     }
   }
 
@@ -458,13 +552,15 @@ export class SelectionController {
     const p = ctx.input.pointer[2];
     const haveSelection = this.model.selection.length > 0;
 
+    // The order point, not the ground point: a right-click on a siege tower must send men
+    // to the tower, and it resolves even when the ray misses the heightfield entirely.
     if (p.pressed && !this.ptr.overUi && haveSelection && !this.ptr.downAlt) {
-      if (this.groundValid) {
+      if (this.orderValid) {
         this.dragging = true;
-        this.dragStartX = this.groundX;
-        this.dragStartZ = this.groundZ;
-        this.dragEndX = this.groundX;
-        this.dragEndZ = this.groundZ;
+        this.dragStartX = this.orderX;
+        this.dragStartZ = this.orderZ;
+        this.dragEndX = this.orderX;
+        this.dragEndZ = this.orderZ;
         this.dragHostileId = this.hostileUnder(hovered);
       }
     }
@@ -472,9 +568,9 @@ export class SelectionController {
     if (this.dragging) {
       // Hold the camera off the right button for the whole gesture.
       ctx.rig.suppressDrag = true;
-      if (this.groundValid) {
-        this.dragEndX = this.groundX;
-        this.dragEndZ = this.groundZ;
+      if (this.orderValid) {
+        this.dragEndX = this.orderX;
+        this.dragEndZ = this.orderZ;
       }
       this.dragHostileId = this.hostileUnder(hovered);
       this.buildGhosts(ctx, p.dragDist);
@@ -725,7 +821,7 @@ export class SelectionController {
       const v = hovered >= 0 ? this.model.view(hovered) : undefined;
       if (v && !v.own) c = this.model.selection.length > 0 ? 'attack' : 'default';
       else if (v && v.own) c = 'friend';
-      else if (this.model.selection.length > 0 && this.groundValid) c = 'move';
+      else if (this.model.selection.length > 0 && this.orderValid) c = 'move';
     }
     if (c !== this.cursor) {
       this.cursor = c;

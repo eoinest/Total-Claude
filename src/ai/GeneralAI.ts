@@ -1,6 +1,6 @@
 import type { EngineContext, Subsystem } from '../core/Engine';
 import type { BattleSystem } from '../sim/BattleSystem';
-import { enemyOf, Faction, type UnitGroupState } from '../sim/types';
+import { ALL_FACTIONS, Faction, type UnitGroupState } from '../sim/types';
 import { angleDelta, wrapAngle } from '../util/math';
 import type { Rng } from '../util/rand';
 import { AIWorld, isLineUnit } from './AIWorld';
@@ -87,9 +87,36 @@ const PURSUIT_GIVE_UP = 250;
 // Plan state
 // ---------------------------------------------------------------------------
 
+/**
+ * How an army fights. Two named doctrines and a default for anyone else.
+ *
+ * `roman-attrition` and `germanic-shock` were a closed two-member union chosen by
+ * `f === Faction.Rome`, which silently made every other faction Germanic. Carthage fights
+ * like neither — a professional army built round a heavy centre and a decisive cavalry
+ * wing — but giving it a doctrine of its own is a tuning job for whoever owns that roster,
+ * so it takes the attritional plan, which is the one that does not throw everything at the
+ * first shock, and the choice is now written down in one place instead of inferred.
+ */
+export type Doctrine = 'roman-attrition' | 'germanic-shock';
+
+export function doctrineFor(f: Faction): Doctrine {
+  return f === Faction.Germanic ? 'germanic-shock' : 'roman-attrition';
+}
+
+/**
+ * Which way a faction faces before it has seen anybody, in radians.
+ *
+ * Only the opening frame depends on this — `replan` overwrites it from the enemy's actual
+ * bearing as soon as perception runs — so it needs to be sane rather than correct. Rome
+ * holds the city and faces out; everyone else is arriving and faces in.
+ */
+export function openingFacing(f: Faction): number {
+  return f === Faction.Rome ? Math.PI : 0;
+}
+
 export interface FactionPlan {
   faction: Faction;
-  doctrine: 'roman-attrition' | 'germanic-shock';
+  doctrine: Doctrine;
   phase: BattlePhase;
   phaseSince: number;
 
@@ -178,7 +205,7 @@ export class GeneralAISystem implements Subsystem {
   readonly commanded: Faction[];
   difficulty: Difficulty;
 
-  constructor(world: AIWorld, difficulty: Difficulty = 'hard', commanded: Faction[] = [Faction.Rome, Faction.Germanic]) {
+  constructor(world: AIWorld, difficulty: Difficulty = 'hard', commanded: Faction[] = [...ALL_FACTIONS]) {
     this.world = world;
     this.difficulty = difficulty;
     this.commanded = commanded;
@@ -208,11 +235,11 @@ export class GeneralAISystem implements Subsystem {
   private newPlan(f: Faction): FactionPlan {
     return {
       faction: f,
-      doctrine: f === Faction.Rome ? 'roman-attrition' : 'germanic-shock',
+      doctrine: doctrineFor(f),
       phase: 'deploy',
       phaseSince: 0,
-      lineX: 0, lineZ: 0, lineFacing: f === Faction.Rome ? Math.PI : 0, lineHalf: 0,
-      deployX: NaN, deployZ: NaN, deployFacing: f === Faction.Rome ? Math.PI : 0,
+      lineX: 0, lineZ: 0, lineFacing: openingFacing(f), lineHalf: 0,
+      deployX: NaN, deployZ: NaN, deployFacing: openingFacing(f),
       holdAdvance: NaN, lastAdvance: 0,
       effortX: 0, effortZ: 0, effortEnemyId: -1,
       flankSide: 0, threatenedSide: 0,

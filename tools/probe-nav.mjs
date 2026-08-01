@@ -82,6 +82,131 @@ if (!(await waitForServer(base, 1500))) {
 // sweep costs one round trip rather than 3,600.
 // ---------------------------------------------------------------------------
 
+/**
+ * Screen-picking arms, installed before the main kit because they need a dynamic import.
+ *
+ * the legacy arm is a frozen transcription of the raySolid merge that shipped in 6bf2568 and
+ * was reverted in 01db41e. It is copied rather than called so the "before" column keeps
+ * meaning something after the real code changes — a reverted commit is a fixed artefact,
+ * and re-deriving the number from live code would silently track the fix.
+ */
+const PICK_ARMS = `
+window.__pickArm = (() => {
+  let mod = null;
+  const ready = import('/src/ui/picking.ts').then((m) => { mod = m; });
+  window.__pickReady = ready;
+
+  const V = window.__game.engine.context.camera.position.constructor;
+  const O = new V(), D = new V(), T = new V();
+
+  /* 01db41e's raySolid, verbatim in behaviour: tmin starts at 0, baseY defaults to -1e4. */
+  const legacyRaySolid = (origin, dir, solids, maxT) => {
+    let best = -1;
+    for (const s of solids) {
+      const c = Math.cos(-s.rot), sn = Math.sin(-s.rot);
+      const ox = origin.x - s.x, oz = origin.z - s.z;
+      const lox = ox * c - oz * sn, loz = ox * sn + oz * c;
+      const ldx = dir.x * c - dir.z * sn, ldz = dir.x * sn + dir.z * c;
+      let tmin = 0, tmax = maxT;
+      for (const [o, d, h] of [[lox, ldx, s.hw], [loz, ldz, s.hd]]) {
+        if (Math.abs(d) < 1e-9) { if (o < -h || o > h) { tmin = Infinity; break; } continue; }
+        const inv = 1 / d;
+        let t1 = (-h - o) * inv, t2 = (h - o) * inv;
+        if (t1 > t2) { const w = t1; t1 = t2; t2 = w; }
+        if (t1 > tmin) tmin = t1;
+        if (t2 < tmax) tmax = t2;
+        if (tmin > tmax) { tmin = Infinity; break; }
+      }
+      if (!Number.isFinite(tmin)) continue;
+      const b = s.baseY ?? -1e4;
+      if (Math.abs(dir.y) < 1e-9) {
+        if (origin.y < b || origin.y > s.topY) continue;
+      } else {
+        const inv = 1 / dir.y;
+        let t1 = (b - origin.y) * inv, t2 = (s.topY - origin.y) * inv;
+        if (t1 > t2) { const w = t1; t1 = t2; t2 = w; }
+        if (t1 > tmin) tmin = t1;
+        if (t2 < tmax) tmax = t2;
+        if (tmin > tmax) continue;
+      }
+      if (tmin >= 0 && tmin <= maxT && (best < 0 || tmin < best)) best = tmin;
+    }
+    return best;
+  };
+
+  const legacy = (cam, nx, ny, heightAt, out, solids) => {
+    T.set(nx, ny, 0.5).unproject(cam);
+    O.copy(cam.position);
+    D.copy(T).sub(O);
+    const len = D.length();
+    if (len < 1e-6) return false;
+    D.multiplyScalar(1 / len);
+    const maxDistance = 4200;
+    const tSolid = solids && solids.length ? legacyRaySolid(O, D, solids, maxDistance) : -1;
+    if (D.y > -0.012) {
+      if (tSolid < 0) return false;
+      out.x = O.x + D.x * tSolid; out.y = O.y + D.y * tSolid; out.z = O.z + D.z * tSolid;
+      return true;
+    }
+    let t = (O.y - heightAt(O.x, O.z)) / -D.y;
+    t = Math.min(t, maxDistance);
+    for (let i = 0; i < 4; i++) {
+      const x = O.x + D.x * t, z = O.z + D.z * t;
+      const nt = (O.y - heightAt(x, z)) / -D.y;
+      if (!Number.isFinite(nt)) break;
+      t = Math.min(Math.max(nt, 0.1), maxDistance);
+    }
+    out.x = O.x + D.x * t; out.z = O.z + D.z * t; out.y = heightAt(out.x, out.z);
+    if (tSolid >= 0 && tSolid < t) {
+      out.x = O.x + D.x * tSolid; out.y = O.y + D.y * tSolid; out.z = O.z + D.z * tSolid;
+      return true;
+    }
+    return t < maxDistance;
+  };
+
+  window.__pickOrderPoint = (solids, index, blockers, hx, hz, heightAt, out) => {
+    if (!mod || !mod.orderPointForSolid) throw new Error('picking module not loaded');
+    mod.orderPointForSolid(solids, index, blockers, hx, hz, heightAt, out);
+  };
+
+  return (kind, cam, nx, ny, heightAt, out, solids) => {
+    if (kind === 'legacy') return legacy(cam, nx, ny, heightAt, out, solids);
+    if (!mod) throw new Error('picking module not loaded — await window.__pickReady');
+    if (kind === 'ground') return mod.screenToGround(cam, nx, ny, heightAt, out);
+    if (kind === 'order') {
+      // Exactly what SelectionController resolves a move order to: the ground, unless a
+      // solid stands in front of it, in which case the ground beside that solid.
+      if (!mod.screenPick) return mod.screenToGround(cam, nx, ny, heightAt, out);
+      const pk = window.__pickScratch || (window.__pickScratch = mod.makeScreenPick());
+      mod.screenPick(cam, nx, ny, heightAt, solids, pk);
+      if (pk.solid >= 0) {
+        mod.orderPointForSolid(solids, pk.solid, solids, pk.solidX, pk.solidZ, heightAt, out);
+        return true;
+      }
+      if (!pk.groundHit) return false;
+      out.x = pk.groundX; out.y = pk.groundY; out.z = pk.groundZ;
+      return true;
+    }
+    if (kind === 'object') {
+      /*
+       * Via screenPick, not screenToSolid, because this arm is also the mask deciding which
+       * pixels count as "no solid under the cursor". screenToSolid has no ground clip, so a
+       * solid standing *behind* the hill the cursor is actually on counts as a hit and the
+       * pixel is wrongly dropped from the open-ground sample. screenPick clips at the
+       * terrain, which is the question the mask is asking.
+       */
+      if (!mod.screenPick) return false;
+      const pk = window.__pickScratch || (window.__pickScratch = mod.makeScreenPick());
+      mod.screenPick(cam, nx, ny, heightAt, solids, pk);
+      if (pk.solid < 0) return false;
+      out.x = pk.solidX; out.y = pk.solidY; out.z = pk.solidZ;
+      return true;
+    }
+    throw new Error('unknown pick arm ' + kind);
+  };
+})();
+`;
+
 const KIT = `
 window.__nav = (() => {
   const g = window.__game;
@@ -156,6 +281,82 @@ window.__nav = (() => {
     const ix = Math.floor((x - X0) / CELL), iz = Math.floor((z - Z0) / CELL);
     if (ix < 0 || iz < 0 || ix >= NX || iz >= NZ) return 0;
     return occ[iz * NX + ix];
+  };
+
+  /** Metres from (x,z) to the nearest masonry cell, or Infinity beyond maxR. */
+  const nearestMasonry = (x, z, maxR) => {
+    const rings = Math.ceil(maxR / CELL);
+    const ix0 = Math.floor((x - X0) / CELL), iz0 = Math.floor((z - Z0) / CELL);
+    let best = Infinity;
+    for (let dz = -rings; dz <= rings; dz++) {
+      const iz = iz0 + dz;
+      if (iz < 0 || iz >= NZ) continue;
+      for (let dx = -rings; dx <= rings; dx++) {
+        const ix = ix0 + dx;
+        if (ix < 0 || ix >= NX) continue;
+        if (!occ[iz * NX + ix]) continue;
+        const d = Math.hypot(X0 + ix * CELL + CELL * 0.5 - x, Z0 + iz * CELL + CELL * 0.5 - z);
+        if (d < best) best = d;
+      }
+    }
+    return best;
+  };
+
+  const median = (a) => {
+    if (!a.length) return null;
+    const s = a.slice().sort((p, q) => p - q);
+    return +s[s.length >> 1].toFixed(2);
+  };
+
+  /** Proper segment-segment intersection; null when they do not cross. */
+  const segIntersect = (ax, az, bx, bz, cx, cz, dx2, dz2) => {
+    const r1 = bx - ax, r2 = bz - az;
+    const s1 = dx2 - cx, s2 = dz2 - cz;
+    const den = r1 * s2 - r2 * s1;
+    if (Math.abs(den) < 1e-12) return null;
+    const t = ((cx - ax) * s2 - (cz - az) * s1) / den;
+    const u = ((cx - ax) * r2 - (cz - az) * r1) / den;
+    if (t < 0 || t > 1 || u < 0 || u > 1) return null;
+    return { x: ax + r1 * t, z: az + r2 * t };
+  };
+
+  /**
+   * Is a point on the wall centreline somewhere a man may legally cross?
+   *
+   * Read from the city's own solid set rather than from a list of bay indices: a crossing
+   * is legal exactly where the city publishes no wall box. That covers the gate's cut
+   * carriageway and the footing bays it deliberately leaves open, and it keeps following
+   * the city if another agent closes or opens one. The 0.6 m margin is float slack on the
+   * box test, not a tolerance for walking through stone.
+   */
+  const wallBoxes = (city && city.getObstacles ? city.getObstacles() : []).filter((o) => o.kind === 'wall' || o.kind === 'tower');
+  const legalOpening = (x, z) => {
+    for (const o of wallBoxes) {
+      const c = Math.cos(o.rot), s = Math.sin(o.rot);
+      const dx = x - o.x, dz = z - o.z;
+      const u = dx * c + dz * s, v = -dx * s + dz * c;
+      if (Math.abs(u) <= o.hw + 0.6 && Math.abs(v) <= o.hd + 0.6) return false;
+    }
+    return true;
+  };
+
+  /** Does a segment cross an oriented box's footprint in plan? Slab test in the box frame. */
+  const segBoxPlan = (ax, az, bx, bz, o) => {
+    const c = Math.cos(o.rot), s = Math.sin(o.rot);
+    const ox = ax - o.x, oz = az - o.z;
+    const px = ox * c + oz * s, pz = -ox * s + oz * c;
+    const rx0 = bx - ax, rz0 = bz - az;
+    const rx = rx0 * c + rz0 * s, rz = -rx0 * s + rz0 * c;
+    let t0 = 0, t1 = 1;
+    for (const [p, r, h] of [[px, rx, o.hw], [pz, rz, o.hd]]) {
+      if (Math.abs(r) < 1e-9) { if (p < -h || p > h) return false; continue; }
+      let a = (-h - p) / r, b = (h - p) / r;
+      if (a > b) { const w = a; a = b; b = w; }
+      if (a > t0) t0 = a;
+      if (b < t1) t1 = b;
+      if (t0 > t1) return false;
+    }
+    return true;
   };
 
   /** Absolute Y of the walkway/masonry top at a point, or -Infinity off the wall. */
@@ -465,6 +666,998 @@ window.__nav = (() => {
       };
     },
 
+    // -----------------------------------------------------------------------
+    // Order legality: does the polyline a unit is actually given cross masonry?
+    // -----------------------------------------------------------------------
+
+    /**
+     * The polyline a unit will actually walk, right now: anchor, current target, queue.
+     *
+     * This is the thing the player sees as "where it decided to go". Reading it rather
+     * than the pathfinder's cache matters, because a route that was computed and never
+     * installed is not a route the unit follows, and that gap is precisely where a
+     * straight line through the wall survives.
+     */
+    issuedPath(u) {
+      const pts = [u.x, u.z, u.targetX, u.targetZ];
+      for (let i = 0; i + 2 < u.waypoints.length + 1; i += 3) {
+        if (i + 1 >= u.waypoints.length) break;
+        pts.push(u.waypoints[i], u.waypoints[i + 1]);
+      }
+      return pts;
+    },
+
+    /**
+     * Metres of a polyline that lie inside masonry, and where.
+     *
+     * Sampled at 1 m against the same occupancy raster the penetration test uses, so a
+     * crossing counted here is a crossing counted there. wallMetres and buildingMetres
+     * are split because the user reported them as two different complaints.
+     */
+    polylineMasonry(pts) {
+      let wall = 0, bldg = 0, total = 0;
+      let firstWallAt = null;
+      for (let i = 0; i + 3 < pts.length; i += 2) {
+        const ax = pts[i], az = pts[i + 1], bx = pts[i + 2], bz = pts[i + 3];
+        const len = Math.hypot(bx - ax, bz - az);
+        const n = Math.max(1, Math.ceil(len));
+        for (let s = 0; s <= n; s++) {
+          const t = s / n;
+          const x = ax + (bx - ax) * t, z = az + (bz - az) * t;
+          const k = occAt(x, z);
+          const dl = len / n;
+          total += dl;
+          if (k === 1) {
+            wall += dl;
+            if (!firstWallAt) firstWallAt = [+x.toFixed(1), +z.toFixed(1)];
+          } else if (k === 2) bldg += dl;
+        }
+      }
+      return {
+        wallMetres: +wall.toFixed(1),
+        buildingMetres: +bldg.toFixed(1),
+        length: +total.toFixed(1),
+        firstWallAt,
+      };
+    },
+
+    /**
+     * Metres of a polyline inside the city's actual solid boxes, by kind.
+     *
+     * Exact oriented-box geometry, not the 4 m occupancy raster polylineMasonry uses. The
+     * raster paints a whole 4 m cell whenever its centre is solid, which inflates a 3.5 m
+     * wall into a 7.5 m band — the penetration test documents the same artefact — so a route
+     * that legitimately runs 2 m from an insula wall registers as being inside it. This is
+     * the number to believe about a polyline; the raster one is kept alongside because it is
+     * what the man-tick penetration figures are measured against.
+     */
+    polylineSolids(pts) {
+      const boxes = city && city.getObstacles ? city.getObstacles() : [];
+      const acc = { wall: 0, tower: 0, building: 0, monument: 0, gate: 0 };
+      let inside = 0;
+      for (let i = 0; i + 3 < pts.length; i += 2) {
+        const ax = pts[i], az = pts[i + 1], bx = pts[i + 2], bz = pts[i + 3];
+        const len = Math.hypot(bx - ax, bz - az);
+        const n = Math.max(1, Math.ceil(len * 4));
+        for (let q = 0; q <= n; q++) {
+          const t = q / n;
+          const x = ax + (bx - ax) * t, z = az + (bz - az) * t;
+          let hitKind = null;
+          for (const o of boxes) {
+            const c = Math.cos(o.rot), sn = Math.sin(o.rot);
+            const dx = x - o.x, dz = z - o.z;
+            if (Math.abs(dx * c + dz * sn) <= o.hw && Math.abs(-dx * sn + dz * c) <= o.hd) { hitKind = o.kind; break; }
+          }
+          if (hitKind) { acc[hitKind] = (acc[hitKind] ?? 0) + len / n; inside += len / n; }
+        }
+      }
+      for (const k of Object.keys(acc)) acc[k] = +acc[k].toFixed(1);
+      return { byKind: acc, totalMetres: +inside.toFixed(1) };
+    },
+
+    /**
+     * Does the polyline cross the wall's *centreline* anywhere other than a legal opening?
+     *
+     * Independent of the raster, and stricter: a segment that clips the curtain between
+     * two raster samples still registers here. Legal openings are read off the city — the
+     * gate's own carriageway and any bay the city publishes no blocker for — so another
+     * agent widening or closing an opening changes this test's answer without an edit.
+     */
+    illegalWallCrossings(pts) {
+      const hits = [];
+      for (let i = 0; i + 3 < pts.length; i += 2) {
+        const ax = pts[i], az = pts[i + 1], bx = pts[i + 2], bz = pts[i + 3];
+        for (const s of segs) {
+          const h = segIntersect(ax, az, bx, bz, s.x1, s.z1, s.x2, s.z2);
+          if (!h) continue;
+          if (legalOpening(h.x, h.z)) continue;
+          hits.push([+h.x.toFixed(1), +h.z.toFixed(1)]);
+        }
+      }
+      return hits;
+    },
+
+    /**
+     * Order units from several positions across the wall and audit the route they get.
+     *
+     * settleTicks is generous on purpose: BattleSystem.requestRoute queues an A* search
+     * and the straight line stands until it lands, so sampling the path too early measures
+     * the placeholder rather than the route. It is reported, so a regression that makes
+     * routing slower shows up as a rise in routesWithZeroLegs.
+     */
+    routeAudit(count, settleTicks, depth) {
+      const wz0 = wallZAt(0) ?? 0;
+      const cands = [];
+      for (const u of battle.units) {
+        if (u.destroyed || u.alive === 0) continue;
+        if (battle.siege && battle.siege.ownsUnit && battle.siege.ownsUnit(u.id)) continue;
+        const def = battle.typeOf(u);
+        if (!def || def.walkSpeed < 1.0) continue;
+        const wzx = wallZAt(u.x);
+        if (wzx === null || u.z >= wzx - 40) continue;
+        cands.push(u);
+      }
+      // Spread the sample along the wall rather than taking the biggest units, which all
+      // stand together: a route from one x tells you nothing about a route from another.
+      cands.sort((a, b) => a.x - b.x);
+      const picked = [];
+      if (cands.length) {
+        for (let k = 0; k < count; k++) {
+          picked.push(cands[Math.min(cands.length - 1, Math.round((k * (cands.length - 1)) / Math.max(1, count - 1)))]);
+        }
+      }
+      const uniq = [...new Set(picked)];
+      if (!uniq.length) return { ok: false, why: 'no mobile unit outside the wall' };
+
+      beginSweep();
+      const aiHeld = holdAI();
+      const statsBefore = nav ? JSON.parse(JSON.stringify(nav.stats)) : null;
+      const rows = [];
+      for (const u of uniq) {
+        const gx = u.x;
+        const gz = (wallZAt(gx) ?? wz0) + (depth ?? 140);
+        rows.push({ u, gx, gz, sx: u.x, sz: u.z });
+        engine.events.emit('orderIssued', {
+          unitIds: [u.id], kind: 'move', x: gx, z: gz,
+          facing: Math.atan2(gx - u.x, gz - u.z), running: true,
+        });
+      }
+      // Snapshot the straight-line placeholder before any route can land.
+      for (const r of rows) r.immediate = this.polylineMasonry(this.issuedPath(r.u));
+      // Tick-by-tick: when does each unit get legs, and what is the search costing?
+      const timeline = [];
+      let nodes = 0;
+      for (let t = 0; t < settleTicks; t++) {
+        step();
+        if (nav) nodes += nav.stats.nodesLastTick;
+        if (t % 10 === 9) {
+          timeline.push({
+            t: t + 1, nodes,
+            queue: nav ? nav.stats.queueDepth : null,
+            searches: nav ? nav.stats.searches : null,
+            failures: nav ? nav.stats.failures : null,
+            withLegs: rows.filter((r) => r.u.waypoints.length > 0).length,
+          });
+        }
+      }
+      const out = [];
+      for (const r of rows) {
+        // What the pathfinder was asked and what came back, so a route that never arrived
+        // is distinguishable from a route that arrived and crossed masonry anyway.
+        const key = r.u.id + 1000000;
+        const pp = nav && nav.pathFor ? nav.pathFor(key) : null;
+        r.nav = {
+          pending: nav ? nav.pending(key) : null,
+          n: pp ? pp.n : 0, ok: pp ? !!pp.ok : null,
+          length: pp ? +pp.length.toFixed(1) : null,
+          goal: pp ? [+pp.goalX.toFixed(1), +pp.goalZ.toFixed(1)] : null,
+          startClear: nav ? nav.isStandable(r.sx, r.sz, 2.2) : null,
+          goalClear: nav ? nav.isStandable(r.gx, r.gz, 2.2) : null,
+          // The three tests BattleSystem.requestRoute short-circuits on, evaluated on the
+          // same straight line it evaluated. If directClear is true no search is ever
+          // queued and the straight line through the wall simply stands.
+          directClear: nav ? nav.directRouteClear(r.sx, r.sz, r.gx, r.gz, 2.2) : null,
+          corridorClear: nav && nav.grid ? nav.grid.corridorClear(r.sx, r.sz, r.gx, r.gz, 2.2) : null,
+          cityBlocks: city && city.blocksMovement ? city.blocksMovement(r.sx, r.sz, r.gx, r.gz) : null,
+        };
+        const pts = this.issuedPath(r.u);
+        const m = this.polylineMasonry(pts);
+        const exact = this.polylineSolids(pts);
+        const illegal = this.illegalWallCrossings(pts);
+        const straight = Math.hypot(r.gx - r.sx, r.gz - r.sz);
+        out.push({
+          unitId: r.u.id,
+          start: [+r.sx.toFixed(1), +r.sz.toFixed(1)],
+          goal: [+r.gx.toFixed(1), +r.gz.toFixed(1)],
+          legs: (pts.length >> 1) - 1,
+          straightLine: +straight.toFixed(1),
+          pathLength: m.length,
+          ratio: +(m.length / Math.max(1, straight)).toFixed(2),
+          wallMetres: m.wallMetres,
+          buildingMetres: m.buildingMetres,
+          exactSolidMetres: exact.totalMetres,
+          exactByKind: exact.byKind,
+          illegalCrossings: illegal.length,
+          firstWallAt: m.firstWallAt,
+          immediateWallMetres: r.immediate.wallMetres,
+          nav: r.nav,
+          via: (() => { const v = []; for (let q = 0; q < pts.length; q += 2) v.push([+pts[q].toFixed(0), +pts[q + 1].toFixed(0)]); return v; })(),
+        });
+      }
+      endSweep();
+      releaseAI();
+      // The pass line is the exact-geometry one and it counts every kind of solid. An
+    // earlier version filtered on wallMetres alone and printed "ROUTES CROSSING MASONRY
+    // 0 / 8" while every one of the eight ran through insulae.
+    const badExact = out.filter((r) => r.exactSolidMetres > 0 || r.illegalCrossings > 0);
+    const bad = out.filter((r) => r.wallMetres > 0 || r.illegalCrossings > 0);
+      const statsAfter = nav ? JSON.parse(JSON.stringify(nav.stats)) : null;
+      return {
+        ok: true, aiHeld, settleTicks, ordered: out.length,
+        // Differenced where the field is a counter; gauges are reported as they stand,
+        // because subtracting two readings of a queue depth is meaningless.
+        navStats: statsBefore && statsAfter
+          ? Object.fromEntries(Object.keys(statsAfter).map((k) => [
+            k, (k === 'queueDepth' || k === 'nodesLastTick') ? statsAfter[k] : statsAfter[k] - statsBefore[k],
+          ]))
+          : null,
+        timeline,
+        routesCrossingWall: bad.length,
+        routesInsideAnySolid: badExact.length,
+        totalExactSolidMetres: +out.reduce((a, r) => a + r.exactSolidMetres, 0).toFixed(1),
+        totalPathMetres: +out.reduce((a, r) => a + r.pathLength, 0).toFixed(1),
+        routesWithZeroLegs: out.filter((r) => r.legs <= 1).length,
+        medianRatio: median(out.map((r) => r.ratio)),
+        rows: out,
+      };
+    },
+
+    /**
+     * The attack order, which the player says walks a straight line into the wall.
+     *
+     * Picks the nearest enemy on the far side of the curtain from a mobile unit on the
+     * near side, issues attack, and audits the same polyline routeAudit does. Then it
+     * runs the clock so the difference between "the order is illegal" and "the order is
+     * illegal and the unit is stuck against masonry" is visible.
+     */
+    attackAudit(seconds) {
+      let att = null, tgt = null, bestD = Infinity;
+      for (const u of battle.units) {
+        if (u.destroyed || u.alive === 0) continue;
+        if (battle.siege && battle.siege.ownsUnit && battle.siege.ownsUnit(u.id)) continue;
+        const def = battle.typeOf(u);
+        if (!def || def.walkSpeed < 1.0) continue;
+        const wzu = wallZAt(u.x);
+        if (wzu === null || u.z >= wzu - 30) continue;
+        for (const e of battle.units) {
+          if (e.destroyed || e.alive === 0 || e.faction === u.faction) continue;
+          const wze = wallZAt(e.x);
+          if (wze === null || e.z <= wze + 15) continue;
+          const d = Math.hypot(e.x - u.x, e.z - u.z);
+          if (d < bestD) { bestD = d; att = u; tgt = e; }
+        }
+      }
+      if (!att || !tgt) return { ok: false, why: 'no attacker outside / target inside' };
+
+      beginSweep();
+      const aiHeld = holdAI();
+      const sx = att.x, sz = att.z;
+      engine.events.emit('orderIssued', { unitIds: [att.id], kind: 'attack', targetUnitId: tgt.id });
+      // One tick so the order is resolved into a destination before the path is read.
+      step();
+      const pts0 = this.issuedPath(att);
+      const m0 = this.polylineMasonry(pts0);
+      const ill0 = this.illegalWallCrossings(pts0);
+
+      // Let any route that is going to arrive, arrive.
+      for (let t = 0; t < 90; t++) step();
+      const pts1 = this.issuedPath(att);
+      const m1 = this.polylineMasonry(pts1);
+      const e1 = this.polylineSolids(pts1);
+      const ill1 = this.illegalWallCrossings(pts1);
+
+      let travelled = 0, px = att.x, pz = att.z, ticksInMasonry = 0;
+      for (let t = 0; t < Math.round(seconds * 30); t++) {
+        step();
+        travelled += Math.hypot(att.x - px, att.z - pz);
+        px = att.x; pz = att.z;
+        if (occAt(att.x, att.z)) ticksInMasonry++;
+      }
+      endSweep();
+      releaseAI();
+      const gap = Math.hypot(att.x - tgt.x, att.z - tgt.z);
+      return {
+        ok: true, aiHeld, attacker: att.id, target: tgt.id,
+        start: [+sx.toFixed(1), +sz.toFixed(1)],
+        targetAt: [+tgt.x.toFixed(1), +tgt.z.toFixed(1)],
+        straightLine: +bestD.toFixed(1),
+        immediate: { legs: (pts0.length >> 1) - 1, wallMetres: m0.wallMetres, buildingMetres: m0.buildingMetres, illegal: ill0.length },
+        settled: { legs: (pts1.length >> 1) - 1, wallMetres: m1.wallMetres, buildingMetres: m1.buildingMetres, exactSolidMetres: e1.totalMetres, illegal: ill1.length, length: m1.length },
+        after: {
+          seconds, travelled: +travelled.toFixed(1),
+          end: [+att.x.toFixed(1), +att.z.toFixed(1)],
+          gapToTarget: +gap.toFixed(1),
+          ticksInMasonry,
+          crossedWall: att.z > (wallZAt(att.x) ?? 0) + 6,
+        },
+      };
+    },
+
+    /**
+     * Do the ordered units actually get there, and how many end up jammed on masonry?
+     *
+     * stuck is deliberately behavioural rather than geometric: a unit is stuck if it has
+     * a live move order, is more than tol from its goal, and has moved less than 2 m in
+     * the last five seconds. againstWall narrows that to the ones parked within 10 m of
+     * masonry, which is the failure the player described.
+     */
+    arrival(count, seconds, tol, longSeconds) {
+      const cands = [];
+      for (const u of battle.units) {
+        if (u.destroyed || u.alive === 0) continue;
+        if (battle.siege && battle.siege.ownsUnit && battle.siege.ownsUnit(u.id)) continue;
+        const def = battle.typeOf(u);
+        if (!def || def.walkSpeed < 1.0) continue;
+        const wzx = wallZAt(u.x);
+        if (wzx === null || u.z >= wzx - 40) continue;
+        cands.push(u);
+      }
+      cands.sort((a, b) => a.x - b.x);
+      const picked = [];
+      for (let k = 0; k < count && cands.length; k++) {
+        picked.push(cands[Math.min(cands.length - 1, Math.round((k * (cands.length - 1)) / Math.max(1, count - 1)))]);
+      }
+      const uniq = [...new Set(picked)];
+      if (!uniq.length) return { ok: false, why: 'no mobile unit outside the wall' };
+
+      beginSweep();
+      const aiHeld = holdAI();
+      const st = uniq.map((u) => {
+        const gx = u.x, gz = (wallZAt(u.x) ?? 0) + 140;
+        engine.events.emit('orderIssued', {
+          unitIds: [u.id], kind: 'move', x: gx, z: gz,
+          facing: Math.atan2(gx - u.x, gz - u.z), running: true,
+        });
+        return { u, gx, gz, hist: [], arrivedAt: null, minDist: Infinity, at60: null };
+      });
+      /*
+       * Two horizons, because one of them answers the wrong question.
+       *
+       * Sixty seconds is what was asked for and is reported as such, but the legal routes
+       * these orders produce run 250 to 540 m through a single 4.3 m gate, and a cohort
+       * marches at about 3 m/s. Judging "did it arrive" at 60 s therefore measures the
+       * length of the detour, not whether the navigation works. The long horizon is the
+       * honest completion figure, and progress — how much of the initial gap was closed —
+       * is what says a unit is making its way rather than sitting down.
+       */
+      const shortTicks = Math.round(seconds * 30);
+      const ticks = Math.round(Math.max(seconds, longSeconds) * 30);
+      const startGap = st.map((s) => Math.hypot(s.u.x - s.gx, s.u.z - s.gz));
+      for (let t = 0; t < ticks; t++) {
+        step();
+        if (t % 15 === 0) for (const s of st) { s.hist.push([s.u.x, s.u.z]); if (s.hist.length > 11) s.hist.shift(); }
+        for (let i = 0; i < st.length; i++) {
+          const s = st[i];
+          const d = Math.hypot(s.u.x - s.gx, s.u.z - s.gz);
+          if (d < s.minDist) s.minDist = d;
+          if (s.arrivedAt === null && d < tol) s.arrivedAt = +(t / 30).toFixed(1);
+          if (t === shortTicks - 1) {
+            s.at60 = {
+              remaining: +d.toFixed(1),
+              arrived: s.arrivedAt !== null,
+              moved5s: s.hist.length >= 2
+                ? +Math.hypot(s.hist[s.hist.length - 1][0] - s.hist[0][0], s.hist[s.hist.length - 1][1] - s.hist[0][1]).toFixed(1)
+                : 0,
+              masonry: nearestMasonry(s.u.x, s.u.z, 14),
+              locked: !!s.u.contactLock,
+            };
+          }
+        }
+      }
+      endSweep();
+      releaseAI();
+      let arrived = 0, stuck = 0, againstWall = 0;
+      let arrived60 = 0, stuck60 = 0, againstWall60 = 0;
+      const rows = st.map((s, i) => {
+        const d = Math.hypot(s.u.x - s.gx, s.u.z - s.gz);
+        const h = s.hist;
+        const moved5s = h.length >= 2 ? Math.hypot(h[h.length - 1][0] - h[0][0], h[h.length - 1][1] - h[0][1]) : 0;
+        const nearWall = nearestMasonry(s.u.x, s.u.z, 14);
+        // A unit held by an enemy it has run into is doing its job, not stuck.
+        const isStuck = d >= tol && moved5s < 2 && !s.u.contactLock;
+        if (s.arrivedAt !== null) arrived++;
+        if (isStuck) { stuck++; if (nearWall <= 10) againstWall++; }
+        const a = s.at60;
+        if (a) {
+          if (a.arrived) arrived60++;
+          const st60 = !a.arrived && a.moved5s < 2 && !a.locked;
+          if (st60) { stuck60++; if (a.masonry <= 10) againstWall60++; }
+        }
+        return {
+          unitId: s.u.id, goal: [+s.gx.toFixed(0), +s.gz.toFixed(0)],
+          end: [+s.u.x.toFixed(1), +s.u.z.toFixed(1)],
+          startGap: +startGap[i].toFixed(1),
+          remaining: +d.toFixed(1), closest: +s.minDist.toFixed(1),
+          progress: +(1 - Math.min(1, d / Math.max(1, startGap[i]))).toFixed(3),
+          remainingAt60: a ? a.remaining : null,
+          arrivedAt: s.arrivedAt, stuck: isStuck,
+          movedLast5s: +moved5s.toFixed(1),
+          contactLocked: !!s.u.contactLock,
+          metresToMasonry: nearWall === Infinity ? null : +nearWall.toFixed(1),
+          order: s.u.order, waypoints: s.u.waypoints.length,
+        };
+      });
+      return {
+        ok: true, aiHeld, seconds, longSeconds, tol, ordered: rows.length,
+        at60: {
+          arrived: arrived60, arrivedFraction: +(arrived60 / rows.length).toFixed(3),
+          stuck: stuck60, stuckAgainstWall: againstWall60,
+        },
+        arrived, arrivedFraction: +(arrived / rows.length).toFixed(3),
+        stuck, stuckAgainstWall: againstWall,
+        medianProgress: median(rows.map((r) => r.progress)),
+        rows,
+      };
+    },
+
+    // -----------------------------------------------------------------------
+    // Destination accuracy: does a click land where the player pointed?
+    // -----------------------------------------------------------------------
+
+    /**
+     * Round-trip a set of world points the player can unambiguously see.
+     *
+     * Ground truth is exact by construction: take a world point, project it to the screen
+     * with the real camera, then ask the picker what that screen position means. Any
+     * difference is the error the player experiences, in metres, with no judgement call
+     * about "where they meant".
+     *
+     * Only points with a clear line of sight are used, and clear is decided *in plan*: no
+     * solid's footprint may lie between the eye and the target at all. That is stricter
+     * than real occlusion and it has to be, because the city publishes topY = 1e4 for
+     * every insula — the boxes carry no real roof height, so no height-aware visibility
+     * test against them can be trusted. A point that passes this test is visible whatever
+     * the true roof heights are, so a correct picker has no excuse.
+     */
+    pickAccuracy(camX, camZ, zoom, yaw, arms) {
+      const terrain = ctx.tryGet('terrain');
+      if (!terrain) return { ok: false, why: 'no terrain' };
+      const heightAt = (x, z) => terrain.heightAt(x, z);
+      const solids = city && city.getObstacles ? city.getObstacles() : [];
+      g.setCamera(camX, camZ, zoom, yaw);
+      ctx.camera.updateMatrixWorld(true);
+      const cam = ctx.camera;
+      const eye = cam.position;
+      const V = eye.constructor;
+      const PROJ = new V(), RAY = new V();
+
+      /*
+       * The reference answer, computed by a method that shares no code with anything
+       * under test: march the ray in 0.5 m steps until it passes below the heightfield,
+       * then bisect 24 times. Slow and dumb on purpose. screenToGround uses a fixed-point
+       * iteration, so if the two ever disagree the disagreement is real and not a shared
+       * mistake, and this project has already been burned once by a probe that computed
+       * its expected answer with the same code it was grading.
+       */
+      const marchToGround = (nx, ny, outv) => {
+        RAY.set(nx, ny, 0.5).unproject(cam).sub(eye);
+        const len = RAY.length();
+        if (len < 1e-6) return false;
+        RAY.multiplyScalar(1 / len);
+        if (RAY.y > -1e-4) return false;
+        let lo = 0, hi = -1;
+        for (let t = 0.5; t <= 4200; t += 0.5) {
+          const y = eye.y + RAY.y * t;
+          if (y <= heightAt(eye.x + RAY.x * t, eye.z + RAY.z * t)) { hi = t; break; }
+          lo = t;
+        }
+        if (hi < 0) return false;
+        for (let i = 0; i < 24; i++) {
+          const m = (lo + hi) * 0.5;
+          const y = eye.y + RAY.y * m;
+          if (y <= heightAt(eye.x + RAY.x * m, eye.z + RAY.z * m)) hi = m; else lo = m;
+        }
+        const t = (lo + hi) * 0.5;
+        outv.x = eye.x + RAY.x * t;
+        outv.y = eye.y + RAY.y * t;
+        outv.z = eye.z + RAY.z * t;
+        outv.t = t;
+        return true;
+      };
+
+      /*
+       * Is that ground point one the player can unambiguously see?
+       *
+       * Decided in plan: no solid footprint may lie between the eye and the point at all.
+       * That is stricter than real occlusion and it has to be, because the city publishes
+       * topY = 1e4 for every insula and monument — 1,730 of its 1,826 boxes carry no real
+       * roof height, so no height-aware visibility test against them can be trusted. A
+       * point that survives this is visible whatever the true roofs are, which means a
+       * picker that misses it has no excuse.
+       */
+      const eyeInside = (s) => {
+        const c = Math.cos(s.rot), sn = Math.sin(s.rot);
+        const dx = eye.x - s.x, dz = eye.z - s.z;
+        return Math.abs(dx * c + dz * sn) <= s.hw && Math.abs(-dx * sn + dz * c) <= s.hd;
+      };
+      let insideCount = 0;
+      for (const s of solids) if (eyeInside(s)) insideCount++;
+
+      const visible = (ax, az, bx, bz) => {
+        for (const s of solids) {
+          // A box the eye is standing inside cannot occlude anything: it intersects every
+          // segment from the eye by definition, and the game plainly draws the world from
+          // there. Without this exclusion the whole test silently returns zero samples at
+          // exactly the camera where the regression fires, which is how it would be missed.
+          if (eyeInside(s)) continue;
+          if (segBoxPlan(ax, az, bx, bz, s)) return false;
+        }
+        return true;
+      };
+
+      const ref = { x: 0, y: 0, z: 0, t: 0 };
+      const errs = {};
+      /*
+       * A second set of numbers over *every* pixel that hits ground, visible or not.
+       *
+       * The strict-visibility set is the right way to ask "does a click land where I
+       * pointed", but deep inside Rome it is empty — from a 35 m camera on an insula, no
+       * pixel has a clean sight line in plan — and an empty set silently passes. So the
+       * reported symptom is measured directly as well: the reverted merge made every click
+       * resolve onto the camera's own position, so what is counted here is how many
+       * resolved points land within 3 m of the eye, and how far apart the answers spread.
+       * Neither needs a judgement about what the player could see.
+       */
+      const allErrs = {};
+      // And, for the order arm, the same error restricted to pixels with no solid under the
+      // cursor. On a solid the order point is *meant* to differ from the ground behind it —
+      // that is the whole feature — so grading it there against a ground reference measures
+      // the fix as if it were the bug.
+      const openErrs = {};
+      const spread = {};
+      for (const k of arms) {
+        errs[k] = []; allErrs[k] = []; openErrs[k] = [];
+        spread[k] = { n: 0, onEye: 0, x0: 1e9, x1: -1e9, z0: 1e9, z1: -1e9, distinct: new Set() };
+      }
+      let onScreen = 0, visibleN = 0, roundTripWorst = 0, solidPixels = 0;
+      const refSpread = { x0: 1e9, x1: -1e9, z0: 1e9, z1: -1e9 };
+      // A 17 x 11 lattice over the central 90% of the frame. Sampling screen space rather
+      // than world space keeps the coverage the same at every pitch and field of view;
+      // the world lattice this replaced put every target off-frame at low zoom.
+      for (let iy = 0; iy < 11; iy++) {
+        for (let ix = 0; ix < 17; ix++) {
+          const nx = -0.9 + (1.8 * ix) / 16;
+          const ny = -0.9 + (1.8 * iy) / 10;
+          if (!marchToGround(nx, ny, ref)) continue;
+          onScreen++;
+          if (ref.x < refSpread.x0) refSpread.x0 = ref.x;
+          if (ref.x > refSpread.x1) refSpread.x1 = ref.x;
+          if (ref.z < refSpread.z0) refSpread.z0 = ref.z;
+          if (ref.z > refSpread.z1) refSpread.z1 = ref.z;
+          const probeSolid = { x: 0, y: 0, z: 0 };
+          const onSolid = arms.includes('object')
+            && window.__pickArm('object', cam, nx, ny, heightAt, probeSolid, solids);
+          for (const k of arms) {
+            const o = { x: 0, y: 0, z: 0 };
+            if (!window.__pickArm(k, cam, nx, ny, heightAt, o, solids)) continue;
+            if (!onSolid) openErrs[k].push(Math.hypot(o.x - ref.x, o.z - ref.z));
+            const sp = spread[k];
+            sp.n++;
+            // Rounded to half a metre: the number of *distinct* destinations a frame can
+            // produce is the sharpest collapse detector there is, and it needs no notion of
+            // what the player could see. 651 pixels giving 622 answers is healthy; 5 pixels
+            // spanning 9 m of wall giving 1 answer is the bug.
+            sp.distinct.add(Math.round(o.x * 2) + ',' + Math.round(o.z * 2));
+            if (Math.hypot(o.x - eye.x, o.z - eye.z) <= 3) sp.onEye++;
+            if (o.x < sp.x0) sp.x0 = o.x;
+            if (o.x > sp.x1) sp.x1 = o.x;
+            if (o.z < sp.z0) sp.z0 = o.z;
+            if (o.z > sp.z1) sp.z1 = o.z;
+            allErrs[k].push(Math.hypot(o.x - ref.x, o.z - ref.z));
+          }
+          if (occAt(ref.x, ref.z)) continue;
+          if (!visible(eye.x, eye.z, ref.x, ref.z)) continue;
+          // The reference must land back on the pixel it came from, or it is not the
+          // ground under that pixel and nothing can be concluded from it.
+          PROJ.set(ref.x, ref.y, ref.z).project(cam);
+          const back = Math.hypot(PROJ.x - nx, PROJ.y - ny);
+          if (back > 2e-3) continue;
+          if (back > roundTripWorst) roundTripWorst = back;
+          visibleN++;
+          for (const k of arms) {
+            const o = { x: 0, y: 0, z: 0 };
+            const ok = window.__pickArm(k, cam, nx, ny, heightAt, o, solids);
+            errs[k].push(ok ? Math.hypot(o.x - ref.x, o.z - ref.z) : -1);
+          }
+        }
+      }
+
+      const pitchDeg = +(Math.atan2(eye.y - heightAt(camX, camZ), Math.hypot(eye.x - camX, eye.z - camZ)) * 180 / Math.PI).toFixed(1);
+      // Height above the ground under the eye, not absolute Y. "eye 37 m" over a 31 m hill
+      // is a six-metre camera, and quoting the absolute number flatters the test.
+      const aboveGround = +(eye.y - heightAt(eye.x, eye.z)).toFixed(1);
+      const res = {
+        ok: true,
+        camera: { x: camX, z: camZ, zoom, yaw, eyeY: +eye.y.toFixed(1), aboveGround, pitchDeg },
+        eyeInsideSolids: insideCount,
+        pixelsHittingGround: onScreen, samples: visibleN,
+        solidPixels: spread.object ? spread.object.n : 0,
+        // How wide the ground actually visible in this frame is, so an arm's own spread
+        // can be read as a fraction of it rather than as a bare number of metres.
+        referenceSpreadM: onScreen ? +Math.hypot(refSpread.x1 - refSpread.x0, refSpread.z1 - refSpread.z0).toFixed(1) : null,
+        referenceRoundTripNdc: +roundTripWorst.toFixed(5),
+        arms: {},
+      };
+      for (const k of arms) {
+        const good = errs[k].filter((v) => v >= 0).sort((a, b) => a - b);
+        const missed = errs[k].filter((v) => v < 0).length;
+        res.arms[k] = {
+          resolved: good.length, unresolved: missed,
+          medianM: good.length ? +good[good.length >> 1].toFixed(2) : null,
+          meanM: good.length ? +(good.reduce((s, v) => s + v, 0) / good.length).toFixed(2) : null,
+          p95M: good.length ? +good[Math.min(good.length - 1, Math.floor(good.length * 0.95))].toFixed(2) : null,
+          maxM: good.length ? +good[good.length - 1].toFixed(2) : null,
+          within2m: good.length ? +(good.filter((v) => v <= 2).length / good.length).toFixed(3) : null,
+        };
+        const sp = spread[k];
+        const all = allErrs[k].slice().sort((a, b) => a - b);
+        res.arms[k].allPixels = {
+          resolved: sp.n,
+          onEyeFraction: sp.n ? +(sp.onEye / sp.n).toFixed(3) : null,
+          spreadM: sp.n ? +Math.hypot(sp.x1 - sp.x0, sp.z1 - sp.z0).toFixed(1) : null,
+          distinctDestinations: sp.distinct.size,
+          spreadFractionOfView: sp.n && onScreen
+            ? +(Math.hypot(sp.x1 - sp.x0, sp.z1 - sp.z0)
+              / Math.max(1e-6, Math.hypot(refSpread.x1 - refSpread.x0, refSpread.z1 - refSpread.z0))).toFixed(3)
+            : null,
+          medianErrM: all.length ? +all[all.length >> 1].toFixed(2) : null,
+          p95ErrM: all.length ? +all[Math.min(all.length - 1, Math.floor(all.length * 0.95))].toFixed(2) : null,
+        };
+        const open = openErrs[k].slice().sort((a, b) => a - b);
+        res.arms[k].openGroundPixels = {
+          n: open.length,
+          medianErrM: open.length ? +open[open.length >> 1].toFixed(2) : null,
+          p95ErrM: open.length ? +open[Math.min(open.length - 1, Math.floor(open.length * 0.95))].toFixed(2) : null,
+          maxErrM: open.length ? +open[open.length - 1].toFixed(2) : null,
+        };
+      }
+      return res;
+    },
+
+    /** Where a right-click on a siege tower actually sends the order. */
+    towerPick(arms) {
+      const terrain = ctx.tryGet('terrain');
+      const siege = battle.siege;
+      const towers = siege && siege.towerReport ? siege.towerReport() : [];
+      if (!towers.length || !terrain) return { ok: false, why: 'no siege towers' };
+      const heightAt = (x, z) => terrain.heightAt(x, z);
+      const T = towers[0];
+      // Aim the camera at the tower from a normal playing distance and pitch.
+      g.setCamera(T.x, T.z - 120, 0.45, 0);
+      ctx.camera.updateMatrixWorld(true);
+      const cam = ctx.camera;
+      const PROJ = new (Object.getPrototypeOf(cam.position).constructor)();
+      // Two metres below the deck: the body of the machine, which is what a player clicks.
+      const aimY = T.deckY - 2;
+      PROJ.set(T.x, aimY, T.z).project(cam);
+      // The set SelectionController actually tests the cursor against — the curtain, its
+      // towers and the siege train — read off the live controller so the probe cannot drift
+      // from it. Falls back to the raw city obstacles if the HUD is not up.
+      const hud = ctx.tryGet('hud');
+      const shipped = (hud && hud.controller && hud.controller.pickSolids)
+        || (city && city.getObstacles ? city.getObstacles() : []);
+      // The legacy arm must be fed the legacy *input* as well as the legacy code. At
+      // 6bf2568 SelectionController handed city.getObstacles() straight through, and that
+      // array contains no siege engine at all — which is exactly why a click on a tower
+      // resolved on the grass behind it. Feeding it the shipped pick set, which only exists
+      // because of the fix, flatters it into looking correct.
+      const raw = city && city.getObstacles ? city.getObstacles() : [];
+      const out = {
+        ok: true, tower: { x: +T.x.toFixed(1), z: +T.z.toFixed(1), deckY: +T.deckY.toFixed(1) },
+        pickSet: shipped.length, legacySet: raw.length,
+        ndc: [+PROJ.x.toFixed(3), +PROJ.y.toFixed(3)], arms: {},
+      };
+      for (const k of arms) {
+        const o = { x: 0, y: 0, z: 0 };
+        const solids = k === 'legacy' ? raw : shipped;
+        const ok = window.__pickArm(k, cam, PROJ.x, PROJ.y, heightAt, o, solids);
+        out.arms[k] = ok
+          ? { at: [+o.x.toFixed(1), +o.z.toFixed(1)], offsetM: +Math.hypot(o.x - T.x, o.z - T.z).toFixed(1) }
+          : { at: null, offsetM: null };
+      }
+      return out;
+    },
+
+    /**
+     * Cost of the AI's navigation with both commanders live, and what it is doing.
+     *
+     * perf() above times BattleSystem alone; the branch-and-bound bound and the per-search
+     * cap live in PathfindingSystem, and a change that made the AI re-request routes in a
+     * loop would show up here and nowhere else. Both systems are timed, plus the whole
+     * fixed step, against the 4 ms budget.
+     */
+    navPerf(seconds, orders) {
+      const nv = ctx.tryGet('pathfinding');
+      if (!nv) return { ok: false, why: 'no pathfinding' };
+      beginSweep();
+      const before = JSON.parse(JSON.stringify(nv.stats));
+      /*
+       * Time EVERY system's fixedUpdate, not just the two this file cares about.
+       *
+       * ARCHITECTURE.md budgets the whole fixed step at 4 ms, and pathfinding plus battle is
+       * 78% of it in the assault and 93% in the field — so reporting only those two
+       * understates the budgeted quantity by about a fifth. An earlier version of this
+       * function claimed in its own docstring to time the step and did not.
+       */
+      const wrapped = [];
+      const stepMs = [];
+      let stepAcc = 0;
+      for (const sys of engine.systems) {
+        if (typeof sys.fixedUpdate !== 'function') continue;
+        const orig = sys.fixedUpdate.bind(sys);
+        wrapped.push([sys, sys.fixedUpdate]);
+        sys.fixedUpdate = (...a) => {
+          const t0 = performance.now();
+          orig(...a);
+          stepAcc += performance.now() - t0;
+        };
+      }
+      const nvIdx = wrapped.findIndex(([sys]) => sys === nv);
+      const batIdx = wrapped.findIndex(([sys]) => sys === battle);
+      const navMs = [], batMs = [];
+      // Re-wrap the two named systems so their own cost is recorded as well as summed.
+      if (nvIdx >= 0) {
+        const inner = nv.fixedUpdate;
+        nv.fixedUpdate = (...a) => { const t0 = performance.now(); inner(...a); navMs.push(performance.now() - t0); };
+      }
+      if (batIdx >= 0) {
+        const inner = battle.fixedUpdate;
+        battle.fixedUpdate = (...a) => { const t0 = performance.now(); inner(...a); batMs.push(performance.now() - t0); };
+      }
+      const ticks = Math.round(seconds * 30);
+      // Warm the JIT: the first dozen ticks pay for every later one.
+      for (let t = 0; t < 30; t++) { stepAcc = 0; step(); }
+      navMs.length = 0; batMs.length = 0; stepMs.length = 0;
+
+      // Optionally put the sim under the load a player creates: a whole wing ordered across
+      // the wall at once. This is the case the steady-state figures cannot see.
+      let ordered = 0;
+      const nOrders = Math.abs(orders);
+      if (nOrders > 0) {
+        const aiHeld = holdAI();
+        void aiHeld;
+        const cands = [];
+        for (const u of battle.units) {
+          if (u.destroyed || u.alive === 0) continue;
+          if (battle.siege && battle.siege.ownsUnit && battle.siege.ownsUnit(u.id)) continue;
+          const def = battle.typeOf(u);
+          if (!def || def.walkSpeed < 1.0) continue;
+          cands.push(u);
+        }
+        for (const u of cands.slice(0, nOrders)) {
+          const wz = wallZAt(u.x);
+          // A negative order count means: the same number of units, the same distance,
+          // but to a point on their own side of the wall". The straight line is clear, so
+          // requestRoute short-circuits and no search, waypoint queue, hold-short or resume
+          // is involved — the only difference from the positive case is that the routing
+          // machinery does nothing. Whatever cost survives is men moving, not navigating.
+          const gz = orders < 0
+            ? u.z - 140
+            : (wz === null ? u.z + 200 : wz + 140);
+          engine.events.emit('orderIssued', {
+            unitIds: [u.id], kind: 'move', x: u.x, z: gz, facing: 0, running: true,
+          });
+          ordered++;
+        }
+      }
+
+      for (let t = 0; t < ticks; t++) { stepAcc = 0; step(); stepMs.push(stepAcc); }
+      for (const [sys, fn] of wrapped) sys.fixedUpdate = fn;
+      if (nOrders > 0) releaseAI();
+      endSweep();
+      const stat = (a) => {
+        const s = a.slice().sort((p2, q) => p2 - q);
+        return {
+          mean: +(s.reduce((p2, q) => p2 + q, 0) / Math.max(1, s.length)).toFixed(3),
+          median: +s[Math.floor(s.length * 0.5)].toFixed(3),
+          p95: +s[Math.floor(s.length * 0.95)].toFixed(3),
+          max: +s[s.length - 1].toFixed(3),
+        };
+      };
+      const after = JSON.parse(JSON.stringify(nv.stats));
+      const overBudget = stepMs.filter((v) => v > 4).length;
+      /*
+       * How fast is this machine *right now*.
+       *
+       * A fixed arithmetic workload, timed the same way everything else here is. Four
+       * agents share this box and its load average has swung between 7 and 41 during this
+       * work; the same configuration measured 1.436, 1.919 and 2.304 ms two minutes apart,
+       * and a whole-step figure of 6.8 ms was recorded against a repo baseline of 2.7 for
+       * the same scenario. Without a contemporaneous calibration there is no way to tell a
+       * regression from a busy machine, and this project has already lost a day to exactly
+       * that mistake.
+       */
+      const calibrate = () => {
+        const t0 = performance.now();
+        let acc = 0;
+        for (let i = 1; i <= 4e6; i++) acc += Math.sqrt(i) / i;
+        return { ms: +(performance.now() - t0).toFixed(3), acc: +acc.toFixed(6) };
+      };
+      const cal = calibrate();
+      return {
+        ok: true, seconds, ticks, men: battle.pool.count, ordered,
+        cpuCalibrationMs: cal.ms,
+        wholeFixedStep: stat(stepMs),
+        ticksOverBudget: overBudget,
+        fractionOverBudget: +(overBudget / Math.max(1, stepMs.length)).toFixed(3),
+        pathfinding: stat(navMs), battle: stat(batMs),
+        navStats: Object.fromEntries(Object.keys(after).map((k) => [k, after[k] - before[k]])),
+      };
+    },
+
+    /**
+     * Somewhere the camera stands inside a solid's footprint — the condition the reverted
+     * merge failed under. Chosen by scanning the published boxes rather than hard-coded,
+     * so it keeps working as the city agent moves things.
+     */
+    aCameraInsideABuilding() {
+      const solids = city && city.getObstacles ? city.getObstacles() : [];
+      for (const s of solids) {
+        if (s.kind !== 'building') continue;
+        if (Math.min(s.hw, s.hd) < 3) continue;
+        return { x: +s.x.toFixed(1), z: +s.z.toFixed(1), topY: s.topY, kind: s.kind };
+      }
+      return null;
+    },
+
+    /**
+     * Does the nav grid follow the city when a gate is rammed open mid-battle?
+     *
+     * Siege does exactly that, and BattleSystem already re-indexes its collision field on
+     * the same obstacleGeneration signal. Toggling the gate shut and open again is the
+     * cheapest way to make the city bump that counter without touching another agent's file.
+     */
+    gateRestamp() {
+      const nv = ctx.tryGet('pathfinding');
+      if (!nv || !city || !city.setGateOpen || !city.getGates) return { ok: false, why: 'no gate api' };
+      const gates = city.getGates();
+      if (!gates.length) return { ok: false, why: 'no gates' };
+      const id = gates[0].id;
+      beginSweep();
+      const genBefore = nv.grid.generation;
+      const wasOpen = gates[0].open;
+
+      city.setGateOpen(id, !wasOpen);
+      const t0 = performance.now();
+      step();
+      const msClosed = performance.now() - t0;
+      const genAfterClose = nv.grid.generation;
+      const blockedWhenShut = nv.grid.blockedAt(gates[0].x, gates[0].z);
+
+      city.setGateOpen(id, wasOpen);
+      const t1 = performance.now();
+      step();
+      const msReopen = performance.now() - t1;
+      const openAgain = !nv.grid.blockedAt(gates[0].x, gates[0].z);
+      const genAfterOpen = nv.grid.generation;
+      endSweep();
+      return {
+        ok: true, gate: id,
+        navGeneration: [genBefore, genAfterClose, genAfterOpen],
+        navFollowedTheClose: !!blockedWhenShut,
+        navFollowedTheReopen: !!openAgain,
+        restampMs: +Math.max(msClosed, msReopen).toFixed(2),
+      };
+    },
+
+    /** Run N ticks and report exactly when the grid was re-stamped. Two runs must agree. */
+    restampTrace(ticks) {
+      const nv = ctx.tryGet('pathfinding');
+      if (!nv) return null;
+      beginSweep();
+      const seen = [];
+      let last = nv.stats.restamps;
+      for (let t = 0; t < ticks; t++) {
+        step();
+        if (nv.stats.restamps !== last) {
+          last = nv.stats.restamps;
+          seen.push({ atProbeTick: t, navTick: nv.stats.lastRestampTick, gen: nv.grid.generation });
+        }
+      }
+      endSweep();
+      return { ticks, restamps: nv.stats.restamps, events: seen };
+    },
+
+    /**
+     * Three invariants that must hold, checked directly rather than argued about.
+     *
+     * 1. The straightening mask is never *less* blocked than the expansion mask. If it ever
+     *    were, the string-puller would approve a leg A* would not have expanded through.
+     * 2. An order point derived from a solid is outside every solid. It is pushed clear of
+     *    the one that was hit; landing inside its neighbour would be a new bug.
+     * 3. A partial route never ends further from the goal than it started. AStarSearch
+     *    falls back to its deepest node when nothing beat the start's heuristic, and the
+     *    deepest node can in principle be in the wrong direction; routeAudit's ratio column
+     *    is what catches that.
+     */
+    invariants() {
+      const nv = ctx.tryGet('pathfinding');
+      const terrain = ctx.tryGet('terrain');
+      const out = {};
+
+      if (nv && nv.grid) {
+        let looser = 0;
+        const { blocked, tight } = nv.grid;
+        for (let i = 0; i < blocked.length; i++) if (blocked[i] && !tight[i]) looser++;
+        out.tightLooserThanBlocked = looser;
+      }
+
+      if (terrain) {
+        const heightAt = (x, z) => terrain.heightAt(x, z);
+        const hud = ctx.tryGet('hud');
+        const solids = (hud && hud.controller && hud.controller.pickSolids) || [];
+        const boxes = city && city.getObstacles ? city.getObstacles() : [];
+        const insideAnyBox = (x, z) => {
+          for (const o of boxes) {
+            const c = Math.cos(o.rot), sn = Math.sin(o.rot);
+            const dx = x - o.x, dz = z - o.z;
+            if (Math.abs(dx * c + dz * sn) <= o.hw && Math.abs(-dx * sn + dz * c) <= o.hd) return true;
+          }
+          return false;
+        };
+        // Sweep every solid in the pick set from eight bearings, as if clicked from each.
+        let tested = 0, insideSolid = 0, worst = 0;
+        const o = { x: 0, y: 0, z: 0 };
+        for (let si = 0; si < solids.length; si++) {
+          const s = solids[si];
+          for (let a = 0; a < 8; a++) {
+            const ang = (a / 8) * Math.PI * 2;
+            // A hit point on the box surface in that direction, as a ray would produce.
+            const hx = s.x + Math.cos(ang) * s.hw * 0.98;
+            const hz = s.z + Math.sin(ang) * s.hd * 0.98;
+            window.__pickOrderPoint(solids, si, boxes, hx, hz, heightAt, o);
+            tested++;
+            if (insideAnyBox(o.x, o.z)) insideSolid++;
+            const d = Math.hypot(o.x - hx, o.z - hz);
+            if (d > worst) worst = d;
+          }
+        }
+        out.orderPoints = { tested, insideAnySolid: insideSolid, worstOffsetM: +worst.toFixed(2) };
+      }
+      return out;
+    },
+
+    /**
+     * Which factions are on the field, and whether anything is actually commanding them.
+     *
+     * A third faction can be deployed, perceived and still be left standing because the
+     * AI's commanded list was built for two sides. Counting units against plans is the
+     * difference between "it does not crash" and "it plays".
+     */
+    factions() {
+      const gen = ctx.tryGet('general-ai');
+      const world = gen && gen.world ? gen.world : null;
+      const counts = {};
+      for (const u of battle.units) {
+        if (u.destroyed) continue;
+        counts[u.faction] = (counts[u.faction] ?? 0) + 1;
+      }
+      const out = {};
+      for (const f of Object.keys(counts)) {
+        const n = Number(f);
+        const v = world ? world.views.get(n) : null;
+        out[f] = {
+          units: counts[f],
+          hasPlan: gen && gen.planOf ? !!gen.planOf(n) : null,
+          doctrine: gen && gen.planOf && gen.planOf(n) ? gen.planOf(n).doctrine : null,
+          perceptionView: !!v,
+          enemiesSeen: v ? v.seen.size : null,
+          strength: battle.strength[n],
+        };
+      }
+      return out;
+    },
+
     info() {
       return {
         hasCity: !!city,
@@ -475,6 +1668,38 @@ window.__nav = (() => {
         units: battle.units.filter((u) => !u.destroyed).length,
         men: battle.pool.count,
       };
+    },
+
+    /**
+     * Holes in the curtain, as the pathfinder sees it.
+     *
+     * Walk every wall segment's centreline at 1 m and count the samples where the nav grid
+     * is passable but the city publishes a solid. Each one is a place A* may route a cohort
+     * through masonry, and it is the failure that the deliberate half-cell over-stamp in
+     * NavGrid.blockBox exists to prevent — so any change to that padding has to be checked
+     * here, not argued about.
+     */
+    wallHoles() {
+      if (!nav || !nav.grid) return null;
+      const gr = nav.grid;
+      let samples = 0, holes = 0, legal = 0;
+      const at = [];
+      for (const sg of segs) {
+        const len = Math.hypot(sg.x2 - sg.x1, sg.z2 - sg.z1);
+        const n = Math.max(1, Math.round(len));
+        for (let i = 0; i <= n; i++) {
+          const t = i / n;
+          const x = sg.x1 + (sg.x2 - sg.x1) * t;
+          const z = sg.z1 + (sg.z2 - sg.z1) * t;
+          samples++;
+          if (legalOpening(x, z)) { legal++; continue; }
+          if (!gr.blockedAt(x, z)) {
+            holes++;
+            if (at.length < 12) at.push([+x.toFixed(0), +z.toFixed(0)]);
+          }
+        }
+      }
+      return { samples, legalOpeningSamples: legal, holes, holeFraction: +(holes / Math.max(1, samples - legal)).toFixed(4), at };
     },
 
     /** What the pathfinder actually put in its grid. */
@@ -490,13 +1715,28 @@ window.__nav = (() => {
       // of the building area does. A stamp that covers the wall but not the insulae is
       // the difference between the two user complaints.
       let onWall = 0, onWallBlocked = 0, onBldg = 0, onBldgBlocked = 0;
+      // And the other error: ground the city says is free that the grid says is not.
+      // Over-stamping is deliberate — a thin barrier that slips between cell centres is a
+      // hole A* will route a cohort through — but it also eats streets, and a goal in a
+      // street the grid has closed is a goal no search can reach.
+      let free = 0, freeBlocked = 0, freeInCity = 0, freeInCityBlocked = 0;
       for (let iz = 0; iz < NZ; iz++) {
         const z = Z0 + iz * CELL + CELL * 0.5;
         for (let ix = 0; ix < NX; ix++) {
           const k = occ[iz * NX + ix];
-          if (!k) continue;
           const x = X0 + ix * CELL + CELL * 0.5;
           const blocked = gr.blockedAt(x, z);
+          if (!k) {
+            free++;
+            if (blocked) freeBlocked++;
+            // Inside the walled city, where it matters for a player's destination.
+            const wz = wallZAt(x);
+            if (wz !== null && z > wz + 10) {
+              freeInCity++;
+              if (blocked) freeInCityBlocked++;
+            }
+            continue;
+          }
           if (k === 1) { onWall++; if (blocked) onWallBlocked++; }
           else { onBldg++; if (blocked) onBldgBlocked++; }
         }
@@ -509,6 +1749,10 @@ window.__nav = (() => {
         buildingCoverage: onBldg ? onBldgBlocked / onBldg : 0,
         wallCells: onWall,
         buildingCells: onBldg,
+        freeGroundBlocked: free ? freeBlocked / free : 0,
+        freeGroundInCityBlocked: freeInCity ? freeInCityBlocked / freeInCity : 0,
+        freeCells: free,
+        freeCellsInCity: freeInCity,
       };
     },
 
@@ -968,9 +2212,13 @@ const MAP = args.get('map') ?? '';
 const encodeConfig = (c) =>
   Buffer.from(JSON.stringify(c)).toString('base64')
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-const mapToken = MAP
+const FOE = args.get('foe') ?? '';
+const mapToken = (MAP || FOE)
   ? '&battle=' + encodeConfig({
-      map: MAP, unitSize: 'ultra',
+      ...(MAP ? { map: MAP } : {}),
+      // 2 is Faction.Carthage. Passed as a number so this file does not import the enum.
+      ...(FOE === 'carthage' ? { opponent: 2 } : {}),
+      unitSize: 'ultra',
       rome: { 'legio-cohort': 6, 'praetorian-cohort': 2, 'urban-cohort': 2, sagittarii: 2, equites: 3, scorpio: 1 },
       juthungi: { 'juthungi-warband': 6, 'juthungi-spears': 3, 'juthungi-skirmishers': 3, 'juthungi-chosen': 2, 'juthungi-berserkers': 2, 'juthungi-riders': 3 },
       quality: QUALITY, difficulty: 'hard', seed: 4265438264,
@@ -981,16 +2229,36 @@ const url = `${base}/?harness=1&quality=${QUALITY}&w=960&h=540`
 console.log(`• loading ${url}`);
 await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
 await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 240000 });
+await page.evaluate(PICK_ARMS);
 await page.evaluate(KIT);
 
 const out = { url, scenario: SCENARIO || 'default', seconds: SECONDS };
 
+/**
+ * Reload to a pristine world.
+ *
+ * Each order test runs the clock for a minute or more, so without this the second test
+ * starts from wherever the first one left the army — and a before/after comparison then
+ * depends on the order the tests happened to run in. Costs about half a minute; buys the
+ * property that every measurement below has the same initial condition.
+ */
+const reset = async () => {
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 240000 });
+  await page.evaluate(PICK_ARMS);
+  await page.evaluate(KIT);
+};
+
 out.info = await page.evaluate(() => window.__nav.info());
+out.factions = await page.evaluate(() => window.__nav.factions());
 out.map = MAP || 'default';
 console.log(`\n── setup ──────────────────────────────────────────────`);
 console.log(`  city ${out.info.hasCity ? 'present' : 'ABSENT'}   pathfinding ${out.info.hasNav ? 'present' : 'ABSENT'}`);
 console.log(`  wall segments ${out.info.segments}   units ${out.info.units}   men ${out.info.men}`);
 console.log(`  masonry raster: ${out.info.rasterCounts.wall} wall cells, ${out.info.rasterCounts.building} building cells (4 m)`);
+for (const [f, d] of Object.entries(out.factions)) {
+  console.log(`  faction ${f}: ${d.units} units, plan ${d.hasPlan ? d.doctrine : 'NONE (uncommanded)'}, perception view ${d.perceptionView ? 'yes' : 'NO'}, enemies seen ${d.enemiesSeen}, strength ${d.strength}`);
+}
 
 if (want('stamp')) {
   out.stamp = await page.evaluate(() => window.__nav.stamp());
@@ -1002,6 +2270,15 @@ if (want('stamp')) {
     console.log(`  nav cells blocked by structure${String(out.stamp.blockedStructureCells).padStart(7)}`);
     console.log(`  wall masonry covered          ${(out.stamp.wallCoverage * 100).toFixed(1)}%  (${out.stamp.wallCells} cells)`);
     console.log(`  building masonry covered      ${(out.stamp.buildingCoverage * 100).toFixed(1)}%  (${out.stamp.buildingCells} cells)`);
+    console.log(`  FREE ground the grid blocks   ${(out.stamp.freeGroundBlocked * 100).toFixed(1)}%  (${out.stamp.freeCells} cells)`);
+    console.log(`  free ground INSIDE the city   ${(out.stamp.freeGroundInCityBlocked * 100).toFixed(1)}%  (${out.stamp.freeCellsInCity} cells)`);
+    out.wallHoles = await page.evaluate(() => window.__nav.wallHoles());
+    const wh = out.wallHoles;
+    if (wh) {
+      console.log(`  HOLES in the curtain the grid would route through: ${wh.holes} of ${wh.samples - wh.legalOpeningSamples} solid samples (${(wh.holeFraction * 100).toFixed(2)}%)`);
+      if (wh.at.length) console.log(`     at ${JSON.stringify(wh.at)}`);
+      console.log(`  samples the city publishes as a legal opening:     ${wh.legalOpeningSamples}`);
+    }
   }
 }
 
@@ -1052,6 +2329,197 @@ if (want('reach')) {
     } else {
       console.log(`  route: NONE returned (search requested: ${r.askedForRoute}); waypoint legs seen ${r.waypointLegs}`);
     }
+  }
+}
+
+if (want('pick')) {
+  await page.evaluate(() => window.__pickReady);
+  const ARMS = ['legacy', 'ground', 'order', 'object'];
+  // Two pitches. Zoom 0.12 is near the camera's low limit and is where the reverted bug
+  // was worst; 0.85 is the commanding view a player plans from.
+  // One camera is placed on top of an insula's footprint on purpose. That is where the
+  // reverted merge failed, and a test that never stands there cannot see it.
+  const inside = await page.evaluate(() => window.__nav.aCameraInsideABuilding());
+  // Zoom 0.62 is RTSCamera's own default and is the camera a player actually has. It was
+  // missing from an earlier version of this set, which is how a collapse covering 5.7% of
+  // the default frame — all of it the wall band — went unmeasured.
+  const CAMS = [
+    ...(inside ? [{ label: 'default zoom, on an insula   ', x: inside.x, z: inside.z, zoom: 0.62, yaw: 0 }] : []),
+    { label: 'DEFAULT zoom, at the wall    ', x: 40, z: 470, zoom: 0.62, yaw: 0 },
+    { label: 'DEFAULT zoom, over the city  ', x: 40, z: 700, zoom: 0.62, yaw: 0 },
+    { label: 'low,     over the city       ', x: 40, z: 700, zoom: 0.3, yaw: 0 },
+    { label: 'low,     over the city sw    ', x: 40, z: 700, zoom: 0.3, yaw: 2.4 },
+    { label: 'low,     outside the wall    ', x: 40, z: 300, zoom: 0.3, yaw: 0 },
+    { label: 'medium,  over the city       ', x: 40, z: 500, zoom: 0.5, yaw: 0 },
+    { label: 'steep,   over the city       ', x: 40, z: 700, zoom: 0.85, yaw: 0 },
+    { label: 'steep,   outside the wall    ', x: 40, z: 300, zoom: 0.85, yaw: 0 },
+  ];
+  out.pick = [];
+  console.log(`\n── destination accuracy: world -> screen -> world ─────`);
+  console.log(`  error in metres between where the player pointed and where the ray resolves`);
+  for (const c of CAMS) {
+    const r = await page.evaluate(
+      ([x, z, zoom, yaw, arms]) => window.__nav.pickAccuracy(x, z, zoom, yaw, arms),
+      [c.x, c.z, c.zoom, c.yaw, ARMS]
+    );
+    r.label = c.label;
+    out.pick.push(r);
+    if (!r.ok) { console.log(`  ${c.label}: skipped (${r.why})`); continue; }
+    console.log(`  ${c.label}  eye ${r.camera.aboveGround} m ABOVE GROUND, pitch ${r.camera.pitchDeg}°, ${r.samples} of ${r.pixelsHittingGround} ground pixels are visible open ground, eye inside ${r.eyeInsideSolids} solid(s), ${r.solidPixels} px on a solid (round-trip ${r.referenceRoundTripNdc} ndc)`);
+    for (const k of ARMS) {
+      const a = r.arms[k];
+      const ap = a.allPixels;
+      // `object` answers a different question — it returns a point on a solid, so grading it
+      // against the *ground* reference is meaningless. Its pixel count is the useful part.
+      if (k === 'object') {
+        console.log(`      object  ${ap.resolved} of ${r.pixelsHittingGround} pixels land on a targetable solid`);
+        continue;
+      }
+      console.log(
+        `      ${k.padEnd(7)} visible-ground median ${String(a.medianM).padStart(6)} m  p95 ${String(a.p95M).padStart(6)}  max ${String(a.maxM).padStart(6)}` +
+        `  within 2 m ${a.within2m === null ? '  n/a' : (a.within2m * 100).toFixed(1) + '%'}`
+      );
+      console.log(
+        `              all ${String(ap.resolved).padStart(3)} px: median err ${String(ap.medianErrM).padStart(7)} m  p95 ${String(ap.p95ErrM).padStart(7)} m` +
+        `  spread ${String(ap.spreadM).padStart(7)} m = ${((ap.spreadFractionOfView ?? 0) * 100).toFixed(0)}% of the ${r.referenceSpreadM} m in view` +
+        `  DISTINCT ${String(ap.distinctDestinations).padStart(4)}/${ap.resolved}`
+      );
+      const og = a.openGroundPixels;
+      // Below twenty pixels the quantiles are noise dressed as a result, so say so instead
+      // of printing a confident 0.01 m drawn from a sample of two.
+      console.log(og.n < 20
+        ? `              no solid under the cursor (${String(og.n).padStart(3)} px): TOO FEW PIXELS TO CONCLUDE`
+        : `              no solid under the cursor (${String(og.n).padStart(3)} px): median ${String(og.medianErrM).padStart(6)} m  p95 ${String(og.p95ErrM).padStart(6)} m  max ${String(og.maxErrM).padStart(6)} m`);
+    }
+  }
+  out.towerPick = await page.evaluate((arms) => window.__nav.towerPick(arms), ['legacy', 'ground', 'order', 'object']);
+  console.log(`\n── clicking a siege tower ─────────────────────────────`);
+  if (!out.towerPick.ok) console.log(`  skipped: ${out.towerPick.why}`);
+  else {
+    const t = out.towerPick;
+    console.log(`  tower at (${t.tower.x}, ${t.tower.z}), deck ${t.tower.deckY} m; aiming 2 m below the deck`);
+    console.log(`  legacy arm sees ${t.legacySet} raw city obstacles (no siege engines); shipped arms see the ${t.pickSet}-solid pick set`);
+    for (const k of Object.keys(t.arms)) {
+      const a = t.arms[k];
+      console.log(`      ${k.padEnd(7)} ${a.at ? `resolves at (${a.at[0]}, ${a.at[1]}), ${a.offsetM} m from the tower` : 'no hit'}`);
+    }
+  }
+}
+
+if (want('routes')) {
+  if (want('pick')) await reset();
+  const settle = Number(args.get('settle') ?? 150);
+  const depth = Number(args.get('depth') ?? 140);
+  out.routes = await page.evaluate(([n, s, d]) => window.__nav.routeAudit(n, s, d), [8, settle, depth]);
+  console.log(`\n── route legality: player move orders across the wall ─`);
+  if (!out.routes.ok) console.log(`  skipped: ${out.routes.why}`);
+  else {
+    const r = out.routes;
+    console.log(`  ${r.ordered} units ordered ${depth} m inside the wall, ${r.settleTicks} ticks to settle (AI held: ${r.aiHeld})`);
+    console.log(`  ROUTES TOUCHING ANY SOLID (exact oriented boxes, every kind)  ${r.routesInsideAnySolid} / ${r.ordered}   total ${r.totalExactSolidMetres} m over ${r.totalPathMetres} m of path`);
+    console.log(`  of which through WALL masonry (4 m raster)  ${r.routesCrossingWall} / ${r.ordered}      median length/straight-line ${r.medianRatio}`);
+    console.log(`  routes still a single straight leg: ${r.routesWithZeroLegs}`);
+    if (r.navStats) console.log(`  pathfinder over the window: ${JSON.stringify(r.navStats)}`);
+    if (r.timeline) for (const tl of r.timeline) console.log(`      t+${String(tl.t).padStart(3)} ticks  nodes ${String(tl.nodes).padStart(7)}  queue ${tl.queue}  searches ${tl.searches}  failures ${tl.failures}  units with a route ${tl.withLegs}`);
+    for (const q of r.rows) {
+      console.log(
+        `   #${String(q.unitId).padStart(3)} (${String(q.start[0]).padStart(7)},${String(q.start[1]).padStart(7)}) -> (${String(q.goal[0]).padStart(7)},${String(q.goal[1]).padStart(7)})` +
+        `  legs ${String(q.legs).padStart(2)}  ${String(q.pathLength).padStart(7)} m /${String(q.straightLine).padStart(7)} m = ${q.ratio}` +
+        `  wall ${String(q.wallMetres).padStart(6)} m  bldg(raster) ${String(q.buildingMetres).padStart(6)} m  EXACT ${String(q.exactSolidMetres).padStart(5)} m  illegal ${q.illegalCrossings}` +
+        (q.firstWallAt ? `  first at (${q.firstWallAt[0]},${q.firstWallAt[1]})` : '')
+      );
+      const nv = q.nav;
+      if (nv) console.log(`        nav: pending ${nv.pending}  storedLegs ${nv.n}  ok ${nv.ok}  len ${nv.length}  startClear ${nv.startClear}  goalClear ${nv.goalClear}  directClear ${nv.directClear}  corridorClear ${nv.corridorClear}  cityBlocks ${nv.cityBlocks}`);
+    }
+  }
+}
+
+if (want('attack')) {
+  if (want('routes')) await reset();
+  out.attack = await page.evaluate((s) => window.__nav.attackAudit(s), 60);
+  console.log(`\n── attack order across the wall ───────────────────────`);
+  if (!out.attack.ok) console.log(`  skipped: ${out.attack.why}`);
+  else {
+    const a = out.attack;
+    console.log(`  #${a.attacker} at (${a.start[0]}, ${a.start[1]}) ordered to attack #${a.target} at (${a.targetAt[0]}, ${a.targetAt[1]}), ${a.straightLine} m away`);
+    console.log(`  one tick after the order : ${a.immediate.legs} leg(s), ${a.immediate.wallMetres} m of the path inside wall masonry, ${a.immediate.buildingMetres} m inside buildings, ${a.immediate.illegal} illegal wall crossings`);
+    console.log(`  after 3 s to settle     : ${a.settled.legs} leg(s), ${a.settled.wallMetres} m inside wall masonry (raster), ${a.settled.exactSolidMetres} m inside ANY solid (exact), ${a.settled.illegal} illegal crossings, ${a.settled.length} m long`);
+    console.log(`  after ${a.after.seconds} s of walking : travelled ${a.after.travelled} m, now (${a.after.end[0]}, ${a.after.end[1]}), ${a.after.gapToTarget} m from the target, crossed the wall ${a.after.crossedWall ? 'YES' : 'NO'}, anchor ticks in masonry ${a.after.ticksInMasonry}`);
+  }
+}
+
+if (want('arrival')) {
+  if (want('attack') || want('routes')) await reset();
+  const longS = Number(args.get('arrivesecs') ?? 210);
+  out.arrival = await page.evaluate(([n, s, t, l]) => window.__nav.arrival(n, s, t, l), [8, 60, 20, longS]);
+  console.log(`\n── arrival ────────────────────────────────────────────`);
+  if (!out.arrival.ok) console.log(`  skipped: ${out.arrival.why}`);
+  else {
+    const a = out.arrival;
+    console.log(`  at 60 s : ARRIVED ${a.at60.arrived}/${a.ordered} (${(a.at60.arrivedFraction * 100).toFixed(1)}%) within ${a.tol} m; STUCK ${a.at60.stuck}, OF WHICH AGAINST MASONRY ${a.at60.stuckAgainstWall}`);
+    console.log(`  at ${String(a.longSeconds).padStart(3)} s : ARRIVED ${a.arrived}/${a.ordered} (${(a.arrivedFraction * 100).toFixed(1)}%);              STUCK ${a.stuck}, OF WHICH AGAINST MASONRY ${a.stuckAgainstWall}`);
+    console.log(`  median fraction of the initial gap closed: ${a.medianProgress}`);
+    for (const q of a.rows) {
+      console.log(
+        `   #${String(q.unitId).padStart(3)} -> (${String(q.goal[0]).padStart(6)},${String(q.goal[1]).padStart(6)})  gap ${String(q.startGap).padStart(6)} m` +
+        `  at60 ${String(q.remainingAt60).padStart(6)} m  end ${String(q.remaining).padStart(6)} m  progress ${String(q.progress).padStart(5)}` +
+        `  arrived ${q.arrivedAt === null ? '   no' : 't+' + q.arrivedAt}  moved/5s ${String(q.movedLast5s).padStart(5)} m` +
+        `  locked ${q.contactLocked ? 'Y' : 'n'}  masonry ${q.metresToMasonry === null ? ' >14' : String(q.metresToMasonry).padStart(4)} m  wps ${q.waypoints}`
+      );
+    }
+  }
+}
+
+if (want('invariants')) {
+  await page.evaluate(() => window.__pickReady);
+  out.invariants = await page.evaluate(() => window.__nav.invariants());
+  const iv = out.invariants;
+  console.log(`\n── invariants ─────────────────────────────────────────`);
+  console.log(`  nav cells where the straightening mask is LOOSER than the expansion mask: ${iv.tightLooserThanBlocked}  (must be 0)`);
+  if (iv.orderPoints) {
+    console.log(`  order points derived from a solid: ${iv.orderPoints.tested} tested, ${iv.orderPoints.insideAnySolid} landed INSIDE a solid (must be 0), worst offset ${iv.orderPoints.worstOffsetM} m`);
+  }
+}
+
+if (want('restamp')) {
+  const r1 = await page.evaluate(() => window.__nav.restampTrace(900));
+  await reset();
+  const r2 = await page.evaluate(() => window.__nav.restampTrace(900));
+  console.log(`\n── when the nav grid re-stamps, twice over ────────────`);
+  console.log(`  run A: ${JSON.stringify(r1)}`);
+  console.log(`  run B: ${JSON.stringify(r2)}`);
+  console.log(`  ${JSON.stringify(r1) === JSON.stringify(r2) ? 'IDENTICAL' : 'DIVERGENT'}`);
+  out.restamp = { a: r1, b: r2 };
+}
+
+if (want('gate')) {
+  out.gate = await page.evaluate(() => window.__nav.gateRestamp());
+  console.log(`\n── nav grid follows a gate opening ────────────────────`);
+  if (!out.gate.ok) console.log(`  skipped: ${out.gate.why}`);
+  else {
+    const g = out.gate;
+    console.log(`  ${g.gate}: nav grid generation ${g.navGeneration.join(' -> ')}`);
+    console.log(`  grid blocked the carriageway when the gate shut: ${g.navFollowedTheClose ? 'YES' : 'NO'}`);
+    console.log(`  grid re-opened it when the gate opened:          ${g.navFollowedTheReopen ? 'YES' : 'NO'}`);
+    console.log(`  worst re-stamp cost: ${g.restampMs} ms in the tick it happened`);
+  }
+}
+
+if (want('navperf')) {
+  if (want('arrival') || want('attack') || want('routes')) await reset();
+  const loadOrders = Number(args.get('orders') ?? 0);
+  out.navPerf = await page.evaluate(([s, o]) => window.__nav.navPerf(s, o), [40, loadOrders]);
+  console.log(`\n── AI navigation cost, both commanders live ───────────`);
+  if (!out.navPerf.ok) console.log(`  skipped: ${out.navPerf.why}`);
+  else {
+    const n = out.navPerf;
+    console.log(`  ${n.ticks} ticks, ${n.men} men${n.ordered ? `, ${n.ordered} units ordered across the wall at t=0` : ''}`);
+    console.log(`  machine speed right now: calibration workload ${n.cpuCalibrationMs} ms (lower is a quieter box; compare across runs before believing a delta)`);
+    console.log(`  WHOLE fixedUpdate        mean ${n.wholeFixedStep.mean} ms  median ${n.wholeFixedStep.median}  p95 ${n.wholeFixedStep.p95}  max ${n.wholeFixedStep.max}   (BUDGET 4.000 ms for 6k men)`);
+    console.log(`  ticks over 4 ms          ${n.ticksOverBudget} / ${n.ticks}  (${(n.fractionOverBudget * 100).toFixed(1)}%)`);
+    console.log(`    of which pathfinding   mean ${n.pathfinding.mean} ms  median ${n.pathfinding.median}  p95 ${n.pathfinding.p95}  max ${n.pathfinding.max}`);
+    console.log(`    of which battle        mean ${n.battle.mean} ms  median ${n.battle.median}  p95 ${n.battle.p95}  max ${n.battle.max}`);
+    console.log(`  pathfinder work: ${JSON.stringify(n.navStats)}`);
   }
 }
 

@@ -6,6 +6,12 @@
  * an oriented rectangle per unit whose width is the frontage and whose depth is the
  * ranks. That is exactly the footprint the sim lays men out into, so hit tests agree
  * with what the player sees.
+ *
+ * The screen ray comes in three forms — `screenToGround`, `screenToSolid` and `screenPick`
+ * — because it is asked two different questions and some callers want one answer, not both.
+ * `SelectionController` wants both and uses `screenPick`; the single-question forms are the
+ * ones `tools/probe-nav.mjs --only=pick` grades separately, which is how the regression that
+ * produced them is kept from coming back.
  */
 
 import * as THREE from 'three';
@@ -79,7 +85,7 @@ const RAY_DIR = new THREE.Vector3();
 const RAY_TMP = new THREE.Vector3();
 
 /**
- * An upright box the cursor can land on: a wall bay, a tower, an insula, a siege engine.
+ * An upright box the cursor can land on: a wall bay, a tower, a siege engine.
  *
  * Structurally a subset of `sim/Obstacles.Obstacle`, redeclared rather than imported so the
  * UI layer does not take a dependency on the simulation's types for four numbers, and so a
@@ -97,56 +103,84 @@ export interface PickSolid {
 }
 
 /**
- * Intersect the camera ray through (ndcX, ndcY) with the heightfield, and optionally with a
- * set of solids.
+ * Above this, `topY` is a sentinel rather than a roof, and the box is skipped for picking.
  *
- * Without `solids` this only ever hits terrain, which is what made right-clicking a 20 m siege
- * tower issue a move order to the grass behind it — measured at 90.8 m from the tower before
- * the crew anchor was also fixed, and still 13.6 m out afterwards purely from this. A player
- * pointing at a tower means the tower.
- *
- * Rather than marching, this iterates the fixed point `t = (eyeY - h(p)) / -dir.y`.
- * On terrain this gentle it converges in three or four steps, and it costs four
- * `heightAt` samples instead of the fifty a march would need.
+ * `CitySystem` publishes `topY: 1e4` for every insula and monument — 1,730 of its 1,827
+ * boxes — because it does not model their heights. That is fine for collision, where the
+ * only question is "is a man's head above this", and fatal for a ray, where it makes each
+ * one an infinitely tall pillar. The tallest modelled top on this map is a wall tower at
+ * 63.7 m, so 400 clears anything genuine six times over and excludes every sentinel.
  */
-export function screenToGround(
-  camera: THREE.PerspectiveCamera,
-  ndcX: number,
-  ndcY: number,
-  heightAt: (x: number, z: number) => number,
-  out: { x: number; y: number; z: number },
-  maxDistance = 4200,
-  solids?: readonly PickSolid[]
-): boolean {
+const SENTINEL_TOP_Y = 400;
+
+/**
+ * A hit nearer than this is the eye standing inside the box, not something the player aimed
+ * at. Half a metre: closer than the near clip plane at any zoom.
+ */
+const MIN_PICK_DISTANCE = 0.5;
+
+/** Metres a solid-derived order point is pushed clear of the solid's own face. */
+const SOLID_STANDOFF = 1.6;
+
+/**
+ * What one screen ray means. Two answers, because it is being asked two questions.
+ *
+ * "What ground did I click" and "what object did I click" are different questions with
+ * different right answers — a rally point in a street wants the paving, an order against a
+ * siege tower wants the tower — and merging them inside one function is what made every
+ * ground click in the city land on the same spot. Measured: with the city's 1,827 solids
+ * folded into the ground ray, six spread-out clicks from one camera all resolved within
+ * two metres of the camera's own position, 42 to 92 m from where the player pointed,
+ * because the eye stood inside an insula's footprint and that insula's `topY` was 1e4.
+ *
+ * So the ray is shared — it is one unproject and one set of `heightAt` samples — and the
+ * interpretation is not. The caller decides which answer its gesture wants.
+ */
+export interface ScreenPick {
+  /** Ground under the cursor. Only meaningful when `groundHit`. */
+  groundX: number;
+  groundY: number;
+  groundZ: number;
+  /** False when the ray never meets the heightfield: the cursor is on or above the horizon. */
+  groundHit: boolean;
+  /** Index into the caller's `solids`, or -1 when the ray met none of them. */
+  solid: number;
+  /** Point on that solid's surface. Only meaningful when `solid >= 0`. */
+  solidX: number;
+  solidY: number;
+  solidZ: number;
+  /** Metres from the eye to the solid hit, or -1. */
+  solidDistance: number;
+}
+
+export function makeScreenPick(): ScreenPick {
+  return {
+    groundX: 0, groundY: 0, groundZ: 0, groundHit: false,
+    solid: -1, solidX: 0, solidY: 0, solidZ: 0, solidDistance: -1,
+  };
+}
+
+/** Set up RAY_ORIGIN / RAY_DIR for a screen position. False if the ray is degenerate. */
+function makeRay(camera: THREE.PerspectiveCamera, ndcX: number, ndcY: number): boolean {
   RAY_TMP.set(ndcX, ndcY, 0.5).unproject(camera);
   RAY_ORIGIN.copy(camera.position);
   RAY_DIR.copy(RAY_TMP).sub(RAY_ORIGIN);
   const len = RAY_DIR.length();
   if (len < 1e-6) return false;
   RAY_DIR.multiplyScalar(1 / len);
+  return true;
+}
 
-  /*
-   * Solids are tested BEFORE the horizon bail-out, and that ordering is the whole point.
-   *
-   * A player clicking the upper half of a 20 m siege tower or a wall-walk produces a ray that
-   * rises — it never meets the heightfield at all. Testing solids after the bail-out meant
-   * such a click returned false and issued no order whatsoever, which is worse than the
-   * original bug. Found by aiming at a point two metres below a tower's roof and getting
-   * `ok: false` from both arms of an A/B.
-   */
-  const tSolid = solids && solids.length
-    ? raySolid(RAY_ORIGIN, RAY_DIR, solids, maxDistance)
-    : -1;
-
-  // Looking at or above the horizon: no ground under the cursor, but a solid may still be.
-  if (RAY_DIR.y > -0.012) {
-    if (tSolid < 0) return false;
-    out.x = RAY_ORIGIN.x + RAY_DIR.x * tSolid;
-    out.y = RAY_ORIGIN.y + RAY_DIR.y * tSolid;
-    out.z = RAY_ORIGIN.z + RAY_DIR.z * tSolid;
-    return true;
-  }
-
+/**
+ * Distance along the current ray to the heightfield, or -1.
+ *
+ * Rather than marching, this iterates the fixed point `t = (eyeY - h(p)) / -dir.y`.
+ * On terrain this gentle it converges in three or four steps, and it costs four
+ * `heightAt` samples instead of the fifty a march would need.
+ */
+function rayGroundT(heightAt: (x: number, z: number) => number, maxDistance: number): number {
+  // Looking at or above the horizon: the ray never comes down inside the world.
+  if (RAY_DIR.y > -0.012) return -1;
   let t = (RAY_ORIGIN.y - heightAt(RAY_ORIGIN.x, RAY_ORIGIN.z)) / -RAY_DIR.y;
   t = Math.min(t, maxDistance);
   for (let i = 0; i < 4; i++) {
@@ -157,32 +191,239 @@ export function screenToGround(
     if (!Number.isFinite(nt)) break;
     t = Math.min(Math.max(nt, 0.1), maxDistance);
   }
-
-  out.x = RAY_ORIGIN.x + RAY_DIR.x * t;
-  out.z = RAY_ORIGIN.z + RAY_DIR.z * t;
-  out.y = heightAt(out.x, out.z);
-
-  // If a solid stands between the eye and that ground point, the player meant the solid.
-  if (tSolid >= 0 && tSolid < t) {
-    out.x = RAY_ORIGIN.x + RAY_DIR.x * tSolid;
-    out.y = RAY_ORIGIN.y + RAY_DIR.y * tSolid;
-    out.z = RAY_ORIGIN.z + RAY_DIR.z * tSolid;
-    return true;
-  }
-  return t < maxDistance;
+  return t < maxDistance ? t : -1;
 }
 
 /**
- * Nearest ray hit against a set of upright oriented boxes, or -1.
+ * Intersect the camera ray through (ndcX, ndcY) with the heightfield.
+ *
+ * Terrain only, and deliberately so — see `ScreenPick`. Use `screenToSolid` when the
+ * question is what object is under the cursor, or `screenPick` when both answers are
+ * wanted from one ray.
+ */
+export function screenToGround(
+  camera: THREE.PerspectiveCamera,
+  ndcX: number,
+  ndcY: number,
+  heightAt: (x: number, z: number) => number,
+  out: { x: number; y: number; z: number },
+  maxDistance = 4200
+): boolean {
+  if (!makeRay(camera, ndcX, ndcY)) return false;
+  const t = rayGroundT(heightAt, maxDistance);
+  if (t < 0) return false;
+  out.x = RAY_ORIGIN.x + RAY_DIR.x * t;
+  out.z = RAY_ORIGIN.z + RAY_DIR.z * t;
+  out.y = heightAt(out.x, out.z);
+  return true;
+}
+
+/**
+ * Nearest solid under the cursor: its index in `solids`, or -1.
+ *
+ * Deliberately independent of the terrain. A player clicking the upper half of a 20 m
+ * siege tower produces a ray that rises and never meets the heightfield at all, so a
+ * solid test gated behind a successful ground hit answers `false` for exactly the clicks
+ * that most need an answer.
+ */
+export function screenToSolid(
+  camera: THREE.PerspectiveCamera,
+  ndcX: number,
+  ndcY: number,
+  solids: readonly PickSolid[],
+  out: { x: number; y: number; z: number },
+  maxDistance = 4200
+): number {
+  if (!solids.length || !makeRay(camera, ndcX, ndcY)) return -1;
+  const i = raySolid(RAY_ORIGIN, RAY_DIR, solids, maxDistance);
+  if (i < 0) return -1;
+  out.x = RAY_ORIGIN.x + RAY_DIR.x * RAY_HIT_T;
+  out.y = RAY_ORIGIN.y + RAY_DIR.y * RAY_HIT_T;
+  out.z = RAY_ORIGIN.z + RAY_DIR.z * RAY_HIT_T;
+  return i;
+}
+
+/** Both answers from one ray. */
+export function screenPick(
+  camera: THREE.PerspectiveCamera,
+  ndcX: number,
+  ndcY: number,
+  heightAt: (x: number, z: number) => number,
+  solids: readonly PickSolid[],
+  out: ScreenPick,
+  maxDistance = 4200
+): void {
+  out.groundHit = false;
+  out.solid = -1;
+  out.solidDistance = -1;
+  if (!makeRay(camera, ndcX, ndcY)) return;
+
+  const tGround = rayGroundT(heightAt, maxDistance);
+  if (tGround >= 0) {
+    out.groundX = RAY_ORIGIN.x + RAY_DIR.x * tGround;
+    out.groundZ = RAY_ORIGIN.z + RAY_DIR.z * tGround;
+    out.groundY = heightAt(out.groundX, out.groundZ);
+    out.groundHit = true;
+  }
+
+  if (!solids.length) return;
+  // A solid behind the ground point is hidden by the hill in front of it.
+  const limit = tGround >= 0 ? tGround : maxDistance;
+  const i = raySolid(RAY_ORIGIN, RAY_DIR, solids, limit);
+  if (i < 0) return;
+  out.solid = i;
+  out.solidDistance = RAY_HIT_T;
+  out.solidX = RAY_ORIGIN.x + RAY_DIR.x * RAY_HIT_T;
+  out.solidY = RAY_ORIGIN.y + RAY_DIR.y * RAY_HIT_T;
+  out.solidZ = RAY_ORIGIN.z + RAY_DIR.z * RAY_HIT_T;
+}
+
+/**
+ * Where a formation ordered at a solid should actually be sent: the ground just outside
+ * its nearest face, on the side the player was looking from.
+ *
+ * Not the hit point itself, and not the ground under it. A click on a siege tower's flank
+ * lands on the box surface, and a click on its roof lands above the footprint — both are
+ * places a cohort cannot stand. Pushing out of the footprint in plan is the one rule that
+ * handles both, and it is the same escape vector `ObstacleField.escape` uses, so the point
+ * this produces is one the collision system also considers free.
+ */
+export function orderPointForSolid(
+  solids: readonly PickSolid[],
+  index: number,
+  blockers: readonly PickSolid[],
+  hitX: number,
+  hitZ: number,
+  heightAt: (x: number, z: number) => number,
+  out: { x: number; y: number; z: number }
+): void {
+  let x = hitX;
+  let z = hitZ;
+  /*
+   * Pushing clear of the box that was hit is not the same as being clear of everything.
+   * The curtain's bays abut end to end and a tower stands at every bay start, so a click
+   * near a joint pushes out of one bay and straight into its neighbour: measured over 808
+   * synthetic hits across the whole pick set, **153 landed inside another solid**. Four
+   * passes, because the geometry is convex and abutting rather than interlocking — two is
+   * enough in every case observed and the fourth is there so a pathological arrangement
+   * degrades to "not quite clear" instead of looping.
+   *
+   * `blockers` is what the point must end up outside of and is a wider set than `solids`:
+   * a man cannot stand inside an insula either, and insulae are not targetable so they are
+   * not in the pick set. Escaping only the pick set left 23 of the 808 inside a building.
+   */
+  for (let pass = 0; pass < 4; pass++) {
+    const s = pass === 0 ? solids[index] : containingSolid(blockers, x, z);
+    if (!s) break;
+    pushOutOfSolid(s, x, z, SCRATCH_XZ);
+    x = SCRATCH_XZ.x;
+    z = SCRATCH_XZ.z;
+  }
+  /*
+   * The iteration can still end inside something where two boxes overlap and each pushes
+   * back into the other — 25 of the same 808 hits, down from 153 but not zero. Fall back to
+   * the nearest free point on an outward spiral, which cannot oscillate. Only this 3% pays
+   * for it, and it runs once per pointer event, not per frame.
+   */
+  if (containingSolid(blockers, x, z)) {
+    outer:
+    for (let ring = 1; ring <= 12; ring++) {
+      for (let a = 0; a < 12; a++) {
+        const ang = (a / 12) * Math.PI * 2;
+        const px = hitX + Math.cos(ang) * ring * SOLID_STANDOFF;
+        const pz = hitZ + Math.sin(ang) * ring * SOLID_STANDOFF;
+        if (!containingSolid(blockers, px, pz)) {
+          x = px;
+          z = pz;
+          break outer;
+        }
+      }
+    }
+  }
+  out.x = x;
+  out.z = z;
+  out.y = heightAt(x, z);
+}
+
+const SCRATCH_XZ = { x: 0, z: 0 };
+
+/** The first solid whose footprint contains (x,z), or undefined. */
+function containingSolid(solids: readonly PickSolid[], x: number, z: number): PickSolid | undefined {
+  for (const s of solids) {
+    const c = Math.cos(s.rot);
+    const sn = Math.sin(s.rot);
+    const dx = x - s.x;
+    const dz = z - s.z;
+    if (Math.abs(dx * c + dz * sn) > s.hw) continue;
+    if (Math.abs(-dx * sn + dz * c) > s.hd) continue;
+    return s;
+  }
+  return undefined;
+}
+
+/** One step of the escape: out through the nearest face, with the tangent clamped. */
+function pushOutOfSolid(s: PickSolid, px: number, pz: number, out: { x: number; z: number }): void {
+  const c = Math.cos(s.rot);
+  const sn = Math.sin(s.rot);
+  const dx = px - s.x;
+  const dz = pz - s.z;
+  const u = dx * c + dz * sn;
+  const v = -dx * sn + dz * c;
+  /*
+   * Two decisions, and getting either wrong reproduces the original bug.
+   *
+   * *Where* on the box: the point the ray actually struck, not the box's centre. Pushing out
+   * from the centre gives one destination for the whole box however wide it is, which on a
+   * 35.5 m curtain bay is bug (a) again in a new costume — measured at the default camera,
+   * five pixels spanning 9 m of the wall all resolved to the same point, the furthest 36.1 m
+   * from where the player pointed.
+   *
+   * *Which* face: the nearest one, by distance out through it. This is the same rule as
+   * `ObstacleField.escape`, so the point it produces is one the collision system also
+   * considers free. A hit on a side face is already on that face, so the distance out is
+   * zero and it wins; a hit on the *top* of a wall-walk is inside the footprint in plan, and
+   * the nearest way out is across the 3.5 m thickness rather than along the 35.5 m run. The
+   * alternative — comparing offsets scaled by their half-extents — sends a click in the
+   * middle of a bay to the far *end* of it, up to 19 m along the wall, which showed up as a
+   * 24.79 m p95 against a 0.29 m ground answer.
+   */
+  const outU = s.hw - Math.abs(u);
+  const outV = s.hd - Math.abs(v);
+  let pu: number;
+  let pv: number;
+  if (outU <= outV) {
+    pu = (u >= 0 ? 1 : -1) * (s.hw + SOLID_STANDOFF);
+    pv = Math.min(s.hd, Math.max(-s.hd, v));
+  } else {
+    pu = Math.min(s.hw, Math.max(-s.hw, u));
+    pv = (v >= 0 ? 1 : -1) * (s.hd + SOLID_STANDOFF);
+  }
+  out.x = s.x + pu * c - pv * sn;
+  out.z = s.z + pu * sn + pv * c;
+}
+
+/** Distance along the ray to the last hit returned by `raySolid`. */
+let RAY_HIT_T = -1;
+
+/**
+ * Nearest ray hit against a set of upright oriented boxes: the box's index, or -1. The
+ * distance is left in `RAY_HIT_T`.
  *
  * A standard slab test done in each box's own frame: rotate the ray by -rot about Y so the
  * box becomes axis-aligned, then intersect three slabs. The boxes are upright, so only the
- * horizontal pair needs rotating and the vertical slab runs from the terrain up to `topY`.
+ * horizontal pair needs rotating and the vertical slab runs from `baseY` up to `topY`.
  *
- * There is no broadphase here on purpose. This runs once per pointer event, not per frame,
- * and 3,000 boxes at a handful of flops each is far below the cost of the `heightAt` samples
- * the caller has already paid. Adding a grid would be a second copy of the city's own
- * broadphase to keep in step with it.
+ * Two rules here are not decoration. Boxes taller than `SENTINEL_TOP_Y` are skipped, and a
+ * hit nearer than `MIN_PICK_DISTANCE` is discarded. Together they are the whole of the
+ * regression that made every ground click in Rome land in the same place: the eye stood
+ * inside an insula's footprint, the insula's `topY` was the 1e4 sentinel so the ray was
+ * inside it vertically too, the slab test therefore returned `tmin = 0`, and the "hit"
+ * was the camera's own position. Six clicks, one answer.
+ *
+ * There is no broadphase on purpose. This runs once per pointer event, not per frame, and
+ * a few hundred boxes at a handful of flops each is far below the cost of the `heightAt`
+ * samples the caller has already paid. Adding a grid would be a second copy of the city's
+ * own broadphase to keep in step with it.
  */
 function raySolid(
   origin: THREE.Vector3,
@@ -191,7 +432,11 @@ function raySolid(
   maxT: number
 ): number {
   let best = -1;
-  for (const s of solids) {
+  let bestT = -1;
+  for (let i = 0; i < solids.length; i++) {
+    const s = solids[i];
+    // Not a roof, a sentinel. Picking against it is picking against a pillar to the sky.
+    if (s.topY >= SENTINEL_TOP_Y) continue;
     const c = Math.cos(-s.rot);
     const sn = Math.sin(-s.rot);
     const ox = origin.x - s.x;
@@ -221,8 +466,8 @@ function raySolid(
     }
     if (!Number.isFinite(tmin)) continue;
 
-    // Vertical slab: base to top. `baseY` defaults generously low because an obstacle only
-    // publishes its top — the city knows where the ground is and the box is upright.
+    // Vertical slab: base to top. `baseY` defaults generously low because a city obstacle
+    // only publishes its top — the ground under it is the terrain, and the box is upright.
     const b = s.baseY ?? -1e4;
     if (Math.abs(dir.y) < 1e-9) {
       if (origin.y < b || origin.y > s.topY) continue;
@@ -236,8 +481,13 @@ function raySolid(
       if (tmin > tmax) continue;
     }
 
-    if (tmin >= 0 && tmin <= maxT && (best < 0 || tmin < best)) best = tmin;
+    if (tmin < MIN_PICK_DISTANCE || tmin > maxT) continue;
+    if (best < 0 || tmin < bestT) {
+      best = i;
+      bestT = tmin;
+    }
   }
+  RAY_HIT_T = bestT;
   return best;
 }
 

@@ -1,6 +1,6 @@
 import type { EngineContext, Subsystem } from '../core/Engine';
 import type { BattleSystem } from '../sim/BattleSystem';
-import { Faction, enemyOf, UnitOrder, type UnitGroupState, type UnitTypeDef } from '../sim/types';
+import { ALL_FACTIONS, Faction, UnitOrder, type UnitGroupState, type UnitTypeDef } from '../sim/types';
 import { angleDelta } from '../util/math';
 import type { Rng } from '../util/rand';
 import { AIWorld, isLineUnit, type UnitInfo } from './AIWorld';
@@ -844,7 +844,7 @@ export class TacticalAISystem implements Subsystem {
    */
   private commanded: Set<Faction>;
 
-  constructor(world: AIWorld, difficulty: Difficulty = 'hard', commanded: Faction[] = [Faction.Rome, Faction.Germanic]) {
+  constructor(world: AIWorld, difficulty: Difficulty = 'hard', commanded: Faction[] = [...ALL_FACTIONS]) {
     this.commanded = new Set(commanded);
     this.world = world;
     this.difficulty = difficulty;
@@ -1128,7 +1128,11 @@ export class TacticalAISystem implements Subsystem {
       latMax = Math.max(latMax, lat + mem.halfFront);
     }
 
-    const enemyView = this.world.view(enemyOf(c.u.faction));
+    // The line to swing around is the *target's own* army's, not "the other side's".
+    // `enemyOf` is a two-faction flip, so with a third army on the field a cohort sent to
+    // flank a Carthaginian was measuring outwards from the Germanic line and picking its
+    // side from a formation on the far side of the battlefield.
+    const enemyView = this.world.view(target.faction);
     const outward = (target.x - enemyView.lineX) * rx + (target.z - enemyView.lineZ) * rz;
     let side = outward >= 0 ? 1 : -1;
     const reachFor = (s: number): number => (s > 0 ? latMax : -latMin) + 62;

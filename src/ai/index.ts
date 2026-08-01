@@ -1,5 +1,5 @@
 import type { Engine, Subsystem } from '../core/Engine';
-import { Faction } from '../sim/types';
+import { ALL_FACTIONS, Faction } from '../sim/types';
 import { AIWorld } from './AIWorld';
 import { AIDebugSystem } from './AIDebug';
 import { GeneralAISystem } from './GeneralAI';
@@ -42,7 +42,9 @@ export interface AIBundle {
 
 export function createAI(opts: AIOptions = {}): AIBundle {
   const difficulty = opts.difficulty ?? 'hard';
-  const commanded = opts.commanded ?? [Faction.Rome, Faction.Germanic];
+  // Every faction the roster knows, so a third side is commanded rather than left standing.
+  // Callers that want a human in the game pass an explicit list; `main.ts` does.
+  const commanded = opts.commanded ?? [...ALL_FACTIONS];
   const world = new AIWorld();
   const pathfinding = new PathfindingSystem();
   const tactical = new TacticalAISystem(world, difficulty, commanded);

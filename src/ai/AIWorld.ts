@@ -1,5 +1,5 @@
 import type { BattleSystem } from '../sim/BattleSystem';
-import { Faction, UnitOrder, type UnitGroupState, type UnitTypeDef, type UnitClass } from '../sim/types';
+import { ALL_FACTIONS, Faction, UnitOrder, type UnitGroupState, type UnitTypeDef, type UnitClass } from '../sim/types';
 import { angleDelta } from '../util/math';
 import { footprintOf, type PathfindingSystem } from './Pathfinding';
 import {
@@ -254,8 +254,11 @@ export class AIWorld {
   attach(battle: BattleSystem, nav: PathfindingSystem): void {
     this.battle = battle;
     this.nav = nav;
-    this.views.set(Faction.Rome, this.blankView(Faction.Rome));
-    this.views.set(Faction.Germanic, this.blankView(Faction.Germanic));
+    // Every faction the roster knows, not the two this file used to name. A third side
+    // landed and `view()` laundered the missing entry through a non-null assertion, so the
+    // first tick a Carthaginian unit existed threw "Cannot read properties of undefined
+    // (reading 'seen')" out of `buildThreats`.
+    for (const f of ALL_FACTIONS) this.views.set(f, this.blankView(f));
   }
 
   private blankView(f: Faction): FactionView {
@@ -271,8 +274,38 @@ export class AIWorld {
     };
   }
 
+  /**
+   * A faction's view, created on demand.
+   *
+   * The lazy branch is not defensive padding: a scenario may field a faction the roster did
+   * not list, and returning a blank view is enormously better than the non-null assertion
+   * that used to stand here, which turned an unlisted faction into a crash three call
+   * levels away in `buildThreats`.
+   */
+  /**
+   * Factions with anything left on the field, plus any the roster declares.
+   *
+   * Derived rather than hard-coded so a scenario that fields two of three sides does not
+   * pay for the third, and one that fields a fourth is not silently ignored. Iterated in
+   * `ALL_FACTIONS` order and then by numeric id, so the sequence is stable across runs —
+   * this feeds `fixedUpdate`, and a Set's insertion order would depend on spawn order.
+   */
+  private activeFactions(): Faction[] {
+    const out: Faction[] = [];
+    for (const f of ALL_FACTIONS) if (this.views.has(f)) out.push(f);
+    const extra: Faction[] = [];
+    for (const f of this.views.keys()) if (!out.includes(f)) extra.push(f);
+    extra.sort((a, b) => a - b);
+    return out.concat(extra);
+  }
+
   view(f: Faction): FactionView {
-    return this.views.get(f)!;
+    let v = this.views.get(f);
+    if (!v) {
+      v = this.blankView(f);
+      this.views.set(f, v);
+    }
+    return v;
   }
 
   infoOf(unitId: number): UnitInfo | undefined {
@@ -292,11 +325,12 @@ export class AIWorld {
 
     this.buildUnitInfo();
     this.buildFactionViews();
-    this.buildPerception(Faction.Rome, Faction.Germanic);
-    this.buildPerception(Faction.Germanic, Faction.Rome);
+    // One pass per faction, each seeing everyone who is not itself. With two sides this is
+    // the pair of calls it replaces; with three it is the only formulation that does not
+    // silently omit a matchup.
+    for (const f of this.activeFactions()) this.buildPerception(f);
     this.buildThreats();
-    this.buildWeakPoints(Faction.Rome);
-    this.buildWeakPoints(Faction.Germanic);
+    for (const f of this.activeFactions()) this.buildWeakPoints(f);
   }
 
   // -------------------------------------------------------------------------
@@ -356,7 +390,7 @@ export class AIWorld {
   }
 
   private buildFactionViews(): void {
-    for (const f of [Faction.Rome, Faction.Germanic] as Faction[]) {
+    for (const f of this.activeFactions()) {
       const v = this.view(f);
       v.fighting.length = 0;
       v.routing = 0;
@@ -417,7 +451,15 @@ export class AIWorld {
   // Perception
   // -------------------------------------------------------------------------
 
-  private buildPerception(observer: Faction, target: Faction): void {
+  /**
+   * What `observer` can see of everyone else.
+   *
+   * "Everyone who is not me", not "the other side". The two-faction form took a single
+   * `target` and filtered `e.faction !== target`, which with a third side on the field
+   * meant each observer perceived exactly one of its two enemies and was blind to the
+   * other — no threat, no weak point, no reaction.
+   */
+  private buildPerception(observer: Faction): void {
     const v = this.view(observer);
     const mine = v.fighting;
     v.routingEnemies = 0;
@@ -425,7 +467,7 @@ export class AIWorld {
     v.seenFighting = 0;
 
     for (const e of this.battle.units) {
-      if (e.faction !== target) continue;
+      if (e.faction === observer) continue;
       const rec = this.info.get(e.id);
 
       if (e.destroyed) {
@@ -575,7 +617,7 @@ export class AIWorld {
 
     // Line dressing: for each line unit, find the friendly line unit nearest on each
     // side along the line's lateral axis, and the metres of open ground between them.
-    for (const f of [Faction.Rome, Faction.Germanic] as Faction[]) {
+    for (const f of this.activeFactions()) {
       const v = this.view(f);
       LINE_SORT.length = 0;
       for (const u of v.fighting) {
