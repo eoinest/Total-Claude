@@ -23,7 +23,7 @@ import { Faction, UnitOrder } from '../sim/types';
 import { el } from './dom';
 import type { HudModel, UnitView } from './model';
 import {
-  distanceToFootprint, footprintCorner, footprintOf, projectPoint, screenToGround,
+  distanceToFootprint, footprintCorner, footprintOf, type PickSolid, projectPoint, screenToGround,
   type Footprint, type Projected,
 } from './picking';
 import type { PointerTracker } from './pointer';
@@ -273,10 +273,35 @@ export class SelectionController {
     this.updateCursor(hovered);
   }
 
+  /**
+   * Solids the cursor can land on, cached because the set only changes when a gate opens or
+   * a bay is breached — `CitySystem` bumps a revision for exactly that. Re-fetching 2,900
+   * boxes on every pointer move would be the one expensive thing in this path.
+   */
+  private solids: readonly PickSolid[] = [];
+  private solidsRev = -1;
+
+  private refreshSolids(ctx: EngineContext): void {
+    const city = ctx.tryGet('city') as unknown as {
+      obstacleGeneration?: number;
+      getObstacles?: () => readonly PickSolid[];
+    } | undefined;
+    if (!city?.getObstacles) { this.solids = []; return; }
+    const rev = city.obstacleGeneration ?? 0;
+    if (rev !== this.solidsRev) {
+      this.solids = city.getObstacles();
+      this.solidsRev = rev;
+    }
+  }
+
   private updateGround(ctx: EngineContext, heightAt: (x: number, z: number) => number): void {
     const nx = (this.ptr.x / Math.max(1, ctx.viewW)) * 2 - 1;
     const ny = -(this.ptr.y / Math.max(1, ctx.viewH)) * 2 + 1;
-    this.groundValid = screenToGround(ctx.camera, nx, ny, heightAt, GROUND);
+    // Pass the city's solids so a click on a wall, a tower or an insula resolves *on* it
+    // rather than on the grass behind it. Without this a right-click on a 20 m siege tower
+    // issued a move order 13.6 m past it, because the ray only ever met the heightfield.
+    this.refreshSolids(ctx);
+    this.groundValid = screenToGround(ctx.camera, nx, ny, heightAt, GROUND, 4200, this.solids);
     if (this.groundValid) {
       this.groundX = GROUND.x;
       this.groundZ = GROUND.z;

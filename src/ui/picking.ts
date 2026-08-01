@@ -79,7 +79,31 @@ const RAY_DIR = new THREE.Vector3();
 const RAY_TMP = new THREE.Vector3();
 
 /**
- * Intersect the camera ray through (ndcX, ndcY) with the heightfield.
+ * An upright box the cursor can land on: a wall bay, a tower, an insula, a siege engine.
+ *
+ * Structurally a subset of `sim/Obstacles.Obstacle`, redeclared rather than imported so the
+ * UI layer does not take a dependency on the simulation's types for four numbers, and so a
+ * caller can hand over siege engines that are not city obstacles at all.
+ */
+export interface PickSolid {
+  x: number;
+  z: number;
+  hw: number;
+  hd: number;
+  rot: number;
+  topY: number;
+  /** Absolute Y of the underside. Defaults to "far below" — these are upright and grounded. */
+  baseY?: number;
+}
+
+/**
+ * Intersect the camera ray through (ndcX, ndcY) with the heightfield, and optionally with a
+ * set of solids.
+ *
+ * Without `solids` this only ever hits terrain, which is what made right-clicking a 20 m siege
+ * tower issue a move order to the grass behind it — measured at 90.8 m from the tower before
+ * the crew anchor was also fixed, and still 13.6 m out afterwards purely from this. A player
+ * pointing at a tower means the tower.
  *
  * Rather than marching, this iterates the fixed point `t = (eyeY - h(p)) / -dir.y`.
  * On terrain this gentle it converges in three or four steps, and it costs four
@@ -91,7 +115,8 @@ export function screenToGround(
   ndcY: number,
   heightAt: (x: number, z: number) => number,
   out: { x: number; y: number; z: number },
-  maxDistance = 4200
+  maxDistance = 4200,
+  solids?: readonly PickSolid[]
 ): boolean {
   RAY_TMP.set(ndcX, ndcY, 0.5).unproject(camera);
   RAY_ORIGIN.copy(camera.position);
@@ -100,8 +125,27 @@ export function screenToGround(
   if (len < 1e-6) return false;
   RAY_DIR.multiplyScalar(1 / len);
 
-  // Looking at or above the horizon: no ground under the cursor.
-  if (RAY_DIR.y > -0.012) return false;
+  /*
+   * Solids are tested BEFORE the horizon bail-out, and that ordering is the whole point.
+   *
+   * A player clicking the upper half of a 20 m siege tower or a wall-walk produces a ray that
+   * rises — it never meets the heightfield at all. Testing solids after the bail-out meant
+   * such a click returned false and issued no order whatsoever, which is worse than the
+   * original bug. Found by aiming at a point two metres below a tower's roof and getting
+   * `ok: false` from both arms of an A/B.
+   */
+  const tSolid = solids && solids.length
+    ? raySolid(RAY_ORIGIN, RAY_DIR, solids, maxDistance)
+    : -1;
+
+  // Looking at or above the horizon: no ground under the cursor, but a solid may still be.
+  if (RAY_DIR.y > -0.012) {
+    if (tSolid < 0) return false;
+    out.x = RAY_ORIGIN.x + RAY_DIR.x * tSolid;
+    out.y = RAY_ORIGIN.y + RAY_DIR.y * tSolid;
+    out.z = RAY_ORIGIN.z + RAY_DIR.z * tSolid;
+    return true;
+  }
 
   let t = (RAY_ORIGIN.y - heightAt(RAY_ORIGIN.x, RAY_ORIGIN.z)) / -RAY_DIR.y;
   t = Math.min(t, maxDistance);
@@ -117,7 +161,84 @@ export function screenToGround(
   out.x = RAY_ORIGIN.x + RAY_DIR.x * t;
   out.z = RAY_ORIGIN.z + RAY_DIR.z * t;
   out.y = heightAt(out.x, out.z);
+
+  // If a solid stands between the eye and that ground point, the player meant the solid.
+  if (tSolid >= 0 && tSolid < t) {
+    out.x = RAY_ORIGIN.x + RAY_DIR.x * tSolid;
+    out.y = RAY_ORIGIN.y + RAY_DIR.y * tSolid;
+    out.z = RAY_ORIGIN.z + RAY_DIR.z * tSolid;
+    return true;
+  }
   return t < maxDistance;
+}
+
+/**
+ * Nearest ray hit against a set of upright oriented boxes, or -1.
+ *
+ * A standard slab test done in each box's own frame: rotate the ray by -rot about Y so the
+ * box becomes axis-aligned, then intersect three slabs. The boxes are upright, so only the
+ * horizontal pair needs rotating and the vertical slab runs from the terrain up to `topY`.
+ *
+ * There is no broadphase here on purpose. This runs once per pointer event, not per frame,
+ * and 3,000 boxes at a handful of flops each is far below the cost of the `heightAt` samples
+ * the caller has already paid. Adding a grid would be a second copy of the city's own
+ * broadphase to keep in step with it.
+ */
+function raySolid(
+  origin: THREE.Vector3,
+  dir: THREE.Vector3,
+  solids: readonly PickSolid[],
+  maxT: number
+): number {
+  let best = -1;
+  for (const s of solids) {
+    const c = Math.cos(-s.rot);
+    const sn = Math.sin(-s.rot);
+    const ox = origin.x - s.x;
+    const oz = origin.z - s.z;
+    // Ray into the box's frame.
+    const lox = ox * c - oz * sn;
+    const loz = ox * sn + oz * c;
+    const ldx = dir.x * c - dir.z * sn;
+    const ldz = dir.x * sn + dir.z * c;
+
+    let tmin = 0;
+    let tmax = maxT;
+    // Horizontal slabs. A ray parallel to a slab either misses entirely or is unconstrained
+    // by it, which is what the `Math.abs(d) < 1e-9` branch decides.
+    for (const [o, d, h] of [[lox, ldx, s.hw], [loz, ldz, s.hd]] as const) {
+      if (Math.abs(d) < 1e-9) {
+        if (o < -h || o > h) { tmin = Infinity; break; }
+        continue;
+      }
+      const inv = 1 / d;
+      let t1 = (-h - o) * inv;
+      let t2 = (h - o) * inv;
+      if (t1 > t2) { const sw = t1; t1 = t2; t2 = sw; }
+      if (t1 > tmin) tmin = t1;
+      if (t2 < tmax) tmax = t2;
+      if (tmin > tmax) { tmin = Infinity; break; }
+    }
+    if (!Number.isFinite(tmin)) continue;
+
+    // Vertical slab: base to top. `baseY` defaults generously low because an obstacle only
+    // publishes its top — the city knows where the ground is and the box is upright.
+    const b = s.baseY ?? -1e4;
+    if (Math.abs(dir.y) < 1e-9) {
+      if (origin.y < b || origin.y > s.topY) continue;
+    } else {
+      const inv = 1 / dir.y;
+      let t1 = (b - origin.y) * inv;
+      let t2 = (s.topY - origin.y) * inv;
+      if (t1 > t2) { const sw = t1; t1 = t2; t2 = sw; }
+      if (t1 > tmin) tmin = t1;
+      if (t2 < tmax) tmax = t2;
+      if (tmin > tmax) continue;
+    }
+
+    if (tmin >= 0 && tmin <= maxT && (best < 0 || tmin < best)) best = tmin;
+  }
+  return best;
 }
 
 // ---------------------------------------------------------------------------
