@@ -106,6 +106,28 @@ export class LightingSystem implements Subsystem {
    * the fill is the only term that reaches those surfaces.
    */
   private static readonly FILL_CHROMA_GAIN = 1.35;
+  /**
+   * Fraction of the sky's own physically-derived irradiance the hemisphere fill delivers.
+   *
+   * The pi is now written down at the point of use instead of being silently absorbed into a
+   * bare `0.34`, which is what let this path drift out of agreement with the IBL — that one
+   * carries its pi correctly, so the two ambient terms were quoted in different units and any
+   * tuning of one disagreed with the other. Keeping trim and pi visible separately matters
+   * beyond this fix: the trim is an art decision about how much sky a man standing in a rank
+   * can actually see, and the pi is not negotiable.
+   *
+   * `0.34 / PI` = 0.108, which reproduces the old delivered energy exactly, so correcting the
+   * units moves no light. Measured E(up) is 0.0494 before and after.
+   *
+   * Raising it was tried and reverted on measurement. At 0.18, with the warm sun-opposed
+   * bounce cut to pay for it, the darkest quartile's warm/cool separation rose 1.228 -> 1.336
+   * toward the Rome II plates' 1.968 — but the crowd went *colder* relative to the field it
+   * stands in (1.178 -> 1.259) and soldier luminance fell 0.1666 -> 0.1524. The sky half of
+   * this term is b/r 3.76, so buying shadow contrast with it is buying it in blue, and the men
+   * are most of what sits in that quartile. See `bounce.intensity` for the same trade from the
+   * other side.
+   */
+  private static readonly SKY_FILL_TRIM = 0.34 / Math.PI;
 
   private csm?: CSM;
   private sky?: SkySystem;
@@ -433,6 +455,9 @@ export class LightingSystem implements Subsystem {
         l.castShadow = lit;
       }
       this.saturate(sky.skyFillColour, this.fill.color);
+      // Radiance -> irradiance. See SKY_FILL_TRIM: three.js consumes a hemisphere colour as
+      // irradiance, and `skyFillColour` is a mean radiance, so the pi is owed here.
+      this.fill.color.multiplyScalar(Math.PI);
 
       // How much light this map's ground throws back up, relative to the Campus Martius'
       // damp November plain.
@@ -454,11 +479,48 @@ export class LightingSystem implements Subsystem {
       // warm light reaching a shadowed surface, and at its old weight it
       // neutralised the sky bounce completely, which is how 2 500 men in shadow
       // ended up exactly the same hue as the same men in sun.
-      const a = sky.preset.groundAlbedo * 0.9;
+      /*
+       * Both halves of the hemisphere, in the irradiance units three.js actually wants.
+       *
+       * `getHemisphereLightIrradiance` returns `mix( groundColor, skyColor, w )` **and uses it
+       * as irradiance directly, with no factor of pi** — unlike `getIBLIrradiance`, which
+       * returns `PI * probe * envMapIntensity`. So a hemisphere colour holding a *radiance*
+       * is short by pi. `skyFillColour` is documented and computed in `atmosphere.ts` as the
+       * cosine-weighted mean sky *radiance*, and it was being handed over raw: measured,
+       * E(up) came to 0.0494 against the integral's own pi*L = 0.4529, i.e. **10.9 % of the
+       * irradiance the sky model says it emits.** The two ambient paths in this rig were
+       * quoted in different units, so tuning either silently disagreed with the other.
+       *
+       * The pi now appears where it belongs and `SKY_FILL_TRIM` carries the art trim openly.
+       * Note what that means: 0.34 was not merely low, it was `pi * 0.108` with the pi lost,
+       * so the constant had been absorbing the unit error. Correcting the units *alone* would
+       * multiply this term by 9.2, and measured attribution puts the fill at 7.3 % of a
+       * soldier's light — that is two thirds of his whole budget added in one step. Units and
+       * level are one fix; either on its own is a regression.
+       *
+       * The ground half is now derived rather than patched. It was
+       * `sunColour * intensity * albedo * (0.26, 0.24, 0.19) + fill.color * 0.5` — a
+       * hand-rolled warm tint with **half the sky's blue radiance added on top**, which
+       * supplied 72 % of the term's blue channel against 26 % of its red and landed the
+       * finished "warm ground bounce" at b/r 1.35, bluer than neutral. That patch is what one
+       * reaches for when the bounce arrives grey, and it did arrive grey, because the integral
+       * behind it had a scalar albedo (see `SkySystem.groundBounceFor`). With the source
+       * corrected the patch actively cancels the fix: the point is a warm lower hemisphere
+       * against a cool upper one, and adding one into the other is exactly what collapsed them
+       * into the same middling blue. The 21st blind round measured that collapse — our darkest
+       * quartile separates from the rest by 1.26 in blue-to-red where the plates reach 1.97.
+       *
+       * What replaces it is the Lambertian identity and nothing else: the plain's own albedo
+       * times the irradiance it receives, which is the sun it can see plus the sky above it.
+       * No per-channel coefficients, and the colour comes from the terrain's real splat
+       * albedo, so it cannot drift from the ground being drawn.
+       */
+      const eSunGround = sky.sunIntensity * Math.max(0, sky.sunDirection.y);
+      const gb = sky.groundBounceAlbedo;
       this.fill.groundColor.setRGB(
-        sky.sunColour.r * sky.sunIntensity * a * 0.26 + this.fill.color.r * 0.5,
-        sky.sunColour.g * sky.sunIntensity * a * 0.24 + this.fill.color.g * 0.5,
-        sky.sunColour.b * sky.sunIntensity * a * 0.19 + this.fill.color.b * 0.5,
+        gb.x * (sky.sunColour.r * eSunGround + this.fill.color.r),
+        gb.y * (sky.sunColour.g * eSunGround + this.fill.color.g),
+        gb.z * (sky.sunColour.b * eSunGround + this.fill.color.b),
       );
       // Raised from 0.22, and the warm ground term above cut by a quarter to pay for it, so
       // the *added* light is the cool sky half rather than the warm bounce half.
@@ -474,7 +536,7 @@ export class LightingSystem implements Subsystem {
       // Spending it on the sky half rather than raising exposure or the bounce is what
       // keeps A1: it lifts the shadow while making it bluer, which is the direction the
       // measurement above says our shadows need to move anyway.
-      this.fill.intensity = 0.34 * bounceGain;
+      this.fill.intensity = LightingSystem.SKY_FILL_TRIM * bounceGain;
 
       // Bounce comes from the ground on the far side of the sun, i.e. the sun
       // direction mirrored through the horizon plane — so it lands on exactly the
@@ -489,6 +551,28 @@ export class LightingSystem implements Subsystem {
       // ground's own lit:shadow ratio stay at 8:1 while the men come back.
       this.bounce.position.set(-sky.sunDirection.x, -0.2, -sky.sunDirection.z).multiplyScalar(300);
       this.bounce.color.copy(sky.sunColour);
+      /*
+       * Left at 0.11, but measured, and the measurement is worth recording because this term
+       * is the largest single lever on the warm/cool split and cutting it does not pay.
+       *
+       * Measured by pinning each light to zero in turn at the `raking` camera and taking the
+       * darkest quartile's blue-to-red against the rest of the frame — the statistic the 21st
+       * blind round separated the decks on, where the Rome II plates score 1.968 and we scored
+       * 1.23. Switching this one light off raised ours to 1.346, the largest single gain
+       * available from any term in the rig. With the sun off as well it reaches 2.090, so the
+       * rig is perfectly capable of the target and a warm term was cancelling it.
+       *
+       * It is pure `sunColour` at b/r 0.669, unshadowed, aimed along a near-horizontal vector
+       * at precisely the anti-sun normals that ought to be reading coolest. Only 12.7 % of a
+       * soldier's energy, but chromatically it is the loudest thing touching a shadow.
+       *
+       * Cutting it to 0.03 and buying the lost energy back on the cool sky half did raise the
+       * separation, 1.228 -> 1.336. It also took soldier luminance from 0.1666 to 0.1524 and
+       * pushed the crowd from 1.178 to 1.259 on the crowd-versus-field temperature index — a
+       * colder slab and a darker army, which is the defect this workstream exists to remove.
+       * The two criteria are not independent: the men and the shadows are the same pixels, so
+       * anything that cools one cools the other. Reverted deliberately, not overlooked.
+       */
       this.bounce.intensity = sky.sunIntensity * 0.11 * bounceGain;
     }
 

@@ -85,7 +85,28 @@ export interface AtmosParams {
   /** Unit vector, ground -> sun. */
   sunDir: THREE.Vector3;
   turbidity: number;
+  /**
+   * Broadband ground albedo, as a single number. Drives the multiple-scattering gain and the
+   * ambient trims, both of which want an energy scalar and nothing else.
+   */
   groundAlbedo: number;
+  /**
+   * Linear RGB albedo of the ground, for the Lambertian bounce alone — and it is a `vec3`
+   * because the thing doing the bouncing has a colour.
+   *
+   * The bounce used `groundAlbedo` with the neutral `SOLAR_IRRADIANCE`, so the only
+   * chromatic factor left in it was the sun's own transmittance. Measured off this file's
+   * integral at the Rome afternoon preset, that put the lower hemisphere of the probe at
+   * b/r 0.734 against an upper hemisphere at 2.605 and only 0.448 of its luminance — so a
+   * vertical surface, which sees half of each, was lit at b/r 1.775. A standing man is a wall
+   * of vertical normals, which is why an army rendered as the one cool mass in a warm frame.
+   *
+   * The colour is not chosen here. `map.terrain.aerialMean` is the area-weighted mean linear
+   * albedo of the eight ground splat layers this map actually renders, so the light bouncing
+   * up off the plain is the colour of that plain by construction, and a new map gets a
+   * correct bounce without anyone tuning anything. See `SkySystem.groundBounceFor`.
+   */
+  groundBounceAlbedo: THREE.Vector3;
   msScale: number;
   mieG: number;
 }
@@ -450,10 +471,14 @@ export function skyRadiance(
     const inv = 1 / Math.sqrt(px * px + py * py + pz * pz);
     const ndl = Math.max(0, (px * inv) * p.sunDir.x + (py * inv) * p.sunDir.y + (pz * inv) * p.sunDir.z);
     sunTransmittanceAt(px, py, pz, p, _sunT);
-    const k = p.groundAlbedo;
-    bgR = k * SOLAR_IRRADIANCE.x * ((ndl * _sunT.x) / Math.PI + 0.02);
-    bgG = k * SOLAR_IRRADIANCE.y * ((ndl * _sunT.y) / Math.PI + 0.02);
-    bgB = k * SOLAR_IRRADIANCE.z * ((ndl * _sunT.z) / Math.PI + 0.02);
+    // Per channel: the ground's own colour is the dominant term in a real bounce, and it was
+    // the one factor missing here. Must stay in step with `tcSkyRadiance` in
+    // `src/shaders/atmosphere.glsl.ts` — this function is that shader's CPU mirror and the
+    // sun colour, the sky fill and the fog tint are all read off it.
+    const k = p.groundBounceAlbedo;
+    bgR = k.x * SOLAR_IRRADIANCE.x * ((ndl * _sunT.x) / Math.PI + 0.02);
+    bgG = k.y * SOLAR_IRRADIANCE.y * ((ndl * _sunT.y) / Math.PI + 0.02);
+    bgB = k.z * SOLAR_IRRADIANCE.z * ((ndl * _sunT.z) / Math.PI + 0.02);
   }
 
   return out.setRGB(

@@ -89,6 +89,13 @@ export class SkySystem implements Subsystem {
   sunIntensity = 3;
   /** Cosine-weighted average sky radiance; the hemisphere fill colour. */
   readonly skyFillColour = new THREE.Color(0.42, 0.5, 0.66);
+  /**
+   * Linear RGB albedo driving the Lambertian ground bounce, derived from this map's own
+   * ground splat layers. Public because `LightingSystem` needs the same colour for the
+   * hemisphere light's ground half — the two must not disagree, which is the whole reason
+   * the sky and the IBL are baked from one integral.
+   */
+  readonly groundBounceAlbedo = new THREE.Vector3(0.13, 0.13, 0.13);
   /** Average horizon radiance. The aerial-perspective and fallback fog tint. */
   readonly horizonColour = new THREE.Color(0.7, 0.75, 0.8);
 
@@ -131,6 +138,8 @@ export class SkySystem implements Subsystem {
     sunDir: this.sunDirection,
     turbidity: 2.7,
     groundAlbedo: 0.13,
+    // By reference, so `applyTime` writing the public field reaches the integral too.
+    groundBounceAlbedo: this.groundBounceAlbedo,
     msScale: 0.36,
     // 0.76 is the classic continental-aerosol Henyey-Greenstein asymmetry; it
     // puts the right amount of glare in the 20 deg around the sun.
@@ -366,6 +375,9 @@ export class SkySystem implements Subsystem {
       uSunIrradiance: { value: new THREE.Vector3(1.775, 1.775, 1.775) },
       uTurbidity: { value: this.atmos.turbidity },
       uGroundAlbedo: { value: this.atmos.groundAlbedo },
+      // Shared by reference so `applyTime` reaches the bake and the visible sky with one
+      // write, exactly as the cloud uniforms do.
+      uGroundBounce: { value: this.atmos.groundBounceAlbedo },
       uMsScale: { value: this.atmos.msScale },
       uMieG: { value: this.atmos.mieG },
       uRadianceScale: { value: RADIANCE_SCALE },
@@ -378,6 +390,7 @@ export class SkySystem implements Subsystem {
     uniform vec3 uSunIrradiance;
     uniform float uTurbidity;
     uniform float uGroundAlbedo;
+    uniform vec3 uGroundBounce;
     uniform float uMsScale;
     uniform float uMieG;
     uniform float uRadianceScale;
@@ -389,6 +402,7 @@ export class SkySystem implements Subsystem {
       a.sunIrradiance = uSunIrradiance;
       a.turbidity = uTurbidity;
       a.groundAlbedo = uGroundAlbedo;
+      a.groundBounce = uGroundBounce;
       a.msScale = uMsScale;
       a.mieG = uMieG;
       return a;
@@ -802,12 +816,43 @@ export class SkySystem implements Subsystem {
     return { ...SKY_PRESETS[keys[keys.length - 1]], hour: h };
   }
 
+  /**
+   * Linear RGB albedo for the Lambertian ground bounce, taken from the map's own ground.
+   *
+   * `map.terrain.aerialMean` is the area-weighted mean linear albedo of the eight splat
+   * layers the terrain actually renders — for the Campus Martius `[0.199, 0.207, 0.07]`,
+   * about 55 % pasture, 30 % straw, 10 % turned earth, 5 % stone. Reading it here is what
+   * keeps the rule this whole subsystem exists to enforce: the lighting may not disagree with
+   * what the player is looking at. A hand-picked warm tint would have looked the same on this
+   * map and been wrong on the next one; Pydna's mean is `[0.326, 0.266, 0.12]`, a paler and
+   * far warmer karst, and it gets the right bounce out of the same line of code.
+   *
+   * **Chromaticity only, for now.** The vector is renormalised so its luminance is still the
+   * preset's `groundAlbedo`, because that scalar is also the reference `ambientTrimFor` and
+   * `bounceGain` were calibrated against, and moving hue and level together would leave the
+   * measurement unattributable. Worth recording that the two disagree: the terrain's real
+   * mean luminance is 0.195 against the preset's 0.13, so the sky has been modelling a plain
+   * a third darker than the one on screen. That is a separate correction with its own
+   * measurement.
+   */
+  private groundBounceFor(preset: SkyPreset, out: THREE.Vector3): void {
+    const mean = activeMap().terrain.aerialMean;
+    const lum = 0.2126 * mean[0] + 0.7152 * mean[1] + 0.0722 * mean[2];
+    if (!(lum > 1e-6)) {
+      out.setScalar(preset.groundAlbedo);
+      return;
+    }
+    const k = preset.groundAlbedo / lum;
+    out.set(mean[0] * k, mean[1] * k, mean[2] * k);
+  }
+
   private applyTime(): void {
     sunDirectionForHour(this.timeOfDay, this.sunDirection);
     this.cloudSunDir.copy(this.sunDirection);
 
     this.atmos.turbidity = this.preset.turbidity;
     this.atmos.groundAlbedo = this.preset.groundAlbedo;
+    this.groundBounceFor(this.preset, this.atmos.groundBounceAlbedo);
     this.atmos.msScale = this.preset.msScale;
 
     // Sun colour and strength straight out of the transmittance integral.
@@ -825,6 +870,10 @@ export class SkySystem implements Subsystem {
       if (!mat) continue;
       mat.uniforms.uTurbidity.value = this.atmos.turbidity;
       mat.uniforms.uGroundAlbedo.value = this.atmos.groundAlbedo;
+      // Both materials were handed the same Vector3 instance by `atmosUniforms`, so the
+      // in-place write above has already reached them; this only guards a material that was
+      // rebuilt with a fresh uniform block.
+      (mat.uniforms.uGroundBounce.value as THREE.Vector3).copy(this.atmos.groundBounceAlbedo);
       mat.uniforms.uMsScale.value = this.atmos.msScale;
     }
     if (this.bgMat) {

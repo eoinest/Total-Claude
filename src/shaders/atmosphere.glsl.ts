@@ -45,7 +45,8 @@ struct TCAtmos {
   vec3  sunDir;       // unit, ground -> sun, world space (y up)
   vec3  sunIrradiance;// top-of-atmosphere solar irradiance, arbitrary but consistent units
   float turbidity;    // 1 pristine, 2.2 clear, 4 hazy summer, 9 storm
-  float groundAlbedo; // broadband albedo of the sphere under the atmosphere
+  float groundAlbedo; // broadband albedo of the sphere under the atmosphere (energy only)
+  vec3  groundBounce; // linear RGB albedo of the ground, for the Lambertian bounce below
   float msScale;      // isotropic multiple-scattering gain (see below)
   float mieG;         // Henyey-Greenstein asymmetry; 0.76 = continental aerosol
 };
@@ -167,13 +168,26 @@ vec3 tcSkyRadiance( vec3 ro, vec3 rd, TCAtmos a, int steps ) {
 
   vec3 bg = vec3( 0.0 );
   if ( hitGround ) {
-    // Lambertian ground bounce. This is what puts warm up-light into the
-    // environment map — without it every shadowed underside reads dead grey.
+    /*
+     * Lambertian ground bounce: the lower hemisphere of the environment probe, and therefore
+     * half of everything a standing man's vertical surfaces are lit by.
+     *
+     * This used the scalar groundAlbedo against a deliberately neutral sunIrradiance, so the
+     * only chromatic factor surviving was gt, the sun's transmittance. The comment here
+     * claimed it "puts warm up-light into the environment map"; measured off the CPU mirror
+     * it came out at b/r 0.734 while the sky above sat at 2.605 with 2.2x the luminance, so a
+     * vertical surface averaged b/r 1.775 and an army read as the one cool mass in a warm
+     * field. The term was not grey, it was outvoted -- and the ground's own colour, the
+     * largest factor in a real bounce, was absent entirely.
+     *
+     * groundBounce is the mean linear albedo of the ground splat layers this map actually
+     * renders, so the bounce is the colour of the plain by construction rather than by taste.
+     */
     vec3 p = ro + rd * tGround;
     vec3 n = normalize( p );
     float ndl = max( 0.0, dot( n, a.sunDir ) );
     vec3 gt = tcSunTransmittance( p, a );
-    bg = a.groundAlbedo * a.sunIrradiance * ( ndl * gt / TC_PI + vec3( 0.02 ) );
+    bg = a.groundBounce * a.sunIrradiance * ( ndl * gt / TC_PI + vec3( 0.02 ) );
   }
 
   vec3 T;
