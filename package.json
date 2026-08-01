@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "vite",
+    "viewer": "vite --open /viewer.html",
     "build": "tsc --noEmit && vite build && node tools/optimize-assets.mjs",
     "build:full": "tsc --noEmit && vite build && node tools/optimize-assets.mjs --keep-models",
     "preview": "vite preview --port 4173",

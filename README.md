@@ -144,6 +144,143 @@ the whole setup in the URL so it can be shared or replayed. `?menu=0` skips the 
 
 ---
 
+## The model viewer
+
+A second page, served by the same dev server, for looking at the character models on their
+own. Every model in this project is generated in code — nothing is loaded from disk — so the
+viewer builds the same atlas, the same bone texture and the same geometry the battle builds,
+and shows you what the battle would draw.
+
+```bash
+npm run dev          # then open http://127.0.0.1:5173/viewer.html
+npm run viewer       # same server, opens the viewer page directly
+```
+
+It is built as a second Vite entry, so `npm run build` produces `dist/viewer.html` alongside
+the game and both share one chunk of common code.
+
+### What it shows
+
+| View | |
+|---|---|
+| **Single** | one man, orbit / zoom / pan, at whichever LOD tier you pick |
+| **LOD** | all four tiers side by side in the same pose, labelled with measured triangle counts and the distance each takes over at |
+| **Rank** | 24 men of one unit type, each with his own hash — this is where kit variance is legible, because variance is a property of a crowd |
+| **Engine** | a scorpio or onager with its crew, scrubbable through the whole loading cycle |
+
+Every unit type in the roster is in the dropdown, grouped by faction, **enumerated at
+runtime** — a unit added to `src/units/roster.ts` appears without anyone editing the viewer.
+Cavalry are drawn on their horses; artillery is drawn as machines with crews at their
+stations. All 44 packed animation clips are selectable by name, with frame count, duration
+and the authored contact frame; the playhead scrubs, steps a frame at a time, and jumps to the
+hit frame.
+
+### The instruments
+
+The things that are actually hard to see, and what the viewer does about them.
+
+- **Shading modes** (`p` cycles) —
+  **Piece IDs** paints a flat colour per piece id, for the soldiers *and* the siege engines. A
+  dark object inside a dark frame and a missing object look identical when lit; painted
+  magenta they do not. It exists because a part view of the scorpio settled in one frame a
+  question five rounds of written critique could not. The Pieces list is its legend — the
+  swatch beside each name is that piece's colour on the model.
+  **Bone IDs** colours by primary bone, showing how the mesh is partitioned across the
+  skeleton. **Weights** is a second-influence heatmap: black is one bone, hot is a 50/50
+  blend. Every joint that deforms rather than hinging must show a band; a knee that is flat
+  black will crease like cardboard, and no amount of staring at a lit render shows it.
+- **Skeleton** (`k`) — joints and bones for the exact frame on screen, drawn through the mesh.
+  The CPU has no idea where any joint is — bone transforms live in a half-float texture and
+  are resolved in the vertex shader — so the overlay runs the same forward kinematics
+  `bakeAnimTexture` bakes from. These are the joints the shader is skinning to, not an
+  approximation of them.
+- **Piece solo** — click any piece in the list to isolate it; the camera moves onto it.
+  Critically, the readout then states whether that piece is *in this man's mask*: if it is and
+  the frame is empty, the geometry is missing; if it is not, an empty frame is correct and you
+  should reroll the hash. That distinction is the whole point.
+- **Seat probe** — marks the animated saddle point (blue) and the rider's pelvis (gold), and
+  reports the saddle's *travel through the gait*: 10.1 cm over a gallop, 3.5 cm over a walk.
+  That is the number worth printing. The 7 cm clearance between the two markers is fixed **by
+  construction** — the solve subtracts the rider's own clip-mean pelvis from the animated
+  saddle height — so the readout says so rather than dressing an identity up as a PASS that
+  could never fail. What the probe proves is that the rider tracks all of that travel; a rider
+  pinned to a rest-pose offset would not, and one whose *boots* were placed on the saddle
+  floats a metre in the air, which is a bug this project has actually had.
+- **2 m rule** — a 100 mm-ticked measuring stick with a band at 1.75 m, placed in the
+  subject's own depth plane so perspective cannot flatter it.
+- **Distance buttons** — 31 m / 88 m / 440 m put the camera exactly where the game changes
+  tier at the `high` preset. LOD2 is 313 triangles and is meant to be seen from 88 metres;
+  judging it from two metres tells you nothing useful.
+- **Studio / Field light** — studio is a neutral room probe for judging the model. Field is
+  the battle's own rig (sun 3.0, hemisphere `0x9dbcdc`/`0x6b5a3e` at 0.42, probe trimmed to
+  0.6) for judging whether it still reads under the game's light. They answer different
+  questions and a viewer with only the first will tell you a mesh is fine while it renders as
+  a black lump on the field.
+- **Long lens** — a 6° near-orthographic lens pulled back to the same framing, for judging
+  proportion and silhouette without perspective convergence.
+- **Wireframe**, **melee-vs-missile kit**, **turntable**, **rider on/off**, **shadows**.
+
+### It prints numbers, not impressions
+
+The readout distinguishes three triangle counts that are routinely conflated, because
+conflating them is how a viewer lies to you:
+
+| | |
+|---|---|
+| **union** | the whole faction geometry — shared by every man of that faction, since the mesh is the union of every kit piece and the shader collapses the ones he is not wearing |
+| **drawn** | what *this man's* mask actually rasterises. A legionary with a scutum and an archer with neither shield nor armour share one buffer and cost very different amounts |
+| **scene rasterised** | the exact total for everything on screen, accumulated from the masks as the instances are pushed |
+| **scene submitted** | `renderer.info` — every pass, so for an instanced kit-union mesh it is *union × instances × passes*, plus the floor. For a 24-man rank that overstates the real load by about 3×. A load proxy, never an asset cost |
+
+`renderer.info` cannot answer the rasterised question and never could: an instanced draw
+submits the whole index buffer whatever the mask says, and the pieces a man is not wearing are
+collapsed to zero-area triangles in the *vertex* shader — counted, then thrown away at the
+rasteriser. So the viewer counts them itself.
+
+Alongside them: **stature in metres**, both standing and on the current frame, measured by
+baking the highest head-bound vertex through the same kinematics as the bone texture (a crest
+is not part of a man's height, and a man mid-lunge is not 1.75 m); **bone count and max skin
+influences**; **screen coverage in pixels** at each LOD switch distance, because a switch
+distance in metres is not a judgement you can make without it; **frame time in milliseconds**
+as well as fps, because fps is pinned to the display refresh; the **soloed piece's own
+triangle count** and a per-piece triangle cost against every row of the piece list; an
+**exact hash field** you can type into, so a man you were looking at can be reproduced; and
+for cavalry, **pelvis-over-saddle clearance in centimetres with the drift across the whole
+gait and a pass/fail against a 5 mm limit**.
+
+Keys: `space` play/pause, `←`/`→` step one frame, `1`-`4` LOD tier, `r` reroll hash,
+`f` frame the subject, `p` cycle shading mode, `k` skeleton.
+
+**Copy report** puts every number on screen on the clipboard, followed by the exact state that
+produced it as a block of `__viewer` calls — unit, tier, clip, gait, hash, playhead, shading
+mode, light, solo, and the camera. Paste it into the console and you are back at that frame,
+camera included, which is the part everyone forgets to write down. A finding you cannot hand
+to someone is a finding you have to find twice.
+
+`window.__viewer` exposes the same kind of contract the game's `window.__game` does —
+`setUnit`, `setMode`, `setLod`, `setClipByName`, `setPhase`, `setHash`, `solo`, `camera`,
+`report()`, `stats()` — so a plate is reproducible from a script rather than taken by hand.
+`tools/scratch/viewer-shots.mjs` drives it and writes a labelled set with a `report.json`.
+
+### Findings it has already produced
+
+Worth recording, because they are defects in the models rather than in the viewer, and the
+viewer is how they became visible:
+
+- The **impostor tier renders about 37% darker than LOD2**. Measured offline off the LOD
+  ladder plate with `sharp`, not in the app: the three mesh tiers agree within 1.7% of each
+  other (mean luminance 133–135 of 255) and the billboard sits at 85. It also casts no shadow,
+  having no depth material. Both will pop at the 440 m switch. The viewer flags the defect and
+  says the number is not its own.
+- **War Elephants are drawn as a man on a horse.** The roster classes them `heavy-cavalry` so
+  the simulation pushes and kills them like a mount, and until an elephant mesh exists the
+  renderer takes that literally. The `drawn as` line says so rather than letting the frame
+  imply an elephant is modelled.
+- The LOD ladder is **unevenly shaped**: 4,135 → 2,314 → 313 → 2. LOD1 saves only 44% and then
+  LOD2 drops 86% in one step, with nothing between 313 triangles and a billboard.
+
+---
+
 ## Deploying
 
 Static build; no server needed.

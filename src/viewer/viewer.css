@@ -1,0 +1,337 @@
+/*
+ * Model viewer chrome.
+ *
+ * Deliberately not sharing `hud.css`: the game's HUD is a diegetic bronze-and-parchment
+ * skin sized for a 1080p battle camera, and a tool for reading geometry wants the opposite —
+ * neutral grey so nothing the panel does tints your judgement of the model, and dense enough
+ * that the whole control set fits without scrolling.
+ */
+
+:root {
+  --vw-bg: #16181c;
+  --vw-panel: #202429;
+  --vw-panel-2: #272c33;
+  --vw-line: #3a4048;
+  --vw-text: #d8dde3;
+  --vw-dim: #8b949e;
+  --vw-accent: #d9a441;
+  --vw-warn: #e0603c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--vw-bg);
+  color: var(--vw-text);
+  font: 12px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+#viewer-app {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 1fr 306px;
+}
+
+#viewer-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+
+#viewer-canvas:active {
+  cursor: grabbing;
+}
+
+#viewer-panel {
+  background: var(--vw-panel);
+  border-left: 1px solid var(--vw-line);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 0 40px;
+}
+
+#viewer-panel::-webkit-scrollbar {
+  width: 9px;
+}
+
+#viewer-panel::-webkit-scrollbar-thumb {
+  background: #444b54;
+  border-radius: 5px;
+}
+
+.vw-title {
+  padding: 11px 12px 9px;
+  border-bottom: 1px solid var(--vw-line);
+  background: #1b1f24;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+
+.vw-title b {
+  display: block;
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  color: var(--vw-accent);
+}
+
+.vw-title span {
+  color: var(--vw-dim);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+}
+
+.vw-group {
+  border-bottom: 1px solid var(--vw-line);
+  padding: 9px 12px 11px;
+}
+
+.vw-group > h3 {
+  margin: 0 0 7px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--vw-dim);
+}
+
+.vw-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 5px;
+}
+
+.vw-row:last-child {
+  margin-bottom: 0;
+}
+
+.vw-row > label {
+  flex: 0 0 74px;
+  color: var(--vw-dim);
+  font-size: 11px;
+}
+
+.vw-row > .vw-fill {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+select,
+button,
+input[type="text"] {
+  font: inherit;
+  color: var(--vw-text);
+  background: var(--vw-panel-2);
+  border: 1px solid var(--vw-line);
+  border-radius: 3px;
+  padding: 3px 5px;
+}
+
+select {
+  width: 100%;
+}
+
+button {
+  cursor: pointer;
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+
+button:hover {
+  background: #323841;
+  border-color: #4d545e;
+}
+
+button.vw-on {
+  background: var(--vw-accent);
+  border-color: var(--vw-accent);
+  color: #191b1e;
+  font-weight: 600;
+}
+
+.vw-seg {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+
+.vw-seg button {
+  flex: 1 1 auto;
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--vw-accent);
+  height: 16px;
+}
+
+.vw-val {
+  flex: 0 0 46px;
+  text-align: right;
+  color: var(--vw-accent);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+}
+
+details.vw-note {
+  color: var(--vw-dim);
+  font-size: 10.5px;
+  margin: 5px 0 0;
+  line-height: 1.4;
+}
+
+details.vw-note > summary {
+  cursor: pointer;
+  list-style: none;
+  color: #6f7883;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 9.5px;
+  user-select: none;
+}
+
+details.vw-note > summary::before {
+  content: "▸ ";
+}
+
+details.vw-note[open] > summary::before {
+  content: "▾ ";
+}
+
+details.vw-note > summary:hover {
+  color: var(--vw-accent);
+}
+
+details.vw-note > p {
+  margin: 4px 0 0;
+}
+
+/* ---- piece isolation list ---- */
+
+.vw-pieces {
+  max-height: 214px;
+  overflow-y: auto;
+  border: 1px solid var(--vw-line);
+  border-radius: 3px;
+  background: #1b1f24;
+}
+
+.vw-piece {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  cursor: pointer;
+  border-bottom: 1px solid #23272d;
+}
+
+.vw-piece:hover {
+  background: #262b31;
+}
+
+.vw-piece.vw-absent {
+  opacity: 0.34;
+}
+
+.vw-piece i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(0, 0, 0, 0.5);
+}
+
+.vw-piece span {
+  flex: 1 1 auto;
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vw-piece em {
+  font-style: normal;
+  font-size: 9.5px;
+  color: var(--vw-dim);
+}
+
+.vw-piece.vw-solo {
+  background: #3b3117;
+  outline: 1px solid var(--vw-accent);
+  outline-offset: -1px;
+}
+
+/* ---- readout overlay ---- */
+
+#viewer-readout {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  padding: 7px 10px;
+  background: rgba(16, 18, 21, 0.78);
+  border: 1px solid var(--vw-line);
+  border-radius: 4px;
+  white-space: pre;
+  font-size: 11px;
+  line-height: 1.5;
+  pointer-events: none;
+  color: var(--vw-text);
+  backdrop-filter: blur(3px);
+}
+
+#viewer-readout b {
+  color: var(--vw-accent);
+  font-weight: 600;
+}
+
+#viewer-readout .vw-bad {
+  color: var(--vw-warn);
+}
+
+#viewer-readout .vw-dim {
+  color: var(--vw-dim);
+}
+
+#viewer-boot {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--vw-bg);
+  color: var(--vw-dim);
+  letter-spacing: 0.08em;
+  z-index: 9;
+}
+
+#viewer-boot.vw-gone {
+  display: none;
+}
+
+/* Labels floated over the LOD ladder, positioned from the render loop. */
+.vw-tag {
+  position: absolute;
+  transform: translate(-50%, 0);
+  padding: 2px 6px;
+  background: rgba(16, 18, 21, 0.8);
+  border: 1px solid var(--vw-line);
+  border-radius: 3px;
+  font-size: 10.5px;
+  white-space: pre;
+  text-align: center;
+  pointer-events: none;
+  color: var(--vw-text);
+}
+
+.vw-tag b {
+  color: var(--vw-accent);
+}
