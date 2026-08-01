@@ -388,7 +388,16 @@ export class GrassField {
         // Fades in where the near ring fades out, so neither ring is ever the only
         // cover and the hand-off leaves no ring of density on the ground.
         fadeIn: 12,
-        fadeStart: 136,
+        // A 59 m fade-out band starting at 136 m sounds gradual and is not. Under a
+        // ground-level camera the band is compressed into a few dozen rows of pixels, so the
+        // sward's whole dissolve happens across about a finger's width of screen and reads
+        // as a line. A blind critic ranked exactly this - a hard, distance-based cutoff
+        // where the instanced ground-detail layer stops - as the most jarring defect in a
+        // twenty-frame deck. The band has to be sized in screen space, not world space, and
+        // starting at 96 m gives roughly three times the rows to dissolve across. 195 m
+        // still sits inside the ring's own lattice extent of +/-202 m, which is the hard
+        // constraint; see the ring extents note at the top of this file.
+        fadeStart: 96,
         fadeEnd: 195,
         heightScale: 1.2,
         weeds: false,
@@ -641,7 +650,14 @@ export class GrassField {
         + (h2 - 0.5) * 0.8 * (1.0 - vMerge) - gStraw * 0.85, 0.0, 1.0));
   gcol = mix(gcol, uDryColour * 1.2, weed * (1.0 - vMerge));
   gcol *= 0.74 + 0.34 * bt;
-  gcol = mix(uGroundColour, gcol, clamp(fade * 1.6, 0.0, 1.0));
+  // Converge on the ground colour across the whole fade-out band rather than only its last
+  // third. The fade term also carries the far ring's fade-IN, and a clump at 30 m must not
+  // be painted as bare earth just because the far ring is still ramping up there, so this
+  // keys off the distance term alone. By the time a clump's geometry disappears its colour
+  // has been the ground's for some way already, which is what makes the hand-off invisible
+  // rather than a ring: the sward dissolves into the ground instead of stopping on it.
+  float farMerge = 1.0 - smoothstep(uFadeStart, uFadeEnd, dist);
+  gcol = mix(uGroundColour, gcol, clamp(farMerge * 1.05, 0.0, 1.0));
   vColor = vec4(gcol, 1.0);
 
   // Pick one of the card variants per clump so the field is not one image stamped
