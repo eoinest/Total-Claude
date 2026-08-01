@@ -45,6 +45,14 @@ const NEAR_GRID = 280;
 const NEAR_SPACING = 0.335;
 const FAR_GRID = 300;
 const FAR_SPACING = 1.35;
+/**
+ * Third ring: 260 × 2.9 m = 754 m across, so ±377 m, fading out by 355 m. Beyond the far
+ * ring's 195 m the ground used to be albedo alone, and albedo alone at that range is a flat
+ * wash whatever the splat does, because mip filtering has already averaged every layer to
+ * its own mean. Broken cover is what the middle distance of a real landscape is made of.
+ */
+const DIST_GRID = 260;
+const DIST_SPACING = 2.9;
 
 interface Ring {
   mesh: THREE.Mesh;
@@ -193,17 +201,45 @@ float grassHeightAt(vec2 wxz) {
 //      pasture mix, so a clump growing on a straw strip can be tinted straw
 //   y  boundary proximity, 1 on a field line
 //   z  the decorrelated fallow hash — which strips are ploughed to bare earth
+float gFieldHash(vec2 c) {
+  return fract(sin(dot(c, vec2(41.317, 78.233))) * 43758.5453);
+}
+
+float gFieldNoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(gFieldHash(i), gFieldHash(i + vec2(1.0, 0.0)), f.x),
+             mix(gFieldHash(i + vec2(0.0, 1.0)), gFieldHash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+
+float gFieldUse(vec2 w) {
+  vec2 fu = vec2(w.x * 0.97740 - w.y * 0.21140, w.x * 0.21140 + w.y * 0.97740) / 94.0;
+  vec2 cell = floor(fu);
+  float strips = 2.0 + floor(gFieldHash(cell + 17.0) * 2.5);
+  float sub = floor(fract(fu.y) * strips);
+  return fract(gFieldHash(cell) + sub * 0.3719 + gFieldHash(cell + 41.0) * 0.21);
+}
+
 vec3 grassField(vec2 wxz) {
-  vec2 fu = vec2(wxz.x * 0.97740 - wxz.y * 0.21140, wxz.x * 0.21140 + wxz.y * 0.97740) / 94.0;
+  // Same wander, area sampling and track widths as fieldPattern() in TerrainMaterial.ts.
+  vec2 w = wxz
+    + (vec2(gFieldNoise(wxz * 0.077), gFieldNoise(wxz.yx * 0.077 + 13.7)) - 0.5) * 8.4
+    + (vec2(gFieldNoise(wxz * 0.227 + 5.1), gFieldNoise(wxz.yx * 0.227 + 27.3)) - 0.5) * 3.2;
+  vec2 fu = vec2(w.x * 0.97740 - w.y * 0.21140, w.x * 0.21140 + w.y * 0.97740) / 94.0;
   vec2 cell = floor(fu);
   vec2 f = fract(fu);
-  float h = fract(sin(dot(cell, vec2(41.317, 78.233))) * 43758.5453);
-  float strips = 2.0 + floor(fract(sin(dot(cell + 17.0, vec2(41.317, 78.233))) * 43758.5453) * 2.5);
-  float sub = floor(f.y * strips);
-  float use = fract(h + sub * 0.3719 + fract(sin(dot(cell + 41.0, vec2(41.317, 78.233))) * 43758.5453) * 0.21);
+  float h = gFieldHash(cell);
+  float strips = 2.0 + floor(gFieldHash(cell + 17.0) * 2.5);
+  float use = (gFieldUse(w) * 2.0
+            + gFieldUse(w + vec2( 0.92,  0.39) * 7.0)
+            + gFieldUse(w + vec2(-0.92, -0.39) * 7.0)
+            + gFieldUse(w + vec2(-0.39,  0.92) * 7.0)
+            + gFieldUse(w + vec2( 0.39, -0.92) * 7.0)) / 6.0;
   vec2 e = abs(f - 0.5);
-  float edge = max(max(e.x, e.y), abs(fract(f.y * strips) - 0.5));
-  return vec3(use, smoothstep(0.40, 0.496, edge), fract(use * 3.71 + h * 0.613));
+  float track = max(smoothstep(0.452, 0.494, max(e.x, e.y)),
+                    smoothstep(0.4787, 0.4968, abs(fract(f.y * strips) - 0.5)) * 0.55);
+  return vec3(use, track, fract(use * 3.71 + h * 0.613));
 }
 `;
 
@@ -261,7 +297,9 @@ export class GrassField {
         geo: crossedCards(2, 1, 1.7, 0.50),
         grid: FAR_GRID,
         spacing: FAR_SPACING,
-        jitter: 1.05,
+        // Over 1 so a clump can leave its own cell. At 1.05 the 1.35 m lattice was legible
+        // as diagonal corduroy across the middle distance from any high camera.
+        jitter: 1.85,
         // Fades in where the near ring fades out, so neither ring is ever the only
         // cover and the hand-off leaves no ring of density on the ground.
         fadeIn: 12,
@@ -272,6 +310,22 @@ export class GrassField {
         cards: 3,
         density: Math.min(1.1, density),
         name: 'grass-far',
+      })
+    );
+    this.rings.push(
+      this.makeRing(ctx, heightMap, controlMap, tex, {
+        geo: crossedCards(2, 1, 2.9, 0.60),
+        grid: DIST_GRID,
+        spacing: DIST_SPACING,
+        jitter: 1.7,
+        fadeIn: 140,
+        fadeStart: 250,
+        fadeEnd: 355,
+        heightScale: 1.5,
+        weeds: false,
+        cards: 3,
+        density: Math.min(1.0, density),
+        name: 'grass-dist',
       })
     );
   }
@@ -358,6 +412,12 @@ export class GrassField {
   float h1 = grassHash(ci);
   float h2 = grassHash(ci + vec2(37.1, 11.7));
   float h3 = grassHash(ci + vec2(5.3, 91.2));
+  // Position, bearing, size and tint each get their own hash. Sharing h1 between the jitter,
+  // the yaw and the width made all three vary together, which is a lattice the eye can still
+  // read as rows even once the positions are jittered off it.
+  float h4 = grassHash(ci + vec2(63.7, 24.9));
+  float h5 = grassHash(ci + vec2(19.4, 77.1));
+  float h6 = grassHash(ci + vec2(88.3, 43.6));
   vec2 gpos = cell + (vec2(h1, h2) - 0.5) * uSpacing * uJitter;
 
   float gh = grassHeightAt(gpos);
@@ -385,7 +445,10 @@ export class GrassField {
               * step(uWaterLevel + 0.35, gh);
   // Real pasture grows in patches: bare scrapes, thick tussocky ground, and everything
   // between. Two scales of clustering noise, and damp ground grows thicker.
-  float clumpBig = grassHash(floor(gpos / 19.0)) * 0.5 + grassHash(floor(gpos / 6.5)) * 0.5;
+  // Smooth noise, not floor()-ed hashes. Blocky 19 m and 6.5 m cells are axis-aligned
+  // squares of density, which from any oblique camera reads as corduroy across the sward.
+  float clumpBig = gFieldNoise(gpos * (1.0 / 21.0)) * 0.55
+                 + gFieldNoise(gpos * (1.0 / 7.3) + 31.7) * 0.45;
   cover *= 0.72 + 0.95 * clumpBig + gctl.r * 0.4;
   // Ploughed and fallow strips carry no sward, and the headland the carts turned on is
   // beaten down to half. Matches the ground shader's own field pattern.
@@ -398,7 +461,7 @@ export class GrassField {
   // The ground shader's own straw / pasture threshold, so a clump standing on a straw strip
   // is straw and one standing on pasture is green. Without this the two systems disagree
   // about the same field and green tufts sprout out of dry stubble.
-  float gStraw = smoothstep(0.42, 0.64, gfld.x * 0.62 + 0.19);
+  float gStraw = smoothstep(0.40, 0.63, gfld.x * 0.60 + 0.20);
 
   float dist = length(gpos - uCamXZ);
   float fadeNear = uFadeIn < 0.5 ? 1.0 : smoothstep(uFadeIn, uFadeIn + 30.0, dist);
@@ -406,7 +469,7 @@ export class GrassField {
   float keep = step(h3, cover * uDensity);
   // One clump in twelve is a thistle or a stand of dead grass: taller and straw
   // coloured. Ground cover that is all one plant is the giveaway of a shader field.
-  float weed = uWeeds * step(0.918, h2);
+  float weed = uWeeds * step(0.918, h6);
 
   // Height and width are scaled *separately*, and height has two populations.
   //
@@ -416,26 +479,26 @@ export class GrassField {
   // front rank in its own grass and made the ground the subject of the frame instead of the
   // army. Width stays nearly constant so a short clump still spreads into its neighbours
   // and the mat does not open up into gaps as the sward gets shorter.
-  float hPop = step(0.80, fract(h1 * 7.31 + h3 * 3.17));
-  float hVar = mix(0.60 + h1 * 0.14, 0.98 + h1 * 0.20, hPop);
+  float hPop = step(0.80, fract(h5 * 7.31 + h4 * 3.17));
+  float hVar = mix(0.56 + h5 * 0.22, 0.94 + h5 * 0.28, hPop);
   // Trampling shortens the sward far harder than it thins it. Ground five thousand men have
   // been standing on is beaten flat — which is both what actually happens and what lets the
   // men read against it.
   float trodden = 1.0 - smoothstep(0.05, 0.32, gctl.b) * 0.45;
-  float wScale = keep * fade * (0.88 + 0.30 * h1);
+  float wScale = keep * fade * (0.78 + 0.46 * h4);
   float hScale = keep * fade * hVar * trodden * uHeightScale * (1.0 + weed * 0.8);
 
   // --- card shape and wind ----------------------------------------------
   float bt = aBlade.x;
   vec3 local = position;
-  float yaw = h1 * 6.2831853;
+  float yaw = h4 * 6.2831853;
   float cs = cos(yaw); float sn = sin(yaw);
   local = vec3(local.x * cs - local.z * sn, local.y, local.x * sn + local.z * cs);
 
   // Two frequencies: a slow gust field travelling across the map, and a faster
   // per-clump flutter phased by the instance hash so no two move together.
   float gust = sin(uTime * 0.42 + gpos.x * 0.031 + gpos.y * 0.021) * 0.5 + 0.5;
-  float phase = h1 * 6.2831853;
+  float phase = h4 * 6.2831853;
   float flutter = sin(uTime * 1.9 + phase) * 0.6 + sin(uTime * 3.4 + phase * 1.7) * 0.3;
   float bend = (0.35 + 0.9 * gust) * flutter * bt * bt;
   vec2 windDir = normalize(vec2(0.82, 0.57));
@@ -449,15 +512,18 @@ export class GrassField {
   // so the cut-off leaves no visible ring of density. Biased toward the green end: the
   // straw tint is the minority state, matching the ground shader's own grass mix.
   vec3 gcol = mix(uDryColour, uWetColour,
-    clamp(0.62 + gctl.r * 1.1 + (h2 - 0.5) * 0.8 - gStraw * 0.85, 0.0, 1.0));
+    clamp(0.62 + gctl.r * 1.1 + (h6 - 0.5) * 0.8 - gStraw * 0.85, 0.0, 1.0));
   gcol = mix(gcol, uDryColour * 1.2, weed);
+  // Per-clump tint, warm and cool rather than only lighter and darker. A sward is a mass of
+  // individually coloured plants, and one tint across every clump reads as a single decal.
+  gcol *= vec3(0.90 + 0.21 * h6, 0.93 + 0.15 * h5, 0.83 + 0.31 * h1);
   gcol *= 0.74 + 0.34 * bt;
   gcol = mix(uGroundColour, gcol, clamp(fade * 1.6, 0.0, 1.0));
   vColor = vec4(gcol, 1.0);
 
   // Pick one of the card variants per clump so the field is not one image stamped
   // everywhere. Overrides the UV that <uv_vertex> set a few lines earlier.
-  vMapUv = vec2((uv.x + floor(h2 * uCards)) / uCards, uv.y);
+  vMapUv = vec2((uv.x + floor(h5 * uCards)) / uCards, uv.y);
 `
         )
         .replace('#include <begin_vertex>', 'vec3 transformed = gWorld;')

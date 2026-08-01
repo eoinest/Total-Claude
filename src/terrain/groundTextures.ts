@@ -37,16 +37,22 @@ export interface GroundLayerSpec {
   /** Base roughness; modulated by surface height in the shader. */
   roughness: number;
   /**
-   * Authored albedo, sRGB 0–255. The layer's own mean is divided out and replaced by
-   * this, so the palette is under our control rather than the photographer's — see
-   * `recolourLayer`. Linear luminance is held in 0.09–0.36, which is where real ground
-   * sits; anything brighter looks chalky the moment the sun comes round.
+   * Authored albedo, sRGB 0–255. Its *luminance* is imposed on the layer outright, because
+   * the tonal separation between layers is what a strategic camera reads and it has to be
+   * under our control rather than the photographer's. Held in 0.09–0.36 linear, which is
+   * where real ground sits; anything brighter looks chalky the moment the sun comes round.
    */
   albedo: readonly [number, number, number];
   /** Micro-contrast gain. >1 makes individual stones and blades read; 1 is neutral. */
   contrast: number;
   /** How much of the photograph's own hue variation survives the recolour, 0–1. */
   chroma: number;
+  /**
+   * How much of the photograph's own mean *chromaticity* is kept, 0–1. 0 is a flat authored
+   * tint, which is what the whole set used to be and why large areas read as tinted grey.
+   * Luminance is unaffected either way, so raising this cannot break the layer separation.
+   */
+  photoHue: number;
   /** Added to the layer's surface height during height-blending — lets gravel win over grass. */
   heightBias: number;
 }
@@ -65,6 +71,8 @@ export interface GroundLayerSpec {
  * Albedos are authored so that no two layers likely to meet share a value *or* a hue:
  * straw 0.26 yellow-ochre, meadow 0.16 green, dirt 0.15 red-brown, mud 0.08 dark, gravel
  * 0.26 cool neutral, limestone 0.38 pale cool, sand 0.32 warm pale, basalt 0.11 cold.
+ * `photoHue` then pulls each layer's hue part of the way back to the plate it came from,
+ * so the value ladder above holds while the surface still reads as a photograph.
  *
  * **These are chromatic on purpose.** Judged against real Rome II frames the ground is
  * warm and *colourful* — green pasture, yellow-brown stubble, pale grey rock and bare
@@ -79,22 +87,22 @@ export const GROUND_LAYERS: readonly GroundLayerSpec[] = [
   // 1.67, and further apart in saturation too — made a plain of high-contrast green and tan
   // patches that read as DPM camouflage from altitude. Real Rome II ground varies in
   // brightness and saturation far more than it varies in hue.
-  { name: 'dry grass',   kind: 'dryGrass',       manifestId: 'dry-grass',       farScale: 4.3,  detailScale: 1.15, detailMix: 0.50, roughness: 0.94, albedo: [140, 128,  86], contrast: 1.32, chroma: 0.55, heightBias: 0.0 },
-  { name: 'meadow grass',kind: 'meadowGrass',    manifestId: 'meadow-grass',    farScale: 3.9,  detailScale: 1.05, detailMix: 0.50, roughness: 0.92, albedo: [100, 124,  62], contrast: 1.38, chroma: 0.55, heightBias: 0.02 },
+  { name: 'dry grass',   kind: 'dryGrass',       manifestId: 'dry-grass',       farScale: 4.3,  detailScale: 1.15, detailMix: 0.50, roughness: 0.94, albedo: [140, 128,  86], contrast: 1.32, chroma: 0.92, heightBias: 0.0,  photoHue: 0.50 },
+  { name: 'meadow grass',kind: 'meadowGrass',    manifestId: 'meadow-grass',    farScale: 3.9,  detailScale: 1.05, detailMix: 0.50, roughness: 0.92, albedo: [100, 124,  62], contrast: 1.38, chroma: 0.92, heightBias: 0.02, photoHue: 0.24 },
   // Redder and a stop darker than the straw above it. Pulling straw down toward pasture
   // brought it to within 20° of hue and 1.18 stops of this, at which point trodden earth and
   // burnt-off grass were the same colour and the plain lost a material rather than gaining
   // tonal cohesion. Straw against dirt must stay separated even while straw against pasture
   // closes up.
-  { name: 'trampled dirt',kind: 'compactedEarth',manifestId: null,              farScale: 4.6,  detailScale: 1.30, detailMix: 0.45, roughness: 0.95, albedo: [138, 104,  76], contrast: 1.25, chroma: 0.45, heightBias: 0.06 },
-  { name: 'mud',         kind: 'mud',            manifestId: 'mud',             farScale: 2.6,  detailScale: 0.72, detailMix: 0.45, roughness: 0.74, albedo: [ 88,  76,  58], contrast: 1.05, chroma: 0.35, heightBias: 0.04 },
-  { name: 'gravel',      kind: 'gravel',         manifestId: 'dirt-gravel',     farScale: 2.3,  detailScale: 0.62, detailMix: 0.50, roughness: 0.96, albedo: [146, 141, 128], contrast: 1.45, chroma: 0.60, heightBias: 0.12 },
-  { name: 'limestone',   kind: 'limestone',      manifestId: null,              farScale: 6.0,  detailScale: 1.70, detailMix: 0.40, roughness: 0.86, albedo: [168, 166, 152], contrast: 1.35, chroma: 0.40, heightBias: 0.22 },
-  { name: 'river sand',  kind: 'sand',           manifestId: 'sand',            farScale: 2.8,  detailScale: 0.78, detailMix: 0.45, roughness: 0.88, albedo: [166, 152, 122], contrast: 1.18, chroma: 0.40, heightBias: -0.04 },
+  { name: 'trampled dirt',kind: 'compactedEarth',manifestId: null,              farScale: 4.6,  detailScale: 1.30, detailMix: 0.45, roughness: 0.95, albedo: [138, 104,  76], contrast: 1.25, chroma: 0.62, heightBias: 0.06, photoHue: 0.0 },
+  { name: 'mud',         kind: 'mud',            manifestId: 'mud',             farScale: 2.6,  detailScale: 0.72, detailMix: 0.45, roughness: 0.74, albedo: [ 88,  76,  58], contrast: 1.05, chroma: 0.70, heightBias: 0.04, photoHue: 0.55 },
+  { name: 'gravel',      kind: 'gravel',         manifestId: 'dirt-gravel',     farScale: 2.3,  detailScale: 0.62, detailMix: 0.50, roughness: 0.96, albedo: [146, 141, 128], contrast: 1.45, chroma: 0.85, heightBias: 0.12, photoHue: 0.45 },
+  { name: 'limestone',   kind: 'limestone',      manifestId: null,              farScale: 6.0,  detailScale: 1.70, detailMix: 0.40, roughness: 0.86, albedo: [168, 166, 152], contrast: 1.35, chroma: 0.50, heightBias: 0.22, photoHue: 0.0 },
+  { name: 'river sand',  kind: 'sand',           manifestId: 'sand',            farScale: 2.8,  detailScale: 0.78, detailMix: 0.45, roughness: 0.88, albedo: [166, 152, 122], contrast: 1.24, chroma: 0.85, heightBias: -0.04, photoHue: 0.55 },
   // Consular roads were paved in basalt (silex) — a cool dark grey, not the pale
   // limestone setts the pack ships. 1.1 m per tile puts the polygons at ~35 cm, which is
   // the size they are on the surviving stretch outside the Porta Appia.
-  { name: 'paving',      kind: 'cobbles',        manifestId: 'cobblestone-road',farScale: 1.1,  detailScale: 1.1,  detailMix: 0.0,  roughness: 0.80, albedo: [ 94,  94,  97], contrast: 1.30, chroma: 0.30, heightBias: 0.30 },
+  { name: 'paving',      kind: 'cobbles',        manifestId: 'cobblestone-road',farScale: 1.1,  detailScale: 1.1,  detailMix: 0.0,  roughness: 0.80, albedo: [ 94,  94,  97], contrast: 1.30, chroma: 0.45, heightBias: 0.30, photoHue: 0.0 },
 ];
 
 export const LAYER_COUNT = GROUND_LAYERS.length;
@@ -229,19 +237,17 @@ for (let i = 0; i < 4096; i++) {
 const encode = (v: number): number => LIN_TO_SRGB[v <= 0 ? 0 : v >= 1 ? 4095 : (v * 4095) | 0];
 
 /**
- * Re-centre one layer's albedo on its authored colour.
+ * Re-centre one layer's albedo on its authored *luminance*, keeping as much of the
+ * photograph's own colour as `photoHue` and `chroma` allow.
  *
- * The photograph (or the procedural substitute) supplies *structure*: which texels are
- * straw and which are the leaf lying on top of it. What it must not supply is the overall
- * colour, because two photographs of different things routinely land within a few per
- * cent of each other — the CC0 dry-grass and meadow-grass plates both average to the same
- * olive tan, and no amount of clever splatting can make two identically-coloured layers
- * read as two materials.
+ * Divide out the layer's own mean, keep the relative luminance (raised to `contrast` to
+ * sharpen or soften the micro-detail), keep `chroma` of the per-texel chroma deviation, and
+ * multiply by the target. The mean of the output is the target by construction.
  *
- * So: divide out the layer's own mean, keep the relative luminance (raised to `contrast`
- * to sharpen or soften the micro-detail), keep a fraction of the chroma deviation so the
- * result is not a monochrome tint, and multiply by the target. The mean of the output is
- * the target by construction.
+ * Measured plate means are dry grass sRGB 173,148,122 at 0.315 linear luminance and meadow
+ * grass 152,132,90 at 0.239: a 1.32 ratio and different hues, so the earlier claim here that
+ * the two average to the same olive tan was wrong. Luminance does need imposing, because it
+ * carries layer separation at range; overpainting hue too is what left the ground grey.
  */
 function recolourLayer(data: Uint8Array, offset: number, count: number, spec: GroundLayerSpec): void {
   const lum = new Float32Array(count);
@@ -307,9 +313,18 @@ function recolourLayer(data: Uint8Array, offset: number, count: number, spec: Gr
   }
   const renorm = meanL / Math.max(1e-4, meanP * inv);
 
-  const tr = SRGB_TO_LIN[spec.albedo[0]] / meanL;
-  const tg = SRGB_TO_LIN[spec.albedo[1]] / meanL;
-  const tb = SRGB_TO_LIN[spec.albedo[2]] / meanL;
+  // Target = the authored luminance wearing a blend of the authored and the photographed
+  // chromaticity. Splitting it this way is what lets real ground colour back in without
+  // touching the tonal separation between layers, which is decided by luminance alone.
+  const ar = SRGB_TO_LIN[spec.albedo[0]];
+  const ag = SRGB_TO_LIN[spec.albedo[1]];
+  const ab = SRGB_TO_LIN[spec.albedo[2]];
+  const aL = Math.max(1e-4, 0.2126 * ar + 0.7152 * ag + 0.0722 * ab);
+  const pL = Math.max(1e-4, 0.2126 * mr + 0.7152 * mg + 0.0722 * mb);
+  const p = spec.photoHue;
+  const tr = (((1 - p) * ar) / aL + (p * mr) / pL) * (aL / meanL);
+  const tg = (((1 - p) * ag) / aL + (p * mg) / pL) * (aL / meanL);
+  const tb = (((1 - p) * ab) / aL + (p * mb) / pL) * (aL / meanL);
   const k = spec.chroma;
   for (let i = 0; i < count; i++) {
     const l = lum[i] * renorm;

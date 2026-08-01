@@ -134,17 +134,16 @@ vec3 terrainSurface(vec2 wxz, out float curv) {
  *
  * Returns:
  *   x  land-use hash of this strip, constant across the whole strip
- *   y  boundary proximity: 1 on a field line, falling to 0 a few metres inside
+ *   y  boundary proximity: 1 on a field line, falling to 0 a dozen metres inside
  *   z  hash of the whole century, for anything that should not change at a strip line
  *
- * **Cells are not displaced by noise.** An earlier revision added the macro noise to the
- * lattice coordinate, which moved whole cells by up to 7.5 m and left every region outline
- * organic. Combined with a narrow threshold on a high-contrast noise field, that produced
- * hard-edged irregular blotches at 40–80 m — the visual language of DPM camouflage, not of
- * farmland, and from a strategic camera it was the dominant read of the whole frame. The
- * gromatici's whole point was the rectangle: the lattice is now exact and the noise bows
- * only the *boundary*, by a metre and a half, which is the scale a real hedge or drainage
- * ditch actually wanders by.
+ * **The lookup is displaced, never the cell.** An earlier revision added the 620 m macro
+ * noise to the lattice coordinate, which moved whole cells by up to 7.5 m: hard-edged
+ * irregular blotches at 40 to 80 m, the visual language of DPM camouflage rather than
+ * farmland. A later one bowed only the boundary, but with noise smooth over 96 m, so the
+ * line stayed a ruled edge that merely curved, which is what made the plain read as a quilt.
+ * fieldWander is two octaves at 13 m and 4.4 m, ±5 m: against a 94 m cell it can only move
+ * pixels within a few metres of a line, so the rectangles survive and the lines wander.
  *
  * The boundary channel was also inverted: it returned 1 over the entire field interior and
  * 0 only in a thin band at the edge, so everything keyed to the headland was in fact
@@ -158,24 +157,60 @@ float fieldHash(vec2 c) {
   return fract(sin(dot(c, vec2(41.317, 78.233))) * 43758.5453);
 }
 
+float fieldNoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = fieldHash(i);
+  float b = fieldHash(i + vec2(1.0, 0.0));
+  float c = fieldHash(i + vec2(0.0, 1.0));
+  float d = fieldHash(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+vec2 fieldWander(vec2 wxz) {
+  return (vec2(fieldNoise(wxz * 0.077), fieldNoise(wxz.yx * 0.077 + 13.7)) - 0.5) * 8.4
+       + (vec2(fieldNoise(wxz * 0.227 + 5.1), fieldNoise(wxz.yx * 0.227 + 27.3)) - 0.5) * 3.2;
+}
+
+vec2 fieldLattice(vec2 w) {
+  return vec2(w.x * FIELD_COS - w.y * FIELD_SIN, w.x * FIELD_SIN + w.y * FIELD_COS)
+       / FIELD_PERIOD;
+}
+
+// Two or three strips per century along its long axis, as the gromatici laid them out.
+float fieldUse(vec2 w) {
+  vec2 fu = fieldLattice(w);
+  vec2 cell = floor(fu);
+  float strips = 2.0 + floor(fieldHash(cell + 17.0) * 2.5);
+  float sub = floor(fract(fu.y) * strips);
+  return fract(fieldHash(cell) + sub * 0.3719 + fieldHash(cell + 41.0) * 0.21);
+}
+
 vec3 fieldPattern(vec2 wxz, float edgeNoise) {
-  vec2 fu = vec2(wxz.x * FIELD_COS - wxz.y * FIELD_SIN, wxz.x * FIELD_SIN + wxz.y * FIELD_COS)
-          / FIELD_PERIOD;
+  vec2 w = wxz + fieldWander(wxz);
+  vec2 fu = fieldLattice(w);
   vec2 cell = floor(fu);
   vec2 f = fract(fu);
   float century = fieldHash(cell);
-  // Fields are subdivided into two or three strips along their long axis, as the
-  // gromatici actually laid them out.
   float strips = 2.0 + floor(fieldHash(cell + 17.0) * 2.5);
-  float sub = floor(f.y * strips);
-  float use = fract(century + sub * 0.3719 + fieldHash(cell + 41.0) * 0.21);
-  // Proximity to the nearest boundary, on a common 0 (strip centre) .. 0.5 (on the line)
-  // scale for the century edges and the strip divisions alike.
-  vec2 e = abs(f - 0.5);
-  float edge = max(max(e.x, e.y), abs(fract(f.y * strips) - 0.5));
-  // ±1.6 m of wander on the line itself.
-  edge += (edgeNoise - 0.5) * 0.034;
-  return vec3(use, smoothstep(0.40, 0.496, edge), century);
+  // Land use area-sampled over a 7 m disc: deeper in, all five taps agree and the interior
+  // keeps its own hash; within 7 m of a line they disagree and the value ramps across. Width
+  // in metres, not a wider threshold, which only averages the whole plain into one khaki.
+  const float SS = 7.0;
+  float use = fieldUse(w) * 2.0
+            + fieldUse(w + vec2( 0.92,  0.39) * SS)
+            + fieldUse(w + vec2(-0.92, -0.39) * SS)
+            + fieldUse(w + vec2(-0.39,  0.92) * SS)
+            + fieldUse(w + vec2( 0.39, -0.92) * SS);
+  use *= 1.0 / 6.0;
+  // 0 at a strip centre, 0.5 on the line. A 4.5 m cart track on the century lines, half that
+  // between strips: a full-width track every 38 m beiges out most of the plain.
+  vec2 e = abs(f - 0.5) + (edgeNoise - 0.5) * 0.030;
+  float edgeS = abs(fract(f.y * strips) - 0.5) + (edgeNoise - 0.5) * 0.020;
+  float track = max(smoothstep(0.452, 0.494, max(e.x, e.y)),
+                    smoothstep(0.4787, 0.4968, edgeS) * 0.55);
+  return vec3(use, track, century);
 }
 
 vec3 triWeights(vec3 n) {
@@ -328,6 +363,11 @@ ${SPLAT_GLSL}`
   vec4 macroMid = texture2D(uMacro, wp.xz * (1.0 / 96.0) + vec2(0.37, 0.61));
   float nzSmall = texture2D(uMacro, wp.xz * (1.0 / 23.0) + vec2(0.13, 0.77)).a;
   float nzBig = texture2D(uMacro, wp.xz * (1.0 / 620.0) + vec2(0.71, 0.29)).a;
+  // Mip filtering averages every splat layer to its own mean by a couple of hundred metres,
+  // so past that range macro modulation is the only thing left that can vary the ground.
+  // These two bands (150 m and 43 m features) therefore carry no distance fade at all.
+  vec4 macroWide = texture2D(uMacro, wp.xz * (1.0 / 1050.0) + vec2(0.17, 0.41));
+  vec4 macroLand = texture2D(uMacro, wp.xz * (1.0 / 300.0) + vec2(0.29, 0.83));
 
   // The Via Flaminia, evaluated analytically so the paving edge stays crisp at any zoom.
   float roadD = abs(wp.x - topoRoadCentreX(wp.z));
@@ -360,15 +400,18 @@ ${SPLAT_GLSL}`
   // which is half of why the strategic view read as camouflage — and the same variance is
   // what aliases when a 94 m cell shrinks toward a few pixels. Roads and rock are exempt,
   // because a basalt carriageway really is a dark line from two kilometres up.
-  float aerial = smoothstep(300.0, 1150.0, length(vViewPosition))
+  float aerial = smoothstep(270.0, 1050.0, length(vViewPosition))
                * (1.0 - paved) * (1.0 - smoothstep(0.18, 0.42, tSlope));
   // Land use is decided per strip, and only *two* states are allowed to be strong: green
   // pasture and burnt-off straw. Bare earth and stone are accents keyed to the fallow
   // strips, the boundary lines and real slope. Four equally-loud states across one plain
   // is what turns worked land into DPM.
   float useDecorr = fract(fld.x * 3.71 + fld.z * 0.613);
-  float fieldGain = 1.0 - aerial * 0.78;
-  float fallow = smoothstep(0.66, 0.79, useDecorr) * farmed * (1.0 - campus * 0.88) * fieldGain;
+  float fieldGain = 1.0 - aerial * 0.66;
+  // The 43 m band is folded into the threshold so a ploughed strip is broken ground rather
+  // than a solid rectangle of one brown.
+  float fallow = smoothstep(0.62, 0.84, useDecorr * 0.78 + macroLand.a * 0.22)
+               * farmed * (1.0 - campus * 0.88) * fieldGain;
   float stubble = smoothstep(0.30, 0.44, fld.x) * (1.0 - smoothstep(0.56, 0.68, fld.x)) * farmed;
   // The headland: a beaten track a few metres wide *on* the field line, where the carts
   // turned and the plough could not reach. It straddles the boundary, so the change of
@@ -385,23 +428,30 @@ ${SPLAT_GLSL}`
   // 0 dry grass and 1 meadow grass share the plain in opposition, so the ground breaks
   // into readable blocks of straw and green rather than averaging into one tone.
   //
-  // **Dominated by the strip hash, not by noise.** The regions have to *be* the fields:
-  // when the mix was 82 % macro noise and 18 % field hash the outlines were fractal and
-  // the result was camouflage. Noise now supplies only a gentle drift within each strip,
-  // so a field is not a flat colour but its identity and its edges come from the lattice.
+  // **The strip hash is still the largest single term.** The regions have to *be* the
+  // fields: when the mix was 82 % one macro band and 18 % field hash the outlines were
+  // fractal and the result was camouflage. The drift is three independent bands at 88, 43
+  // and 32 m, none of them stronger than 0.24, so a field keeps its own outline but reads as
+  // mottled ground inside it rather than a rectangle of paint.
   //
-  // Biased so green pasture is the ground state and burnt-off straw the exception, which
-  // is how real Rome II ground looks — green with dry patches through it, not the reverse.
-  // The straw share is pulled toward the mean with distance along with everything else.
-  float useMix = fld.x * 0.62 + nzBig * 0.22 + macroMid.a * 0.16;
-  float grassMix = mix(smoothstep(0.42, 0.64, useMix), 0.34, aerial * 0.78);
-  w[0] = (0.3 + 2.7 * grassMix + stubble * 1.6) * (1.0 - grassKill) * (1.0 - paved);
+  // Weights sum to one whatever farmed does, so the mean tone cannot shift at the edge of
+  // the worked land. Biased so green pasture is the ground state and burnt-off straw the
+  // exception, and the straw share converges toward the mean with distance.
+  float fieldW = 0.60 * (0.40 + 0.60 * farmed);
+  float useDrift = macroLand.a * 0.46 + nzBig * 0.32 + macroMid.a * 0.22;
+  float useMix = mix(useDrift, fld.x, fieldW);
+  // The threshold stays firm, because fld.x is already area-sampled: the ramp is 14 m of
+  // ground rather than a wider window, so a field commits to straw or to pasture instead of
+  // sitting half way between them.
+  float grassMix = mix(smoothstep(0.40, 0.63, useMix), 0.34, aerial * 0.66);
+  w[0] = (0.3 + 2.7 * grassMix + stubble * 1.6)
+       * (1.0 - grassKill) * (1.0 - paved) * (1.0 - headland * 0.45);
   w[1] = (0.3 + 2.5 * (1.0 - grassMix) + cWet * 1.8 + hollow * 0.5)
-       * (1.0 - grassKill) * (1.0 - paved) * (1.0 - fallow * 0.75);
+       * (1.0 - grassKill) * (1.0 - paved) * (1.0 - fallow * 0.75) * (1.0 - headland * 0.45);
   // 2 trampled earth: army grounds, road verges, the tracks on the field lines and the
   // ploughed and fallow strips. An accent, not a fourth co-equal state.
   w[2] = cTramp * 1.7 + verge * 1.0
-       + fallow * 2.6 + headland * 1.9;
+       + fallow * 2.6 + headland * 2.4;
   // 3 mud: where drainage really concentrates and the ground never dries.
   w[3] = smoothstep(0.68, 0.98, cWet) * 2.1 + hollow * 0.45
        + cSilt * 0.6 * (1.0 - smoothstep(0.8, 4.5, tAbove));
@@ -415,11 +465,13 @@ ${SPLAT_GLSL}`
   // plough has actually turned over.
   w[4] = cBare * 1.2 + smoothstep(0.13, 0.40, tSlope) * 1.75 + verge * 1.35 + nose * 0.7
        + smoothstep(0.78, 0.95, macroMid.b) * 0.6 * fallow * (1.0 - paved)
-       + fallow * nose * 1.4 + headland * 0.5
+       + fallow * nose * 1.4 + headland * 1.0
        // Traffic wears the fines out of a track and leaves the stones standing. Without
        // this, trodden ground — army camps, the glacis, the ford approach — is a sheet of
        // featureless chocolate mud wherever it is not grass.
-       + smoothstep(0.12, 0.55, cTramp) * 1.3;
+       + smoothstep(0.12, 0.55, cTramp) * 1.3
+       // A shoal is sand *and* shingle. Sand alone made the ford one flat pale wash.
+       + cSilt * (1.0 - smoothstep(0.4, 2.6, tAbove)) * 1.25;
   // 5 exposed limestone: steep faces, quarry cuts, the noses of ridges.
   w[5] = smoothstep(0.32, 0.60, tSlope) * 2.9
        + cBare * smoothstep(0.18, 0.45, tSlope) * 2.2 + nose * 0.5;
@@ -488,7 +540,7 @@ ${SPLAT_GLSL}`
   // The 2.4 m band is *not* faded in from the near field: at that wavelength it is clods
   // and hollows, not grain, and a boot-level camera needs them as much as a mid-distance
   // one. Only its far cut-off matters, where it would start to alias.
-  float midFade = 1.0 - smoothstep(150.0, 340.0, camDist);
+  float midFade = 1.0 - smoothstep(260.0, 620.0, camDist);
   vec4 det = texture2D(uDetailNormal, wp.xz * 2.0);
   // The coarse band is sampled on a *rotated* frame, at 37°, and at an irrational-ish
   // 2.19 m rather than a neat fraction of the fine band's 0.5 m. Sampling one texture at two
@@ -506,9 +558,12 @@ ${SPLAT_GLSL}`
   // Large-scale colour drift. Centred on 1.0 so it tints rather than darkens. This is
   // doing most of the work of hiding the repeat at the scales a high camera sees.
   tCol *= mix(vec3(1.0), macroFar * 2.0, 0.85);
-  // Only R and G of the mid band are colour; B is reserved as a splat mask and has far
-  // too much contrast to tint with.
-  tCol *= mix(vec3(1.0), vec3(macroMid.r, macroMid.g, macroMid.g) * 2.0, 0.3);
+  // Only R and G of any band are colour; B is reserved as a splat mask and has far too much
+  // contrast to tint with. The channels are permuted between bands so the swings decorrelate
+  // into warm and cool ground rather than stacking into one brightness ramp.
+  tCol *= mix(vec3(1.0), vec3(macroMid.r, macroMid.g, macroMid.g) * 2.0, 0.42);
+  tCol *= mix(vec3(1.0), vec3(macroWide.g, macroWide.r, macroWide.r * 0.88) * 2.0, 0.40);
+  tCol *= mix(vec3(1.0), vec3(macroLand.r, macroLand.g, macroLand.r * 0.5 + macroLand.g * 0.5) * 2.0, 0.46);
   // Near-field shading from the detail height, and a scatter of small stones. A normal
   // perturbation alone leaves the ground looking sanded smooth under a low sun, because
   // half the clods face away from it; this is the light-and-shade half of the same relief.
@@ -517,8 +572,11 @@ ${SPLAT_GLSL}`
   // A third band at ~11 m from the macro texture. It sits in the octave between the 2.2 m
   // clods and the 23 m mottle, and its job is to carry a structure larger than either so
   // neither repeat has a clean period to be read off.
+  // Carried out to 900 m rather than cut at 260. Mip filtering already collapses an 11 m
+  // tile toward its own mean with distance, so the fade was doing the same job twice and
+  // cost the middle distance its last band of albedo variation.
   tCol *= mix(1.0, 0.84 + 0.34 * texture2D(uMacro, wp.xz * (1.0 / 11.3) + vec2(0.53, 0.19)).a,
-              (1.0 - smoothstep(90.0, 260.0, camDist)) * 0.55);
+              (1.0 - smoothstep(340.0, 900.0, camDist)) * 0.55);
   // Stones read as pale, cool flecks sitting on top of whatever the ground is.
   tCol = mix(tCol, mix(tCol, vec3(0.30, 0.29, 0.265), 0.72), det.w * detFade * 0.55);
 
@@ -533,7 +591,7 @@ ${SPLAT_GLSL}`
   const vec3 AERIAL_MEAN = vec3(0.199, 0.207, 0.070);
   float tLum = dot(tCol, vec3(0.2126, 0.7152, 0.0722));
   vec3 tMean = AERIAL_MEAN * (tLum / max(dot(AERIAL_MEAN, vec3(0.2126, 0.7152, 0.0722)), 1e-4));
-  tCol = mix(tCol, tMean, aerial * 0.62);
+  tCol = mix(tCol, tMean, aerial * 0.52);
   diffuseColor.rgb *= tCol;
 `
       )
