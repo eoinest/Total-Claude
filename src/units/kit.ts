@@ -58,7 +58,9 @@ export const enum Piece {
   Torc = 34,
   /** Gladius in its scabbard on the right hip, worn while the pilum is in the hand. */
   SwordSheathed = 35,
-  Count = 36,
+  /** A long forked beard. Germanic geometry only, so a warband is not one beard repeated. */
+  BeardLong = 36,
+  Count = 37,
 }
 
 /**
@@ -216,7 +218,9 @@ export function resolveKit(def: UnitTypeDef, variant: number, out: ResolvedKit):
   // the Romans kept saying it.
   if (germanic) {
     add(r(1) < 0.86 ? Piece.HairLong : Piece.HairShort);
-    if (r(2) < 0.82) add(Piece.Beard);
+    const br = r(2);
+    if (br < 0.34) add(Piece.BeardLong);
+    else if (br < 0.82) add(Piece.Beard);
   } else {
     add(Piece.HairShort);
     if (r(2) < 0.42) add(Piece.Beard);

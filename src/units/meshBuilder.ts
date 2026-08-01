@@ -292,8 +292,21 @@ export class MeshBuilder {
     if (opts.capEnd) capAt(nodes.length - 1, 1);
   }
 
-  /** A lathed profile of [radius, y] pairs revolved about the Y axis. */
-  revolve(profile: readonly (readonly [number, number])[], segments: number, uv: UvRect, repeatU = 1): void {
+  /**
+   * A lathed profile of [radius, y] pairs revolved about the Y axis. `arc` sweeps only part
+   * of the way round, in radians from +X toward +Z, and leaves the ends open: a helmet whose
+   * rim clears the eyebrows still has to cover the temple and the nape.
+   */
+  revolve(
+    profile: readonly (readonly [number, number])[],
+    segments: number,
+    uv: UvRect,
+    repeatU = 1,
+    arc?: readonly [number, number]
+  ): void {
+    const a0 = arc ? arc[0] : 0;
+    const span = arc ? arc[1] - arc[0] : Math.PI * 2;
+    const ringSize = arc ? segments + 1 : segments;
     const rings: number[][] = [];
     for (let i = 0; i < profile.length; i++) {
       const [r, y] = profile[i];
@@ -307,16 +320,17 @@ export class MeshBuilder {
       const len = Math.hypot(dr, dy) || 1;
       const nr = dy / len;
       const ny = -dr / len;
-      for (let s = 0; s < segments; s++) {
-        const a = (s / segments) * Math.PI * 2;
-        const [u, v] = MeshBuilder.tileUv(uv, s / segments, t, repeatU, 1);
+      for (let s = 0; s < ringSize; s++) {
+        const f = s / segments;
+        const a = a0 + f * span;
+        const [u, v] = MeshBuilder.tileUv(uv, f, t, repeatU, 1);
         ring.push(this.vert(Math.cos(a) * r, y, Math.sin(a) * r, Math.cos(a) * nr, ny, Math.sin(a) * nr, u, v));
       }
       rings.push(ring);
     }
     for (let i = 0; i < rings.length - 1; i++) {
       for (let s = 0; s < segments; s++) {
-        const s2 = (s + 1) % segments;
+        const s2 = arc ? s + 1 : (s + 1) % segments;
         this.quad(rings[i][s], rings[i][s2], rings[i + 1][s2], rings[i + 1][s]);
       }
     }

@@ -100,8 +100,16 @@ const LOD_COUNT = 3;
  * and melee found no visible difference at all: germanhorde and clash are byte-identical
  * because every man in them is inside 88 m either way. 0.40 rather than 0.34 only because it
  * keeps a marginal 10 m of real geometry for nothing at 1080p.
+ *
+ * The near edge was 0.14, or 31 m at ultra, set when LOD0 and LOD1 differed only in
+ * smoothness. LOD0 now carries the cheekbones, the mouth line and the pteruges, and 31 m is
+ * well inside the range a line is watched from: the graded `romanline` and `melee` cameras
+ * orbit at 15 m and 10 m, where a 1.75 m man is 181 and 289 px tall at 1080p. 0.20 is 44 m,
+ * where he is 75 px. Measured, it moves `germanhorde` from 327 LOD0 / 292 LOD1 to 416 / 203,
+ * and leaves `romanline` at 274 / 64 unchanged, because that camera looks along the line and
+ * the men it can see are either inside 35 m or past 49 m with nothing in between.
  */
-const LOD_FRACTION = [0.14, 0.4, 2.0];
+const LOD_FRACTION = [0.20, 0.42, 2.0];
 /** Hysteresis as a fraction of the band distance: a man must cross well past a boundary
  *  before he changes LOD, otherwise a slow camera pan pops a whole rank back and forth. */
 const LOD_HYSTERESIS = 0.12;
@@ -927,12 +935,12 @@ export class UnitRenderSystem implements Subsystem {
     this.slotOff[i * 3] = (hash01(seed, 91) - 0.5) * 2 * SLOT_LATERAL * ragged;
     this.slotOff[i * 3 + 1] = (hash01(seed, 92) - 0.5) * 2 * SLOT_ALONG * ragged;
     this.slotOff[i * 3 + 2] = (hash01(seed, 93) - 0.5) * 2 * SLOT_STRAGGLE * ragged;
-    // Stature. `pool.scale` spreads a man only +-3.5%, which is under one standard
-    // deviation of adult male height and leaves a rank of 160 men looking cut to a
-    // template. Widening it here to about +-7% puts the tallest at 1.88 m and the shortest
-    // at 1.62 m, which is what a hundred and sixty conscripts actually look like, and it
-    // is a stable per-man appearance choice so it belongs on `variant`.
-    this.heightMul[i] = 1 + (hash01(seed, 74) - 0.5) * 0.075;
+    // Stature. `pool.scale` spreads a man only +-3.5%, under one standard deviation of adult
+    // male height, which leaves a rank of 160 men looking cut to a template. +-5% here puts
+    // the combined spread at +-8.5%, so the tallest is 1.90 m and the shortest 1.60 m: two
+    // standard deviations either side of 1.75, which is what a hundred and sixty conscripts
+    // look like. Stable per man, so it belongs on `variant`.
+    this.heightMul[i] = 1 + (hash01(seed, 74) - 0.5) * 0.10;
   }
 
   /** Grid cell key for a ground position. Biased so negative coordinates pack cleanly. */

@@ -74,6 +74,12 @@ function socket(
 const DEG = Math.PI / 180;
 const euler = (x: number, y = 0, z = 0): THREE.Euler => new THREE.Euler(x * DEG, y * DEG, z * DEG, 'XYZ');
 
+/**
+ * The 280 degrees a helmet shell or a cap of hair covers, leaving the face open. Angles run
+ * from +X toward +Z, so +Z is the front and the gap is centred there.
+ */
+const NAPE_ARC: readonly [number, number] = [Math.PI * 0.723, Math.PI * 2.277];
+
 // ---------------------------------------------------------------------------
 // Skin binding helpers
 // ---------------------------------------------------------------------------
@@ -184,7 +190,9 @@ const DETAIL: Record<Lod, Detail> = {
   // crest and the Coolus knob are what tell three helmet types apart. Dropping them at 45 m
   // both flattened kit variety across most of the army and made the LOD0 boundary visible,
   // because a man's neck guard vanished as he crossed it.
-  1: { torso: 6, limb: 4, head: 6, rings: 3, shieldCols: 3, shieldRows: 3, fine: false, medium: true },
+  // `head` is 7 rather than 6 because the face forms live on this tier too: a brow and a nose
+  // on a six-sided skull read as a facet, not a face.
+  1: { torso: 6, limb: 4, head: 7, rings: 3, shieldCols: 3, shieldRows: 3, fine: false, medium: true },
   2: { torso: 5, limb: 4, head: 5, rings: 2, shieldCols: 2, shieldRows: 2, fine: false, medium: false },
 };
 
@@ -225,8 +233,9 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
 
   // Skull. Eyes sit at 0.93 of stature, the crown at 1.75, so the head bone at 1.613 is
   // roughly the atlanto-occipital joint and the skull is a 0.10 m sphere above it.
+  const headM = new THREE.Matrix4().makeTranslation(0, headY, MAN_RIG.restT[MB.head * 3 + 2]);
   b.setBone(MB.head);
-  b.setMatrix(new THREE.Matrix4().makeTranslation(0, headY, MAN_RIG.restT[MB.head * 3 + 2]));
+  b.setMatrix(headM);
   b.revolve(
     [
       [0.001, -0.055], [0.055, -0.075], [0.072, -0.045], [0.079, 0.0],
@@ -235,15 +244,22 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     d.head, skinUv
   );
   if (d.medium) {
-    // Brow, nose and jaw: three small forms are enough to read a face in profile, which
-    // is the only way a face is ever seen in a battle line.
-    b.box(0, -0.012, 0.058, 0.055, 0.026, 0.05, skinUv);
-    b.box(0, -0.052, 0.03, 0.075, 0.05, 0.055, skinUv);
-    // Eye sockets. Twelve triangles that turn a pale oval into a face at three metres.
+    // Brow, nose bridge, nose tip, chin, cheekbones. Heights are anthropometric against a
+    // head bone at the atlanto-occipital joint: chin -0.075, eyes +0.006 (0.93 of stature),
+    // brow +0.026. Every form clears the skull sphere by 8 to 27 mm, which is the whole
+    // point: the shapes this replaces sat *inside* it and rendered nothing.
+    b.box(0, 0.026, 0.064, 0.076, 0.020, 0.040, skinUv);
+    b.box(0, 0.008, 0.070, 0.024, 0.038, 0.038, skinUv);
+    b.box(0, -0.026, 0.070, 0.032, 0.026, 0.042, skinUv);
+    b.box(0, -0.064, 0.048, 0.054, 0.028, 0.040, skinUv);
+    if (d.fine) {
+      for (const s2 of [-1, 1]) b.box(s2 * 0.044, -0.006, 0.054, 0.030, 0.028, 0.030, skinUv);
+    }
     b.setPiece(Piece.Head, Tint.Atlas);
     for (const s2 of [-1, 1]) {
-      b.box(s2 * 0.031, -0.021, 0.064, 0.026, 0.014, 0.012, matUv(Mat.HideBlack));
+      b.box(s2 * 0.029, 0.006, 0.068, 0.024, 0.014, 0.018, matUv(Mat.HideBlack));
     }
+    if (d.fine) b.box(0, -0.046, 0.062, 0.036, 0.007, 0.024, matUv(Mat.HideBlack));
     b.setPiece(Piece.Head, Tint.Skin);
   }
   b.setMatrix(null);
@@ -303,161 +319,151 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
   // =========================================================================
   // Hair and beard
   // =========================================================================
-  const headM = new THREE.Matrix4().makeTranslation(0, headY, MAN_RIG.restT[MB.head * 3 + 2]);
   b.setBone(MB.head).setMatrix(headM);
 
+  // The cap stops at the hairline and the `NAPE_ARC` half carries it over the ears and nape.
   b.setPiece(Piece.HairShort, Tint.Hair);
-  b.revolve(
-    [[0.001, 0.145], [0.05, 0.132], [0.077, 0.098], [0.086, 0.04], [0.088, -0.01], [0.086, -0.035]],
-    d.head, hairUv
-  );
+  b.revolve([[0.001, 0.145], [0.05, 0.132], [0.079, 0.100], [0.085, 0.062]], d.head, hairUv);
+  b.revolve([[0.085, 0.062], [0.088, 0.010], [0.086, -0.035]], d.head, hairUv, 1, NAPE_ARC);
 
   if (germanic) {
     b.setPiece(Piece.HairLong, Tint.Hair);
-    b.revolve(
-      [[0.001, 0.15], [0.055, 0.135], [0.082, 0.1], [0.092, 0.04], [0.094, -0.02]],
-      d.head, hairUv
-    );
-    // A mass of hair falling behind the shoulders. Tacitus on the Suebi: the hair is
-    // knotted and drawn back, and it is the first thing a Roman notices.
+    b.revolve([[0.001, 0.15], [0.055, 0.135], [0.084, 0.102], [0.09, 0.064]], d.head, hairUv);
+    b.revolve([[0.09, 0.064], [0.094, 0.010], [0.094, -0.024]], d.head, hairUv, 1, NAPE_ARC);
+    // Hair drawn back behind the shoulders, the first thing every Roman source says about the
+    // Suebi. Trimmed: at 0.088 wide and 0.29 long it was a blob wider than the head.
     b.setBone(MB.head, MB.neck, 0.7);
     b.tube(
       [
-        { y: 0.03, rx: 0.086, rz: 0.07, z: -0.03 },
-        { y: -0.06, rx: 0.088, rz: 0.062, z: -0.05 },
-        { y: -0.17, rx: 0.078, rz: 0.05, z: -0.055 },
-        { y: -0.26, rx: 0.055, rz: 0.036, z: -0.05 },
+        { y: 0.03, rx: 0.078, rz: 0.062, z: -0.032 },
+        { y: -0.06, rx: 0.076, rz: 0.055, z: -0.05 },
+        { y: -0.15, rx: 0.062, rz: 0.044, z: -0.052 },
+        { y: -0.21, rx: 0.04, rz: 0.03, z: -0.048 },
       ],
       Math.max(4, d.head - 3), hairUv, { capEnd: true }
     );
     b.setBone(MB.head);
   }
 
-  b.setPiece(Piece.Beard, Tint.Hair);
-  const beardLen = germanic ? 0.13 : 0.06;
-  b.tube(
-    [
-      { y: -0.03, rx: 0.072, rz: 0.062, z: 0.012 },
-      { y: -0.055, rx: 0.068, rz: 0.062, z: 0.014 },
-      { y: -0.055 - beardLen * 0.6, rx: 0.055, rz: 0.05, z: 0.012 },
-      { y: -0.055 - beardLen, rx: 0.03, rz: 0.028, z: 0.008 },
-    ],
-    Math.max(4, d.head - 4), hairUv, { capEnd: true }
-  );
+  // Two lengths, because one beard shape across a host in which four men in five are bearded
+  // is as loud a repetition tell as one helmet.
+  const beard = (piece: number, len: number): void => {
+    b.setPiece(piece, Tint.Hair);
+    b.tube(
+      [
+        { y: -0.03, rx: 0.072, rz: 0.062, z: 0.012 },
+        { y: -0.055, rx: 0.068, rz: 0.062, z: 0.014 },
+        { y: -0.055 - len * 0.6, rx: 0.055, rz: 0.05, z: 0.012 },
+        { y: -0.055 - len, rx: 0.03, rz: 0.028, z: 0.008 },
+      ],
+      Math.max(4, d.head - 4), hairUv, { capEnd: true }
+    );
+  };
+  beard(Piece.Beard, germanic ? 0.11 : 0.055);
+  if (germanic) beard(Piece.BeardLong, 0.22);
 
   // =========================================================================
   // Helmets
   // =========================================================================
-  // A galea sits on the crown with its rim just above the brow, so every shell starts at
-  // about y = -0.02 relative to the head bone and rises to 0.16.
+  // Every shell is a bowl whose rim clears the eyebrow line at y = 0.046, plus a `NAPE_ARC`
+  // skirt over the temple and nape. The full lathe down to y = -0.05 this replaces was a
+  // bucket 2.9 cm clear of the skull all round, with the eyes inside it.
   if (!germanic) {
-    // Imperial Gallic: a rounded bowl with an embossed brow band, a broad flared neck
-    // guard at the back and large hinged cheek pieces. This is the helmet everyone
-    // pictures when they picture a legionary.
+    // Imperial Gallic: bowl, embossed brow band, broad flared neck guard, hinged cheeks.
     b.setPiece(Piece.HelmGallic, Tint.Metal);
-    b.revolve(
-      [[0.001, 0.124], [0.058, 0.117], [0.094, 0.086], [0.105, 0.034], [0.108, 0.0], [0.109, -0.016]],
-      d.head, plateUv
-    );
+    b.revolve([[0.001, 0.130], [0.056, 0.122], [0.088, 0.090], [0.096, 0.062], [0.098, 0.046]],
+      d.head, plateUv);
+    b.revolve([[0.098, 0.046], [0.100, 0.010], [0.100, -0.028], [0.097, -0.052]],
+      d.head, plateUv, 1, NAPE_ARC);
     if (d.medium) {
-      // Rim reinforce. Every galea has a thickened brow band, and without it the bowl
-      // reads as a swimming cap.
       b.setPiece(Piece.HelmGallic, Tint.Atlas);
-      b.revolve([[0.109, -0.014], [0.118, -0.026], [0.118, -0.044], [0.107, -0.05]], d.head, bronzeUv);
+      b.revolve([[0.098, 0.052], [0.104, 0.044], [0.104, 0.032], [0.098, 0.028]], d.head, bronzeUv);
       b.setPiece(Piece.HelmGallic, Tint.Metal);
-      // Neck flange, angled down and back.
-      // Neck guard. Flared down and back, and the single feature that tells you a
-      // helmeted man is Roman when you are looking at the back of his head.
-      // Nearly horizontal, and wide: the Gallic neck guard is a shelf, and exaggerating it
-      // is what makes this helmet identifiable at forty metres against the ridge helmet.
+      // Neck guard: nearly horizontal, wide, and what tells you a helmeted man is Roman
+      // when you are looking at the back of his head.
       const flange = new THREE.Matrix4()
         .makeRotationX(-42 * DEG)
-        .premultiply(new THREE.Matrix4().makeTranslation(0, -0.014, -0.086));
+        .premultiply(new THREE.Matrix4().makeTranslation(0, -0.004, -0.092));
       b.setMatrix(headM.clone().multiply(flange));
-      b.box(0, -0.062, 0, 0.25, 0.13, 0.014, plateUv);
+      b.box(0, -0.056, 0, 0.21, 0.115, 0.014, plateUv);
       b.setPiece(Piece.HelmGallic, Tint.Atlas);
-      b.box(0, -0.13, 0, 0.25, 0.024, 0.022, bronzeUv);
+      b.box(0, -0.117, 0, 0.21, 0.022, 0.022, bronzeUv);
       b.setPiece(Piece.HelmGallic, Tint.Metal);
       b.setMatrix(headM);
-      // Cheek pieces, hinged forward of the ears.
+      // Cheeks. Raised to frame the face opening instead of hanging below the jaw.
       for (const s of [-1, 1]) {
         const cheek = new THREE.Matrix4()
           .makeRotationZ(s * 11 * DEG)
-          .premultiply(new THREE.Matrix4().makeTranslation(s * 0.1, -0.075, 0.018));
+          .premultiply(new THREE.Matrix4().makeTranslation(s * 0.100, -0.045, 0.018));
         b.setMatrix(headM.clone().multiply(cheek));
         b.box(0, 0, 0, 0.024, 0.115, 0.085, plateUv);
         b.setMatrix(headM);
       }
     }
 
-    // Intercisa / ridge helmet: two iron halves joined by a raised central ridge, the new
-    // pattern of the late third century. Taller and more angular than the Gallic bowl.
+    // Intercisa ridge helmet, the new late-third-century pattern. Taller and more conical
+    // than the Gallic bowl, as the Intercisa and Berkasovo finds are, so the two read apart.
     b.setPiece(Piece.HelmRidge, Tint.Metal);
-    // Markedly taller and more conical than the Gallic bowl, which is both what the
-    // Intercisa and Berkasovo finds are and what makes the two read apart in a crowd.
     b.revolve(
-      [[0.001, 0.198], [0.026, 0.186], [0.06, 0.146], [0.086, 0.084], [0.097, 0.028],
-        [0.1, 0.0], [0.101, -0.018]],
+      [[0.001, 0.198], [0.026, 0.186], [0.062, 0.148], [0.082, 0.092], [0.090, 0.058], [0.092, 0.046]],
       d.head, plateUv
     );
+    b.revolve([[0.092, 0.046], [0.094, 0.008], [0.094, -0.030], [0.091, -0.054]],
+      d.head, plateUv, 1, NAPE_ARC);
     if (d.medium) {
       b.setPiece(Piece.HelmRidge, Tint.Atlas);
-      // The ridge itself, fore and aft along the crown, plus the brow band.
       b.box(0, 0.166, 0, 0.026, 0.062, 0.21, bronzeUv);
-      b.revolve([[0.101, -0.016], [0.109, -0.028], [0.109, -0.046], [0.099, -0.052]], d.head, bronzeUv);
+      b.revolve([[0.092, 0.052], [0.098, 0.044], [0.098, 0.032], [0.092, 0.028]], d.head, bronzeUv);
       b.setPiece(Piece.HelmRidge, Tint.Metal);
       for (const s of [-1, 1]) {
         const cheek = new THREE.Matrix4()
           .makeRotationZ(s * 9 * DEG)
-          .premultiply(new THREE.Matrix4().makeTranslation(s * 0.098, -0.08, 0.014));
+          .premultiply(new THREE.Matrix4().makeTranslation(s * 0.096, -0.045, 0.014));
         b.setMatrix(headM.clone().multiply(cheek));
         b.box(0, 0, 0, 0.022, 0.125, 0.09, plateUv);
         b.setMatrix(headM);
       }
-      // Nasal, and a neck guard of its own — the ridge helmet's is narrower than the
-      // Gallic bowl's but still flares.
-      b.box(0, -0.048, 0.094, 0.024, 0.075, 0.014, plateUv);
+      // Nasal, standing proud of the nose, and a narrower neck guard of its own.
+      b.box(0, -0.020, 0.106, 0.024, 0.086, 0.012, plateUv);
       const rflange = new THREE.Matrix4()
         .makeRotationX(-64 * DEG)
-        .premultiply(new THREE.Matrix4().makeTranslation(0, -0.026, -0.078));
+        .premultiply(new THREE.Matrix4().makeTranslation(0, -0.010, -0.082));
       b.setMatrix(headM.clone().multiply(rflange));
       b.box(0, -0.045, 0, 0.18, 0.095, 0.013, plateUv);
       b.setMatrix(headM);
     }
 
-    // Coolus: a plain bronze-or-iron bowl with a small knob and a token neck guard. The
-    // cheapest helmet in the army, which is why the city cohorts have it.
+    // Coolus: a plain bowl, a knob and a token neck guard. The cheapest helmet in the army.
     b.setPiece(Piece.HelmCoolus, Tint.Metal);
-    b.revolve(
-      [[0.001, 0.112], [0.06, 0.107], [0.092, 0.08], [0.101, 0.033], [0.104, 0.0], [0.105, -0.014]],
-      Math.max(5, d.head - 2), plateUv
-    );
+    b.revolve([[0.001, 0.116], [0.058, 0.110], [0.088, 0.082], [0.096, 0.058], [0.098, 0.046]],
+      Math.max(5, d.head - 2), plateUv);
+    b.revolve([[0.098, 0.046], [0.100, 0.012], [0.099, -0.026], [0.095, -0.046]],
+      Math.max(5, d.head - 2), plateUv, 1, NAPE_ARC);
     if (d.medium) {
+      // The knob is this helmet's whole silhouette signature, so it survives a mip level.
       b.setPiece(Piece.HelmCoolus, Tint.Atlas);
-      // The knob is this helmet's whole silhouette signature, so it is drawn big enough
-      // to survive a mip level.
       b.revolve([[0.001, 0.152], [0.026, 0.138], [0.026, 0.116], [0.001, 0.108]], 6, bronzeUv);
-      b.revolve([[0.105, -0.012], [0.113, -0.024], [0.113, -0.04], [0.103, -0.046]],
+      b.revolve([[0.098, 0.052], [0.104, 0.044], [0.104, 0.032], [0.098, 0.028]],
         Math.max(5, d.head - 2), bronzeUv);
       b.setPiece(Piece.HelmCoolus, Tint.Metal);
       const guard = new THREE.Matrix4()
         .makeRotationX(-62 * DEG)
-        .premultiply(new THREE.Matrix4().makeTranslation(0, -0.015, -0.09));
+        .premultiply(new THREE.Matrix4().makeTranslation(0, -0.002, -0.094));
       b.setMatrix(headM.clone().multiply(guard));
       b.box(0, -0.028, 0, 0.15, 0.056, 0.012, plateUv);
       b.setMatrix(headM);
     }
   } else {
-    // Spangenhelm: a conical shell of iron plates riveted to a frame, with a nasal. The
-    // Germanic helmet, and rare enough that most of the host is bareheaded.
+    // Spangenhelm: iron plates riveted to a frame, with a nasal. Rare enough in the
+    // barbaricum that most of the host is bareheaded.
     b.setPiece(Piece.HelmSpangen, Tint.Metal);
-    b.revolve(
-      [[0.004, 0.178], [0.028, 0.158], [0.06, 0.108], [0.088, 0.042], [0.098, -0.002], [0.099, -0.018]],
-      d.head, plateUv
-    );
+    b.revolve([[0.004, 0.178], [0.028, 0.158], [0.062, 0.112], [0.086, 0.062], [0.094, 0.046]],
+      d.head, plateUv);
+    b.revolve([[0.094, 0.046], [0.096, 0.008], [0.096, -0.026], [0.093, -0.046]],
+      d.head, plateUv, 1, NAPE_ARC);
     if (d.medium) {
+      // Four visible ribs, the "spangen" the helmet is named for.
       b.setPiece(Piece.HelmSpangen, Tint.Atlas);
-      // Four visible ribs — the "spangen" the helmet is named for.
       for (let i = 0; i < 4; i++) {
         const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
         const rib = new THREE.Matrix4()
@@ -467,18 +473,17 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
         b.box(0, 0.075, 0.062, 0.016, 0.19, 0.014, bronzeUv);
         b.setMatrix(headM);
       }
-      // Brow band and nasal.
-      b.revolve([[0.101, -0.028], [0.108, -0.04], [0.108, -0.055], [0.101, -0.06]], d.head, bronzeUv);
+      b.revolve([[0.094, 0.052], [0.100, 0.044], [0.100, 0.032], [0.094, 0.028]], d.head, bronzeUv);
       b.setPiece(Piece.HelmSpangen, Tint.Metal);
-      b.box(0, -0.055, 0.096, 0.024, 0.075, 0.014, plateUv);
+      b.box(0, -0.020, 0.106, 0.024, 0.086, 0.012, plateUv);
     }
 
     // Fur cap: what a fanatic wears instead of iron.
     b.setPiece(Piece.HelmFur, Tint.Atlas);
-    b.revolve(
-      [[0.001, 0.17], [0.058, 0.158], [0.095, 0.11], [0.106, 0.04], [0.108, -0.02], [0.1, -0.045]],
-      Math.max(5, d.head - 3), furUv
-    );
+    b.revolve([[0.001, 0.170], [0.058, 0.158], [0.095, 0.112], [0.104, 0.058], [0.106, 0.040]],
+      Math.max(5, d.head - 3), furUv);
+    b.revolve([[0.106, 0.040], [0.107, 0.000], [0.105, -0.032], [0.098, -0.050]],
+      Math.max(5, d.head - 3), furUv, 1, NAPE_ARC);
   }
 
   // =========================================================================
@@ -534,9 +539,23 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
   // =========================================================================
   // Torso: tunic, bare chest, focale
   // =========================================================================
+  const bindNode = (scale: number) => ([y, rx, rz]: [number, number, number]): TubeNode => {
+    const bind = spineBind(y);
+    return { y, rx: rx * scale, rz: rz * scale, bone: bind.bone, bone2: bind.bone2, w: bind.w };
+  };
+
+  // Trapezius rows closing the torso onto the neck. Every torso tube used to start open at
+  // the chest, so from above eye level a man was a hollow shell with no shoulder slope.
+  const shoulderRows: [number, number, number][] = [
+    [1.520, 0.058, 0.052],
+    [1.492, 0.112, 0.082],
+    [1.462, 0.150, 0.104],
+  ];
+  const shoulderNodes = (scale: number): TubeNode[] => shoulderRows.map(bindNode(scale));
+
   const torsoNodes = (scale: number, hemY: number): TubeNode[] => {
-    // Chest 0.32 wide by 0.22 deep, waist 0.28 by 0.20, hips 0.32 by 0.22 — the classic
-    // male taper, and wider than deep, which is what makes a rank read as shoulders.
+    // Chest 0.32 wide by 0.22 deep, waist 0.28 by 0.20, hips 0.32 by 0.22: the male taper,
+    // wider than deep, which is what makes a rank read as shoulders.
     const rows: [number, number, number][] = [
       [chestY + 0.005, 0.163, 0.112],
       [1.28, 0.15, 0.103],
@@ -545,12 +564,9 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
       [hemY + 0.03, 0.16, 0.112],
       [hemY, 0.156, 0.11],
     ];
-    return rows
-      .filter((_, i) => d.fine || i % 2 === 0 || i === rows.length - 1)
-      .map(([y, rx, rz]) => {
-        const bind = spineBind(y);
-        return { y, rx: rx * scale, rz: rz * scale, bone: bind.bone, bone2: bind.bone2, w: bind.w };
-      });
+    return shoulderNodes(scale).concat(
+      rows.filter((_, i) => d.fine || i % 2 === 0 || i === rows.length - 1).map(bindNode(scale))
+    );
   };
 
   b.setPiece(Piece.Tunic, Tint.Tunic);
@@ -625,12 +641,9 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
       [0.99, 0.168, 0.12],
     ];
     b.tube(
-      segRows
-        .filter((_, i) => d.fine || i % 2 === 0 || i === segRows.length - 1)
-        .map(([y, rx, rz]) => {
-          const bind = spineBind(y);
-          return { y, rx, rz, bone: bind.bone, bone2: bind.bone2, w: bind.w };
-        }),
+      shoulderNodes(1.06).concat(
+        segRows.filter((_, i) => d.fine || i % 2 === 0 || i === segRows.length - 1).map(bindNode(1))
+      ),
       d.torso, bandUv, { repeatU: 2 }
     );
     if (d.medium) {
@@ -835,13 +848,14 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     d.fine ? 5 : 3,
     d.fine ? 5 : 3,
     (tu: number, tv: number, out: SheetPoint) => {
-      // A sagum reaches the back of the knee, not the ankle, and hangs from the shoulders
-      // rather than swallowing the man. Too long or too wide and a rank of cloaked warriors
-      // reads as a row of monks.
+      // A sagum reaches the back of the knee, not the ankle, and is no wider at the hem than
+      // the hips it hangs past. At 0.54 m across it was wider than the man's own shoulders,
+      // and from any camera above eye level a cloaked rank read as a row of dark tents with
+      // nothing under them. Pinned at the right shoulder, hence the offset centreline.
       const sx = tu * 2 - 1;
-      const halfW = 0.17 + tv * 0.1;
+      const halfW = 0.148 + tv * 0.056;
       const y = chestY + 0.05 - tv * (chestY + 0.05 - 0.74);
-      out.x = sx * halfW;
+      out.x = sx * halfW + 0.022;
       out.y = y + Math.sin(tv * Math.PI) * 0.02 * Math.sin(sx * 5);
       out.z = -0.105 - (1 - sx * sx) * (0.045 + tv * 0.05);
       // Normal follows the wrap, so the cloth catches the light around the shoulders
@@ -1141,6 +1155,9 @@ function buildFarGeometry(faction: Faction): THREE.InstancedBufferGeometry {
   b.setPiece(Coarse.Body, Tint.Tunic);
   b.tube(
     [
+      // Closed onto the neck: an open shoulder shows sky through the man, and the far tier is
+      // where thousands of men are.
+      { y: 1.50, rx: 0.06, rz: 0.05, bone: MB.chest },
       { y: chestY, rx: 0.165, rz: 0.115, bone: MB.chest },
       { y: 1.19, rx: 0.145, rz: 0.102, bone: MB.spineMid },
       { y: 0.98, rx: 0.16, rz: 0.112, bone: MB.pelvis },
