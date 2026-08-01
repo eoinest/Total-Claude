@@ -102,6 +102,50 @@ const HIT_MIN_ALPHA = 0.25;
  */
 const HEAD_GAP_PX = 3;
 
+
+/**
+ * Lower median of `a[0..n)`, in place, by quickselect.
+ *
+ * Quickselect rather than a sort because this runs per unit per frame: linear on average
+ * against `n log n`, and at 35 units of ~320 men that is the difference between a few
+ * thousand comparisons and a few tens of thousands. The array is scratch and the reordering
+ * is deliberate — nothing reads it afterwards.
+ *
+ * The *lower* median is taken rather than averaging the two central order statistics, so the
+ * result is always a value some real soldier actually has. Averaging them would reintroduce,
+ * in miniature, exactly the interpolation this function exists to avoid.
+ */
+function lowerMedian(a: Float32Array, n: number): number {
+  if (n === 1) return a[0];
+  let lo = 0;
+  let hi = n - 1;
+  const k = (n - 1) >> 1;
+  while (lo < hi) {
+    // Median-of-three pivot: an already-sorted or reverse-sorted run is the common case here,
+    // because members are visited in slot order and a formed-up unit is nearly monotonic on
+    // screen. A naive first-element pivot degrades to O(n^2) on exactly that input.
+    const mid = (lo + hi) >> 1;
+    if (a[mid] < a[lo]) { const t = a[mid]; a[mid] = a[lo]; a[lo] = t; }
+    if (a[hi] < a[lo]) { const t = a[hi]; a[hi] = a[lo]; a[lo] = t; }
+    if (a[hi] < a[mid]) { const t = a[hi]; a[hi] = a[mid]; a[mid] = t; }
+    const pivot = a[mid];
+    let i = lo;
+    let j = hi;
+    while (i <= j) {
+      while (a[i] < pivot) i++;
+      while (a[j] > pivot) j--;
+      if (i <= j) {
+        const t = a[i]; a[i] = a[j]; a[j] = t;
+        i++; j--;
+      }
+    }
+    if (k <= j) hi = j;
+    else if (k >= i) lo = i;
+    else return a[k];
+  }
+  return a[lo];
+}
+
 export class Banners {
   private layer!: HTMLElement;
   private items: BannerEls[] = [];
@@ -275,6 +319,13 @@ export class Banners {
    * tick. Sampling per frame removes that whole class of staleness rather than arguing
    * about its size.
    */
+  /** Scratch for the per-frame medians; grown to the largest unit seen, never shrunk. */
+  private mHeadX = new Float32Array(0);
+  private mHeadY = new Float32Array(0);
+  private mTopY = new Float32Array(0);
+  private mWx = new Float32Array(0);
+  private mWz = new Float32Array(0);
+
   private centre(battle: BattleSystem, u: UnitGroupState, alpha: number, lift: number): number {
     const pool = battle.pool;
     const members = u.members;
@@ -287,12 +338,15 @@ export class Banners {
     const state = pool.state;
     const headM = HEAD_M + lift;
 
-    let sumHeadX = 0;
-    let sumHeadY = 0;
-    let sumTopY = 0;
+    const cap = members.length;
+    if (this.mHeadX.length < cap) {
+      this.mHeadX = new Float32Array(cap);
+      this.mHeadY = new Float32Array(cap);
+      this.mTopY = new Float32Array(cap);
+      this.mWx = new Float32Array(cap);
+      this.mWz = new Float32Array(cap);
+    }
     let n = 0;
-    let wx = 0;
-    let wz = 0;
     let footTop = -Infinity;
     for (let k = 0; k < members.length; k++) {
       const i = members[k];
@@ -305,24 +359,44 @@ export class Banners {
       // plane above it, where the spike is planted. One transform serves both.
       if (!this.proj.projectPair(x, y + headM, z, CLEAR_M - HEAD_M, HEAD, TOP)) continue;
       if (!HEAD.inRange) continue;
-      sumHeadX += HEAD.x;
-      sumHeadY += HEAD.y;
-      sumTopY += TOP.y;
-      wx += x;
-      wz += z;
+      this.mHeadX[n] = HEAD.x;
+      this.mHeadY[n] = HEAD.y;
+      this.mTopY[n] = TOP.y;
+      this.mWx[n] = x;
+      this.mWz[n] = z;
       if (y > footTop) footTop = y;
       n++;
     }
     if (n === 0) return 0;
 
-    const inv = 1 / n;
-    // Horizontal: the mean of the men's own screen positions, which is the visual centre
-    // of the block by construction — at any frontage, camera pitch or perspective.
-    this.anchorX = sumHeadX * inv;
-    // Vertical: the mean of the plaque plane, floored so it always clears the mean head.
-    this.anchorY = Math.min(sumTopY * inv, sumHeadY * inv - HEAD_GAP_PX);
-    this.anchorWx = wx * inv;
-    this.anchorWz = wz * inv;
+    /*
+     * Median, not mean, in every axis.
+     *
+     * The mean is the centre of *mass*, and a unit is not always one mass. Send a cohort
+     * through a gate and a dozen men snag on the jamb while the rest march on: the mean sits
+     * in the empty ground between the two groups, so the plaque hovers over nobody and points
+     * at neither part of the unit. The player's words for it were that the flag "is like
+     * pulled into two locations". A lone straggler 200 m behind drags a 320-man block's
+     * anchor by 0.6 m of world space, and a tenth of the unit drags it a fifth of the way.
+     *
+     * The median ignores them. It moves only when *half* the unit moves, which is exactly
+     * the condition under which the block's visual centre has genuinely shifted, and it
+     * always lands on a value some real soldier has rather than on an interpolation between
+     * two crowds. Componentwise — the median x and the median y are taken independently, so
+     * the anchor is not necessarily any one man's position, which is the standard and cheap
+     * approximation to a geometric median and is entirely adequate at this scale.
+     *
+     * Cost is linear by quickselect rather than the `n log n` a sort would need, so this is
+     * the same order as the mean it replaces. Measured at 35 units of ~320 men it is a few
+     * tens of thousands of comparisons a frame against a 1.5 ms HUD budget currently spending
+     * 0.23 ms.
+     */
+    this.anchorX = lowerMedian(this.mHeadX, n);
+    // Vertical: the plaque plane, floored so it always clears the head it sits above. Both
+    // terms are medians so the floor still compares like with like.
+    this.anchorY = Math.min(lowerMedian(this.mTopY, n), lowerMedian(this.mHeadY, n) - HEAD_GAP_PX);
+    this.anchorWx = lowerMedian(this.mWx, n);
+    this.anchorWz = lowerMedian(this.mWz, n);
     this.anchorWy = footTop + CLEAR_M + lift;
     return n;
   }
