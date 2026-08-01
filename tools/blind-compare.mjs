@@ -98,7 +98,26 @@ const OURS = args.get('ours');
 const REFS = args.get('refs') ?? 'reference/rome2';
 const OUT = args.get('out');
 const SEED = Number(args.get('seed') ?? 1);
-const HEIGHT = Number(args.get('height') ?? 1080);
+/*
+ * 864, not 1080, and the reason is a defect an adversarial grader found in round 23.
+ *
+ * Both pools arrive at 1920x1080. A 20% bottom crop leaves 1920x864, and resizing *that*
+ * back up to 1920x1080 is a 1.25x upscale — which is exactly what the harness did on every
+ * frame of every deck it has ever built. The grader detected it directly: a period-4.995
+ * comb in both axes with intermodulation sidebands beating against the 1/8 JPEG grid,
+ * present in all twenty frames. It does not discriminate, because it is applied to both
+ * sides, but it means every round to date was graded on interpolated pixels with real
+ * detail thrown away and a resampling signature added back — on an instrument whose leading
+ * separator is pixel-scale energy.
+ *
+ * At 864 a 1920x1080 source passes through the crop and out again untouched: no resample at
+ * all, for either pool. Anything of a different shape is downscaled, which loses nothing
+ * that upscaling would have recovered.
+ *
+ * Round 23 was run at the old 1080 default, before this was found, so its numbers are the
+ * upscaled ones.
+ */
+const HEIGHT = Number(args.get('height') ?? 864);
 /** Fraction of the frame height removed from the bottom, where wordmarks sit. */
 const BOTTOM_CROP = Number(args.get('bottomCrop') ?? 0.20);
 /** Fraction removed from the top, where in-game captures carry banners and buttons. */
@@ -255,7 +274,29 @@ for (let i = deck.length - 1; i > 0; i--) {
   [deck[i], deck[j]] = [deck[j], deck[i]];
 }
 
-const W = Math.round((HEIGHT * 16) / 9);
+/*
+ * Output shape: follow the pools rather than forcing 16:9.
+ *
+ * Forcing 16:9 at height 864 would hand back 1536x864 — no upscale, but 20% of every
+ * frame's width thrown away instead. Neither is necessary. When both pools are the same
+ * shape (they are: 1920x1080 on both sides), the post-crop shape *is* 1920x864, and
+ * emitting exactly that resamples nothing and crops nothing. Identical output dimensions
+ * are what matters for blindness, not any particular ratio.
+ *
+ * Falls back to 16:9 when the sources disagree, and an explicit `--height`/`--w` always
+ * wins, because a mixed-shape pool has no natural common shape and someone has to choose.
+ */
+const shapes = new Map();
+for (const f of [...ours, ...refs]) {
+  const m = await sharp(f, { failOn: 'none' }).metadata();
+  const k = `${m.width}x${m.height}`;
+  shapes.set(k, (shapes.get(k) ?? 0) + 1);
+}
+const [modal, modalN] = [...shapes].sort((a, b) => b[1] - a[1])[0];
+const uniform = modalN === ours.length + refs.length && !args.has('height') && !args.has('w');
+const [modalW, modalH] = modal.split('x').map(Number);
+const OUT_H = uniform ? Math.max(1, Math.round(modalH * (1 - BOTTOM_CROP - TOP_CROP))) : HEIGHT;
+const W = args.has('w') ? Number(args.get('w')) : (uniform ? modalW : Math.round((OUT_H * 16) / 9));
 const key = [];
 
 for (const [i, entry] of deck.entries()) {
@@ -268,7 +309,7 @@ for (const [i, entry] of deck.entries()) {
     .extract({ left: 0, top, width: meta.width, height: keepH })
     // `cover` + centre keeps the composition and guarantees identical output dimensions,
     // so no frame can be identified by its shape.
-    .resize(W, HEIGHT, {
+    .resize(W, OUT_H, {
       fit: FIT,
       position: 'centre',
       background: { r: 82, g: 82, b: 82 },
@@ -744,7 +785,7 @@ const keyPath = args.get('key')
   : path.join(path.dirname(outAbs), `${path.basename(outAbs)}.key.json`);
 await mkdir(path.dirname(keyPath), { recursive: true });
 await writeFile(keyPath, JSON.stringify({
-  seed: SEED, height: HEIGHT, topCrop: TOP_CROP, bottomCrop: BOTTOM_CROP, quality: QUALITY,
+  seed: SEED, height: OUT_H, width: W, topCrop: TOP_CROP, bottomCrop: BOTTOM_CROP, quality: QUALITY,
   fit: FIT, refs: REFS, refLabel: REF_LABEL, ours: ours.length, reference: refs.length,
   provenance: { ours: oursProv, refs: refsProv },
   audit: {
@@ -757,7 +798,7 @@ await writeFile(keyPath, JSON.stringify({
 }, null, 2));
 
 console.log(`deck: ${deck.length} frames (${ours.length} ours, ${refs.length} ${REF_LABEL}) → ${path.relative(ROOT, outAbs)}`);
-console.log(`all ${W}x${HEIGHT}, top ${Math.round(TOP_CROP * 100)}% + bottom ${Math.round(BOTTOM_CROP * 100)}% cropped, jpeg q${QUALITY}, metadata stripped`);
+console.log(`all ${W}x${OUT_H}, top ${Math.round(TOP_CROP * 100)}% + bottom ${Math.round(BOTTOM_CROP * 100)}% cropped, jpeg q${QUALITY}, metadata stripped`);
 console.log(byteReport);
 console.log(`provenance: ours ${oursProv.state} (${oursProv.tool ?? '-'}${oursProv.commit ? ' @' + oursProv.commit : ''}), ${REF_LABEL} ${refsProv.state}`);
 console.log(`overlay audit: ${overlay.map((o) => `${o.origin} ${(o.area * 100).toFixed(3)}%`).join(', ')} (refuse at ${(OVERLAY_REFUSE * 100).toFixed(3)}%)`);
