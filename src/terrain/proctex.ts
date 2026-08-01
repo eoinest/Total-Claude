@@ -487,3 +487,101 @@ export function generateWaterNormal(size = 256, seed = 3, lattice = 9): Uint8Arr
   }
   return data;
 }
+
+/**
+ * Build a coverage-preserving mip chain for an alpha-tested card texture.
+ *
+ * A grass card is mostly empty: blades cover roughly a third of it. Box-filtering that
+ * alpha down a mip chain drives the *mean* alpha toward that third, so at some mip level
+ * almost every texel falls below the alpha test and the card stops drawing — not gradually,
+ * but over the one or two mip levels where the mean crosses the threshold. On flat ground
+ * a mip level is a band of constant distance, and a band of constant distance under a low
+ * camera projects to a horizontal line. That is the hard seam across the frame: the sward
+ * is not fading out with distance, it is being alpha-tested out of existence at a mip
+ * boundary, and no amount of adjusting the ring fade distances can move it because the ring
+ * fade is not what is drawing the line.
+ *
+ * The fix is the standard one (Castano, "Computing Alpha Mipmaps"): after building each
+ * level, scale its alpha so that the *fraction of texels passing the alpha test* matches
+ * level 0. Coverage, not mean alpha, is what the rasteriser is being asked to reproduce.
+ *
+ * Colour is premultiplied-averaged so that the transparent gutter between blades cannot
+ * bleed its (undefined) colour into the blade as the chain shrinks — the other half of why
+ * distant alpha cards go dark and muddy.
+ */
+export function coveragePreservingMipmaps(
+  base: Uint8Array,
+  width: number,
+  height: number,
+  alphaTest: number,
+): { data: Uint8Array; width: number; height: number }[] {
+  const levels: { data: Uint8Array; width: number; height: number }[] = [
+    { data: base, width, height },
+  ];
+
+  const cutoff = Math.round(alphaTest * 255);
+  const coverageOf = (d: Uint8Array, scale: number): number => {
+    let n = 0;
+    for (let i = 3; i < d.length; i += 4) if (d[i] * scale >= cutoff) n++;
+    return n / (d.length / 4);
+  };
+  const target = coverageOf(base, 1);
+
+  let src = base;
+  let w = width;
+  let h = height;
+  while (w > 1 || h > 1) {
+    const nw = Math.max(1, w >> 1);
+    const nh = Math.max(1, h >> 1);
+    const dst = new Uint8Array(nw * nh * 4);
+    for (let y = 0; y < nh; y++) {
+      for (let x = 0; x < nw; x++) {
+        const x0 = Math.min(w - 1, x * 2);
+        const x1 = Math.min(w - 1, x * 2 + 1);
+        const y0 = Math.min(h - 1, y * 2);
+        const y1 = Math.min(h - 1, y * 2 + 1);
+        let r = 0, g = 0, b = 0, a = 0;
+        for (const yy of [y0, y1]) {
+          for (const xx of [x0, x1]) {
+            const o = (yy * w + xx) * 4;
+            // Premultiplied: a texel that is invisible contributes no colour, only weight.
+            const wa = src[o + 3] / 255;
+            r += src[o] * wa;
+            g += src[o + 1] * wa;
+            b += src[o + 2] * wa;
+            a += src[o + 3];
+          }
+        }
+        const o = (y * nw + x) * 4;
+        const aw = (r + g + b) > 0 ? a / 255 : 0;
+        dst[o] = aw > 0 ? Math.min(255, Math.round(r / aw)) : 0;
+        dst[o + 1] = aw > 0 ? Math.min(255, Math.round(g / aw)) : 0;
+        dst[o + 2] = aw > 0 ? Math.min(255, Math.round(b / aw)) : 0;
+        dst[o + 3] = Math.round(a / 4);
+      }
+    }
+
+    // Bisect for the alpha scale that reproduces level 0's coverage. Ten iterations
+    // resolves the scale to about a thousandth, which is far finer than an 8-bit alpha
+    // can express, and the whole loop runs once at init on a 768x256 card.
+    let lo = 1;
+    let hi = 8;
+    if (coverageOf(dst, hi) >= target) {
+      for (let i = 0; i < 10; i++) {
+        const mid = (lo + hi) * 0.5;
+        if (coverageOf(dst, mid) < target) lo = mid; else hi = mid;
+      }
+    }
+    const scale = (lo + hi) * 0.5;
+    if (scale > 1.001) {
+      for (let i = 3; i < dst.length; i += 4) dst[i] = Math.min(255, Math.round(dst[i] * scale));
+    }
+
+    levels.push({ data: dst, width: nw, height: nh });
+    src = dst;
+    w = nw;
+    h = nh;
+  }
+
+  return levels;
+}

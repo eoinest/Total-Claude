@@ -1,8 +1,23 @@
 import * as THREE from 'three';
 import type { EngineContext } from '../core/Engine';
-import { generateGrassCards } from './proctex';
+import { coveragePreservingMipmaps, generateGrassCards } from './proctex';
 import { HALF_EXTENT } from './topography';
 import type { TerrainSystem } from './TerrainSystem';
+
+/**
+ * Alpha cutoff for the sward. Shared between the material and the mip builder: the mip
+ * chain preserves coverage *at this threshold*, so the two must not drift apart.
+ *
+ * 0.22 rather than the 0.34 this used to be, because alpha-to-coverage changes what the
+ * number means. A binary test paints every texel at or above the threshold at full
+ * strength; three's alpha-to-coverage path replaces it with
+ * `smoothstep(alphaTest, alphaTest + fwidth(a), a)`, whose half-coverage point sits at
+ * `alphaTest + fwidth/2`. On a minified card fwidth is large, so keeping 0.34 moved the
+ * effective cutoff most of the way to 0.5 and took roughly a fifth of the sward's mass
+ * with it — measured as a visibly browner, thinner field. Dropping the threshold puts the
+ * ramp's midpoint back where the hard cutoff used to be.
+ */
+const GRASS_ALPHA_TEST = 0.22;
 
 /**
  * Ground cover.
@@ -249,9 +264,18 @@ vec3 grassField(vec2 wxz) {
   else if (edge == e.y) dir = vec2(0.0, sign(f.y - 0.5));
   else dir = vec2(0.0, sign(fract(f.y * strips) - 0.5) / strips);
   vec2 here = grassParcel(fu);
-  vec2 there = grassParcel(fu + dir * 0.07);
-  vec2 uses = here + smoothstep(0.445, 0.5, edge) * 0.5 * (there - here);
-  return vec3(uses.x, smoothstep(0.40, 0.496, edge), uses.y);
+  vec2 there = grassParcel(fu + dir * 0.12);
+  // The margin over which one parcel's land use gives way to its neighbour's. The ground
+  // shader uses 0.055 of a 94 m cell — 5.2 m — which is right for a colour boundary and
+  // badly wrong for the sward, because the sward's fallow threshold (see cover, below)
+  // re-hardens it: crossing a 0.13-wide smoothstep inside a 5.2 m ramp puts the whole
+  // transition into about 1.7 m of ground. At 150 m under a low camera 1.7 m is a pixel and
+  // a half, and a line of constant parcel boundary is straight, so the sward ends at a hard
+  // straight line across the frame. 0.106 is 10 m either side of the boundary — a headland
+  // and its encroaching margin, which is what actually stands between a ploughed strip and
+  // its neighbour.
+  vec2 uses = here + smoothstep(0.394, 0.5, edge) * 0.5 * (there - here);
+  return vec3(uses.x, smoothstep(0.34, 0.496, edge), uses.y);
 }
 `;
 
@@ -293,8 +317,19 @@ export class GrassField {
     tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
     tex.minFilter = THREE.LinearMipmapLinearFilter;
     tex.magFilter = THREE.LinearFilter;
-    tex.generateMipmaps = true;
-    tex.anisotropy = 4;
+    // A driver-generated chain box-filters alpha, which walks the mean below GRASS_ALPHA_TEST
+    // and deletes the sward at whichever distance that mip level lands on — the hard line
+    // across the frame. This chain holds coverage constant instead. See
+    // coveragePreservingMipmaps.
+    tex.mipmaps = coveragePreservingMipmaps(
+      cards.data, cards.width, cards.height, GRASS_ALPHA_TEST,
+    );
+    tex.generateMipmaps = false;
+    // Grass is seen at a grazing angle in every ground-level frame, which is precisely the
+    // case isotropic mip selection handles worst: it picks the blur radius from the long
+    // axis and smears the short one. Device max rather than a constant — this is a sampler
+    // setting, not a memory cost.
+    tex.anisotropy = ctx.renderer.capabilities.getMaxAnisotropy();
     tex.needsUpdate = true;
     this.cardTex = tex;
 
@@ -440,11 +475,20 @@ export class GrassField {
 
     const mat = new THREE.MeshStandardMaterial({
       map: cardTex,
-      alphaTest: 0.34,
+      alphaTest: GRASS_ALPHA_TEST,
       roughness: 0.88,
       metalness: 0,
       side: THREE.DoubleSide,
       vertexColors: true,
+      // The single largest source of pixel-scale energy in any ground-level frame. A binary
+      // alpha test gives a blade one bit of coverage, so a blade narrower than a pixel
+      // either paints the whole pixel or none of it, and it flips between the two as the
+      // camera moves — the shimmer that reads as "aliased" rather than "detailed".
+      // Alpha-to-coverage spends the scene target's MSAA samples on partial coverage
+      // instead, and three's alphatest chunk switches to an fwidth-scaled smoothstep under
+      // this flag, so the transition lands in one pixel rather than in one texel.
+      // Does nothing unless PostFX gave the scene target samples; harmless when it did not.
+      alphaToCoverage: true,
     });
     mat.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, uniforms);
@@ -500,7 +544,13 @@ export class GrassField {
   // pasture, so a fallow strip there must not strip the sward off it either.
   vec3 gfld = grassField(gpos);
   float gCampus = 1.0 - smoothstep(420.0, 800.0, length(vec2(gpos.x * 0.86, (gpos.y + 40.0) * 1.9)));
-  cover *= 1.0 - smoothstep(0.66, 0.79, gfld.z) * 0.88 * (1.0 - gCampus * 0.88);
+  // Break the parcel boundary with a few metres of noise before thresholding it. A field
+  // edge in the Campus Martius is a headland cut by carts and colonised from both sides,
+  // not a surveyor's line, and a straight geometric edge is the single most artificial
+  // thing a landscape can do. This also means the remaining transition is ragged rather
+  // than coherent, so what is left of it does not read as one line.
+  float gFallow = gfld.z + (grassNoise(gpos / 7.3) - 0.5) * 0.11;
+  cover *= 1.0 - smoothstep(0.62, 0.83, gFallow) * 0.88 * (1.0 - gCampus * 0.88);
   cover *= 1.0 - gfld.y * 0.55 * (1.0 - gCampus * 0.55);
   // The ground shader's own straw / pasture threshold, so a clump standing on a straw strip
   // is straw and one standing on pasture is green. Without this the two systems disagree
@@ -520,6 +570,18 @@ export class GrassField {
   float fadeNear = uFadeIn < 0.5 ? 1.0 : smoothstep(uFadeIn, uFadeIn + 30.0, dist);
   float fade = (1.0 - smoothstep(uFadeStart, uFadeEnd, dist)) * fadeNear;
   float keep = step(h3, cover * uDensity);
+  // How far this clump has passed beyond the point where it is still a clump.
+  //
+  // The far ring plants on a 1.35 m lattice, so at 140 m one clump occupies about three
+  // pixels. Every per-clump random — its colour draw, its height population, its width —
+  // then varies at a three-pixel period, which is noise at very nearly the pixel scale. No
+  // amount of texture filtering touches it, because the variation is per-instance
+  // geometry, not texels: it is the largest single contributor to pixel-scale energy in
+  // any ground-level frame, and it is what makes a sward read as static and aliased rather
+  // than as grass. Converging the *variation* on its own mean with distance is what
+  // atmosphere and the eye's own acuity do to a real field, and it leaves the mean — and
+  // so the parcel structure, which is real detail — untouched.
+  float vMerge = smoothstep(42.0, 155.0, dist);
   // One clump in twelve is a thistle or a stand of dead grass: taller and straw
   // coloured. Ground cover that is all one plant is the giveaway of a shader field.
   float weed = uWeeds * step(0.918, h2);
@@ -534,11 +596,14 @@ export class GrassField {
   // and the mat does not open up into gaps as the sward gets shorter.
   float hPop = step(0.80, fract(h1 * 7.31 + h3 * 3.17));
   float hVar = mix(0.60 + h1 * 0.14, 0.98 + h1 * 0.20, hPop);
+  // 0.752 is this distribution's own mean (0.8 x 0.67 + 0.2 x 1.08), so the sward keeps its
+  // height as it recedes and only loses the clump-to-clump scatter that was aliasing.
+  hVar = mix(hVar, 0.752, vMerge);
   // Trampling shortens the sward far harder than it thins it. Ground five thousand men have
   // been standing on is beaten flat — which is both what actually happens and what lets the
   // men read against it.
   float trodden = 1.0 - smoothstep(0.05, 0.32, gctl.b) * 0.45;
-  float wScale = keep * fade * (0.88 + 0.30 * h1);
+  float wScale = keep * fade * mix(0.88 + 0.30 * h1, 1.03, vMerge);
   float hScale = keep * fade * hVar * trodden * uHeightScale * (1.0 + weed * 0.8);
 
   // --- card shape and wind ----------------------------------------------
@@ -567,10 +632,14 @@ export class GrassField {
   // uDryness slides the whole distribution toward straw, and it also damps the wetness
   // channel's authority: on a plain in midsummer drought a damp hollow is *less* green than
   // the same hollow in November, not equally green. Both terms vanish at dryness 0.
+  // (h2 - 0.5) is the per-clump colour draw and weed the per-clump thistle: both are
+  // per-instance randoms, so both turn into pixel-scale noise once a clump is a few pixels
+  // across. They fade out with vMerge; every other term here is driven by the control map
+  // or the parcel and so is genuine structure that must survive to the horizon.
   vec3 gcol = mix(uDryColour, uWetColour,
     clamp(0.62 - uDryness * 1.15 + gctl.r * 1.1 * (1.0 - uDryness * 0.72)
-        + (h2 - 0.5) * 0.8 - gStraw * 0.85, 0.0, 1.0));
-  gcol = mix(gcol, uDryColour * 1.2, weed);
+        + (h2 - 0.5) * 0.8 * (1.0 - vMerge) - gStraw * 0.85, 0.0, 1.0));
+  gcol = mix(gcol, uDryColour * 1.2, weed * (1.0 - vMerge));
   gcol *= 0.74 + 0.34 * bt;
   gcol = mix(uGroundColour, gcol, clamp(fade * 1.6, 0.0, 1.0));
   vColor = vec4(gcol, 1.0);

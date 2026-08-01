@@ -76,7 +76,21 @@ interface RTOpts {
   scale?: number;
   hdr?: boolean;
   depth?: boolean;
+  /** MSAA sample count. Only the scene target wants this; every post pass is fullscreen. */
+  samples?: number;
 }
+
+/**
+ * MSAA samples on the scene target, by tier.
+ *
+ * The post chain's AA is morphological: SMAA and FXAA reshape staircases in an image that
+ * has already been point-sampled once per pixel, so neither can recover a spear thinner
+ * than a pixel, and neither does anything at all for an alpha-tested grass blade that
+ * either passes its test or vanishes. Multisampling is the only stage in the chain that
+ * takes more than one geometric sample per pixel, and it is the prerequisite for
+ * `alphaToCoverage` on the sward — without it, coverage carries exactly one bit.
+ */
+const MSAA_SAMPLES: Record<string, number> = { low: 0, medium: 2, high: 4, ultra: 4 };
 
 export class PostFXSystem implements Subsystem {
   readonly name = 'postfx';
@@ -101,6 +115,10 @@ export class PostFXSystem implements Subsystem {
 
   private w = 1;
   private h = 1;
+  /** Resolved MSAA sample count on the scene target; 0 when the tier or driver has none. */
+  private samples = 0;
+  /** Remaining anisotropy sweeps; see sweepAnisotropy. Zeroed once a pass finds nothing. */
+  private anisotropySweeps = 12;
 
   private sceneRT?: THREE.WebGLRenderTarget;
   private mainA?: THREE.WebGLRenderTarget;
@@ -192,6 +210,7 @@ export class PostFXSystem implements Subsystem {
       depthBuffer: o.depth ?? false,
       stencilBuffer: false,
       colorSpace: THREE.NoColorSpace,
+      samples: o.samples ?? 0,
     });
     rt.texture.wrapS = THREE.ClampToEdgeWrapping;
     rt.texture.wrapT = THREE.ClampToEdgeWrapping;
@@ -214,7 +233,11 @@ export class PostFXSystem implements Subsystem {
 
     this.freeTargets();
 
-    this.sceneRT = this.makeRT({ hdr: true, depth: true });
+    // The one target the world is rasterised into, and so the only one where extra
+    // geometric samples can be taken. Everything downstream is a fullscreen blit.
+    const maxSamples = this.renderer.capabilities.maxSamples ?? 0;
+    this.samples = Math.min(MSAA_SAMPLES[ctx.quality.tier] ?? 0, maxSamples);
+    this.sceneRT = this.makeRT({ hdr: true, depth: true, samples: this.samples });
     this.mainA = this.makeRT({ hdr: true });
     this.mainB = this.makeRT({ hdr: true });
     this.aoRT = this.makeRT({ scale: 0.5 });
@@ -1137,9 +1160,66 @@ export class PostFXSystem implements Subsystem {
     this.elapsed += dt;
   }
 
+  /**
+   * Raise every mipmapped texture in the scene to the device's maximum anisotropy.
+   *
+   * Anisotropy is a sampler setting, not a memory or authoring cost: it changes how many
+   * taps the hardware takes along the longer axis of a texel footprint, and on a battlefield
+   * almost every surface that matters — ground, road, masonry courses, the sward — is seen
+   * at a grazing angle, which is the exact case isotropic mip selection handles worst. It
+   * picks the blur radius from the long axis and smears the short one, so a brick course
+   * that should stay legible to the horizon turns to mush at forty metres.
+   *
+   * Doing it here rather than at each call site is deliberate. Eight subsystems create
+   * textures and each had independently hardcoded 8 (or 4), which is a value from an era of
+   * 8-sample hardware; this machine reports 16. Sweeping from the renderer means one place
+   * knows the device limit, and it also catches textures created asynchronously after boot
+   * — the city's atlases in particular. Per-call-site defaults should still be raised, and
+   * that change is reported to the integrator rather than made here, because those files
+   * belong to other subsystems.
+   *
+   * The sweep is cheap (a traverse over ~200 meshes) and self-limiting: it stops as soon as
+   * a pass finds nothing left to raise.
+   */
+  private sweepAnisotropy(ctx: EngineContext): void {
+    const max = this.renderer.capabilities.getMaxAnisotropy();
+    let raised = 0;
+    const seen = new Set<string>();
+    ctx.scene.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      const mat = mesh.material;
+      if (!mat) return;
+      for (const m of Array.isArray(mat) ? mat : [mat]) {
+        if (seen.has(m.uuid)) continue;
+        seen.add(m.uuid);
+        const std = m as THREE.MeshStandardMaterial;
+        for (const t of [std.map, std.normalMap, std.roughnessMap, std.aoMap,
+          std.metalnessMap, std.emissiveMap, std.alphaMap]) {
+          // Only textures that actually have a mip chain: anisotropic sampling is defined
+          // in terms of mip selection, so on an unmipped texture it is a no-op that still
+          // forces a redundant re-upload.
+          if (!t) continue;
+          const mipped = t.generateMipmaps || (t.mipmaps?.length ?? 0) > 1;
+          if (!mipped || t.anisotropy >= max) continue;
+          t.anisotropy = max;
+          t.needsUpdate = true;
+          raised++;
+        }
+      }
+    });
+    if (raised === 0) this.anisotropySweeps = 0;
+  }
+
   preRender(ctx: EngineContext): void {
     if (!this.enabled || !this.sceneRT) return;
     const cam = ctx.camera;
+
+    // The world is not fully populated at init — the city streams its atlases in — so the
+    // sweep runs on a short decaying schedule rather than once, and switches itself off.
+    if (this.anisotropySweeps > 0 && (this.frameIndex & 63) === 0) {
+      this.anisotropySweeps--;
+      this.sweepAnisotropy(ctx);
+    }
 
     // Unjittered matrices drive reprojection; the jitter only perturbs raster.
     this.projNoJitter.copy(cam.projectionMatrix);
