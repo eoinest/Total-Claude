@@ -3,8 +3,12 @@ import { clamp01 } from '../util/math';
 import {
   basaltPaving,
   brickFace,
+  detailFromRgb,
   foliageCanopy,
+  graniteSpeckled,
   hammeredMetal,
+  macroVariation,
+  marbleVeined,
   paintedStucco,
   roofTiles,
   rubbleConcrete,
@@ -14,26 +18,19 @@ import {
 } from './texgen';
 
 /**
- * The city's material library — deliberately small, because every extra material is
- * an extra draw call in every spatial chunk that uses it.
- *
- * Design decision: **albedo colour lives in vertex colours, not textures.** Each
- * material carries a mean-normalised luminance *detail* map, a normal map and a
- * packed roughness/metalness map; the actual hue comes from the per-vertex colour
- * written by the geometry builders. That buys three things at once — a controllable
- * Roman palette (painted stucco in reds and ochres, not photographic grey), free
- * per-building and per-brick variation with no new textures, and one material
- * covering every travertine surface in the city.
- *
- * If `public/assets/manifest.json` is present we take the *normal* and *roughness*
- * from the photographed CC0 sets (real surface detail beats procedural noise) and
- * still normalise their albedo into a colourless detail map. With an empty asset
- * folder everything falls back to `texgen.ts`.
+ * The city's material library, kept small: every extra material is an extra draw call
+ * in every chunk that uses it. Albedo is the photographed or generated surface
+ * mean-normalised per channel, so real mottling reaches the screen at full strength
+ * while the vertex colour still sets hue and holds the palette in `palette.ts`. Keeping
+ * 40 % of the chroma over a grey bump, as an earlier revision did, is why every roof was
+ * one flat terracotta plane and every wall one flat cream plane.
  */
 
 export type CityMatKey =
   | 'brick'
   | 'stone'
+  | 'marble'
+  | 'granite'
   | 'stucco'
   | 'roof'
   | 'timber'
@@ -72,56 +69,96 @@ interface MatSpec {
   side: THREE.Side;
   /** Resample size for manifest images; brick and stone are seen close up. */
   texSize: number;
+  /** Take only normal and roughness from the photograph, keep the generated albedo. */
+  surfaceOnly?: boolean;
+  /** Fraction of the photographed AO folded into the albedo, deepening real joints. */
+  aoMix: number;
+  /** World-space macro variation: brightness amount, then warm/cool amount. */
+  macro: readonly [number, number];
 }
 
 /**
- * Note there is no brick texture in the CC0 set, which is fine: the Aurelian
- * curtain's *opus testaceum* face is the one surface the camera gets close to, and
- * a procedurally laid brick bond with the correct 55 mm course pitch reads far
- * better than any tiled photograph of modern brickwork.
+ * There is no brick or granite in the CC0 set, and the one called `white-marble` is a
+ * cream limestone slab with no veining at all, so all three are generated. Where a
+ * photograph exists it wins on surface detail, which is what `surfaceOnly` keeps when
+ * only its albedo is unusable.
  */
 const SPECS: Record<CityMatKey, MatSpec> = {
   brick: {
     manifestId: null,
     gen: brickFace,
-    worldSize: 1.1,
-    // The curtain's brick face is the one surface a besieging camera gets close to, and
-    // its courses have to survive being two screen texels tall from 40 m.
-    normalScale: 1.5,
+    worldSize: 1.76,
+    normalScale: 1.6,
     roughnessMul: 1.0,
     metalness: 0,
     side: THREE.FrontSide,
-    texSize: 512,
+    texSize: 1024,
+    aoMix: 0,
+    macro: [0.3, 0.16],
   },
   stone: {
     manifestId: 'roman-travertine-blocks',
     gen: travertineAshlar,
-    worldSize: 2.3,
-    normalScale: 0.95,
+    worldSize: 3.0,
+    normalScale: 1.0,
     roughnessMul: 1.0,
     metalness: 0,
     side: THREE.FrontSide,
+    texSize: 1024,
+    aoMix: 0.6,
+    // Higher than the rest: the biggest flat surfaces in the city are its travertine
+    // precinct paving and arena floors, and they have nothing else to break them up.
+    macro: [0.34, 0.17],
+  },
+  marble: {
+    manifestId: 'white-marble',
+    gen: marbleVeined,
+    worldSize: 2.4,
+    normalScale: 0.6,
+    roughnessMul: 0.78,
+    metalness: 0,
+    side: THREE.FrontSide,
     texSize: 512,
+    surfaceOnly: true,
+    aoMix: 0.35,
+    macro: [0.15, 0.07],
+  },
+  granite: {
+    manifestId: null,
+    gen: graniteSpeckled,
+    worldSize: 0.6,
+    normalScale: 0.7,
+    roughnessMul: 0.55,
+    metalness: 0,
+    side: THREE.FrontSide,
+    texSize: 512,
+    aoMix: 0,
+    macro: [0.1, 0.05],
   },
   stucco: {
     manifestId: 'painted-plaster',
     gen: paintedStucco,
-    worldSize: 3.2,
+    worldSize: 3.0,
     normalScale: 0.7,
     roughnessMul: 1.0,
     metalness: 0,
     side: THREE.FrontSide,
-    texSize: 256,
+    texSize: 512,
+    surfaceOnly: true,
+    aoMix: 0.3,
+    macro: [0.3, 0.18],
   },
   roof: {
     manifestId: 'terracotta-roof-tiles',
     gen: roofTiles,
-    worldSize: 1.35,
+    worldSize: 3.6,
     normalScale: 1.0,
     roughnessMul: 0.95,
     metalness: 0,
     side: THREE.FrontSide,
     texSize: 512,
+    aoMix: 0.6,
+    macro: [0.28, 0.2],
   },
   timber: {
     manifestId: 'weathered-wood-planks',
@@ -132,6 +169,8 @@ const SPECS: Record<CityMatKey, MatSpec> = {
     metalness: 0,
     side: THREE.FrontSide,
     texSize: 256,
+    aoMix: 0.4,
+    macro: [0.18, 0.1],
   },
   metal: {
     manifestId: 'worn-iron',
@@ -142,16 +181,20 @@ const SPECS: Record<CityMatKey, MatSpec> = {
     metalness: 0.85,
     side: THREE.FrontSide,
     texSize: 256,
+    aoMix: 0.3,
+    macro: [0.1, 0.04],
   },
   road: {
     manifestId: 'cobblestone-road',
     gen: basaltPaving,
-    worldSize: 3.0,
-    normalScale: 0.85,
+    worldSize: 2.3,
+    normalScale: 1.0,
     roughnessMul: 1.0,
     metalness: 0,
     side: THREE.FrontSide,
-    texSize: 256,
+    texSize: 1024,
+    aoMix: 0.7,
+    macro: [0.34, 0.16],
   },
   concrete: {
     manifestId: null,
@@ -162,6 +205,8 @@ const SPECS: Record<CityMatKey, MatSpec> = {
     metalness: 0,
     side: THREE.FrontSide,
     texSize: 256,
+    aoMix: 0,
+    macro: [0.24, 0.12],
   },
   foliage: {
     manifestId: null,
@@ -172,10 +217,36 @@ const SPECS: Record<CityMatKey, MatSpec> = {
     metalness: 0,
     side: THREE.DoubleSide,
     texSize: 128,
+    aoMix: 0,
+    macro: [0.14, 0.1],
   },
 };
 
 export const CITY_MAT_KEYS = Object.keys(SPECS) as CityMatKey[];
+
+/** Periods of the two macro octaves, metres. */
+const MACRO_METRES = [18, 5.4] as const;
+
+const MACRO_VERT_PARS = 'varying vec3 tcWorld;\n';
+const MACRO_VERT_BODY = '\ttcWorld = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;\n';
+const MACRO_FRAG_PARS = `
+uniform sampler2D tcMacro;
+uniform vec2 tcMacroScale;
+uniform vec2 tcMacroAmt;
+varying vec3 tcWorld;
+`;
+// Sampled in world space, not UV space: the UV origin is per chunk, so a UV-space macro
+// steps in brightness where two stretches of the same curtain meet. Folding y into the
+// horizontal lookup gives vertical faces variation along their height for one fetch.
+const MACRO_FRAG_BODY = `
+{
+  vec3 mA = texture2D( tcMacro, ( tcWorld.xz + tcWorld.y * 0.42 ) * tcMacroScale.x ).rgb;
+  float mB = texture2D( tcMacro, ( tcWorld.zx - tcWorld.y * 0.31 ) * tcMacroScale.y ).b;
+  float bright = 1.0 + ( mA.r - 0.5 ) * tcMacroAmt.x + ( mB - 0.5 ) * tcMacroAmt.x * 0.6;
+  float warm = ( mA.g - 0.5 ) * tcMacroAmt.y;
+  diffuseColor.rgb *= max( vec3( 0.0 ), bright * vec3( 1.0 + warm * 0.9, 1.0, 1.0 - warm * 0.85 ) );
+}
+`;
 
 // --- image helpers ----------------------------------------------------------
 
@@ -215,7 +286,7 @@ function dataTex(data: Uint8Array, size: number, srgb: boolean): THREE.DataTextu
   t.minFilter = THREE.LinearMipmapLinearFilter;
   t.magFilter = THREE.LinearFilter;
   t.generateMipmaps = true;
-  t.anisotropy = 8;
+  t.anisotropy = 16;
   t.needsUpdate = true;
   return t;
 }
@@ -231,57 +302,39 @@ const linearToSrgbByte = (v: number): number => {
 };
 
 /**
- * Strip the overall colour cast out of a photographed albedo, leaving surface
- * *detail* that multiplies cleanly with a vertex colour. 40 % of the original chroma
- * is retained so brick still varies warm-to-cool brick to brick.
+ * A photographed albedo ready to multiply against a vertex colour: full chroma
+ * *variation* kept, only the mean cast normalised away, with the photographed AO folded
+ * in rather than bound as a second sampler.
  */
-function albedoToDetail(px: Uint8ClampedArray, size: number): { tex: THREE.DataTexture; gain: number } {
+function albedoToTintable(
+  px: Uint8ClampedArray,
+  aoPx: Uint8ClampedArray | null,
+  aoMix: number,
+  size: number
+): { tex: THREE.DataTexture; gain: number } {
   const n = size * size;
   const lin = new Float32Array(n * 3);
-  let mr = 0;
-  let mg = 0;
-  let mb = 0;
   for (let i = 0; i < n; i++) {
-    const r = srgbToLinear(px[i * 4]);
-    const g = srgbToLinear(px[i * 4 + 1]);
-    const b = srgbToLinear(px[i * 4 + 2]);
-    lin[i * 3] = r;
-    lin[i * 3 + 1] = g;
-    lin[i * 3 + 2] = b;
-    mr += r;
-    mg += g;
-    mb += b;
+    let ao = 1;
+    if (aoPx && aoMix > 0) ao = 1 - aoMix * (1 - srgbToLinear(aoPx[i * 4 + 1]));
+    lin[i * 3] = srgbToLinear(px[i * 4]) * ao;
+    lin[i * 3 + 1] = srgbToLinear(px[i * 4 + 1]) * ao;
+    lin[i * 3 + 2] = srgbToLinear(px[i * 4 + 2]) * ao;
   }
-  mr = Math.max(1e-4, mr / n);
-  mg = Math.max(1e-4, mg / n);
-  mb = Math.max(1e-4, mb / n);
-  const keepChroma = 0.4;
-  let max = 0;
+  return detailFromRgb(lin, size);
+}
+
+/** Fold a photographed AO into an already-generated albedo, in place. */
+function foldAoIntoAlbedo(tex: THREE.DataTexture, aoPx: Uint8ClampedArray, aoMix: number): void {
+  const data = tex.image.data as Uint8Array;
+  const n = Math.min(data.length, aoPx.length) / 4;
   for (let i = 0; i < n; i++) {
-    const r = lin[i * 3] / mr;
-    const g = lin[i * 3 + 1] / mg;
-    const b = lin[i * 3 + 2] / mb;
-    const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    const cr = l + (r - l) * keepChroma;
-    const cg = l + (g - l) * keepChroma;
-    const cb = l + (b - l) * keepChroma;
-    lin[i * 3] = cr;
-    lin[i * 3 + 1] = cg;
-    lin[i * 3 + 2] = cb;
-    if (cr > max) max = cr;
-    if (cg > max) max = cg;
-    if (cb > max) max = cb;
+    const ao = 1 - aoMix * (1 - srgbToLinear(aoPx[i * 4 + 1]));
+    for (let c = 0; c < 3; c++) {
+      data[i * 4 + c] = linearToSrgbByte(srgbToLinear(data[i * 4 + c]) * ao);
+    }
   }
-  // Normalised so the brightest texel is 1.0 — the gain goes into material.color.
-  const scale = max > 1e-4 ? 1 / max : 1;
-  const out = new Uint8Array(n * 4);
-  for (let i = 0; i < n; i++) {
-    out[i * 4] = linearToSrgbByte(lin[i * 3] * scale);
-    out[i * 4 + 1] = linearToSrgbByte(lin[i * 3 + 1] * scale);
-    out[i * 4 + 2] = linearToSrgbByte(lin[i * 3 + 2] * scale);
-    out[i * 4 + 3] = 255;
-  }
-  return { tex: dataTex(out, size, true), gain: 1 / scale };
+  tex.needsUpdate = true;
 }
 
 function rawToTexture(px: Uint8ClampedArray, size: number): THREE.DataTexture {
@@ -304,6 +357,14 @@ function packOrm(px: Uint8ClampedArray | null, size: number, metal: number): THR
   return dataTex(out, size, false);
 }
 
+/** Bytes a texture occupies once resident, mip chain included. */
+function textureBytes(t: THREE.Texture): number {
+  const img = t.image as { width?: number; height?: number } | undefined;
+  const w = img?.width ?? 0;
+  const h = img?.height ?? 0;
+  return Math.round(w * h * 4 * (t.generateMipmaps ? 4 / 3 : 1));
+}
+
 // --- library ----------------------------------------------------------------
 
 export class CityMaterials {
@@ -318,10 +379,16 @@ export class CityMaterials {
    *  case without deleting anything from `public/`. */
   proceduralOnly = false;
 
+  private macro: THREE.DataTexture | null = null;
+  private readonly macroScale = new THREE.Vector2(1 / MACRO_METRES[0], 1 / MACRO_METRES[1]);
+
   async load(): Promise<void> {
     const manifest = this.proceduralOnly ? null : await this.fetchManifest();
     const byId = new Map<string, ManifestTextureEntry>();
     for (const t of manifest?.textures ?? []) byId.set(t.id, t);
+
+    this.macro = macroVariation(256);
+    this.textures.push(this.macro);
 
     for (const key of CITY_MAT_KEYS) {
       const spec = SPECS[key];
@@ -331,6 +398,13 @@ export class CityMaterials {
       if (!mat) mat = this.fromProcedural(key, spec);
       this.built.set(key, mat);
     }
+  }
+
+  /** Texture bytes this library holds resident, for the performance budget. */
+  get residentTextureBytes(): number {
+    let n = 0;
+    for (const t of this.textures) n += textureBytes(t);
+    return n;
   }
 
   private async fetchManifest(): Promise<Manifest | null> {
@@ -355,19 +429,48 @@ export class CityMaterials {
     entry: ManifestTextureEntry
   ): Promise<THREE.MeshStandardMaterial | null> {
     const size = spec.texSize;
-    const albedoPx = entry.maps?.albedo ? await fetchPixels(entry.maps.albedo, size) : null;
-    if (!albedoPx) return null;
+    // A `surfaceOnly` spec discards the photographed albedo, so do not decode it at all.
+    const albedoPx = spec.surfaceOnly || !entry.maps?.albedo ? null : await fetchPixels(entry.maps.albedo, size);
+    if (!spec.surfaceOnly && !albedoPx) return null;
     const normalPx = entry.maps?.normal ? await fetchPixels(entry.maps.normal, size) : null;
-    const roughPx = entry.maps?.roughness ? await fetchPixels(entry.maps.roughness, size) : null;
+    // Roughness and metalness carry no fine structure worth a full-size map.
+    const ormSize = Math.max(64, size >> 1);
+    const roughPx = entry.maps?.roughness ? await fetchPixels(entry.maps.roughness, ormSize) : null;
+    const aoPx = spec.aoMix > 0 && entry.maps?.ao ? await fetchPixels(entry.maps.ao, size) : null;
 
-    const detail = albedoToDetail(albedoPx, size);
-    const normal = normalPx ? rawToTexture(normalPx, size) : spec.gen(size).normal;
-    const orm = packOrm(roughPx, size, spec.metalness);
+    const generated = spec.surfaceOnly || !normalPx ? spec.gen(size) : null;
+    generated?.orm.dispose();
+
+    let albedo: THREE.Texture;
+    let gain: number;
+    if (albedoPx) {
+      generated?.albedo.dispose();
+      const d = albedoToTintable(albedoPx, aoPx, spec.aoMix, size);
+      albedo = d.tex;
+      gain = d.gain;
+    } else if (generated) {
+      if (aoPx) foldAoIntoAlbedo(generated.albedo, aoPx, spec.aoMix);
+      albedo = generated.albedo;
+      gain = generated.albedoGain;
+    } else {
+      return null;
+    }
+
+    let normal: THREE.Texture;
+    if (normalPx) {
+      generated?.normal.dispose();
+      normal = rawToTexture(normalPx, size);
+    } else if (generated) {
+      normal = generated.normal;
+    } else {
+      return null;
+    }
+    const orm = packOrm(roughPx, ormSize, spec.metalness);
 
     this.usedManifest = true;
     if (entry.author) this.credits.push(`${entry.id} — ${entry.author} (${entry.license ?? 'see manifest'})`);
-    this.textures.push(detail.tex, normal, orm);
-    return this.assemble(key, spec, detail.tex, detail.gain, normal, orm);
+    this.textures.push(albedo, normal, orm);
+    return this.assemble(key, spec, albedo, gain, normal, orm);
   }
 
   private fromProcedural(key: CityMatKey, spec: MatSpec): THREE.MeshStandardMaterial {
@@ -396,8 +499,8 @@ export class CityMaterials {
       side: spec.side,
       dithering: true, // large flat stucco faces band badly without it
     });
-    // The detail map is mean-normalised, so the gain restores the intended albedo
-    // level; vertex colours then supply the hue.
+    // The map is mean-normalised, so the gain restores the intended albedo level;
+    // vertex colours then supply the hue.
     mat.color.setScalar(gain);
     mat.normalScale.set(spec.normalScale, spec.normalScale);
     mat.envMapIntensity = key === 'metal' ? 1.35 : 0.9;
@@ -407,7 +510,28 @@ export class CityMaterials {
       // with a slight normal flattening keeps them from looking like plastic.
       mat.normalScale.set(0.4, 0.4);
     }
+    this.patchMacro(mat, spec);
     return mat;
+  }
+
+  /** Assigned before the mesh reaches the scene, so `LightingSystem` chains onto it. */
+  private patchMacro(mat: THREE.MeshStandardMaterial, spec: MatSpec): void {
+    const macro = this.macro;
+    if (!macro || (spec.macro[0] <= 0 && spec.macro[1] <= 0)) return;
+    const amount = new THREE.Vector2(spec.macro[0], spec.macro[1]);
+    const scale = this.macroScale;
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.tcMacro = { value: macro };
+      shader.uniforms.tcMacroScale = { value: scale };
+      shader.uniforms.tcMacroAmt = { value: amount };
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', `#include <common>\n${MACRO_VERT_PARS}`)
+        .replace('#include <project_vertex>', `#include <project_vertex>\n${MACRO_VERT_BODY}`);
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `#include <common>\n${MACRO_FRAG_PARS}`)
+        .replace('#include <color_fragment>', `#include <color_fragment>\n${MACRO_FRAG_BODY}`);
+    };
+    mat.customProgramCacheKey = () => 'city-macro-v1';
   }
 
   get(key: CityMatKey): THREE.MeshStandardMaterial {

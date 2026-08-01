@@ -316,6 +316,10 @@ const TRIM_MERGE: Partial<Record<CityMatKey, CityMatKey>> = {
   road: 'stone',
   concrete: 'stone',
   timber: 'brick',
+  // Marble veining and granite speckle are centimetre features; past the mid-detail
+  // switch they are well under a pixel and only the vertex colour still reads.
+  marble: 'stone',
+  granite: 'stone',
 };
 
 /**

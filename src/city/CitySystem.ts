@@ -556,6 +556,8 @@ export class CitySystem implements Subsystem {
     visibleTriangles: number;
     triangles: number;
     materials: number;
+    /** Texture bytes the city holds resident, mip chains included. */
+    textureBytes: number;
     usedManifest: boolean;
     /** Result of the build-time landmark footprint-overlap assertion. */
     footprintOverlaps: number;
@@ -582,6 +584,7 @@ export class CitySystem implements Subsystem {
       visibleTriangles,
       triangles: this.totalTris,
       materials: CITY_MAT_KEYS.length,
+      textureBytes: this.mats.residentTextureBytes,
       usedManifest: this.mats.usedManifest,
       footprintOverlaps: this.overlaps.count,
       footprintOverlapWorst: this.overlaps.worst,

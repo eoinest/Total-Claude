@@ -752,6 +752,8 @@ const UP = new THREE.Vector3(0, 1, 0);
  */
 function buildPantheon(batch: Batch, detail: number, g: number): void {
   const stone = batch.s('stone');
+  const marble = batch.s('marble');
+  const granite = batch.s('granite');
   const metal = batch.s('metal');
   const brick = batch.s('brick');
   const rOut = 29;
@@ -804,7 +806,7 @@ function buildPantheon(batch: Batch, detail: number, g: number): void {
     oculus: 4.4,
   });
   // Oculus rim.
-  cylinder(stone, 0, apex - 0.6, 0, 4.9, 4.9, 0.9, detail >= 1 ? 18 : 8, PAL.marble, { top: true });
+  cylinder(marble, 0, apex - 0.6, 0, 4.9, 4.9, 0.9, detail >= 1 ? 18 : 8, PAL.marble, { top: true });
 
   // ---- pronaos -------------------------------------------------------------
   const porchW = 33.1;
@@ -828,15 +830,16 @@ function buildPantheon(batch: Batch, detail: number, g: number): void {
     for (let i = 0; i < row.n; i++) {
       const cx = row.n === 8 ? lerp(-porchW / 2 + 2.4, porchW / 2 - 2.4, i / 7) : lerp(-porchW / 2 + 2.4, porchW / 2 - 2.4, i / 3) * (i < 2 ? 1 : 1);
       const x = row.n === 8 ? cx : (i < 2 ? -1 : 1) * (porchW / 2 - 2.4 - (i % 2) * 4.6);
-      column(stone, x, g + 1.5, row.z, colR, colH, 'corinthian', PAL.marbleShadow, detail);
+      // The sixteen pronaos shafts are monolithic grey Mons Claudianus granite.
+      column(granite, x, g + 1.5, row.z, colR, colH, 'corinthian', PAL.graniteGrey, detail);
     }
   }
   // Entablature and pediment. Roman pediment pitch here is about 1:4.
   const entY = g + 1.5 + colH;
-  box(stone, -porchW / 2 - 0.6, entY, zFront - 0.6, porchW / 2 + 0.6, entY + 2.6, -rOut + 1, PAL.marble, { topGain: 1.12 });
-  stone.pushTranslate(0, 0, (zFront + (-rOut + 1)) / 2);
-  pediment(stone, porchW + 1.2, entY + 2.6, Math.abs(-rOut + 1 - zFront), PAL.marble, 0.22);
-  stone.pop();
+  box(marble, -porchW / 2 - 0.6, entY, zFront - 0.6, porchW / 2 + 0.6, entY + 2.6, -rOut + 1, PAL.marble, { topGain: 1.12 });
+  marble.pushTranslate(0, 0, (zFront + (-rOut + 1)) / 2);
+  pediment(marble, porchW + 1.2, entY + 2.6, Math.abs(-rOut + 1 - zFront), PAL.marble, 0.22);
+  marble.pop();
   // Bronze-tiled porch roof behind the pediment.
   const roofSt = batch.s('metal');
   gableRoof(
@@ -1426,13 +1429,15 @@ const NH = new THREE.Vector3();
 /** Italic temple: high podium, frontal steps, deep porch, walled cella. */
 function buildTemple(batch: Batch, detail: number, g: number, o: TempleOpts): void {
   const stone = batch.s('stone');
+  // Luna marble for the order and its mouldings, travertine for the podium under them.
+  const marble = batch.s('marble');
   const roofSt = batch.s(o.roofMat);
   const { w, d, podiumH, colH, colR } = o;
 
   // Podium with a moulded base and cap.
   box(stone, -w / 2 - 1.4, g - 1.0, -d / 2 - 1.4, w / 2 + 1.4, g + 0.7, d / 2 + 1.4, PAL.travertineDirty, { topGain: 1.06 });
   box(stone, -w / 2 - 0.7, g + 0.7, -d / 2 - 0.7, w / 2 + 0.7, g + podiumH - 0.5, d / 2 + 0.7, PAL.travertine, { topGain: 1.06 });
-  box(stone, -w / 2 - 1.2, g + podiumH - 0.5, -d / 2 - 1.2, w / 2 + 1.2, g + podiumH, d / 2 + 1.2, PAL.marbleShadow, { topGain: 1.14 });
+  box(marble, -w / 2 - 1.2, g + podiumH - 0.5, -d / 2 - 1.2, w / 2 + 1.2, g + podiumH, d / 2 + 1.2, PAL.marbleShadow, { topGain: 1.14 });
   // Frontal steps only — the Italic temple is emphatically axial.
   stone.pushTranslate(0, 0, -d / 2 - 1.4);
   steps(stone, w * 0.72, g - 1.0, 0, Math.max(3, Math.round(podiumH / 0.32)), 0.32, 0.4, PAL.travertineDirty);
@@ -1445,7 +1450,7 @@ function buildTemple(batch: Batch, detail: number, g: number, o: TempleOpts): vo
   // Porch colonnade.
   for (let r = 0; r < o.porchRows; r++) {
     for (let i = 0; i < o.colsFront; i++) {
-      column(stone, -halfW + spacing * i, colY, zFront + r * spacing * 0.92, colR, colH, o.order, PAL.marble, detail);
+      column(marble, -halfW + spacing * i, colY, zFront + r * spacing * 0.92, colR, colH, o.order, PAL.marble, detail);
     }
   }
   // Cella walls behind the porch.
@@ -1455,7 +1460,7 @@ function buildTemple(batch: Batch, detail: number, g: number, o: TempleOpts): vo
   if (o.cellae === 3 && detail >= 1) {
     // The Capitoline temple's triple cella: two dividing walls read as deep shadow.
     for (const s of [-1, 1]) {
-      box(stone, (s * halfW) / 3 - 0.5, colY, cellaZ0 - 0.4, (s * halfW) / 3 + 0.5, colY + colH + 0.7, cellaZ0 + 0.4, PAL.marbleShadow);
+      box(marble, (s * halfW) / 3 - 0.5, colY, cellaZ0 - 0.4, (s * halfW) / 3 + 0.5, colY + colH + 0.7, cellaZ0 + 0.4, PAL.marbleShadow);
     }
     // Three doorways.
     for (const s of [-1, 0, 1]) {
@@ -1469,19 +1474,19 @@ function buildTemple(batch: Batch, detail: number, g: number, o: TempleOpts): vo
     for (let i = 0; i < o.colsSide; i++) {
       const zz = lerp(cellaZ0 + 1.5, cellaZ1 - 1.5, i / Math.max(1, o.colsSide - 1));
       for (const s of [-1, 1]) {
-        column(stone, s * (halfW + colR * 0.4), colY, zz, colR * 0.72, colH, o.order, PAL.marbleShadow, detail - 1);
+        column(marble, s * (halfW + colR * 0.4), colY, zz, colR * 0.72, colH, o.order, PAL.marbleShadow, detail - 1);
       }
     }
   }
 
   // Entablature: architrave, frieze, cornice.
   const entY = colY + colH;
-  box(stone, -w / 2 - 0.2, entY, -d / 2 - 0.2, w / 2 + 0.2, entY + colR * 1.1, d / 2 + 0.2, PAL.marble, { topGain: 1.1 });
-  box(stone, -w / 2 - 0.5, entY + colR * 1.1, -d / 2 - 0.5, w / 2 + 0.5, entY + colR * 2.4, d / 2 + 0.5, PAL.marbleShadow, { topGain: 1.14 });
-  box(stone, -w / 2 - 1.1, entY + colR * 2.4, -d / 2 - 1.1, w / 2 + 1.1, entY + colR * 3.0, d / 2 + 1.1, PAL.marble, { topGain: 1.2 });
+  box(marble, -w / 2 - 0.2, entY, -d / 2 - 0.2, w / 2 + 0.2, entY + colR * 1.1, d / 2 + 0.2, PAL.marble, { topGain: 1.1 });
+  box(marble, -w / 2 - 0.5, entY + colR * 1.1, -d / 2 - 0.5, w / 2 + 0.5, entY + colR * 2.4, d / 2 + 0.5, PAL.marbleShadow, { topGain: 1.14 });
+  box(marble, -w / 2 - 1.1, entY + colR * 2.4, -d / 2 - 1.1, w / 2 + 1.1, entY + colR * 3.0, d / 2 + 1.1, PAL.marble, { topGain: 1.2 });
 
   const roofBase = entY + colR * 3.0;
-  pediment(stone, w + 2.2, roofBase, d + 2.2, PAL.marble, 0.24);
+  pediment(marble, w + 2.2, roofBase, d + 2.2, PAL.marble, 0.24);
   tiledGable(stone, roofSt, w + 1.0, d + 1.0, roofBase, ((w + 2.2) / 2) * 0.24, 0.5, o.roofCol, detail);
   // Acroteria on the ridge and the pediment corners.
   if (detail >= 1) {
@@ -2600,12 +2605,13 @@ function buildCastra(batch: Batch, detail: number, g: number, W: number, D: numb
 /** Egyptian obelisk on a plinth. Roman obelisks taper about 1 : 10 and are pyramidal-tipped. */
 function buildObelisk(batch: Batch, detail: number, g: number, height: number, baseHalf: number): void {
   const stone = batch.s('stone');
+  const granite = batch.s('granite');
   const metal = batch.s('metal');
   const plinth = height * 0.14;
   box(stone, -baseHalf * 2.4, g, -baseHalf * 2.4, baseHalf * 2.4, g + plinth, baseHalf * 2.4, PAL.peperino, { topGain: 1.08 });
   const shaftH = height * 0.9;
   const top = baseHalf * 0.66;
-  box(stone, -baseHalf, g + plinth, -baseHalf, baseHalf, g + plinth + shaftH, baseHalf, PAL.brickDark, {
+  box(granite, -baseHalf, g + plinth, -baseHalf, baseHalf, g + plinth + shaftH, baseHalf, PAL.graniteRed, {
     batter: (baseHalf - top) / shaftH,
     topGain: 1.1,
   });

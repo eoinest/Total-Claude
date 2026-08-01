@@ -55,6 +55,9 @@ export const PAL = {
   /** Tufa and peperino, the cheap local volcanic building stones. */
   tufa: srgb(0xbba679),
   peperino: srgb(0x8c8068),
+  /** Imperial granite: grey Mons Claudianus shafts, red Aswan obelisks. */
+  graniteGrey: srgb(0x8d8578),
+  graniteRed: srgb(0x8a5b45),
   /** Painted stucco: the everyday street palette. */
   pompeianRed: srgb(0x9c2f26),
   romanRed: srgb(0xa8202a),

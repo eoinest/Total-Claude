@@ -53,6 +53,19 @@ const SHOTS = {
   circus: { desc: 'The Circus Maximus along its length — arcaded façade and banks', x: 286, z: 1153, zoom: 0.8, yaw: Math.PI * 1.35 },
   circusflank: { desc: 'The Circus Maximus from outside its south flank — three arcaded storeys', x: 250, z: 1256, zoom: 0.52, yaw: Math.PI * 0.55 },
   baths: { desc: 'The Baths of Trajan — precinct, vaulted block, palaestrae', x: 728, z: 741, zoom: 0.7, yaw: Math.PI * 0.15 },
+  // Masonry close-ups. The graded shot set has nothing nearer than the wall camera, so
+  // brick courses, sett shapes and marble veining have no frame that can show them.
+  // zoom 0.42 is the nearest the rig gives before the eye drops into the grass layer.
+  brickclose: { desc: 'The curtain face up close: courses, bond, mortar', x: -120, z: 452, zoom: 0.42, yaw: 0.0 },
+  gateclose: { desc: 'The Porta Flaminia close: brick, travertine dressings, paving', x: 90, z: 500, zoom: 0.42, yaw: Math.PI * 0.06 },
+  // On the Via Lata itself. Coordinates read off the baked `streets-road` positions,
+  // because the street paths are authored in survey coordinates, not world ones.
+  streetclose: { desc: 'Standing on a paved street: basalt setts at eye level', x: 132, z: 915, zoom: 0.42, yaw: Math.PI * 0.02 },
+  // Landmark centres from layout.LANDMARKS. Both pronaoi face -Z, so the camera sits south
+  // looking along +Z; the rig ties eye height to zoom, so it has to stand well back or it
+  // ends up inside the cella.
+  pantheonclose: { desc: 'The Pantheon pronaos: granite shafts, marble entablature', x: 134, z: 690, zoom: 0.5, yaw: 0.0 },
+  templeclose: { desc: 'The Capitoline temple front: marble order on travertine', x: 279, z: 895, zoom: 0.48, yaw: 0.0 },
 };
 
 /**
