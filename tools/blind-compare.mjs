@@ -41,9 +41,9 @@
  *     directory were all plates. `wc -c *.jpg | sort -n` decoded the deck without viewing a
  *     pixel. Round-tripping our PNGs through a JPEG generation first does NOT fix it
  *     (633,746 vs 349,225) — the asymmetry is content, not provenance. So each frame's quality
- *     is binary-searched to land inside a common byte window. It runs in both directions,
- *     which is what makes it fair rather than punitive: plates are re-encoded *up*, spending
- *     more bytes on the same content without adding any, and ours down.
+ *     is padded past its EOI marker to one common file length. An earlier version instead
+ *     binary-searched each frame's *quality* to hit a common size, which traded the size leak
+ *     for a quantisation-table leak — see the byte pass below, where the numbers are.
  *
  * The answer key is written to `key.json` in the *parent* of the deck directory, so an agent
  * pointed at the deck cannot read it by listing its own working directory.
@@ -60,7 +60,7 @@
  * sensible crop line and no amount of trimming makes them usable as blind plates.
  */
 
-import { readdir, mkdir, writeFile, rm, stat } from 'node:fs/promises';
+import { readdir, mkdir, readFile, writeFile, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import sharp from 'sharp';
@@ -175,8 +175,32 @@ for (const [i, entry] of deck.entries()) {
 }
 
 /*
- * Byte-budget pass. Target the midpoint of the two sides' means so neither is degraded
- * relative to the other, then binary-search each frame's quality to land within 3%.
+ * Byte-budget pass — **pad, do not re-quantise.**
+ *
+ * The previous version binary-searched each frame's JPEG quality until its file size hit a
+ * common target. It closed the `wc -c` leak and opened a worse one in its place, because
+ * quality is not free: the search wrote the answer into the quantisation table. Measured on
+ * the round2 and round3 decks it produced, the luma DQT sum reads
+ *
+ *     ours   mean 1426 (median 1367, q59-q95)
+ *     rome2  mean  977 (median  801, q59-q99)
+ *
+ * — a 72-78% single-threshold split on `frame-NN.jpg`'s DQT header alone, no pixel decoded.
+ * That is the same class of failure as the file-size leak it replaced, and it is worse in one
+ * respect: a per-frame quality is not just a label, it is *visible*. Our frames carry more
+ * high-frequency detail, so equalising bytes means systematically spending fewer bits on them,
+ * so our frames come back with more ringing around spear silhouettes and more 8x8 blocking in
+ * the sky. The harness was manufacturing the artefact that the critic was then asked to grade.
+ *
+ * So: one quality for every frame, and equalise the *file length* afterwards by appending
+ * filler past the EOI marker, which every decoder ignores. Nobody is degraded relative to
+ * anybody, `wc -c *.jpg | sort -n` returns the deck in filename order, and the compression
+ * artefacts in the deck are the ones the source content actually earned.
+ *
+ * Stated honestly: this defeats a size *sort*, not a determined adversary. The compressed
+ * length is still recoverable by scanning for the last `FF D9`. Closing that would mean
+ * destroying real image information on one side or the other, which is the trade this pass
+ * previously made and should not.
  */
 let byteReport = 'byte normalisation skipped';
 if (BYTES !== 0) {
@@ -184,29 +208,29 @@ if (BYTES !== 0) {
   const before = { ours: [], ref: [] };
   for (const e of key) before[e.origin === 'ours' ? 'ours' : 'ref'].push(await sizeOf(e.frame));
   const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
-  const target = BYTES ?? Math.round((mean(before.ours) + mean(before.ref)) / 2);
-  const missed = [];
-  for (const e of key) {
+  const sizes = await Promise.all(key.map((e) => sizeOf(e.frame)));
+  // Round up past the largest frame so every file lands on one number, and so that number
+  // is not itself the max frame's size (which would identify that one frame).
+  const target = BYTES ?? (Math.ceil((Math.max(...sizes) + 1) / 65536) + 1) * 65536;
+  const short = [];
+  for (const [i, e] of key.entries()) {
+    if (sizes[i] > target) { short.push(`${e.frame} ${sizes[i]}`); continue; }
     const src = path.join(outAbs, e.frame);
-    const raw = await sharp(src).raw().toBuffer({ resolveWithObject: true });
-    let lo = 20, hi = 100, best = null;
-    for (let i = 0; i < 8; i++) {
-      const q = Math.round((lo + hi) / 2);
-      const buf = await sharp(raw.data, { raw: raw.info }).jpeg({ quality: q, mozjpeg: true }).toBuffer();
-      if (best === null || Math.abs(buf.length - target) < Math.abs(best.len - target)) {
-        best = { q, len: buf.length, buf };
-      }
-      if (buf.length > target) hi = q - 1; else lo = q + 1;
-      if (lo > hi) break;
-    }
-    await writeFile(src, best.buf);
-    if (Math.abs(best.len - target) / target > 0.03) missed.push(`${e.frame} ${best.len} (q${best.q})`);
+    const buf = await readFile(src);
+    // Deterministic per-frame filler rather than zeros: a run of 0x00 is obvious tail padding
+    // and invites stripping it back to the real length.
+    const pad = Buffer.alloc(target - buf.length);
+    const r = rng(SEED * 7919 + i);
+    for (let k = 0; k < pad.length; k++) pad[k] = Math.floor(r() * 256);
+    await writeFile(src, Buffer.concat([buf, pad]));
   }
   const after = { ours: [], ref: [] };
   for (const e of key) after[e.origin === 'ours' ? 'ours' : 'ref'].push(await sizeOf(e.frame));
-  byteReport = `bytes: target ${target}, ours ${Math.round(mean(before.ours))}→${Math.round(mean(after.ours))}, `
-    + `${REF_LABEL} ${Math.round(mean(before.ref))}→${Math.round(mean(after.ref))}`
-    + (missed.length ? `; ${missed.length} outside 3%: ${missed.slice(0, 3).join(', ')}` : '; all inside 3%');
+  const distinct = new Set([...after.ours, ...after.ref]);
+  byteReport = `bytes: padded to ${target} (all frames q${QUALITY}, one quantisation table), `
+    + `pre-pad ours ${Math.round(mean(before.ours))}, ${REF_LABEL} ${Math.round(mean(before.ref))}`
+    + (short.length ? `; ${short.length} OVER TARGET, unpadded and identifiable: ${short.join(', ')}`
+      : `; ${distinct.size} distinct file size${distinct.size === 1 ? '' : 's — LEAK'}`);
 }
 
 // One directory up, so an agent given the deck path cannot list its way to the answers.

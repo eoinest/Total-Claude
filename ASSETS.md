@@ -807,3 +807,117 @@ overlay's loader treats a missing raster as a no-op.
 - Nothing on Sketchfab under CC0/CC-BY is a *georeferenced model of the city*; the CC0
   Roman assets there are individual props and monuments, which would not answer the
   question this task is about (where the Colosseum is), and were not downloaded.
+
+
+## Museum and site photography — `reference/museum/` (factual accuracy only, not shipped, not deck-eligible)
+
+Added during a blind-comparison critic pass. Purpose: a **factual** reference for Roman
+military kit, wall construction, street paving and insula massing, so that "our brick
+courses are wrong" can be settled against a photograph rather than an opinion.
+
+**Deck eligibility: none.** These are photographs of real objects, not renders. Putting a
+photograph into a blind render-vs-render deck measures nothing — a grader separates
+photography from rendering on sensor noise and depth of field alone, and would score 100%
+without ever looking at a shadow. They are eligible for the *accuracy* pass only. The
+single-source rule for blind decks is unaffected: `reference/rome2/` remains the only
+battle-plate pool, and nothing here may be mixed into it.
+
+**How the licence was verified.** Every file was taken through the Wikimedia Commons
+`action=query&prop=imageinfo&iiprop=extmetadata` API, which returns the licence recorded on
+that individual file's own description page. Only files reporting Public domain, CC0, CC BY
+or CC BY-SA — all commercial-use-permitted — were accepted; everything else was dropped
+before any byte was fetched. The attribution below is the `Artist` field from the same
+per-file record, which is what CC BY / CC BY-SA require be preserved.
+
+**Download discipline.** Bytes came only from `upload.wikimedia.org`, which is Commons' own
+CDN — no mirrors, no re-upload sites, no shorteners. `redirect: 'manual'` was set and any
+URL that redirected was skipped rather than followed. Only `image/jpeg` and `image/png`
+Content-Types were accepted. No archives were downloaded, so nothing was extracted; no
+installer, executable or script was fetched or run; no credentials were entered anywhere.
+
+**Safety verification.** Each of the 41 files: magic bytes checked against JPEG/PNG headers;
+whole-file scan for MZ/PE, ELF, Mach-O, ZIP, shebang, PHP and `<script` signatures;
+executable bit checked; trailing-data-past-EOI check for JPEG polyglots; and a full decode
+through libvips to confirm it is an image and nothing else. Three files matched the three
+bytes `#!/` at multi-megabyte offsets inside JPEG entropy-coded data — a chance hit, not a
+shebang, which is only meaningful at offset 0 — and each decodes cleanly with no trailing
+payload. One candidate was **rejected** by the signature scan and not kept. Stated plainly
+rather than dressed up: no on-demand AV scanner (clamscan) exists in this environment, and
+macOS `xprotect` here only reports its definition version (5353) with no scan subcommand, so
+the above is signature-and-structure checking, not a virus scan.
+
+**Not committed.** `reference/` is gitignored in full. Nothing here is redistributed,
+shipped, or referenced by any build entry point, and `reference/.metadata_never_index`
+keeps Spotlight out of it.
+
+#### `wall-aurelian/` — Aurelian Wall and Roman city walls (8 files)
+
+| File | Creator | Licence | Source page |
+| --- | --- | --- | --- |
+| `Aurelian-Wall-1.JPG` | Joris assumed (based on copyright claims). | CC BY-SA 3.0 | <https://commons.wikimedia.org/wiki/File:Aurelian_Wall_1.JPG> |
+| `Aurelian-Wall-tower.JPG` | Joris assumed (based on copyright claims). | CC BY-SA 3.0 | <https://commons.wikimedia.org/wiki/File:Aurelian_Wall_tower.JPG> |
+| `Le-mura-a-porta-san-Giovanni-2793.JPG` | user:Lalupa | Public domain | <https://commons.wikimedia.org/wiki/File:Le_mura_a_porta_san_Giovanni_2793.JPG> |
+| `Ludovisi---mura-e-latrina-1870.JPG` | user:Lalupa | Public domain | <https://commons.wikimedia.org/wiki/File:Ludovisi_-_mura_e_latrina_1870.JPG> |
+| `Mura-a-via-della-Ferratella-2193st.JPG` | user:Lalupa | Public domain | <https://commons.wikimedia.org/wiki/File:Mura_a_via_della_Ferratella_2193st.JPG> |
+| `2012-07-04-Roma-Corso-d-Italia.jpg` | Blackcat | CC BY-SA 3.0 it | <https://commons.wikimedia.org/wiki/File:2012-07-04_Roma_Corso_d%27Italia.jpg> |
+| `2012-08-23-Roma-Piazza-della-Croce-Rossa.jpg` | Blackcat | CC BY-SA 3.0 | <https://commons.wikimedia.org/wiki/File:2012-08-23_Roma_Piazza_della_Croce_Rossa.jpg> |
+| `Mura-di-Roma-quartiere-San-Lorenzo.jpg` | User:Walterdolce | CC BY-SA 1.0 | <https://commons.wikimedia.org/wiki/File:Mura_di_Roma,_quartiere_San_Lorenzo.jpg> |
+
+#### `brickwork/` — Roman wall construction — opus reticulatum, opus latericium (6 files)
+
+| File | Creator | Licence | Source page |
+| --- | --- | --- | --- |
+| `Domus-rovine-5.JPG` | Zanner | Public domain | <https://commons.wikimedia.org/wiki/File:Domus_rovine_5.JPG> |
+| `Domus-rovine-6.JPG` | Zanner | Public domain | <https://commons.wikimedia.org/wiki/File:Domus_rovine_6.JPG> |
+| `Albano-Laziale---villa-Gneo-Pompeo-Magno.JPG` | Deblu68 | Public domain | <https://commons.wikimedia.org/wiki/File:Albano_Laziale_-_villa_Gneo_Pompeo_Magno.JPG> |
+| `Anfiteatro-di-arezzo-opus-reticulatum-02.JPG` | Sailko | CC BY-SA 3.0 | <https://commons.wikimedia.org/wiki/File:Anfiteatro_di_arezzo,_opus_reticulatum_02.JPG> |
+| `Anfiteatro-di-arezzo-opus-reticulatum-01.JPG` | Sailko | CC BY-SA 3.0 | <https://commons.wikimedia.org/wiki/File:Anfiteatro_di_arezzo,_opus_reticulatum_01.JPG> |
+| `Antiche-Ville-Romane-Agnuli-Mattinata-01.jpg` | Alessandro Fazzini | CC BY-SA 4.0 | <https://commons.wikimedia.org/wiki/File:Antiche_Ville_Romane_Agnuli_Mattinata_01.jpg> |
+
+#### `street/` — Roman road and street paving (6 files)
+
+| File | Creator | Licence | Source page |
+| --- | --- | --- | --- |
+| `Forum-Aemilianum-stretch-of-the-Via-Appia-Tarracina-Anxur-Terracina-It` | Carole Raddato from FRANKFURT, Germany | CC BY-SA 2.0 | <https://commons.wikimedia.org/wiki/File:Forum_Aemilianum,_stretch_of_the_Via_Appia,_Tarracina_(Anxur),_Terracina,_Italy_(15224581792).jpg> |
+| `Remaining-side-of-the-quadrifrons-four-sided-arch-under-which-lay-a-we` | Carole Raddato from FRANKFURT, Germany | CC BY-SA 2.0 | <https://commons.wikimedia.org/wiki/File:Remaining_side_of_the_quadrifrons_(four-sided)_arch_under_which_lay_a_well-preserved_stretch_of_the_ancient_Via_Appia,_Tarracina_(Anxur),_Terracina,_Italy_(15221851581).jpg> |
+| `Forum-Aemilianum-stretch-of-the-Via-Appia-Tarracina-Anxur-Terracina-It` | Carole Raddato from FRANKFURT, Germany | CC BY-SA 2.0 | <https://commons.wikimedia.org/wiki/File:Forum_Aemilianum,_stretch_of_the_Via_Appia,_Tarracina_(Anxur),_Terracina,_Italy_(15038262980).jpg> |
+| `Katakomben---panoramio-4-.jpg` | Michael aus Halle | CC BY-SA 3.0 | <https://commons.wikimedia.org/wiki/File:Katakomben_-_panoramio_(4).jpg> |
+| `Milestones-recording-Hadrian-s-restoration-of-the-Via-Appia-in-AD-123-` | Carole Raddato | CC BY-SA 2.0 | <https://commons.wikimedia.org/wiki/File:Milestones_recording_Hadrian%27s_restoration_of_the_Via_Appia_in_AD_123,_Benevento,_Italy.jpg> |
+| `Santuario-di-Monte-Sant-Angelo.-Le-Mura---Resti-torri-quadrangolari-de` | Xavier121 | CC BY-SA 3.0 | <https://commons.wikimedia.org/wiki/File:Santuario_di_Monte_Sant%27Angelo._Le_Mura_-_Resti_torri_quadrangolari_della_porta_attraversata_dall%27appia.JPG> |
+
+#### `insula/` — Insulae — Ostia Antica apartment blocks (6 files)
+
+| File | Creator | Licence | Source page |
+| --- | --- | --- | --- |
+| `Insula-in-Ostia.jpg` | Dennis G. Jarvis | CC BY-SA 2.0 | <https://commons.wikimedia.org/wiki/File:Insula_in_Ostia.jpg> |
+| `La-maison-de-Diane-Ostia-Antica-5900777253-.jpg` | Jean-Pierre Dalbéra from Paris, France | CC BY 2.0 | <https://commons.wikimedia.org/wiki/File:La_maison_de_Diane_(Ostia_Antica)_(5900777253).jpg> |
+| `La-maison-de-Diane-Ostia-Antica-5901008906-.jpg` | Jean-Pierre Dalbéra from Paris, France | CC BY 2.0 | <https://commons.wikimedia.org/wiki/File:La_maison_de_Diane_(Ostia_Antica)_(5901008906).jpg> |
+| `099-Ostia-antica.JPG` | Robert Schediwy | CC BY-SA 4.0 | <https://commons.wikimedia.org/wiki/File:099_Ostia_antica.JPG> |
+| `Italy-0322-5153505665-.jpg` | Dennis G. Jarvis | CC BY-SA 2.0 | <https://commons.wikimedia.org/wiki/File:Italy-0322_(5153505665).jpg> |
+| `DSCN2221-5321766054-.jpg` | Manuel Ramírez Sánchez from Las Palmas de Gran Canaria, Espa | CC BY-SA 2.0 | <https://commons.wikimedia.org/wiki/File:DSCN2221_(5321766054).jpg> |
+
+#### `kit-armour/` — Roman armour, helmets and military dress (10 files)
+
+| File | Creator | Licence | Source page |
+| --- | --- | --- | --- |
+| `007-Conrad-Cichorius-Die-Reliefs-der-Traianss-ule-Tafel-VII-Ausschnitt` | Attributed to Apollodorus of Damascus / Conrad Cichorius | Public domain | <https://commons.wikimedia.org/wiki/File:007_Conrad_Cichorius,_Die_Reliefs_der_Traianss%C3%A4ule,_Tafel_VII_(Ausschnitt_01).jpg> |
+| `046-Conrad-Cichorius-Die-Reliefs-der-Traianss-ule-Tafel-XLVI-Ausschnit` | Attributed to Apollodorus of Damascus / Conrad Cichorius | Public domain | <https://commons.wikimedia.org/wiki/File:046_Conrad_Cichorius,_Die_Reliefs_der_Traianss%C3%A4ule,_Tafel_XLVI_(Ausschnitt_01).jpg> |
+| `Column-of-Marcus-Aurelius---detail3.jpg` | Barosaurus Lentus | CC BY 3.0 | <https://commons.wikimedia.org/wiki/File:Column_of_Marcus_Aurelius_-_detail3.jpg> |
+| `Legio-XXI-Rapax---Sechsel-uten-2011---Lindenhof-2011-04-10-15-58-54.JP` | Roland zh | CC BY-SA 3.0 | <https://commons.wikimedia.org/wiki/File:Legio_XXI_Rapax_-_Sechsel%C3%A4uten_2011_-_Lindenhof_2011-04-10_15-58-54.JPG> |
+| `Legio-XXI-Rapax---Sechsel-utenumzug---Sch-tzengasse-Bahnhostrasse-2011` | Roland zh | CC BY-SA 3.0 | <https://commons.wikimedia.org/wiki/File:Legio_XXI_Rapax_-_Sechsel%C3%A4utenumzug_-_Sch%C3%BCtzengasse-Bahnhostrasse_2011-04-11_14-56-50.JPG> |
+| `KMM---Lorica-segmentata.jpg` | Wolfgang Sauber | CC BY-SA 3.0 | <https://commons.wikimedia.org/wiki/File:KMM_-_Lorica_segmentata.jpg> |
+| `A-possible-incomplete-Roman-strap-fitting-for-plate-armour-lorica-segm` | Museum of London, Ben Paites, 2014-11-19 16:31:54 | CC BY-SA 4.0 | <https://commons.wikimedia.org/wiki/File:A_possible_incomplete_Roman_strap_fitting_for_plate_armour_(lorica_segmentata),_dating_to_the_1st_century_AD._(FindID_650176).jpg> |
+| `LegionariaAquilifer-2-.JPG` | Notafly | CC BY-SA 3.0 | <https://commons.wikimedia.org/wiki/File:LegionariaAquilifer_(2).JPG> |
+| `Lorica-corbridgeA.jpg` | Suetonius | CC BY-SA 3.0 | <https://commons.wikimedia.org/wiki/File:Lorica_corbridgeA.jpg> |
+| `Lorica-corbridgeB.jpg` | Suetonius | CC BY-SA 3.0 | <https://commons.wikimedia.org/wiki/File:Lorica_corbridgeB.jpg> |
+
+#### `kit-shield/` — Roman shields and military reliefs (6 files)
+
+| File | Creator | Licence | Source page |
+| --- | --- | --- | --- |
+| `AdamclisiMetope32.jpg` | CristianChirita | CC BY-SA 3.0 | <https://commons.wikimedia.org/wiki/File:AdamclisiMetope32.jpg> |
+| `AdamclisiMetope36.jpg` | CristianChirita | CC BY-SA 3.0 | <https://commons.wikimedia.org/wiki/File:AdamclisiMetope36.jpg> |
+| `AdamclisiMetope37.jpg` | CristianChirita | CC BY-SA 3.0 | <https://commons.wikimedia.org/wiki/File:AdamclisiMetope37.jpg> |
+| `051-Conrad-Cichorius-Die-Reliefs-der-Traianss-ule-Tafel-LI-Ausschnitt-` | Attributed to Apollodorus of Damascus / Conrad Cichorius | Public domain | <https://commons.wikimedia.org/wiki/File:051_Conrad_Cichorius,_Die_Reliefs_der_Traianss%C3%A4ule,_Tafel_LI_(Ausschnitt_01).jpg> |
+| `Boucliers-escudos---larousse-.jpg` | S. Sibonis de L. | Public domain | <https://commons.wikimedia.org/wiki/File:Boucliers_(escudos_-_larousse).jpg> |
+| `Altar-Domitius-Ahenobarbus-Louvre-n3bis.jpg` | Unknown artist Unknown artist | Public domain | <https://commons.wikimedia.org/wiki/File:Altar_Domitius_Ahenobarbus_Louvre_n3bis.jpg> |
