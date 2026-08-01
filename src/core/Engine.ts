@@ -263,10 +263,35 @@ export class Engine {
   advance(seconds: number, stepMs = 1000 / 60): void {
     const n = Math.max(1, Math.round((seconds * 1000) / stepMs));
     let t = this.time.elapsed * 1000;
+    /*
+     * Re-baseline before feeding synthetic timestamps, or this advances far more than asked.
+     *
+     * `t` is seeded from `time.elapsed`, a cumulative sum of *clamped* deltas. `beginFrame`
+     * differences its argument against `lastNow`, which holds the previous *raw* timestamp.
+     * Those are two different clocks and they diverge the moment anything clamps — so the
+     * first synthetic frame produces a delta with no relation to `stepMs`, and whichever way
+     * it diverged the result is wrong: ahead of the wall clock it pins at the 0.25 s clamp
+     * and fires all five `maxStepsPerFrame` ticks, behind it goes negative and clamps to 0.
+     *
+     * Measured: `advance(1e-6, 1e-3)` moved the battle ~0.13 s, not one microsecond, while
+     * `probe-shadow.mjs` carried a comment asserting the opposite. Any probe that used a
+     * tiny advance to hold the world still was differencing two frames five sim ticks apart
+     * and calling it a noise floor. This is the same five-ticks-per-rendered-frame error that
+     * made every fps figure in this project's history roughly double the truth; it was fixed
+     * in `tools/shoot.mjs` and left live everywhere else, which is why it is fixed here now
+     * rather than in each caller.
+     *
+     * `rebase` rather than `resync`: the latter also zeroes the accumulator, which would stop
+     * N short advances being equivalent to one long one — exactly what determinism tests compare.
+     */
+    this.time.rebase(t);
     for (let i = 0; i < n; i++) {
       t += stepMs;
       this.frame(t);
     }
+    // Hand the clock back to real time; the next rAF timestamp must not be differenced
+    // against a synthetic one.
+    this.time.rebase();
   }
 
   private attachResize(): void {

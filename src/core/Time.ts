@@ -102,4 +102,20 @@ export class Time {
     this.accumulator = 0;
     this.lastNow = -1;
   }
+
+  /**
+   * Re-baseline the frame clock, keeping sub-tick accumulator debt.
+   *
+   * `resync` cannot be used for this: it also zeroes the accumulator, so calling it around
+   * each synthetic run would make N short advances stop being equivalent to one long one,
+   * and determinism checks compare exactly that.
+   *
+   * Pass a timestamp to continue the clock from it. Pass nothing to make the next frame a
+   * zero-delta baseline, which is what the live rAF loop needs after synthetic timestamps
+   * have been fed in — otherwise its first real `performance.now()` differences against a
+   * synthetic value and lands on the 0.25 s clamp.
+   */
+  rebase(nowMs?: number): void {
+    this.lastNow = nowMs === undefined ? -1 : nowMs / 1000;
+  }
 }
