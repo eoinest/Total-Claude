@@ -40,7 +40,7 @@ import type { SkySystem } from './SkySystem';
  *  while being low enough that a polished helmet crown actually reaches it. */
 const BLOOM_THRESHOLD = 0.95;
 const BLOOM_KNEE = 0.4;
-const BLOOM_STRENGTH = 0.07;
+const BLOOM_STRENGTH = 0.085;
 /** AO sampling radius in metres. A man is 1.75 m; 1.1 m darkens the gaps between
  *  ranks and the contact under a shield without haloing whole formations. */
 const AO_RADIUS = 1.1;
@@ -348,7 +348,7 @@ export class PostFXSystem implements Subsystem {
 
     // ---- composite: AO + aerial perspective ------------------------------
     this.mComposite = this.pass(
-      cam + /* glsl */ `
+      cam + HASH_GLSL + /* glsl */ `
       uniform sampler2D tScene;
       uniform sampler2D tAo;
       uniform samplerCube tSky;
@@ -358,6 +358,11 @@ export class PostFXSystem implements Subsystem {
       // x: sigma0 (1/m), y: scale height (m), z: sun in-scatter gain, w: ao floor
       uniform vec4 uHaze;
       uniform vec3 uHazeTint;
+      // Gain on the in-scattered radiance. x/y/z tint it; see uInscat below.
+      uniform vec3 uInscat;
+      // x: how much chroma the haze strips per unit optical depth, y: the sky
+      // elevation the in-scatter lookup is lifted to for a horizontal ray
+      uniform vec2 uAerial;
       uniform float uMieG;
       varying vec2 vUv;
 
@@ -419,16 +424,20 @@ export class PostFXSystem implements Subsystem {
 
         vec3 T = exp( -od * uHazeTint );
 
-        // Light scattered into a near-ground ray comes from the sky *above* the
-        // haze, so the lookup must never dip into the cube's dark ground
-        // hemisphere: a ray angled down would otherwise fade distant terrain
-        // toward black instead of toward the sky.
+        // Haze strips chroma faster than contrast; extinction alone only reaches
+        // the in-scatter's own chroma, short of A2.
+        float fade = 1.0 - exp( -od * uAerial.x );
+        col = mix( col, vec3( tcLuma( col ) ), fade );
+
+        // Never the cube's dark ground hemisphere, and never the horizon band
+        // either: that is the sun's forward lobe through 100 km of air, near-white,
+        // and it faded distance toward milk brighter than the near subject. The
+        // lobe is added separately below, so the base lifts to uAerial.y.
+        float lift = uAerial.y;
         vec3 lookDir = normalize( vec3(
-          dir.x, mix( 0.035, max( dir.y, 0.035 ), smoothstep( 0.0, 0.35, dir.y ) ), dir.z
+          dir.x, mix( lift, max( dir.y, lift ), smoothstep( 0.0, 0.5, dir.y ) ), dir.z
         ) );
-        vec3 inscat = textureCube( tSky, lookDir ).rgb;
-        // The cube holds the whole-column average phase. Ground aerosol is far
-        // more forward-scattering, so the last kilometre glows toward the sun.
+        vec3 inscat = textureCube( tSky, lookDir ).rgb * uInscat;
         inscat *= 1.0 + hg( dot( dir, uSunDir ), uMieG ) * uHaze.z;
 
         gl_FragColor = vec4( col * T + inscat * ( 1.0 - T ), 1.0 );
@@ -444,6 +453,11 @@ export class PostFXSystem implements Subsystem {
         uSunDir: { value: new THREE.Vector3(0, 1, 0) },
         uHaze: { value: new THREE.Vector4(0.0013, 620, 2.2, 0.35) },
         uHazeTint: { value: new THREE.Vector3(0.94, 1.0, 1.12) },
+        // 0.80 of the lifted sky radiance. A haze layer 600 m deep sees only part
+        // of the dome, and the frame needs distance to sit at or below the lit
+        // subject's value for the subject to read as the subject.
+        uInscat: { value: new THREE.Vector3(0.86, 0.88, 0.96) },
+        uAerial: { value: new THREE.Vector2(1.1, 0.22) },
         uMieG: { value: 0.72 },
       },
     );
@@ -692,6 +706,8 @@ export class PostFXSystem implements Subsystem {
       uniform vec2 uSplit;
       // x: shoulder knee, y: shoulder strength
       uniform vec2 uShoulder;
+      // x: chroma gain at zero chroma, y: chroma where the gain reaches 1
+      uniform vec2 uVibrance;
       varying vec2 vUv;
 
       void main() {
@@ -751,7 +767,14 @@ export class PostFXSystem implements Subsystem {
         // Desaturate the shadows a little more than the highlights: dust in shade
         // reads muted. Not far, though — the cool cast is the point of A1 and
         // pulling shadows toward grey is the fastest way to throw it away.
-        float sat = mix( uGrade.z, uGrade.w, split );
+        //
+        // Vibrance, not saturation: the gain falls to 1 as chroma rises, so the
+        // near-neutral khaki the ground collapsed to separates back into grass and
+        // dirt while Roman red and gold stay the only fully saturated notes. A flat
+        // saturation gain instead pushes those two past the shoulder into poster paint.
+        float chroma = length( c - vec3( l ) ) / max( l, 1e-3 );
+        float vib = mix( uVibrance.x, 1.0, smoothstep( 0.0, uVibrance.y, chroma ) );
+        float sat = mix( uGrade.z, uGrade.w, split ) * vib;
         c = mix( vec3( l ), c, sat );
         c = max( c, vec3( 0.0 ) );
 
@@ -775,20 +798,26 @@ export class PostFXSystem implements Subsystem {
         // saturation. The black point has to be well clear of AgX's toe or the
         // darkest thing in the frame is a 20 % grey and the image has no anchor;
         // 0.05 is where the deepest crevice between two men reaches zero.
-        uGrade: { value: new THREE.Vector4(0.42, 0.006, 1.02, 1.3) },
+        uGrade: { value: new THREE.Vector4(0.46, 0.008, 1.06, 1.26) },
         // Pivot at 0.16 render units: measured, that is where a dry-grass ground
         // in full sun sits, so raising the exponent pivots the frame about the
-        // subject rather than about the sky.
-        uContrast: { value: new THREE.Vector3(1.8, 0.16, 0.0026) },
+        // subject rather than about the sky. The pedestal goes up with the exponent
+        // or the same change that widens the range also crushes the bottom of it.
+        uContrast: { value: new THREE.Vector3(1.85, 0.16, 0.004) },
         // Measured against twelve real Rome II frames: their lit surfaces average
         // an r/g/b chromaticity of 1.25/0.96/0.79 and their shadows 1.06/0.90/1.02
         // — warm light, cool shade, and red clearly above green in the sun. Ours
         // measured 1.05/1.03/0.93 and 0.87/1.03/1.10, so the tints carry the frame
         // the rest of the way warm without touching the physical light.
-        uShadowTint: { value: new THREE.Vector3(0.9, 0.96, 1.18) },
+        uShadowTint: { value: new THREE.Vector3(0.94, 0.97, 1.12) },
         uHighlightTint: { value: new THREE.Vector3(1.18, 0.985, 0.82) },
-        uSplit: { value: new THREE.Vector2(0.05, 0.48) },
+        // Display-linear, not sRGB. Shadowed ground measures 0.033 and lit ground
+        // 0.26, so a crossover at 0.48 put the entire frame on the *shadow* side of
+        // the split and cooled the sunlit ground: A1 inverted, and a large part of
+        // why the frames read milky. 0.03..0.16 straddles the real boundary.
+        uSplit: { value: new THREE.Vector2(0.03, 0.16) },
         uShoulder: { value: new THREE.Vector2(0.92, 1.7) },
+        uVibrance: { value: new THREE.Vector2(1.32, 0.34) },
       },
     );
 
@@ -942,7 +971,7 @@ export class PostFXSystem implements Subsystem {
         tSrc: { value: null },
         uTexel: { value: new THREE.Vector2() },
         uSharpen: { value: 0.32 },
-        uVignette: { value: 0.2 },
+        uVignette: { value: 0.26 },
         uGrain: { value: 0.016 },
         uTime: { value: 0 },
       },

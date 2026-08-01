@@ -100,7 +100,20 @@ export interface SkyPreset {
    * because a 26 deg sun delivers only 0.43 of its irradiance to level ground.
    */
   exposure: number;
-  /** How much of the direct sun a full cloud removes. */
+  /**
+   * How much of the direct sun a full cloud removes.
+   *
+   * From a high camera a flat plain under a 26 deg sun has no self-shadowing, so
+   * cloud shade is the *only* large-scale tonal structure the ground can have, and
+   * the only thing that separates a sunlit army from a shaded middle distance. At
+   * 0.34 it was a sixth of a stop and invisible.
+   *
+   * Measured, the sky fill is 22.5 % of a lit surface's irradiance here, so 0.58
+   * is 0.85 of a stop of scene ratio, which the grade's contrast exponent turns
+   * into about 1.6 stops on screen. Physically a thick cumulus takes far more than
+   * that, and 0.8 was tried: it reads as night, because a whole frame lands inside
+   * one cloud. The finer shadow field in `SkySystem.applyTime` is the other half.
+   */
   cloudShadowStrength: number;
 }
 
@@ -116,39 +129,44 @@ export interface SkyPreset {
  */
 export const SKY_PRESETS: Record<string, SkyPreset> = {
   dawn: {
-    hour: 7.5, turbidity: 3.4, groundAlbedo: 0.11, msScale: 0.36,
+    hour: 7.5, turbidity: 3.1, groundAlbedo: 0.11, msScale: 0.32,
     cloudCoverage: 0.5, cloudSoftness: 0.1, cloudDensity: 7.0, cirrusCoverage: 0.62,
-    hazeDensity: 0.00062, hazeHeight: 430, exposure: 5.1, cloudShadowStrength: 0.34,
+    hazeDensity: 0.00058, hazeHeight: 430, exposure: 5.75, cloudShadowStrength: 0.56,
   },
   morning: {
-    hour: 9.8, turbidity: 2.7, groundAlbedo: 0.13, msScale: 0.29,
+    hour: 9.8, turbidity: 2.35, groundAlbedo: 0.13, msScale: 0.25,
     cloudCoverage: 0.54, cloudSoftness: 0.09, cloudDensity: 8.0, cirrusCoverage: 0.66,
-    hazeDensity: 0.00029, hazeHeight: 640, exposure: 3.7, cloudShadowStrength: 0.34,
+    hazeDensity: 0.00028, hazeHeight: 640, exposure: 4.2, cloudShadowStrength: 0.58,
   },
   noon: {
-    hour: 12.0, turbidity: 2.3, groundAlbedo: 0.14, msScale: 0.27,
+    hour: 12.0, turbidity: 2.05, groundAlbedo: 0.14, msScale: 0.23,
     cloudCoverage: 0.57, cloudSoftness: 0.08, cloudDensity: 8.5, cirrusCoverage: 0.7,
-    hazeDensity: 0.00024, hazeHeight: 780, exposure: 3.05, cloudShadowStrength: 0.36,
+    hazeDensity: 0.00023, hazeHeight: 780, exposure: 3.45, cloudShadowStrength: 0.6,
   },
+  // The default look. Turbidity down from 2.6 and multiple scattering from 0.28:
+  // both were filling the horizon band with near-white haze, which is the colour
+  // aerial perspective then fades every distant surface toward. At 2.25 the dome
+  // holds a blue-grey the distance can recede into and the IBL it feeds carries
+  // that blue into shadow, which is A1 and A2 in one change.
   afternoon: {
-    hour: 14.3, turbidity: 2.6, groundAlbedo: 0.13, msScale: 0.28,
+    hour: 14.3, turbidity: 2.25, groundAlbedo: 0.13, msScale: 0.24,
     cloudCoverage: 0.55, cloudSoftness: 0.085, cloudDensity: 8.2, cirrusCoverage: 0.68,
-    hazeDensity: 0.00032, hazeHeight: 620, exposure: 3.7, cloudShadowStrength: 0.34,
+    hazeDensity: 0.00031, hazeHeight: 620, exposure: 4.2, cloudShadowStrength: 0.58,
   },
   goldenHour: {
-    hour: 16.4, turbidity: 3.1, groundAlbedo: 0.12, msScale: 0.34,
+    hour: 16.4, turbidity: 2.85, groundAlbedo: 0.12, msScale: 0.3,
     cloudCoverage: 0.52, cloudSoftness: 0.1, cloudDensity: 7.5, cirrusCoverage: 0.6,
-    hazeDensity: 0.00052, hazeHeight: 500, exposure: 4.5, cloudShadowStrength: 0.32,
+    hazeDensity: 0.00048, hazeHeight: 500, exposure: 5.05, cloudShadowStrength: 0.54,
   },
   overcast: {
     hour: 13.5, turbidity: 7.5, groundAlbedo: 0.12, msScale: 0.72,
     cloudCoverage: 0.2, cloudSoftness: 0.22, cloudDensity: 11.0, cirrusCoverage: 0.34,
-    hazeDensity: 0.00085, hazeHeight: 900, exposure: 2.8, cloudShadowStrength: 0.5,
+    hazeDensity: 0.00085, hazeHeight: 900, exposure: 3.05, cloudShadowStrength: 0.72,
   },
   storm: {
     hour: 16.2, turbidity: 10.5, groundAlbedo: 0.1, msScale: 0.62,
     cloudCoverage: 0.1, cloudSoftness: 0.26, cloudDensity: 14.0, cirrusCoverage: 0.26,
-    hazeDensity: 0.00125, hazeHeight: 800, exposure: 3.25, cloudShadowStrength: 0.62,
+    hazeDensity: 0.00125, hazeHeight: 800, exposure: 3.55, cloudShadowStrength: 0.8,
   },
 };
 

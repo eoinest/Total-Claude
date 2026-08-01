@@ -368,9 +368,15 @@ export class LightingSystem implements Subsystem {
       // silhouette. A low, warm, unshadowed fill lifts precisely that and barely
       // touches level ground, where cos falls away — which is what lets the
       // ground's own lit:shadow ratio stay at 8:1 while the men come back.
+      //
+      // 0.18, up from 0.11, measured off the germanhorde camera: the Juthungi body
+      // cloth was landing at 4.8 % display with its 10th percentile at 0.6 %, i.e.
+      // black, and this light is the only one that reaches those normals. It buys
+      // about 0.6 of a stop there while level ground, where cos falls away, barely
+      // moves. It cannot close the gap on its own; see the note on cloth albedo.
       this.bounce.position.set(-sky.sunDirection.x, -0.2, -sky.sunDirection.z).multiplyScalar(300);
       this.bounce.color.copy(sky.sunColour);
-      this.bounce.intensity = sky.sunIntensity * 0.11;
+      this.bounce.intensity = sky.sunIntensity * 0.18;
     }
 
     // The camera's projection changes every frame (RTSCamera couples fov, near

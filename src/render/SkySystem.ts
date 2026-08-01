@@ -40,13 +40,9 @@ import {
 const CLOUD_ALTITUDE = 1700;
 /** Cirrus at 7 km, the low end of the real range, so the parallax stays visible. */
 const CIRRUS_ALTITUDE = 7000;
-/**
- * World metres -> cloud noise uv. A 7.7 km tile puts the base octave's features
- * at ~3.8 km and the second at ~1.5 km, which is the real size range of
- * continental cumulus — and it means the 2.8 km battlefield sees more than one
- * cloud shadow at a time instead of sitting under a single blanket.
- */
-const CLOUD_UV_SCALE = 0.00013;
+/** Visible deck. A 5.6 km tile puts base features at ~2.8 km and the second at
+ *  ~1.1 km, the real size range of continental cumulus. */
+const CLOUD_UV_SCALE = 0.00018;
 const CIRRUS_UV_SCALE = 0.00005;
 /** Cube face resolution for the baked atmosphere. The sky gradient is smooth
  *  enough that 256 (0.35 deg/texel) interpolates without visible banding. */
@@ -815,7 +811,9 @@ export class SkySystem implements Subsystem {
       u.uCloudNoise.value = this.cloudNoiseTexture;
     }
 
-    this.cloudUniformA.set(CLOUD_UV_SCALE, this.cloudUniformA.y, this.cloudUniformA.z,
+    // Shadow field 2.4x finer than the deck: at one scale a fixed camera measured
+    // 85 %, 0 % and 0 % shaded over three tile sizes, phase deciding not coverage.
+    this.cloudUniformA.set(CLOUD_UV_SCALE * 2.4, this.cloudUniformA.y, this.cloudUniformA.z,
       this.rawCoverage(this.preset.cloudCoverage));
     this.cloudUniformB.set(
       this.rawSoftness(this.preset.cloudSoftness), this.preset.cloudShadowStrength,
@@ -850,8 +848,9 @@ export class SkySystem implements Subsystem {
         this.windTime * 17.0 * CIRRUS_UV_SCALE, this.windTime * -4.0 * CIRRUS_UV_SCALE * 0.28,
       );
     }
-    this.cloudUniformA.y = this.windTime * 7.0 * s;
-    this.cloudUniformA.z = this.windTime * 2.4 * s;
+    // Same metres per second as the deck, in the shadow field's own finer uv.
+    this.cloudUniformA.y = this.windTime * 7.0 * this.cloudUniformA.x;
+    this.cloudUniformA.z = this.windTime * 2.4 * this.cloudUniformA.x;
   }
 
   preRender(ctx: EngineContext): void {
