@@ -32,7 +32,7 @@ const CONTROLS: Array<[string, string]> = [
   ['Left ×2', 'Select all of that type'],
   ['Right click', 'Move here, or attack an enemy'],
   ['Right drag', 'Frontage and facing'],
-  ['Middle drag', 'Grab and drag the ground'],
+  ['Middle drag', 'Turn the view'],
   ['Wheel', 'Zoom'],
   ['Screen edge', 'Pan'],
   ['Compass', 'Drag to turn · click for north'],

@@ -103,7 +103,8 @@ body[data-cur='friend'] #viewport {
 }
 
 body[data-cur='select'] #viewport { cursor: crosshair; }
-body[data-cur='pan'] #viewport { cursor: grabbing; }
+/* Middle drag turns the view on the horizontal axis, so the cursor points along it. */
+body[data-cur='turn'] #viewport { cursor: ew-resize; }
 
 /* ---------------------------------------------------------------- loading -- */
 

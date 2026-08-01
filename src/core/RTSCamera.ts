@@ -12,9 +12,9 @@ import type { Input } from './Input';
  *
  * Mouse routes, one gesture per job so none of them has a second meaning:
  *   wheel                zoom
- *   middle drag          grab the ground and pull it
+ *   middle drag          turn the view, Total War's rotate gesture
  *   cursor at the edge   pan
- *   HUD compass drag     turn (see `rotateBy`); the right button belongs to orders
+ *   HUD compass drag     turn as well (see `rotateBy`); the right button belongs to orders
  * WASD, arrows and Q/E remain as keyboard accelerators for the same three jobs.
  */
 
@@ -205,11 +205,21 @@ export class RTSCamera {
       this.zoomTarget = clamp(this.zoomTarget + input.wheel * 0.075, 0, 1);
     }
 
-    // ---- Turn (Q/E; the mouse route is the HUD compass, which calls `rotateBy`) ----
+    // ---- Turn (middle drag; also the HUD compass and Q/E, both via `rotateBy`) ----
+    //
+    // Rome II's rotate gesture. The ground spins the way the cursor travels, so a rightward
+    // drag brings what was on the left into frame. Scaled by viewport width rather than a
+    // fixed rad-per-pixel so one screen width is a full revolution at any resolution, which
+    // is a quarter turn per 400 px stroke at 1600 px wide. The vertical axis is unused on
+    // purpose: pitch is a function of zoom (`pitchForZoom`), so a drag has no pitch to drive.
+    const mmb = input.mmb;
+    if (mmb.down && mmb.dx !== 0) {
+      this.rotateBy((mmb.dx * Math.PI * 2) / Math.max(1, viewW));
+    }
     if (input.key('KeyQ')) this.yawTarget += dt * 1.35;
     if (input.key('KeyE')) this.yawTarget -= dt * 1.35;
 
-    // ---- Pan (WASD / arrows / MMB drag / screen edge) ----
+    // ---- Pan (WASD / arrows / screen edge; there is no drag-to-pan, as in Total War) ----
     let fx = 0;
     let fy = 0;
     if (input.key('KeyW') || input.key('ArrowUp')) fy += 1;
@@ -241,16 +251,6 @@ export class RTSCamera {
       const rate = this.panRate * dt;
       mRight = fx * rate;
       mFwd = fy * rate;
-    }
-
-    // Middle drag is a grab, not a throttle: the ground follows the cursor metre for pixel.
-    // A vertical pixel covers 1/sin(pitch) of what a horizontal one does, capped because
-    // near the minimum pitch that ratio passes 10 and the field bolts out from under you.
-    const mmb = input.mmb;
-    if (mmb.down) {
-      const m = this.metresPerPixel(viewH);
-      mRight -= mmb.dx * m;
-      mFwd += mmb.dy * m * Math.min(3, 1 / Math.max(0.2, Math.sin(this.pitch)));
     }
 
     if (mRight !== 0 || mFwd !== 0) {

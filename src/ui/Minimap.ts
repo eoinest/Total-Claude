@@ -159,11 +159,10 @@ export class Minimap {
   }
 
   /**
-   * The camera's only mouse route to yaw: drag the rose to turn, click it to face north.
-   *
-   * Rotation cannot ride the right button, which issues orders, and a keyboard-only turn
-   * would leave the camera half unreachable by mouse. 0.014 rad per pixel puts a full
-   * revolution in 450 px of travel, close enough to grab a heading in one gesture.
+   * The second mouse route to yaw beside a middle-button drag on the field: drag the rose
+   * to turn, click it to face north. Rotation cannot ride the right button, which issues
+   * orders. 0.014 rad per pixel puts a full revolution in 450 px of travel, faster per
+   * pixel than the field drag because the rose is a stud rather than the whole viewport.
    */
   private attachCompass(el: HTMLElement, ctx: EngineContext): void {
     let turning = false;

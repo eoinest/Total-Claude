@@ -12,6 +12,9 @@
  *   shift + right         queue the order behind the current one
  *   alt + right           run instead of march
  *   ctrl + right          attack-move
+ *
+ * The middle button belongs to the camera (`RTSCamera` turns the view with it), so nothing
+ * here reads it beyond setting the cursor.
  */
 
 import type { EngineContext } from '../core/Engine';
@@ -26,7 +29,7 @@ import type { PointerTracker } from './pointer';
 import { abilityUI, PLAYER_FACTION } from './theme';
 import type { GhostSpec, WorldOverlay } from './WorldOverlay';
 
-export type CursorKind = 'default' | 'move' | 'attack' | 'friend' | 'select' | 'pan';
+export type CursorKind = 'default' | 'move' | 'attack' | 'friend' | 'select' | 'turn';
 
 /** Pixels of pointer travel before a click becomes a drag. */
 const DRAG_PX = 7;
@@ -682,9 +685,10 @@ export class SelectionController {
 
   // ---- Cursor ----
 
-  private updateCursor(hovered: number, panning: boolean): void {
+  private updateCursor(hovered: number, turning: boolean): void {
     let c: CursorKind = 'default';
-    if (panning) c = 'pan';
+    // The middle button turns the view, so its cursor reads as a sideways drag, not a grab.
+    if (turning) c = 'turn';
     else if (this.boxing) c = 'select';
     else if (this.ptr.overUi) c = 'default';
     else {

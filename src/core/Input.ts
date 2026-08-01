@@ -60,7 +60,7 @@ export class Input {
    *
    * These used to be derived from one shared cursor position, which is only right while
    * exactly one button is held: on the frame a button went down its delta was measured
-   * against wherever the cursor had been last frame, so a middle-button grab jumped the
+   * against wherever the cursor had been last frame, so a middle-button drag jumped the
    * camera by the distance the mouse had travelled before the press.
    */
   private btnPrevX = [0, 0, 0];

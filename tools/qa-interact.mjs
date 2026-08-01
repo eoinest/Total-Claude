@@ -132,6 +132,9 @@ function record(name, pass, what, changed, note = '') {
 
 /** Settle: let the rAF loop process the input edge and the sim react. */
 const settle = async (ms = 350) => page.waitForTimeout(ms);
+/** Shortest signed angle between two headings, so a yaw delta across the pi seam is honest. */
+const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+const readYaw = (p = page) => p.evaluate(() => +window.__game.engine.rig.yaw.toFixed(4));
 
 // Move a little so the sim is not in its first frame, and give the AI time to deploy.
 await page.evaluate(() => window.__game.advance(6));
@@ -496,6 +499,7 @@ else {
   }, setup.id);
   if (!ends) { record('right-drag frontage', false, 'could not fit a frontage line inside the canvas', 'n/a'); }
   else {
+  const yaw0 = await readYaw();
   await page.mouse.move(ends.a.x, ends.a.y);
   await settle(150);
   await page.mouse.down({ button: 'right' });
@@ -523,6 +527,12 @@ else {
       : `no orderIssued event for selection [${selFront.join(',')}]`,
     ok ? '' : `width carried=${gotWidth} facing carried=${gotFacing} unit.width changed=${widthChanged} ` +
       `targetFacing changed=${facingChanged}`);
+  // The same gesture, measured on the camera. Right-drag once turned the view whenever the
+  // selection happened to be empty, so one drag meant two things depending on hidden state.
+  const yaw1 = await readYaw();
+  record('right-drag holds yaw', Math.abs(wrapPi(yaw1 - yaw0)) < 0.01,
+    'measure the camera yaw across that same right-button drag',
+    `yaw ${yaw0} → ${yaw1} (${Math.abs(wrapPi(yaw1 - yaw0)).toFixed(4)} rad)`);
   }
 }
 
@@ -808,6 +818,152 @@ async function reselect() {
 if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, 'hud-final.png') });
 
 // ---------------------------------------------------------------------------
+// 13. camera gestures: middle drag turns, and the pan routes still pan
+// ---------------------------------------------------------------------------
+/*
+ * Middle drag used to pull the ground and this block used to assert that. It turns the view
+ * now, Total War's gesture, so the claim is inverted: yaw moves, focus holds. Nothing drags
+ * to pan any more, so the rest proves the two pan routes a mouse still has. Mouse-only by
+ * design: no key event appears in the block.
+ */
+{
+  const rig = () => page.evaluate(() => {
+    const r = window.__game.engine.rig;
+    return { x: +r.focus.x.toFixed(2), z: +r.focus.z.toFixed(2), yaw: +r.yaw.toFixed(4) };
+  });
+  // Mid-field and a known heading, so no result is really the focus clamp at the map edge.
+  await page.evaluate(() => { window.__game.setCamera(0, 0, 0.55, Math.PI); window.__game.advance(0.4); });
+  await settle(400);
+
+  // ---- 13a. middle drag turns the view, and no longer pans it ----
+  const cx = Math.round(W * 0.5), cy = Math.round(H * 0.45);
+  await page.mouse.move(cx, cy);
+  await settle(200);
+  const a0 = await rig();
+  await page.mouse.down({ button: 'middle' });
+  for (let i = 1; i <= 12; i++) { await page.mouse.move(cx + i * 25, cy); await page.waitForTimeout(30); }
+  await page.mouse.up({ button: 'middle' });
+  await settle(700);
+  const a1 = await rig();
+  // 300 px of a 1600 px viewport is 3/16 of a turn, 1.18 rad; half that clears any noise.
+  const turn = wrapPi(a1.yaw - a0.yaw);
+  const slid = Math.hypot(a1.x - a0.x, a1.z - a0.z);
+  record('middle drag turns', turn > 0.5,
+    `middle-button drag 300 px to the right across the canvas from ${cx},${cy}`,
+    `yaw ${a0.yaw} → ${a1.yaw} (${turn.toFixed(3)} rad; a rightward drag turns yaw positive, ` +
+    'so the ground spins the way the cursor travels)');
+  record('middle drag never pans', slid < 2,
+    'the same drag, measured on the camera focus instead of the yaw',
+    `focus (${a0.x},${a0.z}) → (${a1.x},${a1.z}), moved ${slid.toFixed(2)} m`);
+  if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, 'middle-drag-turn.png') });
+
+  // ---- 13b. right drag with nothing selected still must not turn the view ----
+  await page.mouse.click(cx, Math.round(H * 0.22));
+  await settle(400);
+  const sel = await page.evaluate(() => window.__selection());
+  const b0 = await rig();
+  await page.mouse.move(cx, cy);
+  await page.mouse.down({ button: 'right' });
+  for (let i = 1; i <= 12; i++) { await page.mouse.move(cx + i * 25, cy); await page.waitForTimeout(30); }
+  await page.mouse.up({ button: 'right' });
+  await settle(700);
+  const b1 = await rig();
+  record('right drag empty holds yaw', Math.abs(wrapPi(b1.yaw - b0.yaw)) < 0.01,
+    `right-button drag 300 px with the selection cleared to [${sel.join(',')}]`,
+    `yaw ${b0.yaw} → ${b1.yaw} (${Math.abs(wrapPi(b1.yaw - b0.yaw)).toFixed(4)} rad)`);
+
+  // ---- 13c. screen-edge pan ----
+  // A panel under the cursor takes the canvas hover away, so the point must clear every one.
+  const edge = await page.evaluate(() => {
+    const rects = Array.from(document.querySelectorAll('#hud-root .interactive'))
+      .map((e) => e.getBoundingClientRect())
+      .filter((r) => r.width > 0 && r.height > 0);
+    const clear = (p) => !rects.some((r) =>
+      p.x >= r.left - 6 && p.x <= r.right + 6 && p.y >= r.top - 6 && p.y <= r.bottom + 6);
+    const h = window.innerHeight, w = window.innerWidth;
+    for (const f of [0.5, 0.4, 0.6, 0.32, 0.68]) {
+      for (const x of [2, w - 3]) {
+        const p = { x, y: Math.round(h * f) };
+        if (clear(p)) return { ...p, side: x < 10 ? 'left' : 'right' };
+      }
+    }
+    return null;
+  });
+  if (!edge) record('screen-edge pan', false, 'no HUD-clear point on either vertical screen edge', 'n/a');
+  else {
+    const c0 = await rig();
+    await page.mouse.move(edge.x, edge.y);
+    await settle(900);
+    const c1 = await rig();
+    // Back to the middle, or the camera keeps panning through every later check.
+    await page.mouse.move(cx, cy);
+    await settle(400);
+    const moved = Math.hypot(c1.x - c0.x, c1.z - c0.z);
+    record('screen-edge pan', moved > 10,
+      `hold the cursor at the ${edge.side} screen edge (${edge.x},${edge.y}) for 900 ms`,
+      `focus (${c0.x},${c0.z}) → (${c1.x},${c1.z}), moved ${moved.toFixed(1)} m; yaw ${c0.yaw} → ${c1.yaw}`);
+  }
+
+  // ---- 13d. minimap drag ----
+  const mm = await page.evaluate(() => {
+    const c = document.querySelector('#hud-root .minimap canvas');
+    if (!c) return null;
+    const r = c.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  });
+  if (!mm) record('minimap drag', false, 'no minimap canvas in the DOM', 'n/a');
+  else {
+    const from = { x: mm.x + mm.w * 0.3, y: mm.y + mm.h * 0.3 };
+    const to = { x: mm.x + mm.w * 0.72, y: mm.y + mm.h * 0.72 };
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await settle(250);
+    const d0 = await rig();
+    for (let i = 1; i <= 8; i++) {
+      await page.mouse.move(from.x + (to.x - from.x) * i / 8, from.y + (to.y - from.y) * i / 8);
+      await page.waitForTimeout(30);
+    }
+    await settle(250);
+    const d1 = await rig();
+    await page.mouse.up();
+    await settle(300);
+    // Measured from the press, which is the click route covered above, so this is the drag.
+    const dragged = Math.hypot(d1.x - d0.x, d1.z - d0.z);
+    record('minimap drag', dragged > 20,
+      `press the minimap plate at 30%,30% and drag to 72%,72% of its ${Math.round(mm.w)}×${Math.round(mm.h)} box`,
+      `focus after the press (${d0.x},${d0.z}) → (${d1.x},${d1.z}) at the end of the drag, ` +
+      `moved ${dragged.toFixed(1)} m while held`);
+  }
+
+  // ---- 13e. the harness contract tools/shoot.mjs grades every other lane through ----
+  // `#loading` is read from the served markup, not the live DOM: `src/main.ts` removes the
+  // node once the game is ready, and shoot.mjs only ever names it in an injected CSS rule.
+  const harness = await page.evaluate(async () => {
+    const g = window.__game;
+    const src = await fetch('/').then((r) => r.text()).catch(() => '');
+    const before = { x: +g.engine.rig.focus.x.toFixed(2), yaw: +g.engine.rig.yaw.toFixed(4) };
+    g.setCamera(-120, 260, 0.5, 1.1);
+    g.advance(0.2);
+    const r = g.engine.rig;
+    return {
+      hud: !!document.getElementById('hud-root'),
+      loadingId: /id=["']loading["']/.test(src),
+      loadingLive: !!document.getElementById('loading'),
+      setCamera: typeof g.setCamera === 'function',
+      before,
+      after: { x: +r.focus.x.toFixed(2), z: +r.focus.z.toFixed(2), zoom: +r.zoom.toFixed(4), yaw: +r.yaw.toFixed(4) },
+    };
+  });
+  const took = harness.after.x === -120 && harness.after.z === 260 && Math.abs(harness.after.yaw - 1.1) < 0.001;
+  record('harness camera contract', harness.hud && harness.loadingId && harness.setCamera && took,
+    'check #hud-root and the #loading id, then drive setCamera(-120, 260, 0.5, 1.1)',
+    `#hud-root ${harness.hud}, #loading declared ${harness.loadingId} (still in the DOM: ` +
+    `${harness.loadingLive}), setCamera ${harness.setCamera}; focus x ${harness.before.x} → ` +
+    `${harness.after.x}, z ${harness.after.z}, zoom ${harness.after.zoom}, ` +
+    `yaw ${harness.before.yaw} → ${harness.after.yaw}`);
+}
+
+// ---------------------------------------------------------------------------
 // Starting through the pre-battle menu
 // ---------------------------------------------------------------------------
 /*
@@ -881,7 +1037,18 @@ if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, 'hud-final.png')
     record('wheel zooms after menu', z1.zoom !== z0.zoom, 'six wheel notches over the canvas',
       `zoom ${z0.zoom} → ${z1.zoom}`);
 
-    // The right button is the order button only, so rotation moved to the minimap compass.
+    // Middle drag on the field, on the real player path rather than behind `?harness=1`.
+    await mp.mouse.move(W * 0.5, H * 0.45);
+    await mp.mouse.down({ button: 'middle' });
+    for (let i = 1; i <= 12; i++) { await mp.mouse.move(W * 0.5 + i * 25, H * 0.45); await mp.waitForTimeout(30); }
+    await mp.mouse.up({ button: 'middle' });
+    await mp.waitForTimeout(700);
+    const zm = await rig();
+    record('middle drag turns after menu', wrapPi(zm.yaw - z1.yaw) > 0.5,
+      'middle-button drag 300 px right across the canvas',
+      `yaw ${z1.yaw} → ${zm.yaw} (${wrapPi(zm.yaw - z1.yaw).toFixed(3)} rad)`);
+
+    // The right button is the order button, so the compass is the second route to yaw.
     const rose = await mp.evaluate(() => {
       const r = document.querySelector('#hud-root .mm-compass').getBoundingClientRect();
       return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
@@ -892,8 +1059,8 @@ if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, 'hud-final.png')
     await mp.mouse.up();
     await mp.waitForTimeout(700);
     const z2 = await rig();
-    record('compass drag rotates after menu', z2.yaw !== z1.yaw, 'drag the minimap compass 120 px across',
-      `yaw ${z1.yaw} → ${z2.yaw}`);
+    record('compass drag rotates after menu', z2.yaw !== zm.yaw, 'drag the minimap compass 120 px across',
+      `yaw ${zm.yaw} → ${z2.yaw}`);
 
     const selCount = async () => mp.evaluate(() => {
       const t = document.querySelector('.hud-perf')?.textContent ?? '';
