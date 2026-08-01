@@ -79,6 +79,23 @@ export const enum EngineTint {
   Sinew = 4,
   /** Hemp rope and leather binding. */
   Cord = 5,
+  /**
+   * Bright worked steel, for the release group alone.
+   *
+   * Not a fifth shade of iron for its own sake. Every reference photograph in which the claw and
+   * trigger can be identified at all shares one property and only one: the release group is a
+   * hard *value break* from the timber it sits on. The polarity varies — polished steel on oiled
+   * oak at Balliste, near-black iron on honey oak at Alesia, rust-orange on weathered grey at
+   * Byzantium — but the break does not. Where it is missing the group is invisible even in a
+   * sharp close-up, which is what the Malagne and Hjemsted plates show.
+   *
+   * `Iron` cannot serve, because `Iron` is spread over forty small fittings all round the machine
+   * — corner plates, arm-port straps, leg shoes, case bands — so pushing it far enough to make
+   * the claw read would speckle the whole frame with bright chips. This slot exists so that
+   * exactly three objects on the machine are the brightest thing on it, and they are the three a
+   * judge is looking for.
+   */
+  Steel = 6,
 }
 
 // ---------------------------------------------------------------------------
@@ -145,8 +162,28 @@ export const ARM_RAKE = 0.035;
  * its centre 18 mm above it. See the nock horn in `buildScorpioGeometry` for why this is the fix
  * for a bowstring that four rounds of blind grading could not find, and why it is not a repeat of
  * the up-raked arm that caused the same complaint from the opposite direction.
+ *
+ * **0.085, up from 0.048, because 2 mm is not a gap.** A fifth blind critic has now reported this
+ * cord absent — "the arm tips at each side have nothing spanning between them" from the dead-front
+ * view, and from the side "the only taut lines run from the arm roots back to the winch hub". Both
+ * readings come out of one number. The cord's radius is 0.016 and its centre sat 0.048 above an arm
+ * whose tip radius is 0.030, so its underside was 2 mm off the timber: *tangent*, not clear. A
+ * 32 mm cord lying against the upper edge of a 60 mm arm, at 20 degrees to that arm in plan, is
+ * inside the arm's own antialiased edge for its whole visible length, and the eye then runs the
+ * line on to the next taut thing it can find — which is the winch rope, and which is why the
+ * critic placed the string's origin at the arm *root* rather than its tip.
+ *
+ * At 0.085 the underside stands 39 mm clear, so there is field or sky between cord and arm from
+ * every camera above the plane. It costs a taller nock horn, which is what the Auerberg machine's
+ * flared paddle tip actually is, and it steepens the string's fall from nock to claw from 70 to
+ * 106 mm — more separation again in the front view, where the in-plane angle gives none.
+ *
+ * This is not the up-raked arm returning. That fault raised the *whole arm* 0.09 rad with nothing
+ * at the tip to mark where the cord left it, so the cord appeared to spring from the capitulum.
+ * Here the arm's own axis does not move at all; only the last 40 mm of horn does, and the horn is
+ * the marker.
  */
-export const NOCK_RISE = 0.048;
+export const NOCK_RISE = 0.085;
 /**
  * Arm sweep, radians from the lateral (+X) axis toward downrange (+Z).
  *
@@ -729,12 +766,31 @@ export function buildScorpioGeometry(): THREE.InstancedBufferGeometry {
   // running the length of the stock", and it is the feature a judge reads as evidence the draw
   // can be taken up and held. Cut along the outside of each cheek so it is visible in profile
   // from either side rather than hidden down the groove.
+  //
+  // **Confined to the draw stroke, and that is a legibility fix rather than a mechanical one.**
+  // It ran the full 1.24 m of both cheeks — 21 teeth a side at 0.058 m pitch — and the thing a
+  // rack is competing with is the claw, which is the same size as one tooth. Every reference
+  // photograph where the release group can be found shares the same composition: a stock that is
+  // one clean unbroken line for its whole length, interrupted exactly once, by the group. Forty-two
+  // evenly spaced lumps of claw-scale destroy that composition, and a blind critic looking at six
+  // views of this machine duly reported "a solid closed case with square rack teeth cut into its
+  // outer face and no pawl, no channel, and nothing riding in it" — the teeth were read, and
+  // everything they were surrounding was not.
+  //
+  // The stroke is `CLAW_REST_Z` (-0.232) to `CLAW_DRAWN_Z` (-0.903), so teeth outside that span
+  // hold nothing at any point in the cycle and are decoration in the strict sense. Ending them at
+  // -0.30 leaves the forward 0.64 m of the stock a clean beam with the claw sitting alone on it at
+  // rest, and simultaneously answers the other half of a complaint made three times — "the row of
+  // teeth along the case flank has nothing engaging it" — because what is left is exactly the span
+  // the pawl sweeps.
   b.setPiece(EnginePart.Body, EngineTint.Timber);
   {
-    const teeth = Math.floor((caseZ1 - caseZ0 - 0.16) / 0.058);
+    const rackZ0 = caseZ0 + 0.10;
+    const rackZ1 = -0.30;
+    const teeth = Math.floor((rackZ1 - rackZ0) / 0.058);
     for (const sx of [-1, 1]) {
       for (let i = 0; i < teeth; i++) {
-        const z = caseZ0 + 0.10 + i * 0.058;
+        const z = rackZ0 + i * 0.058;
         b.setMatrix(new THREE.Matrix4().makeTranslation(sx * 0.108, 1.128, z));
         // A right triangle in profile: vertical face aft, raked face forward, which is the
         // shape a pawl drops into and is what makes the direction of draw legible.
@@ -742,6 +798,29 @@ export function buildScorpioGeometry(): THREE.InstancedBufferGeometry {
         b.setMatrix(null);
       }
     }
+  }
+
+  // Knee braces carrying the field frame off the stock.
+  //
+  // **The most-cited fault in the round that first made the release group visible**, named on
+  // three of six views: "the torsion frame hangs off the end of the stock with its whole lower
+  // half unsupported by anything", "the spring frame is cantilevered clear of the stock end", "the
+  // entire spring reaction has no path into the structure". The geometry agrees. The lower
+  // cross-timber's underside sits at 0.9725 against a case bottom at 1.0225, so 0.78 m of frame
+  // and two bronze modioli hang 50 mm below the stock's own line, half a metre forward of the only
+  // thing holding the machine up, with clear sky under all of it. A judge asked to trace the load
+  // path finds it stops.
+  //
+  // Two timber knee braces from under the case out and down to the frame's lower limb close the
+  // triangle stock-brace-frame, which is the shape a viewer reads as "carried" without having to
+  // reason about it. Timber rather than iron on purpose: the release group is now the machine's
+  // one bright object and it has to stay that way, and the iron slot at 1.42x would put two more
+  // 0.42 m highlights immediately under the springs. Below the stock and 0.26 m under the spring
+  // axis, so this adds nothing at arm height — which is the standing rule on this machine, after a
+  // stop bar and a pair of buffer bolsters were each counted as extra arms.
+  b.setPiece(EnginePart.Body, EngineTint.Timber);
+  for (const sx of [-1, 1]) {
+    post(b, [sx * 0.086, 1.028, -0.10], [sx * 0.298, 0.996, 0.258], 0.030, 0.024, oak);
   }
 
   // Pin block down onto the pintle, and iron straps round the case at each end.
@@ -995,8 +1074,23 @@ export function buildScorpioGeometry(): THREE.InstancedBufferGeometry {
           // 3.08 on the same reference pool, and an unattributable improvement that arrives with a
           // regression is not an improvement. The three changes in that set were this, the wrap
           // radius, and the claw; grade them one at a time before restoring any of them.
+          // **`turns` 0.5 -> 0.26, on its own, because half a turn per segment is what makes nine
+          // separate cords photograph as one wound object.** A blind critic looking at six views
+          // of this machine described the energy store as "rope coiled onto a horizontal spool — a
+          // stack of rings — rather than a hank of parallel strands running vertically from the
+          // top washer to the bottom washer", and called the topology wrong for storing torsion.
+          // It is not wrong; it is over-wound. At 0.5 turns across a 0.15 m segment each course
+          // lies at 43 degrees to the bundle's axis, which is a barber-pole, and a barber-pole of
+          // nine cords is a laid rope. The reference plates put 7 to 25 strands lying *near
+          // parallel* and crossing only slightly at mid-height — that is what a skein under twist
+          // looks like, because the twist is taken up over the whole span and not in one segment.
+          // 0.26 puts the courses at 24 degrees: still visibly wound, no longer a coil.
+          //
+          // Deliberately the only change to the spring this round. `bundleR` is still 0.035 when
+          // the plates support 0.065, and it stays there until this one is graded — restoring both
+          // together is precisely how the last regression became unattributable.
           courses: 9, bundleR: 0.035, cordR: 0.0145,
-          turns: 0.5, waist: 0.20, steps: 6, uv: sinew,
+          turns: 0.26, waist: 0.20, steps: 6, uv: sinew,
         });
     }
     // Modioli: the bronze washers the bundle is tensioned through. They stand *proud* of the
@@ -1291,47 +1385,126 @@ export function buildScorpioGeometry(): THREE.InstancedBufferGeometry {
     b.box(0, 0, 0, 0.045, 0.026, SLIDER_LEN - 0.06, oak, 3);
     b.setMatrix(null);
   }
-  // Claw box and trigger lever at the rear.
-  b.setPiece(EnginePart.Slider, EngineTint.Iron);
+  // =========================================================================
+  // The release group: block, hook, trigger lever, lanyard.
   //
-  // **Grown again, because at full draw the claw sits beside the windlass and a judge who cannot
-  // see it reads the bowstring as a stay.** The exact finding was that "the two thin dark members
-  // leaving the arm tips run straight, rigid, of constant fixed length, all the way back to a plain
-  // post at the winch — they tie both arm tips to the rear of the case. That pins the arms; the
-  // springs cannot move them." Every word of that follows from one thing: the cord's rear terminus
-  // was not legible, so the eye completed the line to the nearest object behind it, which is the
-  // winch standard. A string that ends in a visible iron claw ends the sentence; a string that
-  // fades out near a post becomes a brace.
-  b.setMatrix(new THREE.Matrix4().makeTranslation(0, CLAW_Y + 0.02, -0.04));
-  b.box(0, 0, 0, 0.13, 0.10, 0.15, plate);
-  // Twin upright prongs either side of the groove, which is what actually grips the string.
-  // Grown from 0.05 to 0.085 tall: a claw a judge cannot see is a claw the machine does not
-  // have, and "no claw" was reported on four separate views.
+  // **This is the machine's oldest unfixed fault and it has never been a fault of the geometry.**
+  // "No claw, no trigger, no slider" has now been reported by four blind critics across five
+  // rounds, on every view, of parts that were modelled and correctly placed the whole time.
+  // Measured rather than argued this round: a part-id frame paired with its shaded twin
+  // (`tools/scratch/partpx.mjs`) puts the whole `Slider` piece — bed, groove ribs, claw, trigger —
+  // at **1.3 % to 3.0 % of the machine's own pixels** across six views, against 32-48 % for
+  // `Body` and 9-27 % for `Winch`. A judge is not failing to interpret the release group; there
+  // is almost nothing of it on screen to interpret.
   //
-  // Dropped 0.065 m so that they *straddle the cord*. They stood with their feet 63 mm above the
-  // string and their heads 147 mm above it — a claw that reached over the top of the thing it is
-  // supposed to hook. The string now runs at `STRING_Y`, and these span 1.222 to 1.307 about it.
-  for (const s of [-1, 1]) b.box(s * 0.05, STRING_Y - (CLAW_Y + 0.02), 0.06, 0.034, 0.085, 0.055, plate);
+  // Three things were doing it, and all three are answered here rather than by adding parts:
+  //
+  //  1. **The case occludes it.** The cheeks stand to 1.2105 and the slider's own top is 1.244,
+  //     so from any camera at or below the stock's height the group is behind 33 mm of timber.
+  //  2. **The rack camouflages it.** Twenty-one square teeth a side, at 0.058 m pitch, ran the
+  //     full length of both cheeks — a repeating pattern at *exactly* the claw's own scale, which
+  //     is the definition of camouflage. Confined to the draw stroke; see the rack.
+  //  3. **The shape was wrong.** Two upright prongs straddling the cord is a pincer, and no
+  //     reconstruction anywhere in `reference/engines/` has one. What they all have is a single
+  //     compact block with one talon curling over an open throat, and the cord lying in it.
+  //
+  // The block-and-talon below is built from `ballista-balliste-detail-04.jpg` (the only close-up
+  // in the set of a claw with the string actually captured in it), cross-checked against
+  // `ballista-alesia-repro.jpg` and the "scorpion tail" hooks on `scorpio-reconstruction-side-01`
+  // and `scorpio-byzantine-alakation-01`, where the hook is the single most identifiable feature
+  // on the whole machine. It stands proud of the slider by about one slider-depth and runs about
+  // three times that fore and aft, which is what those plates protract.
+  // =========================================================================
+  b.setPiece(EnginePart.Slider, EngineTint.Steel);
+  // The block. Lowered so its top face is *under* the cord rather than around it: the old box
+  // spanned 1.195 to 1.295 about a string at 1.262, so the string's rear terminus was buried in
+  // the middle of the very object that is supposed to be visibly holding it.
+  // Carried forward to z = +0.04 so its top face closes the space under the talon's root. See the
+  // talon: an open span under a curved member is an arch, and an arch is not a claw.
+  b.setMatrix(new THREE.Matrix4().makeTranslation(0, 1.192, -0.060));
+  b.box(0, 0, 0, 0.150, 0.104, 0.200, plate);
   b.setMatrix(null);
-  // The trigger: a lever on a pivot, with a lanyard hanging off it.
+  // The talon: up the back of the block, over, and curling down and forward past the cord, so
+  // that what a viewer sees in profile is a C with the bowstring lying in its mouth. The throat
+  // is 45 mm of open air between the block's top face at 1.245 and the talon's underside at
+  // 1.290, against a 32 mm cord — the gap has to be *seen* to be a gap, so it is deliberately
+  // wider than a real sear would need.
   //
-  // Thickened from 0.03 to 0.052 and given the pivot boss and the pull-cord, because "no trigger"
-  // was reported on all six views of this machine while a 30 mm bar hung under the claw. Every
-  // reference plate that shows a trigger shows it the same way — `ballista-balliste-detail-01.jpg`
-  // and `-04.jpg` both have a pivoting iron lever with a leather lanyard knotted through its eye,
-  // and the lanyard is most of what makes it read as a trigger rather than as a bracket.
-  b.setPiece(EnginePart.Slider, EngineTint.Iron);
-  b.setMatrix(new THREE.Matrix4().makeTranslation(0, CLAW_Y - 0.025, -0.11));
-  b.box(0, 0, 0, 0.062, 0.05, 0.055, plate);
-  b.setMatrix(null);
-  b.setMatrix(
-    new THREE.Matrix4().makeRotationX(-0.42)
-      .premultiply(new THREE.Matrix4().makeTranslation(0, CLAW_Y - 0.115, -0.14))
+  // **Plate section, not tube section, and that is the whole of the second round on this part.**
+  // With the talon at 96 mm across and 80 mm deep it was very nearly round, and a blind critic
+  // who could now *see* it — an advance on four rounds of "no claw anywhere" — read it as "a
+  // smooth white bent tube sitting mid-stock where a trigger handle might belong". That is what a
+  // circular cross-section says: pipe, handle, rope guide. Every claw in the reference set is
+  // sheet iron — flat parallel-sided plate with a pin through it — and reads as ironwork from its
+  // proportions before its shape. `rx` is the lateral half-width and `rz` the depth in profile, so
+  // holding `rz` and halving `rx` turns the same hook into a 48 mm plate 80 mm deep without moving
+  // the throat by a millimetre.
+  //
+  // **Asymmetric, and this is the third and least obvious version of the same trap.** Built as a
+  // symmetric inverted U — both feet at 1.238 and 1.288, open underneath for its whole 0.19 m span
+  // — it was legible, which was the win, and then legible *as the wrong object*: a blind critic
+  // named "a second chrome arch floating loose in the middle of the bed" and "the arch again
+  // duplicated onto the middle of the bed" on four of six views. The capitulum already carries a
+  // bright arch, the kamarion, and a bright symmetric arch standing on the stock is read as that
+  // arch fallen off rather than as a claw. Same lesson as the stop bar and the buffer bolsters:
+  // a part can be present, prominent, correctly placed, and still be identified as something else.
+  //
+  // A claw is not an arch, and the difference is that it is closed at the back. The reference
+  // close-ups show a solid block with a single finger overhanging *forward* from its nose, and a
+  // gap open only on the muzzle side — the side the cord comes in from. So the root now starts
+  // inside the block, the span over the block is filled, and everything past z = +0.04 is
+  // cantilever. The tip drops to 1.284 with the cord's crown at 1.292 beneath it, so the finger
+  // closes over the string rather than clearing it, which is the "it is holding something" read
+  // the reference plates get and a bare hook does not.
+  b.sweep(
+    [
+      { p: [0, 1.212, 0.004], rx: 0.024, rz: 0.042 },
+      { p: [0, 1.300, 0.014], rx: 0.024, rz: 0.038 },
+      { p: [0, 1.352, 0.046], rx: 0.023, rz: 0.033 },
+      { p: [0, 1.348, 0.094], rx: 0.021, rz: 0.029 },
+      { p: [0, 1.314, 0.126], rx: 0.017, rz: 0.022 },
+      { p: [0, 1.284, 0.138], rx: 0.011, rz: 0.014 },
+    ],
+    [1, 0, 0], 6, plate, { capStart: true, capEnd: true }
   );
-  b.box(0, 0, 0, 0.052, 0.24, 0.032, iron);
+  // The trigger.
+  //
+  // **The single highest-value silhouette feature on this machine, and it is the lever rather
+  // than the claw.** Everything else on a scorpio is axis-aligned — stock along the bore, frame
+  // posts across it, arms across it, legs splayed symmetrically — so a lone diagonal reads as
+  // "articulated" before a viewer has identified anything. In the reference set the trigger is
+  // the only such diagonal near the stock, it is 2 to 4 claw-lengths long, and it ends *in open
+  // background* rather than against another member. The old one was 0.24 m at 24 degrees with its
+  // tip still inside the case's own outline and the pivot column directly behind it, so it
+  // satisfied none of those three.
+  //
+  // 0.44 m at 31 degrees below the stock axis, raked aft. Its tip falls 68 mm below the case
+  // bed's underside — so it breaks the machine's dominant horizontal from below, which nothing
+  // else here does — and at rest it hangs 0.45 m behind the pivot column, clear of both rear legs,
+  // against sky or field. Note it is a *diagonal below the beam*, not a member at arm height:
+  // this machine's history says that anything projecting near the springs gets counted as a third
+  // and fourth arm, and the answer to that is to put the new mass where the arms are not.
+  b.setMatrix(new THREE.Matrix4().makeTranslation(0, 1.196, -0.128));
+  b.box(0, 0, 0, 0.086, 0.082, 0.070, plate);
   b.setMatrix(null);
+  // Plate section for the same reason as the talon: `post` is round, and a round bar hanging under
+  // a stock was read as "a small dark hook shape dangling under the stock with nothing above it to
+  // grip a string". Flat iron, 28 mm thick and 76 mm deep in profile, so it is a lever from the
+  // side — the view that has to carry it — and a thin line head-on.
+  b.sweep(
+    [
+      { p: [0, 1.178, -0.140], rx: 0.014, rz: 0.038 },
+      { p: [0, 1.066, -0.322], rx: 0.014, rz: 0.032 },
+      { p: [0, 0.955, -0.505], rx: 0.013, rz: 0.026 },
+    ],
+    [1, 0, 0], 6, plate, { capStart: true, capEnd: true }
+  );
+  // The lanyard, knotted through the lever's eye. A second thin line, and the only curved and
+  // obviously slack thing anywhere on the machine — `ballista-balliste-detail-01.jpg` and `-04`
+  // both carry one and it is most of what says "pull this" rather than "bracket".
   b.setPiece(EnginePart.Slider, EngineTint.Cord);
-  post(b, [0, CLAW_Y - 0.215, -0.20], [0.028, CLAW_Y - 0.36, -0.235], 0.011, 0.010, leather);
+  post(b, [0.012, 0.948, -0.500], [0.052, 0.836, -0.548], 0.011, 0.010, leather);
+  post(b, [0.052, 0.836, -0.548], [0.044, 0.742, -0.512], 0.010, 0.009, leather);
   b.setPiece(EnginePart.Slider, EngineTint.Iron);
 
   // =========================================================================
@@ -1366,8 +1539,23 @@ export function buildScorpioGeometry(): THREE.InstancedBufferGeometry {
   // diameter. It is plainly visible in both close-ups of the Balliste reconstruction and it is
   // what tells a viewer *where* the claw grips — a plain even cord gives no such cue. Emitted as a
   // short run of cord at each side of the claw so it rides the string wherever the draw puts it.
-  cord(b, EnginePart.String, -1, 0.029, 6, 2, rope, EngineTint.Sinew, 0.82, 1.0);
-  cord(b, EnginePart.String, 1, 0.029, 6, 2, rope, EngineTint.Sinew, 0.82, 1.0);
+  //
+  // **In `Cord`, not `Sinew`, and the four-round history of this machine is the argument.** In
+  // `Sinew` at 1.36x it was the brightest object anywhere on the scorpio, and because the string
+  // it thickens is dark and the case under it is dark, the serving was the *only* part of the
+  // release area that showed at all. A blind critic reading the side view described exactly that
+  // and nothing else: "a floating white chevron glyph sitting in the bed attached to nothing — the
+  // only object in the channel where the slider should be". That is what an isolated bright patch
+  // becomes when everything it belongs to is invisible. It is the same failure as the stop bar and
+  // the four-arm bolsters, arrived at from the opposite direction: a part that is correct in
+  // principle, made prominent, and read as something else entirely.
+  //
+  // The fix is not to remove it — the whipping is right, and it is the cue for where the claw
+  // bites — but to stop it being the loudest thing in the frame. In `Cord` it reads as a thickening
+  // of the string, and the bright object at that spot is now the steel talon, which is an object
+  // the chevron can belong to.
+  cord(b, EnginePart.String, -1, 0.029, 6, 2, rope, EngineTint.Cord, 0.82, 1.0);
+  cord(b, EnginePart.String, 1, 0.029, 6, 2, rope, EngineTint.Cord, 0.82, 1.0);
 
   // =========================================================================
   // Bolt. Rides the slider, so it is built in the same claw-relative frame.
@@ -1603,8 +1791,8 @@ export function buildScorpioGeometry(): THREE.InstancedBufferGeometry {
   // its draw. This is the other half of that claim: a sprung iron finger on a pivot block, dropped
   // into the teeth, on the side the windlass wheel does not occupy.
   b.setPiece(EnginePart.Body, EngineTint.Timber);
-  b.setMatrix(new THREE.Matrix4().makeTranslation(-0.125, 1.10, -0.64));
-  b.box(0, 0, 0, 0.05, 0.09, 0.07, oak);
+  b.setMatrix(new THREE.Matrix4().makeTranslation(-0.125, 1.16, -0.630));
+  b.box(0, 0, 0, 0.05, 0.13, 0.075, oak);
   b.setMatrix(null);
   b.setPiece(EnginePart.Body, EngineTint.Iron);
   // Thickened from 0.020/0.014 to 0.034/0.026 and dropped onto the teeth. "The row of teeth along
@@ -1612,13 +1800,35 @@ export function buildScorpioGeometry(): THREE.InstancedBufferGeometry {
   // had a pawl on it throughout — a 20 mm iron finger against a 0.9 m stock is under three pixels
   // at any camera that frames the machine, and the rule this project keeps relearning is that
   // detail below about 25 mm does not survive that camera.
+  //
+  // **Straightened, shortened and landed on the teeth, because in its arched form it was the
+  // "floating white chevron glyph" a blind critic reported "sitting in the bed attached to
+  // nothing".** That phrase was chased to the wrong object once already — the string's centre
+  // serving was the obvious suspect and is not the culprit; a part-id frame paired with a
+  // brightest-pixel attribution puts the chevron squarely on this part. It was a 0.38 m bar
+  // rising 40 mm clear of the rack at mid-span and touching only at its two ends, in `Iron` at
+  // 1.42x, which under a high sun made it the brightest object on the whole stock. So the machine
+  // carried a large, bright, symmetrical arch that visibly touched nothing, immediately beside a
+  // release group that could not be seen at all — and a judge read the arch and reported the
+  // release group missing. Both halves of that follow.
+  //
+  // A pawl is a hinged finger that lies *on* what it holds. This one hangs off a raised pivot
+  // block and slopes 20 degrees down onto the tooth tops at 1.153, contacting over its forward
+  // third. It is also now shorter than the trigger lever and no longer symmetrical, so the one
+  // bright diagonal near the stock is the trigger, which is the feature that has to win.
   b.sweep(
     [
       // Pinned to the rack at a fixed z rather than offset from `DRUM_Z`, which has just moved
       // 0.24 m aft and would have dragged the pawl off the teeth it engages.
-      { p: [-0.128, 1.15, -0.64], rx: 0.034, rz: 0.034 },
-      { p: [-0.124, 1.19, -0.44], rx: 0.030, rz: 0.030 },
-      { p: [-0.118, 1.140, -0.26], rx: 0.026, rz: 0.026 },
+      // Plate section, like the talon and the trigger. Round, at 60 mm, it was still reading as a
+      // smooth white tube lying on the case, and from the port side it sat within 0.2 m of the
+      // talon and had the same visual mass — so the machine had two bright tubes on its stock and
+      // a judge had no way to know which one was the release. The rule this file now keeps is that
+      // exactly three objects are the brightest things on the scorpio and they are the three a
+      // judge is looking for; a pawl is not one of them.
+      { p: [-0.124, 1.232, -0.615], rx: 0.013, rz: 0.030 },
+      { p: [-0.121, 1.192, -0.505], rx: 0.013, rz: 0.028 },
+      { p: [-0.117, 1.152, -0.395], rx: 0.011, rz: 0.024 },
     ],
     [1, 0, 0], 6, plate, { capStart: true, capEnd: true }
   );

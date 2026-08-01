@@ -389,6 +389,16 @@ if (args.has('bench')) {
     { name: 'd-loading', since: 0.9 + 13.5 + 0.5 },
     { name: 'e-ready', since: 0.9 + 13.5 + 2.2 },
     { name: 'f-recoil', since: 0.06 },
+    // Braced, dead still, unloaded — the state **every one of the twelve reference photographs is
+    // in**, and until now no deck frame was in it. `a-released` is 0.35 s after the shot with the
+    // recoil ring still at -0.071 and the machine visibly kicking; the other five are drawn or
+    // winding. A drawn machine cannot be compared with twelve braced ones: the string runs away
+    // from a front camera and foreshortens to nothing, the arms are swept back so the brace angle
+    // cannot be protracted, and the claw ends up among the winch gear, which is where four rounds
+    // of critics failed to find it. 0.80 s leaves `draw` at 0 with the ring down to -0.001, so the
+    // arms are forward on their buffers, the string is the shallow arrowhead a braced engine
+    // actually shows, and the claw sits at `CLAW_REST_Z` on the open part of the case.
+    { name: 'g-braced', since: 0.80 },
   ].filter((f) => !WANT || WANT.includes(f.name));
 
   /**
@@ -400,12 +410,20 @@ if (args.has('bench')) {
    * the groove, the rack and the top of the capitulum are all open to the lens, which is what
    * the reference plates do. Dead level hides the bed.
    */
-  const views = [
-    { tag: 'q', az: 38, el: 14 },
-    { tag: 'side', az: 90, el: 12 },
-    { tag: 'rear', az: 158, el: 16 },
-    { tag: 'front', az: 4, el: 10 },
-  ];
+  // `--views=tag:az:el,...` overrides the set, so a deck can be composed without editing this
+  // file. Six views of one state is a better deck than four states of one machine, because the
+  // reference plates are all of machines at rest and vary by angle rather than by phase.
+  const views = args.get('views')
+    ? String(args.get('views')).split(',').map((s) => {
+      const [tag, az, el] = s.split(':');
+      return { tag, az: Number(az), el: Number(el) };
+    })
+    : [
+      { tag: 'q', az: 38, el: 14 },
+      { tag: 'side', az: 90, el: 12 },
+      { tag: 'rear', az: 158, el: 16 },
+      { tag: 'front', az: 4, el: 10 },
+    ];
 
   // The machine to photograph: the end gun of the focused battery, so it has a neighbour on
   // one side only. Read from the renderer's own placement rather than recomputed here.
