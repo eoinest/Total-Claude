@@ -17,6 +17,12 @@
  *     rather than assumed from the clock. A plaque that is 2 px off at rest and 60 px off
  *     mid-charge is a bug that phase 1 cannot see.
  *
+ *  3. **Tier sweep** — all four quality tiers, cold-booted and then switched at runtime, at
+ *     a retina pixel ratio, asserting that the world is rasterised into the viewport the
+ *     camera matrices assume. Phases 1 and 2 both measure the plaque against a projection
+ *     of the men, which is the right target for the HUD's arithmetic and structurally
+ *     blind to the scene being drawn somewhere else entirely. See `RENDER_SCALE`.
+ *
  * Also exercises the banner as a hit target: hover, click-to-select and shift-click.
  *
  * Usage:
@@ -24,6 +30,8 @@
  *   node tools/banner-check.mjs --dpr=2 --quality=high --w=1920 --h=1080
  *   node tools/banner-check.mjs --json=/tmp/before.json     # save for a before/after diff
  *   node tools/banner-check.mjs --only=motion --frames=150  # skip the station sweep
+ *   node tools/banner-check.mjs --tiers=none                # skip the tier sweep
+ *   node tools/banner-check.mjs --only=stations --tiers=ultra --tier-dpr=2
  */
 
 import { chromium } from 'playwright';
@@ -60,6 +68,23 @@ const ONLY = args.get('only') ?? 'all';
 const PNG_DIR = args.get('png');
 /** Frames tracked per motion phase. 120 at a nominal 60 Hz is two seconds of battle. */
 const FRAMES = Number(args.get('frames') ?? 120);
+/**
+ * Tiers to cold-boot and then switch away from, or `none`.
+ *
+ * On by default: the failure that reached players was tier-shaped and boot-shaped, and a
+ * single-tier run at the default quality cannot see it.
+ */
+const TIER_SWEEP = (args.get('tiers') ?? 'low,medium,high,ultra')
+  .split(',').map((s) => s.trim()).filter((s) => s && s !== 'none');
+/**
+ * Device pixel ratio for the sweep. 2, not 1.
+ *
+ * `pixelRatio = min(devicePixelRatio, maxPixelRatio)` and `maxPixelRatio` is the preset
+ * field that separates the tiers most sharply — 1, 1.25, 1.5, 2. At `devicePixelRatio = 1`
+ * all four collapse to 1 and the tiers become indistinguishable to anything that depends
+ * on it. Players are on retina panels; the sweep has to be too.
+ */
+const TIER_DPR = Number(args.get('tier-dpr') ?? 2);
 
 /**
  * Motion phases. `at` is the simulated second the battle is wound forward to, `mode`
@@ -510,8 +535,120 @@ const MOTION = ({ frames, zoom, yawRate, mode }) => {
 };
 
 // ---------------------------------------------------------------------------
+// In-page: does the world get drawn where the camera says it does?
+// ---------------------------------------------------------------------------
+
+/**
+ * Every other measurement in this file compares the plaque against the men *as projected
+ * by the camera matrices*. That is the right target for the HUD's own arithmetic and it is
+ * completely blind to the failure that actually reached the player: if the scene is
+ * rasterised into a viewport that is not the drawing buffer, the world lands somewhere
+ * else on the glass while both the plaque and this test's "truth" stay put, and the whole
+ * suite reports two hundredths of a pixel while the screen is off by hundreds.
+ *
+ * That is not hypothetical. `renderImpostorAtlas` restored the viewport with
+ * `setViewport(0, 0, domElement.width, domElement.height)` — drawing-buffer pixels handed
+ * to an API that takes CSS pixels and multiplies by the pixel ratio — so from the atlas
+ * bake onwards the world was drawn `pixelRatio` times too large, anchored at the GL
+ * origin. On a 2x display that is x1.25 at medium, x1.5 at high and x2 at ultra, and only
+ * `low` (whose `maxPixelRatio` is 1) escaped.
+ *
+ * So: assert the pipeline invariant the projection depends on. NDC (u, v) must land at CSS
+ * pixel ((u + 1) / 2 * viewW, (1 - v) / 2 * viewH), which holds exactly when the viewport
+ * covers the whole drawing buffer from its origin and no scissor is clipping it.
+ */
+const RENDER_SCALE = () => {
+  const g = window.__game;
+  const r = g.engine.renderer;
+  const cv = r.domElement;
+  const gl = r.getContext();
+  const vp = Array.from(gl.getParameter(gl.VIEWPORT));
+  const sc = Array.from(gl.getParameter(gl.SCISSOR_BOX));
+  const scissorOn = gl.getParameter(gl.SCISSOR_TEST);
+  return {
+    tier: g.engine.quality.tier,
+    pixelRatio: r.getPixelRatio(),
+    devicePixelRatio: window.devicePixelRatio,
+    viewW: g.engine.context.viewW,
+    viewH: g.engine.context.viewH,
+    bufW: cv.width,
+    bufH: cv.height,
+    cssW: cv.clientWidth,
+    cssH: cv.clientHeight,
+    viewport: vp,
+    scissor: sc,
+    scissorOn: !!scissorOn,
+    /** 1.0 when the world is drawn at the scale the camera matrices imply. */
+    scaleX: +(vp[2] / cv.width).toFixed(4),
+    scaleY: +(vp[3] / cv.height).toFixed(4),
+    offX: vp[0],
+    offY: vp[1],
+  };
+};
+
+/**
+ * How many of the plaqued units are drawn as billboard impostors rather than geometry.
+ *
+ * A plaque's job is to say "there is a unit here", and it can only do that if the player
+ * can see the unit. The billboard edge is `lodFarDistance * 2`, so it moves with the tier —
+ * 180 m at low against 640 m at ultra — and an impostor block at a few hundred metres reads
+ * as a bleached smudge rather than a crowd, which puts the plaque over apparently bare
+ * ground. Not a placement error, so nothing else in this file can see it; reported rather
+ * than asserted, because how faint is too faint is a judgement for a rendered frame.
+ */
+const BILLBOARDED = () => {
+  const g = window.__game;
+  const urs = g.engine.context.tryGet('unitRender');
+  const pool = g.battle.pool;
+  let units = 0;
+  let billboardedUnits = 0;
+  let men = 0;
+  let billboardedMen = 0;
+  if (!urs || !urs.lodOf) return { units: 0, billboardedUnits: 0, billboardedMenFrac: null };
+  for (const u of g.battle.units) {
+    if (u.destroyed || u.alive === 0) continue;
+    const e = document.querySelector(`.bnr[data-unit="${u.id}"]`);
+    if (!e || e.classList.contains('off')) continue;
+    let n = 0;
+    let b = 0;
+    for (let k = 0; k < u.members.length; k++) {
+      const i = u.members[k];
+      if (pool.state[i] === 11 || pool.state[i] === 10) continue;
+      n++;
+      if (urs.lodOf[i] === 3) b++;
+    }
+    if (!n) continue;
+    units++;
+    men += n;
+    billboardedMen += b;
+    if (b / n >= 0.5) billboardedUnits++;
+  }
+  return {
+    units, billboardedUnits,
+    billboardedMenFrac: men ? +(billboardedMen / men).toFixed(3) : null,
+  };
+};
+
+/** Human-readable verdict on one `RENDER_SCALE` sample, plus whether it is a failure. */
+function judgeRenderScale(s, label) {
+  const bad =
+    Math.abs(s.scaleX - 1) > 0.005 || Math.abs(s.scaleY - 1) > 0.005 ||
+    s.offX !== 0 || s.offY !== 0 ||
+    (s.scissorOn && (s.scissor[2] < s.bufW || s.scissor[3] < s.bufH)) ||
+    s.cssW !== s.viewW || s.cssH !== s.viewH;
+  const line =
+    `${label.padEnd(24)} tier=${s.tier.padEnd(6)} dpr=${s.devicePixelRatio} ` +
+    `pixelRatio=${String(s.pixelRatio).padEnd(4)} buffer=${s.bufW}x${s.bufH} ` +
+    `viewport=${s.viewport.join(',')} → world drawn at x${s.scaleX.toFixed(3)}` +
+    (bad ? '  ✗ WORLD IS NOT WHERE THE CAMERA SAYS' : '  ✓');
+  return { bad, line };
+}
+
+// ---------------------------------------------------------------------------
 
 const rows = [];
+/** One `RENDER_SCALE` sample per tier and phase, so a regression is diffable. */
+const renderScale = [];
 let browser = null;
 let failed = 0;
 
@@ -540,6 +677,88 @@ try {
   }, AT);
 
   console.log(`banner-check  ${W}x${H}  dpr=${DPR}  quality=${QUALITY}`);
+
+  {
+    const s = await page.evaluate(RENDER_SCALE);
+    const v = judgeRenderScale(s, 'render scale');
+    console.log(`  ${v.line}`);
+    renderScale.push({ where: 'main page', ...s, ok: !v.bad });
+    if (v.bad) failed++;
+  }
+
+  // -------------------------------------------------------------------------
+  // Tier sweep
+  // -------------------------------------------------------------------------
+  //
+  // Four cold boots, each followed by a runtime tier switch, at a *retina* device pixel
+  // ratio. Both halves are load-bearing.
+  //
+  // At `--dpr=1` — this tool's default, and what the previous pass ran — every tier
+  // clamps to `pixelRatio = min(1, maxPixelRatio) = 1`, so the one preset field that
+  // most distinguishes the tiers is neutralised and a pixel-ratio fault cannot appear at
+  // any of them. And a cold boot is not the same code path as the settings button:
+  // `Engine.setQuality` calls `setPixelRatio`, which calls `setSize`, which resets the
+  // viewport — so a switch can repair a boot-time fault and hide it.
+  if (TIER_SWEEP.length) {
+    console.log(`\ntier sweep  dpr=${TIER_DPR}  (cold boot, then a runtime switch)`);
+    for (let i = 0; i < TIER_SWEEP.length; i++) {
+      const tier = TIER_SWEEP[i];
+      const other = TIER_SWEEP[(i + 1) % TIER_SWEEP.length] === tier
+        ? (tier === 'low' ? 'ultra' : 'low')
+        : TIER_SWEEP[(i + 1) % TIER_SWEEP.length];
+      const tp = await browser.newPage({
+        viewport: { width: W, height: H }, deviceScaleFactor: TIER_DPR,
+      });
+      try {
+        await tp.goto(`${base}/?harness=1&autoplay=1&quality=${tier}&w=${W}&h=${H}`,
+          { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await tp.waitForFunction(() => window.__game && window.__game.ready === true,
+          undefined, { timeout: 180000 });
+        await tp.evaluate((at) => {
+          const g = window.__game;
+          while (g.simTime() < at - 1e-6) g.advance(Math.min(0.5, at - g.simTime()));
+          let sx = 0, sz = 0, n = 0;
+          for (const u of g.battle.units) {
+            if (u.destroyed || u.alive === 0 || u.faction !== 0) continue;
+            sx += u.x * u.alive; sz += u.z * u.alive; n += u.alive;
+          }
+          g.setCamera(n ? sx / n : 0, n ? sz / n : 0, 0.72, Math.PI * 0.15);
+          g.advance(0.4);
+        }, Math.max(AT, 26));
+        await tp.waitForTimeout(450);
+
+        for (const phase of ['boot', 'switch']) {
+          if (phase === 'switch') {
+            await tp.evaluate((t) => window.__game.engine.setQuality(t), other);
+            await tp.evaluate(() => window.__game.advance(0.6));
+            await tp.waitForTimeout(300);
+          }
+          const s = await tp.evaluate(RENDER_SCALE);
+          const label = phase === 'boot' ? `  ${tier} cold boot` : `  ${tier} → ${other}`;
+          const v = judgeRenderScale(s, label);
+          const m = await tp.evaluate(MEASURE, {});
+          const shown = m.out.filter((r) => r.visible && r.gotCx !== null);
+          const dx = shown.map((r) => Math.abs(r.gotCx - r.wantX)).sort((a, b) => a - b);
+          const worst = dx.length ? dx[dx.length - 1] : 0;
+          const bill = await tp.evaluate(BILLBOARDED);
+          console.log(
+            `${v.line}  plaques=${String(shown.length).padStart(2)} ` +
+            `worst |dx| ${worst.toFixed(2)} px  billboarded ${bill.billboardedUnits}/${bill.units} units`
+          );
+          renderScale.push({
+            where: phase === 'boot' ? `boot ${tier}` : `${tier}->${other}`,
+            ...s, plaques: shown.length, worstDxPx: +worst.toFixed(2), ...bill, ok: !v.bad,
+          });
+          if (v.bad) failed++;
+        }
+      } catch (e) {
+        console.error(`  tier ${tier} sweep failed: ${e.message}`);
+        failed++;
+      }
+      await tp.close();
+    }
+    console.log('');
+  }
 
   for (const st of ONLY === 'motion' ? [] : STATIONS) {
     await page.evaluate(({ zoom, yaw }) => {
@@ -1003,8 +1222,22 @@ try {
     outOfSpan: withShown.reduce((s, r) => s + (r.all.n - r.all.inSpan), 0),
     totalMeasured: withShown.reduce((s, r) => s + r.all.n, 0),
     unexplainedHidden: rows.reduce((s, r) => s + r.why.unexplained, 0),
+    renderScale,
+    worldScaleWorst: renderScale.length
+      ? Math.max(...renderScale.map((s) => Math.abs(s.scaleX - 1)))
+      : 0,
     rows, motion, interaction, errors: [...new Set(errors)],
   };
+  const scaleBad = renderScale.filter((s) => !s.ok);
+  if (scaleBad.length) {
+    console.error(
+      `\n⚠ the world is drawn at the wrong scale in ${scaleBad.length} of ${renderScale.length} ` +
+      `sampled states — ${scaleBad.map((s) => `${s.where} x${s.scaleX}`).join(', ')}.\n` +
+      '  Every |dx| in this report is measured against the camera matrices, so it stays near ' +
+      'zero\n  while the plaques sit over a world that is somewhere else. Fix the viewport ' +
+      'before\n  reading any other number here.'
+    );
+  }
   console.log(
     `\nover ${summary.totalMeasured} banner placements: worst |dx| ${summary.dxMaxOverall.toFixed(1)} px ` +
     `(${summary.dxMaxSolid.toFixed(1)} px among fully-opaque), ` +
