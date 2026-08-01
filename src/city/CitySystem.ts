@@ -22,8 +22,8 @@ import { CITY_MAT_KEYS, CityMaterials } from './materials';
 import { buildReferenceOverlay, type OverlayOptions, type ReferencePlan } from './overlay';
 import { buildTreeChunks } from './props';
 import {
-  buildWall, unfinishedTopAt, type CityChunkSpec, type GarrisonBay, type GateBlockOut, type GateOut,
-  type TreeRequest, type WallSegmentOut,
+  buildWall, unfinishedTopAt, type CityChunkSpec, type GarrisonBay, type GateBlockOut, type GateDoorOut,
+  type GateOut, type TreeRequest, type WallSegmentOut, type WallStair,
 } from './wall';
 
 /**
@@ -139,6 +139,10 @@ export class CitySystem implements Subsystem {
   /** Where the gatehouse masonry stands. Straddles two bays; see `GateBlockOut`. */
   private gateBlock: GateBlockOut | null = null;
   private bays: GarrisonBay[] = [];
+  /** Every masonry flight onto the wall-walk. See `getWallStairs`. */
+  private stairs: readonly WallStair[] = [];
+  /** The Porta Flaminia's leaves, and whether they are shut. See `getGateDoor`. */
+  private gateDoor: GateDoorOut | null = null;
   /**
    * Bay index by x, for the O(1) masonry lookup a projectile needs. Bays are on a fixed
    * `WALL.towerSpacing` pitch from `WALL_X_MIN`, so the index is arithmetic, not a search:
@@ -196,6 +200,8 @@ export class CitySystem implements Subsystem {
     this.gateList = wall.gates;
     this.gateBlock = wall.gateBlock;
     this.bays = wall.garrisonBays;
+    this.stairs = wall.stairs;
+    this.gateDoor = wall.gateDoor;
     if (this.bays.length > 1) {
       this.bayX0 = this.bays[0].x0;
       this.bayPitch = this.bays[1].x0 - this.bays[0].x0;
@@ -274,8 +280,19 @@ export class CitySystem implements Subsystem {
     }
     for (const f of landmarks.footprints) this.markRect(f.x, f.z, f.hw, f.hd, f.rot);
     for (const f of districts.footprints) this.markRect(f.x, f.z, f.hw, f.hd, f.rot);
-    // The gate passage is open: clear it again so units can march through.
+    /**
+     * A gate that is **open** has its carriageway cleared again so units can march through.
+     *
+     * This used to be unconditional, from when the Porta Flaminia stood open and there was
+     * no other case. The leaves are now shut at build time (`GateOut.open === false`), and
+     * clearing regardless left the two views of the city disagreeing about the one thing
+     * the player asked to change: `getObstacles()` — which is what the pathfinder stamps —
+     * had no cut in the curtain, while `blocksMovement()` reported a 4.8 m corridor straight
+     * through it. A unit would then be routed at a gate the collision surface does not open.
+     * `setGateOpen(id, true)` performs exactly this clear when the ram wins.
+     */
     for (const gate of this.gateList) {
+      if (!gate.open) continue;
       this.clearSegment(gate.x, gate.z - 20, gate.x, gate.z + 20, 2.4);
     }
 
@@ -688,6 +705,53 @@ export class CitySystem implements Subsystem {
     return this.bays;
   }
 
+  /**
+   * Every masonry flight from the pomerium up onto the wall-walk. See `WallStair`.
+   *
+   * **This is the accessor the siege system's wall traversal is built on**, and it exists
+   * so that nothing outside `wall.ts` ever has to know the cadence of the flights, their
+   * rake, or which end of a bay they stand at. Those all changed once already — the old
+   * stair ran out of a tower's city face at right angles to the curtain — and a consumer
+   * that had encoded them would have marched men up thin air the day it changed.
+   *
+   * Endpoints are absolute world positions and the record satisfies `Siege.ts`'s
+   * `CityStairView` field for field: `footX/footY/footZ` on the ground, `topX/topY/topZ`
+   * where the flight's landing meets the walkway, `width` clear between the curtain and
+   * the flight's own parapet, and `side` = -1 for cityward. `bay` names the `GarrisonBay`
+   * whose walkway run the flight delivers onto, so joining a stair to the garrison spine
+   * needs no spatial query. Up is `top`, down is `foot`, and `rise` is positive always.
+   *
+   * The list is generated with the stone — `buildWall` plans each flight once and hands
+   * the same record to the mesh builder and to this — so a published stair and the stone a
+   * man is drawn climbing cannot disagree.
+   */
+  getWallStairs(): readonly WallStair[] {
+    return this.stairs;
+  }
+
+  /**
+   * The Porta Flaminia's leaves: where the door plane is, how big it is, and whether it is
+   * shut. Null on a map with no gate.
+   *
+   * The split of responsibility is deliberate. This workstream owns the door — its plane,
+   * its hinge line, its extent and its state — and the siege system owns the *breaking* of
+   * it. `open` starts **false**, which is the state the player asked for; the siege system
+   * drives it through `setGateOpen(gateId, true)` when its ram wins, which already re-cuts
+   * the movement obstacles and the occupancy grid in one call.
+   *
+   * `open` is re-read from the gate record on every call rather than kept in step by hand,
+   * because `setGateOpen` writes only the gate and two records that can disagree about
+   * whether Rome is open is exactly the bug class this whole file keeps producing. The same
+   * object is returned each time, so a consumer may hold it and poll it per frame.
+   */
+  getGateDoor(): GateDoorOut | null {
+    const door = this.gateDoor;
+    if (!door) return null;
+    const gate = this.gateList.find((g) => g.id === door.gateId);
+    door.open = gate ? gate.open : false;
+    return door;
+  }
+
   /** The bay whose run contains `x`, or undefined off either end of the circuit. */
   bayAt(x: number): GarrisonBay | undefined {
     if (this.bays.length === 0) return undefined;
@@ -727,7 +791,17 @@ export class CitySystem implements Subsystem {
     const pz = bay.z0 + bay.dz * t;
     const off = (x - px) * bay.nx + (z - pz) * bay.nz;
 
-    if (Math.abs(off) > WALL.thickness * 0.5) return -Infinity;
+    /**
+     * `bay.halfThickness`, **not** `WALL.thickness * 0.5`.
+     *
+     * `WALL.thickness` is the historical 3.5 m Richmond measured on the surviving Aurelianic
+     * core and is what `layout.ts` publishes to the rest of the city. The curtain that is
+     * actually built is 6.0 m — see `CURTAIN_T` in `wall.ts` — so the old constant made the
+     * rear 1.25 m of every wall-walk, and the whole footprint of the cityward parapet,
+     * transparent: an arrow lofted at the battlement reported no masonry there and buried
+     * itself in the terrain eight metres below the men it should have hit.
+     */
+    if (Math.abs(off) > bay.halfThickness) return -Infinity;
     // `walkable`, not `garrisonable`: the gate bay's curtain is ordinary finished wall with
     // a walk and a battlement, and treating it as a solid block to `crestY` put an arrow's
     // stopping height two metres above the surface it should have landed on.

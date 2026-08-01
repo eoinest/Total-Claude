@@ -11,7 +11,6 @@ import {
   hipRoof,
   quadPrism,
   statue,
-  steps,
   type Batch,
   type GeoStream,
 } from './build';
@@ -37,7 +36,7 @@ import { PAL } from './palette';
  * scaffolding and treadwheel cranes, stockpiled travertine and brick, mortar pits,
  * and gaps blocked in a hurry with palisade and rubble.
  *
- * Dimensions (sources in `layout.ts`): 6.5 m to the wall-walk, 3.5 m thick,
+ * Dimensions (sources in `layout.ts`): 6.5 m to the wall-walk, `CURTAIN_T` thick,
  * brick-faced concrete on a travertine footing, square towers projecting 3.5 m at
  * one *actus* (35.5 m) intervals, each carrying a ballista chamber under a tiled
  * roof. The monumental gate sits on the axis of the Via Flaminia.
@@ -46,6 +45,70 @@ import { PAL } from './palette';
  * *level*; between bays it steps. That is how real Roman curtains cross sloping
  * ground — they step the courses rather than shearing them.
  */
+
+// ---------------------------------------------------------------------------
+// The section
+// ---------------------------------------------------------------------------
+
+/**
+ * Thickness of the curtain, metres.
+ *
+ * **Deliberately not `WALL.thickness`**, which is the historical 3.5 m that Richmond
+ * measured on the surviving Aurelianic core and which `layout.ts` publishes to the rest
+ * of the city. This is a *playable* wall and the difference is the point.
+ *
+ * Why 6.0. Three things fix it, and they very nearly meet:
+ *
+ *  - **Precedent.** 3.5 m is the low end of the late-Roman range, not the norm for a
+ *    great circuit. The Theodosian inner wall at Constantinople — Aurelian's idea carried
+ *    to its conclusion 140 years later — is 4.5 to 6.0 m thick. 6.0 is the top of the real
+ *    range rather than an invention, and Rome II's own playable walls are wider than life
+ *    for exactly the reason the player gives: a wall you cannot put an army on is scenery.
+ *
+ *  - **It is the width at which the *worst* bay still seats five ranks.** The clear
+ *    standing band works out at `T - 1.765 - batter * rise` (see `walkGeometry`). Bay 3's
+ *    walk stands 40.55 m above its own footing, so the 1-in-30 batter has eaten 1.25 m off
+ *    the outer lip by the time it reaches the walk, leaving 2.98 m — and five ranks at the
+ *    sim's 0.72 m interlocking pitch need 2.88 m. At 5.5 m thick the tall bays drop to four
+ *    ranks and the garrison thins exactly where the wall is highest.
+ *
+ *  - **A hard ceiling at 6.6.** `probe-siege` asserts that no garrisoned man stands more
+ *    than 1.90 m from the bay centreline. The front rank stands at `T/2 - batter*rise -
+ *    1.32`, which on the shallowest bay on the circuit is 1.58 m at T = 6.0. T = 6.7 breaches
+ *    it. So the useful range is 5.5..6.6 and 6.0 sits in it with 0.32 m of margin.
+ *
+ * What it costs: the curtain now reads 0.70 of its own height in section rather than 0.41,
+ * which is chunkier than the real Aurelianic wall and is visible looking along the top and
+ * at the tower returns; and the towers, which are `T + towerProject` deep by construction,
+ * grow from 7.0 m to 9.5 m against a 7.6 m width, so they are now deeper than they are wide.
+ * Both are accepted: neither is visible from the field, which is where the wall is seen.
+ */
+export const CURTAIN_T = 6.0;
+/** Half-thickness, which is what almost every caller actually wants. */
+const HALF_T = CURTAIN_T * 0.5;
+
+/**
+ * Body radius of a man, from `resolveCrowding`. He may not overlap the stonework.
+ */
+const BODY = 0.42;
+/**
+ * How far back from an *unprotected* lip a rank will stand, metres.
+ *
+ * A finished bay has a 0.9 m parapet to lean on and the front rank stands against it. A
+ * half-built lift has nothing: on 3.5 m of curtain the old rule kept men 0.67 m from a
+ * ten-metre drop, which was survivable only because the wall was too narrow for it to
+ * matter. On 6.0 m it puts the front rank 2.06 m off the centreline and breaks
+ * `probe-siege`'s 1.90 m limit — correctly, because a man will not fight at the edge of an
+ * unfinished wall. 1.2 m is a body length back from the void, both sides.
+ */
+const OPEN_EDGE_SETBACK = 1.2;
+/**
+ * The covered gallery's piers: 0.6 m across, their cityward face 0.35 m off the walk's
+ * inner lip. Shared by `walkGeometry` and `buildCurtainBay` so the garrison's cityward
+ * limit and the stone it is clear of are the same number.
+ */
+const GALLERY_PIER_HALF = 0.3;
+const GALLERY_PIER_OFF = -(HALF_T - 0.35 - GALLERY_PIER_HALF);
 
 export interface WallSegmentOut {
   x1: number;
@@ -125,6 +188,16 @@ export interface GarrisonBay {
    * top two metres inside the merlons.
    */
   walkable: boolean;
+  /**
+   * Half-thickness of the curtain here, so a consumer testing "is this point inside the
+   * masonry" does not have to know `CURTAIN_T`.
+   *
+   * Published because the curtain is no longer `WALL.thickness` wide and one consumer still
+   * reads that constant — `CitySystem.masonryTopAt` tests `|off| > WALL.thickness * 0.5`,
+   * which on a 6 m wall makes the rear 1.25 m of the wall-walk and the whole parapet
+   * footprint transparent to arrows. Read this instead.
+   */
+  halfThickness: number;
   /** Half-length of the tower footprint at `x0`, which the walkway does not pass through. */
   towerHalf: number;
   /**
@@ -172,6 +245,113 @@ export interface GateBlockOut {
   topY: number;
   /** Half the clear width of the carriageway. */
   openHalf: number;
+}
+
+/**
+ * The Porta Flaminia's twin leaves, as a thing that can be shut, opened or broken.
+ *
+ * **They start shut**, which is the fourth of the player's reports and the one that changes
+ * behaviour rather than geometry: the gate stood open by default, so the Juthungi could
+ * simply walk into Rome and the battering ram in the siege train had nothing to do. The
+ * geometry here is the shut state; the *breaking* of it belongs to the siege system, and
+ * this is the surface it drives.
+ *
+ * The leaves hang on pintles at `±halfWidth` along the run and swing about those hinges.
+ * A consumer animating them needs only the hinge line and the leaf extent; a consumer
+ * replacing them with wreckage needs the plane. `CitySystem.setGateOpen` already exists and
+ * already re-cuts the movement obstacles, so opening the gate is one call — what was
+ * missing was that it was never shut to begin with.
+ */
+export interface GateDoorOut {
+  /** The gate these leaves close. Matches `GateOut.id`. */
+  gateId: string;
+  /** Centre of the door plane, on the wall line, at threshold level. */
+  x: number;
+  y: number;
+  z: number;
+  /** Outward normal — the way the leaves face the field. */
+  nx: number;
+  nz: number;
+  /** Along-run unit vector. The hinges are at `±halfWidth` along it. */
+  dx: number;
+  dz: number;
+  /** Half the clear width of the opening, i.e. the hinge offset from the centreline. */
+  halfWidth: number;
+  /** Height of a leaf above the threshold. */
+  height: number;
+  /** Leaf thickness, front to back. */
+  thickness: number;
+  /** How far the door plane stands behind the outer face of the gatehouse block. */
+  setback: number;
+  /**
+   * False. The leaves are shut and barred, and the ram has to bring them down.
+   *
+   * Mirrors `GateOut.open` for the same gate; kept on the door as well so a consumer
+   * animating the leaves does not have to go and find the gate record.
+   */
+  open: boolean;
+}
+
+/**
+ * A masonry stair climbing the **inner** face of the curtain, parallel to it.
+ *
+ * This is the contract for anything that wants to walk a man up onto the wall, and it is
+ * deliberately three points and a width rather than a mesh. Everything a mover needs:
+ *
+ *  - `foot` is on the ground outside the wall's own footprint, `head` is on the walkway
+ *    level at the top of the rake, and the surface between them is a **straight linear
+ *    ramp**: at parameter `s` in 0..1 the tread is at `lerp(foot, head, s)` in all three
+ *    axes. There are treads, but they are 0.29 m risers on a 0.42 m going and a mover can
+ *    treat the flight as a plane without ever being more than 0.15 m off the stone.
+ *  - `top` is where the landing at the head meets the wall-walk, at `headY`. Foot → head →
+ *    top is the whole path onto the wall; the last leg is flat, 2.2 m of level landing.
+ *  - **Up is `top`, down is `foot`,** and they are never at the same height: `rise` is
+ *    always positive and always equals `topY - footY`. `side` is −1 on every flight on this
+ *    circuit, because they are all cityward; it is published rather than implied so a
+ *    consumer never has to infer the sense of the normal to tell inside from outside.
+ *  - `bay` is the index of the `GarrisonBay` the flight delivers onto, so a mover can join
+ *    the stair to the garrison spine's stations without a spatial query.
+ *  - `width` is the clear width between the curtain and the stair's own parapet. Two men
+ *    abreast, so a relief going up can pass a casualty coming down.
+ *
+ * The field names `footX/footY/footZ`, `topX/topY/topZ`, `width` and `side` are the ones
+ * `Siege.ts`'s `CityStairView` already asks for, so `CitySystem.getWallStairs()` hands this
+ * record straight over with no adapter and no chance of the two drifting.
+ *
+ * Offsets: the flight is built entirely on the city side. `foot`, `head` and `top` are
+ * absolute world positions, so a consumer needs none of the wall's internal frame.
+ */
+export interface WallStair {
+  /** Index of the `GarrisonBay` this flight serves. */
+  bay: number;
+  /** Bottom of the flight, on the ground in the pomerium. */
+  footX: number;
+  footY: number;
+  footZ: number;
+  /** Top of the rake, on the flight's own centreline, level with the walk. */
+  headX: number;
+  headY: number;
+  headZ: number;
+  /** Where the landing at the head meets the wall-walk. Flat from `head`. */
+  topX: number;
+  topY: number;
+  topZ: number;
+  /** Unit vector foot → head, in plan. */
+  dx: number;
+  dz: number;
+  /** Outward normal of the curtain the flight is built against. */
+  nx: number;
+  nz: number;
+  /** Clear width of the treads. */
+  width: number;
+  /** Plan distance foot → head. */
+  run: number;
+  /** `topY - footY`, always positive: the flight only ever climbs from foot to top. */
+  rise: number;
+  /** Number of risers in the rake. `rise / steps` is the riser height. */
+  steps: number;
+  /** −1 cityward, +1 outward. Always −1 here: a Roman wall stair is inside its own wall. */
+  side: -1 | 1;
 }
 
 export interface Blocker {
@@ -225,6 +405,10 @@ export interface WallBuildOutput {
   bayStages: BayStage[];
   /** Every bay described as a place to stand. See `GarrisonBay`. */
   garrisonBays: GarrisonBay[];
+  /** Every masonry flight onto the wall-walk. See `WallStair`. */
+  stairs: WallStair[];
+  /** The Porta Flaminia's leaves. Shut. See `GateDoorOut`. */
+  gateDoor: GateDoorOut;
   /** Where the wall line sits, for the insula generator to build up against. */
   wallZAt: (x: number) => number;
 }
@@ -279,6 +463,24 @@ const GATE_PASS_H = 8.4;
 const GATE_ATTIC = 4.8;
 /** Merlon height on the gate block's crown. */
 const GATE_MERLON_H = 2.0;
+/** Height of the brick face's springing above the road, where the barrel vault starts. */
+const GATE_SPRING = 1.15 + 4.3;
+/**
+ * How far the door plane stands behind the outer face of the block.
+ *
+ * The *cataracta* drops in its slot 0.85 m inside the face; the leaves hang 1.35 m behind
+ * it, which is the arrangement at the Porta Appia and gives the portcullis somewhere to
+ * fall that is not on top of the doors. Keeping them near the front also matters to the
+ * siege system: a ram parks against the gatehouse and has to be able to reach what it is
+ * breaking, not drive seven metres up a tunnel first.
+ */
+const GATE_DOOR_SET = 2.2;
+/** Top of the threshold slab, which the leaves close down onto. */
+const GATE_DOOR_SILL = 0.12;
+/** Leaves run from the threshold to the springing; the lunette above is filled in brick. */
+const GATE_DOOR_H = GATE_SPRING - GATE_DOOR_SILL;
+/** Twin oak leaves, iron-bound. Thick enough to need 26 blows of a ram. */
+const GATE_DOOR_T = 0.22;
 /**
  * Half-width of the span the curtain is cut out of, 0.3 m inside the block's own face so
  * the curtain dies *inside* the brick and no seam can open between the two.
@@ -400,7 +602,7 @@ function walkGeometry(bay: Bay): {
   outerOff: number;
   garrisonable: boolean;
 } {
-  const T = WALL.thickness;
+  const T = CURTAIN_T;
   const gMin = Math.min(bay.g0, bay.g1);
   const stage = bay.stage;
   // Matches `buildCurtainBay` exactly.
@@ -408,8 +610,6 @@ function walkGeometry(bay: Bay): {
   // Outer face leans back 1-in-30 over the lift, so the walkway's outer lip is inboard
   // of the nominal half-thickness by the batter times the rise.
   const walkOuter = T * 0.5 - WALL.batter * Math.max(0, topY - (gMin + WALL.plinthHeight));
-  // Body radius of a man, from `resolveCrowding`. He may not overlap the stonework.
-  const BODY = 0.42;
   // The inner lip of the walk quad, less the walk's own 25 mm inset.
   const innerLip = -(T * 0.5 - 0.025);
 
@@ -436,8 +636,10 @@ function walkGeometry(bay: Bay): {
   }
 
   if (stage === 'half-built') {
-    // Standing on the exposed rubble core, which is 0.3 m proud of the finished lift and
-    // 2.95 m wide. No parapet at all, so keep men back from both lips.
+    // Standing on the exposed rubble core, 0.3 m proud of the finished lift and inboard of
+    // both facing skins. No parapet on either side, so the line stands a body length back
+    // from both lips — see `OPEN_EDGE_SETBACK`. Symmetric, because the drop into the
+    // pomerium kills a man exactly as well as the drop onto the glacis.
     const half = (T - 0.55) * 0.5;
     return {
       walkY: topY + 0.3,
@@ -445,8 +647,8 @@ function walkGeometry(bay: Bay): {
       sillY: topY + 0.3,
       parapetInner: half,
       parapetOuter: half,
-      innerOff: -half + BODY,
-      outerOff: half - BODY - 0.25,
+      innerOff: -half + OPEN_EDGE_SETBACK + BODY,
+      outerOff: half - OPEN_EDGE_SETBACK - BODY,
       garrisonable: true,
     };
   }
@@ -471,9 +673,9 @@ function walkGeometry(bay: Bay): {
   // front rank stands with its shoulders against the inner face of it, which is what
   // shooting over a merlon looks like.
   //
-  // Bays carrying the covered gallery have piers 0.6 m across on the centre of the
-  // cityward half, spanning offsets [-1.55, -0.95]. The cityward limit is pulled in
-  // clear of them rather than letting the rear rank stand inside a colonnade.
+  // Bays carrying the covered gallery have piers standing just inboard of the walk's
+  // cityward lip. The cityward limit is pulled in clear of them rather than letting the
+  // rear rank stand inside a colonnade.
   const gallery = bay.index % 5 === 1;
   return {
     walkY: topY,
@@ -482,7 +684,7 @@ function walkGeometry(bay: Bay): {
     sillY: topY + 0.6,
     parapetInner: walkOuter - WALL.parapetThickness,
     parapetOuter: walkOuter,
-    innerOff: gallery ? -0.88 : innerLip + BODY,
+    innerOff: gallery ? GALLERY_PIER_OFF + GALLERY_PIER_HALF + BODY : innerLip + BODY,
     outerOff: walkOuter - WALL.parapetThickness - BODY,
     garrisonable: true,
   };
@@ -574,11 +776,11 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
     segments.push({
       x1: bay.x0, z1: bay.z0, x2: bay.x1, z2: bay.z1, height: h,
       gate: isGate,
-      halfThickness: WALL.thickness * 0.5,
+      halfThickness: HALF_T,
     });
     // A bare footing does not stop a man; everything else does.
     if (stage !== 'footing') {
-      blockers.push({ x1: bay.x0, z1: bay.z0, x2: bay.x1, z2: bay.z1, halfW: WALL.thickness * 0.5 });
+      blockers.push({ x1: bay.x0, z1: bay.z0, x2: bay.x1, z2: bay.z1, halfW: HALF_T });
     }
 
     const f = frameOf(bay.x0, bay.z0, bay.x1, bay.z1);
@@ -617,18 +819,67 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
       // and manning a bay the ladders cannot take is worse than leaving it empty.
       garrisonable: walk.garrisonable && !isGate,
       walkable: walk.garrisonable,
+      halfThickness: HALF_T,
       towerHalf: hasTower ? WALL.towerWidth * 0.5 : 0,
       hasTower,
       isGate,
     });
   }
 
+  /**
+   * Where the garrison actually gets up there.
+   *
+   * A flight every fourth bay — about one per 142 m of circuit, which is roughly the
+   * spacing of the surviving Aurelianic stairs — plus one immediately east of the Porta
+   * Flaminia, because a gate is the one place on a circuit that always has its own stair
+   * and because that is the bay the assault is aimed at.
+   *
+   * **Finished bays only.** A stair is the last thing built, not the first: a bay still
+   * carrying its scaffold has a timber ramp, not dressed travertine. It also keeps the two
+   * apart in the pomerium — the scaffold occupies −3.0..−4.9 and the stair −3.0..−6.2, and
+   * they would foul each other on the same bay.
+   */
+  const stairs: WallStair[] = [];
+  for (const bay of bays) {
+    if (bay.stage !== 'finished') continue;
+    if (bay.index % 4 !== 2 && bay.index !== gateBay + 1) continue;
+    // Not into the gatehouse block, which owns its own 25 m of the circuit.
+    if (inGateBlock(bay.x0) || inGateBlock(bay.x0 + STAIR_MAX_RUN)) continue;
+    const plan = stairPlan(bay, walkGeometry(bay).walkY, heightAt);
+    if (plan) stairs.push(plan);
+  }
+  const stairByBay = new Map<number, WallStair>();
+  for (const s of stairs) stairByBay.set(s.bay, s);
+
   const gateBayRef = bays[gateBay];
   const gFrame = frameOf(gateBayRef.x0, gateBayRef.z0, gateBayRef.x1, gateBayRef.z1);
   const gateCz = lerp(gateBayRef.z0, gateBayRef.z1, (GATE_X - gateBayRef.x0) / WALL.towerSpacing);
+  /**
+   * **Shut.**
+   *
+   * It was `open: true`, so the one road into Rome stood wide open with a Germanic host on
+   * the plain, the ram in the siege train had nothing to break, and the assault could walk
+   * in. The leaves are geometry — see `buildGate` — and this is the flag every consumer
+   * reads: `CitySystem.pushWallBox` stops punching the carriageway out of the movement
+   * obstacles, and `setGateOpen('porta-flaminia', true)` is what the siege system calls when
+   * the ram finally brings them down.
+   */
   const gates: GateOut[] = [
-    { id: 'porta-flaminia', x: GATE_X, z: gateCz, facing: Math.atan2(gFrame.nx, gFrame.nz), open: true },
+    { id: 'porta-flaminia', x: GATE_X, z: gateCz, facing: Math.atan2(gFrame.nx, gFrame.nz), open: false },
   ];
+  const gateG = heightAt(GATE_X, gateCz);
+  const gateDoor: GateDoorOut = {
+    gateId: 'porta-flaminia',
+    x: GATE_X + gFrame.nx * (GATE_BLOCK_D * 0.5 - GATE_DOOR_SET),
+    y: gateG + GATE_DOOR_SILL,
+    z: gateCz + gFrame.nz * (GATE_BLOCK_D * 0.5 - GATE_DOOR_SET),
+    nx: gFrame.nx, nz: gFrame.nz, dx: gFrame.dx, dz: gFrame.dz,
+    halfWidth: GATE_OPEN_WIDTH * 0.5,
+    height: GATE_DOOR_H,
+    thickness: GATE_DOOR_T,
+    setback: GATE_DOOR_SET,
+    open: false,
+  };
   // The gatehouse as a solid, for the consumers that need to know where the masonry is.
   // Held separately from the bays because the block straddles two of them: reading it off
   // `bay.isGate` reported the block over 35.5 m of ground it does not stand on and missed
@@ -677,6 +928,11 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
             );
           }
           if (bay.isGate) buildGate(batch, detail, bay, heightAt, rng.fork(`gate-${bay.index}`));
+          // The flight up onto the walk, against the inner face. Planned once in
+          // `buildWall` and looked up here, so the stone and the published `WallStair`
+          // cannot disagree about where it is.
+          const stair = stairByBay.get(bay.index);
+          if (stair) buildWallStair(batch, detail, bay, stair, heightAt);
         }
         // A tower at the west end of every bay, plus the far end of the last chunk.
         // A west end swallowed by the gatehouse gets none: the gate carries its own pair
@@ -711,8 +967,8 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
   }
 
   return {
-    path, chunks, segments, gates, gateBlock, blockers, trees,
-    towerCount, bayStages, garrisonBays, wallZAt: zAt,
+    path, chunks, segments, gates, gateBlock, gateDoor, blockers, trees,
+    towerCount, bayStages, garrisonBays, stairs, wallZAt: zAt,
   };
 }
 
@@ -765,7 +1021,7 @@ function buildCurtainBay(
   const f = frameOf(bay.x0, bay.z0, bay.x1, bay.z1);
   const { nx, nz, dx, dz, len } = f;
   const stage = bay.stage;
-  const T = WALL.thickness;
+  const T = CURTAIN_T;
   const gMin = Math.min(bay.g0, bay.g1);
   const topY = stage === 'half-built' ? Math.max(bay.g0, bay.g1) + 3.4 : bay.topY;
   const subs = detail >= 2 ? 16 : detail === 1 ? 5 : 1;
@@ -946,7 +1202,14 @@ function buildCurtainBay(
     for (let k = 0; k < nLifts; k++) {
       const y = y0 + 1.0 + k * bandH * 2;
       for (let s = 0; s < 12; s++) {
-        if (hash2(s, k + bay.index * 17, 41) < 0.42) continue;
+        // Keyed on the *column* alone, not on the lift.
+        //
+        // Putlogs stack vertically because the standards they socketed into are vertical, so
+        // a socket that is open on one lift is open on all of them. Culling per hole instead
+        // scattered them to random heights and random spacings, and a reviewer reported the
+        // right feature with the wrong logic: "it reads as noise instead of as evidence of
+        // the scaffold you have literally modelled 50 m away."
+        if (hash2(s, bay.index, 41) < 0.42) continue;
         const t = (s + 0.5) / 12;
         const px = lerp(bay.x0, bay.x1, t) + nx * (outerOff(y, y0) - 0.06);
         const pz = lerp(bay.z0, bay.z1, t) + nz * (outerOff(y, y0) - 0.06);
@@ -961,6 +1224,9 @@ function buildCurtainBay(
   const walkOuter = outerOff(topY, plinthTop(gMin));
   // The wall-walk is a working surface: trodden, dusty and much darker than the
   // dressed travertine it is made of.
+  //
+  // Its top is 30 mm below `topY` so the paving below can sit on it without z-fighting;
+  // `walkY` is `topY`, the paving's surface, which is what a man's feet rest on.
   quadPrism(
     stone,
     bay.x0,
@@ -971,11 +1237,54 @@ function buildCurtainBay(
     nz,
     T - 0.05,
     topY - 0.24,
-    topY,
+    stage === 'half-built' ? topY : topY - 0.03,
     PAL.travertineDirty,
     new THREE.Color().copy(PAL.travertineDirty).multiplyScalar(0.86),
     { ends: false }
   );
+
+  /**
+   * Paving on the walk.
+   *
+   * Six metres of bare quad is a runway. At the old 3.5 m the walk was mostly parapet and
+   * merlon shadow and one flat surface was enough; widened, it is the largest unbroken
+   * plane anywhere on the circuit and it reads as untextured ground from any camera above
+   * it. Rome II's own walk — `reference/siege/army-on-walls.jpg` — is laid in big irregular
+   * flags, and that paving is most of what makes the surface read as masonry a man is
+   * standing on rather than as a ribbon.
+   *
+   * Emitted as top quads only, over a substrate 30 mm lower, so the 25 mm joints are the
+   * darker stone showing through. Two triangles per flag, full detail only.
+   */
+  if (detail >= 2 && stage !== 'half-built') {
+    const across = 3;
+    const along = Math.max(1, Math.round(len / 2.1));
+    const halfW = (T - 0.05) * 0.5;
+    for (let a = 0; a < along; a++) {
+      for (let c = 0; c < across; c++) {
+        const ta = (a + 0.0) / along;
+        const tb = (a + 1.0) / along;
+        // 25 mm joint on every edge.
+        const o0 = -halfW + ((2 * halfW * c) / across) + 0.025;
+        const o1 = -halfW + ((2 * halfW * (c + 1)) / across) - 0.025;
+        const ax = lerp(bay.x0, bay.x1, ta);
+        const az = lerp(bay.z0, bay.z1, ta);
+        const bx = lerp(bay.x0, bay.x1, tb);
+        const bz = lerp(bay.z0, bay.z1, tb);
+        const jx = dx * 0.025;
+        const jz = dz * 0.025;
+        const flag = new THREE.Color()
+          .copy(PAL.travertineDirty)
+          .multiplyScalar(0.9 + hash2(a, c + bay.index * 3, 137) * 0.26);
+        P0.set(ax + jx + nx * o0, topY, az + jz + nz * o0);
+        P1.set(bx - jx + nx * o0, topY, bz - jz + nz * o0);
+        P2.set(bx - jx + nx * o1, topY, bz - jz + nz * o1);
+        P3.set(ax + jx + nx * o1, topY, az + jz + nz * o1);
+        OUT.set(0, 1, 0);
+        stone.quadN(OUT, P0, P1, P2, P3, flag);
+      }
+    }
+  }
 
   if (stage === 'half-built') {
     // Exposed rubble core on top of the unfinished lift.
@@ -1033,24 +1342,50 @@ function buildCurtainBay(
     }
   }
 
-  // Covered gallery over the wall-walk on some finished stretches. Strictly this
-  // belongs to the Honorian rebuild; the brief asks for it and it gives the
-  // silhouette a rhythm the bare curtain lacks.
+  /**
+   * Covered gallery on some finished stretches — a *porticus* along the **cityward edge**
+   * of the walk, not a roof over the whole of it.
+   *
+   * Strictly Honorian rather than Aurelianic; the brief asks for it and it gives the
+   * silhouette a rhythm the bare curtain lacks. What it must not do is hide the thing the
+   * player asked to see. Its eaves used to land on the parapet's outer lip, 0.25 m above
+   * the crest, so from any camera outside the wall the tiles began flush behind the merlon
+   * line and roofed the crenels: a critic shown the render reported "the wall-walk is
+   * effectively zero width and the legionaries are clipped into the parapet" on the one
+   * frame that happened to catch a galleried bay. On a 3.5 m curtain that was merely wrong;
+   * on 6.0 m it hides the entire gain, because the roof got 2.5 m wider with the wall.
+   *
+   * So the penthouse now covers the rear 2.3 m and stops 0.6 m short of the centreline,
+   * leaving 2.5 m of walk open to the sky in front of it — the front two ranks shoot from
+   * an open parapet, the reserve stands in shade, and from outside you read merlons, men,
+   * open walk, then a roof set well back behind them. That is also the only arrangement in
+   * which a defender can shoot over his own battlement, which the old one prevented.
+   */
   if (stage === 'finished' && detail >= 1 && bay.index % 5 === 1) {
     const roofSt = batch.s('roof');
     const piers = 8;
-    const innerOff = -(T * 0.5 - 0.5);
+    // `GALLERY_PIER_OFF`, not a local constant: `walkGeometry` pulls the rear rank's
+    // cityward limit clear of these piers, and when the two were derived separately the
+    // rear rank stood inside the colonnade. One number, both places.
+    const innerOff = GALLERY_PIER_OFF;
+    /** Eaves offset: 0.6 m cityward of the bay centreline, well behind the parapet. */
+    const eaveOff = -0.6;
+    const eaveY = topY + 2.5;
+    const ridgeOff = innerOff - 0.55;
+    const ridgeY = topY + 3.4;
+    // Pier tops meet the roof plane where it crosses them, so the colonnade carries the
+    // penthouse instead of standing under it with a gap.
+    const pierTop = eaveY + (ridgeY - eaveY) * ((eaveOff - innerOff) / (eaveOff - ridgeOff));
     for (let s = 0; s <= piers; s++) {
       const t = s / piers;
       const px = lerp(bay.x0, bay.x1, t) + nx * innerOff;
       const pz = lerp(bay.z0, bay.z1, t) + nz * innerOff;
-      quadPrism(brick, px - dx * 0.3, pz - dz * 0.3, px + dx * 0.3, pz + dz * 0.3, nx, nz, 0.6, topY, topY + 2.6, PAL.brick, PAL.travertine);
+      quadPrism(brick, px - dx * 0.3, pz - dz * 0.3, px + dx * 0.3, pz + dz * 0.3, nx, nz, 0.6, topY, pierTop, PAL.brick, PAL.travertine);
     }
-    const oOff = walkOuter - 0.15;
-    P0.set(bay.x0 + nx * oOff, topY + WALL.parapetHeight + 0.25, bay.z0 + nz * oOff);
-    P1.set(bay.x1 + nx * oOff, topY + WALL.parapetHeight + 0.25, bay.z1 + nz * oOff);
-    P2.set(bay.x1 + nx * (innerOff - 0.55), topY + 3.0, bay.z1 + nz * (innerOff - 0.55));
-    P3.set(bay.x0 + nx * (innerOff - 0.55), topY + 3.0, bay.z0 + nz * (innerOff - 0.55));
+    P0.set(bay.x0 + nx * eaveOff, eaveY, bay.z0 + nz * eaveOff);
+    P1.set(bay.x1 + nx * eaveOff, eaveY, bay.z1 + nz * eaveOff);
+    P2.set(bay.x1 + nx * ridgeOff, ridgeY, bay.z1 + nz * ridgeOff);
+    P3.set(bay.x0 + nx * ridgeOff, ridgeY, bay.z0 + nz * ridgeOff);
     OUT.set(nx * 0.4, 1, nz * 0.4).normalize();
     roofSt.quadN(OUT, P0, P1, P2, P3, PAL.roofTile, PAL.roofTile, PAL.roofTileOld, PAL.roofTileOld);
   }
@@ -1076,7 +1411,7 @@ function buildTower(
   const roof = batch.s('roof');
   const g = heightAt(x, z);
   const W = WALL.towerWidth;
-  const T = WALL.thickness;
+  const T = CURTAIN_T;
   const proj = WALL.towerProject;
   // Modules are authored with −Z outward; `f.rotY` turns that onto the wall run.
   const m = new THREE.Matrix4().makeRotationY(f.rotY).setPosition(x, 0, z);
@@ -1192,8 +1527,21 @@ function buildTower(
     }
   }
 
-  // Tiled hip roof: the chamber was covered, because the ballista needed cover.
-  hipRoof(roof, W - inset * 2 + 0.9, zInner - zOuter - inset * 2 + 0.9, chTop, WALL.towerRoofHeight, 0.45, PAL.roofTileOld);
+  /**
+   * Tiled hip roof: the chamber was covered, because the ballista needed cover.
+   *
+   * **Translated onto the chamber's own centre first.** `hipRoof` builds symmetrically
+   * about the local origin, and the chamber is not centred there: it runs from `cz0` on the
+   * field side to `cz1` on the city side, whose midpoint is 1.75 m cityward of the tower's
+   * placement point. Emitted at the origin, the roof overhung the back of the tower by
+   * 1.75 m and left the same depth of the front wall standing in the open with sky above
+   * it. A critic reading the renders called this out as a 43% overhang and it was dismissed
+   * by measuring the tower's *width*, which was never the axis at fault; widening the
+   * curtain to 6 m only moves the error, so it is fixed rather than re-measured.
+   */
+  roof.pushTranslate(0, 0, (cz0 + cz1) * 0.5);
+  hipRoof(roof, W - inset * 2 + 0.9, cz1 - cz0 + 0.9, chTop, WALL.towerRoofHeight, 0.45, PAL.roofTileOld);
+  roof.pop();
   box(brick, cx0 - 0.4, chTop - 0.2, cz0 - 0.4, cx1 + 0.4, chTop, cz1 + 0.4, PAL.brickDark, { top: false });
 
   // Doorway from the wall-walk into the chamber, on the city side.
@@ -1201,15 +1549,10 @@ function buildTower(
   archPanel(brick, cx1 - cx0 - wallT * 2, chH, PAL.brick, { depth: wallT, spring: 1.45, openWidth: 1.15, segments: detail >= 2 ? 7 : 4 });
   brick.pop();
 
-  // Stair down to the ground on the inner face every fourth tower — the way the
-  // garrison actually got up there.
-  if (detail >= 1 && index % 4 === 2) {
-    stone.pushTranslate(0, 0, zInner);
-    const rise = 0.31;
-    const n = Math.max(4, Math.round((topY - g) / rise));
-    steps(stone, 2.4, g, n * 0.34 + 0.5, n, rise, 0.34, PAL.travertineDirty);
-    stone.pop();
-  }
+  // The stair down to the ground is no longer built here. It used to run *out of the
+  // tower's city face, perpendicular to the wall*, projecting into the pomerium — which
+  // is not how a Roman wall stair works and is the second thing the player called out.
+  // See `buildWallStair`: the flight now climbs along the inner face, parallel to it.
 
   batch.popAll(used);
 }
@@ -1459,8 +1802,14 @@ function buildGate(batch: Batch, detail: number, bay: Bay, heightAt: (x: number,
   }
 
   // ---- portcullis, doors, carriageway -------------------------------------
-  // The *cataracta* is raised, so the passage is open — but it is there, hanging in
-  // its slot, which is how you tell a gate from a hole in a wall.
+  /**
+   * The *cataracta*, hanging raised in its slot 0.85 m inside the outer face.
+   *
+   * Left raised on purpose now that the leaves below are shut. It is the second line, not
+   * the first: you drop it when the doors fail, and dropping it now would put a curtain of
+   * iron bars in front of the thing the player asked to see shut. It also gives the siege
+   * system somewhere to go after the ram wins — the geometry is already here.
+   */
   const barTop = g + passH - 0.15;
   const barBottom = g + passH - 3.1;
   for (let i = 0; i <= 12; i++) {
@@ -1473,19 +1822,153 @@ function buildGate(batch: Batch, detail: number, bay: Bay, heightAt: (x: number,
   }
   box(metal, -GATE_OPEN_WIDTH * 0.5, barBottom - 0.38, zF + 0.82, GATE_OPEN_WIDTH * 0.5, barBottom, zF + 1.01, PAL.iron);
 
-  // Twin timber leaves, swung back flat against the reveals.
+  /**
+   * The twin leaves, **shut and barred**.
+   *
+   * They used to be swung flat back against the reveals, which is the fourth thing the
+   * player reported: "The main gate door is open by default. it should be closed. It should
+   * have to be battered down by the battering ram." A gate standing open is not a gate, and
+   * an open gate makes the whole siege train decorative — the ram had nothing to break and
+   * the assault could walk up the Via Flaminia into the city.
+   *
+   * Built shut in the door plane rather than as two swung boxes: the leaves meet on the
+   * centreline, close down onto the threshold slab and up to the springing of the vault,
+   * and the semicircular lunette above them is filled in brick. Nothing can see through.
+   *
+   * The *state* lives in `GateDoorOut` and `GateOut.open`; the siege system swings or wrecks
+   * these by hiding this geometry and drawing its own, which is why the hinge line, the leaf
+   * extent and the plane are all published rather than being implicit in this function.
+   */
+  const doorZ = zF + GATE_DOOR_SET;
+  const leafHalf = GATE_OPEN_WIDTH * 0.5;
+  const sillY = g + GATE_DOOR_SILL;
+  const headY = g + GATE_SPRING;
+  const planks = detail >= 2 ? 11 : detail === 1 ? 6 : 1;
+  /**
+   * The meeting stile: a 45 mm shadow gap on the centreline.
+   *
+   * Two leaves built hard against each other are one slab. A reviewer shown the shut gate
+   * said exactly that — "the plank field runs continuously with no vertical joint anywhere;
+   * as rendered this is one slab" — and the centre joint is the single cue that says *twin
+   * leaves* at any distance. The gap is a real void down the middle, closed behind by the
+   * rebate below so nothing can see through it.
+   */
+  const MEET = 0.045;
   for (const s of [-1, 1]) {
-    const leafW = GATE_OPEN_WIDTH * 0.47;
-    const mm = new THREE.Matrix4().makeRotationY(s * 1.72).setPosition((s * GATE_OPEN_WIDTH) / 2, 0, zF + 5.4);
-    const leaf = batch.pushAll(LEAF_KEYS, mm);
-    box(timber, Math.min(0, s * leafW), g + 0.1, -0.1, Math.max(0, s * leafW), g + 5.7, 0.1, PAL.timberDark);
+    /**
+     * Vertical oak boarding.
+     *
+     * Vertical is not a detail. Roman gate leaves — and effectively all pre-modern ones —
+     * are vertically planked onto horizontal ledges, because horizontal boards put every
+     * plank in bending across the full width of the leaf with nothing to hang them from. The
+     * planks are stepped 20 mm proud and shy of each other in turn, which is what puts a
+     * vertical shadow line between them: without it the timber material's own horizontal
+     * grain wins and the leaf reads as horizontal boarding, which is how the first pass was
+     * described.
+     */
+    for (let j = 0; j < planks; j++) {
+      const a = MEET + ((leafHalf - MEET) * j) / planks;
+      const b = MEET + ((leafHalf - MEET) * (j + 1)) / planks;
+      const jut = planks > 1 ? (j % 2 === 0 ? 0.02 : -0.014) + (hash2(j, s + 1, 17) - 0.5) * 0.01 : 0;
+      /**
+       * Weathered oak, not the dark timber the rest of the site is built from.
+       *
+       * The leaves hang 2.2 m inside an 11 m barrel vault with no bounce light in the engine,
+       * so at `timberDark` they render as a black rectangle and a reviewer reported the ram's
+       * target — the most important object on the map for a siege — as simply invisible. Oak
+       * that has stood in the weather on the north face of a city gate for a century is
+       * silver-grey, not brown, so the brighter value is also the truer one; it is what lets
+       * the boarding and the meeting stile read at all in that shadow.
+       */
+      const tone = 1.02 + hash2(j, s + 7, 53) * 0.34;
+      box(
+        timber,
+        Math.min(s * a, s * b), sillY, doorZ - GATE_DOOR_T * 0.5 - jut,
+        Math.max(s * a, s * b), headY, doorZ + GATE_DOOR_T * 0.5 + jut,
+        new THREE.Color().copy(PAL.timber).multiplyScalar(tone)
+      );
+    }
+    // The rebate the leaf shuts against, one plank thickness behind the meeting stile, so
+    // the shadow gap is a joint between two doors and not a slot through the gate.
+    box(
+      timber,
+      Math.min(0, s * (MEET + 0.06)), sillY, doorZ + GATE_DOOR_T * 0.5 - 0.02,
+      Math.max(0, s * (MEET + 0.06)), headY, doorZ + GATE_DOOR_T * 0.5 + 0.07,
+      new THREE.Color().copy(PAL.timber).multiplyScalar(0.62)
+    );
     if (detail >= 1) {
+      // Iron straps across the boarding, and the pintle band at the hinge stile.
       for (let k = 0; k < 4; k++) {
-        const y = g + 0.65 + k * 1.32;
-        box(metal, Math.min(0, s * leafW), y, -0.14, Math.max(0, s * leafW), y + 0.17, 0.14, PAL.iron);
+        const y = sillY + 0.62 + k * 1.24;
+        box(metal, Math.min(0, s * leafHalf), y, doorZ - GATE_DOOR_T * 0.5 - 0.05, Math.max(0, s * leafHalf), y + 0.15, doorZ + GATE_DOOR_T * 0.5 + 0.05, PAL.iron);
+      }
+      const hx = s * leafHalf;
+      box(metal, Math.min(hx, hx - s * 0.26), sillY, doorZ - GATE_DOOR_T * 0.5 - 0.06, Math.max(hx, hx - s * 0.26), headY, doorZ + GATE_DOOR_T * 0.5 + 0.06, PAL.iron);
+      /**
+       * Pintles, and the harr-post they turn on.
+       *
+       * A Roman leaf does not hang on hinges in the mediaeval sense: its hanging stile runs
+       * down past the sill as a *harr*-post and turns in a socket cut in the threshold, with
+       * iron collars strapping it to the jamb. That socket is the detail that reads as "this
+       * is a gate that swings" rather than a panel dropped into a hole, and its absence was
+       * the first thing named about the closure.
+       */
+      for (const hy of [sillY + 0.55, headY - 0.75]) {
+        box(metal, Math.min(hx, hx + s * 0.3), hy, doorZ - 0.2, Math.max(hx, hx + s * 0.3), hy + 0.26, doorZ + 0.2, PAL.iron);
+      }
+      // The harr-post itself, and its bronze-lined socket worn into the threshold slab.
+      box(timber, Math.min(hx, hx - s * 0.2), sillY - 0.14, doorZ - 0.17, Math.max(hx, hx - s * 0.2), headY, doorZ + 0.17, PAL.timberDark);
+      box(metal, hx - 0.24, sillY - 0.02, doorZ - 0.24, hx + 0.24, sillY + 0.06, doorZ + 0.24, PAL.bronze);
+      // Diagonal ledge-brace on the city face, rising from the hanging stile.
+      strut(
+        timber,
+        P0.set(hx - s * 0.18, sillY + 0.5, doorZ + GATE_DOOR_T * 0.5 + 0.06),
+        P1.set(s * MEET, headY - 0.8, doorZ + GATE_DOOR_T * 0.5 + 0.06),
+        0.075,
+        PAL.timber,
+        4
+      );
+    }
+    if (detail >= 2) {
+      // Bosses: square-headed nails on the strap crossings.
+      for (let k = 0; k < 4; k++) {
+        for (let j = 0; j < 3; j++) {
+          const bx = s * (0.45 + j * 0.72);
+          const y = sillY + 0.62 + k * 1.24;
+          box(metal, bx - 0.06, y - 0.06, doorZ - GATE_DOOR_T * 0.5 - 0.11, bx + 0.06, y + 0.21, doorZ - GATE_DOOR_T * 0.5 - 0.05, PAL.iron);
+        }
       }
     }
-    batch.popAll(leaf);
+  }
+  // The drawbar: one oak baulk across both leaves, dropped into sockets cut in the piers.
+  // This is what actually holds a gate, and what a ram has to snap.
+  {
+    box(timber, -leafHalf - 0.55, g + 2.35, doorZ + GATE_DOOR_T * 0.5, leafHalf + 0.55, g + 2.68, doorZ + GATE_DOOR_T * 0.5 + 0.3, PAL.timber);
+    if (detail >= 1) {
+      for (const s of [-1, 1]) {
+        box(metal, s * leafHalf * 0.62 - 0.08, g + 2.3, doorZ + GATE_DOOR_T * 0.5 - 0.03, s * leafHalf * 0.62 + 0.08, g + 2.73, doorZ + GATE_DOOR_T * 0.5 + 0.35, PAL.iron);
+      }
+    }
+  }
+  /**
+   * The lunette over the doors, filled in brick.
+   *
+   * The leaves are rectangular and stop at the springing, so without this there is a 4.3 m
+   * semicircular hole above them and the gate is shut only as far as a man's head. Emitted
+   * as vertical columns whose tops are taken from the arc at each column's **inner** edge,
+   * so every column rises to or above the intrados and the fill can never leave a gap
+   * against it; the surplus is buried in the arch's own masonry.
+   */
+  {
+    const cols = detail >= 2 ? 14 : detail === 1 ? 8 : 4;
+    const r = leafHalf;
+    for (let j = 0; j < cols; j++) {
+      const a = -r + (2 * r * j) / cols;
+      const b = -r + (2 * r * (j + 1)) / cols;
+      const inner = Math.min(Math.abs(a), Math.abs(b));
+      const h = Math.sqrt(Math.max(0, r * r - inner * inner));
+      box(brick, a, headY - 0.05, doorZ - 0.26, b, headY + h, doorZ + 0.26, new THREE.Color().copy(PAL.brick).multiplyScalar(0.86 + hash2(j, 5, 23) * 0.2));
+    }
   }
 
   // Polygonal basalt carriageway, rutted by two centuries of carts.
@@ -1505,8 +1988,6 @@ function buildGate(batch: Batch, detail: number, bay: Bay, heightAt: (x: number,
   batch.popAll(used);
 }
 
-/** Gate leaves and their ironwork; one stream at far detail. See `Batch.distinct`. */
-const LEAF_KEYS: readonly CityMatKey[] = ['timber', 'metal'];
 /** Guardhouse walls and roof; one stream at far detail. See `Batch.distinct`. */
 const GUARD_KEYS: readonly CityMatKey[] = ['brick', 'roof'];
 
@@ -1735,7 +2216,362 @@ function buildRiverTerminus(
   roof.pop();
 }
 
-/** Timber scaffolding on the outer face: standards, ledgers, putlogs, plank lifts. */
+// ---------------------------------------------------------------------------
+// Wall stairs — parallel to the curtain, on its inner face
+// ---------------------------------------------------------------------------
+
+/**
+ * Riser and going of a wall stair.
+ *
+ * A Roman *gradus* is about three quarters of a pes high on a pes and a half of going.
+ * 0.29 on 0.42 is 34.6° — steep enough to fit a flight against one bay, shallow enough
+ * that a man in mail can run up it, and close to what survives on the Aurelianic stairs
+ * behind the Porta Asinaria and on the Theodosian walls.
+ */
+const STAIR_RISE = 0.29;
+const STAIR_TREAD = 0.42;
+/** Clear width: two men abreast with shields, so a relief can pass a casualty coming down. */
+const STAIR_W = 2.8;
+/** Solid parapet on the open side of the flight, and its height above the treads. */
+const STAIR_PARAPET_W = 0.42;
+const STAIR_PARAPET_H = 0.95;
+/** Depth of the landing at the head, between the tower and the top of the flight. */
+const STAIR_LANDING = 2.2;
+/**
+ * Longest flight worth building.
+ *
+ * Beyond this the ground under the bay has fallen away so far that a single straight flight
+ * is a lie — bay 3's walk stands 40.55 m over its own footing, which would want a 59 m ramp
+ * against a 35.5 m bay. Those stretches get no stair rather than a fictional one.
+ */
+const STAIR_MAX_RUN = 26;
+
+/**
+ * Where a flight would stand on this bay, or null if one cannot.
+ *
+ * Pure in `heightAt`, so `buildWall` can call it once and hand the answer both to the
+ * geometry and to the published contract — the mistake this codebase has already made
+ * twice is deriving the same number in two places and letting them drift.
+ *
+ * The run and the foot are mutually dependent: a longer flight reaches further along the
+ * bay, where the ground is at a different height, which changes the rise, which changes the
+ * run. Solved by three passes of fixed-point iteration — a fixed count rather than a
+ * convergence test, so the result is deterministic whether or not it settles.
+ */
+function stairPlan(
+  bay: Bay,
+  walkY: number,
+  heightAt: (x: number, z: number) => number
+): WallStair | null {
+  const f = frameOf(bay.x0, bay.z0, bay.x1, bay.z1);
+  // Centreline of the treads, hard against the curtain's inner face and reaching out into
+  // the pomerium by the stair's own width.
+  const off = -(HALF_T + STAIR_W * 0.5);
+  const at = (t: number, o: number): { x: number; z: number } => ({
+    x: bay.x0 + f.dx * t + f.nx * o,
+    z: bay.z0 + f.dz * t + f.nz * o,
+  });
+  // The head of the flight sits clear of the tower at the bay's west end, and of the
+  // landing that bridges from the flight across to the walkway.
+  const headT = WALL.towerWidth * 0.5 + 0.9 + STAIR_LANDING;
+
+  let run = 9;
+  let footG = 0;
+  let n = 0;
+  for (let pass = 0; pass < 3; pass++) {
+    const p = at(headT + run, off);
+    footG = heightAt(p.x, p.z);
+    const rise = walkY - footG;
+    if (rise < 2.2) return null;
+    n = Math.max(6, Math.round(rise / STAIR_RISE));
+    run = n * STAIR_TREAD;
+  }
+  if (run > STAIR_MAX_RUN) return null;
+  // Flight, landing and a metre of clearance all have to fit inside the bay.
+  if (headT + run > f.len - 1.0) return null;
+
+  const foot = at(headT + run, off);
+  const head = at(headT, off);
+  /**
+   * Where the landing delivers onto the walkway.
+   *
+   * 0.6 m inboard of the walk's cityward lip, which is inside the clear standing band
+   * `walkGeometry` publishes at every stage — so a man stepping off the stair is on the
+   * walkway rather than balanced on its edge, and a mover can hand him straight to the
+   * garrison spine without a correction step.
+   */
+  const top = at(headT - STAIR_LANDING * 0.5, -(HALF_T - 0.6));
+
+  return {
+    bay: bay.index,
+    footX: foot.x, footY: footG, footZ: foot.z,
+    headX: head.x, headY: walkY, headZ: head.z,
+    topX: top.x, topY: walkY, topZ: top.z,
+    // Foot → head climbs back along the bay, i.e. against the run direction.
+    dx: -f.dx, dz: -f.dz,
+    nx: f.nx, nz: f.nz,
+    width: STAIR_W,
+    run,
+    rise: walkY - footG,
+    steps: n,
+    // Every flight on this circuit is built against the inner face; see `buildWallStair`.
+    side: -1,
+  };
+}
+
+/**
+ * A masonry stair against the inner face, climbing parallel to the curtain.
+ *
+ * The flight it replaces ran **out of the tower's city face at right angles to the wall**,
+ * projecting into the pomerium as a free-standing staircase — which is not a thing Roman
+ * engineers built, and is what the player meant by "it should go parallel to the wall not
+ * perpendicular. Reference the outside." A wall stair is a solid ramp of masonry raised
+ * against the back of the curtain: dressed treads on a brick core, a walled parapet on the
+ * open side, the rake stepped rather than smooth, and a landing at the head. Pompeii, Ostia,
+ * the Aurelianic circuit itself and the Theodosian walls all do it this way, and so does
+ * Rome II — `reference/siege/army-on-walls.jpg` shows a broad flight descending *along* the
+ * inner face, never out of it.
+ *
+ * Emitted into the curtain's own `brick` and `stone` streams, so it costs no draw call.
+ */
+function buildWallStair(
+  batch: Batch,
+  detail: number,
+  bay: Bay,
+  plan: WallStair,
+  heightAt: (x: number, z: number) => number
+): void {
+  const brick = batch.s('brick');
+  const stone = batch.s('stone');
+  const f = frameOf(bay.x0, bay.z0, bay.x1, bay.z1);
+  const { nx, nz } = f;
+  const off = -(HALF_T + STAIR_W * 0.5);
+  const parapetOff = -(HALF_T + STAIR_W + STAIR_PARAPET_W * 0.5);
+  const tOf = (px: number, pz: number): number => (px - bay.x0) * f.dx + (pz - bay.z0) * f.dz;
+  const t0 = tOf(plan.headX, plan.headZ);
+  const t1 = tOf(plan.footX, plan.footZ);
+
+  // Coarser steps at distance: what carries at range is the rake, not the treads.
+  const nEmit =
+    detail >= 2 ? plan.steps : detail === 1 ? Math.max(4, Math.ceil(plan.steps / 3)) : Math.max(3, Math.ceil(plan.steps / 6));
+  const dy = plan.rise / nEmit;
+  const dt = (t1 - t0) / nEmit;
+  const hw = STAIR_W * 0.5;
+
+  const treadCol = new THREE.Color().copy(PAL.travertineDirty).multiplyScalar(1.04);
+  const riserCol = new THREE.Color().copy(PAL.brick).multiplyScalar(0.9);
+
+  /** Ground under the flight at along-run parameter `t`, on the treads' centreline. */
+  const groundAt = (t: number): number =>
+    heightAt(bay.x0 + f.dx * t + nx * off, bay.z0 + f.dz * t + nz * off);
+
+  // Treads, counted from the foot, so step k's surface is at `footY + (k + 1) * dy`.
+  for (let k = 0; k < nEmit; k++) {
+    const ta = t1 - (k + 1) * dt;
+    const tb = t1 - k * dt;
+    const yTop = plan.footY + (k + 1) * dy;
+    const base = Math.min(groundAt(ta), groundAt(tb)) - 1.2;
+    const ax = bay.x0 + f.dx * ta + nx * off;
+    const az = bay.z0 + f.dz * ta + nz * off;
+    const bx = bay.x0 + f.dx * tb + nx * off;
+    const bz = bay.z0 + f.dz * tb + nz * off;
+    const body = new THREE.Color().copy(PAL.brick).multiplyScalar(0.9 + hash2(k, bay.index, 29) * 0.16);
+    const nose = detail >= 1 ? 0.09 : 0;
+    // The mass. `ends` only on the bottom step: every other end cap is buried inside the
+    // step below it, and two coplanar caps at each junction z-fight the length of the rake.
+    quadPrism(brick, ax, az, bx, bz, nx, nz, STAIR_W, base, yTop - nose, body, riserCol, {
+      ends: k === 0,
+    });
+    if (nose > 0) {
+      // Dressed travertine tread, 40 mm proud of the brick each side so it reads as a nosing.
+      quadPrism(stone, ax, az, bx, bz, nx, nz, STAIR_W + 0.08, yTop - nose, yTop, treadCol, treadCol, {
+        ends: false,
+      });
+    }
+    // The riser, standing on the tread below. An explicit quad rather than a prism end cap,
+    // so it lands exactly on the step under it instead of running down to the foundation.
+    P0.set(bx + nx * hw, yTop - dy, bz + nz * hw);
+    P1.set(bx - nx * hw, yTop - dy, bz - nz * hw);
+    P2.set(bx - nx * hw, yTop, bz - nz * hw);
+    P3.set(bx + nx * hw, yTop, bz + nz * hw);
+    OUT.set(f.dx, 0, f.dz);
+    stone.quadN(OUT, P0, P1, P2, P3, riserCol, riserCol, treadCol, treadCol);
+  }
+
+  /**
+   * The cheek wall on the open side, with a **continuously raking coping**.
+   *
+   * The parapet is not the problem; the *silhouette* of its top was. It used to step with
+   * the treads, one 0.29 m jump per going, and a stepped top line above a stepped rake is
+   * visually the same object twice: three independent reviewers looking at three different
+   * renders all reported "no parapet, cheek wall or coping on the open side — a raw stepped
+   * brick arris", while the builder was emitting a 0.95 m wall and `probe-wall` was
+   * measuring it at 0.90-0.96 m over the treads. They were not wrong about what they saw.
+   * A staircase-shaped pale line reads as *treads*, because that is what treads look like.
+   *
+   * A real Roman stair parapet rakes smoothly: the cheek wall is built up in courses and
+   * the coping is laid as a raking string on top of it, one straight line from the apron to
+   * the landing. That single unbroken diagonal is the whole cue — it is what makes the
+   * reference plate's flight (`reference/siege/army-on-walls.jpg`) read as a walled stair
+   * rather than as steps stuck to a wall. So the brickwork below still steps, because
+   * brickwork does, and the coping above it does not.
+   *
+   * Emitted as explicit sloped quads rather than a prism because `quadPrism` has a flat
+   * top by construction. The coping is 0.34 m deep, which is deeper than one riser, so the
+   * stepped brick beneath can never poke through the sloping soffit.
+   */
+  const COPE = 0.34;
+  /** Y of the rake's chord at along-run parameter `t`: `t1` is the foot, `t0` the head. */
+  const chordY = (t: number): number => plan.footY + (plan.rise * (t1 - t)) / (t1 - t0);
+  const pHalf = STAIR_PARAPET_W * 0.5;
+  const cHalf = pHalf + 0.06;
+  for (let k = 0; k < nEmit; k++) {
+    const ta = t1 - (k + 1) * dt;
+    const tb = t1 - k * dt;
+    const base = Math.min(groundAt(ta), groundAt(tb)) - 1.2;
+    // The brick body stops below the coping's soffit at the *lower* end of the segment, so
+    // the sloping soffit is always clear of it.
+    quadPrism(
+      brick,
+      bay.x0 + f.dx * ta + nx * parapetOff,
+      bay.z0 + f.dz * ta + nz * parapetOff,
+      bay.x0 + f.dx * tb + nx * parapetOff,
+      bay.z0 + f.dz * tb + nz * parapetOff,
+      nx,
+      nz,
+      STAIR_PARAPET_W,
+      base,
+      chordY(tb) + STAIR_PARAPET_H - COPE,
+      PAL.brick,
+      PAL.travertine,
+      { ends: k === 0 }
+    );
+    if (detail >= 1) {
+      const yA = chordY(ta) + STAIR_PARAPET_H;
+      const yB = chordY(tb) + STAIR_PARAPET_H;
+      const ax = bay.x0 + f.dx * ta;
+      const az = bay.z0 + f.dz * ta;
+      const bx = bay.x0 + f.dx * tb;
+      const bz = bay.z0 + f.dz * tb;
+      const oIn = parapetOff + cHalf;
+      const oOut = parapetOff - cHalf;
+      // Top of the coping: one continuous sloping plane the length of the flight.
+      P0.set(ax + nx * oOut, yA, az + nz * oOut);
+      P1.set(bx + nx * oOut, yB, bz + nz * oOut);
+      P2.set(bx + nx * oIn, yB, bz + nz * oIn);
+      P3.set(ax + nx * oIn, yA, az + nz * oIn);
+      OUT.set(0, 1, 0);
+      stone.quadN(OUT, P0, P1, P2, P3, PAL.travertine);
+      // Its two faces, which are what carry the raking line in silhouette.
+      for (const s of [-1, 1]) {
+        const o = parapetOff + s * cHalf;
+        P0.set(ax + nx * o, yA - COPE, az + nz * o);
+        P1.set(bx + nx * o, yB - COPE, bz + nz * o);
+        P2.set(bx + nx * o, yB, bz + nz * o);
+        P3.set(ax + nx * o, yA, az + nz * o);
+        OUT.set(nx * s, 0, nz * s);
+        stone.quadN(OUT, P0, P1, P2, P3, PAL.travertine, PAL.travertine, PAL.travertineDirty, PAL.travertineDirty);
+      }
+    }
+  }
+
+  /**
+   * The apron at the foot.
+   *
+   * The bottom step used to end in a blunt vertical face a riser above the turf — "the
+   * flight discharges into raw lawn with no paved surface, no threshold". A stair that
+   * carries a cohort to the wall lands on something: a travertine pad, one tread deep and
+   * wider than the flight, bedded into the ground.
+   */
+  {
+    const pa = t1 + 0.1;
+    const pb = t1 + 1.9;
+    const pg = Math.min(groundAt(pa), groundAt(pb), plan.footY);
+    quadPrism(
+      stone,
+      bay.x0 + f.dx * pa + nx * off,
+      bay.z0 + f.dz * pa + nz * off,
+      bay.x0 + f.dx * pb + nx * off,
+      bay.z0 + f.dz * pb + nz * off,
+      nx,
+      nz,
+      STAIR_W + 0.7,
+      pg - 0.9,
+      plan.footY + 0.06,
+      PAL.travertineDirty,
+      PAL.travertineDirty
+    );
+  }
+
+  // ---- landing at the head, level with the wall-walk -----------------------
+  const la = t0 - STAIR_LANDING;
+  const lb = t0;
+  const lBase = Math.min(groundAt(la), groundAt(lb)) - 1.2;
+  // From the curtain's inner face out past the stair's parapet.
+  const inner = -HALF_T;
+  const outer = parapetOff - STAIR_PARAPET_W * 0.5;
+  const midOff = (inner + outer) * 0.5;
+  const spanW = inner - outer;
+  const lax = bay.x0 + f.dx * la + nx * midOff;
+  const laz = bay.z0 + f.dz * la + nz * midOff;
+  const lbx = bay.x0 + f.dx * lb + nx * midOff;
+  const lbz = bay.z0 + f.dz * lb + nz * midOff;
+  quadPrism(brick, lax, laz, lbx, lbz, nx, nz, spanW, lBase, plan.headY - 0.09, PAL.brick, riserCol, { ends: true });
+  quadPrism(stone, lax, laz, lbx, lbz, nx, nz, spanW, plan.headY - 0.09, plan.headY, treadCol, treadCol, {
+    ends: false,
+  });
+  // The landing's own parapet, closing the open side.
+  quadPrism(
+    brick,
+    bay.x0 + f.dx * la + nx * parapetOff,
+    bay.z0 + f.dz * la + nz * parapetOff,
+    bay.x0 + f.dx * lb + nx * parapetOff,
+    bay.z0 + f.dz * lb + nz * parapetOff,
+    nx,
+    nz,
+    STAIR_PARAPET_W,
+    lBase,
+    plan.headY + STAIR_PARAPET_H,
+    PAL.brick,
+    PAL.travertine,
+    { ends: true }
+  );
+  if (detail >= 1) {
+    // Return wall across the head of the landing, so it does not open onto a drop.
+    quadPrism(
+      brick,
+      bay.x0 + f.dx * (la + 0.21) + nx * midOff,
+      bay.z0 + f.dz * (la + 0.21) + nz * midOff,
+      bay.x0 + f.dx * (la - 0.21) + nx * midOff,
+      bay.z0 + f.dz * (la - 0.21) + nz * midOff,
+      nx,
+      nz,
+      spanW,
+      plan.headY,
+      plan.headY + STAIR_PARAPET_H,
+      PAL.brick,
+      PAL.travertine,
+      { ends: false }
+    );
+  }
+}
+
+/**
+ * Timber scaffolding: standards, ledgers, putlogs and plank lifts, **on the city face**.
+ *
+ * Every offset here is negative along the outward normal, and that is the whole point.
+ * The scaffold used to stand on the field side, which put two rows of poles, a plank deck
+ * and a fifteen-metre treadwheel crane on the *glacis* of a wall being assaulted by a
+ * Germanic host — a free ladder for the Juthungi and the first thing a player notices is
+ * wrong. Aurelian's men worked from inside their own circuit for the same reason his
+ * material yard is inside it (see `buildYard`): the outside of an unfinished wall in 271
+ * is enemy ground.
+ *
+ * It also means the scaffold, the yard and the wall stair all share the pomerium, so their
+ * offsets are chosen not to foul each other: scaffold −3.0..−4.9, stair −3.0..−6.2, yard
+ * −11..−23. Stairs are built on finished bays only and scaffolds on unfinished ones, so the
+ * two never occupy the same bay.
+ */
 function buildScaffold(
   batch: Batch,
   detail: number,
@@ -1747,7 +2583,12 @@ function buildScaffold(
   if (detail < 1) return;
   const timber = batch.s('timber');
   const { nx, nz, dx, dz } = frameOf(bay.x0, bay.z0, bay.x1, bay.z1);
-  const standOff = WALL.thickness * 0.5 + 1.6;
+  // Cityward. A working scaffold stands about 1.6 m off the face — near enough to reach
+  // the work from the deck, far enough to walk behind.
+  const standOff = -(HALF_T + 1.6);
+  // Inner standard, i.e. the row *nearer the wall*. Cityward offsets grow more negative
+  // going away from the wall, so the near row is the larger (less negative) offset.
+  const nearOff = standOff + 1.0;
   const nStands = 12;
 
   for (let s = 0; s <= nStands; s++) {
@@ -1758,17 +2599,31 @@ function buildScaffold(
     const h = topY + 2.8 - g;
     const c = new THREE.Color().copy(PAL.timber).multiplyScalar(0.84 + hash2(s, bay.index, 3) * 0.32);
     cylinder(timber, px, g, pz, 0.17, 0.14, h, 6, c);
-    // Inner standard: real scaffolding is two rows of poles, not one.
-    cylinder(timber, px + nx * 1.0, g, pz + nz * 1.0, 0.15, 0.12, h - 0.5, 5, c);
-    if (s % 2 === 0 && detail >= 1) {
-      const bxp = px + nx * 1.7;
-      const bzp = pz + nz * 1.7;
+    // Two rows of poles, not one: a real scaffold is a frame, not a fence.
+    const qx = lerp(bay.x0, bay.x1, t) + nx * nearOff;
+    const qz = lerp(bay.z0, bay.z1, t) + nz * nearOff;
+    cylinder(timber, qx, heightAt(qx, qz), qz, 0.15, 0.12, h - 0.5, 5, c);
+    if (detail >= 2) {
+      // Sole plates. A 170 mm pole carrying four lifts punches straight through soft ground
+      // without one, and a critic reading the frames named the standards "poking into grass
+      // with no base pad" before naming anything else about the timber.
+      const sole = new THREE.Color().copy(PAL.timberDark).multiplyScalar(0.9);
+      box(timber, px - 0.34, g - 0.06, pz - 0.28, px + 0.34, g + 0.1, pz + 0.28, sole);
+      box(timber, qx - 0.3, heightAt(qx, qz) - 0.06, qz - 0.24, qx + 0.3, heightAt(qx, qz) + 0.1, qz + 0.24, sole);
+    }
+    if (s % 2 === 0) {
+      // Raking brace out into the pomerium, footed on the ground behind the scaffold.
+      const braceOff = standOff - 1.7;
+      const bxp = lerp(bay.x0, bay.x1, t) + nx * braceOff;
+      const bzp = lerp(bay.z0, bay.z1, t) + nz * braceOff;
       strut(timber, P0.set(px, g + h * 0.9, pz), P1.set(bxp, heightAt(bxp, bzp), bzp), 0.1, c);
     }
   }
 
   const gBase = Math.min(bay.g0, bay.g1);
   const lifts = Math.max(1, Math.floor((topY - gBase) / 1.9));
+  // Inner edge of the plank deck, hard against the curtain's city face.
+  const deckOff = -(HALF_T - 0.15);
   for (let k = 1; k <= lifts; k++) {
     const y = gBase + k * 1.9;
     const ax = bay.x0 + nx * standOff;
@@ -1776,29 +2631,140 @@ function buildScaffold(
     const bx = bay.x1 + nx * standOff;
     const bz = bay.z1 + nz * standOff;
     cylinderBetween(timber, ax, y, az, bx, y, bz, 0.07, PAL.timber);
-    if (k >= 1) {
-      // Plank deck between the scaffold and the wall face.
-      const iOff = WALL.thickness * 0.5 - 0.15;
-      P0.set(ax, y + 0.08, az);
-      P1.set(bx, y + 0.08, bz);
-      P2.set(bay.x1 + nx * iOff, y + 0.08, bay.z1 + nz * iOff);
-      P3.set(bay.x0 + nx * iOff, y + 0.08, bay.z0 + nz * iOff);
-      OUT.set(0, 1, 0);
-      timber.quadN(OUT, P0, P1, P2, P3, PAL.timber, PAL.timberDark, PAL.timber, PAL.timberDark);
+    /**
+     * A ledger on the **inner** row too, and raking braces in the plane of the face.
+     *
+     * Without these the scaffold is thirteen bare uprights per bay and reads as a picket
+     * fence — which is exactly what it looked like once it was moved to the city side where
+     * the camera can actually see it. A scaffold is a *frame*: what makes it legible is the
+     * horizontals and the diagonals, not the standards. Vitruvius' *machinae* and every
+     * surviving depiction of Roman staging show the same triangulated bay.
+     */
+    const nax = bay.x0 + nx * nearOff;
+    const naz = bay.z0 + nz * nearOff;
+    const nbx = bay.x1 + nx * nearOff;
+    const nbz = bay.z1 + nz * nearOff;
+    cylinderBetween(timber, nax, y - 0.5, naz, nbx, y - 0.5, nbz, 0.06, PAL.timberDark);
+    if (detail >= 2 && k < lifts) {
+      /**
+       * Face-plane diagonals, **one standard bay each**.
+       *
+       * The first attempt at this ran each brace from t = 0 to t = 0.5 of the *wall* bay —
+       * 17.75 m along against 1.9 m of rise, a 6° member that is a second ledger with a
+       * slope on it, not a brace. A critic shown the render said there was no bracing in the
+       * frame at all, and was right to. A scaffold bay here is 35.5 / 12 = 2.96 m, so a
+       * proper diagonal over one lift rises 1.9 m in 2.96 and lands at 33°, which is what
+       * triangulates the frame and what breaks the orthogonal grid at a distance.
+       */
+      for (let s = 0; s < nStands; s++) {
+        if ((s + k + bay.index) % 2 !== 0) continue;
+        // Alternate the hand so the run reads as a braced frame, not a row of parallel ticks.
+        const up = (s + k) % 4 < 2;
+        const t0 = (up ? s : s + 1) / nStands;
+        const t1 = (up ? s + 1 : s) / nStands;
+        strut(
+          timber,
+          P0.set(lerp(ax, bx, t0), y, lerp(az, bz, t0)),
+          P1.set(lerp(ax, bx, t1), y + 1.9, lerp(az, bz, t1)),
+          0.055,
+          PAL.timberDark
+        );
+      }
+      // Rope lashings where a ledger crosses a standard. Roman staging is tied, not nailed,
+      // and the binding is the detail that separates modelled staging from decorative.
+      for (let s = 0; s <= nStands; s += 2) {
+        const t2 = s / nStands;
+        const lx = lerp(ax, bx, t2);
+        const lz = lerp(az, bz, t2);
+        cylinder(timber, lx, y - 0.11, lz, 0.215, 0.215, 0.22, 6, PAL.timberDark);
+      }
+    }
+    /**
+     * The plank deck: **boards, not a slab.**
+     *
+     * It was one quad the length of the bay, which from anywhere near it is a 35 m sheet of
+     * timber with one clean straight edge — "no individual board ends, no differing lengths,
+     * no overlaps, no gaps". Scaffold boards are about four metres long and are laid four or
+     * five abreast with the ends butted wherever a putlog falls, so the deck is emitted as a
+     * grid of them with a joint between each and a little tone and height variation.
+     *
+     * Each board gets a soffit as well. A deck emitted as a single upward quad is invisible
+     * from underneath, and now that the staging is on the city side there is a whole
+     * pomerium to stand in and look up from.
+     */
+    const across = detail >= 2 ? 4 : 1;
+    const along = detail >= 2 ? 9 : 1;
+    for (let c2 = 0; c2 < across; c2++) {
+      const w0 = c2 / across;
+      const w1 = (c2 + 1) / across;
+      for (let a2 = 0; a2 < along; a2++) {
+        // 25 mm between boards, and a board sits a few millimetres off its neighbour.
+        const j = across > 1 ? 0.012 : 0;
+        const s0 = a2 / along;
+        const s1 = (a2 + 1) / along;
+        const dyB = across > 1 ? hash2(a2, c2 + bay.index * 7 + k * 3, 59) * 0.02 : 0;
+        const yb = y + 0.08 + dyB;
+        const oA = lerp(standOff, deckOff, w0);
+        const oB = lerp(standOff, deckOff, w1) - (across > 1 ? 0.025 : 0);
+        const tone = new THREE.Color()
+          .copy(PAL.timber)
+          .multiplyScalar(0.84 + hash2(a2 * 3 + c2, bay.index + k, 131) * 0.34);
+        const pA = { x: lerp(bay.x0, bay.x1, s0), z: lerp(bay.z0, bay.z1, s0) };
+        const pB = { x: lerp(bay.x0, bay.x1, s1), z: lerp(bay.z0, bay.z1, s1) };
+        const gap = across > 1 ? 0.02 : 0;
+        P0.set(pA.x + nx * oB + dx * gap, yb, pA.z + nz * oB + dz * gap);
+        P1.set(pB.x + nx * oB - dx * gap, yb, pB.z + nz * oB - dz * gap);
+        P2.set(pB.x + nx * oA - dx * gap, yb, pB.z + nz * oA - dz * gap);
+        P3.set(pA.x + nx * oA + dx * gap, yb, pA.z + nz * oA + dz * gap);
+        OUT.set(0, 1, 0);
+        timber.quadN(OUT, P0, P1, P2, P3, tone, tone, tone, tone);
+        P0.set(pA.x + nx * oA + dx * gap, yb - 0.055 - j, pA.z + nz * oA + dz * gap);
+        P1.set(pB.x + nx * oA - dx * gap, yb - 0.055 - j, pB.z + nz * oA - dz * gap);
+        P2.set(pB.x + nx * oB - dx * gap, yb - 0.055 - j, pB.z + nz * oB - dz * gap);
+        P3.set(pA.x + nx * oB + dx * gap, yb - 0.055 - j, pA.z + nz * oB + dz * gap);
+        OUT.set(0, -1, 0);
+        timber.quadN(OUT, P0, P1, P2, P3, PAL.timberDark);
+      }
+    }
+    if (detail >= 2 && k < lifts) {
+      // A ladder to the lift above. Four decks with no way between them is a scaffold no
+      // builder can use, and it was the first thing a reviewer said was missing outright.
+      const lt = 0.18 + ((k * 5 + bay.index) % 7) * 0.1;
+      const lOff = standOff + 0.55;
+      const lx = lerp(bay.x0, bay.x1, lt) + nx * lOff;
+      const lz = lerp(bay.z0, bay.z1, lt) + nz * lOff;
+      const foot = 0.55;
+      for (const sr of [-1, 1]) {
+        strut(
+          timber,
+          P0.set(lx + dx * sr * 0.24 - nx * foot, y + 0.1, lz + dz * sr * 0.24 - nz * foot),
+          P1.set(lx + dx * sr * 0.24, y + 2.0, lz + dz * sr * 0.24),
+          0.045,
+          PAL.timber
+        );
+      }
+      for (let r = 1; r < 7; r++) {
+        const f2 = r / 7;
+        const rx = lx - nx * foot * (1 - f2);
+        const rz = lz - nz * foot * (1 - f2);
+        const ry = y + 0.1 + f2 * 1.9;
+        cylinderBetween(timber, rx - dx * 0.24, ry, rz - dz * 0.24, rx + dx * 0.24, ry, rz + dz * 0.24, 0.033, PAL.timberDark, 4);
+      }
     }
     if (detail >= 2) {
+      // Putlogs: the transoms that carry the deck, one end socketed into the wall.
       for (let s = 0; s < 10; s++) {
         const t = (s + 0.5) / 10;
         const px = lerp(bay.x0, bay.x1, t);
         const pz = lerp(bay.z0, bay.z1, t);
         cylinderBetween(
           timber,
-          px + nx * (standOff + 0.35),
+          px + nx * (standOff - 0.35),
           y,
-          pz + nz * (standOff + 0.35),
-          px + nx * (WALL.thickness * 0.5 - 0.5),
+          pz + nz * (standOff - 0.35),
+          px + nx * (-(HALF_T - 0.5)),
           y,
-          pz + nz * (WALL.thickness * 0.5 - 0.5),
+          pz + nz * (-(HALF_T - 0.5)),
           0.06,
           PAL.timberDark
         );
@@ -1807,8 +2773,6 @@ function buildScaffold(
   }
 
   if (bay.index % 2 === 0) buildCrane(batch, detail, bay, topY, rng);
-  void dx;
-  void dz;
 }
 
 /**
@@ -1825,27 +2789,44 @@ function buildCrane(batch: Batch, detail: number, bay: Bay, topY: number, rng: R
   const bzp = lerp(bay.z0, bay.z1, t);
   const baseY = topY + 0.22;
   const mastH = 15.5;
-  const lean = 2.6;
+  /**
+   * The mast leans **cityward**, and the jib swings over the pomerium.
+   *
+   * A *polyspaston* is fed from the ground it stands over, and the ground the stone is
+   * stacked on is inside the wall — `buildYard` puts the travertine, the brick pallets and
+   * the mortar pit at −11..−23 m, because you do not stockpile your building material on
+   * the enemy's side of an unfinished wall. The crane used to lean the other way and hang
+   * its load out over the glacis, lifting blocks from a yard that is not there.
+   */
+  const lean = -2.6;
 
   const apex = new THREE.Vector3(bxp + nx * lean, baseY + mastH, bzp + nz * lean);
   for (const s of [-1, 1]) {
     strut(
       timber,
-      P0.set(bxp + dx * s * 1.6 - nx * 0.7, baseY, bzp + dz * s * 1.6 - nz * 0.7),
+      P0.set(bxp + dx * s * 1.6 + nx * 0.7, baseY, bzp + dz * s * 1.6 + nz * 0.7),
       apex,
       0.18,
       PAL.timber
     );
   }
-  strut(timber, apex, P0.set(bxp - nx * 3.2, baseY, bzp - nz * 3.2), 0.16, PAL.timberDark);
-  // Jib carrying the fall out beyond the wall face.
-  strut(timber, apex, P0.set(bxp + nx * 6.5, baseY + mastH * 0.62, bzp + nz * 6.5), 0.15, PAL.timber);
+  // Backstay taking the overturning moment, footed on the outer lip of the lift. Brought
+  // in from 3.2 m to 2.2: the exposed core is 5.45 m wide, so 3.2 stood in mid-air.
+  strut(timber, apex, P0.set(bxp + nx * 2.2, baseY, bzp + nz * 2.2), 0.16, PAL.timberDark);
+  // Jib carrying the fall out over the yard behind the wall.
+  strut(timber, apex, P0.set(bxp - nx * 6.5, baseY + mastH * 0.62, bzp - nz * 6.5), 0.15, PAL.timber);
 
   // Treadwheel: two rims joined by treads, big enough for two men to walk in.
+  //
+  // Centred on the lift rather than offset to one side of it. The wheel is 5.8 m across and
+  // stands in the plane *across* the wall, so any offset at all hangs most of it over one
+  // face or the other: at 1.5 m to the field side it reached 4.4 m out — further than the
+  // scaffold it replaced and, being a wheel, a rather better ladder. On the centreline it
+  // overhangs the 5.45 m core by 175 mm each way, which is what a real one would do.
   if (detail >= 1) {
     const R = 2.9;
-    const wcx = bxp - nx * 1.5;
-    const wcz = bzp - nz * 1.5;
+    const wcx = bxp;
+    const wcz = bzp;
     const wheelY = baseY + 0.35 + R;
     const rimSeg = detail >= 2 ? 16 : 9;
     for (const s of [-1, 1]) {
@@ -1894,7 +2875,7 @@ function buildYard(
 
   // Yards sit on the city side: you do not stack your building stone outside the
   // wall with a Germanic host on the plain.
-  const yardOff = -(WALL.thickness * 0.5 + rng.range(8, 20));
+  const yardOff = -(HALF_T + rng.range(8, 20));
   const nStacks = detail >= 1 ? 5 : 2;
   for (let i = 0; i < nStacks; i++) {
     const t = rng.next();
@@ -1987,7 +2968,7 @@ function buildFootingSite(
   const gm = Math.min(bay.g0, bay.g1);
 
   for (const s of [-1, 1]) {
-    const off = s * (WALL.thickness * 0.5 + 0.16);
+    const off = s * (HALF_T + 0.16);
     quadPrism(
       timber,
       bay.x0 + nx * off,
@@ -2020,7 +3001,7 @@ function buildFootingSite(
     bay.z1,
     nx,
     nz,
-    WALL.thickness,
+    CURTAIN_T,
     gm + WALL.plinthHeight,
     gm + WALL.plinthHeight + 1.0,
     PAL.concrete,
@@ -2057,13 +3038,13 @@ function buildGapBarricade(
     const bz = lerp(bay.z0, bay.z1, t1);
     const g = Math.min(heightAt(ax, az), heightAt(bx, bz));
     const h = 2.5 + hash2(s, bay.index, 77) * 0.9;
-    quadPrism(concrete, ax, az, bx, bz, nx, nz, WALL.thickness + 3.6, g - 0.8, g + h, PAL.concrete, PAL.dust, {
+    quadPrism(concrete, ax, az, bx, bz, nx, nz, CURTAIN_T + 3.6, g - 0.8, g + h, PAL.concrete, PAL.dust, {
       ends: false,
       batter: 0.44,
     });
     if (detail >= 1 && hash2(s, bay.index, 91) > 0.5) {
-      const bxx = lerp(ax, bx, 0.5) + nx * (WALL.thickness * 0.5 + 1.3);
-      const bzz = lerp(az, bz, 0.5) + nz * (WALL.thickness * 0.5 + 1.3);
+      const bxx = lerp(ax, bx, 0.5) + nx * (HALF_T + 1.3);
+      const bzz = lerp(az, bz, 0.5) + nz * (HALF_T + 1.3);
       quadPrism(stone, bxx - dx * 0.7, bzz - dz * 0.7, bxx + dx * 0.7, bzz + dz * 0.7, nx, nz, 0.7, g, g + 0.66, PAL.travertineDirty, PAL.travertine);
     }
   }

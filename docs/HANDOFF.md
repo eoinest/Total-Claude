@@ -58,8 +58,15 @@ Everything below came from the player. Items not listed here are done and commit
 - ~~units standing face to face not fighting~~ — **done** `ab8b957`, 0 → 708-772 blows in 60 s
 - ~~`R` run key does nothing~~ — **done** `ab8b957`, sim-side 1.55 → 3.383 m/s
 - ~~stragglers stuck behind the wall~~ — **done** `ab8b957`, 94 → 30 stranded
-- wall much wider; stairs parallel not perpendicular; scaffolding inside — wall geometry
-- gate shut by default — wall geometry owns the door, siege owns the mechanic
+- ~~wall much wider; stairs parallel not perpendicular; scaffolding inside~~ — **done.** Curtain
+  3.5 → 6.0 m (`CURTAIN_T` in `wall.ts`), clear standing band 1.57 → 2.21-4.06 m, which is 4-6 ranks
+  at the sim's 0.72 m pitch instead of 2; nine flights parallel to the face, 14.2-20.4 m along the
+  wall against 3.28-3.79 m of projection into the pomerium; scaffold, crane, plank deck and putlogs
+  all on the city side. `probe-wall` 12 → 19 assertions, all green.
+- ~~gate shut by default~~ — **done.** `GateOut.open` is `false` at build time, the leaves are
+  modelled shut with a drawbar and a bricked lunette, and `CitySystem` no longer clears the
+  carriageway out of the occupancy grid for a shut gate. Siege opens it with
+  `setGateOpen('porta-flaminia', true)`; the door plane is published by `getGateDoor()`.
 - soldiers use stairs, move laterally along the wall, descend into the city — siege
 - much larger wall-breaking ram — siege
 - tower drawbridge backwards (ropes forward, door opens backwards) — siege

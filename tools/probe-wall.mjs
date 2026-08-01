@@ -169,7 +169,8 @@ try {
       nx: b.nx, nz: b.nz, dx: b.dx, dz: b.dz, length: b.length,
       stage: b.stage, walkY: b.walkY, crestY: b.crestY, sillY: b.sillY,
       groundY: b.groundY, garrisonable: b.garrisonable, isGate: b.isGate,
-      towerHalf: b.towerHalf,
+      towerHalf: b.towerHalf, halfThickness: b.halfThickness,
+      innerOff: b.innerOff, outerOff: b.outerOff,
     }));
     const gates = city.getGates().map((x) => ({ ...x }));
     const segs = city.getWallSegments().map((s) => ({ ...s }));
@@ -194,6 +195,75 @@ try {
     root.traverse((o) => {
       if (o.isMesh && o.parent && /^wall-\d+-lod0$/.test(o.parent.name)) meshes.push(o);
     });
+
+    /**
+     * Half-thickness of the curtain, from the published contract rather than a literal.
+     *
+     * The wall was widened from 3.5 m to 6.0 m and every offset band below is measured
+     * from its faces, so hardcoding 1.75 here would have quietly re-tested the old wall.
+     */
+    const HALF_T = bays[0].halfThickness;
+
+    /**
+     * Signed offset bands, in the sense `frameOf` uses: the outward normal of a run heading
+     * +X points toward −Z, so **negative offset is the field side and positive is the city
+     * side**. Everything the player asked to be moved indoors has to land positive.
+     */
+    /**
+     * Squarely inside the treads, and clear of everything else that stands behind the wall.
+     *
+     * The flight's treads run from the curtain's inner face out to `HALF_T + 2.8`. A wider
+     * band picks up the things that legitimately overhang the pomerium and reads them as
+     * rakes: the tower roofs' eaves reach `HALF_T + 0.74`, the gallery's reach `HALF_T`, and
+     * the river terminus is a 7.6 m drum that straddles the wall line entirely. Sampling the
+     * middle 1.2 m of the tread instead finds the stair and nothing else.
+     */
+    const STAIR_BAND_LO = HALF_T + 1.2;
+    const STAIR_BAND_HI = HALF_T + 2.4;
+    /**
+     * And the band the stair's own parapet stands in, just outboard of the treads.
+     *
+     * Two independent reviewers looking at the same render reported that the flight has no
+     * parapet and no coping on the open side — "a raw stepped brick arris with nothing above
+     * tread level" — while the builder does emit one 0.95 m high. Exactly the kind of
+     * disagreement this file exists to settle: either the guard is missing, in which case
+     * it is a real fault on a 9 m drop, or the camera was looking down over the top of it.
+     * Measured, per flight, as the height of the parapet band over the tread band.
+     */
+    const PARA_BAND_LO = HALF_T + 2.7;
+    const PARA_BAND_HI = HALF_T + 3.4;
+    /**
+     * Along-run bin for the stair profile. **Finer than a going**, which matters.
+     *
+     * At 0.5 m against a 0.42 m going a bin straddles two risers whenever the boundaries
+     * fall badly, and taking the max over the bin then reports a 0.58 m step on a stair
+     * whose risers are 0.29 m — an artefact of the sampling, not of the stone. 0.2 m sees
+     * at most one riser per bin, so the number below is the real going-to-going rise.
+     */
+    const STAIR_BIN = 0.2;
+
+    const nBays = bays.length;
+    const bayLen = bays[0].x1 - bays[0].x0;
+    const stairBins = Math.ceil(bayLen / STAIR_BIN) + 1;
+    /** Max Y of tread-band geometry, per bay per along-bin. */
+    const stairTop = new Float64Array(nBays * stairBins).fill(-Infinity);
+    /** And of the parapet band just outboard of it. See `PARA_BAND_LO`. */
+    const paraTop = new Float64Array(nBays * stairBins).fill(-Infinity);
+    /** Furthest cityward any stair-band geometry reaches, per bay. */
+    const stairOut = new Float64Array(nBays).fill(0);
+    /**
+     * Worst *field-side* offset reached by timber standing well above the ground, and where.
+     *
+     * This is the scaffolding test. Offsets are signed with the city positive, so a scaffold
+     * erected outside the wall shows up as a large negative number here. Ground clutter is
+     * excluded by the height gate, not by guessing which mesh is which: a concrete pour has
+     * to be shuttered from both faces, so the footing bays' boards and stakes are
+     * legitimately outside and stand 2.8 m over their own base. 4.0 m clears them and is
+     * still far below a scaffold lift, which reaches the wall-walk and then 2.8 m more.
+     */
+    let timberWorstOut = 0;
+    let timberWorstX = 0;
+    let timberWorstY = 0;
     const top = new Float64Array(N).fill(-Infinity);
     let tris = 0;
     const ax = [0, 0, 0], ay = [0, 0, 0], az = [0, 0, 0];
@@ -240,6 +310,9 @@ try {
       const idx = mesh.geometry.getIndex();
       const e = mesh.matrixWorld.elements;
       const count = idx ? idx.count : pos.count;
+      // `Batch.toMeshes` names each stream `<chunk>-<material>`, so the timber the scaffold
+      // is built from can be measured on its own without guessing from position.
+      const isTimber = /-timber$/.test(mesh.name);
       for (let i = 0; i + 2 < count; i += 3) {
         for (let k = 0; k < 3; k++) {
           const vi = idx ? idx.getX(i + k) : i + k;
@@ -261,6 +334,85 @@ try {
           for (let b = b0; b <= b1; b++) buckets[b].push(ti);
         }
         const yMax = Math.max(ay[0], ay[1], ay[2]);
+
+        // ---- stair band and scaffolding side, both measured off the same offsets ----
+        {
+          const xMid = (ax[0] + ax[1] + ax[2]) / 3;
+          const oMid = (o0 + o1 + o2) / 3;
+          const bi = Math.floor((xMid - X0) / bayLen);
+          /**
+           * Bin by **along-run distance**, not by x.
+           *
+           * The tread band and the parapet band sit at different normal offsets, and the
+           * outward normal has an x component on any bay that is not axis-aligned, so the
+           * same along-run position maps to two different x values in the two bands. On the
+           * obliquest flights that is a full metre of shear, which read as the parapet
+           * running two risers below the treads — a 0.07 m guard on a wall that has 0.95 m
+           * everywhere. Projecting onto the bay's own direction removes it exactly.
+           */
+          const tOfXZ = (px, pz) =>
+            bi >= 0 && bi < nBays
+              ? (px - bays[bi].x0) * bays[bi].dx + (pz - bays[bi].z0) * bays[bi].dz
+              : 0;
+          const tA = tOfXZ(ax[0], az[0]);
+          const tB = tOfXZ(ax[1], az[1]);
+          const tC = tOfXZ(ax[2], az[2]);
+          const tLo = Math.min(tA, tB, tC);
+          const tHi = Math.max(tA, tB, tC);
+          const nearGate = gates.length > 0 && Math.abs(xMid - gates[0].x) <= 13;
+          if (bi >= 0 && bi < nBays && !nearGate) {
+            /**
+             * Only geometry at or below the walkway counts as a walking surface.
+             *
+             * A flight ends *on* the walk, so anything standing above it is a parapet, a
+             * coping or the return wall that closes the head of the landing — all of them
+             * correct masonry, none of them a tread. Without this the profile topped out on
+             * the landing's 0.95 m guard wall and every stair read as overshooting its own
+             * bay by exactly that height. It cannot hide a stair that fails to arrive: a
+             * short flight's top is *below* walkY and is still measured.
+             */
+            /**
+             * Only geometry lying **wholly outboard of the treads** counts as the parapet.
+             *
+             * Not a centroid test, which dropped whichever prism face fell a few centimetres
+             * outside the band and left bins with no reading; and not a plain overlap test,
+             * which swept in the two slabs that legitimately span the whole flight — the
+             * landing at the head and the apron at the foot both run from the curtain face
+             * out past the parapet, and their tops sit at exactly the tread level, so they
+             * reported a guard height of zero on a parapet that is there. Requiring the
+             * triangle to start beyond the treads separates the cheek wall from the flight
+             * it is built on.
+             */
+            if (omin >= PARA_BAND_LO && omin <= PARA_BAND_HI) {
+              const j0 = Math.max(0, Math.floor(tLo / STAIR_BIN));
+              const j1 = Math.min(stairBins - 1, Math.floor(tHi / STAIR_BIN));
+              for (let j = j0; j <= j1; j++) {
+                const k2 = bi * stairBins + j;
+                if (yMax > paraTop[k2]) paraTop[k2] = yMax;
+              }
+            }
+            if (oMid >= STAIR_BAND_LO && oMid <= STAIR_BAND_HI && yMax <= bays[bi].walkY + 0.05) {
+              const j0 = Math.max(0, Math.floor(tLo / STAIR_BIN));
+              const j1 = Math.min(stairBins - 1, Math.floor(tHi / STAIR_BIN));
+              for (let j = j0; j <= j1; j++) {
+                const k = bi * stairBins + j;
+                if (yMax > stairTop[k]) stairTop[k] = yMax;
+              }
+            }
+            if (oMid > HALF_T + 0.1 && oMid < HALF_T + 8 && yMax > bays[bi].groundY + 1.0) {
+              if (omax > stairOut[bi]) stairOut[bi] = omax;
+            }
+          }
+          if (isTimber && omin < timberWorstOut) {
+            const zMid = (az[0] + az[1] + az[2]) / 3;
+            if (yMax > terrain.heightAt(xMid, zMid) + 4.0) {
+              timberWorstOut = omin;
+              timberWorstX = xMid;
+              timberWorstY = yMax - terrain.heightAt(xMid, zMid);
+            }
+          }
+        }
+
         let lo = Math.min(ax[0], ax[1], ax[2]);
         let hi = Math.max(ax[0], ax[1], ax[2]);
         // A triangle that is vertical in x still covers the bin it sits in.
@@ -304,8 +456,35 @@ try {
       return best;
     };
 
+    /**
+     * Where the block's own front face is, measured rather than assumed.
+     *
+     * Cast down the same line at 10 m up, well above the crown of the vault, where the
+     * gatehouse is solid attic. Everything the carriageway rays report is then expressed
+     * *relative to the face*, so the two door assertions below need no constant from
+     * `wall.ts` and cannot drift when the block's depth or setback changes.
+     */
+    const faceHit = castNear(
+      gates[0].x + gateBay.nx * 16, gy + 10.0, gates[0].z + gateBay.nz * 16,
+      -gateBay.nx, 0, -gateBay.nz, 40, [gates[0].x]
+    );
+
     for (const r of rays) {
       r.hit = castNear(r.ox, r.oy, r.oz, r.dx, r.dy, r.dz, 40, [gates[0].x]);
+      /**
+       * And again from a metre behind whatever stopped it.
+       *
+       * This is the half of the old assertion worth keeping. The passage still has to be a
+       * real tunnel — the bug this file was written for was a curtain built straight through
+       * it and a 1.15 m socle step across the road, both hidden behind the leaves — but with
+       * the gate shut, a ray from outside can no longer see any of that. So the test moves
+       * inside the doors: what the ram opens has to be a road, not a bricked-up recess.
+       */
+      const from = Number.isFinite(r.hit) ? r.hit + 1.0 : 0;
+      r.beyond = castNear(
+        r.ox + r.dx * from, r.oy, r.oz + r.dz * from,
+        r.dx, r.dy, r.dz, 25, [gates[0].x, gates[0].x + 6, gates[0].x - 6]
+      );
     }
 
     /**
@@ -394,9 +573,185 @@ try {
       });
     }
 
+    // ---- stair profiles, read back out of the splat --------------------------
+    /**
+     * A flight is a sustained monotone climb in the tread band.
+     *
+     * Discovered from the triangles rather than read from a list, which is the whole point
+     * of this file: the geometry has to *be* a walkable rake, not merely be accompanied by
+     * a record saying it is. Only finished bays are scanned — an unfinished bay carries the
+     * scaffold in the same band, and a scaffold is a roughly level deck, not a climb.
+     */
+    const stairsFound = [];
+    for (let b = 0; b < nBays; b++) {
+      if (bays[b].stage !== 'finished') continue;
+      const h = [];
+      for (let j = 0; j < stairBins; j++) h.push(stairTop[b * stairBins + j]);
+      const filled = h.map((v) => (Number.isFinite(v) ? v : null));
+      // Longest non-decreasing run of filled bins, scanning from the high end down.
+      let best = null;
+      let j = 0;
+      while (j < stairBins) {
+        if (filled[j] === null) { j++; continue; }
+        let k = j;
+        while (k + 1 < stairBins && filled[k + 1] !== null && filled[k + 1] <= filled[k] + 1e-6) k++;
+        const span = { j0: j, j1: k, yTop: filled[j], yBot: filled[k] };
+        if (!best || span.yTop - span.yBot > best.yTop - best.yBot) best = span;
+        j = Math.max(k + 1, j + 1);
+      }
+      if (!best) continue;
+      const climb = best.yTop - best.yBot;
+      // A stair climbs, is long enough to be a flight, and **starts on the ground**. The
+      // last clause is what stops a drum or a roof that happens to fall in the band being
+      // read as a rake, without making the head-height assertion below tautological.
+      if (climb < 2.0) continue;
+      if ((best.j1 - best.j0) * STAIR_BIN < 4.0) continue;
+      if (best.yBot > bays[b].groundY + 3.0) continue;
+      /**
+       * A rake is *straight*. This is what separates a flight from the other thing in this
+       * band that descends: the river terminus at bay 0 is a 7.6 m drum straddling the wall
+       * line, and its tile string courses cross the band at a different height every few
+       * metres, which reads as a 6.8 m "climb" in 8 bins. Measured against the chord from
+       * head to foot, a stair never departs by more than one riser; the drum departs by
+       * metres. Deliberately *not* the same test as the two assertions below — a dead
+       * straight rake can still have risers a man cannot climb, and can still stop short of
+       * the walkway, so neither of those is made tautological by this.
+       */
+      /**
+       * Measured over the rake only, trimming the flat at **both** ends.
+       *
+       * The flight is bounded by two level surfaces that are part of it and are not treads:
+       * a landing at the head, where a man steps off onto the walkway, and an apron at the
+       * foot, where it discharges onto paving instead of into turf. A chord drawn across
+       * either of them tilts off the treads — the 1.8 m apron alone put the deviation at
+       * 0.5 m on a 16 m flight and made the probe report that the circuit had no stairs at
+       * all, half an hour after it had correctly found nine.
+       */
+      let jr = best.j0;
+      while (jr < best.j1 && filled[jr] > best.yTop - 0.05) jr++;
+      jr = Math.max(best.j0, jr - 1);
+      let je = best.j1;
+      while (je > jr && filled[je] < best.yBot + 0.05) je--;
+      je = Math.min(best.j1, je + 1);
+      let dev = 0;
+      for (let q = jr; q <= je; q++) {
+        const t = (q - jr) / Math.max(1, je - jr);
+        dev = Math.max(dev, Math.abs(filled[q] - (filled[jr] + (filled[je] - filled[jr]) * t)));
+      }
+      if (dev > 0.45) continue;
+      // Biggest jump between adjacent bins over the flight — a step a man cannot take.
+      let jump = 0;
+      for (let q = best.j0; q < best.j1; q++) jump = Math.max(jump, filled[q] - filled[q + 1]);
+      stairsFound.push({
+        bay: b,
+        alongLength: +((best.j1 - best.j0) * STAIR_BIN).toFixed(2),
+        crossExtent: +(stairOut[b] - HALF_T).toFixed(2),
+        climb: +climb.toFixed(2),
+        headY: +best.yTop.toFixed(2),
+        footY: +best.yBot.toFixed(2),
+        walkY: +bays[b].walkY.toFixed(2),
+        toWalk: +(best.yTop - bays[b].walkY).toFixed(2),
+        maxStep: +jump.toFixed(3),
+        dev: +dev.toFixed(3),
+        // Lowest guard height over the rake: how far the parapet stands above the tread
+        // beside it, at the worst bin of the flight.
+        /**
+         * Lowest guard height over the rake: how far the parapet stands above the tread
+         * beside it, at the worst step of the flight.
+         *
+         * Taken against the highest parapet **within one bin**, which is not a fudge but the
+         * removal of a sampling artifact. Both profiles are staircases and their step edges
+         * do not fall in the same 0.2 m bin, so wherever the parapet has stepped down and
+         * the tread has not, a straight per-bin difference reports exactly one riser less
+         * than the truth — an alternating 0.95 / 0.66 sawtooth on a parapet that is a
+         * constant 0.95 m everywhere. Same class of error as the 0.58 m "step" a 0.5 m bin
+         * reported on 0.29 m risers. A missing parapet still reads as missing: the window is
+         * one bin, not the flight.
+         */
+        /**
+         * How far the parapet stands above the tread beside it, as the **median** over the
+         * rake, with the fraction of the rake that has a parapet at all reported alongside.
+         *
+         * Both quantities are needed and neither alone is honest. A per-bin minimum is not
+         * measurable here: the two profiles are staircases whose step edges fall in different
+         * 0.2 m bins, so it reports one riser short wherever they disagree, and at the two
+         * junctions — the landing at the head, the apron at the foot — a level slab lands in
+         * both bands at once and it reports zero. Neither is a fault in the wall. The median
+         * is immune to both and still collapses if the guard is actually missing, which is
+         * what `cover` is for: a flight with no parapet reads 0 % covered, not 0.95 m.
+         */
+        /**
+         * Guard height, measured against the **rake's own chord** rather than against the
+         * tread bins.
+         *
+         * Differencing two independently binned staircases cannot do better than one riser:
+         * their step edges fall in different 0.2 m bins, so the reading oscillates by ±0.30 m
+         * whichever profile you take the envelope of, and at the junctions with the landing
+         * and the apron it collapses to zero. The chord from head to foot is already the
+         * line this file asserts the treads lie on, to within 0.45 m, so measuring the
+         * parapet against it is well founded and free of the phase error entirely. A parapet
+         * that is 0.95 m over the treads reads 0.95 m over the chord, give or take the half
+         * riser the treads themselves depart from it.
+         */
+        guard: (() => {
+          const g2 = [];
+          const span = Math.max(1, je - jr);
+          for (let q = jr + 3; q <= je - 3; q++) {
+            const pv = paraTop[b * stairBins + q];
+            if (!Number.isFinite(pv)) continue;
+            const line = filled[jr] + ((filled[je] - filled[jr]) * (q - jr)) / span;
+            g2.push(pv - line);
+          }
+          if (g2.length === 0) return -1;
+          g2.sort((u, v) => u - v);
+          // The median, not the minimum. Two things put noise on the tail that is not in the
+          // wall: the bin phase between two staircases, worth ±1 riser, and the obliquest
+          // bays, where the probe's own reconstruction of the wall line differs from the
+          // builder's by enough to push a few triangles out of a 0.7 m offset band. The
+          // median is stable against both and still goes to zero if the guard is absent —
+          // `cover` is reported beside it so an absent parapet cannot hide behind it.
+          return +g2[g2.length >> 1].toFixed(2);
+        })(),
+        cover: (() => {
+          let n2 = 0;
+          let tot = 0;
+          for (let q = jr; q <= je; q++) {
+            tot++;
+            if (Number.isFinite(paraTop[b * stairBins + q])) n2++;
+          }
+          return tot ? +(n2 / tot).toFixed(3) : 0;
+        })(),
+      });
+    }
+
+    // Debug: the two profiles for one flight, so a disagreement can be read bin by bin.
+    const dbgBay = 14;
+    const dbg = [];
+    for (let j = 0; j < stairBins; j++) {
+      const a = stairTop[dbgBay * stairBins + j];
+      const b2 = paraTop[dbgBay * stairBins + j];
+      if (Number.isFinite(a) || Number.isFinite(b2)) {
+        dbg.push({ t: +(j * STAIR_BIN).toFixed(1),
+          tread: Number.isFinite(a) ? +a.toFixed(2) : null,
+          para: Number.isFinite(b2) ? +b2.toFixed(2) : null });
+      }
+    }
     return {
       bays, gates, segs, prof, meshCount: meshes.length, tris,
-      carriageway: rays.map((r) => ({ h: r.h, hit: Number.isFinite(r.hit) ? +r.hit.toFixed(2) : null })),
+      dbg,
+      stairsFound,
+      timber: {
+        worstOut: +timberWorstOut.toFixed(2),
+        x: +timberWorstX.toFixed(1),
+        above: +timberWorstY.toFixed(2),
+        halfT: HALF_T,
+      },
+      faceHit: Number.isFinite(faceHit) ? +faceHit.toFixed(2) : null,
+      carriageway: rays.map((r) => ({
+        h: r.h,
+        hit: Number.isFinite(r.hit) ? +r.hit.toFixed(2) : null,
+        beyond: Number.isFinite(r.beyond) ? +r.beyond.toFixed(2) : null,
+      })),
       seeThrough, gRun, seeThroughSamples: Math.floor(X1 - X0),
       X0, X1, obstacleCount: obstacles.length,
       obstacleGeneration: city.obstacleGeneration,
@@ -459,16 +814,43 @@ try {
         : `${gateHoles.length} gap(s), worst ${Math.max(...gateHoles.map((h) => h.width)).toFixed(2)} m at x ` +
           `${gateHoles[0].x0.toFixed(1)}..${gateHoles[0].x1.toFixed(1)}`));
 
-    // ---- the one legal crossing is actually open ------------------------
+    /**
+     * ---- the gate is shut ------------------------------------------------
+     *
+     * It was open, and that was the fourth of the player's reports: the one road into Rome
+     * stood wide, so the Juthungi could walk in and the ram in the siege train had nothing
+     * to break. The old assertion here demanded the opposite — that the four carriageway
+     * rays pass clean through — so closing the gate correctly is what turns it red. It is
+     * replaced by the two tests that actually matter now.
+     *
+     * A shut gate is a *flat plane across the passage, set back behind the block's face*.
+     * Both halves of that matter: agreement between the four heights is what distinguishes
+     * a pair of leaves from a lump of masonry, and the setback is what distinguishes leaves
+     * from a bricked-up arch. Everything is measured against `faceHit`, the block's own
+     * front face read off a ray at 10 m up, so no constant from `wall.ts` is assumed.
+     */
     const cw = measured.carriageway;
-    const blocked = cw.filter((r) => r.hit !== null && r.hit < 30);
-    check('the gate passage is clear through the block — the one way in is open',
-      blocked.length === 0,
-      blocked.length === 0
-        ? `four rays down the carriageway centreline at ${cw.map((r) => r.h.toFixed(1)).join('/')} m ` +
-          'above the road pass through 30 m of gatehouse without striking masonry'
-        : `${blocked.length} of ${cw.length} rays hit stone inside the passage: ` +
-          blocked.map((r) => `${r.h.toFixed(1)} m up at ${r.hit.toFixed(2)} m in`).join('; '));
+    const face = measured.faceHit;
+    const hits = cw.filter((r) => r.hit !== null).map((r) => r.hit);
+    const spread = hits.length ? Math.max(...hits) - Math.min(...hits) : Infinity;
+    const setback = hits.length && face !== null ? Math.min(...hits) - face : NaN;
+    check('the gate is shut — the carriageway is stopped by the leaves, not by the vault',
+      hits.length === cw.length && spread <= 0.15 && setback > 1.0 && setback < 9.0,
+      hits.length !== cw.length
+        ? `${cw.length - hits.length} of ${cw.length} rays pass straight through the gate — it is standing open`
+        : `all ${cw.length} rays down the carriageway at ${cw.map((r) => r.h.toFixed(1)).join('/')} m ` +
+          `are stopped at ${Math.min(...hits).toFixed(2)}..${Math.max(...hits).toFixed(2)} m in ` +
+          `(spread ${(spread * 100).toFixed(1)} cm — one flat plane), ` +
+          `${setback.toFixed(2)} m behind the block's own face at ${face === null ? 'n/a' : face.toFixed(2)} m`);
+
+    const notThrough = cw.filter((r) => r.beyond !== null);
+    check('behind the leaves the passage is a real tunnel — the ram opens a road, not a recess',
+      notThrough.length === 0,
+      notThrough.length === 0
+        ? `four rays restarted 1 m inside the leaves run 25 m through the block and out the ` +
+          `far side without striking masonry: no curtain across the passage, no step in the road`
+        : `${notThrough.length} of ${cw.length} rays are blocked behind the doors: ` +
+          notThrough.map((r) => `${r.h.toFixed(1)} m up at ${r.beyond.toFixed(2)} m past them`).join('; '));
 
     // ---- nothing sees through the wall ----------------------------------
     const st = measured.seeThrough.filter((r) => !r.carriageway);
@@ -536,6 +918,102 @@ try {
       `${Math.min(...garr.map((b) => b.walkY - b.groundY)).toFixed(2)}..` +
       `${Math.max(...garr.map((b) => b.walkY - b.groundY)).toFixed(2)} m over the ground` +
       (badWalk.length ? `; offenders ${badWalk.map((b) => b.index).join(',')}` : ''));
+
+    /**
+     * ---- the walkway is wide enough to be worth standing on ---------------
+     *
+     * The player's first report was that the wall should be wider so more men fit, and the
+     * clear standing band is the number that decides how many do: the sim lays ranks at a
+     * 0.72 m interlocking pitch, so a band of `b` metres takes `floor(b / 0.72) + 1` ranks.
+     * At 3.5 m of curtain the band ran 0.75..1.86 m and most bays took **two**. This asserts
+     * the floor that widening bought, so a later change cannot quietly give it back.
+     */
+    const RANK_PITCH = 0.72;
+    const bands = garr.map((b) => ({ i: b.index, band: b.outerOff - b.innerOff }));
+    const ranksOf = (b) => Math.floor(b / RANK_PITCH) + 1;
+    const thin = bands.filter((b) => ranksOf(b.band) < 4);
+    check('every garrisoned bay has a walkway four ranks deep',
+      thin.length === 0,
+      `clear band ${Math.min(...bands.map((b) => b.band)).toFixed(2)}..` +
+      `${Math.max(...bands.map((b) => b.band)).toFixed(2)} m over ${bands.length} bays ` +
+      `(${Math.min(...bands.map((b) => ranksOf(b.band)))}..${Math.max(...bands.map((b) => ranksOf(b.band)))} ranks ` +
+      `at a ${RANK_PITCH} m pitch; the curtain is ${(bays[0].halfThickness * 2).toFixed(2)} m thick)` +
+      (thin.length ? `; too thin at bays ${thin.slice(0, 6).map((b) => `${b.i} (${b.band.toFixed(2)} m)`).join(', ')}` : ''));
+
+    /**
+     * ---- the stairs ------------------------------------------------------
+     *
+     * Discovered from the triangles, not read from a list. The old stair ran out of the
+     * tower's city face at right angles to the wall; the player asked for one that climbs
+     * along it. "Parallel" is measurable: a flight that runs along the curtain is many times
+     * longer than it is deep, and a flight that projects out of it is not.
+     */
+    const st2 = measured.stairsFound;
+    check('the wall has stairs onto the walkway at all',
+      st2.length >= 6,
+      st2.length === 0
+        ? 'no climbable rake found anywhere in the band behind the curtain'
+        : `${st2.length} flights found, on bays ${st2.map((s) => s.bay).join(', ')}; ` +
+          `they climb ${Math.min(...st2.map((s) => s.climb)).toFixed(2)}..` +
+          `${Math.max(...st2.map((s) => s.climb)).toFixed(2)} m`);
+
+    const perp = st2.filter((s) => s.crossExtent > 4.2 || s.alongLength < s.crossExtent * 2.5);
+    check('every stair climbs parallel to the curtain, not out of it',
+      st2.length > 0 && perp.length === 0,
+      st2.length === 0
+        ? 'no stairs to measure'
+        : `flights run ${Math.min(...st2.map((s) => s.alongLength)).toFixed(1)}..` +
+          `${Math.max(...st2.map((s) => s.alongLength)).toFixed(1)} m along the wall against ` +
+          `${Math.min(...st2.map((s) => s.crossExtent)).toFixed(2)}..` +
+          `${Math.max(...st2.map((s) => s.crossExtent)).toFixed(2)} m of projection into the ` +
+          `pomerium — ratio ${Math.min(...st2.map((s) => s.alongLength / Math.max(0.01, s.crossExtent))).toFixed(1)}:1 at worst` +
+          (perp.length ? `; offenders ${perp.map((s) => s.bay).join(',')}` : ''));
+
+    const unguarded = st2.filter((s) => s.guard < 0.7 || s.cover < 0.85);
+    check('every stair is walled on its open side, not a drop',
+      st2.length > 0 && unguarded.length === 0,
+      st2.length === 0
+        ? 'no stairs to measure'
+        : `the parapet stands ${Math.min(...st2.map((s) => s.guard)).toFixed(2)}..` +
+          `${Math.max(...st2.map((s) => s.guard)).toFixed(2)} m above the tread beside it ` +
+          `(worst step of each rake, against its chord), covering ` +
+          `${(Math.min(...st2.map((s) => s.cover)) * 100).toFixed(1)}-` +
+          `${(Math.max(...st2.map((s) => s.cover)) * 100).toFixed(1)}% of it, over ${st2.length} ` +
+          `flights (0.7 m and 85% minimum for a 9 m drop)` +
+          (unguarded.length ? `; short at bays ${unguarded.map((s) => `${s.bay} (${s.guard} m, ${(s.cover * 100).toFixed(0)}%)`).join(', ')}` : ''));
+
+    const short = st2.filter((s) => Math.abs(s.toWalk) > 0.16);
+    const steep = st2.filter((s) => s.maxStep > 0.45);
+    check('every stair arrives on the wall-walk by steps a man can climb',
+      st2.length > 0 && short.length === 0 && steep.length === 0,
+      st2.length === 0
+        ? 'no stairs to measure'
+        : `heads land within ${Math.max(...st2.map((s) => Math.abs(s.toWalk))) * 100 < 0.05 ? 0 : (Math.max(...st2.map((s) => Math.abs(s.toWalk))) * 100).toFixed(1)} cm ` +
+          `of their bay's walkY; tallest step ${(Math.max(...st2.map((s) => s.maxStep)) * 100).toFixed(1)} cm ` +
+          `(a 45 cm limit)` +
+          (short.length ? `; ${short.length} miss the walk, worst ${Math.max(...short.map((s) => Math.abs(s.toWalk))).toFixed(2)} m at bay ${short[0].bay}` : '') +
+          (steep.length ? `; ${steep.length} too steep, worst ${steep[0].maxStep.toFixed(2)} m at bay ${steep[0].bay}` : ''));
+
+    /**
+     * ---- the scaffolding is inside -----------------------------------------
+     *
+     * The player's third report: "There can totally be scaffolding but it should definitely
+     * be on the inside of the walls not on the outside." Offsets are signed with the city
+     * positive, so this is one number — the furthest any raised timber reaches onto the
+     * field. The old scaffold stood its outer standards 1.6 m clear of the outer face and
+     * decked between, which on a 6 m curtain puts them 4.6 m out and hands the Juthungi a
+     * ready-made ladder. The 3.0 m height gate exempts the footing bays' shuttering, which
+     * is legitimately outside and reaches 2.8 m.
+     */
+    const tb = measured.timber;
+    const limit = tb.halfT + 0.6;
+    check('no scaffolding stands on the field side of the wall',
+      -tb.worstOut <= limit,
+      tb.worstOut === 0
+        ? 'no timber over 4.0 m above ground stands outside the wall centreline at all'
+        : `furthest raised timber on the field side reaches ${(-tb.worstOut).toFixed(2)} m from the ` +
+          `centreline (the outer face is at ${tb.halfT.toFixed(2)} m, limit ${limit.toFixed(2)}), ` +
+          `at x ${tb.x.toFixed(0)}, standing ${tb.above.toFixed(1)} m above the ground`);
 
     check('no runtime errors', errors.length === 0, errors.slice(0, 4).join(' | ') || 'clean');
   }
