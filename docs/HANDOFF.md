@@ -54,6 +54,30 @@ and typechecking there, then load the page.
 
 Everything below came from the player. Items not listed here are done and committed.
 
+- **cast shadows have no silhouette** — *unowned, and it is a design decision, not a bug.*
+  Diagnosed but deliberately not attempted; the lighting workstream wound down here. The cause
+  is not the shadow filter. The PCSS blocker-search theory (that its disc, up to 38 cm at
+  cascade 1, is wider than the gap between two men and so saturates inside a formation and
+  forces the widest blur) was tested in-session across all 231 materials and moves the frame by
+  **0.009-0.017/255 over 0.00% of it** — dead. The real cause is that **nothing but the crowd
+  casts**, so the formation's wedge has no environment of smaller shadows to sit among. Turning
+  either candidate on is real work, not a flag:
+  - *Terrain* (`TerrainSystem.ts:111`) has a correct `depthMaterial` already, so it is one flag —
+    but it is off because the clipmap's outer levels carry 8-32 m triangles that the outer
+    cascades cannot bias against a heightfield-resolution normal, and the middle distance breaks
+    out in an acne lattice. It needs **slope-scaled bias per cascade** first. That is a lighting
+    job and the per-cascade ortho extents it would need are already computed in `LightingSystem`.
+  - *Grass* (`GrassField.ts:723`) is **not** a flag flip. The cards are alpha-tested and
+    displaced by wind in the vertex shader and there is no `customDepthMaterial`, so enabling
+    casting would shadow the undeformed opaque quad — solid rectangles, not blades, and not
+    matching the sway. It needs a depth material replicating both, and then the fill cost of a
+    dense camera-centred mesh with `frustumCulled = false` across seven clipmap levels. Judge
+    that cost against `SHADOW_CULL_MARGIN`, which was once claimed to be free and measured
+    0.88-1.78 ms.
+  Whoever picks this up: interleave the A/B in one session (see traps), and note the
+  anti-aliasing work has since changed grass rendering — MSAA, alpha-to-coverage and
+  coverage-preserving alpha mips — so any grass cost measured before `023240d` is stale.
+
 - ~~gate chokepoint snaking~~ — **done** `ab8b957`, lateral drift 0.202 → 0.063 m/s
 - ~~units standing face to face not fighting~~ — **done** `ab8b957`, 0 → 708-772 blows in 60 s
 - ~~`R` run key does nothing~~ — **done** `ab8b957`, sim-side 1.55 → 3.383 m/s
@@ -80,6 +104,23 @@ Everything below came from the player. Items not listed here are done and commit
 Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`).
 
 ## Measured facts that must not be re-derived
+
+- **The crowd is the only thing casting a shadow in a battle frame.** `probe-shadow.mjs`'s
+  `all shadows` and `crowd shadows` arms return *identical* figures at both close cameras
+  (9.768/255 over 22.80% at `romanline`, 9.851/255 over 17.73% at `raking`). `TerrainSystem`
+  sets `castShadow = false` and so does `GrassField`, so there are no hill shadows and no tuft
+  shadows — only men, horses, engines and some city meshes cast. This retires a critic note:
+  "individual grass tufts a metre away cast crisp shadows while the formation drops one merged
+  grey wedge" is comparing a cast shadow against grass **self-shading**, because grass casts
+  nothing. The wedge reads as pasted on because it is the only cast shadow in the frame, with no
+  environment of smaller shadows to sit among. See the missing-casters entry under the
+  player's list for what each would cost.
+- **The shadow noise floor is 0.000/255, not the recorded 1.42-1.47.** That figure was
+  established before `Engine.advance` was found to be running five sim ticks between the two
+  frames it called "no change at all". With the clock paused the floor is exactly zero, so every
+  shadow result previously declared clean against 1.42 was declared against a moving world.
+  Crowd shadows at `wide` measure 1.033/255 over 2.92% — under the old bar that was
+  undetectable; it is real, just small.
 
 - ~~Soldiers render at 2-4% of display luminance.~~ **RETRACTED — a unit error, and it
   misdirected three rounds of work.** `probe-units.mjs` reports *display-linear* values, as its
@@ -149,6 +190,10 @@ Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`
    `THROW_MAX` change was nearly shipped on the strength of eyeballing two such runs; it looked
    convincing and was entirely reseeding. **A/B must be interleaved in one session, both arms
    reported.** Any past finding judged by shooting twice and comparing needs re-checking.
+   Two practical notes: whole-frame gradient energy agrees to under 1% across a change that
+   alters nothing, so the *metric* is not what fails — the frames genuinely are not comparable;
+   and re-shoot the base arm **last** in every run as a drift check, because that is the only
+   thing that distinguishes "my change did nothing" from "my arms did not restore".
 7. **A number that cannot be true given its neighbour is this project's best bug detector.**
    Four silent no-ops have been caught this way: a probe arm reporting 0.000 beside a sibling
    reporting 9.7 (it flipped `renderer.shadowMap.enabled` without a recompile, and
