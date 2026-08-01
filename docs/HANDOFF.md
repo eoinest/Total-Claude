@@ -58,15 +58,15 @@ Everything below came from the player. Items not listed here are done and commit
 - ~~units standing face to face not fighting~~ — **done** `ab8b957`, 0 → 708-772 blows in 60 s
 - ~~`R` run key does nothing~~ — **done** `ab8b957`, sim-side 1.55 → 3.383 m/s
 - ~~stragglers stuck behind the wall~~ — **done** `ab8b957`, 94 → 30 stranded
-- ~~wall much wider; stairs parallel not perpendicular; scaffolding inside~~ — **done.** Curtain
-  3.5 → 6.0 m (`CURTAIN_T` in `wall.ts`), clear standing band 1.57 → 2.21-4.06 m, which is 4-6 ranks
-  at the sim's 0.72 m pitch instead of 2; nine flights parallel to the face, 14.2-20.4 m along the
-  wall against 3.28-3.79 m of projection into the pomerium; scaffold, crane, plank deck and putlogs
-  all on the city side. `probe-wall` 12 → 19 assertions, all green.
-- ~~gate shut by default~~ — **done.** `GateOut.open` is `false` at build time, the leaves are
-  modelled shut with a drawbar and a bricked lunette, and `CitySystem` no longer clears the
-  carriageway out of the occupancy grid for a shut gate. Siege opens it with
-  `setGateOpen('porta-flaminia', true)`; the door plane is published by `getGateDoor()`.
+- ~~wall much wider; stairs parallel not perpendicular; scaffolding inside~~ — **done, uncommitted
+  in `src/city/wall.ts`.** Curtain 3.5 → 6.0 m (`CURTAIN_T`), clear standing band 1.57 → 2.21-4.06 m
+  (4-6 ranks at the sim's 0.72 m pitch, was 2); nine flights parallel to the face, 14.2-20.4 m along
+  against 3.28-3.79 m of projection; scaffold, crane and deck all on the city side. `probe-wall`
+  19/19, up from 12 assertions — the seven new ones measure exactly these.
+- ~~gate shut by default~~ — **done, uncommitted.** `GateOut.open` is `false` at build time, the
+  leaves are modelled shut with a drawbar and a bricked lunette, and `CitySystem` no longer clears
+  the carriageway out of the occupancy grid for a shut gate. Siege opens it with
+  `setGateOpen('porta-flaminia', true)`.
 - soldiers use stairs, move laterally along the wall, descend into the city — siege
 - much larger wall-breaking ram — siege
 - tower drawbridge backwards (ropes forward, door opens backwards) — siege
@@ -143,7 +143,23 @@ Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`
    the terrain height low. Every graded plate was shot through a climbing camera, and the
    player got an unrequested swoop on every load. **Fixed** — `jumpTo` now samples `heightAt`.
    Any framing measured before this fix is suspect.
-6. **A typecheck is not proof of life.** Three commits stacked on a tree that white-screened.
+6. **Cross-session before/after is not a measurement on this project.** Two runs at identical
+   configuration and identical shot order differ on **50-70% of pixels at a mean of 17-27/255**,
+   because dust and particle VFX reseed per session even with the sim clock paused. A
+   `THROW_MAX` change was nearly shipped on the strength of eyeballing two such runs; it looked
+   convincing and was entirely reseeding. **A/B must be interleaved in one session, both arms
+   reported.** Any past finding judged by shooting twice and comparing needs re-checking.
+7. **A number that cannot be true given its neighbour is this project's best bug detector.**
+   Four silent no-ops have been caught this way: a probe arm reporting 0.000 beside a sibling
+   reporting 9.7 (it flipped `renderer.shadowMap.enabled` without a recompile, and
+   `USE_SHADOWMAP` is compile-time); the sun scoring as a *negative* light contributor; a
+   metalness delta of exactly `0.0000` (the material already shipped `metalness: 1`); and a
+   stale uniform lookup after a rename. In every case the arm never ran. Check the *shape* of a
+   number before its value.
+8. **The 1.42-1.47/255 shadow noise floor was a moving-world artefact.** Paused, the true floor
+   is **0.000/255**. Every shadow result ever declared clean against that bar was declared
+   against a world moving five sim ticks between frames.
+9. **A typecheck is not proof of life.** Three commits stacked on a tree that white-screened.
    `tsc` cannot see a missing runtime method behind `?.`, an ESM binding error, or a temporal
    dead zone. Load the page, read `window.__game.ready`, and **capture `pageerror` and
    `console`** — without them a dead app is indistinguishable from a slow boot, and agents have
