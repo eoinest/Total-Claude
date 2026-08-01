@@ -841,7 +841,7 @@ export class PostFXSystem implements Subsystem {
       uniform vec3 uShadowTint;
       uniform vec3 uHighlightTint;
       // x: luminance where the shadow tint ends, y: where the highlight tint starts
-      uniform vec2 uSplit;
+      uniform vec2 uSplit_disp;   // DISPLAY-referred, see the convention note in common.glsl.ts
       // x: shoulder knee, y: shoulder strength
       uniform vec2 uShoulder;
       varying vec2 vUv;
@@ -917,7 +917,7 @@ export class PostFXSystem implements Subsystem {
         // reading as one, so the whole frame stayed on one side of the crossover either way.
         //
         // No backticks in this comment: the shader is a JS template literal and one ends it.
-        float split = smoothstep( uSplit.x, uSplit.y, tcLinearToSRGB( vec3( l ) ).r );
+        float split = smoothstep( uSplit_disp.x, uSplit_disp.y, tcLinearToSRGB( vec3( l ) ).r );
         c *= mix( uShadowTint, uHighlightTint, split );
         // Desaturate the shadows a little more than the highlights: dust in shade
         // reads muted. Not far, though — the cool cast is the point of A1 and
@@ -958,7 +958,7 @@ export class PostFXSystem implements Subsystem {
         // the rest of the way warm without touching the physical light.
         uShadowTint: { value: new THREE.Vector3(0.9, 0.96, 1.18) },
         uHighlightTint: { value: new THREE.Vector3(1.18, 0.985, 0.82) },
-        uSplit: { value: new THREE.Vector2(0.05, 0.48) },
+        uSplit_disp: { value: new THREE.Vector2(0.05, 0.48) },
         uShoulder: { value: new THREE.Vector2(0.92, 1.7) },
       },
     );

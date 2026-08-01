@@ -382,7 +382,12 @@ const statesFor = (term) => page.evaluate(([t, js]) => {
    * `notint` neutralises the grade's warm/cool split so the *scene's own* shadow-to-lit hue
    * ratio can be read directly.
    *
-   * The arithmetic that motivates it: `uShadowTint` is b/r 1.18/0.9 = 1.311 and
+   * Kept after the split-space bug was fixed, because it is the only way to see how much of
+   * the finished frame's warm/cool separation is the render's own and how much the grade
+   * manufactures. Post-fix it reads 1.333 against a graded 2.000, i.e. the scene contributes
+   * about a third and the grade the rest.
+   *
+   * The arithmetic that motivated it: `uShadowTint` is b/r 1.18/0.9 = 1.311 and
    * `uHighlightTint` is 0.82/1.18 = 0.695, so the grade multiplies the darkest quartile's
    * blue-to-red against the rest of the frame by 1.311/0.695 = 1.887. We measure 1.228 on the
    * finished frame. Since the tint is a plain multiply it cannot lose part of itself, which
@@ -419,27 +424,6 @@ const statesFor = (term) => page.evaluate(([t, js]) => {
    * attenuating precisely the light that is in shortest supply, and only where it is shortest.
    * This measures how much of the dark tail it accounts for.
    */
-  /*
-   * `linsplit` re-expresses the grade's shadow/highlight crossover in the space it is actually
-   * evaluated in.
-   *
-   * `uSplit` is compared against `tcLuma(c)` where `c` is still linear — `tcLinearToSRGB` is
-   * the shader's last line — but (0.05, 0.48) are display-referred numbers. The frame's median
-   * is 0.30 display, which is 0.073 linear, and `smoothstep(0.05, 0.48, 0.073)` is 0.008: the
-   * entire frame, shadows and highlights alike, receives the shadow tint and the split
-   * differentiates nothing. This arm converts the same two thresholds through the sRGB
-   * transfer and changes nothing else.
-   */
-  if (t === 'linsplit') {
-    const fx = ctx.tryGet('postfx');
-    for (const k of Object.keys(fx)) {
-      const v = fx[k];
-      if (!v || !v.uniforms || !v.uniforms.uSplit) continue;
-      const old = v.uniforms.uSplit.value.clone();
-      v.uniforms.uSplit.value.set(0.0039, 0.196);
-      undo.push(() => v.uniforms.uSplit.value.copy(old));
-    }
-  }
   if (t === 'noao') {
     const seen = [];
     ctx.scene.traverse((o) => {
@@ -592,7 +576,7 @@ for (const name of requested) {
    * *brighter* than it, reporting the sun as a negative contributor — a comparison between
    * two different points in the frame's own settling, not between two lighting rigs.
    */
-  const arms = ['base', 'nosun', 'nofill', 'nobounce', 'noibl', 'metal', 'notint', 'noao', 'linsplit', 'base2'];
+  const arms = ['base', 'nosun', 'nofill', 'nobounce', 'noibl', 'metal', 'notint', 'noao', 'base2'];
   const res = {};
   for (const t of arms) {
     await statesFor(t === 'base2' ? 'base' : t);
@@ -677,13 +661,6 @@ for (const name of requested) {
     console.log(`              grade delivers x${(graded / Math.max(1e-6, q.darkQRatio)).toFixed(3)} of its designed x1.887 -> ${Math.abs(graded / Math.max(1e-6, q.darkQRatio) - 1.887) < 0.25 ? 'the grade is WORKING; the scene arrives with shadows warmer than lit' : 'something downstream IS eating the tint'}`);
   }
 
-  const lArm = res.linsplit;
-  if (lArm) {
-    const q = lArm.quartile, b0 = res.base.quartile, nt = res.notint ? res.notint.quartile.darkQRatio : null;
-    console.log(`  SPLIT       uSplit converted to linear (0.0039, 0.196): separation ${b0.darkQRatio.toFixed(3)} -> ${q.darkQRatio.toFixed(3)}   (plates 1.968)`);
-    if (nt) console.log(`              grade now delivers x${(q.darkQRatio / Math.max(1e-6, nt)).toFixed(3)} of its designed x1.887`);
-    console.log(`              darkest-quartile luminance ${b0.darkQLum.toFixed(4)} -> ${q.darkQLum.toFixed(4)}  (plates 0.1172)`);
-  }
 
   const aArm = res.noao;
   if (aArm) {

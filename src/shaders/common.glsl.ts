@@ -112,6 +112,37 @@ vec3 tcAgX( vec3 color, float exposure ) {
 }
 `;
 
+/**
+ * ## Naming convention for anything that carries a colour space or a radiometric unit
+ *
+ * Three separate display-versus-linear confusions were found in this codebase in one session,
+ * in three systems, by three authors:
+ *
+ *  - `probe-units.mjs` compared a display-referred threshold against a linear readback;
+ *  - the hemisphere fill was handed a *radiance* where three.js consumes an *irradiance*,
+ *    losing a factor of pi and putting the two ambient paths in different units;
+ *  - `PostFX`'s `uSplit` held display-referred numbers and was tested against linear
+ *    luminance, so the whole frame took the shadow tint and a grade built to deliver 1.887
+ *    delivered 1.107.
+ *
+ * Each was invisible on inspection, because `0.48` and `float l` look equally plausible next
+ * to each other whichever space either is in. None would survive the unit being part of the
+ * name. So: **any identifier holding a quantity whose space or unit is not forced by its type
+ * carries a suffix, and the only way to cross a boundary is a function named for the crossing.**
+ *
+ *   `_disp`  display-referred, sRGB-encoded, what a screenshot measures
+ *   `_lin`   linear-light, working space, what shading maths wants
+ *   `_L`     radiance     (per steradian) — what a sky integral returns
+ *   `_E`     irradiance   (already integrated over the hemisphere; `E = pi * L` for uniform L)
+ *
+ * So `uSplit_disp`, `lumaLin`, `skyFill_L`, `groundBounce_E`. A comparison, a mix or an add
+ * between two differently-suffixed names is then a visible error in the diff rather than a
+ * plausible-looking line, and the reviewer does not have to trace provenance to check it.
+ *
+ * Applied here to `tcLuma` and to `PostFX`'s split threshold; the rest is worth doing as files
+ * are touched rather than in one sweep.
+ */
+
 /** sRGB OETF. Needed because a raw ShaderMaterial gets no `<colorspace_fragment>`. */
 export const SRGB_GLSL = /* glsl */ `
 vec3 tcLinearToSRGB( vec3 c ) {
