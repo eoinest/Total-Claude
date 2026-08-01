@@ -898,7 +898,26 @@ export class PostFXSystem implements Subsystem {
         // Rome II palette. The crossover has to sit *below* the scene's own median
         // or the whole frame lands on the same side of it and the split does
         // nothing at all — which is exactly what happened at 0.1..0.68.
-        float split = smoothstep( uSplit.x, uSplit.y, l );
+        //
+        // Compared in DISPLAY space, which is the space uSplit is written in. c is still
+        // linear here — tcLinearToSRGB is the last line of this shader — so a display-referred
+        // threshold was being tested against a linear value. The frame's median is 0.30
+        // display, which is 0.073 linear, and smoothstep( 0.05, 0.48, 0.073 ) is 0.008: every
+        // pixel in the frame, shadow and highlight alike, took uShadowTint, the highlight tint
+        // was never meaningfully applied, and a split built to multiply the darkest quartile's
+        // blue-to-red against the rest of the frame by 1.887 delivered 1.107.
+        //
+        // That ratio is the statistic the blind rounds separate the decks on: 1.968 across the
+        // ten Rome II plates against our 1.23. Converting this one comparison takes it to
+        // 1.884 and leaves the darkest quartile's luminance at 0.097, so the entire gap four
+        // rounds tried to buy out of the ambient rig was here.
+        //
+        // Which makes the note above right about the mechanism and wrong about the cure:
+        // moving 0.1..0.68 to 0.05..0.48 re-tuned a display-referred number that nothing was
+        // reading as one, so the whole frame stayed on one side of the crossover either way.
+        //
+        // No backticks in this comment: the shader is a JS template literal and one ends it.
+        float split = smoothstep( uSplit.x, uSplit.y, tcLinearToSRGB( vec3( l ) ).r );
         c *= mix( uShadowTint, uHighlightTint, split );
         // Desaturate the shadows a little more than the highlights: dust in shade
         // reads muted. Not far, though — the cool cast is the point of A1 and

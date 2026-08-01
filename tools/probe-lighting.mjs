@@ -194,6 +194,40 @@ function quartileStats(ref) {
   return { darkQLum: dl / Math.max(1, dn), darkQbr: dbr, restBr: ebr, darkQRatio: dbr / Math.max(1e-6, ebr) };
 }
 
+/**
+ * Who actually lives in the frame's darkest quartile.
+ *
+ * This settles whether two measurements that look contradictory can both be true. The blind
+ * critic scores the *frame's* darkest quartile against the Rome II plates and finds ours too
+ * bright; the soldier mask's dark tail is three times darker than the ground it stands on.
+ * Both hold only if the two populations barely overlap — if men are a thin slice of the
+ * darkest quartile, then lifting the ambient on men is nearly invisible to the critic's
+ * statistic and can be argued on its own merits. If men *are* the darkest quartile, the same
+ * lift moves the frame further from the plates, and that is a trade to be argued explicitly
+ * rather than one metric quietly outvoting the other because it is the one being watched.
+ */
+function quartilePopulation(ref, solMask) {
+  const n = ref.info.width * ref.info.height;
+  const lum = new Float64Array(n);
+  for (let i = 0; i < n; i++) lum[i] = lumAt(ref.data, ref.info, i) / 255;
+  const q25 = Float64Array.from(lum).sort()[Math.floor(n * 0.25)];
+  let darkN = 0, darkSol = 0, solN = 0, solInDark = 0;
+  for (let i = 0; i < n; i++) {
+    const dark = lum[i] <= q25;
+    const sol = solMask[i] === 1;
+    if (dark) darkN++;
+    if (sol) solN++;
+    if (dark && sol) { darkSol++; solInDark++; }
+  }
+  return {
+    darkQPixels: darkN,
+    soldierPixels: solN,
+    soldierShareOfFrame: solN / n,
+    soldierShareOfDarkQ: darkSol / Math.max(1, darkN),
+    soldierPixelsInDarkQ: solInDark / Math.max(1, solN),
+  };
+}
+
 /** Mean / percentiles of display luminance over a boolean mask, in 0..1 display units. */
 function statsOver(ref, mask) {
   const n = ref.info.width * ref.info.height;
@@ -344,6 +378,83 @@ const statesFor = (term) => page.evaluate(([t, js]) => {
       undo.push(() => { um(); uv(); m.needsUpdate = true; });
     }
   }
+  /*
+   * `notint` neutralises the grade's warm/cool split so the *scene's own* shadow-to-lit hue
+   * ratio can be read directly.
+   *
+   * The arithmetic that motivates it: `uShadowTint` is b/r 1.18/0.9 = 1.311 and
+   * `uHighlightTint` is 0.82/1.18 = 0.695, so the grade multiplies the darkest quartile's
+   * blue-to-red against the rest of the frame by 1.311/0.695 = 1.887. We measure 1.228 on the
+   * finished frame. Since the tint is a plain multiply it cannot lose part of itself, which
+   * means the scene arriving at the grade already carries a ratio of 1.228/1.887 = 0.651 —
+   * shadows *warmer* than lit surfaces, and the grade spends its entire budget climbing out of
+   * that before it can produce any split at all. This arm tests that prediction: with both
+   * tints neutral the measured separation should land near 0.651, not near 1.0.
+   */
+  if (t === 'notint') {
+    const fx = ctx.tryGet('postfx');
+    const mats = [];
+    for (const k of Object.keys(fx)) {
+      const v = fx[k];
+      if (v && v.uniforms && v.uniforms.uShadowTint) mats.push(v);
+    }
+    for (const m of mats) {
+      const s = m.uniforms.uShadowTint.value.clone();
+      const h = m.uniforms.uHighlightTint.value.clone();
+      m.uniforms.uShadowTint.value.set(1, 1, 1);
+      m.uniforms.uHighlightTint.value.set(1, 1, 1);
+      undo.push(() => {
+        m.uniforms.uShadowTint.value.copy(s);
+        m.uniforms.uHighlightTint.value.copy(h);
+      });
+    }
+    window.__notintCount = mats.length;
+  }
+  /*
+   * `noao` removes the ambient-occlusion map from the soldier kit.
+   *
+   * three.js applies `aoMap` to the *indirect* term only — `material.aoMap` multiplies
+   * `iblIrradiance` and the light-probe irradiance, never the direct sun. On a crowd whose
+   * shadowed side is already three times darker than the ground it stands on, an AO map is
+   * attenuating precisely the light that is in shortest supply, and only where it is shortest.
+   * This measures how much of the dark tail it accounts for.
+   */
+  /*
+   * `linsplit` re-expresses the grade's shadow/highlight crossover in the space it is actually
+   * evaluated in.
+   *
+   * `uSplit` is compared against `tcLuma(c)` where `c` is still linear — `tcLinearToSRGB` is
+   * the shader's last line — but (0.05, 0.48) are display-referred numbers. The frame's median
+   * is 0.30 display, which is 0.073 linear, and `smoothstep(0.05, 0.48, 0.073)` is 0.008: the
+   * entire frame, shadows and highlights alike, receives the shadow tint and the split
+   * differentiates nothing. This arm converts the same two thresholds through the sRGB
+   * transfer and changes nothing else.
+   */
+  if (t === 'linsplit') {
+    const fx = ctx.tryGet('postfx');
+    for (const k of Object.keys(fx)) {
+      const v = fx[k];
+      if (!v || !v.uniforms || !v.uniforms.uSplit) continue;
+      const old = v.uniforms.uSplit.value.clone();
+      v.uniforms.uSplit.value.set(0.0039, 0.196);
+      undo.push(() => v.uniforms.uSplit.value.copy(old));
+    }
+  }
+  if (t === 'noao') {
+    const seen = [];
+    ctx.scene.traverse((o) => {
+      if (!o.isMesh || !/^(soldiers|horses)/.test(o.name || '')) return;
+      for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+        if (m && m.aoMap && !seen.includes(m)) seen.push(m);
+      }
+    });
+    for (const m of seen) {
+      const u = window.__pin(m, 'aoMapIntensity', 0);
+      m.needsUpdate = true;
+      undo.push(() => { u(); m.needsUpdate = true; });
+    }
+    window.__noaoCount = seen.length;
+  }
   window.__undo = undo;
 }, [term, TERM_JS]);
 
@@ -481,7 +592,7 @@ for (const name of requested) {
    * *brighter* than it, reporting the sun as a negative contributor — a comparison between
    * two different points in the frame's own settling, not between two lighting rigs.
    */
-  const arms = ['base', 'nosun', 'nofill', 'nobounce', 'noibl', 'metal', 'base2'];
+  const arms = ['base', 'nosun', 'nofill', 'nobounce', 'noibl', 'metal', 'notint', 'noao', 'linsplit', 'base2'];
   const res = {};
   for (const t of arms) {
     await statesFor(t === 'base2' ? 'base' : t);
@@ -512,6 +623,7 @@ for (const name of requested) {
       ground: statsOver(r, gnd.mask),
       frame: statsOver(r, all),
       quartile: quartileStats(r),
+      population: quartilePopulation(r, sol.mask),
     };
     await restore();
     await step(4);
@@ -553,6 +665,33 @@ for (const name of requested) {
    * warmth. If a warm bounce below and a cool sky above turns this arm around, so that more
    * metal now means brighter and warmer armour, then the inversion was never a material bug.
    */
+  const pop = res.base.population;
+  console.log(`  POPULATION  soldiers are ${(pop.soldierShareOfFrame * 100).toFixed(1)}% of the frame but ${(pop.soldierShareOfDarkQ * 100).toFixed(1)}% of its darkest quartile; ${(pop.soldierPixelsInDarkQ * 100).toFixed(1)}% of soldier pixels fall inside that quartile`);
+  console.log(`              ${pop.soldierShareOfDarkQ > 0.5 ? 'men DOMINATE the darkest quartile — lifting them moves the critic\'s frame metric too' : "men are a MINORITY of the darkest quartile — a man-selective lift barely touches the critic's frame metric"}`);
+
+  const tArm = res.notint;
+  if (tArm) {
+    const q = tArm.quartile;
+    const graded = res.base.quartile.darkQRatio;
+    console.log(`  GRADE       tints neutralised: separation ${q.darkQRatio.toFixed(3)}  (graded ${graded.toFixed(3)}; the tints are built to multiply by 1.887)`);
+    console.log(`              grade delivers x${(graded / Math.max(1e-6, q.darkQRatio)).toFixed(3)} of its designed x1.887 -> ${Math.abs(graded / Math.max(1e-6, q.darkQRatio) - 1.887) < 0.25 ? 'the grade is WORKING; the scene arrives with shadows warmer than lit' : 'something downstream IS eating the tint'}`);
+  }
+
+  const lArm = res.linsplit;
+  if (lArm) {
+    const q = lArm.quartile, b0 = res.base.quartile, nt = res.notint ? res.notint.quartile.darkQRatio : null;
+    console.log(`  SPLIT       uSplit converted to linear (0.0039, 0.196): separation ${b0.darkQRatio.toFixed(3)} -> ${q.darkQRatio.toFixed(3)}   (plates 1.968)`);
+    if (nt) console.log(`              grade now delivers x${(q.darkQRatio / Math.max(1e-6, nt)).toFixed(3)} of its designed x1.887`);
+    console.log(`              darkest-quartile luminance ${b0.darkQLum.toFixed(4)} -> ${q.darkQLum.toFixed(4)}  (plates 0.1172)`);
+  }
+
+  const aArm = res.noao;
+  if (aArm) {
+    const a = aArm.soldier, b = sStat;
+    console.log(`  AO MAP      aoMapIntensity 0.3 -> 0 on the kit: soldier p05 ${b.p05.toFixed(4)} -> ${a.p05.toFixed(4)}, p25 ${b.p25.toFixed(4)} -> ${a.p25.toFixed(4)}, mean ${b.mean.toFixed(4)} -> ${a.mean.toFixed(4)}`);
+    console.log(`              the AO map is costing the dark tail ${((a.p25 / Math.max(1e-6, b.p25) - 1) * 100).toFixed(1)}% at p25 and ${((a.mean / Math.max(1e-6, b.mean) - 1) * 100).toFixed(1)}% at the mean`);
+  }
+
   const mArm = res.metal;
   if (mArm) {
     const dL = mArm.soldier.mean - sStat.mean;
