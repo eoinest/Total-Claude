@@ -83,6 +83,14 @@ export class HudSystem implements Subsystem {
     return this.model.hoveredId;
   }
 
+  /** The live left-button gesture and the unit its press landed on, for the same reason. */
+  get leftGesture(): string {
+    return this.controller.leftGesture;
+  }
+  get pressUnitId(): number {
+    return this.controller.pressUnitId;
+  }
+
   /** Re-measure the card bar. Exposed so a driver can size-test an order of battle. */
   relayoutCards(): void {
     this.cards.relayout();

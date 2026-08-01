@@ -28,11 +28,12 @@ const TIERS: QualityTier[] = ['low', 'medium', 'high', 'ultra'];
 /** Mouse first: the keys are accelerators for the same jobs, not the primary binding. */
 const CONTROLS: Array<[string, string]> = [
   ['Left click', 'Select · bare ground clears'],
-  ['Left drag', 'Box select'],
+  ['Left drag', 'Turn the view, from bare ground or sky'],
+  ['Shift + left drag', 'Box select · ctrl too adds to it'],
   ['Left ×2', 'Select all of that type'],
   ['Right click', 'Move here, or attack an enemy'],
   ['Right drag', 'Frontage and facing'],
-  ['Middle drag', 'Turn the view'],
+  ['Middle drag', 'Turn the view, anywhere'],
   ['Wheel', 'Zoom'],
   ['Screen edge', 'Pan'],
   ['Compass', 'Drag to turn · click for north'],

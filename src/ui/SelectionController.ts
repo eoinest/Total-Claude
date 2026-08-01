@@ -3,7 +3,8 @@
  *
  * Reads raw state off `ctx.input` and turns it into Total War's grammar:
  *   left click            select a unit under the cursor
- *   left drag             marquee select
+ *   left drag on nothing  turn the camera, the gesture a player reaches for first
+ *   shift + left drag     marquee select; ctrl as well adds to the selection
  *   left double-click     select every unit of that type
  *   shift / ctrl + click  add to or remove from the selection
  *   right click           move here; on an enemy, attack it
@@ -14,7 +15,8 @@
  *   ctrl + right          attack-move
  *
  * The middle button belongs to the camera (`RTSCamera` turns the view with it), so nothing
- * here reads it beyond setting the cursor.
+ * here reads it beyond setting the cursor. The left button is shared: presses that land on
+ * nothing clickable are handed to `rig.dragTurn`, which is the same turn the middle drag gets.
  */
 
 import type { EngineContext } from '../core/Engine';
@@ -33,6 +35,14 @@ export type CursorKind = 'default' | 'move' | 'attack' | 'friend' | 'select' | '
 
 /** Pixels of pointer travel before a click becomes a drag. */
 const DRAG_PX = 7;
+/**
+ * Pixels of travel before a left drag on empty space turns the camera.
+ *
+ * A click is a zero-distance drag, so without a dead zone every click on bare ground would
+ * nudge the yaw. Wider than `DRAG_PX` because crossing it also cancels the click: hand jitter
+ * on a slow click has to stay under it or bare ground would stop clearing the selection.
+ */
+const TURN_PX = 12;
 /** Seconds between two clicks that still count as a double-click. */
 const DOUBLE_S = 0.34;
 /** Minimum world metres of right-drag before it is read as a frontage command. */
@@ -84,6 +94,14 @@ export class SelectionController {
   private hint!: HTMLElement;
   private boxing = false;
   private boxValid = false;
+  /** What the current left press is allowed to become, decided when the button goes down. */
+  private canBox = false;
+  private canTurn = false;
+  private turning = false;
+  /** Unit under the cursor when the left button went down; a press is what a click resolves. */
+  private pressId = -1;
+  /** Terrain sampler from the last `update`, so a press can pick at its own coordinates. */
+  private heightSampler: ((x: number, z: number) => number) | null = null;
   private lastClickAt = -10;
   private lastClickId = -1;
 
@@ -264,6 +282,7 @@ export class SelectionController {
 
   update(ctx: EngineContext, heightAt: (x: number, z: number) => number): void {
     const input = ctx.input;
+    this.heightSampler = heightAt;
     this.overBanner = this.bannerAt ? this.bannerAt(this.ptr.x, this.ptr.y) : -1;
     // Published so no other system treats a click aimed at a plaque as a click on the
     // ground behind it. It is only ever true while the cursor is genuinely inside a
@@ -274,10 +293,10 @@ export class SelectionController {
     const hovered = this.pickUnit(ctx);
     if (!this.ptr.overUi) this.model.hoveredId = hovered;
 
-    this.handleLeft(ctx);
+    this.handleLeft(ctx, hovered);
     this.handleRight(ctx, hovered);
     this.handleKeys(ctx);
-    this.updateCursor(hovered, input.mmb.down);
+    this.updateCursor(hovered, input.mmb.down || this.turning);
   }
 
   private updateGround(ctx: EngineContext, heightAt: (x: number, z: number) => number): void {
@@ -324,30 +343,77 @@ export class SelectionController {
     return best;
   }
 
+  /**
+   * The same test at a given screen point, so a press is judged where it landed: below 30 fps
+   * several moves arrive inside one frame, so by the frame that reports `pressed` the cursor
+   * has travelled into the drag and a press on a cohort picked the bare ground behind it.
+   */
+  private pickAtPoint(ctx: EngineContext, x: number, y: number): number {
+    const banner = this.bannerAt ? this.bannerAt(x, y) : -1;
+    if (banner >= 0) return banner;
+    const h = this.heightSampler;
+    if (!h) return -1;
+    const nx = (x / Math.max(1, ctx.viewW)) * 2 - 1;
+    const ny = -(y / Math.max(1, ctx.viewH)) * 2 + 1;
+    if (!screenToGround(ctx.camera, nx, ny, h, GROUND, 4200, PICK_LIFT_M)) return -1;
+    const px = GROUND.x;
+    const pz = GROUND.z;
+    const slack = Math.max(PICK_SLACK_M, Math.min(9, ctx.rig.metresPerPixel(ctx.viewH) * 7));
+    let best = -1;
+    let bestD = Infinity;
+    for (const v of this.model.views) {
+      if (v.destroyed) continue;
+      footprintOf(v.unit, v.def, FOOT);
+      const d = distanceToFootprint(FOOT, px, pz);
+      if (d > slack) continue;
+      const score = d + Math.hypot(v.cx - px, v.cz - pz) * 0.01;
+      if (score < bestD) {
+        bestD = score;
+        best = v.id;
+      }
+    }
+    return best;
+  }
+
   // ---- Left button: selection ----
 
-  private handleLeft(ctx: EngineContext): void {
+  private handleLeft(ctx: EngineContext, hovered: number): void {
     const p = ctx.input.pointer[0];
 
     if (p.pressed && !this.ptr.overUi) {
       this.boxValid = true;
       this.boxing = false;
+      this.turning = false;
+      // What the press landed on fixes its meaning for the whole gesture, so moving onto a
+      // unit mid-drag cannot change it. Shift draws a marquee, a unit under the press is a
+      // selection, and anything with no click behaviour belongs to the camera.
+      const on = p.downX === this.ptr.x && p.downY === this.ptr.y ? hovered : this.pickAtPoint(ctx, p.downX, p.downY);
+      this.canBox = this.ptr.downShift;
+      this.canTurn = !this.ptr.downShift && on < 0;
+      this.pressId = on;
     }
 
     if (this.boxValid && p.down) {
-      if (!this.boxing && p.dragDist > DRAG_PX) this.boxing = true;
-      if (this.boxing) this.drawMarquee(p.downX, p.downY, p.x, p.y);
+      if (this.canBox) {
+        if (!this.boxing && p.dragDist > DRAG_PX) this.boxing = true;
+        if (this.boxing) this.drawMarquee(p.downX, p.downY, p.x, p.y);
+      } else if (this.canTurn && p.dragDist > TURN_PX) {
+        this.turning = true;
+        ctx.rig.dragTurn(p.dx, ctx.viewW);
+      }
     }
 
     if (p.released && this.boxValid) {
       if (this.boxing) {
         this.marquee.style.display = 'none';
         this.boxSelect(ctx, p.downX, p.downY, p.x, p.y);
-      } else {
+      } else if (!this.turning) {
+        // A drag that turned the camera is not a click, so it must not clear the selection.
         this.clickSelect(ctx);
       }
       this.boxValid = false;
       this.boxing = false;
+      this.turning = false;
     }
 
     if (!p.down && this.boxing) {
@@ -369,7 +435,9 @@ export class SelectionController {
   }
 
   private clickSelect(ctx: EngineContext): void {
-    const id = this.model.hoveredId;
+    // Resolved against the press, not the release: a press on a unit that slid a few pixels
+    // before letting go still selects that unit rather than the ground it ended over.
+    const id = this.pressId;
     const now = ctx.time.elapsed;
     const additive = this.ptr.downShift || this.ptr.downCtrl;
 
@@ -398,7 +466,9 @@ export class SelectionController {
     const r = Math.max(x0, x1);
     const t = Math.min(y0, y1);
     const b = Math.max(y0, y1);
-    const additive = this.ptr.downShift || this.ptr.downCtrl;
+    // Ctrl only: shift is the marquee's own modifier now, so reading it as "add" as well
+    // would make every box additive and leave no way to replace a selection with one.
+    const additive = this.ptr.downCtrl;
     const hits: number[] = additive ? this.model.selection.slice() : [];
 
     for (const v of this.model.views) {
@@ -711,6 +781,18 @@ export class SelectionController {
   /** True while a right-drag order is in progress; the HUD dims to keep the field clear. */
   get ordering(): boolean {
     return this.dragging;
+  }
+
+  /** What the live left press decided to be. Exposed like `hoveredUnitId`, for a driver. */
+  get leftGesture(): 'none' | 'box' | 'turn' | 'click' {
+    if (!this.boxValid) return 'none';
+    if (this.boxing) return 'box';
+    if (this.turning) return 'turn';
+    return 'click';
+  }
+  /** Unit the live left press landed on, or -1. */
+  get pressUnitId(): number {
+    return this.pressId;
   }
 
   /** Frontage in metres the current drag would produce, for the readout. */

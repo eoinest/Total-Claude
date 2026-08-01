@@ -102,6 +102,39 @@ await page.evaluate(() => {
     if (!u) return null;
     return window.__project(u.x, g.battle.groundAt(u.x, u.z) + 1, u.z);
   };
+  /** HUD-clear screen points, the ones farthest from any unit anchor first. */
+  window.__spotCandidates = () => {
+    const g = window.__game;
+    const W = g.engine.context.viewW, H = g.engine.context.viewH;
+    const rects = Array.from(document.querySelectorAll('#hud-root .interactive'))
+      .map((e) => e.getBoundingClientRect())
+      .filter((r) => r.width > 0 && r.height > 0);
+    const anchors = [];
+    for (const v of g.battle.units) {
+      if (v.destroyed) continue;
+      const p = window.__project(v.x, g.battle.groundAt(v.x, v.z) + 1, v.z);
+      if (p) anchors.push(p);
+    }
+    const out = [];
+    for (let fy = 0.1; fy <= 0.76; fy += 0.06) {
+      for (let fx = 0.1; fx <= 0.64; fx += 0.06) {
+        const p = { x: Math.round(W * fx), y: Math.round(H * fy) };
+        if (rects.some((r) => p.x >= r.left - 10 && p.x <= r.right + 10 && p.y >= r.top - 10 && p.y <= r.bottom + 10)) continue;
+        // The press has to reach the canvas, or `overUi` swallows it and nothing turns.
+        const hit = document.elementFromPoint(p.x, p.y);
+        if (!hit || hit.id !== 'viewport') continue;
+        let d = 9999;
+        for (const a of anchors) d = Math.min(d, Math.hypot(a.x - p.x, a.y - p.y));
+        out.push({ x: p.x, y: p.y, clear: Math.round(d) });
+      }
+    }
+    out.sort((a, b) => b.clear - a.clear);
+    return out.slice(0, 10);
+  };
+  window.__hovered = () => {
+    const hud = window.__game.engine.context.tryGet('hud');
+    return hud ? hud.hoveredUnitId : -2;
+  };
   window.__tapeMark = () => window.__tape.length;
   window.__tapeSince = (n) => window.__tape.slice(n);
   window.__unit = (id) => {
@@ -135,6 +168,45 @@ const settle = async (ms = 350) => page.waitForTimeout(ms);
 /** Shortest signed angle between two headings, so a yaw delta across the pi seam is honest. */
 const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const readYaw = (p = page) => p.evaluate(() => +window.__game.engine.rig.yaw.toFixed(4));
+
+/**
+ * A point the game itself reports as empty: candidates are HUD-clear by geometry, then the
+ * cursor is parked on each and the HUD asked what it picked. Nothing else can prove that a
+ * press is landing on bare ground rather than on a cohort's footprint slack.
+ */
+const bareSpot = async () => {
+  const cands = await page.evaluate(() => window.__spotCandidates());
+  for (const c of cands) {
+    await page.mouse.move(c.x, c.y);
+    await page.waitForTimeout(140);
+    if (await page.evaluate(() => window.__hovered()) < 0) return c;
+  }
+  return null;
+};
+
+/** A unit the HUD confirms is under the cursor, re-projected now because the sim is running. */
+const pickableUnit = async (exclude = []) => {
+  const cands = await page.evaluate((skip) => {
+    const g = window.__game;
+    const W = g.engine.context.viewW, H = g.engine.context.viewH;
+    const out = [];
+    for (const v of g.battle.units) {
+      if (v.destroyed || v.faction !== 0 || v.alive < 50 || skip.includes(v.id)) continue;
+      const p = window.__unitScreen(v.id);
+      if (!p || p.x < 70 || p.x > W - 70 || p.y < 70 || p.y > H - 190) continue;
+      const hit = document.elementFromPoint(p.x, p.y);
+      if (!hit || hit.id !== 'viewport') continue;
+      out.push({ id: v.id, x: Math.round(p.x), y: Math.round(p.y) });
+    }
+    return out.slice(0, 8);
+  }, exclude);
+  for (const c of cands) {
+    await page.mouse.move(c.x, c.y);
+    await page.waitForTimeout(150);
+    if (await page.evaluate(() => window.__hovered()) === c.id) return c;
+  }
+  return null;
+};
 
 // Move a little so the sim is not in its first frame, and give the AI time to deploy.
 await page.evaluate(() => window.__game.advance(6));
@@ -204,7 +276,10 @@ await settle(400);
 mark = await page.evaluate(() => window.__tapeMark());
 if (!box) record('marquee-select', false, 'no Roman unit anchors projected on screen to box around', 'n/a');
 else {
+  // Shift is the marquee gesture itself now: a bare left drag turns the camera, so the box
+  // moved onto shift when the field drag took the plain one.
   await page.mouse.move(box.x0, box.y0);
+  await page.keyboard.down('Shift');
   await page.mouse.down();
   for (let i = 1; i <= 10; i++) {
     await page.mouse.move(box.x0 + (box.x1 - box.x0) * i / 10, box.y0 + (box.y1 - box.y0) * i / 10);
@@ -212,12 +287,13 @@ else {
   }
   if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, 'marquee.png') });
   await page.mouse.up();
+  await page.keyboard.up('Shift');
   await settle(400);
   const tape = await page.evaluate((n) => window.__tapeSince(n), mark);
   const sel = tape.filter((e) => e.k === 'selectionChanged').pop();
   const ok = !!sel && sel.p.unitIds.length > 1;
   record('marquee-select', ok,
-    `left-drag ${Math.round(box.x0)},${Math.round(box.y0)} → ${Math.round(box.x1)},${Math.round(box.y1)}, ` +
+    `shift + left-drag ${Math.round(box.x0)},${Math.round(box.y0)} → ${Math.round(box.x1)},${Math.round(box.y1)}, ` +
     `a box drawn round ${box.ids.length} projected unit anchors (${box.onScreen} on screen)`,
     sel ? `selectionChanged → ${sel.p.unitIds.length} units [${sel.p.unitIds.join(',')}]` : 'no selectionChanged event',
     ok ? '' : `expected to catch at least ${box.ids.join(',')}`);
@@ -241,7 +317,9 @@ if (!pos) record('double-click type', false, 'anchor did not project', 'n/a');
 else {
   await page.mouse.move(pos.x, pos.y);
   await settle(150);
-  await page.mouse.dblclick(pos.x, pos.y, { delay: 40 });
+  // 140 ms, not 40: `Input` reports one press edge per frame, and a contended frame here runs
+  // 90 ms, so both click pairs used to land in one frame and read as a single click.
+  await page.mouse.dblclick(pos.x, pos.y, { delay: 140 });
   await settle(400);
   const tape = await page.evaluate((n) => window.__tapeSince(n), mark);
   const sel = tape.filter((e) => e.k === 'selectionChanged').pop();
@@ -821,21 +899,131 @@ if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, 'hud-final.png')
 // 13. camera gestures: middle drag turns, and the pan routes still pan
 // ---------------------------------------------------------------------------
 /*
- * Middle drag used to pull the ground and this block used to assert that. It turns the view
- * now, Total War's gesture, so the claim is inverted: yaw moves, focus holds. Nothing drags
- * to pan any more, so the rest proves the two pan routes a mouse still has. Mouse-only by
- * design: no key event appears in the block.
+ * Middle drag used to pull the ground and this block used to assert that. Both it and a left
+ * drag that starts on nothing clickable turn the view now, so the claim is inverted: yaw
+ * moves, focus holds. Nothing drags to pan any more, so the rest proves the two pan routes a
+ * mouse still has. Mouse-only apart from shift, which is the marquee gesture itself.
  */
 {
   const rig = () => page.evaluate(() => {
     const r = window.__game.engine.rig;
     return { x: +r.focus.x.toFixed(2), z: +r.focus.z.toFixed(2), yaw: +r.yaw.toFixed(4) };
   });
+  const selNow = () => page.evaluate(() => window.__selection());
+
+  // ---- 13a. left drag on bare ground turns, and is not read as a click ----
+  // Framed on the whole line rather than on one cohort: this block needs open ground, a unit
+  // to press on and a second unit, all on screen at once.
+  await page.evaluate(() => {
+    const g = window.__game;
+    const own = g.battle.units.filter((v) => v.faction === 0 && !v.destroyed && v.alive > 50);
+    let sx = 0, sz = 0;
+    for (const u of own) { sx += u.x; sz += u.z; }
+    g.setCamera(sx / own.length, sz / own.length, 0.66, Math.PI);
+    g.advance(0.5);
+  });
+  await settle(450);
+  const first = await pickableUnit();
+  if (first) { await page.mouse.click(first.x, first.y); await settle(450); }
+  const held = await selNow();
+  const spot = await bareSpot();
+  if (!spot || held.length === 0) {
+    record('left drag turns', false,
+      'left-drag from a point the HUD reports as empty, with a unit selected',
+      `bare spot ${spot ? `${spot.x},${spot.y}` : 'not found'}; selection [${held.join(',')}]`);
+  } else {
+    const w = await page.evaluate(() => window.__game.engine.context.viewW);
+    const dir = spot.x + 320 < w - 20 ? 1 : -1;
+    const e0 = await rig();
+    await page.mouse.down();
+    for (let i = 1; i <= 12; i++) { await page.mouse.move(spot.x + dir * i * 25, spot.y); await page.waitForTimeout(30); }
+    await page.mouse.up();
+    await settle(700);
+    const e1 = await rig();
+    const kept = await selNow();
+    const turn = wrapPi(e1.yaw - e0.yaw) * dir;
+    record('left drag turns', turn > 0.5,
+      `left-button drag 300 px ${dir > 0 ? 'right' : 'left'} from ${spot.x},${spot.y}, ` +
+      `which the HUD reports as empty (nearest unit anchor ${spot.clear} px)`,
+      `yaw ${e0.yaw} → ${e1.yaw} (${turn.toFixed(3)} rad in the drag direction); ` +
+      `focus (${e0.x},${e0.z}) → (${e1.x},${e1.z})`);
+    record('left drag is not a click', kept.length === held.length && kept.every((v) => held.includes(v)),
+      'the same drag: a turn must not clear the selection the way a click on bare ground does',
+      `selection [${held.join(',')}] → [${kept.join(',')}]`);
+  }
+
+  // ---- 13b. a left drag begun on a unit selects it and must not turn ----
+  // Everything the drag needs is read before the pick, then the press follows it with no round
+  // trip in between: units march, and a hover confirmed 150 ms ago is a stale premise.
+  const w2 = await page.evaluate(() => window.__game.engine.context.viewW);
+  const f0 = await rig();
+  const other = await pickableUnit(held);
+  if (!other) record('left drag on a unit selects', false, 'no second Roman unit was pickable on screen', 'n/a');
+  else {
+    await page.mouse.down();
+    const atPress = await page.evaluate(() => window.__hovered());
+    const dir2 = other.x + 320 < w2 - 20 ? 1 : -1;
+    for (let i = 1; i <= 12; i++) { await page.mouse.move(other.x + dir2 * i * 25, other.y); await page.waitForTimeout(30); }
+    await page.mouse.up();
+    await settle(600);
+    const f1 = await rig();
+    const now = await selNow();
+    record('left drag on a unit selects', now.length === 1 && now[0] === other.id,
+      `press unit ${other.id} at ${other.x},${other.y} and drag 300 px ${dir2 > 0 ? 'right' : 'left'}`,
+      `selection → [${now.join(',')}]; the HUD picked ${atPress} under the cursor at the press`);
+    record('left drag on a unit holds yaw', Math.abs(wrapPi(f1.yaw - f0.yaw)) < 0.01,
+      'the same drag, measured on the camera',
+      `yaw ${f0.yaw} → ${f1.yaw} (${Math.abs(wrapPi(f1.yaw - f0.yaw)).toFixed(4)} rad)`);
+  }
+
+  // ---- 13c. the dead zone: a click that jitters under TURN_PX is still a click ----
+  const jitter = await bareSpot();
+  if (!jitter) record('left click jitter clears', false, 'no bare spot for a jittered click', 'n/a');
+  else {
+    const g0 = await rig();
+    const was = await selNow();
+    await page.mouse.down();
+    for (let i = 1; i <= 3; i++) { await page.mouse.move(jitter.x + i * 2, jitter.y); await page.waitForTimeout(25); }
+    await page.mouse.up();
+    await settle(500);
+    const g1 = await rig();
+    const after = await selNow();
+    record('left click jitter clears', was.length > 0 && after.length === 0 && Math.abs(wrapPi(g1.yaw - g0.yaw)) < 0.01,
+      'left click on bare ground with 6 px of travel, under the 12 px turn threshold',
+      `selection [${was.join(',')}] → [${after.join(',')}]; yaw ${g0.yaw} → ${g1.yaw}`);
+  }
+
+  // ---- 13d. a plain click still selects, and a plain click on bare ground still clears ----
+  // Re-picked rather than reusing a stale anchor: the sim is running and units march.
+  const again = await pickableUnit();
+  if (!again) record('plain left click selects', false, 'no Roman unit was pickable on screen', 'n/a');
+  else {
+    await page.mouse.click(again.x, again.y);
+    await settle(500);
+    const on = await selNow();
+    record('plain left click selects', on.length === 1 && on[0] === again.id,
+      `click unit ${again.id} at ${again.x},${again.y} with no travel`,
+      `selection → [${on.join(',')}]`);
+    const bare = await bareSpot();
+    if (!bare) record('plain left click clears', false, 'no bare spot for a clearing click', 'n/a');
+    else {
+      const h0 = await rig();
+      await page.mouse.click(bare.x, bare.y);
+      await settle(500);
+      const off = await selNow();
+      const h1 = await rig();
+      record('plain left click clears', on.length > 0 && off.length === 0 && Math.abs(wrapPi(h1.yaw - h0.yaw)) < 0.01,
+        `click bare ground at ${bare.x},${bare.y} with no travel`,
+        `selection [${on.join(',')}] → [${off.join(',')}]; yaw ${h0.yaw} → ${h1.yaw}`);
+    }
+  }
+  if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, 'left-drag-turn.png') });
+
   // Mid-field and a known heading, so no result is really the focus clamp at the map edge.
   await page.evaluate(() => { window.__game.setCamera(0, 0, 0.55, Math.PI); window.__game.advance(0.4); });
   await settle(400);
 
-  // ---- 13a. middle drag turns the view, and no longer pans it ----
+  // ---- 13e. middle drag turns the view, and no longer pans it ----
   const cx = Math.round(W * 0.5), cy = Math.round(H * 0.45);
   await page.mouse.move(cx, cy);
   await settle(200);
@@ -857,10 +1045,10 @@ if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, 'hud-final.png')
     `focus (${a0.x},${a0.z}) → (${a1.x},${a1.z}), moved ${slid.toFixed(2)} m`);
   if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, 'middle-drag-turn.png') });
 
-  // ---- 13b. right drag with nothing selected still must not turn the view ----
+  // ---- 13f. right drag with nothing selected still must not turn the view ----
   await page.mouse.click(cx, Math.round(H * 0.22));
   await settle(400);
-  const sel = await page.evaluate(() => window.__selection());
+  const emptySel = await selNow();
   const b0 = await rig();
   await page.mouse.move(cx, cy);
   await page.mouse.down({ button: 'right' });
@@ -869,10 +1057,10 @@ if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, 'hud-final.png')
   await settle(700);
   const b1 = await rig();
   record('right drag empty holds yaw', Math.abs(wrapPi(b1.yaw - b0.yaw)) < 0.01,
-    `right-button drag 300 px with the selection cleared to [${sel.join(',')}]`,
+    `right-button drag 300 px with the selection cleared to [${emptySel.join(',')}]`,
     `yaw ${b0.yaw} → ${b1.yaw} (${Math.abs(wrapPi(b1.yaw - b0.yaw)).toFixed(4)} rad)`);
 
-  // ---- 13c. screen-edge pan ----
+  // ---- 13g. screen-edge pan ----
   // A panel under the cursor takes the canvas hover away, so the point must clear every one.
   const edge = await page.evaluate(() => {
     const rects = Array.from(document.querySelectorAll('#hud-root .interactive'))
@@ -904,7 +1092,7 @@ if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, 'hud-final.png')
       `focus (${c0.x},${c0.z}) → (${c1.x},${c1.z}), moved ${moved.toFixed(1)} m; yaw ${c0.yaw} → ${c1.yaw}`);
   }
 
-  // ---- 13d. minimap drag ----
+  // ---- 13h. minimap drag ----
   const mm = await page.evaluate(() => {
     const c = document.querySelector('#hud-root .minimap canvas');
     if (!c) return null;
@@ -935,7 +1123,7 @@ if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, 'hud-final.png')
       `moved ${dragged.toFixed(1)} m while held`);
   }
 
-  // ---- 13e. the harness contract tools/shoot.mjs grades every other lane through ----
+  // ---- 13i. the harness contract tools/shoot.mjs grades every other lane through ----
   // `#loading` is read from the served markup, not the live DOM: `src/main.ts` removes the
   // node once the game is ready, and shoot.mjs only ever names it in an injected CSS rule.
   const harness = await page.evaluate(async () => {
@@ -961,6 +1149,47 @@ if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, 'hud-final.png')
     `${harness.loadingLive}), setCamera ${harness.setCamera}; focus x ${harness.before.x} → ` +
     `${harness.after.x}, z ${harness.after.z}, zoom ${harness.after.zoom}, ` +
     `yaw ${harness.before.yaw} → ${harness.after.yaw}`);
+}
+
+// ---------------------------------------------------------------------------
+// 14. multi-select with no key at all, now that the marquee wants shift
+// ---------------------------------------------------------------------------
+{
+  const selNow = () => page.evaluate(() => window.__selection());
+  const std = await page.evaluate(() => {
+    const b = document.querySelector('#hud-root .cardbar .cb-tab');
+    if (!b) return null;
+    const r = b.getBoundingClientRect();
+    return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+  });
+  if (!std) record('army standard selects all', false, 'no .cb-tab army standard in the DOM', 'n/a');
+  else {
+    const own = await page.evaluate(() =>
+      window.__game.battle.units.filter((v) => v.faction === 0 && !v.destroyed && v.alive > 0).length);
+    await page.mouse.click(std.x, std.y);
+    await settle(500);
+    const all = await selNow();
+    record('army standard selects all', all.length > 1,
+      `click the army standard at ${std.x},${std.y} with no key held`,
+      `selection → ${all.length} units, of ${own} alive Roman units`);
+
+    const card = await page.evaluate(() => {
+      const cards = Array.from(document.querySelectorAll('#hud-root .cardbar .card:not(.mini)'));
+      const c = cards[Math.min(2, cards.length - 1)];
+      if (!c) return null;
+      const r = c.getBoundingClientRect();
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), n: cards.length };
+    });
+    if (!card) record('unit card selects', false, 'no unit cards in the card bar', 'n/a');
+    else {
+      await page.mouse.click(card.x, card.y);
+      await settle(500);
+      const one = await selNow();
+      record('unit card selects', one.length === 1,
+        `click unit card 3 of ${card.n} at ${card.x},${card.y} with no key held`,
+        `selection ${all.length} units → [${one.join(',')}]`);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

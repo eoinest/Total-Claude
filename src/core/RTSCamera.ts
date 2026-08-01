@@ -12,9 +12,10 @@ import type { Input } from './Input';
  *
  * Mouse routes, one gesture per job so none of them has a second meaning:
  *   wheel                zoom
- *   middle drag          turn the view, Total War's rotate gesture
+ *   left drag on nothing turn the view (`dragTurn`, driven by `SelectionController`)
+ *   middle drag          turn the view as well
  *   cursor at the edge   pan
- *   HUD compass drag     turn as well (see `rotateBy`); the right button belongs to orders
+ *   HUD compass drag     turn (see `rotateBy`); the right button belongs to orders
  * WASD, arrows and Q/E remain as keyboard accelerators for the same three jobs.
  */
 
@@ -127,6 +128,18 @@ export class RTSCamera {
     this.yawTarget = wrapAngle(this.yawTarget + radians);
   }
 
+  /**
+   * Turn from a horizontal drag, in CSS pixels of travel this frame.
+   *
+   * One viewport width is a full revolution at any resolution, a quarter turn per 400 px at
+   * 1600 px wide. Both drag routes come through here so they cannot drift apart: the middle
+   * button below, and a left drag that began on nothing clickable (`SelectionController`).
+   */
+  dragTurn(dxPixels: number, viewW: number): void {
+    if (dxPixels === 0) return;
+    this.rotateBy((dxPixels * Math.PI * 2) / Math.max(1, viewW));
+  }
+
   /** Look north, keeping focus and zoom. North is -Z, which is yaw = pi (see `place`). */
   faceNorth(): void {
     this.yawTarget = Math.PI;
@@ -205,17 +218,12 @@ export class RTSCamera {
       this.zoomTarget = clamp(this.zoomTarget + input.wheel * 0.075, 0, 1);
     }
 
-    // ---- Turn (middle drag; also the HUD compass and Q/E, both via `rotateBy`) ----
+    // ---- Turn (middle drag; the left drag, compass and Q/E all arrive elsewhere) ----
     //
     // Rome II's rotate gesture. The ground spins the way the cursor travels, so a rightward
-    // drag brings what was on the left into frame. Scaled by viewport width rather than a
-    // fixed rad-per-pixel so one screen width is a full revolution at any resolution, which
-    // is a quarter turn per 400 px stroke at 1600 px wide. The vertical axis is unused on
-    // purpose: pitch is a function of zoom (`pitchForZoom`), so a drag has no pitch to drive.
-    const mmb = input.mmb;
-    if (mmb.down && mmb.dx !== 0) {
-      this.rotateBy((mmb.dx * Math.PI * 2) / Math.max(1, viewW));
-    }
+    // drag brings what was on the left into frame. The vertical axis is unused on purpose:
+    // pitch is a function of zoom (`pitchForZoom`), so a drag has no pitch to drive.
+    if (input.mmb.down) this.dragTurn(input.mmb.dx, viewW);
     if (input.key('KeyQ')) this.yawTarget += dt * 1.35;
     if (input.key('KeyE')) this.yawTarget -= dt * 1.35;
 

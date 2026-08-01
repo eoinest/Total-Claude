@@ -159,10 +159,10 @@ export class Minimap {
   }
 
   /**
-   * The second mouse route to yaw beside a middle-button drag on the field: drag the rose
-   * to turn, click it to face north. Rotation cannot ride the right button, which issues
-   * orders. 0.014 rad per pixel puts a full revolution in 450 px of travel, faster per
-   * pixel than the field drag because the rose is a stud rather than the whole viewport.
+   * A named route to yaw beside the two field drags (left on nothing, middle anywhere): drag
+   * the rose to turn, click it to face north. Rotation cannot ride the right button, which
+   * issues orders. 0.014 rad per pixel puts a full revolution in 450 px of travel, faster per
+   * pixel than a field drag because the rose is a stud rather than the whole viewport.
    */
   private attachCompass(el: HTMLElement, ctx: EngineContext): void {
     let turning = false;
