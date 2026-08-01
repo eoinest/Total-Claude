@@ -97,6 +97,25 @@ export const WALL = {
   courseBand: 1.1,
 } as const;
 
+/**
+ * Clear ground between the wall's centreline and the nearest building, metres.
+ *
+ * Rome kept a consecrated strip inside the circuit — the *pomerium* — free of building,
+ * and Aurelian's engineers needed a military road behind the curtain to move men to a
+ * threatened stretch. So the institution is real; the number is chosen for the battle.
+ *
+ * It has to hold three things at once, one behind the other:
+ *   - a lateral movement corridor so a reserve can run the length of the wall   ~20 m
+ *   - depth to form up facing a breach: a cohort in line is 35 m across and about
+ *     five metres deep, and it needs room to wheel into position                ~25 m
+ *   - slack, so a unit forming up is not standing in the movement corridor      ~15 m
+ *
+ * Sixty metres. It was twelve, measured on the plot *centre* rather than its edge, which
+ * in practice put insula walls 1.2 m off the back of the curtain and left the defenders
+ * of a breach nowhere to stand.
+ */
+export const POMERIUM = 60;
+
 /** The Porta Flaminia, where the Via Flaminia crosses the crest. Solved in rome.ts. */
 export const GATE_X = GATE_X_SOLVED;
 /** Clear width of the Porta Flaminia carriageway. */

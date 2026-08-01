@@ -12,7 +12,7 @@ import {
   type Batch,
   type GeoStream,
 } from './build';
-import { DISTRICTS, KeepOut, STREETS, type DistrictSpec } from './layout';
+import { DISTRICTS, KeepOut, POMERIUM, STREETS, type DistrictSpec } from './layout';
 import type { CityMatKey } from './materials';
 import { PAL } from './palette';
 import { cylinderBetween, type CityChunkSpec, type TreeRequest } from './wall';
@@ -66,24 +66,70 @@ interface Plot {
   edge: number;
 }
 
-/** Recursive binary subdivision with jittered cuts and a gap for the street. */
-function subdivide(r: Rect, rng: Rng, maxSize: number, gap: number, out: Rect[], depth = 0): void {
+/**
+ * Street width for a cut through a rectangle `long` metres on its longest side.
+ *
+ * Every street used to be 7.5 m. That is close to the real thing — a Roman *via* is about
+ * 4.8 m and the Via Lata perhaps twelve — and it was fine while men walked through walls.
+ * The moment the fabric became solid it made Rome a maze no formed body could enter: a
+ * cohort in line is roughly 35 m across, so a 7.5 m street is not a corridor for this
+ * game's purposes, it is a wall with a crack in it. Measured before this change, 45% of
+ * the enclosed ground inside the circuit admitted a cohort in line and the fifth
+ * percentile of corridor width was 8 m.
+ *
+ * So the network is graded, by the size of the block it separates, against what has to fit
+ * down it:
+ *
+ * | cut through | width | what fits |
+ * |---|---|---|
+ * | over 260 m | 42 m | a cohort in line (35 m) with 3.5 m either side, or two columns |
+ * | 150–260 m  | 24 m | two columns abreast; a line must narrow to enter |
+ * | 90–150 m   | 14 m | one column of about 16 files |
+ * | under 90 m | 8 m  | men in file — a *vicus*, and deliberately hostile to formations |
+ *
+ * Because the subdivider always cuts the longest axis first, the widest streets are the
+ * ones that run the length of a district and the narrowest are the last lanes between
+ * blocks. Nowhere in the city is more than one local street from a secondary and two from
+ * an artery, which is what "manoeuvre" actually requires.
+ */
+const streetWidth = (long: number): number =>
+  long > 260 ? 42 : long > 150 ? 24 : long > 90 ? 14 : 8;
+
+/**
+ * Recursive binary subdivision with jittered cuts and a gap for the street.
+ *
+ * `gap` is either a fixed width or a function of the rectangle being cut, which is how the
+ * block pass gets a graded street hierarchy while the plot pass inside a block keeps its
+ * flat 1 m alleys.
+ */
+function subdivide(
+  r: Rect,
+  rng: Rng,
+  maxSize: number,
+  gap: number | ((long: number) => number),
+  out: Rect[],
+  depth = 0
+): void {
   const long = Math.max(r.hu, r.hv) * 2;
   if (long <= maxSize || depth > 7) {
     out.push(r);
     return;
   }
+  // Never let the street eat the block: a 42 m artery through a 100 m rectangle would
+  // leave two 29 m stubs, and through a 60 m one it would leave nothing at all.
+  const want = typeof gap === 'number' ? gap : gap(long);
+  const g = Math.min(want, long * 0.36);
   const splitU = r.hu >= r.hv;
   // Off-centre cuts are what stop the result reading as a grid.
   const t = rng.range(0.36, 0.64);
   if (splitU) {
-    const total = r.hu * 2 - gap;
+    const total = r.hu * 2 - g;
     const a = total * t;
     const b = total - a;
     subdivide({ u: r.u - r.hu + a / 2, v: r.v, hu: a / 2, hv: r.hv }, rng, maxSize, gap, out, depth + 1);
     subdivide({ u: r.u + r.hu - b / 2, v: r.v, hu: b / 2, hv: r.hv }, rng, maxSize, gap, out, depth + 1);
   } else {
-    const total = r.hv * 2 - gap;
+    const total = r.hv * 2 - g;
     const a = total * t;
     const b = total - a;
     subdivide({ u: r.u, v: r.v - r.hv + a / 2, hu: r.hu, hv: a / 2 }, rng, maxSize, gap, out, depth + 1);
@@ -143,7 +189,7 @@ export function buildDistricts(
     // district by the fray margin, so the outer blocks exist to be thinned rather than
     // the boundary being a hard cut.
     const grow = 1 + d.fray * 0.34;
-    subdivide({ u: 0, v: 0, hu: d.hw * grow, hv: d.hd * grow }, drng, lerp(78, 46, d.density), 7.5, blocks);
+    subdivide({ u: 0, v: 0, hu: d.hw * grow, hv: d.hd * grow }, drng, lerp(78, 46, d.density), streetWidth, blocks);
 
     for (const blk of blocks) {
       const plotsIn: Rect[] = [];
@@ -154,7 +200,11 @@ export function buildDistricts(
         const r = Math.max(p.hu, p.hv);
         // Never grow through a monument, a main street, or north of the wall line.
         if (keepOut.blocked(wx, wz, r * 0.82)) continue;
-        if (wz < wallZAt(wx) + 12) continue;
+        // The *pomerium*: keep the whole footprint, not just its centre, clear of the
+        // curtain. The old test was on the plot centre against a 12 m line, which let a
+        // building's near edge come within 1.2 m of the wall's own half-thickness.
+        const zReach = Math.abs(Math.sin(d.rot)) * p.hu + Math.abs(Math.cos(d.rot)) * p.hv;
+        if (wz - zReach < wallZAt(wx) + POMERIUM) continue;
         if (Math.min(p.hu, p.hv) < 3.2) continue;
         const mask = districtMask(d, p.u, p.v);
         if (mask <= 0.02) continue;

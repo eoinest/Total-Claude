@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { EngineContext, Subsystem } from '../core/Engine';
+import type { Obstacle } from '../sim/Obstacles';
 import { HALF_EXTENT, type TerrainSystem } from '../terrain/TerrainSystem';
 import { clamp } from '../util/math';
 import { Batch } from './build';
@@ -11,6 +12,7 @@ import {
   assertNoFootprintOverlaps,
   assertOneAmphitheatre,
   assertTopology,
+  GATE_OPEN_WIDTH,
   KeepOut,
   LANDMARKS,
   STREETS,
@@ -92,6 +94,24 @@ interface StrayReport {
   offenders: { chunk: string; level: number; kind: string; x: number; z: number }[];
 }
 
+/** A curtain bay that stops movement, as `buildWall` reports it. */
+interface WallBlocker {
+  x1: number;
+  z1: number;
+  x2: number;
+  z2: number;
+  halfW: number;
+}
+
+/** An oriented rectangle from the plan: a monument's or an insula's footprint. */
+interface PlanRect {
+  x: number;
+  z: number;
+  hw: number;
+  hd: number;
+  rot: number;
+}
+
 /** Cell size of the masonry occupancy grid, in metres. */
 const OCC_CELL = 4;
 const OCC_RES = Math.ceil((HALF_EXTENT * 2) / OCC_CELL);
@@ -124,6 +144,15 @@ export class CitySystem implements Subsystem {
   private bayPitch = 1;
   private bayX0 = 0;
   private occ = new Uint8Array(OCC_RES * OCC_RES);
+  /** Oriented-box form of everything in `occ`. See `buildObstacles`. */
+  private obstacles: Obstacle[] = [];
+  /** Kept so opening or closing a gate can re-cut the curtain boxes. */
+  private wallBlockers: readonly WallBlocker[] = [];
+  /**
+   * Bumped whenever `getObstacles()` changes shape — a gate opening, a wall breached — so
+   * consumers holding a spatial index know to rebuild it.
+   */
+  obstacleGeneration = 1;
   private totalTris = 0;
   private meshCount = 0;
   private overlaps: ReturnType<typeof assertNoFootprintOverlaps> = { ok: true, count: 0, worst: 0, pairs: [] };
@@ -234,6 +263,123 @@ export class CitySystem implements Subsystem {
     for (const gate of this.gateList) {
       this.clearSegment(gate.x, gate.z - 20, gate.x, gate.z + 20, 2.4);
     }
+
+    this.buildObstacles(wall.blockers, landmarks.footprints, districts.footprints);
+  }
+
+  /**
+   * The same solids as the occupancy grid, kept as oriented boxes instead of a 4 m raster.
+   *
+   * The raster answers "is this cell masonry"; the sim needs "how far, and which way, is
+   * out", which a raster cannot give without a distance transform. Keeping both costs one
+   * array of ~3,000 rectangles and means the collision surface a man feels is the geometry
+   * he can see rather than a staircase quantised to 4 m.
+   */
+  private buildObstacles(
+    blockers: readonly WallBlocker[],
+    landmarkFootprints: readonly PlanRect[],
+    districtFootprints: readonly PlanRect[]
+  ): void {
+    this.wallBlockers = blockers;
+    const out: Obstacle[] = [];
+
+    // ---- curtain ------------------------------------------------------------
+    // One box per blocked bay, with the wall-walk as its top so the garrison standing on
+    // it is *on* the wall rather than inside it. `blockers` already omits the bare footing
+    // courses, which are ankle-high and which the occupancy grid deliberately leaves open.
+    const bayOf = (x: number): GarrisonBay | undefined => this.bayAt(x);
+    for (const b of blockers) {
+      const mx = (b.x1 + b.x2) * 0.5;
+      const bay = bayOf(mx);
+      // A gap bay is rubble and a palisade — no walkway, so its top is the rampart crest.
+      const top = bay ? (bay.garrisonable ? bay.walkY : bay.crestY) : this.masonryTopAt(mx, (b.z1 + b.z2) * 0.5);
+      const topY = Number.isFinite(top) ? top : 1e4;
+      this.pushWallBox(out, b.x1, b.z1, b.x2, b.z2, b.halfW, topY);
+    }
+
+    // ---- towers -------------------------------------------------------------
+    // Square, projecting 3.5 m beyond the outer face. Their tops are a storey above the
+    // walk, but the garrison that passes through a tower chamber is flagged `elevated` and
+    // exempt from collision, so a solid box costs nothing and stops a besieger walking
+    // through the base.
+    for (const seg of this.segments) {
+      const bay = this.bayAt(seg.x1);
+      if (!bay || bay.towerHalf <= 0) continue;
+      const top = (Number.isFinite(bay.crestY) ? bay.crestY : 0) + WALL.towerChamberHeight;
+      out.push({
+        x: seg.x1, z: seg.z1,
+        hw: WALL.towerWidth * 0.5,
+        hd: WALL.towerWidth * 0.5,
+        rot: Math.atan2(seg.x2 - seg.x1, seg.z2 - seg.z1),
+        topY: top,
+        kind: 'tower',
+      });
+    }
+
+    // ---- fabric -------------------------------------------------------------
+    // Roofs are not walkable in this game, so a monument and an insula are solid to any
+    // height. 1e4 rather than Infinity keeps the value finite in a Float32Array.
+    for (const f of landmarkFootprints) {
+      out.push({ x: f.x, z: f.z, hw: f.hw, hd: f.hd, rot: f.rot, topY: 1e4, kind: 'monument' });
+    }
+    for (const f of districtFootprints) {
+      out.push({ x: f.x, z: f.z, hw: f.hw, hd: f.hd, rot: f.rot, topY: 1e4, kind: 'building' });
+    }
+
+    this.obstacles = out;
+  }
+
+  /**
+   * Push a curtain bay as one or two boxes, punching out any open gate carriageway that
+   * crosses it.
+   *
+   * The gate is at x = 72, which falls in bay 19 while the gatehouse *geometry* is centred
+   * on bay 20 — so the carriageway the occupancy grid clears sits inside a neighbouring
+   * bay's blocker. Splitting the box is what keeps the one way into the city open.
+   */
+  private pushWallBox(
+    out: Obstacle[],
+    x1: number, z1: number, x2: number, z2: number,
+    halfW: number, topY: number
+  ): void {
+    const dx = x2 - x1;
+    const dz = z2 - z1;
+    const len = Math.hypot(dx, dz);
+    if (len < 1e-4) return;
+    // `rot` is the yaw of the box's u axis, and the u axis is (cos rot, sin rot) in (x,z) —
+    // the same convention `markRect` uses — so this points u along the wall.
+    const rot = Math.atan2(dz, dx);
+    const emit = (t0: number, t1: number): void => {
+      if (t1 - t0 < 0.02) return;
+      const ax = x1 + dx * t0;
+      const az = z1 + dz * t0;
+      const bx = x1 + dx * t1;
+      const bz = z1 + dz * t1;
+      out.push({
+        x: (ax + bx) * 0.5, z: (az + bz) * 0.5,
+        // u runs along the wall, v across its thickness.
+        hw: len * (t1 - t0) * 0.5, hd: halfW,
+        rot, topY, kind: 'wall',
+      });
+    };
+
+    // Clear width plus a body radius either side, so a column can actually enter.
+    const half = GATE_OPEN_WIDTH * 0.5 + 0.5;
+    let cut: [number, number] | null = null;
+    for (const gate of this.gateList) {
+      if (!gate.open) continue;
+      const t = ((gate.x - x1) * dx + (gate.z - z1) * dz) / (len * len);
+      const dt = half / len;
+      if (t + dt <= 0 || t - dt >= 1) continue;
+      cut = [Math.max(0, t - dt), Math.min(1, t + dt)];
+      break;
+    }
+    if (!cut) {
+      emit(0, 1);
+      return;
+    }
+    emit(0, cut[0]);
+    emit(cut[1], 1);
   }
 
   /** Build every detail level of one chunk and register it for LOD swapping. */
@@ -420,6 +566,22 @@ export class CitySystem implements Subsystem {
     return this.segments;
   }
 
+  /**
+   * Every solid in the city as an oriented box with an absolute top.
+   *
+   * This is the same set the occupancy grid is painted from — curtain bays that are not
+   * bare footings, the towers, the monuments and all 2,907 insulae — but in a form a
+   * moving body can be pushed *out* of rather than merely tested against. The open gate's
+   * carriageway is already punched through the bay it crosses.
+   *
+   * Consumers must honour `topY`: a man standing on the wall-walk is on the wall, not in
+   * it, and the garrison would be evicted from its own parapet by anything that ignored
+   * the third dimension here.
+   */
+  getObstacles(): readonly Obstacle[] {
+    return this.obstacles;
+  }
+
   /** Gate positions and whether they are open. `facing` points out of the city. */
   getGates(): { id: string; x: number; z: number; facing: number; open: boolean }[] {
     return this.gateList;
@@ -432,6 +594,25 @@ export class CitySystem implements Subsystem {
     gate.open = open;
     if (open) this.clearSegment(gate.x, gate.z - 20, gate.x, gate.z + 20, 2.4);
     else this.markSegment(gate.x, gate.z - 6, gate.x, gate.z + 6, 2.6);
+    this.recutWallObstacles();
+  }
+
+  /**
+   * Rebuild just the curtain boxes after a gate has opened or closed. The fabric and the
+   * towers never move, so they are left alone; a ram breaking the gate must not cost a
+   * rebuild of three thousand rectangles.
+   */
+  private recutWallObstacles(): void {
+    const kept = this.obstacles.filter((o) => o.kind !== 'wall');
+    const walls: Obstacle[] = [];
+    for (const b of this.wallBlockers) {
+      const mx = (b.x1 + b.x2) * 0.5;
+      const bay = this.bayAt(mx);
+      const top = bay ? (bay.garrisonable ? bay.walkY : bay.crestY) : this.masonryTopAt(mx, (b.z1 + b.z2) * 0.5);
+      this.pushWallBox(walls, b.x1, b.z1, b.x2, b.z2, b.halfW, Number.isFinite(top) ? top : 1e4);
+    }
+    this.obstacles = walls.concat(kept);
+    this.obstacleGeneration++;
   }
 
   /**

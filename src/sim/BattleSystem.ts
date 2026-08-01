@@ -11,6 +11,83 @@ import {
   isAlive, type UnitGroupState, type UnitTypeDef,
 } from './types';
 import { Siege } from './Siege';
+import { ObstacleField, type Obstacle, type Resolved } from './Obstacles';
+
+/**
+ * What the sim needs from the city subsystem, duck-typed.
+ *
+ * The CITY agent owns the real interface and Pydna registers no city at all, so this is
+ * probed rather than imported: a map with no city yields an empty `ObstacleField` and the
+ * whole collision path costs one `empty` test per tick.
+ */
+interface ObstacleSource {
+  getObstacles(): readonly Obstacle[];
+  obstacleGeneration?: number;
+}
+
+/**
+ * What the sim needs from the pathfinder, duck-typed for the same reason.
+ *
+ * Until now nothing outside `src/ai` ever asked it anything: the AI routed its own units
+ * and the player's clicks went straight to a destination with no route at all. So a player
+ * ordering a cohort to the far side of the Aurelian Wall got a unit that walked into it and
+ * stopped, which is the second half of "they should path find around the wall".
+ */
+interface NavProvider {
+  directRouteClear(x1: number, z1: number, x2: number, z2: number, radius: number): boolean;
+  requestPath(
+    unitId: number, sx: number, sz: number, gx: number, gz: number,
+    radius: number, minRadius: number, priority?: number
+  ): void;
+  pathFor(unitId: number): { pts: number[]; n: number; goalX: number; goalZ: number; ok: boolean } | null;
+  pending(unitId: number): boolean;
+  findStandable(x: number, z: number, radius: number, out: { x: number; z: number }): boolean;
+}
+
+/** A player move order waiting on a route. */
+interface PendingRoute {
+  gx: number;
+  gz: number;
+  facing: number;
+  /** Ticks left before the request is abandoned and the straight line stands. */
+  ttl: number;
+}
+
+/**
+ * Footprint radius a player-ordered route is searched for, metres.
+ *
+ * Deliberately narrow. Searching at the unit's true half-frontage (11 m for a cohort in
+ * line) makes most city streets unroutable and the order silently fails; the per-man
+ * collision then sorts out the frontage on the ground, spilling men into the side streets
+ * as a real column does. What the route has to guarantee is that the *centre line* exists.
+ */
+const ROUTE_RADIUS = 2.2;
+
+/**
+ * Ticks a queued route may wait before the straight-line order simply stands.
+ *
+ * Four seconds. A city-crossing search is budgeted at 2,400 node expansions a tick against
+ * a grid with 134,000 reachable cells, so a long one genuinely takes a second or two; the
+ * unit is already walking the straight line in the meantime, so the only cost of waiting
+ * is that the correction arrives late.
+ */
+const ROUTE_TTL = 120;
+
+/** Scratch for the standable-goal nudge. */
+const ROUTE_GOAL = { x: 0, z: 0 };
+
+/**
+ * Offset applied to a unit id when the sim asks the pathfinder for a route.
+ *
+ * `PathfindingSystem` keys its request queue and its result cache by the id it is handed,
+ * and a second request for the same id *cancels the first*. The AI requests routes for the
+ * units it commands under their real ids, so if the sim used the same key a player's click
+ * would silently cancel the AI's in-flight search — and, worse, `TacticalAI` would then
+ * read the sim's narrow-footprint path out of the shared cache and march a cohort in line
+ * down a route only a column fits. Offsetting puts the sim's requests in a keyspace of
+ * their own; the pathfinder does not care what an id means.
+ */
+const SIM_ROUTE_ID = 1_000_000;
 
 /**
  * The battle simulation hub.
@@ -27,6 +104,8 @@ import { Siege } from './Siege';
  */
 
 const SCRATCH = { x: 0, z: 0 };
+/** Scratch for the formation anchor's collision test; see `updateUnitOrder`. */
+const ANCHOR_HIT: Resolved = { x: 0, z: 0, hit: false, blockedX: false, blockedZ: false };
 
 const AIM = { x: 0, z: 0 };
 const SEG_SELF = makeSegment();
@@ -97,6 +176,26 @@ export const SAME_LEVEL_DY = 1.9;
 export const NO_SUPPORT = -1e9;
 
 /**
+ * Body radius used against solid geometry, metres.
+ *
+ * The same 0.42 m `resolveCrowding` uses for man-on-man separation, so a man stands off a
+ * wall by exactly the distance he stands off his neighbour and a rank pressed against the
+ * curtain still dresses. It also sets the effective clear width of the gate: the carriage-
+ * way is cut 5.3 m wide, which leaves 4.46 m of centre-line for a column to thread.
+ */
+const SOLDIER_RADIUS = 0.42;
+
+/**
+ * Body radius used for the *formation anchor* against solid geometry, metres.
+ *
+ * Deliberately much smaller than a unit's frontage. The anchor is a point, and the men are
+ * collided individually; inflating it to the half-frontage would stop a cohort 11 m short
+ * of a building its flank would have cleared. Its only job is to stop the anchor itself
+ * being driven inside masonry, which would drag every slot in with it.
+ */
+const ANCHOR_RADIUS = 0.6;
+
+/**
  * Most metres crowd separation may move one man in one tick. See `resolveCrowding`.
  *
  * Separation is a positional fix-up, not a force, so its magnitude is the sum of a man's
@@ -165,6 +264,19 @@ export class BattleSystem implements Subsystem {
   /** Representative surface height per unit, for the formation-contact test. */
   private unitY = new Float32Array(64);
 
+  /**
+   * Solid world geometry. Empty on any map without a city, which is why every use of it
+   * is guarded by `empty` rather than by a null check on the city subsystem.
+   */
+  readonly masonry = new ObstacleField();
+  /** `obstacleGeneration` the field was last indexed against. */
+  private masonryGen = -1;
+  private obstacleSource: ObstacleSource | null = null;
+  private readonly hitScratch: Resolved = { x: 0, z: 0, hit: false, blockedX: false, blockedZ: false };
+  private nav: NavProvider | null = null;
+  /** Player move orders whose route has been asked for and not yet arrived. */
+  private readonly pendingRoutes = new Map<number, PendingRoute>();
+
   private terrain?: TerrainSystem;
   private ctx!: EngineContext;
   private nextUnitId = 0;
@@ -190,8 +302,165 @@ export class BattleSystem implements Subsystem {
     this.slotFacing = new Float32Array(cap);
 
     this.siege.init(ctx, this);
+    this.bindObstacles(ctx);
 
     ctx.events.on('orderIssued', (o) => this.applyOrder(o));
+  }
+
+  /**
+   * Take the city's solids, if there are any.
+   *
+   * Probed and wrapped for the same reason `Pathfinding` probes it: the city agent owns
+   * that API, `main.ts` does not register `CitySystem` on maps whose `hidesCity` is set,
+   * and a battle on the plain of Pydna must not fail because Rome is absent.
+   */
+  private bindObstacles(ctx: EngineContext): void {
+    const nav = ctx.tryGet('pathfinding') as unknown as NavProvider | undefined;
+    if (nav && typeof nav.requestPath === 'function' && typeof nav.pathFor === 'function') {
+      this.nav = nav;
+    }
+    const src = ctx.tryGet('city') as unknown as ObstacleSource | undefined;
+    if (!src || typeof src.getObstacles !== 'function') return;
+    this.obstacleSource = src;
+    this.refreshObstacles();
+  }
+
+  /**
+   * Ask the pathfinder for a route to a player-ordered destination.
+   *
+   * The straight line stands in the meantime — the unit sets off immediately, as a player
+   * expects, and the route replaces it a few ticks later when the search lands. That is
+   * the same bargain `TacticalAI.moveTo` strikes, and it matters more here: a click that
+   * produced no movement for half a second would read as the order being ignored.
+   */
+  private requestRoute(u: UnitGroupState, gx: number, gz: number, facing: number): void {
+    const nav = this.nav;
+    if (!nav) return;
+    this.pendingRoutes.delete(u.id);
+    // The overwhelmingly common case, and the one an AI path leg always falls into: the
+    // leg came out of the string-puller, so its corridor is already known clear.
+    if (nav.directRouteClear(u.x, u.z, gx, gz, ROUTE_RADIUS)) return;
+
+    /**
+     * Pull the destination onto ground a body can actually stand on before searching.
+     *
+     * A click lands where the mouse pointed, and inside a city that is very often the roof
+     * of an insula. A\* cannot reach a blocked goal cell, so it expands until the budget
+     * runs out and returns a partial route flagged `ok: false` — which is what made the
+     * first version of this silently do nothing at all: a unit ordered 140 m inside the
+     * wall walked to the curtain, stopped, and no route was ever installed.
+     */
+    if (nav.findStandable(gx, gz, ROUTE_RADIUS, ROUTE_GOAL)) {
+      gx = ROUTE_GOAL.x;
+      gz = ROUTE_GOAL.z;
+    }
+    const key = u.id + SIM_ROUTE_ID;
+    if (!nav.pending(key)) {
+      nav.requestPath(key, u.x, u.z, gx, gz, ROUTE_RADIUS, ROUTE_RADIUS, 3);
+    }
+    this.pendingRoutes.set(u.id, { gx, gz, facing, ttl: ROUTE_TTL });
+  }
+
+  /**
+   * Install any route that has arrived, as the sim's own waypoint queue.
+   *
+   * `pts[0]` is the unit's position at the moment of the request, so the first leg is
+   * `pts[1]`; intermediate legs face along the direction of travel and only the last
+   * carries the ordered facing. This mirrors `OrderBook.followPath`, which does the same
+   * job for the AI through the event bus.
+   */
+  private collectRoutes(): void {
+    const nav = this.nav;
+    if (!nav || this.pendingRoutes.size === 0) return;
+    for (const [id, req] of this.pendingRoutes) {
+      const u = this.unitById(id);
+      if (!u || u.destroyed) {
+        this.pendingRoutes.delete(id);
+        continue;
+      }
+      // The unit changed its mind: an attack or a halt supersedes the route.
+      if (u.order !== UnitOrder.MoveTo && u.order !== UnitOrder.AttackMove) {
+        this.pendingRoutes.delete(id);
+        continue;
+      }
+      // Somebody else — the AI — has already given this unit a multi-leg route. Its plan
+      // wins; the sim only routes orders nothing else has routed.
+      if (u.waypoints.length > 0) {
+        this.pendingRoutes.delete(id);
+        continue;
+      }
+      const p = nav.pathFor(id + SIM_ROUTE_ID);
+      // A partial route is accepted. `ok` is false whenever the search did not reach the
+      // exact goal cell, but `store` still writes the best route it found, and walking as
+      // far toward the objective as the ground allows is what a player expects from a
+      // click — certainly more than standing still because the last ten metres are a wall.
+      const fresh = p && p.n >= 2 && Math.hypot(p.goalX - req.gx, p.goalZ - req.gz) < 8;
+      if (!fresh) {
+        if (--req.ttl <= 0) this.pendingRoutes.delete(id);
+        continue;
+      }
+      u.targetX = p.pts[2];
+      u.targetZ = p.pts[3];
+      u.targetFacing = p.n === 2 ? req.facing : Math.atan2(p.pts[2] - p.pts[0], p.pts[3] - p.pts[1]);
+      for (let i = 2; i < p.n; i++) {
+        const f = i === p.n - 1
+          ? req.facing
+          : Math.atan2(p.pts[i * 2] - p.pts[(i - 1) * 2], p.pts[i * 2 + 1] - p.pts[(i - 1) * 2 + 1]);
+        u.waypoints.push(p.pts[i * 2], p.pts[i * 2 + 1], f);
+      }
+      this.pendingRoutes.delete(id);
+    }
+  }
+
+  /**
+   * Keep a siege-owned unit's anchor with its men.
+   *
+   * `Siege` teleports a garrison onto the wall-walk and carries a boarding party up a
+   * tower, but it never touches `u.x/u.z` — so the anchor stays wherever the unit spawned.
+   * For a tower party that is 74 to 101 m out in the field, and *everything* keyed off the
+   * anchor was wrong by that much: `UnitOrder.AttackUnit` aims at `t.x, t.z`, so ordering a
+   * unit to attack a tower party sent it to an empty patch of grass — measured at 90.8 m
+   * from the tower. The selection box, the order arrow and the click footprint were all
+   * out by the same amount, while the banner tracked the men correctly, which is why the
+   * click sometimes appeared to work and the movement never did.
+   */
+  private trackOwnedAnchors(): void {
+    const owner = this.elevation;
+    if (!owner) return;
+    const p = this.pool;
+    for (const u of this.units) {
+      if (u.destroyed || !owner.ownsUnit(u.id)) continue;
+      let sx = 0;
+      let sz = 0;
+      let n = 0;
+      for (const i of u.members) {
+        if (!isAlive(p.state[i] as SoldierState)) continue;
+        sx += p.x[i];
+        sz += p.z[i];
+        n++;
+      }
+      if (n === 0) continue;
+      u.x = sx / n;
+      u.z = sz / n;
+      u.targetX = u.x;
+      u.targetZ = u.z;
+    }
+  }
+
+  /** Re-index the solids if the city says they have changed. Cheap when they have not. */
+  private refreshObstacles(): void {
+    const src = this.obstacleSource;
+    if (!src) return;
+    const gen = src.obstacleGeneration ?? 1;
+    if (gen === this.masonryGen) return;
+    try {
+      this.masonry.set(src.getObstacles());
+      this.masonryGen = gen;
+    } catch (err) {
+      // A foreign API that throws must not take the simulation down with it.
+      console.warn('[sim/battle] city obstacle query failed, running without collision:', err);
+      this.obstacleSource = null;
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -373,8 +642,13 @@ export class BattleSystem implements Subsystem {
             u.waypoints.length = 0;
             u.targetX = o.x;
             u.targetZ = o.z;
-            if (o.facing !== undefined) u.targetFacing = o.facing;
-            else u.targetFacing = Math.atan2(o.x - u.x, o.z - u.z);
+            const face = o.facing ?? Math.atan2(o.x - u.x, o.z - u.z);
+            u.targetFacing = face;
+            // A destination the unit cannot walk to in a straight line needs a route.
+            // `requestRoute` short-circuits when the straight line is already clear, which
+            // is what every leg of an AI route is by construction, so this costs the AI
+            // one corridor test and never displaces its plan.
+            this.requestRoute(u, o.x, o.z, face);
           }
           u.order = o.kind === 'attackMove' ? UnitOrder.AttackMove : UnitOrder.MoveTo;
           u.running = !!o.running;
@@ -450,6 +724,9 @@ export class BattleSystem implements Subsystem {
     const p = this.pool;
     p.savePrevious();
     this.hash.rebuild(p);
+    // A gate opening or a wall coming down changes what is solid. One integer compare when
+    // nothing has moved, which is every tick but a handful.
+    this.refreshObstacles();
 
     this.strength[Faction.Rome] = 0;
     this.strength[Faction.Germanic] = 0;
@@ -457,6 +734,8 @@ export class BattleSystem implements Subsystem {
     // Structures resolve first: a man's support height and his slot on a wall-walk have
     // to be current before anything steers him or asks how far away an enemy is.
     this.elevation?.preSteer(dt);
+    // Then any route the pathfinder finished for a player order last tick.
+    this.collectRoutes();
 
     for (const u of this.units) {
       if (u.destroyed) continue;
@@ -471,6 +750,9 @@ export class BattleSystem implements Subsystem {
     // Crowd separation and integration both move men in the XZ plane with no idea that
     // some of them are on a ledge 3.45 m wide. This puts them back on it.
     this.elevation?.postIntegrate(dt);
+    // The men are final for this tick, so a siege-owned unit's anchor can be put where
+    // they actually are. Must be after `postIntegrate`, which is what moves them.
+    this.trackOwnedAnchors();
     this.updateAnimationState(dt, ctx);
   }
 
@@ -737,8 +1019,20 @@ export class BattleSystem implements Subsystem {
         if (closing > -0.2) step = Math.min(step, Math.max(0, near.dist - CONTACT_GAP));
       }
 
-      u.x += (dx / distToTarget) * step;
-      u.z += (dz / distToTarget) * step;
+      const ax = u.x + (dx / distToTarget) * step;
+      const az = u.z + (dz / distToTarget) * step;
+      // The anchor slides along masonry rather than through it. Sliding rather than
+      // stopping matters: a line that meets the curtain at an angle should walk along it
+      // toward the breach, which is what a real assault does and what a hard stop would
+      // turn into a thousand men standing in a field.
+      if (!this.masonry.empty && !this.siege.ownsUnit(u.id)) {
+        this.masonry.resolve(u.x, u.z, ax, az, this.unitY[u.id] ?? this.groundAt(u.x, u.z), ANCHOR_RADIUS, ANCHOR_HIT);
+        u.x = ANCHOR_HIT.x;
+        u.z = ANCHOR_HIT.z;
+      } else {
+        u.x = ax;
+        u.z = az;
+      }
     }
 
     if (distToTarget <= 0.35) {
@@ -1088,12 +1382,45 @@ export class BattleSystem implements Subsystem {
   private integrate(dt: number): void {
     const p = this.pool;
     const n = p.count;
+    const solids = this.masonry;
+    const collide = !solids.empty;
+    const hit = this.hitScratch;
     for (let i = 0; i < n; i++) {
       const st = p.state[i] as SoldierState;
       if (st === SoldierState.Dead) continue;
 
-      p.x[i] += p.vx[i] * dt;
-      p.z[i] += p.vz[i] * dt;
+      const ox = p.x[i];
+      const oz = p.z[i];
+      let nx = ox + p.vx[i] * dt;
+      let nz = oz + p.vz[i] * dt;
+
+      /**
+       * Masonry is solid.
+       *
+       * Men the siege system has placed are exempt: `elevated` covers the garrison on the
+       * wall-walk, a boarding party on a tower ramp and anyone mid-crossing, and `Siege`
+       * rewrites their positions in `postIntegrate` anyway — colliding them here would be
+       * a fight between two systems over the same metre, which the one that runs last
+       * always wins.
+       *
+       * The dead are exempt too: a corpse lying half in a doorway is scenery, and pushing
+       * bodies around for the rest of the battle is pure cost.
+       */
+      if (collide && this.elevated[i] === 0 && st !== SoldierState.Dying) {
+        solids.resolve(ox, oz, nx, nz, p.y[i], SOLDIER_RADIUS, hit);
+        if (hit.hit) {
+          nx = hit.x;
+          nz = hit.z;
+          // Kill the velocity into the surface, keep the component along it. Without this
+          // a man walks at a wall for the rest of the battle at full speed, and the
+          // moment the formation clears the corner he is fired sideways.
+          if (hit.blockedX) p.vx[i] = 0;
+          if (hit.blockedZ) p.vz[i] = 0;
+        }
+      }
+
+      p.x[i] = nx;
+      p.z[i] = nz;
 
       // Feet stay planted; the vertical is snapped rather than simulated for the living.
       // A man on a structure is snapped to *its* surface instead of the terrain — this

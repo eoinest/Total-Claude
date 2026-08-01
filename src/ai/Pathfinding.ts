@@ -122,6 +122,9 @@ export interface Footprint {
  */
 interface CityNavProvider {
   getWallSegments?: () => unknown;
+  /** Oriented solid boxes: the curtain, the towers, the monuments and the insulae. */
+  getObstacles?: () => unknown;
+  getGates?: () => unknown;
   blocksMovement?: (x1: number, z1: number, x2: number, z2: number) => boolean;
 }
 
@@ -346,6 +349,66 @@ export class NavGrid {
     }
     // Cap so the open plain does not carry nine-digit values into the comparisons.
     for (let i = 0; i < clearance.length; i++) if (clearance[i] > 400) clearance[i] = 400;
+  }
+
+  /**
+   * Stamp an oriented solid box as impassable.
+   *
+   * Conservative by half a cell: a cell counts as blocked if its *centre* falls inside the
+   * box grown by `CELL * 0.5`, so a 3.5 m wall lying between two rows of cell centres
+   * still produces a continuous barrier. Under-stamping is the failure that matters here —
+   * a one-cell hole in a curtain is a hole an A\* search will happily route a cohort
+   * through, and the men will then walk into stone.
+   */
+  blockBox(cx: number, cz: number, hw: number, hd: number, rot: number): void {
+    const c = Math.cos(rot);
+    const s = Math.sin(rot);
+    const pad = CELL * 0.5;
+    const ehw = hw + pad;
+    const ehd = hd + pad;
+    // World-space AABB of the grown box.
+    const ex = Math.abs(c) * ehw + Math.abs(s) * ehd;
+    const ez = Math.abs(s) * ehw + Math.abs(c) * ehd;
+    const x0 = this.toCell(cx - ex);
+    const x1 = this.toCell(cx + ex);
+    const z0 = this.toCell(cz - ez);
+    const z1 = this.toCell(cz + ez);
+    for (let gz = z0; gz <= z1; gz++) {
+      const wz = this.toWorld(gz);
+      const row = gz * this.res;
+      for (let gx = x0; gx <= x1; gx++) {
+        const dx = this.toWorld(gx) - cx;
+        const dz = wz - cz;
+        const u = dx * c + dz * s;
+        if (u < -ehw || u > ehw) continue;
+        const v = -dx * s + dz * c;
+        if (v < -ehd || v > ehd) continue;
+        this.blocked[row + gx] = 2;
+      }
+    }
+  }
+
+  /**
+   * Re-open a disc of cells a structure closed — a gate's carriageway.
+   *
+   * Only clears cells the *structure* pass blocked (value 2). Terrain impassability is not
+   * something a gate can undo, and clearing it would open a route across the Tiber.
+   */
+  clearStructure(x: number, z: number, radius: number): void {
+    const pad = Math.ceil(radius / CELL);
+    const bx = this.toCell(x);
+    const bz = this.toCell(z);
+    for (let dz = -pad; dz <= pad; dz++) {
+      const gz = bz + dz;
+      if (gz < 0 || gz >= this.res) continue;
+      for (let dx = -pad; dx <= pad; dx++) {
+        const gx = bx + dx;
+        if (gx < 0 || gx >= this.res) continue;
+        if (Math.hypot(this.toWorld(gx) - x, this.toWorld(gz) - z) > radius) continue;
+        const i = gz * this.res + gx;
+        if (this.blocked[i] === 2) this.blocked[i] = 0;
+      }
+    }
   }
 
   /** Stamp a wall segment of the given thickness as impassable. */
@@ -609,7 +672,16 @@ export class FlowField {
     this.downsample(fine);
   }
 
-  /** Fold the fine grid into coarse cells: mean cost, blocked if a third is blocked. */
+  /**
+   * Fold the fine grid into coarse cells: mean cost, blocked if a quarter is blocked.
+   *
+   * A quarter, not a third. A 3.5 m curtain stamps one or two of the 7 m fine cells in a
+   * line, and a 28 m coarse cell is 4x4 of them — so a wall crossing it blocks 4 to 8 of
+   * 16, which is 25% to 50%. At the old one-third threshold a single-cell-wide barrier
+   * came out *passable* in the coarse field, and since the flow field is what every unit
+   * heading for the same objective actually follows, the whole army was routed straight
+   * through the Aurelian Wall by the one structure nobody was looking at.
+   */
   downsample(fine: NavGrid): void {
     const { res } = this;
     const half = COARSE_MUL >> 1;
@@ -632,7 +704,7 @@ export class FlowField {
         }
         const i = cz * res + cx;
         this.cost[i] = count > 0 ? sum / count : 1;
-        this.blocked[i] = count === 0 || blockedCount * 3 >= count ? 1 : 0;
+        this.blocked[i] = count === 0 || blockedCount * 4 >= count ? 1 : 0;
       }
     }
     this.ready = false;
@@ -852,32 +924,15 @@ export class PathfindingSystem implements Subsystem {
   private applyCityObstacles(ctx: EngineContext): void {
     const city = ctx.tryGet('city') as unknown as CityNavProvider | undefined;
     this.city = city ?? null;
-    if (!city?.getWallSegments) return;
+    if (!city) return;
 
     let stamped = 0;
     try {
-      const raw = city.getWallSegments();
-      if (Array.isArray(raw)) {
-        for (const seg of raw) {
-          const s = seg as Record<string, unknown>;
-          // Accept {x1,z1,x2,z2}, {ax,az,bx,bz} or {start:{x,z}, end:{x,z}}.
-          const start = (s.start ?? s.a) as Record<string, number> | undefined;
-          const end = (s.end ?? s.b) as Record<string, number> | undefined;
-          const x1 = Number(s.x1 ?? s.ax ?? start?.x);
-          const z1 = Number(s.z1 ?? s.az ?? start?.z);
-          const x2 = Number(s.x2 ?? s.bx ?? end?.x);
-          const z2 = Number(s.z2 ?? s.bz ?? end?.z);
-          if (!Number.isFinite(x1) || !Number.isFinite(z1) || !Number.isFinite(x2) || !Number.isFinite(z2)) continue;
-          // A gate is a hole in the wall, not a wall.
-          if (s.gate === true || s.isGate === true || s.passable === true) continue;
-          const thickness = Number(s.thickness ?? s.width ?? 8);
-          this.grid.blockSegment(x1, z1, x2, z2, Number.isFinite(thickness) ? thickness : 8);
-          stamped++;
-        }
-      }
+      stamped = city.getObstacles ? this.stampObstacles(city) : this.stampWallSegments(city);
+      this.openGates(city);
     } catch (err) {
       // A foreign API that throws must not take the AI down with it.
-      console.warn('[ai/pathfinding] city wall query failed, using terrain only:', err);
+      console.warn('[ai/pathfinding] city obstacle query failed, using terrain only:', err);
     }
 
     if (stamped > 0) {
@@ -886,6 +941,94 @@ export class PathfindingSystem implements Subsystem {
       for (const f of this.flows.values()) f.downsample(this.grid);
     }
     this.stats.cityObstacles = stamped;
+  }
+
+  /**
+   * Stamp every solid the city publishes: the curtain, the towers, the monuments and all
+   * two thousand nine hundred insulae.
+   *
+   * Until this existed the grid knew about the wall and nothing else. Measured: 72.6% of
+   * the wall's masonry had a blocked nav cell under it, and **1.7% of the buildings' did** —
+   * which is to say the pathfinder believed Rome was an open field with a fence across the
+   * north side, and every route it produced through the city ran through houses.
+   */
+  private stampObstacles(city: CityNavProvider): number {
+    const raw = city.getObstacles?.();
+    if (!Array.isArray(raw)) return 0;
+    let stamped = 0;
+    for (const o of raw) {
+      const b = o as Record<string, unknown>;
+      const x = Number(b.x);
+      const z = Number(b.z);
+      const hw = Number(b.hw);
+      const hd = Number(b.hd);
+      const rot = Number(b.rot ?? 0);
+      if (!Number.isFinite(x) || !Number.isFinite(z) || !Number.isFinite(hw) || !Number.isFinite(hd)) continue;
+      this.grid.blockBox(x, z, hw, hd, Number.isFinite(rot) ? rot : 0);
+      stamped++;
+    }
+    return stamped;
+  }
+
+  /**
+   * Fallback for a city that publishes only wall segments.
+   *
+   * Kept because the AI must not depend on another agent's API landing, but note the
+   * field name: the city publishes `halfThickness`, and this used to read
+   * `thickness ?? width ?? 8` — so every bay was stamped at the 8 m fallback rather than
+   * its true 3.5 m, a curtain 2.3x too thick in the grid.
+   */
+  private stampWallSegments(city: CityNavProvider): number {
+    const raw = city.getWallSegments?.();
+    if (!Array.isArray(raw)) return 0;
+    let stamped = 0;
+    for (const seg of raw) {
+      const s = seg as Record<string, unknown>;
+      // Accept {x1,z1,x2,z2}, {ax,az,bx,bz} or {start:{x,z}, end:{x,z}}.
+      const start = (s.start ?? s.a) as Record<string, number> | undefined;
+      const end = (s.end ?? s.b) as Record<string, number> | undefined;
+      const x1 = Number(s.x1 ?? s.ax ?? start?.x);
+      const z1 = Number(s.z1 ?? s.az ?? start?.z);
+      const x2 = Number(s.x2 ?? s.bx ?? end?.x);
+      const z2 = Number(s.z2 ?? s.bz ?? end?.z);
+      if (!Number.isFinite(x1) || !Number.isFinite(z1) || !Number.isFinite(x2) || !Number.isFinite(z2)) continue;
+      // A gate is a hole in the wall, not a wall.
+      if (s.gate === true || s.isGate === true || s.passable === true) continue;
+      const half = Number(s.halfThickness);
+      const thickness = Number.isFinite(half) ? half * 2 : Number(s.thickness ?? s.width ?? 3.5);
+      this.grid.blockSegment(x1, z1, x2, z2, Number.isFinite(thickness) ? thickness : 3.5);
+      stamped++;
+    }
+    return stamped;
+  }
+
+  /**
+   * Punch every open gate back out of the grid.
+   *
+   * The carriageway is 4.3 m and a fine cell is 7 m, so a conservative stamp closes it.
+   * One cell of clearance is the honest answer anyway: `clearance` there comes out near
+   * 3.5 m, so A\* admits only a unit whose footprint radius is under that — a column, not
+   * a line. That is what a gate *is*, and `narrowestFormation` already exists to let a
+   * cohort make itself thin enough to use one.
+   */
+  private openGates(city: CityNavProvider): void {
+    const gates = city.getGates?.();
+    if (!Array.isArray(gates)) return;
+    for (const g of gates) {
+      const gg = g as Record<string, unknown>;
+      if (gg.open === false) continue;
+      const x = Number(gg.x);
+      const z = Number(gg.z);
+      if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
+      // Along the gate's own outward normal, so the passage is opened front to back
+      // rather than as a blob that also eats the curtain either side of the gatehouse.
+      const facing = Number(gg.facing ?? 0);
+      const nx = Number.isFinite(facing) ? Math.sin(facing) : 0;
+      const nz = Number.isFinite(facing) ? Math.cos(facing) : -1;
+      for (let t = -14; t <= 14; t += CELL * 0.5) {
+        this.grid.clearStructure(x + nx * t, z + nz * t, CELL * 0.5);
+      }
+    }
   }
 
   /** Ask the city whether a straight move is blocked, if it offers that service. */
