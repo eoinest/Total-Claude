@@ -144,6 +144,12 @@ export function buildLandmarks(heightAt: Ground, seed: string): LandmarkOutput {
   const rng = new Rng(seed);
   const footprints: { x: number; z: number; hw: number; hd: number; rot: number }[] = [];
   for (const l of LANDMARKS) {
+    // Landscape is not masonry. The Janiculum ridge is a 245 × 113 m *hill*, the Horti
+    // Sallustiani a garden and Tiber Island an island; publishing them as solid boxes put
+    // 150,000 m² of walkable ground behind an invisible wall and was the reason a unit
+    // ordered onto the Janiculum stopped at its foot. They stay in the keep-out map, so
+    // nobody builds houses on them, but they do not stop a man.
+    if (l.soft) continue;
     // Slightly inside the reserved precinct: the precinct includes the steps and the
     // paved area round the building, which a man may walk on.
     footprints.push({ x: l.x, z: l.z, hw: l.hw * 0.88, hd: l.hd * 0.88, rot: l.rot });
@@ -164,9 +170,15 @@ export function buildLandmarks(heightAt: Ground, seed: string): LandmarkOutput {
   // empty chunk and a 500 m-radius one the last time the plan moved.
   const zs = LANDMARKS.map((l) => l.z).sort((a, b) => a - b);
   const q = (t: number): number => zs[Math.min(zs.length - 1, Math.floor(t * zs.length))];
+  // Three bands, not four. A band carries one mesh per material it touches — `monuments-d`
+  // reaches seven — so four bands is up to 22 draw calls for 31 monuments, and the frame was
+  // 231 against a 220 cap. Merging the two northern bands costs the union of their materials
+  // rather than the sum, and the culling loss is small: the Campus Martius monuments are a
+  // single group in every city camera. The cuts stay derived from the plan rather than
+  // hardcoded, because the projection decides where the monuments land and a fixed band edge
+  // silently produced an empty chunk the last time the plan moved.
   const bands: { name: string; from: number; to: number }[] = [
-    { name: 'monuments-a', from: -1e9, to: q(0.25) },
-    { name: 'monuments-b', from: q(0.25), to: q(0.5) },
+    { name: 'monuments-a', from: -1e9, to: q(0.5) },
     { name: 'monuments-c', from: q(0.5), to: q(0.75) },
     { name: 'monuments-d', from: q(0.75), to: 1e9 },
   ];
@@ -191,7 +203,14 @@ export function buildLandmarks(heightAt: Ground, seed: string): LandmarkOutput {
       cz,
       radius,
       castShadow: band.from < 600,
-      lodSwitch: [560, 1e9],
+      // 560 was never reached from any city camera: the switch distance is measured to the
+      // chunk's *surface* and a monument band is 500 m across, so a 560 m nominal switch
+      // fires at a kilometre of centre distance and every band resolved at full detail —
+      // seven materials for `monuments-d`, seven draw calls, plus their shadow passes. At
+      // the mid tier `TRIM_MERGE` folds road, metal and concrete into stone and the same
+      // band is four. Together with the districts this is what brought the `city` camera
+      // back under the 220-call cap.
+      lodSwitch: [400, 1e9],
       build: (batch, detail) => {
         for (const m of members) {
           batch.setUvOrigin(m.x, 0, m.z);
@@ -201,30 +220,39 @@ export function buildLandmarks(heightAt: Ground, seed: string): LandmarkOutput {
     });
   }
 
-  // Aqueducts get their own chunks: they are long and thin, so they cull well.
-  for (const aq of AQUEDUCTS) {
+  /**
+   * **All the aqueducts in one chunk.**
+   *
+   * They had one each on the argument that they are long and thin and therefore cull well,
+   * which is true and was still the wrong trade. Each one is two materials — brick piers and
+   * a stone specus — so two aqueducts is four draw calls, and they cull well *individually*
+   * while being visible *together* from every camera that looks at the city, because they
+   * both converge on the same eastern hills. Merged they are two calls whenever any of them
+   * is in frame, which is the case that actually costs.
+   */
+  {
     let cx = 0;
     let cz = 0;
-    for (const p of aq.path) {
-      cx += p.x;
-      cz += p.z;
+    let n = 0;
+    for (const aq of AQUEDUCTS) for (const p of aq.path) { cx += p.x; cz += p.z; n++; }
+    if (n > 0) {
+      cx /= n;
+      cz /= n;
+      let radius = 60;
+      for (const aq of AQUEDUCTS) for (const p of aq.path) radius = Math.max(radius, Math.hypot(p.x - cx, p.z - cz) + 30);
+      chunks.push({
+        name: 'aqueducts',
+        cx,
+        cz,
+        radius,
+        castShadow: false,
+        lodSwitch: [700, 1e9],
+        build: (batch, detail) => {
+          batch.setUvOrigin(cx, 0, cz);
+          for (const aq of AQUEDUCTS) buildAqueduct(batch, detail, aq, heightAt);
+        },
+      });
     }
-    cx /= aq.path.length;
-    cz /= aq.path.length;
-    let radius = 60;
-    for (const p of aq.path) radius = Math.max(radius, Math.hypot(p.x - cx, p.z - cz) + 30);
-    chunks.push({
-      name: `aqueduct-${aq.id}`,
-      cx,
-      cz,
-      radius,
-      castShadow: false,
-      lodSwitch: [700, 1e9],
-      build: (batch, detail) => {
-        batch.setUvOrigin(cx, 0, cz);
-        buildAqueduct(batch, detail, aq, heightAt);
-      },
-    });
   }
 
   // Tombs lining the Via Flaminia outside the gate. Roman law barred burial inside

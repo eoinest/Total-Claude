@@ -9,14 +9,19 @@ import { buildLandmarks } from './landmarks';
 import {
   AQUEDUCTS,
   assertHillRing,
+  assertNoFabricOverlaps,
   assertNoFootprintOverlaps,
   assertOneAmphitheatre,
   assertTopology,
+  assertWaysClearOfMonuments,
   GATE_OPEN_WIDTH,
   KeepOut,
   LANDMARKS,
-  STREETS,
+  PLAZAS,
   WALL,
+  WAY_FRONTAGE,
+  wayMix,
+  WAYS,
 } from './layout';
 import { CITY_MAT_KEYS, CityMaterials } from './materials';
 import { buildReferenceOverlay, type OverlayOptions, type ReferencePlan } from './overlay';
@@ -113,6 +118,28 @@ interface PlanRect {
   rot: number;
 }
 
+/**
+ * Convert a **plan** rotation into an **occupancy** rotation. They are mirror images, and
+ * for years everything here has quietly conflated them.
+ *
+ * A footprint out of `layout.ts` or `landmarks.ts` follows three.js: `makeRotationY(r)`
+ * sends the box's local +X to world `(cos r, −sin r)` and +Z to `(sin r, cos r)`, and
+ * `rome.ts`'s `worldRot` says so in as many words. The occupancy grid's `markRect` and
+ * `Obstacles.ts` use the opposite hand — local u to `(cos r, +sin r)` — which is the same
+ * rectangle reflected in the X axis.
+ *
+ * For a district at ±0.08 rad the error is nine degrees and merely blurs a wall. For a
+ * monument it is not small: the Circus Maximus stands at 0.6 rad, so its collision box was
+ * rotated 68° off the masonry — 600 m of racetrack whose solid volume lay diagonally across
+ * the Vallis Murcia rather than along it. Nothing caught it because the occupancy grid and
+ * the obstacle list were painted from the *same* wrong convention, so every probe that
+ * grades one against the other agreed with itself.
+ *
+ * `Obstacles.ts` belongs to the sim and its convention is self-consistent, so the fix is a
+ * negation at the boundary rather than a change to anyone else's axes.
+ */
+const occRot = (planRot: number): number => -planRot;
+
 /** Cell size of the masonry occupancy grid, in metres. */
 const OCC_CELL = 4;
 const OCC_RES = Math.ceil((HALF_EXTENT * 2) / OCC_CELL);
@@ -163,11 +190,19 @@ export class CitySystem implements Subsystem {
    * Flaminia was closed. It gained a tower at the east end of the gate bay and its curtain
    * boxes now have stone standing in them, so any index cached against generation 1 is
    * describing a different city.
+   *
+   * Now 3. The street rebuild replaced the BSP fabric with terraces of party-walled
+   * insulae, so both the *count* and the *shape* of every building box changed, and the
+   * monuments' boxes are no longer mirrored (`occRot`). Any consumer holding an index
+   * built against generation 2 is describing a city that no longer exists.
    */
-  obstacleGeneration = 2;
+  obstacleGeneration = 3;
   private totalTris = 0;
   private meshCount = 0;
   private overlaps: ReturnType<typeof assertNoFootprintOverlaps> = { ok: true, count: 0, worst: 0, pairs: [] };
+  private fabricOverlaps: ReturnType<typeof assertNoFabricOverlaps> = { ok: true, count: 0, worst: 0, buildingsHit: 0 };
+  private wayClearance: ReturnType<typeof assertWaysClearOfMonuments> = { ok: true, samples: 0, inside: 0, worst: null };
+  private ways: ReturnType<typeof wayMix> = [];
   private topology: ReturnType<typeof assertTopology> = { ok: true, checks: 0, failures: [] };
   private amphitheatres: ReturnType<typeof assertOneAmphitheatre> = { ok: true, count: 1, ids: ['colosseum'] };
   private stray: StrayReport = { ok: true, worst: 0, offenders: [] };
@@ -217,12 +252,24 @@ export class CitySystem implements Subsystem {
       // A mound is bigger in plan than the building on it.
       if (l.mound) keepOut.addCircle(l.x, l.z, (l.moundRadius ?? l.clear) * 1.02);
     }
-    for (const s of STREETS) keepOut.addPath(s.path, s.width * 0.5 + 2.5);
+    // The whole armature, not just the nine named viae: the military road behind the
+    // curtain, the ring round every monument and the feeders that connect them all reserve
+    // their carriageway plus a margin, so the fabric presents a frontage to the street
+    // instead of growing into it. See `WAY_FRONTAGE` for why the margin is by rank.
+    for (const w of WAYS) keepOut.addPath(w.path, w.width * 0.5 + WAY_FRONTAGE[w.cls]);
+    for (const p of PLAZAS) keepOut.addRect(p.x, p.z, p.hw + 2, p.hd + 2, p.rot);
     for (const a of AQUEDUCTS) keepOut.addPath(a.path, 8);
 
     // Build-time assertion: no two monuments interpenetrate. Reported in `stats()` and
     // logged once, because a layout regression is otherwise invisible until someone
     // notices a temple inside a racetrack.
+    //
+    // **Read the name carefully, because it is narrower than it sounds and that gap is a
+    // bug the user found before the build did.** This compares landmarks with landmarks and
+    // skips anything `soft`. It has never looked at an insula. So while the user was
+    // reporting monuments "smacked down across multiple buildings" it was reporting zero
+    // overlaps — correctly, and about a different question. `assertNoFabricOverlaps` below
+    // is the one that answers the question that was actually being asked.
     this.overlaps = assertNoFootprintOverlaps();
     if (!this.overlaps.ok) {
       console.warn(
@@ -249,6 +296,30 @@ export class CitySystem implements Subsystem {
 
     const landmarks = buildLandmarks(heightAt, 'rome-monuments');
     const districts = buildDistricts(heightAt, keepOut, 'rome-fabric', wall.wallZAt);
+
+    // The check whose absence let the user see what the build could not: does any house
+    // stand inside a monument? Counted against the same rectangles `getObstacles()`
+    // publishes, so it grades the collision surface rather than the intent.
+    this.fabricOverlaps = assertNoFabricOverlaps(landmarks.footprints, districts.footprints);
+    if (!this.fabricOverlaps.ok) {
+      console.warn(
+        `[city] ${this.fabricOverlaps.count} monument/insula overlap(s) across ` +
+          `${this.fabricOverlaps.buildingsHit} building(s), worst ${this.fabricOverlaps.worst} m`
+      );
+    }
+    // ...and the same question asked of the streets, which is where it was worst. See
+    // `assertWaysClearOfMonuments`: before the ways were deflected round the resolved
+    // monument positions, nine tenths of the Via Appia and the Via Triumphalis ran through
+    // masonry at zero clearance and nothing in the build said so.
+    this.wayClearance = assertWaysClearOfMonuments();
+    if (!this.wayClearance.ok) {
+      console.warn(
+        `[city] ${this.wayClearance.inside}/${this.wayClearance.samples} ranked-way samples ` +
+          `inside a monument; worst ${this.wayClearance.worst?.id} at ${this.wayClearance.worst?.pct}%`
+      );
+    }
+    // The armature *and* the lanes each quarter cut for itself. See `wayMix`.
+    this.ways = wayMix(districts.lanes);
 
     const trees: TreeRequest[] = [...wall.trees, ...landmarks.trees, ...districts.trees];
     const specs: CityChunkSpec[] = [
@@ -278,8 +349,8 @@ export class CitySystem implements Subsystem {
     for (const seg of this.segments) {
       this.markCircle(seg.x1, seg.z1, WALL.towerWidth * 0.5);
     }
-    for (const f of landmarks.footprints) this.markRect(f.x, f.z, f.hw, f.hd, f.rot);
-    for (const f of districts.footprints) this.markRect(f.x, f.z, f.hw, f.hd, f.rot);
+    for (const f of landmarks.footprints) this.markRect(f.x, f.z, f.hw, f.hd, occRot(f.rot));
+    for (const f of districts.footprints) this.markRect(f.x, f.z, f.hw, f.hd, occRot(f.rot));
     /**
      * A gate that is **open** has its carriageway cleared again so units can march through.
      *
@@ -357,10 +428,10 @@ export class CitySystem implements Subsystem {
     // Roofs are not walkable in this game, so a monument and an insula are solid to any
     // height. 1e4 rather than Infinity keeps the value finite in a Float32Array.
     for (const f of landmarkFootprints) {
-      out.push({ x: f.x, z: f.z, hw: f.hw, hd: f.hd, rot: f.rot, topY: 1e4, kind: 'monument' });
+      out.push({ x: f.x, z: f.z, hw: f.hw, hd: f.hd, rot: occRot(f.rot), topY: 1e4, kind: 'monument' });
     }
     for (const f of districtFootprints) {
-      out.push({ x: f.x, z: f.z, hw: f.hw, hd: f.hd, rot: f.rot, topY: 1e4, kind: 'building' });
+      out.push({ x: f.x, z: f.z, hw: f.hw, hd: f.hd, rot: occRot(f.rot), topY: 1e4, kind: 'building' });
     }
 
     this.obstacles = out;
@@ -717,7 +788,7 @@ export class CitySystem implements Subsystem {
    * Endpoints are absolute world positions and the record satisfies `Siege.ts`'s
    * `CityStairView` field for field: `footX/footY/footZ` on the ground, `topX/topY/topZ`
    * where the flight's landing meets the walkway, `width` clear between the curtain and
-   * the flight's own parapet, and `side` = -1 for cityward. `bay` names the `GarrisonBay`
+   * the flight's own parapet, and `side` = −1 for cityward. `bay` names the `GarrisonBay`
    * whose walkway run the flight delivers onto, so joining a stair to the garrison spine
    * needs no spatial query. Up is `top`, down is `foot`, and `rise` is positive always.
    *
@@ -952,6 +1023,14 @@ export class CitySystem implements Subsystem {
     amphitheatres: number;
     /** Chunks with geometry in the battlefield or outside their own bounding volume. */
     strayGeometry: number;
+    /** Buildings standing inside a monument. See `assertNoFabricOverlaps`. Must be 0. */
+    fabricOverlaps: number;
+    fabricOverlapWorst: number;
+    /** Ranked-way centreline samples with masonry in the carriageway. Must be 0. */
+    wayInsideMonument: number;
+    waySamples: number;
+    /** Street network by rank: how many ways of each class, and their total length. */
+    ways: { cls: string; count: number; km: number }[];
   } {
     let visibleMeshes = 0;
     let visibleTriangles = 0;
@@ -974,6 +1053,11 @@ export class CitySystem implements Subsystem {
       topologyChecks: this.topology.checks,
       amphitheatres: this.amphitheatres.count,
       strayGeometry: this.stray.offenders.length,
+      fabricOverlaps: this.fabricOverlaps.count,
+      fabricOverlapWorst: this.fabricOverlaps.worst,
+      wayInsideMonument: this.wayClearance.inside,
+      waySamples: this.wayClearance.samples,
+      ways: this.ways,
     };
   }
 
