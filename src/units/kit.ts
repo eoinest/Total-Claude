@@ -387,11 +387,15 @@ export function resolveKit(def: UnitTypeDef, variant: number, out: ResolvedKit):
   // undyed grey-brown wool, madder red-brown, weld ochre, woad-over-yellow green, and the
   // near-black of an iron-mordanted lot. Roman units keep the roster colour, because an
   // issued tunic is exactly what makes a cohort read as a cohort.
-  const GERMANIC_CLOTH: readonly number[] = [
-    0x6e6552, 0x7a4b34, 0x8a7440, 0x4e5a3f, 0x3b3730, 0x5c6349, 0x6b4a3a,
+  const GERMANIC_CLOTH: readonly number[] = [ // eight lots 0.22-0.31 linear, two 0.10-0.12
+    0x8b8577, 0x847f70,   // undyed grey and grey-brown fleece, the commonest cloth a man owned
+    0x96795a, 0x8a6f4d,   // walnut and oak-bark brown
+    0x8f7e46, 0xa86f4e,   // weld ochre, madder red-brown
+    0x828a58, 0x6a747f,   // woad over weld, and one lot of true woad, the dearest dye here
+    0x5f5346, 0x545046,   // the dark end kept narrow: dark fleece, then an iron mordant
   ];
-  const GERMANIC_LEG: readonly number[] = [
-    0x6b5a44, 0x574b3c, 0x7b6448, 0x4a4034, 0x6e5f4a,
+  const GERMANIC_LEG: readonly number[] = [ // a step under the tunic after the soiling below
+    0xa89c84, 0x9c8a6e, 0x8f8d78, 0xa2926f, 0x96856a, 0x8a7c62, 0x7f7a68,
   ];
   const tunic = desaturate(srgbToLinear(
     germanic ? GERMANIC_CLOTH[Math.floor(r(18) * GERMANIC_CLOTH.length)] : ap.tunicColour
@@ -479,9 +483,8 @@ export function resolveKit(def: UnitTypeDef, variant: number, out: ResolvedKit):
     coarse |= 1 << Coarse.Blade;
   }
   out.maskCoarse = coarse;
-  out.emblem = EMBLEM_INDEX.get(ap.shieldEmblem) ?? EMBLEMS.length - 1;
-  // Germanic shields were individually painted; give the host four devices to draw from.
-  if (germanic && ap.shield !== 'none') {
+  out.emblem = EMBLEM_INDEX.get(ap.shieldEmblem) ?? (germanic ? EMBLEMS.length - 1 : 0);
+  if (germanic) { // painted individually, and tile >= 4 is the shader's only faction test
     const pool = [4, 5, 6, 7];
     out.emblem = pool[Math.floor(r(15) * pool.length)];
   }

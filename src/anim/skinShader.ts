@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { AnimTexture } from './animTexture';
+import { Piece } from '../units/kit';
 
 /**
  * GPU skinning by shader injection.
@@ -378,8 +379,12 @@ const TINT_BODY = /* glsl */ `
   // ---- hair ----------------------------------------------------------------
   // Black through to the reddish blond Tacitus keeps remarking on, with a few grey heads:
   // a warband is fathers and sons, not a cohort of twenty-year-olds.
+  // A tribesman wears it long, so his hair is a shoulder-sized surface and not a cap. The
+  // darkest quarter of the range is dropped for him: the sources all say fair, and at 0.055
+  // albedo the head merged into whatever he had on under it.
   float hh = fract( v * 13.7 );
-  vec3 hair = mix( vec3( 0.13, 0.09, 0.07 ), vec3( 0.58, 0.36, 0.15 ), hh );
+  if ( iCol0.w > 3.5 ) hh = 0.25 + hh * 0.75;
+  vec3 hair = mix( vec3( 0.19, 0.13, 0.10 ), vec3( 0.58, 0.36, 0.15 ), hh );
   hair = mix( hair, vec3( 0.44, 0.42, 0.40 ), smoothstep( 0.9, 1.0, fract( v * 5.29 ) ) );
   // ---- metal ---------------------------------------------------------------
   // iCol1.w carries the man's metal packed into one float: the integer part is what his
@@ -406,17 +411,50 @@ const TINT_BODY = /* glsl */ `
   // and applying it to skin fought the tone curve above.
   float batch = 0.84 + fract( v * 31.1 ) * 0.32;
   vec3 tint;
-  if ( slot < 0.5 )       tint = vec3( 1.0 );
+  if ( slot < 0.5 ) {
+    // The atlas colour, untouched, except for the two tiles that cover most of a tribesman.
+    // Measured by piece over the germanhorde frame, the hide jerkin is the largest single
+    // surface on that side of the field and the fur cap the third, and both sat on one fixed
+    // tile at 0.050 and 0.064 linear, four stops under mid grey, identical on every man.
+    tint = vec3( 1.0 );
+    float apid = aPieceTint.x;
+    if ( apid == SOLDIER_PIECE_HIDE ) {
+      float hp = fract( v * 137.3 );                // a beast a man cured himself, not issue kit
+      tint = hp < 0.12 ? vec3( 2.75, 3.8, 4.8 )     // alum-tawed rawhide, the pale end
+        : hp < 0.38 ? vec3( 2.4, 3.1, 3.9 )         // oak-bark tanned, tan
+        : hp < 0.68 ? vec3( 2.1, 2.5, 3.05 )        // greased mid brown, the commonest
+        : hp < 0.88 ? vec3( 1.6, 1.85, 2.15 )       // dark, heavily oiled
+        :             vec3( 1.15, 1.25, 1.4 );      // smoked black, the dark end kept narrow
+      tint *= 0.9 + fract( v * 149.7 ) * 0.2;
+    } else if ( apid == SOLDIER_PIECE_FUR ) {
+      float fp = fract( v * 151.3 );                // whatever he killed, or his father did
+      tint = fp < 0.22 ? vec3( 2.1, 2.3, 2.6 )      // sheepskin or pale fox
+        : fp < 0.50 ? vec3( 1.6, 1.7, 1.8 )         // grey wolf
+        : fp < 0.80 ? vec3( 1.35, 1.4, 1.45 )       // brown bear
+        :             vec3( 1.05, 1.0, 1.0 );       // black bear
+      tint *= 0.92 + fract( v * 157.1 ) * 0.16;
+    }
+  }
   else if ( slot < 1.5 )  tint = iCol0.rgb * batch;
   else if ( slot < 2.5 )  tint = iCol1.rgb * batch;
   else if ( slot < 3.5 )  tint = skin;
   else if ( slot < 4.5 )  tint = hair;
   else if ( slot < 5.5 ) {
-    // The sagum was bought, not issued. Start from the tunic's dye lot, then pull a good
-    // way toward undyed brown wool on a per-man basis, so a rank has red cloaks, brown
-    // cloaks and everything between rather than one repeated colour.
+    // The sagum was bought, not issued: start from the tunic's dye lot, then pull per man
+    // toward undyed wool, so a rank has red cloaks, brown cloaks and everything between.
     vec3 dyed = iCol0.rgb * 0.78 + vec3( 0.05, 0.045, 0.04 );
-    tint = mix( dyed, vec3( 0.16, 0.125, 0.095 ), fract( v * 61.7 ) * 0.85 ) * batch;
+    float wp = fract( v * 61.7 );
+    if ( iCol0.w > 3.5 ) {
+      vec3 fleece =                                // a flock is white, grey, brown and black
+          wp < 0.24 ? vec3( 0.43, 0.405, 0.35 )    // the palest fleece, undyed
+        : wp < 0.46 ? vec3( 0.30, 0.275, 0.225 )   // grey wether wool
+        : wp < 0.68 ? vec3( 0.33, 0.26, 0.18 )     // warm natural brown
+        : wp < 0.86 ? vec3( 0.185, 0.165, 0.14 )   // dark grey fleece
+        :             vec3( 0.105, 0.098, 0.092 ); // black fleece, or an iron mordant over it
+      tint = mix( dyed, fleece, 0.40 + fract( v * 67.3 ) * 0.5 ) * batch;
+    } else {
+      tint = mix( dyed, vec3( 0.16, 0.125, 0.095 ), wp * 0.85 ) * batch;
+    }
   }
   else if ( slot < 6.5 ) {
     // ---- shield facing ----
@@ -584,6 +622,8 @@ function defines(o: SoldierShaderOptions): string {
     `#define SOLDIER_LEAN_H ${o.leanHeight.toFixed(3)}`,
     `#define SOLDIER_EMBLEM_ORIGIN vec2(${o.emblemOrigin[0].toFixed(6)}, ${o.emblemOrigin[1].toFixed(6)})`,
     `#define SOLDIER_EMBLEM_TILE vec2(${o.emblemTile[0].toFixed(6)}, ${o.emblemTile[1].toFixed(6)})`,
+    `#define SOLDIER_PIECE_HIDE ${Piece.ArmourLeather}.0`,
+    `#define SOLDIER_PIECE_FUR ${Piece.HelmFur}.0`,
   ];
   const pv = o.poseVary;
   if (pv) {
