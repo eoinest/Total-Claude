@@ -59,6 +59,16 @@ const DPR = Number(args.get('dpr') ?? 1);
 const TIER = args.get('quality') ?? null;          // null = the game's own default tier
 const MAP = args.get('map') ?? 'campus-martius';
 const SCENARIO = args.get('scenario') ?? null;
+/*
+ * `--enemy=carthage` is not optional for a heaviest-case run, and its absence is a trap.
+ *
+ * `sanitiseConfig` keeps `opponent: Germanic` unless it is asked for Carthage explicitly, so
+ * `?map=carthage` on its own is Rome against the Juthungi *on* the Carthage map: no Punic
+ * army and no war elephants. Measured — the first Carthage run reported strength
+ * `{0:3772, 1:4860, 2:0}`, and a faction-2 count of exactly zero beside two real ones is
+ * what gave it away.
+ */
+const ENEMY = args.get('enemy') ?? null;
 const SECONDS = Number(args.get('seconds') ?? 30);
 const AT = Number(args.get('at') ?? 60);
 const SPIKE = Number(args.get('spike') ?? 20);
@@ -208,7 +218,8 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.
 
 const url = `${base}/?harness=1&autoplay=0&w=${W}&h=${H}&map=${MAP}`
   + (TIER ? `&quality=${TIER}` : '')
-  + (SCENARIO ? `&scenario=${SCENARIO}` : '');
+  + (SCENARIO ? `&scenario=${SCENARIO}` : '')
+  + (ENEMY ? `&enemy=${ENEMY}` : '');
 console.log(`url: ${url}   viewport ${W}x${H} @ dpr ${DPR}`);
 await page.goto(url, { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 240000 });
@@ -790,7 +801,10 @@ if (JSON_OUT) {
   await writeFile(JSON_OUT, JSON.stringify({
     label: LABEL, url, dpr: DPR, deep: DEEP, spikeMs: SPIKE, tree: TREE,
     loadBefore: LOAD_BEFORE, loadAfter: LOAD_AFTER, setup, errors,
-    progs: { first: out.progs[0], last: out.progs[out.n - 1] },
+    progs: {
+      boot: progsAtBoot, afterAdvance: progsAfterAdvance,
+      first: out.progs[0], last: out.progs[out.n - 1],
+    },
     tex: { first: out.tex[0], last: out.tex[out.n - 1] },
     geo: { first: out.geo[0], last: out.geo[out.n - 1] },
     n: out.n, simTime: out.simTime, strength: out.strength,
