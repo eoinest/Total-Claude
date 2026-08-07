@@ -81,9 +81,11 @@ if (!served) {
   console.error(`FATAL: nothing served at ${base}/src/sim/Projectiles.ts — is vite up on ${PORT}?`);
   process.exit(2);
 }
-const fingerprint = served.includes('debugWallShots')
-  ? 'HAS debugWallShots (the wall census is present)'
-  : 'UNRECOGNISED — no debugWallShots in the served source; every number below is void';
+const fingerprint = !served.includes('debugWallShots')
+  ? 'UNRECOGNISED — no debugWallShots in the served source; every number below is void'
+  : served.includes('embrasureAt')
+    ? 'AFTER arm — debugWallShots + embrasureAt (the aim solve knows about the crenels)'
+    : 'BEFORE arm — debugWallShots only, no embrasureAt';
 console.log(`source:      ${base}  (dev server started outside this probe)`);
 console.log(`served tree: ${fingerprint}  (${served.length} bytes of src/sim/Projectiles.ts)`);
 console.log(`url:         ${url}`);
@@ -131,45 +133,62 @@ const advance = async (seconds) => {
   }
 };
 
-/** Who is on the wall, who is on the ground, and how far apart they are. */
+/**
+ * Who is standing, who is elevated, and who has killed whom.
+ *
+ * `u.kills` is `BattleSystem.damage`'s own attribution counter — it increments on the unit
+ * that owned the projectile or the blade — so a before/after pair of these separates *kills
+ * by the garrison* from *deaths of the garrison*. That distinction turned out to matter:
+ * `segmentVisit` has no faction test, so a projectile hits whoever is on its line.
+ *
+ * `aliveAt` is counted off the pool rather than read off `u.alive`, so the headcount does not
+ * depend on `updateUnitCohesion` having run this tick.
+ */
 const snapshot = async () =>
   page.evaluate(() => {
     const g = window.__game;
     const b = g.battle;
     const p = b.pool;
     const perFaction = {};
-    const garrisonUnits = [];
+    const units = [];
     let elevatedAlive = 0;
     for (const u of b.units) {
-      if (u.destroyed) continue;
       const f = u.faction;
-      perFaction[f] ??= { units: 0, alive: 0, elevated: 0 };
+      perFaction[f] ??= { units: 0, alive: 0, poolAlive: 0, elevated: 0, kills: 0, elevAmmo: 0 };
       perFaction[f].units++;
       perFaction[f].alive += u.alive;
+      perFaction[f].kills += u.kills ?? 0;
       let elev = 0;
-      for (const i of u.members) if (p.aliveAt(i) && b.elevated[i] !== 0) elev++;
+      let poolAlive = 0;
+      for (const i of u.members) {
+        if (!p.aliveAt(i)) continue;
+        poolAlive++;
+        if (b.elevated[i] !== 0) { elev++; perFaction[f].elevAmmo += p.ammo[i]; }
+      }
+      perFaction[f].poolAlive += poolAlive;
       perFaction[f].elevated += elev;
       elevatedAlive += elev;
-      if (elev > 0) {
-        garrisonUnits.push({ id: u.id, type: u.typeId, faction: f, alive: u.alive, elevated: elev });
-      }
+      units.push({
+        id: u.id, type: u.typeId, faction: f, alive: u.alive, poolAlive,
+        elevated: elev, kills: u.kills ?? 0, destroyed: !!u.destroyed,
+      });
     }
-    // Rank histogram over living elevated men — the denominator for the per-rank table.
+    // Rank histogram over living elevated men, split by faction — the denominator for the
+    // per-rank table, and the check on whether an attacker on a ladder is polluting it.
     const rankHist = {};
     for (const u of b.units) {
-      if (u.destroyed) continue;
       for (const i of u.members) {
         if (!p.aliveAt(i) || b.elevated[i] === 0) continue;
         const r = p.rank[i];
-        const k = r >= 0 && r < 5 ? String(r) : 'other';
+        const k = `f${u.faction}r${r >= 0 && r < 5 ? r : 'X'}`;
         rankHist[k] = (rankHist[k] ?? 0) + 1;
       }
     }
     return {
-      t: +g.engine.elapsed?.toFixed?.(2) ?? null,
       strength: { ...b.strength },
+      wallKills: b.siege?.wallKills ?? null,
       perFaction,
-      garrisonUnits,
+      units,
       elevatedAlive,
       rankHist,
     };
@@ -318,7 +337,25 @@ const warmTrace = [];
       const pr = window.__game.engine.context.get('projectiles');
       const t = pr.debugWallShots().total;
       const b = window.__game.battle;
-      return { launched: t.launched, hitMan: t.hitMan, killed: t.killed, strength: { ...b.strength } };
+      const p = b.pool;
+      const alive = {};
+      let ammo = 0;
+      let ammoN = 0;
+      for (const u of b.units) {
+        let n = 0;
+        for (const i of u.members) {
+          if (!p.aliveAt(i)) continue;
+          n++;
+          if (b.elevated[i] !== 0 && u.faction === 0) { ammo += p.ammo[i]; ammoN++; }
+        }
+        alive[u.faction] = (alive[u.faction] ?? 0) + n;
+      }
+      return {
+        launched: t.launched, hitMan: t.hitMan, killed: t.killed, alive,
+        // Mean quiver of the living garrison. The shot rate collapses after the opening
+        // half-minute and this is the number that says whether it is ammunition or geometry.
+        garrisonAmmo: ammoN ? +(ammo / ammoN).toFixed(2) : null, garrisonN: ammoN,
+      };
     });
     warmTrace.push({ t: +done.toFixed(1), ...w });
   }
@@ -380,20 +417,50 @@ console.log('=== 4. parapet profile, read off the live city ===');
 console.log(JSON.stringify(profile, null, 1));
 
 console.log('');
-console.log('=== 5. kills per minute from the wall, two instruments ===');
+console.log('=== 5. kills per minute from the wall, three instruments ===');
 console.log(`census:    killed ${T.killed} = ${perMin(T.killed)}/min   arrivals(hitMan) ${T.hitMan} = ${perMin(T.hitMan)}/min`);
+console.log(`siege:     wallKills ${garrisonBefore.wallKills} -> ${postShot.wallKills}  (delta ${postShot.wallKills - garrisonBefore.wallKills} = ${perMin(postShot.wallKills - garrisonBefore.wallKills)}/min)`);
 const drop = {};
-for (const f of Object.keys(strengthBefore)) {
-  drop[f] = strengthBefore[f] - strengthAfter[f];
+for (const f of Object.keys(strengthBefore)) drop[f] = strengthBefore[f] - strengthAfter[f];
+console.log(`strength:  before ${JSON.stringify(strengthBefore)}  after ${JSON.stringify(strengthAfter)}  drop ${JSON.stringify(drop)}`);
+
+// Pool-truth headcount and per-unit kill attribution: who killed, and who died.
+const byId = new Map(garrisonBefore.units.map((u) => [u.id, u]));
+const killRows = [];
+const factionKills = {};
+const factionDeaths = {};
+for (const a of postShot.units) {
+  const b0 = byId.get(a.id);
+  const dk = a.kills - (b0?.kills ?? 0);
+  const dd = (b0?.poolAlive ?? a.poolAlive) - a.poolAlive;
+  factionKills[a.faction] = (factionKills[a.faction] ?? 0) + dk;
+  factionDeaths[a.faction] = (factionDeaths[a.faction] ?? 0) + dd;
+  if (dk !== 0 || dd !== 0) {
+    killRows.push({ id: a.id, type: a.type, f: a.faction, elevated: a.elevated, kills: dk, died: dd });
+  }
 }
-console.log(`strength:  before ${JSON.stringify(strengthBefore)}  after ${JSON.stringify(strengthAfter)}`);
-console.log(`           drop ${JSON.stringify(drop)}  (per minute: ${JSON.stringify(
-  Object.fromEntries(Object.entries(drop).map(([f, v]) => [f, perMin(v)]))
-)})`);
+console.log('');
+console.log('per-unit over the window (kills = BattleSystem.damage attribution; died = pool headcount):');
+console.log('  id  type                 f  elev  kills  died');
+for (const r of killRows.sort((x, y) => y.kills - x.kills)) {
+  console.log(
+    `  ${String(r.id).padStart(2)}  ${String(r.type).padEnd(20)} ${r.f}  ${String(r.elevated).padStart(4)}  ` +
+      `${String(r.kills).padStart(5)}  ${String(r.died).padStart(4)}`
+  );
+}
+console.log(`faction kills ${JSON.stringify(factionKills)}   faction deaths ${JSON.stringify(factionDeaths)}`);
+console.log(`per minute:   kills ${JSON.stringify(Object.fromEntries(Object.entries(factionKills).map(([f, v]) => [f, perMin(v)])))}` +
+  `   deaths ${JSON.stringify(Object.fromEntries(Object.entries(factionDeaths).map(([f, v]) => [f, perMin(v)])))}`);
+const garrisonIds = new Set(garrisonBefore.units.filter((u) => u.elevated > 0 && u.faction === 0).map((u) => u.id));
+const garrisonKills = killRows.filter((r) => garrisonIds.has(r.id)).reduce((s, r) => s + r.kills, 0);
+console.log(`garrison units (faction 0, elevated) killed ${garrisonKills} = ${perMin(garrisonKills)}/min`);
 console.log(`garrison:  ${garrisonBefore.elevatedAlive} elevated men at census reset, ${postShot.elevatedAlive} at end`);
-console.log(`units:     ${JSON.stringify(postShot.garrisonUnits)}`);
+console.log(`per faction at reset: ${JSON.stringify(garrisonBefore.perFaction)}`);
+console.log(`per faction at end:   ${JSON.stringify(postShot.perFaction)}`);
+console.log(`shots per elevated faction-0 man per minute: ${(garrisonBefore.perFaction['0']?.elevated ? (T.launched * 60) / WINDOW / garrisonBefore.perFaction['0'].elevated : 0).toFixed(2)}`);
+console.log(`elevated by faction/rank at end: ${JSON.stringify(postShot.rankHist)}`);
 console.log(`warm trace (cumulative wall shots at each ${CHUNK}s of the ${WARM}s warm-up):`);
-for (const w of warmTrace) console.log(`   t=${String(w.t).padStart(5)}s  launched ${String(w.launched).padStart(5)}  hitMan ${String(w.hitMan).padStart(4)}  killed ${String(w.killed).padStart(4)}  strength ${JSON.stringify(w.strength)}`);
+for (const w of warmTrace) console.log(`   t=${String(w.t).padStart(5)}s  launched ${String(w.launched).padStart(5)}  hitMan ${String(w.hitMan).padStart(4)}  killed ${String(w.killed).padStart(4)}  garrisonAmmo ${String(w.garrisonAmmo).padStart(6)} x${String(w.garrisonN).padStart(4)}  alive ${JSON.stringify(w.alive)}`);
 
 if (errors.length) {
   console.log('');
