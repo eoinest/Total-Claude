@@ -218,10 +218,16 @@ export const MONUMENTS: readonly Monument[] = [
     x: -250, z: 1120, hw: 30, hd: 10, rot: 0, clear: 6, solid: true,
   },
   // ---- the tophet --------------------------------------------------------
-  // Real position (e −71, n −1645) is south of both harbours, on the Taenia side.
+  // §2.5: e −71, n −1645 → x = 0.45·(−1645) = −740, z = 945 + 0.22·(−71) = 929. The prior
+  // entry here (x −1150, z 950) was ~410 m off this and did not derive from those e/n at all —
+  // found and corrected in the D3 landmark audit. Note for the harbour workstream: at this x
+  // the tophet sits *between* the two harbours (cothon x −930, merchant harbour x −540), not
+  // south of both as the old comment claimed — that reading only held against the harbours'
+  // surveyed x of −670, before departure 1 above moved the cothon to −930. Not re-moved here,
+  // since the cothon's position is its own deliberate, documented call.
   {
     id: 'tophet', name: 'The Tophet of Salammbô', kind: 'tophet',
-    x: -1150, z: 950, hw: 62, hd: 44, rot: 0.06, clear: 10, solid: false,
+    x: -740, z: 929, hw: 62, hd: 44, rot: 0.06, clear: 10, solid: false,
   },
   // ---- the forum and its edges -------------------------------------------
   {
