@@ -36,10 +36,13 @@ import type { GhostSpec, WorldOverlay } from './WorldOverlay';
 export type CursorKind = 'default' | 'move' | 'attack' | 'friend' | 'select' | 'wall';
 
 /** One phrase per wall order, so the hint and the cursor cannot describe different things. */
-const WALL_HINT: Record<'ascend' | 'traverse' | 'descend', string> = {
+const WALL_HINT: Record<'ascend' | 'traverse' | 'descend' | 'storm', string> = {
   ascend: 'Up onto the wall',
   traverse: 'Along the wall',
   descend: 'Down off the wall',
+  // Named differently on purpose: from outside there are no stairs, and what the order
+  // actually buys is a place in the file at whatever ramp or ladder is against that bay.
+  storm: 'Storm the wall here',
 };
 
 /** Pixels of pointer travel before a click becomes a drag. */
@@ -256,7 +259,17 @@ export class SelectionController {
    * system registered — a field battle, or a map with no city — this stays null and every
    * gesture behaves exactly as it did.
    */
-  wallProbe: { targetAt(x: number, z: number): number; isGarrisoned(unitId: number): boolean } | null = null;
+  wallProbe: {
+    targetAt(x: number, z: number): number;
+    isGarrisoned(unitId: number): boolean;
+    /**
+     * Which side of the curtain a point is on: -1 inside the city, +1 out in the field.
+     *
+     * Asked because the two sides of a wall are two different orders, and the pick cannot
+     * tell them apart on its own. See `updateGround`.
+     */
+    sideAt(x: number, z: number): -1 | 1;
+  } | null = null;
 
   constructor(
     private model: HudModel,
@@ -444,6 +457,7 @@ export class SelectionController {
     // plaque's box, so the field stays clickable everywhere else.
     input.uiCapture = this.ptr.overUi || this.overBanner >= 0;
 
+    this.refreshStorming();
     this.updateGround(ctx, heightAt);
     const hovered = this.pickUnit(ctx);
     if (!this.ptr.overUi) this.model.hoveredId = hovered;
@@ -464,7 +478,8 @@ export class SelectionController {
    */
   private drawWallTarget(): void {
     if (!this.wallValid || this.deployment?.active) return;
-    if (this.wallIntent() !== 'ascend' && this.wallIntent() !== 'traverse') return;
+    const intent = this.wallIntent();
+    if (intent !== 'ascend' && intent !== 'traverse' && intent !== 'storm') return;
     let men = 0;
     for (const v of this.model.selectedViews) men += v.alive;
     // `Siege` packs a garrison four to five ranks deep at the walk's own spacing; four is the
@@ -596,8 +611,19 @@ export class SelectionController {
        * two orders cleanly. Half a metre of tolerance rather than an epsilon so a click on a
        * merlon still counts.
        */
-      if (this.wallProbe && PICK.solidY > this.solids[PICK.solid].topY - 0.5
-        && this.wallProbe.targetAt(PICK.solidX, PICK.solidZ) >= 0) {
+      /*
+       * ...and the slab test is the *defender's* question, not the attacker's.
+       *
+       * Standing in the field you cannot see the walk at all: the outer face and the merlons
+       * are between the camera and it, so the ray meets the stone metres below `topY` and the
+       * test above says "the foot of the wall" for every pixel of an enemy curtain. Measured
+       * on the storm of Carthage from the player's own camera — solid hit at y 22.9 against a
+       * walk at 26.5, `wallValid` false everywhere on the wall. There is nothing else to
+       * *mean* at the foot of a wall you are besieging, so on that side any hit on the
+       * masonry is a wall order and `Siege.escalade` decides whether there is a way up.
+       */
+      if (this.wallProbe && this.wallProbe.targetAt(PICK.solidX, PICK.solidZ) >= 0
+        && (PICK.solidY > this.solids[PICK.solid].topY - 0.5 || this.selectionIsStorming())) {
         this.wallX = PICK.solidX;
         this.wallZ = PICK.solidZ;
         this.wallY = PICK.solidY;
@@ -626,11 +652,49 @@ export class SelectionController {
    * emitted cannot disagree about which of the four wall orders is on offer — which is the
    * other half of the owner's complaint, that the cursor tells you nothing before you commit.
    */
-  private wallIntent(): 'ascend' | 'traverse' | 'descend' | null {
+  /**
+   * True when the selection is standing outside the curtain, looking at somebody else's wall.
+   *
+   * Majority rather than unanimity, for the same reason `wallIntent` is: one order goes out
+   * and `Siege` decides per unit what it means. Nothing is asked of the sim unless a wall
+   * probe exists, so a field battle answers false without a call.
+   */
+  private selectionIsStorming(): boolean {
+    return this.storming;
+  }
+
+  /**
+   * Recompute `storming` — once a frame, and not on every question that wants it.
+   *
+   * `Siege.wallSideAt` is a linear scan over every station on the circuit, and its own
+   * comment promises it is "only ever called on an order". The cursor asks this question up
+   * to four times a frame (the pick, the hover marker, the hit test and the cursor glyph), so
+   * asking the sim each time would put fifteen hundred distance tests per selected unit into
+   * the frame path to answer a question whose answer cannot change inside one frame.
+   */
+  private storming = false;
+  private refreshStorming(): void {
+    this.storming = false;
+    const probe = this.wallProbe;
+    if (!probe) return;
+    const sel = this.model.selectedViews;
+    if (sel.length === 0) return;
+    let out = 0;
+    for (const v of sel) {
+      if (probe.isGarrisoned(v.id)) continue;
+      if (probe.sideAt(v.cx, v.cz) > 0) out++;
+    }
+    this.storming = out > sel.length * 0.5;
+  }
+
+  private wallIntent(): 'ascend' | 'traverse' | 'descend' | 'storm' | null {
     const probe = this.wallProbe;
     if (!probe) return null;
     const sel = this.model.selectedViews;
     if (sel.length === 0) return null;
+    // From outside, "up" means over a ramp or a ladder, and it is worth saying so before the
+    // player commits: an escalade is a different thing from walking up your own stairs.
+    if (this.wallValid && this.selectionIsStorming()) return 'storm';
     // A mixed selection is named by the majority; every unit still gets the same order and
     // `Siege` decides per unit what that means for it.
     let onWall = 0;
@@ -899,10 +963,25 @@ export class SelectionController {
     }
   }
 
+  /**
+   * The enemy the cursor is on, or -1 — with one exception, and the exception is the wall.
+   *
+   * A garrison covers its own parapet, so from the field almost every pixel of an enemy
+   * curtain has a defender behind it and almost every right-click on the wall was read as
+   * "attack that unit". Measured on the storm of Carthage from the player's camera: the
+   * cursor resolved the masonry correctly, `wallValid` was true, and the order that went out
+   * was `attack` at unit 3. The intent is not in doubt — you cannot melee a man eight metres
+   * above you — and it is the same intent the wall order carries, so the wall order wins.
+   *
+   * Only when the wall order is genuinely on offer (`wallIntent`), so nothing else about
+   * attacking changes: an enemy in the open, in a gateway or on a siege tower is unaffected.
+   */
   private hostileUnder(hovered: number): number {
     if (hovered < 0) return -1;
     const v = this.model.view(hovered);
-    return v && !v.own && !v.destroyed ? hovered : -1;
+    if (!v || v.own || v.destroyed) return -1;
+    if (this.wallValid && this.wallProbe?.isGarrisoned(v.id) && this.wallIntent()) return -1;
+    return hovered;
   }
 
   /**
