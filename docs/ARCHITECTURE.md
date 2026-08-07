@@ -190,12 +190,19 @@ Two properties are load-bearing and a new map should rely on both:
 
 A basin whose bed is *built geometry* — a harbour cut into level ground — is the one thing
 the bathymetric test cannot see, because the heightfield there is at quay level. Those are
-declared as `basins` on the profile with their own `dy` and `depth`; import the quay
-builder's own `FREEBOARD`/`BASIN_DEPTH` rather than copying the numbers.
+declared as `basins` on the profile with their own `y` and `depth`; import the quay builder's
+own `BASIN_WATER_Y`/`BASIN_DEPTH` rather than copying the numbers.
+
+**A basin's surface is absolute and it is not a function of the bed under it.** `WaterBasin.y`
+was `dy`, an offset from `heightAt(centre)`, and that put Carthage's two basins at −1.46 and
+−0.04 while the gulf they both join through 21 m channels sat at 0 — because the ground
+sample at the cothon's centre is +0.34 and the merchant basin's is +1.76, and neither number
+has anything to do with the sea. Connected water is at one height by definition. The quay's
+freeboard is then an *output* of the ground, measured by the city's own build checks, not an
+input the water is derived from.
 
 **Nothing in the simulation knows what water is**, and rendering a surface did not change
-that — verified, 870,489 nav cells at 3 m and three body radii identical to the tree before
-it. A man walks into the sea unless something stops him, and only two things can:
+that. A man walks into the sea unless something stops him, and only two things can:
 
 1. **A slope the pathfinder refuses.** `SLOPE_IMPASSABLE = 0.62` measured over its 7 m cell,
    so a 9 m fall in 14 m. Carthage's open coast plunges 9.5 m in 12 for exactly this reason
@@ -205,15 +212,40 @@ it. A man walks into the sea unless something stops him, and only two things can
    build. **Whoever builds the quays must publish the basins through `getObstacles()` with
    `topY` at quay level, or units will march across the naval harbour.**
 
-Both are still exactly as they were, and both are still the only two. A rendered surface is
-not a collider and must never be mistaken for one.
+Both are still the only two. A rendered surface is not a collider and must never be mistaken
+for one.
 
-**Rendering the water found a map bug that painting it had hidden.** Two connected water
-bodies exist on Carthage — the gulf at 60.0 ha and the lake channel behind the Taenia at
-3.08 ha, x −1094..−954, z 482..842, mean depth 5.63 m — and **13 building footprints stand
-under the datum inside the second one**, 6,206 m² of the fabric's 357,376. Painted as dark
-splat nobody noticed; rendered as water they are houses in a lagoon. That is the city
-workstream's to fix, not the water system's.
+**But the pathfinder had a third opinion and it was the Tiber's.** `Pathfinding.ts` carried
+`WATER_LEVEL = 1.5` and `MARSH_LEVEL = 3.0` as module constants described as heights above
+datum. They are not: the Tiber's surface is 5.0, so they are **depths** — 3.5 m of water
+drowns a man, 2.0–3.5 m is waded at 2.6× cost — and on the Campus Martius every one of the
+8,205 cells the "marsh" band charges is river bed. Written as absolute heights they followed
+the pathfinder onto every map and called **122,847 cells of dry Carthage water**: 110.6 ha,
+14.1 % of the battlefield, the isthmus approach at the lagoon margin, the Sebkhet Ariana and
+the strand. Read as depths below `terrain.waterLevel` they generalise exactly and the Campus
+Martius does not move a cell.
+
+`isWater` reads the same datum, and **a map that declares no water answers false everywhere**
+— the absence of a `WaterProfile` is the absence of water, the same rule `city: CityPlan |
+null` follows. Pydna's floor is +8.07 m so nothing there is affected today; the rule is there
+so the next map to cut a dry gully below its own sea datum does not find a river in it.
+
+**Rendering the water found two map bugs that painting them had hidden, and both are fixed.**
+Two connected water bodies exist on Carthage — the gulf at 60.0 ha and the lake channel
+behind the Taenia at 3.08 ha, x −1094..−954, z 482..842, mean depth 5.63 m. **22 building
+footprints stood under the datum inside the second**, 6,689 m² of the fabric's 357,376, plus
+the wall's south-anchor tower on ground at −0.75 m. The cause was that the fabric had a
+coastline test in *z* — `shoreZAt`, the gulf — and none in *x*, which is where the lake is.
+It tests the bed now, for the same reason the wetted extent comes out of the heightfield: a
+city and a coast planned against two different curves is one bug seen from two sides.
+
+**What is left there and is the map workstream's, not the city's: the heightfield does not
+excavate the harbours.** Measured against the built basins, 51 % of the cothon's water area
+and 84 % of the merchant basin's stand under terrain that is above their surface, so those
+parts render as dry ground with a basin buried beneath them. The cothon's quay also clears
+its own water by only 0.34 m against §6.2's 1.8, because the ground at its centre is 0.34 m
+where §3.3 puts the harbour district at 2–6. Building the quay up to the design figure is not
+the fix: men stand at terrain height, so a quay raised 1.5 m is a quay they walk under.
 
 ### BattleSystem (`name: 'battle'`)
 The single source of truth for army state. Read freely; write only via its methods.
