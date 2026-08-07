@@ -275,6 +275,38 @@ const GALLERY_RAMP_W = 4.4;
 
 /** Clear width of a postern through the main wall. */
 const PASSAGE_W = 6.0;
+/**
+ * Jamb height below the springing of a postern's arch.
+ *
+ * The arch is semicircular on the opening, so a 6.0 m postern carries a 3.0 m rise and this
+ * is the straight jamb under it; the two together are the clear head.
+ */
+const PASSAGE_SPRING = 1.1;
+/**
+ * Shortest jamb worth calling a jamb, where a postern has to duck under the upper gallery.
+ *
+ * The head is clamped to leave `PASSAGE_UNDER_GALLERY` of masonry beneath the upper vault's
+ * floor (see `passageOf`), and on a bay whose ground climbs under the run that clamp bites.
+ * Rather than let the arch grow taller than the hole it is set into — which is the one thing
+ * `archPanel` answers by drawing **nothing at all**, `crown > h` returning early — the
+ * opening narrows instead and the head stays where the masonry needs it.
+ */
+const PASSAGE_MIN_JAMB = 1.8;
+/** Masonry left between a postern's soffit and the floor of the upper gallery over it. */
+const PASSAGE_UNDER_GALLERY = 0.4;
+/**
+ * How far outboard of a mouth's own jamb the void through the curtain is cut.
+ *
+ * Not slack. The arch panel's reveal and the curtain's cut face are two surfaces at the same
+ * station facing the same way, and coincident coplanar faces z-fight. Sixty millimetres puts
+ * the dressed jamb proud of the rubble behind it, which is what a set doorway looks like, and
+ * makes the fault unexpressible. A gate's void takes **zero** reveal for the opposite reason:
+ * its piers stand exactly on the line and are 16.6 m deep, so anything outboard of them is a
+ * slot straight through the wall.
+ */
+const PASSAGE_REVEAL = 0.06;
+/** Dressed surround each side of a postern's arch, inside the cut and therefore visible. */
+const PASSAGE_SURROUND = 0.3;
 
 // ---------------------------------------------------------------------------
 // Towers, gate and ramps
@@ -550,6 +582,50 @@ function frameOf(x0: number, z0: number, x1: number, z1: number): Frame {
   return { nx: dz, nz: -dx, dx, dz, len };
 }
 
+/**
+ * A void cut clean through the curtain — a gate's carriageway, or a postern.
+ *
+ * **The one place a passage through this wall is decided**, in the same shape and for the
+ * same reason as `punicTowerPass`: the stone `buildMainBay` lays, the mouth `buildPostern`
+ * sets into it and the stretch of gallery `buildGallery` stands down are all read off this
+ * one record, so a hole and the thing that is supposed to fit through it cannot drift apart.
+ *
+ * It exists because they had. `buildPostern` set a pierced arch **panel** into each face and
+ * the wall's own body ran straight across behind it; eight posterns were published as
+ * already-open `GateOut`s, so `CitySystem` cut them out of the collision surface and the
+ * simulation walked men down a carriageway through stone that was still standing. Measured
+ * with a ray against the baked chunks, a postern stopped one at 8.1 m — the curtain's
+ * cityward face — at every height and every lateral offset, and `porta-byrsae` stopped one
+ * at 8.4 m with the leaves excluded. Nothing in the sim could see it: every penetration
+ * counter in this repo grades men against the *obstacle set*, which agreed.
+ */
+interface WallCut {
+  /** Gate id this void serves, so a probe or a fault can name it. */
+  id: string;
+  /** Centre of the void along the bay's run, measured from `x0`. */
+  at: number;
+  /** Half-width of the void along the run. */
+  half: number;
+  /** Absolute Y of the soffit: the underside of the lintel the void is cut beneath. */
+  headY: number;
+  /** Absolute Y below which nothing is cut. The lowest ground under the void, less a metre. */
+  floorY: number;
+  /** Ground at the void's own centreline — the floor the mouths stand on. */
+  groundY: number;
+  /** Clear width of the mouth, and its springing above `groundY`. Zero where a gate's own
+   *  block carries the opening and the curtain only has to get out of its way. */
+  openW: number;
+  spring: number;
+  /**
+   * Whether the void's own side faces are emitted.
+   *
+   * False at a gate, whose piers stand exactly on the line of the cut and are 7.5 m deeper
+   * than the curtain, so the curtain's own reveal would either z-fight them or open a slot
+   * outboard of them. True at a postern, which has nothing else to close it.
+   */
+  faceEnds: boolean;
+}
+
 interface MainBay {
   index: number;
   x0: number;
@@ -567,6 +643,8 @@ interface MainBay {
   casemate: CasemateOut | null;
   /** Along-run offset of a postern through this bay from `x0`, or null. */
   posternAt: number | null;
+  /** The void through this bay, or null where the curtain runs solid. */
+  cut: WallCut | null;
 }
 
 /**
@@ -924,16 +1002,28 @@ export function buildCarthageWall(
       isGate: b === gateBay,
       casemate: null,
       posternAt: null,
+      cut: null,
     };
     bays.push(bay);
   }
 
-  // Posterns: the ways an elephant gets out. Every fifth bay and never the gate bay, and
-  // published as *open gates* so `CitySystem.pushWallBox` splits the obstacle box and the
-  // occupancy raster clears the passage through the exact same code path the Porta
-  // Flaminia's carriageway uses. Nothing new had to be taught how to cut a hole in a wall.
+  /**
+   * Posterns: the ways an elephant gets out. Every eighth bay and never the gate bay, and
+   * published as *open gates* so `CitySystem.pushWallBox` splits the obstacle box and the
+   * occupancy raster clears the passage through the exact same code path the Porta Byrsae's
+   * carriageway uses. Nothing new had to be taught how to cut a hole in a wall.
+   *
+   * **An even bay, and that is the whole of the reason for `% 8 === 6`.** These stood on
+   * `% 8 === 5`, and every one of those is `% 4 === 1`, which is the wall-walk ramp's own
+   * cadence — a 3.4 m masonry mass laid hard against the inner face from t = 4 to t = 28 of
+   * a 30 m bay, climbing thirteen metres. The postern sits at the bay's centre, so five of
+   * the seven on the development circuit opened their cityward mouth into the *side of a
+   * ramp*: a tunnel cut clean through nine metres of wall and then stopped dead by the
+   * stair. Even bays carry a tower at their west end and nothing at their centre, the
+   * gallery access blocks take `% 4 === 3`, and the cadence and the count are unchanged.
+   */
   for (const bay of bays) {
-    if (bay.isGate || bay.index % 8 !== 5) continue;
+    if (bay.isGate || bay.index % 8 !== 6) continue;
     bay.posternAt = bay.frame.len * 0.5;
   }
 
@@ -1090,6 +1180,112 @@ export function buildCarthageWall(
   const gf = gb.frame;
   const gateCz = gateAxes[0].z;
   const gateG = heightAt(GATE_X, gateCz);
+
+  /**
+   * The voids, derived once and hung on the bay for everything that has to agree with them.
+   *
+   * A bay carries at most one: the gate cadence and the postern cadence are disjoint by
+   * construction, and `assertPassages` says so out loud rather than leaving it to be
+   * believed. Both go through `cutFaults` so a passage that cannot be cut — an arch taller
+   * than the wall that carries it, a mouth narrower than a man — is reported on the output
+   * beside the section's own arithmetic instead of silently drawing nothing.
+   */
+  const cutFaults: string[] = [];
+  {
+    const spanGround = (bay: MainBay, t0: number, t1: number): { lo: number; hi: number } => {
+      const f = bay.frame;
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (let s = 0; s <= 6; s++) {
+        const t = lerp(t0, t1, s / 6);
+        const h = heightAt(bay.x0 + f.dx * t, bay.z0 + f.dz * t);
+        if (h < lo) lo = h;
+        if (h > hi) hi = h;
+      }
+      return { lo, hi };
+    };
+    const lowGround = (bay: MainBay, t0: number, t1: number): number => spanGround(bay, t0, t1).lo;
+    const set = (bay: MainBay, cut: WallCut): void => {
+      if (bay.cut) {
+        cutFaults.push(`bay ${bay.index} carries both ${bay.cut.id} and ${cut.id}`);
+        return;
+      }
+      bay.cut = cut;
+    };
+    for (const ga of gateAxes) {
+      const bay = bays[ga.bay];
+      const f = bay.frame;
+      const at = (ga.x - bay.x0) * f.dx + (ga.z - bay.z0) * f.dz;
+      const half = GATE_PASS_W * 0.5;
+      const groundY = heightAt(ga.x, ga.z);
+      set(bay, {
+        id: ga.id, at, half,
+        // The block's own soffit. Its lintel band and its coffered ceiling are 0.1 m wider
+        // and 7.5 m deeper than the curtain, so they cover the cut's head from every side.
+        headY: groundY + GATE_PASS_H,
+        floorY: lowGround(bay, at - half, at + half) - 1.8,
+        groundY,
+        openW: 0, spring: 0,
+        faceEnds: false,
+      });
+    }
+    for (const bay of bays) {
+      if (bay.posternAt === null) continue;
+      const f = bay.frame;
+      const at = bay.posternAt;
+      const groundY = heightAt(bay.x0 + f.dx * at, bay.z0 + f.dz * at);
+      /**
+       * The head, and the only thing on this circuit that moves it.
+       *
+       * A postern is a hole at ground level and the lower gallery's floor is 3.5 m up, so
+       * the passage runs through the solid footing §4.4 leaves under the stalls and breaks
+       * the *lower* vault where its arch reaches into it — which is what a sally port
+       * through a casemate does, and the upper gallery bridges over it. What it may not do
+       * is reach the **upper** floor, because a void that swallows both storeys has nothing
+       * left to carry the wall-walk. Where the ground climbs under the run — 2.4 m across
+       * one bay on the development circuit — the clamp bites and the opening narrows.
+       */
+      const crownMax = bay.casemate
+        ? bay.casemate.upperFloorY - PASSAGE_UNDER_GALLERY
+        : bay.walkY - 1.0;
+      const clearH = Math.min(PASSAGE_SPRING + PASSAGE_W, crownMax - groundY);
+      const openW = Math.min(PASSAGE_W, 2 * (clearH - PASSAGE_MIN_JAMB));
+      if (openW < 2.4 || clearH < 2.8) {
+        cutFaults.push(
+          `postern-${bay.index} has ${openW.toFixed(2)} m of opening under a ` +
+          `${clearH.toFixed(2)} m head and is not a passage`
+        );
+        bay.posternAt = null;
+        continue;
+      }
+      set(bay, {
+        id: `postern-${bay.index}`,
+        at,
+        half: openW * 0.5 + PASSAGE_REVEAL,
+        headY: groundY + clearH,
+        floorY: lowGround(bay, at - openW * 0.5 - PASSAGE_REVEAL, at + openW * 0.5 + PASSAGE_REVEAL) - 1.8,
+        groundY,
+        openW,
+        spring: clearH - openW * 0.5,
+        faceEnds: true,
+      });
+    }
+    for (const bay of bays) {
+      const cut = bay.cut;
+      if (!cut) continue;
+      // A void wider than the bay, or one whose soffit is under the plinth it is cut
+      // through, is a hole beside the opening rather than an opening. Rome lost 23 m of
+      // curtain that way and the lesson was to say so at build time.
+      if (cut.at - cut.half < 0.5 || cut.at + cut.half > bay.frame.len - 0.5) {
+        cutFaults.push(`${cut.id} is cut past the end of bay ${bay.index}`);
+      }
+      // The plinth's top follows the *lowest* ground under each sub-panel, so the highest
+      // ground inside the void's own span is the worst case a soffit has to clear.
+      if (cut.headY <= spanGround(bay, cut.at - cut.half, cut.at + cut.half).hi + PLINTH_H) {
+        cutFaults.push(`${cut.id}'s soffit is inside the plinth of bay ${bay.index}`);
+      }
+    }
+  }
   const gates: GateOut[] = gateAxes.map((ga) => ({
     id: ga.id,
     x: ga.x,
@@ -1316,7 +1512,7 @@ export function buildCarthageWall(
       offset: DITCH_OFF,
       built: false,
     },
-    sectionFaults: assertSection(),
+    sectionFaults: [...assertSection(), ...cutFaults],
   };
 }
 
@@ -1359,10 +1555,26 @@ function buildMainBay(
     return heightAt(p.x, p.z);
   };
 
+  /**
+   * Where the sub-panels break, with the void's own two edges forced in as breaks.
+   *
+   * The passage is cut by **leaving the panels out** rather than by punching a hole, and a
+   * panel that straddles the edge of the void cannot do either. Inserting the edges as stops
+   * means every panel is wholly inside the void or wholly outside it, and the panel next to
+   * the void carries the reveal on its own end face — the cross-section then matches the
+   * cut exactly, batter and plinth projection included, with nothing hand-derived to drift.
+   */
+  const cut = bay.cut;
+  const stops: number[] = [];
+  for (let s = 0; s <= nSub; s++) stops.push((f.len * s) / nSub);
+  if (cut) stops.push(cut.at - cut.half, cut.at + cut.half);
+  stops.sort((p, q) => p - q);
+
   // --- plinth and body, sub-bay by sub-bay ----------------------------------
-  for (let s = 0; s < nSub; s++) {
-    const ta = (f.len * s) / nSub;
-    const tb = (f.len * (s + 1)) / nSub;
+  for (let s = 0; s < stops.length - 1; s++) {
+    const ta = stops[s];
+    const tb = stops[s + 1];
+    if (tb - ta < 0.05) continue;
     const a = at(ta);
     const b = at(tb);
     const g = Math.min(groundAt(ta), groundAt(tb));
@@ -1373,19 +1585,50 @@ function buildMainBay(
     const tone = 0.94 + hash2(s, bay.index, 17) * 0.13;
     const bodyCol = new THREE.Color().copy(PAL.tufa).multiplyScalar(tone);
     const plinthCol = new THREE.Color().copy(PAL.travertine).multiplyScalar(tone * 0.97);
+    const voided = !!cut && ta > cut.at - cut.half - 1e-6 && tb < cut.at + cut.half + 1e-6
+      && cut.headY > plinthTop && cut.floorY <= g - 1.6 + 1e-6;
+    // The reveal is on the panel that stands beside the void, and only at a postern: a
+    // gate's piers are on the same line and 7.5 m deeper, so a curtain reveal there is
+    // either coplanar with them or a slot outboard of them.
+    const beside = !!cut && cut.faceEnds
+      && (Math.abs(tb - (cut.at - cut.half)) < 1e-6 || Math.abs(ta - (cut.at + cut.half)) < 1e-6);
+    const ends = ta < 1e-6 || tb > f.len - 1e-6 || beside;
 
+    if (!voided) {
+      quadPrism(
+        stone, a.x, a.z, b.x, b.z, f.nx, f.nz,
+        PUNIC.mainThickness + PLINTH_PROJECT * 2,
+        g - 1.6, plinthTop, plinthCol, plinthCol,
+        { ends, batter: PLINTH_BATTER, top: false }
+      );
+      quadPrism(
+        stone, a.x, a.z, b.x, b.z, f.nx, f.nz,
+        PUNIC.mainThickness,
+        plinthTop, bay.walkY, bodyCol, bodyCol,
+        { ends, batter: BATTER, top: false }
+      );
+      continue;
+    }
+    /**
+     * Over the void: the lintel only, and the soffit it stands on.
+     *
+     * The lintel's thickness is the body's own cross-section **at the soffit** rather than
+     * the nominal 9.1 m, because `quadPrism` batters by insetting its top face — so a piece
+     * restarted at the nominal thickness would step 0.2 m proud of the panel beside it. The
+     * same figure is the soffit's width, which is why the two cannot disagree.
+     */
+    const lintelT = Math.max(1.0, PUNIC.mainThickness - 2 * BATTER * (cut.headY - plinthTop));
     quadPrism(
-      stone, a.x, a.z, b.x, b.z, f.nx, f.nz,
-      PUNIC.mainThickness + PLINTH_PROJECT * 2,
-      g - 1.6, plinthTop, plinthCol, plinthCol,
-      { ends: s === 0 || s === nSub - 1, batter: PLINTH_BATTER, top: false }
+      stone, a.x, a.z, b.x, b.z, f.nx, f.nz, lintelT,
+      cut.headY, bay.walkY, bodyCol, bodyCol, { ends: false, batter: BATTER, top: false }
     );
-    quadPrism(
-      stone, a.x, a.z, b.x, b.z, f.nx, f.nz,
-      PUNIC.mainThickness,
-      plinthTop, bay.walkY, bodyCol, bodyCol,
-      { ends: s === 0 || s === nSub - 1, batter: BATTER, top: false }
-    );
+    const ht = lintelT * 0.5;
+    P0.set(a.x + f.nx * ht, cut.headY, a.z + f.nz * ht);
+    P1.set(b.x + f.nx * ht, cut.headY, b.z + f.nz * ht);
+    P2.set(b.x - f.nx * ht, cut.headY, b.z - f.nz * ht);
+    P3.set(a.x - f.nx * ht, cut.headY, a.z - f.nz * ht);
+    NRM.set(0, -1, 0);
+    stone.quadN(NRM, P3, P2, P1, P0, plinthCol, plinthCol, plinthCol, plinthCol);
   }
 
   // --- the wall-walk ---------------------------------------------------------
@@ -1453,7 +1696,7 @@ function buildMainBay(
     buildGallery(batch, detail, bay, bay.casemate, rng);
     buildGalleryRamp(batch, detail, bay, bay.casemate, heightAt);
   }
-  if (bay.posternAt !== null) buildPostern(batch, detail, bay, heightAt);
+  if (bay.posternAt !== null) buildPostern(batch, detail, bay);
   void brick;
 }
 
@@ -1484,9 +1727,27 @@ function buildGallery(
   const voidWarm = new THREE.Color().copy(PAL.voidWarm);
   const voidDark = new THREE.Color().copy(PAL.voidDark);
   const wallCol = new THREE.Color().copy(PAL.tufa).multiplyScalar(0.98);
+  /**
+   * Where a gate or a postern crosses this stretch, the gallery stands down.
+   *
+   * A passage cut through the curtain runs *across* the gallery, so anything the gallery
+   * puts inside the void — a stall front on the face that is no longer there, a floor slab
+   * or a barrel arching over the carriageway — ends up standing in the passage. The stretch
+   * is therefore broken at the void and the two halves are walled off, which is what a sally
+   * port through a casemate is: the lower vault stops each side of it and the upper vault
+   * bridges over. See `WallCut`.
+   */
+  const cut = bay.cut;
+  const cutLo = cut ? cut.at - cut.half : 0;
+  const cutHi = cut ? cut.at + cut.half : 0;
+  /** Does a storey between `y0` and `y1` reach into the void at all? */
+  const crossesVoid = (y0: number, y1: number): boolean =>
+    !!cut && y1 > cut.floorY && y0 < cut.headY;
 
   for (let i = 0; i < n; i++) {
     const t = t0 + (i + 0.5) * STALL_PITCH;
+    // A panel that straddles the void has no face left to stand on.
+    if (cut && t + STALL_PITCH * 0.5 > cutLo && t - STALL_PITCH * 0.5 < cutHi) continue;
     const px = bay.x0 + f.dx * t + f.nx * innerFace;
     const pz = bay.z0 + f.dz * t + f.nz * innerFace;
 
@@ -1552,12 +1813,41 @@ function buildGallery(
   const co = cm.centreOff;
   const r = GALLERY_W * 0.5;
   const SEG = 6;
-  const ends: [number, number][] = [[t0, t0 + n * STALL_PITCH]];
-  for (const [ta, tb] of ends) {
-    for (const [floor, clear] of [
-      [floorY, STALL_CLEAR],
-      [cm.upperFloorY, UPPER_CLEAR],
-    ] as [number, number][]) {
+  const runEnd = t0 + n * STALL_PITCH;
+  for (const [floor, clear] of [
+    [floorY, STALL_CLEAR],
+    [cm.upperFloorY, UPPER_CLEAR],
+  ] as [number, number][]) {
+    /**
+     * One run, or two with the passage between them.
+     *
+     * A storey that never reaches the void keeps its single run — on this circuit that is
+     * the upper gallery at every postern, because the head is clamped to stay under its
+     * floor. The lower one is broken, and each broken end gets a wall across the full
+     * section: without it a sight line down the gallery and through a stall door runs out
+     * of vault, out of the severed end and clean through the wall.
+     */
+    const broken = crossesVoid(floor, floor + clear);
+    const ends: [number, number][] = broken
+      ? [[t0, cutLo - 0.05], [cutHi + 0.05, runEnd]]
+      : [[t0, runEnd]];
+    if (broken) {
+      const crossCol = new THREE.Color().copy(PAL.tufa).multiplyScalar(0.9);
+      for (const [tc, sign] of [[cutLo - 0.05, -1], [cutHi + 0.05, 1]] as [number, number][]) {
+        if (tc < t0 || tc > runEnd) continue;
+        const cxp = bay.x0 + f.dx * tc;
+        const czp = bay.z0 + f.dz * tc;
+        P0.set(cxp + f.nx * (co - r), floor, czp + f.nz * (co - r));
+        P1.set(cxp + f.nx * (co + r), floor, czp + f.nz * (co + r));
+        P2.set(cxp + f.nx * (co + r), floor + clear, czp + f.nz * (co + r));
+        P3.set(cxp + f.nx * (co - r), floor + clear, czp + f.nz * (co - r));
+        NRM.set(sign * f.dx, 0, sign * f.dz);
+        if (sign > 0) stone.quadN(NRM, P0, P1, P2, P3, crossCol, crossCol, crossCol, crossCol);
+        else stone.quadN(NRM, P3, P2, P1, P0, crossCol, crossCol, crossCol, crossCol);
+      }
+    }
+    for (const [ta, tb] of ends) {
+      if (tb - ta < 0.4) continue;
       /**
        * Springing and rise of the barrel, from the clear height rather than assumed
        * semicircular. A 6.4 m span wants a 3.2 m rise to be a semicircle, which the 3.6 m
@@ -1676,73 +1966,58 @@ function buildGalleryRamp(
  * rather than by the man — an elephant in harness needs to turn in it. The passage is
  * published as an already-open `GateOut`, so the obstacle box and the occupancy raster are
  * cut by the same code that opens the main gate.
+ *
+ * **This function used to be the whole of the postern, and that was the bug.** It set a
+ * pierced arch *panel* into each face and modelled a barrel between them, and every one of
+ * those triangles was buried inside a curtain that ran straight across behind it — a mouth
+ * at each end of nine metres of solid tufa. What cuts the stone is `WallCut`, read by
+ * `buildMainBay`; this now draws only the two dressed mouths that stand in the hole, and it
+ * takes their width, their springing and their head off the same record, so a mouth cannot
+ * be a different size from the passage it fronts.
+ *
+ * The lining is gone with the barrel. The void's own side faces are the curtain's cut
+ * cross-section, which carries the plinth's projection and the face batter exactly because
+ * it *is* the curtain, and the soffit is `buildMainBay`'s. A flat-soffited passage under a
+ * relieving arch is also the right idiom here — `buildPunicGate` already argues it: "a flat
+ * coffered ceiling, which is what a Punic gate has where a Roman one has a barrel."
  */
-function buildPostern(
-  batch: Batch,
-  detail: number,
-  bay: MainBay,
-  heightAt: (x: number, z: number) => number
-): void {
-  if (bay.posternAt === null) return;
+function buildPostern(batch: Batch, detail: number, bay: MainBay): void {
+  const cut = bay.cut;
+  if (bay.posternAt === null || !cut || cut.openW <= 0) return;
   const stone = batch.s('stone');
   const f = bay.frame;
-  const t = bay.posternAt;
-  const cx = bay.x0 + f.dx * t;
-  const cz = bay.z0 + f.dz * t;
-  const g = heightAt(cx, cz);
+  const cx = bay.x0 + f.dx * cut.at;
+  const cz = bay.z0 + f.dz * cut.at;
   const rotY = Math.atan2(-f.nx, -f.nz);
   const wallCol = new THREE.Color().copy(PAL.tufa);
   const voidWarm = new THREE.Color().copy(PAL.voidWarm);
-  const h = Math.min(bay.walkY - g - 1.0, PASSAGE_W * 0.5 + 3.2);
+  const h = cut.headY - cut.groundY;
 
-  // Both mouths, each a panel pierced by the passage arch and set into the face.
   for (const side of [-1, 1]) {
-    const rise = Math.max(0, g + h - (bay.gMin + PLINTH_H));
+    const rise = Math.max(0, cut.headY - (bay.gMin + PLINTH_H));
     const off = side * (HALF_T - BATTER * rise - 0.05);
     const px = cx + f.nx * off;
     const pz = cz + f.nz * off;
-    stone.push(place(px, g, pz, side > 0 ? rotY : rotY + Math.PI));
-    archPanel(stone, PASSAGE_W + 4.4, h + 0.9, wallCol, {
+    stone.push(place(px, cut.groundY, pz, side > 0 ? rotY : rotY + Math.PI));
+    /**
+     * The surround is 0.3 m, not 2.2 m, and `backFace` is on.
+     *
+     * The panel used to be 10.4 m wide, which was a frame standing on a face; with the hole
+     * cut it is a frame standing in *front of* one, and everything outside the void is
+     * behind masonry and never seen. What is seen is the spandrel over the arch — and that
+     * is a single-sided slab unless the back is drawn, so from inside the passage the
+     * stonework between the arch and the square head was a hole to the sky.
+     */
+    archPanel(stone, cut.openW + PASSAGE_SURROUND * 2, h, wallCol, {
       depth: 1.1,
-      spring: PASSAGE_W * 0.5 + 1.1,
-      openWidth: PASSAGE_W,
+      spring: cut.spring,
+      openWidth: cut.openW,
       segments: detail >= 2 ? 10 : 5,
       voidCol: voidWarm,
+      backFace: true,
       archivolt: detail >= 2 ? 0.2 : 0,
     });
     stone.pop();
-  }
-  // The barrel of the passage, so it is a tunnel and not two holes.
-  if (detail >= 2) {
-    const r = PASSAGE_W * 0.5;
-    const spring = g + PASSAGE_W * 0.5 + 1.1;
-    for (let k = 0; k < 7; k++) {
-      const a0 = (Math.PI * k) / 7;
-      const a1 = (Math.PI * (k + 1)) / 7;
-      for (const [ang, next] of [[a0, a1]] as [number, number][]) {
-        const s0 = -Math.cos(ang) * r;
-        const s1 = -Math.cos(next) * r;
-        const y0 = spring + Math.sin(ang) * r;
-        const y1 = spring + Math.sin(next) * r;
-        P0.set(cx + f.dx * s0 - f.nx * HALF_T, y0, cz + f.dz * s0 - f.nz * HALF_T);
-        P1.set(cx + f.dx * s0 + f.nx * HALF_T, y0, cz + f.dz * s0 + f.nz * HALF_T);
-        P2.set(cx + f.dx * s1 + f.nx * HALF_T, y1, cz + f.dz * s1 + f.nz * HALF_T);
-        P3.set(cx + f.dx * s1 - f.nx * HALF_T, y1, cz + f.dz * s1 - f.nz * HALF_T);
-        NRM.set(0, -1, 0);
-        stone.quadN(NRM, P3, P2, P1, P0, voidWarm, voidWarm, voidWarm, voidWarm);
-      }
-    }
-    // Jambs, so the passage has sides.
-    for (const side of [-1, 1]) {
-      const s = side * PASSAGE_W * 0.5;
-      P0.set(cx + f.dx * s - f.nx * HALF_T, g, cz + f.dz * s - f.nz * HALF_T);
-      P1.set(cx + f.dx * s + f.nx * HALF_T, g, cz + f.dz * s + f.nz * HALF_T);
-      P2.set(cx + f.dx * s + f.nx * HALF_T, spring, cz + f.dz * s + f.nz * HALF_T);
-      P3.set(cx + f.dx * s - f.nx * HALF_T, spring, cz + f.dz * s - f.nz * HALF_T);
-      NRM.set(-side * f.dx, 0, -side * f.dz);
-      if (side < 0) stone.quadN(NRM, P0, P1, P2, P3, voidWarm, voidWarm, voidWarm, voidWarm);
-      else stone.quadN(NRM, P3, P2, P1, P0, voidWarm, voidWarm, voidWarm, voidWarm);
-    }
   }
 }
 
@@ -1998,10 +2273,13 @@ function buildPunicGate(
       });
     }
   }
-  // The lintel band over the passage, and the attic above it.
+  // The lintel band over the passage, and the attic above it. Its underside is drawn at
+  // every detail level, because with the curtain behind it cut the coffered ceiling below
+  // — which is detail 1 and up — is the only other thing between the carriageway and the
+  // hollow of the attic, and at detail 0 there would be nothing.
   box(
     stone, -GATE_PASS_W * 0.5 - 0.1, g + GATE_PASS_H, -hd,
-    GATE_PASS_W * 0.5 + 0.1, top, hd, col, { bottom: false, top: false }
+    GATE_PASS_W * 0.5 + 0.1, top, hd, col, { bottom: true, top: false }
   );
   // Crenellated crown across the whole block.
   crenellation(
@@ -2093,8 +2371,18 @@ function buildPunicGateLeaves(
   const leafW = GATE_PASS_W * 0.5;
   const headY = doorY + GATE_PASS_H - GATE_DOOR_SILL;
   for (const side of [-1, 1]) {
-    const x0 = side < 0 ? -leafW : 0.03;
-    const x1 = side < 0 ? -0.03 : leafW;
+    /**
+     * The leaves **meet**. They used to stop 30 mm short of the centreline apiece.
+     *
+     * A 60 mm slot down the middle of a shut gate is a ray straight through it, and a ray
+     * straight through it is what the whole of this file's passage work is about. The two
+     * boxes now share the plane at x = 0: the faces there are coincident and face opposite
+     * ways, so each is back-facing from the side the other is seen from and neither can
+     * z-fight. A wrecked leaf swings about its own harr-post and takes its edge with it, so
+     * the pose is unaffected.
+     */
+    const x0 = side < 0 ? -leafW : 0;
+    const x1 = side < 0 ? 0 : leafW;
     /**
      * The wrecked pose, about this leaf's own harr-post.
      *
