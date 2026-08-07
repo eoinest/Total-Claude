@@ -476,6 +476,62 @@ structure our figures carry.
 stills) are **mechanics and layout reference only, never blind-deck plates** — mixed provenance
 would flatter or unfairly penalise us.
 
+### Round 23, the final round — 40 of 40, on a deck built to be harder
+
+Run at `fc5ed39` (which is `023240d` plus the harness work) on `--set=deck`: ten frames, no
+two sharing a follow target, two maps, hours 07:30-16:24, one frame at `high` rather than
+ultra. Deck at seed 8813, 10 ours against 10 Rome II plates, all three gates passed.
+
+**Both graders scored 20/20.** A cold grader with no repo context, mean confidence 87.8, its
+two least-confident calls at 58 and 68 (`deck-pydna-horizon`, which is nearly featureless
+grass, and `deck-pydna-terrain`). An adversarial grader, mean confidence 91.2. Neither made
+an error, and neither needed to be told the split was 10/10 — both arrived at it.
+
+**The deck-independence fix did not move the result.** That is the useful finding. One map,
+one hour and three near-duplicate pairs were suspected of inflating every earlier round;
+removing all three changed nothing, so the separation was never resting on family
+resemblance. Take the twenty-two earlier rounds' *accuracy* figures as unreliable and their
+*direction* as confirmed.
+
+**Neither grader led with aliasing.** Ranked cues, both graders independently:
+
+1. **Shield and insignia authoring.** Flat discs and quads carrying crisp wear-free vector
+   emblems, no boss geometry, no rim bevel, no wood grain, against press plates whose
+   shields have a modelled spindle boss casting its own shadow onto the shield face. Both
+   graders named this first or second and it is the one cue the cold grader said it could
+   defend *mechanically* — "a canvas texture on a flat disc cannot fake wood grain plus a
+   boss that casts onto the face, and I can point at those pixels."
+2. **Faceless cloned characters.** "One head, one helmet, one torso, cloned across ~250 men";
+   torsos read as stacked identical rings. **This is in direct tension with the measured fact
+   below that the crowd carries 57-59 kit masks, 119 statures and 252 tunic colours.** Both
+   are true: the variation is in the instance buffers and does not reach the screen. The
+   defect is that faces and kit silhouettes do not vary, not that the data is missing, and
+   "add more variation" remains the wrong fix.
+3. **Untextured ground and flat-shaded architecture.** `deck-city` drew the single highest
+   confidence in the deck at 98 — "untextured flat-shaded prisms, windows as painted
+   rectangles, roof planes meeting in razor edges with no gutter, tile relief or dirt".
+4. **No smooth region anywhere in frame.** The adversarial grader's strongest single scalar:
+   percentage of 32x32 tiles with local Laplacian std < 1.0. Plates 0.31-15.10%, ours
+   0.00-0.05%, **20/20 with nine of our frames at exactly 0.00**. It could not decide whether
+   the mechanism is renderer dither or terrain polygon faceting, and said so.
+
+**The honest caveat, from the adversarial grader and worth more than the score.** Nine of ten
+plates are eye-level cinematic close-ups with sky, depth of field and dark blurred
+backgrounds; nine of ten of ours are elevated RTS-camera field shots packed edge to edge with
+vegetation. Every >90% tell it found is downstream of that. The anti-aliasing workstream
+partially controlled for it — restricted to the top 20% most detailed 256px tiles the
+separation *widened*, plates 0.516 against ours 1.953 — so it is not the whole story, but
+**camera and subject distance are still not matched between the pools and that is now the
+largest confound in the instrument.** Matching them pairwise, one class against the other at
+the same angle and field of view, is the single highest-value change left.
+
+**A protocol note nobody should have to rediscover.** The adversarial grader disclosed that
+its session context automatically included a `git status` of this repository and recent
+commit subjects, one of which said soldiers "read as clones" — a cue it then reported
+independently. **A grader spawned inside this repo is never fully cold.** Its calls should be
+treated as contaminated on any point the surrounding commits touch, and a genuinely cold read
+needs an agent that has never seen the tree.
+
 ### The separation record, audited — do not quote the old number
 
 **"Twenty-three rounds, twenty-three separations" was in every workstream's brief and it is not
@@ -564,6 +620,13 @@ ICC survives.
   harshness numbers run about 1.2x lower than `tools/probe-harshness.mjs` measured on the
   uncropped frames. The crop is load-bearing for the wordmarks and must not be reduced, so the
   blind deck systematically *understates* the aliasing gap.
+- **Every deck built before `f6aaaa6` was graded on a 1.25x upscale.** The 20% crop leaves
+  1920x864 and the harness resized it back to 1920x1080 — a period-4.995 resampling comb an
+  adversarial grader read straight out of the files. It never sorted the deck, because it was
+  applied to both sides, but it means every round to date measured pixel-scale energy on
+  interpolated pixels. Fixed: the output shape now follows the pools, the deck comes out
+  1536x864, and the geometry is a pure crop (verified at 1.98/255 mean difference against an
+  independent crop, which is q88 re-encoding and nothing else). Round 23 predates the fix.
 
 ### Known limitation, left open deliberately
 
