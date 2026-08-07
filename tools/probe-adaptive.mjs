@@ -84,16 +84,23 @@ const INSTALL = `
       const mean = s / m;
       return { mean: +mean.toFixed(2), std: +Math.sqrt(Math.max(0, s2 / m - mean * mean)).toFixed(2) };
     },
-    /** Render N frames at the wall clock and return the render-half times. */
+    /**
+     * Render N frames and return a *drained* per-frame cost.
+     *
+     * eng.lastRenderMs alone is CPU submit time and is blind to fill rate: measured flat at
+     * 4-5 ms from scale 1.00 to 0.50 while the scene target went 3200x1800 to 1600x900. A 1x1
+     * readPixels per frame is the only real barrier on ANGLE-on-Metal (gl.finish returns before
+     * the GPU drains) and turns the same clock into a true frame cost.
+     */
     block: async (frames) => {
-      const t = eng.time;
+      eng.drainAfterFrame = true;
       drain();
       const out = [];
       for (let i = 0; i < frames; i++) {
         await new Promise((r) => requestAnimationFrame(r));
         out.push(eng.lastRenderMs);
       }
-      drain();
+      eng.drainAfterFrame = false;
       return out;
     },
     calls: () => eng.renderer.info.render.calls,
@@ -274,9 +281,22 @@ if (MODE === 'loop') {
   const { page, errors } = await open(`map=${MAP}&quality=${TIER}&scenario=assault&autoplay=1`);
   await page.evaluate((t) => window.__game.advance(t), AT);
   const secs = Number(args.get('secs') ?? 60);
-  const out = await page.evaluate(async (secs) => {
+  const out = await page.evaluate(async ({ secs, TARGET }) => {
     const eng = window.__game.engine;
     const aq = eng.adaptiveQuality;
+    /*
+     * Drive the controller through a drained clock.
+     *
+     * Headless has no display, so the presented-frame arm correctly switches itself off and only
+     * the CPU arm runs -- and the CPU arm cannot see a fill-rate lever (4-5 ms flat from scale
+     * 1.00 to 0.50). `drainAfterFrame` puts a 1x1 readPixels at the end of every frame, which is
+     * the only real barrier on ANGLE-on-Metal, so `lastRenderMs` becomes a true frame cost and
+     * the loop closes on the same number a player's GPU would impose. The budget is raised to
+     * suit, because a drained frame is not a pipelined one: this measures the controller, not
+     * the machine.
+     */
+    eng.drainAfterFrame = true;
+    aq.targetMs = TARGET;
     aq.enabled = true;
     aq.forceWarm();
     const rig = eng.rig;
@@ -305,8 +325,8 @@ if (MODE === 'loop') {
       }
     }
     return { log, state: aq.state(), trace: aq.trace };
-  }, secs);
-  console.log(`\n== loop, ${MAP} @ ${TIER}, ${secs}s, dsf=${DSF} ==`);
+  }, { secs, TARGET: Number(args.get('target') ?? 0) || 16.67 });
+  console.log(`\n== loop, ${MAP} @ ${TIER}, ${secs}s, dsf=${DSF}, target ${args.get('target') ?? 16.67} ms, drained ==`);
   console.log('   t(ms)  phase          press  scale  grass   p50   p90   p99 rg la');
   for (const r of out.log) {
     console.log(`  ${String(r.t).padStart(6)}  ${r.phase.padEnd(13)} ${r.p.toFixed(2).padStart(5)}  ${r.sc.toFixed(2)}   ${r.gr.toFixed(2)}  ${String(r.p50).padStart(5)} ${String(r.p90).padStart(5)} ${String(r.p99).padStart(5)}  ${r.rg} ${r.la}`);

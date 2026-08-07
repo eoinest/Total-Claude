@@ -147,14 +147,14 @@ const ENVELOPES: Record<QualityTier, TierEnvelope> = {
  * timed block.
  */
 const GRASS_SEGMENTS: Array<Ramp & { from: number; to: number }> = [
-  { p0: 0.0, p1: 0.3, from: 1.0, to: 0.65 },
-  { p0: 0.3, p1: 0.7, from: 0.65, to: NaN },
+  { p0: 0.0, p1: 0.35, from: 1.0, to: 0.65 },
+  { p0: 0.35, p1: 0.75, from: 0.65, to: NaN },
 ];
 
 const RES_SEGMENTS: Array<Ramp & { from: number; to: number }> = [
-  { p0: 0.3, p1: 0.6, from: 1.0, to: 0.85 },
+  { p0: 0.05, p1: 0.55, from: 1.0, to: 0.85 },
   // The tail runs to the tier's own floor, so this segment's `to` is filled in per tier.
-  { p0: 0.6, p1: 1.0, from: 0.85, to: NaN },
+  { p0: 0.55, p1: 1.0, from: 0.85, to: NaN },
 ];
 
 /**
@@ -195,7 +195,36 @@ const EXCLUDED = ['shadowCascades', 'shadowMapSize', 'antialias', 'lodFarDistanc
 // ---------------------------------------------------------------------------
 
 /** The display's frame budget. 60 Hz is the project's stated target. */
-const TARGET_MS = 1000 / 60;
+const DEFAULT_TARGET_MS = 1000 / 60;
+
+/**
+ * Refresh periods a display-paced rAF loop can legitimately sit on: 60, 90, 120, 144 Hz.
+ *
+ * Used to decide whether the presented-frame arm is trustworthy at all. A headless browser has
+ * no display and no vsync, so its rAF interval is whatever the machine happens to manage —
+ * measured here at p50 41-65 ms, nowhere near a refresh period — and the arm must switch itself
+ * off rather than read that as a machine dropping four frames in five.
+ */
+const REFRESH_MS = [1000 / 60, 1000 / 90, 1000 / 120, 1000 / 144];
+
+/**
+ * Presented-interval overrun that counts as missing frames.
+ *
+ * On a vsync-paced loop the interval is *quantised* to multiples of the refresh period: a frame
+ * either makes it in one period or takes two. So p90 above 1.2x the period does not mean "20 %
+ * slow", it means at least one frame in ten took two periods — a tenth of frames dropped, which
+ * is visible judder. Any factor between about 1.05 and 1.9 selects the same event; 1.2 sits
+ * clear of scheduler jitter and well under the 2.0 a real miss produces.
+ */
+const MISS_FACTOR = 1.2;
+
+/**
+ * If the *simulation* is eating this much of the frame, the overrun is not something a render
+ * lever can fix, and the presented-frame arm must not act on it. Half the budget: at 8,632 men
+ * `fixedUpdate` is 3.657 ms against 16.67, so this only trips at game speed 4x or on a machine
+ * where the sim itself is the problem.
+ */
+const SIM_DOMINANT_SHARE = 0.5;
 
 /**
  * Simulation time the controller cannot see and must therefore reserve.
@@ -205,12 +234,6 @@ const TARGET_MS = 1000 / 60;
  * worst frame in any pair is `renderMs + 3.7`. Round up to the budget the sim is held to.
  */
 const SIM_RESERVE_MS = 4.0;
-
-/**
- * Drop when the render tail exceeds this. 16.67 - 4.0 = 12.67 ms: above it, the frames that
- * carry a sim tick miss vsync, which is exactly what "laggy" is.
- */
-const DROP_MS = TARGET_MS - SIM_RESERVE_MS;
 
 /**
  * Dead band. Below `DROP_MS - DEAD_BAND_MS` the loop may recover.
@@ -380,6 +403,13 @@ export interface AdaptiveState {
   deadBandMs: number;
   dropMs: number;
   raiseMs: number;
+  targetMs: number;
+  /** Detected refresh period, or 0 when the loop is not display-paced. */
+  refreshMs: number;
+  /** p90 of the presented-frame interval. */
+  ivP90: number;
+  /** p90 of the fixed-step half, which the controller excludes but must watch. */
+  simP90: number;
   changes: number;
   reallocs: number;
   /** Cost of the last resolution change, wall clock, in ms. */
@@ -441,9 +471,22 @@ export class AdaptiveQualitySystem implements Subsystem {
   private ctx?: EngineContext;
 
   private ring = new Float64Array(WINDOW);
+  private ivRing = new Float64Array(WINDOW);
+  private simRing = new Float64Array(WINDOW);
   private sorted = new Float64Array(WINDOW);
   private ringN = 0;
   private ringHead = 0;
+
+  /**
+   * The frame budget the loop aims at. Defaults to 60 Hz and is raised, never lowered, to the
+   * detected refresh: chasing 120 Hz by spending image quality is not a trade this game should
+   * make on the player's behalf, but a 30 Hz panel should not be driven at 60.
+   */
+  targetMs = DEFAULT_TARGET_MS;
+  /** Detected display refresh period, or 0 when the loop is not display-paced (headless). */
+  private refreshMs = 0;
+  private ivP90 = 0;
+  private simP90 = 0;
 
   private framesSeen = 0;
   private startMs = 0;
@@ -464,6 +507,7 @@ export class AdaptiveQualitySystem implements Subsystem {
   private reallocCosts: number[] = [];
   /** Frames dropped from the window because they linked a shader program. */
   private discardedLinks = 0;
+  private afterLink = false;
 
   private latched = false;
   private lastInBandMs = 0;
@@ -521,14 +565,26 @@ export class AdaptiveQualitySystem implements Subsystem {
   private reentry = 0;
 
   /** Called by `Engine.frame` with the render half of the frame just completed. */
-  sample(renderMs: number, linkedProgram = false): void {
+  sample(renderMs: number, linkedProgram = false, intervalMs = 0, simMs = 0): void {
     this.framesSeen++;
     this.reentry = 0;
-    if (linkedProgram) {
-      // A frame that linked a shader program is not evidence about the renderer's steady-state
-      // cost. See the note in `Engine.frame`: the two worst frames of a 1,079-frame session were
-      // the only two that linked, at 151 and 65 ms against a p50 of 10.8, and nothing this loop
-      // can do makes a `glLinkProgram` cheaper.
+    if (linkedProgram || this.afterLink) {
+      /*
+       * A frame that linked a shader program is not evidence about the renderer's steady-state
+       * cost, and neither is the frame after it.
+       *
+       * See the note in `Engine.frame` for the link itself: across nine sessions, eight had
+       * their single worst frame on a linking frame, p50 49.2 ms against 6.2 for frames that
+       * linked nothing, and the program count is still climbing at t+88 s of battle — this is
+       * camera-triggered first-sight cost, not warm-up, so it never stops.
+       *
+       * The frame *after* is filtered because one link is felt as two bad frames. A 151 ms stall
+       * fills the fixed-timestep accumulator, so the next frame fires all five
+       * `maxStepsPerFrame` ticks and pays another 30-38 ms of `fixedUpdate` — about 188 ms
+       * across the pair, and it reproduces. Filtering only the link would leave the controller
+       * a 37 ms frame with nothing to blame it on.
+       */
+      this.afterLink = linkedProgram;
       this.discardedLinks++;
       return;
     }
@@ -537,6 +593,8 @@ export class AdaptiveQualitySystem implements Subsystem {
       return;
     }
     this.ring[this.ringHead] = renderMs;
+    this.ivRing[this.ringHead] = intervalMs;
+    this.simRing[this.ringHead] = simMs;
     this.ringHead = (this.ringHead + 1) % WINDOW;
     if (this.ringN < WINDOW) this.ringN++;
   }
@@ -549,6 +607,15 @@ export class AdaptiveQualitySystem implements Subsystem {
 
   get warm(): boolean {
     return this.framesSeen >= WARMUP_FRAMES || performance.now() - this.startMs >= WARMUP_MS;
+  }
+
+  /**
+   * Drop when the render tail exceeds this: the budget less the sim time the controller
+   * deliberately does not measure. At 60 Hz, 16.67 - 4.0 = 12.67 ms — above it, the frames that
+   * carry a sim tick miss vsync, which is exactly what "laggy" is.
+   */
+  get dropMs(): number {
+    return this.targetMs - SIM_RESERVE_MS;
   }
 
   private get deadBandMs(): number {
@@ -576,16 +643,67 @@ export class AdaptiveQualitySystem implements Subsystem {
 
     const n = this.ringN;
     this.sorted.set(this.ring.subarray(0, n));
-    const view = this.sorted.subarray(0, n);
-    view.sort();
+    this.sorted.subarray(0, n).sort();
     this.p50 = percentile(this.sorted, n, 0.5);
     this.p90 = percentile(this.sorted, n, 0.9);
     this.p99 = percentile(this.sorted, n, 0.99);
+    this.sorted.set(this.ivRing.subarray(0, n));
+    this.sorted.subarray(0, n).sort();
+    const ivP50 = percentile(this.sorted, n, 0.5);
+    this.ivP90 = percentile(this.sorted, n, 0.9);
+    const ivSpread = percentile(this.sorted, n, 0.75) - percentile(this.sorted, n, 0.25);
+    this.sorted.set(this.simRing.subarray(0, n));
+    this.sorted.subarray(0, n).sort();
+    this.simP90 = percentile(this.sorted, n, 0.9);
+
+    /*
+     * Is this loop actually paced by a display?
+     *
+     * The signature of vsync is a median interval sitting on a real refresh period with a tight
+     * interquartile spread. Headless Chromium has neither: measured p50 41-65 ms with a spread
+     * of tens of milliseconds, because it renders as fast as it can and nothing throttles it.
+     * Reading that as "a machine dropping four frames in five" would drive the loop to its floor
+     * in every probe, so the presented-frame arm switches itself off unless it can see a display.
+     */
+    let refresh = 0;
+    for (const r of REFRESH_MS) {
+      if (Math.abs(ivP50 - r) < r * 0.15 && ivSpread < r * 0.5) { refresh = r; break; }
+    }
+    this.refreshMs = refresh;
+    if (refresh > 0) this.targetMs = Math.max(DEFAULT_TARGET_MS, refresh);
 
     if (!this.warm) return;
 
-    const raiseMs = DROP_MS - this.deadBandMs;
-    const inBand = this.p90 <= DROP_MS && this.p90 >= raiseMs;
+    const dropMs = this.dropMs;
+    const raiseMs = dropMs - this.deadBandMs;
+
+    /*
+     * Two arms, because no single clock on this stack can see both bottlenecks.
+     *
+     * **CPU arm.** `renderMs` is wall time around `update` + `preRender` + submit. It catches a
+     * CPU-bound frame early, before any frame is actually missed, and it works everywhere
+     * including headless. What it cannot see is the GPU: measured on Rome assault at dpr 2,
+     * dropping the scale from 1.00 to 0.50 shrinks the scene target from 3200x1800 to 1600x900
+     * and takes the drained frame cost from 41 ms to 29 ms, while `renderMs` sits flat at 4-5 ms
+     * across every scale. A clock that reports 0.0 for a lever that quarters the pixel count is
+     * the wrong instrument for that lever, and this is the whole reason there is a second arm.
+     *
+     * **Presented arm.** On a display-paced loop the rAF interval is ground truth: if the GPU
+     * cannot finish inside a refresh period the browser cannot present, and the interval
+     * stretches to two periods. It sees GPU-bound and CPU-bound alike. What it cannot do is
+     * report headroom — a comfortable frame and a barely-comfortable one both present at exactly
+     * the refresh period — so it can only ever say "drop", never "raise". Recovery is therefore
+     * driven by the CPU arm and by time.
+     *
+     * The presented arm is gated on the sim not dominating the frame, because a frame lost to
+     * `fixedUpdate` is not a frame any render lever can win back, and acting on it would be
+     * hunting for a cause the loop cannot address — the same principle as discarding the frames
+     * that link a shader program.
+     */
+    const missingFrames = this.refreshMs > 0
+      && this.ivP90 > this.refreshMs * MISS_FACTOR
+      && this.simP90 < this.targetMs * SIM_DOMINANT_SHARE;
+    const inBand = !missingFrames && this.p90 <= dropMs && this.p90 >= raiseMs;
     if (inBand) {
       if (this.lastInBandMs === 0) this.lastInBandMs = now;
     } else {
@@ -603,16 +721,21 @@ export class AdaptiveQualitySystem implements Subsystem {
       return;
     }
 
-    if (this.p90 > DROP_MS) {
+    if (this.p90 > dropMs || missingFrames) {
       if (now - this.lastChangeMs < DROP_DWELL_MS) return;
       if (this.pressure >= 1) return;
-      const over = this.p90 / DROP_MS;
+      // Size the step off whichever arm is further over. The presented arm's overrun is
+      // quantised to whole refresh periods, so it is converted to an equivalent share of the
+      // budget rather than used raw.
+      const cpuOver = this.p90 / dropMs;
+      const gpuOver = missingFrames ? this.ivP90 / this.refreshMs : 0;
+      const over = Math.max(cpuOver, gpuOver);
       const step = Math.min(DROP_STEP_MAX, Math.max(DROP_STEP_MIN, (over - 1) * DROP_GAIN));
       this.move(Math.min(1, this.pressure + step), 'down', now);
       return;
     }
 
-    if (this.p90 < raiseMs) {
+    if (this.p90 < raiseMs && !missingFrames) {
       if (this.pressure <= 0) return;
       if (now - this.lastRaiseMs < this.raiseDwellMs) return;
       // A raise is only taken on a window that is entirely post-change. A drop is allowed to
@@ -804,8 +927,12 @@ export class AdaptiveQualitySystem implements Subsystem {
       samples: this.ringN,
       reversals: this.reversals,
       deadBandMs: this.deadBandMs,
-      dropMs: DROP_MS,
-      raiseMs: DROP_MS - this.deadBandMs,
+      dropMs: this.dropMs,
+      raiseMs: this.dropMs - this.deadBandMs,
+      targetMs: this.targetMs,
+      refreshMs: this.refreshMs,
+      ivP90: this.ivP90,
+      simP90: this.simP90,
       changes: this.changes,
       reallocs: this.reallocs,
       lastReallocMs: this.lastReallocMs,

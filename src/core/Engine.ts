@@ -394,6 +394,11 @@ export class Engine {
 
     this.input.endFrame();
 
+    if (this.drainAfterFrame) {
+      const gl = this.renderer.getContext();
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, this.drainPx);
+    }
+
     const tEnd = performance.now();
     this.lastSimMs = tRenderStart - t0;
     this.lastRenderMs = tEnd - tRenderStart;
@@ -422,10 +427,26 @@ export class Engine {
 
     // `advance` runs synthetic frames flat out with no display to pace them, so its wall clock
     // says nothing about whether a player would see a dropped frame.
-    if (!this.advancing) this.adaptive?.sample(this.lastRenderMs, linked);
+    if (!this.advancing) {
+      this.adaptive?.sample(this.lastRenderMs, linked, this.time.frameDt * 1000, this.lastSimMs);
+    }
   }
 
   private lastProgramCount = 0;
+
+  /**
+   * Force a GPU round trip at the end of every frame, so `lastRenderMs` includes GPU time.
+   *
+   * **A probe instrument, never shipped on.** A 1x1 `readPixels` is the only real barrier on
+   * this stack — `gl.finish()` returns before the GPU drains under ANGLE-on-Metal — and it costs
+   * the entire benefit of pipelining, so turning it on makes the game slower in order to measure
+   * it honestly. It exists because the CPU-side clock cannot see the resolution lever at all:
+   * scale 1.00 -> 0.50 at dpr 2 takes the drained frame from 41 ms to 29 ms while `lastRenderMs`
+   * sits flat at 4-5 ms. Any headless measurement of a fill-rate lever needs this or it will
+   * report the lever as free.
+   */
+  drainAfterFrame = false;
+  private drainPx = new Uint8Array(4);
 
   /**
    * Advance the simulation by a wall-clock duration without waiting for real time.
