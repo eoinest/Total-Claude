@@ -1,4 +1,13 @@
-node_modules/
+# No trailing slash, deliberately. `node_modules/` matches a *directory* and does not
+# match a *symlink to* one — and every agent working in a `git worktree` symlinks this
+# path back to the main checkout, because a worktree does not get its own install. So the
+# symlink was not ignored, `git add -A` swept it up, and a mode-120000 blob whose contents
+# are an absolute path on one machine got committed to a branch. Twice today, by two
+# different agents, one of whom had already removed it once.
+#
+# The failure lands nowhere near the cause: the branch works perfectly in the worktree
+# that created it, and fails in any other checkout as `Cannot find package 'three'`.
+node_modules
 dist/
 .DS_Store
 *.log
