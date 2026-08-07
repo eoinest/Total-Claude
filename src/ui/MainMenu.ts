@@ -26,7 +26,7 @@ import {
 } from '../sim/battleConfig';
 import { QUALITY_PRESETS } from '../core/Engine';
 import { MAPS, getMap, isMapId, setActiveMap, type MapId } from '../maps';
-import { Faction, type UnitClass } from '../sim/types';
+import { Faction, setOpposingFaction, type UnitClass } from '../sim/types';
 
 /** CSS class suffix per faction, so `menu.css` can theme each army panel. */
 const FACTION_CLASS: Record<Faction, string> = {
@@ -46,6 +46,30 @@ const SIDE_LABEL: Record<number, string> = {
   [Faction.Germanic]: 'JUTHUNGI',
   [Faction.Carthage]: 'QART-HADASHT',
 };
+
+/**
+ * Who Rome fights, and the row that was missing.
+ *
+ * `BattleConfig.opponent` has existed since Carthage was added and **nothing ever set it** —
+ * not the menu, not a URL parameter, not a map. Its default is the Juthungi, so
+ * `belligerents` always returned the Juthungi for a field battle, and the Punic *field* army
+ * in `DEFAULT_CONFIG.carthage` — Sacred Band, Numidian horse, war elephants, seven bought
+ * contingents to one of citizens — could only be reached by hand-building a base64 `?battle=`
+ * token.
+ *
+ * `662b189` reached the Carthaginian faction from the other end, through the *storm* of
+ * Carthage, where the map names both sides and no choice is needed. This is the half a
+ * choice does apply to: Rome's 218 BC enemy on open ground, which is a different army from
+ * the 146 BC levy that held the triple wall and is still the only one in the roster that
+ * nothing can select.
+ *
+ * Two entries rather than a loop over `ALL_FACTIONS` because Rome is never her own opponent
+ * and the copy is per army, not generic.
+ */
+const OPPONENTS: readonly { id: Faction; label: string; sub: string }[] = [
+  { id: Faction.Germanic, label: 'Juthungi', sub: 'Alemannic confederation &middot; 271 AD' },
+  { id: Faction.Carthage, label: 'Qart-Hadasht', sub: 'Punic host in Hannibal&rsquo;s proportions' },
+];
 
 /**
  * The strapline under each army's name, which is not the same sentence in the two battles:
@@ -155,6 +179,20 @@ export function resolveConfig(params: URLSearchParams, useStored = true): Battle
   if (wantMap && isMapId(wantMap) && wantMap !== cfg.map) {
     cfg = sanitiseConfig({ ...cfg, map: wantMap });
   }
+  /*
+   * `?enemy=juthungi|carthage`, on the same footing as `?map=` and for the same reason.
+   *
+   * There has never been a way to reach the Punic army short of hand-building a `?battle=`
+   * token, so there has never been a shareable link to it either. Names rather than the enum
+   * ordinal, because `?enemy=2` is not a URL anyone can write from memory.
+   */
+  const wantFoe = params.get('enemy');
+  if (wantFoe) {
+    const f = wantFoe === 'carthage' ? Faction.Carthage
+      : wantFoe === 'juthungi' || wantFoe === 'germanic' ? Faction.Germanic
+        : null;
+    if (f !== null && f !== cfg.opponent) cfg = sanitiseConfig({ ...cfg, opponent: f });
+  }
   // Publish the choice to `src/maps` here, and again in `commit`.
   //
   // `main.ts` constructs every subsystem with no arguments and `EngineContext` carries no
@@ -163,7 +201,23 @@ export function resolveConfig(params: URLSearchParams, useStored = true): Battle
   // through (the harness, `?menu=0`, and a shared `?battle=` link). It runs before the engine
   // exists, let alone `TerrainSystem.init`. See `setActiveMap` for the full ordering argument.
   setActiveMap(cfg.map);
+  publishBelligerents(cfg);
   return cfg;
+}
+
+/**
+ * Tell `src/sim/types` who Rome is fighting, before anything is built.
+ *
+ * The same singleton-and-timing argument as `setActiveMap`, for the same reason: the HUD
+ * builds its panels in `init`, which is *before* `deployBattle` runs, and until now the only
+ * writer of `setOpposingFaction` was the deployment. So every panel that asked "who is the
+ * enemy" during `init` — the unit-card bar's foe tab, the top plaque's second army — got the
+ * default answer, the Juthungi, whatever battle the player had actually chosen. The
+ * deployment still publishes it afterwards from the army it really laid out, which is the
+ * authority; this only makes the answer right one phase earlier.
+ */
+function publishBelligerents(cfg: BattleConfig): void {
+  setOpposingFaction(belligerents(cfg)[1]);
 }
 
 export class MainMenu {
@@ -175,6 +229,7 @@ export class MainMenu {
   private diffBtns = new Map<Difficulty, HTMLElement>();
   private mapBtns = new Map<MapId, HTMLElement>();
   private scenBtns = new Map<ScenarioId, HTMLElement>();
+  private oppBtns = new Map<Faction, HTMLElement>();
   private countCells = new Map<string, HTMLElement>();
   private stepBtns: Array<{ el: HTMLButtonElement; f: Faction; id: string; d: number }> = [];
   /** Set when picking a map without a wall has just taken the assault away from the player. */
@@ -245,6 +300,20 @@ export class MainMenu {
            </div>
          </section>
          <p class="scen-blurb" data-scen-blurb></p>
+
+         <section class="menu-row opp-row">
+           <div class="menu-lab">
+             <span class="lab-main">Enemy</span>
+             <span class="lab-sub">Who Rome is fighting</span>
+           </div>
+           <div class="menu-opts opp-opts">
+             ${OPPONENTS.map((o) => `
+               <button type="button" data-opp="${o.id}">
+                 <b>${o.label}</b>
+                 <i>${o.sub}</i>
+               </button>`).join('')}
+           </div>
+         </section>
 
          <section class="menu-row size-row">
            <div class="menu-lab">
@@ -343,6 +412,19 @@ export class MainMenu {
         this.refresh();
       });
     }
+    for (const b of this.qsa('[data-opp]')) {
+      const f = Number(b.dataset.opp) as Faction;
+      this.oppBtns.set(f, b);
+      b.addEventListener('click', () => {
+        if (this.cfg.opponent === f || this.opponentBlocked() !== null) return;
+        this.cfg = { ...this.cfg, opponent: f };
+        // The rows themselves change — the Punic roster is a different list of unit types
+        // from the Juthungi one, and both compositions are carried side by side in the
+        // config, so switching back and forth costs the player neither order of battle.
+        this.buildArmies();
+        this.refresh();
+      });
+    }
     for (const b of this.qsa('[data-size]')) {
       const id = b.dataset.size as UnitSizeId;
       this.sizeBtns.set(id, b);
@@ -387,7 +469,11 @@ export class MainMenu {
       // Restores the historical order of battle *for the battle on screen*, not the whole
       // config: a player who has chosen the assault and then wants the shipped assault back
       // should not be silently returned to the field battle on a different map.
+      // `opponent` is kept for the same reason `map` and `scenario` are: it selects *which*
+      // battle, not how it is drawn up, and a player who has chosen Carthage and then asks
+      // for the historical order of battle means the Punic one.
       this.cfg = { ...DEFAULT_CONFIG, map: this.cfg.map, scenario: this.cfg.scenario,
+        opponent: this.cfg.opponent,
         quality: this.cfg.quality, difficulty: this.cfg.difficulty,
         timeOfDay: this.cfg.timeOfDay, seed: this.cfg.seed };
       this.buildArmies();
@@ -453,6 +539,23 @@ export class MainMenu {
       this.stepBtns.push({ el: b as HTMLButtonElement, f, id, d });
       b.addEventListener('click', () => this.step(f, id, d));
     }
+  }
+
+  /**
+   * Why the enemy cannot be chosen right now, or null when it can.
+   *
+   * A storm has no choice in it, because the wall already names both sides: `belligerents`
+   * reads the defender out of `CityPlan.garrison` and the besieger is whoever that is not.
+   * The Aurelian Wall is Rome's, so Rome holds it against the Juthungi; the triple wall is
+   * Carthage's, so Rome storms it. Greyed with the reason rather than left live over a
+   * choice that would be ignored — a disabled control that does not say why is the same bug
+   * as no control at all.
+   */
+  private opponentBlocked(): string | null {
+    if (this.cfg.scenario !== 'assault') return null;
+    const map = getMap(this.cfg.map);
+    return `A storm is fought by whoever holds the wall and whoever is outside it, so `
+      + `${map.label} names both sides. Choose the field battle to pick an enemy.`;
   }
 
   /** Why this scenario cannot be chosen right now, or null when it can. */
@@ -539,6 +642,21 @@ export class MainMenu {
       scenNote = `${mapDef.label} has no wall, so the battle has gone back to the field. ${scDef.blurb}`;
     }
     setText(this.q('[data-scen-blurb]'), scenNote);
+
+    // The enemy row. `belligerents()` is what the battle will actually field, so the
+    // highlight follows *it* rather than `cfg.opponent` — in a storm the config may still
+    // say Carthage while the battle is against the Juthungi, and a lit button under an
+    // army that is not going to be there is the worst kind of menu.
+    const oppWhy = this.opponentBlocked();
+    const foe = belligerents(this.cfg)[1];
+    setClass(this.q('.opp-row'), 'inert', oppWhy !== null);
+    for (const [f, b] of this.oppBtns) {
+      setClass(b, 'on', f === foe);
+      setClass(b, 'off', oppWhy !== null && f !== foe);
+      (b as HTMLButtonElement).disabled = oppWhy !== null;
+      b.title = oppWhy ?? '';
+    }
+    setText(this.q('.opp-row .lab-sub'), oppWhy ?? 'Who Rome is fighting');
 
     for (const [t, b] of this.tierBtns) setClass(b, 'on', t === this.cfg.quality);
     for (const [d, b] of this.diffBtns) setClass(b, 'on', d === this.cfg.difficulty);
@@ -636,9 +754,10 @@ export class MainMenu {
   private commit(): void {
     const cfg = sanitiseConfig(this.cfg);
     storeConfig(cfg);
-    // The interactive counterpart of the call in `resolveConfig`: this is the only path on
-    // which the player can have changed the map since that ran.
+    // The interactive counterpart of the calls in `resolveConfig`: this is the only path on
+    // which the player can have changed the map or the enemy since that ran.
     setActiveMap(cfg.map);
+    publishBelligerents(cfg);
     this.root.classList.remove('in');
     this.root.classList.add('out');
     // Let the fade finish before the DOM node goes, but resolve immediately so asset
