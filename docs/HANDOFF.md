@@ -348,6 +348,36 @@ Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`
   cohort carries 57-59 kit masks, 119 statures, 229 cadences, 314/320 distinct animation phases,
   252 tunic colours. Adding variation is the wrong fix.
 
+- **`MELEE_TEMPO = 1.5` is settled against, and the reason is `ENGAGE_PER_WIDTH`.** Josh
+  Kappler's constant was declined as arithmetic (1.5x blow rate is 1.5x damage rate) and
+  defended on the grounds that the acquisition-radius change would move how many men are in
+  contact by enough to cancel it. Measured on pinned worktrees at `cb80afd`, both arms, three
+  independent instruments: pair-level engaged men (`probe-meleegeom`) **19.5 -> 22.1** and
+  **17.0 -> 24.0** for swords and **49.8 -> 50.0** for the spear control; mean men in melee
+  across `matchup.mjs`'s twenty-two cases **+20 %**; men in `Fighting` in the full 8,632-man
+  battle **432 -> 465 median**. Nothing halved and nothing reached 1.5x, so there is nothing
+  for a flat tempo to cancel against. **The mechanism is the finding: `peakFight` is
+  *identical* on both arms in every real line engagement** — 82/82, 67/67, 87/87, 75/75,
+  102/102, 104/104 — because `ENGAGE_PER_WIDTH` is a hard per-unit ceiling on men in contact
+  and the acquisition radius cannot raise it. It only decides how much of the time a unit sits
+  at its ceiling. **No reach change can ever move contact by 1.5x in a line fight**, so the
+  defence was never available, and a 1.5x tempo would land straight on the damage rate: the
+  `even-grind` control is already 130 s after the reach fix and would go to about 87 s, under
+  the 120 s floor. Do not adopt the constant.
+
+- **The gate chokepoint did not regress and the old figure was not wrong — the wall got
+  thicker.** `ab8b957` recorded lateral drift while fighting **0.063 m/s** and **188 per
+  mille** inside masonry; a collision agent read **0.203** and **350.8** at `c20f711` and was
+  disbelieved. Measured at `cb80afd` on unmodified main: **0.158 m/s** and **372.9 per
+  mille** — corroborating the second reading, not the first. `Combat.ts` and
+  `BattleSystem.ts` are **byte-identical between `ab8b957` and `c20f711`**, so no melee code
+  changed at all. What changed is `1a56522`, which landed *after* `ab8b957` and took the
+  curtain from **3.5 m to 6.0 m** (`CURTAIN_T`). `probe-melee --case=gate` measures men
+  within 12 m of the gate through the passage, and that passage is now 71 % longer, so the
+  window holds more stone and men queue in a tunnel nearly twice as deep. **The two numbers
+  were measured through two different walls and are not comparable.** Any chokepoint figure
+  quoted from before `1a56522` needs the same treatment.
+
 - **"Units pass through the walls" was Carthage, not Rome, and no man-tick counter in this
   repo could see it.** Every penetration measure here — `probe-nav.penetration`,
   `probe-melee`'s gate window — grades the men against the *obstacle set*. When the obstacle
@@ -430,6 +460,13 @@ Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`
   27-42 (`tools/probe-interactive.mjs`). The rAF interval in that session is p50 25 ms, but
   that is headless compositing and six other agents, not this codebase.
 - `fixedUpdate` 3.657 ms at 8,632 men idle, 3.964 ms routing across the wall, against a 4 ms budget.
+  The melee acquisition-radius change costs **+0.06 to +0.09 ms** on the best block, measured
+  with both arms rotated inside one browser session against two pinned worktrees at `cb80afd`
+  (base best 3.322/3.360, candidate 3.408/3.423, two runs, load 4.2-7.4). The medians disagree
+  in *sign* between those two runs (+0.022 and −0.141), which is trap 9 doing its job: at this
+  size only the best block is an estimator. Note these absolutes sit below the 3.657 above
+  because the harness sets `renderOverride` to a no-op, so the sim band is not sharing the
+  thread with the GPU submit — good for the delta, not comparable as a level.
 - **The frame is a small colour pass and a large shadow pass, and only the second scales with
   tier.** Rome assault at ultra: 98 colour + 98 shadow + 23 post = 219. The colour pass is
   96-101 at *every* tier. **A casting mesh costs one call in the colour pass and one more per
