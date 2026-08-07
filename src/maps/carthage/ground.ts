@@ -58,13 +58,22 @@ export const CARTHAGE_LAYERS: readonly GroundLayerSpec[] = [
     farScale: 4.2, detailScale: 1.2, detailMix: 0.45, roughness: 0.94,
     albedo: [124, 82, 56], contrast: 1.3, chroma: 0.56, heightBias: 0.06,
   },
-  // 3. Lagoon mud: the grey-violet clay under the salt, showing wherever the crust is broken
-  //    or the pan is still damp. The darkest thing on the map and the only cool dark on it —
-  //    it is what stops the sabkha reading as a sheet of paper.
+  // 3. Water, and the wet strand at its edge.
+  //
+  //    **There is no water surface mesh on this map** — see `SEA_LEVEL` in `topography.ts`.
+  //    The Gulf of Tunis, the Lake of Tunis and the harbour basins are terrain below the
+  //    datum, and this layer is what paints them. Cool, dark and much smoother than anything
+  //    else here: roughness 0.34 is the lowest in the project and it is what makes the
+  //    difference between "sea" and "grey mud" at 700 m through haze, because a low-roughness
+  //    surface under a 20 deg sun returns a broad specular sheet and nothing else on the map
+  //    does.
+  //
+  //    It doubles as the grey-violet clay showing through a broken salt crust, which is the
+  //    same material wet and is why the two share a slot in an eight-layer budget.
   {
-    name: 'lagoon mud', kind: 'mud', manifestId: 'mud',
-    farScale: 3.2, detailScale: 0.88, detailMix: 0.42, roughness: 0.72,
-    albedo: [96, 90, 92], contrast: 1.2, chroma: 0.3, heightBias: 0.04,
+    name: 'water and wet clay', kind: 'mud', manifestId: 'mud',
+    farScale: 3.4, detailScale: 0.9, detailMix: 0.3, roughness: 0.34,
+    albedo: [58, 74, 82], contrast: 1.1, chroma: 0.26, heightBias: 0.0,
   },
   // 4. Salt crust. **The brightest surface in this project.** A sabkha in full sun is
   //    genuinely near-white and it is the one place a frame here can carry a highlight
@@ -75,10 +84,10 @@ export const CARTHAGE_LAYERS: readonly GroundLayerSpec[] = [
     farScale: 5.2, detailScale: 1.5, detailMix: 0.34, roughness: 0.64,
     albedo: [188, 184, 179], contrast: 1.46, chroma: 0.16, heightBias: 0.2,
   },
-  // 5. Shell sand: the gulf beach and the dune belt behind it. Warm cream, fine-grained, and
-  //    the only surface on the map with no structure at all — which is the point. Nine of
-  //    ten of our graded frames measure 0.00 % of tiles with a low local Laplacian; a beach
-  //    is a large smooth region with a reason to be there.
+  // 5. Shell sand: the gulf beach, the Taenia's sand bar and the strand at the lake. Warm
+  //    cream, fine-grained, and the only surface on the map with no structure at all — which
+  //    is the point. Nine of ten of our graded frames measure 0.00 % of tiles with a low
+  //    local Laplacian; a beach is a large smooth region with a reason to be there.
   {
     name: 'shell sand', kind: 'sand', manifestId: 'sand',
     farScale: 3.6, detailScale: 0.92, detailMix: 0.4, roughness: 0.88,
@@ -152,23 +161,22 @@ void tcMapSplat(
   float braid = 1.0 - smoothstep(CAR_WADI_HALF * 0.7, CAR_WADI_HALF * 2.2, wadiD);
   float wash = 1.0 - smoothstep(CAR_WADI_HALF * 2.0, 64.0, wadiD);
 
-  // --- The two shores ------------------------------------------------------
-  // These are the terms that make this map a peninsula. Both edges wander on the macro band
-  // by a few tens of metres, because a shoreline that follows an analytic curve exactly is
-  // the most obviously machine-drawn thing a landscape can contain — and unlike the garden
-  // field these do not have to agree with the scatter to the metre, because nothing is
-  // planted within 200 m of either.
-  float lagoon = carLagoonNess(wp.xz + vec2((macroMid.a - 0.5) * 120.0, 0.0));
-  float gulf = carGulfNess(wp.xz + vec2((macroMid.b - 0.5) * 90.0, 0.0));
-  // The pan proper: the inner two thirds of the lagoon ramp, where the crust is unbroken.
-  float pan = smoothstep(0.42, 0.86, lagoon);
-  // The strand line: the wet-looking band right at the water, where the crust is thin and
-  // the grey clay shows through. Also where the beach is darkest.
-  float strand = smoothstep(0.80, 1.0, lagoon);
-  float beach = smoothstep(0.46, 0.92, gulf);
-  // The dune crest, which is the only part of the gulf side that is not beach: it sits at
-  // the middle of the ramp, so it is a band rather than an edge.
-  float dune = 4.0 * gulf * (1.0 - gulf) * smoothstep(0.15, 0.4, gulf);
+  // --- The three waters ----------------------------------------------------
+  // These are the terms that make this map a peninsula, and they run off the *height field*
+  // rather than off a distance, because the shore is where the ground goes under the datum
+  // and there is no water surface to ask. 'tAbove' is height over the map's water level.
+  //
+  // Three bands: open water, the wet strand at its edge, and the dry beach behind it.
+  float sea = 1.0 - smoothstep(-2.4, 0.15, tAbove);
+  float strand = (1.0 - smoothstep(0.1, 1.6, tAbove)) * (1.0 - sea);
+  // The two evaporite pans. Not open water — the Sebkhet Ariana is a salt crust at 0 to +1 m
+  // that infantry walks over and no wheel crosses, and the Lake's margin is salt marsh. The
+  // control texture's blue channel carries them above 0.8, which is above anything trampling
+  // reaches, so the threshold is a genuine discriminator and not a guess.
+  float soft = smoothstep(0.78, 0.94, cTramp);
+  float pan = soft * (1.0 - sea) * smoothstep(0.35, 0.75, cSilt);
+  // The Taenia's sand bar and the gulf beach, both from the fines channel above the water.
+  float beach = smoothstep(0.5, 0.9, cSilt) * (1.0 - sea) * (1.0 - smoothstep(3.0, 7.5, tAbove));
 
   // --- Worked land ---------------------------------------------------------
   // Market gardens and orchards in irregular blocks. carGardenField is the same closed form
@@ -176,9 +184,9 @@ void tcMapSplat(
   // The macro band only softens the boundary by a few metres — it must not move it, or the
   // two disagree and the map grows olives out of stubble.
   //
-  // Suppressed on both shores: nobody irrigates a salt pan, and the term would otherwise put
-  // orchards on the beach.
-  float dryLand = (1.0 - smoothstep(0.15, 0.55, lagoon)) * (1.0 - smoothstep(0.15, 0.55, gulf));
+  // Suppressed on anything wet or salt: nobody irrigates a pan, and the term would otherwise
+  // put orchards on the beach.
+  float dryLand = (1.0 - sea) * (1.0 - soft) * (1.0 - strand);
   float garden = smoothstep(0.56, 0.74, carGardenField(wp.xz) + (macroMid.a - 0.5) * 0.08)
                * dryLand;
 
@@ -186,20 +194,20 @@ void tcMapSplat(
   // The cleared strip outside the wall. Swept to bare earth and beaten flat: a besieged city
   // leaves nothing standing within bowshot, and after three years of working parties the
   // ground in front of the curtain is the most worn on the field. It is also a strong
-  // horizontal band across the frame, which is exactly what the composition wants under a
-  // wall.
-  float glacis = 1.0 - smoothstep(24.0, 150.0, abs(wp.z - carWallZ(wp.x)));
+  // horizontal band across the frame, which is what the composition wants under a wall.
+  float glacis = (1.0 - smoothstep(24.0, 160.0, abs(wp.z - carWallZ(wp.x)))) * dryLand;
 
   // --- Aridity -------------------------------------------------------------
   //
   // Green is a *minority* and it is driven by water someone is paying for, not by noise and
-  // not by aspect. On this coast that is literally true: the isthmus is 400 mm of winter
-  // rain and nothing between May and September, so the only green in August is under a
-  // channel. Aspect is left in at a third of the weight it carries at Pydna — enough to keep
-  // a boundary organic, not enough to decide land use.
+  // not by aspect. On this coast that is literally true even in April: the isthmus is 400 mm
+  // of winter rain, the last of it has fallen, the barley is ripening rather than growing,
+  // and the reliably green ground is under a channel. Aspect is left in at a third of the
+  // weight it carries at Pydna — enough to keep a boundary organic, not enough to decide
+  // land use, which is the mistake two Pydna passes were rejected for.
   //
-  // +X is the gulf, -Z is the mainland. A north-facing slope holds what moisture there is.
-  float aspect = clamp((tGeoN.x * 0.3 - tGeoN.z * 0.95) * 8.0, -1.0, 1.0);
+  // +X is true north on this map and -Z is true west. A north-facing slope holds moisture.
+  float aspect = clamp((tGeoN.x * 0.9 - tGeoN.z * 0.3) * 8.0, -1.0, 1.0);
   float watered = cWet * 1.65 + hollow * 0.4 + garden * 0.55;
   float drift = (nzBig - 0.5) * 0.12 + (macroMid.a - 0.5) * 0.3;
   float green = clamp(0.015 + aspect * 0.1 + watered * 0.95 + drift * 0.35
@@ -209,43 +217,42 @@ void tcMapSplat(
 
   // --- Aerial convergence ---------------------------------------------------
   // Pushed out to 780-2500 m, following the correction made at Pydna: convergence starting
-  // inside the fighting ground is not depth information, it is a milky sheet. The two shores
-  // are exempt — a salt pan really is a white line from altitude and a beach really is a
-  // cream one, and converging them onto the map's warm mean would erase the single feature
-  // that says "peninsula" from a strategic camera.
+  // inside the fighting ground is not depth information, it is a milky sheet. Water, salt and
+  // beach are exempt — a sea really is a dark line from altitude, a salt pan a white one and
+  // a beach a cream one, and converging them onto the map's warm mean would erase the three
+  // features that say "peninsula" from a strategic camera.
   aerial = smoothstep(780.0, 2500.0, camDist)
-         * (1.0 - track) * (1.0 - max(pan, beach))
+         * (1.0 - track) * (1.0 - max(sea, max(pan, beach)))
          * (1.0 - smoothstep(0.20, 0.46, tSlope));
 
   // --- Weights -------------------------------------------------------------
   // 0 stubble is the ground state of the isthmus, and it is thinner here than at Pydna:
-  // grazed and reaped ground shows its soil. Killed outright on both shores.
+  // grazed and reaped ground shows its soil. Killed outright on water, salt and sand.
   w[0] = (0.30 + 2.35 * dry) * (1.0 - grassKill) * (1.0 - track) * (1.0 - braid) * dryLand;
   // 1 garden green: channels, wadi margin, and the irrigated blocks.
   w[1] = (0.12 + 3.0 * green) * (1.0 - grassKill) * (1.0 - track) * (1.0 - braid);
   // 2 red earth: the swept floor of a garden, the ploughed ground between blocks, trodden
   //   ground, the glacis, and the crowns of the swells where the stubble has burnt through.
-  //   This is the map's dominant tone and it carries the relief — a 2.4 m swell is legible
+  //   This is the map's dominant tone and it carries the relief — a 2.2 m swell is legible
   //   from altitude because its crown is bare soil and its flank is not.
   w[2] = (cTramp * 1.6 + verge * 0.9 + garden * 1.7 + glacis * 1.5 + nose * 0.5
        + smoothstep(0.78, 1.0, dry) * nose * 1.8
        + smoothstep(0.88, 1.0, dry) * 0.6) * dryLand;
-  // 3 lagoon mud: under the salt, at the strand line, and wherever the pan is broken. Held
-  //   off the beach, where any fines are shell sand rather than clay.
-  w[3] = strand * 2.4 + pan * (1.0 - smoothstep(0.3, 0.7, cSilt)) * 0.8
-       + braid * 0.35 * (1.0 - dryLand);
+  // 3 water and wet clay: the gulf, the lake, the harbour basins and the strand line. Deeper
+  //   water is more emphatic so a shelving shore reads as a shore rather than as a hard edge.
+  w[3] = sea * (3.2 + 3.0 * smoothstep(0.0, -4.5, tAbove)) + strand * 1.5
+       + pan * (1.0 - smoothstep(0.3, 0.7, cSilt)) * 0.7;
   // 4 salt crust. The one term on this map allowed to be emphatic: a sabkha is not a subtle
   //   surface and painting it timidly would waste the only large bright region in the frame.
-  w[4] = pan * 5.0 + lagoon * cSilt * 1.4;
-  // 5 shell sand: the beach and the dune belt, plus the fines the wadi drops where it reaches
-  //   the pan.
-  w[5] = beach * 4.4 + dune * 2.2 + braid * 0.9 + cSilt * lagoon * 0.5;
+  w[4] = pan * 5.0 + soft * (1.0 - sea) * 1.2;
+  // 5 shell sand: the beach, the Taenia's bar, the strand behind the water line, and the
+  //   fines the wadi drops where it reaches the pan.
+  w[5] = beach * 4.0 + strand * 1.8 + braid * 0.9 + wash * 0.5 * dryLand;
   // 6 calcarenite: the two hills' scoured faces and noses, and the wave-cut platform under
-  //   the gulf shore where the sea has stripped the dunes back to rock.
-  w[6] = smoothstep(0.26, 0.52, tSlope) * 3.0 + cBare * 1.7 + nose * 0.7
-       + gulf * cBare * 1.2;
+  //   the coast where the sea has stripped the sand back to rock.
+  w[6] = smoothstep(0.26, 0.52, tSlope) * 3.0 + cBare * 1.7 + nose * 0.7;
   // 7 the road and the siege lines. Traffic wears the fines out and leaves the stones
   //   standing; without the trampling term every beaten surface on the map is featureless.
-  w[7] = track * 7.0 + smoothstep(0.30, 0.72, cTramp) * 1.5 * dryLand;
+  w[7] = track * 7.0 + smoothstep(0.30, 0.72, cTramp) * 1.5 * dryLand * (1.0 - soft);
 }
 `;

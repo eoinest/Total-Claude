@@ -138,12 +138,17 @@ if (ready && outDir) {
   await fs.mkdir(outDir, { recursive: true });
   // x, z, zoom, yaw. Yaw 0 looks toward +Z, which on this map is the city.
   const CAMS = [
-    ['isthmus', 0, -260, 0.86, 0],
-    ['wallline', 0, 250, 0.62, 0],
-    ['byrsa', 90, 480, 0.78, 0],
-    ['lagoon', -900, -80, 0.7, Math.PI * 0.5],
-    ['gulf', 950, 120, 0.7, -Math.PI * 0.5],
-    ['strategic', 0, 200, 1.0, 0],
+    // The siege line looking east up the isthmus at the wall, which is the map's main axis.
+    ['siegeline', 0, -60, 0.72, 0],
+    // On the wall line, looking at the Byrsa behind it.
+    ['byrsa', 0, 700, 0.62, 0],
+    // The Taenia and the head of the lake, from the south-west.
+    ['taenia', -1150, 400, 0.6, 0],
+    // The Sebkhet Ariana at the wall's north anchor.
+    ['ariana', 1050, 380, 0.6, 0],
+    // The east coast behind the city.
+    ['coast', 200, 1020, 0.62, 0],
+    ['strategic', 0, 320, 1.0, 0],
   ];
   for (const [name, x, z, zoom, yaw] of CAMS) {
     await page.evaluate(

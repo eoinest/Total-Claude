@@ -6,17 +6,18 @@ import {
   WALL_CLEAR_OUT,
   battleCoreMask,
   carthageWallZ,
+  coastZ,
   gardenField,
-  gulfEdgeX,
-  lagoonEdgeX,
+  lakeEdgeX,
   punicDeployMask,
   roadCentreX,
   romanDeployMask,
+  softGround,
   wadiZ,
 } from './topography';
 
 /**
- * What grows on the isthmus of Carthage, and where.
+ * What grows on the isthmus of Carthage, and where. Built to `docs/CARTHAGE.md` §3 and §7.7.
  *
  * The species geometry is shared with the other two maps — olive, holm oak, Aleppo pine,
  * cypress and a weeping riparian tree are all as native to Cap Bon as to Latium or Pieria —
@@ -46,15 +47,21 @@ import {
 /** Garden threshold. Matches the ground shader's `smoothstep(0.56, 0.74, ...)` midpoint. */
 const GARDEN_EDGE = 0.61;
 
-/** Inside this many metres of a shoreline nothing woody grows. */
-const LAGOON_BARE = 300;
-const GULF_BARE = 210;
-
-/** How near a shore a point is, 0 inland .. 1 at the water. */
+/**
+ * How near a water or a salt margin a point is, 0 inland .. 1 at the edge.
+ *
+ * Three waters on this map (§2.2): the Lake of Tunis at −X, the Gulf of Tunis at +Z, and the
+ * Sebkhet Ariana salt pan at +X. Nothing woody roots in an evaporite pan, nothing but marram
+ * holds a beach, and `softGround` already publishes the sabkha margin for the engine-mobility
+ * rule — so the same function decides what grows.
+ */
 const shoreNess = (x: number, z: number): number =>
   Math.max(
-    1 - sstep(0, LAGOON_BARE, x - lagoonEdgeX(z)),
-    1 - sstep(0, GULF_BARE, gulfEdgeX(z) - x),
+    softGround(x, z),
+    Math.max(
+      1 - sstep(0, 300, x - lakeEdgeX(z)),
+      1 - sstep(0, 220, coastZ(x) - z),
+    ),
   );
 
 export const CARTHAGE_SCATTER: ScatterProfile = {
