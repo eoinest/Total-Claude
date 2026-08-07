@@ -6,6 +6,7 @@ import {
   ranksFor, segmentDistance,
 } from './formations';
 import { unitType, isCavalry } from '../units/roster';
+import { ridesElephant } from '../units/kit';
 import type { TerrainSystem } from '../terrain/TerrainSystem';
 import {
   ALL_FACTIONS, Clip, Faction, SoldierPool, SoldierState, SpatialHash, UnitOrder,
@@ -368,6 +369,29 @@ const MAX_SEPARATION_STEP = 0.22;
 const MAX_SEPARATION_FIGHTING = 0.08;
 
 /**
+ * The footprint of a fallen war elephant, as a capsule on the ground.
+ *
+ * A live animal is about 4.2 m nose to tail and 2.0 m across the body. Lying on its side
+ * it keeps the length and gains width, because what is now across the ground is belly to
+ * spine. So: a segment `CARCASS_HALF_LEN` either side of the animal's centre along the
+ * heading it died facing, inflated by `CARCASS_RADIUS` — 4.7 m by 2.6 m, scaled per animal
+ * by the same size hash the renderer draws it at.
+ *
+ * A capsule and not a circle because the difference is the whole point. A circle big enough
+ * to contain the body is 2.4 m across the *short* axis too, which makes a cohort walking
+ * past a carcass bulge round something a metre wider than the thing they can see.
+ */
+const CARCASS_HALF_LEN = 1.05;
+const CARCASS_RADIUS = 1.30;
+
+/**
+ * Carcasses tracked at once. Two elephant units at `ultra` is 32 animals; this is headroom,
+ * and the cap exists only so a pathological battle cannot grow the per-tick pass without
+ * bound. Overflow simply gets no body — worse than a body, better than an unbounded loop.
+ */
+const CARCASS_MAX = 64;
+
+/**
  * What a soldier standing on something other than the ground needs the sim to know.
  *
  * Implemented by `Siege`, which owns every structure a man can stand on. Kept as an
@@ -471,6 +495,7 @@ export class BattleSystem implements Subsystem {
     this.terrain = ctx.tryGet<TerrainSystem>('terrain');
     this.pool = new SoldierPool(ctx.quality.maxSoldiers);
     this.mounted = new Uint8Array(ctx.quality.maxSoldiers);
+    this.onElephant = new Uint8Array(ctx.quality.maxSoldiers);
     this.orderGrace = new Float32Array(256);
     this.breakingOff = new Uint8Array(256);
     this.press = new Float32Array(ctx.quality.maxSoldiers);
@@ -766,6 +791,7 @@ export class BattleSystem implements Subsystem {
     const ranks = ranksFor(strength, width);
     const rng = this.rng.fork(`unit${u.id}`);
     const mounted = isCavalry(def);
+    const elephant = ridesElephant(def);
     // Where it was deployed counts as where it was told to stand, so a unit that is never
     // given an order still has a point to measure its self-initiated drift against.
     this.growUnitScratch(u.id + 1);
@@ -822,6 +848,7 @@ export class BattleSystem implements Subsystem {
       p.deathDirX[i] = 0;
       p.deathDirZ[i] = 0;
       this.mounted[i] = mounted ? 1 : 0;
+      this.onElephant[i] = elephant ? 1 : 0;
     }
 
     u.alive = u.members.length;
@@ -2241,7 +2268,122 @@ export class BattleSystem implements Subsystem {
         used[i] += mag * k;
       }
     }
+    this.partCarcasses();
     void dt;
+  }
+
+  /**
+   * Men flow round a dead elephant.
+   *
+   * `resolveCrowding`'s main loop skips anything `aliveAt` is false for, which is right for
+   * a man — a corpse is 25 cm high and gets walked over — and wrong for four tonnes of
+   * animal lying across the line of advance. Without this a Punic elephant that goes down
+   * in front of its own line is a thing the whole battle marches straight through, which is
+   * the same defect as the animal vanishing, one layer down.
+   *
+   * Deliberately *not* an entry in `ObstacleField` and *not* in the nav grid. Those are
+   * static masonry, rebuilt on a generation counter, and pathing round a carcass is not
+   * worth a dynamic obstacle system. Contact separation is what a player actually sees: the
+   * rank in front of the body parts and closes up behind it. Note also `Obstacles.ts:206`
+   * deliberately skips a box whose top is below a man's feet, so a 1.4 m carcass would have
+   * been *taller* than the harbour boxes that rule exists for — a second reason to keep it
+   * out of that field rather than tune the rule around it.
+   *
+   * Cost is one broadphase query per carcass per tick — 32 against the main loop's 8,600.
+   */
+  private partCarcasses(): void {
+    const list = this.carcasses;
+    if (list.length === 0) return;
+    const p = this.pool;
+    const used = this.sepUsed;
+    const solids = this.masonry;
+    const collide = !solids.empty;
+
+    for (let c = 0; c < list.length; c++) {
+      const e = list[c];
+      /**
+       * Only once it is down. The fall takes about a second of sim time and the animal is
+       * still on its feet for most of it, so an obstacle that appeared on the killing blow
+       * would shove the rank that killed it away from a beast still standing in front of
+       * them. `Dead` is exactly "the death animation has finished".
+       */
+      if (p.state[e] !== SoldierState.Dead) continue;
+      const ex = p.x[e];
+      const ez = p.z[e];
+      const ey = p.y[e];
+      // The same size hash `UnitRenderSystem.pushElephant` draws the animal at, so the body
+      // a man is pushed out of is the body he can see.
+      const size = 0.9 + p.variant[e] * 0.2;
+      const half = CARCASS_HALF_LEN * size;
+      const rad = CARCASS_RADIUS * size;
+      // It fell along the heading it died facing; +Z is forward, matching `renderFacing`.
+      const ax = Math.sin(p.facing[e]) * half;
+      const az = Math.cos(p.facing[e]) * half;
+      const reach = rad + SOLDIER_RADIUS;
+
+      this.hash.query(ex, ez, half + reach, (j) => {
+        if (!p.aliveAt(j)) return;
+        // One animal does not shove another out of the way of a third's body: an elephant
+        // is far too big for this capsule to be the right shape, and the pair would fight.
+        if (this.onElephant[j] !== 0) return;
+        if (Math.abs(p.y[j] - ey) > SAME_LEVEL_DY) return;
+        // Closest point on the body's spine to this man, clamped to the segment.
+        const rx = p.x[j] - ex;
+        const rz = p.z[j] - ez;
+        const len2 = ax * ax + az * az;
+        const t = len2 > 1e-9 ? clamp((rx * ax + rz * az) / len2, -1, 1) : 0;
+        const dx = rx - ax * t;
+        const dz = rz - az * t;
+        const d2 = dx * dx + dz * dz;
+        if (d2 >= reach * reach) return;
+        // Dead centre: push him out along the body's normal rather than nowhere at all.
+        let nx: number;
+        let nz: number;
+        let overlap: number;
+        if (d2 < 1e-8) {
+          nx = az; nz = -ax;
+          const l = Math.hypot(nx, nz) || 1;
+          nx /= l; nz /= l;
+          overlap = reach;
+        } else {
+          const d = Math.sqrt(d2);
+          nx = dx / d; nz = dz / d;
+          overlap = reach - d;
+        }
+        // The carcass is immovable, so the man takes the whole correction — bounded by the
+        // same per-tick budget as every other positional write in this tick, which is what
+        // stops a man who wanders into the middle of a body being flung out of it.
+        const budget = p.state[j] === SoldierState.Fighting
+          ? MAX_SEPARATION_FIGHTING : MAX_SEPARATION_STEP;
+        const room = budget - used[j];
+        if (room <= 0) return;
+        const step = Math.min(overlap, room);
+        const tx = p.x[j] + nx * step;
+        const tz = p.z[j] + nz * step;
+        if (collide && step > 0.01 && this.elevated[j] === 0
+          && solids.blocked(tx, tz, p.y[j], SOLDIER_RADIUS)) return;
+        p.x[j] = tx;
+        p.z[j] = tz;
+        used[j] += step;
+      });
+    }
+  }
+
+  /**
+   * True if this pool entry is a war elephant — the animal, not a man riding one.
+   *
+   * Published because at least two systems outside the sim have to branch on it and both of
+   * them got it wrong by not being able to ask: `RagdollSystem` gave a four-tonne animal a
+   * man's eight-particle skeleton, and `UnitRenderSystem` then stopped drawing the animal
+   * the moment that skeleton existed.
+   */
+  ridesElephantAt(i: number): boolean {
+    return i >= 0 && i < this.onElephant.length && this.onElephant[i] !== 0;
+  }
+
+  /** Pool indices of the elephants that have been killed, in the order they died. */
+  get elephantCarcasses(): readonly number[] {
+    return this.carcasses;
   }
 
   /**
@@ -2264,6 +2406,24 @@ export class BattleSystem implements Subsystem {
 
   /** 1 if this soldier is mounted. Set at spawn; read in the crowd-separation inner loop. */
   private mounted!: Uint8Array;
+  /**
+   * 1 if this pool entry is a war elephant rather than a man.
+   *
+   * One pool slot is one whole animal plus its mahout and tower crew — see `war-elephants`
+   * in `roster.ts` — so several systems that are correct for a man are simply wrong here,
+   * and every one of them needs to be able to ask. Baked at spawn beside `mounted` for the
+   * same reason: resolving the unit and then its type inside a per-tick loop was the single
+   * most expensive thing in the tick.
+   */
+  private onElephant!: Uint8Array;
+  /**
+   * Pool indices of elephants that have been killed, in the order they died.
+   *
+   * A four-tonne carcass is a feature of the battlefield, not a decal: `partCarcasses`
+   * walks this list every tick and pushes the living out of the body. Insertion order is
+   * the order `damage` was called in, which is deterministic, so the pass is too.
+   */
+  private readonly carcasses: number[] = [];
   /** Metres this man has closed up into the press, forward of his formation slot. */
   private press!: Float32Array;
   /** Metres of crowd separation already spent on each man this tick. */
@@ -2502,6 +2662,10 @@ export class BattleSystem implements Subsystem {
 
     const killer = this.unitById(attackerUnitId);
     if (killer) killer.kills++;
+
+    // A dead elephant is scenery with mass. Registered here rather than off `soldierDied`
+    // because this is the one door into `Dying` and the list has to stay in kill order.
+    if (this.onElephant[i] !== 0 && this.carcasses.length < CARCASS_MAX) this.carcasses.push(i);
 
     this.ctx.events.emit('soldierDied', {
       x: p.x[i], y: p.y[i], z: p.z[i],

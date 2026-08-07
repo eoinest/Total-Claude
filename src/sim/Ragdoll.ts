@@ -191,6 +191,24 @@ export class RagdollSystem implements Subsystem {
   private registerDeath(i: number): void {
     if (i < 0 || i >= this.tier.length) return;
     if (this.tier[i] !== Tier.None) return;
+    /**
+     * An elephant is not a man, and it must not be given a man's skeleton.
+     *
+     * One pool entry is one whole animal (see `war-elephants` in `roster.ts`), so this
+     * handler was building an eight-particle verlet body with its pelvis at 0.95 m and its
+     * head at 1.63 m for something four metres long, and then publishing a pose for it.
+     * `UnitRenderSystem` reads `getCorpsePose` before it decides what to draw and treats a
+     * true return as "the ragdoll owns this body now" — so the effect of registering here
+     * was that the animal and its four crew stopped being written to the instance buffer on
+     * the tick of the killing blow. Measured: elephant instances 16 -> 0 and soldier
+     * instances -64 on the first frame after `damage()`, for the rest of the battle.
+     *
+     * The animal goes down on its own authored 2.6 s collapse instead and stays where it
+     * fell, which is `UnitRenderSystem.advanceElephant`. Nothing here has anything to offer
+     * it. Returning early also gives the forty simulated slots back to the men, who are the
+     * only things this solver's rest layout describes.
+     */
+    if (this.battle.ridesElephantAt(i)) return;
     const p = this.battle.pool;
 
     this.age[i] = 0;

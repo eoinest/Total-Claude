@@ -1017,6 +1017,8 @@ export function buildCarthageWall(
       blockers.push({ x1: bay.x0, z1: bay.z0, x2: bay.x1, z2: bay.z1, halfW: HALF_T });
     }
     const hasTower = towerAt(bay.index, bay.x0);
+    // The lane through this bay's west tower, from the same helper the stone is cut with.
+    const lane = hasTower ? punicTowerPass(bay, bays[bay.index - 1]) : null;
     garrisonBays.push({
       index: bay.index,
       x0: bay.x0, z0: bay.z0, x1: bay.x1, z1: bay.z1,
@@ -1039,6 +1041,10 @@ export function buildCarthageWall(
       halfThickness: HALF_T,
       towerHalf: hasTower ? TOWER_W * 0.5 : 0,
       hasTower,
+      passOuter: lane ? lane.outer : 0,
+      passInner: lane ? lane.inner : 0,
+      passLoY: lane ? lane.loY : 0,
+      passHiY: lane ? lane.hiY : 0,
       isGate: bay.isGate,
     });
   }
@@ -1189,14 +1195,15 @@ export function buildCarthageWall(
           if (!towerAt(bay.index, bay.x0)) continue;
           const prev = bays[bay.index - 1];
           const topY = Math.max(bay.walkY, prev ? prev.walkY : bay.walkY);
-          buildPunicTower(batch, detail, bay, topY, heightAt);
+          buildPunicTower(batch, detail, bay, topY, heightAt, punicTowerPass(bay, prev));
         }
         if (to === bays.length) {
           const last = slice[slice.length - 1];
+          // The far end of the circuit: a walk on one side only, so nothing to pass to.
           buildPunicTower(
             batch, detail,
             { ...last, x0: last.x1, z0: last.z1, index: bays.length },
-            last.walkY, heightAt
+            last.walkY, heightAt, null
           );
         }
       },
@@ -1752,7 +1759,8 @@ function buildPunicTower(
   detail: number,
   bay: MainBay,
   walkY: number,
-  heightAt: (x: number, z: number) => number
+  heightAt: (x: number, z: number) => number,
+  pass: TowerPass | null
 ): void {
   const stone = batch.s('stone');
   const roof = batch.s('roof');
@@ -1774,20 +1782,91 @@ function buildPunicTower(
   box(stone, -hw - 0.5, g - 1.8, -hd - 0.5, hw + 0.5, g + PLINTH_H, hd + 0.5, plinthCol, {
     batter: PLINTH_BATTER, top: false, bottom: false,
   });
-  box(stone, -hw, g + PLINTH_H, -hd, hw, top, hd, col, {
-    batter: BATTER * 0.6, bottom: false, top: false, groundShade: 0.05,
-  });
-  // Storey lines. Four storeys is a *count*, and a count has to be visible.
+  /**
+   * The shaft, with the wall-walk cut through it.
+   *
+   * **This is what the owner was looking at.** The tower was one 20 m prism from the plinth
+   * to the crown, 11 m along the wall and flush with the curtain's inner face, and this
+   * function's `walkY` argument ended at `void walkY;` — there was no opening at any height
+   * on any of the thirty-one of them, and the wall-walk simply stopped. Appian's four
+   * storeys are exactly why there is room for a passage: the storey the walk arrives at is
+   * a chamber, and a chamber astride a walk has to be walked through.
+   *
+   * The shaft is split rather than punched because `box` batters by insetting its own top
+   * face, so each piece starts at the inset the piece below it finished on and the faces
+   * stay flush. Same stream, so it costs triangles and not a draw call.
+   */
+  const bat = BATTER * 0.6;
+  const lane = pass && pass.outer - pass.inner >= PUNIC_MIN_LANE ? pass : null;
+  if (!lane) {
+    box(stone, -hw, g + PLINTH_H, -hd, hw, top, hd, col, {
+      batter: bat, bottom: false, top: false, groundShade: 0.05,
+    });
+  } else {
+    // Wall-normal offsets into the tower's own frame: local +Z is cityward and the module
+    // stands `centreOff` out along the normal, so an offset `o` is at `centreOff - o`.
+    const lz0 = centreOff - lane.outer;
+    const lz1 = centreOff - lane.inner;
+    const voidLo = Math.max(g + PLINTH_H + 0.2, lane.loY);
+    const voidHi = Math.min(top - 0.6, lane.hiY + PUNIC_PASS_HEAD);
+    const i0 = bat * (voidLo - (g + PLINTH_H));
+    const i1 = i0 + bat * (voidHi - voidLo);
+    box(stone, -hw, g + PLINTH_H, -hd, hw, voidLo, hd, col, {
+      batter: bat, bottom: false, top: false, groundShade: 0.05,
+    });
+    // Field side of the lane, city side of it, and the storeys above it.
+    box(stone, -hw + i0, voidLo, -hd + i0, hw - i0, voidHi, lz0, col,
+      { batter: bat, bottom: false, top: false, groundShade: 0.05 });
+    box(stone, -hw + i0, voidLo, lz1, hw - i0, voidHi, hd - i0, col,
+      { batter: bat, bottom: false, top: false, groundShade: 0.05 });
+    box(stone, -hw + i1, voidHi, -hd + i1, hw - i1, top, hd - i1, col,
+      { batter: bat, bottom: false, top: false, groundShade: 0.05 });
+    /**
+     * The passage floor, and the flight that carries it over the bay-to-bay step.
+     *
+     * Carthage steps its construction level every bay and its towers stand every other
+     * one, so thirteen of thirty-one joints climb 0.5 to 2.0 m inside the tower. Local +X
+     * runs west to east; the sign is the whole of the correctness here.
+     */
+    const rise = lane.hiY - lane.loY;
+    const treads = rise < 0.06 ? 1 : Math.min(12, Math.max(1, Math.ceil(rise / 0.31)));
+    const east = lane.loIsWest ? 1 : -1;
+    const going = Math.min(0.4, (TOWER_W + 1.0) / treads);
+    for (let k = 0; k < treads; k++) {
+      const y = lane.loY + (rise * (k + 1)) / treads;
+      const cut = k * going;
+      const a = east > 0 ? -hw - 0.5 + cut : -hw - 0.5;
+      const b = east > 0 ? hw + 0.5 : hw + 0.5 - cut;
+      box(stone, a, lane.loY - 0.4, lz0, b, y, lz1, plinthCol, { bottom: false, topGain: 1.05 });
+    }
+  }
+  /**
+   * Storey lines. Four storeys is a *count*, and a count has to be visible.
+   *
+   * Cut around the doorway where one lands inside it. The third course sits at `g + 15`
+   * against a walk at `g + 13.7`, so it ran as a solid 0.26 m slab across the tower 0.9 m
+   * over a man's head-height passage — and it is a *string course*, an external band, not
+   * a floor: measured, it was the thing that took nine of the thirty-one passages back
+   * under a shoulder's width at chest height after the shaft had been opened.
+   */
   if (detail >= 1) {
+    const laneBand = lane
+      ? { z0: centreOff - lane.outer, z1: centreOff - lane.inner,
+        lo: lane.loY - 0.1, hi: Math.min(top - 0.6, lane.hiY + PUNIC_PASS_HEAD) + 0.1 }
+      : null;
     for (let s = 1; s < PUNIC.towerStoreys; s++) {
       const y = g + s * TOWER_STOREY;
       const inset = BATTER * 0.6 * (y - (g + PLINTH_H));
-      box(
-        stone,
-        -hw - 0.20 + inset, y, -hd - 0.20 + inset,
-        hw + 0.20 - inset, y + 0.26, hd + 0.20 - inset,
-        plinthCol, { bottom: false }
-      );
+      const a = -hw - 0.20 + inset;
+      const b = hw + 0.20 - inset;
+      const c0 = -hd - 0.20 + inset;
+      const c1 = hd + 0.20 - inset;
+      if (laneBand && y + 0.26 > laneBand.lo && y < laneBand.hi) {
+        box(stone, a, y, c0, b, y + 0.26, laneBand.z0, plinthCol, { bottom: false });
+        box(stone, a, y, laneBand.z1, b, y + 0.26, c1, plinthCol, { bottom: false });
+      } else {
+        box(stone, a, y, c0, b, y + 0.26, c1, plinthCol, { bottom: false });
+      }
     }
   }
   // The chamber's openings: a tall arched window per face per storey above the walk, and
@@ -1825,6 +1904,53 @@ function buildPunicTower(
     roof.pop();
   }
   void walkY;
+}
+
+/** A man is 0.84 m across the shoulders; anything narrower is not a doorway. */
+const PUNIC_MIN_LANE = 0.9;
+/** Clear head over the higher of the two walks a tower joins, metres. */
+const PUNIC_PASS_HEAD = 2.3;
+/** Stone left standing behind the passage, on the tower's city face. */
+const PUNIC_PASS_BACK = 1.0;
+
+/** The lane through a tower, and the two walks it joins. Mirrors `wall.ts towerLane`. */
+interface TowerPass {
+  outer: number;
+  inner: number;
+  loY: number;
+  hiY: number;
+  /** True when the *west* neighbour is the lower walk, so the flight inside climbs east. */
+  loIsWest: boolean;
+}
+
+/**
+ * The lane through the tower at `bay.x0`, or null where there is not one.
+ *
+ * **The one place the doorway is decided on this circuit**, called by the bay record the
+ * siege system reads and by the stone `buildPunicTower` lays, so a hole and the path
+ * through it cannot drift apart. Rome learned that the expensive way: its opening was a
+ * pair of constants sized for a 3.5 m curtain and the path ran 1.36 m past the far jamb.
+ *
+ * Carthage's wall is 9.1 m thick and its standing band 5.7 m, so the lane is the whole
+ * band — which is not a licence, it is what a *casemated* wall is. The tower keeps
+ * `PUNIC_PASS_BACK` of stone on its city face and all 7.7 m of its projection.
+ */
+function punicTowerPass(bay: MainBay, prev: MainBay | undefined): TowerPass | null {
+  if (!prev) return null;
+  const here = walkGeometry(bay);
+  const west = walkGeometry(prev);
+  const outer = Math.min(here.outerOff, west.outerOff);
+  const inner = Math.max(
+    Math.max(here.innerOff, west.innerOff),
+    -(HALF_T - PUNIC_PASS_BACK)
+  );
+  if (outer - inner < PUNIC_MIN_LANE) return null;
+  return {
+    outer, inner,
+    loY: Math.min(bay.walkY, prev.walkY),
+    hiY: Math.max(bay.walkY, prev.walkY),
+    loIsWest: prev.walkY <= bay.walkY,
+  };
 }
 
 /**
