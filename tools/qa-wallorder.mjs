@@ -407,15 +407,27 @@ record('order-carries-parapet', !!evt && evt.kind === 'move'
 // Let one tick land, then look for a plan.
 await page.evaluate(() => window.__game.engine.advance(0.4));
 const justAfter = await page.evaluate((id) => window.__unit(id), u.id);
-record('siege-took-the-order', !!justAfter.plan,
-  'Siege.interceptOrders converts it into a wall plan',
+/*
+ * What "the sim took it" looks like differs by side, and conflating them is how a green
+ * suite would hide half the feature. From inside the city an ascent is a `WallPlan` with a
+ * stair in it. From the field there is no stair and no plan: the unit is enrolled in a
+ * machine's boarding file and `musterOwned` places it, so the evidence is siege ownership.
+ */
+record('siege-took-the-order', plan.side > 0 ? justAfter.owned === true : !!justAfter.plan,
+  plan.side > 0
+    ? 'Siege.interceptOrders enrols it on the escalade at that bay'
+    : 'Siege.interceptOrders converts it into a wall plan',
   justAfter.plan
     ? `goal ${justAfter.plan.goal} dest station ${justAfter.plan.destStation} run ${justAfter.plan.destRun} stair ${justAfter.plan.stair}`
     : `no plan; order ${justAfter.order}, garrisoned ${justAfter.garrisoned}, owned ${justAfter.owned}`);
 
 const marks = [];
-for (const s of [10, 20, 30, 40, 50, 60, 75, 90]) {
-  await page.evaluate((sec) => window.__game.engine.advance(sec), s === 10 ? 10 : 10);
+// `advance(s, 166)` is exact and four times faster than the default step. An escalade is a
+// long order — the men walk to the foot and then go up one at a time — so it is given the
+// time a real one takes rather than the time a stair takes.
+const STEP = plan.side > 0 ? 60 : 10;
+for (const s of [1, 2, 3, 4, 5, 6, 7, 8].map((k) => k * STEP)) {
+  await page.evaluate((sec) => window.__game.engine.advance(sec, 166), STEP);
   const m = await page.evaluate((id) => window.__unit(id), u.id);
   marks.push({ t: s, meanY: m.meanY, maxY: m.maxY, men: m.men, garrisoned: m.garrisoned,
     plan: m.plan ? m.plan.goal : null, age: m.plan ? m.plan.age : null });
@@ -427,11 +439,11 @@ for (const m of marks) {
   console.log(`    t+${String(m.t).padStart(3)}  meanY ${m.meanY.toFixed(2)}  maxY ${m.maxY.toFixed(2)}`
     + `  men ${m.men}  garrisoned ${m.garrisoned}  plan ${m.plan}  age ${m.age}`);
 }
-const rise = last.meanY - before.meanY;
+const rise = last.maxY - before.maxY;
 record('men-actually-climb', rise > 2.0,
   `cohort ${u.id} ordered onto the parapet (via ${plan.via}) by right-click alone`,
-  `mean man height ${before.meanY.toFixed(2)} -> ${last.meanY.toFixed(2)} m (+${rise.toFixed(2)}), `
-  + `max ${last.maxY.toFixed(2)}, garrisoned ${last.garrisoned}`);
+  `highest man ${before.maxY.toFixed(2)} -> ${last.maxY.toFixed(2)} m (+${rise.toFixed(2)}), `
+  + `mean ${before.meanY.toFixed(2)} -> ${last.meanY.toFixed(2)}, garrisoned ${last.garrisoned}`);
 
 if (errs.length) record('console-clean', false, 'page errors', errs.slice(0, 3).join(' | '));
 

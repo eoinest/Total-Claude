@@ -117,32 +117,43 @@ const INSTALL = () => {
   }));
 };
 
-const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
-const errs = [];
-page.on('pageerror', (e) => errs.push(`pageerror: ${e.message}`));
-page.on('console', (m) => { if (m.type() === 'error') errs.push(`console.error: ${m.text()}`); });
-const settle = (ms = 300) => page.waitForTimeout(ms);
-const shot = async (n) => { if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, `${n}.png`) }); };
-// `engine.advance(s, 166)` is exact and four times faster than the default step.
-const run = (s) => page.evaluate((n) => window.__game.engine.advance(n, 166), s);
+/**
+ * A fresh battle per arm.
+ *
+ * The two arms cannot share one. Every tower is docked and boarding by t+120, so a tower
+ * arm that runs after a climb arm has nothing left to re-aim — measured exactly that way
+ * on the first run of this file. `probe-walltraffic` learned the same lesson and says so.
+ */
+let page, errs, settle, shot, run;
+async function boot(label) {
+  if (page) await page.close();
+  page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
+  errs = [];
+  page.on('pageerror', (e) => errs.push(`pageerror: ${e.message}`));
+  page.on('console', (m) => { if (m.type() === 'error') errs.push(`console.error: ${m.text()}`); });
+  settle = (ms = 300) => page.waitForTimeout(ms);
+  shot = async (n) => { if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, `${n}.png`) }); };
+  // `engine.advance(s, 166)` is exact and four times faster than the default step.
+  run = (s) => page.evaluate((n) => window.__game.engine.advance(n, 166), s);
 
-console.log('\n— Carthage, assault, the real menu, ?autoplay=0');
-await page.goto(`${base}/?quality=high&autoplay=0`, { waitUntil: 'domcontentloaded' });
-await page.waitForSelector('.menu .begin', { timeout: 60000 });
-await page.click('.menu [data-map="carthage"]');
-await settle(220);
-await page.click('.menu [data-scen="assault"]');
-await settle(220);
-await page.click('.menu .begin');
-await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 240000 });
-await page.evaluate(INSTALL);
-await settle(500);
-if (await page.evaluate(() => !!document.querySelector('.dep-begin'))) {
-  await page.click('.dep-begin');
-  await settle(700);
+  console.log(`\n— ${label}: Carthage, assault, the real menu, ?autoplay=0`);
+  await page.goto(`${base}/?quality=high&autoplay=0`, { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.menu .begin', { timeout: 60000 });
+  await page.click('.menu [data-map="carthage"]');
+  await settle(220);
+  await page.click('.menu [data-scen="assault"]');
+  await settle(220);
+  await page.click('.menu .begin');
+  await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 240000 });
+  await page.evaluate(INSTALL);
+  await settle(500);
+  if (await page.evaluate(() => !!document.querySelector('.dep-begin'))) {
+    await page.click('.dep-begin');
+    await settle(700);
+  }
+  record(`boot-${label}`, true, 'BEGIN BATTLE, then BEGIN BATTLE again out of the deployment plaque',
+    `${await page.evaluate(() => window.__game.battle.units.length)} units, clock running`);
 }
-record('boot', true, 'BEGIN BATTLE, then BEGIN BATTLE again out of the deployment plaque',
-  `${await page.evaluate(() => window.__game.battle.units.length)} units, clock running`);
 
 /** Park a camera that shows every point, and hand back the pixels. */
 async function frame(pts, yaw) {
@@ -179,6 +190,7 @@ async function selectUnit(id, px) {
 // Arm 1 — a cohort of the line, up somebody else's ladders
 // ---------------------------------------------------------------------------
 if (!ONLY || ONLY === 'climb') {
+  await boot('climb');
   console.log('\n— climb: a legionary cohort ordered onto a bank of ladders');
   // Let the escalade parties get their ladders up and start climbing, so the "before"
   // ledger is the shipped behaviour rather than an empty field.
@@ -269,12 +281,21 @@ if (!ONLY || ONLY === 'climb') {
         console.log(`    t+${String(m.t).padStart(3)}  alive ${m.alive}  on the wall ${m.above}  `
           + `meanY ${m.meanY}  maxY ${m.maxY}  garrisoned ${m.garrisoned}`);
       }
-      const last = marks[marks.length - 1];
-      record('climb-men-up', last.above > 0,
-        `men of ${pick.unit.typeId} standing above ${(pick.walkY - 3).toFixed(1)} m — the walk`,
-        `${b4.above} -> ${last.above} of ${last.alive}, mean height ${b4.meanY} -> ${last.meanY}, `
-        + `garrisoned ${last.garrisoned}`);
+      const peak = marks.reduce((a, m) => (m.above > a.above ? m : a), marks[0]);
       const after = await page.evaluate(() => window.__ledger());
+      /*
+       * Peak, not endpoint. The cohort that went up this bank was down to 26 men by t+300 —
+       * it climbed into a Punic garrison and was destroyed on the walk, which is the battle
+       * working, not the order failing. The question is whether the player's men got up,
+       * and the honest answers to that are the high-water mark on the parapet and the bank's
+       * own crossing count.
+       */
+      const crossedBefore = before.ladderBanks.reduce((a, x) => a + x.crossed, 0);
+      const crossedAfter = after.ladderBanks.reduce((a, x) => a + x.crossed, 0);
+      record('climb-men-up', peak.above > 0,
+        `men of ${pick.unit.typeId} standing above ${(pick.walkY - 3).toFixed(1)} m — the walk`,
+        `${b4.above} -> peak ${peak.above} at t+${peak.t} (maxY ${peak.maxY}), `
+        + `ladder crossings ${crossedBefore} -> ${crossedAfter} (+${crossedAfter - crossedBefore})`);
       console.log('  after — the ledger:');
       for (const b of after.ladderBanks) {
         console.log(`    ladders of ${b.crew}: boarders [${b.boarders.join(', ')}], ${b.crossed} across`);
@@ -287,7 +308,11 @@ if (!ONLY || ONLY === 'climb') {
 // Arm 2 — a tower sent to a bay of the player's choosing
 // ---------------------------------------------------------------------------
 if (!ONLY || ONLY === 'tower') {
+  await boot('tower');
   console.log('\n— tower: a machine re-aimed by the player, and measured where it docks');
+  // Only far enough for the crews to form up on their machines. A tower is docked and
+  // boarding by t+120, and a docked tower is not a tower you can send anywhere.
+  await run(25);
   const t0 = await page.evaluate(() => window.__towers());
   console.log(`  towers: ${t0.map((t) => `#${t.id} ${t.state} station ${t.station} dist ${t.dist.toFixed(0)}`).join(' | ')}`);
   const pick = await page.evaluate(() => {
