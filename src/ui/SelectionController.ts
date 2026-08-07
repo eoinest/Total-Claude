@@ -457,6 +457,7 @@ export class SelectionController {
     // plaque's box, so the field stays clickable everywhere else.
     input.uiCapture = this.ptr.overUi || this.overBanner >= 0;
 
+    this.refreshStorming();
     this.updateGround(ctx, heightAt);
     const hovered = this.pickUnit(ctx);
     if (!this.ptr.overUi) this.model.hoveredId = hovered;
@@ -659,16 +660,31 @@ export class SelectionController {
    * probe exists, so a field battle answers false without a call.
    */
   private selectionIsStorming(): boolean {
+    return this.storming;
+  }
+
+  /**
+   * Recompute `storming` — once a frame, and not on every question that wants it.
+   *
+   * `Siege.wallSideAt` is a linear scan over every station on the circuit, and its own
+   * comment promises it is "only ever called on an order". The cursor asks this question up
+   * to four times a frame (the pick, the hover marker, the hit test and the cursor glyph), so
+   * asking the sim each time would put fifteen hundred distance tests per selected unit into
+   * the frame path to answer a question whose answer cannot change inside one frame.
+   */
+  private storming = false;
+  private refreshStorming(): void {
+    this.storming = false;
     const probe = this.wallProbe;
-    if (!probe) return false;
+    if (!probe) return;
     const sel = this.model.selectedViews;
-    if (sel.length === 0) return false;
+    if (sel.length === 0) return;
     let out = 0;
     for (const v of sel) {
       if (probe.isGarrisoned(v.id)) continue;
       if (probe.sideAt(v.cx, v.cz) > 0) out++;
     }
-    return out > sel.length * 0.5;
+    this.storming = out > sel.length * 0.5;
   }
 
   private wallIntent(): 'ascend' | 'traverse' | 'descend' | 'storm' | null {
