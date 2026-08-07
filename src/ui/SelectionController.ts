@@ -58,6 +58,15 @@ const FRONTAGE_MIN_M = 6;
  * cohort at 107 files, about 92 m, which is still two and a half times its natural frontage.
  */
 const MIN_RANKS = 3;
+/**
+ * Floor under the pick slack, in world metres.
+ *
+ * The slack is seven pixels converted to metres so a thin skirmish line stays pickable when
+ * zoomed out, and it is capped at nine metres so it does not get sloppy. It had no floor, and
+ * at close zoom seven pixels is **13 cm** — well inside the men's own footprint slack, so
+ * every click on a cohort had to be dead on the block.
+ */
+const PICK_SLACK_M = 1.1;
 
 const FOOT: Footprint = { cx: 0, cz: 0, halfW: 1, halfD: 1, cos: 1, sin: 0 };
 const PROJECTED: Projected = { x: 0, y: 0, distance: 0, visible: false };
@@ -653,8 +662,9 @@ export class SelectionController {
     // never lands on the ground the unit is standing on.
     if (this.overBanner >= 0) return this.overBanner;
     // A few pixels of slack in world units keeps thin skirmish lines pickable when
-    // zoomed out, without making close-up picking sloppy.
-    const slack = Math.min(9, ctx.rig.metresPerPixel(ctx.viewH) * 7);
+    // zoomed out, without making close-up picking sloppy. The floor matters at close
+    // zoom, where seven pixels is 13 cm and every click had to be dead on the block.
+    const slack = Math.max(PICK_SLACK_M, Math.min(9, ctx.rig.metresPerPixel(ctx.viewH) * 7));
     let best = -1;
     let bestD = Infinity;
     for (const v of this.model.views) {
