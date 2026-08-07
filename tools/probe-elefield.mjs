@@ -399,7 +399,7 @@ for (const c of CAMS) {
 // ---------------------------------------------------------------------------
 // 5. Men over the body.
 // ---------------------------------------------------------------------------
-const part = await page.evaluate(async ({ v }) => {
+const marchOver = async (wantMounted) => page.evaluate(async ({ v, wantMounted }) => {
   const g = window.__game;
   const b = g.battle;
   const p = b.pool;
@@ -409,10 +409,11 @@ const part = await page.evaluate(async ({ v }) => {
    *
    * Ordering the nearest Roman cohort over the body and watching is not a test: the tactical
    * AI re-plans every few ticks and took the order straight back off it, and the closest any
-   * man came in a minute was ten metres. The claim under test is "a man cannot stand inside
-   * four tonnes of dead animal", so put a whole century on a collision course with it and
-   * hold them there. The AI is stubbed only for this arm and only after every other
-   * measurement in this run is finished.
+   * man came in a minute was ten metres. The claim under test is "nothing alive can stand
+   * inside four tonnes of dead animal", so put a whole unit on a collision course with it.
+   * The AI is stubbed only for this arm and only after every other measurement in this run
+   * is finished. Run twice, foot and horse, because they have different keep-outs and the
+   * horse is the one that was broken.
    */
   for (const name of ['tactical-ai', 'general-ai', 'battleFlow', 'autoEngage', 'morale']) {
     const sys = g.engine.ctx.tryGet(name);
@@ -424,15 +425,35 @@ const part = await page.evaluate(async ({ v }) => {
     if (u.destroyed || u.alive === 0 || u.faction !== 0) continue;
     const i = u.members.find((m) => p.aliveAt(m));
     if (i === undefined) continue;
+    if ((b.mounted[i] !== 0) !== wantMounted) continue;
     const d = Math.hypot(p.x[i] - bx, p.z[i] - bz);
     if (d < bestD) { bestD = d; best = u; }
   }
-  if (!best) return { error: 'no roman unit' };
+  if (!best) return { error: `no roman ${wantMounted ? 'cavalry' : 'infantry'}` };
+  /*
+   * Whoever marched last is put well aside, so two arms cannot stand in each other's way.
+   *
+   * `!= null` and not a truthiness test: the first unit to march had `id` 0, the guard read
+   * it as "nobody has marched yet", and the 320-man cohort was left standing on the body
+   * while the cavalry arm tried to form up 22 m short of the same point. That arm then
+   * measured the horse never getting closer than 18 m and looked like a clean pass.
+   */
+  if (window.__lastMarch != null && window.__lastMarch !== best.id) {
+    const prev = b.unitById(window.__lastMarch);
+    if (prev) {
+      for (const i of prev.members) { p.x[i] += 180; p.px[i] += 180; }
+      prev.order = UnitOrder.Hold;
+      prev.targetX = p.x[prev.members[0]];
+      prev.targetZ = p.z[prev.members[0]];
+      prev.waypoints.length = 0;
+    }
+  }
+  window.__lastMarch = best.id;
   // Form them up 22 m short of the body, in ranks square to it, and send them straight over.
   const alive = best.members.filter((m) => p.aliveAt(m));
   const heading = 0;
-  const width = 20;
-  const pitch = 0.86;
+  const width = wantMounted ? 12 : 20;
+  const pitch = wantMounted ? 1.9 : 0.86;
   for (let k = 0; k < alive.length; k++) {
     const i = alive[k];
     const file = (k % width) - (width - 1) / 2;
@@ -443,30 +464,45 @@ const part = await page.evaluate(async ({ v }) => {
     p.y[i] = b.groundAt(p.x[i], p.z[i]);
     p.facing[i] = heading; p.prevFacing[i] = heading;
   }
+  /*
+   * Move the *unit* as well as its men.
+   *
+   * `UnitGroupState.x/z` is the formation anchor and `steerSoldiers` builds every slot from
+   * it. Writing the men's positions alone leaves the anchor where the unit was, so the
+   * formation immediately drags them back: the cavalry arm advanced 0.4 m, turned round and
+   * walked home, and reported "closest approach 18 m" as if the obstacle had worked.
+   */
+  best.x = bx;
+  best.z = bz - 22;
   best.order = UnitOrder.MoveTo;
   best.facing = heading;
+  best.targetFacing = heading;
   best.targetX = bx;
   best.targetZ = bz + 26;
   best.running = false;
   best.waypoints.length = 0;
-  return {
-    unit: String(best.name ?? best.id), alive: alive.length,
-    formedAt: 22, throughTo: 26,
-  };
-}, { v: pick.victim });
-console.log(`\n"${part.unit}" (${part.alive} men) formed 22 m short of the body and ordered `
-  + 'straight over it');
-report.part = part;
+  return { unit: String(best.name ?? best.id), alive: alive.length, mounted: wantMounted };
+}, { v: pick.victim, wantMounted });
 
+/**
+ * How close the living get to the body, measured as `BattleSystem.partCarcasses` measures it.
+ *
+ * The figure reported is clearance from the *body's own surface* — the 1.30 m capsule radius
+ * scaled by the animal's size hash — with the man's keep-out taken back off, so 0 means his
+ * own body is exactly touching the animal's and a negative figure is overlap. Foot and
+ * mounted are kept apart because they have different keep-outs (0.42 m against 1.05 m) and
+ * pooling them hides the case that was actually broken.
+ */
 const capsule = async () => page.evaluate(({ v }) => {
   const b = window.__game.battle;
   const p = b.pool;
-  const HALF = 1.05; const RAD = 1.30; const SOLDIER_R = 0.30;
+  const HALF = 1.05; const RAD = 1.30; const FOOT_R = 0.42; const MOUNT_R = 1.05;
   const size = 0.9 + p.variant[v] * 0.2;
   const half = HALF * size; const rad = RAD * size;
   const ax = Math.sin(p.facing[v]) * half;
   const az = Math.cos(p.facing[v]) * half;
-  let nearest = Infinity; let inside = 0; let within5 = 0;
+  let foot = Infinity; let mount = Infinity;
+  let inside = 0; let within5 = 0; let mounted5 = 0;
   for (let j = 0; j < p.count; j++) {
     if (!p.aliveAt(j)) continue;
     if (b.ridesElephantAt(j)) continue;
@@ -474,45 +510,59 @@ const capsule = async () => page.evaluate(({ v }) => {
     const len2 = ax * ax + az * az;
     const t = len2 > 1e-9 ? Math.max(-1, Math.min(1, (rx * ax + rz * az) / len2)) : 0;
     const dx = rx - ax * t; const dz = rz - az * t;
-    const d = Math.hypot(dx, dz) - rad - SOLDIER_R;
-    if (d < nearest) nearest = d;
+    const isMounted = b.mounted[j] !== 0;
+    const d = Math.hypot(dx, dz) - rad - (isMounted ? MOUNT_R : FOOT_R);
+    if (isMounted) { if (d < mount) mount = d; } else if (d < foot) foot = d;
     if (d < 0) inside++;
-    if (d < 5) within5++;
+    if (d < 5) { within5++; if (isMounted) mounted5++; }
   }
   return {
-    nearest: Number.isFinite(nearest) ? +nearest.toFixed(3) : null,
-    inside, within5, simTime: +window.__game.simTime().toFixed(1),
+    foot: Number.isFinite(foot) ? +foot.toFixed(3) : null,
+    mount: Number.isFinite(mount) ? +mount.toFixed(3) : null,
+    nearest: +Math.min(foot, mount).toFixed(3),
+    inside, within5, mounted5, simTime: +window.__game.simTime().toFixed(1),
   };
 }, { v: pick.victim });
 
-report.march = [await capsule()];
-let step = 0;
-for (const s of [3, 3, 3, 3, 4, 4, 5, 5, 10, 10]) {
-  await page.evaluate((sec) => window.__game.engine.advance(sec, 166), s);
-  report.march.push(await capsule());
-  step++;
-  if (step === 4 || step === 6 || step === 8) {
-    await aim(after.x, after.z, 0.40, sideYaw);
-    await shot(`i${step}-march-side`);
-    await aim(after.x, after.z, 0.44, sideYaw + Math.PI / 2);
-    await shot(`i${step}-march-along`);
+report.march = {};
+report.partVerdict = {};
+for (const arm of ['foot', 'horse']) {
+  const tag = arm === 'foot' ? 'i' : 'j';
+  const info = await marchOver(arm === 'horse');
+  report.part = { ...(report.part ?? {}), [arm]: info };
+  if (info.error) { console.log(`\n${arm}: ${info.error}`); continue; }
+  console.log(`\n"${info.unit}" (${info.alive} ${arm === 'horse' ? 'horsemen' : 'men'}) formed `
+    + '22 m short of the body and ordered straight over it');
+  const rows = [await capsule()];
+  let step = 0;
+  for (const s of [3, 3, 3, 3, 4, 4, 5, 6, 8]) {
+    await page.evaluate((sec) => window.__game.engine.advance(sec, 166), s);
+    rows.push(await capsule());
+    step++;
+    if (step === 4 || step === 6) {
+      await aim(after.x, after.z, 0.38, sideYaw);
+      await shot(`${tag}${step}-${arm}-side`);
+      await aim(after.x, after.z, 0.44, sideYaw + Math.PI / 2);
+      await shot(`${tag}${step}-${arm}-along`);
+    }
   }
+  report.march[arm] = rows;
+  console.log(`=== ${arm.toUpperCase()} ORDERED OVER THE BODY ===`);
+  console.log('  t   clearFoot  clearMount  overlapping  within5m  ofThoseMounted');
+  for (const r of rows) {
+    console.log(`${String(r.simTime).padStart(6)} ${String(r.foot).padStart(10)} `
+      + `${String(r.mount).padStart(11)} ${String(r.inside).padStart(12)} `
+      + `${String(r.within5).padStart(9)} ${String(r.mounted5).padStart(15)}`);
+  }
+  const worstInside = Math.max(...rows.map((r) => r.inside));
+  const closest = Math.min(...rows.map((r) => (arm === 'horse' ? r.mount : r.foot) ?? Infinity));
+  const passed = Math.max(...rows.map((r) => r.within5));
+  report.partVerdict[arm] = { worstInside, closest: +closest.toFixed(3), passed };
+  console.log(`${passed} came within 5 m; closest approach to the body's surface `
+    + `${closest.toFixed(3)} m; most ever overlapping it: ${worstInside}`);
+  await aim(after.x, after.z, 0.38, sideYaw);
+  await shot(`${tag}9-${arm}-final`);
 }
-console.log('\n=== A COHORT ORDERED OVER THE BODY ===');
-console.log('  t   nearest(m)  menInsideBody  menWithin5m');
-for (const r of report.march) {
-  console.log(`${String(r.simTime).padStart(6)} ${String(r.nearest).padStart(11)} `
-    + `${String(r.inside).padStart(14)} ${String(r.within5).padStart(12)}`);
-}
-const worstInside = Math.max(...report.march.map((r) => r.inside));
-const closest = Math.min(...report.march.map((r) => r.nearest ?? Infinity));
-report.partVerdict = { worstInside, closest: +closest.toFixed(3) };
-console.log(`closest any living man came to the body's surface: ${closest.toFixed(3)} m; `
-  + `most men ever standing inside it: ${worstInside}`);
-await aim(after.x, after.z, 0.40, sideYaw);
-await shot('i9-march-final');
-await aim(after.x, after.z, 0.52, sideYaw);
-await shot('i9-march-wide');
 
 report.errors = errors;
 console.log(errors.length ? `\npage errors: ${errors.length}` : '\nno page errors');
