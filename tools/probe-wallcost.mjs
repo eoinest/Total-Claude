@@ -40,14 +40,13 @@ await page.goto(`${base}/?harness=1&scenario=assault&autoplay=1&quality=low${MAP
   { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 180000 });
 
-await page.evaluate(`
-window.__wc = await (async () => {
+await page.evaluate(async () => {
   const g = window.__game;
   g.engine.stop();
   const prof = await import('/src/ai/profile.ts');
   const t = g.engine.context.get('tactical-ai');
   const keep = t.wall;
-  return {
+  window.__wc = {
     warm: (s) => g.engine.advance(s, 166),
     arm: (on, s) => {
       t.wall = on ? keep : null;
@@ -65,8 +64,7 @@ window.__wc = await (async () => {
     men: () => g.battle.pool.count,
     t: () => +g.engine.time.simTime.toFixed(1),
   };
-})();
-`);
+});
 
 await page.evaluate(`window.__wc.warm(${WARM})`);
 const men = await page.evaluate('window.__wc.men()');
