@@ -251,16 +251,37 @@ export class PostFXSystem implements Subsystem {
 
   private allocate(ctx: EngineContext): void {
     this.renderer.getDrawingBufferSize(this.dbSize);
-    this.w = Math.max(1, Math.floor(this.dbSize.x));
-    this.h = Math.max(1, Math.floor(this.dbSize.y));
+    const w = Math.max(1, Math.floor(this.dbSize.x));
+    const h = Math.max(1, Math.floor(this.dbSize.y));
+    const maxSamples = this.renderer.capabilities.maxSamples ?? 0;
+    const samples = Math.min(this.samplesOverride ?? MSAA_SAMPLES[ctx.quality.tier] ?? 0, maxSamples);
+
+    this.lastCtx = ctx;
+
+    /*
+     * Nothing below changes unless one of those three does, so reallocating on an unchanged
+     * triple destroys nineteen render targets and rebuilds them identically.
+     *
+     * That was not hypothetical. `resize()` is called unconditionally, and `Engine.setQuality`
+     * calls `resize` on every subsystem — so switching from `high` to `ultra`, which changes
+     * neither the drawing buffer nor the sample count (both tiers are 4), threw away and
+     * rebuilt the whole chain along with the TAA history. It is also the difference between a
+     * resolution lever that can be stepped and one that cannot: a continuous scale drives this
+     * path on every adjustment, and the cost of an adjustment is the cost of this function.
+     *
+     * The guard has to sit after `lastCtx` is stored, because `setSamplesOverride` reallocates
+     * through the remembered context and a skipped call must not leave a stale one behind.
+     */
+    if (this.mainA && w === this.w && h === this.h && samples === this.samples) return;
+
+    this.w = w;
+    this.h = h;
 
     this.freeTargets();
 
     // The one target the world is rasterised into, and so the only one where extra
     // geometric samples can be taken. Everything downstream is a fullscreen blit.
-    const maxSamples = this.renderer.capabilities.maxSamples ?? 0;
-    this.lastCtx = ctx;
-    this.samples = Math.min(this.samplesOverride ?? MSAA_SAMPLES[ctx.quality.tier] ?? 0, maxSamples);
+    this.samples = samples;
     this.sceneRT = this.makeRT({ hdr: true, depth: true, samples: this.samples });
     this.mainA = this.makeRT({ hdr: true });
     this.mainB = this.makeRT({ hdr: true });
