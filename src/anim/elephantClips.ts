@@ -489,30 +489,51 @@ clips.set('attack', buildOverlay(ELEPHANT_RIG, base, {
 // ---------------------------------------------------------------------------
 // Death
 // ---------------------------------------------------------------------------
-// The legs buckle and it goes down on one side. Slow — four tonnes does not drop quickly —
-// and the root sinks 1.5 m, which is most of the way from a standing shoulder to a lying one.
+/**
+ * The legs buckle and it goes down on one side. Slow — four tonnes does not drop quickly.
+ *
+ * **The last frame of this clip is the carcass**, and it is the only frame most players will
+ * ever look at for more than a second: nothing removes a dead elephant from the field, so
+ * the pose it holds is a permanent feature of the battlefield. It is therefore authored
+ * against measured bone heights (`tools/scratch/eleposedeath.mjs` prints every bone's world
+ * y on frames 0, 13 and 25) rather than by eye, to two rules:
+ *
+ *   1. **Nothing may be under the ground.** The first version rolled the body 78 degrees
+ *      with the legs still hanging straight, and a roll swings a foot 0.65 m off the
+ *      centreline through 1.3 m of arc: the two right-side feet finished 0.47 m and 0.19 m
+ *      *below* the terrain and the trunk tip 0.16 m below it, while the left hind leg stood
+ *      1.06 m in the air. The counter is to fold the legs hard — knees to 128 degrees,
+ *      hocks to -104 — so all four feet sit near the body's own centreline and the roll
+ *      moves them along the ground instead of through it.
+ *   2. **The spine lands at the animal's own half-width.** A body 1.9 m across lying on its
+ *      side puts the barrel about 0.95 m up. The root sink is 1.32 m from a 2.30 m pelvis,
+ *      which lands it there; 1.5 m put the whole animal a third of a metre into the turf.
+ */
 clips.set('death', buildOverlay(ELEPHANT_RIG, base, {
   name: 'death',
   frames: 26,
   duration: 2.6,
   loop: false,
   tracks: [
-    { bone: EB.root, keys: [[0, 0, 0, 0], [0.25, -6, 0, 8], [0.6, 4, 0, 46], [1, 6, 0, 78]] },
-    { bone: EB.neck, keys: [[0, 0, 0, 0], [0.4, -14, 0, 0], [1, 18, 0, 0]] },
-    { bone: EB.head, keys: [[0, 0, 0, 0], [0.45, -10, 0, 0], [1, 22, 0, -12]] },
-    // The forelegs fold first, which is how a collapsing elephant actually goes down.
-    { bone: EB.fShoulderL, keys: [[0, 0, 0, 0], [0.3, -26, 0, 0], [1, -46, 0, 0]] },
-    { bone: EB.fShoulderR, keys: [[0, 0, 0, 0], [0.34, -22, 0, 0], [1, -42, 0, 0]] },
-    { bone: EB.fKneeL, keys: [[0, 0, 0, 0], [0.3, 54, 0, 0], [1, 86, 0, 0]] },
-    { bone: EB.fKneeR, keys: [[0, 0, 0, 0], [0.34, 48, 0, 0], [1, 82, 0, 0]] },
-    { bone: EB.bHipL, keys: [[0, 0, 0, 0], [0.55, 18, 0, 0], [1, 34, 0, 0]] },
-    { bone: EB.bHipR, keys: [[0, 0, 0, 0], [0.6, 14, 0, 0], [1, 30, 0, 0]] },
-    { bone: EB.bHockL, keys: [[0, 0, 0, 0], [0.55, -30, 0, 0], [1, -58, 0, 0]] },
-    { bone: EB.bHockR, keys: [[0, 0, 0, 0], [0.6, -26, 0, 0], [1, -54, 0, 0]] },
-    ...trunkSway(6, 1, -18),
+    { bone: EB.root, keys: [[0, 0, 0, 0], [0.25, -6, 0, 8], [0.6, 4, 0, 46], [1, 5, 0, 84]] },
+    // The neck straightens as the head goes over, and the skull comes to rest cheek-down.
+    { bone: EB.neck, keys: [[0, 0, 0, 0], [0.4, -14, 0, 0], [1, 10, 0, 0]] },
+    { bone: EB.head, keys: [[0, 0, 0, 0], [0.45, -10, 0, 0], [1, 8, 0, -12]] },
+    // The forelegs fold first, which is how a collapsing elephant actually goes down, and
+    // they finish fully folded rather than extended: see rule 1 above.
+    { bone: EB.fShoulderL, keys: [[0, 0, 0, 0], [0.3, -26, 0, 0], [1, -34, 0, 0]] },
+    { bone: EB.fShoulderR, keys: [[0, 0, 0, 0], [0.34, -22, 0, 0], [1, -29, 0, 0]] },
+    { bone: EB.fKneeL, keys: [[0, 0, 0, 0], [0.3, 54, 0, 0], [1, 128, 0, 0]] },
+    { bone: EB.fKneeR, keys: [[0, 0, 0, 0], [0.34, 48, 0, 0], [1, 122, 0, 0]] },
+    { bone: EB.bHipL, keys: [[0, 0, 0, 0], [0.55, 18, 0, 0], [1, 46, 0, 0]] },
+    { bone: EB.bHipR, keys: [[0, 0, 0, 0], [0.6, 14, 0, 0], [1, 41, 0, 0]] },
+    { bone: EB.bHockL, keys: [[0, 0, 0, 0], [0.55, -30, 0, 0], [1, -104, 0, 0]] },
+    { bone: EB.bHockR, keys: [[0, 0, 0, 0], [0.6, -26, 0, 0], [1, -98, 0, 0]] },
+    // The trunk goes slack and lies out along the ground rather than curling.
+    ...trunkSway(6, 1, -8),
     ...earTracks(4, 1),
   ],
-  root: [[0, 0, 0, 0], [0.3, 0, -0.35, 0], [0.65, 0, -1.05, 0], [1, 0, -1.5, 0]],
+  root: [[0, 0, 0, 0], [0.3, 0, -0.35, 0], [0.65, 0, -1.05, 0], [1, 0, -1.32, 0]],
 }));
 
 // ---------------------------------------------------------------------------
