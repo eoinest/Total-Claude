@@ -426,35 +426,59 @@ const MATS: Record<Mat, MatDef> = {
   },
   // Coarse wool: the tunic and the sagum. A visible weave at close range is most of what
   // makes cloth read as cloth rather than plastic.
+  /*
+   * The weave is at half the frequency it was, and the difference is in the folds.
+   *
+   * 36 cycles across a 128 px tile is 3.6 px a cycle *in the tile*, and the tunic and the
+   * bracae both carry it at `repeatU 2, repeatV 3` — 72 cycles round a 0.28 m leg, or 3.9 mm
+   * a cycle. At the magnification the isolated-model deck shoots that lands at four or five
+   * screen pixels, which is the worst place a periodic signal can be: too fine to read as
+   * cloth, too coarse to filter away, and it renders as the hard moire grid the legs showed.
+   * It is also the single cheapest source of the 1 px band energy that is the *only* octave
+   * separating these models from Rome II's.
+   *
+   * 18 cycles reads as a weave at close range and filters cleanly at battle range, and the
+   * amplitude it gives up goes into a two-octave fold field at 5 and 11 cycles — which is
+   * what a fulled woollen tunic actually shows at two metres, and which lives at 2-8 px
+   * where the deficit is. Energy moved down an octave, not removed.
+   */
   [Mat.WoolCoarse]: {
     colour(u, v, out) {
-      const warp = Math.sin(u * Math.PI * 2 * 36) * 0.5 + 0.5;
-      const weft = Math.sin(v * Math.PI * 2 * 36) * 0.5 + 0.5;
-      const weave = (warp * 0.5 + weft * 0.5) * 0.35 + 0.65;
+      const warp = Math.sin(u * Math.PI * 2 * 18) * 0.5 + 0.5;
+      const weft = Math.sin(v * Math.PI * 2 * 18) * 0.5 + 0.5;
+      const weave = (warp * 0.5 + weft * 0.5) * 0.22 + 0.78;
       const slub = fbm(u * 12, v * 12, 3, 12, 41);
-      const g = weave * (0.78 + slub * 0.3);
+      const fold = fbm(u * 5, v * 5, 2, 5, 211) * 0.30 + fbm(u * 11, v * 11, 2, 11, 217) * 0.18;
+      const g = weave * (0.70 + slub * 0.24 + fold * 0.42);
       out[0] = g; out[1] = g * 0.99; out[2] = g * 0.97;
     },
     height(u, v) {
-      const warp = Math.sin(u * Math.PI * 2 * 36) * 0.5 + 0.5;
-      const weft = Math.sin(v * Math.PI * 2 * 36) * 0.5 + 0.5;
-      return Math.max(warp, weft) * 0.7 + fbm(u * 16, v * 16, 3, 16, 41) * 0.3;
+      const warp = Math.sin(u * Math.PI * 2 * 18) * 0.5 + 0.5;
+      const weft = Math.sin(v * Math.PI * 2 * 18) * 0.5 + 0.5;
+      return Math.max(warp, weft) * 0.42
+        + fbm(u * 16, v * 16, 3, 16, 41) * 0.20
+        + fbm(u * 5, v * 5, 2, 5, 211) * 0.38;
     },
     roughness: 0.9,
     metalness: 0,
     bump: 0.5,
   },
+  // 26 cycles, not 52 — see the note on `WoolCoarse`. A 52-cycle weave is 2.5 px a cycle in
+  // the tile and cannot survive to the screen as anything but noise; the amplitude goes into
+  // a fold field instead.
   [Mat.Linen]: {
     colour(u, v, out) {
-      const warp = Math.sin(u * Math.PI * 2 * 52) * 0.5 + 0.5;
-      const weft = Math.sin(v * Math.PI * 2 * 52) * 0.5 + 0.5;
-      const g = 0.78 + (warp * 0.5 + weft * 0.5) * 0.22 + fbm(u * 14, v * 14, 3, 14, 43) * 0.12;
+      const warp = Math.sin(u * Math.PI * 2 * 26) * 0.5 + 0.5;
+      const weft = Math.sin(v * Math.PI * 2 * 26) * 0.5 + 0.5;
+      const fold = fbm(u * 6, v * 6, 2, 6, 223) * 0.5 + fbm(u * 13, v * 13, 2, 13, 227) * 0.3;
+      const g = 0.74 + (warp * 0.5 + weft * 0.5) * 0.14 + fbm(u * 14, v * 14, 3, 14, 43) * 0.10
+        + fold * 0.16;
       out[0] = Math.min(1, g); out[1] = Math.min(1, g * 0.98); out[2] = Math.min(1, g * 0.9);
     },
     height(u, v) {
-      const warp = Math.sin(u * Math.PI * 2 * 52) * 0.5 + 0.5;
-      const weft = Math.sin(v * Math.PI * 2 * 52) * 0.5 + 0.5;
-      return Math.max(warp, weft);
+      const warp = Math.sin(u * Math.PI * 2 * 26) * 0.5 + 0.5;
+      const weft = Math.sin(v * Math.PI * 2 * 26) * 0.5 + 0.5;
+      return Math.max(warp, weft) * 0.55 + fbm(u * 6, v * 6, 2, 6, 223) * 0.45;
     },
     roughness: 0.86,
     metalness: 0,
@@ -672,17 +696,21 @@ const MATS: Record<Mat, MatDef> = {
     bump: 0.2,
   },
   // Finer wool for cloaks and officer cloth.
+  // 30 cycles, not 64 — see the note on `WoolCoarse`. This is the cloak, which is the largest
+  // single area of cloth a man presents, so it was also the largest contributor.
   [Mat.ClothFine]: {
     colour(u, v, out) {
-      const warp = Math.sin(u * Math.PI * 2 * 64) * 0.5 + 0.5;
-      const weft = Math.sin(v * Math.PI * 2 * 64) * 0.5 + 0.5;
-      const g = 0.8 + (warp * 0.5 + weft * 0.5) * 0.2 + fbm(u * 10, v * 10, 3, 10, 149) * 0.1;
+      const warp = Math.sin(u * Math.PI * 2 * 30) * 0.5 + 0.5;
+      const weft = Math.sin(v * Math.PI * 2 * 30) * 0.5 + 0.5;
+      const drape = fbm(u * 4, v * 4, 2, 4, 233) * 0.55 + fbm(u * 9, v * 9, 2, 9, 239) * 0.32;
+      const g = 0.76 + (warp * 0.5 + weft * 0.5) * 0.12 + fbm(u * 10, v * 10, 3, 10, 149) * 0.08
+        + drape * 0.16;
       out[0] = Math.min(1, g); out[1] = Math.min(1, g); out[2] = Math.min(1, g * 0.98);
     },
     height(u, v) {
-      const warp = Math.sin(u * Math.PI * 2 * 64) * 0.5 + 0.5;
-      const weft = Math.sin(v * Math.PI * 2 * 64) * 0.5 + 0.5;
-      return Math.max(warp, weft);
+      const warp = Math.sin(u * Math.PI * 2 * 30) * 0.5 + 0.5;
+      const weft = Math.sin(v * Math.PI * 2 * 30) * 0.5 + 0.5;
+      return Math.max(warp, weft) * 0.42 + fbm(u * 4, v * 4, 2, 4, 233) * 0.58;
     },
     roughness: 0.82,
     metalness: 0,
