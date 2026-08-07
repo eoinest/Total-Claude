@@ -30,3 +30,10 @@ traversal graph. The two diffs touch no common function.
 
 No children were started, so there is nothing to stop. Ports: 5411 freed (vite killed by
 PID), 5412 owned and killed at the end. 5173 untouched throughout.
+
+One process was killed early on purpose: `probe-siege.mjs` had run 30 minutes with no
+output while the machine sat at **load 76-82**, which is the band that killed nine agents on
+this project. It drives the sim with `__game.advance(s)` — the 1/60 path, four times slower
+than `engine.advance(s, 166)` — over several hundred seconds of assault. It was killed by
+PID along with the two determinism runs queued behind it, and the field-battle determinism
+gate had already passed 5/5 by then.
