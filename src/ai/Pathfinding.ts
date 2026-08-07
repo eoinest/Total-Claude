@@ -47,12 +47,32 @@ const SLOPE_COST_K = 5.0;
 /** Extra metres-equivalent charged per metre climbed, on top of the slope cost. */
 const CLIMB_COST_K = 1.4;
 /**
- * The Tiber channel bottoms out well below the flood plain. Anything under this
- * height above datum is water deep enough to drown a man in mail.
+ * Water deeper than this drowns a man in mail, so the grid refuses the cell outright.
+ *
+ * **This is a depth below the map's own surface, not a height above the map's datum**, and
+ * that distinction is the whole of a bug this file shipped for three maps. It was written as
+ * `WATER_LEVEL = 1.5` with a comment about the Tiber bottoming out below the flood plain —
+ * but the Tiber's surface is at 5.0 (`terrain/topography.ts`), so 1.5 was never a water
+ * level. It was 5.0 minus 3.5 m of water: the depth at which a man goes under. Sitting in a
+ * module constant it then followed the pathfinder onto every other map, and on Carthage,
+ * where the sea is at 0, it called **122,847 cells of dry land — 110.6 ha, 14.1 % of the
+ * battlefield — water**: the whole isthmus approach at the lagoon margin, the Sebkhet Ariana
+ * salt pan, the strand and part of the harbour district.
+ *
+ * Read as a depth it generalises exactly: on the Campus Martius `5.0 - 3.5` is 1.5 and not
+ * one cell of that map moves.
  */
-const WATER_LEVEL = 1.5;
-/** Soft ground either side of the water: passable, but nobody wants to fight in it. */
-const MARSH_LEVEL = 3.0;
+const DROWNING_DEPTH = 3.5;
+/**
+ * Water shallower than this is waded at no extra cost; between here and `DROWNING_DEPTH` it
+ * is chest-deep and charged for.
+ *
+ * Same correction: this shipped as `MARSH_LEVEL = 3.0` — "soft ground either side of the
+ * water" — and 3.0 is two metres *under* the Tiber's surface, so the band it selects is not
+ * beside the river at all. Measured on the Campus Martius, every one of the 8,205 cells it
+ * charges is river bed. It is a wading penalty and it is named as one now.
+ */
+const WADEABLE_DEPTH = 2.0;
 
 /** A* node expansions allowed across all searches per fixed step. */
 const NODE_BUDGET = 2400;
@@ -338,6 +358,20 @@ export class NavGrid {
   /** Bumped whenever obstacles change, so cached paths can be invalidated. */
   generation = 1;
 
+  /**
+   * The surface of this map's open water, or null when the map declares none.
+   *
+   * Taken from `MapDefinition.terrain` at `build` rather than from a module constant,
+   * because the datum is map data: the Tiber is at 5.0 and the Mediterranean at 0. Null
+   * where `terrain.water` is null, and that is deliberate rather than defensive — see
+   * `isWater`.
+   */
+  waterLevel: number | null = null;
+  /** `waterLevel - DROWNING_DEPTH`, or -Infinity on a map with no water. */
+  private drownBelow = -Infinity;
+  /** `waterLevel - WADEABLE_DEPTH`, or -Infinity on a map with no water. */
+  private wadeBelow = -Infinity;
+
   constructor() {
     this.res = Math.ceil((HALF_EXTENT * 2) / CELL) + 1;
     const n = this.res * this.res;
@@ -378,6 +412,13 @@ export class NavGrid {
   /** Sample terrain into the grid and derive cost from gradient and water depth. */
   build(terrain: TerrainSystem | undefined): void {
     const { res, height } = this;
+    // A map that declares no water has none, exactly as a map that declares no city has no
+    // wall. Pydna's floor is +8.07 m so nothing there is affected today, but the next map to
+    // cut a dry gully below its own datum must not find a phantom river in it.
+    const declares = terrain ? terrain.map.terrain.water !== null : false;
+    this.waterLevel = declares ? terrain!.waterLevel : null;
+    this.drownBelow = this.waterLevel === null ? -Infinity : this.waterLevel - DROWNING_DEPTH;
+    this.wadeBelow = this.waterLevel === null ? -Infinity : this.waterLevel - WADEABLE_DEPTH;
     for (let cz = 0; cz < res; cz++) {
       const wz = this.toWorld(cz);
       const row = cz * res;
@@ -411,8 +452,8 @@ export class NavGrid {
         let c = 1 + slope * SLOPE_COST_K;
         let block = 0;
         if (slope > SLOPE_IMPASSABLE) block = 1;
-        if (h < WATER_LEVEL) block = 1;
-        else if (h < MARSH_LEVEL) c *= 2.6; // river margin: mud, reeds, broken ground
+        if (h < this.drownBelow) block = 1;
+        else if (h < this.wadeBelow) c *= 2.6; // chest-deep: waded, at a price
         // The outermost ring is off the playable field.
         if (cx === 0 || cz === 0 || cx === res - 1 || cz === res - 1) block = 1;
 
@@ -1414,8 +1455,29 @@ export class PathfindingSystem implements Subsystem {
     return this.groundHeight(x, z) - this.groundHeight(x + fx * ahead, z + fz * ahead);
   }
 
+  /**
+   * Is the ground here under this map's own water surface?
+   *
+   * Three things in this project decide what water is and until now they disagreed:
+   * `WaterSurface` renders wherever the bed is under `terrain.waterLevel`, `probe-water`
+   * counts "under the datum" the same way, and this returned "under 1.5 m above datum" on
+   * every map because the constant was the Tiber's channel written as an absolute height.
+   * One definition now, and it is the map's.
+   *
+   * **Null means false, and that is the deliberate answer for Pydna.** A map declares its
+   * water as `TerrainProfile.water: WaterProfile | null`, so the absence of water is the
+   * absence of data, not a level nobody set — the same rule `city: CityPlan | null` follows.
+   * Pydna's one watercourse is the Leucus, a dry shingle braid on 22 June, and the AI must
+   * be able to fight in it. Falling back to `waterLevel` alone would have said the opposite
+   * the moment a dry bed was cut below its own sea datum.
+   *
+   * This is *not* the same question as "can a man stand here": the grid wades water up to
+   * `DROWNING_DEPTH`, so a cell can be water and standable at once. Ask `isStandable` for
+   * that; ask this one whether a commander should be fighting with his feet in the sea.
+   */
   isWater(x: number, z: number): boolean {
-    return this.groundHeight(x, z) < WATER_LEVEL;
+    const datum = this.grid.waterLevel;
+    return datum !== null && this.groundHeight(x, z) < datum;
   }
 
   /** Passable, and clear enough for a body of the given radius. */
