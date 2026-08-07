@@ -90,9 +90,13 @@ const PLATES = {
     unit: 'juthungi-warband', hash: 0.73, clip: 'idleAlertReady', phase: 0.32,
     az: -0.6, el: 0.05, fill: 0.88, desc: 'Juthungi warrior, three-quarter front',
   },
+  // Hash 0.51 rather than 0.19: 0.19 draws a fur cap, and with the camera looking at the
+  // back of his head that was indistinguishable from a bare one. Now that azimuth 0 is
+  // genuinely in front of the man (see `framePlate`), the one plate in the deck whose job is
+  // to photograph a head has to photograph one that is not inside a hat.
   'juth-head': {
-    unit: 'juthungi-warband', hash: 0.19, clip: 'idleAlertReady', phase: 0.32,
-    az: -0.45, el: 0.05, fill: 4.0, aimY: HEAD_Y, desc: 'Juthungi head — hair, beard, spangenhelm',
+    unit: 'juthungi-warband', hash: 0.51, clip: 'idleAlertReady', phase: 0.32,
+    az: -0.45, el: 0.05, fill: 4.0, aimY: HEAD_Y, desc: 'Juthungi head — hair, beard, face',
   },
   'urban-front': {
     unit: 'urban-cohort', hash: 0.83, clip: 'idleAlertReady', phase: 0.32,

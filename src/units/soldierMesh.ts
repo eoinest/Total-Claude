@@ -174,6 +174,34 @@ interface Detail {
   medium: boolean;
 }
 
+/**
+ * The face arc, and the rest of the head.
+ *
+ * A soldier faces +Z and `revolve` places a ring at `x = cos a, z = sin a`, so `PI/2` is
+ * straight ahead of him and the face is the 120 degrees either side of it. Both the skull
+ * and the hair are split on exactly these two arcs, so the seam is in one place and the
+ * hairline lands on it.
+ */
+const FACE_HALF = Math.PI / 3;
+const FACE_ARC: readonly [number, number] = [Math.PI / 2 - FACE_HALF, Math.PI / 2 + FACE_HALF];
+const BACK_ARC: readonly [number, number] = [Math.PI / 2 + FACE_HALF, Math.PI / 2 - FACE_HALF + Math.PI * 2];
+/**
+ * Columns across each arc.
+ *
+ * Six over 120 degrees is 20 degrees a facet against the 36 the whole circle used to get, so
+ * the face is *rounder* than the head it replaces. The back arc has to be scaled to its own
+ * 300 degrees or the split silently coarsens the skull: `d.head - 3` over five sixths of a
+ * turn is 43 degrees a facet, and it showed as a visibly polygonal hair dome.
+ */
+const FACE_SEG = 6;
+const BACK_SEG = (head: number): number => Math.max(5, Math.round(head * 0.85));
+/**
+ * The V range the face tile is painted against, in metres relative to the head bone: from
+ * under the jaw to the crown. `atlas.ts`'s `Mat.Face` layout is written to these two numbers
+ * and they must move together.
+ */
+const HEAD_V: readonly [number, number] = [-0.075, 0.14];
+
 // LOD0 keeps every rivet-scale form that reads at 5 m. LOD1 drops the sub-pieces —
 // cheek plates, pteruges, crest strands, arrow shafts — which is most of the cost and
 // almost none of the silhouette past 45 m. LOD2 is a different mesh entirely.
@@ -237,24 +265,55 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
   // roughly the atlanto-occipital joint and the skull is a 0.10 m sphere above it.
   b.setBone(MB.head);
   b.setMatrix(new THREE.Matrix4().makeTranslation(0, headY, MAN_RIG.restT[MB.head * 3 + 2]));
-  b.revolve(
-    [
-      [0.001, -0.055], [0.055, -0.075], [0.072, -0.045], [0.079, 0.0],
-      [0.082, 0.045], [0.072, 0.095], [0.045, 0.128], [0.001, 0.14],
-    ],
-    d.head, skinUv
-  );
-  if (d.medium) {
-    // Brow, nose and jaw: three small forms are enough to read a face in profile, which
-    // is the only way a face is ever seen in a battle line.
-    b.box(0, -0.012, 0.058, 0.055, 0.026, 0.05, skinUv);
-    b.box(0, -0.052, 0.03, 0.075, 0.05, 0.055, skinUv);
-    // Eye sockets. Twelve triangles that turn a pale oval into a face at three metres.
-    b.setPiece(Piece.Head, Tint.Atlas);
-    for (const s2 of [-1, 1]) {
-      b.box(s2 * 0.031, -0.021, 0.064, 0.026, 0.014, 0.012, matUv(Mat.HideBlack));
-    }
-    b.setPiece(Piece.Head, Tint.Skin);
+  const skullProfile: [number, number][] = [
+    [0.001, -0.055], [0.055, -0.075], [0.072, -0.045], [0.079, 0.0],
+    [0.082, 0.045], [0.072, 0.095], [0.045, 0.128], [0.001, 0.14],
+  ];
+  if (d.fine) {
+    /*
+     * The face is one arc of the lathe with its own tile, and the rest of the head is the
+     * other. One lathe with one UV rect cannot carry a face: `Mat.Skin` is a tileable noise
+     * field wrapped many times round a limb, and stretching a *drawn* face across the whole
+     * 360 degrees would leave it 43 texels wide. Split, the face gets the entire tile —
+     * 766 texels per metre against the 374 the head carried — and an iris is 23 px instead
+     * of 8. The two arcs share the same profile and the same `vFromY`, so the seam is a
+     * change of texture and not of surface.
+     *
+     * 120 degrees, because that is roughly ear to ear on a head. Six columns at LOD0 against
+     * the ten the whole circle used to get, which is a rounder face for 42 triangles.
+     */
+    b.revolve(skullProfile, FACE_SEG, matUv(Mat.Face), 1, { arc: FACE_ARC, vFromY: HEAD_V });
+    b.revolve(skullProfile, BACK_SEG(d.head), skinUv, 1, { arc: BACK_ARC, vFromY: HEAD_V });
+  } else {
+    b.revolve(skullProfile, d.head, skinUv);
+  }
+  if (d.fine) {
+    /*
+     * A nose, and nothing else.
+     *
+     * What this replaces was a "brow" slab at y = -0.012 — 55 mm below the actual
+     * supraorbital ridge, so it sat across the eyes — a "jaw" box whose front face at
+     * z = 0.0575 was *inside* a skull of radius 0.0678 at that height and therefore drew
+     * nothing at all, and two black boxes for eyes. All four were under the hair.
+     *
+     * The brow and the chin are gone rather than repaired: a box on a lathe reads as a slab
+     * stuck to a face, and the brow ridge, the eye socket and the chin crease are all in the
+     * face tile's height field, which the bake turns into a normal, a cavity AO and a
+     * roughness break for nothing. The nose stays because it is the one facial form that
+     * changes the **silhouette**, and a silhouette is the only part of a face a texture
+     * cannot fake — a four-ring taper standing 2 mm proud at the bridge and 14 mm at the
+     * tip, each ring measured off the lathe's own radius at its own height so it cannot end
+     * up buried the way the jaw box was. Net against what it replaces: 14 triangles fewer.
+     */
+    b.tube(
+      [
+        { y: 0.038, rx: 0.007, rz: 0.008, z: 0.0756 },
+        { y: 0.005, rx: 0.009, rz: 0.010, z: 0.0753 },
+        { y: -0.014, rx: 0.017, rz: 0.012, z: 0.0788 },
+        { y: -0.026, rx: 0.015, rz: 0.008, z: 0.0675 },
+      ],
+      5, skinUv, { capEnd: true }
+    );
   }
   b.setMatrix(null);
 
@@ -316,18 +375,44 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
   const headM = new THREE.Matrix4().makeTranslation(0, headY, MAN_RIG.restT[MB.head * 3 + 2]);
   b.setBone(MB.head).setMatrix(headM);
 
+  /*
+   * Hair is a cap with a hairline, not a closed dome.
+   *
+   * This lathe used to be a full revolution running down to y = -0.035 at a radius 4 to
+   * 9 mm proud of the skull. That is below the brow, below both eye boxes and across the top
+   * of the nose: **every bare-headed man in this game had his face sealed inside his own
+   * hair.** No battle frame could show it at 20 px a man, and the isolated-model critic
+   * scored the face 0 without being able to say why.
+   *
+   * Cut into two arcs of the same profile: the back and sides keep the full drop, and the
+   * front gets only the part above the hairline at y = 0.082 — which is a Roman crop with a
+   * fringe combed forward, and is what the Trajanic portrait heads show. Fewer triangles
+   * over the face arc than the dome had, so this is cheaper than what it replaces.
+   */
+  const hairProfile: [number, number][] = [
+    [0.001, 0.145], [0.05, 0.132], [0.077, 0.098], [0.086, 0.04], [0.088, -0.01], [0.086, -0.035],
+  ];
   b.setPiece(Piece.HairShort, Tint.Hair);
-  b.revolve(
-    [[0.001, 0.145], [0.05, 0.132], [0.077, 0.098], [0.086, 0.04], [0.088, -0.01], [0.086, -0.035]],
-    d.head, hairUv
-  );
+  if (d.fine) {
+    b.revolve(hairProfile, BACK_SEG(d.head), hairUv, 1, { arc: BACK_ARC });
+    b.revolve([[0.001, 0.145], [0.05, 0.132], [0.077, 0.098], [0.082, 0.082]],
+      FACE_SEG, hairUv, 1, { arc: FACE_ARC });
+  } else {
+    b.revolve(hairProfile, d.head, hairUv);
+  }
 
   if (germanic) {
     b.setPiece(Piece.HairLong, Tint.Hair);
-    b.revolve(
-      [[0.001, 0.15], [0.055, 0.135], [0.082, 0.1], [0.092, 0.04], [0.094, -0.02]],
-      d.head, hairUv
-    );
+    const longProfile: [number, number][] = [
+      [0.001, 0.15], [0.055, 0.135], [0.082, 0.1], [0.092, 0.04], [0.094, -0.02],
+    ];
+    if (d.fine) {
+      b.revolve(longProfile, BACK_SEG(d.head), hairUv, 1, { arc: BACK_ARC });
+      b.revolve([[0.001, 0.15], [0.055, 0.135], [0.082, 0.1], [0.088, 0.078]],
+        FACE_SEG, hairUv, 1, { arc: FACE_ARC });
+    } else {
+      b.revolve(longProfile, d.head, hairUv);
+    }
     // A mass of hair falling behind the shoulders. Tacitus on the Suebi: the hair is
     // knotted and drawn back, and it is the first thing a Roman notices.
     b.setBone(MB.head, MB.neck, 0.7);

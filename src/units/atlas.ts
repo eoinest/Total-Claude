@@ -104,7 +104,32 @@ export const enum Mat {
    * a smooth grey elephant looks like an inflatable.
    */
   ElephantHide = 27,
-  Count = 28,
+  /**
+   * A face. Not tileable, and mapped to one 120-degree arc of the skull lathe.
+   *
+   * There was no eye, nose or mouth anywhere in this game. Two 26 x 14 x 12 mm boxes of
+   * `HideBlack` stood in for eyes and both were **inside the hair**: `Piece.HairShort` is a
+   * full revolution 4 to 9 mm proud of the skull running down to y = -0.035, which is below
+   * the brow and below both eye boxes, so a bare-headed man's face was sealed under a dome
+   * of hair. A helmeted man's was under the helmet. Neither is visible at 20 px a man, which
+   * is how it survived every blind round; on the isolated-model deck the critic scored face
+   * **0** and it was the only 0 on the sheet.
+   *
+   * Its own tile rather than a region of `Skin` because a face needs texels. `Skin` is a
+   * tileable noise field wrapped many times round a limb; a face is drawn once, at a known
+   * scale, with features at known places. Splitting the skull into a face arc and a
+   * remainder arc gives the face the whole 128 px tile — 766 texels per metre across it,
+   * against the 374 the head carried before — which is what makes an iris 23 px wide instead
+   * of 8.
+   *
+   * The layout is fixed by `soldierMesh`'s call and must not drift from it:
+   *   u  0..1 across the 120-degree front arc, 0.5 dead centre on the nose;
+   *   v  0..1 from y = -0.075 (under the jaw) to y = +0.140 (the crown), by **height**,
+   *      via `revolve`'s `vFromY` — a lathe's rings are 20 to 50 mm apart and not evenly
+   *      spaced, so a face painted against ring index lands in the wrong place.
+   */
+  Face = 28,
+  Count = 29,
 }
 
 export interface UvRect {
@@ -800,6 +825,219 @@ const MATS: Record<Mat, MatDef> = {
      * the subject, which is the general form of the mistake.
      */
     bump: 0.45,
+  },
+  /**
+   * A man's face, drawn once at a known scale. See the enum note for the UV contract.
+   *
+   * Everything here is written as a *modulation of the same 0.60 grey the `Skin` tile
+   * carries*, because slot `Tint.Skin` multiplies the whole tile by a per-man tone between
+   * (1.66, 1.10, 0.70) and (1.24, 0.78, 0.50). A face painted at its own absolute colour
+   * would fight that and every man would end up the same. The one exception is the sclera,
+   * which is drawn cool and pale on purpose so that a warm multiply leaves it reading as an
+   * eye rather than as a white dot.
+   *
+   * The height field is doing as much work as the colour and possibly more: it is what puts
+   * energy into the 2-8 px band, which is the octave this project's models are short of
+   * (`docs/HANDOFF.md`, "the separation is a one-pixel spike"). Brow ridge, eye socket, the
+   * groove between the lips, the nasolabial fold, the chin crease and the stubble field all
+   * carry real relief, and the bake turns each of them into a normal, a cavity AO and a
+   * roughness break for free.
+   */
+  [Mat.Face]: {
+    colour(u, cv, out) {
+      // Distance from the centreline. The face is symmetric, so everything is written once.
+      const aq = Math.abs(u - 0.5);
+      /**
+       * Canvas row 0 is the *top*, and `CanvasTexture` uploads with `flipY`, so canvas row 0
+       * becomes texture v = 1. Every feature below is placed in the mesh's own V — 0 under
+       * the jaw, 1 at the crown — so the tile must be drawn upside down. Written the obvious
+       * way round it bakes a face with the eyebrows under the eyes and the nostrils above
+       * them, which is exactly what the first version of this tile did.
+       */
+      const v = 1 - cv;
+      /**
+       * Everything face-specific is faded out at the tile's left and right edges.
+       *
+       * Those edges are the arc seam against the plain `Skin` tile on the rest of the head,
+       * and any residual difference across them draws a hard vertical line down the cheek —
+       * which is what the first version did, because the temple hollow was centred at
+       * `aq = 0.40`, i.e. 100 mm from the seam and well inside its own falloff.
+       */
+      const edge = Math.min(1, Math.min(u, 1 - u) / 0.09);
+
+      // ---- base skin, matching the `Skin` tile so the arc seam is invisible ----------
+      const pore = fbm(u * 46, v * 46, 3, 46, 47) * 0.10;
+      const blotch = fbm(u * 8, v * 8, 3, 8, 53) * 0.08;
+      let g = 0.60 + pore - blotch * 0.5;
+      const base = g;
+
+      // ---- temple and cheek hollows --------------------------------------------------
+      // Two soft darkenings. Without them a face is a balloon. Both are narrow in u as well
+      // as in v: written wide they bake as horizontal stripes across the whole tile, which
+      // is what the first version did and it read as banding rather than as form.
+      g -= Math.exp(-((aq - 0.40) ** 2) / 0.0055) * Math.exp(-((v - 0.585) ** 2) / 0.0075) * 0.11;
+      g -= Math.exp(-((aq - 0.29) ** 2) / 0.0050) * Math.exp(-((v - 0.315) ** 2) / 0.0065) * 0.08;
+
+      // ---- brow ridge and eyebrow ----------------------------------------------------
+      // The brow arches: it starts near the nose, rises over the eye and falls at the
+      // temple. Modelled as a v that moves with distance from the centreline.
+      const browArch = 0.578 + 0.050 * Math.sin(Math.min(1, Math.max(0, (aq - 0.04) / 0.30)) * Math.PI);
+      const browSpan = Math.min(1, Math.max(0, (0.34 - aq) / 0.06)) * Math.min(1, Math.max(0, (aq - 0.035) / 0.04));
+      const brow = Math.exp(-((v - browArch) ** 2) / 0.00035) * browSpan;
+      // Hair, so it takes a hair-like fibre rather than a flat block.
+      const browFibre = 0.62 + vnoise(u * 150, v * 12, 150, 59) * 0.5;
+      g -= brow * 0.52 * browFibre;
+      // The shelf's own shadow, immediately under it.
+      g -= Math.exp(-((v - (browArch - 0.032)) ** 2) / 0.00060) * browSpan * 0.18;
+
+      // ---- eyes ----------------------------------------------------------------------
+      // Centre at 0.197 from the midline: 32 mm of interpupillary half-distance mapped onto
+      // a 79 mm-radius lathe over a 120-degree arc.
+      const ex = aq - 0.197;
+      const ey = v - 0.462;
+      const almond = (ex / 0.090) ** 2 + (ey / 0.034) ** 2;
+      // The upper lid comes down over the top of the globe, which is what makes an eye an
+      // eye rather than a circle: without it the sclera reads as two white beads.
+      const lid = 0.015 + 0.015 * Math.cos(Math.min(1, Math.abs(ex) / 0.090) * Math.PI * 0.5);
+      if (almond < 1 && ey < lid && edge > 0.99) {
+        // Sclera: pale and faintly cool, and never near white — it sits in the shadow of
+        // the brow and is wet.
+        g = 0.95 - Math.max(0, ey / lid) * 0.20;
+        out[0] = g * 0.97; out[1] = g * 0.99; out[2] = g;
+        const di = (ex / 0.032) ** 2 + ((ey + 0.004) / 0.026) ** 2;
+        if (di < 1) {
+          // Iris: brown to grey-green, with the radial stroma that is the one thing that
+          // reads as an eye rather than a dot. Limbal ring dark at the edge.
+          const ang = Math.atan2(ey + 0.003, ex);
+          const stroma = 0.72 + vnoise((ang / (Math.PI * 2) + 0.5) * 34, Math.sqrt(di) * 5, 34, 191) * 0.46;
+          const limbal = Math.min(1, Math.max(0, (di - 0.55) / 0.45));
+          const c = (0.22 * stroma) * (1 - limbal * 0.80);
+          out[0] = c * 1.06; out[1] = c * 0.94; out[2] = c * 0.74;
+          if (di < 0.26) { out[0] = 0.045; out[1] = 0.045; out[2] = 0.048; }
+        }
+        // Lash line along the lid edge.
+        if (ey > lid - 0.008) { out[0] *= 0.16; out[1] *= 0.16; out[2] *= 0.18; }
+        return;
+      }
+      // Socket shading around the globe, the lid crease above and the tear-trough below.
+      const socket = Math.exp(-((almond - 1) ** 2) / 0.55) * Math.min(1, Math.max(0, 1.7 - almond));
+      g -= socket * 0.10;
+      g -= Math.exp(-((ey - 0.049) ** 2) / 0.00012) * Math.exp(-((ex) ** 2) / 0.012) * 0.10;
+      g -= Math.exp(-((ey + 0.047) ** 2) / 0.00016) * Math.exp(-((ex) ** 2) / 0.010) * 0.06;
+
+      // ---- nose ----------------------------------------------------------------------
+      // The geometry carries the wedge; the tile carries what a wedge cannot: nostrils, the
+      // alar crease and the two folds running to the mouth.
+      const nostril = Math.exp(-((aq - 0.052) ** 2) / 0.00035) * Math.exp(-((v - 0.247) ** 2) / 0.00016);
+      g -= nostril * 0.58;
+      // Alar crease, curling round each wing of the nose.
+      const alar = Math.exp(-((aq - 0.093) ** 2) / 0.00045) * Math.exp(-((v - 0.262) ** 2) / 0.00060);
+      g -= alar * 0.24;
+      // Nasolabial fold: from the wing of the nose out and down toward the mouth corner.
+      const foldV = 0.258 - Math.min(1, Math.max(0, (aq - 0.095) / 0.075)) * 0.10;
+      g -= Math.exp(-((v - foldV) ** 2) / 0.00030)
+        * Math.min(1, Math.max(0, (aq - 0.088) / 0.03)) * Math.min(1, Math.max(0, (0.185 - aq) / 0.03)) * 0.13;
+      // The shaded side of the bridge, which is what gives a nose width from the front.
+      g -= Math.exp(-((aq - 0.062) ** 2) / 0.00045)
+        * Math.min(1, Math.max(0, (v - 0.28) / 0.06)) * Math.min(1, Math.max(0, (0.53 - v) / 0.08)) * 0.09;
+
+      // ---- mouth ---------------------------------------------------------------------
+      // A cupid's bow, so the upper lip is not a straight bar. Half-width 0.17 in u, which
+      // is a 50 mm mouth on a 70 mm-radius jaw.
+      const mw = Math.min(1, Math.max(0, (0.175 - aq) / 0.032));
+      const bow = 0.168 + Math.exp(-((aq - 0.032) ** 2) / 0.0013) * 0.009;
+      const lipLine = Math.exp(-((v - bow) ** 2) / 0.00014) * mw;
+      g -= lipLine * 0.60;
+      // Both lips: a shade darker and redder than the surrounding skin, and glossier —
+      // the gloss comes out of the height field below.
+      const upper = Math.exp(-((v - (bow + 0.022)) ** 2) / 0.00048) * mw;
+      const lower = Math.exp(-((v - (bow - 0.027)) ** 2) / 0.00062) * mw;
+      const lipMask = Math.min(1, upper + lower);
+      // Vertical lip striation. Fine, and one of the highest-frequency real features a face
+      // has at this magnification.
+      const striate = vnoise(u * 190, v * 9, 190, 197);
+      g -= lipMask * (0.10 + striate * 0.07);
+      // Philtrum: the two ridges under the nose.
+      g -= Math.exp(-((aq - 0.024) ** 2) / 0.00028) * Math.exp(-((v - 0.222) ** 2) / 0.00060) * 0.08;
+
+      // ---- chin ----------------------------------------------------------------------
+      g -= Math.exp(-((v - 0.105) ** 2) / 0.00045) * Math.min(1, Math.max(0, (0.13 - aq) / 0.05)) * 0.12;
+
+      // ---- stubble -------------------------------------------------------------------
+      // Beard shadow over the jaw, the chin and the upper lip, faded out at the cheekbone.
+      // Deliberately high-frequency: this is the single largest contributor of 2-8 px energy
+      // on the whole head, and a clean-shaven man at 271 AD is the exception anyway. Held
+      // light enough that the mouth still reads through it — the first version buried it.
+      const beardZone = Math.min(1, Math.max(0, (0.32 - v) / 0.12))
+        + Math.exp(-((v - 0.235) ** 2) / 0.0014) * Math.min(1, Math.max(0, (aq - 0.035) / 0.05));
+      const grain = fbm(u * 120, v * 120, 3, 120, 199);
+      g -= Math.min(1, beardZone) * (0.035 + grain * 0.11);
+
+      // ---- forehead ------------------------------------------------------------------
+      // Two faint creases and the shadow the fringe casts on the brow.
+      g -= Math.exp(-((v - 0.655) ** 2) / 0.00050) * Math.min(1, Math.max(0, (0.34 - aq) / 0.10)) * 0.045;
+      g -= Math.min(1, Math.max(0, (v - 0.715) / 0.05)) * 0.09;
+
+      // Fade the whole face back to plain skin at the seam.
+      g = base + (g - base) * edge;
+      out[0] = Math.min(1, Math.max(0.02, g));
+      out[1] = Math.min(1, Math.max(0.02, g * 0.955));
+      out[2] = Math.min(1, Math.max(0.02, g * 0.90));
+    },
+    height(u, cv) {
+      const aq = Math.abs(u - 0.5);
+      const v = 1 - cv;   // see the note in `colour`
+      const edge = Math.min(1, Math.min(u, 1 - u) / 0.09);
+      const base = 0.52 + fbm(u * 50, v * 50, 3, 50, 47) * 0.16;
+      let h = base;
+
+      // Brow ridge: a real shelf, and the strongest piece of relief on a face.
+      const browArch = 0.578 + 0.050 * Math.sin(Math.min(1, Math.max(0, (aq - 0.04) / 0.30)) * Math.PI);
+      const browSpan = Math.min(1, Math.max(0, (0.34 - aq) / 0.06)) * Math.min(1, Math.max(0, (aq - 0.035) / 0.04));
+      h += Math.exp(-((v - browArch) ** 2) / 0.00090) * browSpan * 0.34;
+
+      // Eye: the globe bulges, the socket around it is cut back, the lid crease is a groove.
+      const ex = aq - 0.197;
+      const ey = v - 0.462;
+      const almond = (ex / 0.090) ** 2 + (ey / 0.034) ** 2;
+      if (almond < 1) h += (1 - almond) * 0.30;
+      else h -= Math.min(1, Math.max(0, (1.7 - almond) / 0.7)) * 0.22;
+      h -= Math.exp(-((ey - 0.049) ** 2) / 0.00012) * Math.exp(-(ex ** 2) / 0.012) * 0.24;
+
+      // Nose: nostrils are holes, the alar crease and the nasolabial fold are grooves.
+      h -= Math.exp(-((aq - 0.052) ** 2) / 0.00035) * Math.exp(-((v - 0.247) ** 2) / 0.00016) * 0.55;
+      h -= Math.exp(-((aq - 0.093) ** 2) / 0.00045) * Math.exp(-((v - 0.262) ** 2) / 0.00060) * 0.24;
+      const foldV = 0.258 - Math.min(1, Math.max(0, (aq - 0.095) / 0.075)) * 0.10;
+      h -= Math.exp(-((v - foldV) ** 2) / 0.00030)
+        * Math.min(1, Math.max(0, (aq - 0.088) / 0.03)) * Math.min(1, Math.max(0, (0.185 - aq) / 0.03)) * 0.22;
+
+      // Mouth: two raised lips with a cut between them. The raised lips read glossy, because
+      // the bake derives roughness from this field.
+      const mw = Math.min(1, Math.max(0, (0.175 - aq) / 0.032));
+      const bow = 0.168 + Math.exp(-((aq - 0.032) ** 2) / 0.0013) * 0.009;
+      h -= Math.exp(-((v - bow) ** 2) / 0.00010) * mw * 0.60;
+      h += Math.exp(-((v - (bow + 0.022)) ** 2) / 0.00048) * mw * 0.24;
+      h += Math.exp(-((v - (bow - 0.027)) ** 2) / 0.00062) * mw * 0.28;
+      h += Math.exp(-((aq - 0.024) ** 2) / 0.00028) * Math.exp(-((v - 0.222) ** 2) / 0.00060) * 0.14;
+
+      // Chin ball and the crease above it.
+      h += Math.exp(-((v - 0.065) ** 2) / 0.0016) * Math.min(1, Math.max(0, (0.11 - aq) / 0.06)) * 0.18;
+      h -= Math.exp(-((v - 0.105) ** 2) / 0.00045) * Math.min(1, Math.max(0, (0.13 - aq) / 0.05)) * 0.20;
+
+      // Stubble, again — as relief this time, which is where most of its 2-8 px energy comes
+      // from. A shaved-off albedo blotch averages away under mipping; a bump does not
+      // survive either, but the cavity term the bake derives from it does.
+      const beardZone = Math.min(1, Math.max(0, (0.32 - v) / 0.12))
+        + Math.exp(-((v - 0.235) ** 2) / 0.0014) * Math.min(1, Math.max(0, (aq - 0.035) / 0.05));
+      h -= Math.min(1, beardZone) * fbm(u * 120, v * 120, 3, 120, 199) * 0.22;
+
+      return Math.min(1, Math.max(0, base + (h - base) * edge));
+    },
+    // Skin's own roughness. The bake spreads it with the height field, which is what leaves
+    // the lips and the globe of the eye glossy against a matte cheek.
+    roughness: 0.55,
+    metalness: 0,
+    bump: 0.42,
   },
   [Mat.Count]: {
     colour(_u, _v, out) { out[0] = 0.5; out[1] = 0.5; out[2] = 0.5; },
