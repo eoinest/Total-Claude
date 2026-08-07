@@ -338,4 +338,50 @@ if (MODE === 'loop') {
   await page.close();
 }
 
+if (MODE === 'player') {
+  /*
+   * The real player path, which no other mode exercises.
+   *
+   * Everything else loads `?harness=1`, and that sets `fixedSize` -- which is exactly the flag
+   * that turns the adaptive loop *off* and `preserveDrawingBuffer` *on*. So the configuration a
+   * player actually runs, loop enabled and no drawing-buffer copy, is the one the harness can
+   * never see. Goes through the menu with real clicks rather than through a query parameter.
+   */
+  const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: DSF });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text().slice(0, 200)}`); });
+  await page.goto(`${base}/?map=${MAP}`, { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('#menu-root button', { timeout: 60000 });
+  const labels = await page.$$eval('#menu-root button', (bs) => bs.map((b) => b.textContent.trim()));
+  const start = page.locator('#menu-root button', { hasText: /start|battle|fight|begin/i }).last();
+  await start.click();
+  await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 300000 });
+  await page.evaluate(() => new Promise((r) => setTimeout(r, 3000)));
+  await page.evaluate(INSTALL);
+  const r = await page.evaluate(() => {
+    const eng = window.__game.engine;
+    return {
+      adaptiveEnabled: eng.adaptiveQuality.enabled,
+      preserve: eng.renderer.getContextAttributes().preserveDrawingBuffer,
+      state: eng.adaptiveQuality.state(),
+      hud: eng.adaptiveQuality.hudLine(),
+      calls: eng.renderer.info.render.calls,
+      exposed: typeof window.__adaptive === 'object',
+      db: eng.drawingBufferSize(),
+    };
+  });
+  const shot = await page.screenshot({ type: 'png' });
+  console.log(`\n== player path, ${MAP}, menu -> start ==`);
+  console.log(`  menu buttons: ${labels.join(' | ').slice(0, 160)}`);
+  console.log(`  ready true, errors ${errors.length}, draws ${r.calls}, drawingBuffer ${r.db.w}x${r.db.h}`);
+  console.log(`  adaptive enabled ${r.adaptiveEnabled}, window.__adaptive ${r.exposed}, preserveDrawingBuffer ${r.preserve}`);
+  console.log(`  screenshot ${shot.length} bytes (a dead canvas compresses to near nothing)`);
+  console.log(`  hud: ${r.hud.replace(/\n/g, ' / ')}`);
+  if (errors.length) for (const e of errors.slice(0, 5)) console.log(`    ${e}`);
+  const ok = r.adaptiveEnabled && !r.preserve && r.calls > 40 && !errors.length;
+  console.log(ok ? '  PASS' : '  FAIL');
+  await page.close();
+}
+
 await browser.close();
