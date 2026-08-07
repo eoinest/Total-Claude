@@ -600,6 +600,17 @@ interface CityBayView {
   parapetInner: number; parapetOuter: number;
   innerOff: number; outerOff: number; garrisonable: boolean; towerHalf: number;
   isGate: boolean; stage: string;
+  /**
+   * The clear lane cut through the tower at this bay's west end, as offsets along the
+   * outward normal, or a zero-width band where there is no lane.
+   *
+   * Optional in the view because it is the city's to publish and a city that has not is
+   * still a city; `linkPath` falls back to the cityward lip, which is where it walked men
+   * before this existed. It is *not* optional in practice — both circuits publish it, and
+   * without it the path is inside masonry at every tower on both of them.
+   */
+  passOuter?: number;
+  passInner?: number;
 }
 
 /**
@@ -665,6 +676,16 @@ export class Siege implements ElevationOwner {
   /** Absolute Y of the top of the battlement at each station. A tower deck must clear it. */
   private sCrest = new Float32Array(0);
   private sBay = new Int32Array(0);
+  /**
+   * Centre of the lane through the tower at this station's bay's *west* end, as an offset
+   * along the outward normal, and its half-width. `sPassHalf` is 0 where there is no lane.
+   *
+   * Carried per station rather than looked up per link because a link's far end is always
+   * the first station of the bay whose west tower it crosses, which makes this an array
+   * read in a function that already has the index.
+   */
+  private sPassMid = new Float32Array(0);
+  private sPassHalf = new Float32Array(0);
   /**
    * Which continuous run of walkway each station belongs to.
    *
@@ -944,9 +965,17 @@ export class Siege implements ElevationOwner {
     const faces: number[] = [];
     const crests: number[] = [];
     const bidx: number[] = [];
+    const pmid: number[] = [];
+    const phalf: number[] = [];
 
     for (const bay of bays) {
       if (!bay.garrisonable) continue;
+      // The doorway through this bay's west tower, as the city cut it. Zero-width where the
+      // city publishes none, which puts `linkPath` back on the cityward lip.
+      const pOut = bay.passOuter ?? 0;
+      const pIn = bay.passInner ?? 0;
+      const laneMid = (pOut + pIn) * 0.5;
+      const laneHalf = Math.max(0, (pOut - pIn) * 0.5);
       // A tower stands at the bay's west end and its ballista chamber occupies the walk
       // there, so the standing run starts clear of it. The east end is the next bay's
       // tower, which that bay's own margin handles.
@@ -966,6 +995,8 @@ export class Siege implements ElevationOwner {
         faces.push(bay.parapetOuter);
         crests.push(bay.crestY);
         bidx.push(bay.index);
+        pmid.push(laneMid);
+        phalf.push(laneHalf);
       }
     }
 
@@ -980,6 +1011,8 @@ export class Siege implements ElevationOwner {
     this.sFace = new Float32Array(faces);
     this.sCrest = new Float32Array(crests);
     this.sBay = new Int32Array(bidx);
+    this.sPassMid = new Float32Array(pmid);
+    this.sPassHalf = new Float32Array(phalf);
 
     this.sDead = new Uint8Array(this.nStations);
     this.sOwner = new Int32Array(this.nStations).fill(-1);
@@ -1198,16 +1231,30 @@ export class Siege implements ElevationOwner {
       if (forward) pts.push(l.ax, l.ay, l.az, l.bx, l.by, l.bz);
       else pts.push(l.bx, l.by, l.bz, l.ax, l.ay, l.az);
     } else {
-      // Through the tower, or over the step. Both go by way of the *cityward* lip: the
-      // tower's only door onto the walk is on the city face — `wall.ts` is explicit that
-      // "the only way in was a doorway on the city face" — and a man taking a construction
-      // step keeps away from the parapet edge while his footing changes. Four points, so
-      // the path visibly turns in and back out again instead of cutting the corner through
-      // the masonry.
+      /**
+       * Through the tower, or over the step.
+       *
+       * **Both used to go by way of the cityward lip, and that was the bug the owner was
+       * looking at.** The comment here read "the tower's only door onto the walk is on the
+       * city face", quoting `wall.ts` — but `wall.ts` had said that about a *previous*
+       * tower and then pierced the chamber's side walls on the line of the walk. So the
+       * path ran along the lip at `innerOff - 0.15` and the hole was 1.36 m out to the
+       * field of it, and the file walked through 0.75 m of chamber wall and the chamber's
+       * back wall at every one of forty-two towers on Rome and all thirty-one on Carthage,
+       * where there was no hole at all. Measured with a ray along the wall axis against the
+       * geometry the renderer had: path inside masonry, 73 towers of 73.
+       *
+       * The lane is now published on the bay — `sPassMid`, from `GarrisonBay.passOuter`
+       * and `passInner` — and it is the *same call* the stone is cut with. Read off the
+       * far end of the link, because the tower stands at the west end of the bay the far
+       * station belongs to. Where there is no lane published, this falls back to the lip:
+       * a construction step is not a tower and has no doorway to aim at.
+       */
       const a = l.stationA;
       const b = l.stationB;
-      const inA = this.sInner[a] - 0.15;
-      const inB = this.sInner[b] - 0.15;
+      const doorway = this.sPassHalf[b] > 0;
+      const inA = doorway ? this.sPassMid[b] : this.sInner[a] - 0.15;
+      const inB = doorway ? this.sPassMid[b] : this.sInner[b] - 0.15;
       const legs: number[] = [
         this.sx[a], this.sy[a], this.sz[a],
         this.sx[a] + this.snx[a] * inA, this.sy[a], this.sz[a] + this.snz[a] * inA,

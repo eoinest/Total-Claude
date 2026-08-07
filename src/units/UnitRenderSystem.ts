@@ -293,6 +293,55 @@ interface Tier {
 const rp = { x: 0, y: 0, z: 0 };
 
 /**
+ * Where the tower crew go when the animal goes down, as fractions of the death clip.
+ *
+ * A Punic elephant carries a mahout astride the neck and three men in a crenellated tower
+ * 3.06 m up. The animal's fall is 2.6 s and the men are not passengers in it: the forelegs
+ * buckle first, the whole platform pitches forward, and they are thrown off it. So they
+ * hold on while it pitches (the howdah track already carries them down, because it is baked
+ * over the death rows like every other row), let go at `CREW_THROW_START`, and are on the
+ * ground by `CREW_THROW_START + CREW_THROW_LEN` — a second before the animal has finished
+ * settling, which is the right order: the crew land, then the beast comes to rest beside
+ * them.
+ */
+const CREW_THROW_START = 0.28;
+const CREW_THROW_LEN = 0.22;
+/** Peak of the thrown crewman's arc above the straight line from tower to ground, metres. */
+const CREW_THROW_ARC = 0.55;
+/**
+ * How far from the animal's spine a thrown crewman lands, metres, before his own scatter.
+ *
+ * Outside the carcass capsule in `BattleSystem` (1.30 m) so a body does not lie inside the
+ * animal, and inside the distance at which he would read as belonging to some other death.
+ */
+const CREW_LAND_OUT = 1.95;
+/**
+ * The side the animal rolls onto, in its own frame: +1 is its right.
+ *
+ * Read off `elephantClips.ts`'s death clip, whose root rolls from 0 to +78 degrees. Hard
+ * coupling to one authored clip, so it lives next to the throw constants and not inside the
+ * loop that uses it — if that clip is ever re-authored to fall the other way, this is the
+ * one line that has to move with it.
+ */
+const CREW_FALL_SIDE = 1;
+/**
+ * Lift on a landed crewman's mesh origin, metres.
+ *
+ * The same 0.15 m `RagdollSystem.writeCheapPose` gives a settled corpse. A death clip ends
+ * with its root well below the standing pose and the tip quaternion turns most of that drop
+ * into a horizontal displacement; the remainder is what this covers. Matching the ragdoll's
+ * own figure rather than picking a new one means a crewman lying beside the animal reads at
+ * the same height as the men who killed it lying next to him.
+ */
+const CREW_GROUND_LIFT = 0.15;
+
+/** Scratch for the thrown crew's lie-down quaternion. Four men per animal per frame. */
+const qCrew = new THREE.Quaternion();
+const qCrewTip = new THREE.Quaternion();
+const vCrewAxis = new THREE.Vector3();
+const AXIS_UP = new THREE.Vector3(0, 1, 0);
+
+/**
  * Bone chains and pivots the per-man pose variation acts on, read off the man rig itself so
  * a re-bake that reorders bones cannot silently start bending the wrong limb.
  *
@@ -398,6 +447,21 @@ export class UnitRenderSystem implements Subsystem {
   /** Clip, previous clip and fade per elephant, indexed by the animal's pool slot. */
   private eleCur!: Uint8Array;
   private elePhase!: Float32Array;
+  /**
+   * How far through its collapse a dead elephant is, 0 to 1 over the death clip's own
+   * 2.6 seconds. Its own timer and not `pool.animTime`, for two reasons that both matter.
+   *
+   * `animTime` is a *man's* playhead: `BattleSystem.stepAnimation` runs it at the man death
+   * clip's rate and flips `Dying` to `Dead` when it reaches 1, which it does in about one
+   * second. Driving the animal off it crushed a clip authored for four tonnes going down
+   * into the time it takes a man to fold at the knees — and worse, it stopped dead at the
+   * state change, because `advancePlayheads` skips anything already `Dead`.
+   *
+   * And it is a *render* clock, advanced in `preRender` from the frame delta, so nothing
+   * about how long the animal takes to fall can reach the simulation. The sim's own timing
+   * — one second of `Dying`, then `Dead` — is untouched, and the determinism hash with it.
+   */
+  private eleDeath!: Float32Array;
   /** Gait crossover speeds, m/s. */
   private eleGaitUp: number[] = [];
   /**
@@ -606,6 +670,7 @@ export class UnitRenderSystem implements Subsystem {
 
     this.eleCur = new Uint8Array(cap).fill(255);
     this.elePhase = new Float32Array(cap);
+    this.eleDeath = new Float32Array(cap);
     this.phase = new Float32Array(cap);
     this.prevPhase = new Float32Array(cap);
     this.blend = new Float32Array(cap).fill(1);
@@ -1436,7 +1501,12 @@ export class UnitRenderSystem implements Subsystem {
     const n = p.count;
     for (let i = 0; i < n; i++) {
       const state = p.state[i] as SoldierState;
-      if (state === SoldierState.Dead) continue;
+      // A settled corpse has no playhead left to advance. The one exception is an elephant
+      // still going down: the sim calls it `Dead` after a second and its authored collapse
+      // runs for 2.6, so stopping here would freeze four tonnes half-way to the ground with
+      // its forelegs folded and its hindquarters still up. The extra test costs two array
+      // reads on the dead, and stops of its own accord the moment the fall completes.
+      if (state === SoldierState.Dead && !(this.eleDeath[i] < 1 && this.isElephant(i))) continue;
 
       this.ensureGait(i);
       const cav = this.isCavalry(i);
@@ -1971,8 +2041,18 @@ export class UnitRenderSystem implements Subsystem {
         // ---- cull ---------------------------------------------------------
         // A settled body lies within a metre of the ground and reaches 1.8 m along it, so
         // its bound is centred lower and is wider than a standing man's.
-        this.sphere.center.set(rp.x, rp.y + (hasCorpse ? 0.4 : 0.9), rp.z);
-        this.sphere.radius = (cav ? 1.9 : hasCorpse ? 1.5 : 1.25) + SHADOW_CULL_MARGIN;
+        //
+        // An elephant gets its own figure, because a horse's does not fit it in either
+        // state. Standing it is 4.5 m long and 3.9 m to the top of the tower, so the 1.9 m
+        // sphere at 0.9 m the cavalry branch gave it enclosed about the front half of the
+        // animal and none of the crew — at the frame edge the whole beast popped out while
+        // most of it was still on screen. Lying down it is 4.7 m along the ground. One
+        // sphere at 1.7 m with a 3.6 m radius contains both, and a bigger bound costs
+        // instances, never draw calls.
+        const bigAnimal = onElephant;
+        this.sphere.center.set(rp.x, rp.y + (bigAnimal ? 1.7 : hasCorpse ? 0.4 : 0.9), rp.z);
+        this.sphere.radius = (bigAnimal ? 3.6 : cav ? 1.9 : hasCorpse ? 1.5 : 1.25)
+          + SHADOW_CULL_MARGIN;
         if (!this.frustum.intersectsSphere(this.sphere)) continue;
 
         // A settled corpse is drawn one tier coarser than his distance would give. Lying
@@ -2016,11 +2096,21 @@ export class UnitRenderSystem implements Subsystem {
            * instances rather than being pool soldiers of their own. They cost nothing in the
            * draw budget because they come out of the Carthaginian soldier tier this unit is
            * already using, and nothing in the simulation because they do not exist in it.
+           *
+           * **The animal is drawn dead as well as alive, and this is the fix for "when they
+           * die they just disappear".** There used to be an `if (!hasCorpse)` around these
+           * two calls, and `hasCorpse` went true on the tick of the killing blow because
+           * `Ragdoll` registered every death including this one — so the elephant and its
+           * four men left the instance buffer on the first frame after `damage()` and never
+           * came back. The carcass is the *same instance in the same tier* at the last frame
+           * of the death clip, so it costs exactly nothing: no extra draw call, no extra
+           * mesh, no impostor, just an instance that stops moving.
            */
-          if (!hasCorpse) {
-            this.pushElephant(i, rp.x, rp.y + ELEPHANT_GROUND_LIFT, rp.z, facing, dying);
-            this.pushElephantCrew(u, def, i, rp.x, rp.y + ELEPHANT_GROUND_LIFT, rp.z, facing, lod, state);
-          }
+          this.pushElephant(i, rp.x, rp.y + ELEPHANT_GROUND_LIFT, rp.z, facing, dying);
+          this.pushElephantCrew(
+            u, def, i, rp.x, rp.y + ELEPHANT_GROUND_LIFT, rp.z, facing, lod, state,
+            dying ? this.eleDeath[i] : 0
+          );
           // The animal is the unit. Nothing is drawn at the man's own slot: a legionary-sized
           // Carthaginian standing inside the elephant's ribs is what the naive path produces.
           continue;
@@ -2185,13 +2275,23 @@ export class UnitRenderSystem implements Subsystem {
    * animal keeps a separate one in `elePhase`.
    */
   private advanceElephant(i: number, dt: number, state: SoldierState, speed: number): number {
-    // Death and rout override speed: a dying elephant goes down and a broken one trumpets,
-    // whatever the ground is doing under it.
+    /**
+     * Death and rout override speed: a dying elephant goes down and a broken one trumpets,
+     * whatever the ground is doing under it.
+     *
+     * The collapse runs on `eleDeath`, at the death clip's own authored duration — see the
+     * field's note. It used to run on `pool.animTime`, which is a man's playhead: 2.6 s of
+     * authored fall was played in the 1.0 s the *man* death clip takes, and then froze,
+     * because the sim flips `Dying` to `Dead` at that point and `advancePlayheads` skips
+     * the dead. Nobody ever saw either failure, because the animal was not being drawn at
+     * all — see `Ragdoll.registerDeath`.
+     */
     if (state === SoldierState.Dying || state === SoldierState.Dead) {
       this.eleCur[i] = ELEPHANT_CLIP.death;
-      // The sim's own playhead, so the collapse lands with `Dying` turning into `Dead`.
-      this.elePhase[i] = Math.min(1, this.battle.pool.animTime[i]);
-      return this.elePhase[i];
+      const d = Math.min(1, this.eleDeath[i] + dt * this.elephantFacts[ELEPHANT_CLIP.death].invDuration);
+      this.eleDeath[i] = d;
+      this.elePhase[i] = d;
+      return d;
     }
     let want: number;
     if (state === SoldierState.Routing) {
@@ -2333,7 +2433,8 @@ export class UnitRenderSystem implements Subsystem {
     x: number, y: number, z: number,
     facing: number,
     lod: number,
-    state: SoldierState
+    state: SoldierState,
+    fall: number
   ): void {
     const tier = this.soldierTiers[u.faction][Math.min(lod, LOD_COUNT - 1)];
     const p = this.battle.pool;
@@ -2350,10 +2451,16 @@ export class UnitRenderSystem implements Subsystem {
     const seatZ = this.mahoutTrack[row + 2] * scale;
 
     // A crewman throws when the animal's unit is shooting and braces otherwise; the mahout
-    // never fights, he is holding a goad in both hands and steering four tonnes.
+    // never fights, he is holding a goad in both hands and steering four tonnes. Once the
+    // animal is going down every one of them is holding on with both hands.
     const shooting = state === SoldierState.Throwing || state === SoldierState.Shooting;
     const routing = state === SoldierState.Routing;
-    const crewClipId = routing ? Clip.IdleBrace : shooting ? Clip.ThrowPilum : Clip.IdleAlert;
+    const crewClipId = fall > 0 || routing
+      ? Clip.IdleBrace : shooting ? Clip.ThrowPilum : Clip.IdleAlert;
+    // 0 while they are still on the animal, rising to 1 as each is thrown clear.
+    const throwT = fall <= CREW_THROW_START
+      ? 0
+      : Math.min(1, (fall - CREW_THROW_START) / CREW_THROW_LEN);
 
     for (let k = 0; k < HOWDAH_STATIONS.length + 1; k++) {
       const mahout = k === HOWDAH_STATIONS.length;
@@ -2371,19 +2478,82 @@ export class UnitRenderSystem implements Subsystem {
       // `scale` would give the biggest bull the tallest crew, which is backwards — a big
       // elephant is what makes the men on it look *small*.
       const manScale = (mahout ? 0.97 : 1.0) * (0.96 + hash01(seed, 63) * 0.09);
-      this.pushCrewman(
-        tier,
-        x + lx * cosF + lz * sinF,
-        my,
-        z - lx * sinF + lz * cosF,
-        facing + st.turn,
-        manScale,
-        def,
-        seed,
-        mahout ? Clip.IdleRelaxed : crewClipId,
-        i
-      );
+      const wx = x + lx * cosF + lz * sinF;
+      const wz = z - lx * sinF + lz * cosF;
+
+      if (throwT <= 0) {
+        this.pushCrewman(
+          tier, wx, my, wz, facing + st.turn, manScale, def, seed,
+          mahout ? Clip.IdleRelaxed : crewClipId, i
+        );
+        continue;
+      }
+      this.throwCrewman(tier, def, i, seed, manScale, wx, my, wz, facing, mahout, throwT);
     }
+  }
+
+  /**
+   * One crewman pitched off a falling elephant, mid-air or landed.
+   *
+   * The recipe is deliberately the *same one a man's corpse uses*, because that combination
+   * is known to sit correctly on the ground: a death clip held at its last frame, a
+   * full-body quaternion that tips him out of the standing pose, and a mesh origin at the
+   * surface plus `RagdollSystem`'s own 0.15 m. Interpolating the clip phase and the tip
+   * angle together over the throw turns the same three numbers into a man tumbling out of a
+   * tower and landing flat, without a second solver and without a per-man physics body.
+   *
+   * He is not a pool soldier, so nothing here reaches the simulation. Four instances per
+   * dead animal, in the faction tier that is already being drawn.
+   */
+  private throwCrewman(
+    tier: Tier,
+    def: UnitTypeDef,
+    i: number,
+    seed: number,
+    manScale: number,
+    fromX: number, fromY: number, fromZ: number,
+    facing: number,
+    mahout: boolean,
+    t: number
+  ): void {
+    const b = this.battle;
+    /**
+     * Where he lands, in the animal's frame.
+     *
+     * The mahout sits forward of the tower and is thrown further forward; the three tower
+     * men scatter along the body. All of it off the same stable seed, so a crewman's landing
+     * place is fixed the moment he is thrown and does not crawl if the frame rate changes.
+     */
+    const side = CREW_FALL_SIDE * (CREW_LAND_OUT + hash01(seed, 81) * 1.35);
+    const along = mahout ? 1.5 + hash01(seed, 82) * 0.9 : -0.7 + hash01(seed, 82) * 2.4;
+    const sinF = Math.sin(facing);
+    const cosF = Math.cos(facing);
+    const landX = fromX + side * cosF + along * sinF;
+    const landZ = fromZ - side * sinF + along * cosF;
+    const landY = b.groundAt(landX, landZ) + CREW_GROUND_LIFT;
+
+    // Ease out of the tower and into the ground: fast off the platform, slowing as he lands.
+    const s = t * t * (3 - 2 * t);
+    const x = fromX + (landX - fromX) * s;
+    const z = fromZ + (landZ - fromZ) * s;
+    // A parabola over the straight line, so he clears the animal's back rather than sliding
+    // down it. Zero at both ends by construction.
+    const y = fromY + (landY - fromY) * s + CREW_THROW_ARC * Math.sin(Math.PI * s);
+
+    // Which way he is turned when he lands, and the horizontal axis he tips about: away
+    // from the animal, which is the direction he was thrown.
+    const outward = facing + (CREW_FALL_SIDE > 0 ? Math.PI / 2 : -Math.PI / 2)
+      + (hash01(seed, 83) - 0.5) * 1.1;
+    qCrew.setFromAxisAngle(AXIS_UP, outward);
+    vCrewAxis.set(Math.cos(outward), 0, -Math.sin(outward));
+    // Tip through a right angle over the throw, a little past it so he does not land as a
+    // plank: 96 degrees rolls his shoulder into the ground.
+    qCrewTip.setFromAxisAngle(vCrewAxis, s * 1.676);
+    qCrew.premultiply(qCrewTip);
+
+    const variants = [Clip.DeathSide, Clip.DeathBack, Clip.DeathForward, Clip.DeathKneel];
+    const clip = variants[Math.floor(hash01(seed, 84) * 4) & 3];
+    this.pushCrewman(tier, x, y, z, outward, manScale, def, seed, clip, i, s, qCrew);
   }
 
   /**
@@ -2402,7 +2572,11 @@ export class UnitRenderSystem implements Subsystem {
     def: UnitTypeDef,
     seed: number,
     clip: Clip,
-    hostIndex: number
+    hostIndex: number,
+    /** Playhead 0-1 for a one-shot, or undefined to run the clip on the shared clock. */
+    phase?: number,
+    /** Full-body orientation, for a man who is not standing up. See `iQuat` in the shader. */
+    quat?: THREE.Quaternion
   ): void {
     const buf = tier.buf;
     const n = buf.count;
@@ -2426,13 +2600,21 @@ export class UnitRenderSystem implements Subsystem {
     buf.orient[o + 2] = 0;
     buf.orient[o + 3] = this.battle.pool.grime[hostIndex] * 0.6;
     const q = n * Stride.Quat;
-    buf.quat[q] = 0; buf.quat[q + 1] = 0; buf.quat[q + 2] = 0; buf.quat[q + 3] = 0;
+    if (quat) {
+      buf.quat[q] = quat.x; buf.quat[q + 1] = quat.y;
+      buf.quat[q + 2] = quat.z; buf.quat[q + 3] = quat.w;
+    } else {
+      buf.quat[q] = 0; buf.quat[q + 1] = 0; buf.quat[q + 2] = 0; buf.quat[q + 3] = 0;
+    }
 
     const facts = this.manFacts[FOOT_CLIP_MAP[clip]];
     // Desynchronised from his own hash: four men on one animal all breathing in time is the
     // same uniformity tell as a rank of identical legionaries, at four times the magnification
-    // because they are three metres up and silhouetted against the sky.
-    const ph = (hash01(seed, 71) + this.animClock * facts.invDuration) % 1;
+    // because they are three metres up and silhouetted against the sky. A one-shot — a man
+    // being thrown off the animal — is driven by its caller instead and must not wrap.
+    const ph = phase !== undefined
+      ? Math.min(1, phase)
+      : (hash01(seed, 71) + this.animClock * facts.invDuration) % 1;
     const f = ph * facts.frames;
     const f0 = Math.min(facts.frames - 1, Math.floor(f));
     const f1 = facts.loop ? (f0 + 1) % facts.frames : Math.min(f0 + 1, facts.frames - 1);

@@ -623,8 +623,9 @@ export class CitySystem implements Subsystem {
      * through it. A unit would then be routed at a gate the collision surface does not open.
      * `setGateOpen(id, true)` performs exactly this clear when the ram wins.
      */
+    this.assertGatePassages(heightAt);
     for (const gate of this.gateList) {
-      if (!gate.open) continue;
+      if (!gate.open || this.unpierced.has(gate.id)) continue;
       this.clearSegment(gate.x, gate.z - 20, gate.x, gate.z + 20, 2.4);
     }
 
@@ -698,22 +699,7 @@ export class CitySystem implements Subsystem {
     this.wallBlockers = blockers;
     const out: Obstacle[] = [];
 
-    // ---- curtain ------------------------------------------------------------
-    // One box per blocked bay, with the wall-walk as its top so the garrison standing on
-    // it is *on* the wall rather than inside it. `blockers` already omits the bare footing
-    // courses, which are ankle-high and which the occupancy grid deliberately leaves open.
-    const bayOf = (x: number): GarrisonBay | undefined => this.bayAt(x);
-    for (const b of blockers) {
-      const mx = (b.x1 + b.x2) * 0.5;
-      const bay = bayOf(mx);
-      // A gap bay is rubble and a palisade — no walkway, so its top is the rampart crest.
-      // `walkable`, not `garrisonable`: the gate bay carries a wall-walk on both flanks of
-      // the gatehouse and no garrison, and taking its top from `crestY` buried the walking
-      // surface two metres inside the merlons.
-      const top = bay ? (bay.walkable ? bay.walkY : bay.crestY) : this.masonryTopAt(mx, (b.z1 + b.z2) * 0.5);
-      const topY = Number.isFinite(top) ? top : 1e4;
-      this.pushWallBox(out, b.x1, b.z1, b.x2, b.z2, b.halfW, topY);
-    }
+    this.pushWallFamily(out);
 
     // ---- towers -------------------------------------------------------------
     // Square, projecting 3.5 m beyond the outer face. Their tops are a storey above the
@@ -739,16 +725,65 @@ export class CitySystem implements Subsystem {
       });
     }
 
-    // ---- Carthage's outer and middle lines ----------------------------------
+    // ---- fabric -------------------------------------------------------------
+    // Roofs are not walkable in this game, so a monument and an insula are solid to any
+    // height. 1e4 rather than Infinity keeps the value finite in a Float32Array.
+    for (const f of landmarkFootprints) {
+      out.push({ x: f.x, z: f.z, hw: f.hw, hd: f.hd, rot: occRot(f.rot), topY: 1e4, kind: 'monument' });
+    }
+    for (const f of districtFootprints) {
+      out.push({ x: f.x, z: f.z, hw: f.hw, hd: f.hd, rot: occRot(f.rot), topY: 1e4, kind: 'building' });
+    }
+
+    this.obstacles = out;
+  }
+
+  /**
+   * Every solid filed under `kind: 'wall'` — curtain, forward lines and stairs.
+   *
+   * **One producer, two callers, and that is the whole point of it existing.** The build
+   * emitted these in three separate loops and `recutWallObstacles` — which runs whenever a
+   * gate opens or shuts — rebuilt only the first, then concatenated back everything whose
+   * kind was *not* `'wall'`. The stairs and the forward lines are `'wall'`, so they were
+   * dropped by the filter and never re-emitted.
+   *
+   * That was not a rare path. `Siege.armGate` shuts the gate on the first tick of every
+   * battle and deliberately toggles it open-then-shut to force the raster, so **two recuts
+   * happen before a man has moved**: measured, Rome went 56 wall boxes to 47 and Carthage
+   * 160 to 147 within one tick of load, taking all nine and all thirteen flights — 14–20 m
+   * of masonry apiece, the longest solids in the city — out of the collision set for the
+   * rest of the battle. On Carthage the stair boxes were also the only thing standing
+   * across seven of the eight postern gaps, so losing them opened seven 6 m holes in a
+   * curtain that is drawn solid.
+   *
+   * This is the same defect as the gate carriageway being cleared from the occupancy grid
+   * unconditionally, in the same file, one level up: two views of one piece of stone,
+   * derived twice.
+   */
+  private pushWallFamily(out: Obstacle[]): void {
+    // ---- curtain ------------------------------------------------------------
+    // One box per blocked bay, with the wall-walk as its top so the garrison standing on
+    // it is *on* the wall rather than inside it. `blockers` already omits the bare footing
+    // courses, which are ankle-high and which the occupancy grid deliberately leaves open.
+    for (const b of this.wallBlockers) {
+      const mx = (b.x1 + b.x2) * 0.5;
+      const bay = this.bayAt(mx);
+      // A gap bay is rubble and a palisade — no walkway, so its top is the rampart crest.
+      // `walkable`, not `garrisonable`: the gate bay carries a wall-walk on both flanks of
+      // the gatehouse and no garrison, and taking its top from `crestY` buried the walking
+      // surface two metres inside the merlons.
+      const top = bay ? (bay.walkable ? bay.walkY : bay.crestY) : this.masonryTopAt(mx, (b.z1 + b.z2) * 0.5);
+      this.pushWallBox(out, b.x1, b.z1, b.x2, b.z2, b.halfW, Number.isFinite(top) ? top : 1e4);
+    }
+
+    // ---- forward lines ------------------------------------------------------
     /**
-     * Real masonry, but not a garrison line.
+     * Real masonry, but not a garrison line. Empty on both circuits as they now stand —
+     * Carthage's outer and middle walls were removed at `dd57abf` — and kept because
+     * `getOutworks()` is still the published way for a plan to declare one.
      *
-     * `bayAt` is index arithmetic in x and one x cannot name three bays, so the forward
-     * lines are published as their own records and stamped here rather than folded into
-     * `getGarrisonBays()`. Their `topY` is their own crest, which is metres below the main
-     * wall's walk: an attacker who takes the outer line is standing sixteen metres under the
-     * men shooting at him, and that is the arithmetic that makes a defence in depth mean
-     * something rather than being three walls in a row.
+     * `bayAt` is index arithmetic in x and one x cannot name two bays, so a forward line is
+     * published as its own record rather than folded into `getGarrisonBays()`.
      */
     for (const ow of this.outworks) {
       for (const [ax, az, bx, bz] of outworkSpans(ow)) {
@@ -766,17 +801,18 @@ export class CitySystem implements Subsystem {
 
     // ---- wall stairs --------------------------------------------------------
     /**
-     * The nine flights onto the walkway, which nothing has ever collided with.
+     * The flights onto the walkway, which nothing collided with until `27a9e85`.
      *
      * Ground units walked straight through 14–20 m of masonry apiece. That was tolerable
      * when a flight projected 3.3 m out of a tower's city face; since the rebuild put them
-     * *along* the curtain they are the longest unstamped solids in the city.
+     * *along* the curtain they are the longest solids in the city.
      *
      * `kind` is `'wall'` rather than a new kind of its own. A flight is built hard against
      * the inner face and lies wholly within the twelve metres of the centreline that every
      * consumer already treats as curtain, so calling it anything else would split one piece
      * of masonry across two categories for no gain — and `ObstacleKind` lives in the sim,
-     * which is not this workstream's to widen.
+     * which is not this workstream's to widen. The cost of that choice was the bug this
+     * method exists to prevent: read `recutWallObstacles` before adding a fourth family.
      */
     for (const s of this.stairs) {
       const solid = stairSolid(s);
@@ -794,18 +830,6 @@ export class CitySystem implements Subsystem {
         kind: 'wall',
       });
     }
-
-    // ---- fabric -------------------------------------------------------------
-    // Roofs are not walkable in this game, so a monument and an insula are solid to any
-    // height. 1e4 rather than Infinity keeps the value finite in a Float32Array.
-    for (const f of landmarkFootprints) {
-      out.push({ x: f.x, z: f.z, hw: f.hw, hd: f.hd, rot: occRot(f.rot), topY: 1e4, kind: 'monument' });
-    }
-    for (const f of districtFootprints) {
-      out.push({ x: f.x, z: f.z, hw: f.hw, hd: f.hd, rot: occRot(f.rot), topY: 1e4, kind: 'building' });
-    }
-
-    this.obstacles = out;
   }
 
   /**
@@ -846,7 +870,9 @@ export class CitySystem implements Subsystem {
     const half = this.plan.gateOpenWidth * 0.5 + 0.5;
     let cut: [number, number] | null = null;
     for (const gate of this.gateList) {
-      if (!gate.open) continue;
+      // `unpierced` is a gate that says it is open and whose stone is not cut. Punching the
+      // box anyway is a hole in a wall the player can see standing. See `assertGatePassages`.
+      if (!gate.open || this.unpierced.has(gate.id)) continue;
       const t = ((gate.x - x1) * dx + (gate.z - z1) * dz) / (len * len);
       const dt = half / len;
       if (t + dt <= 0 || t - dt >= 1) continue;
@@ -1015,6 +1041,152 @@ export class CitySystem implements Subsystem {
   }
 
   /**
+   * Gates that stand open at build time and whose **drawn stone has no passage**.
+   *
+   * See `assertGatePassages`. Empty on Rome.
+   */
+  private unpierced = new Set<string>();
+  /** What `assertGatePassages` found at build, so shutting a gate can re-arm the refusal. */
+  private unpiercedAtBuild = new Set<string>();
+
+  /** Gates whose collision cut was refused because the stone is not pierced. Diagnostics. */
+  getUnpiercedGates(): readonly string[] {
+    return [...this.unpierced];
+  }
+
+  /**
+   * Refuse to cut a hole in the collision surface where the drawn stone has none.
+   *
+   * `CitySystem` opens a carriageway in the occupancy raster and in the oriented boxes for
+   * every gate whose record says `open`. That is a *claim by the wall builder* that it has
+   * cut a passage, and until now nothing checked it. Carthage publishes eight posterns as
+   * already-open gates — the mechanism by which a casemate wall is a wall you can pass
+   * through, and it needed no new code because `pushWallBox` and the raster clear were
+   * already there — but `buildPostern` sets a pierced arch *panel* into each face and never
+   * cuts the wall's own skins. Measured with a raycast against the baked chunks: at every
+   * height from 0.5 m to 5.0 m and every lateral offset out to ±8 m, a ray down a postern
+   * axis is stopped at the outer face, 9.2 m from a start 14 m out. There is no hole.
+   *
+   * From the player's seat that is a column of men walking through a wall, and it is
+   * invisible to every man-tick counter in this repo, because those measure against the
+   * obstacle set — which agrees with itself. It is the same two-halves-disagree defect as
+   * the carriageway being cleared from the occupancy grid unconditionally, running the
+   * other way: the collision surface says open, the stone says solid.
+   *
+   * Two deliberate limits, both of them fail-open:
+   *
+   *  - **Only gates that are already open before anything has happened.** A gate the siege
+   *    opens is trusted absolutely (`setGateOpen` clears the id below), because a ram that
+   *    has beaten the leaves down has earned its hole and refusing it would make a city
+   *    untakeable. Carthage's three main gates are not pierced either — measured the same
+   *    way, `porta-byrsae` stops a ray at 9.1 m with the leaves excluded — so this rule is
+   *    load-bearing and not theoretical.
+   *  - **All three heights must be blocked.** One stopped ray is a threshold slab or a
+   *    dropped portcullis groove; three is a wall.
+   *
+   * The check retires itself: the day the stone is cut, the rays pass and the postern opens
+   * with no further change here.
+   */
+  private assertGatePassages(heightAt: (x: number, z: number) => number): void {
+    this.unpierced.clear();
+    this.unpiercedAtBuild.clear();
+    const solid: string[] = [];
+    const t0 = performance.now();
+    for (const gate of this.gateList) {
+      if (!gate.open) continue;
+      // Outward normal of the circuit at this gate. `facing` points out of the city.
+      const nx = Math.sin(gate.facing);
+      const nz = Math.cos(gate.facing);
+      // Reach just past both faces of the curtain and no further. A longer probe finds the
+      // stair that stands 1.7 m behind the inner face and reads it as the wall.
+      const half = (this.bayAt(gate.x)?.halfThickness ?? 3) + 0.6;
+      const g = heightAt(gate.x, gate.z);
+      let blocked = 0;
+      for (const h of [0.8, 1.6, 2.4]) {
+        const y = g + h;
+        if (this.segmentHitsStone(
+          gate.x + nx * half, y, gate.z + nz * half,
+          gate.x - nx * half, y, gate.z - nz * half
+        )) blocked++;
+      }
+      if (blocked === 3) {
+        this.unpierced.add(gate.id);
+        this.unpiercedAtBuild.add(gate.id);
+        solid.push(gate.id);
+      }
+    }
+    if (solid.length) {
+      console.warn(
+        `[city:${this.plan.id}] ${solid.length} gate(s) stand open with no passage cut in ` +
+        `the stone — the collision cut is refused so men do not walk through a solid wall: ` +
+        `${solid.join(', ')}. Cut the passage in the wall builder and this retires itself. ` +
+        `(${(performance.now() - t0).toFixed(1)} ms)`
+      );
+    }
+  }
+
+  /**
+   * Does a short world segment meet any baked city triangle?
+   *
+   * Möller–Trumbore over the full-detail level of every chunk whose bounding sphere the
+   * segment could reach. The gate leaves are excluded by tag: a door is not a wall, and
+   * `setGateOpen(id, true)` re-cuts the boxes *before* `applyGateDoorState` hides them, so
+   * a check that counted them would refuse to open a gate the ram had just broken.
+   *
+   * Build-time only, a few dozen rays. It walks index buffers rather than using a
+   * `Raycaster` so it costs no scene traversal and no matrix work — the baked positions are
+   * already world-space, which `assertNoStrayGeometry` relies on too.
+   */
+  private segmentHitsStone(
+    ax: number, ay: number, az: number,
+    bx: number, by: number, bz: number
+  ): boolean {
+    const dx = bx - ax, dy = by - ay, dz = bz - az;
+    const mx = (ax + bx) * 0.5, mz = (az + bz) * 0.5;
+    const reach = Math.hypot(dx, dy, dz) * 0.5;
+    for (const c of this.chunks) {
+      if (c.gateDoorFor || c.gateWreckFor || c.scenery) continue;
+      if (Math.hypot(c.cx - mx, c.cz - mz) > c.radius + reach) continue;
+      for (const child of c.levels[0].group.children) {
+        const mesh = child as THREE.Mesh;
+        if (!mesh.isMesh) continue;
+        const pos = mesh.geometry.getAttribute('position');
+        if (!pos) continue;
+        const p = pos.array as ArrayLike<number>;
+        const idx = mesh.geometry.getIndex();
+        const ind = idx ? (idx.array as ArrayLike<number>) : null;
+        const tris = ind ? ind.length / 3 : pos.count / 3;
+        for (let t = 0; t < tris; t++) {
+          const i0 = (ind ? ind[t * 3] : t * 3) * 3;
+          const i1 = (ind ? ind[t * 3 + 1] : t * 3 + 1) * 3;
+          const i2 = (ind ? ind[t * 3 + 2] : t * 3 + 2) * 3;
+          const e1x = p[i1] - p[i0], e1y = p[i1 + 1] - p[i0 + 1], e1z = p[i1 + 2] - p[i0 + 2];
+          const e2x = p[i2] - p[i0], e2y = p[i2 + 1] - p[i0 + 1], e2z = p[i2 + 2] - p[i0 + 2];
+          const hx = dy * e2z - dz * e2y;
+          const hy = dz * e2x - dx * e2z;
+          const hz = dx * e2y - dy * e2x;
+          const a = e1x * hx + e1y * hy + e1z * hz;
+          // Two-sided: the inner face of a skin is wound away from the field and a
+          // one-sided test would walk straight out through the back of the wall.
+          if (a > -1e-9 && a < 1e-9) continue;
+          const f = 1 / a;
+          const sx = ax - p[i0], sy = ay - p[i0 + 1], sz = az - p[i0 + 2];
+          const u = f * (sx * hx + sy * hy + sz * hz);
+          if (u < 0 || u > 1) continue;
+          const qx = sy * e1z - sz * e1y;
+          const qy = sz * e1x - sx * e1z;
+          const qz = sx * e1y - sy * e1x;
+          const v = f * (dx * qx + dy * qy + dz * qz);
+          if (v < 0 || u + v > 1) continue;
+          const s = f * (e2x * qx + e2y * qy + e2z * qz);
+          if (s > 1e-6 && s < 1) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
    * How much of a chunk's radius the distance test forgives.
    *
    * Measuring to a chunk's surface rather than its centre is right in principle — a district
@@ -1145,6 +1317,17 @@ export class CitySystem implements Subsystem {
     const gate = this.gateList.find((g) => g.id === id);
     if (!gate || gate.open === open) return;
     gate.open = open;
+    /*
+     * An explicit call outranks the build-time passage check, in both directions.
+     *
+     * A ram that has beaten the leaves down has earned its hole whatever the stone still
+     * says — refusing it would make a city untakeable, and on Carthage no gate's passage is
+     * cut, so this is load-bearing rather than theoretical. Shutting a gate re-arms the
+     * check for it, so `Siege.armGate`'s deliberate open-then-shut on the first tick leaves
+     * the world exactly as the build left it.
+     */
+    if (open) this.unpierced.delete(id);
+    else if (this.unpiercedAtBuild.has(id)) this.unpierced.add(id);
     if (open) this.clearSegment(gate.x, gate.z - 20, gate.x, gate.z + 20, 2.4);
     else this.markSegment(gate.x, gate.z - 6, gate.x, gate.z + 6, 2.6);
     this.recutWallObstacles();
@@ -1227,19 +1410,19 @@ export class CitySystem implements Subsystem {
   }
 
   /**
-   * Rebuild just the curtain boxes after a gate has opened or closed. The fabric and the
+   * Rebuild the whole `'wall'` family after a gate has opened or closed. The fabric and the
    * towers never move, so they are left alone; a ram breaking the gate must not cost a
    * rebuild of three thousand rectangles.
+   *
+   * It must be the *whole* family and not just the curtain. The filter below drops every
+   * box whose kind is `'wall'`, and the stairs and the forward lines are `'wall'` too — so
+   * a version of this that re-emitted only `wallBlockers` deleted them. See
+   * `pushWallFamily`, which is now the single producer both callers share.
    */
   private recutWallObstacles(): void {
     const kept = this.obstacles.filter((o) => o.kind !== 'wall');
     const walls: Obstacle[] = [];
-    for (const b of this.wallBlockers) {
-      const mx = (b.x1 + b.x2) * 0.5;
-      const bay = this.bayAt(mx);
-      const top = bay ? (bay.walkable ? bay.walkY : bay.crestY) : this.masonryTopAt(mx, (b.z1 + b.z2) * 0.5);
-      this.pushWallBox(walls, b.x1, b.z1, b.x2, b.z2, b.halfW, Number.isFinite(top) ? top : 1e4);
-    }
+    this.pushWallFamily(walls);
     this.obstacles = walls.concat(kept);
     this.obstacleGeneration++;
   }
