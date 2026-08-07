@@ -200,6 +200,21 @@ export const maxRange = (kind: WeaponKind): number => {
 };
 /** Soldier torso radius for a projectile intersection, metres. */
 const HIT_RADIUS = 0.4;
+
+/**
+ * Rank buckets for the garrison-shot census: five wall ranks plus one for everything else.
+ * `MAX_WALL_RANKS` is 5 in `Siege.ts`; a man with no rank lands in the last bucket.
+ */
+const WALL_DIAG_RANKS = 6;
+
+/**
+ * A shot that dies on masonry sooner than this came down on the wall it was fired from.
+ *
+ * A parapet is 0.9 m thick and an arrow leaves at 20-60 m/s, so a shot that clears its own
+ * battlement is 20 m away inside half a second; anything that reports stone before then hit
+ * the merlon in front of the man who loosed it.
+ */
+const SELF_WALL_T = 0.5;
 /** Top of the hittable volume above a man's feet. */
 const HIT_TOP = 1.85;
 /** Seconds of flight before a projectile can hit anyone, so nobody shoots himself. */
@@ -494,6 +509,38 @@ export class ProjectileSystem implements Subsystem {
   private cMissN = new Int32Array(32);
   /** Shots the launch solve refused because the target was beyond the weapon's real reach. */
   private cUnreachable = new Int32Array(32);
+
+  /**
+   * Where a *garrison's own* shots end up, bucketed by the shooter's rank on the walkway.
+   *
+   * The player's report is that men on the parapet "cannot throw spears or shoot over the
+   * edge — it gets stuck on the little pieces of cover facing the enemies", and none of the
+   * census above can distinguish that from a weapon that is simply out of range: both come
+   * out as "not many kills". These buckets answer the only question that matters, which is
+   * *what the shot hit*, and they answer it per rank, because a man at the parapet and a man
+   * two ranks behind him have completely different geometry to solve.
+   *
+   * Diagnostic only. Nothing reads these back into the sim, so they cannot move the hash.
+   */
+  private wRank = new Int8Array(MAX_PROJECTILES);
+  /** Absolute Y of the walkway under the shooter, so an impact can be placed on the section. */
+  private wFootY = new Float32Array(MAX_PROJECTILES);
+  private wLaunched = new Int32Array(WALL_DIAG_RANKS);
+  private wHitMan = new Int32Array(WALL_DIAG_RANKS);
+  private wKilled = new Int32Array(WALL_DIAG_RANKS);
+  private wGround = new Int32Array(WALL_DIAG_RANKS);
+  /** Struck masonry standing at merlon height — his own battlement. */
+  private wCrest = new Int32Array(WALL_DIAG_RANKS);
+  /** Struck the crenel sill, i.e. he was at an embrasure and shot too low through it. */
+  private wSill = new Int32Array(WALL_DIAG_RANKS);
+  /** Struck the walking surface itself. */
+  private wWalk = new Int32Array(WALL_DIAG_RANKS);
+  /** Struck masonry below the walk — the curtain face, a tower, an outwork. */
+  private wBelow = new Int32Array(WALL_DIAG_RANKS);
+  /** Struck masonry more than `SELF_WALL_T` after release, so not the wall he stood on. */
+  private wFarMasonry = new Int32Array(WALL_DIAG_RANKS);
+  /** Summed seconds of flight for shots that died on their own wall — a sanity check. */
+  private wSelfLife = new Float64Array(WALL_DIAG_RANKS);
 
   // ---- spent projectiles ----
   private sx = new Float32Array(MAX_STUCK);
@@ -1205,7 +1252,17 @@ export class ProjectileSystem implements Subsystem {
     this.lastHit[idx] = -1;
     const elevated = b.elevated[i] !== 0;
     this.fromWall[idx] = elevated ? 1 : 0;
-    if (elevated) b.siege.noteWallShot();
+    this.wRank[idx] = -1;
+    if (elevated) {
+      b.siege.noteWallShot();
+      const r = p.rank[i];
+      const bucket = r >= 0 && r < WALL_DIAG_RANKS - 1 ? r : WALL_DIAG_RANKS - 1;
+      this.wRank[idx] = bucket;
+      // His feet, not his shoulders: an impact is classified by how far it stands above the
+      // walkway, which is the only frame in which "merlon" and "sill" mean anything.
+      this.wFootY[idx] = b.support[i];
+      this.wLaunched[bucket]++;
+    }
     if (m.kind === 'boulder') b.siege.noteArtillery(1, 0);
 
     if (p.ammo[i] > 0) p.ammo[i]--;
@@ -1281,6 +1338,7 @@ export class ProjectileSystem implements Subsystem {
     this.pierceLeft[idx] = phys.pierce;
     this.lastHit[idx] = -1;
     this.fromWall[idx] = 0;
+    this.wRank[idx] = -1;
     return true;
   }
 
@@ -1388,7 +1446,7 @@ export class ProjectileSystem implements Subsystem {
       if (this.city !== null) {
         const top = this.city.masonryTopAt(x1, z1);
         if (y1 <= top) {
-          this.impactMasonry(i, x1, Math.min(y0, top), z1);
+          this.impactMasonry(i, x1, Math.min(y0, top), z1, top);
           continue;
         }
       }
@@ -1410,9 +1468,10 @@ export class ProjectileSystem implements Subsystem {
    * Stones shatter and are gone; arrows and pila lodge in the mortar joints, which is
    * what makes a besieged wall face look besieged after a few minutes of shooting.
    */
-  private impactMasonry(i: number, x: number, y: number, z: number): void {
+  private impactMasonry(i: number, x: number, y: number, z: number, top: number): void {
     const weapon = this.kinds[this.kindIdx[i]];
     const kind = physicsOf(weapon).event;
+    this.noteWallShotEnd(i, top);
     this.ctx.events.emit('projectileImpact', {
       x, y, z, kind, hitTarget: false, material: 'stone',
     });
@@ -1488,6 +1547,30 @@ export class ProjectileSystem implements Subsystem {
     }
   }
 
+  /**
+   * Place a garrison shot's death on the section of the wall it was fired from.
+   *
+   * `top` is the masonry height the collision test actually read, so the classification is
+   * against the same number that stopped the shaft rather than against a re-derived one —
+   * the rule this project keeps relearning is that an instrument which recomputes what it is
+   * testing cannot fail. The bands are relative to the shooter's own walkway, so they carry
+   * from Rome's 2.05 m parapet to Carthage's 2.2 m without a constant.
+   */
+  private noteWallShotEnd(i: number, top: number): void {
+    const r = this.wRank[i];
+    if (r < 0) return;
+    if (this.life[i] > SELF_WALL_T) {
+      this.wFarMasonry[r]++;
+      return;
+    }
+    this.wSelfLife[r] += this.life[i];
+    const d = top - this.wFootY[i];
+    if (d > 1.3) this.wCrest[r]++;
+    else if (d > 0.25) this.wSill[r]++;
+    else if (d > -0.25) this.wWalk[r]++;
+    else this.wBelow[r]++;
+  }
+
   /** Score a landing against the point it was solved for. See `aimX`. */
   private noteMiss(i: number, x: number, z: number): void {
     const k = this.kindIdx[i];
@@ -1497,6 +1580,7 @@ export class ProjectileSystem implements Subsystem {
 
   private impactGround(i: number, x: number, y: number, z: number): void {
     this.cGround[this.kindIdx[i]]++;
+    if (this.wRank[i] >= 0) this.wGround[this.wRank[i]]++;
     this.noteMiss(i, x, z);
     const kind = physicsOf(this.kinds[this.kindIdx[i]]).event;
     this.ctx.events.emit('projectileImpact', {
@@ -1534,6 +1618,7 @@ export class ProjectileSystem implements Subsystem {
     const block = clamp01((ddef.shieldDefence / 46) * cover);
 
     this.cHitMan[this.kindIdx[i]]++;
+    if (this.wRank[i] >= 0) this.wHitMan[this.wRank[i]]++;
     this.noteMiss(i, hx, hz);
     // A shield stops an arrow and a pilum. It does not stop a stone from an engine, so a
     // weapon with a blast radius skips the block roll entirely.
@@ -1562,7 +1647,10 @@ export class ProjectileSystem implements Subsystem {
       * this.rng.range(0.85, 1.15);
     const lethal = b.damage(j, total, this.ox[i], this.oz[i], this.ownerUnit[i]);
     this.cDamage[this.kindIdx[i]] += total;
-    if (lethal) this.cKilled[this.kindIdx[i]]++;
+    if (lethal) {
+      this.cKilled[this.kindIdx[i]]++;
+      if (this.wRank[i] >= 0) this.wKilled[this.wRank[i]]++;
+    }
     const dsig = signalsOf(dv.id);
     dsig.missilePulse += 1;
     if (lethal) {
@@ -2009,8 +2097,58 @@ export class ProjectileSystem implements Subsystem {
     };
   }
 
+  /**
+   * The garrison's own shots, per rank on the walkway. See `wCrest`.
+   *
+   * `crest` is the number this whole workstream exists for: a shot that struck masonry
+   * standing more than 1.3 m above the walk within half a second of leaving the bow is a man
+   * shooting his own merlon.
+   */
+  debugWallShots(): unknown {
+    const rank = (r: number) => ({
+      rank: r === WALL_DIAG_RANKS - 1 ? 'other' : r,
+      launched: this.wLaunched[r],
+      hitMan: this.wHitMan[r],
+      killed: this.wKilled[r],
+      intoGround: this.wGround[r],
+      ownMerlon: this.wCrest[r],
+      ownSill: this.wSill[r],
+      ownWalkway: this.wWalk[r],
+      ownCurtainFace: this.wBelow[r],
+      farMasonry: this.wFarMasonry[r],
+      meanSelfLifeS: this.wCrest[r] + this.wSill[r] + this.wWalk[r] + this.wBelow[r]
+        ? +(this.wSelfLife[r] / (this.wCrest[r] + this.wSill[r] + this.wWalk[r] + this.wBelow[r])).toFixed(3)
+        : null,
+    });
+    const rows = [];
+    for (let r = 0; r < WALL_DIAG_RANKS; r++) if (this.wLaunched[r] > 0) rows.push(rank(r));
+    const sum = (a: Int32Array) => a.reduce((s, v) => s + v, 0);
+    const launched = sum(this.wLaunched);
+    const selfWall = sum(this.wCrest) + sum(this.wSill) + sum(this.wWalk) + sum(this.wBelow);
+    return {
+      byRank: rows,
+      total: {
+        launched,
+        hitMan: sum(this.wHitMan),
+        killed: sum(this.wKilled),
+        intoGround: sum(this.wGround),
+        ownMerlon: sum(this.wCrest),
+        ownSill: sum(this.wSill),
+        ownWalkway: sum(this.wWalk),
+        ownCurtainFace: sum(this.wBelow),
+        farMasonry: sum(this.wFarMasonry),
+        selfWall,
+        selfWallPct: launched ? +((100 * selfWall) / launched).toFixed(1) : 0,
+      },
+    };
+  }
+
   /** Reset the census, so a probe can measure one interval rather than the whole battle. */
   debugResetCensus(): void {
+    this.wLaunched.fill(0); this.wHitMan.fill(0); this.wKilled.fill(0);
+    this.wGround.fill(0); this.wCrest.fill(0); this.wSill.fill(0);
+    this.wWalk.fill(0); this.wBelow.fill(0); this.wFarMasonry.fill(0);
+    this.wSelfLife.fill(0);
     this.cLaunched.fill(0); this.cHitMan.fill(0); this.cBlocked.fill(0);
     this.cKilled.fill(0); this.cGround.fill(0); this.cMasonry.fill(0);
     this.cDamage.fill(0); this.cMiss.fill(0); this.cMissN.fill(0);
