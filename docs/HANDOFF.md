@@ -394,12 +394,14 @@ Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`
    spend three times the elapsed time of a drained interval. Its deltas are inflated in
    proportion: the post chain reads −35.5 ms against −6.0 ms of wall. Trust it for the *sign*
    of a difference and never for a millisecond.
-12. **`src/maps/carthage.ts` still has `city: null`.** Carthage's triple wall, its 59
-   casemated bays and its 30 towers exist in `src/city/carthageWall.ts` and are not reachable
-   from `?map=carthage` at `7a313fe` — the map hands over no plan, so `main.ts` registers no
-   `CitySystem` and `probe-boot-carthage` prints `city: absent`. Verified against a clean HEAD
-   checkout, so it is not a regression, but any Carthage measurement quoted from a running
-   game — including "19 visible wall meshes against Rome's 29" — was not taken on that map.
+12. **Carthage was unreachable at `7a313fe` and is the over-budget map at `b7d8aaf`.**
+   `src/maps/carthage.ts` had `city: null` until the fabric merge, so no Carthage figure
+   quoted from a running game before that was taken on that map. It is wired now, and its
+   assault camera renders **242** at ultra: 134 colour + 85 shadow + 23 post. The shadow pass
+   is *cheaper* than Rome's and the triple wall is 25 visible meshes against Rome's 31, so the
+   shared-material-stream technique works. The colour pass is the problem — `fabric` alone is
+   **157 visible meshes**, about forty chunks at 5/3/1. Their LOD ladder works; there are just
+   too many chunks. The lever is chunk count, and it belongs to `src/city/carthage/`.
 
 ## Grading
 

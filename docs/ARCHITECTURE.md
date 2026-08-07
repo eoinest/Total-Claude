@@ -345,6 +345,23 @@ interactive session touches **226**. The next lever, if more headroom is wanted,
 cascade count — one cascade off ultra is worth about 39 draws — and it is a quality
 decision, not a bug fix.
 
+**Carthage is now the over-budget map, and for the opposite reason.** With
+`city: CARTHAGE_PLAN` wired in, its assault camera renders **242** at ultra: 134 colour + 85
+shadow + 23 post. The shadow pass is *cheaper* than Rome's (85 against 98) and the triple
+wall really does cost less than Rome's single curtain — 25 visible meshes against 31 — so
+the material-stream sharing works exactly as advertised. The colour pass is the problem:
+
+    fabric 157   streets 28   wall 25   monuments 17   byrsa 6   harbour 5   trees 2
+
+`fabric` is about forty small chunks at 5/3/1 meshes. Their LOD ladder works — most sit at
+level 1 or 2 at any battle camera — but forty chunks at three meshes is 120 calls before
+anything else draws. Rome solved the same problem in `insulae.ts` by merging six districts
+into one chunk; Carthage has gone the other way. The lever is chunk *count*, not detail, and
+it belongs to whoever owns `src/city/carthage/`. Note the trade this makes explicit: small
+chunks give real LOD and real frustum culling, large chunks give few calls, and the surface
+correction in `CitySystem.surfaceCorrection` is what decides whether a large chunk can use
+its ladder at all.
+
 | Resource | Budget |
 |---|---|
 | Draw calls, whole frame | ≤ 220 |
