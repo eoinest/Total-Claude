@@ -1850,7 +1850,7 @@ export class Siege implements ElevationOwner {
           }
           const lane = this.links[this.breachLinks[moving % this.breachLinks.length]];
           if (!lane) { stuck++; continue; }
-          this.footSlot(i, lane, Math.floor(moving / this.breachLinks.length));
+          this.footSlot(i, lane);
           this.wantLink[i] = lane.id;
           this.wantDir[i] = 0;
           this.noteWaiting(i, lane.id, 0);
@@ -1870,12 +1870,13 @@ export class Siege implements ElevationOwner {
             continue;
           }
           if (cur === stair.runB) {
-            this.queueAtLink(i, stair, 1, moving++);
+            this.queueAtLink(i, stair, 1);
           } else {
             const hop = this.nextHop(cur, stair.runB);
             if (hop.link < 0) { stuck++; continue; }
-            this.queueAtLink(i, this.links[hop.link], hop.dir, moving++);
+            this.queueAtLink(i, this.links[hop.link], hop.dir);
           }
+          moving++;
           continue;
         }
 
@@ -1887,10 +1888,11 @@ export class Siege implements ElevationOwner {
           // hold him at a support height he is not on.
           const stair = this.links[plan.stair];
           if (!stair) { stuck++; continue; }
-          this.footSlot(i, stair, moving++);
+          this.footSlot(i, stair);
           this.wantLink[i] = stair.id;
           this.wantDir[i] = 0;
           this.noteWaiting(i, stair.id, 0);
+          moving++;
           continue;
         }
 
@@ -1901,7 +1903,8 @@ export class Siege implements ElevationOwner {
           stuck++;
           continue;
         }
-        this.queueAtLink(i, this.links[hop.link], hop.dir, moving++);
+        this.queueAtLink(i, this.links[hop.link], hop.dir);
+        moving++;
       }
 
       plan.stuck = stuck;
@@ -1961,10 +1964,40 @@ export class Siege implements ElevationOwner {
     }
   }
 
+  /**
+   * A man's place in the file at one link mouth, this tick.
+   *
+   * **This is the whole reason a garrison could not leave a wall, and it is a counter, not a
+   * mechanic.** `advancePlans` used to hand `queueAtLink` and `footSlot` its running `moving`
+   * tally as the queue index. That tally counts every man of the unit who is in motion —
+   * men already on a crossing, men queued at a *different* doorway, men bound for the far
+   * end of the curtain — so the first man actually waiting at a given mouth was handed an
+   * index equal to however many of his mates were busy elsewhere. `queueAtLink` then parks
+   * index `q` at `floor(q / MAX_WALL_RANKS)` stations back and rank `q % MAX_WALL_RANKS` in,
+   * and `pickWaiting` only admits a man within `LINK_ADMIT` of the mouth.
+   *
+   * Measured on a 53-man cohort ordered off the parapet: twelve men crossed the tower pass,
+   * and from that moment the head of the file behind them sat at station +2, rank 4 —
+   * **2.26 m from a mouth with a 2.00 m admission radius** — where it stayed for the rest of
+   * the battle. Forty-one men, no plan failure, no timeout, nobody stuck by the geometry;
+   * the queue had simply been laid out beyond its own doorway. It is self-reinforcing, which
+   * is why it reads as permanent: every man who gets onto the path pushes the next one
+   * further back.
+   *
+   * `waiters` is rebuilt from scratch each tick and every waiting man is pushed into it, so
+   * the count already in this bucket *is* the man's place in this file. Shared across units
+   * on purpose: two cohorts changing places at one tower door form one queue, which is what
+   * `advanceLinks` already assumes when it admits by proximity rather than by unit.
+   */
+  private fileIndex(linkId: number, dir: 0 | 1): number {
+    return this.waiters.get(linkId * 2 + dir)?.length ?? 0;
+  }
+
   /** Park a man in the file waiting at the wall-walk end of a link. */
-  private queueAtLink(i: number, l: WallLink, dir: 0 | 1, q: number): void {
+  private queueAtLink(i: number, l: WallLink, dir: 0 | 1): void {
     const st = dir === 0 ? l.stationA : l.stationB;
     if (st < 0) return;
+    const q = this.fileIndex(l.id, dir);
     const bounds = this.runBounds(st);
     // Step back into the run away from the mouth, three abreast, so a hundred men waiting
     // for a tower door are a crowd on the walkway and not a single file across two bays.
@@ -1978,9 +2011,17 @@ export class Siege implements ElevationOwner {
     this.noteWaiting(i, l.id, dir);
   }
 
-  /** Park a man in the file waiting at the foot of a stair, on the ground. */
-  private footSlot(i: number, l: WallLink, q: number): void {
+  /**
+   * Park a man in the file waiting at the foot of a stair, on the ground.
+   *
+   * The ground end of a link is only ever entered a->b, so the file is the `dir 0` bucket.
+   * See `fileIndex` for why the index is per-link and not the plan's `moving` tally: the
+   * ascent had the identical defect, and it bites harder here because `footSlot` steps back
+   * 0.85 m per row against the same 2 m admission radius — index 12 stands 4.2 m out.
+   */
+  private footSlot(i: number, l: WallLink): void {
     const b = this.battle;
+    const q = this.fileIndex(l.id, 0);
     // Back away from the flight along its own axis, four abreast.
     let ax = l.ax - l.bx;
     let az = l.az - l.bz;
