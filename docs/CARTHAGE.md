@@ -385,9 +385,21 @@ Distances are the clear gap between the works; cross-sections are **true metres,
 | 7 | **Military way** behind it | **35.0 m** clear | — | [GAME], §7.5 |
 | | **Total from ditch lip to the first building** | **109.1 m**, of which **74.1 m** is the defensive belt | | [DER] |
 
-Compare Rome: one 6.0 m curtain (`CURTAIN_T` in `wall.ts`), 6.5 m to the walk, no modelled ditch,
-60 m pomerium. **Carthage is 12× the defensive depth and 2.4× the height.** Say that number out
-loud in the menu blurb; it is the map.
+Compare Rome, exactly, so nobody quotes a flattering version of this:
+
+| | Rome, `fbcfe65` | Carthage | ratio |
+|---|---|---|---|
+| **Depth of works to fight through** (ditch lip to the back of the last wall) | **6.0 m** — the curtain, and nothing else | **74.1 m** | **12.4×** |
+| Height to the wall-walk | 6.5 m | 13.7 m | 2.1× |
+| Height to the merlons | 8.55 m | 15.9 m | 1.9× |
+| Height to the top of a tower | 13.8 m | 22.5 m | 1.6× |
+| Clear standing band on the walk | 2.21–4.06 m | 7.1 m | ~2× |
+| Ditch | none modelled | 20 × 6 m | — |
+| Ditch lip to the first building | 66 m (6 curtain + 60 pomerium) | 109.1 m | 1.65× |
+
+**The 12.4× is the real headline and the only one worth putting in the blurb.** The height ratios
+are under 2× and the distance-to-first-building ratio is under 2×; it is the *number of things
+between you and the city* that changes, not the size of any one of them.
 
 ### 4.3 The main wall — dimensions
 
