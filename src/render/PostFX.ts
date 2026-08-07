@@ -89,8 +89,23 @@ interface RTOpts {
  * either passes its test or vanishes. Multisampling is the only stage in the chain that
  * takes more than one geometric sample per pixel, and it is the prerequisite for
  * `alphaToCoverage` on the sward — without it, coverage carries exactly one bit.
+ *
+ * **Never 2.** Eight camera-measurements over two interleaved sessions at loads 42 and 60:
+ * 4x against none is a median of **1.18 ms**, while 4x against 2x is **0.07 ms**. The cost is
+ * in having a multisampled target at all, not in the sample count — 2x pays 94 % of 4x's
+ * price for half the samples, so `medium: 2` was the worst cell in the table and there is no
+ * machine for which it is the right answer. It buys medium 1.11 ms to spend on grass, which
+ * is the only knob measured larger (0.55-3.71 ms at 100 -> 50 %).
+ *
+ * Dropping medium to 0 costs the sward its coverage bit, but that is not a new configuration:
+ * `low` has always been 0 and grass sets `alphaToCoverage` unconditionally
+ * (`GrassField.ts:500`), so this is a path the engine already ships and renders. Medium also
+ * carries `grassDensity: 0.45`, so there is less than half as much of the sward to alias.
+ *
+ * This is now a **binary** lever — 0 or 4, worth 1.18 ms — which is the shape an adaptive
+ * quality loop can actually step through without paying for a state that is all cost.
  */
-const MSAA_SAMPLES: Record<string, number> = { low: 0, medium: 2, high: 4, ultra: 4 };
+const MSAA_SAMPLES: Record<string, number> = { low: 0, medium: 0, high: 4, ultra: 4 };
 
 export class PostFXSystem implements Subsystem {
   readonly name = 'postfx';
@@ -236,16 +251,37 @@ export class PostFXSystem implements Subsystem {
 
   private allocate(ctx: EngineContext): void {
     this.renderer.getDrawingBufferSize(this.dbSize);
-    this.w = Math.max(1, Math.floor(this.dbSize.x));
-    this.h = Math.max(1, Math.floor(this.dbSize.y));
+    const w = Math.max(1, Math.floor(this.dbSize.x));
+    const h = Math.max(1, Math.floor(this.dbSize.y));
+    const maxSamples = this.renderer.capabilities.maxSamples ?? 0;
+    const samples = Math.min(this.samplesOverride ?? MSAA_SAMPLES[ctx.quality.tier] ?? 0, maxSamples);
+
+    this.lastCtx = ctx;
+
+    /*
+     * Nothing below changes unless one of those three does, so reallocating on an unchanged
+     * triple destroys nineteen render targets and rebuilds them identically.
+     *
+     * That was not hypothetical. `resize()` is called unconditionally, and `Engine.setQuality`
+     * calls `resize` on every subsystem — so switching from `high` to `ultra`, which changes
+     * neither the drawing buffer nor the sample count (both tiers are 4), threw away and
+     * rebuilt the whole chain along with the TAA history. It is also the difference between a
+     * resolution lever that can be stepped and one that cannot: a continuous scale drives this
+     * path on every adjustment, and the cost of an adjustment is the cost of this function.
+     *
+     * The guard has to sit after `lastCtx` is stored, because `setSamplesOverride` reallocates
+     * through the remembered context and a skipped call must not leave a stale one behind.
+     */
+    if (this.mainA && w === this.w && h === this.h && samples === this.samples) return;
+
+    this.w = w;
+    this.h = h;
 
     this.freeTargets();
 
     // The one target the world is rasterised into, and so the only one where extra
     // geometric samples can be taken. Everything downstream is a fullscreen blit.
-    const maxSamples = this.renderer.capabilities.maxSamples ?? 0;
-    this.lastCtx = ctx;
-    this.samples = Math.min(this.samplesOverride ?? MSAA_SAMPLES[ctx.quality.tier] ?? 0, maxSamples);
+    this.samples = samples;
     this.sceneRT = this.makeRT({ hdr: true, depth: true, samples: this.samples });
     this.mainA = this.makeRT({ hdr: true });
     this.mainB = this.makeRT({ hdr: true });

@@ -119,12 +119,25 @@ export class HudSystem implements Subsystem {
    * for a full second by any single long frame — a load hitch, or the harness settling
    * its clock — and a wrong number in the corner of a screenshot misleads review. A
    * median over a short ring buffer ignores outliers entirely.
+   *
+   * Ignoring outliers entirely is exactly the problem. A median is the right lead number
+   * for a screenshot and the wrong one for the question "why does this feel bad": a frame
+   * distribution with a p50 of 9 ms and a p99 of 60 ms renders as "9.0 ms/f 111 fps", and
+   * the player who is watching it stutter is told the game is running at 111 fps. The
+   * median stays, and a p99 and a worst-frame now stand beside it.
+   *
+   * 240 frames, not 48. A p99 needs enough samples to have a 99th percentile at all: over
+   * 48 the top centile is the single worst frame, a maximum wearing a percentile's name.
+   * 240 is two to four seconds of play, which is about the window over which a player
+   * integrates before calling something laggy.
    */
-  private frameRing = new Float32Array(48);
+  private frameRing = new Float32Array(240);
   private frameRingAt = 0;
   private frameRingN = 0;
   private lastFrameAt = -1;
-  private readonly ringSort = new Float32Array(48);
+  private readonly ringSort = new Float32Array(240);
+  /** Frames too long to be frame times: counted, not averaged away. See `update`. */
+  private stalls = 0;
 
   constructor(private opts: HudOptions = {}) {}
 
@@ -330,14 +343,19 @@ export class HudSystem implements Subsystem {
    * the only system that already has a toggle, a place to put it and the HUD's own cost.
    * Everything comes off `EngineContext`, so no engine reference is needed.
    */
-  /** Median frame time in ms over the ring buffer, or 0 until it fills a little. */
-  private medianFrameMs(): number {
+  /**
+   * Median, 99th percentile and worst frame time in ms over the ring, or zeros until it
+   * has filled a little. One sort serves all three.
+   */
+  private frameStats(): { p50: number; p99: number; max: number } {
     const n = this.frameRingN;
-    if (n < 4) return 0;
+    if (n < 4) return { p50: 0, p99: 0, max: 0 };
     const a = this.ringSort.subarray(0, n);
     a.set(this.frameRing.subarray(0, n));
     a.sort();
-    return a[n >> 1];
+    // `ceil(0.99n) - 1` rather than `floor(0.99n)`: at n = 240 both give index 237, but at
+    // small n the latter can land below the median, which would print a p99 under the p50.
+    return { p50: a[n >> 1], p99: a[Math.max(0, Math.ceil(n * 0.99) - 1)], max: a[n - 1] };
   }
 
   private writeDebug(ctx: EngineContext): void {
@@ -350,18 +368,29 @@ export class HudSystem implements Subsystem {
       units++;
       men += v.alive;
     }
-    const med = this.medianFrameMs();
+    const f = this.frameStats();
     // Below ~1.6 ms per frame we are not in a display-driven loop at all — the
     // screenshot harness pumps `engine.frame()` back to back — so a frame *rate* would
     // be a fiction. The interval is always honest, so that is what leads.
-    const fps = med >= 1.6 ? Math.round(1000 / med).toString().padStart(4) : '   —';
-    // Packed into three short lines rather than four long ones: this sits over the sky in
+    const fps = f.p50 >= 1.6 ? Math.round(1000 / f.p50).toString().padStart(4) : '   —';
+    /*
+     * `programs` is the count of linked shader programs. It belongs on a performance
+     * readout because three.js links a program lazily, on the first frame a material is
+     * actually drawn, and a link is tens of milliseconds of synchronous main thread. So a
+     * program count that *climbs during a battle* is a mid-battle compile, and it is the
+     * one stutter cause that leaves no other trace: draws, triangles and men are all
+     * unchanged on the frame that pays for it. Watch it against `worst`.
+     */
+    // Packed into four short lines rather than six long ones: this sits over the sky in
     // every screenshot taken of the game, and a debug readout has no business occluding
     // more of the frame than it must.
     setText(
       this.perfLine,
-      `${med.toFixed(1)} ms/f ${fps} fps  hud ${this.hudMs.toFixed(2)}\n` +
-        `draws ${info.render.calls}  tris ${(info.render.triangles / 1000).toFixed(0)}k\n` +
+      `${f.p50.toFixed(1)} ms/f ${fps} fps  hud ${this.hudMs.toFixed(2)}\n` +
+        `p99 ${f.p99.toFixed(1)}  worst ${f.max.toFixed(1)}` +
+        `${this.stalls > 0 ? `  stalls ${this.stalls}` : ''}\n` +
+        `draws ${info.render.calls}  tris ${(info.render.triangles / 1000).toFixed(0)}k  ` +
+        `prog ${info.programs?.length ?? 0}\n` +
         `men ${men}  units ${units}  sel ${this.model.selection.length}  ` +
         `${t.paused ? 'PAUSED' : `${t.gameSpeed}x`} t+${t.simTime.toFixed(0)}s`
     );
@@ -381,11 +410,23 @@ export class HudSystem implements Subsystem {
 
     if (this.lastFrameAt >= 0) {
       const dt = t0 - this.lastFrameAt;
-      // Anything over a third of a second is a hitch, not a frame rate.
+      /*
+       * A third of a second is not a frame time, and it never was — but discarding it
+       * silently was worse than including it. A tab restored from the background, a
+       * shader link storm or a load stall all land here, and under the old guard they
+       * left the readout claiming a steady 111 fps through a visible freeze. Count them
+       * instead: `stalls` is a number the player can see, and it distinguishes "the frame
+       * is uniformly slow" from "the frame is fine and something is periodically seizing".
+       *
+       * The ceiling stays, because a 4-second load stall in a 240-frame ring would own the
+       * p99 for the next 240 frames and hide everything real behind it.
+       */
       if (dt > 0.05 && dt < 333) {
         this.frameRing[this.frameRingAt] = dt;
         this.frameRingAt = (this.frameRingAt + 1) % this.frameRing.length;
         if (this.frameRingN < this.frameRing.length) this.frameRingN++;
+      } else if (dt >= 333) {
+        this.stalls++;
       }
     }
     this.lastFrameAt = t0;

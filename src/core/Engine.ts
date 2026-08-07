@@ -333,6 +333,44 @@ export class Engine {
       // Sequential on purpose: later systems commonly read state built by earlier ones.
       await s.init?.(this.ctx);
     }
+
+    /*
+     * Link the shader programs now, on the loading screen, rather than during play.
+     *
+     * three.js links a program the first frame a material is actually *drawn*, and on
+     * ANGLE-over-Metal that link is a synchronous 40-290 ms on the main thread. Measured
+     * over nine interactive sessions: in eight of them the single worst frame of the
+     * session was a frame that linked a program. Frames that linked ran at p50 49.2 ms;
+     * frames that did not ran at p50 6.2 ms. It is triggered by the *camera* bringing
+     * something into view for the first time, not by the fighting getting heavy, and the
+     * program count is still climbing at t+88 s of battle — so it never stops happening.
+     * It is also amplified: a 151 ms stall fills the fixed-timestep accumulator, so the
+     * next frame fires all five `maxStepsPerFrame` ticks and costs another 30-38 ms. One
+     * link is felt as two bad frames.
+     *
+     * Measured on Carthage, 24 s of hard panning per arm: programs linked during play
+     * 22 -> 5, and the worst frame of the session 583.7 ms -> 73.0 ms.
+     *
+     * Two honest caveats, both measured rather than assumed:
+     *
+     * - **It does much less on Rome** (22 -> 23 links, worst 588 -> 553 ms) because far
+     *   less of that scene is compilable at this instant — it links 27 programs here
+     *   against Carthage's 44. The mechanism for the difference is not established.
+     * - **Do not wrap this in a force-visible traverse.** `compileAsync` walks the scene
+     *   with `traverseVisible`, so the obvious improvement is to make everything visible
+     *   first and catch the hidden LOD and pool meshes. Measured, that is *worse than
+     *   doing nothing*: it compiles fewer programs (27 against 44) and leaves all 22
+     *   links in play. Excluding lights from the forcing changes nothing either.
+     *
+     * The residue is materials that do not exist yet at this point — VFX, decals,
+     * ragdolls — plus `LightingSystem.preRender`, which re-links anything
+     * `discoverMaterials` has not seen. `UnitRenderSystem.prewarm` is the house pattern
+     * for the harder version: force a *draw*, which is the only thing that reliably links
+     * the exact variant that will be used.
+     */
+    onProgress?.(this.systems.length / (this.systems.length + 1), 'shaders');
+    await this.renderer.compileAsync(this.scene, this.rig.camera);
+
     onProgress?.(1, 'ready');
     this.time.resync();
   }
