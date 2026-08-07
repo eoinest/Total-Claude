@@ -514,8 +514,16 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
   // =========================================================================
   // Helmets
   // =========================================================================
-  // A galea sits on the crown with its rim just above the brow, so every shell starts at
-  // about y = -0.02 relative to the head bone and rises to 0.16.
+  /*
+   * A galea sits on the crown with its rim just above the brow.
+   *
+   * Every bowl here is 8-10 % narrower than it was, and the cheek pieces come in with them.
+   * The Gallic shell was a lathe of radius 0.109 over a skull of 0.082 — **27 mm of padding
+   * all round**, where a real linen lining is eight or ten. The head rattled inside it, and
+   * once the face opening was cut the opening looked into a cavern rather than at a face:
+   * both blind critics called the result "a skin-coloured tube" and "candle wax". A helmet
+   * that fits is also the cheapest thing that makes one read as formed rather than lathed.
+   */
   if (!germanic) {
     // Imperial Gallic: a rounded bowl with an embossed brow band, a broad flared neck
     // guard at the back and large hinged cheek pieces. This is the helmet everyone
@@ -523,7 +531,7 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     b.setPiece(Piece.HelmGallic, Tint.Metal);
     bowlWithFace(
       b,
-      [[0.001, 0.124], [0.058, 0.117], [0.094, 0.086], [0.105, 0.034], [0.108, 0.0], [0.109, -0.016]],
+      [[0.001, 0.118], [0.052, 0.111], [0.085, 0.082], [0.095, 0.032], [0.097, 0.0], [0.098, -0.016]],
       d.head, plateUv, BROW_Y
     );
     if (d.medium) {
@@ -533,9 +541,9 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
       // The reinforce is two things, not one ring: a browband on the rim of the face opening
       // and the nape band round the back. As a single ring at y -0.014 it sat at jaw height
       // on a helmet that had no face opening to bind.
-      b.revolve([[0.109, -0.014], [0.118, -0.026], [0.118, -0.044], [0.107, -0.05]],
+      b.revolve([[0.098, -0.014], [0.107, -0.026], [0.107, -0.044], [0.096, -0.05]],
         BACK_SEG(d.head), bronzeUv, 1, { arc: BACK_ARC });
-      b.revolve([[0.100, BROW_Y + 0.008], [0.110, BROW_Y - 0.004], [0.110, BROW_Y - 0.020], [0.099, BROW_Y - 0.028]],
+      b.revolve([[0.090, BROW_Y + 0.008], [0.099, BROW_Y - 0.004], [0.099, BROW_Y - 0.020], [0.089, BROW_Y - 0.028]],
         FACE_SEG, bronzeUv, 1, { arc: FACE_ARC });
       b.setPiece(Piece.HelmGallic, Tint.Metal);
       // Neck flange, angled down and back.
@@ -569,7 +577,7 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
       for (const s of [-1, 1]) {
         const cheek = new THREE.Matrix4()
           .makeRotationZ(s * 18 * DEG)
-          .premultiply(new THREE.Matrix4().makeTranslation(s * 0.088, -0.075, 0.018));
+          .premultiply(new THREE.Matrix4().makeTranslation(s * 0.076, -0.070, 0.026));
         b.setMatrix(headM.clone().multiply(cheek));
         b.box(0, 0, 0, 0.012, 0.115, 0.085, plateUv);
         b.setMatrix(headM);
@@ -583,23 +591,23 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     // Intercisa and Berkasovo finds are and what makes the two read apart in a crowd.
     bowlWithFace(
       b,
-      [[0.001, 0.198], [0.026, 0.186], [0.06, 0.146], [0.086, 0.084], [0.097, 0.028],
-        [0.1, 0.0], [0.101, -0.018]],
+      [[0.001, 0.190], [0.024, 0.178], [0.055, 0.140], [0.079, 0.082], [0.089, 0.028],
+        [0.092, 0.0], [0.093, -0.018]],
       d.head, plateUv, BROW_Y
     );
     if (d.medium) {
       b.setPiece(Piece.HelmRidge, Tint.Atlas);
       // The ridge itself, fore and aft along the crown, plus the brow band.
       b.box(0, 0.166, 0, 0.026, 0.062, 0.21, bronzeUv);
-      b.revolve([[0.101, -0.016], [0.109, -0.028], [0.109, -0.046], [0.099, -0.052]],
+      b.revolve([[0.093, -0.016], [0.101, -0.028], [0.101, -0.046], [0.091, -0.052]],
         BACK_SEG(d.head), bronzeUv, 1, { arc: BACK_ARC });
-      b.revolve([[0.094, BROW_Y + 0.008], [0.103, BROW_Y - 0.004], [0.103, BROW_Y - 0.020], [0.093, BROW_Y - 0.028]],
+      b.revolve([[0.086, BROW_Y + 0.008], [0.095, BROW_Y - 0.004], [0.095, BROW_Y - 0.020], [0.085, BROW_Y - 0.028]],
         FACE_SEG, bronzeUv, 1, { arc: FACE_ARC });
       b.setPiece(Piece.HelmRidge, Tint.Metal);
       for (const s of [-1, 1]) {
         const cheek = new THREE.Matrix4()
           .makeRotationZ(s * 9 * DEG)
-          .premultiply(new THREE.Matrix4().makeTranslation(s * 0.098, -0.08, 0.014));
+          .premultiply(new THREE.Matrix4().makeTranslation(s * 0.084, -0.074, 0.022));
         b.setMatrix(headM.clone().multiply(cheek));
         b.box(0, 0, 0, 0.022, 0.125, 0.09, plateUv);
         b.setMatrix(headM);
@@ -620,7 +628,7 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     b.setPiece(Piece.HelmCoolus, Tint.Metal);
     bowlWithFace(
       b,
-      [[0.001, 0.112], [0.06, 0.107], [0.092, 0.08], [0.101, 0.033], [0.104, 0.0], [0.105, -0.014]],
+      [[0.001, 0.107], [0.055, 0.102], [0.085, 0.078], [0.093, 0.032], [0.096, 0.0], [0.097, -0.014]],
       Math.max(5, d.head - 2), plateUv, BROW_Y
     );
     if (d.medium) {
@@ -628,9 +636,9 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
       // The knob is this helmet's whole silhouette signature, so it is drawn big enough
       // to survive a mip level.
       b.revolve([[0.001, 0.152], [0.026, 0.138], [0.026, 0.116], [0.001, 0.108]], 6, bronzeUv);
-      b.revolve([[0.105, -0.012], [0.113, -0.024], [0.113, -0.04], [0.103, -0.046]],
+      b.revolve([[0.097, -0.012], [0.105, -0.024], [0.105, -0.04], [0.095, -0.046]],
         BACK_SEG(Math.max(5, d.head - 2)), bronzeUv, 1, { arc: BACK_ARC });
-      b.revolve([[0.097, BROW_Y + 0.008], [0.106, BROW_Y - 0.004], [0.106, BROW_Y - 0.020], [0.096, BROW_Y - 0.028]],
+      b.revolve([[0.089, BROW_Y + 0.008], [0.098, BROW_Y - 0.004], [0.098, BROW_Y - 0.020], [0.088, BROW_Y - 0.028]],
         FACE_SEG, bronzeUv, 1, { arc: FACE_ARC });
       b.setPiece(Piece.HelmCoolus, Tint.Metal);
       const guard = new THREE.Matrix4()
