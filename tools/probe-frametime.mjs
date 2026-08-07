@@ -212,7 +212,13 @@ const url = `${base}/?harness=1&autoplay=0&w=${W}&h=${H}&map=${MAP}`
 console.log(`url: ${url}   viewport ${W}x${H} @ dpr ${DPR}`);
 await page.goto(url, { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 240000 });
+// Program count at three moments, because `advance()` renders thousands of frames and links
+// most of the cache before the session starts. Without the first two, the session's residual
+// linking looks like the whole story; with them, "linked at boot / linked during the
+// fast-forward / linked while the player was playing" are three separate numbers.
+const progsAtBoot = await page.evaluate(() => window.__game.engine.renderer.info.programs?.length ?? -1);
 if (AT > 0) await page.evaluate((t) => window.__game.advance(t), AT);
+const progsAfterAdvance = await page.evaluate(() => window.__game.engine.renderer.info.programs?.length ?? -1);
 
 // ---------------------------------------------------------------------------
 // Instrumentation. `Engine.frame` is wrapped, and so are the parts it calls — the frame
@@ -258,11 +264,15 @@ const setup = await page.evaluate((deep) => {
   let accFix = 0, accUpd = 0, accPre = 0, accRnd = 0;
   const now = () => performance.now();
 
+  // Every inner timer is gated on `p.deep` read at call time, not on the closure constant,
+  // so an A/B arm can switch the attribution off and the tool can measure its own overhead
+  // inside one page load — the only kind of comparison that is valid on this project.
   if (deep) {
     systems.forEach((s, i) => {
       if (s.fixedUpdate) {
         const f = s.fixedUpdate.bind(s);
         s.fixedUpdate = (dt, ctx) => {
+          if (!p.deep) return f(dt, ctx);
           const t = now(); f(dt, ctx); const d = now() - t;
           accFix += d; scratchFix[i] += d;
         };
@@ -270,6 +280,7 @@ const setup = await page.evaluate((deep) => {
       if (s.update) {
         const f = s.update.bind(s);
         s.update = (dt, ctx) => {
+          if (!p.deep) return f(dt, ctx);
           const t = now(); f(dt, ctx); const d = now() - t;
           accUpd += d; scratchUpd[i] += d;
         };
@@ -277,6 +288,7 @@ const setup = await page.evaluate((deep) => {
       if (s.preRender) {
         const f = s.preRender.bind(s);
         s.preRender = (ctx) => {
+          if (!p.deep) return f(ctx);
           const t = now(); f(ctx); const d = now() - t;
           accPre += d; scratchPre[i] += d;
         };
@@ -285,10 +297,16 @@ const setup = await page.evaluate((deep) => {
     // PostFX installs `renderOverride` during init, so by now it is the real composer.
     if (e.renderOverride) {
       const ro = e.renderOverride;
-      e.renderOverride = (ctx) => { const t = now(); ro(ctx); accRnd += now() - t; };
+      e.renderOverride = (ctx) => {
+        if (!p.deep) return ro(ctx);
+        const t = now(); ro(ctx); accRnd += now() - t;
+      };
     } else {
       const rr = e.renderer.render.bind(e.renderer);
-      e.renderer.render = (sc, cam) => { const t = now(); rr(sc, cam); accRnd += now() - t; };
+      e.renderer.render = (sc, cam) => {
+        if (!p.deep) return rr(sc, cam);
+        const t = now(); rr(sc, cam); accRnd += now() - t;
+      };
     }
   }
 
@@ -405,6 +423,24 @@ const zoom = async () => {
   for (let i = 0; i < 6; i++) { await page.mouse.wheel(0, 240); await wait(70); }
 };
 
+/**
+ * Put the camera back where the battle is.
+ *
+ * A session that only pans and zooms drifts off the fight and then spends most of its frames
+ * photographing grass: the first run of this tool put 66% of its frames in a settle phase at
+ * 3.4M triangles when the opening view was 15.7M. That is a real thing players do, but it
+ * silently reweights the whole distribution towards the cheap case, so the heavy case gets
+ * sampled deliberately at the end rather than left to chance.
+ */
+const openingCam = await page.evaluate(() => {
+  const r = window.__game.engine.rig;
+  return { x: r.focus.x, z: r.focus.z, zoom: r.zoom, yaw: r.yaw };
+});
+const refocus = (zoom) => page.evaluate(
+  (c) => window.__game.setCamera(c.x, c.z, c.zoom, c.yaw),
+  { ...openingCam, zoom: zoom ?? openingCam.zoom },
+);
+
 const FULL = [
   ['idle', async () => { await wait(2000); }],
   ['pan-keys', panKeys],
@@ -433,6 +469,21 @@ const FULL = [
     await page.keyboard.down('KeyA'); await wait(800); await page.keyboard.up('KeyA');
     await page.keyboard.down('KeyE'); await wait(700); await page.keyboard.up('KeyE');
     await wait(1000);
+  }],
+  // The heaviest thing a player can do: stand in the melee and turn round.
+  ['melee-close', async () => {
+    await refocus(0.34);
+    await wait(1200);
+    await page.keyboard.down('KeyE'); await wait(1200); await page.keyboard.up('KeyE');
+    await wait(800);
+  }],
+  ['melee-orbit-wide', async () => {
+    await refocus(0.62);
+    await wait(600);
+    await page.mouse.move(cx, cy);
+    for (let i = 0; i < 8; i++) { await page.mouse.wheel(0, -140); await wait(80); }
+    await page.keyboard.down('KeyQ'); await wait(1200); await page.keyboard.up('KeyQ');
+    await wait(900);
   }],
 ];
 
@@ -471,7 +522,10 @@ if (AB) {
   console.log(`# ${W}x${H} dpr${DPR} ${setup.tier}, map ${MAP}, from t+${AT}s, ~${SECONDS}s of real interaction`);
   for (const [name, fn] of FULL) { await phase(name); await fn(); }
   const spent = (Date.now() - t0) / 1000;
-  if (spent < SECONDS) { await phase('settle'); await wait((SECONDS - spent) * 1000); }
+  // Capped: idle frames are the cheapest in the session and an unbounded settle silently
+  // reweights the whole distribution towards them.
+  const settle = Math.min(4, SECONDS - spent);
+  if (settle > 0) { await phase('settle'); await wait(settle * 1000); }
 }
 
 const out = await page.evaluate(() => {
@@ -495,6 +549,27 @@ const out = await page.evaluate(() => {
 });
 
 const LOAD_AFTER = load();
+
+/**
+ * Drop the first few frames after `advance()`.
+ *
+ * `Engine.advance` ends with `time.rebase()`, which resets the frame clock but deliberately
+ * keeps the accumulator's sub-tick debt so that N short advances equal one long one. After
+ * 3,600 synthetic frames that debt is at the `maxStepsPerFrame` ceiling, so the first live
+ * frames each fire all five ticks and cost 38-43 ms. Measured: frames 1-3 of a Carthage run
+ * were 5-step frames with an rAF delta of 1141 ms, which cannot be a live rAF interval —
+ * that is the synthetic-to-real clock boundary, not the game. Real players never see it
+ * because they never call `advance`. Left in, it owns the p99.
+ */
+const WARMUP = Number(args.get('warmup') ?? 6);
+if (WARMUP > 0 && out.n > WARMUP * 4) {
+  for (const k of ['rafDt', 'total', 'fixed', 'upd', 'pre', 'rnd', 'steps', 'calls', 'tris',
+    'simT', 'phaseOf', 'armOf', 'progs', 'tex', 'geo']) out[k] = out[k].slice(WARMUP);
+  out.spikes = out.spikes.filter((s) => s.i >= WARMUP);
+  out.n -= WARMUP;
+  console.log(`\n(dropped the first ${WARMUP} frames: the advance() clock rebase leaves the`
+    + ` accumulator full, so they all fire ${5} sim ticks. Pass --warmup=0 to keep them.)`);
+}
 
 const f = (v, w = 6, d = 2) => (v === undefined || v === null ? '-'.padStart(w) : v.toFixed(d).padStart(w));
 const row = (label, s) => `  ${label.padEnd(16)} ${String(s.n).padStart(5)} ${f(s.p50)} ${f(s.p90)} ${f(s.p95)} `
@@ -558,8 +633,10 @@ if (out.progs[0] < 0) {
     const d = out.progs[i] - out.progs[i - 1];
     if (d !== 0) links.push({ i, d, simT: out.simT[i], ms: out.total[i], rnd: out.rnd[i], phase: out.phaseOf[i] });
   }
-  console.log(`  programs: ${out.progs[0]} at the first measured frame -> ${out.progs[out.n - 1]} at the last`
-    + `   (${links.length} frame(s) changed the count)`);
+  console.log(`  programs: ${progsAtBoot} at boot -> ${progsAfterAdvance} after the t+${AT}s fast-forward`
+    + ` -> ${out.progs[out.n - 1]} at the end of the session`);
+  console.log(`  of those, ${links.length} frame(s) of the ${out.n} measured linked or dropped a program`
+    + ` (${out.progs[out.n - 1] - out.progs[0]} net during play)`);
   if (links.length) {
     const last = links[links.length - 1];
     console.log(`  last link at frame ${last.i}/${out.n} (sim t+${last.simT.toFixed(1)}s) — `
@@ -605,10 +682,40 @@ for (const [name, idx] of groups) {
     + `${String(Math.round(d.p50)).padStart(6)}`);
 }
 
+/**
+ * Best block: the cheapest 60 consecutive frames in the run.
+ *
+ * Contention on this box is one-sided — another process can only ever *add* time to a frame,
+ * never remove it — so the cheapest comparable window is the closest thing to a clean read
+ * that a loaded machine can give. The full distribution above is the deliverable and its tail
+ * is real; but under load the tail is partly the box and partly the game, and the best block
+ * is the part that is only the game. Reported as a floor, not as the answer.
+ */
+{
+  const win = Math.min(60, Math.max(10, Math.floor(out.n / 8)));
+  let best = Infinity; let bestAt = 0;
+  for (let s = 0; s + win <= out.n; s++) {
+    let m = 0;
+    for (let k = s; k < s + win; k++) m += out.total[k];
+    if (m < best) { best = m; bestAt = s; }
+  }
+  const blk = Array.from({ length: win }, (_, k) => bestAt + k);
+  const t = stat(blk.map((i) => out.total[i]));
+  const fx = stat(blk.map((i) => out.fixed[i]));
+  const rn = stat(blk.map((i) => out.rnd[i]));
+  const st = blk.map((i) => out.steps[i]);
+  console.log(`\n-- best block: the cheapest ${win} consecutive frames (frames ${bestAt}-${bestAt + win - 1}, `
+    + `phase ${out.phaseNames[out.phaseOf[bestAt]] ?? '?'}) --`);
+  console.log(`  frame() mean ${f(best / win).trim()}  p50 ${f(t.p50).trim()}  p90 ${f(t.p90).trim()}  max ${f(t.max).trim()}`
+    + `   fixed p50 ${f(fx.p50).trim()}  render p50 ${f(rn.p50).trim()}`
+    + `   mean steps/frame ${(st.reduce((a, b) => a + b, 0) / win).toFixed(2)}`);
+  console.log(`  absolute cheapest single frame in the run: ${f(stat(out.total).min).trim()} ms`
+    + `   (a 0-step frame costs ${f(stat(out.total.filter((_, i) => out.steps[i] === 0)).p50 ?? 0).trim()} ms at p50)`);
+}
+
 if (AB) {
-  // Best-block: contention on this box is one-sided, so the cheapest comparable window is
-  // the closest thing to a clean read. Blocks of 60 consecutive frames within an arm.
-  console.log(`\n-- best block (60 consecutive frames, lowest mean frame()) --`);
+  // Same logic, per arm: the cheapest window each arm managed.
+  console.log(`\n-- best block per arm (60 consecutive frames, lowest mean frame()) --`);
   for (const [name, idx] of groups) {
     let best = Infinity; let bestAt = -1;
     for (let s = 0; s + 60 <= idx.length; s += 10) {
