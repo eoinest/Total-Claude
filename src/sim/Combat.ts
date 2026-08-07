@@ -122,6 +122,44 @@ const HIT_CEIL = 0.75;
 const ENGAGE_PER_WIDTH = 1.2;
 const ENGAGE_PER_WIDTH_SPEAR = 1.8;
 
+/**
+ * Metres added to a weapon's `reach` to get the radius a man will *acquire* an opponent in.
+ *
+ * The idea is Josh Kappler's, from PR #1. It was 0.25, and the smell he named is that the
+ * next line down uses a different convention: `keepR` is `reach + 0.9`, so a man would hold
+ * an opponent at 2.0 m that he could never have taken at 1.35.
+ *
+ * What that costs is measurable and it is specific to short weapons.
+ * `tools/probe-meleegeom.mjs` settles two 160-man blocks nose to nose and reads the distance
+ * from every man to his nearest enemy, by rank. A legionary line against a Germanic line
+ * settles with rank 0 at 0.69 m, rank 1 at **1.23 m** and rank 2 at **1.69 m** — so at
+ * `reach + 0.25` = 1.35 m a gladius covers all of rank 0, **52 %** of rank 1 and **none** of
+ * rank 2. The consequence is not subtle: `ENGAGE_PER_WIDTH` exists to be the thing that
+ * decides how many men fight, and for a sword unit it was not, because geometry bound first.
+ * Measured against each unit's own ceiling: spears **49.9 of a cap of 50**, swords
+ * **19.5-20.4 of a cap of 35**.
+ *
+ * 0.86 is one body diameter (`2 x SOLDIER_RADIUS` = 0.84) plus a centimetre of slack, which
+ * is the geometric statement of "his own body brings the man behind him that much closer" —
+ * and it is deliberately just inside `KEEP_PAD`, so acquire and keep are finally the same
+ * convention. A spear is unaffected by construction: at `reach` 2.4 the old radius already
+ * covered 100 % of ranks 0-2, and the same probe's spear control does not move.
+ */
+const ACQUIRE_PAD = 0.86;
+/**
+ * And how much further away an opponent may drift before he is dropped.
+ *
+ * Expressed as a band on top of `ACQUIRE_PAD` rather than as a second independent pad,
+ * because two pads written side by side is exactly how the conventions drifted apart: main
+ * carried 0.25 and 0.9, a 0.65 m band, which is 60 % of a gladius's whole reach.
+ *
+ * 0.32 m is four ticks of `MAX_SEPARATION_FIGHTING` (0.08 m), which is the largest jostle
+ * crowd separation can inflict on a man who is in melee. Anything narrower and a man drops
+ * the opponent he is mid-stroke against because somebody leaned on him; acquisition is
+ * striped across eight ticks, so re-finding him costs up to a quarter of a second.
+ */
+const KEEP_PAD = ACQUIRE_PAD + 0.32;
+
 // ---------------------------------------------------------------------------
 // Module-scope scratch. Hoisted so the per-soldier loops allocate nothing at all:
 // the spatial hash takes a callback, and a closure per man per tick would be
@@ -659,8 +697,8 @@ export class CombatSystem implements Subsystem {
       const s = signalsOf(id);
       const ownFaction = u.faction;
       const cav = isCavalry(def);
-      const acquireR = def.reach + 0.25;
-      const keepR = def.reach + 0.9;
+      const acquireR = def.reach + ACQUIRE_PAD;
+      const keepR = def.reach + KEEP_PAD;
       const keepR2 = keepR * keepR;
       const loose = u.spacingX > 1.3;
       // Press along the direction the fight is in if we know it, else at the enemy
