@@ -1783,6 +1783,25 @@ export class Siege implements ElevationOwner {
   }
 
   /**
+   * May this unit hold a place in a boarding file?
+   *
+   * **A broken party at the head of a file blocks everyone behind it, and that is how a
+   * feature that measured green stopped working.** `musterOwned` lays the file out and
+   * `stepCrossing` admits from it, and the two used different tests: admission skipped a
+   * routing unit, the layout did not. So a routed escalade party went on occupying rows 0-14
+   * at the foot of its own ladders while refusing to climb them, and the cohort the player
+   * had sent was laid out behind it — measured at **14.6 m from a mouth with a 1.6 m
+   * admission radius**, frozen there for the whole battle. That is the queue-index defect
+   * that broke wall descent wearing different clothes: a place in a file handed to a man who
+   * is never going to use it.
+   *
+   * Same shape as the ram's rule and for the same reason: a machine is a thing you abandon.
+   */
+  private mayBoard(u: UnitGroupState | undefined): u is UnitGroupState {
+    return !!u && !u.destroyed && u.alive > 0 && u.order !== UnitOrder.Rout;
+  }
+
+  /**
    * Take every routed unit off one machine's boarder list, crew excepted.
    *
    * Men already on the rungs keep going: `advanceQueue` does not read the list, and pulling
@@ -3003,6 +3022,30 @@ export class Siege implements ElevationOwner {
      */
     for (const t of this.towers) this.dropBrokenBoarders(t.boarders);
     for (const l of this.ladders) this.dropBrokenBoarders(l.boarders);
+    /**
+     * And the gang itself, once it has broken.
+     *
+     * `updateTowers` already halts a machine whose crew has routed, but the crew stayed
+     * `owned`, so `steerToSlots` held it at a muster point it was trying to run from — the
+     * same pin the ram had. Released here, it becomes an ordinary routing formation. It is
+     * *not* dropped from `boarders`, because a rally puts it straight back to work; the
+     * `mayBoard` test is what keeps it out of the file in the meantime.
+     */
+    for (const m of [...this.towers, ...this.ladders]) {
+      if (!this.owned.has(m.unitId) || this.garrisons.has(m.unitId)) continue;
+      const u = b.unitById(m.unitId);
+      // Written out rather than `!mayBoard(u)`: that is a type predicate, and its false
+      // branch narrows `u` to `undefined` — which is wrong here, because a live unit that is
+      // merely routing also fails it and its men are exactly the ones to release.
+      if (u && !u.destroyed && u.alive > 0 && u.order !== UnitOrder.Rout) continue;
+      this.owned.delete(m.unitId);
+      if (!u) continue;
+      for (const i of u.members) {
+        if (this.crossOf[i] !== -1 || this.stationOf[i] >= 0) continue;
+        b.elevated[i] = 0;
+        b.support[i] = NO_SUPPORT;
+      }
+    }
     for (const r of this.rams) {
       if (r.wreck) continue;
       const u = b.unitById(r.unitId);
@@ -3653,9 +3696,8 @@ export class Siege implements ElevationOwner {
     if (this.mouthClear(c)) {
       admit: for (const unitId of boarders) {
         const u = b.unitById(unitId);
-        // A unit that has been destroyed or has broken is not queuing for anything. Left in
-        // the list, because a rout can rally and the machine is still theirs to use.
-        if (!u || u.destroyed || u.order === UnitOrder.Rout) continue;
+        // Left in the list, because a rout can rally and the machine is still theirs to use.
+        if (!this.mayBoard(u)) continue;
         for (const i of u.members) {
           if (!p.aliveAt(i)) continue;
           if (this.crossOf[i] !== -1) continue;
@@ -3831,7 +3873,7 @@ export class Siege implements ElevationOwner {
       let q = 0;
       for (const uid of t.boarders) {
         const u = b.unitById(uid);
-        if (!u || u.destroyed) continue;
+        if (!this.mayBoard(u)) continue;
         for (const i of u.members) {
           if (!p.aliveAt(i)) continue;
           if (this.stationOf[i] >= 0 || this.crossOf[i] !== -1) continue;
@@ -3882,7 +3924,7 @@ export class Siege implements ElevationOwner {
       let q = 0;
       for (const uid of group[0].boarders) {
         const u = b.unitById(uid);
-        if (!u || u.destroyed) continue;
+        if (!this.mayBoard(u)) continue;
         for (const i of u.members) {
           if (!p.aliveAt(i)) continue;
           if (this.stationOf[i] >= 0 || this.crossOf[i] !== -1) continue;
