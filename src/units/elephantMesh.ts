@@ -235,7 +235,7 @@ export function buildElephantGeometry(): THREE.InstancedBufferGeometry {
         // The ear cups forward and its trailing edge curls; without the curl it is a plank.
         const curl = Math.sin(s * Math.PI * 0.85) * 0.16 + s * s * 0.14;
         const z = ez - 0.08 - curl;
-        const [u, v] = MeshBuilder.tileUv(hideUv, s, t, 1, 1);
+        const [u, v] = MeshBuilder.tileUv(hideUv, s, t);
         row.push(b.vert(x, y, z, side * 0.35, 0.1, -0.9, u, v));
       }
       grid.push(row);
@@ -381,7 +381,7 @@ export function buildElephantGeometry(): THREE.InstancedBufferGeometry {
         // A raised central rib, and the domed boss at the brow.
         const rib = Math.exp(-(s * s) / 0.05) * 0.035;
         const boss = Math.exp(-((s * s) / 0.16 + ((t - 0.42) ** 2) / 0.012)) * 0.075;
-        const [u, v] = MeshBuilder.tileUv(bronzeUv, (s + 1) * 0.5, t, 1, 1);
+        const [u, v] = MeshBuilder.tileUv(bronzeUv, (s + 1) * 0.5, t);
         row.push(b.vert(x, y, z + rib + boss, s * 0.7, 0.35, 0.62, u, v));
       }
       grid.push(row);
@@ -402,7 +402,7 @@ export function buildElephantGeometry(): THREE.InstancedBufferGeometry {
       const sm = (s0 + s1) * 0.5;
       const halfW = 0.30;
       const arch = Math.sqrt(Math.max(0, 1 - sm * sm)) * 0.22;
-      const [u, v] = MeshBuilder.tileUv(bronzeUv, (sm + 1) * 0.5, 1, 1, 1);
+      const [u, v] = MeshBuilder.tileUv(bronzeUv, (sm + 1) * 0.5, 1);
       const tip = b.vert(
         sm * halfW, 2.86 - 0.92 - 0.10, head[2] + 0.16 + arch + Math.sin(0.8 * Math.PI) * 0.14,
         0, -0.2, 0.98, u, v
@@ -444,7 +444,7 @@ export function buildElephantGeometry(): THREE.InstancedBufferGeometry {
         const y = 2.36 - t * 1.02;
         const bulge = Math.sqrt(Math.max(0, 1 - s * s)) * 0.20;
         const z = withers[2] + 0.26 + bulge - t * 0.10;
-        const [u, v] = MeshBuilder.tileUv(scaleUv, (s + 1) * 0.5, t, 2, 2);
+        const [u, v] = MeshBuilder.tileUvWrapped(scaleUv, (s + 1) * 0.5, t, 2, 2);
         row.push(b.vert(x, y, z, s * 0.6, 0.1, 0.79, u, v));
       }
       grid.push(row);
@@ -484,7 +484,7 @@ export function buildElephantGeometry(): THREE.InstancedBufferGeometry {
       const edge = cI === 0 || cI === cols.length - 1 ? 0.34 : 0;
       const x = (0.70) * pt.s;
       const y = barrel[1] - 0.20 + 0.70 * pt.k - edge;
-      const [u, v] = MeshBuilder.tileUv(clothUv, cI / (cols.length - 1), r, 2, 1);
+      const [u, v] = MeshBuilder.tileUvWrapped(clothUv, cI / (cols.length - 1), r, 2, 1);
       return b.vert(x, y, barrel[2] + dz, pt.s, pt.k, 0, u, v);
     }));
     for (let cI = 0; cI < cols.length - 1; cI++) {

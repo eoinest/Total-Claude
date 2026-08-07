@@ -183,11 +183,73 @@ export class MeshBuilder {
     else this.tri(a, b, c);
   }
 
-  /** Map a 0..1 pair into an atlas tile, optionally tiling within it. */
-  static tileUv(r: UvRect, s: number, t: number, repeatS = 1, repeatT = 1): [number, number] {
+  /** Map a 0..1 pair into an atlas tile. `s`/`t` are already tile-local; see `repeatStops`. */
+  static tileUv(r: UvRect, s: number, t: number): [number, number] {
+    const fs = Math.min(1, Math.max(0, s));
+    const ft = Math.min(1, Math.max(0, t));
+    return [r.u0 + fs * (r.u1 - r.u0), r.v0 + ft * (r.v1 - r.v0)];
+  }
+
+  /**
+   * The old per-vertex modulo, kept only for the hand-rolled grids that still call it.
+   *
+   * It carries the reversed-column defect described on `repeatStops` and should not be used
+   * by anything new. Five sites remain, all outside the soldier: the elephant's scale
+   * caparison and cloth, the horse's mane and caparison, and one engine sweep. Each is its
+   * own loop rather than a `tube`/`revolve`, so converting them is per-site work in three
+   * subsystems this workstream does not grade — recorded rather than quietly fixed.
+   */
+  static tileUvWrapped(r: UvRect, s: number, t: number, repeatS: number, repeatT: number): [number, number] {
     const fs = repeatS === 1 ? Math.min(1, Math.max(0, s)) : (s * repeatS) % 1;
     const ft = repeatT === 1 ? Math.min(1, Math.max(0, t)) : (t * repeatT) % 1;
     return [r.u0 + fs * (r.u1 - r.u0), r.v0 + ft * (r.v1 - r.v0)];
+  }
+
+  /**
+   * Where a repeated tile starts and stops along a swept parameter — the fix for the
+   * single largest source of pixel-scale noise on a soldier.
+   *
+   * A tile repeat used to be `(s * repeat) % 1` evaluated **per vertex**, and a modulo
+   * between two vertices does not wrap the surface between them: it runs the tile
+   * *backwards*, compressed into one column. Two things follow, and the second is worse
+   * than the first.
+   *
+   *   - Even at `repeat = 1` every closed ring had one, because `tube`, `revolve` and
+   *     `sweep` close with `s2 = (s + 1) % segments` and reuse vertex 0 — whose u is the
+   *     tile's *start*. So the last column of every limb, every torso, every helmet bowl
+   *     and every lathed weapon head carried the whole 128 px tile mirrored into one
+   *     segment's width.
+   *   - At `repeatU: 3` on the mail and scale torsos, three of ten columns did it: 30 % of
+   *     the surface was a mirrored 10x-compressed copy of the tile. That is the zig-zag
+   *     down the segmentata, and it is nearly pure energy at the 1 px band — which is the
+   *     one octave where this project's models separate from Rome II's
+   *     (`docs/HANDOFF.md`, "the separation is a one-pixel spike").
+   *
+   * The cure is to put the seam **on a vertex**: emit a duplicated column there, one ending
+   * the tile at 1 and one starting the next at 0. Because the pair is coincident the quad
+   * between them is skipped, so this costs vertices and **not one triangle**.
+   *
+   * Seams are snapped to the nearest existing division rather than inserted between them,
+   * which makes the tiles very slightly uneven in width when `repeat` does not divide `n`
+   * — invisible, and the alternative adds real geometry.
+   *
+   * Returns, in sweep order, the division index each column sits on and its 0..1 coordinate
+   * within its own tile. Length is `n + repeat`, against `n + 1` divisions.
+   */
+  static repeatStops(n: number, repeat: number): { i: number; f: number }[] {
+    // A seam can only sit on a division, so more repeats than divisions is not expressible.
+    // Clamping is the honest failure: asking for six tiles across four segments silently
+    // gives four, where the old code silently gave six broken ones.
+    const r = Math.min(Math.max(1, Math.round(repeat)), Math.max(1, n));
+    const out: { i: number; f: number }[] = [];
+    let prev = 0;
+    for (let j = 0; j < r; j++) {
+      const end = j === r - 1 ? n : Math.max(prev + 1, Math.round(((j + 1) * n) / r));
+      const span = end - prev;
+      for (let i = prev; i <= end; i++) out.push({ i, f: (i - prev) / span });
+      prev = end;
+    }
+    return out;
   }
 
   // -------------------------------------------------------------------------
@@ -215,24 +277,27 @@ export class MeshBuilder {
     uv: UvRect,
     opts: { capStart?: boolean; capEnd?: boolean; repeatV?: number; repeatU?: number } = {}
   ): void {
+    // Both sweeps carry their tile seams on duplicated vertices — see `repeatStops`. The
+    // ring is closed, so the column list always ends with a duplicate of column 0.
+    const cols = MeshBuilder.repeatStops(segments, opts.repeatU ?? 1);
+    const rows = MeshBuilder.repeatStops(nodes.length - 1, opts.repeatV ?? 1);
     const rings: number[][] = [];
-    for (let i = 0; i < nodes.length; i++) {
-      const n = nodes[i];
+    for (const row of rows) {
+      const n = nodes[row.i];
       if (n.bone !== undefined) this.setBone(n.bone, n.bone2 ?? n.bone, n.w ?? 1);
       const ring: number[] = [];
-      const t = i / (nodes.length - 1);
-      for (let s = 0; s < segments; s++) {
-        const a = (s / segments) * Math.PI * 2;
+      // Slope-aware normal so a tapering limb is not lit like a cylinder.
+      let dy = 0;
+      if (row.i > 0 && row.i < nodes.length - 1) {
+        const dr = (nodes[row.i + 1].rx - nodes[row.i - 1].rx) / 2;
+        const dyy = nodes[row.i + 1].y - nodes[row.i - 1].y;
+        dy = dyy !== 0 ? dr / dyy : 0;
+      }
+      for (const col of cols) {
+        const a = (col.i / segments) * Math.PI * 2;
         const cx = Math.cos(a);
         const cz = Math.sin(a);
-        // Slope-aware normal so a tapering limb is not lit like a cylinder.
-        let dy = 0;
-        if (i > 0 && i < nodes.length - 1) {
-          const dr = (nodes[i + 1].rx - nodes[i - 1].rx) / 2;
-          const dyy = nodes[i + 1].y - nodes[i - 1].y;
-          dy = dyy !== 0 ? dr / dyy : 0;
-        }
-        const [u, v] = MeshBuilder.tileUv(uv, s / segments, t, opts.repeatU ?? 1, opts.repeatV ?? 1);
+        const [u, v] = MeshBuilder.tileUv(uv, col.f, row.f);
         ring.push(
           this.vert(
             (n.x ?? 0) + cx * n.rx,
@@ -245,10 +310,11 @@ export class MeshBuilder {
       }
       rings.push(ring);
     }
-    for (let i = 0; i < rings.length - 1; i++) {
-      for (let s = 0; s < segments; s++) {
-        const s2 = (s + 1) % segments;
-        this.quadFacing(rings[i][s], rings[i][s2], rings[i + 1][s2], rings[i + 1][s]);
+    for (let r = 0; r < rings.length - 1; r++) {
+      if (rows[r].i === rows[r + 1].i) continue;   // the duplicated seam ring
+      for (let s = 0; s < cols.length - 1; s++) {
+        if (cols[s].i === cols[s + 1].i) continue; // the duplicated seam column
+        this.quadFacing(rings[r][s], rings[r][s + 1], rings[r + 1][s + 1], rings[r + 1][s]);
       }
     }
     if (opts.capStart) this.cap(nodes[0], segments, uv, -1);
@@ -264,6 +330,8 @@ export class MeshBuilder {
     if (n.bone !== undefined) this.setBone(n.bone, n.bone2 ?? n.bone, n.w ?? 1);
     const [cu, cv] = MeshBuilder.tileUv(uv, 0.5, 0.5);
     const centre = this.vert(n.x ?? 0, n.y, n.z ?? 0, 0, dir, 0, cu, cv);
+    // A cap is mapped radially rather than by sweep parameter, so there is no seam column
+    // to duplicate: u and v both come back to the same place after a full turn.
     const ring: number[] = [];
     for (let s = 0; s < segments; s++) {
       const a = (s / segments) * Math.PI * 2;
@@ -300,13 +368,18 @@ export class MeshBuilder {
     uv: UvRect,
     opts: { capStart?: boolean; capEnd?: boolean; repeatU?: number; repeatV?: number } = {}
   ): void {
+    const cols = MeshBuilder.repeatStops(segments, opts.repeatU ?? 1);
+    const rowStops = MeshBuilder.repeatStops(nodes.length - 1, opts.repeatV ?? 1);
+    /** Index into `rings` of the first ring built from each node, for the caps. */
+    const ringOfNode = new Map<number, number>();
     const rings: number[][] = [];
     const dir = new THREE.Vector3();
     const side = new THREE.Vector3();
     const upv = new THREE.Vector3(up[0], up[1], up[2]);
     const perp = new THREE.Vector3();
 
-    for (let i = 0; i < nodes.length; i++) {
+    for (const row of rowStops) {
+      const i = row.i;
       const n = nodes[i];
       if (n.bone !== undefined) this.setBone(n.bone, n.bone2 ?? n.bone, n.w ?? 1);
       const a = nodes[Math.max(0, i - 1)].p;
@@ -319,16 +392,15 @@ export class MeshBuilder {
       side.normalize();
       perp.crossVectors(dir, side).normalize();
 
-      const t = i / (nodes.length - 1);
       const ring: number[] = [];
-      for (let s = 0; s < segments; s++) {
-        const ang = (s / segments) * Math.PI * 2;
+      for (const col of cols) {
+        const ang = (col.i / segments) * Math.PI * 2;
         const ca = Math.cos(ang);
         const sa = Math.sin(ang);
         const nx = side.x * ca * n.rz + perp.x * sa * n.rx;
         const ny = side.y * ca * n.rz + perp.y * sa * n.rx;
         const nz = side.z * ca * n.rz + perp.z * sa * n.rx;
-        const [u, v] = MeshBuilder.tileUv(uv, s / segments, t, opts.repeatU ?? 1, opts.repeatV ?? 1);
+        const [u, v] = MeshBuilder.tileUv(uv, col.f, row.f);
         ring.push(
           this.vert(
             n.p[0] + side.x * ca * n.rx + perp.x * sa * n.rz,
@@ -338,12 +410,14 @@ export class MeshBuilder {
           )
         );
       }
+      if (!ringOfNode.has(i)) ringOfNode.set(i, rings.length);
       rings.push(ring);
     }
-    for (let i = 0; i < rings.length - 1; i++) {
-      for (let s = 0; s < segments; s++) {
-        const s2 = (s + 1) % segments;
-        this.quadFacing(rings[i][s], rings[i][s2], rings[i + 1][s2], rings[i + 1][s]);
+    for (let r = 0; r < rings.length - 1; r++) {
+      if (rowStops[r].i === rowStops[r + 1].i) continue;
+      for (let s = 0; s < cols.length - 1; s++) {
+        if (cols[s].i === cols[s + 1].i) continue;
+        this.quadFacing(rings[r][s], rings[r][s + 1], rings[r + 1][s + 1], rings[r + 1][s]);
       }
     }
     const capAt = (i: number, sign: number): void => {
@@ -354,24 +428,53 @@ export class MeshBuilder {
       dir.set(c[0] - a[0], c[1] - a[1], c[2] - a[2]).normalize().multiplyScalar(sign);
       const [cu, cv] = MeshBuilder.tileUv(uv, 0.5, 0.5);
       const centre = this.vert(n.p[0], n.p[1], n.p[2], dir.x, dir.y, dir.z, cu, cv);
-      const ring = rings[i];
-      for (let s = 0; s < segments; s++) {
-        const s2 = (s + 1) % segments;
-        if (sign > 0) this.tri(centre, ring[s], ring[s2]);
-        else this.tri(centre, ring[s2], ring[s]);
+      // Rings are indexed by the seam-expanded row list now, not by node, and a ring is
+      // `cols.length` wide rather than `segments` — the closing column is a real vertex.
+      const ring = rings[ringOfNode.get(i) ?? 0];
+      for (let s = 0; s < cols.length - 1; s++) {
+        if (cols[s].i === cols[s + 1].i) continue;
+        if (sign > 0) this.tri(centre, ring[s], ring[s + 1]);
+        else this.tri(centre, ring[s + 1], ring[s]);
       }
     };
     if (opts.capStart) capAt(0, -1);
     if (opts.capEnd) capAt(nodes.length - 1, 1);
   }
 
-  /** A lathed profile of [radius, y] pairs revolved about the Y axis. */
-  revolve(profile: readonly (readonly [number, number])[], segments: number, uv: UvRect, repeatU = 1): void {
+  /**
+   * A lathed profile of [radius, y] pairs revolved about the Y axis.
+   *
+   * `opts.arc` lathes only part of a turn, in radians, measured the same way as the ring
+   * itself (`x = cos a`, `z = sin a`, so `PI/2` is straight ahead of the man). It is what
+   * turns a closed dome of hair into a hair *cap*: the short-hair lathe used to be a full
+   * revolution 4-9 mm proud of the skull running down to y = -0.035, which is below the
+   * brow, below the eye boxes and across the top of the nose — so on a bare-headed man the
+   * whole face was inside the hair and no soldier in this game has ever had one.
+   *
+   * `opts.vFromY` maps V to the profile's own **height** between two y values instead of to
+   * the ring index. A lathe's rings are not evenly spaced in y — the skull's are 20 to 50 mm
+   * apart — so an anatomical texture painted against ring index lands in the wrong place.
+   * Given the range, a face tile can be painted in metres above the head bone and stay put.
+   */
+  revolve(
+    profile: readonly (readonly [number, number])[],
+    segments: number,
+    uv: UvRect,
+    repeatU = 1,
+    opts: { arc?: readonly [number, number]; vFromY?: readonly [number, number] } = {}
+  ): void {
+    const a0 = opts.arc ? opts.arc[0] : 0;
+    const a1 = opts.arc ? opts.arc[1] : Math.PI * 2;
+    // One column list serves both cases: a closed lathe's last column lands on angle 2*PI,
+    // which is the same place as column 0 but carries the tile's *end* rather than its start.
+    const cols = MeshBuilder.repeatStops(segments, repeatU);
     const rings: number[][] = [];
     for (let i = 0; i < profile.length; i++) {
       const [r, y] = profile[i];
       const ring: number[] = [];
-      const t = i / (profile.length - 1);
+      const t = opts.vFromY
+        ? Math.min(1, Math.max(0, (y - opts.vFromY[0]) / (opts.vFromY[1] - opts.vFromY[0])))
+        : i / (profile.length - 1);
       // Profile tangent for the normal.
       const p = profile[Math.max(0, i - 1)];
       const q = profile[Math.min(profile.length - 1, i + 1)];
@@ -395,28 +498,38 @@ export class MeshBuilder {
       // lathed weapon head in the game had it.
       const nr = -dy / len;
       const ny = dr / len;
-      for (let s = 0; s < segments; s++) {
-        const a = (s / segments) * Math.PI * 2;
-        const [u, v] = MeshBuilder.tileUv(uv, s / segments, t, repeatU, 1);
+      for (const col of cols) {
+        const a = a0 + (col.i / segments) * (a1 - a0);
+        const [u, v] = MeshBuilder.tileUv(uv, col.f, t);
         ring.push(this.vert(Math.cos(a) * r, y, Math.sin(a) * r, Math.cos(a) * nr, ny, Math.sin(a) * nr, u, v));
       }
       rings.push(ring);
     }
     for (let i = 0; i < rings.length - 1; i++) {
-      for (let s = 0; s < segments; s++) {
-        const s2 = (s + 1) % segments;
-        this.quadFacing(rings[i][s], rings[i][s2], rings[i + 1][s2], rings[i + 1][s]);
+      for (let s = 0; s < cols.length - 1; s++) {
+        if (cols[s].i === cols[s + 1].i) continue;
+        this.quadFacing(rings[i][s], rings[i][s + 1], rings[i + 1][s + 1], rings[i + 1][s]);
       }
     }
   }
 
-  /** An axis-aligned box centred at (cx, cy, cz). */
+  /**
+   * An axis-aligned box centred at (cx, cy, cz).
+   *
+   * `repeat` is accepted and deliberately ignored. A box face is one quad, so there is
+   * nowhere to put a seam and no way to tile inside it; the old code fed `0` and `1` through
+   * `(x * repeat) % 1`, which is `0` for both, so **every corner of a repeated face landed on
+   * the same texel** and the face rendered as one flat colour. Five engine call sites pass
+   * `2`, `3` and `4`. Mapping the whole tile is the honest reading of the intent and is
+   * strictly better than a point sample; a genuinely tiled box needs subdivision.
+   */
   box(
     cx: number, cy: number, cz: number,
     sx: number, sy: number, sz: number,
     uv: UvRect,
     repeat = 1
   ): void {
+    void repeat;
     const hx = sx / 2;
     const hy = sy / 2;
     const hz = sz / 2;
@@ -445,7 +558,7 @@ export class MeshBuilder {
       const c = [cx + nx * hx, cy + ny * hy, cz + nz * hz];
       const v: number[] = [];
       for (const [su, sv] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
-        const [u, vv] = MeshBuilder.tileUv(uv, (su + 1) / 2, (sv + 1) / 2, repeat, repeat);
+        const [u, vv] = MeshBuilder.tileUv(uv, (su + 1) / 2, (sv + 1) / 2);
         v.push(this.vert(
           c[0] + ex[0] * su + ey[0] * sv,
           c[1] + ex[1] * su + ey[1] * sv,
@@ -616,19 +729,24 @@ export class MeshBuilder {
     thickness = 0
   ): void {
     const p: SheetPoint = { x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 1 };
+    // Same seam treatment as the swept primitives — the cloak ships `repeatU 2, repeatV 3`
+    // over a 5x5 grid, so two of its five columns and two of its five rows ran the tile
+    // backwards before this.
+    const colStops = MeshBuilder.repeatStops(cols, repeatU);
+    const rowStops = MeshBuilder.repeatStops(rows, repeatV);
     /** Both shells' rings, so the rim can be stitched between them afterwards. */
     const shells: number[][][] = [];
     for (const facing of [1, -1]) {
       const grid: number[][] = [];
-      for (let r = 0; r <= rows; r++) {
-        const tv = r / rows;
+      for (const rs of rowStops) {
+        const tv = rs.i / rows;
         const bind = bindOf(tv);
         this.setBone(bind.bone, bind.bone2, bind.w);
         const row: number[] = [];
-        for (let c = 0; c <= cols; c++) {
-          const tu = c / cols;
+        for (const cs of colStops) {
+          const tu = cs.i / cols;
           at(tu, tv, p);
-          const [u, v] = MeshBuilder.tileUv(uv, tu, tv, repeatU, repeatV);
+          const [u, v] = MeshBuilder.tileUv(uv, cs.f, rs.f);
           // Push each shell a half-thickness along its own outward normal.
           const nl = Math.hypot(p.nx, p.ny, p.nz) || 1;
           const off = (facing * thickness) / (2 * nl);
@@ -639,8 +757,10 @@ export class MeshBuilder {
         }
         grid.push(row);
       }
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
+      for (let r = 0; r < rowStops.length - 1; r++) {
+        if (rowStops[r].i === rowStops[r + 1].i) continue;
+        for (let c = 0; c < colStops.length - 1; c++) {
+          if (colStops[c].i === colStops[c + 1].i) continue;
           if (facing > 0) this.quad(grid[r][c], grid[r][c + 1], grid[r + 1][c + 1], grid[r + 1][c]);
           else this.quad(grid[r][c], grid[r + 1][c], grid[r + 1][c + 1], grid[r][c + 1]);
         }
@@ -648,15 +768,20 @@ export class MeshBuilder {
       shells.push(grid);
     }
     if (thickness <= 0) return;
-    // Rim. Front shell is shells[0], back is shells[1]; both are indexed [row][col].
+    // Rim. Front shell is shells[0], back is shells[1]; both are indexed [row][col] over the
+    // seam-expanded stop lists, so the last index is `length - 1` rather than `rows`/`cols`.
     const [f, bk] = shells;
-    for (let c = 0; c < cols; c++) {
+    const rN = rowStops.length - 1;
+    const cN = colStops.length - 1;
+    for (let c = 0; c < cN; c++) {
+      if (colStops[c].i === colStops[c + 1].i) continue;
       this.quad(f[0][c + 1], f[0][c], bk[0][c], bk[0][c + 1]);
-      this.quad(f[rows][c], f[rows][c + 1], bk[rows][c + 1], bk[rows][c]);
+      this.quad(f[rN][c], f[rN][c + 1], bk[rN][c + 1], bk[rN][c]);
     }
-    for (let r = 0; r < rows; r++) {
+    for (let r = 0; r < rN; r++) {
+      if (rowStops[r].i === rowStops[r + 1].i) continue;
       this.quad(f[r][0], f[r + 1][0], bk[r + 1][0], bk[r][0]);
-      this.quad(f[r + 1][cols], f[r][cols], bk[r][cols], bk[r + 1][cols]);
+      this.quad(f[r + 1][cN], f[r][cN], bk[r][cN], bk[r + 1][cN]);
     }
   }
 

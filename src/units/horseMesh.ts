@@ -263,7 +263,7 @@ export function buildHorseGeometry(lod: Lod): THREE.InstancedBufferGeometry {
         const s = (c - 1) * 0.05;
         // Hangs to the off side, as a mane trained over does.
         const drop = c === 1 ? 0 : -0.1 - Math.abs(s) * 0.6;
-        const [u, v] = MeshBuilder.tileUv(maneUv, (c + 1) / 3, t, 1, 2);
+        const [u, v] = MeshBuilder.tileUvWrapped(maneUv, (c + 1) / 3, t, 1, 2);
         row.push(b.vert(p[0] + s * 1.6, p[1] + 0.2 + drop, p[2] - 0.02, s * 4, 1, 0, u, v));
       }
       grid.push(row);
@@ -333,7 +333,7 @@ export function buildHorseGeometry(lod: Lod): THREE.InstancedBufferGeometry {
         };
       });
       const grid = [-halfZ, halfZ].map((dz, r) => across.map((pt, c) => {
-        const [u, v] = MeshBuilder.tileUv(clothUv, c / 4, r, 2, 1);
+        const [u, v] = MeshBuilder.tileUvWrapped(clothUv, c / 4, r, 2, 1);
         return b.vert(pt.x, pt.y, seatZ + dz, pt.nx, pt.ny, 0, u, v);
       }));
       for (let c = 0; c < across.length - 1; c++) {
