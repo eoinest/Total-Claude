@@ -44,3 +44,35 @@ shot minutes earlier it was carrying the *old* position — so the plates were r
 `9d0f4ea` and the Tophet's label verified at screen x 573 (world −740) where the stale one would
 have been at 261. Three agents committing into one worktree is what made this possible; the
 lesson is that a `grep` is not a measurement of `HEAD` unless the tree is clean.
+
+## D3's landmark table, recorded in full
+
+Coded against §2.5's survey run through §2.3's projection, world metres, worst first.
+
+| landmark | coded | survey | error | disposition |
+|---|---|---|---|---|
+| Tophet of Salammbô | (−1150, 950) | (−740, 929) | **410.3 m** | transcription bug — **fixed**, `9d0f4ea` |
+| Cothon | (−930, 1000) | (−670, 984) | 260.4 m | deliberate — `layout.ts` header, departure 1: basin centres separated at true scale, not projected |
+| Forum | (−230, 1005) | (−180, 1000) | 50.2 m | deliberate, documented twice — §7.6 moves it for room, `layout.ts` moves it again to lengthen the three streets |
+| Merchant harbour | (−540, 1010) | (−540, 973) | 37.5 m, all in z | x exact; z residual small and unitemised |
+| La Malga Cisterns | (100, 788) | (100, 788) | 0 | correct |
+| Byrsa summit | (0, 945) | (0, 945) | 0 | correct, it is the origin |
+
+`circuit.ts`'s `SHORE` polyline matches §3.6 at all seven points.
+
+**The Odeon, and why D3's one wrong call is worth keeping on the record.** D3 reported the
+Odeon as a *missing landmark*: the terrain hill stands at exactly (210, 1037), `topography.ts`
+said the ridge carried "the Odeon" on its summit, and no monument existed. Every one of those
+facts is true and the conclusion is backwards. The Odeon of Carthage is **Severan, c. AD 200**
+— 350 years after this map's moment — and `docs/CARTHAGE.md` only ever uses the word as a
+modern place-name for a survey point (§2.5 a coordinate, §3.3 an elevation). The building is
+not missing, it is correctly absent, and building it would drop an imperial concert hall into a
+Punic city on the day that city died.
+
+The defect was the *comment*, which was quietly instructing every future agent to commit an
+anachronism — and had already produced one such report. Comment corrected in `topography.ts`,
+naming the trap so the next audit does not re-file it.
+
+**Wall, FYI only, not touched:** `circuit.ts` self-diagnoses that two independently-fitted
+curves through the wall's three surveyed anchors disagreed by up to ~25 world m at mid-span.
+Wall-owned, `src/city/carthageWall.ts`, another workstream's ground.
