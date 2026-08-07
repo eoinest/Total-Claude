@@ -3064,8 +3064,17 @@ export class Siege implements ElevationOwner {
          * solver and to the obstacle push-out. Before, the gate stood open from t=0 and the
          * only thing 26 blows achieved was that it could no longer be closed — a mechanic
          * with nothing on the other side of it.
+         *
+         * The gate is read off the city rather than named. `'porta-flaminia'` is Rome's, and
+         * `armGate` shuts `getGates()[0]` by *its* id while `spawnRam` aims at
+         * `getGates()[0]` — so on any other city the ram landed its twenty-six blows, set
+         * `gateBreached`, and then asked `CitySystem` to open a gate that does not exist.
+         * The carriageway stayed solid to pathfinding, the crowd solver and the obstacle
+         * push-out for the rest of the battle. Reading the id off the same gate the other
+         * two paths use makes all three agree by construction.
          */
-        this.city?.setGateOpen('porta-flaminia', true);
+        const broken = this.city?.getGates()[0];
+        if (broken) this.city?.setGateOpen(broken.id, true);
         this.ctx.events.emit('cameraShake', { amplitude: 1.0, decay: 0.9 });
         // And get out of the way of the men who have been waiting behind it.
         this.beginWithdraw(r);
