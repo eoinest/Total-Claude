@@ -754,3 +754,37 @@ wrong — both are present, and it was reading flatness as absence. A grader tha
 right for a false reason is a different result from one that names a real defect, and only the
 second is a work item. Allow "I cannot tell" per frame and count it honestly; a forced binary on
 twenty frames turns a coin flip into evidence.
+
+### The atlas widening, priced
+
+Measured with both arms interleaved in one browser session and the sim clock pinned so each
+arm renders the identical men at the identical instant, on pinned detached worktrees at
+`751dd0d` and `b7d8aaf`.
+
+| | before | after |
+|---|---|---|
+| draws — wide / romanline / city / wall / skyline / melee | 131 / 153 / 200 / 211 / 178 / 135 | **identical** |
+| whole-frame triangles, all six cameras | — | **byte-identical** |
+| LOD2 triangles / vertices, all three factions | 313 / 280 | **313 / 280, bit-identical buffers** |
+| LOD0 vertices, Rome / Germanic / Carthage | 5263 / 4528 / 7057 | 5297 / 4617 / 7091 |
+| LOD1 vertices | 3132 / 2753 / 4388 | 3156 / 2805 / 4412 |
+| soldier atlas resident | 25.17 MB | **50.33 MB** |
+| asset textures, whole scene | 99.5 MB | **124.6 MB** |
+| `buildSoldierAtlas` | 104 ms median | **309 ms median** |
+| frame time, romanline and melee | — | **no measurable change**, every CI spans zero |
+
+Two things the commit summary got wrong and the body got right. **"No vertex" is false** — tile
+seams duplicate a vertex column, so LOD0 gains 34-89 vertices and LOD1 24-52, about +22 KB of
+geometry across all nine builds. And **"texture memory only" is false**: the bake is 3.05x, so
++205 ms warm and up to +500 ms cold on a loaded machine, once at load.
+
+**LOD2 keeping its tiling is provable rather than asserted.** Raw UVs must differ, because a
+tile is now 256/1536 of the sheet and `matUv`'s 3-texel inset is 3/256 of a tile instead of
+3/128. Divide both out into tile space and the LOD2 UV hashes are identical on both arms while
+LOD0's and LOD1's differ, which is exactly the intended fix.
+
+**Not this commit, but found by it: `romanline` is 153 draws against round two's recorded 139,
+and it is already 153 at the merge-base.** `tools/shoot.mjs` is byte-identical between the r2
+tip and `b7d8aaf`, so the camera did not move; the merge that pulled in the Carthage fabric and
+the water surface is where the scene changed. `city` moved the other way, 218 to 200, for the
+same reason. Neither figure is a soldier regression.
