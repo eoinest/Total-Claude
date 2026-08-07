@@ -47,8 +47,37 @@ export const FIGHT_R = 30;
 export const REACH_R = 150;
 /** Form up this far short of the enemy rather than trickling into him off a stair. */
 export const STANDOFF = 22;
+/**
+ * Men an enemy unit inside the walls must still have before anybody comes off the wall for
+ * it.
+ *
+ * A garrison comes down for a break-in, not for a patrol, and the cost of getting this
+ * wrong is not symmetric. Measured at Carthage with no threshold: twenty-three Romans
+ * scattered inside the curtain pulled two Punic cohorts — 63 and 46 men — off the parapet,
+ * and both descents were still open at t+250 with **one man each left on the stone** holding
+ * the plan alive at ages 5,333 and 4,252 ticks. A descent that cannot close is worse than no
+ * descent at all: `releaseToGround` only fires when the last man is down, so until then the
+ * whole cohort is still placed by the stonework and cannot form line, wheel or charge in the
+ * city it has just entered.
+ */
+export const BREAK_IN_MEN = 25;
 /** Snap a rally point to a street if one is this close. */
 const LANE_SNAP = 34;
+/** How far inside the curtain an order given to a unit already inside is held. */
+const KEEP_IN = 26;
+/** Bisection steps used to find where an order leaves the city. Six is 1/64 of the leg. */
+const KEEP_IN_STEPS = 6;
+/**
+ * How far from a flight the crossing point may be before `holdInside` declines.
+ *
+ * Rome's curtain is a *line*, not a circuit — it ends at x = 1144 — and `inside` answers
+ * from the nearest flight's normal wherever it is asked, so a unit standing in open field
+ * fifty metres past the east end reads "inside" and a march further east reads "leaving".
+ * There is no masonry between those two points and holding the order would freeze a field
+ * unit for no reason. The flights are spaced about a bay apart, so a genuine crossing is
+ * always within one of them.
+ */
+const WALL_SPAN = 150;
 /** Every nth lane vertex is kept. See `attach`. */
 const LANE_STRIDE = 3;
 /**
@@ -158,6 +187,16 @@ export class WallDoctrine {
     this.laneZ = Float32Array.from(zs);
   }
 
+  /** Plan distance from a point to the nearest flight head. */
+  private nearestFlightDist(x: number, z: number): number {
+    let best = Infinity;
+    for (const f of this.flights) {
+      const d = (f.topX - x) * (f.topX - x) + (f.topZ - z) * (f.topZ - z);
+      if (d < best) best = d;
+    }
+    return Math.sqrt(best);
+  }
+
   /**
    * Is this point on the city side of the curtain?
    *
@@ -178,6 +217,48 @@ export class WallDoctrine {
     if (best < 0) return false;
     const f = this.flights[best];
     return (x - f.topX) * f.nx + (z - f.topZ) * f.nz < 0;
+  }
+
+  /**
+   * Hold an order given to a unit inside the walls inside the walls.
+   *
+   * **This closes a yo-yo, and the mechanism is worth writing out because it is entirely on
+   * the far side of an interface this layer does not own.** `BattleSystem.holdShortOfSolid`
+   * clamps a move order to the last point on the straight line it can legally reach; for a
+   * unit standing in the pomerium and ordered to a station out in the field, that point is
+   * the **inner face of the curtain**. `Siege.interceptOrders` then runs its auto-ascend
+   * rule — a unit on the city side whose order points at the wall's own footprint is asking
+   * to get on the wall — and sends the cohort back up the stairs it has just come down.
+   * Measured at Rome after the descents started working: u17 and u18 both carried
+   * `goal=ascend` at t+250 with 26 and 45 men on the ground and one on the stone.
+   *
+   * Neither of those two rules is wrong. The order is. A formation inside a walled city
+   * cannot march out through the masonry, and an AI that issues that order is relying on a
+   * clamp to fix it. So the destination is bisected back to the last point still inside and
+   * pulled `KEEP_IN` further in, which leaves a straight line that needs no clamping.
+   *
+   * Returns false when the order was already legal and `out` should be ignored.
+   */
+  holdInside(fromX: number, fromZ: number, toX: number, toZ: number, out: { x: number; z: number }): boolean {
+    if (this.flights.length === 0) return false;
+    if (!this.inside(fromX, fromZ) || this.inside(toX, toZ)) return false;
+    let lo = 0;
+    let hi = 1;
+    for (let k = 0; k < KEEP_IN_STEPS; k++) {
+      const mid = (lo + hi) * 0.5;
+      if (this.inside(fromX + (toX - fromX) * mid, fromZ + (toZ - fromZ) * mid)) lo = mid;
+      else hi = mid;
+    }
+    const bx = fromX + (toX - fromX) * lo;
+    const bz = fromZ + (toZ - fromZ) * lo;
+    if (this.nearestFlightDist(bx, bz) > WALL_SPAN) return false;
+    const dx = bx - fromX;
+    const dz = bz - fromZ;
+    const d = Math.hypot(dx, dz);
+    if (d <= KEEP_IN) { out.x = fromX; out.z = fromZ; return true; }
+    out.x = fromX + (dx / d) * (d - KEEP_IN);
+    out.z = fromZ + (dz / d) * (d - KEEP_IN);
+    return true;
   }
 
   /**

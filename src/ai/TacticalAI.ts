@@ -12,7 +12,7 @@ import {
   type Difficulty, type DifficultyProfile, type UnitCommand,
 } from './types';
 import {
-  DESCEND_R, FIGHT_R, ORDER_COOLDOWN, REACH_R, WallDoctrine, type WallView,
+  BREAK_IN_MEN, DESCEND_R, FIGHT_R, ORDER_COOLDOWN, REACH_R, WallDoctrine, type WallView,
 } from './WallDoctrine';
 
 /**
@@ -1074,6 +1074,11 @@ export class TacticalAISystem implements Subsystem {
      * units, and it goes straight to the order book with a single point.
      */
     if (this.wall !== null && this.wall.isGarrisoned(u.id)) return;
+    // And a unit standing in the city is not ordered out through the wall. See `holdInside`.
+    if (this.doctrine.holdInside(u.x, u.z, x, z, WALL_PT)) {
+      x = WALL_PT.x;
+      z = WALL_PT.z;
+    }
     const fp = footprintOf(u, c.def);
     // Never order a formation into the river or onto a cliff.
     if (!this.nav.findStandable(x, z, fp.min, STAND)) {
@@ -1147,8 +1152,9 @@ export class TacticalAISystem implements Subsystem {
    *      a centroid that is itself moving. See `ORDER_COOLDOWN`.
    *   2. an enemy within `FIGHT_R` on the stone — fight him. Withdrawing the bid rather than
    *      issuing a hold, so `engage` and `brace` can win the slot and do their own work.
-   *   3. an enemy on the ground **inside** the curtain — go down the stairs at him. This is
-   *      the player's request, and it is above the traverse deliberately.
+   *   3. a real enemy force on the ground **inside** the curtain — go down the stairs at
+   *      him. This is the player's request, and it is above the traverse deliberately.
+   *      `BREAK_IN_MEN` is what stops a garrison abandoning a bay for a handful of men.
    *   4. an enemy holding wall within `REACH_R` — walk the parapet to him. A defender
    *      converging on a lodgement and an attacker rolling up a garrison are one manoeuvre.
    *
@@ -1180,7 +1186,7 @@ export class TacticalAISystem implements Subsystem {
       const d = Math.hypot(mem.x - c.u.x, mem.z - c.u.z);
       if (wall.isGarrisoned(mem.unitId)) {
         if (d < wallD) { wallD = d; wallX = mem.x; wallZ = mem.z; }
-      } else if (d < inD && this.doctrine.inside(mem.x, mem.z)) {
+      } else if (d < inD && mem.alive >= BREAK_IN_MEN && this.doctrine.inside(mem.x, mem.z)) {
         inD = d; inX = mem.x; inZ = mem.z;
       }
     }
