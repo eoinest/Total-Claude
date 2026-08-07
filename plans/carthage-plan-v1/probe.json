@@ -2,24 +2,24 @@
   "url": "http://127.0.0.1:5561/?menu=0&quality=low&scenario=field&battle=eyJtYXAiOiJjYXJ0aGFnZSIsInNjZW5hcmlvIjoiZmllbGQifQ",
   "map": "carthage",
   "scenario": "field",
-  "when": "2026-08-07T19:41:38.450Z",
+  "when": "2026-08-07T19:43:01.024Z",
   "solids": {
-    "obstacles": 638,
+    "obstacles": 643,
     "byKind": {
       "wall": 147,
       "tower": 31,
       "monument": 42,
-      "building": 418
+      "building": 423
     },
-    "occupiedCells": 39115,
-    "occupiedHectares": 62.6,
+    "occupiedCells": 39335,
+    "occupiedHectares": 62.9,
     "stats": {
       "id": "carthage",
       "chunks": 120,
       "meshes": 782,
       "visibleMeshes": 222,
-      "visibleTriangles": 381480,
-      "triangles": 1133324,
+      "visibleTriangles": 393980,
+      "triangles": 1140784,
       "materials": 9,
       "usedManifest": true,
       "footprintOverlaps": 0,
@@ -45,13 +45,13 @@
         },
         {
           "cls": "local",
-          "count": 102,
-          "km": 26.73
+          "count": 101,
+          "km": 26.9
         },
         {
           "cls": "vicus",
           "count": 106,
-          "km": 17.36
+          "km": 17.45
         }
       ],
       "assertions": [
@@ -63,7 +63,7 @@
         {
           "name": "solid/solid interpenetration",
           "ok": true,
-          "detail": "0 overlapping pair(s) over 460 solids (430 footprints + 30 harbour-water rectangles), worst 0.0 m. Population is every solid against every other — monuments, houses, quays, moles and the water — with a 0.4 m allowance for the party walls a terrace is made of, and one exclusion: the 30 chords are one basin cut into pieces and are not tested against each other. No soft exemption and no upper escape hatch. Worst pair: none."
+          "detail": "0 overlapping pair(s) over 465 solids (435 footprints + 30 harbour-water rectangles), worst 0.0 m. Population is every solid against every other — monuments, houses, quays, moles and the water — with a 0.4 m allowance for the party walls a terrace is made of, and one exclusion: the 30 chords are one basin cut into pieces and are not tested against each other. No soft exemption and no upper escape hatch. Worst pair: none."
         },
         {
           "name": "intervallum clear behind the circuit",
@@ -78,7 +78,7 @@
         {
           "name": "roof coverage",
           "ok": true,
-          "detail": "418 blocks (776 rejected), 33.8 ha of roof over 136.3 ha of walled land = **24.8%**; 43.1 ha of that is carriageway, so roof between street lines is **36.3%**. Not a pass/fail: the second figure is the one comparable with an orthophoto, and Megara is a garden suburb that is *supposed* to be empty."
+          "detail": "423 blocks (771 rejected), 34.1 ha of roof over 136.3 ha of walled land = **25.0%**; 43.2 ha of that is carriageway, so roof between street lines is **36.6%**. Not a pass/fail: the second figure is the one comparable with an orthophoto, and Megara is a garden suburb that is *supposed* to be empty."
         },
         {
           "name": "ship sheds",
@@ -88,7 +88,7 @@
         {
           "name": "nothing the city builds stands under the sea",
           "ok": true,
-          "detail": "0 of 418 house footprints and 0 of 31 curtain towers have any part of their plan below 0 m. 120 candidate blocks were refused at build for standing within 0.44 m of the datum, which is where the gulf's swell crest reaches. 5 monuments *are* under it and are meant to be — Scipio's mole, the quay-fort, the cut channel and the cothon ring are harbour works built into the sea."
+          "detail": "0 of 423 house footprints and 0 of 31 curtain towers have any part of their plan below 0 m. 120 candidate blocks were refused at build for standing within 0.44 m of the datum, which is where the gulf's swell crest reaches. 5 monuments *are* under it and are meant to be — Scipio's mole, the quay-fort, the cut channel and the cothon ring are harbour works built into the sea."
         },
         {
           "name": "harbour basins at sea level, on quays a man can stand on",
@@ -142,7 +142,7 @@
     {
       "name": "solid/solid interpenetration",
       "ok": true,
-      "detail": "0 overlapping pair(s) over 460 solids (430 footprints + 30 harbour-water rectangles), worst 0.0 m. Population is every solid against every other — monuments, houses, quays, moles and the water — with a 0.4 m allowance for the party walls a terrace is made of, and one exclusion: the 30 chords are one basin cut into pieces and are not tested against each other. No soft exemption and no upper escape hatch. Worst pair: none."
+      "detail": "0 overlapping pair(s) over 465 solids (435 footprints + 30 harbour-water rectangles), worst 0.0 m. Population is every solid against every other — monuments, houses, quays, moles and the water — with a 0.4 m allowance for the party walls a terrace is made of, and one exclusion: the 30 chords are one basin cut into pieces and are not tested against each other. No soft exemption and no upper escape hatch. Worst pair: none."
     },
     {
       "name": "intervallum clear behind the circuit",
@@ -157,7 +157,7 @@
     {
       "name": "roof coverage",
       "ok": true,
-      "detail": "418 blocks (776 rejected), 33.8 ha of roof over 136.3 ha of walled land = **24.8%**; 43.1 ha of that is carriageway, so roof between street lines is **36.3%**. Not a pass/fail: the second figure is the one comparable with an orthophoto, and Megara is a garden suburb that is *supposed* to be empty."
+      "detail": "423 blocks (771 rejected), 34.1 ha of roof over 136.3 ha of walled land = **25.0%**; 43.2 ha of that is carriageway, so roof between street lines is **36.6%**. Not a pass/fail: the second figure is the one comparable with an orthophoto, and Megara is a garden suburb that is *supposed* to be empty."
     },
     {
       "name": "ship sheds",
@@ -167,7 +167,7 @@
     {
       "name": "nothing the city builds stands under the sea",
       "ok": true,
-      "detail": "0 of 418 house footprints and 0 of 31 curtain towers have any part of their plan below 0 m. 120 candidate blocks were refused at build for standing within 0.44 m of the datum, which is where the gulf's swell crest reaches. 5 monuments *are* under it and are meant to be — Scipio's mole, the quay-fort, the cut channel and the cothon ring are harbour works built into the sea."
+      "detail": "0 of 423 house footprints and 0 of 31 curtain towers have any part of their plan below 0 m. 120 candidate blocks were refused at build for standing within 0.44 m of the datum, which is where the gulf's swell crest reaches. 5 monuments *are* under it and are meant to be — Scipio's mole, the quay-fort, the cut channel and the cothon ring are harbour works built into the sea."
     },
     {
       "name": "harbour basins at sea level, on quays a man can stand on",
@@ -230,7 +230,7 @@
     }
   ],
   "corridor": {
-    "freeCellsSampled": 87812,
+    "freeCellsSampled": 87852,
     "corridorWidth": {
       "p05": 8,
       "p25": 27.3,
@@ -240,8 +240,8 @@
     },
     "fractionAdmitting": {
       "file2p4m": 1,
-      "column16m": 0.883,
-      "cohortInLine35m": 0.695
+      "column16m": 0.884,
+      "cohortInLine35m": 0.696
     }
   },
   "reach": {
@@ -253,11 +253,11 @@
           0,
           297
         ],
-        "cellsReached": 448994,
-        "cellsInsideCircuit": 109259,
-        "cellsWalled": 71174,
-        "hectaresReached": 718.4,
-        "hectaresInsideCircuit": 174.8,
+        "cellsReached": 448774,
+        "cellsInsideCircuit": 109039,
+        "cellsWalled": 71214,
+        "hectaresReached": 718,
+        "hectaresInsideCircuit": 174.5,
         "hectaresWalled": 113.9,
         "deepestReached": 1398,
         "deepestAt": [
@@ -272,12 +272,12 @@
           0,
           297
         ],
-        "cellsReached": 436644,
-        "cellsInsideCircuit": 100481,
-        "cellsWalled": 63257,
-        "hectaresReached": 698.6,
-        "hectaresInsideCircuit": 160.8,
-        "hectaresWalled": 101.2,
+        "cellsReached": 436410,
+        "cellsInsideCircuit": 100247,
+        "cellsWalled": 63317,
+        "hectaresReached": 698.3,
+        "hectaresInsideCircuit": 160.4,
+        "hectaresWalled": 101.3,
         "deepestReached": 1398,
         "deepestAt": [
           1062,
@@ -291,12 +291,12 @@
           0,
           297
         ],
-        "cellsReached": 418467,
-        "cellsInsideCircuit": 84891,
-        "cellsWalled": 49003,
-        "hectaresReached": 669.5,
-        "hectaresInsideCircuit": 135.8,
-        "hectaresWalled": 78.4,
+        "cellsReached": 418261,
+        "cellsInsideCircuit": 84685,
+        "cellsWalled": 49091,
+        "hectaresReached": 669.2,
+        "hectaresInsideCircuit": 135.5,
+        "hectaresWalled": 78.5,
         "deepestReached": 1398,
         "deepestAt": [
           1074,
@@ -312,11 +312,11 @@
           0,
           553
         ],
-        "cellsReached": 448994,
-        "cellsInsideCircuit": 109259,
-        "cellsWalled": 71174,
-        "hectaresReached": 718.4,
-        "hectaresInsideCircuit": 174.8,
+        "cellsReached": 448774,
+        "cellsInsideCircuit": 109039,
+        "cellsWalled": 71214,
+        "hectaresReached": 718,
+        "hectaresInsideCircuit": 174.5,
         "hectaresWalled": 113.9,
         "deepestReached": 1398,
         "deepestAt": [
@@ -331,12 +331,12 @@
           0,
           553
         ],
-        "cellsReached": 436644,
-        "cellsInsideCircuit": 100481,
-        "cellsWalled": 63257,
-        "hectaresReached": 698.6,
-        "hectaresInsideCircuit": 160.8,
-        "hectaresWalled": 101.2,
+        "cellsReached": 436410,
+        "cellsInsideCircuit": 100247,
+        "cellsWalled": 63317,
+        "hectaresReached": 698.3,
+        "hectaresInsideCircuit": 160.4,
+        "hectaresWalled": 101.3,
         "deepestReached": 1398,
         "deepestAt": [
           -74,
@@ -350,12 +350,12 @@
           0,
           553
         ],
-        "cellsReached": 418467,
-        "cellsInsideCircuit": 84891,
-        "cellsWalled": 49003,
-        "hectaresReached": 669.5,
-        "hectaresInsideCircuit": 135.8,
-        "hectaresWalled": 78.4,
+        "cellsReached": 418261,
+        "cellsInsideCircuit": 84685,
+        "cellsWalled": 49091,
+        "hectaresReached": 669.2,
+        "hectaresInsideCircuit": 135.5,
+        "hectaresWalled": 78.5,
         "deepestReached": 1398,
         "deepestAt": [
           -86,
@@ -378,28 +378,28 @@
     {
       "name": "assault",
       "calls": 116,
-      "triangles": 2643919,
+      "triangles": 2643859,
       "callsWithoutCity": 48,
       "cityCalls": 68,
-      "cityTriangles": 324972,
+      "cityTriangles": 324912,
       "programs": 54
     },
     {
       "name": "wall",
       "calls": 106,
-      "triangles": 2539284,
+      "triangles": 2539224,
       "callsWithoutCity": 51,
       "cityCalls": 55,
-      "cityTriangles": 391756,
+      "cityTriangles": 391696,
       "programs": 54
     },
     {
       "name": "byrsa",
-      "calls": 150,
-      "triangles": 2783742,
+      "calls": 149,
+      "triangles": 2783532,
       "callsWithoutCity": 55,
-      "cityCalls": 95,
-      "cityTriangles": 282166,
+      "cityCalls": 94,
+      "cityTriangles": 281956,
       "programs": 55
     },
     {
@@ -413,18 +413,18 @@
     },
     {
       "name": "overview",
-      "calls": 175,
-      "triangles": 2411628,
+      "calls": 176,
+      "triangles": 2424788,
       "callsWithoutCity": 33,
-      "cityCalls": 142,
-      "cityTriangles": 280478,
+      "cityCalls": 143,
+      "cityTriangles": 293638,
       "programs": 55
     }
   ],
   "errors": [],
   "plateMeasure": {
     "bearings": [
-      45030,
+      45290,
       0,
       0,
       180,
@@ -516,8 +516,8 @@
       140
     ],
     "peak": 0,
-    "within": 0.9222,
-    "totalLen": 50681,
+    "within": 0.9226,
+    "totalLen": 50941,
     "byRank": {
       "secondary": {
         "m": 5387.76383084249,
@@ -534,16 +534,16 @@
         "wMax": 20
       },
       "local": {
-        "m": 26730.71066679769,
-        "n": 102,
-        "ha": 18.669776400078597,
+        "m": 26901.210666797684,
+        "n": 101,
+        "ha": 18.789126400078597,
         "wMin": 6,
         "wMax": 7
       },
       "vicus": {
-        "m": 17359.100000000006,
+        "m": 17448.899999999998,
         "n": 106,
-        "ha": 6.94364,
+        "ha": 6.979560000000003,
         "wMin": 4,
         "wMax": 4
       }
@@ -610,7 +610,7 @@
         "deepest": -9.264202721949985
       },
       "building": {
-        "n": 418,
+        "n": 423,
         "wet": 0,
         "ha": 0,
         "deepest": 0
