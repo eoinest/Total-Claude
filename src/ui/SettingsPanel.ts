@@ -33,8 +33,13 @@ const KEYS: Array<[string, string]> = [
   ['RMB', 'Move · attack'],
   ['RMB drag', 'Frontage and facing'],
   ['Shift + RMB', 'Queue order'],
-  ['Alt + RMB', 'Run · free the camera'],
+  // Was "Run · free the camera", and the camera half was the only half that happened: the
+  // order gesture refused to start while alt was down, so the run order could never be issued.
+  // Alt is the run modifier now and the camera keeps Q/E, the middle button, and the right
+  // button whenever nothing is selected.
+  ['Alt + RMB', 'Move at a run'],
   ['Ctrl + RMB', 'Attack move'],
+  ['Q · E', 'Rotate camera'],
   ['Z X C V B', 'Formations'],
   ['G T Y', 'Abilities'],
   ['H · R', 'Halt · run toggle'],

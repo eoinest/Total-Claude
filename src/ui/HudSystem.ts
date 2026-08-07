@@ -261,6 +261,28 @@ export class HudSystem implements Subsystem {
       };
     }
 
+    /*
+     * The wall as somewhere the cursor can point.
+     *
+     * `Siege.wallTargetAt` is the same query the sim uses to decide a click meant the parapet,
+     * and `DeploymentSystem` already asks it before the battle. Asking it here as well is what
+     * lets the cursor, the drag hint, the hover marker and the order that is finally emitted
+     * agree about which of ascend / traverse / descend is on offer — a UI that guesses at this
+     * and a sim that decides it were bound to disagree, and did. Duck-typed like every other
+     * optional integration: no siege system, no wall cursor, and every gesture is as it was.
+     */
+    const siege = (this.battle as unknown as {
+      siege?: {
+        wallTargetAt?: (x: number, z: number) => number;
+        isGarrisoned?: (unitId: number) => boolean;
+      };
+    } | undefined)?.siege;
+    if (siege && typeof siege.wallTargetAt === 'function' && typeof siege.isGarrisoned === 'function') {
+      this.controller.wallProbe = {
+        targetAt: (x, z) => siege.wallTargetAt!(x, z),
+        isGarrisoned: (u) => siege.isGarrisoned!(u),
+      };
+    }
 
     /*
      * The deployment phase, if this build has one and `main.ts` opened it.

@@ -13,9 +13,11 @@
  *   alt + right           run instead of march
  *   ctrl + right          attack-move
  *
- * The camera also wants the right button for yaw, so the rule is: with something
- * selected the right button belongs to the order system (`rig.suppressDrag` holds the
- * camera off); with an empty selection, or with alt held, it belongs to the camera.
+ * The camera also wants the right button for yaw, so the rule is: with something selected the
+ * right button belongs to the order system (`rig.suppressDrag` holds the camera off); with an
+ * empty selection it belongs to the camera. Alt used to be a third case — it handed the button
+ * back to the camera — and that is why `alt + right` could never issue the run order the legend
+ * promised. Q/E and the middle button rotate and pan under every selection, so nothing is lost.
  */
 
 import type { EngineContext } from '../core/Engine';
@@ -23,15 +25,22 @@ import { Faction, UnitOrder } from '../sim/types';
 import { el } from './dom';
 import type { HudModel, UnitView } from './model';
 import {
-  distanceToFootprint, footprintCorner, footprintOf, makeScreenPick, orderPointForSolid,
-  type PickSolid, projectPoint, screenPick, type ScreenPick,
-  type Footprint, type Projected,
+  distanceToFootprint, footprintCorner, footprintOf, makeScreenPick, makeScreenRay,
+  orderPointForSolid, type PickSolid, projectPoint, rayPlaneY, screenPick, screenRay,
+  type ScreenPick, type ScreenRay, type Footprint, type Projected,
 } from './picking';
 import type { PointerTracker } from './pointer';
 import { abilityUI, PLAYER_FACTION } from './theme';
 import type { GhostSpec, WorldOverlay } from './WorldOverlay';
 
-export type CursorKind = 'default' | 'move' | 'attack' | 'friend' | 'select';
+export type CursorKind = 'default' | 'move' | 'attack' | 'friend' | 'select' | 'wall';
+
+/** One phrase per wall order, so the hint and the cursor cannot describe different things. */
+const WALL_HINT: Record<'ascend' | 'traverse' | 'descend', string> = {
+  ascend: 'Up onto the wall',
+  traverse: 'Along the wall',
+  descend: 'Down off the wall',
+};
 
 /** Pixels of pointer travel before a click becomes a drag. */
 const DRAG_PX = 7;
@@ -39,12 +48,45 @@ const DRAG_PX = 7;
 const DOUBLE_S = 0.34;
 /** Minimum world metres of right-drag before it is read as a frontage command. */
 const FRONTAGE_MIN_M = 6;
+/**
+ * Fewest ranks a frontage drag may flatten a unit to.
+ *
+ * Three, because two is not a formation: the front rank has nobody to step into its place and
+ * the block has no depth to absorb a charge. It is also roughly where the drawing stops making
+ * sense — at 320 men and 0.86 m of lateral spacing, the unclamped 180 m drag that prompted this
+ * produced 210 files, 1.5 ranks, and rendered as a 181 m thread. Three ranks caps the same
+ * cohort at 107 files, about 92 m, which is still two and a half times its natural frontage.
+ */
+const MIN_RANKS = 3;
 
 const FOOT: Footprint = { cx: 0, cz: 0, halfW: 1, halfD: 1, cos: 1, sin: 0 };
 const PROJECTED: Projected = { x: 0, y: 0, distance: 0, visible: false };
 const PICK: ScreenPick = makeScreenPick();
+const RAY: ScreenRay = makeScreenRay();
 const ORDER_AT = { x: 0, y: 0, z: 0 };
 const CORNER = { x: 0, z: 0 };
+const PLANE_AT = { x: 0, z: 0 };
+
+/**
+ * Metres a unit's men must stand above the terrain under them before the cursor is aimed at
+ * the men rather than at that terrain.
+ *
+ * 2.5 m is comfortably above the worst disagreement a slope can produce inside one footprint —
+ * `cy` is sampled at the block's centre while `standY` is a mean over every man in it — and
+ * comfortably below anything a man can actually be standing on: the Aurelian walk is 8 m up
+ * and a siege tower's deck is 20. So the ground path is entered by exactly the units that were
+ * always on the ground, and their picking is unchanged by construction.
+ */
+const ELEVATED_MIN_DY = 2.5;
+
+/**
+ * Where on a standing man the cursor is deemed to be aiming, metres above his feet.
+ *
+ * A player clicks the middle of a soldier, not his boots, and an RTS camera looks *down*: a
+ * ray through a man's chest crosses the plane of his feet several metres beyond him. Testing
+ * against a plane at mid-body splits that error instead of always landing long.
+ */
+const MAN_MID_Y = 0.9;
 
 /**
  * Half-extents of a siege tower's footprint, metres.
@@ -129,6 +171,20 @@ export class SelectionController {
   private dragEndZ = 0;
   private dragHostileId = -1;
   private ghosts: GhostSpec[] = [];
+  /**
+   * Modifiers held at any point during the right-button gesture.
+   *
+   * `issueDragOrder` read `ctx.input.ctrl` at *release*, which is a one-frame race with the
+   * hand: let go of ctrl a moment before the button and the attack-move silently became a
+   * move. Seeded from the pointerdown snapshot — the rule `PointerTracker` documents — and
+   * then held true if the modifier appears later in the gesture, so neither "pressed ctrl
+   * first" nor "pressed ctrl after aiming" can miss.
+   */
+  private dragCtrl = false;
+  private dragAlt = false;
+  private dragShift = false;
+  /** Frontage the ghosts actually occupy, which is not the drag length once it is clamped. */
+  private ghostSpan = 0;
 
   /**
    * The *ground* under the cursor this frame, valid when `groundValid`.
@@ -162,6 +218,36 @@ export class SelectionController {
   solidZ = 0;
   solidY = 0;
   solidValid = false;
+  /**
+   * The point on the parapet the cursor is aiming at *in play*, valid when `wallValid`.
+   *
+   * The owner's report was that the wall "just doesn't really do a good job of … letting you
+   * select that elevated point as the location that you want your troops to go to". The order
+   * did not survive the trip: `orderX/orderZ` is pushed a body radius clear of whatever solid
+   * it lands on, because for a siege tower or an insula the ground *beside* the thing is the
+   * only place a cohort can stand — and `Siege.wallTargetAt` is then asked about that grass
+   * rather than about the parapet, so the sim never sees a wall order at all.
+   *
+   * `Siege` already owns the whole of the destination half: `interceptOrders` subscribes to
+   * `orderIssued` for exactly this, and turns the point into `sendToWall`, `moveAlongWall` or
+   * `sendToGround` depending on where the unit is standing. It only has to be handed the point
+   * the player pointed at, which is `solidX/solidZ`, not the one pushed out of it. Same
+   * distinction `DeploymentSystem.isWallPoint` draws before the battle, asked with a different
+   * verb: there it means "stand here now", here it means "walk up there".
+   */
+  wallX = 0;
+  wallZ = 0;
+  wallY = 0;
+  wallValid = false;
+
+  /**
+   * What the HUD needs from `Siege` to know a parapet when the cursor is over one.
+   *
+   * Duck-typed and installed by `HudSystem`, like `bannerAt` and `abilityProbe`: with no siege
+   * system registered — a field battle, or a map with no city — this stays null and every
+   * gesture behaves exactly as it did.
+   */
+  wallProbe: { targetAt(x: number, z: number): number; isGarrisoned(unitId: number): boolean } | null = null;
 
   constructor(
     private model: HudModel,
@@ -357,6 +443,25 @@ export class SelectionController {
     this.handleRight(ctx, hovered);
     this.handleKeys(ctx);
     this.updateCursor(hovered);
+    this.drawWallTarget();
+  }
+
+  /**
+   * Mark the stretch of parapet the cursor is offering, on the parapet.
+   *
+   * The whole of the hover half of the owner's report: a wall is the one destination in the
+   * game whose marker cannot be drawn on the heightfield, because the heightfield there is
+   * inside the masonry and under it. Suppressed during deployment, which draws its own.
+   */
+  private drawWallTarget(): void {
+    if (!this.wallValid || this.deployment?.active) return;
+    if (this.wallIntent() !== 'ascend' && this.wallIntent() !== 'traverse') return;
+    let men = 0;
+    for (const v of this.model.selectedViews) men += v.alive;
+    // `Siege` packs a garrison four to five ranks deep at the walk's own spacing; four is the
+    // conservative end, so the marker is never longer than the stretch that will be filled.
+    const halfLength = Math.max(3, (men / 4) * 0.86 * 0.5);
+    this.overlay.wallTarget(this.wallX, this.wallZ, this.wallY, halfLength);
   }
 
   /**
@@ -453,6 +558,10 @@ export class SelectionController {
     const nx = (this.ptr.x / Math.max(1, ctx.viewW)) * 2 - 1;
     const ny = -(this.ptr.y / Math.max(1, ctx.viewH)) * 2 + 1;
     this.refreshSolids(ctx);
+    // One unproject, kept for the frame: `pickUnit` asks the same ray where it crosses each
+    // elevated unit's own standing level, and doing that per unit would be a second unproject
+    // per unit per frame.
+    screenRay(ctx.camera, nx, ny, RAY);
     screenPick(ctx.camera, nx, ny, heightAt, this.solids, PICK);
 
     this.groundValid = PICK.groundHit;
@@ -462,10 +571,29 @@ export class SelectionController {
     }
 
     this.solidValid = PICK.solid >= 0;
+    this.wallValid = false;
     if (PICK.solid >= 0) {
       this.solidX = PICK.solidX;
       this.solidZ = PICK.solidZ;
       this.solidY = PICK.solidY;
+      /*
+       * Is this the top of a wall the player can put men on?
+       *
+       * Two tests, and the second is not decoration. `Siege.wallTargetAt` is a *plan* query —
+       * it answers about x and z and knows nothing about height — so on its own it says yes to
+       * a click on the outer face four metres down, which is not "get on the wall", it is "go
+       * to the foot of it". The slab test lands exactly on `topY` when the ray came down onto
+       * the walk and strictly below it on any side face, so comparing the two separates the
+       * two orders cleanly. Half a metre of tolerance rather than an epsilon so a click on a
+       * merlon still counts.
+       */
+      if (this.wallProbe && PICK.solidY > this.solids[PICK.solid].topY - 0.5
+        && this.wallProbe.targetAt(PICK.solidX, PICK.solidZ) >= 0) {
+        this.wallX = PICK.solidX;
+        this.wallZ = PICK.solidZ;
+        this.wallY = PICK.solidY;
+        this.wallValid = true;
+      }
       // A click on a 20 m siege tower means the tower. Without this the ray only ever met
       // the heightfield, so the order went to the grass behind it — 13.6 m past, and 138.8 m
       // past from a low camera, or nothing at all when the ray rose clear of the ground.
@@ -482,14 +610,48 @@ export class SelectionController {
     }
   }
 
-  /** Nearest unit whose banner or formation footprint contains the cursor, or -1. */
+  /**
+   * What a right-click here would do to the selection, as a verb the player can read.
+   *
+   * One function so the cursor, the hover marker, the drag hint and the order that is finally
+   * emitted cannot disagree about which of the four wall orders is on offer — which is the
+   * other half of the owner's complaint, that the cursor tells you nothing before you commit.
+   */
+  private wallIntent(): 'ascend' | 'traverse' | 'descend' | null {
+    const probe = this.wallProbe;
+    if (!probe) return null;
+    const sel = this.model.selectedViews;
+    if (sel.length === 0) return null;
+    // A mixed selection is named by the majority; every unit still gets the same order and
+    // `Siege` decides per unit what that means for it.
+    let onWall = 0;
+    for (const v of sel) if (probe.isGarrisoned(v.id)) onWall++;
+    if (this.wallValid) return onWall > sel.length * 0.5 ? 'traverse' : 'ascend';
+    return onWall > 0 ? 'descend' : null;
+  }
+
+  /**
+   * Nearest unit whose banner or formation footprint contains the cursor, or -1.
+   *
+   * A unit is hit-tested on the level its men are standing on, which for everybody on the
+   * ground is the ground and is the test this has always applied. For a cohort on a wall walk
+   * it is not: the men are drawn eight metres above the paving under them, so testing the
+   * cursor's *ground* point against the footprint meant clicking the parapet crowd selected
+   * nothing while clicking the grass below the wall — or the masonry itself — selected them
+   * instantly. With the curtain garrisoned and about to become traversable that is a whole
+   * tactical layer the player cannot reach.
+   *
+   * The two paths are kept apart rather than merged. `groundX/groundZ` is untouched and is
+   * still the only thing a non-elevated unit is tested against, so ordinary picking is
+   * unchanged by construction — which matters here, because folding one more question into
+   * the ground ray is exactly what `01db41e` had to revert.
+   */
   private pickUnit(ctx: EngineContext): number {
     if (this.ptr.overUi) return -1;
     // Banners are tested first, and before `groundValid`: a plaque floats above the block
     // and is very often over sky or over a hillside behind the unit, where the cursor ray
     // never lands on the ground the unit is standing on.
     if (this.overBanner >= 0) return this.overBanner;
-    if (!this.groundValid) return -1;
     // A few pixels of slack in world units keeps thin skirmish lines pickable when
     // zoomed out, without making close-up picking sloppy.
     const slack = Math.min(9, ctx.rig.metresPerPixel(ctx.viewH) * 7);
@@ -497,11 +659,22 @@ export class SelectionController {
     let bestD = Infinity;
     for (const v of this.model.views) {
       if (v.destroyed) continue;
+      let px: number;
+      let pz: number;
+      if (v.standY - v.cy > ELEVATED_MIN_DY) {
+        if (!rayPlaneY(RAY, v.standY + MAN_MID_Y, PLANE_AT)) continue;
+        px = PLANE_AT.x;
+        pz = PLANE_AT.z;
+      } else {
+        if (!this.groundValid) continue;
+        px = this.groundX;
+        pz = this.groundZ;
+      }
       footprintOf(v.unit, v.def, FOOT);
-      const d = distanceToFootprint(FOOT, this.groundX, this.groundZ);
+      const d = distanceToFootprint(FOOT, px, pz);
       if (d > slack) continue;
       // Inside two footprints at once: prefer the nearer centre.
-      const score = d + Math.hypot(v.cx - this.groundX, v.cz - this.groundZ) * 0.01;
+      const score = d + Math.hypot(v.cx - px, v.cz - pz) * 0.01;
       if (score < bestD) {
         bestD = score;
         best = v.id;
@@ -591,14 +764,17 @@ export class SelectionController {
       if (!v.own || v.destroyed) continue;
       footprintOf(v.unit, v.def, FOOT);
       let inside = false;
+      // The men's own level, for the same reason `pickUnit` uses it: projecting the terrain
+      // under a wall garrison puts its box eight metres below the crowd being dragged over.
+      const y = (v.standY - v.cy > ELEVATED_MIN_DY ? v.standY : v.cy) + 1;
       // Centre first — the common case for a box thrown over a whole wing.
-      projectPoint(ctx.camera, v.cx, v.cy + 1, v.cz, ctx.viewW, ctx.viewH, PROJECTED);
+      projectPoint(ctx.camera, v.cx, y, v.cz, ctx.viewW, ctx.viewH, PROJECTED);
       if (PROJECTED.visible && PROJECTED.x >= l && PROJECTED.x <= r && PROJECTED.y >= t && PROJECTED.y <= b) {
         inside = true;
       }
       for (let c = 0; c < 4 && !inside; c++) {
         footprintCorner(FOOT, c, CORNER);
-        projectPoint(ctx.camera, CORNER.x, v.cy + 1, CORNER.z, ctx.viewW, ctx.viewH, PROJECTED);
+        projectPoint(ctx.camera, CORNER.x, y, CORNER.z, ctx.viewW, ctx.viewH, PROJECTED);
         if (PROJECTED.visible && PROJECTED.x >= l && PROJECTED.x <= r && PROJECTED.y >= t && PROJECTED.y <= b) {
           inside = true;
         }
@@ -610,13 +786,23 @@ export class SelectionController {
 
   // ---- Right button: orders ----
 
+  /**
+   * The right button belongs to the order system whenever something is selected.
+   *
+   * It used to refuse the gesture outright while alt was held, so that `issueDragOrder`'s
+   * `running = ctx.input.alt || …` was unreachable on this path: the legend promised
+   * "Alt + RMB — Run · free the camera" and only the camera half ever happened. Alt now means
+   * run, which is the half the legend can actually keep, and the camera keeps the right button
+   * whenever nothing is selected plus Q/E and the middle button at all times — so no view is
+   * unreachable. The legend says exactly that now.
+   */
   private handleRight(ctx: EngineContext, hovered: number): void {
     const p = ctx.input.pointer[2];
     const haveSelection = this.model.selection.length > 0;
 
     // The order point, not the ground point: a right-click on a siege tower must send men
     // to the tower, and it resolves even when the ray misses the heightfield entirely.
-    if (p.pressed && !this.ptr.overUi && haveSelection && !this.ptr.downAlt) {
+    if (p.pressed && !this.ptr.overUi && haveSelection) {
       if (this.orderValid) {
         this.dragging = true;
         this.dragStartX = this.orderX;
@@ -624,6 +810,9 @@ export class SelectionController {
         this.dragEndX = this.orderX;
         this.dragEndZ = this.orderZ;
         this.dragHostileId = this.hostileUnder(hovered);
+        this.dragCtrl = this.ptr.downCtrl;
+        this.dragAlt = this.ptr.downAlt;
+        this.dragShift = this.ptr.downShift;
       }
     }
 
@@ -634,11 +823,15 @@ export class SelectionController {
         this.dragEndX = this.orderX;
         this.dragEndZ = this.orderZ;
       }
+      this.dragCtrl = this.dragCtrl || ctx.input.ctrl;
+      this.dragAlt = this.dragAlt || ctx.input.alt;
+      this.dragShift = this.dragShift || ctx.input.shift;
       this.dragHostileId = this.hostileUnder(hovered);
       const wall = this.wallPoint();
-      if (wall) {
+      if (wall || (!this.deployment?.active && this.wallValid)) {
         // No ground ghost over the parapet: `Siege.garrison` packs a unit along the walkway
-        // and the formation block a ghost draws is not what will be there.
+        // and the formation block a ghost draws is not what will be there. True of an order
+        // in play for the same reason it is true of a deployment.
         this.ghosts.length = 0;
       } else {
         this.buildGhosts(ctx, p.dragDist);
@@ -663,13 +856,19 @@ export class SelectionController {
       } else if (this.dragHostileId >= 0) {
         const t = this.model.view(this.dragHostileId);
         this.showHint(`Attack ${t ? t.title : 'enemy'}`, 'attack');
+      } else if (this.wallIntent()) {
+        this.showHint(WALL_HINT[this.wallIntent()!], 'move');
       } else {
         const len = this.dragFrontage;
         const wide = this.ghosts.length ? this.ghosts[0].width : 0;
+        // The *achieved* span, not the drag length: past the depth clamp they part company,
+        // and a readout that keeps counting up while the ghosts stop widening is a lie the
+        // player can see. Prefixes tell them which order they are about to give.
+        const verb = this.dragCtrl ? 'Attack move' : this.dragAlt || this.runByDefault ? 'Run' : 'Move';
         this.showHint(
           len >= FRONTAGE_MIN_M
-            ? `${Math.round(len)} m frontage · ${wide} per rank`
-            : ctx.input.shift ? 'Queue move order' : 'Move here',
+            ? `${verb} · ${Math.round(this.ghostSpan)} m frontage · ${wide} per rank`
+            : this.dragShift ? `Queue ${verb.toLowerCase()} order` : `${verb} here`,
           'move'
         );
       }
@@ -683,6 +882,9 @@ export class SelectionController {
       ctx.rig.suppressDrag = false;
       this.issueDragOrder(ctx, p.dragDist);
       this.ghosts.length = 0;
+      this.dragCtrl = false;
+      this.dragAlt = false;
+      this.dragShift = false;
       this.hideHint();
     }
   }
@@ -716,6 +918,7 @@ export class SelectionController {
    */
   private buildGhosts(ctx: EngineContext, dragPx: number): void {
     this.ghosts.length = 0;
+    this.ghostSpan = 0;
     const sel = this.model.selectedViews.filter((v) => !v.routing);
     if (sel.length === 0) return;
 
@@ -752,6 +955,7 @@ export class SelectionController {
           detail,
         });
       }
+      this.ghostSpan = Math.max(0, total - gap);
       return;
     }
 
@@ -783,11 +987,24 @@ export class SelectionController {
     const scale = usable / Math.max(1, natural);
 
     let t = 0;
+    let span = 0;
     for (const v of ordered) {
       const seg = Math.max(v.unit.spacingX * 2, v.frontage * scale);
       const centreT = t + seg * 0.5;
       t += seg + gap;
-      const width = Math.max(1, Math.min(v.alive, Math.round(seg / v.unit.spacingX)));
+      /*
+       * A frontage drag has a floor on depth, and it did not have one.
+       *
+       * A 180 m drag on a 320-man cohort set `width = 210` — one and a half ranks — and drew a
+       * 181 m white thread that no formation of this period could stand in, let alone fight
+       * from: a line two deep has no relief for the front rank and nothing to give when it is
+       * charged. `MIN_RANKS` is the same number the roster's own `line` reaches at roughly
+       * three times a cohort's natural frontage, so it clamps only the drags that were already
+       * past anything a player could have meant.
+       */
+      const maxFiles = Math.max(1, Math.ceil(v.alive / MIN_RANKS));
+      const width = Math.max(1, Math.min(v.alive, maxFiles, Math.round(seg / v.unit.spacingX)));
+      span += width * v.unit.spacingX + gap;
       this.ghosts.push({
         unit: v.unit,
         x: this.dragStartX + ux * centreT,
@@ -798,6 +1015,7 @@ export class SelectionController {
         detail,
       });
     }
+    this.ghostSpan = Math.max(0, span - gap);
   }
 
   private selectionCentroid(sel: UnitView[]): { x: number; z: number } {
@@ -864,9 +1082,12 @@ export class SelectionController {
     }
     const sel = this.model.selectedViews.filter((v) => !v.routing);
     if (sel.length === 0) return;
-    const queued = ctx.input.shift;
-    const running = ctx.input.alt || this.runByDefault;
-    const attackMove = ctx.input.ctrl;
+    // `dragShift`/`dragAlt`/`dragCtrl`, not `ctx.input.*`: see the note on those fields. The
+    // live state is folded in there every frame of the gesture, so this is strictly a
+    // superset of what reading the input here would have seen.
+    const queued = this.dragShift || ctx.input.shift;
+    const running = this.dragAlt || ctx.input.alt || this.runByDefault;
+    const attackMove = this.dragCtrl || ctx.input.ctrl;
 
     // Attacking a specific unit overrides any frontage the drag implied.
     if (this.dragHostileId >= 0 && dragPx < DRAG_PX * 3) {
@@ -874,6 +1095,33 @@ export class SelectionController {
         unitIds: sel.map((v) => v.id),
         kind: 'attack',
         targetUnitId: this.dragHostileId,
+      });
+      return;
+    }
+
+    /*
+     * A click on the parapet carries the parapet, not the ground beside it.
+     *
+     * This is the whole of the destination half. `Siege.interceptOrders` subscribes to
+     * `orderIssued` precisely because the event "is the only place the clicked point survives
+     * intact", and then asks `wallTargetAt(o.x, o.z)` — so an order that has already been
+     * pushed `SOLID_STANDOFF` clear of the curtain's face answers about grass and the wall
+     * order is never recognised. Sending the raw hit is the one change that closes it; every
+     * decision after this point is the sim's, including the rule that a besieger at the foot
+     * of the outer face does not get to walk up the defenders' stairs.
+     *
+     * No frontage and no facing: `Siege` packs a garrison along the walkway itself, four or
+     * five ranks deep at the bay's own `walkY`, and a width from a ground drag would be
+     * overwritten by that layout anyway. `queued` is dropped for the same reason `Siege`
+     * ignores queued orders — a waypoint appended to a march is not a decision about the wall.
+     */
+    if (this.wallValid && !queued) {
+      ctx.events.emit('orderIssued', {
+        unitIds: sel.map((v) => v.id),
+        kind: attackMove ? 'attackMove' : 'move',
+        x: this.wallX,
+        z: this.wallZ,
+        running,
       });
       return;
     }
@@ -991,9 +1239,23 @@ export class SelectionController {
     else if (this.ptr.overUi) c = 'default';
     else {
       const v = hovered >= 0 ? this.model.view(hovered) : undefined;
-      if (v && !v.own) c = this.model.selection.length > 0 ? 'attack' : 'default';
+      const haveSel = this.model.selection.length > 0;
+      /*
+       * A parapet under the cursor outranks "friend", and that ordering is deliberate.
+       *
+       * Measured over a column of screen samples down a bay: seven of the eight rows that are
+       * genuinely on the walk also have the garrison's own footprint under them — now that the
+       * garrison is pickable at all — so "friend" would win on almost every pixel of the wall
+       * and the player would never see the wall cursor. Selecting a friendly unit is already
+       * announced by its own hover box and by its banner lighting up; whether a right-click
+       * will send men *up* or leave them at the foot is announced by nothing else, and it is
+       * the thing the owner said the cursor fails to tell them. A hostile unit still wins
+       * outright: attacking is never the surprising reading.
+       */
+      if (v && !v.own) c = haveSel ? 'attack' : 'default';
+      else if (haveSel && this.wallValid && this.wallIntent()) c = 'wall';
       else if (v && v.own) c = 'friend';
-      else if (this.model.selection.length > 0 && this.orderValid) c = 'move';
+      else if (haveSel && this.orderValid) c = 'move';
     }
     if (c !== this.cursor) {
       this.cursor = c;

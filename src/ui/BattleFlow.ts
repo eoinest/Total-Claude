@@ -106,14 +106,28 @@ const CINEMATIC = !HARNESS;
 export class BattleFlow {
   private title!: HTMLElement;
   private results!: HTMLElement;
+  /** The HUD root, so the dispatch can hide every other panel while it is up. */
+  private hudRoot!: HTMLElement;
   private titleShownAt = -1;
   private titleGone = false;
   private resultsOpen = false;
+  /**
+   * Once dismissed, stays dismissed.
+   *
+   * `resultsOpen` used to be the only latch and the close button cleared it, so the 10 Hz
+   * `checkOutcome` fallback was free to re-raise the screen on its next tick — the player
+   * dismisses the dispatch and it comes straight back. It cannot fire today only because
+   * `BattleFlowSystem` is registered and `checkOutcome` bails on that, which is a coincidence
+   * of wiring rather than a rule.
+   */
+  private dismissed = false;
+  private onKey: ((e: KeyboardEvent) => void) | null = null;
   private offs: Array<() => void> = [];
 
   constructor(private model: HudModel) {}
 
   attach(parent: HTMLElement, ctx: EngineContext): void {
+    this.hudRoot = parent;
     this.title = el('div', 'title-card', parent);
     /*
      * The card is the map's copy, not Rome's.
@@ -148,6 +162,16 @@ export class BattleFlow {
        <div class="tc-lede">${map.blurb}</div>
        <div class="tc-rule flip"></div>`
     );
+
+    /*
+     * The browser tab is the map's too, and for the same reason the card is.
+     *
+     * `index.html` hard-codes "TOTAL CLAUDE — Siege of Rome" and it is not this workstream's
+     * file, so it is written here. Read back off the card rather than from `head` directly:
+     * a subtitle is authored as markup ("&middot;"), and a tab title is plain text.
+     */
+    const heading = this.title.querySelector('.tc-main')?.textContent?.trim();
+    if (heading) document.title = `TOTAL CLAUDE — ${heading}`;
 
     this.results = el('div', 'results interactive', parent);
     this.results.style.display = 'none';
@@ -213,22 +237,28 @@ export class BattleFlow {
    * HUD over a bare `BattleSystem`, which is the only way to reach the rest of it.
    */
   checkOutcome(ctx: EngineContext, model: HudModel): void {
-    if (this.resultsOpen || ctx.time.simTime < 20) return;
+    if (this.resultsOpen || this.dismissed || ctx.time.simTime < 20) return;
     // `BattleFlowSystem` owns the verdict when it is registered.
     if (ctx.tryGet('battleFlow')) return;
+    // `getOpposingFaction()`, not `Faction.Germanic`: on Carthage the literal counts an army
+    // that was never deployed, so the fallback would call the battle over on its first check
+    // with the real opponent untouched. Same defect the sim's own flow system carried.
+    //
+    // Keyed on `PLAYER_FACTION` rather than on Rome, because Rome is not always the player's
+    // side and will not be the moment a second playable faction lands.
     const foe = getOpposingFaction();
-    const rome = model.unitsLeft[Faction.Rome] - model.routing[Faction.Rome];
-    const other = model.unitsLeft[foe] - model.routing[foe];
-    if (rome > 0 && other > 0) return;
-    const victor = rome > 0 ? Faction.Rome : other > 0 ? foe : -1;
-    const wiped = model.strength[victor === Faction.Rome ? foe : Faction.Rome] === 0;
+    const mine = model.unitsLeft[PLAYER_FACTION] - model.routing[PLAYER_FACTION];
+    const theirs = model.unitsLeft[foe] - model.routing[foe];
+    if (mine > 0 && theirs > 0) return;
+    const victor = mine > 0 ? PLAYER_FACTION : theirs > 0 ? foe : -1;
+    const wiped = model.strength[victor === PLAYER_FACTION ? foe : PLAYER_FACTION] === 0;
     this.model.over = true;
     this.model.victor = victor;
     this.showResults(ctx, victor, wiped ? 'annihilation' : 'rout');
   }
 
   private showResults(ctx: EngineContext, victor: number, reason: string): void {
-    if (this.resultsOpen || !CINEMATIC) return;
+    if (this.resultsOpen || this.dismissed || !CINEMATIC) return;
     this.resultsOpen = true;
     const m = this.model;
 
@@ -322,36 +352,90 @@ export class BattleFlow {
       })
       .join('');
 
+    /*
+     * Three structural rules, all of them from a playtest that could not read this screen.
+     *
+     * **The head and the foot are outside the scroll.** The panel was one block with
+     * `overflow: auto` on the whole of it, so on a full order of battle the roll of honour ran
+     * past the bottom and took the dismiss button with it — measured at 1920x1080 and the
+     * shipped 1.35 HUD scale, content 968 px inside a 948 px box, i.e. the only control on the
+     * screen was below the fold and there was no other way out. Only `.rs-body` scrolls now,
+     * so `.rs-foot` is on screen whatever the army size.
+     *
+     * **`aria-modal` and `role="dialog"`**, because this genuinely is one: it is the last thing
+     * the battle says and nothing behind it is reachable while it is up.
+     *
+     * **A corner dismiss as well as the button.** A player who has just lost looks for the way
+     * out at the top right before they read to the bottom.
+     */
     html(
       this.results,
-      `<div class="rs-panel hud-panel">
-         <div class="rs-verdict ${verdict.toLowerCase()}">${verdict}</div>
-         <div class="rs-reason">${reasonText[reason] ?? reason}</div>
-         <div class="rs-clock">${fmtClock(tally?.at ?? ctx.time.simTime)} on the field</div>
-         <div class="rs-cols">${column(Faction.Rome)}<div class="rs-vs">${icon(ICON.swords, 'rs-vs-ic')}</div>${column(foe)}</div>
-         <div class="rs-honours">
-           <div class="sec-head">Roll of honour</div>
-           <table><tbody>${honours}</tbody></table>
+      `<div class="rs-panel hud-panel" role="dialog" aria-modal="true" aria-label="Battle result">
+         <button class="rs-x interactive" type="button" title="Dismiss (Esc)" aria-label="Dismiss">&times;</button>
+         <div class="rs-head">
+           <div class="rs-verdict ${verdict.toLowerCase()}">${verdict}</div>
+           <div class="rs-reason">${reasonText[reason] ?? reason}</div>
+           <div class="rs-clock">${fmtClock(tally?.at ?? ctx.time.simTime)} on the field</div>
          </div>
-         <div class="rs-flavour">${flavour}</div>
-         <button class="rs-close" type="button">Dismiss</button>
+         <div class="rs-body">
+           <div class="rs-cols">${column(PLAYER_FACTION)}<div class="rs-vs">${icon(ICON.swords, 'rs-vs-ic')}</div>${column(foe)}</div>
+           <div class="rs-honours">
+             <div class="sec-head">Roll of honour</div>
+             <table><tbody>${honours}</tbody></table>
+           </div>
+           <div class="rs-flavour">${flavour}</div>
+         </div>
+         <div class="rs-foot">
+           <button class="rs-close interactive" type="button">Dismiss</button>
+           <span class="rs-esc">Esc</span>
+         </div>
        </div>`
     );
     this.results.style.display = 'grid';
+    // Every other panel goes dark. A dispatch that the top bar, the minimap, the banners and
+    // twenty unit cards all show through is the state the playtest called illegible, and no
+    // amount of opacity on this element fixes chrome that is drawn *over* it.
+    setClass(this.hudRoot, 'results-up', true);
     // A frame's delay lets the transition run instead of snapping.
     requestAnimationFrame(() => setClass(this.results, 'open', true));
-    (this.results.querySelector('.rs-close') as HTMLElement).addEventListener('click', () => {
-      setClass(this.results, 'open', false);
-      window.setTimeout(() => {
-        this.results.style.display = 'none';
-        this.resultsOpen = false;
-      }, 420);
+
+    const dismiss = (): void => this.dismissResults();
+    for (const sel of ['.rs-close', '.rs-x']) {
+      this.results.querySelector(sel)?.addEventListener('click', dismiss);
+    }
+    // The scrim itself, but not the panel: clicking the sheet around a modal closes it.
+    this.results.addEventListener('click', (e) => {
+      if (e.target === this.results) dismiss();
     });
+    this.onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' || e.key === 'Enter') dismiss();
+    };
+    window.addEventListener('keydown', this.onKey);
+    // Focus so the keyboard reaches the dialog even if the canvas had it.
+    (this.results.querySelector('.rs-close') as HTMLElement | null)?.focus();
+  }
+
+  /** Close the dispatch and hand the HUD back. Idempotent. */
+  private dismissResults(): void {
+    if (!this.resultsOpen) return;
+    this.resultsOpen = false;
+    this.dismissed = true;
+    if (this.onKey) {
+      window.removeEventListener('keydown', this.onKey);
+      this.onKey = null;
+    }
+    setClass(this.results, 'open', false);
+    setClass(this.hudRoot, 'results-up', false);
+    window.setTimeout(() => {
+      if (!this.resultsOpen) this.results.style.display = 'none';
+    }, 420);
   }
 
   dispose(): void {
     for (const off of this.offs) off();
     this.offs.length = 0;
+    if (this.onKey) window.removeEventListener('keydown', this.onKey);
+    this.onKey = null;
     this.title.remove();
     this.results.remove();
   }

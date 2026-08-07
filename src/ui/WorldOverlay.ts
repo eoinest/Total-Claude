@@ -43,6 +43,16 @@ class Batch {
   private n = 0;
   private readonly capacity: number;
 
+  /**
+   * Absolute Y for the next vertices, or null to sample the heightfield.
+   *
+   * A marker for a cohort on the wall walk drawn against `heightAt` is painted on the paving
+   * eight metres beneath its own unit, where the masonry hides it — so selecting the parapet
+   * garrison looked like selecting nothing. Set it, draw, clear it; nothing keeps it across a
+   * frame, so a caller that forgets cannot poison the batch.
+   */
+  levelY: number | null = null;
+
   constructor(maxTris: number, material: THREE.Material, private heightAt: Height, private lift: number) {
     this.capacity = maxTris * 3;
     this.pos = new Float32Array(this.capacity * 3);
@@ -62,6 +72,7 @@ class Batch {
 
   reset(): void {
     this.n = 0;
+    this.levelY = null;
   }
 
   private vertex(x: number, z: number, r: number, g: number, b: number, a: number): void {
@@ -69,7 +80,7 @@ class Batch {
     if (i >= this.capacity) return;
     const p = i * 3;
     this.pos[p] = x;
-    this.pos[p + 1] = this.heightAt(x, z) + this.lift;
+    this.pos[p + 1] = (this.levelY ?? this.heightAt(x, z)) + this.lift;
     this.pos[p + 2] = z;
     const c = i * 4;
     this.col[c] = r;
@@ -317,15 +328,29 @@ export class WorldOverlay {
   // Public markers
   // -------------------------------------------------------------------------
 
+  /**
+   * The level to draw a unit's marker at: its men's own feet when they are standing on
+   * something, and the heightfield otherwise. Same 2.5 m test `SelectionController` uses to
+   * decide where the cursor is aimed, so the marker cannot end up on a different level from
+   * the hit box that put it there.
+   */
+  private levelOf(v: UnitView): number | null {
+    return v.standY - v.cy > 2.5 ? v.standY : null;
+  }
+
   selectionMarker(v: UnitView): void {
     const u = v.unit;
+    this.ground.levelY = this.levelOf(v);
     this.block(this.ground, u.x, u.z, u.facing, v.frontage, v.depth, this.px(2.6, 1), GOLD, 1, 0.07);
+    this.ground.levelY = null;
   }
 
   hoverMarker(v: UnitView, hostile: boolean): void {
     const u = v.unit;
     const col = hostile ? RED : PALE;
+    this.ground.levelY = this.levelOf(v);
     this.block(this.ground, u.x, u.z, u.facing, v.frontage, v.depth, this.px(1.8, 0.7), col, 0.7, 0.05);
+    this.ground.levelY = null;
   }
 
   /** Dashed path from the unit to its objective, plus any queued waypoints. */
@@ -356,6 +381,36 @@ export class WorldOverlay {
   /** A small diamond marker on the ground. */
   private node(x: number, z: number, r: number, col: readonly number[], a: number): void {
     this.air.quad(x - r, z, x, z - r, x + r, z, x, z + r, col[0], col[1], col[2], a);
+  }
+
+  /**
+   * The stretch of parapet a right-click would send the selection to, drawn *on the parapet*.
+   *
+   * The owner's report was that hovering the wall tells the player nothing. It cannot be drawn
+   * against `heightAt`, which here is paving twelve metres beneath the walk and inside the
+   * masonry; `levelY` puts it on the stone the men will actually stand on. Two rails along the
+   * run rather than a filled patch, because what is being marked is a length of walkway and
+   * the men are what should fill it.
+   *
+   * The rails run along x and are inset in z, which is not a guess: "the wall runs broadly
+   * along x and the city is at +Z" is a stated constraint on every city plan
+   * (`docs/ARCHITECTURE.md`), load-bearing in `bayAt`, `scenario.ts` and `Siege`.
+   */
+  wallTarget(x: number, z: number, y: number, halfLength: number): void {
+    const w = this.px(2.2, 0.8);
+    const inset = 1.1;
+    // The `air` batch, not `ground`: `matAir` is `depthTest: false`, and a marker on top of a
+    // wall is exactly the case where the merlons in front of it would otherwise eat it. The
+    // `ground` batch's polygon offset is tuned for terrain decals and does not help here.
+    this.air.levelY = y;
+    for (const side of [-1, 1]) {
+      this.air.segment(
+        x - halfLength, z + side * inset, x + halfLength, z + side * inset,
+        w, GOLD[0], GOLD[1], GOLD[2], 0.9
+      );
+    }
+    this.node(x, z, this.px(6, 1.9), GOLD, 0.95);
+    this.air.levelY = null;
   }
 
   /**

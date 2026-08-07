@@ -64,6 +64,16 @@ export interface UnitView {
   cx: number;
   cy: number;
   cz: number;
+  /**
+   * Mean foot height of the unit's living men — the level they are actually *drawn* at.
+   *
+   * `cy` is the terrain under the block, which for a cohort on the Aurelian wall walk is
+   * eight metres below its own boots. The sim already keeps this figure (`BattleSystem.levelOf`,
+   * a mean rather than a sample because a unit half-way up a stair is genuinely on two levels),
+   * so nothing new is measured here — it is only carried across to the HUD, which is what
+   * lets a click land on the men instead of on the grass under them.
+   */
+  standY: number;
   frontage: number;
   depth: number;
   /** True while the player owns this unit and may give it orders. */
@@ -189,6 +199,10 @@ export class HudModel {
       v.cx = u.x - s * v.depth * 0.5;
       v.cz = u.z - c * v.depth * 0.5;
       v.cy = battle.groundAt(v.cx, v.cz);
+      // Zero before the first `fixedUpdate` has run, and zero is a legal sea-level height, so
+      // it is not special-cased here — `SelectionController` only trusts this when it is
+      // *above* the terrain, and a spurious zero never is.
+      v.standY = battle.levelOf(u.id);
 
       if (!u.destroyed) {
         this.strength[u.faction] += u.alive;
@@ -263,6 +277,7 @@ export class HudModel {
         cx: u.x,
         cy: 0,
         cz: u.z,
+        standY: 0,
         frontage: u.width * u.spacingX,
         depth: 4,
         own: u.faction === PLAYER_FACTION,

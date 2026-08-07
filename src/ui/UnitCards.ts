@@ -19,7 +19,7 @@
  */
 
 import type { EngineContext } from '../core/Engine';
-import { getOpposingFaction, type UnitClass } from '../sim/types';
+import { getOpposingFaction, type Faction, type UnitClass } from '../sim/types';
 import { el, html, icon, pulse, setClass, setFill, setText, sizeCanvas } from './dom';
 import { ICON, standardGlyph, UNIT_CLASS_ICON } from './icons';
 import type { HudModel, UnitView } from './model';
@@ -96,6 +96,19 @@ export class UnitCards {
   private foeOpen = false;
 
   private generation = -1;
+  /**
+   * Units wiped out at the last rebuild.
+   *
+   * A card is the order of battle, and a unit that no longer exists is not in it. Nine grey
+   * zero-strength cards were left interleaved with seven live ones while the top plaque
+   * correctly read "7 units" — two counts of the same army on one screen, disagreeing.
+   * Comparing the count rather than watching each card because the bar is grouped into arms
+   * with a labelled divider between them, and removing one card can leave a band heading with
+   * nothing under it; the whole row has to be laid out again either way.
+   */
+  private deadCount = -1;
+  /** Which faction the enemy tab is currently labelled for; see the note in `attach`. */
+  private foeLabelled: Faction | -1 = -1;
   private hoverTimer = 0;
   private hoverCard: CardEls | null = null;
 
@@ -107,15 +120,17 @@ export class UnitCards {
 
   attach(parent: HTMLElement): void {
     /*
-     * The enemy tab, named for whoever is actually opposite.
+     * The enemy strip is *labelled* after deployment, not while it is being built.
      *
-     * This was `PLAYER_FACTION === Rome ? Germanic : Rome` — a two-faction flip that reads
-     * as general and is not: with Carthage on the field it labelled the tab JUTHUNGI, flew a
-     * horned standard over it, and counted a faction with no units, so the strip read
-     * "0 units" all battle. `getOpposingFaction` is what the deployment publishes and what
-     * `checkVictory` and the end-of-battle dispatch already resolve enmity through. The menu
-     * publishes it before the engine is built, which is what makes it readable here — the
-     * HUD attaches during `init`, one phase before the deployment runs.
+     * `attach` runs inside `engine.initAll`, and `setOpposingFaction` is not called until
+     * `deployBattle`, which runs after it — so anything read here is still the default. That is
+     * how the strip over a Carthaginian order of battle came to say JUTHUNGI under a horned
+     * standard. The markup is built from whatever is known now and `build` rewrites it; `build`
+     * first runs on the refresh that sees the deployed army, so it is never early.
+     *
+     * The literal this replaced was `PLAYER_FACTION === Rome ? Germanic : Rome` — a two-faction
+     * flip that reads as general and is not, since it also counted a faction with no units, so
+     * the strip read "0 units" for the whole battle.
      */
     const foeFui = FACTION_UI[getOpposingFaction()];
     this.foeBar = el('div', 'obat', parent);
@@ -166,7 +181,7 @@ export class UnitCards {
 
     // Stable sort into bands so each divider separates one arm from the next.
     const own = this.model.views
-      .filter((v) => v.own)
+      .filter((v) => v.own && !v.destroyed)
       .map((v, i) => ({ v, i }))
       .sort((a, b) => CLASS_BAND[a.v.def.unitClass] - CLASS_BAND[b.v.def.unitClass] || a.i - b.i);
 
@@ -184,10 +199,18 @@ export class UnitCards {
     }
     this.inner.dataset.bands = String(bands);
 
-    const foes = this.model.views.filter((v) => !v.own);
+    const foes = this.model.views.filter((v) => !v.own && !v.destroyed);
     for (const v of foes) this.foeCards.push(this.makeCard(v, this.foeHolder, ctx, true));
     setText(this.foeCount, String(foes.length));
     setClass(this.foeBar, 'none', foes.length === 0);
+    // Now the army exists, so whose it is can be read off it. See the note in `attach`.
+    const foeFaction = foes[0]?.faction ?? getOpposingFaction();
+    if (foeFaction !== this.foeLabelled) {
+      this.foeLabelled = foeFaction;
+      setText(this.foeBar.querySelector('.obat-lab') as HTMLElement, FACTION_UI[foeFaction].short);
+      const std = this.foeBar.querySelector('.obat-std');
+      if (std) std.outerHTML = icon(standardGlyph(foeFaction), 'obat-std');
+    }
 
     this.relayout();
   }
@@ -377,8 +400,11 @@ export class UnitCards {
 
   /** 10 Hz: diff the model against what is on screen. */
   sync(ctx: EngineContext): void {
-    if (this.generation !== this.model.generation) {
+    let dead = 0;
+    for (const v of this.model.views) if (v.destroyed) dead++;
+    if (this.generation !== this.model.generation || dead !== this.deadCount) {
       this.generation = this.model.generation;
+      this.deadCount = dead;
       this.build(ctx);
     }
     const hoveredId = this.model.hoveredId;
