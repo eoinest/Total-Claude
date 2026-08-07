@@ -2,7 +2,8 @@ import type { EngineContext, Subsystem } from '../core/Engine';
 import { Rng, hash01 } from '../util/rand';
 import { clamp, clamp01, damp, turnToward, wrapAngle } from '../util/math';
 import {
-  closestPointOnSegment, formation, frontSegment, makeSegment, ranksFor, segmentDistance,
+  BASE_SPACING_X, BASE_SPACING_Z, closestPointOnSegment, formation, frontSegment, makeSegment,
+  ranksFor, segmentDistance,
 } from './formations';
 import { unitType, isCavalry } from '../units/roster';
 import type { TerrainSystem } from '../terrain/TerrainSystem';
@@ -830,10 +831,10 @@ export class BattleSystem implements Subsystem {
   }
 
   private baseSpacingX(def: UnitTypeDef): number {
-    return isCavalry(def) ? 1.95 : 0.86;
+    return isCavalry(def) ? BASE_SPACING_X.mounted : BASE_SPACING_X.foot;
   }
   private baseSpacingZ(def: UnitTypeDef): number {
-    return isCavalry(def) ? 3.1 : 1.02;
+    return isCavalry(def) ? BASE_SPACING_Z.mounted : BASE_SPACING_Z.foot;
   }
 
   /** Transform a formation-local offset into world space. */
