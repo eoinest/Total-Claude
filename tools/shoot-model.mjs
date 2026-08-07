@@ -66,9 +66,16 @@ const PLATES = {
     unit: 'legio-cohort', hash: 0.37, clip: 'idleBrace', phase: 0.5,
     az: 0.95, el: 0.03, fill: 0.86, desc: 'Legionary behind the scutum — the shield face',
   },
+  // Aimed at 1.585 rather than the eye line and pulled back from 4.2 to 3.3.
+  //
+  // A galea's rim sits at the brow, so a head plate aimed at the eyes and magnified 4.2x
+  // frames the *bowl* and nothing else — which is what the blind critic saw when it wrote
+  // "full-frame head and there is no face". The face opening, the cheek pieces, the chin and
+  // the focale are all below the eye line on a helmeted man, and they are what a Rome II
+  // head crop actually contains.
   'legio-head': {
     unit: 'legio-cohort', hash: 0.62, clip: 'idleAlertReady', phase: 0.32,
-    az: -0.6, el: 0.06, fill: 4.2, aimY: HEAD_Y, desc: 'Legionary head and helmet, close',
+    az: -0.6, el: 0.06, fill: 3.3, aimY: 1.585, desc: 'Legionary head and helmet, close',
   },
   'legio-back': {
     unit: 'legio-cohort', hash: 0.11, clip: 'idleAlertReady', phase: 0.32,

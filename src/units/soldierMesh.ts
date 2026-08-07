@@ -196,6 +196,14 @@ const BACK_ARC: readonly [number, number] = [Math.PI / 2 + FACE_HALF, Math.PI / 
 const FACE_SEG = 6;
 const BACK_SEG = (head: number): number => Math.max(5, Math.round(head * 0.85));
 /**
+ * Where a helmet's face opening starts, in metres above the head bone.
+ *
+ * The eyes are at y = +0.024 and the brow ridge at +0.050, so a rim at +0.054 clears both by
+ * a few millimetres — which is where a galea sits on a man's head and is 70 mm higher than
+ * where every bowl in this file used to stop.
+ */
+const BROW_Y = 0.054;
+/**
  * The V range the face tile is painted against, in metres relative to the head bone: from
  * under the jaw to the crown. `atlas.ts`'s `Mat.Face` layout is written to these two numbers
  * and they must move together.
@@ -215,6 +223,48 @@ const DETAIL: Record<Lod, Detail> = {
   1: { torso: 6, limb: 4, head: 6, rings: 3, shieldCols: 3, shieldRows: 3, fine: false, medium: true },
   2: { torso: 5, limb: 4, head: 5, rings: 2, shieldCols: 2, shieldRows: 2, fine: false, medium: false },
 };
+
+/**
+ * A helmet bowl with a face opening.
+ *
+ * Every helmet in this game was a **closed dome**. The Imperial Gallic bowl lathed a full
+ * revolution from y = 0.124 down to y = -0.016; the eyes are at y = +0.024 and the brow at
+ * +0.050, so the shell enclosed both, and the bronze reinforce below it sat at jaw height.
+ * A helmeted man's whole face was inside his helmet — the same defect as the hair dome, in
+ * the same shape, found the same way, and it is why the blind critic's note on the head
+ * plates was "no eye, no nose, no mouth, no brow" and on the helmets "a perfect surface of
+ * revolution".
+ *
+ * The cure is the arc again: the back and sides keep the full drop, which is where a galea
+ * *does* come down over the ears and the nape, and the front 120 degrees stops at the brow.
+ * The rim radius on the cut is interpolated along the profile segment it crosses, so the two
+ * arcs meet without a step, and the opening is the shape a real face opening is — high at
+ * the front, low at the sides.
+ *
+ * Costs one extra band-row of quads over the front arc and saves two columns everywhere
+ * else; net about 40 triangles on a helmet, at LOD0 and LOD1 only.
+ */
+function bowlWithFace(
+  b: MeshBuilder,
+  profile: readonly (readonly [number, number])[],
+  segments: number,
+  uv: UvRect,
+  browY: number
+): void {
+  b.revolve(profile, BACK_SEG(segments), uv, 1, { arc: BACK_ARC });
+  // Helmet profiles run crown-first, so y descends; the front arc keeps the head of the list
+  // and closes on the brow line.
+  const front: [number, number][] = [];
+  for (let i = 0; i < profile.length; i++) {
+    const [r, y] = profile[i];
+    if (y >= browY) { front.push([r, y]); continue; }
+    const [pr, py] = profile[i - 1] ?? [r, y];
+    const t = py === y ? 0 : (browY - py) / (y - py);
+    front.push([pr + (r - pr) * t, browY]);
+    break;
+  }
+  if (front.length >= 2) b.revolve(front, FACE_SEG, uv, 1, { arc: FACE_ARC });
+}
 
 export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.InstancedBufferGeometry {
   if (lod === 2) return buildFarGeometry(faction);
@@ -471,15 +521,22 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     // guard at the back and large hinged cheek pieces. This is the helmet everyone
     // pictures when they picture a legionary.
     b.setPiece(Piece.HelmGallic, Tint.Metal);
-    b.revolve(
+    bowlWithFace(
+      b,
       [[0.001, 0.124], [0.058, 0.117], [0.094, 0.086], [0.105, 0.034], [0.108, 0.0], [0.109, -0.016]],
-      d.head, plateUv
+      d.head, plateUv, BROW_Y
     );
     if (d.medium) {
       // Rim reinforce. Every galea has a thickened brow band, and without it the bowl
       // reads as a swimming cap.
       b.setPiece(Piece.HelmGallic, Tint.Atlas);
-      b.revolve([[0.109, -0.014], [0.118, -0.026], [0.118, -0.044], [0.107, -0.05]], d.head, bronzeUv);
+      // The reinforce is two things, not one ring: a browband on the rim of the face opening
+      // and the nape band round the back. As a single ring at y -0.014 it sat at jaw height
+      // on a helmet that had no face opening to bind.
+      b.revolve([[0.109, -0.014], [0.118, -0.026], [0.118, -0.044], [0.107, -0.05]],
+        BACK_SEG(d.head), bronzeUv, 1, { arc: BACK_ARC });
+      b.revolve([[0.100, BROW_Y + 0.008], [0.110, BROW_Y - 0.004], [0.110, BROW_Y - 0.020], [0.099, BROW_Y - 0.028]],
+        FACE_SEG, bronzeUv, 1, { arc: FACE_ARC });
       b.setPiece(Piece.HelmGallic, Tint.Metal);
       // Neck flange, angled down and back.
       // Neck guard. Flared down and back, and the single feature that tells you a
@@ -524,16 +581,20 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     b.setPiece(Piece.HelmRidge, Tint.Metal);
     // Markedly taller and more conical than the Gallic bowl, which is both what the
     // Intercisa and Berkasovo finds are and what makes the two read apart in a crowd.
-    b.revolve(
+    bowlWithFace(
+      b,
       [[0.001, 0.198], [0.026, 0.186], [0.06, 0.146], [0.086, 0.084], [0.097, 0.028],
         [0.1, 0.0], [0.101, -0.018]],
-      d.head, plateUv
+      d.head, plateUv, BROW_Y
     );
     if (d.medium) {
       b.setPiece(Piece.HelmRidge, Tint.Atlas);
       // The ridge itself, fore and aft along the crown, plus the brow band.
       b.box(0, 0.166, 0, 0.026, 0.062, 0.21, bronzeUv);
-      b.revolve([[0.101, -0.016], [0.109, -0.028], [0.109, -0.046], [0.099, -0.052]], d.head, bronzeUv);
+      b.revolve([[0.101, -0.016], [0.109, -0.028], [0.109, -0.046], [0.099, -0.052]],
+        BACK_SEG(d.head), bronzeUv, 1, { arc: BACK_ARC });
+      b.revolve([[0.094, BROW_Y + 0.008], [0.103, BROW_Y - 0.004], [0.103, BROW_Y - 0.020], [0.093, BROW_Y - 0.028]],
+        FACE_SEG, bronzeUv, 1, { arc: FACE_ARC });
       b.setPiece(Piece.HelmRidge, Tint.Metal);
       for (const s of [-1, 1]) {
         const cheek = new THREE.Matrix4()
@@ -557,9 +618,10 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     // Coolus: a plain bronze-or-iron bowl with a small knob and a token neck guard. The
     // cheapest helmet in the army, which is why the city cohorts have it.
     b.setPiece(Piece.HelmCoolus, Tint.Metal);
-    b.revolve(
+    bowlWithFace(
+      b,
       [[0.001, 0.112], [0.06, 0.107], [0.092, 0.08], [0.101, 0.033], [0.104, 0.0], [0.105, -0.014]],
-      Math.max(5, d.head - 2), plateUv
+      Math.max(5, d.head - 2), plateUv, BROW_Y
     );
     if (d.medium) {
       b.setPiece(Piece.HelmCoolus, Tint.Atlas);
@@ -567,7 +629,9 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
       // to survive a mip level.
       b.revolve([[0.001, 0.152], [0.026, 0.138], [0.026, 0.116], [0.001, 0.108]], 6, bronzeUv);
       b.revolve([[0.105, -0.012], [0.113, -0.024], [0.113, -0.04], [0.103, -0.046]],
-        Math.max(5, d.head - 2), bronzeUv);
+        BACK_SEG(Math.max(5, d.head - 2)), bronzeUv, 1, { arc: BACK_ARC });
+      b.revolve([[0.097, BROW_Y + 0.008], [0.106, BROW_Y - 0.004], [0.106, BROW_Y - 0.020], [0.096, BROW_Y - 0.028]],
+        FACE_SEG, bronzeUv, 1, { arc: FACE_ARC });
       b.setPiece(Piece.HelmCoolus, Tint.Metal);
       const guard = new THREE.Matrix4()
         .makeRotationX(-62 * DEG)
@@ -580,9 +644,10 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     // Spangenhelm: a conical shell of iron plates riveted to a frame, with a nasal. The
     // Germanic helmet, and rare enough that most of the host is bareheaded.
     b.setPiece(Piece.HelmSpangen, Tint.Metal);
-    b.revolve(
+    bowlWithFace(
+      b,
       [[0.004, 0.178], [0.028, 0.158], [0.06, 0.108], [0.088, 0.042], [0.098, -0.002], [0.099, -0.018]],
-      d.head, plateUv
+      d.head, plateUv, BROW_Y
     );
     if (d.medium) {
       b.setPiece(Piece.HelmSpangen, Tint.Atlas);
