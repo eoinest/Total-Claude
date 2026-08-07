@@ -16,9 +16,11 @@
 
 import type { EngineContext, QualityTier, Subsystem } from '../core/Engine';
 import type { BattleSystem } from '../sim/BattleSystem';
+import type { DeploymentSystem } from '../sim/deployment';
 import { Banners, type WallSegment } from './Banners';
 import { BattleFlow } from './BattleFlow';
 import { CommandPanel } from './CommandPanel';
+import { DeploymentPanel } from './DeploymentPanel';
 import { el, setText } from './dom';
 import { EventFeed } from './EventFeed';
 import { HudModel } from './model';
@@ -67,6 +69,9 @@ export class HudSystem implements Subsystem {
   private settings!: SettingsPanel;
   private tooltip!: Tooltip;
   private perfLine!: HTMLElement;
+  private deployment: DeploymentSystem | null = null;
+  private deployPanel: DeploymentPanel | null = null;
+  private offs: Array<() => void> = [];
 
   private bottomPanel!: HTMLElement;
   private battle?: BattleSystem;
@@ -81,6 +86,27 @@ export class HudSystem implements Subsystem {
   /** Unit under the cursor, or -1. Exposed so a headless driver can verify picking. */
   get hoveredUnitId(): number {
     return this.model.hoveredId;
+  }
+
+  /**
+   * What the cursor is resolving to this frame, for a headless driver.
+   *
+   * Read-only, and deliberately not a way to *issue* anything: a test that called a
+   * placement function directly would pass while the feature was unreachable, which is a gap
+   * this project has already shipped once. `tools/qa-deploy.mjs` still clicks with a real
+   * mouse; this is how it picks the pixel to aim at and how it explains a miss.
+   */
+  get cursorWorld(): {
+    x: number; z: number; valid: boolean;
+    solidX: number; solidZ: number; solidY: number; onSolid: boolean;
+    onWall: boolean;
+  } {
+    const c = this.controller;
+    return {
+      x: c.orderX, z: c.orderZ, valid: c.orderValid,
+      solidX: c.solidX, solidZ: c.solidZ, solidY: c.solidY, onSolid: c.solidValid,
+      onWall: !!(c.solidValid && this.deployment?.isWallPoint(c.solidX, c.solidZ)),
+    };
   }
 
   /** Re-measure the card bar. Exposed so a driver can size-test an order of battle. */
@@ -236,6 +262,35 @@ export class HudSystem implements Subsystem {
     }
 
 
+    /*
+     * The deployment phase, if this build has one and `main.ts` opened it.
+     *
+     * Attached last so the plaque sits above the rest of the chrome, and only when the
+     * phase is actually live — a banner that says DEPLOYMENT over a running battle would be
+     * worse than none. `deploymentBegan` is listened for as well as polled at init, because
+     * the phase opens in `boot()` after `initAll`, which is after this runs.
+     */
+    this.deployment = (ctx.tryGet('deployment') as unknown as DeploymentSystem | undefined) ?? null;
+    if (this.deployment) {
+      const dep = this.deployment;
+      this.controller.deployment = dep;
+      this.topbar.clockHeld = () => dep.blocksClock;
+      const open = (): void => {
+        if (this.deployPanel || !dep.active) return;
+        this.deployPanel = new DeploymentPanel(dep, this.model, this.controller);
+        this.deployPanel.attach(this.root, ctx);
+        this.root.classList.add('deploying');
+      };
+      this.offs.push(ctx.events.on('deploymentBegan', open));
+      this.offs.push(ctx.events.on('deploymentEnded', () => {
+        this.deployPanel?.dispose();
+        this.deployPanel = null;
+        this.controller.deployment = null;
+        this.root.classList.remove('deploying');
+      }));
+      open();
+    }
+
     this.perfLine = el('div', 'hud-perf', this.root);
     setText(this.perfLine, 'hud —');
 
@@ -316,6 +371,10 @@ export class HudSystem implements Subsystem {
     if (this.tickAcc >= TICK) {
       this.tickAcc = 0;
       this.model.refresh(this.battle, ctx.time.simTime);
+      // `derivePhase` reads the battle's own shape, and at t+0 with a garrison already on
+      // the wall and missile troops in range it reports "Missile Exchange" — over a battle
+      // that has not started. The phase the player is in is the one the plaque says.
+      if (this.deployment?.active) this.model.phase = 'deployment';
       if (this.model.pruneSelection()) {
         ctx.events.emit('selectionChanged', { unitIds: this.model.selection.slice() });
       }
@@ -326,7 +385,12 @@ export class HudSystem implements Subsystem {
       this.minimap.draw(ctx);
       this.feed.observe(ctx.time.elapsed);
       this.feed.sync(ctx.time.elapsed);
-      this.flow.checkOutcome(ctx, this.model);
+      this.deployPanel?.sync(ctx);
+      // The result screen must not fire on a paused, unfought battle: with no tick run,
+      // `BattleFlowSystem` has no sides and every army reads as intact, but a scenario
+      // whose second side is empty would still resolve. Deployment owns the outcome until
+      // it commits.
+      if (!this.deployment?.active) this.flow.checkOutcome(ctx, this.model);
       this.settings.reflect(this.banners.enabled, this.debugOn);
       // One layout read per tick, so world banners never end up buried under the bar.
       this.banners.bottomReserve = Math.max(0, ctx.viewH - this.bottomPanel.offsetTop + 6);
@@ -345,6 +409,10 @@ export class HudSystem implements Subsystem {
     // World overlay: rebuilt every frame so the order ghost tracks the cursor exactly.
     this.overlay.metresPerPixel = ctx.rig.metresPerPixel(ctx.viewH);
     this.overlay.begin();
+    if (this.deployment?.active) {
+      const z = this.deployment.zone;
+      this.overlay.deployZone(z.xMin, z.zMin, z.xMax, z.zMax, this.deployment.frontIsLowZ());
+    }
     this.controller.update(ctx, this.heightAt);
     const hovered = this.model.hoveredId;
     for (const v of this.model.selectedViews) this.overlay.selectionMarker(v);
@@ -377,6 +445,20 @@ export class HudSystem implements Subsystem {
     // Game speed, Total War style. The HUD owns these because it owns the buttons that
     // show their state; nothing else in the engine binds them.
     const t = ctx.time;
+    /*
+     * Deployment holds the clock, and that is not a nicety.
+     *
+     * A paused clock is what keeps `fixedUpdate` from running, and a paused `fixedUpdate` is
+     * what keeps the AI's planner off the field — `installAI` binds its `commanded` set at
+     * construction and re-plans every few ticks, and a player order it owns has been
+     * measured drifting 46 m and being re-issued 23 times in ten seconds. So Space and the
+     * speed keys are not merely ignored during deployment; if they were honoured the phase
+     * would end up watching its own army walk away. Enter is the way out.
+     */
+    if (this.deployment?.blocksClock) {
+      if (input.keyPressed('Enter') || input.keyPressed('NumpadEnter')) this.deployment.commit();
+      return;
+    }
     if (input.keyPressed('Space')) t.togglePause();
     if (input.keyPressed('Digit1')) {
       if (t.paused) t.togglePause();
@@ -402,6 +484,9 @@ export class HudSystem implements Subsystem {
   }
 
   dispose(): void {
+    for (const off of this.offs) off();
+    this.offs.length = 0;
+    this.deployPanel?.dispose();
     this.controller.dispose();
     this.ptr.dispose();
     this.overlay.dispose();

@@ -154,25 +154,55 @@ Three constraints on any city, all load-bearing in files the city workstream doe
   z −190 and z +130; `Siege.ts` reads `GarrisonBay.nx/nz` as the outward normal.
   `CitySystem` asserts a uniform bay pitch at build time.
 - **Nothing at z < `battlefieldZ`**, checked per vertex per LOD by `assertNoStrayGeometry`.
-- **220 draw calls whole-frame, and it is already exceeded.** Measured at `fbcfe65 + this
-  work`: the Rome *assault* camera renders **268** at high and ultra, 227 at medium, 184 at
-  low. The city's own upper bound is 89 of that (wall 37, monuments 21, fabric 20, printed by
-  `CitySystem` at every boot as `[city:<id>] N draws … by family`). So the overage is mostly
-  not the city — but a second city has the same ceiling as the first, not a share of it, and
-  **any commit that adds city geometry must quote the ledger line.**
+- **220 draw calls whole-frame — met at the assault camera, with 1 to spare.** The city's
+  own upper bound is printed at every boot as `[city:<id>] N draws … by family`. A second
+  city has the same ceiling as the first, not a share of it, and **any commit that adds city
+  geometry must quote the ledger line.** How the number is spent, and how little of it is the
+  colour pass, is in §4 — read that before adding geometry, because a mesh that casts is
+  charged five times, not once.
 
 Directory layout: `src/city/*.ts` is shared machinery; `src/city/<cityname>/` is one city's
 own geometry. Ownership is per-city-directory, so two cities can be built in parallel.
 
-### Water is terrain, and a basin is a hole
+### Water is a map's to declare, and the heightfield says where it is
 
-There is no general water surface. `RiverWater` is a ribbon built along the Tiber's
-centreline and it is the only one. On Carthage the Gulf of Tunis, the Lake of Tunis and the
-harbour basins are **terrain below the map's `waterLevel`, painted by the splat rules** —
-free, no draw call, no reflection pass, and legible at the distances a battle camera uses.
+`MapDefinition.terrain.water` is a `WaterProfile | null` and `TerrainSystem` builds
+`WaterSurface` only when a map hands it one. This replaced `hasRiver: boolean`, for the
+reason `city: CityPlan | null` replaced `hidesCity`: under the flag there was exactly one
+water surface in the engine — a ribbon of geometry built along the Tiber's own meander
+train — so Carthage, which is a peninsula, had to answer "no". Its gulf, its lagoon and its
+harbours shipped as terrain under the datum painted by the splat, and the owner's report on
+the finished map was *"I see the ocean but no lagoon, it's just the beach."* A flat
+desaturated plate with no specular, no animation and no depth cue reads as wet sand, and a
+17:00 sun 20 degrees up is the case that reads worst.
 
-**Nothing in the simulation knows what water is.** A man walks into the sea unless something
-stops him, and only two things can:
+Two properties are load-bearing and a new map should rely on both:
+
+- **The wetted extent comes out of the heightfield, not out of an authored polygon.** Water
+  is wherever the bed is under `waterLevel`, tested per pixel against the same height texture
+  and the same edge-drift `TerrainMaterial` uses, so a coast cannot disagree with its own
+  bathymetry and a sand bar comes out as a bar. It also means **a map cannot flood a salt
+  flat**: the Sebkhet Ariana is built at +0.54 to +0.64 m and stays dry by construction.
+- **One draw call for all of a map's water.** A 16 m grid with the dry cells left out, a
+  coarse ring outside the battlefield so the sea runs to the horizon, and any authored basin
+  welded into the same buffers with its surface height and depth per vertex. Measured at ten
+  cameras on Carthage: +1 draw at every one, byrsa 281 → 282.
+
+A basin whose bed is *built geometry* — a harbour cut into level ground — is the one thing
+the bathymetric test cannot see, because the heightfield there is at quay level. Those are
+declared as `basins` on the profile with their own `y` and `depth`; import the quay builder's
+own `BASIN_WATER_Y`/`BASIN_DEPTH` rather than copying the numbers.
+
+**A basin's surface is absolute and it is not a function of the bed under it.** `WaterBasin.y`
+was `dy`, an offset from `heightAt(centre)`, and that put Carthage's two basins at −1.46 and
+−0.04 while the gulf they both join through 21 m channels sat at 0 — because the ground
+sample at the cothon's centre is +0.34 and the merchant basin's is +1.76, and neither number
+has anything to do with the sea. Connected water is at one height by definition. The quay's
+freeboard is then an *output* of the ground, measured by the city's own build checks, not an
+input the water is derived from.
+
+**Nothing in the simulation knows what water is**, and rendering a surface did not change
+that. A man walks into the sea unless something stops him, and only two things can:
 
 1. **A slope the pathfinder refuses.** `SLOPE_IMPASSABLE = 0.62` measured over its 7 m cell,
    so a 9 m fall in 14 m. Carthage's open coast plunges 9.5 m in 12 for exactly this reason
@@ -182,8 +212,40 @@ stops him, and only two things can:
    build. **Whoever builds the quays must publish the basins through `getObstacles()` with
    `topY` at quay level, or units will march across the naval harbour.**
 
-If a real animated water surface is ever wanted, it is a `src/terrain/` change generalising
-`RiverWater` off the Tiber's centreline — not a per-map workaround.
+Both are still the only two. A rendered surface is not a collider and must never be mistaken
+for one.
+
+**But the pathfinder had a third opinion and it was the Tiber's.** `Pathfinding.ts` carried
+`WATER_LEVEL = 1.5` and `MARSH_LEVEL = 3.0` as module constants described as heights above
+datum. They are not: the Tiber's surface is 5.0, so they are **depths** — 3.5 m of water
+drowns a man, 2.0–3.5 m is waded at 2.6× cost — and on the Campus Martius every one of the
+8,205 cells the "marsh" band charges is river bed. Written as absolute heights they followed
+the pathfinder onto every map and called **122,847 cells of dry Carthage water**: 110.6 ha,
+14.1 % of the battlefield, the isthmus approach at the lagoon margin, the Sebkhet Ariana and
+the strand. Read as depths below `terrain.waterLevel` they generalise exactly and the Campus
+Martius does not move a cell.
+
+`isWater` reads the same datum, and **a map that declares no water answers false everywhere**
+— the absence of a `WaterProfile` is the absence of water, the same rule `city: CityPlan |
+null` follows. Pydna's floor is +8.07 m so nothing there is affected today; the rule is there
+so the next map to cut a dry gully below its own sea datum does not find a river in it.
+
+**Rendering the water found two map bugs that painting them had hidden, and both are fixed.**
+Two connected water bodies exist on Carthage — the gulf at 60.0 ha and the lake channel
+behind the Taenia at 3.08 ha, x −1094..−954, z 482..842, mean depth 5.63 m. **22 building
+footprints stood under the datum inside the second**, 6,689 m² of the fabric's 357,376, plus
+the wall's south-anchor tower on ground at −0.75 m. The cause was that the fabric had a
+coastline test in *z* — `shoreZAt`, the gulf — and none in *x*, which is where the lake is.
+It tests the bed now, for the same reason the wetted extent comes out of the heightfield: a
+city and a coast planned against two different curves is one bug seen from two sides.
+
+**What is left there and is the map workstream's, not the city's: the heightfield does not
+excavate the harbours.** Measured against the built basins, 51 % of the cothon's water area
+and 84 % of the merchant basin's stand under terrain that is above their surface, so those
+parts render as dry ground with a basin buried beneath them. The cothon's quay also clears
+its own water by only 0.34 m against §6.2's 1.8, because the ground at its centre is 0.34 m
+where §3.3 puts the harbour district at 2–6. Building the quay up to the design figure is not
+the fix: men stand at terrain height, so a quay raised 1.5 m is a quay they walk under.
 
 ### BattleSystem (`name: 'battle'`)
 The single source of truth for army state. Read freely; write only via its methods.
@@ -271,6 +333,66 @@ corpse pile. Neither puts thousands of scattered men on screen at once. The fram
 *heavier as men die* — 7,879 men at t+130 render 15.03 M, 7,010 at t+171 render 18.30 M —
 because a rout spreads a unit over ~120 m and pushes men who were a tight LOD2 clump across
 the LOD1 boundary. Headcount is the wrong thing to reason from.
+
+### Where the draw calls actually go, and the only lever that matters
+
+Measured at `a974a28` with `tools/probe-budget.mjs`, which instruments
+`WebGLShadowMap.render` and `WebGLRenderer.render` separately. `Engine` sets
+`info.autoReset = false` and resets once per frame, so the counter accumulates over the
+whole frame and differencing the two entry points splits it exactly.
+
+**A frame is a small colour pass, a large shadow pass and a fixed post chain.** At the Rome
+assault camera, 1920x1080, ultra, t+72 s: **98 colour + 98 shadow + 23 post = 219.** The
+colour pass is 96-101 at *every* tier; the entire tier scaling is the shadow pass, because
+the cascade count is the only thing a tier changes about it.
+
+**The shadow pass is very nearly cascade-invariant.** Cascade 0 covers 39 x 39 m and cascade
+3 covers 745 x 745 m, and they draw the same objects — every caster in this scene is a
+merged mesh whose bounding sphere straddles all four. So the practical rule is:
+
+> **A shadow-casting mesh costs one draw call in the colour pass and one more in every
+> cascade.** On ultra that is five. Splitting a chunk into one mesh per material saves
+> nothing in the shadow pass, because every one of them resolves to the same opaque depth
+> material — see `buildShadowProxy` in `CitySystem.ts`, which merges them back into one.
+
+Draw calls per camera per tier, both scenarios, at t+72 s. Nothing here needed the machine
+to be quiet: the count is deterministic and load-independent, which is why it and not frame
+time is the right thing to gate on.
+
+| camera | ultra | high | medium | low |
+|---|---|---|---|---|
+| assault (siege) | **219** | 214 | 186 | 156 |
+| city (siege) | 192 | 192 | 175 | 149 |
+| wall (siege) | 191 | 191 | 172 | 144 |
+| wall (field) | 163 | 163 | 149 | 126 |
+| city (field) | 154 | 154 | 144 | 125 |
+| terrain | 134 | 134 | 124 | 106 |
+| clash | 120 | 125 | 115 | 91 |
+| melee | 116 | 126 | 112 | 89 |
+| wide / raking | 112 | 112 | 102 | 84-86 |
+| romanline | 103 | 103 | 93 | 75 |
+
+The assault camera is the binding one and it is at the line, not under it: panning during an
+interactive session touches **226**. The next lever, if more headroom is wanted, is the
+cascade count — one cascade off ultra is worth about 39 draws — and it is a quality
+decision, not a bug fix.
+
+**Carthage is now the over-budget map, and for the opposite reason.** With
+`city: CARTHAGE_PLAN` wired in, its assault camera renders **242** at ultra: 134 colour + 85
+shadow + 23 post. The shadow pass is *cheaper* than Rome's (85 against 98) and the triple
+wall really does cost less than Rome's single curtain — 25 visible meshes against 31 — so
+the material-stream sharing works exactly as advertised. The colour pass is the problem:
+
+    fabric 157   streets 28   wall 25   monuments 17   byrsa 6   harbour 5   trees 2
+
+`fabric` is about forty small chunks at 5/3/1 meshes. Their LOD ladder works — most sit at
+level 1 or 2 at any battle camera — but forty chunks at three meshes is 120 calls before
+anything else draws. Rome solved the same problem in `insulae.ts` by merging six districts
+into one chunk; Carthage has gone the other way. The lever is chunk *count*, not detail, and
+it belongs to whoever owns `src/city/carthage/`. Note the trade this makes explicit: small
+chunks give real LOD and real frustum culling, large chunks give few calls, and the surface
+correction in `CitySystem.surfaceCorrection` is what decides whether a large chunk can use
+its ladder at all.
 
 | Resource | Budget |
 |---|---|

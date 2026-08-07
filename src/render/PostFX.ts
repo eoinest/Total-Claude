@@ -117,6 +117,14 @@ export class PostFXSystem implements Subsystem {
   private h = 1;
   /** Resolved MSAA sample count on the scene target; 0 when the tier or driver has none. */
   private samples = 0;
+  /**
+   * Overrides the tier's sample count until the next tier change. Exists so the cost of
+   * multisampling can be A/B'd inside one browser session, which is the only kind of frame
+   * timing this project has ever been able to trust: the arms have to be interleaved against
+   * the same machine load, and a page reload cannot do that.
+   */
+  private samplesOverride: number | null = null;
+  private lastCtx: EngineContext | null = null;
   /** Remaining anisotropy sweeps; see sweepAnisotropy. Zeroed once a pass finds nothing. */
   private anisotropySweeps = 12;
 
@@ -236,7 +244,8 @@ export class PostFXSystem implements Subsystem {
     // The one target the world is rasterised into, and so the only one where extra
     // geometric samples can be taken. Everything downstream is a fullscreen blit.
     const maxSamples = this.renderer.capabilities.maxSamples ?? 0;
-    this.samples = Math.min(MSAA_SAMPLES[ctx.quality.tier] ?? 0, maxSamples);
+    this.lastCtx = ctx;
+    this.samples = Math.min(this.samplesOverride ?? MSAA_SAMPLES[ctx.quality.tier] ?? 0, maxSamples);
     this.sceneRT = this.makeRT({ hdr: true, depth: true, samples: this.samples });
     this.mainA = this.makeRT({ hdr: true });
     this.mainB = this.makeRT({ hdr: true });
@@ -280,6 +289,21 @@ export class PostFXSystem implements Subsystem {
   resize(_w: number, _h: number, ctx: EngineContext): void {
     if (!this.mainA) return;
     this.allocate(ctx);
+  }
+
+  /** Samples actually resolved on the scene target, after the driver cap. */
+  get msaaSamples(): number {
+    return this.samples;
+  }
+
+  /**
+   * Force a sample count, or `null` to go back to the tier's. Reallocates the scene target,
+   * which invalidates the TAA history — the caller must discard the next frame.
+   */
+  setSamplesOverride(n: number | null): void {
+    if (this.samplesOverride === n) return;
+    this.samplesOverride = n;
+    if (this.lastCtx && this.mainA) this.allocate(this.lastCtx);
   }
 
   // ---------------------------------------------------------------------------

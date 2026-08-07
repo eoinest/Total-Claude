@@ -4,7 +4,9 @@ import {
   APRON_DEPTH, APRON_HALF_RUN, CIRCUIT_X_MAX, CIRCUIT_X_MIN, circuitZAt,
   INTERVALLUM, intervallumDepthAt, STAIR_APRONS,
 } from './circuit';
-import { MONUMENTS, PUNIC_WAYS, shoreZAt } from './layout';
+import { BASIN_WATER_Y, FREEBOARD } from './harbour';
+import { COTHON, MERCHANT_HARBOUR, MONUMENTS, PUNIC_WAYS, shoreZAt } from './layout';
+import { SEA_LEVEL } from '../../maps/carthage/topography';
 
 /**
  * Build-time checks on the *built* city, not on the intent.
@@ -76,8 +78,14 @@ export interface AssertInput {
   occSegments: readonly { x1: number; z1: number; x2: number; z2: number; halfW: number }[];
   lanes: readonly Lane[];
   /** How many buildings each quarter placed, and their roof area. */
-  blocksByQuarter: readonly { id: string; placed: number; rejected: number; roofArea: number }[];
+  blocksByQuarter: readonly {
+    id: string; placed: number; rejected: number; roofArea: number; drowned: number;
+  }[];
   shedCount: number;
+  /** The terrain sampler, so a check can ask what the ground under a solid is doing. */
+  heightAt: (x: number, z: number) => number;
+  /** Every tower on the circuit, so their footings can be measured too. */
+  towers: readonly { x: number; z: number; hw: number }[];
 }
 
 /**
@@ -386,6 +394,94 @@ export function assertCarthage(inp: AssertInput): CarthageChecks {
       + `slipway width the British excavation measured. Appian says 220; archaeology gives `
       + `160-170. We model the archaeology and the blurb may quote Appian.`,
   });
+
+  // ---- 6a. nothing the city builds stands under the sea --------------------
+  //
+  // **The check that did not exist while the water was a splat.** `planQuarter` refused
+  // anything seaward of `shoreZAt`, which is the Gulf of Tunis and a function of x; the Lake
+  // of Tunis is a function of z and nothing tested it, so the Salammbô quarter's grid marched
+  // across the lagoon behind the Taenia — 22 footprints, 6,689 m², the deepest with its floor
+  // 9.3 m under water. The gulf's swell breathes the waterline to +0.44 m at the crest, so
+  // the bar is the datum plus a freeboard and not the datum itself.
+  //
+  // Monuments are counted separately and are *expected* to be wet: Scipio's mole, the
+  // quay-fort on the captured quay, the cut channel and the cothon's own ring are harbour
+  // works standing in the sea on purpose.
+  {
+    const SWELL_CREST = 0.44;
+    let wetFabric = 0;
+    let wetFabricArea = 0;
+    let worst = 0;
+    let worstAt = '';
+    let wetMonuments = 0;
+    for (const f of inp.footprints) {
+      const c = Math.cos(f.rot);
+      const s = Math.sin(f.rot);
+      let lo = Infinity;
+      for (let iu = -1; iu <= 1; iu++) {
+        for (let iv = -1; iv <= 1; iv++) {
+          const u = iu * f.hw;
+          const v = iv * f.hd;
+          lo = Math.min(lo, inp.heightAt(f.x + u * c - v * s, f.z + u * s + v * c));
+        }
+      }
+      if (lo >= SEA_LEVEL) continue;
+      if (f.kind === 'monument') { wetMonuments++; continue; }
+      wetFabric++;
+      wetFabricArea += 4 * f.hw * f.hd;
+      if (-lo > worst) { worst = -lo; worstAt = `(${f.x.toFixed(0)}, ${f.z.toFixed(0)})`; }
+    }
+    let wetTowers = 0;
+    let towerWorst = 0;
+    for (const t of inp.towers) {
+      let lo = Infinity;
+      for (let i = -1; i <= 1; i++) {
+        for (let k = -1; k <= 1; k++) {
+          lo = Math.min(lo, inp.heightAt(t.x + i * t.hw, t.z + k * t.hw));
+        }
+      }
+      if (lo < SEA_LEVEL) { wetTowers++; towerWorst = Math.max(towerWorst, -lo); }
+    }
+    const drowned = inp.blocksByQuarter.reduce((a, q) => a + q.drowned, 0);
+    out.push({
+      name: 'nothing the city builds stands under the sea',
+      ok: wetFabric === 0 && wetTowers === 0,
+      detail: `${wetFabric} of ${inp.footprints.filter((f) => f.kind === 'building').length} `
+        + `house footprints and ${wetTowers} of ${inp.towers.length} curtain towers have any `
+        + `part of their plan below ${SEA_LEVEL} m`
+        + (wetFabric ? `, worst ${worst.toFixed(2)} m under at ${worstAt}` : '')
+        + (wetTowers ? `, worst tower ${towerWorst.toFixed(2)} m under` : '')
+        + `. ${drowned} candidate blocks were refused at build for standing within `
+        + `${SWELL_CREST} m of the datum, which is where the gulf's swell crest reaches. `
+        + `${wetMonuments} monuments *are* under it and are meant to be — Scipio's mole, the `
+        + `quay-fort, the cut channel and the cothon ring are harbour works built into the sea.`,
+    });
+  }
+
+  // ---- 6b. the harbour basins are one body of water ------------------------
+  //
+  // Both basins join the gulf through 21 m channels, so all three surfaces are the same
+  // water. They were not: each basin's level was `heightAt(its own centre) - FREEBOARD`,
+  // which put the cothon at −1.46 and the merchant basin at −0.04 against a sea at 0. The
+  // level is now `BASIN_WATER_Y` for both and the *freeboard* is what the ground supplies,
+  // so it is measured here rather than assumed — and the cothon's is the finding.
+  {
+    const cothonQuay = inp.heightAt(COTHON.x, COTHON.z);
+    const merchantQuay = inp.heightAt(MERCHANT_HARBOUR.x, MERCHANT_HARBOUR.z);
+    const cf = cothonQuay - BASIN_WATER_Y;
+    const mf = merchantQuay - BASIN_WATER_Y;
+    out.push({
+      name: 'harbour basins stand at sea level',
+      ok: BASIN_WATER_Y === SEA_LEVEL,
+      detail: `both basins at ${BASIN_WATER_Y.toFixed(2)} m, the gulf they join at `
+        + `${SEA_LEVEL.toFixed(2)}. Quay freeboard is now an output: cothon `
+        + `**${cf.toFixed(2)} m**, merchant **${mf.toFixed(2)} m**, against the ${FREEBOARD} m `
+        + `of §6.2. The cothon is short because the ground at its centre is ${cothonQuay.toFixed(2)} m `
+        + `where §3.3 puts the harbour district at 2-6; that is the heightfield's to raise, and `
+        + `the alternative — building the quay up to the design figure — floats the ring 1.5 m `
+        + `over ground the men walk at.`,
+    });
+  }
 
   // ---- 7. every monument the plan names got built --------------------------
   out.push({

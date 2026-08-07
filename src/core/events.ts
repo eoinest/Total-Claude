@@ -98,6 +98,17 @@ export interface GameEvents {
   // ---- Battle flow ----
   battleStarted: { seed: number; scenario: string };
   battleEnded: { victor: number; reason: 'annihilation' | 'rout' | 'timeout' | 'objective' };
+  /**
+   * The pre-battle deployment phase opened, closed, or had a unit added or removed.
+   *
+   * `deploymentBegan` fires after the scenario has laid the armies out and the clock has
+   * been stopped, which is the moment the HUD has to change mode; `deploymentEnded` fires
+   * as the clock is released. Nothing in the simulation consumes these — they exist so the
+   * interface and a headless driver can both observe the phase without polling.
+   */
+  deploymentBegan: { faction: number; units: number };
+  deploymentEnded: { units: number };
+  deploymentChanged: { unitId: number; added: boolean };
   /** Gates breached, walls scaled, capture points taken. */
   objectiveChanged: { id: string; holder: number; progress: number };
 

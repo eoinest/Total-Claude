@@ -25,6 +25,7 @@ import { AudioEngine } from './audio/AudioEngine';
 import { HudSystem } from './ui/HudSystem';
 import { PostFXSystem } from './render/PostFX';
 
+import { DeploymentSystem } from './sim/deployment';
 import { getMap } from './maps';
 import { deployBattle } from './sim/scenario';
 import { type Difficulty, type ScenarioId, sanitiseConfig } from './sim/battleConfig';
@@ -103,6 +104,24 @@ const difficulty = config.difficulty;
 const autoplay = params.has('autoplay') ? params.get('autoplay') === '1' : harness;
 const playerFaction = Faction.Rome;
 
+/**
+ * Whether the player lays their army out before the clock starts.
+ *
+ * On by default for anyone who came through the menu, which is every real player: pressing
+ * BEGIN BATTLE hands you your army on the field with the clock stopped, exactly as Total War
+ * does, and the deployment plaque is the first thing on screen. Off by default everywhere the
+ * menu was skipped — the screenshot deck, `tools/probe-*`, `qa-determinism`, `qa-interact`
+ * and every `?battle=` link all expect a battle that is already running, and a phase they
+ * did not ask for would stop all of them dead at t+0.
+ *
+ * `?deploy=1` forces it on so a headless driver can exercise the phase, and `?deploy=0`
+ * forces it off so a player can skip straight to the fight. It is refused outright under
+ * autoplay: with both armies handed to the AI there is no player to deploy for.
+ */
+const deployPhase = params.has('deploy')
+  ? params.get('deploy') === '1' && !autoplay
+  : !skipMenu && !autoplay;
+
 const engine = new Engine({
   canvas,
   quality: config.quality,
@@ -157,6 +176,23 @@ engine.add(new MoraleSystem());
 engine.add(new AbilitySystem());
 engine.add(new RagdollSystem());
 engine.add(new BattleFlowSystem());
+
+/*
+ * The pre-battle deployment phase.
+ *
+ * Registered here but *opened* after `deployBattle`, in `boot()`: its deployment zone is
+ * measured off where the scenario actually stood the two armies, so it cannot be computed
+ * before they exist. Its `order` of 690 puts its `init` just ahead of the HUD's, which is
+ * what lets `HudSystem` find it with `tryGet` and build the plaque. Registered at all only
+ * when the phase will be used, so that same `tryGet` is the HUD's test for whether to.
+ *
+ * It holds `time.paused`, and that is the whole answer to the AI problem. `installAI` binds
+ * its `commanded` set at construction, three lines below, and re-plans every few ticks — but
+ * `Engine.frame` runs `fixedUpdate` exactly as many times as `Time.beginFrame` returns, and
+ * a paused clock returns zero. So during deployment the planner is not merely out-voted, it
+ * is never called.
+ */
+const deployment = deployPhase ? engine.add(new DeploymentSystem()) : null;
 
 // Four AI subsystems sharing one blackboard: nav grid, per-unit utility selector,
 // per-faction plan, debug overlay. Registered as a bundle so their relative update
@@ -228,6 +264,9 @@ async function boot(): Promise<void> {
   const f = result.cameraFocus;
   engine.rig.jumpTo(f.x, f.z, f.zoom, f.yaw);
 
+  // After the armies are on the field, because the deployment zone is measured off them.
+  deployment?.begin(config, playerFaction);
+
   if (harness) {
     loading?.remove();
   } else {
@@ -252,6 +291,16 @@ declare global {
       setCamera(x: number, z: number, zoom: number, yaw: number): void;
       /** Sim seconds elapsed. */
       simTime(): number;
+      /**
+       * The pre-battle deployment phase, or null when this run has none.
+       *
+       * Published so a headless driver can *observe* the phase — is it live, what does it
+       * think its zone is, how much pool is left. Driving it from here would be testing the
+       * API rather than the feature, which is a gap this project has shipped before, so the
+       * checks in `tools/qa-deploy.mjs` go through real mouse and keyboard events and only
+       * read through this.
+       */
+      deployment: DeploymentSystem | null;
     };
   }
 }
@@ -263,6 +312,7 @@ window.__game = {
   advance: (seconds: number) => engine.advance(seconds),
   setCamera: (x, z, zoom, yaw) => engine.rig.jumpTo(x, z, zoom, yaw),
   simTime: () => engine.time.simTime,
+  deployment,
 };
 
 boot()

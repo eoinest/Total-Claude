@@ -126,6 +126,32 @@ frame costs 13.4 ms at 8,644 men, 16.1 ms at 9,584 and 19.2 ms at 11,255.
 "Historical order of battle" restores the 271 AD deployment. "Copy link to this battle" puts
 the whole setup in the URL so it can be shared or replayed. `?menu=0` skips the screen.
 
+### Deployment
+
+Begin Battle does not start the fight. It hands you your army on the field with the clock
+stopped and a plaque across the top of the screen, the way Total War's deployment phase does,
+and the fight starts when you say so.
+
+- **Drag a unit to where it should stand.** Left-click to select, right-drag to place: the
+  drag line sets the frontage and the direction it faces, and a ghost formation previews the
+  result before the button comes up. **Z X C V B** change formation. It is the same gesture
+  that gives a move order in play, so there is nothing new to learn — it just puts the men
+  there instead of marching them.
+- **Add and remove units.** ADD UNITS opens the same roster the setup screen offers, with the
+  same steppers and the same caps: 20 units a side, 12 of one type. **Delete** takes the
+  selection off the field. Past 9,000 men it warns, exactly as the setup screen does.
+- **Man the wall.** Drop a unit on the parapet and it deploys *on the stone*, in as many ranks
+  as that bay's walkway will take. On the Aurelian circuit the clear standing band runs 2.21
+  to 4.06 m, which is four to five ranks at the simulation's 0.72 m rank pitch.
+- **The zone** is drawn on the ground in gold: a solid line at the front edge you may not
+  cross, dashes elsewhere. It is measured from the two armies and from whatever the map puts
+  behind you — your own city wall, an enemy city, or the edge of the field.
+
+Nothing moves while you are deploying and the AI is not planning: the clock is stopped, and a
+stopped clock is what stops the simulation tick the AI runs in. Space and the speed controls
+are held until you commit. **Enter** or BEGIN BATTLE starts the battle; `?deploy=0` skips the
+phase entirely and `?deploy=1` forces it on where the setup screen was skipped.
+
 ### Controls
 
 | | |
@@ -141,6 +167,15 @@ the whole setup in the URL so it can be shared or replayed. `?menu=0` skips the 
 | **1 2 3** / **space** | speed 1× / 2× / 4× / pause |
 | **F3** | AI debug overlay |
 | **L** | performance overlay |
+
+During deployment only:
+
+| | |
+|---|---|
+| **right-click** / drag | stand the selection here, at this frontage, facing this way |
+| **right-click** on the parapet | man the wall |
+| **Delete** | take the selection off the field |
+| **Enter** | begin the battle |
 
 ---
 

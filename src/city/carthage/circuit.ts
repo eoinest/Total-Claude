@@ -1,6 +1,6 @@
 import { clamp } from '../../util/math';
 import {
-  carthageWallZ, WALL_X_MAX, WALL_X_MIN,
+  carthageWallZ, SEA_LEVEL, WALL_X_MAX, WALL_X_MIN,
 } from '../../maps/carthage/topography';
 import type { WallLine } from '../carthageWall';
 
@@ -77,6 +77,19 @@ export const CARTHAGE_WALL_LINE: WallLine = {
   xMax: CIRCUIT_X_MAX,
   gateX: 0,
   zAt: circuitZAt,
+  /**
+   * Both anchors die on water and the south one dies *in* it. Measured on the centreline, the
+   * ground crosses the datum at x ≈ −956 and the anchor is at −968, so the last 12 m of
+   * curtain stands in up to 0.94 m of the Lake of Tunis. §2.2 wants exactly that — a wall
+   * that ends in a lagoon is a wall with no flank march round it. What it does not want is
+   * the 22.5 m anchor **tower** founded at −0.75 m, which is what was there.
+   *
+   * The anchor itself is not moved. `nBays` is `round(length / 30.8) & ~1`, so anything east
+   * of x −943.4 drops the wall from 64 bays to 62 and relays every bay, tower, postern, ramp
+   * and casemate on the circuit to bury one tower — and the window of dry ground before that
+   * boundary is 13 m wide, which is a footing measured in centimetres of margin.
+   */
+  waterLevel: SEA_LEVEL,
 };
 
 export interface CircuitGate {

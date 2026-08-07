@@ -141,7 +141,7 @@ export class HudModel {
   refresh(battle: BattleSystem, simTime: number): void {
     const pool = battle.pool;
 
-    if (this.views.length !== battle.units.length) this.rebuild(battle);
+    if (this.staleViews(battle)) this.rebuild(battle);
 
     for (const f of ALL_FACTIONS) {
       this.strength[f] = 0;
@@ -203,6 +203,25 @@ export class HudModel {
     this.phase = this.derivePhase(simTime);
   }
 
+  /**
+   * Whether the view list still describes the army.
+   *
+   * This tested `views.length !== battle.units.length`, which is true for every way a unit
+   * could leave the field *in a battle* — men die, units are destroyed, the list only
+   * shrinks. The deployment phase can swap one unit for another in a single frame (taking a
+   * garrison off the wall retires it and stands a new one on the grass), and the length is
+   * then unchanged: the card bar kept a phantom card for the unit that had gone, had none
+   * for the one that had arrived, and any selection of the new unit was pruned on the next
+   * tick because it had no view. Comparing identities is forty reference compares at 10 Hz.
+   */
+  private staleViews(battle: BattleSystem): boolean {
+    if (this.views.length !== battle.units.length) return true;
+    for (let i = 0; i < this.views.length; i++) {
+      if (this.views[i].unit !== battle.units[i]) return true;
+    }
+    return false;
+  }
+
   private rebuild(battle: BattleSystem): void {
     this.generation++;
     this.views.length = 0;
@@ -257,6 +276,14 @@ export class HudModel {
       for (const v of this.views) this.initialStrength[v.faction] += v.initial;
       this.labelled = true;
     }
+
+    /*
+     * Re-assert the highlight, because `SelectionController.commit` writes `unit.selected`
+     * *through the views* and a unit can be selected before it has one. The deployment phase
+     * does exactly that when it rebuilds a unit: the replacement is put into the selection in
+     * the same frame it is created, one tick before this list knows about it.
+     */
+    for (const v of this.views) v.unit.selected = this.selection.includes(v.id);
   }
 
   /** Nearest distance between any two opposing units' centres. */

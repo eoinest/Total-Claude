@@ -2199,3 +2199,181 @@ input[type='checkbox']:checked::after { opacity: 1; }
   cursor: pointer;
 }
 .rs-close:hover { box-shadow: 0 0 20px rgba(242, 221, 158, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.6); }
+
+/* ------------------------------------------------------ deployment plaque -- */
+/* The pre-battle phase. Same bronze-and-gold language as the main menu, because it is
+   the same decision continued: the menu chooses the army, this stands it on the ground.
+   Anchored top-centre under the battle plaque so the eye lands on it, and wide enough
+   that the gesture help reads as instructions rather than as a caption. */
+
+.deploy {
+  position: absolute;
+  top: 8.2em;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(94vw, 128em);
+  padding: 0.5em 0.7em 0.45em;
+  z-index: 6;
+  animation: dep-in 420ms ease-out both;
+}
+
+@keyframes dep-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-0.9em); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+.dep-head {
+  display: flex;
+  align-items: center;
+  gap: 0.9em;
+}
+
+.dep-eagle { color: var(--gold); flex: 0 0 auto; }
+.dep-ic { width: 2.4em; height: 2.4em; display: block; }
+
+.dep-title { display: flex; flex-direction: column; gap: 0.12em; flex: 0 0 auto; }
+.dep-title b {
+  font-size: 1.16em;
+  letter-spacing: 0.3em;
+  color: var(--gold-bright);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+.dep-title i {
+  font-family: var(--num);
+  font-style: normal;
+  font-size: 0.76em;
+  letter-spacing: 0.04em;
+  color: rgba(220, 205, 176, 0.62);
+}
+
+/* The help lines are `nowrap` and clip, and that is load-bearing rather than fussy.
+   With them free to wrap, the flex row gave this column almost no width, the two sentences
+   stacked one word per line, and the plaque grew to 346 px of mostly empty panel — which,
+   being `interactive`, then swallowed every right-drag aimed at the ground beneath it. A
+   banner across the top of the field must have a height that cannot depend on its text. */
+.dep-help {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18em;
+  flex: 1 1 24em;
+  min-width: 14em;
+  padding-left: 0.8em;
+  border-left: 1px solid rgba(217, 178, 95, 0.2);
+  font-family: var(--num);
+  font-size: 0.82em;
+  line-height: 1.35;
+  color: rgba(226, 214, 190, 0.78);
+}
+.dep-help span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dep-help em { font-style: normal; color: var(--gold-bright); letter-spacing: 0.06em; }
+
+.dep-tally {
+  display: flex;
+  gap: 0.9em;
+  flex: 0 0 auto;
+  font-family: var(--num);
+  font-size: 0.84em;
+  color: var(--travertine);
+}
+.dep-tally b { color: var(--parchment); font-size: 1.15em; }
+
+.deploy button {
+  appearance: none;
+  flex: 0 0 auto;
+  padding: 0.5em 1.1em;
+  font-family: var(--serif);
+  font-size: 0.86em;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gold);
+  background: linear-gradient(180deg, rgba(72, 56, 34, 0.6), rgba(28, 21, 14, 0.8));
+  border: 1px solid var(--gold-dim);
+  border-radius: 2px;
+  cursor: pointer;
+}
+.deploy button:hover:not(:disabled) { border-color: var(--gold); color: var(--gold-bright); }
+.deploy button:disabled { opacity: 0.3; cursor: default; }
+
+.dep-begin {
+  color: #241a0a !important;
+  background: linear-gradient(180deg, #f6e6ba, #c8a45f) !important;
+  border: 1px solid rgba(255, 245, 214, 0.7) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+.dep-begin:hover:not(:disabled) { box-shadow: 0 0 20px rgba(242, 221, 158, 0.5); }
+.dep-begin:disabled { filter: grayscale(0.6); }
+
+.dep-note {
+  display: none;
+  margin: 0.45em 0.2em 0.1em;
+  font-family: var(--num);
+  font-size: 0.82em;
+  color: var(--warn);
+}
+.dep-note.on { display: block; }
+.dep-note.bad { color: var(--bad); }
+
+/* `display: grid` beats the user-agent `[hidden] { display: none }`, so the closed palette
+   has to be hidden explicitly. Without this the plaque stood 427 px tall over an empty
+   panel and `pointer-events: auto` ate every right-drag aimed at the ground under it. */
+.dep-palette[hidden] { display: none; }
+
+.dep-palette {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17em, 1fr));
+  gap: 0.15em 0.9em;
+  margin-top: 0.5em;
+  padding-top: 0.5em;
+  border-top: 1px solid rgba(217, 178, 95, 0.18);
+}
+
+.dep-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6em;
+  padding: 0.2em 0.35em;
+}
+.dep-row:hover { background: rgba(217, 178, 95, 0.07); }
+
+.dep-uname { display: flex; flex-direction: column; min-width: 0; }
+.dep-uname b {
+  font-size: 0.92em;
+  color: var(--parchment);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dep-uname i {
+  font-family: var(--num);
+  font-style: normal;
+  font-size: 0.72em;
+  color: rgba(217, 200, 168, 0.55);
+}
+
+.dep-step { display: flex; align-items: center; gap: 0.3em; flex: 0 0 auto; }
+.dep-step button {
+  width: 1.7em;
+  height: 1.7em;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--num);
+  font-size: 1em;
+  letter-spacing: 0;
+}
+.dep-count {
+  min-width: 1.5em;
+  text-align: center;
+  font-family: var(--num);
+  font-size: 1em;
+  color: var(--parchment);
+}
+.dep-count.zero { opacity: 0.3; }
+
+/* While deploying, the result screen and the event feed have nothing to say. */
+.hud.deploying .feed { opacity: 0.25; }

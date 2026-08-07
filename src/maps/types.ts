@@ -1,6 +1,7 @@
 import type { CityPlan } from '../city/cityPlan';
 import type { GroundLayerSpec } from '../terrain/groundTextures';
 import type { TerrainData } from '../terrain/heightfield';
+import type { WaterProfile } from '../terrain/WaterSurface';
 
 /**
  * What a battle map is, as far as the engine is concerned.
@@ -141,11 +142,23 @@ export interface TerrainProfile {
   /** How hard distant ground converges on that mean. See `TerrainShading.aerialStrength`. */
   readonly aerialStrength: number;
   /**
-   * Whether this map carries an open water surface. The Tiber does; the Leucus on 22 June is
-   * a dry shingle braid and does not, which saves `RiverWater`'s draw call and its
-   * reflection work outright.
+   * The open water this map carries, or null for none.
+   *
+   * **This replaced `hasRiver: boolean`, for the reason `city: CityPlan | null` replaced
+   * `hidesCity`.** Under the flag there was exactly one water surface in the engine — a
+   * ribbon of geometry built along the Tiber's own meander train — so a map could say "yes,
+   * water" and get the Tiber's channel, or say "no" and get nothing. Carthage, which is a
+   * peninsula, had to say no: its gulf, its lagoon and its harbours shipped as terrain under
+   * the datum painted by the splat, and the owner's report on the finished map was *"I see
+   * the ocean but no lagoon, it's just the beach."* A flat diffuse surface with no specular,
+   * no animation and no depth cue reads as wet sand.
+   *
+   * A map now describes its water and `WaterSurface` renders it — one draw call for all of
+   * it, with the wetted extent taken from the map's own heightfield rather than from an
+   * authored polyline, so a coast cannot disagree with its own bathymetry. The Leucus on 22
+   * June is a dry shingle braid and still says null, which still costs nothing.
    */
-  hasRiver: boolean;
+  water: WaterProfile | null;
   /**
    * GLSL defining `float grassRoadCentreX(float z)`: the road the sward keeps off. The grass
    * shader needs the centreline analytically so the verge stays crisp at any zoom.

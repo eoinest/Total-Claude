@@ -688,10 +688,30 @@ class Viewer {
     // camera pointed at the navel with the head off the top of the frame.
     const ty = aimY ?? b.cy;
     this.stage.controls.target.set(b.cx, ty, b.cz);
+    /**
+     * Azimuth 0 is in front of the man's face — and until now it was behind his head.
+     *
+     * `shoot-model.mjs` states that contract in its own comment, and records that the first
+     * version of its plate table had it backwards and "shot ten plates of a legionary's
+     * back". The correction went into the table and not into the camera, so it swapped which
+     * plates were wrong rather than fixing any: **every isolated-model plate this project has
+     * graded photographs the back of the man's head.** That is on its own most of why the
+     * critic scored the face 0 — no plate was ever pointed at one.
+     *
+     * Measured rather than reasoned. With the face tile painted magenta and the head shot at
+     * four azimuths, the magenta pixel count is 0 at azimuth 0 and 121,407 at PI, with 56,288
+     * and 44,038 at the two profiles. The posed man faces -Z: the mesh is built facing +Z
+     * (the scutum socket is at z +0.20, the nose at z +0.075) and `iOrient.x` is 0 here, so
+     * the half-turn is in the authored clips' root and not in this file.
+     *
+     * Corrected here rather than in the shot table because the contract is documented here,
+     * and because a table of ten hand-written azimuths is the thing that got it wrong twice.
+     */
+    const az = azimuth + Math.PI;
     cam.position.set(
-      b.cx + Math.sin(azimuth) * Math.cos(elevation) * dist,
+      b.cx + Math.sin(az) * Math.cos(elevation) * dist,
       ty + Math.sin(elevation) * dist,
-      b.cz + Math.cos(azimuth) * Math.cos(elevation) * dist
+      b.cz + Math.cos(az) * Math.cos(elevation) * dist
     );
     this.stage.controls.update();
     this.stage.aimSun(b.cx, b.cy, b.cz);
