@@ -1,5 +1,6 @@
 import { assertLayerSet } from '../terrain/groundTextures';
 import { CAMPUS_MARTIUS } from './campusMartius';
+import { CARTHAGE } from './carthage';
 import { PYDNA } from './pydna';
 import type { MapDefinition, MapId } from './types';
 
@@ -12,7 +13,7 @@ export type { MapDefinition, MapId, ScatterProfile, SiteAstronomy, TerrainProfil
  * — and every harness run that does not ask for anything else — gets exactly the battle the
  * game shipped with.
  */
-export const MAPS: readonly MapDefinition[] = [CAMPUS_MARTIUS, PYDNA];
+export const MAPS: readonly MapDefinition[] = [CAMPUS_MARTIUS, CARTHAGE, PYDNA];
 
 export const DEFAULT_MAP_ID: MapId = 'campus-martius';
 

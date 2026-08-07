@@ -276,6 +276,72 @@ export const SKY_PRESETS: Record<string, SkyPreset> = {
     cloudCoverage: 0.6, cloudSoftness: 0.1, cloudDensity: 7.6, cirrusCoverage: 0.68,
     hazeDensity: 0.00036, hazeHeight: 520, exposure: 2.4, cloudShadowStrength: 0.4,
   },
+
+  // --- Carthage, the summer of 147 BC ---------------------------------------
+  //
+  // A North African coast at the end of the dry season, which differs from
+  // both existing atmospheres in the same three coupled ways Pydna differs
+  // from Rome — and further in each.
+  //
+  //  - **Turbidity is the highest in the table for a clear day** (4.0-4.8).
+  //    Saharan dust plus Mediterranean sea salt, and in August the Tunisian
+  //    coast carries both at once. That is what puts the hard pale band along
+  //    the horizon and what makes the Byrsa read at 1.2 km as a silhouette
+  //    rather than as a textured hill.
+  //  - **Ground albedo is the highest anywhere here** (0.24-0.28 against
+  //    Pydna's 0.19-0.21 and Rome's 0.12-0.14), because a third of this map is
+  //    salt pan, shell sand and pale calcarenite. It is a real physical input,
+  //    not a mood: it is how much light comes back up off the ground and into
+  //    the sky's own bounce term, and getting it wrong is how the Pydna sky was
+  //    first built too blue.
+  //  - **Exposure follows from the other two**, and it is set relative to
+  //    Pydna's corrected values rather than guessed: the sun here reaches 21.9
+  //    deg at the default hour against Pydna's 26.0, which is 0.83x the
+  //    irradiance on level ground, while the ground is roughly 1.15x paler. Net,
+  //    a touch above Pydna, and 1.70 is that. **Do not raise these on the
+  //    strength of a frame looking dark** — that mistake has been made twice on
+  //    this project and cost three rounds of grading; measure the median display
+  //    luminance against a reference plate first.
+  //
+  // Cloud: August in Tunisia is very nearly cloudless, and the honest coverage
+  // would be 0.85+ (the scale is inverted — higher means less cloud). It is set
+  // at 0.72 instead, which is a deliberate and recorded compromise. Pydna
+  // established by measurement that removing cloud shadow does not clean a
+  // frame up, it deepens the mush: with it suppressed the strategic frames came
+  // back at luminance sd 0.055-0.067 against a Rome II plate's 0.135, with
+  // 0.1-0.5 % of the frame below 15 % against the plates' 5.2-18.2 %. Big soft
+  // cloud shadows dragging across bright ground are most of why r2-03 has any
+  // tonal range at all, and this map's ground is brighter than Pydna's. Sparse
+  // thermal cumulus over a hot coast in the afternoon is also not a fiction —
+  // it is what builds over the land while the sea stays clear. So: few clouds,
+  // but the ones that are there cast hard.
+  carthageMorning: {
+    hour: 8.0, turbidity: 4.0, groundAlbedo: 0.24, msScale: 0.44,
+    cloudCoverage: 0.82, cloudSoftness: 0.09, cloudDensity: 8.2, cirrusCoverage: 0.82,
+    hazeDensity: 0.00034, hazeHeight: 560, exposure: 1.72, cloudShadowStrength: 0.26,
+  },
+  carthageNoon: {
+    hour: 12.5, turbidity: 4.2, groundAlbedo: 0.28, msScale: 0.42,
+    cloudCoverage: 0.8, cloudSoftness: 0.08, cloudDensity: 8.6, cirrusCoverage: 0.84,
+    hazeDensity: 0.00032, hazeHeight: 720, exposure: 1.5, cloudShadowStrength: 0.3,
+  },
+  // 17:00 is the default hour, so this and the evening preset are what almost
+  // every frame of this map is lit by.
+  carthageAfternoon: {
+    hour: 16.3, turbidity: 4.5, groundAlbedo: 0.27, msScale: 0.46,
+    cloudCoverage: 0.72, cloudSoftness: 0.085, cloudDensity: 8.4, cirrusCoverage: 0.8,
+    hazeDensity: 0.0003, hazeHeight: 650, exposure: 1.7, cloudShadowStrength: 0.42,
+  },
+  // 18.2, not 19.0. At latitude 36.85 with declination +17 the sun sets at
+  // about 18:53 solar, so a 19:00 anchor would put the last preset's own hour
+  // below the horizon — which is exactly the state that makes Pydna's evening
+  // render at a few percent luminance with a blown sun blob and gets a frame
+  // sorted by a blind grader as "the dark one".
+  carthageEvening: {
+    hour: 18.2, turbidity: 4.8, groundAlbedo: 0.25, msScale: 0.5,
+    cloudCoverage: 0.7, cloudSoftness: 0.1, cloudDensity: 7.8, cirrusCoverage: 0.74,
+    hazeDensity: 0.00038, hazeHeight: 480, exposure: 2.45, cloudShadowStrength: 0.42,
+  },
 };
 
 export type SkyPresetName = keyof typeof SKY_PRESETS;

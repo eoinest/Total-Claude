@@ -21,7 +21,7 @@ import type { TerrainData } from '../terrain/heightfield';
  */
 
 /** Registry key. Also the value persisted in `BattleConfig.map` and the `?battle=` token. */
-export type MapId = 'campus-martius' | 'pydna';
+export type MapId = 'campus-martius' | 'pydna' | 'carthage';
 
 /**
  * Where and when the battle is, for the scattering integral.
