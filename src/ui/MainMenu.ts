@@ -25,7 +25,7 @@ import {
   summarise, unitCount, unitSizePreset,
 } from '../sim/battleConfig';
 import { QUALITY_PRESETS } from '../core/Engine';
-import { MAPS, getMap, setActiveMap, type MapId } from '../maps';
+import { MAPS, getMap, isMapId, setActiveMap, type MapId } from '../maps';
 import { Faction, type UnitClass } from '../sim/types';
 
 /** CSS class suffix per faction, so `menu.css` can theme each army panel. */
@@ -127,7 +127,26 @@ export interface MenuResult {
 export function resolveConfig(params: URLSearchParams, useStored = true): BattleConfig {
   const token = params.get('battle');
   const decoded = token ? decodeConfig(token) : null;
-  const cfg = decoded ?? (useStored ? loadStoredConfig() : null) ?? DEFAULT_CONFIG;
+  let cfg = decoded ?? (useStored ? loadStoredConfig() : null) ?? DEFAULT_CONFIG;
+  /*
+   * `?map=` — the override that was missing, and its absence was not a small gap.
+   *
+   * There were overrides for quality, difficulty and scenario but none for the map, so the
+   * only ways to reach a specific one were to click it in the menu or to carry a whole
+   * `?battle=` token. That made a shareable link to a particular map impossible, and it
+   * interacted badly with the stored preference: a player who had once selected a map with
+   * no city kept it across every later visit, and the menu then correctly greyed out the
+   * assault — leaving `?scenario=assault` in the URL doing nothing, with no clue as to why.
+   *
+   * Applied here rather than in `main.ts` alongside the other three, because `setActiveMap`
+   * runs at the bottom of this function and the terrain reads that singleton before
+   * `main.ts` gets another word in. `sanitiseConfig` still has the last word, so this cannot
+   * select an assault on a map that has no city to storm.
+   */
+  const wantMap = params.get('map');
+  if (wantMap && isMapId(wantMap) && wantMap !== cfg.map) {
+    cfg = sanitiseConfig({ ...cfg, map: wantMap });
+  }
   // Publish the choice to `src/maps` here, and again in `commit`.
   //
   // `main.ts` constructs every subsystem with no arguments and `EngineContext` carries no
