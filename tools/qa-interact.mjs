@@ -102,6 +102,39 @@ await page.evaluate(() => {
     if (!u) return null;
     return window.__project(u.x, g.battle.groundAt(u.x, u.z) + 1, u.z);
   };
+  /** HUD-clear screen points, the ones farthest from any unit anchor first. */
+  window.__spotCandidates = () => {
+    const g = window.__game;
+    const W = g.engine.context.viewW, H = g.engine.context.viewH;
+    const rects = Array.from(document.querySelectorAll('#hud-root .interactive'))
+      .map((e) => e.getBoundingClientRect())
+      .filter((r) => r.width > 0 && r.height > 0);
+    const anchors = [];
+    for (const v of g.battle.units) {
+      if (v.destroyed) continue;
+      const p = window.__project(v.x, g.battle.groundAt(v.x, v.z) + 1, v.z);
+      if (p) anchors.push(p);
+    }
+    const out = [];
+    for (let fy = 0.1; fy <= 0.76; fy += 0.06) {
+      for (let fx = 0.1; fx <= 0.64; fx += 0.06) {
+        const p = { x: Math.round(W * fx), y: Math.round(H * fy) };
+        if (rects.some((r) => p.x >= r.left - 10 && p.x <= r.right + 10 && p.y >= r.top - 10 && p.y <= r.bottom + 10)) continue;
+        // The press has to reach the canvas, or `overUi` swallows it and nothing turns.
+        const hit = document.elementFromPoint(p.x, p.y);
+        if (!hit || hit.id !== 'viewport') continue;
+        let d = 9999;
+        for (const a of anchors) d = Math.min(d, Math.hypot(a.x - p.x, a.y - p.y));
+        out.push({ x: p.x, y: p.y, clear: Math.round(d) });
+      }
+    }
+    out.sort((a, b) => b.clear - a.clear);
+    return out.slice(0, 10);
+  };
+  window.__hovered = () => {
+    const hud = window.__game.engine.context.tryGet('hud');
+    return hud ? hud.hoveredUnitId : -2;
+  };
   window.__tapeMark = () => window.__tape.length;
   window.__tapeSince = (n) => window.__tape.slice(n);
   window.__unit = (id) => {
@@ -132,6 +165,48 @@ function record(name, pass, what, changed, note = '') {
 
 /** Settle: let the rAF loop process the input edge and the sim react. */
 const settle = async (ms = 350) => page.waitForTimeout(ms);
+/** Shortest signed angle between two headings, so a yaw delta across the pi seam is honest. */
+const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+const readYaw = (p = page) => p.evaluate(() => +window.__game.engine.rig.yaw.toFixed(4));
+
+/**
+ * A point the game itself reports as empty: candidates are HUD-clear by geometry, then the
+ * cursor is parked on each and the HUD asked what it picked. Nothing else can prove that a
+ * press is landing on bare ground rather than on a cohort's footprint slack.
+ */
+const bareSpot = async () => {
+  const cands = await page.evaluate(() => window.__spotCandidates());
+  for (const c of cands) {
+    await page.mouse.move(c.x, c.y);
+    await page.waitForTimeout(140);
+    if (await page.evaluate(() => window.__hovered()) < 0) return c;
+  }
+  return null;
+};
+
+/** A unit the HUD confirms is under the cursor, re-projected now because the sim is running. */
+const pickableUnit = async (exclude = []) => {
+  const cands = await page.evaluate((skip) => {
+    const g = window.__game;
+    const W = g.engine.context.viewW, H = g.engine.context.viewH;
+    const out = [];
+    for (const v of g.battle.units) {
+      if (v.destroyed || v.faction !== 0 || v.alive < 50 || skip.includes(v.id)) continue;
+      const p = window.__unitScreen(v.id);
+      if (!p || p.x < 70 || p.x > W - 70 || p.y < 70 || p.y > H - 190) continue;
+      const hit = document.elementFromPoint(p.x, p.y);
+      if (!hit || hit.id !== 'viewport') continue;
+      out.push({ id: v.id, x: Math.round(p.x), y: Math.round(p.y) });
+    }
+    return out.slice(0, 8);
+  }, exclude);
+  for (const c of cands) {
+    await page.mouse.move(c.x, c.y);
+    await page.waitForTimeout(150);
+    if (await page.evaluate(() => window.__hovered()) === c.id) return c;
+  }
+  return null;
+};
 
 // Move a little so the sim is not in its first frame, and give the AI time to deploy.
 await page.evaluate(() => window.__game.advance(6));
@@ -238,7 +313,9 @@ if (!pos) record('double-click type', false, 'anchor did not project', 'n/a');
 else {
   await page.mouse.move(pos.x, pos.y);
   await settle(150);
-  await page.mouse.dblclick(pos.x, pos.y, { delay: 40 });
+  // 140 ms, not 40: `Input` reports one press edge per frame, and a contended frame here runs
+  // 90 ms, so both click pairs used to land in one frame and read as a single click.
+  await page.mouse.dblclick(pos.x, pos.y, { delay: 140 });
   await settle(400);
   const tape = await page.evaluate((n) => window.__tapeSince(n), mark);
   const sel = tape.filter((e) => e.k === 'selectionChanged').pop();
@@ -273,12 +350,13 @@ else {
   /*
    * A destination clear of the HUD, of the viewport edges, and of every unit on screen.
    *
-   * **`right-click move` and `right-click attack` fail at HEAD as well as here** — verified by
-   * stashing all other work and re-running, which gives 13/15 with exactly these two red. They
-   * are a genuine pre-existing defect in the click path, not a consequence of the pre-battle
-   * menu or of the HUD scale, and three plausible-sounding explanations for them turned out to
-   * be wrong: the HUD occluding the point, the point landing inside the unit's own ranks, and
-   * the point projecting off-screen. Do not attribute them to the menu.
+   * `right-click move` and `right-click attack` were red for a long stretch, and the cause was
+   * neither the pre-battle menu nor the HUD scale — both of those were investigated and both
+   * were wrong. It was the pick geometry: the cursor ray was intersected with the ground while
+   * a click actually lands on a man whose chest is about a metre up, so from anywhere but the
+   * unit's face the overshoot fell outside the formation footprint, and the slack it had to
+   * fall inside collapsed to 13 cm at close zoom. `screenPick`'s solid hit and the pick slack
+   * floor are the two halves of that; if either regresses, these two go red together.
    *
    * The framing work below is kept anyway, because it fixes a real fragility even though it
    * does not fix the failure. The check used to use one fixed world offset of (+20, +55), which
@@ -496,6 +574,7 @@ else {
   }, setup.id);
   if (!ends) { record('right-drag frontage', false, 'could not fit a frontage line inside the canvas', 'n/a'); }
   else {
+  const yaw0 = await readYaw();
   await page.mouse.move(ends.a.x, ends.a.y);
   await settle(150);
   await page.mouse.down({ button: 'right' });
@@ -523,6 +602,12 @@ else {
       : `no orderIssued event for selection [${selFront.join(',')}]`,
     ok ? '' : `width carried=${gotWidth} facing carried=${gotFacing} unit.width changed=${widthChanged} ` +
       `targetFacing changed=${facingChanged}`);
+  // The same gesture, measured on the camera. Right-drag once turned the view whenever the
+  // selection happened to be empty, so one drag meant two things depending on hidden state.
+  const yaw1 = await readYaw();
+  record('right-drag holds yaw', Math.abs(wrapPi(yaw1 - yaw0)) < 0.01,
+    'measure the camera yaw across that same right-button drag',
+    `yaw ${yaw0} → ${yaw1} (${Math.abs(wrapPi(yaw1 - yaw0)).toFixed(4)} rad)`);
   }
 }
 
@@ -808,6 +893,228 @@ async function reselect() {
 if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, 'hud-final.png') });
 
 // ---------------------------------------------------------------------------
+// 13. camera gestures: every mouse route to the camera, on the real input path
+// ---------------------------------------------------------------------------
+/*
+ * Mouse-only, and every check drives a real Playwright event at real screen coordinates.
+ * The shipped routes are: middle drag pans, right drag turns *unless* an order drag has
+ * claimed the button (`RTSCamera.suppressDrag`), the screen edge pans, the minimap plate
+ * jumps and drags the focus, and the minimap compass turns.
+ *
+ * The bare-ground checks lean on `bareSpot()`, which is the only honest way to find a point
+ * that presses on nothing: geometry says which candidates clear the HUD, and then the cursor
+ * is parked on each and the HUD is asked what it picked. A point 200 px from every unit
+ * anchor can still be inside a cohort's footprint slack, and a check that assumes otherwise
+ * fails for a reason that has nothing to do with what it is testing.
+ */
+{
+  const rig = () => page.evaluate(() => {
+    const r = window.__game.engine.rig;
+    return { x: +r.focus.x.toFixed(2), z: +r.focus.z.toFixed(2), yaw: +r.yaw.toFixed(4) };
+  });
+  const selNow = () => page.evaluate(() => window.__selection());
+
+  // ---- 13a. framing: this block needs open ground and two units on screen at once ----
+  await page.evaluate(() => {
+    const g = window.__game;
+    const own = g.battle.units.filter((v) => v.faction === 0 && !v.destroyed && v.alive > 50);
+    let sx = 0, sz = 0;
+    for (const u of own) { sx += u.x; sz += u.z; }
+    g.setCamera(sx / own.length, sz / own.length, 0.66, Math.PI);
+    g.advance(0.5);
+  });
+  await settle(450);
+
+  // ---- 13b. a plain click still selects, and a plain click on bare ground still clears ----
+  // Re-picked rather than reusing a stale anchor: the sim is running and units march.
+  const again = await pickableUnit();
+  if (!again) record('plain left click selects', false, 'no Roman unit was pickable on screen', 'n/a');
+  else {
+    await page.mouse.click(again.x, again.y);
+    await settle(500);
+    const on = await selNow();
+    record('plain left click selects', on.length === 1 && on[0] === again.id,
+      `click unit ${again.id} at ${again.x},${again.y} with no travel`,
+      `selection → [${on.join(',')}]`);
+    const bare = await bareSpot();
+    if (!bare) record('plain left click clears', false, 'no bare spot for a clearing click', 'n/a');
+    else {
+      const h0 = await rig();
+      await page.mouse.click(bare.x, bare.y);
+      await settle(500);
+      const off = await selNow();
+      const h1 = await rig();
+      record('plain left click clears', on.length > 0 && off.length === 0 && Math.abs(wrapPi(h1.yaw - h0.yaw)) < 0.01,
+        `click bare ground at ${bare.x},${bare.y} with no travel`,
+        `selection [${on.join(',')}] → [${off.join(',')}]; yaw ${h0.yaw} → ${h1.yaw}`);
+    }
+  }
+
+  // Mid-field and a known heading, so no result is really the focus clamp at the map edge.
+  await page.evaluate(() => { window.__game.setCamera(0, 0, 0.55, Math.PI); window.__game.advance(0.4); });
+  await settle(400);
+
+  // ---- 13c. middle drag pans the focus, and must not turn the view ----
+  // The first frame of the drag is the one that used to be wrong: `Input` derived every
+  // button's delta from one shared cursor position, so the press frame reported however far
+  // the mouse had travelled *before* it. This drag is preceded by a 300 px cursor move for
+  // exactly that reason — a regression here shows up as an overshoot on the pan.
+  const cx = Math.round(W * 0.5), cy = Math.round(H * 0.45);
+  await page.mouse.move(cx - 300, cy);
+  await page.mouse.move(cx, cy);
+  await settle(200);
+  const a0 = await rig();
+  await page.mouse.down({ button: 'middle' });
+  for (let i = 1; i <= 12; i++) { await page.mouse.move(cx + i * 25, cy); await page.waitForTimeout(30); }
+  await page.mouse.up({ button: 'middle' });
+  await settle(700);
+  const a1 = await rig();
+  const turn = Math.abs(wrapPi(a1.yaw - a0.yaw));
+  const slid = Math.hypot(a1.x - a0.x, a1.z - a0.z);
+  record('middle drag pans', slid > 10,
+    `middle-button drag 300 px to the right across the canvas from ${cx},${cy}, after a ` +
+    '300 px cursor move with no button held',
+    `focus (${a0.x},${a0.z}) → (${a1.x},${a1.z}), moved ${slid.toFixed(2)} m`);
+  record('middle drag never turns', turn < 0.01,
+    'the same drag, measured on the camera yaw instead of the focus',
+    `yaw ${a0.yaw} → ${a1.yaw} (${turn.toFixed(4)} rad)`);
+  if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, 'middle-drag-pan.png') });
+
+  // ---- 13d. right drag with nothing selected turns the view ----
+  // With a selection it is the frontage gesture and `suppressDrag` holds the camera off it;
+  // that arm is checked in block 6. This is the other half of the same switch.
+  await page.evaluate(() => { window.__game.setCamera(0, 0, 0.55, Math.PI); window.__game.advance(0.4); });
+  await settle(400);
+  const clearSpot = await bareSpot();
+  if (clearSpot) { await page.mouse.click(clearSpot.x, clearSpot.y); await settle(400); }
+  const emptySel = await selNow();
+  const b0 = await rig();
+  await page.mouse.move(cx, cy);
+  await page.mouse.down({ button: 'right' });
+  for (let i = 1; i <= 12; i++) { await page.mouse.move(cx + i * 25, cy); await page.waitForTimeout(30); }
+  await page.mouse.up({ button: 'right' });
+  await settle(700);
+  const b1 = await rig();
+  record('right drag empty turns', emptySel.length === 0 && Math.abs(wrapPi(b1.yaw - b0.yaw)) > 0.5,
+    `right-button drag 300 px with the selection cleared to [${emptySel.join(',')}]`,
+    `yaw ${b0.yaw} → ${b1.yaw} (${wrapPi(b1.yaw - b0.yaw).toFixed(4)} rad)`);
+
+  // ---- 13e. screen-edge pan ----
+  // A panel under the cursor takes the canvas hover away, so the point must clear every one.
+  const edge = await page.evaluate(() => {
+    const rects = Array.from(document.querySelectorAll('#hud-root .interactive'))
+      .map((e) => e.getBoundingClientRect())
+      .filter((r) => r.width > 0 && r.height > 0);
+    const clear = (p) => !rects.some((r) =>
+      p.x >= r.left - 6 && p.x <= r.right + 6 && p.y >= r.top - 6 && p.y <= r.bottom + 6);
+    const h = window.innerHeight, w = window.innerWidth;
+    for (const f of [0.5, 0.4, 0.6, 0.32, 0.68]) {
+      for (const x of [2, w - 3]) {
+        const p = { x, y: Math.round(h * f) };
+        if (clear(p)) return { ...p, side: x < 10 ? 'left' : 'right' };
+      }
+    }
+    return null;
+  });
+  if (!edge) record('screen-edge pan', false, 'no HUD-clear point on either vertical screen edge', 'n/a');
+  else {
+    const c0 = await rig();
+    await page.mouse.move(edge.x, edge.y);
+    await settle(900);
+    const c1 = await rig();
+    // Back to the middle, or the camera keeps panning through every later check.
+    await page.mouse.move(cx, cy);
+    await settle(400);
+    const moved = Math.hypot(c1.x - c0.x, c1.z - c0.z);
+    record('screen-edge pan', moved > 10,
+      `hold the cursor at the ${edge.side} screen edge (${edge.x},${edge.y}) for 900 ms`,
+      `focus (${c0.x},${c0.z}) → (${c1.x},${c1.z}), moved ${moved.toFixed(1)} m; yaw ${c0.yaw} → ${c1.yaw}`);
+  }
+
+  // ---- 13f. minimap drag ----
+  const mm = await page.evaluate(() => {
+    const c = document.querySelector('#hud-root .minimap canvas');
+    if (!c) return null;
+    const r = c.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  });
+  if (!mm) record('minimap drag', false, 'no minimap canvas in the DOM', 'n/a');
+  else {
+    const from = { x: mm.x + mm.w * 0.3, y: mm.y + mm.h * 0.3 };
+    const to = { x: mm.x + mm.w * 0.72, y: mm.y + mm.h * 0.72 };
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await settle(250);
+    const d0 = await rig();
+    for (let i = 1; i <= 8; i++) {
+      await page.mouse.move(from.x + (to.x - from.x) * i / 8, from.y + (to.y - from.y) * i / 8);
+      await page.waitForTimeout(30);
+    }
+    await settle(250);
+    const d1 = await rig();
+    await page.mouse.up();
+    await settle(300);
+    // Measured from the press, which is the click route covered above, so this is the drag.
+    const dragged = Math.hypot(d1.x - d0.x, d1.z - d0.z);
+    record('minimap drag', dragged > 20,
+      `press the minimap plate at 30%,30% and drag to 72%,72% of its ${Math.round(mm.w)}×${Math.round(mm.h)} box`,
+      `focus after the press (${d0.x},${d0.z}) → (${d1.x},${d1.z}) at the end of the drag, ` +
+      `moved ${dragged.toFixed(1)} m while held`);
+  }
+
+  // ---- 13g. the harness contract tools/shoot.mjs grades every other lane through ----
+  // `#loading` is read from the served markup, not the live DOM: `src/main.ts` removes the
+  // node once the game is ready, and shoot.mjs only ever names it in an injected CSS rule.
+  const harness = await page.evaluate(async () => {
+    const g = window.__game;
+    const src = await fetch('/').then((r) => r.text()).catch(() => '');
+    const before = { x: +g.engine.rig.focus.x.toFixed(2), yaw: +g.engine.rig.yaw.toFixed(4) };
+    g.setCamera(-120, 260, 0.5, 1.1);
+    g.advance(0.2);
+    const r = g.engine.rig;
+    return {
+      hud: !!document.getElementById('hud-root'),
+      loadingId: /id=["']loading["']/.test(src),
+      loadingLive: !!document.getElementById('loading'),
+      setCamera: typeof g.setCamera === 'function',
+      before,
+      after: { x: +r.focus.x.toFixed(2), z: +r.focus.z.toFixed(2), zoom: +r.zoom.toFixed(4), yaw: +r.yaw.toFixed(4) },
+    };
+  });
+  const took = harness.after.x === -120 && harness.after.z === 260 && Math.abs(harness.after.yaw - 1.1) < 0.001;
+  record('harness camera contract', harness.hud && harness.loadingId && harness.setCamera && took,
+    'check #hud-root and the #loading id, then drive setCamera(-120, 260, 0.5, 1.1)',
+    `#hud-root ${harness.hud}, #loading declared ${harness.loadingId} (still in the DOM: ` +
+    `${harness.loadingLive}), setCamera ${harness.setCamera}; focus x ${harness.before.x} → ` +
+    `${harness.after.x}, z ${harness.after.z}, zoom ${harness.after.zoom}, ` +
+    `yaw ${harness.before.yaw} → ${harness.after.yaw}`);
+}
+
+// ---------------------------------------------------------------------------
+// 14. the card bar selects
+// ---------------------------------------------------------------------------
+{
+  const selNow = () => page.evaluate(() => window.__selection());
+  const before = await selNow();
+  const card = await page.evaluate(() => {
+    const cards = Array.from(document.querySelectorAll('#hud-root .cardbar .card:not(.mini)'));
+    const c = cards[Math.min(2, cards.length - 1)];
+    if (!c) return null;
+    const r = c.getBoundingClientRect();
+    return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), n: cards.length };
+  });
+  if (!card) record('unit card selects', false, 'no unit cards in the card bar', 'n/a');
+  else {
+    await page.mouse.click(card.x, card.y);
+    await settle(500);
+    const one = await selNow();
+    record('unit card selects', one.length === 1,
+      `click unit card 3 of ${card.n} at ${card.x},${card.y} with no key held`,
+      `selection [${before.join(',')}] → [${one.join(',')}]`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Starting through the pre-battle menu
 // ---------------------------------------------------------------------------
 /*
@@ -870,7 +1177,10 @@ if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, 'hud-final.png')
 
     const rig = () => mp.evaluate(() => {
       const r = window.__game.engine.rig;
-      return { zoom: +r.zoom.toFixed(4), yaw: +r.yaw.toFixed(4) };
+      return {
+        zoom: +r.zoom.toFixed(4), yaw: +r.yaw.toFixed(4),
+        x: +r.focus.x.toFixed(2), z: +r.focus.z.toFixed(2),
+      };
     });
 
     const z0 = await rig();
@@ -881,14 +1191,37 @@ if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, 'hud-final.png')
     record('wheel zooms after menu', z1.zoom !== z0.zoom, 'six wheel notches over the canvas',
       `zoom ${z0.zoom} → ${z1.zoom}`);
 
-    await mp.mouse.move(W * 0.5, H * 0.5);
-    await mp.mouse.down({ button: 'right' });
-    await mp.mouse.move(W * 0.5 + 240, H * 0.5, { steps: 12 });
-    await mp.mouse.up({ button: 'right' });
+    // Middle drag on the field, on the real player path rather than behind `?harness=1`.
+    await mp.mouse.move(W * 0.5, H * 0.45);
+    await mp.mouse.down({ button: 'middle' });
+    for (let i = 1; i <= 12; i++) { await mp.mouse.move(W * 0.5 + i * 25, H * 0.45); await mp.waitForTimeout(30); }
+    await mp.mouse.up({ button: 'middle' });
     await mp.waitForTimeout(700);
-    const z2 = await rig();
-    record('right-drag rotates after menu', z2.yaw !== z1.yaw, 'right-drag 240 px across the canvas',
-      `yaw ${z1.yaw} → ${z2.yaw}`);
+    const zm = await rig();
+    record('middle drag pans after menu', Math.hypot(zm.x - z1.x, zm.z - z1.z) > 10,
+      'middle-button drag 300 px right across the canvas',
+      `focus (${z1.x},${z1.z}) → (${zm.x},${zm.z}), ` +
+      `moved ${Math.hypot(zm.x - z1.x, zm.z - z1.z).toFixed(1)} m`);
+
+    // The right button is also the order button, so the compass is a second route to yaw
+    // that never has to ask what is selected.
+    const rose = await mp.evaluate(() => {
+      const el = document.querySelector('#hud-root .mm-compass');
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    });
+    if (!rose) record('compass drag rotates after menu', false, 'no .mm-compass in the DOM', 'n/a');
+    else {
+      await mp.mouse.move(rose.x, rose.y);
+      await mp.mouse.down();
+      for (let i = 1; i <= 10; i++) await mp.mouse.move(rose.x + i * 12, rose.y);
+      await mp.mouse.up();
+      await mp.waitForTimeout(700);
+      const z2 = await rig();
+      record('compass drag rotates after menu', z2.yaw !== zm.yaw, 'drag the minimap compass 120 px across',
+        `yaw ${zm.yaw} → ${z2.yaw}`);
+    }
 
     const selCount = async () => mp.evaluate(() => {
       const t = document.querySelector('.hud-perf')?.textContent ?? '';
