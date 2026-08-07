@@ -130,6 +130,16 @@ export class RTSCamera {
     this.applyImmediate();
   }
 
+  /** Turn the view. The HUD compass drives this; Q/E are the keyboard equivalent. */
+  rotateBy(radians: number): void {
+    this.yawTarget = wrapAngle(this.yawTarget + radians);
+  }
+
+  /** Look north, keeping focus and zoom. North is -Z, and `place` puts that at yaw = pi. */
+  faceNorth(): void {
+    this.yawTarget = Math.PI;
+  }
+
   /** Ease toward a viewpoint over the next few seconds (used for intro flythroughs). */
   flyTo(x: number, z: number, zoom: number, yaw: number): void {
     this.focus.set(x, 0, z);

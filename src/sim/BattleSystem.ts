@@ -2,7 +2,8 @@ import type { EngineContext, Subsystem } from '../core/Engine';
 import { Rng, hash01 } from '../util/rand';
 import { clamp, clamp01, damp, turnToward, wrapAngle } from '../util/math';
 import {
-  closestPointOnSegment, formation, frontSegment, makeSegment, ranksFor, segmentDistance,
+  BASE_SPACING_X, BASE_SPACING_Z, closestPointOnSegment, formation, frontSegment, makeSegment,
+  ranksFor, segmentDistance,
 } from './formations';
 import { unitType, isCavalry } from '../units/roster';
 import type { TerrainSystem } from '../terrain/TerrainSystem';
@@ -478,7 +479,10 @@ export class BattleSystem implements Subsystem {
     this.rallyZ = new Float32Array(ctx.quality.maxSoldiers);
     this.rallyOn = new Uint8Array(ctx.quality.maxSoldiers);
     this.rallyUntil = new Float32Array(ctx.quality.maxSoldiers);
-    this.hash = new SpatialHash(1500, 3.5);
+    // 2.0 m cells. The separation pass asks for everything within 0.84 m once per man per
+    // tick, and at 3.5 m cells that scanned about 37 candidates to find 6. The rebuild can
+    // afford the finer grid because it only ever touches the rectangle the armies stand on.
+    this.hash = new SpatialHash(1500, 2.0);
 
     const cap = ctx.quality.maxSoldiers;
     this.elevated = new Uint8Array(cap);
@@ -827,10 +831,10 @@ export class BattleSystem implements Subsystem {
   }
 
   private baseSpacingX(def: UnitTypeDef): number {
-    return isCavalry(def) ? 1.95 : 0.86;
+    return isCavalry(def) ? BASE_SPACING_X.mounted : BASE_SPACING_X.foot;
   }
   private baseSpacingZ(def: UnitTypeDef): number {
-    return isCavalry(def) ? 3.1 : 1.02;
+    return isCavalry(def) ? BASE_SPACING_Z.mounted : BASE_SPACING_Z.foot;
   }
 
   /** Transform a formation-local offset into world space. */
