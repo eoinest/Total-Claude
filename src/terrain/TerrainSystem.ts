@@ -123,7 +123,7 @@ export class TerrainSystem implements Subsystem {
       await this.water.init(ctx, this.textures, this.heightTex);
     }
 
-    this.scatter = new ScatterField(this, map.terrain.scatter, !map.hidesCity);
+    this.scatter = new ScatterField(this, map.terrain.scatter, map.city !== null);
     this.scatter.init(ctx);
 
     this.grass = new GrassField(this, { ...map.terrain.grass, roadGlsl: map.terrain.roadGlsl },
@@ -150,39 +150,18 @@ export class TerrainSystem implements Subsystem {
     this.grass?.update(dt);
   }
 
-  /** One-shot: the city can only be reached after its own `init` has run. */
-  private cityChecked = false;
-
-  /**
-   * Take Rome off a map that is not Rome.
+  /*
+   * `hideCityIfForeign` used to live here and it is gone.
    *
-   * `main.ts` does `engine.add(new CitySystem())` unconditionally and `CitySystem.init` has
-   * no early-out — neither file belongs to this workstream — so on the plain of Pydna the
-   * Aurelian Wall would otherwise stand across the southern horizon. `setDebugVisible` is a
-   * public method on `CitySystem` and hiding the root is enough to keep it out of every
-   * frame and out of the draw call count.
-   *
-   * **This is a workaround and not the fix.** It still pays the city's several-second build
-   * at boot and still leaves its wall segments stamped into the AI nav grid past z ≈ 500.
-   * Nothing fights up there so neither is visible, but the correct change is one line in
-   * `main.ts` making the registration conditional. It is written up in the hand-off notes.
-   *
-   * Runs in `preRender` rather than `init` because terrain initialises at order −50 and the
-   * city at −20: at our own init the city does not exist yet.
+   * It hid Rome's root on any map with `hidesCity`, as a workaround for `main.ts` registering
+   * `CitySystem` unconditionally — and it said so in its own comment: it still paid the
+   * city's multi-second build at boot and still left the wall stamped into the AI nav grid,
+   * so the wall blocked movement across a plain it was invisible on. `main.ts` now builds
+   * only the `CityPlan` its map carries, so there is nothing foreign to hide. See
+   * `MapDefinition.city`.
    */
-  private hideCityIfForeign(ctx: EngineContext): void {
-    if (this.cityChecked) return;
-    this.cityChecked = true;
-    if (!this.map.hidesCity) return;
-    const city = ctx.tryGet('city') as unknown as { setDebugVisible?(on: boolean): void } | undefined;
-    if (city?.setDebugVisible) {
-      city.setDebugVisible(false);
-      console.info(`[terrain] ${this.map.id}: city of Rome hidden (see hideCityIfForeign)`);
-    }
-  }
 
   preRender(ctx: EngineContext): void {
-    this.hideCityIfForeign(ctx);
     const cam = ctx.camera.position;
     // Snap the clipmap centre so every level's grid stays aligned with every other's;
     // that alignment is what makes the level seams watertight.

@@ -431,7 +431,7 @@ export class MainMenu {
   private scenarioBlocked(id: ScenarioId): string | null {
     const def = scenarioDef(id);
     const map = getMap(this.cfg.map);
-    if (def.needsCity && map.hidesCity) {
+    if (def.needsCity && !map.city) {
       return `${map.label} is open ground — there is no wall on it to storm. `
         + 'Choose the Campus Martius for the assault.';
     }

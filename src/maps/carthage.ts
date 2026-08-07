@@ -139,7 +139,7 @@ export const CARTHAGE: MapDefinition = {
     scatter: CARTHAGE_SCATTER,
   },
   /**
-   * No city on it yet, so no city of anyone else's either.
+   * No city on it yet — so, correctly, no city of anyone else's either.
    *
    * The map ships as open ground first and deliberately: it gives the wall and fabric
    * workstreams a real heightfield to build against a commit earlier than they would
@@ -148,10 +148,8 @@ export const CARTHAGE: MapDefinition = {
    * it, and the scatter clears its glacis — so the masonry drops onto a heightfield that is
    * expecting it.
    *
-   * **This field is on its way out.** `src/city/cityPlan.ts` records the decision:
-   * `hidesCity: boolean` becomes `city: CityPlan | null`, because a flag you must remember to
-   * set is what put Rome's wall across the plain of Pydna, blocking movement on a map where
-   * it was nowhere on screen. When that lands this becomes `city: CARTHAGE_PLAN`.
+   * When `src/city/carthage/` exists this becomes `city: CARTHAGE_PLAN` and nothing else
+   * changes: `main.ts` builds whatever the map hands it. See `src/city/cityPlan.ts`.
    */
-  hidesCity: true,
+  city: null,
 };

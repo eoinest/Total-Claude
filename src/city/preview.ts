@@ -3,6 +3,7 @@ import { Engine, type QualityTier } from '../core/Engine';
 import { LightingSystem } from '../render/LightingSystem';
 import { SkySystem } from '../render/SkySystem';
 import { TerrainSystem } from '../terrain/TerrainSystem';
+import { ROME_PLAN } from './rome/plan';
 import { hash01 } from '../util/rand';
 import { CitySystem } from './CitySystem';
 import { LANDMARKS } from './layout';
@@ -32,7 +33,9 @@ const engine = new Engine({ canvas, quality, fixedSize: { w: W, h: H } });
 engine.add(new SkySystem());
 engine.add(new LightingSystem());
 const terrain = engine.add(new TerrainSystem());
-const city = engine.add(new CitySystem());
+// The city preview is Rome's. A second city gets its own entry point rather than a query
+// parameter here: this page exists to grade the Aurelian Wall against archaeology.
+const city = engine.add(new CitySystem(ROME_PLAN));
 if (params.get('procedural') === '1') city.useProceduralTexturesOnly(true);
 
 /** Stand-in soldiers: a man is 1.75 m, shoulders 0.5 m, 0.86 m lateral spacing. */

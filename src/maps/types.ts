@@ -1,3 +1,4 @@
+import type { CityPlan } from '../city/cityPlan';
 import type { GroundLayerSpec } from '../terrain/groundTextures';
 import type { TerrainData } from '../terrain/heightfield';
 
@@ -167,15 +168,22 @@ export interface MapDefinition {
   readonly sky: SkyProfile;
   readonly terrain: TerrainProfile;
   /**
-   * True when this map is not the Campus Martius and the procedural city of Rome must not
-   * appear on it.
+   * The city standing on this map, or null for open ground.
    *
-   * `main.ts` registers `CitySystem` unconditionally and `CitySystem.init` has no early-out,
-   * neither of which this workstream owns. Until that one line becomes conditional the city
-   * is built and then hidden through its own public `setDebugVisible`, which costs its build
-   * time at boot and leaves its wall segments stamped into the AI nav grid beyond z ≈ 500.
-   * Both are invisible on this map — nothing fights up there — but neither is right, and the
-   * fix is one line in `main.ts`. See the hand-off notes.
+   * **This replaced `hidesCity: boolean`, and the replacement is the point.** Under the flag,
+   * `CitySystem` planned the Aurelian circuit against the Tiber, built it onto whatever
+   * heightfield was loaded, and was then merely made invisible — so Rome's wall blocked
+   * movement across the plain of Pydna while being nowhere on screen. Skipping registration
+   * fixed that instance and left the shape of the error alive: a flag is something a third
+   * map can forget.
+   *
+   * A city is now something a map *carries*, not something it hides. `main.ts` does
+   * `if (plan) engine.add(new CitySystem(plan))` and builds exactly what it was handed. The
+   * absence of a city is the absence of data, and there is no field left to forget.
+   *
+   * Anything downstream asking "does this map have a wall" asks `map.city !== null`. Nothing
+   * may reintroduce a test on the map's *identity* — if a consumer needs to know which city,
+   * it reads `plan.id`.
    */
-  readonly hidesCity: boolean;
+  readonly city: CityPlan | null;
 }

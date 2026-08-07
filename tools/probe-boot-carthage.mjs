@@ -166,7 +166,7 @@ if (errors.length) {
   console.log(`\n[boot] ${errors.length} error(s):`);
   for (const e of errors.slice(0, 25)) console.log(`  ${e}`);
 }
-const interesting = logs.filter((l) => /\[terrain\]|\[city\]|\[carthage\]|\[boot\]|warn/i.test(l));
+const interesting = logs.filter((l) => /\[terrain|\[city|\[carthage|\[boot|warn/i.test(l));
 if (interesting.length) {
   console.log(`\n[boot] notable console:`);
   for (const l of interesting.slice(0, 25)) console.log(`  ${l}`);

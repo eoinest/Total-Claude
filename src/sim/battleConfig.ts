@@ -47,9 +47,9 @@ export interface ScenarioDef {
   subtitle: string;
   blurb: string;
   /**
-   * True when the battle needs Rome's wall on the map.
+   * True when the battle needs a walled city on the map.
    *
-   * `main.ts` only registers `CitySystem` when the map does not hide the city, so on Pydna
+   * `main.ts` only registers `CitySystem` when the map carries a `CityPlan`, so on Pydna
    * there is no curtain, no gate and no parapet — an assault there would deploy a garrison
    * onto nothing. `sanitiseConfig` enforces the pairing rather than leaving it to the menu,
    * so a hand-made `?battle=` token cannot ask for the impossible one either.
@@ -597,7 +597,7 @@ export function sanitiseConfig(raw: unknown): BattleConfig {
    */
   const askedScenario: ScenarioId = o.scenario === 'assault' ? 'assault' : 'field';
   const scenario: ScenarioId =
-    askedScenario === 'assault' && getMap(map).hidesCity ? 'field' : askedScenario;
+    askedScenario === 'assault' && !getMap(map).city ? 'field' : askedScenario;
   const sizes = UNIT_SIZES.map((p) => p.id) as string[];
   const tiers: QualityTier[] = ['low', 'medium', 'high', 'ultra'];
   const diffs: Difficulty[] = ['easy', 'normal', 'hard', 'legendary'];

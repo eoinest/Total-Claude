@@ -119,5 +119,10 @@ export const PYDNA: MapDefinition = {
     grass: { heightScale: 1.3, densityScale: 1.18, dryness: 0.72 },
     scatter: PYDNA_SCATTER,
   },
-  hidesCity: true,
+  /**
+   * A field battle, so no city — and the field is `null` rather than a flag saying so. This
+   * is the map the flag was wrong on: Rome's wall was built onto this plain and hidden, where
+   * it blocked movement while being nowhere on screen. See `MapDefinition.city`.
+   */
+  city: null,
 };
