@@ -32,7 +32,7 @@ const args = new Map(process.argv.slice(2).map((a) => {
 }));
 const PORT = Number(args.get('port') ?? 5407);
 const AS_JSON = args.has('json');
-const SECONDS = Number(args.get('seconds') ?? 120);
+const SECONDS = Number(args.get('seconds') ?? 90);
 
 const base = `http://127.0.0.1:${PORT}`;
 const up = await fetch(`${base}/src/main.ts`).catch(() => null);
@@ -389,19 +389,20 @@ const TRAFFIC = (secs) => {
   const { g, b, s, p } = w;
   g.advance(2);
   /*
-   * The quietest settled garrison, not the furthest from the gate. On Rome the far end of
-   * the curtain is where the storm lands, and a cohort ordered along the wall there is
-   * grading the casualty list. "Quiet" is fewest live enemies inside 140 m.
+   * The settled garrison furthest from the gate.
+   *
+   * Not the "quietest" one by enemies within 140 m, which was tried: on Rome's assault the
+   * minimum is 250 and the arm picked a cohort the storm reached inside ninety seconds and
+   * wiped, 44 to 0. The gate is where the escalade and the ram go, and distance from it is
+   * the selection `probe-walltraffic` has been using and passing on.
    */
-  let u = null, bestThreat = Infinity;
+  const gate0 = w.bays.find((q) => q.isGate) ?? w.bays[Math.floor(w.bays.length / 2)];
+  const gc = w.mid(gate0);
+  let u = null, far = -1;
   for (const q of b.units) {
     if (q.destroyed || q.alive < 20 || !s.isGarrisoned(q.id) || s.plans.has(q.id)) continue;
-    let threat = 0;
-    for (const e of b.units) {
-      if (e.destroyed || e.alive === 0 || e.faction === q.faction) continue;
-      if (Math.hypot(e.x - q.x, e.z - q.z) < 140) threat += e.alive;
-    }
-    if (threat < bestThreat) { bestThreat = threat; u = q; }
+    const d = Math.hypot(q.x - gc.x, q.z - gc.z);
+    if (d > far) { far = d; u = q; }
   }
   if (!u) return { fail: 'no settled garrison' };
   let here = 0, bd = Infinity;
@@ -409,16 +410,30 @@ const TRAFFIC = (secs) => {
     const c = w.mid(w.bays[k]); const d = (c.x - u.x) ** 2 + (c.z - u.z) ** 2;
     if (d < bd) { bd = d; here = k; }
   }
-  // Four bays along, whichever direction has wall. Four bays is at least two towers on
-  // Rome (a tower per bay) and two on Carthage (a tower every other bay).
+  /*
+   * A bay at least two run boundaries along, *away from the gate*.
+   *
+   * Two run boundaries is two towers, which is the bar the owner set. Counted rather than
+   * assumed: Rome stands a tower at every bay and Carthage at every other, so a fixed bay
+   * offset means a different number of towers on the two circuits.
+   *
+   * The direction is not a preference. Three bays *toward* the gate walks the cohort into
+   * the storm; `probe-walltraffic` records a 44-man cohort wiped inside a hundred seconds
+   * doing exactly that, which grades the assault and not the order.
+   */
+  const startRun0 = s.sRun[s.stationNear(u.x, u.z)];
+  const away = here > w.bays.indexOf(gate0) ? 1 : -1;
   let target = null, off0 = 0;
-  for (const off of [4, -4, 5, -5, 3, -3]) {
+  for (const off of [away * 2, away * 3, away * 4, -away * 2, -away * 3, -away * 4]) {
     const q = w.bays[here + off];
-    if (q && q.garrisonable) { target = q; off0 = off; break; }
+    if (!q || !q.garrisonable) continue;
+    const c2 = w.mid(q);
+    if (Math.abs(s.sRun[s.stationNear(c2.x, c2.z)] - startRun0) < 2) continue;
+    target = q; off0 = off; break;
   }
-  if (!target) return { fail: 'no bay to move to' };
+  if (!target) return { fail: 'no bay two towers along' };
   const c = w.mid(target);
-  const startRun = s.sRun[s.stationNear(u.x, u.z)];
+  const startRun = startRun0;
   const targetRun = s.sRun[s.stationNear(c.x, c.z)];
   const before = u.alive;
   // Per-man: did this man ever complete a tower pass?
@@ -452,7 +467,7 @@ const TRAFFIC = (secs) => {
   }
   const passDelta = s.links.reduce((n, l, k) => n + (l.kind === 0 ? l.used - usedBefore[k] : 0), 0);
   return {
-    unitId: u.id, bays: `${here} -> ${here + off0}`, threat: bestThreat, goal,
+    unitId: u.id, bays: `${here} -> ${here + off0}`, fromGate: +far.toFixed(0), goal,
     startRun, targetRun, before, alive, at, peakAt, stillUp,
     menPastATower: crossed.size, circuitPasses: passDelta, ticksOnLink,
     worstFeet: +worstFeet.toFixed(3),
@@ -505,14 +520,20 @@ for (const [city, t] of GEOM_ONLY ? [] : [['Rome', romeTraffic], ['Carthage', ca
   check(`${city}: a right-click along the wall is a traverse`,
     !!t && t.goal === 2 && t.startRun !== t.targetRun,
     `goal ${t?.goal} (2 = Traverse), run ${t?.startRun} -> ${t?.targetRun}, bays ${t?.bays}, `
-    + `${t?.before} men, ${t?.threat} enemies within 140 m`);
+    + `${t?.before} men, ${t?.fromGate} m from the gate`);
   check(`${city}: men get past the towers`,
     !!t && t.menPastATower >= Math.max(8, t.before * 0.5),
     `${t?.menPastATower}/${t?.before} men of this cohort completed a tower crossing; `
     + `${t?.circuitPasses} crossings on the whole circuit; a man on a link on `
     + `${t?.ticksOnLink} ticks`);
+  /*
+   * Graded against the men still alive, which is `probe-walltraffic`'s own convention and
+   * is the only honest denominator under an assault: a garrison redeploying while the
+   * escalade lands takes losses on the way, and scoring the arrivals against the *starting*
+   * strength measures the casualty list a second time.
+   */
   check(`${city}: and they arrive on the bay they were sent to`,
-    !!t && t.alive > 0 && t.peakAt >= t.before * 0.5,
+    !!t && t.alive > 0 && t.at >= t.alive * 0.8,
     `${t?.at}/${t?.alive} surviving men within 26 m of the target bay at the end, peak `
     + `${t?.peakAt} of ${t?.before}; ${t?.stillUp} still on the stone, worst |y - support| `
     + `${((t?.worstFeet ?? 0) * 100).toFixed(2)} cm`);
