@@ -17,7 +17,7 @@ import { MAN_RIG, MB, restPos } from '../anim/rig';
 import {
   makeSoldierMaterial, type SoldierMaterialSet, type PoseVaryBones,
 } from '../anim/skinShader';
-import { buildSoldierAtlas, EMBLEM_ORIGIN, EMBLEM_TILE, type SoldierAtlas } from './atlas';
+import { buildSoldierAtlas, EMBLEM_COLS, EMBLEM_ORIGIN, EMBLEM_TILE, type SoldierAtlas } from './atlas';
 import { buildSoldierGeometry, type Lod } from './soldierMesh';
 import {
   buildHorseGeometry, HORSE_MASK_LO, SADDLE_BONES, SADDLE_SEAT, HORSE_GROUND_LIFT,
@@ -699,6 +699,7 @@ export class UnitRenderSystem implements Subsystem {
       anim: this.manAnim,
       emblemOrigin: EMBLEM_ORIGIN,
       emblemTile: EMBLEM_TILE,
+      emblemCols: EMBLEM_COLS,
       emblemTribalFirst: EMBLEM_TRIBAL_FIRST,
       emblemPunicFirst: EMBLEM_PUNIC_FIRST,
       // Lean ramps in over the full height of a man so his feet stay on the ground.
@@ -709,6 +710,7 @@ export class UnitRenderSystem implements Subsystem {
       anim: this.horseAnim,
       emblemOrigin: EMBLEM_ORIGIN,
       emblemTile: EMBLEM_TILE,
+      emblemCols: EMBLEM_COLS,
       emblemTribalFirst: EMBLEM_TRIBAL_FIRST,
       emblemPunicFirst: EMBLEM_PUNIC_FIRST,
       leanHeight: 1.7,
@@ -720,6 +722,7 @@ export class UnitRenderSystem implements Subsystem {
       anim: this.elephantAnim,
       emblemOrigin: EMBLEM_ORIGIN,
       emblemTile: EMBLEM_TILE,
+      emblemCols: EMBLEM_COLS,
       emblemTribalFirst: EMBLEM_TRIBAL_FIRST,
       emblemPunicFirst: EMBLEM_PUNIC_FIRST,
       // No lean on an animal that weighs four tonnes and does not bank into a turn.

@@ -27,15 +27,35 @@ import { EMBLEMS } from './kit';
  * consistently lit, which a mixture of scanned Poly Haven surfaces cannot.
  */
 
-export const ATLAS_W = 1024;
+/**
+ * **256 px a material tile, not 128, and the reason is measured.**
+ *
+ * A 128 px tile stretched over a torso puts one texel across 2.5 screen pixels at the
+ * magnification the isolated-model deck shoots at, so every surface on the man was being
+ * *magnified* and read as bilinear mush — which is precisely what three independent critics
+ * reported as "no normal map, no roughness map" on a model that has carried both for months.
+ * They were reading a starved sampler as an absent one.
+ *
+ * The two halves of this are coupled and neither works alone. Correcting the tiles' physical
+ * size (`MAT_TILE_M`) without more texels **measurably makes the plate worse**: it shrinks
+ * the same 128 texels into fewer screen pixels, pushing the tile's own finest content below
+ * the resolvable band, and the octave probe put E2 down 12-15 % on all three full-figure
+ * Roman plates for it. Doubling the texels first is what buys the room to shrink the tile.
+ *
+ * Cost is texture memory and nothing else — no draw call, no triangle, no vertex. The sheet
+ * goes 1024 x 1536 to 2048 x 1536, so the three soldier textures go from about 25 MB
+ * resident with mips to about 50 MB, against a 220 MB budget for the whole game. The bake is
+ * four times the pixels; it runs once at load.
+ */
+export const ATLAS_W = 2048;
 export const ATLAS_H = 1536;
 /** Retained as the width, which is what every caller that used it meant. */
 export const ATLAS_SIZE = ATLAS_W;
-const TILE = 128;
+const TILE = 256;
 const TILES_PER_ROW = 8;
 const MAT_ROWS = 4;
 const EMBLEM_TILE_PX = 256;
-const EMBLEM_TOP = 512;
+const EMBLEM_TOP = TILE * MAT_ROWS;
 
 /** Material tile ids. Index maps to a cell of the 8 x 4 grid, row-major. */
 export const enum Mat {
@@ -159,6 +179,95 @@ export function matUv(id: Mat): UvRect {
 }
 
 /**
+ * **How much of a man one tile of each material covers, in metres.**
+ *
+ * Every tile in this sheet draws a fixed number of real objects — 18 rings of mail, 14 rows
+ * of scale, 7 girdle hoops, 6 planks — and until this table existed nothing anywhere tied
+ * that count to a size. The repeats were hand-written per call site in `soldierMesh.ts`, one
+ * number for around a torso and another for along it, and **every torso in the game came out
+ * stretched**: the mail body sat at `repeatU: 3, repeatV: 4` over a circumference of 0.87 m
+ * and a length of 0.66 m, so one tile covered 291 mm around by 164 mm along. That is a
+ * **1.8:1 horizontal stretch**, and it turned a 9 mm riveted ring into a 16 x 9 mm oval —
+ * which is exactly what the `legio-head` plate photographs, a coif of embossed lozenges.
+ *
+ * Sizing the tile instead of the repeat makes the stretch inexpressible: `soldierMesh` now
+ * measures each swept surface's own circumference and path length and divides. Two useful
+ * consequences fall out for free. A sleeve and a torso in the same material come out at the
+ * same physical grain without anyone matching two numbers by hand; and at LOD2, where a
+ * torso has a handful of segments, `MeshBuilder.repeatStops` clamps the repeat to the
+ * segment count on its own, so **the low tier keeps the coarse tiling it already had and
+ * pays nothing**.
+ *
+ * The value chosen for each material is the finer of (a) its real object size times the
+ * number of objects the tile draws, and (b) what the *tighter* of the two existing axes
+ * already delivered. Never the coarser: correcting an aspect ratio by stretching the fine
+ * axis out to meet the coarse one would fix the shape and throw away the mid-band structure
+ * that the octave instrument is measuring, which is the wrong trade in both directions.
+ */
+export const MAT_TILE_M: Record<Mat, number> = {
+  // fbm period 14 over the tile, so the coarsest patina blotch is a fourteenth of it: 30 mm.
+  [Mat.IronWorn]: 0.42,
+  // A planished bowl. The period-3 term is the one roughness is derived from — 100 mm sweeps
+  // of the hammer, which is what a burnished helmet actually shows.
+  [Mat.IronPlate]: 0.30,
+  // Casting mottle and patina at 30 mm, fbm period 10.
+  [Mat.Bronze]: 0.30,
+  // **18 rings. A riveted ring of the period is 8-10 mm outside diameter**, which is the
+  // single most load-bearing number in this table: mail is the largest area of small
+  // repeated objects a soldier wears, so it sets the scale a viewer reads the whole man by.
+  [Mat.Mail]: 0.162,
+  // 14 rows. Roman squamata finds run 10-50 mm; 15 mm is at the small end, chosen because it
+  // is also the finer of the two axes the torso already carried and so costs no structure.
+  [Mat.Scale]: 0.21,
+  // fbm period 20 — 8 mm grain pebbling, which is what stops a jerkin reading as rubber.
+  [Mat.LeatherBrown]: 0.16,
+  [Mat.LeatherDark]: 0.18,
+  // Sized by the **fold** field (fbm period 5), not the weave: the fold carries 0.38 of the
+  // height amplitude against the weave's 0.42 spread over 18 cycles, and folds at 55 mm are
+  // what a wool tunic reads as at any distance a man is legible from. The weave then comes
+  // out at 15 mm, which is coarse for wool and is a lie no viewer can measure.
+  [Mat.WoolCoarse]: 0.27,
+  // Fold fbm period 6 at 55 mm. Linen creases tighter than wool, hence 26 weave cycles.
+  [Mat.Linen]: 0.33,
+  // fbm period 44 — 6 mm blotch and pore. **V is overridden to 1 on every limb**, because
+  // the tile's elbow and wrist creases are placed at fixed v and only land on the joint if
+  // the limb carries exactly one tile end to end; see `SKIN_LIMB_V` in `soldierMesh.ts`.
+  [Mat.Skin]: 0.26,
+  // 70 strands across, so 4 mm a strand clump.
+  [Mat.Hair]: 0.28,
+  // 6 planks at 120 mm. **Not driven from here** — the shield boards and the spear shafts
+  // both take this tile at hand-set repeats, and halving the shaft grain has already been
+  // tried and reverted because it moved the octave ratio the wrong way.
+  [Mat.WoodPlank]: 0.72,
+  // fbm period 30 — 15 mm tufts.
+  [Mat.Fur]: 0.45,
+  [Mat.Plume]: 0.20,
+  // 14 lays of the strand at 12 mm.
+  [Mat.Rope]: 0.17,
+  // **7 girdle hoops at 64 mm**, against 55-70 mm on the Corbridge finds. The segmentata
+  // torso already ran 459 x 450 mm and is the one surface in the game that was square and
+  // correctly scaled before this table; it comes out unchanged, which is the check that the
+  // arithmetic here is not inventing a correction.
+  [Mat.Bands]: 0.45,
+  [Mat.HideBay]: 0.50,
+  [Mat.HideGrey]: 0.50,
+  [Mat.HideBlack]: 0.50,
+  [Mat.SaddleLeather]: 0.30,
+  [Mat.Hoof]: 0.12,
+  [Mat.Mane]: 0.25,
+  [Mat.Bone]: 0.20,
+  // Drape fbm period 4 at 90 mm — a cloak hangs in bigger folds than a tunic sits in.
+  [Mat.ClothFine]: 0.36,
+  [Mat.ShieldBack]: 0.45,
+  [Mat.OakBeam]: 0.80,
+  [Mat.SinewCord]: 0.15,
+  [Mat.ElephantHide]: 0.60,
+  // Not tiled: the face is drawn once onto a 120-degree arc of the skull at a known scale.
+  [Mat.Face]: 0.22,
+  [Mat.Count]: 1,
+};
+
+/**
  * Where the emblem block sits, in the form the shader wants.
  *
  * V is fiddly because `CanvasTexture` uploads flipped: within a tile V rises with the
@@ -173,8 +282,16 @@ export const EMBLEM_TILE: [number, number] = [
   EMBLEM_TILE_PX / ATLAS_W,
   EMBLEM_TILE_PX / ATLAS_H,
 ];
-/** Emblem tiles across the sheet. The shader's `mod(e, 4)` must agree with this. */
-export const EMBLEM_COLS = 4;
+/**
+ * Emblem tiles across the sheet.
+ *
+ * Eight rather than four because the sheet is now 2048 wide and four 256 px devices would
+ * leave half the emblem band empty. The shader used to hard-code `mod(e, 4.0)` beside a
+ * comment on this very line saying the two "must agree" — an agreement kept by remembering,
+ * which is the arrangement that has already repainted an army once. It is now fed through
+ * `SOLDIER_EMBLEM_COLS` from this constant, so the two cannot disagree.
+ */
+export const EMBLEM_COLS = 8;
 
 // ---------------------------------------------------------------------------
 // Noise

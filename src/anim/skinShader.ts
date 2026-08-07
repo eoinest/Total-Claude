@@ -26,6 +26,8 @@ export interface SoldierShaderOptions {
   emblemOrigin: [number, number];
   /** Size of one emblem tile in UV. */
   emblemTile: [number, number];
+  /** Emblem tiles across the sheet — `atlas.EMBLEM_COLS`, never a literal. */
+  emblemCols?: number;
   /**
    * First emblem index of the tribal and Punic style bands.
    *
@@ -623,7 +625,7 @@ const TINT_BODY = /* glsl */ `
   vSoldierEmblem = vec3( 0.0 );
   if ( slot > 5.5 && slot < 6.5 ) {
     float e = iCol0.w;
-    vec2 tile = vec2( mod( e, 4.0 ), floor( e * 0.25 ) );
+    vec2 tile = vec2( mod( e, SOLDIER_EMBLEM_COLS ), floor( e / SOLDIER_EMBLEM_COLS ) );
     vSoldierEmblem = vec3(
       SOLDIER_EMBLEM_ORIGIN + vec2( tile.x + aPieceTint.z, aPieceTint.w - tile.y ) * SOLDIER_EMBLEM_TILE,
       1.0 );
@@ -800,6 +802,11 @@ function defines(o: SoldierShaderOptions): string {
     `#define SOLDIER_LEAN_H ${o.leanHeight.toFixed(3)}`,
     `#define SOLDIER_EMBLEM_ORIGIN vec2(${o.emblemOrigin[0].toFixed(6)}, ${o.emblemOrigin[1].toFixed(6)})`,
     `#define SOLDIER_EMBLEM_TILE vec2(${o.emblemTile[0].toFixed(6)}, ${o.emblemTile[1].toFixed(6)})`,
+    // Fed from `atlas.EMBLEM_COLS` rather than written as a literal here. It was `mod(e, 4.0)`
+    // with a comment on the constant asking the two files to agree by hand; widening the
+    // sheet to 2048 made them disagree, and a disagreement here silently draws the wrong
+    // device on every shield in an army.
+    `#define SOLDIER_EMBLEM_COLS ${(o.emblemCols ?? 8).toFixed(1)}`,
     // Band boundaries as "last index of the previous band, plus a half", so a float compare
     // is exact. Fed from `kit.ts` rather than written here, because two files disagreeing
     // about where the tribal band ends would repaint an army with nothing to show for it.

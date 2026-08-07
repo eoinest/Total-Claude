@@ -3,7 +3,7 @@ import { Faction } from '../sim/types';
 import { MAN_RIG, MB } from '../anim/rig';
 import { MAN_CLIP_SET } from '../anim/clips';
 import { sampleGlobals } from '../anim/pose';
-import { Mat, matUv, type UvRect } from './atlas';
+import { Mat, MAT_TILE_M, matUv, type UvRect } from './atlas';
 import { Coarse, Piece, Tint } from './kit';
 import { MeshBuilder, type SheetPoint } from './meshBuilder';
 
@@ -95,6 +95,80 @@ interface TubeNode {
   bone2?: number;
   w?: number;
 }
+
+/**
+ * Ellipse circumference, Ramanujan's second approximation.
+ *
+ * Exact to better than 1 part in 10^7 for every aspect ratio a body ring takes here (the
+ * worst is the chest at 0.163 by 0.112), which is four orders of magnitude finer than the
+ * rounding to a whole number of tiles that consumes it.
+ */
+function ellipseC(a: number, b: number): number {
+  const s = a + b;
+  if (s <= 0) return 0;
+  const h = ((a - b) / s) ** 2;
+  return Math.PI * s * (1 + (3 * h) / (10 + Math.sqrt(4 - 3 * h)));
+}
+
+/**
+ * **Tile repeats that put a material at its real size on the surface it is worn on.**
+ *
+ * Reads the swept surface's own mean circumference and its own path length and divides both
+ * by `MAT_TILE_M[mat]`, so the two axes come out at one grain by construction. Before this,
+ * both numbers were written by hand at each call site and none of them agreed: the mail
+ * torso ran 291 mm of tile around against 164 mm along, a 1.8:1 stretch that turned a 9 mm
+ * ring into a 16 x 9 mm oval on every mailed man in the game.
+ *
+ * `repeatStops` clamps a repeat to the division count on its own, so a request this returns
+ * for a LOD0 torso is silently reduced to what a LOD2 torso can carry — which is why the
+ * low tier keeps its old tiling, and its triangle count, untouched.
+ *
+ * The path length is measured through the node centres rather than down the y axis, because
+ * a sleeve is swept under a rotation and a shoulder guard is not straight; using y alone
+ * would under-count both.
+ */
+function tileRepeat(
+  nodes: readonly TubeNode[],
+  mat: Mat,
+  /**
+   * The repeats this surface shipped with, as a **floor**.
+   *
+   * Rounding a tile count to a whole number can only be done up or down, and on a small
+   * surface down is a long way: a leg is 0.35 m round and a wool tile is 0.27 m, so
+   * `round(1.3)` is 1 and the bracae come out **30 % coarser than authored**. That is what
+   * the first cut of this function shipped, and it is measurable — the octave probe put E2
+   * down 12-15 % on all three full-figure Roman plates, because the legs are a third of the
+   * figure and their weave had halved. Never coarser than what was there is the rule the
+   * table comment in `atlas.ts` states; this parameter is what enforces it.
+   */
+  was: { u?: number; v?: number } = {},
+  opts: { vFixed?: number } = {}
+): { repeatU: number; repeatV: number } {
+  const tile = MAT_TILE_M[mat];
+  let around = 0;
+  for (const n of nodes) around += ellipseC(n.rx, n.rz);
+  around /= Math.max(1, nodes.length);
+  let along = 0;
+  for (let i = 1; i < nodes.length; i++) {
+    const p = nodes[i - 1];
+    const q = nodes[i];
+    along += Math.hypot(q.y - p.y, (q.x ?? 0) - (p.x ?? 0), (q.z ?? 0) - (p.z ?? 0));
+  }
+  return {
+    repeatU: Math.max(was.u ?? 1, Math.round(around / tile)),
+    repeatV: opts.vFixed ?? Math.max(was.v ?? 1, Math.round(along / tile)),
+  };
+}
+
+/**
+ * A bare limb takes exactly one skin tile end to end, and that is not negotiable.
+ *
+ * `Mat.Skin`'s height field cuts a crease at v = 0.5 and another at v = 0.94 so the cavity
+ * term darkens the elbow and the wrist. Those land on the joint only if the limb carries one
+ * tile from shoulder to hand; at two tiles a man grows a second elbow half way down his
+ * forearm. So skin is sized round the limb and fixed along it.
+ */
+const SKIN_LIMB_V = 1;
 
 /** Spine binding by height: a smooth blend up the four spine bones. */
 function spineBind(y: number): Bind {
@@ -756,7 +830,8 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
   };
 
   b.setPiece(Piece.Tunic, Tint.Tunic);
-  b.tube(torsoNodes(1.0, 0.62), d.torso, woolUv, { repeatV: 3, repeatU: 2, capEnd: true });
+  const tunicBody = torsoNodes(1.0, 0.62);
+  b.tube(tunicBody, d.torso, woolUv, { ...tileRepeat(tunicBody, Mat.WoolCoarse, { u: 2, v: 3 }), capEnd: true });
   if (d.medium) {
     // Short sleeves over the deltoid.
     for (const left of [true, false]) {
@@ -770,14 +845,12 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
         .makeRotationZ(left ? -Math.PI / 2 : Math.PI / 2)
         .premultiply(new THREE.Matrix4().makeTranslation(0, armY, armZ));
       b.setMatrix(m);
-      b.tube(
-        [
-          { y: Math.abs(shX) - 0.02, rx: 0.072, rz: 0.066 },
-          { y: Math.abs(shX) + 0.06, rx: 0.062, rz: 0.058 },
-          { y: Math.abs(shX) + 0.11, rx: 0.055, rz: 0.052 },
-        ],
-        d.limb, woolUv, { repeatU: 2 }
-      );
+      const woolSleeve = [
+        { y: Math.abs(shX) - 0.02, rx: 0.072, rz: 0.066 },
+        { y: Math.abs(shX) + 0.06, rx: 0.062, rz: 0.058 },
+        { y: Math.abs(shX) + 0.11, rx: 0.055, rz: 0.052 },
+      ];
+      b.tube(woolSleeve, d.limb, woolUv, tileRepeat(woolSleeve, Mat.WoolCoarse, { u: 2 }));
       b.setMatrix(null);
       void s;
     }
@@ -785,7 +858,11 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
 
   if (germanic) {
     b.setPiece(Piece.TorsoBare, Tint.Skin);
-    b.tube(torsoNodes(0.95, 0.88), d.torso, skinUv, { capEnd: false });
+    const bareTorso = torsoNodes(0.95, 0.88);
+    b.tube(bareTorso, d.torso, skinUv, {
+      ...tileRepeat(bareTorso, Mat.Skin, {}, { vFixed: SKIN_LIMB_V }),
+      capEnd: false,
+    });
     // Loincloth for the fanatics, since they are bare to the waist and not beyond.
     b.setPiece(Piece.TorsoBare, Tint.Legs);
     b.tube(
@@ -826,15 +903,13 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
       [1.14, 0.16, 0.113],
       [0.99, 0.168, 0.12],
     ];
-    b.tube(
-      segRows
-        .filter((_, i) => d.fine || i % 2 === 0 || i === segRows.length - 1)
-        .map(([y, rx, rz]) => {
-          const bind = spineBind(y);
-          return { y, rx, rz, bone: bind.bone, bone2: bind.bone2, w: bind.w };
-        }),
-      d.torso, bandUv, { repeatU: 2 }
-    );
+    const segBody = segRows
+      .filter((_, i) => d.fine || i % 2 === 0 || i === segRows.length - 1)
+      .map(([y, rx, rz]) => {
+        const bind = spineBind(y);
+        return { y, rx, rz, bone: bind.bone, bone2: bind.bone2, w: bind.w };
+      });
+    b.tube(segBody, d.torso, bandUv, tileRepeat(segBody, Mat.Bands, { u: 2 }));
     if (d.medium) {
       // Shoulder guards: three overlapping plates per side, following the deltoid.
       for (const left of [true, false]) {
@@ -886,7 +961,8 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
   // Ring mail, worn by everyone who is not in plate or scale. A hamata reached the hip and
   // had short sleeves; the Mail tile does the rings.
   b.setPiece(Piece.ArmourMail, Tint.Metal);
-  b.tube(torsoNodes(1.06, 0.78), d.torso, mailUv, { repeatV: 4, repeatU: 3, capEnd: false });
+  const mailBody = torsoNodes(1.06, 0.78);
+  b.tube(mailBody, d.torso, mailUv, { ...tileRepeat(mailBody, Mat.Mail, { u: 3, v: 4 }), capEnd: false });
   if (d.medium) {
     for (const left of [true, false]) {
       const sh = left ? MB.upperArmL : MB.upperArmR;
@@ -898,14 +974,12 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
         .makeRotationZ(left ? -Math.PI / 2 : Math.PI / 2)
         .premultiply(new THREE.Matrix4().makeTranslation(0, armY, armZ));
       b.setMatrix(m);
-      b.tube(
-        [
-          { y: Math.abs(shX) - 0.03, rx: 0.08, rz: 0.074 },
-          { y: Math.abs(shX) + 0.07, rx: 0.068, rz: 0.063 },
-          { y: Math.abs(shX) + 0.14, rx: 0.06, rz: 0.056 },
-        ],
-        d.limb, mailUv, { repeatU: 3 }
-      );
+      const mailSleeve = [
+        { y: Math.abs(shX) - 0.03, rx: 0.08, rz: 0.074 },
+        { y: Math.abs(shX) + 0.07, rx: 0.068, rz: 0.063 },
+        { y: Math.abs(shX) + 0.14, rx: 0.06, rz: 0.056 },
+      ];
+      b.tube(mailSleeve, d.limb, mailUv, tileRepeat(mailSleeve, Mat.Mail, { u: 3 }));
       b.setMatrix(null);
     }
   }
@@ -913,7 +987,8 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
   if (!germanic) {
     // Lorica squamata: bronze scales wired to a linen backing. Praetorian kit.
     b.setPiece(Piece.ArmourScale, Tint.Atlas);
-    b.tube(torsoNodes(1.07, 0.8), d.torso, scaleUv, { repeatV: 3, repeatU: 3, capEnd: false });
+    const scaleBody = torsoNodes(1.07, 0.8);
+    b.tube(scaleBody, d.torso, scaleUv, { ...tileRepeat(scaleBody, Mat.Scale, { u: 3, v: 3 }), capEnd: false });
     if (d.medium) {
       for (const left of [true, false]) {
         const sh = left ? MB.upperArmL : MB.upperArmR;
@@ -924,24 +999,20 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
         b.setMatrix(new THREE.Matrix4()
           .makeRotationZ(left ? -Math.PI / 2 : Math.PI / 2)
           .premultiply(new THREE.Matrix4().makeTranslation(0, armY, armZ)));
-        b.tube(
-          [
-            { y: Math.abs(shX) - 0.03, rx: 0.082, rz: 0.076 },
-            { y: Math.abs(shX) + 0.08, rx: 0.07, rz: 0.065 },
-            { y: Math.abs(shX) + 0.15, rx: 0.062, rz: 0.058 },
-          ],
-          d.limb, scaleUv, { repeatU: 3 }
-        );
+        const scaleSleeve = [
+          { y: Math.abs(shX) - 0.03, rx: 0.082, rz: 0.076 },
+          { y: Math.abs(shX) + 0.08, rx: 0.07, rz: 0.065 },
+          { y: Math.abs(shX) + 0.15, rx: 0.062, rz: 0.058 },
+        ];
+        b.tube(scaleSleeve, d.limb, scaleUv, tileRepeat(scaleSleeve, Mat.Scale, { u: 3 }));
         b.setMatrix(null);
       }
     }
   } else {
     // A hide jerkin. No sleeves, cut short, and it does not pretend to be armour.
     b.setPiece(Piece.ArmourLeather, Tint.Atlas);
-    b.tube(
-      torsoNodes(1.05, 0.86).filter((nd) => nd.y > 0.85),
-      d.torso, leatherUv, { repeatV: 2, repeatU: 2 }
-    );
+    const jerkin = torsoNodes(1.05, 0.86).filter((nd) => nd.y > 0.85);
+    b.tube(jerkin, d.torso, leatherUv, tileRepeat(jerkin, Mat.LeatherBrown, { u: 2, v: 2 }));
   }
 
   // =========================================================================
@@ -1038,7 +1109,8 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
 
     // Bracae with leg wraps. Universal among Germans, and by 271 common in the legions too.
     b.setPiece(Piece.LegsTrousers, Tint.Legs);
-    b.tube(legNodes(1.1), d.limb, woolUv, { repeatV: 3, repeatU: 2, capEnd: true });
+    const bracae = legNodes(1.1);
+    b.tube(bracae, d.limb, woolUv, { ...tileRepeat(bracae, Mat.WoolCoarse, { u: 2, v: 3 }), capEnd: true });
     if (d.medium) {
       b.setPiece(Piece.LegsTrousers, Tint.Atlas);
       const wraps = d.fine ? 4 : 2;
