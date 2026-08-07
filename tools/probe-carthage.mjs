@@ -114,7 +114,16 @@ if (!(await waitForServer(base, 1500))) {
 }
 console.log(`[probe-carthage] ${base} — ${ownServer ? 'server started by this run' : 'server already up'}, root ${ROOT}`);
 
-const browser = await chromium.launch({ args: ['--use-gl=angle', '--enable-unsafe-swiftshader'] });
+/**
+ * `--use-angle=metal` is not optional on this platform, and its absence is not a slow run but
+ * an indistinguishable one: without it ANGLE falls through to SwiftShader, the page renders on
+ * the CPU, and a probe that should take under a minute runs for tens of minutes and looks
+ * exactly like a hang. An agent lost an hour to that. `tools/shoot.mjs` already carries the
+ * flag and this file did not; the two are now the same launch.
+ */
+const browser = await chromium.launch({
+  args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+});
 const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
 
 const errors = [];
