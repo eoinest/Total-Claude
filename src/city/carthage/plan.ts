@@ -187,6 +187,13 @@ export const CARTHAGE_PLAN: CityPlan = {
       lanes,
       blocksByQuarter: fabric.blocksByQuarter,
       shedCount: harbours.shedCount,
+      heightAt,
+      // The towers as the wall itself published them, at the west end of the bay that carries
+      // one — not re-derived from a pitch, which is how a check ends up measuring its own
+      // arithmetic rather than the masonry.
+      towers: wall.garrisonBays
+        .filter((b) => b.hasTower)
+        .map((b) => ({ x: b.x0, z: b.z0, hw: b.towerHalf })),
     });
 
     // The water goes into the obstacle set *after* the checks are taken, so the assertion's

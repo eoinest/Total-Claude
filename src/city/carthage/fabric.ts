@@ -8,6 +8,7 @@ import {
   QUARTERS, shoreZAt, STOREY_H, type Quarter,
 } from './layout';
 import { PUN, tinted } from './palette';
+import { SEA_LEVEL } from '../../maps/carthage/topography';
 import { hash2, Rng } from '../../util/rand';
 import { clamp } from '../../util/math';
 
@@ -53,12 +54,63 @@ type Ground = (x: number, z: number) => number;
 /** Ground-floor clear height. Taller than the upper storeys because it is a shop. */
 const GROUND_H = 3.9;
 
+/**
+ * How far above the sea a block's whole footing has to stand.
+ *
+ * **The fabric had a coastline test in z and none in x, and the Lake of Tunis runs in x.**
+ * `planQuarter` refused anything seaward of `shoreZAt`, which is the Gulf of Tunis and is a
+ * function of x; the lake's edge is a function of z and nothing tested it. So the Salammbô
+ * quarter's grid marched straight across the lagoon behind the Taenia: measured against the
+ * built city, **22 footprints stood under the datum, 6,689 m² of the fabric's 357,376**, the
+ * deepest with its floor 9.3 m under water. Painted as splat nobody noticed; rendered as
+ * water they were houses in a lagoon.
+ *
+ * Testing the *bed* rather than adding a second authored polyline is deliberate and it is the
+ * same reasoning `WaterSurface` uses for the wetted extent: a coast and a city planned
+ * against two different curves is the bug seen from two sides, and there is only one
+ * heightfield. It also means a re-seed, a new quarter or a moved shoreline cannot put the
+ * problem back.
+ *
+ * 0.5 m rather than 0. The gulf's swell breathes the waterline in and out — `surge` 0.55 in
+ * the map's `WaterProfile`, and the shader's two-sine crest reaches 0.8 of it, so water laps
+ * to **+0.44 m** at the top of the swell. A house at +0.24 would stand in it twice a minute.
+ * `assertions.ts` measures the achieved clearance so this number cannot go quietly stale.
+ */
+const BUILD_FREEBOARD = 0.5;
+
+/**
+ * Is every part of this block's plan clear of the water?
+ *
+ * Nine samples — corners, edge midpoints and centre — rather than the four corners, because a
+ * block bridging the lagoon's scarp can have all four corners on dry ground and its middle
+ * 9 m under. Called once per candidate block at build time, so about 9,000 heightfield reads
+ * for the whole city.
+ */
+function dryFooting(
+  ground: Ground, x: number, z: number, hw: number, hd: number, rot: number
+): boolean {
+  const c = Math.cos(rot);
+  const s = Math.sin(rot);
+  for (let iu = -1; iu <= 1; iu++) {
+    for (let iv = -1; iv <= 1; iv++) {
+      const u = iu * hw;
+      const v = iv * hd;
+      if (ground(x + u * c - v * s, z + u * s + v * c) < SEA_LEVEL + BUILD_FREEBOARD) return false;
+    }
+  }
+  return true;
+}
+
 export interface FabricOutput {
   chunks: CityChunkSpec[];
   trees: TreeRequest[];
   footprints: { x: number; z: number; hw: number; hd: number; rot: number }[];
   lanes: Lane[];
-  blocksByQuarter: { id: string; placed: number; rejected: number; roofArea: number }[];
+  blocksByQuarter: {
+    id: string; placed: number; rejected: number; roofArea: number;
+    /** Of the rejected, how many were refused for standing in water. See `BUILD_FREEBOARD`. */
+    drowned: number;
+  }[];
 }
 
 interface Block {
@@ -177,11 +229,13 @@ function planQuarter(
   q: Quarter,
   rng: Rng,
   keepOut: KeepOut,
-  placed: PlacedGrid
-): { blocks: Block[]; lanes: Lane[]; rejected: number } {
+  placed: PlacedGrid,
+  ground: Ground
+): { blocks: Block[]; lanes: Lane[]; rejected: number; drowned: number } {
   const blocks: Block[] = [];
   const lanes: Lane[] = [];
   let rejected = 0;
+  let drowned = 0;
   const F = frame(q);
   const rot = q.rot + q.grid;
 
@@ -221,6 +275,7 @@ function planQuarter(
       const wx = F.x(u, v);
       const wz = F.z(u, v);
       if (wz < buildLineZAt(wx) || wz > shoreZAt(wx) - 26) { rejected++; continue; }
+      if (!dryFooting(ground, wx, wz, hw, hd, rot)) { rejected++; drowned++; continue; }
       if (keepOut.blockedRect(wx, wz, hw + 1.2, hd + 1.2, rot)) { rejected++; continue; }
       if (placed.hits(wx, wz, hw + 1.0, hd + 1.0, rot)) { rejected++; continue; }
       const h = hash2(i, j, Rng.hashString(q.id) & 0xffff);
@@ -262,7 +317,7 @@ function planQuarter(
       width: PUNIC_WAY_WIDTH.vicus,
     });
   }
-  return { blocks, lanes, rejected };
+  return { blocks, lanes, rejected, drowned };
 }
 
 // ---------------------------------------------------------------------------
@@ -479,7 +534,7 @@ export function buildFabric(heightAt: Ground, keepOut: KeepOut, seed: string): F
   const placed = new PlacedGrid();
 
   for (const q of QUARTERS) {
-    const out = planQuarter(q, rng.fork(q.id), keepOut, placed);
+    const out = planQuarter(q, rng.fork(q.id), keepOut, placed, heightAt);
     for (const b of out.blocks) placed.add(b);
     for (const l of out.lanes) lanes.push(l);
     let roofArea = 0;
@@ -488,7 +543,10 @@ export function buildFabric(heightAt: Ground, keepOut: KeepOut, seed: string): F
       roofArea += b.hw * b.hd * 4;
       if (b.kind === 'megara') plotTrees(b, trees);
     }
-    blocksByQuarter.push({ id: q.id, placed: out.blocks.length, rejected: out.rejected, roofArea });
+    blocksByQuarter.push({
+      id: q.id, placed: out.blocks.length, rejected: out.rejected, roofArea,
+      drowned: out.drowned,
+    });
 
     // Cut the quarter's blocks into chunks small enough for LOD to fire, by binning on a
     // grid rather than by sorting along one axis — a long thin run has the same radius as

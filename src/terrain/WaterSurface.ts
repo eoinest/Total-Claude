@@ -58,11 +58,18 @@ export interface WaterBasin {
     | { readonly kind: 'disc'; readonly x: number; readonly z: number; readonly outerR: number; readonly innerR?: number }
     | { readonly kind: 'rect'; readonly x: number; readonly z: number; readonly hw: number; readonly hd: number };
   /**
-   * Surface height as an offset from the *ground* at the basin's centre. A quay is built at
-   * ground level and the water sits a freeboard below it, so this is negative and it must be
-   * whatever the builder of the quays used.
+   * Surface height in world metres. **Absolute, not an offset from the ground.**
+   *
+   * It was `dy`, added to `heightAt(centre)`, on the reasoning that a quay is built at ground
+   * level and the water sits a freeboard below it. That is true of the quay and false of the
+   * water: Carthage's two basins join the Mediterranean through 21 m channels, and one ground
+   * sample at +0.34 and another at +1.76 gave them surfaces at −1.46 and −0.04 against a sea
+   * at 0. Connected water is at one height by definition, and that height is a property of
+   * the sea and not of the bed under the middle of the basin — which for the cothon is not
+   * bed at all, it is the admiralty island. Take it from the quay builder's own constant
+   * (`harbour.ts:BASIN_WATER_Y`) so the plate and the surface cannot drift apart.
    */
-  readonly dy: number;
+  readonly y: number;
   /** Water depth. The heightfield here is at quay level, so it cannot supply one. */
   readonly depth: number;
 }
@@ -294,7 +301,7 @@ export class WaterSurface {
     // ---- Authored basins ----------------------------------------------------
     for (const b of this.profile.basins ?? []) {
       const s = b.shape;
-      const y = this.terrain.heightAt(s.x, s.z) + b.dy;
+      const y = b.y;
       if (s.kind === 'rect') {
         quad(s.x - s.hw, s.z - s.hd, s.x + s.hw, s.z + s.hd, y, b.depth);
       } else {

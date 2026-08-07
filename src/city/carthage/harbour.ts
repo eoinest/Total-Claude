@@ -3,6 +3,7 @@ import { box, column, pavedField, statue, type Batch } from '../build';
 import type { Blocker, CityChunkSpec } from '../wall';
 import { COTHON, MERCHANT_HARBOUR } from './layout';
 import { PUN, tinted } from './palette';
+import { SEA_LEVEL } from '../../maps/carthage/topography';
 import { hash2 } from '../../util/rand';
 
 /**
@@ -46,14 +47,34 @@ import { hash2 } from '../../util/rand';
 const M4 = new THREE.Matrix4();
 
 /**
- * Quay stands this far above the water.
+ * **The water in both basins is the Mediterranean, so it stands at the Mediterranean's level.**
  *
- * Exported because the map's `WaterProfile` puts a rendered water surface in both basins and
- * it has to land on the same plane as the dark plate below it. A copy of this number in
- * `src/maps/` is a copy that can drift; an import cannot.
+ * This used to be `heightAt(basin centre) - FREEBOARD`, computed separately per basin, so the
+ * two had two different water levels and neither was the sea's. Measured: the cothon's ground
+ * sample is +0.34, putting its water at **−1.46**; the merchant basin's is +1.76, putting its
+ * water at **−0.04**; and the gulf both join through 21 m channels is at **0**. Painted as
+ * splat that is a shade of brown. Rendered as three surfaces it is three water levels inside
+ * 400 m, one of them a metre and a half down a hole.
+ *
+ * A basin open to the sea cannot carry its own datum. It takes the sea's, and the freeboard
+ * is then whatever the ground supplies rather than an input — which is the honest direction
+ * of causation, and `assertions.ts` measures the result rather than assuming it.
+ *
+ * Exported because the map's `WaterProfile` renders a surface in each basin and it has to
+ * land on this plane. A copy of the number in `src/maps/` is a copy that can drift; an import
+ * cannot.
+ */
+export const BASIN_WATER_Y = SEA_LEVEL;
+/**
+ * What a quay ought to stand above its water, §6.2 [GAME].
+ *
+ * No longer derives anything — see `BASIN_WATER_Y` — and is kept as the figure the built
+ * result is measured against, because "the cothon's quay clears its water by 0.34 m against a
+ * 1.8 m target" is a finding about the ground under the harbour, and a constant deleted for
+ * being unused is a finding thrown away.
  */
 export const FREEBOARD = 1.8;
-/** §6.2: 2.5-3.0 m of water in both basins. Exported for the same reason as `FREEBOARD`. */
+/** §6.2: 2.5-3.0 m of water in both basins. Exported for the same reason as `BASIN_WATER_Y`. */
 export const BASIN_DEPTH = 2.8;
 /** §6.3 [ARCH]: slipway width. */
 const SHED_BAY = 5.9;
@@ -171,7 +192,7 @@ const MH_KEYS = ['stone', 'road', 'concrete', 'timber', 'metal'] as const;
 
 export function buildHarbours(heightAt: (x: number, z: number) => number): HarbourOutput {
   const quayY = heightAt(COTHON.x, COTHON.z);
-  const waterY = quayY - FREEBOARD;
+  const waterY = BASIN_WATER_Y;
   const floorY = waterY - BASIN_DEPTH;
   // Sheds are 40 m deep and the annular water is 100 m, so 80 of it is shed and 20 is water.
   // That is §6.2's own arithmetic, and it is the check that the whole table hangs together.
@@ -238,7 +259,9 @@ export function buildHarbours(heightAt: (x: number, z: number) => number): Harbo
   // ---- the merchant harbour ------------------------------------------------
   const mh = MERCHANT_HARBOUR;
   const mQuayY = heightAt(mh.x, mh.z);
-  const mWaterY = mQuayY - FREEBOARD;
+  // Same sea, so the same surface. The 1.42 m of ground between the two basins' centres is a
+  // difference in freeboard, not a difference in water level.
+  const mWaterY = BASIN_WATER_Y;
   const mFloorY = mWaterY - BASIN_DEPTH;
   chunks.push({
     name: 'harbour-merchant',

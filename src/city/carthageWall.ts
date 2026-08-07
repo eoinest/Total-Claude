@@ -787,6 +787,18 @@ export interface WallLine {
   gateX: number;
   /** Centreline z for each x. */
   zAt: (x: number) => number;
+  /**
+   * This map's water datum, when the wall's ends run down to water.
+   *
+   * A **curtain** may die in a lagoon — at Carthage both ends do, and that is the design:
+   * §2.2, "the wall's two ends both die on water. There is no flank march on this map." A
+   * **tower** may not. It is a 22.5 m four-storey keep with a garrison bay and a bolt-shooter
+   * on its top, and the south anchor's stood on ground at **−0.75 m**, which nobody could see
+   * while the lagoon was painted splat and everybody can see now that it is a surface.
+   *
+   * Omitted by Rome, whose circuit touches no water, and then no footing test is made.
+   */
+  waterLevel?: number;
 }
 
 /**
@@ -865,9 +877,26 @@ export function buildCarthageWall(
    * gatehouse block, which carries its own pair. Keyed on where the block *is*, not on which
    * bay is flagged `isGate`: rounding a gate to the nearest tower is how Rome lost 23 m of
    * curtain beside the Porta Flaminia.
+   *
+   * **And never on a footing under water.** See `WallLine.waterLevel`. The test is the
+   * tower's own 11 m footprint and its 5.5 m projection past the face, not the centreline
+   * point, because the anchor tower's ground falls 0.3 m across its own width.
    */
+  const dryFooting = (x: number): boolean => {
+    const wl = spec.waterLevel;
+    if (wl === undefined) return true;
+    for (let i = -1; i <= 1; i++) {
+      const tx = x + i * TOWER_W * 0.5;
+      const cz = zAt(tx);
+      for (const dz of [-TOWER_PROJECT, 0, TOWER_W * 0.5]) {
+        if (heightAt(tx, cz + dz) < wl) return false;
+      }
+    }
+    return true;
+  };
   const towerAt = (bayIndex: number, bayX0: number): boolean =>
-    bayIndex % 2 === 0 && Math.abs(bayX0 - GATE_X) > GATE_BLOCK_W * 0.5 + TOWER_W * 0.5;
+    bayIndex % 2 === 0 && Math.abs(bayX0 - GATE_X) > GATE_BLOCK_W * 0.5 + TOWER_W * 0.5
+    && dryFooting(bayX0);
 
   // --- the main line ---------------------------------------------------------
   const bays: MainBay[] = [];
