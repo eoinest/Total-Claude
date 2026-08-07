@@ -1,4 +1,6 @@
 import { Faction } from '../../sim/types';
+import { buildCarthageWall, CARTHAGE_SECTION } from '../carthageWall';
+import { activeFortification } from '../fortification';
 import type { CityBuild, CityPlan } from '../cityPlan';
 import { buildDistricts } from '../insulae';
 import { buildLandmarks } from '../landmarks';
@@ -52,7 +54,6 @@ export const ROME_PLAN: CityPlan = {
    * of nowhere as the camera pulled back.
    */
   battlefieldZ: 250,
-  towerWidth: WALL.towerWidth,
   towerChamberHeight: WALL.towerChamberHeight,
   /**
    * 1.7 m merlons on 0.95 m gaps, which is exactly what the `crenellation()` call in
@@ -65,7 +66,35 @@ export const ROME_PLAN: CityPlan = {
   gateOpenWidth: GATE_OPEN_WIDTH,
 
   build(heightAt): CityBuild {
-    const wall = buildWall(heightAt, 'aurelian-271');
+    /**
+     * **The wall-development rig, and it is not the product path.**
+     *
+     * `?fort=carthage` swaps the Punic triple wall onto Rome's circuit line so the masonry
+     * could be built and graded — `tools/probe-carthage-wall.mjs`, 44 assertions — before a
+     * Carthage map existed to stand it on. It is genuinely useful and it stays.
+     *
+     * It lives *here*, in Rome's plan, rather than in `CitySystem`, because the selection of
+     * which city to build has exactly one home and that home is `MapDefinition.city`. Two
+     * module singletons that must agree with each other — one for the fabric, one for the
+     * masonry — is the same shape of bug as `hidesCity`, and a plan naming Rome's fabric with
+     * Carthage's wall describes no city that ever existed. Under this override that is
+     * precisely what you get, which is why it is a rig and says so.
+     *
+     * Note what it is standing on: `carthageWall.ts` takes `WALL_X_MIN`, `WALL_X_MAX`,
+     * `GATE_X` and `fitWallPath` from Rome's `layout.ts`, so the triple wall is currently
+     * built along the **Aurelian** line. On the Carthage map the line is
+     * `maps/carthage/topography.ts:carthageWallZ` — the terrain has already graded a bench
+     * under it and the scatter already clears its glacis there. See the seam note in
+     * `cityPlan.ts`.
+     */
+    const punic = activeFortification() === 'carthage';
+    const wall = punic
+      ? buildCarthageWall(heightAt, 'carthage-149')
+      : buildWall(heightAt, 'aurelian-271');
+    const cw = punic ? (wall as ReturnType<typeof buildCarthageWall>) : null;
+    if (cw && cw.sectionFaults.length > 0) {
+      console.warn(`[city] Punic section faults: ${cw.sectionFaults.join('; ')}`);
+    }
 
     // Reserve every landmark's *oriented rectangular* footprint before a single insula is
     // generated. A circle is not good enough: the Circus Maximus is 621 × 118 m, and the
@@ -157,6 +186,15 @@ export const ROME_PLAN: CityPlan = {
     return {
       wall,
       chunks,
+      // Present only under the `?fort=carthage` rig above; every one of them is defaulted by
+      // `CitySystem`, so the Aurelian circuit passes `undefined` and nothing downstream cares.
+      towerRise: cw?.towerRise,
+      outworks: cw?.outworks,
+      outworkTopAt: cw?.outworkTopAt,
+      casemates: cw?.casemates,
+      ditch: cw?.ditch ?? null,
+      occBlockers: cw?.occBlockers,
+      punicSection: cw ? { ...CARTHAGE_SECTION, faults: cw.sectionFaults } : null,
       landmarkFootprints: landmarks.footprints,
       buildingFootprints: districts.footprints,
       lanes: districts.lanes,

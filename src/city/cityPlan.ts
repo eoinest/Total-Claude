@@ -58,6 +58,50 @@ import type { Lane } from './insulae';
  *    neither edits the other's file, and neither edits `CitySystem.ts` at all.
  *
  * ---------------------------------------------------------------------------
+ * THE RULING ON THE TWO SEAMS THAT ARRIVED WHILE THIS WAS BEING WRITTEN
+ * ---------------------------------------------------------------------------
+ *
+ * Two workstreams reached this file independently and shipped different halves of it. They
+ * are **composable, not contradictory**, and both are kept.
+ *
+ *  - **`setFortification('carthage')`** (`fortification.ts`) chose *which wall*, and
+ *    `buildCarthageWall` returns the same `WallBuildOutput` `buildWall` does — so the chunk
+ *    baker, the raster, the obstacle set and all four siege accessors were already one code
+ *    path for both cities, and `Siege.ts` was never touched. That is exactly the contract
+ *    this file specifies, satisfied before it was written down.
+ *  - **`CityPlan`** chose *which city*, and pulled Rome out of `CitySystem.init` so the
+ *    shared machinery knows about neither. That is the half that scales to a third city.
+ *
+ * **The ruling: a plan chooses its own fortification, and the selection has exactly one
+ * home.** Two module singletons that must agree with each other — one for the fabric, one
+ * for the masonry — is the same shape of bug as `hidesCity`: a plan naming Rome's fabric
+ * with Carthage's wall describes no city that ever existed, and nothing would stop it. So
+ * `CityPlan.build` calls its own wall builder, and the one selector is `MapDefinition.city`.
+ *
+ * What that cost each side: nothing structural. A multi-line circuit publishes more than a
+ * single-line one — outworks, casemates, a ditch, a taller tower, a separate raster list —
+ * and those now ride on `CityBuild` as optionals that `CitySystem` reads with defaults,
+ * which is what the branch in `init` was doing anyway. `?fort=carthage` survives as a
+ * **development rig** on Rome's plan (see `rome/plan.ts`), because building and grading a
+ * wall before its map exists is genuinely useful; it is not the product path and it says so.
+ * Both probes stay green: `probe-wall` 19/19, `probe-carthage-wall` 44/44.
+ *
+ * **One thing this does not resolve, and it is a measurement rather than an opinion: there
+ * are three definitions of Carthage's wall line and only one can be true.**
+ *
+ *     maps/carthage/topography.ts  carthageWallZ   527 − 0.06241x + 2.945e−5x²,  x −968..1013
+ *     city/carthage/circuit.ts     circuitZAt      the same three §2.5 anchors, same span
+ *     city/carthageWall.ts         layout.ts       Rome's WALL_X_MIN/MAX and GATE_X
+ *
+ * The first two agree to the metre, because both were built from the spec's survey. The
+ * third is Rome's, correctly, because the Punic wall was developed as a swap on the Campus
+ * Martius. **It has to move**, and it has to move to the terrain's line rather than the other
+ * way round, because the heightfield has already graded a bench under `carthageWallZ` and the
+ * vegetation scatter already clears its glacis there — a wall built anywhere else stands on
+ * ungraded ground with trees through it, and `Siege.layOutGarrison` walks one continuous run
+ * of stations along a walkway that would then step by metres between bays.
+ *
+ * ---------------------------------------------------------------------------
  * WHAT A CITY MUST NOT DO
  * ---------------------------------------------------------------------------
  *
@@ -111,6 +155,20 @@ export type {
   WallSegmentOut,
   WallStair,
 } from './wall';
+
+/**
+ * The extras a **multi-line** fortification publishes on top of `WallBuildOutput`.
+ *
+ * Rome's circuit is one wall and needs none of them. Carthage's is Appian's triple wall — an
+ * outer palisade and ditch, a middle wall, and a main wall that is *hollow*, with elephant
+ * stables and barracks in its thickness — and those are things a single-line contract has no
+ * words for. Rather than widen `WallBuildOutput` for every city, they ride on `CityBuild` as
+ * optionals, and `CitySystem` reads each with a default so a one-wall city need not know they
+ * exist.
+ *
+ * `export type`, so this is erased: importing the contract does not import Carthage.
+ */
+export type { CarthageDitch, CasemateOut, OutworkOut } from './carthageWall';
 
 export type { Lane } from './insulae';
 
@@ -184,6 +242,41 @@ export interface CityBuild {
   /** Named monuments. See `CitySystem.getLandmarks`. */
   landmarks: readonly CityLandmarkRef[];
   checks: CityChecks;
+
+  // -- multi-line fortifications only; every one defaulted by `CitySystem` ----------------
+
+  /**
+   * How far a curtain tower rises above the bay crest, for its obstacle box. Defaults to
+   * `CityPlan.towerChamberHeight`.
+   */
+  towerRise?: number;
+  /** The outer and middle lines, if there are any. */
+  outworks?: readonly import('./carthageWall').OutworkOut[];
+  /** O(1) top-of-masonry over those lines, which `bayAt` cannot answer — it indexes one bay. */
+  outworkTopAt?: (x: number, z: number) => number;
+  /** Chambers inside the thickness of the main wall. */
+  casemates?: readonly import('./carthageWall').CasemateOut[];
+  ditch?: import('./carthageWall').CarthageDitch | null;
+  /**
+   * What the 4 m occupancy raster is painted from, when it differs from `wall.blockers`.
+   *
+   * A hollow wall's obstacle boxes are two skins with a walkable corridor between them, and a
+   * 1.5 m skin cannot be expressed in a 4 m cell — painting the skins would leave a 2.4 m
+   * hole clean through the curtain in `blocksMovement`. So the raster paints the solid
+   * section and the boxes carry the casemate.
+   */
+  occBlockers?: readonly { x1: number; z1: number; x2: number; z2: number; halfW: number }[];
+  /**
+   * The wall's own cross-section arithmetic, surfaced for a probe rather than trusted.
+   *
+   * **This is the one Carthage-shaped hole in a contract that is otherwise city-agnostic**,
+   * and it is named rather than hidden: the type is `CARTHAGE_SECTION`'s. Generalise it when
+   * a *third* multi-line fortification exists and there is a second instance to generalise
+   * against; inventing the abstraction now would be inventing it from one example.
+   */
+  punicSection?: (typeof import('./carthageWall').CARTHAGE_SECTION & {
+    faults: readonly string[];
+  }) | null;
 }
 
 /**
@@ -217,9 +310,15 @@ export interface CityPlan {
    * The battlefield is everything below it and both armies deploy there.
    */
   readonly battlefieldZ: number;
-  /** Plan width of a curtain tower, for its footprint circle and its obstacle box. */
-  readonly towerWidth: number;
-  /** Rise of the tower chamber above the bay crest, for the tower box's top. */
+  /**
+   * Default rise of a tower chamber above the bay crest, for the tower box's top. A wall that
+   * publishes `CityBuild.towerRise` overrides it.
+   *
+   * **There is deliberately no `towerWidth` here.** A tower's plan half-width is read from
+   * `GarrisonBay.towerHalf`, which the wall builder publishes per bay — so a circuit whose
+   * gate towers differ from its curtain towers can say so, and there is one fewer number for
+   * a plan to get wrong.
+   */
   readonly towerChamberHeight: number;
   /**
    * Crenellation period along a bay: merlon length, then the crenel gap between merlons.

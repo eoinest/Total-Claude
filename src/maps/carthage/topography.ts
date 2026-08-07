@@ -331,6 +331,41 @@ const hill = (
   return 20 + (skirtH - 20) * sstepLocal(1, 1.4, r);
 };
 
+/**
+ * Absolute Y of the Byrsa's analytic form at a point — the hill on its own, without the
+ * relief, the erosion or the detail octave the heightfield adds on top of it.
+ *
+ * **Published for `src/city/carthage/byrsa.ts`, which currently owns the citadel's 45 m as a
+ * function rather than as ground.** That was the right call while there was no Carthage
+ * heightfield: on the Campus Martius the hill has to be synthesised or a camera at the
+ * citadel is buried forty-five metres underground, the grass mask knows nothing about it and
+ * `Pathfinding` routes men through it. It stops being right the moment the terrain carries
+ * the hill, because then there are two Byrsas and they disagree.
+ *
+ * The seam is a `max`, and it collapses to nothing on this map:
+ *
+ *     byrsaReliefAt(x, z)  ===  Math.max(0, byrsaGroundAt(x, z) - terrain.heightAt(x, z))
+ *
+ * — zero everywhere on Carthage, because `regionalLand` already `max`es this in, and the full
+ * 45 m on any heightfield that does not. Nothing downstream changes.
+ *
+ * The numbers behind it, which are §5.1a's and not a taste: the footprint is **340 m in x by
+ * 200 m in z at the 20 m contour**, overriding the projection, because 45 m of uncompressed
+ * relief over a projected 154 m footprint is a **30° cliff** against a real 1:7.8. The
+ * override buys 1:3.8 on the approach face, which three stepped streets can climb and
+ * terraced housing can sit on. The summit is 60 m and the plateau is the projected
+ * 250 × 180 real metres. `assertSurveyElevations` fails the build if the face ever goes past
+ * 1:2.5.
+ */
+export const byrsaGroundAt = (x: number, z: number): number => {
+  const h = hill(x, z, BYRSA_X, BYRSA_Z, BYRSA_HW, BYRSA_HD,
+    BYRSA_PLATEAU_HW, BYRSA_PLATEAU_HD, BYRSA_SUMMIT, 8);
+  return Number.isFinite(h) ? h : -Infinity;
+};
+
+/** The overridden world footprint, half-extents at the 20 m contour. §5.1a. */
+export const BYRSA_FOOTPRINT = { hw: BYRSA_HW, hd: BYRSA_HD } as const;
+
 // ---------------------------------------------------------------------------
 // The regional surface
 // ---------------------------------------------------------------------------

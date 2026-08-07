@@ -5,7 +5,10 @@ import type { TerrainSystem } from '../terrain/TerrainSystem';
 import { HALF_EXTENT } from '../terrain/topography';
 import { clamp } from '../util/math';
 import { Batch } from './build';
-import type { CityChecks, CityLandmarkRef, CityPlan, PlanRect } from './cityPlan';
+import type {
+  CARTHAGE_SECTION, CarthageDitch, CasemateOut, OutworkOut,
+} from './carthageWall';
+import type { CityBuild, CityChecks, CityLandmarkRef, CityPlan, PlanRect } from './cityPlan';
 import type { Lane } from './insulae';
 import { CITY_MAT_KEYS, CityMaterials } from './materials';
 import { buildReferenceOverlay, type OverlayOptions, type ReferencePlan } from './overlay';
@@ -82,6 +85,29 @@ interface StrayReport {
   /** Worst overshoot past a chunk's declared radius, metres. */
   worst: number;
   offenders: { chunk: string; level: number; kind: string; x: number; z: number }[];
+}
+
+/**
+ * The standing masonry of one outwork bay: the whole run, or the two stubs either side of a
+ * passage.
+ *
+ * One helper, three consumers — the occupancy raster, the obstacle boxes and the geometry
+ * builder in `carthageWall.ts` all derive their spans from `passageAt` the same way. The
+ * staggered gate openings only mean anything if all three cut in the *same* six metres, and
+ * a boolean "this bay is a passage" already once threw away a 29.7 m bay for a 6 m gap.
+ */
+function outworkSpans(ow: OutworkOut): [number, number, number, number][] {
+  if (ow.standsDown) return [];
+  const len = Math.hypot(ow.x1 - ow.x0, ow.z1 - ow.z0);
+  const at = (t: number): [number, number] => [ow.x0 + ow.dx * t, ow.z0 + ow.dz * t];
+  if (ow.passageAt === null) return [[ow.x0, ow.z0, ow.x1, ow.z1]];
+  const half = 3.0;
+  const out: [number, number, number, number][] = [];
+  const a = Math.max(0, ow.passageAt - half);
+  const b = Math.min(len, ow.passageAt + half);
+  if (a > 0.5) out.push([...at(0), ...at(a)] as [number, number, number, number]);
+  if (b < len - 0.5) out.push([...at(b), ...at(len)] as [number, number, number, number]);
+  return out;
 }
 
 /** A curtain bay that stops movement, as `buildWall` reports it. */
@@ -217,6 +243,36 @@ export class CitySystem implements Subsystem {
    */
   private bayPitch = 1;
   private bayX0 = 0;
+  /**
+   * Carthage's outer and middle lines, and the O(1) lookup that reports their tops.
+   *
+   * Empty and null on the Aurelian circuit, which has one wall line and needs neither. They
+   * are held here rather than folded into `bays` because `bayAt` is index arithmetic in x
+   * and cannot answer with three different bays for one x — see `getOutworks`.
+   */
+  private outworks: readonly OutworkOut[] = [];
+  private outworkTopAt: ((x: number, z: number) => number) | null = null;
+  private casemates: readonly CasemateOut[] = [];
+  private ditch: CarthageDitch | null = null;
+  private punic: NonNullable<CityBuild['punicSection']> | null = null;
+  /**
+   * What the 4 m occupancy raster is painted from, when it differs from `blockers`.
+   *
+   * Null on Rome, where the wall is solid and the two are the same list. Carthage's main wall
+   * is hollow and its obstacle boxes say so — two skins with a walkable corridor between —
+   * but a 1.5 m skin cannot be expressed in a 4 m cell, and painting the skins into the
+   * raster would leave a 2.4 m hole clean through the curtain in `blocksMovement`. So the
+   * raster paints the solid section and the boxes carry the casemate. See `CasemateOut`.
+   */
+  private rasterBlockers: readonly WallBlocker[] | null = null;
+  /**
+   * How far a curtain tower rises above the bay crest, for its obstacle box.
+   *
+   * `WALL.towerChamberHeight` is Aurelian's 5.0 m ballista chamber; Appian's Punic towers
+   * are four storeys and stand 2.3 m clear of a wall that is itself twice as high. Held as
+   * a field so `buildObstacles` does not hard-code one circuit's tower into the other's.
+   */
+  private towerRise = 0;
   private occ = new Uint8Array(OCC_RES * OCC_RES);
   /** Oriented-box form of everything in `occ`. See `buildObstacles`. */
   private obstacles: Obstacle[] = [];
@@ -270,9 +326,39 @@ export class CitySystem implements Subsystem {
     this.groundAt = heightAt;
 
     // ---- plan ---------------------------------------------------------------
-    // Everything city-specific happens inside this one call. See `./cityPlan.ts`.
+    /**
+     * Everything city-specific happens inside this one call, **including which circuit
+     * stands on the crest.**
+     *
+     * This is the reconciliation of two seams that arrived independently. One selected the
+     * *fortification* through a module singleton (`setFortification('carthage')`, `?fort=`);
+     * the other selected the *city plan*. They are one decision, not two: a plan that named
+     * Rome's fabric and Carthage's wall describes no city that ever existed, and two
+     * singletons that must agree is the same shape of bug as `hidesCity`, which is what put
+     * Rome's wall across the plain of Pydna. So the plan calls its own wall builder and the
+     * selection has exactly one home — `MapDefinition.city`.
+     *
+     * Both builders return the same `WallBuildOutput`, so everything downstream of this line
+     * — the chunk baker, the occupancy raster, the obstacle set and all four accessors the
+     * siege system drives — is one code path for both cities. A multi-line circuit *adds*
+     * fields (outworks, casemates, a ditch, a taller tower, a separate raster list); it
+     * changes none, and every one of them is read with a default so a single-line wall need
+     * not know they exist.
+     */
     const built = this.plan.build(heightAt);
     const wall = built.wall;
+    this.outworks = built.outworks ?? [];
+    this.outworkTopAt = built.outworkTopAt ?? null;
+    this.casemates = built.casemates ?? [];
+    this.towerRise = built.towerRise ?? this.plan.towerChamberHeight;
+    this.rasterBlockers = built.occBlockers ?? null;
+    this.ditch = built.ditch ?? null;
+    this.punic = built.punicSection ?? null;
+    // The builder's own arithmetic, surfaced rather than trusted: a section that does not sum
+    // to its own stated thickness is a bug nobody sees until a probe walks the stone.
+    if (this.punic && this.punic.faults.length > 0) {
+      console.warn(`[city:${this.plan.id}] section faults: ${this.punic.faults.join('; ')}`);
+    }
     this.segments = wall.segments;
     this.gateList = wall.gates;
     this.gateBlock = wall.gateBlock;
@@ -304,10 +390,31 @@ export class CitySystem implements Subsystem {
     }
 
     // ---- movement blocking --------------------------------------------------
-    for (const b of wall.blockers) this.markSegment(b.x1, b.z1, b.x2, b.z2, b.halfW);
+    for (const b of this.rasterBlockers ?? wall.blockers) {
+      this.markSegment(b.x1, b.z1, b.x2, b.z2, b.halfW);
+    }
+    /**
+     * Carthage's forward lines, stamped from the same records `buildObstacles` reads.
+     *
+     * A bay flagged `passage` is skipped in *both* views, which is the whole reason the two
+     * are derived from one list: the staggered gate gaps and the posterns are what make a
+     * triple wall permeable, and a raster that closed them while the box set left them open
+     * would route a column at a gap the collision surface does not have.
+     */
+    for (const ow of this.outworks) {
+      for (const [ax, az, bx, bz] of outworkSpans(ow)) {
+        this.markSegment(ax, az, bx, bz, ow.halfThickness);
+      }
+    }
     // Tower footprints project beyond the curtain.
     for (const seg of this.segments) {
-      this.markCircle(seg.x1, seg.z1, this.plan.towerWidth * 0.5);
+      // `bay.towerHalf`, from the bay the wall itself published — not a plan-level constant.
+      // A circuit whose towers vary along it (Carthage's gate towers are not its curtain
+      // towers) can then say so per bay, and there is one fewer number for a plan to get
+      // wrong. The fallback is the bay's own thickness, not any city's tower width.
+      const bay = this.bayAt(seg.x1);
+      const towerHalf = bay && bay.towerHalf > 0 ? bay.towerHalf : (bay?.halfThickness ?? 0);
+      if (towerHalf > 0) this.markCircle(seg.x1, seg.z1, towerHalf);
     }
     /**
      * The nine flights onto the wall-walk, from the same helper `buildObstacles` uses, so
@@ -448,15 +555,43 @@ export class CitySystem implements Subsystem {
       // `hasTower`, not `towerHalf > 0`: `towerHalf` also carries the gatehouse's
       // intrusion into the bay it lands in, and a tower box there would be a phantom.
       if (!bay || !bay.hasTower) continue;
-      const top = (Number.isFinite(bay.crestY) ? bay.crestY : 0) + this.plan.towerChamberHeight;
+      // `this.towerRise`, not a constant: Aurelian's is a 5 m ballista chamber and Appian's
+      // Punic tower is four storeys on a wall already twice as high. `bay.towerHalf` for the
+      // same reason — it is `WALL.towerWidth * 0.5` on Rome, so this stays Rome-identical.
+      const top = (Number.isFinite(bay.crestY) ? bay.crestY : 0) + this.towerRise;
       out.push({
         x: seg.x1, z: seg.z1,
-        hw: this.plan.towerWidth * 0.5,
-        hd: this.plan.towerWidth * 0.5,
+        hw: bay.towerHalf,
+        hd: bay.towerHalf,
         rot: Math.atan2(seg.x2 - seg.x1, seg.z2 - seg.z1),
         topY: top,
         kind: 'tower',
       });
+    }
+
+    // ---- Carthage's outer and middle lines ----------------------------------
+    /**
+     * Real masonry, but not a garrison line.
+     *
+     * `bayAt` is index arithmetic in x and one x cannot name three bays, so the forward
+     * lines are published as their own records and stamped here rather than folded into
+     * `getGarrisonBays()`. Their `topY` is their own crest, which is metres below the main
+     * wall's walk: an attacker who takes the outer line is standing sixteen metres under the
+     * men shooting at him, and that is the arithmetic that makes a defence in depth mean
+     * something rather than being three walls in a row.
+     */
+    for (const ow of this.outworks) {
+      for (const [ax, az, bx, bz] of outworkSpans(ow)) {
+        const len = Math.hypot(bx - ax, bz - az);
+        if (len < 0.5) continue;
+        out.push({
+          x: (ax + bx) * 0.5, z: (az + bz) * 0.5,
+          hw: len * 0.5, hd: ow.halfThickness,
+          rot: Math.atan2(bz - az, bx - ax),
+          topY: ow.walkY,
+          kind: 'wall',
+        });
+      }
     }
 
     // ---- wall stairs --------------------------------------------------------
@@ -908,6 +1043,54 @@ export class CitySystem implements Subsystem {
     return door;
   }
 
+  /**
+   * The hollow stretches of Carthage's main wall. Empty on the Aurelian circuit.
+   *
+   * Deliberately *not* part of the four accessors the siege system drives. A casemate is a
+   * second level inside the wall and `GarrisonBay` describes exactly one walking surface per
+   * bay, so publishing galleries through `getGarrisonBays()` would put a garrison rank at a
+   * height there is no stone at. Anything that wants the inside of the wall — a stabling
+   * animation, a fire that spreads along it, a spec that decides the galleries are enterable
+   * — reads this instead, and the siege system carries on knowing nothing about it.
+   */
+  getCasemates(): readonly CasemateOut[] {
+    return this.casemates;
+  }
+
+  /**
+   * Carthage's outer and middle lines. Empty on the Aurelian circuit.
+   *
+   * `passage: true` marks the staggered gate gaps and the posterns — the bays where there is
+   * deliberately no masonry — and both the occupancy raster and `getObstacles()` skip exactly
+   * those, from this list, so the two cannot drift.
+   */
+  getOutworks(): readonly OutworkOut[] {
+    return this.outworks;
+  }
+
+  /**
+   * The ditch in front of Carthage's outwork, **as a request rather than as geometry**.
+   *
+   * `built` is false: a 20 × 6 m ditch is a cut in the heightfield and `src/terrain/` is not
+   * the city's to edit, so the plan and the profile are published for whoever owns it. Until
+   * that lands, the belt is 54.1 m of standing works and not the spec's 74.1, and saying
+   * which is which is the whole point of publishing it. Null on the Aurelian circuit.
+   */
+  getDitch(): CarthageDitch | null {
+    return this.ditch;
+  }
+
+  /**
+   * The Punic section, as the builder computed it, plus its own fault list.
+   *
+   * A probe that re-derives the arithmetic it is testing cannot fail, so this hands over the
+   * numbers the stone was actually built from. `faults` is empty when the section closes.
+   * Null on the Aurelian circuit.
+   */
+  punicSection(): (typeof CARTHAGE_SECTION & { faults: readonly string[] }) | null {
+    return this.punic;
+  }
+
   /** The bay whose run contains `x`, or undefined off either end of the circuit. */
   bayAt(x: number): GarrisonBay | undefined {
     if (this.bays.length === 0) return undefined;
@@ -938,6 +1121,18 @@ export class CitySystem implements Subsystem {
       const gt = (x - gb.x) * gb.dx + (z - gb.z) * gb.dz;
       const goff = (x - gb.x) * gb.nx + (z - gb.z) * gb.nz;
       if (Math.abs(gt) <= gb.halfRun && Math.abs(goff) <= gb.halfDepth) return gb.topY;
+    }
+    /**
+     * Carthage's forward lines, tested **before** the main wall.
+     *
+     * They stand 20 and 40 m out along the outward normal, which is well outside every bay's
+     * `halfThickness`, so without this an arrow lofted at the outer wall reports no masonry,
+     * passes through two lines of it and buries itself in the glacis behind them. Null on
+     * the Aurelian circuit, so Rome pays one null check per projectile and nothing else.
+     */
+    if (this.outworkTopAt !== null) {
+      const ow = this.outworkTopAt(x, z);
+      if (ow > -Infinity) return ow;
     }
     const bay = this.bayAt(x);
     if (!bay) return -Infinity;
