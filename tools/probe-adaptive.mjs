@@ -297,6 +297,7 @@ if (MODE === 'loop') {
      */
     eng.drainAfterFrame = true;
     aq.targetMs = TARGET;
+    aq.targetLocked = true;
     aq.enabled = true;
     aq.forceWarm();
     const rig = eng.rig;
@@ -320,7 +321,7 @@ if (MODE === 'loop') {
       // the only thing that touches 226 draws against a 220 budget.
       if (phase === 'pan') { rig.focus.x += Math.sin(performance.now() / 700) * 2.2; rig.focus.z += 0.9; }
       const s = aq.state();
-      if (log.length === 0 || performance.now() - log[log.length - 1].t > 250) {
+      if (log.length === 0 || (performance.now() - t0) - log[log.length - 1].t > 1000) {
         log.push({ t: +(performance.now() - t0).toFixed(0), phase, p: +s.pressure.toFixed(3), sc: s.appliedScale, gr: +s.grassDensity.toFixed(2), p50: +s.p50.toFixed(1), p90: +s.p90.toFixed(1), p99: +s.p99.toFixed(1), rg: s.regressing ? 1 : 0, la: s.latched ? 1 : 0 });
       }
     }

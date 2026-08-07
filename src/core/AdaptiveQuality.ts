@@ -483,6 +483,8 @@ export class AdaptiveQualitySystem implements Subsystem {
    * make on the player's behalf, but a 30 Hz panel should not be driven at 60.
    */
   targetMs = DEFAULT_TARGET_MS;
+  /** Set when a probe pins the budget, so refresh detection does not overwrite it. */
+  targetLocked = false;
   /** Detected display refresh period, or 0 when the loop is not display-paced (headless). */
   private refreshMs = 0;
   private ivP90 = 0;
@@ -670,7 +672,7 @@ export class AdaptiveQualitySystem implements Subsystem {
       if (Math.abs(ivP50 - r) < r * 0.15 && ivSpread < r * 0.5) { refresh = r; break; }
     }
     this.refreshMs = refresh;
-    if (refresh > 0) this.targetMs = Math.max(DEFAULT_TARGET_MS, refresh);
+    if (refresh > 0 && !this.targetLocked) this.targetMs = Math.max(DEFAULT_TARGET_MS, refresh);
 
     if (!this.warm) return;
 
