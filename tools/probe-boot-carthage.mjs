@@ -132,6 +132,48 @@ if (ready) {
  * anyway — `shoot.mjs` writes the provenance record and this does not — but the cheapest way
  * to keep a working frame out of a deck is for it never to look like a deck frame.
  */
+/**
+ * Quality-tier switch, which is its own bug class on this project.
+ *
+ * A CSM `rebuild()` without a matching `remove()` once rendered the whole world grey after a
+ * tier change, and a tier change is one click in the HUD. It cannot be caught by booting at a
+ * tier — the fault is in the *transition* — so this drives every tier in turn and reads the
+ * mean luminance of the frame back out of the canvas each time. Grey is not an error, it is a
+ * picture, so the check has to be photometric.
+ */
+if (ready && args.get('tiers')) {
+  const tiers = ['low', 'medium', 'high', 'ultra'];
+  const seen = [];
+  for (const t of tiers) {
+    await page.evaluate((q) => window.__game.engine.setQuality(q), t);
+    await page.waitForTimeout(700);
+    const m = await page.evaluate(() => {
+      const cv = document.getElementById('viewport');
+      const c = document.createElement('canvas');
+      c.width = 160;
+      c.height = 90;
+      const g = c.getContext('2d');
+      g.drawImage(cv, 0, 0, 160, 90);
+      const d = g.getImageData(0, 0, 160, 90).data;
+      let sum = 0;
+      let sq = 0;
+      const n = d.length / 4;
+      for (let i = 0; i < d.length; i += 4) {
+        const l = (0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]) / 255;
+        sum += l;
+        sq += l * l;
+      }
+      const mean = sum / n;
+      return { mean, sd: Math.sqrt(Math.max(0, sq / n - mean * mean)),
+               draws: window.__game.engine.renderer.info.render.calls };
+    });
+    seen.push(`${t} mean ${m.mean.toFixed(3)} sd ${m.sd.toFixed(3)} draws ${m.draws}`);
+    // A flat frame is the signature: the grey-world bug left the picture uniform, not dark.
+    if (m.sd < 0.02) errors.push(`TIER ${t} rendered flat (sd ${m.sd.toFixed(4)}) — grey world?`);
+  }
+  console.log(`[boot] tiers: ${seen.join(' | ')}`);
+}
+
 const outDir = args.get('shots');
 if (ready && outDir) {
   const fs = await import('node:fs/promises');
