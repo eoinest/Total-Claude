@@ -310,17 +310,22 @@ export function buildTowerShaft(): THREE.BufferGeometry {
     const ax = s0 * (t0 - 0.6);
     const bx = -s0 * (t1 - 0.6);
     /**
-     * Local −Z, so the stair stands under the same face the crossing path climbs.
+     * Local **+Z**, which is the rear — the open side, away from the wall.
      *
-     * That face is the one skinned in hide, so the stair is largely hidden from outside —
-     * a blind critic judging the machine said "the floor decks are there, nothing connects
-     * them". The honest fix is to skin the wall-facing side instead and leave this one open
-     * lattice, which is also how a real tower was built: the hides go where the missiles come
-     * from. That is a geometry change to `buildTowerShaft`'s skin placement and to the deck,
-     * and it is not made here because the sign convention has already been got wrong once and
-     * the boarding path depends on it. Left as reported work.
+     * This is the other half of the yaw fix, and it is the change the previous note here said
+     * was owed. The stair has to stand under the face the crossing path actually climbs, and
+     * that path musters at `-(TOWER_HALF_D + 1.6)` in the *tower's world frame*, i.e. on the
+     * side away from the masonry. With the shaft now drawn at `facing + PI` so its hide front
+     * (local −Z) faces the wall, the side away from the wall is local +Z, and that is where
+     * the flight and the ground doorway belong.
+     *
+     * It is also how the machine was really built: the hides go where the missiles come from,
+     * and the back is open lattice so the assault party is visible riding up it — the
+     * strongest single feature of `reference/siege/siege-tower-from-behind.jpg`, and the thing
+     * a blind critic could not find when it said "the floor decks are there, nothing connects
+     * them".
      */
-    const zz = -(D - 0.55);
+    const zz = D - 0.55;
     // Two stringers and the treads between them.
     for (const sx of [-1, 1]) {
       m.beam(ax, y0, zz + sx * 0.34, bx, y1, zz + sx * 0.34, 0.055, OAK_DARK);
@@ -333,9 +338,10 @@ export function buildTowerShaft(): THREE.BufferGeometry {
       m.beam(tx, ty, zz - 0.34, tx, ty, zz + 0.34, 0.04, OAK_PALE);
     }
   }
-  // Doorway in the rear face, at the foot of the stair: a gap in the skin with a lintel.
+  // Doorway in the rear face, at the foot of the stair: a lintel over the gap. Local +Z, on
+  // the open side away from the wall, matching the flight above it.
   const doorW = 0.85;
-  m.beam(-doorW, 1 / TOWER_FLOORS, -(D + spread), doorW, 1 / TOWER_FLOORS, -(D + spread), 0.09, OAK);
+  m.beam(-doorW, 1 / TOWER_FLOORS, D + spread, doorW, 1 / TOWER_FLOORS, D + spread, 0.09, OAK);
 
   const fo = 0.06;
   skin(
@@ -551,6 +557,155 @@ export function buildRamTrunk(): THREE.BufferGeometry {
       const rr = R * 1.08;
       m.quad(Math.cos(a0) * rr, Math.sin(a0) * rr, z + 0.09, Math.cos(a1) * rr, Math.sin(a1) * rr, z + 0.09,
         Math.cos(a1) * rr, Math.sin(a1) * rr, z - 0.09, Math.cos(a0) * rr, Math.sin(a0) * rr, z - 0.09, IRON);
+    }
+  }
+  return m.build();
+}
+
+// ---------------------------------------------------------------------------
+// The great ram — a *testudo arietaria* built to take a curtain down
+// ---------------------------------------------------------------------------
+
+/**
+ * The wall-breaker, and why it is a separate machine rather than the gate ram scaled up.
+ *
+ * A gate ram is a shed with a beam in it. This is a *building* on wheels: 11.6 m long and
+ * 3.4 m wide against the gate ram's 8.4 by 3.8, standing 4.2 m to the eaves, with a trunk of
+ * 11 m of oak hung on four slings instead of two. Vitruvius X.13 has Hegetor's ram at
+ * Byzantium at 55 m of beam on a shed with eight wheels; this is a tenth of that and still
+ * reads as the largest thing on the field.
+ *
+ * Uniform scaling was the cheap alternative and it is wrong twice over. A machine three
+ * times the mass does not have three-times-thicker planks — the timber sizes barely change,
+ * only the count of them — so a scaled shed reads as a toy photographed close up. And the
+ * silhouette that says "this one is for the wall" is the *proportion*: long and low and
+ * heavily raked, against the gate ram's short box.
+ */
+/**
+ * And it is *wider* than the gate ram, not merely longer.
+ *
+ * 1.7 was wrong and the assertion caught it: at 3.4 m across against the gate ram's 3.8 the
+ * great ram had only **1.24x** its footprint, because it had been made long and narrow
+ * rather than big. That reads as a different machine of the same size, which is not what
+ * "much larger, dedicated to tearing down walls" means.
+ *
+ * 4.8 m across is the width the job actually needs. The beam is 11 m of oak on four slings
+ * and the gang works it from both sides standing inside the shed, which is two files of men
+ * plus the swing of the trunk between them; at 3.4 m they would be shoulder to shoulder with
+ * a ten-tonne baulk. It also puts the wheels far enough apart that the thing does not tip
+ * crossing a ditch, which is the failure that ends most of these machines.
+ */
+export const GREAT_RAM_HALF_W = 2.4;
+export const GREAT_RAM_HALF_D = 5.8;
+export const GREAT_RAM_SHED_H = 4.2;
+/** Origin of the trunk to the tip of its iron head. See `RAM_TRUNK_REACH`. */
+export const GREAT_RAM_REACH = 11.9;
+
+export function buildGreatRamShed(): THREE.BufferGeometry {
+  const m = new Mesher();
+  const W = GREAT_RAM_HALF_W;
+  const D = GREAT_RAM_HALF_D;
+  const H = GREAT_RAM_SHED_H;
+  // Eight bays of framing rather than four: the give-away that this is a bigger machine and
+  // not a nearer one is that the members are the same size and there are twice as many.
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) m.beam(sx * W, 0, sz * D, sx * W, H, sz * D, 0.15, OAK);
+    for (let k = 1; k < 8; k++) {
+      const z = -D + (2 * D * k) / 8;
+      m.beam(sx * W, 0, z, sx * W, H, z, 0.1, OAK_DARK);
+      // Knee braces into the sill, which is what stops a shed this long racking.
+      m.beam(sx * W, 1.5, z, sx * W, 0.15, z - 1.1, 0.07, OAK);
+    }
+    m.beam(sx * W, H, -D, sx * W, H, D, 0.13, OAK);
+    m.beam(sx * W, 0.12, -D, sx * W, 0.12, D, 0.15, OAK);
+    // A second rail at chest height: the crew work standing inside this.
+    m.beam(sx * W, 1.9, -D, sx * W, 1.9, D, 0.09, OAK_DARK);
+  }
+  // Cross-ties over the crew, carrying the sling tackle.
+  for (let k = 0; k <= 8; k++) {
+    const z = -D + (2 * D * k) / 8;
+    m.beam(-W, H, z, W, H, z, 0.09, OAK_DARK);
+  }
+  // Steep pitched roof, hide over boards, with the ridge carried well past the front so a
+  // stone dropped from the parapet glances off before it reaches the head.
+  const ridge = H + 1.8;
+  m.quad(-W, H, -D, W, H, -D, W, ridge, -D, -W, ridge, -D, OAK_DARK);
+  m.quad(W, H, D, -W, H, D, -W, ridge, D, W, ridge, D, OAK_DARK);
+  for (let k = 0; k < 10; k++) {
+    const z0 = -D + (2 * D * k) / 10;
+    const z1 = -D + (2 * D * (k + 1)) / 10;
+    const c = k % 2 === 0 ? HIDE : HIDE_DARK;
+    m.quad(-W - 0.14, H, z0, 0, ridge, z0, 0, ridge, z1, -W - 0.14, H, z1, c);
+    m.quad(0, ridge, z0, W + 0.14, H, z0, W + 0.14, H, z1, 0, ridge, z1, c);
+  }
+  // A hide apron down the front face, hung clear of the head's travel.
+  m.quad(-W - 0.14, H, -D, W + 0.14, H, -D, W + 0.14, 2.6, -D - 0.5, -W - 0.14, 2.6, -D - 0.5, HIDE_DARK);
+  // Eight wheels on four axles. `RAM_HALF_D` gets two; this needs the bearing area.
+  for (const sz of [-1.5, -0.5, 0.5, 1.5]) {
+    const z = sz * (D - 1.0) * 0.66;
+    for (const sx of [-1, 1]) {
+      const cx = sx * (W + 0.17);
+      const R = 0.62;
+      for (let k = 0; k < 9; k++) {
+        const a0 = (k / 9) * Math.PI * 2;
+        const a1 = ((k + 1) / 9) * Math.PI * 2;
+        const y0 = R + Math.sin(a0) * R, z0 = z + Math.cos(a0) * R;
+        const y1 = R + Math.sin(a1) * R, z1 = z + Math.cos(a1) * R;
+        m.quad(cx - 0.16, y0, z0, cx + 0.16, y0, z0, cx + 0.16, y1, z1, cx - 0.16, y1, z1,
+          k % 2 === 0 ? OAK : OAK_DARK);
+        m.tri(cx + 0.16, R, z, cx + 0.16, y0, z0, cx + 0.16, y1, z1, OAK_PALE);
+        m.tri(cx - 0.16, R, z, cx - 0.16, y1, z1, cx - 0.16, y0, z0, OAK_DARK);
+      }
+    }
+    m.beam(-W - 0.2, 0.62, z, W + 0.2, 0.62, z, 0.1, IRON);
+  }
+  // Four slings, not two: eleven metres of oak needs carrying in more than one place.
+  for (const sz of [-2.4, -0.8, 0.8, 2.4]) {
+    for (const sx of [-1, 1]) {
+      m.beam(sx * 0.34, H - 0.12, sz, sx * 0.12, 1.85, sz, 0.04, ROPE);
+    }
+  }
+  return m.build();
+}
+
+/** Eleven metres of iron-bound oak. Authored along -Z from its origin, as the light one is. */
+export function buildGreatRamTrunk(): THREE.BufferGeometry {
+  const m = new Mesher();
+  const L = 10.7;
+  const seg = 10;
+  const R = 0.42;
+  for (let k = 0; k < seg; k++) {
+    const a0 = (k / seg) * Math.PI * 2;
+    const a1 = ((k + 1) / seg) * Math.PI * 2;
+    // Tapered: a real baulk is the trunk of a tree and is thicker at the butt.
+    const r0 = R, r1 = R * 0.82;
+    m.quad(Math.cos(a0) * r0, Math.sin(a0) * r0, 0, Math.cos(a1) * r0, Math.sin(a1) * r0, 0,
+      Math.cos(a1) * r1, Math.sin(a1) * r1, -L, Math.cos(a0) * r1, Math.sin(a0) * r1, -L,
+      k % 2 === 0 ? OAK : OAK_DARK);
+  }
+  // The head: a heavier casting than the gate ram's, with four horns instead of two.
+  const rr = R * 1.35;
+  for (let k = 0; k < seg; k++) {
+    const a0 = (k / seg) * Math.PI * 2;
+    const a1 = ((k + 1) / seg) * Math.PI * 2;
+    m.quad(Math.cos(a0) * rr, Math.sin(a0) * rr, -L, Math.cos(a1) * rr, Math.sin(a1) * rr, -L,
+      Math.cos(a1) * R * 0.66, Math.sin(a1) * R * 0.66, -L - 1.2,
+      Math.cos(a0) * R * 0.66, Math.sin(a0) * R * 0.66, -L - 1.2, IRON);
+  }
+  for (const sx of [-1, 1]) {
+    for (const sy of [-1, 1]) {
+      m.beam(sx * 0.3, sy * 0.24, -L - 0.3, sx * 0.62, sy * 0.46, -L - 0.85, 0.1, IRON);
+    }
+  }
+  // Iron bands, and the four sling collars they run between.
+  for (let k = 1; k < 9; k++) {
+    const z = -(L * k) / 9;
+    for (let s = 0; s < seg; s++) {
+      const a0 = (s / seg) * Math.PI * 2;
+      const a1 = ((s + 1) / seg) * Math.PI * 2;
+      const br = R * 1.1;
+      m.quad(Math.cos(a0) * br, Math.sin(a0) * br, z + 0.11, Math.cos(a1) * br, Math.sin(a1) * br, z + 0.11,
+        Math.cos(a1) * br, Math.sin(a1) * br, z - 0.11, Math.cos(a0) * br, Math.sin(a0) * br, z - 0.11, IRON);
     }
   }
   return m.build();

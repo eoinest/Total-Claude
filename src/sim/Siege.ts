@@ -7,8 +7,9 @@ import { SoldierState, UnitOrder, type UnitGroupState } from './types';
 import { clamp, lerp } from '../util/math';
 import { hash01, Rng } from '../util/rand';
 import {
-  RAMP_LEN, RAM_HALF_D, RAM_SHED_H, RAM_TRUNK_REACH, TOWER_FLOORS, TOWER_HALF_D, TOWER_HALF_W,
-  buildLadder, buildRamShed, buildRamTrunk,
+  GREAT_RAM_HALF_D, GREAT_RAM_HALF_W, GREAT_RAM_REACH, GREAT_RAM_SHED_H,
+  RAMP_LEN, RAM_HALF_D, RAM_HALF_W, RAM_SHED_H, RAM_TRUNK_REACH, TOWER_FLOORS, TOWER_HALF_D, TOWER_HALF_W,
+  buildGreatRamShed, buildGreatRamTrunk, buildLadder, buildRamShed, buildRamTrunk,
   buildTowerDeck, buildTowerRamp, buildTowerShaft, buildTowerWheels, siegeMaterial,
 } from './siegeGeometry';
 
@@ -75,8 +76,20 @@ const STATION_PITCH = 0.86;
 const WALL_RANK_PITCH = 0.72;
 /** Sideways offset applied to odd ranks so the packing interlocks. Half a station. */
 const WALL_RANK_STAGGER = STATION_PITCH * 0.5;
-/** Most ranks a walkway will ever take. */
-const MAX_WALL_RANKS = 3;
+/**
+ * Most ranks a walkway will ever take.
+ *
+ * Five, not three. The curtain workstream widened the wall from 3.5 to 6.0 m and the clear
+ * standing band with it, from 1.57 m to a measured **2.21-4.06 m** — which is four to six
+ * ranks at the 0.72 m interlocking pitch. `layOutGarrison` already computes the depth the
+ * band will take, so the only thing capping it at three was this constant, and the result
+ * was one rank at the parapet with bare stone behind: precisely what two blind critics read
+ * as "the walk has zero width".
+ *
+ * The player asked for a wider wall *so that more men fit on it*. Leaving this at three
+ * accepted the geometry and threw away the point of it.
+ */
+const MAX_WALL_RANKS = 5;
 /**
  * How fast a siege tower rolls, metres per second.
  *
@@ -102,16 +115,127 @@ const ADMIT_RADIUS = 1.6;
 const STATION_WINDOW = 14;
 /** `stationOf` for a man who has just come over the parapet and has no slot yet. */
 const PENDING_SLOT = -2;
+/**
+ * `stationOf` for a man who is inside a tower doorway, on a stair or in a breach.
+ *
+ * Distinct from `PENDING_SLOT` on purpose. Both mean "not standing on a station", and every
+ * consumer keys on `< 0` so both are skipped by the layout, the surface search and the
+ * lateral clamp — but `adoptBoarders` claims exactly the `PENDING_SLOT` men, and a man half
+ * way through a tower door is not a boarder to be adopted into a lodgement. Sharing the
+ * sentinel would have deposited a man in mid-air on the far side of the wall the first time
+ * a unit used a ramp and a tower pass in the same second.
+ */
+const ON_LINK = -3;
 /** Metres of travel over which his entry position is blended onto the path. */
 const ENTRY_BLEND = 1.0;
 /** Seconds between blows of a ram at full crew. */
 const RAM_PERIOD = 4.4;
 /** Blows a gate of this construction survives. Twin oak leaves, iron-bound. */
 const GATE_BLOWS = 26;
+/**
+ * Seconds between blows of the great ram, and the blows a curtain bay survives.
+ *
+ * The *testudo arietaria* at scale swings a trunk two or three times the mass of a gate
+ * ram, so the crew cannot cycle it as fast — 7.0 s against 4.4 — and 3.5 m of Aurelianic
+ * concrete-and-brick is not a pair of oak leaves. 74 blows at 7 s is about nine minutes of
+ * battering, which is fast for masonry and slow enough that the defence has a real chance
+ * to sally, burn the shed or drop a millstone on it. Vegetius IV.23 is explicit that the
+ * counter to a ram is the counter-weight and the fire, not the wall.
+ */
+const GREAT_RAM_PERIOD = 7.0;
+const WALL_BLOWS = 74;
+/**
+ * How far a derelict machine will look for a fresh gang, and how long it waits.
+ *
+ * 55 m is inside the assault's own frontage, so a ram at the gate draws on the storm column
+ * behind it and never on a unit that has no business being there. 40 s is long enough that a
+ * momentary rout does not write the machine off and short enough that an abandoned one stops
+ * being a live threat inside the span of a battle.
+ */
+const RECREW_RADIUS = 95;
+const DERELICT_LIMIT = 40;
+/** Ticks a wall order may run before it is abandoned as impossible. See `advancePlans`. */
+const PLAN_TIMEOUT = 30 * 60 * 10;
+/**
+ * Metres the order destination must jump before it counts as a new order.
+ *
+ * `trackOwnedAnchors` mirrors a siege-owned unit's centroid into `targetX/targetZ`, so the
+ * value drifts by centimetres a tick as the men shuffle. A click moves it by metres. Four is
+ * far above the drift and far below any order worth giving.
+ */
+const ORDER_JUMP = 4;
+
+/**
+ * Speed a man moves along a wall-walk while traversing between runs, m/s.
+ *
+ * Slower than the 1.35 m/s of a boarding ramp: a tower pass threads a doorway barely a man
+ * wide and turns twice inside the chamber, and the construction steps between bays are
+ * uneven. It is also what keeps a lateral redeployment feeling like a decision with a cost
+ * — 35 m of curtain plus a tower is about forty seconds — rather than a teleport.
+ */
+const CROSS_PASS = 1.05;
+/**
+ * How far apart two consecutive runs' ends may be and still be linked, metres.
+ *
+ * A run break is one of three things: a tower (the stations stop `towerHalf + 0.55` short
+ * of the tower centre on each side, so the gap across a 3.8 m half-footprint is about
+ * 8.7 m), a construction step where `walkY` jumps, or a bay that carries no walkway at all.
+ * The first two are crossable and the third is a hole in the wall. 14 m separates them:
+ * measured, the tower gaps on this circuit run 8.3–9.4 m and the nearest unbuilt-bay gap is
+ * 44 m, so the classifier has thirty metres of daylight in it.
+ */
+const LINK_MAX_GAP = 14;
+/** Farthest a click may be from the wall's plan footprint and still mean "get on the wall". */
+const WALL_CLICK_BAND = 1.7;
+/**
+ * Metres of ordinary walking a man will do to reach a link mouth before he is admitted.
+ *
+ * The mouth of a stair or a tower pass is a point on the walkway, and a man walking to it
+ * is steered there by `steerToSlots` like any other slot. Only once he is inside this
+ * radius does the crossing take him over, which is what stops a man on the far side of the
+ * bay being snatched onto a path he has not reached.
+ */
+const LINK_ADMIT = 2.0;
+/**
+ * Lanes a practicable breach is stormed in abreast, and how wide the hole is.
+ *
+ * 4.5 m either side of the point of impact is a 9 m breach, which is the width a ram working
+ * one spot actually brings down once the arch of the surrounding masonry gives. Five lanes
+ * at 1.6 m centres is 8 m of storming front inside it — nearly twice the 4.3 m of the gate
+ * carriageway, and that ratio is the entire argument for building the machine.
+ *
+ * `BREACH_STUB_DROP` is how far below the old walkway the rubble saddle sits. Not to ground
+ * level: a breach is practicable when you can climb it, not when it is a doorway, and the
+ * stub of core-work left standing is what a man goes over.
+ */
+const BREACH_LANES = 5;
+const BREACH_HALF_W = 4.5;
+const BREACH_STUB_DROP = 2.4;
+
+/**
+ * Cadence of the **synthesised fallback** stairs, in bays, and the pitch of a flight.
+ *
+ * These mirror `src/city/wall.ts buildTower`, which emits a stone flight on the curtain's
+ * inner face when `index % 4 === 2`, with `rise 0.31` and `tread 0.34`. They are the only
+ * numbers in this file that duplicate a rule owned by another workstream, and they exist for
+ * exactly one reason: **the city publishes no stair record today**.
+ *
+ * `buildStairs` asks for `city.getWallStairs()` first and believes it absolutely when it is
+ * there, never reading these again. The wall workstream is rebuilding the flights to run
+ * parallel to the curtain, at which point a synthesised perpendicular flight would be men
+ * walking up thin air — which is the ladder failure in a new costume. So the probe prints
+ * the provenance on every run: `published` or `synthesised`. The day the API lands the
+ * output changes and no line of this file does. The patch is in the report.
+ */
+const STAIR_MOD = 4;
+const STAIR_PHASE = 2;
+const STAIR_SLOPE = 0.34 / 0.31;
 
 const MAX_TOWERS = 6;
 const MAX_RAMS = 2;
 const MAX_LADDERS = 24;
+/** Great rams. Two is already a siege train nobody could afford twice. */
+const MAX_GREAT_RAMS = 2;
 
 // ---------------------------------------------------------------------------
 
@@ -148,10 +272,63 @@ interface SiegeTower {
   crossing: Crossing | null;
   /** Distance still to run, metres, for the report. */
   dist: number;
+  /** Slant length the *pons* was cut to, and the pitch that lands it. See `spawnTower`. */
+  rampLen: number;
+  rampLanded: number;
+  /** Horizontal distance from the hinge to where the lip lands, along the bay's normal. */
+  rampReach: number;
+}
+
+/**
+ * Which machine, and therefore what it is trying to knock down.
+ *
+ * The light ram goes for the gate because the gate is the one part of a circuit that is
+ * made of wood. The *great* ram goes for the curtain, which is the only reason to build
+ * something that heavy: you accept nine minutes of battering and a crew of eighty to make a
+ * hole where the defence has not built a killing ground, instead of walking into the one
+ * they have.
+ */
+const enum RamKind {
+  Gate = 0,
+  Great = 1,
+}
+
+/**
+ * What a ram is doing, and — the part that matters — what it does once it has won.
+ *
+ * A ram that breaks a gate and then sits in the hole is the worst outcome the feature has:
+ * it corks the only way in, it cannot be killed, and it cannot be moved, so an assault
+ * stalls on its own success. Reported by the player in exactly those terms. Three of these
+ * five states exist to make sure that cannot happen.
+ *
+ * `Withdrawing` is the real answer and it is also the historical one. You do not leave a
+ * *testudo arietaria* standing in the gateway you have just opened; the storming column is
+ * behind it and the shed is in their way. The crew haul it back off the threshold and the
+ * column goes in past it. Ammianus has the Persians at Amida clearing their engines before
+ * the assault went in, for the same unremarkable reason.
+ */
+const enum RamState {
+  Approach = 0,
+  Battering = 1,
+  /** Hauling back out of the passage it has just opened. */
+  Withdrawing = 2,
+  /** Parked clear, job done. Still drawn, no longer in anybody's way. */
+  Spent = 3,
+  /** Crew dead or fled. A low, passable heap of burnt timber. */
+  Wreck = 4,
 }
 
 interface SiegeRam {
   id: number;
+  kind: RamKind;
+  state: RamState;
+  /** Where it hauls back to once the gate is down: clear of the threshold, on its own side. */
+  parkX: number;
+  parkZ: number;
+  /** True once the crew are gone and the machine is a ruin rather than a weapon. */
+  wreck: boolean;
+  /** Seconds with nobody working it. See `DERELICT_LIMIT`. */
+  derelictFor: number;
   x: number;
   z: number;
   y: number;
@@ -165,6 +342,106 @@ interface SiegeRam {
   targetX: number;
   targetZ: number;
   blows: number;
+  /** For a great ram: the bay it is breaking, and the station it is squared up to. */
+  bay: number;
+  station: number;
+}
+
+/**
+ * A stair from the ground to the wall-walk.
+ *
+ * Read from the city where the city publishes them and synthesised from the bays where it
+ * does not — see `buildStairs`. Either way nothing here knows or cares which, because both
+ * paths produce the same record and the crossing is built from the record.
+ */
+interface WallStair {
+  /** Foot, on the ground, at the bottom of the flight. */
+  footX: number;
+  footZ: number;
+  footY: number;
+  /** Head, on the walkway. */
+  topX: number;
+  topZ: number;
+  topY: number;
+  /** Spine station the head lands on. */
+  station: number;
+  /** Which side of the wall the flight is on: -1 cityward, +1 outward. */
+  side: -1 | 1;
+  /** Clear width of the flight, metres. Only used to space the file that climbs it. */
+  width: number;
+  /** True when the city published it; false when this is a synthesised fallback. */
+  fromCity: boolean;
+}
+
+/**
+ * How two things a man can stand on are joined.
+ *
+ * This is the whole of "the wall is traversable terrain". A run of walkway is a place; a
+ * link is the only way between two places; and a link is a `Crossing`, so every property
+ * the crossing representation already guarantees — cannot fall, cannot be shoved off,
+ * cannot teleport, one man at a time in file — is inherited rather than re-argued.
+ */
+const enum LinkKind {
+  /** Through a tower chamber, from the run on one side to the run on the other. */
+  TowerPass = 0,
+  /** Over a construction step between two bays whose walkways are at different heights. */
+  Step = 1,
+  /** Ground to walkway. Traversable in both directions, which is the point. */
+  Stair = 2,
+  /** Through a hole the great ram made: outside ground to inside ground. */
+  Breach = 3,
+}
+
+interface WallLink {
+  id: number;
+  kind: LinkKind;
+  /** Run at the `a` end. -1 means the ground. */
+  runA: number;
+  /** Run at the `b` end. -1 means the ground. */
+  runB: number;
+  /** Station at each end; -1 at a ground end. */
+  stationA: number;
+  stationB: number;
+  /** Mouth of the link at each end, in world space — where a man must get to. */
+  ax: number; az: number; ay: number;
+  bx: number; bz: number; by: number;
+  /** Paths, authored a->b and b->a. Built lazily, because most links are never used. */
+  ab: Crossing | null;
+  ba: Crossing | null;
+  /** Men who have completed it, either way. For the report. */
+  used: number;
+  /** A breach lane is one of `BREACH_LANES` parallel copies; this is which. */
+  lane: number;
+}
+
+/** What a unit has been told to do about the wall. */
+const enum WallGoal {
+  /** Nothing; it is a garrison standing where it stands. */
+  Hold = 0,
+  /** Get onto the wall at `destStation`, from the ground, via `stair`. */
+  Ascend = 1,
+  /** Move along the wall to `destStation`, through whatever links are between. */
+  Traverse = 2,
+  /** Get off the wall to (gx, gz), via `stair`. */
+  Descend = 3,
+  /** Storm a practicable breach: outside ground, up the rubble, down into the city. */
+  Storm = 4,
+}
+
+interface WallPlan {
+  goal: WallGoal;
+  /** Station the unit is forming on once it arrives. */
+  destStation: number;
+  destRun: number;
+  /** Stair index for an ascent or a descent, or -1. */
+  stair: number;
+  /** Ground point for a descent. */
+  gx: number;
+  gz: number;
+  /** Ticks the plan has been running, so a stuck one can be reported rather than hidden. */
+  age: number;
+  /** Men this plan could not move on the last tick. Reported, never silently absorbed. */
+  stuck: number;
 }
 
 interface Ladder {
@@ -195,10 +472,21 @@ interface Crossing {
   /** Cumulative arc length at each point, so `arc[n-1]` is the total. */
   arc: Float32Array;
   n: number;
-  /** Where a man who finishes the crossing ends up on the spine. */
+  /**
+   * Where a man who finishes the crossing ends up on the spine, or -1 if it ends on the
+   * ground — which is what a stair traversed downward and a breach both do.
+   */
   destStation: number;
   /** Soldier indices currently on the path, ordered from furthest along to least. */
   queue: number[];
+  /**
+   * Speed multiplier for the non-steep legs.
+   *
+   * A tower pass is threaded through a doorway and turns twice; a boarding ramp is a
+   * straight run at a charge. Both are `CROSS_WALK` legs by the steepness test and they are
+   * not the same movement, so the path carries its own pace.
+   */
+  pace: number;
 }
 
 interface Garrison {
@@ -222,6 +510,17 @@ interface Garrison {
   sticky: boolean;
   /** Arrivals so far, for the next-free-slot cursor. */
   filled: number;
+  /** Men the last layout could not fit on this run. See `layOutGarrison`. */
+  overflow: number;
+  /**
+   * The order destination this garrison was last seen with.
+   *
+   * `interceptOrders` compares against it to tell a real click from the sim changing
+   * `u.order` on its own. Seeded from the unit's own position, which is where
+   * `trackOwnedAnchors` keeps the target while the siege system owns the unit.
+   */
+  lastTx: number;
+  lastTz: number;
 }
 
 const TMP_M = new THREE.Matrix4();
@@ -233,17 +532,51 @@ const TMP_C = new THREE.Color();
 /** Read-back scratch for the diagnostics, kept clear of the ones `setInstance` writes. */
 const TMP_R = new THREE.Vector3();
 
+interface CityBayView {
+  index: number; x0: number; z0: number; x1: number; z1: number;
+  nx: number; nz: number; dx: number; dz: number; length: number;
+  walkY: number; groundY: number; crestY: number; sillY: number;
+  parapetInner: number; parapetOuter: number;
+  innerOff: number; outerOff: number; garrisonable: boolean; towerHalf: number;
+  isGate: boolean; stage: string;
+}
+
+/**
+ * What a stair looks like when the city publishes one.
+ *
+ * Deliberately in world space and deliberately not a description of the geometry. The wall
+ * workstream is rebuilding the flights to run *parallel* to the curtain instead of
+ * perpendicular to it, and a record that said "perpendicular, 2.4 m wide, at the tower"
+ * would have to be renegotiated the moment that landed. Two endpoints and a width survive
+ * any arrangement of treads between them.
+ */
+interface CityStairView {
+  footX: number; footZ: number; footY: number;
+  topX: number; topZ: number; topY: number;
+  /** Optional; derived from the endpoints when absent. */
+  width?: number;
+  /** Optional; derived from which side of the wall the foot stands on when absent. */
+  side?: number;
+}
+
 interface CityView {
-  getGarrisonBays(): readonly {
-    index: number; x0: number; z0: number; x1: number; z1: number;
-    nx: number; nz: number; dx: number; dz: number; length: number;
-    walkY: number; groundY: number; crestY: number; sillY: number;
-    parapetInner: number; parapetOuter: number;
-    innerOff: number; outerOff: number; garrisonable: boolean; towerHalf: number;
-    isGate: boolean; stage: string;
-  }[];
+  getGarrisonBays(): readonly CityBayView[];
   getGates(): { id: string; x: number; z: number; facing: number; open: boolean }[];
   setGateOpen(id: string, open: boolean): void;
+  /**
+   * Optional, and the whole reason the stair mechanic reads the city instead of guessing.
+   *
+   * Absent today. `buildStairs` synthesises a set from the bays when it is, and reports
+   * which of the two it used, so the day this lands the probe's assertion goes from
+   * "synthesised" to "published" without a line of this file changing.
+   */
+  getWallStairs?(): readonly CityStairView[];
+  /**
+   * Optional. Cuts a passage through the curtain where the great ram has broken it, in the
+   * occupancy grid and in the oriented-box set, exactly as `setGateOpen(id, true)` does for
+   * the gate. Absent today; see the patch in this workstream's report.
+   */
+  breachWall?(x: number, z: number, halfWidth: number): void;
 }
 
 export class Siege implements ElevationOwner {
@@ -287,6 +620,36 @@ export class Siege implements ElevationOwner {
    */
   private sRun = new Int32Array(0);
   private nStations = 0;
+  /**
+   * First and last station of each run, indexed by run.
+   *
+   * `runBounds` used to walk outward from a station comparing run ids, which is O(run
+   * length) and ran twice for every garrisoned man every tick — 810 men times a mean run of
+   * 38 stations. Precomputing it is the difference between 62,000 comparisons a tick and two
+   * array reads, and the wall does not move.
+   */
+  private runLo = new Int32Array(0);
+  private runHi = new Int32Array(0);
+  private nRuns = 0;
+  /**
+   * 1 where the great ram has brought the walkway down. A dead station is not a place to
+   * stand and not a place to walk through, so it splits its run in two.
+   */
+  private sDead = new Uint8Array(0);
+  /**
+   * Which unit holds each station, or -1. The ledger behind "the run you want is occupied":
+   * a garrison laying out along a run takes the free window and no more.
+   */
+  private sOwner = new Int32Array(0);
+
+  // ---- the wall as a graph ----
+  private stairs: WallStair[] = [];
+  private links: WallLink[] = [];
+  /** Link joining run k to run k+1, or -1. Indexed by run. */
+  private runNext = new Int32Array(0);
+  /** Links whose foot is on the ground, by run they reach. Indexed by run; -1 if none. */
+  private runStair = new Int32Array(0);
+  private stairsFromCity = false;
 
   // ---- entities ----
   private towers: SiegeTower[] = [];
@@ -295,6 +658,8 @@ export class Siege implements ElevationOwner {
   private garrisons = new Map<number, Garrison>();
   /** Units whose men the siege system places. Includes garrisons and boarding parties. */
   private owned = new Set<number>();
+  /** Movement orders the player or the AI has given a unit about the wall. */
+  private plans = new Map<number, WallPlan>();
 
   // ---- per-soldier crossing state ----
   /** Which crossing this man is on, or -1. Indexed by soldier. */
@@ -317,10 +682,34 @@ export class Siege implements ElevationOwner {
   private stationOf!: Int32Array;
   /** Which rank of the walkway he holds. */
   private rankOf!: Uint8Array;
+  /** The link he is on, or -1. */
+  private linkOf!: Int32Array;
+  /** 0 while he is walking it a->b, 1 for b->a. */
+  private linkDir!: Uint8Array;
+  /** The link he is walking toward and will be admitted to, or -1. */
+  private wantLink!: Int32Array;
+  private wantDir!: Uint8Array;
 
   // ---- gate ----
   private gateBlows = 0;
   private gateBreached = false;
+  /**
+   * The gate starts **shut**, and this is the flag that says so before anything has hit it.
+   *
+   * Reverted work, stated plainly: the first version left the leaves open and the ram's only
+   * effect was that they could no longer be closed, which is a mechanic nobody can see. A
+   * gate that is already a hole is not a target. `init` shuts it against the city's own
+   * movement grid, so a column ordered into Rome has to go round or wait for the ram.
+   */
+  private gateShutAtStart = false;
+  /** Whether `armGate` has run. See it for why this is not done in `init`. */
+  private gateArmed = false;
+  /** Blows landed on each curtain bay by a great ram, indexed by bay index. */
+  private bayBlows = new Map<number, number>();
+  /** Bays the great ram has brought down, in the order they fell. */
+  private breachedBays: number[] = [];
+  /** Link ids of the storming lanes through those breaches. */
+  private breachLinks: number[] = [];
 
   // ---- diagnostics ----
   /** Missiles released by men whose feet were on a wall-walk. */
@@ -340,6 +729,8 @@ export class Siege implements ElevationOwner {
   private mShed?: THREE.InstancedMesh;
   private mTrunk?: THREE.InstancedMesh;
   private mLadder?: THREE.InstancedMesh;
+  private mGreatShed?: THREE.InstancedMesh;
+  private mGreatTrunk?: THREE.InstancedMesh;
 
   // -------------------------------------------------------------------------
   // Setup
@@ -361,11 +752,46 @@ export class Siege implements ElevationOwner {
     this.crossEz = new Float32Array(cap);
     this.stationOf = new Int32Array(cap).fill(-1);
     this.rankOf = new Uint8Array(cap);
+    this.linkOf = new Int32Array(cap).fill(-1);
+    this.linkDir = new Uint8Array(cap);
+    this.wantLink = new Int32Array(cap).fill(-1);
+    this.wantDir = new Uint8Array(cap);
 
     this.buildSpine();
+    this.buildStairs();
+    this.buildLinks();
     this.buildMeshes(ctx);
 
     battle.elevation = this;
+  }
+
+  /**
+   * Close the Porta Flaminia, on the first tick rather than in `init`.
+   *
+   * `CitySystem.setGateOpen(id, false)` paints the carriageway back into the occupancy
+   * raster and re-cuts the curtain's oriented boxes, and that is the one call that makes a
+   * shut gate a *wall* as far as pathfinding, the crowd solver and the obstacle push-out are
+   * concerned — without it the closed gate is a picture of a door.
+   *
+   * Doing it in `init` looked right and did not work. `CitySystem` clears the carriageway
+   * unconditionally as part of its own build — "the gate passage is open: clear it again so
+   * units can march through" — and that clear lands *after* `BattleSystem.init` runs. So the
+   * flag flipped, `getGates()[0].open` read false, and the raster was wide open behind it:
+   * measured, `blocksMovement` straight through the gateway returned false at t=0 while a
+   * manual open-then-shut toggle in the same session returned true. A state that reports
+   * itself correct while being wrong is the worst kind, so this now runs once the world is
+   * built and *verifies* rather than assuming.
+   */
+  private armGate(): void {
+    this.gateArmed = true;
+    const city = this.city;
+    const gate = city?.getGates()[0];
+    if (!city || !gate) return;
+    // Force the mark even if the flag already says shut: the flag and the raster had come
+    // apart once and only the raster decides whether anybody can walk through.
+    if (gate.open) city.setGateOpen(gate.id, false);
+    else { city.setGateOpen(gate.id, true); city.setGateOpen(gate.id, false); }
+    this.gateShutAtStart = true;
   }
 
   /** Late binding: the projectile system is registered after the battle. */
@@ -432,27 +858,246 @@ export class Siege implements ElevationOwner {
     this.sCrest = new Float32Array(crests);
     this.sBay = new Int32Array(bidx);
 
-    // Split into walkable runs. 0.62 m is a high step but a possible one; the breaks this
-    // is really catching are metres deep.
+    this.sDead = new Uint8Array(this.nStations);
+    this.sOwner = new Int32Array(this.nStations).fill(-1);
+    this.recut();
+  }
+
+  /**
+   * (Re)split the spine into walkable runs and index their bounds.
+   *
+   * Called at init and again whenever a great ram takes a bay down, because a breach is
+   * exactly a new run boundary: the stations over the hole stop being places to stand, and
+   * the walkway either side of it becomes two separate runs that a man can no longer walk
+   * between. Everything downstream — garrison layout, the standing-surface search, a
+   * lodgement spreading out — already refuses to cross a run boundary, so a breach needs no
+   * special case anywhere but here.
+   *
+   * 0.62 m is a high step but a possible one; the breaks this is really catching are metres
+   * deep.
+   */
+  private recut(): void {
     this.sRun = new Int32Array(this.nStations);
     let run = 0;
-    for (let i = 1; i < this.nStations; i++) {
-      const dx = this.sx[i] - this.sx[i - 1];
-      const dz = this.sz[i] - this.sz[i - 1];
-      const dy = Math.abs(this.sy[i] - this.sy[i - 1]);
-      if (Math.hypot(dx, dz) > STATION_PITCH * 1.9 || dy > 0.62) run++;
+    for (let i = 0; i < this.nStations; i++) {
+      if (i > 0) {
+        const dx = this.sx[i] - this.sx[i - 1];
+        const dz = this.sz[i] - this.sz[i - 1];
+        const dy = Math.abs(this.sy[i] - this.sy[i - 1]);
+        // A dead station on either side of the joint is a break: you cannot walk over a
+        // hole, and you cannot walk out of one.
+        if (Math.hypot(dx, dz) > STATION_PITCH * 1.9 || dy > 0.62
+          || this.sDead[i] !== this.sDead[i - 1]) run++;
+      }
       this.sRun[i] = run;
+    }
+    this.nRuns = this.nStations === 0 ? 0 : run + 1;
+    this.runLo = new Int32Array(this.nRuns).fill(-1);
+    this.runHi = new Int32Array(this.nRuns).fill(-1);
+    for (let i = 0; i < this.nStations; i++) {
+      const r = this.sRun[i];
+      if (this.runLo[r] < 0) this.runLo[r] = i;
+      this.runHi[r] = i;
     }
   }
 
-  /** First and last station of the run containing `station`. */
+  /** First and last station of the run containing `station`. O(1); see `runLo`. */
   private runBounds(station: number): { lo: number; hi: number } {
     const r = this.sRun[station];
-    let lo = station;
-    let hi = station;
-    while (lo > 0 && this.sRun[lo - 1] === r) lo--;
-    while (hi < this.nStations - 1 && this.sRun[hi + 1] === r) hi++;
-    return { lo, hi };
+    return { lo: this.runLo[r], hi: this.runHi[r] };
+  }
+
+  /** True where the walkway is gone, so nobody may stand on or walk through this station. */
+  private dead(station: number): boolean {
+    return this.sDead[station] === 1;
+  }
+
+  /**
+   * Find every stair between the ground and the wall-walk.
+   *
+   * Two sources, one record. The city is asked first and believed absolutely — it owns the
+   * masonry and it is rebuilding the flights to run parallel to the curtain, so anything
+   * this file thinks it knows about where a stair is will be wrong before long. Only when
+   * there is no API at all does it fall back to assuming the cadence the geometry currently
+   * uses, and it says so in `stairReport`.
+   */
+  private buildStairs(): void {
+    this.stairs = [];
+    this.stairsFromCity = false;
+    if (!this.city || this.nStations === 0) return;
+
+    const published = this.city.getWallStairs?.();
+    if (published && published.length > 0) {
+      this.stairsFromCity = true;
+      for (const s of published) {
+        const station = this.stationNear(s.topX, s.topZ);
+        if (station < 0 || this.dead(station)) continue;
+        // Reject a published flight whose head is nowhere near the standing surface: a
+        // stair that does not actually reach the walk is not a way onto the wall, and
+        // silently accepting one would put men on a path to nothing.
+        if (Math.hypot(s.topX - this.sx[station], s.topZ - this.sz[station]) > 6) continue;
+        const dx = s.footX - this.sx[station];
+        const dz = s.footZ - this.sz[station];
+        const off = dx * this.snx[station] + dz * this.snz[station];
+        this.stairs.push({
+          footX: s.footX, footZ: s.footZ, footY: s.footY,
+          topX: s.topX, topZ: s.topZ, topY: s.topY,
+          station,
+          side: (s.side !== undefined ? (s.side < 0 ? -1 : 1) : (off < 0 ? -1 : 1)),
+          width: s.width ?? 2.4,
+          fromCity: true,
+        });
+      }
+      if (this.stairs.length > 0) return;
+      // A published-but-unusable set falls through to the synthesis rather than leaving the
+      // wall with no way up, and `stairsFromCity` is reset so the report does not claim a
+      // provenance it did not get.
+      this.stairsFromCity = false;
+    }
+
+    // ---- fallback ----------------------------------------------------------
+    const bays = this.city.getGarrisonBays();
+    for (const bay of bays) {
+      if (!bay.garrisonable) continue;
+      if (((bay.index % STAIR_MOD) + STAIR_MOD) % STAIR_MOD !== STAIR_PHASE) continue;
+      // The flight stands against the tower at the bay's start, so the station it serves is
+      // the first one clear of that tower — which is this bay's first station.
+      const station = this.stationNear(bay.x0 + bay.dx * (bay.towerHalf + 0.6),
+        bay.z0 + bay.dz * (bay.towerHalf + 0.6));
+      if (station < 0 || this.dead(station)) continue;
+      // Head on the walk at the run's cityward lip; foot out from it by the flight's own
+      // horizontal run, which the rise and the tread ratio fix between them.
+      const headOff = this.sInner[station];
+      const topY = this.sy[station];
+      const hx = this.sx[station] + this.snx[station] * headOff;
+      const hz = this.sz[station] + this.snz[station] * headOff;
+      // Probe the ground where the foot will land before committing to a length, then solve
+      // the run from the rise that probe gives: a flight on a slope is longer than one on
+      // the flat and a fixed length would leave the bottom tread buried or in mid-air.
+      const guessOff = headOff - (topY - bay.groundY) * STAIR_SLOPE;
+      const gx = this.sx[station] + this.snx[station] * guessOff;
+      const gz = this.sz[station] + this.snz[station] * guessOff;
+      const footY = this.battle.groundAt(gx, gz);
+      const run = Math.max(1.5, (topY - footY) * STAIR_SLOPE);
+      const footOff = headOff - run;
+      const fx = this.sx[station] + this.snx[station] * footOff;
+      const fz = this.sz[station] + this.snz[station] * footOff;
+      this.stairs.push({
+        footX: fx, footZ: fz, footY: this.battle.groundAt(fx, fz),
+        topX: hx, topZ: hz, topY,
+        station, side: -1, width: 2.4, fromCity: false,
+      });
+    }
+  }
+
+  /**
+   * Join everything a man can stand on into a graph.
+   *
+   * Three kinds of edge and one rule: an edge exists only where a man could physically get
+   * from one surface to the other. Consecutive runs are joined where the gap between their
+   * ends is a tower or a construction step and *not* where it is a missing bay — the wall
+   * really is broken there and no amount of ordering should walk a cohort across forty
+   * metres of air. Stairs join the ground to a run at both ends, which is what makes "pull
+   * the archers back and put infantry up" one mechanism rather than two.
+   */
+  private buildLinks(): void {
+    this.links = [];
+    this.runNext = new Int32Array(Math.max(1, this.nRuns)).fill(-1);
+    this.runStair = new Int32Array(Math.max(1, this.nRuns)).fill(-1);
+    if (this.nStations === 0) return;
+
+    // ---- run to run --------------------------------------------------------
+    for (let r = 0; r + 1 < this.nRuns; r++) {
+      const a = this.runHi[r];
+      const b = this.runLo[r + 1];
+      if (a < 0 || b < 0) continue;
+      if (this.dead(a) || this.dead(b)) continue;
+      const gap = Math.hypot(this.sx[b] - this.sx[a], this.sz[b] - this.sz[a]);
+      if (gap > LINK_MAX_GAP) continue;
+      const step = Math.abs(this.sy[b] - this.sy[a]);
+      // A tower is a long gap in plan; a construction step is a short one with a jump in
+      // height. Both are crossable and they are drawn differently, so they are named
+      // differently, but the path is built the same way.
+      const kind = gap > STATION_PITCH * 3 ? LinkKind.TowerPass : LinkKind.Step;
+      void step;
+      this.runNext[r] = this.links.length;
+      this.links.push({
+        id: this.links.length, kind,
+        runA: r, runB: r + 1, stationA: a, stationB: b,
+        ax: this.sx[a], az: this.sz[a], ay: this.sy[a],
+        bx: this.sx[b], bz: this.sz[b], by: this.sy[b],
+        ab: null, ba: null, used: 0, lane: 0,
+      });
+    }
+
+    // ---- ground to run -----------------------------------------------------
+    for (const s of this.stairs) {
+      const r = this.sRun[s.station];
+      // One stair per run is enough for the graph: a second flight onto a run a man can
+      // already reach adds a choice the router would have to make and no reachability.
+      if (this.runStair[r] >= 0) continue;
+      this.runStair[r] = this.links.length;
+      this.links.push({
+        id: this.links.length, kind: LinkKind.Stair,
+        runA: -1, runB: r, stationA: -1, stationB: s.station,
+        ax: s.footX, az: s.footZ, ay: s.footY,
+        bx: this.sx[s.station] + this.snx[s.station] * this.sInner[s.station],
+        bz: this.sz[s.station] + this.snz[s.station] * this.sInner[s.station],
+        by: s.topY,
+        ab: null, ba: null, used: 0, lane: 0,
+      });
+    }
+  }
+
+  /** The path along a link, built the first time somebody needs it. */
+  private linkPath(l: WallLink, forward: boolean): Crossing {
+    const cached = forward ? l.ab : l.ba;
+    if (cached) return cached;
+    const pts: number[] = [];
+    const dest = forward ? l.stationB : l.stationA;
+    if (l.kind === LinkKind.Stair) {
+      const s = this.stairs.find((q) => q.station === l.stationB);
+      const st = l.stationB;
+      // Ground, foot of the flight, head of the flight, then one pace onto the walkway
+      // proper. The last leg is what takes a man off the top tread and into the standing
+      // band, and it is what a garrison closing up then spreads him along.
+      const legs: number[] = [
+        l.ax, l.ay, l.az,
+        s ? s.topX : l.bx, s ? s.topY : l.by, s ? s.topZ : l.bz,
+        this.sx[st] + this.snx[st] * this.sInner[st], this.sy[st],
+        this.sz[st] + this.snz[st] * this.sInner[st],
+        this.sx[st] + this.snx[st] * this.sOuter[st], this.sy[st],
+        this.sz[st] + this.snz[st] * this.sOuter[st],
+      ];
+      if (forward) pts.push(...legs);
+      else for (let k = legs.length - 3; k >= 0; k -= 3) pts.push(legs[k], legs[k + 1], legs[k + 2]);
+    } else if (l.kind === LinkKind.Breach) {
+      if (forward) pts.push(l.ax, l.ay, l.az, l.bx, l.by, l.bz);
+      else pts.push(l.bx, l.by, l.bz, l.ax, l.ay, l.az);
+    } else {
+      // Through the tower, or over the step. Both go by way of the *cityward* lip: the
+      // tower's only door onto the walk is on the city face — `wall.ts` is explicit that
+      // "the only way in was a doorway on the city face" — and a man taking a construction
+      // step keeps away from the parapet edge while his footing changes. Four points, so
+      // the path visibly turns in and back out again instead of cutting the corner through
+      // the masonry.
+      const a = l.stationA;
+      const b = l.stationB;
+      const inA = this.sInner[a] - 0.15;
+      const inB = this.sInner[b] - 0.15;
+      const legs: number[] = [
+        this.sx[a], this.sy[a], this.sz[a],
+        this.sx[a] + this.snx[a] * inA, this.sy[a], this.sz[a] + this.snz[a] * inA,
+        this.sx[b] + this.snx[b] * inB, this.sy[b], this.sz[b] + this.snz[b] * inB,
+        this.sx[b], this.sy[b], this.sz[b],
+      ];
+      if (forward) pts.push(...legs);
+      else for (let k = legs.length - 3; k >= 0; k -= 3) pts.push(legs[k], legs[k + 1], legs[k + 2]);
+    }
+    const c = this.makeCrossing(pts, dest, l.kind === LinkKind.Stair ? CROSS_WALK : CROSS_PASS);
+    if (forward) l.ab = c;
+    else l.ba = c;
+    return c;
   }
 
   private buildMeshes(ctx: EngineContext): void {
@@ -485,6 +1130,10 @@ export class Siege implements ElevationOwner {
     this.mShed = mk(buildRamShed(), MAX_RAMS, 'siege-ram-shed', true);
     this.mTrunk = mk(buildRamTrunk(), MAX_RAMS, 'siege-ram-trunk', false);
     this.mLadder = mk(buildLadder(), MAX_LADDERS, 'siege-ladders', false);
+    // The great ram is the one machine on the field whose shadow is worth four passes: it is
+    // the largest solid here and it stands against the curtain, where the cascade is tight.
+    this.mGreatShed = mk(buildGreatRamShed(), MAX_GREAT_RAMS, 'siege-greatram-shed', true);
+    this.mGreatTrunk = mk(buildGreatRamTrunk(), MAX_GREAT_RAMS, 'siege-greatram-trunk', false);
     this.root.name = 'siege';
     ctx.scene.add(this.root);
   }
@@ -605,7 +1254,7 @@ export class Siege implements ElevationOwner {
     if (this.nStations === 0) return false;
     const centre = this.stationNear(x, z);
     if (centre < 0) return false;
-    const g: Garrison = { unitId: u.id, from: 0, span: 0, ranks: 2, plannedFor: -1, sticky: false, filled: 0 };
+    const g: Garrison = { unitId: u.id, from: 0, span: 0, ranks: 2, plannedFor: -1, sticky: false, filled: 0, overflow: 0, lastTx: u.x, lastTz: u.z };
     this.garrisons.set(u.id, g);
     this.owned.add(u.id);
     u.order = UnitOrder.Garrison;
@@ -639,10 +1288,17 @@ export class Siege implements ElevationOwner {
    * repacked in member order, so a garrison closes up along the wall the way a line closes
    * up in the field, and a man's station only ever shifts by the gap left beside him.
    */
-  private layOutGarrison(u: UnitGroupState, g: Garrison, centre?: number): void {
+  private layOutGarrison(u: UnitGroupState, g: Garrison, centre?: number, onlyPlaced = false): void {
     const p = this.battle.pool;
     const living: number[] = [];
-    for (const i of u.members) if (p.aliveAt(i)) living.push(i);
+    for (const i of u.members) {
+      if (!p.aliveAt(i)) continue;
+      // A unit half way up a stair lays out only the half that is up. Placing the ones
+      // still on the grass would give them a slot 8 m in the air, and `steerToSlots` would
+      // walk them into the masonry trying to reach it.
+      if (onlyPlaced && this.stationOf[i] < 0) continue;
+      living.push(i);
+    }
     if (living.length === 0) return;
 
     // How many ranks the narrowest part of this run will take. Two is the practical
@@ -651,19 +1307,34 @@ export class Siege implements ElevationOwner {
     const m = clamp(mid, 0, this.nStations - 1);
     const band = this.sOuter[m] - this.sInner[m];
     // As many ranks as the clear band will take at the interlocking pitch.
-    const ranks = clamp(Math.floor(band / WALL_RANK_PITCH) + 1, 1, MAX_WALL_RANKS);
+    let ranks = clamp(Math.floor(band / WALL_RANK_PITCH) + 1, 1, MAX_WALL_RANKS);
     // A unit holds one continuous stretch of walkway. It may not straddle a tower or a
     // construction step, so the run it is centred on bounds it — and if that run is
     // shorter than the unit, the unit stands deeper rather than spilling over the break.
     const bounds = this.runBounds(m);
-    const runLen = bounds.hi - bounds.lo + 1;
-    const perRank = Math.min(runLen, Math.ceil(living.length / ranks));
-    const from = clamp((centre ?? mid) - (perRank >> 1), bounds.lo, Math.max(bounds.lo, bounds.hi - perRank + 1));
+    const free = this.freeWindow(m, bounds, u.id, Math.ceil(living.length / ranks));
+    /**
+     * Deepen before spilling.
+     *
+     * This is the answer to "what happens when the run you want is already occupied". The
+     * free stretch is whatever the other units on this run have left; if it is too short for
+     * the incoming unit at its natural depth, the unit stands *deeper* first — three ranks
+     * instead of two is what a wall under assault actually looks like — and only the men who
+     * still do not fit are counted as overflow and pushed along the wall to the next run.
+     * A unit is never silently truncated and men are never stacked on one station.
+     */
+    while (ranks < MAX_WALL_RANKS && free.span * ranks < living.length) ranks++;
+    const perRank = Math.max(1, Math.min(free.span, Math.ceil(living.length / ranks)));
+    const from = clamp(free.from, bounds.lo, Math.max(bounds.lo, bounds.hi - perRank + 1));
 
     g.from = from;
     g.span = perRank;
     g.ranks = ranks;
     g.plannedFor = living.length;
+    g.overflow = Math.max(0, living.length - perRank * ranks);
+
+    this.releaseClaim(g);
+    for (let f = 0; f < perRank; f++) this.sOwner[clamp(from + f, bounds.lo, bounds.hi)] = u.id;
 
     for (let k = 0; k < living.length; k++) {
       const i = living[k];
@@ -671,9 +1342,81 @@ export class Siege implements ElevationOwner {
       // garrison should be one full line of men shooting, not two half lines.
       const rank = Math.floor(k / perRank);
       const file = k % perRank;
+      if (rank >= ranks) {
+        // Overflow. He keeps a legal station so he is never in mid-air, but he is flagged so
+        // `advancePlans` can walk him along the wall to the next run instead.
+        this.stationOf[i] = clamp(from + (file % perRank), bounds.lo, bounds.hi);
+        this.rankOf[i] = (ranks - 1) as number;
+        continue;
+      }
       this.stationOf[i] = clamp(from + file, bounds.lo, bounds.hi);
       this.rankOf[i] = Math.min(255, rank);
     }
+  }
+
+  /**
+   * Give back the stations a garrison currently holds.
+   *
+   * Only its own window, not a scan of the spine. A garrison shuffling one station along the
+   * wall has to release before it re-claims or it finds its own slots occupied by itself,
+   * and the obvious way to write that — sweep `sOwner` for this unit id — is 1,695 array
+   * reads per re-layout, which happens every time any garrison loses six per cent of its
+   * men. `from`/`span` already record exactly what was taken.
+   */
+  private releaseClaim(g: Garrison): void {
+    for (let f = 0; f < g.span; f++) {
+      const s = g.from + f;
+      if (s >= 0 && s < this.nStations && this.sOwner[s] === g.unitId) this.sOwner[s] = -1;
+    }
+  }
+
+  /**
+   * The longest stretch of this run that no *other* living unit has claimed, nearest to
+   * `want`.
+   *
+   * Ownership is by station and by unit id, so a friendly cohort sent onto a manned stretch
+   * takes what is left rather than standing inside the men already there. An enemy claim is
+   * ignored on purpose: taking a wall off somebody is not an allocation problem, it is a
+   * melee, and the lodgement wants to land exactly where they are standing.
+   */
+  private freeWindow(
+    want: number, bounds: { lo: number; hi: number }, unitId: number, need: number
+  ): { from: number; span: number } {
+    const b = this.battle;
+    const mine = (s: number): boolean => {
+      const o = this.sOwner[s];
+      if (o < 0 || o === unitId) return true;
+      const other = b.unitById(o);
+      if (!other || other.destroyed || other.alive === 0) return true;
+      const me = b.unitById(unitId);
+      // Only a unit on the same side yields ground. See the note above.
+      return !!me && other.faction !== me.faction;
+    };
+    let best = { from: bounds.lo, span: 0 };
+    let bestScore = -Infinity;
+    let s = bounds.lo;
+    while (s <= bounds.hi) {
+      if (!mine(s)) { s++; continue; }
+      let e = s;
+      while (e + 1 <= bounds.hi && mine(e + 1)) e++;
+      const span = e - s + 1;
+      // Prefer a window that can hold the unit and sits near where it was told to stand.
+      const usable = Math.min(span, need);
+      const centre = s + (span >> 1);
+      const score = usable * 1000 - Math.abs(centre - want);
+      if (score > bestScore) {
+        bestScore = score;
+        const from = clamp(want - (Math.min(span, need) >> 1), s, Math.max(s, e - Math.min(span, need) + 1));
+        best = { from, span: Math.min(span, Math.max(need, 1)) };
+      }
+      s = e + 1;
+    }
+    if (best.span === 0) {
+      // Nothing free at all. Stand on the requested station and let the crowd solver and the
+      // melee sort it out; refusing the order outright would be worse.
+      best = { from: clamp(want, bounds.lo, bounds.hi), span: 1 };
+    }
+    return best;
   }
 
   isGarrisoned(unitId: number): boolean {
@@ -682,6 +1425,644 @@ export class Siege implements ElevationOwner {
 
   ownsUnit(unitId: number): boolean {
     return this.owned.has(unitId);
+  }
+
+  // -------------------------------------------------------------------------
+  // The wall as somewhere you can be ordered
+  // -------------------------------------------------------------------------
+
+  /**
+   * The station a click at `(x, z)` means, or -1 if the click did not mean the wall.
+   *
+   * The test is against the wall's **plan footprint** rather than a radius, because a radius
+   * cannot tell "on the parapet" from "at the foot of it" and those are opposite orders. A
+   * point counts if it is inside the standing band widened by `WALL_CLICK_BAND` either side
+   * — about 4.9 m across a 3.5 m curtain — and within a station pitch of the run in plan.
+   *
+   * Public so the UI can ask before it commits to a cursor: see the patch in the report.
+   */
+  wallTargetAt(x: number, z: number): number {
+    if (this.nStations === 0) return -1;
+    const s = this.stationNear(x, z);
+    if (s < 0 || this.dead(s)) return -1;
+    const dx = x - this.sx[s];
+    const dz = z - this.sz[s];
+    const off = dx * this.snx[s] + dz * this.snz[s];
+    // Along the wall, he must be beside a station and not off the end of the run.
+    const along = Math.abs(-this.snz[s] * dx + this.snx[s] * dz);
+    if (along > STATION_PITCH * 1.5) return -1;
+    if (off < this.sInner[s] - WALL_CLICK_BAND || off > this.sOuter[s] + WALL_CLICK_BAND) return -1;
+    return s;
+  }
+
+  /** Which side of the wall a point is on: -1 inside the city, +1 out in the field. */
+  private sideOf(x: number, z: number): -1 | 1 {
+    const s = this.stationNear(x, z);
+    if (s < 0) return 1;
+    const off = (x - this.sx[s]) * this.snx[s] + (z - this.sz[s]) * this.snz[s];
+    return off < 0 ? -1 : 1;
+  }
+
+  /** The run a man is standing on, or -1 for the ground. */
+  private runOfMan(i: number): number {
+    const st = this.stationOf[i];
+    if (st < 0 || st >= this.nStations) return -1;
+    return this.sRun[st];
+  }
+
+  /**
+   * Order a unit that is on the ground up onto the wall, by the nearest stair.
+   *
+   * Nothing teleports. The unit becomes siege-owned so its men are steered to absolute
+   * slots, they walk to the foot of a flight, they go up it one at a time in file, and they
+   * form a garrison as they arrive. Returns false when there is no wall there or no stair
+   * that reaches it — a caller should degrade that to an ordinary move rather than silently
+   * eat the order.
+   */
+  sendToWall(u: UnitGroupState, x: number, z: number): boolean {
+    const dest = this.wallTargetAt(x, z) >= 0 ? this.wallTargetAt(x, z) : this.stationNear(x, z);
+    if (dest < 0 || this.dead(dest)) return false;
+    const destRun = this.sRun[dest];
+    const stair = this.nearestStairLink(u.x, u.z, destRun);
+    if (stair < 0) return false;
+    this.owned.add(u.id);
+    if (!this.garrisons.has(u.id)) {
+      this.garrisons.set(u.id, {
+        unitId: u.id, from: dest, span: 1, ranks: MAX_WALL_RANKS,
+        plannedFor: -1, sticky: false, filled: 0, overflow: 0, lastTx: u.x, lastTz: u.z,
+      });
+    }
+    u.order = UnitOrder.Garrison;
+    u.targetUnitId = -1;
+    u.waypoints.length = 0;
+    u.contactLock = false;
+    this.plans.set(u.id, {
+      goal: WallGoal.Ascend, destStation: dest, destRun, stair, gx: x, gz: z, age: 0, stuck: 0,
+    });
+    return true;
+  }
+
+  /**
+   * Order a unit already on the wall to another stretch of it.
+   *
+   * The unit walks: along its own run to the tower at the end of it, through the chamber,
+   * out onto the next run, and so on until it reaches the one it was sent to. Every hop is a
+   * crossing, so a cohort redeploying six bays along the curtain files through five towers
+   * and takes about four minutes, which is what it should cost.
+   */
+  moveAlongWall(u: UnitGroupState, x: number, z: number): boolean {
+    if (!this.garrisons.has(u.id)) return false;
+    const dest = this.wallTargetAt(x, z);
+    if (dest < 0) return false;
+    const destRun = this.sRun[dest];
+    this.plans.set(u.id, {
+      goal: WallGoal.Traverse, destStation: dest, destRun, stair: -1, gx: x, gz: z, age: 0, stuck: 0,
+    });
+    // A unit walking somewhere else must be free to re-form when it gets there, even if it
+    // arrived as a boarding party. Stickiness is a property of a lodgement, not of a unit.
+    const g = this.garrisons.get(u.id);
+    if (g) g.sticky = false;
+    return true;
+  }
+
+  /**
+   * Order a unit off the wall to a point on the ground, by the nearest stair.
+   *
+   * This is the half of the feature the player asked for twice: draw the archers back so the
+   * infantry can go up, and — from the other side — an attacker who has taken the wall comes
+   * down off it into the streets. Once every man is down the unit stops being siege-owned
+   * and goes back to being an ordinary formation, which is exactly right: it is in the city
+   * now, and the city is ground.
+   */
+  sendToGround(u: UnitGroupState, x: number, z: number): boolean {
+    if (!this.garrisons.has(u.id)) return false;
+    // The stair is chosen from where the unit *is*, not from where it is going: a garrison
+    // told to fall back walks to the nearest way down, not to the one nearest the rally
+    // point forty bays away.
+    const here = this.stationNear(u.x, u.z);
+    const stair = this.nearestStairLink(u.x, u.z, here >= 0 ? this.sRun[here] : -1);
+    if (stair < 0) return false;
+    this.plans.set(u.id, {
+      goal: WallGoal.Descend, destStation: -1, destRun: this.links[stair].runB,
+      stair, gx: x, gz: z, age: 0, stuck: 0,
+    });
+    const g = this.garrisons.get(u.id);
+    if (g) g.sticky = false;
+    return true;
+  }
+
+  /**
+   * Send a unit through a breach the great ram has made.
+   *
+   * Without this the lanes were unreachable. `wantLink` is only ever written by the stair
+   * branch and by `queueAtLink`, and `queueAtLink` is only ever fed by `nextHop`, which walks
+   * `runNext` — and a breach lane belongs to no run at either end. So five perfectly good
+   * paths existed, were counted by `breachReport().lanes`, and no man could be admitted to
+   * one. The probe asserted that the lanes *existed*, which they did.
+   *
+   * A breach is the reason to build a great ram, so it has to be an order you can give.
+   */
+  stormBreach(u: UnitGroupState, gx: number, gz: number): boolean {
+    if (this.breachLinks.length === 0) return false;
+    this.owned.add(u.id);
+    u.order = UnitOrder.Garrison;
+    u.targetUnitId = -1;
+    u.waypoints.length = 0;
+    this.plans.set(u.id, {
+      goal: WallGoal.Storm, destStation: -1, destRun: -1,
+      stair: this.breachLinks[0], gx, gz, age: 0, stuck: 0,
+    });
+    return true;
+  }
+
+  /**
+   * The stair link that best serves a unit at `(x, z)` wanting run `run`.
+   *
+   * Prefers a flight that lands on the run itself; otherwise the nearest one in plan, which
+   * the traversal then walks along the wall from. Deterministic: ties break on link id.
+   */
+  private nearestStairLink(x: number, z: number, run: number): number {
+    let onRun = -1;
+    let best = -1;
+    let bestD = Infinity;
+    for (const l of this.links) {
+      if (l.kind !== LinkKind.Stair) continue;
+      if (l.runB === run) { onRun = onRun < 0 ? l.id : onRun; }
+      const d = (l.ax - x) * (l.ax - x) + (l.az - z) * (l.az - z);
+      if (d < bestD - 1e-6) { bestD = d; best = l.id; }
+    }
+    return onRun >= 0 ? onRun : best;
+  }
+
+  /**
+   * Take a plain move order given to a unit the siege system owns and turn it into a wall
+   * order.
+   *
+   * **This is the whole player-facing integration, and it needs no patch to any file this
+   * workstream does not own.** `Siege.garrison` sets `u.order = UnitOrder.Garrison`, and
+   * nothing else in the sim ever writes that value; `BattleSystem.trackOwnedAnchors` moves
+   * the anchor but never the order. So a garrisoned unit whose order is no longer `Garrison`
+   * has been given a new one by the player or the AI in the window between two ticks, and
+   * `preSteer` runs before `trackOwnedAnchors` can overwrite the target it came with.
+   *
+   * Where the order points decides which of the two things it means: a point on the wall's
+   * own footprint is a lateral redeployment along the parapet, anything else is "come down".
+   */
+  private interceptOrders(): void {
+    const b = this.battle;
+    for (const [id, g] of this.garrisons) {
+      const u = b.unitById(id);
+      if (!u || u.destroyed) continue;
+      // Already executing an order. Re-reading `u.order` while a plan is running is what
+      // destroyed the plan the tick after it was issued — see below.
+      if (this.plans.has(id)) continue;
+      if (u.order === UnitOrder.Garrison || u.order === UnitOrder.Rout) continue;
+      if (u.order !== UnitOrder.MoveTo && u.order !== UnitOrder.AttackMove) continue;
+
+      /**
+       * A *new* order, not merely a changed `u.order`.
+       *
+       * This was the bug that stopped the whole feature working, and it is worth writing
+       * down because the reasoning that produced it was so nearly right. `Siege.garrison`
+       * sets `u.order = UnitOrder.Garrison` and nothing else in the sim writes that value,
+       * so "the order is no longer Garrison" looked like a sound proxy for "the player has
+       * given this unit a new order".
+       *
+       * It is not. `BattleSystem.updateUnitOrder` runs for every unit every tick and changes
+       * `u.order` on its own for reasons that have nothing to do with the player — coming
+       * into contact, resuming a route, breaking off. Measured: a cohort sent up a stair was
+       * owned with a live Ascend plan at the instant the order was given, and **five seconds
+       * later had no plan and was no longer siege-owned**. The sim flipped its order, this
+       * loop read that as a fresh click, saw the target was not on the wall, converted the
+       * ascent into a *descent*, found every man already on the ground, concluded the descent
+       * was complete and released the unit. Nobody ever reached a stair.
+       *
+       * The honest signal is the order's *destination* changing, because that is the thing a
+       * click actually carries. `trackOwnedAnchors` mirrors the unit's own centroid into
+       * these fields while the siege system owns it, so they move — but they move
+       * continuously, by centimetres, and a click moves them metres at once.
+       */
+      const moved = Math.hypot(u.targetX - g.lastTx, u.targetZ - g.lastTz);
+      g.lastTx = u.targetX;
+      g.lastTz = u.targetZ;
+      if (moved < ORDER_JUMP) {
+        // Not a new order — the sim changed the order kind by itself. Take the unit back
+        // and leave it standing where it is.
+        u.order = UnitOrder.Garrison;
+        continue;
+      }
+      if (this.wallTargetAt(u.targetX, u.targetZ) >= 0) this.moveAlongWall(u, u.targetX, u.targetZ);
+      else this.sendToGround(u, u.targetX, u.targetZ);
+      // Reclaim the order either way: this unit's men are placed by the stonework, and
+      // leaving it on `MoveTo` would have `steerToSlots` and the formation path fighting
+      // over the same men on alternate ticks.
+      u.order = UnitOrder.Garrison;
+      u.waypoints.length = 0;
+    }
+
+    /**
+     * A unit that is *not* on the wall and has been ordered into it.
+     *
+     * The UI pushes an order point out of any solid it lands on — `orderPointForSolid` — so a
+     * click on the parapet arrives as a point a body radius clear of the nearest face, on the
+     * side the player was looking from. Read from inside the city that is unambiguous: a
+     * cohort told to stand with its anchor inside the curtain's own footprint is being told
+     * to get on the wall, because there is nothing else there to stand on.
+     *
+     * Restricted to units on the **city side**, and that restriction is not a hedge. A
+     * besieger at the foot of the outer face is not entitled to walk up the defenders'
+     * stairs; he comes over a ramp, up a ladder or through a breach. Confining the shortcut
+     * to the inside is both the historically correct rule and the one that cannot fire by
+     * accident on the assault.
+     */
+    for (const u of b.units) {
+      if (u.destroyed || u.alive === 0) continue;
+      if (this.owned.has(u.id)) continue;
+      if (u.order !== UnitOrder.MoveTo && u.order !== UnitOrder.AttackMove) continue;
+      if (this.wallTargetAt(u.targetX, u.targetZ) < 0) continue;
+      if (this.sideOf(u.x, u.z) !== -1) continue;
+      this.sendToWall(u, u.targetX, u.targetZ);
+    }
+  }
+
+  /**
+   * The link a man on run `cur` should take next to reach run `target`, and which way.
+   *
+   * The runs are a chain along the curtain — run k abuts run k+1 across a tower or a
+   * construction step and nothing else — so "route" is a comparison rather than a search.
+   * That is worth saying out loud: a general graph search here would be a fifty-line A* run
+   * for every man every tick to answer a question that has one bit in it.
+   */
+  private nextHop(cur: number, target: number): { link: number; dir: 0 | 1 } {
+    if (cur === target || cur < 0 || target < 0) return { link: -1, dir: 0 };
+    if (cur < target) return { link: this.runNext[cur] ?? -1, dir: 0 };
+    return { link: this.runNext[cur - 1] ?? -1, dir: 1 };
+  }
+
+  /**
+   * Drive every unit that has been told to go somewhere by way of the wall.
+   *
+   * Each man is in exactly one of three states and the function's whole job is to say which
+   * and give him a slot for it: on a path (leave him alone, `advanceLinks` owns him),
+   * arrived (lay him out as part of a garrison), or transiting (queue him at the mouth of
+   * the next link). Queueing is done by *assigning him a station near the mouth*, which
+   * means the whole of the existing garrison machinery — the slot geometry, the rank
+   * stagger, the surface search, the lateral clamp — carries him there with nothing new.
+   */
+  private advancePlans(): void {
+    const b = this.battle;
+    const p = b.pool;
+    // Rebuilt from scratch each tick: a waiter is a fact about this instant, and carrying
+    // one over would admit a man who has since died, been shoved away or changed his mind.
+    if (this.waiters.size > 0) this.waiters.clear();
+    for (const [id, plan] of this.plans) {
+      const u = b.unitById(id);
+      if (!u || u.destroyed || u.alive === 0) { this.plans.delete(id); continue; }
+      plan.age++;
+      const arrived: number[] = [];
+      let moving = 0;
+      /**
+       * Men the plan cannot move, and they must not be counted as having arrived.
+       *
+       * The first version pushed them into `arrived`, which handed them to `layOutArrived`
+       * — and that lays men out around `plan.destStation`, on the destination run. A man
+       * stranded on run 3 was therefore given a slot on run 7, and `holdGarrisonsOnTheWalk`
+       * then snapped his Y to that station's height. That is precisely the 3.62 m teleport
+       * this file already carries a long comment about, reintroduced by a convenience.
+       *
+       * A man who cannot be moved is left exactly where he is standing. That is always a
+       * legal place to be, because he was standing there a tick ago.
+       */
+      let stuck = 0;
+
+      for (const i of u.members) {
+        if (!p.aliveAt(i)) continue;
+        if (this.crossOf[i] !== -1) { moving++; continue; }
+        const cur = this.runOfMan(i);
+
+        if (plan.goal === WallGoal.Storm) {
+          /**
+           * Through the hole, in five files abreast.
+           *
+           * Lanes are handed out round-robin on the man's index within the unit, so a cohort
+           * spreads across the whole width of the breach instead of forming one queue at the
+           * left-hand lane. That width is the entire point of preferring a breach to a gate:
+           * eight metres of storming front against the carriageway's four.
+           */
+          if (this.sideOf(p.x[i], p.z[i]) < 0) {
+            // Inside the city. He is through; form up on the rally point.
+            this.groundSlot(i, u, plan.gx, plan.gz, arrived.length);
+            arrived.push(i);
+            continue;
+          }
+          const lane = this.links[this.breachLinks[moving % this.breachLinks.length]];
+          if (!lane) { stuck++; continue; }
+          this.footSlot(i, lane, Math.floor(moving / this.breachLinks.length));
+          this.wantLink[i] = lane.id;
+          this.wantDir[i] = 0;
+          this.noteWaiting(i, lane.id, 0);
+          moving++;
+          continue;
+        }
+
+        if (plan.goal === WallGoal.Descend) {
+          const stair = this.links[plan.stair];
+          if (!stair) { stuck++; continue; }
+          if (cur < 0) {
+            // Down and out. He is on the grass and steers to the rally point like anybody
+            // else, in a loose block so a cohort coming off a stair does not form a queue
+            // forty metres long across a street.
+            this.groundSlot(i, u, plan.gx, plan.gz, arrived.length);
+            arrived.push(i);
+            continue;
+          }
+          if (cur === stair.runB) {
+            this.queueAtLink(i, stair, 1, moving++);
+          } else {
+            const hop = this.nextHop(cur, stair.runB);
+            if (hop.link < 0) { stuck++; continue; }
+            this.queueAtLink(i, this.links[hop.link], hop.dir, moving++);
+          }
+          continue;
+        }
+
+        if (cur === plan.destRun) { arrived.push(i); continue; }
+
+        if (cur < 0) {
+          // At the foot of a flight, waiting his turn. `elevated` is cleared because he is
+          // demonstrably standing on the ground, and anything else would have `integrate`
+          // hold him at a support height he is not on.
+          const stair = this.links[plan.stair];
+          if (!stair) { stuck++; continue; }
+          this.footSlot(i, stair, moving++);
+          this.wantLink[i] = stair.id;
+          this.wantDir[i] = 0;
+          this.noteWaiting(i, stair.id, 0);
+          continue;
+        }
+
+        const hop = this.nextHop(cur, plan.destRun);
+        if (hop.link < 0) {
+          // The wall is broken between here and there. He stops where he is rather than
+          // walking into the gap, and the plan times out rather than being retried forever.
+          stuck++;
+          continue;
+        }
+        this.queueAtLink(i, this.links[hop.link], hop.dir, moving++);
+      }
+
+      plan.stuck = stuck;
+      // The men who are there form up; the ones still coming do not disturb them.
+      const g = this.garrisons.get(id);
+      if (g && plan.goal !== WallGoal.Descend && plan.goal !== WallGoal.Storm && arrived.length > 0) {
+        this.layOutArrived(u, g, plan.destStation, arrived);
+      }
+
+      if (moving === 0) {
+        if (plan.goal === WallGoal.Descend || plan.goal === WallGoal.Storm) this.releaseToGround(u, plan.gx, plan.gz);
+        else if (g) { g.plannedFor = -1; }
+        this.plans.delete(id);
+      } else if (plan.age > PLAN_TIMEOUT) {
+        /**
+         * Abandon an order that is never going to finish.
+         *
+         * Some orders genuinely cannot complete: a unit told to reach a run on the far side
+         * of an unbuilt bay, or told to come down when the great ram has taken out the only
+         * stair it could reach. Without this it would spend the rest of the battle walking
+         * at a link mouth that leads nowhere, and — worse — `updateGarrisons` defers to the
+         * plan, so the unit would never re-form either. Dropping the plan leaves the men
+         * standing on the stonework they are on, which is always a legal place to be.
+         *
+         * Ten minutes at 30 Hz. A legitimate traverse of six bays and five towers is about
+         * four, so this is well clear of anything real.
+         */
+        this.plans.delete(id);
+        if (g) { g.plannedFor = -1; g.sticky = false; }
+        for (const i of u.members) this.wantLink[i] = -1;
+      }
+    }
+  }
+
+  /** Lay the men who have reached the destination run out along it, and no others. */
+  private layOutArrived(
+    u: UnitGroupState, g: Garrison, centre: number, arrived: readonly number[]
+  ): void {
+    if (centre < 0 || this.nStations === 0) return;
+    const m = clamp(centre, 0, this.nStations - 1);
+    const band = this.sOuter[m] - this.sInner[m];
+    let ranks = clamp(Math.floor(band / WALL_RANK_PITCH) + 1, 1, MAX_WALL_RANKS);
+    const bounds = this.runBounds(m);
+    const free = this.freeWindow(m, bounds, u.id, Math.ceil(arrived.length / ranks));
+    while (ranks < MAX_WALL_RANKS && free.span * ranks < arrived.length) ranks++;
+    const perRank = Math.max(1, Math.min(free.span, Math.ceil(arrived.length / ranks)));
+    const from = clamp(free.from, bounds.lo, Math.max(bounds.lo, bounds.hi - perRank + 1));
+    this.releaseClaim(g);
+    g.from = from;
+    g.span = perRank;
+    g.ranks = ranks;
+    for (let f = 0; f < perRank; f++) this.sOwner[clamp(from + f, bounds.lo, bounds.hi)] = u.id;
+    for (let k = 0; k < arrived.length; k++) {
+      const i = arrived[k];
+      this.stationOf[i] = clamp(from + (k % perRank), bounds.lo, bounds.hi);
+      this.rankOf[i] = Math.min(255, Math.floor(k / perRank));
+    }
+  }
+
+  /** Park a man in the file waiting at the wall-walk end of a link. */
+  private queueAtLink(i: number, l: WallLink, dir: 0 | 1, q: number): void {
+    const st = dir === 0 ? l.stationA : l.stationB;
+    if (st < 0) return;
+    const bounds = this.runBounds(st);
+    // Step back into the run away from the mouth, three abreast, so a hundred men waiting
+    // for a tower door are a crowd on the walkway and not a single file across two bays.
+    const back = Math.floor(q / MAX_WALL_RANKS);
+    // Which way "back" is depends on which end of the run the mouth is.
+    const inward = st === bounds.hi ? -1 : 1;
+    this.stationOf[i] = clamp(st + inward * back, bounds.lo, bounds.hi);
+    this.rankOf[i] = q % MAX_WALL_RANKS;
+    this.wantLink[i] = l.id;
+    this.wantDir[i] = dir;
+    this.noteWaiting(i, l.id, dir);
+  }
+
+  /** Park a man in the file waiting at the foot of a stair, on the ground. */
+  private footSlot(i: number, l: WallLink, q: number): void {
+    const b = this.battle;
+    // Back away from the flight along its own axis, four abreast.
+    let ax = l.ax - l.bx;
+    let az = l.az - l.bz;
+    const len = Math.hypot(ax, az) || 1;
+    ax /= len; az /= len;
+    /**
+     * The head of the queue must stand inside `LINK_ADMIT` of the mouth, or nobody starts.
+     *
+     * Four abreast at 0.9 m centres put files 0 and 3 of the first row at
+     * `hypot(0.9, 1.35) = 1.62 m` from the foot — outside the 1.5 m admission radius. With
+     * men already on the flight the queue reshuffles and somebody eventually lands in range,
+     * but at the *start* nobody is in range and nobody ever will be: the file deadlocks with
+     * a hundred and sixty men standing a metre and a half from a stair they cannot step onto.
+     * Measured as `0/160 men on the wall, men were observed on a stair path on 0 ticks`.
+     *
+     * Three abreast at 0.8 m and 0.7 m back puts the worst first-row man at 1.06 m.
+     */
+    const file = (q % 3) - 1;
+    const row = Math.floor(q / 3);
+    b.elevated[i] = 0;
+    b.support[i] = NO_SUPPORT;
+    b.slotX[i] = l.ax + ax * (0.7 + row * 0.85) + -az * file * 0.8;
+    b.slotZ[i] = l.az + az * (0.7 + row * 0.85) + ax * file * 0.8;
+    b.slotFacing[i] = Math.atan2(-ax, -az);
+  }
+
+  /** Steer a man who has come off the wall toward the rally point, in a loose block. */
+  private groundSlot(i: number, u: UnitGroupState, gx: number, gz: number, q: number): void {
+    const b = this.battle;
+    const file = (q % 8) - 3.5;
+    const row = Math.floor(q / 8);
+    const c = Math.cos(u.facing);
+    const s = Math.sin(u.facing);
+    b.elevated[i] = 0;
+    b.support[i] = NO_SUPPORT;
+    b.slotX[i] = gx + file * 0.9 * c + -row * 0.9 * s;
+    b.slotZ[i] = gz - file * 0.9 * s + -row * 0.9 * c;
+    b.slotFacing[i] = u.facing;
+  }
+
+  /**
+   * Hand a unit back to the field once every man is off the wall.
+   *
+   * The point of coming down is to be an ordinary cohort in an ordinary street fight. Left
+   * siege-owned it would keep being steered to absolute slots by `steerToSlots`, which has
+   * no formation, no wheeling and no charge — a unit that had taken the wall and descended
+   * would then be unable to form line in the city it had just entered.
+   */
+  private releaseToGround(u: UnitGroupState, gx: number, gz: number): void {
+    const p = this.battle.pool;
+    for (const i of u.members) {
+      this.stationOf[i] = -1;
+      this.rankOf[i] = 0;
+      this.wantLink[i] = -1;
+      this.linkOf[i] = -1;
+      this.battle.elevated[i] = 0;
+      this.battle.support[i] = NO_SUPPORT;
+      if (p.state[i] === SoldierState.Climbing) p.setState(i, SoldierState.Idle);
+    }
+    for (let s = 0; s < this.nStations; s++) if (this.sOwner[s] === u.id) this.sOwner[s] = -1;
+    const g = this.garrisons.get(u.id);
+    if (g) this.releaseClaim(g);
+    this.garrisons.delete(u.id);
+    this.owned.delete(u.id);
+    /**
+     * Point the order at the rally point, and that is not tidiness.
+     *
+     * `interceptOrders` reads a ground unit's `targetX/targetZ` to decide whether the player
+     * has clicked the parapet, and `trackOwnedAnchors` has been mirroring this unit's own
+     * centroid into those fields for as long as the siege system owned it. A cohort that has
+     * just walked down a stair therefore has a target sitting at the foot of the wall, on the
+     * city side — which is exactly the signature the auto-ascend rule looks for. Released
+     * without this, it would about-face and climb straight back up, for ever.
+     */
+    u.order = UnitOrder.MoveTo;
+    u.targetX = gx;
+    u.targetZ = gz;
+    u.waypoints.length = 0;
+  }
+
+  /**
+   * Admit men to links and move everybody who is on one.
+   *
+   * Admission is by desire and proximity rather than by unit, because a stair or a tower
+   * door is shared: two cohorts changing places on the same stretch of wall queue up at the
+   * same doorway and go through it one at a time, in whatever order they reach it. That is
+   * both the correct behaviour and the reason this cannot reuse `stepCrossing`, which admits
+   * from a single unit's member list.
+   */
+  private advanceLinks(dt: number): void {
+    const b = this.battle;
+    const p = b.pool;
+    // Ninety-odd links on this circuit and a handful ever in use, so the common case must
+    // cost nothing: no waiters and no path already built means the link is skipped entirely.
+    for (const l of this.links) {
+      for (let dir = 0; dir < 2; dir++) {
+        const existing = dir === 0 ? l.ab : l.ba;
+        if (!existing && !this.waiters.has(l.id * 2 + dir)) continue;
+        const c = this.linkPath(l, dir === 0);
+        if (this.mouthClear(c)) {
+          const cand = this.pickWaiting(l.id, dir as 0 | 1, c);
+          if (cand >= 0) {
+            this.admitTo(c, cand);
+            this.linkOf[cand] = l.id;
+            this.linkDir[cand] = dir;
+            this.wantLink[cand] = -1;
+            // Off the ledger while he is in the doorway: he is neither standing on a station
+            // nor available to be laid out, and every consumer keys on `stationOf < 0`.
+            this.stationOf[cand] = ON_LINK;
+          }
+        }
+        this.advanceQueue(c, dt, (i) => {
+          l.used++;
+          this.linkOf[i] = -1;
+          const dest = c.destStation;
+          if (dest < 0) {
+            // Off the bottom of a stair, or out of a breach: he is on the ground now.
+            this.stationOf[i] = -1;
+            b.elevated[i] = 0;
+            b.support[i] = NO_SUPPORT;
+          } else {
+            this.stationOf[i] = dest;
+            this.rankOf[i] = 0;
+            b.elevated[i] = 1;
+            b.support[i] = this.sy[dest];
+          }
+          p.setState(i, SoldierState.Idle);
+        });
+      }
+    }
+  }
+
+  /**
+   * Everybody waiting at a link mouth this tick, bucketed by `linkId * 2 + dir`.
+   *
+   * Rebuilt once per tick by `advancePlans`, which is already walking exactly these men, and
+   * then read by `advanceLinks`. The first version had `advanceLinks` search for its own
+   * candidates, which is `links x 2 x planned men` — 90 links against a cohort of 80 is
+   * 14,400 array reads per tick to admit at most a handful of people, and it ran inside
+   * `postIntegrate` where the budget is 4 ms for six thousand men. This is O(planned men).
+   *
+   * A plain `Map` of arrays rather than a per-link field so a battle with no orders in
+   * progress allocates nothing and the whole system costs one `size === 0` test.
+   */
+  private waiters = new Map<number, number[]>();
+
+  private noteWaiting(i: number, linkId: number, dir: 0 | 1): void {
+    const key = linkId * 2 + dir;
+    const arr = this.waiters.get(key);
+    if (arr) arr.push(i);
+    else this.waiters.set(key, [i]);
+  }
+
+  /**
+   * The waiting man nearest the mouth, or -1.
+   *
+   * Nearest rather than first in member order, because the file that forms at a doorway is
+   * physical: the man at the front goes through, and which man that is depends on where the
+   * unit came from. Ties break on the lower soldier index, so it is deterministic.
+   */
+  private pickWaiting(linkId: number, dir: 0 | 1, c: Crossing): number {
+    const p = this.battle.pool;
+    const arr = this.waiters.get(linkId * 2 + dir);
+    if (!arr) return -1;
+    let best = -1;
+    let bestD = LINK_ADMIT * LINK_ADMIT;
+    for (const i of arr) {
+      if (!p.aliveAt(i)) continue;
+      if (this.crossOf[i] !== -1) continue;
+      const dx = p.x[i] - c.pts[0];
+      const dz = p.z[i] - c.pts[2];
+      const d = dx * dx + dz * dz;
+      if (d < bestD - 1e-9) { bestD = d; best = i; }
+    }
+    return best;
   }
 
   // -------------------------------------------------------------------------
@@ -746,7 +2127,27 @@ export class Siege implements ElevationOwner {
       crossed: 0,
       crossing: null,
       dist: 0,
+      rampLen: RAMP_LEN,
+      rampLanded: 0,
+      rampReach: 0,
     };
+    /**
+     * Cut the ramp to the span it will actually have to bridge.
+     *
+     * The hinge ends up `sFace + 0.32` out from the bay centreline and the lip has to reach
+     * the outward limit of the standing band, so the horizontal reach is fixed by the wall
+     * and the standoff between them — 1.64 m on this curtain, not the 3.4 m the geometry is
+     * authored at. Measured: a correctly-yawed 3.4 m ramp overshoots the walkway's cityward
+     * lip by 1.6 m and cantilevers over the street.
+     *
+     * Solved rather than tuned, and solved from the *bay*, so the wall workstream widening
+     * the curtain moves this with it instead of breaking it.
+     */
+    const hingeOff = this.sFace[station] + 0.32;
+    t.rampReach = Math.max(0.6, hingeOff - this.sOuter[station]);
+    const drop = this.sy[station] - t.deckY;
+    t.rampLen = Math.hypot(t.rampReach, drop);
+    t.rampLanded = Math.atan2(drop, t.rampReach);
     this.towers.push(t);
     this.owned.add(unitId);
     return t.id;
@@ -754,11 +2155,16 @@ export class Siege implements ElevationOwner {
 
   /** Send a ram at a gate. */
   spawnRam(x: number, z: number, unitId: number): number {
-    if (this.rams.length >= MAX_RAMS || !this.city) return -1;
+    // Counted by kind, not by `rams.length`: the two machines draw from separate instanced
+    // meshes with separate capacities, and sharing one counter meant a great ram on the
+    // field silently used up a gate ram's slot.
+    const gates = this.rams.reduce((a, r) => a + (r.kind === RamKind.Gate ? 1 : 0), 0);
+    if (gates >= MAX_RAMS || !this.city) return -1;
     const gate = this.city.getGates()[0];
     if (!gate) return -1;
     const r: SiegeRam = {
       id: this.rams.length,
+      kind: RamKind.Gate,
       x, z,
       y: this.battle.groundAt(x, z),
       facing: Math.atan2(gate.x - x, gate.z - z),
@@ -770,10 +2176,254 @@ export class Siege implements ElevationOwner {
       targetX: gate.x + Math.sin(gate.facing) * (RAM_HALF_D + 3.6),
       targetZ: gate.z + Math.cos(gate.facing) * (RAM_HALF_D + 3.6),
       blows: 0,
+      bay: -1,
+      station: -1,
+      state: RamState.Approach,
+      parkX: x,
+      parkZ: z,
+      wreck: false,
+      derelictFor: 0,
     };
     this.rams.push(r);
     this.owned.add(unitId);
     return r.id;
+  }
+
+  /**
+   * Roll the great ram at a stretch of curtain — the *testudo arietaria* proper.
+   *
+   * Distinct from the gate ram in target as well as in size, and that is the decision the
+   * brief asked for: **it attacks the curtain, not the gate.** A gate is a pair of oak
+   * leaves and 26 blows from a light ram will have them down; there is no reason to build
+   * something three times the mass to do a job a smaller machine already does. The only
+   * reason to build this is to make a hole where the defence has not prepared one — to
+   * refuse the killing ground behind the gate and take the wall somewhere of your choosing.
+   * So it squares up to a bay and works on masonry, at 74 blows and seven seconds a blow.
+   */
+  spawnGreatRam(x: number, z: number, targetX: number, targetZ: number, unitId: number): number {
+    const greats = this.rams.reduce((a, r) => a + (r.kind === RamKind.Great ? 1 : 0), 0);
+    if (greats >= MAX_GREAT_RAMS || this.nStations === 0) return -1;
+    const station = this.stationNear(targetX, targetZ);
+    if (station < 0) return -1;
+    const nx = this.snx[station];
+    const nz = this.snz[station];
+    // Head against the masonry, shed clear of it: the same face-relative standoff the tower
+    // uses, because the same mistake — measuring from the bay centreline instead of from the
+    // wall's outer face — drove four towers 0.70 m into the brickwork.
+    const standoff = this.sFace[station] + 0.4 + GREAT_RAM_HALF_D + GREAT_RAM_REACH * 0.0;
+    const tx = this.sx[station] + nx * standoff;
+    const tz = this.sz[station] + nz * standoff;
+    const r: SiegeRam = {
+      id: this.rams.length,
+      kind: RamKind.Great,
+      state: RamState.Approach,
+      x, z,
+      y: this.battle.groundAt(x, z),
+      facing: Math.atan2(-nx, -nz),
+      swing: 0,
+      timer: GREAT_RAM_PERIOD,
+      arrived: false,
+      unitId,
+      targetX: tx,
+      targetZ: tz,
+      blows: 0,
+      bay: this.sBay[station],
+      station,
+      parkX: x,
+      parkZ: z,
+      wreck: false,
+      derelictFor: 0,
+    };
+    this.rams.push(r);
+    this.owned.add(unitId);
+    return r.id;
+  }
+
+  /** One blow of the great ram on the bay it is squared up to. */
+  private strikeCurtain(r: SiegeRam): void {
+    if (r.bay < 0) return;
+    const n = (this.bayBlows.get(r.bay) ?? 0) + 1;
+    this.bayBlows.set(r.bay, n);
+    if (n < WALL_BLOWS || this.breachedBays.includes(r.bay)) return;
+    this.breachBay(r);
+  }
+
+  /**
+   * Bring a bay down, and say what a breach in a curtain actually *is*.
+   *
+   * A hole in a wall is not a doorway. What a ram leaves is a **practicable breach**: the
+   * face collapses outward into a slope of its own rubble, and the storming party goes up
+   * that slope, over the stub, and down the inside. It is climbed, not walked through. That
+   * matters mechanically as well as historically, because it means a breach is the same
+   * object as everything else on this wall — a `Crossing` — and inherits the properties the
+   * representation already guarantees rather than needing a hole punched in the nav grid to
+   * be safe.
+   *
+   * It is stormed in `BREACH_LANES` files abreast rather than one, because the whole point
+   * of preferring a breach to a gate is that it is wider than a gate. Five lanes at 1.6 m
+   * centres is 8 m of front — twice the 4.3 m carriageway, which is the number that makes
+   * the machine worth building.
+   *
+   * Three things happen to the wall itself. The stations over the hole stop being places to
+   * stand; `recut` therefore splits the run in two, and every consumer that already refuses
+   * to cross a run boundary refuses to cross the breach with no new code. Any garrison
+   * standing on the collapsed stretch has to go somewhere, and does. And the city is asked
+   * to cut the passage in its own occupancy raster if it can — see `breachWall` on
+   * `CityView`, and the patch in this workstream's report for the day it can.
+   */
+  private breachBay(r: SiegeRam): void {
+    const st = r.station;
+    if (st < 0 || this.breachedBays.includes(r.bay)) return;
+    this.breachedBays.push(r.bay);
+
+    // ---- the masonry comes down -------------------------------------------
+    const bounds = this.runBounds(st);
+    const half = Math.max(1, Math.round(BREACH_HALF_W / STATION_PITCH));
+    const lo = Math.max(bounds.lo, st - half);
+    const hi = Math.min(bounds.hi, st + half);
+    for (let s = lo; s <= hi; s++) {
+      this.sDead[s] = 1;
+      this.sOwner[s] = -1;
+    }
+    this.recut();
+    this.buildLinks();
+    this.invalidateWallTraffic();
+
+    // ---- the men who were standing on it ----------------------------------
+    this.rehouseTheFallen(lo, hi);
+
+    // ---- the way through --------------------------------------------------
+    const nx = this.snx[st];
+    const nz = this.snz[st];
+    const ax = -nz;
+    const az = nx;
+    const outFoot = this.sFace[st] + 5.0;
+    const inFoot = this.sInner[st] - 5.0;
+    const crestY = this.sy[st] - BREACH_STUB_DROP;
+    for (let k = 0; k < BREACH_LANES; k++) {
+      const along = (k - (BREACH_LANES - 1) * 0.5) * 1.6;
+      const cx = this.sx[st] + ax * along;
+      const cz = this.sz[st] + az * along;
+      const ox = cx + nx * outFoot;
+      const oz = cz + nz * outFoot;
+      const ix = cx + nx * inFoot;
+      const iz = cz + nz * inFoot;
+      const l: WallLink = {
+        id: this.links.length, kind: LinkKind.Breach,
+        runA: -1, runB: -1, stationA: -1, stationB: -1,
+        ax: ox, az: oz, ay: this.battle.groundAt(ox, oz),
+        bx: ix, bz: iz, by: this.battle.groundAt(ix, iz),
+        ab: null, ba: null, used: 0, lane: k,
+      };
+      // Over the rubble in the middle: a breach is climbed, and the stub of wall left
+      // standing is what a man goes over.
+      l.ab = this.makeCrossing([
+        l.ax, l.ay, l.az,
+        cx + nx * (this.sFace[st] * 0.5), crestY, cz + nz * (this.sFace[st] * 0.5),
+        cx + nx * (this.sInner[st] * 0.5), crestY, cz + nz * (this.sInner[st] * 0.5),
+        l.bx, l.by, l.bz,
+      ], -1, CROSS_PASS);
+      l.ba = this.makeCrossing([
+        l.bx, l.by, l.bz,
+        cx + nx * (this.sInner[st] * 0.5), crestY, cz + nz * (this.sInner[st] * 0.5),
+        cx + nx * (this.sFace[st] * 0.5), crestY, cz + nz * (this.sFace[st] * 0.5),
+        l.ax, l.ay, l.az,
+      ], -1, CROSS_PASS);
+      this.links.push(l);
+      this.breachLinks.push(l.id);
+    }
+
+    // The city cuts its own nav if it knows how; absent, the breach is still crossable by
+    // the lanes above, which is the mechanic. See the report.
+    this.city?.breachWall?.(this.sx[st], this.sz[st], BREACH_HALF_W);
+    this.ctx.events.emit('cameraShake', { amplitude: 1.6, decay: 0.7 });
+    // The machine has done what it was built for. Get it off the rubble.
+    this.beginWithdraw(r);
+  }
+
+  /**
+   * Throw away every reference to the wall graph that the collapse has just invalidated.
+   *
+   * `recut` renumbers the runs and `buildLinks` rebuilds `this.links` from scratch, so after
+   * a breach every stored index is pointing at something else or at nothing:
+   *
+   *   - `plan.stair` and `plan.destRun` are integers into arrays that no longer mean what
+   *     they meant. A descent whose `stair` index now names a tower pass would walk a cohort
+   *     into a doorway instead of down a flight, and one that is now out of range would take
+   *     the `!stair` branch every tick for ever.
+   *   - Worse, a man mid-crossing is in the `queue` of a `Crossing` hanging off the *old*
+   *     link objects. `advanceLinks` only ever walks `this.links`, so nothing would advance
+   *     him again: he would hang in a tower doorway at the height he had reached, for the
+   *     rest of the battle, with `crossOf` permanently set.
+   *
+   * Both are silent. Neither would fail an assertion that was not looking for it. So the
+   * collapse discards all of it and puts everyone back on a station they are demonstrably
+   * standing on — orders are cheap to reissue and a man frozen in mid-air is not recoverable.
+   */
+  private invalidateWallTraffic(): void {
+    const b = this.battle;
+    const p = b.pool;
+    for (const l of this.links) { l.ab = null; l.ba = null; }
+    this.plans.clear();
+    this.waiters.clear();
+    for (let i = 0; i < this.crossOf.length; i++) {
+      this.wantLink[i] = -1;
+      if (this.linkOf[i] < 0) continue;
+      // He was inside a doorway that no longer exists. Put him on the nearest live station,
+      // or on the ground if the whole run has gone.
+      this.linkOf[i] = -1;
+      this.crossOf[i] = -1;
+      const st = p.aliveAt(i) ? this.stationNear(p.x[i], p.z[i]) : -1;
+      if (st >= 0 && !this.dead(st)) {
+        this.stationOf[i] = st;
+        this.rankOf[i] = 0;
+        b.elevated[i] = 1;
+        b.support[i] = this.sy[st];
+      } else {
+        this.stationOf[i] = -1;
+        b.elevated[i] = 0;
+        b.support[i] = NO_SUPPORT;
+      }
+      if (p.aliveAt(i) && p.state[i] === SoldierState.Climbing) p.setState(i, SoldierState.Idle);
+    }
+  }
+
+  /**
+   * Move anybody who was standing on the stretch that just fell.
+   *
+   * They are not killed here. `BattleSystem.damage` is the only thing in the sim allowed to
+   * kill a man and this is not it — a collapsing wall throwing men down is a Combat
+   * decision, not a geometry one. What this guarantees is the invariant this file owns:
+   * nobody is left standing on a station that no longer exists, which would leave him
+   * hovering at the old walkway height over an eight-metre hole.
+   */
+  private rehouseTheFallen(lo: number, hi: number): void {
+    const b = this.battle;
+    const p = b.pool;
+    for (const [id] of this.garrisons) {
+      const u = b.unitById(id);
+      if (!u || u.destroyed) continue;
+      for (const i of u.members) {
+        if (!p.aliveAt(i)) continue;
+        const s = this.stationOf[i];
+        if (s < lo || s > hi) continue;
+        // Nearest surviving station on either side of the hole, else down to the ground.
+        let dest = -1;
+        for (let k = 1; k < 400; k++) {
+          if (lo - k >= 0 && !this.dead(lo - k)) { dest = lo - k; break; }
+          if (hi + k < this.nStations && !this.dead(hi + k)) { dest = hi + k; break; }
+        }
+        if (dest < 0) {
+          this.stationOf[i] = -1;
+          b.elevated[i] = 0;
+          b.support[i] = NO_SUPPORT;
+          continue;
+        }
+        this.stationOf[i] = dest;
+        this.rankOf[i] = 0;
+        b.support[i] = this.sy[dest];
+      }
+    }
   }
 
   /**
@@ -849,15 +2499,90 @@ export class Siege implements ElevationOwner {
   // -------------------------------------------------------------------------
 
   preSteer(dt: number): void {
+    // Before the early-out: a city's gate is shut whether or not anybody is standing on the
+    // wall, and this must not depend on a garrison existing. One boolean per tick.
+    if (!this.gateArmed) this.armGate();
     // A battle with nothing on a structure pays one comparison for all of this. The field
     // battle runs 8,600 men and never touches a wall; it must not pay for the siege.
     if (this.owned.size === 0 && this.garrisons.size === 0) return;
+    // A player order arrives between ticks and this runs before `trackOwnedAnchors` can
+    // overwrite the target it came with, which is the whole reason the interception works
+    // without a patch anywhere else. See `interceptOrders`.
+    this.interceptOrders();
+    this.releaseBrokenCrews(dt);
     this.updateGarrisons();
+    this.advancePlans();
     this.updateTowers(dt);
     this.updateRams(dt);
     this.updateLadders(dt);
     // After the machines have moved, because a crew musters on where its machine *is*.
     this.musterOwned();
+  }
+
+  /**
+   * Let a crew that has broken actually run.
+   *
+   * `BattleSystem.steerSoldiers` tests `ownsUnit` *before* it tests for a rout, so a
+   * siege-owned unit is steered to its muster slots whatever its morale — and `musterRams`
+   * rewrites those slots at the machine every tick. The result was reported by the player
+   * and is worth stating exactly: a ram crew that broke could not leave, so the defenders
+   * went on killing men who were pinned to the machine in the middle of the carriageway, and
+   * the gate the ram had just opened stayed corked by the fight in it. Nothing died, nothing
+   * moved, and the assault stalled on its own success.
+   *
+   * A machine is a thing you abandon. The moment its crew breaks they stop being the crew,
+   * the siege system lets go of them, and they rout like anybody else.
+   */
+  private releaseBrokenCrews(dt: number): void {
+    const b = this.battle;
+    for (const r of this.rams) {
+      if (r.wreck) continue;
+      const u = b.unitById(r.unitId);
+      const gone = !u || u.destroyed || u.alive === 0;
+      const broken = !gone && u.order === UnitOrder.Rout;
+
+      if (gone || broken) {
+        /**
+         * Derelict. Somebody else can have a turn.
+         *
+         * The scenario crews this machine with sixteen men and they are shot off it on the
+         * way in — measured: the crew is down to one man by t+90 and the unit is destroyed by
+         * t+270, and with the pin removed the ram then stood 16 m short of the gate for the
+         * rest of the battle and landed **0 blows** where the unmodified tree landed 26.
+         *
+         * That is worth being blunt about: the 26 blows the old code scored were a *product
+         * of the bug*. A routed crew that could not run away kept its hands on the machine
+         * and kept pushing it. Fixing the pin honestly and changing nothing else would have
+         * traded the player's complaint for a gate that never opens, which is worse.
+         *
+         * A ram is not one small unit's toy, it is an army's asset, and an army that has
+         * spent a month building one does not abandon it because the first gang broke. So it
+         * takes a fresh gang from whoever is nearest. If nobody comes for `DERELICT_LIMIT`
+         * seconds it really has been abandoned, and then it is a wreck.
+         */
+        if (this.owned.has(r.unitId)) {
+          this.owned.delete(r.unitId);
+          const old = b.unitById(r.unitId);
+          if (old) {
+            for (const i of old.members) {
+              b.elevated[i] = 0;
+              b.support[i] = NO_SUPPORT;
+            }
+          }
+        }
+        if (this.recrew(r)) continue;
+        r.derelictFor += dt;
+        if (r.derelictFor >= DERELICT_LIMIT) {
+          r.wreck = true;
+          r.state = RamState.Wreck;
+        }
+        continue;
+      }
+      r.derelictFor = 0;
+
+      // Working normally.
+      if (!this.owned.has(u.id)) this.owned.add(u.id);
+    }
   }
 
   private updateGarrisons(): void {
@@ -871,8 +2596,13 @@ export class Siege implements ElevationOwner {
       // cent rather than every tick: re-laying every frame makes the whole garrison
       // shuffle a few centimetres on every casualty, which reads as a nervous twitch
       // running down the wall.
-      if (!g.sticky && (g.plannedFor < 0 || u.alive < g.plannedFor * 0.94)) {
-        this.layOutGarrison(u, g);
+      // A unit under orders is laid out by `advancePlans`, which knows which of its men are
+      // actually up here and which are still on a stair. Re-forming it from this side as
+      // well would fight that every tick: the two disagree about the roll, so the unit would
+      // shuffle between two layouts at 30 Hz.
+      const planned = this.plans.has(id);
+      if (!planned && !g.sticky && (g.plannedFor < 0 || u.alive < g.plannedFor * 0.94)) {
+        this.layOutGarrison(u, g, undefined, true);
       }
       for (const i of u.members) {
         if (!p.aliveAt(i)) continue;
@@ -895,6 +2625,30 @@ export class Siege implements ElevationOwner {
       const dx = t.dockX - t.x;
       const dz = t.dockZ - t.z;
       t.dist = Math.hypot(dx, dz);
+
+      /**
+       * A tower nobody is pushing does not roll. Same defect as the ram, same fix.
+       *
+       * Reported from a playtest as "the ram gets routed and the people flee yet it keeps
+       * moving forward", and a *turris ambulatoria* had exactly the same hole: `t.x` and
+       * `t.z` were advanced every tick with no reference to whether the crew still existed.
+       * Fifteen tonnes of green timber is moved by a gang on levers and rollers; when the
+       * gang breaks it stops, and it stops *where it is*, in the open, which is the moment
+       * the defenders have been waiting for.
+       *
+       * The mesh follows because `writeTowers` positions the shaft, deck, wheels and ramp
+       * from `t.x/t.y/t.z` — these fields, not the crew unit's anchor — so freezing the
+       * simulation freezes what the player sees. (Artillery is the opposite case: its mesh
+       * is placed off the *unit* anchor, which is why the onager's answer is a zero walk
+       * speed in `siegeUnits.ts` rather than a gate here.)
+       */
+      const crew = b.unitById(t.unitId);
+      const manned = !!crew && !crew.destroyed && crew.alive > 0
+        && crew.order !== UnitOrder.Rout;
+      if (!manned && t.state === TowerState.Approach) {
+        t.y = b.groundAt(t.x, t.z);
+        continue;
+      }
 
       if (t.state === TowerState.Approach) {
         if (t.dist <= TOWER_SPEED * dt) {
@@ -963,9 +2717,15 @@ export class Siege implements ElevationOwner {
     }
     // Across the deck, out along the ramp, and one pace clear onto the stonework.
     const deckFront = w(0, TOWER_HALF_D - 0.3);
-    // Where the ramp head rests, in the tower's own frame: far enough forward to be past the
-    // parapet and on the walk, not the full ramp length, because the ramp slopes down.
-    const rampEnd = w(0, TOWER_HALF_D + 3.2);
+    /**
+     * Where the ramp head rests, in the tower's own frame.
+     *
+     * `t.rampReach`, not a hand-picked 3.2 m: this is the same number the renderer scales
+     * and pitches the timber by, so the men walk on the plank that is drawn rather than
+     * beside it. The two were independent before, which is survivable only while both happen
+     * to be right — and the drawn one was not.
+     */
+    const rampEnd = w(0, TOWER_HALF_D + t.rampReach);
     pts.push(deckFront[0], t.deckY, deckFront[1]);
     pts.push(rampEnd[0], s.y, rampEnd[1]);
     pts.push(s.x, s.y, s.z);
@@ -973,29 +2733,45 @@ export class Siege implements ElevationOwner {
   }
 
   /**
-   * Pitch of a tower's ramp, radians, about the local +X axis at the deck's front lip.
+   * How long the *pons* is and how it is pitched right now.
    *
-   * The ramp is authored running along -Z from its hinge, so after a rotation of `pitch`
-   * about X its far end sits at `deckY + RAMP_LEN * sin(pitch)`. Landing it on the walkway
-   * therefore needs **`asin((walkY - deckY) / RAMP_LEN)`, which is negative** because the
-   * deck is deliberately built half a metre proud of the parapet — a ramp that has to be
-   * pushed *up* onto a wall is a ramp that does not reach it.
+   * Both are cut to the machine at spawn — see `spawnTower` — because a boarding ramp is a
+   * piece of timber, not a telescope. Only the pitch animates: `+90 degrees` stowed, upright
+   * against the front of the tower, easing down to the angle that lands the lip on the walk.
    *
-   * The sign was inverted in the first version and the probe caught it as a ramp whose
-   * head floated 110 cm above the stonework: the same magnitude as the deck's own 55 cm
-   * of clearance, doubled, which is exactly the signature of a flipped sign and not of a
-   * mistuned constant.
-   *
-   * Stowed is +90 degrees: straight up against the front of the tower.
+   * The landed pitch is **negative**, and that sign is load-bearing. The deck is built half a
+   * metre proud of the walkway, so the ramp falls onto the wall; a ramp that has to be
+   * pushed *up* onto a parapet is one that does not reach it. An earlier version had the
+   * sign inverted and the probe caught it as a head floating 110 cm above the stonework —
+   * twice the deck's own 55 cm of clearance, which is the signature of a flipped sign rather
+   * than a mistuned constant.
    */
-  private rampPitch(t: SiegeTower): number {
-    const landed = Math.asin(clamp((this.sy[t.station] - t.deckY) / RAMP_LEN, -1, 1));
-    return lerp(Math.PI * 0.5, landed, t.ramp);
+  private rampSpan(t: SiegeTower): { len: number; pitch: number } {
+    return { len: t.rampLen, pitch: lerp(Math.PI * 0.5, t.rampLanded, t.ramp) };
   }
 
-  /** Absolute Y of the far end of a tower's ramp — the thing that must sit on the walk. */
-  private rampHeadY(t: SiegeTower): number {
-    return t.deckY + Math.sin(this.rampPitch(t)) * RAMP_LEN;
+  /**
+   * Where a tower's ramp head has actually been **drawn**, read back out of the instance
+   * matrix the renderer wrote rather than recomputed from the numbers that produced it.
+   *
+   * This replaces `rampHeadY`, and the replacement is the entire point. `rampHeadY` returned
+   * `deckY + sin(pitch)·RAMP_LEN` — the head's height derived analytically from the same
+   * inputs as the transform — so it agreed with the renderer's mistake perfectly and
+   * reported all four heads 0.0 cm from the walkway while every one of them was drawn 3.36 m
+   * out from the wall, raked backwards over the machine. Twenty-five assertions passed on
+   * top of a ramp a player could see was wrong, which is precisely what happened to the
+   * ladders before them and precisely what `drawnLadderHead` exists to prevent.
+   *
+   * Returns false before the first frame, when there is no matrix to read; the probe treats
+   * a head it could not measure as a failure rather than as a pass.
+   */
+  private drawnRampHead(n: number, out: THREE.Vector3): boolean {
+    if (!this.mRamp || n >= this.mRamp.count) return false;
+    this.mRamp.getMatrixAt(n, TMP_M);
+    // (0, 0, -RAMP_LEN) is the iron-shod lip in `buildTowerRamp`, before the per-instance
+    // stretch that the matrix itself carries.
+    out.set(0, 0, -RAMP_LEN).applyMatrix4(TMP_M);
+    return Number.isFinite(out.x) && Number.isFinite(out.y) && Number.isFinite(out.z);
   }
 
   private slotStation(station: number): { x: number; y: number; z: number } {
@@ -1004,7 +2780,7 @@ export class Siege implements ElevationOwner {
     return { x: this.sx[s] + this.snx[s] * off, y: this.sy[s], z: this.sz[s] + this.snz[s] * off };
   }
 
-  private makeCrossing(flat: number[], destStation: number): Crossing {
+  private makeCrossing(flat: number[], destStation: number, pace = CROSS_WALK): Crossing {
     const n = flat.length / 3;
     const pts = new Float32Array(flat);
     const arc = new Float32Array(n);
@@ -1014,13 +2790,28 @@ export class Siege implements ElevationOwner {
       const dz = pts[k * 3 + 2] - pts[(k - 1) * 3 + 2];
       arc[k] = arc[k - 1] + Math.hypot(dx, dy, dz);
     }
-    return { pts, arc, n, destStation, queue: [] };
+    return { pts, arc, n, destStation, queue: [], pace };
   }
 
   private updateRams(dt: number): void {
     const b = this.battle;
     for (const r of this.rams) {
-      if (!r.arrived) {
+      const great = r.kind === RamKind.Great;
+      const period = great ? GREAT_RAM_PERIOD : RAM_PERIOD;
+
+      // A wreck is scenery. It never swings, never blocks and is never a target again.
+      if (r.state === RamState.Wreck) {
+        r.swing = lerp(r.swing, 0, Math.min(1, dt * 0.6));
+        continue;
+      }
+      // Crew broken but alive: the machine stands where it is until they rally. Nobody is
+      // hauling it and nobody is on the ropes, so it neither rolls nor swings.
+      if (!this.owned.has(r.unitId)) {
+        r.swing = lerp(r.swing, 0, Math.min(1, dt * 1.2));
+        continue;
+      }
+
+      if (r.state === RamState.Approach) {
         const dx = r.targetX - r.x;
         const dz = r.targetZ - r.z;
         const d = Math.hypot(dx, dz);
@@ -1028,6 +2819,7 @@ export class Siege implements ElevationOwner {
           r.x = r.targetX;
           r.z = r.targetZ;
           r.arrived = true;
+          r.state = RamState.Battering;
         } else {
           r.x += (dx / d) * RAM_SPEED * dt;
           r.z += (dz / d) * RAM_SPEED * dt;
@@ -1036,42 +2828,166 @@ export class Siege implements ElevationOwner {
         continue;
       }
 
-      if (this.gateBreached) {
-        // Draw it back out of the passage once the leaves are down.
+      /**
+       * Hauling clear of the hole it has just made.
+       *
+       * This is the answer to the ram corking its own breach, and it is worth being precise
+       * about what was actually blocking. The shed is not a physical obstacle — the sim's
+       * only obstacle source is the city — so the machine never stopped anybody. What
+       * stopped them was the *crew*: eighty men mustered on a machine standing in a 4.3 m
+       * carriageway, in a melee they could not disengage from. Backing the machine off the
+       * threshold takes its muster points with it, which takes the crew out of the gateway,
+       * which is what actually clears the road. `releaseBrokenCrews` covers the other case.
+       */
+      if (r.state === RamState.Withdrawing) {
         r.swing = lerp(r.swing, 0, Math.min(1, dt * 1.4));
+        const dx = r.parkX - r.x;
+        const dz = r.parkZ - r.z;
+        const d = Math.hypot(dx, dz);
+        if (d <= RAM_SPEED * dt) {
+          r.x = r.parkX;
+          r.z = r.parkZ;
+          r.state = RamState.Spent;
+        } else {
+          // Backing a loaded shed out is slower than rolling it up. It is also the moment
+          // the crew are most exposed, which is why they hurry and still take casualties.
+          r.x += (dx / d) * RAM_SPEED * 0.8 * dt;
+          r.z += (dz / d) * RAM_SPEED * 0.8 * dt;
+        }
+        r.y = b.groundAt(r.x, r.z);
         continue;
       }
 
+      if (r.state === RamState.Spent) {
+        r.swing = lerp(r.swing, 0, Math.min(1, dt * 1.4));
+        /**
+         * Give the gang back.
+         *
+         * A machine that is parked and finished has no further claim on a cohort, and
+         * keeping it would be a second version of the pin the player reported: a unit held
+         * by the siege system is steered to absolute muster slots by `steerToSlots` and
+         * cannot form line, charge or be given a formation. The men who hauled the ram out
+         * of the gateway should be free to walk in through it.
+         */
+        if (this.owned.has(r.unitId)) {
+          this.owned.delete(r.unitId);
+          const u = b.unitById(r.unitId);
+          if (u) {
+            for (const i of u.members) {
+              b.elevated[i] = 0;
+              b.support[i] = NO_SUPPORT;
+            }
+            u.order = UnitOrder.MoveTo;
+          }
+        }
+        continue;
+      }
+
+      // ---- battering ----
       // The crew haul the trunk back against the slings and let it run. The blow lands
       // when the recoil crosses zero going forward, which is what makes the strike land
       // on the frame the sound plays on.
       r.timer -= dt;
-      const phase = 1 - clamp(r.timer / RAM_PERIOD, 0, 1);
-      // Draw back over the first 70 % of the cycle, run forward over the last 30 %.
+      const phase = 1 - clamp(r.timer / period, 0, 1);
+      // Draw back over the first 70 % of the cycle, run forward over the last 30 %. The
+      // great ram is slung further back because there is more of it.
+      const draw = great ? 2.6 : 1.5;
       r.swing = phase < 0.7
-        ? -1.5 * (phase / 0.7)
-        : -1.5 * (1 - (phase - 0.7) / 0.3);
-      if (r.timer <= 0) {
-        r.timer = RAM_PERIOD;
-        r.blows++;
-        this.gateBlows++;
-        this.ctx.events.emit('cameraShake', { amplitude: 0.55, decay: 2.6 });
-        this.ctx.events.emit('projectileImpact', {
-          x: r.x + Math.sin(r.facing) * (RAM_HALF_D + 3.2),
-          y: r.y + 1.6,
-          z: r.z + Math.cos(r.facing) * (RAM_HALF_D + 3.2),
-          kind: 'bolt', hitTarget: false, material: 'wood',
-        });
-        if (this.gateBlows >= GATE_BLOWS && !this.gateBreached) {
-          this.gateBreached = true;
-          // The passage is already clear in the movement grid — the gate stood open. What
-          // the breach changes is that it can no longer be shut, which is what the
-          // defenders would otherwise do the moment the ram appeared.
-          this.city?.setGateOpen('porta-flaminia', true);
-          this.ctx.events.emit('cameraShake', { amplitude: 1.0, decay: 0.9 });
-        }
+        ? -draw * (phase / 0.7)
+        : -draw * (1 - (phase - 0.7) / 0.3);
+      if (r.timer > 0) continue;
+
+      r.timer = period;
+      r.blows++;
+      const reach = (great ? GREAT_RAM_HALF_D : RAM_HALF_D) + (great ? 4.4 : 3.2);
+      this.ctx.events.emit('cameraShake', { amplitude: great ? 0.9 : 0.55, decay: 2.6 });
+      this.ctx.events.emit('projectileImpact', {
+        x: r.x + Math.sin(r.facing) * reach,
+        y: r.y + 1.6,
+        z: r.z + Math.cos(r.facing) * reach,
+        kind: 'bolt', hitTarget: false, material: great ? 'stone' : 'wood',
+      });
+
+      if (great) {
+        this.strikeCurtain(r);
+        continue;
+      }
+
+      this.gateBlows++;
+      if (this.gateBlows >= GATE_BLOWS && !this.gateBreached) {
+        this.gateBreached = true;
+        /**
+         * The leaves come down and the passage opens — *now*, not at the start of the
+         * battle.
+         *
+         * This is the line the whole gate mechanic turns on and it used to be a no-op.
+         * `Siege.init` shuts the gate against the city's own occupancy raster and oriented
+         * boxes, so until this fires the carriageway is solid to pathfinding, to the crowd
+         * solver and to the obstacle push-out. Before, the gate stood open from t=0 and the
+         * only thing 26 blows achieved was that it could no longer be closed — a mechanic
+         * with nothing on the other side of it.
+         */
+        this.city?.setGateOpen('porta-flaminia', true);
+        this.ctx.events.emit('cameraShake', { amplitude: 1.0, decay: 0.9 });
+        // And get out of the way of the men who have been waiting behind it.
+        this.beginWithdraw(r);
       }
     }
+  }
+
+  /**
+   * Put a fresh gang on a derelict machine.
+   *
+   * The nearest formed body of the right side that is not already doing something a siege
+   * engine cannot interrupt. Deterministic: `battle.units` is iterated in order and ties
+   * break on the smaller unit id, so two equidistant warbands always resolve the same way.
+   *
+   * Deliberately *not* a unit in contact. Pulling a cohort out of a melee to push a shed is
+   * not a trade any commander makes, and mechanically it would let a machine reach across
+   * the field and unstick a fight.
+   */
+  private recrew(r: SiegeRam): boolean {
+    const b = this.battle;
+    const previous = b.unitById(r.unitId);
+    const faction = previous ? previous.faction : -1;
+    if (faction < 0) return false;
+    let best = -1;
+    let bestD = RECREW_RADIUS * RECREW_RADIUS;
+    for (const u of b.units) {
+      if (u.destroyed || u.alive === 0) continue;
+      if (u.faction !== faction) continue;
+      if (u.id === r.unitId) continue;
+      if (this.owned.has(u.id)) continue;
+      if (u.order === UnitOrder.Rout || u.contactLock) continue;
+      const d = (u.x - r.x) * (u.x - r.x) + (u.z - r.z) * (u.z - r.z);
+      if (d < bestD - 1e-6) { bestD = d; best = u.id; }
+    }
+    if (best < 0) return false;
+    r.unitId = best;
+    r.derelictFor = 0;
+    this.owned.add(best);
+    const fresh = b.unitById(best);
+    if (fresh) {
+      fresh.waypoints.length = 0;
+      fresh.targetUnitId = -1;
+    }
+    return true;
+  }
+
+  /**
+   * Back a ram off the passage it has opened, to a park clear of the threshold.
+   *
+   * Straight back down its own axis, on the side it came from, far enough that neither the
+   * shed nor the crew mustered around it is inside the carriageway any more. `RAM_HALF_D`
+   * puts the tail of the shed on the threshold; the muster extends about four rows further
+   * back again, so the park has to clear both.
+   */
+  private beginWithdraw(r: SiegeRam): void {
+    const great = r.kind === RamKind.Great;
+    const clear = (great ? GREAT_RAM_HALF_D : RAM_HALF_D) * 2 + 9;
+    r.parkX = r.x - Math.sin(r.facing) * clear;
+    r.parkZ = r.z - Math.cos(r.facing) * clear;
+    r.state = RamState.Withdrawing;
   }
 
   private updateLadders(dt: number): void {
@@ -1097,6 +3013,7 @@ export class Siege implements ElevationOwner {
   postIntegrate(dt: number): void {
     if (this.owned.size === 0 && this.garrisons.size === 0) return;
     this.advanceCrossings(dt);
+    this.advanceLinks(dt);
     this.holdGarrisonsOnTheWalk();
   }
 
@@ -1122,39 +3039,39 @@ export class Siege implements ElevationOwner {
     void b;
   }
 
-  private stepCrossing(c: Crossing, unitId: number, dt: number, onArrive: (n: number) => void): void {
+  /** Common bookkeeping for putting a man onto a path. See `crossEx` for the entry blend. */
+  private admitTo(c: Crossing, i: number): void {
     const b = this.battle;
     const p = b.pool;
-    const u = b.unitById(unitId);
-    if (!u || u.destroyed) return;
+    this.crossOf[i] = 1;
+    this.crossT[i] = 0;
+    this.crossEx[i] = p.x[i];
+    this.crossEy[i] = p.y[i];
+    this.crossEz[i] = p.z[i];
+    c.queue.push(i);
+    b.elevated[i] = 1;
+    p.setState(i, SoldierState.Climbing);
+  }
+
+  /** True when the tail of the queue has moved far enough off the mouth to admit another. */
+  private mouthClear(c: Crossing): boolean {
+    return c.queue.length === 0 || this.crossT[c.queue[c.queue.length - 1]] > CROSS_GAP;
+  }
+
+  /**
+   * Move everyone already on a path, and hand back each man who reaches the end.
+   *
+   * Shared by every kind of crossing — a boarding ramp, a ladder, a stair, a tower pass and
+   * a breach lane are one mechanism, and this is it. `onArrive` is the only thing that
+   * differs, because a ramp deposits a man into a lodgement and a stair going down deposits
+   * him on the grass.
+   */
+  private advanceQueue(c: Crossing, dt: number, onArrive: (i: number) => void): number {
+    const b = this.battle;
+    const p = b.pool;
     const total = c.arc[c.n - 1];
-
-    // ---- admit the next man ----
-    // One at a time, and only once the man ahead is clear of the mouth of the path.
-    const lastT = c.queue.length > 0 ? this.crossT[c.queue[c.queue.length - 1]] : Infinity;
-    if (lastT > CROSS_GAP) {
-      for (const i of u.members) {
-        if (!p.aliveAt(i)) continue;
-        if (this.crossOf[i] !== -1) continue;
-        if (this.stationOf[i] >= 0) continue;
-        // Only a man who has actually reached the foot of the path may start up it.
-        const dx = p.x[i] - c.pts[0];
-        const dz = p.z[i] - c.pts[2];
-        if (dx * dx + dz * dz > ADMIT_RADIUS * ADMIT_RADIUS) continue;
-        this.crossOf[i] = 1;
-        this.crossT[i] = 0;
-        this.crossEx[i] = p.x[i];
-        this.crossEy[i] = p.y[i];
-        this.crossEz[i] = p.z[i];
-        c.queue.push(i);
-        b.elevated[i] = 1;
-        p.setState(i, SoldierState.Climbing);
-        break;
-      }
-    }
-
-    // ---- advance, back of the queue first so nobody is blocked by a stale position ----
     let arrived = 0;
+    // Back of the queue first, so nobody is blocked by a stale position.
     for (let k = c.queue.length - 1; k >= 0; k--) {
       const i = c.queue[k];
       if (!p.aliveAt(i)) {
@@ -1162,12 +3079,13 @@ export class Siege implements ElevationOwner {
         // died at, which is what `elevated` is still doing for him.
         c.queue.splice(k, 1);
         this.crossOf[i] = -1;
+        this.linkOf[i] = -1;
         continue;
       }
       // Nobody overtakes: the man ahead is the one before him in the queue.
       const ahead = k > 0 ? this.crossT[c.queue[k - 1]] - CROSS_GAP : Infinity;
       const seg = this.segmentAt(c, this.crossT[i]);
-      const speed = seg.steep ? CROSS_CLIMB : CROSS_WALK;
+      const speed = seg.steep ? CROSS_CLIMB : c.pace;
       const want = Math.min(this.crossT[i] + speed * dt, ahead, total);
       this.crossT[i] = Math.max(this.crossT[i], want);
 
@@ -1192,17 +3110,45 @@ export class Siege implements ElevationOwner {
       else if (!seg.steep && p.state[i] === SoldierState.Climbing) p.setState(i, SoldierState.Running);
 
       if (this.crossT[i] >= total - 1e-3) {
-        // Onto the wall. He joins the garrison of whatever bay the path ends at.
         c.queue.splice(k, 1);
         this.crossOf[i] = -1;
-        // Flagged rather than placed: `adoptBoarders` decides where in the lodgement he
-        // goes, and it must be able to tell him from the men already standing there.
-        this.stationOf[i] = PENDING_SLOT;
-        this.rankOf[i] = 0;
-        p.setState(i, SoldierState.Idle);
+        onArrive(i);
         arrived++;
       }
     }
+    return arrived;
+  }
+
+  private stepCrossing(c: Crossing, unitId: number, dt: number, onArrive: (n: number) => void): void {
+    const b = this.battle;
+    const p = b.pool;
+    const u = b.unitById(unitId);
+    if (!u || u.destroyed) return;
+
+    // ---- admit the next man ----
+    // One at a time, and only once the man ahead is clear of the mouth of the path.
+    if (this.mouthClear(c)) {
+      for (const i of u.members) {
+        if (!p.aliveAt(i)) continue;
+        if (this.crossOf[i] !== -1) continue;
+        if (this.stationOf[i] >= 0) continue;
+        // Only a man who has actually reached the foot of the path may start up it.
+        const dx = p.x[i] - c.pts[0];
+        const dz = p.z[i] - c.pts[2];
+        if (dx * dx + dz * dz > ADMIT_RADIUS * ADMIT_RADIUS) continue;
+        this.admitTo(c, i);
+        break;
+      }
+    }
+
+    const arrived = this.advanceQueue(c, dt, (i) => {
+      // Onto the wall. He joins the garrison of whatever bay the path ends at. Flagged
+      // rather than placed: `adoptBoarders` decides where in the lodgement he goes, and it
+      // must be able to tell him from the men already standing there.
+      this.stationOf[i] = PENDING_SLOT;
+      this.rankOf[i] = 0;
+      p.setState(i, SoldierState.Idle);
+    });
     if (arrived > 0) {
       onArrive(arrived);
       this.adoptBoarders(u, c.destStation);
@@ -1221,7 +3167,7 @@ export class Siege implements ElevationOwner {
     if (!g) {
       g = {
         unitId: u.id, from: destStation, span: 1, ranks: MAX_WALL_RANKS,
-        plannedFor: -1, sticky: true, filled: 0,
+        plannedFor: -1, sticky: true, filled: 0, overflow: 0, lastTx: u.x, lastTz: u.z,
       };
       this.garrisons.set(u.id, g);
       u.order = UnitOrder.Garrison;
@@ -1408,18 +3354,24 @@ export class Siege implements ElevationOwner {
     const b = this.battle;
     const p = b.pool;
     for (const r of this.rams) {
+      // A wreck has no crew to muster, and a crew that has broken is no longer mustered on
+      // anything — it is running. Holding either of them here is the pin that stopped a
+      // routed crew leaving the carriageway. See `releaseBrokenCrews`.
+      if (r.wreck) continue;
       const u = b.unitById(r.unitId);
-      if (!u || u.destroyed) continue;
+      if (!u || u.destroyed || u.order === UnitOrder.Rout) continue;
+      const halfD = r.kind === RamKind.Great ? GREAT_RAM_HALF_D : RAM_HALF_D;
+      const abreast = r.kind === RamKind.Great ? 6 : 4;
       const cos = Math.cos(r.facing);
       const sin = Math.sin(r.facing);
       let q = 0;
       for (const i of u.members) {
         if (!p.aliveAt(i)) continue;
-        const file = q % 4;
-        const row = Math.floor(q / 4);
+        const file = q % abreast;
+        const row = Math.floor(q / abreast);
         q++;
-        const rx = (file - 1.5) * 0.85;
-        const fz = row < 4 ? 1.6 - row * 1.1 : -(RAM_HALF_D + (row - 3) * 0.95);
+        const rx = (file - (abreast - 1) * 0.5) * 0.85;
+        const fz = row < 4 ? 1.6 - row * 1.1 : -(halfD + (row - 3) * 0.95);
         b.elevated[i] = 0;
         b.support[i] = NO_SUPPORT;
         b.slotX[i] = r.x + rx * cos + fz * sin;
@@ -1473,17 +3425,71 @@ export class Siege implements ElevationOwner {
   private writeTowers(): void {
     let n = 0;
     for (const t of this.towers) {
+      /**
+       * The whole machine takes the half turn, not just the ramp.
+       *
+       * Fixing `mRamp` alone was a half fix and it left the more visible half of the player's
+       * report in place. Every one of these geometries is authored with **local −Z as the
+       * front** — `buildTowerShaft`'s comment says so outright, "−Z is the front, the face
+       * that goes against the wall" — and under `Ry(yaw)` local −Z lands on
+       * `(−sin yaw, −cos yaw)`, the opposite of the bearing `yaw` names. Drawn at
+       * `yaw = t.facing` the tower therefore presented its *back* to the wall:
+       *
+       *   - the hide screen, which exists to stop what the defenders throw, faced the open
+       *     field, and the open lattice faced the parapet;
+       *   - `buildTowerDeck`'s front cheeks and its iron hinge pintles sat on the far side,
+       *     so the ramp — correctly hinged on the wall side in world space — came out
+       *     *through the solid rear breastwork* while the opening pointed at nothing.
+       *
+       * That last one is "the door opens backwards", and no assertion could see it: the probe
+       * reads back `mRamp` and `mLadder` and has never read a matrix from the shaft, the deck,
+       * the wheels or either shed.
+       */
       const h = Math.max(2, t.deckY - t.y);
-      this.setInstance(this.mShaft, n, t.x, t.y, t.z, t.facing, 1, h, 1);
-      this.setInstance(this.mDeck, n, t.x, t.deckY, t.z, t.facing);
-      this.setInstance(this.mWheels, n, t.x, t.y, t.z, t.facing);
-      // The ramp hinges at the deck's front lip. Stowed it stands straight up against
-      // the front of the tower; landed it lies flat, reaching the parapet.
-      const cos = Math.cos(t.facing);
+      const yaw = t.facing + Math.PI;
+      this.setInstance(this.mShaft, n, t.x, t.y, t.z, yaw, 1, h, 1);
+      this.setInstance(this.mDeck, n, t.x, t.deckY, t.z, yaw);
+      this.setInstance(this.mWheels, n, t.x, t.y, t.z, yaw);
+      /**
+       * The ramp hinges at the deck's front lip, and it is yawed by `facing + PI`.
+       *
+       * **That half turn is the reported bug, and it is the ladder bug over again.**
+       * `buildTowerRamp` authors the *pons* running out along local **−Z** — the same
+       * "business end along −Z" convention as `buildRamTrunk` and `buildLadder` — and
+       * `setInstance` composes `Ry(yaw)·Rx(pitch)`, under which local −Z lands on world
+       * `(−sin yaw, −cos yaw)`. `t.facing` is `atan2(−nx, −nz)`, which points *at* the wall.
+       * Drawn at `yaw = t.facing`, therefore, the ramp reached out along `(nx, nz)` — away
+       * from the wall, backwards over the tower's own roof.
+       *
+       * Measured off this `InstancedMesh`'s matrix before the fix, all four ramps had their
+       * head **3.36 m further from the wall than their own hinge**: a signed reach of −3.36
+       * where it must be positive. The player saw it as "the draw bridge is a bit backwards
+       * on their top — the ropes are pointed forward and the door opens backwards", which is
+       * exactly what a half-turned ramp looks like: the hoisting ropes, authored from the
+       * far end back over the hinge, end up on the wall side pointing forward while the deck
+       * swings out over the back.
+       *
+       * And the reason twenty-five assertions sat green on top of it is the same reason
+       * twenty-four sat green on the ladders. `rampHeadY` computed the head **analytically**,
+       * as `deckY + sin(pitch)·RAMP_LEN`, from the same inputs as the bug — so it reported
+       * the head 0.0 cm from the walkway while the renderer put it in mid-air behind the
+       * machine. `drawnRampHead` now reads the matrix instead, and the assertion on it is
+       * signed. A check that shares its inputs with the thing it is checking is not a check.
+       *
+       * The Z scale is the second half of the fix. `RAMP_LEN` is 3.4 m and the span actually
+       * wanted here is `hypot(reach, drop)` — measured at 1.7 m on this curtain, because the
+       * tower docks 0.32 m off the face and the standing band starts 1.3 m inboard of it. A
+       * correctly-yawed 3.4 m ramp lands 1.6 m past the walkway's cityward lip, cantilevered
+       * over the street. Scaling to the span is also what keeps this right when the wall
+       * workstream widens the curtain, since nothing here is a constant.
+       */
       const sin = Math.sin(t.facing);
+      const cos = Math.cos(t.facing);
       const hx = t.x + TOWER_HALF_D * sin;
       const hz = t.z + TOWER_HALF_D * cos;
-      this.setInstance(this.mRamp, n, hx, t.deckY, hz, t.facing, 1, 1, 1, this.rampPitch(t));
+      const span = this.rampSpan(t);
+      this.setInstance(this.mRamp, n, hx, t.deckY, hz, t.facing + Math.PI,
+        1, 1, span.len / RAMP_LEN, span.pitch);
       this.tint(this.mShaft, n, t.id);
       this.tint(this.mDeck, n, t.id);
       this.tint(this.mRamp, n, t.id + 41);
@@ -1500,33 +3506,69 @@ export class Siege implements ElevationOwner {
 
   private writeRams(): void {
     let n = 0;
+    let gn = 0;
     for (const r of this.rams) {
-      this.setInstance(this.mShed, n, r.x, r.y, r.z, r.facing);
+      const great = r.kind === RamKind.Great;
+      const halfD = great ? GREAT_RAM_HALF_D : RAM_HALF_D;
+      const shedH = great ? GREAT_RAM_SHED_H : RAM_SHED_H;
+      const reach = great ? GREAT_RAM_REACH : RAM_TRUNK_REACH;
       const cos = Math.cos(r.facing);
       const sin = Math.sin(r.facing);
       /**
+       * A wreck settles.
+       *
+       * Scaled to 40 % of its height and dropped a little into the ground, so what is left is
+       * a low heap of burnt frame rather than a full-height shed standing in the gateway with
+       * nobody in it. It is the honest middle answer to the machine that corked its own
+       * breach: the thing that happened is still visible, and it is no longer a wall.
+       */
+      const sy = r.wreck ? 0.4 : 1;
+      const yy = r.wreck ? r.y - 0.25 : r.y;
+      /**
        * Where the trunk hangs.
        *
-       * `buildRamTrunk` authors the baulk from its origin along **-Z** with the iron head
-       * 7.15 m out, and `facing + PI` turns that to point forward, so the origin has to sit
-       * that far *behind* where the head should be. The first version placed the origin
-       * 5.4 m ahead of the shed instead, which put the head 12.5 m in front of it — through
-       * the gate, out the other side and invisible in every frame of the machine.
+       * The trunk is authored from its origin along **-Z** with the iron head `reach` metres
+       * out, and `facing + PI` turns that to point forward, so the origin has to sit that far
+       * *behind* where the head should be. An early version placed the origin 5.4 m ahead of
+       * the shed instead, which put the head 12.5 m in front of it — through the gate, out
+       * the other side and invisible in every frame of the machine.
        *
        * The head is wanted a metre proud of the shed's front, plus the recoil.
        */
-      const headAt = RAM_HALF_D + 1.0 + r.swing;
-      const originAt = headAt - RAM_TRUNK_REACH;
-      this.setInstance(this.mTrunk, n,
-        r.x + originAt * sin, r.y + RAM_SHED_H - 1.35, r.z + originAt * cos,
-        r.facing + Math.PI);
-      n++;
+      const headAt = halfD + 1.0 + r.swing;
+      const originAt = headAt - reach;
+      const trunkY = yy + shedH * sy - (great ? 1.9 : 1.35) * sy;
+
+      // Same half turn, same reason: the trunk already gets it, and the shed it hangs in is
+      // authored front-along-−Z like everything else here. The plain shed is symmetric in Z
+      // so this is invisible on it; the great ram's hide apron hangs down its front face and
+      // was facing away from the wall it is battering.
+      const shedYaw = r.facing + Math.PI;
+      if (great) {
+        this.setInstance(this.mGreatShed, gn, r.x, yy, r.z, shedYaw, 1, sy, 1);
+        this.setInstance(this.mGreatTrunk, gn,
+          r.x + originAt * sin, trunkY, r.z + originAt * cos, r.facing + Math.PI);
+        this.tint(this.mGreatShed, gn, r.id + 91);
+        this.tint(this.mGreatTrunk, gn, r.id + 23);
+        gn++;
+      } else {
+        this.setInstance(this.mShed, n, r.x, yy, r.z, shedYaw, 1, sy, 1);
+        this.setInstance(this.mTrunk, n,
+          r.x + originAt * sin, trunkY, r.z + originAt * cos, r.facing + Math.PI);
+        n++;
+      }
     }
     for (const m of [this.mShed, this.mTrunk]) {
       if (!m) continue;
       m.count = n;
       m.visible = n > 0;
       if (n > 0) m.instanceMatrix.needsUpdate = true;
+    }
+    for (const m of [this.mGreatShed, this.mGreatTrunk]) {
+      if (!m) continue;
+      m.count = gn;
+      m.visible = gn > 0;
+      if (gn > 0) m.instanceMatrix.needsUpdate = true;
     }
   }
 
@@ -1599,7 +3641,9 @@ export class Siege implements ElevationOwner {
 
   towerReport(): {
     id: number; state: string; dist: number; docked: boolean;
-    rampY: number; walkY: number; crossed: number; queued: number;
+    rampDrawn: boolean; rampY: number; rampHeadOff: number; rampHingeOff: number;
+    rampReach: number; wantHeadOff: number; innerOff: number;
+    walkY: number; crossed: number; queued: number;
     x: number; z: number; baseY: number; groundY: number; deckY: number;
     /** Horizontal gap between the tower's front face and the wall's outer face. */
     faceGap: number;
@@ -1612,12 +3656,35 @@ export class Siege implements ElevationOwner {
       const dx = t.x - this.sx[s];
       const dz = t.z - this.sz[s];
       const outward = dx * this.snx[s] + dz * this.snz[s];
+      /**
+       * The ramp, measured off the matrix the renderer wrote. See `drawnRampHead`.
+       *
+       * `reach` is the signed one and it is the assertion that matters: the head must end up
+       * *closer* to the wall than its own hinge. Every other number here is a magnitude, and
+       * a ramp yawed 180 degrees satisfies all of them — right height, plausible pitch, men
+       * still crossing, because the boarding path is built from the station and not from the
+       * mesh. That is the exact state this suite passed 25/25 in.
+       */
+      const drawn = this.drawnRampHead(t.id, TMP_R);
+      const headOff = drawn
+        ? (TMP_R.x - this.sx[s]) * this.snx[s] + (TMP_R.z - this.sz[s]) * this.snz[s]
+        : NaN;
+      const hingeOff = (t.x + Math.sin(t.facing) * TOWER_HALF_D - this.sx[s]) * this.snx[s]
+        + (t.z + Math.cos(t.facing) * TOWER_HALF_D - this.sz[s]) * this.snz[s];
       return {
         id: t.id,
         state: names[t.state],
         dist: t.dist,
         docked: t.state >= TowerState.Landing,
-        rampY: this.rampHeadY(t),
+        rampDrawn: drawn,
+        rampY: drawn ? TMP_R.y : NaN,
+        rampHeadOff: headOff,
+        rampHingeOff: hingeOff,
+        /** Positive when the lip reaches toward the wall; negative is the reported bug. */
+        rampReach: hingeOff - headOff,
+        /** Where the lip must land: the outward limit of the standing band. */
+        wantHeadOff: this.sOuter[s],
+        innerOff: this.sInner[s],
         walkY: this.sy[s],
         crossed: t.crossed,
         queued: t.crossing ? t.crossing.queue.length : 0,
@@ -1703,6 +3770,237 @@ export class Siege implements ElevationOwner {
     };
   }
 
+  /**
+   * The wall as a graph: where you can stand, and how you get between the places.
+   *
+   * `source` is the one number a reader should look at first. `published` means the city
+   * told us where its flights are; `synthesised` means it did not and this file assumed the
+   * cadence the geometry currently uses, which is a standing invitation for men to walk up
+   * stone that is not there. See `STAIR_MOD`.
+   */
+  wallReport(): {
+    source: 'published' | 'synthesised' | 'none';
+    stairs: number; runs: number; stations: number; deadStations: number;
+    links: { towerPass: number; step: number; stair: number; breach: number };
+    /** Runs reachable from the ground without leaving the wall, over total runs. */
+    reachable: number;
+    stairDetail: {
+      station: number; run: number; footY: number; topY: number;
+      terrainAtFoot: number; walkYAtHead: number; side: number; rise: number;
+    }[];
+    linkUse: { id: number; kind: string; runA: number; runB: number; used: number; gap: number }[];
+  } {
+    const kinds = ['towerPass', 'step', 'stair', 'breach'] as const;
+    const counts = { towerPass: 0, step: 0, stair: 0, breach: 0 };
+    for (const l of this.links) counts[kinds[l.kind]]++;
+
+    // Flood the run chain outward from every run a stair lands on: this is literally the
+    // question "can a man ordered onto this stretch of wall actually get there".
+    const seen = new Uint8Array(Math.max(1, this.nRuns));
+    const stack: number[] = [];
+    for (const l of this.links) if (l.kind === LinkKind.Stair && l.runB >= 0) stack.push(l.runB);
+    while (stack.length > 0) {
+      const r = stack.pop() as number;
+      if (r < 0 || r >= this.nRuns || seen[r]) continue;
+      seen[r] = 1;
+      if (this.runNext[r] >= 0) stack.push(r + 1);
+      if (r > 0 && this.runNext[r - 1] >= 0) stack.push(r - 1);
+    }
+    let reachable = 0;
+    for (let r = 0; r < this.nRuns; r++) if (seen[r]) reachable++;
+
+    let deadStations = 0;
+    for (let s = 0; s < this.nStations; s++) if (this.sDead[s]) deadStations++;
+
+    return {
+      source: this.stairs.length === 0 ? 'none' : (this.stairsFromCity ? 'published' : 'synthesised'),
+      stairs: this.stairs.length,
+      runs: this.nRuns,
+      stations: this.nStations,
+      deadStations,
+      links: counts,
+      reachable,
+      stairDetail: this.stairs.map((s) => ({
+        station: s.station,
+        run: this.sRun[s.station],
+        footY: s.footY,
+        topY: s.topY,
+        terrainAtFoot: this.battle.groundAt(s.footX, s.footZ),
+        walkYAtHead: this.sy[s.station],
+        side: s.side,
+        rise: s.topY - s.footY,
+      })),
+      linkUse: this.links.map((l) => ({
+        id: l.id, kind: kinds[l.kind], runA: l.runA, runB: l.runB, used: l.used,
+        gap: Math.hypot(l.bx - l.ax, l.bz - l.az),
+      })),
+    };
+  }
+
+  /** A world point in the middle of a run, for ordering a unit to that stretch of wall. */
+  stationWorld(run: number): { x: number; z: number; y: number; station: number } {
+    if (run < 0 || run >= this.nRuns) return { x: NaN, z: NaN, y: NaN, station: -1 };
+    const s = (this.runLo[run] + this.runHi[run]) >> 1;
+    return { x: this.sx[s], z: this.sz[s], y: this.sy[s], station: s };
+  }
+
+  /**
+   * How many stations have men of both units standing on them.
+   *
+   * The measurable form of "the run you wanted is occupied". Two friendly units sharing a
+   * stretch of walkway must divide it, not stand inside one another — so this is zero when
+   * the allocation is working and rises the moment `freeWindow` stops being honoured.
+   */
+  stationOverlap(a: number, b: number): number {
+    const p = this.battle.pool;
+    const ua = this.battle.unitById(a);
+    const ub = this.battle.unitById(b);
+    if (!ua || !ub) return -1;
+    const held = new Set<number>();
+    for (const i of ua.members) {
+      if (p.aliveAt(i) && this.stationOf[i] >= 0) held.add(this.stationOf[i]);
+    }
+    let n = 0;
+    const counted = new Set<number>();
+    for (const i of ub.members) {
+      if (!p.aliveAt(i)) continue;
+      const s = this.stationOf[i];
+      if (s >= 0 && held.has(s) && !counted.has(s)) { counted.add(s); n++; }
+    }
+    return n;
+  }
+
+  /** Where every man of a unit is with respect to the wall. Drives the traversal assertions. */
+  unitWallState(unitId: number): {
+    onWall: number; onGround: number; onLink: number;
+    runs: number[]; goal: string; destRun: number; planAge: number; stuck: number;
+    /** How many men stand on each run the unit occupies, keyed by run. */
+    runCounts: Record<number, number>;
+    worstFeetError: number;
+  } {
+    const b = this.battle;
+    const p = b.pool;
+    const u = b.unitById(unitId);
+    const runs: number[] = [];
+    const runCounts: Record<number, number> = {};
+    let onWall = 0;
+    let onGround = 0;
+    let onLink = 0;
+    let worst = 0;
+    if (u) {
+      for (const i of u.members) {
+        if (!p.aliveAt(i)) continue;
+        if (this.crossOf[i] !== -1) { onLink++; continue; }
+        const s = this.stationOf[i];
+        if (s < 0) { onGround++; continue; }
+        onWall++;
+        const r = this.sRun[s];
+        if (!runs.includes(r)) runs.push(r);
+        runCounts[r] = (runCounts[r] ?? 0) + 1;
+        const err = Math.abs(p.y[i] - this.sy[this.standingStation(i, s)]);
+        if (err > worst) worst = err;
+      }
+    }
+    const plan = this.plans.get(unitId);
+    const names = ['hold', 'ascend', 'traverse', 'descend', 'storm'];
+    runs.sort((a, c) => a - c);
+    return {
+      onWall, onGround, onLink, runs, runCounts,
+      goal: plan ? names[plan.goal] : 'none',
+      destRun: plan ? plan.destRun : -1,
+      planAge: plan ? plan.age : -1,
+      stuck: plan ? plan.stuck : 0,
+      worstFeetError: worst,
+    };
+  }
+
+  /**
+   * The rams, and specifically whether either of them is corking the hole it made.
+   *
+   * `inPassage` is the assertion the player's report turns on: after a breach, no ram and no
+   * crew of one may still be standing in the carriageway. `crewPinned` is the other half —
+   * men who have broken and are still being held on a machine they should have abandoned.
+   */
+  ramReport(): {
+    id: number; kind: 'gate' | 'great'; state: string; blows: number;
+    x: number; z: number; distFromTarget: number; wreck: boolean;
+    crewAlive: number; crewRouting: boolean; crewPinned: boolean; owned: boolean;
+    bay: number; bayBlows: number;
+    /**
+     * The machine's actual dimensions, so "much larger" is a measurement.
+     *
+     * Written out because the alternative — a probe that prints "11.6 x 3.4 against 8.4 x
+     * 3.8" as literal text in its own detail string — asserts nothing at all. Set
+     * `GREAT_RAM_HALF_D` to 0.1 and a prose claim still prints; these change.
+     */
+    dims: { halfW: number; halfD: number; shedH: number; reach: number; footprint: number };
+  }[] {
+    const names = ['approach', 'battering', 'withdrawing', 'spent', 'wreck'];
+    return this.rams.map((r) => {
+      const u = this.battle.unitById(r.unitId);
+      const routing = !!u && u.order === UnitOrder.Rout;
+      const great = r.kind === RamKind.Great;
+      const halfW = great ? GREAT_RAM_HALF_W : RAM_HALF_W;
+      const halfD = great ? GREAT_RAM_HALF_D : RAM_HALF_D;
+      return {
+        dims: {
+          halfW, halfD,
+          shedH: great ? GREAT_RAM_SHED_H : RAM_SHED_H,
+          reach: great ? GREAT_RAM_REACH : RAM_TRUNK_REACH,
+          footprint: halfW * 2 * halfD * 2,
+        },
+        id: r.id,
+        kind: r.kind === RamKind.Great ? 'great' as const : 'gate' as const,
+        state: names[r.state],
+        blows: r.blows,
+        x: r.x, z: r.z,
+        distFromTarget: Math.hypot(r.x - r.targetX, r.z - r.targetZ),
+        wreck: r.wreck,
+        crewAlive: u ? u.alive : 0,
+        crewRouting: routing,
+        // The bug in one boolean: broken, and still owned by the siege system, which means
+        // still being steered to a muster point instead of running away.
+        crewPinned: routing && this.owned.has(r.unitId),
+        owned: this.owned.has(r.unitId),
+        bay: r.bay,
+        bayBlows: r.bay >= 0 ? (this.bayBlows.get(r.bay) ?? 0) : 0,
+      };
+    });
+  }
+
+  /** Breaches the great ram has made, and how many men have stormed through them. */
+  breachReport(): {
+    bays: number[]; lanes: number; through: number; deadStations: number;
+    integrity: { bay: number; hp: number }[];
+  } {
+    let through = 0;
+    for (const id of this.breachLinks) through += this.links[id]?.used ?? 0;
+    let deadStations = 0;
+    for (let s = 0; s < this.nStations; s++) if (this.sDead[s]) deadStations++;
+    const integrity: { bay: number; hp: number }[] = [];
+    for (const [bay, blows] of this.bayBlows) {
+      integrity.push({ bay, hp: Math.max(0, 1 - blows / WALL_BLOWS) });
+    }
+    return { bays: this.breachedBays.slice(), lanes: this.breachLinks.length, through, deadStations, integrity };
+  }
+
+  /** Whether the gate is shut, and what has been done to it. Drives the gate assertions. */
+  gateReport(): {
+    shutAtStart: boolean; open: boolean; breached: boolean;
+    blows: number; hp: number; x: number; z: number;
+  } {
+    const g = this.city?.getGates()[0];
+    return {
+      shutAtStart: this.gateShutAtStart,
+      open: g ? g.open : true,
+      breached: this.gateBreached,
+      blows: this.gateBlows,
+      hp: Math.max(0, 1 - this.gateBlows / GATE_BLOWS),
+      x: g ? g.x : NaN,
+      z: g ? g.z : NaN,
+    };
+  }
+
   stats(): {
     stations: number; garrisoned: number; garrisonMen: number;
     towers: number; rams: number; ladders: number;
@@ -1744,7 +4042,7 @@ export class Siege implements ElevationOwner {
 
   dispose(): void {
     for (const m of [this.mShaft, this.mDeck, this.mWheels, this.mRamp, this.mShed,
-      this.mTrunk, this.mLadder]) {
+      this.mTrunk, this.mLadder, this.mGreatShed, this.mGreatTrunk]) {
       m?.geometry.dispose();
       m?.dispose();
     }

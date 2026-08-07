@@ -236,7 +236,31 @@ export const SIEGE_UNITS: UnitTypeDef[] = [
     // A one-talent stone: enormous damage, armour-piercing because there is no armour
     // against a 26 kg rock, two shots a minute, twenty stones per machine.
     missile: { kind: 'boulder', range: 220, damage: 150, apDamage: 120, rate: 1.6, ammo: 20, accuracy: 0.045, arc: 'high' },
-    walkSpeed: 0.7, runSpeed: 1.1, chargeSpeed: 1.1, mass: 300, stamina: 40,
+    /**
+     * An onager does not walk, run or charge. All three are zero.
+     *
+     * A one-talent stone-thrower is a timber frame with a torsion bundle in it, sited by
+     * gangs with levers and rollers over hours, and it does not move again until the siege
+     * is over. The previous 0.7 / 1.1 / 1.1 let a battery drift across the field at a
+     * shambling walk and — worse — let it *charge*, which is a stone-thrower running at
+     * infantry.
+     *
+     * Checked rather than assumed, because a zero speed is exactly the sort of value that
+     * divides by itself somewhere. Both steering paths in `BattleSystem` compute
+     * `k = 1 - exp(-(accel / Math.max(0.2, maxSpeed)) * dt)` with `accel = maxSpeed * 5.5`,
+     * so at zero the guard makes `k` exactly 0: velocity is never updated, the machine sits
+     * still, and no NaN reaches the pool. `steerToSlots` takes the same shape.
+     *
+     * The remaining hazard is the one this workstream already hit with the ram, and it is
+     * reported rather than papered over here: **a siege instrument that routs cannot flee.**
+     * `BattleSystem` retires a broken unit once `routTimer > 18` *and* it is either at the
+     * map edge or 260 m from the nearest enemy, and a machine with zero speed can never
+     * satisfy either, so it is ground on for ever by an enemy that can never finish it. The
+     * ram's answer was to hand the crew back to the ordinary rout path and leave the machine
+     * standing; artillery needs the equivalent, and the exact patch is in this workstream's
+     * report because the rule lives in `BattleSystem`, not here.
+     */
+    walkSpeed: 0, runSpeed: 0, chargeSpeed: 0, mass: 300, stamina: 40,
     morale: 44, discipline: 0.92,
     appearance: {
       weapon: 'boulder', sidearm: 'axe', shield: 'none', armour: 'leather',
