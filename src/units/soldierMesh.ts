@@ -639,17 +639,9 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     ];
     if (d.fine) {
       b.revolve(longProfile, BACK_SEG(d.head), hairUv, 1, { arc: BACK_ARC });
-      // **No front arc at all, and that is deliberate rather than unfinished.**
-      //
-      // `HairShort` gets the same truncation treatment two blocks up and comes out as a clean
-      // cap; the identical line here rendered as four pale planar wedges stabbing across the
-      // face and down the chest, photographed on `juth-head`. The mechanism was not chased,
-      // because the fallback is not a compromise: the defect being fixed is that `HairLong`
-      // was a curtain closing over the face from fringe to beard at every hash, and a
-      // Germanic warrior with no hair *in front of* his hairline is exactly right. The mass
-      // still falls behind him -- the back arc above, and the tube below. Whoever revisits
-      // this should find out why one profile fans and the other does not before adding
-      // anything back in front of the brow.
+      // Same rule as the crop: the front arc is the shared profile truncated at the hairline.
+      // Its own fourth point put the Germanic fringe at 0.078, *lower* than the Roman one.
+      b.revolve(longProfile.slice(0, 3), FACE_SEG, hairUv, 1, { arc: FACE_ARC });
     } else {
       b.revolve(longProfile, d.head, hairUv);
     }
