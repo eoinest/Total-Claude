@@ -466,20 +466,39 @@ export function assertCarthage(inp: AssertInput): CarthageChecks {
   // level is now `BASIN_WATER_Y` for both and the *freeboard* is what the ground supplies,
   // so it is measured here rather than assumed — and the cothon's is the finding.
   {
+    /**
+     * **Sample the quay, not the water.**
+     *
+     * Both freeboards used to be `heightAt(basin centre)`, which was defensible only while the
+     * heightfield still left the basins filled in — the "quay" and the basin floor were then
+     * the same ground. Now that both basins are genuinely excavated, the centre of a basin is
+     * its *bed*, so this read a bed depth and printed it as a quay height: the merchant basin
+     * reported a freeboard of **−3.10 m**, a number with no meaning, inside a check that said
+     * `[ ok ]`. A green board carrying a nonsense figure is worse than a red one.
+     *
+     * Each is now sampled on the belt a man actually stands on. The merchant reference is the
+     * landward quay, `mh.z - mh.hd - mh.quayWest * 0.5`, which is the point `harbour.ts` sets
+     * its own quay level from and the one `layout.ts` hangs `via-navalis` on, so the three
+     * cannot drift apart. The cothon's basin is annular and its centre is the admiralty
+     * island — made ground, and itself a quay — so that sample was already honest.
+     *
+     * And the freeboard is now part of `ok`. It was an "output": printed, never tested. That
+     * is how it sat at 0.34 m against §6.2's 1.8 without anything going red.
+     */
     const cothonQuay = inp.heightAt(COTHON.x, COTHON.z);
-    const merchantQuay = inp.heightAt(MERCHANT_HARBOUR.x, MERCHANT_HARBOUR.z);
+    const mh = MERCHANT_HARBOUR;
+    const merchantQuay = inp.heightAt(mh.x, mh.z - mh.hd - mh.quayWest * 0.5);
     const cf = cothonQuay - BASIN_WATER_Y;
     const mf = merchantQuay - BASIN_WATER_Y;
     out.push({
-      name: 'harbour basins stand at sea level',
-      ok: BASIN_WATER_Y === SEA_LEVEL,
+      name: 'harbour basins at sea level, on quays a man can stand on',
+      ok: BASIN_WATER_Y === SEA_LEVEL && cf >= FREEBOARD && mf >= FREEBOARD,
       detail: `both basins at ${BASIN_WATER_Y.toFixed(2)} m, the gulf they join at `
-        + `${SEA_LEVEL.toFixed(2)}. Quay freeboard is now an output: cothon `
-        + `**${cf.toFixed(2)} m**, merchant **${mf.toFixed(2)} m**, against the ${FREEBOARD} m `
-        + `of §6.2. The cothon is short because the ground at its centre is ${cothonQuay.toFixed(2)} m `
-        + `where §3.3 puts the harbour district at 2-6; that is the heightfield's to raise, and `
-        + `the alternative — building the quay up to the design figure — floats the ring 1.5 m `
-        + `over ground the men walk at.`,
+        + `${SEA_LEVEL.toFixed(2)}. Quay freeboard, sampled on the quay belt and not at the `
+        + `basin centre: cothon **${cf.toFixed(2)} m**, merchant **${mf.toFixed(2)} m**, both `
+        + `against the ${FREEBOARD} m of §6.2. Raising a quay is not a fix for a short one — `
+        + `men stand at terrain height, so a lifted quay is one they walk under, and the `
+        + `heightfield has to be cut instead.`,
     });
   }
 

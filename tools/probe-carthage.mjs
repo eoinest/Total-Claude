@@ -612,7 +612,7 @@ out.errors = errors;
 /** The page. World extent is the terrain's own ±1400 in x and the city's z-range plus glacis. */
 const PLATE_PAGE = {
   x0: -1400, x1: 1400, z0: 200, z1: 1400,
-  width: 2200, margin: 78, mapTop: 130, legendH: 196,
+  width: 2200, margin: 78, mapTop: 130, legendH: 196, sectionH: 232,
 };
 
 const plateLayout = (P) => {
@@ -620,11 +620,14 @@ const plateLayout = (P) => {
   const sc = mapW / (P.x1 - P.x0);
   const mapH = Math.round((P.z1 - P.z0) * sc);
   const mapY1 = P.mapTop + mapH;
+  const sectionY = mapY1 + 44;
+  const legendY = sectionY + P.sectionH + 44;
   return {
     ...P, sc, mapW, mapH,
     mapX: P.margin, mapY: P.mapTop, mapX1: P.margin + mapW, mapY1,
-    legendY: mapY1 + 70,
-    height: mapY1 + 70 + P.legendH,
+    sectionY,
+    legendY,
+    height: legendY + P.legendH,
   };
 };
 
@@ -1180,6 +1183,155 @@ function buildPlates(pd) {
     return p.join('\n');
   };
 
+  /**
+   * **The section, because the plan view structurally cannot show this.**
+   *
+   * §4.2's belt is 74.1 m from the ditch's outer lip to the back of the main wall, and at the
+   * plate's scale of 1,500 world metres to the sheet that is about three pixels — a hairline.
+   * So the one thing that makes Carthage worth building, the *depth* of the works, is the one
+   * thing the plan cannot carry, and an owner approving landmarks off plates 1–4 would be
+   * approving a black line.
+   *
+   * Drawn at true 1:1 with no vertical exaggeration, so a height and a run on this band can be
+   * measured against each other with a ruler. Every dimension is §4.2, §4.3, §4.4 and §4.5;
+   * they are literals here rather than reads out of the build because this is the *spec*
+   * against which the built wall is graded, and `src/city/carthageWall.ts` is being rewritten
+   * by another workstream as this is drawn. If the two ever disagree, the wall is wrong or the
+   * spec moved, and either way the disagreement is the finding.
+   *
+   * Rome's curtain is drawn beside it at the same scale, because the 12.4× is the headline and
+   * a reader should not have to take it on trust.
+   */
+  const wallSection = () => {
+    const p = [];
+    const K = 6.6;                                   // pixels per true metre, both axes
+    const y0 = L.sectionY;
+    const baseY = y0 + L.sectionH - 52;              // natural ground level
+    const sx = L.mapX + 92;
+    const X = (m) => sx + m * K;
+    const Y = (h) => baseY - h * K;
+    const M = (a, b) => `${a},${b}`;
+
+    p.push(`<line x1="${L.mapX}" y1="${y0 - 22}" x2="${L.mapX1}" y2="${y0 - 22}" stroke="${PC.ink}" stroke-width="1"/>`);
+    p.push(`<text x="${L.mapX}" y="${y0 - 2}" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+      + `font-size="12.5" font-weight="700" letter-spacing="1.6" fill="${PC.ink}">`
+      + `SECTION THROUGH THE TRIPLE WALL — WHAT THE PLAN ABOVE CANNOT SHOW</text>`);
+    p.push(`<text x="${L.mapX + 560}" y="${y0 - 2}" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+      + `font-size="11.5" fill="${PC.inkSoft}">true 1:1, no vertical exaggeration · `
+      + `the belt is 74.1 m deep and about 3 px wide on the plan · §4.2–§4.5, the specification, not the build</text>`);
+
+    // Ground, and the ditch cut into it. Lip 0, inner lip 20, 6 m deep on a 2 m flat bottom.
+    const groundFill = '#dcc9a4', groundEdge = '#9c8154';
+    p.push(`<path d="M ${M(X(-14), baseY)} L ${M(X(0), baseY)} L ${M(X(9), Y(-6))} L ${M(X(11), Y(-6))} `
+      + `L ${M(X(20), baseY)} L ${M(X(123), baseY)} L ${M(X(123), Y(-9))} L ${M(X(-14), Y(-9))} Z" `
+      + `fill="${groundFill}" stroke="${groundEdge}" stroke-width="1.1"/>`);
+
+    /** A block of masonry with a face batter, drawn from its two ground corners up. */
+    const masonry = (m0, m1, h, fill) =>
+      `<rect x="${X(m0)}" y="${Y(h)}" width="${(m1 - m0) * K}" height="${h * K}" `
+      + `fill="${fill ?? PC.wall}" stroke="#1d1710" stroke-width="1"/>`;
+    /** Merlons: a crenellated cap of height `hp` sitting on a walk at `hw`. */
+    const merlons = (m0, m1, hw, hp, XF = X) => {
+      const s = [];
+      const n = Math.max(2, Math.round(((m1 - m0) * K) / 9));
+      for (let i = 0; i < n; i += 2) {
+        const a = m0 + ((m1 - m0) * i) / n, b = m0 + ((m1 - m0) * (i + 1)) / n;
+        s.push(`<rect x="${XF(a)}" y="${Y(hw + hp)}" width="${(b - a) * K}" height="${hp * K}" `
+          + `fill="${PC.wall}" stroke="#1d1710" stroke-width="0.8"/>`);
+      }
+      return s.join('');
+    };
+
+    // 2 — the outer work: earth and rubble, stone-revetted on the ditch face, palisade on top.
+    p.push(`<path d="M ${M(X(23.5), baseY)} L ${M(X(25), Y(4))} L ${M(X(31), Y(4))} L ${M(X(32.5), baseY)} Z" `
+      + `fill="#c9ad82" stroke="${groundEdge}" stroke-width="1.1"/>`);
+    for (let m = 25.4; m < 31; m += 1.1) {
+      p.push(`<line x1="${X(m)}" y1="${Y(4)}" x2="${X(m)}" y2="${Y(5.8)}" stroke="#6b5636" stroke-width="1.6"/>`);
+    }
+    // 4 — the middle wall: plain ashlar, 4 m thick, 8 m to the walk.
+    p.push(masonry(43, 47, 8));
+    p.push(merlons(43, 47, 8, 1.8));
+    // 6 — the main wall: 9.1 m thick, 13.7 m to the walk, two vaults inside it.
+    p.push(masonry(65, 74.1, 13.7));
+    p.push(merlons(65, 74.1, 13.7, 2.2));
+    // The casemates. Outer face 1.5 m, inner face 1.2 m, clear span 6.4 m between them.
+    const vs = X(66.5), vw = 6.4 * K;
+    p.push(`<rect x="${vs}" y="${Y(8.1)}" width="${vw}" height="${4.6 * K}" fill="#6a5842" stroke="#241d16" stroke-width="0.9"/>`);
+    p.push(`<rect x="${vs}" y="${Y(12.7)}" width="${vw}" height="${3.6 * K}" fill="#83705a" stroke="#241d16" stroke-width="0.9"/>`);
+    p.push(`<text x="${vs + vw / 2}" y="${Y(5.1)}" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+      + `font-size="9.5" fill="#f2e8d4">300 elephants</text>`);
+    p.push(`<text x="${vs + vw / 2}" y="${Y(10.0)}" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+      + `font-size="9.5" fill="#f2e8d4">fighting gallery</text>`);
+    // A tower, ghosted, to carry the 22.5 m: 11 m across, projecting 5.5 m beyond the outer face.
+    p.push(`<rect x="${X(59.5)}" y="${Y(22.5)}" width="${11 * K}" height="${22.5 * K}" fill="none" `
+      + `stroke="${PC.wall}" stroke-width="1.2" stroke-dasharray="5 4" opacity="0.75"/>`);
+    p.push(`<text x="${X(65)}" y="${Y(23.4)}" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+      + `font-size="10" fill="${PC.inkSoft}">tower 22.5 m, one every 59.2 m</text>`);
+
+    // A man, 1.8 m, standing in the killing ground. The whole point of a 1:1 section.
+    const mx = X(56);
+    p.push(`<circle cx="${mx}" cy="${Y(1.62)}" r="${0.18 * K}" fill="${PC.mark}"/>`);
+    p.push(`<line x1="${mx}" y1="${Y(1.44)}" x2="${mx}" y2="${Y(0)}" stroke="${PC.mark}" stroke-width="2"/>`);
+    p.push(`<text x="${mx + 9}" y="${Y(0.1)}" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+      + `font-size="10" fill="${PC.mark}">1.8 m</text>`);
+
+    /** A dimension run with ticks and a centred caption, drawn below the ground line. */
+    const dim = (m0, m1, lab, row) => {
+      const yy = baseY + 20 + row * 15;
+      return `<line x1="${X(m0)}" y1="${yy}" x2="${X(m1)}" y2="${yy}" stroke="${PC.inkSoft}" stroke-width="1"/>`
+        + `<line x1="${X(m0)}" y1="${yy - 4}" x2="${X(m0)}" y2="${yy + 4}" stroke="${PC.inkSoft}" stroke-width="1"/>`
+        + `<line x1="${X(m1)}" y1="${yy - 4}" x2="${X(m1)}" y2="${yy + 4}" stroke="${PC.inkSoft}" stroke-width="1"/>`
+        + `<text x="${X((m0 + m1) / 2)}" y="${yy - 5}" text-anchor="middle" `
+        + `font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="10" fill="${PC.ink}">${esc(lab)}</text>`;
+    };
+    p.push(dim(0, 20, 'ditch 20 × 6 m', 0));
+    p.push(dim(20, 25, 'berm 5', 0));
+    p.push(dim(25, 31, 'outwork 6', 0));
+    p.push(dim(31, 43, 'gap 12', 0));
+    p.push(dim(43, 47, '4', 0));
+    p.push(dim(47, 65, 'killing ground 18 m', 0));
+    p.push(dim(65, 74.1, 'main wall 9.1', 0));
+    p.push(dim(74.1, 109.1, 'military way 35 m (§7.5)', 0));
+    p.push(dim(0, 74.1, 'THE DEFENSIVE BELT — 74.1 m of works to fight through', 1.15));
+    p.push(dim(0, 109.1, 'ditch lip to the first house — 109.1 m', 2.3));
+
+    // Rome at the same scale, so the ratio is a thing you can see rather than a claim.
+    const rx = X(132);
+    const RX = (m) => rx + m * K;
+    p.push(`<path d="M ${M(RX(-8), baseY)} L ${M(RX(30), baseY)} L ${M(RX(30), Y(-9))} L ${M(RX(-8), Y(-9))} Z" `
+      + `fill="${groundFill}" stroke="${groundEdge}" stroke-width="1.1"/>`);
+    p.push(`<rect x="${RX(0)}" y="${Y(6.5)}" width="${6 * K}" height="${6.5 * K}" fill="${PC.wall}" stroke="#1d1710" stroke-width="1"/>`);
+    p.push(merlons(0, 6, 6.5, 2.05, RX));
+    const rmx = RX(-4);
+    p.push(`<circle cx="${rmx}" cy="${Y(1.62)}" r="${0.18 * K}" fill="${PC.mark}"/>`);
+    p.push(`<line x1="${rmx}" y1="${Y(1.44)}" x2="${rmx}" y2="${Y(0)}" stroke="${PC.mark}" stroke-width="2"/>`);
+    p.push(`<text x="${RX(3)}" y="${y0 + 22}" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+      + `font-size="11.5" font-weight="700" fill="${PC.ink}">ROME, same scale</text>`);
+    p.push(`<text x="${RX(3)}" y="${y0 + 38}" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+      + `font-size="10.5" fill="${PC.inkSoft}">the Aurelian curtain,</text>`);
+    p.push(`<text x="${RX(3)}" y="${y0 + 51}" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+      + `font-size="10.5" fill="${PC.inkSoft}">and that is the whole of it</text>`);
+    p.push(`<text x="${RX(3)}" y="${baseY + 25}" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+      + `font-size="10" fill="${PC.ink}">6.0 m</text>`);
+    p.push(`<text x="${RX(3)}" y="${baseY + 55}" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+      + `font-size="12" font-weight="700" fill="${PC.mark}">74.1 ÷ 6.0 = 12.4×</text>`);
+    p.push(`<text x="${RX(3)}" y="${baseY + 71}" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+      + `font-size="10" fill="${PC.inkSoft}">heights are only 1.9–2.1×;</text>`);
+    p.push(`<text x="${RX(3)}" y="${baseY + 84}" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+      + `font-size="10" fill="${PC.inkSoft}">it is the count, not the size</text>`);
+
+    // Attacker's side, defender's side — the section has a direction and it should say so.
+    p.push(`<text x="${X(-12)}" y="${Y(17)}" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+      + `font-size="11" font-weight="700" fill="${PC.inkSoft}">← THE ISTHMUS</text>`);
+    p.push(`<text x="${X(-12)}" y="${Y(14.6)}" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+      + `font-size="10" fill="${PC.inkSoft}">the attacker</text>`);
+    p.push(`<text x="${X(80)}" y="${Y(17)}" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+      + `font-size="11" font-weight="700" fill="${PC.inkSoft}">THE CITY →</text>`);
+    p.push(`<text x="${X(80)}" y="${Y(14.6)}" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+      + `font-size="10" fill="${PC.inkSoft}">first house at 109.1 m</text>`);
+    return p.join('\n');
+  };
+
   // ---- assemble the four plates ---------------------------------------------
   const nHouse = pd.obstacles.filter((o) => o.kind === 'building').length;
   const nMason = pd.obstacles.filter((o) => o.kind !== 'building' && o.kind !== 'monument').length;
@@ -1247,6 +1399,7 @@ function buildPlates(pd) {
     g.push('</g>');
     g.push(frame.join('\n'));
     g.push(edges.join('\n'));
+    g.push(wallSection());
     g.push(legend(sp.n));
     g.push('</svg>');
     return { name: sp.name, svg: g.join('\n'), width: L.width, height: L.height };
