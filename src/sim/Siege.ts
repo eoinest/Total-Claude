@@ -1782,6 +1782,38 @@ export class Siege implements ElevationOwner {
     return found;
   }
 
+  /**
+   * Take every routed unit off one machine's boarder list, crew excepted.
+   *
+   * Men already on the rungs keep going: `advanceQueue` does not read the list, and pulling
+   * a climbing man off a ladder because his cohort broke would drop him eight metres.
+   */
+  private dropBrokenBoarders(list: number[]): void {
+    for (let k = list.length - 1; k > 0; k--) {
+      const u = this.battle.unitById(list[k]);
+      if (u && !u.destroyed && u.alive > 0 && u.order !== UnitOrder.Rout) continue;
+      const id = list[k];
+      list.splice(k, 1);
+      // Only let go of him entirely once no other machine still has him and he is not a
+      // garrison somewhere: `owned` is one set across the whole siege.
+      if (this.garrisons.has(id) || this.crewsAMachine(id) || this.isBoarder(id)) continue;
+      this.owned.delete(id);
+      if (!u) continue;
+      for (const i of u.members) {
+        if (this.crossOf[i] !== -1 || this.stationOf[i] >= 0) continue;
+        this.battle.elevated[i] = 0;
+        this.battle.support[i] = NO_SUPPORT;
+      }
+    }
+  }
+
+  /** True while any machine still has this unit in its boarding file. */
+  private isBoarder(unitId: number): boolean {
+    for (const t of this.towers) if (t.boarders.includes(unitId)) return true;
+    for (const l of this.ladders) if (l.boarders.includes(unitId)) return true;
+    return false;
+  }
+
   /** The tower this unit's gang pushes, or null. */
   private towerOf(unitId: number): SiegeTower | null {
     for (const t of this.towers) if (t.unitId === unitId) return t;
@@ -2960,6 +2992,17 @@ export class Siege implements ElevationOwner {
    */
   private releaseBrokenCrews(dt: number): void {
     const b = this.battle;
+    /**
+     * A cohort that has broken is not queuing for a ladder either.
+     *
+     * The same rule as the ram, applied to the men the player *added* to a machine rather
+     * than to the gang that owns it. Without it a routed cohort stays `owned`, stays
+     * mustered in the file, and cannot run — the exact pin that kept a broken ram crew
+     * standing in a gateway being killed. Crews are index 0 and are never dropped here; a
+     * machine with no gang stops, which `updateTowers` already handles.
+     */
+    for (const t of this.towers) this.dropBrokenBoarders(t.boarders);
+    for (const l of this.ladders) this.dropBrokenBoarders(l.boarders);
     for (const r of this.rams) {
       if (r.wreck) continue;
       const u = b.unitById(r.unitId);
@@ -3788,7 +3831,7 @@ export class Siege implements ElevationOwner {
       let q = 0;
       for (const uid of t.boarders) {
         const u = b.unitById(uid);
-        if (!u || u.destroyed || u.order === UnitOrder.Rout) continue;
+        if (!u || u.destroyed) continue;
         for (const i of u.members) {
           if (!p.aliveAt(i)) continue;
           if (this.stationOf[i] >= 0 || this.crossOf[i] !== -1) continue;
@@ -3839,7 +3882,7 @@ export class Siege implements ElevationOwner {
       let q = 0;
       for (const uid of group[0].boarders) {
         const u = b.unitById(uid);
-        if (!u || u.destroyed || u.order === UnitOrder.Rout) continue;
+        if (!u || u.destroyed) continue;
         for (const i of u.members) {
           if (!p.aliveAt(i)) continue;
           if (this.stationOf[i] >= 0 || this.crossOf[i] !== -1) continue;

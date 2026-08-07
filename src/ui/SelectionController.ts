@@ -947,10 +947,25 @@ export class SelectionController {
     }
   }
 
+  /**
+   * The enemy the cursor is on, or -1 — with one exception, and the exception is the wall.
+   *
+   * A garrison covers its own parapet, so from the field almost every pixel of an enemy
+   * curtain has a defender behind it and almost every right-click on the wall was read as
+   * "attack that unit". Measured on the storm of Carthage from the player's camera: the
+   * cursor resolved the masonry correctly, `wallValid` was true, and the order that went out
+   * was `attack` at unit 3. The intent is not in doubt — you cannot melee a man eight metres
+   * above you — and it is the same intent the wall order carries, so the wall order wins.
+   *
+   * Only when the wall order is genuinely on offer (`wallIntent`), so nothing else about
+   * attacking changes: an enemy in the open, in a gateway or on a siege tower is unaffected.
+   */
   private hostileUnder(hovered: number): number {
     if (hovered < 0) return -1;
     const v = this.model.view(hovered);
-    return v && !v.own && !v.destroyed ? hovered : -1;
+    if (!v || v.own || v.destroyed) return -1;
+    if (this.wallValid && this.wallProbe?.isGarrisoned(v.id) && this.wallIntent()) return -1;
+    return hovered;
   }
 
   /**
