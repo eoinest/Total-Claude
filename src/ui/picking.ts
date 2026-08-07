@@ -279,6 +279,58 @@ export function screenPick(
 }
 
 /**
+ * The camera ray for a screen position, kept so callers can ask more than one question of it.
+ *
+ * `screenPick` answers the two questions the *ground* needs. A unit standing on a wall walk
+ * needs a third — "where does this ray cross the level the men are standing on" — and that
+ * cannot be folded into either of the other two without repeating the mistake `ScreenPick`
+ * documents. So the ray itself is published and each question stays its own function.
+ */
+export interface ScreenRay {
+  ox: number; oy: number; oz: number;
+  dx: number; dy: number; dz: number;
+  valid: boolean;
+}
+
+export const makeScreenRay = (): ScreenRay =>
+  ({ ox: 0, oy: 0, oz: 0, dx: 0, dy: 0, dz: -1, valid: false });
+
+/** One unproject, kept for the frame. */
+export function screenRay(
+  camera: THREE.PerspectiveCamera,
+  ndcX: number,
+  ndcY: number,
+  out: ScreenRay
+): boolean {
+  out.valid = makeRay(camera, ndcX, ndcY);
+  if (!out.valid) return false;
+  out.ox = RAY_ORIGIN.x; out.oy = RAY_ORIGIN.y; out.oz = RAY_ORIGIN.z;
+  out.dx = RAY_DIR.x; out.dy = RAY_DIR.y; out.dz = RAY_DIR.z;
+  return true;
+}
+
+/**
+ * Where the ray crosses the horizontal plane `y = planeY`, in front of the eye.
+ *
+ * Deliberately trivial and allocation-free: it runs once per elevated unit per frame, and the
+ * whole point of hoisting `screenRay` out is that this costs three multiplies rather than a
+ * second unproject.
+ */
+export function rayPlaneY(
+  r: ScreenRay,
+  planeY: number,
+  out: { x: number; z: number },
+  maxDistance = 4200
+): boolean {
+  if (!r.valid || Math.abs(r.dy) < 1e-6) return false;
+  const t = (planeY - r.oy) / r.dy;
+  if (t <= 0 || t > maxDistance) return false;
+  out.x = r.ox + r.dx * t;
+  out.z = r.oz + r.dz * t;
+  return true;
+}
+
+/**
  * Where a formation ordered at a solid should actually be sent: the ground just outside
  * its nearest face, on the side the player was looking from.
  *

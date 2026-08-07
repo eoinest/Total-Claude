@@ -43,6 +43,16 @@ class Batch {
   private n = 0;
   private readonly capacity: number;
 
+  /**
+   * Absolute Y for the next vertices, or null to sample the heightfield.
+   *
+   * A marker for a cohort on the wall walk drawn against `heightAt` is painted on the paving
+   * eight metres beneath its own unit, where the masonry hides it — so selecting the parapet
+   * garrison looked like selecting nothing. Set it, draw, clear it; nothing keeps it across a
+   * frame, so a caller that forgets cannot poison the batch.
+   */
+  levelY: number | null = null;
+
   constructor(maxTris: number, material: THREE.Material, private heightAt: Height, private lift: number) {
     this.capacity = maxTris * 3;
     this.pos = new Float32Array(this.capacity * 3);
@@ -62,6 +72,7 @@ class Batch {
 
   reset(): void {
     this.n = 0;
+    this.levelY = null;
   }
 
   private vertex(x: number, z: number, r: number, g: number, b: number, a: number): void {
@@ -69,7 +80,7 @@ class Batch {
     if (i >= this.capacity) return;
     const p = i * 3;
     this.pos[p] = x;
-    this.pos[p + 1] = this.heightAt(x, z) + this.lift;
+    this.pos[p + 1] = (this.levelY ?? this.heightAt(x, z)) + this.lift;
     this.pos[p + 2] = z;
     const c = i * 4;
     this.col[c] = r;
@@ -317,15 +328,29 @@ export class WorldOverlay {
   // Public markers
   // -------------------------------------------------------------------------
 
+  /**
+   * The level to draw a unit's marker at: its men's own feet when they are standing on
+   * something, and the heightfield otherwise. Same 2.5 m test `SelectionController` uses to
+   * decide where the cursor is aimed, so the marker cannot end up on a different level from
+   * the hit box that put it there.
+   */
+  private levelOf(v: UnitView): number | null {
+    return v.standY - v.cy > 2.5 ? v.standY : null;
+  }
+
   selectionMarker(v: UnitView): void {
     const u = v.unit;
+    this.ground.levelY = this.levelOf(v);
     this.block(this.ground, u.x, u.z, u.facing, v.frontage, v.depth, this.px(2.6, 1), GOLD, 1, 0.07);
+    this.ground.levelY = null;
   }
 
   hoverMarker(v: UnitView, hostile: boolean): void {
     const u = v.unit;
     const col = hostile ? RED : PALE;
+    this.ground.levelY = this.levelOf(v);
     this.block(this.ground, u.x, u.z, u.facing, v.frontage, v.depth, this.px(1.8, 0.7), col, 0.7, 0.05);
+    this.ground.levelY = null;
   }
 
   /** Dashed path from the unit to its objective, plus any queued waypoints. */
