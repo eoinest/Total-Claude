@@ -7,11 +7,25 @@
  */
 
 import type { EngineContext } from '../core/Engine';
-import { Faction } from '../sim/types';
+import { Faction, getOpposingFaction } from '../sim/types';
 import { el, fmtClock, fmtCount, html, icon, setClass, setFill, setText } from './dom';
 import { ICON, standardGlyph } from './icons';
 import type { HudModel } from './model';
 import { FACTION_UI, PHASE_UI } from './theme';
+
+/**
+ * The adjective for "<side> advantage", which is not a faction's name.
+ *
+ * `FACTION_UI[f].short` is a banner legend — ROME, JUTHUNGI, QART-HADASHT — and reads wrong
+ * inside a sentence next to "Roman". Three words, kept beside the one sentence that uses
+ * them rather than added to the shared `FactionUI` table, which is a colour and chrome
+ * record and has no other prose in it.
+ */
+const ADVANTAGE: Record<Faction, string> = {
+  [Faction.Rome]: 'Roman',
+  [Faction.Germanic]: 'Juthungi',
+  [Faction.Carthage]: 'Punic',
+};
 
 export class TopBar {
   private root!: HTMLElement;
@@ -53,6 +67,16 @@ export class TopBar {
         </div>`;
     };
 
+    /*
+     * The second army is whoever Rome is fighting, not the Juthungi.
+     *
+     * Hard-coded, this plaque reported a Carthaginian battle as Rome against a Juthungi
+     * army of nobody: 0 men, 0 units, and a balance bar pinned hard to Rome from the first
+     * frame. `getOpposingFaction` is published by the menu before the engine is built and
+     * again by the deployment, so it is already right here in `attach` — which matters,
+     * because the HUD builds its panels during `init`, one phase before `deployBattle` runs.
+     */
+    const foe = getOpposingFaction();
     html(
       this.root,
       `${side(Faction.Rome, 'rome')}
@@ -77,7 +101,7 @@ export class TopBar {
            <span class="tb-adv">Even</span>
          </div>
        </div>
-       ${side(Faction.Germanic, 'jut')}
+       ${side(foe, 'jut')}
        <div class="tb-tools"></div>`
     );
 
@@ -134,8 +158,9 @@ export class TopBar {
       this.root.dataset.phase = m.phase;
     }
 
+    const foe = getOpposingFaction();
     const r = m.strength[Faction.Rome];
-    const g = m.strength[Faction.Germanic];
+    const g = m.strength[foe];
     const total = Math.max(1, r + g);
     const rf = r / total;
     setFill(this.balR, rf);
@@ -146,17 +171,18 @@ export class TopBar {
     setText(this.menR, fmtCount(r));
     setText(this.menG, fmtCount(g));
     const lr = Math.max(0, m.initialStrength[Faction.Rome] - r);
-    const lg = Math.max(0, m.initialStrength[Faction.Germanic] - g);
+    const lg = Math.max(0, m.initialStrength[foe] - g);
     setText(this.lossR, `−${fmtCount(lr)}`);
     setText(this.lossG, `−${fmtCount(lg)}`);
     setText(this.unitsR, `${m.unitsLeft[Faction.Rome]} units`);
-    setText(this.unitsG, `${m.unitsLeft[Faction.Germanic]} units`);
+    setText(this.unitsG, `${m.unitsLeft[foe]} units`);
 
     // Victory progress: how far the balance of surviving men has swung from parity.
     const swing = (rf - 0.5) * 2;
     const pct = Math.round(Math.abs(swing) * 100);
     if (pct < 4) setText(this.advantage, 'Evenly matched');
-    else setText(this.advantage, `${swing > 0 ? 'Roman' : 'Juthungi'} advantage ${pct}%`);
+    // "Juthungi advantage" over a Punic army was the same hard-coding one line further on.
+    else setText(this.advantage, `${swing > 0 ? ADVANTAGE[Faction.Rome] : ADVANTAGE[foe]} advantage ${pct}%`);
     setClass(this.advantage, 'good', swing > 0.04);
     setClass(this.advantage, 'bad', swing < -0.04);
 

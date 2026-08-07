@@ -19,7 +19,7 @@
  */
 
 import type { EngineContext } from '../core/Engine';
-import { Faction, type UnitClass } from '../sim/types';
+import { getOpposingFaction, type UnitClass } from '../sim/types';
 import { el, html, icon, pulse, setClass, setFill, setText, sizeCanvas } from './dom';
 import { ICON, standardGlyph, UNIT_CLASS_ICON } from './icons';
 import type { HudModel, UnitView } from './model';
@@ -106,7 +106,18 @@ export class UnitCards {
   ) {}
 
   attach(parent: HTMLElement): void {
-    const foeFui = FACTION_UI[PLAYER_FACTION === Faction.Rome ? Faction.Germanic : Faction.Rome];
+    /*
+     * The enemy tab, named for whoever is actually opposite.
+     *
+     * This was `PLAYER_FACTION === Rome ? Germanic : Rome` — a two-faction flip that reads
+     * as general and is not: with Carthage on the field it labelled the tab JUTHUNGI, flew a
+     * horned standard over it, and counted a faction with no units, so the strip read
+     * "0 units" all battle. `getOpposingFaction` is what the deployment publishes and what
+     * `checkVictory` and the end-of-battle dispatch already resolve enmity through. The menu
+     * publishes it before the engine is built, which is what makes it readable here — the
+     * HUD attaches during `init`, one phase before the deployment runs.
+     */
+    const foeFui = FACTION_UI[getOpposingFaction()];
     this.foeBar = el('div', 'obat', parent);
     html(
       this.foeBar,

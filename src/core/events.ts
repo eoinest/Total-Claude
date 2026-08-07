@@ -97,7 +97,16 @@ export interface GameEvents {
 
   // ---- Battle flow ----
   battleStarted: { seed: number; scenario: string };
-  battleEnded: { victor: number; reason: 'annihilation' | 'rout' | 'timeout' | 'objective' };
+  /**
+   * Two reasons that are not `timeout`, because both can fire long before the clock runs
+   * out and each means something else: `stalemate`, nobody has died anywhere on the field
+   * for two minutes; `repulsed`, a storm has stopped reducing the garrison's hold on the
+   * parapet, so the assault has failed while both armies are still standing.
+   */
+  battleEnded: {
+    victor: number;
+    reason: 'annihilation' | 'rout' | 'timeout' | 'objective' | 'stalemate' | 'repulsed';
+  };
   /**
    * The pre-battle deployment phase opened, closed, or had a unit added or removed.
    *

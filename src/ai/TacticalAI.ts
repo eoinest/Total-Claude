@@ -888,6 +888,11 @@ export class TacticalAISystem implements Subsystem {
       if (u.order === UnitOrder.Rout) continue;
 
       const brain = this.brain(u.id, prof);
+      // Before anything else: if the sim has changed this unit's order out from under the
+      // order book — a move that arrived, an attack whose target died — forget what we last
+      // told it, or the next identical instruction is suppressed as a repeat and the unit
+      // never hears it. See `OrderBook.reconcile`.
+      this.orders.reconcile(u);
       // Contact starting or stopping, or something fast arriving, cannot wait for the
       // next scheduled think — being a third of a second late to brace is the difference
       // between holding and breaking. Both are *edges*, not states: re-thinking every

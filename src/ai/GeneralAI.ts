@@ -3,7 +3,7 @@ import type { BattleSystem } from '../sim/BattleSystem';
 import { ALL_FACTIONS, Faction, type UnitGroupState } from '../sim/types';
 import { angleDelta, wrapAngle } from '../util/math';
 import type { Rng } from '../util/rand';
-import { AIWorld, isLineUnit } from './AIWorld';
+import { AIWorld, isLineUnit, type PerceivedEnemy } from './AIWorld';
 import { footprintOf, type PathfindingSystem } from './Pathfinding';
 import { profileBegin, profileEnd } from './profile';
 import {
@@ -185,6 +185,73 @@ interface Assignment {
 
 const LINE_ORDER: Assignment[] = [];
 const STAND = { x: 0, z: 0 };
+const CLUSTER_POOL: PerceivedEnemy[] = [];
+const CLUSTER_OF: number[] = [];
+const CLUSTER_MASS: number[] = [];
+const CLUSTER_X: number[] = [];
+const CLUSTER_Z: number[] = [];
+
+/**
+ * Metres between two enemy units before they stop being one body.
+ *
+ * A deployed line stands on 46-64 m centres and its wing units sit up to 90 m beyond the
+ * end of it, so anything below about a hundred metres would split a healthy line into
+ * pieces and send the army at one cohort of it. Above about a hundred and fifty it welds
+ * two wings back together and reintroduces the defect this exists to fix. 120 sits in the
+ * middle of that window with room either side.
+ */
+const CLUSTER_LINK = 120;
+
+/**
+ * Strength-weighted centroid of the heaviest connected group.
+ *
+ * Single linkage by flood fill over an n^2 adjacency test. n is the number of enemy units
+ * in view — twenty at most, and this runs once per `planInterval` (1.4 s at `hard`) per
+ * army, so the quadratic is 400 distance tests a second across the whole game.
+ */
+function heaviestCluster(pool: readonly PerceivedEnemy[]): { x: number; z: number } {
+  const n = pool.length;
+  CLUSTER_OF.length = 0;
+  for (let i = 0; i < n; i++) CLUSTER_OF.push(-1);
+  CLUSTER_MASS.length = 0;
+  CLUSTER_X.length = 0;
+  CLUSTER_Z.length = 0;
+
+  const link2 = CLUSTER_LINK * CLUSTER_LINK;
+  const stack: number[] = [];
+  for (let seed = 0; seed < n; seed++) {
+    if (CLUSTER_OF[seed] !== -1) continue;
+    const c = CLUSTER_MASS.length;
+    CLUSTER_MASS.push(0);
+    CLUSTER_X.push(0);
+    CLUSTER_Z.push(0);
+    CLUSTER_OF[seed] = c;
+    stack.length = 0;
+    stack.push(seed);
+    while (stack.length > 0) {
+      const i = stack.pop() as number;
+      const m = pool[i];
+      CLUSTER_MASS[c] += m.alive;
+      CLUSTER_X[c] += m.x * m.alive;
+      CLUSTER_Z[c] += m.z * m.alive;
+      for (let j = 0; j < n; j++) {
+        if (CLUSTER_OF[j] !== -1) continue;
+        const dx = pool[j].x - m.x;
+        const dz = pool[j].z - m.z;
+        if (dx * dx + dz * dz > link2) continue;
+        CLUSTER_OF[j] = c;
+        stack.push(j);
+      }
+    }
+  }
+
+  let best = 0;
+  for (let c = 1; c < CLUSTER_MASS.length; c++) {
+    if (CLUSTER_MASS[c] > CLUSTER_MASS[best]) best = c;
+  }
+  const w = Math.max(1, CLUSTER_MASS[best]);
+  return { x: CLUSTER_X[best] / w, z: CLUSTER_Z[best] / w };
+}
 
 // ---------------------------------------------------------------------------
 // System
@@ -683,9 +750,20 @@ export class GeneralAISystem implements Subsystem {
       if (d > 110) {
         const want = Math.atan2(enemy.x - plan.lineX, enemy.z - plan.lineZ);
         let f = plan.lineFacing + angleDelta(plan.lineFacing, want) * 0.35;
-        // And never turn more than 50 degrees off the ground we deployed on.
+        /*
+         * And never turn more than 50 degrees off the ground we deployed on — while there
+         * is still a line to hold.
+         *
+         * The whole position is `deploy + forward * advance`, so the bearing is also the
+         * only thing that decides *where the army can go*: a remnant more than 50 degrees
+         * off the deployment axis is unreachable, and the line saturates at the cap and
+         * stops. That is a correct rule for a battle line, which must not wheel away from
+         * its own flanks, and the wrong one for the mopping up: by the time the enemy has
+         * come apart into fragments on both wings there are no flanks left to keep.
+         */
+        const cap = plan.phase === 'exploit' || plan.phase === 'pursuit' ? Math.PI : 0.87;
         const off = angleDelta(plan.deployFacing, f);
-        if (Math.abs(off) > 0.87) f = plan.deployFacing + Math.sign(off) * 0.87;
+        if (Math.abs(off) > cap) f = plan.deployFacing + Math.sign(off) * cap;
         plan.lineFacing = wrapAngle(f);
       }
     }
@@ -1131,30 +1209,45 @@ export class GeneralAISystem implements Subsystem {
   /**
    * Where we believe the enemy's line is. Built from perception, so an army that has
    * not seen its enemy does not know where it is.
+   *
+   * **The heaviest body of them, not the mean of all of them, and the difference is a
+   * battle that stops.** This was a straight strength-weighted centroid over every enemy
+   * unit in view, which is correct while the enemy is a line and catastrophic once it is
+   * not. Measured on the shipped field battle with a passive Rome: by t+1000 the Roman
+   * remnant was three fragments at (296, 35), (−350, 91) and (−261, 235) — 650 m apart on
+   * opposite wings — whose mean is (−81, 119), *empty ground between them*. The Juthungi
+   * marched their whole line to that point, arrived, and held: `Engage` reaches
+   * `34 + aggression * 90` = 124 m and the nearest Roman was 200 m away, so no unit had
+   * anything to attack and nothing else moves an army. **Eighteen units stood still for the
+   * next 1,400 seconds** while the scoreboard did not change by one man, until the 2,400 s
+   * clock ended it — sixteen and a half real minutes at 1x.
+   *
+   * Single-linkage at `CLUSTER_LINK`, which is wide enough that a deployed line is one
+   * cluster (Rome's cohorts stand on 64 m centres and the urban cohorts 90 m beyond the
+   * end of the line) and narrow enough that the late-battle fragments above are three. So
+   * this is identical to the mean for as long as the enemy *has* a line, and only differs
+   * once there is no single body to average — which is exactly when the mean is a lie.
    */
   private enemyLine(plan: FactionPlan): { x: number; z: number; seen: boolean } {
     const v = this.world.view(plan.faction);
-    let sx = 0;
-    let sz = 0;
-    let sw = 0;
+    CLUSTER_POOL.length = 0;
     for (const mem of v.seen.values()) {
       if (mem.alive <= 0 || mem.routing) continue;
       if (!isLineUnit(mem.unitClass)) continue;
-      sx += mem.x * mem.alive;
-      sz += mem.z * mem.alive;
-      sw += mem.alive;
+      CLUSTER_POOL.push(mem);
     }
-    if (sw === 0) {
-      // No line troops in view: fall back on anything at all we have seen.
+    if (CLUSTER_POOL.length === 0) {
+      // No line troops in view: fall back on anything at all we have seen. A broken enemy
+      // is still worth chasing, so routers are not excluded from this pass.
       for (const mem of v.seen.values()) {
         if (mem.alive <= 0) continue;
-        sx += mem.x * mem.alive;
-        sz += mem.z * mem.alive;
-        sw += mem.alive;
+        CLUSTER_POOL.push(mem);
       }
     }
-    if (sw === 0) return { x: plan.deployX || 0, z: plan.deployZ || 0, seen: false };
-    return { x: sx / sw, z: sz / sw, seen: true };
+    if (CLUSTER_POOL.length === 0) {
+      return { x: plan.deployX || 0, z: plan.deployZ || 0, seen: false };
+    }
+    return { ...heaviestCluster(CLUSTER_POOL), seen: true };
   }
 
   // -------------------------------------------------------------------------

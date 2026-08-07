@@ -30,6 +30,11 @@
   --rome-lit: #d4444d;
   --germanic: #2f5d8c;
   --germanic-lit: #5b93c4;
+  /* Tyrian purple. Mirrors `FACTION_UI[Faction.Carthage]` in `ui/theme.ts`, which carries
+     the argument for the hue: murex was Phoenicia's own export, pushed violet because the
+     true dye is indistinguishable from Roman oxblood at the size of a HUD blip. */
+  --carthage: #7a3d96;
+  --carthage-lit: #a96fc4;
   --panel-bg: linear-gradient(180deg, rgba(30, 24, 17, 0.94), rgba(16, 12, 9, 0.97));
   --panel-edge: 1px solid rgba(217, 178, 95, 0.38);
   --shadow-deep: 0 10px 34px rgba(0, 0, 0, 0.66);

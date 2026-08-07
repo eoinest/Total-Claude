@@ -209,6 +209,7 @@
 
 .army-rome { border-top: 2px solid var(--rome); }
 .army-germanic { border-top: 2px solid var(--germanic); }
+.army-carthage { border-top: 2px solid var(--carthage); }
 
 .army-head {
   display: flex;
@@ -221,6 +222,7 @@
 .army-name { font-size: 1rem; letter-spacing: 0.2em; color: var(--gold-bright); }
 .army-rome .army-name { color: var(--rome-lit); }
 .army-germanic .army-name { color: var(--germanic-lit); }
+.army-carthage .army-name { color: var(--carthage-lit); }
 
 .army-sub {
   font-family: var(--num);
@@ -497,6 +499,18 @@
   white-space: nowrap;
 }
 
+/* The enemy picker, third in the same family: where, then what, then against whom. */
+.opp-opts button { min-width: 11.5rem; }
+.opp-opts button i {
+  font-size: 0.66rem;
+  letter-spacing: 0.045em;
+  white-space: nowrap;
+}
+.opp-opts button[data-opp='2'].on {
+  border-color: var(--carthage-lit);
+  color: var(--carthage-lit);
+}
+
 /*
  * A scenario the current map cannot carry.
  *
@@ -541,4 +555,5 @@
 @media (max-width: 900px) {
   .scen-blurb { margin-left: 0; }
   .scen-opts button { min-width: 9rem; }
+  .opp-opts button { min-width: 9rem; }
 }
