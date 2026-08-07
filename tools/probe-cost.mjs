@@ -52,8 +52,22 @@ const ping = await fetch(base, { signal: AbortSignal.timeout(4000) }).catch(() =
 if (!ping?.ok) throw new Error(`no dev server on ${base} — start your own`);
 console.log(`source: ${base} (my server; confirmed 200)`);
 
+/**
+ * `--enable-webgl-developer-extensions` exposes `EXT_disjoint_timer_query_webgl2`. It was
+ * added here hoping for an instrument immune to CPU contention, and **it does not work on
+ * this stack** — it is kept only as a cross-check on the *sign* of a delta, never as a
+ * millisecond figure.
+ *
+ * The disproof is the one this project already knows to look for: a number that cannot be
+ * true given its neighbour. At `melee` the timer reports 51.2 ms of GPU per frame inside a
+ * block whose wall clock, bounded by a `readPixels` drain at both ends, is 16.1 ms. The GPU
+ * cannot spend three times the elapsed wall time of a drained interval. Its deltas are
+ * inflated in the same proportion — the post chain reads -35.5 ms against -6.0 ms of wall —
+ * so anyone quoting it would report a five-fold saving that does not exist.
+ */
 const browser = await chromium.launch({
-  args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+  args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist',
+    '--enable-webgl-developer-extensions'],
 });
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
 const errors = [];
@@ -105,8 +119,20 @@ await page.evaluate(() => {
     if (g && Number.isFinite(g.instanceCount)) grassMeshes.push([c, g.instanceCount]);
   }
 
-  const casters = [];
-  ctx.scene.traverse((o) => { if (o.isDirectionalLight && o.shadow) casters.push([o, o.castShadow]); });
+  /**
+   * Suppressing the shadow pass has to go through `renderer.shadowMap`, not through the
+   * lights.
+   *
+   * `LightingSystem.update` assigns `l.castShadow = lit` to every cascade light on every
+   * frame, so an arm that clears the flag is undone before the next render and measures
+   * nothing. That is not hypothetical: the `shadowRender` knob in `tools/probe-perf-ab.mjs`
+   * does exactly this, and so did the first version of `tools/probe-budget.mjs`, which
+   * reported the shadow passes at exactly zero draw calls — the shape of an arm that never
+   * ran. `WebGLShadowMap.render` returns immediately when `autoUpdate` and `needsUpdate` are
+   * both false, which nothing in this codebase touches.
+   */
+  const sm = ctx.renderer.shadowMap;
+  const smAuto = sm.autoUpdate;
 
   window.tc = {
     texCount: texes.length,
@@ -114,7 +140,7 @@ await page.evaluate(() => {
     msaa: (n) => postfx.setSamplesOverride(n),
     aniso: (n) => { for (const [t, was] of texes) { const v = n === null ? was : Math.min(n, was); if (t.anisotropy !== v) { t.anisotropy = v; t.needsUpdate = true; } } },
     grass: (f) => { for (const [m, was] of grassMeshes) m.geometry.instanceCount = Math.round(was * f); },
-    shadowRender: (on) => { for (const [l, was] of casters) l.castShadow = on && was; },
+    shadowRender: (on) => { sm.autoUpdate = on ? smAuto : false; sm.needsUpdate = false; },
     post: (on) => { postfx.enabled = on; },
     soft: (on) => { if (lighting && 'softShadows' in lighting) lighting.softShadows = on; },
     grassSys: !!grass,
@@ -149,20 +175,44 @@ const timeBlock = (n) => page.evaluate(async (frames) => {
   const gl = g.engine.renderer.getContext();
   const px = new Uint8Array(4);
   const sync = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  const ext = window.__tq ?? (window.__tq = gl.getExtension('EXT_disjoint_timer_query_webgl2'));
+
   const wasPaused = time.paused;
   time.paused = false;
   // Seeding `lastNow` pins the frame delta at a true 1/60 s. Left alone it is a fixed point
   // that lands on the 0.25 s clamp and fires five sim ticks per rendered frame.
   time.lastNow = time.elapsed;
   const step = () => g.engine.frame((time.elapsed + 1 / 60) * 1000);
+  // Three warm frames: a reallocated target and a freshly compiled program must not be timed.
   step(); step(); step();
   sync();
+
+  let q = null;
+  if (ext) { q = gl.createQuery(); gl.beginQuery(ext.TIME_ELAPSED_EXT, q); }
   const t0 = performance.now();
   for (let i = 0; i < frames; i++) step();
+  if (ext) gl.endQuery(ext.TIME_ELAPSED_EXT);
   sync();
   const ms = (performance.now() - t0) / frames;
+
+  let gpuMs = null;
+  if (ext && q) {
+    // The query result is not ready the instant the queue drains; poll, and throw the whole
+    // block away if the driver reports a disjoint (a context switch or power event landed
+    // inside the query and its timing is meaningless).
+    for (let i = 0; i < 400; i++) {
+      if (gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE)) break;
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    const disjoint = gl.getParameter(ext.GPU_DISJOINT_EXT);
+    if (!disjoint && gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE)) {
+      gpuMs = gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6 / frames;
+    }
+    gl.deleteQuery(q);
+  }
+
   time.paused = wasPaused;
-  return { ms, draws: g.engine.renderer.info.render.calls, tris: g.engine.renderer.info.render.triangles };
+  return { ms, gpuMs, draws: g.engine.renderer.info.render.calls, tris: g.engine.renderer.info.render.triangles };
 }, n);
 
 const median = (a) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
@@ -175,6 +225,7 @@ for (const name of cams) {
   await page.evaluate(() => { for (let i = 0; i < 20; i++) window.__game.engine.advance(1 / 60); });
 
   const samples = ARMS.map(() => []);
+  const gpu = ARMS.map(() => []);
   const info = ARMS.map(() => null);
   for (let b = 0; b < BLOCKS; b++) {
     const order = b % 2 ? [...ARMS.keys()].reverse() : [...ARMS.keys()];
@@ -182,6 +233,7 @@ for (const name of cams) {
       await page.evaluate((src) => { new Function('tc', src)(window.tc); }, ARM_SRC[ARMS[i]]);
       const r = await timeBlock(FRAMES);
       samples[i].push(r.ms);
+      if (r.gpuMs !== null) gpu[i].push(r.gpuMs);
       info[i] = r;
     }
   }
@@ -189,15 +241,22 @@ for (const name of cams) {
 
   const mins = samples.map(best);
   const meds = samples.map(median);
+  const gMed = gpu.map((a) => (a.length ? median(a) : null));
+  const gMin = gpu.map((a) => (a.length ? best(a) : null));
   console.log(`\n=== ${name} ===`);
+  console.log(`  arm        GPUmed*  GPUbest* |  WALL best  wall med | draws   tris    delta vs base (wall-best is the number)`);
   for (const [i, a] of ARMS.entries()) {
     const d = mins[i] - mins[0];
-    const dm = meds[i] - meds[0];
-    const flag = Math.abs(d - dm) > 0.9 ? '  ?noisy' : '';
-    console.log(`  ${a.padEnd(10)} best ${mins[i].toFixed(2)}  median ${meds[i].toFixed(2)} ms  ${String(info[i].draws).padStart(4)} draws`
-      + `  ${(info[i].tris / 1e6).toFixed(1).padStart(5)}M`
-      + (i === 0 ? '   (reference)' : `   ${d >= 0 ? '+' : ''}${d.toFixed(2)} best / ${dm >= 0 ? '+' : ''}${dm.toFixed(2)} median${flag}`)
-      + `   [${samples[i].map((v) => v.toFixed(1)).join(' ')}]`);
+    const dg = gMed[i] !== null && gMed[0] !== null ? gMed[i] - gMed[0] : null;
+    // GPU timing and wall clock should agree on the *sign* and roughly on the size. When
+    // they do not, the wall-clock arm was taxed by something outside this browser.
+    // Sign disagreement is the only thing the GPU column is trusted for; magnitude is not,
+    // so a size mismatch is not flagged.
+    const flag = dg !== null && d !== 0 && Math.sign(dg) !== Math.sign(d) ? '  <-- GPU and wall disagree on SIGN' : '';
+    console.log(`  ${a.padEnd(10)} ${(gMed[i] === null ? '   -  ' : gMed[i].toFixed(2)).padStart(7)}   ${(gMin[i] === null ? '   -  ' : gMin[i].toFixed(2)).padStart(7)}  |`
+      + `  ${mins[i].toFixed(2).padStart(8)}  ${meds[i].toFixed(2).padStart(8)}  |`
+      + ` ${String(info[i].draws).padStart(4)} ${(info[i].tris / 1e6).toFixed(1).padStart(6)}M`
+      + (i === 0 ? '   (reference)' : `   ${dg === null ? '?' : (dg >= 0 ? '+' : '') + dg.toFixed(2)} / ${d >= 0 ? '+' : ''}${d.toFixed(2)} ms${flag}`));
   }
 }
 

@@ -243,9 +243,40 @@ Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`
 - `GroundDamage.ts:352` sets `receiveShadow = false` on a raw `ShaderMaterial` at `renderOrder 1`,
   so trampled ground paints out the terrain's shadow.
 - True frame times are melee 8.31 ms, clash 8.88 ms. **Every fps figure in this project's history
-  before the harness clock fix was roughly double the truth.**
+  before the harness clock fix was roughly double the truth.** Confirmed from the other side at
+  `a974a28`: a *real interactive* session — page-driven `requestAnimationFrame`, HUD up, camera
+  panned, rotated and zoomed, units drag-selected and right-click ordered — measures
+  `engine.frame()` at p50 **9.1 ms**, p90 11.0, mean 8.84, over 927 frames at machine load
+  27-42 (`tools/probe-interactive.mjs`). The rAF interval in that session is p50 25 ms, but
+  that is headless compositing and six other agents, not this codebase.
 - `fixedUpdate` 3.657 ms at 8,632 men idle, 3.964 ms routing across the wall, against a 4 ms budget.
-- Draw calls: city 205, wall 216, cap 220. Soldier draws 121-122.
+- **The frame is a small colour pass and a large shadow pass, and only the second scales with
+  tier.** Rome assault at ultra: 98 colour + 98 shadow + 23 post = 219. The colour pass is
+  96-101 at *every* tier. **A casting mesh costs one call in the colour pass and one more per
+  cascade — five on ultra.** Cascade 0 (39 m across) draws the same objects as cascade 3
+  (745 m), because every caster is a merged mesh that straddles all four. Full per-camera
+  per-tier table in `ARCHITECTURE.md` §4; worst is the assault at 219 against the 220 cap, and
+  panning in a live session touches 226.
+- **Soldier draws are 6, not 121-122.** Read off the live scene at t+72 s: the unit render
+  group submits six meshes carrying 826-1,210 instances. The ≤12 target is met. The 121 figure
+  is stale — it looks like a whole-frame count that got filed under soldiers.
+- **The assault camera has never been inside the 220 cap, and the last forty commits cost it
+  five draws.** Bisected with `tools/bisect-draws.mjs`, a worktree and a vite and a boot per
+  commit: **254** at `9639c4c`, the commit that *created* the assault scenario, and **259** at
+  `7a313fe`. There is no culprit commit and nobody should go looking for one.
+- **MSAA costs about 1.2 ms, and 2x is not worth having.** Eight camera-measurements over two
+  interleaved sessions at loads 42 and 60, wall-clock best-of-blocks. 4x against none:
+  −1.56 −1.70 −0.77 −1.01 −0.55 +0.42 −2.11 −1.35, median **1.18 ms**. 4x against 2x:
+  +0.36 −0.34 −1.15 +0.32 +0.15 +0.71 −0.15 −0.45, median **0.07 ms**. So the author's claimed
+  +1.1 ms was right, and **the cost is in having a multisampled target at all, not in the
+  sample count** — 2x pays 94 % of 4x's price for half the samples. `MSAA_SAMPLES` should read
+  0 or 4 and never 2; `medium: 2` is the worst cell in that table.
+- **Anisotropy 16 → 8 is not a lever**: −1.03 to +0.90 ms across four cameras, inside the
+  noise, on a change already measured as worth 0.008 on image quality. Grass density 100 → 50 %
+  is worth 0.55-3.71 ms and is the largest single knob at the wide and city cameras. The whole
+  post chain is worth 1.6-3.5 ms and 22-25 draws.
+- **The driver caps MSAA at 4 here.** `renderer.capabilities.maxSamples` is 4 under headless
+  ANGLE-on-Metal, so an 8x arm silently resolves to 4x and would measure as free.
 
 ## Traps that have already cost time
 
@@ -294,10 +325,37 @@ Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`
    when it was a floated climb. When a measurement disagrees with what you can see, suspect the
    instrument first — that rule has now paid out five times.
 8. `git clean -fd` in a verification worktree **deletes the `node_modules` symlink**; pass
-   `-e node_modules`. A bare `sleep` is blocked in a backgrounded Bash call (exit 144) — use an
+   `-e node_modules`. **`git stash push -u` takes it too**, for the same reason — it is an
+   untracked entry — and the failure lands one command later as `Cannot find package
+   'playwright'`. A bare `sleep` is blocked in a backgrounded Bash call (exit 144) — use an
    `until` loop, and prefer the foreground for anything that must wait on a dev server.
 9. Machine load makes frame timing meaningless — an *unchanged* tree has measured slower than a
-   changed one. Use in-session interleaved A/B and report both arms.
+   changed one. Use in-session interleaved A/B and report both arms. **Prefer the best block
+   over the median**: contention is one-sided, so it can only add time, and the minimum over
+   N blocks converges on the uncontended cost while the median tracks whatever else the machine
+   is doing. `tools/probe-cost.mjs` reports both and flags the run when they disagree.
+10. **Clearing `castShadow` does not switch the shadow pass off, and two probes think it
+   does.** `LightingSystem.update` assigns `l.castShadow = lit` to every cascade light on
+   *every frame* (line ~455), and lighting has order −100, so it runs before anything else can
+   see the flag. The `shadowRender` knob and the `noshadowrender` arm in
+   `tools/probe-perf-ab.mjs` are therefore silent no-ops, and any conclusion drawn from them
+   should be re-checked. The working switch is `renderer.shadowMap.autoUpdate = false` with
+   `needsUpdate = false`; `WebGLShadowMap.render` returns immediately on that and nothing in
+   this codebase touches either. Signature of the fault, again: the arm reported the shadow
+   passes at *exactly zero* draw calls.
+11. **`EXT_disjoint_timer_query_webgl2` is available here and it does not work.** It is
+   exposed by launching Chromium with `--enable-webgl-developer-extensions`, and it looked
+   like the answer to a loaded machine. At `melee` it reports 51.2 ms of GPU per frame inside
+   a block whose wall clock, drained by `readPixels` at both ends, is 16.1 ms — the GPU cannot
+   spend three times the elapsed time of a drained interval. Its deltas are inflated in
+   proportion: the post chain reads −35.5 ms against −6.0 ms of wall. Trust it for the *sign*
+   of a difference and never for a millisecond.
+12. **`src/maps/carthage.ts` still has `city: null`.** Carthage's triple wall, its 59
+   casemated bays and its 30 towers exist in `src/city/carthageWall.ts` and are not reachable
+   from `?map=carthage` at `7a313fe` — the map hands over no plan, so `main.ts` registers no
+   `CitySystem` and `probe-boot-carthage` prints `city: absent`. Verified against a clean HEAD
+   checkout, so it is not a regression, but any Carthage measurement quoted from a running
+   game — including "19 visible wall meshes against Rome's 29" — was not taken on that map.
 
 ## Grading
 
