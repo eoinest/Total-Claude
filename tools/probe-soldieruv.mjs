@@ -37,9 +37,18 @@ const args = new Map(process.argv.slice(2).map((a) => {
 }));
 const PORT = Number(args.get('port') ?? 5302);
 const BASE = `http://127.0.0.1:${PORT}`;
-/** Atlas pixels. Must agree with `atlas.ts`; a mismatch only scales the table. */
-const ATLAS_W = 1024;
-const ATLAS_H = 1536;
+/**
+ * Atlas pixels — a **fallback**, overwritten from the live module before use.
+ *
+ * These were hard-coded at 1024 x 1536 with a comment saying they "must agree with
+ * `atlas.ts`; a mismatch only scales the table". The sheet then went to 2048 x 1536 and this
+ * file did not, so every texel-density figure it printed would have been half the truth, with
+ * no error, because a scaled table still looks like a table. Two files that must agree with
+ * only one of them a source of truth is the arrangement that also let the emblem grid drift.
+ * Take the number from the module that owns it.
+ */
+let ATLAS_W = 2048;
+let ATLAS_H = 1536;
 
 const alive = await fetch(`${BASE}/viewer.html`).then((r) => r.ok).catch(() => false);
 if (!alive) {
@@ -57,6 +66,20 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
 await page.goto(`${BASE}/viewer.html`, { waitUntil: 'domcontentloaded', timeout: 60000 });
 await page.waitForFunction(() => window.__viewer && window.__viewer.ready === true, null, { timeout: 180000 });
+
+const live = await page.evaluate(async () => {
+  const a = await import('/src/units/atlas.ts');
+  return { w: a.ATLAS_W, h: a.ATLAS_H };
+});
+if (!Number.isFinite(live.w) || !Number.isFinite(live.h)) {
+  console.error('atlas.ts did not export ATLAS_W/ATLAS_H; refusing to guess the sheet size.');
+  process.exit(2);
+}
+if (live.w !== ATLAS_W || live.h !== ATLAS_H) {
+  console.log(`atlas is ${live.w}x${live.h}, this file's fallback said ${ATLAS_W}x${ATLAS_H} — using the live one\n`);
+}
+ATLAS_W = live.w;
+ATLAS_H = live.h;
 
 const out = await page.evaluate(async ({ aw, ah }) => {
   const mesh = await import('/src/units/soldierMesh.ts');
