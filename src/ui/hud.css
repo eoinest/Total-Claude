@@ -2002,32 +2002,104 @@ input[type='checkbox']:checked::after { opacity: 1; }
 
 /* ---------------------------------------------------------------- results -- */
 
+/*
+ * The dispatch is a modal, not a scrim.
+ *
+ * It was `rgba(3, 4, 6, 0.92)` at its darkest and 0.72 in the middle, and the playtest's
+ * verdict was that it could not be read: the battlefield, the unit banners, the top bar, the
+ * minimap and the whole card tray were legible through it — and the ones that are DOM were
+ * legible *over* it wherever the panel did not reach. The fix is two parts and it needs both.
+ * Here, an opaque sheet. Below, `.hud.results-up` blanks every sibling panel: no alpha on this
+ * element can help against chrome that is a sibling in the same layer.
+ */
 .results {
   position: absolute;
   inset: 0;
   z-index: 80;
   display: grid;
   place-items: center;
-  background: radial-gradient(ellipse at 50% 42%, rgba(26, 18, 10, 0.72), rgba(3, 4, 6, 0.92) 72%);
+  background:
+    radial-gradient(ellipse at 50% 42%, #1a120a, #030406 74%),
+    #030406;
   opacity: 0;
   transition: opacity 0.42s ease;
 }
 .results.open { opacity: 1; }
 
+/* Everything else the HUD draws is chrome for a battle that is over. */
+.hud.results-up > *:not(.results) { visibility: hidden; }
+
 .rs-panel {
+  display: flex;
+  flex-direction: column;
   width: min(86em, 88vw);
-  max-height: 88vh;
-  overflow: auto;
-  padding: 2.2em 2.4em 1.6em;
+  /* `min()` against a viewport unit AND a percentage: the grid parent is the viewport here,
+     but a panel that can only be sized in vh breaks the moment the HUD is embedded. */
+  max-height: min(94vh, 100%);
+  padding: 1.9em 2.4em 1.3em;
   text-align: center;
   background:
-    linear-gradient(180deg, rgba(44, 34, 22, 0.985) 0%, rgba(24, 18, 12, 0.99) 46%, rgba(12, 9, 6, 0.995) 100%),
+    linear-gradient(180deg, #2c2216 0%, #181209 46%, #0c0906 100%),
     repeating-linear-gradient(0deg, rgba(255, 236, 194, 0.022) 0 1px, rgba(0, 0, 0, 0.06) 1px 3px);
   border-color: rgba(217, 178, 95, 0.5);
   transform: translateY(1.4em) scale(0.985);
   transition: transform 0.5s cubic-bezier(0.2, 0.9, 0.25, 1);
 }
 .results.open .rs-panel { transform: translateY(0) scale(1); }
+
+/* Head and foot are outside the scroll so the way out is never below the fold. */
+.rs-head { flex: 0 0 auto; }
+.rs-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Room for the scrollbar so a long roll of honour does not shift the columns. */
+  padding-right: 0.2em;
+}
+.rs-body::-webkit-scrollbar { width: 0.7em; }
+.rs-body::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.45); }
+.rs-body::-webkit-scrollbar-thumb {
+  background: rgba(217, 178, 95, 0.32);
+  border-radius: 1px;
+}
+.rs-foot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.9em;
+  padding-top: 1em;
+  margin-top: 0.6em;
+  border-top: 1px solid rgba(217, 178, 95, 0.18);
+}
+.rs-esc {
+  font-family: var(--num);
+  font-size: 0.82em;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(226, 214, 190, 0.5);
+}
+
+/* A corner dismiss as well as the button: a player looks top-right first. */
+.rs-x {
+  position: absolute;
+  top: 0.3em;
+  right: 0.5em;
+  appearance: none;
+  width: 1.9em;
+  height: 1.9em;
+  padding: 0;
+  font-family: var(--serif);
+  font-size: 1.8em;
+  line-height: 1;
+  color: rgba(230, 219, 197, 0.66);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.rs-x:hover { color: var(--gold-bright); border-color: rgba(217, 178, 95, 0.4); }
 
 .rs-verdict {
   font-size: 4.4em;
@@ -2175,7 +2247,7 @@ input[type='checkbox']:checked::after { opacity: 1; }
 }
 
 .rs-flavour {
-  margin: 1.4em auto 0;
+  margin: 1.4em auto 0.2em;
   max-width: 56em;
   font-size: 1.04em;
   font-style: italic;
@@ -2185,7 +2257,6 @@ input[type='checkbox']:checked::after { opacity: 1; }
 
 .rs-close {
   appearance: none;
-  margin-top: 1.4em;
   padding: 0.6em 2.4em;
   font-family: var(--serif);
   font-size: 1em;
