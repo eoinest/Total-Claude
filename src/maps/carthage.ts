@@ -1,9 +1,130 @@
+import { BASIN_DEPTH, FREEBOARD } from '../city/carthage/harbour';
+import { COTHON, MERCHANT_HARBOUR } from '../city/carthage/layout';
 import { CARTHAGE_PLAN } from '../city/carthage/plan';
+import type { WaterProfile } from '../terrain/WaterSurface';
 import { CARTHAGE_AERIAL_MEAN, CARTHAGE_LAYERS, CARTHAGE_SPLAT_GLSL } from './carthage/ground';
 import { buildCarthageTerrain } from './carthage/heightfield';
 import { CARTHAGE_SCATTER } from './carthage/scatter';
 import { CARTHAGE_TOPO_GLSL, SEA_LEVEL } from './carthage/topography';
 import type { MapDefinition } from './types';
+
+/**
+ * Enough of a lift over the harbours' own dark plate that the two cannot z-fight.
+ *
+ * The quays are built by `src/city/carthage/harbour.ts` and their water is a slab whose top
+ * is exactly `heightAt(centre) - FREEBOARD`. Putting a second surface on the same plane at a
+ * camera 400-1,000 m away, with `RTSCamera`'s near clamped as low as 0.08 m, is a coin flip
+ * per pixel. 0.35 m out of a 1.8 m freeboard is invisible and decides it.
+ */
+const BASIN_LIFT = 0.35;
+
+/**
+ * The Gulf of Tunis, the Lake of Tunis and the two harbour basins.
+ *
+ * **The map declares water and the heightfield decides where it is.** There is no coastline
+ * polygon here: `WaterSurface` tests the map's own bed against `waterLevel`, per pixel,
+ * against the same texture and the same edge-drift the terrain material uses. So the
+ * shoreline is `coastZ` and `lakeEdgeX` exactly, because those are what shaped the bed, and
+ * the Taenia's sand bar comes out as a bar rather than as a hole in an authored outline.
+ *
+ * The two evaporite pans are *not* in here and must not be. The Sebkhet Ariana is 0.0 % under
+ * the datum by construction (`carthage/topography.ts` builds it at +0.54 to +0.64 m and
+ * `carthage/ground.ts` paints it with the `pan` term, not the `sea` term) and the lake's
+ * margin is 35 m of walkable salt marsh. Nothing about either changes: a surface that renders
+ * only what is under the datum cannot put water on a salt flat.
+ *
+ * **What the numbers are for.** At 17:00 the sun is 20.2 deg up, which is the hardest case
+ * for a diffuse surface and the easiest for a specular one, so the whole profile is aimed at
+ * the specular response:
+ *
+ *  - `roughness` 0.075 against the Tiber's 0.13. A tighter lobe puts more energy into the sun
+ *    path and less into a general sheen, which is the difference between a sea and a wet
+ *    field. It is not zero, because a mirror only glints where the eye is exactly in the
+ *    mirror direction and an RTS camera rarely is.
+ *  - the waves are **coarser** than the Tiber's 6.5 m and 17 m tiles: 10 m and 45 m. A 6.5 m
+ *    ripple at 800 m is a quarter of a pixel; it aliases and then mips away to a flat mirror,
+ *    which is the measured failure mode of every procedural normal map in this project.
+ *  - `chop` 0.38 and `farRoughness` 0.26, which are the two the first pass got wrong in
+ *    opposite directions. See their comments below: between them they decide whether the sun
+ *    makes a *path* across the gulf or turns the whole of it into hammered foil.
+ *  - `surge` 0.55. The waterline breathes 55 cm of depth in and out, so the strand carries
+ *    surf. On this coast the scarp is steep — 9.5 m in 12, and it is the only thing stopping
+ *    an army walking into the gulf — so the band is narrow, and that is the map's shape
+ *    rather than a limitation of the surface.
+ *
+ * Colours are linear-light triples, not hexes: `Color.setHex` decodes display-referred sRGB
+ * and would land the sea about a stop and a half dark. See the convention beside `tcLuma`.
+ * The deep value is very low on purpose — clear Mediterranean water absorbs nearly all of
+ * what enters it and what the eye actually sees out there is sky, which arrives through the
+ * Fresnel and environment terms rather than through the body colour.
+ */
+const GULF_OF_TUNIS: WaterProfile = {
+  shallow_lin: [0.052, 0.108, 0.098],
+  deep_lin: [0.008, 0.026, 0.044],
+  foam_lin: [0.72, 0.74, 0.75],
+  // Clear water over a pale shell-sand bed: the colour is still turning at 3.5 m, which is
+  // what makes the shelf inside the Taenia read as shallow and the gulf floor at -8.5 m read
+  // as deep. The Tiber's 2.6 is right for a river carrying Apennine marl and wrong here.
+  absorbDepth: 3.5,
+  roughness: 0.075,
+  // At 0.075 flat, the gulf past 400 m rendered as a field of unfiltered white sparkles —
+  // one mirror lobe per pixel, hitting or missing — because the wave normals had mipped away
+  // and left the roughness behind. Converging on 0.26 turns the far half of the gulf back
+  // into a sheet with a sun path across it.
+  farRoughness: 0.26,
+  // Water reflects far more sky than any ground layer does, and `SkySystem` keeps a PMREM of
+  // the actual scattering cube in `scene.environment`, so this is a reflection of this hour's
+  // own sky rather than a tint.
+  envIntensity: 1.3,
+  waves: [
+    // Swell rolling in off the gulf, which is +Z, so it runs toward -Z; the lake's fetch is
+    // across x and picks up the cross term. 10 m of chop under a 45 m swell: the fine layer
+    // has to survive a camera 60 m off the water at the harbour and the coarse one has to
+    // survive one 600 m off it over the gulf, and no single tiling does both.
+    { scale: 0.1, drift: [0.19, -0.34], weight: 0.5 },
+    { scale: 0.022, drift: [0.12, -0.21], weight: 0.68 },
+  ],
+  // 0.38: a slope of 21 degrees at the crest, so an RMS nearer 9 — inside the 5-15 a real
+  // sea runs. The first pass shipped 1.05 and the gulf came back as hammered foil from edge
+  // to edge, because at 43 degrees of slope some facet in every pixel catches a 20-degree
+  // sun. The glitter has to be a path, and a path is what a shallow wave field makes.
+  chop: 0.38,
+  skyReflect: 0.4,
+  surge: 0.55,
+  // A bar breaks. The Taenia's crown stands at +3.7 m and the channel behind it shallows to
+  // under a metre at its margins, which is exactly where a real lagoon mouth breaks.
+  shoalFoam: 0.4,
+  /**
+   * The two harbour basins, which the heightfield cannot see.
+   *
+   * A basin is a hole cut in level ground by `harbour.ts`, so the bed under it is the *quay's*
+   * elevation and the bathymetric test finds no water there at all. These carry their own
+   * surface height and their own depth instead, and both come from that builder's own
+   * constants rather than from a copy of them — `FREEBOARD` and `BASIN_DEPTH` are imported so
+   * the two cannot drift apart.
+   */
+  basins: [
+    {
+      // The cothon: an annulus, because the admiralty island stands in the middle of it.
+      shape: {
+        kind: 'disc', x: COTHON.x, z: COTHON.z,
+        outerR: COTHON.outerR, innerR: COTHON.islandR,
+      },
+      dy: -FREEBOARD + BASIN_LIFT,
+      depth: BASIN_DEPTH,
+    },
+    {
+      // The merchant basin: 320 x 150 m of water, long axis in x.
+      shape: {
+        kind: 'rect', x: MERCHANT_HARBOUR.x, z: MERCHANT_HARBOUR.z,
+        hw: MERCHANT_HARBOUR.hw, hd: MERCHANT_HARBOUR.hd,
+      },
+      dy: -FREEBOARD + BASIN_LIFT,
+      depth: BASIN_DEPTH,
+    },
+  ],
+  cacheKey: 'carthage-sea',
+};
 
 /**
  * Carthage, spring 146 BC — the isthmus, the triple wall and the Byrsa behind it.
@@ -130,10 +251,7 @@ export const CARTHAGE: MapDefinition = {
     // shorelines that must stay legible from altitude, and the splat rules already exempt the
     // salt pan and the beach from the aerial term for exactly that reason.
     aerialStrength: 0.18,
-    // No open water surface. `RiverWater` is a ribbon built along the Tiber's centreline and
-    // generalising it is a `src/terrain/` change; more to the point, neither shore is inside
-    // the field. See `carthage/topography.ts`.
-    hasRiver: false,
+    water: GULF_OF_TUNIS,
     roadGlsl: `${CARTHAGE_TOPO_GLSL}\nfloat grassRoadCentreX(float z) { return carRoadCentreX(z); }`,
     /**
      * Short and dry, but not as dead as a solstice plain.

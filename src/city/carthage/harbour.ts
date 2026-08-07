@@ -45,10 +45,16 @@ import { hash2 } from '../../util/rand';
 
 const M4 = new THREE.Matrix4();
 
-/** Quay stands this far above the water. */
-const FREEBOARD = 1.8;
-/** §6.2: 2.5-3.0 m of water in both basins. */
-const BASIN_DEPTH = 2.8;
+/**
+ * Quay stands this far above the water.
+ *
+ * Exported because the map's `WaterProfile` puts a rendered water surface in both basins and
+ * it has to land on the same plane as the dark plate below it. A copy of this number in
+ * `src/maps/` is a copy that can drift; an import cannot.
+ */
+export const FREEBOARD = 1.8;
+/** §6.2: 2.5-3.0 m of water in both basins. Exported for the same reason as `FREEBOARD`. */
+export const BASIN_DEPTH = 2.8;
 /** §6.3 [ARCH]: slipway width. */
 const SHED_BAY = 5.9;
 /** §6.3 [GAME]: a quinquereme is 35-40 m. */
