@@ -20,7 +20,8 @@ import {
   MAX_UNITS_PER_SIDE, SCENARIOS, UNIT_SIZES, type UnitSizeId, baseStrength, belligerents,
   compositionFor,
   decodeConfig, encodeConfig, PERF_VALIDATED_MEN, fittedUnitScale, isScaleClamped,
-  loadStoredConfig, rosterFor, sanitiseConfig, scaleAppliesTo, scenarioDef, storeConfig,
+  loadStoredConfig, rosterFor, sanitiseConfig, scaleAppliesTo, scenarioDef, scenarioFor,
+  storeConfig,
   summarise, unitCount, unitSizePreset,
 } from '../sim/battleConfig';
 import { QUALITY_PRESETS } from '../core/Engine';
@@ -212,7 +213,7 @@ export class MainMenu {
              ${SCENARIOS.map((s) => `
                <button type="button" data-scen="${s.id}">
                  <b>${s.label}</b>
-                 <i>${s.subtitle}</i>
+                 <i data-scen-sub="${s.id}">${scenarioFor(s.id, this.cfg.map).subtitle}</i>
                </button>`).join('')}
            </div>
          </section>
@@ -477,7 +478,7 @@ export class MainMenu {
    */
   private refresh(): void {
     const sc = this.cfg.scenario;
-    const scDef = scenarioDef(sc);
+    const scDef = scenarioFor(sc, this.cfg.map);
     for (const [id, b] of this.mapBtns) setClass(b, 'on', id === this.cfg.map);
     for (const [id, b] of this.sizeBtns) setClass(b, 'on', id === this.cfg.unitSize);
     const mapDef = getMap(this.cfg.map);
@@ -490,6 +491,12 @@ export class MainMenu {
     // and *says why* on the blurb line rather than being hidden or silently ignored — a
     // greyed button with no reason is the same bug as no button at all.
     let scenNote = scDef.blurb;
+    // The sub-labels follow the map: "The Campus Martius" under Field Battle is a lie on
+    // Pydna, and "Storming the Aurelian Wall" is one on any city that is not Rome.
+    for (const el of this.qsa('[data-scen-sub]')) {
+      const id = el.dataset.scenSub as ScenarioId;
+      setText(el, scenarioFor(id, this.cfg.map).subtitle);
+    }
     for (const [id, b] of this.scenBtns) {
       const why = this.scenarioBlocked(id);
       setClass(b, 'on', id === sc);

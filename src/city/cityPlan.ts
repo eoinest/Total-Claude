@@ -1,3 +1,4 @@
+import type { Faction } from '../sim/types';
 import type { Lane } from './insulae';
 
 /**
@@ -197,6 +198,15 @@ export interface CityPlan {
   readonly id: string;
   /** Display name, for objectives, the results screen and the assault's menu subtitle. */
   readonly name: string;
+  /**
+   * Whose city it is — the faction that garrisons the wall in an assault.
+   *
+   * Not derivable and not optional. `deployAssault` used to put `Faction.Rome` on the parapet
+   * because Rome was the only city there was; on a second city that is not merely a label, it
+   * is the wrong army on the wrong side of the wall. The storming side is then "whichever
+   * belligerent is not this one", which is how the deployment stays free of a list of cities.
+   */
+  readonly garrison: Faction;
   /**
    * The gate the siege drives its ram at. Must match one of `WallBuildOutput.gates[].id`,
    * because `setGateOpen(id, true)` is how the ram wins.

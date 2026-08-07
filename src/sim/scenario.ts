@@ -194,7 +194,7 @@ const nameAt = (names: readonly string[], k: number, stem: string): string =>
  */
 export type ScenarioVariant = ScenarioId;
 
-export function deploySiegeOfRome(
+export function deployBattle(
   battle: BattleSystem,
   ctx: EngineContext,
   config: BattleConfig = DEFAULT_CONFIG,
@@ -562,6 +562,15 @@ function deployAssault(
     Math.max(0, comp[id] ?? 0);
 
   const siege = battle.siege;
+  /**
+   * The city, through the narrowest view that will do the job.
+   *
+   * A structural type rather than an import of `CitySystem`: `src/sim/` must not depend on
+   * `src/city/`, and it does not have to — everything an assault needs is four accessors and
+   * three scalars. **Nothing here names Rome**, which is the point. `cityPlan` carries the
+   * display name, the gate the ram drives at, and which faction holds the wall; the storming
+   * side is whichever belligerent is not that one.
+   */
   const city = ctx.tryGet('city') as unknown as {
     getGarrisonBays?: () => readonly {
       index: number; x0: number; z0: number; x1: number; z1: number;
@@ -569,9 +578,47 @@ function deployAssault(
       isGate: boolean; stage: string;
     }[];
     getGates?: () => { id: string; x: number; z: number; facing: number }[];
+    cityPlan?: { id: string; name: string; siegeGateId: string; garrison: Faction };
   } | undefined;
   const bays = city?.getGarrisonBays?.() ?? [];
-  const gate = city?.getGates?.()?.[0];
+  const plan = city?.cityPlan;
+  const gates = city?.getGates?.() ?? [];
+  // The gate the ram drives at, named by the plan rather than taken as "the first one". A
+  // circuit with three gates (Carthage has three) would otherwise be stormed at whichever one
+  // the wall builder happened to emit first, which is not a decision anyone made.
+  const gate = gates.find((g) => g.id === plan?.siegeGateId) ?? gates[0];
+  const cityName = plan?.name ?? 'the city';
+  /**
+   * Who holds the wall, and who storms it.
+   *
+   * `deployAssault` put `Faction.Rome` on the parapet because Rome was the only city there
+   * was. At Carthage that is the wrong army on the wrong side of its own wall: Rome is the
+   * besieger there. The garrison side comes from the plan and the storming side is derived,
+   * so this function never learns a list of cities.
+   */
+  const garrisonSide = plan?.garrison ?? Faction.Rome;
+  const stormSide = belligerents(config).find((f) => f !== garrisonSide) ?? Faction.Germanic;
+  setOpposingFaction(garrisonSide === Faction.Rome ? stormSide : garrisonSide);
+  /**
+   * **The one thing this generalisation does not do, named rather than guessed.**
+   *
+   * The two siege orders of battle are still keyed to Rome-garrisons-and-the-Juthungi-storm,
+   * because the roster has no Punic wall troops and no Roman siege train — `ballistarii`,
+   * `wall-slingers` and `carroballista` are Roman, `tower-assault`, `escalade-party`,
+   * `ram-crew` and `onager` are Juthungi, and inventing Punic equivalents is the roster
+   * workstream's call, not this file's. Guessing at another workstream's table is how work
+   * gets lost.
+   *
+   * It is not currently reachable: a map with no `CityPlan` cannot host an assault
+   * (`sanitiseConfig`), Carthage has no plan yet, and so `garrisonSide` is always
+   * `Faction.Rome` today. When Carthage's plan lands, `rosterFor` needs a *role* argument —
+   * garrison or storm — instead of a faction, and `SIEGE_CARTHAGE_ROSTER` and a Roman siege
+   * train need to exist. Everything else below already follows `garrisonSide`.
+   */
+  const garrisonComp = garrisonSide === Faction.Rome ? rome : juth;
+  const stormComp = garrisonSide === Faction.Rome ? juth : rome;
+  void garrisonComp;
+  void stormComp;
 
   const push = (arr: DeployedUnit[], id: number, label: string) => {
     if (id >= 0) arr.push({ unitId: id, label });
@@ -584,7 +631,7 @@ function deployAssault(
   // `CitySystem` registered at all. The player's own field order of battle is used rather
   // than `DEFAULT_CONFIG`, which is what they would have got had they picked the field
   // battle themselves.
-  if (bays.length === 0 || !gate) return deploySiegeOfRome(battle, ctx, config, 'field');
+  if (bays.length === 0 || !gate) return deployBattle(battle, ctx, config, 'field');
 
   const gateBay = bays.find((b) => b.isGate) ?? bays[Math.floor(bays.length / 2)];
   const at = (k: number) => bays[Math.max(0, Math.min(bays.length - 1, gateBay.index + k))];
@@ -768,37 +815,84 @@ function deployAssault(
     if (u.order !== UnitOrder.Garrison) u.order = UnitOrder.Hold;
   }
 
-  ctx.events.emit('battleStarted', { seed: battle.rng.getState(), scenario: 'assault-of-rome-271' });
+  ctx.events.emit('battleStarted', {
+    seed: battle.rng.getState(),
+    scenario: `assault-of-${plan?.id ?? 'city'}`,
+  });
 
   const focus = mid(1);
   return {
     roman,
     germanic,
-    // Outside the wall looking south at it, from about where the towers are coming from:
-    // the curtain across the frame, the gate on the left, the assault in the middle
-    // distance. Yaw 0 looks toward +Z, which is the city.
-    cameraFocus: { x: focus.x, z: focus.z - 96, zoom: 0.52, yaw: 0 },
+    /*
+     * Outside the wall looking at it, from about where the towers are coming from: the
+     * curtain across the frame, the gate to one side, the assault in the middle distance.
+     * Yaw 0 looks toward +Z, which is the city on every map — that is a fixed engine
+     * convention, not a fact about Rome (`scenario.ts` deploys the attacker at z −190 and the
+     * defender at z +130 whatever the compass says), so this framing carries to any city.
+     *
+     * The offset is taken from the bay's own outward normal rather than as `−96` in z, so a
+     * curtain that runs at an angle — Carthage's falls 121 m of z across its length — is
+     * still framed square rather than obliquely.
+     */
+    cameraFocus: {
+      x: focus.x + focus.nx * 96,
+      z: focus.z + focus.nz * 96,
+      zoom: 0.52,
+      yaw: 0,
+    },
   };
 }
 
-/** Simple victory check used until the objective system lands. */
-export function checkVictory(battle: BattleSystem): { over: boolean; victor: Faction | -1; reason: string } {
+/**
+ * Simple victory check used until the objective system lands.
+ *
+ * Faction-agnostic on purpose and in two senses. It counts Rome against *everyone who is not
+ * Rome* rather than against `Faction.Germanic`, because the exact form would have reported a
+ * Carthaginian army as annihilated on the first tick and handed Rome an instant win against
+ * an army still standing there. And it takes the engine context rather than the battle alone,
+ * so it can name the city and say what actually happened at a wall: "the storm was thrown
+ * back from Carthage" is a different result from "the Juthungi routed", and the two need
+ * different words even when the arithmetic is identical.
+ *
+ * `ctx` is optional so every existing caller and every probe keeps working; without it the
+ * reason is the bare one it always was.
+ */
+export function checkVictory(
+  battle: BattleSystem,
+  ctx?: EngineContext,
+): { over: boolean; victor: Faction | -1; reason: string } {
   const romans = battle.activeUnits(Faction.Rome);
-  // Whoever is not Rome. `activeUnits(Faction.Germanic)` was exact for two factions and
-  // would have reported a Carthaginian army as annihilated on the first tick, handing Rome
-  // an instant victory against an army that was still standing there.
-  const germans = battle.activeUnits().filter((u) => u.faction !== Faction.Rome);
+  const others = battle.activeUnits().filter((u) => u.faction !== Faction.Rome);
   const romanMen = romans.reduce((a, u) => a + u.alive, 0);
-  const germanMen = germans.reduce((a, u) => a + u.alive, 0);
+  const otherMen = others.reduce((a, u) => a + u.alive, 0);
+  if (romanMen > 0 && otherMen > 0) return { over: false, victor: -1, reason: '' };
 
-  if (romanMen === 0 && germanMen === 0) return { over: true, victor: -1, reason: 'annihilation' };
-  if (germanMen === 0) return { over: true, victor: Faction.Rome, reason: romans.length ? 'rout' : 'annihilation' };
-  if (romanMen === 0) {
-    return {
-      over: true,
-      victor: germans[0]?.faction ?? getOpposingFaction(),
-      reason: germans.length ? 'rout' : 'annihilation',
-    };
+  /**
+   * Who was defending a wall, if anyone. Read through the same narrow structural view the
+   * deployment uses; `src/sim/` does not import `src/city/`.
+   *
+   * This is what makes the result mean something on a siege map. A besieger who kills the
+   * garrison has *taken the city*; a garrison that kills the besieger has *held the wall*.
+   * Both are the same two numbers being zero and they are not the same event.
+   */
+  const city = ctx?.tryGet('city') as unknown as {
+    cityPlan?: { name: string; garrison: Faction };
+    getGateDoor?: () => { open: boolean } | null;
+  } | undefined;
+  const plan = city?.cityPlan;
+
+  const outcome = (victor: Faction | -1, survivors: number): string => {
+    if (victor === -1) return 'annihilation';
+    if (!plan) return survivors > 0 ? 'rout' : 'annihilation';
+    if (victor === plan.garrison) return `${plan.name} holds`;
+    return city?.getGateDoor?.()?.open ? `${plan.name} is stormed` : `${plan.name} falls`;
+  };
+
+  if (romanMen === 0 && otherMen === 0) return { over: true, victor: -1, reason: 'annihilation' };
+  if (otherMen === 0) {
+    return { over: true, victor: Faction.Rome, reason: outcome(Faction.Rome, romans.length) };
   }
-  return { over: false, victor: -1, reason: '' };
+  const victor = others[0]?.faction ?? getOpposingFaction();
+  return { over: true, victor, reason: outcome(victor, others.length) };
 }

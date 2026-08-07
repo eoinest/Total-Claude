@@ -1,3 +1,4 @@
+import { Faction } from '../../sim/types';
 import type { CityBuild, CityPlan } from '../cityPlan';
 import { buildDistricts } from '../insulae';
 import { buildLandmarks } from '../landmarks';
@@ -39,6 +40,7 @@ import { buildWall, type CityChunkSpec, type TreeRequest } from '../wall';
 export const ROME_PLAN: CityPlan = {
   id: 'rome',
   name: 'Rome',
+  garrison: Faction.Rome,
   // The one gate in the circuit, on the axis of the Via Flaminia. `Siege` drives its ram at
   // this and `CitySystem.setGateOpen(id, true)` is how it wins.
   siegeGateId: 'porta-flaminia',

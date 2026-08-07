@@ -26,7 +26,7 @@ import { HudSystem } from './ui/HudSystem';
 import { PostFXSystem } from './render/PostFX';
 
 import { getMap } from './maps';
-import { deploySiegeOfRome } from './sim/scenario';
+import { deployBattle } from './sim/scenario';
 import { type Difficulty, type ScenarioId, sanitiseConfig } from './sim/battleConfig';
 import { MainMenu, resolveConfig } from './ui/MainMenu';
 import { ALL_FACTIONS, Faction } from './sim/types';
@@ -224,7 +224,7 @@ async function boot(): Promise<void> {
 
   // The scenario is passed explicitly rather than left to `scenario.ts` to read out of
   // `location.search`, which is what it did while that file could not be edited from here.
-  const result = deploySiegeOfRome(battle, engine.context, config, config.scenario);
+  const result = deployBattle(battle, engine.context, config, config.scenario);
   const f = result.cameraFocus;
   engine.rig.jumpTo(f.x, f.z, f.zoom, f.yaw);
 
