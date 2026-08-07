@@ -197,8 +197,11 @@ export const MONUMENTS: readonly Monument[] = [
   // the rectangular harbour. An attacker asset, pre-placed: 4,000 men shooting down onto a
   // 16 m rampart from level with it.
   {
+    // On the waterfront east of the two moles, not on the quay itself: a 60 × 20 m fort will
+    // not share a 25 m quay belt with the 10 m quay road, and putting it there was 8% of
+    // `via-navalis` running through solid masonry.
     id: 'quay-fort', name: 'The Roman Quay-Fort', kind: 'quay-fort',
-    x: -620, z: 1096, hw: 30, hd: 10, rot: 0, clear: 6, solid: true,
+    x: -250, z: 1120, hw: 30, hd: 10, rot: 0, clear: 6, solid: true,
   },
   // ---- the tophet --------------------------------------------------------
   // Real position (e −71, n −1645) is south of both harbours, on the Taenia side.
@@ -604,12 +607,12 @@ export const QUARTERS: readonly Quarter[] = [
   },
   {
     id: 'quarter-west', name: 'The western quarter', kind: 'insulae',
-    x: -700, z: 690, hw: 240, hd: 180, rot: 0.03, density: 0.82, storeys: 3.4, fray: 0.28,
+    x: -680, z: 700, hw: 250, hd: 205, rot: 0.03, density: 0.84, storeys: 3.4, fray: 0.28,
     grid: 0.03, bays: 1,
   },
   {
     id: 'quarter-lower', name: 'The lower town', kind: 'insulae',
-    x: -300, z: 950, hw: 190, hd: 120, rot: 0, density: 0.86, storeys: 4.2, fray: 0.18,
+    x: -430, z: 990, hw: 130, hd: 92, rot: 0, density: 0.88, storeys: 4.2, fray: 0.2,
     grid: 0, bays: 1,
   },
   /**
@@ -634,8 +637,18 @@ export const QUARTERS: readonly Quarter[] = [
   },
   {
     id: 'byrsa-foot', name: 'The foot of the Byrsa', kind: 'terrace',
-    x: -250, z: 960, hw: 74, hd: 92, rot: 0, density: 0.9, storeys: 5.2, fray: 0.1,
+    x: -250, z: 872, hw: 96, hd: 62, rot: 0, density: 0.9, storeys: 5.2, fray: 0.12,
     grid: 0, bays: 1,
+  },
+  {
+    id: 'quarter-east-byrsa', name: 'The quarter east of the Byrsa', kind: 'insulae',
+    x: 250, z: 930, hw: 130, hd: 105, rot: 0.01, density: 0.86, storeys: 3.6, fray: 0.22,
+    grid: 0.01, bays: 1,
+  },
+  {
+    id: 'quarter-salammbo', name: 'The Salammbô shore', kind: 'insulae',
+    x: -820, z: 1150, hw: 130, hd: 70, rot: 0.02, density: 0.7, storeys: 2.4, fray: 0.34,
+    grid: 0.02, bays: 1,
   },
   /** §7.3: the Magon quarter and the harbour district, 2-4 storeys, workshops and stores. */
   {
@@ -650,7 +663,7 @@ export const QUARTERS: readonly Quarter[] = [
   },
   {
     id: 'tophet-quarter', name: 'The Salammbô quarter', kind: 'insulae',
-    x: -1000, z: 800, hw: 180, hd: 120, rot: 0.02, density: 0.62, storeys: 2.6, fray: 0.36,
+    x: -1080, z: 790, hw: 220, hd: 165, rot: 0.02, density: 0.7, storeys: 2.6, fray: 0.32,
     grid: 0.02, bays: 1,
   },
 ];
