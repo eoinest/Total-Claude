@@ -101,9 +101,16 @@ const PLATES = {
   // back of his head that was indistinguishable from a bare one. Now that azimuth 0 is
   // genuinely in front of the man (see `framePlate`), the one plate in the deck whose job is
   // to photograph a head has to photograph one that is not inside a hat.
+  // Azimuth +0.45 rather than -0.45, and the sign is the point.
+  //
+  // Every azimuth in this table was hand-picked while `framePlate` was adding PI, i.e. while
+  // the camera stood behind the man — so anything he *carries in front of him* was safely out
+  // of shot. With the camera turned round to his face, this warrior's javelin bundle stands
+  // between the lens and his nose: three heads across the eyes and the shafts down the chin.
+  // His own left-front is the same three-quarter view from the other side and it is clear.
   'juth-head': {
     unit: 'juthungi-warband', hash: 0.51, clip: 'idleAlertReady', phase: 0.32,
-    az: -0.45, el: 0.05, fill: 4.0, aimY: HEAD_Y, desc: 'Juthungi head — hair, beard, face',
+    az: 0.45, el: 0.05, fill: 4.0, aimY: HEAD_Y, desc: 'Juthungi head — hair, beard, face',
   },
   'urban-front': {
     unit: 'urban-cohort', hash: 0.83, clip: 'idleAlertReady', phase: 0.32,
