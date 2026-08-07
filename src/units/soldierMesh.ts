@@ -361,11 +361,32 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     b.tube(nodes, d.limb, skinUv, { capEnd: false });
     b.setMatrix(null);
 
-    // Hand: a mitten. Fingers are invisible past 3 m and cost 200 triangles.
+    /*
+     * Hand: a palm, a folded finger block and a thumb — three boxes, not one mitten.
+     *
+     * The mitten was a single 90 x 75 x 48 mm slab, which at the magnification the
+     * isolated-model deck shoots is a paddle on the end of an arm. Every one of these men is
+     * gripping something, so the shape that has to read is a *fist*: the palm, the fingers
+     * folded across it with real daylight at the knuckle line, and the thumb lying over
+     * them. That gap is the whole of it — it is the only thing in the silhouette that says
+     * "hand" rather than "mitten", and it costs twelve triangles.
+     *
+     * 36 triangles a hand at LOD0 against 12, and the mitten unchanged at LOD1 and below,
+     * where a hand is under two pixels across and modelling one is waste.
+     */
     b.setBone(wr);
     const hm = new THREE.Matrix4().makeTranslation(wrX + s * 0.045, armY, armZ);
     b.setMatrix(hm);
-    b.box(0, 0, 0, 0.09, 0.075, 0.048, skinUv);
+    if (d.fine) {
+      // Palm: 58 mm across the back of the hand, 76 mm from wrist to knuckle.
+      b.box(-s * 0.016, 0, 0, 0.058, 0.076, 0.042, skinUv);
+      // Fingers, folded — set forward of the palm and a shade narrower.
+      b.box(s * 0.030, -0.004, 0.008, 0.046, 0.068, 0.036, skinUv);
+      // Thumb, lying across the fingers on the near side.
+      b.box(s * 0.014, -0.030, 0.026, 0.052, 0.026, 0.024, skinUv);
+    } else {
+      b.box(0, 0, 0, 0.09, 0.075, 0.048, skinUv);
+    }
     b.setMatrix(null);
   }
 
@@ -848,6 +869,62 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
       torsoNodes(1.05, 0.86).filter((nd) => nd.y > 0.85),
       d.torso, leatherUv, { repeatV: 2, repeatU: 2 }
     );
+  }
+
+  // =========================================================================
+  // The belt
+  // =========================================================================
+  /*
+   * A cingulum, and it is not decoration.
+   *
+   * Armour ran unbroken from the sleeve to the trousers: segmentata down to y = 0.99, mail
+   * and scale to 0.78-0.80, and then the leg straight out of it with no hem, no fastening
+   * and no horizontal line anywhere on a man's whole trunk. That is most of what makes a
+   * rank read as extruded rather than dressed, and it is on every relief of the period —
+   * the belt is the one item a Roman soldier owned that marked him as a soldier out of
+   * uniform, and the apron of studded leather straps hanging from it is the single most
+   * recognisable thing on a legionary below the shield.
+   *
+   * Radius 0.175 clears every torso shell it has to sit over — segmentata 0.168, scale
+   * 0.163, mail 0.161, jerkin 0.160, tunic 0.152 — by 7 to 23 mm, so it reads as strapped on
+   * over the armour rather than sunk into it.
+   *
+   * Carried on `Piece.Tunic`, which every man who wears anything on his trunk has, rather
+   * than on a new piece id: a forty-sixth piece means a new bit in the kit mask and a new
+   * branch in `resolveKit`, and this needs neither. A bare-chested fanatic loses his belt,
+   * which is the right answer anyway.
+   */
+  {
+    const beltBind = spineBind(0.985);
+    b.setPiece(Piece.Tunic, Tint.Atlas);
+    b.setBone(beltBind.bone, beltBind.bone2, beltBind.w);
+    b.tube(
+      [
+        { y: 1.012, rx: 0.174, rz: 0.123 },
+        { y: 0.985, rx: 0.176, rz: 0.125 },
+        { y: 0.958, rx: 0.173, rz: 0.122 },
+      ],
+      d.torso, leatherUv, { repeatU: 3 }
+    );
+    if (d.medium) {
+      // Buckle plate, centred on the belly, and two tinned side plates. The Corbridge and
+      // Rheingoenheim finds are all plate-and-stud, not a modern frame buckle.
+      b.setPiece(Piece.Tunic, Tint.Metal);
+      b.box(0, 0.986, 0.128, 0.062, 0.050, 0.014, plateUv);
+      for (const sx of [-1, 1]) b.box(sx * 0.070, 0.986, 0.116, 0.030, 0.042, 0.010, bronzeUv);
+    }
+    if (d.fine) {
+      // The apron: four studded straps hanging in front of the groin. Short — a baltea hangs
+      // to mid-thigh and any longer reads as a skirt.
+      for (let i = 0; i < 4; i++) {
+        const sx = (i - 1.5) * 0.036;
+        b.setPiece(Piece.Tunic, Tint.Atlas);
+        b.setBone(MB.pelvis);
+        b.box(sx, 0.905, 0.124 - Math.abs(sx) * 0.22, 0.026, 0.115, 0.008, leatherUv);
+        b.setPiece(Piece.Tunic, Tint.Metal);
+        b.box(sx, 0.849, 0.124 - Math.abs(sx) * 0.22, 0.020, 0.020, 0.012, bronzeUv);
+      }
+    }
   }
 
   // =========================================================================
