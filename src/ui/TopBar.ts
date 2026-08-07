@@ -103,6 +103,9 @@ export class TopBar {
       const s = b.dataset.s ?? '1';
       this.speedBtns.set(s, b);
       b.addEventListener('click', () => {
+        // The deployment phase holds the clock, and releasing it from here would let the
+        // AI re-plan over a half-finished deployment. See the note in `HudSystem.hotkeys`.
+        if (this.clockHeld?.()) return;
         if (s === '0') {
           if (!ctx.time.paused) ctx.time.togglePause();
         } else {
@@ -112,6 +115,12 @@ export class TopBar {
       });
     }
   }
+
+  /**
+   * Installed by `HudSystem` when a phase owns the clock. Left null in play, so the speed
+   * controls behave exactly as they always have on every path that has no such phase.
+   */
+  clockHeld: (() => boolean) | null = null;
 
   sync(ctx: EngineContext): void {
     const m = this.model;

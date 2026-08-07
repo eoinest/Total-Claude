@@ -64,6 +64,25 @@ export interface AbilityProbe {
   activeOn(unitId: number): string[];
 }
 
+/**
+ * What the pre-battle deployment phase needs from the order gestures.
+ *
+ * Duck-typed rather than imported so the HUD still runs against a build with no deployment
+ * phase registered. While `active` is true the right-drag stops issuing orders and starts
+ * *placing* units instead — same gesture, same ghosts, same frontage readout, different
+ * verb. That reuse is deliberate: a player who has learned to draw a line with the right
+ * button in play should not have to learn a second gesture to draw the same line before it.
+ */
+export interface DeploymentHooks {
+  readonly active: boolean;
+  readonly lastRefusal: string;
+  place(unitId: number, x: number, z: number, facing: number, width?: number): boolean;
+  setFormation(unitId: number, formationId: string): boolean;
+  remove(unitId: number): boolean;
+  contains(x: number, z: number): boolean;
+  isWallPoint(x: number, z: number): boolean;
+}
+
 export class SelectionController {
   cursor: CursorKind = 'default';
   /** Move orders run by default while this is on (toggled with R). */
@@ -82,6 +101,10 @@ export class SelectionController {
    * enemy's banner attacks it, which falls out of the existing order path for free.
    */
   bannerAt: ((x: number, y: number) => number) | null = null;
+  /**
+   * The deployment phase, installed by `HudSystem` when it is registered. Null in play.
+   */
+  deployment: DeploymentHooks | null = null;
   /** Unit under the cursor's banner this frame, or -1. */
   private overBanner = -1;
   /** Ability cooldown expiry times, keyed `unitId:abilityId`, in sim seconds. */
@@ -124,6 +147,19 @@ export class SelectionController {
   orderX = 0;
   orderZ = 0;
   orderValid = false;
+  /**
+   * Where the ray actually met a solid, **before** the push-out, valid when `solidValid`.
+   *
+   * `orderX/orderZ` is deliberately pushed clear of masonry, because an order aimed at a
+   * wall means the ground beside it — a man cannot stand inside stone. A *deployment* aimed
+   * at the same pixel means the opposite: the top of the wall is exactly where the player
+   * wants the unit, and `Siege.wallTargetAt` has to be asked about the point on the parapet
+   * rather than about the grass 4 m away from it, which is not on the wall at all.
+   */
+  solidX = 0;
+  solidZ = 0;
+  solidY = 0;
+  solidValid = false;
 
   constructor(
     private model: HudModel,
@@ -251,7 +287,27 @@ export class SelectionController {
     const ids = this.model.selectedViews
       .filter((v) => !v.routing && v.def.formations.includes(id))
       .map((v) => v.id);
-    if (ids.length) ctx.events.emit('orderIssued', { unitIds: ids, kind: 'formation', formation: id });
+    if (!ids.length) return;
+    // During deployment a formation change has to re-stand the men there and then. Left to
+    // the ordinary path it would set `formationId` and `width` and nothing would move,
+    // because the steering that dresses a unit into its new shape runs in `fixedUpdate` and
+    // the clock is stopped.
+    const dep = this.deployment;
+    if (dep?.active) {
+      for (const uid of ids) dep.setFormation(uid, id);
+      return;
+    }
+    ctx.events.emit('orderIssued', { unitIds: ids, kind: 'formation', formation: id });
+  }
+
+  /** Take the selection off the field. Deployment only; in play a unit is lost, not removed. */
+  removeSelected(ctx: EngineContext): number {
+    const dep = this.deployment;
+    if (!dep?.active) return 0;
+    let n = 0;
+    for (const id of this.model.selection.slice()) if (dep.remove(id)) n++;
+    if (n > 0) this.clear(ctx);
+    return n;
   }
 
   issueAbility(id: string, ctx: EngineContext): void {
@@ -403,7 +459,11 @@ export class SelectionController {
       this.groundZ = PICK.groundZ;
     }
 
+    this.solidValid = PICK.solid >= 0;
     if (PICK.solid >= 0) {
+      this.solidX = PICK.solidX;
+      this.solidZ = PICK.solidZ;
+      this.solidY = PICK.solidY;
       // A click on a 20 m siege tower means the tower. Without this the ray only ever met
       // the heightfield, so the order went to the grass behind it — 13.6 m past, and 138.8 m
       // past from a low camera, or nothing at all when the ray rose clear of the ground.
@@ -573,10 +633,32 @@ export class SelectionController {
         this.dragEndZ = this.orderZ;
       }
       this.dragHostileId = this.hostileUnder(hovered);
-      this.buildGhosts(ctx, p.dragDist);
-      for (const g of this.ghosts) this.overlay.ghost(g);
+      const wall = this.wallPoint();
+      if (wall) {
+        // No ground ghost over the parapet: `Siege.garrison` packs a unit along the walkway
+        // and the formation block a ghost draws is not what will be there.
+        this.ghosts.length = 0;
+      } else {
+        this.buildGhosts(ctx, p.dragDist);
+        for (const g of this.ghosts) this.overlay.ghost(g);
+      }
 
-      if (this.dragHostileId >= 0) {
+      const dep = this.deployment;
+      if (dep?.active) {
+        if (wall) this.showHint('Place on the wall', 'move');
+        else if (!dep.contains(this.dragEndX, this.dragEndZ)) {
+          this.showHint('Outside the deployment zone', 'attack');
+        } else {
+          const len = this.dragFrontage;
+          const wide = this.ghosts.length ? this.ghosts[0].width : 0;
+          this.showHint(
+            len >= FRONTAGE_MIN_M
+              ? `${Math.round(len)} m frontage · ${wide} per rank`
+              : 'Place here',
+            'move'
+          );
+        }
+      } else if (this.dragHostileId >= 0) {
         const t = this.model.view(this.dragHostileId);
         this.showHint(`Attack ${t ? t.title : 'enemy'}`, 'attack');
       } else {
@@ -607,6 +689,22 @@ export class SelectionController {
     if (hovered < 0) return -1;
     const v = this.model.view(hovered);
     return v && !v.own && !v.destroyed ? hovered : -1;
+  }
+
+  /**
+   * The point on the player's own parapet the cursor is over, or null.
+   *
+   * Read off the *raw* solid hit rather than the order point — see `solidX`. Only ever
+   * non-null during deployment, because in play a click on the wall already has a meaning
+   * (`Siege.interceptOrders` turns a move order aimed at the parapet into a wall order, and
+   * it wants the pushed-out point, not this one).
+   */
+  private wallPoint(): { x: number; z: number } | null {
+    const dep = this.deployment;
+    if (!dep?.active || !this.solidValid) return null;
+    return dep.isWallPoint(this.solidX, this.solidZ)
+      ? { x: this.solidX, z: this.solidZ }
+      : null;
   }
 
   /**
@@ -710,7 +808,36 @@ export class SelectionController {
     return { x: x / sel.length, z: z / sel.length };
   }
 
+  /**
+   * Stand the selection where the drag says, instead of ordering it to march there.
+   *
+   * The gesture is the one the player already knows and the geometry is the one
+   * `buildGhosts` already computed, so what the ghost previewed is exactly what appears —
+   * position, facing and men per rank. A drop on the parapet skips the ghost geometry
+   * entirely and hands the point to the garrison layout, which owns rank count and height.
+   */
+  private placeSelection(ctx: EngineContext, dragPx: number): void {
+    const dep = this.deployment;
+    if (!dep) return;
+    const sel = this.model.selectedViews.filter((v) => !v.destroyed);
+    if (sel.length === 0) return;
+
+    const wall = this.wallPoint();
+    if (wall) {
+      // Every unit is offered the same station; `Siege.freeWindow` gives each the next free
+      // stretch of walkway rather than stacking them, so a whole wing can be dropped at once.
+      for (const v of sel) dep.place(v.id, wall.x, wall.z, 0);
+      return;
+    }
+    this.buildGhosts(ctx, dragPx);
+    for (const g of this.ghosts) dep.place(g.unit.id, g.x, g.z, g.facing, g.width);
+  }
+
   private issueDragOrder(ctx: EngineContext, dragPx: number): void {
+    if (this.deployment?.active) {
+      this.placeSelection(ctx, dragPx);
+      return;
+    }
     const sel = this.model.selectedViews.filter((v) => !v.routing);
     if (sel.length === 0) return;
     const queued = ctx.input.shift;
@@ -774,6 +901,10 @@ export class SelectionController {
       }
     }
     if (input.keyPressed('Tab')) this.cycle(ctx);
+    if (this.deployment?.active
+      && (input.keyPressed('Delete') || input.keyPressed('Backspace'))) {
+      this.removeSelected(ctx);
+    }
 
     const sel = this.model.selectedViews;
     if (sel.length === 0) return;

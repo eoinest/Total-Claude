@@ -358,6 +358,42 @@ export class WorldOverlay {
     this.air.quad(x - r, z, x, z - r, x + r, z, x, z + r, col[0], col[1], col[2], a);
   }
 
+  /**
+   * The deployment zone, as a dashed boundary with the front edge drawn solid.
+   *
+   * Into the *existing* ground batch, so this costs triangles and **no draw call** — the
+   * whole-frame cap is 220 and Rome's assault camera already reports 268, so a new mesh for
+   * a phase-only marker would be the wrong way to spend it. The front edge is solid and the
+   * other three dashed, because the front edge is the one the player has to respect and the
+   * rest are there to say how much room there is.
+   */
+  deployZone(
+    xMin: number, zMin: number, xMax: number, zMax: number, frontIsLowZ: boolean
+  ): void {
+    const w = this.px(2.2, 1.4);
+    const dash = this.px(16, 11);
+    const a = 0.5;
+    const [r, g, b] = GOLD;
+    const front = frontIsLowZ ? zMin : zMax;
+    const back = frontIsLowZ ? zMax : zMin;
+    // Subdivided because the batch samples the heightfield once per vertex: a single 900 m
+    // quad has only its two ends on the ground and buries its middle in any rise between.
+    const steps = Math.max(2, Math.min(72, Math.round((xMax - xMin) / 24)));
+    for (let i = 0; i < steps; i++) {
+      const x1 = xMin + ((xMax - xMin) * i) / steps;
+      const x2 = xMin + ((xMax - xMin) * (i + 1)) / steps;
+      this.ground.segment(x1, front, x2, front, w * 1.6, r, g, b, a + 0.25);
+      this.ground.dashed(x1, back, x2, back, w, dash, r, g, b, a);
+    }
+    const stepsZ = Math.max(2, Math.min(72, Math.round((zMax - zMin) / 24)));
+    for (let i = 0; i < stepsZ; i++) {
+      const z1 = zMin + ((zMax - zMin) * i) / stepsZ;
+      const z2 = zMin + ((zMax - zMin) * (i + 1)) / stepsZ;
+      this.ground.dashed(xMin, z1, xMin, z2, w, dash, r, g, b, a);
+      this.ground.dashed(xMax, z1, xMax, z2, w, dash, r, g, b, a);
+    }
+  }
+
   /** The live formation preview under a right-click drag. */
   ghost(spec: GhostSpec): void {
     const u = spec.unit;
