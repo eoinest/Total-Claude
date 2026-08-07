@@ -345,6 +345,54 @@ Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`
 
 ## Grading
 
+### CORRECTED — the face was inside out, and round two's fix pointed the deck at the back
+
+**Read this before the section below it, which is wrong.** Round two's magenta measurement was
+real and its conclusion was not. `revolve` derives its normal from the profile tangent as
+`(-dy, dr)`, which points outward **only while y descends down the point list**. Every other
+lathe on the man is written crown-first. `skullProfile` was written **jaw-first**, so its
+normals pointed into the head, `quadFacing` derived matching inward winding, and
+`side: FrontSide` culled the near half of every man's face — mean dot of winding with the
+outward radial over the face arc **-0.324**, 76 of 123 triangles inward.
+
+So the face was not dark, it was **inside out**: a camera in front of a man saw *through* it to
+the inside of the back of his skull, at the back skull's depth, so every helmet bowl, hair dome
+and beard between the two won the depth test. That is what produced "0 magenta at azimuth 0 and
+121,407 at PI" — the tile was visible **only from behind him, through his own skull**. Adding
+PI to `framePlate` therefore pointed all ten plates at his back *for real*, which is why every
+head plate since has photographed a neck guard and a nape band, and why the deck looked
+"materially harder". Reversing eight profile points takes the dot to **+0.540** and adds no
+triangles; the same magenta measurement then inverts and strengthens to **466,141 face pixels
+at the front against 0 at the back**. The PI is gone.
+
+**Three passes have now got this sign wrong. The invariant is the measurement, not the sign:
+paint `Mat.Face` magenta, sweep the azimuth, and the peak is the front.**
+
+**`probe-soldiermesh` reports 0 disagreements on that piece and always did, and it is not an
+all-clear.** It asks whether a shading normal opposes its own winding, and `quadFacing` derives
+one from the other — so both faced the wrong way in perfect agreement. A whole class of
+inside-out geometry is invisible to it. Test against an *outward radial*, not against itself.
+
+Three more full revolutions fell out of the same audit, the same family as the four closed
+domes: the **beard was a 360-degree hoop at mouth height** (82 % of Germanics and 42 % of
+Romans had no mouth), the **spangenhelm brow band was a complete turn**, also at mouth height,
+and the **fur cap was a full revolution** to y -0.045, so a capped Juthungi measured exactly
+**0 face pixels**. All three Roman brow bands hung below the rim as 36 mm visors across the
+eyes. The nose now projects 25.8 mm against a life-size 25, from 14.
+
+Visible face-tile pixels at the shipped framing: `juth-head` **580 -> 157,649**, `legio-head`
+**744 -> 84,782**. Both head plates now show eyes with whites, irises, pupils and lash lines,
+brows, a nose with a shadow under it, and a mouth line. Still short: the eyes are hard-edged
+cut-outs that stair-step on the lids, the nose is a faceted slab with a seam, and **the face
+*tile* itself was never touched** — its low contrast against the skull's own ring creases, and
+the 256 px band it now has and does not use, are the obvious next pass and are unblocked.
+
+**Every azimuth in `shoot-model.mjs`'s plate table was picked while the camera stood behind the
+man**, so anything he carries in front of himself was out of shot. `juth-head` is fixed
+(-0.45 to +0.45; his javelin bundle stood between the lens and his nose, and it is the thing
+that looks like pale shards across his face). **The other eight plates have the same latent
+problem and nobody has audited them.**
+
 ### The isolated-model deck photographed the back of the man's head, every round
 
 **Azimuth 0 was behind him.** `viewer/main.ts`'s `framePlate` documents "azimuth is measured
