@@ -11,6 +11,9 @@ import {
   DIFFICULTY, isAntiCavalry, isCavalryClass, isMissileClass, matchup,
   type Difficulty, type DifficultyProfile, type UnitCommand,
 } from './types';
+import {
+  DESCEND_R, FIGHT_R, ORDER_COOLDOWN, REACH_R, WallDoctrine, type WallView,
+} from './WallDoctrine';
 
 /**
  * Per-unit tactical behaviour.
@@ -102,6 +105,18 @@ interface UnitBrain {
   standX: number;
   standZ: number;
   standFacing: number;
+
+  /**
+   * The wall order this unit has decided on, resolved in `score` and issued in `act`.
+   *
+   * Kept on the brain rather than recomputed because `unitWallState` walks the unit's
+   * member list and the selector calls `score` for every candidate before it calls one
+   * `act`. `wallOrderTick` is the cooldown clock — see `ORDER_COOLDOWN`.
+   */
+  wallMove: 'none' | 'descend' | 'traverse';
+  wallX: number;
+  wallZ: number;
+  wallOrderTick: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -109,6 +124,8 @@ interface UnitBrain {
 // ---------------------------------------------------------------------------
 
 const STAND = { x: 0, z: 0 };
+/** Rally point resolved by `WallDoctrine.descentPoint`. */
+const WALL_PT = { x: 0, z: 0 };
 /** Output buffer for flow-field routes. */
 const FLOW_OUT: number[] = [];
 
@@ -809,9 +826,31 @@ const CavalryScreen: Behaviour = {
   },
 };
 
+/**
+ * What to do with a stretch of wall you are standing on.
+ *
+ * The only behaviour that may move a unit the stonework owns — `TacticalAISystem.moveTo`
+ * refuses for exactly these units, because the field mover's destination is a station on the
+ * ground and `Siege.interceptOrders` reads a ground destination given to a garrison as
+ * "come down off the wall". See `WallDoctrine` for the measurement that cost.
+ *
+ * Scored above `engage` so it beats the ordinary line behaviours, and it withdraws its own
+ * bid (`-1`) the moment there is an enemy within `FIGHT_R` on the same stonework: a fight on
+ * a parapet is a fight, and walking away from one to go and find another is worse than
+ * hanging about. Missile troops and artillery never bid at all — a bolt-thrower on a
+ * gatehouse is where it should be, and `shoot` already knows what to do with it.
+ */
+const Parapet: Behaviour = {
+  name: 'parapet',
+  applies: (c) => c.self.holdsWall(c.u.id),
+  score: (c) => (c.self.decideWall(c) ? 74 : -1),
+  act: (c) => c.self.issueWall(c),
+};
+
 const BEHAVIOURS: Behaviour[] = [
   HoldLine, MarchToStation, Engage, Brace, Testudo, PlugGap, RefuseFlank,
   Shoot, MissileWithdraw, Skirmish, CavalryHold, CavalryScreen, CavalryCycle, Pursue, Inspire,
+  Parapet,
 ];
 
 // ---------------------------------------------------------------------------
@@ -827,11 +866,18 @@ export class TacticalAISystem implements Subsystem {
   private battle!: BattleSystem;
   private nav!: PathfindingSystem;
   private brains = new Map<number, UnitBrain>();
+  /**
+   * The siege system, narrowed to the four questions the AI asks it. Null on a map with no
+   * wall, and every wall decision is gated on it.
+   */
+  private wall: WallView | null = null;
+  /** The city's stairs and streets, read once. See `WallDoctrine`. */
+  readonly doctrine = new WallDoctrine();
   private rng!: Rng;
   private tick = 0;
   difficulty: Difficulty;
 
-  readonly stats = { thinks: 0, forcedThinks: 0 };
+  readonly stats = { thinks: 0, forcedThinks: 0, wallOrders: 0, descents: 0, traverses: 0 };
 
   /**
    * Factions this layer issues orders for. Anything not listed is left alone.
@@ -858,6 +904,17 @@ export class TacticalAISystem implements Subsystem {
     // tick would hand out the same stream over and over.
     this.rng = this.battle.rng.fork('ai-tactical');
     if (!this.world.battle) this.world.attach(this.battle, this.nav);
+    /**
+     * The siege system, taken through a structural type rather than an import.
+     *
+     * `src/ai` does not depend on `src/sim/Siege.ts` and must not: the wall is another
+     * workstream's file. Assigning it to a `WallView` is nevertheless a *compile-time*
+     * check that the four methods this layer calls still exist with the shapes it expects,
+     * which a cast to `any` or a duck-typed `tryGet` would both throw away.
+     */
+    const siege: WallView = this.battle.siege;
+    this.wall = siege;
+    this.doctrine.attach(ctx);
 
     CTX.self = this;
     CTX.w = this.world;
@@ -941,6 +998,7 @@ export class TacticalAISystem implements Subsystem {
         skirmPhase: 'advance', skirmPhaseSince: this.tick,
         fireTargetId: -1, wantFormation: '', squeezing: false,
         standX: 0, standZ: 0, standFacing: 0,
+        wallMove: 'none', wallX: 0, wallZ: 0, wallOrderTick: -999,
       };
       this.brains.set(unitId, b);
     }
@@ -1002,6 +1060,20 @@ export class TacticalAISystem implements Subsystem {
    */
   moveTo(c: Ctx, x: number, z: number, facing: number, running: boolean): void {
     const u = c.u;
+    /**
+     * A unit the stonework owns is not steered by the field mover, and this one line is the
+     * larger half of the wall fix.
+     *
+     * `Siege.interceptOrders` takes any move order given to a garrison whose destination is
+     * *not* on the parapet and reads it as "come down" — which is right for a right-click
+     * and catastrophic for `MarchToStation`, whose destination is a station on the ground by
+     * definition. Measured on the storm of Carthage: eight of ten wall units carrying
+     * `goal=descend` at t+87, and the garrison down from 448 men on the parapet to 69 by
+     * t+250 without the storm having cleared a single bay. The garrison did not die on the
+     * walk; the AI walked it off. `Parapet` is the one behaviour allowed to move these
+     * units, and it goes straight to the order book with a single point.
+     */
+    if (this.wall !== null && this.wall.isGarrisoned(u.id)) return;
     const fp = footprintOf(u, c.def);
     // Never order a formation into the river or onto a cliff.
     if (!this.nav.findStandable(x, z, fp.min, STAND)) {
@@ -1052,6 +1124,111 @@ export class TacticalAISystem implements Subsystem {
       this.orders.formation(u, narrow);
     }
     this.orders.followPath(u, cached.pts, cached.n, facing, running);
+  }
+
+  // -------------------------------------------------------------------------
+  // The wall
+  // -------------------------------------------------------------------------
+
+  /** Does this unit hold a stretch of wall? The gate on every wall decision. */
+  holdsWall(unitId: number): boolean {
+    return this.wall !== null && this.wall.isGarrisoned(unitId);
+  }
+
+  /**
+   * Decide what a unit standing on a wall should do, and write it to the brain.
+   *
+   * Returns true when there is an order worth giving. Four rules, in order, and the order
+   * matters more than any of the thresholds:
+   *
+   *   1. a live plan, or men still climbing — say nothing. **Re-issuing is the trap here**:
+   *      `sendToGround` builds a fresh plan with `age = 0`, so a unit re-ordered every few
+   *      ticks carries a plan that can never reach `PLAN_TIMEOUT` and a stair re-chosen from
+   *      a centroid that is itself moving. See `ORDER_COOLDOWN`.
+   *   2. an enemy within `FIGHT_R` on the stone — fight him. Withdrawing the bid rather than
+   *      issuing a hold, so `engage` and `brace` can win the slot and do their own work.
+   *   3. an enemy on the ground **inside** the curtain — go down the stairs at him. This is
+   *      the player's request, and it is above the traverse deliberately.
+   *   4. an enemy holding wall within `REACH_R` — walk the parapet to him. A defender
+   *      converging on a lodgement and an attacker rolling up a garrison are one manoeuvre.
+   *
+   * Public because `Parapet.score` calls it; not called from anywhere else.
+   */
+  decideWall(c: Ctx): boolean {
+    const brain = c.brain;
+    brain.wallMove = 'none';
+    const wall = this.wall;
+    if (wall === null) return false;
+    // A bolt-thrower on a gatehouse is exactly where it belongs, and a slinger's whole
+    // advantage is the height. Neither goes looking for a melee in a street.
+    if (!isFoot(c)) return false;
+    if (this.tick - brain.wallOrderTick < ORDER_COOLDOWN) return false;
+    const st = wall.unitWallState(c.u.id);
+    if (st.goal !== 'none') return false;
+    // Still coming up a ladder or a ramp: the siege system owns the climb and an order now
+    // would be given on behalf of men who are not there yet.
+    if (st.onWall === 0) return false;
+
+    let wallD = Infinity;
+    let wallX = 0;
+    let wallZ = 0;
+    let inD = Infinity;
+    let inX = 0;
+    let inZ = 0;
+    for (const mem of c.w.view(c.u.faction).seen.values()) {
+      if (mem.alive <= 0 || mem.routing) continue;
+      const d = Math.hypot(mem.x - c.u.x, mem.z - c.u.z);
+      if (wall.isGarrisoned(mem.unitId)) {
+        if (d < wallD) { wallD = d; wallX = mem.x; wallZ = mem.z; }
+      } else if (d < inD && this.doctrine.inside(mem.x, mem.z)) {
+        inD = d; inX = mem.x; inZ = mem.z;
+      }
+    }
+
+    if (wallD < FIGHT_R) return false;
+
+    if (inD < DESCEND_R && this.doctrine.descentPoint(c.u.x, c.u.z, inX, inZ, wall, WALL_PT)) {
+      // And the last gate: a rally point a formation cannot stand on is not a rally point.
+      // `findStandable` is the same test every ordinary move goes through, so a descent is
+      // held to the standard of a march.
+      const fp = footprintOf(c.u, c.def);
+      if (this.nav.findStandable(WALL_PT.x, WALL_PT.z, fp.min, STAND)) {
+        brain.wallMove = 'descend';
+        brain.wallX = STAND.x;
+        brain.wallZ = STAND.z;
+        return true;
+      }
+    }
+
+    if (wallD < REACH_R && wall.wallTargetAt(wallX, wallZ) >= 0) {
+      brain.wallMove = 'traverse';
+      brain.wallX = wallX;
+      brain.wallZ = wallZ;
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Issue the order `decideWall` settled on — as one event carrying one point.
+   *
+   * Deliberately **not** through `moveTo`. That helper answers with a *route* whenever the
+   * straight line is blocked, and the straight line off a wall always is; `followPath` then
+   * emits the first leg unqueued and the rest queued, while `Siege` reads the first unqueued
+   * point of an order as the whole intent and ignores queued ones outright. A routed descent
+   * would therefore be aimed at whichever nav-grid corner the route turned at. One point in
+   * one event is also precisely what the player's right-click produces, which is the path
+   * this feature was verified on.
+   */
+  issueWall(c: Ctx): void {
+    const brain = c.brain;
+    if (brain.wallMove === 'none') return;
+    brain.wallOrderTick = this.tick;
+    const facing = Math.atan2(brain.wallX - c.u.x, brain.wallZ - c.u.z);
+    this.orders.move(c.u, brain.wallX, brain.wallZ, facing, true);
+    this.stats.wallOrders++;
+    if (brain.wallMove === 'descend') this.stats.descents++;
+    else this.stats.traverses++;
   }
 
   /**
