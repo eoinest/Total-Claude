@@ -68,6 +68,16 @@ const SCENARIO = args.get('scenario') ?? 'field';
 const QUALITY = args.get('quality') ?? 'low';
 const JSON_OUT = args.get('json') ?? null;
 const PLAN_OUT = args.get('plan') ?? null;
+/**
+ * `--plates=DIR` — the layered plan a human can approve a city from.
+ *
+ * `--plan` is the engineer's plot: everything at once, one colour, no ground. It is what
+ * found four faults and it stays exactly as it is. This is the other job. Four plates, each
+ * adding one layer to the last — ground, then the named armature, then the generated mesh,
+ * then the fabric — over real terrain read out of `TerrainSystem.heightAt`, because a plan
+ * with no water and no relief cannot be compared against anything.
+ */
+const PLATES_OUT = args.get('plates') ?? null;
 const SHOT_DIR = args.get('shots') ?? null;
 const ONLY = args.has('only') ? new Set(String(args.get('only')).split(',')) : null;
 const want = (k) => !ONLY || ONLY.has(k);
@@ -583,6 +593,1107 @@ if (errors.length) {
   for (const e of errors) console.log('  ' + e);
 }
 out.errors = errors;
+
+
+// ---8<--- PLATES BEGIN
+// Everything between the markers is pure: plain data in, SVG strings out, no imports, no
+// closure over anything above. That is deliberate — it can be lifted out and run against a
+// cached payload while the drawing is being tuned, without booting a browser or a city.
+
+/** The page. World extent is the terrain's own ±1400 in x and the city's z-range plus glacis. */
+const PLATE_PAGE = {
+  x0: -1400, x1: 1400, z0: 200, z1: 1400,
+  width: 2200, margin: 78, mapTop: 130, legendH: 196,
+};
+
+const plateLayout = (P) => {
+  const mapW = P.width - P.margin * 2;
+  const sc = mapW / (P.x1 - P.x0);
+  const mapH = Math.round((P.z1 - P.z0) * sc);
+  const mapY1 = P.mapTop + mapH;
+  return {
+    ...P, sc, mapW, mapH,
+    mapX: P.margin, mapY: P.mapTop, mapX1: P.margin + mapW, mapY1,
+    legendY: mapY1 + 70,
+    height: mapY1 + 70 + P.legendH,
+  };
+};
+
+/** Ink. A warm, printed-plan palette; every value is used in the legend as well as the map. */
+const PC = {
+  paper: '#f7f1e2', ink: '#2b2419', inkSoft: '#6d5d46', rule: '#b8a888',
+  wall: '#3a2f25', wallLt: '#7a674f',
+  civic: '#8c5f3b', civicEdge: '#5a3a22',
+  pave: '#e0d2b2', paveEdge: '#a99372',
+  water: '#7ba4bb', waterEdge: '#3f6a82',
+  citadel: '#7b4a30',
+  house: '#c0a07d', houseEdge: '#7a6247',
+  megara: '#9aab72',
+  artery: '#a02a1c', secondary: '#cf7b28', local: '#3f7d66',
+  stepped: '#2f6494', vicus: '#6e5c44',
+  mark: '#8c2f2f',
+};
+
+/** True world width, metres, per rank. These are the spec's and they are drawn to scale. */
+const RANK_W = { artery: 20, secondary: 12, local: 7, stepped: 6, vicus: 4 };
+const RANK_COL = {
+  artery: PC.artery, secondary: PC.secondary, local: PC.local,
+  stepped: PC.stepped, vicus: PC.vicus,
+};
+
+const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const f2 = (n) => (Math.round(n * 100) / 100).toString();
+/** Monospace advance width. Used for label collision, so it must not be optimistic. */
+const textW = (s, size) => s.length * size * 0.6;
+
+/**
+ * Labels that do not collide, with anything.
+ *
+ * Side is chosen by whether the text fits to the right of its anchor. Then every label is
+ * swept top to bottom against a single occupancy list that is *seeded* with the things this
+ * pass does not own — the way ids set on the carriageways, the italic terrain names, the spot
+ * heights, the compass card and the scale bar — and pushed down until its box is clear.
+ * Testing both axes matters: the earlier revision pushed on y alone, so a label at x 400
+ * was displaced by one at x 1900 that it could never have touched, and monument names walked
+ * a hundred pixels off their own monuments to avoid nothing.
+ */
+function placeLabels(items, box, size, reserved = []) {
+  const cols = { R: [], L: [] };
+  for (const it of items) {
+    const w = textW(it.text, it.size ?? size);
+    const side = it.side ?? (it.ax + 13 + w < box.x1 - 8 ? 'R' : 'L');
+    cols[side].push({ ...it, w, side, size: it.size ?? size });
+  }
+  const taken = reserved.map((r) => ({ ...r }));
+  const out = [];
+  for (const side of ['R', 'L']) {
+    for (const it of cols[side].sort((a, b) => a.ay - b.ay)) {
+      const lx = side === 'R' ? it.ax + 13 : it.ax - 13;
+      const x0 = (side === 'R' ? lx : lx - it.w) - 2;
+      const x1 = x0 + it.w + 4;
+      let y = it.ay;
+      for (let guard = 0; guard < 240; guard++) {
+        let hit = null;
+        for (const p of taken) {
+          if (x1 < p.x0 || x0 > p.x1 || y - it.size > p.y1 || y + 4 < p.y0) continue;
+          hit = p;
+          break;
+        }
+        if (!hit) break;
+        y = hit.y1 + it.size + 2;
+      }
+      y = Math.min(box.y1 - 6, Math.max(box.y0 + it.size, y));
+      taken.push({ x0, y0: y - it.size, x1, y1: y + 4 });
+      out.push({ ...it, lx, ly: y, h: it.size + 6 });
+    }
+  }
+  return out;
+}
+
+function drawLabels(placed) {
+  const p = [];
+  for (const it of placed) {
+    const tip = it.side === 'R' ? it.lx - 4 : it.lx + 4;
+    if (Math.hypot(tip - it.ax, it.ly - 4 - it.ay) > 9) {
+      p.push(`<path d="M${f2(it.ax)} ${f2(it.ay)} L${f2(tip)} ${f2(it.ly - 4)}" `
+        + `fill="none" stroke="${PC.mark}" stroke-width="1" opacity="0.75"/>`);
+    }
+    p.push(`<circle cx="${f2(it.ax)}" cy="${f2(it.ay)}" r="2.8" fill="${PC.mark}" `
+      + `stroke="${PC.paper}" stroke-width="1"/>`);
+    p.push(`<text x="${f2(it.lx)}" y="${f2(it.ly)}" text-anchor="${it.side === 'R' ? 'start' : 'end'}"`
+      + ` font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="${it.size}"`
+      + ` font-weight="${it.bold ? 700 : 500}" fill="${it.fill ?? PC.ink}"`
+      + ` stroke="${PC.paper}" stroke-width="3.4" paint-order="stroke"`
+      + ` stroke-linejoin="round">${esc(it.text)}</text>`);
+  }
+  return p.join('\n');
+}
+
+/** Build all four plates. `pd` is the payload gathered in-page; see `platePayload`. */
+function buildPlates(pd) {
+  const L = plateLayout(PLATE_PAGE);
+  const S = (x) => L.mapX + (x - L.x0) * L.sc;
+  const T = (z) => L.mapY1 - (z - L.z0) * L.sc;
+  const M = (m) => m * L.sc;
+
+  // ---- shared geometry ------------------------------------------------------
+  /** An oriented world rectangle as a screen polygon. Matches `--plan`'s hand exactly. */
+  const rectPts = (o) => {
+    const c = Math.cos(o.rot), s = Math.sin(o.rot);
+    const pts = [];
+    for (const [u, v] of [[-o.hw, -o.hd], [o.hw, -o.hd], [o.hw, o.hd], [-o.hw, o.hd]]) {
+      pts.push(`${f2(S(o.x + u * c - v * s))},${f2(T(o.z + u * s + v * c))}`);
+    }
+    return pts.join(' ');
+  };
+  const poly = (o, fill, stroke, sw) =>
+    `<polygon points="${rectPts(o)}" fill="${fill}"${stroke ? ` stroke="${stroke}" stroke-width="${sw ?? 0.6}"` : ''}/>`;
+  const pathD = (pts) => pts.map((q, i) => `${i ? 'L' : 'M'}${f2(S(q[0] ?? q.x))} ${f2(T(q[1] ?? q.z))}`).join(' ');
+  const segPath = (segs) => segs.map((s) =>
+    `M${f2(S(s[0]))} ${f2(T(s[1]))}L${f2(S(s[2]))} ${f2(T(s[3]))}`).join('');
+
+  const frame = [];
+  frame.push(`<rect x="${L.mapX}" y="${L.mapY}" width="${L.mapW}" height="${L.mapH}" `
+    + `fill="none" stroke="${PC.ink}" stroke-width="1.6"/>`);
+
+  // ---- ground: the raster, its contours and its coastline -------------------
+  const ground = [];
+  ground.push(`<image x="${L.mapX}" y="${L.mapY}" width="${L.mapW}" height="${L.mapH}" `
+    + `href="${pd.raster}" preserveAspectRatio="none"/>`);
+  for (const c of pd.contours) {
+    const major = c.level % 20 === 0;
+    ground.push(`<path d="${segPath(c.segs)}" fill="none" stroke="#6a4a24" `
+      + `stroke-width="${major ? 1.35 : 0.7}" opacity="${major ? 0.72 : 0.42}"/>`);
+  }
+  ground.push(`<path d="${segPath(pd.coast)}" fill="none" stroke="${PC.waterEdge}" `
+    + `stroke-width="1.7" opacity="0.85"/>`);
+
+  // ---- what the city actually published as large civic solids ---------------
+  // Every `kind: 'monument'` box out of `getObstacles()` — the moles, the island core, the
+  // cothon's 28 water chords, the citadel platform, the basins. Drawn first and plainly, so
+  // that the authored shapes above it are labelling something that is really there.
+  const builtSolids = [];
+  for (const o of pd.obstacles) {
+    if (o.kind !== 'monument') continue;
+    builtSolids.push(poly(o, '#9b7752', '#5a3a22', 0.5));
+  }
+
+  // ---- the harbours ---------------------------------------------------------
+  // Drawn from the same constants `harbour.ts` builds from: the basins are water, but they
+  // are quay-level obstacles rather than terrain below the datum, so the raster cannot know.
+  const har = [];
+  const CO = pd.cothon, MH = pd.merchant;
+  const ringOuter = M(CO.outerR), ringIsland = M(CO.islandR);
+  har.push(`<circle cx="${f2(S(CO.x))}" cy="${f2(T(CO.z))}" r="${f2(ringOuter)}" `
+    + `fill="${PC.water}" stroke="${PC.waterEdge}" stroke-width="1.4"/>`);
+  // Ship sheds: a radial comb on both faces of the annulus. 168 of them, and they are the
+  // reason the ring reads as a naval yard rather than as a pond.
+  const shedTicks = [];
+  for (let i = 0; i < CO.ringSheds; i++) {
+    const a = (i / CO.ringSheds) * Math.PI * 2;
+    const r0 = CO.outerR - CO.shedDepth, r1 = CO.outerR;
+    shedTicks.push(`M${f2(S(CO.x + Math.cos(a) * r0))} ${f2(T(CO.z + Math.sin(a) * r0))}`
+      + `L${f2(S(CO.x + Math.cos(a) * r1))} ${f2(T(CO.z + Math.sin(a) * r1))}`);
+  }
+  for (let i = 0; i < CO.islandSheds; i++) {
+    const a = (i / CO.islandSheds) * Math.PI * 2;
+    const r0 = CO.islandR + 1.5, r1 = CO.islandR + CO.shedDepth;
+    shedTicks.push(`M${f2(S(CO.x + Math.cos(a) * r0))} ${f2(T(CO.z + Math.sin(a) * r0))}`
+      + `L${f2(S(CO.x + Math.cos(a) * r1))} ${f2(T(CO.z + Math.sin(a) * r1))}`);
+  }
+  har.push(`<path d="${shedTicks.join('')}" fill="none" stroke="${PC.civicEdge}" stroke-width="0.8" opacity="0.85"/>`);
+  har.push(`<circle cx="${f2(S(CO.x))}" cy="${f2(T(CO.z))}" r="${f2(ringIsland)}" `
+    + `fill="${PC.pave}" stroke="${PC.civicEdge}" stroke-width="1.2"/>`);
+  har.push(`<line x1="${f2(S(CO.x + CO.islandR))}" y1="${f2(T(CO.z))}" `
+    + `x2="${f2(S(CO.x + CO.outerR))}" y2="${f2(T(CO.z))}" stroke="#7a5a34" `
+    + `stroke-width="${f2(Math.max(1.4, M(CO.causewayWidth)))}"/>`);
+  // The merchant basin, its quay belts and the 21 m chained entrance between the two moles.
+  har.push(`<rect x="${f2(S(MH.x - MH.hw - MH.quayWest))}" y="${f2(T(MH.z + MH.hd + MH.quayEast))}" `
+    + `width="${f2(M(MH.hw * 2 + MH.quayWest * 2))}" height="${f2(M(MH.hd * 2 + MH.quayEast + MH.quayWest))}" `
+    + `fill="${PC.pave}" stroke="${PC.paveEdge}" stroke-width="0.9"/>`);
+  har.push(`<rect x="${f2(S(MH.x - MH.hw))}" y="${f2(T(MH.z + MH.hd))}" `
+    + `width="${f2(M(MH.hw * 2))}" height="${f2(M(MH.hd * 2))}" `
+    + `fill="${PC.water}" stroke="${PC.waterEdge}" stroke-width="1.4"/>`);
+  for (const ch of pd.channels) {
+    har.push(`<line x1="${f2(S(ch.x1))}" y1="${f2(T(ch.z1))}" x2="${f2(S(ch.x2))}" y2="${f2(T(ch.z2))}" `
+      + `stroke="${PC.water}" stroke-width="${f2(M(ch.halfW * 2))}" stroke-linecap="butt"/>`);
+  }
+
+  // ---- masonry: the triple circuit, its towers and its gates ----------------
+  const walls = [];
+  // The line first, so a bay whose masonry the plan happens not to publish does not read as
+  // a hole in the circuit; then the stone the city actually built, on top of it.
+  walls.push(`<path d="${pathD(pd.circuit)}" fill="none" stroke="${PC.wall}" `
+    + `stroke-width="2.4" opacity="0.5"/>`);
+  const wallKinds = { wall: PC.wall, tower: '#221a12', gate: '#8c2f2f' };
+  for (const o of pd.obstacles) {
+    if (!wallKinds[o.kind]) continue;
+    walls.push(poly(o, wallKinds[o.kind], '#1d1710', 0.4));
+  }
+  // The six reserved stair aprons: where a flight off the walk may put a formation down.
+  for (const ax of pd.aprons) {
+    const cz = pd.circuitZAt[String(ax)];
+    if (cz == null) continue;
+    walls.push(`<rect x="${f2(S(ax - pd.apronHalfRun))}" y="${f2(T(cz + pd.apronDepth))}" `
+      + `width="${f2(M(pd.apronHalfRun * 2))}" height="${f2(M(pd.apronDepth))}" fill="none" `
+      + `stroke="${PC.wall}" stroke-width="0.9" stroke-dasharray="3 4" opacity="0.55"/>`);
+  }
+
+  // ---- monuments ------------------------------------------------------------
+  const monKind = {
+    cothon: null, harbour: null, // drawn as water above
+    forum: [PC.pave, PC.paveEdge], tophet: [PC.pave, PC.paveEdge],
+    byrsa: [PC.citadel, '#4a2a18'],
+    stoa: [PC.civic, PC.civicEdge], temple: [PC.civic, PC.civicEdge],
+    cistern: [PC.civic, PC.civicEdge], warehouse: [PC.civic, PC.civicEdge],
+    'quay-fort': ['#7a3b2e', '#43201a'],
+  };
+  const mons = [];
+  for (const m of pd.monuments) {
+    const c = monKind[m.kind];
+    if (!c) continue;
+    mons.push(poly(m, c[0], c[1], 1.1));
+  }
+  // The citadel enceinte and the temple of Eshmun on the summit plateau. §5.2 — geometry
+  // that is built (`byrsa.ts`) but carries no entry in `getLandmarks()`.
+  const BY = pd.byrsa;
+  mons.push(`<rect x="${f2(S(BY.x - BY.summitHw))}" y="${f2(T(BY.z + BY.summitHd))}" `
+    + `width="${f2(M(BY.summitHw * 2))}" height="${f2(M(BY.summitHd * 2))}" fill="none" `
+    + `stroke="#3a1f10" stroke-width="1.8"/>`);
+  mons.push(`<circle cx="${f2(S(BY.x))}" cy="${f2(T(BY.z))}" r="4.5" fill="none" `
+    + `stroke="#3a1f10" stroke-width="1.6"/>`);
+  // The sixty steps: from the enceinte's landward gate down to where the three streets end.
+  mons.push(`<line x1="${f2(S(BY.stairHead.x))}" y1="${f2(T(BY.stairHead.z))}" `
+    + `x2="${f2(S(BY.x - BY.summitHw))}" y2="${f2(T(BY.z))}" stroke="#3a1f10" `
+    + `stroke-width="${f2(Math.max(2, M(9)))}" stroke-linecap="butt"/>`);
+
+  // ---- quarters: the Megara is a land class, not housing --------------------
+  const quarters = [];
+  for (const q of pd.quarters) {
+    if (q.kind !== 'megara') continue;
+    quarters.push(poly(q, 'none', PC.megara, 1.6).replace('/>', ' stroke-dasharray="10 6"/>'));
+  }
+
+  // ---- streets --------------------------------------------------------------
+  const rankOf = (l) => (l.stepped ? 'stepped' : l.cls);
+  const wayPath = (l) => l.path.map((q, i) => `${i ? 'L' : 'M'}${f2(S(q[0]))} ${f2(T(q[1]))}`).join(' ');
+
+  const namedWays = [];
+  /** Ways too short to carry their own id inline; they join the leader-label pass instead. */
+  const wayLeaders = [];
+  /** Boxes the leader pass must route around. See `placeLabels`. */
+  const reservedWays = [];
+  for (const w of pd.named) {
+    const r = rankOf(w);
+    const d = wayPath(w);
+    namedWays.push(`<path d="${d}" fill="none" stroke="#4a3b28" stroke-width="${f2(M(w.width) + 2.2)}" `
+      + `stroke-linejoin="round" stroke-linecap="round" opacity="0.5"/>`);
+    namedWays.push(`<path d="${d}" fill="none" stroke="${RANK_COL[r]}" stroke-width="${f2(M(w.width))}" `
+      + `stroke-linejoin="round" stroke-linecap="round"/>`);
+    if (w.stepped) {
+      const rungs = [];
+      for (let i = 0; i + 1 < w.path.length; i++) {
+        const [ax, az] = w.path[i], [bx, bz] = w.path[i + 1];
+        const len = Math.hypot(bx - ax, bz - az);
+        const nx = -(bz - az) / len, nz = (bx - ax) / len;
+        for (let t = 0; t < len; t += 9) {
+          const px = ax + ((bx - ax) * t) / len, pz = az + ((bz - az) * t) / len;
+          rungs.push(`M${f2(S(px - nx * 3))} ${f2(T(pz - nz * 3))}L${f2(S(px + nx * 3))} ${f2(T(pz + nz * 3))}`);
+        }
+      }
+      namedWays.push(`<path d="${rungs.join('')}" fill="none" stroke="#dceaf4" stroke-width="0.8" opacity="0.8"/>`);
+    }
+    /**
+     * The id, set on the way itself.
+     *
+     * Not `textPath`: on a 97 px path a 15-character id overflows its own way and on the
+     * cothon ring it comes out upside down. So the id goes on the *straightest, flattest*
+     * segment the way owns — among everything at least half the length of its longest run,
+     * the one closest to horizontal on the page — and anything with no run long enough to
+     * hold the text at all drops into the leader pass with the monuments.
+     */
+    const sp = w.path.map((q) => [S(q[0]), T(q[1])]);
+    let total = 0, best = 0;
+    const segs = [];
+    for (let i = 0; i + 1 < sp.length; i++) {
+      const len = Math.hypot(sp[i + 1][0] - sp[i][0], sp[i + 1][1] - sp[i][1]);
+      total += len;
+      best = Math.max(best, len);
+      segs.push({ i, len });
+    }
+    const need = textW(w.id, 11.5);
+    if (total < need + 34) {
+      const mid = sp[Math.floor(sp.length / 2)];
+      wayLeaders.push({ ax: mid[0], ay: mid[1], text: w.id, size: 11.5, fill: RANK_COL[r] });
+      continue;
+    }
+    let pick = null, score = 1e9;
+    for (const sg of segs) {
+      if (sg.len < Math.max(26, best * 0.5)) continue;
+      const a = sp[sg.i], b = sp[sg.i + 1];
+      const s = Math.abs((b[1] - a[1]) / sg.len) - sg.len / 4000;
+      if (s < score) { score = s; pick = sg; }
+    }
+    if (!pick) pick = segs.reduce((p, q) => (q.len > p.len ? q : p), segs[0]);
+    {
+      const a = sp[pick.i], b = sp[pick.i + 1];
+      let ang = (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI;
+      if (ang > 90) ang -= 180; else if (ang < -90) ang += 180;
+      const nx = -(b[1] - a[1]) / pick.len, ny = (b[0] - a[0]) / pick.len;
+      const sgn = ny > 0 ? -1 : 1;
+      const off = M(w.width) * 0.5 + 9;
+      const tx = (a[0] + b[0]) * 0.5 + nx * off * sgn;
+      const ty = (a[1] + b[1]) * 0.5 + ny * off * sgn;
+      // A conservative axis-aligned box round the rotated id.
+      const hw = (Math.abs(Math.cos((ang * Math.PI) / 180)) * need + 8) * 0.5;
+      const hh = (Math.abs(Math.sin((ang * Math.PI) / 180)) * need + 15) * 0.5;
+      reservedWays.push({ x0: tx - hw, y0: ty - hh, x1: tx + hw, y1: ty + hh });
+      namedWays.push(`<text x="${f2(tx)}" y="${f2(ty)}" text-anchor="middle" `
+        + `transform="rotate(${f2(ang)} ${f2(tx)} ${f2(ty)})" `
+        + `font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="11.5" font-weight="700" `
+        + `fill="${PC.ink}" stroke="${PC.paper}" stroke-width="3" paint-order="stroke" `
+        + `stroke-linejoin="round">${esc(w.id)}</text>`);
+    }
+  }
+
+  // The generated mesh, batched by (rank, true width) so every lane is drawn at its own
+  // carriageway width and the whole 200-odd of them cost four paths.
+  const meshLanes = [];
+  {
+    const groups = new Map();
+    for (const l of pd.lanes) {
+      const k = `${l.cls}|${l.w}`;
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(l);
+    }
+    const order = ['vicus', 'local', 'secondary', 'artery'];
+    for (const [k, ls] of [...groups].sort((a, b) =>
+      order.indexOf(a[0].split('|')[0]) - order.indexOf(b[0].split('|')[0]))) {
+      const [cls, w] = k.split('|');
+      meshLanes.push(`<path d="${ls.map(wayPath).join(' ')}" fill="none" stroke="${RANK_COL[cls]}" `
+        + `stroke-width="${f2(M(Number(w)))}" stroke-linejoin="round" stroke-linecap="round" opacity="0.82"/>`);
+    }
+  }
+
+  // ---- housing --------------------------------------------------------------
+  const houses = [];
+  {
+    const parts = [];
+    for (const o of pd.obstacles) {
+      if (o.kind !== 'building') continue;
+      parts.push(`M${rectPts(o).replace(/ /g, 'L').replace(/,/g, ' ')}Z`);
+    }
+    houses.push(`<path d="${parts.join('')}" fill="${PC.house}" stroke="${PC.houseEdge}" `
+      + `stroke-width="0.45" fill-rule="evenodd"/>`);
+  }
+
+  // ---- compass, scale bar and the four edge legends -------------------------
+  const card = (x, y, w, h) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" `
+    + `fill="${PC.paper}" fill-opacity="0.86" stroke="${PC.rule}" stroke-width="1"/>`;
+
+  const compass = [];
+  {
+    const cx = L.mapX + 118, cy = L.mapY1 - 106, r = 46;
+    compass.push(card(L.mapX + 14, L.mapY1 - 194, 208, 180));
+    compass.push(`<text x="${cx}" y="${L.mapY1 - 170}" text-anchor="middle" `
+      + `font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="12" font-weight="700" `
+      + `letter-spacing="1.6" fill="${PC.ink}">ORIENTATION</text>`);
+    compass.push(`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${PC.ink}" stroke-width="1.2"/>`);
+    compass.push(`<circle cx="${cx}" cy="${cy}" r="${r * 0.66}" fill="none" stroke="${PC.rule}" stroke-width="0.8"/>`);
+    // +X is true north and it is to the RIGHT. +Z is true east and it is UP.
+    const arms = [
+      ['N', r, 0, true], ['E', 0, -r, false], ['S', -r, 0, false], ['W', 0, r, false],
+    ];
+    for (const [lab, dx, dy, big] of arms) {
+      compass.push(`<line x1="${cx}" y1="${cy}" x2="${cx + dx}" y2="${cy + dy}" `
+        + `stroke="${big ? PC.mark : PC.ink}" stroke-width="${big ? 3 : 1.4}"/>`);
+      if (big) {
+        compass.push(`<polygon points="${cx + dx + 11},${cy} ${cx + dx - 4},${cy - 6} ${cx + dx - 4},${cy + 6}" `
+          + `fill="${PC.mark}"/>`);
+      }
+      compass.push(`<text x="${cx + dx * 1.32}" y="${cy + dy * 1.32 + 5}" text-anchor="middle" `
+        + `font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="15" font-weight="700" `
+        + `fill="${big ? PC.mark : PC.ink}">${lab}</text>`);
+    }
+    compass.push(`<text x="${L.mapX + 118}" y="${L.mapY1 - 34}" text-anchor="middle" `
+      + `font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="11" fill="${PC.inkSoft}">`
+      + `true north = map +X</text>`);
+    compass.push(`<text x="${L.mapX + 118}" y="${L.mapY1 - 21}" text-anchor="middle" `
+      + `font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="11" fill="${PC.inkSoft}">`
+      + `true east = map +Z (up)</text>`);
+  }
+
+  const scaleBar = [];
+  {
+    const total = 1500, px = M(total);
+    const bx = L.mapX1 - 24 - px, by = L.mapY1 - 58;
+    scaleBar.push(card(bx - 16, by - 40, px + 32, 74));
+    for (let i = 0; i < 3; i++) {
+      scaleBar.push(`<rect x="${f2(bx + M(500) * i)}" y="${by}" width="${f2(M(500))}" height="11" `
+        + `fill="${i % 2 ? PC.paper : PC.ink}" stroke="${PC.ink}" stroke-width="1"/>`);
+    }
+    for (let i = 0; i <= 3; i++) {
+      scaleBar.push(`<text x="${f2(bx + M(500) * i)}" y="${by - 6}" text-anchor="middle" `
+        + `font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="12" fill="${PC.ink}">`
+        + `${i * 500}</text>`);
+    }
+    scaleBar.push(`<text x="${f2(bx + px / 2)}" y="${by + 26}" text-anchor="middle" `
+      + `font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="11.5" fill="${PC.inkSoft}">`
+      + `world metres — see the projection note below</text>`);
+  }
+
+  const edges = [];
+  const edgeTxt = (x, y, t, anchor, rot) =>
+    `<text x="${x}" y="${y}" text-anchor="${anchor}"${rot ? ` transform="rotate(${rot} ${x} ${y})"` : ''} `
+    + `font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="13.5" font-weight="700" `
+    + `letter-spacing="1.6" fill="${PC.inkSoft}">${esc(t)}</text>`;
+  edges.push(edgeTxt(L.mapX + L.mapW / 2, L.mapY - 12, 'GULF OF TUNIS  ·  map +Z  ·  TRUE EAST', 'middle'));
+  edges.push(edgeTxt(L.mapX + L.mapW / 2, L.mapY1 + 25,
+    'THE ISTHMUS — the Roman assault deploys here (z −190)  ·  map −Z  ·  TRUE WEST', 'middle'));
+  edges.push(edgeTxt(L.mapX1 + 22, L.mapY + L.mapH / 2, 'SEBKHET ARIANA  ·  map +X  ·  TRUE NORTH', 'middle', 90));
+  edges.push(edgeTxt(L.mapX - 26, L.mapY + L.mapH / 2,
+    'LAKE OF TUNIS and THE TAENIA  ·  map −X  ·  TRUE SOUTH', 'middle', -90));
+
+  // ---- terrain naming and spot heights --------------------------------------
+  const terrainLabels = [];
+  const reservedBase = [];
+  for (const t of pd.terrainNames) {
+    const sz = t.size ?? 15;
+    const len = t.text.length * (sz * 0.6 + (sz < 13 ? 1 : 2.2));
+    const [bw, bh] = t.rot ? [sz * 1.5, len] : [len, sz * 1.5];
+    reservedBase.push({ x0: S(t.x) - bw / 2 - 4, y0: T(t.z) - bh / 2 - 4, x1: S(t.x) + bw / 2 + 4, y1: T(t.z) + bh / 2 + 4 });
+  }
+  for (const s of pd.spots) {
+    reservedBase.push({ x0: S(s.x) - 8, y0: T(s.z) - 8, x1: S(s.x) + 52, y1: T(s.z) + 18 });
+  }
+  // The two cards, so no monument name is ever set under the compass or the scale bar.
+  reservedBase.push({ x0: L.mapX + 8, y0: L.mapY1 - 200, x1: L.mapX + 228, y1: L.mapY1 - 8 });
+  {
+    const px = M(1500), bx = L.mapX1 - 24 - px;
+    reservedBase.push({ x0: bx - 22, y0: L.mapY1 - 104, x1: bx + px + 22, y1: L.mapY1 - 18 });
+  }
+  for (const t of pd.terrainNames) {
+    terrainLabels.push(`<text x="${f2(S(t.x))}" y="${f2(T(t.z))}" text-anchor="middle" `
+      + `font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="${t.size ?? 15}" `
+      + `letter-spacing="${t.size && t.size < 13 ? 1 : 2.2}" fill="${t.fill ?? '#3f6a82'}" `
+      + `font-style="italic" opacity="0.95"${t.rot ? ` transform="rotate(${t.rot} ${f2(S(t.x))} ${f2(T(t.z))})"` : ''} `
+      + `stroke="${PC.paper}" stroke-width="2.6" paint-order="stroke" stroke-linejoin="round">${esc(t.text)}</text>`);
+  }
+  for (const s of pd.spots) {
+    terrainLabels.push(`<path d="M${f2(S(s.x) - 4)} ${f2(T(s.z) - 4)}l8 8M${f2(S(s.x) + 4)} ${f2(T(s.z) - 4)}l-8 8" `
+      + `stroke="${PC.ink}" stroke-width="1.3"/>`);
+    terrainLabels.push(`<text x="${f2(S(s.x) + 8)}" y="${f2(T(s.z) + 13)}" `
+      + `font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="11.5" font-weight="700" `
+      + `fill="${PC.ink}" stroke="${PC.paper}" stroke-width="2.6" paint-order="stroke" `
+      + `stroke-linejoin="round">${s.h.toFixed(0)} m</text>`);
+  }
+
+  // ---- legend ---------------------------------------------------------------
+  const legend = (n) => {
+    const p = [];
+    const y0 = L.legendY;
+    p.push(`<line x1="${L.mapX}" y1="${y0 - 20}" x2="${L.mapX1}" y2="${y0 - 20}" stroke="${PC.ink}" stroke-width="1"/>`);
+    const col = [L.mapX + 4, L.mapX + 560, L.mapX + 1120, L.mapX + 1600];
+    const head = (x, t) => `<text x="${x}" y="${y0 + 4}" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+      + `font-size="12.5" font-weight="700" letter-spacing="1.6" fill="${PC.ink}">${esc(t)}</text>`;
+    const row = (x, i, sw, t, sub) => {
+      const y = y0 + 26 + i * 20;
+      return sw + `<text x="${x + 40}" y="${y + 4}" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+        + `font-size="12" fill="${PC.ink}">${esc(t)}</text>`
+        + (sub ? `<text x="${x + 40 + textW(t, 12) + 10}" y="${y + 4}" `
+          + `font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="11" fill="${PC.inkSoft}">${esc(sub)}</text>` : '');
+    };
+    const box = (x, i, fill, stroke, dash) => {
+      const y = y0 + 26 + i * 20;
+      return `<rect x="${x}" y="${y - 7}" width="30" height="13" fill="${fill}" stroke="${stroke ?? 'none'}" `
+        + `stroke-width="1.1"${dash ? ` stroke-dasharray="${dash}"` : ''}/>`;
+    };
+    const line = (x, i, col2, w) => {
+      const y = y0 + 26 + i * 20;
+      return `<line x1="${x}" y1="${y}" x2="${x + 30}" y2="${y}" stroke="${col2}" stroke-width="${w}" stroke-linecap="round"/>`;
+    };
+
+    // Column 1 — the ground, on every plate.
+    p.push(head(col[0], 'THE GROUND'));
+    p.push(`<image x="${col[0]}" y="${y0 + 19}" width="150" height="13" href="${pd.rampSwatch}" preserveAspectRatio="none"/>`);
+    p.push(`<rect x="${col[0]}" y="${y0 + 19}" width="150" height="13" fill="none" stroke="${PC.ink}" stroke-width="0.8"/>`);
+    for (let i = 0; i <= 3; i++) {
+      p.push(`<text x="${col[0] + (150 * i) / 3}" y="${y0 + 46}" text-anchor="middle" `
+        + `font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="10.5" fill="${PC.inkSoft}">${i * 20}</text>`);
+    }
+    p.push(`<text x="${col[0] + 160}" y="${y0 + 31}" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+      + `font-size="11.5" fill="${PC.ink}">metres above sea level (hillshaded)</text>`);
+    p.push(row(col[0], 1.6, box(col[0], 1.6, PC.water, PC.waterEdge), 'sea, lagoon, basin water'));
+    p.push(row(col[0], 2.6, box(col[0], 2.6, '#ecebe1', '#c3bfae'), 'Sebkhet Ariana', 'salt pan, dry, walkable'));
+    p.push(row(col[0], 3.6, box(col[0], 3.6, '#cfd6b4', '#9aa77c'), 'salt marsh', 'lake margin, the Taenia route'));
+    p.push(row(col[0], 4.6, line(col[0], 4.6, '#6a4a24', 1.5), 'contours',
+      '10 m, plus the 5 m line at the shore'));
+    p.push(`<text x="${col[0]}" y="${y0 + 26 + 5.8 * 20 + 4}" `
+      + `font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="11.5" font-weight="700" `
+      + `fill="${PC.ink}">Byrsa summit ${pd.relief.summit.toFixed(0)} m a.s.l. · lower town `
+      + `${pd.relief.lowerTown.toFixed(0)} m · ${(pd.relief.summit - pd.relief.lowerTown).toFixed(0)} m of relief</text>`);
+
+    // Column 2 — the built city, on every plate.
+    p.push(head(col[1], 'MASONRY AND MONUMENTS'));
+    p.push(row(col[1], 0, box(col[1], 0, PC.wall, '#1d1710'), 'the triple circuit', 'wall, towers, gatehouses'));
+    p.push(row(col[1], 1, box(col[1], 1, 'none', PC.wall, '3 4'), 'stair apron', '6 reserved, 120 × 70 m'));
+    p.push(row(col[1], 2, box(col[1], 2, PC.citadel, '#4a2a18'), 'the Byrsa citadel platform'));
+    p.push(row(col[1], 3, box(col[1], 3, PC.civic, PC.civicEdge), 'civic solid', 'temple, stoa, cistern, horreum'));
+    p.push(row(col[1], 4, box(col[1], 4, PC.pave, PC.paveEdge), 'open paving', 'forum, quay, precinct — walkable'));
+    p.push(row(col[1], 5, box(col[1], 5, 'none', PC.megara, '10 6'), 'the Megara', 'gardens and orchards, not housing'));
+
+    // Column 3 — what this plate adds.
+    if (n === 1) {
+      p.push(head(col[2], 'PLATE 1 SHOWS'));
+      p.push(`<text x="${col[2]}" y="${y0 + 30}" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+        + `font-size="12" fill="${PC.ink}">the ground, the water, the wall and the</text>`);
+      p.push(`<text x="${col[2]}" y="${y0 + 48}" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+        + `font-size="12" fill="${PC.ink}">monuments — and nothing else. No streets,</text>`);
+      p.push(`<text x="${col[2]}" y="${y0 + 66}" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+        + `font-size="12" fill="${PC.ink}">no housing. Plates 2–4 add one layer each.</text>`);
+    } else {
+      p.push(head(col[2], 'STREETS, AT TRUE WIDTH'));
+      const ranks = [
+        ['artery', 'artery', '20 m — processional'],
+        ['secondary', 'secondary', '12 m — arterial'],
+        ['local', 'local', '7 m'],
+        ['stepped', 'stepped', '6 m — no wheels, no engines'],
+        ['vicus', 'vicus', '4 m — no formation fits'],
+      ];
+      ranks.forEach(([k, t, sub], i) => {
+        p.push(row(col[2], i, line(col[2], i, RANK_COL[k], Math.max(1.5, M(RANK_W[k]))), t, sub));
+      });
+      p.push(row(col[2], 5,
+        line(col[2], 5, '#4a3b28', 7) + line(col[2], 5, PC.secondary, 4),
+        'named way', n === 2 ? '11 in the armature, labelled' : 'dark casing + id'));
+      if (n >= 3) {
+        p.push(row(col[2], 6, line(col[2], 6, PC.vicus, 3), 'generated lane', 'no casing, cut per quarter'));
+      }
+    }
+
+    // Column 4 — the projection warning and the plate's own count.
+    p.push(head(col[3], 'READ THIS BEFORE COMPARING'));
+    const notes = [
+      'The plan is anisotropically compressed.',
+      'x = 0.45 · (metres true north)   KN = 0.45',
+      'z = 945 + 0.22 · (metres true east)  KE = 0.22',
+      'So true EAST–WEST — the vertical axis here —',
+      'is squeezed 2.05× against true north–south.',
+      'A distance up the page is 4.55 real metres per',
+      'world metre; across the page, 2.22.',
+      'Do not measure this against a survey plan of',
+      'Carthage without applying both factors.',
+    ];
+    notes.forEach((t, i) => {
+      p.push(`<text x="${col[3]}" y="${y0 + 24 + i * 16}" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+        + `font-size="11" fill="${i < 3 ? PC.ink : PC.inkSoft}"${i === 0 ? ` font-weight="700"` : ''}>${esc(t)}</text>`);
+    });
+    return p.join('\n');
+  };
+
+  // ---- assemble the four plates ---------------------------------------------
+  const nHouse = pd.obstacles.filter((o) => o.kind === 'building').length;
+  const nMason = pd.obstacles.filter((o) => o.kind !== 'building' && o.kind !== 'monument').length;
+  const specs = [
+    {
+      n: 1, name: '1-landmarks', title: 'THE GROUND AND THE MONUMENTS',
+      sub: `Terrain, water, the ${nMason} masonry solids of the triple circuit, and every named `
+        + `monument. No streets and no housing — this is the armature everything else hangs on.`,
+      ways: false, mesh: false, fabric: false,
+    },
+    {
+      n: 2, name: '2-streets', title: 'THE NAMED ARMATURE',
+      sub: `Plate 1 plus the ${pd.named.length} named ways, drawn to true carriageway width and `
+        + `coloured by rank. This is the whole monumental street network of the city.`,
+      ways: true, mesh: false, fabric: false,
+    },
+    {
+      n: 3, name: '3-grid', title: 'THE FULL STREET GRID',
+      sub: `Plate 2 plus the ${pd.lanes.length} lanes the quarters cut for themselves. Every `
+        + `carriageway in Carthage is on this sheet; the blocks between them are where housing goes. Still no housing.`,
+      ways: true, mesh: true, fabric: false,
+    },
+    {
+      n: 4, name: '4-fabric', title: 'THE FABRIC AS BUILT',
+      sub: `Plate 3 plus the ${nHouse} housing blocks the generator has cut to date. This is what `
+        + `stands in the build today, for contrast with plates 1–3.`,
+      ways: true, mesh: true, fabric: true,
+    },
+  ];
+
+  return specs.map((sp) => {
+    const g = [];
+    g.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${L.width}" height="${L.height}" `
+      + `viewBox="0 0 ${L.width} ${L.height}" font-kerning="none">`);
+    g.push(`<rect width="${L.width}" height="${L.height}" fill="${PC.paper}"/>`);
+    // Title block.
+    g.push(`<text x="${L.margin}" y="46" font-family="Helvetica Neue,Helvetica,Arial,sans-serif" `
+      + `font-size="30" font-weight="700" letter-spacing="0.5" fill="${PC.ink}">`
+      + `CARTHAGE, spring 146 BC — plate ${sp.n} of 4: ${esc(sp.title)}</text>`);
+    g.push(`<text x="${L.margin}" y="74" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+      + `font-size="13.5" fill="${PC.inkSoft}">${esc(sp.sub)}</text>`);
+    g.push(`<text x="${L.margin}" y="98" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+      + `font-size="12" fill="${PC.inkSoft}">Drawn from the BUILT city — getObstacles(), getLanes(), `
+      + `getCircuitSamples() and TerrainSystem.heightAt() — not from the layout constants. `
+      + `${esc(pd.stamp)}</text>`);
+    // The map.
+    g.push(`<clipPath id="mapclip"><rect x="${L.mapX}" y="${L.mapY}" width="${L.mapW}" height="${L.mapH}"/></clipPath>`);
+    g.push(`<g clip-path="url(#mapclip)">`);
+    g.push(ground.join('\n'));
+    g.push(quarters.join('\n'));
+    if (sp.mesh) g.push(meshLanes.join('\n'));
+    if (sp.fabric) g.push(houses.join('\n'));
+    g.push(builtSolids.join('\n'));
+    g.push(har.join('\n'));
+    g.push(walls.join('\n'));
+    g.push(mons.join('\n'));
+    if (sp.ways) g.push(namedWays.join('\n'));
+    g.push(terrainLabels.join('\n'));
+    g.push(compass.join('\n'));
+    g.push(scaleBar.join('\n'));
+    g.push(drawLabels(placeLabels(
+      sp.ways ? [...pd.labels, ...wayLeaders] : pd.labels,
+      { x0: L.mapX + 6, y0: L.mapY + 14, x1: L.mapX1 - 6, y1: L.mapY1 - 8 }, 13,
+      sp.ways ? [...reservedBase, ...reservedWays] : reservedBase)));
+    g.push('</g>');
+    g.push(frame.join('\n'));
+    g.push(edges.join('\n'));
+    g.push(legend(sp.n));
+    g.push('</svg>');
+    return { name: sp.name, svg: g.join('\n'), width: L.width, height: L.height };
+  });
+}
+// ---8<--- PLATES END
+
+if (PLATES_OUT) {
+  const L = plateLayout(PLATE_PAGE);
+  const dir = path.resolve(ROOT, PLATES_OUT);
+  await mkdir(dir, { recursive: true });
+
+  const pd = await page.evaluate(async (o) => {
+    const g = window.__game;
+    const ctx = g.engine.context;
+    const city = ctx.tryGet('city');
+    const terrain = ctx.get('terrain');
+    const waterLevel = terrain.waterLevel ?? 0;
+
+    // The constants, imported rather than retyped. Two files disagreeing about the Byrsa is
+    // the bug this city's whole order of operations exists to prevent.
+    const lay = await import('/src/city/carthage/layout.ts');
+    const cir = await import('/src/city/carthage/circuit.ts');
+    const top = await import('/src/maps/carthage/topography.ts');
+    const byr = await import('/src/city/carthage/byrsa.ts');
+
+    const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+    const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+    // Hypsometric tint. Deliberately stretched at the bottom: nine tenths of this map lies
+    // between 0 and 20 m, so a ramp spaced evenly to 60 would paint the whole lower town one
+    // colour and hide the only thing the ramp is for.
+    const RAMP = [
+      [0, [0xef, 0xe6, 0xcd]], [2, [0xe9, 0xdc, 0xba]], [5, [0xe4, 0xd3, 0xa9]],
+      [9, [0xde, 0xc9, 0x99]], [13, [0xd8, 0xbe, 0x8a]], [17, [0xd1, 0xb2, 0x7c]],
+      [22, [0xc9, 0xa4, 0x6e]], [32, [0xbe, 0x92, 0x5e]], [45, [0xb0, 0x7d, 0x4d]],
+      [60, [0x9f, 0x67, 0x3d]], [70, [0x92, 0x5a, 0x35]],
+    ];
+    const landCol = (h) => {
+      for (let i = 0; i + 1 < RAMP.length; i++) {
+        if (h <= RAMP[i + 1][0]) {
+          return lerp3(RAMP[i][1], RAMP[i + 1][1], (h - RAMP[i][0]) / (RAMP[i + 1][0] - RAMP[i][0]));
+        }
+      }
+      return RAMP[RAMP.length - 1][1];
+    };
+
+    // ---- the height grid, at map pixel resolution --------------------------
+    const cw = o.pxW, ch = o.pxH;
+    const dx = (o.x1 - o.x0) / cw, dz = (o.z1 - o.z0) / ch;
+    const H = new Float32Array(cw * ch);
+    for (let py = 0; py < ch; py++) {
+      const z = o.z1 - (py + 0.5) * dz;
+      const row = py * cw;
+      for (let px = 0; px < cw; px++) H[row + px] = terrain.heightAt(o.x0 + (px + 0.5) * dx, z);
+    }
+
+    /**
+     * A smoothed copy, for the shading only.
+     *
+     * The heightfield carries an erosion pass and a detail octave, and at 1.4 world metres
+     * per pixel a Lambert shade off the raw field renders the whole peninsula as crumpled
+     * paper: the noise wins and the Byrsa — the one elevation on this map that matters —
+     * disappears into it. Three box passes is about 6 m of blur, which is under the width of
+     * a vicus and well over the wavelength of the noise. Colour still comes off the raw field.
+     */
+    const Hs = (() => {
+      let a = H;
+      for (let p = 0; p < 3; p++) {
+        const b = new Float32Array(cw * ch);
+        for (let j = 0; j < ch; j++) {
+          const jm = j > 0 ? -cw : 0, jp = j < ch - 1 ? cw : 0;
+          for (let i = 0; i < cw; i++) {
+            const k = j * cw + i;
+            const im = i > 0 ? -1 : 0, ip = i < cw - 1 ? 1 : 0;
+            b[k] = (a[k + jm + im] + a[k + jm] + a[k + jm + ip]
+              + a[k + im] + a[k] + a[k + ip]
+              + a[k + jp + im] + a[k + jp] + a[k + jp + ip]) / 9;
+          }
+        }
+        a = b;
+      }
+      return a;
+    })();
+
+    // ---- hillshade and colour ----------------------------------------------
+    const cvs = document.createElement('canvas');
+    cvs.width = cw; cvs.height = ch;
+    const g2 = cvs.getContext('2d');
+    const img = g2.createImageData(cw, ch);
+    const D = img.data;
+    // Light from the upper left of the page, over the smoothed field. 1.6× exaggeration, so
+    // the wall bench and the harbour terrace register at all on ground that falls one in
+    // seven hundred — and no more, or the shore scarp blows out to white.
+    const EX = 1.6;
+    const Lx = -0.6, Lz = 0.6, Ly = 0.8;
+    const Ln = Math.hypot(Lx, Lz, Ly);
+    const flat = Ly / Ln;
+    for (let py = 0; py < ch; py++) {
+      const z = o.z1 - (py + 0.5) * dz;
+      for (let px = 0; px < cw; px++) {
+        const i = py * cw + px;
+        const h = H[i];
+        const x = o.x0 + (px + 0.5) * dx;
+        let c;
+        if (h <= waterLevel) {
+          const t = clamp((waterLevel - h) / 8, 0, 1);
+          c = lerp3([0xb4, 0xd0, 0xd9], [0x6e, 0x99, 0xb1], t * t * (3 - 2 * t));
+        } else {
+          c = landCol(h);
+          const dAr = top.arianaEdgeX(z) - x;
+          if (dAr < 0) c = lerp3(c, [0xec, 0xeb, 0xe1], clamp(-dAr / 60, 0, 1) * 0.9);
+          const dLk = x - top.lakeEdgeX(z);
+          if (dLk < 26 && dLk > -44 && h < 4) {
+            c = lerp3(c, [0xcf, 0xd6, 0xb4], clamp((26 - dLk) / 30, 0, 1) * 0.75);
+          }
+          // Lambert shade on land only. Water stays flat so the coast reads as an edge.
+          const hL = Hs[i - (px > 0 ? 1 : 0)], hR = Hs[i + (px < cw - 1 ? 1 : 0)];
+          const hU = Hs[i - (py > 0 ? cw : 0)], hD = Hs[i + (py < ch - 1 ? cw : 0)];
+          const gx = ((hR - hL) / (2 * dx)) * EX;
+          const gz = ((hU - hD) / (2 * dz)) * EX;
+          const nn = Math.hypot(gx, gz, 1);
+          const sh = (-gx * Lx - gz * Lz + Ly) / (nn * Ln);
+          const f = clamp(1 + 1.55 * (sh - flat), 0.6, 1.4);
+          c = [c[0] * f, c[1] * f, c[2] * f];
+        }
+        const k = i * 4;
+        D[k] = clamp(c[0], 0, 255); D[k + 1] = clamp(c[1], 0, 255);
+        D[k + 2] = clamp(c[2], 0, 255); D[k + 3] = 255;
+      }
+    }
+    g2.putImageData(img, 0, 0);
+    const raster = cvs.toDataURL('image/png');
+
+    // The legend's elevation swatch, from exactly the same ramp.
+    const sw = document.createElement('canvas');
+    sw.width = 150; sw.height = 1;
+    const sg = sw.getContext('2d');
+    const si = sg.createImageData(150, 1);
+    for (let i = 0; i < 150; i++) {
+      const c = landCol((i / 149) * 60);
+      si.data[i * 4] = c[0]; si.data[i * 4 + 1] = c[1]; si.data[i * 4 + 2] = c[2]; si.data[i * 4 + 3] = 255;
+    }
+    sg.putImageData(si, 0, 0);
+    const rampSwatch = sw.toDataURL('image/png');
+
+    // ---- marching squares, for contours and for the coast -------------------
+    const march = (grid, gw, gh, gx0, gz0, gdx, gdz, level) => {
+      const segs = [];
+      const at = (i, j) => grid[j * gw + i];
+      const ip = (xa, za, va, xb, zb, vb) => {
+        const t = (level - va) / (vb - va || 1e-9);
+        return [xa + (xb - xa) * t, za + (zb - za) * t];
+      };
+      const TAB = [[], [[3, 2]], [[2, 1]], [[3, 1]], [[0, 1]], [[0, 3], [1, 2]], [[0, 2]], [[0, 3]],
+        [[0, 3]], [[0, 2]], [[0, 1], [2, 3]], [[0, 1]], [[3, 1]], [[2, 1]], [[3, 2]], []];
+      for (let j = 0; j + 1 < gh; j++) {
+        for (let i = 0; i + 1 < gw; i++) {
+          const v0 = at(i, j), v1 = at(i + 1, j), v2 = at(i + 1, j + 1), v3 = at(i, j + 1);
+          const idx = (v0 > level ? 8 : 0) | (v1 > level ? 4 : 0) | (v2 > level ? 2 : 0) | (v3 > level ? 1 : 0);
+          const cases = TAB[idx];
+          if (!cases.length) continue;
+          const xA = gx0 + i * gdx, xB = xA + gdx;
+          const zA = gz0 - j * gdz, zB = zA - gdz;
+          const E = [
+            ip(xA, zA, v0, xB, zA, v1), ip(xB, zA, v1, xB, zB, v2),
+            ip(xA, zB, v3, xB, zB, v2), ip(xA, zA, v0, xA, zB, v3),
+          ];
+          for (const [a, b] of cases) segs.push([E[a][0], E[a][1], E[b][0], E[b][1]]);
+        }
+      }
+      return segs;
+    };
+    const down = (fac, blur) => {
+      const gw = Math.floor(cw / fac), gh = Math.floor(ch / fac);
+      let gr = new Float32Array(gw * gh);
+      for (let j = 0; j < gh; j++) {
+        for (let i = 0; i < gw; i++) {
+          let s = 0, n = 0;
+          for (let b = 0; b < fac; b++) for (let a = 0; a < fac; a++) { s += H[(j * fac + b) * cw + i * fac + a]; n++; }
+          gr[j * gw + i] = s / n;
+        }
+      }
+      for (let p = 0; p < blur; p++) {
+        const nx = new Float32Array(gw * gh);
+        for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
+          let s = 0, n = 0;
+          for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) {
+            const jj = j + b, ii = i + a;
+            if (jj < 0 || ii < 0 || jj >= gh || ii >= gw) continue;
+            s += gr[jj * gw + ii]; n++;
+          }
+          nx[j * gw + i] = s / n;
+        }
+        gr = nx;
+      }
+      return { gr, gw, gh, gdx: fac * dx, gdz: fac * dz };
+    };
+    const cg = down(8, 2);
+    const contours = [5, 10, 20, 30, 40, 50].map((level) => ({
+      level,
+      segs: march(cg.gr, cg.gw, cg.gh, o.x0 + cg.gdx * 0.5, o.z1 - cg.gdz * 0.5, cg.gdx, cg.gdz, level)
+        .map((s) => s.map((v) => Math.round(v * 10) / 10)),
+    }));
+    const fg = down(2, 0);
+    const coast = march(fg.gr, fg.gw, fg.gh, o.x0 + fg.gdx * 0.5, o.z1 - fg.gdz * 0.5, fg.gdx, fg.gdz, waterLevel)
+      .map((s) => s.map((v) => Math.round(v * 10) / 10));
+
+    // ---- the city -----------------------------------------------------------
+    const allLanes = city.getLanes();
+    const named = lay.PUNIC_WAYS.map((w) => ({
+      id: w.id, cls: w.cls, width: w.width, stepped: !!w.stepped,
+      path: w.path.map((q) => [+q.x.toFixed(1), +q.z.toFixed(1)]),
+    }));
+    // `plan.ts` concatenates PUNIC_WAYS ahead of the fabric's lanes, so the tail is the
+    // generated mesh. Verified rather than assumed: a silent slice at the wrong offset would
+    // put named ways on the wrong plate and nothing in the picture would say so.
+    let namedPrefixOk = allLanes.length > named.length;
+    for (let i = 0; i < named.length && namedPrefixOk; i++) {
+      const a = allLanes[i], b = lay.PUNIC_WAYS[i];
+      if (!a || a.path.length !== b.path.length
+        || Math.abs(a.path[0].x - b.path[0].x) > 0.01 || Math.abs(a.path[0].z - b.path[0].z) > 0.01) {
+        namedPrefixOk = false;
+      }
+    }
+    const lanes = allLanes.slice(named.length).map((l) => ({
+      cls: l.cls, w: l.width, path: l.path.map((q) => [Math.round(q.x), Math.round(q.z)]),
+    }));
+
+    const obstacles = city.getObstacles().map((ob) => ({
+      x: +ob.x.toFixed(1), z: +ob.z.toFixed(1), hw: +ob.hw.toFixed(1), hd: +ob.hd.toFixed(1),
+      rot: +ob.rot.toFixed(4), kind: ob.kind,
+    }));
+    const circuit = city.getCircuitSamples(12);
+
+    const monuments = lay.MONUMENTS.map((m) => ({
+      id: m.id, name: m.name, kind: m.kind, x: m.x, z: m.z, hw: m.hw, hd: m.hd, rot: m.rot, solid: m.solid,
+    }));
+    const quarters = lay.QUARTERS.map((q) => ({
+      id: q.id, name: q.name, kind: q.kind, x: q.x, z: q.z, hw: q.hw, hd: q.hd,
+      rot: q.rot, grid: q.grid, density: q.density, storeys: q.storeys,
+    }));
+
+    // ---- labels -------------------------------------------------------------
+    const SC = o.mapW / (o.x1 - o.x0);
+    const SX = (x) => o.mapX + (x - o.x0) * SC;
+    const TZ = (z) => o.mapY1 - (z - o.z0) * SC;
+    const labels = [];
+    const byrsaH = terrain.heightAt(lay.BYRSA.x, lay.BYRSA.z);
+    const townH = (terrain.heightAt(-230, 1005) + terrain.heightAt(-430, 990)
+      + terrain.heightAt(250, 930)) / 3;
+    for (const m of lay.MONUMENTS) {
+      labels.push({
+        ax: SX(m.x), ay: TZ(m.z), bold: true,
+        text: m.id === 'byrsa' ? `${m.name} — summit ${byrsaH.toFixed(0)} m a.s.l.` : m.name,
+      });
+    }
+    for (const gt of cir.CIRCUIT_GATES) {
+      labels.push({
+        ax: SX(gt.x), ay: TZ(cir.circuitZAt(gt.x)),
+        text: gt.name + (gt.principal ? ' (the ram)' : ''), size: 12,
+      });
+    }
+    labels.push({ ax: SX(lay.BYRSA.x), ay: TZ(lay.BYRSA.z), text: 'Temple of Eshmun, the sixty steps', size: 12 });
+    labels.push({ ax: SX(byr.BYRSA_STAIR_HEAD.x), ay: TZ(byr.BYRSA_STAIR_HEAD.z), text: 'citadel enceinte gate', size: 11.5 });
+    labels.push({ ax: SX(150), ay: TZ(1200), text: 'the Magon sea gate', size: 12 });
+    labels.push({
+      ax: SX(lay.COTHON.x + (lay.COTHON.islandR + lay.COTHON.outerR) * 0.5), ay: TZ(lay.COTHON.z),
+      text: 'admiralty island · 4 m causeway', size: 12,
+    });
+    labels.push({ ax: SX(lay.COTHON.x + 30), ay: TZ(1340), text: "the Carthaginians' cut channel, 30 m", size: 12 });
+    labels.push({
+      ax: SX(lay.MERCHANT_HARBOUR.x), ay: TZ(lay.MERCHANT_HARBOUR.z + lay.MERCHANT_HARBOUR.hd + lay.MERCHANT_HARBOUR.quayEast + 17),
+      text: 'the chained entrance, 21 m', size: 12,
+    });
+
+    // Spot heights. Placed clear of the scale bar and the compass card, which sit over the
+    // bottom of the map, and clear of each other.
+    const spotAt = [
+      [lay.BYRSA.x, lay.BYRSA.z], [210, 1037], [-330, 862],
+      [-620, 860], [0, cir.circuitZAt(0)], [-820, 420], [900, 800], [430, 1250],
+    ];
+    const spots = spotAt.map(([x, z]) => ({ x, z, h: terrain.heightAt(x, z) }));
+
+    const terrainNames = [
+      { x: 240, z: 1350, text: 'GULF OF TUNIS', size: 20 },
+      { x: -1235, z: 760, text: 'LAKE OF TUNIS', size: 17, rot: -90 },
+      { x: 1285, z: 1000, text: 'SEBKHET ARIANA', size: 16, rot: 90, fill: '#7b7364' },
+      { x: -1250, z: 400, text: 'THE TAENIA', size: 13, rot: -78, fill: '#4f6b3f' },
+      { x: -560, z: 300, text: 'THE ISTHMUS — the only land approach', size: 16, fill: '#7a6a4e' },
+      { x: 330, z: 1140, text: 'BORDJ DJEDID', size: 13, fill: '#7a6a4e' },
+      { x: 640, z: 620, text: 'THE MEGARA — gardens, orchards and villas', size: 15, fill: '#4f6b3f' },
+    ];
+
+    // ---- the measurements ---------------------------------------------------
+    // Bearing is a TRUE compass bearing: +X is true north and +Z is true east, so the
+    // bearing of a segment is atan2(dz, dx) — east over north — and it is folded mod 90 so
+    // the two arms of an orthogonal grid land in the same bin.
+    const bear = new Float64Array(90);
+    let totalLen = 0;
+    const byRank = {};
+    const push = (cls, len, width) => {
+      byRank[cls] = byRank[cls] ?? { m: 0, n: 0, ha: 0, wMin: 1e9, wMax: 0 };
+      byRank[cls].m += len;
+      byRank[cls].ha += (len * width) / 1e4;
+      byRank[cls].wMin = Math.min(byRank[cls].wMin, width);
+      byRank[cls].wMax = Math.max(byRank[cls].wMax, width);
+    };
+    for (const l of allLanes) {
+      let len = 0;
+      for (let i = 0; i + 1 < l.path.length; i++) {
+        const ax = l.path[i].x, az = l.path[i].z;
+        const bx = l.path[i + 1].x, bz = l.path[i + 1].z;
+        const d = Math.hypot(bx - ax, bz - az);
+        if (d < 1e-6) continue;
+        let b = (Math.atan2(bz - az, bx - ax) * 180) / Math.PI;
+        b = ((b % 90) + 90) % 90;
+        bear[Math.min(89, Math.floor(b))] += d;
+        len += d;
+        totalLen += d;
+      }
+      push(l.cls, len, l.width);
+      byRank[l.cls].n++;
+    }
+    // Dominant bearing pair: the peak of the mod-90 histogram, and everything within ±5°.
+    let peak = 0;
+    for (let i = 1; i < 90; i++) if (bear[i] > bear[peak]) peak = i;
+    let within = 0;
+    for (let d = -5; d <= 5; d++) within += bear[(((peak + d) % 90) + 90) % 90];
+    /**
+     * How much of the built city stands on ground the terrain puts under water.
+     *
+     * Drawing the ground under the plan is the first thing that could ask this question, and
+     * it is not rhetorical: the cothon's north half, the moles and part of the Salammbô shore
+     * are seaward of `coastZ`. Reported, not fixed — this is a visualisation job.
+     */
+    const drowned = {};
+    for (const ob of city.getObstacles()) {
+      const h = terrain.heightAt(ob.x, ob.z);
+      const row = (drowned[ob.kind] = drowned[ob.kind] ?? { n: 0, wet: 0, ha: 0, deepest: 0 });
+      row.n++;
+      if (h < waterLevel) {
+        row.wet++;
+        row.ha += (ob.hw * 2 * ob.hd * 2) / 1e4;
+        row.deepest = Math.min(row.deepest, h);
+      }
+    }
+    let laneWetM = 0;
+    for (const l of allLanes) {
+      for (let i = 0; i + 1 < l.path.length; i++) {
+        const d = Math.hypot(l.path[i + 1].x - l.path[i].x, l.path[i + 1].z - l.path[i].z);
+        for (let t = 0; t < d; t += 6) {
+          const u = t / d;
+          const x = l.path[i].x + (l.path[i + 1].x - l.path[i].x) * u;
+          const z = l.path[i].z + (l.path[i + 1].z - l.path[i].z) * u;
+          if (terrain.heightAt(x, z) < waterLevel) laneWetM += 6;
+        }
+      }
+    }
+
+    const gridBearings = {};
+    for (const q of lay.QUARTERS) {
+      const k = ((q.grid * 180) / Math.PI).toFixed(2);
+      gridBearings[k] = gridBearings[k] ?? { ha: 0, quarters: [] };
+      gridBearings[k].ha += (q.hw * 2 * q.hd * 2) / 1e4;
+      gridBearings[k].quarters.push(q.id);
+    }
+
+    return {
+      raster, rampSwatch, contours, coast,
+      named, lanes, obstacles, circuit, monuments, quarters,
+      labels, spots, terrainNames,
+      namedPrefixOk, lanesTotal: allLanes.length,
+      relief: { summit: +byrsaH.toFixed(1), lowerTown: +townH.toFixed(1) },
+      cothon: {
+        ...lay.COTHON,
+        // `SHED_DEPTH`, `ISLAND_SHEDS` and `RING_SHEDS` are module-private in harbour.ts.
+        // Only the count is published, on stats(); the depth is a drawing constant here.
+        shedDepth: 40, islandSheds: 30, ringSheds: 138,
+      },
+      merchant: { ...lay.MERCHANT_HARBOUR },
+      byrsa: {
+        x: lay.BYRSA.x, z: lay.BYRSA.z, summitHw: lay.BYRSA.summitHw, summitHd: lay.BYRSA.summitHd,
+        citadelHw: lay.BYRSA.citadelHw, citadelHd: lay.BYRSA.citadelHd, stairHead: byr.BYRSA_STAIR_HEAD,
+      },
+      channels: [
+        { x1: lay.COTHON.x + lay.COTHON.outerR + 8, z1: lay.COTHON.z,
+          x2: lay.MERCHANT_HARBOUR.x - lay.MERCHANT_HARBOUR.hw - 6, z2: lay.MERCHANT_HARBOUR.z, halfW: 10.5 },
+        { x1: lay.COTHON.x, z1: lay.COTHON.z + lay.COTHON.outerR + 6, x2: lay.COTHON.x + 60, z2: 1340, halfW: 15 },
+      ],
+      aprons: [...cir.STAIR_APRONS],
+      apronHalfRun: cir.APRON_HALF_RUN, apronDepth: cir.APRON_DEPTH,
+      circuitZAt: Object.fromEntries(cir.STAIR_APRONS.map((x) => [String(x), cir.circuitZAt(x)])),
+      stamp: `${city.stats().id} · ${new Date().toISOString().slice(0, 16).replace('T', ' ')}Z`,
+      measure: {
+        bearings: Array.from(bear).map((v) => Math.round(v)),
+        peak, within: +(within / totalLen).toFixed(4), totalLen: Math.round(totalLen),
+        byRank, gridBearings, drowned, laneWetM, waterLevel,
+      },
+    };
+  }, { x0: L.x0, x1: L.x1, z0: L.z0, z1: L.z1, pxW: L.mapW, pxH: L.mapH, mapX: L.mapX, mapY1: L.mapY1, mapW: L.mapW });
+
+  out.plateMeasure = pd.measure;
+  if (!pd.namedPrefixOk) {
+    console.log('\n*** getLanes() does not begin with PUNIC_WAYS — the named/generated split is WRONG ***');
+  }
+
+  const m = pd.measure;
+  console.log(`\n── street bearings (true compass, +X = north, +Z = east; folded mod 90°) ──`);
+  console.log(`  total street length ${m.totalLen.toLocaleString()} m over ${pd.lanesTotal} ways and lanes`);
+  console.log(`  dominant bearing pair ${m.peak}° / ${m.peak + 90}°`);
+  console.log(`  within ±5° of it: ${(m.within * 100).toFixed(1)}% of all street length`);
+  const rows = [];
+  for (let i = 0; i < 90; i += 5) {
+    let s = 0;
+    for (let k = i; k < i + 5; k++) s += m.bearings[k];
+    rows.push([i, s]);
+  }
+  const maxRow = Math.max(...rows.map((r) => r[1]));
+  for (const [i, s] of rows) {
+    if (s === 0) continue;
+    const bar = '█'.repeat(Math.max(1, Math.round((s / maxRow) * 46)));
+    console.log(`    ${String(i).padStart(2)}–${String(i + 5).padStart(2)}°  ${String(Math.round(s)).padStart(6)} m  ${((s / m.totalLen) * 100).toFixed(1).padStart(5)}%  ${bar}`);
+  }
+  console.log(`\n── street length by rank ──────────────────────────────`);
+  for (const [cls, v] of Object.entries(m.byRank)) {
+    console.log(`  ${cls.padEnd(10)} ${String(Math.round(v.m)).padStart(7)} m  over ${String(v.n).padStart(4)} ways/lanes`
+      + `  width ${v.wMin === v.wMax ? `${v.wMin} m` : `${v.wMin}–${v.wMax} m`}`
+      + `  → ${v.ha.toFixed(1)} ha of carriageway`);
+  }
+  console.log(`\n── city solids standing below the water line (level ${m.waterLevel} m) ──`);
+  for (const [kind, v] of Object.entries(m.drowned)) {
+    console.log(`  ${kind.padEnd(9)} ${String(v.wet).padStart(4)} / ${String(v.n).padStart(4)} below datum`
+      + `  ${v.ha.toFixed(2).padStart(7)} ha  deepest ${v.deepest.toFixed(1)} m`);
+  }
+  console.log(`  carriageway over water: ${m.laneWetM} m of centreline`);
+
+  console.log(`\n── quarter grid bearings ──────────────────────────────`);
+  const gb = Object.entries(m.gridBearings).sort((a, b) => Number(a[0]) - Number(b[0]));
+  console.log(`  ${gb.length} distinct bearings among ${pd.quarters.length} quarters`);
+  for (const [deg, v] of gb) {
+    console.log(`    ${String(deg).padStart(6)}°  ${v.ha.toFixed(1).padStart(6)} ha  ${v.quarters.join(', ')}`);
+  }
+
+  const plates = buildPlates(pd);
+  for (const p of plates) {
+    await writeFile(path.join(dir, `${p.name}.svg`), p.svg);
+    await page.setViewportSize({ width: p.width, height: p.height });
+    await page.setContent(`<!doctype html><body style="margin:0;background:#f7f1e2">${p.svg}</body>`);
+    await page.screenshot({ path: path.join(dir, `${p.name}.png`), clip: { x: 0, y: 0, width: p.width, height: p.height } });
+    console.log(`  wrote ${PLATES_OUT}/${p.name}.svg + .png  (${p.width}×${p.height})`);
+  }
+  /**
+   * `setContent` above destroyed `window.__game`, so nothing that needs the city may run
+   * after this block. `--plan` is sequenced below it for exactly that reason.
+   */
+}
 
 if (PLAN_OUT) {
   const pd = await page.evaluate(() => window.__cart.planData());
