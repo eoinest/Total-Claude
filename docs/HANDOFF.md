@@ -137,6 +137,103 @@ Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`
 
 ## Measured facts that must not be re-derived
 
+- **The game is not slow. It hitches, and the hitch is a shader link.** On an *idle* box
+  (load 9.6) Carthage at ultra runs `engine.frame()` at p50 **2.60 ms**, p99 **7.00**, with
+  one frame in 2,899 over 16.7 ms and none over 33. The heaviest scenario in the game —
+  the Punic army with elephants — is cheaper still at p50 **2.30**. The cleanest single
+  result in the study: over 2,299 frames, **exactly four frames missed 16.7 ms, all four
+  linked a shader program, and there were exactly four link frames.** Zero false positives,
+  zero misses. Frames that linked: p50 49.90 ms. Frames that did not: p50 2.30, p99 5.00.
+  three.js links a program the first frame a material is *drawn*, and there was no
+  `renderer.compile`/`compileAsync` in the tree. Fixed in `Engine.initAll`. It is
+  camera-triggered — first sight, not heavy fighting — and the program count was still
+  climbing at t+88 s of battle, so it never stopped happening.
+- **Every frame-time number ever taken on this box below load ~15 must be re-taken before
+  it is believed, and `uptime` cannot tell you when.** Load average is a CPU run-queue
+  metric; the frames here are GPU-bound. The *quietest* runs (load 9-17) initially produced
+  the *worst* rAF figures and the most expensive shader links (177-290 ms against 38-75 ms
+  at load 64), because other agents' Chromium instances saturate the GPU while barely
+  moving the run queue. Re-run at load < 15 and the same links cost 5-57 ms. An earlier
+  round of this workstream's own numbers was inflated this way and had to be retracted.
+- **`engine.frame()` is blind to the resolution lever.** At dpr 2 against dpr 1 — four times
+  the pixels — cost *per 1-step frame* is **11.50 vs 11.40 ms** and render p50 is 1.30 vs
+  1.30, while the rAF interval goes 16.40 → 33.60 (**2.05x**) and frames over 33 ms go
+  3 % → 72 %. `frame()` returns when the command buffer is submitted; the pixels are paid
+  for afterwards. **Measure any resolution work on the rAF interval or it will read as a
+  no-op when it is the largest lever on the project.**
+- **One `PostFX` reallocation costs ~4.1 ms, and `new WebGLRenderTarget` allocates nothing.**
+  Three creates the texture and framebuffer lazily on first bind, so timing `allocate()`
+  alone reports 0.3 ms for nineteen 1080p targets — which cannot be true, and is the shape
+  of an arm that never ran. With the materialising frame inside the timed block: best 36.8
+  against a 32.7 ms control, i.e. **4.1 ms best-of-blocks, worst observed 668 ms**. A second
+  workstream measured 4.3 ms in situ independently.
+- **A `setPixelRatio` that does not reach `PostFX.resize` is a silent no-op.** Three's
+  `setPixelRatio` internally calls `setSize(w, h, false)`, so it does resize the backing
+  store and leave the CSS size alone — a real continuous lever at any dpr, including below
+  1. But `PostFX.allocate` sizes all nineteen targets from `getDrawingBufferSize()` at
+  allocation time, so without a reallocation the whole scene keeps rasterising at the old
+  resolution. The lever moves a number and buys nothing.
+- **`compileAsync` must NOT be wrapped in a force-visible traverse, and the obvious reasoning
+  says it must.** It walks the scene with `traverseVisible` (`three.module.js:17385`,
+  `:17403`), so every hidden LOD tier and pool mesh is skipped — which is exactly the set
+  that links mid-battle. Forcing them visible first is nevertheless **worse than doing
+  nothing**: 27 programs compiled against a plain call's 44, and all 22 mid-play links
+  still land. Excluding lights from the forcing changes nothing either. Both guesses were
+  tested and both were wrong; the mechanism is not established. Plain call on Carthage:
+  links during play 22 → 5, worst frame 583.7 → 73.0 ms. **On Rome it does nothing
+  measurable** (22 → 23 links, 588 → 553 ms) because it links only 27 programs there.
+- **The engine has no unguarded per-frame allocation.** All 46 `update`/`preRender`/
+  `fixedUpdate` bodies in `src/` were brace-matched and scanned: nine allocation-shaped
+  lines, every one a growth-only guard (`DustEmitter.ts:125-129`, `LightingSystem.ts:596`)
+  or trivial. **GC pressure is not the cause of any stutter here** — do not go looking.
+- **`fixedUpdate` after the spatial-hash fix is healthy**: 3.00 ms/tick at 8,632 men idle,
+  2.00 at 3,311, against a 4 ms budget and the 3.657 ms previously on record. The 6.05-6.20
+  ms first measured was pure contention. The multi-tick amplifier (a stall fills the
+  accumulator, so the next frame fires all five `maxStepsPerFrame` ticks) is real on a
+  loaded box and **almost absent on an idle one** — 2,899 idle frames ran only 0-step and
+  1-step frames.
+- **A median frame time cannot show a stutter, and the HUD only had one.** It reported the
+  median of a 48-frame ring and *discarded* every frame over 333 ms, so a distribution with
+  a p50 of 9 ms and a p99 of 60 rendered as "9.0 ms/f 111 fps". It now prints p50, p99,
+  worst, a stall count and `prog`, the linked-program count — a program count that climbs
+  during a battle is a mid-battle compile, and it is the one stutter cause that leaves no
+  other trace: draws, triangles and men are all unchanged on the frame that pays for it.
+- **`.gitignore` read `node_modules/` with a trailing slash, which matches a directory and
+  not a symlink to one.** Every agent working in a `git worktree` symlinks that path back
+  to the main checkout, so it was never ignored by anybody: `git add -A` committed a
+  mode-120000 blob holding an absolute machine path. It happened twice in one day on two
+  branches after `a9227c3` had already cleaned it once. The pattern is fixed; the failure
+  mode is worth remembering because the branch works perfectly in the worktree that created
+  it and fails everywhere else as `Cannot find package 'three'`.
+- **`EventBus` can recurse to a stack overflow through its own deferral drain.** It defers a
+  re-entrant emit and then drains the queue *synchronously in its own `finally`*, where the
+  drained call finds `dispatching === 0` and dispatches for real. So a handler that answers
+  `qualityChanged` by writing quality recurses through the drain, and **no re-entrancy flag
+  can catch it** — the flag is cleared before the deferred call runs. Guard by only emitting
+  when a field actually moved.
+- **`LightingSystem.resize` early-returns unless the cascade count changed, so writing
+  `shadowMapSize` at runtime is a silent no-op.** Another instance of the house failure mode.
+- **`quality.maxSoldiers` is sim-side and `setQuality` used to overwrite it.**
+  `BattleSystem.init` sizes the `SoldierPool` and eight typed arrays from it and
+  `scenario.ts:293/644` scale unit size through `fittedUnitScale`, so a runtime tier switch
+  took a deployed battle's cap to 1,600. It is pinned now. **`low` is not merely a render
+  tier** — it deploys 1,515 men against ultra's 8,632, which is why a low-tier frame
+  photographs a different battle.
+- **MSAA `medium: 2` is gone.** 4x against none is 1.18 ms and 4x against 2x is 0.07 ms, so
+  2x paid 94 % of full price for half the samples. `MSAA_SAMPLES` is now a binary 0-or-4
+  lever worth 1.18 ms. `low` has always run 0 and grass sets `alphaToCoverage`
+  unconditionally, so medium at 0 is a path the engine already shipped.
+- **Grass density is one uniform write.** `geo.instanceCount` is fixed at 168,400 whatever
+  the density; `uDensity` only feeds `step(h3, cover * uDensity)` in the vertex shader and a
+  rejected clump collapses to a zero-area quad. So the largest single knob in the project
+  (0.55-3.71 ms) costs nothing to operate — no reallocation, no recompile. **Resolution is
+  the expensive lever to operate even though it is the smooth one to look at**, so spend
+  grass and `postfx.enabled` first.
+- **The `radius * 0.55` chunk-LOD pin is already fixed.** `CitySystem.surfaceCorrection`
+  caps at `Math.min(c.radius * 0.55, nearSwitch * 0.5)`, landed in `a974a28`. The residual
+  pin is uncapped chunk *radius* in `landmarks.ts:199-200`; Carthage caps it
+  (`carthage/fabric.ts:811`) and Rome does not. Still worth ~7-10 draws.
+
 - **Rome is NOT short of roof, and "20.5 % built" was an instrument reading its own streets
   as failure.** `city-audit.mjs` built its street keep-out from `layout.ts`'s exported
   `WAYS` — the twenty-two named viae, 11 km. The district generator cuts a further **374
