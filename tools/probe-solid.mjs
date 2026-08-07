@@ -72,7 +72,7 @@ try {
   const r = await fetch(`${base}/src/city/CitySystem.ts`, { signal: AbortSignal.timeout(4000) });
   live = r.ok; served = await r.text();
 } catch { /* leave false */ }
-const MARKERS = ['pushWallBox', 'stairSolid', 'masonryTopAt', 'recutWallObstacles'];
+const MARKERS = ['pushWallBox', 'stairSolid', 'masonryTopAt', 'pushWallFamily', 'assertGatePassages'];
 let localSrc = '';
 try { localSrc = await readFile(path.join(ROOT, 'src/city/CitySystem.ts'), 'utf8'); } catch { /* */ }
 const disagree = MARKERS.filter((m) => served.includes(m) !== localSrc.includes(m));

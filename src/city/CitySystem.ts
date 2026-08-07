@@ -566,8 +566,9 @@ export class CitySystem implements Subsystem {
      * through it. A unit would then be routed at a gate the collision surface does not open.
      * `setGateOpen(id, true)` performs exactly this clear when the ram wins.
      */
+    this.assertGatePassages(heightAt);
     for (const gate of this.gateList) {
-      if (!gate.open) continue;
+      if (!gate.open || this.unpierced.has(gate.id)) continue;
       this.clearSegment(gate.x, gate.z - 20, gate.x, gate.z + 20, 2.4);
     }
 
@@ -812,7 +813,9 @@ export class CitySystem implements Subsystem {
     const half = this.plan.gateOpenWidth * 0.5 + 0.5;
     let cut: [number, number] | null = null;
     for (const gate of this.gateList) {
-      if (!gate.open) continue;
+      // `unpierced` is a gate that says it is open and whose stone is not cut. Punching the
+      // box anyway is a hole in a wall the player can see standing. See `assertGatePassages`.
+      if (!gate.open || this.unpierced.has(gate.id)) continue;
       const t = ((gate.x - x1) * dx + (gate.z - z1) * dz) / (len * len);
       const dt = half / len;
       if (t + dt <= 0 || t - dt >= 1) continue;
@@ -981,6 +984,152 @@ export class CitySystem implements Subsystem {
   }
 
   /**
+   * Gates that stand open at build time and whose **drawn stone has no passage**.
+   *
+   * See `assertGatePassages`. Empty on Rome.
+   */
+  private unpierced = new Set<string>();
+  /** What `assertGatePassages` found at build, so shutting a gate can re-arm the refusal. */
+  private unpiercedAtBuild = new Set<string>();
+
+  /** Gates whose collision cut was refused because the stone is not pierced. Diagnostics. */
+  getUnpiercedGates(): readonly string[] {
+    return [...this.unpierced];
+  }
+
+  /**
+   * Refuse to cut a hole in the collision surface where the drawn stone has none.
+   *
+   * `CitySystem` opens a carriageway in the occupancy raster and in the oriented boxes for
+   * every gate whose record says `open`. That is a *claim by the wall builder* that it has
+   * cut a passage, and until now nothing checked it. Carthage publishes eight posterns as
+   * already-open gates — the mechanism by which a casemate wall is a wall you can pass
+   * through, and it needed no new code because `pushWallBox` and the raster clear were
+   * already there — but `buildPostern` sets a pierced arch *panel* into each face and never
+   * cuts the wall's own skins. Measured with a raycast against the baked chunks: at every
+   * height from 0.5 m to 5.0 m and every lateral offset out to ±8 m, a ray down a postern
+   * axis is stopped at the outer face, 9.2 m from a start 14 m out. There is no hole.
+   *
+   * From the player's seat that is a column of men walking through a wall, and it is
+   * invisible to every man-tick counter in this repo, because those measure against the
+   * obstacle set — which agrees with itself. It is the same two-halves-disagree defect as
+   * the carriageway being cleared from the occupancy grid unconditionally, running the
+   * other way: the collision surface says open, the stone says solid.
+   *
+   * Two deliberate limits, both of them fail-open:
+   *
+   *  - **Only gates that are already open before anything has happened.** A gate the siege
+   *    opens is trusted absolutely (`setGateOpen` clears the id below), because a ram that
+   *    has beaten the leaves down has earned its hole and refusing it would make a city
+   *    untakeable. Carthage's three main gates are not pierced either — measured the same
+   *    way, `porta-byrsae` stops a ray at 9.1 m with the leaves excluded — so this rule is
+   *    load-bearing and not theoretical.
+   *  - **All three heights must be blocked.** One stopped ray is a threshold slab or a
+   *    dropped portcullis groove; three is a wall.
+   *
+   * The check retires itself: the day the stone is cut, the rays pass and the postern opens
+   * with no further change here.
+   */
+  private assertGatePassages(heightAt: (x: number, z: number) => number): void {
+    this.unpierced.clear();
+    this.unpiercedAtBuild.clear();
+    const solid: string[] = [];
+    const t0 = performance.now();
+    for (const gate of this.gateList) {
+      if (!gate.open) continue;
+      // Outward normal of the circuit at this gate. `facing` points out of the city.
+      const nx = Math.sin(gate.facing);
+      const nz = Math.cos(gate.facing);
+      // Reach just past both faces of the curtain and no further. A longer probe finds the
+      // stair that stands 1.7 m behind the inner face and reads it as the wall.
+      const half = (this.bayAt(gate.x)?.halfThickness ?? 3) + 0.6;
+      const g = heightAt(gate.x, gate.z);
+      let blocked = 0;
+      for (const h of [0.8, 1.6, 2.4]) {
+        const y = g + h;
+        if (this.segmentHitsStone(
+          gate.x + nx * half, y, gate.z + nz * half,
+          gate.x - nx * half, y, gate.z - nz * half
+        )) blocked++;
+      }
+      if (blocked === 3) {
+        this.unpierced.add(gate.id);
+        this.unpiercedAtBuild.add(gate.id);
+        solid.push(gate.id);
+      }
+    }
+    if (solid.length) {
+      console.warn(
+        `[city:${this.plan.id}] ${solid.length} gate(s) stand open with no passage cut in ` +
+        `the stone — the collision cut is refused so men do not walk through a solid wall: ` +
+        `${solid.join(', ')}. Cut the passage in the wall builder and this retires itself. ` +
+        `(${(performance.now() - t0).toFixed(1)} ms)`
+      );
+    }
+  }
+
+  /**
+   * Does a short world segment meet any baked city triangle?
+   *
+   * Möller–Trumbore over the full-detail level of every chunk whose bounding sphere the
+   * segment could reach. The gate leaves are excluded by tag: a door is not a wall, and
+   * `setGateOpen(id, true)` re-cuts the boxes *before* `applyGateDoorState` hides them, so
+   * a check that counted them would refuse to open a gate the ram had just broken.
+   *
+   * Build-time only, a few dozen rays. It walks index buffers rather than using a
+   * `Raycaster` so it costs no scene traversal and no matrix work — the baked positions are
+   * already world-space, which `assertNoStrayGeometry` relies on too.
+   */
+  private segmentHitsStone(
+    ax: number, ay: number, az: number,
+    bx: number, by: number, bz: number
+  ): boolean {
+    const dx = bx - ax, dy = by - ay, dz = bz - az;
+    const mx = (ax + bx) * 0.5, mz = (az + bz) * 0.5;
+    const reach = Math.hypot(dx, dy, dz) * 0.5;
+    for (const c of this.chunks) {
+      if (c.gateDoorFor || c.gateWreckFor || c.scenery) continue;
+      if (Math.hypot(c.cx - mx, c.cz - mz) > c.radius + reach) continue;
+      for (const child of c.levels[0].group.children) {
+        const mesh = child as THREE.Mesh;
+        if (!mesh.isMesh) continue;
+        const pos = mesh.geometry.getAttribute('position');
+        if (!pos) continue;
+        const p = pos.array as ArrayLike<number>;
+        const idx = mesh.geometry.getIndex();
+        const ind = idx ? (idx.array as ArrayLike<number>) : null;
+        const tris = ind ? ind.length / 3 : pos.count / 3;
+        for (let t = 0; t < tris; t++) {
+          const i0 = (ind ? ind[t * 3] : t * 3) * 3;
+          const i1 = (ind ? ind[t * 3 + 1] : t * 3 + 1) * 3;
+          const i2 = (ind ? ind[t * 3 + 2] : t * 3 + 2) * 3;
+          const e1x = p[i1] - p[i0], e1y = p[i1 + 1] - p[i0 + 1], e1z = p[i1 + 2] - p[i0 + 2];
+          const e2x = p[i2] - p[i0], e2y = p[i2 + 1] - p[i0 + 1], e2z = p[i2 + 2] - p[i0 + 2];
+          const hx = dy * e2z - dz * e2y;
+          const hy = dz * e2x - dx * e2z;
+          const hz = dx * e2y - dy * e2x;
+          const a = e1x * hx + e1y * hy + e1z * hz;
+          // Two-sided: the inner face of a skin is wound away from the field and a
+          // one-sided test would walk straight out through the back of the wall.
+          if (a > -1e-9 && a < 1e-9) continue;
+          const f = 1 / a;
+          const sx = ax - p[i0], sy = ay - p[i0 + 1], sz = az - p[i0 + 2];
+          const u = f * (sx * hx + sy * hy + sz * hz);
+          if (u < 0 || u > 1) continue;
+          const qx = sy * e1z - sz * e1y;
+          const qy = sz * e1x - sx * e1z;
+          const qz = sx * e1y - sy * e1x;
+          const v = f * (dx * qx + dy * qy + dz * qz);
+          if (v < 0 || u + v > 1) continue;
+          const s = f * (e2x * qx + e2y * qy + e2z * qz);
+          if (s > 1e-6 && s < 1) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
    * How much of a chunk's radius the distance test forgives.
    *
    * Measuring to a chunk's surface rather than its centre is right in principle — a district
@@ -1111,6 +1260,17 @@ export class CitySystem implements Subsystem {
     const gate = this.gateList.find((g) => g.id === id);
     if (!gate || gate.open === open) return;
     gate.open = open;
+    /*
+     * An explicit call outranks the build-time passage check, in both directions.
+     *
+     * A ram that has beaten the leaves down has earned its hole whatever the stone still
+     * says — refusing it would make a city untakeable, and on Carthage no gate's passage is
+     * cut, so this is load-bearing rather than theoretical. Shutting a gate re-arms the
+     * check for it, so `Siege.armGate`'s deliberate open-then-shut on the first tick leaves
+     * the world exactly as the build left it.
+     */
+    if (open) this.unpierced.delete(id);
+    else if (this.unpiercedAtBuild.has(id)) this.unpierced.add(id);
     if (open) this.clearSegment(gate.x, gate.z - 20, gate.x, gate.z + 20, 2.4);
     else this.markSegment(gate.x, gate.z - 6, gate.x, gate.z + 6, 2.6);
     this.recutWallObstacles();
