@@ -657,6 +657,46 @@ class Viewer {
     return { cx: 0, cy: 1.18, cz: 0, hw: 0.62, hh: 1.32, hd: 0.55 };
   }
 
+  /**
+   * Frame one man for a comparison plate: fill a stated *fraction of frame height* rather
+   * than fit a box.
+   *
+   * The distinction matters because the reference side of the isolated deck is a crop out of
+   * a Rome II press plate, cut so the man fills a known share of the output. Magnification is
+   * the single largest confound the blind harness has left — "camera and subject distance are
+   * still not matched between the pools" — so the harness has to be able to *dial* it rather
+   * than accept whatever a bounding-box fit gives.
+   */
+  private framePlate(azimuth: number, elevation: number, fill: number, aimY?: number): void {
+    const box = this.subjectBox();
+    // Frame the *man*, not his bounding box.
+    //
+    // `subjectBox` reaches 2.64 m because a raised pilum is inside it, so a "fill 0.88" that
+    // fits the box puts the man himself at 58 % of frame height. Against a press-plate crop
+    // in which a soldier fills ~90 %, that is a two-thirds magnification mismatch — and
+    // magnification is the largest confound the blind instrument has left. A press plate
+    // crops the spear tip without hesitation and so does this.
+    const man = { cx: box.cx, cy: 0.95, cz: box.cz, hh: 0.95 };
+    const b = this.stage.plateMode && this.state.mode === 'single' ? { ...box, ...man } : box;
+    const cam = this.stage.camera;
+    const fovY = (cam.fov * Math.PI) / 180;
+    // `fill` above 1 is a *close-up*, not an error: the head plates crop inside the man, and
+    // clamping it to 1 silently turned every one of them back into a full figure.
+    const wantHalf = b.hh / Math.max(0.05, fill);
+    const dist = wantHalf / Math.tan(fovY / 2);
+    // A head plate has to aim at the head. Fitting the body box and then zooming leaves the
+    // camera pointed at the navel with the head off the top of the frame.
+    const ty = aimY ?? b.cy;
+    this.stage.controls.target.set(b.cx, ty, b.cz);
+    cam.position.set(
+      b.cx + Math.sin(azimuth) * Math.cos(elevation) * dist,
+      ty + Math.sin(elevation) * dist,
+      b.cz + Math.cos(azimuth) * Math.cos(elevation) * dist
+    );
+    this.stage.controls.update();
+    this.stage.aimSun(b.cx, b.cy, b.cz);
+  }
+
   private frameSubject(): void {
     const b = this.subjectBox();
     // Machines are looked at from the front quarter, men from their own right-front. A siege
@@ -1217,6 +1257,51 @@ class Viewer {
       },
       solo: (id: number): void => this.solo(id),
       frame: (): void => this.frameSubject(),
+      /**
+       * Set up one *plate*: a single man, deterministically posed and framed, on a
+       * neutral ground under the game's own light. This is the whole of the isolated-model
+       * capture harness's contract with the viewer (`tools/shoot-model.mjs`).
+       *
+       * `fill` is the fraction of frame height the man's own bounding box should occupy, so
+       * the harness can match a Rome II press-plate crop's magnification rather than
+       * guessing a camera distance. `azimuth` is measured from the man's front.
+       */
+      plate: (o: {
+        unit: string; hash: number; lod?: 0 | 1 | 2 | 3;
+        clip?: string; phase?: number;
+        azimuth?: number; elevation?: number; fill?: number; aimY?: number;
+        light?: LightPreset; chrome?: boolean; graded?: boolean;
+      }): void => {
+        const s = this.state;
+        s.unitId = o.unit;
+        s.hash = o.hash;
+        s.lod = o.lod ?? 0;
+        s.mode = 'single';
+        s.playing = false;
+        s.parts = 0;
+        s.skeleton = false;
+        s.wireframe = false;
+        s.turntable = false;
+        s.solo = -1;
+        s.hidden.clear();
+        this.onUnitChanged(false);
+        if (o.clip) {
+          const f = this.rig.manFacts.find((c) => c.name === o.clip);
+          if (f) s.clip = f.index;
+        }
+        s.phase = o.phase ?? 0.32;
+        s.preset = o.light ?? 'field';
+        this.stage.setPlate(o.chrome === false || o.chrome === undefined);
+        if (o.light) this.stage.setLightPreset(o.light);
+        // Graded by default. An ungraded plate photographs the absence of the game's
+        // output chain rather than the model — see `grade.ts`.
+        this.stage.setGraded(o.graded !== false);
+        this.framePlate(o.azimuth ?? -0.85, o.elevation ?? 0.06, o.fill ?? 0.86, o.aimY);
+        this.syncPanel();
+      },
+      /** Re-aim without rebuilding the man — the turntable, one angle per call. */
+      plateAim: (azimuth: number, elevation: number, fill: number, aimY?: number): void =>
+        this.framePlate(azimuth, elevation, fill, aimY),
       /** Restore an exact camera, for a pasted reproduction block. */
       camera: (cx: number, cy: number, cz: number, tx: number, ty: number, tz: number): void => {
         this.stage.controls.target.set(tx, ty, tz);

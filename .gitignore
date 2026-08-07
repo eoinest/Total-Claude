@@ -18,3 +18,14 @@ screenshots/**/report.json
 # Local-only visual reference material. Copyrighted third-party screenshots used
 # for side-by-side critique; never committed or redistributed.
 reference/
+
+# Crops CUT FROM reference/ are still the same copyrighted press material, just
+# smaller. Same rule: local-only, never committed. The index.json alongside them
+# is only coordinates and prose, but it is worthless without the images, so the
+# whole directory goes.
+reference-crops/
+
+# Scratch renders of the reference plates (grid overlays, crop trials).
+tools/scratch/.grid/
+tools/scratch/.preview/
+tools/scratch/.try/

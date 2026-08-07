@@ -109,6 +109,63 @@ export class MeshBuilder {
     this.idx.push(a, b, c, a, c, d);
   }
 
+  /**
+   * Emit a face wound to agree with the normals its own vertices carry.
+   *
+   * Every primitive here writes two independent descriptions of which way a surface faces —
+   * a shading normal per vertex, and a triangle order — and nothing tied them together.
+   * They disagreed on **56.2 % of a legionary's 4,175 triangles at LOD0**, measured by
+   * `tools/probe-soldiermesh.mjs`, and the two failure modes look nothing alike:
+   *
+   *   - where the *winding* was wrong the triangle was culled by `side: FrontSide`, so four
+   *     of every box's six faces were simply not drawn — a helmet's cheek pieces and neck
+   *     guard read as detached flat planks and a boot as a spray of slivers;
+   *   - where the *normal* was wrong the triangle drew but lit itself inside out, which at
+   *     `envMapIntensity: 2.9` means a helmet crown sampling the ground hemisphere instead
+   *     of the sky. That is the flat cream lampshade the first isolated-model plates showed
+   *     where a bronze galea should be.
+   *
+   * Neither is visible in a battle screenshot at 20 px a man, which is why both survived
+   * twenty-three blind rounds. Deriving one from the other makes the class incapable of
+   * holding the contradiction: `vert` states the intent, and the order follows it.
+   *
+   * Build-time only — this runs once per faction per LOD at boot, never per frame.
+   */
+  private quadFacing(a: number, b: number, c: number, d: number): void {
+    const ax = this.pos[a * 3], ay = this.pos[a * 3 + 1], az = this.pos[a * 3 + 2];
+    const e1x = this.pos[b * 3] - ax, e1y = this.pos[b * 3 + 1] - ay, e1z = this.pos[b * 3 + 2] - az;
+    const e2x = this.pos[c * 3] - ax, e2y = this.pos[c * 3 + 1] - ay, e2z = this.pos[c * 3 + 2] - az;
+    const wx = e1y * e2z - e1z * e2y;
+    const wy = e1z * e2x - e1x * e2z;
+    const wz = e1x * e2y - e1y * e2x;
+    // Mean of the four corner normals: on a smooth band the corners differ, and testing one
+    // corner flips a whole ring where the surface turns over.
+    let nx = 0, ny = 0, nz = 0;
+    for (const i of [a, b, c, d]) {
+      nx += this.nrm[i * 3];
+      ny += this.nrm[i * 3 + 1];
+      nz += this.nrm[i * 3 + 2];
+    }
+    // A degenerate quad has no opinion; leave the caller's order alone.
+    if (wx * nx + wy * ny + wz * nz < 0) this.quad(a, d, c, b);
+    else this.quad(a, b, c, d);
+  }
+
+  /** The triangle form of `quadFacing`, for fans. */
+  private triFacing(a: number, b: number, c: number): void {
+    const ax = this.pos[a * 3], ay = this.pos[a * 3 + 1], az = this.pos[a * 3 + 2];
+    const e1x = this.pos[b * 3] - ax, e1y = this.pos[b * 3 + 1] - ay, e1z = this.pos[b * 3 + 2] - az;
+    const e2x = this.pos[c * 3] - ax, e2y = this.pos[c * 3 + 1] - ay, e2z = this.pos[c * 3 + 2] - az;
+    const wx = e1y * e2z - e1z * e2y;
+    const wy = e1z * e2x - e1x * e2z;
+    const wz = e1x * e2y - e1y * e2x;
+    const nx = this.nrm[a * 3] + this.nrm[b * 3] + this.nrm[c * 3];
+    const ny = this.nrm[a * 3 + 1] + this.nrm[b * 3 + 1] + this.nrm[c * 3 + 1];
+    const nz = this.nrm[a * 3 + 2] + this.nrm[b * 3 + 2] + this.nrm[c * 3 + 2];
+    if (wx * nx + wy * ny + wz * nz < 0) this.tri(a, c, b);
+    else this.tri(a, b, c);
+  }
+
   /** Map a 0..1 pair into an atlas tile, optionally tiling within it. */
   static tileUv(r: UvRect, s: number, t: number, repeatS = 1, repeatT = 1): [number, number] {
     const fs = repeatS === 1 ? Math.min(1, Math.max(0, s)) : (s * repeatS) % 1;
@@ -174,7 +231,7 @@ export class MeshBuilder {
     for (let i = 0; i < rings.length - 1; i++) {
       for (let s = 0; s < segments; s++) {
         const s2 = (s + 1) % segments;
-        this.quad(rings[i][s], rings[i][s2], rings[i + 1][s2], rings[i + 1][s]);
+        this.quadFacing(rings[i][s], rings[i][s2], rings[i + 1][s2], rings[i + 1][s]);
       }
     }
     if (opts.capStart) this.cap(nodes[0], segments, uv, -1);
@@ -200,8 +257,7 @@ export class MeshBuilder {
     }
     for (let s = 0; s < segments; s++) {
       const s2 = (s + 1) % segments;
-      if (dir > 0) this.tri(centre, ring[s], ring[s2]);
-      else this.tri(centre, ring[s2], ring[s]);
+      this.triFacing(centre, ring[s], ring[s2]);
     }
   }
 
@@ -270,7 +326,7 @@ export class MeshBuilder {
     for (let i = 0; i < rings.length - 1; i++) {
       for (let s = 0; s < segments; s++) {
         const s2 = (s + 1) % segments;
-        this.quad(rings[i][s], rings[i][s2], rings[i + 1][s2], rings[i + 1][s]);
+        this.quadFacing(rings[i][s], rings[i][s2], rings[i + 1][s2], rings[i + 1][s]);
       }
     }
     const capAt = (i: number, sign: number): void => {
@@ -305,8 +361,23 @@ export class MeshBuilder {
       const dr = q[0] - p[0];
       const dy = q[1] - p[1];
       const len = Math.hypot(dr, dy) || 1;
-      const nr = dy / len;
-      const ny = -dr / len;
+      // Sign set by the ring winding below, not by taste.
+      //
+      // `quad(ring[i][s], ring[i][s2], ring[i+1][s2], ring[i+1][s])` has a right-hand-rule
+      // face normal proportional to (-dy, dr) in (radial, axial), so the profile tangent's
+      // perpendicular has to be taken the same way round. Written as (dy, -dr) it was the
+      // exact negation, for **every** profile — measured at meanDot -0.991 on the hair cap
+      // by `tools/probe-soldiermesh.mjs`, with the winding pointing outward (+0.911) and the
+      // shading normal pointing inward (-0.909).
+      //
+      // Backface culling never caught it because culling reads winding and shading reads the
+      // attribute, so the surface rendered solid and simply lit itself inside out: a helmet
+      // bowl whose crown sampled the ground hemisphere instead of the sky, at
+      // envMapIntensity 2.9, which is exactly the flat cream lampshade the isolated-model
+      // plates showed. Every helmet, the skull, the hair, all four shield bosses and every
+      // lathed weapon head in the game had it.
+      const nr = -dy / len;
+      const ny = dr / len;
       for (let s = 0; s < segments; s++) {
         const a = (s / segments) * Math.PI * 2;
         const [u, v] = MeshBuilder.tileUv(uv, s / segments, t, repeatU, 1);
@@ -317,7 +388,7 @@ export class MeshBuilder {
     for (let i = 0; i < rings.length - 1; i++) {
       for (let s = 0; s < segments; s++) {
         const s2 = (s + 1) % segments;
-        this.quad(rings[i][s], rings[i][s2], rings[i + 1][s2], rings[i + 1][s]);
+        this.quadFacing(rings[i][s], rings[i][s2], rings[i + 1][s2], rings[i + 1][s]);
       }
     }
   }
@@ -345,6 +416,10 @@ export class MeshBuilder {
       // Build each face from its two in-plane axes.
       let ax: number[];
       let ay: number[];
+      // The basis is chosen for the UV, not for the winding — `quadFacing` settles the
+      // winding below. Four of the six faces were wound backwards here and culled by
+      // `side: FrontSide`; keeping the basis keeps every box's texture orientation exactly
+      // as it shipped, so the fix moves the winding and nothing else.
       if (Math.abs(nx) > 0.5) { ax = [0, 0, nx]; ay = [0, 1, 0]; }
       else if (Math.abs(ny) > 0.5) { ax = [ny, 0, 0]; ay = [0, 0, 1]; }
       else { ax = [nz, 0, 0]; ay = [0, 1, 0]; }
@@ -361,7 +436,7 @@ export class MeshBuilder {
           nx, ny, nz, u, vv
         ));
       }
-      this.quad(v[0], v[1], v[2], v[3]);
+      this.quadFacing(v[0], v[1], v[2], v[3]);
     }
   }
 

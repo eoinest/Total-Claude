@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { Grade } from './grade';
 
 /**
  * The room the models stand in.
@@ -39,11 +40,16 @@ export class Stage {
 
   private readonly pmrem: THREE.PMREMGenerator;
   private readonly envs = new Map<LightPreset, THREE.Texture>();
-  private readonly backgrounds = new Map<LightPreset, THREE.Texture>();
+  /** Keyed wider than `LightPreset` because plate mode shares `field`'s probe but not its sky. */
+  private readonly backgrounds = new Map<LightPreset | 'plate', THREE.Texture>();
   private readonly ground: THREE.Mesh;
   private readonly grid: THREE.GridHelper;
   private readonly gauge: THREE.Group;
   private preset: LightPreset = 'studio';
+  private plate = false;
+  private readonly grade: Grade;
+  private canvasW = 2;
+  private canvasH = 2;
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
@@ -108,6 +114,8 @@ export class Stage {
 
     this.gauge = this.buildGauge();
     this.scene.add(this.gauge);
+
+    this.grade = new Grade(this.renderer);
 
     this.setLightPreset('studio');
   }
@@ -216,7 +224,7 @@ export class Stage {
         : this.gradient(0x5b8ec4, 0xc9d6e0, 0x8a806c, 1, 0.2);
       this.backgrounds.set(p, bg);
     }
-    this.scene.background = bg;
+    this.scene.background = this.plate ? this.plateBackdrop() : bg;
 
     if (p === 'studio') {
       // A neutral room. The probe does most of the work, so the key is there for form and
@@ -255,6 +263,62 @@ export class Stage {
 
   setGaugeVisible(on: boolean): void {
     this.gauge.visible = on;
+  }
+
+  /**
+   * Plate mode: the framing a *comparison* is shot in, as opposed to the framing an
+   * inspection is shot in.
+   *
+   * Every blind round on this project has graded battle screenshots, in which a man is a
+   * few hundred pixels among nine thousand and the grader ends up sorting on grass seams and
+   * terrain rather than on the soldier. One man, large, is a strictly better instrument —
+   * but only if the *frame* is not itself the tell. Against a press-plate crop of a Rome II
+   * soldier, a studio grid and a measuring rule sort the deck in one glance, so plate mode
+   * removes them and puts back the three things a real crop has:
+   *
+   *   - **a defocused ground**, not a grid. A tight crop of a battle plate has a
+   *     low-frequency warm-grey field behind the man, so the disc keeps its shadow-catching
+   *     job and loses its texture.
+   *   - **a graded backdrop**, darker at the top than the bottom, which is what aerial
+   *     perspective plus a dust layer does behind a man at 8 m.
+   *   - **the game's own light**, i.e. the `field` preset. A studio key is the wrong
+   *     question: nobody ships the studio.
+   *
+   * It is deliberately *not* a cut-out on white. An alpha matte would make the silhouette
+   * the only thing graded and would hide exactly the defect this workstream is chasing,
+   * which is how light behaves across a form.
+   */
+  setPlate(on: boolean): void {
+    this.plate = on;
+    this.grid.visible = !on;
+    this.gauge.visible = !on;
+    this.ground.visible = true;
+    this.setLightPreset(on ? 'field' : this.preset);
+    if (on) (this.ground.material as THREE.MeshStandardMaterial).color.set(0x6c6555);
+  }
+
+  /**
+   * The backdrop a plate is shot against.
+   *
+   * Deliberately low-frequency: a *structured* backdrop would leak into the harshness and
+   * block-contrast measurements that grade the man, and the point of the isolated deck is
+   * that everything in the frame except the soldier is uninformative.
+   */
+  private plateBackdrop(): THREE.Texture {
+    let bg = this.backgrounds.get('plate');
+    if (!bg) {
+      // Cool and dark above, dusty below. Deliberately *cooler* than the field sky: the
+      // grade's warm/cool split keys off a display-referred luminance crossover, and a warm
+      // backdrop filling two-thirds of a portrait frame drags the whole plate to one side of
+      // it and comes out monochrome sepia — which is what the first graded plates did.
+      bg = this.gradient(0x39424e, 0x6f7076, 0x5d574c, 1, 0.10);
+      this.backgrounds.set('plate', bg);
+    }
+    return bg;
+  }
+
+  get plateMode(): boolean {
+    return this.plate;
   }
 
   /**
@@ -347,6 +411,25 @@ export class Stage {
     this.camera.aspect = w / Math.max(1, h);
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h, false);
+    this.canvasW = w;
+    this.canvasH = h;
+    this.grade.resize(w, h, this.renderer.getPixelRatio());
+  }
+
+  /**
+   * Put the game's tone map, grade and sharpen on the viewer's output.
+   *
+   * Off for inspection, on for a comparison plate. See `grade.ts` for why the difference
+   * matters more than it sounds: the bare renderer path is AgX with no black point, no
+   * scene-linear contrast and no warm/cool split, and it is not what the product ships.
+   */
+  setGraded(on: boolean): void {
+    this.grade.enabled = on;
+    this.grade.resize(this.canvasW, this.canvasH, this.renderer.getPixelRatio());
+  }
+
+  get graded(): boolean {
+    return this.grade.enabled;
   }
 
   /** Keep the sun rig pointed at the subject so the key light does not slide off it. */
@@ -359,6 +442,7 @@ export class Stage {
 
   render(): void {
     this.controls.update();
-    this.renderer.render(this.scene, this.camera);
+    if (this.grade.enabled) this.grade.render(this.scene, this.camera);
+    else this.renderer.render(this.scene, this.camera);
   }
 }
