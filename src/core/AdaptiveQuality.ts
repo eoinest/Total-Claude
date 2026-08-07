@@ -120,29 +120,53 @@ const ENVELOPES: Record<QualityTier, TierEnvelope> = {
 };
 
 /**
- * Resolution is spent in three segments with the other levers interleaved between them.
+ * The ladder is ordered by **what a lever costs to operate**, not by what it looks like.
  *
- * It goes first because it is the only continuous lever in the set and the only one with no pop
- * at all — with SMAA downstream, 1.00 -> 0.90 is not visible in motion and is worth ~19 % of
- * fill. It is spent last as well, because at the bottom of the ladder there is nothing else
- * left that does not change what the game looks like.
+ * That inverts the obvious design and it is the main thing this engine's measurements teach.
+ * Grass is one uniform write; the four post flags are booleans `PostFX.render` reads off
+ * `ctx.quality` every frame. All five are free to move, instant, and reversible.
+ *
+ * Resolution is not. A resolution change is the only lever here that must reallocate: `PostFX`
+ * rasterises the world into `sceneRT`, sized from `getDrawingBufferSize()` at allocation time,
+ * so the scale cannot move without freeing and rebuilding nineteen render targets plus an
+ * `SMAAPass.setSize`. Measured at **~4.1 ms best-of-blocks with an observed worst case of
+ * 668 ms** (Rome assault, ultra, 1080p, 16 interleaved blocks at machine load 28). A lever whose
+ * worst case is two-thirds of a second can produce, in the act of trying to fix the lag, exactly
+ * the freeze it was reaching for.
+ *
+ * So the free levers go first and absorb small overloads with no allocation at all, and
+ * resolution is coarse-rung and dwell-gated underneath them. The ramps still overlap: resolution
+ * opens at pressure 0.30 rather than waiting for grass to bottom out, because on a Retina panel
+ * at ultra it is four times the pixels and by far the biggest lever there is.
+ *
+ * A methodological note worth keeping, because it nearly cost a wrong number: `new
+ * THREE.WebGLRenderTarget` allocates no GPU memory. Three creates the texture and framebuffer
+ * lazily in `textures.setupRenderTarget`, the first time the target is bound. Timing the
+ * allocation call alone measures JS object churn and reports 0.3 ms for nineteen 1080p targets —
+ * a figure that cannot be true. The frame that materialises the targets has to be inside the
+ * timed block.
  */
+const GRASS_SEGMENTS: Array<Ramp & { from: number; to: number }> = [
+  { p0: 0.0, p1: 0.3, from: 1.0, to: 0.65 },
+  { p0: 0.3, p1: 0.7, from: 0.65, to: NaN },
+];
+
 const RES_SEGMENTS: Array<Ramp & { from: number; to: number }> = [
-  { p0: 0.0, p1: 0.3, from: 1.0, to: 0.9 },
-  { p0: 0.3, p1: 0.62, from: 0.9, to: 0.8 },
+  { p0: 0.3, p1: 0.6, from: 1.0, to: 0.85 },
   // The tail runs to the tier's own floor, so this segment's `to` is filled in per tier.
-  { p0: 0.62, p1: 1.0, from: 0.8, to: NaN },
+  { p0: 0.6, p1: 1.0, from: 0.85, to: NaN },
 ];
 
 /**
- * Grass, the largest single measured knob: 100 % -> 50 % is worth 0.55-3.71 ms, biggest at the
- * wide and city cameras. It comes in second and early because thinning a sward is subtle in a
- * way that switching a post pass off is not.
+ * The resolution rungs, and why they are geometric-ish rather than evenly spaced.
+ *
+ * Nine values between 1.0 and 0.5, spaced so each step is a roughly equal *fraction* of the
+ * remaining pixel count — fill cost goes as scale², so evenly spaced scales would buy wildly
+ * unequal amounts of time and the controller's gain would change as it descended. Coarse rungs
+ * also mean two consecutive pressure nudges frequently land on the same rung and skip the
+ * reallocation entirely, which is the cheapest possible way to rate-limit an expensive lever.
  */
-const GRASS_SEGMENTS: Array<Ramp & { from: number; to: number }> = [
-  { p0: 0.15, p1: 0.45, from: 1.0, to: 0.6 },
-  { p0: 0.45, p1: 0.8, from: 0.6, to: NaN },
-];
+const RES_RUNGS = [1.0, 0.92, 0.85, 0.78, 0.71, 0.65, 0.59, 0.54, 0.5];
 
 /**
  * Levers deliberately left out of the loop.
@@ -304,34 +328,34 @@ const LATCH_RELEASE_MS = 60000;
  *
  * It is deliberately *not* a pressure change. Pressure is the controller's belief about the
  * machine, and the camera moving is not evidence about the machine; folding it in would corrupt
- * the state that has to survive between scenes. It multiplies the settled scale instead.
+ * the state that has to survive between scenes. It multiplies a lever instead.
+ *
+ * **It regresses grass rather than resolution, and that is a departure from R3F worth stating.**
+ * `AdaptiveDpr` moves the pixel ratio because in a typical R3F scene that is free. Here it is
+ * the one lever that costs ~4.1 ms to operate with a 668 ms tail, and a player who pans in
+ * bursts would pay that twice per burst — a feature that manufactures the hitch it exists to
+ * prevent. Grass is a uniform write, costs nothing to move, and is *more* valuable during a pan
+ * than resolution is: the sward is at its most expensive at exactly the wide and city cameras a
+ * pan sweeps through (0.55-3.71 ms, largest there), and thinning it under motion is even harder
+ * to see than softening pixels. Same idea, right lever for this engine.
  */
-const REGRESS_SCALE = 0.85;
+const REGRESS_GRASS = 0.6;
 /** Camera world-space movement per frame above which the camera counts as moving. */
 const REGRESS_SPEED_M = 0.05;
 /** drei's debounce. Long enough that a burst-delivered mouse wheel does not flicker. */
 const REGRESS_HOLD_MS = 200;
-/**
- * Regression is only enabled once the loop has priced its own reallocation.
- *
- * Entering and leaving regression reallocates PostFX's render targets, so on a machine where
- * that is expensive the feature would trade a soft pan for a hitching one — strictly worse than
- * not having it. The loop measures its first real reallocation and switches this on only if it
- * came in under budget. 2 ms is an eighth of a frame: below that, two of them inside a pan are
- * not something a player can see.
- */
-const REGRESS_MAX_REALLOC_MS = 2.0;
 
 /**
- * Resolution quantum.
+ * Minimum wall time between two reallocations, which is a dwell on the *lever*, not the loop.
  *
- * A resolution change reallocates PostFX's nineteen render targets, so the scale is snapped to a
- * grid rather than moved every frame. 0.02 gives 25 distinct steps between 0.5 and 1.0 — at
- * 1080p that is a drawing-buffer height step of ~22 px, far below the point where a step is
- * visible, while collapsing a continuous controller output onto a small set of allocations. The
- * change is additionally suppressed when the rounded drawing-buffer size does not move.
+ * One second, against a measured ~4.1 ms per reallocation with a 668 ms worst case. At that
+ * rate the amortised cost is 0.07 ms/frame at 60 Hz — under half a percent of the budget — while
+ * a controller stepping resolution every 250 ms would pay 0.27 ms/frame, and would pay it
+ * precisely when the machine is already struggling. It also sits naturally inside drei's 2.5 s
+ * decision window, which is the shipped precedent for how long a quality controller should look
+ * before it moves.
  */
-const RES_QUANTUM = 0.02;
+const RES_DWELL_MS = 1000;
 
 // ---------------------------------------------------------------------------
 
@@ -366,7 +390,8 @@ export interface AdaptiveState {
   /** True once the loop has decided the machine sits on its threshold and stopped moving. */
   latched: boolean;
   regressing: boolean;
-  regressEnabled: boolean;
+  /** Frames excluded from the window because they linked a shader program. */
+  discardedLinks: number;
 }
 
 export interface ScaleTracePoint {
@@ -385,6 +410,17 @@ function percentile(sorted: Float64Array, n: number, q: number): number {
   if (n === 0) return 0;
   const i = Math.min(n - 1, Math.max(0, Math.round(q * (n - 1))));
   return sorted[i];
+}
+
+/** Evaluate a lever's piecewise ramp at pressure `p`; `NaN` in a segment's `to` means `floor`. */
+function ramp(segments: Array<Ramp & { from: number; to: number }>, p: number, floor: number): number {
+  let v = segments[0].from;
+  for (const seg of segments) {
+    const to = Number.isNaN(seg.to) ? floor : seg.to;
+    if (p >= seg.p1) v = to;
+    else if (p > seg.p0) v = seg.from + (to - seg.from) * ((p - seg.p0) / (seg.p1 - seg.p0));
+  }
+  return v;
 }
 
 export class AdaptiveQualitySystem implements Subsystem {
@@ -426,14 +462,16 @@ export class AdaptiveQualitySystem implements Subsystem {
   private reallocs = 0;
   private lastReallocMs = 0;
   private reallocCosts: number[] = [];
+  /** Frames dropped from the window because they linked a shader program. */
+  private discardedLinks = 0;
 
   private latched = false;
   private lastInBandMs = 0;
 
   /** Camera-motion regression. */
   regressOnMotion = true;
-  private regressEnabled = false;
   private regressing = false;
+  private lastResMs = -1e9;
   private lastCamX = NaN;
   private lastCamY = 0;
   private lastCamZ = 0;
@@ -467,6 +505,11 @@ export class AdaptiveQualitySystem implements Subsystem {
      * flag it set. It is reset every frame in `sample`.
      */
     ctx.events.on('qualityChanged', () => {
+      // A disabled loop must not write anything. Without this it kept re-deriving the scale
+      // from its own `pressure` of 0 and overwriting whatever else had set it, so the harness
+      // and every probe measured a resolution lever that snapped straight back to 1.0 — and the
+      // giveaway was `sceneRT` reading the same width at 0.70 as at 1.00.
+      if (!this.enabled) return;
       if (this.reentry++ > 4) return;
       this.resetWindow();
       this.apply(true);
@@ -478,9 +521,17 @@ export class AdaptiveQualitySystem implements Subsystem {
   private reentry = 0;
 
   /** Called by `Engine.frame` with the render half of the frame just completed. */
-  sample(renderMs: number): void {
+  sample(renderMs: number, linkedProgram = false): void {
     this.framesSeen++;
     this.reentry = 0;
+    if (linkedProgram) {
+      // A frame that linked a shader program is not evidence about the renderer's steady-state
+      // cost. See the note in `Engine.frame`: the two worst frames of a 1,079-frame session were
+      // the only two that linked, at 151 and 65 ms against a p50 of 10.8, and nothing this loop
+      // can do makes a `glLinkProgram` cheaper.
+      this.discardedLinks++;
+      return;
+    }
     if (this.skipFrames > 0) {
       this.skipFrames--;
       return;
@@ -589,15 +640,13 @@ export class AdaptiveQualitySystem implements Subsystem {
     this.lastCamX = p.x; this.lastCamY = p.y; this.lastCamZ = p.z;
     if (dx * dx + dy * dy + dz * dz > REGRESS_SPEED_M * REGRESS_SPEED_M) this.lastMotionMs = now;
 
-    if (!this.regressOnMotion || !this.regressEnabled) {
+    if (!this.regressOnMotion) {
       if (this.regressing) { this.regressing = false; this.apply(false); }
       return;
     }
     const want = now - this.lastMotionMs < REGRESS_HOLD_MS;
     if (want === this.regressing) return;
     this.regressing = want;
-    // Samples taken while the resolution is stepping are not evidence about the settled state.
-    this.skipFrames = Math.max(this.skipFrames, REALLOC_SETTLE_FRAMES);
     this.apply(false);
   }
 
@@ -654,45 +703,44 @@ export class AdaptiveQualitySystem implements Subsystem {
     const p = this.pressure;
 
     // --- resolution -------------------------------------------------------
-    let scale = 1;
-    for (const seg of RES_SEGMENTS) {
-      const to = Number.isNaN(seg.to) ? env.renderScaleFloor : seg.to;
-      if (p >= seg.p1) scale = to;
-      else if (p > seg.p0) {
-        const t = (p - seg.p0) / (seg.p1 - seg.p0);
-        scale = seg.from + (to - seg.from) * t;
-      }
+    const wanted = Math.max(env.renderScaleFloor, Math.min(1, ramp(RES_SEGMENTS, p, env.renderScaleFloor)));
+    // Snap to a rung at or above the tier floor. Coarse rungs are the rate limiter: two
+    // consecutive pressure nudges usually land on the same one and skip the reallocation.
+    let rung = RES_RUNGS[0];
+    for (const r of RES_RUNGS) {
+      if (r < env.renderScaleFloor - 1e-9) continue;
+      if (Math.abs(r - wanted) < Math.abs(rung - wanted)) rung = r;
     }
-    scale = Math.max(env.renderScaleFloor, Math.min(1, scale));
-    // Regression is a multiplier on the settled scale, not a change of state, and it is still
-    // held above the tier's floor: a pan must not show a player something their tier forbids.
-    if (this.regressing) scale = Math.max(env.renderScaleFloor, scale * REGRESS_SCALE);
-    const quantised = Math.round(scale / RES_QUANTUM) * RES_QUANTUM;
+    /*
+     * Dwell on the expensive lever specifically, not on the loop.
+     *
+     * The free levers may move every 250 ms; a reallocation may not. Holding the previous rung
+     * when the dwell has not elapsed is not a lost step — pressure has already moved, so grass
+     * and the post flags have already responded, and the resolution catches up on the next
+     * decision. That is what "rate-limit the expensive lever, not the controller" means.
+     */
+    const now = performance.now();
+    if (!fromTierChange && rung !== this.appliedScale && now - this.lastResMs < RES_DWELL_MS) {
+      rung = this.appliedScale;
+    }
 
     // --- grass ------------------------------------------------------------
-    const base = this.engine.baseQuality;
-    let grassFrac = 1;
-    for (const seg of GRASS_SEGMENTS) {
-      const to = Number.isNaN(seg.to) ? env.grassFloorFrac : seg.to;
-      if (p >= seg.p1) grassFrac = to;
-      else if (p > seg.p0) {
-        const t = (p - seg.p0) / (seg.p1 - seg.p0);
-        grassFrac = seg.from + (to - seg.from) * t;
-      }
-    }
+    const bq = this.engine.baseQuality;
+    let grassFrac = ramp(GRASS_SEGMENTS, p, env.grassFloorFrac);
+    if (this.regressing) grassFrac = Math.max(env.grassFloorFrac, grassFrac * REGRESS_GRASS);
 
     // --- post -------------------------------------------------------------
     const patch: RenderQualityPatch = {
-      renderScale: quantised,
-      grassDensity: base.grassDensity * grassFrac,
-      depthOfField: base.depthOfField && p < env.dropDepthOfField,
-      motionBlur: base.motionBlur && p < env.dropMotionBlur,
-      volumetricLight: base.volumetricLight && p < env.dropVolumetricLight,
-      ssao: base.ssao && p < env.dropSsao,
+      renderScale: rung,
+      grassDensity: bq.grassDensity * grassFrac,
+      depthOfField: bq.depthOfField && p < env.dropDepthOfField,
+      motionBlur: bq.motionBlur && p < env.dropMotionBlur,
+      volumetricLight: bq.volumetricLight && p < env.dropVolumetricLight,
+      ssao: bq.ssao && p < env.dropSsao,
     };
 
-    const resMoved = fromTierChange || Math.abs(quantised - this.appliedScale) > 1e-6;
-    this.appliedScale = quantised;
+    if (rung !== this.appliedScale) this.lastResMs = now;
+    this.appliedScale = rung;
 
 
     const t0 = performance.now();
@@ -706,14 +754,7 @@ export class AdaptiveQualitySystem implements Subsystem {
       this.reallocCosts.push(cost);
       if (this.reallocCosts.length > 64) this.reallocCosts.shift();
       this.skipFrames = REALLOC_SETTLE_FRAMES;
-      // The loop prices its own lever and decides on the evidence whether the fast
-      // motion-regression path is affordable. Three samples, because the first reallocation of
-      // a session also warms allocator paths and driver state and is not representative.
-      if (this.reallocCosts.length >= 3) {
-        this.regressEnabled = this.medianReallocMs() < REGRESS_MAX_REALLOC_MS;
-      }
     }
-    void resMoved;
     return realloc ? cost : 0;
   }
 
@@ -772,7 +813,7 @@ export class AdaptiveQualitySystem implements Subsystem {
       lastDirection: this.lastDirection,
       latched: this.latched,
       regressing: this.regressing,
-      regressEnabled: this.regressEnabled,
+      discardedLinks: this.discardedLinks,
     };
   }
 

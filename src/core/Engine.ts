@@ -398,10 +398,34 @@ export class Engine {
     this.lastSimMs = tRenderStart - t0;
     this.lastRenderMs = tEnd - tRenderStart;
     this.lastFrameMs = tEnd - t0;
+
+    /*
+     * Whether this frame linked a shader program, which is the discriminator the adaptive loop
+     * needs more than any other.
+     *
+     * Measured over a 1,079-frame interactive session on Carthage: the two worst frames were
+     * the only two that linked a program — 151.0 ms and 65.1 ms, of which 140.8 and 62.0 were
+     * render — while frames that linked nothing ran at p50 10.8 ms. So the frame-time
+     * distribution is a healthy ~11 ms body with a tail made almost entirely of
+     * `glLinkProgram`, three.js linking lazily on the first frame a material is actually drawn.
+     *
+     * A 151 ms frame is not evidence that the renderer is over budget. It is a one-off that
+     * will never recur for that material, and no amount of resolution reduction prevents it or
+     * makes it cheaper. A controller that reacted to it would drop quality for a cause it
+     * cannot address and then recover — a visible oscillation with a measured trigger. A
+     * percentile over a multi-second window helps but is not enough, because a p99 over a
+     * few hundred frames is still dominated by exactly these frames. Naming the reason is.
+     */
+    const progs = this.renderer.info.programs?.length ?? 0;
+    const linked = progs > this.lastProgramCount;
+    this.lastProgramCount = progs;
+
     // `advance` runs synthetic frames flat out with no display to pace them, so its wall clock
     // says nothing about whether a player would see a dropped frame.
-    if (!this.advancing) this.adaptive?.sample(this.lastRenderMs);
+    if (!this.advancing) this.adaptive?.sample(this.lastRenderMs, linked);
   }
+
+  private lastProgramCount = 0;
 
   /**
    * Advance the simulation by a wall-clock duration without waiting for real time.
