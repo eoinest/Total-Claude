@@ -389,13 +389,26 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
       b.box(0, -0.13, 0, 0.25, 0.024, 0.022, bronzeUv);
       b.setPiece(Piece.HelmGallic, Tint.Metal);
       b.setMatrix(headM);
-      // Cheek pieces, hinged forward of the ears.
+      /*
+       * Cheek pieces, hinged forward of the ears.
+       *
+       * They stood 33 mm clear of the face and read as detached planks. Arithmetic, not
+       * taste: the inner face sat at |x| = 0.088 while the skull at that height (y = -0.075)
+       * is a lathe of radius 0.055, and 11 degrees of tilt over a 0.115 m plate brings the
+       * bottom in by only 11 mm. An isolated-model plate shows daylight straight through the
+       * gap; at 20 px a man nobody could ever have seen it.
+       *
+       * 18 degrees brings the bottom to |x| = 0.070 against a 0.055 jaw while the top stays
+       * at 0.106 under the bowl rim at 0.109, so it hangs from the rim and closes on the jaw
+       * the way a hinged cheek piece does. Thickness 24 mm -> 12 mm: the original was a
+       * finger of solid iron.
+       */
       for (const s of [-1, 1]) {
         const cheek = new THREE.Matrix4()
-          .makeRotationZ(s * 11 * DEG)
-          .premultiply(new THREE.Matrix4().makeTranslation(s * 0.1, -0.075, 0.018));
+          .makeRotationZ(s * 18 * DEG)
+          .premultiply(new THREE.Matrix4().makeTranslation(s * 0.088, -0.075, 0.018));
         b.setMatrix(headM.clone().multiply(cheek));
-        b.box(0, 0, 0, 0.024, 0.115, 0.085, plateUv);
+        b.box(0, 0, 0, 0.012, 0.115, 0.085, plateUv);
         b.setMatrix(headM);
       }
     }

@@ -287,6 +287,24 @@ export class SoldierRig {
    * literals at face value and renders a mirror-finish white machine under any probe. That
    * is exactly what the first pass of this viewer drew.
    */
+  /**
+   * Pin the kit cavity gate, for an interleaved A/B.
+   *
+   * Cross-session before/after is not a measurement on this project — two runs at identical
+   * configuration differ on 50-70 % of pixels — so a feature has to be switchable *inside*
+   * one page session, and the base arm re-shot last as a drift check. The uniform object is
+   * shared between the shader and `material.userData`, so writing it here reaches the GPU on
+   * the next frame with no recompile.
+   */
+  setKitCavity(v: number): boolean {
+    let hit = false;
+    for (const m of [this.manMat.material, this.horseMat.material]) {
+      const u = m.userData.kitCavity as { value: number } | undefined;
+      if (u) { u.value = v; hit = true; }
+    }
+    return hit;
+  }
+
   get materialBase(): THREE.MeshStandardMaterialParameters {
     return this.baseParams;
   }
