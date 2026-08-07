@@ -153,6 +153,17 @@ Three constraints on any city, all load-bearing in files the city workstream doe
   arithmetically in x because it runs once per projectile per tick; `scenario.ts` deploys at
   z −190 and z +130; `Siege.ts` reads `GarrisonBay.nx/nz` as the outward normal.
   `CitySystem` asserts a uniform bay pitch at build time.
+- **A tower on the wall-walk must publish the hole a man walks through it.**
+  `GarrisonBay.passOuter`/`passInner` are the clear lane through the tower at the bay's west
+  end, as offsets along the outward normal, and `passLoY`/`passHiY` are the two walk levels it
+  joins. `Siege.linkPath` routes a `TowerPass` crossing down the centre of that band; a city
+  that publishes a zero-width band gets the old route along the cityward lip, which is legal
+  and is what a construction step wants. **Derive the lane once and cut the stone with the
+  same call** — Rome kept the two apart, the doorway was a pair of constants sized for a 3.5 m
+  curtain, and after the widening to 6.0 m the path ran 1.36 m past the far jamb at every
+  tower on the circuit. Both cities do this in one helper apiece (`towerLane`,
+  `punicTowerPass`) and `tools/probe-towerpass.mjs` measures the result off the built meshes
+  rather than off either source.
 - **Nothing at z < `battlefieldZ`**, checked per vertex per LOD by `assertNoStrayGeometry`.
 - **220 draw calls whole-frame — met at the assault camera, with 1 to spare.** The city's
   own upper bound is printed at every boot as `[city:<id>] N draws … by family`. A second

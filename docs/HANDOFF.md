@@ -91,6 +91,20 @@ Everything below came from the player. Items not listed here are done and commit
   leaves are modelled shut with a drawbar and a bricked lunette, and `CitySystem` no longer clears
   the carriageway out of the occupancy grid for a shut gate. Siege opens it with
   `setGateOpen('porta-flaminia', true)`.
+- ~~soldiers cannot walk past the towers on the wall~~ — **done, tower-pass workstream.** The
+  link was never the problem: `LinkKind.TowerPass` existed, men were admitted to it and
+  crossed. There was no *hole*. `buildPunicTower` took a `walkY` and ended `void walkY;` — all
+  thirty-one Punic towers were one solid 20 m prism, clear lane **0.00 m**. Rome's chamber was
+  pierced, but at `doorOuter -0.35 .. doorInner +1.35`, the clear band of a **3.5 m** curtain
+  that has been 6.0 m for two workstreams, and `Siege.linkPath` walked men along the cityward
+  lip 1.36 m past the far jamb: **path inside masonry at 25 of Rome's 25 finished-circuit
+  towers and 31 of 31 on Carthage.** The lane is now derived once (`towerLane` /
+  `punicTowerPass`), published as `GarrisonBay.passOuter/passInner/passLoY/passHiY`, cut out of
+  the stone and read by `linkPath` through the same accessor. Rome 1.59 → **3.22 m** median
+  lane, Carthage 0.00 → **5.72 m**, headroom 2.0 / 2.2 m, path inside masonry **0/25 and
+  0/31**. Draws **identical at all nine cameras on both maps** (Rome assault 202, Carthage 198)
+  — no new material stream, so no new mesh; +13,530 triangles across Rome's whole city, +0.38 %.
+  `tools/probe-towerpass.mjs` 12/12.
 - soldiers use stairs, move laterally along the wall, descend into the city — siege
 - much larger wall-breaking ram — siege
 - tower drawbridge backwards (ropes forward, door opens backwards) — siege
@@ -373,6 +387,25 @@ Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`
    alters nothing, so the *metric* is not what fails — the frames genuinely are not comparable;
    and re-shoot the base arm **last** in every run as a drift check, because that is the only
    thing that distinguishes "my change did nothing" from "my arms did not restore".
+13. **A working feature and a hole in the stone are two measurements, and passing the first
+   proved nothing about the second.** The wall traversal shipped green — `LinkKind.TowerPass`,
+   `probe-walltraffic`'s traverse arm at 13/13, `probe-siege` asserting men stay on the
+   stonework — while men walked through 11 m of solid tufa at every tower on Carthage and
+   0.75 m of chamber wall at every tower on Rome. Nothing in the simulation could see it: a
+   man on a crossing is kinematic and `elevated`, so he is exempt from collision by design.
+   The only instrument that finds it is a ray fired **along the wall axis at chest height
+   against the position buffers the renderer uploaded** (`tools/probe-towerpass.mjs`). Two
+   sub-traps inside that, both paid for: keep a triangle on an **AABB overlap**, not on "a
+   vertex is inside the test box" — Carthage's tower is one 20 m box whose side-face triangles
+   have no vertex anywhere near walk level, so the first version dropped the whole tower and
+   reported 5.73 m of clear lane through it; and report the **mean Y of the blocking
+   triangle**, because three rounds were spent guessing whether a blocker was a lintel, a jamb
+   or a tread when the number says which.
+14. **Another agent's commit will land in your A/B window.** A Carthage draw-call comparison
+   read +5 at every camera including `melee`, which cannot see the city — the signature of a
+   caster, not of city geometry. It was two other agents' commits that had landed between the
+   baseline worktree and the working tree. **Pin both arms to explicit commits in worktrees**;
+   comparing a worktree against `HEAD` in a shared checkout is not an A/B.
 7. **A number that cannot be true given its neighbour is this project's best bug detector.**
    Four silent no-ops have been caught this way: a probe arm reporting 0.000 beside a sibling
    reporting 9.7 (it flipped `renderer.shadowMap.enabled` without a recompile, and
