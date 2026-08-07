@@ -7,11 +7,11 @@
  */
 
 import type { EngineContext } from '../core/Engine';
-import { Faction } from '../sim/types';
+import { Faction, getOpposingFaction } from '../sim/types';
 import { el, fmtClock, fmtCount, html, icon, setClass, setFill, setText } from './dom';
 import { ICON, standardGlyph } from './icons';
 import type { HudModel } from './model';
-import { FACTION_UI, PHASE_UI } from './theme';
+import { FACTION_UI, PHASE_UI, PLAYER_FACTION } from './theme';
 
 export class TopBar {
   private root!: HTMLElement;
@@ -30,6 +30,20 @@ export class TopBar {
   private unitsG!: HTMLElement;
   private speedBtns = new Map<string, HTMLElement>();
   private lastPhase = '';
+  /**
+   * The opponent this plaque is currently *showing*, which is not the same as the opponent.
+   *
+   * `attach` runs inside `engine.initAll`, and `setOpposingFaction` is not called until
+   * `deployBattle`, which runs after it — so reading `getOpposingFaction()` while building the
+   * markup bakes in the default and Carthage's plaque reads "JUTHUNGI · 0 units" under a horned
+   * standard for the whole battle. The side is therefore built from the default and re-labelled
+   * on the first `sync` that disagrees, which costs one comparison a tick and cannot be wrong
+   * whatever order the systems initialise in.
+   */
+  private foeShown: Faction | -1 = -1;
+  private foeSide!: HTMLElement;
+  private foeName!: HTMLElement;
+  private foeStd!: HTMLElement;
   /** Where the settings stud lives, so it reads as part of the plaque rather than as a
    *  lone button floating in the corner. */
   toolSlot!: HTMLElement;
@@ -55,7 +69,7 @@ export class TopBar {
 
     html(
       this.root,
-      `${side(Faction.Rome, 'rome')}
+      `${side(PLAYER_FACTION, 'rome')}
        <div class="tb-mid">
          <div class="tb-head">
            <span class="tb-clock">00:00</span>
@@ -77,7 +91,7 @@ export class TopBar {
            <span class="tb-adv">Even</span>
          </div>
        </div>
-       ${side(Faction.Germanic, 'jut')}
+       ${side(getOpposingFaction(), 'jut')}
        <div class="tb-tools"></div>`
     );
 
@@ -98,6 +112,10 @@ export class TopBar {
     this.lossG = jut.querySelector('.tb-loss') as HTMLElement;
     this.unitsR = rome.querySelector('.tb-units') as HTMLElement;
     this.unitsG = jut.querySelector('.tb-units') as HTMLElement;
+    this.foeSide = jut;
+    this.foeName = jut.querySelector('.tb-name') as HTMLElement;
+    this.foeStd = jut.querySelector('.tb-std') as HTMLElement;
+    this.foeShown = getOpposingFaction();
 
     for (const b of Array.from(this.root.querySelectorAll('.tb-speed button')) as HTMLElement[]) {
       const s = b.dataset.s ?? '1';
@@ -134,8 +152,17 @@ export class TopBar {
       this.root.dataset.phase = m.phase;
     }
 
-    const r = m.strength[Faction.Rome];
-    const g = m.strength[Faction.Germanic];
+    const foe = getOpposingFaction();
+    if (foe !== this.foeShown) {
+      this.foeShown = foe;
+      const fui = FACTION_UI[foe];
+      this.foeSide.dataset.f = fui.key;
+      setText(this.foeName, fui.short);
+      html(this.foeStd, icon(standardGlyph(foe), 'tb-std-ic'));
+    }
+
+    const r = m.strength[PLAYER_FACTION];
+    const g = m.strength[foe];
     const total = Math.max(1, r + g);
     const rf = r / total;
     setFill(this.balR, rf);
@@ -145,18 +172,23 @@ export class TopBar {
 
     setText(this.menR, fmtCount(r));
     setText(this.menG, fmtCount(g));
-    const lr = Math.max(0, m.initialStrength[Faction.Rome] - r);
-    const lg = Math.max(0, m.initialStrength[Faction.Germanic] - g);
+    const lr = Math.max(0, m.initialStrength[PLAYER_FACTION] - r);
+    const lg = Math.max(0, m.initialStrength[foe] - g);
     setText(this.lossR, `−${fmtCount(lr)}`);
     setText(this.lossG, `−${fmtCount(lg)}`);
-    setText(this.unitsR, `${m.unitsLeft[Faction.Rome]} units`);
-    setText(this.unitsG, `${m.unitsLeft[Faction.Germanic]} units`);
+    setText(this.unitsR, `${m.unitsLeft[PLAYER_FACTION]} units`);
+    setText(this.unitsG, `${m.unitsLeft[foe]} units`);
 
     // Victory progress: how far the balance of surviving men has swung from parity.
     const swing = (rf - 0.5) * 2;
     const pct = Math.round(Math.abs(swing) * 100);
     if (pct < 4) setText(this.advantage, 'Evenly matched');
-    else setText(this.advantage, `${swing > 0 ? 'Roman' : 'Juthungi'} advantage ${pct}%`);
+    // Named from the faction table, not from a literal: "Juthungi advantage 25%" over a
+    // Carthaginian army is the same defect as the plaque heading, one line further down.
+    else {
+      const who = FACTION_UI[swing > 0 ? PLAYER_FACTION : foe].short;
+      setText(this.advantage, `${who} advantage ${pct}%`);
+    }
     setClass(this.advantage, 'good', swing > 0.04);
     setClass(this.advantage, 'bad', swing < -0.04);
 

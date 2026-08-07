@@ -19,7 +19,7 @@
  */
 
 import type { EngineContext } from '../core/Engine';
-import { Faction, type UnitClass } from '../sim/types';
+import { getOpposingFaction, type Faction, type UnitClass } from '../sim/types';
 import { el, html, icon, pulse, setClass, setFill, setText, sizeCanvas } from './dom';
 import { ICON, standardGlyph, UNIT_CLASS_ICON } from './icons';
 import type { HudModel, UnitView } from './model';
@@ -107,6 +107,8 @@ export class UnitCards {
    * nothing under it; the whole row has to be laid out again either way.
    */
   private deadCount = -1;
+  /** Which faction the enemy tab is currently labelled for; see the note in `attach`. */
+  private foeLabelled: Faction | -1 = -1;
   private hoverTimer = 0;
   private hoverCard: CardEls | null = null;
 
@@ -117,7 +119,16 @@ export class UnitCards {
   ) {}
 
   attach(parent: HTMLElement): void {
-    const foeFui = FACTION_UI[PLAYER_FACTION === Faction.Rome ? Faction.Germanic : Faction.Rome];
+    /*
+     * The enemy strip is *labelled* after deployment, not while it is being built.
+     *
+     * `attach` runs inside `engine.initAll`, and `setOpposingFaction` is not called until
+     * `deployBattle`, which runs after it — so anything read here is still the default. That is
+     * how the strip over a Carthaginian order of battle came to say JUTHUNGI under a horned
+     * standard. The markup is built from whatever is known now and `build` rewrites it; `build`
+     * first runs on the refresh that sees the deployed army, so it is never early.
+     */
+    const foeFui = FACTION_UI[getOpposingFaction()];
     this.foeBar = el('div', 'obat', parent);
     html(
       this.foeBar,
@@ -188,6 +199,14 @@ export class UnitCards {
     for (const v of foes) this.foeCards.push(this.makeCard(v, this.foeHolder, ctx, true));
     setText(this.foeCount, String(foes.length));
     setClass(this.foeBar, 'none', foes.length === 0);
+    // Now the army exists, so whose it is can be read off it. See the note in `attach`.
+    const foeFaction = foes[0]?.faction ?? getOpposingFaction();
+    if (foeFaction !== this.foeLabelled) {
+      this.foeLabelled = foeFaction;
+      setText(this.foeBar.querySelector('.obat-lab') as HTMLElement, FACTION_UI[foeFaction].short);
+      const std = this.foeBar.querySelector('.obat-std');
+      if (std) std.outerHTML = icon(standardGlyph(foeFaction), 'obat-std');
+    }
 
     this.relayout();
   }

@@ -234,15 +234,18 @@ export class BattleFlow {
    * the sim does start emitting the event this simply loses the race and does nothing.
    */
   checkOutcome(ctx: EngineContext, model: HudModel): void {
-    if (this.resultsOpen || ctx.time.simTime < 20) return;
+    if (this.resultsOpen || this.dismissed || ctx.time.simTime < 20) return;
     // `BattleFlowSystem` owns the verdict when it is registered.
     if (ctx.tryGet('battleFlow')) return;
-    const rome = model.unitsLeft[Faction.Rome] - model.routing[Faction.Rome];
-    const germ = model.unitsLeft[Faction.Germanic] - model.routing[Faction.Germanic];
-    if (rome > 0 && germ > 0) return;
-    const victor = rome > 0 ? Faction.Rome : germ > 0 ? Faction.Germanic : -1;
-    const wiped =
-      model.strength[victor === Faction.Rome ? Faction.Germanic : Faction.Rome] === 0;
+    // `getOpposingFaction()`, not `Faction.Germanic`: on Carthage the literal counts an army
+    // that was never deployed, so the fallback would call the battle over on its first check
+    // with the real opponent untouched. Same defect the sim's own flow system carried.
+    const foe = getOpposingFaction();
+    const mine = model.unitsLeft[PLAYER_FACTION] - model.routing[PLAYER_FACTION];
+    const theirs = model.unitsLeft[foe] - model.routing[foe];
+    if (mine > 0 && theirs > 0) return;
+    const victor = mine > 0 ? PLAYER_FACTION : theirs > 0 ? foe : -1;
+    const wiped = model.strength[victor === PLAYER_FACTION ? foe : PLAYER_FACTION] === 0;
     this.model.over = true;
     this.model.victor = victor;
     this.showResults(ctx, victor, wiped ? 'annihilation' : 'rout');
