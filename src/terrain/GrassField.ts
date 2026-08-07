@@ -517,6 +517,16 @@ export class GrassField {
   float h1 = grassHash(ci);
   float h2 = grassHash(ci + vec2(37.1, 11.7));
   float h3 = grassHash(ci + vec2(5.3, 91.2));
+  // Position, bearing, size and tint each get their own draw. h1 used to run the jitter,
+  // the yaw, the width and the wind phase together, and h2 the other jitter axis, the card
+  // variant, the colour draw and the thistle — so a clump displaced right of its cell was
+  // always turned the same way, always the same width and always flapping in step with
+  // every other clump displaced right of its cell. Decorrelated randoms are what stop the
+  // planting lattice from staying legible as rows after it has been jittered off itself.
+  // Three more taps in the *vertex* stage, one per clump; no fragment cost at all.
+  float h4 = grassHash(ci + vec2(63.7, 24.9));
+  float h5 = grassHash(ci + vec2(19.4, 77.1));
+  float h6 = grassHash(ci + vec2(88.3, 43.6));
   vec2 gpos = cell + (vec2(h1, h2) - 0.5) * uSpacing * uJitter;
 
   float gh = grassHeightAt(gpos);
@@ -593,7 +603,7 @@ export class GrassField {
   float vMerge = smoothstep(42.0, 155.0, dist);
   // One clump in twelve is a thistle or a stand of dead grass: taller and straw
   // coloured. Ground cover that is all one plant is the giveaway of a shader field.
-  float weed = uWeeds * step(0.918, h2);
+  float weed = uWeeds * step(0.918, h6);
 
   // Height and width are scaled *separately*, and height has two populations.
   //
@@ -603,8 +613,8 @@ export class GrassField {
   // front rank in its own grass and made the ground the subject of the frame instead of the
   // army. Width stays nearly constant so a short clump still spreads into its neighbours
   // and the mat does not open up into gaps as the sward gets shorter.
-  float hPop = step(0.80, fract(h1 * 7.31 + h3 * 3.17));
-  float hVar = mix(0.60 + h1 * 0.14, 0.98 + h1 * 0.20, hPop);
+  float hPop = step(0.80, fract(h5 * 7.31 + h4 * 3.17));
+  float hVar = mix(0.60 + h5 * 0.14, 0.98 + h5 * 0.20, hPop);
   // 0.752 is this distribution's own mean (0.8 x 0.67 + 0.2 x 1.08), so the sward keeps its
   // height as it recedes and only loses the clump-to-clump scatter that was aliasing.
   hVar = mix(hVar, 0.752, vMerge);
@@ -612,20 +622,20 @@ export class GrassField {
   // been standing on is beaten flat — which is both what actually happens and what lets the
   // men read against it.
   float trodden = 1.0 - smoothstep(0.05, 0.32, gctl.b) * 0.45;
-  float wScale = keep * fade * mix(0.88 + 0.30 * h1, 1.03, vMerge);
+  float wScale = keep * fade * mix(0.88 + 0.30 * h4, 1.03, vMerge);
   float hScale = keep * fade * hVar * trodden * uHeightScale * (1.0 + weed * 0.8);
 
   // --- card shape and wind ----------------------------------------------
   float bt = aBlade.x;
   vec3 local = position;
-  float yaw = h1 * 6.2831853;
+  float yaw = h4 * 6.2831853;
   float cs = cos(yaw); float sn = sin(yaw);
   local = vec3(local.x * cs - local.z * sn, local.y, local.x * sn + local.z * cs);
 
   // Two frequencies: a slow gust field travelling across the map, and a faster
   // per-clump flutter phased by the instance hash so no two move together.
   float gust = sin(uTime * 0.42 + gpos.x * 0.031 + gpos.y * 0.021) * 0.5 + 0.5;
-  float phase = h1 * 6.2831853;
+  float phase = h4 * 6.2831853;
   float flutter = sin(uTime * 1.9 + phase) * 0.6 + sin(uTime * 3.4 + phase * 1.7) * 0.3;
   float bend = (0.35 + 0.9 * gust) * flutter * bt * bt;
   vec2 windDir = normalize(vec2(0.82, 0.57));
@@ -641,13 +651,13 @@ export class GrassField {
   // uDryness slides the whole distribution toward straw, and it also damps the wetness
   // channel's authority: on a plain in midsummer drought a damp hollow is *less* green than
   // the same hollow in November, not equally green. Both terms vanish at dryness 0.
-  // (h2 - 0.5) is the per-clump colour draw and weed the per-clump thistle: both are
+  // (h6 - 0.5) is the per-clump colour draw and weed the per-clump thistle: both are
   // per-instance randoms, so both turn into pixel-scale noise once a clump is a few pixels
   // across. They fade out with vMerge; every other term here is driven by the control map
   // or the parcel and so is genuine structure that must survive to the horizon.
   vec3 gcol = mix(uDryColour, uWetColour,
     clamp(0.62 - uDryness * 1.15 + gctl.r * 1.1 * (1.0 - uDryness * 0.72)
-        + (h2 - 0.5) * 0.8 * (1.0 - vMerge) - gStraw * 0.85, 0.0, 1.0));
+        + (h6 - 0.5) * 0.8 * (1.0 - vMerge) - gStraw * 0.85, 0.0, 1.0));
   gcol = mix(gcol, uDryColour * 1.2, weed * (1.0 - vMerge));
   gcol *= 0.74 + 0.34 * bt;
   // Converge on the ground colour across the whole fade-out band rather than only its last
@@ -662,7 +672,7 @@ export class GrassField {
 
   // Pick one of the card variants per clump so the field is not one image stamped
   // everywhere. Overrides the UV that <uv_vertex> set a few lines earlier.
-  vMapUv = vec2((uv.x + floor(h2 * uCards)) / uCards, uv.y);
+  vMapUv = vec2((uv.x + floor(h5 * uCards)) / uCards, uv.y);
 `
         )
         .replace('#include <begin_vertex>', 'vec3 transformed = gWorld;')

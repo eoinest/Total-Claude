@@ -58,6 +58,20 @@ export interface FormationDef {
   idlePose: 'relaxed' | 'alert' | 'brace';
 }
 
+/**
+ * Metres between men before a formation's own multipliers, so every system that estimates
+ * a footprint agrees with the one that actually places the men.
+ *
+ * These were literals in three places — `BattleSystem.baseSpacingX/Z`, and twice inside
+ * `Pathfinding` — with nothing tying them together, so a change in one silently disagreed
+ * with the other two about how wide a cohort is. That is the number every chokepoint,
+ * detour and narrowest-formation decision is made from.
+ *
+ * The values are unchanged from those three literals.
+ */
+export const BASE_SPACING_X = { foot: 0.86, mounted: 1.95 } as const;
+export const BASE_SPACING_Z = { foot: 1.02, mounted: 3.1 } as const;
+
 /** Centre a rank so the formation's anchor sits at the middle of its front. */
 const centredX = (file: number, width: number, spacingX: number): number =>
   (file - (width - 1) * 0.5) * spacingX;
