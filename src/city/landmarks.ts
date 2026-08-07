@@ -28,7 +28,7 @@ import {
 // See the note in `layout.ts`: `TerrainSystem` imports `activeMap`, so taking HALF_EXTENT
 // from there would close an ESM cycle once a map declares its city.
 import { crestZAt, HALF_EXTENT, roadCentreX } from '../terrain/topography';
-import type { CityMatKey } from './materials';
+import { CITY_MAT_KEYS, type CityMatKey } from './materials';
 import { AQUEDUCTS, GATE_X, LANDMARKS, type LandmarkPlacement } from './layout';
 import { PAL } from './palette';
 import { cylinderBetween, type CityChunkSpec, type TreeRequest } from './wall';
@@ -318,7 +318,7 @@ function buildLandmark(batch: Batch, detail: number, world: LandmarkPlacement, h
   // Roman line in every establishing shot. Enumerate the union, not the guess.
   //
   // And push through `pushAll`, never by iterating the keys: at mid and far detail several
-  // of these nine keys resolve to the *same* stream, and pushing per key composed the
+  // of these keys resolve to the *same* stream, and pushing per key composed the
   // placement matrix up to four times. See `Batch.distinct`. That is what put the Mausoleum
   // of Augustus, the Horologium, the Iseum Campense and Trajan's Column at exactly (0, 0)
   // whenever the camera was more than 560 m from them.
@@ -530,20 +530,20 @@ function localExtents(m: LandmarkPlacement): LandmarkPlacement {
 }
 
 /**
- * Every material stream a monument builder can reach for. Kept as a named constant so the
- * placement push and any later addition cannot drift apart.
+ * Every material stream a monument builder can reach for: the whole key set, read off the
+ * material table rather than listed here.
+ *
+ * A hand-kept list drifts and nothing stops it. The day a key is added to `SPECS` — marble
+ * and granite are the obvious next two — every monument that reaches for it emits its
+ * geometry in the monument's *local* frame, and that lands stacked over the world origin,
+ * up to 110 m above the middle of the battlefield. Silently, and **only at full detail**,
+ * because `TRIM_MERGE` folds an unknown key onto `stone` past the mid switch and `stone` is
+ * pushed. An empty stream is dropped when baking, so naming a key no monument uses costs
+ * nothing.
+ *
+ * Identical to the nine keys this listed by hand, at the time it replaced them.
  */
-const LANDMARK_KEYS: readonly CityMatKey[] = [
-  'stone',
-  'brick',
-  'stucco',
-  'roof',
-  'metal',
-  'timber',
-  'road',
-  'concrete',
-  'foliage',
-];
+const LANDMARK_KEYS: readonly CityMatKey[] = CITY_MAT_KEYS;
 
 /**
  * The substructure under a large flat monument.
