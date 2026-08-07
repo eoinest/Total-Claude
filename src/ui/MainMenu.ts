@@ -17,8 +17,8 @@
 import type { QualityTier } from '../core/Engine';
 import {
   type BattleConfig, type Difficulty, type ScenarioId, DEFAULT_CONFIG, MAX_PER_TYPE,
-  MAX_UNITS_PER_SIDE, SCENARIOS, UNIT_SIZES, type UnitSizeId, baseStrength, belligerents,
-  compositionFor,
+  MAX_UNITS_PER_SIDE, SCENARIOS, UNIT_SIZES, type UnitSizeId, assaultCompositionKey,
+  baseStrength, belligerents, compositionFor, siegeRoleOf,
   decodeConfig, encodeConfig, PERF_VALIDATED_MEN, fittedUnitScale, isScaleClamped,
   loadStoredConfig, rosterFor, sanitiseConfig, scaleAppliesTo, scenarioDef, scenarioFor,
   storeConfig,
@@ -53,34 +53,42 @@ const SIDE_LABEL: Record<number, string> = {
  * that offered ballistarii under the heading "Aurelian's field army" would be describing the
  * wrong battle.
  */
-const SIDE_SUB: Record<ScenarioId, Record<number, string>> = {
-  field: {
-    [Faction.Rome]: 'Aurelian&rsquo;s field army &middot; defending',
-    [Faction.Germanic]: 'The host of the Juthungi &middot; attacking',
-    [Faction.Carthage]: 'A citizen core and six bought contingents &middot; attacking',
-  },
-  assault: {
-    [Faction.Rome]: 'The garrison of the Aurelian Wall &middot; holding',
-    [Faction.Germanic]: 'The storming parties &middot; assaulting',
-    // Unreachable: `sanitiseConfig` forces the Juthungi for an assault. Present so the
-    // lookup is total — an absent key here printed the literal string "undefined" as an
-    // army's strapline rather than failing, which is the worst of both.
-    [Faction.Carthage]: 'The storming parties &middot; assaulting',
-  },
+const FIELD_SUB: Record<number, string> = {
+  [Faction.Rome]: 'Aurelian&rsquo;s field army &middot; defending',
+  [Faction.Germanic]: 'The host of the Juthungi &middot; attacking',
+  [Faction.Carthage]: 'A citizen core and six bought contingents &middot; attacking',
 };
 
+/**
+ * An assault's strapline is a *role* and not a faction, which is what the fixed table above
+ * could not say.
+ *
+ * `[Faction.Rome]: 'The garrison of the Aurelian Wall'` was exact while Rome was the only
+ * city; at Carthage, Rome is the besieger and the wall is Punic, so the same key had to give
+ * two different answers. It reads the map's own city name for the same reason the title card
+ * does — the words follow the battlefield, not the army.
+ */
+const assaultSub = (cfg: BattleConfig, f: Faction): string =>
+  siegeRoleOf(f, cfg.map) === 'garrison'
+    ? `The garrison of ${getMap(cfg.map).city?.name ?? 'the city'} &middot; holding`
+    : 'The storming parties &middot; assaulting';
+
+const sideSub = (cfg: BattleConfig, f: Faction): string =>
+  (cfg.scenario === 'assault' ? assaultSub(cfg, f) : FIELD_SUB[f]);
+
 /** What the third figure in an army's totals means, which the scenario decides. */
-const FRONTAGE_LABEL: Record<ScenarioId, Record<number, { unit: string; title: string }>> = {
-  field: {
-    [Faction.Rome]: { unit: 'm of line', title: 'Combined width of the battle-line units — how much front this army can form. Excludes reserves, wings and artillery.' },
-    [Faction.Germanic]: { unit: 'm of line', title: 'Combined width of the battle-line units — how much front this army can form. Excludes reserves, wings and artillery.' },
-    [Faction.Carthage]: { unit: 'm of line', title: 'Combined width of the Libyan, Iberian and Gallic blocks. The Sacred Band is a reserve, the skirmishers a screen, and the elephants stand in front of the line rather than in it.' },
-  },
-  assault: {
-    [Faction.Rome]: { unit: 'm of wall held', title: 'Combined width of the wall troops — how much curtain this garrison can line. Excludes the reserve cohorts and the carroballistae, which hold no parapet.' },
-    [Faction.Germanic]: { unit: 'm of line', title: 'Combined width of the warbands waiting in the open. The towers, ladder parties, ram and onagers form no line.' },
-    [Faction.Carthage]: { unit: 'm of line', title: 'Combined width of the warbands waiting in the open.' },
-  },
+const FIELD_FRONTAGE: Record<number, { unit: string; title: string }> = {
+  [Faction.Rome]: { unit: 'm of line', title: 'Combined width of the battle-line units — how much front this army can form. Excludes reserves, wings and artillery.' },
+  [Faction.Germanic]: { unit: 'm of line', title: 'Combined width of the battle-line units — how much front this army can form. Excludes reserves, wings and artillery.' },
+  [Faction.Carthage]: { unit: 'm of line', title: 'Combined width of the Libyan, Iberian and Gallic blocks. The Sacred Band is a reserve, the skirmishers a screen, and the elephants stand in front of the line rather than in it.' },
+};
+
+/** Keyed by role for the same reason `assaultSub` is: Rome plays both sides of a siege. */
+const frontageLabel = (cfg: BattleConfig, f: Faction): { unit: string; title: string } => {
+  if (cfg.scenario !== 'assault') return FIELD_FRONTAGE[f];
+  return siegeRoleOf(f, cfg.map) === 'garrison'
+    ? { unit: 'm of wall held', title: 'Combined width of the wall troops — how much curtain this garrison can line. Excludes the reserve and the engines behind the parapet, which hold no wall.' }
+    : { unit: 'm of line', title: 'Combined width of whatever waits in the open. The towers, ladder parties, ram and batteries are the assault itself and form no line.' };
 };
 
 /**
@@ -413,10 +421,10 @@ export class MainMenu {
         <section class="army army-${FACTION_CLASS[f]}" data-side="${f}">
           <div class="army-head">
             <span class="army-name">${SIDE_LABEL[f]}</span>
-            <span class="army-sub">${SIDE_SUB[sc][f]}</span>
+            <span class="army-sub">${sideSub(this.cfg, f)}</span>
           </div>
           <div class="army-rows">
-            ${rosterFor(f, sc).map((id) => {
+            ${rosterFor(f, sc, this.cfg.map).map((id) => {
               const d = unitType(id);
               return `
               <div class="urow" data-side="${f}" data-unit="${id}">
@@ -474,13 +482,16 @@ export class MainMenu {
     if (next < 0 || next > MAX_PER_TYPE) return;
     if (d > 0 && total >= MAX_UNITS_PER_SIDE) return;
     comp[id] = next;
-    // Four fields, not two: the stepper writes into whichever pair belongs to the scenario
-    // on screen, so editing a siege never touches the field order of battle or the reverse.
-    // Five fields now, not four: a Carthaginian row edited into `juthungi` would silently
-    // rewrite the Juthungi order of battle, and the player would see their change vanish the
-    // moment they switched opponent back.
+    // Seven fields, not two: the stepper writes into whichever composition belongs to the
+    // scenario, the side and — for an assault — the map, so editing a siege never touches the
+    // field order of battle or the reverse. A Carthaginian row edited into `juthungi` would
+    // silently rewrite the Juthungi order of battle and the player would see their change
+    // vanish the moment they switched opponent back; a Roman siege-train row edited into
+    // `siegeRome` would rewrite the Aurelian Wall's garrison from the far side of the
+    // Mediterranean. `assaultCompositionKey` owns that last decision so this file and
+    // `compositionFor` cannot disagree about it.
     const key = this.cfg.scenario === 'assault'
-      ? (f === Faction.Rome ? 'siegeRome' : 'siegeJuthungi')
+      ? assaultCompositionKey(f, this.cfg.map)
       : f === Faction.Rome ? 'rome'
         : f === Faction.Carthage ? 'carthage' : 'juthungi';
     this.cfg = { ...this.cfg, [key]: comp };
@@ -552,7 +563,7 @@ export class MainMenu {
       const comp = compositionFor(this.cfg, f);
       const s = summarise(this.cfg, f, pool);
       grand += s.men;
-      for (const id of rosterFor(f, sc)) {
+      for (const id of rosterFor(f, sc, this.cfg.map)) {
         const cell = this.countCells.get(`${f}:${id}`);
         if (cell) {
           setText(cell, String(comp[id] ?? 0));
@@ -561,7 +572,7 @@ export class MainMenu {
       }
       const tot = this.root.querySelector(`[data-tot="${f}"]`) as HTMLElement;
       const full = s.units >= MAX_UNITS_PER_SIDE;
-      const fr = FRONTAGE_LABEL[sc][f];
+      const fr = frontageLabel(this.cfg, f);
       html(tot, `
         <span><b>${s.units}</b> units${full ? ' <i class="cap">(max)</i>' : ''}</span>
         <span><b>${fmt(s.men)}</b> men</span>

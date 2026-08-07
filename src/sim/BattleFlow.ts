@@ -1,6 +1,6 @@
 import type { EngineContext, Subsystem } from '../core/Engine';
 import type { BattleSystem } from './BattleSystem';
-import { Faction, UnitOrder, type UnitGroupState } from './types';
+import { ALL_FACTIONS, Faction, UnitOrder, type UnitGroupState } from './types';
 
 /**
  * Battle flow: decides when the engagement is over and who won.
@@ -65,8 +65,7 @@ export class BattleFlowSystem implements Subsystem {
     // Snapshot the order of battle after deployment. `init` runs before the scenario
     // spawns, so defer the snapshot to the first tick that sees any units.
     this.sides = [];
-    this.collapsedFor.set(Faction.Rome, 0);
-    this.collapsedFor.set(Faction.Germanic, 0);
+    this.collapsedFor.clear();
   }
 
   fixedUpdate(dt: number, ctx: EngineContext): void {
@@ -74,14 +73,32 @@ export class BattleFlowSystem implements Subsystem {
     if (b.units.length === 0) return;
 
     if (this.sides.length === 0) {
-      for (const f of [Faction.Rome, Faction.Germanic]) {
+      /**
+       * The two sides are whoever actually deployed, not `[Rome, Germanic]`.
+       *
+       * That literal ended the storm of Carthage six seconds after it began. Carthage fields
+       * no Juthungi, so the Germanic side snapshotted `initialMen: 0`, scored `frac = 0`,
+       * was judged spent on the first tick and confirmed as the loser at `CONFIRM_SECONDS` —
+       * handing Rome an instant victory over an army that was never there while a real
+       * battle went on around it. `checkVictory` in `scenario.ts` had already been made
+       * faction-agnostic for the same reason; this is the other half of it.
+       *
+       * A side with no units is not a side. Built from the deployment in faction order, so
+       * `sides[0]` is still Rome in every battle that has Rome in it and the timeout's
+       * score comparison keeps its meaning.
+       */
+      for (const f of ALL_FACTIONS) {
         const own = b.units.filter((u) => u.faction === f);
+        if (own.length === 0) continue;
+        this.collapsedFor.set(f, 0);
         this.sides.push({
           faction: f,
           initialMen: own.reduce((a, u) => a + u.initialStrength, 0),
           initialUnits: own.length,
         });
       }
+      // One side on the field is not a battle, and calling it would be worse than waiting.
+      if (this.sides.length < 2) this.sides.length = 0;
       return;
     }
 
@@ -109,7 +126,9 @@ export class BattleFlowSystem implements Subsystem {
     }
 
     if (loser !== -1) {
-      const winner = bothSpent ? -1 : loser === Faction.Rome ? Faction.Germanic : Faction.Rome;
+      const winner = bothSpent
+        ? -1
+        : (this.sides.find((s2) => s2.faction !== loser)?.faction ?? -1);
       // Annihilation only if the loser genuinely has no living men; otherwise they broke.
       const loserAlive = b.units
         .filter((u) => u.faction === loser && !u.destroyed)
@@ -128,7 +147,7 @@ export class BattleFlowSystem implements Subsystem {
       });
       const victor = Math.abs(score[0] - score[1]) < 0.05
         ? -1
-        : score[0] > score[1] ? Faction.Rome : Faction.Germanic;
+        : this.sides[score[0] > score[1] ? 0 : 1].faction;
       this.finish(ctx, victor, 'timeout');
     }
   }

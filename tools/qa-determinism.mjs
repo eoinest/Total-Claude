@@ -12,6 +12,13 @@
  * localises the culprit.
  *
  * Usage: node tools/qa-determinism.mjs [--port=5226] [--until=200] [--json=path]
+ *                                       [--battle=map=carthage&scenario=assault]
+ *
+ * `--battle` appends extra query parameters, so the gate can be run against a battle other
+ * than the default one. It matters now that there are two besiegeable cities: an assault
+ * takes an entirely different code path through `deployAssault` and `Siege`, and a garrison
+ * pinned to a wall-walk is the part of the sim least like the field battle this gate has
+ * always measured.
  */
 
 import { chromium } from 'playwright';
@@ -30,6 +37,7 @@ const args = new Map(
 const PORT = Number(args.get('port') ?? 5226);
 const JSON_OUT = args.get('json') ?? null;
 const CHECKPOINTS = (args.get('at') ?? '0,30,90,150,200').split(',').map(Number);
+const EXTRA = args.get('battle') ? `&${args.get('battle')}` : '';
 
 const waitForServer = async (url, ms) => {
   const end = Date.now() + ms;
@@ -97,7 +105,7 @@ async function run(label) {
   const errors = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto(`${base}/?harness=1&quality=high&w=960&h=540`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${base}/?harness=1&quality=high&w=960&h=540${EXTRA}`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 180000 });
   // Stop the rAF loop: otherwise wall-clock time between Playwright calls advances one run
   // more than the other and every hash diverges for an uninteresting reason.

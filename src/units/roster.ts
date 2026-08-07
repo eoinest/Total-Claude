@@ -367,6 +367,17 @@ export const GERMANIC_UNITS: UnitTypeDef[] = [
  * Rome II makes the same choice, and a faction whose own citizens never appear on its own
  * battle line is worse history than a fifty-year stretch.
  *
+ * **This is not the army that defends the Carthage map, and it must not be edited to become
+ * one.** The map is spring 146 BC (`docs/CARTHAGE.md` §1) and there is no overlap worth
+ * pretending about: the 201 treaty forbade Carthage war elephants, the city surrendered its
+ * arms wholesale in 149, and what held the triple wall for the next three years was a
+ * citizen levy, freed slaves, engines re-made out of temple timber and nine hundred Roman
+ * deserters. That order of battle is in `siegeUnits.ts` under `punic-*`, where the rest of
+ * the siege rosters live. §1 asks for exactly this split — state the map's year, state the
+ * roster's, and let a player who wants elephants at Carthage field this army in a *field*
+ * battle and make the anachronism deliberately. **Do not renumber the roster to suit the map,
+ * and do not renumber the map to suit the roster.**
+ *
  * **Stat scale is the one already established** — see the note at the top of this file.
  * Damage and rates here were set against `tools/matchup.mjs` and not by eye: the target is a
  * two-to-four-minute grind for a matched pair of line units and about a minute for a

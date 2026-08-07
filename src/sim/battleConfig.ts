@@ -178,30 +178,143 @@ export const CARTHAGE_ROSTER: readonly string[] = [
 /**
  * The assault's own orders of battle, which share almost nothing with the field's.
  *
- * A siege is not the same army doing something else. Rome fields wall troops — short-reach
- * missile units the siege system pins along the parapet, plus carroballistae behind it and a
- * cohort or two inside the gate to plug a breach; there is no cavalry on a wall-walk and no
- * use for a wedge. The Juthungi field the machines and the parties that serve them, and their
- * warbands stand in the open waiting their turn. Offering a player ram crews for a battle on
- * open grass, or refusing them one for a storm, would be worse than offering no editor at all,
- * so the roster rows follow the scenario and `rosterFor` takes it as an argument rather than
- * defaulting — a wrong default here is silent and the typecheck would not catch it.
+ * A siege is not the same army doing something else. A garrison is wall troops — the siege
+ * system pins them along the parapet — plus artillery behind it and formed infantry inside
+ * the gate to plug a breach; there is no cavalry on a wall-walk and no use for a wedge. The
+ * storming side fields the machines and the parties that serve them, and its line units stand
+ * in the open waiting their turn. Offering a player ram crews for a battle on open grass, or
+ * refusing them one for a storm, would be worse than offering no editor at all, so the roster
+ * rows follow the scenario, and `rosterFor` takes it as an argument rather than defaulting —
+ * a wrong default here is silent and the typecheck would not catch it.
  *
- * Order is deployment order, as in the field rosters: for Rome the bays nearest the gate are
- * filled first, so the row order decides which type holds the finished curtain and which the
- * unfinished stretch.
+ * **Keyed by faction *and* role, because a faction is not a side.** Rome garrisons the
+ * Aurelian Wall in 271 AD and storms Carthage in 146 BC, and those are two different armies
+ * out of one roster. Two flat lists per faction could not express that, which is why
+ * `deployAssault` used to spawn Roman `ballistarii` onto Carthage's parapet whatever
+ * `CityPlan.garrison` said.
+ *
+ * Order within each list is deployment order, as in the field rosters: for the wall it is the
+ * order the bays are filled outward from the gate, so the row order decides which type holds
+ * the curtain nearest the gate.
  */
-export const SIEGE_ROME_ROSTER: readonly string[] = [
-  'ballistarii', 'wall-slingers', 'carroballista', 'legio-cohort',
-];
+export type SiegeRole = 'garrison' | 'storm';
 
-export const SIEGE_JUTHUNGI_ROSTER: readonly string[] = [
-  'tower-assault', 'escalade-party', 'ram-crew', 'onager',
-  'juthungi-warband', 'juthungi-riders',
-];
+/** Which unit types hold each part of a defended circuit. */
+export interface GarrisonPlan {
+  /** Troops the siege system pins along the wall-walk, in bay-filling order. */
+  wall: readonly string[];
+  /** Artillery sited behind the parapet. */
+  engines: readonly string[];
+  /** Formed infantry held inside the walls to plug whatever gets over. */
+  reserve: readonly string[];
+}
 
-export const rosterFor = (f: Faction, s: ScenarioId): readonly string[] => {
-  if (s === 'assault') return f === Faction.Rome ? SIEGE_ROME_ROSTER : SIEGE_JUTHUNGI_ROSTER;
+/** Which unit types do each job of a storm. */
+export interface StormPlan {
+  /** The party that rides a siege tower up to the walk. */
+  tower: string;
+  /** The party that pitches the ladders. */
+  ladder: string;
+  /** The gang on the ram. */
+  ram: string;
+  /** Batteries standing off and shooting at the parapet. */
+  batteries: readonly string[];
+  /** The host waiting its turn in the open, which is most of an assault. */
+  host: readonly string[];
+  /**
+   * How the host stands while it waits, which is a real difference between the two armies:
+   * a Germanic host is a `horde` and a consular army waiting to go in is in `line`.
+   */
+  hostFormation: string;
+  /** Horse on the wings, with nothing to do until a gate opens. */
+  horse: readonly string[];
+}
+
+export const GARRISON_PLANS: Partial<Record<Faction, GarrisonPlan>> = {
+  // Rome, 271 AD: ballistarii take the finished curtain nearest the gate and the slingers
+  // what is left, which is the unfinished stretch with no parapet — a sling does not need one.
+  [Faction.Rome]: {
+    wall: ['ballistarii', 'wall-slingers'],
+    engines: ['carroballista'],
+    reserve: ['legio-cohort'],
+  },
+  // Carthage, 146 BC: the levy holds the walk itself — Appian's 30-ft wall leaves 7.1 m of
+  // clear standing band, so a Punic bay carries a formation rather than a picket — with the
+  // freedmen's slings behind them answering the approach. See `siegeUnits.ts` for why there
+  // are no elephants and no Libyan veterans on this wall.
+  [Faction.Carthage]: {
+    wall: ['punic-levy', 'punic-freedmen'],
+    engines: ['punic-catapults'],
+    reserve: ['punic-deserters'],
+  },
+};
+
+export const STORM_PLANS: Partial<Record<Faction, StormPlan>> = {
+  [Faction.Germanic]: {
+    tower: 'tower-assault',
+    ladder: 'escalade-party',
+    ram: 'ram-crew',
+    batteries: ['onager'],
+    host: ['juthungi-warband'],
+    hostFormation: 'horde',
+    horse: ['juthungi-riders'],
+  },
+  // Scipio's train. Two battery types rather than one, because a Roman siege park had both
+  // and both are already modelled: the stone-throwers work on the merlons and the
+  // carroballistae — the same unit that garrisons the Aurelian Wall in the other siege —
+  // shoot flat at whoever is standing behind them.
+  [Faction.Rome]: {
+    tower: 'legio-tower-party',
+    ladder: 'legio-escalade',
+    ram: 'legio-ram-crew',
+    batteries: ['legio-ballista', 'carroballista'],
+    host: ['legio-cohort'],
+    hostFormation: 'line',
+    horse: ['equites'],
+  },
+};
+
+/** Whose city stands on this map. Rome's is the fallback for a map with no city at all. */
+export const garrisonOf = (mapId: MapId): Faction =>
+  getMap(mapId).city?.garrison ?? Faction.Rome;
+
+/**
+ * Which side of an assault a faction is on, for a given map.
+ *
+ * The single question the whole generalisation turns on, and the map already answers it:
+ * `CityPlan.garrison` says whose wall it is and everyone else is storming it.
+ */
+export const siegeRoleOf = (f: Faction, mapId: MapId): SiegeRole =>
+  f === garrisonOf(mapId) ? 'garrison' : 'storm';
+
+/**
+ * A side's assault roster in menu and deployment order, flattened from its plan.
+ *
+ * Derived rather than written out a second time: the menu rows and the deployment then
+ * cannot disagree about which types exist, which is the failure the old pair of hand-written
+ * constants was one edit away from. At `(Rome, 'garrison')` and `(Germanic, 'storm')` this
+ * reproduces the two shipped lists exactly.
+ */
+export const siegeRosterFor = (f: Faction, role: SiegeRole): readonly string[] => {
+  if (role === 'garrison') {
+    const p = GARRISON_PLANS[f];
+    return p ? [...p.wall, ...p.engines, ...p.reserve] : [];
+  }
+  const p = STORM_PLANS[f];
+  return p ? [p.tower, p.ladder, p.ram, ...p.batteries, ...p.host, ...p.horse] : [];
+};
+
+/**
+ * The roster rows a side may field.
+ *
+ * `mapId` is only consulted for an assault, and only because Rome plays both sides of one:
+ * without it there is no way to tell "Rome holding the Aurelian Wall" from "Rome storming
+ * Carthage". It defaults to the campaign's own map so every field-battle caller is unchanged.
+ */
+export const rosterFor = (
+  f: Faction, s: ScenarioId, mapId: MapId = DEFAULT_MAP_ID
+): readonly string[] => {
+  if (s === 'assault') return siegeRosterFor(f, siegeRoleOf(f, mapId));
   if (f === Faction.Carthage) return CARTHAGE_ROSTER;
   return f === Faction.Rome ? ROME_ROSTER : JUTHUNGI_ROSTER;
 };
@@ -261,9 +374,18 @@ export interface BattleConfig {
    * scenario would zero every row and the player would lose the order of battle they had
    * just built on the other side of the switch. Two pairs cost eight numbers in the token
    * and mean a player can flip between the two battles without losing either.
+   *
+   * **Four fields, not two, and they are keyed by *role* rather than by faction.**
+   * `siegeRome` is Rome holding the Aurelian Wall; `siegeRomanTrain` is Rome storming
+   * Carthage. Those are disjoint rosters belonging to one faction, so one field could not
+   * carry both any more than one field could carry the field battle and the storm. All four
+   * are always sanitised and always carried, for the same reason the first two were: a player
+   * who changes map must not lose the army they built on the other one.
    */
   siegeRome: ArmyComposition;
   siegeJuthungi: ArmyComposition;
+  siegeCarthage: ArmyComposition;
+  siegeRomanTrain: ArmyComposition;
   quality: QualityTier;
   difficulty: Difficulty;
   /** Hour of day, 4..21, matching the SkySystem's own range. */
@@ -348,6 +470,38 @@ export const DEFAULT_CONFIG: BattleConfig = {
     'juthungi-warband': 6,
     'juthungi-riders': 2,
   },
+  /**
+   * Carthage on its own wall: six bays of citizen levy, four of freedmen behind them, two
+   * batteries of the hair-strung engines and the nine hundred Roman deserters in reserve.
+   *
+   * 14 units and 1,616 men against Rome's 12 and 1,154 at the Aurelian Wall, which is the
+   * wall's own arithmetic rather than a thumb on the scale: Carthage's modelled curtain is
+   * 1,984 m against Rome's 1,781, and its 7.1 m walk carries five ranks where Rome's carries
+   * three or four. More wall and a deeper walk means more men standing on it.
+   */
+  siegeCarthage: {
+    'punic-levy': 6,
+    'punic-freedmen': 4,
+    'punic-catapults': 2,
+    'punic-deserters': 2,
+  },
+  /**
+   * Scipio's train: four towers, four ladder parties, one ram at the Porta Byrsae, two
+   * batteries of stone-throwers and one of carroballistae, six cohorts waiting and two
+   * squadrons of horse.
+   *
+   * Twenty units is exactly `MAX_UNITS_PER_SIDE`, as the Juthungi assault is, so adding a
+   * fifth tower means giving something up.
+   */
+  siegeRomanTrain: {
+    'legio-tower-party': 4,
+    'legio-escalade': 4,
+    'legio-ram-crew': 1,
+    'legio-ballista': 2,
+    carroballista: 1,
+    'legio-cohort': 6,
+    equites: 2,
+  },
   quality: 'ultra',
   difficulty: 'hard',
   timeOfDay: 10,
@@ -368,9 +522,24 @@ export const DEFAULT_CONFIG: BattleConfig = {
 export const compositionFor = (
   c: BattleConfig, f: Faction, s: ScenarioId = c.scenario
 ): ArmyComposition => {
-  if (s === 'assault') return f === Faction.Rome ? c.siegeRome : c.siegeJuthungi;
+  if (s === 'assault') return c[assaultCompositionKey(f, c.map)];
   if (f === Faction.Carthage) return c.carthage;
   return f === Faction.Rome ? c.rome : c.juthungi;
+};
+
+/**
+ * Which of the four assault compositions belongs to a faction on a given map.
+ *
+ * Exported because the menu's steppers write back into the config and must reach for the
+ * same field this reads, and a second copy of the mapping in the UI is exactly how a player
+ * ends up editing an army they are not looking at.
+ */
+export const assaultCompositionKey = (
+  f: Faction, mapId: MapId
+): 'siegeRome' | 'siegeJuthungi' | 'siegeCarthage' | 'siegeRomanTrain' => {
+  if (f === Faction.Carthage) return 'siegeCarthage';
+  if (f === Faction.Germanic) return 'siegeJuthungi';
+  return siegeRoleOf(Faction.Rome, mapId) === 'garrison' ? 'siegeRome' : 'siegeRomanTrain';
 };
 
 /**
@@ -380,9 +549,18 @@ export const compositionFor = (
  * that literal is correct for the shipped battle and silently wrong for any other, and it
  * appeared in enough places — strength tallies, pool fitting, the menu's army panels — that
  * a shared accessor is the only way they stay in step.
+ *
+ * An assault used to hardcode the Juthungi as the second side, on the argument that storming
+ * the Aurelian Wall is a Juthungi operation. True, and it stops being the whole story with a
+ * second city: at Carthage the wall is Punic and Rome is the besieger, so the opponent comes
+ * from `CityPlan.garrison` instead. It still resolves to the Juthungi at Rome, because
+ * Rome's own plan names Rome as the garrison.
  */
-export const belligerents = (c: BattleConfig): readonly [Faction, Faction] =>
-  [Faction.Rome, c.scenario === 'assault' ? Faction.Germanic : c.opponent] as const;
+export const belligerents = (c: BattleConfig): readonly [Faction, Faction] => {
+  if (c.scenario !== 'assault') return [Faction.Rome, c.opponent] as const;
+  const held = garrisonOf(c.map);
+  return [Faction.Rome, held === Faction.Rome ? Faction.Germanic : held] as const;
+};
 
 /** Units in a side's composition, ignoring rows set to zero. */
 export const unitCount = (comp: ArmyComposition): number =>
@@ -397,7 +575,7 @@ export const unitCount = (comp: ArmyComposition): number =>
 export function spawnList(c: BattleConfig, f: Faction, s: ScenarioId = c.scenario): string[] {
   const comp = compositionFor(c, f, s);
   const out: string[] = [];
-  for (const id of rosterFor(f, s)) {
+  for (const id of rosterFor(f, s, c.map)) {
     for (let k = 0; k < Math.max(0, comp[id] ?? 0); k++) out.push(id);
   }
   return out;
@@ -517,20 +695,27 @@ const LINE_TYPES: ReadonlySet<string> = new Set([
 /**
  * The same idea for the assault, where "the line" means two different things per side.
  *
- * Rome's line is the garrison strung along the parapet, and its width is the useful figure a
- * player is actually choosing: **how many metres of curtain they can hold**. The reserve
- * cohorts and the carroballistae are behind it and hold no wall. The Juthungi's line is the
- * warbands waiting in the open; the towers, ladder parties, ram and onagers are the assault
+ * A garrison's line is the wall troops strung along the parapet, and its width is the useful
+ * figure a player is actually choosing: **how many metres of curtain they can hold**. The
+ * reserve and the engines are behind it and hold no wall. A storming side's line is whatever
+ * is waiting in the open; the towers, ladder parties, ram and batteries are the assault
  * itself and stand in no line at all, so counting them would report a front the host never
  * forms. `MainMenu` labels the two cases differently for the same reason.
+ *
+ * Read off the side's own plan rather than written out, which is what makes it work for four
+ * armies instead of two — `legio-cohort` holds no wall as Rome's reserve at the Aurelian Wall
+ * and *is* the line as Rome's host at Carthage, and one flat set cannot say both.
  */
-const SIEGE_LINE_TYPES: ReadonlySet<string> = new Set([
-  'ballistarii', 'wall-slingers',
-  'juthungi-warband',
-]);
-
-export const lineTypesFor = (s: ScenarioId): ReadonlySet<string> =>
-  s === 'assault' ? SIEGE_LINE_TYPES : LINE_TYPES;
+export const lineTypesFor = (
+  s: ScenarioId, f: Faction = Faction.Rome, mapId: MapId = DEFAULT_MAP_ID
+): ReadonlySet<string> => {
+  if (s !== 'assault') return LINE_TYPES;
+  const role = siegeRoleOf(f, mapId);
+  const ids = role === 'garrison'
+    ? GARRISON_PLANS[f]?.wall ?? []
+    : STORM_PLANS[f]?.host ?? [];
+  return new Set(ids);
+};
 
 export interface SideSummary {
   units: number;
@@ -551,7 +736,7 @@ export function summarise(
   c: BattleConfig, f: Faction, maxSoldiers: number, sc: ScenarioId = c.scenario
 ): SideSummary {
   const scale = fittedUnitScale(c, maxSoldiers, sc);
-  const line = lineTypesFor(sc);
+  const line = lineTypesFor(sc, f, c.map);
   let men = 0;
   let frontage = 0;
   const list = spawnList(c, f, sc);
@@ -584,18 +769,28 @@ const clampInt = (n: unknown, lo: number, hi: number, fallback: number): number 
  */
 export function sanitiseConfig(raw: unknown): BattleConfig {
   const o = (raw ?? {}) as Partial<BattleConfig>;
-  const side = (v: unknown, f: Faction, sc: ScenarioId): ArmyComposition => {
+  /**
+   * Clamp one composition against the rows it is allowed to carry.
+   *
+   * Takes the roster and the fallback rather than a faction and a scenario, because the four
+   * assault compositions are no longer one per faction: `siegeRome` and `siegeRomanTrain` are
+   * both Rome's, and resolving them through `compositionFor(DEFAULT_CONFIG, ...)` would have
+   * asked the *default* map which one it meant and been wrong on the other.
+   */
+  const side = (
+    v: unknown, ids: readonly string[], fallback: ArmyComposition
+  ): ArmyComposition => {
     const src = (v ?? {}) as Record<string, unknown>;
     const out: Record<string, number> = {};
     let total = 0;
-    for (const id of rosterFor(f, sc)) {
+    for (const id of ids) {
       const n = clampInt(src[id], 0, MAX_PER_TYPE, 0);
       // Respect the per-side cap even if the input ignored it, trimming later rows first.
       const room = Math.max(0, MAX_UNITS_PER_SIDE - total);
       out[id] = Math.min(n, room);
       total += out[id];
     }
-    if (total === 0) return compositionFor(DEFAULT_CONFIG, f, sc);
+    if (total === 0) return fallback;
     return out;
   };
   // Resolved first: the map decides the default hour, because 10:00 is the right opening
@@ -626,14 +821,20 @@ export function sanitiseConfig(raw: unknown): BattleConfig {
     map,
     scenario,
     unitSize: sizes.includes(String(o.unitSize)) ? (o.unitSize as UnitSizeId) : DEFAULT_CONFIG.unitSize,
-    // Both orders of battle are always sanitised and always carried, whichever one is being
-    // fought, so switching scenario in the menu never destroys the other one.
+    // Every order of battle is always sanitised and always carried, whichever one is being
+    // fought, so switching scenario — or map — in the menu never destroys another one.
     opponent: o.opponent === Faction.Carthage ? Faction.Carthage : Faction.Germanic,
-    rome: side(o.rome, Faction.Rome, 'field'),
-    juthungi: side(o.juthungi, Faction.Germanic, 'field'),
-    carthage: side(o.carthage, Faction.Carthage, 'field'),
-    siegeRome: side(o.siegeRome, Faction.Rome, 'assault'),
-    siegeJuthungi: side(o.siegeJuthungi, Faction.Germanic, 'assault'),
+    rome: side(o.rome, ROME_ROSTER, DEFAULT_CONFIG.rome),
+    juthungi: side(o.juthungi, JUTHUNGI_ROSTER, DEFAULT_CONFIG.juthungi),
+    carthage: side(o.carthage, CARTHAGE_ROSTER, DEFAULT_CONFIG.carthage),
+    siegeRome:
+      side(o.siegeRome, siegeRosterFor(Faction.Rome, 'garrison'), DEFAULT_CONFIG.siegeRome),
+    siegeJuthungi:
+      side(o.siegeJuthungi, siegeRosterFor(Faction.Germanic, 'storm'), DEFAULT_CONFIG.siegeJuthungi),
+    siegeCarthage:
+      side(o.siegeCarthage, siegeRosterFor(Faction.Carthage, 'garrison'), DEFAULT_CONFIG.siegeCarthage),
+    siegeRomanTrain:
+      side(o.siegeRomanTrain, siegeRosterFor(Faction.Rome, 'storm'), DEFAULT_CONFIG.siegeRomanTrain),
     quality: tiers.includes(o.quality as QualityTier) ? (o.quality as QualityTier) : DEFAULT_CONFIG.quality,
     difficulty: diffs.includes(o.difficulty as Difficulty)
       ? (o.difficulty as Difficulty)

@@ -10,7 +10,7 @@
 import { ranksFor } from '../sim/formations';
 import type { BattleSystem } from '../sim/BattleSystem';
 import {
-  ALL_FACTIONS, Faction, SoldierState, UnitOrder,
+  ALL_FACTIONS, Faction, SoldierState, UnitOrder, getOpposingFaction,
   type UnitGroupState, type UnitTypeDef,
 } from '../sim/types';
 import { moraleStateOf, PLAYER_FACTION, type MoraleState, type Phase } from './theme';
@@ -262,10 +262,13 @@ export class HudModel {
   /** Nearest distance between any two opposing units' centres. */
   private closestApproach(): number {
     let best = Infinity;
+    // Rome against whoever Rome is fighting. `Faction.Germanic` returned `Infinity` on any
+    // Carthage battle, so `derivePhase` could never reach `skirmish`.
+    const foe = getOpposingFaction();
     for (const a of this.views) {
       if (a.destroyed || a.faction !== Faction.Rome || a.routing) continue;
       for (const b of this.views) {
-        if (b.destroyed || b.faction !== Faction.Germanic || b.routing) continue;
+        if (b.destroyed || b.faction !== foe || b.routing) continue;
         const d = Math.hypot(a.cx - b.cx, a.cz - b.cz) - (a.depth + b.depth) * 0.5;
         if (d < best) best = d;
       }
@@ -275,10 +278,14 @@ export class HudModel {
 
   private derivePhase(simTime: number): Phase {
     if (this.over) return 'aftermath';
+    // The enemy is whoever Rome is fighting, not `Faction.Germanic`. With the literal, a
+    // battle against Carthage divided by a Juthungi army of nobody: `gTotal` clamped to 1,
+    // `routing` stayed 0, and the phase readout could never leave the Roman side's story.
+    const foe = getOpposingFaction();
     const rTotal = Math.max(1, this.unitsLeft[Faction.Rome] + this.routing[Faction.Rome]);
-    const gTotal = Math.max(1, this.unitsLeft[Faction.Germanic] + this.routing[Faction.Germanic]);
+    const gTotal = Math.max(1, this.unitsLeft[foe] + this.routing[foe]);
     const broken =
-      this.routing[Faction.Rome] / rTotal > 0.34 || this.routing[Faction.Germanic] / gTotal > 0.34;
+      this.routing[Faction.Rome] / rTotal > 0.34 || this.routing[foe] / gTotal > 0.34;
     if (broken) return 'rout';
     if (this.engagedCount > 0) return 'clash';
     // 165 m is the longest bow range in the roster, so inside it arrows are already flying.

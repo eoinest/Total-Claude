@@ -1,8 +1,8 @@
 import type { EngineContext } from '../core/Engine';
 import type { BattleSystem } from './BattleSystem';
 import {
-  type BattleConfig, type ScenarioId, DEFAULT_CONFIG, belligerents, compositionFor,
-  fittedUnitScale,
+  type BattleConfig, type ScenarioId, DEFAULT_CONFIG, GARRISON_PLANS, STORM_PLANS,
+  belligerents, compositionFor, fittedUnitScale,
 } from './battleConfig';
 import { Faction, UnitOrder, getOpposingFaction, setOpposingFaction } from './types';
 
@@ -176,6 +176,85 @@ const RAM_NAMES = ['The Widder', 'The Boar', 'The Ash-Head'];
 /** `names[k]`, falling back to a numbered variant once the hand-written list runs out. */
 const nameAt = (names: readonly string[], k: number, stem: string): string =>
   names[k] ?? `${stem} ${ROMAN_NUMERALS[k] ?? k + 1}`;
+
+/**
+ * Unit names for the assault, keyed by roster id.
+ *
+ * The four blocks of `deployAssault` used to carry their stems inline — `Tower Party ${I}`,
+ * `Onager Battery ${I}` — which was fine while each block deployed one known type and stops
+ * being fine the moment the type comes out of a plan. One table, so adding a unit to a plan
+ * cannot leave it deploying under somebody else's name.
+ *
+ * Carthage's garrison is named for the quarters and trades it was raised from, in the same
+ * idiom the field roster uses for the Punic contingents; the siege train for the legions and
+ * the men who led the storm.
+ */
+const SIEGE_NAMES: Record<string, { list: readonly string[]; stem: string }> = {
+  // Rome, holding the Aurelian Wall.
+  ballistarii: { list: BALLISTARII_NAMES, stem: 'Ballistarii' },
+  'wall-slingers': { list: SLINGER_NAMES, stem: 'Slingers' },
+  carroballista: { list: [], stem: 'Carroballista' },
+  'legio-cohort': { list: [], stem: 'Cohort' },
+  // The Juthungi, storming it.
+  'tower-assault': { list: [], stem: 'Tower Party' },
+  'escalade-party': { list: [], stem: 'Ladder Party' },
+  'ram-crew': { list: RAM_NAMES, stem: 'Ram' },
+  onager: { list: [], stem: 'Onager Battery' },
+  'juthungi-warband': { list: BAND_NAMES, stem: 'Warband' },
+  'juthungi-riders': { list: RAIDER_NAMES, stem: 'Raiders' },
+  // Carthage, holding the triple wall in 146.
+  'punic-levy': {
+    list: [
+      'Levy of the Byrsa', 'Levy of the Megara', 'Levy of the Magon Quarter',
+      'Levy of the Harbour', 'Levy of Salammbo', 'Levy of the Sea Gate',
+      'Levy of the Tophet Road', 'Levy of the Corn Quay',
+    ],
+    stem: 'Citizen Levy',
+  },
+  'punic-freedmen': {
+    list: [
+      'Freedmen of the Ship-Sheds', 'Freedmen of the Dye-Works',
+      'Freedmen of the Corn Quay', 'Freedmen of the Byrsa',
+      'Freedmen of the Cothon', 'Freedmen of the Kilns',
+    ],
+    stem: 'Freedmen',
+  },
+  // Appian: the public buildings were broken up for timber and the women cut off their hair
+  // for the skeins, because the city had surrendered its engines in 149 and had no sinew.
+  'punic-catapults': {
+    list: ["The Women's Engines", 'The Temple Timbers', 'The Byrsa Engines'],
+    stem: 'Wall Catapults',
+  },
+  'punic-deserters': { list: ['The Nine Hundred', 'The Second Nine Hundred'], stem: 'Deserters' },
+  // Rome, storming it. Laelius was over the wall of the Cothon first in 146; Tiberius Gracchus
+  // and Gaius Fannius were first over at the night attack on Megara the year before.
+  'legio-tower-party': {
+    list: [
+      "Laelius' Storming Party", 'Party of the Mural Crown',
+      'Volunteers of the Fourth', 'Volunteers of the Sixth',
+    ],
+    stem: 'Tower Party',
+  },
+  'legio-escalade': {
+    list: [
+      'Velites of the Fourth', 'Velites of the Sixth',
+      'Velites of the Allies', 'Velites of the Camp',
+    ],
+    stem: 'Ladder Party',
+  },
+  'legio-ram-crew': { list: ['Aries', 'The Bull', 'The Wall-Breaker'], stem: 'Ram' },
+  'legio-ballista': {
+    list: ['Battery of the Isthmus', 'Battery of the Ditch', 'Battery of the Taenia'],
+    stem: 'Stone-Throwers',
+  },
+  equites: { list: EQUITES_NAMES, stem: 'Equites' },
+};
+
+/** The `k`th unit of a siege type, by its own naming convention. */
+const siegeNameFor = (id: string, k: number): string => {
+  const e = SIEGE_NAMES[id];
+  return e ? nameAt(e.list, k, e.stem) : `${id} ${ROMAN_NUMERALS[k] ?? k + 1}`;
+};
 
 /**
  * Which order of battle to deploy.
@@ -518,25 +597,33 @@ export function deployBattle(
 // ---------------------------------------------------------------------------
 
 /**
- * The Juthungi storm the Aurelian Wall either side of the Porta Flaminia.
+ * A wall is stormed either side of its gate. Which wall, and by whom, is data.
  *
  * Everything about this deployment is read from the wall itself at run time rather than
- * written down here, because the wall's geometry is generated: the bays are on a 35.5 m
- * pitch from a `WALL_X_MIN` that is solved from where the Tiber happens to run, their
- * construction stages are a function of their distance from the gate, and the wall-walk
- * steps in height with the ground under it. A hardcoded x would be wrong the first time
- * anything upstream changed, and would be wrong silently.
+ * written down here, because the wall's geometry is generated: at Rome the bays are on a
+ * 35.5 m pitch from a `WALL_X_MIN` solved from where the Tiber happens to run and their
+ * construction stages are a function of distance from the gate; at Carthage they are on half
+ * the 59.2 m tower interval along a bowed line whose south end sits 121 m deeper into the
+ * map. A hardcoded x would be wrong the first time anything upstream changed, and would be
+ * wrong silently.
  *
- * The tactical picture:
+ * **Who fights is data too, and that is the newer half.** `CityPlan.garrison` names the side
+ * that holds the wall; `GARRISON_PLANS` and `STORM_PLANS` in `battleConfig` say which unit
+ * types fill each job for each side. So this function knows the *shape* of an assault and
+ * nothing else — no city, no faction, no unit id appears below.
  *
- *  - Rome holds the finished bays either side of the gate with ballistarii and slingers,
- *    with two cohorts in reserve inside the walls to plug whatever gets over.
- *  - The Juthungi bring four towers against the finished curtain, ladders against the
- *    no-parapet stretch west of the gate — the obvious weak point, and visibly so — and a
- *    ram at the gate itself.
- *  - The onagers stand off at 200 m and shoot at the parapet.
- *  - The rest of the host waits in the open behind them, which is what an assault
- *    reserve actually looks like and is also what fills the frame.
+ * The tactical picture, which is the same shape in both sieges:
+ *
+ *  - the garrison holds the bays either side of the gate, working outward, with its engines
+ *    behind the parapet and a reserve inside the walls to plug whatever gets over;
+ *  - the storming side brings towers against the bays nearest the gate, ladders beyond them,
+ *    and a ram at the gate itself;
+ *  - the batteries stand off at ~200 m and shoot at the parapet;
+ *  - the rest of the host waits in the open behind them, which is what an assault reserve
+ *    actually looks like and is also what fills the frame.
+ *
+ * At Rome that is the Juthungi against ballistarii on the unfinished curtain; at Carthage it
+ * is Scipio's train against a citizen levy on a wall three works deep.
  */
 function deployAssault(
   battle: BattleSystem, ctx: EngineContext, config: BattleConfig
@@ -556,8 +643,6 @@ function deployAssault(
    */
   battle.unitSizeScale = fittedUnitScale(config, ctx.quality.maxSoldiers, 'assault');
 
-  const rome = compositionFor(config, Faction.Rome, 'assault');
-  const juth = compositionFor(config, Faction.Germanic, 'assault');
   const n = (comp: Readonly<Record<string, number>>, id: string): number =>
     Math.max(0, comp[id] ?? 0);
 
@@ -600,25 +685,26 @@ function deployAssault(
   const stormSide = belligerents(config).find((f) => f !== garrisonSide) ?? Faction.Germanic;
   setOpposingFaction(garrisonSide === Faction.Rome ? stormSide : garrisonSide);
   /**
-   * **The one thing this generalisation does not do, named rather than guessed.**
+   * The two armies, as *roles* rather than as names.
    *
-   * The two siege orders of battle are still keyed to Rome-garrisons-and-the-Juthungi-storm,
-   * because the roster has no Punic wall troops and no Roman siege train — `ballistarii`,
-   * `wall-slingers` and `carroballista` are Roman, `tower-assault`, `escalade-party`,
-   * `ram-crew` and `onager` are Juthungi, and inventing Punic equivalents is the roster
-   * workstream's call, not this file's. Guessing at another workstream's table is how work
-   * gets lost.
+   * This is the note that used to stand here saying the generalisation stopped short: the
+   * orders of battle were keyed to Rome-garrisons-and-the-Juthungi-storm because the roster
+   * had no Punic wall troops and no Roman siege train, so a storm of Carthage put Roman
+   * auxiliaries on Carthage's parapet. Both tables now exist in `siegeUnits.ts`, and
+   * `battleConfig` keys them by faction *and* role — Rome is the only faction with both, and
+   * one flat list per faction is precisely what could not express that.
    *
-   * It is not currently reachable: a map with no `CityPlan` cannot host an assault
-   * (`sanitiseConfig`), Carthage has no plan yet, and so `garrisonSide` is always
-   * `Faction.Rome` today. When Carthage's plan lands, `rosterFor` needs a *role* argument —
-   * garrison or storm — instead of a faction, and `SIEGE_CARTHAGE_ROSTER` and a Roman siege
-   * train need to exist. Everything else below already follows `garrisonSide`.
+   * What is left here is the shape of an assault and nothing about who is fighting it:
+   * `garrison.wall` fills the bays outward from the gate, `storm.tower` rides the towers, and
+   * this function still never learns a city's name.
    */
-  const garrisonComp = garrisonSide === Faction.Rome ? rome : juth;
-  const stormComp = garrisonSide === Faction.Rome ? juth : rome;
-  void garrisonComp;
-  void stormComp;
+  const garrisonComp = compositionFor(config, garrisonSide, 'assault');
+  const stormComp = compositionFor(config, stormSide, 'assault');
+  const garrison = GARRISON_PLANS[garrisonSide] ?? GARRISON_PLANS[Faction.Rome]!;
+  const storm = STORM_PLANS[stormSide] ?? STORM_PLANS[Faction.Germanic]!;
+  /** The two sides' result lists, under the names `ScenarioResult` has always used. */
+  const held = garrisonSide === Faction.Rome ? roman : germanic;
+  const storming = garrisonSide === Faction.Rome ? germanic : roman;
 
   const push = (arr: DeployedUnit[], id: number, label: string) => {
     if (id >= 0) arr.push({ unitId: id, label });
@@ -680,22 +766,19 @@ function deployAssault(
   /** A bay that can carry men on its walk, which is what a garrison and a ladder both need. */
   const holdable = (k: number): boolean => real(k) && at(k).garrisonable;
 
-  // ---- Rome: the garrison ------------------------------------------------
-  // Wall troops fill the bays either side of the gate, working outward, in roster order:
-  // ballistarii take the finished curtain nearest the gate and slingers what is left, which
-  // is the unfinished stretch where there is no parapet to shoot from — but a sling does not
-  // need one. `SIEGE_ROME_ROSTER`'s order is what decides that, so it is deployment order.
-  const wallTypes: [string, readonly string[], string][] = [
-    ['ballistarii', BALLISTARII_NAMES, 'Ballistarii'],
-    ['wall-slingers', SLINGER_NAMES, 'Slingers'],
-  ];
+  // ---- The garrison ------------------------------------------------------
+  // Wall troops fill the bays either side of the gate, working outward, in roster order. At
+  // Rome the ballistarii take the finished curtain nearest the gate and the slingers what is
+  // left, which is the unfinished stretch where there is no parapet to shoot from — a sling
+  // does not need one. At Carthage the levy holds the walk and the freedmen stand behind
+  // them. `GarrisonPlan.wall`'s order is what decides that, so it is deployment order.
   {
-    const bayFor = fanOut(
-      n(rome, 'ballistarii') + n(rome, 'wall-slingers'), 1, holdable
-    );
+    let total = 0;
+    for (const type of garrison.wall) total += n(garrisonComp, type);
+    const bayFor = fanOut(total, 1, holdable);
     let next = 0;
-    for (const [type, names, stem] of wallTypes) {
-      for (let i = 0; i < n(rome, type); i++) {
+    for (const type of garrison.wall) {
+      for (let i = 0; i < n(garrisonComp, type); i++) {
         const k = bayFor[next++];
         if (k === undefined) break;
         const m = mid(k);
@@ -706,85 +789,109 @@ function deployAssault(
         const u = battle.unitById(id);
         if (!u) continue;
         if (!siege.garrison(u, m.x, m.z)) continue;
-        push(roman, id, nameAt(names, i, stem));
+        push(held, id, siegeNameFor(type, i));
       }
     }
   }
 
-  // Carroballistae behind the parapet, on the flanks of the gate bay.
-  for (const [i, k] of fanOut(n(rome, 'carroballista'), 2, real).entries()) {
-    const [cx, cz] = out(k, -14);
-    push(roman, battle.spawnUnit('carroballista', cx, cz, Math.atan2(mid(k).nx, mid(k).nz), 'line'),
-      `Carroballista ${ROMAN_NUMERALS[i] ?? i + 1}`);
+  // The garrison's engines behind the parapet, on the flanks of the gate bay.
+  {
+    let i = 0;
+    for (const type of garrison.engines) {
+      for (const k of fanOut(n(garrisonComp, type), 2, real)) {
+        const [cx, cz] = out(k, -14);
+        push(held, battle.spawnUnit(type, cx, cz, Math.atan2(mid(k).nx, mid(k).nz), 'line'),
+          siegeNameFor(type, i++));
+      }
+    }
   }
 
-  // Cohorts in reserve 46 m inside the walls, to plug whatever gets over. They stand behind
-  // the same bays the towers come at, fanned out in the same order, because that is where a
-  // breach will be: a reserve posted anywhere else is a reserve that arrives late.
-  for (const [i, k] of fanOut(n(rome, 'legio-cohort'), 1, real).entries()) {
-    const m = mid(k);
-    const [rx, rz] = out(k, -46);
-    push(roman, battle.spawnUnit('legio-cohort', rx, rz, Math.atan2(m.nx, m.nz), 'line'),
-      `Cohort ${ROMAN_NUMERALS[i] ?? i + 1}`);
+  // The reserve 46 m inside the walls, to plug whatever gets over. It stands behind the same
+  // bays the towers come at, fanned out in the same order, because that is where a breach
+  // will be: a reserve posted anywhere else is a reserve that arrives late.
+  {
+    let i = 0;
+    for (const type of garrison.reserve) {
+      for (const k of fanOut(n(garrisonComp, type), 1, real)) {
+        const m = mid(k);
+        const [rx, rz] = out(k, -46);
+        push(held, battle.spawnUnit(type, rx, rz, Math.atan2(m.nx, m.nz), 'line'),
+          siegeNameFor(type, i++));
+      }
+    }
   }
 
-  // ---- The Juthungi: the assault -----------------------------------------
-  // Towers against the finished curtain, where the parapet fight will be worth watching.
-  // Echeloned back 9 m apiece so four machines converging on four adjacent bays do not
-  // arrive in one rank and foul each other.
-  for (const [i, k] of fanOut(n(juth, 'tower-assault'), 1, real).entries()) {
+  // ---- The storm ---------------------------------------------------------
+  // Towers against the curtain nearest the gate, where the parapet fight will be worth
+  // watching. Echeloned back 9 m apiece so four machines converging on four adjacent bays do
+  // not arrive in one rank and foul each other.
+  for (const [i, k] of fanOut(n(stormComp, storm.tower), 1, real).entries()) {
     const m = mid(k);
     const [sx, sz] = out(k, 74 + i * 9);
-    const id = battle.spawnUnit('tower-assault', sx, sz - m.nz * 12, Math.atan2(-m.nx, -m.nz), 'line');
+    const id = battle.spawnUnit(storm.tower, sx, sz - m.nz * 12, Math.atan2(-m.nx, -m.nz), 'line');
     if (id < 0) continue;
     siege.spawnTower(sx, sz, m.x, m.z, id);
-    push(germanic, id, `Tower Party ${ROMAN_NUMERALS[i] ?? i + 1}`);
+    push(storming, id, siegeNameFor(storm.tower, i));
   }
 
-  // Ladders against the stretch with no parapet raised yet — beyond the bays the towers are
-  // taking. It is the obvious place to go over and it is obvious from the ground, which is
-  // the point of building the wall unfinished in the first place.
+  // Ladders against the stretch beyond the bays the towers are taking. At Rome that is the
+  // curtain with no parapet raised yet — the obvious place to go over, and obvious from the
+  // ground, which is the point of building the wall unfinished in the first place.
   // Beyond bay +-2 while there are towers, because those bays are the towers' — but a player
   // who fields no towers at all should get their ladders against the gate bays rather than
   // sending every party to the far end of the circuit for no reason.
-  const ladderStart = n(juth, 'tower-assault') === 0 ? 1 : 3;
-  for (const [i, k] of fanOut(n(juth, 'escalade-party'), ladderStart, holdable).entries()) {
+  const ladderStart = n(stormComp, storm.tower) === 0 ? 1 : 3;
+  for (const [i, k] of fanOut(n(stormComp, storm.ladder), ladderStart, holdable).entries()) {
     const m = mid(k);
     const [sx, sz] = out(k, 26);
-    const id = battle.spawnUnit('escalade-party', sx, sz, Math.atan2(-m.nx, -m.nz), 'loose');
+    const id = battle.spawnUnit(storm.ladder, sx, sz, Math.atan2(-m.nx, -m.nz), 'loose');
     if (id < 0) continue;
     // Three ladders per party, spread across the bay's frontage.
     for (let j = -1; j <= 1; j++) {
       siege.spawnLadder(m.x + (-m.nz) * j * 7, m.z + m.nx * j * 7, id);
     }
-    push(germanic, id, `Ladder Party ${ROMAN_NUMERALS[i] ?? i + 1}`);
+    push(storming, id, siegeNameFor(storm.ladder, i));
   }
 
-  // The ram, on the axis of the Via Flaminia. A second crew queues 18 m behind the first
-  // rather than beside it: there is one gate, and two rams abreast of it would occupy the
-  // same ground and beat on the same timber.
-  for (let i = 0; i < n(juth, 'ram-crew'); i++) {
+  // The ram, on the axis of the road the gate carries. A second crew queues 18 m behind the
+  // first rather than beside it: there is one gate, and two rams abreast of it would occupy
+  // the same ground and beat on the same timber.
+  for (let i = 0; i < n(stormComp, storm.ram); i++) {
     const reach = 62 + i * 18;
     const gx = gate.x + Math.sin(gate.facing) * reach;
     const gz = gate.z + Math.cos(gate.facing) * reach;
-    const id = battle.spawnUnit('ram-crew', gx, gz, gate.facing + Math.PI, 'line');
+    const id = battle.spawnUnit(storm.ram, gx, gz, gate.facing + Math.PI, 'line');
     if (id < 0) continue;
     siege.spawnRam(gx, gz, id);
-    push(germanic, id, nameAt(RAM_NAMES, i, 'Ram'));
+    push(storming, id, siegeNameFor(storm.ram, i));
   }
 
-  // Onagers standing off at 196 m, shooting at the parapet. Spread along the wall rather
-  // than by bay, so the battery keeps its spacing however many there are.
+  // Batteries standing off at 196 m, shooting at the parapet. Spread along the wall rather
+  // than by bay, so the park keeps its spacing however many there are.
+  //
+  // The whole park is laid out as one line and *then* the types are dealt into it, rather
+  // than each type being centred on its own: Rome brings two kinds — stone-throwers for the
+  // merlons and carroballistae for the men behind them — and centring both would stack a
+  // carroballista on top of a stone-thrower, while offsetting the second group by its
+  // predecessor's count would push it 142 m down the wall on its own.
   {
     const m = mid(0);
     const [ox, oz] = out(0, 196);
-    for (const [i, along] of centred(n(juth, 'onager'), 71).entries()) {
-      const id = battle.spawnUnit('onager',
+    const park: string[] = [];
+    for (const type of storm.batteries) {
+      for (let k = 0; k < n(stormComp, type); k++) park.push(type);
+    }
+    const seen = new Map<string, number>();
+    for (const [k, along] of centred(park.length, 71).entries()) {
+      const type = park[k];
+      const id = battle.spawnUnit(type,
         ox + -m.nz * along, oz + m.nx * along, Math.atan2(-m.nx, -m.nz), 'line');
       if (id < 0) continue;
       const u = battle.unitById(id);
       if (u) siege.registerArtillery(u);
-      push(germanic, id, `Onager Battery ${ROMAN_NUMERALS[i] ?? i + 1}`);
+      const i = seen.get(type) ?? 0;
+      seen.set(type, i + 1);
+      push(storming, id, siegeNameFor(type, i));
     }
   }
 
@@ -793,19 +900,25 @@ function deployAssault(
   {
     const m = mid(0);
     const [bx, bz] = out(0, 132);
-    for (const [i, along] of centred(n(juth, 'juthungi-warband'), 62).entries()) {
-      push(germanic, battle.spawnUnit('juthungi-warband',
-        bx + -m.nz * along, bz + m.nx * along, Math.atan2(-m.nx, -m.nz), 'horde'),
-        nameAt(BAND_NAMES, i, 'Warband'));
+    let i = 0;
+    for (const type of storm.host) {
+      for (const along of centred(n(stormComp, type), 62)) {
+        push(storming, battle.spawnUnit(type,
+          bx + -m.nz * along, bz + m.nx * along, Math.atan2(-m.nx, -m.nz), storm.hostFormation),
+          siegeNameFor(type, i++));
+      }
     }
   }
   {
     const m = mid(0);
     const [bx, bz] = out(0, 178);
-    for (const [i, along] of flanking(n(juth, 'juthungi-riders'), 240, 70).entries()) {
-      push(germanic, battle.spawnUnit('juthungi-riders',
-        bx + -m.nz * along, bz + m.nx * along, Math.atan2(-m.nx, -m.nz), 'loose'),
-        nameAt(RAIDER_NAMES, i, 'Raiders'));
+    let i = 0;
+    for (const type of storm.horse) {
+      for (const along of flanking(n(stormComp, type), 240, 70)) {
+        push(storming, battle.spawnUnit(type,
+          bx + -m.nz * along, bz + m.nx * along, Math.atan2(-m.nx, -m.nz), 'loose'),
+          siegeNameFor(type, i++));
+      }
     }
   }
 

@@ -13,6 +13,14 @@
  *
  * Usage:
  *   node tools/matchup.mjs [--port=5363] [--only=spear-vs-cav] [--until=300] [--verbose]
+ *
+ * **A single figure here is repeatable to about ±8%, and that is the instrument, not the
+ * sim.** Unlike `qa-determinism.mjs` this does not call `engine.stop()`, so the page's own rAF
+ * loop keeps stepping the world between Playwright round-trips and the amount it steps
+ * depends on machine load. `even-grind` measured t+156 s (39%/35%) and t+144 s (43%/41%) on
+ * one unchanged tree half an hour apart. Read a case against the band — a matched pair grinds
+ * for two to four minutes — and against the other cases in the same run, never against a
+ * number quoted from a different one.
  */
 
 import { chromium } from 'playwright';
@@ -169,6 +177,53 @@ const CASES = [
     b: { type: 'urban-cohort', form: 'line', order: 'attack' },
     gap: 90,
     expect: 'the Punic pacing benchmark — should sit in the same band as even-grind',
+  },
+  // ---- The siege rosters, 146 BC ----------------------------------------
+  // Added with the Punic garrison and the Roman siege train. Read against the same band as
+  // everything above — a matched pair grinds for two to four minutes — plus one rule that
+  // only applies to a siege and is stated at the head of `src/units/siegeUnits.ts`: **an
+  // assault party must be the worse unit in a straight fight against what it meets on the
+  // walkway.** `deserters-vs-tower` is the test of that, and it is a pass/fail rather than a
+  // number.
+  {
+    id: 'punic-wall-grind',
+    name: 'Punic Citizen Levy vs Tribal Spearmen (matched control)',
+    a: { type: 'punic-levy', form: 'line', order: 'attack' },
+    b: { type: 'juthungi-spears', form: 'line', order: 'attack' },
+    gap: 90,
+    expect: 'the same shape as even-grind, which fights the identical B at the identical size',
+  },
+  {
+    id: 'deserters-vs-tower',
+    name: 'Roman Deserters vs a Legionary Tower Party',
+    a: { type: 'punic-deserters', form: 'line', order: 'hold' },
+    b: { type: 'legio-tower-party', form: 'line', order: 'attack' },
+    gap: 90,
+    expect: 'A — the hardest unit on the Punic wall is Roman, and the party must not out-fight it',
+  },
+  {
+    id: 'levy-vs-tower',
+    name: 'Punic Citizen Levy vs a Legionary Tower Party',
+    a: { type: 'punic-levy', form: 'shieldwall', order: 'hold' },
+    b: { type: 'legio-tower-party', form: 'line', order: 'attack' },
+    gap: 90,
+    expect: '150 militia against 80 legionaries on open ground, with none of the levy’s wall',
+  },
+  {
+    id: 'velites-vs-levy',
+    name: 'Velite Ladder Party vs Punic Citizen Levy',
+    a: { type: 'punic-levy', form: 'shieldwall', order: 'hold' },
+    b: { type: 'legio-escalade', form: 'loose', order: 'attack' },
+    gap: 90,
+    expect: 'an attritional edge-fight neither side wins in 300 s — read it against ladders-vs-ballistarii',
+  },
+  {
+    id: 'ladders-vs-ballistarii',
+    name: 'Juthungi Ladder Party vs Wall Ballistarii (the shipped control)',
+    a: { type: 'ballistarii', form: 'line', order: 'hold' },
+    b: { type: 'escalade-party', form: 'loose', order: 'attack' },
+    gap: 90,
+    expect: 'the mirror of velites-vs-levy in the siege that shipped; the two should read alike',
   },
   {
     id: 'even-grind',
