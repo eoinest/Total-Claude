@@ -236,6 +236,50 @@ Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`
 - **The crowd is NOT short of variation.** Read from the uploaded instance buffers: one 320-man
   cohort carries 57-59 kit masks, 119 statures, 229 cadences, 314/320 distinct animation phases,
   252 tunic colours. Adding variation is the wrong fix.
+
+- **56.2% of a soldier's triangles disagreed with themselves, and a battle frame could never
+  have shown it.** `MeshBuilder` wrote a shading normal per vertex and a triangle order, and
+  nothing tied them together. `revolve` emitted normals that were the *exact negation* of its
+  own winding for every profile, so every helmet bowl, the skull, the hair, all four shield
+  bosses and every lathed weapon head drew correctly and lit itself inside out — at
+  `envMapIntensity: 2.9` a helmet crown sampled the ground hemisphere instead of the sky, which
+  is why a bronze galea rendered as a flat cream lampshade. `box` got a left-handed basis on
+  four of six faces, so ±X and ±Y were **culled** by `side: FrontSide` and a box drew as two
+  facing panels with the world between them. Fixed at `5eb55f0` by deriving winding from the
+  normals (`quadFacing`/`triFacing`); `tools/probe-soldiermesh.mjs` reports 0 / 4,307. Identical
+  vertex and index counts, so the cost is nil. **Culling and shading disagree silently: a mesh
+  can render solid and still be wrong, and only a per-triangle probe finds it.**
+
+- **The shield boss was modelled, tinted and drawn every frame, on the wrong side of the board.**
+  `boss()` is a lathe under `rotationX(+PI/2)`, and all four call sites passed a negative axial
+  offset: the scutum's umbo sat 219 mm *behind* the face it should stand proud of, the oval's
+  114 mm, the round's 56 mm. "No boss geometry, no rim bevel" is the cue both round-23 graders
+  named first or second. Fixed at `d237d1c`; `boss()` now takes the board's own front-face Z so
+  the mistake is not expressible.
+
+- **"No smooth region anywhere in frame" is the grain pass, not the geometry.** The adversarial
+  grader's strongest scalar (32px tiles with Laplacian std < 1.0; plates 0.31-15.10%, ours
+  0.00-0.05%, 20/20) was attributed to "renderer dither or terrain polygon faceting". Measured
+  on one isolated-model plate, switching only `uGrain` (`PostFX.ts:1140`, ships **0.016**):
+  **0.016 -> 0.00%, 0.006 -> 2.21%, 0 -> 69.67%**, against Rome II soldier crops at mean 7.09%
+  (range 0.48-24.03). One uniform. Re-shot at 0.016 twice for 0.00 both times, so it is stable.
+  **0.006 lands inside the reference range.** Owned by the render workstream — one default.
+  And the statistic itself is weaker than believed: with the backdrop flood-filled out it
+  collapses from 100% to 80/70% balanced accuracy, i.e. it was largely measuring the background.
+
+- **The separation is a one-pixel spike, and it is not the background.** On the isolated-model
+  deck an adversarial grader flood-filled the backdrop, eroded the silhouette 4 px and measured
+  the figure only. Octave decomposition: at **4, 8 and 16 px the two pools are statistically
+  identical** (60-65% balanced accuracy = chance) — our models are not worse-proportioned,
+  worse-posed or worse-lit at coarse scale. The whole separation is the **1 px ÷ 2 px energy
+  ratio: ours 2.01-3.61, Rome II 1.20-1.35, no overlap.** The target is to drive it under 1.4
+  **by adding energy at 2-8 px — normal maps, roughness variation, wear, cavity, grime — and
+  never by blurring the 1 px band**, which lowers the ratio while making the model worse. That
+  is the same trap the harshness note records, found independently by a second instrument.
+  Two statistics that *fail* here and should stop being quoted at this magnification: local RMS
+  contrast at 32 px (80%, and the sign is **backwards** — Rome II is higher), and a
+  Gaussian-blur high-pass (70%, because the blur residual is dominated by the mid-band the two
+  pools share).
 - Raising metalness *darkens* armour here — verified twice. Full metal trades a sunlit diffuse
   term for a dim blue sky reflection under a sun-dominated rig with a weak probe.
 - `LightingSystem.ts:87` hemisphere fill is `0x9dbcdc / 0x6b5a3e` at 0.42, set to 0.34 at line 477,
@@ -300,6 +344,34 @@ Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`
    changed one. Use in-session interleaved A/B and report both arms.
 
 ## Grading
+
+### The isolated-model deck — a strictly better instrument, and it says 20/20
+
+`tools/shoot-model.mjs` photographs **one soldier, large**, deterministically posed and framed
+on a neutral ground, driven through `/viewer.html` so it renders the game's own geometry, atlas
+and shaders. `tools/model-deck.mjs` pairs those against single-soldier crops cut from the same
+ten Rome II press plates, re-encodes both pools through one encoder at one quality, balances the
+counts, shuffles from a seed and writes the key outside the deck.
+
+Why it is better: every earlier round graded a battle screenshot in which a man is a few hundred
+pixels among nine thousand, and both round-23 graders sorted largely on terrain, vegetation and
+framing. On the isolated deck **both graders scored 20/20 and tagged 20 of 20 mechanisms
+[FIGURE]** — no call rested on background, and the adversarial grader proved it rather than
+asserting it (see the one-pixel-spike note above). It also found things no battle frame could:
+the inside-out normals, the culled box faces and the reversed shield boss were all found this
+way within an hour, after surviving twenty-three blind rounds.
+
+**Read `screenshots/*-key.json` for what a round was.** `report.json` records commit, argv, dpr,
+output size and the full plate spec; `model-deck.mjs` refuses a source whose record is missing or
+says `hud: true`.
+
+The two known limits, both open: our plates stand on a neutral ground while the crops are cut out
+of a battle, so background can sort the deck in a glance even though it is not load-bearing; and
+the byte ratio between the pools is **0.51-0.53** (ours 60 KB against 118 KB at identical
+quantisation tables), which is not an encoder leak but an honest measure of how much less
+structure our figures carry.
+
+### The battle deck
 
 `tools/blind-compare.mjs` against `reference/rome2/` (ten Rome II press plates), built from
 `tools/shoot.mjs --set=deck`. `reference/siege/` (25 user images) and `reference/rome3d/` (YouTube
