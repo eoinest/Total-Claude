@@ -478,7 +478,10 @@ export class BattleSystem implements Subsystem {
     this.rallyZ = new Float32Array(ctx.quality.maxSoldiers);
     this.rallyOn = new Uint8Array(ctx.quality.maxSoldiers);
     this.rallyUntil = new Float32Array(ctx.quality.maxSoldiers);
-    this.hash = new SpatialHash(1500, 3.5);
+    // 2.0 m cells. The separation pass asks for everything within 0.84 m once per man per
+    // tick, and at 3.5 m cells that scanned about 37 candidates to find 6. The rebuild can
+    // afford the finer grid because it only ever touches the rectangle the armies stand on.
+    this.hash = new SpatialHash(1500, 2.0);
 
     const cap = ctx.quality.maxSoldiers;
     this.elevated = new Uint8Array(cap);

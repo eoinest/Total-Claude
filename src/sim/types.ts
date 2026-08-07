@@ -627,12 +627,28 @@ export class SpatialHash {
   private counts: Int32Array;
   /** Soldier indices, bucketed by cell. */
   private items: Int32Array;
+  /**
+   * The cell rectangle `starts` describes, inclusive. Outside it the array is stale, so a
+   * rebuild only clears and prefix-sums the ground the army is standing on: over a grid this
+   * size, scanning every cell costs several times what bucketing 8,000 men does, and it is
+   * what lets the cell size come down to something a 0.84 m body query can use.
+   *
+   * Empty is an inverted rectangle (`hi < lo`), which makes every query a no-op rather than
+   * a read of stale offsets.
+   */
+  private cxLo = 0;
+  private cxHi = -1;
+  private czLo = 0;
+  private czHi = -1;
 
   constructor(halfExtent: number, cellSize = 4) {
     this.cellSize = cellSize;
     this.originX = -halfExtent;
     this.originZ = -halfExtent;
-    this.cols = Math.ceil((halfExtent * 2) / cellSize) + 1;
+    // One spare column on the right: `rebuild` writes each row's end offset at cxHi + 1, so
+    // there has to be a column no man can ever occupy for that write to land in. `cellOf`
+    // rejects it, so the accepted region is exactly what it was before the spare was added.
+    this.cols = Math.ceil((halfExtent * 2) / cellSize) + 2;
     this.rows = this.cols;
     const n = this.cols * this.rows;
     this.starts = new Int32Array(n + 1);
@@ -643,34 +659,67 @@ export class SpatialHash {
   private cellOf(x: number, z: number): number {
     const cx = Math.floor((x - this.originX) / this.cellSize);
     const cz = Math.floor((z - this.originZ) / this.cellSize);
-    if (cx < 0 || cz < 0 || cx >= this.cols || cz >= this.rows) return -1;
+    if (cx < 0 || cz < 0 || cx >= this.cols - 1 || cz >= this.rows) return -1;
     return cz * this.cols + cx;
   }
 
-  /** Two-pass counting sort into contiguous buckets. */
+  /**
+   * Two-pass counting sort into contiguous buckets, over the occupied rectangle only.
+   *
+   * Bit-identical to a whole-grid rebuild: every cell outside the rectangle holds zero men
+   * and so contributes zero to the prefix sum, which means the offsets inside it — and
+   * therefore `items` and the order `query` walks it in — are exactly what they were.
+   */
   rebuild(pool: SoldierPool): void {
     const n = pool.count;
     if (this.items.length < n) this.items = new Int32Array(Math.max(n, 1024));
-    this.counts.fill(0);
+    const counts = this.counts;
+    const starts = this.starts;
+    const cols = this.cols;
+    // Outside the previous rectangle every counter is already zero, so this is the whole clear.
+    for (let cz = this.czLo; cz <= this.czHi; cz++) {
+      counts.fill(0, cz * cols + this.cxLo, cz * cols + this.cxHi + 1);
+    }
 
+    let cxLo = cols;
+    let cxHi = -1;
+    let czLo = this.rows;
+    let czHi = -1;
     for (let i = 0; i < n; i++) {
       if (!pool.aliveAt(i)) continue;
-      const c = this.cellOf(pool.x[i], pool.z[i]);
-      if (c >= 0) this.counts[c]++;
+      const cx = Math.floor((pool.x[i] - this.originX) / this.cellSize);
+      const cz = Math.floor((pool.z[i] - this.originZ) / this.cellSize);
+      if (cx < 0 || cz < 0 || cx >= cols - 1 || cz >= this.rows) continue;
+      counts[cz * cols + cx]++;
+      if (cx < cxLo) cxLo = cx;
+      if (cx > cxHi) cxHi = cx;
+      if (cz < czLo) czLo = cz;
+      if (cz > czHi) czHi = cz;
     }
+    this.cxLo = cxLo;
+    this.cxHi = cxHi;
+    this.czLo = czLo;
+    this.czHi = czHi;
+    if (czHi < 0) return;
+
     let acc = 0;
-    for (let c = 0; c < this.counts.length; c++) {
-      this.starts[c] = acc;
-      acc += this.counts[c];
+    for (let cz = czLo; cz <= czHi; cz++) {
+      const row = cz * cols;
+      for (let cx = cxLo; cx <= cxHi; cx++) {
+        starts[row + cx] = acc;
+        acc += counts[row + cx];
+      }
+      starts[row + cxHi + 1] = acc;
     }
-    this.starts[this.counts.length] = acc;
     // Reuse counts as a write cursor.
-    this.counts.fill(0);
+    for (let cz = czLo; cz <= czHi; cz++) {
+      counts.fill(0, cz * cols + cxLo, cz * cols + cxHi + 1);
+    }
     for (let i = 0; i < n; i++) {
       if (!pool.aliveAt(i)) continue;
       const c = this.cellOf(pool.x[i], pool.z[i]);
       if (c < 0) continue;
-      this.items[this.starts[c] + this.counts[c]++] = i;
+      this.items[starts[c] + counts[c]++] = i;
     }
   }
 
@@ -680,10 +729,12 @@ export class SpatialHash {
    */
   query(x: number, z: number, radius: number, fn: (index: number, d2: number) => void): void {
     const r = Math.max(0, radius);
-    const minCx = Math.max(0, Math.floor((x - r - this.originX) / this.cellSize));
-    const maxCx = Math.min(this.cols - 1, Math.floor((x + r - this.originX) / this.cellSize));
-    const minCz = Math.max(0, Math.floor((z - r - this.originZ) / this.cellSize));
-    const maxCz = Math.min(this.rows - 1, Math.floor((z + r - this.originZ) / this.cellSize));
+    // Clamped to the occupied rectangle: outside it `starts` is stale, and nothing is indexed
+    // there in any case.
+    const minCx = Math.max(this.cxLo, Math.floor((x - r - this.originX) / this.cellSize));
+    const maxCx = Math.min(this.cxHi, Math.floor((x + r - this.originX) / this.cellSize));
+    const minCz = Math.max(this.czLo, Math.floor((z - r - this.originZ) / this.cellSize));
+    const maxCz = Math.min(this.czHi, Math.floor((z + r - this.originZ) / this.cellSize));
     const r2 = r * r;
 
     for (let cz = minCz; cz <= maxCz; cz++) {
