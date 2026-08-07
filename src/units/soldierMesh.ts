@@ -3,7 +3,7 @@ import { Faction } from '../sim/types';
 import { MAN_RIG, MB } from '../anim/rig';
 import { MAN_CLIP_SET } from '../anim/clips';
 import { sampleGlobals } from '../anim/pose';
-import { Mat, matUv, type UvRect } from './atlas';
+import { Mat, MAT_TILE_M, matUv, type UvRect } from './atlas';
 import { Coarse, Piece, Tint } from './kit';
 import { MeshBuilder, type SheetPoint } from './meshBuilder';
 
@@ -95,6 +95,80 @@ interface TubeNode {
   bone2?: number;
   w?: number;
 }
+
+/**
+ * Ellipse circumference, Ramanujan's second approximation.
+ *
+ * Exact to better than 1 part in 10^7 for every aspect ratio a body ring takes here (the
+ * worst is the chest at 0.163 by 0.112), which is four orders of magnitude finer than the
+ * rounding to a whole number of tiles that consumes it.
+ */
+function ellipseC(a: number, b: number): number {
+  const s = a + b;
+  if (s <= 0) return 0;
+  const h = ((a - b) / s) ** 2;
+  return Math.PI * s * (1 + (3 * h) / (10 + Math.sqrt(4 - 3 * h)));
+}
+
+/**
+ * **Tile repeats that put a material at its real size on the surface it is worn on.**
+ *
+ * Reads the swept surface's own mean circumference and its own path length and divides both
+ * by `MAT_TILE_M[mat]`, so the two axes come out at one grain by construction. Before this,
+ * both numbers were written by hand at each call site and none of them agreed: the mail
+ * torso ran 291 mm of tile around against 164 mm along, a 1.8:1 stretch that turned a 9 mm
+ * ring into a 16 x 9 mm oval on every mailed man in the game.
+ *
+ * `repeatStops` clamps a repeat to the division count on its own, so a request this returns
+ * for a LOD0 torso is silently reduced to what a LOD2 torso can carry — which is why the
+ * low tier keeps its old tiling, and its triangle count, untouched.
+ *
+ * The path length is measured through the node centres rather than down the y axis, because
+ * a sleeve is swept under a rotation and a shoulder guard is not straight; using y alone
+ * would under-count both.
+ */
+function tileRepeat(
+  nodes: readonly TubeNode[],
+  mat: Mat,
+  /**
+   * The repeats this surface shipped with, as a **floor**.
+   *
+   * Rounding a tile count to a whole number can only be done up or down, and on a small
+   * surface down is a long way: a leg is 0.35 m round and a wool tile is 0.27 m, so
+   * `round(1.3)` is 1 and the bracae come out **30 % coarser than authored**. That is what
+   * the first cut of this function shipped, and it is measurable — the octave probe put E2
+   * down 12-15 % on all three full-figure Roman plates, because the legs are a third of the
+   * figure and their weave had halved. Never coarser than what was there is the rule the
+   * table comment in `atlas.ts` states; this parameter is what enforces it.
+   */
+  was: { u?: number; v?: number } = {},
+  opts: { vFixed?: number } = {}
+): { repeatU: number; repeatV: number } {
+  const tile = MAT_TILE_M[mat];
+  let around = 0;
+  for (const n of nodes) around += ellipseC(n.rx, n.rz);
+  around /= Math.max(1, nodes.length);
+  let along = 0;
+  for (let i = 1; i < nodes.length; i++) {
+    const p = nodes[i - 1];
+    const q = nodes[i];
+    along += Math.hypot(q.y - p.y, (q.x ?? 0) - (p.x ?? 0), (q.z ?? 0) - (p.z ?? 0));
+  }
+  return {
+    repeatU: Math.max(was.u ?? 1, Math.round(around / tile)),
+    repeatV: opts.vFixed ?? Math.max(was.v ?? 1, Math.round(along / tile)),
+  };
+}
+
+/**
+ * A bare limb takes exactly one skin tile end to end, and that is not negotiable.
+ *
+ * `Mat.Skin`'s height field cuts a crease at v = 0.5 and another at v = 0.94 so the cavity
+ * term darkens the elbow and the wrist. Those land on the joint only if the limb carries one
+ * tile from shoulder to hand; at two tiles a man grows a second elbow half way down his
+ * forearm. So skin is sized round the limb and fixed along it.
+ */
+const SKIN_LIMB_V = 1;
 
 /** Spine binding by height: a smooth blend up the four spine bones. */
 function spineBind(y: number): Bind {
@@ -209,6 +283,29 @@ const BROW_Y = 0.054;
  * and they must move together.
  */
 const HEAD_V: readonly [number, number] = [-0.075, 0.14];
+/**
+ * The hairline, in metres above the head bone — where hair stops and forehead starts.
+ *
+ * It was 0.082, which is 28 mm above a brow ridge at 0.054, and a man's trichion stands
+ * 50-60 mm above his glabella. So every soldier had a 28 mm forehead, and because the cap's
+ * rim stands 4-8 mm proud of the skull and a head plate is shot from *below* the rim, that
+ * rim's underside covered the brow and the eyes as well. Measured on the shipped plate with
+ * the face tile painted magenta: 580 face pixels visible on `juth-head` against 315,888 with
+ * the hair hidden — 99.8 % of the face was inside the man's own hair.
+ *
+ * 0.098 is 44 mm above the brow, which is a Roman crop with the fringe combed forward and is
+ * what the Trajanic portrait heads show.
+ */
+const HAIRLINE_Y = 0.098;
+/**
+ * Where a soft cap's brim sits.
+ *
+ * A helmet is cut away at the brow because a man has to see out from under an iron rim; a fur
+ * cap is not cut at all, it is simply pulled down to the hairline. Set 8 mm below `HAIRLINE_Y`
+ * so a fringe of hair shows under the brim rather than the cap and the hair ending on the
+ * same line.
+ */
+const CAP_BRIM_Y = HAIRLINE_Y - 0.008;
 
 // LOD0 keeps every rivet-scale form that reads at 5 m. LOD1 drops the sub-pieces —
 // cheek plates, pteruges, crest strands, arrow shafts — which is most of the cost and
@@ -266,6 +363,32 @@ function bowlWithFace(
   if (front.length >= 2) b.revolve(front, FACE_SEG, uv, 1, { arc: FACE_ARC });
 }
 
+/**
+ * An embossed brow band, riveted to the bowl **above** the face opening.
+ *
+ * All three Roman bands hung *below* the rim: `[BROW_Y + 0.008 ... BROW_Y - 0.028]` at a
+ * radius up to 0.099 over a skull of 0.079. That is a 36 mm bronze visor standing 20 mm proud
+ * across a face whose brow is at 0.050 and whose eyes are at 0.024 — so the one thing the
+ * arc-cut bowl had just uncovered was covered again by its own trim, and the eyes sat in the
+ * shadow it cast. On the shipped `legio-head` plate, with the face tile painted magenta, 744
+ * face pixels survived out of the 315,888 the bare skull shows at the same framing.
+ *
+ * An Imperial Gallic brow band is on the *front of the bowl*, above the opening — it is the
+ * embossed "eyebrows" everyone knows the helmet by. So the band now runs from 32 mm above the
+ * rim down to the rim, flush at both ends and 7 mm proud in the middle. The three radii are
+ * the caller's own bowl profile sampled at y = 0.086 / 0.070 / 0.054, so the band sits on the
+ * bowl rather than floating off it, and each helmet keeps its own width.
+ */
+function browBand(rTop: number, rMid: number, rRim: number): [number, number][] {
+  const PROUD = 0.007;
+  return [
+    [rTop, BROW_Y + 0.032],
+    [rMid + PROUD, BROW_Y + 0.016],
+    [rMid + PROUD, BROW_Y + 0.004],
+    [rRim, BROW_Y],
+  ];
+}
+
 export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.InstancedBufferGeometry {
   if (lod === 2) return buildFarGeometry(faction);
   const b = new MeshBuilder();
@@ -315,9 +438,35 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
   // roughly the atlanto-occipital joint and the skull is a 0.10 m sphere above it.
   b.setBone(MB.head);
   b.setMatrix(new THREE.Matrix4().makeTranslation(0, headY, MAN_RIG.restT[MB.head * 3 + 2]));
+  /*
+   * Crown first, and the order is the whole point: **written jaw-first this lathe was
+   * inside-out, and it is the face.**
+   *
+   * `revolve` takes its normal from the profile tangent as `(-dy, dr)`, which is outward only
+   * while y *descends* down the list. Every other lathe on this man — hair, all five helmet
+   * bowls, the fur cap — is written crown-first and is correct; the skull was written from
+   * under the jaw upward, so `-dy` came out negative and its normals pointed **into the
+   * head**. `quadFacing` then derived the winding from those normals, so culling and shading
+   * agreed with each other and disagreed with the world: `probe-soldiermesh` reports 0
+   * disagreements on this piece and it was wrong the whole time. Measured directly, the mean
+   * dot of the triangle winding with the outward radial was **-0.324 over the face arc** —
+   * 76 of 123 triangles facing inward.
+   *
+   * What that did to a face plate is worse than "lit oddly". `side` is `FrontSide`, so the
+   * near half of the skull was **culled**: a camera in front of the man saw straight through
+   * his face to the inside of the back of his skull, at the back of the skull's depth. So the
+   * face was not merely dark, it was *behind the rest of the head* in the depth buffer, and
+   * every helmet bowl, hair dome and beard between the two won the depth test. It also
+   * inverted the instrument: the magenta face tile was only ever visible from **behind** the
+   * man, which is what produced the "0 magenta at azimuth 0, 121,407 at PI" reading that the
+   * previous round used to turn the whole plate table round.
+   *
+   * Reversing the point order is the whole fix — same eight rings, same radii, same
+   * `vFromY`, not one triangle added.
+   */
   const skullProfile: [number, number][] = [
-    [0.001, -0.055], [0.055, -0.075], [0.072, -0.045], [0.079, 0.0],
-    [0.082, 0.045], [0.072, 0.095], [0.045, 0.128], [0.001, 0.14],
+    [0.001, 0.14], [0.045, 0.128], [0.072, 0.095], [0.082, 0.045],
+    [0.079, 0.0], [0.072, -0.045], [0.055, -0.075], [0.001, -0.055],
   ];
   if (d.fine) {
     /*
@@ -351,16 +500,24 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
      * face tile's height field, which the bake turns into a normal, a cavity AO and a
      * roughness break for nothing. The nose stays because it is the one facial form that
      * changes the **silhouette**, and a silhouette is the only part of a face a texture
-     * cannot fake — a four-ring taper standing 2 mm proud at the bridge and 14 mm at the
-     * tip, each ring measured off the lathe's own radius at its own height so it cannot end
-     * up buried the way the jaw box was. Net against what it replaces: 14 triangles fewer.
+     * cannot fake.
+     *
+     * **It projected 14 mm and a man's nose projects 25.** Measured against the lathe's own
+     * radius at the tip's height (0.0757 at y = -0.020), the old four-ring taper reached
+     * z = 0.0908, so a profile read flat and a three-quarter view had nothing to cast a
+     * shadow across the cheek. Five rings now, named for the landmarks they are: the nasion
+     * sits on the brow line so the bridge has a root, the pronasale reaches 25.8 mm, and the
+     * columella tucks back under so the nostrils are a real undercut rather than a painted
+     * pair of dots. 38 mm across the alae, which is a man's. Ten triangles more than the
+     * four-ring version at LOD0 only, and it is the single most legible form on the head.
      */
     b.tube(
       [
-        { y: 0.038, rx: 0.007, rz: 0.008, z: 0.0756 },
-        { y: 0.005, rx: 0.009, rz: 0.010, z: 0.0753 },
-        { y: -0.014, rx: 0.017, rz: 0.012, z: 0.0788 },
-        { y: -0.026, rx: 0.015, rz: 0.008, z: 0.0675 },
+        { y: 0.050, rx: 0.008, rz: 0.007, z: 0.0755 },
+        { y: 0.022, rx: 0.010, rz: 0.011, z: 0.0790 },
+        { y: -0.004, rx: 0.014, rz: 0.014, z: 0.0840 },
+        { y: -0.020, rx: 0.019, rz: 0.016, z: 0.0855 },
+        { y: -0.032, rx: 0.016, rz: 0.009, z: 0.0700 },
       ],
       5, skinUv, { capEnd: true }
     );
@@ -456,18 +613,21 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
    * scored the face 0 without being able to say why.
    *
    * Cut into two arcs of the same profile: the back and sides keep the full drop, and the
-   * front gets only the part above the hairline at y = 0.082 — which is a Roman crop with a
-   * fringe combed forward, and is what the Trajanic portrait heads show. Fewer triangles
-   * over the face arc than the dome had, so this is cheaper than what it replaces.
+   * front stops at `HAIRLINE_Y`. Fewer triangles over the face arc than the dome had, so this
+   * is cheaper than what it replaces.
+   *
+   * The front cap ends on the profile's own third point rather than on a fourth of its own,
+   * so the two arcs meet at an identical ring and the seam is a change of texture and not of
+   * surface — the fourth point it used to carry was both a 16 mm-lower hairline and a 5 mm
+   * step at the temple.
    */
   const hairProfile: [number, number][] = [
-    [0.001, 0.145], [0.05, 0.132], [0.077, 0.098], [0.086, 0.04], [0.088, -0.01], [0.086, -0.035],
+    [0.001, 0.145], [0.05, 0.132], [0.077, HAIRLINE_Y], [0.086, 0.04], [0.088, -0.01], [0.086, -0.035],
   ];
   b.setPiece(Piece.HairShort, Tint.Hair);
   if (d.fine) {
     b.revolve(hairProfile, BACK_SEG(d.head), hairUv, 1, { arc: BACK_ARC });
-    b.revolve([[0.001, 0.145], [0.05, 0.132], [0.077, 0.098], [0.082, 0.082]],
-      FACE_SEG, hairUv, 1, { arc: FACE_ARC });
+    b.revolve(hairProfile.slice(0, 3), FACE_SEG, hairUv, 1, { arc: FACE_ARC });
   } else {
     b.revolve(hairProfile, d.head, hairUv);
   }
@@ -475,12 +635,13 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
   if (germanic) {
     b.setPiece(Piece.HairLong, Tint.Hair);
     const longProfile: [number, number][] = [
-      [0.001, 0.15], [0.055, 0.135], [0.082, 0.1], [0.092, 0.04], [0.094, -0.02],
+      [0.001, 0.15], [0.055, 0.135], [0.082, HAIRLINE_Y + 0.002], [0.092, 0.04], [0.094, -0.02],
     ];
     if (d.fine) {
       b.revolve(longProfile, BACK_SEG(d.head), hairUv, 1, { arc: BACK_ARC });
-      b.revolve([[0.001, 0.15], [0.055, 0.135], [0.082, 0.1], [0.088, 0.078]],
-        FACE_SEG, hairUv, 1, { arc: FACE_ARC });
+      // Same rule as the crop: the front arc is the shared profile truncated at the hairline.
+      // Its own fourth point put the Germanic fringe at 0.078, *lower* than the Roman one.
+      b.revolve(longProfile.slice(0, 3), FACE_SEG, hairUv, 1, { arc: FACE_ARC });
     } else {
       b.revolve(longProfile, d.head, hairUv);
     }
@@ -499,14 +660,31 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     b.setBone(MB.head);
   }
 
+  /*
+   * A beard hangs off the chin. It was a collar round the whole jaw, and it sealed the mouth.
+   *
+   * The first ring was a 360-degree hoop at y = -0.030, radius 72 mm against a skull of 74 mm
+   * at that height — so it stood proud of the jaw all the way round, at the height of the
+   * *mouth* (the face tile puts the lip line at y = -0.039 and the chin crease at -0.052).
+   * Every bearded man in the game therefore had no mouth and no chin: 82 % of Germanic
+   * warriors, 42 % of Romans, 78 % of Punic and Libyan foot. It is the same defect as the
+   * hair dome and the closed helmet bowls, in the one place left that still had it.
+   *
+   * The cure here is not an arc but a *shape*: the top ring drops below the lower lip, shrinks
+   * to 52 mm — narrower than the jaw, so it reads as growing out of the chin rather than
+   * clamping round it — and moves 8 mm forward onto the chin. It widens to the jaw angle
+   * below, which is where the mass of a beard actually is. The moustache and the beard's edge
+   * along the jaw are painted in `Mat.Face` instead, where they cost nothing and cannot
+   * occlude anything. Identical node and segment count, so this is free.
+   */
   b.setPiece(Piece.Beard, Tint.Hair);
   const beardLen = germanic ? 0.13 : 0.06;
   b.tube(
     [
-      { y: -0.03, rx: 0.072, rz: 0.062, z: 0.012 },
-      { y: -0.055, rx: 0.068, rz: 0.062, z: 0.014 },
-      { y: -0.055 - beardLen * 0.6, rx: 0.055, rz: 0.05, z: 0.012 },
-      { y: -0.055 - beardLen, rx: 0.03, rz: 0.028, z: 0.008 },
+      { y: -0.052, rx: 0.052, rz: 0.048, z: 0.020 },
+      { y: -0.075, rx: 0.068, rz: 0.058, z: 0.012 },
+      { y: -0.075 - beardLen * 0.55, rx: 0.058, rz: 0.050, z: 0.010 },
+      { y: -0.075 - beardLen, rx: 0.03, rz: 0.028, z: 0.008 },
     ],
     Math.max(4, d.head - 4), hairUv, { capEnd: true }
   );
@@ -543,8 +721,7 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
       // on a helmet that had no face opening to bind.
       b.revolve([[0.098, -0.014], [0.107, -0.026], [0.107, -0.044], [0.096, -0.05]],
         BACK_SEG(d.head), bronzeUv, 1, { arc: BACK_ARC });
-      b.revolve([[0.090, BROW_Y + 0.008], [0.099, BROW_Y - 0.004], [0.099, BROW_Y - 0.020], [0.089, BROW_Y - 0.028]],
-        FACE_SEG, bronzeUv, 1, { arc: FACE_ARC });
+      b.revolve(browBand(0.0804, 0.0874, 0.0906), FACE_SEG, bronzeUv, 1, { arc: FACE_ARC });
       b.setPiece(Piece.HelmGallic, Tint.Metal);
       // Neck flange, angled down and back.
       // Neck guard. Flared down and back, and the single feature that tells you a
@@ -601,8 +778,7 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
       b.box(0, 0.166, 0, 0.026, 0.062, 0.21, bronzeUv);
       b.revolve([[0.093, -0.016], [0.101, -0.028], [0.101, -0.046], [0.091, -0.052]],
         BACK_SEG(d.head), bronzeUv, 1, { arc: BACK_ARC });
-      b.revolve([[0.086, BROW_Y + 0.008], [0.095, BROW_Y - 0.004], [0.095, BROW_Y - 0.020], [0.085, BROW_Y - 0.028]],
-        FACE_SEG, bronzeUv, 1, { arc: FACE_ARC });
+      b.revolve(browBand(0.0773, 0.0812, 0.0842), FACE_SEG, bronzeUv, 1, { arc: FACE_ARC });
       b.setPiece(Piece.HelmRidge, Tint.Metal);
       for (const s of [-1, 1]) {
         const cheek = new THREE.Matrix4()
@@ -612,9 +788,17 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
         b.box(0, 0, 0, 0.022, 0.125, 0.09, plateUv);
         b.setMatrix(headM);
       }
-      // Nasal, and a neck guard of its own — the ridge helmet's is narrower than the
-      // Gallic bowl's but still flares.
-      b.box(0, -0.048, 0.094, 0.024, 0.075, 0.014, plateUv);
+      /*
+       * Nasal, and a neck guard of its own — the ridge helmet's is narrower than the
+       * Gallic bowl's but still flares.
+       *
+       * The nasal ran y -0.086 to -0.011, which is *mouth to chin*: a 75 mm iron bar hung
+       * across the man's jaw, below the nose it is named for. A Berkasovo nasal descends
+       * from the brow band and stops above the tip, so it now runs from the rim at
+       * `BROW_Y` down to y = -0.008, and it is narrowed from 24 to 18 mm so the alae and
+       * the nostrils show either side of it.
+       */
+      b.box(0, 0.023, 0.093, 0.018, 0.062, 0.013, plateUv);
       const rflange = new THREE.Matrix4()
         .makeRotationX(-64 * DEG)
         .premultiply(new THREE.Matrix4().makeTranslation(0, -0.026, -0.078));
@@ -638,8 +822,7 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
       b.revolve([[0.001, 0.152], [0.026, 0.138], [0.026, 0.116], [0.001, 0.108]], 6, bronzeUv);
       b.revolve([[0.097, -0.012], [0.105, -0.024], [0.105, -0.04], [0.095, -0.046]],
         BACK_SEG(Math.max(5, d.head - 2)), bronzeUv, 1, { arc: BACK_ARC });
-      b.revolve([[0.089, BROW_Y + 0.008], [0.098, BROW_Y - 0.004], [0.098, BROW_Y - 0.020], [0.088, BROW_Y - 0.028]],
-        FACE_SEG, bronzeUv, 1, { arc: FACE_ARC });
+      b.revolve(browBand(0.0750, 0.0864, 0.0892), FACE_SEG, bronzeUv, 1, { arc: FACE_ARC });
       b.setPiece(Piece.HelmCoolus, Tint.Metal);
       const guard = new THREE.Matrix4()
         .makeRotationX(-62 * DEG)
@@ -669,17 +852,43 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
         b.box(0, 0.075, 0.062, 0.016, 0.19, 0.014, bronzeUv);
         b.setMatrix(headM);
       }
-      // Brow band and nasal.
-      b.revolve([[0.101, -0.028], [0.108, -0.04], [0.108, -0.055], [0.101, -0.06]], d.head, bronzeUv);
+      /*
+       * Brow band and nasal — both were in the wrong place, and the band was the last full
+       * revolution left on a head.
+       *
+       * The band lathed a **complete turn** at y -0.028 to -0.060, radius 0.108 over a jaw of
+       * 0.072: a bronze hoop 36 mm proud, all the way round, at the height of the man's
+       * mouth. The nasal hung from -0.093 to -0.018, which is chin to lip. Between them a
+       * spangenhelm-wearing warrior was gagged in his own helmet.
+       *
+       * Split on the same two arcs as everything else: the nape band keeps the back, where a
+       * spangenhelm's rim does come down over the ears, and the front gets a brow band above
+       * the face opening. The nasal descends from the rim as a Vendel-period nasal does.
+       */
+      b.revolve([[0.0995, -0.014], [0.106, -0.026], [0.106, -0.042], [0.0985, -0.048]],
+        BACK_SEG(d.head), bronzeUv, 1, { arc: BACK_ARC });
+      b.revolve(browBand(0.0693, 0.0761, 0.0829), FACE_SEG, bronzeUv, 1, { arc: FACE_ARC });
       b.setPiece(Piece.HelmSpangen, Tint.Metal);
-      b.box(0, -0.055, 0.096, 0.024, 0.075, 0.014, plateUv);
+      b.box(0, 0.023, 0.091, 0.018, 0.062, 0.013, plateUv);
     }
 
-    // Fur cap: what a fanatic wears instead of iron.
+    /*
+     * Fur cap: what a fanatic wears instead of iron.
+     *
+     * It was a full revolution to y = -0.045 at a radius of 0.108 — below the eyes, below the
+     * nose, and 26 mm of fur all round a skull of 0.082, which is the same padding error the
+     * Gallic bowl had. A capped Juthungi had no face at all: the shipped plate for
+     * `juthungi-warband` hash 0.73 measures **0 face pixels**.
+     *
+     * A cap is not cut away at the brow the way a helmet is; it is pulled down to the
+     * hairline and stops. `bowlWithFace` at `CAP_BRIM_Y` does exactly that, and the profile
+     * is drawn in to 12-15 mm of fur, which is what a sheepskin cap is.
+     */
     b.setPiece(Piece.HelmFur, Tint.Atlas);
-    b.revolve(
-      [[0.001, 0.17], [0.058, 0.158], [0.095, 0.11], [0.106, 0.04], [0.108, -0.02], [0.1, -0.045]],
-      Math.max(5, d.head - 3), furUv
+    bowlWithFace(
+      b,
+      [[0.001, 0.162], [0.052, 0.150], [0.086, 0.108], [0.095, 0.045], [0.097, -0.012], [0.092, -0.038]],
+      Math.max(5, d.head - 3), furUv, CAP_BRIM_Y
     );
   }
 
@@ -756,7 +965,8 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
   };
 
   b.setPiece(Piece.Tunic, Tint.Tunic);
-  b.tube(torsoNodes(1.0, 0.62), d.torso, woolUv, { repeatV: 3, repeatU: 2, capEnd: true });
+  const tunicBody = torsoNodes(1.0, 0.62);
+  b.tube(tunicBody, d.torso, woolUv, { ...tileRepeat(tunicBody, Mat.WoolCoarse, { u: 2, v: 3 }), capEnd: true });
   if (d.medium) {
     // Short sleeves over the deltoid.
     for (const left of [true, false]) {
@@ -770,14 +980,12 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
         .makeRotationZ(left ? -Math.PI / 2 : Math.PI / 2)
         .premultiply(new THREE.Matrix4().makeTranslation(0, armY, armZ));
       b.setMatrix(m);
-      b.tube(
-        [
-          { y: Math.abs(shX) - 0.02, rx: 0.072, rz: 0.066 },
-          { y: Math.abs(shX) + 0.06, rx: 0.062, rz: 0.058 },
-          { y: Math.abs(shX) + 0.11, rx: 0.055, rz: 0.052 },
-        ],
-        d.limb, woolUv, { repeatU: 2 }
-      );
+      const woolSleeve = [
+        { y: Math.abs(shX) - 0.02, rx: 0.072, rz: 0.066 },
+        { y: Math.abs(shX) + 0.06, rx: 0.062, rz: 0.058 },
+        { y: Math.abs(shX) + 0.11, rx: 0.055, rz: 0.052 },
+      ];
+      b.tube(woolSleeve, d.limb, woolUv, tileRepeat(woolSleeve, Mat.WoolCoarse, { u: 2 }));
       b.setMatrix(null);
       void s;
     }
@@ -785,7 +993,11 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
 
   if (germanic) {
     b.setPiece(Piece.TorsoBare, Tint.Skin);
-    b.tube(torsoNodes(0.95, 0.88), d.torso, skinUv, { capEnd: false });
+    const bareTorso = torsoNodes(0.95, 0.88);
+    b.tube(bareTorso, d.torso, skinUv, {
+      ...tileRepeat(bareTorso, Mat.Skin, {}, { vFixed: SKIN_LIMB_V }),
+      capEnd: false,
+    });
     // Loincloth for the fanatics, since they are bare to the waist and not beyond.
     b.setPiece(Piece.TorsoBare, Tint.Legs);
     b.tube(
@@ -826,15 +1038,13 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
       [1.14, 0.16, 0.113],
       [0.99, 0.168, 0.12],
     ];
-    b.tube(
-      segRows
-        .filter((_, i) => d.fine || i % 2 === 0 || i === segRows.length - 1)
-        .map(([y, rx, rz]) => {
-          const bind = spineBind(y);
-          return { y, rx, rz, bone: bind.bone, bone2: bind.bone2, w: bind.w };
-        }),
-      d.torso, bandUv, { repeatU: 2 }
-    );
+    const segBody = segRows
+      .filter((_, i) => d.fine || i % 2 === 0 || i === segRows.length - 1)
+      .map(([y, rx, rz]) => {
+        const bind = spineBind(y);
+        return { y, rx, rz, bone: bind.bone, bone2: bind.bone2, w: bind.w };
+      });
+    b.tube(segBody, d.torso, bandUv, tileRepeat(segBody, Mat.Bands, { u: 2 }));
     if (d.medium) {
       // Shoulder guards: three overlapping plates per side, following the deltoid.
       for (const left of [true, false]) {
@@ -886,7 +1096,8 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
   // Ring mail, worn by everyone who is not in plate or scale. A hamata reached the hip and
   // had short sleeves; the Mail tile does the rings.
   b.setPiece(Piece.ArmourMail, Tint.Metal);
-  b.tube(torsoNodes(1.06, 0.78), d.torso, mailUv, { repeatV: 4, repeatU: 3, capEnd: false });
+  const mailBody = torsoNodes(1.06, 0.78);
+  b.tube(mailBody, d.torso, mailUv, { ...tileRepeat(mailBody, Mat.Mail, { u: 3, v: 4 }), capEnd: false });
   if (d.medium) {
     for (const left of [true, false]) {
       const sh = left ? MB.upperArmL : MB.upperArmR;
@@ -898,14 +1109,12 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
         .makeRotationZ(left ? -Math.PI / 2 : Math.PI / 2)
         .premultiply(new THREE.Matrix4().makeTranslation(0, armY, armZ));
       b.setMatrix(m);
-      b.tube(
-        [
-          { y: Math.abs(shX) - 0.03, rx: 0.08, rz: 0.074 },
-          { y: Math.abs(shX) + 0.07, rx: 0.068, rz: 0.063 },
-          { y: Math.abs(shX) + 0.14, rx: 0.06, rz: 0.056 },
-        ],
-        d.limb, mailUv, { repeatU: 3 }
-      );
+      const mailSleeve = [
+        { y: Math.abs(shX) - 0.03, rx: 0.08, rz: 0.074 },
+        { y: Math.abs(shX) + 0.07, rx: 0.068, rz: 0.063 },
+        { y: Math.abs(shX) + 0.14, rx: 0.06, rz: 0.056 },
+      ];
+      b.tube(mailSleeve, d.limb, mailUv, tileRepeat(mailSleeve, Mat.Mail, { u: 3 }));
       b.setMatrix(null);
     }
   }
@@ -913,7 +1122,8 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
   if (!germanic) {
     // Lorica squamata: bronze scales wired to a linen backing. Praetorian kit.
     b.setPiece(Piece.ArmourScale, Tint.Atlas);
-    b.tube(torsoNodes(1.07, 0.8), d.torso, scaleUv, { repeatV: 3, repeatU: 3, capEnd: false });
+    const scaleBody = torsoNodes(1.07, 0.8);
+    b.tube(scaleBody, d.torso, scaleUv, { ...tileRepeat(scaleBody, Mat.Scale, { u: 3, v: 3 }), capEnd: false });
     if (d.medium) {
       for (const left of [true, false]) {
         const sh = left ? MB.upperArmL : MB.upperArmR;
@@ -924,24 +1134,20 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
         b.setMatrix(new THREE.Matrix4()
           .makeRotationZ(left ? -Math.PI / 2 : Math.PI / 2)
           .premultiply(new THREE.Matrix4().makeTranslation(0, armY, armZ)));
-        b.tube(
-          [
-            { y: Math.abs(shX) - 0.03, rx: 0.082, rz: 0.076 },
-            { y: Math.abs(shX) + 0.08, rx: 0.07, rz: 0.065 },
-            { y: Math.abs(shX) + 0.15, rx: 0.062, rz: 0.058 },
-          ],
-          d.limb, scaleUv, { repeatU: 3 }
-        );
+        const scaleSleeve = [
+          { y: Math.abs(shX) - 0.03, rx: 0.082, rz: 0.076 },
+          { y: Math.abs(shX) + 0.08, rx: 0.07, rz: 0.065 },
+          { y: Math.abs(shX) + 0.15, rx: 0.062, rz: 0.058 },
+        ];
+        b.tube(scaleSleeve, d.limb, scaleUv, tileRepeat(scaleSleeve, Mat.Scale, { u: 3 }));
         b.setMatrix(null);
       }
     }
   } else {
     // A hide jerkin. No sleeves, cut short, and it does not pretend to be armour.
     b.setPiece(Piece.ArmourLeather, Tint.Atlas);
-    b.tube(
-      torsoNodes(1.05, 0.86).filter((nd) => nd.y > 0.85),
-      d.torso, leatherUv, { repeatV: 2, repeatU: 2 }
-    );
+    const jerkin = torsoNodes(1.05, 0.86).filter((nd) => nd.y > 0.85);
+    b.tube(jerkin, d.torso, leatherUv, tileRepeat(jerkin, Mat.LeatherBrown, { u: 2, v: 2 }));
   }
 
   // =========================================================================
@@ -1038,7 +1244,8 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
 
     // Bracae with leg wraps. Universal among Germans, and by 271 common in the legions too.
     b.setPiece(Piece.LegsTrousers, Tint.Legs);
-    b.tube(legNodes(1.1), d.limb, woolUv, { repeatV: 3, repeatU: 2, capEnd: true });
+    const bracae = legNodes(1.1);
+    b.tube(bracae, d.limb, woolUv, { ...tileRepeat(bracae, Mat.WoolCoarse, { u: 2, v: 3 }), capEnd: true });
     if (d.medium) {
       b.setPiece(Piece.LegsTrousers, Tint.Atlas);
       const wraps = d.fine ? 4 : 2;

@@ -6,7 +6,7 @@ import {
 } from '../anim/clips';
 import { MAN_RIG, MB, restPos } from '../anim/rig';
 import { makeSoldierMaterial, type PoseVaryBones, type SoldierMaterialSet } from '../anim/skinShader';
-import { EMBLEM_ORIGIN, EMBLEM_TILE, buildSoldierAtlas, type SoldierAtlas } from '../units/atlas';
+import { EMBLEM_COLS, EMBLEM_ORIGIN, EMBLEM_TILE, buildSoldierAtlas, type SoldierAtlas } from '../units/atlas';
 import {
   HORSE_GROUND_LIFT, HORSE_MASK_LO, SADDLE_BONES, SADDLE_SEAT, buildHorseGeometry,
 } from '../units/horseMesh';
@@ -246,6 +246,7 @@ export class SoldierRig {
       anim: this.manAnim,
       emblemOrigin: EMBLEM_ORIGIN,
       emblemTile: EMBLEM_TILE,
+      emblemCols: EMBLEM_COLS,
       leanHeight: 1.5,
       poseVary: MAN_POSE_VARY,
     });
@@ -253,6 +254,7 @@ export class SoldierRig {
       anim: this.horseAnim,
       emblemOrigin: EMBLEM_ORIGIN,
       emblemTile: EMBLEM_TILE,
+      emblemCols: EMBLEM_COLS,
       leanHeight: 1.7,
     });
     // Distinct tags, because `makeSoldierMaterial` keys its program cache on the rig flag

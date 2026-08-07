@@ -27,15 +27,35 @@ import { EMBLEMS } from './kit';
  * consistently lit, which a mixture of scanned Poly Haven surfaces cannot.
  */
 
-export const ATLAS_W = 1024;
+/**
+ * **256 px a material tile, not 128, and the reason is measured.**
+ *
+ * A 128 px tile stretched over a torso puts one texel across 2.5 screen pixels at the
+ * magnification the isolated-model deck shoots at, so every surface on the man was being
+ * *magnified* and read as bilinear mush — which is precisely what three independent critics
+ * reported as "no normal map, no roughness map" on a model that has carried both for months.
+ * They were reading a starved sampler as an absent one.
+ *
+ * The two halves of this are coupled and neither works alone. Correcting the tiles' physical
+ * size (`MAT_TILE_M`) without more texels **measurably makes the plate worse**: it shrinks
+ * the same 128 texels into fewer screen pixels, pushing the tile's own finest content below
+ * the resolvable band, and the octave probe put E2 down 12-15 % on all three full-figure
+ * Roman plates for it. Doubling the texels first is what buys the room to shrink the tile.
+ *
+ * Cost is texture memory and nothing else — no draw call, no triangle, no vertex. The sheet
+ * goes 1024 x 1536 to 2048 x 1536, so the three soldier textures go from about 25 MB
+ * resident with mips to about 50 MB, against a 220 MB budget for the whole game. The bake is
+ * four times the pixels; it runs once at load.
+ */
+export const ATLAS_W = 2048;
 export const ATLAS_H = 1536;
 /** Retained as the width, which is what every caller that used it meant. */
 export const ATLAS_SIZE = ATLAS_W;
-const TILE = 128;
+const TILE = 256;
 const TILES_PER_ROW = 8;
 const MAT_ROWS = 4;
 const EMBLEM_TILE_PX = 256;
-const EMBLEM_TOP = 512;
+const EMBLEM_TOP = TILE * MAT_ROWS;
 
 /** Material tile ids. Index maps to a cell of the 8 x 4 grid, row-major. */
 export const enum Mat {
@@ -159,6 +179,95 @@ export function matUv(id: Mat): UvRect {
 }
 
 /**
+ * **How much of a man one tile of each material covers, in metres.**
+ *
+ * Every tile in this sheet draws a fixed number of real objects — 18 rings of mail, 14 rows
+ * of scale, 7 girdle hoops, 6 planks — and until this table existed nothing anywhere tied
+ * that count to a size. The repeats were hand-written per call site in `soldierMesh.ts`, one
+ * number for around a torso and another for along it, and **every torso in the game came out
+ * stretched**: the mail body sat at `repeatU: 3, repeatV: 4` over a circumference of 0.87 m
+ * and a length of 0.66 m, so one tile covered 291 mm around by 164 mm along. That is a
+ * **1.8:1 horizontal stretch**, and it turned a 9 mm riveted ring into a 16 x 9 mm oval —
+ * which is exactly what the `legio-head` plate photographs, a coif of embossed lozenges.
+ *
+ * Sizing the tile instead of the repeat makes the stretch inexpressible: `soldierMesh` now
+ * measures each swept surface's own circumference and path length and divides. Two useful
+ * consequences fall out for free. A sleeve and a torso in the same material come out at the
+ * same physical grain without anyone matching two numbers by hand; and at LOD2, where a
+ * torso has a handful of segments, `MeshBuilder.repeatStops` clamps the repeat to the
+ * segment count on its own, so **the low tier keeps the coarse tiling it already had and
+ * pays nothing**.
+ *
+ * The value chosen for each material is the finer of (a) its real object size times the
+ * number of objects the tile draws, and (b) what the *tighter* of the two existing axes
+ * already delivered. Never the coarser: correcting an aspect ratio by stretching the fine
+ * axis out to meet the coarse one would fix the shape and throw away the mid-band structure
+ * that the octave instrument is measuring, which is the wrong trade in both directions.
+ */
+export const MAT_TILE_M: Record<Mat, number> = {
+  // fbm period 14 over the tile, so the coarsest patina blotch is a fourteenth of it: 30 mm.
+  [Mat.IronWorn]: 0.42,
+  // A planished bowl. The period-3 term is the one roughness is derived from — 100 mm sweeps
+  // of the hammer, which is what a burnished helmet actually shows.
+  [Mat.IronPlate]: 0.30,
+  // Casting mottle and patina at 30 mm, fbm period 10.
+  [Mat.Bronze]: 0.30,
+  // **18 rings. A riveted ring of the period is 8-10 mm outside diameter**, which is the
+  // single most load-bearing number in this table: mail is the largest area of small
+  // repeated objects a soldier wears, so it sets the scale a viewer reads the whole man by.
+  [Mat.Mail]: 0.162,
+  // 14 rows. Roman squamata finds run 10-50 mm; 15 mm is at the small end, chosen because it
+  // is also the finer of the two axes the torso already carried and so costs no structure.
+  [Mat.Scale]: 0.21,
+  // fbm period 20 — 8 mm grain pebbling, which is what stops a jerkin reading as rubber.
+  [Mat.LeatherBrown]: 0.16,
+  [Mat.LeatherDark]: 0.18,
+  // Sized by the **fold** field (fbm period 5), not the weave: the fold carries 0.38 of the
+  // height amplitude against the weave's 0.42 spread over 18 cycles, and folds at 55 mm are
+  // what a wool tunic reads as at any distance a man is legible from. The weave then comes
+  // out at 15 mm, which is coarse for wool and is a lie no viewer can measure.
+  [Mat.WoolCoarse]: 0.27,
+  // Fold fbm period 6 at 55 mm. Linen creases tighter than wool, hence 26 weave cycles.
+  [Mat.Linen]: 0.33,
+  // fbm period 44 — 6 mm blotch and pore. **V is overridden to 1 on every limb**, because
+  // the tile's elbow and wrist creases are placed at fixed v and only land on the joint if
+  // the limb carries exactly one tile end to end; see `SKIN_LIMB_V` in `soldierMesh.ts`.
+  [Mat.Skin]: 0.26,
+  // 70 strands across, so 4 mm a strand clump.
+  [Mat.Hair]: 0.28,
+  // 6 planks at 120 mm. **Not driven from here** — the shield boards and the spear shafts
+  // both take this tile at hand-set repeats, and halving the shaft grain has already been
+  // tried and reverted because it moved the octave ratio the wrong way.
+  [Mat.WoodPlank]: 0.72,
+  // fbm period 30 — 15 mm tufts.
+  [Mat.Fur]: 0.45,
+  [Mat.Plume]: 0.20,
+  // 14 lays of the strand at 12 mm.
+  [Mat.Rope]: 0.17,
+  // **7 girdle hoops at 64 mm**, against 55-70 mm on the Corbridge finds. The segmentata
+  // torso already ran 459 x 450 mm and is the one surface in the game that was square and
+  // correctly scaled before this table; it comes out unchanged, which is the check that the
+  // arithmetic here is not inventing a correction.
+  [Mat.Bands]: 0.45,
+  [Mat.HideBay]: 0.50,
+  [Mat.HideGrey]: 0.50,
+  [Mat.HideBlack]: 0.50,
+  [Mat.SaddleLeather]: 0.30,
+  [Mat.Hoof]: 0.12,
+  [Mat.Mane]: 0.25,
+  [Mat.Bone]: 0.20,
+  // Drape fbm period 4 at 90 mm — a cloak hangs in bigger folds than a tunic sits in.
+  [Mat.ClothFine]: 0.36,
+  [Mat.ShieldBack]: 0.45,
+  [Mat.OakBeam]: 0.80,
+  [Mat.SinewCord]: 0.15,
+  [Mat.ElephantHide]: 0.60,
+  // Not tiled: the face is drawn once onto a 120-degree arc of the skull at a known scale.
+  [Mat.Face]: 0.22,
+  [Mat.Count]: 1,
+};
+
+/**
  * Where the emblem block sits, in the form the shader wants.
  *
  * V is fiddly because `CanvasTexture` uploads flipped: within a tile V rises with the
@@ -173,8 +282,16 @@ export const EMBLEM_TILE: [number, number] = [
   EMBLEM_TILE_PX / ATLAS_W,
   EMBLEM_TILE_PX / ATLAS_H,
 ];
-/** Emblem tiles across the sheet. The shader's `mod(e, 4)` must agree with this. */
-export const EMBLEM_COLS = 4;
+/**
+ * Emblem tiles across the sheet.
+ *
+ * Eight rather than four because the sheet is now 2048 wide and four 256 px devices would
+ * leave half the emblem band empty. The shader used to hard-code `mod(e, 4.0)` beside a
+ * comment on this very line saying the two "must agree" — an agreement kept by remembering,
+ * which is the arrangement that has already repainted an army once. It is now fed through
+ * `SOLDIER_EMBLEM_COLS` from this constant, so the two cannot disagree.
+ */
+export const EMBLEM_COLS = 8;
 
 // ---------------------------------------------------------------------------
 // Noise
@@ -303,8 +420,26 @@ const MATS: Record<Mat, MatDef> = {
     // metalness map cannot separate them — 0.88 is the compromise that leaves a rusted patch
     // reading as a dielectric crust without giving clean iron a diffuse lobe it should not
     // have. Roughness stays high: this is the *worn* tile, the everyday ironmongery.
+    /**
+     * **Metalness 1, and the reason is that this fix shipped half-applied.**
+     *
+     * The note above `IRON` argues at length that a conductor has no diffuse lobe and that
+     * its colour *is* its F0, and the albedos were duly raised to measured F0 -- iron 0.78,
+     * bronze 0.88/0.70/0.40. The metalness values were not: they stayed at the 0.36-0.74 the
+     * old charcoal-albedo tiles used. That leaves every metal on a soldier **half dielectric
+     * with a metal's albedo**, which is the one combination the note explicitly warns is
+     * worse than either end -- a bright saturated diffuse lobe with a broad soft highlight
+     * over it, which is the definition of painted plastic, and is exactly what the
+     * `praet-torso` plate photographs on a bronze squamata.
+     *
+     * The recorded counter-measurement ("raising metalness darkens armour, verified twice")
+     * was taken against a charcoal albedo at an effective IBL gain of 1.08. Both have since
+     * moved: the albedo is a real F0 and the probe reports 0.508 x 2.9 = 1.47. Moving one
+     * half of a two-variable change and leaving the other is not a conservative choice, it
+     * is the worst point in the space.
+     */
     roughness: 0.44,
-    metalness: 0.45,
+    metalness: 1,
     bump: 0.5,
   },
   // Cleaner plate for helmets and bosses.
@@ -333,7 +468,7 @@ const MATS: Record<Mat, MatDef> = {
     // glint is the single thing that most distinguishes a rank of Rome II helmets from a
     // rank of grey cones.
     roughness: 0.22,
-    metalness: 0.5,
+    metalness: 1,
     bump: 0.25,
   },
   // Gilded bronze: praetorian fittings, helmet trim, harness bosses.
@@ -349,8 +484,11 @@ const MATS: Record<Mat, MatDef> = {
     // warm and the sky cannot take it over. Gilt fittings are the one thing on a man that
     // should read as a mirror, and the patina term in `colour` is the only part of this tile
     // that is an oxide — hence 0.95 rather than a flat 1.
-    roughness: 0.23,
-    metalness: 0.74,
+    // 0.30, not 0.23. All three of round two's critics named bronze independently and all
+    // three asked for the same pair; 0.23 is a polished mirror and a cast, wiped, marched-in
+    // bronze scale is not one.
+    roughness: 0.3,
+    metalness: 1,
     bump: 0.3,
   },
   [Mat.Mail]: {
@@ -365,8 +503,12 @@ const MATS: Record<Mat, MatDef> = {
     // hamata as a black net — but that was a metal with a *charcoal* albedo, which has no
     // colour left to reflect. At true iron F0 the same rings catch the sun individually,
     // which is what makes mail read as mail rather than as a grey knitted jumper.
+    // A mail sheet is thousands of small curved mirrors at every angle at once, so its
+    // *effective* roughness is high even though each ring is burnished. That is a real
+    // statement about the BRDF and it survives the metalness going to 1; 0.36 metalness was
+    // not, it was a leftover.
     roughness: 0.52,
-    metalness: 0.36,
+    metalness: 1,
     bump: 1.0,
   },
   // Lorica squamata: overlapping bronze-washed scales wired to a linen backing.
@@ -399,7 +541,7 @@ const MATS: Record<Mat, MatDef> = {
     // Bronze-washed scales, each a small curved mirror. Same reasoning as the mail: the
     // scale edges are what catch the light and they cannot do it without an F0 to do it with.
     roughness: 0.31,
-    metalness: 0.52,
+    metalness: 1,
     bump: 0.9,
   },
   [Mat.LeatherBrown]: {
@@ -442,6 +584,24 @@ const MATS: Record<Mat, MatDef> = {
    * what a fulled woollen tunic actually shows at two metres, and which lives at 2-8 px
    * where the deficit is. Energy moved down an octave, not removed.
    */
+  /**
+   * **18 cycles, and a finer weave was tried, measured worse and reverted.**
+   *
+   * At 18 cycles the tile draws a 15 mm thread, which on the isolated plate is a legible
+   * diamond lattice down a man's legs — the bracae read as fishnet. The obvious correction,
+   * once the tile went to 256 px, is to triple the count toward a real 5 mm thread, and it
+   * is wrong: at 54 cycles the octave probe puts E1 **up** 21 % and E2 **down** 8 % pooled,
+   * with the two cloth-heavy plates losing 20 % of E2. Halving the regular term's amplitude
+   * into the slub instead was tried in the same session and lost the same energy again.
+   *
+   * The mechanism is the same one that governs the tile size, and it has now been measured
+   * three separate ways in one session: **at this magnification our atlas content already
+   * sits in the 2-4 px octaves, and every change that makes it finer moves that energy down
+   * into the 1 px band, where the render's own filtering throws most of it away.** A weave
+   * cannot be made physically correct here without more texels than the sheet can afford.
+   * Whoever raises the tile again past 256 px should retry this first; it is the change most
+   * obviously waiting on that headroom.
+   */
   [Mat.WoolCoarse]: {
     colour(u, v, out) {
       const warp = Math.sin(u * Math.PI * 2 * 18) * 0.5 + 0.5;
@@ -463,9 +623,10 @@ const MATS: Record<Mat, MatDef> = {
     metalness: 0,
     bump: 0.5,
   },
-  // 26 cycles, not 52 — see the note on `WoolCoarse`. A 52-cycle weave is 2.5 px a cycle in
-  // the tile and cannot survive to the screen as anything but noise; the amplitude goes into
-  // a fold field instead.
+  // 72 cycles, not 26. The old count was set against a 128 px tile, where 52 was measured at
+  // 2.5 px a cycle and dismissed as noise; at 256 px, 72 cycles is 3.6 texels and a 4.6 mm
+  // thread, which is a fine linen rather than sacking. Same trade as `WoolCoarse`: the
+  // regular term loses amplitude and the irregular fold field gains it.
   [Mat.Linen]: {
     colour(u, v, out) {
       const warp = Math.sin(u * Math.PI * 2 * 26) * 0.5 + 0.5;
@@ -616,7 +777,7 @@ const MATS: Record<Mat, MatDef> = {
     // gutter in `colour` is a shadow rather than a material, so it keeps the plate's
     // metalness and simply reflects less — which is what a gap between two plates does.
     roughness: 0.32,
-    metalness: 0.48,
+    metalness: 1,
     bump: 0.9,
   },
   [Mat.HideBay]: {

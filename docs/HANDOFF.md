@@ -405,6 +405,54 @@ Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`
 
 ## Grading
 
+### CORRECTED — the face was inside out, and round two's fix pointed the deck at the back
+
+**Read this before the section below it, which is wrong.** Round two's magenta measurement was
+real and its conclusion was not. `revolve` derives its normal from the profile tangent as
+`(-dy, dr)`, which points outward **only while y descends down the point list**. Every other
+lathe on the man is written crown-first. `skullProfile` was written **jaw-first**, so its
+normals pointed into the head, `quadFacing` derived matching inward winding, and
+`side: FrontSide` culled the near half of every man's face — mean dot of winding with the
+outward radial over the face arc **-0.324**, 76 of 123 triangles inward.
+
+So the face was not dark, it was **inside out**: a camera in front of a man saw *through* it to
+the inside of the back of his skull, at the back skull's depth, so every helmet bowl, hair dome
+and beard between the two won the depth test. That is what produced "0 magenta at azimuth 0 and
+121,407 at PI" — the tile was visible **only from behind him, through his own skull**. Adding
+PI to `framePlate` therefore pointed all ten plates at his back *for real*, which is why every
+head plate since has photographed a neck guard and a nape band, and why the deck looked
+"materially harder". Reversing eight profile points takes the dot to **+0.540** and adds no
+triangles; the same magenta measurement then inverts and strengthens to **466,141 face pixels
+at the front against 0 at the back**. The PI is gone.
+
+**Three passes have now got this sign wrong. The invariant is the measurement, not the sign:
+paint `Mat.Face` magenta, sweep the azimuth, and the peak is the front.**
+
+**`probe-soldiermesh` reports 0 disagreements on that piece and always did, and it is not an
+all-clear.** It asks whether a shading normal opposes its own winding, and `quadFacing` derives
+one from the other — so both faced the wrong way in perfect agreement. A whole class of
+inside-out geometry is invisible to it. Test against an *outward radial*, not against itself.
+
+Three more full revolutions fell out of the same audit, the same family as the four closed
+domes: the **beard was a 360-degree hoop at mouth height** (82 % of Germanics and 42 % of
+Romans had no mouth), the **spangenhelm brow band was a complete turn**, also at mouth height,
+and the **fur cap was a full revolution** to y -0.045, so a capped Juthungi measured exactly
+**0 face pixels**. All three Roman brow bands hung below the rim as 36 mm visors across the
+eyes. The nose now projects 25.8 mm against a life-size 25, from 14.
+
+Visible face-tile pixels at the shipped framing: `juth-head` **580 -> 157,649**, `legio-head`
+**744 -> 84,782**. Both head plates now show eyes with whites, irises, pupils and lash lines,
+brows, a nose with a shadow under it, and a mouth line. Still short: the eyes are hard-edged
+cut-outs that stair-step on the lids, the nose is a faceted slab with a seam, and **the face
+*tile* itself was never touched** — its low contrast against the skull's own ring creases, and
+the 256 px band it now has and does not use, are the obvious next pass and are unblocked.
+
+**Every azimuth in `shoot-model.mjs`'s plate table was picked while the camera stood behind the
+man**, so anything he carries in front of himself was out of shot. `juth-head` is fixed
+(-0.45 to +0.45; his javelin bundle stood between the lens and his nose, and it is the thing
+that looks like pale shards across his face). **The other eight plates have the same latent
+problem and nobody has audited them.**
+
 ### The isolated-model deck photographed the back of the man's head, every round
 
 **Azimuth 0 was behind him.** `viewer/main.ts`'s `framePlate` documents "azimuth is measured
@@ -482,6 +530,165 @@ it costs vertices and **not one triangle**. Two of the same family alongside it:
 a repeated box face landed on **one texel** (five engine call sites); and five hand-rolled
 grids outside the soldier still carry the defect, now behind the deliberately ugly name
 `tileUvWrapped`.
+
+### R measures the reference pool's upscale, not the model — stop steering by it
+
+**This retires the target "drive R under 1.4".** `reference-crops/` is cut from the ten Rome II
+press plates at **285x380 to 570x760 native** and lanczos-upscaled to 900x1200, i.e. **1.58x to
+3.16x up**; our plates are shot at 1800x2400 and resampled 2x **down** to the same grid. That is
+a three- to six-fold relative resolution difference between the pools, and it is most of what
+R measures.
+
+Proved by putting **our own unchanged plates through the reference pool's own chain** — no
+model change at all, only the resampling:
+
+| plate | native | up 1.58x | up 2.37x |
+|---|---|---|---|
+| praet-torso | 1.042 | 0.795 | **0.633** |
+| legio-front | 2.411 | 1.421 | 0.859 |
+| juth-front  | 1.363 | 0.848 | **0.630** |
+
+The reference band is 0.520-0.621. Two of three of our own plates land in or beside it purely
+from being resampled the way the reference was. HANDOFF already recorded that at each pool's
+native size the two **overlap** (ours 1.29-2.13, Rome II 0.87-2.15); round two read the
+normalisation as what "makes the separation clean". It is the other way round — the
+normalisation *manufactures* it. Quote the separation as **confounded by resampling**, not as
+100 % clean.
+
+The practical consequence, measured three separate ways in one session and all agreeing:
+**every change that makes our texture finer or more physically correct moves energy from E2
+into E1 and R goes up.** Halving the material tile's world size: E2 -12 to -15 % on three
+plates. Tripling the cloth weave toward a real 5 mm thread: E1 +21 %, E2 -8 % pooled. Moving
+the weave's amplitude into an irregular slub: the same loss again. Two of those three were
+reverted on the measurement, and the third was kept only because a texel-density fix was
+landed underneath it. **Our atlas content already sits in the 2-4 px octaves at this
+magnification; there is nowhere for added detail to go except the 1 px band, where the render's
+own filtering throws it away and the upscaled reference has nothing to compare against.**
+
+What is still worth using from this instrument: the **absolutes within our own pool**, and
+`--repro`, which measured a floor here of **0.22 % worst plate and 0.05 % pooled** on this
+machine — so it is a genuinely sharp differencer of our own tree against itself. What is not
+worth using is R against the reference. Matching the two pools' native resolution before
+measuring is the fix, and it means either shooting our plates at the crops' true pixel size or
+finding press material at ours.
+
+### "No normal map, no roughness map" was a starved sampler, not an absent one
+
+Three independent critics named it and all three were reading the same real defect by the
+wrong name. Both maps have been present for months. Arm-differencing the live material
+(`tools/probe-kitmaps.mjs`, drift floor **exactly 0.00000/255**, base and base2 bit-identical)
+puts numbers on it: deleting the normal map alone costs **8.8-21.5 % of E1** and changes
+**33-64 % of figure pixels**; `flat-all` costs 35-47 % of E1.
+
+The actual defect was **texel density**. At the isolated deck's magnification one atlas texel
+covered **2.0 to 4.7 screen pixels** on a 128 px tile — the sampler is on mip 0 everywhere, so
+nothing is mip-starved, everything is *magnified* and interpolated up. A bilinear smear and a
+missing map are indistinguishable to an eye. Measured by piece at `praet-torso`:
+Segmentata was at 2.0x magnification, Tunic 2.6x, Scale 4.1x, head and arms 4.7x. At 256 px
+tiles that halves to 1.2-2.3x, which is where it now stands.
+
+Two things fall out of this that are worth carrying:
+
+- **Head and arms are the second-worst-sampled surface on the man** (1056 texels/m median),
+  and that is part of why the face has no features. Texels, not paint.
+- **Texel density varies 13.1x across one man's pieces** — bare legs 570 texels/m against a
+  quiver at 7470 (`tools/probe-soldieruv.mjs`, which now reads the sheet size out of the live
+  module rather than carrying its own stale copy). One man whose material grain changes
+  thirteen-fold from piece to piece cannot read as authored.
+
+### Every torso was tiled 1.8:1 stretched, and nothing tied a repeat to a surface
+
+`repeatU`/`repeatV` were hand-written at each `tube` call with nothing connecting either to
+the geometry. The mail body ran 3 tiles around a 0.87 m circumference and 4 along a 0.65 m
+length — one tile covering **291 mm by 164 mm**, so a 9 mm riveted ring rendered as a
+**16 x 9 mm oval** on every mailed man in the game, which is why a coif photographed as a
+sheet of embossed lozenges. Scale ran 1.4:1, the tunic 1.5:1.
+
+Fixed by `MAT_TILE_M` (how much of a man one tile of each material covers) plus `tileRepeat`,
+which divides the surface's own mean circumference and path length by it. The segmentata torso
+comes out **unchanged** at 453 x 449 mm — it was the one surface already square — which is the
+check that the arithmetic is not inventing a correction. `MeshBuilder.repeatStops` clamps a
+repeat to the division count on its own, so **LOD2 is untouched and still measures exactly 313
+triangles / 280 vertices**.
+
+Two traps found inside this, both now written into the code:
+
+1. **Rounding a tile count can only go up or down, and on a small surface down is a long way.**
+   A leg is 0.35 m round against a 0.27 m wool tile, so `round(1.3)` is 1 and the bracae came
+   out 30 % *coarser* than authored. `tileRepeat` takes the old repeats as a floor.
+2. **Correcting the size without adding texels measurably makes the plate worse** — it shrinks
+   the same 128 texels into fewer screen pixels. That is why the sheet went to 2048 x 1536.
+
+**Still open, same family, and it is the largest single surface on the man.**
+`MeshBuilder.shieldPanel` maps **one tile across a whole 1.02 m board** — 4.4 screen pixels per
+texel, by far the worst on the figure, and it is why a scutum's inner face photographs as a
+featureless black smear across 12-20 % of two plates. It is also one of the five hand-rolled
+grids still carrying the `tileUvWrapped` seam defect, so fixing the tiling and the seam is one
+job. Not attempted here: seven call sites and a rim topology indexed by column, against a
+shield whose boss was only just repaired.
+
+### The metal F0 rewrite shipped half-applied
+
+The long note above `IRON` argues that a conductor has no diffuse lobe and that its colour is
+its measured F0, and the **albedos were duly raised** — iron 0.78, bronze 0.88/0.70/0.40. The
+**metalness values were never moved**: iron 0.45, plate 0.5, bronze 0.74, mail 0.36, scale 0.52,
+bands 0.48. That left every metal a soldier wears half dielectric with a metal's albedo, which
+is the one combination that same note warns is worse than either end, and it is what
+`praet-torso` photographed — a bronze squamata as one smooth extruded gold ribbon with no seam
+between one scale and the next. All six are now at metalness 1, bronze at roughness 0.30.
+
+The recorded counter-measurement ("raising metalness darkens armour, verified twice") does
+reproduce as a fall in median plate luminance, largest on the two most metal-heavy plates. It
+is the fix rather than the cost: what goes dark is the gutter between two scale rows and the
+overlap under a girdle plate. **Moving one half of a two-variable change and leaving the other
+is not the conservative choice, it is the worst point in the space** — worth remembering
+generally, since it survived here for months behind a comment that described the whole fix.
+
+### A "paused" model plate is not still
+
+Found while building the arm probe, and it is a live hazard for anything that differences two
+frames of the viewer. `viewer/main.ts` feeds the rAF delta to `soldierRig`, which advances
+`uTime`, and `anim/skinShader.ts` adds a `sin(uTime * 0.55 + hash)` idle lean of +/-0.014 rad
+about the feet — roughly +/-27 device px of head swing at `legio-front` — plus a cloak-hem
+wave on the same clock. Two screenshots of the same plate are two different poses. Pinning
+both (a constant rAF timestamp, and `uTime` pinned through
+`renderer.properties.get(mat).uniforms`) takes an arm-differencing floor from **17.1/255 over
+63 % of pixels to exactly 0**. Note this does **not** affect `shoot-model.mjs` decks, which
+measured a `--repro` floor of 0.22 % worst plate in the same session — the harness controls it
+per plate. It bites live-page probes only.
+
+### `grade.ts` is fixed; `viewer.html` still does not load `LightingSystem`
+
+`uGrain` is now **0.006**, matching `PostFX`. `uSharpen` had the same class of error and is now
+**0.28**: it mirrored a *default* that `PostFX.ts:1530` overwrites from the quality tier every
+frame, so the deck ran a value the product never uses. Every model deck this project has graded
+before this was shot at 0.016, the level measured to leave 0.00 % of a plate reading as a
+smooth region against Rome II's 7.09 %.
+
+**The de-duplication was deliberately not done.** The right fix is still to hoist `PostFX`'s two
+shader bodies to module-level exports and delete the mirror — they are anonymous template
+literals at `PostFX.ts:851-960` and `1095-1134`, referenced nowhere else in the file, so it is a
+pure hoist. It was not attempted because the frame-budget workstream holds `src/render/PostFX.ts`
+in its own worktree with 26 insertions against `b7d8aaf`, and losing that is a worse outcome
+than a mirror with the drift now corrected. Two further divergences are recorded and unfixed:
+`Grade` pins `uExposure` at 1 where `PostFX` drives it from the sky preset (**1.42-5.1** in
+practice, the largest tonal divergence left), and `uTime` is pinned at 0 on purpose for
+reproducible plates and must stay that way through any refactor.
+
+**`LightingSystem` is still not loaded, and the map to load it is now complete.** The viewer's
+`Stage` builds three hand-rolled lights and sets `PCFSoftShadowMap` — a **third** shadow mode
+that neither `Engine` (`PCFShadowMap` via `LightingSystem.ts:192`) nor the rig uses, so the deck
+grades under fixed 3x3 PCF with one non-cascaded sun. `LightingSystem`'s constructor takes zero
+arguments and `init`/`preRender` touch only `scene, camera, renderer, quality{tier,
+shadowCascades, shadowMapSize}, rig.orbitRadius, tryGet('sky')`, so a five-field shim is
+enough — or copy `src/city/preview.ts`, which stands up a real `Engine` with `SkySystem` and
+`LightingSystem` for exactly this reason. Four hazards, in order: `TC_CLOUD_SHADOW` is defined
+unconditionally but its uniforms are only bound when a sky exists, so with no sky
+`directLight.color` is multiplied by garbage and `cloudShadowsEnabled` is private with no
+setter; `installShaderChunks` mutates `THREE.ShaderChunk` process-wide and throws if the CSM
+call text does not match; every lit material must be patched or it renders 4x too bright, which
+`discoverMaterials` only fixes on a 16-frame timer; and `Stage`'s own sun, fill and bounce must
+be removed or the man is double-lit and the CSM light indices shift.
 
 ### The octave instrument, and the constants that do not transfer
 
@@ -718,3 +925,37 @@ wrong — both are present, and it was reading flatness as absence. A grader tha
 right for a false reason is a different result from one that names a real defect, and only the
 second is a work item. Allow "I cannot tell" per frame and count it honestly; a forced binary on
 twenty frames turns a coin flip into evidence.
+
+### The atlas widening, priced
+
+Measured with both arms interleaved in one browser session and the sim clock pinned so each
+arm renders the identical men at the identical instant, on pinned detached worktrees at
+`751dd0d` and `b7d8aaf`.
+
+| | before | after |
+|---|---|---|
+| draws — wide / romanline / city / wall / skyline / melee | 131 / 153 / 200 / 211 / 178 / 135 | **identical** |
+| whole-frame triangles, all six cameras | — | **byte-identical** |
+| LOD2 triangles / vertices, all three factions | 313 / 280 | **313 / 280, bit-identical buffers** |
+| LOD0 vertices, Rome / Germanic / Carthage | 5263 / 4528 / 7057 | 5297 / 4617 / 7091 |
+| LOD1 vertices | 3132 / 2753 / 4388 | 3156 / 2805 / 4412 |
+| soldier atlas resident | 25.17 MB | **50.33 MB** |
+| asset textures, whole scene | 99.5 MB | **124.6 MB** |
+| `buildSoldierAtlas` | 104 ms median | **309 ms median** |
+| frame time, romanline and melee | — | **no measurable change**, every CI spans zero |
+
+Two things the commit summary got wrong and the body got right. **"No vertex" is false** — tile
+seams duplicate a vertex column, so LOD0 gains 34-89 vertices and LOD1 24-52, about +22 KB of
+geometry across all nine builds. And **"texture memory only" is false**: the bake is 3.05x, so
++205 ms warm and up to +500 ms cold on a loaded machine, once at load.
+
+**LOD2 keeping its tiling is provable rather than asserted.** Raw UVs must differ, because a
+tile is now 256/1536 of the sheet and `matUv`'s 3-texel inset is 3/256 of a tile instead of
+3/128. Divide both out into tile space and the LOD2 UV hashes are identical on both arms while
+LOD0's and LOD1's differ, which is exactly the intended fix.
+
+**Not this commit, but found by it: `romanline` is 153 draws against round two's recorded 139,
+and it is already 153 at the merge-base.** `tools/shoot.mjs` is byte-identical between the r2
+tip and `b7d8aaf`, so the camera did not move; the merge that pulled in the Carthage fabric and
+the water surface is where the scene changed. `city` moved the other way, 218 to 200, for the
+same reason. Neither figure is a soldier regression.
