@@ -225,23 +225,20 @@ const BED_SINK = 0.3;
 const BASIN_BED = BASIN_WATER_Y - BASIN_DEPTH - BED_SINK;
 
 /**
- * **The merchant basin is not dug, and this is the blocker, not an oversight.**
+ * **The merchant basin is dug.** It was blocked on one line in `harbour.ts`: the merchant
+ * harbour's quay elevation was sampled as `heightAt(mh.x, mh.z)` — the ground at the **centre
+ * of the basin**. Excavating with that line unfixed would have made that sample the bed: the
+ * 15/25 m quay belts, the basin's own revetment and both entrance moles would all have been
+ * rebuilt at −3.1 m, three metres under the sea. The cothon never had this problem because
+ * *its* sample lands on the admiralty island, which stays at quay level by design.
  *
- * `harbour.ts` takes the merchant harbour's quay elevation as `heightAt(mh.x, mh.z)` — the
- * ground at the **centre of the basin**. Excavate the basin and that sample becomes the bed:
- * the 15/25 m quay belts, the basin's own revetment and both entrance moles would all be
- * rebuilt at −3.1 m, three metres under the sea, and `assertions.ts` would report the merchant
- * freeboard as −3.10. The cothon survives the same treatment only because *its* sample lands
- * on the admiralty island, which stays at quay level by design.
- *
- * So this waits on one line in `src/city/carthage/harbour.ts` — sample the quay belt, e.g.
- * `heightAt(mh.x, mh.z - mh.hd - mh.quayWest * 0.5)`, instead of the basin centre. The moment
- * it lands, flipping this to `true` digs the basin with the mechanism already written below
- * and the 84 % goes with it. The district raise is held off the merchant harbour for exactly
- * the same reason: raising the ground round a basin that cannot be dug would take its water
- * from 84 % buried to 100 %.
+ * `harbour.ts` now samples `heightAt(mh.x, mh.z - mh.hd - mh.quayWest * 0.5)` — the landward
+ * quay belt, not the basin centre — so digging the basin here no longer moves the quay's own
+ * reference point. The district raise (`cothonApron`) still does not reach the merchant
+ * harbour: its quay was never below `HARBOUR_GROUND` the way the cothon's was, so it needs no
+ * made-ground lift, only the cut below.
  */
-const CUT_MERCHANT_BASIN = false;
+const CUT_MERCHANT_BASIN = true;
 
 /**
  * The ring quay, metres. `harbour.ts` paves the annulus `outerR .. outerR + 20` and does not
