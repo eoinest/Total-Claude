@@ -164,15 +164,38 @@ Three constraints on any city, all load-bearing in files the city workstream doe
 Directory layout: `src/city/*.ts` is shared machinery; `src/city/<cityname>/` is one city's
 own geometry. Ownership is per-city-directory, so two cities can be built in parallel.
 
-### Water is terrain, and a basin is a hole
+### Water is a map's to declare, and the heightfield says where it is
 
-There is no general water surface. `RiverWater` is a ribbon built along the Tiber's
-centreline and it is the only one. On Carthage the Gulf of Tunis, the Lake of Tunis and the
-harbour basins are **terrain below the map's `waterLevel`, painted by the splat rules** —
-free, no draw call, no reflection pass, and legible at the distances a battle camera uses.
+`MapDefinition.terrain.water` is a `WaterProfile | null` and `TerrainSystem` builds
+`WaterSurface` only when a map hands it one. This replaced `hasRiver: boolean`, for the
+reason `city: CityPlan | null` replaced `hidesCity`: under the flag there was exactly one
+water surface in the engine — a ribbon of geometry built along the Tiber's own meander
+train — so Carthage, which is a peninsula, had to answer "no". Its gulf, its lagoon and its
+harbours shipped as terrain under the datum painted by the splat, and the owner's report on
+the finished map was *"I see the ocean but no lagoon, it's just the beach."* A flat
+desaturated plate with no specular, no animation and no depth cue reads as wet sand, and a
+17:00 sun 20 degrees up is the case that reads worst.
 
-**Nothing in the simulation knows what water is.** A man walks into the sea unless something
-stops him, and only two things can:
+Two properties are load-bearing and a new map should rely on both:
+
+- **The wetted extent comes out of the heightfield, not out of an authored polygon.** Water
+  is wherever the bed is under `waterLevel`, tested per pixel against the same height texture
+  and the same edge-drift `TerrainMaterial` uses, so a coast cannot disagree with its own
+  bathymetry and a sand bar comes out as a bar. It also means **a map cannot flood a salt
+  flat**: the Sebkhet Ariana is built at +0.54 to +0.64 m and stays dry by construction.
+- **One draw call for all of a map's water.** A 16 m grid with the dry cells left out, a
+  coarse ring outside the battlefield so the sea runs to the horizon, and any authored basin
+  welded into the same buffers with its surface height and depth per vertex. Measured at ten
+  cameras on Carthage: +1 draw at every one, byrsa 281 → 282.
+
+A basin whose bed is *built geometry* — a harbour cut into level ground — is the one thing
+the bathymetric test cannot see, because the heightfield there is at quay level. Those are
+declared as `basins` on the profile with their own `dy` and `depth`; import the quay
+builder's own `FREEBOARD`/`BASIN_DEPTH` rather than copying the numbers.
+
+**Nothing in the simulation knows what water is**, and rendering a surface did not change
+that — verified, 870,489 nav cells at 3 m and three body radii identical to the tree before
+it. A man walks into the sea unless something stops him, and only two things can:
 
 1. **A slope the pathfinder refuses.** `SLOPE_IMPASSABLE = 0.62` measured over its 7 m cell,
    so a 9 m fall in 14 m. Carthage's open coast plunges 9.5 m in 12 for exactly this reason
@@ -182,8 +205,15 @@ stops him, and only two things can:
    build. **Whoever builds the quays must publish the basins through `getObstacles()` with
    `topY` at quay level, or units will march across the naval harbour.**
 
-If a real animated water surface is ever wanted, it is a `src/terrain/` change generalising
-`RiverWater` off the Tiber's centreline — not a per-map workaround.
+Both are still exactly as they were, and both are still the only two. A rendered surface is
+not a collider and must never be mistaken for one.
+
+**Rendering the water found a map bug that painting it had hidden.** Two connected water
+bodies exist on Carthage — the gulf at 60.0 ha and the lake channel behind the Taenia at
+3.08 ha, x −1094..−954, z 482..842, mean depth 5.63 m — and **13 building footprints stand
+under the datum inside the second one**, 6,206 m² of the fabric's 357,376. Painted as dark
+splat nobody noticed; rendered as water they are houses in a lagoon. That is the city
+workstream's to fix, not the water system's.
 
 ### BattleSystem (`name: 'battle'`)
 The single source of truth for army state. Read freely; write only via its methods.
