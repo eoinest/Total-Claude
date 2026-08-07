@@ -279,11 +279,16 @@ const frame = (
 const CITY_BEARING = 0;
 
 /**
- * The smallest terrace worth building, in plots. Two 12-cubit houses, 12.4 m of street front.
+ * The smallest terrace worth building, in plots. One 12-cubit house, 6.2 m of street front.
  *
- * Below that a "block" is a shed, and it costs the same draw call as five houses.
+ * An earlier revision held this at two "because below that a block is a shed and it costs the
+ * same draw call as five houses". That was wrong on its own terms: chunks merge per material,
+ * so an extra block costs triangles and **no draw call at all**. And §7.1 records that some
+ * plots were themselves split front and back into an `a` and a `b` unit, so a single 12 × 30
+ * cubit house on a corner is the module, not a compromise. It is worth about a hectare of
+ * roof in the gaps the streets leave.
  */
-const MIN_PLOTS = 2;
+const MIN_PLOTS = 1;
 
 /**
  * Shorten a block's face by whole plots until it fits, instead of deleting it.
@@ -424,15 +429,24 @@ function planQuarter(
       /**
        * Does a block of this face, centred at this offset along `u`, stand?
        *
-       * The bounds test is on the block's own extent rather than on its centre, which the
-       * first revision compared against `buildLineZAt(centre)` alone. That was harmless only
-       * because the keep-out belt catches the same ground by rectangle; stating it on the
-       * extent means the two agree instead of one covering for the other.
+       * **The bounds are tested on the block's whole extent, in both axes, and the previous
+       * revision tested one point.** `buildLineZAt(centre)` alone is not the build line the
+       * block meets: the reserved strip is 35 m deep along most of the wall and **70 m over a
+       * stair apron**, with a cosine shoulder between, so a 31 m block whose centre stands
+       * just outside an apron has a corner 15 m inside it where the line is deeper. That is
+       * exactly the seven obstructed samples `assertions.ts` reports at x −475, and it is the
+       * same shape of mistake as the coastline test that had a z guard and no x guard.
+       *
+       * So both boundaries are evaluated at the two ends of the face as well as at the
+       * centre, and the strictest wins. `shoreZAt` gets the same treatment because the coast
+       * runs diagonally across the whole north-east and a block face there spans 8 m of it.
        */
       const stands = (off: number, hw: number): RejectReasons['collide'] | 0 => {
         const wx = F.x(u + off, v);
         const wz = F.z(u + off, v);
-        if (wz - hd < buildLineZAt(wx) || wz + hd > shoreZAt(wx) - 26) return 1;
+        const near = Math.max(buildLineZAt(wx - hw), buildLineZAt(wx), buildLineZAt(wx + hw));
+        const far = Math.min(shoreZAt(wx - hw), shoreZAt(wx), shoreZAt(wx + hw)) - 26;
+        if (wz - hd < near || wz + hd > far) return 1;
         if (!dryFooting(ground, wx, wz, hw, hd, rot)) return 2;
         if (keepOut.blockedRect(wx, wz, hw + 1.2, hd + 1.2, rot)) return 3;
         if (placed.hits(wx, wz, hw + 1.0, hd + 1.0, rot)) return 4;
@@ -531,12 +545,19 @@ function place(b: Block, y: number): THREE.Matrix4 {
  *   already had a flat roof; only the Megara's farm ranges carried a pitched tile gable, which
  *   is a Roman idiom on a Punic farm. They are flat-roofed now, and the fabric touches no
  *   roof-tile material anywhere.
+ * - **`timber` is gone because the doors are better without it.** They were solid leaves
+ *   standing 0.28 m *proud* of the wall in a wood material, in 33 of 41 chunks. §7.1's
+ *   ground-floor room is "usable as a **shop** on the street", and a Punic shop front is an
+ *   open doorway — so they are now a recess *into* the render, unlit and near-black. What
+ *   reads at any distance is the value step and the 0.28 m of relief, and both are stronger
+ *   set in than set out. Below about 40 m the loss is a wood normal map on a 1.2 × 2.2 m
+ *   surface; above it, HANDOFF's own measurement says 84 % of that map is gone by mip 4.
  *
- * That takes a full-detail fabric chunk from four material meshes to two, plus its one merged
- * shadow proxy. `buildShadowProxy` merges **per chunk**, not per stream, so a material stream
- * costs exactly one call in the colour pass and nothing in the four cascades.
+ * That takes a full-detail fabric chunk from four material meshes to **two**, plus its one
+ * merged shadow proxy. `buildShadowProxy` merges **per chunk**, not per stream, so a material
+ * stream costs exactly one call in the colour pass and nothing in the four cascades.
  */
-const BLOCK_KEYS = ['stucco', 'stone', 'timber'] as const;
+const BLOCK_KEYS = ['stucco', 'stone'] as const;
 
 /**
  * One insula: a party-walled terrace of five plots about a courtyard, flat-roofed.
@@ -597,11 +618,15 @@ function insulaBlock(b: Batch, blk: Block, detail: number, groundY: number): voi
             { bottom: false, zMin: zf > 0, zMax: zf < 0 });
         }
       }
-      // Street doors front and back — §7.1's defining feature, an entrance on two streets.
+      // Street doors front and back — §7.1's defining feature, an entrance on two streets,
+      // and the ground-floor room behind one of them is a shop. Cut *into* the render as a
+      // dark recess rather than stood proud as a timber leaf: the recess is the thing that
+      // reads, it survives the mip chain as a value step, and it costs no second material.
       for (const zf of [-blk.hd, blk.hd] as const) {
-        box(b.s('timber'), x0 + plotW * 0.55 - 0.6, 0.9, zf - Math.sign(zf) * 0.26,
-          x0 + plotW * 0.55 + 0.6, 3.1, zf + Math.sign(zf) * 0.02,
-          PUN.timberDark, { bottom: false });
+        const sg = Math.sign(zf);
+        box(wall, x0 + plotW * 0.55 - 0.6, 0.9, zf - sg * 0.34,
+          x0 + plotW * 0.55 + 0.6, 3.1, zf - sg * 0.06,
+          PUN.timberDark, { bottom: false, top: false });
       }
       // The cistern mouth in the courtyard floor. Every excavated house has one.
       if (p === Math.floor(nPlots / 2)) {
@@ -702,8 +727,8 @@ function warehouseBlock(b: Batch, blk: Block, detail: number, groundY: number): 
     const n = Math.max(2, Math.round(blk.hw / 5));
     for (let i = 0; i < n; i++) {
       const px = -blk.hw + ((i + 0.5) * blk.hw * 2) / n;
-      box(b.s('timber'), px - 1.4, 1.1, blk.front * blk.hd - 0.36, px + 1.4, 4.2,
-        blk.front * blk.hd + 0.06, PUN.timberDark, { bottom: false });
+      box(wall, px - 1.4, 1.1, blk.front * blk.hd - 0.42, px + 1.4, 4.2,
+        blk.front * blk.hd - 0.08, PUN.timberDark, { bottom: false, top: false });
       box(stone, px - 1.9, 1.1, blk.front * (blk.hd + 0.1), px - 1.55, h - 0.3,
         blk.front * (blk.hd + 0.24), PUN.sandstone, { bottom: false });
     }
@@ -739,7 +764,7 @@ function warehouseBlock(b: Batch, blk: Block, detail: number, groundY: number): 
  * bin at which a chunk is still smaller than the ground a battle camera sees, and it takes
  * the count from 99 to about 40 without pinning anything at full detail.
  */
-const MAX_CHUNK_R = 200;
+const MAX_CHUNK_R = 280;
 
 export function buildFabric(heightAt: Ground, keepOut: KeepOut, seed: string): FabricOutput {
   const rng = new Rng(seed);

@@ -309,10 +309,39 @@ export const PUNIC_WAY_WIDTH: Readonly<Record<WayClass, number>> = {
 /** §7.1: stepped streets on the Byrsa are 6 m [ARCH] — Rue II measures 7.5, Rue III 5.4. */
 export const STEPPED_STREET_WIDTH = 6;
 
-/** Frontage margin kept clear beyond the carriageway. Punic thresholds, not Roman porticoes. */
+/**
+ * Frontage margin kept clear beyond the carriageway. Punic thresholds, not Roman porticoes.
+ *
+ * **The two upper ranks are sized on the body that has to use them, and they were not.**
+ * A cohort in line is 35 m at the sim's 0.72 m pitch and a column is 16 m; `probe-carthage`
+ * floods the city at exactly those two radii. With frontage at 3.5 and 2.5 the reserved
+ * bands were 27 m and 17 m — so the arterial rank cleared a 16 m column by **one metre** and
+ * the processional rank did not clear a cohort at all.
+ *
+ * It went unnoticed while the fabric was thin, because a formation could cut across whatever
+ * ground had not been built on. Filling the housing in removed that: with the same frontages
+ * and 765 blocks instead of 423, a cohort seeded at the stormed gate reached **0.9 hectares** —
+ * out of the gate and nowhere. That is not "the attacker is in column, permanently" (§8.6),
+ * which is the design; it is a gate that leads nowhere, which is a bug.
+ *
+ * So the reserved band, not the carriageway, is what changes: **40 m on the processional rank
+ * and 22 m on the arterial**. The road ranks themselves are untouched at 20 / 12 / 7 / 4 —
+ * §7.2's numbers stand, the paving a player sees is the same width, and the extra is
+ * threshold, setback and awning ground, which a Punic street front had. §7.2 already calls
+ * the 20 m rank "the game's minimum for a formed unit … stated as a compromise"; this is what
+ * finishes the compromise, and it buys the one thing Appian's geography needs — a route from
+ * the Porta Byrsae down the Tunis road to the forum and on along the harbour road, wide
+ * enough for a formed body the whole way.
+ *
+ * The cost is measured and it is the trade this file is willing to make: 1.2 km of
+ * processional and 5.4 km of arterial way, so about 4 ha of roof.
+ */
 export const PUNIC_FRONTAGE: Readonly<Record<WayClass, number>> = {
-  artery: 3.5,
-  secondary: 2.5,
+  /** 20 + 2 × 10 = 40 m reserved: a 35 m cohort with 2.5 m of play either side. */
+  artery: 10,
+  /** 12 + 2 × 5 = 22 m reserved: a 16 m column with 3 m either side. */
+  secondary: 5,
+  /** A 7 m local street takes a file and a laden mule. Unchanged, and it is meant to bind. */
   local: 1.4,
   vicus: 0.8,
 };
@@ -531,7 +560,62 @@ export const PUNIC_WAYS: readonly PunicWay[] = (() => {
     ]),
   });
 
-  // 11. The quay circuit round the merchant harbour, joining the warehouses and the quay-fort.
+  // 11. The inner lateral street, 110 m behind the circuit and parallel to it.
+  /**
+   * **The second street a formation can use across the whole city, and the map had one.**
+   *
+   * Measured with `probe-carthage`: filling the housing in took a 16 m column from 160 to
+   * 136 hectares of reachable walled ground, and the cause was structural rather than
+   * incidental. A column needs 16 m of clear width; the fabric's own network is 7 m locals
+   * and 4 m lanes by construction (§7.2, and that is the map's infantry mechanic), so the
+   * only ground a column can cross is a named way or open plain. Filling the plain therefore
+   * removes its network, and the eleven named ways ran mostly *into* the city rather than
+   * across it.
+   *
+   * `via-sagularis` is the lateral street behind the wall; this is the one 110 m further in,
+   * which is what any walled city has — a back street serving the quarters the military way
+   * only skirts. It runs the circuit's own curve at a fixed offset, so it stays parallel to
+   * the wall for its whole 1.8 km rather than diverging at the ends the way a straight line
+   * would on a wall that leans 121 m.
+   *
+   * [GAME], like every other rank above `local`; §7.2's evidence stops at 9 m.
+   */
+  {
+    const path: { x: number; z: number }[] = [];
+    for (let x = CIRCUIT_X_MIN + 90; x <= CIRCUIT_X_MAX - 110; x += 60) {
+      path.push(pt(x, circuitZAt(x) + 110));
+    }
+    ways.push({
+      id: 'via-interior', cls: 'secondary', width: PUNIC_WAY_WIDTH.secondary, paved: false,
+      path: deflect(path),
+    });
+  }
+
+  // 12. The shore road, north from the sea gate to the Bordj Djedid quarter.
+  /**
+   * **Added because a quarter with no named way through it is unreachable by a formation.**
+   *
+   * Filling the coastal strip with housing (`magon-shore`, `bordj-djedid`) cost a 16 m column
+   * 12 hectares of reachable walled ground, and the cause was not the houses — it was that
+   * the only streets there were the fabric's own 7 m locals and 4 m lanes, neither of which
+   * admits a column. Deleting the housing bought the reach back; so does one road, at about a
+   * hectare of roof instead of six, which is the better trade and is the reason this way
+   * exists.
+   *
+   * It is also the road the archaeology implies. §4.6 records an excavated seaward rampart
+   * running "between the Bay of Kram and Bordj Djedid" — a wall on the shore has a way behind
+   * it — and §4.5's attested sea gate at (x +150, z 1200) is where this begins, so the chain
+   * from the Porta Uticensis runs Utica road → sea-gate street → shore road → Bordj Djedid
+   * without a formation ever having to use a 7 m street.
+   */
+  ways.push({
+    id: 'via-litoralis', cls: 'secondary', width: PUNIC_WAY_WIDTH.secondary, paved: false,
+    path: deflect([
+      pt(150, 1200), pt(330, 1240), pt(520, 1288), pt(720, 1330), pt(900, 1372),
+    ]),
+  });
+
+  // 13. The quay circuit round the merchant harbour, joining the warehouses and the quay-fort.
   /**
    * The quay circuit, laid **on** the harbour's quay belts rather than deflected off them.
    *

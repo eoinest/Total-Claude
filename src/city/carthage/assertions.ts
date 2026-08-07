@@ -319,16 +319,25 @@ export function assertCarthage(inp: AssertInput): CarthageChecks {
   // Wall traversal landed at fbcfe65: men climb the wall, walk along it and come *down the
   // stairs into the city*, so the ground at the foot of a flight is where the battle goes.
   // This is the check that a formation coming off a stair has somewhere to form up.
+  //
+  // **The apron follows the wall, and this measured a flat box.** `z0` was taken once, at the
+  // apron's centre, and the same `z0` was used across all 120 m of its run — but the circuit
+  // leans 121 m across the map and moves about 4 m over an apron's own width. So the far row
+  // of a flat box stood a few metres *cityward* of the curved line the fabric is actually
+  // held behind, and the check reported seven obstructed samples at x −475 that were two
+  // perfectly legal houses standing 2.5 m behind their own build line. Reading `circuitZAt`
+  // at each sample's own x costs one call and makes the box the shape of the thing it is
+  // measuring. Same family as the `wallZAt` that clamped past the end of Rome's curtain and
+  // invented four pomerium intrusions out of a frozen z-line.
   {
     const blocked: string[] = [];
     for (const ax of STAIR_APRONS) {
-      const z0 = circuitZAt(ax);
       let hit = 0;
       let tested = 0;
       for (let dx = -APRON_HALF_RUN; dx <= APRON_HALF_RUN; dx += 6) {
         for (let dz = 4; dz <= APRON_DEPTH; dz += 6) {
           const x = ax + dx;
-          const z = z0 + dz;
+          const z = circuitZAt(x) + dz;
           tested++;
           for (const f of solids) {
             if (inside(x, z, f)) { hit++; break; }
