@@ -34,6 +34,16 @@ const MAP = args.get('map') ?? 'rome';
 const UNTIL = Number(args.get('until') ?? 900);
 const AS_JSON = args.has('json');
 const TAG = args.get('tag') ?? '';
+/**
+ * Run the same tree with the wall doctrine off.
+ *
+ * `TacticalAISystem.wall` gates all three halves of the change at once — the `moveTo`
+ * refusal, the `Parapet` behaviour and the melee-target filter — so nulling it reproduces
+ * the behaviour at `965e12b` without a second checkout, a second server or a second day.
+ * Verified against a real run at that commit: same defender parapet counts to within the
+ * session-to-session noise this file's header already warns about.
+ */
+const OFF = args.has('off');
 
 const base = `http://127.0.0.1:${PORT}`;
 const up = await fetch(`${base}/src/main.ts`).catch(() => null);
@@ -56,6 +66,7 @@ await page.goto(url, { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 180000 });
 if (errs.length) console.error('page errors:', errs.slice(0, 4));
 
+if (OFF) await page.evaluate("window.__game.engine.context.get('tactical-ai').wall = null");
 await page.evaluate(`
 window.__wa = (() => {
   const g = window.__game, b = g.battle, s = b.siege, p = b.pool;
@@ -137,7 +148,7 @@ window.__wa = (() => {
 })();
 `);
 
-const out = { map: MAP, tag: TAG, samples: [], decision: null, errs: errs.slice(0, 6) };
+const out = { map: MAP, tag: TAG, doctrine: !OFF, samples: [], decision: null, errs: errs.slice(0, 6) };
 
 const sampleAt = async (target) => {
   const t = await page.evaluate('window.__wa.t()');
