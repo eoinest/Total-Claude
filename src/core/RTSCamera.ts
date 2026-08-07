@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { clamp, damp, lerp, smoothstep, wrapAngle } from '../util/math';
-import type { Input } from './Input';
+import type { Input, PointerState } from './Input';
 
 /**
  * Total War-style battle camera.
@@ -63,6 +63,21 @@ export class RTSCamera {
   suppressDrag = false;
 
   private tmpV = new THREE.Vector3();
+  private tmpDir = new THREE.Vector3();
+
+  /**
+   * Cap on how much further one vertical drag pixel may travel than a horizontal one.
+   *
+   * A screen-vertical pixel covers `1 / sin(pitch)` times as much ground as a horizontal
+   * one, because the ray is oblique to the ground: 1.17 looking down at the 59-degree
+   * limit, 2.07 at the zoom most of a battle is watched from, and 21 at the eye-level end,
+   * where the view is 2.7 degrees off horizontal and the ground under the cursor is 34 m
+   * away. Honouring that exactly is what "the ground stays under the cursor" means, and it
+   * is unusable at the flat end — the factor is unbounded as the view nears the horizon, so
+   * a twitch would throw the focus across the map. Three keeps the gesture faithful across
+   * the zooms where the correction is small and stops short of the singularity.
+   */
+  private readonly dragForwardGain = 3;
 
   constructor(aspect: number) {
     this.camera = new THREE.PerspectiveCamera(45, aspect, 0.35, 8000);
@@ -230,7 +245,11 @@ export class RTSCamera {
     if (input.key('KeyQ')) this.yawTarget += dt * 1.35;
     if (input.key('KeyE')) this.yawTarget -= dt * 1.35;
 
-    // ---- Pan (WASD / arrows / MMB drag / screen edge) ----
+    // ---- Rate pan (WASD / arrows / screen edge) ----
+    //
+    // These say "keep going that way", so the distance covered is speed x time and `dt`
+    // belongs in it. The diagonal normalisation below belongs to them too: without it
+    // W+D would cover panRate * sqrt(2) and a diagonal would outrun a cardinal.
     let fx = 0;
     let fy = 0;
     if (input.key('KeyW') || input.key('ArrowUp')) fy += 1;
@@ -249,35 +268,127 @@ export class RTSCamera {
       else if (input.mouseY > viewH - margin) fy -= 1 - (viewH - input.mouseY) / margin;
     }
 
-    const mmb = input.mmb;
-    if (mmb.down) {
-      const k = this.panRate * 0.0042;
-      fx -= mmb.dx * k;
-      fy -= mmb.dy * k;
-    }
-
     if (fx !== 0 || fy !== 0) {
       const len = Math.hypot(fx, fy);
       if (len > 1) {
         fx /= len;
         fy /= len;
       }
-      // Pan in the camera's ground plane, not world axes.
-      //
-      // `place()` puts the eye at focus - (sin yaw, cos yaw) * r, so the view direction —
-      // screen "up" projected onto the ground — is forward = +(sin yaw, cos yaw).
-      //
-      // Screen-right is NOT the naive perpendicular (cos yaw, -sin yaw). Three's camera
-      // basis is right-handed with x = right, y = up, z = -forward, so it must satisfy
-      // right x up = -forward, which gives right = (-cos yaw, sin yaw) — the negation of
-      // the naive form. Getting this wrong inverts A and D at every heading while leaving
-      // W and S correct, which is exactly how it was reported.
-      const s = Math.sin(this.yaw);
-      const c = Math.cos(this.yaw);
       const rate = this.panRate * dt;
-      this.focus.x += (fy * s - fx * c) * rate;
-      this.focus.z += (fy * c + fx * s) * rate;
+      this.panGround(fx * rate, fy * rate);
     }
+
+    // ---- Drag pan (middle button) ----
+    //
+    // A drag is a *displacement* gesture, not a rate one. The player has already said how
+    // far by moving the cursor that far, so neither `dt` nor `panRate` may appear in the
+    // answer: the ground under the cursor should stay under the cursor however the frame
+    // rate happens to fall. That matters more since the adaptive-quality controller landed,
+    // because it deliberately varies frame time.
+    //
+    // This used to be folded into the rate accumulator above as `mmb.dx * panRate * 0.0042`,
+    // which at the default zoom reaches the length clamp at 1.2 px of travel per frame — so
+    // every real drag saturated at length 1, the cursor delta was thrown away, and the pan
+    // came out as `panRate * dt`. Measured on one fixed 300 px scripted drag with the frame
+    // duration swept and nothing else changed: **16.7 m at 144 fps against 160.1 m at 15
+    // fps**, a constant 200.1 m/s in every row. Held instead at a constant *elapsed time*
+    // the answer was 80.04 m at every frame rate from 15 to 120 — which is the proof that it
+    // was integrating the clock and had stopped reading the cursor at all.
+    //
+    // The vertical axis was inverted against the horizontal one as well: `fy -= mmb.dy * k`
+    // pushed the camera backwards as the cursor came down, so a world point ran away from
+    // the hand on one axis while following it on the other.
+    //
+    // Shift no longer speeds this up. `panSpeed` scales a rate; there is no rate here, and
+    // a 1:1 gesture that moves 2.4x the cursor is not a 1:1 gesture.
+    const mmb = input.mmb;
+    if (mmb.down && (mmb.dx !== 0 || mmb.dy !== 0)) this.dragPan(mmb, viewW, viewH);
+  }
+
+  /**
+   * Slide the focus `right` metres across the view and `fwd` metres into it.
+   *
+   * Panning happens in the camera's ground plane, not on world axes. `place()` puts the eye
+   * at focus - (sin yaw, cos yaw) * r, so the view direction — screen "up" projected onto
+   * the ground — is forward = +(sin yaw, cos yaw).
+   *
+   * Screen-right is NOT the naive perpendicular (cos yaw, -sin yaw). Three's camera basis is
+   * right-handed with x = right, y = up, z = -forward, so it must satisfy right x up =
+   * -forward, which gives right = (-cos yaw, sin yaw) — the negation of the naive form.
+   * Getting this wrong inverts A and D at every heading while leaving W and S correct, which
+   * is exactly how it was reported.
+   *
+   * `direct` carries the same step straight into the smoothed focus. A rate gesture wants
+   * the 16/s damp; a drag must not have it. The damp is a fixed ~60 ms of *time* lag, so it
+   * would leave the ground trailing the cursor by however far the hand moved in 60 ms —
+   * frame-rate independent, but still not direct manipulation. It stays on for everything
+   * else, and the difference between the two focuses is untouched, so `update`'s damp keeps
+   * converging exactly as before.
+   */
+  private panGround(right: number, fwd: number, direct = false): void {
+    const s = Math.sin(this.yaw);
+    const c = Math.cos(this.yaw);
+    const dx = fwd * s - right * c;
+    const dz = fwd * c + right * s;
+    this.focus.x += dx;
+    this.focus.z += dz;
+    if (direct) {
+      this.smoothFocus.x += dx;
+      this.smoothFocus.z += dz;
+    }
+  }
+
+  /**
+   * Slide the focus so the ground under the cursor stays under the cursor.
+   *
+   * A closed form rather than a raycast, and a *difference of two ground points* rather
+   * than a per-pixel rate. The difference is what makes it frame-count independent: the
+   * steps telescope, so twelve frames of 25 px and sixty frames of 5 px land in the same
+   * place. A rate — even one evaluated at the cursor's own position, which is the exact
+   * derivative — is a first-order integrator, and its error would grow as the frame rate
+   * fell. That is the same class of defect this replaces, only smaller.
+   *
+   * With the eye `h` above the plane through the focus, the camera's own pitch P, and a
+   * screen offset (u, v) from the centre in tangent units (u right, v up), the ray
+   * `f + u R + v U` meets that plane at
+   *
+   *     t = h / (sinP - v cosP)
+   *     ground = t * ((cosP + v sinP) * forward + u * right)      [horizontal, from the eye]
+   *
+   * R is horizontal because the camera carries no roll, which is why `u` never enters the
+   * denominator and why a horizontal drag is *exactly* linear in pixels at any screen row.
+   *
+   * P is read off the placed camera, not off `pitch`: `place` lifts the eye to clear the
+   * ground and aims a little above the focus when close, so at the near end of the zoom the
+   * orbit's nominal 0.05 rad and the camera's real angle differ tenfold.
+   *
+   * Two clamps, both against the horizon, where `t` and its v-derivative are unbounded: the
+   * range under the cursor may not exceed `dragForwardGain` times the range on the view
+   * axis, and one vertical pixel may not outrun one horizontal pixel by more than the same
+   * factor. Neither binds at the zooms a battle is watched from — over a full-height drag at
+   * zoom 0.55 the true forward gain runs 1.3 to 2.0 against a cap of 3.
+   */
+  private dragPan(mmb: PointerState, viewW: number, viewH: number): void {
+    const h = this.camera.position.y - this.smoothFocus.y;
+    const sinP = -this.camera.getWorldDirection(this.tmpDir).y;
+    if (h <= 0.05 || sinP <= 1e-3) return;
+    const cosP = Math.hypot(this.tmpDir.x, this.tmpDir.z);
+    // Pixels to tangent units. Both axes divide by viewH: NDC x is scaled by the aspect
+    // ratio on the way out, and aspect = viewW / viewH cancels the viewW.
+    const k = (2 * Math.tan((this.camera.fov * Math.PI) / 360)) / viewH;
+    // `x - dx` is where this button was last frame. It is only that because `Input` tracks
+    // dx per button; while one shared cursor fed all three, this would have been wherever
+    // the mouse was before the press.
+    const u0 = (mmb.x - mmb.dx - viewW * 0.5) * k;
+    const u1 = (mmb.x - viewW * 0.5) * k;
+    const v0 = (viewH * 0.5 - (mmb.y - mmb.dy)) * k;
+    const v1 = (viewH * 0.5 - mmb.y) * k;
+    const denMin = sinP / this.dragForwardGain;
+    const t0 = h / Math.max(sinP - v0 * cosP, denMin);
+    const t1 = h / Math.max(sinP - v1 * cosP, denMin);
+    const maxFwd = this.dragForwardGain * Math.max(t0, t1) * Math.abs(v0 - v1);
+    const fwd = t0 * (cosP + v0 * sinP) - t1 * (cosP + v1 * sinP);
+    this.panGround(t0 * u0 - t1 * u1, clamp(fwd, -maxFwd, maxFwd), true);
   }
 
   /** Position the camera on its orbit and aim it at the focus. */
