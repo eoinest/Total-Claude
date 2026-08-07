@@ -43,21 +43,41 @@ import { Weather, type WeatherKind } from './Weather';
  */
 
 /**
- * `spawns` is the per-frame emission cap, and it is the single most important number
- * here. Optical depth comes from alpha × overlap, not from particle count, so the right
- * shape of this system is *few, opaque, long-lived* puffs: 130 spawns/frame at a 3.5 s
- * mean life settles at ~4,500 live billboards, which is a legible dust bank. Ten times
- * that — which is what a per-man emission rate reaches with 9,500 men on the field —
- * costs 5 ms of fill and renders the battle as a white sheet.
+ * `dustLive` is the number that decides how much of the battle you can see, and it is a
+ * count of *live billboards* rather than a spawn rate because optical depth is alpha ×
+ * overlap. ~4,500 is a legible dust bank; three times that — which a per-man emission rate
+ * reaches with 9,500 men on the field — costs 5 ms of fill and renders the battle as a
+ * white sheet.
+ *
+ * It barely varies with tier, and that is deliberate. How much dust hangs over a melee is
+ * art direction, not a quality setting: the tiers below ultra pull it down only far enough
+ * to protect fill rate on weaker hardware. What happened instead was that `DustEmitter`
+ * tapered against a fraction of `soft` — a *memory* budget — so ultra drew 4.4x the dust
+ * of low for no reason anyone chose, and every tuning pass on the melee was made against
+ * whichever tier its author happened to boot on.
+ *
+ * `spawns` is the per-frame emission cap and it is a CPU guard, not an optical one: at
+ * 60 Hz a full-scale battle asks for 50-80 spawns a frame against a cap of 280, so it only
+ * binds when frames are long.
  *
  * `litter` is deliberately generous: it is one instanced draw of a 20-triangle dish, and
  * the spent shafts are the cheapest legible record of the whole battle.
  */
-const QUALITY_SCALE: Record<string, { soft: number; add: number; density: number; decals: number; birds: number; litter: number; spawns: number }> = {
-  low: { soft: 5000, add: 1600, density: 0.32, decals: 200, birds: 8, litter: 1400, spawns: 60 },
-  medium: { soft: 10000, add: 3200, density: 0.62, decals: 380, birds: 12, litter: 3000, spawns: 130 },
-  high: { soft: 17000, add: 5200, density: 1, decals: 640, birds: 16, litter: 5000, spawns: 220 },
-  ultra: { soft: 22000, add: 6400, density: 1.15, decals: 820, birds: 20, litter: 7000, spawns: 280 },
+interface VFXTier {
+  soft: number;
+  add: number;
+  density: number;
+  decals: number;
+  birds: number;
+  litter: number;
+  spawns: number;
+  dustLive: number;
+}
+const QUALITY_SCALE: Record<string, VFXTier> = {
+  low: { soft: 5000, add: 1600, density: 0.32, decals: 200, birds: 8, litter: 1400, spawns: 60, dustLive: 2400 },
+  medium: { soft: 10000, add: 3200, density: 0.62, decals: 380, birds: 12, litter: 3000, spawns: 130, dustLive: 3800 },
+  high: { soft: 17000, add: 5200, density: 1, decals: 640, birds: 16, litter: 5000, spawns: 220, dustLive: 4800 },
+  ultra: { soft: 22000, add: 6400, density: 1.15, decals: 820, birds: 20, litter: 7000, spawns: 280, dustLive: 5200 },
 };
 
 export class VFXSystem implements Subsystem {
@@ -210,8 +230,21 @@ export class VFXSystem implements Subsystem {
     this.birds = new BirdFlock(q.birds);
     ctx.scene.add(this.birds.mesh);
 
-    this.dust.budget.density = q.density;
-    this.dust.budget.maxSpawnsPerFrame = q.spawns;
+    this.applyTier(ctx.quality.tier);
+    /*
+     * Re-apply on a tier switch, and on `qualityChanged` rather than on `resize`.
+     *
+     * Everything `applyTier` sets used to be assigned once in `init` and never again, so a
+     * player who changed quality in the options menu kept whatever dust, decal and spawn
+     * budget the game happened to boot on. `resize` is the trap `events.ts` warns about —
+     * it also fires on every window resize — so this listens to the event `Engine.setQuality`
+     * actually emits. The ring capacities genuinely cannot follow, because they are
+     * allocated instance buffers, so `dustLive` is clamped against the ring that exists
+     * rather than against the one the new tier would have asked for.
+     */
+    ctx.events.on('qualityChanged', (e) => {
+      if (e?.quality) this.applyTier(e.quality.tier);
+    });
 
     if (this.battle) {
       this.combat.init(ctx, this.battle, this.particles, this.damage, this.decals, this.litter);
@@ -241,6 +274,18 @@ export class VFXSystem implements Subsystem {
         );
       }
     });
+  }
+
+  /** Everything a quality tier sets that does not need a buffer reallocation. */
+  private applyTier(tier: string): void {
+    const q = QUALITY_SCALE[tier] ?? QUALITY_SCALE.high;
+    // `battleOver` settles the field; a tier switch afterwards must not start it up again.
+    this.dust.budget.density = this.battleOver ? 0.15 : q.density;
+    this.dust.budget.maxSpawnsPerFrame = q.spawns;
+    // Half the ring is the hard stop: blood, smoke, weather and debris share it, and a dust
+    // ceiling above that would starve them on a session booted at a lower tier than the one
+    // now asked for. In practice `dustLive` is well under it at every tier.
+    this.dust.budget.liveCeiling = Math.min(q.dustLive, this.particles.softCapacity * 0.5);
   }
 
   private groundAt(x: number, z: number): number {

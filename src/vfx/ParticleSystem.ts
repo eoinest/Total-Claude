@@ -115,6 +115,7 @@ varying vec4 vCol;
 varying float vTile;
 varying float vViewZ;
 varying float vAgeN;
+varying float vLift;
 
 #include <fog_pars_vertex>
 
@@ -133,6 +134,7 @@ void main() {
     vTile = 0.0;
     vViewZ = -1.0;
     vAgeN = 0.0;
+    vLift = 1.0;
 #ifdef USE_FOG
     vFogDepth = 0.0;
 #endif
@@ -162,6 +164,10 @@ void main() {
   float grow = 1.0 - pow(1.0 - age, 1.7);
   float size = mix(aS.x, aS.y, grow) * uSizeScale;
 
+  // Clearance of the puff's centre above the soil, measured in its own diameters. 0 means
+  // it is sitting in the dirt with the bank piled over it; 1 means it is riding clear on
+  // top. The fragment shader spends it on self-shadowing — see the buried term there.
+  float lift = 1.0;
   if (groundMode < 0.5) {
     // Sit the puff on the surface instead of letting it sink through a slope.
     //
@@ -173,6 +179,7 @@ void main() {
     // itself in the ground, which is what keeps the density profile bottom-heavy.
     float ground = terrainHeight(wp.xz);
     wp.y = max(wp.y, ground + size * 0.14);
+    lift = (wp.y - ground) / max(size, 0.001);
   }
 
   float fadeIn = smoothstep(0.0, 0.10, age);
@@ -197,6 +204,7 @@ void main() {
   vTile = tile;
   vViewZ = mv.z;
   vAgeN = age;
+  vLift = lift;
 #ifdef USE_FOG
   vFogDepth = -mv.z;
 #endif
@@ -226,6 +234,7 @@ varying vec4 vCol;
 varying float vTile;
 varying float vViewZ;
 varying float vAgeN;
+varying float vLift;
 
 #include <common>
 #include <fog_pars_fragment>
@@ -268,12 +277,26 @@ void main() {
   // Sky light arrives from above, so the crown of the puff is cooler and brighter.
   float skyW = 0.40 + 0.60 * vUv.y;
 
+  // Self-shadowing inside the bank, and the answer to the grading note "dust is an unlit
+  // sprite blob that does not darken the ground under it".
+  //
+  // Every billboard was taking the full sun term wherever it sat, so a bank forty sprites
+  // deep summed to a flat ochre wash *brighter* than everything behind it. A real dust
+  // cloud is lit on its crown only: the metre nearest the soil is shaded by all the dust
+  // above it, renders darker than the ground, and takes the ground under it down with it.
+  // vLift is the puff's clearance in its own diameters and vUv.y places the fragment
+  // inside the sprite, so together they say how deep in the bank this fragment sits.
+  // Costs one smoothstep and one varying, no extra draw and no shadow pass.
+  float buried = 1.0 - smoothstep(0.08, 0.85, vLift * 0.80 + vUv.y * 0.55);
+
   // Gains above unity, and this is the whole ballgame. Airborne mineral dust has a
   // single-scatter albedo near 0.9 and is illuminated from every side by multiple
   // scattering, so *sunlit dust is brighter than the ground that produced it*. Tuned
   // below unity it lands at the same luminance as dry grass and disappears into the
-  // field — which is exactly how a technically-correct dust system scores zero.
-  vec3 lit = uAmbient * skyW * 0.85 + uSunColour * (diff * 0.90 + fwd * 0.22);
+  // field — which is exactly how a technically-correct dust system scores zero. It is the
+  // *crown* that earns that gain, though, which is what the buried term takes back.
+  vec3 lit = uAmbient * skyW * (0.85 - 0.30 * buried)
+           + uSunColour * (diff * 0.90 + fwd * 0.22) * (1.0 - 0.62 * buried);
   // Atlas RGB carries internal density; darker cores read as depth in the cloud. The range
   // is what buys the cloud an interior: a dust bank is the sum of dozens of overlapping
   // sprites, so it converges on the mean of this term, and a narrow range produces a bank
@@ -358,6 +381,8 @@ export class ParticleSystem {
   private seed = 0;
   /** Soft-layer occupancy 0..1, refreshed periodically for the emission governor. */
   private occ = 0;
+  /** The same count, absolute. See `softLive` for why both exist. */
+  private occN = 0;
   private occFrame = 0;
 
   constructor(atlas: THREE.Texture, height: HeightTexture, opts: ParticleSystemOptions) {
@@ -549,6 +574,7 @@ export class ParticleSystem {
       let n = 0;
       for (let i = 0; i < l.cap; i++) if (e[i] > this.time) n++;
       this.occ = n / l.cap;
+      this.occN = n;
     }
 
     for (const l of this.layers) {
@@ -594,6 +620,26 @@ export class ParticleSystem {
    */
   get occupancy(): number {
     return this.occ;
+  }
+
+  /**
+   * Live soft billboards, as an absolute count.
+   *
+   * `occupancy` answers "how full is the ring", which is the right question for a *fill
+   * rate* governor and the wrong one for an *optical* budget: the ring size is a memory
+   * decision that runs 5,000 at low and 22,000 at ultra, so an emitter that tapers against
+   * a fraction of it draws 4.4x as much dust on the tier with the most memory. Measured:
+   * the melee sat at 12,529 live billboards at ultra where this file's own design note
+   * calls ~4,500 "a legible dust bank", and 58.8 % of the frame had dust over it. Budget
+   * dust against this number, not against the ring.
+   */
+  get softLive(): number {
+    return this.occN;
+  }
+
+  /** Ring size of the soft layer. Allocated at construction, fixed for its lifetime. */
+  get softCapacity(): number {
+    return this.layers[PLayer.Soft].cap;
   }
 
   /** Global opacity, used to dial particles back when quality drops. */

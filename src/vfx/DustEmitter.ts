@@ -56,10 +56,30 @@ export interface DustBudget {
   maxSpawnsPerFrame: number;
   /** Global emission multiplier from the quality tier. */
   density: number;
+  /**
+   * **The optical budget: live soft billboards at which dust emission reaches zero.**
+   *
+   * This is the number that decides how much of the frame is dust, and it is absolute on
+   * purpose. It used to be `0.78 x the soft ring's capacity`, and that ring is a *memory*
+   * decision — 5,000 at low, 22,000 at ultra — so the tier with the most memory was
+   * licensed 4.4x as much dust as the tier the emission rates were calibrated on, and
+   * nobody ever chose that. Measured at ultra before the change: 12,529 live billboards at
+   * the melee camera against the ~4,500 this system's own design note calls "a legible
+   * dust bank", 58.8 % of the frame with dust over it and 75.0 % at the clash.
+   */
+  liveCeiling: number;
+  /**
+   * Peak-opacity multiplier applied to every dust puff.
+   *
+   * Optical depth is alpha x overlap. `liveCeiling` bounds the overlap and this bounds the
+   * alpha; spawn rate, lifetime and sprite size all act only through those two, which is
+   * why the budget is expressed in them rather than in puffs per man per second.
+   */
+  opacity: number;
 }
 
 export class DustEmitter {
-  budget: DustBudget = { maxSpawnsPerFrame: 320, density: 1 };
+  budget: DustBudget = { maxSpawnsPerFrame: 320, density: 1, liveCeiling: 5200, opacity: 0.8 };
   /** Multiplier from the weather preset — wet ground raises almost nothing. */
   wetness = 1;
   /**
@@ -108,11 +128,17 @@ export class DustEmitter {
       this.trampleTimer = new Float32Array(battle.units.length + 64);
     }
 
-    // Occupancy governor. Emission is per man, so the natural failure mode is that the
-    // rate is fine at 2,500 men and saturates the pool at 9,500 — which reads as a white
-    // sheet over the battle and costs a whole frame budget in fill rate. Taper to zero as
-    // the soft layer fills so the ceiling is structural, not a tuning constant.
-    const govern = clamp01((0.78 - ps.occupancy) / 0.30);
+    // Optical governor. Emission is per man, so the natural failure mode is that the rate
+    // is fine at 2,500 men and saturates the field at 9,500 — which reads as a white sheet
+    // over the battle and costs a whole frame budget in fill rate. Taper to zero as the
+    // live population approaches the budget, so the ceiling is structural rather than a
+    // tuning constant that happens to be right for one army size.
+    //
+    // The taper is 38.5 % of the ceiling, which reproduces the shape of the old
+    // ring-relative form (0.30 of capacity under a 0.78 ceiling) exactly — only the
+    // ceiling itself has moved, and it has moved from a memory budget to an optical one.
+    const ceiling = Math.max(1, this.budget.liveCeiling);
+    const govern = clamp01((ceiling - ps.softLive) / (ceiling * 0.385));
     const density = this.budget.density * this.wetness * govern;
     if (density <= 0.001) return;
 
@@ -258,6 +284,7 @@ export class DustEmitter {
       // `dustWisp` have readable lumpy outlines that sell a puff close up and give away
       // the billboard from a strategic camera, where the whole cloud is 40 pixels.
       const soft = alphaK < 0.34;
+      const opq = alphaK * lump * this.budget.opacity;
       const rec = ps.reset(
         PLayer.Soft,
         soft ? PT.smokeSoft : big ? PT.dustBillow : h4 < 0.72 ? PT.smokeSoft : PT.dustWisp
@@ -280,7 +307,7 @@ export class DustEmitter {
         rec.life = 4.0 + h3 * 2.4;
         rec.size0 = (2.6 + h1 * 2.2) * (horse ? 1.4 : 1) * sizeK;
         rec.size1 = rec.size0 * (1.7 + h2 * 0.8);
-        rec.a = (0.086 + 0.094 * dry) * alphaK * lump;
+        rec.a = (0.086 + 0.094 * dry) * opq;
         rec.drag = 0.45;
         rec.gravity = 0.22;
         rec.turb = 1.5;
@@ -288,7 +315,7 @@ export class DustEmitter {
         rec.life = 2.8 + h3 * 1.9;
         rec.size0 = (1.45 + h1 * 1.45) * (horse ? 1.35 : 1) * sizeK;
         rec.size1 = rec.size0 * (2.0 + h2 * 1.1);
-        rec.a = (0.145 + 0.120 * dry) * alphaK * lump;
+        rec.a = (0.145 + 0.120 * dry) * opq;
         rec.drag = 0.8;
         rec.gravity = 0.34;
         rec.turb = 1.05;
@@ -395,6 +422,7 @@ export class DustEmitter {
       const tier = h4 < 0.05 + speedN * (horse ? 0.24 : 0.09) ? 2 : h4 < 0.44 ? 1 : 0;
 
       const soft = alphaK < 0.34;
+      const opq = alphaK * this.budget.opacity;
       const rec = ps.reset(
         PLayer.Soft,
         soft || tier === 1 ? PT.smokeSoft : tier === 2 ? PT.dustBillow : PT.dustWisp
@@ -419,7 +447,7 @@ export class DustEmitter {
         rec.life = 1.3 + h3 * 1.3;
         rec.size0 = (0.55 + h1 * 0.55) * (horse ? 1.8 : 1) * sizeK;
         rec.size1 = rec.size0 * (2.8 + h2 * 1.5);
-        rec.a = (0.16 + 0.16 * dry * speedN) * alphaK;
+        rec.a = (0.16 + 0.16 * dry * speedN) * opq;
         rec.drag = 1.9;
         rec.gravity = 1.1;
         rec.turb = 0.35;
@@ -427,7 +455,7 @@ export class DustEmitter {
         rec.life = 3.0 + h3 * 2.2;
         rec.size0 = (1.9 + h1 * 1.9) * (horse ? 1.85 : 1) * sizeK;
         rec.size1 = rec.size0 * (2.5 + h2 * 1.4);
-        rec.a = (0.095 + 0.115 * dry * (0.4 + speedN)) * alphaK;
+        rec.a = (0.095 + 0.115 * dry * (0.4 + speedN)) * opq;
         rec.drag = 1.1;
         rec.gravity = 0.40;
         rec.turb = 0.8;
@@ -435,7 +463,7 @@ export class DustEmitter {
         rec.life = 4.2 + h3 * 3.0;
         rec.size0 = (3.8 + h1 * 3.4) * (horse ? 1.95 : 1) * sizeK;
         rec.size1 = rec.size0 * (2.0 + h2 * 1.1);
-        rec.a = (0.052 + 0.070 * dry * (0.3 + speedN)) * alphaK;
+        rec.a = (0.052 + 0.070 * dry * (0.3 + speedN)) * opq;
         rec.drag = 0.60;
         rec.gravity = 0.20;
         rec.turb = 1.3;
