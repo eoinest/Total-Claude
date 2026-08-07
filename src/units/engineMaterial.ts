@@ -383,9 +383,28 @@ const TINT_BODY = /* glsl */ `
     tint = vec3( 1.02, 0.94, 0.76 )
          * ( heavy ? 1.0 : 1.36 )
          * ( 0.88 + fract( v * 61.3 ) * 0.24 );
-  } else {
+  } else if ( slot < 5.5 ) {
     // Hemp cord and greased leather.
     tint = vec3( 0.90, 0.76, 0.54 ) * ( 0.82 + fract( v * 71.7 ) * 0.34 );
+  } else {
+    // Worked steel, and only ever the claw, the hook and the trigger lever. See EngineTint.Steel.
+    //
+    // Deliberately flat across the battery — no v term — because this is the one slot whose job
+    // is to be found rather than to look varied, and a per-engine multiplier of 0.72 to 1.18 is
+    // enough to lose the group on a third of the guns. Cool rather than warm, so it separates in
+    // hue as well as value from timber that is warm everywhere on this machine.
+    //
+    // Carried on Mat.IronPlate, whose metalness is 0.5 rather than 1: half a diffuse term is what
+    // stops the group going navy in its own shadow, which is the failure the arm-port straps and
+    // epizygides already demonstrated at full metal, while the remaining specular half gives the
+    // hard bright edge that every legible reference plate reads on.
+    //
+    // 1.70 rather than the 2.05 first tried. At 2.05 the group measured a mean display luminance
+    // of 0.39 to 0.46 against a machine at 0.16, which is the right *ratio* and the wrong
+    // *absolute*: the brightest 4,000 machine pixels topped out at 0.99, so the talon was a
+    // clipped white patch rather than a lit steel object, and a flat blown area reads as an error
+    // where a blown specular edge reads as polish.
+    tint = vec3( 1.70, 1.74, 1.83 );
   }
   vEngTint = tint;
   vEngGrime = iOrient.w * 0.0 + clamp( wear * 0.35, 0.0, 1.0 );
