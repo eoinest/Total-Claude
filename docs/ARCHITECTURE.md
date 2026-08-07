@@ -104,6 +104,57 @@ Also expose, for anyone who needs IBL or fog matching:
 environmentTexture: THREE.Texture | null   // the PMREM-processed HDRI
 ```
 
+### CitySystem (`name: 'city'`) — and there is exactly one of it
+
+**A map owns a city, or owns none.** `MapDefinition.city` is a `CityPlan | null`, and
+`main.ts` registers `CitySystem` only when the map hands it one:
+
+```ts
+const plan = getMap(config.map).city;
+if (plan) engine.add(new CitySystem(plan));
+```
+
+This replaces the old `hidesCity: boolean`. That flag's failure mode was invisible and it
+was paid for once already: Rome's wall was built onto the plain of Pydna and merely made
+invisible, so **it blocked movement across a map where it was nowhere on screen**. A flag
+you must remember to set repeats that on the next map; the absence of data cannot.
+
+**There is one `CitySystem` and it builds whichever city its plan describes.** Do not add a
+sibling subsystem for a second city. The accessors the siege system reads —
+`getWallStairs()`, `getGateDoor()`, `getWallSegments()`, `getGarrisonBays()`,
+`getObstacles()`, `blocksMovement()`, `setGateOpen()`, `bayAt()`, `masonryTopAt()` — contain
+no city-specific knowledge; they are derived from a `WallBuildOutput` and two lists of
+footprints. A second implementation would fork the occupancy raster, the obstacle boxes and
+the stair solids, all three of which have already shipped a bug and been fixed separately.
+
+The contract is `src/city/cityPlan.ts`, and it is the **only** module a new city imports
+from. It re-exports the wall types as `export type`, so a city's own `wall.ts` gets the
+whole interface without pulling Rome's 135 KB of Aurelian geometry into the module graph.
+
+```ts
+interface CityPlan {
+  id, name, siegeGateId
+  battlefieldZ            // no city geometry below this z, at ANY detail level
+  towerWidth, towerChamberHeight
+  merlonLength, crenelLength   // must match the wall's own crenellation() exactly
+  gateOpenWidth
+  build(heightAt): CityBuild   // { wall, chunks, footprints, lanes, landmarks, checks }
+}
+```
+
+Three constraints on any city, all load-bearing in files the city workstream does not own:
+
+- **The wall runs broadly along x and the city is at +Z.** `bayAt` indexes bays
+  arithmetically in x because it runs once per projectile per tick; `scenario.ts` deploys at
+  z −190 and z +130; `Siege.ts` reads `GarrisonBay.nx/nz` as the outward normal.
+  `CitySystem` asserts a uniform bay pitch at build time.
+- **Nothing at z < `battlefieldZ`**, checked per vertex per LOD by `assertNoStrayGeometry`.
+- **220 draw calls whole-frame.** Two cities are never on screen together, so the budget is
+  per map — but the second city has the same ceiling as the first, not a share of it.
+
+Directory layout: `src/city/*.ts` is shared machinery; `src/city/<cityname>/` is one city's
+own geometry. Ownership is per-city-directory, so two cities can be built in parallel.
+
 ### BattleSystem (`name: 'battle'`)
 The single source of truth for army state. Read freely; write only via its methods.
 ```ts
