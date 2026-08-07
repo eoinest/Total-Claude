@@ -1,4 +1,6 @@
 import { Rng } from '../../util/rand';
+import { BASIN_DEPTH, BASIN_WATER_Y, FREEBOARD } from '../../city/carthage/harbour';
+import { COTHON, MERCHANT_HARBOUR } from '../../city/carthage/layout';
 import { blurField, hydraulicErode } from '../../terrain/erosion';
 import { fbm, gnoise, ridged, sstep, warpedFbm } from '../../terrain/noise';
 import { FIELD_RES, FIELD_SPACING, sampleBilinear, type TerrainData } from '../../terrain/heightfield';
@@ -53,6 +55,9 @@ import {
  *  - **Nothing may dig near water, and the shore must plunge.** See `SHORE_SCARP_DEPTH` in
  *    `topography.ts`: the pathfinder marks a cell impassable above gradient 0.62, and that
  *    scarp is the only thing on this map stopping an army walking into the Gulf of Tunis.
+ *  - **Except the harbours, which are dug on purpose.** Stage 4g, and the one place on this
+ *    map where the terrain takes an instruction from the city plan rather than the other way
+ *    round. See `HARBOUR_GROUND`.
  *
  * The control texture's four channels carry the meanings the shader contract fixes, but on
  * this coast in April they describe different things — see stage 5.
@@ -165,6 +170,189 @@ const softFloor = (h: number, dry: number): number => {
   // large argument is an overflow waiting to happen in the one place it is called 4.2 M times.
   const floored = t > FLOOR_KNEE * 6 ? h : FLOOR + FLOOR_KNEE * Math.log1p(Math.exp(t / FLOOR_KNEE));
   return h + (floored - h) * dry;
+};
+
+// ---------------------------------------------------------------------------
+// The harbours (§6.2) — the only ground on this map that is dug on purpose
+// ---------------------------------------------------------------------------
+
+/**
+ * **The basins were painted, not dug, and rendering the water is what proved it.**
+ *
+ * Until `WaterSurface` landed, a harbour basin on this map was a hole in `harbour.ts`'s own
+ * geometry standing on ground the heightfield knew nothing about, and a splat rule painted
+ * whatever was under the datum blue. Put a real surface in each basin and the measurement
+ * falls out: **51 % of the cothon's water area and 84 % of the merchant basin's stood under
+ * terrain that was above their own surface** — the water was buried and the parts of it that
+ * showed were the parts the coastal ramp happened to have taken below zero.
+ *
+ * The same ramp is why the cothon's quay cleared its water by **0.34 m** against the 1.8 m
+ * `FREEBOARD` §6.2 asks for: `regionalLand` crushes the crown to a twentieth of itself within
+ * 220 m of `coastZ`, and the cothon's centre is 19 m inside it. §3.3 puts the harbour district
+ * at **2–6 m**, so the ground there was 1.7 m short of its own survey.
+ *
+ * **Raising the quay is not the fix and it is worth saying why in the terrain file.** Men
+ * stand at terrain height. A ring quay lifted 1.5 m to meet the design figure is 1 km of
+ * colonnade the garrison walks *under*. The ground has to come up and the basin has to go
+ * down, both here, and the numbers for both are imported from the builder that draws the
+ * masonry rather than copied — two files disagreeing about one basin is the fault this
+ * workstream keeps finding in other people's code.
+ *
+ * **What is dug and what is not.** The cothon's annulus, the 30 m Carthaginian cut and the
+ * 21 m channel into the naval yard are dug. The merchant basin is *not* — see
+ * `CUT_MERCHANT_BASIN`. Its 21 m sea entrance needs nothing: it opens 38 m seaward of
+ * `coastZ`, where the bed is already at −9.1 m.
+ */
+/** Level of the harbour district's made ground, and the argument for the value.
+ *
+ * §3.3 gives the district 2–6 m; §6.2's `FREEBOARD` implies 1.8. The two disagree by 0.2 m and
+ * this takes the higher, because §3.3's band is a survey figure and the freeboard is `[GAME]`.
+ * Derived rather than typed so that moving `FREEBOARD` past 2 m moves the ground with it.
+ */
+const HARBOUR_GROUND = BASIN_WATER_Y + Math.max(FREEBOARD, 2.0);
+
+/**
+ * How far the terrain bed sits under the built floor plate, and why it is not zero.
+ *
+ * `harbour.ts` lays a flat concrete plate across each basin at `BASIN_WATER_Y - BASIN_DEPTH`.
+ * Terrain at exactly that height is coplanar with it and z-fights through 2.8 m of water at a
+ * 400 m camera — the same reason `carthage.ts` lifts the water plate by `BASIN_LIFT`. So the
+ * bed goes 0.3 m under the plate: invisible, and it keeps the *rendered* depth at §6.2's 2.8 m
+ * because what the eye sees is the plate. Where there is no plate — the two channels — this is
+ * the whole story and the water is 3.1 m deep.
+ */
+const BED_SINK = 0.3;
+const BASIN_BED = BASIN_WATER_Y - BASIN_DEPTH - BED_SINK;
+
+/**
+ * **The merchant basin is dug.** It was blocked on one line in `harbour.ts`: the merchant
+ * harbour's quay elevation was sampled as `heightAt(mh.x, mh.z)` — the ground at the **centre
+ * of the basin**. Excavating with that line unfixed would have made that sample the bed: the
+ * 15/25 m quay belts, the basin's own revetment and both entrance moles would all have been
+ * rebuilt at −3.1 m, three metres under the sea. The cothon never had this problem because
+ * *its* sample lands on the admiralty island, which stays at quay level by design.
+ *
+ * `harbour.ts` now samples `heightAt(mh.x, mh.z - mh.hd - mh.quayWest * 0.5)` — the landward
+ * quay belt, not the basin centre — so digging the basin here no longer moves the quay's own
+ * reference point. The district raise (`cothonApron`) still does not reach the merchant
+ * harbour: its quay was never below `HARBOUR_GROUND` the way the cothon's was, so it needs no
+ * made-ground lift, only the cut below.
+ */
+const CUT_MERCHANT_BASIN = true;
+
+/**
+ * The ring quay, metres. `harbour.ts` paves the annulus `outerR .. outerR + 20` and does not
+ * export the width; it is restated here with the call named so a reader can check it, and it
+ * is the *only* harbour number in this file that is not imported.
+ */
+const COTHON_QUAY = 20;
+/** Working margin outside the paving before the made ground starts to fall away. */
+const QUAY_MARGIN = 8;
+/**
+ * How far the made ground takes to die into whatever is around it. **A pathfinder number.**
+ *
+ * Landward the platform meets ground at 0.7–1.9 m, so 20 m of fall is a 0.06 gradient and the
+ * harbour joins the city. Seaward it meets the gulf floor at −9.2 m, so the same 20 m is a
+ * peak gradient of 1.5 × 11.2 / 20 = **0.84** — over `SLOPE_IMPASSABLE`, which is the point:
+ * the outer face of a mole has to refuse a formation exactly as the shore scarp does, or the
+ * harbour becomes the flank march this map is built not to have.
+ */
+const APRON_FALL = 20;
+/**
+ * Feather at a basin wall, metres. One heightfield cell, and the tightest thing in this file.
+ *
+ * Turned *inward*, never outward: `harbour.ts` stands a vertical revetment at `outerR` and at
+ * `islandR`, so the ramp from quay level down to the bed has to hide behind that masonry. A
+ * feather that reached outward would undercut the ring quay men fight along.
+ *
+ * It cannot be zero — the field is reconstructed bilinearly and a step is a step over one cell
+ * whatever is written into it — and every metre of it is a metre of bed standing above the
+ * waterline at the foot of the wall. At 2.8 m it measured as a 1.0 m ledge of sand right round
+ * both revetments, 2.0 % of the basin's plan; at one cell it is half that.
+ */
+const BASIN_EDGE = 1.4;
+
+/**
+ * §6.4's two channels, with the endpoints `harbour.ts` publishes as `occSegments`.
+ *
+ * Verbatim, so the ground that is water and the ground the pathfinder is told is water are the
+ * same ground. Both capsules reach a little inside the ring — which is what a channel cut
+ * through a quay is, and what the city's own blockers already say: the cut is *also* a 30 m
+ * gap in Carthage's own defences and the ring is severed at both of them by design.
+ */
+const CHANNELS: readonly { x1: number; z1: number; x2: number; z2: number; half: number }[] = [
+  // The Carthaginians' cut straight out to the open sea, 30 m, freshly dug and unrevetted.
+  { x1: COTHON.x, z1: COTHON.z + COTHON.outerR + 6, x2: COTHON.x + 60, z2: 1340, half: 15 },
+  // The controlled channel into the naval yard, 21 m, behind a double wall with a gate.
+  {
+    x1: COTHON.x + COTHON.outerR + 8, z1: COTHON.z,
+    x2: MERCHANT_HARBOUR.x - MERCHANT_HARBOUR.hw - 6, z2: MERCHANT_HARBOUR.z, half: 10.5,
+  },
+];
+
+/** Distance from a point to a segment. The two channels are capsules, as the city stamps them. */
+const segDist = (
+  x: number, z: number, x1: number, z1: number, x2: number, z2: number,
+): number => {
+  const dx = x2 - x1;
+  const dz = z2 - z1;
+  const l2 = dx * dx + dz * dz;
+  const t = l2 > 0 ? clamp01(((x - x1) * dx + (z - z1) * dz) / l2) : 0;
+  return Math.hypot(x - (x1 + dx * t), z - (z1 + dz * t));
+};
+
+/** 0 on a channel's centreline, 1 at its lip, greater than 1 clear of both. */
+const channelNess = (x: number, z: number): number => {
+  let least = Infinity;
+  for (const c of CHANNELS) least = Math.min(least, segDist(x, z, c.x1, c.z1, c.x2, c.z2) / c.half);
+  return least;
+};
+
+/** 1 on the cothon's made ground — island, water and ring quay alike — 0 past its outer fall. */
+const cothonApron = (x: number, z: number): number => {
+  const flat = COTHON.outerR + COTHON_QUAY + QUAY_MARGIN;
+  return 1 - sstep(flat, flat + APRON_FALL, Math.hypot(x - COTHON.x, z - COTHON.z));
+};
+
+/**
+ * 1 in open harbour water, 0 on the quay, on the island and on the mole.
+ *
+ * **The island is not in here and must not be.** §6.2 calls it an artificial raised platform
+ * 125 m across; excavating it with the water round it would leave the admiral's house, thirty
+ * ship sheds and the causeway's far landing standing on the bottom of the basin.
+ *
+ * **The whole 100 m annulus is dug, and the one thing that argues against it is measured
+ * rather than asserted.** §6.2 gives 100 m of annular water and `harbour.ts` reads that as
+ * "80 of it is shed and 20 is water" — but it then draws all 168 sheds *flat at `quayY`*, so
+ * any bed under them at all floats them, and digging only the middle 20 m would leave the
+ * authored water plate in `carthage.ts` buried over 80 % of its own plan. Dug in full, the
+ * sheds stand 5.10 m over their bed and 1.65 m over the water, which is `harbour.ts`'s to fix
+ * by building them and their §6.3 1:10 slipways from `floorY` up through the waterline.
+ *
+ * The gameplay worry — that this takes the ring-shed range out of the battle §6.1 says the
+ * harbours exist for — was measured and is the other way round. Flood-filling the pathfinder's
+ * own `isStandable` at the 35 m body from the harbour district: the ring-shed band r 122.5–162.5
+ * goes from **2.17 of 3.59 ha reachable to 3.54**, and the ring quay itself from **1.27 of 2.15
+ * to 2.08**, because half of both used to be nine metres under the Gulf of Tunis. The bed at
+ * −3.10 m is chest-deep rather than drowning, so the sheds are waded at 2.6× cost; the 20 m
+ * manoeuvring ring in the middle stays a hard obstacle because the city stamps it as one.
+ */
+const harbourWater = (x: number, z: number): number => {
+  const r = Math.hypot(x - COTHON.x, z - COTHON.z);
+  let w = sstep(COTHON.islandR, COTHON.islandR + BASIN_EDGE, r)
+    * (1 - sstep(COTHON.outerR - BASIN_EDGE, COTHON.outerR, r));
+  const mh = MERCHANT_HARBOUR;
+  for (const c of CHANNELS) {
+    w = Math.max(w, 1 - sstep(c.half - BASIN_EDGE, c.half,
+      segDist(x, z, c.x1, c.z1, c.x2, c.z2)));
+  }
+  if (CUT_MERCHANT_BASIN) {
+    w = Math.max(w, Math.min(
+      1 - sstep(mh.hw - BASIN_EDGE, mh.hw, Math.abs(x - mh.x)),
+      1 - sstep(mh.hd - BASIN_EDGE, mh.hd, Math.abs(z - mh.z)),
+    ));
+  }
+  return w;
 };
 
 export function buildCarthageTerrain(seedLabel = 'carthage-146bc'): TerrainData {
@@ -430,6 +618,49 @@ export function buildCarthageTerrain(seedLabel = 'carthage-146bc'): TerrainData 
     }
   }
 
+  // -- 4g. **The harbours.** The made ground up, the basins down. See `HARBOUR_GROUND`.
+  //
+  //        **After the floor, not before it**, and the ordering is a measured one. `softFloor`
+  //        exists to stop the noise and the erosion digging *accidentally* near the datum, and
+  //        it is weighted by how dry the ground is; at the cothon's landward rim `dryLand` is
+  //        0.21, so a bed cut to −3.1 m before the floor came back up to −2.40. The basins are
+  //        the one deliberate excavation on this map and they run last.
+  {
+    const reach = COTHON.outerR + COTHON_QUAY + QUAY_MARGIN + APRON_FALL + spacing;
+    const bound = (v: number): number =>
+      Math.max(0, Math.min(res - 1, Math.round((v + HALF_EXTENT) / spacing)));
+    const i0 = bound(COTHON.x - reach);
+    const i1 = bound(MERCHANT_HARBOUR.x + MERCHANT_HARBOUR.hw + 40);
+    const j0 = bound(COTHON.z - reach);
+    // The Carthaginian cut runs on to z 1340, well past the cothon's own apron.
+    const j1 = bound(1360);
+    for (let j = j0; j <= j1; j++) {
+      const wz = -HALF_EXTENT + j * spacing;
+      const row = j * res;
+      for (let i = i0; i <= i1; i++) {
+        const wx = -HALF_EXTENT + i * spacing;
+        let h = heights[row + i];
+        const apron = cothonApron(wx, wz);
+        if (apron > 0.002) {
+          // Made ground: a worked quay platform, so it is levelled rather than smoothed, with
+          // 9 cm of settling left in it at a 33 m wavelength — enough that a 20° sun finds
+          // something on it and far too little for the pathfinder to notice.
+          //
+          // **Raise-only.** The apron is a disc and the lower town east of it stands at 12–18 m
+          // (§3.3); a lerp toward 2 m would quarry the city if these constants ever moved.
+          const made = HARBOUR_GROUND + 0.09 * gnoise(wx * 0.03, wz * 0.03, seed + 61);
+          if (made > h) h += (made - h) * apron;
+        }
+        const wet = harbourWater(wx, wz);
+        // **Dig-only**, for the mirror-image reason: the Carthaginian cut runs 170 m out into
+        // a gulf whose floor is already at −9.2 m, and a lerp toward −3.1 there would build a
+        // bar across the escape channel it exists to be.
+        if (wet > 0.002 && BASIN_BED < h) h += (BASIN_BED - h) * wet;
+        heights[row + i] = h;
+      }
+    }
+  }
+
   // ---------------------------------------------------------------------
   // 5. Control texture.
   //
@@ -524,6 +755,7 @@ export function buildCarthageTerrain(seedLabel = 'carthage-146bc'): TerrainData 
   }
 
   assertSurveyElevations(heights, res, spacing);
+  assertHarbourWorks(heights, res, spacing);
 
   return {
     heights,
@@ -617,6 +849,114 @@ function assertSurveyElevations(heights: Float32Array, res: number, spacing: num
       `[carthage] the Byrsa's approach face is 1:${(1 / grad).toFixed(1)} — §5.1a overrides the ` +
         'projection precisely so it is not a cliff; three stepped streets cannot climb this'
     );
+  }
+}
+
+/**
+ * Did the harbours actually get dug, and does the quay clear its own water?
+ *
+ * **The figure that shamed this file into existing was prose.** `docs/ARCHITECTURE.md` carried
+ * "51 % of the cothon's water area and 84 % of the merchant basin's stand under terrain that is
+ * above their surface" as a sentence in a report, computed once by hand; nothing in the tree
+ * could recompute it, so nothing could watch it move or catch it coming back. It is an
+ * instrument now, it runs on every build of the field, and it prints its numbers whether they
+ * are good or bad — an honest 84 % is worth more than a check that only speaks when it likes
+ * the answer.
+ *
+ * The basins' plans and their datum come from `harbour.ts`, not from a copy of them, so this
+ * grades the terrain against the masonry that will actually stand in it.
+ */
+function assertHarbourWorks(heights: Float32Array, res: number, spacing: number): void {
+  const at = (x: number, z: number): number => sampleBilinear(heights, res, spacing, x, z);
+  const mh = MERCHANT_HARBOUR;
+
+  /** Fraction of a basin's water plan whose bed stands above the water, and the bed's depth. */
+  const survey = (
+    inside: (x: number, z: number) => boolean, x0: number, x1: number, z0: number, z1: number,
+  ): { pct: number; ha: number; median: number } => {
+    const beds: number[] = [];
+    let buried = 0;
+    for (let z = z0; z <= z1; z += 2) {
+      for (let x = x0; x <= x1; x += 2) {
+        if (!inside(x, z)) continue;
+        const h = at(x, z);
+        beds.push(h);
+        if (h > BASIN_WATER_Y) buried++;
+      }
+    }
+    beds.sort((a, b) => a - b);
+    return {
+      pct: (buried / Math.max(1, beds.length)) * 100,
+      ha: (beds.length * 4) / 1e4,
+      median: beds.length ? beds[beds.length >> 1] : 0,
+    };
+  };
+
+  const R = COTHON.outerR;
+  const cothon = survey((x, z) => {
+    const r = Math.hypot(x - COTHON.x, z - COTHON.z);
+    return r <= R && r >= COTHON.islandR;
+  }, COTHON.x - R, COTHON.x + R, COTHON.z - R, COTHON.z + R);
+  const merchant = survey(() => true, mh.x - mh.hw, mh.x + mh.hw, mh.z - mh.hd, mh.z + mh.hd);
+
+  // The freeboards, sampled exactly where `harbour.ts` samples them, so the two cannot differ.
+  const cothonFree = at(COTHON.x, COTHON.z) - BASIN_WATER_Y;
+  const merchantFree = at(mh.x, mh.z) - BASIN_WATER_Y;
+
+  /**
+   * The steepest gradient the pathfinder will meet on the ring quay, over its own 7 m cell.
+   *
+   * The made ground has to be flat where men fight along it and a cliff where it meets the
+   * gulf, and those two are 20 m apart. This measures the first. **Three exclusions, and each
+   * of them is a slope that has to be there:** the outer face of the mole is deliberate and is
+   * not quay; the two channels cut clean through the ring, so their banks grade at 0.96 and
+   * are not a defect either; and the first 3.5 m inboard of `outerR` is inside the 7 m stencil
+   * the pathfinder straddles the basin's own revetment with, so it reads the drop into the
+   * water and refuses the cell — correctly, since the cell *is* the lip of a 5 m wall. That
+   * costs the 20 m quay its innermost 3.5 m and leaves 15.5 m of colonnade a cohort walks.
+   * Anything steep on what is left is 1 km of fighting ground nobody can use.
+   */
+  let quaySlope = 0;
+  let quayAt = 'nothing steep';
+  for (let a = 0; a < 360; a += 2) {
+    const th = (a * Math.PI) / 180;
+    for (let r = R + 5; r <= R + COTHON_QUAY - 1; r += 1.5) {
+      const x = COTHON.x + Math.cos(th) * r;
+      const z = COTHON.z + Math.sin(th) * r;
+      if (channelNess(x, z) < 1.6) continue;
+      const g = Math.hypot(
+        (at(x + 3.5, z) - at(x - 3.5, z)) / 7,
+        (at(x, z + 3.5) - at(x, z - 3.5)) / 7,
+      );
+      if (g > quaySlope) { quaySlope = g; quayAt = `(${x.toFixed(0)}, ${z.toFixed(0)})`; }
+    }
+  }
+
+  console.info(
+    `[carthage] harbours: cothon ${cothon.pct.toFixed(1)}% of ${cothon.ha.toFixed(1)} ha buried, `
+      + `bed ${cothon.median.toFixed(2)} m, freeboard ${cothonFree.toFixed(2)} m; `
+      + `merchant ${merchant.pct.toFixed(1)}% of ${merchant.ha.toFixed(1)} ha buried, `
+      + `bed ${merchant.median.toFixed(2)} m, freeboard ${merchantFree.toFixed(2)} m; `
+      + `want 0% buried, a ${BASIN_BED.toFixed(2)} m bed and ${FREEBOARD} m of freeboard. `
+      + `Ring-quay slope worst ${quaySlope.toFixed(2)} at ${quayAt} (impassable past 0.62).`
+  );
+
+  const bad: string[] = [];
+  // 1.2 %, not 0: `BASIN_EDGE` is one cell of ramp at the foot of each revetment and the field
+  // is reconstructed bilinearly, so a perfect zero is not a number this instrument can return.
+  // The allowance is a *measured* one — 0.5 m of ledge round a 1,414 m perimeter.
+  if (cothon.pct > 1.2) bad.push(`${cothon.pct.toFixed(1)}% of the cothon's water is buried`);
+  if (cothonFree < FREEBOARD) {
+    bad.push(`the cothon's quay clears its water by ${cothonFree.toFixed(2)} m, under §6.2's ${FREEBOARD}`);
+  }
+  if (quaySlope > 0.62) {
+    bad.push(`the ring quay reaches gradient ${quaySlope.toFixed(2)} at ${quayAt}, which the pathfinder refuses`);
+  }
+  if (CUT_MERCHANT_BASIN && merchant.pct > 1) {
+    bad.push(`${merchant.pct.toFixed(1)}% of the merchant basin's water is buried`);
+  }
+  if (bad.length) {
+    console.warn(`[carthage] harbour works off docs/CARTHAGE.md §6.2/§3.3: ${bad.join('; ')}`);
   }
 }
 

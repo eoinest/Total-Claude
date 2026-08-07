@@ -258,9 +258,14 @@ export function buildHarbours(heightAt: (x: number, z: number) => number): Harbo
 
   // ---- the merchant harbour ------------------------------------------------
   const mh = MERCHANT_HARBOUR;
-  const mQuayY = heightAt(mh.x, mh.z);
-  // Same sea, so the same surface. The 1.42 m of ground between the two basins' centres is a
-  // difference in freeboard, not a difference in water level.
+  // Sampled on the landward quay belt, not the basin centre: the centre is water, and once the
+  // heightfield excavates the basin (`CUT_MERCHANT_BASIN`) that sample would be the dug bed,
+  // three metres under the sea, rebuilding every quay belt, revetment and mole at the bottom of
+  // the harbour. `mh.z - mh.hd - mh.quayWest * 0.5` is the same landward reference `layout.ts`
+  // already uses for `via-navalis`'s land edge, so this is not a new point, just a shared one.
+  const mQuayY = heightAt(mh.x, mh.z - mh.hd - mh.quayWest * 0.5);
+  // Same sea, so the same surface. Any difference in freeboard between the two harbours is
+  // ground height, not water level.
   const mWaterY = BASIN_WATER_Y;
   const mFloorY = mWaterY - BASIN_DEPTH;
   chunks.push({

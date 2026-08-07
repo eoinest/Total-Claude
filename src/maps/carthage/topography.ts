@@ -295,11 +295,24 @@ const DJEDID_TOP = 45;
 /**
  * An elliptical hill with a level top.
  *
- * Flat-topped rather than Gaussian because both of this map's hills carried buildings on
- * their summits — a temple precinct and a citadel enceinte on one, the Odeon on the other —
- * and a Gaussian leaves nowhere to put them. Returns an absolute height, or `-Infinity`
- * outside the hill's skirt so callers can `Math.max` hills together rather than summing
- * them: the Byrsa and Bordj Djedid overlap in plan, and summing would give a 105 m mountain.
+ * Flat-topped rather than Gaussian because both of this map's hills carry building on their
+ * summits and a Gaussian leaves nowhere to put it: a temple precinct and a citadel enceinte
+ * on the Byrsa, and dense housing on Bordj Djedid.
+ *
+ * **Bordj Djedid does not carry an Odeon, and nothing here should ever build one.** An earlier
+ * draft of this comment named it as the ridge's summit building, and that is a trap: "Odeon"
+ * in `docs/CARTHAGE.md` is a *modern place-name for a survey point* — §2.5 gives it as a
+ * coordinate and §3.3 as an elevation band — and never a structure to model. The Odeon of
+ * Carthage is Severan, put up around AD 200, **three hundred and fifty years after this map's
+ * spring of 146 BC**, on ground the Romans could build on only because they had first levelled
+ * what stood there. A landmark audit has already read the old wording and reported the Odeon
+ * as a missing monument; it is not missing, it is correctly absent, and adding it would put an
+ * imperial concert hall in a Punic city on the day that city died. What belongs on this ridge
+ * in 146 is Punic fabric, and §7.3's Magon quarter is what the generator already puts there.
+ *
+ * Returns an absolute height, or `-Infinity` outside the hill's skirt so callers can
+ * `Math.max` hills together rather than summing them: the Byrsa and Bordj Djedid overlap in
+ * plan, and summing would give a 105 m mountain.
  */
 const hill = (
   x: number, z: number,
