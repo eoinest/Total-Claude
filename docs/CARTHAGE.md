@@ -157,7 +157,7 @@ Projection (the Carthaginian analogue of worldOf):
   the two maps compress depth identically and a player's sense of distance transfers.
 - `KN = 0.45` is set by the wall: the isthmus front is 4.43 km of real wall (§4.1) and it has to
   fit across a 2800 m map with both ends on water and some lagoon showing beyond each. 0.45 puts
-  it at 1,990 world metres. It is also **within 1.5 % of Rome's `KX` (0.443)**.
+  it at 1,984 world metres. It is also **within 1.5 % of Rome's `KX` (0.443)**.
 - Anisotropy is therefore **2.05×**, against Rome's 2.00×. The two cities are distorted the same
   way by the same amount. Nobody has to learn a second mental correction.
 
@@ -175,10 +175,24 @@ For Carthage, state it up front:
   depth, tower height and footprint and spacing, street widths, storey heights, insula
   dimensions, ship-shed dimensions, the height of the Byrsa above the lower town.
 
-Concretely: the wall is 4,434 real metres long and 1,990 world metres long, but it is 9.1 metres
+Concretely: the wall is 4,434 real metres long and 1,984 world metres long, but it is 9.1 metres
 thick in both. Towers stand 59.2 world metres apart because that is the real interval, which
-means the modelled stretch carries 34 towers where the real wall carried 75. That is exactly what
+means the modelled stretch carries 33 towers where the real wall carried 75. That is exactly what
 Rome does with `WALL.towerSpacing = 35.5`.
+
+**And there is a third category, which is where this rule bites.** Anything whose *slope* matters
+cannot take a compressed run against an uncompressed height, because the gradient comes out
+wrong by the compression factor. There are exactly two such things on this map and both are
+overridden explicitly:
+
+- **the Byrsa** — §5.1a; the projection gives it a 30° face against a real 1:7, so its world
+  footprint is set from the gradient instead. Rome already does this: `RISE_RUN = 175` is a
+  chosen world number, not a projected one;
+- **open spaces that have to be fought in** — the forum, the harbour quays, the wall's killing
+  ground — which take world dimensions directly (§7.6), because a projected 180 × 120 m agora
+  comes out 81 × 26 and is a corridor.
+
+If you find a third case, add it here rather than quietly bending the projection.
 
 **Plan scale for monuments.** Rome uses `PLAN_SCALE = 0.65` because a 1:1 building in a 10×-
 compressed plan eats the city. Carthage's monumental load is far lighter (there is no Colosseum,
@@ -203,6 +217,7 @@ Longitude/latitude are modern site coordinates [MOD]; the ancient shoreline diff
 | Tophet of Salammbô | −71 | −1645 | **−740** | **929** | 36.8380 N 10.3225 E |
 | Harbour channel mouth (to the sea) | +600 | −1750 | **−788** | **1077** | reconstructed, §6.4 |
 | Odeon / north ridge crest | +419 | +467 | **+210** | **1037** | 36.8570 N 10.3280 E |
+| Forum / agora (§7.6) | +250 | −400 | **−180** | **1000** | position debated; §7.6 places it at x −290 for room |
 | Bordj Djedid shore (Antonine Baths site) | +731 | +556 | **+250** | **1106** | 36.8578 N 10.3315 E |
 | La Malga (inside the wall, W of Byrsa) | −713 | +222 | **+100** | **788** | 36.8548 N 10.3153 E |
 | East shore at the Byrsa's latitude | +1050 | 0 | **0** | **1176** | [MOD] |
@@ -214,7 +229,7 @@ Sanity checks that must hold after you build:
 - attacker deployment (z −190) to the ditch lip (z ≈ 452 at mid-wall) = **642 m of approach**;
 - wall (z 527) to Byrsa summit (z 945) = **418 m** of city depth on the main axis;
 - Byrsa (z 945) to the shore (z 1176) = **231 m**, then **~200 m of open sea** to the map edge;
-- modelled wall length **1,990 m** against Rome's 1,781 m (`WALL_X_MAX − WALL_X_MIN`, computed at
+- modelled wall length **1,984 m** against Rome's 1,781 m (`WALL_X_MAX − WALL_X_MIN`, computed at
   `fbcfe65`: 1150 − (−631)). Rome's wall costs 216 draw calls. Carthage's is 12 % longer, three
   walls deep and casemated. **Budget for it early; this is the map's largest single risk.**
 
@@ -337,7 +352,7 @@ This is why the map is worth building. Build it first.
 | | value |
 |---|---|
 | Real length across the isthmus | **4,434 m** (from the survey polyline in §2.5) |
-| Modelled length | **1,990 world m** |
+| Modelled length | **1,984 world m** |
 | Modelled bearing | runs from (x +1013, z 494) through (x 0, z 527) to (x −968, z 615) — leaning so the south end sits **121 m deeper** into the map |
 | North anchor | the Sebkhet Ariana shore |
 | South anchor | the head of the Lake of Tunis |
@@ -458,7 +473,7 @@ strong defensive position — but start at the real number.
 | property | value | tag |
 |---|---|---|
 | Interval | **59.2 m** (200 ft at 0.296 m). At the Punic foot it is 61 m. | [A] |
-| Count on the modelled stretch | **34** (1,990 / 59.2). The real 4.43 km wall carried **75**. | [DER] |
+| Count on the modelled stretch | **33** (1,984 / 59.2 = 33.5). The real 4.43 km wall carried **75**. | [DER] |
 | Storeys | **four** | [A] |
 | Height to the top storey's walk | **20.0 m** | [DER]: four storeys at ~4.2 m clear plus slabs |
 | Height to the merlons | **22.5 m** | [DER] |
@@ -467,7 +482,7 @@ strong defensive position — but start at the real number.
 | Internal | ground storey opens into the lower casemate; second into the upper gallery; third is level with the wall-walk and gates it; fourth is the fighting top, roofed, with a bolt-shooter | [GAME], consistent with [A] |
 
 Rome's towers stand 13.8 m and there are 50 of them across 1,781 m. **Carthage has fewer, far
-bigger towers**: 34 at 22.5 m. Silhouette that difference deliberately — Rome's wall reads as a
+bigger towers**: 33 at 22.5 m. Silhouette that difference deliberately — Rome's wall reads as a
 serrated line, Carthage's as a row of keeps joined by a rampart.
 
 **Gates.** No ancient source gives a gate count for the land wall and none has been excavated.
@@ -522,12 +537,43 @@ housing grid; the harbour slipways.
 | Summit elevation | **60 m** a.s.l. | [MOD]. Published values run 50 / 57 / 60. Wikipedia gives ~50 with Sidi Bou Saïd "twice as high"; the 1911 Britannica gives 195 ft = 59.4 m; guidebooks give 57. **Use 60** — it is inside the range, it is the roundest, and every metre of it is gameplay. |
 | Lower town at its foot | **12–18 m** | [MOD] |
 | **Relief above the lower town** | **~45 m** | [DER] |
-| Summit plateau (Punic, before Roman truncation) | **250 × 180 m** | [MOD] [GAME] — the Romans cut several metres off the top to build the forum platform (320 × 160 m), so the Punic summit was **higher and smaller** than what is there today. |
-| Hill footprint at the 20 m contour | **~700 × 550 m real** → **~315 × 250 world m** after `KN`/`KE` | [DER] |
-| South-east slope (the built one) | **1:7, 14 %** | [ARCH] Lancel |
-| North and west slopes | **steeper, 1:4 to 1:3, partly scarped** | [GAME] |
+| Summit plateau (Punic, before Roman truncation) | **250 × 180 m real** | [MOD] [GAME] — the Romans cut several metres off the top to build the forum platform (320 × 160 m), so the Punic summit was **higher and smaller** than what is there today. The section drawing labels the operation *arasement du sommet*. |
+| Hill footprint at the 20 m contour, real | **~700 m E–W × 550 m N–S** | [MOD] |
+| **Hill footprint at the 20 m contour, world — do NOT take this from the projection** | **340 m in x × 200 m in z** | [GAME], and read the next subsection before you build it |
+| South-east slope, real | **1:7, 14 %** | [ARCH] Lancel |
+| **South-east slope, as built** | **1:3.8, 26 %** | [DER], see below |
+| North and west slopes | steeper still and partly scarped; cap them at **1:2** so they stay climbable in loose order | [GAME] |
 
-Do not compress the 45 m. Heights are not compressed (§2.4) and this one is the reason to come.
+### 5.1a The one place the projection must be overridden, and the arithmetic that says so
+
+**Heights are not compressed and positions are, so every slope on this map comes out steeper than
+it really was.** On the Byrsa that stops being a stylistic issue and becomes a bug. Run the real
+hill through §2.3 and you get:
+
+```
+real footprint at the 20 m contour   700 m (E–W)  ×  550 m (N–S)
+projected                            0.22·700 = 154 m in z   ,  0.45·550 = 248 m in x
+relief, uncompressed                 45 m
+resulting gradient into z            45 / 77   = 1 : 1.7   (30°)
+resulting gradient across x          45 / 124  = 1 : 2.8   (20°)
+the real gradients                             1 : 7.8  and  1 : 6.1
+```
+
+A 30° face is a cliff. The three streets would be unbuildable, the housing terraces would
+interpenetrate, and the whole point of §5.3 would be lost.
+
+**Fix: set the Byrsa's world footprint from the gradient you want, not from the projection.**
+This is not a special case — it is exactly what `topography.ts` already does at Rome, where
+`RISE_RUN = 175` is a *chosen world number* with the comment "short enough to read as a hill
+front", not a projected one. State the same thing here.
+
+Recommended: **340 m in x by 200 m in z at the 20 m contour**, which puts the built south-east
+face at **170 world m of run for 45 m of rise = 1:3.8**. That is 1.8× steeper than the real
+1:7 — the same order of distortion Rome accepts on its own rise — and it is a slope three
+stepped streets can climb and terraced housing can sit on.
+
+**Do not compress the 45 m.** Heights are not compressed (§2.4) and this one is the reason to
+come.
 
 ### 5.2 What stood on it
 
@@ -552,9 +598,14 @@ storeys high, and it took the Romans six days and nights to get up them.** [A]
 
 Build exactly that:
 
-- **Three streets**, not one, from the forum flat to the citadel gate.
-- Each **6.0 m wide** [ARCH] and **stepped**, because 14 % over 45 m of rise cannot be walked in
-  formation. Give them **treads of 1.2 m and risers of 0.17 m** in flights of 8–12 with landings.
+- **Three streets**, not one, from the forum flat to the citadel gate. They run up the hill's
+  **south-east face**, i.e. predominantly in **+x** on this map (from the forum at x ≈ −290 to the
+  summit at x = 0), which is the map's **less compressed axis** — a piece of luck from the
+  orientation choice in §2.2 and worth checking rather than assuming. Each street is
+  **~170 world m long** and gains 45 m.
+- Each **6.0 m wide** [ARCH] and **stepped**, because even the real 14 % could not be walked in
+  formation and the built 26 % certainly cannot. Give them **treads of 1.2 m and risers of
+  0.17 m** in flights of 8–12 with landings.
 - **Wheeled traffic and every siege engine is excluded from all three.** There is no way to get a
   ram to the citadel gate. That is a historical fact and a superb constraint.
 - Formation coherence must break on a stepped street. A cohort going up the Byrsa should arrive
@@ -752,9 +803,10 @@ armies can actually deploy against each other.
 
 | property | value | tag |
 |---|---|---|
-| Position | between the south-east foot of the Byrsa and the harbours: **e ≈ +120, n ≈ −850 → x ≈ −383, z ≈ 971** | [MOD], the position is debated |
+| Position | at the Byrsa's south-east foot, between the hill and the harbours: **e ≈ +250, n ≈ −400 → x ≈ −290, z ≈ 1000** | [MOD], the position is debated |
 | Size | **120 × 80 world metres of open paving** | [GAME] |
 | Enclosure | colonnaded on at least two sides, with the three street mouths on the Byrsa side and the harbour road entering opposite | [GAME] |
+| Distance to the harbours | **x −290 → −670, z 1000 → 984**: **380 world m** of harbour road. That is the stretch Scipio covered between taking the cothon and taking the forum. | [DER] |
 
 **Note the exception to §2.4.** An open square is neither a position nor a cross-section: put
 through `KN`/`KE` a 180 × 120 m real agora would come out 81 × 26 world m, a corridor. Open
@@ -895,6 +947,7 @@ Listed so no one later mistakes our decisions for evidence.
 | The admiralty island's diameter | **excavated, 125 m** (Hurst) | 125 m. Our independent derivation from shed counts gave 130 — a useful check that the rest of §6.2 hangs together |
 | A causeway to the island | **no evidence** | built anyway, flagged, §6.4 |
 | Byrsa summit elevation | 50 / 57 / 60 in print | **60** |
+| The Byrsa's *world* footprint | the projection gives a 30° cliff | **overridden to 340 × 200 world m** for a 1:3.8 built face — §2.4, §5.1a. This is a deliberate departure from the projection and the only one on the hill. |
 | The Punic summit's plateau before Roman truncation | inferred | 250 × 180 m |
 | Whether houses were really six storeys | Appian only | modelled 4–6, six on the three streets |
 | The city's grid orientation away from Byrsa and Magon | partial | follow the coast in the Magon quarter, follow the contour on the Byrsa slope |
