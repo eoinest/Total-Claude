@@ -102,6 +102,12 @@ body[data-cur='friend'] #viewport {
   cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'><g stroke='%23140f09' stroke-width='2.4' stroke-linejoin='round'><path d='M16 3 5 6.6v9.2c0 6 4.4 11.2 11 13.2 6.6-2 11-7.2 11-13.2V6.6z' fill='%23f6ead0'/></g><path d='M16 3 5 6.6v9.2c0 6 4.4 11.2 11 13.2 6.6-2 11-7.2 11-13.2V6.6z' fill='%23f6ead0'/><path d='M16 7.6 8.6 10v5.6c0 4 2.9 7.4 7.4 8.9 4.5-1.5 7.4-4.9 7.4-8.9V10z' fill='%23a8202a'/><circle cx='16' cy='15.4' r='2.8' fill='%23d9b25f'/></svg>") 16 3, pointer;
 }
 
+/* Aiming at a parapet the selection can be ordered onto: a flight of steps against a wall, so
+   it cannot be mistaken at a glance for the move boot a metre to the side of it. */
+body[data-cur='wall'] #viewport {
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'><g stroke='%23140f09' stroke-width='2.4' stroke-linejoin='round'><path d='M3 29h8v-6h6v-6h6v-6h6v18z' fill='%23f6ead0'/></g><path d='M3 29h8v-6h6v-6h6v-6h6v18z' fill='%23f6ead0'/><path d='M23 11h6v4h-6zM17 17h6v4h-6zM11 23h6v4h-6z' fill='%23c8a45f'/><path d='M26 2v7M22.5 5.5h7' stroke='%23140f09' stroke-width='4.4' stroke-linecap='round'/><path d='M26 2v7M22.5 5.5h7' stroke='%23d9b25f' stroke-width='2.6' stroke-linecap='round'/></svg>") 4 29, pointer;
+}
+
 body[data-cur='select'] #viewport { cursor: crosshair; }
 
 /* ---------------------------------------------------------------- loading -- */

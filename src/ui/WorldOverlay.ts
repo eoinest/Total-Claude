@@ -384,6 +384,36 @@ export class WorldOverlay {
   }
 
   /**
+   * The stretch of parapet a right-click would send the selection to, drawn *on the parapet*.
+   *
+   * The owner's report was that hovering the wall tells the player nothing. It cannot be drawn
+   * against `heightAt`, which here is paving twelve metres beneath the walk and inside the
+   * masonry; `levelY` puts it on the stone the men will actually stand on. Two rails along the
+   * run rather than a filled patch, because what is being marked is a length of walkway and
+   * the men are what should fill it.
+   *
+   * The rails run along x and are inset in z, which is not a guess: "the wall runs broadly
+   * along x and the city is at +Z" is a stated constraint on every city plan
+   * (`docs/ARCHITECTURE.md`), load-bearing in `bayAt`, `scenario.ts` and `Siege`.
+   */
+  wallTarget(x: number, z: number, y: number, halfLength: number): void {
+    const w = this.px(2.2, 0.8);
+    const inset = 1.1;
+    // The `air` batch, not `ground`: `matAir` is `depthTest: false`, and a marker on top of a
+    // wall is exactly the case where the merlons in front of it would otherwise eat it. The
+    // `ground` batch's polygon offset is tuned for terrain decals and does not help here.
+    this.air.levelY = y;
+    for (const side of [-1, 1]) {
+      this.air.segment(
+        x - halfLength, z + side * inset, x + halfLength, z + side * inset,
+        w, GOLD[0], GOLD[1], GOLD[2], 0.9
+      );
+    }
+    this.node(x, z, this.px(6, 1.9), GOLD, 0.95);
+    this.air.levelY = null;
+  }
+
+  /**
    * The deployment zone, as a dashed boundary with the front edge drawn solid.
    *
    * Into the *existing* ground batch, so this costs triangles and **no draw call** — the

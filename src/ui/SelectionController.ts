@@ -33,7 +33,14 @@ import type { PointerTracker } from './pointer';
 import { abilityUI, PLAYER_FACTION } from './theme';
 import type { GhostSpec, WorldOverlay } from './WorldOverlay';
 
-export type CursorKind = 'default' | 'move' | 'attack' | 'friend' | 'select';
+export type CursorKind = 'default' | 'move' | 'attack' | 'friend' | 'select' | 'wall';
+
+/** One phrase per wall order, so the hint and the cursor cannot describe different things. */
+const WALL_HINT: Record<'ascend' | 'traverse' | 'descend', string> = {
+  ascend: 'Up onto the wall',
+  traverse: 'Along the wall',
+  descend: 'Down off the wall',
+};
 
 /** Pixels of pointer travel before a click becomes a drag. */
 const DRAG_PX = 7;
@@ -211,6 +218,36 @@ export class SelectionController {
   solidZ = 0;
   solidY = 0;
   solidValid = false;
+  /**
+   * The point on the parapet the cursor is aiming at *in play*, valid when `wallValid`.
+   *
+   * The owner's report was that the wall "just doesn't really do a good job of … letting you
+   * select that elevated point as the location that you want your troops to go to". The order
+   * did not survive the trip: `orderX/orderZ` is pushed a body radius clear of whatever solid
+   * it lands on, because for a siege tower or an insula the ground *beside* the thing is the
+   * only place a cohort can stand — and `Siege.wallTargetAt` is then asked about that grass
+   * rather than about the parapet, so the sim never sees a wall order at all.
+   *
+   * `Siege` already owns the whole of the destination half: `interceptOrders` subscribes to
+   * `orderIssued` for exactly this, and turns the point into `sendToWall`, `moveAlongWall` or
+   * `sendToGround` depending on where the unit is standing. It only has to be handed the point
+   * the player pointed at, which is `solidX/solidZ`, not the one pushed out of it. Same
+   * distinction `DeploymentSystem.isWallPoint` draws before the battle, asked with a different
+   * verb: there it means "stand here now", here it means "walk up there".
+   */
+  wallX = 0;
+  wallZ = 0;
+  wallY = 0;
+  wallValid = false;
+
+  /**
+   * What the HUD needs from `Siege` to know a parapet when the cursor is over one.
+   *
+   * Duck-typed and installed by `HudSystem`, like `bannerAt` and `abilityProbe`: with no siege
+   * system registered — a field battle, or a map with no city — this stays null and every
+   * gesture behaves exactly as it did.
+   */
+  wallProbe: { targetAt(x: number, z: number): number; isGarrisoned(unitId: number): boolean } | null = null;
 
   constructor(
     private model: HudModel,
@@ -406,6 +443,25 @@ export class SelectionController {
     this.handleRight(ctx, hovered);
     this.handleKeys(ctx);
     this.updateCursor(hovered);
+    this.drawWallTarget();
+  }
+
+  /**
+   * Mark the stretch of parapet the cursor is offering, on the parapet.
+   *
+   * The whole of the hover half of the owner's report: a wall is the one destination in the
+   * game whose marker cannot be drawn on the heightfield, because the heightfield there is
+   * inside the masonry and under it. Suppressed during deployment, which draws its own.
+   */
+  private drawWallTarget(): void {
+    if (!this.wallValid || this.deployment?.active) return;
+    if (this.wallIntent() !== 'ascend' && this.wallIntent() !== 'traverse') return;
+    let men = 0;
+    for (const v of this.model.selectedViews) men += v.alive;
+    // `Siege` packs a garrison four to five ranks deep at the walk's own spacing; four is the
+    // conservative end, so the marker is never longer than the stretch that will be filled.
+    const halfLength = Math.max(3, (men / 4) * 0.86 * 0.5);
+    this.overlay.wallTarget(this.wallX, this.wallZ, this.wallY, halfLength);
   }
 
   /**
@@ -515,10 +571,29 @@ export class SelectionController {
     }
 
     this.solidValid = PICK.solid >= 0;
+    this.wallValid = false;
     if (PICK.solid >= 0) {
       this.solidX = PICK.solidX;
       this.solidZ = PICK.solidZ;
       this.solidY = PICK.solidY;
+      /*
+       * Is this the top of a wall the player can put men on?
+       *
+       * Two tests, and the second is not decoration. `Siege.wallTargetAt` is a *plan* query —
+       * it answers about x and z and knows nothing about height — so on its own it says yes to
+       * a click on the outer face four metres down, which is not "get on the wall", it is "go
+       * to the foot of it". The slab test lands exactly on `topY` when the ray came down onto
+       * the walk and strictly below it on any side face, so comparing the two separates the
+       * two orders cleanly. Half a metre of tolerance rather than an epsilon so a click on a
+       * merlon still counts.
+       */
+      if (this.wallProbe && PICK.solidY > this.solids[PICK.solid].topY - 0.5
+        && this.wallProbe.targetAt(PICK.solidX, PICK.solidZ) >= 0) {
+        this.wallX = PICK.solidX;
+        this.wallZ = PICK.solidZ;
+        this.wallY = PICK.solidY;
+        this.wallValid = true;
+      }
       // A click on a 20 m siege tower means the tower. Without this the ray only ever met
       // the heightfield, so the order went to the grass behind it — 13.6 m past, and 138.8 m
       // past from a low camera, or nothing at all when the ray rose clear of the ground.
@@ -533,6 +608,26 @@ export class SelectionController {
     } else {
       this.orderValid = false;
     }
+  }
+
+  /**
+   * What a right-click here would do to the selection, as a verb the player can read.
+   *
+   * One function so the cursor, the hover marker, the drag hint and the order that is finally
+   * emitted cannot disagree about which of the four wall orders is on offer — which is the
+   * other half of the owner's complaint, that the cursor tells you nothing before you commit.
+   */
+  private wallIntent(): 'ascend' | 'traverse' | 'descend' | null {
+    const probe = this.wallProbe;
+    if (!probe) return null;
+    const sel = this.model.selectedViews;
+    if (sel.length === 0) return null;
+    // A mixed selection is named by the majority; every unit still gets the same order and
+    // `Siege` decides per unit what that means for it.
+    let onWall = 0;
+    for (const v of sel) if (probe.isGarrisoned(v.id)) onWall++;
+    if (this.wallValid) return onWall > sel.length * 0.5 ? 'traverse' : 'ascend';
+    return onWall > 0 ? 'descend' : null;
   }
 
   /**
@@ -733,9 +828,10 @@ export class SelectionController {
       this.dragShift = this.dragShift || ctx.input.shift;
       this.dragHostileId = this.hostileUnder(hovered);
       const wall = this.wallPoint();
-      if (wall) {
+      if (wall || (!this.deployment?.active && this.wallValid)) {
         // No ground ghost over the parapet: `Siege.garrison` packs a unit along the walkway
-        // and the formation block a ghost draws is not what will be there.
+        // and the formation block a ghost draws is not what will be there. True of an order
+        // in play for the same reason it is true of a deployment.
         this.ghosts.length = 0;
       } else {
         this.buildGhosts(ctx, p.dragDist);
@@ -760,6 +856,8 @@ export class SelectionController {
       } else if (this.dragHostileId >= 0) {
         const t = this.model.view(this.dragHostileId);
         this.showHint(`Attack ${t ? t.title : 'enemy'}`, 'attack');
+      } else if (this.wallIntent()) {
+        this.showHint(WALL_HINT[this.wallIntent()!], 'move');
       } else {
         const len = this.dragFrontage;
         const wide = this.ghosts.length ? this.ghosts[0].width : 0;
@@ -1001,6 +1099,33 @@ export class SelectionController {
       return;
     }
 
+    /*
+     * A click on the parapet carries the parapet, not the ground beside it.
+     *
+     * This is the whole of the destination half. `Siege.interceptOrders` subscribes to
+     * `orderIssued` precisely because the event "is the only place the clicked point survives
+     * intact", and then asks `wallTargetAt(o.x, o.z)` — so an order that has already been
+     * pushed `SOLID_STANDOFF` clear of the curtain's face answers about grass and the wall
+     * order is never recognised. Sending the raw hit is the one change that closes it; every
+     * decision after this point is the sim's, including the rule that a besieger at the foot
+     * of the outer face does not get to walk up the defenders' stairs.
+     *
+     * No frontage and no facing: `Siege` packs a garrison along the walkway itself, four or
+     * five ranks deep at the bay's own `walkY`, and a width from a ground drag would be
+     * overwritten by that layout anyway. `queued` is dropped for the same reason `Siege`
+     * ignores queued orders — a waypoint appended to a march is not a decision about the wall.
+     */
+    if (this.wallValid && !queued) {
+      ctx.events.emit('orderIssued', {
+        unitIds: sel.map((v) => v.id),
+        kind: attackMove ? 'attackMove' : 'move',
+        x: this.wallX,
+        z: this.wallZ,
+        running,
+      });
+      return;
+    }
+
     this.buildGhosts(ctx, dragPx);
     for (const g of this.ghosts) {
       // `orderIssued.width` is the contract for a frontage order, but
@@ -1114,9 +1239,23 @@ export class SelectionController {
     else if (this.ptr.overUi) c = 'default';
     else {
       const v = hovered >= 0 ? this.model.view(hovered) : undefined;
-      if (v && !v.own) c = this.model.selection.length > 0 ? 'attack' : 'default';
+      const haveSel = this.model.selection.length > 0;
+      /*
+       * A parapet under the cursor outranks "friend", and that ordering is deliberate.
+       *
+       * Measured over a column of screen samples down a bay: seven of the eight rows that are
+       * genuinely on the walk also have the garrison's own footprint under them — now that the
+       * garrison is pickable at all — so "friend" would win on almost every pixel of the wall
+       * and the player would never see the wall cursor. Selecting a friendly unit is already
+       * announced by its own hover box and by its banner lighting up; whether a right-click
+       * will send men *up* or leave them at the foot is announced by nothing else, and it is
+       * the thing the owner said the cursor fails to tell them. A hostile unit still wins
+       * outright: attacking is never the surprising reading.
+       */
+      if (v && !v.own) c = haveSel ? 'attack' : 'default';
+      else if (haveSel && this.wallValid && this.wallIntent()) c = 'wall';
       else if (v && v.own) c = 'friend';
-      else if (this.model.selection.length > 0 && this.orderValid) c = 'move';
+      else if (haveSel && this.orderValid) c = 'move';
     }
     if (c !== this.cursor) {
       this.cursor = c;
