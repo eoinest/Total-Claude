@@ -314,9 +314,9 @@ export function assertCarthage(inp: AssertInput): CityAssertion[] {
   out.push({
     name: 'ship sheds',
     ok: true,
-    detail: `${inp.shedCount} built, against Appian's 220. The count is circumference ÷ a `
-      + `5.7 m bay, so it is a consequence of the basin's diameter rather than a number typed in; `
-      + `matching 220 exactly would mean choosing the bay width to hit it.`,
+    detail: `${inp.shedCount} built — 30 on the island and 138 round the ring, at the 5.9 m `
+      + `slipway width the British excavation measured. Appian says 220; archaeology gives `
+      + `160-170. We model the archaeology and the blurb may quote Appian.`,
   });
 
   // ---- 7. every monument the plan names got built --------------------------
