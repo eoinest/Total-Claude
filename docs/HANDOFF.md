@@ -237,6 +237,31 @@ Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`
   cohort carries 57-59 kit masks, 119 statures, 229 cadences, 314/320 distinct animation phases,
   252 tunic colours. Adding variation is the wrong fix.
 
+- **"Units pass through the walls" was Carthage, not Rome, and no man-tick counter in this
+  repo could see it.** Every penetration measure here — `probe-nav.penetration`,
+  `probe-melee`'s gate window — grades the men against the *obstacle set*. When the obstacle
+  set is the thing that is wrong, they all agree with it and report zero. Two faults, both
+  now fixed, both found by measuring the **drawn stone** instead (`tools/probe-solid.mjs`
+  casts against the baked chunks and reports mesh / boxes / raster as three independent
+  views):
+  - `recutWallObstacles` re-emitted only the boxes derived from `wallBlockers` after
+    filtering out everything of `kind: 'wall'`. The **stairs** are `'wall'`. `Siege.armGate`
+    toggles the gate open-then-shut on tick 1 of every battle, so Rome went 56 wall boxes to
+    47 and Carthage 160 to 147 **before a man had moved** — all nine and all thirteen
+    flights, non-solid for the rest of every battle since `27a9e85` added them.
+  - Carthage's **eight posterns are published as already-open gates and the stone is never
+    cut**. `buildPostern` sets a pierced arch *panel* into each face; the wall's own skins
+    run straight across. A ray down a postern axis is stopped at the outer face at every
+    height 0.5-5.0 m and every lateral offset out to ±8 m. `CitySystem.assertGatePassages`
+    now refuses the collision cut where the stone is solid, and retires itself when it is
+    cut. **No Carthage gate's passage is cut** — `porta-byrsae` stops a ray at 9.1 m with the
+    leaves excluded — which is why the refusal exempts any gate the siege opens.
+  Man-ticks inside the curtain's own footprint per thousand, 45 s after a 20 s warm-up:
+  Carthage infantry **16.71 -> 0**, cavalry **10.13 -> 0**, rout/engine/garrison 0 in both
+  arms; Rome **0 in every class in both arms**. And measure a man's **centre**, not his
+  inflated body: a man correctly stopped rests at `halfW + 0.42` and a body test counts the
+  whole front rank as inside — worth a spurious 52.4 per mille on Rome.
+
 - **56.2% of a soldier's triangles disagreed with themselves, and a battle frame could never
   have shown it.** `MeshBuilder` wrote a shading normal per vertex and a triangle order, and
   nothing tied them together. `revolve` emitted normals that were the *exact negation* of its
