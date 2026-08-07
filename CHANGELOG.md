@@ -13,7 +13,8 @@ Each entry records the commit that was deployed and the Vercel deployment that c
 are not taken on trust: every commit below was matched to its deployment by comparing the SHA-1 of
 every tracked file in the commit against the file digests Vercel holds for that deployment, and all
 four matched at 100%. `r4` was additionally verified by rebuilding the commit in a pinned worktree
-and diffing the output against the bytes the live site serves. See
+and diffing the output against the bytes the live site serves, and by booting all three maps against
+the live URL and confirming the simulation clock advances on each. See
 [`docs/RELEASING.md`](docs/RELEASING.md) for the procedure.
 
 Every figure quoted here comes from a commit message, from `docs/HANDOFF.md`, or from a measurement
