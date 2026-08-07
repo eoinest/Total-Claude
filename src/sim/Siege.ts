@@ -99,6 +99,32 @@ const MAX_WALL_RANKS = 5;
  * fast enough to happen inside a battle.
  */
 const TOWER_SPEED = 0.42;
+/**
+ * How fast the gang can lever the machine round onto a new bearing, radians per second.
+ *
+ * 0.09 is a right angle in seventeen seconds, which is about as fast as sixty men with
+ * levers and rollers turn a fifteen-tonne frame and slow enough that a player watching one
+ * being re-aimed can see it happening.
+ */
+const TOWER_SLEW = 0.09;
+/** Seconds a re-aimed tower stands still while its rollers are shifted. See `orderTowerTo`. */
+const TOWER_HEAVE = 14;
+/**
+ * Inside this many metres of its bay a tower will not be turned.
+ *
+ * The gang is squaring the machine on the masonry by eye at that range and the ramp is about
+ * to fall. Committing here is the honest half of "hard to redirect": the refusal has to bite
+ * at the end of the approach, where changing your mind is most tempting and least possible.
+ */
+const TOWER_COMMIT = 12;
+/**
+ * Units that may queue at one machine at once, crew included.
+ *
+ * A cap rather than a rule about who: four cohorts is already a file long enough to reach
+ * back off the glacis, and without one an AI storm that keeps re-issuing move orders at a
+ * bay could enrol its whole host on one bank of ladders.
+ */
+const MAX_BOARDING_UNITS = 4;
 /** And a ram, which is lighter and has further to come. */
 const RAM_SPEED = 0.55;
 /** Seconds for a boarding ramp to fall from stowed to landed. */
@@ -111,6 +137,24 @@ const CROSS_CLIMB = 0.78;
 const CROSS_GAP = 0.78;
 /** How close to the foot of a path a man must be before he may step onto it. */
 const ADMIT_RADIUS = 1.6;
+/**
+ * What a man who is not of the party that raised the machine climbs it at.
+ *
+ * Anybody may go up a ladder or a boarding ramp — the alternative is a scenario deciding
+ * the player's assault for them — but an escalade party has drilled at it and is equipped
+ * for it, and a legionary of the line is carrying a scutum up a rung he has never seen. 0.72
+ * is about forty seconds against thirty on an 8 m ladder, which is enough to be worth
+ * spending the specialists first and small enough not to feel like a punishment.
+ */
+const ESCALADE_PACE = 0.72;
+/**
+ * Stations either side of the clicked one that count as "this stretch of wall" when the
+ * player picks an escalade for a unit standing in the field.
+ *
+ * A station is a metre of curtain, so this is a twenty-metre window — about a bay. Wider and
+ * a click at one end of the wall would enrol men on a ladder out of sight at the other.
+ */
+const ESCALADE_REACH = 20;
 /** Stations either side of his slot searched for the one he is actually standing on. */
 const STATION_WINDOW = 14;
 /** `stationOf` for a man who has just come over the parapet and has no slot yet. */
@@ -255,6 +299,13 @@ interface SiegeTower {
   y: number;
   /** Heading: the direction the front face (-Z local) points, i.e. at the wall. */
   facing: number;
+  /**
+   * The heading its bay wants. Equal to `facing` except while the gang is levering it round
+   * after the player has re-aimed it. See `orderTowerTo`.
+   */
+  wantFacing: number;
+  /** Seconds the gang is still shifting rollers and will not roll the machine forward. */
+  heave: number;
   state: TowerState;
   /** Absolute Y of the fighting deck. */
   deckY: number;
@@ -265,8 +316,15 @@ interface SiegeTower {
   station: number;
   /** 0 stowed vertical, 1 landed. */
   ramp: number;
-  /** Unit whose men board through it. */
+  /** Unit that crews it — the gang on the levers, and the first in the boarding file. */
   unitId: number;
+  /**
+   * Every unit allowed up it, crew first. See `stepCrossing` and `escalade`.
+   *
+   * A machine belongs to an army, not to one cohort. This is the list the player extends by
+   * ordering another unit at the same stretch of wall.
+   */
+  boarders: number[];
   /** Men who have completed the crossing. */
   crossed: number;
   crossing: Crossing | null;
@@ -455,7 +513,10 @@ interface Ladder {
   facing: number;
   station: number;
   crossing: Crossing | null;
+  /** The party that raised it, and the first in the file. */
   unitId: number;
+  /** Every unit allowed up it, that party first. See `stepCrossing` and `escalade`. */
+  boarders: number[];
   crossed: number;
 }
 
@@ -713,6 +774,14 @@ export class Siege implements ElevationOwner {
   private crossEx!: Float32Array;
   private crossEy!: Float32Array;
   private crossEz!: Float32Array;
+  /**
+   * Multiplier on this man's pace along the path he is on. 1 for the party the machine
+   * belongs to, `ESCALADE_PACE` for anybody else the player has sent up it.
+   *
+   * Per soldier rather than per crossing because a ladder now carries men of two or three
+   * different units at once, in one file, and they do not climb at the same rate.
+   */
+  private crossPace!: Float32Array;
   /** Station he is bound for once across; -1 while he is still on the ground. */
   private stationOf!: Int32Array;
   /** Which rank of the walkway he holds. */
@@ -785,6 +854,7 @@ export class Siege implements ElevationOwner {
     this.crossEx = new Float32Array(cap);
     this.crossEy = new Float32Array(cap);
     this.crossEz = new Float32Array(cap);
+    this.crossPace = new Float32Array(cap).fill(1);
     this.stationOf = new Int32Array(cap).fill(-1);
     this.rankOf = new Uint8Array(cap);
     this.linkOf = new Int32Array(cap).fill(-1);
@@ -1508,6 +1578,18 @@ export class Siege implements ElevationOwner {
     return s;
   }
 
+  /**
+   * Which side of the wall a point is on: -1 inside the city, +1 out in the field.
+   *
+   * Published because the UI has to draw the same distinction the sim acts on. A click on
+   * the parapet from inside means "walk up the stairs"; the same pixel with a besieging
+   * cohort selected means "storm it", and the cursor has to be able to say which before the
+   * player commits.
+   */
+  wallSideAt(x: number, z: number): -1 | 1 {
+    return this.sideOf(x, z);
+  }
+
   /** Which side of the wall a point is on: -1 inside the city, +1 out in the field. */
   private sideOf(x: number, z: number): -1 | 1 {
     const s = this.stationNear(x, z);
@@ -1605,6 +1687,224 @@ export class Siege implements ElevationOwner {
   }
 
   /**
+   * Order a unit standing in the field up onto the wall by whatever is leaning on it.
+   *
+   * The mirror of `sendToWall`, and the half that did not exist. A besieger is not entitled
+   * to walk up the defenders' stairs — he comes over a ramp, up a ladder or through a
+   * breach — and until now `interceptOrders` enforced the first clause and had nothing to
+   * offer for the second, so a click on the enemy parapet from the storming side was
+   * silently discarded. From the player's chair that is indistinguishable from the feature
+   * not existing, which is exactly how it was reported.
+   *
+   * Enrolment is on a *bank* of ladders rather than one rail, because `musterOwned`
+   * round-robins a party's ladders and admission must agree with the muster or men queue at
+   * a foot they are not allowed to climb.
+   *
+   * Returns false when there is no practicable way up within `ESCALADE_REACH` of the point,
+   * which a caller should degrade to an ordinary move — standing at the foot of a wall you
+   * cannot climb is a real order and this must not eat it.
+   */
+  escalade(u: UnitGroupState, x: number, z: number): boolean {
+    // A gang has its own machine to work. Sending the ram crew up a ladder would abandon
+    // the ram in the carriageway, which is the failure this workstream has already fixed once.
+    if (this.crewsAMachine(u.id)) return false;
+    const dest = this.wallTargetAt(x, z) >= 0 ? this.wallTargetAt(x, z) : this.stationNear(x, z);
+    if (dest < 0) return false;
+
+    let bestKind: 'tower' | 'ladder' | null = null;
+    let bestD = Infinity;
+    let bestTower: SiegeTower | null = null;
+    let bestGroup: Ladder[] | null = null;
+
+    for (const t of this.towers) {
+      // A machine still trundling across the glacis is a promise; one whose ramp is down is
+      // a road. Both count — the men walk out with it and go up when it lands — but a spent
+      // one does not.
+      if (t.state === TowerState.Spent) continue;
+      if (Math.abs(t.station - dest) > ESCALADE_REACH) continue;
+      if (t.boarders.length >= MAX_BOARDING_UNITS && !t.boarders.includes(u.id)) continue;
+      const d = Math.hypot(t.x - u.x, t.z - u.z);
+      if (d < bestD) { bestD = d; bestKind = 'tower'; bestTower = t; bestGroup = null; }
+    }
+    for (const l of this.ladders) {
+      if (Math.abs(l.station - dest) > ESCALADE_REACH) continue;
+      if (l.boarders.length >= MAX_BOARDING_UNITS && !l.boarders.includes(u.id)) continue;
+      const d = Math.hypot(l.x - u.x, l.z - u.z);
+      if (d < bestD) {
+        bestD = d;
+        bestKind = 'ladder';
+        bestTower = null;
+        bestGroup = this.ladders.filter((k) => k.unitId === l.unitId);
+      }
+    }
+    if (bestKind === null) return false;
+
+    // A unit cannot be queuing at two machines at once, and it cannot be halfway up a stair
+    // either. Take it off whatever it was doing first.
+    this.releaseEscalade(u.id);
+    this.plans.delete(u.id);
+
+    const enrol = (list: number[]): void => { if (!list.includes(u.id)) list.push(u.id); };
+    if (bestTower) enrol(bestTower.boarders);
+    else for (const l of bestGroup!) enrol(l.boarders);
+
+    this.owned.add(u.id);
+    /*
+     * Reclaim the order for the same reason every other wall verb does: these men are placed
+     * by `musterOwned` from now on, and leaving the unit on `MoveTo` would have
+     * `steerToSlots` and the formation path writing the same slots on alternate ticks.
+     */
+    u.order = UnitOrder.Garrison;
+    u.targetUnitId = -1;
+    u.waypoints.length = 0;
+    u.contactLock = false;
+    return true;
+  }
+
+  /**
+   * Take a unit off every machine it was queuing at.
+   *
+   * Public because there was no way to countermand a siege order at all — see the note on
+   * `cancelWallPlan` — and because `escalade` needs it internally to keep the invariant that
+   * a unit appears in at most one boarder list.
+   *
+   * The crew of a machine is never released this way: `boarders[0]` is the gang, and a gang
+   * that stops being enrolled stops pushing.
+   */
+  releaseEscalade(unitId: number): boolean {
+    let found = false;
+    const drop = (list: number[]): void => {
+      const k = list.indexOf(unitId);
+      if (k > 0) { list.splice(k, 1); found = true; }
+    };
+    for (const t of this.towers) drop(t.boarders);
+    for (const l of this.ladders) drop(l.boarders);
+    return found;
+  }
+
+  /** The tower this unit's gang pushes, or null. */
+  private towerOf(unitId: number): SiegeTower | null {
+    for (const t of this.towers) if (t.unitId === unitId) return t;
+    return null;
+  }
+
+  /** True when this unit is somebody's gang and has a machine of its own to work. */
+  private crewsAMachine(unitId: number): boolean {
+    if (this.towerOf(unitId)) return true;
+    for (const r of this.rams) if (r.unitId === unitId && !r.wreck) return true;
+    for (const l of this.ladders) if (l.unitId === unitId) return true;
+    return false;
+  }
+
+  /**
+   * Point a tower at a stretch of wall, and cut its ramp to the span it will have to bridge.
+   *
+   * Every number a docked tower depends on is solved here from the bay it is aimed at, and
+   * it is one function rather than two so that `orderTowerTo` cannot dock to a different
+   * standard than `spawnTower` does. The measured contract is 0.32 m of daylight between the
+   * front face and the masonry and a ramp lip level with the walk; both fall out of this.
+   */
+  private aimTowerAt(t: SiegeTower, station: number): void {
+    const nx = this.snx[station];
+    const nz = this.snz[station];
+    /**
+     * Where the tower's centre stops, measured out from the bay centreline.
+     *
+     * Its *front face* must end up just clear of the wall's outer face — `sFace` — and the
+     * face is `TOWER_HALF_D` ahead of the centre. The first version used a flat 1.05 m
+     * clearance from the centreline instead of from the face, which put the front of the
+     * machine 0.70 m inside the brickwork: measured, on all four towers, as `faceGap`
+     * −0.70. It also overshot the ramp, because the hinge was then too far in for the
+     * 3.4 m ramp to land anywhere but off the back of the wall.
+     *
+     * 0.32 m of clearance is a hand's breadth of daylight — enough that the machine does
+     * not visibly intersect the masonry, close enough that the ramp bridges the parapet.
+     */
+    const standoff = this.sFace[station] + 0.32 + TOWER_HALF_D;
+    t.station = station;
+    t.wantFacing = Math.atan2(-nx, -nz);
+    t.dockX = this.sx[station] + nx * standoff;
+    t.dockZ = this.sz[station] + nz * standoff;
+    /**
+     * Deck height: 0.55 m above the wall-walk, which is 1.5 m *below* the merlon tops.
+     *
+     * This is knowingly wrong and is reverted work. A blind critic judging the machine
+     * observed that "the platform floor sits at the base of the merlons with the roof below
+     * their tops — an assaulting soldier would have to climb out and over unaided", and it
+     * is right: a tower should deliver men onto the wall from above its defences.
+     *
+     * Raising it to `sCrest + 0.3` with a 4.2 m ramp docked and measured correctly — deck
+     * 45.25 against a walk at 42.90, ramp head level with the walk to within a centimetre —
+     * but boarding then stopped dead: four towers in `boarding` state, every crew alive and
+     * standing on its muster point 0.5 m from the mouth of the crossing, and not one man
+     * admitted to the path. I could not find the cause by inspection inside the time I had,
+     * and a tower that looks better and delivers nobody is worse than one that looks squat
+     * and works. The probe assertion `infantry cross the ramp onto the wall` is what caught
+     * it and is what should guard the retry.
+     */
+    t.deckY = this.sy[station] + 0.55;
+    /**
+     * Cut the ramp to the span it will actually have to bridge.
+     *
+     * The hinge ends up `sFace + 0.32` out from the bay centreline and the lip has to reach
+     * the outward limit of the standing band, so the horizontal reach is fixed by the wall
+     * and the standoff between them — 1.64 m on this curtain, not the 3.4 m the geometry is
+     * authored at. Measured: a correctly-yawed 3.4 m ramp overshoots the walkway's cityward
+     * lip by 1.6 m and cantilevers over the street.
+     *
+     * Solved rather than tuned, and solved from the *bay*, so the wall workstream widening
+     * the curtain moves this with it instead of breaking it.
+     */
+    const hingeOff = this.sFace[station] + 0.32;
+    t.rampReach = Math.max(0.6, hingeOff - this.sOuter[station]);
+    const drop = this.sy[station] - t.deckY;
+    t.rampLen = Math.hypot(t.rampReach, drop);
+    t.rampLanded = Math.atan2(drop, t.rampReach);
+  }
+
+  /**
+   * Send a tower at a stretch of wall the player has chosen.
+   *
+   * The third of the owner's three complaints: *"the siege towers, you cannot choose where
+   * they attack — they always go to their predetermined destination"*. `dockX/dockZ` was
+   * written once at spawn and never again, so the scenario picked the bay and the player
+   * watched.
+   *
+   * Three refusals, and they are the character of the machine rather than caution. Fifteen
+   * tonnes of green timber on rollers is **committed**: once the ramp has started to fall it
+   * is landing on the bay it is over (`state !== Approach`), and inside the last
+   * `TOWER_COMMIT` metres the gang is lining it up on the masonry and will not be turned. A
+   * re-aim that does clear those buys a `TOWER_HEAVE` halt while the gang shifts the rollers
+   * and levers the frame round — during which the machine slews toward its new bearing and
+   * does not advance a metre. That is the cost of changing your mind about a tower, and it
+   * is what stops the thing behaving like a unit that pivots.
+   */
+  orderTowerTo(u: UnitGroupState, x: number, z: number): boolean {
+    const t = this.towerOf(u.id);
+    if (!t) return false;
+    const station = this.wallTargetAt(x, z) >= 0 ? this.wallTargetAt(x, z) : this.stationNear(x, z);
+    if (station < 0 || this.dead(station)) return false;
+    if (station === t.station) return false;
+    if (t.state !== TowerState.Approach) return false;
+    if (t.dist > 0 && t.dist < TOWER_COMMIT) return false;
+    this.aimTowerAt(t, station);
+    t.heave = TOWER_HEAVE;
+    return true;
+  }
+
+  /**
+   * Countermand whatever the wall was told to do with this unit.
+   *
+   * `Siege` had no public way to cancel a plan, which is why a descent whose last man is
+   * blocked by a friendly holds its plan open for thousands of ticks and the cohort can
+   * never form line in the city it has just entered. Publishing the verb does not fix that
+   * on its own — somebody still has to call it — but it makes the fix expressible.
+   */
+  cancelWallPlan(unitId: number): boolean {
+    return this.plans.delete(unitId);
+  }
+
+  /**
    * Send a unit through a breach the great ram has made.
    *
    * Without this the lanes were unreachable. `wantLink` is only ever written by the stair
@@ -1689,16 +1989,45 @@ export class Siege implements ElevationOwner {
         u.waypoints.length = 0;
         const g = this.garrisons.get(id);
         if (g) { g.lastTx = u.x; g.lastTz = u.z; }
-      } else if (!this.owned.has(id) && this.wallTargetAt(dest.x, dest.z) >= 0
-        && this.sideOf(u.x, u.z) === -1) {
+      } else if (this.wallTargetAt(dest.x, dest.z) >= 0) {
         /**
-         * On the ground and told to get on the wall.
+         * On the ground and told to get on the wall. Which way up depends on which side of
+         * it he is standing.
          *
-         * Restricted to the city side, and that restriction is not a hedge: a besieger at the
-         * foot of the outer face is not entitled to walk up the defenders' stairs. He comes
-         * over a ramp, up a ladder, or through a breach.
+         * The city side walks up the defenders' own stairs. The field side does not — a
+         * besieger is not entitled to those — but it is entitled to the ramp or the ladder
+         * its own army has put against the stone, and until `escalade` existed this branch
+         * simply dropped the order. That silence is the owner's report: *"I cannot send units
+         * up the stairs and onto the wall"*, and *"others cannot climb those same siege
+         * instruments"*, which are one missing verb.
          */
-        this.sendToWall(u, dest.x, dest.z);
+        if (this.sideOf(u.x, u.z) === -1) {
+          if (!this.owned.has(id)) this.sendToWall(u, dest.x, dest.z);
+        } else if (this.towerOf(id)) {
+          // A tower's own gang told to go at a different stretch of wall moves the tower.
+          this.orderTowerTo(u, dest.x, dest.z);
+        } else {
+          this.escalade(u, dest.x, dest.z);
+        }
+      } else if (this.releaseEscalade(id)) {
+        /**
+         * Out of the queue.
+         *
+         * Enrolling a unit on a ladder makes the siege system place its men, and without
+         * this there was no way back: a cohort sent at a bank of ladders would have stood
+         * in that file for the rest of the battle whatever the player clicked afterwards,
+         * because every later order pointed at ground the wall code does not read. An order
+         * you cannot countermand is worse than an order you cannot give.
+         *
+         * Men already on the rungs are left alone — `advanceQueue` does not consult the
+         * enrolment — so nobody is dropped off a ladder by a change of mind.
+         */
+        this.owned.delete(id);
+        for (const i of u.members) {
+          if (this.crossOf[i] !== -1 || this.stationOf[i] >= 0) continue;
+          b.elevated[i] = 0;
+          b.support[i] = NO_SUPPORT;
+        }
       }
     }
     if (this.ordered.size > 0) this.ordered.clear();
@@ -2213,51 +2542,21 @@ export class Siege implements ElevationOwner {
     if (this.towers.length >= MAX_TOWERS || this.nStations === 0) return -1;
     const station = this.stationNear(targetX, targetZ);
     if (station < 0) return -1;
-    const nx = this.snx[station];
-    const nz = this.snz[station];
-    /**
-     * Where the tower's centre stops, measured out from the bay centreline.
-     *
-     * Its *front face* must end up just clear of the wall's outer face — `sFace` — and the
-     * face is `TOWER_HALF_D` ahead of the centre. The first version used a flat 1.05 m
-     * clearance from the centreline instead of from the face, which put the front of the
-     * machine 0.70 m inside the brickwork: measured, on all four towers, as `faceGap`
-     * −0.70. It also overshot the ramp, because the hinge was then too far in for the
-     * 3.4 m ramp to land anywhere but off the back of the wall.
-     *
-     * 0.32 m of clearance is a hand's breadth of daylight — enough that the machine does
-     * not visibly intersect the masonry, close enough that the ramp bridges the parapet.
-     */
-    const standoff = this.sFace[station] + 0.32 + TOWER_HALF_D;
     const t: SiegeTower = {
       id: this.towers.length,
       x, z,
       y: this.battle.groundAt(x, z),
-      facing: Math.atan2(-nx, -nz),
+      facing: 0,
+      wantFacing: 0,
+      heave: 0,
       state: TowerState.Approach,
-      /**
-       * Deck height: 0.55 m above the wall-walk, which is 1.5 m *below* the merlon tops.
-       *
-       * This is knowingly wrong and is reverted work. A blind critic judging the machine
-       * observed that "the platform floor sits at the base of the merlons with the roof below
-       * their tops — an assaulting soldier would have to climb out and over unaided", and it
-       * is right: a tower should deliver men onto the wall from above its defences.
-       *
-       * Raising it to `sCrest + 0.3` with a 4.2 m ramp docked and measured correctly — deck
-       * 45.25 against a walk at 42.90, ramp head level with the walk to within a centimetre —
-       * but boarding then stopped dead: four towers in `boarding` state, every crew alive and
-       * standing on its muster point 0.5 m from the mouth of the crossing, and not one man
-       * admitted to the path. I could not find the cause by inspection inside the time I had,
-       * and a tower that looks better and delivers nobody is worse than one that looks squat
-       * and works. The probe assertion `infantry cross the ramp onto the wall` is what caught
-       * it and is what should guard the retry.
-       */
-      deckY: this.sy[station] + 0.55,
-      dockX: this.sx[station] + nx * standoff,
-      dockZ: this.sz[station] + nz * standoff,
+      deckY: 0,
+      dockX: x,
+      dockZ: z,
       station,
       ramp: 0,
       unitId,
+      boarders: [unitId],
       crossed: 0,
       crossing: null,
       dist: 0,
@@ -2265,23 +2564,10 @@ export class Siege implements ElevationOwner {
       rampLanded: 0,
       rampReach: 0,
     };
-    /**
-     * Cut the ramp to the span it will actually have to bridge.
-     *
-     * The hinge ends up `sFace + 0.32` out from the bay centreline and the lip has to reach
-     * the outward limit of the standing band, so the horizontal reach is fixed by the wall
-     * and the standoff between them — 1.64 m on this curtain, not the 3.4 m the geometry is
-     * authored at. Measured: a correctly-yawed 3.4 m ramp overshoots the walkway's cityward
-     * lip by 1.6 m and cantilevers over the street.
-     *
-     * Solved rather than tuned, and solved from the *bay*, so the wall workstream widening
-     * the curtain moves this with it instead of breaking it.
-     */
-    const hingeOff = this.sFace[station] + 0.32;
-    t.rampReach = Math.max(0.6, hingeOff - this.sOuter[station]);
-    const drop = this.sy[station] - t.deckY;
-    t.rampLen = Math.hypot(t.rampReach, drop);
-    t.rampLanded = Math.atan2(drop, t.rampReach);
+    // Every docking number is solved in one place so that a tower the player re-aims docks
+    // to the same standard as one the scenario placed. See `aimTowerAt`.
+    this.aimTowerAt(t, station);
+    t.facing = t.wantFacing;
     this.towers.push(t);
     this.owned.add(unitId);
     return t.id;
@@ -2605,6 +2891,7 @@ export class Siege implements ElevationOwner {
       station,
       crossing: null,
       unitId,
+      boarders: [unitId],
       crossed: 0,
     });
     this.owned.add(unitId);
@@ -2789,9 +3076,31 @@ export class Siege implements ElevationOwner {
       }
 
       if (t.state === TowerState.Approach) {
+        /**
+         * Levering the frame round after the player has re-aimed it.
+         *
+         * A tower does not turn, it is turned: the rollers come out, go back in across the
+         * new bearing, and the gang heaves. `TOWER_HEAVE` seconds of that with no forward
+         * movement is what makes a change of target a decision with a price rather than a
+         * free steer, and it is the difference between commanding fifteen tonnes of green
+         * timber and driving it.
+         */
+        if (t.wantFacing !== t.facing) {
+          let d = t.wantFacing - t.facing;
+          while (d > Math.PI) d -= Math.PI * 2;
+          while (d < -Math.PI) d += Math.PI * 2;
+          const step = TOWER_SLEW * dt;
+          t.facing = Math.abs(d) <= step ? t.wantFacing : t.facing + Math.sign(d) * step;
+        }
+        if (t.heave > 0) {
+          t.heave -= dt;
+          t.y = b.groundAt(t.x, t.z);
+          continue;
+        }
         if (t.dist <= TOWER_SPEED * dt) {
           t.x = t.dockX;
           t.z = t.dockZ;
+          t.facing = t.wantFacing;
           t.state = TowerState.Docking;
         } else {
           t.x += (dx / t.dist) * TOWER_SPEED * dt;
@@ -3177,21 +3486,30 @@ export class Siege implements ElevationOwner {
     const b = this.battle;
     const p = b.pool;
     for (const t of this.towers) {
-      if (t.crossing) this.stepCrossing(t.crossing, t.unitId, dt, (n) => { t.crossed += n; });
+      if (t.crossing) this.stepCrossing(t.crossing, t.boarders, dt, (n) => { t.crossed += n; });
     }
     for (const l of this.ladders) {
-      if (l.crossing) this.stepCrossing(l.crossing, l.unitId, dt, (n) => { l.crossed += n; });
+      if (l.crossing) this.stepCrossing(l.crossing, l.boarders, dt, (n) => { l.crossed += n; });
     }
     void p;
     void b;
   }
 
-  /** Common bookkeeping for putting a man onto a path. See `crossEx` for the entry blend. */
-  private admitTo(c: Crossing, i: number): void {
+  /**
+   * Common bookkeeping for putting a man onto a path. See `crossEx` for the entry blend.
+   *
+   * `pace` is the one thing that stays differential once anybody may climb anything. A
+   * *miles* of an escalade party has done this before and has both hands free; a legionary
+   * of the line is carrying a scutum up a ladder he has never seen. Both get up it, and one
+   * gets up it faster — which is a reason to keep specialists rather than a rule forbidding
+   * everyone else.
+   */
+  private admitTo(c: Crossing, i: number, pace = 1): void {
     const b = this.battle;
     const p = b.pool;
     this.crossOf[i] = 1;
     this.crossT[i] = 0;
+    this.crossPace[i] = pace;
     this.crossEx[i] = p.x[i];
     this.crossEy[i] = p.y[i];
     this.crossEz[i] = p.z[i];
@@ -3232,7 +3550,9 @@ export class Siege implements ElevationOwner {
       // Nobody overtakes: the man ahead is the one before him in the queue.
       const ahead = k > 0 ? this.crossT[c.queue[k - 1]] - CROSS_GAP : Infinity;
       const seg = this.segmentAt(c, this.crossT[i]);
-      const speed = seg.steep ? CROSS_CLIMB : c.pace;
+      // `crossPace` is 1 for the men whose machine this is and less for anyone else the
+      // player has sent up it. See `admitTo`.
+      const speed = (seg.steep ? CROSS_CLIMB : c.pace) * (this.crossPace[i] || 1);
       const want = Math.min(this.crossT[i] + speed * dt, ahead, total);
       this.crossT[i] = Math.max(this.crossT[i], want);
 
@@ -3266,28 +3586,56 @@ export class Siege implements ElevationOwner {
     return arrived;
   }
 
-  private stepCrossing(c: Crossing, unitId: number, dt: number, onArrive: (n: number) => void): void {
+  /**
+   * Drive one machine's path: admit whoever is next in the file, move everybody on it.
+   *
+   * `boarders` is a list rather than a unit, and that is the whole of the second half of the
+   * owner's report. A ladder used to carry the single `unitId` that planted it, so a
+   * legionary cohort standing at the foot of a ladder its own army had raised could not set
+   * a boot on it: the admission loop only ever walked one unit's `members`. That is a
+   * scenario convenience — *this* party climbs *its* ladder — dressed up as a rule, and it
+   * removes the only decision worth making in an escalade, which is who goes up.
+   *
+   * The list is ordered and the order matters: the party that owns the machine is always
+   * first, so the specialists keep the head of the queue and anyone the player has sent
+   * afterwards falls in behind them.
+   */
+  private stepCrossing(c: Crossing, boarders: readonly number[], dt: number,
+    onArrive: (n: number) => void): void {
     const b = this.battle;
     const p = b.pool;
-    const u = b.unitById(unitId);
-    if (!u || u.destroyed) return;
 
     // ---- admit the next man ----
     // One at a time, and only once the man ahead is clear of the mouth of the path.
     if (this.mouthClear(c)) {
-      for (const i of u.members) {
-        if (!p.aliveAt(i)) continue;
-        if (this.crossOf[i] !== -1) continue;
-        if (this.stationOf[i] >= 0) continue;
-        // Only a man who has actually reached the foot of the path may start up it.
-        const dx = p.x[i] - c.pts[0];
-        const dz = p.z[i] - c.pts[2];
-        if (dx * dx + dz * dz > ADMIT_RADIUS * ADMIT_RADIUS) continue;
-        this.admitTo(c, i);
-        break;
+      admit: for (const unitId of boarders) {
+        const u = b.unitById(unitId);
+        // A unit that has been destroyed or has broken is not queuing for anything. Left in
+        // the list, because a rout can rally and the machine is still theirs to use.
+        if (!u || u.destroyed || u.order === UnitOrder.Rout) continue;
+        for (const i of u.members) {
+          if (!p.aliveAt(i)) continue;
+          if (this.crossOf[i] !== -1) continue;
+          if (this.stationOf[i] >= 0) continue;
+          // Only a man who has actually reached the foot of the path may start up it.
+          const dx = p.x[i] - c.pts[0];
+          const dz = p.z[i] - c.pts[2];
+          if (dx * dx + dz * dz > ADMIT_RADIUS * ADMIT_RADIUS) continue;
+          this.admitTo(c, i, unitId === boarders[0] ? 1 : ESCALADE_PACE);
+          break admit;
+        }
       }
     }
 
+    /**
+     * Which units put a man over the parapet this tick, so each is adopted into its own
+     * lodgement.
+     *
+     * Rebuilt per call rather than kept: at most one man is admitted per tick per machine,
+     * so this set holds one entry in every realistic case and allocating it is cheaper than
+     * the branch that would avoid it.
+     */
+    const landed = new Set<number>();
     const arrived = this.advanceQueue(c, dt, (i) => {
       // Onto the wall. He joins the garrison of whatever bay the path ends at. Flagged
       // rather than placed: `adoptBoarders` decides where in the lodgement he goes, and it
@@ -3295,10 +3643,14 @@ export class Siege implements ElevationOwner {
       this.stationOf[i] = PENDING_SLOT;
       this.rankOf[i] = 0;
       p.setState(i, SoldierState.Idle);
+      landed.add(p.unitId[i]);
     });
     if (arrived > 0) {
       onArrive(arrived);
-      this.adoptBoarders(u, c.destStation);
+      for (const id of landed) {
+        const u = b.unitById(id);
+        if (u && !u.destroyed) this.adoptBoarders(u, c.destStation);
+      }
     }
   }
 
@@ -3423,35 +3775,45 @@ export class Siege implements ElevationOwner {
     const b = this.battle;
     const p = b.pool;
     for (const t of this.towers) {
-      const u = b.unitById(t.unitId);
-      if (!u || u.destroyed) continue;
       const cos = Math.cos(t.facing);
       const sin = Math.sin(t.facing);
+      /**
+       * One running index for the whole machine, not one per unit.
+       *
+       * This is the queue trap that broke wall descent, restated: a man's place in a file is
+       * a fact about the *file*, and counting it per unit gives two men the same slot and
+       * neither of them the mouth. The crew are first in `boarders`, so the gang on the
+       * levers keeps the front of the column and anybody the player has sent falls in behind.
+       */
       let q = 0;
-      for (const i of u.members) {
-        if (!p.aliveAt(i)) continue;
-        if (this.stationOf[i] >= 0 || this.crossOf[i] !== -1) continue;
-        // A column behind the tower, four abreast, which is also the gang pushing it.
-        const file = q % 4;
-        const row = Math.floor(q / 4);
-        q++;
-        const rx = (file - 1.5) * 0.9;
-        /**
-         * Local −Z, which is the side *away* from the wall.
-         *
-         * The tower's local +Z points along its facing, which is at the wall, so local −Z is
-         * where the pushing gang stands and where the crossing path must begin. Flipping this
-         * to +Z on the assumption that +Z was the rear put the muster point in the 0.32 m gap
-         * between the machine and the masonry: nobody came within admission range of the path
-         * and not one man boarded. The probe caught it immediately as `0 men across a boarding
-         * ramp`, which is exactly the kind of silent break it exists for.
-         */
-        const fz = -(TOWER_HALF_D + 1.6 + row * 0.95);
-        b.elevated[i] = 0;
-        b.support[i] = NO_SUPPORT;
-        b.slotX[i] = t.x + rx * cos + fz * sin;
-        b.slotZ[i] = t.z - rx * sin + fz * cos;
-        b.slotFacing[i] = t.facing;
+      for (const uid of t.boarders) {
+        const u = b.unitById(uid);
+        if (!u || u.destroyed || u.order === UnitOrder.Rout) continue;
+        for (const i of u.members) {
+          if (!p.aliveAt(i)) continue;
+          if (this.stationOf[i] >= 0 || this.crossOf[i] !== -1) continue;
+          // A column behind the tower, four abreast, which is also the gang pushing it.
+          const file = q % 4;
+          const row = Math.floor(q / 4);
+          q++;
+          const rx = (file - 1.5) * 0.9;
+          /**
+           * Local −Z, which is the side *away* from the wall.
+           *
+           * The tower's local +Z points along its facing, which is at the wall, so local −Z is
+           * where the pushing gang stands and where the crossing path must begin. Flipping this
+           * to +Z on the assumption that +Z was the rear put the muster point in the 0.32 m gap
+           * between the machine and the masonry: nobody came within admission range of the path
+           * and not one man boarded. The probe caught it immediately as `0 men across a boarding
+           * ramp`, which is exactly the kind of silent break it exists for.
+           */
+          const fz = -(TOWER_HALF_D + 1.6 + row * 0.95);
+          b.elevated[i] = 0;
+          b.support[i] = NO_SUPPORT;
+          b.slotX[i] = t.x + rx * cos + fz * sin;
+          b.slotZ[i] = t.z - rx * sin + fz * cos;
+          b.slotFacing[i] = t.facing;
+        }
       }
     }
     // Escalade parties queue at the foot of their own ladders, spread across them.
@@ -3471,25 +3833,29 @@ export class Siege implements ElevationOwner {
       if (arr) arr.push(l);
       else byUnit.set(l.unitId, [l]);
     }
-    for (const [uid, group] of byUnit) {
-      const u = b.unitById(uid);
-      if (!u || u.destroyed) continue;
+    for (const group of byUnit.values()) {
+      // Every ladder a party raised is one bank, and `escalade` enrols a unit on the bank
+      // rather than on one rail of it, so the whole group shares a boarder list.
       let q = 0;
-      for (const i of u.members) {
-        if (!p.aliveAt(i)) continue;
-        if (this.stationOf[i] >= 0 || this.crossOf[i] !== -1) continue;
-        // Round-robin across the party's ladders, in a file behind each foot. The
-        // admission test in `stepCrossing` only takes a man within 3 m of the foot, so the
-        // file forms itself: the head of it is admitted, everyone shuffles up.
-        const l = group[q % group.length];
-        const row = Math.floor(q / group.length);
-        q++;
-        const back = 1.1 + row * 0.9;
-        b.elevated[i] = 0;
-        b.support[i] = NO_SUPPORT;
-        b.slotX[i] = l.x + Math.sin(l.facing + Math.PI) * back;
-        b.slotZ[i] = l.z + Math.cos(l.facing + Math.PI) * back;
-        b.slotFacing[i] = l.facing;
+      for (const uid of group[0].boarders) {
+        const u = b.unitById(uid);
+        if (!u || u.destroyed || u.order === UnitOrder.Rout) continue;
+        for (const i of u.members) {
+          if (!p.aliveAt(i)) continue;
+          if (this.stationOf[i] >= 0 || this.crossOf[i] !== -1) continue;
+          // Round-robin across the party's ladders, in a file behind each foot. The
+          // admission test in `stepCrossing` only takes a man within `ADMIT_RADIUS` of the
+          // foot, so the file forms itself: the head of it is admitted, everyone shuffles up.
+          const l = group[q % group.length];
+          const row = Math.floor(q / group.length);
+          q++;
+          const back = 1.1 + row * 0.9;
+          b.elevated[i] = 0;
+          b.support[i] = NO_SUPPORT;
+          b.slotX[i] = l.x + Math.sin(l.facing + Math.PI) * back;
+          b.slotZ[i] = l.z + Math.cos(l.facing + Math.PI) * back;
+          b.slotFacing[i] = l.facing;
+        }
       }
     }
 

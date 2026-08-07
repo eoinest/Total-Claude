@@ -275,12 +275,15 @@ export class HudSystem implements Subsystem {
       siege?: {
         wallTargetAt?: (x: number, z: number) => number;
         isGarrisoned?: (unitId: number) => boolean;
+        wallSideAt?: (x: number, z: number) => -1 | 1;
       };
     } | undefined)?.siege;
-    if (siege && typeof siege.wallTargetAt === 'function' && typeof siege.isGarrisoned === 'function') {
+    if (siege && typeof siege.wallTargetAt === 'function' && typeof siege.isGarrisoned === 'function'
+      && typeof siege.wallSideAt === 'function') {
       this.controller.wallProbe = {
         targetAt: (x, z) => siege.wallTargetAt!(x, z),
         isGarrisoned: (u) => siege.isGarrisoned!(u),
+        sideAt: (x, z) => siege.wallSideAt!(x, z),
       };
     }
 
