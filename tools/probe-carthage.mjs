@@ -1216,9 +1216,9 @@ function buildPlates(pd) {
     p.push(`<text x="${L.mapX}" y="${y0 - 2}" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
       + `font-size="12.5" font-weight="700" letter-spacing="1.6" fill="${PC.ink}">`
       + `SECTION THROUGH THE TRIPLE WALL — WHAT THE PLAN ABOVE CANNOT SHOW</text>`);
-    p.push(`<text x="${L.mapX + 560}" y="${y0 - 2}" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+    p.push(`<text x="${L.mapX1}" y="${y0 - 2}" text-anchor="end" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
       + `font-size="11.5" fill="${PC.inkSoft}">true 1:1, no vertical exaggeration · `
-      + `the belt is 74.1 m deep and about 3 px wide on the plan · §4.2–§4.5, the specification, not the build</text>`);
+      + `the belt is 74.1 m deep and about 3 px wide on the plan above · §4.2–§4.5, the specification, not the build</text>`);
 
     // Ground, and the ditch cut into it. Lip 0, inner lip 20, 6 m deep on a 2 m flat bottom.
     const groundFill = '#dcc9a4', groundEdge = '#9c8154';
@@ -1258,10 +1258,18 @@ function buildPlates(pd) {
     const vs = X(66.5), vw = 6.4 * K;
     p.push(`<rect x="${vs}" y="${Y(8.1)}" width="${vw}" height="${4.6 * K}" fill="#6a5842" stroke="#241d16" stroke-width="0.9"/>`);
     p.push(`<rect x="${vs}" y="${Y(12.7)}" width="${vw}" height="${3.6 * K}" fill="#83705a" stroke="#241d16" stroke-width="0.9"/>`);
-    p.push(`<text x="${vs + vw / 2}" y="${Y(5.1)}" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
-      + `font-size="9.5" fill="#f2e8d4">300 elephants</text>`);
-    p.push(`<text x="${vs + vw / 2}" y="${Y(10.0)}" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
-      + `font-size="9.5" fill="#f2e8d4">fighting gallery</text>`);
+    // The vaults are 6.4 m of clear span, which is 42 px — narrower than either caption. So the
+    // captions stand off in the military way on leaders rather than overprinting the masonry.
+    const vlabel = (h, t) => {
+      const yy = Y(h);
+      return `<line x1="${vs + vw}" y1="${yy}" x2="${X(76.5)}" y2="${yy}" stroke="${PC.inkSoft}" stroke-width="0.8"/>`
+        + `<circle cx="${vs + vw}" cy="${yy}" r="1.8" fill="${PC.inkSoft}"/>`
+        + `<text x="${X(77.4)}" y="${yy + 3.4}" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" `
+        + `font-size="10" fill="${PC.ink}">${esc(t)}</text>`;
+    };
+    p.push(vlabel(10.5, 'upper vault 3.6 m — the fighting gallery, loopholed (§4.4)'));
+    p.push(vlabel(5.6, 'lower vault 4.6 m — stalls for 300 elephants, and dark'));
+    p.push(vlabel(1.7, 'and 3.5 m of solid footing under both'));
     // A tower, ghosted, to carry the 22.5 m: 11 m across, projecting 5.5 m beyond the outer face.
     p.push(`<rect x="${X(59.5)}" y="${Y(22.5)}" width="${11 * K}" height="${22.5 * K}" fill="none" `
       + `stroke="${PC.wall}" stroke-width="1.2" stroke-dasharray="5 4" opacity="0.75"/>`);
