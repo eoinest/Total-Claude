@@ -1145,6 +1145,43 @@ export function quadPrism(
 }
 
 /**
+ * How a crenellated run of a given length **actually** divides into merlons and gaps.
+ *
+ * Exported because two other subsystems need to agree with the stone and neither can, from
+ * `merlonW` and `gapW` alone. `crenellation()` does not lay merlons at the nominal pitch: it
+ * fits a whole number of them to the run and rescales, then centres each merlon in its own
+ * step. So a run carries `count` merlons at `step` centres — **not** `merlonW + gapW` — with
+ * *half* a gap at each end, which means a whole gap straddles every joint between two runs.
+ *
+ * `CitySystem.masonryTopAt` restated the nominal model instead and disagreed with the stone
+ * on 64 % of Rome's parapet: the collision surface stopped arrows in mid-air over embrasures
+ * and let them through solid merlons, and it drifted a further 0.08 m per period so the error
+ * grew to a whole merlon by the far end of a bay. Only the merlon *fraction* survives the
+ * rescale exactly, which is why the mistake was invisible to anything averaging over a bay.
+ *
+ * Take the numbers from here and the two cannot disagree again.
+ */
+export interface CrenellationRun {
+  /** Merlons on this run. */
+  count: number;
+  /** Centre-to-centre spacing as built. Not `merlonW + gapW`. */
+  step: number;
+  /** One merlon's width as built. */
+  merlon: number;
+  /** One gap's width as built. The gap at each *end* of the run is half of this. */
+  gap: number;
+}
+
+/** See `CrenellationRun`. Pure arithmetic; `crenellation()` itself is built on it. */
+export function crenellationRun(len: number, merlonW: number, gapW: number): CrenellationRun {
+  const pitch = merlonW + gapW;
+  const count = Math.max(1, Math.round(len / pitch));
+  const step = len / count;
+  const merlon = step * (merlonW / pitch);
+  return { count, step, merlon, gap: step - merlon };
+}
+
+/**
  * Crenellated parapet along a straight run.
  *
  * The Aurelian Wall's first phase carried a plain crenellated parapet on the outer
@@ -1171,10 +1208,7 @@ export function crenellation(
   const dz = (z1 - z0) / len;
   const nx = -dz;
   const nz = dx;
-  const pitch = merlonW + gapW;
-  const n = Math.max(1, Math.round(len / pitch));
-  const step = len / n;
-  const mw = step * (merlonW / pitch);
+  const { count: n, step, merlon: mw } = crenellationRun(len, merlonW, gapW);
   const shade = new THREE.Color().copy(col).multiplyScalar(0.94);
   const cap = new THREE.Color().copy(col).multiplyScalar(1.15);
   const dark = new THREE.Color(0.012, 0.011, 0.01);

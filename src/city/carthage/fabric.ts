@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { box, gableRoof, type Batch } from '../build';
+import { box, type Batch } from '../build';
 import type { Lane } from '../insulae';
 import { KeepOut, type WayClass } from '../layout';
 import type { CityChunkSpec, TreeRequest } from '../wall';
@@ -101,6 +101,34 @@ function dryFooting(
   return true;
 }
 
+/**
+ * Why a candidate cell did not become a block.
+ *
+ * **This exists because "771 rejected" is not a diagnosis, and three quarters were empty
+ * behind it.** The Hannibalic quarter — the best-documented Punic urbanism there is, and the
+ * reason §7.1 has any numbers at all — placed **zero** blocks, and so did the Byrsa approach
+ * that carries Appian's six-storey ranges. One rejected count cannot tell you that: a quarter
+ * with eight candidate cells and eight rejections reads exactly like a quarter that was
+ * thinned. Splitting the count by cause names it in a line.
+ */
+export type RejectReasons = {
+  /** Outside the quarter's fray mask entirely — never a candidate. */
+  masked: number;
+  /** Thinned by the density rule. The only rejection that is a design decision. */
+  density: number;
+  /** Forward of the build line behind the wall, or seaward of the shore margin. */
+  outOfBounds: number;
+  /** Standing within the swell crest of the datum. See `BUILD_FREEBOARD`. */
+  drowned: number;
+  /** Inside a monument's reserved rectangle or a way's carriageway plus frontage. */
+  keepOut: number;
+  /** Overlapping a block already placed, by this quarter or a neighbouring one. */
+  collide: number;
+};
+
+const noReasons = (): RejectReasons =>
+  ({ masked: 0, density: 0, outOfBounds: 0, drowned: 0, keepOut: 0, collide: 0 });
+
 export interface FabricOutput {
   chunks: CityChunkSpec[];
   trees: TreeRequest[];
@@ -110,6 +138,8 @@ export interface FabricOutput {
     id: string; placed: number; rejected: number; roofArea: number;
     /** Of the rejected, how many were refused for standing in water. See `BUILD_FREEBOARD`. */
     drowned: number;
+    /** The whole rejection ledger, so an empty quarter says *why* it is empty. */
+    why: RejectReasons;
   }[];
 }
 
@@ -249,6 +279,74 @@ const frame = (
 const CITY_BEARING = 0;
 
 /**
+ * The smallest terrace worth building, in plots. One 12-cubit house, 6.2 m of street front.
+ *
+ * An earlier revision held this at two "because below that a block is a shed and it costs the
+ * same draw call as five houses". That was wrong on its own terms: chunks merge per material,
+ * so an extra block costs triangles and **no draw call at all**. And §7.1 records that some
+ * plots were themselves split front and back into an `a` and a `b` unit, so a single 12 × 30
+ * cubit house on a corner is the module, not a compromise. It is worth about a hectare of
+ * roof in the gaps the streets leave.
+ */
+const MIN_PLOTS = 1;
+
+/**
+ * Shorten a block's face by whole plots until it fits, instead of deleting it.
+ *
+ * **This is the single largest thing wrong with the fabric's first revision and it is worth
+ * stating plainly.** A candidate block was placed only if all 30.9 m of its face cleared
+ * every keep-out, every neighbour and every boundary. Touch a way's frontage margin by one
+ * metre and 477 m² of roof vanished. Measured: **204 of 770 rejections were the keep-out and
+ * 75 were a neighbour** — 36 % of everything refused — and two whole quarters died of it. The
+ * `hannibal-quarter`, which is the excavated Byrsa slope every dimension in §7.1 comes from,
+ * placed **0 blocks of 8**, seven of them to the keep-out; `byrsa-approach`, which carries
+ * Appian's six-storey ranges on the three streets, placed **0 of 6**, all six to the keep-out.
+ * The two most important pieces of urbanism on the map were deleted by the streets that make
+ * them worth building.
+ *
+ * **Dropping plots is not a compromise, it is the archaeology.** §7.1: the 60-cubit block face
+ * is subdivided into five plots of 12 × 30 cubits. A terrace of three plots against a street
+ * corner is a Punic street front; a terrace of five that has been squeezed to 4/5 scale is
+ * not. So the quantum is one plot, the module is untouched, and every façade in the city
+ * stays on the same 6.2 m rhythm whatever length of block it belongs to.
+ *
+ * **The depth is never trimmed.** §7.1's defining feature is a house with entrances front and
+ * back onto two streets and a side corridor joining them. Shorten the depth and it stops
+ * being that house. So `v` is fixed at 30 cubits and all the give is in `u`.
+ *
+ * Windows are tried longest first and, at equal length, nearest the cell centre first, so a
+ * block only slides off-centre when it must and the row still reads as a row.
+ */
+function fitFace(
+  q: Quarter,
+  fullHw: number,
+  stands: (off: number, hw: number) => number
+): { ok: boolean; off: number; hw: number; worst: number } {
+  // A garden enclosure and a warehouse range are not made of houses, so they take their own
+  // quantum: a quarter of the field for the Megara, a whole insula bay for the quay ranges.
+  const quantum = q.kind === 'megara' ? fullHw * 0.5 : q.kind === 'harbourside' ? INSULA_FACE : PLOT_FACE;
+  const n = Math.max(1, Math.round((fullHw * 2) / quantum));
+  const minRun = Math.min(n, q.kind === 'insulae' || q.kind === 'terrace' ? MIN_PLOTS : 1);
+  let worst = 0;
+  for (let run = n; run >= minRun; run--) {
+    const starts: number[] = [];
+    for (let a = 0; a + run <= n; a++) starts.push(a);
+    // Nearest-centred window first; ties broken toward the low end so the choice is stable.
+    starts.sort((a, b) => Math.abs(a + run / 2 - n / 2) - Math.abs(b + run / 2 - n / 2));
+    for (const a of starts) {
+      const hw = (run * quantum) * 0.5;
+      const off = (a + run * 0.5) * quantum - fullHw;
+      const bad = stands(off, hw);
+      if (bad === 0) return { ok: true, off, hw, worst: 0 };
+      // Report the *last* obstacle standing in the way of the smallest window tried, which is
+      // the one that actually refused the cell.
+      worst = bad;
+    }
+  }
+  return { ok: false, off: 0, hw: 0, worst };
+}
+
+/**
  * Lay one quarter's grid on the cubit module.
  *
  * `u` runs along the block face (30.9 m per bay, with a 4 m lane between bays) and `v` runs
@@ -267,9 +365,10 @@ function planQuarter(
   keepOut: KeepOut,
   placed: PlacedGrid,
   ground: Ground
-): { blocks: Block[]; lanes: Lane[]; rejected: number; drowned: number } {
+): { blocks: Block[]; lanes: Lane[]; rejected: number; drowned: number; why: RejectReasons } {
   const blocks: Block[] = [];
   const lanes: Lane[] = [];
+  const why = noReasons();
   let rejected = 0;
   let drowned = 0;
   const F = frame(q, CITY_BEARING);
@@ -312,31 +411,67 @@ function planQuarter(
       const u = cellU(i);
       const v = cellV(j);
       const mask = quarterMask(q, u, v);
-      if (mask < 0.05) continue;
+      if (mask < 0.05) { why.masked++; continue; }
       // Density thins the *fringe*, not the heart. `mask` is 1 across the quarter's plateau
       // and only falls through its rim, so a quarter at 0.9 is essentially solid in the
       // middle and ragged at the edge — which is what a Punic quarter looks like and is what
       // keeps the roof figure from being eaten by holes nobody asked for.
-      if (rng.next() > q.density * (0.35 + 0.65 * mask) + 0.2) { rejected++; continue; }
+      if (rng.next() > q.density * (0.35 + 0.65 * mask) + 0.2) { rejected++; why.density++; continue; }
 
       // The module never changes; only whether a block is there at all. Fringe blocks lose
       // a bay rather than shrinking, which keeps every façade on the same plot rhythm.
       const bays = mask < 0.35 && q.bays > 1 ? q.bays - 1 : q.bays;
-      const hw = (q.blockFace ?? INSULA_FACE * bays) * 0.5;
+      const fullHw = (q.blockFace ?? INSULA_FACE * bays) * 0.5;
       const hd = depthLen * 0.5;
-      const wx = F.x(u, v);
-      const wz = F.z(u, v);
-      if (wz < buildLineZAt(wx) || wz > shoreZAt(wx) - 26) { rejected++; continue; }
-      if (!dryFooting(ground, wx, wz, hw, hd, rot)) { rejected++; drowned++; continue; }
-      if (keepOut.blockedRect(wx, wz, hw + 1.2, hd + 1.2, rot)) { rejected++; continue; }
-      if (placed.hits(wx, wz, hw + 1.0, hd + 1.0, rot)) { rejected++; continue; }
+      const cx = F.x(u, v);
+      const cz = F.z(u, v);
+
+      /**
+       * Does a block of this face, centred at this offset along `u`, stand?
+       *
+       * **The bounds are tested on the block's whole extent, in both axes, and the previous
+       * revision tested one point.** `buildLineZAt(centre)` alone is not the build line the
+       * block meets: the reserved strip is 35 m deep along most of the wall and **70 m over a
+       * stair apron**, with a cosine shoulder between, so a 31 m block whose centre stands
+       * just outside an apron has a corner 15 m inside it where the line is deeper. That is
+       * exactly the seven obstructed samples `assertions.ts` reports at x −475, and it is the
+       * same shape of mistake as the coastline test that had a z guard and no x guard.
+       *
+       * So both boundaries are evaluated at the two ends of the face as well as at the
+       * centre, and the strictest wins. `shoreZAt` gets the same treatment because the coast
+       * runs diagonally across the whole north-east and a block face there spans 8 m of it.
+       */
+      const stands = (off: number, hw: number): RejectReasons['collide'] | 0 => {
+        const wx = F.x(u + off, v);
+        const wz = F.z(u + off, v);
+        const near = Math.max(buildLineZAt(wx - hw), buildLineZAt(wx), buildLineZAt(wx + hw));
+        const far = Math.min(shoreZAt(wx - hw), shoreZAt(wx), shoreZAt(wx + hw)) - 26;
+        if (wz - hd < near || wz + hd > far) return 1;
+        if (!dryFooting(ground, wx, wz, hw, hd, rot)) return 2;
+        if (keepOut.blockedRect(wx, wz, hw + 1.2, hd + 1.2, rot)) return 3;
+        if (placed.hits(wx, wz, hw + 1.0, hd + 1.0, rot)) return 4;
+        return 0;
+      };
+
+      const fit = fitFace(q, fullHw, stands);
+      if (!fit.ok) {
+        rejected++;
+        if (fit.worst === 1) why.outOfBounds++;
+        else if (fit.worst === 2) { drowned++; why.drowned++; }
+        else if (fit.worst === 3) why.keepOut++;
+        else why.collide++;
+        continue;
+      }
+      const hw = fit.hw;
+      const wx = F.x(u + fit.off, v);
+      const wz = F.z(u + fit.off, v);
       const h = hash2(i, j, Rng.hashString(q.id) & 0xffff);
       const storeys = Math.max(1, Math.round(q.storeys * (0.78 + 0.3 * mask) + (h - 0.5) * 1.2));
       blocks.push({
         x: wx, z: wz, rot, hw, hd, mask, storeys, kind: q.kind, h, bays,
         front: (i + j) % 2 === 0 ? 1 : -1,
       });
-      span(rowSpan, j, u - hw, u + hw);
+      span(rowSpan, j, u + fit.off - hw, u + fit.off + hw);
       span(colSpan, i, v - hd, v + hd);
     }
   }
@@ -369,7 +504,7 @@ function planQuarter(
       width: PUNIC_WAY_WIDTH.vicus,
     });
   }
-  return { blocks, lanes, rejected, drowned };
+  return { blocks, lanes, rejected, drowned, why };
 }
 
 // ---------------------------------------------------------------------------
@@ -389,8 +524,40 @@ function place(b: Block, y: number): THREE.Matrix4 {
   return M4.makeRotationY(b.rot).setPosition(b.x, y, b.z);
 }
 
-/** Every material a fabric block may touch. See the aliasing note in `Batch.distinct`. */
-const BLOCK_KEYS = ['stucco', 'stone', 'roof', 'timber', 'concrete'] as const;
+/**
+ * Every material a fabric block may touch, and it is a short list on purpose.
+ *
+ * **A material within a chunk is a draw call, and the fabric is the map's whole draw
+ * problem** — Carthage renders 242 at ultra against a 220 cap and `fabric` is the largest
+ * single line in the colour pass. Measured on the built city: `concrete` appeared in **98 of
+ * 99** fabric chunks at full detail and `roof` in **25**, and between them they carried a
+ * courtyard floor slab, an irrigation channel and a farm shed's tiles.
+ *
+ * Both are gone:
+ *
+ * - **`concrete` folds into `stone`.** It only ever drew the *pavimenta punica* slab in a
+ *   courtyard and the Megara's channel bed, and both keep their colour — the loss is a
+ *   roughness map on a horizontal surface, at a distance where a normal map has already lost
+ *   84 % of its perturbation by mip 4. `TRIM_MERGE` already folded concrete into stone at mid
+ *   detail, so this only makes the near tier agree with the far one.
+ * - **`roof` is gone because §7.3 says it should never have been there.** "Roofs: **flat, with
+ *   parapets** — Punic and North African, not tiled and pitched like Rome's." Every insula
+ *   already had a flat roof; only the Megara's farm ranges carried a pitched tile gable, which
+ *   is a Roman idiom on a Punic farm. They are flat-roofed now, and the fabric touches no
+ *   roof-tile material anywhere.
+ * - **`timber` is gone because the doors are better without it.** They were solid leaves
+ *   standing 0.28 m *proud* of the wall in a wood material, in 33 of 41 chunks. §7.1's
+ *   ground-floor room is "usable as a **shop** on the street", and a Punic shop front is an
+ *   open doorway — so they are now a recess *into* the render, unlit and near-black. What
+ *   reads at any distance is the value step and the 0.28 m of relief, and both are stronger
+ *   set in than set out. Below about 40 m the loss is a wood normal map on a 1.2 × 2.2 m
+ *   surface; above it, HANDOFF's own measurement says 84 % of that map is gone by mip 4.
+ *
+ * That takes a full-detail fabric chunk from four material meshes to **two**, plus its one
+ * merged shadow proxy. `buildShadowProxy` merges **per chunk**, not per stream, so a material
+ * stream costs exactly one call in the colour pass and nothing in the four cascades.
+ */
+const BLOCK_KEYS = ['stucco', 'stone'] as const;
 
 /**
  * One insula: a party-walled terrace of five plots about a courtyard, flat-roofed.
@@ -451,15 +618,19 @@ function insulaBlock(b: Batch, blk: Block, detail: number, groundY: number): voi
             { bottom: false, zMin: zf > 0, zMax: zf < 0 });
         }
       }
-      // Street doors front and back — §7.1's defining feature, an entrance on two streets.
+      // Street doors front and back — §7.1's defining feature, an entrance on two streets,
+      // and the ground-floor room behind one of them is a shop. Cut *into* the render as a
+      // dark recess rather than stood proud as a timber leaf: the recess is the thing that
+      // reads, it survives the mip chain as a value step, and it costs no second material.
       for (const zf of [-blk.hd, blk.hd] as const) {
-        box(b.s('timber'), x0 + plotW * 0.55 - 0.6, 0.9, zf - Math.sign(zf) * 0.26,
-          x0 + plotW * 0.55 + 0.6, 3.1, zf + Math.sign(zf) * 0.02,
-          PUN.timberDark, { bottom: false });
+        const sg = Math.sign(zf);
+        box(wall, x0 + plotW * 0.55 - 0.6, 0.9, zf - sg * 0.34,
+          x0 + plotW * 0.55 + 0.6, 3.1, zf - sg * 0.06,
+          PUN.timberDark, { bottom: false, top: false });
       }
       // The cistern mouth in the courtyard floor. Every excavated house has one.
       if (p === Math.floor(nPlots / 2)) {
-        box(b.s('concrete'), -1.1, 0.05, -courtHd + 0.4, 1.1, 0.16, courtHd - 0.4,
+        box(stone, -1.1, 0.05, -courtHd + 0.4, 1.1, 0.16, courtHd - 0.4,
           PUN.signinum, { bottom: false });
         box(stone, -0.55, 0.16, -0.55, 0.55, 0.62, 0.55, PUN.sandstoneDark, { bottom: false });
       }
@@ -501,7 +672,7 @@ function gardenPlot(b: Batch, blk: Block, detail: number, groundY: number): void
   box(stone, -1.7, -0.3, blk.front * (blk.hd - t), 1.7, 0.35, blk.front * blk.hd,
     tinted(wallCol, 0.3, 0.1), { bottom: false });
   // The irrigation channel along one side: 2 m wide, 1 m deep, and it breaks a formation.
-  box(b.s('concrete'), -blk.hw, -1.0, -blk.hd - 1.4, blk.hw, -0.15, -blk.hd + 0.6,
+  box(stone, -blk.hw, -1.0, -blk.hd - 1.4, blk.hw, -0.15, -blk.hd + 0.6,
     PUN.earth, { bottom: false, top: true });
 
   if (blk.mask > 0.35 || detail >= 2) {
@@ -511,10 +682,16 @@ function gardenPlot(b: Batch, blk: Block, detail: number, groundY: number): void
     const fz = -blk.front * (blk.hd - fd - 2);
     box(wall, fx - fw, 0, fz - fd, fx + fw, 3.3, fz + fd, tinted(PUN.render, blk.h, 0.16),
       { bottom: false, groundShade: 0.14 });
-    const rs = b.s('roof');
-    const sub = b.pushAllTranslate(['roof'], fx, 3.3, fz);
-    gableRoof(rs, rs, fw * 2, fd * 2, 0, 1.2, 0.4, tinted(PUN.tileWorn, blk.h, 0.12), fw >= fd);
-    b.popAll(sub);
+    // Flat, with a parapet, like every other roof in this city. §7.3 is explicit that the
+    // Punic roof is flat and North African; the pitched tile gable this used to carry was a
+    // Roman farm on a Carthaginian estate, and it was the fabric's only user of the `roof`
+    // material — one draw call per chunk for a shed.
+    box(wall, fx - fw, 3.3, fz - fd, fx + fw, 3.44, fz + fd, tinted(PUN.render, blk.h * 0.7, 0.1),
+      { bottom: false });
+    box(stone, fx - fw, 3.44, fz - fd, fx + fw, 3.96, fz - fd + 0.26,
+      tinted(PUN.sandstoneDark, blk.h, 0.1), { bottom: false });
+    box(stone, fx - fw, 3.44, fz + fd - 0.26, fx + fw, 3.96, fz + fd,
+      tinted(PUN.sandstoneDark, blk.h, 0.1), { bottom: false });
   }
   b.popAll(streams);
 }
@@ -550,8 +727,8 @@ function warehouseBlock(b: Batch, blk: Block, detail: number, groundY: number): 
     const n = Math.max(2, Math.round(blk.hw / 5));
     for (let i = 0; i < n; i++) {
       const px = -blk.hw + ((i + 0.5) * blk.hw * 2) / n;
-      box(b.s('timber'), px - 1.4, 1.1, blk.front * blk.hd - 0.36, px + 1.4, 4.2,
-        blk.front * blk.hd + 0.06, PUN.timberDark, { bottom: false });
+      box(wall, px - 1.4, 1.1, blk.front * blk.hd - 0.42, px + 1.4, 4.2,
+        blk.front * blk.hd - 0.08, PUN.timberDark, { bottom: false, top: false });
       box(stone, px - 1.9, 1.1, blk.front * (blk.hd + 0.1), px - 1.55, h - 0.3,
         blk.front * (blk.hd + 0.24), PUN.sandstone, { bottom: false });
     }
@@ -564,17 +741,30 @@ function warehouseBlock(b: Batch, blk: Block, detail: number, groundY: number): 
 // ---------------------------------------------------------------------------
 
 /**
- * Chunking, and why the chunks are small.
+ * Chunking: one world lattice, not one lattice per quarter.
  *
  * Rome's LOD switch distances were silently never firing: `preRender` measures distance to a
  * chunk's *surface* as `centre distance − radius × 0.55`, and Rome's district chunks are
  * 400-700 m across, so the subtraction alone exceeded the switch distance and every chunk
- * stayed at full detail from every camera. Carthage caps a chunk at `MAX_CHUNK_R`, so the
- * surface correction is at most 77 m against a near switch at 300 m. The cost is more chunks
- * — and a chunk is not a draw call; a *material within a chunk* is, and the full level
- * carries five.
+ * stayed at full detail from every camera. Carthage caps a chunk's radius so the correction
+ * stays well under the 300 m near switch, and its ladder does fire — measured at 146 m of
+ * correction against a 340 m switch.
+ *
+ * **But the bins were per quarter, and that is a draw call for nothing.** Two quarters whose
+ * fabric interleaves across one 140 m cell produced two chunks over the same ground, each
+ * with its own material meshes and its own merged shadow proxy. Fifteen quarters against
+ * about forty occupied cells gave **99 chunks**, and a chunk is at least three calls at full
+ * detail. Binning on **one world lattice** — the same lattice the blocks themselves are
+ * snapped to, so this is the registration argument applied one level up — merges those, and
+ * a chunk is then a piece of *city* rather than a piece of an authoring rectangle.
+ *
+ * On the size. `CitySystem.surfaceCorrection` is `min(radius × 0.55, nearSwitch × 0.5)`, so
+ * anything up to `2 × 0.5 × 300 / 0.55 = 545` m of radius keeps the correction on the radius
+ * term; the binding consideration is frustum culling, not the ladder. 200 m is the largest
+ * bin at which a chunk is still smaller than the ground a battle camera sees, and it takes
+ * the count from 99 to about 40 without pinning anything at full detail.
  */
-const MAX_CHUNK_R = 140;
+const MAX_CHUNK_R = 280;
 
 export function buildFabric(heightAt: Ground, keepOut: KeepOut, seed: string): FabricOutput {
   const rng = new Rng(seed);
@@ -584,6 +774,7 @@ export function buildFabric(heightAt: Ground, keepOut: KeepOut, seed: string): F
   const chunks: CityChunkSpec[] = [];
   const blocksByQuarter: FabricOutput['blocksByQuarter'] = [];
   const placed = new PlacedGrid();
+  const bins = new Map<string, Block[]>();
 
   for (const q of QUARTERS) {
     const out = planQuarter(q, rng.fork(q.id), keepOut, placed, heightAt);
@@ -594,60 +785,61 @@ export function buildFabric(heightAt: Ground, keepOut: KeepOut, seed: string): F
       footprints.push({ x: b.x, z: b.z, hw: b.hw, hd: b.hd, rot: b.rot });
       roofArea += b.hw * b.hd * 4;
       if (b.kind === 'megara') plotTrees(b, trees);
-    }
-    blocksByQuarter.push({
-      id: q.id, placed: out.blocks.length, rejected: out.rejected, roofArea,
-      drowned: out.drowned,
-    });
-
-    // Cut the quarter's blocks into chunks small enough for LOD to fire, by binning on a
-    // grid rather than by sorting along one axis — a long thin run has the same radius as
-    // the quarter it came from and defeats the point.
-    const bins = new Map<string, Block[]>();
-    for (const b of out.blocks) {
+      // One world lattice for the chunks, keyed off the block's own position rather than off
+      // the quarter it came from, so neighbouring quarters share a chunk instead of laying
+      // two over the same ground.
       const k = `${Math.floor(b.x / MAX_CHUNK_R)},${Math.floor(b.z / MAX_CHUNK_R)}`;
       let list = bins.get(k);
       if (!list) bins.set(k, (list = []));
       list.push(b);
     }
-    let part = 0;
-    for (const run of bins.values()) {
-      const name = `fabric-${q.id}-${part++}`;
-      let cx = 0;
-      let cz = 0;
-      for (const b of run) { cx += b.x; cz += b.z; }
-      cx /= run.length;
-      cz /= run.length;
-      let radius = 0;
-      for (const b of run) radius = Math.max(radius, Math.hypot(b.x - cx, b.z - cz) + Math.hypot(b.hw, b.hd) + 2);
-      chunks.push({
-        name, cx, cz, radius,
-        castShadow: true,
-        lodSwitch: [300, 850],
-        farMaterial: q.kind === 'megara' ? 'stone' : 'stucco',
-        build: (batch, detail) => {
-          batch.setUvOrigin(cx, 0, cz);
-          for (const blk of run) {
-            const gy = heightAt(blk.x, blk.z);
-            if (detail === 0) {
-              // Far silhouette: one prism per block in the collapse material. The
-              // roofscape's *height variation* is what reads at a kilometre, so the storey
-              // count is kept rather than averaged away.
-              const far = batch.s('stone');
-              const sub = batch.pushAll(BLOCK_KEYS, place(blk, gy));
-              box(far, -blk.hw, 0, -blk.hd, blk.hw,
-                blk.kind === 'megara' ? 1.6 : GROUND_H + (blk.storeys - 1) * STOREY_H, blk.hd,
-                blk.kind === 'megara' ? PUN.sandstoneDark : PUN.render, { bottom: false });
-              batch.popAll(sub);
-              continue;
-            }
-            if (blk.kind === 'megara') gardenPlot(batch, blk, detail, gy);
-            else if (blk.kind === 'harbourside') warehouseBlock(batch, blk, detail, gy);
-            else insulaBlock(batch, blk, detail, gy);
+    blocksByQuarter.push({
+      id: q.id, placed: out.blocks.length, rejected: out.rejected, roofArea,
+      drowned: out.drowned, why: out.why,
+    });
+  }
+
+  for (const [key, run] of [...bins.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
+    const name = `fabric-${key.replace(',', '_')}`;
+    let cx = 0;
+    let cz = 0;
+    let gardens = 0;
+    for (const b of run) { cx += b.x; cz += b.z; if (b.kind === 'megara') gardens++; }
+    cx /= run.length;
+    cz /= run.length;
+    let radius = 0;
+    for (const b of run) radius = Math.max(radius, Math.hypot(b.x - cx, b.z - cz) + Math.hypot(b.hw, b.hd) + 2);
+    chunks.push({
+      name, cx, cz, radius,
+      castShadow: true,
+      lodSwitch: [300, 850],
+      // The far tier collapses to one material, so a mixed chunk has to pick. Gardens
+      // collapse to `stone` (dry-stone walls) and everything else to `stucco` (rendered
+      // house walls); the majority wins, which is the right answer for a chunk that is
+      // nearly all one or the other and an arbitrary but stable one for the few that are not.
+      farMaterial: gardens * 2 > run.length ? 'stone' : 'stucco',
+      build: (batch, detail) => {
+        batch.setUvOrigin(cx, 0, cz);
+        for (const blk of run) {
+          const gy = heightAt(blk.x, blk.z);
+          if (detail === 0) {
+            // Far silhouette: one prism per block in the collapse material. The
+            // roofscape's *height variation* is what reads at a kilometre, so the storey
+            // count is kept rather than averaged away.
+            const far = batch.s('stone');
+            const sub = batch.pushAll(BLOCK_KEYS, place(blk, gy));
+            box(far, -blk.hw, 0, -blk.hd, blk.hw,
+              blk.kind === 'megara' ? 1.6 : GROUND_H + (blk.storeys - 1) * STOREY_H, blk.hd,
+              blk.kind === 'megara' ? PUN.sandstoneDark : PUN.render, { bottom: false });
+            batch.popAll(sub);
+            continue;
           }
-        },
-      });
-    }
+          if (blk.kind === 'megara') gardenPlot(batch, blk, detail, gy);
+          else if (blk.kind === 'harbourside') warehouseBlock(batch, blk, detail, gy);
+          else insulaBlock(batch, blk, detail, gy);
+        }
+      },
+    });
   }
 
   return { chunks, trees, footprints, lanes, blocksByQuarter };

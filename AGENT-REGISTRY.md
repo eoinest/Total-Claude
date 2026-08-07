@@ -76,3 +76,49 @@ naming the trap so the next audit does not re-file it.
 **Wall, FYI only, not touched:** `circuit.ts` self-diagnoses that two independently-fitted
 curves through the wall's three surveyed anchors disagreed by up to ~25 world m at mid-span.
 Wall-owned, `src/city/carthageWall.ts`, another workstream's ground.
+
+---
+
+# Missile geometry over a crenellated parapet — child agent registry
+
+Manager worktree: `/private/tmp/tc-merlon`, branch `e/sim/merlon-embrasure`, based on `89cb13f`.
+Concurrency cap: **3**, and in practice **2**. Machine load was already 25 at the start, against
+the 78 that killed nine agents. Own ports: **5301**, **5303**. Port 5173 is the owner's playtest
+server and is not touched.
+
+Held by other agents and therefore read-only here: `src/city/wall.ts`, `src/city/carthageWall.ts`,
+`src/sim/Siege.ts` (wall traversal past towers), `src/city/carthageWall.ts` again (gate-door seam),
+`src/sim/Combat.ts` (melee), `src/terrain/` (shading), `src/city/carthage/` (housing).
+This workstream writes only `src/sim/Projectiles.ts`, `src/city/CitySystem.ts` and `tools/`.
+
+## Children
+
+| # | name | id | wave | port | status | outcome |
+|---|---|---|---|---|---|---|
+| M1 | measure | `a89415936a629a216` | 1 | 5301, 5302 | **REPORTED, stopped, ports freed** | built `tools/probe-parapet.mjs` (`c3f577b`), ran both arms. Found the lofted-solve defect is **ruled out** for the garrison (`unreachable` 0 on both arms, both weapons), that the Rome garrison has **no archers** at all, and — unasked — that **73 % of garrison hits are on its own men**: Rome is credited 132 kills while 13 attackers died. Also caught me mid-commit and correctly discarded four contaminated runs rather than quoting them |
+| M2 | geometry | `ab2fe961b69e49ff5` | 1 | none (read-only) | **REPORTED, stopped** | found the decisive bug: `crenellation()` rescales its period to `len/n` with a half-gap lead-in, so `masonryTopAt`'s nominal model agreed with the stone on **36 % of Rome's parapet** and every embrasure centre I was publishing landed inside solid brick. Also the full parapet profile for both cities, the eight-site duplication list, and the per-rank clearance table |
+
+Neither child spawned children of its own. Peak concurrency 2, never 3.
+
+## Stop log
+
+- **M1** — reported inside its box after one course-correction message (pin the before arm to a
+  separate worktree; the tree had moved under it). Killed its own vites by explicit PID 52341 and
+  52343, confirmed 5301 and 5302 free, touched nothing under `src/`, committed one file alone
+  rather than `git add -A` because I had concurrent edits in the same worktree.
+- **M2** — read-only throughout, completed on its own, created and edited nothing.
+- **Manager's own servers** — 5307 (after arm) and 5309 (before arm) killed by explicit PID 43352
+  and 65665; both confirmed with no listener.
+- **Port 5173 was never touched.** Note its PID changed from 94221 to 10089 during the session,
+  which is the owner restarting their own playtest server, not this workstream.
+
+## A correction I made against myself
+
+My first after-arm measurement showed the fix working on the merlons and the garrison still
+losing *more* men than before — 186 in 30 s against the before arm's 126 — because lifting the
+rear ranks' shots over the parapet sent them through the heads of the men in front instead. I
+nearly reported that as a win on the strength of the merlon number alone. The two instruments
+that caught it were the enemy strength delta (which is the player's number) and a friendly-hit
+counter I only added because M1 had said, unprompted, that the census `killed` figure was
+counting blue-on-blue. **A census of what a shot hit is not a measure of whether the fix
+helped; only the other side's casualty count is.**
