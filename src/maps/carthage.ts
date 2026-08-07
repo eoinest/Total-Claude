@@ -1,3 +1,4 @@
+import { CARTHAGE_PLAN } from '../city/carthage/plan';
 import { CARTHAGE_AERIAL_MEAN, CARTHAGE_LAYERS, CARTHAGE_SPLAT_GLSL } from './carthage/ground';
 import { buildCarthageTerrain } from './carthage/heightfield';
 import { CARTHAGE_SCATTER } from './carthage/scatter';
@@ -152,17 +153,21 @@ export const CARTHAGE: MapDefinition = {
     scatter: CARTHAGE_SCATTER,
   },
   /**
-   * No city on it yet — so, correctly, no city of anyone else's either.
+   * The city — and this field is the only thing that selects one.
    *
-   * The map ships as open ground first and deliberately: it gives the wall and fabric
-   * workstreams a real heightfield to build against a commit earlier than they would
-   * otherwise have had one. Everything the curtain needs is already here — the wall line is
-   * published by `carthage/topography.ts:carthageWallZ`, the terrain has graded a bench under
-   * it, and the scatter clears its glacis — so the masonry drops onto a heightfield that is
-   * expecting it.
+   * `main.ts` builds whatever the map hands it and nothing when it hands nothing, so there is
+   * no flag to forget and no second module singleton to disagree with this one. The plan
+   * calls its own wall builder, `buildCarthageWall` on `CARTHAGE_WALL_LINE`, which *is*
+   * `carthage/topography.ts:carthageWallZ` — so the masonry stands on the bench the terrain
+   * graded for it, inside the glacis the scatter already clears, and the fabric behind it was
+   * laid out against the same function. See `src/city/cityPlan.ts` for the argument and
+   * `src/city/carthage/plan.ts` for the build order.
    *
-   * When `src/city/carthage/` exists this becomes `city: CARTHAGE_PLAN` and nothing else
-   * changes: `main.ts` builds whatever the map hands it. See `src/city/cityPlan.ts`.
+   * The one consequence worth knowing about: this makes `scenario: 'assault'` selectable on
+   * Carthage (`sanitiseConfig` refuses it only on a map with no city). `deploySiege` still
+   * spawns Roman `ballistarii` and `wall-slingers` on the parapet whatever `plan.garrison`
+   * says, because the roster has no Punic wall troops and no Roman siege train — the gap is
+   * named in `scenario.ts` itself and closing it is the roster workstream's call.
    */
-  city: null,
+  city: CARTHAGE_PLAN,
 };

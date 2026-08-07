@@ -13,7 +13,6 @@ import {
 import {
   fitWallPath,
   GATE_X,
-  WALL_LENGTH,
   WALL_X_MAX,
   WALL_X_MIN,
   type WallNode,
@@ -760,22 +759,90 @@ function assertSection(): string[] {
 // Build
 // ---------------------------------------------------------------------------
 
+/**
+ * Where the circuit runs — **an argument, because there were three answers and only one
+ * could be true.**
+ *
+ * This wall was developed as a swap onto Rome's line, so it read `WALL_X_MIN`, `WALL_X_MAX`
+ * and `GATE_X` out of the Campus Martius' `layout.ts`. Meanwhile the Carthage map published
+ * `carthageWallZ`, graded a 40 m bench under it and had the vegetation scatter clear its
+ * glacis — and `city/carthage/circuit.ts` published a third line, the same three surveyed
+ * anchors interpolated linearly and then bowed 25 m toward the field.
+ *
+ * The ruling (see `cityPlan.ts`) is that the masonry moves to the terrain's line, because
+ * that is the one the ground was prepared for. Rather than hard-swapping it — which would
+ * take the `?fort=carthage` development rig, and `probe-carthage-wall`'s 44 assertions with
+ * it, off the circuit they were measured on — the line is a parameter and Rome's is the
+ * default. Carthage's plan passes the terrain's.
+ *
+ * **`zAt` must be single-valued in x and its slope bounded**, because `CitySystem.bayAt`
+ * indexes bays by arithmetic in x. `carthageWallZ` rises 121 m across 1,981 m, a 6 % skew.
+ */
+export interface WallLine {
+  /** West/south end of the frontage. Beyond it the land wall does not exist. */
+  xMin: number;
+  /** East/north end. */
+  xMax: number;
+  /** Where the principal gate — the one with leaves, the one the ram is driven at — stands. */
+  gateX: number;
+  /** Centreline z for each x. */
+  zAt: (x: number) => number;
+}
+
+/**
+ * Rome's Aurelian line, which is where the Punic wall was built and graded.
+ *
+ * Reproduces exactly what this function did before the line became a parameter: the same
+ * `fitWallPath` nodes at the same 55 m spacing, interpolated the same way. Kept so the
+ * `?fort=carthage` rig and its probe measure an unchanged wall.
+ */
+function aurelianLine(heightAt: (x: number, z: number) => number): WallLine {
+  const p: WallNode[] = fitWallPath(heightAt);
+  return {
+    xMin: WALL_X_MIN,
+    xMax: WALL_X_MAX,
+    gateX: GATE_X,
+    zAt: (x: number): number => {
+      if (x <= p[0].x) return p[0].z;
+      const last = p[p.length - 1];
+      if (x >= last.x) return last.z;
+      const span = p[1].x - p[0].x;
+      const i = Math.min(p.length - 2, Math.floor((x - p[0].x) / span));
+      const t = (x - p[i].x) / (p[i + 1].x - p[i].x);
+      return lerp(p[i].z, p[i + 1].z, t);
+    },
+  };
+}
+
 export function buildCarthageWall(
   heightAt: (x: number, z: number) => number,
-  rngSeed: string
+  rngSeed: string,
+  line?: WallLine
 ): CarthageWallOutput {
   const rng = new Rng(rngSeed);
-  const path: WallNode[] = fitWallPath(heightAt);
+  const spec = line ?? aurelianLine(heightAt);
+  const WALL_X_MIN = spec.xMin;
+  const WALL_X_MAX = spec.xMax;
+  const WALL_LENGTH = WALL_X_MAX - WALL_X_MIN;
+  const GATE_X = spec.gateX;
+  const zAt = spec.zAt;
 
-  const zAt = (x: number): number => {
-    if (x <= path[0].x) return path[0].z;
-    const last = path[path.length - 1];
-    if (x >= last.x) return last.z;
-    const span = path[1].x - path[0].x;
-    const i = Math.min(path.length - 2, Math.floor((x - path[0].x) / span));
-    const t = (x - path[i].x) / (path[i + 1].x - path[i].x);
-    return lerp(path[i].z, path[i + 1].z, t);
-  };
+  /**
+   * The circuit as nodes, at the same 55 m spacing `fitWallPath` uses.
+   *
+   * Published on `WallBuildOutput.path` and read by the insula generator; sampled rather than
+   * taken from the caller so the two cities' outputs have the same shape whichever line they
+   * were built on.
+   */
+  const path: WallNode[] = [];
+  {
+    const n = Math.round(WALL_LENGTH / 55) + 1;
+    for (let i = 0; i < n; i++) {
+      const x = WALL_X_MIN + (i * WALL_LENGTH) / (n - 1);
+      const z = zAt(x);
+      path.push({ x, z, ground: heightAt(x, z) });
+    }
+  }
 
   /**
    * Bays step at **one** plethron; towers stand at **two**, which is Appian's figure.
