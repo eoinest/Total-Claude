@@ -202,23 +202,26 @@ export class BattleFlow {
   }
 
   /**
-   * Fallback outcome detection.
+   * Fallback outcome detection, for a HUD running without the sim's arbiter.
    *
-   * Nothing emits `battleEnded` yet — `checkVictory` in `sim/scenario.ts` exists but is
-   * unused — so without this the results screen would never appear in normal play. The
-   * rule is the same one `checkVictory` applies, and `showResults` is idempotent, so when
-   * the sim does start emitting the event this simply loses the race and does nothing.
+   * **The comment this replaces said "nothing emits `battleEnded` yet". It does** —
+   * `BattleFlowSystem.finish` in `sim/BattleFlow.ts` emits it and this panel opens on the
+   * event with the sim's own tally, which is where the Committed/Surviving/Fallen figures
+   * and the roll of honour come from. The line below has therefore been the operative one
+   * for some time: `main.ts` always registers `battleFlow`, so this returns immediately in
+   * every configuration the game ships. It is kept for an embed or a probe that builds the
+   * HUD over a bare `BattleSystem`, which is the only way to reach the rest of it.
    */
   checkOutcome(ctx: EngineContext, model: HudModel): void {
     if (this.resultsOpen || ctx.time.simTime < 20) return;
     // `BattleFlowSystem` owns the verdict when it is registered.
     if (ctx.tryGet('battleFlow')) return;
+    const foe = getOpposingFaction();
     const rome = model.unitsLeft[Faction.Rome] - model.routing[Faction.Rome];
-    const germ = model.unitsLeft[Faction.Germanic] - model.routing[Faction.Germanic];
-    if (rome > 0 && germ > 0) return;
-    const victor = rome > 0 ? Faction.Rome : germ > 0 ? Faction.Germanic : -1;
-    const wiped =
-      model.strength[victor === Faction.Rome ? Faction.Germanic : Faction.Rome] === 0;
+    const other = model.unitsLeft[foe] - model.routing[foe];
+    if (rome > 0 && other > 0) return;
+    const victor = rome > 0 ? Faction.Rome : other > 0 ? foe : -1;
+    const wiped = model.strength[victor === Faction.Rome ? foe : Faction.Rome] === 0;
     this.model.over = true;
     this.model.victor = victor;
     this.showResults(ctx, victor, wiped ? 'annihilation' : 'rout');
@@ -267,6 +270,8 @@ export class BattleFlow {
       rout: 'By rout — the enemy has quit the field',
       timeout: 'The light has gone; both armies still stand',
       objective: 'By objective — the ground that mattered has been taken',
+      stalemate: 'Neither army will close again; the field has gone quiet',
+      repulsed: 'The storm is thrown back — the parapet is still held',
     };
 
     const column = (f: Faction): string => {
