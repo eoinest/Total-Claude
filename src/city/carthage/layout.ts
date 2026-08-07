@@ -644,7 +644,7 @@ export const QUARTERS: readonly Quarter[] = [
   },
   {
     id: 'quarter-north', name: 'The northern quarter', kind: 'insulae',
-    x: 170, z: 700, hw: 165, hd: 140, rot: 0.02, density: 0.84, storeys: 3.6, fray: 0.26,
+    x: 175, z: 715, hw: 170, hd: 155, rot: 0.02, density: 0.84, storeys: 3.6, fray: 0.26,
     grid: 0.02, bays: 1,
   },
   /**
@@ -661,7 +661,7 @@ export const QUARTERS: readonly Quarter[] = [
    */
   {
     id: 'quarter-inner', name: 'The inner quarter', kind: 'insulae',
-    x: -330, z: 712, hw: 280, hd: 128, rot: -0.02, density: 0.86, storeys: 3.8, fray: 0.24,
+    x: -310, z: 712, hw: 300, hd: 128, rot: -0.02, density: 0.86, storeys: 3.8, fray: 0.24,
     grid: -0.02, bays: 1,
   },
   {
@@ -724,7 +724,7 @@ export const QUARTERS: readonly Quarter[] = [
   },
   {
     id: 'quarter-east-byrsa', name: 'The quarter east of the Byrsa', kind: 'insulae',
-    x: 255, z: 925, hw: 150, hd: 115, rot: 0.01, density: 0.86, storeys: 3.6, fray: 0.22,
+    x: 262, z: 935, hw: 158, hd: 125, rot: 0.01, density: 0.86, storeys: 3.6, fray: 0.22,
     grid: 0.01, bays: 1,
   },
   /**
@@ -751,12 +751,12 @@ export const QUARTERS: readonly Quarter[] = [
    */
   {
     id: 'magon-shore', name: 'The seafront north of the Magon Quarter', kind: 'insulae',
-    x: 380, z: 1195, hw: 190, hd: 105, rot: 0.02, density: 0.78, storeys: 2.8, fray: 0.3,
+    x: 375, z: 1190, hw: 195, hd: 120, rot: 0.02, density: 0.78, storeys: 2.8, fray: 0.3,
     grid: 0.02, bays: 1,
   },
   {
     id: 'bordj-djedid', name: 'The Bordj Djedid shore', kind: 'insulae',
-    x: 720, z: 1290, hw: 230, hd: 105, rot: 0.02, density: 0.72, storeys: 2.6, fray: 0.34,
+    x: 770, z: 1245, hw: 270, hd: 150, rot: 0.02, density: 0.72, storeys: 2.6, fray: 0.34,
     grid: 0.02, bays: 1,
   },
   {

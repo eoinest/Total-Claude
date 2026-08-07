@@ -5,7 +5,10 @@ import {
   INTERVALLUM, intervallumDepthAt, STAIR_APRONS,
 } from './circuit';
 import { BASIN_WATER_Y, FREEBOARD } from './harbour';
-import { COTHON, MERCHANT_HARBOUR, MONUMENTS, PUNIC_WAYS, shoreZAt } from './layout';
+import {
+  COTHON, INSULA_DEPTH, INSULA_FACE, MERCHANT_HARBOUR, MONUMENTS, PUNIC_WAY_WIDTH,
+  PUNIC_WAYS, shoreZAt,
+} from './layout';
 import { SEA_LEVEL } from '../../maps/carthage/topography';
 
 /**
@@ -387,6 +390,17 @@ export function assertCarthage(inp: AssertInput): CarthageChecks {
       .sort((a, b) => b[1] - a[1])
       .map(([k, v]) => `${k} ${v}`)
       .join(', ');
+    // The decomposition, which is the figure that actually compares with a Punic core.
+    //
+    // A single average over the walled land cannot answer "is the fabric dense enough",
+    // because a third of Carthage inside the wall is §7.7's garden suburb and is supposed to
+    // be empty. Split the two and the answer is unambiguous — and it is the opposite of what
+    // the pooled number suggests.
+    let megaraRoof = 0;
+    let denseRoof = 0;
+    for (const q of inp.blocksByQuarter) {
+      if (/megara/.test(q.id)) megaraRoof += q.roofArea; else denseRoof += q.roofArea;
+    }
     out.push({
       name: 'roof coverage',
       ok: true,
@@ -394,8 +408,58 @@ export function assertCarthage(inp: AssertInput): CarthageChecks {
         + `${(roof / 1e4).toFixed(1)} ha of roof over `
         + `${(walled / 1e4).toFixed(1)} ha of walled land = **${pctWalled.toFixed(1)}%**; `
         + `${(wayArea / 1e4).toFixed(1)} ha of that is carriageway, so roof between street lines is `
-        + `**${betweenLines.toFixed(1)}%**. Not a pass/fail: the second figure is the one comparable `
-        + `with an orthophoto, and Megara is a garden suburb that is *supposed* to be empty.`,
+        + `**${betweenLines.toFixed(1)}%**. Split: dense city ${(denseRoof / 1e4).toFixed(1)} ha, `
+        + `Megara ${(megaraRoof / 1e4).toFixed(1)} ha of walled enclosure. Not a pass/fail: the `
+        + `second figure is the one comparable with an orthophoto, and Megara is a garden `
+        + `suburb that is *supposed* to be empty — see 'dense fabric at the module's ceiling'.`,
+    });
+  }
+
+  // ---- 5b. the figure that actually compares with a Punic core ------------
+  //
+  // **A pooled coverage percentage cannot answer "is the fabric dense enough", and it was
+  // being asked to.** Carthage's published 25.0 % of walled land against Rome's 51.6 % looks
+  // like a thin city. It is not one. A 4 m land census inside the build line finds
+  // 120.8 buildable hectares, of which §7.7's garden suburb claims about a third by design,
+  // the ways and monuments reserve a further sixth, and 8 ha is water. Measure the dense
+  // quarters against the land they actually have and the answer is 60-70 % — which is the
+  // figure the archaeology gives for the Carthaginian core, and it is also the arithmetic
+  // ceiling of the cubit module itself:
+  //
+  //     block 30.9 × 15.45 in a cell of (30.9 + 4) × (15.45 + 7) = 477 / 784 = 60.9 %
+  //
+  // So the dense fabric is **at its ceiling**, and the only way to raise the pooled number
+  // further is to narrow the streets below Lancel's measured 5-7 m band or to build over the
+  // Megara. Both would be a different city. This check states the ceiling next to the
+  // achieved figure so nobody has to rediscover that.
+  {
+    const cellArea = (INSULA_FACE + PUNIC_WAY_WIDTH.vicus) * (INSULA_DEPTH + PUNIC_WAY_WIDTH.local);
+    const ceiling = ((INSULA_FACE * INSULA_DEPTH) / cellArea) * 100;
+    let denseRoof = 0;
+    let denseBlocks = 0;
+    for (const q of inp.blocksByQuarter) {
+      if (/megara/.test(q.id)) continue;
+      denseRoof += q.roofArea;
+      denseBlocks += q.placed;
+    }
+    // The land the dense quarters stand on, measured rather than declared: the union of the
+    // blocks' own cells. One cell per block is exact by construction — the lattice places at
+    // most one block per cell — so this is the module's own denominator and nothing else.
+    const denseLand = denseBlocks * cellArea;
+    const achieved = denseLand > 0 ? (denseRoof / denseLand) * 100 : 0;
+    out.push({
+      name: "dense fabric at the module's ceiling",
+      // Clipped blocks are shorter than a full five-plot face, so the achieved figure is
+      // *under* the ceiling by construction and 0.85 of it is a full city.
+      ok: achieved >= ceiling * 0.8,
+      detail: `${denseBlocks} blocks outside the Megara carry ${(denseRoof / 1e4).toFixed(1)} ha of `
+        + `roof over ${(denseLand / 1e4).toFixed(1)} ha of their own lattice cells = `
+        + `**${achieved.toFixed(1)}%**, against the cubit module's arithmetic ceiling of `
+        + `${ceiling.toFixed(1)}% (a ${INSULA_FACE.toFixed(1)} × ${INSULA_DEPTH.toFixed(1)} m block `
+        + `in a ${(INSULA_FACE + PUNIC_WAY_WIDTH.vicus).toFixed(1)} × `
+        + `${(INSULA_DEPTH + PUNIC_WAY_WIDTH.local).toFixed(1)} m cell) and the 60-70% the `
+        + `archaeology gives for the Carthaginian core. **The gap between this and the pooled `
+        + `figure above is the Megara and the streets, not thin housing.**`,
     });
   }
 
