@@ -96,6 +96,17 @@ export class UnitCards {
   private foeOpen = false;
 
   private generation = -1;
+  /**
+   * Units wiped out at the last rebuild.
+   *
+   * A card is the order of battle, and a unit that no longer exists is not in it. Nine grey
+   * zero-strength cards were left interleaved with seven live ones while the top plaque
+   * correctly read "7 units" — two counts of the same army on one screen, disagreeing.
+   * Comparing the count rather than watching each card because the bar is grouped into arms
+   * with a labelled divider between them, and removing one card can leave a band heading with
+   * nothing under it; the whole row has to be laid out again either way.
+   */
+  private deadCount = -1;
   private hoverTimer = 0;
   private hoverCard: CardEls | null = null;
 
@@ -155,7 +166,7 @@ export class UnitCards {
 
     // Stable sort into bands so each divider separates one arm from the next.
     const own = this.model.views
-      .filter((v) => v.own)
+      .filter((v) => v.own && !v.destroyed)
       .map((v, i) => ({ v, i }))
       .sort((a, b) => CLASS_BAND[a.v.def.unitClass] - CLASS_BAND[b.v.def.unitClass] || a.i - b.i);
 
@@ -173,7 +184,7 @@ export class UnitCards {
     }
     this.inner.dataset.bands = String(bands);
 
-    const foes = this.model.views.filter((v) => !v.own);
+    const foes = this.model.views.filter((v) => !v.own && !v.destroyed);
     for (const v of foes) this.foeCards.push(this.makeCard(v, this.foeHolder, ctx, true));
     setText(this.foeCount, String(foes.length));
     setClass(this.foeBar, 'none', foes.length === 0);
@@ -366,8 +377,11 @@ export class UnitCards {
 
   /** 10 Hz: diff the model against what is on screen. */
   sync(ctx: EngineContext): void {
-    if (this.generation !== this.model.generation) {
+    let dead = 0;
+    for (const v of this.model.views) if (v.destroyed) dead++;
+    if (this.generation !== this.model.generation || dead !== this.deadCount) {
       this.generation = this.model.generation;
+      this.deadCount = dead;
       this.build(ctx);
     }
     const hoveredId = this.model.hoveredId;
