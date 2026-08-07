@@ -109,6 +109,15 @@ const timeBlock = (n) => page.evaluate(async (frames) => {
 }, n);
 
 const median = (a) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
+/**
+ * Best of N, and the headline estimator here rather than the median.
+ *
+ * Contention is one-sided: another process can only ever *add* time to a block, never
+ * remove it. So under load the median drifts with whatever else the machine is doing while
+ * the minimum converges on the uncontended cost from above. The median is still printed,
+ * because if the two disagree by much the run was too noisy to quote at all.
+ */
+const best = (a) => Math.min(...a);
 
 console.log(`# ${W}x${H} ${TIER}, ${SCENARIO} t+${AT}s, ${FRAMES} frames x ${BLOCKS} blocks,`
   + ` arms ${ARMS.map((a) => (a === null ? 'tier' : `${a}x`)).join(' ')}`);
@@ -132,15 +141,19 @@ for (const name of cams) {
   await setArm(null);
 
   const meds = samples.map((a) => median(a.map((r) => r.ms)));
+  const mins = samples.map((a) => best(a.map((r) => r.ms)));
   const b0 = samples[0][0];
   console.log(`\n=== ${name}  (${b0.draws} draws, frameDt ${b0.frameDt.toFixed(4)}s, ${b0.ticks} sim ticks/frame) ===`);
   for (const [i, a] of ARMS.entries()) {
-    const d = meds[i] - meds[0];
+    const d = mins[i] - mins[0];
+    const dm = meds[i] - meds[0];
     const lbl = a === null ? 'tier default' : `${a}x MSAA`;
-    console.log(`  ${lbl.padEnd(14)} resolved ${resolved[i]}x  median ${meds[i].toFixed(2)} ms`
+    console.log(`  ${lbl.padEnd(14)} resolved ${resolved[i]}x  best ${mins[i].toFixed(2)} median ${meds[i].toFixed(2)} ms`
       + `  blocks [${samples[i].map((r) => r.ms.toFixed(2)).join(', ')}]`
-      + (i === 0 ? '  (reference)' : `   ${d >= 0 ? '+' : ''}${d.toFixed(2)} ms`));
+      + (i === 0 ? '  (reference)' : `   ${d >= 0 ? '+' : ''}${d.toFixed(2)} ms on best, ${dm >= 0 ? '+' : ''}${dm.toFixed(2)} on median`));
   }
+  const spread = Math.max(...meds.map((m, i) => Math.abs((m - meds[0]) - (mins[i] - mins[0]))));
+  if (spread > 0.8) console.log(`  !! best and median disagree by up to ${spread.toFixed(2)} ms — too noisy to quote`);
 }
 
 if (errors.length) {
