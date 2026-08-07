@@ -632,6 +632,7 @@ const TINT_BODY = /* glsl */ `
 `;
 
 const FRAG_DECLS = /* glsl */ `
+uniform float uKitCavity;
 varying vec3 vSoldierTint;
 /** x: grime 0..1. y: this man's roughness offset, signed, metal slots only. */
 varying vec2 vSoldierSurf;
@@ -667,6 +668,96 @@ varying vec3 vSoldierEmblem;
  * clamp is what stops a silhouette edge, where the derivative is meaningless, from turning
  * the rim of every man fully rough.
  */
+/**
+ * How hard the cavity gate bites, 0..1.
+ *
+ * Sized against the atlas: ORM.R bottoms out at 0.3, so the deepest texel any cell can carry
+ * gates at a horizon sine of 0.7 x this, and a flat texel is untouched at any value. Held
+ * below 1 because the cavity here is derived from the *same* 128 px height field that made
+ * the normal map, so the two describe one piece of relief twice and a full-strength gate
+ * double-counts it.
+ */
+const KIT_CAVITY_STRENGTH = 0.62;
+
+/**
+ * Cavity occlusion on the **direct** light, for soldier kit.
+ *
+ * The atlas already bakes a cavity term from each material cell's own height field into
+ * ORM.R (`atlas.ts:1329`, `0.3 + h * 0.7`), and the material already binds it as an `aoMap`
+ * at `aoMapIntensity: 0.3`. But `aoMapIntensity` in three attenuates the **indirect** term
+ * only, so **nothing at all occludes direct sunlight on a soldier**: the gutter between two
+ * segmentata hoops, the gap under a scale row and the shadow inside a mail ring all receive
+ * the sun exactly as fully as the plate beside them. The recesses are painted, and paint has
+ * no light direction.
+ *
+ * That is the known cause of a defect this project has measured twice and named twice. Under
+ * mip averaging "84 % of a normal map's perturbation is gone by mip 4, because a bump's two
+ * slopes are equal and opposite and cancel", so relief cannot survive to battle range; a
+ * *scalar* occlusion does, because occlusion averages like brightness. Masonry got the
+ * counter (`city/materials.ts:416-474`) and the handoff records that soldier kit did not.
+ *
+ * It is also the mechanism behind the crowd's contrast defect. Ours carries 2.6x the
+ * reference's local contrast at 32 px scale while reading as flatter, because our variation
+ * is albedo — sharp, direction-blind, identical in sun and shade — where Rome II's is
+ * shading across a form. Gating the sun by the cavity converts one into the other without
+ * adding any contrast at all: it *removes* light from the parts that should not have it.
+ *
+ * Same shape as the masonry gate, and the same reason for each part of it: a soft
+ * transition because a hard step aliases on a mipped scalar, and a width that scales with
+ * the occlusion so a flat texel is an exact no-op rather than a global dimmer. Tested
+ * against the *geometric* normal, because the cavity is defined relative to the macro
+ * surface and testing the perturbed normal counts the same slope twice.
+ *
+ * No backtick may appear in these comments: one silently ends the JS template literal.
+ */
+const KIT_CAVITY_PARS = /* glsl */ `
+#ifdef USE_ROUGHNESSMAP
+  float tcKitCavity;
+  vec3 tcKitGeoN;
+  void tcRE_Direct_Kit(
+    const in IncidentLight directLight, const in vec3 geometryPosition,
+    const in vec3 geometryNormal, const in vec3 geometryViewDir,
+    const in vec3 geometryClearcoatNormal, const in PhysicalMaterial material,
+    inout ReflectedLight reflectedLight
+  ) {
+    IncidentLight tcLight = directLight;
+    float tcCos = clamp( dot( tcKitGeoN, tcLight.direction ), 0.0, 1.0 );
+    float tcW = 0.04 + 0.55 * tcKitCavity;
+    tcLight.color *= smoothstep( max( 0.0, tcKitCavity - tcW ), tcKitCavity + tcW, tcCos );
+    RE_Direct_Physical(
+      tcLight, geometryPosition, geometryNormal, geometryViewDir,
+      geometryClearcoatNormal, material, reflectedLight
+    );
+  }
+  #undef RE_Direct
+  #define RE_Direct tcRE_Direct_Kit
+#endif
+`;
+
+/**
+ * Once per fragment, before the light loop.
+ *
+ * `uKitCavity` is a uniform rather than a constant so a probe can pin it to 0 and difference
+ * two frames of one paused world — arm differencing, not a single frame, because band-pass
+ * amplitude over a whole frame is dominated by geometry edges and a real change hides inside
+ * the noise. That technique measured a reproducibility floor of 0.00000 on masonry.
+ */
+const KIT_CAVITY_SETUP = /* glsl */ `
+#ifdef USE_ROUGHNESSMAP
+  // R is 0.3 (deepest cavity) .. 1.0 (unoccluded). 1.0 is an exact no-op, so a cell whose
+  // height field is flat costs nothing.
+  tcKitCavity = clamp( 1.0 - texelRoughness.r, 0.0, 1.0 ) * uKitCavity;
+  tcKitGeoN = nonPerturbedNormal;
+#endif
+`;
+
+/** The indirect half. Deliberately far gentler than the direct gate; that asymmetry is the point. */
+const KIT_CAVITY_AO = /* glsl */ `
+#ifdef USE_ROUGHNESSMAP
+  reflectedLight.indirectDiffuse *= 1.0 - tcKitCavity * tcKitCavity;
+#endif
+`;
+
 const SPEC_AA = /* glsl */ `
 {
   vec3 tcDNdx = dFdx( normal );
@@ -764,6 +855,13 @@ function patch(
   const withNormal = variant === 'colour';
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
+    // Exposed on the material so a probe can pin it to 0 and difference two frames of one
+    // paused world against an otherwise identical build.
+    if (withNormal) {
+      const cav = (material.userData.kitCavity ?? { value: KIT_CAVITY_STRENGTH }) as { value: number };
+      material.userData.kitCavity = cav;
+      shader.uniforms.uKitCavity = cav;
+    }
 
     let v = shader.vertexShader;
     v = `${defines(o)}\n${DECLS}\nvec3 gSoldierPos;\n${
@@ -798,7 +896,16 @@ function patch(
       // two reads roughnessFactor — <lights_physical_fragment> is the first consumer — so
       // raising it here is equivalent, and it gets the normal-mapped normal, which is the
       // one that carries the sub-pixel detail we are trying to filter.
-      f = f.replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>\n${SPEC_AA}`);
+      f = f.replace(
+        '#include <normal_fragment_maps>',
+        `#include <normal_fragment_maps>\n${KIT_CAVITY_SETUP}\n${SPEC_AA}`
+      );
+      // Cavity occlusion on the *direct* light. See `KIT_CAVITY_PARS`.
+      f = f.replace(
+        '#include <lights_physical_pars_fragment>',
+        `#include <lights_physical_pars_fragment>\n${KIT_CAVITY_PARS}`
+      );
+      f = f.replace('#include <aomap_fragment>', `#include <aomap_fragment>\n${KIT_CAVITY_AO}`);
       shader.fragmentShader = f;
     }
   };
@@ -807,7 +914,7 @@ function patch(
   // because it changes the injected source: the man has it and the horse does not, and
   // colliding here would give one of them the other's vertex shader.
   const rig = o.poseVary ? 'vary' : 'plain';
-  material.customProgramCacheKey = () => `soldier-skin-v5-${variant}-${rig}`;
+  material.customProgramCacheKey = () => `soldier-skin-v6cav-${variant}-${rig}`;
 }
 
 export interface SoldierMaterialSet {

@@ -217,6 +217,18 @@ export class Grade {
     r.toneMapping = prevTone;
   }
 
+  /**
+   * Grain amplitude, for measuring what it costs.
+   *
+   * `PostFX` applies 0.016 of uniform hash noise to every pixel of the final image. On a
+   * 32 px block that is enough on its own to put the block's Laplacian standard deviation
+   * above 1.0 — which is the exact threshold the adversarial grader's strongest single
+   * scalar uses. Worth being able to switch off and measure rather than argue about.
+   */
+  setGrain(v: number): void {
+    (this.mFinal.uniforms.uGrain as { value: number }).value = v;
+  }
+
   dispose(): void {
     this.sceneRT.dispose();
     this.ldrRT.dispose();

@@ -1308,6 +1308,10 @@ class Viewer {
         this.stage.camera.position.set(cx, cy, cz);
         this.stage.controls.update();
       },
+      /** Interleaved A/B handle for the kit cavity gate. Returns false if the arm never ran. */
+      setCavity: (v: number): boolean => this.rig.setKitCavity(v),
+      /** Grain amplitude on the output pass. `PostFX` ships 0.016. */
+      setGrain: (v: number): void => this.stage.setGrain(v),
       report: (): string => this.lastReport,
       orbit: (az: number, el: number, dist: number): void => {
         const t = this.stage.controls.target;
