@@ -173,6 +173,14 @@ const PHYSICS: Record<string, MissilePhysics> = {
 
 const physicsOf = (kind: WeaponKind): MissilePhysics => PHYSICS[kind] ?? PHYSICS.javelin;
 
+/**
+ * Weapons the roster throws on `arc: 'high'`, for the friendly-fire census only.
+ *
+ * Every one of the roster's nine missile lines agrees with this and the arc that is actually
+ * flown still comes from `m.arc`, so a divergence here mislabels a census row and nothing else.
+ */
+const LOFTED_KINDS: ReadonlySet<string> = new Set(['bow', 'sling', 'boulder']);
+
 const GRAVITY = 9.81;
 /** Elevation a lofted shot is fired at, in radians (34 degrees). */
 const LOFT = 0.6;
@@ -206,6 +214,23 @@ const HIT_RADIUS = 0.4;
  * `MAX_WALL_RANKS` is 5 in `Siege.ts`; a man with no rank lands in the last bucket.
  */
 const WALL_DIAG_RANKS = 6;
+
+/**
+ * Distance-from-release bands for the friendly-fire census, metres. See `ffDist`.
+ *
+ * Chosen against the two lengths that matter and not round-numbered for its own sake: 0.86 m
+ * is a file's lateral spacing and roughly a rank's depth on open ground, 0.72 m is a rank on
+ * a wall-walk, and 4.7 m is how far a ballista bolt travels in `ARM_TIME`. The last band is
+ * open-ended and holds the shots that are nobody's fault.
+ */
+const FF_BAND_M = [0.9, 1.8, 2.7, 3.6, 4.7, 7, 12] as const;
+/** Flight-time bands, seconds, over the same hits. `ARM_TIME` is the first edge. */
+const FF_BAND_S = [0.06, 0.12, 0.2, 0.35, 0.6, 1.0, 2.0] as const;
+const FF_BINS = FF_BAND_M.length + 1;
+const ffBand = (v: number, edges: readonly number[]): number => {
+  for (let k = 0; k < edges.length; k++) if (v < edges[k]) return k;
+  return edges.length;
+};
 
 /**
  * Where a shot leaves a man, above his feet. Shoulder height on a 1.75 m soldier.
@@ -634,8 +659,67 @@ export class ProjectileSystem implements Subsystem {
   private wSelfRun = new Float64Array(WALL_DIAG_RANKS);
   /** Self-wall deaths on masonry that publishes no battlement — the gatehouse block, mostly. */
   private wSelfNoBay = new Int32Array(WALL_DIAG_RANKS);
+  /**
+   * Friendly fire, separated by *where along its own flight* a shot found one of its own.
+   *
+   * Three different faults produce a friendly casualty and they need three different fixes, so
+   * a single "friendly hits" total is useless. What tells them apart is the distance from the
+   * release point, because each fault owns a band of it:
+   *
+   *   - **inside the arming window** — the shot became live inside the file it was loosed
+   *     from. `ARM_TIME` is a *time*, and 0.06 s is 1.3 m for a pilum and 4.7 m for a bolt,
+   *     so the window is a different size for every weapon and for two of them it is deeper
+   *     than the formation.
+   *   - **inside the shooter's own block but past arming** — the lane test should have
+   *     refused the shot and did not. That is either no test at all (lofted fire probes once,
+   *     at 1.5 m) or the stepping hole: probes at 1.5 m over ranks 0.86 m apart.
+   *   - **beyond it** — a genuinely stray shot. Scatter, a friendly unit crossing the lane
+   *     after release, an arcing volley falling on the wrong block. This one is *supposed* to
+   *     happen and must not be engineered away.
+   *
+   * The bands are recorded as a histogram rather than as three counters so the thresholds can
+   * be argued about afterwards without re-running the battle, and split by arc because the
+   * lofted and flat lane tests are different code with different holes.
+   */
+  private ffDist = new Int32Array(2 * FF_BINS);
+  private ffTime = new Int32Array(2 * FF_BINS);
+  /** Of those, the ones that killed. */
+  private ffKillDist = new Int32Array(2 * FF_BINS);
+  /** Every hit, friend or foe, in the same bands — the denominator the histogram needs. */
+  private ffAllDist = new Int32Array(2 * FF_BINS);
+  /** Friendly hits and kills per weapon kind, so `cHitMan` can be split into enemy and own. */
+  private ffHitKind = new Int32Array(32);
+  private ffKillKind = new Int32Array(32);
+  /**
+   * Was the man hit in the shooter's own unit, and was he standing in front of him?
+   *
+   * A hit on one's own unit is a lane fault; a hit on the unit next door is a crossfire fault,
+   * and no line-of-fire test a man could plausibly run would catch it. `ahead` is the subset
+   * where the victim's rank is lower than the shooter's — the literal "shot through my own
+   * front rank" case, which is the one the brief names.
+   */
+  private ffSameUnit = new Int32Array(3);
+  /** Friendly hits, kills and blast casualties from a shot loosed off a wall. */
+  private ffWall = new Int32Array(2);
+  /** Blast: a stone does not ask whose men are standing round where it came down. */
+  private ffBlast = new Int32Array(2);
+  private allBlast = new Int32Array(2);
+  /** Enemy hits and kills, so the report does not have to subtract two arrays to get them. */
+  private ffEnemy = new Int32Array(2);
   /** Denominator for the three means above. */
   private wSelfOn = new Int32Array(WALL_DIAG_RANKS);
+  /**
+   * Where each shot left from, and the rank of the man who loosed it.
+   *
+   * Carried on the projectile because the shooter's index is not kept and he may well be dead
+   * before it lands. Every friendly-fire question — did it arm inside its own file, did it go
+   * through the rank in front — is a question about the distance from *here*, so nothing that
+   * re-derives the release point from the owning unit's centre can answer it.
+   */
+  private srcX = new Float32Array(MAX_PROJECTILES);
+  private srcY = new Float32Array(MAX_PROJECTILES);
+  private srcZ = new Float32Array(MAX_PROJECTILES);
+  private srcRank = new Int8Array(MAX_PROJECTILES);
   /**
    * Why `aimOverParapet` left a garrison shot alone: no battlement published here, his feet
    * are not on this walk, he is shooting inward, he is outboard of the parapet, or the crest
@@ -645,9 +729,6 @@ export class ProjectileSystem implements Subsystem {
   private wSkip = new Int32Array(8);
   /** Garrison shots that struck a man of the shooter's own faction. */
   private wFriendly = new Int32Array(WALL_DIAG_RANKS);
-  /** Release point, so a self-wall death can be measured back to where it came from. */
-  private wSrcX = new Float32Array(MAX_PROJECTILES);
-  private wSrcZ = new Float32Array(MAX_PROJECTILES);
 
   // ---- spent projectiles ----
   private sx = new Float32Array(MAX_STUCK);
@@ -698,6 +779,14 @@ export class ProjectileSystem implements Subsystem {
   private kindVisual = new Uint8Array(32);
   private kindGirth = new Float32Array(32);
   private kindTint = new Float32Array(32 * 3);
+  /**
+   * 1 for a weapon the roster throws on `arc: 'high'`. Census only.
+   *
+   * A mirror of the roster rather than a read of it, because a projectile in flight no longer
+   * knows which `UnitTypeDef` threw it — and the lofted and flat lane tests are different
+   * code with different holes, so a friendly-fire figure that pools them says nothing.
+   */
+  private kindLofted = new Uint8Array(32);
 
   lastCostMs = 0;
 
@@ -756,6 +845,7 @@ export class ProjectileSystem implements Subsystem {
       this.kinds.push(kind);
       const phys = physicsOf(kind);
       this.kindVisual[k] = phys.visual;
+      this.kindLofted[k] = LOFTED_KINDS.has(kind) ? 1 : 0;
       this.kindGirth[k] = phys.girth;
       this.kindTint[k * 3] = ((phys.tint >> 16) & 0xff) / 255;
       this.kindTint[k * 3 + 1] = ((phys.tint >> 8) & 0xff) / 255;
@@ -1509,6 +1599,8 @@ export class ProjectileSystem implements Subsystem {
     this.cLaunched[ki]++;
     this.pierceLeft[idx] = phys.pierce;
     this.lastHit[idx] = -1;
+    this.srcX[idx] = sx; this.srcY[idx] = sy; this.srcZ[idx] = sz;
+    this.srcRank[idx] = p.rank[i];
     const elevated = b.elevated[i] !== 0;
     this.fromWall[idx] = elevated ? 1 : 0;
     this.wRank[idx] = -1;
@@ -1520,8 +1612,6 @@ export class ProjectileSystem implements Subsystem {
       // His feet, not his shoulders: an impact is classified by how far it stands above the
       // walkway, which is the only frame in which "merlon" and "sill" mean anything.
       this.wFootY[idx] = b.support[i];
-      this.wSrcX[idx] = sx;
-      this.wSrcZ[idx] = sz;
       this.wLaunched[bucket]++;
       if (PARAPET_STEPPED) this.wStepped[bucket]++;
       else if (clearPitch > -Infinity) this.wFloored[bucket]++;
@@ -1600,6 +1690,8 @@ export class ProjectileSystem implements Subsystem {
     this.cLaunched[ki]++;
     this.pierceLeft[idx] = phys.pierce;
     this.lastHit[idx] = -1;
+    this.srcX[idx] = opts.fromX; this.srcY[idx] = opts.fromY; this.srcZ[idx] = opts.fromZ;
+    this.srcRank[idx] = -1;
     this.fromWall[idx] = 0;
     this.wRank[idx] = -1;
     return true;
@@ -1798,8 +1890,16 @@ export class ProjectileSystem implements Subsystem {
       const lethal = b.damage(j, total, x, z, this.ownerUnit[i]);
       this.cDamage[this.kindIdx[i]] += total;
       signalsOf(dv.id).missilePulse += 1;
+      // A stone does not ask whose men are standing round where it came down, and unlike a
+      // shaft it never had a lane to be refused: the census keeps it apart for that reason.
+      const own = this.unitById(this.ownerUnit[i]);
+      const friendly = own !== undefined && own.faction === dv.faction;
+      this.allBlast[0]++;
+      if (friendly) this.ffBlast[0]++;
       if (lethal) {
         this.cKilled[this.kindIdx[i]]++;
+        this.allBlast[1]++;
+        if (friendly) this.ffBlast[1]++;
         signalsOf(this.ownerUnit[i]).killPulse += 1;
         b.siege.noteArtillery(0, 1);
       }
@@ -1827,7 +1927,7 @@ export class ProjectileSystem implements Subsystem {
       return;
     }
     this.wSelfLife[r] += this.life[i];
-    this.wSelfRange[r] += Math.hypot(this.px[i] - this.wSrcX[i], this.pz[i] - this.wSrcZ[i]);
+    this.wSelfRange[r] += Math.hypot(this.px[i] - this.srcX[i], this.pz[i] - this.srcZ[i]);
     this.wSelfUp[r] += this.py[i] - this.wFootY[i];
     const e = this.wall !== null ? this.wall.embrasureAt(this.px[i], this.pz[i]) : null;
     if (e === null) this.wSelfNoBay[r]++;
@@ -1835,7 +1935,7 @@ export class ProjectileSystem implements Subsystem {
       this.wSelfOn[r]++;
       this.wSelfOff[r] += (this.px[i] - e.x) * e.nx + (this.pz[i] - e.z) * e.nz;
       this.wSelfRun[r] += Math.abs(
-        (this.px[i] - this.wSrcX[i]) * -e.nz + (this.pz[i] - this.wSrcZ[i]) * e.nx
+        (this.px[i] - this.srcX[i]) * -e.nz + (this.pz[i] - this.srcZ[i]) * e.nx
       );
     }
     const d = top - this.wFootY[i];
@@ -1843,6 +1943,71 @@ export class ProjectileSystem implements Subsystem {
     else if (d > 0.25) this.wSill[r]++;
     else if (d > -0.25) this.wWalk[r]++;
     else this.wBelow[r]++;
+  }
+
+  /**
+   * Classify one man-hit for the friendly-fire census. See `ffDist`.
+   *
+   * The band a hit lands in is the whole point: `bin` is set here and read again by
+   * `noteFriendlyKill` on the same projectile, so the hit and the kill histograms cannot
+   * disagree about which band a shot was in.
+   */
+  private ffBin = 0;
+  private ffArc = 0;
+
+  /**
+   * The last few friendly hits, in full, as a ring.
+   *
+   * A histogram can only confirm a mechanism somebody already thought of. The first run of
+   * this census produced a band — friendly hits under 0.9 m from a muzzle whose bolt leaves
+   * at 78 m/s and covers 2.6 m in one tick — that could not be true given its neighbour, and
+   * only the raw record said which of the two numbers was lying.
+   */
+  private ffSample: number[][] = [];
+  private ffSampleAt = 0;
+
+  private noteFriendlyFire(
+    i: number, j: number, friendly: boolean, hx: number, hz: number, victimUnit: number
+  ): void {
+    const arc = this.kindLofted[this.kindIdx[i]];
+    const bin = ffBand(Math.hypot(hx - this.srcX[i], hz - this.srcZ[i]), FF_BAND_M);
+    if (friendly && this.ffSampleAt < 4096) {
+      const p0 = this.battle.pool;
+      this.ffSample[this.ffSampleAt++ % 48] = [
+        this.kindIdx[i], +this.life[i].toFixed(4),
+        +Math.hypot(hx - this.srcX[i], hz - this.srcZ[i]).toFixed(3),
+        +Math.hypot(this.vx[i], this.vy[i], this.vz[i]).toFixed(2),
+        this.srcRank[i], p0.rank[j], this.ownerUnit[i], victimUnit,
+        +this.srcY[i].toFixed(2), +p0.y[j].toFixed(2), this.fromWall[i],
+      ];
+    }
+    this.ffArc = arc;
+    this.ffBin = bin;
+    this.ffAllDist[arc * FF_BINS + bin]++;
+    if (!friendly) { this.ffEnemy[0]++; return; }
+    this.ffDist[arc * FF_BINS + bin]++;
+    this.ffTime[arc * FF_BINS + ffBand(this.life[i], FF_BAND_S)]++;
+    this.ffHitKind[this.kindIdx[i]]++;
+    if (this.fromWall[i] !== 0) this.ffWall[0]++;
+    const p = this.battle.pool;
+    if (victimUnit === this.ownerUnit[i]) {
+      this.ffSameUnit[0]++;
+      // Rank counts outward from the front, so a lower rank is a man standing in front of the
+      // shooter. That is the literal "the rear rank shot through its own front rank" case and
+      // it is the only one a line-of-fire test could ever have prevented.
+      if (this.srcRank[i] >= 0 && p.rank[j] >= 0 && p.rank[j] < this.srcRank[i]) {
+        this.ffSameUnit[2]++;
+      }
+    } else {
+      this.ffSameUnit[1]++;
+    }
+  }
+
+  private noteFriendlyKill(i: number, friendly: boolean): void {
+    if (!friendly) { this.ffEnemy[1]++; return; }
+    this.ffKillDist[this.ffArc * FF_BINS + this.ffBin]++;
+    this.ffKillKind[this.kindIdx[i]]++;
+    if (this.fromWall[i] !== 0) this.ffWall[1]++;
   }
 
   /** Score a landing against the point it was solved for. See `aimX`. */
@@ -1892,11 +2057,13 @@ export class ProjectileSystem implements Subsystem {
     const block = clamp01((ddef.shieldDefence / 46) * cover);
 
     this.cHitMan[this.kindIdx[i]]++;
+    const own = this.unitById(this.ownerUnit[i]);
+    const friendly = own !== undefined && own.faction === dv.faction;
     if (this.wRank[i] >= 0) {
       this.wHitMan[this.wRank[i]]++;
-      const own = this.unitById(this.ownerUnit[i]);
-      if (own && own.faction === dv.faction) this.wFriendly[this.wRank[i]]++;
+      if (friendly) this.wFriendly[this.wRank[i]]++;
     }
+    this.noteFriendlyFire(i, j, friendly, hx, hz, dv.id);
     this.noteMiss(i, hx, hz);
     // A shield stops an arrow and a pilum. It does not stop a stone from an engine, so a
     // weapon with a blast radius skips the block roll entirely.
@@ -1928,6 +2095,7 @@ export class ProjectileSystem implements Subsystem {
     if (lethal) {
       this.cKilled[this.kindIdx[i]]++;
       if (this.wRank[i] >= 0) this.wKilled[this.wRank[i]]++;
+      this.noteFriendlyKill(i, friendly);
     }
     const dsig = signalsOf(dv.id);
     dsig.missilePulse += 1;
@@ -2440,8 +2608,67 @@ export class ProjectileSystem implements Subsystem {
     };
   }
 
+  /**
+   * Who a missile hit that it should not have, and how far from the muzzle it happened.
+   *
+   * The one number this exists to separate: a friendly casualty 0.9 m from the release point
+   * and a friendly casualty 40 m from it are two different bugs with two different fixes, and
+   * `hitOwnSide` pooled them.
+   */
+  debugFriendlyFire(): unknown {
+    const band = (a: Int32Array, arc: number): number[] =>
+      Array.from({ length: FF_BINS }, (_, k) => a[arc * FF_BINS + k]);
+    const sum = (a: Int32Array): number => a.reduce((s, v) => s + v, 0);
+    const hits = sum(this.ffDist);
+    const all = sum(this.ffAllDist);
+    return {
+      // Edges, printed with the data so a reader never has to find them in the source.
+      distEdgesM: [...FF_BAND_M],
+      timeEdgesS: [...FF_BAND_S],
+      shaft: {
+        friendlyByDist: band(this.ffDist, 0),
+        friendlyKillsByDist: band(this.ffKillDist, 0),
+        allHitsByDist: band(this.ffAllDist, 0),
+        friendlyByTime: band(this.ffTime, 0),
+      },
+      lofted: {
+        friendlyByDist: band(this.ffDist, 1),
+        friendlyKillsByDist: band(this.ffKillDist, 1),
+        allHitsByDist: band(this.ffAllDist, 1),
+        friendlyByTime: band(this.ffTime, 1),
+      },
+      // kindIdx, life s, ground metres from the muzzle, speed, shooter rank, victim rank,
+      // shooter unit, victim unit, muzzle Y, victim foot Y, off a wall.
+      sampleFields: 'kind life distM speed srcRank dstRank srcUnit dstUnit srcY dstY wall',
+      kindNames: [...this.kinds],
+      samples: this.ffSample.slice(),
+      total: {
+        hitsOnMen: all,
+        friendlyHits: hits,
+        friendlyKills: sum(this.ffKillDist),
+        friendlyPct: all ? +((100 * hits) / all).toFixed(1) : 0,
+        enemyHits: this.ffEnemy[0],
+        enemyKills: this.ffEnemy[1],
+        fromWallHits: this.ffWall[0],
+        fromWallKills: this.ffWall[1],
+        sameUnit: this.ffSameUnit[0],
+        otherFriendlyUnit: this.ffSameUnit[1],
+        sameUnitAhead: this.ffSameUnit[2],
+        blastHits: this.allBlast[0],
+        blastKills: this.allBlast[1],
+        blastFriendlyHits: this.ffBlast[0],
+        blastFriendlyKills: this.ffBlast[1],
+      },
+    };
+  }
+
   /** Reset the census, so a probe can measure one interval rather than the whole battle. */
   debugResetCensus(): void {
+    this.ffDist.fill(0); this.ffTime.fill(0); this.ffKillDist.fill(0);
+    this.ffAllDist.fill(0); this.ffHitKind.fill(0); this.ffKillKind.fill(0);
+    this.ffSameUnit.fill(0); this.ffWall.fill(0);
+    this.ffBlast.fill(0); this.allBlast.fill(0); this.ffEnemy.fill(0);
+    this.ffSample.length = 0; this.ffSampleAt = 0;
     this.wLaunched.fill(0); this.wHitMan.fill(0); this.wKilled.fill(0);
     this.wGround.fill(0); this.wCrest.fill(0); this.wSill.fill(0);
     this.wWalk.fill(0); this.wBelow.fill(0); this.wFarMasonry.fill(0);
