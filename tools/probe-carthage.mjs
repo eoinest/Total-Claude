@@ -1683,11 +1683,51 @@ if (PLATES_OUT) {
   }
   console.log(`  carriageway over water: ${m.laneWetM} m of centreline`);
 
+  /**
+   * **Authored against built, and the gap between them is the reading.**
+   *
+   * This block used to print `q.grid` out of `lay.QUARTERS` under the heading "quarter grid
+   * bearings", which is a layout *constant* — the authored jitter — and not a bearing anything
+   * was built at. That is precisely the divergence this probe exists to catch, and the probe
+   * was committing it: it reported five distinct bearings on a build whose every block had
+   * been laid at one, so the instrument said the grid was broken while the city said it was
+   * not. A probe that reads intent is a probe that cannot see a plan-versus-baked fault.
+   *
+   * So both are printed. The authored line is what `layout.ts` still says; the built line is
+   * `getObstacles()` — every housing block's own `rot`, weighted by its footprint area. When
+   * the two disagree, the built line is the true one and the authored constants are dead
+   * numbers that should be read as documentation, not as behaviour.
+   */
   console.log(`\n── quarter grid bearings ──────────────────────────────`);
   const gb = Object.entries(m.gridBearings).sort((a, b) => Number(a[0]) - Number(b[0]));
+  console.log(`  AUTHORED (layout.ts QUARTERS[].grid — a constant, not a measurement)`);
   console.log(`  ${gb.length} distinct bearings among ${pd.quarters.length} quarters`);
   for (const [deg, v] of gb) {
     console.log(`    ${String(deg).padStart(6)}°  ${v.ha.toFixed(1).padStart(6)} ha  ${v.quarters.join(', ')}`);
+  }
+  {
+    const built = new Map();
+    let totHa = 0;
+    for (const o of pd.obstacles) {
+      if (o.kind !== 'building') continue;
+      // Fold into [0, 90): a block turned by a right angle is on the same lattice.
+      let d = ((o.rot * 180) / Math.PI) % 90;
+      if (d < 0) d += 90;
+      const k = (d > 89.995 ? 0 : d).toFixed(2);
+      const ha = (o.hw * 2 * o.hd * 2) / 1e4;
+      built.set(k, (built.get(k) ?? 0) + ha);
+      totHa += ha;
+    }
+    const rows = [...built.entries()].sort((a, b) => b[1] - a[1]);
+    console.log(`  BUILT (getObstacles() — every housing block's own rot, area-weighted)`);
+    console.log(`  ${rows.length} distinct bearing(s) across ${pd.obstacles.filter((o) => o.kind === 'building').length} blocks, ${totHa.toFixed(1)} ha of roof`);
+    for (const [deg, ha] of rows.slice(0, 8)) {
+      console.log(`    ${String(deg).padStart(6)}°  ${ha.toFixed(1).padStart(6)} ha  ${((ha / totHa) * 100).toFixed(1)}%`);
+    }
+    if (rows.length !== gb.length) {
+      console.log(`  → authored ${gb.length}, built ${rows.length}. The build ignores the authored jitter; `
+        + `layout.ts's QUARTERS[].grid is documentation, not behaviour.`);
+    }
   }
 
   const plates = buildPlates(pd);
