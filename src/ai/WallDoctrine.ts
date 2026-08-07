@@ -78,6 +78,14 @@ const KEEP_IN_STEPS = 6;
  * always within one of them.
  */
 const WALL_SPAN = 150;
+/**
+ * Beyond this from any flight there is no curtain to be standing in.
+ *
+ * A cheap O(flights) pre-filter in front of `Siege.wallTargetAt`, which searches every
+ * station on the circuit. The flights are about a bay apart, so a point genuinely in the
+ * footprint is always well inside this of one of them.
+ */
+export const NEAR_WALL = 90;
 /** Every nth lane vertex is kept. See `attach`. */
 const LANE_STRIDE = 3;
 /**
@@ -188,7 +196,7 @@ export class WallDoctrine {
   }
 
   /** Plan distance from a point to the nearest flight head. */
-  private nearestFlightDist(x: number, z: number): number {
+  nearestFlightDist(x: number, z: number): number {
     let best = Infinity;
     for (const f of this.flights) {
       const d = (f.topX - x) * (f.topX - x) + (f.topZ - z) * (f.topZ - z);

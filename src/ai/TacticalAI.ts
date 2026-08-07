@@ -12,7 +12,8 @@ import {
   type Difficulty, type DifficultyProfile, type UnitCommand,
 } from './types';
 import {
-  BREAK_IN_MEN, DESCEND_R, FIGHT_R, ORDER_COOLDOWN, REACH_R, WallDoctrine, type WallView,
+  BREAK_IN_MEN, DESCEND_R, FIGHT_R, NEAR_WALL, ORDER_COOLDOWN, REACH_R,
+  WallDoctrine, type WallView,
 } from './WallDoctrine';
 
 /**
@@ -1074,7 +1075,34 @@ export class TacticalAISystem implements Subsystem {
      * units, and it goes straight to the order book with a single point.
      */
     if (this.wall !== null && this.wall.isGarrisoned(u.id)) return;
-    // And a unit standing in the city is not ordered out through the wall. See `holdInside`.
+    /**
+     * A unit whose own anchor is inside the curtain's footprint is given no order at all,
+     * and **no choice of destination is a substitute** — that was measured twice.
+     *
+     * `BattleSystem.holdShortOfSolid` clamps a move to the last point on the straight line
+     * it can legally reach, and `Siege.ts` documents the degenerate case at length: from an
+     * anchor inside masonry the clear fraction is zero, so the clamp answers with the
+     * unit's *own position*. A cohort that has just walked down a stair stands exactly
+     * there, and a target on the wall footprint is the auto-ascend rule's trigger — so it
+     * turned round and climbed back up. Traced with `tools/probe-ascend.mjs`: both
+     * `sendToWall` calls in a 260 s storm of Rome arrived with `matchesTarget: true`, the
+     * polling loop reading a clamped field rather than any event. Re-aiming the order 18 m
+     * cityward changed the event and **not** the clamp, which is the proof that the
+     * destination is not the variable.
+     *
+     * Saying nothing is the right answer because the order that is already there is
+     * correct: `releaseToGround` writes the rally point straight into `targetX/targetZ`
+     * without going through `applyOrder`, so it is never clamped. The cohort walks itself
+     * off the stonework on the order it was released with, and ordinary movement resumes
+     * the moment its anchor is clear. The `NEAR_WALL` pre-filter is not decoration —
+     * `wallTargetAt` is a linear search over every station on the circuit and this is the
+     * AI's hottest call site.
+     */
+    if (this.wall !== null && this.doctrine.ready
+      && this.doctrine.nearestFlightDist(u.x, u.z) < NEAR_WALL
+      && this.wall.wallTargetAt(u.x, u.z) >= 0) {
+      return;
+    }
     if (this.doctrine.holdInside(u.x, u.z, x, z, WALL_PT)) {
       x = WALL_PT.x;
       z = WALL_PT.z;
@@ -1399,13 +1427,33 @@ export class TacticalAISystem implements Subsystem {
     // not the front rank's.
     if (c.info.inContact && c.info.contactEnemyId >= 0) return c.info.contactEnemyId;
 
+    /**
+     * A cohort standing in a street cannot fight a man on a parapet, and ordering it to
+     * try sends it back up the stairs.
+     *
+     * The chain is entirely on the far side of interfaces this layer does not own and it
+     * took a measurement to see. `Engage` picks the nearest enemy; for a warband that has
+     * just descended into Rome the nearest enemy is the ballistarii on the wall it came
+     * down from. `orders.attack` routes the unit at them, the sim clamps the route's
+     * target to the last legal point on the straight line — the inner face of the curtain
+     * — and `Siege`'s auto-ascend rule reads a city-side unit whose order points at the
+     * wall footprint as asking to get on the wall. Measured at Rome: u17 and u18 both
+     * carried `goal=ascend` at t+250, 21 and 44 men queued at the foot of the flight they
+     * had walked down twenty seconds earlier.
+     *
+     * So: enemies the stonework holds are not melee targets unless we hold stonework too.
+     * Missile selection is deliberately untouched — shooting up at a parapet is exactly
+     * what a slinger is for, and `pickMissileTarget` is a different function.
+     */
+    const skipWall = this.wall !== null && !this.wall.isGarrisoned(c.u.id);
+
     const holdsLine = c.cmd.role === 'line' || c.cmd.role === 'anchor';
     const arc = holdsLine ? 1.4 : Math.PI; // 80 degrees either side of the ordered front
 
     const pref = c.cmd.preferredTargetId;
     if (pref >= 0) {
       const mem = w.perceived(c.u.faction, pref);
-      if (mem && mem.alive > 0 && !mem.routing) {
+      if (mem && mem.alive > 0 && !mem.routing && !(skipWall && this.wall!.isGarrisoned(pref))) {
         const d = Math.hypot(mem.x - c.u.x, mem.z - c.u.z);
         const off = Math.abs(angleDelta(c.brain.standFacing, Math.atan2(mem.x - c.u.x, mem.z - c.u.z)));
         if (d < 260 && off < arc) return pref;
@@ -1416,6 +1464,7 @@ export class TacticalAISystem implements Subsystem {
     let bestScore = -Infinity;
     for (const mem of w.view(c.u.faction).seen.values()) {
       if (mem.alive <= 0 || mem.routing) continue;
+      if (skipWall && this.wall!.isGarrisoned(mem.unitId)) continue;
       const dx = mem.x - c.u.x;
       const dz = mem.z - c.u.z;
       const d = Math.hypot(dx, dz);
