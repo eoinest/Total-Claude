@@ -154,12 +154,12 @@ Three constraints on any city, all load-bearing in files the city workstream doe
   z −190 and z +130; `Siege.ts` reads `GarrisonBay.nx/nz` as the outward normal.
   `CitySystem` asserts a uniform bay pitch at build time.
 - **Nothing at z < `battlefieldZ`**, checked per vertex per LOD by `assertNoStrayGeometry`.
-- **220 draw calls whole-frame, and it is already exceeded.** Measured at `fbcfe65 + this
-  work`: the Rome *assault* camera renders **268** at high and ultra, 227 at medium, 184 at
-  low. The city's own upper bound is 89 of that (wall 37, monuments 21, fabric 20, printed by
-  `CitySystem` at every boot as `[city:<id>] N draws … by family`). So the overage is mostly
-  not the city — but a second city has the same ceiling as the first, not a share of it, and
-  **any commit that adds city geometry must quote the ledger line.**
+- **220 draw calls whole-frame — met at the assault camera, with 1 to spare.** The city's
+  own upper bound is printed at every boot as `[city:<id>] N draws … by family`. A second
+  city has the same ceiling as the first, not a share of it, and **any commit that adds city
+  geometry must quote the ledger line.** How the number is spent, and how little of it is the
+  colour pass, is in §4 — read that before adding geometry, because a mesh that casts is
+  charged five times, not once.
 
 Directory layout: `src/city/*.ts` is shared machinery; `src/city/<cityname>/` is one city's
 own geometry. Ownership is per-city-directory, so two cities can be built in parallel.
@@ -301,6 +301,66 @@ corpse pile. Neither puts thousands of scattered men on screen at once. The fram
 *heavier as men die* — 7,879 men at t+130 render 15.03 M, 7,010 at t+171 render 18.30 M —
 because a rout spreads a unit over ~120 m and pushes men who were a tight LOD2 clump across
 the LOD1 boundary. Headcount is the wrong thing to reason from.
+
+### Where the draw calls actually go, and the only lever that matters
+
+Measured at `a974a28` with `tools/probe-budget.mjs`, which instruments
+`WebGLShadowMap.render` and `WebGLRenderer.render` separately. `Engine` sets
+`info.autoReset = false` and resets once per frame, so the counter accumulates over the
+whole frame and differencing the two entry points splits it exactly.
+
+**A frame is a small colour pass, a large shadow pass and a fixed post chain.** At the Rome
+assault camera, 1920x1080, ultra, t+72 s: **98 colour + 98 shadow + 23 post = 219.** The
+colour pass is 96-101 at *every* tier; the entire tier scaling is the shadow pass, because
+the cascade count is the only thing a tier changes about it.
+
+**The shadow pass is very nearly cascade-invariant.** Cascade 0 covers 39 x 39 m and cascade
+3 covers 745 x 745 m, and they draw the same objects — every caster in this scene is a
+merged mesh whose bounding sphere straddles all four. So the practical rule is:
+
+> **A shadow-casting mesh costs one draw call in the colour pass and one more in every
+> cascade.** On ultra that is five. Splitting a chunk into one mesh per material saves
+> nothing in the shadow pass, because every one of them resolves to the same opaque depth
+> material — see `buildShadowProxy` in `CitySystem.ts`, which merges them back into one.
+
+Draw calls per camera per tier, both scenarios, at t+72 s. Nothing here needed the machine
+to be quiet: the count is deterministic and load-independent, which is why it and not frame
+time is the right thing to gate on.
+
+| camera | ultra | high | medium | low |
+|---|---|---|---|---|
+| assault (siege) | **219** | 214 | 186 | 156 |
+| city (siege) | 192 | 192 | 175 | 149 |
+| wall (siege) | 191 | 191 | 172 | 144 |
+| wall (field) | 163 | 163 | 149 | 126 |
+| city (field) | 154 | 154 | 144 | 125 |
+| terrain | 134 | 134 | 124 | 106 |
+| clash | 120 | 125 | 115 | 91 |
+| melee | 116 | 126 | 112 | 89 |
+| wide / raking | 112 | 112 | 102 | 84-86 |
+| romanline | 103 | 103 | 93 | 75 |
+
+The assault camera is the binding one and it is at the line, not under it: panning during an
+interactive session touches **226**. The next lever, if more headroom is wanted, is the
+cascade count — one cascade off ultra is worth about 39 draws — and it is a quality
+decision, not a bug fix.
+
+**Carthage is now the over-budget map, and for the opposite reason.** With
+`city: CARTHAGE_PLAN` wired in, its assault camera renders **242** at ultra: 134 colour + 85
+shadow + 23 post. The shadow pass is *cheaper* than Rome's (85 against 98) and the triple
+wall really does cost less than Rome's single curtain — 25 visible meshes against 31 — so
+the material-stream sharing works exactly as advertised. The colour pass is the problem:
+
+    fabric 157   streets 28   wall 25   monuments 17   byrsa 6   harbour 5   trees 2
+
+`fabric` is about forty small chunks at 5/3/1 meshes. Their LOD ladder works — most sit at
+level 1 or 2 at any battle camera — but forty chunks at three meshes is 120 calls before
+anything else draws. Rome solved the same problem in `insulae.ts` by merging six districts
+into one chunk; Carthage has gone the other way. The lever is chunk *count*, not detail, and
+it belongs to whoever owns `src/city/carthage/`. Note the trade this makes explicit: small
+chunks give real LOD and real frustum culling, large chunks give few calls, and the surface
+correction in `CitySystem.surfaceCorrection` is what decides whether a large chunk can use
+its ladder at all.
 
 | Resource | Budget |
 |---|---|

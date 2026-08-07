@@ -82,6 +82,99 @@ const SHADOW_CUTOFF = 700;
  */
 const STRAY_RADIUS_TOLERANCE = 1.35;
 
+/**
+ * The material a shadow proxy carries. It is never shaded — the shadow pass substitutes a
+ * depth material — and it is never seen, because the proxy's draw range is zero outside the
+ * shadow pass. It exists only because `WebGLShadowMap` skips an object whose material is
+ * invisible, so the proxy cannot simply be hidden.
+ */
+const PROXY_MATERIAL = new THREE.MeshBasicMaterial({
+  colorWrite: false,
+  depthWrite: false,
+  depthTest: false,
+});
+
+/**
+ * One depth-only mesh standing in for a chunk's whole casting set.
+ *
+ * A chunk is split into one mesh per material for the colour pass, and that split is
+ * multiplied by the cascade count in the shadow pass: measured at the Rome assault camera,
+ * 19 city meshes went into each of four cascades for 76 of the frame's 279 draw calls. The
+ * split buys nothing there — every one of those meshes resolves to the same opaque depth
+ * material, so the four passes are drawing one silhouette in six pieces.
+ *
+ * This merges the casting geometry into a single position-and-index buffer and lets only
+ * that cast. The silhouette is identical to the pixel, because it is the same triangles.
+ *
+ * The awkward part is keeping it out of the colour pass, and three.js leaves exactly one
+ * seam to do it through. `WebGLShadowMap.renderObject` skips an object whose `visible` or
+ * whose `material.visible` is false, so neither flag can hide the proxy from the colour pass
+ * alone. Draw range can: `WebGLRenderer.projectObject` builds the colour render list without
+ * consulting it, and `onBeforeShadow`/`onAfterShadow` fire around the shadow draw and nowhere
+ * else. So the proxy sits at a zero draw range and opens only for the cascades. It still
+ * costs one call per casting chunk in the colour pass — `renderBufferDirect` early-returns
+ * only on a *negative* count, not a zero one — which is honest, counted, and a twentieth of
+ * what it saves.
+ */
+function buildShadowProxy(meshes: readonly THREE.Mesh[], name: string): THREE.Mesh | null {
+  const casters = meshes.filter((m) => m.castShadow && m.geometry.getAttribute('position'));
+  // Two meshes are the break-even point: one proxy costs one colour call plus one call per
+  // cascade, so it only pays from the second caster on.
+  if (casters.length < 2) return null;
+
+  let vCount = 0;
+  let iCount = 0;
+  for (const m of casters) {
+    vCount += m.geometry.getAttribute('position').count;
+    const idx = m.geometry.getIndex();
+    iCount += idx ? idx.count : m.geometry.getAttribute('position').count;
+  }
+  const pos = new Float32Array(vCount * 3);
+  // A city chunk runs to hundreds of thousands of vertices, past what a Uint16 index holds.
+  const idxArr = vCount > 65535 ? new Uint32Array(iCount) : new Uint16Array(iCount);
+  let vAt = 0;
+  let iAt = 0;
+  for (const m of casters) {
+    const p = m.geometry.getAttribute('position');
+    pos.set(p.array as ArrayLike<number>, vAt * 3);
+    const idx = m.geometry.getIndex();
+    if (idx) {
+      const a = idx.array as ArrayLike<number>;
+      for (let i = 0; i < idx.count; i++) idxArr[iAt + i] = a[i] + vAt;
+      iAt += idx.count;
+    } else {
+      for (let i = 0; i < p.count; i++) idxArr[iAt + i] = i + vAt;
+      iAt += p.count;
+    }
+    vAt += p.count;
+  }
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setIndex(new THREE.BufferAttribute(idxArr, 1));
+  g.computeBoundingSphere();
+  g.computeBoundingBox();
+  // Closed outside the shadow pass. `Infinity` is three.js's own "all of it" sentinel and is
+  // what `BufferGeometry` starts with.
+  g.setDrawRange(0, 0);
+
+  const proxy = new THREE.Mesh(g, PROXY_MATERIAL);
+  proxy.name = `${name}-shadow`;
+  proxy.castShadow = true;
+  proxy.receiveShadow = false;
+  proxy.matrixAutoUpdate = false;
+  proxy.updateMatrix();
+  proxy.onBeforeShadow = () => g.setDrawRange(0, Infinity);
+  proxy.onAfterShadow = () => g.setDrawRange(0, 0);
+  for (const m of casters) m.castShadow = false;
+  // The meshes this proxy stands in for, so `setShadowProxies` can hand the job back and the
+  // claim "the silhouette is identical" can be checked against pixels in one session rather
+  // than asserted across two.
+  proxy.userData.replaces = casters;
+  for (const m of casters) m.userData.replacedBy = proxy;
+  return proxy;
+}
+
 interface StrayReport {
   ok: boolean;
   /** Worst overshoot past a chunk's declared radius, metres. */
@@ -306,6 +399,8 @@ export class CitySystem implements Subsystem {
   private stray: StrayReport = { ok: true, worst: 0, offenders: [] };
   /** Diagnostics only: see `debugForceLod`. */
   private forcedLod: number | null = null;
+  /** Whether merged proxies carry shadow casting, or the per-material meshes do. */
+  private shadowProxies = true;
   private overlay: THREE.Mesh | null = null;
   /** Terrain sampler kept for the debug overlay, which is built after `init`. */
   private overlayGround: ((x: number, z: number) => number) | null = null;
@@ -724,9 +819,19 @@ export class CitySystem implements Subsystem {
       // outer cascades' texel footprint, and re-rendering it four times to blur it away
       // was costing more calls than the whole city's main pass.
       const meshes = batch.toMeshes(spec.name, spec.castShadow && detail >= 2);
+      // Built before the meshes are parented, because it clears `castShadow` on the ones it
+      // takes over from.
+      const proxy = buildShadowProxy(meshes, `${spec.name}-lod${i}`);
       for (const mesh of meshes) {
         group.add(mesh);
         if (mesh.castShadow) casters.push(mesh);
+      }
+      if (proxy) {
+        group.add(proxy);
+        // Both the proxy and the meshes it stands in for go on the caster list, so the
+        // distance cutoff in `preRender` keeps working whichever way `setShadowProxies` has
+        // it. `applyCasting` decides which of the two actually carries the flag.
+        casters.push(proxy, ...(proxy.userData.replaces as THREE.Mesh[]));
       }
       this.meshCount += meshes.length;
       levels.push({ group, triangles: batch.triangleCount });
@@ -827,6 +932,49 @@ export class CitySystem implements Subsystem {
   }
 
   /**
+   * How much of a chunk's radius the distance test forgives.
+   *
+   * Measuring to a chunk's surface rather than its centre is right in principle — a district
+   * a kilometre across should not drop to a silhouette because its midpoint is far away —
+   * but subtracting a flat 55 % of the radius made the near switch unreachable for every
+   * chunk wider than about twice that distance, and Rome's are. Measured at the shipped
+   * `city` camera: `monuments-d` is 1,526 m across, so the correction was 840 m against a
+   * switch at 400; `city-campus-n` 619 m against 300; `city-south` 533 m against 280. Six of
+   * twenty-one chunks could never leave full detail from anywhere on a 2.8 km map, and
+   * `insulae.ts` had already worked around it by merging six districts into one chunk with
+   * the comment that "a chunk 700 m across is never far away by that measure".
+   *
+   * Capping the forgiveness at half the near switch distance keeps the intent — a big chunk
+   * still gets the benefit of the doubt — while guaranteeing the ladder can always be
+   * climbed, because the remaining half of the switch distance is always reachable.
+   *
+   * Carthage avoids the whole problem by capping chunk radius at 140 m against the same
+   * 340 m switch, which is the better answer where the geometry allows it. Rome's districts
+   * are single authored masses and cannot be cut that small without adding the draw calls
+   * the merge was there to remove, so it is fixed here instead of in the chunk layout.
+   */
+  private surfaceCorrection(c: Chunk): number {
+    const nearSwitch = c.switchAt.length > 0 ? c.switchAt[0] : Infinity;
+    return Math.min(c.radius * 0.55, nearSwitch * 0.5);
+  }
+
+  /**
+   * Point a chunk's shadow flag at whichever caster set is currently in charge.
+   *
+   * A chunk with a single casting mesh gets no proxy — one merged mesh standing in for one
+   * mesh saves nothing — and that mesh must keep casting in *both* modes. Reading the mode
+   * off "is this a proxy" alone silenced every such chunk, which cost the city's cypresses
+   * their shadows over 8.5 % of the `city` frame before the pixel A/B caught it.
+   */
+  private applyCasting(c: Chunk): void {
+    for (const m of c.casters) {
+      const paired = m.userData.replaces !== undefined || m.userData.replacedBy !== undefined;
+      const wanted = !paired || (m.userData.replaces !== undefined) === this.shadowProxies;
+      m.castShadow = c.casting && wanted;
+    }
+  }
+
+  /**
    * Swap detail levels by camera distance. Hysteresis of 12 % stops a chunk flipping
    * back and forth while the camera hovers on a threshold.
    */
@@ -837,9 +985,7 @@ export class CitySystem implements Subsystem {
       const dx = cam.x - c.cx;
       const dy = cam.y - c.cy;
       const dz = cam.z - c.cz;
-      // Distance to the chunk's surface, not its centre: a 1 km-wide district should
-      // not drop to silhouette just because its midpoint is far away.
-      const d = Math.max(0, Math.sqrt(dx * dx + dy * dy + dz * dz) - c.radius * 0.55);
+      const d = Math.max(0, Math.sqrt(dx * dx + dy * dy + dz * dz) - this.surfaceCorrection(c));
 
       // Shadow casting by distance, with 15 % hysteresis so a hovering camera does not
       // flip a district's shadow on and off.
@@ -847,7 +993,7 @@ export class CitySystem implements Subsystem {
         const want = d < SHADOW_CUTOFF * (c.casting ? 1.15 : 1.0);
         if (want !== c.casting) {
           c.casting = want;
-          for (const m of c.casters) m.castShadow = want;
+          this.applyCasting(c);
         }
       }
 
@@ -1274,6 +1420,20 @@ export class CitySystem implements Subsystem {
       c.levels[want].group.visible = true;
       c.current = want;
     }
+  }
+
+  /**
+   * Hand shadow casting back to the per-material meshes, or to the merged proxies.
+   *
+   * `buildShadowProxy` claims the merged silhouette is identical because it is the same
+   * triangles. That is the kind of claim this project has been wrong about before, and the
+   * only way to check it is to photograph both arms in one session — two sessions differ on
+   * half their pixels from VFX reseeding alone. So the swap is a supported switch, not test
+   * scaffolding: it also gives the next agent a one-line way to price the technique.
+   */
+  setShadowProxies(on: boolean): void {
+    this.shadowProxies = on;
+    for (const c of this.chunks) this.applyCasting(c);
   }
 
   /** Diagnostics only: hide the whole city, for a reference-plan-only plan view. */
