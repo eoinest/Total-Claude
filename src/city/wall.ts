@@ -290,6 +290,16 @@ export interface GateDoorOut {
    * animating the leaves does not have to go and find the gate record.
    */
   open: boolean;
+  /**
+   * True once the ram has brought them down and the wreckage is what is drawn.
+   *
+   * Distinct from `open`, and the distinction is load-bearing: `Siege.armGate` shuts the
+   * gate on the first tick of every battle, so a leaf state derived from `open` alone would
+   * hang a wrecked gate's doors back on the next thing that closed it. Written by
+   * `CitySystem.setGateDoorBroken(id)` and read back here, so the mesh, this record and
+   * `isGateDoorBroken` cannot disagree.
+   */
+  broken: boolean;
 }
 
 /**
@@ -390,6 +400,42 @@ export interface CityChunkSpec {
    * stay wholly beyond the map instead.
    */
   scenery?: boolean;
+  /**
+   * This chunk is one gate's leaves, and `CitySystem.setGateDoorBroken(id)` hides it.
+   *
+   * A gate's leaves are the one piece of city geometry that has to *disappear* at runtime,
+   * and until now they could not: they were `box()` calls merged into a wall chunk's timber
+   * stream, so `setGateOpen` re-cut the occupancy raster and the obstacle boxes while the
+   * doors stayed drawn, shut, for the rest of the battle. The ram lands twenty-six blows,
+   * the gate opens, men walk through the arch — and the player watches two leaves that never
+   * move. `getGateDoor()` has published the hinge line and the leaf extent for exactly this
+   * since it was written, with the comment "the siege system swings or wrecks these by
+   * hiding this geometry and drawing its own", and there was nothing to hide.
+   *
+   * A chunk is the seam that already exists for it: it bakes, it culls, it is measured by
+   * `assertNoStrayGeometry`, and its group's `visible` is already owned by one place. So the
+   * leaves are authored into their own chunk instead of into the gatehouse's, and hiding
+   * them is one call. The id is carried rather than encoded in the name, because
+   * `7e72785` was the second bug caused by a hard-coded `'porta-flaminia'`.
+   */
+  gateDoorFor?: string;
+  /**
+   * This chunk is one gate's **wreckage**, drawn only after `setGateDoorBroken(id)`.
+   *
+   * The counterpart to `gateDoorFor`, and the difference between a gate that reads as broken
+   * and one that reads as merely missing. Hiding the leaves on a breach leaves a clean
+   * archway with the portcullis still raised behind it — which is what an *opened* gate
+   * looks like, and the player has been told a ram spent two minutes on it. So the same
+   * leaves are authored a second time in the pose the ram left them: one half hanging off
+   * its harr-post, canted into the passage with its head splintered away, the other down
+   * across the threshold, and the drawbar snapped in two.
+   *
+   * `CitySystem.bakeChunk` bakes this level and immediately hides it, so it costs nothing
+   * until it is wanted: three.js skips a hidden group in `projectObject`, and the intact
+   * leaves it replaces are hidden in the same call. The swap is draw-call neutral in both
+   * directions and it is measured that way in `getStats().visibleMeshes`.
+   */
+  gateWreckFor?: string;
 }
 
 export interface WallBuildOutput {
@@ -879,6 +925,7 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
     thickness: GATE_DOOR_T,
     setback: GATE_DOOR_SET,
     open: false,
+    broken: false,
   };
   // The gatehouse as a solid, for the consumers that need to know where the masonry is.
   // Held separately from the bays because the block straddles two of them: reading it off
@@ -948,6 +995,50 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
           buildTower(batch, detail, last.x1, last.z1, last.topY, heightAt, bays.length, last.stage, frameOf(last.x0, last.z0, last.x1, last.z1));
         }
         if (from === 0) buildRiverTerminus(batch, detail, bays[0], heightAt);
+      },
+    });
+  }
+
+  /**
+   * The Porta Flaminia's leaves, as their own chunk so the ram's work shows.
+   *
+   * One detail level and no shadow: it is under a thousand triangles hanging 2.2 m inside an
+   * 11 m barrel vault, so there is nothing for a mid tier to drop and its shadow falls
+   * entirely inside the gatehouse's own. `castShadow: false` also keeps it out of
+   * `buildShadowProxy`, which would otherwise have baked a copy of the leaves into the
+   * gatehouse chunk's merged caster and gone on drawing their shadow after they were hidden.
+   *
+   * `lodSwitch` at 1e9 is the documented way to ask `bakeChunk` for a single level; the
+   * radius covers the 11 m opening and the drawbar's sockets either side of it.
+   */
+  {
+    const gb = gateBayRef;
+    chunks.push({
+      name: 'gate-door',
+      cx: GATE_X,
+      cz: gateCz,
+      radius: 16,
+      castShadow: false,
+      lodSwitch: [1e9, 1e9],
+      gateDoorFor: gateDoor.gateId,
+      build: (batch, detail) => {
+        batch.setUvOrigin(GATE_X, 0, gb.z0);
+        buildGateLeaves(batch, detail, gb, heightAt);
+      },
+    });
+    // The same leaves in the pose the ram left them. Baked and hidden; `setGateDoorBroken`
+    // swaps the two, so the pair costs one chunk's worth of draws whichever is on screen.
+    chunks.push({
+      name: 'gate-wreck',
+      cx: GATE_X,
+      cz: gateCz,
+      radius: 22,
+      castShadow: false,
+      lodSwitch: [1e9, 1e9],
+      gateWreckFor: gateDoor.gateId,
+      build: (batch, detail) => {
+        batch.setUvOrigin(GATE_X, 0, gb.z0);
+        buildGateLeaves(batch, detail, gb, heightAt, true);
       },
     });
   }
@@ -1822,134 +1913,10 @@ function buildGate(batch: Batch, detail: number, bay: Bay, heightAt: (x: number,
   }
   box(metal, -GATE_OPEN_WIDTH * 0.5, barBottom - 0.38, zF + 0.82, GATE_OPEN_WIDTH * 0.5, barBottom, zF + 1.01, PAL.iron);
 
-  /**
-   * The twin leaves, **shut and barred**.
-   *
-   * They used to be swung flat back against the reveals, which is the fourth thing the
-   * player reported: "The main gate door is open by default. it should be closed. It should
-   * have to be battered down by the battering ram." A gate standing open is not a gate, and
-   * an open gate makes the whole siege train decorative — the ram had nothing to break and
-   * the assault could walk up the Via Flaminia into the city.
-   *
-   * Built shut in the door plane rather than as two swung boxes: the leaves meet on the
-   * centreline, close down onto the threshold slab and up to the springing of the vault,
-   * and the semicircular lunette above them is filled in brick. Nothing can see through.
-   *
-   * The *state* lives in `GateDoorOut` and `GateOut.open`; the siege system swings or wrecks
-   * these by hiding this geometry and drawing its own, which is why the hinge line, the leaf
-   * extent and the plane are all published rather than being implicit in this function.
-   */
   const doorZ = zF + GATE_DOOR_SET;
   const leafHalf = GATE_OPEN_WIDTH * 0.5;
-  const sillY = g + GATE_DOOR_SILL;
   const headY = g + GATE_SPRING;
-  const planks = detail >= 2 ? 11 : detail === 1 ? 6 : 1;
-  /**
-   * The meeting stile: a 45 mm shadow gap on the centreline.
-   *
-   * Two leaves built hard against each other are one slab. A reviewer shown the shut gate
-   * said exactly that — "the plank field runs continuously with no vertical joint anywhere;
-   * as rendered this is one slab" — and the centre joint is the single cue that says *twin
-   * leaves* at any distance. The gap is a real void down the middle, closed behind by the
-   * rebate below so nothing can see through it.
-   */
-  const MEET = 0.045;
-  for (const s of [-1, 1]) {
-    /**
-     * Vertical oak boarding.
-     *
-     * Vertical is not a detail. Roman gate leaves — and effectively all pre-modern ones —
-     * are vertically planked onto horizontal ledges, because horizontal boards put every
-     * plank in bending across the full width of the leaf with nothing to hang them from. The
-     * planks are stepped 20 mm proud and shy of each other in turn, which is what puts a
-     * vertical shadow line between them: without it the timber material's own horizontal
-     * grain wins and the leaf reads as horizontal boarding, which is how the first pass was
-     * described.
-     */
-    for (let j = 0; j < planks; j++) {
-      const a = MEET + ((leafHalf - MEET) * j) / planks;
-      const b = MEET + ((leafHalf - MEET) * (j + 1)) / planks;
-      const jut = planks > 1 ? (j % 2 === 0 ? 0.02 : -0.014) + (hash2(j, s + 1, 17) - 0.5) * 0.01 : 0;
-      /**
-       * Weathered oak, not the dark timber the rest of the site is built from.
-       *
-       * The leaves hang 2.2 m inside an 11 m barrel vault with no bounce light in the engine,
-       * so at `timberDark` they render as a black rectangle and a reviewer reported the ram's
-       * target — the most important object on the map for a siege — as simply invisible. Oak
-       * that has stood in the weather on the north face of a city gate for a century is
-       * silver-grey, not brown, so the brighter value is also the truer one; it is what lets
-       * the boarding and the meeting stile read at all in that shadow.
-       */
-      const tone = 1.02 + hash2(j, s + 7, 53) * 0.34;
-      box(
-        timber,
-        Math.min(s * a, s * b), sillY, doorZ - GATE_DOOR_T * 0.5 - jut,
-        Math.max(s * a, s * b), headY, doorZ + GATE_DOOR_T * 0.5 + jut,
-        new THREE.Color().copy(PAL.timber).multiplyScalar(tone)
-      );
-    }
-    // The rebate the leaf shuts against, one plank thickness behind the meeting stile, so
-    // the shadow gap is a joint between two doors and not a slot through the gate.
-    box(
-      timber,
-      Math.min(0, s * (MEET + 0.06)), sillY, doorZ + GATE_DOOR_T * 0.5 - 0.02,
-      Math.max(0, s * (MEET + 0.06)), headY, doorZ + GATE_DOOR_T * 0.5 + 0.07,
-      new THREE.Color().copy(PAL.timber).multiplyScalar(0.62)
-    );
-    if (detail >= 1) {
-      // Iron straps across the boarding, and the pintle band at the hinge stile.
-      for (let k = 0; k < 4; k++) {
-        const y = sillY + 0.62 + k * 1.24;
-        box(metal, Math.min(0, s * leafHalf), y, doorZ - GATE_DOOR_T * 0.5 - 0.05, Math.max(0, s * leafHalf), y + 0.15, doorZ + GATE_DOOR_T * 0.5 + 0.05, PAL.iron);
-      }
-      const hx = s * leafHalf;
-      box(metal, Math.min(hx, hx - s * 0.26), sillY, doorZ - GATE_DOOR_T * 0.5 - 0.06, Math.max(hx, hx - s * 0.26), headY, doorZ + GATE_DOOR_T * 0.5 + 0.06, PAL.iron);
-      /**
-       * Pintles, and the harr-post they turn on.
-       *
-       * A Roman leaf does not hang on hinges in the mediaeval sense: its hanging stile runs
-       * down past the sill as a *harr*-post and turns in a socket cut in the threshold, with
-       * iron collars strapping it to the jamb. That socket is the detail that reads as "this
-       * is a gate that swings" rather than a panel dropped into a hole, and its absence was
-       * the first thing named about the closure.
-       */
-      for (const hy of [sillY + 0.55, headY - 0.75]) {
-        box(metal, Math.min(hx, hx + s * 0.3), hy, doorZ - 0.2, Math.max(hx, hx + s * 0.3), hy + 0.26, doorZ + 0.2, PAL.iron);
-      }
-      // The harr-post itself, and its bronze-lined socket worn into the threshold slab.
-      box(timber, Math.min(hx, hx - s * 0.2), sillY - 0.14, doorZ - 0.17, Math.max(hx, hx - s * 0.2), headY, doorZ + 0.17, PAL.timberDark);
-      box(metal, hx - 0.24, sillY - 0.02, doorZ - 0.24, hx + 0.24, sillY + 0.06, doorZ + 0.24, PAL.bronze);
-      // Diagonal ledge-brace on the city face, rising from the hanging stile.
-      strut(
-        timber,
-        P0.set(hx - s * 0.18, sillY + 0.5, doorZ + GATE_DOOR_T * 0.5 + 0.06),
-        P1.set(s * MEET, headY - 0.8, doorZ + GATE_DOOR_T * 0.5 + 0.06),
-        0.075,
-        PAL.timber,
-        4
-      );
-    }
-    if (detail >= 2) {
-      // Bosses: square-headed nails on the strap crossings.
-      for (let k = 0; k < 4; k++) {
-        for (let j = 0; j < 3; j++) {
-          const bx = s * (0.45 + j * 0.72);
-          const y = sillY + 0.62 + k * 1.24;
-          box(metal, bx - 0.06, y - 0.06, doorZ - GATE_DOOR_T * 0.5 - 0.11, bx + 0.06, y + 0.21, doorZ - GATE_DOOR_T * 0.5 - 0.05, PAL.iron);
-        }
-      }
-    }
-  }
-  // The drawbar: one oak baulk across both leaves, dropped into sockets cut in the piers.
-  // This is what actually holds a gate, and what a ram has to snap.
-  {
-    box(timber, -leafHalf - 0.55, g + 2.35, doorZ + GATE_DOOR_T * 0.5, leafHalf + 0.55, g + 2.68, doorZ + GATE_DOOR_T * 0.5 + 0.3, PAL.timber);
-    if (detail >= 1) {
-      for (const s of [-1, 1]) {
-        box(metal, s * leafHalf * 0.62 - 0.08, g + 2.3, doorZ + GATE_DOOR_T * 0.5 - 0.03, s * leafHalf * 0.62 + 0.08, g + 2.73, doorZ + GATE_DOOR_T * 0.5 + 0.35, PAL.iron);
-      }
-    }
-  }
+
   /**
    * The lunette over the doors, filled in brick.
    *
@@ -1990,6 +1957,314 @@ function buildGate(batch: Batch, detail: number, bay: Bay, heightAt: (x: number,
 
 /** Guardhouse walls and roof; one stream at far detail. See `Batch.distinct`. */
 const GUARD_KEYS: readonly CityMatKey[] = ['brick', 'roof'];
+
+/** The two streams the leaves and their ironwork land in. See `Batch.distinct`. */
+const GATE_DOOR_KEYS: readonly CityMatKey[] = ['timber', 'metal'];
+
+/**
+ * The twin leaves, **shut and barred** — and in their own chunk, so they can stop being.
+ *
+ * They used to be swung flat back against the reveals, which is the fourth thing the
+ * player reported: "The main gate door is open by default. it should be closed. It should
+ * have to be battered down by the battering ram." A gate standing open is not a gate, and
+ * an open gate makes the whole siege train decorative — the ram had nothing to break and
+ * the assault could walk up the Via Flaminia into the city.
+ *
+ * Built shut in the door plane rather than as two swung boxes: the leaves meet on the
+ * centreline, close down onto the threshold slab and up to the springing of the vault, and
+ * the semicircular lunette above them is filled in brick. Nothing can see through.
+ *
+ * **Why this is not part of `buildGate`.** The *state* lives in `GateDoorOut` and
+ * `GateOut.open`, and the published comment has always said the siege system "swings or
+ * wrecks these by hiding this geometry and drawing its own" — but the leaves were merged
+ * into the gatehouse's own timber and metal streams and there was nothing separable to
+ * hide. `setGateOpen` re-cut the raster and the boxes and the doors stayed drawn, so a ram
+ * could land twenty-six blows, open the gate and let men through the arch while the player
+ * watched two leaves that never moved. They are their own `CityChunkSpec` now, tagged
+ * `gateDoorFor`, and `CitySystem.setGateDoorBroken(id)` takes them off the screen.
+ *
+ * The lunette stays with the gatehouse. It is brick fill above the springing and a ram
+ * that breaks the doors has not taken the arch down with them.
+ *
+ * **`wrecked` builds the same leaves in the pose the ram left them**, into a second chunk
+ * tagged `gateWreckFor`. One function and one set of constants for both states, because two
+ * would drift: a wreck authored from remembered dimensions is how you get splinters that do
+ * not line up with the jambs the doors hung in. See `WRECK` for what the pose is and why
+ * hiding the leaves alone is not enough.
+ */
+function buildGateLeaves(
+  batch: Batch,
+  detail: number,
+  bay: Bay,
+  heightAt: (x: number, z: number) => number,
+  wrecked = false
+): void {
+  const metal = batch.s('metal');
+  const timber = batch.s('timber');
+  const f = frameOf(bay.x0, bay.z0, bay.x1, bay.z1);
+  const cx = GATE_X;
+  const cz = lerp(bay.z0, bay.z1, (GATE_X - bay.x0) / WALL.towerSpacing);
+  const g = heightAt(cx, cz);
+  const zF = -GATE_BLOCK_D * 0.5;
+  const used = batch.pushAll(GATE_DOOR_KEYS, new THREE.Matrix4().makeRotationY(f.rotY).setPosition(cx, 0, cz));
+
+  const doorZ = zF + GATE_DOOR_SET;
+  const leafHalf = GATE_OPEN_WIDTH * 0.5;
+  const sillY = g + GATE_DOOR_SILL;
+  const headY = g + GATE_SPRING;
+  const planks = detail >= 2 ? 11 : detail === 1 ? 6 : 1;
+  /**
+   * The meeting stile: a 45 mm shadow gap on the centreline.
+   *
+   * Two leaves built hard against each other are one slab. A reviewer shown the shut gate
+   * said exactly that — "the plank field runs continuously with no vertical joint anywhere;
+   * as rendered this is one slab" — and the centre joint is the single cue that says *twin
+   * leaves* at any distance. The gap is a real void down the middle, closed behind by the
+   * rebate below so nothing can see through it.
+   */
+  const MEET = 0.045;
+  for (const s of [-1, 1]) {
+    /**
+     * The wrecked pose, as a transform around the intact leaf.
+     *
+     * `s = -1` is still on its harr-post: swung `WRECK.swing` into the passage, canted off
+     * plumb because the upper pintle has torn out, and with its head beaten away. `s = +1`
+     * came off altogether and lies face-up across the carriageway inside the arch. Both are
+     * hinged **inward**, which is the only way a ram can drive them; local `+z` is the city
+     * side here, the same convention the guardhouse and the carriageway are placed in.
+     *
+     * A rotation about the hinge, not a hand-placed box: the hinge line is
+     * `GateDoorOut.halfWidth` and the sill is `GATE_DOOR_SILL`, so the wreck stands in the
+     * same jambs the doors hung in and cannot drift from them. Composed as
+     * `T(hinge)·R·T(-hinge)` and pushed onto both streams, so every plank, strap, boss and
+     * brace of the intact leaf comes along without being re-authored.
+     */
+    const hingeX = s * leafHalf;
+    let posed: GeoStream[] | null = null;
+    if (wrecked) {
+      const m = new THREE.Matrix4();
+      if (s < 0) {
+        m.makeTranslation(hingeX, sillY, doorZ)
+          .multiply(new THREE.Matrix4().makeRotationY(s * WRECK.swing))
+          .multiply(new THREE.Matrix4().makeRotationX(WRECK.cant))
+          .multiply(new THREE.Matrix4().makeTranslation(-hingeX, -sillY, -doorZ));
+      } else {
+        m.makeTranslation(hingeX * WRECK.slide, g + WRECK.lie, doorZ + WRECK.shove)
+          .multiply(new THREE.Matrix4().makeRotationY(WRECK.yaw))
+          .multiply(new THREE.Matrix4().makeRotationX(WRECK.flat))
+          .multiply(new THREE.Matrix4().makeTranslation(-hingeX, -sillY, -doorZ));
+      }
+      posed = batch.pushAll(GATE_DOOR_KEYS, m);
+    }
+    /**
+     * How much of each plank column survives, and why the head goes first.
+     *
+     * A ram strikes the meeting stile, so the loss is greatest on the centreline and tapers
+     * to the hanging stile, which is braced against the jamb — which is also what leaves the
+     * unmistakable silhouette of a broken gate: a ragged V bitten out of the middle, not a
+     * clean rectangle of missing door. `j` counts outward from the centre, so the profile is
+     * a straight function of it, hashed a little so no two columns break level.
+     */
+    const survives = (j: number): number =>
+      !wrecked
+        ? 1
+        : Math.min(1, (s < 0 ? 0.26 : 0.5) + (0.5 * j) / planks + hash2(j, s + 3, 71) * 0.16);
+    const topAt = (j: number): number => sillY + (headY - sillY) * survives(j);
+    /** The hanging stile: the tallest thing still standing on this leaf. */
+    const leafTop = topAt(planks - 1);
+    /** Inner edge of the first column still standing at height `y`, for clipping a strap. */
+    const standingFrom = (y: number): number => {
+      for (let j = 0; j < planks; j++) {
+        if (topAt(j) >= y) return s * (MEET + ((leafHalf - MEET) * j) / planks);
+      }
+      return s * leafHalf;
+    };
+    /**
+     * Vertical oak boarding.
+     *
+     * Vertical is not a detail. Roman gate leaves — and effectively all pre-modern ones —
+     * are vertically planked onto horizontal ledges, because horizontal boards put every
+     * plank in bending across the full width of the leaf with nothing to hang them from. The
+     * planks are stepped 20 mm proud and shy of each other in turn, which is what puts a
+     * vertical shadow line between them: without it the timber material's own horizontal
+     * grain wins and the leaf reads as horizontal boarding, which is how the first pass was
+     * described.
+     */
+    for (let j = 0; j < planks; j++) {
+      const a = MEET + ((leafHalf - MEET) * j) / planks;
+      const b = MEET + ((leafHalf - MEET) * (j + 1)) / planks;
+      const jut = planks > 1 ? (j % 2 === 0 ? 0.02 : -0.014) + (hash2(j, s + 1, 17) - 0.5) * 0.01 : 0;
+      /**
+       * Weathered oak, not the dark timber the rest of the site is built from.
+       *
+       * The leaves hang 2.2 m inside an 11 m barrel vault with no bounce light in the engine,
+       * so at `timberDark` they render as a black rectangle and a reviewer reported the ram's
+       * target — the most important object on the map for a siege — as simply invisible. Oak
+       * that has stood in the weather on the north face of a city gate for a century is
+       * silver-grey, not brown, so the brighter value is also the truer one; it is what lets
+       * the boarding and the meeting stile read at all in that shadow.
+       */
+      const tone = 1.02 + hash2(j, s + 7, 53) * 0.34;
+      box(
+        timber,
+        Math.min(s * a, s * b), sillY, doorZ - GATE_DOOR_T * 0.5 - jut,
+        Math.max(s * a, s * b), topAt(j), doorZ + GATE_DOOR_T * 0.5 + jut,
+        new THREE.Color().copy(PAL.timber).multiplyScalar(tone)
+      );
+    }
+    // The rebate the leaf shuts against, one plank thickness behind the meeting stile, so
+    // the shadow gap is a joint between two doors and not a slot through the gate.
+    box(
+      timber,
+      Math.min(0, s * (MEET + 0.06)), sillY, doorZ + GATE_DOOR_T * 0.5 - 0.02,
+      Math.max(0, s * (MEET + 0.06)), topAt(0), doorZ + GATE_DOOR_T * 0.5 + 0.07,
+      new THREE.Color().copy(PAL.timber).multiplyScalar(0.62)
+    );
+    if (detail >= 1) {
+      // Iron straps across the boarding, and the pintle band at the hinge stile. A strap
+      // whose boarding has gone is clipped back to the first column still under it, so the
+      // ironwork ends where the timber does instead of hanging in the gap.
+      for (let k = 0; k < 4; k++) {
+        const y = sillY + 0.62 + k * 1.24;
+        if (y + 0.15 > leafTop) continue;
+        const inner = standingFrom(y + 0.15);
+        box(metal, Math.min(inner, s * leafHalf), y, doorZ - GATE_DOOR_T * 0.5 - 0.05, Math.max(inner, s * leafHalf), y + 0.15, doorZ + GATE_DOOR_T * 0.5 + 0.05, PAL.iron);
+      }
+      const hx = s * leafHalf;
+      box(metal, Math.min(hx, hx - s * 0.26), sillY, doorZ - GATE_DOOR_T * 0.5 - 0.06, Math.max(hx, hx - s * 0.26), leafTop, doorZ + GATE_DOOR_T * 0.5 + 0.06, PAL.iron);
+      /**
+       * Pintles, and the harr-post they turn on.
+       *
+       * A Roman leaf does not hang on hinges in the mediaeval sense: its hanging stile runs
+       * down past the sill as a *harr*-post and turns in a socket cut in the threshold, with
+       * iron collars strapping it to the jamb. That socket is the detail that reads as "this
+       * is a gate that swings" rather than a panel dropped into a hole, and its absence was
+       * the first thing named about the closure.
+       */
+      // Upper pintle first: on a wrecked leaf it is the collar that tore out of the jamb and
+      // let the leaf drop, so it is the one piece of ironwork that must *not* still be there.
+      for (const hy of wrecked ? [sillY + 0.55] : [sillY + 0.55, headY - 0.75]) {
+        box(metal, Math.min(hx, hx + s * 0.3), hy, doorZ - 0.2, Math.max(hx, hx + s * 0.3), hy + 0.26, doorZ + 0.2, PAL.iron);
+      }
+      // The harr-post itself, and its bronze-lined socket worn into the threshold slab.
+      box(timber, Math.min(hx, hx - s * 0.2), sillY - 0.14, doorZ - 0.17, Math.max(hx, hx - s * 0.2), leafTop, doorZ + 0.17, PAL.timberDark);
+      box(metal, hx - 0.24, sillY - 0.02, doorZ - 0.24, hx + 0.24, sillY + 0.06, doorZ + 0.24, PAL.bronze);
+      // Diagonal ledge-brace on the city face, rising from the hanging stile. Cut short with
+      // the boarding it braces: a brace running up through nothing reads as a bug.
+      const braceTop = Math.min(headY - 0.8, leafTop - 0.25);
+      if (braceTop > sillY + 0.8) {
+        const reach = (braceTop - (sillY + 0.5)) / Math.max(1e-3, headY - 0.8 - (sillY + 0.5));
+        strut(
+          timber,
+          P0.set(hx - s * 0.18, sillY + 0.5, doorZ + GATE_DOOR_T * 0.5 + 0.06),
+          P1.set(lerp(hx - s * 0.18, s * MEET, reach), braceTop, doorZ + GATE_DOOR_T * 0.5 + 0.06),
+          0.075,
+          PAL.timber,
+          4
+        );
+      }
+    }
+    if (detail >= 2) {
+      // Bosses: square-headed nails on the strap crossings.
+      for (let k = 0; k < 4; k++) {
+        for (let j = 0; j < 3; j++) {
+          const bx = s * (0.45 + j * 0.72);
+          const y = sillY + 0.62 + k * 1.24;
+          if (y + 0.21 > topAt(Math.min(planks - 1, Math.floor(((Math.abs(bx) - MEET) * planks) / (leafHalf - MEET))))) continue;
+          box(metal, bx - 0.06, y - 0.06, doorZ - GATE_DOOR_T * 0.5 - 0.11, bx + 0.06, y + 0.21, doorZ - GATE_DOOR_T * 0.5 - 0.05, PAL.iron);
+        }
+      }
+    }
+    if (posed) batch.popAll(posed);
+  }
+  /**
+   * The drawbar: one oak baulk across both leaves, dropped into sockets cut in the piers.
+   * This is what actually holds a gate, and what a ram has to snap — so on the wrecked pose
+   * it is snapped, in two pieces on the paving with the iron collars still on them. Nothing
+   * else in the frame says "this was barred and the bar gave way".
+   */
+  if (!wrecked) {
+    box(timber, -leafHalf - 0.55, g + 2.35, doorZ + GATE_DOOR_T * 0.5, leafHalf + 0.55, g + 2.68, doorZ + GATE_DOOR_T * 0.5 + 0.3, PAL.timber);
+    if (detail >= 1) {
+      for (const s of [-1, 1]) {
+        box(metal, s * leafHalf * 0.62 - 0.08, g + 2.3, doorZ + GATE_DOOR_T * 0.5 - 0.03, s * leafHalf * 0.62 + 0.08, g + 2.73, doorZ + GATE_DOOR_T * 0.5 + 0.35, PAL.iron);
+      }
+    }
+  } else {
+    for (const s of [-1, 1]) {
+      const yaw = s * 0.42 + WRECK.yaw * 0.5;
+      const bm = new THREE.Matrix4()
+        .makeTranslation(s * leafHalf * 0.5, g + 0.28, doorZ + 1.5 + s * 0.9)
+        .multiply(new THREE.Matrix4().makeRotationY(yaw))
+        .multiply(new THREE.Matrix4().makeRotationZ(s * 0.06));
+      const bs = batch.pushAll(GATE_DOOR_KEYS, bm);
+      const half = leafHalf * 0.55 + 0.3;
+      // Split square across the bar, then torn back along the grain on one side, which is
+      // how a baulk in bending actually fails.
+      box(timber, -half, -0.165, -0.15, half, 0.165, 0.15, PAL.timber);
+      box(timber, half - 0.02, -0.06, -0.11, half + 0.44 + s * 0.2, 0.05, 0.02, PAL.timber);
+      if (detail >= 1) {
+        box(metal, -0.08, -0.19, -0.19, 0.08, 0.19, 0.19, PAL.iron);
+      }
+      batch.popAll(bs);
+    }
+    /**
+     * Splinters and plank ends, scattered **through** the arch and not just behind it.
+     *
+     * The leaves hang 2.2 m inside an 11 m barrel vault, so anything modelled at the door
+     * plane is behind a stone reveal and in shadow: from the field the broken gate and the
+     * merely open gate photograph as the same dark rectangle. The player watches the ram from
+     * outside, so the wreck has to reach outside — the run below straddles the outer face at
+     * local z −5.5 and puts timber on the apron of the Via Flaminia, which is also where a
+     * ram striking a leaf's outer face throws it.
+     */
+    for (let k = 0; k < 10; k++) {
+      const hx0 = hash2(k, 3, 91);
+      const hz0 = hash2(k, 8, 37);
+      const ha = hash2(k, 12, 61);
+      const px = (hx0 - 0.5) * GATE_OPEN_WIDTH * 1.45;
+      const pz = doorZ - 5.2 + hz0 * 11.0;
+      const sm = new THREE.Matrix4()
+        .makeTranslation(px, g + 0.12, pz)
+        .multiply(new THREE.Matrix4().makeRotationY(ha * Math.PI))
+        .multiply(new THREE.Matrix4().makeRotationZ((ha - 0.5) * 0.3));
+      const ss = batch.pushAll(GATE_DOOR_KEYS, sm);
+      const ln = 0.5 + ha * 1.5;
+      box(timber, -ln, -0.055, -0.11, ln, 0.055, 0.11, new THREE.Color().copy(PAL.timber).multiplyScalar(0.9 + hz0 * 0.3));
+      batch.popAll(ss);
+    }
+  }
+  batch.popAll(used);
+}
+
+/**
+ * The pose the ram leaves the leaves in, and the reason the wreck is modelled at all.
+ *
+ * Hiding the doors on a breach is one line and it is not enough: an empty archway with the
+ * portcullis still raised behind it is what an *opened* gate looks like, and the player has
+ * just watched a ram spend two minutes on it. What says "broken" is timber that is still
+ * there and is in the wrong place — one leaf hanging skewed off its harr-post with its head
+ * beaten in, the other down across the carriageway, and the drawbar snapped.
+ *
+ * Angles in radians, distances in metres, all applied about the leaf's own hinge line so the
+ * wreck stands in the jambs the intact doors hung in. Local `+z` is the city side.
+ */
+const WRECK = {
+  /** Swing of the surviving leaf into the passage. 41 deg: enough to read at battle range. */
+  swing: 0.72,
+  /** Cant off plumb, the upper collar having torn out of the jamb. */
+  cant: 0.085,
+  /** Tip of the fallen leaf: 84 deg, so it lies on the paving with its head slightly raised. */
+  flat: 1.466,
+  /** Skew of the fallen leaf across the carriageway. */
+  yaw: -0.31,
+  /** How far its foot slid off the hinge line, as a fraction of the half-width. */
+  slide: 0.62,
+  /** How far in from the door plane it came to rest. */
+  shove: 0.85,
+  /** Height of its foot above the ground under the gate. */
+  lie: 0.19,
+} as const;
 
 /**
  * The ground outside the Porta Flaminia: the paved apron of the Via Flaminia widening

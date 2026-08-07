@@ -61,6 +61,20 @@ interface Chunk {
   /** Which of this chunk's meshes may cast, and whether they currently do. */
   casters: THREE.Mesh[];
   casting: boolean;
+  /** This chunk is a gate's shut leaves. `CityChunkSpec.gateDoorFor`. */
+  gateDoorFor: string | null;
+  /** This chunk is a gate's wreckage, drawn only once it is broken. */
+  gateWreckFor: string | null;
+  /**
+   * Held off the screen by something other than distance — today, gate state.
+   *
+   * Kept as a chunk field rather than as a raw `group.visible = false`, because the LOD
+   * swap in `preRender` writes `visible` on every level it moves between and would have
+   * turned the leaves back on the first time the camera crossed a switch distance. Three
+   * places read the current level's group — the swap, `debugForceLod` and the draw ledger
+   * in `getStats` — and all three have to agree that a suppressed chunk is not there.
+   */
+  suppressed: boolean;
 }
 
 /**
@@ -331,6 +345,8 @@ export class CitySystem implements Subsystem {
   private stairs: readonly WallStair[] = [];
   /** The Porta Flaminia's leaves, and whether they are shut. See `getGateDoor`. */
   private gateDoor: GateDoorOut | null = null;
+  /** Gates whose leaves the ram has brought down. See `setGateDoorBroken`. */
+  private brokenGates = new Set<string>();
   /**
    * Bay index by x, for the O(1) masonry lookup a projectile needs. Bays are on a fixed
    * `WALL.towerSpacing` pitch from `WALL_X_MIN`, so the index is arithmetic, not a search:
@@ -844,6 +860,13 @@ export class CitySystem implements Subsystem {
       if (i < wanted.length - 1) switchAt.push(spec.lodSwitch[wanted[i + 1] === 1 ? 0 : 1]);
     }
 
+    // Wreckage is authored for a state the battle has not reached, so it is baked and then
+    // held off the screen. Costing nothing to draw is the whole reason it can be built at
+    // all: a hidden group is skipped by `WebGLRenderer.projectObject`, so the broken gate is
+    // free until it is broken and the intact leaves it replaces are free afterwards.
+    const suppressed = spec.gateWreckFor !== undefined;
+    if (suppressed) for (const l of levels) l.group.visible = false;
+
     this.chunks.push({
       name: spec.name,
       cx: spec.cx,
@@ -856,6 +879,9 @@ export class CitySystem implements Subsystem {
       current: 0,
       casters,
       casting: true,
+      gateDoorFor: spec.gateDoorFor ?? null,
+      gateWreckFor: spec.gateWreckFor ?? null,
+      suppressed,
     });
   }
 
@@ -982,6 +1008,7 @@ export class CitySystem implements Subsystem {
     if (this.forcedLod !== null) return;
     const cam = ctx.camera.position;
     for (const c of this.chunks) {
+      if (c.suppressed) continue;
       const dx = cam.x - c.cx;
       const dy = cam.y - c.cy;
       const dz = cam.z - c.cz;
@@ -1045,7 +1072,18 @@ export class CitySystem implements Subsystem {
     return this.gateList;
   }
 
-  /** Open or close a gate. Closing it fills the passage in the movement grid. */
+  /**
+   * Open or close a gate. Closing it fills the passage in the movement grid.
+   *
+   * **This now moves the leaves too.** It used to write the occupancy raster, re-cut the
+   * oriented boxes and touch no mesh, so a gate the ram had opened went on being *drawn*
+   * shut for the rest of the battle: measured on Rome, the ram reaches the leaves at t+100,
+   * lands 26 blows, the gate is open at t+220 and three men are on the carriageway by t+300
+   * — and the player watches two doors that never move. Drawing shut leaves across a
+   * carriageway that pathfinding, the crowd solver and the obstacle push-out all treat as
+   * open is not a stylisation, it is the two halves of one state disagreeing, which is the
+   * bug class `getGateDoor` already re-reads `open` off the gate record to avoid.
+   */
   setGateOpen(id: string, open: boolean): void {
     const gate = this.gateList.find((g) => g.id === id);
     if (!gate || gate.open === open) return;
@@ -1053,6 +1091,82 @@ export class CitySystem implements Subsystem {
     if (open) this.clearSegment(gate.x, gate.z - 20, gate.x, gate.z + 20, 2.4);
     else this.markSegment(gate.x, gate.z - 6, gate.x, gate.z + 6, 2.6);
     this.recutWallObstacles();
+    this.applyGateDoorState(id);
+  }
+
+  /**
+   * The leaves of gate `id` are **wreckage**: hide them and put the splinters on the ground.
+   *
+   * This is the seam the siege workstream asked for, in its words — "emit the twin leaves as
+   * their own object, or add `CitySystem.setGateDoorBroken(id)`". Both were done: the leaves
+   * are their own `CityChunkSpec` on both circuits, tagged `gateDoorFor`, and a second chunk
+   * tagged `gateWreckFor` carries the broken pose. This call swaps one for the other.
+   *
+   * The exact call, from `Siege.ts`, at the point where `gateBreached` is set:
+   *
+   * ```ts
+   * const broken = this.city?.getGates()[0];
+   * if (broken) {
+   *   this.city?.setGateOpen(broken.id, true);
+   *   this.city?.setGateDoorBroken(broken.id);   // ← the new line
+   * }
+   * ```
+   *
+   * Read the id off the same gate the rest of the siege uses and never name one: `7e72785`
+   * was landed because the breach said `'porta-flaminia'` while `armGate` and `spawnRam`
+   * used `getGates()[0]`, and on Carthage the ram then landed every blow into a carriageway
+   * that stayed solid for ever. `setGateDoorBroken` takes an id for the same reason and does
+   * nothing at all if no chunk claims it, so a circuit with no modelled leaves is not a
+   * crash.
+   *
+   * **`setGateOpen(id, true)` alone already hides the intact leaves**, because an open gate
+   * with its doors drawn shut is simply wrong however it was opened. What this adds is the
+   * *broken* state, and it is sticky: `setGateOpen(id, false)` re-hangs leaves that are
+   * merely shut, and `armGate` shuts the gate on the first tick of every battle, so without
+   * the distinction a wrecked gate would grow its doors back the moment anything closed it.
+   * Pass `false` to un-break — scenario restart, not gameplay.
+   *
+   * Visual only. It writes no raster, no obstacle and no `GateOut`, so it cannot be a source
+   * of divergence and it is safe to call outside `fixedUpdate`.
+   */
+  setGateDoorBroken(id: string, broken = true): void {
+    if (broken) this.brokenGates.add(id);
+    else this.brokenGates.delete(id);
+    this.applyGateDoorState(id);
+  }
+
+  /** True once `setGateDoorBroken` has been called for this gate. */
+  isGateDoorBroken(id: string): boolean {
+    return this.brokenGates.has(id);
+  }
+
+  /**
+   * Point the leaf and wreck chunks at the gate's current state.
+   *
+   * Derived from `GateOut.open` and the broken set every time rather than tracked, because
+   * two records that can disagree about whether Rome is open is the bug this file keeps
+   * producing.
+   */
+  private applyGateDoorState(id: string): void {
+    const broken = this.brokenGates.has(id);
+    const open = this.gateList.find((g) => g.id === id)?.open ?? false;
+    const hangs = !broken && !open;
+    for (const c of this.chunks) {
+      if (c.gateDoorFor === id) this.suppressChunk(c, !hangs);
+      else if (c.gateWreckFor === id) this.suppressChunk(c, !broken);
+    }
+  }
+
+  /** Take a chunk off the screen, or put it back at whatever level it was on. */
+  private suppressChunk(c: Chunk, off: boolean): void {
+    if (c.suppressed === off) return;
+    c.suppressed = off;
+    for (let i = 0; i < c.levels.length; i++) c.levels[i].group.visible = !off && i === c.current;
+    // A hidden group is skipped by the colour pass but **not** by the shadow pass unless the
+    // flag comes off the meshes: `WebGLShadowMap.render` walks the scene itself. These two
+    // chunks ship `castShadow: false` so the list is empty, but a future one need not.
+    if (off) for (const m of c.casters) m.castShadow = false;
+    else this.applyCasting(c);
   }
 
   /**
@@ -1188,6 +1302,7 @@ export class CitySystem implements Subsystem {
     if (!door) return null;
     const gate = this.gateList.find((g) => g.id === door.gateId);
     door.open = gate ? gate.open : false;
+    door.broken = this.brokenGates.has(door.gateId);
     return door;
   }
 
@@ -1416,9 +1531,9 @@ export class CitySystem implements Subsystem {
     for (const c of this.chunks) {
       const want = clamp(level, 0, c.levels.length - 1);
       if (want === c.current) continue;
-      c.levels[c.current].group.visible = false;
-      c.levels[want].group.visible = true;
       c.current = want;
+      if (c.suppressed) continue;
+      for (let i = 0; i < c.levels.length; i++) c.levels[i].group.visible = i === want;
     }
   }
 
@@ -1537,6 +1652,9 @@ export class CitySystem implements Subsystem {
     let visibleTriangles = 0;
     const byFamily = new Map<string, number>();
     for (const c of this.chunks) {
+      // A suppressed chunk draws nothing, so it must not appear in the ledger the draw-call
+      // budget is argued from. The gate's wreckage is baked from t=0 and is not on screen.
+      if (c.suppressed) continue;
       const lvl = c.levels[c.current];
       const n = lvl.group.children.length;
       visibleMeshes += n;

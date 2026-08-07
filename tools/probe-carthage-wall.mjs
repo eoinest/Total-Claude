@@ -382,78 +382,62 @@ const result = await page.evaluate(
       `median rise ${median.toFixed(2)} m (walk 13.86 + parapet 2.15 + tower tail)`);
 
     /**
-     * B3: the **forward lines' own stone**, and this assertion exists because it was missing.
+     * B3: **the approach is empty**, and this is the inverse of the assertion it replaces.
      *
-     * Every check on the outworks measured their published records — offsets, command,
-     * permeability, passages — and every one passed while the question "is there any masonry
-     * out there at all" had never been asked. It took a screenshot to notice, which is
-     * precisely the failure this probe is written to make impossible: a record is a claim and
-     * a triangle is a fact. Same technique as B1, splatted by x-extent, but classified by the
-     * signed offset from the main line so each of the three lines gets its own profile.
+     * The old B3 measured the outer and middle lines' own stone, because every other check on
+     * them read their published records and none had ever asked "is there any masonry out
+     * there at all" — a record is a claim and a triangle is a fact. The two lines are gone,
+     * and the same technique run the other way is what proves it: walk the whole frontage in
+     * the corridor from just clear of the towers out past the ditch, splat every triangle by
+     * its own x-extent, and demand that nothing stands there.
+     *
+     * Deleting the records without deleting the geometry is a real failure mode and it is
+     * invisible from every accessor — `getOutworks()` would answer empty while the palisade
+     * still stood, exactly the way round that the original B3 was written to catch.
      */
-    const owLines = { middle: null, outer: null };
-    for (const id of ['middle', 'outer']) {
-      const line = outworks.filter((o) => o.id === id && !o.standsDown);
-      if (line.length === 0) continue;
-      const off = line.reduce((acc, o) => {
-        const b = bays[o.bay];
-        const mx = (o.x0 + o.x1) * 0.5;
-        const mz = (o.z0 + o.z1) * 0.5;
-        const t = (mx - b.x0) * b.dx + (mz - b.z0) * b.dz;
-        return acc + (mx - (b.x0 + b.dx * t)) * b.nx + (mz - (b.z0 + b.dz * t)) * b.nz;
-      }, 0) / line.length;
-      const half = line[0].halfThickness + 2.5;
-      const top = new Float64Array(nBin).fill(-Infinity);
-      for (let t = 0; t < tris.length; t += 9) {
-        const xa = Math.min(tris[t], tris[t + 3], tris[t + 6]);
-        const xb = Math.max(tris[t], tris[t + 3], tris[t + 6]);
-        const yMax = Math.max(tris[t + 1], tris[t + 4], tris[t + 7]);
-        const xc = (xa + xb) * 0.5;
-        const zc = (tris[t + 2] + tris[t + 5] + tris[t + 8]) / 3;
-        const b = lineOf(xc);
-        const tt = (xc - b.x0) * b.dx + (zc - b.z0) * b.dz;
-        const o2 = (xc - (b.x0 + b.dx * tt)) * b.nx + (zc - (b.z0 + b.dz * tt)) * b.nz;
-        if (Math.abs(o2 - off) > half) continue;
-        const ia = Math.max(0, Math.floor((xa - x0) / STEP));
-        const ib = Math.min(nBin - 1, Math.ceil((xb - x0) / STEP));
-        for (let i = ia; i <= ib; i++) if (yMax > top[i]) top[i] = yMax;
-      }
-      // Walk each standing bay of this line and demand stone over it, off the passage.
-      let holes = 0;
-      let checked = 0;
-      let worstHole = 0;
-      let holeX = 0;
-      let run = 0;
-      for (const o of line) {
-        const len = Math.hypot(o.x1 - o.x0, o.z1 - o.z0);
-        for (let t = 1.0; t < len - 1.0; t += 1.0) {
-          if (o.passageAt !== null && Math.abs(t - o.passageAt) <= 4.5) { run = 0; continue; }
-          const px = o.x0 + o.dx * t;
-          const i = Math.floor((px - x0) / STEP);
-          if (i < 0 || i >= nBin) continue;
-          checked++;
-          const g = terrain.heightAt(px, o.z0 + o.dz * t);
-          if (!(top[i] - g > 1.2)) {
-            holes++;
-            run += 1.0;
-            if (run > worstHole) { worstHole = run; holeX = px; }
-          } else run = 0;
-        }
-      }
-      owLines[id] = { off, checked, holes, worstHole, holeX, bays: line.length };
+    // The builder's own tower projection, not a literal: an assertion that re-derives the
+    // number it is testing against cannot fail.
+    const secB = city.punicSection ? city.punicSection() : null;
+    const APPROACH_FROM = bays[0].halfThickness + (secB ? secB.towerProject : 5.5) + 2.0;
+    const APPROACH_TO = 70.0;
+    const approachTop = new Float64Array(nBin).fill(-Infinity);
+    for (let t = 0; t < tris.length; t += 9) {
+      const xa = Math.min(tris[t], tris[t + 3], tris[t + 6]);
+      const xb = Math.max(tris[t], tris[t + 3], tris[t + 6]);
+      const yMax = Math.max(tris[t + 1], tris[t + 4], tris[t + 7]);
+      const xc = (xa + xb) * 0.5;
+      const zc = (tris[t + 2] + tris[t + 5] + tris[t + 8]) / 3;
+      const b = lineOf(xc);
+      const tt = (xc - b.x0) * b.dx + (zc - b.z0) * b.dz;
+      const o2 = (xc - (b.x0 + b.dx * tt)) * b.nx + (zc - (b.z0 + b.dz * tt)) * b.nz;
+      // Signed, and outward-positive: only the field side counts. The ramps and the gallery
+      // ramps stand at −8 to −9 m and are none of this assertion's business.
+      if (o2 < APPROACH_FROM || o2 > APPROACH_TO) continue;
+      const ia = Math.max(0, Math.floor((xa - x0) / STEP));
+      const ib = Math.min(nBin - 1, Math.ceil((xb - x0) / STEP));
+      for (let i = ia; i <= ib; i++) if (yMax > approachTop[i]) approachTop[i] = yMax;
     }
-    out.facts.outerStone = owLines.outer;
-    out.facts.middleStone = owLines.middle;
-    ok('B3 both forward lines are standing masonry, not just published records',
-      !!owLines.middle && !!owLines.outer &&
-        owLines.middle.worstHole <= 3 && owLines.outer.worstHole <= 3,
-      ['middle', 'outer'].map((id) => {
-        const L = owLines[id];
-        return L
-          ? `${id} ${L.bays} bays, ${L.checked - L.holes}/${L.checked} m walled, ` +
-            `worst hole ${L.worstHole.toFixed(0)} m at x=${L.holeX.toFixed(0)}`
-          : `${id} MISSING`;
-      }).join('; '));
+    let standing = 0;
+    let worstStand = 0;
+    let worstStandX = 0;
+    for (let i = 0; i < nBin; i++) {
+      if (!Number.isFinite(approachTop[i])) continue;
+      const rise = approachTop[i] - ground[i];
+      // 1.0 m: below that is a plinth skirt or a footing apron of the wall itself sampled at
+      // the corridor's inner edge, which is masonry that belongs to the main line.
+      if (rise > 1.0) {
+        standing++;
+        if (rise > worstStand) { worstStand = rise; worstStandX = x0 + i * STEP; }
+      }
+    }
+    out.facts.approachCorridor = { from: APPROACH_FROM, to: APPROACH_TO, bins: nBin };
+    out.facts.approachStandingMetres = standing * STEP;
+    out.facts.approachWorstRise = worstStand;
+    ok('B3 the approach in front of the wall carries no masonry at all',
+      standing === 0,
+      `${(standing * STEP).toFixed(1)} m of the frontage carries something standing between ` +
+        `${APPROACH_FROM.toFixed(1)} and ${APPROACH_TO} m out` +
+        (standing ? `, worst ${worstStand.toFixed(2)} m at x=${worstStandX.toFixed(0)}` : ''));
 
     // --- masonryTopAt agrees with the stone ------------------------------
     /**
@@ -632,66 +616,113 @@ const result = await page.evaluate(
     }
     ok('C4 no part of any ramp is outboard of the wall (signed offsets all ≤ 0)',
       rampOutside === 0, `${rampOutside} outboard points`);
-    // C5: the forward lines really are forward. Signed offset from the main line.
-    let owSign = { outer: [], middle: [] };
-    for (const o of outworks) {
-      const b = lineOf((o.x0 + o.x1) * 0.5);
-      const mx = (o.x0 + o.x1) * 0.5;
-      const mz = (o.z0 + o.z1) * 0.5;
-      const tt = (mx - b.x0) * b.dx + (mz - b.z0) * b.dz;
+    /**
+     * C5: **the ditch is in front of the wall**, signed, and it is the only forward work left.
+     *
+     * The offset it replaces was the outer and middle lines'. This is the same test on the
+     * same axis for the same reason: `CarthageDitch.offset` is measured along the *outward*
+     * normal, so a sign error puts a 20 × 6 m trench through the intervallum behind the
+     * curtain, where the garrison forms up and where nothing in the pathfinder knows it is.
+     * Measured off the published path, point by point, not off the scalar — the scalar is the
+     * builder's claim and the path is what a terrain agent will actually cut to.
+     */
+    const ditchPub = city.getDitch ? city.getDitch() : null;
+    let ditchBehind = 0;
+    let ditchOffMin = Infinity;
+    let ditchOffMax = -Infinity;
+    for (const p of ditchPub ? ditchPub.path : []) {
+      const b = lineOf(p.x);
+      const tt = (p.x - b.x0) * b.dx + (p.z - b.z0) * b.dz;
       const px = b.x0 + b.dx * tt;
       const pz = b.z0 + b.dz * tt;
-      owSign[o.id].push((mx - px) * b.nx + (mz - pz) * b.nz);
+      const off = (p.x - px) * b.nx + (p.z - pz) * b.nz;
+      if (off < ditchOffMin) ditchOffMin = off;
+      if (off > ditchOffMax) ditchOffMax = off;
+      // Clear of the wall's own footing by at least the berm, on the field side.
+      if (!(off - ditchPub.width * 0.5 >= b.halfThickness)) ditchBehind++;
     }
-    const meanOf = (a) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : NaN);
-    out.facts.outerOffset = meanOf(owSign.outer);
-    out.facts.middleOffset = meanOf(owSign.middle);
-    ok('C5 outer and middle stand in front of the main line, in that order (signed)',
-      meanOf(owSign.outer) > meanOf(owSign.middle) && meanOf(owSign.middle) > 5,
-      `outer +${meanOf(owSign.outer).toFixed(1)} m, middle +${meanOf(owSign.middle).toFixed(1)} m`);
-
-    // --- the triple wall, as a defence in depth --------------------------
-    ok('C6 there are three lines and the main one overlooks both',
-      outworks.length > 0 &&
-        outworks.every((o) => {
-          if (o.standsDown) return true;
-          // The bay the record itself names, not one this probe goes and looks up: the two
-          // disagreed by a whole bay where the wall line bends, and the lookup lost.
-          const b = bays[o.bay];
-          return !!b && b.walkY >= o.crestY + 3.99;
-        }),
-      (() => {
-        let worst = Infinity;
-        for (const o of outworks) {
-          if (o.standsDown) continue;
-          const b = bays[o.bay];
-          if (b) worst = Math.min(worst, b.walkY - o.crestY);
-        }
-        return `least command ${Number.isFinite(worst) ? worst.toFixed(2) : '-'} m over ` +
-          `${outworks.filter((o) => !o.standsDown).length} standing bays`;
-      })()
-    );
+    out.facts.ditchOffsetRange = [ditchOffMin, ditchOffMax];
+    out.facts.ditchPathPoints = ditchPub ? ditchPub.path.length : 0;
+    ok('C5 the ditch is published on the field side of the wall, clear of it (signed)',
+      !!ditchPub && ditchPub.path.length >= 8 && ditchBehind === 0 &&
+        Math.abs(ditchOffMax - ditchOffMin) < 0.5,
+      ditchPub
+        ? `${ditchPub.path.length} points at +${ditchOffMin.toFixed(2)}..+${ditchOffMax.toFixed(2)} m ` +
+          `outward, ${ditchBehind} of them inside the wall's footing; ` +
+          `counterscarp stands ${(ditchOffMin - ditchPub.width * 0.5 - bays[0].halfThickness).toFixed(2)} m ` +
+          'off the outer face'
+        : 'no ditch published');
 
     /**
-     * Permeability: the longest run of forward masonry with no way through it.
+     * C6: **one line, and all three views agree.**
      *
-     * A triple wall that a storming party cannot reach at all is not a harder wall, it is a
-     * broken map. Every line has staggered gate gaps and posterns and this measures how far
-     * a man can be from one.
+     * This replaces "there are three lines and the main one overlooks both", which was the
+     * command test that made a defence in depth mean something. With one line the claim that
+     * has to be checked is the owner's: *the soldiers treat exactly one wall as real.* So
+     * sample the whole of the old belt — the killing ground at +24.6 m and the outwork's
+     * ground at +41.6 m, the two offsets the removed lines stood on — and require the
+     * records, the missile lookup and the movement surface to say the same thing about it.
+     *
+     * Three views, because each one is a different consumer and this project has shipped a
+     * disagreement between exactly this pair before: a raster that was open where the boxes
+     * were not, and units routed at a gate the collision surface did not have.
      */
-    let worstSolidRun = 0;
-    for (const id of ['outer', 'middle']) {
-      const line = outworks.filter((o) => o.id === id).sort((a, b) => a.x0 - b.x0);
-      let acc = 0;
-      for (const o of line) {
-        if (o.passageAt !== null || o.standsDown) { acc = 0; continue; }
-        acc += Math.hypot(o.x1 - o.x0, o.z1 - o.z0);
-        if (acc > worstSolidRun) worstSolidRun = acc;
+    let owRecords = outworks.length;
+    let masonryOut = 0;
+    let blockedOut = 0;
+    let sampledOut = 0;
+    for (const b of bays) {
+      const len = Math.hypot(b.x1 - b.x0, b.z1 - b.z0);
+      for (let t = 2; t < len - 2; t += 6) {
+        const cx = b.x0 + b.dx * t;
+        const cz = b.z0 + b.dz * t;
+        for (const off of [24.55, 41.55]) {
+          const px = cx + b.nx * off;
+          const pz = cz + b.nz * off;
+          sampledOut++;
+          if (Number.isFinite(city.masonryTopAt(px, pz))) masonryOut++;
+          // A 3 m step across the old line's own thickness: if masonry were still stamped
+          // there this crosses it.
+          if (city.blocksMovement(px - b.nx * 3, pz - b.nz * 3, px + b.nx * 3, pz + b.nz * 3)) {
+            blockedOut++;
+          }
+        }
       }
     }
-    out.facts.worstSolidOutworkRun = worstSolidRun;
-    ok('C7 no forward line runs more than 130 m without a way through',
-      worstSolidRun <= 130, `longest solid run ${worstSolidRun.toFixed(0)} m`);
+    out.facts.oldBeltSamples = sampledOut;
+    out.facts.oldBeltMasonry = masonryOut;
+    out.facts.oldBeltBlocked = blockedOut;
+    ok('C6 exactly one wall is real, in records, masonryTopAt and blocksMovement alike',
+      owRecords === 0 && masonryOut === 0 && blockedOut === 0,
+      `${owRecords} forward-line records; over ${sampledOut} stations on the old middle and ` +
+        `outer offsets: ${masonryOut} report masonry, ${blockedOut} stop movement`);
+
+    /**
+     * C7: permeability, now carried entirely by the main wall.
+     *
+     * The old C7 measured the forward lines, on the argument that a wall a storming party
+     * cannot reach at all is a broken map rather than a harder one. That argument did not
+     * belong to the outworks; it belongs to whatever line is in front, and now there is one.
+     * Longest run of curtain with no gate and no postern in it, measured off the published
+     * gates so a cadence change in the builder cannot slip past.
+     */
+    const openings = gates
+      .map((g) => ({ id: g.id, x: g.x }))
+      .sort((a, b) => a.x - b.x);
+    let worstSolidRun = 0;
+    let worstSolidAt = 0;
+    {
+      let prev = bays[0].x0;
+      for (const o of [...openings, { id: 'east end', x: bays[bays.length - 1].x1 }]) {
+        if (o.x - prev > worstSolidRun) { worstSolidRun = o.x - prev; worstSolidAt = prev; }
+        prev = o.x;
+      }
+    }
+    out.facts.worstSolidCurtainRun = worstSolidRun;
+    ok('C7 no stretch of curtain runs more than 260 m without a gate or a postern',
+      worstSolidRun <= 260,
+      `longest run ${worstSolidRun.toFixed(0)} m from x=${worstSolidAt.toFixed(0)}, ` +
+        `over ${openings.length} openings`);
 
     // --- the casemate ----------------------------------------------------
     const stalls = casemates.reduce((s, c) => s + c.stalls, 0);
@@ -772,41 +803,72 @@ const result = await page.evaluate(
       !!sec && sec.faults.length === 0,
       sec ? (sec.faults.length ? sec.faults.join('; ') : 'section closes') : 'not published');
 
-    // §4.2: 74.1 m from the ditch's outer lip to the back of the main wall — and how much of
-    // it is actually standing, which is not the same number while the ditch is a request.
+    /**
+     * §4.2, and the number moved with the design rather than being left as a claim.
+     *
+     * The belt was 74.1 m — 20 m ditch, 5 m berm, the outwork, 12 m, the middle wall, 18 m of
+     * killing ground and then 9.1 m of curtain — and it bought the spec's 12.4× headline over
+     * Rome's six metres. With the two forward lines gone it is the ditch, the berm and the
+     * wall: **34.1 m, still 5.7× Rome**, of which 14.1 m is standing masonry and 20 m is a
+     * request to the heightfield. Saying which part is which is the whole point of publishing
+     * it, and it is why the check is against the builder's own posted arithmetic and not
+     * against a literal this file keeps in step by hand.
+     */
     const ditch = city.getDitch ? city.getDitch() : null;
     out.facts.beltDepth = sec ? sec.beltDepth : null;
     out.facts.beltBuilt = sec ? sec.beltDepth - (ditch && !ditch.built ? ditch.width : 0) : null;
-    ok('G2 the belt is the spec depth, and says which part of it is built',
-      !!sec && Math.abs(sec.beltDepth - 74.1) < 0.05 && !!ditch && ditch.built === false,
-      sec ? `${sec.beltDepth.toFixed(1)} m published, ` +
+    const beltWanted = sec ? sec.ditchWidth + sec.berm + sec.mainThickness : NaN;
+    ok('G2 the belt is ditch + berm + wall, and says which part of it is built',
+      !!sec && Math.abs(sec.beltDepth - beltWanted) < 0.001 && !!ditch && ditch.built === false,
+      sec ? `${sec.beltDepth.toFixed(1)} m published (${sec.ditchWidth} ditch + ${sec.berm} berm ` +
+        `+ ${sec.mainThickness} wall), ` +
         `${(sec.beltDepth - (ditch ? ditch.width : 0)).toFixed(1)} m built; ` +
         `the ${ditch ? ditch.width : 0} m ditch is a terrain cut and is published as a request`
         : 'not published');
 
     /**
-     * §4.5, and the spec calls this decision worth more than any texture: **a ram at the
-     * ditch must not see daylight through the belt.**
+     * **A ram driven straight at a gate does not get through it.**
      *
-     * Tested as a movement query along the gate's own outward normal from beyond the outwork
-     * to just clear of the main wall. If the three openings were in line this walk is
-     * unobstructed; with them staggered 8 m either way, it is not.
+     * §4.5's staggered openings were the mechanism — three gaps offset 8 m apart so a ram at
+     * the ditch could not see the leaves — and they went with the lines that carried them.
+     * The claim they backed is the one that still matters and it is tested unchanged: walk
+     * the gate's own outward normal from clear of the ditch to just inside the passage and
+     * require the movement surface to stop it. What stops it now is the gate itself — leaves
+     * shut and barred at the Porta Byrsae, masonry at the two flanking gatehouses — which is
+     * a weaker defence than a 74 m jink and is exactly what the map is meant to have.
      */
     let seeThrough = 0;
     const jinkDetail = [];
     for (const gg of gates) {
       if (gg.open) continue;
       const b = lineOf(gg.x);
-      const far = 12 + (sec ? sec.outerOffset : 42);
+      // Beyond the ditch's outer lip, so the walk starts where an engine would be parked.
+      const far = 12 + (sec ? sec.ditchOffset + sec.ditchWidth * 0.5 : 30);
+      /**
+       * **The near end is 12 m *inside* the wall, and that is the whole test.**
+       *
+       * This assertion used to ask a different question — "no gate can be reached in a
+       * straight line through the belt" — and it ran from beyond the ditch to 12 m short of
+       * the gate, because what had to stop the walk was the outer and middle lines standing
+       * in between. Both of those endpoints are in front of the curtain. With the forward
+       * lines gone the segment lies wholly in open ground, and it reported three OPEN gates
+       * on a circuit whose gates are shut and barred — a green-to-red flip with no stone
+       * moved, which is trap 7: a number that cannot be true beside its neighbour, since C6
+       * and G1 both measure masonry standing across those same passages.
+       *
+       * The claim now is that a shut gate is not a way in, so the walk has to cross the
+       * carriageway and come out the other side. `-12` is 3.7 m behind the gatehouse's own
+       * inner face at a `gateBlockDepth` of 16.6 m.
+       */
       const blocked = city.blocksMovement(
         gg.x + b.nx * far, gg.z + b.nz * far,
-        gg.x + b.nx * 12, gg.z + b.nz * 12
+        gg.x - b.nx * 12, gg.z - b.nz * 12
       );
       if (!blocked) seeThrough++;
-      jinkDetail.push(`${gg.id}:${blocked ? 'jink' : 'STRAIGHT'}`);
+      jinkDetail.push(`${gg.id}:${blocked ? 'shut' : 'OPEN'}`);
     }
-    ok('G3 no gate can be reached in a straight line through the belt',
-      seeThrough === 0, jinkDetail.join(' '));
+    ok('G3 no shut gate can be walked through from the field',
+      seeThrough === 0 && gates.some((g) => !g.open), jinkDetail.join(' '));
 
     /**
      * The casemate is enterable, and this is the assertion that proves it rather than
@@ -988,11 +1050,11 @@ result.checks.push({
     `Rome ${armRome.inner.calls} / ${armRome.field.calls}, same session, same eye`,
 });
 result.checks.push({
-  name: 'F3 the whole triple wall costs fewer meshes than Rome\'s single curtain',
+  name: 'F3 Carthage\'s wall costs fewer meshes than Rome\'s',
   pass: armCarthage.wallMeshes <= armRome.wallMeshes,
   detail: `Carthage ${armCarthage.wallMeshes} visible wall meshes against Rome's ` +
-    `${armRome.wallMeshes}; three lines, casemates, 30 towers and three gatehouses all bake ` +
-    'into the same streams',
+    `${armRome.wallMeshes}; casemates, 30 towers and three gatehouses all bake into the same ` +
+    'four streams, and with the palisade gone `timber` and `metal` survive in one chunk only',
 });
 result.checks.push({
   name: 'F4 the re-shot base arm did not drift',
