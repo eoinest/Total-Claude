@@ -66,6 +66,8 @@ interface Ring {
   geo: THREE.InstancedBufferGeometry;
   uniforms: Record<string, THREE.IUniform>;
   spacing: number;
+  /** `grass-near` or `grass-far`; the two take different density clamps. */
+  name: string;
 }
 
 /**
@@ -406,6 +408,43 @@ export class GrassField {
         name: 'grass-far',
       })
     );
+
+    /*
+     * Follow a quality change instead of keeping whatever density the game booted on.
+     *
+     * `grassDensity` was read once, here in `init`, and never again — so a player who dropped
+     * to `low`, or an adaptive controller spending its largest lever, moved a number that
+     * nothing read. Grass 100 % -> 50 % is worth 0.55-3.71 ms and is the biggest single knob in
+     * the frame, so this was the most expensive silent no-op in the quality system.
+     *
+     * It is also the cheapest one to fix, because density was never baked into anything:
+     * `instanceCount` is a fixed 280² + 300² regardless, and `uDensity` is compared per clump
+     * against a hash in the vertex shader (`keep = step(h3, cover * uDensity)`), with a
+     * rejected clump collapsing to a zero-area quad. So the whole lever is two uniform writes.
+     *
+     * `qualityChanged` rather than `resize`, for the reason `events.ts` gives: `resize` also
+     * fires on every window resize, and a subsystem that does not implement it keeps its
+     * boot-time tier silently.
+     */
+    ctx.events.on('qualityChanged', (e) => {
+      if (e?.quality) this.setDensity(e.quality.grassDensity);
+    });
+  }
+
+  /**
+   * Live density, in the same units as `quality.grassDensity`.
+   *
+   * Costs two uniform writes and takes effect on the next frame: no reallocation, no instance
+   * buffer rebuild, no recompile. The two rings take the same figure with the far ring clamped,
+   * exactly as `init` derives them — the far ring covers 300² clumps at 1.35 m and above 1.1
+   * the extra cards land on top of each other at a distance where they are already a few pixels
+   * across, so the clamp buys nothing and costs fill.
+   */
+  setDensity(grassDensity: number): void {
+    const density = Math.max(0, grassDensity) * this.profile.densityScale;
+    for (const r of this.rings) {
+      r.uniforms.uDensity.value = r.name === 'grass-far' ? Math.min(1.1, density) : density;
+    }
   }
 
   private makeRing(
@@ -736,7 +775,7 @@ export class GrassField {
     mesh.updateMatrix();
     ctx.scene.add(mesh);
 
-    return { mesh, geo, uniforms, spacing: opt.spacing };
+    return { mesh, geo, uniforms, spacing: opt.spacing, name: opt.name };
   }
 
   update(dt: number): void {

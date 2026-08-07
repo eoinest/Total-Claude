@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { AdaptiveQualitySystem } from './AdaptiveQuality';
 import { EventBus } from './EventBus';
 import { Input } from './Input';
 import { RTSCamera } from './RTSCamera';
@@ -46,10 +47,41 @@ export interface Subsystem {
 
 export type QualityTier = 'low' | 'medium' | 'high' | 'ultra';
 
-export interface QualitySettings {
+/**
+ * The half of the quality settings the **simulation** reads, and which therefore must not move
+ * while a battle is running.
+ *
+ * `BattleSystem.init` sizes `SoldierPool` and eight parallel typed arrays from `maxSoldiers`,
+ * and `scenario.ts` derives `unitSizeScale` from it through `fittedUnitScale`, so changing it
+ * under a running sim changes the order of battle and breaks the determinism hashes. It is kept
+ * in its own interface, out of `RenderQuality`, so that the adaptive loop's patch type cannot
+ * name it: the mistake does not typecheck rather than being caught by review.
+ */
+export interface SimQuality {
+  /** Max simultaneously simulated soldiers. Pinned at boot; see `Engine.setQuality`. */
+  maxSoldiers: number;
+}
+
+/**
+ * The half only the renderer reads. Everything here is safe for the adaptive loop to write on
+ * any frame — but only where a consumer actually re-reads it after boot, which is not true of
+ * all of them; see `AdaptiveQuality.EXCLUDED` for the ones that are wired and inert.
+ */
+export interface RenderQuality {
   tier: QualityTier;
-  /** Device pixel ratio cap. */
+  /** Device pixel ratio cap for this tier — the ceiling `renderScale` is a fraction of. */
   maxPixelRatio: number;
+  /**
+   * Continuous resolution scale in (0,1], multiplied into the pixel ratio.
+   *
+   * This is the lever the old design did not have. `maxPixelRatio` alone gave four discrete
+   * values clamped by `window.devicePixelRatio`, so on a dpr-1 display every tier rendered at
+   * 1.0 and there was no resolution lever at all, while on a retina display it stepped
+   * 1 / 1.25 / 1.5 / 2 with nothing in between. `renderScale` is decoupled from the display: at
+   * dpr 1 the engine can render at 0.7 and let the compositor upscale, which is exactly the
+   * case a weak laptop needs and the old code could not express.
+   */
+  renderScale: number;
   shadowMapSize: number;
   /** Number of cascaded shadow splits. */
   shadowCascades: number;
@@ -58,8 +90,6 @@ export interface QualitySettings {
   motionBlur: boolean;
   volumetricLight: boolean;
   depthOfField: boolean;
-  /** Max simultaneously simulated soldiers. */
-  maxSoldiers: number;
   /** World-space distance at which soldiers drop to the cheapest LOD. */
   lodFarDistance: number;
   grassDensity: number;
@@ -67,27 +97,41 @@ export interface QualitySettings {
   antialias: 'none' | 'fxaa' | 'smaa' | 'taa';
 }
 
+export type QualitySettings = SimQuality & RenderQuality;
+
+/**
+ * What the adaptive loop is allowed to write.
+ *
+ * `maxSoldiers` is absent because it is not in `RenderQuality`; `tier` is excluded because the
+ * loop works *within* the player's choice rather than overriding it. Both exclusions are
+ * enforced by the type, and re-asserted at runtime in `applyRenderQuality`.
+ */
+export type RenderQualityPatch = Partial<Omit<RenderQuality, 'tier'>>;
+
+/** Scratch for `drawingBufferSize`, which the debug overlay calls every frame. */
+const DB_SCRATCH = new THREE.Vector2();
+
 export const QUALITY_PRESETS: Record<QualityTier, QualitySettings> = {
   low: {
-    tier: 'low', maxPixelRatio: 1, shadowMapSize: 1024, shadowCascades: 2,
+    tier: 'low', maxPixelRatio: 1, renderScale: 1, shadowMapSize: 1024, shadowCascades: 2,
     ssao: false, bloom: true, motionBlur: false, volumetricLight: false,
     depthOfField: false, maxSoldiers: 1600, lodFarDistance: 90,
     grassDensity: 0.15, antialias: 'fxaa',
   },
   medium: {
-    tier: 'medium', maxPixelRatio: 1.25, shadowMapSize: 2048, shadowCascades: 3,
+    tier: 'medium', maxPixelRatio: 1.25, renderScale: 1, shadowMapSize: 2048, shadowCascades: 3,
     ssao: true, bloom: true, motionBlur: false, volumetricLight: false,
     depthOfField: false, maxSoldiers: 3200, lodFarDistance: 140,
     grassDensity: 0.45, antialias: 'smaa',
   },
   high: {
-    tier: 'high', maxPixelRatio: 1.5, shadowMapSize: 2048, shadowCascades: 4,
+    tier: 'high', maxPixelRatio: 1.5, renderScale: 1, shadowMapSize: 2048, shadowCascades: 4,
     ssao: true, bloom: true, motionBlur: true, volumetricLight: true,
     depthOfField: true, maxSoldiers: 10000, lodFarDistance: 220,
     grassDensity: 1, antialias: 'smaa',
   },
   ultra: {
-    tier: 'ultra', maxPixelRatio: 2, shadowMapSize: 4096, shadowCascades: 4,
+    tier: 'ultra', maxPixelRatio: 2, renderScale: 1, shadowMapSize: 4096, shadowCascades: 4,
     ssao: true, bloom: true, motionBlur: true, volumetricLight: true,
     depthOfField: true, maxSoldiers: 12000, lodFarDistance: 320,
     // SMAA rather than TAA. Soldiers are GPU-skinned instances animated entirely in
@@ -104,6 +148,13 @@ export interface EngineOptions {
   quality?: QualityTier;
   /** Render at a fixed size instead of tracking the window — used by the screenshot harness. */
   fixedSize?: { w: number; h: number };
+  /**
+   * Close the adaptive-quality loop. Defaults to on for an interactive session and off under
+   * `fixedSize`, because a resolution that moves mid-shot is not a measurement — the screenshot
+   * harness must render every frame at the settings it was asked for. Probes turn it back on
+   * through `window.__adaptive.enabled`.
+   */
+  adaptive?: boolean;
 }
 
 export class Engine {
@@ -128,6 +179,29 @@ export class Engine {
   private resizeObserver?: ResizeObserver;
 
   /**
+   * The simulation-side settings, frozen at construction.
+   *
+   * Everything that sizes the soldier pool or the order of battle is read from here and
+   * re-asserted onto `quality` after any change, so neither the adaptive loop nor a mid-battle
+   * tier switch can move it. Before this, `setQuality` replaced the whole settings object from
+   * the preset table, which changed `maxSoldiers` from 12,000 to 1,600 under a running sim.
+   */
+  private readonly simQuality: Readonly<SimQuality>;
+
+  /**
+   * The player's chosen tier, unmodified. The adaptive loop derives every lever's ceiling from
+   * this, so `pressure = 0` is exactly what the player asked for.
+   */
+  private readonly tierQuality: Readonly<QualitySettings>;
+
+  private adaptive: AdaptiveQualitySystem | null = null;
+  /** Wall clock, last frame: the fixed-step half, the render half, and the total. */
+  lastSimMs = 0;
+  lastRenderMs = 0;
+  lastFrameMs = 0;
+  private advancing = false;
+
+  /**
    * Installed by the post-processing subsystem. When present the engine calls this
    * instead of `renderer.render`, so the composer owns the final image.
    */
@@ -137,6 +211,8 @@ export class Engine {
     this.canvas = opts.canvas;
     this.fixedSize = opts.fixedSize;
     this.quality = { ...QUALITY_PRESETS[opts.quality ?? 'high'] };
+    this.simQuality = Object.freeze({ maxSoldiers: this.quality.maxSoldiers });
+    this.tierQuality = Object.freeze({ ...this.quality });
 
     this.renderer = new THREE.WebGLRenderer({
       canvas: opts.canvas,
@@ -145,7 +221,23 @@ export class Engine {
       stencil: false,
       depth: true,
       powerPreference: 'high-performance',
-      preserveDrawingBuffer: true, // screenshot harness reads pixels back
+      /*
+       * Only for the harness, which is the only thing that reads the viewport back.
+       *
+       * `preserveDrawingBuffer` makes the compositor *copy* the drawing buffer every frame
+       * rather than swap it — at ultra on a Retina panel, a 3840x2160 copy per frame, and it
+       * scales with exactly the resolution lever this engine now moves. It was shipped
+       * unconditionally to serve `probe-artillery.mjs`, which calls
+       * `renderer.domElement.toDataURL()`, and that probe loads with `?harness=1&w=640&h=400`,
+       * so gating on `fixedSize` keeps it working and takes the copy off every real player.
+       * Nothing in `src/` reads pixels back, and `shoot.mjs` goes through `page.screenshot()`,
+       * which is the compositor path and never needed the flag.
+       *
+       * The cost lands after `frame()` returns and before pixels appear, so no instrument in
+       * this project can see it: the measured session has `frame()` at p50 9.1 ms against an
+       * rAF interval of 25 ms, and this flag lives in that gap.
+       */
+      preserveDrawingBuffer: opts.fixedSize !== undefined,
       logarithmicDepthBuffer: false,
     });
 
@@ -186,6 +278,38 @@ export class Engine {
 
     this.applyResize();
     this.attachResize();
+
+    // Registered by the engine rather than by `main.ts` on purpose: the loop's only lever that
+    // needs privileged access is the pixel ratio, which the engine owns, and a subsystem that
+    // has to be remembered in a wiring file is a subsystem that gets forgotten on the next map.
+    this.adaptive = new AdaptiveQualitySystem(this, opts.adaptive ?? !opts.fixedSize);
+    this.add(this.adaptive);
+  }
+
+  /** The adaptive-quality controller. Always present; may be disabled. */
+  get adaptiveQuality(): AdaptiveQualitySystem {
+    return this.adaptive!;
+  }
+
+  /** The player's chosen tier at full quality — the ceiling every lever is a fraction of. */
+  get baseQuality(): Readonly<QualitySettings> {
+    return this.tierQuality;
+  }
+
+  /**
+   * The pixel ratio at `renderScale = 1`: the display's own ratio, capped by the tier.
+   *
+   * On a 1x display this is 1 at every tier, which is why `maxPixelRatio` alone was never a
+   * usable lever there.
+   */
+  basePixelRatio(): number {
+    return Math.min(window.devicePixelRatio || 1, this.quality.maxPixelRatio);
+  }
+
+  /** Backing-store size in device pixels, for the debug overlay and the probes. */
+  drawingBufferSize(): { w: number; h: number } {
+    this.renderer.getDrawingBufferSize(DB_SCRATCH);
+    return { w: Math.round(DB_SCRATCH.x), h: Math.round(DB_SCRATCH.y) };
   }
 
   get context(): EngineContext {
@@ -232,6 +356,7 @@ export class Engine {
 
   /** One full frame. Exposed so the screenshot harness can step deterministically. */
   frame(nowMs: number): void {
+    const t0 = performance.now();
     const steps = this.time.beginFrame(nowMs);
     this.input.beginFrame(this.time.frameDt, this.viewW, this.viewH);
 
@@ -239,6 +364,20 @@ export class Engine {
     for (let n = 0; n < steps; n++) {
       for (const s of this.systems) s.fixedUpdate?.(fdt, this.ctx);
     }
+
+    /*
+     * The boundary between the two halves of the frame, and the whole reason it is measured.
+     *
+     * The sim runs at a fixed 30 Hz off an accumulator, so at a 60 Hz display `ticksThisFrame`
+     * alternates 1, 0, 1, 0 while `fixedUpdate` costs 3.657 ms at 8,632 men. Whole-frame time
+     * therefore carries a ±3.7 ms square wave at the display's Nyquist frequency — larger than
+     * every render lever put together, and larger still at game speed 2x/4x, where five ticks
+     * can land in one frame. Feeding that to the adaptive controller would make the sim-heavy
+     * frames read as a render problem and turn the accumulator's beat into an oscillator. So
+     * the controller sees `lastRenderMs` and nothing else, and pays the sim back as a fixed
+     * reserve in its threshold instead.
+     */
+    const tRenderStart = performance.now();
 
     const sdt = this.time.scaledDt;
     for (const s of this.systems) s.update?.(sdt, this.ctx);
@@ -254,7 +393,60 @@ export class Engine {
     else this.renderer.render(this.scene, this.rig.camera);
 
     this.input.endFrame();
+
+    if (this.drainAfterFrame) {
+      const gl = this.renderer.getContext();
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, this.drainPx);
+    }
+
+    const tEnd = performance.now();
+    this.lastSimMs = tRenderStart - t0;
+    this.lastRenderMs = tEnd - tRenderStart;
+    this.lastFrameMs = tEnd - t0;
+
+    /*
+     * Whether this frame linked a shader program, which is the discriminator the adaptive loop
+     * needs more than any other.
+     *
+     * Measured over a 1,079-frame interactive session on Carthage: the two worst frames were
+     * the only two that linked a program — 151.0 ms and 65.1 ms, of which 140.8 and 62.0 were
+     * render — while frames that linked nothing ran at p50 10.8 ms. So the frame-time
+     * distribution is a healthy ~11 ms body with a tail made almost entirely of
+     * `glLinkProgram`, three.js linking lazily on the first frame a material is actually drawn.
+     *
+     * A 151 ms frame is not evidence that the renderer is over budget. It is a one-off that
+     * will never recur for that material, and no amount of resolution reduction prevents it or
+     * makes it cheaper. A controller that reacted to it would drop quality for a cause it
+     * cannot address and then recover — a visible oscillation with a measured trigger. A
+     * percentile over a multi-second window helps but is not enough, because a p99 over a
+     * few hundred frames is still dominated by exactly these frames. Naming the reason is.
+     */
+    const progs = this.renderer.info.programs?.length ?? 0;
+    const linked = progs > this.lastProgramCount;
+    this.lastProgramCount = progs;
+
+    // `advance` runs synthetic frames flat out with no display to pace them, so its wall clock
+    // says nothing about whether a player would see a dropped frame.
+    if (!this.advancing) {
+      this.adaptive?.sample(this.lastRenderMs, linked, this.time.frameDt * 1000, this.lastSimMs);
+    }
   }
+
+  private lastProgramCount = 0;
+
+  /**
+   * Force a GPU round trip at the end of every frame, so `lastRenderMs` includes GPU time.
+   *
+   * **A probe instrument, never shipped on.** A 1x1 `readPixels` is the only real barrier on
+   * this stack — `gl.finish()` returns before the GPU drains under ANGLE-on-Metal — and it costs
+   * the entire benefit of pipelining, so turning it on makes the game slower in order to measure
+   * it honestly. It exists because the CPU-side clock cannot see the resolution lever at all:
+   * scale 1.00 -> 0.50 at dpr 2 takes the drained frame from 41 ms to 29 ms while `lastRenderMs`
+   * sits flat at 4-5 ms. Any headless measurement of a fill-rate lever needs this or it will
+   * report the lever as free.
+   */
+  drainAfterFrame = false;
+  private drainPx = new Uint8Array(4);
 
   /**
    * Advance the simulation by a wall-clock duration without waiting for real time.
@@ -285,10 +477,17 @@ export class Engine {
      * N short advances being equivalent to one long one — exactly what determinism tests compare.
      */
     this.time.rebase(t);
+    // Synthetic frames must not reach the adaptive controller: they run as fast as the CPU
+    // allows with nothing pacing them, so their wall clock has no relation to a dropped frame,
+    // and a resolution change part-way through an `advance` would make the harness's shots
+    // depend on how loaded the machine was.
+    const wasAdvancing = this.advancing;
+    this.advancing = true;
     for (let i = 0; i < n; i++) {
       t += stepMs;
       this.frame(t);
     }
+    this.advancing = wasAdvancing;
     // Hand the clock back to real time; the next rAF timestamp must not be differenced
     // against a synthetic one.
     this.time.rebase();
@@ -311,8 +510,7 @@ export class Engine {
     this.viewW = w;
     this.viewH = h;
 
-    const dpr = Math.min(window.devicePixelRatio || 1, this.quality.maxPixelRatio);
-    this.renderer.setPixelRatio(dpr);
+    this.renderer.setPixelRatio(this.basePixelRatio() * this.quality.renderScale);
     this.renderer.setSize(w, h, !this.fixedSize);
     if (this.fixedSize) {
       this.canvas.style.width = `${w}px`;
@@ -323,11 +521,106 @@ export class Engine {
     this.events.emit('resize', { w, h });
   }
 
+  /**
+   * Write render-only quality settings and propagate them. Returns whether the drawing buffer
+   * was reallocated, which is the expensive case and the one a caller may want to rate-limit.
+   *
+   * Two propagation paths, and the difference between them is the point:
+   *
+   * - **Resolution changed.** `renderer.setPixelRatio` resizes the drawing buffer, but on its
+   *   own that only changes the final present blit. `PostFX` rasterises the world into
+   *   `sceneRT`, a fixed-size FBO sized from `getDrawingBufferSize()` **at allocation time**, so
+   *   without a `resize` fan-out the 98-draw colour pass with 9,000 men in it keeps running at
+   *   the old resolution and the lever buys exactly nothing. Every symptom of working, zero
+   *   milliseconds. So a resolution change must reach `PostFX.resize` -> `allocate`, and it
+   *   costs a full rebuild of nineteen render targets plus an `SMAAPass.setSize`.
+   * - **Anything else.** `PostFX.render` reads `ssao`, `volumetricLight`, `depthOfField`,
+   *   `motionBlur` and `bloom` off `ctx.quality` every frame, so those need no fan-out at all —
+   *   they are free and take effect next frame. Reallocating for them would be nineteen render
+   *   targets rebuilt to change a boolean.
+   */
+  applyRenderQuality(patch: RenderQualityPatch): boolean {
+    const q = this.quality;
+    let resolutionMoved = false;
+    let changed = false;
+
+    if (patch.renderScale !== undefined) {
+      // 0.2 is a floor on absurdity, not a quality decision — the tiers set the real floors.
+      const s = Math.max(0.2, Math.min(1, patch.renderScale));
+      if (Math.abs(s - q.renderScale) > 1e-6) {
+        q.renderScale = s;
+        resolutionMoved = true;
+      }
+    }
+    if (patch.maxPixelRatio !== undefined && patch.maxPixelRatio !== q.maxPixelRatio) {
+      q.maxPixelRatio = patch.maxPixelRatio;
+      resolutionMoved = true;
+    }
+    // A `RenderQuality` view of the same object, so the helper cannot be handed a sim-side key:
+    // `keyof RenderQuality` does not include `maxSoldiers`.
+    const rq: RenderQuality = q;
+    const set = <K extends keyof RenderQuality>(k: K, v: RenderQuality[K] | undefined): void => {
+      if (v === undefined || rq[k] === v) return;
+      rq[k] = v;
+      changed = true;
+    };
+    set('shadowMapSize', patch.shadowMapSize);
+    set('shadowCascades', patch.shadowCascades);
+    set('ssao', patch.ssao);
+    set('bloom', patch.bloom);
+    set('motionBlur', patch.motionBlur);
+    set('volumetricLight', patch.volumetricLight);
+    set('depthOfField', patch.depthOfField);
+    set('lodFarDistance', patch.lodFarDistance);
+    set('grassDensity', patch.grassDensity === undefined ? undefined : Math.max(0, patch.grassDensity));
+    set('antialias', patch.antialias);
+
+    // Belt and braces over the type. `RenderQualityPatch` cannot name `maxSoldiers`, but the
+    // field lives on the same object every consumer reads, so it is re-pinned rather than
+    // trusted. A drift here would change the order of battle under a running sim.
+    q.maxSoldiers = this.simQuality.maxSoldiers;
+
+    if (resolutionMoved) {
+      const drawn = this.basePixelRatio() * q.renderScale;
+      this.renderer.setPixelRatio(drawn);
+      // `setPixelRatio` already re-ran `setSize` internally, so the buffer is the new size by
+      // the time the subsystems are asked to follow it.
+      for (const s of this.systems) s.resize?.(this.viewW, this.viewH, this.ctx);
+    }
+
+    /*
+     * Emit only on a real change, and the "only" is load-bearing rather than tidy.
+     *
+     * `EventBus.emit` defers a re-entrant emit and then drains the queue synchronously in its
+     * own `finally`, where the drained call finds `dispatching === 0` and dispatches for real.
+     * So a handler that responds to `qualityChanged` by writing quality does not recurse
+     * *through* the emit — it recurses through the drain, one stack frame deeper each time, and
+     * no re-entrancy flag on the handler's side can see it: the flag is already cleared by the
+     * time the deferred call runs. `Maximum call stack size exceeded`, on the first tier switch.
+     *
+     * The fix belongs here rather than in the handler, because an event that announces a change
+     * when nothing changed is the actual defect. With this guard the loop's response to a tier
+     * switch reaches a fixed point in two rounds: the first re-derives its levers from the new
+     * envelope and emits, the second finds them already correct and stops.
+     */
+    if (changed || resolutionMoved) this.events.emit('qualityChanged', { quality: this.quality });
+    return resolutionMoved;
+  }
+
   setQuality(tier: QualityTier): void {
     const before = this.quality;
-    this.quality = { ...QUALITY_PRESETS[tier] };
-    const dpr = Math.min(window.devicePixelRatio || 1, this.quality.maxPixelRatio);
-    this.renderer.setPixelRatio(dpr);
+    this.quality = {
+      ...QUALITY_PRESETS[tier],
+      // The pool and the order of battle were fixed at boot; a settings-menu press must not
+      // resize them under a battle already deployed. Before this, ultra -> low took
+      // `maxSoldiers` from 12,000 to 1,600 while `BattleSystem` held 12,000 men in its arrays.
+      maxSoldiers: this.simQuality.maxSoldiers,
+      // The adaptive loop's verdict about this machine survives a tier change; only the
+      // envelope it works inside moves. It re-derives the exact scale from its own pressure
+      // when it sees `qualityChanged`.
+      renderScale: before.renderScale,
+    };
+    this.renderer.setPixelRatio(this.basePixelRatio() * this.quality.renderScale);
 
     // Changing the cascade count changes `NUM_DIR_LIGHT_SHADOWS`, which is compiled into
     // every lit shader, so they all have to be recompiled against the new light count.
