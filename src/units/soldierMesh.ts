@@ -161,12 +161,17 @@ function tileRepeat(
 }
 
 /**
- * A bare limb takes exactly one skin tile end to end, and that is not negotiable.
+ * Skin takes exactly one tile along the surface, and that is not negotiable.
  *
  * `Mat.Skin`'s height field cuts a crease at v = 0.5 and another at v = 0.94 so the cavity
  * term darkens the elbow and the wrist. Those land on the joint only if the limb carries one
  * tile from shoulder to hand; at two tiles a man grows a second elbow half way down his
- * forearm. So skin is sized round the limb and fixed along it.
+ * forearm. So skin is sized round the surface and pinned along it.
+ *
+ * The arm and leg tubes are not routed through `tileRepeat` at all — they ship at repeat 1 on
+ * both axes, which already satisfies this. Only the Germanic bare torso needs it stated, and
+ * it is stated here rather than as a bare `1` at the call site so that the next person to
+ * route a skin surface through `tileRepeat` finds the reason before they find the bug.
  */
 const SKIN_LIMB_V = 1;
 
