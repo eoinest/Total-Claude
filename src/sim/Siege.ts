@@ -661,6 +661,41 @@ export class Siege implements ElevationOwner {
   /** Movement orders the player or the AI has given a unit about the wall. */
   private plans = new Map<number, WallPlan>();
 
+  /**
+   * Where a move order was actually aimed, taken off the event rather than off the unit.
+   *
+   * **This is the whole reason a unit on the wall could not be ordered down, and the
+   * measurement is worth writing out because the symptom points nowhere near the cause.**
+   * Logged live for a cohort of 108 men standing on the parapet, immediately after a real
+   * `orderIssued` move event to a rally point 62 m away inside the city:
+   *
+   * ```
+   * before-click       order Garrison  target 61.2,529.4  moved 0.07  -> G2 order===Garrison
+   * after-applyOrder   order MoveTo    target 61.2,529.4  moved 0.07  -> G4 moved < ORDER_JUMP
+   * tick+1..tick+8     order Garrison  target 61.2,529.4  moved 0.00  -> G2 order===Garrison
+   * after-120s         onWall 108, onGround 0, goal none, stair crossings 0
+   * ```
+   *
+   * `u.order` became `MoveTo`, so `applyOrder` plainly ran — and `u.targetX/targetZ` did not
+   * move a centimetre off the unit's own anchor. That pair cannot both be true of a click
+   * 62 m away, and it is `BattleSystem.holdShortOfSolid` that makes them: the anchor of a
+   * garrison **is inside the curtain's footprint**, so `clearLineFraction` from it is 0, the
+   * order is clamped to `u.x, u.z` as "the last point on the straight line it can legally
+   * reach", and the destination the player clicked is gone before `preSteer` ever runs.
+   * `interceptOrders` then measured a 7 cm displacement, correctly concluded no click had
+   * happened, and put the unit back to `Garrison` — for ever. Every gate in that loop was
+   * behaving exactly as documented; the input it reads had already been destroyed.
+   *
+   * That clamp is right for a field unit and must not change: no order the sim holds may
+   * point through masonry. So the fix is to stop reading the clamped value. `orderIssued`
+   * carries the point the player actually clicked, the AI emits the same event through
+   * `OrderBook`, and both arrive before anything has had a chance to rewrite them.
+   *
+   * Recorded here and consumed inside `preSteer` rather than acted on in the handler, so
+   * every mutation still happens inside the fixed step and the tick stays deterministic.
+   */
+  private ordered = new Map<number, { x: number; z: number }>();
+
   // ---- per-soldier crossing state ----
   /** Which crossing this man is on, or -1. Indexed by soldier. */
   private crossOf!: Int32Array;
@@ -761,6 +796,24 @@ export class Siege implements ElevationOwner {
     this.buildStairs();
     this.buildLinks();
     this.buildMeshes(ctx);
+
+    /**
+     * The only subscription this system has, and it exists because the polling loop it
+     * replaces reads a value that has already been clamped. See `ordered`.
+     *
+     * Both the player's mouse and `ai/Orders.ts` emit this, so one handler serves a
+     * right-click and an AI redeployment identically — which is the point: a defender told
+     * to fall back off the wall and an attacker's lodgement told to come down into the
+     * streets are the same order.
+     */
+    ctx.events.on('orderIssued', (o) => {
+      if (o.kind !== 'move' && o.kind !== 'attackMove') return;
+      if (o.x === undefined || o.z === undefined) return;
+      // A queued waypoint appends to a march that is already running; it is not a decision
+      // about the wall and taking it as one would hijack the second click of a two-click path.
+      if (o.queued) return;
+      for (const id of o.unitIds) this.ordered.set(id, { x: o.x, z: o.z });
+    });
 
     battle.elevation = this;
   }
@@ -1610,6 +1663,46 @@ export class Siege implements ElevationOwner {
    */
   private interceptOrders(): void {
     const b = this.battle;
+
+    /**
+     * Orders taken off the event, which is the only place the clicked point survives intact.
+     *
+     * Runs before the polling loop below and settles the same three questions from a
+     * destination that has not been through `holdShortOfSolid`. A unit handled here is left
+     * with `lastTx/lastTz` at its own anchor, so the poll sees no displacement and does not
+     * then re-decide the order it has already carried out.
+     */
+    for (const [id, dest] of this.ordered) {
+      const u = b.unitById(id);
+      if (!u || u.destroyed || u.alive === 0) continue;
+      if (u.order === UnitOrder.Rout) continue;
+      const onWall = this.garrisons.has(id);
+      if (onWall) {
+        // On the stone already: either along it, or off it. `wallTargetAt` is the same query
+        // the UI uses to decide a click landed on the parapet.
+        if (this.wallTargetAt(dest.x, dest.z) >= 0) this.moveAlongWall(u, dest.x, dest.z);
+        else this.sendToGround(u, dest.x, dest.z);
+        // Reclaim the order: this unit's men are placed by the stonework, and leaving it on
+        // `MoveTo` would have `steerToSlots` and the formation path fighting over the same
+        // men on alternate ticks.
+        u.order = UnitOrder.Garrison;
+        u.waypoints.length = 0;
+        const g = this.garrisons.get(id);
+        if (g) { g.lastTx = u.x; g.lastTz = u.z; }
+      } else if (!this.owned.has(id) && this.wallTargetAt(dest.x, dest.z) >= 0
+        && this.sideOf(u.x, u.z) === -1) {
+        /**
+         * On the ground and told to get on the wall.
+         *
+         * Restricted to the city side, and that restriction is not a hedge: a besieger at the
+         * foot of the outer face is not entitled to walk up the defenders' stairs. He comes
+         * over a ramp, up a ladder, or through a breach.
+         */
+        this.sendToWall(u, dest.x, dest.z);
+      }
+    }
+    if (this.ordered.size > 0) this.ordered.clear();
+
     for (const [id, g] of this.garrisons) {
       const u = b.unitById(id);
       if (!u || u.destroyed) continue;
@@ -2504,7 +2597,11 @@ export class Siege implements ElevationOwner {
     if (!this.gateArmed) this.armGate();
     // A battle with nothing on a structure pays one comparison for all of this. The field
     // battle runs 8,600 men and never touches a wall; it must not pay for the siege.
-    if (this.owned.size === 0 && this.garrisons.size === 0) return;
+    //
+    // `ordered` is in the test because a unit ordered *onto* an ungarrisoned wall is the one
+    // case where nothing is owned yet and there is still work to do — and because a queue
+    // left unconsumed would grow for the length of a field battle.
+    if (this.owned.size === 0 && this.garrisons.size === 0 && this.ordered.size === 0) return;
     // A player order arrives between ticks and this runs before `trackOwnedAnchors` can
     // overwrite the target it came with, which is the whole reason the interception works
     // without a patch anywhere else. See `interceptOrders`.
