@@ -1,6 +1,6 @@
 import type { EventBus } from '../core/EventBus';
 import type { GameEvents } from '../core/events';
-import type { UnitGroupState } from '../sim/types';
+import { UnitOrder, type UnitGroupState } from '../sim/types';
 import { angleDelta } from '../util/math';
 
 /**
@@ -82,6 +82,38 @@ export class OrderBook {
   /** Forget a unit's history — call when it is destroyed so the map cannot grow. */
   forget(unitId: number): void {
     this.last.delete(unitId);
+  }
+
+  /**
+   * Drop the memory of an order the simulation has since overwritten. **Call before
+   * deciding, every tick, for every unit.**
+   *
+   * De-duplication is what stops a route being reset thirty times a second, and it works by
+   * remembering what we last *said*. But the sim also writes `u.order` on its own account,
+   * in three places: a `MoveTo` that arrives settles to `Hold`, a `MoveTo` that runs out of
+   * route settles to `Hold`, and an `AttackUnit` whose target dies is put on `Hold` at its
+   * own feet with `targetUnitId` cleared. None of those reaches this book, so it goes on
+   * believing the unit is moving or attacking, suppresses the identical order the behaviour
+   * layer keeps re-issuing, and **the unit stands still for the rest of the battle.**
+   *
+   * Measured on the shipped field battle with a passive Rome: at t+1200 eighteen of the
+   * nineteen Juthungi units were on `Hold` with `targetX === x`, three of them scoring
+   * `engage` as their chosen behaviour with a Roman cohort 20, 29 and 39 m away. Nothing had
+   * been ordered for the previous two hundred seconds and the scoreboard did not move again
+   * before the 2,400 s timeout — sixteen and a half real minutes at 1x.
+   *
+   * The test is deliberately narrow: only a *movement* or *attack* record is dropped, and
+   * only when the unit's own order disagrees with it. A `halt` record matches `Hold` and is
+   * left alone, so a line that has been told to stand is still quiet.
+   */
+  reconcile(u: UnitGroupState): void {
+    const r = this.last.get(u.id);
+    if (!r) return;
+    if (r.kind === 'move' || r.kind === 'path') {
+      if (u.order !== UnitOrder.MoveTo && u.order !== UnitOrder.AttackMove) r.kind = '';
+    } else if (r.kind === 'attack') {
+      if (u.order !== UnitOrder.AttackUnit || u.targetUnitId !== r.targetUnitId) r.kind = '';
+    }
   }
 
   /** What we last told this unit to do, for the debug overlay. */
