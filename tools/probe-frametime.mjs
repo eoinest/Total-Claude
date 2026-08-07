@@ -510,25 +510,33 @@ const CYCLE = async () => {
 const t0 = Date.now();
 if (AB) {
   console.log(`# A/B interleaved in one page load: ${CYCLES} cycles per arm, alternating`);
+  /**
+   * Throw the lever, then wait before crediting anything to the new arm.
+   *
+   * The arm tag goes to -1 across the switch and only becomes `idx` once the transient has
+   * passed, so the settling frames belong to neither arm. It matters: a lever that changes a
+   * material or a render target charges the frame it lands on with a shader link or a
+   * reallocation, and on this project that is a 50-150 ms frame. Credited to the arm, it
+   * would decide the comparison on its own.
+   */
   const setArm = async (idx, name, js) => {
     await page.evaluate(({ idx, name, js }) => {
       const p = window.__probe;
       if (!p.armNames[idx]) p.armNames[idx] = name;
-      p.arm = idx;
+      p.arm = -1;
       if (js) (0, eval)(js);
     }, { idx, name, js });
+    await wait(400);
+    await page.evaluate((i) => { window.__probe.arm = i; }, idx);
   };
   for (let c = 0; c < CYCLES; c++) {
     for (const [idx, name, js] of [[0, NAME_A, ARM_A], [1, NAME_B, ARM_B]]) {
-      await setArm(idx, name, js);
       await phase(`cycle${c}-${name}`);
-      // Discard the first 300 ms after a switch: a lever that recompiles a shader charges
-      // the frame it lands on, not the arm.
-      await wait(300);
-      await page.evaluate(() => { window.__probe.settled = window.__probe.n; });
+      await setArm(idx, name, js);
       await CYCLE();
     }
   }
+  await page.evaluate(() => { window.__probe.arm = -1; });
 } else {
   console.log(`# ${W}x${H} dpr${DPR} ${setup.tier}, map ${MAP}, from t+${AT}s, ~${SECONDS}s of real interaction`);
   for (const [name, fn] of FULL) { await phase(name); await fn(); }
