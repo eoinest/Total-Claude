@@ -921,3 +921,68 @@ keeps Spotlight out of it.
 | `051-Conrad-Cichorius-Die-Reliefs-der-Traianss-ule-Tafel-LI-Ausschnitt-` | Attributed to Apollodorus of Damascus / Conrad Cichorius | Public domain | <https://commons.wikimedia.org/wiki/File:051_Conrad_Cichorius,_Die_Reliefs_der_Traianss%C3%A4ule,_Tafel_LI_(Ausschnitt_01).jpg> |
 | `Boucliers-escudos---larousse-.jpg` | S. Sibonis de L. | Public domain | <https://commons.wikimedia.org/wiki/File:Boucliers_(escudos_-_larousse).jpg> |
 | `Altar-Domitius-Ahenobarbus-Louvre-n3bis.jpg` | Unknown artist Unknown artist | Public domain | <https://commons.wikimedia.org/wiki/File:Altar_Domitius_Ahenobarbus_Louvre_n3bis.jpg> |
+
+---
+
+## Punic Carthage reference — `reference/carthage/` (layout and accuracy only, not shipped, not deck-eligible)
+
+Gathered for `docs/CARTHAGE.md`, the specification for the second besiegeable city. Purpose:
+settle the plan of Punic Carthage — the Byrsa's excavated housing grid, the two harbour
+lagoons, the relief of the hill and the coast — against a measured drawing or a photograph
+rather than against an opinion.
+
+**Deck eligibility: none, and this pool is the reason the rule exists.** `reference/rome2/`
+remains the *sole* blind render-quality pool. Everything here is a photograph of a real place
+or a published excavation plan; a grader separates photography from rendering on sensor noise
+alone and would score 100% without looking at a shadow. Mixing provenance has been got wrong
+twice on this project. These are eligible for the **accuracy and layout** pass only.
+
+**How the licence was verified.** Every candidate was taken through the Wikimedia Commons
+`action=query&prop=imageinfo&iiprop=extmetadata` API, which returns the licence recorded on
+that individual file's own description page, **before** any byte was fetched. Only files
+reporting CC0, Public domain, "Copyrighted free use", CC BY or CC BY-SA — all
+commercial-use-permitted — were accepted, and every one returned an empty `Restrictions`
+field. The `Artist` column below is the `Artist` field from the same per-file record, which
+is what CC BY / CC BY-SA require be preserved.
+
+**What was actually done to check the files, stated honestly.** There is no on-demand AV
+scanner in this environment, so this is signature-and-structure checking, not scanning. Each
+download was fetched directly from `upload.wikimedia.org` (Wikimedia's own media host, no
+mirror, no redirect, no shortener), held in memory, and only written to disk after its **leading
+magic bytes** matched the declared type (`89 50 4E 47 0D 0A 1A 0A` for PNG, `FF D8 FF` for
+JPEG) **and** its trailing bytes matched a complete container (`IEND®B\`‚` for PNG, `FF D9` for
+JPEG). Anything failing either test was to be discarded unwritten; nothing failed. No archives
+were involved, so nothing was extracted; no executable, installer or script was downloaded or
+run. The three source files are SVG on Commons and SVG is not on the permitted-format list, so
+they were taken as **PNG renderings from Wikimedia's own thumbnail service** rather than as
+SVG. 15 files, 9.9 MB total. `reference/` is gitignored and carries `.metadata_never_index`.
+
+| File | What it is for | Creator | Licence | Source page | SHA-256 (first 16) |
+| --- | --- | --- | --- | --- | --- |
+| `plan-byrsa-hannibal-quarter.png` | Lancel excavation plan of the Hannibalic quarter — insula module in Punic cubits, house plots, Rues I–III | Equipe française (via Commons) | Copyrighted free use | <https://commons.wikimedia.org/wiki/File:Plan_quartier_Hannibal_Byrsa_fouilles_fran%C3%A7aises.svg> | `ccb085b792a9b030` |
+| `plan-byrsa-house.png` | Measured plan of one Byrsa house — courtyard, side corridor, cistern (after Lancel, *Carthage*) | Habib M'henni | CC BY-SA 3.0 | <https://commons.wikimedia.org/wiki/File:Plan_fouilles_arch_maison_Byrsa.svg> | `b352fa9c09d76f34` |
+| `plan-byrsa-hill-section.png` | Section through the Byrsa: Punic levels under the Roman forum platform, and the truncated summit | Habib M'henni | CC0 | <https://commons.wikimedia.org/wiki/File:Plan_fouilles_colline_Byrsa.svg> | `ee06dae8d1ea0c87` |
+| `ports-punic-oblique.jpg` | The two Punic harbour lagoons seen from the Byrsa | Citizen59 | CC BY-SA 3.0 | <https://commons.wikimedia.org/wiki/File:PortsPuniquesCarthage.JPG> | `8bb303628b8dd98e` |
+| `aerial-salammbo-ports.jpg` | Oblique aerial: both harbours, the admiralty island, the shore and the sand spit | T A | CC BY-SA 2.0 | <https://commons.wikimedia.org/wiki/File:Vue_a%C3%A9rienne_de_Salambo_et_Carthage.jpg> | `89550c3ee5b5ca82` |
+| `ports-cothon-ground-1.jpg` | Circular harbour at ground level — basin, island, bank profile | Sharon Hahn Darlin | CC BY 2.0 | <https://commons.wikimedia.org/wiki/File:Punic_Ports_(Ports_Puniques)_of_Carthage,_Tunisia_January_2024_-_1.jpg> | `53685e36f25a360e` |
+| `ports-cothon-ground-3.jpg` | Circular harbour at ground level, second angle | Sharon Hahn Darlin | CC BY 2.0 | <https://commons.wikimedia.org/wiki/File:Punic_Ports_(Ports_Puniques)_of_Carthage,_Tunisia_January_2024_-_3.jpg> | `adfbe1a565c6007f` |
+| `byrsa-hill.jpg` | The Byrsa from below — the relief the three streets have to climb | Shoestring | CC BY-SA 4.0 | <https://commons.wikimedia.org/wiki/File:Byrsa_hill_in_Carthage.jpg> | `b97c2877c182bf27` |
+| `byrsa-site-dalbera.jpg` | Byrsa archaeological site, the Punic quarter in situ | Jean-Pierre Dalbéra | CC BY 2.0 | <https://commons.wikimedia.org/wiki/File:Le_site_arch%C3%A9ologique_de_Byrsa_(Carthage,_Tunisie)_(49787855963).jpg> | `e5fd6185b1c32152` |
+| `byrsa-hill-cridland.jpg` | Byrsa hilltop and the excavated quarter | Verity Cridland | CC BY 2.0 | <https://commons.wikimedia.org/wiki/File:Carthage,_Byrsa_hill_(13585102703).jpg> | `9cba03b730af8334` |
+| `punic-ruins-masonry.jpg` | Punic wall fabric — ashlar piers with rubble panels (*opus africanum*) | upyernoz | CC BY 2.0 | <https://commons.wikimedia.org/wiki/File:Punic_Ruins,_Carthage.jpg> | `c4a126eb27d85c0e` |
+| `aerial-carthage.jpg` | Aerial of the Carthage peninsula — coast, relief and the lie of the land | Aziz0161 | CC BY-SA 4.0 | <https://commons.wikimedia.org/wiki/File:Carthage_aerial_view.jpg> | `4cfea96f9ad9a673` |
+| `aerial-carthage-2013.jpg` | Aerial of Carthage, wider frame | Citizen59 | CC BY 3.0 | <https://commons.wikimedia.org/wiki/File:VueDuCielCarthageNov2013.jpg> | `e98331e2752b854d` |
+| `tophet.jpg` | The Tophet of Salammbô, immediately west of the harbours | IssamBarhoumi | CC BY-SA 4.0 | <https://commons.wikimedia.org/wiki/File:Tophet_de_Carthage.jpg> | `ec8077f2c996f95b` |
+| `byrsa-roman-foundations.jpg` | Roman forum foundation piles punched through the Punic quarter | damian entwistle | CC BY-SA 2.0 | <https://commons.wikimedia.org/wiki/File:Byrsa_roman_foundations.jpg> | `b381d860abad7971` |
+
+**Attribution, as the licences require.** Habib M'henni (2 plans, one CC0 and one CC BY-SA 3.0,
+both drawn after Serge Lancel, *Carthage*); the French excavation team, via Commons, for the
+Hannibalic quarter plan; Citizen59 (2); Sharon Hahn Darlin (2); Jean-Pierre Dalbéra; Verity
+Cridland; upyernoz; T A; Shoestring; Aziz0161; IssamBarhoumi; damian entwistle.
+
+**Skipped, and why.** Gsell's *Histoire ancienne de l'Afrique du Nord* II (1918) and several
+other public-domain topographies of Carthage are on Commons as **PDF**, which is not on the
+permitted-format list; they are cited in `docs/CARTHAGE.md` as reading, not fetched. No
+reconstruction render, artist's impression or game screenshot of Carthage was fetched from any
+source, and none may be: the reconstruction imagery that dominates a search for this city is
+overwhelmingly either unlicensed, of unknown provenance, or extracted from a commercial game.

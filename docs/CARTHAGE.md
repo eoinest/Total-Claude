@@ -1,9 +1,14 @@
 # Carthage — map specification
 
-**Status: draft 1.** Written at `fbcfe65` for the three agents building the map (terrain and
+**Status: draft 2.** Written at `fbcfe65` for the three agents building the map (terrain and
 integration, walls, city fabric). Everything here is a number you can build to. Where the
 sources disagree or the archaeology is thin the entry says so **and still gives the number to
 use**, because a builder cannot act on "uncertain".
+
+Draft 2 adds: the cubit module the Byrsa quarter is actually laid out on (§7.1, read off the
+excavation plan); the excavated 125 m admiralty island, against the 130 m draft 1 derived (§6.2);
+Appian's sixty steps verified (§5.2); the forum (§7.6) and the Megara (§7.7); and
+`reference/carthage/`, 15 licence-verified files catalogued in `ASSETS.md`.
 
 This is the counterpart to `src/city/rome.ts` + `src/city/layout.ts`. Read those two first if
 you have not: this document deliberately reuses their idioms — a survey in real metres, an
@@ -237,7 +242,7 @@ Sebkhet Ariana (a salt flat) north-west. Land reaches it only from the west.
 
 | feature | value | tag |
 |---|---|---|
-| Isthmus width | **4.0–4.8 km**; Appian gives 25 stades ≈ 4.6 km | [A] [MOD] |
+| Isthmus width | **4.0–4.8 km**. Appian's figure is rendered "about three miles" in White's translation, i.e. 25 stades ≈ 4.6 km. **Use 4.43 km**, which is what the modelled wall line in §4.1 measures — so the source and the build agree by construction. | [A] [MOD] |
 | Peninsula circumference | 360 stades ≈ 66 km (Strabo) — includes the whole headland out to Sidi Bou Saïd, not the city | [MOD] |
 | Punic urban area | **> 300 ha** (Tlatli); the walled circuit enclosed far more, including the Megara garden suburb | [ARCH] |
 | Total wall circuit | 33–37 km is quoted, from Livy/Orosius' "23 miles". **Treat as unreliable.** A 315 ha core has a 6–7 km perimeter; the large figure can only describe a perimeter round the entire peninsula. Model what the map contains and ignore the number. | [MOD] |
@@ -286,12 +291,12 @@ BC. Appian names the angle where the triple wall meets it and runs on toward the
 
 | property | value | tag |
 |---|---|---|
-| Appian's width | half a stade ≈ **92 m** at its narrowest | [A] — but see below |
+| Appian's width | **"about 300 feet wide"** ≈ **89 m** (White's tr., verified against Perseus) | [A] — but see below |
 | Real neck south of the harbours | **~1,150 m** between lake and sea | [MOD] |
 | **Modelled usable ground** between the lake shore and the south wall | **200–300 world m** (≈ 450–670 real m), narrowing to **~130 world m** at the map's −X/−Z corner | [GAME] |
 
-Appian's half-stade and the modern 1.1 km cannot both describe the same cross-section; the
-half-stade is almost certainly the Catadas channel neck at what is now La Goulette, which is
+Appian's 300 feet and the modern 1.1 km cannot both describe the same cross-section; the
+300-foot figure is almost certainly the Catadas channel neck at what is now La Goulette, which is
 off-map to the south. Use the modelled figures. They are chosen so the corridor takes a legion in
 column and a battery, but **not a line of battle** — a 320-man cohort at the sim's 0.72 m pitch is
 ~35 m wide in line, so 200 m of corridor holds five cohorts abreast at most, with a lake on one
@@ -528,9 +533,17 @@ Do not compress the 45 m. Heights are not compressed (§2.4) and this one is the
 
 | structure | note | tag |
 |---|---|---|
-| **Temple of Eshmun** (Gk. Asklepios, Lat. Aesculapius) | the great temple of the citadel, on a podium at the summit, **reached by an ascent of sixty steps**. Hasdrubal, his family and the 900 Roman deserters made the last stand here and burned it. | [A] — verify the sixty steps against a primary text before it goes in a caption |
+| **Temple of Eshmun** (Gk. Asklepios, Lat. Aesculapius) | **verified.** Appian: it stood "in a place of great height and rocky nature", was **reached in peacetime by an ascent of sixty steps**, and was "much the richest and most renowned" temple of the citadel. Hasdrubal, his wife, their two boys and the **900 Roman deserters** made the last stand here on the **seventh day** and burned it over themselves. | [A] |
+| **The sixty steps** | build them. At a 0.19 m rise per step that is **11.4 m of climb** on the final approach, above the 45 m the streets have already done. Make it the last chokepoint on the map: **9 m wide**, no engines, no horses. | [A] + [DER] |
 | **Citadel enceinte** | a wall round the summit plateau, separate from the city wall. No dimensions survive. Recommend **4.5 m high, 2.5 m thick, with a single gate on the south-east where the three streets arrive.** | [GAME] |
 | **The Hannibalic quarter** | dense housing on the **south-east slope**, not on the summit — §7 | [ARCH] |
+
+**The stratigraphy of the south slope**, from the published section (`reference/carthage/
+plan-byrsa-hill-section.png`, CC0), because it tells you what the slope *is*: a Punic necropolis
+lowest, **metalworkers' workshops** above it, then the **ground floors of the apartment blocks**,
+and over the lot the Roman forum platform and the levelled summit. In 146 the slope is
+**housing over industry**. Put smithies, slag, kilns and workshop yards into the lower quarter
+rather than making the whole hill residential — it dresses the fight and it is evidenced.
 
 ### 5.3 The approach, and why it matters
 
@@ -567,19 +580,25 @@ the forum. [A] The harbours are not scenery; they are the route to the Byrsa.
 | **Rectangular (commercial) basin** | **400 × 150 m** of water, long axis roughly N–S; 6.0 ha | [ARCH] [MOD]. Note the conflict: the French Wikipedia summary of the excavations gives the circular basin ~8 ha and the rectangular "about twice as large" (~16 ha), and the 1911 Britannica gives the commercial harbour "nearly 60 acres" (24 ha). **The 8 ha for the circular basin checks out exactly against its 325 m diameter, so that figure is the water; the larger rectangular figures must include quays, warehouses and the outer anchorage.** Build 400 × 150 of water and put the difference into the quay belt below. |
 | Quay belt round the rectangular basin | **15 m** on the west side excavated; use **15 m west and north, 25 m east** (against the city wall) | [ARCH] |
 | **Circular (naval) basin, the cothon** | **325 m outer diameter**, 8.3 ha | [ARCH] Hurst; the lagoon survives at this size |
-| **Admiralty island** | **130 m diameter** | [DER] — see the check below; flag as MEDIUM confidence |
-| Annular water between island and ring | **97 m** | [DER] |
+| **Admiralty island** | **125 m diameter**, an artificial raised platform | [ARCH] Hurst, British Mission, 1970s |
+| Annular water between island and ring | **100 m** | [DER] |
 | Entrance from the sea | **21 m wide** (Appian's 70 ft), **closable with iron chains** | [A] |
 | Water depth in both basins | **2.5–3.0 m** | [MOD] |
 | Dating of the built form | **2nd century BC**, i.e. exactly our moment | [ARCH] |
 
-**The island-diameter derivation.** British excavation found **30 slipways on the island** and
-**135–140 round the ring**, 160–170 in total. Slipways are **5.9 m wide** [ARCH]. A 130 m island
-has a 408 m circumference; 30 × 5.9 = 177 m, so the sheds occupy 43 % of it — consistent with
-Hurst finding them in discrete blocks rather than a continuous ring. The 325 m ring has a 1,021 m
-circumference; 138 × 5.9 = 814 m, 80 % of it, leaving ~200 m for the gate, the channel to the
-rectangular basin, and the ramps. **Both numbers land in the plausible band at a 130 m island and
-nowhere else**, which is why that is the recommendation.
+**The island diameter, cross-checked.** This document first *derived* 130 m from the shed counts
+before the excavated figure was found, and the excavated figure is **125 m**. The derivation is
+kept because it is a useful consistency check on everything else: British excavation found **30
+slipways on the island** and **135–140 round the ring**, 160–170 in total, at **5.9 m wide**
+[ARCH]. A 125 m island has a 393 m circumference; 30 × 5.9 = 177 m, so the sheds occupy 45 % of
+it — consistent with Hurst finding them in discrete blocks rather than a continuous ring. The
+325 m ring has a 1,021 m circumference; 138 × 5.9 = 814 m, 80 % of it, leaving ~200 m for the
+gate, the channel to the rectangular basin and the ramps. **Every figure in this table is
+mutually consistent**, which is unusual for Punic Carthage and worth trusting.
+
+**Warning about the aerial photographs.** In `reference/carthage/aerial-salammbo-ports.jpg` the
+island looks like 55–60 % of the lagoon's width, not 125/325 = 38 %. That is modern silting and
+landscaping, plus oblique foreshortening. **Build to 125 m, not to the photograph.**
 
 ### 6.3 The ship-sheds
 
@@ -630,8 +649,9 @@ is a kind of space this project does not currently have.
 
 | finding | value | tag |
 |---|---|---|
-| **Insula (block) size, Byrsa quarter** | **15.5 × 31 m** | [ARCH] Lancel, from 1982 |
-| Street width, Byrsa quarter | **5–7 m**, call it **6 m**; roadway of beaten earth and clay, **unpaved** | [ARCH] |
+| **Insula (block) size, Byrsa quarter** | **15.5 × 31 m**, and — read straight off the excavation plan — this is a **module of 30 × 60 Punic cubits**. The plan dimensions block C as `30 coudées` deep by `60 coudées` along the street. At the Punic cubit of 0.515 m that is 15.45 × 30.9 m. | [ARCH] Lancel, from 1982; module verified on `reference/carthage/plan-byrsa-hannibal-quarter.png` |
+| **House plot** | the 60-cubit block face is subdivided into **five plots of 12 × 30 cubits = 6.2 × 15.5 m**, some further split front and back into an `a` and a `b` unit | [ARCH], same plan |
+| Street width, Byrsa quarter | **5–7 m**; measured off the plan's own scale bar: Rue I **6.2 m**, Rue III **5.4 m**, Rue II (the stepped one) **7.5 m**. Roadway of beaten earth and clay, **unpaved**. | [ARCH] |
 | Street gradient on the Byrsa slope | **1:7 (14 %)**, with **in-situ flights of steps** to take up the slope; wheeled traffic impossible | [ARCH] |
 | Street width, Magon quarter (seafront) | **~3 m**, with **one exceptional 9 m street** running to the sea gate | [ARCH] |
 | Grid | **orthogonal**, laid out deliberately, blocks separated by straight streets | [ARCH] |
@@ -671,11 +691,17 @@ fabric read; Carthage's are at 4–7 m and there should be **more of them**.
 
 ### 7.3 Blocks and buildings
 
+**Author the fabric on the cubit module, not on metres.** A Punic cubit is 0.515 m; the whole
+Byrsa quarter is laid out on it, and a generator that snaps to `30 × 60 cubits` with `12-cubit`
+plot subdivisions will produce a Carthaginian street front by construction. This is the single
+most useful thing in the archaeology and Rome has no equivalent.
+
 | property | value | tag |
 |---|---|---|
-| Insula footprint | **15.5 × 31 m** (480 m²) | [ARCH] |
-| Long axis | **across the slope**, so the short 15.5 m face fronts the climbing street | [ARCH] [DER] |
-| Houses per insula | **2–4** | [DER] from the plan type |
+| Insula footprint | **15.5 × 31 m** = **30 × 60 Punic cubits** (480 m²) | [ARCH] |
+| Long axis | **along the contour**, so the 31 m face runs across the slope and the 15.5 m depth climbs it; each block therefore steps down one terrace to the next | [ARCH] [DER] |
+| Plot subdivision | **five plots of 12 × 30 cubits (6.2 × 15.5 m)** per block face; some split into a front and a back unit | [ARCH] |
+| House interior | a **courtyard** for light with the **cistern mouth in its floor**, a **side corridor** running the full depth from the street door to a second door on the back street, small rooms off it, a cesspool, and a street-front room usable as a **shop** | [ARCH] |
 | Storey height | **2.8 m** + 0.4 m of floor | [GAME] |
 | Typical height | **ground + 3 to ground + 5**, i.e. **4–6 storeys, 12.8–19.2 m** | [A] tempered |
 | The three streets to the Byrsa | **six storeys, 19.2 m**, both sides, hard on the kerb — the tallest continuous fabric in the game | [A] |
@@ -716,6 +742,49 @@ Two consequences:
    once.
 2. The fabric comes 25 m closer to the wall than at Rome, so **a breach dumps you into houses
    almost immediately**. Intended.
+
+### 7.6 The forum — the map's one open space inside the walls
+
+Appian: with the wall round the Cothon taken, **"Scipio seized the neighbouring forum"**, and it
+is from the forum that the three streets climb to the Byrsa. [A] So the forum is the hinge
+between the harbour fight and the hill fight, and it is the only place inside Carthage where two
+armies can actually deploy against each other.
+
+| property | value | tag |
+|---|---|---|
+| Position | between the south-east foot of the Byrsa and the harbours: **e ≈ +120, n ≈ −850 → x ≈ −383, z ≈ 971** | [MOD], the position is debated |
+| Size | **120 × 80 world metres of open paving** | [GAME] |
+| Enclosure | colonnaded on at least two sides, with the three street mouths on the Byrsa side and the harbour road entering opposite | [GAME] |
+
+**Note the exception to §2.4.** An open square is neither a position nor a cross-section: put
+through `KN`/`KE` a 180 × 120 m real agora would come out 81 × 26 world m, a corridor. Open
+spaces that have to be *fought in* take **world dimensions directly**, which is the same
+exemption `rome.ts` gives its `soft` entries. The forum, the harbour quays and the wall's
+killing ground are the three places on this map where that applies.
+
+### 7.7 The Megara — a walled suburb that is not city fabric
+
+The northern half of the walled area was the **Megara**: not streets and insulae but a large
+suburb of **market gardens, orchards, hedges, ditches and irrigation channels**, with scattered
+villas. Scipio broke into it by night in 147 BC and Appian records that the Romans found the
+enclosures and channels harder going than the wall had been. [A]
+
+Build it as a **third terrain class**, distinct from both open ground and city:
+
+| property | value | tag |
+|---|---|---|
+| Extent | the **+X (north) quarter** behind the wall — roughly x **+250 to +1100**, z **520 to 1000** | [MOD] |
+| Field enclosures | dry-stone walls and thorn hedges **1.2–1.8 m** high on a **40–70 m** grid | [GAME] from [A] |
+| Ditches | irrigation channels **1.5–2.5 m** wide, **1 m** deep, along one side of most enclosures | [A] |
+| Planting | olive, fig, almond, pomegranate, vine; walled kitchen gardens; cypress lines | [MOD] |
+| Buildings | scattered villas and farm ranges, **1–2 storeys**, at maybe 8 % coverage | [GAME] |
+
+**Why this earns its place.** An attacker who gets over the *north* end of the triple wall does
+not arrive in a city — he arrives in a chequerboard of walled gardens where a formation cannot
+hold its line, every enclosure is a small strongpoint, and cavalry is useless. It is a third kind
+of ground on a map that already has open plain and dense fabric, and it means the three gates in
+§4.5 do not lead to the same battle. It is also cheap: it is scatter and low walls, not
+buildings.
 
 ---
 
@@ -801,6 +870,13 @@ Soft margins on both flanks (§3.4) force every heavy engine into the centre of 
 defender knows exactly where the rams are coming and can weight the wall accordingly. Rome's
 approach is uniformly firm.
 
+### 8.9 Three gates, three different battles behind them
+
+Rome's modelled circuit has one gate and everything behind it is the same city. At Carthage the
+north gate opens into the **Megara's walled gardens** (§7.7), the centre gate into the road to the
+**forum**, and the south gate into the **harbour quarter**. Each is a different kind of ground
+with a different unit type suited to it, and the attacker picks before he commits.
+
 ---
 
 ## 9. What nobody knows, and what we are inventing
@@ -816,7 +892,7 @@ Listed so no one later mistakes our decisions for evidence.
 | Tower plan and footprint | unknown | 11 × 11 m, projecting 5.5 m |
 | Whether the casemates are continuous or intermittent | unknown | continuous, on Appian's plain sense |
 | Whether the barracks figure is real | **almost certainly not** | gallery, not dormitory, §4.4 |
-| The admiralty island's diameter | not directly published to us | **130 m, derived from shed counts** |
+| The admiralty island's diameter | **excavated, 125 m** (Hurst) | 125 m. Our independent derivation from shed counts gave 130 — a useful check that the rest of §6.2 hangs together |
 | A causeway to the island | **no evidence** | built anyway, flagged, §6.4 |
 | Byrsa summit elevation | 50 / 57 / 60 in print | **60** |
 | The Punic summit's plateau before Roman truncation | inferred | 250 × 180 m |
@@ -870,26 +946,42 @@ Modern:
 
 ---
 
-## 11. Reference imagery
+## 11. Reference imagery — `reference/carthage/`
 
-**Not yet gathered — this section is the next thing to land.** Rules, restated so the builders
-apply them too:
+**15 files, 9.9 MB, licence-verified and catalogued in `ASSETS.md`** under "Punic Carthage
+reference". Full table with creator, licence, source page and SHA-256 is there; this is the
+index of what each one is *for*.
 
-- `reference/carthage/` is **layout and accuracy reference only**. It is **never** a blind
-  render-quality deck plate. `reference/rome2/` remains the sole deck-eligible pool. Mixing the
-  pools has been got wrong twice on this project.
-- Licence verified on the individual asset page; CC0, public domain or explicitly
-  commercial-use-permitted only. Wikimedia Commons' `extmetadata` API returns each file's own
-  licence and is the method that worked for the 41 files already in `ASSETS.md`.
-- Name, creator, source URL and licence recorded in `ASSETS.md`; attribution preserved.
-- Official page or the creator's own download button only. No mirrors, re-uploads or shorteners.
-- Nothing extracted from Total War or any other game, ever.
-- `reference/` is gitignored.
+| use it for | files |
+|---|---|
+| **§7 street grid and housing** — the cubit module, plot subdivision, the stepped street | `plan-byrsa-hannibal-quarter.png` (the plan every number in §7.1 was read off), `plan-byrsa-house.png` |
+| **§5 the Byrsa** — relief, the slope, the stratigraphy, the truncated summit | `plan-byrsa-hill-section.png`, `byrsa-hill.jpg`, `byrsa-hill-cridland.jpg`, `byrsa-site-dalbera.jpg`, `byrsa-roman-foundations.jpg` |
+| **§6 the harbours** — basin shapes, the island, bank profiles, the shore relationship | `aerial-salammbo-ports.jpg`, `ports-punic-oblique.jpg`, `ports-cothon-ground-1.jpg`, `ports-cothon-ground-3.jpg` |
+| **§3 the ground** — coast, peninsula, how flat it all is | `aerial-carthage.jpg`, `aerial-carthage-2013.jpg` |
+| **materials** — Punic ashlar and *opus africanum* | `punic-ruins-masonry.jpg` |
+| dressing | `tophet.jpg` |
 
-Wanted, in priority order: site plans of Punic Carthage showing the wall line and the harbours;
-Lancel's Byrsa quarter plan; Hurst's harbour plans; aerial and oblique photographs of the two
-lagoons; photographs of the Byrsa slope housing in situ; Punic masonry (`opus africanum`) and
-ashlar; the Tunisian coast and sebkha ground.
+**Deck eligibility: none of it, ever.** This pool is **layout and accuracy reference only**.
+`reference/rome2/` remains the sole blind render-quality plate pool. Mixing provenance has been
+got wrong twice on this project and a photograph in a render-vs-render deck measures sensor
+noise, not rendering.
+
+**Two cautions on using these.**
+
+1. **Everything photographed is post-146.** The Byrsa's visible stonework is largely Roman
+   forum substructure standing *on* the Punic quarter, not Punic. The harbour lagoons have
+   silted, been landscaped and been re-cut. Use the photographs for shape, relief, light and
+   material; use §4–§7 for dimensions. Where the two disagree, the numbers win — see the
+   admiralty-island warning in §6.2.
+2. **No reconstruction art was fetched, and none should be.** A search for "Carthage" returns
+   mostly reconstruction renders and artists' impressions of unknown provenance, and a
+   significant fraction of what circulates is extracted from commercial games. Nothing of that
+   kind is in this directory.
+
+Still wanted and not yet found under an acceptable licence: a published plan of Hurst's circular
+harbour excavation; any measured drawing of the Magon-quarter sea rampart; a site plan showing a
+reconstructed line for the isthmus wall. Gsell (1918) has the last of these and is public domain,
+but Commons carries it as PDF, which is not a permitted format here.
 
 ---
 
