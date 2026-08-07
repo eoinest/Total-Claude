@@ -3,33 +3,32 @@ import type { EngineContext, Subsystem } from '../core/Engine';
 import type { Obstacle } from '../sim/Obstacles';
 import { HALF_EXTENT, type TerrainSystem } from '../terrain/TerrainSystem';
 import { clamp } from '../util/math';
+import { activeMap } from '../maps';
 import { Batch } from './build';
-import { buildDistricts, type Lane } from './insulae';
-import { buildLandmarks } from './landmarks';
+import { buildCarthagePlan } from './carthage';
 import {
-  AQUEDUCTS,
-  assertHillRing,
+  resolveCityId, type CityAssertion, type CityId, type CityPlan, type CityPlanRect,
+} from './cityPlan';
+import type { Lane } from './insulae';
+import {
   assertNoFabricOverlaps,
   assertNoFootprintOverlaps,
   assertOneAmphitheatre,
   assertTopology,
   assertWaysClearOfMonuments,
   GATE_OPEN_WIDTH,
-  KeepOut,
-  LANDMARKS,
-  PLAZAS,
   WALL,
-  WAY_FRONTAGE,
-  wayMix,
-  WAYS,
 } from './layout';
 import { CITY_MAT_KEYS, CityMaterials } from './materials';
 import { buildReferenceOverlay, type OverlayOptions, type ReferencePlan } from './overlay';
-import { buildTreeChunks } from './props';
+import { buildRomePlan, type RomePlan } from './romePlan';
 import {
-  buildWall, unfinishedTopAt, type CityChunkSpec, type GarrisonBay, type GateBlockOut, type GateDoorOut,
-  type GateOut, type TreeRequest, type WallSegmentOut, type WallStair,
+  unfinishedTopAt, type CityChunkSpec, type GarrisonBay, type GateBlockOut, type GateDoorOut,
+  type GateOut, type WallSegmentOut, type WallStair,
 } from './wall';
+
+/** Narrow a plan to Rome's, which carries the five Rome-only assertion results. */
+const isRomePlan = (p: CityPlan): p is RomePlan => p.id === 'rome';
 
 /**
  * Rome, 271 AD: the Aurelian Wall under construction and the city behind it.
@@ -253,7 +252,7 @@ export class CitySystem implements Subsystem {
   private overlaps: ReturnType<typeof assertNoFootprintOverlaps> = { ok: true, count: 0, worst: 0, pairs: [] };
   private fabricOverlaps: ReturnType<typeof assertNoFabricOverlaps> = { ok: true, count: 0, worst: 0, buildingsHit: 0 };
   private wayClearance: ReturnType<typeof assertWaysClearOfMonuments> = { ok: true, samples: 0, inside: 0, worst: null };
-  private ways: ReturnType<typeof wayMix> = [];
+  private ways: { cls: string; count: number; km: number }[] = [];
   /** Every lane the quarters cut for themselves, in world space. See `getLanes`. */
   private lanes: readonly Lane[] = [];
   private topology: ReturnType<typeof assertTopology> = { ok: true, checks: 0, failures: [] };
@@ -261,6 +260,10 @@ export class CitySystem implements Subsystem {
   private stray: StrayReport = { ok: true, worst: 0, offenders: [] };
   /** Diagnostics only: see `debugForceLod`. */
   private forcedLod: number | null = null;
+  /** Which city was built. See `resolveCityId`. */
+  private cityId: CityId = 'rome';
+  /** The plan this city was built from, kept for the diagnostics and the public getters. */
+  private plan: CityPlan | null = null;
   private overlay: THREE.Mesh | null = null;
   /** Terrain sampler kept for the debug overlay, which is built after `init`. */
   private overlayGround: ((x: number, z: number) => number) | null = null;
@@ -283,105 +286,48 @@ export class CitySystem implements Subsystem {
     this.groundAt = heightAt;
 
     // ---- plan ---------------------------------------------------------------
-    const wall = buildWall(heightAt, 'aurelian-271');
-    this.segments = wall.segments;
-    this.gateList = wall.gates;
-    this.gateBlock = wall.gateBlock;
-    this.bays = wall.garrisonBays;
-    this.stairs = wall.stairs;
-    this.gateDoor = wall.gateDoor;
+    //
+    // Which city this is comes from `resolveCityId`. Rome's plan is `romePlan.ts`, which is
+    // this block's own previous contents lifted verbatim; Carthage's is `carthage/`. The
+    // baking, the LOD, the occupancy raster and the obstacle set below are shared and know
+    // nothing about either.
+    this.cityId = resolveCityId(activeMap().id);
+    const plan: CityPlan = this.cityId === 'carthage'
+      ? buildCarthagePlan(heightAt)
+      : buildRomePlan(heightAt);
+    this.plan = plan;
+
+    // A plan may carry no circuit at all — Carthage's triple wall is a separate workstream.
+    // Everything below tolerates empty arrays; see `bayAt`, `masonryTopAt` and
+    // `wallHeightNear`, all of which already had the guard.
+    const wall = plan.wall;
+    this.segments = wall?.segments ?? [];
+    this.gateList = wall?.gates ?? [];
+    this.gateBlock = wall?.gateBlock ?? null;
+    this.bays = wall?.garrisonBays ?? [];
+    this.stairs = wall?.stairs ?? [];
+    this.gateDoor = wall?.gateDoor ?? null;
     if (this.bays.length > 1) {
       this.bayX0 = this.bays[0].x0;
       this.bayPitch = this.bays[1].x0 - this.bays[0].x0;
     }
 
-    // Reserve every landmark's *oriented rectangular* footprint before a single insula
-    // is generated. A circle is not good enough: the Circus Maximus is 621 × 118 m, and
-    // the circle that used to stand in for it left five sixths of its footprint free for
-    // the fabric to grow through — which is precisely what happened.
-    const keepOut = new KeepOut();
-    for (const l of LANDMARKS) {
-      keepOut.addRect(l.x, l.z, l.hw, l.hd, l.rot);
-      // A mound is bigger in plan than the building on it.
-      if (l.mound) keepOut.addCircle(l.x, l.z, (l.moundRadius ?? l.clear) * 1.02);
+    if (isRomePlan(plan)) {
+      this.overlaps = plan.rome.overlaps;
+      this.topology = plan.rome.topology;
+      this.amphitheatres = plan.rome.amphitheatres;
+      this.fabricOverlaps = plan.rome.fabricOverlaps;
+      this.wayClearance = plan.rome.wayClearance;
     }
-    // The whole armature, not just the nine named viae: the military road behind the
-    // curtain, the ring round every monument and the feeders that connect them all reserve
-    // their carriageway plus a margin, so the fabric presents a frontage to the street
-    // instead of growing into it. See `WAY_FRONTAGE` for why the margin is by rank.
-    for (const w of WAYS) keepOut.addPath(w.path, w.width * 0.5 + WAY_FRONTAGE[w.cls]);
-    for (const p of PLAZAS) keepOut.addRect(p.x, p.z, p.hw + 2, p.hd + 2, p.rot);
-    for (const a of AQUEDUCTS) keepOut.addPath(a.path, 8);
-
-    // Build-time assertion: no two monuments interpenetrate. Reported in `stats()` and
-    // logged once, because a layout regression is otherwise invisible until someone
-    // notices a temple inside a racetrack.
-    //
-    // **Read the name carefully, because it is narrower than it sounds and that gap is a
-    // bug the user found before the build did.** This compares landmarks with landmarks and
-    // skips anything `soft`. It has never looked at an insula. So while the user was
-    // reporting monuments "smacked down across multiple buildings" it was reporting zero
-    // overlaps — correctly, and about a different question. `assertNoFabricOverlaps` below
-    // is the one that answers the question that was actually being asked.
-    this.overlaps = assertNoFootprintOverlaps();
-    if (!this.overlaps.ok) {
-      console.warn(
-        `[city] ${this.overlaps.count} landmark footprint overlap(s), worst ${this.overlaps.worst} m: ` +
-          this.overlaps.pairs.map((p) => `${p.a}/${p.b}`).join(', ')
-      );
-    }
-    // ...and that separating them did not destroy the plan.
-    this.topology = assertTopology();
-    const ring = assertHillRing();
-    this.topology = {
-      ok: this.topology.ok && ring.ok,
-      checks: this.topology.checks + ring.checks,
-      failures: [...this.topology.failures, ...ring.failures],
-    };
-    if (!this.topology.ok) {
-      console.warn(`[city] topology check failed: ${this.topology.failures.join('; ')}`);
-    }
-    // Exactly one Flavian Amphitheatre. See `assertOneAmphitheatre`.
-    this.amphitheatres = assertOneAmphitheatre();
-    if (!this.amphitheatres.ok) {
-      console.warn(`[city] expected 1 amphitheatre, found ${this.amphitheatres.count}: ${this.amphitheatres.ids.join(', ')}`);
+    for (const a of plan.assertions) {
+      if (!a.ok) console.warn(`[city] ${plan.id}: ${a.name} — ${a.detail}`);
     }
 
-    const landmarks = buildLandmarks(heightAt, 'rome-monuments');
-    const districts = buildDistricts(heightAt, keepOut, 'rome-fabric', wall.wallZAt);
+    this.ways = plan.ways;
+    this.lanes = plan.lanes;
 
-    // The check whose absence let the user see what the build could not: does any house
-    // stand inside a monument? Counted against the same rectangles `getObstacles()`
-    // publishes, so it grades the collision surface rather than the intent.
-    this.fabricOverlaps = assertNoFabricOverlaps(landmarks.footprints, districts.footprints);
-    if (!this.fabricOverlaps.ok) {
-      console.warn(
-        `[city] ${this.fabricOverlaps.count} monument/insula overlap(s) across ` +
-          `${this.fabricOverlaps.buildingsHit} building(s), worst ${this.fabricOverlaps.worst} m`
-      );
-    }
-    // ...and the same question asked of the streets, which is where it was worst. See
-    // `assertWaysClearOfMonuments`: before the ways were deflected round the resolved
-    // monument positions, nine tenths of the Via Appia and the Via Triumphalis ran through
-    // masonry at zero clearance and nothing in the build said so.
-    this.wayClearance = assertWaysClearOfMonuments();
-    if (!this.wayClearance.ok) {
-      console.warn(
-        `[city] ${this.wayClearance.inside}/${this.wayClearance.samples} ranked-way samples ` +
-          `inside a monument; worst ${this.wayClearance.worst?.id} at ${this.wayClearance.worst?.pct}%`
-      );
-    }
-    // The armature *and* the lanes each quarter cut for itself. See `wayMix`.
-    this.ways = wayMix(districts.lanes);
-    this.lanes = districts.lanes;
-
-    const trees: TreeRequest[] = [...wall.trees, ...landmarks.trees, ...districts.trees];
-    const specs: CityChunkSpec[] = [
-      ...wall.chunks,
-      ...landmarks.chunks,
-      ...districts.chunks,
-      ...buildTreeChunks(trees, heightAt),
-    ];
+    const trees = plan.trees;
+    const specs: CityChunkSpec[] = plan.chunks;
 
     // ---- bake ---------------------------------------------------------------
     for (const spec of specs) this.bakeChunk(spec, heightAt);
@@ -398,11 +344,11 @@ export class CitySystem implements Subsystem {
     }
 
     // ---- movement blocking --------------------------------------------------
-    for (const b of wall.blockers) this.markSegment(b.x1, b.z1, b.x2, b.z2, b.halfW);
-    // Tower footprints project beyond the curtain.
-    for (const seg of this.segments) {
-      this.markCircle(seg.x1, seg.z1, WALL.towerWidth * 0.5);
-    }
+    for (const b of wall?.blockers ?? []) this.markSegment(b.x1, b.z1, b.x2, b.z2, b.halfW);
+    // Solids a plan describes as discs — Rome's tower footprints project beyond the curtain.
+    for (const c of plan.occCircles) this.markCircle(c.x, c.z, c.r);
+    // ...and as thick lines: Carthage's harbour basins, which are water and are not walkable.
+    for (const b of plan.occSegments) this.markSegment(b.x1, b.z1, b.x2, b.z2, b.halfW);
     /**
      * The nine flights onto the wall-walk, from the same helper `buildObstacles` uses, so
      * the raster and the box set cannot disagree about a stair the way they once did about
@@ -427,8 +373,7 @@ export class CitySystem implements Subsystem {
         solid.x1 + dx * back, solid.z1 + dz * back, solid.x2, solid.z2, solid.halfW
       );
     }
-    for (const f of landmarks.footprints) this.markRect(f.x, f.z, f.hw, f.hd, occRot(f.rot));
-    for (const f of districts.footprints) this.markRect(f.x, f.z, f.hw, f.hd, occRot(f.rot));
+    for (const f of plan.footprints) this.markRect(f.x, f.z, f.hw, f.hd, occRot(f.rot));
     /**
      * A gate that is **open** has its carriageway cleared again so units can march through.
      *
@@ -445,7 +390,7 @@ export class CitySystem implements Subsystem {
       this.clearSegment(gate.x, gate.z - 20, gate.x, gate.z + 20, 2.4);
     }
 
-    this.buildObstacles(wall.blockers, landmarks.footprints, districts.footprints);
+    this.buildObstacles(wall?.blockers ?? [], plan.footprints, plan.occSegments);
   }
 
   /**
@@ -458,8 +403,8 @@ export class CitySystem implements Subsystem {
    */
   private buildObstacles(
     blockers: readonly WallBlocker[],
-    landmarkFootprints: readonly PlanRect[],
-    districtFootprints: readonly PlanRect[]
+    footprints: readonly CityPlanRect[],
+    occSegments: readonly WallBlocker[]
   ): void {
     this.wallBlockers = blockers;
     const out: Obstacle[] = [];
@@ -536,11 +481,30 @@ export class CitySystem implements Subsystem {
     // ---- fabric -------------------------------------------------------------
     // Roofs are not walkable in this game, so a monument and an insula are solid to any
     // height. 1e4 rather than Infinity keeps the value finite in a Float32Array.
-    for (const f of landmarkFootprints) {
-      out.push({ x: f.x, z: f.z, hw: f.hw, hd: f.hd, rot: occRot(f.rot), topY: 1e4, kind: 'monument' });
+    for (const f of footprints) {
+      out.push({
+        x: f.x, z: f.z, hw: f.hw, hd: f.hd, rot: occRot(f.rot), topY: 1e4,
+        kind: f.kind === 'monument' ? 'monument' : 'building',
+      });
     }
-    for (const f of districtFootprints) {
-      out.push({ x: f.x, z: f.z, hw: f.hw, hd: f.hd, rot: occRot(f.rot), topY: 1e4, kind: 'building' });
+
+    // ---- thick-line solids ---------------------------------------------------
+    // Not part of any circuit: Carthage's harbour basins are stamped as chords of water so
+    // that a pathfinder cannot route a cohort across a naval harbour. Boxed as 'monument',
+    // which is the only kind in `ObstacleKind` that means "large civic solid, not a house";
+    // widening that enum lives in the sim and is not this workstream's to change.
+    for (const b of occSegments) {
+      const dx = b.x2 - b.x1;
+      const dz = b.z2 - b.z1;
+      const len = Math.hypot(dx, dz);
+      if (len < 0.4) continue;
+      out.push({
+        x: (b.x1 + b.x2) * 0.5, z: (b.z1 + b.z2) * 0.5,
+        hw: len * 0.5, hd: b.halfW,
+        rot: Math.atan2(dz, dx),
+        topY: 1e4,
+        kind: 'monument',
+      });
     }
 
     this.obstacles = out;
@@ -1067,7 +1031,43 @@ export class CitySystem implements Subsystem {
 
   /** Named monument positions, for the camera, the minimap and objective markers. */
   getLandmarks(): { id: string; name: string; x: number; z: number }[] {
-    return LANDMARKS.map((l) => ({ id: l.id, name: l.name, x: l.x, z: l.z }));
+    return this.plan ? [...this.plan.landmarks] : [];
+  }
+
+  /** Which city is standing: `'rome'` or `'carthage'`. */
+  getCityId(): CityId {
+    return this.cityId;
+  }
+
+  /**
+   * Where the defended circuit runs, **whether or not masonry has been built on it**.
+   *
+   * `getWallSegments()` answers "where is the stone"; this answers "where is the line". They
+   * are the same for Rome and they are not for Carthage, whose triple wall is a separate
+   * workstream — and a nav probe that could only see the stone would score a wall-less city
+   * as perfectly permeable and call that a pass.
+   */
+  getCircuit(): { zAt: (x: number) => number; xMin: number; xMax: number } | null {
+    if (!this.plan) return null;
+    return {
+      zAt: this.plan.circuitZAt,
+      xMin: this.plan.circuitXRange[0],
+      xMax: this.plan.circuitXRange[1],
+    };
+  }
+
+  /** Sampled circuit line, for a probe that cannot call a function across the bridge. */
+  getCircuitSamples(step = 20): { x: number; z: number }[] {
+    const c = this.getCircuit();
+    if (!c) return [];
+    const out: { x: number; z: number }[] = [];
+    for (let x = c.xMin; x <= c.xMax; x += step) out.push({ x, z: c.zAt(x) });
+    return out;
+  }
+
+  /** Every build-time check, with what it measured. See `CityAssertion`. */
+  getAssertions(): readonly CityAssertion[] {
+    return this.plan ? this.plan.assertions : [];
   }
 
   /**
@@ -1158,6 +1158,10 @@ export class CitySystem implements Subsystem {
     waySamples: number;
     /** Street network by rank: how many ways of each class, and their total length. */
     ways: { cls: string; count: number; km: number }[];
+    /** Which city this is. Every Rome-specific field above is meaningless when it is not Rome. */
+    cityId: CityId;
+    /** Build-time checks with what each one measured. See `CityAssertion`. */
+    assertions: readonly CityAssertion[];
   } {
     let visibleMeshes = 0;
     let visibleTriangles = 0;
@@ -1185,6 +1189,8 @@ export class CitySystem implements Subsystem {
       wayInsideMonument: this.wayClearance.inside,
       waySamples: this.wayClearance.samples,
       ways: this.ways,
+      cityId: this.cityId,
+      assertions: this.getAssertions(),
     };
   }
 
