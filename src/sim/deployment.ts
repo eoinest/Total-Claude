@@ -259,7 +259,20 @@ export class DeploymentSystem implements Subsystem {
 
     const bays = this.city?.getGarrisonBays?.() ?? [];
     const plan = this.city?.cityPlan;
-    const mine = !!plan && plan.garrison === this.playerFaction && bays.length > 0;
+    /**
+     * Whether the parapet is the player's to stand on.
+     *
+     * Normally that is the plan's own answer: the wall belongs to `plan.garrison`. The second
+     * clause is for the case the plan alone gets wrong — a scenario that has already put the
+     * player's units on the stone. `deployAssault`'s two siege orders of battle are still
+     * keyed to Rome-garrisons-and-the-Juthungi-storm (its own comment says so), so a storm of
+     * Carthage deploys Roman wall troops onto a wall whose plan names Carthage as the
+     * garrison. Refusing the player the parapet there would leave them unable to move units
+     * they can see standing on it, which is a worse answer than either faction's.
+     */
+    const holdsWall = own.some((u) => this.battle.siege.isGarrisoned(u.id));
+    const mine = bays.length > 0
+      && (holdsWall || (!!plan && plan.garrison === this.playerFaction));
 
     let wallZLo = Infinity;
     let wallZHi = -Infinity;
@@ -325,7 +338,7 @@ export class DeploymentSystem implements Subsystem {
     void wallXHi;
 
     const bound = mine
-      ? `${plan?.name ?? 'the city'}’s own wall`
+      ? `the wall of ${plan?.name ?? 'the city'}`
       : plan
         ? `${plan.name} at z ${Math.round(plan.battlefieldZ)}`
         : 'the edge of the field';
