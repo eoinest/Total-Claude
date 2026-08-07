@@ -76,6 +76,8 @@ export interface AbilityProbe {
 export interface DeploymentHooks {
   readonly active: boolean;
   readonly lastRefusal: string;
+  /** Non-null when the last `place` rebuilt the unit instead of moving it. */
+  readonly lastReplacement: { from: number; to: number } | null;
   place(unitId: number, x: number, z: number, facing: number, width?: number): boolean;
   setFormation(unitId: number, formationId: string): boolean;
   remove(unitId: number): boolean;
@@ -822,15 +824,37 @@ export class SelectionController {
     const sel = this.model.selectedViews.filter((v) => !v.destroyed);
     if (sel.length === 0) return;
 
+    /**
+     * Keep hold of anything the placement rebuilt.
+     *
+     * Taking a garrison off the wall retires the unit and stands a new one on the grass —
+     * there is no public way to un-garrison in place — and without this the player's
+     * selection would simply empty as the unit they were dragging ceased to exist.
+     */
+    const rebuilt = new Map<number, number>();
+    const note = (): void => {
+      const r = dep.lastReplacement;
+      if (r) rebuilt.set(r.from, r.to);
+    };
+
     const wall = this.wallPoint();
     if (wall) {
       // Every unit is offered the same station; `Siege.freeWindow` gives each the next free
       // stretch of walkway rather than stacking them, so a whole wing can be dropped at once.
-      for (const v of sel) dep.place(v.id, wall.x, wall.z, 0);
-      return;
+      for (const v of sel) {
+        dep.place(v.id, wall.x, wall.z, 0);
+        note();
+      }
+    } else {
+      this.buildGhosts(ctx, dragPx);
+      for (const g of this.ghosts) {
+        dep.place(g.unit.id, g.x, g.z, g.facing, g.width);
+        note();
+      }
     }
-    this.buildGhosts(ctx, dragPx);
-    for (const g of this.ghosts) dep.place(g.unit.id, g.x, g.z, g.facing, g.width);
+    if (rebuilt.size > 0) {
+      this.commit(this.model.selection.map((id) => rebuilt.get(id) ?? id), ctx);
+    }
   }
 
   private issueDragOrder(ctx: EngineContext, dragPx: number): void {

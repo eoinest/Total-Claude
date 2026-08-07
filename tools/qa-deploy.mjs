@@ -410,14 +410,128 @@ if (!ONLY || ONLY === 'field') {
     'the second add is served off the bench, so it costs no pool places');
   measured.budget = { before: budgetBefore, add: budgetAdd, removed: budgetRm, readd: budgetRe };
 
+  // ---- a drop outside the zone is refused, and says so ----
+  {
+    // Re-select the unit that was placed by hand and try to send it behind the enemy line.
+    await page.evaluate((id) => {
+      const g = window.__game;
+      const hud = g.engine.context.tryGet('hud');
+      void hud;
+      return id;
+    }, target.id);
+    const cards2 = await page.$$('.cardbar .card:not(.foe)');
+    const cb = await cards2[0].boundingBox();
+    await page.mouse.click(cb.x + cb.width / 2, cb.y + cb.height / 2);
+    await settle(page, 300);
+    const selNow = (await page.evaluate(() => window.__selection()))[0] ?? -1;
+    const beforeOut = await page.evaluate((id) => window.__unit(id), selNow);
+    const outPt = await page.evaluate((id) => {
+      const g = window.__game;
+      const u = g.battle.unitById(id);
+      const d = g.deployment;
+      // 120 m past the forbidden edge, straight ahead into no-man's-land.
+      const z = d.frontIsLowZ() ? d.zone.zMin - 120 : d.zone.zMax + 120;
+      return { x: u.x, z, lift: 0.4, inZone: d.contains(u.x, z) };
+    }, selNow);
+    const f3 = await frameAndProject(page, [outPt]);
+    let refused = null;
+    if (f3.px) {
+      await page.mouse.move(f3.px[0].x, f3.px[0].y);
+      await settle(page, 200);
+      const hint2 = await page.evaluate(() => {
+        const h = document.querySelector('.drag-hint');
+        return h && h.style.display !== 'none' ? h.textContent : '';
+      });
+      await page.mouse.down({ button: 'right' });
+      await settle(page, 200);
+      const hint3 = await page.evaluate(() => {
+        const h = document.querySelector('.drag-hint');
+        return h && h.style.display !== 'none' ? h.textContent : '';
+      });
+      await page.mouse.up({ button: 'right' });
+      await settle(page, 350);
+      const afterOut = await page.evaluate((id) => window.__unit(id), selNow);
+      const st2 = await page.evaluate(() => window.__depState());
+      refused = {
+        moved: Math.hypot(afterOut.x - beforeOut.x, afterOut.z - beforeOut.z),
+        reason: st2.refusal, hint: hint3 || hint2,
+      };
+    }
+    record('zone-refusal', !!refused && !outPt.inZone && refused.moved < 0.01
+      && /deployment zone/i.test(refused.reason),
+      `right-click 120 m past the front edge of the zone with unit ${selNow} selected`,
+      refused
+        ? `unit moved ${refused.moved.toFixed(3)} m; refusal "${refused.reason}"; `
+          + `cursor hint read "${refused.hint}"`
+        : 'could not frame a point outside the zone');
+  }
+
+  // ---- the performance line warns rather than refusing ----
+  {
+    const perf = await page.evaluate(async () => {
+      const g = window.__game;
+      const d = g.deployment;
+      const before = d.budget();
+      // Click the palette's + until the battle is past the measured 60 fps line, or the
+      // caps stop us. Real clicks, one row at a time.
+      const rows = Array.from(document.querySelectorAll('.dep-row'));
+      let clicks = 0;
+      for (let guard = 0; guard < 12 && d.budget().men <= d.budget().perfLine; guard++) {
+        const btn = rows.map((r) => r.querySelector('[data-d="1"]')).find((b) => !b.disabled);
+        if (!btn) break;
+        btn.click();
+        clicks++;
+        await new Promise((r) => setTimeout(r, 40));
+      }
+      return { before, after: d.budget(), clicks, warning: d.warning() };
+    });
+    await settle(page, 350);
+    const noteOn = await page.evaluate(() => {
+      const n = document.querySelector('.dep-note');
+      return n ? { on: n.classList.contains('on'), text: n.textContent } : null;
+    });
+    record('perf-line-warns',
+      perf.after.men > perf.before.men && perf.after.men > perf.after.perfLine
+        && /60 fps/.test(perf.warning) && !!noteOn?.on,
+      `added ${perf.clicks} units from the palette to cross PERF_VALIDATED_MEN`,
+      `men ${perf.before.men} → ${perf.after.men} against a line of ${perf.after.perfLine}; `
+        + `warning "${perf.warning}"; plaque note ${noteOn?.on ? 'shown' : 'absent'}`,
+      'the pre-battle menu warns past this line rather than refusing, and so does this');
+    // Put the army back where it was so the later checks measure what they think.
+    await page.evaluate(async (n) => {
+      const rows = Array.from(document.querySelectorAll('.dep-row'));
+      for (let k = 0; k < n; k++) {
+        const btn = rows.map((r) => r.querySelector('[data-d="-1"]')).find((b) => !b.disabled);
+        if (!btn) break;
+        btn.click();
+        await new Promise((r) => setTimeout(r, 40));
+      }
+    }, perf.clicks);
+    await settle(page, 350);
+  }
+
   // ---- Delete removes the selection ----
+  // Re-select off the card bar: the palette's own +/- moved the selection about, and a
+  // Delete with nothing selected measures nothing.
+  {
+    const cs = await page.$$('.cardbar .card:not(.foe)');
+    const cb = await cs[cs.length - 1].boundingBox();
+    if (cb) {
+      await page.mouse.click(cb.x + cb.width / 2, cb.y + cb.height / 2);
+      await settle(page, 300);
+    }
+  }
+  const beforeDel = await page.evaluate(() => ({
+    budget: window.__depState().budget, sel: window.__selection(),
+  }));
   await page.mouse.move(W / 2, H * 0.55);
   await page.keyboard.press('Delete');
   await settle(page, 400);
   const afterDel = await page.evaluate(() => window.__depState().budget);
-  record('delete-key', afterDel.units === budgetRe.units - 1,
-    'pressed Delete with the newly added unit selected',
-    `units ${budgetRe.units} → ${afterDel.units}`);
+  record('delete-key',
+    beforeDel.sel.length > 0 && afterDel.units === beforeDel.budget.units - beforeDel.sel.length,
+    `pressed Delete with ${beforeDel.sel.length} unit(s) selected`,
+    `units ${beforeDel.budget.units} → ${afterDel.units}`);
 
   // ---- commit ----
   const placedBefore = await page.evaluate((id) => window.__unit(id), target.id);
@@ -742,6 +856,108 @@ if (!ONLY || ONLY === 'wall') {
       'nobody standing off the edge of the walkway',
       `${proof.outOfBand} men outside [${proof.innerOff}, ${proof.outerOff}]; `
         + `measured offsets ${proof.offLo}..${proof.offHi} m`);
+
+    /*
+     * Take it back off the wall.
+     *
+     * This is the one edit that is not a move: `Siege` keeps its garrisons in private maps
+     * and the only public way down — `sendToGround` — plans a descent by stair over many
+     * ticks, which a paused clock will never run. So the phase retires the unit and stands
+     * an identical one on the grass, and the thing worth measuring is that the wall is
+     * genuinely released: no man of the new unit has a station, and the stone is free again.
+     */
+    {
+      const before = await page.evaluate(() => window.__depState().budget);
+      const gPt = await page.evaluate(() => {
+        const g = window.__game;
+        const d = g.deployment;
+        return {
+          x: (d.zone.xMin + d.zone.xMax) * 0.5,
+          z: (d.zone.zMin + d.zone.zMax) * 0.5, lift: 0.4,
+        };
+      });
+      const f4 = await frameAndProject(page, [gPt]);
+      let off = null;
+      if (f4.px) {
+        await page.mouse.move(f4.px[0].x, f4.px[0].y);
+        await settle(page, 200);
+        await page.mouse.down({ button: 'right' });
+        await settle(page, 200);
+        await page.mouse.up({ button: 'right' });
+        await settle(page, 500);
+        off = await page.evaluate(([oldId, pt]) => {
+          const g = window.__game;
+          const d = g.deployment;
+          const siege = g.battle.siege;
+          const p = g.battle.pool;
+          const own = d.ownUnits();
+          const now = own[own.length - 1];
+          let onStone = 0;
+          if (now) {
+            for (const i of now.members) {
+              if (p.aliveAt(i) && siege.probeMan(i).station >= 0) onStone++;
+            }
+          }
+          // Each man against the terrain *under him*, not under the drop point: a 160-man
+          // block is 20 m across and the ground inside Rome is not flat.
+          let worstY = 0;
+          if (now) {
+            for (const i of now.members) {
+              if (!p.aliveAt(i)) continue;
+              worstY = Math.max(worstY,
+                Math.abs(p.y[i] - g.battle.groundAt(p.x[i], p.z[i])));
+            }
+          }
+          return {
+            gone: !g.battle.unitById(oldId),
+            newId: now ? now.id : -1, newType: now ? now.typeId : '',
+            onStone, alive: now ? now.alive : 0,
+            dist: now ? +Math.hypot(now.x - pt.x, now.z - pt.z).toFixed(1) : -1,
+            worstY: +worstY.toFixed(4),
+            budget: d.budget(),
+          };
+        }, [setup.unitId, gPt]);
+      }
+      record('wall-to-ground',
+        !!off && off.gone && off.newId >= 0 && off.onStone === 0
+          && off.dist < 20 && off.worstY < 0.01,
+        'right-click open ground with the garrison selected',
+        off
+          ? `unit ${setup.unitId} retired, ${off.newType} ${off.newId} stands `
+            + `${off.dist} m from the drop with every man on the terrain `
+            + `(worst |Δy| ${off.worstY} m); `
+            + `${off.onStone} of ${off.alive} men still hold a wall station`
+          : 'could not frame a ground point inside the zone',
+        off
+          ? `pool free ${before.free} → ${off.budget.free} — the wall bench cannot serve a `
+            + 'ground add, so this one costs slots'
+          : '');
+      // The selection has to have followed the rebuild for the next click to mean anything.
+      const kept = (await page.evaluate(() => window.__selection()))[0] ?? -1;
+      record('selection-follows-rebuild', !!off && kept === off.newId,
+        'the unit that was dragged off the wall was rebuilt, not moved',
+        `selection ${setup.unitId} → ${kept}, the replacement is ${off ? off.newId : '?'}`);
+
+      // Put it back up so the survives-the-start check measures a garrison. The ground
+      // framing moved the camera, so the aim camera has to be restored before the pixel
+      // that resolved to the parapet means the parapet again.
+      if (off?.newId >= 0 && aim) {
+        await page.evaluate(([s, c]) => {
+          window.__game.setCamera(s.mid.x + s.mid.nx * c.d, s.mid.z + s.mid.nz * c.d, c.zoom, c.yaw);
+        }, [setup, aim.cam]);
+        await settle(page, 450);
+        await page.mouse.move(aim.px.x, aim.px.y);
+        await settle(page, 200);
+        const back = await page.evaluate(() => window.__cursor());
+        if (back?.onWall) {
+          await page.mouse.down({ button: 'right' });
+          await settle(page, 200);
+          await page.mouse.up({ button: 'right' });
+          await settle(page, 450);
+        }
+        setup.unitId = off.newId;
+      }
+    }
 
     // And it survives the battle starting.
     await page.click('.dep-begin');

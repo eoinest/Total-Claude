@@ -140,6 +140,12 @@ export class DeploymentSystem implements Subsystem {
 
   /** Last refusal, so the HUD can say why a gesture did nothing. */
   lastRefusal = '';
+  /**
+   * Set by the one edit that replaces a unit rather than moving it — a garrison dragged off
+   * the wall. The caller maps its selection through this, so the player keeps hold of the
+   * thing they were dragging instead of watching it vanish and a stranger appear.
+   */
+  lastReplacement: { from: number; to: number } | null = null;
 
   private ctx!: EngineContext;
   private battle!: BattleSystem;
@@ -377,6 +383,7 @@ export class DeploymentSystem implements Subsystem {
    * walkway's clear band takes at the sim's rank pitch, capped at `MAX_WALL_RANKS`.
    */
   place(unitId: number, x: number, z: number, facing: number, width?: number): boolean {
+    this.lastReplacement = null;
     if (!this.active) return false;
     const u = this.battle.unitById(unitId);
     if (!u || u.destroyed || u.faction !== this.playerFaction) return false;
@@ -398,15 +405,26 @@ export class DeploymentSystem implements Subsystem {
         this.lastRefusal = 'That is outside the deployment zone.';
         return false;
       }
-      const refusal = this.headroom(typeId, false);
+      const refusal = this.headroom(typeId, false, u.id);
       if (refusal) {
         this.lastRefusal = `${refusal} — the unit stays on the wall.`;
         return false;
       }
+      const home = { x: u.x, z: u.z };
       this.remove(u.id);
       const fresh = this.add(typeId, x, z, facing);
-      if (fresh < 0) return false;
+      if (fresh < 0) {
+        // Put it back on the stone rather than lose it to a refusal the pre-check missed.
+        const at = this.benchedFor(typeId, true);
+        if (at >= 0) {
+          const back = this.revive(this.bench.splice(at, 1)[0]);
+          this.placeOnWall(back, home.x, home.z);
+          this.lastRefusal = 'There is no room to stand that unit on the ground.';
+        }
+        return false;
+      }
       if (width !== undefined) this.place(fresh, x, z, facing, width);
+      this.lastReplacement = { from: u.id, to: fresh };
       return true;
     }
 
@@ -532,14 +550,22 @@ export class DeploymentSystem implements Subsystem {
    * `PERF_VALIDATED_MEN` is deliberately *not* here: the menu warns past it rather than
    * refusing, and this phase says the same thing in the same words.
    */
-  headroom(typeId: string, wantWall = false): AddRefusal {
+  headroom(typeId: string, wantWall = false, replacing = -1): AddRefusal {
     if (!this.roster().includes(typeId)) {
       return `${unitType(typeId).name} is not in this army's roster.`;
     }
-    if (this.ownUnits().length >= MAX_UNITS_PER_SIDE) {
+    /*
+     * `replacing` is the unit this add is standing in for, and it is not a nicety. Taking a
+     * garrison off the wall is a remove followed by an add (see `place`), and an army sitting
+     * on either cap would have that refused for a slot it is about to give back.
+     */
+    const drop = replacing >= 0 && this.battle.unitById(replacing) ? 1 : 0;
+    if (this.ownUnits().length - drop >= MAX_UNITS_PER_SIDE) {
       return `${MAX_UNITS_PER_SIDE} units is the limit for one side.`;
     }
-    if (this.countOf(typeId) >= MAX_PER_TYPE) {
+    const sameType = replacing >= 0
+      && this.battle.unitById(replacing)?.typeId === typeId ? 1 : 0;
+    if (this.countOf(typeId) - sameType >= MAX_PER_TYPE) {
       return `${MAX_PER_TYPE} of one type is the limit.`;
     }
     if (this.benchedFor(typeId, wantWall) >= 0) return null;
@@ -627,8 +653,16 @@ export class DeploymentSystem implements Subsystem {
     u.alive = 0;
     this.bench.push({ unit: u, typeId: u.typeId, wasOnWall: this.onWall.has(u.id) });
     this.onWall.delete(u.id);
+    /*
+     * `deploymentChanged`, and deliberately **not** `unitDestroyed`.
+     *
+     * A unit taken off the field before the battle has not been destroyed, and the two
+     * systems that listen for that event would both say so out loud: `EventFeed` would post
+     * "wiped out" into the dispatch log and `AudioEngine` would play the loss sting. Nothing
+     * needs the event — `HudModel.refresh` rebuilds its views from `battle.units` every tick
+     * and `pruneSelection` drops what is gone.
+     */
     this.ctx.events.emit('deploymentChanged', { unitId, added: false });
-    this.ctx.events.emit('unitDestroyed', { unitId, faction: u.faction });
     return true;
   }
 
