@@ -84,8 +84,29 @@ const INSTALL = () => {
       if (p.y[i] > y) up++;
       if (p.y[i] > hi) hi = p.y[i];
     }
+    /*
+     * Why he is not moving, if he is not moving. `owned` says the siege system has him,
+     * `slotted` says it actually wrote him a destination — those are two different failures
+     * and the whole of the descent bug was the second one wearing the first one's face.
+     */
+    const s = g.battle.siege;
+    let slotted = 0, nearFoot = Infinity, onPath = 0, dx = 0, dz = 0;
+    const feet = (s.ladders ?? []).filter((l) => (l.boarders ?? []).includes(id));
+    for (const i of u.members) {
+      if (!p.aliveAt(i)) continue;
+      if (s.crossOf[i] !== -1) onPath++;
+      if (g.battle.slotX[i] !== 0 || g.battle.slotZ[i] !== 0) slotted++;
+      for (const l of feet) {
+        const d = Math.hypot(p.x[i] - l.x, p.z[i] - l.z);
+        if (d < nearFoot) { nearFoot = d; dx = +(g.battle.slotX[i] - p.x[i]).toFixed(1);
+          dz = +(g.battle.slotZ[i] - p.z[i]).toFixed(1); }
+      }
+    }
     return { alive: n, above: up, meanY: n ? +(sy / n).toFixed(2) : 0, maxY: n ? +hi.toFixed(2) : 0,
-      garrisoned: g.battle.siege.isGarrisoned(u.id), order: u.order };
+      garrisoned: s.isGarrisoned(u.id), order: u.order,
+      owned: s.owned.has(u.id), slotted, onPath, banks: feet.length,
+      nearFoot: Number.isFinite(nearFoot) ? +nearFoot.toFixed(1) : null,
+      slotOff: `${dx},${dz}` };
   };
   /** Who is enrolled on which machine, by unit type. The "who can climb what" ledger. */
   window.__ledger = () => {
@@ -279,7 +300,8 @@ if (!ONLY || ONLY === 'climb') {
       console.log('  cohort trace:');
       for (const m of marks) {
         console.log(`    t+${String(m.t).padStart(3)}  alive ${m.alive}  on the wall ${m.above}  `
-          + `meanY ${m.meanY}  maxY ${m.maxY}  garrisoned ${m.garrisoned}`);
+          + `maxY ${m.maxY}  owned ${m.owned}  slotted ${m.slotted}  onPath ${m.onPath}  `
+          + `banks ${m.banks}  nearestFoot ${m.nearFoot}  slotOffset ${m.slotOff}  order ${m.order}`);
       }
       const peak = marks.reduce((a, m) => (m.above > a.above ? m : a), marks[0]);
       const after = await page.evaluate(() => window.__ledger());
