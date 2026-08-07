@@ -4,7 +4,10 @@ import type { Obstacle } from '../sim/Obstacles';
 import { HALF_EXTENT, type TerrainSystem } from '../terrain/TerrainSystem';
 import { clamp } from '../util/math';
 import { Batch } from './build';
-import { buildCarthageWall, type CasemateOut, type OutworkOut } from './carthageWall';
+import {
+  buildCarthageWall, CARTHAGE_SECTION,
+  type CarthageDitch, type CasemateOut, type OutworkOut,
+} from './carthageWall';
 import { activeFortification } from './fortification';
 import { buildDistricts, type Lane } from './insulae';
 import { buildLandmarks } from './landmarks';
@@ -100,6 +103,29 @@ interface StrayReport {
   /** Worst overshoot past a chunk's declared radius, metres. */
   worst: number;
   offenders: { chunk: string; level: number; kind: string; x: number; z: number }[];
+}
+
+/**
+ * The standing masonry of one outwork bay: the whole run, or the two stubs either side of a
+ * passage.
+ *
+ * One helper, three consumers — the occupancy raster, the obstacle boxes and the geometry
+ * builder in `carthageWall.ts` all derive their spans from `passageAt` the same way. The
+ * staggered gate openings only mean anything if all three cut in the *same* six metres, and
+ * a boolean "this bay is a passage" already once threw away a 29.7 m bay for a 6 m gap.
+ */
+function outworkSpans(ow: OutworkOut): [number, number, number, number][] {
+  if (ow.standsDown) return [];
+  const len = Math.hypot(ow.x1 - ow.x0, ow.z1 - ow.z0);
+  const at = (t: number): [number, number] => [ow.x0 + ow.dx * t, ow.z0 + ow.dz * t];
+  if (ow.passageAt === null) return [[ow.x0, ow.z0, ow.x1, ow.z1]];
+  const half = 3.0;
+  const out: [number, number, number, number][] = [];
+  const a = Math.max(0, ow.passageAt - half);
+  const b = Math.min(len, ow.passageAt + half);
+  if (a > 0.5) out.push([...at(0), ...at(a)] as [number, number, number, number]);
+  if (b < len - 0.5) out.push([...at(b), ...at(len)] as [number, number, number, number]);
+  return out;
 }
 
 /** A curtain bay that stops movement, as `buildWall` reports it. */
@@ -240,6 +266,18 @@ export class CitySystem implements Subsystem {
   private outworks: readonly OutworkOut[] = [];
   private outworkTopAt: ((x: number, z: number) => number) | null = null;
   private casemates: readonly CasemateOut[] = [];
+  private ditch: CarthageDitch | null = null;
+  private punic: (typeof CARTHAGE_SECTION & { faults: readonly string[] }) | null = null;
+  /**
+   * What the 4 m occupancy raster is painted from, when it differs from `blockers`.
+   *
+   * Null on Rome, where the wall is solid and the two are the same list. Carthage's main wall
+   * is hollow and its obstacle boxes say so — two skins with a walkable corridor between —
+   * but a 1.5 m skin cannot be expressed in a 4 m cell, and painting the skins into the
+   * raster would leave a 2.4 m hole clean through the curtain in `blocksMovement`. So the
+   * raster paints the solid section and the boxes carry the casemate. See `CasemateOut`.
+   */
+  private rasterBlockers: readonly WallBlocker[] | null = null;
   /**
    * How far a curtain tower rises above the bay crest, for its obstacle box.
    *
@@ -318,6 +356,9 @@ export class CitySystem implements Subsystem {
       this.outworkTopAt = cw.outworkTopAt;
       this.casemates = cw.casemates;
       this.towerRise = cw.towerRise;
+      this.rasterBlockers = cw.occBlockers;
+      this.ditch = cw.ditch;
+      this.punic = { ...CARTHAGE_SECTION, faults: cw.sectionFaults };
       // The builder's own arithmetic, surfaced rather than trusted: a section that does not
       // sum to its own stated thickness is a bug nobody sees until a probe walks the stone.
       if (cw.sectionFaults.length > 0) {
@@ -441,7 +482,9 @@ export class CitySystem implements Subsystem {
     }
 
     // ---- movement blocking --------------------------------------------------
-    for (const b of wall.blockers) this.markSegment(b.x1, b.z1, b.x2, b.z2, b.halfW);
+    for (const b of this.rasterBlockers ?? wall.blockers) {
+      this.markSegment(b.x1, b.z1, b.x2, b.z2, b.halfW);
+    }
     /**
      * Carthage's forward lines, stamped from the same records `buildObstacles` reads.
      *
@@ -451,8 +494,9 @@ export class CitySystem implements Subsystem {
      * would route a column at a gap the collision surface does not have.
      */
     for (const ow of this.outworks) {
-      if (ow.passage) continue;
-      this.markSegment(ow.x0, ow.z0, ow.x1, ow.z1, ow.halfThickness);
+      for (const [ax, az, bx, bz] of outworkSpans(ow)) {
+        this.markSegment(ax, az, bx, bz, ow.halfThickness);
+      }
     }
     // Tower footprints project beyond the curtain.
     for (const seg of this.segments) {
@@ -573,16 +617,17 @@ export class CitySystem implements Subsystem {
      * something rather than being three walls in a row.
      */
     for (const ow of this.outworks) {
-      if (ow.passage) continue;
-      const len = Math.hypot(ow.x1 - ow.x0, ow.z1 - ow.z0);
-      if (len < 0.5) continue;
-      out.push({
-        x: (ow.x0 + ow.x1) * 0.5, z: (ow.z0 + ow.z1) * 0.5,
-        hw: len * 0.5, hd: ow.halfThickness,
-        rot: Math.atan2(ow.z1 - ow.z0, ow.x1 - ow.x0),
-        topY: ow.walkY,
-        kind: 'wall',
-      });
+      for (const [ax, az, bx, bz] of outworkSpans(ow)) {
+        const len = Math.hypot(bx - ax, bz - az);
+        if (len < 0.5) continue;
+        out.push({
+          x: (ax + bx) * 0.5, z: (az + bz) * 0.5,
+          hw: len * 0.5, hd: ow.halfThickness,
+          rot: Math.atan2(bz - az, bx - ax),
+          topY: ow.walkY,
+          kind: 'wall',
+        });
+      }
     }
 
     // ---- wall stairs --------------------------------------------------------
@@ -1056,6 +1101,29 @@ export class CitySystem implements Subsystem {
    */
   getOutworks(): readonly OutworkOut[] {
     return this.outworks;
+  }
+
+  /**
+   * The ditch in front of Carthage's outwork, **as a request rather than as geometry**.
+   *
+   * `built` is false: a 20 × 6 m ditch is a cut in the heightfield and `src/terrain/` is not
+   * the city's to edit, so the plan and the profile are published for whoever owns it. Until
+   * that lands, the belt is 54.1 m of standing works and not the spec's 74.1, and saying
+   * which is which is the whole point of publishing it. Null on the Aurelian circuit.
+   */
+  getDitch(): CarthageDitch | null {
+    return this.ditch;
+  }
+
+  /**
+   * The Punic section, as the builder computed it, plus its own fault list.
+   *
+   * A probe that re-derives the arithmetic it is testing cannot fail, so this hands over the
+   * numbers the stone was actually built from. `faults` is empty when the section closes.
+   * Null on the Aurelian circuit.
+   */
+  punicSection(): (typeof CARTHAGE_SECTION & { faults: readonly string[] }) | null {
+    return this.punic;
   }
 
   /** The bay whose run contains `x`, or undefined off either end of the circuit. */

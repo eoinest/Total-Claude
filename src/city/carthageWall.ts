@@ -71,12 +71,10 @@ import type {
 // Ancient measure
 // ---------------------------------------------------------------------------
 
-/** Attic *pēchys*. Appian writes in Greek units for a Punic city. */
+/** Attic *pēchys*, for the record. `docs/CARTHAGE.md` §4.3 resolves which one to build at. */
 const CUBIT = 0.462;
-/** Attic *pous*. */
+/** Attic *pous*. 200 of them is the tower interval. */
 const GK_FOOT = 0.308;
-/** 100 Greek feet. */
-const PLETHRON = 100 * GK_FOOT;
 
 /**
  * The section, as Appian gives it and as this builds it.
@@ -86,12 +84,18 @@ const PLETHRON = 100 * GK_FOOT;
  * that recomputes the thing it is testing and therefore cannot fail.
  */
 export const PUNIC = {
-  /** 30 cubits to the wall-walk, "apart from the parapets and towers". */
-  mainHeight: 30 * CUBIT,
-  /** 30 Greek feet across. This is what makes the wall hollow-able at all. */
-  mainThickness: 30 * GK_FOOT,
-  /** Two plethra between towers. */
-  towerSpacing: 2 * PLETHRON,
+  /**
+   * 30 cubits to the wall-walk, "apart from the parapets and towers".
+   *
+   * `docs/CARTHAGE.md` §4.3 settles the cubit: at the Attic 0.462 m this is 13.86 m and at
+   * the Punic 0.515 m it is 15.5 m, and the spec picks **13.7** — Appian's own gloss of
+   * 45 Roman feet. Taken from the spec rather than re-derived, so the two cannot drift.
+   */
+  mainHeight: 13.7,
+  /** 30 ft across. This is what makes the wall hollow-able at all. §4.3. */
+  mainThickness: 9.1,
+  /** 200 ft between towers, at the Attic pous. §4.5. */
+  towerSpacing: 59.2,
   /** "Each of four storeys." */
   towerStoreys: 4,
   /** Appian's stabling, for the record the probe checks the gallery's capacity against. */
@@ -113,7 +117,7 @@ const HALF_T = PUNIC.mainThickness * 0.5;
  * the shallow end of that range and is chosen because a steeper batter eats the walkway.
  * Rome's curtain uses 1-in-30 for the same reason. See `walkGeometry`.
  */
-const BATTER = 0.025;
+const BATTER = 0.04;
 
 /** Battered ashlar plinth: the *euthynteria* and the courses above it. */
 const PLINTH_H = 1.75;
@@ -128,10 +132,10 @@ const PLINTH_BATTER = 0.10;
  * city side that is not a fourteen-metre drop. The outer is thick enough to shelter a man
  * behind a merlon; the inner is a chest-high kerb.
  */
-const PARAPET_T = 1.05;
-const PARAPET_H = 2.15;
-const INNER_PARAPET_T = 0.70;
-const INNER_PARAPET_H = 1.15;
+const PARAPET_T = 1.2;
+const PARAPET_H = 2.2;
+const INNER_PARAPET_T = 0.8;
+const INNER_PARAPET_H = 1.2;
 
 /** Body radius of a man, from `resolveCrowding`. He may not stand inside the stonework. */
 const BODY = 0.42;
@@ -150,8 +154,8 @@ const BODY = 0.42;
  *
  * `field + gallery + city` must equal `mainThickness`, and `assertSection` proves it does.
  */
-const SKIN_FIELD = 2.30;
-const SKIN_CITY = 2.34;
+const SKIN_FIELD = 1.5;
+const SKIN_CITY = 1.2;
 const GALLERY_W = PUNIC.mainThickness - SKIN_FIELD - SKIN_CITY;
 
 /**
@@ -162,13 +166,23 @@ const GALLERY_W = PUNIC.mainThickness - SKIN_FIELD - SKIN_CITY;
  * springing on a 2.3 m barrel gives 5.2 m to the crown and a beast can be led under it
  * wearing a tower. Upper is the horse lines and the barrack, which need only headroom.
  */
-const STALL_SPRING = 2.90;
-const STALL_CROWN = STALL_SPRING + GALLERY_W * 0.5;
-/** Floor slab between the storeys: vault haunching, fill and a paved deck. */
-const GALLERY_SLAB = 0.70;
+/**
+ * Solid footing below the lower floor. §4.4's arithmetic leaves exactly this much, and it is
+ * the reason the elephants need a ramp: the stalls are three and a half metres up.
+ */
+const FOOTING_H = 3.5;
+/** Lower vault: clear to the crown. An African forest elephant with a mahout needs 4 m+. */
+const STALL_CLEAR = 4.6;
+/** Vault between the two levels, and the slab under the wall-walk. §4.4. */
+const GALLERY_SLAB = 1.0;
+const WALK_SLAB = 1.0;
+/** Upper gallery: clear to the crown. */
+const UPPER_CLEAR = 3.6;
+
+const STALL_FLOOR = FOOTING_H;
+const STALL_CROWN = STALL_FLOOR + STALL_CLEAR;
 const UPPER_FLOOR = STALL_CROWN + GALLERY_SLAB;
-const UPPER_SPRING = UPPER_FLOOR + 2.40;
-const UPPER_CROWN = UPPER_SPRING + GALLERY_W * 0.5;
+const UPPER_CROWN = UPPER_FLOOR + UPPER_CLEAR;
 /** Masonry between the upper vault's crown and the wall-walk. */
 const CASEMATE_COVER = PUNIC.mainHeight - UPPER_CROWN;
 
@@ -180,8 +194,8 @@ const CASEMATE_COVER = PUNIC.mainHeight - UPPER_CROWN;
  * rhythm the wall reads by: at the wall camera's 90 m this is a 4-pixel-per-metre arcade,
  * which is metre-scale geometry and survives the mip chain, where a 55 mm course does not.
  */
-const STALL_PITCH = 3.6;
-const STALL_DOOR_W = 2.6;
+const STALL_PITCH = 6.6;
+const STALL_DOOR_W = 3.2;
 
 /**
  * Minimum clear rise from the gallery floor to the wall-walk before a bay may be hollowed.
@@ -190,37 +204,67 @@ const STALL_DOOR_W = 2.6;
  * *highest*, so on a slope the cover over the upper vault thins. Below this the bay is built
  * solid, which is what a real builder does and is why the hollow runs in stretches.
  */
-const CASEMATE_MIN_RISE = UPPER_CROWN + 1.6;
+const CASEMATE_MIN_RISE = UPPER_CROWN + WALK_SLAB * 0.8;
 
 // ---------------------------------------------------------------------------
 // The outworks
 // ---------------------------------------------------------------------------
 
 /**
- * How far in front of the main line the other two stand, metres along the outward normal.
+ * The belt, front to back, as offsets along the outward normal from the main wall's
+ * centreline. `docs/CARTHAGE.md` §4.2 gives the clear gaps; these are the sums.
  *
- * Appian gives no interval. These come from the ground and from the fight: the wall line
- * sits on the crest of a 175 m rise, so a line 20 m out stands roughly 4 m lower and one
- * 40 m out roughly 8 m lower, which is what makes the three lines *step* rather than hide
- * behind each other. 20 m of killing ground is one rush for a storming party and short
- * enough that the main wall's archery covers all of it, which is the point of a
- * proteichisma.
+ * The headline this exists to deliver is **12.4×**, and it is a depth ratio, not a height
+ * one. Every height in the spec's comparison table is under 2.1× Rome's; what changes is the
+ * *number of things between the attacker and the city*. Nothing here should be scaled up.
  */
-const MIDDLE_OFF = 20;
-const OUTER_OFF = 40;
+const HALF_T_NOM = PUNIC.mainThickness * 0.5;
+/** Outer face of the main wall. */
+const MAIN_FACE = HALF_T_NOM;
+/** §4.2 row 5: killing ground, 18 m of it, overlooked from 16 m by a wall nobody has touched. */
+const KILLING_GROUND = 18.0;
+/** §4.2 row 4: plain ashlar, no casemates, no towers. */
+const MIDDLE_T = 4.0;
+const MIDDLE_H = 8.0;
+const MIDDLE_PARAPET = 1.8;
+const MIDDLE_OFF = MAIN_FACE + KILLING_GROUND + MIDDLE_T * 0.5;
+/** §4.2 row 3. */
+const OUTWORK_GAP = 12.0;
+/** §4.2 row 2: earth and rubble, stone-revetted on the ditch face, palisade on the crest. */
+const RAMPART_T = 6.0;
+const RAMPART_H = 4.0;
+const PALISADE_H = 1.8;
+const OUTER_OFF = MIDDLE_OFF + MIDDLE_T * 0.5 + OUTWORK_GAP + RAMPART_T * 0.5;
+/** §4.2 row 1. */
+const BERM = 5.0;
+/** §4.2 row 0: dry, V-profile with a 2 m flat bottom. */
+const DITCH_W = 20.0;
+const DITCH_D = 6.0;
+const DITCH_INNER_LIP = OUTER_OFF + RAMPART_T * 0.5 + BERM;
+const DITCH_OFF = DITCH_INNER_LIP + DITCH_W * 0.5;
+/** Ditch lip to the back of the main wall. The spec's 74.1 m, and `assertSection` proves it. */
+const BELT_DEPTH = DITCH_INNER_LIP + DITCH_W + MAIN_FACE;
 
 /**
- * Half-length of the triple section, either side of the gate.
+ * How far from the gate axis the triple belt runs.
  *
- * Appian is explicit that the triple wall faced **the isthmus** — the seaward circuit was a
- * single wall. Modelling that is not a saving, it is the tactical shape: the strongest
- * frontage is the one the attacker is deployed in front of, and going round it is a real
- * choice rather than a bug.
+ * The spec puts it across the whole isthmus — "no way round" (§8.4). On this map the circuit
+ * is Rome's and both ends die in terrain the belt has no business standing on, so it stops
+ * 120 m short of each and the ends of the circuit carry the main wall alone, which is also
+ * what the seaward stretch of the real city did.
  */
-const TRIPLE_HALF = 400;
+const TRIPLE_END_MARGIN = 120;
 
-/** One plethron between the outworks' own steps: half the main wall's tower cadence. */
-const OUTWORK_PITCH = PLETHRON;
+/**
+ * The least the main wall's walk must stand above a forward line's merlons.
+ *
+ * Four metres is a man plus his shield plus the arc of a thrown stone: enough that a party
+ * that has taken the outwork is being shot down at rather than across.
+ */
+const MIN_COMMAND = 4.0;
+
+/** One outwork bay. Half a tower interval, so the two lines step in step with the main wall. */
+const OUTWORK_PITCH = PUNIC.towerSpacing * 0.5;
 
 interface OutworkSpec {
   id: 'outer' | 'middle';
@@ -230,22 +274,37 @@ interface OutworkSpec {
   height: number;
   thickness: number;
   parapetH: number;
-  /** Where this line's passage crosses, as an offset along the run from `GATE_X`. */
+  /** Where this line's passage crosses, as a lateral offset from the gate axis. */
   gateShift: number;
+  /** True where the crest carries a timber palisade rather than a merlon line. */
+  palisade: boolean;
 }
 
 /**
  * The two forward lines.
  *
- * Their passages are **staggered** — the outer opens 16 m west of the gate axis and the
- * middle 16 m east of it. A column that wants the main gate has to turn twice inside 40 m
- * with a wall on both sides of it, which is the standard Hellenistic arrangement and is the
- * one piece of this that a player feels immediately.
+ * Their passages are **staggered**: §4.5 requires that a ram cannot see daylight through the
+ * three openings, and 8 m of lateral offset per line does it — a column bound for the main
+ * gate turns four times inside 74 m with a wall on both sides of it. The spec calls that
+ * single decision worth more to the map than any texture, and it is the only part of the gate
+ * that costs nothing to build.
  */
 const OUTWORKS: readonly OutworkSpec[] = [
-  { id: 'outer', off: OUTER_OFF, height: 5.6, thickness: 2.4, parapetH: 1.45, gateShift: -16 },
-  { id: 'middle', off: MIDDLE_OFF, height: 8.8, thickness: 3.6, parapetH: 1.60, gateShift: +16 },
+  {
+    id: 'outer', off: OUTER_OFF, height: RAMPART_H, thickness: RAMPART_T,
+    parapetH: PALISADE_H, gateShift: -8, palisade: true,
+  },
+  {
+    id: 'middle', off: MIDDLE_OFF, height: MIDDLE_H, thickness: MIDDLE_T,
+    parapetH: MIDDLE_PARAPET, gateShift: +8, palisade: false,
+  },
 ];
+
+/**
+ * The gallery access ramp: 1 in 6, per §4.4, and wide enough for the beast that uses it.
+ */
+const GALLERY_RAMP_GRADE = 6;
+const GALLERY_RAMP_W = 4.4;
 
 /** Clear width of a passage through an outwork, and of a postern in the main wall. */
 const PASSAGE_W = 6.0;
@@ -257,16 +316,21 @@ const POSTERN_EVERY = 4;
 // ---------------------------------------------------------------------------
 
 /**
- * Four storeys, Appian says. A storey is taken at 4.05 m, so four of them reach 16.2 m —
- * 2.34 m above the 13.86 m walk — and the tower reads as rising out of the curtain rather
- * than sitting on it. Width is set by the section: a tower has to be wider than the wall is
- * thick or it does not flank it.
+ * Four storeys, Appian says, and `docs/CARTHAGE.md` §4.5 gives the built figures.
+ *
+ * 20.0 m to the top storey's walk and 22.5 m to its merlons, on an 11 × 11 m footprint
+ * projecting 5.5 m past the outer face. That is 6.6 m clear above the wall-walk — Rome's
+ * towers stand 13.8 m and there are fifty of them, so the silhouettes are deliberately
+ * different objects: **Rome's wall is a serrated line, Carthage's is a row of keeps joined by
+ * a rampart.** Only 1.6× the height, and a third of the number.
  */
-const TOWER_STOREY = 4.05;
-const TOWER_W = 11.4;
-const TOWER_PROJECT = 4.2;
+const TOWER_TOP = 20.0;
+const TOWER_MERLON = 22.5;
+const TOWER_STOREY = TOWER_TOP / PUNIC.towerStoreys;
+const TOWER_W = 11.0;
+const TOWER_PROJECT = 5.5;
 /** Height of the tower's own top above the bay's crest, for an obstacle box. */
-const TOWER_RISE = PUNIC.towerStoreys * TOWER_STOREY - PUNIC.mainHeight + 1.9;
+const TOWER_RISE = TOWER_MERLON - PUNIC.mainHeight - PARAPET_H;
 
 /**
  * The ramp onto the wall.
@@ -287,13 +351,33 @@ const RAMP_LANDING = 2.6;
 /** Longest ramp worth building; past this the ground has fallen away and the bay gets none. */
 const RAMP_MAX_RUN = 34;
 
-/** The gatehouse block: two square towers with the passage between them. */
+/**
+ * The gatehouse block: two square towers with the passage between them.
+ *
+ * §4.5 makes a gate "not a door, it is a 90 m tunnel through the whole belt" — a bridged
+ * ditch, a gap in the outwork, a gap in the middle wall, and only then the leaves. The three
+ * forward openings are laterally offset so a ram cannot see through; that lives in
+ * `OUTWORKS[].gateShift` and in `gateAxes` below.
+ */
 const GATE_BLOCK_W = 30;
 const GATE_BLOCK_D = PUNIC.mainThickness + 7.5;
 const GATE_PASS_W = 5.2;
 const GATE_PASS_H = 8.0;
 const GATE_ATTIC = 5.4;
 const GATE_MERLON_H = 2.1;
+/**
+ * Where the three gates cross, as offsets in x from the map's own gate axis.
+ *
+ * §4.5 puts the Porta Byrsae on the isthmus road, the Porta Uticensis 560 m north and the
+ * Porta Maritima 760 m south. Those are positions on *Carthage's* survey; on this circuit
+ * they are offsets from `GATE_X`, clamped to the wall, and the main gate keeps the axis so
+ * `getGates()[0]` is still the one the siege train is pointed at.
+ */
+const GATE_AXES: readonly { id: string; shift: number; leaves: boolean }[] = [
+  { id: 'porta-byrsae', shift: 0, leaves: true },
+  { id: 'porta-uticensis', shift: 560, leaves: false },
+  { id: 'porta-maritima', shift: -560, leaves: false },
+];
 /** How far behind the outer face the leaves hang. A Punic gate passage is a long one. */
 const GATE_DOOR_SET = 3.4;
 const GATE_DOOR_SILL = 0.14;
@@ -338,19 +422,30 @@ export interface CasemateOut {
   /**
    * Whether a man may be **inside** this gallery as far as movement is concerned.
    *
-   * False for the longitudinal gallery and true for the transverse posterns, and the split
-   * is a measurement rather than a preference. `CitySystem`'s occupancy raster is a 4 m
-   * grid: a 4.6 m corridor with 2.3 m of masonry either side cannot be represented in it at
-   * all, so clearing the gallery would leave `getObstacles()` — which is what the pathfinder
-   * stamps — reporting an open corridor while `blocksMovement()` reported solid stone. That
-   * is the precise disagreement that once routed units at a gate the collision surface did
-   * not open, and it is not worth re-creating for a corridor.
+   * **True for the lower vault**, which `docs/CARTHAGE.md` §4.4 settles by arithmetic:
+   * 4,434 m of wall at a 6.4 m internal span is 28,378 m² a level, and Appian's 300
+   * elephants take 94 m² each — six times what an elephant needs. The stabling is real, so
+   * the space is real, so the space is playable. The same arithmetic kills the barracks at
+   * 0.52 m² a man, which is why the upper level is built as a fighting gallery and not a
+   * dormitory.
    *
-   * A **postern** is 6.0 m across and *is* representable — it is wider than the Porta
-   * Flaminia's 4.3 m carriageway, which the same raster already cuts — so the ways *through*
-   * the wall are real and the way *along* the inside of it is scenery. See `posterns`.
+   * **How it is made enterable, and the one asymmetry that is deliberate.** The obstacle box
+   * set gets *two* boxes per hollow bay — the field skin and the city skin — with the
+   * corridor between them open, and that is what the pathfinder and the collision surface
+   * both read. The 4 m occupancy raster keeps the whole wall solid, because a 1.5 m skin is
+   * not representable in a 4 m cell and painting the skins would leave a 2.4 m hole clean
+   * through the curtain in `blocksMovement`.
+   *
+   * That is a disagreement, and it is the *safe* direction of one. `blocksMovement` answers
+   * "does a straight line between two points cross masonry", and a line crossing this wall
+   * does cross masonry — the skins. Saying so is conservative: it can make a missile check
+   * pessimistic, it can never route a man into stone. The direction that has actually cost
+   * this project time is the opposite one, where the raster was open and the boxes were not
+   * and units were routed at a gate the collision surface did not open.
    */
   enterable: boolean;
+  /** Where the gallery is entered from the city, along the run from `x0`, or null. */
+  entranceAt: number | null;
 }
 
 /** One of the two forward lines of the triple wall, as a thing that stops men and arrows. */
@@ -358,6 +453,17 @@ export interface OutworkOut {
   id: 'outer' | 'middle';
   /** Index within this line, west to east. */
   index: number;
+  /**
+   * The `GarrisonBay` that stands directly behind this bay, so nothing has to do a spatial
+   * query to find out what commands it.
+   *
+   * Published for the same reason `WallStair.bay` is, and it is not cosmetic: the outwork is
+   * offset up to 41.6 m along the normal, and where the wall line bends the hardest that is
+   * **19 m of x** — most of a bay. Deriving it twice put the builder's command clamp on one
+   * bay and the probe's command test on its neighbour, and the disagreement read as a wall
+   * standing 4.8 m over the one behind it.
+   */
+  bay: number;
   x0: number;
   z0: number;
   x1: number;
@@ -371,8 +477,33 @@ export interface OutworkOut {
   /** Absolute Y of the walk and of the top of the merlons. */
   walkY: number;
   crestY: number;
-  /** True where this bay is a passage rather than masonry: the staggered gate gaps and the posterns. */
-  passage: boolean;
+  /**
+   * Where a passage cuts this bay, as an offset along its run from `x0`, or null for solid.
+   *
+   * **Not a boolean.** It was one, and a boolean voided the whole 29.7 m bay for a 6 m gap —
+   * which silently threw away the entire point of §4.5's staggered openings, because an
+   * opening 29.7 m wide is in line with everything. The one assertion that tests the thing
+   * the spec calls "worth more to this map than any texture" was the one that caught it.
+   */
+  passageAt: number | null;
+  /** True where the line gives out here because the ground rises past what can be commanded. */
+  standsDown: boolean;
+  /** True where the crest carries a timber palisade rather than a merlon line. */
+  palisade: boolean;
+}
+
+/** The ditch, as a request to whoever owns the heightfield. See `CarthageWallOutput.ditch`. */
+export interface CarthageDitch {
+  /** Centreline of the ditch, in world space, west to east. */
+  path: readonly { x: number; z: number }[];
+  width: number;
+  depth: number;
+  /** Width of the flat bottom of the V. */
+  bottomWidth: number;
+  /** Offset of the centreline from the main wall, along the outward normal. */
+  offset: number;
+  /** Always false. Nothing here cuts terrain. */
+  built: false;
 }
 
 export interface CarthageWallOutput extends WallBuildOutput {
@@ -391,6 +522,26 @@ export interface CarthageWallOutput extends WallBuildOutput {
   outworkTopAt(x: number, z: number): number;
   /** Extra height of a curtain tower above the bay crest, for the obstacle box. */
   towerRise: number;
+  /**
+   * What the 4 m occupancy raster is painted from, as opposed to `blockers`, which is what
+   * the oriented-box set is built from.
+   *
+   * They are the same list on a solid wall and they differ on a hollow one: the boxes express
+   * the casemate and the raster cannot. See `CasemateOut.enterable` for why the difference is
+   * in the safe direction.
+   */
+  occBlockers: readonly Blocker[];
+  /**
+   * The ditch, as a **request** rather than as geometry.
+   *
+   * §4.2 puts a 20 × 6 m dry ditch in front of the outwork and it is 27% of the belt's depth.
+   * It cannot be built here: a ditch is a cut in the heightfield and `src/terrain/` is not
+   * this workstream's, and a trench liner emitted at the right depth would simply be buried
+   * by the ground it is supposed to be cut into. So the plan and the profile are published
+   * for whoever owns the terrain, and the built belt is honestly 54.1 m and not 74.1 m until
+   * that lands. Saying which is which is the point of publishing it.
+   */
+  ditch: CarthageDitch;
   /**
    * Every posted result of `assertSection`, so a probe can read the builder's own arithmetic
    * instead of re-deriving it. Empty means the section closes.
@@ -568,14 +719,40 @@ function assertSection(): string[] {
   if (Math.abs(sum - PUNIC.mainThickness) > 1e-9) {
     f.push(`section sums to ${sum.toFixed(4)} m, not ${PUNIC.mainThickness.toFixed(4)}`);
   }
-  if (CASEMATE_COVER < 2.5) {
-    f.push(`only ${CASEMATE_COVER.toFixed(2)} m of masonry over the upper vault`);
+  // §4.4: 3.5 + 4.6 + 1.0 + 3.6 + 1.0 = 13.7. If this does not close, the vault crown is
+  // inside the wall-walk and no amount of geometry will hide it.
+  const stack = FOOTING_H + STALL_CLEAR + GALLERY_SLAB + UPPER_CLEAR + WALK_SLAB;
+  if (Math.abs(stack - PUNIC.mainHeight) > 1e-9) {
+    f.push(`casemate stack sums to ${stack.toFixed(4)} m, not ${PUNIC.mainHeight.toFixed(4)}`);
   }
-  // Five ranks at the sim's interlocking pitch is what `MAX_WALL_RANKS` asks for.
-  const band = (HALF_T - PARAPET_T - BODY) - (-(HALF_T - 0.025) + INNER_PARAPET_T + BODY);
+  if (Math.abs(CASEMATE_COVER - WALK_SLAB) > 1e-9) {
+    f.push(`cover over the upper vault is ${CASEMATE_COVER.toFixed(3)} m, not ${WALK_SLAB}`);
+  }
+  // §4.2: 74.1 m from the ditch's outer lip to the back of the main wall.
+  if (Math.abs(BELT_DEPTH - 74.1) > 0.05) {
+    f.push(`belt is ${BELT_DEPTH.toFixed(2)} m deep, not the spec's 74.1`);
+  }
+  // §4.3: 9.1 − 1.2 − 0.8 = 7.1 m of clear masonry on the walk.
+  const clear = PUNIC.mainThickness - PARAPET_T - INNER_PARAPET_T;
+  if (Math.abs(clear - 7.1) > 1e-9) f.push(`clear walk is ${clear.toFixed(2)} m, not 7.1`);
+  // Five ranks at the sim's interlocking pitch is what `MAX_WALL_RANKS` asks for; the band
+  // a *man* gets is the clear masonry less a body radius at each end.
+  const band = clear - 2 * BODY;
   if (band < 5 * 0.72) f.push(`standing band ${band.toFixed(2)} m holds under five ranks`);
   if (STALL_DOOR_W + 0.6 > STALL_PITCH) f.push('stall doors overlap their own piers');
   if (GATE_PASS_W + 1.0 > GATE_BLOCK_W * 0.5) f.push('gate passage wider than its own pier');
+  // The whole point of the staggered openings: no straight line through the belt.
+  for (const a of OUTWORKS) {
+    for (const b of OUTWORKS) {
+      if (a === b) continue;
+      if (Math.abs(a.gateShift - b.gateShift) < PASSAGE_W) {
+        f.push(`${a.id} and ${b.id} passages are in line — a ram can see the leaves`);
+      }
+    }
+    if (Math.abs(a.gateShift) < PASSAGE_W) {
+      f.push(`${a.id} passage is in line with the main gate`);
+    }
+  }
   return f;
 }
 
@@ -613,11 +790,11 @@ export function buildCarthageWall(
    * The pitch also has to stay uniform, because `CitySystem.bayAt` is index arithmetic in x
    * and a variable pitch silently returns the wrong bay to every projectile in the game.
    */
-  const nBays = Math.max(4, Math.round(WALL_LENGTH / PLETHRON) & ~1);
+  const nBays = Math.max(4, Math.round(WALL_LENGTH / (PUNIC.towerSpacing * 0.5)) & ~1);
   const pitch = WALL_LENGTH / nBays;
   const gateBay = clamp(Math.floor((GATE_X - WALL_X_MIN) / pitch), 1, nBays - 2);
   /**
-   * A tower stands at the west end of every *other* bay — two plethra — and never inside the
+   * A tower stands at the west end of every *other* bay — 200 ft, §4.5 — and never inside the
    * gatehouse block, which carries its own pair. Keyed on where the block *is*, not on which
    * bay is flagged `isGate`: rounding a gate to the nearest tower is how Rome lost 23 m of
    * curtain beside the Porta Flaminia.
@@ -629,6 +806,7 @@ export function buildCarthageWall(
   const bays: MainBay[] = [];
   const segments: WallSegmentOut[] = [];
   const blockers: Blocker[] = [];
+  const occBlockers: Blocker[] = [];
   const garrisonBays: GarrisonBay[] = [];
   const casemates: CasemateOut[] = [];
 
@@ -672,11 +850,20 @@ export function buildCarthageWall(
   // occupancy raster clears the passage through the exact same code path the Porta
   // Flaminia's carriageway uses. Nothing new had to be taught how to cut a hole in a wall.
   for (const bay of bays) {
-    if (bay.isGate || bay.index % 8 !== 3) continue;
+    if (bay.isGate || bay.index % 8 !== 5) continue;
     bay.posternAt = bay.frame.len * 0.5;
   }
 
-  // The gallery, where the ground leaves cover over its upper vault.
+  /**
+   * The gallery, where the ground leaves cover over its upper vault.
+   *
+   * `entranceAt` is set at **every second tower**, which §4.4 gives as the access cadence —
+   * a stair-and-ramp block in the inner face climbing the 3.5 m from the intervallum to the
+   * stall floor at 1 in 6, so an elephant or a handcart can use it. Towers stand at every
+   * other bay, so every second tower is every fourth bay; the wall-walk ramps take bays
+   * `% 4 === 1` and the gallery entrances take `% 4 === 3`, so the two never foul each other
+   * on the same stretch of inner face.
+   */
   for (const bay of bays) {
     if (bay.isGate) continue;
     if (bay.walkY - bay.gMin < CASEMATE_MIN_RISE) continue;
@@ -686,24 +873,31 @@ export function buildCarthageWall(
       x: bay.x0 + f.dx * t + f.nx * centreOff,
       z: bay.z0 + f.dz * t + f.nz * centreOff,
     });
-    const a = end(1.2);
-    const c = end(f.len - 1.2);
-    const alongStalls = Math.max(1, Math.floor((f.len - 2.4) / STALL_PITCH));
+    const a = end(1.0);
+    const c = end(f.len - 1.0);
+    const alongStalls = Math.max(1, Math.floor((f.len - 2.0) / STALL_PITCH));
     const cm: CasemateOut = {
       bay: bay.index,
       x0: a.x, z0: a.z, x1: c.x, z1: c.z,
       dx: f.dx, dz: f.dz, nx: f.nx, nz: f.nz,
       centreOff,
       width: GALLERY_W,
-      lowerFloorY: bay.gMin,
+      lowerFloorY: bay.gMin + STALL_FLOOR,
       upperFloorY: bay.gMin + UPPER_FLOOR,
-      lowerCrown: STALL_CROWN,
-      upperCrown: UPPER_CROWN - UPPER_FLOOR,
-      // Both storeys are stabling and barrack, so the count is twice the along-run bays.
-      stalls: alongStalls * 2,
-      // See the field's own comment: the longitudinal gallery is not representable in a
-      // 4 m occupancy raster; the transverse postern is.
-      enterable: false,
+      lowerCrown: STALL_CLEAR,
+      upperCrown: UPPER_CLEAR,
+      // The lower level is the stabling and its magazines; the upper is a fighting gallery
+      // and carries no stalls of its own, so this is the along-run count and not twice it.
+      stalls: alongStalls,
+      enterable: true,
+      /**
+       * §4.4: an access block at every second tower. Towers stand at every other bay, so
+       * that is every fourth — 118.7 m at this pitch, which is the spec's 118 to a metre.
+       * Posterns take `% 8 === 5` so the two cadences never land on one bay and cost each
+       * other a door; before that split, half the access blocks were being suppressed and
+       * the enterable gallery was reachable only every 297 m.
+       */
+      entranceAt: bay.index % 4 === 3 ? f.len * 0.5 : null,
     };
     bay.casemate = cm;
     casemates.push(cm);
@@ -718,7 +912,27 @@ export function buildCarthageWall(
       gate: bay.isGate,
       halfThickness: HALF_T,
     });
-    blockers.push({ x1: bay.x0, z1: bay.z0, x2: bay.x1, z2: bay.z1, halfW: HALF_T });
+    /**
+     * The oriented-box set gets the wall's **two skins** where it is hollow and one solid
+     * box where it is not, so the casemate is a place a man can be. The raster gets the
+     * solid box either way — see `CasemateOut.enterable`, which explains why the two lists
+     * differ and why this is the safe direction for them to differ in.
+     */
+    occBlockers.push({ x1: bay.x0, z1: bay.z0, x2: bay.x1, z2: bay.z1, halfW: HALF_T });
+    if (bay.casemate) {
+      for (const [off, half] of [
+        [HALF_T - SKIN_FIELD * 0.5, SKIN_FIELD * 0.5],
+        [-(HALF_T - SKIN_CITY * 0.5), SKIN_CITY * 0.5],
+      ] as [number, number][]) {
+        blockers.push({
+          x1: bay.x0 + f.nx * off, z1: bay.z0 + f.nz * off,
+          x2: bay.x1 + f.nx * off, z2: bay.z1 + f.nz * off,
+          halfW: half,
+        });
+      }
+    } else {
+      blockers.push({ x1: bay.x0, z1: bay.z0, x2: bay.x1, z2: bay.z1, halfW: HALF_T });
+    }
     const hasTower = towerAt(bay.index, bay.x0);
     garrisonBays.push({
       index: bay.index,
@@ -767,48 +981,58 @@ export function buildCarthageWall(
   const rampByBay = new Map<number, WallStair>();
   for (const s of stairs) rampByBay.set(s.bay, s);
 
-  // --- the gate --------------------------------------------------------------
+  // --- the gates -------------------------------------------------------------
+  /**
+   * Three gates, and each one is a tunnel through the whole belt rather than a door.
+   *
+   * The main gate keeps the map's own axis, so `getGates()[0]` is still what the siege train
+   * is pointed at and `Siege.ts` needs to know nothing about the other two. Only the main one
+   * carries leaves; the flanking gates are gatehouses whose passages are barred by masonry,
+   * which is what an ancient city does with the gates it is not using during a siege.
+   */
+  const gateAxes = GATE_AXES.map((ga) => {
+    const x = clamp(GATE_X + ga.shift, WALL_X_MIN + 90, WALL_X_MAX - 90);
+    const bi = clamp(Math.floor((x - WALL_X_MIN) / pitch), 1, nBays - 2);
+    const b = bays[bi];
+    const cz = lerp(b.z0, b.z1, clamp((x - b.x0) / b.frame.len, 0, 1));
+    return { ...ga, x, z: cz, bay: bi, frame: b.frame };
+  });
   const gb = bays[gateBay];
   const gf = gb.frame;
-  const gateCz = lerp(gb.z0, gb.z1, clamp((GATE_X - gb.x0) / gf.len, 0, 1));
+  const gateCz = gateAxes[0].z;
   const gateG = heightAt(GATE_X, gateCz);
-  const gates: GateOut[] = [
-    {
-      id: 'porta-punica',
-      x: GATE_X,
-      z: gateCz,
-      facing: Math.atan2(gf.nx, gf.nz),
-      // Shut. The ram has to bring it down; `setGateOpen(id, true)` is what the siege calls.
-      open: false,
-    },
-  ];
+  const gates: GateOut[] = gateAxes.map((ga) => ({
+    id: ga.id,
+    x: ga.x,
+    z: ga.z,
+    facing: Math.atan2(ga.frame.nx, ga.frame.nz),
+    // Shut. The ram has to bring them down; `setGateOpen(id, true)` is what the siege calls.
+    open: false,
+  }));
   /**
    * The posterns, published as gates that are already **open**.
    *
    * This is the whole mechanism by which a casemate wall is a wall you can pass *through*
    * rather than only over, and it needed no new code anywhere: `CitySystem.pushWallBox`
    * already splits a bay's obstacle box at every open gate, and `CitySystem.init` already
-   * clears an open gate's carriageway out of the occupancy raster. Both were written for
-   * one gate and neither cares how many there are.
-   *
-   * `Siege.ts` reads `getGates()[0]` for the gate it besieges, so the main gate is first and
-   * the posterns can never be mistaken for it.
+   * clears an open gate's carriageway out of the occupancy raster. Both were written for one
+   * gate and neither cares how many there are — which is also how the elephants get out of
+   * the stalls Appian puts them in.
    */
   for (const bay of bays) {
     if (bay.posternAt === null) continue;
     const f = bay.frame;
-    const px = bay.x0 + f.dx * bay.posternAt;
-    const pz = bay.z0 + f.dz * bay.posternAt;
     gates.push({
       id: `postern-${bay.index}`,
-      x: px, z: pz,
+      x: bay.x0 + f.dx * bay.posternAt,
+      z: bay.z0 + f.dz * bay.posternAt,
       facing: Math.atan2(f.nx, f.nz),
       open: true,
     });
   }
 
   const gateDoor: GateDoorOut = {
-    gateId: 'porta-punica',
+    gateId: gateAxes[0].id,
     x: GATE_X + gf.nx * (GATE_BLOCK_D * 0.5 - GATE_DOOR_SET),
     y: gateG + GATE_DOOR_SILL,
     z: gateCz + gf.nz * (GATE_BLOCK_D * 0.5 - GATE_DOOR_SET),
@@ -830,8 +1054,8 @@ export function buildCarthageWall(
 
   // --- the outer and middle lines -------------------------------------------
   const outworks: OutworkOut[] = [];
-  const owX0 = GATE_X - TRIPLE_HALF;
-  const owX1 = GATE_X + TRIPLE_HALF;
+  const owX0 = WALL_X_MIN + TRIPLE_END_MARGIN;
+  const owX1 = WALL_X_MAX - TRIPLE_END_MARGIN;
   const owN = Math.max(2, Math.round((owX1 - owX0) / OUTWORK_PITCH));
   const owPitch = (owX1 - owX0) / owN;
 
@@ -849,20 +1073,59 @@ export function buildCarthageWall(
         const g = heightAt(lerp(a.x, c.x, s / 8), lerp(a.z, c.z, s / 8));
         if (g > gMax) gMax = g;
       }
-      // This line's own passage, and a postern every few bays so the frontage is permeable.
-      const gx = GATE_X + spec.gateShift;
-      const isGap =
-        (gx >= x0 - PASSAGE_W * 0.5 && gx <= x1 + PASSAGE_W * 0.5) || i % POSTERN_EVERY === 2;
-      const walkY = Math.ceil((gMax + spec.height) / 0.5) * 0.5;
+      /**
+       * This line's own passages: one per gate, each shifted laterally by `gateShift` so the
+       * three openings in the belt are not in line and a ram at the ditch cannot see the
+       * leaves. Plus a postern every few bays, so a storming party is never more than half a
+       * bay from a way in and the frontage is a defence rather than a lid.
+       */
+      let passageAt: number | null = null;
+      for (const ga of gateAxes) {
+        const gx = ga.x + spec.gateShift;
+        if (gx < x0 || gx > x1) continue;
+        passageAt = ((gx - a.x) * f.dx + (zAt(gx) + f.nz * spec.off - a.z) * f.dz);
+      }
+      // A postern every few bays, so a storming party is never more than half a bay from a
+      // way in and the frontage is a defence rather than a lid.
+      if (passageAt === null && i % POSTERN_EVERY === 2) {
+        passageAt = Math.hypot(c.x - a.x, c.z - a.z) * 0.5;
+      }
+      /**
+       * Stepped **down** from the wall behind it, and clamped so it stays that way.
+       *
+       * §4.2's whole arrangement is a stepped system: each line lower than the one behind,
+       * so all three can be fought from at once and the main wall dominates everything in
+       * front of it. Following the ground alone does not deliver that — the wall line sits on
+       * a crest whose fall is not uniform, and measured over the full circuit there are
+       * stretches where the ground 41 m out is *higher* than the ground under the main wall.
+       * Left alone those bays put a merlon line 4.8 m **above** the wall it is supposed to
+       * screen, which hands the attacker a firing step.
+       *
+       * So the crest is capped at the main wall's walk less `MIN_COMMAND`, and where the
+       * ground rises so far that even a 2 m revetment breaks the cap, the line simply gives
+       * out and the bay becomes a passage. A forward work that cannot be commanded is not
+       * built, which is also what a real engineer does with one.
+       */
+      // The bay behind this one is found at the outwork's **own** world x, after the offset
+      // along the normal has moved it — not at the main-line x it was generated from.
+      const backing = clamp(Math.floor(((a.x + c.x) * 0.5 - WALL_X_MIN) / pitch), 0, nBays - 1);
+      const mainBay = bays[backing];
+      const wanted = Math.ceil((gMax + spec.height) / 0.5) * 0.5;
+      const cap = mainBay.walkY - MIN_COMMAND - spec.parapetH;
+      const walkY = Math.min(wanted, cap);
+      const givesOut = walkY < gMax + 2.0;
       outworks.push({
         id: spec.id,
         index: i,
+        bay: backing,
         x0: a.x, z0: a.z, x1: c.x, z1: c.z,
         dx: f.dx, dz: f.dz, nx: f.nx, nz: f.nz,
         halfThickness: spec.thickness * 0.5,
         walkY,
         crestY: walkY + spec.parapetH,
-        passage: isGap,
+        passageAt,
+        standsDown: givesOut,
+        palisade: spec.palisade,
       });
     }
   }
@@ -892,7 +1155,7 @@ export function buildCarthageWall(
       const i = Math.floor((x - owX0) / owPitch);
       if (i < 0 || i >= owN) continue;
       const ow = byIndex.get(spec.id)![i];
-      if (!ow || ow.passage) continue;
+      if (!ow || ow.standsDown) continue;
       const t = (x - ow.x0) * ow.dx + (z - ow.z0) * ow.dz;
       const px = ow.x0 + ow.dx * t;
       const pz = ow.z0 + ow.dz * t;
@@ -900,6 +1163,8 @@ export function buildCarthageWall(
       if (Math.abs(off) > ow.halfThickness) continue;
       const len = Math.hypot(ow.x1 - ow.x0, ow.z1 - ow.z0);
       if (t < 0 || t > len) continue;
+      // Only the passage itself is a hole, not the bay it is cut in.
+      if (ow.passageAt !== null && Math.abs(t - ow.passageAt) <= PASSAGE_W * 0.5) continue;
       if (ow.crestY > best) best = ow.crestY;
     }
     return best;
@@ -940,7 +1205,11 @@ export function buildCarthageWall(
         batch.setUvOrigin(cx, 0, cz);
         for (const bay of slice) {
           buildMainBay(batch, detail, bay, heightAt, rng.fork(`bay-${bay.index}`));
-          if (bay.isGate) buildPunicGate(batch, detail, bay, gateCz, heightAt);
+          for (const ga of gateAxes) {
+            if (ga.bay === bay.index) {
+              buildPunicGate(batch, detail, bay, ga.x, ga.z, ga.leaves, heightAt);
+            }
+          }
           const ramp = rampByBay.get(bay.index);
           if (ramp) buildRamp(batch, detail, bay, ramp, heightAt);
         }
@@ -978,6 +1247,17 @@ export function buildCarthageWall(
     });
   }
 
+  /**
+   * The ditch, published rather than built. See the field's own comment on the output type:
+   * a 6 m cut belongs to the heightfield and this workstream does not own it.
+   */
+  const ditchPath: { x: number; z: number }[] = [];
+  for (let k = 0; k <= 24; k++) {
+    const x = lerp(owX0, owX1, k / 24);
+    const b = bays[clamp(Math.floor((x - WALL_X_MIN) / pitch), 0, nBays - 1)];
+    ditchPath.push({ x: x + b.frame.nx * DITCH_OFF, z: zAt(x) + b.frame.nz * DITCH_OFF });
+  }
+
   return {
     path,
     chunks,
@@ -998,6 +1278,15 @@ export function buildCarthageWall(
     outworks,
     outworkTopAt,
     towerRise: TOWER_RISE,
+    occBlockers,
+    ditch: {
+      path: ditchPath,
+      width: DITCH_W,
+      depth: DITCH_D,
+      bottomWidth: 2.0,
+      offset: DITCH_OFF,
+      built: false,
+    },
     sectionFaults: assertSection(),
   };
 }
@@ -1119,7 +1408,7 @@ function buildMainBay(
    * built in lifts and the lift joint is dressed as a string.
    */
   if (detail >= 1) {
-    const stringY = bay.gMin + UPPER_SPRING;
+    const stringY = bay.gMin + UPPER_FLOOR;
     if (stringY < bay.walkY - 1.5) {
       const rise = Math.max(0, stringY - (bay.gMin + PLINTH_H));
       const t = PUNIC.mainThickness - 2 * BATTER * rise + 0.44;
@@ -1131,7 +1420,10 @@ function buildMainBay(
     }
   }
 
-  if (bay.casemate && detail >= 1) buildGallery(batch, detail, bay, bay.casemate, rng);
+  if (bay.casemate && detail >= 1) {
+    buildGallery(batch, detail, bay, bay.casemate, rng);
+    buildGalleryRamp(batch, detail, bay, bay.casemate, heightAt);
+  }
   if (bay.posternAt !== null) buildPostern(batch, detail, bay, heightAt);
   void brick;
 }
@@ -1171,24 +1463,29 @@ function buildGallery(
 
     // Ground storey: the stall door. `archPanel`'s local frame has its front at z = 0
     // looking toward −Z, so the placement rotation faces it at the city, i.e. along +n.
+    //
+    // The doors stand 3.5 m up, on the solid footing §4.4's arithmetic leaves under the
+    // stalls — which is why the elephants need the ramps at every second tower and is the
+    // most legible thing on the whole inner face: a raised arcade, not a row of holes.
     stone.push(place(px, floorY, pz, rotY + Math.PI));
-    archPanel(stone, STALL_PITCH, STALL_CROWN + 0.5, wallCol, {
+    archPanel(stone, STALL_PITCH, STALL_CLEAR + 0.4, wallCol, {
       depth: 1.0,
-      spring: STALL_DOOR_W * 0.5 + 1.35,
+      spring: STALL_DOOR_W * 0.5 + 1.4,
       openWidth: STALL_DOOR_W,
       segments: detail >= 2 ? 9 : 5,
       voidCol: voidWarm,
-      archivolt: detail >= 2 ? 0.14 : 0,
+      archivolt: detail >= 2 ? 0.16 : 0,
     });
     stone.pop();
 
-    // Upper storey: a smaller light into the horse lines and the barrack.
+    // Upper storey: a light into the fighting gallery. Not a dormitory window — §4.4 rules
+    // the barracks out at 0.52 m² a man — so it is sized as an embrasure.
     const upY = cm.upperFloorY;
     stone.push(place(px, upY, pz, rotY + Math.PI));
-    archPanel(stone, STALL_PITCH, UPPER_CROWN - UPPER_FLOOR + 0.4, wallCol, {
+    archPanel(stone, STALL_PITCH, UPPER_CLEAR + 0.3, wallCol, {
       depth: 0.9,
-      spring: 1.5,
-      openWidth: 1.5,
+      spring: 1.4,
+      openWidth: 1.6,
       segments: detail >= 2 ? 7 : 4,
       voidCol: voidDark,
       archivolt: detail >= 2 ? 0.10 : 0,
@@ -1198,17 +1495,23 @@ function buildGallery(
     // Field face: a loop into the upper gallery, every other stall. Modelled as a recess
     // rather than painted, because a painted slit has the same contrast in sun and shade
     // and that is the defect this project just finished removing from Rome's brick.
-    if (detail >= 2 && i % 2 === 0) {
+    if (detail >= 2) {
+      // §4.4: loopholes at 3.5 m centres in the outer face of the upper level. Two per
+      // 6.6 m stall bay. Modelled as recesses, never painted — a painted slit shows the
+      // same contrast in sun and in shade, which is the defect just removed from Rome.
       const rise = Math.max(0, upY + 1.4 - (bay.gMin + PLINTH_H));
       const outFace = HALF_T - BATTER * rise;
-      const ox = bay.x0 + f.dx * t + f.nx * outFace;
-      const oz = bay.z0 + f.dz * t + f.nz * outFace;
-      quadPrism(
-        stone,
-        ox - f.dx * 0.14, oz - f.dz * 0.14,
-        ox + f.dx * 0.14, oz + f.dz * 0.14,
-        f.nx, f.nz, 0.7, upY + 0.9, upY + 2.5, voidDark, voidDark, { ends: false }
-      );
+      for (const sub of [-1, 1]) {
+        const tt = t + sub * 1.75;
+        const ox = bay.x0 + f.dx * tt + f.nx * outFace;
+        const oz = bay.z0 + f.dz * tt + f.nz * outFace;
+        quadPrism(
+          stone,
+          ox - f.dx * 0.14, oz - f.dz * 0.14,
+          ox + f.dx * 0.14, oz + f.dz * 0.14,
+          f.nx, f.nz, 0.7, upY + 0.8, upY + 2.4, voidDark, voidDark, { ends: false }
+        );
+      }
     }
   }
 
@@ -1222,10 +1525,17 @@ function buildGallery(
   const SEG = 6;
   const ends: [number, number][] = [[t0, t0 + n * STALL_PITCH]];
   for (const [ta, tb] of ends) {
-    for (const [floor, spring] of [
-      [floorY, STALL_SPRING],
-      [cm.upperFloorY, UPPER_SPRING - UPPER_FLOOR],
+    for (const [floor, clear] of [
+      [floorY, STALL_CLEAR],
+      [cm.upperFloorY, UPPER_CLEAR],
     ] as [number, number][]) {
+      /**
+       * Springing and rise of the barrel, from the clear height rather than assumed
+       * semicircular. A 6.4 m span wants a 3.2 m rise to be a semicircle, which the 3.6 m
+       * upper level has no room for, so that one is segmental and the lower one is not.
+       */
+      const rise = Math.min(GALLERY_W * 0.5, clear - 0.9);
+      const spring = clear - rise;
       // Springing walls.
       for (const side of [-1, 1]) {
         const o = co + side * r;
@@ -1247,8 +1557,8 @@ function buildGallery(
         const a1 = (Math.PI * (k + 1)) / SEG;
         const o0 = co - Math.cos(a0) * r;
         const o1 = co - Math.cos(a1) * r;
-        const y0 = floor + spring + Math.sin(a0) * r;
-        const y1 = floor + spring + Math.sin(a1) * r;
+        const y0 = floor + spring + Math.sin(a0) * rise;
+        const y1 = floor + spring + Math.sin(a1) * rise;
         P0.set(bay.x0 + f.dx * ta + f.nx * o0, y0, bay.z0 + f.dz * ta + f.nz * o0);
         P1.set(bay.x0 + f.dx * tb + f.nx * o0, y0, bay.z0 + f.dz * tb + f.nz * o0);
         P2.set(bay.x0 + f.dx * tb + f.nx * o1, y1, bay.z0 + f.dz * tb + f.nz * o1);
@@ -1266,6 +1576,68 @@ function buildGallery(
     }
   }
   void rng;
+}
+
+/**
+ * The stair-and-ramp block that gets an elephant into the wall.
+ *
+ * §4.4: an access block in the inner face at every second tower, gradient **1 in 6** so a
+ * beast or a handcart can use it. It climbs the 3.5 m of solid footing that the casemate
+ * arithmetic leaves under the stall floor, which is 21 m of run — a third of a tower
+ * interval, and the reason the wall-walk ramps and these are placed on different bays.
+ *
+ * This is the thing that makes the interior *reachable*, and without it the enterable
+ * casemate is a room with no door. It is emitted as a solid masonry mass rather than as
+ * steps: a ramp an elephant can use is a ramp, not a flight.
+ */
+function buildGalleryRamp(
+  batch: Batch,
+  detail: number,
+  bay: MainBay,
+  cm: CasemateOut,
+  heightAt: (x: number, z: number) => number
+): void {
+  if (cm.entranceAt === null) return;
+  const stone = batch.s('stone');
+  const f = bay.frame;
+  const rise = cm.lowerFloorY - bay.gMin;
+  if (rise < 0.5) return;
+  const run = rise * GALLERY_RAMP_GRADE;
+  const t1 = cm.entranceAt;
+  const t0 = t1 - run;
+  if (t0 < 1.0) return;
+  const off = -(HALF_T + GALLERY_RAMP_W * 0.5);
+  const col = new THREE.Color().copy(PAL.tufa).multiplyScalar(0.97);
+  const capCol = new THREE.Color().copy(PAL.travertine).multiplyScalar(1.02);
+  const nSub = detail >= 2 ? 8 : 3;
+
+  for (let k = 0; k < nSub; k++) {
+    const ta = lerp(t0, t1, k / nSub);
+    const tb = lerp(t0, t1, (k + 1) / nSub);
+    const ax = bay.x0 + f.dx * ta + f.nx * off;
+    const az = bay.z0 + f.dz * ta + f.nz * off;
+    const bx = bay.x0 + f.dx * tb + f.nx * off;
+    const bz = bay.z0 + f.dz * tb + f.nz * off;
+    const g = Math.min(heightAt(ax, az), heightAt(bx, bz)) - 1.2;
+    // A smooth rake, not treads: the top of each sub-panel is the ramp surface at `tb`.
+    const yTop = bay.gMin + (rise * (k + 1)) / nSub;
+    quadPrism(stone, ax, az, bx, bz, f.nx, f.nz, GALLERY_RAMP_W, g, yTop, col, capCol, {
+      ends: k === 0,
+    });
+  }
+  // The mouth: an arch through the city skin at the head of the ramp.
+  const px = bay.x0 + f.dx * t1 + f.nx * -(HALF_T - 0.02);
+  const pz = bay.z0 + f.dz * t1 + f.nz * -(HALF_T - 0.02);
+  stone.push(place(px, cm.lowerFloorY, pz, Math.atan2(-f.nx, -f.nz) + Math.PI));
+  archPanel(stone, GALLERY_RAMP_W + 3.0, STALL_CLEAR + 0.4, col, {
+    depth: SKIN_CITY + 0.2,
+    spring: GALLERY_RAMP_W * 0.5 + 1.0,
+    openWidth: GALLERY_RAMP_W,
+    segments: detail >= 2 ? 10 : 5,
+    voidCol: new THREE.Color().copy(PAL.voidWarm),
+    archivolt: detail >= 2 ? 0.18 : 0,
+  });
+  stone.pop();
 }
 
 /**
@@ -1446,21 +1818,23 @@ function buildPunicGate(
   batch: Batch,
   detail: number,
   bay: MainBay,
+  gateX: number,
   gateCz: number,
+  leaves: boolean,
   heightAt: (x: number, z: number) => number
 ): void {
   const stone = batch.s('stone');
   const timber = batch.s('timber');
   const metal = batch.s('metal');
   const f = bay.frame;
-  const g = heightAt(GATE_X, gateCz);
+  const g = heightAt(gateX, gateCz);
   const rotY = Math.atan2(-f.nx, -f.nz);
   const col = new THREE.Color().copy(PAL.tufa).multiplyScalar(1.02);
   const plinthCol = new THREE.Color().copy(PAL.travertine);
   const hd = GATE_BLOCK_D * 0.5;
   const top = g + GATE_PASS_H + GATE_ATTIC;
 
-  const m = place(GATE_X, 0, gateCz, rotY);
+  const m = place(gateX, 0, gateCz, rotY);
   stone.push(m);
   // Two piers flanking the carriageway, each carrying its own tower.
   for (const side of [-1, 1]) {
@@ -1510,9 +1884,22 @@ function buildPunicGate(
   stone.pop();
 
   // --- the leaves, shut and barred ------------------------------------------
+  //
+  // Only the main gate has them. §4.5 gives three gates and `Siege.ts` besieges
+  // `getGates()[0]`; the other two are gatehouses whose passages are walled up, which is
+  // what a city under siege does with the gates it is not using, and it keeps the flanking
+  // gates from reading as two more ways in that nothing defends.
+  if (!leaves) {
+    const blockCol = new THREE.Color().copy(PAL.tufa).multiplyScalar(0.9);
+    stone.push(m);
+    box(stone, -GATE_PASS_W * 0.5, g, -0.9, GATE_PASS_W * 0.5, g + GATE_PASS_H, 0.9,
+      blockCol, { bottom: false });
+    stone.pop();
+    return;
+  }
   const doorY = g + GATE_DOOR_SILL;
   const dm = place(
-    GATE_X + f.nx * (hd - GATE_DOOR_SET),
+    gateX + f.nx * (hd - GATE_DOOR_SET),
     0,
     gateCz + f.nz * (hd - GATE_DOOR_SET),
     rotY
@@ -1567,10 +1954,12 @@ function buildOutworkBay(
     .multiplyScalar(ow.id === 'outer' ? 0.93 : 0.97);
   const capCol = new THREE.Color().copy(PAL.travertine).multiplyScalar(0.96);
 
-  /** The bay, or the two stubs either side of a passage. */
-  const spans: [number, number][] = ow.passage
-    ? [[0, Math.max(0, len * 0.5 - PASSAGE_W * 0.5)], [Math.min(len, len * 0.5 + PASSAGE_W * 0.5), len]]
-    : [[0, len]];
+  if (ow.standsDown) return;
+  /** The bay, or the two stubs either side of the passage where one is cut. */
+  const pa = ow.passageAt;
+  const spans: [number, number][] = pa === null
+    ? [[0, len]]
+    : [[0, Math.max(0, pa - PASSAGE_W * 0.5)], [Math.min(len, pa + PASSAGE_W * 0.5), len]];
 
   const nSub = detail >= 2 ? 4 : 2;
   for (const [sa, sb] of spans) {
@@ -1594,10 +1983,43 @@ function buildOutworkBay(
     const az = ow.z0 + ow.dz * sa;
     const bx = ow.x0 + ow.dx * sb;
     const bz = ow.z0 + ow.dz * sb;
-    crenellation(
-      stone, ax, az, bx, bz, ow.walkY, ow.crestY - ow.walkY,
-      Math.max(0.6, t - 0.9), col, 1.5, 0.9, detail >= 2
-    );
+    if (ow.palisade) {
+      /**
+       * A timber palisade, not a merlon line. §4.2 row 2: the outer work is earth and
+       * rubble, stone-revetted on the ditch face, with stakes on the crest — and the change
+       * of *material* between the three lines is what stops them reading as one wall drawn
+       * three times at the strategic camera.
+       */
+      const timber = batch.s('timber');
+      const len2 = sb - sa;
+      const n = Math.max(2, Math.round(len2 / 0.62));
+      const stakeCol = new THREE.Color().copy(PAL.timberDark);
+      for (let k = 0; k < n; k++) {
+        const tt = sa + ((k + 0.5) * len2) / n;
+        const sx = ow.x0 + ow.dx * tt;
+        const sz = ow.z0 + ow.dz * tt;
+        const jitter = hash2(k, ow.index, 41);
+        quadPrism(
+          timber,
+          sx - ow.dx * 0.11, sz - ow.dz * 0.11,
+          sx + ow.dx * 0.11, sz + ow.dz * 0.11,
+          ow.nx, ow.nz, 0.22, ow.walkY - 0.4,
+          ow.crestY - 0.1 + jitter * 0.22, stakeCol, stakeCol, { ends: detail >= 2 }
+        );
+      }
+      // A waling piece behind the stakes, so the palisade reads as a built thing.
+      quadPrism(
+        timber,
+        ax - ow.nx * 0.22, az - ow.nz * 0.22, bx - ow.nx * 0.22, bz - ow.nz * 0.22,
+        ow.nx, ow.nz, 0.18, ow.walkY + 0.55, ow.walkY + 0.8,
+        PAL.timber, PAL.timber, { ends: false }
+      );
+    } else {
+      crenellation(
+        stone, ax, az, bx, bz, ow.walkY, ow.crestY - ow.walkY,
+        Math.max(0.6, t - 0.9), col, 1.5, 0.9, detail >= 2
+      );
+    }
   }
 }
 
@@ -1745,7 +2167,17 @@ export const CARTHAGE_SECTION = {
   passageWidth: PASSAGE_W,
   middleOffset: MIDDLE_OFF,
   outerOffset: OUTER_OFF,
-  tripleHalfLength: TRIPLE_HALF,
+  beltDepth: BELT_DEPTH,
+  ditchWidth: DITCH_W,
+  ditchDepth: DITCH_D,
+  mainHeight: PUNIC.mainHeight,
+  mainThickness: PUNIC.mainThickness,
+  towerSpacing: PUNIC.towerSpacing,
+  towerMerlonHeight: TOWER_MERLON,
+  clearWalk: PUNIC.mainThickness - PARAPET_T - INNER_PARAPET_T,
+  galleryLowerClear: STALL_CLEAR,
+  galleryUpperClear: UPPER_CLEAR,
+  galleryFloorHeight: FOOTING_H,
   gateBlockWidth: GATE_BLOCK_W,
   gateBlockDepth: GATE_BLOCK_D,
   gatePassageWidth: GATE_PASS_W,

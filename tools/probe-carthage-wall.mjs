@@ -381,6 +381,80 @@ const result = await page.evaluate(
       median >= 13.86 && median <= 13.86 + 2.15 + 4.0,
       `median rise ${median.toFixed(2)} m (walk 13.86 + parapet 2.15 + tower tail)`);
 
+    /**
+     * B3: the **forward lines' own stone**, and this assertion exists because it was missing.
+     *
+     * Every check on the outworks measured their published records — offsets, command,
+     * permeability, passages — and every one passed while the question "is there any masonry
+     * out there at all" had never been asked. It took a screenshot to notice, which is
+     * precisely the failure this probe is written to make impossible: a record is a claim and
+     * a triangle is a fact. Same technique as B1, splatted by x-extent, but classified by the
+     * signed offset from the main line so each of the three lines gets its own profile.
+     */
+    const owLines = { middle: null, outer: null };
+    for (const id of ['middle', 'outer']) {
+      const line = outworks.filter((o) => o.id === id && !o.standsDown);
+      if (line.length === 0) continue;
+      const off = line.reduce((acc, o) => {
+        const b = bays[o.bay];
+        const mx = (o.x0 + o.x1) * 0.5;
+        const mz = (o.z0 + o.z1) * 0.5;
+        const t = (mx - b.x0) * b.dx + (mz - b.z0) * b.dz;
+        return acc + (mx - (b.x0 + b.dx * t)) * b.nx + (mz - (b.z0 + b.dz * t)) * b.nz;
+      }, 0) / line.length;
+      const half = line[0].halfThickness + 2.5;
+      const top = new Float64Array(nBin).fill(-Infinity);
+      for (let t = 0; t < tris.length; t += 9) {
+        const xa = Math.min(tris[t], tris[t + 3], tris[t + 6]);
+        const xb = Math.max(tris[t], tris[t + 3], tris[t + 6]);
+        const yMax = Math.max(tris[t + 1], tris[t + 4], tris[t + 7]);
+        const xc = (xa + xb) * 0.5;
+        const zc = (tris[t + 2] + tris[t + 5] + tris[t + 8]) / 3;
+        const b = lineOf(xc);
+        const tt = (xc - b.x0) * b.dx + (zc - b.z0) * b.dz;
+        const o2 = (xc - (b.x0 + b.dx * tt)) * b.nx + (zc - (b.z0 + b.dz * tt)) * b.nz;
+        if (Math.abs(o2 - off) > half) continue;
+        const ia = Math.max(0, Math.floor((xa - x0) / STEP));
+        const ib = Math.min(nBin - 1, Math.ceil((xb - x0) / STEP));
+        for (let i = ia; i <= ib; i++) if (yMax > top[i]) top[i] = yMax;
+      }
+      // Walk each standing bay of this line and demand stone over it, off the passage.
+      let holes = 0;
+      let checked = 0;
+      let worstHole = 0;
+      let holeX = 0;
+      let run = 0;
+      for (const o of line) {
+        const len = Math.hypot(o.x1 - o.x0, o.z1 - o.z0);
+        for (let t = 1.0; t < len - 1.0; t += 1.0) {
+          if (o.passageAt !== null && Math.abs(t - o.passageAt) <= 4.5) { run = 0; continue; }
+          const px = o.x0 + o.dx * t;
+          const i = Math.floor((px - x0) / STEP);
+          if (i < 0 || i >= nBin) continue;
+          checked++;
+          const g = terrain.heightAt(px, o.z0 + o.dz * t);
+          if (!(top[i] - g > 1.2)) {
+            holes++;
+            run += 1.0;
+            if (run > worstHole) { worstHole = run; holeX = px; }
+          } else run = 0;
+        }
+      }
+      owLines[id] = { off, checked, holes, worstHole, holeX, bays: line.length };
+    }
+    out.facts.outerStone = owLines.outer;
+    out.facts.middleStone = owLines.middle;
+    ok('B3 both forward lines are standing masonry, not just published records',
+      !!owLines.middle && !!owLines.outer &&
+        owLines.middle.worstHole <= 3 && owLines.outer.worstHole <= 3,
+      ['middle', 'outer'].map((id) => {
+        const L = owLines[id];
+        return L
+          ? `${id} ${L.bays} bays, ${L.checked - L.holes}/${L.checked} m walled, ` +
+            `worst hole ${L.worstHole.toFixed(0)} m at x=${L.holeX.toFixed(0)}`
+          : `${id} MISSING`;
+      }).join('; '));
+
     // --- masonryTopAt agrees with the stone ------------------------------
     /**
      * Sampled **along each bay's own run**, not by stepping x.
@@ -580,16 +654,21 @@ const result = await page.evaluate(
     ok('C6 there are three lines and the main one overlooks both',
       outworks.length > 0 &&
         outworks.every((o) => {
-          const b = lineOf((o.x0 + o.x1) * 0.5);
-          return b.walkY > o.crestY + 1.5;
+          if (o.standsDown) return true;
+          // The bay the record itself names, not one this probe goes and looks up: the two
+          // disagreed by a whole bay where the wall line bends, and the lookup lost.
+          const b = bays[o.bay];
+          return !!b && b.walkY >= o.crestY + 3.99;
         }),
       (() => {
         let worst = Infinity;
         for (const o of outworks) {
-          const b = lineOf((o.x0 + o.x1) * 0.5);
-          worst = Math.min(worst, b.walkY - o.crestY);
+          if (o.standsDown) continue;
+          const b = bays[o.bay];
+          if (b) worst = Math.min(worst, b.walkY - o.crestY);
         }
-        return `least command ${Number.isFinite(worst) ? worst.toFixed(2) : '-'} m`;
+        return `least command ${Number.isFinite(worst) ? worst.toFixed(2) : '-'} m over ` +
+          `${outworks.filter((o) => !o.standsDown).length} standing bays`;
       })()
     );
 
@@ -605,7 +684,7 @@ const result = await page.evaluate(
       const line = outworks.filter((o) => o.id === id).sort((a, b) => a.x0 - b.x0);
       let acc = 0;
       for (const o of line) {
-        if (o.passage) { acc = 0; continue; }
+        if (o.passageAt !== null || o.standsDown) { acc = 0; continue; }
         acc += Math.hypot(o.x1 - o.x0, o.z1 - o.z0);
         if (acc > worstSolidRun) worstSolidRun = acc;
       }
@@ -642,7 +721,16 @@ const result = await page.evaluate(
       casemates.length ? `enterable=${casemates[0].enterable}` : 'none');
 
     // Posterns: published as open gates, and the obstacle set must really be cut there.
-    const posterns = gates.filter((gg) => gg.id !== gates[0].id);
+    /**
+     * A postern is a gate that is **open**, not merely one that is not the first.
+     *
+     * There are three gates now and two of them are shut, so `id !== gates[0].id` counted
+     * two walled-up gatehouses as sally ports and demanded that men walk through them. The
+     * assertion was right and the population was wrong, which is the failure mode this whole
+     * file is written against.
+     */
+    const posterns = gates.filter((gg) => gg.open);
+    out.facts.shutGates = gates.filter((gg) => !gg.open).length;
     out.facts.posterns = posterns.length;
     let posternBlocked = 0;
     for (const p of posterns) {
@@ -677,6 +765,147 @@ const result = await page.evaluate(
     ok('E6 the wall still reports a top over every postern',
       posternRoofless === 0, `${posternRoofless} posterns with no masonry over them`);
 
+    // --- G. the spec's own claims ----------------------------------------
+    const sec = city.punicSection ? city.punicSection() : null;
+    out.facts.section = sec;
+    ok('G1 the builder reports no section faults of its own',
+      !!sec && sec.faults.length === 0,
+      sec ? (sec.faults.length ? sec.faults.join('; ') : 'section closes') : 'not published');
+
+    // §4.2: 74.1 m from the ditch's outer lip to the back of the main wall — and how much of
+    // it is actually standing, which is not the same number while the ditch is a request.
+    const ditch = city.getDitch ? city.getDitch() : null;
+    out.facts.beltDepth = sec ? sec.beltDepth : null;
+    out.facts.beltBuilt = sec ? sec.beltDepth - (ditch && !ditch.built ? ditch.width : 0) : null;
+    ok('G2 the belt is the spec depth, and says which part of it is built',
+      !!sec && Math.abs(sec.beltDepth - 74.1) < 0.05 && !!ditch && ditch.built === false,
+      sec ? `${sec.beltDepth.toFixed(1)} m published, ` +
+        `${(sec.beltDepth - (ditch ? ditch.width : 0)).toFixed(1)} m built; ` +
+        `the ${ditch ? ditch.width : 0} m ditch is a terrain cut and is published as a request`
+        : 'not published');
+
+    /**
+     * §4.5, and the spec calls this decision worth more than any texture: **a ram at the
+     * ditch must not see daylight through the belt.**
+     *
+     * Tested as a movement query along the gate's own outward normal from beyond the outwork
+     * to just clear of the main wall. If the three openings were in line this walk is
+     * unobstructed; with them staggered 8 m either way, it is not.
+     */
+    let seeThrough = 0;
+    const jinkDetail = [];
+    for (const gg of gates) {
+      if (gg.open) continue;
+      const b = lineOf(gg.x);
+      const far = 12 + (sec ? sec.outerOffset : 42);
+      const blocked = city.blocksMovement(
+        gg.x + b.nx * far, gg.z + b.nz * far,
+        gg.x + b.nx * 12, gg.z + b.nz * 12
+      );
+      if (!blocked) seeThrough++;
+      jinkDetail.push(`${gg.id}:${blocked ? 'jink' : 'STRAIGHT'}`);
+    }
+    ok('G3 no gate can be reached in a straight line through the belt',
+      seeThrough === 0, jinkDetail.join(' '));
+
+    /**
+     * The casemate is enterable, and this is the assertion that proves it rather than
+     * asserting it: at the gallery's own floor level, a point on its centreline is in **no**
+     * obstacle, while a point in each of the two skins is in one.
+     */
+    const boxAt = (px, pz, y) => {
+      for (const o of obstacles) {
+        if (o.kind !== 'wall') continue;
+        if (o.topY <= y + 0.05) continue;
+        const c = Math.cos(-o.rot), sn = Math.sin(-o.rot);
+        const dx = px - o.x, dz = pz - o.z;
+        if (Math.abs(dx * c - dz * sn) <= o.hw && Math.abs(dx * sn + dz * c) <= o.hd) return true;
+      }
+      return false;
+    };
+    let corridorBlocked = 0;
+    let skinOpen = 0;
+    let tested = 0;
+    for (const c of casemates) {
+      const b = bays[c.bay];
+      if (!b) continue;
+      const len = Math.hypot(c.x1 - c.x0, c.z1 - c.z0);
+      for (const frac of [0.25, 0.5, 0.75]) {
+        const t = len * frac;
+        const cx = c.x0 + c.dx * t;
+        const cz = c.z0 + c.dz * t;
+        // A postern is a hole in both skins by design; do not ask them to be solid there.
+        if (gates.some((gg) => Math.hypot(gg.x - cx, gg.z - cz) < 8)) continue;
+        tested++;
+        if (boxAt(cx, cz, c.lowerFloorY + 0.5)) corridorBlocked++;
+        // A point 0.4 m inside each skin, measured from the bay centreline outward.
+        for (const off of [b.halfThickness - 0.4, -(b.halfThickness - 0.4)]) {
+          const sx = b.x0 + b.dx * ((cx - b.x0) * b.dx + (cz - b.z0) * b.dz) + b.nx * off;
+          const sz = b.z0 + b.dz * ((cx - b.x0) * b.dx + (cz - b.z0) * b.dz) + b.nz * off;
+          if (!boxAt(sx, sz, c.lowerFloorY + 0.5)) skinOpen++;
+        }
+      }
+    }
+    ok('G4 the gallery is open to movement and both skins are not',
+      corridorBlocked === 0 && skinOpen === 0,
+      `${tested} stations: ${corridorBlocked} corridor points solid, ${skinOpen} skin points open`);
+
+    /**
+     * The counterpart, and the one that keeps this honest: the raster must **not** agree.
+     * A 1.5 m skin is not representable in a 4 m cell, so `blocksMovement` reports the wall
+     * solid, which is conservative and safe. If it ever starts reporting the corridor open,
+     * the two views have drifted in the dangerous direction and a unit will be routed
+     * through a wall.
+     */
+    let rasterOpen = 0;
+    for (const c of casemates.slice(0, 24)) {
+      const b = bays[c.bay];
+      if (!b || b.isGate) continue;
+      const len = Math.hypot(c.x1 - c.x0, c.z1 - c.z0);
+      const t = len * 0.5;
+      const cx = c.x0 + c.dx * t;
+      const cz = c.z0 + c.dz * t;
+      // Skip anywhere a postern or a gate legitimately cuts the raster.
+      if (gates.some((gg) => Math.hypot(gg.x - cx, gg.z - cz) < 18)) continue;
+      if (!city.blocksMovement(cx + b.nx * 14, cz + b.nz * 14, cx - b.nx * 14, cz - b.nz * 14)) {
+        rasterOpen++;
+      }
+    }
+    ok('G5 the occupancy raster still reports the hollow wall solid, as it must',
+      rasterOpen === 0, `${rasterOpen} sections passable in blocksMovement`);
+
+    // Every gallery with an entrance must have a ramp that reaches it at 1 in 6 or shallower.
+    const entrances = casemates.filter((c) => c.entranceAt !== null);
+    out.facts.galleryEntrances = entrances.length;
+    const spanM = bays[bays.length - 1].x1 - bays[0].x0;
+    const doorSpacing = entrances.length ? spanM / entrances.length : Infinity;
+    out.facts.galleryDoorSpacing = doorSpacing;
+    ok('G6 the enterable gallery has doors, at the spec 118 m cadence',
+      Math.abs(doorSpacing - 118) <= 20,
+      `${entrances.length} access blocks over ${spanM.toFixed(0)} m — one per ` +
+        `${doorSpacing.toFixed(0)} m against the spec's 118`);
+
+    // Towers, measured off the stone: the spec's 22.5 m, from the tallest triangle within a
+    // tower's own footprint.
+    let towerTop = -Infinity;
+    let towerGround = 0;
+    const towerBay = bays.find((b) => b.hasTower && !b.isGate);
+    if (towerBay) {
+      towerGround = terrain.heightAt(towerBay.x0, towerBay.z0);
+      for (let t = 0; t < tris.length; t += 9) {
+        for (let k = 0; k < 3; k++) {
+          const px = tris[t + k * 3];
+          const pz = tris[t + k * 3 + 2];
+          if (Math.hypot(px - towerBay.x0, pz - towerBay.z0) > towerBay.towerHalf) continue;
+          if (tris[t + k * 3 + 1] > towerTop) towerTop = tris[t + k * 3 + 1];
+        }
+      }
+    }
+    out.facts.towerHeight = towerTop - towerGround;
+    ok('G7 a tower stands to the spec 22.5 m, measured off its own triangles',
+      Math.abs(towerTop - towerGround - 22.5) <= 1.2,
+      `${(towerTop - towerGround).toFixed(2)} m over its own ground vs 22.5 ±1.2`);
+
     // --- draw calls ------------------------------------------------------
     const info = ctx.renderer.info;
     out.facts.drawCalls = info.render.calls;
@@ -693,25 +922,82 @@ if (result.fatal) {
   process.exit(2);
 }
 
-// Draw calls have to be read after a frame that actually points at the wall.
-const camera = await page.evaluate(async () => {
-  const g = window.__game;
-  const city = g.engine.context.tryGet('city');
-  const bays = city.getGarrisonBays();
-  const gate = city.getGates()[0];
-  // The wall camera: 90 m off the inner face, the framing Rome's 209-call figure was read at.
-  g.setCamera(gate.x, gate.z + 90, 0.55, 0);
-  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-  const info = g.engine.context.renderer.info;
-  return { calls: info.render.calls, triangles: info.render.triangles, bays: bays.length };
-});
-result.facts.wallCameraDrawCalls = camera.calls;
-result.facts.wallCameraTriangles = camera.triangles;
+/**
+ * Draw calls, **interleaved**, both arms reported.
+ *
+ * Cross-session before/after is not a measurement on this project: two runs at identical
+ * configuration differ on 50-70% of pixels because the VFX reseed. Draw calls are steadier
+ * than pixels, but the framing is not — a figure shot at "the wall camera" means nothing
+ * unless the other arm was shot from the same eye. So Rome and Carthage are loaded into the
+ * same browser, parked at the same camera relative to each city's own gate, and read back to
+ * back; and Carthage is re-shot last as a drift check, because that is the only thing that
+ * distinguishes "my wall is cheaper" from "my arms did not restore".
+ */
+async function armAt(fort) {
+  await page.goto(`${base}/?harness=1&fort=${fort}&quality=${QUALITY}&w=1280&h=720`, {
+    waitUntil: 'domcontentloaded',
+  });
+  await page.waitForFunction('window.__game && window.__game.ready === true', { timeout: 180000 });
+  return page.evaluate(async () => {
+    const g = window.__game;
+    const ctx = g.engine.context;
+    const city = ctx.tryGet('city');
+    const gate = city.getGates()[0];
+    const bays = city.getGarrisonBays();
+    // 90 m off the inner face on the gate axis — the framing Rome's 209-call figure is read
+    // at — then the same eye from the field, which is where an assault actually looks.
+    const shot = async (x, z, zoom) => {
+      g.setCamera(x, z, zoom, 0);
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      const i = ctx.renderer.info;
+      return { calls: i.render.calls, tris: i.render.triangles };
+    };
+    const inner = await shot(gate.x, gate.z + 90, 0.55);
+    const field = await shot(gate.x, gate.z - 150, 0.42, 0);
+    // What the fortification itself costs: the wall chunks' own visible meshes.
+    let wallMeshes = 0;
+    const root = ctx.scene.getObjectByName('city');
+    if (root) {
+      root.traverse((o) => {
+        if (!o.isMesh || !/^wall-\d+/.test(o.name)) return;
+        let p = o;
+        while (p) { if (p.visible === false) return; p = p.parent; }
+        wallMeshes++;
+      });
+    }
+    return { inner, field, wallMeshes, bays: bays.length };
+  });
+}
+
+const armCarthage = await armAt('carthage');
+const armRome = await armAt('aurelian');
+const armCarthageAgain = await armAt('carthage');
+
+result.facts.arm_carthage_innerCalls = armCarthage.inner.calls;
+result.facts.arm_rome_innerCalls = armRome.inner.calls;
+result.facts.arm_carthage_fieldCalls = armCarthage.field.calls;
+result.facts.arm_rome_fieldCalls = armRome.field.calls;
+result.facts.arm_carthage_wallMeshes = armCarthage.wallMeshes;
+result.facts.arm_rome_wallMeshes = armRome.wallMeshes;
+result.facts.arm_drift = Math.abs(armCarthageAgain.inner.calls - armCarthage.inner.calls);
 
 result.checks.push({
   name: 'F1 the wall camera stays inside the 220 draw-call cap',
-  pass: camera.calls <= 220,
-  detail: `${camera.calls} calls, ${(camera.triangles / 1e6).toFixed(2)} M triangles reported`,
+  pass: armCarthage.inner.calls <= 220 && armCarthage.field.calls <= 220,
+  detail: `Carthage ${armCarthage.inner.calls} inner / ${armCarthage.field.calls} field, ` +
+    `Rome ${armRome.inner.calls} / ${armRome.field.calls}, same session, same eye`,
+});
+result.checks.push({
+  name: 'F3 the whole triple wall costs fewer meshes than Rome\'s single curtain',
+  pass: armCarthage.wallMeshes <= armRome.wallMeshes,
+  detail: `Carthage ${armCarthage.wallMeshes} visible wall meshes against Rome's ` +
+    `${armRome.wallMeshes}; three lines, casemates, 30 towers and three gatehouses all bake ` +
+    'into the same streams',
+});
+result.checks.push({
+  name: 'F4 the re-shot base arm did not drift',
+  pass: result.facts.arm_drift === 0,
+  detail: `${result.facts.arm_drift} calls between the first and last Carthage arm`,
 });
 result.checks.push({
   name: 'F2 the page booted with no pageerror',
