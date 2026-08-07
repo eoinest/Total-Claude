@@ -1047,28 +1047,38 @@ if (!ONLY || ONLY === 'det') {
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
     await settle(page, 300);
     const sel = (await page.evaluate(() => window.__selection()))[0] ?? -1;
-    const pts = await page.evaluate((id) => {
+    /*
+     * A right-*click*, not a right-drag.
+     *
+     * A drag's frontage is the length of the line the pointer actually travelled, and the
+     * number of `pointermove` events a browser delivers over a 260 px path is not a constant
+     * — a busy machine coalesces them. Measured: two runs of this arm placed the same unit at
+     * widths one apart, which is a different formation, which is a different t+0 hash, and
+     * the arm then reported determinism broken when what had differed was the input. The
+     * click branch of `buildGhosts` keeps the unit's own frontage and aims at one point, so
+     * the gesture is reproducible. The drag is covered by the field arm, where the frontage
+     * is the thing being measured rather than a nuisance parameter.
+     */
+    const pt = await page.evaluate((id) => {
       const g = window.__game;
       const u = g.battle.unitById(id);
       const d = g.deployment;
       const zA = d.frontIsLowZ() ? u.z - 40 : u.z + 40;
-      return [{ x: u.x - 30, z: zA, lift: 0.4 }, { x: u.x + 30, z: zA, lift: 0.4 }];
+      return { x: u.x, z: zA, lift: 0.4 };
     }, sel);
-    const f2 = await frameAndProject(page, pts);
+    const f2 = await frameAndProject(page, [pt]);
     if (f2.px) {
       await page.mouse.move(f2.px[0].x, f2.px[0].y);
-      await settle(page, 150);
+      await settle(page, 220);
       await page.mouse.down({ button: 'right' });
-      for (let i = 1; i <= 8; i++) {
-        await page.mouse.move(
-          f2.px[0].x + (f2.px[1].x - f2.px[0].x) * i / 8,
-          f2.px[0].y + (f2.px[1].y - f2.px[0].y) * i / 8);
-        await page.waitForTimeout(30);
-      }
-      await settle(page, 200);
+      await settle(page, 220);
       await page.mouse.up({ button: 'right' });
       await settle(page, 350);
     }
+    const placed = await page.evaluate((id) => {
+      const u = window.__unit(id);
+      return u ? { x: u.x, z: u.z, facing: u.facing, width: u.width, f: u.formationId } : null;
+    }, sel);
     /*
      * Stop the rAF loop *before* pressing BEGIN, then advance by hand.
      *
@@ -1091,14 +1101,20 @@ if (!ONLY || ONLY === 'det') {
         ...(await page.evaluate(() => window.__poolHash())),
       });
     }
-    marks.push({ label, framed: !!f2.px, at, errs: page.__errs.slice(0, 2) });
+    marks.push({ label, framed: !!f2.px, placed, at, errs: page.__errs.slice(0, 2) });
     console.log(`  run ${label}: ${at.map((m) => `t+${m.t} sim ${m.sim} ${m.hash} (${m.alive}/${m.count})`).join('  ')}`);
     await page.close();
   }
   const [A, B] = marks;
+  // Reported separately, because "the harness did not reproduce the input" and "the sim did
+  // not reproduce the outcome" are different findings and only the second is a bug here.
+  const sameInput = JSON.stringify(A.placed) === JSON.stringify(B.placed);
+  record('deployment-reproduced', sameInput && A.framed && B.framed,
+    'both runs put the unit in the same place with the same frontage',
+    `A ${JSON.stringify(A.placed)}  B ${JSON.stringify(B.placed)}`);
   const same = A.at.every((m, i) =>
     m.hash === B.at[i].hash && m.count === B.at[i].count && m.sim === B.at[i].sim);
-  record('deployed-battle-replays', same && A.framed && B.framed,
+  record('deployed-battle-replays', same && sameInput && A.framed && B.framed,
     'two independent loads driven through the identical hand deployment, then advanced 60 s',
     A.at.map((m, i) => `t+${m.t} A ${m.hash} B ${B.at[i].hash} `
       + `${m.hash === B.at[i].hash ? 'IDENTICAL' : 'DIVERGED'}`).join('; '),
