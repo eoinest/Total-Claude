@@ -1,3 +1,4 @@
+import { ROME_PLAN } from '../city/rome/plan';
 import { CAMPUS_SHADING } from '../terrain/TerrainMaterial';
 import { GROUND_LAYERS } from '../terrain/groundTextures';
 import { buildTerrain } from '../terrain/heightfield';
@@ -181,5 +182,5 @@ export const CAMPUS_MARTIUS: MapDefinition = {
     grass: { heightScale: 1, densityScale: 1, dryness: 0 },
     scatter: CAMPUS_SCATTER,
   },
-  hidesCity: false,
+  city: ROME_PLAN,
 };

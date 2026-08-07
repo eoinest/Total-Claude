@@ -1,5 +1,8 @@
-import { HALF_EXTENT } from '../terrain/TerrainSystem';
-import { crestZAt, RIVER_HALF_WIDTH, riverCentreX } from '../terrain/topography';
+// `terrain/topography`, not `terrain/TerrainSystem`, which merely re-exports the same
+// constant. `TerrainSystem` imports `activeMap`, so taking it from there closes an ESM cycle
+// the moment a map declares its city: maps/index -> campusMartius -> city/rome/plan ->
+// city/layout -> terrain/TerrainSystem -> maps/index. `topography` imports nothing at all.
+import { crestZAt, HALF_EXTENT, RIVER_HALF_WIDTH, riverCentreX } from '../terrain/topography';
 import { clamp, lerp } from '../util/math';
 import { hash2 } from '../util/rand';
 import {

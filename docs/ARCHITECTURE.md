@@ -104,6 +104,87 @@ Also expose, for anyone who needs IBL or fog matching:
 environmentTexture: THREE.Texture | null   // the PMREM-processed HDRI
 ```
 
+### CitySystem (`name: 'city'`) — and there is exactly one of it
+
+**A map owns a city, or owns none.** `MapDefinition.city` is a `CityPlan | null`, and
+`main.ts` registers `CitySystem` only when the map hands it one:
+
+```ts
+const plan = getMap(config.map).city;
+if (plan) engine.add(new CitySystem(plan));
+```
+
+This replaces the old `hidesCity: boolean`. That flag's failure mode was invisible and it
+was paid for once already: Rome's wall was built onto the plain of Pydna and merely made
+invisible, so **it blocked movement across a map where it was nowhere on screen**. A flag
+you must remember to set repeats that on the next map; the absence of data cannot.
+
+**There is one `CitySystem` and it builds whichever city its plan describes.** Do not add a
+sibling subsystem for a second city. The accessors the siege system reads —
+`getWallStairs()`, `getGateDoor()`, `getWallSegments()`, `getGarrisonBays()`,
+`getObstacles()`, `blocksMovement()`, `setGateOpen()`, `bayAt()`, `masonryTopAt()` — contain
+no city-specific knowledge; they are derived from a `WallBuildOutput` and two lists of
+footprints. A second implementation would fork the occupancy raster, the obstacle boxes and
+the stair solids, all three of which have already shipped a bug and been fixed separately.
+
+The contract is `src/city/cityPlan.ts`, and it is the **only** module a new city imports
+from. It re-exports the wall types as `export type`, so a city's own `wall.ts` gets the
+whole interface without pulling Rome's 135 KB of Aurelian geometry into the module graph.
+
+```ts
+interface CityPlan {
+  id, name, siegeGateId
+  garrison: Faction       // whose city it is; the storming side is derived, not named
+  battlefieldZ            // no city geometry below this z, at ANY detail level
+  towerWidth, towerChamberHeight
+  merlonLength, crenelLength   // must match the wall's own crenellation() exactly
+  gateOpenWidth
+  build(heightAt): CityBuild   // { wall, chunks, footprints, lanes, landmarks, checks }
+}
+```
+
+`scenario.ts` reads `name`, `siegeGateId` and `garrison` through a narrow structural view, so
+`src/sim/` still does not import `src/city/`. `deployBattle` (was `deploySiegeOfRome`) puts
+`garrison` on the parapet and whichever belligerent is not `garrison` in the field.
+
+Three constraints on any city, all load-bearing in files the city workstream does not own:
+
+- **The wall runs broadly along x and the city is at +Z.** `bayAt` indexes bays
+  arithmetically in x because it runs once per projectile per tick; `scenario.ts` deploys at
+  z −190 and z +130; `Siege.ts` reads `GarrisonBay.nx/nz` as the outward normal.
+  `CitySystem` asserts a uniform bay pitch at build time.
+- **Nothing at z < `battlefieldZ`**, checked per vertex per LOD by `assertNoStrayGeometry`.
+- **220 draw calls whole-frame, and it is already exceeded.** Measured at `fbcfe65 + this
+  work`: the Rome *assault* camera renders **268** at high and ultra, 227 at medium, 184 at
+  low. The city's own upper bound is 89 of that (wall 37, monuments 21, fabric 20, printed by
+  `CitySystem` at every boot as `[city:<id>] N draws … by family`). So the overage is mostly
+  not the city — but a second city has the same ceiling as the first, not a share of it, and
+  **any commit that adds city geometry must quote the ledger line.**
+
+Directory layout: `src/city/*.ts` is shared machinery; `src/city/<cityname>/` is one city's
+own geometry. Ownership is per-city-directory, so two cities can be built in parallel.
+
+### Water is terrain, and a basin is a hole
+
+There is no general water surface. `RiverWater` is a ribbon built along the Tiber's
+centreline and it is the only one. On Carthage the Gulf of Tunis, the Lake of Tunis and the
+harbour basins are **terrain below the map's `waterLevel`, painted by the splat rules** —
+free, no draw call, no reflection pass, and legible at the distances a battle camera uses.
+
+**Nothing in the simulation knows what water is.** A man walks into the sea unless something
+stops him, and only two things can:
+
+1. **A slope the pathfinder refuses.** `SLOPE_IMPASSABLE = 0.62` measured over its 7 m cell,
+   so a 9 m fall in 14 m. Carthage's open coast plunges 9.5 m in 12 for exactly this reason
+   and for no bathymetric one.
+2. **An obstacle box from the city plan.** This is the only option for a harbour basin, whose
+   quays are level with the town and whose water is two metres down: there is no scarp to
+   build. **Whoever builds the quays must publish the basins through `getObstacles()` with
+   `topY` at quay level, or units will march across the naval harbour.**
+
+If a real animated water surface is ever wanted, it is a `src/terrain/` change generalising
+`RiverWater` off the Tiber's centreline — not a per-map workaround.
+
 ### BattleSystem (`name: 'battle'`)
 The single source of truth for army state. Read freely; write only via its methods.
 ```ts

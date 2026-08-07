@@ -26,7 +26,7 @@ import { HudSystem } from './ui/HudSystem';
 import { PostFXSystem } from './render/PostFX';
 
 import { getMap } from './maps';
-import { deploySiegeOfRome } from './sim/scenario';
+import { deployBattle } from './sim/scenario';
 import { type Difficulty, type ScenarioId, sanitiseConfig } from './sim/battleConfig';
 import { MainMenu, resolveConfig } from './ui/MainMenu';
 import { ALL_FACTIONS, Faction } from './sim/types';
@@ -124,18 +124,23 @@ engine.add(new LightingSystem());
 // Terrain installs `rig.heightAt`, which the city and the sim both sample during init.
 engine.add(new TerrainSystem());
 /*
- * Only build Rome where Rome is.
+ * Build the city this map carries, and nothing if it carries none.
  *
- * This was unconditional, and on any map that hides the city it was not merely wasted work —
- * it was a live gameplay bug. `CitySystem` planned the Aurelian circuit against the Tiber,
- * built it onto whatever heightfield was loaded, and was then simply made invisible. The
- * geometry stayed in the world: `Pathfinding` stamps `city.getWallSegments()` with no map
- * guard, so **Rome's wall blocked movement across the plain of Pydna** while being nowhere
- * on screen. Skipping registration closes it at the source rather than adding a second guard
- * downstream — `Pathfinding` already tests `if (!city?.getWallSegments) return`, so an absent
- * city is a case it handles cleanly.
+ * This was unconditional, and on any map without a city it was not merely wasted work — it
+ * was a live gameplay bug. `CitySystem` planned the Aurelian circuit against the Tiber, built
+ * it onto whatever heightfield was loaded, and was then simply made invisible. The geometry
+ * stayed in the world: `Pathfinding` stamps `city.getWallSegments()` with no map guard, so
+ * **Rome's wall blocked movement across the plain of Pydna** while being nowhere on screen.
+ * Skipping registration closes it at the source rather than adding a second guard downstream
+ * — `Pathfinding` already tests `if (!city?.getWallSegments) return`, so an absent city is a
+ * case it handles cleanly.
+ *
+ * The guard was `!getMap(config.map).hidesCity`, and a flag is something the next map can
+ * forget. It is now the plan itself: a map hands over a `CityPlan` or it hands over nothing,
+ * and this line builds exactly what it was handed. See `src/city/cityPlan.ts`.
  */
-if (!getMap(config.map).hidesCity) engine.add(new CitySystem());
+const cityPlan = getMap(config.map).city;
+if (cityPlan) engine.add(new CitySystem(cityPlan));
 
 const battle = engine.add(new BattleSystem());
 // Seed the battle's root stream here, before `initAll`, and not in the scenario.
@@ -219,7 +224,7 @@ async function boot(): Promise<void> {
 
   // The scenario is passed explicitly rather than left to `scenario.ts` to read out of
   // `location.search`, which is what it did while that file could not be edited from here.
-  const result = deploySiegeOfRome(battle, engine.context, config, config.scenario);
+  const result = deployBattle(battle, engine.context, config, config.scenario);
   const f = result.cameraFocus;
   engine.rig.jumpTo(f.x, f.z, f.zoom, f.yaw);
 

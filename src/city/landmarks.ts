@@ -25,8 +25,9 @@ import {
   type ColumnOrder,
   type GeoStream,
 } from './build';
-import { HALF_EXTENT } from '../terrain/TerrainSystem';
-import { crestZAt, roadCentreX } from '../terrain/topography';
+// See the note in `layout.ts`: `TerrainSystem` imports `activeMap`, so taking HALF_EXTENT
+// from there would close an ESM cycle once a map declares its city.
+import { crestZAt, HALF_EXTENT, roadCentreX } from '../terrain/topography';
 import type { CityMatKey } from './materials';
 import { AQUEDUCTS, GATE_X, LANDMARKS, type LandmarkPlacement } from './layout';
 import { PAL } from './palette';

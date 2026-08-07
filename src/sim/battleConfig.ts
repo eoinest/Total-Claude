@@ -47,9 +47,9 @@ export interface ScenarioDef {
   subtitle: string;
   blurb: string;
   /**
-   * True when the battle needs Rome's wall on the map.
+   * True when the battle needs a walled city on the map.
    *
-   * `main.ts` only registers `CitySystem` when the map does not hide the city, so on Pydna
+   * `main.ts` only registers `CitySystem` when the map carries a `CityPlan`, so on Pydna
    * there is no curtain, no gate and no parapet — an assault there would deploy a garrison
    * onto nothing. `sanitiseConfig` enforces the pairing rather than leaving it to the menu,
    * so a hand-made `?battle=` token cannot ask for the impossible one either.
@@ -61,24 +61,45 @@ export const SCENARIOS: readonly ScenarioDef[] = [
   {
     id: 'field',
     label: 'Field Battle',
-    subtitle: 'The Campus Martius',
-    blurb: 'Two armies in the open north of the city. Aurelian’s field army stands between '
-      + 'the Juthungi host and the unfinished wall behind it.',
+    subtitle: 'In the open',
+    blurb: 'Two armies drawn up on open ground, with whatever the map puts behind them.',
     needsCity: false,
   },
   {
     id: 'assault',
     label: 'Assault',
-    subtitle: 'Storming the Aurelian Wall',
+    subtitle: 'Storming the wall',
     blurb: 'The host comes at the curtain itself: siege towers against the finished bays, '
-      + 'ladders where the parapet has not been raised, a ram at the Porta Flaminia, and a '
-      + 'garrison of ballistarii shooting down into it.',
+      + 'ladders where the parapet is weakest, a ram at the gate, and a garrison shooting '
+      + 'down into it.',
     needsCity: true,
   },
 ];
 
 export const scenarioDef = (id: ScenarioId): ScenarioDef =>
   SCENARIOS.find((s) => s.id === id) ?? SCENARIOS[0];
+
+/**
+ * The scenario's label and blurb *for a given map*, which is what the menu should show.
+ *
+ * The two scenario rows read "The Campus Martius" and "Storming the Aurelian Wall", which was
+ * exact while there was one battlefield and one wall and is a lie on any other map: a player
+ * who picks Pydna and reads "The Campus Martius" under Field Battle has been told the wrong
+ * thing by the interface. The map already carries a subtitle and, if it has a city, that
+ * city's name, so the specifics come from there and the scenario keeps only what is true of
+ * every instance of it.
+ */
+export function scenarioFor(id: ScenarioId, mapId: MapId): ScenarioDef {
+  const def = scenarioDef(id);
+  const map = getMap(mapId);
+  if (id === 'assault') {
+    const city = map.city;
+    return city
+      ? { ...def, subtitle: `Storming ${city.name}`, blurb: `${def.blurb} The wall is ${city.name}’s.` }
+      : def;
+  }
+  return { ...def, subtitle: map.label };
+}
 
 // ---------------------------------------------------------------------------
 // Unit size
@@ -597,7 +618,7 @@ export function sanitiseConfig(raw: unknown): BattleConfig {
    */
   const askedScenario: ScenarioId = o.scenario === 'assault' ? 'assault' : 'field';
   const scenario: ScenarioId =
-    askedScenario === 'assault' && getMap(map).hidesCity ? 'field' : askedScenario;
+    askedScenario === 'assault' && !getMap(map).city ? 'field' : askedScenario;
   const sizes = UNIT_SIZES.map((p) => p.id) as string[];
   const tiers: QualityTier[] = ['low', 'medium', 'high', 'ultra'];
   const diffs: Difficulty[] = ['easy', 'normal', 'hard', 'legendary'];
