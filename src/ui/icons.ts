@@ -213,7 +213,30 @@ const HORNED_STANDARD =
   `<circle cx="10.2" cy="6.8" r=".95" fill="#0d1520"/><circle cx="13.8" cy="6.8" r=".95" fill="#0d1520"/>` +
   `<path d="M12.9 15.4c2.6-1.5 4.5.6 6.7-.7l-1.5 4.8c-2.2 1.3-4.1-.9-5.2.2zM11.1 15.4c-2.6-1.5-4.5.6-6.7-.7l1.5 4.8c2.2 1.3 4.1-.9 5.2.2z" opacity=".9"/>`;
 
-export const standardGlyph = (f: Faction): string => (f === Faction.Rome ? AQUILA : HORNED_STANDARD);
+/**
+ * The sign of Tanit on a standard pole — Carthage's.
+ *
+ * Without it `standardGlyph` fell through to the Juthungi horned skull for every faction that
+ * is not Rome, so the title card over the siege *of* Carthage flew a Germanic beast standard,
+ * and so did every Punic row in the roll of honour. The device is the same
+ * trapezoid-bar-and-disc that `atlas.ts` paints on Punic shields (`punic-tanit`), which is
+ * deliberate: the glyph in the interface and the emblem on the board in front of the player
+ * are one sign. The crescent and disc above it is the other standing type on the stelae.
+ */
+const TANIT_STANDARD =
+  `<path d="M11.1 9.8h1.8v12.8a.9.9 0 0 1-1.8 0z"/>` +
+  // Crescent cradling a disc: the finial above the device.
+  `<path d="M7.9 3.4a4.3 4.3 0 0 0 8.2 0 5.4 5.4 0 0 1-8.2 0z"/>` +
+  `<circle cx="12" cy="1.9" r="1.3"/>` +
+  // The sign itself — a disc for the head, a bar for the arms, a triangular body.
+  `<circle cx="12" cy="7.2" r="1.45"/>` +
+  `<path d="M5.8 9.5h12.4V11H5.8z"/>` +
+  `<path d="M12 11.5 8.4 19h7.2z"/>` +
+  // Cloth below, so the silhouette reads as a carried standard rather than as a symbol.
+  `<path d="M9 19.9h6l-1 2.5h-4z" opacity=".85"/>`;
+
+export const standardGlyph = (f: Faction): string =>
+  (f === Faction.Rome ? AQUILA : f === Faction.Carthage ? TANIT_STANDARD : HORNED_STANDARD);
 
 // ---------------------------------------------------------------------------
 // Formation glyphs, generated from the real formation functions

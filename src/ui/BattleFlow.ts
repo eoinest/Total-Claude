@@ -7,24 +7,93 @@
  */
 
 import type { EngineContext } from '../core/Engine';
-import { Faction } from '../sim/types';
+import { Faction, getOpposingFaction } from '../sim/types';
 import { el, fmtClock, fmtCount, html, icon, setClass } from './dom';
 import { activeMap } from '../maps';
+import type { MapId } from '../maps';
 import { ICON, standardGlyph } from './icons';
 import type { HudModel } from './model';
 import { FACTION_UI, HARNESS, PLAYER_FACTION } from './theme';
 
-const FLAVOUR_VICTORY = [
-  'The Juthungi host is broken. What is left of it runs north up the Via Flaminia, and Rome keeps her walls unfinished a little longer.',
-  'The line held. Aurelian will hear that the city stood without him, and the masons will go back to the wall in the morning.',
-];
-const FLAVOUR_DEFEAT = [
-  'The eagles are down on the Campus Martius. Behind the broken line there is nothing between the Juthungi and the Tiber bridges.',
-  'The field belongs to the tribes. Rome will remember this day every time she looks at the height of her new walls.',
-];
-const FLAVOUR_DRAW = [
-  'Both hosts have bled themselves white. The dead lie in windrows where the lines met, and nobody holds the ground.',
-];
+/**
+ * The closing dispatch, per battlefield.
+ *
+ * All three lists were one set of hard-coded Roman sentences naming the Juthungi, the Via
+ * Flaminia and the Tiber bridges, so **Carthage ended every battle with Rome's story** —
+ * "the eagles are down on the Campus Martius" printed over a burning Byrsa. It is the same
+ * defect the title card had and it takes the same fix: the copy follows the map.
+ *
+ * Keyed by map rather than lifted onto `MapDefinition` because these are three or four
+ * sentences of *battle* prose, and `src/maps/` describes ground, light and vegetation. The
+ * card's `label`/`subtitle`/`blurb` genuinely belong to the map and are read from it; a
+ * dispatch belongs beside the other dispatch.
+ *
+ * Per map **and** per victor, which is what "whichever reads better" comes out as here: at
+ * Rome the player defends and at Carthage the player storms, so victory and defeat are not
+ * the same event with the names swapped. Two victory and two defeat lines each, picked by
+ * the clock exactly as before.
+ *
+ * `victory`/`defeat` are always written from the player's side (`PLAYER_FACTION`, Rome).
+ */
+interface Dispatch {
+  victory: readonly string[];
+  defeat: readonly string[];
+  draw: readonly string[];
+}
+
+const DISPATCH: Record<MapId, Dispatch> = {
+  'campus-martius': {
+    victory: [
+      'The Juthungi host is broken. What is left of it runs north up the Via Flaminia, and Rome keeps her walls unfinished a little longer.',
+      'The line held. Aurelian will hear that the city stood without him, and the masons will go back to the wall in the morning.',
+    ],
+    defeat: [
+      'The eagles are down on the Campus Martius. Behind the broken line there is nothing between the Juthungi and the Tiber bridges.',
+      'The field belongs to the tribes. Rome will remember this day every time she looks at the height of her new walls.',
+    ],
+    draw: [
+      'Both hosts have bled themselves white. The dead lie in windrows where the lines met, and nobody holds the ground.',
+    ],
+  },
+  /**
+   * Spring 146, the fourth year of the war, and Rome is the attacker here — the one map on
+   * which the player is storming rather than holding. Scipio Aemilianus took the harbour
+   * quay, then the forum, then six days and nights up the three streets to the Byrsa; on the
+   * seventh Hasdrubal's wife took the children into the temple of Eshmun and fired it.
+   * `docs/CARTHAGE.md` §5.2, from Appian.
+   */
+  carthage: {
+    victory: [
+      'The Byrsa is taken. The three streets are choked from the forum to the citadel gate, and the Senate&rsquo;s instruction was that nothing should be left standing.',
+      'Carthage is Rome&rsquo;s. The temple on the summit is burning with the last of them inside it, and the ploughs are ordered up for the spring.',
+    ],
+    defeat: [
+      'The storm is thrown back off the wall. The triple line holds as it held Manilius, and the legions will winter on the isthmus again.',
+      'The ditch is full of Roman dead and the ladders are burning where they fell. Whatever is written to the Senate, this is where the assault stopped.',
+    ],
+    draw: [
+      'Both hosts are spent. The killing ground between the middle wall and the main one is full of men from both armies, and neither can be pushed out of it.',
+    ],
+  },
+  /**
+   * 168 BC, and the map carries no city — so this is always the field battle, Rome against
+   * the phalanx on the Pierian plain. Plutarch has the line broken within the hour and the
+   * pursuit run until dark.
+   */
+  pydna: {
+    victory: [
+      'The phalanx is broken. Once the sarissas came apart on the swells there was nothing in front of the legion but men who could not turn, and the pursuit will run until dark.',
+      'The field under Olocrus is Rome&rsquo;s. Macedon put her whole levy into one line, and one line is what she has lost.',
+    ],
+    defeat: [
+      'The legion could not get inside the points. The line is back across the stream bed and the pikes are still coming on in step.',
+      'The maniples are shattered on the Pierian plain. Whatever Rome does next, she will not do it with this army.',
+    ],
+    draw: [
+      'Both armies have come apart on the broken ground and neither will close again. The dead lie along the swells that did it.',
+    ],
+  },
+};
 
 /**
  * The screenshot harness is a measurement rig, not a player: a cinematic title card and
@@ -59,14 +128,21 @@ export class BattleFlow {
      * main/sub split the card wants, so it is split on the separator rather than duplicating
      * the same words in a second field. A map whose subtitle carries no separator falls back
      * to using the whole string as the heading.
+     *
+     * The standard over the rule was `standardGlyph(Faction.Rome)` — an aquila on the card
+     * for the siege *of* Carthage. It is the map's own defender now, which is exactly what
+     * `CityPlan.garrison` says and the one place the card can learn it without naming a city:
+     * Rome holds the Aurelian Wall, Carthage holds the triple wall. A map with no city has no
+     * defender to read, so it keeps the player's own standard.
      */
     const map = activeMap();
     const cut = map.subtitle.indexOf('&middot;');
     const head = cut < 0 ? map.subtitle : map.subtitle.slice(0, cut).trim();
     const when = cut < 0 ? '' : `${map.subtitle.slice(cut + 8).trim()} &middot; `;
+    const defender = map.city?.garrison ?? PLAYER_FACTION;
     html(
       this.title,
-      `<div class="tc-rule"><span class="tc-eagle">${icon(standardGlyph(Faction.Rome), 'tc-eagle-ic')}</span></div>
+      `<div class="tc-rule"><span class="tc-eagle">${icon(standardGlyph(defender), 'tc-eagle-ic')}</span></div>
        <div class="tc-main">${head}</div>
        <div class="tc-sub">${when}${map.label}</div>
        <div class="tc-lede">${map.blurb}</div>
@@ -171,11 +247,20 @@ export class BattleFlow {
 
     const player = victor === PLAYER_FACTION;
     const verdict = victor < 0 ? 'Stalemate' : player ? 'Victory' : 'Defeat';
-    const flavour = victor < 0
-      ? FLAVOUR_DRAW[0]
-      : player
-        ? FLAVOUR_VICTORY[Math.floor(ctx.time.simTime) % FLAVOUR_VICTORY.length]
-        : FLAVOUR_DEFEAT[Math.floor(ctx.time.simTime) % FLAVOUR_DEFEAT.length];
+    const dispatch = DISPATCH[activeMap().id];
+    const lines = victor < 0 ? dispatch.draw : player ? dispatch.victory : dispatch.defeat;
+    const flavour = lines[Math.floor(ctx.time.simTime) % lines.length];
+
+    /**
+     * The two columns are the two armies that were actually on the field.
+     *
+     * The right-hand one was `Faction.Germanic` unconditionally, so a battle fought against
+     * Carthage reported a Juthungi army of nobody next to a Roman one. The deployment
+     * publishes who Rome is fighting through `setOpposingFaction`, and that is the same value
+     * `enemyOf` gives the AI and the combat code, so reading it here adds no second source of
+     * truth to drift from.
+     */
+    const foe = getOpposingFaction();
 
     const reasonText: Record<string, string> = {
       annihilation: 'By annihilation — no formed body of the enemy remains',
@@ -238,7 +323,7 @@ export class BattleFlow {
          <div class="rs-verdict ${verdict.toLowerCase()}">${verdict}</div>
          <div class="rs-reason">${reasonText[reason] ?? reason}</div>
          <div class="rs-clock">${fmtClock(tally?.at ?? ctx.time.simTime)} on the field</div>
-         <div class="rs-cols">${column(Faction.Rome)}<div class="rs-vs">${icon(ICON.swords, 'rs-vs-ic')}</div>${column(Faction.Germanic)}</div>
+         <div class="rs-cols">${column(Faction.Rome)}<div class="rs-vs">${icon(ICON.swords, 'rs-vs-ic')}</div>${column(foe)}</div>
          <div class="rs-honours">
            <div class="sec-head">Roll of honour</div>
            <table><tbody>${honours}</tbody></table>

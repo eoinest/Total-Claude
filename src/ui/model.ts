@@ -10,12 +10,19 @@
 import { ranksFor } from '../sim/formations';
 import type { BattleSystem } from '../sim/BattleSystem';
 import {
-  Faction, SoldierState, UnitOrder,
+  ALL_FACTIONS, Faction, SoldierState, UnitOrder,
   type UnitGroupState, type UnitTypeDef,
 } from '../sim/types';
 import { moraleStateOf, PLAYER_FACTION, type MoraleState, type Phase } from './theme';
 
 const ROMAN_NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+
+/** A per-faction counter table with every faction present at zero. See `HudModel.strength`. */
+const zeroPerFaction = (): Record<number, number> => {
+  const out: Record<number, number> = {};
+  for (const f of ALL_FACTIONS) out[f] = 0;
+  return out;
+};
 
 export interface UnitView {
   id: number;
@@ -71,11 +78,23 @@ export class HudModel {
   selection: number[] = [];
   hoveredId = -1;
 
-  strength: Record<number, number> = { 0: 0, 1: 0 };
-  initialStrength: Record<number, number> = { 0: 0, 1: 0 };
-  routing: Record<number, number> = { 0: 0, 1: 0 };
-  unitsLeft: Record<number, number> = { 0: 0, 1: 0 };
-  kills: Record<number, number> = { 0: 0, 1: 0 };
+  /**
+   * Per-faction tallies, seeded for **every** faction rather than for the two Rome shipped
+   * with.
+   *
+   * `{ 0: 0, 1: 0 }` left `Faction.Carthage` (2) undefined, and both halves of that were
+   * wrong at once: `refresh` cleared only Rome's and the Juthungi's counters each pass, so a
+   * Carthaginian tally accumulated for the whole battle, and its first `+= u.alive` was
+   * `undefined + n` — **NaN from the first frame**. The strength bar, the unit-count readout
+   * and the "Committed / Surviving / Fallen" columns of the end-of-battle dispatch all read
+   * these, so a Carthage battle reported NaN men on one side and a Juthungi army of nobody on
+   * the other. Built from `ALL_FACTIONS` so a fourth faction cannot repeat it.
+   */
+  strength: Record<number, number> = zeroPerFaction();
+  initialStrength: Record<number, number> = zeroPerFaction();
+  routing: Record<number, number> = zeroPerFaction();
+  unitsLeft: Record<number, number> = zeroPerFaction();
+  kills: Record<number, number> = zeroPerFaction();
   engagedCount = 0;
   /** Closest approach between the two armies, in metres. */
   lineGap = Infinity;
@@ -124,14 +143,12 @@ export class HudModel {
 
     if (this.views.length !== battle.units.length) this.rebuild(battle);
 
-    this.strength[Faction.Rome] = 0;
-    this.strength[Faction.Germanic] = 0;
-    this.routing[Faction.Rome] = 0;
-    this.routing[Faction.Germanic] = 0;
-    this.unitsLeft[Faction.Rome] = 0;
-    this.unitsLeft[Faction.Germanic] = 0;
-    this.kills[Faction.Rome] = 0;
-    this.kills[Faction.Germanic] = 0;
+    for (const f of ALL_FACTIONS) {
+      this.strength[f] = 0;
+      this.routing[f] = 0;
+      this.unitsLeft[f] = 0;
+      this.kills[f] = 0;
+    }
     this.engagedCount = 0;
 
     for (const v of this.views) {
@@ -236,8 +253,7 @@ export class HudModel {
     }
 
     if (!this.labelled && this.views.length > 0) {
-      this.initialStrength[Faction.Rome] = 0;
-      this.initialStrength[Faction.Germanic] = 0;
+      for (const f of ALL_FACTIONS) this.initialStrength[f] = 0;
       for (const v of this.views) this.initialStrength[v.faction] += v.initial;
       this.labelled = true;
     }
