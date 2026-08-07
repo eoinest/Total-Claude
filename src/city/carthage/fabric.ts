@@ -206,11 +206,47 @@ function quarterMask(q: Quarter, u: number, v: number): number {
   return s * s * (3 - 2 * s);
 }
 
-const frame = (q: Quarter): { x: (u: number, v: number) => number; z: (u: number, v: number) => number } => {
-  const cs = Math.cos(q.rot);
-  const sn = Math.sin(q.rot);
+const frame = (
+  q: Quarter,
+  bearing: number
+): { x: (u: number, v: number) => number; z: (u: number, v: number) => number } => {
+  const cs = Math.cos(bearing);
+  const sn = Math.sin(bearing);
   return { x: (u, v) => q.x + u * cs - v * sn, z: (u, v) => q.z + u * sn + v * cs };
 };
+
+/**
+ * **CANDIDATE — one city-wide lattice. Awaiting the owner's decision; not a landed call.**
+ *
+ * The owner asked for Carthage to be "built on a grid system", and measurement says the
+ * module was already right and the *registration* was not. Every quarter runs the same Punic
+ * cubit module — `INSULA_FACE + vicus` by `INSULA_DEPTH + local`, 34.90 × 22.45 m — and all
+ * fifteen `QUARTERS` already share one bearing to within ±0.03 rad. But `planQuarter` used to
+ * lay the first bay at `-q.hw + 0.5 * pitchU` **relative to the quarter's own centre**, and
+ * those centres sit at arbitrary metres: measured across one 34.90 m bay, twelve different
+ * phases spread right across the cell (1.9, 5.7, 10.4, 10.6, 11.6, 13.6, 14.1, 17.6, 18.0,
+ * 23.7, 24.1, 29.2 m), and the same scatter through the 22.45 m depth. So no local street ran
+ * out of one quarter and into the next, and the city read as a dozen grid patches rather than
+ * as one grid.
+ *
+ * Two things change here and nothing else:
+ *
+ * 1. **Phase.** A quarter's lower corner is rounded onto the world lattice before the first
+ *    bay is laid, so every bay boundary in the city is a multiple of the pitch measured from
+ *    the world origin. Two quarters on the same module now interlock and their local streets
+ *    are the same streets. The bay *count* is untouched.
+ * 2. **Bearing.** `CITY_BEARING` replaces `q.rot + q.grid`. A lattice cannot be continuous
+ *    across a 1.7° kink; the jitter was decoration and it cost the thing it decorated. This is
+ *    overridden here rather than edited into `layout.ts` so the candidate is one file and the
+ *    authored numbers survive untouched if it is rejected.
+ *
+ * The module, the pitches, the density rule, the fray mask, the keep-out and the placed-grid
+ * rejection are all byte-for-byte what they were. The Megara's three quarters carry their own
+ * `blockFace`/`blockDepth` (§7.7's 40-70 m field enclosures), so they get their own lattice on
+ * their own pitch, anchored the same way — they are orchards, not streets, and they were never
+ * meant to register with the insulae.
+ */
+const CITY_BEARING = 0;
 
 /**
  * Lay one quarter's grid on the cubit module.
@@ -236,8 +272,8 @@ function planQuarter(
   const lanes: Lane[] = [];
   let rejected = 0;
   let drowned = 0;
-  const F = frame(q);
-  const rot = q.rot + q.grid;
+  const F = frame(q, CITY_BEARING);
+  const rot = CITY_BEARING;
 
   const faceLen = q.blockFace ?? INSULA_FACE * q.bays;
   const depthLen = q.blockDepth ?? INSULA_DEPTH;
@@ -245,6 +281,22 @@ function planQuarter(
   const pitchV = depthLen + PUNIC_WAY_WIDTH.local;
   const nU = Math.max(1, Math.floor((q.hw * 2) / pitchU));
   const nV = Math.max(1, Math.floor((q.hd * 2) / pitchV));
+  /**
+   * The snap. The quarter's lower corner is rounded onto the world lattice and the bays are
+   * walked from there, so bay boundaries land on multiples of the pitch measured from the
+   * world origin and two quarters on the same module share their lines.
+   *
+   * The **bay count is deliberately untouched** — still `floor(2·hw / pitch)`. An earlier cut
+   * of this took the run of lattice cells covering the quarter's rectangle instead, which
+   * quietly grew every quarter by up to half a cell on each side: it gained 29 blocks and
+   * then failed the stair-apron check, and a candidate that changes coverage cannot be used
+   * to grade a change of phase. Same count, same candidate cells consumed from `rng`, same
+   * everything — only where the first line falls.
+   */
+  const cellU = (i: number): number =>
+    Math.round((q.x - q.hw) / pitchU) * pitchU + (i + 0.5) * pitchU - q.x;
+  const cellV = (j: number): number =>
+    Math.round((q.z - q.hd) / pitchV) * pitchV + (j + 0.5) * pitchV - q.z;
 
   /** Extent of placed blocks along each grid line, so a lane can be cut to its fabric. */
   const rowSpan = new Map<number, [number, number]>();
@@ -257,8 +309,8 @@ function planQuarter(
 
   for (let j = 0; j < nV; j++) {
     for (let i = 0; i < nU; i++) {
-      const u = -q.hw + (i + 0.5) * pitchU;
-      const v = -q.hd + (j + 0.5) * pitchV;
+      const u = cellU(i);
+      const v = cellV(j);
       const mask = quarterMask(q, u, v);
       if (mask < 0.05) continue;
       // Density thins the *fringe*, not the heart. `mask` is 1 across the quarter's plateau
@@ -296,7 +348,7 @@ function planQuarter(
     if (!a && !b) continue;
     const lo = Math.min(a ? a[0] : Infinity, b ? b[0] : Infinity) - 4;
     const hi = Math.max(a ? a[1] : -Infinity, b ? b[1] : -Infinity) + 4;
-    const v = -q.hd + j * pitchV - PUNIC_WAY_WIDTH.local * 0.5;
+    const v = cellV(j) - pitchV * 0.5 - PUNIC_WAY_WIDTH.local * 0.5;
     lanes.push({
       path: [{ x: F.x(lo, v), z: F.z(lo, v) }, { x: F.x(hi, v), z: F.z(hi, v) }],
       cls: 'local' as WayClass,
@@ -310,7 +362,7 @@ function planQuarter(
     if (!a && !b) continue;
     const lo = Math.min(a ? a[0] : Infinity, b ? b[0] : Infinity) - 3;
     const hi = Math.max(a ? a[1] : -Infinity, b ? b[1] : -Infinity) + 3;
-    const u = -q.hw + i * pitchU - PUNIC_WAY_WIDTH.vicus * 0.5;
+    const u = cellU(i) - pitchU * 0.5 - PUNIC_WAY_WIDTH.vicus * 0.5;
     lanes.push({
       path: [{ x: F.x(u, lo), z: F.z(u, lo) }, { x: F.x(u, hi), z: F.z(u, hi) }],
       cls: 'vicus' as WayClass,
