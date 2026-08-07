@@ -76,3 +76,28 @@ naming the trap so the next audit does not re-file it.
 **Wall, FYI only, not touched:** `circuit.ts` self-diagnoses that two independently-fitted
 curves through the wall's three surveyed anchors disagreed by up to ~25 world m at mid-span.
 Wall-owned, `src/city/carthageWall.ts`, another workstream's ground.
+
+---
+
+# Missile geometry over a crenellated parapet — child agent registry
+
+Manager worktree: `/private/tmp/tc-merlon`, branch `e/sim/merlon-embrasure`, based on `89cb13f`.
+Concurrency cap: **3**, and in practice **2**. Machine load was already 25 at the start, against
+the 78 that killed nine agents. Own ports: **5301**, **5303**. Port 5173 is the owner's playtest
+server and is not touched.
+
+Held by other agents and therefore read-only here: `src/city/wall.ts`, `src/city/carthageWall.ts`,
+`src/sim/Siege.ts` (wall traversal past towers), `src/city/carthageWall.ts` again (gate-door seam),
+`src/sim/Combat.ts` (melee), `src/terrain/` (shading), `src/city/carthage/` (housing).
+This workstream writes only `src/sim/Projectiles.ts`, `src/city/CitySystem.ts` and `tools/`.
+
+## Children
+
+| # | name | id | wave | port | status | outcome |
+|---|---|---|---|---|---|---|
+| M1 | measure | `a89415936a629a216` | 1 | 5301 | launched | where garrison arrows die, per rank; before-arm kills/min |
+| M2 | geometry | `ab2fe961b69e49ff5` | 1 | none (read-only) | launched | parapet profile both cities; phase alignment |
+
+## Stop log
+
+(filled in as each reports)
