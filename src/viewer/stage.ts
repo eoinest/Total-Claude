@@ -311,7 +311,7 @@ export class Stage {
       // grade's warm/cool split keys off a display-referred luminance crossover, and a warm
       // backdrop filling two-thirds of a portrait frame drags the whole plate to one side of
       // it and comes out monochrome sepia — which is what the first graded plates did.
-      bg = this.gradient(0x39424e, 0x6f7076, 0x5d574c, 1, 0.10);
+      bg = this.gradient(0x7d97b4, 0xc9cec6, 0x8d8371, 1.5, 0.10);
       this.backgrounds.set('plate', bg);
     }
     return bg;

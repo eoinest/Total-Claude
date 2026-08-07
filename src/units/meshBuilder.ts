@@ -101,6 +101,23 @@ export class MeshBuilder {
     return this.pos.length / 3 - 1;
   }
 
+  /**
+   * Emit a vertex whose position and normal are already in the builder's output space.
+   *
+   * Needed where a primitive derives a vertex from ones it has *already* emitted — the
+   * shield rim averages two border vertices — because those are past the transform and
+   * running them through it again would place the rim wherever the socket matrix points.
+   */
+  vertWorld(x: number, y: number, z: number, nx: number, ny: number, nz: number, u: number, v: number): number {
+    N.set(nx, ny, nz).applyMatrix3(this.nxf).normalize();
+    this.pos.push(x, y, z);
+    this.nrm.push(N.x, N.y, N.z);
+    this.uv.push(u, v);
+    this.skin.push(this.b0, this.b1, this.w0, 1 - this.w0);
+    this.pieceTint.push(this.piece, this.tint, this.auxU, this.auxV);
+    return this.pos.length / 3 - 1;
+  }
+
   tri(a: number, b: number, c: number): void {
     this.idx.push(a, b, c);
   }
@@ -458,11 +475,23 @@ export class MeshBuilder {
     faceTint: number,
     edgeTint: number,
     shape: (sx: number, sy: number) => number,
-    piece: number
+    piece: number,
+    /**
+     * Give the board's edge its own outward-facing band.
+     *
+     * True everywhere a camera can resolve 20 mm of board, false on the far mesh, where the
+     * whole man is 313 triangles and the edge is well under a pixel. Costing the crowd tier
+     * 32 triangles a man for an invisible bevel is the wrong trade at 8,632 men.
+     */
+    rimBand = true
   ): void {
     const z = (sx: number): number => curve * (1 - sx * sx);
     const front: number[][] = [];
     const back: number[][] = [];
+    const loRim: number[] = [];
+    const hiRim: number[] = [];
+    const lfRim: number[] = [];
+    const rtRim: number[] = [];
 
     this.setPiece(piece, faceTint);
     for (let r = 0; r <= rows; r++) {
@@ -502,14 +531,60 @@ export class MeshBuilder {
         this.quad(back[r][c], back[r + 1][c], back[r + 1][c + 1], back[r][c + 1]);
       }
     }
-    // Rim: stitch the two shells together around the border.
+    // Rim: a hide binding with its own outward normals, not a stitch between the two shells.
+    //
+    // Stitching reused the border vertices of the face and the back, so a scutum's 22 mm
+    // edge carried *face* normals and shaded as a continuation of the board — there was no
+    // edge in the shading at all. Both blind graders in round 23 named "no rim bevel"
+    // alongside "no boss geometry" as the strongest cue against the Rome II plates, and the
+    // reference crops agree: a Rome II shield's rim is separately modelled binding with its
+    // own highlight running round the outline.
+    //
+    // A middle ring pointing outward costs vertices and **no extra triangles** — the same
+    // 2*(cols+rows) quads, just split into two bands each. It also takes the hide UV, so the
+    // binding reads as leather rather than as more painted board.
+    const rim = (i: number, j: number, dx: number, dy: number): number => {
+      const fi = front[i][j];
+      const bi = back[i][j];
+      // Midway between the shells, in the space they were already emitted into — so the
+      // builder transform must not be applied a second time.
+      const x = (this.pos[fi * 3] + this.pos[bi * 3]) * 0.5;
+      const y = (this.pos[fi * 3 + 1] + this.pos[bi * 3 + 1]) * 0.5;
+      const z = (this.pos[fi * 3 + 2] + this.pos[bi * 3 + 2]) * 0.5;
+      const [u, v] = MeshBuilder.tileUv(edgeUv, (i / rows) * 0.5 + (j / cols) * 0.5, 0.5);
+      return this.vertWorld(x, y, z, dx, dy, 0, u, v);
+    };
+    this.setPiece(piece, edgeTint);
+    if (!rimBand) {
+      for (let c = 0; c < cols; c++) {
+        this.quadFacing(front[0][c + 1], front[0][c], back[0][c], back[0][c + 1]);
+        this.quadFacing(front[rows][c], front[rows][c + 1], back[rows][c + 1], back[rows][c]);
+      }
+      for (let r = 0; r < rows; r++) {
+        this.quadFacing(front[r][0], front[r + 1][0], back[r + 1][0], back[r][0]);
+        this.quadFacing(front[r + 1][cols], front[r][cols], back[r][cols], back[r + 1][cols]);
+      }
+      return;
+    }
+    for (let c = 0; c <= cols; c++) {
+      loRim[c] = rim(0, c, 0, -1);
+      hiRim[c] = rim(rows, c, 0, 1);
+    }
+    for (let r = 0; r <= rows; r++) {
+      lfRim[r] = rim(r, 0, -1, 0);
+      rtRim[r] = rim(r, cols, 1, 0);
+    }
     for (let c = 0; c < cols; c++) {
-      this.quad(front[0][c + 1], front[0][c], back[0][c], back[0][c + 1]);
-      this.quad(front[rows][c], front[rows][c + 1], back[rows][c + 1], back[rows][c]);
+      this.quadFacing(front[0][c + 1], front[0][c], loRim[c], loRim[c + 1]);
+      this.quadFacing(loRim[c + 1], loRim[c], back[0][c], back[0][c + 1]);
+      this.quadFacing(front[rows][c], front[rows][c + 1], hiRim[c + 1], hiRim[c]);
+      this.quadFacing(hiRim[c], hiRim[c + 1], back[rows][c + 1], back[rows][c]);
     }
     for (let r = 0; r < rows; r++) {
-      this.quad(front[r][0], front[r + 1][0], back[r + 1][0], back[r][0]);
-      this.quad(front[r + 1][cols], front[r][cols], back[r][cols], back[r + 1][cols]);
+      this.quadFacing(front[r][0], front[r + 1][0], lfRim[r + 1], lfRim[r]);
+      this.quadFacing(lfRim[r], lfRim[r + 1], back[r + 1][0], back[r][0]);
+      this.quadFacing(front[r + 1][cols], front[r][cols], rtRim[r], rtRim[r + 1]);
+      this.quadFacing(rtRim[r + 1], rtRim[r], back[r][cols], back[r + 1][cols]);
     }
   }
 

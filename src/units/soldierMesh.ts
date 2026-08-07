@@ -888,7 +888,28 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
   const scutumM = socket('march', 0, MB.lowerArmL, new THREE.Vector3(-0.13, -0.16, 0.2), euler(0, 12, 0));
   const roundM = socket('march', 0, MB.lowerArmL, new THREE.Vector3(-0.11, -0.14, 0.18), euler(0, 10, 0));
 
-  const boss = (uvIron: UvRect, piece: number, r: number, z: number): void => {
+  /**
+   * The umbo, seated on the **front** of the board.
+   *
+   * It takes the panel-space Z of the board's own front face rather than a bare axial
+   * offset, because the bare offset was wrong on all four shields and in the same direction.
+   * The lathe is placed under `rotationX(+PI/2)`, which maps its axial coordinate onto the
+   * panel's Z, and every call passed a *negative* one: the scutum's umbo sat 219 mm behind
+   * the face it is supposed to stand proud of, the oval's 114 mm, the round's 56 mm. It was
+   * modelled, tinted `Tint.Metal`, costing 64 triangles a shield, and invisible.
+   *
+   * Two independent things said so and neither was read as saying it. The spina boxes eight
+   * lines below sit 3-15 mm *proud* of the same face and leave a 0.28 m gap across the
+   * centre of the board — a gap with nothing in it. And both blind graders in round 23 named
+   * "flat discs, no boss geometry, no rim bevel" as the single strongest cue separating our
+   * frames from the Rome II plates, the one the cold grader said it could defend
+   * mechanically. The geometry it said was missing was there the whole time, facing away.
+   *
+   * `faceZ` is where the board's front surface is at the centre: `curve + thickness / 2`.
+   * The flange lands 6 mm under it so the boss reads as seated rather than floating.
+   */
+  const boss = (uvIron: UvRect, piece: number, r: number, faceZ: number): void => {
+    const z = faceZ + 0.004;
     b.setPiece(piece, Tint.Metal);
     b.revolve(
       [[0.001, z + r * 0.9], [r * 0.45, z + r * 0.8], [r * 0.8, z + r * 0.4], [r, z], [r * 1.15, z - 0.01]],
@@ -918,7 +939,7 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
       // Umbo, and the vertical spina behind it.
       const bm = scutumM.clone().multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2));
       b.setMatrix(bm);
-      boss(plateUv, Piece.ShieldScutum, 0.075, -0.14);
+      boss(plateUv, Piece.ShieldScutum, 0.075, 0.135 + 0.022 * 0.5);
       b.setMatrix(scutumM);
       b.setPiece(Piece.ShieldScutum, Tint.Atlas);
       b.box(0, 0.28, 0.155, 0.05, 0.28, 0.012, bronzeUv);
@@ -937,7 +958,7 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     );
     if (d.medium) {
       b.setMatrix(roundM.clone().multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)));
-      boss(plateUv, Piece.ShieldOval, 0.062, -0.085);
+      boss(plateUv, Piece.ShieldOval, 0.062, 0.075 + 0.02 * 0.5);
       b.setMatrix(null);
     }
   }
@@ -956,7 +977,7 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
   );
   if (d.medium) {
     b.setMatrix(roundM.clone().multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)));
-    boss(plateUv, Piece.ShieldRound, 0.07, -0.06);
+    boss(plateUv, Piece.ShieldRound, 0.07, 0.05 + 0.018 * 0.5);
     b.setMatrix(null);
   }
 
@@ -1222,7 +1243,7 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     );
     if (d.medium) {
       b.setMatrix(caetraM.clone().multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)));
-      boss(plateUv, Piece.ShieldCaetra, 0.085, -0.03);
+      boss(plateUv, Piece.ShieldCaetra, 0.085, 0.035 + 0.016 * 0.5);
       b.setMatrix(null);
     }
 
@@ -1504,12 +1525,12 @@ function buildFarGeometry(faction: Faction): THREE.InstancedBufferGeometry {
   b.shieldPanel(
     0.33, 0.52, 0.11, 0.02, 2, 2,
     woodUv, matUv(Mat.ShieldBack), Tint.Emblem, Tint.ShieldBack,
-    () => 1, Coarse.ShieldBig
+    () => 1, Coarse.ShieldBig, false
   );
   b.shieldPanel(
     0.4, 0.4, 0.05, 0.018, 2, 2,
     woodUv, matUv(Mat.ShieldBack), Tint.Emblem, Tint.ShieldBack,
-    (_sx, sy) => Math.sqrt(Math.max(0.05, 1 - sy * sy)), Coarse.ShieldRound
+    (_sx, sy) => Math.sqrt(Math.max(0.05, 1 - sy * sy)), Coarse.ShieldRound, false
   );
   b.setMatrix(null);
 
