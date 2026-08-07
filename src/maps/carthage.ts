@@ -1,4 +1,4 @@
-import { BASIN_DEPTH, FREEBOARD } from '../city/carthage/harbour';
+import { BASIN_DEPTH, BASIN_WATER_Y } from '../city/carthage/harbour';
 import { COTHON, MERCHANT_HARBOUR } from '../city/carthage/layout';
 import { CARTHAGE_PLAN } from '../city/carthage/plan';
 import type { WaterProfile } from '../terrain/WaterSurface';
@@ -12,9 +12,14 @@ import type { MapDefinition } from './types';
  * Enough of a lift over the harbours' own dark plate that the two cannot z-fight.
  *
  * The quays are built by `src/city/carthage/harbour.ts` and their water is a slab whose top
- * is exactly `heightAt(centre) - FREEBOARD`. Putting a second surface on the same plane at a
- * camera 400-1,000 m away, with `RTSCamera`'s near clamped as low as 0.08 m, is a coin flip
- * per pixel. 0.35 m out of a 1.8 m freeboard is invisible and decides it.
+ * is exactly `BASIN_WATER_Y`. Putting a second surface on the same plane at a camera
+ * 400-1,000 m away, with `RTSCamera`'s near clamped as low as 0.08 m, is a coin flip per
+ * pixel. 0.35 m is invisible and decides it.
+ *
+ * It also separates the basins from the *gulf*, which now shares their datum: the cothon's
+ * seaward half lies past `coastZ`, so its authored disc and the bathymetric grid overlap
+ * there, and two coplanar quads in one buffer would fight between a 2.8 m harbour blue and a
+ * 9 m gulf blue. 0.35 m at 400 m is half a pixel.
  */
 const BASIN_LIFT = 0.35;
 
@@ -100,8 +105,12 @@ const GULF_OF_TUNIS: WaterProfile = {
    * A basin is a hole cut in level ground by `harbour.ts`, so the bed under it is the *quay's*
    * elevation and the bathymetric test finds no water there at all. These carry their own
    * surface height and their own depth instead, and both come from that builder's own
-   * constants rather than from a copy of them — `FREEBOARD` and `BASIN_DEPTH` are imported so
-   * the two cannot drift apart.
+   * constants rather than from a copy of them — `BASIN_WATER_Y` and `BASIN_DEPTH` are
+   * imported so the two cannot drift apart.
+   *
+   * **Both basins are at `SEA_LEVEL` and that is the point of the constant.** They join the
+   * gulf through 21 m channels, so they are the same body of water; deriving each one's
+   * surface from the ground at its own centre gave them −1.46 and −0.04 against a sea at 0.
    */
   basins: [
     {
@@ -110,7 +119,7 @@ const GULF_OF_TUNIS: WaterProfile = {
         kind: 'disc', x: COTHON.x, z: COTHON.z,
         outerR: COTHON.outerR, innerR: COTHON.islandR,
       },
-      dy: -FREEBOARD + BASIN_LIFT,
+      y: BASIN_WATER_Y + BASIN_LIFT,
       depth: BASIN_DEPTH,
     },
     {
@@ -119,7 +128,7 @@ const GULF_OF_TUNIS: WaterProfile = {
         kind: 'rect', x: MERCHANT_HARBOUR.x, z: MERCHANT_HARBOUR.z,
         hw: MERCHANT_HARBOUR.hw, hd: MERCHANT_HARBOUR.hd,
       },
-      dy: -FREEBOARD + BASIN_LIFT,
+      y: BASIN_WATER_Y + BASIN_LIFT,
       depth: BASIN_DEPTH,
     },
   ],
