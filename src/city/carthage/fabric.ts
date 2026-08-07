@@ -101,6 +101,34 @@ function dryFooting(
   return true;
 }
 
+/**
+ * Why a candidate cell did not become a block.
+ *
+ * **This exists because "771 rejected" is not a diagnosis, and three quarters were empty
+ * behind it.** The Hannibalic quarter — the best-documented Punic urbanism there is, and the
+ * reason §7.1 has any numbers at all — placed **zero** blocks, and so did the Byrsa approach
+ * that carries Appian's six-storey ranges. One rejected count cannot tell you that: a quarter
+ * with eight candidate cells and eight rejections reads exactly like a quarter that was
+ * thinned. Splitting the count by cause names it in a line.
+ */
+export type RejectReasons = {
+  /** Outside the quarter's fray mask entirely — never a candidate. */
+  masked: number;
+  /** Thinned by the density rule. The only rejection that is a design decision. */
+  density: number;
+  /** Forward of the build line behind the wall, or seaward of the shore margin. */
+  outOfBounds: number;
+  /** Standing within the swell crest of the datum. See `BUILD_FREEBOARD`. */
+  drowned: number;
+  /** Inside a monument's reserved rectangle or a way's carriageway plus frontage. */
+  keepOut: number;
+  /** Overlapping a block already placed, by this quarter or a neighbouring one. */
+  collide: number;
+};
+
+const noReasons = (): RejectReasons =>
+  ({ masked: 0, density: 0, outOfBounds: 0, drowned: 0, keepOut: 0, collide: 0 });
+
 export interface FabricOutput {
   chunks: CityChunkSpec[];
   trees: TreeRequest[];
@@ -110,6 +138,8 @@ export interface FabricOutput {
     id: string; placed: number; rejected: number; roofArea: number;
     /** Of the rejected, how many were refused for standing in water. See `BUILD_FREEBOARD`. */
     drowned: number;
+    /** The whole rejection ledger, so an empty quarter says *why* it is empty. */
+    why: RejectReasons;
   }[];
 }
 
@@ -249,6 +279,69 @@ const frame = (
 const CITY_BEARING = 0;
 
 /**
+ * The smallest terrace worth building, in plots. Two 12-cubit houses, 12.4 m of street front.
+ *
+ * Below that a "block" is a shed, and it costs the same draw call as five houses.
+ */
+const MIN_PLOTS = 2;
+
+/**
+ * Shorten a block's face by whole plots until it fits, instead of deleting it.
+ *
+ * **This is the single largest thing wrong with the fabric's first revision and it is worth
+ * stating plainly.** A candidate block was placed only if all 30.9 m of its face cleared
+ * every keep-out, every neighbour and every boundary. Touch a way's frontage margin by one
+ * metre and 477 m² of roof vanished. Measured: **204 of 770 rejections were the keep-out and
+ * 75 were a neighbour** — 36 % of everything refused — and two whole quarters died of it. The
+ * `hannibal-quarter`, which is the excavated Byrsa slope every dimension in §7.1 comes from,
+ * placed **0 blocks of 8**, seven of them to the keep-out; `byrsa-approach`, which carries
+ * Appian's six-storey ranges on the three streets, placed **0 of 6**, all six to the keep-out.
+ * The two most important pieces of urbanism on the map were deleted by the streets that make
+ * them worth building.
+ *
+ * **Dropping plots is not a compromise, it is the archaeology.** §7.1: the 60-cubit block face
+ * is subdivided into five plots of 12 × 30 cubits. A terrace of three plots against a street
+ * corner is a Punic street front; a terrace of five that has been squeezed to 4/5 scale is
+ * not. So the quantum is one plot, the module is untouched, and every façade in the city
+ * stays on the same 6.2 m rhythm whatever length of block it belongs to.
+ *
+ * **The depth is never trimmed.** §7.1's defining feature is a house with entrances front and
+ * back onto two streets and a side corridor joining them. Shorten the depth and it stops
+ * being that house. So `v` is fixed at 30 cubits and all the give is in `u`.
+ *
+ * Windows are tried longest first and, at equal length, nearest the cell centre first, so a
+ * block only slides off-centre when it must and the row still reads as a row.
+ */
+function fitFace(
+  q: Quarter,
+  fullHw: number,
+  stands: (off: number, hw: number) => number
+): { ok: boolean; off: number; hw: number; worst: number } {
+  // A garden enclosure and a warehouse range are not made of houses, so they take their own
+  // quantum: a quarter of the field for the Megara, a whole insula bay for the quay ranges.
+  const quantum = q.kind === 'megara' ? fullHw * 0.5 : q.kind === 'harbourside' ? INSULA_FACE : PLOT_FACE;
+  const n = Math.max(1, Math.round((fullHw * 2) / quantum));
+  const minRun = Math.min(n, q.kind === 'insulae' || q.kind === 'terrace' ? MIN_PLOTS : 1);
+  let worst = 0;
+  for (let run = n; run >= minRun; run--) {
+    const starts: number[] = [];
+    for (let a = 0; a + run <= n; a++) starts.push(a);
+    // Nearest-centred window first; ties broken toward the low end so the choice is stable.
+    starts.sort((a, b) => Math.abs(a + run / 2 - n / 2) - Math.abs(b + run / 2 - n / 2));
+    for (const a of starts) {
+      const hw = (run * quantum) * 0.5;
+      const off = (a + run * 0.5) * quantum - fullHw;
+      const bad = stands(off, hw);
+      if (bad === 0) return { ok: true, off, hw, worst: 0 };
+      // Report the *last* obstacle standing in the way of the smallest window tried, which is
+      // the one that actually refused the cell.
+      worst = bad;
+    }
+  }
+  return { ok: false, off: 0, hw: 0, worst };
+}
+
+/**
  * Lay one quarter's grid on the cubit module.
  *
  * `u` runs along the block face (30.9 m per bay, with a 4 m lane between bays) and `v` runs
@@ -267,9 +360,10 @@ function planQuarter(
   keepOut: KeepOut,
   placed: PlacedGrid,
   ground: Ground
-): { blocks: Block[]; lanes: Lane[]; rejected: number; drowned: number } {
+): { blocks: Block[]; lanes: Lane[]; rejected: number; drowned: number; why: RejectReasons } {
   const blocks: Block[] = [];
   const lanes: Lane[] = [];
+  const why = noReasons();
   let rejected = 0;
   let drowned = 0;
   const F = frame(q, CITY_BEARING);
@@ -312,31 +406,58 @@ function planQuarter(
       const u = cellU(i);
       const v = cellV(j);
       const mask = quarterMask(q, u, v);
-      if (mask < 0.05) continue;
+      if (mask < 0.05) { why.masked++; continue; }
       // Density thins the *fringe*, not the heart. `mask` is 1 across the quarter's plateau
       // and only falls through its rim, so a quarter at 0.9 is essentially solid in the
       // middle and ragged at the edge — which is what a Punic quarter looks like and is what
       // keeps the roof figure from being eaten by holes nobody asked for.
-      if (rng.next() > q.density * (0.35 + 0.65 * mask) + 0.2) { rejected++; continue; }
+      if (rng.next() > q.density * (0.35 + 0.65 * mask) + 0.2) { rejected++; why.density++; continue; }
 
       // The module never changes; only whether a block is there at all. Fringe blocks lose
       // a bay rather than shrinking, which keeps every façade on the same plot rhythm.
       const bays = mask < 0.35 && q.bays > 1 ? q.bays - 1 : q.bays;
-      const hw = (q.blockFace ?? INSULA_FACE * bays) * 0.5;
+      const fullHw = (q.blockFace ?? INSULA_FACE * bays) * 0.5;
       const hd = depthLen * 0.5;
-      const wx = F.x(u, v);
-      const wz = F.z(u, v);
-      if (wz < buildLineZAt(wx) || wz > shoreZAt(wx) - 26) { rejected++; continue; }
-      if (!dryFooting(ground, wx, wz, hw, hd, rot)) { rejected++; drowned++; continue; }
-      if (keepOut.blockedRect(wx, wz, hw + 1.2, hd + 1.2, rot)) { rejected++; continue; }
-      if (placed.hits(wx, wz, hw + 1.0, hd + 1.0, rot)) { rejected++; continue; }
+      const cx = F.x(u, v);
+      const cz = F.z(u, v);
+
+      /**
+       * Does a block of this face, centred at this offset along `u`, stand?
+       *
+       * The bounds test is on the block's own extent rather than on its centre, which the
+       * first revision compared against `buildLineZAt(centre)` alone. That was harmless only
+       * because the keep-out belt catches the same ground by rectangle; stating it on the
+       * extent means the two agree instead of one covering for the other.
+       */
+      const stands = (off: number, hw: number): RejectReasons['collide'] | 0 => {
+        const wx = F.x(u + off, v);
+        const wz = F.z(u + off, v);
+        if (wz - hd < buildLineZAt(wx) || wz + hd > shoreZAt(wx) - 26) return 1;
+        if (!dryFooting(ground, wx, wz, hw, hd, rot)) return 2;
+        if (keepOut.blockedRect(wx, wz, hw + 1.2, hd + 1.2, rot)) return 3;
+        if (placed.hits(wx, wz, hw + 1.0, hd + 1.0, rot)) return 4;
+        return 0;
+      };
+
+      const fit = fitFace(q, fullHw, stands);
+      if (!fit.ok) {
+        rejected++;
+        if (fit.worst === 1) why.outOfBounds++;
+        else if (fit.worst === 2) { drowned++; why.drowned++; }
+        else if (fit.worst === 3) why.keepOut++;
+        else why.collide++;
+        continue;
+      }
+      const hw = fit.hw;
+      const wx = F.x(u + fit.off, v);
+      const wz = F.z(u + fit.off, v);
       const h = hash2(i, j, Rng.hashString(q.id) & 0xffff);
       const storeys = Math.max(1, Math.round(q.storeys * (0.78 + 0.3 * mask) + (h - 0.5) * 1.2));
       blocks.push({
         x: wx, z: wz, rot, hw, hd, mask, storeys, kind: q.kind, h, bays,
         front: (i + j) % 2 === 0 ? 1 : -1,
       });
-      span(rowSpan, j, u - hw, u + hw);
+      span(rowSpan, j, u + fit.off - hw, u + fit.off + hw);
       span(colSpan, i, v - hd, v + hd);
     }
   }
@@ -369,7 +490,7 @@ function planQuarter(
       width: PUNIC_WAY_WIDTH.vicus,
     });
   }
-  return { blocks, lanes, rejected, drowned };
+  return { blocks, lanes, rejected, drowned, why };
 }
 
 // ---------------------------------------------------------------------------
@@ -597,7 +718,7 @@ export function buildFabric(heightAt: Ground, keepOut: KeepOut, seed: string): F
     }
     blocksByQuarter.push({
       id: q.id, placed: out.blocks.length, rejected: out.rejected, roofArea,
-      drowned: out.drowned,
+      drowned: out.drowned, why: out.why,
     });
 
     // Cut the quarter's blocks into chunks small enough for LOD to fire, by binning on a

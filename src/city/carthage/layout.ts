@@ -609,39 +609,76 @@ export interface Quarter {
  * walls rather than buildings, so it costs almost nothing.
  */
 export const QUARTERS: readonly Quarter[] = [
+  /**
+   * **The Megara stops at z 1010, and that is §7.7 rather than a taste.**
+   *
+   * §7.7 puts the garden suburb at "x +250 to +1100, **z 520 to 1000**". The first revision
+   * ran `megara-east` out to z 1210, and with `megara-north` beside it the three garden
+   * quarters claimed **51.9 of the city's 120.8 buildable hectares** — 43 % of it — at about
+   * 13 % roof. A land census is what found this: the strip beyond z 1010 is the **coast**,
+   * not the gardens. §2.5 surveys the Bordj Djedid shore at (x +250, z 1106); §4.6 records
+   * the excavated seaward rampart running "between the Bay of Kram and Bordj Djedid"; §7.1
+   * puts the Magon quarter on the seafront with 3 m streets and one exceptional 9 m street to
+   * its sea gate. So the coastal strip carries housing, and `magon-shore` and `bordj-djedid`
+   * below are that strip.
+   *
+   * Note what is deliberately *not* going on the ridge. §3.3 labels it "Odeon / north ridge",
+   * and a previous revision of `topography.ts` told future agents the ridge "carried the Odeon
+   * on its summit". **The Odeon of Carthage is Severan, c. AD 200** — three hundred and fifty
+   * years after this map's moment. The ridge gets Punic houses and no concert hall.
+   */
   {
     id: 'megara-north', name: 'The Megara, northern gardens', kind: 'megara',
-    x: 760, z: 690, hw: 330, hd: 190, rot: 0.02, density: 0.34, storeys: 1.4, fray: 0.5,
+    x: 850, z: 700, hw: 240, hd: 205, rot: 0.02, density: 0.34, storeys: 1.4, fray: 0.5,
     grid: 0.02, bays: 1, blockFace: 58, blockDepth: 42,
   },
   {
     id: 'megara-central', name: 'The Megara, orchards', kind: 'megara',
-    x: 400, z: 700, hw: 240, hd: 205, rot: -0.02, density: 0.32, storeys: 1.4, fray: 0.5,
+    x: 470, z: 700, hw: 170, hd: 205, rot: -0.02, density: 0.32, storeys: 1.4, fray: 0.5,
     grid: -0.02, bays: 1, blockFace: 52, blockDepth: 44,
   },
   {
     id: 'megara-east', name: 'The Megara, the eastern estates', kind: 'megara',
-    x: 720, z: 1060, hw: 300, hd: 150, rot: 0.01, density: 0.26, storeys: 1.5, fray: 0.55,
+    x: 730, z: 1000, hw: 300, hd: 105, rot: 0.01, density: 0.26, storeys: 1.5, fray: 0.55,
     grid: 0.01, bays: 1, blockFace: 66, blockDepth: 48,
   },
   {
     id: 'quarter-north', name: 'The northern quarter', kind: 'insulae',
-    x: 220, z: 655, hw: 180, hd: 150, rot: 0.02, density: 0.84, storeys: 3.6, fray: 0.26,
+    x: 170, z: 700, hw: 165, hd: 140, rot: 0.02, density: 0.84, storeys: 3.6, fray: 0.26,
     grid: 0.02, bays: 1,
   },
+  /**
+   * The inner quarter, and the general correction the census forced on all four of these.
+   *
+   * A quarter is authored as a rectangle and the buildable land is a band between the
+   * military way and the shore whose near edge moves 60 m with x and steps to 70 m deep over
+   * every stair apron. Four quarters were centred **on the pomerium's edge** rather than
+   * inside it, so a third of their candidate rows fell in the reserved strip and were
+   * refused: `quarter-inner` lost 73, `quarter-west` 85, `quarter-north` 28. Moving the
+   * centres cityward and trimming `hd` to match costs no ground — the ground was never
+   * available — and it stops the rejection ledger being dominated by a boundary that is
+   * doing its job.
+   */
   {
     id: 'quarter-inner', name: 'The inner quarter', kind: 'insulae',
-    x: -300, z: 665, hw: 300, hd: 165, rot: -0.02, density: 0.86, storeys: 3.8, fray: 0.24,
+    x: -330, z: 712, hw: 280, hd: 128, rot: -0.02, density: 0.86, storeys: 3.8, fray: 0.24,
     grid: -0.02, bays: 1,
   },
   {
     id: 'quarter-west', name: 'The western quarter', kind: 'insulae',
-    x: -680, z: 700, hw: 250, hd: 205, rot: 0.03, density: 0.84, storeys: 3.4, fray: 0.28,
+    x: -700, z: 790, hw: 250, hd: 150, rot: 0.03, density: 0.84, storeys: 3.4, fray: 0.28,
     grid: 0.03, bays: 1,
   },
+  /**
+   * The lower town, moved off the merchant basin.
+   *
+   * At (−430, 990) with `hd` 92 it stood inside x −700..−380, z 935..1085, which is the
+   * water: **34 of its 56 candidate cells drowned** and the densest quarter on the map built
+   * three houses. The basin was authored first and the quarter was never authored against it.
+   */
   {
     id: 'quarter-lower', name: 'The lower town', kind: 'insulae',
-    x: -430, z: 990, hw: 130, hd: 92, rot: 0, density: 0.88, storeys: 4.2, fray: 0.2,
+    x: -325, z: 950, hw: 105, hd: 92, rot: 0, density: 0.88, storeys: 4.2, fray: 0.2,
     grid: 0, bays: 1,
   },
   /**
@@ -653,46 +690,94 @@ export const QUARTERS: readonly Quarter[] = [
    * courtyard with a cistern under it. Under it — literally, in the stratigraphy — are
    * metalworkers' workshops, so the lower part of the slope is industry, not housing.
    */
+  /**
+   * **These three were 88 × 92 m and their own streets deleted them.**
+   *
+   * `hannibal-quarter` placed **0 blocks of 8 candidate cells**, seven refused by the
+   * keep-out; `byrsa-approach` placed **0 of 6**, all six refused by the keep-out. Between
+   * them they carry the two things this map is for — Lancel's excavated grid and Appian's six
+   * days up the three streets — and neither existed in the built city.
+   *
+   * The cause is arithmetic, not taste. Three stepped streets 6 m wide reserve 8.8 m each
+   * with their frontage; `via-circa-byrsam` reserves 17 m; the citadel reserves 88 × 58 m. A
+   * quarter two bays wide and four rows deep has eight cells and every one of them touches
+   * something. Enlarging them does not weaken the reservations — the streets still cut
+   * exactly where they cut — it gives the lattice enough cells that the strips *between* the
+   * streets survive. Which is the thing Appian describes: houses lining the streets on both
+   * sides, not a district with streets through it.
+   */
   {
     id: 'hannibal-quarter', name: 'The Hannibalic Quarter', kind: 'terrace',
-    x: -126, z: 1018, hw: 44, hd: 46, rot: 0, density: 0.94, storeys: 4.6, fray: 0.06,
+    x: -150, z: 1032, hw: 92, hd: 72, rot: 0, density: 0.94, storeys: 4.6, fray: 0.06,
     grid: 0, bays: 1,
   },
   /** The tall ranges hard on the kerb of the three streets. Appian's six storeys. */
   {
     id: 'byrsa-approach', name: 'The Byrsa approach', kind: 'terrace',
-    x: -128, z: 898, hw: 42, hd: 44, rot: 0, density: 0.92, storeys: 6, fray: 0.05,
+    x: -148, z: 900, hw: 74, hd: 70, rot: 0, density: 0.92, storeys: 6, fray: 0.05,
     grid: 0, bays: 1,
   },
   {
     id: 'byrsa-foot', name: 'The foot of the Byrsa', kind: 'terrace',
-    x: -250, z: 872, hw: 96, hd: 62, rot: 0, density: 0.9, storeys: 5.2, fray: 0.12,
+    x: -320, z: 900, hw: 88, hd: 78, rot: 0, density: 0.9, storeys: 5.2, fray: 0.12,
     grid: 0, bays: 1,
   },
   {
     id: 'quarter-east-byrsa', name: 'The quarter east of the Byrsa', kind: 'insulae',
-    x: 250, z: 930, hw: 130, hd: 105, rot: 0.01, density: 0.86, storeys: 3.6, fray: 0.22,
+    x: 255, z: 925, hw: 150, hd: 115, rot: 0.01, density: 0.86, storeys: 3.6, fray: 0.22,
     grid: 0.01, bays: 1,
   },
-  {
-    id: 'quarter-salammbo', name: 'The Salammbô shore', kind: 'insulae',
-    x: -820, z: 1150, hw: 130, hd: 70, rot: 0.02, density: 0.7, storeys: 2.4, fray: 0.34,
-    grid: 0.02, bays: 1,
-  },
-  /** §7.3: the Magon quarter and the harbour district, 2-4 storeys, workshops and stores. */
+  /**
+   * §7.3: the Magon quarter and the harbour district, 2-4 storeys, workshops and stores.
+   *
+   * §4.5 [ARCH] puts the sea gate at (x +150, z 1200) with a 9 m street running to it — the
+   * widest attested street in the Punic city and one of the few things archaeology found that
+   * Appian does not mention. The quarter is sized so that street runs through fabric rather
+   * than across open ground.
+   */
   {
     id: 'magon-quarter', name: 'The Magon Quarter', kind: 'insulae',
-    x: 150, z: 1120, hw: 140, hd: 76, rot: 0.03, density: 0.74, storeys: 2.8, fray: 0.3,
+    x: 140, z: 1120, hw: 170, hd: 96, rot: 0.03, density: 0.78, storeys: 2.8, fray: 0.3,
     grid: 0.03, bays: 1,
+  },
+  /**
+   * The seafront north of the Magon quarter, running up to the Bordj Djedid shore.
+   *
+   * The land census found **12.7 unclaimed hectares inside the build line and nearly all of
+   * it here** — a coastal triangle from x +250 to the map's north-east that no quarter
+   * touched and the Megara's fray happened to overlap. §2.5 surveys Bordj Djedid at
+   * (x +250, z 1106) and the coast leaves the map at (x +540, z 1331), so this is the strip
+   * between the gardens and the sea. 3 storeys: it is a shore quarter, not the Byrsa.
+   */
+  {
+    id: 'magon-shore', name: 'The seafront north of the Magon Quarter', kind: 'insulae',
+    x: 380, z: 1195, hw: 190, hd: 105, rot: 0.02, density: 0.78, storeys: 2.8, fray: 0.3,
+    grid: 0.02, bays: 1,
+  },
+  {
+    id: 'bordj-djedid', name: 'The Bordj Djedid shore', kind: 'insulae',
+    x: 720, z: 1290, hw: 230, hd: 105, rot: 0.02, density: 0.72, storeys: 2.6, fray: 0.34,
+    grid: 0.02, bays: 1,
   },
   {
     id: 'harbourside', name: 'The harbour quarter', kind: 'harbourside',
-    x: -290, z: 1090, hw: 100, hd: 44, rot: 0, density: 0.7, storeys: 2.6, fray: 0.3,
-    grid: 0, bays: 3,
+    x: -285, z: 1075, hw: 125, hd: 58, rot: 0, density: 0.74, storeys: 2.6, fray: 0.3,
+    grid: 0, bays: 2,
   },
+  /**
+   * Salammbô — the Tophet's own district, on the Taenia between the lake and the harbours.
+   *
+   * A second entry, `quarter-salammbo` "The Salammbô shore", used to stand at (−820, 1150)
+   * and built **nothing**: `shoreZAt(−820)` is 1069, so the whole quarter lay in the Gulf of
+   * Tunis and all 34 of its in-mask cells were refused as out of bounds. It has been retired
+   * rather than moved, because there is no room for it — the cothon's reserved circle runs
+   * x −1112..−748 and the merchant basin x −700..−380, so between the harbours and the sea
+   * there is quay and water and nothing else. The name belongs to this quarter, which is
+   * where the Tophet is.
+   */
   {
     id: 'tophet-quarter', name: 'The Salammbô quarter', kind: 'insulae',
-    x: -1080, z: 790, hw: 220, hd: 165, rot: 0.02, density: 0.7, storeys: 2.6, fray: 0.32,
+    x: -1190, z: 800, hw: 155, hd: 150, rot: 0.02, density: 0.7, storeys: 2.6, fray: 0.32,
     grid: 0.02, bays: 1,
   },
 ];

@@ -77,9 +77,10 @@ export interface AssertInput {
   /** Thick-line solids — the harbour water and the two channels. */
   occSegments: readonly { x1: number; z1: number; x2: number; z2: number; halfW: number }[];
   lanes: readonly Lane[];
-  /** How many buildings each quarter placed, and their roof area. */
+  /** How many buildings each quarter placed, their roof area, and why the rest were refused. */
   blocksByQuarter: readonly {
     id: string; placed: number; rejected: number; roofArea: number; drowned: number;
+    why?: Readonly<Record<string, number>>;
   }[];
   shedCount: number;
   /** The terrain sampler, so a check can ask what the ground under a solid is doing. */
@@ -375,14 +376,50 @@ export function assertCarthage(inp: AssertInput): CarthageChecks {
     }
     const pctWalled = (roof / walled) * 100;
     const betweenLines = (roof / Math.max(1, walled - wayArea)) * 100;
+    // The rejection ledger, pooled. A single "771 rejected" hid three empty quarters for a
+    // whole revision; a cause breakdown names the binding constraint in one line.
+    const pool: Record<string, number> = {};
+    for (const q of inp.blocksByQuarter) {
+      for (const [k, v] of Object.entries(q.why ?? {})) pool[k] = (pool[k] ?? 0) + v;
+    }
+    const ledger = Object.entries(pool)
+      .filter(([, v]) => v > 0)
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => `${k} ${v}`)
+      .join(', ');
     out.push({
       name: 'roof coverage',
       ok: true,
-      detail: `${placed} blocks (${rejected} rejected), ${(roof / 1e4).toFixed(1)} ha of roof over `
+      detail: `${placed} blocks (${rejected} rejected: ${ledger || 'no ledger'}), `
+        + `${(roof / 1e4).toFixed(1)} ha of roof over `
         + `${(walled / 1e4).toFixed(1)} ha of walled land = **${pctWalled.toFixed(1)}%**; `
         + `${(wayArea / 1e4).toFixed(1)} ha of that is carriageway, so roof between street lines is `
         + `**${betweenLines.toFixed(1)}%**. Not a pass/fail: the second figure is the one comparable `
         + `with an orthophoto, and Megara is a garden suburb that is *supposed* to be empty.`,
+    });
+  }
+
+  // ---- 5a. no residential quarter may be empty ----------------------------
+  //
+  // **This check exists because three of them were, and nothing said so.** `hannibal-quarter`
+  // is the Byrsa slope Lancel excavated — the source of every dimension in §7.1 and the
+  // single most important piece of urbanism on the map — and it placed zero blocks;
+  // `byrsa-approach`, which carries Appian's six-storey ranges on the three streets, placed
+  // zero; `quarter-salammbo` placed zero. Pooled into "423 blocks, 25.0% coverage" all three
+  // were invisible, because a coverage percentage is an average and an average cannot be
+  // empty in one place. A quarter that is named, authored and residential and then builds
+  // nothing is a bug in the constants, not a thin district.
+  {
+    const empty = inp.blocksByQuarter.filter((q) => q.placed === 0);
+    out.push({
+      name: 'every residential quarter builds',
+      ok: empty.length === 0,
+      detail: empty.length === 0
+        ? `all ${inp.blocksByQuarter.length} quarters placed at least one block; the smallest is `
+          + `${inp.blocksByQuarter.reduce((a, q) => (q.placed < a.placed ? q : a)).id} at `
+          + `${inp.blocksByQuarter.reduce((a, q) => (q.placed < a.placed ? q : a)).placed}.`
+        : `${empty.length} empty: ${empty.map((q) => `${q.id} (0 of ${q.rejected}: `
+          + `${Object.entries(q.why ?? {}).filter(([, v]) => v > 0).map(([k, v]) => `${k} ${v}`).join(', ')})`).join('; ')}`,
     });
   }
 
