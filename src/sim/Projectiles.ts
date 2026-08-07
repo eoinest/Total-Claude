@@ -200,6 +200,90 @@ export const maxRange = (kind: WeaponKind): number => {
 };
 /** Soldier torso radius for a projectile intersection, metres. */
 const HIT_RADIUS = 0.4;
+
+/**
+ * Rank buckets for the garrison-shot census: five wall ranks plus one for everything else.
+ * `MAX_WALL_RANKS` is 5 in `Siege.ts`; a man with no rank lands in the last bucket.
+ */
+const WALL_DIAG_RANKS = 6;
+
+/**
+ * Where a shot leaves a man, above his feet. Shoulder height on a 1.75 m soldier.
+ *
+ * Named because it is load-bearing twice over: on the flat it is only the origin of an arrow,
+ * but on a battlement it is 0.60 m *below* the top of the merlon in front of him, and that
+ * difference is the whole of the player's report.
+ */
+const SHOULDER = 1.45;
+
+/**
+ * One gap in a battlement, as `CitySystem.embrasureAt` publishes it.
+ *
+ * A structural mirror, not an import: `src/sim/` does not depend on `src/city/`. Kept
+ * deliberately narrow — the fields a launch solve needs and nothing else.
+ */
+interface EmbrasureView {
+  x: number;
+  z: number;
+  nx: number;
+  nz: number;
+  walkY: number;
+  sillY: number;
+  crestY: number;
+  parapetInner: number;
+  parapetOuter: number;
+  halfThickness: number;
+  hasParapet: boolean;
+}
+
+/**
+ * How far back from the parapet a man can still step into the gap beside him.
+ *
+ * The front rank stands `BODY` = 0.42 m inboard of the parapet's inner face (`wall.ts`), the
+ * next rank 0.72 m behind that (`WALL_RANK_PITCH` in `Siege.ts`). 0.75 m therefore admits the
+ * front rank and nobody else, which is the intent: a man at the battlement leans into the
+ * embrasure, and a man with another man's back in front of him cannot.
+ */
+const EMBRASURE_REACH = 0.75;
+
+/** How far inside the parapet's outer face he looses from, once he is in the gap. */
+const EMBRASURE_INSET = 0.1;
+
+/** Clearance over the crenel sill for a shot leaving the gap. */
+const SILL_CLEAR = 0.3;
+
+/** Clearance over the merlon's inner top edge for a shot lobbed from a rear rank. */
+const MERLON_CLEAR = 0.2;
+
+/** Clearance over the outer lip of the wall-walk for a shot depressed off a parapet-less bay. */
+const WALK_CLEAR = 0.1;
+
+/**
+ * How far a man's feet may be from a bay's walkway and still count as standing on it.
+ *
+ * The guard that keeps this off everything else `elevated` covers — a boarding ramp, a siege
+ * tower's fighting top, a ladder, a tower chamber a storey above the walk. `bayAt` indexes
+ * arithmetically in x and will happily name a bay for a man who is nowhere near it.
+ */
+const ON_WALK_TOL = 0.6;
+
+/** Scratch for `aimOverParapet`, in the module-global style the hash visitors use. */
+let PARAPET_X = 0;
+let PARAPET_Y = 0;
+let PARAPET_Z = 0;
+/** Lowest elevation that clears the man's own battlement; `-Infinity` when nothing is in the way. */
+let PARAPET_PITCH = -Infinity;
+/** Whether the release point was moved into an embrasure. Diagnostic only. */
+let PARAPET_STEPPED = false;
+
+/**
+ * A shot that dies on masonry sooner than this came down on the wall it was fired from.
+ *
+ * A parapet is 0.9 m thick and an arrow leaves at 20-60 m/s, so a shot that clears its own
+ * battlement is 20 m away inside half a second; anything that reports stone before then hit
+ * the merlon in front of the man who loosed it.
+ */
+const SELF_WALL_T = 0.5;
 /** Top of the hittable volume above a man's feet. */
 const HIT_TOP = 1.85;
 /** Seconds of flight before a projectile can hit anyone, so nobody shoots himself. */
@@ -424,6 +508,16 @@ export class ProjectileSystem implements Subsystem {
    * a battle on open ground — and every unit test — needs no city at all.
    */
   private city: { masonryTopAt(x: number, z: number): number } | null = null;
+  /**
+   * The battlement, if the city publishes one, for placing a garrison's shots.
+   *
+   * A structural view rather than an import: `src/sim/` does not depend on `src/city/`, which
+   * is what lets a second city be built in parallel with the simulation that fights over it.
+   * Kept separate from `city` above, and duck-typed on its own, so a tree whose `CitySystem`
+   * predates `embrasureAt` still collides against masonry correctly and merely loses the
+   * placement — a missing method here must not take the wall's collision with it.
+   */
+  private wall: { embrasureAt(x: number, z: number): EmbrasureView | null } | null = null;
 
   // ---- projectile pool (structure of arrays) ----
   private px = new Float32Array(MAX_PROJECTILES);
@@ -495,6 +589,66 @@ export class ProjectileSystem implements Subsystem {
   /** Shots the launch solve refused because the target was beyond the weapon's real reach. */
   private cUnreachable = new Int32Array(32);
 
+  /**
+   * Where a *garrison's own* shots end up, bucketed by the shooter's rank on the walkway.
+   *
+   * The player's report is that men on the parapet "cannot throw spears or shoot over the
+   * edge — it gets stuck on the little pieces of cover facing the enemies", and none of the
+   * census above can distinguish that from a weapon that is simply out of range: both come
+   * out as "not many kills". These buckets answer the only question that matters, which is
+   * *what the shot hit*, and they answer it per rank, because a man at the parapet and a man
+   * two ranks behind him have completely different geometry to solve.
+   *
+   * Diagnostic only. Nothing reads these back into the sim, so they cannot move the hash.
+   */
+  private wRank = new Int8Array(MAX_PROJECTILES);
+  /** Absolute Y of the walkway under the shooter, so an impact can be placed on the section. */
+  private wFootY = new Float32Array(MAX_PROJECTILES);
+  private wLaunched = new Int32Array(WALL_DIAG_RANKS);
+  private wHitMan = new Int32Array(WALL_DIAG_RANKS);
+  private wKilled = new Int32Array(WALL_DIAG_RANKS);
+  private wGround = new Int32Array(WALL_DIAG_RANKS);
+  /** Struck masonry standing at merlon height — his own battlement. */
+  private wCrest = new Int32Array(WALL_DIAG_RANKS);
+  /** Struck the crenel sill, i.e. he was at an embrasure and shot too low through it. */
+  private wSill = new Int32Array(WALL_DIAG_RANKS);
+  /** Struck the walking surface itself. */
+  private wWalk = new Int32Array(WALL_DIAG_RANKS);
+  /** Struck masonry below the walk — the curtain face, a tower, an outwork. */
+  private wBelow = new Int32Array(WALL_DIAG_RANKS);
+  /** Struck masonry more than `SELF_WALL_T` after release, so not the wall he stood on. */
+  private wFarMasonry = new Int32Array(WALL_DIAG_RANKS);
+  /** Summed seconds of flight for shots that died on their own wall — a sanity check. */
+  private wSelfLife = new Float64Array(WALL_DIAG_RANKS);
+  /** Garrison shots `aimOverParapet` moved into an embrasure. */
+  private wStepped = new Int32Array(WALL_DIAG_RANKS);
+  /** Garrison shots it gave a minimum elevation to instead. */
+  private wFloored = new Int32Array(WALL_DIAG_RANKS);
+  /** Summed metres from the release point to a shot's death on its own wall. */
+  private wSelfRange = new Float64Array(WALL_DIAG_RANKS);
+  /** Summed normal-offset from the wall centreline where a self-wall death happened. */
+  private wSelfOff = new Float64Array(WALL_DIAG_RANKS);
+  /** Summed height over the shooter's walkway where a self-wall death happened. */
+  private wSelfUp = new Float64Array(WALL_DIAG_RANKS);
+  /** Summed |along-run| metres from the release point to a self-wall death. */
+  private wSelfRun = new Float64Array(WALL_DIAG_RANKS);
+  /** Self-wall deaths on masonry that publishes no battlement — the gatehouse block, mostly. */
+  private wSelfNoBay = new Int32Array(WALL_DIAG_RANKS);
+  /** Denominator for the three means above. */
+  private wSelfOn = new Int32Array(WALL_DIAG_RANKS);
+  /**
+   * Why `aimOverParapet` left a garrison shot alone: no battlement published here, his feet
+   * are not on this walk, he is shooting inward, he is outboard of the parapet, or the crest
+   * is already below his shoulder. A rank that fires into its own stone while reporting none
+   * of these is a rank the fix reached and failed on, which is a different bug.
+   */
+  private wSkip = new Int32Array(8);
+  /** Garrison shots that struck a man of the shooter's own faction. */
+  private wFriendly = new Int32Array(WALL_DIAG_RANKS);
+  /** Release point, so a self-wall death can be measured back to where it came from. */
+  private wSrcX = new Float32Array(MAX_PROJECTILES);
+  private wSrcZ = new Float32Array(MAX_PROJECTILES);
+
   // ---- spent projectiles ----
   private sx = new Float32Array(MAX_STUCK);
   private sy = new Float32Array(MAX_STUCK);
@@ -556,6 +710,11 @@ export class ProjectileSystem implements Subsystem {
     const city = ctx.tryGet('city') as unknown as { masonryTopAt?: (x: number, z: number) => number } | undefined;
     this.city = city && typeof city.masonryTopAt === 'function'
       ? (city as { masonryTopAt(x: number, z: number): number })
+      : null;
+    const battlement = city as unknown as
+      { embrasureAt?: (x: number, z: number) => EmbrasureView | null } | undefined;
+    this.wall = battlement && typeof battlement.embrasureAt === 'function'
+      ? (battlement as { embrasureAt(x: number, z: number): EmbrasureView | null })
       : null;
     const b = this.battle;
     const masonry = this.city;
@@ -1063,6 +1222,105 @@ export class ProjectileSystem implements Subsystem {
   // Launch
   // -------------------------------------------------------------------------
 
+  /**
+   * Put a garrison's shot where a garrison's shot actually leaves from, and tell the solve
+   * what it has to clear. Writes `PARAPET_X/Y/Z` and `PARAPET_PITCH`.
+   *
+   * A crenellated parapet is merlon alternating with embrasure, and 64 % of Rome's run is
+   * merlon. A man loosing from wherever he happens to be standing therefore shoots his own
+   * battlement about two thirds of the time — and he does it *inside the stone*, not by
+   * grazing it: the front rank stands 1.32 m in from the parapet's outer face and releases
+   * 0.60 m below the crest, so even at the lofted 0.6 rad the shaft is still 0.15 m under the
+   * merlon's top when it reaches the far side of the tooth. It cannot be fixed with elevation.
+   * That is the player's "it gets stuck on the little pieces of cover facing the enemies", and
+   * it is the same defect from the other side as the 491 impacts on our own masonry that put
+   * the crenellation model into `masonryTopAt` in the first place — that fix stopped the
+   * parapet blocking *incoming* fire wholesale and left the outgoing case standing.
+   *
+   * Two men, two answers, because they have two different problems:
+   *
+   * - **The front rank steps to the gap.** He is within reach of an embrasure, so he looses
+   *   from its mouth. This is what the architecture is for and it is why the wall has teeth:
+   *   he is behind 0.9 m of brick between shots and exposed in the gap while he shoots.
+   * - **A rear rank lobs over the tooth.** He cannot reach the gap — there is a man in front
+   *   of him — so the shot is given a floor: the elevation that clears the merlon's inner top
+   *   edge, which is the corner that actually binds. Ranks 1 and back already clear it at the
+   *   lofted 0.6 rad; what this rescues is every `arc: 'flat'` weapon, whose low root shooting
+   *   *downhill* off a wall is depressed and goes straight into the brick from any rank.
+   *
+   * Deliberately **not** done: exempting a shot from the masonry test. The player ruled that
+   * out and he is right — a defender who can be shot through his own merlon is worse than one
+   * who cannot shoot. Incoming fire still stops on the crest exactly as before; only where a
+   * defender's own shot *starts* has moved.
+   */
+  private aimOverParapet(i: number, toX: number, toZ: number): void {
+    const b = this.battle;
+    const p = b.pool;
+    PARAPET_X = p.x[i];
+    PARAPET_Y = p.y[i] + SHOULDER;
+    PARAPET_Z = p.z[i];
+    PARAPET_PITCH = -Infinity;
+    PARAPET_STEPPED = false;
+    const wall = this.wall;
+    if (wall === null || b.elevated[i] === 0) return;
+    const e = wall.embrasureAt(PARAPET_X, PARAPET_Z);
+    if (e === null) { this.wSkip[1]++; return; }
+    // His feet on this bay's walkway, not a storey above it in a tower chamber and not on a
+    // boarding ramp that happens to be over the same stretch of x.
+    if (Math.abs(b.support[i] - e.walkY) > ON_WALK_TOL) { this.wSkip[2]++; return; }
+
+    const dx = toX - PARAPET_X;
+    const dz = toZ - PARAPET_Z;
+    const dLen = Math.hypot(dx, dz);
+    if (dLen < 1e-3) { this.wSkip[3]++; return; }
+    // Only an outward shot has a battlement in front of it. A man shooting back into the city
+    // — at besiegers who have taken a stretch of the walk, or down the stair behind him — has
+    // nothing to clear and must not be moved sideways for it.
+    const cosOut = (dx * e.nx + dz * e.nz) / dLen;
+    if (cosOut <= 0) { this.wSkip[4]++; return; }
+
+    const off = (PARAPET_X - e.x) * e.nx + (PARAPET_Z - e.z) * e.nz;
+    if (off > e.parapetOuter) { this.wSkip[5]++; return; }
+
+    if (e.hasParapet && off >= e.parapetInner - EMBRASURE_REACH) {
+      const mouth = e.parapetOuter - EMBRASURE_INSET;
+      PARAPET_X = e.x + e.nx * mouth;
+      PARAPET_Z = e.z + e.nz * mouth;
+      // Never below the sill. A no-op on Rome, where a 1.45 m shoulder already stands 0.85 m
+      // over a 0.6 m sill, and a guard for a city whose sill is higher.
+      PARAPET_Y = Math.max(PARAPET_Y, e.sillY + SILL_CLEAR);
+      PARAPET_STEPPED = true;
+      return;
+    }
+
+    /**
+     * Two corners bind a shot going out over a wall-walk, and which one is higher depends on
+     * how finished the bay is.
+     *
+     * On a raised parapet it is the merlon's **inner** top edge — the first thing a rising
+     * shot meets and the point where it is lowest inside the band. On a bay whose parapet is
+     * not up yet there is no tooth at all, and the binding edge is the **outer lip of the walk
+     * itself**: a man depressing onto an enemy at the foot of his own wall ploughs into six
+     * metres of curtain top two metres in front of his feet. Measured, that second case was
+     * the larger one — 94 % of the deepest rank's shots and 143 of 240 self-wall deaths, all
+     * of them at or *below* walkway level, and every one of them invisible to a floor that
+     * only knew about merlons.
+     *
+     * `atan2` of a negative rise is a negative angle, so this is a **depression limit** in
+     * that case rather than a minimum loft, and the same `Math.max` handles both.
+     */
+    const cos = Math.max(0.25, cosOut);
+    const runToCrest = (e.parapetInner - off) / cos;
+    const runToLip = (e.halfThickness - off) / cos;
+    let pitch = -Infinity;
+    if (runToCrest > 0) pitch = Math.atan2(e.crestY + MERLON_CLEAR - PARAPET_Y, runToCrest);
+    if (runToLip > 0) {
+      pitch = Math.max(pitch, Math.atan2(e.walkY + WALK_CLEAR - PARAPET_Y, runToLip));
+    }
+    if (pitch === -Infinity) { this.wSkip[6]++; return; }
+    PARAPET_PITCH = pitch;
+  }
+
   private launch(
     i: number,
     u: UnitGroupState,
@@ -1093,9 +1351,16 @@ export class ProjectileSystem implements Subsystem {
     }
     if (t < 0) return;
 
-    const sx = p.x[i];
-    const sy = p.y[i] + 1.45;
-    const sz = p.z[i];
+    // ---- where the shot leaves from ----
+    // On the flat this is his shoulder and nothing else happens. On a battlement it is the
+    // mouth of the nearest embrasure, and a rear rank comes back with a minimum elevation.
+    // See `aimOverParapet`. Aimed at the man's current position rather than the predicted
+    // one: which side of the wall the enemy is on does not change over a second of lead.
+    this.aimOverParapet(i, p.x[t], p.z[t]);
+    const sx = PARAPET_X;
+    const sy = PARAPET_Y;
+    const sz = PARAPET_Z;
+    const clearPitch = PARAPET_PITCH;
 
     // ---- predicted aim point, two passes ----
     let tx = p.x[t];
@@ -1136,18 +1401,36 @@ export class ProjectileSystem implements Subsystem {
     const dirX = (tx - sx) / (d || 1);
     const dirZ = (tz - sz) / (d || 1);
     const lofted = m.arc === 'high';
-    const probes = lofted ? 1 : 3;
+    /**
+     * On a battlement, also probe the man immediately in front.
+     *
+     * The probes step at 1.5 m, and a wall rank is 0.72 m deep, so the two ranks nearest a
+     * rear-rank man have never been on the line at all. On open ground that hole is small —
+     * a formation is 0.86 m deep and the shot is roughly level, so it passes over shoulders.
+     * On a wall it is the whole problem: a rank-3 man's shot has to be lifted over his own
+     * merlon, and the elevation that just clears a merlon 2.6 m away does **not** clear the
+     * head of a man 0.72 m away. He was shooting his own front rank in the back of the neck.
+     * Extra probes only where there is a parapet, so every field battle keeps its own
+     * geometry and its own hash.
+     */
+    const onWall = clearPitch > -Infinity || PARAPET_STEPPED;
+    const probes = lofted ? (onWall ? 3 : 1) : (onWall ? 5 : 3);
+    const probeStep = onWall ? 0.72 : 1.5;
     LOS_FACTION = u.faction;
     LOS_SELF = i;
     LOS_BLOCKED = false;
     for (let k = 1; k <= probes; k++) {
-      const dist = k * 1.5;
+      const dist = k * probeStep;
       if (dist > d) break;
       LOS_X = sx + dirX * dist;
       LOS_Z = sz + dirZ * dist;
       // Height along a straight line to the aim point is a good enough proxy over
-      // the couple of metres that matter for a blocked lane.
-      LOS_Y = sy + (ty - sy) * (dist / d) + (lofted ? dist * 0.5 : 0);
+      // the couple of metres that matter for a blocked lane — except where the shot is
+      // being lifted over a parapet, in which case the lane it will actually take is the
+      // lifted one and the straight line is metres below it.
+      LOS_Y = clearPitch > -Infinity
+        ? sy + Math.tan(clearPitch) * dist
+        : sy + (ty - sy) * (dist / d) + (lofted ? dist * 0.5 : 0);
       b.hash.query(LOS_X, LOS_Z, 0.6, losVisit);
       if (LOS_BLOCKED) break;
     }
@@ -1170,6 +1453,29 @@ export class ProjectileSystem implements Subsystem {
       }
     } else {
       theta = this.lowRoot(v, dComp, h);
+    }
+
+    /**
+     * Everything above is the answer the weapon wants. This is the answer his own wall
+     * leaves him, and it only bites when the two disagree.
+     *
+     * `clearPitch` is `-Infinity` for every man not standing on a battlement, so this whole
+     * block is dead on open ground and every field battle in the game is byte-identical.
+     * When it does bind it is the same closed form the lofted branch uses, asked at the
+     * limiting angle: the shot is re-drawn to whatever power still puts it on the man at that
+     * elevation. Note the limit can be **negative** — a depression limit, for a man who would
+     * otherwise plough his shot into the walk he is standing on — and the arithmetic is the
+     * same either way.
+     */
+    if (theta < clearPitch) {
+      const c = Math.cos(clearPitch);
+      const v0 = phys.speed;
+      const need = (GRAVITY * dComp * dComp) / (2 * c * c * (dComp * Math.tan(clearPitch) - h));
+      // No power reaches the target at that elevation: shoot anyway, over the wall. A shot
+      // that sails past its man is a miss; a shot into one's own parapet is a miss *and* a
+      // garrison that reads as broken, which is what the player was looking at.
+      v = need > 0 && need <= v0 * v0 ? Math.sqrt(need) : v0;
+      theta = clearPitch;
     }
 
     // ---- accuracy ----
@@ -1205,7 +1511,21 @@ export class ProjectileSystem implements Subsystem {
     this.lastHit[idx] = -1;
     const elevated = b.elevated[i] !== 0;
     this.fromWall[idx] = elevated ? 1 : 0;
-    if (elevated) b.siege.noteWallShot();
+    this.wRank[idx] = -1;
+    if (elevated) {
+      b.siege.noteWallShot();
+      const r = p.rank[i];
+      const bucket = r >= 0 && r < WALL_DIAG_RANKS - 1 ? r : WALL_DIAG_RANKS - 1;
+      this.wRank[idx] = bucket;
+      // His feet, not his shoulders: an impact is classified by how far it stands above the
+      // walkway, which is the only frame in which "merlon" and "sill" mean anything.
+      this.wFootY[idx] = b.support[i];
+      this.wSrcX[idx] = sx;
+      this.wSrcZ[idx] = sz;
+      this.wLaunched[bucket]++;
+      if (PARAPET_STEPPED) this.wStepped[bucket]++;
+      else if (clearPitch > -Infinity) this.wFloored[bucket]++;
+    }
     if (m.kind === 'boulder') b.siege.noteArtillery(1, 0);
 
     if (p.ammo[i] > 0) p.ammo[i]--;
@@ -1281,6 +1601,7 @@ export class ProjectileSystem implements Subsystem {
     this.pierceLeft[idx] = phys.pierce;
     this.lastHit[idx] = -1;
     this.fromWall[idx] = 0;
+    this.wRank[idx] = -1;
     return true;
   }
 
@@ -1388,7 +1709,7 @@ export class ProjectileSystem implements Subsystem {
       if (this.city !== null) {
         const top = this.city.masonryTopAt(x1, z1);
         if (y1 <= top) {
-          this.impactMasonry(i, x1, Math.min(y0, top), z1);
+          this.impactMasonry(i, x1, Math.min(y0, top), z1, top);
           continue;
         }
       }
@@ -1410,9 +1731,10 @@ export class ProjectileSystem implements Subsystem {
    * Stones shatter and are gone; arrows and pila lodge in the mortar joints, which is
    * what makes a besieged wall face look besieged after a few minutes of shooting.
    */
-  private impactMasonry(i: number, x: number, y: number, z: number): void {
+  private impactMasonry(i: number, x: number, y: number, z: number, top: number): void {
     const weapon = this.kinds[this.kindIdx[i]];
     const kind = physicsOf(weapon).event;
+    this.noteWallShotEnd(i, top);
     this.ctx.events.emit('projectileImpact', {
       x, y, z, kind, hitTarget: false, material: 'stone',
     });
@@ -1488,6 +1810,41 @@ export class ProjectileSystem implements Subsystem {
     }
   }
 
+  /**
+   * Place a garrison shot's death on the section of the wall it was fired from.
+   *
+   * `top` is the masonry height the collision test actually read, so the classification is
+   * against the same number that stopped the shaft rather than against a re-derived one —
+   * the rule this project keeps relearning is that an instrument which recomputes what it is
+   * testing cannot fail. The bands are relative to the shooter's own walkway, so they carry
+   * from Rome's 2.05 m parapet to Carthage's 2.2 m without a constant.
+   */
+  private noteWallShotEnd(i: number, top: number): void {
+    const r = this.wRank[i];
+    if (r < 0) return;
+    if (this.life[i] > SELF_WALL_T) {
+      this.wFarMasonry[r]++;
+      return;
+    }
+    this.wSelfLife[r] += this.life[i];
+    this.wSelfRange[r] += Math.hypot(this.px[i] - this.wSrcX[i], this.pz[i] - this.wSrcZ[i]);
+    this.wSelfUp[r] += this.py[i] - this.wFootY[i];
+    const e = this.wall !== null ? this.wall.embrasureAt(this.px[i], this.pz[i]) : null;
+    if (e === null) this.wSelfNoBay[r]++;
+    if (e !== null) {
+      this.wSelfOn[r]++;
+      this.wSelfOff[r] += (this.px[i] - e.x) * e.nx + (this.pz[i] - e.z) * e.nz;
+      this.wSelfRun[r] += Math.abs(
+        (this.px[i] - this.wSrcX[i]) * -e.nz + (this.pz[i] - this.wSrcZ[i]) * e.nx
+      );
+    }
+    const d = top - this.wFootY[i];
+    if (d > 1.3) this.wCrest[r]++;
+    else if (d > 0.25) this.wSill[r]++;
+    else if (d > -0.25) this.wWalk[r]++;
+    else this.wBelow[r]++;
+  }
+
   /** Score a landing against the point it was solved for. See `aimX`. */
   private noteMiss(i: number, x: number, z: number): void {
     const k = this.kindIdx[i];
@@ -1497,6 +1854,7 @@ export class ProjectileSystem implements Subsystem {
 
   private impactGround(i: number, x: number, y: number, z: number): void {
     this.cGround[this.kindIdx[i]]++;
+    if (this.wRank[i] >= 0) this.wGround[this.wRank[i]]++;
     this.noteMiss(i, x, z);
     const kind = physicsOf(this.kinds[this.kindIdx[i]]).event;
     this.ctx.events.emit('projectileImpact', {
@@ -1534,6 +1892,11 @@ export class ProjectileSystem implements Subsystem {
     const block = clamp01((ddef.shieldDefence / 46) * cover);
 
     this.cHitMan[this.kindIdx[i]]++;
+    if (this.wRank[i] >= 0) {
+      this.wHitMan[this.wRank[i]]++;
+      const own = this.unitById(this.ownerUnit[i]);
+      if (own && own.faction === dv.faction) this.wFriendly[this.wRank[i]]++;
+    }
     this.noteMiss(i, hx, hz);
     // A shield stops an arrow and a pilum. It does not stop a stone from an engine, so a
     // weapon with a blast radius skips the block roll entirely.
@@ -1562,7 +1925,10 @@ export class ProjectileSystem implements Subsystem {
       * this.rng.range(0.85, 1.15);
     const lethal = b.damage(j, total, this.ox[i], this.oz[i], this.ownerUnit[i]);
     this.cDamage[this.kindIdx[i]] += total;
-    if (lethal) this.cKilled[this.kindIdx[i]]++;
+    if (lethal) {
+      this.cKilled[this.kindIdx[i]]++;
+      if (this.wRank[i] >= 0) this.wKilled[this.wRank[i]]++;
+    }
     const dsig = signalsOf(dv.id);
     dsig.missilePulse += 1;
     if (lethal) {
@@ -2009,8 +2375,81 @@ export class ProjectileSystem implements Subsystem {
     };
   }
 
+  /**
+   * The garrison's own shots, per rank on the walkway. See `wCrest`.
+   *
+   * `crest` is the number this whole workstream exists for: a shot that struck masonry
+   * standing more than 1.3 m above the walk within half a second of leaving the bow is a man
+   * shooting his own merlon.
+   */
+  debugWallShots(): unknown {
+    const rank = (r: number) => ({
+      rank: r === WALL_DIAG_RANKS - 1 ? 'other' : r,
+      launched: this.wLaunched[r],
+      steppedToGap: this.wStepped[r],
+      elevationFloored: this.wFloored[r],
+      hitMan: this.wHitMan[r],
+      hitOwnSide: this.wFriendly[r],
+      killed: this.wKilled[r],
+      intoGround: this.wGround[r],
+      ownMerlon: this.wCrest[r],
+      ownSill: this.wSill[r],
+      ownWalkway: this.wWalk[r],
+      ownCurtainFace: this.wBelow[r],
+      farMasonry: this.wFarMasonry[r],
+      meanSelfLifeS: this.wCrest[r] + this.wSill[r] + this.wWalk[r] + this.wBelow[r]
+        ? +(this.wSelfLife[r] / (this.wCrest[r] + this.wSill[r] + this.wWalk[r] + this.wBelow[r])).toFixed(3)
+        : null,
+      meanSelfRangeM: this.wCrest[r] + this.wSill[r] + this.wWalk[r] + this.wBelow[r]
+        ? +(this.wSelfRange[r] / (this.wCrest[r] + this.wSill[r] + this.wWalk[r] + this.wBelow[r])).toFixed(2)
+        : null,
+      selfWallOffCircuit: this.wSelfNoBay[r],
+      meanSelfOffM: this.wSelfOn[r] ? +(this.wSelfOff[r] / this.wSelfOn[r]).toFixed(2) : null,
+      meanSelfAlongM: this.wSelfOn[r] ? +(this.wSelfRun[r] / this.wSelfOn[r]).toFixed(2) : null,
+      meanSelfUpM: this.wCrest[r] + this.wSill[r] + this.wWalk[r] + this.wBelow[r]
+        ? +(this.wSelfUp[r] / (this.wCrest[r] + this.wSill[r] + this.wWalk[r] + this.wBelow[r])).toFixed(2)
+        : null,
+    });
+    const rows = [];
+    for (let r = 0; r < WALL_DIAG_RANKS; r++) if (this.wLaunched[r] > 0) rows.push(rank(r));
+    const sum = (a: Int32Array) => a.reduce((s, v) => s + v, 0);
+    const launched = sum(this.wLaunched);
+    const selfWall = sum(this.wCrest) + sum(this.wSill) + sum(this.wWalk) + sum(this.wBelow);
+    return {
+      byRank: rows,
+      skips: {
+        noBattlement: this.wSkip[1], notOnThisWalk: this.wSkip[2], zeroRange: this.wSkip[3],
+        shootingInward: this.wSkip[4], outboardOfParapet: this.wSkip[5], crestBelowShoulder: this.wSkip[6],
+      },
+      total: {
+        launched,
+        steppedToGap: sum(this.wStepped),
+        elevationFloored: sum(this.wFloored),
+        hitMan: sum(this.wHitMan),
+        hitOwnSide: sum(this.wFriendly),
+        killed: sum(this.wKilled),
+        intoGround: sum(this.wGround),
+        ownMerlon: sum(this.wCrest),
+        ownSill: sum(this.wSill),
+        ownWalkway: sum(this.wWalk),
+        ownCurtainFace: sum(this.wBelow),
+        farMasonry: sum(this.wFarMasonry),
+        selfWall,
+        selfWallPct: launched ? +((100 * selfWall) / launched).toFixed(1) : 0,
+      },
+    };
+  }
+
   /** Reset the census, so a probe can measure one interval rather than the whole battle. */
   debugResetCensus(): void {
+    this.wLaunched.fill(0); this.wHitMan.fill(0); this.wKilled.fill(0);
+    this.wGround.fill(0); this.wCrest.fill(0); this.wSill.fill(0);
+    this.wWalk.fill(0); this.wBelow.fill(0); this.wFarMasonry.fill(0);
+    this.wSelfLife.fill(0); this.wSelfRange.fill(0);
+    this.wSelfOff.fill(0); this.wSelfUp.fill(0); this.wSelfRun.fill(0);
+    this.wSelfNoBay.fill(0); this.wSelfOn.fill(0);
+    this.wSkip.fill(0); this.wFriendly.fill(0);
+    this.wStepped.fill(0); this.wFloored.fill(0);
     this.cLaunched.fill(0); this.cHitMan.fill(0); this.cBlocked.fill(0);
     this.cKilled.fill(0); this.cGround.fill(0); this.cMasonry.fill(0);
     this.cDamage.fill(0); this.cMiss.fill(0); this.cMissN.fill(0);
