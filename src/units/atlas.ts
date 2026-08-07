@@ -420,8 +420,26 @@ const MATS: Record<Mat, MatDef> = {
     // metalness map cannot separate them — 0.88 is the compromise that leaves a rusted patch
     // reading as a dielectric crust without giving clean iron a diffuse lobe it should not
     // have. Roughness stays high: this is the *worn* tile, the everyday ironmongery.
+    /**
+     * **Metalness 1, and the reason is that this fix shipped half-applied.**
+     *
+     * The note above `IRON` argues at length that a conductor has no diffuse lobe and that
+     * its colour *is* its F0, and the albedos were duly raised to measured F0 -- iron 0.78,
+     * bronze 0.88/0.70/0.40. The metalness values were not: they stayed at the 0.36-0.74 the
+     * old charcoal-albedo tiles used. That leaves every metal on a soldier **half dielectric
+     * with a metal's albedo**, which is the one combination the note explicitly warns is
+     * worse than either end -- a bright saturated diffuse lobe with a broad soft highlight
+     * over it, which is the definition of painted plastic, and is exactly what the
+     * `praet-torso` plate photographs on a bronze squamata.
+     *
+     * The recorded counter-measurement ("raising metalness darkens armour, verified twice")
+     * was taken against a charcoal albedo at an effective IBL gain of 1.08. Both have since
+     * moved: the albedo is a real F0 and the probe reports 0.508 x 2.9 = 1.47. Moving one
+     * half of a two-variable change and leaving the other is not a conservative choice, it
+     * is the worst point in the space.
+     */
     roughness: 0.44,
-    metalness: 0.45,
+    metalness: 1,
     bump: 0.5,
   },
   // Cleaner plate for helmets and bosses.
@@ -450,7 +468,7 @@ const MATS: Record<Mat, MatDef> = {
     // glint is the single thing that most distinguishes a rank of Rome II helmets from a
     // rank of grey cones.
     roughness: 0.22,
-    metalness: 0.5,
+    metalness: 1,
     bump: 0.25,
   },
   // Gilded bronze: praetorian fittings, helmet trim, harness bosses.
@@ -466,8 +484,11 @@ const MATS: Record<Mat, MatDef> = {
     // warm and the sky cannot take it over. Gilt fittings are the one thing on a man that
     // should read as a mirror, and the patina term in `colour` is the only part of this tile
     // that is an oxide — hence 0.95 rather than a flat 1.
-    roughness: 0.23,
-    metalness: 0.74,
+    // 0.30, not 0.23. All three of round two's critics named bronze independently and all
+    // three asked for the same pair; 0.23 is a polished mirror and a cast, wiped, marched-in
+    // bronze scale is not one.
+    roughness: 0.3,
+    metalness: 1,
     bump: 0.3,
   },
   [Mat.Mail]: {
@@ -482,8 +503,12 @@ const MATS: Record<Mat, MatDef> = {
     // hamata as a black net — but that was a metal with a *charcoal* albedo, which has no
     // colour left to reflect. At true iron F0 the same rings catch the sun individually,
     // which is what makes mail read as mail rather than as a grey knitted jumper.
+    // A mail sheet is thousands of small curved mirrors at every angle at once, so its
+    // *effective* roughness is high even though each ring is burnished. That is a real
+    // statement about the BRDF and it survives the metalness going to 1; 0.36 metalness was
+    // not, it was a leftover.
     roughness: 0.52,
-    metalness: 0.36,
+    metalness: 1,
     bump: 1.0,
   },
   // Lorica squamata: overlapping bronze-washed scales wired to a linen backing.
@@ -516,7 +541,7 @@ const MATS: Record<Mat, MatDef> = {
     // Bronze-washed scales, each a small curved mirror. Same reasoning as the mail: the
     // scale edges are what catch the light and they cannot do it without an F0 to do it with.
     roughness: 0.31,
-    metalness: 0.52,
+    metalness: 1,
     bump: 0.9,
   },
   [Mat.LeatherBrown]: {
@@ -559,6 +584,24 @@ const MATS: Record<Mat, MatDef> = {
    * what a fulled woollen tunic actually shows at two metres, and which lives at 2-8 px
    * where the deficit is. Energy moved down an octave, not removed.
    */
+  /**
+   * **18 cycles, and a finer weave was tried, measured worse and reverted.**
+   *
+   * At 18 cycles the tile draws a 15 mm thread, which on the isolated plate is a legible
+   * diamond lattice down a man's legs — the bracae read as fishnet. The obvious correction,
+   * once the tile went to 256 px, is to triple the count toward a real 5 mm thread, and it
+   * is wrong: at 54 cycles the octave probe puts E1 **up** 21 % and E2 **down** 8 % pooled,
+   * with the two cloth-heavy plates losing 20 % of E2. Halving the regular term's amplitude
+   * into the slub instead was tried in the same session and lost the same energy again.
+   *
+   * The mechanism is the same one that governs the tile size, and it has now been measured
+   * three separate ways in one session: **at this magnification our atlas content already
+   * sits in the 2-4 px octaves, and every change that makes it finer moves that energy down
+   * into the 1 px band, where the render's own filtering throws most of it away.** A weave
+   * cannot be made physically correct here without more texels than the sheet can afford.
+   * Whoever raises the tile again past 256 px should retry this first; it is the change most
+   * obviously waiting on that headroom.
+   */
   [Mat.WoolCoarse]: {
     colour(u, v, out) {
       const warp = Math.sin(u * Math.PI * 2 * 18) * 0.5 + 0.5;
@@ -580,9 +623,10 @@ const MATS: Record<Mat, MatDef> = {
     metalness: 0,
     bump: 0.5,
   },
-  // 26 cycles, not 52 — see the note on `WoolCoarse`. A 52-cycle weave is 2.5 px a cycle in
-  // the tile and cannot survive to the screen as anything but noise; the amplitude goes into
-  // a fold field instead.
+  // 72 cycles, not 26. The old count was set against a 128 px tile, where 52 was measured at
+  // 2.5 px a cycle and dismissed as noise; at 256 px, 72 cycles is 3.6 texels and a 4.6 mm
+  // thread, which is a fine linen rather than sacking. Same trade as `WoolCoarse`: the
+  // regular term loses amplitude and the irregular fold field gains it.
   [Mat.Linen]: {
     colour(u, v, out) {
       const warp = Math.sin(u * Math.PI * 2 * 26) * 0.5 + 0.5;
@@ -733,7 +777,7 @@ const MATS: Record<Mat, MatDef> = {
     // gutter in `colour` is a shadow rather than a material, so it keeps the plate's
     // metalness and simply reflects less — which is what a gap between two plates does.
     roughness: 0.32,
-    metalness: 0.48,
+    metalness: 1,
     bump: 0.9,
   },
   [Mat.HideBay]: {
