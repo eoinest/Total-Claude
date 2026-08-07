@@ -110,6 +110,66 @@ const OPEN_EDGE_SETBACK = 1.2;
 const GALLERY_PIER_HALF = 0.3;
 const GALLERY_PIER_OFF = -(HALF_T - 0.35 - GALLERY_PIER_HALF);
 
+/**
+ * The ballista chamber's own walls: how far its shell is set in from the tower's face, and
+ * how thick that shell is. Hoisted out of `buildTower` because `towerLane` has to know how
+ * much stone the chamber keeps behind the passage.
+ */
+const TOWER_CH_INSET = 0.16;
+const TOWER_CH_WALL = 0.75;
+/** Clear head over the *higher* of the two walks a tower joins, metres. */
+export const TOWER_PASS_HEAD = 2.3;
+
+/**
+ * The lane through a tower, from the two walks it joins.
+ *
+ * **One helper, two consumers, and they used to be three metres apart.** `buildTower` cut a
+ * 1.7 m opening at `-0.35 .. +1.35` — the clear band of a 3.5 m curtain, never re-derived
+ * when the curtain went to 6.0 — while `Siege.linkPath` walked men across at the walk's
+ * cityward lip, `innerOff - 0.15`, which is 1.36 m past the far jamb and inside the
+ * chamber's back wall. Measured: the traversal path was inside masonry at 42 of Rome's 42
+ * walkable towers. So the lane is derived once, published on `GarrisonBay`, and both the
+ * stone and the path read it.
+ *
+ * The lane is the intersection of the two bays' standing bands — a man may not be walked
+ * anywhere he could not stand — pulled clear of the chamber's back wall so the tower keeps
+ * one. `keepInner` is how much stone must be left on the cityward side; pass the chamber's
+ * own shell where there is one and the wall's back thickness where there is not.
+ */
+function towerLane(
+  a: { innerOff: number; outerOff: number; walkY: number },
+  b: { innerOff: number; outerOff: number; walkY: number },
+  halfThickness: number,
+  keepInner: number
+): { outer: number; inner: number; loY: number; hiY: number; loIsWest: boolean } {
+  const outer = Math.min(a.outerOff, b.outerOff);
+  // Never cityward of the stone that has to stay standing behind it.
+  const backLimit = -(halfThickness - keepInner);
+  const inner = Math.max(Math.max(a.innerOff, b.innerOff), backLimit);
+  return {
+    outer,
+    inner,
+    loY: Math.min(a.walkY, b.walkY),
+    hiY: Math.max(a.walkY, b.walkY),
+    // `b` is the western neighbour at every call site: the tower stands at the eastern
+    // bay's `x0`.
+    loIsWest: b.walkY <= a.walkY,
+  };
+}
+
+/** A man is 0.84 m across the shoulders; anything narrower is not a doorway. */
+const MIN_LANE = 0.9;
+
+/** What `buildTower` needs to know about the doorway it is cutting. See `towerLane`. */
+interface TowerPassOut {
+  outer: number;
+  inner: number;
+  loY: number;
+  hiY: number;
+  /** True when the *west* neighbour is the lower walk, so the flight inside climbs east. */
+  loIsWest: boolean;
+}
+
 export interface WallSegmentOut {
   x1: number;
   z1: number;
@@ -208,6 +268,33 @@ export interface GarrisonBay {
    * which is a *standing* offset and can be non-zero for reasons that are not a tower.
    */
   hasTower: boolean;
+  /**
+   * The clear lane cut through the tower at `x0`, as offsets along the outward normal.
+   *
+   * **This is the doorway, published, and it is the thing that was missing.** A tower stands
+   * on the full thickness of the curtain on both circuits — Rome's is 9.5 m deep on a 6.0 m
+   * wall and Carthage's 14.6 m on a 9.1 m one, both flush with the inner face — so there is
+   * no ground to walk *round* one, and the pass has to go *through*. `Siege.linkPath` walks
+   * a man across a tower on the centre of this band, and `buildTower`/`buildPunicTower` cut
+   * the stone out of the same band. They used to be derived separately and disagreed by
+   * 1.36 m, which is how forty-two towers came to have a doorway nobody walked through.
+   *
+   * `passOuter` is the fieldward limit and `passInner` the cityward one, so
+   * `passInner <= passOuter` exactly as with `innerOff`/`outerOff`. Both are 0 where there
+   * is no tower, or where the two bays the tower joins leave no lane between them.
+   */
+  passOuter: number;
+  passInner: number;
+  /**
+   * Absolute Y of the lower and higher of the two wall-walks the tower at `x0` joins.
+   *
+   * The walk steps at a tower — median 1.65 m on Rome, up to 7.70 m — because `walkY` is a
+   * quantised construction level held over pairs of bays and the ground under the circuit
+   * rolls. The tower carries a flight between the two inside its own footprint; these are
+   * its ends, so the crossing path and the stone agree about which way is up.
+   */
+  passLoY: number;
+  passHiY: number;
   isGate: boolean;
 }
 
@@ -539,6 +626,26 @@ function inGateBlock(x: number): boolean {
 }
 
 /**
+ * The lane through the tower at `bay.x0`, or null where there is not one.
+ *
+ * **The single place the doorway is decided**, called by the bay record the siege system
+ * reads *and* by the stone `buildTower` lays, so the two cannot disagree. That is not
+ * tidiness: they were derived separately, drifted 1.36 m apart, and forty-two towers ended
+ * up with an opening in one place and a file of men walking through the brick beside it.
+ *
+ * Null where there is no walk on both sides — a footing, a gap, or the far end of the
+ * circuit. A doorway onto a bare footing is a door onto air.
+ */
+function towerPassOf(bay: Bay, prev: Bay | undefined): TowerPassOut | null {
+  if (!prev || inGateBlock(bay.x0)) return null;
+  const here = walkGeometry(bay);
+  const west = walkGeometry(prev);
+  if (!here.garrisonable || !west.garrisonable) return null;
+  const lane = towerLane(here, west, HALF_T, TOWER_CH_INSET + TOWER_CH_WALL);
+  return lane.outer - lane.inner >= MIN_LANE ? lane : null;
+}
+
+/**
  * The parts of a run from `x0` to `x1` that the gatehouse does not stand in: the whole
  * run, one piece of it, or the two flanks either side of the block.
  */
@@ -840,6 +947,8 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
     // the gate, in open curtain — was simply missing: the wall east of the Porta Flaminia
     // ended in a bare vertical face with nothing on it.
     const hasTower = !inGateBlock(bay.x0);
+    // The lane through this bay's west tower, from the same helper the stone is cut with.
+    const lane = towerPassOf(bay, bays[b - 1]);
     garrisonBays.push({
       index: b,
       x0: bay.x0, z0: bay.z0, x1: bay.x1, z1: bay.z1,
@@ -868,6 +977,10 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
       halfThickness: HALF_T,
       towerHalf: hasTower ? WALL.towerWidth * 0.5 : 0,
       hasTower,
+      passOuter: lane ? lane.outer : 0,
+      passInner: lane ? lane.inner : 0,
+      passLoY: lane ? lane.loY : 0,
+      passHiY: lane ? lane.hiY : 0,
       isGate,
     });
   }
@@ -988,11 +1101,14 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
           if (inGateBlock(bay.x0)) continue;
           const prev = bays[bay.index - 1];
           const topY = Math.max(bay.topY, prev ? prev.topY : bay.topY);
-          buildTower(batch, detail, bay.x0, bay.z0, topY, heightAt, bay.index, bay.stage, frameOf(bay.x0, bay.z0, bay.x1, bay.z1));
+          buildTower(batch, detail, bay.x0, bay.z0, topY, heightAt, bay.index, bay.stage,
+            frameOf(bay.x0, bay.z0, bay.x1, bay.z1), towerPassOf(bay, prev));
         }
         if (to === bays.length) {
           const last = slice[slice.length - 1];
-          buildTower(batch, detail, last.x1, last.z1, last.topY, heightAt, bays.length, last.stage, frameOf(last.x0, last.z0, last.x1, last.z1));
+          // The far end of the circuit: a tower with a walk on one side only, so it gets no
+          // passage — there is nothing on the other side of it to walk to.
+          buildTower(batch, detail, last.x1, last.z1, last.topY, heightAt, bays.length, last.stage, frameOf(last.x0, last.z0, last.x1, last.z1), null);
         }
         if (from === 0) buildRiverTerminus(batch, detail, bays[0], heightAt);
       },
@@ -1486,6 +1602,18 @@ function buildCurtainBay(
 // Towers
 // ---------------------------------------------------------------------------
 
+/**
+ * The lane through one tower, in the tower's own local frame.
+ *
+ * Local `-Z` is outward (see `frameOf`), so an offset along the outward normal maps to
+ * `-offset` and the fieldward jamb is the *lower* local z. Returned as `null` where the bay
+ * published no lane — a west end inside the gate block, or a neighbour with no walk on it.
+ */
+function localLane(pass: TowerPassOut | null): { z0: number; z1: number } | null {
+  if (!pass || pass.outer - pass.inner < MIN_LANE) return null;
+  return { z0: -pass.outer, z1: -pass.inner };
+}
+
 function buildTower(
   batch: Batch,
   detail: number,
@@ -1495,7 +1623,8 @@ function buildTower(
   heightAt: (x: number, z: number) => number,
   index: number,
   stage: BayStage,
-  f: Frame
+  f: Frame,
+  pass: TowerPassOut | null
 ): void {
   const brick = batch.s('brick');
   const stone = batch.s('stone');
@@ -1515,15 +1644,39 @@ function buildTower(
   const zInner = T * 0.5;
   const unfinished = stage === 'footing' || stage === 'gap';
   const bodyTop = unfinished ? g + 2.7 : topY;
+  const lane = unfinished ? null : localLane(pass);
+  const bat = WALL.batter * 0.6;
 
   box(stone, -W / 2 - 0.32, g - 2.0, zOuter - 0.32, W / 2 + 0.32, g + WALL.plinthHeight, zInner + 0.32, PAL.travertineDirty, {
     topGain: 1.1,
   });
-  box(brick, -W / 2, g + WALL.plinthHeight, zOuter, W / 2, bodyTop, zInner, PAL.brick, {
-    batter: WALL.batter * 0.6,
-    groundShade: 0.3,
-    topGain: 1.05,
-  });
+  /**
+   * The body, with the passage cut out of it.
+   *
+   * The tower's floor is its own body top at `topY`, which is the *higher* of the two bays'
+   * construction levels — so where the walk steps, the low side meets solid brick and the
+   * chamber's doorway is that step above his head. Cutting the slot in the body is what
+   * lets the low side in at all; the flight below carries him up to the floor.
+   *
+   * Split rather than punched: `box` batters by insetting the top face, so the piece above
+   * the sill starts at the inset the piece below it ended on and the two faces are flush.
+   */
+  if (!lane || pass!.loY >= bodyTop - 0.05) {
+    box(brick, -W / 2, g + WALL.plinthHeight, zOuter, W / 2, bodyTop, zInner, PAL.brick, {
+      batter: bat, groundShade: 0.3, topGain: 1.05,
+    });
+  } else {
+    const sill = Math.max(g + WALL.plinthHeight + 0.1, pass!.loY);
+    box(brick, -W / 2, g + WALL.plinthHeight, zOuter, W / 2, sill, zInner, PAL.brick, {
+      batter: bat, groundShade: 0.3, topGain: 1.05,
+    });
+    const in0 = bat * (sill - (g + WALL.plinthHeight));
+    // Field side of the lane, and city side of it. Both run up to the floor.
+    box(brick, -W / 2 + in0, sill, zOuter + in0, W / 2 - in0, bodyTop, lane.z0, PAL.brick,
+      { groundShade: 0.3, topGain: 1.05 });
+    box(brick, -W / 2 + in0, sill, lane.z1, W / 2 - in0, bodyTop, zInner - in0, PAL.brick,
+      { groundShade: 0.3, topGain: 1.05 });
+  }
 
   if (detail >= 2 && !unfinished) {
     // Travertine quoins up each outer corner: the strongest single cue that this is
@@ -1538,9 +1691,26 @@ function buildTower(
         });
       }
     }
+    /*
+     * String courses, cut around the passage.
+     *
+     * They wrap the tower's whole depth, and on a finished joint that is free — the body
+     * stops at the walk, so every band is under a man's feet. Where the two bays are still
+     * half-built the tower is up to its full height and the walk is on a 3.4 m lift, so the
+     * bands cross the doorway at 0.9 m intervals: four of Rome's forty-two passes measured
+     * 0.00 m of lane with the blocking triangle 0.10 to 0.22 m over the walk, which is a
+     * 90 mm band and nothing else.
+     */
     const nb = Math.max(1, Math.round((bodyTop - g - WALL.plinthHeight) / WALL.courseBand));
+    const voidLo = lane ? pass!.loY - 0.15 : Infinity;
+    const voidHi = lane ? Math.max(pass!.hiY, topY) + TOWER_PASS_HEAD + 0.15 : -Infinity;
     for (let k = 1; k < nb; k++) {
       const y = g + WALL.plinthHeight + ((bodyTop - g - WALL.plinthHeight) * k) / nb;
+      if (lane && y > voidLo && y - 0.09 < voidHi) {
+        box(brick, -W / 2 - 0.08, y - 0.09, zOuter - 0.08, W / 2 + 0.08, y, lane.z0, PAL.brickDark, { topGain: 1.22 });
+        box(brick, -W / 2 - 0.08, y - 0.09, lane.z1, W / 2 + 0.08, y, zInner + 0.08, PAL.brickDark, { topGain: 1.22 });
+        continue;
+      }
       box(brick, -W / 2 - 0.08, y - 0.09, zOuter - 0.08, W / 2 + 0.08, y, zInner + 0.08, PAL.brickDark, { topGain: 1.22 });
     }
   }
@@ -1553,8 +1723,8 @@ function buildTower(
   // ---- ballista chamber ---------------------------------------------------
   const chH = WALL.towerChamberHeight;
   const chTop = topY + chH;
-  const inset = 0.16;
-  const wallT = 0.75;
+  const inset = TOWER_CH_INSET;
+  const wallT = TOWER_CH_WALL;
   // Projecting cornice at the wall-walk line. Without it the chamber looks like a
   // smaller box balanced on a bigger one instead of a storey of the same tower.
   box(stone, -W / 2 - 0.34, topY - 0.42, zOuter - 0.34, W / 2 + 0.34, topY, zInner + 0.34, PAL.travertine, { topGain: 1.2 });
@@ -1562,7 +1732,6 @@ function buildTower(
   const cx1 = W / 2 - inset;
   const cz0 = zOuter + inset;
   const cz1 = zInner - inset;
-  box(stone, cx0, topY - 0.12, cz0, cx1, topY, cz1, PAL.travertineDirty, { topGain: 1.06 });
   const chTone = (k: number): THREE.Color =>
     new THREE.Color().copy(PAL.brick).multiplyScalar(0.82 + hash2(index, k, 331) * 0.34);
   /**
@@ -1573,13 +1742,27 @@ function buildTower(
    * is: the only way in was a doorway on the *city* face, which a man walking the parapet
    * cannot reach. A chamber astride the walk has to be walked through.
    *
-   * The opening spans the clear standing band `walkGeometry` publishes — from the inner
-   * face of the parapet to the walk's cityward lip — rather than being centred on the
-   * chamber, whose centre is 1.75 m outboard of the walk over the tower's projection.
+   * **The opening was then authored as a constant, and the constant went stale.**
+   * `-0.35 .. +1.35` is 1.7 m, which was the clear band of a 3.5 m curtain; the curtain has
+   * been 6.0 m for two workstreams and the walk is 4.0 m wide, so the door had become a
+   * 1.7 m slot offset to the field side of a lane nobody used. It comes off `towerLane`
+   * now, which is the same call the bay publishes to the siege system, so the hole and the
+   * path through it cannot drift apart again.
+   *
+   * Its head is `TOWER_PASS_HEAD` over the *higher* of the two walks, not over `topY`,
+   * because on a stepped joint the tower's floor and the low side's walk are different
+   * levels and a man crossing has to clear both.
    */
-  const doorOuter = -0.35;
-  const doorInner = 1.35;
-  const doorHead = topY + 2.25;
+  const doorOuter = lane ? lane.z0 : -0.35;
+  const doorInner = lane ? lane.z1 : 1.35;
+  const doorHead = (lane ? Math.max(pass!.hiY, topY) : topY) + TOWER_PASS_HEAD;
+  // Chamber paving, with the lane taken out of it so the flight below can come up through.
+  if (lane) {
+    box(stone, cx0, topY - 0.12, cz0, cx1, topY, doorOuter, PAL.travertineDirty, { topGain: 1.06 });
+    box(stone, cx0, topY - 0.12, doorInner, cx1, topY, cz1, PAL.travertineDirty, { topGain: 1.06 });
+  } else {
+    box(stone, cx0, topY - 0.12, cz0, cx1, topY, cz1, PAL.travertineDirty, { topGain: 1.06 });
+  }
   for (const sx of [-1, 1]) {
     const a = sx < 0 ? cx0 : cx1 - wallT;
     const b = sx < 0 ? cx0 + wallT : cx1;
@@ -1590,13 +1773,45 @@ function buildTower(
     }
     box(brick, a, topY, cz0, b, chTop, doorOuter, tone, { topGain: 1.1, groundShade: 0.14 });
     box(brick, a, topY, doorInner, b, chTop, cz1, tone, { topGain: 1.1, groundShade: 0.14 });
-    box(brick, a, doorHead, doorOuter, b, chTop, doorInner, tone, { topGain: 1.1, groundShade: 0.14 });
-    // Travertine lintel over the opening, so the head reads as dressed rather than sawn.
-    box(stone, a - 0.06, doorHead - 0.22, doorOuter - 0.06, b + 0.06, doorHead, doorInner + 0.06, PAL.travertine, {
-      topGain: 1.16,
-    });
+    if (doorHead < chTop) {
+      box(brick, a, doorHead, doorOuter, b, chTop, doorInner, tone, { topGain: 1.1, groundShade: 0.14 });
+      // Travertine lintel over the opening, so the head reads as dressed rather than sawn.
+      box(stone, a - 0.06, doorHead - 0.22, doorOuter - 0.06, b + 0.06, doorHead, doorInner + 0.06, PAL.travertine, {
+        topGain: 1.16,
+      });
+    }
   }
   box(brick, cx0 + wallT, topY, cz1 - wallT, cx1 - wallT, chTop, cz1, chTone(3), { topGain: 1.1, groundShade: 0.14 });
+  /**
+   * The passage floor, and the flight that carries it over the construction step.
+   *
+   * The chamber's own paving is laid at `topY` and the low side arrives at `pass.loY`, so
+   * without this a man walking in from the low side steps into a hole. Treads at the wall
+   * stair's own 0.31 rise where the tower is wide enough for them, and a plain ramp where
+   * it is not — Rome's worst walkable joint steps 7.70 m across a 7.6 m tower, which is
+   * 45 degrees and is a tower stair rather than a flight, but it is stone under his feet.
+   */
+  if (lane) {
+    const loY = pass!.loY;
+    const hiY = Math.max(pass!.hiY, topY);
+    const rise = hiY - loY;
+    const treads = rise < 0.06 ? 1 : Math.min(26, Math.max(1, Math.ceil(rise / 0.31)));
+    // Local +X runs from `x0` toward `x1` — east — so a flight climbing away from a low
+    // west neighbour advances in +X. Signed, because the same arithmetic run the wrong way
+    // builds a staircase descending into the wall it is meant to climb out of, and this
+    // project has shipped exactly that mistake twice.
+    const east = pass!.loIsWest ? 1 : -1;
+    const going = Math.min(0.34, (W + 0.6) / treads);
+    for (let k = 0; k < treads; k++) {
+      const y = loY + (rise * (k + 1)) / treads;
+      const cut = k * going;
+      const a = east > 0 ? -W / 2 - 0.3 + cut : -W / 2 - 0.3;
+      const b = east > 0 ? W / 2 + 0.3 : W / 2 + 0.3 - cut;
+      box(stone, a, loY - 0.35, doorOuter, b, y, doorInner, PAL.travertineDirty, {
+        topGain: 1.08, bottom: false,
+      });
+    }
+  }
 
   // Front wall pierced by the ballista embrasure.
   brick.pushTranslate(0, topY, cz0);
@@ -1610,11 +1825,23 @@ function buildTower(
   brick.pop();
 
   if (detail >= 1) {
-    // Side loopholes covering the curtain either way.
+    /**
+     * Side loopholes covering the curtain either way.
+     *
+     * Set in the *solid* part of the jamb, on the field side of the doorway. They used to
+     * be centred on the chamber's own axis at `z = 0`, which is inside the passage: the
+     * head ray through the lane hit them at 1.5 m and the tower had 1.4 m of clear
+     * headroom over a walk a man is 1.75 m tall on. A loophole is a slot in a wall and the
+     * wall it is in is the one either side of the door.
+     */
     const dark = new THREE.Color(0.016, 0.015, 0.013);
-    for (const sx of [-1, 1]) {
-      const px = sx * (W / 2 - inset - wallT * 0.5);
-      box(brick, px - 0.13, topY + 1.4, -0.4, px + 0.13, topY + 2.9, 0.4, dark, { top: false });
+    const slotZ = lane ? (cz0 + wallT + lane.z0) * 0.5 : 0;
+    const room = lane ? lane.z0 - (cz0 + wallT) : 1.0;
+    if (room > 0.9) {
+      for (const sx of [-1, 1]) {
+        const px = sx * (W / 2 - inset - wallT * 0.5);
+        box(brick, px - 0.13, topY + 1.4, slotZ - 0.4, px + 0.13, topY + 2.9, slotZ + 0.4, dark, { top: false });
+      }
     }
   }
 

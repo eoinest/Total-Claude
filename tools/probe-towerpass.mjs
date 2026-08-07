@@ -146,7 +146,35 @@ window.__tp = (() => {
     return out;
   };
 
-  /** Moller-Trumbore, two-sided: a wall is a wall whichever way its winding runs. */
+  /**
+   * Moller-Trumbore, two-sided: a wall is a wall whichever way its winding runs.
+   *
+   * Returns the nearest hit's distance and the mean height of the triangle that made it,
+   * because "blocked" on its own does not tell you whether you are looking at a lintel, a
+   * jamb or a tread, and the first three rounds of this were spent guessing which.
+   */
+  const nearestHit = (tris, ox, oy, oz, dx, dy, dz, len) => {
+    let bestT = Infinity, bestY = 0;
+    for (let i = 0; i < tris.length; i++) {
+      const t = tris[i];
+      const e1x = t[3] - t[0], e1y = t[4] - t[1], e1z = t[5] - t[2];
+      const e2x = t[6] - t[0], e2y = t[7] - t[1], e2z = t[8] - t[2];
+      const px = dy * e2z - dz * e2y, py = dz * e2x - dx * e2z, pz = dx * e2y - dy * e2x;
+      const det = e1x * px + e1y * py + e1z * pz;
+      if (det > -1e-9 && det < 1e-9) continue;
+      const inv = 1 / det;
+      const tx = ox - t[0], ty = oy - t[1], tz = oz - t[2];
+      const u = (tx * px + ty * py + tz * pz) * inv;
+      if (u < 0 || u > 1) continue;
+      const qx = ty * e1z - tz * e1y, qy = tz * e1x - tx * e1z, qz = tx * e1y - ty * e1x;
+      const v = (dx * qx + dy * qy + dz * qz) * inv;
+      if (v < 0 || u + v > 1) continue;
+      const s2 = (e2x * qx + e2y * qy + e2z * qz) * inv;
+      if (s2 > 1e-4 && s2 < len && s2 < bestT) { bestT = s2; bestY = (t[1] + t[4] + t[7]) / 3; }
+    }
+    return { t: bestT, y: bestY };
+  };
+
   const hits = (tris, ox, oy, oz, dx, dy, dz, len) => {
     for (let i = 0; i < tris.length; i++) {
       const t = tris[i];
@@ -193,10 +221,20 @@ window.__tp = (() => {
     const half = bay.towerHalf;
     const walkHi = Math.max(bay.walkY, prev.walkY);
     const walkLo = Math.min(bay.walkY, prev.walkY);
-    // Along the wall, from clear of the tower on the west face to clear on the east.
-    const run = half * 2 + 3.0;
-    const x0 = bay.x0 - bay.dx * (half + 1.5);
-    const z0 = bay.z0 - bay.dz * (half + 1.5);
+    /*
+     * Along the wall, from just clear of the tower's west face to just clear of its east.
+     *
+     * **The tower's own footprint plus 0.4 m, and not a metre more.** The first version ran
+     * the ray 1.5 m out either side and four of Rome's forty-two passes failed on it with
+     * the blocking triangle at 4.10 m from the tower centre — 0.3 m *outside* a 3.8 m
+     * half-footprint. That is the scaffolding and the treadwheel crane a half-built bay
+     * carries on its own walk, which is a real obstruction and a different question. A
+     * probe that mixes the two cannot tell a tower with no doorway from a bay with a crane
+     * parked on it. \`approach\` measures the second, separately.
+     */
+    const run = half * 2 + 0.8;
+    const x0 = bay.x0 - bay.dx * (half + 0.4);
+    const z0 = bay.z0 - bay.dz * (half + 0.4);
     const lo = Math.min(bay.innerOff, prev.innerOff);
     const hi = Math.max(bay.outerOff, prev.outerOff);
     // Every triangle within the tower's own block, once, so the sweep below is cheap.
@@ -221,29 +259,64 @@ window.__tp = (() => {
     }
     const width = best > 0 ? (best - 1) * ((hi - lo) / N) : 0;
     const centre = best > 0 ? lo + ((hi - lo) * (bestAt + (best - 1) / 2)) / N : 0;
-    // Where the siege system currently walks a man across.
-    const pathOff = Math.min(bay.innerOff, prev.innerOff) - 0.15;
-    const pi = Math.round(((pathOff - lo) / (hi - lo)) * N);
-    const pathClear = pi >= 0 && pi <= N ? clear[pi] : false;
-    // Headroom over the centre of the best lane.
+    /*
+     * Where the siege system actually walks a man across.
+     *
+     * The centre of the lane the bay publishes, which is what \`Siege.linkPath\` reads. Where
+     * the city publishes none it falls back to the cityward lip, which is where \`linkPath\`
+     * falls back to as well — so this arm and the sim always ask the same question.
+     */
+    const half2 = ((bay.passOuter ?? 0) - (bay.passInner ?? 0)) * 0.5;
+    const pathOff = half2 > 0
+      ? ((bay.passOuter ?? 0) + (bay.passInner ?? 0)) * 0.5
+      : Math.min(bay.innerOff, prev.innerOff) - 0.15;
+    const ppx = x0 + bay.nx * pathOff;
+    const ppz = z0 + bay.nz * pathOff;
+    const pathClear = !hits(tris, ppx, walkHi + 1.15, ppz, bay.dx, 0, bay.dz, run);
+    /*
+     * Headroom over the path, from the *higher* walk — the level the tower's own floor is
+     * at. Measured from the lower one it reads the flight inside the tower as an obstacle,
+     * which it is not: it is the floor.
+     */
     let head = 0;
-    if (best > 0) {
-      const px = x0 + bay.nx * centre;
-      const pz = z0 + bay.nz * centre;
-      for (let h = 0.2; h <= 4.0; h += 0.1) {
-        if (hits(tris, px, walkLo + h, pz, bay.dx, 0, bay.dz, run)) break;
-        head = h;
-      }
+    let headY = 0;
+    for (let k = 2; k <= 40; k++) {
+      const h = k * 0.1;
+      const q = nearestHit(tris, ppx, walkHi + h, ppz, bay.dx, 0, bay.dz, run);
+      if (q.t < Infinity) { headY = +(q.y - walkHi).toFixed(2); break; }
+      head = h;
     }
+    /*
+     * The 1.5 m of open walk either side of the tower, graded on its own.
+     *
+     * A construction bay parks a treadwheel crane and a scaffold lift on its own walkway,
+     * and that stops a file as surely as a solid tower does — but it is \`buildScaffold\`'s
+     * decision, not the tower's, and it should be reported rather than folded in.
+     */
+    const apRun = 1.6;
+    const apW = !hits(tris, x0 - bay.dx * apRun + bay.nx * pathOff, walkHi + 1.15,
+      z0 - bay.dz * apRun + bay.nz * pathOff, bay.dx, 0, bay.dz, apRun);
+    const apE = !hits(tris, x0 + bay.dx * (run + 0.05) + bay.nx * pathOff, walkHi + 1.15,
+      z0 + bay.dz * (run + 0.05) + bay.nz * pathOff, bay.dx, 0, bay.dz, apRun);
     return {
       bay: bay.index,
+      /*
+       * Both bays' construction stage, because a half-built bay is a building site: its
+       * walk is a 3.4 m rubble lift, it carries a scaffold and, every other bay, a 15 m
+       * treadwheel crane standing on the walk itself. Four of Rome's forty-two joints are
+       * half-built pairs and they are graded apart from the finished circuit rather than
+       * quietly excluded.
+       */
+      site: bay.stage !== 'finished' || prev.stage !== 'finished',
       step: +(walkHi - walkLo).toFixed(2),
       band: +(hi - lo).toFixed(2),
       lane: +width.toFixed(2),
       centre: +centre.toFixed(2),
       pathOff: +pathOff.toFixed(2),
       pathClear,
+      approach: apW && apE,
       head: +head.toFixed(1),
+      headY,
     };
   };
 
@@ -280,12 +353,17 @@ async function arm(map, fn, argsIn) {
 
 const GEOM = () => {
   const w = window.__tp;
-  const t = w.towers;
+  const all = w.towers;
+  const t = all.filter((q) => !q.site);
+  const site = all.filter((q) => q.site);
   const blocked = t.filter((q) => q.lane < 0.85);
   const offPath = t.filter((q) => !q.pathClear);
   const med = (a) => (a.length ? a.slice().sort((x, y) => x - y)[a.length >> 1] : 0);
   return {
     towers: t.length,
+    siteTowers: site.length,
+    siteBlocked: site.filter((q) => q.lane < 0.85).length,
+    siteBays: site.map((q) => q.bay),
     laneMin: Math.min(...t.map((q) => q.lane)),
     laneMed: med(t.map((q) => q.lane)),
     laneMax: Math.max(...t.map((q) => q.lane)),
@@ -294,10 +372,15 @@ const GEOM = () => {
     stepMax: Math.max(...t.map((q) => q.step)),
     stepMed: med(t.map((q) => q.step)),
     stepOver2: t.filter((q) => q.step > 2.0).length,
+    headMin: Math.min(...t.map((q) => q.head)),
+    lowHead: t.filter((q) => q.head < 2.0).length,
+    approachBlocked: t.filter((q) => !q.approach).length,
     blockedTowers: blocked.length,
     pathBlockedTowers: offPath.length,
     steps: t.map((q) => q.step).sort((x, y) => x - y),
-    sample: t.slice(0, 6),
+    worst: t.slice().sort((a, b) => a.lane - b.lane).slice(0, 5),
+    lowHeadSample: t.filter((q) => q.head < 2.0).slice(0, 5),
+    sample: t.slice(0, 4),
   };
 };
 
@@ -398,19 +481,24 @@ const check = (name, ok, detail) => {
 };
 
 for (const [city, gm] of [['Rome', romeGeom], ['Carthage', carGeom]]) {
-  check(`${city}: every tower has a lane through it a man fits down`,
+  check(`${city}: every tower on the finished circuit has a lane through it a man fits down`,
     gm.blockedTowers === 0,
     `${gm.towers} towers; clear lane min ${gm.laneMin} m, median ${gm.laneMed} m, max `
     + `${gm.laneMax} m across a ${gm.bandMed} m standing band; ${gm.blockedTowers} towers `
-    + `under 0.85 m (a man is 0.84 m across the shoulders)`);
+    + `under 0.85 m (a man is 0.84 m across the shoulders). Graded apart: ${gm.siteTowers} `
+    + `joints between bays still under construction, ${gm.siteBlocked} of them blocked `
+    + `(bays ${gm.siteBays.join(',') || 'none'}) — a half-built bay carries a scaffold and a `
+    + `treadwheel crane on its own walk, which is \`buildScaffold\`'s call and not the tower's`);
   check(`${city}: the lane is tall enough to walk down`,
-    gm.headMed >= 2.0,
-    `median headroom over the lane centre ${gm.headMed} m, measured from the lower walk`);
+    gm.headMin >= 2.0,
+    `headroom over the path, from the tower's own floor: min ${gm.headMin} m, median `
+    + `${gm.headMed} m; ${gm.lowHead} towers under 2.0 m`);
   check(`${city}: the traversal path goes through the hole`,
     gm.pathBlockedTowers === 0,
     `${gm.pathBlockedTowers}/${gm.towers} towers where the offset \`linkPath\` walks men `
     + `along is inside masonry; walk step at a tower median ${gm.stepMed} m, worst `
-    + `${gm.stepMax} m`);
+    + `${gm.stepMax} m; ${gm.approachBlocked} towers whose approach along the open walk is `
+    + `blocked by something that is not the tower (scaffolding, a crane on a half-built bay)`);
 }
 
 for (const [city, t] of GEOM_ONLY ? [] : [['Rome', romeTraffic], ['Carthage', carTraffic]]) {
