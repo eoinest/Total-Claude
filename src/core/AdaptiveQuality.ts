@@ -269,6 +269,60 @@ const WARMUP_MS = 12000;
 const REALLOC_SETTLE_FRAMES = 3;
 
 /**
+ * Reversals within `FLIP_WINDOW_MS` of each other before the loop gives up and holds.
+ *
+ * drei's `PerformanceMonitor` ships `flipflops: Infinity` and the community configuration
+ * everyone copies sets a finite one, because a controller that has reversed six times has
+ * demonstrated that the machine sits exactly on its own threshold and no further movement will
+ * fix that — it will only be visible. Latching is the direct answer to "must not oscillate
+ * visibly", and it is the part of that algorithm most implementations leave out.
+ *
+ * Six, not drei's suggested two or three, because a reversal here is separated by at least the
+ * 2 s raise dwell: six of them is a minimum of twelve seconds of hunting, which is long enough
+ * that a genuine scene change (a city camera cutting to a melee and back) is not mistaken for
+ * it. Unlike drei's, the latch is releasable — see `LATCH_RELEASE_MS`.
+ */
+const LATCH_REVERSALS = 6;
+/**
+ * Hold the latch until the frame has stayed inside the dead band this long.
+ *
+ * drei stops adapting permanently. That is wrong for a game where the scene's cost changes by
+ * more than the whole lever range over a battle: the frame at the deployment camera and the
+ * frame in the middle of a rout are different problems, and a loop that latched during the
+ * first must be able to work during the second. A minute of quiet is far longer than any
+ * hunting episode and much shorter than a battle.
+ */
+const LATCH_RELEASE_MS = 60000;
+
+/**
+ * Camera-motion regression, after R3F's `AdaptiveDpr` + `regress()`.
+ *
+ * Two things make this worth having on top of the measured loop. Motion masks softness — a
+ * panning image at 0.85 of full resolution is not distinguishable from full, while a still one
+ * is — and panning is measurably this project's worst case, the only camera that touches 226
+ * draws against a 220 budget. So the cheap frames are exactly the ones nobody can see.
+ *
+ * It is deliberately *not* a pressure change. Pressure is the controller's belief about the
+ * machine, and the camera moving is not evidence about the machine; folding it in would corrupt
+ * the state that has to survive between scenes. It multiplies the settled scale instead.
+ */
+const REGRESS_SCALE = 0.85;
+/** Camera world-space movement per frame above which the camera counts as moving. */
+const REGRESS_SPEED_M = 0.05;
+/** drei's debounce. Long enough that a burst-delivered mouse wheel does not flicker. */
+const REGRESS_HOLD_MS = 200;
+/**
+ * Regression is only enabled once the loop has priced its own reallocation.
+ *
+ * Entering and leaving regression reallocates PostFX's render targets, so on a machine where
+ * that is expensive the feature would trade a soft pan for a hitching one — strictly worse than
+ * not having it. The loop measures its first real reallocation and switches this on only if it
+ * came in under budget. 2 ms is an eighth of a frame: below that, two of them inside a pan are
+ * not something a player can see.
+ */
+const REGRESS_MAX_REALLOC_MS = 2.0;
+
+/**
  * Resolution quantum.
  *
  * A resolution change reallocates PostFX's nineteen render targets, so the scale is snapped to a
@@ -306,7 +360,13 @@ export interface AdaptiveState {
   reallocs: number;
   /** Cost of the last resolution change, wall clock, in ms. */
   lastReallocMs: number;
+  /** Median of every reallocation this session — the number the design turns on. */
+  medianReallocMs: number;
   lastDirection: 'up' | 'down' | 'none';
+  /** True once the loop has decided the machine sits on its threshold and stopped moving. */
+  latched: boolean;
+  regressing: boolean;
+  regressEnabled: boolean;
 }
 
 export interface ScaleTracePoint {
@@ -365,6 +425,19 @@ export class AdaptiveQualitySystem implements Subsystem {
   private changes = 0;
   private reallocs = 0;
   private lastReallocMs = 0;
+  private reallocCosts: number[] = [];
+
+  private latched = false;
+  private lastInBandMs = 0;
+
+  /** Camera-motion regression. */
+  regressOnMotion = true;
+  private regressEnabled = false;
+  private regressing = false;
+  private lastCamX = NaN;
+  private lastCamY = 0;
+  private lastCamZ = 0;
+  private lastMotionMs = -1e9;
 
   /** Ring of decisions, for the debug HUD and for proving the loop settles. */
   readonly trace: ScaleTracePoint[] = [];
@@ -382,10 +455,19 @@ export class AdaptiveQualitySystem implements Subsystem {
   init(ctx: EngineContext): void {
     this.ctx = ctx;
     this.startMs = performance.now();
-    // A tier switch keeps the pressure — the machine has not changed, only what is being asked
-    // of it — but the envelope, and therefore every lever's floor, is re-derived from scratch.
+    /*
+     * A tier switch keeps the pressure — the machine has not changed, only what is being asked
+     * of it — but the envelope, and therefore every lever's floor, is re-derived from scratch.
+     *
+     * This reaches a fixed point rather than recursing because `applyRenderQuality` emits only
+     * on a real change: the first pass re-derives the levers for the new tier and emits, the
+     * second finds them already correct and emits nothing. `reentry` is a second line of
+     * defence only, because a flag cannot see the recursion this used to have — `EventBus`
+     * defers a re-entrant emit and drains it *after* the handler has returned and cleared any
+     * flag it set. It is reset every frame in `sample`.
+     */
     ctx.events.on('qualityChanged', () => {
-      if (this.applying) return;
+      if (this.reentry++ > 4) return;
       this.resetWindow();
       this.apply(true);
     });
@@ -393,12 +475,12 @@ export class AdaptiveQualitySystem implements Subsystem {
     w.__adaptive = this;
   }
 
-  /** Set while this system is writing quality, so its own event does not re-enter. */
-  private applying = false;
+  private reentry = 0;
 
   /** Called by `Engine.frame` with the render half of the frame just completed. */
   sample(renderMs: number): void {
     this.framesSeen++;
+    this.reentry = 0;
     if (this.skipFrames > 0) {
       this.skipFrames--;
       return;
@@ -430,6 +512,7 @@ export class AdaptiveQualitySystem implements Subsystem {
     if (!this.enabled || !this.ctx) return;
 
     const now = performance.now();
+    this.trackCamera(now);
 
     // Decay one notch of flip-flop penalty after a long quiet spell, so a machine that got
     // pinned by a transient (a load spike from another process) is not penalised forever.
@@ -451,6 +534,23 @@ export class AdaptiveQualitySystem implements Subsystem {
     if (!this.warm) return;
 
     const raiseMs = DROP_MS - this.deadBandMs;
+    const inBand = this.p90 <= DROP_MS && this.p90 >= raiseMs;
+    if (inBand) {
+      if (this.lastInBandMs === 0) this.lastInBandMs = now;
+    } else {
+      this.lastInBandMs = 0;
+    }
+
+    // Release the latch once the frame has been quiet for a minute. A battle's cost changes by
+    // more than the whole lever range between the deployment camera and a rout, so a loop that
+    // latched during the first has to be able to work during the second.
+    if (this.latched) {
+      if (inBand && now - this.lastInBandMs > LATCH_RELEASE_MS) {
+        this.latched = false;
+        this.reversals = 0;
+      }
+      return;
+    }
 
     if (this.p90 > DROP_MS) {
       if (now - this.lastChangeMs < DROP_DWELL_MS) return;
@@ -471,16 +571,50 @@ export class AdaptiveQualitySystem implements Subsystem {
     }
   }
 
+  /**
+   * Enter and leave motion regression.
+   *
+   * Camera displacement rather than any flag on the rig: it covers pan, edge scroll, rotation
+   * about the focus, zoom and a scripted jump with one test, and it couples to nothing.
+   */
+  private trackCamera(now: number): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const p = ctx.camera.position;
+    if (Number.isNaN(this.lastCamX)) {
+      this.lastCamX = p.x; this.lastCamY = p.y; this.lastCamZ = p.z;
+      return;
+    }
+    const dx = p.x - this.lastCamX, dy = p.y - this.lastCamY, dz = p.z - this.lastCamZ;
+    this.lastCamX = p.x; this.lastCamY = p.y; this.lastCamZ = p.z;
+    if (dx * dx + dy * dy + dz * dz > REGRESS_SPEED_M * REGRESS_SPEED_M) this.lastMotionMs = now;
+
+    if (!this.regressOnMotion || !this.regressEnabled) {
+      if (this.regressing) { this.regressing = false; this.apply(false); }
+      return;
+    }
+    const want = now - this.lastMotionMs < REGRESS_HOLD_MS;
+    if (want === this.regressing) return;
+    this.regressing = want;
+    // Samples taken while the resolution is stepping are not evidence about the settled state.
+    this.skipFrames = Math.max(this.skipFrames, REALLOC_SETTLE_FRAMES);
+    this.apply(false);
+  }
+
   private move(next: number, dir: 'up' | 'down', now: number): void {
     if (next === this.pressure) return;
 
     if (this.lastDirection !== 'none' && this.lastDirection !== dir) {
       if (now - this.lastReversalMs < FLIP_WINDOW_MS || this.lastReversalMs < 0) {
-        this.reversals = Math.min(8, this.reversals + 1);
+        this.reversals = Math.min(LATCH_REVERSALS, this.reversals + 1);
       } else {
         this.reversals = 1;
       }
       this.lastReversalMs = now;
+      if (this.reversals >= LATCH_REVERSALS) {
+        this.latched = true;
+        this.lastInBandMs = 0;
+      }
     }
 
     this.pressure = next;
@@ -530,6 +664,9 @@ export class AdaptiveQualitySystem implements Subsystem {
       }
     }
     scale = Math.max(env.renderScaleFloor, Math.min(1, scale));
+    // Regression is a multiplier on the settled scale, not a change of state, and it is still
+    // held above the tier's floor: a pan must not show a player something their tier forbids.
+    if (this.regressing) scale = Math.max(env.renderScaleFloor, scale * REGRESS_SCALE);
     const quantised = Math.round(scale / RES_QUANTUM) * RES_QUANTUM;
 
     // --- grass ------------------------------------------------------------
@@ -557,19 +694,34 @@ export class AdaptiveQualitySystem implements Subsystem {
     const resMoved = fromTierChange || Math.abs(quantised - this.appliedScale) > 1e-6;
     this.appliedScale = quantised;
 
-    this.applying = true;
+
     const t0 = performance.now();
     const realloc = this.engine.applyRenderQuality(patch);
     const cost = performance.now() - t0;
-    this.applying = false;
+
 
     if (realloc) {
       this.reallocs++;
       this.lastReallocMs = cost;
+      this.reallocCosts.push(cost);
+      if (this.reallocCosts.length > 64) this.reallocCosts.shift();
       this.skipFrames = REALLOC_SETTLE_FRAMES;
+      // The loop prices its own lever and decides on the evidence whether the fast
+      // motion-regression path is affordable. Three samples, because the first reallocation of
+      // a session also warms allocator paths and driver state and is not representative.
+      if (this.reallocCosts.length >= 3) {
+        this.regressEnabled = this.medianReallocMs() < REGRESS_MAX_REALLOC_MS;
+      }
     }
     void resMoved;
     return realloc ? cost : 0;
+  }
+
+  /** Median reallocation cost this session. The number the whole design turns on. */
+  medianReallocMs(): number {
+    if (!this.reallocCosts.length) return 0;
+    const a = [...this.reallocCosts].sort((x, y) => x - y);
+    return a[a.length >> 1];
   }
 
   /** Force a pressure, for probes and for the settings menu's "reset". */
@@ -616,7 +768,11 @@ export class AdaptiveQualitySystem implements Subsystem {
       changes: this.changes,
       reallocs: this.reallocs,
       lastReallocMs: this.lastReallocMs,
+      medianReallocMs: this.medianReallocMs(),
       lastDirection: this.lastDirection,
+      latched: this.latched,
+      regressing: this.regressing,
+      regressEnabled: this.regressEnabled,
     };
   }
 
@@ -625,9 +781,10 @@ export class AdaptiveQualitySystem implements Subsystem {
     const s = this.state();
     if (!s.enabled) return 'adapt off';
     if (!s.warm) return `adapt warm ${this.framesSeen}/${WARMUP_FRAMES}`;
+    const flag = s.latched ? ' LATCH' : s.regressing ? ' pan' : '';
     return (
       `adapt p${(s.pressure * 100).toFixed(0)}%  res ${s.appliedScale.toFixed(2)}` +
-      ` (${s.drawingBuffer.w}x${s.drawingBuffer.h})  grass ${s.grassDensity.toFixed(2)}\n` +
+      ` (${s.drawingBuffer.w}x${s.drawingBuffer.h})  grass ${s.grassDensity.toFixed(2)}${flag}\n` +
       `  rend p50 ${s.p50.toFixed(1)} p90 ${s.p90.toFixed(1)} p99 ${s.p99.toFixed(1)}` +
       ` band ${s.raiseMs.toFixed(1)}-${s.dropMs.toFixed(1)} x${s.reversals}`
     );

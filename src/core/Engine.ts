@@ -221,7 +221,23 @@ export class Engine {
       stencil: false,
       depth: true,
       powerPreference: 'high-performance',
-      preserveDrawingBuffer: true, // screenshot harness reads pixels back
+      /*
+       * Only for the harness, which is the only thing that reads the viewport back.
+       *
+       * `preserveDrawingBuffer` makes the compositor *copy* the drawing buffer every frame
+       * rather than swap it — at ultra on a Retina panel, a 3840x2160 copy per frame, and it
+       * scales with exactly the resolution lever this engine now moves. It was shipped
+       * unconditionally to serve `probe-artillery.mjs`, which calls
+       * `renderer.domElement.toDataURL()`, and that probe loads with `?harness=1&w=640&h=400`,
+       * so gating on `fixedSize` keeps it working and takes the copy off every real player.
+       * Nothing in `src/` reads pixels back, and `shoot.mjs` goes through `page.screenshot()`,
+       * which is the compositor path and never needed the flag.
+       *
+       * The cost lands after `frame()` returns and before pixels appear, so no instrument in
+       * this project can see it: the measured session has `frame()` at p50 9.1 ms against an
+       * rAF interval of 25 ms, and this flag lives in that gap.
+       */
+      preserveDrawingBuffer: opts.fixedSize !== undefined,
       logarithmicDepthBuffer: false,
     });
 
@@ -481,6 +497,7 @@ export class Engine {
   applyRenderQuality(patch: RenderQualityPatch): boolean {
     const q = this.quality;
     let resolutionMoved = false;
+    let changed = false;
 
     if (patch.renderScale !== undefined) {
       // 0.2 is a floor on absurdity, not a quality decision — the tiers set the real floors.
@@ -494,16 +511,24 @@ export class Engine {
       q.maxPixelRatio = patch.maxPixelRatio;
       resolutionMoved = true;
     }
-    if (patch.shadowMapSize !== undefined) q.shadowMapSize = patch.shadowMapSize;
-    if (patch.shadowCascades !== undefined) q.shadowCascades = patch.shadowCascades;
-    if (patch.ssao !== undefined) q.ssao = patch.ssao;
-    if (patch.bloom !== undefined) q.bloom = patch.bloom;
-    if (patch.motionBlur !== undefined) q.motionBlur = patch.motionBlur;
-    if (patch.volumetricLight !== undefined) q.volumetricLight = patch.volumetricLight;
-    if (patch.depthOfField !== undefined) q.depthOfField = patch.depthOfField;
-    if (patch.lodFarDistance !== undefined) q.lodFarDistance = patch.lodFarDistance;
-    if (patch.grassDensity !== undefined) q.grassDensity = Math.max(0, patch.grassDensity);
-    if (patch.antialias !== undefined) q.antialias = patch.antialias;
+    // A `RenderQuality` view of the same object, so the helper cannot be handed a sim-side key:
+    // `keyof RenderQuality` does not include `maxSoldiers`.
+    const rq: RenderQuality = q;
+    const set = <K extends keyof RenderQuality>(k: K, v: RenderQuality[K] | undefined): void => {
+      if (v === undefined || rq[k] === v) return;
+      rq[k] = v;
+      changed = true;
+    };
+    set('shadowMapSize', patch.shadowMapSize);
+    set('shadowCascades', patch.shadowCascades);
+    set('ssao', patch.ssao);
+    set('bloom', patch.bloom);
+    set('motionBlur', patch.motionBlur);
+    set('volumetricLight', patch.volumetricLight);
+    set('depthOfField', patch.depthOfField);
+    set('lodFarDistance', patch.lodFarDistance);
+    set('grassDensity', patch.grassDensity === undefined ? undefined : Math.max(0, patch.grassDensity));
+    set('antialias', patch.antialias);
 
     // Belt and braces over the type. `RenderQualityPatch` cannot name `maxSoldiers`, but the
     // field lives on the same object every consumer reads, so it is re-pinned rather than
@@ -518,7 +543,22 @@ export class Engine {
       for (const s of this.systems) s.resize?.(this.viewW, this.viewH, this.ctx);
     }
 
-    this.events.emit('qualityChanged', { quality: this.quality });
+    /*
+     * Emit only on a real change, and the "only" is load-bearing rather than tidy.
+     *
+     * `EventBus.emit` defers a re-entrant emit and then drains the queue synchronously in its
+     * own `finally`, where the drained call finds `dispatching === 0` and dispatches for real.
+     * So a handler that responds to `qualityChanged` by writing quality does not recurse
+     * *through* the emit — it recurses through the drain, one stack frame deeper each time, and
+     * no re-entrancy flag on the handler's side can see it: the flag is already cleared by the
+     * time the deferred call runs. `Maximum call stack size exceeded`, on the first tier switch.
+     *
+     * The fix belongs here rather than in the handler, because an event that announces a change
+     * when nothing changed is the actual defect. With this guard the loop's response to a tier
+     * switch reaches a fixed point in two rounds: the first re-derives its levers from the new
+     * envelope and emits, the second finds them already correct and stops.
+     */
+    if (changed || resolutionMoved) this.events.emit('qualityChanged', { quality: this.quality });
     return resolutionMoved;
   }
 
