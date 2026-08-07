@@ -1,25 +1,25 @@
 {
-  "url": "http://127.0.0.1:5561/?menu=0&quality=low&scenario=field&battle=eyJtYXAiOiJjYXJ0aGFnZSIsInNjZW5hcmlvIjoiZmllbGQifQ",
+  "url": "http://127.0.0.1:5599/?menu=0&quality=low&scenario=field&battle=eyJtYXAiOiJjYXJ0aGFnZSIsInNjZW5hcmlvIjoiZmllbGQifQ",
   "map": "carthage",
   "scenario": "field",
-  "when": "2026-08-07T19:43:01.024Z",
+  "when": "2026-08-07T20:28:40.902Z",
   "solids": {
-    "obstacles": 643,
+    "obstacles": 905,
     "byKind": {
       "wall": 147,
       "tower": 31,
       "monument": 42,
-      "building": 423
+      "building": 685
     },
-    "occupiedCells": 39335,
-    "occupiedHectares": 62.9,
+    "occupiedCells": 44229,
+    "occupiedHectares": 70.8,
     "stats": {
       "id": "carthage",
-      "chunks": 120,
-      "meshes": 782,
-      "visibleMeshes": 222,
-      "visibleTriangles": 393980,
-      "triangles": 1140784,
+      "chunks": 68,
+      "meshes": 318,
+      "visibleMeshes": 107,
+      "visibleTriangles": 393339,
+      "triangles": 1357170,
       "materials": 9,
       "usedManifest": true,
       "footprintOverlaps": 0,
@@ -31,7 +31,7 @@
       "fabricOverlaps": 0,
       "fabricOverlapWorst": 0,
       "wayInsideMonument": 10,
-      "waySamples": 1265,
+      "waySamples": 1717,
       "ways": [
         {
           "cls": "artery",
@@ -40,45 +40,55 @@
         },
         {
           "cls": "secondary",
-          "count": 6,
-          "km": 5.39
+          "count": 8,
+          "km": 7.9
         },
         {
           "cls": "local",
-          "count": 101,
-          "km": 26.9
+          "count": 137,
+          "km": 35.5
         },
         {
           "cls": "vicus",
-          "count": 106,
-          "km": 17.45
+          "count": 138,
+          "km": 23.74
         }
       ],
       "assertions": [
         {
           "name": "ways clear of all solids",
           "ok": false,
-          "detail": "10/1265 centreline samples at 6 m along the 11 named ways stand inside a solid — monuments, houses **and the harbour water**, not monuments alone. Worst: via-portus 3%, via-circa-byrsam 2%, via-navalis 2%."
+          "detail": "10/1717 centreline samples at 6 m along the 13 named ways stand inside a solid — monuments, houses **and the harbour water**, not monuments alone. Worst: via-portus 3%, via-circa-byrsam 2%, via-navalis 2%."
         },
         {
           "name": "solid/solid interpenetration",
           "ok": true,
-          "detail": "0 overlapping pair(s) over 465 solids (435 footprints + 30 harbour-water rectangles), worst 0.0 m. Population is every solid against every other — monuments, houses, quays, moles and the water — with a 0.4 m allowance for the party walls a terrace is made of, and one exclusion: the 30 chords are one basin cut into pieces and are not tested against each other. No soft exemption and no upper escape hatch. Worst pair: none."
+          "detail": "0 overlapping pair(s) over 727 solids (697 footprints + 30 harbour-water rectangles), worst 0.0 m. Population is every solid against every other — monuments, houses, quays, moles and the water — with a 0.4 m allowance for the party walls a terrace is made of, and one exclusion: the 30 chords are one basin cut into pieces and are not tested against each other. No soft exemption and no upper escape hatch. Worst pair: none."
         },
         {
           "name": "intervallum clear behind the circuit",
           "ok": true,
-          "detail": "min 38.0 m at x=456 over 248 samples across the circuit's real span (-968..1013); 0 sample(s) below the required 35 m, or 70 m over a stair apron."
+          "detail": "min 38.0 m at x=-328 over 248 samples across the circuit's real span (-968..1013); 0 sample(s) below the required 35 m, or 70 m over a stair apron."
         },
         {
           "name": "stair-foot aprons clear",
-          "ok": false,
-          "detail": "6 aprons of 120 × 70 m at x -830, -475, -120, 235, 590, 945. Obstructed: x=-475: 7/252. A 35 m cohort in line fits in every one with 43 m of depth to spare."
+          "ok": true,
+          "detail": "6 aprons of 120 × 70 m at x -830, -475, -120, 235, 590, 945. All empty. A 35 m cohort in line fits in every one with 43 m of depth to spare."
         },
         {
           "name": "roof coverage",
           "ok": true,
-          "detail": "423 blocks (771 rejected), 34.1 ha of roof over 136.3 ha of walled land = **25.0%**; 43.2 ha of that is carriageway, so roof between street lines is **36.6%**. Not a pass/fail: the second figure is the one comparable with an orthophoto, and Megara is a garden suburb that is *supposed* to be empty."
+          "detail": "685 blocks (635 rejected: keepOut 306, density 124, outOfBounds 85, collide 79, drowned 41, masked 21), 40.5 ha of roof over 136.3 ha of walled land = **29.7%**; 57.8 ha of that is carriageway, so roof between street lines is **51.5%**. Split: dense city 28.1 ha, Megara 12.4 ha of walled enclosure. Not a pass/fail: the second figure is the one comparable with an orthophoto, and Megara is a garden suburb that is *supposed* to be empty — see 'dense fabric at the module's ceiling'."
+        },
+        {
+          "name": "dense fabric at the module's ceiling",
+          "ok": true,
+          "detail": "634 blocks outside the Megara carry 28.1 ha of roof over 49.7 ha of their own lattice cells = **56.5%**, against the cubit module's arithmetic ceiling of 60.9% (a 30.9 × 15.5 m block in a 34.9 × 22.5 m cell) and the 60-70% the archaeology gives for the Carthaginian core. **The gap between this and the pooled figure above is the Megara and the streets, not thin housing.**"
+        },
+        {
+          "name": "every residential quarter builds",
+          "ok": true,
+          "detail": "all 16 quarters placed at least one block; the smallest is harbourside at 2."
         },
         {
           "name": "ship sheds",
@@ -88,7 +98,7 @@
         {
           "name": "nothing the city builds stands under the sea",
           "ok": true,
-          "detail": "0 of 423 house footprints and 0 of 31 curtain towers have any part of their plan below 0 m. 120 candidate blocks were refused at build for standing within 0.44 m of the datum, which is where the gulf's swell crest reaches. 5 monuments *are* under it and are meant to be — Scipio's mole, the quay-fort, the cut channel and the cothon ring are harbour works built into the sea."
+          "detail": "0 of 685 house footprints and 0 of 31 curtain towers have any part of their plan below 0 m. 41 candidate blocks were refused at build for standing within 0.44 m of the datum, which is where the gulf's swell crest reaches. 5 monuments *are* under it and are meant to be — Scipio's mole, the quay-fort, the cut channel and the cothon ring are harbour works built into the sea."
         },
         {
           "name": "harbour basins at sea level, on quays a man can stand on",
@@ -104,19 +114,19 @@
       "drawsByFamily": [
         {
           "family": "fabric",
-          "meshes": 143
+          "meshes": 33
         },
         {
           "family": "streets",
-          "meshes": 27
-        },
-        {
-          "family": "wall",
-          "meshes": 25
+          "meshes": 29
         },
         {
           "family": "monuments",
           "meshes": 17
+        },
+        {
+          "family": "wall",
+          "meshes": 16
         },
         {
           "family": "harbour",
@@ -125,6 +135,10 @@
         {
           "family": "byrsa",
           "meshes": 3
+        },
+        {
+          "family": "gate",
+          "meshes": 2
         },
         {
           "family": "trees",
@@ -137,27 +151,37 @@
     {
       "name": "ways clear of all solids",
       "ok": false,
-      "detail": "10/1265 centreline samples at 6 m along the 11 named ways stand inside a solid — monuments, houses **and the harbour water**, not monuments alone. Worst: via-portus 3%, via-circa-byrsam 2%, via-navalis 2%."
+      "detail": "10/1717 centreline samples at 6 m along the 13 named ways stand inside a solid — monuments, houses **and the harbour water**, not monuments alone. Worst: via-portus 3%, via-circa-byrsam 2%, via-navalis 2%."
     },
     {
       "name": "solid/solid interpenetration",
       "ok": true,
-      "detail": "0 overlapping pair(s) over 465 solids (435 footprints + 30 harbour-water rectangles), worst 0.0 m. Population is every solid against every other — monuments, houses, quays, moles and the water — with a 0.4 m allowance for the party walls a terrace is made of, and one exclusion: the 30 chords are one basin cut into pieces and are not tested against each other. No soft exemption and no upper escape hatch. Worst pair: none."
+      "detail": "0 overlapping pair(s) over 727 solids (697 footprints + 30 harbour-water rectangles), worst 0.0 m. Population is every solid against every other — monuments, houses, quays, moles and the water — with a 0.4 m allowance for the party walls a terrace is made of, and one exclusion: the 30 chords are one basin cut into pieces and are not tested against each other. No soft exemption and no upper escape hatch. Worst pair: none."
     },
     {
       "name": "intervallum clear behind the circuit",
       "ok": true,
-      "detail": "min 38.0 m at x=456 over 248 samples across the circuit's real span (-968..1013); 0 sample(s) below the required 35 m, or 70 m over a stair apron."
+      "detail": "min 38.0 m at x=-328 over 248 samples across the circuit's real span (-968..1013); 0 sample(s) below the required 35 m, or 70 m over a stair apron."
     },
     {
       "name": "stair-foot aprons clear",
-      "ok": false,
-      "detail": "6 aprons of 120 × 70 m at x -830, -475, -120, 235, 590, 945. Obstructed: x=-475: 7/252. A 35 m cohort in line fits in every one with 43 m of depth to spare."
+      "ok": true,
+      "detail": "6 aprons of 120 × 70 m at x -830, -475, -120, 235, 590, 945. All empty. A 35 m cohort in line fits in every one with 43 m of depth to spare."
     },
     {
       "name": "roof coverage",
       "ok": true,
-      "detail": "423 blocks (771 rejected), 34.1 ha of roof over 136.3 ha of walled land = **25.0%**; 43.2 ha of that is carriageway, so roof between street lines is **36.6%**. Not a pass/fail: the second figure is the one comparable with an orthophoto, and Megara is a garden suburb that is *supposed* to be empty."
+      "detail": "685 blocks (635 rejected: keepOut 306, density 124, outOfBounds 85, collide 79, drowned 41, masked 21), 40.5 ha of roof over 136.3 ha of walled land = **29.7%**; 57.8 ha of that is carriageway, so roof between street lines is **51.5%**. Split: dense city 28.1 ha, Megara 12.4 ha of walled enclosure. Not a pass/fail: the second figure is the one comparable with an orthophoto, and Megara is a garden suburb that is *supposed* to be empty — see 'dense fabric at the module's ceiling'."
+    },
+    {
+      "name": "dense fabric at the module's ceiling",
+      "ok": true,
+      "detail": "634 blocks outside the Megara carry 28.1 ha of roof over 49.7 ha of their own lattice cells = **56.5%**, against the cubit module's arithmetic ceiling of 60.9% (a 30.9 × 15.5 m block in a 34.9 × 22.5 m cell) and the 60-70% the archaeology gives for the Carthaginian core. **The gap between this and the pooled figure above is the Megara and the streets, not thin housing.**"
+    },
+    {
+      "name": "every residential quarter builds",
+      "ok": true,
+      "detail": "all 16 quarters placed at least one block; the smallest is harbourside at 2."
     },
     {
       "name": "ship sheds",
@@ -167,7 +191,7 @@
     {
       "name": "nothing the city builds stands under the sea",
       "ok": true,
-      "detail": "0 of 423 house footprints and 0 of 31 curtain towers have any part of their plan below 0 m. 120 candidate blocks were refused at build for standing within 0.44 m of the datum, which is where the gulf's swell crest reaches. 5 monuments *are* under it and are meant to be — Scipio's mole, the quay-fort, the cut channel and the cothon ring are harbour works built into the sea."
+      "detail": "0 of 685 house footprints and 0 of 31 curtain towers have any part of their plan below 0 m. 41 candidate blocks were refused at build for standing within 0.44 m of the datum, which is where the gulf's swell crest reaches. 5 monuments *are* under it and are meant to be — Scipio's mole, the quay-fort, the cut channel and the cothon ring are harbour works built into the sea."
     },
     {
       "name": "harbour basins at sea level, on quays a man can stand on",
@@ -185,10 +209,10 @@
     "xTo": 1012,
     "samples": 100,
     "min": 24,
-    "p10": 32,
+    "p10": 36,
     "median": 72,
-    "p90": 256,
-    "max": 400,
+    "p90": 200,
+    "max": 308,
     "worstAt": -308
   },
   "aprons": [
@@ -196,13 +220,13 @@
       "x": -830,
       "ok": true,
       "openFraction": 0.985,
-      "widestBody": 80
+      "widestBody": 75.3
     },
     {
       "x": -475,
       "ok": true,
       "openFraction": 0.951,
-      "widestBody": 80
+      "widestBody": 123.3
     },
     {
       "x": -120,
@@ -214,34 +238,34 @@
       "x": 235,
       "ok": true,
       "openFraction": 0.875,
-      "widestBody": 80
+      "widestBody": 75.9
     },
     {
       "x": 590,
       "ok": true,
       "openFraction": 1,
-      "widestBody": 118.6
+      "widestBody": 144
     },
     {
       "x": 945,
       "ok": true,
       "openFraction": 1,
-      "widestBody": 119.2
+      "widestBody": 144
     }
   ],
   "corridor": {
-    "freeCellsSampled": 87852,
+    "freeCellsSampled": 83482,
     "corridorWidth": {
       "p05": 8,
-      "p25": 27.3,
-      "median": 70.6,
+      "p25": 24,
+      "median": 64,
       "p75": 160,
-      "p95": 376
+      "p95": 363.3
     },
     "fractionAdmitting": {
       "file2p4m": 1,
-      "column16m": 0.884,
-      "cohortInLine35m": 0.696
+      "column16m": 0.88,
+      "cohortInLine35m": 0.676
     }
   },
   "reach": {
@@ -253,15 +277,15 @@
           0,
           297
         ],
-        "cellsReached": 448774,
-        "cellsInsideCircuit": 109039,
-        "cellsWalled": 71214,
-        "hectaresReached": 718,
-        "hectaresInsideCircuit": 174.5,
-        "hectaresWalled": 113.9,
+        "cellsReached": 443880,
+        "cellsInsideCircuit": 102199,
+        "cellsWalled": 64600,
+        "hectaresReached": 710.2,
+        "hectaresInsideCircuit": 163.5,
+        "hectaresWalled": 103.4,
         "deepestReached": 1398,
         "deepestAt": [
-          1058,
+          -66,
           1398
         ]
       },
@@ -272,15 +296,15 @@
           0,
           297
         ],
-        "cellsReached": 436410,
-        "cellsInsideCircuit": 100247,
-        "cellsWalled": 63317,
-        "hectaresReached": 698.3,
-        "hectaresInsideCircuit": 160.4,
-        "hectaresWalled": 101.3,
+        "cellsReached": 429543,
+        "cellsInsideCircuit": 89176,
+        "cellsWalled": 52813,
+        "hectaresReached": 687.3,
+        "hectaresInsideCircuit": 142.7,
+        "hectaresWalled": 84.5,
         "deepestReached": 1398,
         "deepestAt": [
-          1062,
+          -62,
           1398
         ]
       },
@@ -291,12 +315,12 @@
           0,
           297
         ],
-        "cellsReached": 418261,
-        "cellsInsideCircuit": 84685,
-        "cellsWalled": 49091,
-        "hectaresReached": 669.2,
-        "hectaresInsideCircuit": 135.5,
-        "hectaresWalled": 78.5,
+        "cellsReached": 403076,
+        "cellsInsideCircuit": 65098,
+        "cellsWalled": 30292,
+        "hectaresReached": 644.9,
+        "hectaresInsideCircuit": 104.2,
+        "hectaresWalled": 48.5,
         "deepestReached": 1398,
         "deepestAt": [
           1074,
@@ -312,15 +336,15 @@
           0,
           553
         ],
-        "cellsReached": 448774,
-        "cellsInsideCircuit": 109039,
-        "cellsWalled": 71214,
-        "hectaresReached": 718,
-        "hectaresInsideCircuit": 174.5,
-        "hectaresWalled": 113.9,
+        "cellsReached": 443880,
+        "cellsInsideCircuit": 102199,
+        "cellsWalled": 64600,
+        "hectaresReached": 710.2,
+        "hectaresInsideCircuit": 163.5,
+        "hectaresWalled": 103.4,
         "deepestReached": 1398,
         "deepestAt": [
-          -70,
+          -66,
           1398
         ]
       },
@@ -331,15 +355,15 @@
           0,
           553
         ],
-        "cellsReached": 436410,
-        "cellsInsideCircuit": 100247,
-        "cellsWalled": 63317,
-        "hectaresReached": 698.3,
-        "hectaresInsideCircuit": 160.4,
-        "hectaresWalled": 101.3,
+        "cellsReached": 429543,
+        "cellsInsideCircuit": 89176,
+        "cellsWalled": 52813,
+        "hectaresReached": 687.3,
+        "hectaresInsideCircuit": 142.7,
+        "hectaresWalled": 84.5,
         "deepestReached": 1398,
         "deepestAt": [
-          -74,
+          -62,
           1398
         ]
       },
@@ -350,16 +374,16 @@
           0,
           553
         ],
-        "cellsReached": 418261,
-        "cellsInsideCircuit": 84685,
-        "cellsWalled": 49091,
-        "hectaresReached": 669.2,
-        "hectaresInsideCircuit": 135.5,
-        "hectaresWalled": 78.5,
-        "deepestReached": 1398,
+        "cellsReached": 8892,
+        "cellsInsideCircuit": 8892,
+        "cellsWalled": 8892,
+        "hectaresReached": 14.2,
+        "hectaresInsideCircuit": 14.2,
+        "hectaresWalled": 14.2,
+        "deepestReached": 1098,
         "deepestAt": [
-          -86,
-          1398
+          -50,
+          1098
         ]
       }
     ]
@@ -377,54 +401,54 @@
   "draws": [
     {
       "name": "assault",
-      "calls": 116,
-      "triangles": 2643859,
+      "calls": 104,
+      "triangles": 2656204,
       "callsWithoutCity": 48,
-      "cityCalls": 68,
-      "cityTriangles": 324912,
+      "cityCalls": 56,
+      "cityTriangles": 337257,
       "programs": 54
     },
     {
       "name": "wall",
-      "calls": 106,
-      "triangles": 2539224,
+      "calls": 101,
+      "triangles": 2525979,
       "callsWithoutCity": 51,
-      "cityCalls": 55,
-      "cityTriangles": 391696,
+      "cityCalls": 50,
+      "cityTriangles": 378451,
       "programs": 54
     },
     {
       "name": "byrsa",
-      "calls": 149,
-      "triangles": 2783532,
+      "calls": 124,
+      "triangles": 2940683,
       "callsWithoutCity": 55,
-      "cityCalls": 94,
-      "cityTriangles": 281956,
+      "cityCalls": 69,
+      "cityTriangles": 439107,
       "programs": 55
     },
     {
       "name": "harbour",
-      "calls": 106,
-      "triangles": 2024110,
+      "calls": 96,
+      "triangles": 2489509,
       "callsWithoutCity": 44,
-      "cityCalls": 62,
-      "cityTriangles": 167488,
+      "cityCalls": 52,
+      "cityTriangles": 632887,
       "programs": 55
     },
     {
       "name": "overview",
-      "calls": 176,
-      "triangles": 2424788,
+      "calls": 112,
+      "triangles": 2461005,
       "callsWithoutCity": 33,
-      "cityCalls": 143,
-      "cityTriangles": 293638,
+      "cityCalls": 79,
+      "cityTriangles": 329855,
       "programs": 55
     }
   ],
   "errors": [],
   "plateMeasure": {
     "bearings": [
-      45290,
+      60177,
       0,
       0,
       180,
@@ -435,10 +459,10 @@
       0,
       0,
       0,
-      62,
-      155,
-      85,
-      145,
+      267,
+      339,
+      270,
+      341,
       220,
       0,
       0,
@@ -507,22 +531,22 @@
       0,
       0,
       0,
-      211,
-      352,
-      378,
-      281,
-      280,
-      350,
-      140
+      392,
+      653,
+      679,
+      521,
+      581,
+      650,
+      260
     ],
     "peak": 0,
-    "within": 0.9226,
-    "totalLen": 50941,
+    "within": 0.924,
+    "totalLen": 68342,
     "byRank": {
       "secondary": {
-        "m": 5387.76383084249,
-        "n": 6,
-        "ha": 6.192282504448501,
+        "m": 7901.514026708979,
+        "n": 8,
+        "ha": 9.208782739488287,
         "wMin": 9,
         "wMax": 12
       },
@@ -534,53 +558,54 @@
         "wMax": 20
       },
       "local": {
-        "m": 26901.210666797684,
-        "n": 101,
-        "ha": 18.789126400078597,
+        "m": 35497.770666797725,
+        "n": 137,
+        "ha": 24.806718400078616,
         "wMin": 6,
         "wMax": 7
       },
       "vicus": {
-        "m": 17448.899999999998,
-        "n": 106,
-        "ha": 6.979560000000003,
+        "m": 23739.100000000002,
+        "n": 138,
+        "ha": 9.49564,
         "wMin": 4,
         "wMax": 4
       }
     },
     "gridBearings": {
       "1.15": {
-        "ha": 54.03999999999999,
+        "ha": 65.08,
         "quarters": [
           "megara-north",
           "quarter-north",
-          "quarter-salammbo",
+          "magon-shore",
+          "bordj-djedid",
           "tophet-quarter"
         ]
       },
       "-1.15": {
-        "ha": 39.480000000000004,
+        "ha": 29.299999999999997,
         "quarters": [
           "megara-central",
           "quarter-inner"
         ]
       },
       "0.57": {
-        "ha": 23.46,
+        "ha": 20.5,
         "quarters": [
           "megara-east",
           "quarter-east-byrsa"
         ]
       },
       "1.72": {
-        "ha": 24.756,
+        "ha": 21.528,
         "quarters": [
           "quarter-west",
           "magon-quarter"
         ]
       },
       "0.00": {
-        "ha": 10.4736,
+        "ha": 14.2312,
         "quarters": [
           "quarter-lower",
           "hannibal-quarter",
@@ -610,13 +635,13 @@
         "deepest": -9.264202721949985
       },
       "building": {
-        "n": 423,
+        "n": 685,
         "wet": 0,
         "ha": 0,
         "deepest": 0
       }
     },
-    "laneWetM": 432,
+    "laneWetM": 438,
     "waterLevel": 0
   }
 }
