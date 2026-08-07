@@ -1,8 +1,8 @@
 {
-  "url": "http://127.0.0.1:5598/?menu=0&quality=low&scenario=field&battle=eyJtYXAiOiJjYXJ0aGFnZSIsInNjZW5hcmlvIjoiZmllbGQifQ",
+  "url": "http://127.0.0.1:5599/?menu=0&quality=low&scenario=field&battle=eyJtYXAiOiJjYXJ0aGFnZSIsInNjZW5hcmlvIjoiZmllbGQifQ",
   "map": "carthage",
   "scenario": "field",
-  "when": "2026-08-07T20:21:28.019Z",
+  "when": "2026-08-07T20:28:40.902Z",
   "solids": {
     "obstacles": 905,
     "byKind": {
@@ -11,15 +11,15 @@
       "monument": 42,
       "building": 685
     },
-    "occupiedCells": 46175,
-    "occupiedHectares": 73.9,
+    "occupiedCells": 44229,
+    "occupiedHectares": 70.8,
     "stats": {
       "id": "carthage",
-      "chunks": 66,
-      "meshes": 329,
-      "visibleMeshes": 114,
-      "visibleTriangles": 436413,
-      "triangles": 1457680,
+      "chunks": 68,
+      "meshes": 318,
+      "visibleMeshes": 107,
+      "visibleTriangles": 393339,
+      "triangles": 1357170,
       "materials": 9,
       "usedManifest": true,
       "footprintOverlaps": 0,
@@ -121,12 +121,12 @@
           "meshes": 29
         },
         {
-          "family": "wall",
-          "meshes": 25
-        },
-        {
           "family": "monuments",
           "meshes": 17
+        },
+        {
+          "family": "wall",
+          "meshes": 16
         },
         {
           "family": "harbour",
@@ -135,6 +135,10 @@
         {
           "family": "byrsa",
           "meshes": 3
+        },
+        {
+          "family": "gate",
+          "meshes": 2
         },
         {
           "family": "trees",
@@ -250,18 +254,18 @@
     }
   ],
   "corridor": {
-    "freeCellsSampled": 81536,
+    "freeCellsSampled": 83482,
     "corridorWidth": {
       "p05": 8,
       "p25": 24,
-      "median": 56,
-      "p75": 136,
-      "p95": 352
+      "median": 64,
+      "p75": 160,
+      "p95": 363.3
     },
     "fractionAdmitting": {
       "file2p4m": 1,
-      "column16m": 0.855,
-      "cohortInLine35m": 0.638
+      "column16m": 0.88,
+      "cohortInLine35m": 0.676
     }
   },
   "reach": {
@@ -273,15 +277,15 @@
           0,
           297
         ],
-        "cellsReached": 441934,
+        "cellsReached": 443880,
         "cellsInsideCircuit": 102199,
         "cellsWalled": 64600,
-        "hectaresReached": 707.1,
+        "hectaresReached": 710.2,
         "hectaresInsideCircuit": 163.5,
         "hectaresWalled": 103.4,
         "deepestReached": 1398,
         "deepestAt": [
-          -806,
+          -66,
           1398
         ]
       },
@@ -292,15 +296,15 @@
           0,
           297
         ],
-        "cellsReached": 425339,
+        "cellsReached": 429543,
         "cellsInsideCircuit": 89176,
         "cellsWalled": 52813,
-        "hectaresReached": 680.5,
+        "hectaresReached": 687.3,
         "hectaresInsideCircuit": 142.7,
         "hectaresWalled": 84.5,
         "deepestReached": 1398,
         "deepestAt": [
-          1062,
+          -62,
           1398
         ]
       },
@@ -311,10 +315,10 @@
           0,
           297
         ],
-        "cellsReached": 398674,
+        "cellsReached": 403076,
         "cellsInsideCircuit": 65098,
         "cellsWalled": 30292,
-        "hectaresReached": 637.9,
+        "hectaresReached": 644.9,
         "hectaresInsideCircuit": 104.2,
         "hectaresWalled": 48.5,
         "deepestReached": 1398,
@@ -332,10 +336,10 @@
           0,
           553
         ],
-        "cellsReached": 441934,
+        "cellsReached": 443880,
         "cellsInsideCircuit": 102199,
         "cellsWalled": 64600,
-        "hectaresReached": 707.1,
+        "hectaresReached": 710.2,
         "hectaresInsideCircuit": 163.5,
         "hectaresWalled": 103.4,
         "deepestReached": 1398,
@@ -351,10 +355,10 @@
           0,
           553
         ],
-        "cellsReached": 425339,
+        "cellsReached": 429543,
         "cellsInsideCircuit": 89176,
         "cellsWalled": 52813,
-        "hectaresReached": 680.5,
+        "hectaresReached": 687.3,
         "hectaresInsideCircuit": 142.7,
         "hectaresWalled": 84.5,
         "deepestReached": 1398,
@@ -397,29 +401,29 @@
   "draws": [
     {
       "name": "assault",
-      "calls": 109,
-      "triangles": 2713828,
+      "calls": 104,
+      "triangles": 2656204,
       "callsWithoutCity": 48,
-      "cityCalls": 61,
-      "cityTriangles": 394881,
+      "cityCalls": 56,
+      "cityTriangles": 337257,
       "programs": 54
     },
     {
       "name": "wall",
-      "calls": 103,
-      "triangles": 2587707,
+      "calls": 101,
+      "triangles": 2525979,
       "callsWithoutCity": 51,
-      "cityCalls": 52,
-      "cityTriangles": 440179,
+      "cityCalls": 50,
+      "cityTriangles": 378451,
       "programs": 54
     },
     {
       "name": "byrsa",
-      "calls": 126,
-      "triangles": 2959447,
+      "calls": 124,
+      "triangles": 2940683,
       "callsWithoutCity": 55,
-      "cityCalls": 71,
-      "cityTriangles": 457871,
+      "cityCalls": 69,
+      "cityTriangles": 439107,
       "programs": 55
     },
     {
@@ -433,11 +437,11 @@
     },
     {
       "name": "overview",
-      "calls": 114,
-      "triangles": 2479769,
+      "calls": 112,
+      "triangles": 2461005,
       "callsWithoutCity": 33,
-      "cityCalls": 81,
-      "cityTriangles": 348619,
+      "cityCalls": 79,
+      "cityTriangles": 329855,
       "programs": 55
     }
   ],
