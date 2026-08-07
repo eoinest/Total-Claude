@@ -21,6 +21,41 @@ import {
 } from './wall';
 
 /**
+ * One gap in a battlement, as somewhere a shot can leave from. See `CitySystem.embrasureAt`.
+ *
+ * Declared here rather than in `wall.ts` beside `GarrisonBay` because it is not a property of
+ * the stone: the two lengths that generate it come off the `CityPlan`, and the accessor that
+ * resolves them against a bay is this system's. Everything on it is absolute or a normal-
+ * offset, the same conventions `GarrisonBay` uses.
+ */
+export interface Embrasure {
+  /** Index of the `GarrisonBay` the gap is in. */
+  bay: number;
+  /** World point on the bay's **centreline**, level with the middle of the gap. */
+  x: number;
+  z: number;
+  /** Outward unit normal of the bay. */
+  nx: number;
+  nz: number;
+  /** Unit vector along the run, `x0 -> x1`. */
+  dx: number;
+  dz: number;
+  /** Absolute Y of the walkway behind the gap. */
+  walkY: number;
+  /** Absolute Y of the sill — the bottom of the gap, and the lowest a shot may pass. */
+  sillY: number;
+  /** Absolute Y of the merlon tops either side of it. */
+  crestY: number;
+  /** Normal-offsets of the parapet's inner and outer faces. */
+  parapetInner: number;
+  parapetOuter: number;
+  /** Clear width of the gap along the run. */
+  width: number;
+  /** Signed metres along `dx, dz` from the query point to the centre of the gap. */
+  step: number;
+}
+
+/**
  * A besieged city: a curtain, its gates and its stairs, and the fabric behind them.
  *
  * **Which** city is a constructor argument. `CityPlan` (`./cityPlan.ts`) is a data object plus
@@ -1340,6 +1375,85 @@ export class CitySystem implements Subsystem {
     const period = this.plan.merlonLength + this.plan.crenelLength;
     const phase = t - Math.floor(t / period) * period;
     return phase < this.plan.merlonLength ? bay.crestY : bay.sillY;
+  }
+
+  /**
+   * The nearest embrasure to a point on the wall-walk, or null where there is none.
+   *
+   * A crenellated parapet is merlon (the solid tooth) alternating with embrasure (the gap),
+   * and a garrison archer does not shoot *through* his own merlon — he shoots through the
+   * gap, or steps to one. `masonryTopAt` has modelled that alternation since the parapet
+   * stopped being a solid barrier, but only as a *collision* surface: nothing published
+   * where the gaps are, so a man loosed from wherever he happened to be standing and 64 % of
+   * the run is tooth. This is the other half of the same arithmetic, exposed the way
+   * `getWallStairs()` exposes the flights, so the sim never has to know the cadence of a
+   * battlement any more than it has to know the rake of a stair.
+   *
+   * Derived from the same `merlonLength`/`crenelLength` the collision model uses and phased
+   * off the same `bay.x0`, so a gap this reports and a gap a shot can pass through cannot
+   * disagree. Both cities come through unchanged: the plan supplies the two lengths and the
+   * bay supplies `sillY`/`crestY`, and neither number appears here.
+   *
+   * `x, z` is on the bay's **centreline**, level with the middle of the gap; compose a point
+   * in the gap itself as `x + nx * off`, `z + nz * off` for an `off` between `parapetInner`
+   * and `parapetOuter`. `step` is how far along the run the caller would have to move to get
+   * there, signed along `dx, dz`.
+   *
+   * Null where there is nothing to shoot through *or* nothing in the way: off the circuit,
+   * on an unwalkable bay, inside the gatehouse block, and — deliberately — on a bay whose
+   * parapet has not been raised yet, where the crest is open along its whole length and a
+   * man needs no gap.
+   */
+  embrasureAt(x: number, z: number): Embrasure | null {
+    const gb = this.gateBlock;
+    if (gb) {
+      const gt = (x - gb.x) * gb.dx + (z - gb.z) * gb.dz;
+      const goff = (x - gb.x) * gb.nx + (z - gb.z) * gb.nz;
+      if (Math.abs(gt) <= gb.halfRun && Math.abs(goff) <= gb.halfDepth) return null;
+    }
+    const bay = this.bayAt(x);
+    if (!bay || !bay.walkable || bay.stage === 'no-parapet') return null;
+
+    const merlon = this.plan.merlonLength;
+    const crenel = this.plan.crenelLength;
+    const period = merlon + crenel;
+    if (!(period > 0) || !(crenel > 0)) return null;
+
+    const t = (x - bay.x0) * bay.dx + (z - bay.z0) * bay.dz;
+    // Centre of the gap in each period, in the same frame `masonryTopAt` phases in: it calls
+    // everything below `merlonLength` tooth and everything above it gap.
+    const mid = merlon + crenel * 0.5;
+    let tc = Math.round((t - mid) / period) * period + mid;
+
+    // A gap has to be on walkway the man could actually reach. The tower at `x0` interrupts
+    // the run — the walkway does not pass through it — and the far end of the bay is the
+    // next bay's business.
+    const lo = bay.towerHalf + crenel * 0.5;
+    const hi = bay.length - crenel * 0.5;
+    if (lo > hi) return null;
+    while (tc < lo) tc += period;
+    while (tc > hi) tc -= period;
+    if (tc < lo || tc > hi) return null;
+    // A man leans, sidesteps or turns to a loophole; he does not cross a merlon and a gap to
+    // reach one. Half a period is the worst case from anywhere on the run, so anything past a
+    // whole period means the clamp above pushed the answer somewhere he cannot go.
+    const step = tc - t;
+    if (Math.abs(step) > period) return null;
+
+    return {
+      bay: bay.index,
+      x: bay.x0 + bay.dx * tc,
+      z: bay.z0 + bay.dz * tc,
+      nx: bay.nx, nz: bay.nz,
+      dx: bay.dx, dz: bay.dz,
+      walkY: bay.walkY,
+      sillY: bay.sillY,
+      crestY: bay.crestY,
+      parapetInner: bay.parapetInner,
+      parapetOuter: bay.parapetOuter,
+      width: crenel,
+      step,
+    };
   }
 
   /**

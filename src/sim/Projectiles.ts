@@ -208,6 +208,68 @@ const HIT_RADIUS = 0.4;
 const WALL_DIAG_RANKS = 6;
 
 /**
+ * Where a shot leaves a man, above his feet. Shoulder height on a 1.75 m soldier.
+ *
+ * Named because it is load-bearing twice over: on the flat it is only the origin of an arrow,
+ * but on a battlement it is 0.60 m *below* the top of the merlon in front of him, and that
+ * difference is the whole of the player's report.
+ */
+const SHOULDER = 1.45;
+
+/**
+ * One gap in a battlement, as `CitySystem.embrasureAt` publishes it.
+ *
+ * A structural mirror, not an import: `src/sim/` does not depend on `src/city/`. Kept
+ * deliberately narrow — the fields a launch solve needs and nothing else.
+ */
+interface EmbrasureView {
+  x: number;
+  z: number;
+  nx: number;
+  nz: number;
+  walkY: number;
+  sillY: number;
+  crestY: number;
+  parapetInner: number;
+  parapetOuter: number;
+}
+
+/**
+ * How far back from the parapet a man can still step into the gap beside him.
+ *
+ * The front rank stands `BODY` = 0.42 m inboard of the parapet's inner face (`wall.ts`), the
+ * next rank 0.72 m behind that (`WALL_RANK_PITCH` in `Siege.ts`). 0.75 m therefore admits the
+ * front rank and nobody else, which is the intent: a man at the battlement leans into the
+ * embrasure, and a man with another man's back in front of him cannot.
+ */
+const EMBRASURE_REACH = 0.75;
+
+/** How far inside the parapet's outer face he looses from, once he is in the gap. */
+const EMBRASURE_INSET = 0.1;
+
+/** Clearance over the crenel sill for a shot leaving the gap. */
+const SILL_CLEAR = 0.3;
+
+/** Clearance over the merlon's inner top edge for a shot lobbed from a rear rank. */
+const MERLON_CLEAR = 0.2;
+
+/**
+ * How far a man's feet may be from a bay's walkway and still count as standing on it.
+ *
+ * The guard that keeps this off everything else `elevated` covers — a boarding ramp, a siege
+ * tower's fighting top, a ladder, a tower chamber a storey above the walk. `bayAt` indexes
+ * arithmetically in x and will happily name a bay for a man who is nowhere near it.
+ */
+const ON_WALK_TOL = 0.6;
+
+/** Scratch for `aimOverParapet`, in the module-global style the hash visitors use. */
+let PARAPET_X = 0;
+let PARAPET_Y = 0;
+let PARAPET_Z = 0;
+/** Lowest elevation that clears the man's own battlement; `-Infinity` when nothing is in the way. */
+let PARAPET_PITCH = -Infinity;
+
+/**
  * A shot that dies on masonry sooner than this came down on the wall it was fired from.
  *
  * A parapet is 0.9 m thick and an arrow leaves at 20-60 m/s, so a shot that clears its own
@@ -439,6 +501,16 @@ export class ProjectileSystem implements Subsystem {
    * a battle on open ground — and every unit test — needs no city at all.
    */
   private city: { masonryTopAt(x: number, z: number): number } | null = null;
+  /**
+   * The battlement, if the city publishes one, for placing a garrison's shots.
+   *
+   * A structural view rather than an import: `src/sim/` does not depend on `src/city/`, which
+   * is what lets a second city be built in parallel with the simulation that fights over it.
+   * Kept separate from `city` above, and duck-typed on its own, so a tree whose `CitySystem`
+   * predates `embrasureAt` still collides against masonry correctly and merely loses the
+   * placement — a missing method here must not take the wall's collision with it.
+   */
+  private wall: { embrasureAt(x: number, z: number): EmbrasureView | null } | null = null;
 
   // ---- projectile pool (structure of arrays) ----
   private px = new Float32Array(MAX_PROJECTILES);
@@ -603,6 +675,11 @@ export class ProjectileSystem implements Subsystem {
     const city = ctx.tryGet('city') as unknown as { masonryTopAt?: (x: number, z: number) => number } | undefined;
     this.city = city && typeof city.masonryTopAt === 'function'
       ? (city as { masonryTopAt(x: number, z: number): number })
+      : null;
+    const battlement = city as unknown as
+      { embrasureAt?: (x: number, z: number) => EmbrasureView | null } | undefined;
+    this.wall = battlement && typeof battlement.embrasureAt === 'function'
+      ? (battlement as { embrasureAt(x: number, z: number): EmbrasureView | null })
       : null;
     const b = this.battle;
     const masonry = this.city;
@@ -1110,6 +1187,84 @@ export class ProjectileSystem implements Subsystem {
   // Launch
   // -------------------------------------------------------------------------
 
+  /**
+   * Put a garrison's shot where a garrison's shot actually leaves from, and tell the solve
+   * what it has to clear. Writes `PARAPET_X/Y/Z` and `PARAPET_PITCH`.
+   *
+   * A crenellated parapet is merlon alternating with embrasure, and 64 % of Rome's run is
+   * merlon. A man loosing from wherever he happens to be standing therefore shoots his own
+   * battlement about two thirds of the time — and he does it *inside the stone*, not by
+   * grazing it: the front rank stands 1.32 m in from the parapet's outer face and releases
+   * 0.60 m below the crest, so even at the lofted 0.6 rad the shaft is still 0.15 m under the
+   * merlon's top when it reaches the far side of the tooth. It cannot be fixed with elevation.
+   * That is the player's "it gets stuck on the little pieces of cover facing the enemies", and
+   * it is the same defect from the other side as the 491 impacts on our own masonry that put
+   * the crenellation model into `masonryTopAt` in the first place — that fix stopped the
+   * parapet blocking *incoming* fire wholesale and left the outgoing case standing.
+   *
+   * Two men, two answers, because they have two different problems:
+   *
+   * - **The front rank steps to the gap.** He is within reach of an embrasure, so he looses
+   *   from its mouth. This is what the architecture is for and it is why the wall has teeth:
+   *   he is behind 0.9 m of brick between shots and exposed in the gap while he shoots.
+   * - **A rear rank lobs over the tooth.** He cannot reach the gap — there is a man in front
+   *   of him — so the shot is given a floor: the elevation that clears the merlon's inner top
+   *   edge, which is the corner that actually binds. Ranks 1 and back already clear it at the
+   *   lofted 0.6 rad; what this rescues is every `arc: 'flat'` weapon, whose low root shooting
+   *   *downhill* off a wall is depressed and goes straight into the brick from any rank.
+   *
+   * Deliberately **not** done: exempting a shot from the masonry test. The player ruled that
+   * out and he is right — a defender who can be shot through his own merlon is worse than one
+   * who cannot shoot. Incoming fire still stops on the crest exactly as before; only where a
+   * defender's own shot *starts* has moved.
+   */
+  private aimOverParapet(i: number, toX: number, toZ: number): void {
+    const b = this.battle;
+    const p = b.pool;
+    PARAPET_X = p.x[i];
+    PARAPET_Y = p.y[i] + SHOULDER;
+    PARAPET_Z = p.z[i];
+    PARAPET_PITCH = -Infinity;
+    const wall = this.wall;
+    if (wall === null || b.elevated[i] === 0) return;
+    const e = wall.embrasureAt(PARAPET_X, PARAPET_Z);
+    if (e === null) return;
+    // His feet on this bay's walkway, not a storey above it in a tower chamber and not on a
+    // boarding ramp that happens to be over the same stretch of x.
+    if (Math.abs(b.support[i] - e.walkY) > ON_WALK_TOL) return;
+
+    const dx = toX - PARAPET_X;
+    const dz = toZ - PARAPET_Z;
+    const dLen = Math.hypot(dx, dz);
+    if (dLen < 1e-3) return;
+    // Only an outward shot has a battlement in front of it. A man shooting back into the city
+    // — at besiegers who have taken a stretch of the walk, or down the stair behind him — has
+    // nothing to clear and must not be moved sideways for it.
+    const cosOut = (dx * e.nx + dz * e.nz) / dLen;
+    if (cosOut <= 0) return;
+
+    const off = (PARAPET_X - e.x) * e.nx + (PARAPET_Z - e.z) * e.nz;
+    if (off > e.parapetOuter) return;
+
+    if (off >= e.parapetInner - EMBRASURE_REACH) {
+      const mouth = e.parapetOuter - EMBRASURE_INSET;
+      PARAPET_X = e.x + e.nx * mouth;
+      PARAPET_Z = e.z + e.nz * mouth;
+      // Never below the sill. A no-op on Rome, where a 1.45 m shoulder already stands 0.85 m
+      // over a 0.6 m sill, and a guard for a city whose sill is higher.
+      PARAPET_Y = Math.max(PARAPET_Y, e.sillY + SILL_CLEAR);
+      return;
+    }
+
+    // Perpendicular distance to the near face of the parapet, taken along the line of fire —
+    // an oblique shot has further to climb. The clamp bounds a shot fired nearly along the
+    // wall, which would otherwise be handed an arbitrarily small angle.
+    const run = (e.parapetInner - off) / Math.max(0.25, cosOut);
+    const rise = e.crestY + MERLON_CLEAR - PARAPET_Y;
+    if (rise <= 0 || run <= 0) return;
+    PARAPET_PITCH = Math.atan2(rise, run);
+  }
+
   private launch(
     i: number,
     u: UnitGroupState,
@@ -1140,9 +1295,16 @@ export class ProjectileSystem implements Subsystem {
     }
     if (t < 0) return;
 
-    const sx = p.x[i];
-    const sy = p.y[i] + 1.45;
-    const sz = p.z[i];
+    // ---- where the shot leaves from ----
+    // On the flat this is his shoulder and nothing else happens. On a battlement it is the
+    // mouth of the nearest embrasure, and a rear rank comes back with a minimum elevation.
+    // See `aimOverParapet`. Aimed at the man's current position rather than the predicted
+    // one: which side of the wall the enemy is on does not change over a second of lead.
+    this.aimOverParapet(i, p.x[t], p.z[t]);
+    const sx = PARAPET_X;
+    const sy = PARAPET_Y;
+    const sz = PARAPET_Z;
+    const clearPitch = PARAPET_PITCH;
 
     // ---- predicted aim point, two passes ----
     let tx = p.x[t];
@@ -1205,15 +1367,29 @@ export class ProjectileSystem implements Subsystem {
     const dComp = d * (1 + phys.dragComp * d);
     let v = phys.speed;
     let theta: number;
-    if (lofted) {
-      // Loft at a fixed elevation and draw only as hard as the range needs.
-      const c = Math.cos(LOFT);
-      const need = (GRAVITY * dComp * dComp) / (2 * c * c * (dComp * Math.tan(LOFT) - h));
+    /**
+     * The elevation this shot wants: a lofted weapon's own angle, raised to whatever the
+     * man's battlement leaves him. `-Infinity` on the flat and for anyone with nothing in
+     * front of him, which collapses this to the flat root and leaves every field battle in
+     * the game byte-identical to before.
+     */
+    const want = lofted ? Math.max(LOFT, clearPitch) : clearPitch;
+    if (want > -Infinity) {
+      // Loft at that elevation and draw only as hard as the range needs. The closed form is
+      // the one the lofted branch has always used; it is now asked at a per-shot angle
+      // rather than at a constant, which is what turns "clear the merlon" into a solve
+      // instead of an exemption.
+      const c = Math.cos(want);
+      const need = (GRAVITY * dComp * dComp) / (2 * c * c * (dComp * Math.tan(want) - h));
       if (need > 0 && need <= v * v) {
         v = Math.sqrt(need);
-        theta = LOFT;
+        theta = want;
       } else {
-        theta = this.lowRoot(v, dComp, h);
+        // No answer at that elevation — the target is at the edge of the weapon's reach. Take
+        // the flat root, but never below the floor: a shot that sails past the man it was
+        // aimed at is a miss, and a shot into the back of one's own merlon is a miss *and* a
+        // garrison that reads as broken.
+        theta = Math.max(this.lowRoot(v, dComp, h), clearPitch);
       }
     } else {
       theta = this.lowRoot(v, dComp, h);
