@@ -466,7 +466,7 @@ function beam(
     // On the onager's chassis rails, which are the longest beams in the project and were tiled
     // 4x, that read as regular dark bands ringing the timber like a corrugated pipe. Grain runs
     // along a baulk, not around it.
-    const [u, v] = MeshBuilder.tileUv(uv, i / 8, (t + 1) * 0.5, 1, repeat);
+    const [u, v] = MeshBuilder.tileUvWrapped(uv, i / 8, (t + 1) * 0.5, 1, repeat);
     return b.vert(q[0], q[1], q[2], n[0], n[1], n[2], u, v);
   };
   const lo: number[] = [];
@@ -642,7 +642,7 @@ function cord(
       const a = (s / segments) * Math.PI * 2;
       const cx = Math.cos(a);
       const cy = Math.sin(a);
-      const [u, v] = MeshBuilder.tileUv(uv, s / segments, t, 1, 3);
+      const [u, v] = MeshBuilder.tileUvWrapped(uv, s / segments, t, 1, 3);
       row.push(b.vert(cx * radius, cy * radius, 0, cx, cy, 0, u, v));
     }
     grid.push(row);

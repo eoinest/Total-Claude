@@ -16,7 +16,7 @@ import { activeMap } from '../maps';
 import type { MapDefinition } from '../maps/types';
 import { GrassField } from './GrassField';
 import { ScatterField } from './ScatterField';
-import { RiverWater } from './RiverWater';
+import { WaterSurface } from './WaterSurface';
 
 /**
  * Battlefield terrain for whichever map this session selected.
@@ -57,7 +57,7 @@ export class TerrainSystem implements Subsystem {
 
   private grass?: GrassField;
   private scatter?: ScatterField;
-  private water?: RiverWater;
+  private water?: WaterSurface;
 
   /** Diagnostics surfaced in the console at boot. */
   stats = { buildMs: 0, triangles: 0, layersFromPack: '' };
@@ -115,11 +115,17 @@ export class TerrainSystem implements Subsystem {
     this.mesh.name = 'terrain';
     ctx.scene.add(this.mesh);
 
-    // Open water is per-map. Pydna is a June plain draining to a gulf past the map edge:
-    // its one watercourse is a dry shingle braid, so it carries no water surface at all and
-    // skipping the system saves both its draw call and its reflection work.
-    if (map.terrain.hasRiver) {
-      this.water = new RiverWater(this);
+    // Open water is per-map, and it is one draw call for however much of it a map has: the
+    // Tiber's channel, or a gulf, a lagoon and two harbour basins. Pydna is a June plain
+    // draining to a gulf past the map edge and its one watercourse is a dry shingle braid, so
+    // it declares no water at all and the system is never constructed.
+    if (map.terrain.water) {
+      this.water = new WaterSurface(
+        this,
+        map.terrain.water,
+        map.terrain.waterLevel,
+        map.terrain.farHeight
+      );
       await this.water.init(ctx, this.textures, this.heightTex);
     }
 

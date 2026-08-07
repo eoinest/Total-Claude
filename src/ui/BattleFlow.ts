@@ -9,6 +9,7 @@
 import type { EngineContext } from '../core/Engine';
 import { Faction } from '../sim/types';
 import { el, fmtClock, fmtCount, html, icon, setClass } from './dom';
+import { activeMap } from '../maps';
 import { ICON, standardGlyph } from './icons';
 import type { HudModel } from './model';
 import { FACTION_UI, HARNESS, PLAYER_FACTION } from './theme';
@@ -45,12 +46,30 @@ export class BattleFlow {
 
   attach(parent: HTMLElement, ctx: EngineContext): void {
     this.title = el('div', 'title-card', parent);
+    /*
+     * The card is the map's copy, not Rome's.
+     *
+     * All three lines were hard-coded, so **every** map opened with "The Siege of Rome ·
+     * 271 AD · Campus Martius" and a lede about the Via Flaminia. On Carthage that is simply
+     * wrong, and it cost an agent a round of screenshot forensics before it realised the
+     * frames it was studying were Carthage. `MapDefinition` has carried `label`, `subtitle`
+     * and `blurb` the whole time; nothing needed inventing.
+     *
+     * `subtitle` is already written as "The Siege of X &middot; <year>", which is exactly the
+     * main/sub split the card wants, so it is split on the separator rather than duplicating
+     * the same words in a second field. A map whose subtitle carries no separator falls back
+     * to using the whole string as the heading.
+     */
+    const map = activeMap();
+    const cut = map.subtitle.indexOf('&middot;');
+    const head = cut < 0 ? map.subtitle : map.subtitle.slice(0, cut).trim();
+    const when = cut < 0 ? '' : `${map.subtitle.slice(cut + 8).trim()} &middot; `;
     html(
       this.title,
       `<div class="tc-rule"><span class="tc-eagle">${icon(standardGlyph(Faction.Rome), 'tc-eagle-ic')}</span></div>
-       <div class="tc-main">The Siege of Rome</div>
-       <div class="tc-sub">271 AD &middot; Campus Martius</div>
-       <div class="tc-lede">A Juthungi host stands between the city and the Via Flaminia. Rome's field army is drawn up before the unfinished Aurelian Wall.</div>
+       <div class="tc-main">${head}</div>
+       <div class="tc-sub">${when}${map.label}</div>
+       <div class="tc-lede">${map.blurb}</div>
        <div class="tc-rule flip"></div>`
     );
 

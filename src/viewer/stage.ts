@@ -428,6 +428,10 @@ export class Stage {
     this.grade.resize(this.canvasW, this.canvasH, this.renderer.getPixelRatio());
   }
 
+  setGrain(v: number): void {
+    this.grade.setGrain(v);
+  }
+
   get graded(): boolean {
     return this.grade.enabled;
   }

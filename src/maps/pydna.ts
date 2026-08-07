@@ -108,7 +108,9 @@ export const PYDNA: MapDefinition = {
     // itself is right — a real aerial view does resolve to one — but it is the *last* few
     // per cent of the read, not most of it.
     aerialStrength: 0.16,
-    hasRiver: false,
+    // The Leucus on 22 June is a dry shingle braid and the Thermaic Gulf is past the map
+    // edge, so there is no open water anywhere in the field and no surface to render.
+    water: null,
     roadGlsl: `${PYDNA_TOPO_GLSL}\nfloat grassRoadCentreX(float z) { return pydRoadCentreX(z); }`,
     // Taller, thinner and drier than Latian turf: this is a standing crop of grass that
     // seeded and went over a month ago, so it stands 60 cm and it is straw-coloured.

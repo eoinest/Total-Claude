@@ -1161,7 +1161,21 @@ export class PostFXSystem implements Subsystem {
         uTexel: { value: new THREE.Vector2() },
         uSharpen: { value: 0.32 },
         uVignette: { value: 0.2 },
-        uGrain: { value: 0.016 },
+        /*
+         * 0.016 left literally no smooth region anywhere in the frame.
+         *
+         * Measured by switching this uniform alone and counting the share of the frame that
+         * reads as a smooth gradient: **0.016 → 0.00%**, 0.006 → 2.21%, 0 → 69.67%, against
+         * Rome II crops at a mean of 7.09%. So the shipped default was not "a little grainy",
+         * it was destroying every flat surface in the picture — and a blind grader named it
+         * as its single strongest scalar, attributing it to "renderer dither or terrain
+         * faceting" without knowing what it was looking at.
+         *
+         * 0.006 is the value that measurement recommends. Note the reference mean sits
+         * between 0.006 and 0, so there may be a little more to give back; that is a
+         * measurement to make, not a number to guess at here.
+         */
+        uGrain: { value: 0.006 },
         uTime: { value: 0 },
       },
     );

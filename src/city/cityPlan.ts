@@ -86,20 +86,30 @@ import type { Lane } from './insulae';
  * wall before its map exists is genuinely useful; it is not the product path and it says so.
  * Both probes stay green: `probe-wall` 19/19, `probe-carthage-wall` 44/44.
  *
- * **One thing this does not resolve, and it is a measurement rather than an opinion: there
- * are three definitions of Carthage's wall line and only one can be true.**
+ * **Three definitions of Carthage's wall line existed and only one could be true. Settled:
+ * there is now one, and it is the terrain's.**
  *
  *     maps/carthage/topography.ts  carthageWallZ   527 − 0.06241x + 2.945e−5x²,  x −968..1013
- *     city/carthage/circuit.ts     circuitZAt      the same three §2.5 anchors, same span
- *     city/carthageWall.ts         layout.ts       Rome's WALL_X_MIN/MAX and GATE_X
+ *     city/carthage/circuit.ts     circuitZAt      re-exports carthageWallZ, clamped
+ *     city/carthageWall.ts         WallLine        the line is now an argument
  *
- * The first two agree to the metre, because both were built from the spec's survey. The
- * third is Rome's, correctly, because the Punic wall was developed as a swap on the Campus
- * Martius. **It has to move**, and it has to move to the terrain's line rather than the other
- * way round, because the heightfield has already graded a bench under `carthageWallZ` and the
- * vegetation scatter already clears its glacis there — a wall built anywhere else stands on
- * ungraded ground with trees through it, and `Siege.layOutGarrison` walks one continuous run
- * of stations along a walkway that would then step by metres between bays.
+ * The two survey-derived definitions agreed at all three §2.5 anchors and **not between
+ * them**: the quadratic passes through them, while `circuit.ts` interpolated linearly and
+ * then bowed the result 25 m toward the field, so at mid-span the two were 25 m apart and at
+ * x +500 they were 10.6 m apart. That is a bowed wall against a straight bench, and the
+ * difference is bigger than the bench is wide (`WALL_BENCH_HALF = 40`), so half the circuit
+ * would have stood off its own footing. The bow was the junior claim and it is gone.
+ *
+ * It moved to the terrain's line and not the other way round because the heightfield has
+ * already graded a bench under `carthageWallZ` and the vegetation scatter already clears its
+ * glacis there — a wall built anywhere else stands on ungraded ground with trees through it,
+ * and `Siege.layOutGarrison` walks one continuous run of stations along a walkway that would
+ * then step by metres between bays.
+ *
+ * `buildCarthageWall` therefore takes an optional `WallLine` (`xMin`, `xMax`, `gateX`, `zAt`)
+ * and defaults to Rome's, so the `?fort=carthage` rig keeps building on the Aurelian circuit
+ * and `probe-carthage-wall` keeps measuring the same 44 things, while the Carthage plan hands
+ * it the terrain's line and the masonry lands on the bench.
  *
  * ---------------------------------------------------------------------------
  * WHAT A CITY MUST NOT DO
@@ -199,6 +209,28 @@ export interface CityLandmarkRef {
 }
 
 /**
+ * One build-time check, with the sentence that says what it measured.
+ *
+ * **`detail` is not decoration; it is the whole instrument.** Rome shipped
+ * `assertNoFootprintOverlaps`, whose name reads like a guarantee and whose body compared
+ * landmarks with landmarks, skipped anything `soft`, and had never in its life looked at an
+ * insula. It reported zero — correctly, and about a different question — while the player was
+ * staring at monuments dropped across housing. A scalar on `CityChecks` cannot carry the
+ * population it sampled; this can, and it is what a reader needs to know whether `ok: true`
+ * means anything.
+ *
+ * A non-zero result is **reported rather than suppressed**. An honest number with the
+ * reasoning written down beats a green board, so `ok: true` is legitimate on a measurement
+ * that is not a pass/fail at all — roof coverage, for one — provided `detail` says so.
+ */
+export interface CityAssertion {
+  name: string;
+  ok: boolean;
+  /** Human-readable measurement, always populated — including when `ok`. */
+  detail: string;
+}
+
+/**
  * Build-time self-checks, surfaced through `CitySystem.stats()` and the debug overlay.
  *
  * Every field is optional and defaults to "passed with nothing measured", so a young city
@@ -206,6 +238,16 @@ export interface CityLandmarkRef {
  * not default a check to `ok` by filling in a zero — leave it out.
  */
 export interface CityChecks {
+  /**
+   * Every check the plan made, in the order it made them. See `CityAssertion`.
+   *
+   * The scalar fields below are the subset the stats panel and the debug overlay have
+   * columns for; this is the full set with its reasoning, and it is what
+   * `tools/probe-carthage.mjs` prints. A city may publish assertions the scalars have no
+   * room for — Carthage's roof coverage, its stair-foot aprons, its ship-shed count — without
+   * either widening this interface for every future city or dropping the measurement.
+   */
+  assertions?: readonly CityAssertion[];
   /** Landmark-on-landmark footprint overlaps. Must be 0. */
   footprintOverlaps?: number;
   footprintOverlapWorst?: number;

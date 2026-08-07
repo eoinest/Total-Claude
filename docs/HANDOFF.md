@@ -236,6 +236,50 @@ Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`
 - **The crowd is NOT short of variation.** Read from the uploaded instance buffers: one 320-man
   cohort carries 57-59 kit masks, 119 statures, 229 cadences, 314/320 distinct animation phases,
   252 tunic colours. Adding variation is the wrong fix.
+
+- **56.2% of a soldier's triangles disagreed with themselves, and a battle frame could never
+  have shown it.** `MeshBuilder` wrote a shading normal per vertex and a triangle order, and
+  nothing tied them together. `revolve` emitted normals that were the *exact negation* of its
+  own winding for every profile, so every helmet bowl, the skull, the hair, all four shield
+  bosses and every lathed weapon head drew correctly and lit itself inside out — at
+  `envMapIntensity: 2.9` a helmet crown sampled the ground hemisphere instead of the sky, which
+  is why a bronze galea rendered as a flat cream lampshade. `box` got a left-handed basis on
+  four of six faces, so ±X and ±Y were **culled** by `side: FrontSide` and a box drew as two
+  facing panels with the world between them. Fixed at `5eb55f0` by deriving winding from the
+  normals (`quadFacing`/`triFacing`); `tools/probe-soldiermesh.mjs` reports 0 / 4,307. Identical
+  vertex and index counts, so the cost is nil. **Culling and shading disagree silently: a mesh
+  can render solid and still be wrong, and only a per-triangle probe finds it.**
+
+- **The shield boss was modelled, tinted and drawn every frame, on the wrong side of the board.**
+  `boss()` is a lathe under `rotationX(+PI/2)`, and all four call sites passed a negative axial
+  offset: the scutum's umbo sat 219 mm *behind* the face it should stand proud of, the oval's
+  114 mm, the round's 56 mm. "No boss geometry, no rim bevel" is the cue both round-23 graders
+  named first or second. Fixed at `d237d1c`; `boss()` now takes the board's own front-face Z so
+  the mistake is not expressible.
+
+- **"No smooth region anywhere in frame" is the grain pass, not the geometry.** The adversarial
+  grader's strongest scalar (32px tiles with Laplacian std < 1.0; plates 0.31-15.10%, ours
+  0.00-0.05%, 20/20) was attributed to "renderer dither or terrain polygon faceting". Measured
+  on one isolated-model plate, switching only `uGrain` (`PostFX.ts:1140`, ships **0.016**):
+  **0.016 -> 0.00%, 0.006 -> 2.21%, 0 -> 69.67%**, against Rome II soldier crops at mean 7.09%
+  (range 0.48-24.03). One uniform. Re-shot at 0.016 twice for 0.00 both times, so it is stable.
+  **0.006 lands inside the reference range.** Owned by the render workstream — one default.
+  And the statistic itself is weaker than believed: with the backdrop flood-filled out it
+  collapses from 100% to 80/70% balanced accuracy, i.e. it was largely measuring the background.
+
+- **The separation is a one-pixel spike, and it is not the background.** On the isolated-model
+  deck an adversarial grader flood-filled the backdrop, eroded the silhouette 4 px and measured
+  the figure only. Octave decomposition: at **4, 8 and 16 px the two pools are statistically
+  identical** (60-65% balanced accuracy = chance) — our models are not worse-proportioned,
+  worse-posed or worse-lit at coarse scale. The whole separation is the **1 px ÷ 2 px energy
+  ratio: ours 2.01-3.61, Rome II 1.20-1.35, no overlap.** The target is to drive it under 1.4
+  **by adding energy at 2-8 px — normal maps, roughness variation, wear, cavity, grime — and
+  never by blurring the 1 px band**, which lowers the ratio while making the model worse. That
+  is the same trap the harshness note records, found independently by a second instrument.
+  Two statistics that *fail* here and should stop being quoted at this magnification: local RMS
+  contrast at 32 px (80%, and the sign is **backwards** — Rome II is higher), and a
+  Gaussian-blur high-pass (70%, because the blur residual is dominated by the mid-band the two
+  pools share).
 - Raising metalness *darkens* armour here — verified twice. Full metal trades a sunlit diffuse
   term for a dim blue sky reflection under a sun-dominated rig with a weak probe.
 - `LightingSystem.ts:87` hemisphere fill is `0x9dbcdc / 0x6b5a3e` at 0.42, set to 0.34 at line 477,
@@ -358,6 +402,132 @@ Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`
    game — including "19 visible wall meshes against Rome's 29" — was not taken on that map.
 
 ## Grading
+
+### The isolated-model deck photographed the back of the man's head, every round
+
+**Azimuth 0 was behind him.** `viewer/main.ts`'s `framePlate` documents "azimuth is measured
+from the man's front", and `shoot-model.mjs` records that the first version of its plate table
+had the convention backwards and "shot ten plates of a legionary's back" — the correction went
+into the *table*, not the camera, so it swapped which plates were wrong and fixed none. With
+the face tile painted magenta and one head shot at four azimuths, magenta pixels come to
+**0 at azimuth 0 and 121,407 at PI**. The posed man faces **-Z**: the mesh is built facing +Z
+(scutum socket z +0.20, nose z +0.075) and `iOrient.x` is 0 in the viewer, so the half-turn is
+in the authored clips' root. Fixed in `framePlate`. **Every isolated-model grade before this
+graded a man's back**, and the deck is materially harder now: on an unchanged model the octave
+ratio goes 1.475 -> 1.734 purely from turning the camera round, because a front carries far
+more pixel-scale structure than a back.
+
+**`viewer.html` never loads `LightingSystem`.** `tcShadowGeom`/`tcSoftShadow` are not present as
+text in any of its 24 fragment programs. The deck grades soldiers under three's stock PCF with
+one non-cascaded sun; the battle grades them under `tcSoftShadow` with four cascades.
+
+**`grade.ts` has already drifted from `PostFX`.** Of the five uniforms they share, one
+disagrees: `uGrain` is 0.006 in `PostFX` and **0.016** in the viewer's mirror — so the model
+deck is still shot at the grain level that measured 0.00 % smooth-region against Rome II's
+7.09 %. Exporting `PostFX`'s two shader bodies and deleting the mirror is still the right fix
+and is still not done.
+
+### The 12 `tcShadowGeom` errors do not reproduce at HEAD, and "12" was one program
+
+Zero failing programs across nine arms — ultra/high/medium/low, Rome and Carthage, field and
+assault, a 62 s battle, quality churn, a shadow-map recompile, the main-menu path and the
+viewer — 124 fragment programs at maximum coverage, all clean. The mechanism is real and one
+`shadowMap.type` away: the **declaration** of `tcShadowGeom` sits behind
+`SHADOWMAP_TYPE_PCF && USE_SHADOWMAP && USE_CSM && CSM_CASCADES`
+(`softShadow.glsl.ts:119`) while the **use** injected into `lights_fragment_begin`
+(`LightingSystem.ts:319`) needs only the last three. Forced with `BasicShadowMap`, 14 of 25
+patched materials fail — two of them soldier materials — and each failing program's log holds
+exactly **12 `ERROR:` lines**: 4 unrolled cascades x 3 errors. So "12 identical errors" was one
+program's dump at `CSM_CASCADES=4`, not twelve programs. It cannot fire today because
+`LightingSystem.init` sets `PCFShadowMap` before any material carries `USE_CSM`. Fix it on the
+*call* side — `CSM_SOFT_SHADOW_CALL` (`softShadow.glsl.ts:243`) should emit
+`#if defined( SHADOWMAP_TYPE_PCF )` / the call / `#else` / stock `getShadow` / `#endif`. The
+`SHADOWMAP_TYPE_PCF` term in the declaration guard is correct and must not be dropped: three
+declares `directionalShadowMap` as `sampler2DShadow` only under PCF.
+
+### Three closed domes, and no battle frame could ever have shown them
+
+The same defect in three places, each hiding the thing under it:
+
+- **`Piece.HairShort` was a full revolution** 4-9 mm proud of the skull running to y = -0.035 —
+  below the brow, below both eye boxes, across the top of the nose. Every bare-headed man's
+  face was sealed inside his own hair.
+- **Every helmet bowl was a full revolution** down to y = -0.016, with the eyes at +0.024 and
+  the brow at +0.050: Gallic, ridge, Coolus and spangen all enclosed both, and the reinforce
+  below sat at jaw height binding nothing. The Gallic shell was also radius 0.109 over a skull
+  of 0.082 — **27 mm of padding all round** against a real lining's eight or ten.
+- **The "brow" box was at y = -0.012**, 55 mm below the real supraorbital ridge, so it lay
+  across the eyes; the "jaw" box's front face at z = 0.0575 was *inside* a skull of radius
+  0.0678 and drew nothing at all.
+
+All three are fixed with one mechanism — `revolve` now takes an `arc`. The general lesson is
+the one the inside-out normals taught: **a lathe is axisymmetric and a head is not**, so any
+head part built as a full revolution is covering something.
+
+**Still open, same family:** the Germanic `HairLong` is modelled as a curtain that closes over
+the face from the fringe to the beard at every hash, which is why a Juthungi head plate cannot
+photograph a face.
+
+### A tile repeat ran backwards on every closed ring in the game
+
+`MeshBuilder.tileUv` wrapped with `(s * repeat) % 1` **per vertex**, and a modulo between two
+vertices does not wrap the surface between them — it runs the whole tile backwards, compressed
+into one column. Even at `repeat = 1` every ring had one, because `tube`, `revolve` and `sweep`
+close with `(s + 1) % segments` and reuse vertex 0. At `repeatU: 3` on the mail and scale
+torsos, **three of ten columns** did it. `repeatStops` puts the seam on a duplicated vertex, so
+it costs vertices and **not one triangle**. Two of the same family alongside it:
+`box(..., repeat)` fed 0 and 1 through the same modulo, which is 0 for both, so every corner of
+a repeated box face landed on **one texel** (five engine call sites); and five hand-rolled
+grids outside the soldier still carry the defect, now behind the deliberately ugly name
+`tileUvWrapped`.
+
+### The octave instrument, and the constants that do not transfer
+
+`tools/probe-octave.mjs` measures 1/2/4/8/16 px band energy on figure pixels only and prints
+R = E1/E2 **plus the absolute bands**, because a 0.7 px Gaussian takes R down 43.9 % *and* E2
+down 19.2 % — R alone is gameable and the absolutes are the guard. `--selftest` proves it.
+**Round one's constants are in different units and must not be quoted against these:** the
+reference pool reads **0.520-0.621** here, not 1.20-1.35, because both pools are normalised to
+900x1200 first. At each pool's own native size the same decomposition gives ours 1.29-2.13
+against Rome II 0.87-2.15 — *overlapping*. Normalising is what makes the separation clean.
+
+Reproducibility floor **0.11-0.30 % pooled, 0.58 % worst plate** over three shoots of a
+byte-identical tree, so unlike trap 6's battle frames **cross-session A/B is valid on this
+deck**. `report.json` records the commit but not the working tree, and two decks at one commit
+can be different trees — hash `git diff HEAD -- src/` beside it.
+
+**Our absolute mid-band energy is already above the reference's** (E2 1.78x, E4 1.28x). The
+excess by band is 4.5x at 1 px and ~1.3x at 4-16 px — round one's coarse-scale parity finding,
+reproduced by a second instrument. Read the absolutes *within* our pool only; the cross-pool
+ratios are confounded by content and key and already run the "wrong" way.
+
+### The isolated-model deck — a strictly better instrument, and it says 20/20
+
+`tools/shoot-model.mjs` photographs **one soldier, large**, deterministically posed and framed
+on a neutral ground, driven through `/viewer.html` so it renders the game's own geometry, atlas
+and shaders. `tools/model-deck.mjs` pairs those against single-soldier crops cut from the same
+ten Rome II press plates, re-encodes both pools through one encoder at one quality, balances the
+counts, shuffles from a seed and writes the key outside the deck.
+
+Why it is better: every earlier round graded a battle screenshot in which a man is a few hundred
+pixels among nine thousand, and both round-23 graders sorted largely on terrain, vegetation and
+framing. On the isolated deck **both graders scored 20/20 and tagged 20 of 20 mechanisms
+[FIGURE]** — no call rested on background, and the adversarial grader proved it rather than
+asserting it (see the one-pixel-spike note above). It also found things no battle frame could:
+the inside-out normals, the culled box faces and the reversed shield boss were all found this
+way within an hour, after surviving twenty-three blind rounds.
+
+**Read `screenshots/*-key.json` for what a round was.** `report.json` records commit, argv, dpr,
+output size and the full plate spec; `model-deck.mjs` refuses a source whose record is missing or
+says `hud: true`.
+
+The two known limits, both open: our plates stand on a neutral ground while the crops are cut out
+of a battle, so background can sort the deck in a glance even though it is not load-bearing; and
+the byte ratio between the pools is **0.51-0.53** (ours 60 KB against 118 KB at identical
+quantisation tables), which is not an encoder leak but an honest measure of how much less
+structure our figures carry.
+
+### The battle deck
 
 `tools/blind-compare.mjs` against `reference/rome2/` (ten Rome II press plates), built from
 `tools/shoot.mjs --set=deck`. `reference/siege/` (25 user images) and `reference/rome3d/` (YouTube

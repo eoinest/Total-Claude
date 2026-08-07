@@ -15,7 +15,51 @@ import {
   romanDeployMask,
   streamDistance,
 } from '../terrain/topography';
+import type { WaterProfile } from '../terrain/WaterSurface';
 import type { MapDefinition, ScatterProfile } from './types';
+
+/**
+ * The Tiber, as the general water system sees it.
+ *
+ * Every number here is the one `RiverWater` carried as a module constant before the system
+ * was generalised, restated in the units the profile uses:
+ *
+ *  - the two wave layers scrolled at `flow * 0.075` and `flow * 0.028` texture-units per
+ *    second against tilings of 0.155 and 0.058 cycles/m, which is **0.058, 0.484 m/s** of
+ *    world drift for both — the same water speed, which is what "flow" has to mean;
+ *  - the normal amplitude was folded into the fragment's `vec3(waveXY.x * 0.85, 1.0, ...)`,
+ *    so `chop` is 0.85;
+ *  - the ford's foam was a Gaussian on `FORD_Z`. It is now the general shoaling term: the
+ *    Tiber's shoal is 0.65 m deep against 4.6 m in the reach, so the same 120 m of broken
+ *    water comes out of the bathymetry rather than out of a hard-coded z.
+ *
+ * `surge` is zero. A river has a bank, not a beach, and the Tiber does not breathe.
+ */
+const TIBER: WaterProfile = {
+  // "Flavus Tiberis" — the yellow Tiber. Horace and Virgil both call it that, and it is
+  // still an ochre-brown river: the Apennine marl it carries never settles.
+  shallow_lin: [0.34, 0.3, 0.18],
+  deep_lin: [0.075, 0.085, 0.055],
+  foam_lin: [0.62, 0.62, 0.58],
+  absorbDepth: 2.6,
+  // Low but not zero: a real river has enough microdetail to broaden the sun glint into a
+  // sheet rather than a point.
+  roughness: 0.13,
+  // The reach is 94 m wide and rarely fills a frame at 600 m, so the mip chain takes less
+  // here than it does off a gulf — but it takes some, and an unfiltered glint on a river is
+  // the same defect at a smaller scale.
+  farRoughness: 0.26,
+  envIntensity: 1,
+  waves: [
+    { scale: 0.155, drift: [0.058, 0.484], weight: 0.62 },
+    { scale: 0.058, drift: [0.058, 0.483], weight: 0.48 },
+  ],
+  chop: 0.85,
+  skyReflect: 0.55,
+  surge: 0,
+  shoalFoam: 0.6,
+  cacheKey: 'tiber',
+};
 
 /**
  * The Campus Martius outside Rome, 271 AD — the battlefield the game shipped with.
@@ -177,7 +221,7 @@ export const CAMPUS_MARTIUS: MapDefinition = {
     splatCacheKey: CAMPUS_SHADING.cacheKey,
     aerialMean: CAMPUS_SHADING.aerialMean,
     aerialStrength: CAMPUS_SHADING.aerialStrength,
-    hasRiver: true,
+    water: TIBER,
     roadGlsl: `${TOPO_GLSL}\nfloat grassRoadCentreX(float z) { return topoRoadCentreX(z); }`,
     grass: { heightScale: 1, densityScale: 1, dryness: 0 },
     scatter: CAMPUS_SCATTER,

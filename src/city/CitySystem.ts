@@ -8,7 +8,9 @@ import { Batch } from './build';
 import type {
   CARTHAGE_SECTION, CarthageDitch, CasemateOut, OutworkOut,
 } from './carthageWall';
-import type { CityBuild, CityChecks, CityLandmarkRef, CityPlan, PlanRect } from './cityPlan';
+import type {
+  CityAssertion, CityBuild, CityChecks, CityLandmarkRef, CityPlan, PlanRect,
+} from './cityPlan';
 import type { Lane } from './insulae';
 import { CITY_MAT_KEYS, CityMaterials } from './materials';
 import { buildReferenceOverlay, type OverlayOptions, type ReferencePlan } from './overlay';
@@ -1370,6 +1372,39 @@ export class CitySystem implements Subsystem {
   }
 
   /**
+   * Every build-time check the plan made, with what each one measured. See `CityAssertion`.
+   *
+   * Separate from the scalars on `stats()` because a scalar cannot carry the population it
+   * sampled, and that gap is the one that let Rome report zero footprint overlaps while the
+   * player was looking at monuments dropped across housing.
+   */
+  getAssertions(): readonly CityAssertion[] {
+    return this.checks.assertions ?? [];
+  }
+
+  /**
+   * Where the defended circuit runs, sampled, **whether or not masonry stands on it**.
+   *
+   * `getWallSegments()` answers "where is the stone" and is the right question for a siege.
+   * This answers "where is the line", which is what a plan-view probe needs: it can draw the
+   * circuit without importing a layout constant, so a divergence between what the plan
+   * intended and what the city baked shows up as two lines on one drawing rather than as
+   * nothing at all. Derived from the bays, so it is the built line and not the intent.
+   */
+  getCircuitSamples(step = 20): { x: number; z: number }[] {
+    if (this.bays.length === 0) return [];
+    const out: { x: number; z: number }[] = [];
+    const first = this.bays[0];
+    const last = this.bays[this.bays.length - 1];
+    for (let x = first.x0; x <= last.x1; x += step) {
+      const b = this.bayAt(x) ?? last;
+      const t = clamp((x - b.x0) / Math.max(1e-3, b.x1 - b.x0), 0, 1);
+      out.push({ x, z: b.z0 + (b.z1 - b.z0) * t });
+    }
+    return out;
+  }
+
+  /**
    * Diagnostics only: pin every chunk to one detail level, or `null` to resume
    * distance-based swapping. The plan view looks at the whole city from 1.5 km up, where
    * distance culling would drop all of it to silhouettes and there would be nothing to
@@ -1446,6 +1481,15 @@ export class CitySystem implements Subsystem {
    * performance budget actually cares about.
    */
   stats(): {
+    /**
+     * Which city was built — `plan.id`, read through the city rather than guessed at.
+     *
+     * Every Rome-specific scalar below is meaningless when this is not `'rome'`, and a probe
+     * that could not tell which city it had measured is a probe that can silently grade the
+     * wrong one. This is the sanctioned way to ask: `cityPlan.ts` forbids reinstating a
+     * "which city is this really" test anywhere else.
+     */
+    id: string;
     chunks: number;
     meshes: number;
     visibleMeshes: number;
@@ -1472,6 +1516,13 @@ export class CitySystem implements Subsystem {
     /** Street network by rank: how many ways of each class, and their total length. */
     ways: { cls: string; count: number; km: number }[];
     /**
+     * Every build-time check with what it measured, which the scalars above cannot carry.
+     *
+     * Empty on a city that has not written any. See `CityAssertion` for why a sentence is
+     * part of the measurement and not commentary on it.
+     */
+    assertions: readonly CityAssertion[];
+    /**
      * Visible meshes per chunk family, descending — the city's own draw-call ledger.
      *
      * `visibleMeshes` is a single number and a single number cannot be acted on. The assault
@@ -1495,6 +1546,7 @@ export class CitySystem implements Subsystem {
     }
     const c = this.checks;
     return {
+      id: this.plan.id,
       chunks: this.chunks.length,
       meshes: this.meshCount,
       visibleMeshes,
@@ -1516,6 +1568,7 @@ export class CitySystem implements Subsystem {
       wayInsideMonument: c.wayInsideMonument ?? 0,
       waySamples: c.waySamples ?? 0,
       ways: c.ways ?? [],
+      assertions: c.assertions ?? [],
       drawsByFamily: [...byFamily.entries()]
         .map(([family, meshes]) => ({ family, meshes }))
         .sort((a, b) => b.meshes - a.meshes),
