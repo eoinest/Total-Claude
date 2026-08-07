@@ -155,9 +155,18 @@ export class RTSCamera {
     this.yawTarget = Math.PI;
   }
 
-  /** Ease toward a viewpoint over the next few seconds (used for intro flythroughs). */
+  /**
+   * Ease toward a viewpoint over the next few seconds (used for intro flythroughs).
+   *
+   * Samples the ground for the same reason `jumpTo` does, though against a smaller fault:
+   * this one leaves `smoothFocus` alone deliberately — the ease *is* the damp — so it never
+   * produced `jumpTo`'s swoop, and `update` re-derives `focus.y` from `heightAt` on the very
+   * next frame anyway. What it did leave is a window between the call and that frame in
+   * which `focus.y` reads as sea level, which is the sort of thing only the first caller
+   * ever finds. There is no caller today; that is why it is worth closing now.
+   */
   flyTo(x: number, z: number, zoom: number, yaw: number): void {
-    this.focus.set(x, 0, z);
+    this.focus.set(x, this.heightAt ? this.heightAt(x, z) : 0, z);
     this.zoomTarget = clamp(zoom, 0, 1);
     this.yawTarget = yaw;
   }
