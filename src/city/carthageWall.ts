@@ -32,13 +32,12 @@ import type {
 } from './wall';
 
 /**
- * The landward defence of Carthage, 149 BC — a *triple* wall with a casemated main line.
+ * The landward defence of Carthage, 149 BC — a ditched, casemated wall.
  *
  * This is deliberately not `wall.ts` with different numbers. Rome's Aurelian curtain is a
- * single skin of brick-faced concrete you stand on top of; Carthage's isthmus wall is three
- * lines stepping down a glacis, the innermost of which is **hollow** and has an army
- * quartered inside it. Those are different tactical objects and the difference is the whole
- * reason for the map.
+ * single skin of brick-faced concrete you stand on top of; Carthage's isthmus wall is
+ * **hollow**, with an army quartered inside it. Those are different tactical objects and the
+ * difference is the whole reason for the map.
  *
  * ## The source
  *
@@ -53,17 +52,40 @@ import type {
  *
  * Every dimension below is that passage converted at Attic measure, and each constant
  * carries the ancient figure it came from so it can be re-derived rather than trusted.
- * **Where Appian gives no number** — the interval between the three lines, the depth of the
- * gallery's two storeys, the rake of a ramp — the constant says so and gives the
- * archaeological or playability reason instead. There is no third category.
+ * **Where Appian gives no number** — the depth of the gallery's two storeys, the rake of a
+ * ramp — the constant says so and gives the archaeological or playability reason instead.
+ * There is no third category.
+ *
+ * ## One wall, and where the other two went
+ *
+ * Appian's belt is three lines, and all three were built here: a palisaded outwork, a plain
+ * middle wall, and this one. They shared these chunks and these four material streams, which
+ * is why three lines cost fewer visible meshes than Rome's single curtain. They are gone
+ * anyway, on the owner's ruling, and the argument is draw calls and clarity:
+ *
+ * - **Nothing could happen on them.** Only the main line publishes `GarrisonBay`s and
+ *   `WallStair`s, because `CitySystem.bayAt` is index arithmetic in x and one x cannot name
+ *   three bays. Nobody was ever posted on a forward line, nobody could storm one and hold
+ *   it; they stopped men and arrows and did nothing else a player could see or use.
+ * - **Three parallel crenellated lines read as three walls**, not as one wall with two
+ *   screens in front of it, and a player who cannot tell which one his men will fight on
+ *   misreads the approach. With one line the question does not arise.
+ * - **Sharing the streams made them cheap, not free.** The palisade is the only reason most
+ *   wall chunks carried a `timber` mesh at all, so every visible chunk paid a colour-pass
+ *   call for stakes; and the chunk bounding spheres had to be pushed 20.8 m toward the field
+ *   and grown by the same to cover geometry that was 41.6 m out.
+ *
+ * The **ditch** stays, moved back onto this wall's own glacis (§4.2 rows 0-1). It is a cut in
+ * the heightfield rather than masonry — zero triangles and zero draw calls — and nobody
+ * mistakes a hole in the ground for the wall standing behind it.
  *
  * ## What the sim sees
  *
- * The **main** line, and only the main line, publishes `GarrisonBay`s and `WallStair`s, so
- * `CitySystem.bayAt`'s index arithmetic still holds and `Siege.ts` drives this circuit with
- * the same four accessors it drives Rome's. The outer and middle lines are published as
- * `OutworkOut` — real masonry that stops men and arrows, but not a garrison line, because
- * one x cannot index two bays.
+ * One line, publishing `GarrisonBay`s and `WallStair`s, so `CitySystem.bayAt`'s index
+ * arithmetic holds and `Siege.ts` drives this circuit with the same four accessors it drives
+ * Rome's. `getOutworks()` answers empty here, exactly as it does on the Aurelian circuit;
+ * the record type stays because the contract is a live one and a future circuit may have
+ * forward lines, but Carthage's history is now `[]`.
  */
 
 // ---------------------------------------------------------------------------
@@ -206,98 +228,44 @@ const STALL_DOOR_W = 3.2;
 const CASEMATE_MIN_RISE = UPPER_CROWN + WALK_SLAB * 0.8;
 
 // ---------------------------------------------------------------------------
-// The outworks
+// The ditch
 // ---------------------------------------------------------------------------
 
+/** Outer face of the main wall, along the outward normal from its centreline. */
+const MAIN_FACE = PUNIC.mainThickness * 0.5;
+
 /**
- * The belt, front to back, as offsets along the outward normal from the main wall's
- * centreline. `docs/CARTHAGE.md` §4.2 gives the clear gaps; these are the sums.
+ * §4.2 row 1: the berm between the wall's footing and the ditch's counterscarp.
  *
- * The headline this exists to deliver is **12.4×**, and it is a depth ratio, not a height
- * one. Every height in the spec's comparison table is under 2.1× Rome's; what changes is the
- * *number of things between the attacker and the city*. Nothing here should be scaled up.
+ * The spec puts these five metres between the ditch and the *outwork*. With the outwork gone
+ * they belong here, and for the reason a berm exists at all: a ditch cut hard against a wall
+ * undermines its own footing, and this wall stands on 3.5 m of solid masonry over a rubble
+ * base that a 6 m cut would drain into.
  */
-const HALF_T_NOM = PUNIC.mainThickness * 0.5;
-/** Outer face of the main wall. */
-const MAIN_FACE = HALF_T_NOM;
-/** §4.2 row 5: killing ground, 18 m of it, overlooked from 16 m by a wall nobody has touched. */
-const KILLING_GROUND = 18.0;
-/** §4.2 row 4: plain ashlar, no casemates, no towers. */
-const MIDDLE_T = 4.0;
-const MIDDLE_H = 8.0;
-const MIDDLE_PARAPET = 1.8;
-const MIDDLE_OFF = MAIN_FACE + KILLING_GROUND + MIDDLE_T * 0.5;
-/** §4.2 row 3. */
-const OUTWORK_GAP = 12.0;
-/** §4.2 row 2: earth and rubble, stone-revetted on the ditch face, palisade on the crest. */
-const RAMPART_T = 6.0;
-const RAMPART_H = 4.0;
-const PALISADE_H = 1.8;
-const OUTER_OFF = MIDDLE_OFF + MIDDLE_T * 0.5 + OUTWORK_GAP + RAMPART_T * 0.5;
-/** §4.2 row 1. */
 const BERM = 5.0;
 /** §4.2 row 0: dry, V-profile with a 2 m flat bottom. */
 const DITCH_W = 20.0;
 const DITCH_D = 6.0;
-const DITCH_INNER_LIP = OUTER_OFF + RAMPART_T * 0.5 + BERM;
+const DITCH_INNER_LIP = MAIN_FACE + BERM;
 const DITCH_OFF = DITCH_INNER_LIP + DITCH_W * 0.5;
-/** Ditch lip to the back of the main wall. The spec's 74.1 m, and `assertSection` proves it. */
+/**
+ * Ditch's outer lip to the back of the main wall — the whole landward defence, now.
+ *
+ * §4.2's belt was 74.1 m and that number bought the spec's **12.4×** headline against Rome's
+ * six. It is 34.1 m here, which is still 5.7× Rome's, and it is the honest figure:
+ * `assertSection` derives it from the same three §4.2 rows that are still standing rather
+ * than leaving the old constant in place as a claim about geometry that is not there.
+ */
 const BELT_DEPTH = DITCH_INNER_LIP + DITCH_W + MAIN_FACE;
 
 /**
- * How far from the gate axis the triple belt runs.
+ * How far short of each end of the frontage the ditch stops.
  *
- * The spec puts it across the whole isthmus — "no way round" (§8.4). On this map the circuit
- * is Rome's and both ends die in terrain the belt has no business standing on, so it stops
- * 120 m short of each and the ends of the circuit carry the main wall alone, which is also
- * what the seaward stretch of the real city did.
+ * §2.2: "the wall's two ends both die on water." A cut carried into a lagoon margin is a
+ * channel, not a ditch, and it would flood to the datum `WallLine.waterLevel` carries. The
+ * curtain runs the whole frontage; its ditch does not.
  */
-const TRIPLE_END_MARGIN = 120;
-
-/**
- * The least the main wall's walk must stand above a forward line's merlons.
- *
- * Four metres is a man plus his shield plus the arc of a thrown stone: enough that a party
- * that has taken the outwork is being shot down at rather than across.
- */
-const MIN_COMMAND = 4.0;
-
-/** One outwork bay. Half a tower interval, so the two lines step in step with the main wall. */
-const OUTWORK_PITCH = PUNIC.towerSpacing * 0.5;
-
-interface OutworkSpec {
-  id: 'outer' | 'middle';
-  /** Offset along the outward normal from the main wall's centreline. */
-  off: number;
-  /** Height of the walk above its own footing. */
-  height: number;
-  thickness: number;
-  parapetH: number;
-  /** Where this line's passage crosses, as a lateral offset from the gate axis. */
-  gateShift: number;
-  /** True where the crest carries a timber palisade rather than a merlon line. */
-  palisade: boolean;
-}
-
-/**
- * The two forward lines.
- *
- * Their passages are **staggered**: §4.5 requires that a ram cannot see daylight through the
- * three openings, and 8 m of lateral offset per line does it — a column bound for the main
- * gate turns four times inside 74 m with a wall on both sides of it. The spec calls that
- * single decision worth more to the map than any texture, and it is the only part of the gate
- * that costs nothing to build.
- */
-const OUTWORKS: readonly OutworkSpec[] = [
-  {
-    id: 'outer', off: OUTER_OFF, height: RAMPART_H, thickness: RAMPART_T,
-    parapetH: PALISADE_H, gateShift: -8, palisade: true,
-  },
-  {
-    id: 'middle', off: MIDDLE_OFF, height: MIDDLE_H, thickness: MIDDLE_T,
-    parapetH: MIDDLE_PARAPET, gateShift: +8, palisade: false,
-  },
-];
+const DITCH_END_MARGIN = 120;
 
 /**
  * The gallery access ramp: 1 in 6, per §4.4, and wide enough for the beast that uses it.
@@ -305,10 +273,8 @@ const OUTWORKS: readonly OutworkSpec[] = [
 const GALLERY_RAMP_GRADE = 6;
 const GALLERY_RAMP_W = 4.4;
 
-/** Clear width of a passage through an outwork, and of a postern in the main wall. */
+/** Clear width of a postern through the main wall. */
 const PASSAGE_W = 6.0;
-/** A postern through an outwork every this many of its bays. */
-const POSTERN_EVERY = 4;
 
 // ---------------------------------------------------------------------------
 // Towers, gate and ramps
@@ -354,9 +320,9 @@ const RAMP_MAX_RUN = 34;
  * The gatehouse block: two square towers with the passage between them.
  *
  * §4.5 makes a gate "not a door, it is a 90 m tunnel through the whole belt" — a bridged
- * ditch, a gap in the outwork, a gap in the middle wall, and only then the leaves. The three
- * forward openings are laterally offset so a ram cannot see through; that lives in
- * `OUTWORKS[].gateShift` and in `gateAxes` below.
+ * ditch, a gap in the outwork, a gap in the middle wall, and only then the leaves. Two of
+ * those three are gone with the forward lines, and what is left is the ditch causeway and
+ * the leaves: 16.6 m of gatehouse behind 20 m of trench that has to be bridged first.
  */
 const GATE_BLOCK_W = 30;
 const GATE_BLOCK_D = PUNIC.mainThickness + 7.5;
@@ -447,7 +413,15 @@ export interface CasemateOut {
   entranceAt: number | null;
 }
 
-/** One of the two forward lines of the triple wall, as a thing that stops men and arrows. */
+/**
+ * A forward line of a multi-line circuit, as a thing that stops men and arrows.
+ *
+ * **Nothing publishes one today.** Carthage's outer and middle lines were built to this
+ * record and were removed; `getOutworks()` now answers `[]` on both circuits, which is the
+ * value it has always had on Rome's and which every consumer already handles. The type
+ * stays because it is a live contract read by the siege, AI and HUD workstreams and because
+ * it is the shape a second line would take — not because anything fills it.
+ */
 export interface OutworkOut {
   id: 'outer' | 'middle';
   /** Index within this line, west to east. */
@@ -456,7 +430,7 @@ export interface OutworkOut {
    * The `GarrisonBay` that stands directly behind this bay, so nothing has to do a spatial
    * query to find out what commands it.
    *
-   * Published for the same reason `WallStair.bay` is, and it is not cosmetic: the outwork is
+   * Published for the same reason `WallStair.bay` is, and it is not cosmetic: the outwork was
    * offset up to 41.6 m along the normal, and where the wall line bends the hardest that is
    * **19 m of x** — most of a bay. Deriving it twice put the builder's command clamp on one
    * bay and the probe's command test on its neighbour, and the disagreement read as a wall
@@ -481,8 +455,8 @@ export interface OutworkOut {
    *
    * **Not a boolean.** It was one, and a boolean voided the whole 29.7 m bay for a 6 m gap —
    * which silently threw away the entire point of §4.5's staggered openings, because an
-   * opening 29.7 m wide is in line with everything. The one assertion that tests the thing
-   * the spec calls "worth more to this map than any texture" was the one that caught it.
+   * opening 29.7 m wide is in line with everything. Kept as an offset in the record so the
+   * mistake is not expressible if a forward line is ever built again.
    */
   passageAt: number | null;
   /** True where the line gives out here because the ground rises past what can be commanded. */
@@ -508,17 +482,18 @@ export interface CarthageDitch {
 export interface CarthageWallOutput extends WallBuildOutput {
   /** The hollow stretches of the main wall. See `CasemateOut`. */
   casemates: readonly CasemateOut[];
-  /** The outer and middle lines. See `OutworkOut`. */
-  outworks: readonly OutworkOut[];
   /**
-   * Absolute Y of the top of the outer or middle line at a point, or `-Infinity`.
+   * Forward lines, if a circuit has any. **This one has none** — see the header.
    *
-   * A closure rather than a table because `CitySystem.masonryTopAt` is a per-projectile hot
-   * path and this has to be O(1): both lines are indexed by the same arithmetic in x that
-   * `bayAt` uses. Without it an arrow lofted at the outer wall passes through two lines of
-   * masonry and buries itself in the glacis behind them.
+   * Both this and `outworkTopAt` are omitted rather than answered empty, which is not
+   * pedantry: `CityBuild` declares them optional and `CitySystem` reads them as `?? []` and
+   * `?? null`, and the null is what takes the outwork branch out of `masonryTopAt` — a
+   * per-projectile hot path that would otherwise call a closure to be told there is nothing
+   * there, two thousand arrows a tick.
    */
-  outworkTopAt(x: number, z: number): number;
+  outworks?: readonly OutworkOut[];
+  /** Absolute Y of the top of a forward line at a point, or `-Infinity`. Omitted here. */
+  outworkTopAt?(x: number, z: number): number;
   /** Extra height of a curtain tower above the bay crest, for the obstacle box. */
   towerRise: number;
   /**
@@ -533,11 +508,14 @@ export interface CarthageWallOutput extends WallBuildOutput {
   /**
    * The ditch, as a **request** rather than as geometry.
    *
-   * §4.2 puts a 20 × 6 m dry ditch in front of the outwork and it is 27% of the belt's depth.
+   * §4.2 puts a 20 × 6 m dry ditch at the front of the belt, and with the two forward lines
+   * gone it stands on the main wall's own glacis, across a 5 m berm. It is 59% of what is
+   * left of the belt's depth and it is the only forward work still in the design.
+   *
    * It cannot be built here: a ditch is a cut in the heightfield and `src/terrain/` is not
    * this workstream's, and a trench liner emitted at the right depth would simply be buried
    * by the ground it is supposed to be cut into. So the plan and the profile are published
-   * for whoever owns the terrain, and the built belt is honestly 54.1 m and not 74.1 m until
+   * for whoever owns the terrain, and the built belt is honestly 14.1 m and not 34.1 m until
    * that lands. Saying which is which is the point of publishing it.
    */
   ditch: CarthageDitch;
@@ -727,9 +705,19 @@ function assertSection(): string[] {
   if (Math.abs(CASEMATE_COVER - WALK_SLAB) > 1e-9) {
     f.push(`cover over the upper vault is ${CASEMATE_COVER.toFixed(3)} m, not ${WALK_SLAB}`);
   }
-  // §4.2: 74.1 m from the ditch's outer lip to the back of the main wall.
-  if (Math.abs(BELT_DEPTH - 74.1) > 0.05) {
-    f.push(`belt is ${BELT_DEPTH.toFixed(2)} m deep, not the spec's 74.1`);
+  /**
+   * §4.2 rows 0, 1 and 6, which are the three that are still standing: a 20 m ditch, a 5 m
+   * berm and 9.1 m of wall is 34.1 m from the ditch's outer lip to the back of the curtain.
+   *
+   * The spec's own figure is 74.1 m and it counts the outwork, the middle wall and the
+   * killing ground between them. Testing against 74.1 with those gone would be an assertion
+   * that passes on arithmetic while the ground it describes is empty, which is the exact
+   * failure this whole file's comment style exists to prevent — so the constant moved and
+   * says what it now measures.
+   */
+  const belt = DITCH_W + BERM + PUNIC.mainThickness;
+  if (Math.abs(BELT_DEPTH - belt) > 1e-9) {
+    f.push(`belt is ${BELT_DEPTH.toFixed(2)} m deep, not ditch + berm + wall = ${belt.toFixed(2)}`);
   }
   // §4.3: 9.1 − 1.2 − 0.8 = 7.1 m of clear masonry on the walk.
   const clear = PUNIC.mainThickness - PARAPET_T - INNER_PARAPET_T;
@@ -740,17 +728,16 @@ function assertSection(): string[] {
   if (band < 5 * 0.72) f.push(`standing band ${band.toFixed(2)} m holds under five ranks`);
   if (STALL_DOOR_W + 0.6 > STALL_PITCH) f.push('stall doors overlap their own piers');
   if (GATE_PASS_W + 1.0 > GATE_BLOCK_W * 0.5) f.push('gate passage wider than its own pier');
-  // The whole point of the staggered openings: no straight line through the belt.
-  for (const a of OUTWORKS) {
-    for (const b of OUTWORKS) {
-      if (a === b) continue;
-      if (Math.abs(a.gateShift - b.gateShift) < PASSAGE_W) {
-        f.push(`${a.id} and ${b.id} passages are in line — a ram can see the leaves`);
-      }
-    }
-    if (Math.abs(a.gateShift) < PASSAGE_W) {
-      f.push(`${a.id} passage is in line with the main gate`);
-    }
+  /**
+   * The ditch is in front of the wall and clear of its footing.
+   *
+   * A sign error here is the whole of the risk in moving it: `DITCH_OFF` is an offset along
+   * the *outward* normal, so a negative one puts a 6 m trench through the intervallum behind
+   * the wall, where the pathfinder has no idea it is and the garrison forms up.
+   */
+  if (DITCH_INNER_LIP <= MAIN_FACE) f.push("the ditch is cut into the wall's own footing");
+  if (DITCH_OFF - DITCH_W * 0.5 - MAIN_FACE + 1e-9 < BERM) {
+    f.push(`berm is ${(DITCH_OFF - DITCH_W * 0.5 - MAIN_FACE).toFixed(2)} m, not ${BERM}`);
   }
   return f;
 }
@@ -1138,6 +1125,7 @@ export function buildCarthageWall(
     thickness: GATE_DOOR_T,
     setback: GATE_DOOR_SET,
     open: false,
+    broken: false,
   };
   const gateBlock: GateBlockOut = {
     x: GATE_X, z: gateCz,
@@ -1148,137 +1136,18 @@ export function buildCarthageWall(
     openHalf: GATE_PASS_W * 0.5,
   };
 
-  // --- the outer and middle lines -------------------------------------------
-  const outworks: OutworkOut[] = [];
-  const owX0 = WALL_X_MIN + TRIPLE_END_MARGIN;
-  const owX1 = WALL_X_MAX - TRIPLE_END_MARGIN;
-  const owN = Math.max(2, Math.round((owX1 - owX0) / OUTWORK_PITCH));
-  const owPitch = (owX1 - owX0) / owN;
-
-  for (const spec of OUTWORKS) {
-    for (let i = 0; i < owN; i++) {
-      const x0 = clamp(owX0 + i * owPitch, WALL_X_MIN, WALL_X_MAX);
-      const x1 = clamp(x0 + owPitch, WALL_X_MIN, WALL_X_MAX);
-      if (x1 - x0 < 1) continue;
-      const mf = frameOf(x0, zAt(x0), x1, zAt(x1));
-      const a = { x: x0 + mf.nx * spec.off, z: zAt(x0) + mf.nz * spec.off };
-      const c = { x: x1 + mf.nx * spec.off, z: zAt(x1) + mf.nz * spec.off };
-      const f = frameOf(a.x, a.z, c.x, c.z);
-      let gMax = -Infinity;
-      for (let s = 0; s <= 8; s++) {
-        const g = heightAt(lerp(a.x, c.x, s / 8), lerp(a.z, c.z, s / 8));
-        if (g > gMax) gMax = g;
-      }
-      /**
-       * This line's own passages: one per gate, each shifted laterally by `gateShift` so the
-       * three openings in the belt are not in line and a ram at the ditch cannot see the
-       * leaves. Plus a postern every few bays, so a storming party is never more than half a
-       * bay from a way in and the frontage is a defence rather than a lid.
-       */
-      let passageAt: number | null = null;
-      for (const ga of gateAxes) {
-        const gx = ga.x + spec.gateShift;
-        if (gx < x0 || gx > x1) continue;
-        passageAt = ((gx - a.x) * f.dx + (zAt(gx) + f.nz * spec.off - a.z) * f.dz);
-      }
-      // A postern every few bays, so a storming party is never more than half a bay from a
-      // way in and the frontage is a defence rather than a lid.
-      if (passageAt === null && i % POSTERN_EVERY === 2) {
-        passageAt = Math.hypot(c.x - a.x, c.z - a.z) * 0.5;
-      }
-      /**
-       * Stepped **down** from the wall behind it, and clamped so it stays that way.
-       *
-       * §4.2's whole arrangement is a stepped system: each line lower than the one behind,
-       * so all three can be fought from at once and the main wall dominates everything in
-       * front of it. Following the ground alone does not deliver that — the wall line sits on
-       * a crest whose fall is not uniform, and measured over the full circuit there are
-       * stretches where the ground 41 m out is *higher* than the ground under the main wall.
-       * Left alone those bays put a merlon line 4.8 m **above** the wall it is supposed to
-       * screen, which hands the attacker a firing step.
-       *
-       * So the crest is capped at the main wall's walk less `MIN_COMMAND`, and where the
-       * ground rises so far that even a 2 m revetment breaks the cap, the line simply gives
-       * out and the bay becomes a passage. A forward work that cannot be commanded is not
-       * built, which is also what a real engineer does with one.
-       */
-      // The bay behind this one is found at the outwork's **own** world x, after the offset
-      // along the normal has moved it — not at the main-line x it was generated from.
-      const backing = clamp(Math.floor(((a.x + c.x) * 0.5 - WALL_X_MIN) / pitch), 0, nBays - 1);
-      const mainBay = bays[backing];
-      const wanted = Math.ceil((gMax + spec.height) / 0.5) * 0.5;
-      const cap = mainBay.walkY - MIN_COMMAND - spec.parapetH;
-      const walkY = Math.min(wanted, cap);
-      const givesOut = walkY < gMax + 2.0;
-      outworks.push({
-        id: spec.id,
-        index: i,
-        bay: backing,
-        x0: a.x, z0: a.z, x1: c.x, z1: c.z,
-        dx: f.dx, dz: f.dz, nx: f.nx, nz: f.nz,
-        halfThickness: spec.thickness * 0.5,
-        walkY,
-        crestY: walkY + spec.parapetH,
-        passageAt,
-        standsDown: givesOut,
-        palisade: spec.palisade,
-      });
-    }
-  }
-
-  /**
-   * O(1) masonry lookup for the two forward lines.
-   *
-   * Index arithmetic in x against each line's own uniform pitch, then a signed distance to
-   * that bay's centreline — the same two steps `CitySystem.masonryTopAt` already does for
-   * the main wall, so the cost of the triple wall to a per-projectile hot path is two extra
-   * distance tests and no allocation.
-   */
-  /**
-   * `line[id][i]`, so the lookup never assumes a line kept all `owN` of its bays.
-   *
-   * It does today, but a line clipped by `WALL_X_MIN` would drop one and every index after
-   * it would then name the wrong bay — a silent off-by-one in a hot path, which is exactly
-   * the class of bug that put a gatehouse over 23 m of open grass.
-   */
-  const byIndex = new Map<string, (OutworkOut | undefined)[]>();
-  for (const spec of OUTWORKS) byIndex.set(spec.id, new Array(owN));
-  for (const ow of outworks) byIndex.get(ow.id)![ow.index] = ow;
-
-  const outworkTopAt = (x: number, z: number): number => {
-    let best = -Infinity;
-    for (const spec of OUTWORKS) {
-      const i = Math.floor((x - owX0) / owPitch);
-      if (i < 0 || i >= owN) continue;
-      const ow = byIndex.get(spec.id)![i];
-      if (!ow || ow.standsDown) continue;
-      const t = (x - ow.x0) * ow.dx + (z - ow.z0) * ow.dz;
-      const px = ow.x0 + ow.dx * t;
-      const pz = ow.z0 + ow.dz * t;
-      const off = (x - px) * ow.nx + (z - pz) * ow.nz;
-      if (Math.abs(off) > ow.halfThickness) continue;
-      const len = Math.hypot(ow.x1 - ow.x0, ow.z1 - ow.z0);
-      if (t < 0 || t > len) continue;
-      // Only the passage itself is a hole, not the bay it is cut in.
-      if (ow.passageAt !== null && Math.abs(t - ow.passageAt) <= PASSAGE_W * 0.5) continue;
-      if (ow.crestY > best) best = ow.crestY;
-    }
-    return best;
-  };
-
   // --- chunks ----------------------------------------------------------------
   /**
-   * Everything — three lines, towers, gate, ramps and the galleries — goes into the same
-   * `Batch` streams inside the same chunks, so a triple wall costs the *same* number of
-   * draw calls as a single curtain. `Batch.toMeshes` bakes one mesh per material per detail
-   * level, and the material set has not grown: `brick`, `stone`, `timber`, `metal`, `roof`.
-   * That is not a cleanup pass, it is the only reason a wall with three times the geometry
-   * fits inside a 220-call frame at all.
+   * Curtain, towers, gates, ramps and the galleries all go into the same `Batch` streams
+   * inside the same chunks. `Batch.toMeshes` bakes one mesh per material per detail level,
+   * so the wall's whole cost is its *material set* — `stone`, `timber`, `metal`, `roof` —
+   * and not how much of it there is.
+   *
+   * With the palisade gone, `timber` and `metal` survive only where a gate has leaves and a
+   * drawbar: **one chunk in seven**, instead of every chunk in the circuit.
    */
   const BAYS_PER_CHUNK = 10;
   const chunks: CityChunkSpec[] = [];
-  const owByChunk = (cx0: number, cx1: number): OutworkOut[] =>
-    outworks.filter((o) => o.x1 > cx0 && o.x0 <= cx1);
 
   for (let c = 0; c * BAYS_PER_CHUNK < bays.length; c++) {
     const from = c * BAYS_PER_CHUNK;
@@ -1286,12 +1155,19 @@ export function buildCarthageWall(
     const slice = bays.slice(from, to);
     const spanX0 = slice[0].x0;
     const spanX1 = slice[slice.length - 1].x1;
-    const mine = owByChunk(spanX0, spanX1);
     const cx = (spanX0 + spanX1) * 0.5;
-    // Pulled toward the field so the sphere covers the outworks as well as the main line;
-    // `assertNoStrayGeometry` measures every vertex against this radius.
-    const cz = (slice[0].z0 + slice[slice.length - 1].z1) * 0.5 - OUTER_OFF * 0.5;
-    const radius = (spanX1 - spanX0) * 0.62 + OUTER_OFF * 0.5 + 58;
+    /**
+     * The sphere sits on the wall line now.
+     *
+     * It used to be pushed 20.8 m toward the field with the radius grown by the same, to
+     * cover an outwork 41.6 m out. Nothing stands out there, so leaving it would declare a
+     * chunk half again as deep as the geometry in it — which is not free: `surfaceCorrection`
+     * takes `radius * 0.55` off the LOD distance, so an over-declared radius holds a chunk at
+     * full detail longer than it has any reason to be. `assertNoStrayGeometry` measures every
+     * vertex against this and will say so if it is now too small.
+     */
+    const cz = (slice[0].z0 + slice[slice.length - 1].z1) * 0.5;
+    const radius = (spanX1 - spanX0) * 0.62 + 58;
     chunks.push({
       name: `wall-${c}`,
       cx, cz, radius,
@@ -1323,7 +1199,52 @@ export function buildCarthageWall(
             last.walkY, heightAt
           );
         }
-        for (const ow of mine) buildOutworkBay(batch, detail, ow, heightAt);
+      },
+    });
+  }
+
+  /**
+   * The Porta Byrsae's leaves, as their own chunk so a breach is visible.
+   *
+   * One detail level and no shadow: 130 triangles hanging 3.4 m inside a 16.6 m passage, so
+   * there is nothing for a mid tier to drop and the shadow falls wholly inside the
+   * gatehouse's. `castShadow: false` also keeps them out of `buildShadowProxy`, which would
+   * otherwise bake a copy into the wall chunk's merged caster and go on drawing their shadow
+   * after they were hidden.
+   *
+   * It costs this circuit nothing. `timber` and `metal` in the gate chunk were the leaves and
+   * the drawbar and nothing else once the palisade went, so the two meshes move rather than
+   * multiply — and they come back on an 18 m sphere at the gate instead of a 250 m one across
+   * ten bays.
+   */
+  {
+    const ga = gateAxes[0];
+    chunks.push({
+      name: 'gate-door',
+      cx: ga.x,
+      cz: ga.z,
+      radius: 18,
+      castShadow: false,
+      lodSwitch: [1e9, 1e9],
+      gateDoorFor: ga.id,
+      build: (batch, detail) => {
+        batch.setUvOrigin(ga.x, 0, ga.z);
+        buildPunicGateLeaves(batch, detail, bays[ga.bay], ga.x, ga.z, heightAt);
+      },
+    });
+    // The same leaves after the ram. Baked and held off the screen; `setGateDoorBroken`
+    // swaps the two, so the pair costs one chunk's draws whichever of them is showing.
+    chunks.push({
+      name: 'gate-wreck',
+      cx: ga.x,
+      cz: ga.z,
+      radius: 22,
+      castShadow: false,
+      lodSwitch: [1e9, 1e9],
+      gateWreckFor: ga.id,
+      build: (batch, detail) => {
+        batch.setUvOrigin(ga.x, 0, ga.z);
+        buildPunicGateLeaves(batch, detail, bays[ga.bay], ga.x, ga.z, heightAt, true);
       },
     });
   }
@@ -1346,10 +1267,16 @@ export function buildCarthageWall(
   /**
    * The ditch, published rather than built. See the field's own comment on the output type:
    * a 6 m cut belongs to the heightfield and this workstream does not own it.
+   *
+   * Offset along each bay's **own** outward normal rather than straight in −z, because on
+   * Carthage's line the curtain leans 6 % and a ditch laid off a global axis would run into
+   * the wall's footing at one end of the frontage and 3 m clear of the berm at the other.
    */
+  const ditchX0 = WALL_X_MIN + DITCH_END_MARGIN;
+  const ditchX1 = WALL_X_MAX - DITCH_END_MARGIN;
   const ditchPath: { x: number; z: number }[] = [];
   for (let k = 0; k <= 24; k++) {
-    const x = lerp(owX0, owX1, k / 24);
+    const x = lerp(ditchX0, ditchX1, k / 24);
     const b = bays[clamp(Math.floor((x - WALL_X_MIN) / pitch), 0, nBays - 1)];
     ditchPath.push({ x: x + b.frame.nx * DITCH_OFF, z: zAt(x) + b.frame.nz * DITCH_OFF });
   }
@@ -1371,8 +1298,7 @@ export function buildCarthageWall(
     stairs,
     wallZAt: zAt,
     casemates,
-    outworks,
-    outworkTopAt,
+    // `outworks` and `outworkTopAt` are deliberately absent, not empty. See the output type.
     towerRise: TOWER_RISE,
     occBlockers,
     ditch: {
@@ -1920,8 +1846,6 @@ function buildPunicGate(
   heightAt: (x: number, z: number) => number
 ): void {
   const stone = batch.s('stone');
-  const timber = batch.s('timber');
-  const metal = batch.s('metal');
   const f = bay.frame;
   const g = heightAt(gateX, gateCz);
   const rotY = Math.atan2(-f.nx, -f.nz);
@@ -1979,20 +1903,59 @@ function buildPunicGate(
   }
   stone.pop();
 
-  // --- the leaves, shut and barred ------------------------------------------
+  // --- the leaves ------------------------------------------------------------
   //
   // Only the main gate has them. §4.5 gives three gates and `Siege.ts` besieges
   // `getGates()[0]`; the other two are gatehouses whose passages are walled up, which is
   // what a city under siege does with the gates it is not using, and it keeps the flanking
   // gates from reading as two more ways in that nothing defends.
+  //
+  // The leaves themselves are **not built here** — they are their own chunk, so the ram can
+  // take them off the screen. See `buildPunicGateLeaves` and `CityChunkSpec.gateDoorFor`.
   if (!leaves) {
     const blockCol = new THREE.Color().copy(PAL.tufa).multiplyScalar(0.9);
     stone.push(m);
     box(stone, -GATE_PASS_W * 0.5, g, -0.9, GATE_PASS_W * 0.5, g + GATE_PASS_H, 0.9,
       blockCol, { bottom: false });
     stone.pop();
-    return;
   }
+}
+
+/**
+ * The Porta Byrsae's twin leaves, in their own chunk so the ram's work shows.
+ *
+ * `CitySystem.setGateOpen` re-cuts the occupancy raster and the obstacle boxes and touches
+ * no mesh, so a gate that has been broken open goes on being *drawn* shut for the rest of
+ * the battle: the player watches a ram land twenty-six blows and two leaves that never move.
+ * `getGateDoor()` has published the hinge line, the leaf extent and the door plane for
+ * exactly this purpose since it was written and had no consumer, because the leaves were
+ * `box()` calls merged into the gatehouse chunk's timber stream and there was nothing
+ * separable to hide.
+ *
+ * They are a `CityChunkSpec` tagged `gateDoorFor` now, and `setGateDoorBroken(id)` hides
+ * them. Same shape on both circuits — see `buildGateLeaves` in `wall.ts`.
+ *
+ * **`wrecked` is the pose the ram left them in**, into a second chunk tagged `gateWreckFor`.
+ * Same constants, same hinge line, same door plane, because a wreck authored from remembered
+ * dimensions is how you get splinters that do not line up with the jambs. Carthage's gate is
+ * the one a player will actually assault — the Byrsa is behind it — so this is the frame the
+ * whole seam exists to produce. See `PUNIC_WRECK`.
+ */
+function buildPunicGateLeaves(
+  batch: Batch,
+  detail: number,
+  bay: MainBay,
+  gateX: number,
+  gateCz: number,
+  heightAt: (x: number, z: number) => number,
+  wrecked = false
+): void {
+  const timber = batch.s('timber');
+  const metal = batch.s('metal');
+  const f = bay.frame;
+  const g = heightAt(gateX, gateCz);
+  const rotY = Math.atan2(-f.nx, -f.nz);
+  const hd = GATE_BLOCK_D * 0.5;
   const doorY = g + GATE_DOOR_SILL;
   const dm = place(
     gateX + f.nx * (hd - GATE_DOOR_SET),
@@ -2002,122 +1965,146 @@ function buildPunicGate(
   );
   timber.push(dm);
   const leafW = GATE_PASS_W * 0.5;
+  const headY = doorY + GATE_PASS_H - GATE_DOOR_SILL;
   for (const side of [-1, 1]) {
     const x0 = side < 0 ? -leafW : 0.03;
     const x1 = side < 0 ? -0.03 : leafW;
-    box(timber, x0, doorY, -GATE_DOOR_T * 0.5, x1, doorY + GATE_PASS_H - GATE_DOOR_SILL,
-      GATE_DOOR_T * 0.5, PAL.timberDark, { bottom: false });
+    /**
+     * The wrecked pose, about this leaf's own harr-post.
+     *
+     * `side = -1` is still hanging, swung into the passage and canted because its upper
+     * collar tore out; `side = +1` went down flat across the carriageway. Local `+z` is the
+     * city side here — `rotY` is `atan2(-nx, -nz)`, so `+z` runs *against* the wall's
+     * outward normal — which is the only direction a ram can drive a leaf.
+     */
+    const hingeX = side * leafW;
+    if (wrecked) {
+      const m = new THREE.Matrix4();
+      if (side < 0) {
+        m.makeTranslation(hingeX, doorY, 0)
+          .multiply(new THREE.Matrix4().makeRotationY(side * PUNIC_WRECK.swing))
+          .multiply(new THREE.Matrix4().makeRotationX(PUNIC_WRECK.cant))
+          .multiply(new THREE.Matrix4().makeTranslation(-hingeX, -doorY, 0));
+      } else {
+        m.makeTranslation(hingeX * PUNIC_WRECK.slide, g + PUNIC_WRECK.lie, PUNIC_WRECK.shove)
+          .multiply(new THREE.Matrix4().makeRotationY(PUNIC_WRECK.yaw))
+          .multiply(new THREE.Matrix4().makeRotationX(PUNIC_WRECK.flat))
+          .multiply(new THREE.Matrix4().makeTranslation(-hingeX, -doorY, 0));
+      }
+      timber.push(m);
+    }
+    if (!wrecked) {
+      box(timber, x0, doorY, -GATE_DOOR_T * 0.5, x1, headY,
+        GATE_DOOR_T * 0.5, PAL.timberDark, { bottom: false });
+    } else {
+      /**
+       * Broken into its plank columns, because a slab cannot have a ragged edge.
+       *
+       * The shut leaf is one box — at 5.2 m of passage that is the right cost and nobody can
+       * see a joint at battle range. A *broken* one is read entirely by its top edge, so the
+       * wrecked pose spends eight columns on each leaf to get a jagged one. The loss is
+       * greatest at the meeting stile, where the ram lands, and tapers to the braced hanging
+       * stile: a V bitten out of the middle, not a rectangle of missing door.
+       */
+      const cols = detail >= 1 ? 8 : 4;
+      for (let j = 0; j < cols; j++) {
+        const a = lerp(x0, x1, j / cols);
+        const b = lerp(x0, x1, (j + 1) / cols);
+        // `j` runs from the meeting stile outward on the +side and inward on the −side.
+        const out = side < 0 ? j / cols : 1 - (j + 1) / cols;
+        const keep = Math.min(1, (side < 0 ? 0.30 : 0.54) + 0.5 * (1 - out) + hash2(j, side + 3, 71) * 0.15);
+        const top = doorY + (headY - doorY) * keep;
+        box(timber, Math.min(a, b), doorY, -GATE_DOOR_T * 0.5, Math.max(a, b), top,
+          GATE_DOOR_T * 0.5, new THREE.Color().copy(PAL.timberDark).multiplyScalar(0.94 + hash2(j, side + 9, 23) * 0.22),
+          { bottom: false });
+      }
+    }
     if (detail >= 1) {
-      for (let k = 0; k < 5; k++) {
+      // Ledges. On the wrecked leaf only the ones still under timber survive; the top of the
+      // leaf went with the boarding it was nailed to.
+      const survive = wrecked ? (side < 0 ? 2 : 3) : 5;
+      for (let k = 0; k < survive; k++) {
         const y = doorY + 0.7 + k * ((GATE_PASS_H - 1.6) / 4);
         box(timber, x0 + 0.05, y, -GATE_DOOR_T * 0.5 - 0.05, x1 - 0.05, y + 0.16,
           -GATE_DOOR_T * 0.5, PAL.timber, { bottom: false });
       }
     }
+    if (wrecked) timber.pop();
+  }
+  if (wrecked) {
+    /**
+     * Plank ends and splinters, scattered **through** the arch and not just behind it.
+     *
+     * The leaves are 3.4 m inside a 16.6 m passage, so everything modelled at the door plane
+     * is in shadow behind a stone reveal: shot from the field at 70 m the broken gate and the
+     * open gate are the same dark rectangle, which is the whole failure this work exists to
+     * fix restated one step further in. The player watches the ram from outside, so the wreck
+     * has to reach outside. `-9.5` is 4.6 m clear of the block's own outer face, on the paved
+     * apron the ram stood on; a ram breaks a leaf by striking its outer face and the timber it
+     * takes off it goes that way.
+     */
+    for (let k = 0; k < 10; k++) {
+      const hx0 = hash2(k, 3, 91);
+      const hz0 = hash2(k, 8, 37);
+      const ha = hash2(k, 12, 61);
+      const sm = new THREE.Matrix4()
+        .makeTranslation((hx0 - 0.5) * GATE_PASS_W * 1.5, g + 0.12, -9.5 + hz0 * 14.0)
+        .multiply(new THREE.Matrix4().makeRotationY(ha * Math.PI))
+        .multiply(new THREE.Matrix4().makeRotationZ((ha - 0.5) * 0.3));
+      timber.push(sm);
+      const ln = 0.4 + ha * 1.3;
+      box(timber, -ln, -0.055, -0.1, ln, 0.055, 0.1,
+        new THREE.Color().copy(PAL.timberDark).multiplyScalar(1.0 + hz0 * 0.3));
+      timber.pop();
+    }
   }
   timber.pop();
   if (detail >= 1) {
     metal.push(dm);
-    // The drawbar: this gate is barred, not merely closed.
-    box(metal, -leafW + 0.2, doorY + GATE_PASS_H * 0.44, -GATE_DOOR_T * 0.5 - 0.16,
-      leafW - 0.2, doorY + GATE_PASS_H * 0.44 + 0.3, -GATE_DOOR_T * 0.5 - 0.02,
-      PAL.iron, { bottom: false });
+    if (!wrecked) {
+      // The drawbar: this gate is barred, not merely closed.
+      box(metal, -leafW + 0.2, doorY + GATE_PASS_H * 0.44, -GATE_DOOR_T * 0.5 - 0.16,
+        leafW - 0.2, doorY + GATE_PASS_H * 0.44 + 0.3, -GATE_DOOR_T * 0.5 - 0.02,
+        PAL.iron, { bottom: false });
+    } else {
+      // And snapped, in two pieces on the paving. Nothing else in the frame says the gate
+      // was *barred* and the bar gave way.
+      for (const side of [-1, 1]) {
+        const bm = new THREE.Matrix4()
+          .makeTranslation(side * leafW * 0.5, g + 0.26, 1.2 + side * 0.7)
+          .multiply(new THREE.Matrix4().makeRotationY(side * 0.44 + PUNIC_WRECK.yaw * 0.5))
+          .multiply(new THREE.Matrix4().makeRotationZ(side * 0.06));
+        metal.push(bm);
+        const half = leafW * 0.5 - 0.1;
+        box(metal, -half, -0.15, -0.14, half, 0.15, 0.14, PAL.iron);
+        metal.pop();
+      }
+    }
     metal.pop();
   }
 }
 
 /**
- * One bay of the outer or middle line.
- *
- * Deliberately plainer than the main wall: a battered scarp, a walk and a merlon line, and
- * nothing else. Three walls that all carry the same detail read as one wall drawn three
- * times; three walls of *descending* elaboration read as a defence in depth, which is what
- * this is. A bay flagged `passage` emits only its two jamb returns, so the gap is framed
- * rather than simply missing.
+ * The pose the ram leaves the Porta Byrsae in. See `WRECK` in `wall.ts` for the argument;
+ * the numbers differ because this passage is 5.2 m wide against Rome's 8.6 and 16.6 m deep
+ * against 11, so a leaf that fell as far as Rome's would still be under the arch.
  */
-function buildOutworkBay(
-  batch: Batch,
-  detail: number,
-  ow: OutworkOut,
-  heightAt: (x: number, z: number) => number
-): void {
-  const stone = batch.s('stone');
-  const len = Math.hypot(ow.x1 - ow.x0, ow.z1 - ow.z0);
-  if (len < 1) return;
-  const t = ow.halfThickness * 2;
-  const col = new THREE.Color()
-    .copy(PAL.tufa)
-    .multiplyScalar(ow.id === 'outer' ? 0.93 : 0.97);
-  const capCol = new THREE.Color().copy(PAL.travertine).multiplyScalar(0.96);
-
-  if (ow.standsDown) return;
-  /** The bay, or the two stubs either side of the passage where one is cut. */
-  const pa = ow.passageAt;
-  const spans: [number, number][] = pa === null
-    ? [[0, len]]
-    : [[0, Math.max(0, pa - PASSAGE_W * 0.5)], [Math.min(len, pa + PASSAGE_W * 0.5), len]];
-
-  const nSub = detail >= 2 ? 4 : 2;
-  for (const [sa, sb] of spans) {
-    if (sb - sa < 0.6) continue;
-    for (let s = 0; s < nSub; s++) {
-      const ta = lerp(sa, sb, s / nSub);
-      const tb = lerp(sa, sb, (s + 1) / nSub);
-      const ax = ow.x0 + ow.dx * ta;
-      const az = ow.z0 + ow.dz * ta;
-      const bx = ow.x0 + ow.dx * tb;
-      const bz = ow.z0 + ow.dz * tb;
-      const g = Math.min(heightAt(ax, az), heightAt(bx, bz));
-      quadPrism(stone, ax, az, bx, bz, ow.nx, ow.nz, t, g - 1.4, ow.walkY, col, capCol, {
-        // A steeper batter than the main wall: these are scarps, not fighting platforms,
-        // and the lean is what makes them read as a glacis from the field.
-        batter: 0.055,
-        ends: (s === 0 && sa > 0.01) || (s === nSub - 1 && sb < len - 0.01),
-      });
-    }
-    const ax = ow.x0 + ow.dx * sa;
-    const az = ow.z0 + ow.dz * sa;
-    const bx = ow.x0 + ow.dx * sb;
-    const bz = ow.z0 + ow.dz * sb;
-    if (ow.palisade) {
-      /**
-       * A timber palisade, not a merlon line. §4.2 row 2: the outer work is earth and
-       * rubble, stone-revetted on the ditch face, with stakes on the crest — and the change
-       * of *material* between the three lines is what stops them reading as one wall drawn
-       * three times at the strategic camera.
-       */
-      const timber = batch.s('timber');
-      const len2 = sb - sa;
-      const n = Math.max(2, Math.round(len2 / 0.62));
-      const stakeCol = new THREE.Color().copy(PAL.timberDark);
-      for (let k = 0; k < n; k++) {
-        const tt = sa + ((k + 0.5) * len2) / n;
-        const sx = ow.x0 + ow.dx * tt;
-        const sz = ow.z0 + ow.dz * tt;
-        const jitter = hash2(k, ow.index, 41);
-        quadPrism(
-          timber,
-          sx - ow.dx * 0.11, sz - ow.dz * 0.11,
-          sx + ow.dx * 0.11, sz + ow.dz * 0.11,
-          ow.nx, ow.nz, 0.22, ow.walkY - 0.4,
-          ow.crestY - 0.1 + jitter * 0.22, stakeCol, stakeCol, { ends: detail >= 2 }
-        );
-      }
-      // A waling piece behind the stakes, so the palisade reads as a built thing.
-      quadPrism(
-        timber,
-        ax - ow.nx * 0.22, az - ow.nz * 0.22, bx - ow.nx * 0.22, bz - ow.nz * 0.22,
-        ow.nx, ow.nz, 0.18, ow.walkY + 0.55, ow.walkY + 0.8,
-        PAL.timber, PAL.timber, { ends: false }
-      );
-    } else {
-      crenellation(
-        stone, ax, az, bx, bz, ow.walkY, ow.crestY - ow.walkY,
-        Math.max(0.6, t - 0.9), col, 1.5, 0.9, detail >= 2
-      );
-    }
-  }
-}
+const PUNIC_WRECK = {
+  /** Swing of the surviving leaf into the passage, radians. 43 deg. */
+  swing: 0.75,
+  /** Cant off plumb, the upper collar having torn out of the jamb. */
+  cant: 0.09,
+  /** Tip of the fallen leaf: 83 deg, head slightly raised off the paving. */
+  flat: 1.449,
+  /** Skew of the fallen leaf across the carriageway. */
+  yaw: -0.27,
+  /** How far its foot slid off the hinge line, as a fraction of the half-width. */
+  slide: 0.6,
+  /** How far in from the door plane it came to rest. */
+  shove: 0.7,
+  /** Height of its foot above the ground under the gate. */
+  lie: 0.17,
+} as const;
 
 /**
  * The ramp onto the wall: a solid masonry mass against the inner face with a raking coping.
@@ -2261,9 +2248,11 @@ export const CARTHAGE_SECTION = {
   rampWidth: RAMP_W,
   rampMaxRun: RAMP_MAX_RUN,
   passageWidth: PASSAGE_W,
-  middleOffset: MIDDLE_OFF,
-  outerOffset: OUTER_OFF,
   beltDepth: BELT_DEPTH,
+  /** Berm between the outer face and the ditch's counterscarp. */
+  berm: BERM,
+  /** Signed offset of the ditch centreline from the wall's, along the **outward** normal. */
+  ditchOffset: DITCH_OFF,
   ditchWidth: DITCH_W,
   ditchDepth: DITCH_D,
   mainHeight: PUNIC.mainHeight,

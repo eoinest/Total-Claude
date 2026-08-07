@@ -190,10 +190,32 @@ try {
       return b.z0 + (b.z1 - b.z0) * t;
     };
 
-    // ---- splat the wall chunks' triangles into x bins ------------------------
+    /**
+     * ---- splat the wall chunks' triangles into x bins ------------------------
+     *
+     * `wall-<n>` is the curtain; `gate-door` and `gate-wreck` are the Porta Flaminia's twin
+     * leaves, intact and as the ram left them. The leaves used to be merged into the
+     * gatehouse's own chunk and moved out so `CitySystem.setGateDoorBroken` has something
+     * separable to hide — at which point this gather silently stopped seeing them, the two
+     * carriageway assertions went red, and the wall had a 4 m hole in it that was really a
+     * hole in the instrument. That is trap 1 in this file's own idiom: check what the probe
+     * is looking at before believing what it says about the stone.
+     *
+     * **Visibility is part of the query for the gate pair and must not be for the curtain.**
+     * Exactly one of the two gate chunks is on screen at a time and the other is baked and
+     * hidden, so gathering both would fill the passage with wreckage while the doors are
+     * still shut; reading `visible` there means these assertions test the shut gate before a
+     * breach and the broken one after it. Applying the same test to `wall-<n>-lod0` drops
+     * every bay the camera has already LOD-switched away from — measured, that took the run
+     * from 17/19 to 15/19 and reported a discontinuous circuit, stairless bays and phantom
+     * obstacles, none of which had moved. The curtain is gathered at full detail always.
+     */
     const meshes = [];
     root.traverse((o) => {
-      if (o.isMesh && o.parent && /^wall-\d+-lod0$/.test(o.parent.name)) meshes.push(o);
+      if (!o.isMesh || !o.parent) return;
+      const p = o.parent.name;
+      if (/^wall-\d+-lod0$/.test(p)) meshes.push(o);
+      else if (/^gate-(door|wreck)-lod0$/.test(p) && o.parent.visible) meshes.push(o);
     });
 
     /**
