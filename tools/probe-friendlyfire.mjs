@@ -23,9 +23,17 @@
  * — the projectile census, and the strength/kill ledger off `BattleSystem` — because a
  * counter that agrees with itself has never caught anything on this project.
  *
+ * **Read it in slices.** The friendly-fire picture is not one number per battle, it is a
+ * different number in every phase: Rome's assault opens at 49 % of hits on its own men while
+ * the garrison is packed and the attackers are still out of reach, falls to 8 % once the
+ * slingers stop, and climbs back past 40 % as the ranks thin and the bolt-throwers depress.
+ * A single window lands wherever it lands. `--slices=N` walks the whole battle in one boot,
+ * resetting the census at each step, and is the only honest way to compare two trees.
+ *
  * Usage:
  *   node tools/probe-friendlyfire.mjs --port=5417
  *   node tools/probe-friendlyfire.mjs --port=5417 --map=carthage --warm=45 --window=60
+ *   node tools/probe-friendlyfire.mjs --port=5417 --slices=8 --window=30
  *   node tools/probe-friendlyfire.mjs --port=5417 --json=/tmp/mff-rome-before.json
  *
  * Requires a dev server you started on `--port`; it does not start one. A probe that falls
@@ -50,6 +58,8 @@ const QUALITY = args.get('quality') ?? 'ultra';
 const WARM = Number(args.get('warm') ?? 60);
 const WINDOW = Number(args.get('window') ?? 60);
 const CHUNK = Number(args.get('chunk') ?? 5);
+/** Walk the battle in this many consecutive windows instead of measuring one. */
+const SLICES = Number(args.get('slices') ?? 0);
 const JSON_OUT = args.get('json') ?? null;
 const TIMEOUT = Number(args.get('timeout') ?? 240000);
 
@@ -154,6 +164,47 @@ const census = async () =>
   });
 
 await advance(WARM);
+
+if (SLICES > 0) {
+  console.log('');
+  console.log('slice-by-slice. ff = friendly, ahead = victim in the shooter\'s own unit and'
+    + ' in front of him');
+  const slices = [];
+  for (let k = 0; k < SLICES; k++) {
+    await page.evaluate(() => window.__game.engine.context.get('projectiles').debugResetCensus());
+    const a = await ledger();
+    await advance(WINDOW);
+    const b2 = await ledger();
+    const cc = await census();
+    const T = cc.ff.total;
+    slices.push({ t0: a.t, t1: b2.t, total: T, dist: cc.ff, ledger: { before: a, after: b2 } });
+    console.log(
+      `t ${a.t.toFixed(0).padStart(4)}-${b2.t.toFixed(0).padStart(4)}`
+      + `  hits ${String(T.hitsOnMen).padStart(5)}`
+      + `  ff ${String(T.friendlyHits).padStart(5)} (${String(T.friendlyPct).padStart(5)} %)`
+      + `  ffKill ${String(T.friendlyKills).padStart(4)}`
+      + `  enKill ${String(T.enemyKills).padStart(4)}`
+      + `  same/other/ahead ${T.sameUnit}/${T.otherFriendlyUnit}/${T.sameUnitAhead}`
+      + `  wall ${T.fromWallHits}/${T.fromWallKills}`
+      + `  refused lane ${T.refusedLane} melee ${T.refusedMeleeTargets}`
+    );
+  }
+  const sum = (k) => slices.reduce((s2, x) => s2 + x.total[k], 0);
+  const mins = (slices.at(-1).t1 - slices[0].t0) / 60;
+  console.log('');
+  console.log(`pooled over ${mins.toFixed(2)} min:`
+    + `  hits ${sum('hitsOnMen')}  friendly ${sum('friendlyHits')}`
+    + ` (${((100 * sum('friendlyHits')) / Math.max(1, sum('hitsOnMen'))).toFixed(1)} %)`
+    + `  friendly kills/min ${(sum('friendlyKills') / mins).toFixed(1)}`
+    + `  enemy kills/min ${(sum('enemyKills') / mins).toFixed(1)}`);
+  if (JSON_OUT) {
+    await writeFile(JSON_OUT, JSON.stringify({ map: MAP, scenario: SCENARIO, slices }, null, 2));
+    console.log(`\nwrote ${JSON_OUT}`);
+  }
+  await browser.close();
+  process.exit(0);
+}
+
 await page.evaluate(() => window.__game.engine.context.get('projectiles').debugResetCensus());
 const before = await ledger();
 await advance(WINDOW);
