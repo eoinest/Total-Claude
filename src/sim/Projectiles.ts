@@ -32,9 +32,15 @@ import {
  *   - **Misses must land plausibly.** Scatter grows with range, movement and fatigue,
  *     and every miss buries itself in the ground where it fell. A field stubbled with
  *     spent arrows and pila is one of Rome II's signatures.
- *   - **Flat trajectories cannot pass through your own men.** Only the men with a
- *     clear lane throw. Arrows lofted over the front rank mostly clear it, so they
- *     only check the man immediately ahead.
+ *   - **A shaft does not know whose men are on its line, and that is on purpose.** Firing
+ *     into your own back is a tactical mistake the player has to be able to make, so nothing
+ *     here makes a missile pass through a friendly. Four things instead keep it rare:
+ *     a shot is inert to its own side for the first `FRIENDLY_ARM` metres, a man will not
+ *     loose while one of his own stands in the swept lane in front of him, a unit shooting at
+ *     will refuses a target it would have to shoot over its own line to reach, and a friendly
+ *     kill is credited to nobody. Measured on Carthage's parapet, that is 63.9 % of hits
+ *     landing on our own men, at 19.6 friendly kills a minute against 21.1 enemy, down to
+ *     19.3 % and 3.8 against 42.1.
  */
 
 // ---------------------------------------------------------------------------
@@ -173,6 +179,14 @@ const PHYSICS: Record<string, MissilePhysics> = {
 
 const physicsOf = (kind: WeaponKind): MissilePhysics => PHYSICS[kind] ?? PHYSICS.javelin;
 
+/**
+ * Weapons the roster throws on `arc: 'high'`, for the friendly-fire census only.
+ *
+ * Every one of the roster's nine missile lines agrees with this and the arc that is actually
+ * flown still comes from `m.arc`, so a divergence here mislabels a census row and nothing else.
+ */
+const LOFTED_KINDS: ReadonlySet<string> = new Set(['bow', 'sling', 'boulder']);
+
 const GRAVITY = 9.81;
 /** Elevation a lofted shot is fired at, in radians (34 degrees). */
 const LOFT = 0.6;
@@ -206,6 +220,23 @@ const HIT_RADIUS = 0.4;
  * `MAX_WALL_RANKS` is 5 in `Siege.ts`; a man with no rank lands in the last bucket.
  */
 const WALL_DIAG_RANKS = 6;
+
+/**
+ * Distance-from-release bands for the friendly-fire census, metres. See `ffDist`.
+ *
+ * Chosen against the two lengths that matter and not round-numbered for its own sake: 0.86 m
+ * is a file's lateral spacing and roughly a rank's depth on open ground, 0.72 m is a rank on
+ * a wall-walk, and 4.7 m is how far a ballista bolt travels in `ARM_TIME`. The last band is
+ * open-ended and holds the shots that are nobody's fault.
+ */
+const FF_BAND_M = [0.9, 1.8, 2.7, 3.6, 4.7, 7, 12] as const;
+/** Flight-time bands, seconds, over the same hits. `ARM_TIME` is the first edge. */
+const FF_BAND_S = [0.06, 0.12, 0.2, 0.35, 0.6, 1.0, 2.0] as const;
+const FF_BINS = FF_BAND_M.length + 1;
+const ffBand = (v: number, edges: readonly number[]): number => {
+  for (let k = 0; k < edges.length; k++) if (v < edges[k]) return k;
+  return edges.length;
+};
 
 /**
  * Where a shot leaves a man, above his feet. Shoulder height on a 1.75 m soldier.
@@ -289,6 +320,40 @@ const HIT_TOP = 1.85;
 /** Seconds of flight before a projectile can hit anyone, so nobody shoots himself. */
 const ARM_TIME = 0.06;
 
+/**
+ * How far a shot must travel before it can hurt a man of the shooter's own side, metres.
+ *
+ * `ARM_TIME` is a *time*, and that is the bug. 0.06 s is 4.7 m for a ballista bolt and
+ * 0.20 m for the same bolt after `aimOverParapet` re-draws it to 6 m/s to clear a merlon at
+ * ten paces — a lofted or floored solve draws only as hard as the range needs, so the same
+ * constant means two entirely different distances and for the slow half of them the shot goes
+ * live *inside the file it was loosed from*. Measured on Carthage's parapet, 89 % of every
+ * friendly casualty happened within 0.9 m of the muzzle, at 0.067 s, on a man in the shooter's
+ * own rank: the man standing next to him.
+ *
+ * A distance says what a time cannot. 0.86 m is a file's lateral spacing and 0.72 m a rank on
+ * a wall-walk; `HIT_RADIUS` is 0.4. So 1.3 m is the far side of the eight men who are
+ * physically touching the shooter and nothing else — the next man out stands at 1.72 m with
+ * his near surface at 1.32. It is the arithmetic statement of the thing a release point cannot
+ * express: a bow is loosed from a point at shoulder height in this model, but a real archer's
+ * bow arm is outside his own rank and his own file by construction.
+ *
+ * Deliberately **not** a blanket faction test. Past 1.3 m a shaft still hits whoever is on its
+ * line, because a volley that cannot hit your own men is not a volley you have to think about
+ * where to stand.
+ */
+const FRIENDLY_ARM = 1.3;
+
+/**
+ * How far down the lane a man looks for one of his own before he looses, metres.
+ *
+ * Five ranks at a wall-walk's 0.72 m pitch, or six at open ground's 0.86 — the shooter's own
+ * block and no further. Past it a friendly who walks into the lane after release is not
+ * something the shooter could have known about, and refusing the shot for him would mean an
+ * archer behind a moving line never shoots at all.
+ */
+const LANE_M = 5.0;
+
 const MAX_PROJECTILES = 2600;
 const MAX_STUCK = 1400;
 /** Of those, how many may be tracking a shield rather than planted in the ground. */
@@ -314,13 +379,50 @@ const TIGHT_WINDOW = 0.16;
 
 let POOL: SoldierPool | null = null;
 
-/** Line-of-fire probe: is one of our own men standing in the lane? */
-let LOS_X = 0;
-let LOS_Z = 0;
-let LOS_Y = 0;
+/**
+ * Line-of-fire probe: is one of our own men standing in the lane?
+ *
+ * A **swept segment**, not a row of point samples, and that is the fix rather than a
+ * refinement. The probes used to step at 1.5 m over ranks 0.86 m apart, so a man could stand
+ * anywhere in two thirds of the lane and never be looked at; the parapet workstream found the
+ * same hole on a wall-walk and closed it by stepping at 0.72 m instead, which narrows the gaps
+ * without removing them and costs five hash queries to do it. A sweep has no step to fall
+ * between, is exact at every offset, and asks the hash **once**.
+ *
+ * `LOS_R2` is the lane's own half-width squared: a man's shoulders plus the shaft, not
+ * `HIT_RADIUS`, because a lane is refused for a man who would be *endangered* rather than for
+ * one who is certain to be struck.
+ */
+let LOS_X0 = 0;
+let LOS_Y0 = 0;
+let LOS_Z0 = 0;
+let LOS_X1 = 0;
+let LOS_Z1 = 0;
+let LOS_R2 = 0.34;
 let LOS_FACTION = 0;
 let LOS_SELF = -1;
 let LOS_BLOCKED = false;
+/** Men closer than this to the release point cannot block: they are the shooter's own file. */
+let LOS_NEAR2 = 0;
+/**
+ * The lane's height is a **parabola**, not a ray, and over these distances that is not a
+ * refinement.
+ *
+ * The first version of this test carried a comment saying the drop could be ignored because a
+ * bow at 30 m/s falls 0.014 m over 5 m. True, and irrelevant: the shots that hit their own
+ * front rank are not travelling at 30 m/s. `aimOverParapet`'s elevation floor re-draws a
+ * garrison shot to whatever power still reaches the target at the limiting angle, and against
+ * a man at the foot of his own wall that is **5-13 m/s** — at which the drop over the 1.44 m
+ * to the second rank ahead is 0.38 m, which is the difference between clearing his helmet and
+ * taking him in the back of the neck. A straight-ray lane cannot see that by construction, and
+ * measured, it was the entire residual: 54 of 56 remaining friendly hits were `sameUnitAhead`.
+ *
+ * `y(s) = y0 + s·tan(pitch) − g·s² / (2·v²·cos²pitch)`, drag-free — over 5 m the drag term is
+ * four orders under the lane's own half-width.
+ */
+let LOS_TAN = 0;
+let LOS_DROP = 0;
+let LOS_LANE = 1;
 
 const losVisit = (j: number): void => {
   if (LOS_BLOCKED) return;
@@ -329,11 +431,34 @@ const losVisit = (j: number): void => {
   if (p.faction[j] !== LOS_FACTION) return;
   const st = p.state[j];
   if (st === SoldierState.Dead || st === SoldierState.Dying) return;
-  const dx = p.x[j] - LOS_X;
-  const dz = p.z[j] - LOS_Z;
-  if (dx * dx + dz * dz > 0.34) return;
-  // Only a man tall enough to be in the way actually blocks the lane.
-  if (LOS_Y < p.y[j] + 0.3 || LOS_Y > p.y[j] + HIT_TOP) return;
+  const t = closestOnSegment(p.x[j], p.z[j], LOS_X0, LOS_Z0, LOS_X1, LOS_Z1);
+  const cx = LOS_X0 + (LOS_X1 - LOS_X0) * t;
+  const cz = LOS_Z0 + (LOS_Z1 - LOS_Z0) * t;
+  const dx = cx - p.x[j];
+  const dz = cz - p.z[j];
+  if (dx * dx + dz * dz > LOS_R2) return;
+  /*
+   * The same volume `segmentVisit` will test, to the centimetre.
+   *
+   * These two used to disagree twice over and both gaps showed up as casualties. The lane
+   * called a man clear from his feet up to 0.30 m while the sweep struck him from 0.05 m
+   * *below* them — a 0.35 m ankle band, which is exactly where a shot depressed off a parapet
+   * at the ditch passes through the rank in front. And the near exemption was measured flat
+   * while the arming bubble is measured in three dimensions, so a friendly 1.2 m ahead and
+   * 1.5 m down was simultaneously too close to block and far enough to kill. Two tests that
+   * describe one lane have to describe it in one geometry.
+   */
+  const s = t * LOS_LANE;
+  const cy = LOS_Y0 + s * LOS_TAN - LOS_DROP * s * s;
+  const foot = p.y[j];
+  if (cy < foot - 0.05 || cy > foot + HIT_TOP) return;
+  // The man pressed against the shooter's shoulder never blocks. He is inside `FRIENDLY_ARM`,
+  // so the shot cannot hurt him in any case, and refusing the shot for him would silence
+  // every rank but the first — which is the same mistake from the other side.
+  const ox = p.x[j] - LOS_X0;
+  const oy = foot + 0.9 - LOS_Y0;
+  const oz = p.z[j] - LOS_Z0;
+  if (ox * ox + oy * oy + oz * oz < LOS_NEAR2) return;
   LOS_BLOCKED = true;
 };
 
@@ -348,6 +473,19 @@ let SEG_BEST_T = 2;
 let SEG_BEST = -1;
 /** A man this shot has already passed through, so an over-penetrating bolt cannot re-hit him. */
 let SEG_SKIP = -1;
+/**
+ * The shooter's own side and where his shot left from — set only while the shaft is still
+ * inside `FRIENDLY_ARM` of the muzzle. See `SEG_FRIENDLY_ARM2`.
+ *
+ * Off for every tick past the first metre and a bit, which is all but one or two ticks of a
+ * flight, so the faction read costs nothing on the overwhelming majority of candidates. That
+ * matters: this callback runs once per man per projectile per tick inside a 4 ms budget.
+ */
+let SEG_FRIENDLY_ARM2 = 0;
+let SEG_FACTION = -1;
+let SEG_SRC_X = 0;
+let SEG_SRC_Y = 0;
+let SEG_SRC_Z = 0;
 
 const segmentVisit = (j: number): void => {
   if (j === SEG_SKIP) return;
@@ -364,6 +502,14 @@ const segmentVisit = (j: number): void => {
   const cy = SEG_Y0 + (SEG_Y1 - SEG_Y0) * t;
   const foot = p.y[j];
   if (cy < foot - 0.05 || cy > foot + HIT_TOP) return;
+  // Last, because it is the only test that reads a second array and it only ever runs on a
+  // candidate the sweep has already decided it would strike.
+  if (SEG_FRIENDLY_ARM2 > 0 && p.faction[j] === SEG_FACTION) {
+    const ax = cx - SEG_SRC_X;
+    const ay = cy - SEG_SRC_Y;
+    const az = cz - SEG_SRC_Z;
+    if (ax * ax + ay * ay + az * az < SEG_FRIENDLY_ARM2) return;
+  }
   SEG_BEST_T = t;
   SEG_BEST = j;
 };
@@ -588,6 +734,10 @@ export class ProjectileSystem implements Subsystem {
   private cMissN = new Int32Array(32);
   /** Shots the launch solve refused because the target was beyond the weapon's real reach. */
   private cUnreachable = new Int32Array(32);
+  /** Shots a man held because one of his own was standing in the lane. */
+  private cRefusedLane = new Int32Array(32);
+  /** Volleys a unit did not fire at will because its target was mixed in with friendlies. */
+  private cRefusedMelee = 0;
 
   /**
    * Where a *garrison's own* shots end up, bucketed by the shooter's rank on the walkway.
@@ -634,8 +784,75 @@ export class ProjectileSystem implements Subsystem {
   private wSelfRun = new Float64Array(WALL_DIAG_RANKS);
   /** Self-wall deaths on masonry that publishes no battlement — the gatehouse block, mostly. */
   private wSelfNoBay = new Int32Array(WALL_DIAG_RANKS);
+  /**
+   * Friendly fire, separated by *where along its own flight* a shot found one of its own.
+   *
+   * Three different faults produce a friendly casualty and they need three different fixes, so
+   * a single "friendly hits" total is useless. What tells them apart is the distance from the
+   * release point, because each fault owns a band of it:
+   *
+   *   - **inside the arming window** — the shot became live inside the file it was loosed
+   *     from. `ARM_TIME` is a *time*, and 0.06 s is 1.3 m for a pilum and 4.7 m for a bolt,
+   *     so the window is a different size for every weapon and for two of them it is deeper
+   *     than the formation.
+   *   - **inside the shooter's own block but past arming** — the lane test should have
+   *     refused the shot and did not. That is either no test at all (lofted fire probes once,
+   *     at 1.5 m) or the stepping hole: probes at 1.5 m over ranks 0.86 m apart.
+   *   - **beyond it** — a genuinely stray shot. Scatter, a friendly unit crossing the lane
+   *     after release, an arcing volley falling on the wrong block. This one is *supposed* to
+   *     happen and must not be engineered away.
+   *
+   * The bands are recorded as a histogram rather than as three counters so the thresholds can
+   * be argued about afterwards without re-running the battle, and split by arc because the
+   * lofted and flat lane tests are different code with different holes.
+   */
+  private ffDist = new Int32Array(2 * FF_BINS);
+  private ffTime = new Int32Array(2 * FF_BINS);
+  /** Of those, the ones that killed. */
+  private ffKillDist = new Int32Array(2 * FF_BINS);
+  /** Every hit, friend or foe, in the same bands — the denominator the histogram needs. */
+  private ffAllDist = new Int32Array(2 * FF_BINS);
+  /** Friendly hits and kills per weapon kind, so `cHitMan` can be split into enemy and own. */
+  private ffHitKind = new Int32Array(32);
+  private ffKillKind = new Int32Array(32);
+  /**
+   * Was the man hit in the shooter's own unit, and was he standing in front of him?
+   *
+   * A hit on one's own unit is a lane fault; a hit on the unit next door is a crossfire fault,
+   * and no line-of-fire test a man could plausibly run would catch it. `ahead` is the subset
+   * where the victim's rank is lower than the shooter's — the literal "shot through my own
+   * front rank" case, which is the one the brief names.
+   */
+  private ffSameUnit = new Int32Array(3);
+  /** Friendly hits, kills and blast casualties from a shot loosed off a wall. */
+  private ffWall = new Int32Array(2);
+  /** Blast: a stone does not ask whose men are standing round where it came down. */
+  private ffBlast = new Int32Array(2);
+  private allBlast = new Int32Array(2);
+  /** Enemy hits and kills, so the report does not have to subtract two arrays to get them. */
+  private ffEnemy = new Int32Array(2);
   /** Denominator for the three means above. */
   private wSelfOn = new Int32Array(WALL_DIAG_RANKS);
+  /**
+   * Where each shot left from, and the rank of the man who loosed it.
+   *
+   * Carried on the projectile because the shooter's index is not kept and he may well be dead
+   * before it lands. Every friendly-fire question — did it arm inside its own file, did it go
+   * through the rank in front — is a question about the distance from *here*, so nothing that
+   * re-derives the release point from the owning unit's centre can answer it.
+   */
+  private srcX = new Float32Array(MAX_PROJECTILES);
+  private srcY = new Float32Array(MAX_PROJECTILES);
+  private srcZ = new Float32Array(MAX_PROJECTILES);
+  private srcRank = new Int8Array(MAX_PROJECTILES);
+  /**
+   * The shooter's faction, carried rather than looked up.
+   *
+   * `unitById` is a map probe and the arming test asks this once per live projectile per tick;
+   * with 2,600 in the air that is 2,600 map probes a tick to answer a question one byte
+   * already knows. It also survives the owning unit being destroyed mid-flight.
+   */
+  private ownerFaction = new Uint8Array(MAX_PROJECTILES);
   /**
    * Why `aimOverParapet` left a garrison shot alone: no battlement published here, his feet
    * are not on this walk, he is shooting inward, he is outboard of the parapet, or the crest
@@ -645,9 +862,6 @@ export class ProjectileSystem implements Subsystem {
   private wSkip = new Int32Array(8);
   /** Garrison shots that struck a man of the shooter's own faction. */
   private wFriendly = new Int32Array(WALL_DIAG_RANKS);
-  /** Release point, so a self-wall death can be measured back to where it came from. */
-  private wSrcX = new Float32Array(MAX_PROJECTILES);
-  private wSrcZ = new Float32Array(MAX_PROJECTILES);
 
   // ---- spent projectiles ----
   private sx = new Float32Array(MAX_STUCK);
@@ -698,6 +912,14 @@ export class ProjectileSystem implements Subsystem {
   private kindVisual = new Uint8Array(32);
   private kindGirth = new Float32Array(32);
   private kindTint = new Float32Array(32 * 3);
+  /**
+   * 1 for a weapon the roster throws on `arc: 'high'`. Census only.
+   *
+   * A mirror of the roster rather than a read of it, because a projectile in flight no longer
+   * knows which `UnitTypeDef` threw it — and the lofted and flat lane tests are different
+   * code with different holes, so a friendly-fire figure that pools them says nothing.
+   */
+  private kindLofted = new Uint8Array(32);
 
   lastCostMs = 0;
 
@@ -756,6 +978,7 @@ export class ProjectileSystem implements Subsystem {
       this.kinds.push(kind);
       const phys = physicsOf(kind);
       this.kindVisual[k] = phys.visual;
+      this.kindLofted[k] = LOFTED_KINDS.has(kind) ? 1 : 0;
       this.kindGirth[k] = phys.girth;
       this.kindTint[k * 3] = ((phys.tint >> 16) & 0xff) / 255;
       this.kindTint[k * 3 + 1] = ((phys.tint >> 8) & 0xff) / 255;
@@ -811,7 +1034,31 @@ export class ProjectileSystem implements Subsystem {
       return;
     }
 
-    // ---- pick a target formation ----
+    const ordered = mods.orderedVolleys > 0;
+
+    /**
+     * ---- pick a target formation ----
+     *
+     * A unit shooting **at will** will not shoot *over its own line* into a block that is
+     * already locked in melee. This is the largest single source of friendly casualties in a
+     * field battle and it is not a geometry bug: measured over one 30 s slice on the Campus
+     * Martius, 766 of 788 friendly hits were lofted arrows arriving more than 12 m out on a
+     * *different* friendly unit — Roman archers volleying over their own line into the scrum
+     * in front of it, 1,671 arrows for 21 enemy dead and 13 of their own. No line-of-fire test
+     * can catch that: at the moment of release the lane genuinely is clear, and the arrow comes
+     * down a hundred metres later among men who are intermingled by then.
+     *
+     * **Both halves of the condition are load-bearing and refusing on the first alone is
+     * measurably wrong.** With the corridor test dropped, the same battle's archers went from
+     * 84 enemy killed in a 30 s slice to 15 — 69 enemy lives to save 3 of our own — because
+     * once a line is locked, half its length is still open to enfilade from the wing and the
+     * unqualified rule threw all of that away. Together they are the mechanic the brief is
+     * about: move the archers off the back of your own line and onto its flank and they shoot
+     * again, which is exactly why a Total War player repositions them.
+     *
+     * Refused only for `fireAtWill`. An **ordered** volley still goes in, because deciding to
+     * shoot into a melee and wear the losses is a real order and the player must keep it.
+     */
     if (this.phase[id] === Phase.Idle || this.phase[id] === Phase.Reloading) {
       let best = -1;
       let bestD = this.effectiveRange(m.kind, m.range);
@@ -820,15 +1067,22 @@ export class ProjectileSystem implements Subsystem {
         const o = units[k];
         if (o.destroyed || o.faction === u.faction || o.alive === 0) continue;
         const d = Math.hypot(o.x - u.x, o.z - u.z);
-        if (d < bestD) {
-          bestD = d;
-          best = o.id;
+        if (d >= bestD) continue;
+        // Only for a candidate that would actually become the target, so the corridor scan
+        // runs two or three times per search rather than once per candidate.
+        if (!ordered) {
+          const osig = signalsOf(o.id);
+          if ((osig.contactLock || osig.engagedFraction > 0.18) && this.ownLineBetween(u, o)) {
+            this.cRefusedMelee++;
+            continue;
+          }
         }
+        bestD = d;
+        best = o.id;
       }
       this.targetUnit[id] = best;
     }
 
-    const ordered = mods.orderedVolleys > 0;
     const canFire = this.targetUnit[id] >= 0 && (mods.fireAtWill || ordered) && u.ammo > 0;
 
     switch (this.phase[id] as Phase) {
@@ -909,6 +1163,37 @@ export class ProjectileSystem implements Subsystem {
         }
         break;
     }
+  }
+
+  /**
+   * Is one of our own formations standing between this unit and that one?
+   *
+   * A block, not a man: this decides where a *unit* lays its volley, and the men are tested
+   * one at a time by the lane sweep afterwards. Half-frontage plus half a file of margin is
+   * the corridor, because an arrow that clips the end of a friendly line is as dead a
+   * comrade as one through its middle.
+   *
+   * The along-parameter is clamped away from both ends — a friendly standing on top of the
+   * shooter is his own escort and one standing on top of the target is the man fighting it,
+   * and the second is the whole point: that is the friendly the volley would land among.
+   */
+  private ownLineBetween(u: UnitGroupState, o: UnitGroupState): boolean {
+    const ox = o.x - u.x;
+    const oz = o.z - u.z;
+    const len2 = ox * ox + oz * oz;
+    if (len2 < 1) return true;
+    const units = this.battle.units;
+    for (let k = 0; k < units.length; k++) {
+      const f = units[k];
+      if (f === u || f.destroyed || f.faction !== u.faction || f.alive === 0) continue;
+      const fx = f.x - u.x;
+      const fz = f.z - u.z;
+      const t = (fx * ox + fz * oz) / len2;
+      if (t <= 0.02 || t >= 1) continue;
+      const perp = Math.abs(fx * oz - fz * ox) / Math.sqrt(len2);
+      if (perp < f.width * f.spacingX * 0.5 + 0.5) return true;
+    }
+    return false;
   }
 
   // -------------------------------------------------------------------------
@@ -1397,44 +1682,9 @@ export class ProjectileSystem implements Subsystem {
     // boarding ramp is led correctly in all three axes.
     const ty = p.y[t] + p.vy[t] * tof + 1.0;
 
-    // ---- line of fire ----
     const dirX = (tx - sx) / (d || 1);
     const dirZ = (tz - sz) / (d || 1);
     const lofted = m.arc === 'high';
-    /**
-     * On a battlement, also probe the man immediately in front.
-     *
-     * The probes step at 1.5 m, and a wall rank is 0.72 m deep, so the two ranks nearest a
-     * rear-rank man have never been on the line at all. On open ground that hole is small —
-     * a formation is 0.86 m deep and the shot is roughly level, so it passes over shoulders.
-     * On a wall it is the whole problem: a rank-3 man's shot has to be lifted over his own
-     * merlon, and the elevation that just clears a merlon 2.6 m away does **not** clear the
-     * head of a man 0.72 m away. He was shooting his own front rank in the back of the neck.
-     * Extra probes only where there is a parapet, so every field battle keeps its own
-     * geometry and its own hash.
-     */
-    const onWall = clearPitch > -Infinity || PARAPET_STEPPED;
-    const probes = lofted ? (onWall ? 3 : 1) : (onWall ? 5 : 3);
-    const probeStep = onWall ? 0.72 : 1.5;
-    LOS_FACTION = u.faction;
-    LOS_SELF = i;
-    LOS_BLOCKED = false;
-    for (let k = 1; k <= probes; k++) {
-      const dist = k * probeStep;
-      if (dist > d) break;
-      LOS_X = sx + dirX * dist;
-      LOS_Z = sz + dirZ * dist;
-      // Height along a straight line to the aim point is a good enough proxy over
-      // the couple of metres that matter for a blocked lane — except where the shot is
-      // being lifted over a parapet, in which case the lane it will actually take is the
-      // lifted one and the straight line is metres below it.
-      LOS_Y = clearPitch > -Infinity
-        ? sy + Math.tan(clearPitch) * dist
-        : sy + (ty - sy) * (dist / d) + (lofted ? dist * 0.5 : 0);
-      b.hash.query(LOS_X, LOS_Z, 0.6, losVisit);
-      if (LOS_BLOCKED) break;
-    }
-    if (LOS_BLOCKED) return;
 
     // ---- ballistic solve ----
     const h = ty - sy;
@@ -1478,6 +1728,25 @@ export class ProjectileSystem implements Subsystem {
       theta = clearPitch;
     }
 
+    /**
+     * ---- line of fire ----
+     *
+     * **After** the solve, not before it, and that is a correctness fix rather than a tidy-up.
+     * The lane a man has to have clear is the one the shaft is about to fly, and until now the
+     * test guessed at it: a straight line to the aim point plus `dist * 0.5` for a lofted
+     * shot, or `tan(clearPitch)` where a parapet floor happened to be set. `theta` is the
+     * answer, it costs nothing to wait for it, and neither branch draws from the rng — so the
+     * only thing moving the test changes is which men are refused.
+     *
+     * One swept segment out to `LANE_M`. The old form stepped at 1.5 m over a formation whose
+     * ranks stand 0.86 m apart, so a man could stand in two thirds of the lane and never be
+     * looked at; the parapet workstream closed the same hole on a wall by stepping at 0.72 m,
+     * which narrows the gaps rather than removing them and pays five hash queries for it.
+     * A sweep has no gaps and asks once.
+     *
+     * The drop over 5 m is ignored: a bow at 30 m/s falls 0.014 m in that distance, two orders
+     * under the lane's own half-width.
+     */
     // ---- accuracy ----
     const moving = Math.hypot(p.vx[i], p.vz[i]) > 0.5 ? 1 : 0;
     const mods = modsOf(u.id);
@@ -1487,6 +1756,42 @@ export class ProjectileSystem implements Subsystem {
       * (1 + 0.8 * moving);
     const yaw = Math.atan2(dirX, dirZ) + this.rng.normal(0, spread);
     const pitch = theta + this.rng.normal(0, spread * 0.8);
+
+    /**
+     * The lane is tested against `pitch` and `yaw`, the shaft he is actually about to loose,
+     * not against `theta` and the bearing to the target.
+     *
+     * Measured, this is the whole of the residual. With the lane tested at the nominal
+     * elevation the garrison's remaining friendly casualties were 74 of 78 `sameUnitAhead` —
+     * a rear rank whose floored shot clears the head of the man in front by 0.04 m on paper
+     * and is then given a normal deviate of 0.8x the spread, which puts a fair share of it
+     * into the back of his neck. Testing the nominal lane cannot see that by construction: it
+     * asks about a trajectory nothing ever flies.
+     *
+     * It is also the more honest model of the man. An archer does not know his own dispersion,
+     * but he does see his own front rank down the shaft, and he holds when the shaft is
+     * pointing at it.
+     */
+    const laneDirX = Math.sin(yaw);
+    const laneDirZ = Math.cos(yaw);
+    const lane = Math.min(d, LANE_M);
+    const laneCos = Math.max(0.2, Math.cos(pitch));
+    LOS_X0 = sx; LOS_Y0 = sy; LOS_Z0 = sz;
+    LOS_X1 = sx + laneDirX * lane;
+    LOS_Z1 = sz + laneDirZ * lane;
+    LOS_LANE = lane;
+    LOS_TAN = Math.tan(pitch);
+    LOS_DROP = GRAVITY / (2 * v * v * laneCos * laneCos);
+    LOS_R2 = 0.34;
+    LOS_NEAR2 = FRIENDLY_ARM * FRIENDLY_ARM;
+    LOS_FACTION = u.faction;
+    LOS_SELF = i;
+    LOS_BLOCKED = false;
+    b.hash.query((LOS_X0 + LOS_X1) * 0.5, (LOS_Z0 + LOS_Z1) * 0.5, lane * 0.5 + 0.6, losVisit);
+    if (LOS_BLOCKED) {
+      this.cRefusedLane[this.kindIndexOf(m.kind)]++;
+      return;
+    }
 
     const idx = this.spawn();
     if (idx < 0) return;
@@ -1509,6 +1814,9 @@ export class ProjectileSystem implements Subsystem {
     this.cLaunched[ki]++;
     this.pierceLeft[idx] = phys.pierce;
     this.lastHit[idx] = -1;
+    this.srcX[idx] = sx; this.srcY[idx] = sy; this.srcZ[idx] = sz;
+    this.srcRank[idx] = p.rank[i];
+    this.ownerFaction[idx] = u.faction;
     const elevated = b.elevated[i] !== 0;
     this.fromWall[idx] = elevated ? 1 : 0;
     this.wRank[idx] = -1;
@@ -1520,8 +1828,6 @@ export class ProjectileSystem implements Subsystem {
       // His feet, not his shoulders: an impact is classified by how far it stands above the
       // walkway, which is the only frame in which "merlon" and "sill" mean anything.
       this.wFootY[idx] = b.support[i];
-      this.wSrcX[idx] = sx;
-      this.wSrcZ[idx] = sz;
       this.wLaunched[bucket]++;
       if (PARAPET_STEPPED) this.wStepped[bucket]++;
       else if (clearPitch > -Infinity) this.wFloored[bucket]++;
@@ -1600,6 +1906,9 @@ export class ProjectileSystem implements Subsystem {
     this.cLaunched[ki]++;
     this.pierceLeft[idx] = phys.pierce;
     this.lastHit[idx] = -1;
+    this.srcX[idx] = opts.fromX; this.srcY[idx] = opts.fromY; this.srcZ[idx] = opts.fromZ;
+    this.srcRank[idx] = -1;
+    this.ownerFaction[idx] = this.unitById(opts.ownerUnit)?.faction ?? 255;
     this.fromWall[idx] = 0;
     this.wRank[idx] = -1;
     return true;
@@ -1694,6 +2003,19 @@ export class ProjectileSystem implements Subsystem {
         SEG_BEST_T = 2;
         SEG_BEST = -1;
         SEG_SKIP = this.lastHit[i];
+        // Only while the near end of this tick's segment is still inside the shooter's own
+        // file. One subtract and a compare buys the whole faction test out of the hot loop for
+        // every tick but the first one or two of a flight.
+        const ax = x0 - this.srcX[i];
+        const ay = y0 - this.srcY[i];
+        const az = z0 - this.srcZ[i];
+        if (ax * ax + ay * ay + az * az < FRIENDLY_ARM * FRIENDLY_ARM) {
+          SEG_FRIENDLY_ARM2 = FRIENDLY_ARM * FRIENDLY_ARM;
+          SEG_FACTION = this.ownerFaction[i];
+          SEG_SRC_X = this.srcX[i]; SEG_SRC_Y = this.srcY[i]; SEG_SRC_Z = this.srcZ[i];
+        } else {
+          SEG_FRIENDLY_ARM2 = 0;
+        }
         b.hash.query(midX, midZ, half + HIT_RADIUS + 0.2, segmentVisit);
         if (SEG_BEST >= 0) {
           this.impactSoldier(i, SEG_BEST, SEG_BEST_T);
@@ -1795,13 +2117,26 @@ export class ProjectileSystem implements Subsystem {
       const through = 1 - armourReduction(ddef.armour * dmods.armour) * ARMOUR_BITE;
       const total = (this.dmg[i] * through + this.apDmg[i]) * f
         * df.mods.missileTaken * dmods.missileTaken * this.rng.range(0.8, 1.2);
-      const lethal = b.damage(j, total, x, z, this.ownerUnit[i]);
+      // A stone does not ask whose men are standing round where it came down, and unlike a
+      // shaft it never had a lane to be refused — a blast has no line of fire and no arming
+      // distance can help it. That is deliberate: the one weapon in the game whose friendly
+      // casualties are a property of the weapon rather than of a bug keeps them. What it does
+      // not keep is the credit, for the reason `impactSoldier` gives.
+      const own = this.unitById(this.ownerUnit[i]);
+      const friendly = own !== undefined && own.faction === dv.faction;
+      const lethal = b.damage(j, total, x, z, friendly ? -1 : this.ownerUnit[i]);
       this.cDamage[this.kindIdx[i]] += total;
       signalsOf(dv.id).missilePulse += 1;
+      this.allBlast[0]++;
+      if (friendly) this.ffBlast[0]++;
       if (lethal) {
         this.cKilled[this.kindIdx[i]]++;
-        signalsOf(this.ownerUnit[i]).killPulse += 1;
-        b.siege.noteArtillery(0, 1);
+        this.allBlast[1]++;
+        if (friendly) this.ffBlast[1]++;
+        else {
+          signalsOf(this.ownerUnit[i]).killPulse += 1;
+          b.siege.noteArtillery(0, 1);
+        }
       }
       // Knocked off their feet, away from where it landed.
       const inv = 1 / Math.max(0.3, d);
@@ -1827,7 +2162,7 @@ export class ProjectileSystem implements Subsystem {
       return;
     }
     this.wSelfLife[r] += this.life[i];
-    this.wSelfRange[r] += Math.hypot(this.px[i] - this.wSrcX[i], this.pz[i] - this.wSrcZ[i]);
+    this.wSelfRange[r] += Math.hypot(this.px[i] - this.srcX[i], this.pz[i] - this.srcZ[i]);
     this.wSelfUp[r] += this.py[i] - this.wFootY[i];
     const e = this.wall !== null ? this.wall.embrasureAt(this.px[i], this.pz[i]) : null;
     if (e === null) this.wSelfNoBay[r]++;
@@ -1835,7 +2170,7 @@ export class ProjectileSystem implements Subsystem {
       this.wSelfOn[r]++;
       this.wSelfOff[r] += (this.px[i] - e.x) * e.nx + (this.pz[i] - e.z) * e.nz;
       this.wSelfRun[r] += Math.abs(
-        (this.px[i] - this.wSrcX[i]) * -e.nz + (this.pz[i] - this.wSrcZ[i]) * e.nx
+        (this.px[i] - this.srcX[i]) * -e.nz + (this.pz[i] - this.srcZ[i]) * e.nx
       );
     }
     const d = top - this.wFootY[i];
@@ -1843,6 +2178,73 @@ export class ProjectileSystem implements Subsystem {
     else if (d > 0.25) this.wSill[r]++;
     else if (d > -0.25) this.wWalk[r]++;
     else this.wBelow[r]++;
+  }
+
+  /**
+   * Classify one man-hit for the friendly-fire census. See `ffDist`.
+   *
+   * The band a hit lands in is the whole point: `bin` is set here and read again by
+   * `noteFriendlyKill` on the same projectile, so the hit and the kill histograms cannot
+   * disagree about which band a shot was in.
+   */
+  private ffBin = 0;
+  private ffArc = 0;
+
+  /**
+   * The last few friendly hits, in full, as a ring.
+   *
+   * A histogram can only confirm a mechanism somebody already thought of. The first run of
+   * this census produced a band — friendly hits under 0.9 m from a muzzle whose bolt leaves
+   * at 78 m/s and covers 2.6 m in one tick — that could not be true given its neighbour, and
+   * only the raw record said which of the two numbers was lying.
+   */
+  private ffSample: number[][] = [];
+  private ffSampleAt = 0;
+
+  private noteFriendlyFire(
+    i: number, j: number, friendly: boolean, hx: number, hz: number, victimUnit: number
+  ): void {
+    const arc = this.kindLofted[this.kindIdx[i]];
+    const bin = ffBand(Math.hypot(hx - this.srcX[i], hz - this.srcZ[i]), FF_BAND_M);
+    // The first 48 after a reset and then nothing, so the one allocation in this method stops
+    // happening at all in the hot path rather than merely being overwritten.
+    if (friendly && this.ffSampleAt < 48) {
+      const p0 = this.battle.pool;
+      this.ffSample[this.ffSampleAt++] = [
+        this.kindIdx[i], +this.life[i].toFixed(4),
+        +Math.hypot(hx - this.srcX[i], hz - this.srcZ[i]).toFixed(3),
+        +Math.hypot(this.vx[i], this.vy[i], this.vz[i]).toFixed(2),
+        this.srcRank[i], p0.rank[j], this.ownerUnit[i], victimUnit,
+        +this.srcY[i].toFixed(2), +p0.y[j].toFixed(2), this.fromWall[i],
+      ];
+    }
+    this.ffArc = arc;
+    this.ffBin = bin;
+    this.ffAllDist[arc * FF_BINS + bin]++;
+    if (!friendly) { this.ffEnemy[0]++; return; }
+    this.ffDist[arc * FF_BINS + bin]++;
+    this.ffTime[arc * FF_BINS + ffBand(this.life[i], FF_BAND_S)]++;
+    this.ffHitKind[this.kindIdx[i]]++;
+    if (this.fromWall[i] !== 0) this.ffWall[0]++;
+    const p = this.battle.pool;
+    if (victimUnit === this.ownerUnit[i]) {
+      this.ffSameUnit[0]++;
+      // Rank counts outward from the front, so a lower rank is a man standing in front of the
+      // shooter. That is the literal "the rear rank shot through its own front rank" case and
+      // it is the only one a line-of-fire test could ever have prevented.
+      if (this.srcRank[i] >= 0 && p.rank[j] >= 0 && p.rank[j] < this.srcRank[i]) {
+        this.ffSameUnit[2]++;
+      }
+    } else {
+      this.ffSameUnit[1]++;
+    }
+  }
+
+  private noteFriendlyKill(i: number, friendly: boolean): void {
+    if (!friendly) { this.ffEnemy[1]++; return; }
+    this.ffKillDist[this.ffArc * FF_BINS + this.ffBin]++;
+    this.ffKillKind[this.kindIdx[i]]++;
+    if (this.fromWall[i] !== 0) this.ffWall[1]++;
   }
 
   /** Score a landing against the point it was solved for. See `aimX`. */
@@ -1892,11 +2294,13 @@ export class ProjectileSystem implements Subsystem {
     const block = clamp01((ddef.shieldDefence / 46) * cover);
 
     this.cHitMan[this.kindIdx[i]]++;
+    const own = this.unitById(this.ownerUnit[i]);
+    const friendly = own !== undefined && own.faction === dv.faction;
     if (this.wRank[i] >= 0) {
       this.wHitMan[this.wRank[i]]++;
-      const own = this.unitById(this.ownerUnit[i]);
-      if (own && own.faction === dv.faction) this.wFriendly[this.wRank[i]]++;
+      if (friendly) this.wFriendly[this.wRank[i]]++;
     }
+    this.noteFriendlyFire(i, j, friendly, hx, hz, dv.id);
     this.noteMiss(i, hx, hz);
     // A shield stops an arrow and a pilum. It does not stop a stone from an engine, so a
     // weapon with a blast radius skips the block roll entirely.
@@ -1923,18 +2327,35 @@ export class ProjectileSystem implements Subsystem {
     const through = 1 - armourReduction(ddef.armour * dmods.armour) * ARMOUR_BITE;
     const total = (this.dmg[i] * through + this.apDmg[i]) * taken * bypass
       * this.rng.range(0.85, 1.15);
-    const lethal = b.damage(j, total, this.ox[i], this.oz[i], this.ownerUnit[i]);
+    /**
+     * Nobody is credited with shooting his own side.
+     *
+     * `BattleSystem.damage` puts the kill on `attackerUnitId` without asking whose man died,
+     * which is how a garrison came to be credited 132 kills over a minute in which thirteen
+     * attackers fell — the score was reading a unit's own casualties as its success, and every
+     * instrument built on `u.kills` inherited it, up to and including the HUD. Passing -1
+     * resolves to no unit and so to no credit; the death, the direction it throws him and the
+     * casualty on his own side are all unchanged. That is what makes friendly fire cost
+     * something: a man is gone and nothing is bought with him.
+     */
+    const lethal = b.damage(j, total, this.ox[i], this.oz[i], friendly ? -1 : this.ownerUnit[i]);
     this.cDamage[this.kindIdx[i]] += total;
     if (lethal) {
       this.cKilled[this.kindIdx[i]]++;
       if (this.wRank[i] >= 0) this.wKilled[this.wRank[i]]++;
+      this.noteFriendlyKill(i, friendly);
     }
     const dsig = signalsOf(dv.id);
     dsig.missilePulse += 1;
     if (lethal) {
-      signalsOf(this.ownerUnit[i]).killPulse += 1;
-      if (this.fromWall[i] !== 0) b.siege.noteWallKill();
-      if (this.kinds[this.kindIdx[i]] === 'boulder') b.siege.noteArtillery(0, 1);
+      // `killPulse` feeds the exchange ratio a unit steadies itself on, and `noteWallKill` is
+      // the number the siege probe grades a garrison by. Neither may be paid for a man of
+      // one's own side, for the same reason `damage` is not: see above.
+      if (!friendly) {
+        signalsOf(this.ownerUnit[i]).killPulse += 1;
+        if (this.fromWall[i] !== 0) b.siege.noteWallKill();
+        if (this.kinds[this.kindIdx[i]] === 'boulder') b.siege.noteArtillery(0, 1);
+      }
       p.vx[j] = -bx * 1.3;
       p.vz[j] = -bz * 1.3;
     }
@@ -2440,8 +2861,69 @@ export class ProjectileSystem implements Subsystem {
     };
   }
 
+  /**
+   * Who a missile hit that it should not have, and how far from the muzzle it happened.
+   *
+   * The one number this exists to separate: a friendly casualty 0.9 m from the release point
+   * and a friendly casualty 40 m from it are two different bugs with two different fixes, and
+   * `hitOwnSide` pooled them.
+   */
+  debugFriendlyFire(): unknown {
+    const band = (a: Int32Array, arc: number): number[] =>
+      Array.from({ length: FF_BINS }, (_, k) => a[arc * FF_BINS + k]);
+    const sum = (a: Int32Array): number => a.reduce((s, v) => s + v, 0);
+    const hits = sum(this.ffDist);
+    const all = sum(this.ffAllDist);
+    return {
+      // Edges, printed with the data so a reader never has to find them in the source.
+      distEdgesM: [...FF_BAND_M],
+      timeEdgesS: [...FF_BAND_S],
+      shaft: {
+        friendlyByDist: band(this.ffDist, 0),
+        friendlyKillsByDist: band(this.ffKillDist, 0),
+        allHitsByDist: band(this.ffAllDist, 0),
+        friendlyByTime: band(this.ffTime, 0),
+      },
+      lofted: {
+        friendlyByDist: band(this.ffDist, 1),
+        friendlyKillsByDist: band(this.ffKillDist, 1),
+        allHitsByDist: band(this.ffAllDist, 1),
+        friendlyByTime: band(this.ffTime, 1),
+      },
+      // kindIdx, life s, ground metres from the muzzle, speed, shooter rank, victim rank,
+      // shooter unit, victim unit, muzzle Y, victim foot Y, off a wall.
+      sampleFields: 'kind life distM speed srcRank dstRank srcUnit dstUnit srcY dstY wall',
+      kindNames: [...this.kinds],
+      samples: this.ffSample.slice(),
+      total: {
+        hitsOnMen: all,
+        friendlyHits: hits,
+        friendlyKills: sum(this.ffKillDist),
+        friendlyPct: all ? +((100 * hits) / all).toFixed(1) : 0,
+        enemyHits: this.ffEnemy[0],
+        enemyKills: this.ffEnemy[1],
+        fromWallHits: this.ffWall[0],
+        fromWallKills: this.ffWall[1],
+        sameUnit: this.ffSameUnit[0],
+        otherFriendlyUnit: this.ffSameUnit[1],
+        sameUnitAhead: this.ffSameUnit[2],
+        blastHits: this.allBlast[0],
+        blastKills: this.allBlast[1],
+        blastFriendlyHits: this.ffBlast[0],
+        blastFriendlyKills: this.ffBlast[1],
+        refusedLane: this.cRefusedLane.reduce((s, v) => s + v, 0),
+        refusedMeleeTargets: this.cRefusedMelee,
+      },
+    };
+  }
+
   /** Reset the census, so a probe can measure one interval rather than the whole battle. */
   debugResetCensus(): void {
+    this.ffDist.fill(0); this.ffTime.fill(0); this.ffKillDist.fill(0);
+    this.ffAllDist.fill(0); this.ffHitKind.fill(0); this.ffKillKind.fill(0);
+    this.ffSameUnit.fill(0); this.ffWall.fill(0);
+    this.ffBlast.fill(0); this.allBlast.fill(0); this.ffEnemy.fill(0);
+    this.ffSample.length = 0; this.ffSampleAt = 0;
     this.wLaunched.fill(0); this.wHitMan.fill(0); this.wKilled.fill(0);
     this.wGround.fill(0); this.wCrest.fill(0); this.wSill.fill(0);
     this.wWalk.fill(0); this.wBelow.fill(0); this.wFarMasonry.fill(0);
@@ -2454,6 +2936,7 @@ export class ProjectileSystem implements Subsystem {
     this.cKilled.fill(0); this.cGround.fill(0); this.cMasonry.fill(0);
     this.cDamage.fill(0); this.cMiss.fill(0); this.cMissN.fill(0);
     this.cUnreachable.fill(0);
+    this.cRefusedLane.fill(0); this.cRefusedMelee = 0;
     this.masonryHits = 0;
   }
 
