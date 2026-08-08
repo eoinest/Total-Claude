@@ -1,0 +1,453 @@
+{
+  "errors": [],
+  "pick": {
+    "victim": 8080,
+    "animals": 32,
+    "trees": 5128,
+    "clearance": 77.6,
+    "x": -149.33,
+    "z": -133.47,
+    "y": 11.6,
+    "facing": -1.5115,
+    "simTime": 24.4
+  },
+  "alive": {
+    "ele": 9,
+    "eleVis": true,
+    "state": 0,
+    "animTime": 0.142,
+    "eleDeath": 0,
+    "clip": 2,
+    "crewNear": 7,
+    "crewLowestDy": 2.15,
+    "turnDeg": 0,
+    "x": -151.131,
+    "z": -133.334,
+    "calls": 98
+  },
+  "fall": [
+    {
+      "t": 0,
+      "ele": 9,
+      "eleVis": true,
+      "state": 10,
+      "animTime": 0.034,
+      "eleDeath": 0.003,
+      "clip": 4,
+      "crewNear": 7,
+      "crewLowestDy": 2.17,
+      "turnDeg": 0,
+      "x": -151.131,
+      "z": -133.288,
+      "calls": 99,
+      "slid": 0
+    },
+    {
+      "t": 0.2,
+      "ele": 9,
+      "eleVis": true,
+      "state": 10,
+      "animTime": 0.545,
+      "eleDeath": 0.195,
+      "clip": 4,
+      "crewNear": 4,
+      "crewLowestDy": 2.18,
+      "turnDeg": 0,
+      "x": -151.131,
+      "z": -132.588,
+      "calls": 99,
+      "slid": 0.7
+    },
+    {
+      "t": 0.5,
+      "ele": 8,
+      "eleVis": true,
+      "state": 11,
+      "animTime": 1,
+      "eleDeath": 0.463,
+      "clip": 4,
+      "crewNear": 4,
+      "crewLowestDy": 0.37,
+      "turnDeg": 0,
+      "x": -151.131,
+      "z": -131.935,
+      "calls": 99,
+      "slid": 1.35
+    },
+    {
+      "t": 0.9,
+      "ele": 5,
+      "eleVis": true,
+      "state": 11,
+      "animTime": 1,
+      "eleDeath": 0.805,
+      "clip": 4,
+      "crewNear": 4,
+      "crewLowestDy": 0.14,
+      "turnDeg": 0,
+      "x": -151.131,
+      "z": -131.935,
+      "calls": 99,
+      "slid": 1.35
+    },
+    {
+      "t": 1.3,
+      "ele": 2,
+      "eleVis": true,
+      "state": 11,
+      "animTime": 1,
+      "eleDeath": 1,
+      "clip": 4,
+      "crewNear": 4,
+      "crewLowestDy": 0.14,
+      "turnDeg": 0,
+      "x": -151.131,
+      "z": -131.935,
+      "calls": 99,
+      "slid": 1.35
+    },
+    {
+      "t": 1.8,
+      "ele": 1,
+      "eleVis": true,
+      "state": 11,
+      "animTime": 1,
+      "eleDeath": 1,
+      "clip": 4,
+      "crewNear": 4,
+      "crewLowestDy": 0.14,
+      "turnDeg": 0,
+      "x": -151.131,
+      "z": -131.935,
+      "calls": 98,
+      "slid": 1.35
+    },
+    {
+      "t": 2.6,
+      "ele": 1,
+      "eleVis": true,
+      "state": 11,
+      "animTime": 1,
+      "eleDeath": 1,
+      "clip": 4,
+      "crewNear": 4,
+      "crewLowestDy": 0.14,
+      "turnDeg": 0,
+      "x": -151.131,
+      "z": -131.935,
+      "calls": 98,
+      "slid": 1.35
+    },
+    {
+      "t": 4,
+      "ele": 1,
+      "eleVis": true,
+      "state": 11,
+      "animTime": 1,
+      "eleDeath": 1,
+      "clip": 4,
+      "crewNear": 4,
+      "crewLowestDy": 0.14,
+      "turnDeg": 0,
+      "x": -151.131,
+      "z": -131.935,
+      "calls": 99,
+      "slid": 1.35
+    }
+  ],
+  "crew": [
+    {
+      "along": -0.73,
+      "side": -3.2,
+      "dy": 0.14,
+      "tipped": 0.457
+    },
+    {
+      "along": 3.45,
+      "side": -2.94,
+      "dy": 0.16,
+      "tipped": 0.673
+    },
+    {
+      "along": 0.62,
+      "side": -2.82,
+      "dy": 0.15,
+      "tipped": 0.577
+    },
+    {
+      "along": 1.08,
+      "side": -2.52,
+      "dy": 0.15,
+      "tipped": 0.487
+    }
+  ],
+  "after": {
+    "simTime": 93.6,
+    "carcasses": 1,
+    "victimState": 11,
+    "victimMoved": null,
+    "x": -151.13,
+    "z": -131.93,
+    "driftFromDeath": 2.369
+  },
+  "draws": [
+    {
+      "camera": "close",
+      "zoom": 0.35,
+      "animalsInFrame": 1,
+      "withAnimals": 97,
+      "withoutAnimals": 92,
+      "restored": 97,
+      "elephantCost": 5,
+      "meshHiddenInOffArm": true,
+      "trisWith": 2902547,
+      "trisWithout": 2887582
+    },
+    {
+      "camera": "shoulder",
+      "zoom": 0.44,
+      "animalsInFrame": 1,
+      "withAnimals": 102,
+      "withoutAnimals": 97,
+      "restored": 102,
+      "elephantCost": 5,
+      "meshHiddenInOffArm": true,
+      "trisWith": 2973278,
+      "trisWithout": 2958313
+    },
+    {
+      "camera": "field",
+      "zoom": 0.58,
+      "animalsInFrame": 1,
+      "withAnimals": 116,
+      "withoutAnimals": 111,
+      "restored": 116,
+      "elephantCost": 5,
+      "meshHiddenInOffArm": true,
+      "trisWith": 15050029,
+      "trisWithout": 15017237
+    },
+    {
+      "camera": "strategic",
+      "zoom": 0.74,
+      "animalsInFrame": 2,
+      "withAnimals": 102,
+      "withoutAnimals": 97,
+      "restored": 102,
+      "elephantCost": 5,
+      "meshHiddenInOffArm": true,
+      "trisWith": 8268042,
+      "trisWithout": 8238112
+    }
+  ],
+  "march": {
+    "foot": [
+      {
+        "foot": 19.164,
+        "mount": 35.302,
+        "nearest": 19.164,
+        "inside": 0,
+        "within5": 0,
+        "mounted5": 0,
+        "simTime": 95.4
+      },
+      {
+        "foot": 17.623,
+        "mount": 34.459,
+        "nearest": 17.623,
+        "inside": 0,
+        "within5": 0,
+        "mounted5": 0,
+        "simTime": 98.4
+      },
+      {
+        "foot": 13.392,
+        "mount": 24.854,
+        "nearest": 13.392,
+        "inside": 0,
+        "within5": 0,
+        "mounted5": 0,
+        "simTime": 101.6
+      },
+      {
+        "foot": 8.379,
+        "mount": 29.368,
+        "nearest": 8.379,
+        "inside": 0,
+        "within5": 0,
+        "mounted5": 0,
+        "simTime": 104.9
+      },
+      {
+        "foot": 3.398,
+        "mount": 35.18,
+        "nearest": 3.398,
+        "inside": 0,
+        "within5": 9,
+        "mounted5": 0,
+        "simTime": 108.1
+      },
+      {
+        "foot": -0.051,
+        "mount": 47.798,
+        "nearest": -0.051,
+        "inside": 8,
+        "within5": 72,
+        "mounted5": 0,
+        "simTime": 113
+      },
+      {
+        "foot": -0.052,
+        "mount": 49.463,
+        "nearest": -0.052,
+        "inside": 9,
+        "within5": 103,
+        "mounted5": 0,
+        "simTime": 117.3
+      },
+      {
+        "foot": -0.024,
+        "mount": 61.731,
+        "nearest": -0.024,
+        "inside": 2,
+        "within5": 33,
+        "mounted5": 0,
+        "simTime": 123.1
+      },
+      {
+        "foot": 4.88,
+        "mount": 73.706,
+        "nearest": 4.88,
+        "inside": 0,
+        "within5": 1,
+        "mounted5": 0,
+        "simTime": 129.4
+      },
+      {
+        "foot": 17.432,
+        "mount": 73.706,
+        "nearest": 17.432,
+        "inside": 0,
+        "within5": 0,
+        "mounted5": 0,
+        "simTime": 137.6
+      }
+    ],
+    "horse": [
+      {
+        "foot": 51.846,
+        "mount": 18.551,
+        "nearest": 18.551,
+        "inside": 0,
+        "within5": 0,
+        "mounted5": 0,
+        "simTime": 138.1
+      },
+      {
+        "foot": 51.821,
+        "mount": 20.156,
+        "nearest": 20.156,
+        "inside": 0,
+        "within5": 0,
+        "mounted5": 0,
+        "simTime": 141.1
+      },
+      {
+        "foot": 51.747,
+        "mount": 10.317,
+        "nearest": 10.317,
+        "inside": 0,
+        "within5": 0,
+        "mounted5": 0,
+        "simTime": 144.3
+      },
+      {
+        "foot": 51.823,
+        "mount": 1.935,
+        "nearest": 1.935,
+        "inside": 0,
+        "within5": 5,
+        "mounted5": 5,
+        "simTime": 147.5
+      },
+      {
+        "foot": 51.825,
+        "mount": -0.183,
+        "nearest": -0.183,
+        "inside": 3,
+        "within5": 28,
+        "mounted5": 28,
+        "simTime": 150.8
+      },
+      {
+        "foot": 51.825,
+        "mount": -0.169,
+        "nearest": -0.169,
+        "inside": 1,
+        "within5": 2,
+        "mounted5": 2,
+        "simTime": 155.8
+      },
+      {
+        "foot": 51.825,
+        "mount": 9.249,
+        "nearest": 9.249,
+        "inside": 0,
+        "within5": 0,
+        "mounted5": 0,
+        "simTime": 160
+      },
+      {
+        "foot": 51.825,
+        "mount": 9.249,
+        "nearest": 9.249,
+        "inside": 0,
+        "within5": 0,
+        "mounted5": 0,
+        "simTime": 165.9
+      },
+      {
+        "foot": 49.969,
+        "mount": 9.249,
+        "nearest": 9.249,
+        "inside": 0,
+        "within5": 0,
+        "mounted5": 0,
+        "simTime": 172.1
+      },
+      {
+        "foot": 34.461,
+        "mount": 8.802,
+        "nearest": 8.802,
+        "inside": 0,
+        "within5": 0,
+        "mounted5": 0,
+        "simTime": 180.3
+      }
+    ]
+  },
+  "partVerdict": {
+    "foot": {
+      "worstInside": 9,
+      "closest": -0.052,
+      "passed": 103
+    },
+    "horse": {
+      "worstInside": 3,
+      "closest": -0.183,
+      "passed": 28
+    }
+  },
+  "part": {
+    "foot": {
+      "unit": "0",
+      "alive": 320,
+      "mounted": false
+    },
+    "horse": {
+      "unit": "12",
+      "alive": 59,
+      "mounted": true
+    }
+  }
+}

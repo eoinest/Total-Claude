@@ -334,6 +334,23 @@ export const NO_SUPPORT = -1e9;
 const SOLDIER_RADIUS = 0.42;
 
 /**
+ * How much room a mounted man needs beside something he cannot walk through, metres.
+ *
+ * Used by `partCarcasses` and nowhere else, on purpose. `resolveCrowding` carries no
+ * per-man radius — one diameter for the whole crowd, with a rider distinguished only by an
+ * inverse mass of 5 — and that is the right model for men shoving each other, where the
+ * question is who gives way. Against a body lying on the ground the question is instead how
+ * wide the thing is, and a cavalryman is a 2.4 m horse drawn around a point that the crowd
+ * solver treats as 0.42 m wide.
+ *
+ * 1.05 m is a little under the horse's own half-length, so a nose or a tail may cross the
+ * grass beside a carcass while the barrel never enters it. Larger would have a squadron
+ * bulging round a two-metre body from four metres out, which is the failure the capsule
+ * shape exists to avoid in the first place.
+ */
+const MOUNTED_RADIUS = 1.05;
+
+/**
  * Body radius used for the *formation anchor* against solid geometry, metres.
  *
  * Deliberately much smaller than a unit's frontage. The anchor is a point, and the men are
@@ -2298,6 +2315,21 @@ export class BattleSystem implements Subsystem {
     const used = this.sepUsed;
     const solids = this.masonry;
     const collide = !solids.empty;
+    /**
+     * The carcass gets a full allowance, not the crowd's leftovers.
+     *
+     * This pass runs at the end of `resolveCrowding` and shared `sepUsed` with it, so a man
+     * in a dense block had already spent his whole 0.22 m on shoving his neighbours by the
+     * time the one *immovable* thing in the tick got a word in, and `room <= 0` dropped his
+     * correction entirely. Measured on a 57-horse squadron ordered over a body: the
+     * squadron settled with riders **1.8 m inside** the animal and stayed there, because the
+     * formation pull was unopposed. Nothing reads `sepUsed` after this pass, so resetting it
+     * here costs one fill of a few thousand floats — under the noise floor of the tick's own
+     * measurement — and re-establishes the priority that matters: a neighbour can be leaned
+     * on, a dead elephant cannot. The cap still applies, so a man who wanders into the middle
+     * of a body walks out of it rather than being flung.
+     */
+    used.fill(0, 0, p.count);
 
     for (let c = 0; c < list.length; c++) {
       const e = list[c];
@@ -2320,13 +2352,29 @@ export class BattleSystem implements Subsystem {
       const ax = Math.sin(p.facing[e]) * half;
       const az = Math.cos(p.facing[e]) * half;
       const reach = rad + SOLDIER_RADIUS;
+      const reachMounted = rad + MOUNTED_RADIUS;
 
-      this.hash.query(ex, ez, half + reach, (j) => {
+      this.hash.query(ex, ez, half + reachMounted, (j) => {
         if (!p.aliveAt(j)) return;
         // One animal does not shove another out of the way of a third's body: an elephant
         // is far too big for this capsule to be the right shape, and the pair would fight.
         if (this.onElephant[j] !== 0) return;
         if (Math.abs(p.y[j] - ey) > SAME_LEVEL_DY) return;
+        /**
+         * A horse is not a man, and this is the one place in the tick where that is a
+         * *shape* rather than a mass.
+         *
+         * `resolveCrowding` has no per-man radius at all — one `diameter` for everybody,
+         * and the only thing that distinguishes a rider is his inverse mass of 5. That is
+         * right for men shoving each other, where what matters is who gives way. It is
+         * wrong against a static body, where what matters is how much room the thing needs:
+         * a cavalryman is drawn as a 2.4 m horse around a point with a 0.42 m keep-out, so
+         * an ala ordered over a carcass rode *through* it — measured, and photographed, with
+         * the barrel of the horse inside the animal while the rider's own centre was legally
+         * outside it. This is the case the brief flags, and it is the only exception the
+         * pass needs, so it is a second radius here and not a new field on the pool.
+         */
+        const r = this.mounted[j] !== 0 ? reachMounted : reach;
         // Closest point on the body's spine to this man, clamped to the segment.
         const rx = p.x[j] - ex;
         const rz = p.z[j] - ez;
@@ -2335,7 +2383,7 @@ export class BattleSystem implements Subsystem {
         const dx = rx - ax * t;
         const dz = rz - az * t;
         const d2 = dx * dx + dz * dz;
-        if (d2 >= reach * reach) return;
+        if (d2 >= r * r) return;
         // Dead centre: push him out along the body's normal rather than nowhere at all.
         let nx: number;
         let nz: number;
@@ -2344,11 +2392,11 @@ export class BattleSystem implements Subsystem {
           nx = az; nz = -ax;
           const l = Math.hypot(nx, nz) || 1;
           nx /= l; nz /= l;
-          overlap = reach;
+          overlap = r;
         } else {
           const d = Math.sqrt(d2);
           nx = dx / d; nz = dz / d;
-          overlap = reach - d;
+          overlap = r - d;
         }
         // The carcass is immovable, so the man takes the whole correction — bounded by the
         // same per-tick budget as every other positional write in this tick, which is what

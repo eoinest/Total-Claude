@@ -316,14 +316,28 @@ const CREW_THROW_ARC = 0.55;
  */
 const CREW_LAND_OUT = 1.95;
 /**
- * The side the animal rolls onto, in its own frame: +1 is its right.
+ * The side the animal rolls onto, as a sign on the model's own +X axis.
  *
- * Read off `elephantClips.ts`'s death clip, whose root rolls from 0 to +78 degrees. Hard
- * coupling to one authored clip, so it lives next to the throw constants and not inside the
- * loop that uses it — if that clip is ever re-authored to fall the other way, this is the
- * one line that has to move with it.
+ * **Derived from the clip's kinematics, not from the sign of its root key**, because the two
+ * disagree. This was `+1`, read off "the root rolls from 0 to +78 degrees" and glossed as
+ * "its right"; a roll about the forward axis moves +X up or down depending on the rig's
+ * handedness, and here it moves it *up*. `tools/scratch/elepose-side.mjs` runs the death
+ * clip's own forward kinematics and prints every bone: at the last frame `earL` finishes at
+ * y 1.175 and `earR` at y 0.297, `fShoulderL` 1.353 against `fShoulderR` 0.204, `bHipL`
+ * 1.517 against `bHipR` 0.407. The whole right side is on the ground and the spine has moved
+ * to −X while the folded legs point +X, so **the tower goes down on −X** and a man thrown out
+ * of it goes with it.
+ *
+ * At +1 the crew were thrown onto the belly side, into the folded legs and the raised flank —
+ * i.e. onto the part of the animal still in the air. Nobody caught it because the render-side
+ * death turn above used to spin the whole animal up to 180 degrees, which cancelled the error
+ * exactly whenever the killing blow came from ahead or astern and left it arbitrary otherwise.
+ *
+ * Hard coupling to one authored clip, so it lives next to the throw constants and not inside
+ * the loop that uses it: if that clip is ever re-authored to fall the other way, this is the
+ * one line that moves with it, and the script above is how to tell which way it now falls.
  */
-const CREW_FALL_SIDE = 1;
+const CREW_FALL_SIDE = -1;
 /**
  * Lift on a landed crewman's mesh origin, metres.
  *
@@ -1699,6 +1713,7 @@ export class UnitRenderSystem implements Subsystem {
   probeElephant(i: number): {
     clip: number; rate: number; groundSpeed: number; footSlip: number;
     backY: number; towerY: number; mahoutY: number;
+    phase: number; fall: number;
   } | null {
     if (!this.isElephant(i)) return null;
     const p = this.battle.pool;
@@ -1726,6 +1741,17 @@ export class UnitRenderSystem implements Subsystem {
       backY: p.y[i] + ELEPHANT_GROUND_LIFT + 2.76 * scale,
       towerY: p.y[i] + ELEPHANT_GROUND_LIFT + this.howdahTrack[row + 1] * scale,
       mahoutY: p.y[i] + ELEPHANT_GROUND_LIFT + this.mahoutTrack[row + 1] * scale,
+      /**
+       * The animal's own playhead, and how far through its collapse it is.
+       *
+       * `tools/probe-elephantdeath.mjs` has an `elePhase` column that reads `?.phase` and has
+       * therefore printed **-1 on every row of every run**, because this object never carried
+       * one. A column that cannot move is the "the arm never ran" signature this project has
+       * paid for four times, and here it hid the fact that the collapse was being driven off
+       * a man's playhead. `fall` is the render-side death timer, 0 while alive.
+       */
+      phase: this.elePhase[i],
+      fall: this.eleDeath[i],
     };
   }
 
@@ -2012,9 +2038,30 @@ export class UnitRenderSystem implements Subsystem {
           rp.x = this.corpse.x;
           rp.y = this.corpse.y;
           rp.z = this.corpse.z;
-        } else if (dying && (p.deathDirX[i] !== 0 || p.deathDirZ[i] !== 0)) {
-          // No ragdoll available: turn the man so his death clip's own fall direction
-          // points where the blow pushed him.
+        } else if (dying && !onElephant && (p.deathDirX[i] !== 0 || p.deathDirZ[i] !== 0)) {
+          /**
+           * No ragdoll available: turn the man so his death clip's own fall direction
+           * points where the blow pushed him.
+           *
+           * **Never an elephant, and this was the last thing left of "they just disappear".**
+           * A man's death clip drops him one fixed way, so the renderer turns *him* to make
+           * the blow's direction come out right. An elephant is exempt from the ragdoll by
+           * design, so it fell into this branch too, and the result was measurable and
+           * ridiculous: killed from dead astern, the drawn heading snapped a **full 180
+           * degrees on the frame of the killing blow** (`animTime` is still mid-clip at that
+           * instant, so `min(1, animTime * 2.5)` is already 1), then jumped back to 46
+           * degrees when `setState` zeroed the playhead and swung round to 180 again over
+           * 0.6 s. Four tonnes pirouetting while it collapses reads as a stumble, not a
+           * death — see `tools/scratch/eleface-check.mjs`, which prints that sequence.
+           *
+           * It is also a correctness bug and not only a look. The animal's fall direction is
+           * baked into the clip's own roll, so turning the body turns the roll with it; the
+           * crew's landing side is computed off the same heading; and
+           * `BattleSystem.partCarcasses` builds its 4.7 x 2.6 m capsule on `pool.facing`,
+           * which this branch does not touch. A body drawn at 180 degrees to the obstacle
+           * men are pushed out of is the worst possible version of that pass. The animal
+           * goes down on the heading it was on, and every one of those four agree again.
+           */
           const target = Math.atan2(-p.deathDirX[i], -p.deathDirZ[i]);
           let d = (target - facing) % (Math.PI * 2);
           if (d > Math.PI) d -= Math.PI * 2;

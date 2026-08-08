@@ -495,8 +495,8 @@ clips.set('attack', buildOverlay(ELEPHANT_RIG, base, {
  * **The last frame of this clip is the carcass**, and it is the only frame most players will
  * ever look at for more than a second: nothing removes a dead elephant from the field, so
  * the pose it holds is a permanent feature of the battlefield. It is therefore authored
- * against measured bone heights (`tools/scratch/eleposedeath.mjs` prints every bone's world
- * y on frames 0, 13 and 25) rather than by eye, to two rules:
+ * against measured bone heights (`tools/scratch/elepose-side.mjs` prints every bone's world
+ * position on the first and last frame) rather than by eye, to two rules:
  *
  *   1. **Nothing may be under the ground.** The first version rolled the body 78 degrees
  *      with the legs still hanging straight, and a roll swings a foot 0.65 m off the
@@ -506,8 +506,18 @@ clips.set('attack', buildOverlay(ELEPHANT_RIG, base, {
  *      hocks to -104 — so all four feet sit near the body's own centreline and the roll
  *      moves them along the ground instead of through it.
  *   2. **The spine lands at the animal's own half-width.** A body 1.9 m across lying on its
- *      side puts the barrel about 0.95 m up. The root sink is 1.32 m from a 2.30 m pelvis,
- *      which lands it there; 1.5 m put the whole animal a third of a metre into the turf.
+ *      side puts the barrel about 0.95 m up. 1.5 m of root sink put the whole animal a third
+ *      of a metre into the turf; 1.32 m was arithmetic from a 2.30 m pelvis and measured
+ *      0.88 m at the barrel with the right knee still 51 mm under the grass, because the
+ *      hard leg fold moves the pivot. **1.26 m is the measured answer**: barrel 0.94 m
+ *      against the 0.95 target and the lowest bone in the whole animal at +0.009 m, so
+ *      nothing is under the ground at all.
+ *
+ * Which side it falls onto is not free either, and it is read from this clip rather than
+ * declared: the last frame puts `earR`, `fShoulderR` and `bHipR` at y 0.30/0.20/0.41 against
+ * their left-side partners at 1.18/1.35/1.52, so the animal lies on its **right**, the spine
+ * moves to −X and the folded legs point +X. `UnitRenderSystem.CREW_FALL_SIDE` throws the
+ * tower crew that way and must move with any re-authoring here.
  */
 clips.set('death', buildOverlay(ELEPHANT_RIG, base, {
   name: 'death',
@@ -533,7 +543,7 @@ clips.set('death', buildOverlay(ELEPHANT_RIG, base, {
     ...trunkSway(6, 1, -8),
     ...earTracks(4, 1),
   ],
-  root: [[0, 0, 0, 0], [0.3, 0, -0.35, 0], [0.65, 0, -1.05, 0], [1, 0, -1.32, 0]],
+  root: [[0, 0, 0, 0], [0.3, 0, -0.35, 0], [0.65, 0, -1.05, 0], [1, 0, -1.26, 0]],
 }));
 
 // ---------------------------------------------------------------------------
