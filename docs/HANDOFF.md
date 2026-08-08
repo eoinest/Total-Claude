@@ -105,6 +105,24 @@ Everything below came from the player. Items not listed here are done and commit
   0/31**. Draws **identical at all nine cameras on both maps** (Rome assault 202, Carthage 198)
   — no new material stream, so no new mesh; +13,530 triangles across Rome's whole city, +0.38 %.
   `tools/probe-towerpass.mjs` 12/12.
+- ~~elephants just disappear when they die~~ — **done, `f4ef850` + `f061813` + `c469fb6`.**
+  Three layers, each hidden by the one above it. `Ragdoll` registered the animal's death and
+  `UnitRenderSystem` read that as "the ragdoll owns this body", so the beast and its four crew
+  left the instance buffer on the tick of the killing blow (`f4ef850`, which also gave the
+  collapse its own render-side clock — it had been running on a man's playhead, 2.6 s of fall
+  crushed into 1.0 and then frozen). With the animal visible again, it **turned on the spot
+  while it died**: killed from astern the drawn heading snapped a full 180 degrees on the frame
+  of the blow, then swung round again over 0.6 s, because a man's death-direction turn was
+  being applied to four tonnes. That also silently inverted the crew's landing side and put the
+  drawn body at up to 180 degrees to the capsule `partCarcasses` pushes men out of. And the
+  capsule itself did not hold against cavalry: a 57-horse squadron settled 1.8 m *inside* the
+  animal, because `resolveCrowding` has no per-man radius (a rider is a 2.4 m horse around a
+  0.42 m point) and because the pass ran last and got whatever separation budget the crowd had
+  left. Now: deepest overlap foot **0.026 m**, horse **0.224 m**, and a 320-man cohort ordered
+  over a body walks round it with a carcass-shaped hole in the block. **The whole elephant tier
+  costs 5 draws — 1 colour + 4 cascades — at every camera, with 1 animal in frame or 32, alive
+  or dead, so a carcass costs nothing.** `tools/probe-elefield.mjs`; frames in
+  `screenshots/elephant-death/`.
 - soldiers use stairs, move laterally along the wall, descend into the city — siege
 - much larger wall-breaking ram — siege
 - tower drawbridge backwards (ropes forward, door opens backwards) — siege
@@ -1151,3 +1169,18 @@ and it is already 153 at the merge-base.** `tools/shoot.mjs` is byte-identical b
 tip and `b7d8aaf`, so the camera did not move; the merge that pulled in the Carthage fabric and
 the water surface is where the scene changed. `city` moved the other way, 218 to 200, for the
 same reason. Neither figure is a soldier regression.
+
+### Two traps the elephant-death pass paid for
+
+- **A camera parked where a unit deployed is not a camera looking at that unit.** Every draw
+  count in the elephant workstream before this was taken at the squadron's spawn point; by the
+  time an animal dies the fight is a hundred metres away, so those frames photographed empty
+  grass. `tools/probe-elefield.mjs` re-aims on the animal's own coordinates at every shot. The
+  same probe now picks its victim by clearance from `veg-*` instance matrices, because the
+  first run killed one under an olive and the close camera photographed the inside of the
+  canopy — which reads exactly like "the carcass is not there".
+- **`mesh.visible = false` cannot switch a soldier tier off**, and an A/B that does it reports
+  a difference of exactly 0. `UnitRenderSystem.flush` assigns `t.mesh.visible = n > 0` from the
+  instance count on every frame. Suppress the *emission* instead — override `pushElephant` on
+  the instance — and `flush` hides the mesh itself. Same family as the `castShadow` no-op at
+  trap 10 and the `shadowRender` knob, and the same tell: a number that is exactly zero.
