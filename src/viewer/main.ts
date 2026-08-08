@@ -103,6 +103,12 @@ const HORSE_LIFT = 0.075;
  */
 const ELEPHANT_PIECE_NAMES: readonly string[] = ['Hide', 'Barding & chamfron', 'Howdah & caparison'];
 
+/** `9.5` -> `09:30`, for the hour slider and the readout, so the two cannot disagree. */
+const HOUR_LABEL = (v: number): string => {
+  const h = Math.floor(v);
+  return `${String(h).padStart(2, '0')}:${String(Math.round((v - h) * 60)).padStart(2, '0')}`;
+};
+
 /** Where the four men stand in the LOD ladder, metres. */
 const LADDER_X = [-2.25, -0.75, 0.75, 2.25];
 
@@ -148,6 +154,8 @@ interface State {
   engineCrew: boolean;
   battery: boolean;
   engineKind: KindChoice;
+  /** Hours 0..24 on the battle rig's sky. Meaningless under the other two presets. */
+  hour: number;
   /** Index into `ELEPHANT_CLIP_SET` — the *animal's* clip, not its crew's. */
   eleClip: number;
   /** Show the mahout and the three men in the tower. */
@@ -202,6 +210,7 @@ class Viewer {
     engineCrew: true,
     battery: false,
     engineKind: 'auto',
+    hour: 12,
     eleClip: 0,
     eleCrew: true,
     eleShooting: false,
@@ -238,6 +247,7 @@ class Viewer {
     gait?: HTMLSelectElement;
     clipRow?: HTMLElement;
     gaitRow?: HTMLElement;
+    hour?: (v: number) => void;
     eleClip?: HTMLSelectElement;
     eleGroup?: HTMLElement;
     elePieces?: (present: number[], solo: number, hidden: Set<number>, tris: Map<number, number>) => void;
@@ -461,10 +471,7 @@ class Viewer {
       { value: 'field', label: 'Field', title: 'Three hand-rolled lights with the battle’s numbers copied into them. Cheap, stable, and what every archived plate was shot under.' },
       { value: 'battle', label: 'Battle rig', title: 'The product’s own SkySystem and LightingSystem: four cascades, blocker-search soft shadow, physical sky irradiance, chromatic ground bounce. Until this existed, tcSoftShadow appeared in none of this page’s shaders.' },
     ], s.preset, (v) => this.setLight(v));
-    p.slider('Hour', 4, 21, 0.25, 12, (v) => this.stage.setTimeOfDay(v), (v) => {
-      const h = Math.floor(v);
-      return `${String(h).padStart(2, '0')}:${String(Math.round((v - h) * 60)).padStart(2, '0')}`;
-    });
+    this.sync.hour = p.slider('Hour', 4, 21, 0.25, 12, (v) => this.setHour(v), HOUR_LABEL);
     p.note('Battle rig is the answer to a question the other two cannot be asked: does this model hold up under the lighting the game actually ships? It is the real SkySystem and the real LightingSystem, driven from the viewer’s own loop through a five-field shim. Two things to know. A tier built while it is on renders about four times too bright for up to sixteen frames, because LightingSystem re-patches materials on a timer and the viewer builds its meshes lazily — wait a quarter of a second after switching unit. And the hour slider only does anything here; the other two presets have no sky to move.');
     const riderToggles = p.toggleRow([
       { label: 'Rider', value: s.rider, title: 'Show the man on the horse, or the horse alone', onChange: (v) => { s.rider = v; } },
@@ -558,6 +565,7 @@ class Viewer {
     this.sync.light?.(s.preset);
     const flags = s as unknown as Record<string, boolean>;
     for (const [k, f] of Object.entries(this.sync.flags)) f(flags[k]);
+    this.sync.hour?.(s.hour);
     if (this.sync.eleClip) this.sync.eleClip.value = String(s.eleClip);
     // Rows that mean nothing in the current view are hidden rather than left to mislead: the
     // crew's clip comes from `crewClip`, so a Clip dropdown beside a siege engine is a lie —
@@ -650,6 +658,20 @@ class Viewer {
    * state and a harness that set the stage separately would eventually disagree, which is the
    * failure the whole two-way panel exists to prevent.
    */
+  /**
+   * The battle sky's hour. Two-way, like every other control on this panel.
+   *
+   * The panel is driven from three directions — itself, the keyboard and `window.__viewer` —
+   * and one that only listens goes stale the moment a harness moves the state. This one was
+   * caught doing exactly that within an hour of being written: a plate shot at 09:30 with the
+   * slider still reading 12:00 beside it.
+   */
+  private setHour(h: number): void {
+    this.state.hour = h;
+    this.stage.setTimeOfDay(h);
+    this.sync.hour?.(h);
+  }
+
   private setLight(p: LightPreset): void {
     this.state.preset = p;
     this.stage.setLightPreset(p);
@@ -1515,7 +1537,7 @@ class Viewer {
     // reasonably concludes the counter is broken.
     lines.push(`frame     ${info.calls} draws (instanced: one per tier, not per man) · ${info.triangles.toLocaleString()} tris submitted, all passes`);
     lines.push(`          ${this.frameMs.toFixed(2)} ms mean over 0.35 s · ${this.fps.toFixed(0)} fps <span class="vw-dim">(display-capped; the ms is a mean, so it does not quantise)</span>`);
-    lines.push(`view      ${this.stage.lightPreset} light${s.parts ? ` · ${['', 'PIECE IDs', 'BONE IDs', 'WEIGHTS'][s.parts]}` : ''}${s.hidden.size ? ` · ${s.hidden.size} hidden` : ''}`);
+    lines.push(`view      ${this.stage.lightPreset} light${s.preset === 'battle' ? ` at ${HOUR_LABEL(s.hour)}` : ''}${s.parts ? ` · ${['', 'PIECE IDs', 'BONE IDs', 'WEIGHTS'][s.parts]}` : ''}${s.hidden.size ? ` · ${s.hidden.size} hidden` : ''}`);
 
     // The whole point of soloing is to distinguish "this man does not wear one" from "the
     // geometry is missing", and an empty frame cannot tell you which. The mask can, so say it.
@@ -1661,7 +1683,7 @@ class Viewer {
         this.syncPanel();
       },
       /** Hours 0..24 on the battle rig's sky. A no-op under the other two presets. */
-      setHour: (h: number): void => this.stage.setTimeOfDay(h),
+      setHour: (h: number): void => this.setHour(h),
       setEngineKind: (k: KindChoice): void => {
         this.state.engineKind = k;
         this.syncPanel();

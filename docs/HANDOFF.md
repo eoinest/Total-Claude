@@ -525,15 +525,19 @@ graded a man's back**, and the deck is materially harder now: on an unchanged mo
 ratio goes 1.475 -> 1.734 purely from turning the camera round, because a front carries far
 more pixel-scale structure than a back.
 
-**`viewer.html` never loads `LightingSystem`.** `tcShadowGeom`/`tcSoftShadow` are not present as
-text in any of its 24 fragment programs. The deck grades soldiers under three's stock PCF with
-one non-cascaded sun; the battle grades them under `tcSoftShadow` with four cascades.
+~~**`viewer.html` never loads `LightingSystem`.**~~ **CLOSED** — `Battle rig`, a third light
+preset, registers the real `SkySystem` and the real `LightingSystem` through a shim
+(`src/viewer/battleRig.ts`). Measured off `gl.getShaderSource` over every linked program, in
+one session: studio 0 of 12 fragment programs carry `tcShadowGeom`, field 0 of 15, **battle 6
+of 28**, and `shadowMap.type` is `PCFShadowMap` under all three. `studio` and `field` are
+unchanged and stay — every archived plate was shot under one of them.
 
-**`grade.ts` has already drifted from `PostFX`.** Of the five uniforms they share, one
-disagrees: `uGrain` is 0.006 in `PostFX` and **0.016** in the viewer's mirror — so the model
-deck is still shot at the grain level that measured 0.00 % smooth-region against Rome II's
-7.09 %. Exporting `PostFX`'s two shader bodies and deleting the mirror is still the right fix
-and is still not done.
+~~**`grade.ts` has already drifted from `PostFX`.**~~ **CLOSED** — the mirror is deleted.
+`PostFX` exports `TC_TONE_GRADE_FRAG`, `TC_FINAL_FRAG`, `tcToneGradeUniforms()`,
+`tcFinalUniforms()` and `MSAA_SAMPLES`; `grade.ts` imports all five. Pure hoists: the GLSL
+differs only in leading indentation and every uniform default is the same literal, so the
+shipping program is unchanged. The viewer binds `tBloom`/`tGod` to a 1x1 black texture at zero
+strength, which is an exact no-op.
 
 ### The 12 `tcShadowGeom` errors do not reproduce at HEAD, and "12" was one program
 
@@ -715,7 +719,7 @@ both (a constant rAF timestamp, and `uTime` pinned through
 measured a `--repro` floor of 0.22 % worst plate in the same session — the harness controls it
 per plate. It bites live-page probes only.
 
-### `grade.ts` is fixed; `viewer.html` still does not load `LightingSystem`
+### Both viewer divergences are closed — read this before the two sections below it
 
 `uGrain` is now **0.006**, matching `PostFX`. `uSharpen` had the same class of error and is now
 **0.28**: it mirrored a *default* that `PostFX.ts:1530` overwrites from the quality tier every
@@ -723,7 +727,12 @@ frame, so the deck ran a value the product never uses. Every model deck this pro
 before this was shot at 0.016, the level measured to leave 0.00 % of a plate reading as a
 smooth region against Rome II's 7.09 %.
 
-**The de-duplication was deliberately not done.** The right fix is still to hoist `PostFX`'s two
+~~**The de-duplication was deliberately not done.**~~ **It is done now.** `PostFX` hoists both
+shader bodies plus two uniform factories and `MSAA_SAMPLES` to module-level exports and
+`grade.ts` imports them; the mirror is gone. `uExposure` remains pinned at 1 against `PostFX`'s
+sky-driven 1.42-5.1 and is now the *only* tonal divergence left — closing it needs the battle
+rig's sky, which exists, so it is a small and unblocked follow-up. The original text follows.
+The right fix was to hoist `PostFX`'s two
 shader bodies to module-level exports and delete the mirror — they are anonymous template
 literals at `PostFX.ts:851-960` and `1095-1134`, referenced nowhere else in the file, so it is a
 pure hoist. It was not attempted because the frame-budget workstream holds `src/render/PostFX.ts`
@@ -733,7 +742,16 @@ than a mirror with the drift now corrected. Two further divergences are recorded
 practice, the largest tonal divergence left), and `uTime` is pinned at 0 on purpose for
 reproducible plates and must stay that way through any refactor.
 
-**`LightingSystem` is still not loaded, and the map to load it is now complete.** The viewer's
+~~**`LightingSystem` is still not loaded, and the map to load it is now complete.**~~ **Loaded.**
+The map below was accurate and all four hazards were real; `src/viewer/battleRig.ts` answers
+each in order and names them. Two things it found that the map did not: `Stage` set
+`PCFSoftShadowMap`, which three has deprecated and warns about on every boot of the page, and
+**`SkySystem.dispose` disposes the sky dome's geometry without removing the mesh from the
+scene** — harmless in the game where dispose runs once at teardown, one leaked draw call and a
+deleted index buffer in a viewer that can switch presets. The shim removes the dome by name;
+`src/render/SkySystem.ts` should do it itself. Original map follows.
+
+The viewer's
 `Stage` builds three hand-rolled lights and sets `PCFSoftShadowMap` — a **third** shadow mode
 that neither `Engine` (`PCFShadowMap` via `LightingSystem.ts:192`) nor the rig uses, so the deck
 grades under fixed 3x3 PCF with one non-cascaded sun. `LightingSystem`'s constructor takes zero
@@ -747,6 +765,44 @@ setter; `installShaderChunks` mutates `THREE.ShaderChunk` process-wide and throw
 call text does not match; every lit material must be patched or it renders 4x too bright, which
 `discoverMaterials` only fixes on a 16-frame timer; and `Stage`'s own sun, fill and bounce must
 be removed or the man is double-lit and the CSM light indices shift.
+
+### The viewer drew a horse where the war elephant is, and the carcass had never been seen
+
+The owner's report was literally true. `pushManOrRider` branched on `isCavalry(def)`, which is
+true of `war-elephants` because the **simulation** wants the animal pushed and killed like a
+mount, and the viewer put a Carthaginian on a bay gelding — with a readout underneath saying
+"soldier mesh + horse mesh" and a comment claiming the fallback stood "until an elephant mesh
+exists". It had existed for some time. `mountKind` is what picks the geometry; `isElephantUnit`
+now asks it. **The general rule: a `unitClass` is a simulation fact and a render path is not
+derivable from it.** Anything else keyed off `isCavalry` should be re-read with that in mind.
+
+**The elephant's forward axis is +Z, the same as a man's, and it was measured.** Barding
+centroid Z +1.22 m against the hide's +0.39 and the tower's +0.09; and a four-azimuth sweep of
+the soloed barding in the flat piece-ID view reads **53,984 px at azimuth 0, 31,007 at PI,
+14-15 k at the two profiles**. Azimuth 0 is in front of the animal's face.
+`__viewer.elephantGroupZ()` exposes the cheap half so nobody re-derives it.
+
+**Four things the carcass shows that no battle frame could, all in `src/units`/`src/anim`
+and none of them the viewer's:**
+
+- **The four legs never move through the whole death clip.** The root rolls 78 degrees and the
+  barrel and head pitch, but the legs stay straight, parallel and rigid, so the settled carcass
+  reads as a toppled table rather than a dead animal. It is the first thing the eye goes to and
+  it is the pose with the longest screen life in the game.
+- **The howdah separates from the back.** The tower is rigid-bound to `barrel`/`loin` at
+  0.72/0.28 while the hide under it skins differently, so the death roll opens a visible gap
+  and the caparison hangs in the air with daylight behind it.
+- **At 39 % of the fall the crew tumble through the animal's own back**, not clear of it. The
+  `CREW_THROW_ARC` parabola of 0.55 m clears a *standing* animal; it does not clear one that is
+  rotating into the arc.
+- The three-man scale bib on the chest is a flat rectangular plate with square corners and
+  reads as a signboard rather than as hanging barding.
+
+**Three restatements the viewer now carries and would rather not.** `src/units/UnitRenderSystem.ts`
+should export `CREW_THROW_START`, `CREW_THROW_LEN`, `CREW_THROW_ARC`, `CREW_LAND_OUT`,
+`CREW_FALL_SIDE` and `CREW_GROUND_LIFT`; it should also export `MAN_POSE_VARY` and
+`LOD_FRACTION`, which two earlier passes already asked for. All eight are copied into
+`src/viewer/` verbatim with comments saying so, and every one of them can drift silently.
 
 ### The octave instrument, and the constants that do not transfer
 
