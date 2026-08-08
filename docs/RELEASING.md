@@ -156,6 +156,64 @@ git commit -m "docs: changelog for rN"
 That commit sits *after* the released commit, which is correct: the changelog documents what
 shipped, it is not what shipped.
 
+### 4a. Illustrate the headline entries
+
+**Every headline entry gets a picture where a picture can carry the claim, and the picture is
+captured while the work is fresh.** Reconstructing a "before" afterwards means checking out an old
+tag into a detached worktree, standing a dev server up on it and re-shooting — for four releases
+that is four worktrees, four servers and a day, and it is the single most expensive thing anyone
+has done to this changelog. Capturing it at the time costs one extra invocation of a harness the
+workstream is already running.
+
+**So the rule is a workstream rule, not a release rule.** Anyone fixing something visible shoots
+the pair *before they fix it*:
+
+1. **Shoot the "before" arm first, from the unfixed tree**, at a named camera you can repeat. Add
+   the entry to `tools/shoot.mjs`'s `SHOTS` table rather than hand-placing a camera, so the "after"
+   is the same frame and not merely a similar one.
+2. **Interleave the arms in one session and report both.** Two runs of this project at identical
+   configuration differ on 50-70% of pixels at a mean of 17-27/255, because dust and particle VFX
+   reseed per session even with the sim clock paused. A cross-session pair is not a comparison and
+   has nearly shipped a change that did nothing. Re-shoot the base arm **last** as a drift check.
+3. **`--nohud` unless the entry is about the interface.** The deployment phase, the results screen
+   and the menu are all worth showing *with* interface; a wall, a soldier or a siege engine is not.
+4. **Keep it, and say where.** `screenshots/**` is gitignored for every raster format, so a frame
+   left there is a frame that is gone the next time somebody runs the cleanup rule. Put anything a
+   release might want in `docs/images/releases/` and name it for the claim it supports.
+
+Then, at release time:
+
+- **Resize and compress.** The build already ships 213 MB of source assets. `docs/images/releases/`
+  is JPEG at about 1000-1500 px on the long edge and 60-180 KB a frame; `sharp` with
+  `{ quality: ~74, mozjpeg: true }` is what produced the current set. A 3.5 MB PNG in a changelog is
+  a 3.5 MB PNG in every clone, forever.
+- **Never publish anything from `reference/`.** Those are copyrighted Rome II press plates and
+  licence-verified museum photographs, held locally and never redistributed. `reference/` and
+  `reference-crops/` are gitignored precisely so this cannot happen by accident — do not defeat
+  that. **Every published image must be our own render.**
+- **Match the claim to the picture.** An image that does not show the thing the entry describes is
+  worse than no image; leave the entry text-only and say why. Write the alt text from what is
+  visible in the frame, not from the entry.
+- **`CHANGELOG.md` renders on GitHub, so repo-relative paths work there** (`docs/images/releases/…`).
+  **A GitHub Release body does not resolve them** — it needs the raw form,
+  `https://raw.githubusercontent.com/eoinest/Total-Claude/<tag-or-sha>/docs/images/releases/…`,
+  pinned to a tag or a SHA and never to a branch. Push the images *before* you write the release
+  body, or the raw URLs 404.
+- **Check the rendered markdown on both surfaces**, do not assume it:
+
+  ```sh
+  # the changelog, as GitHub will render it
+  jq -Rs '{text: ., mode: "gfm", context: "eoinest/Total-Claude"}' CHANGELOG.md \
+    | gh api -X POST /markdown --input - | grep -c '<img'
+
+  # the release body, and every image URL in it
+  gh release view rN --json body -q .body \
+    | grep -oE 'https://raw\.githubusercontent\.com/[^)]+' \
+    | while read u; do echo "$(curl -s -o /dev/null -w '%{http_code}' "$u")  $u"; done
+  ```
+
+  Every URL must be 200. A broken image in a release note is worse than none.
+
 ### 5. Tag the deployed commit
 
 The tag names the bytes that are live, so it points at `$C` and not at the changelog commit:
@@ -174,8 +232,18 @@ take the next number and say so.
 gh release create rN --title "rN — <the one-line summary>" --notes-file <(…the section you wrote…)
 ```
 
-The notes are the changelog section for that release, verbatim. Mark it `--latest` only if it is
-actually the live version.
+The notes are the changelog section for that release, verbatim — **except that every image path has
+to be rewritten to its raw URL**, because a release body does not resolve repo-relative paths and
+renders them as broken images. Pin the URL to the tag or a SHA:
+
+```sh
+sed -E 's#\((docs/images/releases/[^)]+)\)#(https://raw.githubusercontent.com/eoinest/Total-Claude/rN/\1)#g' \
+  section.md > section-release.md
+gh release create rN --title "rN — <the one-line summary>" --notes-file section-release.md
+```
+
+Then check the URLs resolve, with the loop in step 4a. Mark it `--latest` only if it is actually the
+live version.
 
 ### 7. Clean up
 
@@ -240,3 +308,8 @@ Each of these was paid for.
 8. **Do not touch port 5173.** It is the owner's playtest server, and killing vite by filtering on
    `port 5173` misses it, because `npm run dev` puts no port on its command line. That has killed the
    owner's server three times.
+9. **Shoot the "before" while it is still the present.** A "before" is only cheap once. Four
+   releases were illustrated retrospectively and it cost four detached worktrees, four dev servers
+   and three parallel agents — and several claims still went out text-only, because no picture of
+   the old behaviour existed and re-deriving one was not worth the machine. Every published image
+   must be our own render; nothing from `reference/` ever ships.

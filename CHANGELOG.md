@@ -22,6 +22,16 @@ taken while writing this file. Where a claim was later found to be wrong, the co
 what appears — with the correction shown, because on this project the corrections have usually been
 more useful than the original findings.
 
+**Every image on this page is our own render**, shot headlessly from the tree it illustrates, at
+`--use-gl=angle --use-angle=metal` so it is a real GPU rasterisation and not a software one. The
+interface is suppressed unless the entry is *about* the interface, in which case it is shown. Where
+a caption says *before* and *after*, both frames are the same camera on the same scenario with one
+thing changed, and the arms were interleaved rather than shot on separate days — two runs of this
+project at identical configuration differ on 50-70% of their pixels because the particle systems
+reseed, so a cross-session pair is not a comparison. **A caption says only what its picture shows.**
+Several entries below carry no image because no honest one could be got, and they are better as
+text than as a frame that half-supports them.
+
 ---
 
 ## r4 — the frame stops hitching, and there is a way through every tower
@@ -51,6 +61,16 @@ into their own battlements.
   | Carthage, clear lane | 0.00 m at all 31 | **5.72 m median, 5.54 m worst** |
   | headroom over the path | — | 2.0 m (Rome) / 2.2 m (Carthage) |
   | path inside masonry | 42/42 and 31/31 | **0/25 and 0/31** |
+
+  | before | after |
+  |---|---|
+  | ![A tower on the Aurelian Wall as an unbroken brick block, with a file of legionaries backed up along the walkway beside it](docs/images/releases/r4-tower-rome-before.jpg) | ![The same tower with its chamber open at walk level — a doorway in the near face and the lit steps inside it, with a man on them](docs/images/releases/r4-tower-rome-after.jpg) |
+  | The same tower, both arms in one session. Before: the face is unbroken and the file stops at it. | After: the chamber is open at walk level and the men go into it. |
+
+  ![A cohort strung out along Carthage's parapet, passing a mural tower whose flanks are cut through](docs/images/releases/r4-tower-carthage.jpg)
+
+  Carthage's parapet after the cut — where `buildPunicTower` had ended `void walkY;` and all
+  thirty-one towers were one solid prism.
 
 - **Quality adapts to your machine, not to a guess about your machine.** The old system was four
   fixed presets whose only resolution lever was `min(devicePixelRatio, tier.maxPixelRatio)` — on a
@@ -92,6 +112,10 @@ into their own battlements.
   teeth for; a rear rank, who cannot reach one, gets an elevation floor that clears the merlon's
   inner top edge. Incoming fire still stops on the crest — the player ruled pass-through out, and
   every field battle is byte-identical because the floor is `-Infinity` for anyone not on a parapet.
+
+  ![Roman archers standing in the embrasures of the Aurelian Wall's parapet, one to each gap, with shafts crossing the openings between the merlons](docs/images/releases/r4-merlon-embrasure.jpg)
+
+  The front rank in the mouths of the gaps, which is what a wall has teeth for.
 - **The collision model's battlement was never the one that was built.** The model restated the
   crenellation as merlons on a fixed period starting at t = 0; the builder fits a whole number of
   merlons to the run and rescales, then centres each one in its own step. Rome's built step is
@@ -117,6 +141,11 @@ into their own battlements.
   just disappear"* — and that is exactly what the buffer said. Elephant instances went 16 → 0 and the
   mesh invisible on the first frame after the killing blow, taking 64 soldier instances (four crew
   apiece) with them, with no recovery for the rest of the battle.
+
+  | alive | t+260 s |
+  |---|---|
+  | ![Four Carthaginian war elephants advancing in line, each with a crewed fighting tower on its back](docs/images/releases/r4-elephant-alive.jpg) | ![One elephant dead on its side in the grass, its tower canted over beside it and its crew scattered around it](docs/images/releases/r4-elephant-dead.jpg) |
+  | Four elephants under way, four crew apiece in the towers. | The same animal after the killing blow. It used to leave the instance buffer on that tick, crew and all. |
 - **A broken party at the head of a ladder blocked everyone behind it.** The muster layout and the
   admission test used different rules about who belongs in a boarding file, so a routed escalade
   party went on holding the first fifteen rows at the foot of its own ladders while refusing to climb
@@ -201,6 +230,10 @@ fight, storm Carthage against actual Carthaginians, and be told who won. Sixty-t
   published walk height with a worst vertical error of **0.000 m**, twelve metres above the terrain
   and nothing inside the masonry, in five ranks. Across all 45 garrisonable bays the clear standing
   band gives four to five ranks.
+
+  ![The deployment phase with the interface up: a DEPLOYMENT bar across the top with ADD UNITS, REMOVE and BEGIN BATTLE, the clock at 00:00, sixteen Roman units laid out on the field behind the deployment line, and the card bar along the bottom](docs/images/releases/r3-deployment.jpg)
+
+  Shown with the interface, because the interface is the feature.
 - **Carthage is defended by Carthaginians.** An assault on Carthage used to deploy Roman
   *ballistarii* onto Carthage's wall and send Juthungi tribesmen up ladders at them: Rome 1,154 men,
   the Juthungi 1,920, Carthage **0**. There are now two Punic orders of battle. The 146 BC defence
@@ -212,6 +245,8 @@ fight, storm Carthage against actual Carthaginians, and be told who won. Sixty-t
   Sacred Band, Numidian horse, war elephants, seven bought contingents to one of citizens — had
   existed since Carthage was added and nothing anywhere set it, so every field battle drew the
   Juthungi and the Punic army could only be reached by hand-building a base64 battle token.
+
+  ![The main menu, with rows for Battlefield, Battle, Enemy and Battle size. The Enemy row offers Juthungi and Qart-Hadasht, and Qart-Hadasht is selected; the order-of-battle panels below read ROME and QART-HADASHT](docs/images/releases/r3-enemy-menu.jpg)
 - **An army that takes a wall goes down into the city.** The player: *"the enemy AI when on the wall
   kinda hangs out."* The larger half of the fix was a deletion: the siege system read *any* move
   order given to a garrison as "come down off the wall", which is right for a right-click and
@@ -227,6 +262,12 @@ fight, storm Carthage against actual Carthaginians, and be told who won. Sixty-t
 - **Houses across Carthage.** Coverage 25.0 → **29.7%** of walled land and 36.6 → **51.5%** between
   street lines, with the dense city at 56.5% roof against the Punic cubit module's arithmetic ceiling
   of 60.9% — the fabric is at its ceiling, and raising the density knob would not move it.
+
+  ![A measured plan of Carthage in 146 BC drawn from the built city rather than from the layout constants: the circular harbour and the merchant basin, the Byrsa, the triple wall across the isthmus, the named ways, and the housing blocks filling the quarters between them, with a section through the defensive belt below](docs/images/releases/r3-carthage-fabric.jpg)
+
+  Plate 4 of 4, drawn from the *built* city — `getObstacles()`, `getLanes()`, `getCircuitSamples()`
+  and `TerrainSystem.heightAt()` — rather than from the layout constants, so it can disagree with
+  the design. The four plates are in [`plans/carthage-plan-v1/`](plans/carthage-plan-v1/).
 - **One wall at Carthage, and a gate the ram can visibly break.** The landward belt was three
   parallel crenellated lines, only the innermost of which could be garrisoned or stormed, so a player
   could not tell which one his men would fight on. The 20 × 6 m ditch stays, moved back onto the main
@@ -279,6 +320,11 @@ fight, storm Carthage against actual Carthaginians, and be told who won. Sixty-t
 - **The screen that announces the outcome could be seen through, and not dismissed.** The panel was
   never opaque, and no amount of opacity would have been enough, because the top bar, the minimap,
   the banners and the card bar are *siblings* in the same layer rather than things behind it.
+
+  | before | after |
+  |---|---|
+  | ![The VICTORY panel with the top plaque, the banners and the card bar showing straight through it](docs/images/releases/r3-results-before.jpg) | ![The same panel opaque on a plain dark field, with a close button in the corner and a DISMISS button at the foot](docs/images/releases/r3-results-after.jpg) |
+  | Before: the plaque, the banners and the card bar read straight through the panel. | After: opaque, with a way out of it. |
 - **Nine dead cohorts kept their cards while the plaque said seven units** — two counts of the same
   army on one screen, disagreeing. Routed units keep their cards, because a broken cohort is still
   yours and can still be rallied.
@@ -288,6 +334,12 @@ fight, storm Carthage against actual Carthaginians, and be told who won. Sixty-t
   ultra, so **ultra drew 4.4× the dust it was tuned for**. Measured at the melee camera by hiding the
   particles at a paused instant and re-rendering the identical world: 58.1% of the frame had dust over
   it and soldier pixels were lifted 8.9/255, rising to 76.5% cover and +18.0/255 forty seconds later.
+
+  | before | after |
+  |---|---|
+  | ![A wedge of Juthungi infantry seen from above, the far half of it washed out under a pale haze](docs/images/releases/r3-dust-melee-before.jpg) | ![The same formation with the haze gone: helmets, shield bosses and spear shafts legible right through the mass](docs/images/releases/r3-dust-melee-after.jpg) |
+  | ![A cavalry unit mid-rout, completely erased by a white blob three times its own length](docs/images/releases/r3-dust-rout-before.jpg) | ![The same rout: two squadrons of horse plainly visible, with a thin plume where the fighting is](docs/images/releases/r3-dust-rout-after.jpg) |
+  | Before, at ultra, where the ring is 22,000 slots. In the lower pair there is a cavalry unit under the white. | After. Both arms interleaved in one session at the same camera, with the base arm re-shot last as a drift check. |
 - A cohort marched out through its own city wall, and the wall let it climb. A warband walked down
   into Rome and climbed straight back up the stairs. The ram opened a gate named `porta-flaminia`,
   and Carthage has no such gate. The top plaque said JUTHUNGI over a Carthaginian army. Carthage
