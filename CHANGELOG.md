@@ -25,10 +25,11 @@ more useful than the original findings.
 **Every image on this page is our own render**, shot headlessly from the tree it illustrates, at
 `--use-gl=angle --use-angle=metal` so it is a real GPU rasterisation and not a software one. The
 interface is suppressed unless the entry is *about* the interface, in which case it is shown. Where
-a caption says *before* and *after*, both frames are the same camera on the same scenario with one
-thing changed, and the arms were interleaved rather than shot on separate days — two runs of this
-project at identical configuration differ on 50-70% of their pixels because the particle systems
-reseed, so a cross-session pair is not a comparison. **A caption says only what its picture shows.**
+a caption says *before* and *after*, both frames are the same named camera on the same scenario with
+one thing changed. Where the frame carries particle VFX the two arms were additionally interleaved
+in one session with the base arm re-shot last as a drift check, because two runs of this project at
+identical configuration differ on 50-70% of their pixels — the dust reseeds, and a cross-session
+pair of a dusty frame is not a comparison. **A caption says only what its picture shows.**
 Several entries below carry no image because no honest one could be got, and they are better as
 text than as a frame that half-supports them.
 
@@ -65,9 +66,9 @@ into their own battlements.
   | before | after |
   |---|---|
   | ![A tower on the Aurelian Wall as an unbroken brick block, with a file of legionaries backed up along the walkway beside it](docs/images/releases/r4-tower-rome-before.jpg) | ![The same tower with its chamber open at walk level — a doorway in the near face and the lit steps inside it, with a man on them](docs/images/releases/r4-tower-rome-after.jpg) |
-  | The same tower, both arms in one session. Before: the face is unbroken and the file stops at it. | After: the chamber is open at walk level and the men go into it. |
+  | The same tower at the same camera, one arm without the cut. The face is unbroken and the file stops at it. | With the cut: the chamber is open at walk level and the men go into it. |
 
-  ![A cohort strung out along Carthage's parapet, passing a mural tower whose flanks are cut through](docs/images/releases/r4-tower-carthage.jpg)
+  ![A cohort strung out along Carthage's parapet, filing past a mural tower with dark openings in its flanks](docs/images/releases/r4-tower-carthage.jpg)
 
   Carthage's parapet after the cut — where `buildPunicTower` had ended `void walkY;` and all
   thirty-one towers were one solid prism.
@@ -113,7 +114,7 @@ into their own battlements.
   inner top edge. Incoming fire still stops on the crest — the player ruled pass-through out, and
   every field battle is byte-identical because the floor is `-Infinity` for anyone not on a parapet.
 
-  ![Roman archers standing in the embrasures of the Aurelian Wall's parapet, one to each gap, with shafts crossing the openings between the merlons](docs/images/releases/r4-merlon-embrasure.jpg)
+  ![The Aurelian Wall's parapet from outside: men of the garrison standing in the embrasures, one to each gap, with shafts across the openings between the merlons](docs/images/releases/r4-merlon-embrasure.jpg)
 
   The front rank in the mouths of the gaps, which is what a wall has teeth for.
 - **The collision model's battlement was never the one that was built.** The model restated the
@@ -424,6 +425,18 @@ battle frame could ever have shown. Forty changes.
   cities. Inside the walls: the Byrsa, the harbours, and a street fabric laid out on the archaeology's
   own 30 × 60 Punic cubit module — 15.5 × 31 m — so a Carthaginian street front comes out by
   construction rather than by taste. The defensive belt is 74.1 m deep with an enterable lower vault.
+
+  ![The landward belt from the attacker's side of the isthmus: a low revetted outwork with a timber palisade along its crest, a taller crenellated middle wall behind it, and behind that the main wall with square four-storey towers under red-tiled roofs, with the pale city fabric and its pines beyond](docs/images/releases/r2-carthage-wall.jpg)
+
+  Three lines in depth, and the ashlar courses and individual merlons both resolve. What is *not*
+  in the picture is the ditch: `carthageWall.ts` publishes it as a request to whoever owns the
+  heightfield rather than as geometry, and nothing in this tree cuts it, so the belt here is the
+  54.1 m of built masonry and the glacis in front of it is flat.
+
+  ![A near-aerial view east over Carthage: the Byrsa on stepped terraces with a walled summit precinct at the left, the rectangular merchant basin in the centre, the complete circular ring of the cothon's ship sheds around its admiralty island at the right, the insula grid filling the middle of the frame, and the wall belt across the bottom edge](docs/images/releases/r2-carthage-city.jpg)
+
+  The Byrsa, both harbours and the grid. The fabric is deliberately read as a **plan** here and not
+  as density — at r2 the quarters are thin, and the houses arrive in r3.
 - **The wall is terrain.** The owner, three times: *"walls are like interactive terrain… when a unit
   leaves the wall they will walk down the stairs. Enemies on the wall can also walk down the stairs."*
   A unit on or near a wall now carries a plan with one of five goals — Hold, Ascend, Traverse,
@@ -436,6 +449,12 @@ battle frame could ever have shown. Forty changes.
   engine that could render as water, and Carthage's gulf, lagoon and harbours all shipped as terrain.
   A flat desaturated plate with no specular, no animation and no depth cue reads as wet sand, and
   under a 20-degree April sun it reads as wet sand very convincingly.
+
+  ![Low over the Gulf of Tunis into a 17:00 sun: a full-width specular track broken into thousands of individual wave facets running to the horizon, near-black navy in the shadowed foreground grading to silver-gold at distance, with the pale stone harbour mole and the city's sea wall along the top right](docs/images/releases/r2-carthage-water.jpg)
+
+  The gulf, and **not** the lagoon: at r2 the Lake of Tunis is a 90 m channel between the shore
+  scarp and the crown of the Taenia sand bar, and every framing of it photographs as a salt flat,
+  because that is what most of it is.
 - **A siege machine stops when its crew routs.** From a playtest: *"the ram gets routed and the people
   flee yet it keeps moving forward."* Fifteen tonnes of green timber is moved by a gang on levers and
   rollers; when the gang breaks it stops, and it stops in the open, which is the moment the defenders
@@ -465,6 +484,12 @@ battle frame could ever have shown. Forty changes.
   and the bare-headed men's hair was the same — every face sealed inside its own headgear. The Gallic
   shell was also radius 109 mm over a skull of 82 mm: **27 mm of padding all round**, against a real
   lining's eight or ten.
+
+  ![An isolated legionary's head at high magnification: the galea bowl, the transverse crest seen end-on, the brow band, both cheek pieces standing clear of the face opening, the neck guard, a red focale and mail below — and inside the face opening a smooth featureless pale oval with no eye, no brow, no nose and no mouth](docs/images/releases/r2-face-before-legio.jpg)
+
+  Shot from this release's own tree. The helmet bowl runs down over both eye boxes and the head is
+  sealed inside it — which is also why the *galea* photographs as a flat cream lampshade: at
+  `envMapIntensity: 2.9` a crown wound inside out samples the ground hemisphere instead of the sky.
 - **Every closed ring in the game ran one column of its texture backwards.** A per-vertex modulo does
   not wrap the surface between two vertices — it runs the whole tile backwards, compressed into one
   column. Because rings close by reusing vertex zero, this happened even at a repeat of 1; on the mail
@@ -560,10 +585,28 @@ them. See the note at the end of this file.*
 - **Scaffolding on the inside.** Standards, ledgers, putlogs, plank lifts, ladders and the treadwheel
   crane are all on the city side now, and the crane's jib swings over the material yard instead of
   hanging its load out over the glacis. The scaffold used to be a free ladder for the Juthungi.
+
+  ![The inner face of the Aurelian Wall from inside the city in raking light: a masonry stair flight climbing along the wall from a travertine apron to a landing at a tower, its cheek-wall coping running as one unbroken pale diagonal under the treads; the broad flat top of the curtain with merlons along the far edge; and to the left, timber scaffolding of standards, ledgers, putlogs and four plank lifts standing against the unfinished bays, with dressed stone stockpiled in the yard at its foot](docs/images/releases/r1-wall-stairs-scaffold.jpg)
+
+  The three entries above in one frame: the width of the walking surface, a flight that climbs
+  *along* the wall rather than out of it, and the scaffold on the city side. The unbroken diagonal
+  under the treads is the whole cue — three reviewers reported "no parapet on the open side" while
+  the builder was emitting 0.95 m of one, because a stepped pale line above a stepped rake reads as
+  more treads. There is nobody standing on the wall in this shot, so it shows the band and does not
+  measure it.
 - **The gate starts shut**, and is modelled shut: vertical oak boarding on iron straps, harr-posts in
   bronze-lined sockets, a drawbar across both leaves, and the lunette above them filled in brick. Four
   rays down the carriageway stop on one flat plane, and a ray restarted inside runs 25 m out the far
   side — so what the ram opens is a road and not a recess.
+
+  ![The Porta Flaminia straight on from outside, 24 m back on the gate's axis between its two drum towers: twin oak leaves shut on the centreline with vertical plank boarding, four iron straps to a leaf each carrying a row of square-headed nail bosses, a meeting stile down the middle, a threshold slab, and a brick archivolt ringed with travertine voussoirs; above the leaves the raised portcullis hangs as a curtain of vertical bars](docs/images/releases/r1-gate-shut.jpg)
+
+  Shut, boarded and strapped. **Two things the entry names are not in this picture and the caption
+  will not claim them**: the drawbar is modelled on the *city* face of the leaves, so from outside
+  it is behind 220 mm of oak, and the bricked lunette is behind the raised portcullis, so what reads
+  above the leaves is iron and not brick. The face is dark at every hour — Campus Martius runs
+  declination −14 at latitude 41.9 N, so the sun's azimuth never crosses north of the east-west line
+  and this face is in shade all day. Shot at noon for maximum sky fill it is no brighter.
 - A blind-comparison deck of **ten independent trials** instead of one battle photographed ten times:
   no two frames sharing a follow target, two maps, hours 07:30 to 16:24 against the single 17:00 every
   earlier frame shared, and one frame at high rather than ultra.
@@ -584,6 +627,12 @@ them. See the note at the end of this file.*
   | 4.0 m | 1.67 m | 0 → **708-772** |
   | 5.0 m | 2.65 m | 0 → **710-793** |
   | 5.5-7.0 m | — | 0 → 0, bounded by design |
+
+  ![Looking down into the contact line at t+89 s with 8,352 men alive: ordered Roman files in ridge helmets on the left, the Juthungi with mixed shield blazons, cloaks and bare heads on the right, and the two masses interpenetrating along a diagonal seam rather than standing apart](docs/images/releases/r1-melee.jpg)
+
+  The two lines pressed together at t+89 s. The camera is over the crowd rather than in it, so what
+  the frame shows is that the seam has closed — not the blows themselves, which are a counter and
+  not a pixel.
 
 - **The gate chokepoint.** Lateral drift per fighting man 0.202 → 0.063 m/s, rotation 3.86 → 2.41
   deg/s, wall crossings off the carriageway 28/158 → 2/179, unit spread at t+119 s
