@@ -408,13 +408,24 @@ Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`
     toggles the gate open-then-shut on tick 1 of every battle, so Rome went 56 wall boxes to
     47 and Carthage 160 to 147 **before a man had moved** — all nine and all thirteen
     flights, non-solid for the rest of every battle since `27a9e85` added them.
-  - Carthage's **eight posterns are published as already-open gates and the stone is never
-    cut**. `buildPostern` sets a pierced arch *panel* into each face; the wall's own skins
-    run straight across. A ray down a postern axis is stopped at the outer face at every
-    height 0.5-5.0 m and every lateral offset out to ±8 m. `CitySystem.assertGatePassages`
-    now refuses the collision cut where the stone is solid, and retires itself when it is
-    cut. **No Carthage gate's passage is cut** — `porta-byrsae` stops a ray at 9.1 m with the
-    leaves excluded — which is why the refusal exempts any gate the siege opens.
+  - ~~Carthage's **eight posterns are published as already-open gates and the stone is never
+    cut**~~ — **fixed**, and the guard has retired itself. `buildPostern` set a pierced arch
+    *panel* into each face while the wall's own body ran straight across behind it: a ray
+    down a postern axis stopped at **8.03-8.10 m** at every height and every lateral offset,
+    and `porta-byrsae` at **8.39-8.67 m** with the leaves excluded. The passage is now a
+    `WallCut` hung on the bay and read by all three of the things that have to agree with it
+    — the panels `buildMainBay` leaves out, the mouth `buildPostern` sets in the hole, and
+    the stretch of gallery that stands down beside it. Every ray now runs clean through:
+    `getUnpiercedGates()` is empty on both circuits, `probe-carthage-wall`'s E5 is green and
+    its new **E7** casts 78 rays through the mouths and the carriageway against the drawn
+    stone. Draws **identical at all nine Carthage cameras** (assault 198), triangles within
+    0.2 %. Two things found on the way and both fixed: every `% 8 === 5` bay is also
+    `% 4 === 1`, the wall-walk ramp's cadence, so **five of seven posterns opened their
+    cityward mouth into the side of a 3.4 m masonry ramp** (posterns moved to `% 8 === 6`,
+    same count and spacing, which also stopped `postern-13` and the Porta Maritima sharing
+    bay 13 on the shipping line); and the two gate leaves stopped 30 mm short of the
+    centreline apiece, so a ray went **through the shut gate** down the 60 mm slot between
+    them.
   Man-ticks inside the curtain's own footprint per thousand, 45 s after a 20 s warm-up:
   Carthage infantry **16.71 -> 0**, cavalry **10.13 -> 0**, rout/engine/garrison 0 in both
   arms; Rome **0 in every class in both arms**. And measure a man's **centre**, not his

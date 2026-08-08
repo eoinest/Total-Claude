@@ -796,6 +796,107 @@ const result = await page.evaluate(
     ok('E6 the wall still reports a top over every postern',
       posternRoofless === 0, `${posternRoofless} posterns with no masonry over them`);
 
+    /**
+     * E7: behind every open mouth the passage is a real tunnel, in the **drawn stone**.
+     *
+     * `probe-wall` has carried this assertion for Rome since a curtain was found built
+     * straight through the Porta Flaminia's carriageway. Carthage had no equivalent, and
+     * that is exactly how eight posterns came to be published as already-open `GateOut`s —
+     * so `CitySystem` cut them out of the collision surface — while `buildPostern` set a
+     * pierced arch *panel* into each face and never touched the wall's own body. Measured
+     * with these rays before the cut: every postern stopped one at 8.03-8.10 m, the
+     * curtain's cityward face, at every height and every lateral offset; `porta-byrsae`
+     * stopped one at 8.39-8.67 m with the leaves excluded.
+     *
+     * E4 and E5 cannot see it. Both grade the *obstacle set*, which agrees with itself; the
+     * only instrument that finds a hole in the collision surface with stone standing in it
+     * is a ray against the triangles the renderer was given. Möller-Trumbore over `tris`,
+     * which is the visible wall chunks only — the gate leaves live in their own chunk and
+     * are excluded by name, because a door is not a wall.
+     *
+     * Rays are cast face to face plus 0.6 m, at three heights and three lateral offsets, so
+     * a threshold slab or one badly-aligned sample cannot pass for a passage and a 6 m
+     * opening is tested across its width rather than down its centreline.
+     */
+    const rayHits = (ox, oy, oz, dx, dy, dz, len) => {
+      let best = Infinity;
+      for (let i = 0; i < tris.length; i += 9) {
+        const e1x = tris[i + 3] - tris[i], e1y = tris[i + 4] - tris[i + 1], e1z = tris[i + 5] - tris[i + 2];
+        const e2x = tris[i + 6] - tris[i], e2y = tris[i + 7] - tris[i + 1], e2z = tris[i + 8] - tris[i + 2];
+        const px = dy * e2z - dz * e2y, py = dz * e2x - dx * e2z, pz = dx * e2y - dy * e2x;
+        const det = e1x * px + e1y * py + e1z * pz;
+        if (det > -1e-9 && det < 1e-9) continue;
+        const inv = 1 / det;
+        const tx = ox - tris[i], ty = oy - tris[i + 1], tz = oz - tris[i + 2];
+        const u = (tx * px + ty * py + tz * pz) * inv;
+        if (u < 0 || u > 1) continue;
+        const qx = ty * e1z - tz * e1y, qy = tz * e1x - tx * e1z, qz = tx * e1y - ty * e1x;
+        const v = (dx * qx + dy * qy + dz * qz) * inv;
+        if (v < 0 || u + v > 1) continue;
+        const s = (e2x * qx + e2y * qy + e2z * qz) * inv;
+        if (s > 1e-4 && s < len && s < best) best = s;
+      }
+      return best;
+    };
+    const solidMouths = [];
+    let passageRays = 0;
+    for (const gt of posterns) {
+      const b = lineOf(gt.x);
+      const gy = terrain ? terrain.heightAt(gt.x, gt.z) : 0;
+      const reach = b.halfThickness + 0.6;
+      let worst = Infinity;
+      for (const h of [0.8, 1.6, 2.4]) {
+        for (const off of [-2, 0, 2]) {
+          const ox = gt.x + b.nx * reach + b.dx * off;
+          const oz = gt.z + b.nz * reach + b.dz * off;
+          passageRays++;
+          const t = rayHits(ox, gy + h, oz, -b.nx, 0, -b.nz, reach * 2);
+          if (Number.isFinite(t) && t < worst) worst = t;
+        }
+      }
+      if (Number.isFinite(worst)) solidMouths.push(`${gt.id}@${worst.toFixed(2)}m`);
+    }
+    /**
+     * And the main gate, from a metre behind the leaves.
+     *
+     * The same shape as `probe-wall`'s "behind the leaves the passage is a real tunnel":
+     * with the gate shut a ray from the field cannot see past the doors, so the test starts
+     * inside them. What the ram opens has to be a road.
+     */
+    {
+      const gy = terrain ? terrain.heightAt(door.x, door.z) : 0;
+      for (const h of [1.6, 3.0]) {
+        for (const off of [-2, 0, 2]) {
+          const ox = door.x - door.nx * 1.0 + door.dx * off;
+          const oz = door.z - door.nz * 1.0 + door.dz * off;
+          passageRays++;
+          const t = rayHits(ox, gy + h, oz, -door.nx, 0, -door.nz, 22);
+          if (Number.isFinite(t)) solidMouths.push(`${door.gateId}@${t.toFixed(2)}m`);
+        }
+      }
+    }
+    out.facts.passageRays = passageRays;
+    out.facts.solidMouths = solidMouths;
+    ok('E7 behind every open mouth the stone is really cut, not painted',
+      solidMouths.length === 0,
+      `${passageRays} rays through ${posterns.length} posterns and the Porta Byrsae's ` +
+        `carriageway${solidMouths.length ? `; stopped: ${solidMouths.slice(0, 6).join(', ')}` : ', none stopped'}`);
+
+    /**
+     * E8: and the guard that was refusing the cut has retired itself.
+     *
+     * `CitySystem.assertGatePassages` casts its own three rays per build-time-open gate and
+     * refuses to punch the collision surface where the stone is solid, because a hole in the
+     * obstacle set with masonry standing in it is a man walking through a wall. It is a
+     * fail-open guard and it exempts anything the siege opens, so a green E4/E5 with a
+     * non-empty verdict here would mean the posterns had been *dropped* rather than cut.
+     */
+    const unpierced = city.getUnpiercedGates ? city.getUnpiercedGates() : [];
+    out.facts.unpiercedGates = [...unpierced];
+    ok('E8 no gate stands open with its passage refused',
+      unpierced.length === 0,
+      unpierced.length ? unpierced.join(', ') : 'getUnpiercedGates() is empty');
+
     // --- G. the spec's own claims ----------------------------------------
     const sec = city.punicSection ? city.punicSection() : null;
     out.facts.section = sec;
