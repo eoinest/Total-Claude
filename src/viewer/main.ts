@@ -5,8 +5,13 @@ import {
   EngineKind, emptyPose, engineKindOf, enginePose, isEngineUnit, type EnginePose,
 } from '../units/engines';
 import { emptyKit, resolveKit } from '../units/kit';
+import { ELEPHANT_CLIP } from '../anim/elephantClips';
+import { ELEPHANT_RIG } from '../anim/rig';
 import { hash01 } from '../util/rand';
-import { SoldierRig, type CaptureLight, type ManPose } from './soldierRig';
+import {
+  SoldierRig, isElephantUnit,
+  type CaptureLight, type ElephantPose, type ManPose,
+} from './soldierRig';
 import { EngineRig, type EngineView } from './engineRig';
 import { Stage, type LightPreset } from './stage';
 import { pieceColour, setPartsDebug } from './partsDebug';
@@ -87,8 +92,28 @@ const LOD_LABELS = ['LOD0', 'LOD1', 'LOD2', 'IMPOSTOR'];
  */
 const HORSE_LIFT = 0.075;
 
+/**
+ * The three groups a war elephant's geometry is authored in.
+ *
+ * `ElephantPiece` is a `const enum` in `elephantMesh.ts` and has no runtime reverse map, the
+ * same reason `PIECE_NAMES` exists above. Three entries rather than thirty-six, because the
+ * animal's mask never varies — every war elephant wears all three — so this is a *view*
+ * control, not a kit read: it answers "is the chamfron modelled or painted on the hide" and
+ * "what is under the tower", which nothing in a battle frame can.
+ */
+const ELEPHANT_PIECE_NAMES: readonly string[] = ['Hide', 'Barding & chamfron', 'Howdah & caparison'];
+
 /** Where the four men stand in the LOD ladder, metres. */
 const LADDER_X = [-2.25, -0.75, 0.75, 2.25];
+
+/**
+ * The same ladder for a war elephant, metres.
+ *
+ * Wider because the animal is 2.3 m across the ears and 4.7 m nose to tail: at the man's
+ * 1.5 m pitch four of them interpenetrate and the comparison the view exists for — which
+ * feature went at which tier — is unreadable.
+ */
+const ELEPHANT_LADDER_X = [-6.6, -2.2, 2.2, 6.6];
 
 type Mode = 'single' | 'lod' | 'rank' | 'engine';
 type KindChoice = 'auto' | 'scorpio' | 'onager';
@@ -123,6 +148,15 @@ interface State {
   engineCrew: boolean;
   battery: boolean;
   engineKind: KindChoice;
+  /** Index into `ELEPHANT_CLIP_SET` — the *animal's* clip, not its crew's. */
+  eleClip: number;
+  /** Show the mahout and the three men in the tower. */
+  eleCrew: boolean;
+  /** The unit is loosing javelins from the tower, which is what picks the crew's clip. */
+  eleShooting: boolean;
+  /** Which of the three elephant groups are drawn; -1 is all of them. */
+  eleSolo: number;
+  eleHidden: Set<number>;
 }
 
 const bitOf = (p: number): number => (p < 24 ? 2 ** p : 2 ** (p - 24));
@@ -168,6 +202,11 @@ class Viewer {
     engineCrew: true,
     battery: false,
     engineKind: 'auto',
+    eleClip: 0,
+    eleCrew: true,
+    eleShooting: false,
+    eleSolo: -1,
+    eleHidden: new Set<number>(),
   };
 
   /**
@@ -199,6 +238,9 @@ class Viewer {
     gait?: HTMLSelectElement;
     clipRow?: HTMLElement;
     gaitRow?: HTMLElement;
+    eleClip?: HTMLSelectElement;
+    eleGroup?: HTMLElement;
+    elePieces?: (present: number[], solo: number, hidden: Set<number>, tris: Map<number, number>) => void;
   } = { flags: {} };
 
   private fps = 0;
@@ -292,6 +334,19 @@ class Viewer {
     return this.rig.horseFacts.map((f) => ({
       value: String(f.index), label: `${f.name}  (${f.frames}f)`, group: 'Mount',
     }));
+  }
+
+  private elephantClipOptions(): { value: string; label: string; group: string }[] {
+    return this.rig.elephantFacts.map((f) => ({
+      value: String(f.index),
+      label: `${f.name}  (${f.frames}f · ${f.duration.toFixed(2)}s)`,
+      group: f.loop ? 'Looping' : 'One-shot',
+    }));
+  }
+
+  /** Whether the subject is drawn as an animal rather than as a man on a horse. */
+  private get isElephant(): boolean {
+    return isElephantUnit(this.def);
   }
 
   private kindOf(def: UnitTypeDef): EngineKind {
@@ -437,6 +492,31 @@ class Viewer {
       this.sync.flags.engineCycle?.(false);
     });
 
+    p.group('War elephant');
+    this.sync.eleGroup = p.lastGroup;
+    this.sync.eleClip = p.select('Animal clip', this.elephantClipOptions(), String(s.eleClip), (v) => {
+      s.eleClip = Number(v);
+      s.phase = 0;
+      this.sync.phase?.(0);
+    });
+    p.buttons([
+      { label: 'alive', title: 'Idle, standing, crew aboard', onClick: () => this.elephantState('alive') },
+      { label: 'mid-death', title: 'The death clip at the frame the crew let go', onClick: () => this.elephantState('dying') },
+      { label: 'carcass', title: 'The death clip held at its last frame — what a player sees for the rest of the battle', onClick: () => this.elephantState('dead') },
+    ]);
+    const [ec2, es] = p.toggleRow([
+      { label: 'Crew', value: s.eleCrew, title: 'The mahout on the neck and three men in the tower. They are Carthaginian tier soldiers, not pool men.', onChange: (v) => { s.eleCrew = v; } },
+      { label: 'Loosing', value: s.eleShooting, title: 'The tower is throwing javelins, which is what picks the crew’s clip', onChange: (v) => { s.eleShooting = v; } },
+    ]);
+    Object.assign(this.sync.flags, { eleCrew: ec2, eleShooting: es });
+    const eleEntries = ELEPHANT_PIECE_NAMES.map((name, id) => ({
+      id, name, colour: `#${pieceColour(id).getHexString()}`,
+    }));
+    this.sync.elePieces = p.pieces(
+      eleEntries, (id) => this.eleSolo(id), (id) => this.eleHide(id)
+    );
+    p.note('The animal has one tier and no LOD chain, on purpose: sixteen animals at 7 k triangles is three per cent of one LOD1 rank of infantry, and a distance LOD would cost a draw call out of a budget of twelve that already has ten in it. The crew do have the man’s full ladder. Hide the howdah to see what is under it — the caparison and the pad the tower is lashed to are modelled and nothing in a battle frame has ever shown them.');
+
     p.group('Pieces — click to solo, ⌘/ctrl-click to hide');
     const entries = Object.keys(PIECE_NAMES).map(Number).map((id) => ({
       id, name: PIECE_NAMES[id], colour: `#${pieceColour(id).getHexString()}`,
@@ -469,15 +549,70 @@ class Viewer {
     this.sync.light?.(s.preset === 'field');
     const flags = s as unknown as Record<string, boolean>;
     for (const [k, f] of Object.entries(this.sync.flags)) f(flags[k]);
+    if (this.sync.eleClip) this.sync.eleClip.value = String(s.eleClip);
     // Rows that mean nothing in the current view are hidden rather than left to mislead: the
-    // crew's clip comes from `crewClip`, so a Clip dropdown beside a siege engine is a lie.
-    if (this.sync.gaitRow) this.sync.gaitRow.style.display = isCavalry(this.def) && s.mode !== 'engine' ? '' : 'none';
-    if (this.sync.clipRow) this.sync.clipRow.style.display = s.mode === 'engine' ? 'none' : '';
+    // crew's clip comes from `crewClip`, so a Clip dropdown beside a siege engine is a lie —
+    // and so is a horse gait beside an elephant, which is the defect this pass came in to fix.
+    const horse = isCavalry(this.def) && !this.isElephant;
+    if (this.sync.gaitRow) this.sync.gaitRow.style.display = horse && s.mode !== 'engine' ? '' : 'none';
+    // An elephant's crew take their clip from the animal's state exactly as an engine crew
+    // take theirs from the machine's, so the man Clip dropdown would not be driving anything.
+    if (this.sync.clipRow) {
+      this.sync.clipRow.style.display = s.mode === 'engine' || this.isElephant ? 'none' : '';
+    }
     // Controls that cannot do anything for this subject are hidden, not left enabled and
     // inert. A "Rider" button lit beside a man on foot is a button that has already lied.
     if (this.sync.siegeGroup) this.sync.siegeGroup.style.display = s.mode === 'engine' ? '' : 'none';
-    if (this.sync.riderRow) this.sync.riderRow.style.display = isCavalry(this.def) && s.mode !== 'engine' ? '' : 'none';
+    if (this.sync.riderRow) this.sync.riderRow.style.display = horse && s.mode !== 'engine' ? '' : 'none';
+    if (this.sync.eleGroup) this.sync.eleGroup.style.display = this.isElephant ? '' : 'none';
     this.refreshPieces();
+  }
+
+  /**
+   * The three poses the animal is worth photographing, as one button each.
+   *
+   * The carcass is here because the death clip held at its last frame is what a player looks
+   * at for the rest of a battle, and nobody has ever looked at it closely: it is the only
+   * pose in the game with a guaranteed audience measured in minutes rather than in the 2.6 s
+   * the fall itself takes.
+   */
+  private elephantState(which: 'alive' | 'dying' | 'dead'): void {
+    const s = this.state;
+    s.eleClip = which === 'alive' ? ELEPHANT_CLIP.idle : ELEPHANT_CLIP.death;
+    // 0.39 is `CREW_THROW_START` plus half of `CREW_THROW_LEN`: the animal's forelegs have
+    // buckled, the platform has pitched, and the four men are exactly half way through being
+    // thrown off it. Pick any other frame and either nobody has let go or everybody has landed.
+    s.phase = which === 'alive' ? 0 : which === 'dying' ? 0.39 : 1;
+    s.playing = which === 'alive';
+    this.syncPanel();
+    this.sync.phase?.(s.phase);
+  }
+
+  private eleSolo(id: number): void {
+    this.state.eleSolo = this.state.eleSolo === id ? -1 : id;
+    this.refreshPieces();
+  }
+
+  private eleHide(id: number): void {
+    const h = this.state.eleHidden;
+    if (h.has(id)) h.delete(id);
+    else h.add(id);
+    this.refreshPieces();
+  }
+
+  /**
+   * The animal's own mask this frame — solo and hide, over the three authored groups.
+   *
+   * `ELEPHANT_MASK_LO` is `0b111` and never varies, so unlike the man's list every row here
+   * is always "present": an empty frame after soloing one of them means the geometry is
+   * missing, with no ambiguity to resolve first.
+   */
+  private elephantMask(): number {
+    const s = this.state;
+    if (s.eleSolo >= 0) return 1 << s.eleSolo;
+    let m = 0b111;
+    for (const id of s.eleHidden) m &= ~(1 << id);
+    return m;
   }
 
   private onUnitChanged(reframe: boolean): void {
@@ -485,9 +620,15 @@ class Viewer {
     if (isEngineUnit(def) && this.state.mode !== 'engine') this.state.mode = 'engine';
     else if (!isEngineUnit(def) && this.state.mode === 'engine') this.state.mode = 'single';
     // A mounted man belongs in a seated clip; a footed one starts at attention.
-    const want = isCavalry(def) ? 'rideIdle' : 'idleAlertReady';
+    const want = isCavalry(def) && !this.isElephant ? 'rideIdle' : 'idleAlertReady';
     const f = this.rig.manFacts.find((c) => c.name === want);
     if (f) this.state.clip = f.index;
+    if (this.isElephant) {
+      this.state.eleClip = ELEPHANT_CLIP.idle;
+      this.state.phase = 0;
+      this.state.eleSolo = -1;
+      this.state.eleHidden.clear();
+    }
     this.syncPanel();
     if (reframe) this.frameSubject();
   }
@@ -523,6 +664,9 @@ class Viewer {
       'reproduce (paste into the console on /viewer.html):',
       `  __viewer.setUnit('${s.unitId}'); __viewer.setMode('${s.mode}'); __viewer.setLod(${s.lod});`,
       `  __viewer.setClipByName('${clip}'); __viewer.setGaitByName('${gait}');`,
+      this.isElephant
+        ? `  __viewer.setElephantClip('${this.rig.elephantFacts[s.eleClip]?.name ?? 'idle'}'); __viewer.elephantSolo(${s.eleSolo});`
+        : '',
       `  __viewer.setHash(${s.hash}); __viewer.setPhase(${s.phase});`,
       `  __viewer.setParts(${s.parts}); __viewer.setLight('${s.preset}');`,
       s.solo >= 0 ? `  __viewer.solo(${s.solo});` : '',
@@ -584,6 +728,11 @@ class Viewer {
       this.presentPieces(), this.state.solo, this.state.hidden,
       this.rig.pieceTriangles(this.def.faction, lod)
     );
+    if (this.isElephant) {
+      this.sync.elePieces?.(
+        [0, 1, 2], this.state.eleSolo, this.state.eleHidden, this.rig.elephantPieceTriangles()
+      );
+    }
   }
 
   private setWireframe(on: boolean): void {
@@ -598,7 +747,7 @@ class Viewer {
   }
 
   private step(dir: number): void {
-    const f = this.rig.manFacts[this.state.clip];
+    const f = this.playheadFacts;
     this.state.playing = false;
     this.sync.play?.(false);
     this.state.phase = (this.state.phase + dir / Math.max(1, f.frames) + 1) % 1;
@@ -606,7 +755,7 @@ class Viewer {
   }
 
   private toHit(): void {
-    const f = this.rig.manFacts[this.state.clip];
+    const f = this.playheadFacts;
     if (f.hitFrame < 0) return;
     this.state.playing = false;
     this.sync.play?.(false);
@@ -628,6 +777,7 @@ class Viewer {
   private subjectBox(): { cx: number; cy: number; cz: number; hw: number; hh: number; hd: number } {
     const s = this.state;
     const def = this.def;
+    if (this.isElephant && s.mode !== 'engine') return this.elephantBox();
     if (s.mode === 'lod') return { cx: 0, cy: 1.35, cz: 0, hw: 3.1, hh: 1.35, hd: 0.6 };
     if (s.mode === 'rank') {
       const cav = isCavalry(def);
@@ -658,6 +808,41 @@ class Viewer {
   }
 
   /**
+   * The framing box for one, four or eight animals, off the geometry's own measured extents.
+   *
+   * The single view pads laterally rather than vertically: a thrown crewman lands
+   * `CREW_LAND_OUT` 1.95 m plus up to 1.35 m of scatter off the spine, so a box fitted to the
+   * animal alone crops the men out of the carcass frame — which is the one frame where where
+   * they landed is the whole question.
+   */
+  private elephantBox(): { cx: number; cy: number; cz: number; hw: number; hh: number; hd: number } {
+    const s = this.state;
+    const b = this.rig.elephantBounds();
+    if (s.mode === 'lod') {
+      const span = ELEPHANT_LADDER_X[3] - ELEPHANT_LADDER_X[0];
+      return { cx: 0, cy: b.cy, cz: 0, hw: span / 2 + b.hw, hh: b.hh, hd: b.hd };
+    }
+    if (s.mode === 'rank') {
+      // Two ranks of four at the roster's own `loose` spacing: 3.80 m laterally and 5.58 m
+      // front to back, which is the spacing the formation restriction in `roster.ts` exists
+      // to guarantee. Four animals at `line` would be inside one another.
+      return {
+        cx: 0, cy: b.cy, cz: -5.58 / 2,
+        hw: (3 * 3.8) / 2 + b.hw, hh: b.hh, hd: 5.58 / 2 + b.hd,
+      };
+    }
+    // The pad is only bought when it is needed. A thrown crewman lands `CREW_LAND_OUT` 1.95 m
+    // plus up to 1.35 m of scatter off the spine, so the fall and the carcass need 3.3 m of
+    // it or the men are cropped out of the one frame in which where they landed is the whole
+    // question — and a living animal framed to that pad is 40 % smaller than it should be.
+    const dying = this.rig.elephantFacts[s.eleClip]?.name === 'death';
+    return {
+      cx: 0, cy: b.cy, cz: 0,
+      hw: b.hw + (dying ? 3.3 : 0.2), hh: b.hh, hd: b.hd + (dying ? 1.2 : 0.1),
+    };
+  }
+
+  /**
    * Frame one man for a comparison plate: fill a stated *fraction of frame height* rather
    * than fit a box.
    *
@@ -676,8 +861,12 @@ class Viewer {
     // in which a soldier fills ~90 %, that is a two-thirds magnification mismatch — and
     // magnification is the largest confound the blind instrument has left. A press plate
     // crops the spear tip without hesitation and so does this.
+    //
+    // Not applied to an elephant: 0.95 m is half a *man*, and forcing it on an animal 4 m to
+    // the merlons would frame its knees and call it a full figure.
     const man = { cx: box.cx, cy: 0.95, cz: box.cz, hh: 0.95 };
-    const b = this.stage.plateMode && this.state.mode === 'single' ? { ...box, ...man } : box;
+    const plateMan = this.stage.plateMode && this.state.mode === 'single' && !this.isElephant;
+    const b = plateMan ? { ...box, ...man } : box;
     const cam = this.stage.camera;
     const fovY = (cam.fov * Math.PI) / 180;
     // `fill` above 1 is a *close-up*, not an error: the head plates crop inside the man, and
@@ -850,10 +1039,53 @@ class Viewer {
     this.engines.end();
   }
 
+  /**
+   * One war elephant, its crew, and the skeleton overlay if it is asked for.
+   *
+   * The whole of the defect this pass came in to fix lives in the `if` below it: the viewer
+   * asked `isCavalry`, which is true of `war-elephants` because the *simulation* wants it
+   * pushed and killed like a mount, and drew a Carthaginian on a bay gelding. The mesh, the
+   * clips and the tier all existed; nothing ever asked for them.
+   */
+  private pushElephant(
+    def: UnitTypeDef, variant: number, lod: 0 | 1 | 2 | 3,
+    x: number, z: number, yaw: number, phase: number, probe = false
+  ): void {
+    const s = this.state;
+    const facts = this.rig.elephantFacts[s.eleClip];
+    // The animal's own playhead is the death progress while it is dying, exactly as the game
+    // runs it: `eleDeath` advances on the death clip's own duration, so the two are one number.
+    const fall = facts?.name === 'death' ? phase : 0;
+    const e: ElephantPose = { x, y: 0, z, yaw, clip: s.eleClip, phase, variant, fall };
+    this.rig.elephantMaskFilter = this.elephantMask();
+    this.rig.pushElephant(e);
+    if (s.eleCrew) {
+      const crew = this.rig.elephantCrew(e, s.eleShooting);
+      // The crew go in the *faction's* soldier tier, which is why four men on an animal cost
+      // no draw call — and why they are subject to the man's LOD ladder while the animal is not.
+      const ml = Math.min(2, lod) as 0 | 1 | 2;
+      for (const c of crew) {
+        this.rig.pushMan({
+          ...this.man(def, c.variant, ml, c.x, c.y, c.z, c.facing, c.clip, c.phase ?? ((this.engineT * 0.8 + c.variant) % 1), c.scale),
+          quat: c.quat,
+        });
+      }
+    }
+    if (probe && s.skeleton) {
+      this.skeleton.poseElephant(
+        s.eleClip, phase, x, 0, z, yaw, this.rig.elephantScale(variant)
+      );
+    }
+  }
+
   private pushManOrRider(
     def: UnitTypeDef, variant: number, lod: 0 | 1 | 2 | 3,
     x: number, z: number, yaw: number, phase: number, probe = false
   ): void {
+    if (isElephantUnit(def)) {
+      this.pushElephant(def, variant, lod, x, z, yaw, phase, probe);
+      return;
+    }
     const v = this.manVary(variant);
     const scale = def.appearance.heightScale * v.scale;
     if (!isCavalry(def)) {
@@ -889,7 +1121,9 @@ class Viewer {
   }
 
   private composeSingle(def: UnitTypeDef): void {
-    if (this.state.lod === 3) this.rig.prepareImpostors(this.stage.renderer, def, this.captureLight());
+    if (this.state.lod === 3 && !this.isElephant) {
+      this.rig.prepareImpostors(this.stage.renderer, def, this.captureLight());
+    }
     this.pushManOrRider(def, this.state.hash, this.state.lod, 0, 0, 0, this.state.phase, true);
   }
 
@@ -901,9 +1135,15 @@ class Viewer {
    * need to know is which *feature* went, and only a side-by-side shows that.
    */
   private composeLod(def: UnitTypeDef): void {
-    this.rig.prepareImpostors(this.stage.renderer, def, this.captureLight());
+    // An elephant has one tier and there is no billboard of one, so the ladder shows the same
+    // animal four times with the *crew* stepping down the man's ladder. That is a real
+    // question — the crew are three metres up and silhouetted against the sky, which the
+    // roster's own note calls the least forgiving place on the field to put a man — and the
+    // tags say which number belongs to whom.
+    if (!this.isElephant) this.rig.prepareImpostors(this.stage.renderer, def, this.captureLight());
+    const xs = this.isElephant ? ELEPHANT_LADDER_X : LADDER_X;
     for (let l = 0; l < 4; l++) {
-      this.pushManOrRider(def, this.state.hash, l as 0 | 1 | 2 | 3, LADDER_X[l], 0, 0, this.state.phase);
+      this.pushManOrRider(def, this.state.hash, l as 0 | 1 | 2 | 3, xs[l], 0, 0, this.state.phase);
     }
   }
 
@@ -916,16 +1156,32 @@ class Viewer {
    * here would make the viewer flatter than the game and useless for judging variance.
    */
   private composeRank(def: UnitTypeDef): void {
+    const ele = this.isElephant;
     const cav = isCavalry(def);
-    const cols = cav ? 4 : 6;
-    const rows = cav ? 2 : 4;
-    const dx = cav ? 1.5 : 0.86;
-    const dz = cav ? 2.4 : 0.95;
-    if (this.state.lod === 3) this.rig.prepareImpostors(this.stage.renderer, def, this.captureLight());
+    const cols = ele ? 4 : cav ? 4 : 6;
+    const rows = ele ? 2 : cav ? 2 : 4;
+    // `loose`, the only formation an elephant unit is offered, and the reason it is: 1.95x and
+    // 1.8x on the cavalry base spacing is 3.80 m and 5.58 m, which leaves 1.8 m between flanks.
+    const dx = ele ? 3.8 : cav ? 1.5 : 0.86;
+    const dz = ele ? 5.58 : cav ? 2.4 : 0.95;
+    if (this.state.lod === 3 && !ele) {
+      this.rig.prepareImpostors(this.stage.renderer, def, this.captureLight());
+    }
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         const variant = hash01(r * cols + c + 1, 17);
-        const phase = (this.state.phase + this.manVary(variant).phaseOff) % 1;
+        // An animal desyncs on its own salt, a man on his. Both are the render system's, and
+        // this line is why: eight elephants started at one phase step in time, which three
+        // blind critics named as the single most-cited defect in the last deck. A rank view
+        // that showed it would be showing a defect the game does not have.
+        //
+        // Not applied to a one-shot: offsetting the death clip scatters eight animals across
+        // eight different moments of the same collapse, which is a *worse* picture than
+        // eight in lockstep because you cannot compare any two of them.
+        const off = ele
+          ? (this.playheadFacts.loop ? this.rig.elephantPhaseOff(variant) : 0)
+          : this.manVary(variant).phaseOff;
+        const phase = (this.state.phase + off) % 1;
         this.pushManOrRider(
           def, variant, this.state.lod,
           (c - (cols - 1) / 2) * dx, -r * dz, 0, phase
@@ -1001,10 +1257,24 @@ class Viewer {
   // Loop
   // -------------------------------------------------------------------------
 
+  /**
+   * The clip the playhead belongs to.
+   *
+   * For an elephant that is the *animal's*, not the man's: the crew's clip is chosen by the
+   * animal's state the way an engine crew's is chosen by the machine's, so running the
+   * playhead on a man's duration would scrub a 2.6 s collapse at a 1.1 s idle's rate and
+   * every frame number under it would be wrong.
+   */
+  private get playheadFacts(): { frames: number; duration: number; loop: boolean; hitFrame: number; name: string } {
+    const s = this.state;
+    if (this.isElephant) return this.rig.elephantFacts[s.eleClip] ?? this.rig.elephantFacts[0];
+    return this.rig.manFacts[s.clip] ?? this.rig.manFacts[0];
+  }
+
   private advance(dt: number): void {
     const s = this.state;
     if (!s.playing) return;
-    const f = this.rig.manFacts[s.clip];
+    const f = this.playheadFacts;
     s.phase += (dt * s.speed) / Math.max(0.05, f.duration);
     // `%` keeps the sign of the dividend, so wrap into [0,1) explicitly rather than trusting it.
     if (f.loop) s.phase = ((s.phase % 1) + 1) % 1;
@@ -1037,10 +1307,22 @@ class Viewer {
       `to ${(LOD_FRACTION[2] * LOD_FAR_HIGH).toFixed(0)} m`,
       'beyond',
     ];
+    const ele = this.isElephant;
+    const xs = ele ? ELEPHANT_LADDER_X : LADDER_X;
+    // The animal is one tier by construction, so the ladder's fourth rung has no billboard
+    // and the third and fourth crew both sit at LOD2 — the game clamps a mounted man there
+    // because a billboard captured on foot has no mount in it. Say so on the tag rather than
+    // print an impostor count that does not exist.
+    const crewLod = (i: number): 0 | 1 | 2 => Math.min(2, i) as 0 | 1 | 2;
     for (let i = 0; i < want; i++) {
-      this.project.set(LADDER_X[i], 2.05, 0).project(this.stage.camera);
+      this.project.set(xs[i], ele ? 4.3 : 2.05, 0).project(this.stage.camera);
       this.tags[i].style.left = `${(this.project.x * 0.5 + 0.5) * rect.width}px`;
       this.tags[i].style.top = `${(-this.project.y * 0.5 + 0.5) * rect.height}px`;
+      if (ele) {
+        const tris = this.rig.triangles(this.def.faction, crewLod(i));
+        this.tags[i].innerHTML = `<b>crew ${LOD_LABELS[crewLod(i)]}</b>\nunion ${tris.toLocaleString()}\nanimal: one tier\n${edges[i]}`;
+        continue;
+      }
       const tris = this.rig.triangles(this.def.faction, i as 0 | 1 | 2 | 3);
       // "union", not "tris": the header beside it prints the drawn figure, and two different
       // numbers under one word 2x apart is how a reviewer budgets a man at the wrong cost.
@@ -1069,8 +1351,57 @@ class Viewer {
     if (this.state.mode === 'engine') {
       return `${this.kindOf(def) === EngineKind.Onager ? 'onager' : 'scorpio'} + crew (soldier mesh)`;
     }
+    if (isElephantUnit(def)) return 'elephant mesh + 4 crew (soldier mesh, faction tier)';
     if (isCavalry(def)) return 'soldier mesh + horse mesh';
     return 'soldier mesh, on foot';
+  }
+
+  /**
+   * The numbers that decide whether a war elephant is right, and none of them are a man's.
+   *
+   * Two in particular have never been readable anywhere: the *animated* howdah floor height,
+   * which is what four men are standing on and is the one number that separates "the crew
+   * ride the animal" from "the crew ride a rest-pose constant"; and how far through the
+   * collapse the fall is, against the two fractions at which the crew let go. A carcass with
+   * a man standing in mid-air beside it is a two-second read here and invisible at 20 px.
+   */
+  private elephantReadout(lines: string[]): void {
+    const s = this.state;
+    const f = this.rig.elephantFacts[s.eleClip] ?? this.rig.elephantFacts[0];
+    const scale = this.rig.elephantScale(s.hash);
+    const at = this.rig.howdahAt(s.eleClip, s.phase, s.hash);
+    const fall = f.name === 'death' ? s.phase : 0;
+    const per = this.rig.elephantPieceTriangles();
+    const mask = this.elephantMask();
+    const union = this.rig.elephantTriangles();
+    let drawn = 0;
+    for (let i = 0; i < 3; i++) if (mask & (1 << i)) drawn += per.get(i) ?? 0;
+
+    lines.push(`tier      ONE TIER, no LOD chain and no impostor · union ${union.toLocaleString()} · <b>drawn ${drawn.toLocaleString()}</b>`);
+    lines.push(`animal    ${(this.rig.elephantBounds().hd * 2 * scale).toFixed(2)} m long · ${(this.rig.elephantBounds().hh * 2 * scale).toFixed(2)} m to the merlons · size draw ${scale.toFixed(3)} (±10% off the hash)`);
+    lines.push(`rig       ${ELEPHANT_RIG.boneCount} bones · 2 influences max per vertex${s.skeleton ? ` · overlay at frame ${at.frame}` : ''}`);
+    lines.push(`clip      ${f.name} · ${f.frames}f · ${f.duration.toFixed(2)}s · ${f.loop ? 'loop' : 'one-shot'}`);
+    lines.push(`playhead  ${s.phase.toFixed(3)} · frame ${at.frame}/${at.frames}`);
+    // Both heights are read off the baked point tracks, i.e. off the same numbers the crew are
+    // placed with — so if they disagree with the picture, the picture is the truth and the
+    // seating is broken.
+    lines.push(`howdah    floor ${at.floorY.toFixed(3)} m this frame · z ${at.floorZ.toFixed(3)} · mahout seat ${at.seatY.toFixed(3)} m`);
+    if (fall > 0) {
+      const throwT = fall <= 0.28 ? 0 : Math.min(1, (fall - 0.28) / 0.22);
+      const where = throwT <= 0 ? 'holding on' : throwT >= 1 ? 'landed' : 'in the air';
+      lines.push(`fall      ${(fall * 100).toFixed(0)}% through the collapse · crew ${where} (${(throwT * 100).toFixed(0)}% of the throw)`);
+      lines.push('          they let go at 28% and are down by 50%, a second before the beast settles');
+      if (fall >= 1) {
+        lines.push('<b>CARCASS</b>  the death clip held at its last frame — what a player sees for the rest of the battle');
+      }
+    }
+    lines.push(`crew      ${s.eleCrew ? '4 shown' : 'hidden'} · mahout astride the neck + 3 in the tower · ${s.eleShooting ? 'loosing javelins' : 'braced'}`);
+    // The crew's own cost, because "four men cost no draw call" is the load-bearing claim
+    // about this unit and a reviewer should be able to check it against the frame line below.
+    lines.push('          drawn into the Carthaginian soldier tier, not pool men: no draw call, no simulation');
+    if (s.eleSolo >= 0) {
+      lines.push(`<b>SOLO ${ELEPHANT_PIECE_NAMES[s.eleSolo]}</b> · ${(per.get(s.eleSolo) ?? 0).toLocaleString()} tris · every animal wears all three, so an empty frame means the geometry is missing.`);
+    }
   }
 
   private updateReadout(): void {
@@ -1092,13 +1423,15 @@ class Viewer {
     // What geometry the pipeline actually produces for this roster entry, spelled out.
     //
     // Not decoration. `unitClass` is what the *simulation* needs; the mesh path is chosen
-    // separately, and the two can disagree while a new unit is being wired up. War Elephants
-    // are classed `heavy-cavalry` so that the sim pushes and kills them like a mount — which
-    // means, until an elephant mesh exists, the renderer draws them as a man on a horse. A
-    // viewer that quietly showed a horse there would be lying about the state of the project.
+    // separately, and the two can disagree. War Elephants are classed `heavy-cavalry` so that
+    // the sim pushes and kills them like a mount, and this viewer read that class as "put him
+    // on a horse" for as long as it existed — the animal, its five clips and its own instance
+    // tier were all in the build and nothing ever asked for them. `mountKind` is what decides
+    // the geometry, and this line is what would have caught it.
     lines.push(`drawn as  ${this.drawnAs(def)}`);
     lines.push('');
-    if (s.mode === 'engine') {
+    if (this.isElephant && s.mode !== 'engine') this.elephantReadout(lines);
+    else if (s.mode === 'engine') {
       const kind = this.kindOf(def);
       lines.push(`machine   ${kind === EngineKind.Onager ? 'onager' : 'scorpio'} · ${this.engines.triangles(kind).toLocaleString()} tris`);
       lines.push(`crew      ${s.engineCrew ? 'shown' : 'hidden'} · ${s.engineCycle ? 'cycling' : `draw ${s.engineDraw.toFixed(2)}`}`);
@@ -1243,6 +1576,37 @@ class Viewer {
         this.syncPanel();
         return true;
       },
+      /** The *animal's* clip — idle, walk, charge, attack, death, panic. */
+      setElephantClip: (name: string): boolean => {
+        const f = this.rig.elephantFacts.find((c) => c.name === name);
+        if (!f) return false;
+        this.state.eleClip = f.index;
+        this.state.phase = 0;
+        this.syncPanel();
+        return true;
+      },
+      /**
+       * Alive, mid-death or carcass, as one call.
+       *
+       * The harness needs the third of these more than the other two: the death clip held at
+       * its last frame is what a player looks at for the rest of a battle and it is the only
+       * elephant pose with a guaranteed audience.
+       */
+      elephantState: (which: 'alive' | 'dying' | 'dead'): void => this.elephantState(which),
+      /** Solo one of hide / barding / howdah, or -1 for all three. */
+      elephantSolo: (id: number): void => {
+        this.state.eleSolo = id;
+        this.refreshPieces();
+      },
+      elephantClips: (): string[] => this.rig.elephantFacts.map((c) => c.name),
+      /**
+       * Which way the animal faces, in its own bind frame.
+       *
+       * Half of the azimuth invariant `framePlate` documents — the cheap, exact half. The
+       * other half is a pixel sweep, and the two must agree before anyone trusts a plate.
+       */
+      elephantGroupZ: (): { hide: number; barding: number; tower: number } =>
+        this.rig.elephantGroupZ(),
       setPhase: (p: number): void => {
         this.state.phase = p;
         this.state.playing = false;
@@ -1309,8 +1673,15 @@ class Viewer {
         s.hidden.clear();
         this.onUnitChanged(false);
         if (o.clip) {
-          const f = this.rig.manFacts.find((c) => c.name === o.clip);
-          if (f) s.clip = f.index;
+          // On an elephant plate the clip named is the *animal's*, because the crew take
+          // theirs from the animal's state. Falling back to the man's list would silently
+          // photograph an idle animal whatever the harness asked for.
+          const set = this.isElephant ? this.rig.elephantFacts : this.rig.manFacts;
+          const f = set.find((c) => c.name === o.clip);
+          if (f) {
+            if (this.isElephant) s.eleClip = f.index;
+            else s.clip = f.index;
+          }
         }
         s.phase = o.phase ?? 0.32;
         s.preset = o.light ?? 'field';
