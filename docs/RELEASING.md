@@ -147,7 +147,8 @@ commit messages already set:
 - **Credit outside contributors by name**, and say which release their work landed in.
 
 Add the section to the top of `CHANGELOG.md` with the release number, the date, `$C`, and the
-verified deployment slug from step 1. Commit it:
+verified deployment slug from step 1. **Put the pictures in before you commit it — see step 4a**,
+which is below this one only because it is longer, not because it comes after. Commit it:
 
 ```sh
 git commit -m "docs: changelog for rN"
@@ -202,9 +203,16 @@ Then, at release time:
 - **Check the rendered markdown on both surfaces**, do not assume it:
 
   ```sh
-  # the changelog, as GitHub will render it
+  # the changelog, as GitHub will render it. `grep -o … | wc -l`, not `grep -c`:
+  # the API returns several images on one line and `-c` counts lines.
   jq -Rs '{text: ., mode: "gfm", context: "eoinest/Total-Claude"}' CHANGELOG.md \
-    | gh api -X POST /markdown --input - | grep -c '<img'
+    | gh api -X POST /markdown --input - | grep -o '<img' | wc -l
+
+  # and that every rendered src is a file that exists
+  jq -Rs '{text: ., mode: "gfm", context: "eoinest/Total-Claude"}' CHANGELOG.md \
+    | gh api -X POST /markdown --input - \
+    | grep -oE 'src="[^"]+"' | sed 's/src="//;s/"//' \
+    | while read p; do [ -f "$p" ] || echo "MISSING $p"; done
 
   # the release body, and every image URL in it
   gh release view rN --json body -q .body \

@@ -435,8 +435,8 @@ battle frame could ever have shown. Forty changes.
 
   ![A near-aerial view east over Carthage: the Byrsa on stepped terraces with a walled summit precinct at the left, the rectangular merchant basin in the centre, the complete circular ring of the cothon's ship sheds around its admiralty island at the right, the insula grid filling the middle of the frame, and the wall belt across the bottom edge](docs/images/releases/r2-carthage-city.jpg)
 
-  The Byrsa, both harbours and the grid. The fabric is deliberately read as a **plan** here and not
-  as density — at r2 the quarters are thin, and the houses arrive in r3.
+  The Byrsa, both harbours and the grid. Read this as the **plan** and not as the density: there is
+  bare ground between the quarters, and r3 is the release that fills them.
 - **The wall is terrain.** The owner, three times: *"walls are like interactive terrain… when a unit
   leaves the wall they will walk down the stairs. Enemies on the wall can also walk down the stairs."*
   A unit on or near a wall now carries a plan with one of five goals — Hold, Ascend, Traverse,
