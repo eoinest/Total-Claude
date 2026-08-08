@@ -192,7 +192,15 @@ const GRAVITY = 9.81;
 const LOFT = 0.6;
 
 /**
- * The furthest a weapon can actually throw, in metres, drag-free and over level ground.
+ * Front-to-front metres inside which a formation stops volleying and reaches for its sidearm.
+ * See `updateVolley`. `Abilities.shouldAuto` uses the same 7 m as the lower bound on an
+ * automatic pilum volley, and the two should stay equal.
+ */
+const VOLLEY_MIN_M = 7;
+
+/**
+ * The furthest a weapon can actually throw, in metres of **horizontal** distance, to a target
+ * `dy` metres above the muzzle. Drag-free; `dy = 0` is the level-ground figure.
  *
  * This exists because `PHYSICS.speed` and `missile.range` were independent numbers that nobody
  * had ever compared, and for both `arc: 'high'` weapons they disagreed badly: a sling could
@@ -201,17 +209,84 @@ const LOFT = 0.6;
  * returns a flat 45 degrees — so the shot leaves at full power on the maximum-range elevation
  * and lands as far short as the numbers disagree, every time, silently.
  *
- * A lofted weapon is held to the 45-degree maximum rather than to `LOFT`'s 34, because the
- * solve legitimately steepens toward 45 as it runs out of reach.
+ * **`dy` is the second half of that same fault and it is the one a siege runs into.** The
+ * bound was level-ground while the distance it was compared against is horizontal, so neither
+ * side of the test knew a parapet was overhead: it refused men who were comfortably in reach
+ * from a wall-walk looking *down*, and it passed men on a battlement that no javelin in the
+ * game can physically touch — and those shots fell straight through to the 45-degree fallback
+ * and into the masonry. The correct bound is the launch solve's own discriminant. `lowRoot`
+ * has a real root only while
+ *
+ *     v⁴ ≥ g(g·d² + 2·dy·v²)      ⟺      d ≤ (v/g)·√(v² − 2g·dy)
+ *
+ * which is the envelope parabola of every trajectory the weapon can fly, and which collapses
+ * to the old `v²/g` at `dy = 0`. It is the right bound for a lofted weapon too — `LOFT`'s 34
+ * degrees and the 45 the solve steepens to are both inside that envelope.
+ *
+ * Note the ceiling: no launch reaches higher than `v²/2g` at any range, so a 24 m/s javelin
+ * cannot touch anything more than 29.4 m above it however close it stands, and the function
+ * returns 0 to say so.
  */
-export const maxRange = (kind: WeaponKind): number => {
+export const maxRange = (kind: WeaponKind, dy = 0): number => {
   const p = physicsOf(kind);
+  const c = p.dragComp;
   // d_compensated = d(1 + c·d) is what the solve actually has to satisfy, so invert it to get
   // the true ground distance the weapon covers.
   const dComp = (p.speed * p.speed) / GRAVITY;
-  const c = p.dragComp;
+  const level = c > 0 ? (Math.sqrt(1 + 4 * c * dComp) - 1) / (2 * c) : dComp;
+  return dy === 0 ? level : reachAtHeight(kind, level, dy);
+};
+
+/**
+ * The same envelope asked of a *stated* level-ground reach rather than of the physics: a shot
+ * that carries `level` metres over flat ground carries this far horizontally to a point `dy`
+ * above the muzzle. `maxRange` is this function applied to the weapon's own physical reach.
+ *
+ * Factored out so the two bounds cannot drift apart, and exported because it is the honest
+ * conversion for any number in this codebase that is quoted over level ground and compared
+ * against a horizontal distance. It is deliberately *not* applied to `missile.range` — see
+ * `effectiveRange` for why, and for the measurement.
+ */
+export const reachAtHeight = (kind: WeaponKind, level: number, dy: number): number => {
+  if (dy === 0 || level <= 0) return level;
+  const c = physicsOf(kind).dragComp;
+  const lc = level * (1 + c * level);
+  const v2 = GRAVITY * lc;
+  const inner = v2 - 2 * GRAVITY * dy;
+  if (inner <= 0) return 0;
+  const dComp = Math.sqrt(v2 * inner) / GRAVITY;
   return c > 0 ? (Math.sqrt(1 + 4 * c * dComp) - 1) / (2 * c) : dComp;
 };
+
+/**
+ * A man's own height is not a slope.
+ *
+ * The muzzle is `SHOULDER` up and the aim point is a metre up, so on perfectly level ground a
+ * target sits 0.45 m *below* the shooter and two formations on Rome's field ground differ by
+ * 0.6-0.8 m over a hundred metres. Feeding that through the height bound would move it by a
+ * percent or two, re-cut which shots are refused, and rewrite every field battle in the game
+ * for nothing — the fault this bound exists for is a fourteen-metre wall. Subtracted rather
+ * than thresholded so there is no cliff at the edge of the band and the correction stays
+ * conservative on both sides.
+ */
+const HEIGHT_DEADBAND = 1.5;
+const slope = (dy: number): number =>
+  dy > HEIGHT_DEADBAND ? dy - HEIGHT_DEADBAND : dy < -HEIGHT_DEADBAND ? dy + HEIGHT_DEADBAND : 0;
+/** Height-above-muzzle bands for the refusal census, metres. See `cRefuseByH`. */
+const REFUSE_H_EDGES = [-12, -6, -2, 2, 6, 12, 18, 24] as const;
+/** How far past the reach bound a refusal was, as a multiple of it. See `cRefuseByOver`. */
+const REFUSE_O_EDGES = [1.1, 1.25, 1.5, 2, 3, 5] as const;
+
+/**
+ * Does the launch solve have a real root at all — can this speed put a shaft on a point
+ * `d` (compensated) away and `h` up? Exactly `lowRoot`'s discriminant, factored out so the
+ * census can ask the question without the sim taking a different branch for it.
+ */
+const hasRoot = (v: number, d: number, h: number): boolean => {
+  const v2 = v * v;
+  return v2 * v2 - GRAVITY * (GRAVITY * d * d + 2 * h * v2) > 0;
+};
+
 /** Soldier torso radius for a projectile intersection, metres. */
 const HIT_RADIUS = 0.4;
 
@@ -734,6 +809,34 @@ export class ProjectileSystem implements Subsystem {
   private cMissN = new Int32Array(32);
   /** Shots the launch solve refused because the target was beyond the weapon's real reach. */
   private cUnreachable = new Int32Array(32);
+  /**
+   * The two halves of the height-aware reach bound, so the change can be graded rather than
+   * asserted. Diagnostic only — nothing reads them back into the sim.
+   *
+   *   - `cRefusedHigh` — refused now, and the old level-ground bound would have passed it:
+   *     a man on a parapet that this weapon genuinely cannot throw up to. These are the shots
+   *     that used to fall through to `lowRoot`'s negative discriminant and leave at 45 degrees
+   *     into the wall.
+   *   - `cReachedDown` — fired now, and the old bound would have refused it: a garrison
+   *     shooting *down*, where the drop buys reach the level-ground figure never counted.
+   *   - `cNoSolve` — launched with no real ballistic root at all, i.e. `lowRoot` returned its
+   *     45-degree fallback. This is the number the height bound exists to drive to zero, and
+   *     it is counted after every re-draw so a parapet-limited shot is not miscounted.
+   */
+  private cRefusedHigh = new Int32Array(32);
+  private cReachedDown = new Int32Array(32);
+  private cNoSolve = new Int32Array(32);
+  /**
+   * Every refusal, bucketed by how far **above the muzzle** the man refused was standing, and
+   * by how far past the bound he was as a multiple of it.
+   *
+   * These are here because the first reading of this fault was wrong and only the shape of the
+   * distribution said so. A refusal rate on its own cannot tell "the parapet is out of reach"
+   * from "the man drawn out of the target formation was simply too far away", and those want
+   * opposite fixes.
+   */
+  private cRefuseByH = new Int32Array(REFUSE_H_EDGES.length + 1);
+  private cRefuseByOver = new Int32Array(REFUSE_O_EDGES.length + 1);
   /** Shots a man held because one of his own was standing in the lane. */
   private cRefusedLane = new Int32Array(32);
   /** Volleys a unit did not fire at will because its target was mixed in with friendlies. */
@@ -1026,9 +1129,41 @@ export class ProjectileSystem implements Subsystem {
     const mods = modsOf(id);
     const sig = signalsOf(id);
     const routing = u.order === UnitOrder.Rout;
-    const inMelee = sig.contactLock || sig.engagedFraction > 0.18;
+    /**
+     * ---- a bow is not a weapon at four metres ----
+     *
+     * The two tests above ask whether the unit is *fighting*, and a hundred archers with a
+     * cavalry wedge standing in them are not: fifty horsemen present a tip, five or six of our
+     * men have an opponent, `engagedFraction` reads 0.05 and `contactLock` never sets. So the
+     * unit went on volleying with the enemy at **1.7 m**, and the volleys landed — 55 hits and
+     * six dead riders in a single second, out of arrows lofted at 4.6 m/s over a two-metre gap,
+     * doing full listed damage because damage is a roster number and not a function of speed.
+     *
+     * That is the whole of the `cav-vs-archers` regression and it is not a stat line. Measured
+     * band by band on the way in, the horse arrives at the archers having lost **2 of 50 —
+     * 4 %, which is exactly the figure the case is documented to produce**. Every extra loss
+     * happens after contact. Before the friendly-fire fix those point-blank arrows were
+     * absorbed by the archers' own front rank at the muzzle, which is why the case read right
+     * while being wrong, and why "the rear ranks' arrows now fly" looks like the cause: the
+     * arrows that now fly are the ones loosed at two metres, not the ones loosed at a hundred.
+     *
+     * 7 m is not a new number — `Abilities.shouldAuto` already refuses a pilum volley inside
+     * it. Measured on the front-rank *segments* rather than on the nearest man, because that
+     * is the same geometry `contactLock` is derived from, and because it excludes a broken
+     * enemy: a missile unit shooting into the backs of men running away is doing its job.
+     * Different levels are excluded there too, so a garrison on a wall-walk with besiegers at
+     * its foot is untouched — see `nearestEnemyFront`, which already carries that guard for
+     * exactly this reason.
+     */
+    const inMelee = sig.contactLock || sig.engagedFraction > 0.18
+      || b.frontGapOf(id) < VOLLEY_MIN_M;
 
     if (routing || inMelee || u.alive === 0) {
+      // Leaving the volley machine has to put the pose back as well as the phase. It never
+      // had to before, because the only way out was `contactLock` and `Combat` puts a man
+      // into `Fighting` on the same tick; the 7 m rule above gets out one beat *earlier*, and
+      // without this a hundred men play a throwing animation all the way through a charge.
+      if (this.phase[id] !== Phase.Idle) this.clearAimPose(u);
       this.phase[id] = Phase.Idle;
       this.timer[id] = 0;
       return;
@@ -1059,15 +1194,35 @@ export class ProjectileSystem implements Subsystem {
      * Refused only for `fireAtWill`. An **ordered** volley still goes in, because deciding to
      * shoot into a melee and wear the losses is a real order and the player must keep it.
      */
+    /**
+     * ---- and the reach bound is per candidate, because it depends on height ----
+     *
+     * `maxRange` is a *horizontal* reach to a target `dy` above the muzzle, and asking it once
+     * for the whole search — as this did — is only right on flat ground. On a siege map it put
+     * a javelin unit at the foot of a wall onto a garrison it cannot physically throw up to:
+     * the formation passed a level-ground bound, the unit locked on, aimed, and then `launch`
+     * refused every individual shot, so it spent the assault cycling aim-and-reload at a
+     * target it was never going to hit. 43 % of a Punic javelin's attempts.
+     *
+     * `levelOf` is the mean foot height of a unit's living men — the same coarse figure the
+     * formation contact test runs on. It only has to be good enough to choose *which*
+     * formation; the exact geometry is asked again per shot, against the one man aimed at.
+     * Foot to foot rather than muzzle to chest, so two units on the same ground give exactly
+     * zero and take the memoised level-ground branch: a field battle stays byte-identical,
+     * and the 0.45 m the man-height offsets would have added is inside the tolerance of a
+     * test run on unit centres.
+     */
     if (this.phase[id] === Phase.Idle || this.phase[id] === Phase.Reloading) {
       let best = -1;
-      let bestD = this.effectiveRange(m.kind, m.range);
+      let bestD = Infinity;
       const units = b.units;
+      const ownY = b.levelOf(u.id);
       for (let k = 0; k < units.length; k++) {
         const o = units[k];
         if (o.destroyed || o.faction === u.faction || o.alive === 0) continue;
         const d = Math.hypot(o.x - u.x, o.z - u.z);
         if (d >= bestD) continue;
+        if (d >= this.effectiveRange(m.kind, m.range, b.levelOf(o.id) - ownY)) continue;
         // Only for a candidate that would actually become the target, so the corridor scan
         // runs two or three times per search rather than once per candidate.
         if (!ordered) {
@@ -1098,6 +1253,10 @@ export class ProjectileSystem implements Subsystem {
       case Phase.Aiming: {
         this.timer[id] += dt;
         if (!canFire) {
+          // Same hole as the melee bail above, and it predates the 7 m rule: a unit whose
+          // target walks out of range or whose last man runs out of arrows was left drawing
+          // a bow it was never going to loose.
+          this.clearAimPose(u);
           this.phase[id] = Phase.Idle;
           this.timer[id] = 0;
           break;
@@ -1478,6 +1637,25 @@ export class ProjectileSystem implements Subsystem {
   }
 
   /** Put a whole unit into a state without disturbing anyone locked in melee. */
+  /**
+   * Put down the bow.
+   *
+   * Narrower than `setUnitState` on purpose: it touches **only** the two poses this system
+   * ever sets, so it cannot reach a man who is climbing a ladder, bracing, routing or in a
+   * melee. `setUnitState` steps over three of those and not over `Climbing`, and an escalade
+   * party with javelins is on a ladder at exactly the moment the 7 m rule fires.
+   */
+  private clearAimPose(u: UnitGroupState): void {
+    const p = this.battle.pool;
+    for (let k = 0; k < u.members.length; k++) {
+      const i = u.members[k];
+      const st = p.state[i];
+      if (st === SoldierState.Shooting || st === SoldierState.Throwing) {
+        p.setState(i, SoldierState.Idle);
+      }
+    }
+  }
+
   private setUnitState(u: UnitGroupState, state: SoldierState): void {
     const p = this.battle.pool;
     for (let k = 0; k < u.members.length; k++) {
@@ -1661,11 +1839,28 @@ export class ProjectileSystem implements Subsystem {
     // The 8% over the roster range is the tolerance that was always here — a man on the wing
     // shoots at someone slightly beyond the unit's nominal reach. Only the *physical* bound is
     // new, and it is the one that has to be hard.
+    //
+    // **And it is asked in three dimensions.** `d` is a horizontal distance and `maxRange` was
+    // a level-ground bound, so on a siege map neither side of this test knew the parapet was
+    // overhead. It refused a garrison shooting down, whose drop buys it reach, and it passed
+    // an attacker throwing at a battlement no javelin can physically reach — and *that* shot
+    // fell through to `lowRoot`'s negative discriminant, left at a flat 45 degrees and buried
+    // itself in the wall, which is the same silent failure the paragraph above describes, in
+    // the one axis it did not cover. `hAim` is the height the solve will actually use, less
+    // the lead, which moves a man vertically by centimetres over a javelin's time of flight.
     if (d < 1.5) return;
-    if (d > this.effectiveRange(m.kind, m.range * 1.08)) {
-      this.cUnreachable[this.kindIndexOf(m.kind)]++;
+    const kx = this.kindIndexOf(m.kind);
+    const hAim = p.y[t] + 1.0 - sy;
+    const reach = this.effectiveRange(m.kind, m.range * 1.08, hAim);
+    const flat = this.effectiveRange(m.kind, m.range * 1.08);
+    if (d > reach) {
+      this.cUnreachable[kx]++;
+      if (d <= flat) this.cRefusedHigh[kx]++;
+      this.cRefuseByH[ffBand(hAim, REFUSE_H_EDGES)]++;
+      this.cRefuseByOver[ffBand(d / Math.max(1e-3, reach), REFUSE_O_EDGES)]++;
       return;
     }
+    if (d > flat) this.cReachedDown[kx]++;
     let tof = d / Math.max(6, phys.speed * 0.8);
     for (let pass = 0; pass < 2; pass++) {
       tx = p.x[t] + p.vx[t] * tof;
@@ -1691,6 +1886,10 @@ export class ProjectileSystem implements Subsystem {
     const dComp = d * (1 + phys.dragComp * d);
     let v = phys.speed;
     let theta: number;
+    // Whether the answer below is a *solution* or `lowRoot`'s 45-degree shrug. Diagnostic
+    // only, and the one number that says whether the reach bound above is doing its job:
+    // every shot counted here is one that cannot land on its man however it is aimed.
+    let solved = true;
     if (lofted) {
       // Loft at a fixed elevation and draw only as hard as the range needs.
       const c = Math.cos(LOFT);
@@ -1700,10 +1899,13 @@ export class ProjectileSystem implements Subsystem {
         theta = LOFT;
       } else {
         theta = this.lowRoot(v, dComp, h);
+        solved = hasRoot(v, dComp, h);
       }
     } else {
       theta = this.lowRoot(v, dComp, h);
+      solved = hasRoot(v, dComp, h);
     }
+    if (!solved) this.cNoSolve[kx]++;
 
     /**
      * Everything above is the answer the weapon wants. This is the answer his own wall
@@ -1919,15 +2121,40 @@ export class ProjectileSystem implements Subsystem {
    * small margin so the last few metres of reach are not fired at a 45-degree elevation that
    * lands every shot on the same point.
    *
-   * Memoised because it takes a square root and is asked once per unit per target search.
+   * `dy` is how far the target sits **above** the muzzle, and it is not optional on a siege
+   * map: see `maxRange` and `reachAtHeight`. It is negative for a garrison shooting down, and
+   * that direction lengthens the reach rather than shortening it. **Both** bounds move with
+   * it — the roster's stated reach as well as the physical one — because both are quoted over
+   * level ground and neither means anything against a horizontal distance without it.
+   *
+   * The level case is memoised because it takes a square root and is asked once per unit per
+   * target search; the sloping case is not, because the key would be a float. A sloping ask
+   * is three `sqrt`s and happens once per shot, against the two `hypot`s the caller has
+   * already paid for.
    */
-  private effectiveRange(kind: WeaponKind, rosterRange: number): number {
-    let r = this.rangeCache.get(kind);
-    if (r === undefined) {
-      r = maxRange(kind) * 0.97;
-      this.rangeCache.set(kind, r);
+  private effectiveRange(kind: WeaponKind, rosterRange: number, dy = 0): number {
+    const s = slope(dy);
+    if (s === 0) {
+      let r = this.rangeCache.get(kind);
+      if (r === undefined) {
+        r = maxRange(kind) * 0.97;
+        this.rangeCache.set(kind, r);
+      }
+      return Math.min(rosterRange, r);
     }
-    return Math.min(rosterRange, r);
+    /**
+     * The **roster** range is deliberately not converted, and that was measured rather than
+     * assumed. `missile.range` reads as a physical throw but it is used as an engagement
+     * policy, and at least one line says so in as many words: `punic-levy`'s 30 m carries the
+     * comment "they are thrown *down* … 30 m is short enough that this unit contributes
+     * nothing while the towers are still crossing the open ground and everything once they
+     * are in the ditch". Converting it for the 14.7 m the levy stands above the ditch takes
+     * that bound to 43.1 m and the unit's hits per attempt from **24.6 % to 20.3 %** and its
+     * kills per attempt from 0.90 % to 0.61 %: five javelins a man, spent earlier, at 2.3x the
+     * spread. The physical bound is the one that is a lie about geometry; the roster bound is
+     * a decision.
+     */
+    return Math.min(rosterRange, maxRange(kind, s) * 0.97);
   }
 
   private rangeCache = new Map<WeaponKind, number>();
@@ -2769,6 +2996,11 @@ export class ProjectileSystem implements Subsystem {
         maxRangeM: +maxRange(kind).toFixed(1),
         launched: this.cLaunched[k],
         unreachable: this.cUnreachable[k],
+        // The height half of `unreachable`, both ways round, plus the shots that left with no
+        // ballistic root at all. See `maxRange` and `cRefusedHigh`.
+        refusedTooHigh: this.cRefusedHigh[k],
+        reachedDownhill: this.cReachedDown[k],
+        noSolution: this.cNoSolve[k],
         hitMan: this.cHitMan[k],
         blockedByShield: this.cBlocked[k],
         killed: this.cKilled[k],
@@ -2780,6 +3012,12 @@ export class ProjectileSystem implements Subsystem {
     });
     return {
       kinds,
+      // Every refusal, by how far above the muzzle the man stood and by how far past the
+      // bound he was. See `cRefuseByH`: this is what tells a parapet apart from open ground.
+      refuseHeightEdgesM: [...REFUSE_H_EDGES],
+      refuseByHeight: [...this.cRefuseByH],
+      refuseOverEdges: [...REFUSE_O_EDGES],
+      refuseByOver: [...this.cRefuseByOver],
       inFlight: this.liveCount,
       spent: this.stuckCount,
       // Instances actually written per mesh on the last frame. This is the counted answer to
@@ -2936,6 +3174,8 @@ export class ProjectileSystem implements Subsystem {
     this.cKilled.fill(0); this.cGround.fill(0); this.cMasonry.fill(0);
     this.cDamage.fill(0); this.cMiss.fill(0); this.cMissN.fill(0);
     this.cUnreachable.fill(0);
+    this.cRefusedHigh.fill(0); this.cReachedDown.fill(0); this.cNoSolve.fill(0);
+    this.cRefuseByH.fill(0); this.cRefuseByOver.fill(0);
     this.cRefusedLane.fill(0); this.cRefusedMelee = 0;
     this.masonryHits = 0;
   }
