@@ -5,24 +5,24 @@
     "animals": 32,
     "trees": 5128,
     "clearance": 77.6,
-    "x": -149.07,
-    "z": -133.49,
+    "x": -149.33,
+    "z": -133.47,
     "y": 11.6,
-    "facing": -1.524,
+    "facing": -1.5115,
     "simTime": 24.4
   },
   "alive": {
     "ele": 9,
     "eleVis": true,
     "state": 0,
-    "animTime": 0.959,
+    "animTime": 0.142,
     "eleDeath": 0,
     "clip": 2,
     "crewNear": 7,
-    "crewLowestDy": 2.18,
+    "crewLowestDy": 2.15,
     "turnDeg": 0,
-    "x": -150.488,
-    "z": -133.386,
+    "x": -151.131,
+    "z": -133.334,
     "calls": 98
   },
   "fall": [
@@ -31,15 +31,15 @@
       "ele": 9,
       "eleVis": true,
       "state": 10,
-      "animTime": 0.959,
-      "eleDeath": 0,
-      "clip": 2,
+      "animTime": 0.034,
+      "eleDeath": 0.003,
+      "clip": 4,
       "crewNear": 7,
-      "crewLowestDy": 2.18,
+      "crewLowestDy": 2.17,
       "turnDeg": 0,
-      "x": -150.488,
-      "z": -133.386,
-      "calls": 98,
+      "x": -151.131,
+      "z": -133.288,
+      "calls": 99,
       "slid": 0
     },
     {
@@ -47,16 +47,16 @@
       "ele": 9,
       "eleVis": true,
       "state": 10,
-      "animTime": 0.477,
-      "eleDeath": 0.176,
+      "animTime": 0.545,
+      "eleDeath": 0.195,
       "clip": 4,
       "crewNear": 4,
-      "crewLowestDy": 2.2,
+      "crewLowestDy": 2.18,
       "turnDeg": 0,
-      "x": -150.488,
-      "z": -132.733,
+      "x": -151.131,
+      "z": -132.588,
       "calls": 99,
-      "slid": 0.65
+      "slid": 0.7
     },
     {
       "t": 0.5,
@@ -64,15 +64,15 @@
       "eleVis": true,
       "state": 11,
       "animTime": 1,
-      "eleDeath": 0.435,
+      "eleDeath": 0.463,
       "clip": 4,
       "crewNear": 4,
-      "crewLowestDy": 0.78,
+      "crewLowestDy": 0.37,
       "turnDeg": 0,
-      "x": -150.488,
-      "z": -131.986,
+      "x": -151.131,
+      "z": -131.935,
       "calls": 99,
-      "slid": 1.4
+      "slid": 1.35
     },
     {
       "t": 0.9,
@@ -80,31 +80,31 @@
       "eleVis": true,
       "state": 11,
       "animTime": 1,
-      "eleDeath": 0.757,
+      "eleDeath": 0.805,
       "clip": 4,
       "crewNear": 4,
       "crewLowestDy": 0.14,
       "turnDeg": 0,
-      "x": -150.488,
-      "z": -131.986,
+      "x": -151.131,
+      "z": -131.935,
       "calls": 99,
-      "slid": 1.4
+      "slid": 1.35
     },
     {
       "t": 1.3,
-      "ele": 3,
+      "ele": 2,
       "eleVis": true,
       "state": 11,
       "animTime": 1,
       "eleDeath": 1,
       "clip": 4,
       "crewNear": 4,
-      "crewLowestDy": 0.13,
+      "crewLowestDy": 0.14,
       "turnDeg": 0,
-      "x": -150.488,
-      "z": -131.986,
+      "x": -151.131,
+      "z": -131.935,
       "calls": 99,
-      "slid": 1.4
+      "slid": 1.35
     },
     {
       "t": 1.8,
@@ -115,12 +115,12 @@
       "eleDeath": 1,
       "clip": 4,
       "crewNear": 4,
-      "crewLowestDy": 0.13,
+      "crewLowestDy": 0.14,
       "turnDeg": 0,
-      "x": -150.488,
-      "z": -131.986,
+      "x": -151.131,
+      "z": -131.935,
       "calls": 98,
-      "slid": 1.4
+      "slid": 1.35
     },
     {
       "t": 2.6,
@@ -131,12 +131,12 @@
       "eleDeath": 1,
       "clip": 4,
       "crewNear": 4,
-      "crewLowestDy": 0.13,
+      "crewLowestDy": 0.14,
       "turnDeg": 0,
-      "x": -150.488,
-      "z": -131.986,
+      "x": -151.131,
+      "z": -131.935,
       "calls": 98,
-      "slid": 1.4
+      "slid": 1.35
     },
     {
       "t": 4,
@@ -147,19 +147,19 @@
       "eleDeath": 1,
       "clip": 4,
       "crewNear": 4,
-      "crewLowestDy": 0.13,
+      "crewLowestDy": 0.14,
       "turnDeg": 0,
-      "x": -150.488,
-      "z": -131.986,
+      "x": -151.131,
+      "z": -131.935,
       "calls": 99,
-      "slid": 1.4
+      "slid": 1.35
     }
   ],
   "crew": [
     {
       "along": -0.73,
       "side": -3.2,
-      "dy": 0.13,
+      "dy": 0.14,
       "tipped": 0.457
     },
     {
@@ -182,13 +182,13 @@
     }
   ],
   "after": {
-    "simTime": 93.2,
+    "simTime": 93.6,
     "carcasses": 1,
     "victimState": 11,
     "victimMoved": null,
-    "x": -150.49,
-    "z": -131.99,
-    "driftFromDeath": 2.066
+    "x": -151.13,
+    "z": -131.93,
+    "driftFromDeath": 2.369
   },
   "draws": [
     {
@@ -200,8 +200,8 @@
       "restored": 97,
       "elephantCost": 5,
       "meshHiddenInOffArm": true,
-      "trisWith": 2910698,
-      "trisWithout": 2895613
+      "trisWith": 2902547,
+      "trisWithout": 2887582
     },
     {
       "camera": "shoulder",
@@ -212,8 +212,8 @@
       "restored": 102,
       "elephantCost": 5,
       "meshHiddenInOffArm": true,
-      "trisWith": 3159001,
-      "trisWithout": 3161826
+      "trisWith": 2973278,
+      "trisWithout": 2958313
     },
     {
       "camera": "field",
@@ -224,218 +224,218 @@
       "restored": 116,
       "elephantCost": 5,
       "meshHiddenInOffArm": true,
-      "trisWith": 15235188,
-      "trisWithout": 15204785
+      "trisWith": 15050029,
+      "trisWithout": 15017237
     },
     {
       "camera": "strategic",
       "zoom": 0.74,
-      "animalsInFrame": 5,
+      "animalsInFrame": 2,
       "withAnimals": 102,
       "withoutAnimals": 97,
       "restored": 102,
       "elephantCost": 5,
       "meshHiddenInOffArm": true,
-      "trisWith": 8340816,
-      "trisWithout": 8265991
+      "trisWith": 8268042,
+      "trisWithout": 8238112
     }
   ],
   "march": {
     "foot": [
       {
         "foot": 19.164,
-        "mount": 33.578,
+        "mount": 35.302,
         "nearest": 19.164,
         "inside": 0,
         "within5": 0,
         "mounted5": 0,
-        "simTime": 94.7
+        "simTime": 95.4
       },
       {
-        "foot": 17.728,
-        "mount": 35.371,
-        "nearest": 17.728,
+        "foot": 17.623,
+        "mount": 34.459,
+        "nearest": 17.623,
         "inside": 0,
         "within5": 0,
         "mounted5": 0,
-        "simTime": 97.7
+        "simTime": 98.4
       },
       {
-        "foot": 15.882,
-        "mount": 21.563,
-        "nearest": 15.882,
+        "foot": 13.392,
+        "mount": 24.854,
+        "nearest": 13.392,
         "inside": 0,
         "within5": 0,
         "mounted5": 0,
-        "simTime": 100.9
+        "simTime": 101.6
       },
       {
-        "foot": 13.182,
-        "mount": 23.85,
-        "nearest": 13.182,
+        "foot": 8.379,
+        "mount": 29.368,
+        "nearest": 8.379,
         "inside": 0,
         "within5": 0,
         "mounted5": 0,
-        "simTime": 104.2
+        "simTime": 104.9
       },
       {
-        "foot": 10.697,
-        "mount": 25.996,
-        "nearest": 10.697,
-        "inside": 0,
-        "within5": 0,
-        "mounted5": 0,
-        "simTime": 107.4
-      },
-      {
-        "foot": 6.927,
-        "mount": 26.214,
-        "nearest": 6.927,
-        "inside": 0,
-        "within5": 0,
-        "mounted5": 0,
-        "simTime": 112.3
-      },
-      {
-        "foot": 3.646,
-        "mount": 26.214,
-        "nearest": 3.646,
+        "foot": 3.398,
+        "mount": 35.18,
+        "nearest": 3.398,
         "inside": 0,
         "within5": 9,
         "mounted5": 0,
-        "simTime": 116.5
+        "simTime": 108.1
       },
       {
-        "foot": -0.026,
-        "mount": 26.214,
-        "nearest": -0.026,
-        "inside": 4,
-        "within5": 52,
-        "mounted5": 0,
-        "simTime": 122.6
-      },
-      {
-        "foot": -0.025,
-        "mount": 26.214,
-        "nearest": -0.025,
-        "inside": 11,
-        "within5": 124,
-        "mounted5": 0,
-        "simTime": 128.8
-      },
-      {
-        "foot": -0.026,
-        "mount": 26.214,
-        "nearest": -0.026,
+        "foot": -0.051,
+        "mount": 47.798,
+        "nearest": -0.051,
         "inside": 8,
-        "within5": 180,
+        "within5": 72,
         "mounted5": 0,
-        "simTime": 137
+        "simTime": 113
+      },
+      {
+        "foot": -0.052,
+        "mount": 49.463,
+        "nearest": -0.052,
+        "inside": 9,
+        "within5": 103,
+        "mounted5": 0,
+        "simTime": 117.3
+      },
+      {
+        "foot": -0.024,
+        "mount": 61.731,
+        "nearest": -0.024,
+        "inside": 2,
+        "within5": 33,
+        "mounted5": 0,
+        "simTime": 123.1
+      },
+      {
+        "foot": 4.88,
+        "mount": 73.706,
+        "nearest": 4.88,
+        "inside": 0,
+        "within5": 1,
+        "mounted5": 0,
+        "simTime": 129.4
+      },
+      {
+        "foot": 17.432,
+        "mount": 73.706,
+        "nearest": 17.432,
+        "inside": 0,
+        "within5": 0,
+        "mounted5": 0,
+        "simTime": 137.6
       }
     ],
     "horse": [
       {
-        "foot": 57.62,
+        "foot": 51.846,
         "mount": 18.551,
         "nearest": 18.551,
         "inside": 0,
         "within5": 0,
         "mounted5": 0,
-        "simTime": 137.8
+        "simTime": 138.1
       },
       {
-        "foot": 57.62,
-        "mount": 17.329,
-        "nearest": 17.329,
+        "foot": 51.821,
+        "mount": 20.156,
+        "nearest": 20.156,
         "inside": 0,
         "within5": 0,
         "mounted5": 0,
-        "simTime": 140.8
+        "simTime": 141.1
       },
       {
-        "foot": 57.622,
-        "mount": 2.98,
-        "nearest": 2.98,
+        "foot": 51.747,
+        "mount": 10.317,
+        "nearest": 10.317,
+        "inside": 0,
+        "within5": 0,
+        "mounted5": 0,
+        "simTime": 144.3
+      },
+      {
+        "foot": 51.823,
+        "mount": 1.935,
+        "nearest": 1.935,
         "inside": 0,
         "within5": 5,
         "mounted5": 5,
-        "simTime": 144
+        "simTime": 147.5
       },
       {
-        "foot": 57.618,
-        "mount": 0.047,
-        "nearest": 0.047,
-        "inside": 0,
-        "within5": 4,
-        "mounted5": 4,
-        "simTime": 147.3
-      },
-      {
-        "foot": 57.627,
-        "mount": -0.179,
-        "nearest": -0.179,
+        "foot": 51.825,
+        "mount": -0.183,
+        "nearest": -0.183,
         "inside": 3,
-        "within5": 12,
-        "mounted5": 12,
-        "simTime": 150.5
+        "within5": 28,
+        "mounted5": 28,
+        "simTime": 150.8
       },
       {
-        "foot": 57.657,
-        "mount": 6.5,
-        "nearest": 6.5,
+        "foot": 51.825,
+        "mount": -0.169,
+        "nearest": -0.169,
+        "inside": 1,
+        "within5": 2,
+        "mounted5": 2,
+        "simTime": 155.8
+      },
+      {
+        "foot": 51.825,
+        "mount": 9.249,
+        "nearest": 9.249,
         "inside": 0,
         "within5": 0,
         "mounted5": 0,
-        "simTime": 155.5
+        "simTime": 160
       },
       {
-        "foot": 57.674,
-        "mount": -0.161,
-        "nearest": -0.161,
-        "inside": 5,
-        "within5": 14,
-        "mounted5": 14,
-        "simTime": 159.8
-      },
-      {
-        "foot": 57.649,
-        "mount": -0.195,
-        "nearest": -0.195,
-        "inside": 4,
-        "within5": 13,
-        "mounted5": 13,
+        "foot": 51.825,
+        "mount": 9.249,
+        "nearest": 9.249,
+        "inside": 0,
+        "within5": 0,
+        "mounted5": 0,
         "simTime": 165.9
       },
       {
-        "foot": 57.682,
-        "mount": -0.224,
-        "nearest": -0.224,
-        "inside": 4,
-        "within5": 13,
-        "mounted5": 13,
+        "foot": 49.969,
+        "mount": 9.249,
+        "nearest": 9.249,
+        "inside": 0,
+        "within5": 0,
+        "mounted5": 0,
         "simTime": 172.1
       },
       {
-        "foot": 57.57,
-        "mount": -0.132,
-        "nearest": -0.132,
-        "inside": 3,
-        "within5": 13,
-        "mounted5": 13,
+        "foot": 34.461,
+        "mount": 8.802,
+        "nearest": 8.802,
+        "inside": 0,
+        "within5": 0,
+        "mounted5": 0,
         "simTime": 180.3
       }
     ]
   },
   "partVerdict": {
     "foot": {
-      "worstInside": 11,
-      "closest": -0.026,
-      "passed": 180
+      "worstInside": 9,
+      "closest": -0.052,
+      "passed": 103
     },
     "horse": {
-      "worstInside": 5,
-      "closest": -0.224,
-      "passed": 14
+      "worstInside": 3,
+      "closest": -0.183,
+      "passed": 28
     }
   },
   "part": {
@@ -446,7 +446,7 @@
     },
     "horse": {
       "unit": "12",
-      "alive": 35,
+      "alive": 59,
       "mounted": true
     }
   }
