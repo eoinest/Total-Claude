@@ -1,16 +1,23 @@
 import * as THREE from 'three';
-import { Faction, type UnitTypeDef } from '../sim/types';
+import { Clip, Faction, type UnitTypeDef } from '../sim/types';
 import { bakeAnimTexture, type AnimTexture } from '../anim/animTexture';
 import {
-  HORSE_CLIP_SET, HORSE_GAIT_LADDER, MAN_CLIP_SET, bakePointTrack, meanPointOverClip,
+  FOOT_CLIP_MAP, HORSE_CLIP_SET, HORSE_GAIT_LADDER, MAN_CLIP_SET, bakePointTrack,
+  meanPointOverClip,
 } from '../anim/clips';
+import { ELEPHANT_CLIP, ELEPHANT_CLIP_SET } from '../anim/elephantClips';
 import { MAN_RIG, MB, restPos } from '../anim/rig';
 import { makeSoldierMaterial, type PoseVaryBones, type SoldierMaterialSet } from '../anim/skinShader';
 import { EMBLEM_COLS, EMBLEM_ORIGIN, EMBLEM_TILE, buildSoldierAtlas, type SoldierAtlas } from '../units/atlas';
 import {
+  ELEPHANT_GROUND_LIFT, ELEPHANT_MASK_LO, HOWDAH, HOWDAH_BONES, HOWDAH_STATIONS,
+  MAHOUT_BONES, MAHOUT_SEAT, buildElephantGeometry,
+} from '../units/elephantMesh';
+import {
   HORSE_GROUND_LIFT, HORSE_MASK_LO, SADDLE_BONES, SADDLE_SEAT, buildHorseGeometry,
 } from '../units/horseMesh';
-import { Piece, emptyKit, mounted, resolveKit, type ResolvedKit } from '../units/kit';
+import { Piece, emptyKit, mounted, resolveKit, ridesElephant, type ResolvedKit } from '../units/kit';
+import { hash01 } from '../util/rand';
 import { buildSoldierGeometry, type Lod } from '../units/soldierMesh';
 import {
   buildImpostorGeometry, makeImpostorMaterial, renderImpostorAtlas, type ImpostorAtlas,
@@ -74,6 +81,31 @@ const MAN_POSE_VARY: PoseVaryBones = {
 /** Rider clearance above the saddle, metres. Matches `SEAT_RISE` in the render system. */
 const SEAT_RISE = 0.07;
 
+/**
+ * The tower crew's fall, restated from `UnitRenderSystem.ts:296-336`.
+ *
+ * Six module-private constants there, and every one of them is load-bearing for what a
+ * player sees for the rest of a battle — a dead elephant and four men lying beside it. A
+ * viewer that guessed them would show a different collapse from the one the game runs, which
+ * is the failure mode this whole deck exists to prevent, so they are copied exactly and the
+ * accompanying report asks for the export. If they ever drift, the symptom is visible in one
+ * frame: a crewman standing in mid-air, or landing inside the carcass.
+ *
+ * `CREW_FALL_SIDE` in particular is hard-coupled to the death clip's own +78 degree roll.
+ */
+const CREW_THROW_START = 0.28;
+const CREW_THROW_LEN = 0.22;
+const CREW_THROW_ARC = 0.55;
+const CREW_LAND_OUT = 1.95;
+const CREW_FALL_SIDE = 1;
+const CREW_GROUND_LIFT = 0.15;
+
+/** Scratch for the thrown crew's lie-down quaternion — four per animal per frame. */
+const qCrew = new THREE.Quaternion();
+const qCrewTip = new THREE.Quaternion();
+const vCrewAxis = new THREE.Vector3();
+const AXIS_UP = new THREE.Vector3(0, 1, 0);
+
 /** Playback facts for one packed clip, read once so the per-frame write does no lookups. */
 export interface ClipFacts {
   readonly index: number;
@@ -122,6 +154,54 @@ export interface ManPose {
   maskFilterLo: number;
   maskFilterHi: number;
   maskFilterCoarse: number;
+  /**
+   * Full-body orientation, for a man who is not standing up — `iQuat` in the shader.
+   *
+   * Zero or absent is a living man. Anything else sends the shader down the corpse branch,
+   * which is what a crewman thrown off a dying elephant needs and what the viewer had no way
+   * of expressing before: every man it could draw was upright by construction.
+   */
+  quat?: readonly [number, number, number, number];
+}
+
+/** One war elephant to draw. The animal only; its crew come back from `elephantCrew`. */
+export interface ElephantPose {
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  /** Index into `ELEPHANT_CLIP_SET` — see `elephantFacts`. */
+  clip: number;
+  phase: number;
+  /** Stable 0..1 hash: size, caparison dye and the crew's own seeds all come from it. */
+  variant: number;
+  /**
+   * How far through the collapse, 0..1.
+   *
+   * In the game this is `eleDeath[i]`, advanced on the death clip's own duration, so it and
+   * the animal's playhead are the same number while it is dying. Passing it separately keeps
+   * the viewer able to scrub a carcass with the clip held at its last frame.
+   */
+  fall: number;
+}
+
+/** Where one crewman goes this frame — a station on the animal, or a man in the air. */
+export interface CrewPlacement {
+  x: number;
+  y: number;
+  z: number;
+  facing: number;
+  scale: number;
+  /** His own 0..1 hash, which is what `resolveKit` reads. */
+  variant: number;
+  /** Index into `MAN_CLIP_SET`, already mapped out of the `Clip` enum. */
+  clip: number;
+  /** Playhead for a one-shot fall, or undefined to run on the shared clock. */
+  phase?: number;
+  quat?: [number, number, number, number];
+  mahout: boolean;
+  /** Off the animal and in the air or on the ground. */
+  thrown: boolean;
 }
 
 /**
@@ -179,12 +259,15 @@ export class SoldierRig {
   readonly group = new THREE.Group();
   readonly manFacts: ClipFacts[];
   readonly horseFacts: ClipFacts[];
+  readonly elephantFacts: ClipFacts[];
 
   private readonly atlas: SoldierAtlas;
   private readonly manAnim: AnimTexture;
   private readonly horseAnim: AnimTexture;
+  private readonly elephantAnim: AnimTexture;
   private readonly manMat: SoldierMaterialSet;
   private readonly horseMat: SoldierMaterialSet;
+  private readonly elephantMat: SoldierMaterialSet;
   private readonly baseParams: THREE.MeshStandardMaterialParameters;
 
   /** Lazily built, keyed `faction:lod` — so a faction added to the roster just works. */
@@ -193,6 +276,9 @@ export class SoldierRig {
   private readonly triCache = new Map<string, Map<number, number>>();
   private readonly headTrack = new Map<Faction, Float32Array>();
   private readonly horseTiers = new Map<number, Tier>();
+  /** One tier, no LOD chain — `elephantMesh.ts` explains why, and the viewer must not invent one. */
+  private elephantTierCache?: Tier;
+  private elephantBox?: { cx: number; cy: number; cz: number; hw: number; hh: number; hd: number };
   private impostorTier?: Tier;
   private impostors?: ImpostorAtlas;
   private impostorMat?: THREE.MeshBasicMaterial;
@@ -202,6 +288,9 @@ export class SoldierRig {
   private readonly saddleTrack: Float32Array;
   private readonly riderSeatY: Float32Array;
   private readonly riderSeatZ: Float32Array;
+  /** Animated howdah floor and mahout seat, three floats per elephant animation row. */
+  private readonly howdahTrack: Float32Array;
+  private readonly mahoutTrack: Float32Array;
 
   private readonly kitScratch: ResolvedKit = emptyKit();
   private elapsed = 0;
@@ -221,8 +310,10 @@ export class SoldierRig {
     this.atlas = buildSoldierAtlas(anisotropy);
     this.manAnim = bakeAnimTexture(MAN_CLIP_SET, 'man');
     this.horseAnim = bakeAnimTexture(HORSE_CLIP_SET, 'horse');
+    this.elephantAnim = bakeAnimTexture(ELEPHANT_CLIP_SET, 'elephant');
     this.manFacts = factsOf(MAN_CLIP_SET);
     this.horseFacts = factsOf(HORSE_CLIP_SET);
+    this.elephantFacts = factsOf(ELEPHANT_CLIP_SET);
 
     // Copied from `UnitRenderSystem.ts:513-556`. The numbers carry measurements in their
     // comments there; changing any of them here would make the viewer show a man the game
@@ -257,10 +348,43 @@ export class SoldierRig {
       emblemCols: EMBLEM_COLS,
       leanHeight: 1.7,
     });
+    // The elephant gets its own material because it gets its own animation texture: the rig
+    // has 31 bones against the horse's 29 and none of the clips are shared. Same program,
+    // same uniforms, one more texture — which is exactly what the game does at
+    // `UnitRenderSystem.ts:786`, and the reason the animal is one draw call whatever it is
+    // doing. `leanHeight` is the game's 3.0: four tonnes does not bank into a turn.
+    this.elephantMat = makeSoldierMaterial(this.baseParams, {
+      anim: this.elephantAnim,
+      emblemOrigin: EMBLEM_ORIGIN,
+      emblemTile: EMBLEM_TILE,
+      emblemCols: EMBLEM_COLS,
+      leanHeight: 3.0,
+    });
     // Distinct tags, because `makeSoldierMaterial` keys its program cache on the rig flag
     // alone and two chained materials sharing a key would get each other's shader.
     chainPartsDebug(this.manMat.material, 'man');
     chainPartsDebug(this.horseMat.material, 'horse');
+    chainPartsDebug(this.elephantMat.material, 'elephant');
+
+    /**
+     * Where the howdah floor and the mahout's seat are on every frame, including the death
+     * clip's.
+     *
+     * The same decomposition the saddle uses, and it exists for the same recorded reason: a
+     * rider's boots were once placed *on* the saddle because a rest-pose offset was added to
+     * the ground rather than to the mount, leaving him a measured 0.95 m in the air. Here it
+     * is four men on a platform three metres up, so the error would be four times as visible
+     * — and the whole point of a carcass view is that these two tracks carry the crew *down*
+     * with the animal before they let go.
+     */
+    this.howdahTrack = bakePointTrack(
+      ELEPHANT_CLIP_SET, [0, HOWDAH.y, HOWDAH.z],
+      HOWDAH_BONES.bone0, HOWDAH_BONES.bone1, HOWDAH_BONES.weight0
+    );
+    this.mahoutTrack = bakePointTrack(
+      ELEPHANT_CLIP_SET, [0, MAHOUT_SEAT.y, MAHOUT_SEAT.z],
+      MAHOUT_BONES.bone0, MAHOUT_BONES.bone1, MAHOUT_BONES.weight0
+    );
 
     this.saddleTrack = bakePointTrack(
       HORSE_CLIP_SET,
@@ -384,6 +508,47 @@ export class SoldierRig {
       this.horseTiers.set(lod, t);
     }
     return t;
+  }
+
+  private elephantTier(): Tier {
+    if (!this.elephantTierCache) {
+      this.elephantTierCache = this.makeTier(
+        buildElephantGeometry(), this.elephantMat, 'viewer-war-elephants'
+      );
+    }
+    return this.elephantTierCache;
+  }
+
+  elephantTriangles(): number {
+    return this.elephantTier().tris;
+  }
+
+  /**
+   * The animal's rest-pose extents, measured off the geometry rather than written down.
+   *
+   * A framing constant for a subject this size is a constant that goes stale the first time
+   * anyone re-authors the tower — and the failure is silent, because a camera fitted to the
+   * wrong box still produces a picture. Reading the buffer costs one pass at first use.
+   */
+  elephantBounds(): { cx: number; cy: number; cz: number; hw: number; hh: number; hd: number } {
+    if (this.elephantBox) return this.elephantBox;
+    const pos = this.elephantTier().geometry.getAttribute('position');
+    let x0 = Infinity; let y0 = Infinity; let z0 = Infinity;
+    let x1 = -Infinity; let y1 = -Infinity; let z1 = -Infinity;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i); const y = pos.getY(i); const z = pos.getZ(i);
+      if (x < x0) x0 = x; if (y < y0) y0 = y; if (z < z0) z0 = z;
+      if (x > x1) x1 = x; if (y > y1) y1 = y; if (z > z1) z1 = z;
+    }
+    this.elephantBox = {
+      cx: (x0 + x1) / 2,
+      cy: (y0 + y1) / 2 + ELEPHANT_GROUND_LIFT,
+      cz: (z0 + z1) / 2,
+      hw: Math.max(0.5, (x1 - x0) / 2),
+      hh: Math.max(0.5, (y1 - y0) / 2),
+      hd: Math.max(0.5, (z1 - z0) / 2),
+    };
+    return this.elephantBox;
   }
 
   /**
@@ -595,6 +760,7 @@ export class SoldierRig {
     this.drawn = 0;
     for (const t of this.manTiers.values()) t.count = 0;
     for (const t of this.horseTiers.values()) t.count = 0;
+    if (this.elephantTierCache) this.elephantTierCache.count = 0;
     if (this.impostorTier) this.impostorTier.count = 0;
   }
 
@@ -648,9 +814,14 @@ export class SoldierRig {
     t.buf.orient[o + 2] = m.lean;
     t.buf.orient[o + 3] = m.grime;
 
-    // A living man. Non-zero here would send the shader down the corpse branch and apply a
-    // body-wide rotation plus a settle squash.
-    t.buf.quat[o] = 0; t.buf.quat[o + 1] = 0; t.buf.quat[o + 2] = 0; t.buf.quat[o + 3] = 0;
+    // Zero is a living man. Non-zero sends the shader down the corpse branch and applies a
+    // body-wide rotation plus a settle squash — which is what a crewman thrown off a dying
+    // elephant needs, and the reason this is no longer hard-wired to zero.
+    const q = m.quat;
+    t.buf.quat[o] = q ? q[0] : 0;
+    t.buf.quat[o + 1] = q ? q[1] : 0;
+    t.buf.quat[o + 2] = q ? q[2] : 0;
+    t.buf.quat[o + 3] = q ? q[3] : 0;
 
     const k = n * 2;
     if (m.lod === 2) {
@@ -764,6 +935,260 @@ export class SoldierRig {
         y + this.riderSeatY[riderClip] * scale,
         z + Math.cos(h.yaw) * this.riderSeatZ[riderClip] * scale,
       ],
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // War elephant
+  // -------------------------------------------------------------------------
+
+  /**
+   * The animal: one instance, one geometry, no LOD chain.
+   *
+   * A transcription of `UnitRenderSystem.pushElephant`, down to the caparison dye bands and
+   * the polish on the chamfron dropping from 1.78 to 1.35 once it is going down. Two numbers
+   * that look decorative and are not: the size draw is +/-10 % off the same stable hash, so a
+   * line of animals is visibly not all one size; and the *dying* flag is the only appearance
+   * difference between a live elephant and a carcass beyond the pose, so the carcass view
+   * would flatter the model if it were dropped.
+   */
+  pushElephant(e: ElephantPose): void {
+    const t = this.elephantTier();
+    const n = t.count;
+    if (n >= CAP) return;
+
+    const facts = this.elephantFacts[e.clip] ?? this.elephantFacts[ELEPHANT_CLIP.idle];
+    this.writeAnim(t, n, facts, e.phase, e.variant);
+
+    t.buf.pos[n * 3] = e.x;
+    t.buf.pos[n * 3 + 1] = e.y + ELEPHANT_GROUND_LIFT;
+    t.buf.pos[n * 3 + 2] = e.z;
+
+    const o = n * 4;
+    t.buf.orient[o] = e.yaw;
+    // Bulls and cows in one herd, a fifth either side of full size.
+    t.buf.orient[o + 1] = this.elephantScale(e.variant);
+    t.buf.orient[o + 2] = 0;
+    t.buf.orient[o + 3] = 0;
+    t.buf.quat[o] = 0; t.buf.quat[o + 1] = 0; t.buf.quat[o + 2] = 0; t.buf.quat[o + 3] = 0;
+
+    t.buf.kit[n * 2] = ELEPHANT_MASK_LO & this.elephantMaskFilter;
+    t.buf.kit[n * 2 + 1] = 0;
+
+    // The caparison under the tower is the one dyed surface on the animal: Punic crimson and
+    // purple, varied per animal because a mercenary army's cloth came from whatever lots the
+    // quartermaster could buy.
+    const v = e.variant;
+    const cloth = v < 0.34 ? [0.20, 0.030, 0.055]
+      : v < 0.68 ? [0.13, 0.022, 0.10] : [0.16, 0.055, 0.032];
+    t.buf.col0[o] = cloth[0];
+    t.buf.col0[o + 1] = cloth[1];
+    t.buf.col0[o + 2] = cloth[2];
+    t.buf.col0[o + 3] = 0;
+    t.buf.col1[o] = 0.5; t.buf.col1[o + 1] = 0.5; t.buf.col1[o + 2] = 0.5;
+    // A dead animal's kit stops being maintained.
+    t.buf.col1[o + 3] = e.fall > 0 ? 1.35 : 1.78;
+
+    // Only the three groups actually admitted rasterise; the rest collapse in the shader.
+    const per = this.elephantPieceTriangles();
+    for (let i = 0; i < 3; i++) if (t.buf.kit[n * 2] & (1 << i)) this.drawn += per.get(i) ?? 0;
+
+    t.count = n + 1;
+  }
+
+  /** +/-10 % off the stable hash, exactly as the render system draws it. */
+  elephantScale(variant: number): number {
+    return 0.9 + variant * 0.2;
+  }
+
+  /**
+   * The animal's own starting phase — salt 45, the same one `advanceElephant` uses.
+   *
+   * Sixteen four-tonne animals stepping in time was the single most-cited defect in the last
+   * deck, named by three blind critics without prompting, and the fix in the render system is
+   * this one hash. A rank view that started them all at zero would show a defect the game does
+   * not have, which is the mirror image of the failure this viewer exists to prevent.
+   */
+  elephantPhaseOff(variant: number): number {
+    return hash01(Math.floor(variant * 16777216), 45);
+  }
+
+  /** Triangles per `ElephantPiece`, counted off the index buffer like the man's. */
+  elephantPieceTriangles(): Map<number, number> {
+    let m = this.triCache.get('elephant');
+    if (m) return m;
+    m = new Map<number, number>();
+    const geo = this.elephantTier().geometry;
+    const idx = geo.getIndex();
+    const pid = geo.getAttribute('aPieceTint');
+    if (idx && pid) {
+      for (let t = 0; t < idx.count; t += 3) {
+        const id = Math.round(pid.getX(idx.getX(t)));
+        m.set(id, (m.get(id) ?? 0) + 1);
+      }
+    }
+    this.triCache.set('elephant', m);
+    return m;
+  }
+
+  /** Bitwise AND on `ELEPHANT_MASK_LO`, so hide, barding and tower can be shown separately. */
+  elephantMaskFilter = -1;
+
+  /**
+   * Mean Z of each authored group in the mesh's own bind frame — which way the animal faces.
+   *
+   * Not a curiosity. `framePlate`'s azimuth convention has been got wrong three times on the
+   * man, every time by reasoning about it rather than photographing it, and the recorded
+   * invariant is a *measurement*. This is the cheap half of it: the barding is the chamfron
+   * over the forehead plus the bib across the chest, so if its centroid is at +Z the animal's
+   * front is +Z, and a pixel sweep has to agree. An elephant's forward axis is not a man's by
+   * assumption; it is only the same because this says so.
+   */
+  elephantGroupZ(): { hide: number; barding: number; tower: number } {
+    const geo = this.elephantTier().geometry;
+    const pos = geo.getAttribute('position');
+    const pid = geo.getAttribute('aPieceTint');
+    const sum = [0, 0, 0];
+    const n = [0, 0, 0];
+    for (let i = 0; i < pos.count; i++) {
+      const id = Math.round(pid.getX(i));
+      if (id < 0 || id > 2) continue;
+      sum[id] += pos.getZ(i);
+      n[id]++;
+    }
+    return {
+      hide: n[0] ? sum[0] / n[0] : 0,
+      barding: n[1] ? sum[1] / n[1] : 0,
+      tower: n[2] ? sum[2] / n[2] : 0,
+    };
+  }
+
+  /**
+   * Where the howdah floor and the mahout's seat are on a given frame, in the animal's own
+   * frame and at its own size. The two numbers a crew placement is built from.
+   */
+  howdahAt(clip: number, phase: number, variant: number): {
+    floorY: number; floorZ: number; seatY: number; seatZ: number; frame: number; frames: number;
+  } {
+    const facts = this.elephantFacts[clip] ?? this.elephantFacts[ELEPHANT_CLIP.idle];
+    const frame = Math.min(facts.frames - 1, Math.max(0, Math.floor(phase * facts.frames)));
+    const row = (facts.rowBase + frame) * 3;
+    const scale = this.elephantScale(variant);
+    return {
+      floorY: this.howdahTrack[row + 1] * scale,
+      floorZ: this.howdahTrack[row + 2] * scale,
+      seatY: this.mahoutTrack[row + 1] * scale,
+      seatZ: this.mahoutTrack[row + 2] * scale,
+      frame,
+      frames: facts.frames,
+    };
+  }
+
+  /**
+   * The mahout on the neck and the three men in the tower — where each one is this frame.
+   *
+   * Returned rather than pushed, because the crew are *not* elephant geometry: they are
+   * written into the Carthaginian soldier tier that is already being drawn, which is why four
+   * men on an animal cost no draw call. Splitting the solve from the emit is also what lets
+   * the viewer hide them, or hide the animal and leave them, and see which of the two is
+   * wrong.
+   *
+   * `state` picks the man clip the way the game does: a crewman throws when the unit is
+   * shooting, braces once the animal is going down, and the mahout never fights — he is
+   * holding a goad in both hands and steering four tonnes.
+   */
+  elephantCrew(
+    e: ElephantPose, shooting: boolean, groundY = 0
+  ): CrewPlacement[] {
+    const scale = this.elephantScale(e.variant);
+    const sinF = Math.sin(e.yaw);
+    const cosF = Math.cos(e.yaw);
+    const at = this.howdahAt(e.clip, e.phase, e.variant);
+    const y = e.y + ELEPHANT_GROUND_LIFT;
+
+    const crewClip = e.fall > 0
+      ? Clip.IdleBrace : shooting ? Clip.ThrowPilum : Clip.IdleAlert;
+    // 0 while they are still on the animal, rising to 1 as each is thrown clear.
+    const throwT = e.fall <= CREW_THROW_START
+      ? 0
+      : Math.min(1, (e.fall - CREW_THROW_START) / CREW_THROW_LEN);
+
+    const out: CrewPlacement[] = [];
+    for (let k = 0; k < HOWDAH_STATIONS.length + 1; k++) {
+      const mahout = k === HOWDAH_STATIONS.length;
+      const st = mahout ? { x: 0, z: 0, turn: 0 } : HOWDAH_STATIONS[k];
+      // Stable per man: the animal's own hash, salted by station.
+      const seed = Math.floor(e.variant * 16777216) + k * 7919;
+      const jx = (hash01(seed, 61) - 0.5) * 0.14;
+      const jz = (hash01(seed, 62) - 0.5) * 0.12;
+      const lx = (st.x + jx) * scale;
+      const lz = (mahout ? at.seatZ : at.floorZ + st.z + jz) * scale;
+      const my = y + (mahout ? at.seatY - 0.86 * scale : at.floorY);
+      // The men are their own size, not the animal's: a big elephant is what makes the men on
+      // it look small, and scaling them by their mount would undo exactly that.
+      const manScale = (mahout ? 0.97 : 1.0) * (0.96 + hash01(seed, 63) * 0.09);
+      const wx = e.x + lx * cosF + lz * sinF;
+      const wz = e.z - lx * sinF + lz * cosF;
+      const variant = hash01(seed, 3);
+
+      if (throwT <= 0) {
+        out.push({
+          x: wx, y: my, z: wz, facing: e.yaw + st.turn, scale: manScale, variant,
+          clip: FOOT_CLIP_MAP[mahout ? Clip.IdleRelaxed : crewClip],
+          mahout, thrown: false,
+        });
+        continue;
+      }
+      out.push(this.throwCrewman(e, seed, variant, manScale, wx, my, wz, mahout, throwT, groundY));
+    }
+    return out;
+  }
+
+  /**
+   * One crewman pitched off a falling elephant, mid-air or landed.
+   *
+   * The same recipe a man's corpse uses, because that combination is known to sit correctly
+   * on the ground: a death clip held at its last frame, a full-body quaternion that tips him
+   * out of the standing pose, and the ragdoll's own 0.15 m lift. Interpolating the clip phase
+   * and the tip angle together over the throw turns three numbers into a man tumbling out of
+   * a tower, with no second solver.
+   */
+  private throwCrewman(
+    e: ElephantPose,
+    seed: number, variant: number, manScale: number,
+    fromX: number, fromY: number, fromZ: number,
+    mahout: boolean, t: number, groundY: number
+  ): CrewPlacement {
+    const side = CREW_FALL_SIDE * (CREW_LAND_OUT + hash01(seed, 81) * 1.35);
+    const along = mahout ? 1.5 + hash01(seed, 82) * 0.9 : -0.7 + hash01(seed, 82) * 2.4;
+    const sinF = Math.sin(e.yaw);
+    const cosF = Math.cos(e.yaw);
+    const landX = fromX + side * cosF + along * sinF;
+    const landZ = fromZ - side * sinF + along * cosF;
+    const landY = groundY + CREW_GROUND_LIFT;
+
+    const s = t * t * (3 - 2 * t);
+    const x = fromX + (landX - fromX) * s;
+    const z = fromZ + (landZ - fromZ) * s;
+    // A parabola over the straight line, so he clears the animal's back rather than sliding
+    // down it. Zero at both ends by construction.
+    const y = fromY + (landY - fromY) * s + CREW_THROW_ARC * Math.sin(Math.PI * s);
+
+    const outward = e.yaw + (CREW_FALL_SIDE > 0 ? Math.PI / 2 : -Math.PI / 2)
+      + (hash01(seed, 83) - 0.5) * 1.1;
+    qCrew.setFromAxisAngle(AXIS_UP, outward);
+    vCrewAxis.set(Math.cos(outward), 0, -Math.sin(outward));
+    // 96 degrees rolls his shoulder into the ground; a right angle lands him as a plank.
+    qCrewTip.setFromAxisAngle(vCrewAxis, s * 1.676);
+    qCrew.premultiply(qCrewTip);
+
+    const variants = [Clip.DeathSide, Clip.DeathBack, Clip.DeathForward, Clip.DeathKneel];
+    const clip = variants[Math.floor(hash01(seed, 84) * 4) & 3];
+    return {
+      x, y, z, facing: outward, scale: manScale, variant,
+      clip: FOOT_CLIP_MAP[clip], phase: s,
+      quat: [qCrew.x, qCrew.y, qCrew.z, qCrew.w],
+      mahout, thrown: true,
     };
   }
 
@@ -895,6 +1320,7 @@ export class SoldierRig {
     this.elapsed += dt;
     this.manMat.uniforms.uTime.value = this.elapsed;
     this.horseMat.uniforms.uTime.value = this.elapsed;
+    this.elephantMat.uniforms.uTime.value = this.elapsed;
 
     const push = (t: Tier): void => {
       t.geometry.instanceCount = t.count;
@@ -908,6 +1334,7 @@ export class SoldierRig {
     };
     for (const t of this.manTiers.values()) push(t);
     for (const t of this.horseTiers.values()) push(t);
+    if (this.elephantTierCache) push(this.elephantTierCache);
     if (this.impostorTier) push(this.impostorTier);
   }
 
@@ -919,6 +1346,7 @@ export class SoldierRig {
     };
     for (const t of this.manTiers.values()) add(t);
     for (const t of this.horseTiers.values()) add(t);
+    if (this.elephantTierCache) add(this.elephantTierCache);
     if (this.impostorTier) add(this.impostorTier);
     return out;
   }
@@ -941,11 +1369,15 @@ export class SoldierRig {
     for (const t of this.horseTiers.values()) t.geometry.dispose();
     this.manTiers.clear();
     this.horseTiers.clear();
+    this.elephantTierCache?.geometry.dispose();
+    this.elephantTierCache = undefined;
     this.disposeImpostors();
     this.manMat.dispose();
     this.horseMat.dispose();
+    this.elephantMat.dispose();
     this.manAnim.dispose();
     this.horseAnim.dispose();
+    this.elephantAnim.dispose();
     this.atlas.dispose();
     this.group.clear();
   }
@@ -953,3 +1385,13 @@ export class SoldierRig {
 
 /** Whether the roster entry is drawn on a horse. Re-exported so the UI need not import kit. */
 export const isMounted = (def: UnitTypeDef): boolean => mounted(def);
+
+/**
+ * Whether the roster entry is drawn on an *elephant* rather than a horse.
+ *
+ * The distinction the viewer was missing. `war-elephants` is classed `heavy-cavalry` so the
+ * simulation pushes and kills it like a mount, and every branch in the viewer keyed off
+ * `isCavalry` — so it drew a Carthaginian on a bay gelding and reported "soldier mesh + horse
+ * mesh" underneath him. `mountKind` is what actually decides the geometry.
+ */
+export const isElephantUnit = (def: UnitTypeDef): boolean => ridesElephant(def);

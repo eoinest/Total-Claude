@@ -1,5 +1,8 @@
 import * as THREE from 'three';
-import { AGX_GLSL, FS_VERT, HASH_GLSL, SRGB_GLSL } from '../shaders/common.glsl';
+import { FS_VERT } from '../shaders/common.glsl';
+import {
+  MSAA_SAMPLES, TC_FINAL_FRAG, TC_TONE_GRADE_FRAG, tcFinalUniforms, tcToneGradeUniforms,
+} from '../render/PostFX';
 
 /**
  * The game's output chain, brought into the viewer.
@@ -23,92 +26,36 @@ import { AGX_GLSL, FS_VERT, HASH_GLSL, SRGB_GLSL } from '../shaders/common.glsl'
  * milky, low contrast, desaturated. A grader shown one of those frames would have reported a
  * flat, plasticky soldier and been right about the frame and wrong about the model.
  *
- * The transform below is a **mirror of `PostFX.ts:850-985` (tone + grade) and
- * `PostFX.ts:1093-1140` (CAS sharpen + vignette + grain)**, with the same uniform defaults.
- * Mirroring rather than importing is deliberate: `src/render/` belongs to another workstream
- * and this is a dev tool, so a copy that can go stale is a smaller risk than an edit to the
- * shipping renderer. It is worth exporting the two shader bodies from `PostFX` and deleting
- * this duplicate — that is a recommendation in the report, not something done here.
+ * **This class used to carry a hand-copied mirror of `PostFX`'s two shader bodies, and the
+ * copy drifted.** Of the five uniforms they shared, `uGrain` read 0.006 in `PostFX` and 0.016
+ * here — the level measured to leave 0.00 % of a plate reading as a smooth region against a
+ * Rome II reference of 7.09 %, so every isolated-model grade this project ever ran was shot
+ * through a grain the product does not ship. `uSharpen` had the same class of error, mirroring
+ * a default the original overwrites from the quality tier every frame. Both were corrected by
+ * hand and the mirror was left in place; it is now gone. `TC_TONE_GRADE_FRAG`,
+ * `TC_FINAL_FRAG` and the two uniform factories are the shipping renderer's own, imported.
+ * The original argument for copying — that `src/render/` belongs to another workstream —
+ * bought a divergence that cost three rounds of grading, which is the more expensive risk.
  *
- * What is deliberately **not** mirrored: HBAO, contact shadows, aerial perspective, god rays,
+ * Two deliberate departures remain and both are recorded rather than accidental. `uSharpen` is
+ * pulled back to the tier value the game actually runs, and `uTime` is pinned at 0 so a plate
+ * shot twice is the same file. A third is *unfixed and is the largest tonal divergence left*:
+ * `uExposure` is 1 here and `PostFX` drives it from the sky preset, 1.42-5.1 in practice.
+ * Closing it needs a sky, which is the same prerequisite as loading `LightingSystem`.
+ *
+ * What is deliberately **not** brought over: HBAO, contact shadows, aerial perspective, god rays,
  * bloom, depth of field, TAA and SMAA. Those are scene-scale effects with no meaning around
  * one man on an empty disc, and three of them need a depth buffer of a world that is not
  * there. The two that would matter — SMAA and MSAA — are handled by giving the scene target
  * real samples (see `Grade.resize`) rather than by porting a pass.
  */
 
-/** Matches `MSAA_SAMPLES.ultra` in `PostFX.ts:84`. The deck must not be shot at 1 sample. */
-const SAMPLES = 4;
-
-const TONE_FRAG = AGX_GLSL + SRGB_GLSL + HASH_GLSL + /* glsl */ `
-uniform sampler2D tSrc;
-uniform float uExposure;
-uniform vec4 uGrade;        // x S-curve blend, y black point, z shadow sat, w highlight sat
-uniform vec3 uContrast;     // x exponent, y pivot (render units), z veiling pedestal
-uniform vec3 uShadowTint;
-uniform vec3 uHighlightTint;
-uniform vec2 uSplit_disp;   // DISPLAY-referred; see the convention note beside tcLuma
-uniform vec2 uShoulder;     // x knee, y strength
-varying vec2 vUv;
-
-void main() {
-  vec3 hdr = texture2D( tSrc, vUv ).rgb;
-
-  float y0 = max( tcLuma( hdr ), 1e-6 );
-  float y1 = uContrast.y * pow( y0 / uContrast.y, uContrast.x );
-  hdr *= y1 / y0;
-  hdr += uContrast.z;
-
-  vec3 c = tcAgX( hdr, uExposure );
-
-  c = max( vec3( 0.0 ), c - uGrade.y ) / max( 1e-3, 1.0 - uGrade.y );
-  c = mix( c, c * c * ( 3.0 - 2.0 * c ), uGrade.x );
-
-  float l = tcLuma( c );
-  float split = smoothstep( uSplit_disp.x, uSplit_disp.y, tcLinearToSRGB( vec3( l ) ).r );
-  c *= mix( uShadowTint, uHighlightTint, split );
-  float sat = mix( uGrade.z, uGrade.w, split );
-  c = mix( vec3( l ), c, sat );
-  c = max( c, vec3( 0.0 ) );
-
-  vec3 over = max( c - uShoulder.x, vec3( 0.0 ) );
-  c = min( c, vec3( uShoulder.x ) ) + over / ( 1.0 + over * uShoulder.y );
-
-  gl_FragColor = vec4( tcLinearToSRGB( c ), 1.0 );
-}
-`;
-
-const FINAL_FRAG = HASH_GLSL + /* glsl */ `
-uniform sampler2D tSrc;
-uniform vec2 uTexel;
-uniform float uSharpen;
-uniform float uVignette;
-uniform float uGrain;
-uniform float uTime;
-varying vec2 vUv;
-void main() {
-  vec3 e  = texture2D( tSrc, vUv ).rgb;
-  vec3 n  = texture2D( tSrc, vUv + vec2( 0.0, -uTexel.y ) ).rgb;
-  vec3 s  = texture2D( tSrc, vUv + vec2( 0.0, uTexel.y ) ).rgb;
-  vec3 w  = texture2D( tSrc, vUv + vec2( -uTexel.x, 0.0 ) ).rgb;
-  vec3 ee = texture2D( tSrc, vUv + vec2( uTexel.x, 0.0 ) ).rgb;
-
-  vec3 mn = min( e, min( min( n, s ), min( w, ee ) ) );
-  vec3 mx = max( e, max( max( n, s ), max( w, ee ) ) );
-  vec3 amp = sqrt( clamp( min( mn, 1.0 - mx ) / max( mx, 1e-4 ), 0.0, 1.0 ) );
-  vec3 k = amp * ( -1.0 / mix( 8.0, 5.0, clamp( uSharpen, 0.0, 1.0 ) ) );
-  vec3 c = ( e + ( n + s + w + ee ) * k ) / ( 1.0 + 4.0 * k );
-  c = clamp( c, 0.0, 1.0 );
-
-  vec2 q = ( vUv - 0.5 ) * 2.0;
-  c *= 1.0 - uVignette * pow( clamp( length( q ) * 0.72, 0.0, 1.0 ), 2.6 );
-
-  float g = tcHash12( gl_FragCoord.xy + uTime ) - 0.5;
-  c += g * uGrain * ( 1.0 - tcLuma( c ) * 0.75 );
-
-  gl_FragColor = vec4( c, 1.0 );
-}
-`;
+/**
+ * The deck must not be shot at one sample per pixel — aliasing is the leading separator
+ * against the reference pool and one sample is its worst case. Read out of `PostFX`'s own
+ * table rather than restated, for the same reason the shader bodies are now imported.
+ */
+const SAMPLES = MSAA_SAMPLES.ultra;
 
 export class Grade {
   /** Off by default: inspection wants the raw material, a comparison plate wants the game. */
@@ -122,6 +69,8 @@ export class Grade {
   private readonly mFinal: THREE.ShaderMaterial;
   private sceneRT: THREE.WebGLRenderTarget;
   private ldrRT: THREE.WebGLRenderTarget;
+  /** 1x1 black, standing in for the bloom and god-ray inputs the viewer has none of. */
+  private readonly black: THREE.DataTexture;
 
   constructor(renderer: THREE.WebGLRenderer) {
     this.renderer = renderer;
@@ -131,34 +80,30 @@ export class Grade {
         depthTest: false, depthWrite: false, toneMapped: false, blending: THREE.NoBlending,
       });
 
-    this.mTone = make(TONE_FRAG, {
-      tSrc: { value: null },
-      uExposure: { value: 1 },
-      uGrade: { value: new THREE.Vector4(0.42, 0.006, 1.02, 1.3) },
-      uContrast: { value: new THREE.Vector3(1.8, 0.16, 0.0026) },
-      uShadowTint: { value: new THREE.Vector3(0.9, 0.96, 1.18) },
-      uHighlightTint: { value: new THREE.Vector3(1.18, 0.985, 0.82) },
-      uSplit_disp: { value: new THREE.Vector2(0.05, 0.48) },
-      uShoulder: { value: new THREE.Vector2(0.92, 1.7) },
-    });
-    this.mFinal = make(FINAL_FRAG, {
-      tSrc: { value: null },
-      uTexel: { value: new THREE.Vector2() },
-      // 0.28, not the 0.32 default in `PostFX`, because `PostFX` never runs its own default:
-      // `PostFX.ts:1530` sets `uSharpen` from the quality tier every frame, and ultra ships
-      // SMAA rather than TAA, so the shipping value is 0.28. Mirroring a default that the
-      // original overwrites at runtime is the same class of error as the grain below.
-      uSharpen: { value: 0.28 },
-      uVignette: { value: 0.2 },
-      // **0.006, and the 0.016 this replaces cost three rounds of grading.** The adversarial
-      // grader's strongest single scalar is the share of 32 px tiles with Laplacian std < 1.0:
-      // Rome II plates 0.31-15.10 % (mean 7.09), ours 0.00-0.05. Measured on one isolated
-      // plate by switching only this uniform: 0.016 -> 0.00 %, 0.006 -> 2.21 %, 0 -> 69.67 %.
-      // So 0.016 guarantees that **no** 32 px tile anywhere in a plate reads as smooth, and
-      // every model deck shot before this was graded through that guarantee.
-      uGrain: { value: 0.006 },
-      uTime: { value: 0 },
-    });
+    /**
+     * The bloom and god-ray taps, wired to nothing.
+     *
+     * The shared tone body adds both before it tone maps, and neither has any meaning around
+     * one man on an empty disc. A 1x1 black texture with the two strengths at zero makes the
+     * two fetches an exact algebraic no-op, which is a smaller and far more checkable thing
+     * than a second copy of the shader with the lines removed — the second copy is precisely
+     * what this class used to be.
+     */
+    this.black = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+    this.black.needsUpdate = true;
+
+    this.mTone = make(TC_TONE_GRADE_FRAG, tcToneGradeUniforms());
+    this.mTone.uniforms.tBloom.value = this.black;
+    this.mTone.uniforms.tGod.value = this.black;
+    this.mTone.uniforms.uBloom.value = 0;
+    this.mTone.uniforms.uGodRays.value = 0;
+
+    this.mFinal = make(TC_FINAL_FRAG, tcFinalUniforms());
+    // 0.28, not the 0.32 the factory carries, because `PostFX` never runs its own default: it
+    // sets `uSharpen` from the quality tier every frame, and ultra ships SMAA rather than TAA.
+    // Running a default the original overwrites at runtime is the error that put the deck on
+    // 0.016 of grain for three rounds, in a different uniform.
+    this.mFinal.uniforms.uSharpen.value = 0.28;
 
     this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.mTone);
     this.quad.frustumCulled = false;
@@ -240,6 +185,7 @@ export class Grade {
   }
 
   dispose(): void {
+    this.black.dispose();
     this.sceneRT.dispose();
     this.ldrRT.dispose();
     this.mTone.dispose();

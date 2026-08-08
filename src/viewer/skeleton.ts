@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { HORSE_CLIP_SET, MAN_CLIP_SET } from '../anim/clips';
-import { HORSE_RIG, MAN_RIG, type Rig } from '../anim/rig';
+import { ELEPHANT_CLIP_SET } from '../anim/elephantClips';
+import { ELEPHANT_RIG, HORSE_RIG, MAN_RIG, type Rig } from '../anim/rig';
 import { frameGlobals } from '../anim/pose';
 
 /**
@@ -88,6 +89,13 @@ export class SkeletonOverlay {
     clipIndex: number, phase: number, x: number, y: number, z: number, yaw: number, scale: number
   ): void {
     this.pose(HORSE_RIG, HORSE_CLIP_SET, clipIndex, phase, x, y, z, yaw, scale);
+  }
+
+  /** 31 bones, comfortably inside `MAX_BONES` — the trunk alone is six of them. */
+  poseElephant(
+    clipIndex: number, phase: number, x: number, y: number, z: number, yaw: number, scale: number
+  ): void {
+    this.pose(ELEPHANT_RIG, ELEPHANT_CLIP_SET, clipIndex, phase, x, y, z, yaw, scale);
   }
 
   private pose(

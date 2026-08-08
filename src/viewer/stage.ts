@@ -1,21 +1,32 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { BattleRig } from './battleRig';
 import { Grade } from './grade';
 
 /**
  * The room the models stand in.
  *
- * Two lighting presets, and the difference between them is the point of having both.
+ * Three lighting presets, and the difference between them is the point of having all three.
  *
  * **Studio** is for *inspection*: a neutral grey room probe, a key light you can orbit
  * against, no colour cast. Anything you dislike about the model under it is the model.
  *
- * **Field** reproduces the battle's own rig — the sun and hemisphere values are read off
- * `src/render/LightingSystem.ts`, and the environment is a sky gradient rather than a room —
- * because "does this helmet read at all in the game's light" is a different question from
- * "is this helmet modelled", and a viewer that can only answer the second one will tell you
- * a mesh is fine while it renders as a black lump on the field.
+ * **Field** is a hand-rolled *imitation* of the battle's rig — a directional key, a
+ * hemisphere and a warm bounce, with the numbers copied out of `LightingSystem.ts` — because
+ * "does this helmet read at all in the game's light" is a different question from "is this
+ * helmet modelled", and a viewer that can only answer the second will tell you a mesh is
+ * fine while it renders as a black lump on the field.
+ *
+ * **Battle** is the rig itself. `field` copies three numbers; `battle` registers the real
+ * `SkySystem` and the real `LightingSystem` through `battleRig.ts` and lights the model with
+ * the product's own four-cascade sun, its blocker-search soft shadow, its physical sky
+ * irradiance and its chromatic ground bounce. Until it existed, **`tcShadowGeom` and
+ * `tcSoftShadow` appeared as text in none of this page's 24 fragment programs** — the deck
+ * graded every soldier this project has ever photographed under lighting the game does not
+ * ship, and under `PCFSoftShadowMap`, a *third* shadow mode used nowhere else and since
+ * deprecated by three. Keeping `field` beside it is deliberate: it is cheap, it is stable
+ * across sessions, and every plate in the archive was shot under it.
  *
  * The soldier material runs `envMapIntensity: 2.9` against a probe the game trims to 0.6.
  * With no `scene.environment` at all it is near-black — measured in the game at 0.9 probe
@@ -23,7 +34,7 @@ import { Grade } from './grade';
  * not decoration here, it is a requirement for the material to show anything.
  */
 
-export type LightPreset = 'studio' | 'field';
+export type LightPreset = 'studio' | 'field' | 'battle';
 
 /** Metres. A man is 1.75 m; the gauge is marked so you can check that by eye. */
 const GAUGE_HEIGHT = 2;
@@ -50,6 +61,11 @@ export class Stage {
   private readonly grade: Grade;
   private canvasW = 2;
   private canvasH = 2;
+  /** Built on first use: `SkySystem.init` bakes a PMREM and nobody should pay for it on boot. */
+  private battle?: BattleRig;
+  /** Backdrop and environment saved before the sky took them, so `studio` can have them back. */
+  private savedBackground: THREE.Scene['background'] = null;
+  private savedFog: THREE.Scene['fog'] = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
@@ -60,7 +76,14 @@ export class Stage {
     this.renderer.toneMapping = THREE.AgXToneMapping;
     this.renderer.toneMappingExposure = 1;
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // `PCFShadowMap`, which is what `LightingSystem.ts:192` sets and therefore what the game
+    // ships. This line used to read `PCFSoftShadowMap` — a *third* shadow mode used nowhere
+    // else in the project, and one three has since deprecated and silently downgrades to this
+    // one anyway, with a console warning on every boot. Its own comment in `LightingSystem`
+    // says why it is the wrong choice: PCFSoft is a fixed 3x3 that ignores `shadow.radius`, so
+    // it cannot give a penumbra that widens with throw distance, and a penumbra that widens
+    // with throw distance is most of what a soft shadow is.
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
 
     this.camera = new THREE.PerspectiveCamera(38, 1, 0.05, 900);
     this.camera.position.set(2.4, 1.7, 3.1);
@@ -196,6 +219,11 @@ export class Stage {
 
   setLightPreset(p: LightPreset): void {
     this.preset = p;
+    if (p === 'battle') {
+      this.enterBattle();
+      return;
+    }
+    if (this.battle?.attached) this.leaveBattle();
     let env = this.envs.get(p);
     if (!env) {
       if (p === 'studio') {
@@ -252,6 +280,64 @@ export class Stage {
     }
   }
 
+  /**
+   * Hand the room over to the product's own rig.
+   *
+   * The three hand-rolled lights must be **removed from the scene**, not merely dimmed.
+   * `LightingSystem.init` adds its bounce and fill after the cascade lights so that the
+   * shadow-casting lights keep the low indices — the shader pairs `directionalLights[i]` with
+   * `directionalLightShadows[i]` — and a stray `DirectionalLight` sitting in the scene takes
+   * index 0 and makes every cascade read the wrong map. Setting `visible = false` does not
+   * help: three's light list is built from the graph, not from visibility.
+   */
+  private enterBattle(): void {
+    if (this.battle?.attached) return;
+    this.savedBackground = this.scene.background;
+    this.savedFog = this.scene.fog;
+    this.scene.remove(this.sun, this.sun.target, this.fill, this.bounce);
+    if (!this.battle) {
+      this.battle = new BattleRig(
+        this.scene, this.camera, this.renderer,
+        () => this.camera.position.distanceTo(this.controls.target)
+      );
+    }
+    this.battle.attach();
+    // The ground goes to the Campus Martius' own damp-plain albedo, because the whole ambient
+    // calibration in `LightingSystem` is written against 0.13 and the disc is the only thing
+    // in the room throwing anything back up at the model.
+    (this.ground.material as THREE.MeshStandardMaterial).color.set(0x6a6250);
+    // A plate still wants a low-frequency backdrop: the blind harness's own note is that a
+    // *structured* background leaks into the very statistics that grade the man. So the sky's
+    // clouds are for inspection, and a plate keeps the gradient it always had.
+    if (this.plate) this.scene.background = this.plateBackdrop();
+  }
+
+  private leaveBattle(): void {
+    this.battle?.detach();
+    this.scene.add(this.sun, this.sun.target, this.fill, this.bounce);
+    this.scene.background = this.savedBackground;
+    this.scene.fog = this.savedFog;
+  }
+
+  /**
+   * Advance the battle rig. A no-op under the other two presets.
+   *
+   * Called from the viewer's loop rather than from `render`, because `LightingSystem.preRender`
+   * has to run after the camera is final and the orbit controls settle inside `render`.
+   */
+  updateLighting(dt: number): void {
+    this.battle?.update(dt);
+  }
+
+  /** Hours 0..24 on the battle rig's sky. Ignored under the other two presets. */
+  setTimeOfDay(h: number): void {
+    this.battle?.setTimeOfDay(h);
+  }
+
+  get timeOfDay(): number {
+    return this.battle?.timeOfDay ?? 0;
+  }
+
   get lightPreset(): LightPreset {
     return this.preset;
   }
@@ -293,7 +379,10 @@ export class Stage {
     this.grid.visible = !on;
     this.gauge.visible = !on;
     this.ground.visible = true;
-    this.setLightPreset(on ? 'field' : this.preset);
+    // A plate that already asked for the battle rig keeps it. Forcing `field` here would
+    // silently downgrade a caller that had explicitly asked for the shipped lighting, which
+    // is the same class of error as the grade mirror: a default overriding a choice.
+    this.setLightPreset(on && this.preset !== 'battle' ? 'field' : this.preset);
     if (on) (this.ground.material as THREE.MeshStandardMaterial).color.set(0x6c6555);
   }
 
@@ -434,6 +523,25 @@ export class Stage {
 
   get graded(): boolean {
     return this.grade.enabled;
+  }
+
+  /**
+   * The key light, whichever rig is running it — direction from the model toward the sun, and
+   * the sun's colour.
+   *
+   * The impostor atlas is a *photograph* of a lit man, so it has to be captured under the same
+   * light the mesh tiers stand in or the far tier reads as a lighting seam that is the
+   * viewer's fault rather than the pipeline's. Reading `stage.sun` directly used to be enough;
+   * under the battle preset that light is not even in the scene.
+   */
+  keyLight(): { direction: THREE.Vector3; colour: THREE.Color } {
+    const bd = this.battle?.attached ? this.battle.sunDirection : undefined;
+    const bc = this.battle?.attached ? this.battle.sunColour : undefined;
+    if (bd && bc) return { direction: bd.clone(), colour: bc.clone() };
+    return {
+      direction: this.sun.position.clone().sub(this.sun.target.position).normalize(),
+      colour: this.sun.color.clone(),
+    };
   }
 
   /** Keep the sun rig pointed at the subject so the key light does not slide off it. */

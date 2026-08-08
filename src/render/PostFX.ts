@@ -105,7 +105,237 @@ interface RTOpts {
  * This is now a **binary** lever — 0 or 4, worth 1.18 ms — which is the shape an adaptive
  * quality loop can actually step through without paying for a state that is all cost.
  */
-const MSAA_SAMPLES: Record<string, number> = { low: 0, medium: 0, high: 4, ultra: 4 };
+export const MSAA_SAMPLES: Record<string, number> = { low: 0, medium: 0, high: 4, ultra: 4 };
+
+
+/**
+ * The two shader bodies the model viewer also runs, hoisted so there is exactly one of each.
+ *
+ * `src/viewer/grade.ts` used to carry a hand-copied mirror of both, and it drifted: `uGrain`
+ * shipped 0.006 here and 0.016 there, which is the level measured to leave **0.00 % of a plate
+ * reading as a smooth region** against a Rome II reference of 7.09 % — so every isolated-model
+ * grade this project ever ran was shot through a grain the product does not ship. `uSharpen`
+ * had the same class of error, mirroring a default that line ~1554 overwrites from the quality
+ * tier every frame. Both were corrected by hand; the mirror is now gone instead, because a
+ * copy that *can* drift eventually does and nothing in the type system was going to notice.
+ *
+ * These are pure hoists: the GLSL is unchanged but for four columns of leading indentation,
+ * and every uniform default is the same literal the class built inline. The viewer binds
+ * `tBloom`/`tGod` to a 1x1 black texture with `uBloom`/`uGodRays` at zero, which is an exact
+ * no-op rather than a second code path — so the game's picture is not a function of whether
+ * the viewer exists.
+ *
+ * Two divergences the viewer keeps on purpose, and neither is drift. It sets `uSharpen` to
+ * 0.28, because this class overwrites its own 0.32 default from the quality tier every frame
+ * and 0.28 is what ultra ships. It pins `uTime` at 0, because a plate shot twice must be the
+ * same file and the grain is hashed against it.
+ */
+export const TC_TONE_GRADE_FRAG = AGX_GLSL + SRGB_GLSL + HASH_GLSL + /* glsl */ `
+  uniform sampler2D tSrc;
+  uniform sampler2D tBloom;
+  uniform sampler2D tGod;
+  uniform float uExposure;
+  uniform float uBloom;
+  uniform float uGodRays;
+  // x: contrast, y: pivot, z: shadow saturation, w: highlight saturation
+  uniform vec4 uGrade;
+  // x: scene-linear contrast exponent, y: its pivot in render units,
+  // z: veiling-glare pedestal
+  uniform vec3 uContrast;
+  uniform vec3 uShadowTint;
+  uniform vec3 uHighlightTint;
+  // x: luminance where the shadow tint ends, y: where the highlight tint starts
+  uniform vec2 uSplit_disp;   // DISPLAY-referred, see the convention note in common.glsl.ts
+  // x: shoulder knee, y: shoulder strength
+  uniform vec2 uShoulder;
+  varying vec2 vUv;
+
+  void main() {
+    vec3 hdr = texture2D( tSrc, vUv ).rgb;
+    hdr += texture2D( tBloom, vUv ).rgb * uBloom;
+    hdr += texture2D( tGod, vUv ).rgb * uGodRays;
+
+    // --- scene-linear contrast, before the tone map ---
+    // This is where dynamic range has to come from. AgX is a log-domain
+    // compressor: by the time it has folded 16 stops into 0..1 the ratio
+    // between a sunlit surface and a shadowed one is already fixed, and a
+    // display-referred S-curve can only shuffle values around inside the band
+    // AgX chose — measured, it moved a 6:1 frame to 7:1. A power law about a
+    // mid-grey pivot multiplies the *stop* range instead, which is what an
+    // OCIO/ACES contrast control does and the only knob that turns a 6:1
+    // frame into the ~18:1 a Rome II frame measures.
+    //
+    // On luminance, not per channel. Per-channel it is the same curve applied
+    // to three different numbers, so it stretches channel *ratios* too: at an
+    // exponent of 1.6 it took measured saturation from 0.48 to 0.70 and pushed
+    // the blue in a shadow from 0.68 to 0.35 of neutral. Scaling by a
+    // luminance ratio leaves chromaticity untouched.
+    float y0 = max( tcLuma( hdr ), 1e-6 );
+    float y1 = uContrast.y * pow( y0 / uContrast.y, uContrast.x );
+    hdr *= y1 / y0;
+
+    // Veiling glare. A power law about a pivot amplifies everything below the
+    // pivot as hard as it lifts everything above it, so at an exponent of 1.75
+    // the ground inside the Aurelian Wall's shadow went to literal zero and
+    // 72 % of that frame was black — an S-curve failure mode, not an artistic
+    // choice. Real lenses and real air both scatter a little light into the
+    // shadows and that is what keeps film blacks off the floor, so the same
+    // pedestal goes in here: enough to put the deepest shadow near 8 % display,
+    // which is where Rome II's 5th percentile actually sits.
+    hdr += uContrast.z;
+
+    vec3 c = tcAgX( hdr, uExposure );
+
+    // --- filmic grade, display-referred ---
+    // AgX has a long toe and a very long shoulder: on its own it lands an
+    // outdoor scene entirely between 0.3 and 0.7 with no black point, which
+    // reads as milky. Reinstating a black point and a mid-tone S-curve is not
+    // optional with this transform.
+    c = max( vec3( 0.0 ), c - uGrade.y ) / max( 1e-3, 1.0 - uGrade.y );
+    // Blending toward smoothstep raises mid-tone contrast while leaving 0 and
+    // 1 fixed, so nothing clips at either end the way a gain about a pivot does.
+    c = mix( c, c * c * ( 3.0 - 2.0 * c ), uGrade.x );
+
+    float l = tcLuma( c );
+    // Warm the highlights, cool the shadows. This warm/cool split across the
+    // lit/shadow boundary is the single most recognisable thing about the
+    // Rome II palette. The crossover has to sit *below* the scene's own median
+    // or the whole frame lands on the same side of it and the split does
+    // nothing at all — which is exactly what happened at 0.1..0.68.
+    //
+    // Compared in DISPLAY space, which is the space uSplit is written in. c is still
+    // linear here — tcLinearToSRGB is the last line of this shader — so a display-referred
+    // threshold was being tested against a linear value. The frame's median is 0.30
+    // display, which is 0.073 linear, and smoothstep( 0.05, 0.48, 0.073 ) is 0.008: every
+    // pixel in the frame, shadow and highlight alike, took uShadowTint, the highlight tint
+    // was never meaningfully applied, and a split built to multiply the darkest quartile's
+    // blue-to-red against the rest of the frame by 1.887 delivered 1.107.
+    //
+    // That ratio is the statistic the blind rounds separate the decks on: 1.968 across the
+    // ten Rome II plates against our 1.23. Converting this one comparison takes it to
+    // 1.884 and leaves the darkest quartile's luminance at 0.097, so the entire gap four
+    // rounds tried to buy out of the ambient rig was here.
+    //
+    // Which makes the note above right about the mechanism and wrong about the cure:
+    // moving 0.1..0.68 to 0.05..0.48 re-tuned a display-referred number that nothing was
+    // reading as one, so the whole frame stayed on one side of the crossover either way.
+    //
+    // No backticks in this comment: the shader is a JS template literal and one ends it.
+    float split = smoothstep( uSplit_disp.x, uSplit_disp.y, tcLinearToSRGB( vec3( l ) ).r );
+    c *= mix( uShadowTint, uHighlightTint, split );
+    // Desaturate the shadows a little more than the highlights: dust in shade
+    // reads muted. Not far, though — the cool cast is the point of A1 and
+    // pulling shadows toward grey is the fastest way to throw it away.
+    float sat = mix( uGrade.z, uGrade.w, split );
+    c = mix( vec3( l ), c, sat );
+    c = max( c, vec3( 0.0 ) );
+
+    // Soft shoulder so a warmed highlight rolls off instead of clipping to a
+    // flat plate of white. Per channel, above a knee, hyperbolic — the same
+    // shape as a film shoulder and it cannot exceed 1 for any finite input.
+    vec3 over = max( c - uShoulder.x, vec3( 0.0 ) );
+    c = min( c, vec3( uShoulder.x ) ) + over / ( 1.0 + over * uShoulder.y );
+
+    gl_FragColor = vec4( tcLinearToSRGB( c ), 1.0 );
+  }
+  `;
+
+/** Defaults for {@link TC_TONE_GRADE_FRAG}. A factory: uniform objects must not be shared. */
+export function tcToneGradeUniforms(): Record<string, THREE.IUniform> {
+  return {
+    tSrc: { value: null },
+    tBloom: { value: null },
+    tGod: { value: null },
+    uExposure: { value: 1 },
+    uBloom: { value: BLOOM_STRENGTH },
+    uGodRays: { value: 1 },
+    // x: S-curve blend, y: black point, z: shadow saturation, w: highlight
+    // saturation. The black point has to be well clear of AgX's toe or the
+    // darkest thing in the frame is a 20 % grey and the image has no anchor;
+    // 0.05 is where the deepest crevice between two men reaches zero.
+    uGrade: { value: new THREE.Vector4(0.42, 0.006, 1.02, 1.3) },
+    // Pivot at 0.16 render units: measured, that is where a dry-grass ground
+    // in full sun sits, so raising the exponent pivots the frame about the
+    // subject rather than about the sky.
+    uContrast: { value: new THREE.Vector3(1.8, 0.16, 0.0026) },
+    // Measured against twelve real Rome II frames: their lit surfaces average
+    // an r/g/b chromaticity of 1.25/0.96/0.79 and their shadows 1.06/0.90/1.02
+    // — warm light, cool shade, and red clearly above green in the sun. Ours
+    // measured 1.05/1.03/0.93 and 0.87/1.03/1.10, so the tints carry the frame
+    // the rest of the way warm without touching the physical light.
+    uShadowTint: { value: new THREE.Vector3(0.9, 0.96, 1.18) },
+    uHighlightTint: { value: new THREE.Vector3(1.18, 0.985, 0.82) },
+    uSplit_disp: { value: new THREE.Vector2(0.05, 0.48) },
+    uShoulder: { value: new THREE.Vector2(0.92, 1.7) },
+  };
+}
+
+export const TC_FINAL_FRAG = HASH_GLSL + /* glsl */ `
+  uniform sampler2D tSrc;
+  uniform vec2 uTexel;
+  uniform float uSharpen;
+  uniform float uVignette;
+  uniform float uGrain;
+  uniform float uTime;
+  varying vec2 vUv;
+  void main() {
+    vec3 e = texture2D( tSrc, vUv ).rgb;
+    vec3 n = texture2D( tSrc, vUv + vec2( 0.0, -uTexel.y ) ).rgb;
+    vec3 s = texture2D( tSrc, vUv + vec2( 0.0, uTexel.y ) ).rgb;
+    vec3 w = texture2D( tSrc, vUv + vec2( -uTexel.x, 0.0 ) ).rgb;
+    vec3 ee = texture2D( tSrc, vUv + vec2( uTexel.x, 0.0 ) ).rgb;
+
+    // AMD contrast-adaptive sharpening, cross-only variant: the sharpening
+    // amount falls off where local contrast is already high, so edges gain
+    // definition without ringing. The weight *must* stay in [-0.25, 0] or the
+    // 1 + 4w denominator crosses zero and the pass inverts colour.
+    vec3 mn = min( e, min( min( n, s ), min( w, ee ) ) );
+    vec3 mx = max( e, max( max( n, s ), max( w, ee ) ) );
+    vec3 amp = sqrt( clamp( min( mn, 1.0 - mx ) / max( mx, 1e-4 ), 0.0, 1.0 ) );
+    // AMD's mapping: peak weight from -1/8 (soft) to -1/5 (sharp).
+    vec3 k = amp * ( -1.0 / mix( 8.0, 5.0, clamp( uSharpen, 0.0, 1.0 ) ) );
+    vec3 c = ( e + ( n + s + w + ee ) * k ) / ( 1.0 + 4.0 * k );
+    c = clamp( c, 0.0, 1.0 );
+
+    // Vignette. Exponent 2.6 keeps the falloff out of the action and only
+    // darkens the extreme corners.
+    vec2 q = ( vUv - 0.5 ) * 2.0;
+    float r = length( q );
+    c *= 1.0 - uVignette * pow( clamp( r * 0.72, 0.0, 1.0 ), 2.6 );
+
+    // Fine grain, stronger in the shadows where a real negative is grainiest.
+    float g = tcHash12( gl_FragCoord.xy + uTime ) - 0.5;
+    c += g * uGrain * ( 1.0 - tcLuma( c ) * 0.75 );
+
+    gl_FragColor = vec4( c, 1.0 );
+  }
+  `;
+
+/** Defaults for {@link TC_FINAL_FRAG}. */
+export function tcFinalUniforms(): Record<string, THREE.IUniform> {
+  return {
+    tSrc: { value: null },
+    uTexel: { value: new THREE.Vector2() },
+    uSharpen: { value: 0.32 },
+    uVignette: { value: 0.2 },
+    /*
+     * 0.016 left literally no smooth region anywhere in the frame.
+     *
+     * Measured by switching this uniform alone and counting the share of the frame that
+     * reads as a smooth gradient: **0.016 → 0.00%**, 0.006 → 2.21%, 0 → 69.67%, against
+     * Rome II crops at a mean of 7.09%. So the shipped default was not "a little grainy",
+     * it was destroying every flat surface in the picture — and a blind grader named it
+     * as its single strongest scalar, attributing it to "renderer dither or terrain
+     * faceting" without knowing what it was looking at.
+     *
+     * 0.006 is the value that measurement recommends. Note the reference mean sits
+     * between 0.006 and 0, so there may be a little more to give back; that is a
+     * measurement to make, not a number to guess at here.
+     */
+    uGrain: { value: 0.006 },
+    uTime: { value: 0 },
+  };
+}
 
 export class PostFXSystem implements Subsystem {
   readonly name = 'postfx';
@@ -908,143 +1138,7 @@ export class PostFXSystem implements Subsystem {
     );
 
     // ---- tone map + grade ------------------------------------------------
-    this.mTone = this.pass(
-      AGX_GLSL + SRGB_GLSL + HASH_GLSL + /* glsl */ `
-      uniform sampler2D tSrc;
-      uniform sampler2D tBloom;
-      uniform sampler2D tGod;
-      uniform float uExposure;
-      uniform float uBloom;
-      uniform float uGodRays;
-      // x: contrast, y: pivot, z: shadow saturation, w: highlight saturation
-      uniform vec4 uGrade;
-      // x: scene-linear contrast exponent, y: its pivot in render units,
-      // z: veiling-glare pedestal
-      uniform vec3 uContrast;
-      uniform vec3 uShadowTint;
-      uniform vec3 uHighlightTint;
-      // x: luminance where the shadow tint ends, y: where the highlight tint starts
-      uniform vec2 uSplit_disp;   // DISPLAY-referred, see the convention note in common.glsl.ts
-      // x: shoulder knee, y: shoulder strength
-      uniform vec2 uShoulder;
-      varying vec2 vUv;
-
-      void main() {
-        vec3 hdr = texture2D( tSrc, vUv ).rgb;
-        hdr += texture2D( tBloom, vUv ).rgb * uBloom;
-        hdr += texture2D( tGod, vUv ).rgb * uGodRays;
-
-        // --- scene-linear contrast, before the tone map ---
-        // This is where dynamic range has to come from. AgX is a log-domain
-        // compressor: by the time it has folded 16 stops into 0..1 the ratio
-        // between a sunlit surface and a shadowed one is already fixed, and a
-        // display-referred S-curve can only shuffle values around inside the band
-        // AgX chose — measured, it moved a 6:1 frame to 7:1. A power law about a
-        // mid-grey pivot multiplies the *stop* range instead, which is what an
-        // OCIO/ACES contrast control does and the only knob that turns a 6:1
-        // frame into the ~18:1 a Rome II frame measures.
-        //
-        // On luminance, not per channel. Per-channel it is the same curve applied
-        // to three different numbers, so it stretches channel *ratios* too: at an
-        // exponent of 1.6 it took measured saturation from 0.48 to 0.70 and pushed
-        // the blue in a shadow from 0.68 to 0.35 of neutral. Scaling by a
-        // luminance ratio leaves chromaticity untouched.
-        float y0 = max( tcLuma( hdr ), 1e-6 );
-        float y1 = uContrast.y * pow( y0 / uContrast.y, uContrast.x );
-        hdr *= y1 / y0;
-
-        // Veiling glare. A power law about a pivot amplifies everything below the
-        // pivot as hard as it lifts everything above it, so at an exponent of 1.75
-        // the ground inside the Aurelian Wall's shadow went to literal zero and
-        // 72 % of that frame was black — an S-curve failure mode, not an artistic
-        // choice. Real lenses and real air both scatter a little light into the
-        // shadows and that is what keeps film blacks off the floor, so the same
-        // pedestal goes in here: enough to put the deepest shadow near 8 % display,
-        // which is where Rome II's 5th percentile actually sits.
-        hdr += uContrast.z;
-
-        vec3 c = tcAgX( hdr, uExposure );
-
-        // --- filmic grade, display-referred ---
-        // AgX has a long toe and a very long shoulder: on its own it lands an
-        // outdoor scene entirely between 0.3 and 0.7 with no black point, which
-        // reads as milky. Reinstating a black point and a mid-tone S-curve is not
-        // optional with this transform.
-        c = max( vec3( 0.0 ), c - uGrade.y ) / max( 1e-3, 1.0 - uGrade.y );
-        // Blending toward smoothstep raises mid-tone contrast while leaving 0 and
-        // 1 fixed, so nothing clips at either end the way a gain about a pivot does.
-        c = mix( c, c * c * ( 3.0 - 2.0 * c ), uGrade.x );
-
-        float l = tcLuma( c );
-        // Warm the highlights, cool the shadows. This warm/cool split across the
-        // lit/shadow boundary is the single most recognisable thing about the
-        // Rome II palette. The crossover has to sit *below* the scene's own median
-        // or the whole frame lands on the same side of it and the split does
-        // nothing at all — which is exactly what happened at 0.1..0.68.
-        //
-        // Compared in DISPLAY space, which is the space uSplit is written in. c is still
-        // linear here — tcLinearToSRGB is the last line of this shader — so a display-referred
-        // threshold was being tested against a linear value. The frame's median is 0.30
-        // display, which is 0.073 linear, and smoothstep( 0.05, 0.48, 0.073 ) is 0.008: every
-        // pixel in the frame, shadow and highlight alike, took uShadowTint, the highlight tint
-        // was never meaningfully applied, and a split built to multiply the darkest quartile's
-        // blue-to-red against the rest of the frame by 1.887 delivered 1.107.
-        //
-        // That ratio is the statistic the blind rounds separate the decks on: 1.968 across the
-        // ten Rome II plates against our 1.23. Converting this one comparison takes it to
-        // 1.884 and leaves the darkest quartile's luminance at 0.097, so the entire gap four
-        // rounds tried to buy out of the ambient rig was here.
-        //
-        // Which makes the note above right about the mechanism and wrong about the cure:
-        // moving 0.1..0.68 to 0.05..0.48 re-tuned a display-referred number that nothing was
-        // reading as one, so the whole frame stayed on one side of the crossover either way.
-        //
-        // No backticks in this comment: the shader is a JS template literal and one ends it.
-        float split = smoothstep( uSplit_disp.x, uSplit_disp.y, tcLinearToSRGB( vec3( l ) ).r );
-        c *= mix( uShadowTint, uHighlightTint, split );
-        // Desaturate the shadows a little more than the highlights: dust in shade
-        // reads muted. Not far, though — the cool cast is the point of A1 and
-        // pulling shadows toward grey is the fastest way to throw it away.
-        float sat = mix( uGrade.z, uGrade.w, split );
-        c = mix( vec3( l ), c, sat );
-        c = max( c, vec3( 0.0 ) );
-
-        // Soft shoulder so a warmed highlight rolls off instead of clipping to a
-        // flat plate of white. Per channel, above a knee, hyperbolic — the same
-        // shape as a film shoulder and it cannot exceed 1 for any finite input.
-        vec3 over = max( c - uShoulder.x, vec3( 0.0 ) );
-        c = min( c, vec3( uShoulder.x ) ) + over / ( 1.0 + over * uShoulder.y );
-
-        gl_FragColor = vec4( tcLinearToSRGB( c ), 1.0 );
-      }
-      `,
-      {
-        tSrc: { value: null },
-        tBloom: { value: null },
-        tGod: { value: null },
-        uExposure: { value: 1 },
-        uBloom: { value: BLOOM_STRENGTH },
-        uGodRays: { value: 1 },
-        // x: S-curve blend, y: black point, z: shadow saturation, w: highlight
-        // saturation. The black point has to be well clear of AgX's toe or the
-        // darkest thing in the frame is a 20 % grey and the image has no anchor;
-        // 0.05 is where the deepest crevice between two men reaches zero.
-        uGrade: { value: new THREE.Vector4(0.42, 0.006, 1.02, 1.3) },
-        // Pivot at 0.16 render units: measured, that is where a dry-grass ground
-        // in full sun sits, so raising the exponent pivots the frame about the
-        // subject rather than about the sky.
-        uContrast: { value: new THREE.Vector3(1.8, 0.16, 0.0026) },
-        // Measured against twelve real Rome II frames: their lit surfaces average
-        // an r/g/b chromaticity of 1.25/0.96/0.79 and their shadows 1.06/0.90/1.02
-        // — warm light, cool shade, and red clearly above green in the sun. Ours
-        // measured 1.05/1.03/0.93 and 0.87/1.03/1.10, so the tints carry the frame
-        // the rest of the way warm without touching the physical light.
-        uShadowTint: { value: new THREE.Vector3(0.9, 0.96, 1.18) },
-        uHighlightTint: { value: new THREE.Vector3(1.18, 0.985, 0.82) },
-        uSplit_disp: { value: new THREE.Vector2(0.05, 0.48) },
-        uShoulder: { value: new THREE.Vector2(0.92, 1.7) },
-      },
-    );
+    this.mTone = this.pass(TC_TONE_GRADE_FRAG, tcToneGradeUniforms());
 
     // ---- TAA -------------------------------------------------------------
     this.mTaa = this.pass(
@@ -1151,70 +1245,7 @@ export class PostFXSystem implements Subsystem {
     );
 
     // ---- final: CAS sharpen + vignette + grain ---------------------------
-    this.mFinal = this.pass(
-      HASH_GLSL + /* glsl */ `
-      uniform sampler2D tSrc;
-      uniform vec2 uTexel;
-      uniform float uSharpen;
-      uniform float uVignette;
-      uniform float uGrain;
-      uniform float uTime;
-      varying vec2 vUv;
-      void main() {
-        vec3 e = texture2D( tSrc, vUv ).rgb;
-        vec3 n = texture2D( tSrc, vUv + vec2( 0.0, -uTexel.y ) ).rgb;
-        vec3 s = texture2D( tSrc, vUv + vec2( 0.0, uTexel.y ) ).rgb;
-        vec3 w = texture2D( tSrc, vUv + vec2( -uTexel.x, 0.0 ) ).rgb;
-        vec3 ee = texture2D( tSrc, vUv + vec2( uTexel.x, 0.0 ) ).rgb;
-
-        // AMD contrast-adaptive sharpening, cross-only variant: the sharpening
-        // amount falls off where local contrast is already high, so edges gain
-        // definition without ringing. The weight *must* stay in [-0.25, 0] or the
-        // 1 + 4w denominator crosses zero and the pass inverts colour.
-        vec3 mn = min( e, min( min( n, s ), min( w, ee ) ) );
-        vec3 mx = max( e, max( max( n, s ), max( w, ee ) ) );
-        vec3 amp = sqrt( clamp( min( mn, 1.0 - mx ) / max( mx, 1e-4 ), 0.0, 1.0 ) );
-        // AMD's mapping: peak weight from -1/8 (soft) to -1/5 (sharp).
-        vec3 k = amp * ( -1.0 / mix( 8.0, 5.0, clamp( uSharpen, 0.0, 1.0 ) ) );
-        vec3 c = ( e + ( n + s + w + ee ) * k ) / ( 1.0 + 4.0 * k );
-        c = clamp( c, 0.0, 1.0 );
-
-        // Vignette. Exponent 2.6 keeps the falloff out of the action and only
-        // darkens the extreme corners.
-        vec2 q = ( vUv - 0.5 ) * 2.0;
-        float r = length( q );
-        c *= 1.0 - uVignette * pow( clamp( r * 0.72, 0.0, 1.0 ), 2.6 );
-
-        // Fine grain, stronger in the shadows where a real negative is grainiest.
-        float g = tcHash12( gl_FragCoord.xy + uTime ) - 0.5;
-        c += g * uGrain * ( 1.0 - tcLuma( c ) * 0.75 );
-
-        gl_FragColor = vec4( c, 1.0 );
-      }
-      `,
-      {
-        tSrc: { value: null },
-        uTexel: { value: new THREE.Vector2() },
-        uSharpen: { value: 0.32 },
-        uVignette: { value: 0.2 },
-        /*
-         * 0.016 left literally no smooth region anywhere in the frame.
-         *
-         * Measured by switching this uniform alone and counting the share of the frame that
-         * reads as a smooth gradient: **0.016 → 0.00%**, 0.006 → 2.21%, 0 → 69.67%, against
-         * Rome II crops at a mean of 7.09%. So the shipped default was not "a little grainy",
-         * it was destroying every flat surface in the picture — and a blind grader named it
-         * as its single strongest scalar, attributing it to "renderer dither or terrain
-         * faceting" without knowing what it was looking at.
-         *
-         * 0.006 is the value that measurement recommends. Note the reference mean sits
-         * between 0.006 and 0, so there may be a little more to give back; that is a
-         * measurement to make, not a number to guess at here.
-         */
-        uGrain: { value: 0.006 },
-        uTime: { value: 0 },
-      },
-    );
+    this.mFinal = this.pass(TC_FINAL_FRAG, tcFinalUniforms());
 
     this.mCopy = this.pass(
       /* glsl */ `
