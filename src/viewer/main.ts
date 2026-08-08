@@ -231,7 +231,7 @@ class Viewer {
     riderRow?: HTMLElement;
     play?: (v: boolean) => void;
     parts?: (v: string) => void;
-    light?: (v: boolean) => void;
+    light?: (v: LightPreset) => void;
     flags: Record<string, (v: boolean) => void>;
     unit?: HTMLSelectElement;
     clip?: HTMLSelectElement;
@@ -451,12 +451,21 @@ class Viewer {
       { label: '2 m rule', value: s.gauge, onChange: (v) => { s.gauge = v; this.stage.setGaugeVisible(v); } },
       { label: 'Shadows', value: s.shadows, onChange: (v) => { s.shadows = v; this.stage.setShadows(v); } },
     ]);
-    const [tt, lt, ll, sk] = p.toggleRow([
+    const [tt, ll, sk] = p.toggleRow([
       { label: 'Turntable', value: s.turntable, onChange: (v) => { s.turntable = v; this.stage.setTurntable(v); } },
-      { label: 'Field light', value: s.preset === 'field', title: 'Swap the neutral studio probe for the battle’s own sun and sky', onChange: (v) => { s.preset = v ? 'field' : 'studio'; this.stage.setLightPreset(s.preset); } },
       { label: 'Long lens', value: s.longLens, title: 'Near-orthographic: 6° lens pulled back, so proportion and silhouette can be judged without perspective', onChange: (v) => { s.longLens = v; this.stage.setLongLens(v); this.frameSubject(); } },
       { label: 'Skeleton', value: s.skeleton, title: 'Joints and bones for this exact frame, drawn through the mesh (k)', onChange: (v) => { s.skeleton = v; } },
     ]);
+    const lt = p.segmented<LightPreset>('Light', [
+      { value: 'studio', label: 'Studio', title: 'A neutral room probe. Anything you dislike about the model under it is the model.' },
+      { value: 'field', label: 'Field', title: 'Three hand-rolled lights with the battle’s numbers copied into them. Cheap, stable, and what every archived plate was shot under.' },
+      { value: 'battle', label: 'Battle rig', title: 'The product’s own SkySystem and LightingSystem: four cascades, blocker-search soft shadow, physical sky irradiance, chromatic ground bounce. Until this existed, tcSoftShadow appeared in none of this page’s shaders.' },
+    ], s.preset, (v) => this.setLight(v));
+    p.slider('Hour', 4, 21, 0.25, 12, (v) => this.stage.setTimeOfDay(v), (v) => {
+      const h = Math.floor(v);
+      return `${String(h).padStart(2, '0')}:${String(Math.round((v - h) * 60)).padStart(2, '0')}`;
+    });
+    p.note('Battle rig is the answer to a question the other two cannot be asked: does this model hold up under the lighting the game actually ships? It is the real SkySystem and the real LightingSystem, driven from the viewer’s own loop through a five-field shim. Two things to know. A tier built while it is on renders about four times too bright for up to sixteen frames, because LightingSystem re-patches materials on a timer and the viewer builds its meshes lazily — wait a quarter of a second after switching unit. And the hour slider only does anything here; the other two presets have no sky to move.');
     const riderToggles = p.toggleRow([
       { label: 'Rider', value: s.rider, title: 'Show the man on the horse, or the horse alone', onChange: (v) => { s.rider = v; } },
       { label: 'Seat probe', value: s.seatProbe, title: 'Mark the animated saddle point and the rider’s pelvis', onChange: (v) => { s.seatProbe = v; } },
@@ -546,7 +555,7 @@ class Viewer {
     this.sync.draw?.(s.engineDraw);
     this.sync.play?.(s.playing);
     this.sync.parts?.(String(s.parts));
-    this.sync.light?.(s.preset === 'field');
+    this.sync.light?.(s.preset);
     const flags = s as unknown as Record<string, boolean>;
     for (const [k, f] of Object.entries(this.sync.flags)) f(flags[k]);
     if (this.sync.eleClip) this.sync.eleClip.value = String(s.eleClip);
@@ -631,6 +640,20 @@ class Viewer {
     }
     this.syncPanel();
     if (reframe) this.frameSubject();
+  }
+
+  /**
+   * Switch the room's lighting.
+   *
+   * One path, because there are now three presets and two of them are cheap while the third
+   * bakes a PMREM sky and re-patches every material in the scene. A control that set the
+   * state and a harness that set the stage separately would eventually disagree, which is the
+   * failure the whole two-way panel exists to prevent.
+   */
+  private setLight(p: LightPreset): void {
+    this.state.preset = p;
+    this.stage.setLightPreset(p);
+    this.sync.light?.(p);
   }
 
   private setParts(mode: number): void {
@@ -1011,13 +1034,16 @@ class Viewer {
    * fault rather than the pipeline's.
    */
   private captureLight(): CaptureLight {
-    const sun = this.stage.sun;
-    const dir = sun.position.clone().sub(sun.target.position).normalize();
+    const k = this.stage.keyLight();
     return {
       key: this.state.preset,
-      direction: dir,
-      colour: sun.color.clone(),
-      ambient: new THREE.Color(this.state.preset === 'field' ? 0x9dbcdc : 0xc9d6e4),
+      direction: k.direction,
+      colour: k.colour,
+      // The hemisphere the atlas is baked against. `battle` shares `field`'s sky hue rather
+      // than reading `skyFillColour` live: the atlas is captured once and cached on the key,
+      // so a time-of-day-dependent colour would re-capture whenever the sun moved and the
+      // billboard tier would flicker its way through a turntable.
+      ambient: new THREE.Color(this.state.preset === 'studio' ? 0xc9d6e4 : 0x9dbcdc),
     };
   }
 
@@ -1528,6 +1554,10 @@ class Viewer {
       }
       this.advance(dt);
       this.compose(dt);
+      // Before `render`, because the battle rig's `preRender` fits four shadow cascades to the
+      // camera and the orbit controls settle inside `render`. One frame of lag on a turntable
+      // is invisible; the alternative is four cascades fitted to where the camera *was*.
+      this.stage.updateLighting(dt);
       this.stage.render();
       this.updateTags();
       if (this.copied > 0) this.copied -= dt;
@@ -1544,6 +1574,10 @@ class Viewer {
   resize(): void {
     const canvas = this.stage.renderer.domElement;
     this.stage.resize(canvas.clientWidth, canvas.clientHeight);
+  }
+
+  get renderer(): THREE.WebGLRenderer {
+    return this.stage.renderer;
   }
 
   /** Harness API — see `window.__viewer`. */
@@ -1623,10 +1657,11 @@ class Viewer {
         this.syncPanel();
       },
       setLight: (p: LightPreset): void => {
-        this.state.preset = p;
-        this.stage.setLightPreset(p);
+        this.setLight(p);
         this.syncPanel();
       },
+      /** Hours 0..24 on the battle rig's sky. A no-op under the other two presets. */
+      setHour: (h: number): void => this.stage.setTimeOfDay(h),
       setEngineKind: (k: KindChoice): void => {
         this.state.engineKind = k;
         this.syncPanel();
@@ -1758,3 +1793,15 @@ boot.classList.add('vw-gone');
   ready: true,
   ...viewer.api(),
 };
+
+/**
+ * The raw renderer, for probes that have to read the *compiled programs*.
+ *
+ * The finding this page exists to keep honest — "`tcShadowGeom` appears in none of the
+ * viewer's 24 fragment programs" — is a measurement over `renderer.info.programs` and
+ * `gl.getShaderSource`, not an assertion about which module got imported. A `LightingSystem`
+ * that was constructed but whose `installShaderChunks` silently no-opped would pass any
+ * import check and fail this one, so the handle is worth the two lines.
+ */
+(window as unknown as { __viewerRenderer: THREE.WebGLRenderer }).__viewerRenderer =
+  viewer.renderer;
