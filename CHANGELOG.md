@@ -138,6 +138,11 @@ into their own battlements.
   already-open gates, and the city cut a carriageway through the collision raster for each — but the
   builder only set a pierced arch *panel* into each face and never cut the wall's own skins. The
   passage is now refused where the stone is solid.
+
+  ![Square on to a postern in Carthage's main wall from outside: a flat expanse of coursed ashlar with a chamfered plinth along the bottom, and set into it an arch about 10 m wide drawn as a raised ring of voussoirs with a straight jamb line dropping from each springing — and the wall's own coursing running straight through the middle of the arch, course for course, at the same brightness, with no opening, no shadow and no barrel vault behind it](docs/images/releases/r4-postern-face.jpg)
+
+  Postern-29 as r4 ships it, in raking light. The arch is a relief on a solid wall — and the
+  collision raster had a 6 m carriageway cut through it.
 - **A war elephant left the instance buffer on the tick it died.** The owner: *"when they die they
   just disappear"* — and that is exactly what the buffer said. Elephant instances went 16 → 0 and the
   mesh invisible on the first frame after the killing blow, taking 64 soldier instances (four crew
@@ -242,6 +247,13 @@ fight, storm Carthage against actual Carthaginians, and be told who won. Sixty-t
   strung with the hair the women cut off, and nine hundred Roman deserters who could expect no mercy
   — because the 201 treaty forbade war elephants and the city surrendered its arms in 149. There is
   no moment in the Third Punic War with Carthaginian war elephants.
+
+  ![The outer face of Carthage's main wall at t+101 s of the assault: a file of about ten Roman escalade troops in red tunics and bronze helmets climbing a scaling ladder nose to tail at the left, two more bare ladders further along, defenders standing in and behind the crenels across the top of the frame, Roman cavalry and a few men on foot on scorched ground at the wall's foot, and several dozen javelins frozen in flight against the masonry](docs/images/releases/r3-punic-garrison.jpg)
+
+  Who is who is read off the unit table rather than off the picture: within 55 m of this focus the
+  parapet holds `punic-levy` and `punic-freedmen` under faction 2, and the ladders and the ground
+  hold `legio-escalade` and `equites` under faction 0. At 24 m a man is about 80 px, so what the
+  frame shows is a Roman file on the ladder and a Punic crowd in the embrasures — not the kit.
 - **An Enemy row in the menu**, and `?enemy=carthage` as a shareable link. The Punic *field* army —
   Sacred Band, Numidian horse, war elephants, seven bought contingents to one of citizens — had
   existed since Carthage was added and nothing anywhere set it, so every field battle drew the
@@ -260,6 +272,20 @@ fight, storm Carthage against actual Carthaginians, and be told who won. Sixty-t
   line, on the one criterion that had scored zero in every blind round. A critic's exact words on
   that plate the round before: *"no eye, no eyelid, no eyebrow, no nose, no nostril, no lip, no mouth
   line."*
+
+  | before — shot at r2 | after — shot at r3 |
+  |---|---|
+  | ![A legionary's head at high magnification under a bronze galea: crest block, bowl, brow band, cheek pieces, red focale and mail — and inside the face opening a smooth featureless pale oval with no eye, no brow, no nose and no mouth](docs/images/releases/r2-face-before-legio.jpg) | ![The same plate at r3: below the helmet rim a brown face with one fully legible eye — white sclera, dark iris, black pupil — a second eye at the edge of the face, a dark brow, a nose projecting as a wedge with its own cast shadow down the cheek, a moustache and a dark mouth line](docs/images/releases/r3-face-legio.jpg) |
+  | ![A bare Juthungi head sealed inside one closed dome of straked hair that covers the cranium and the whole of the face past the brow, cut off by a hard horizontal edge with a thin dark slot below it, then chin and mail](docs/images/releases/r2-face-before-juth.jpg) | ![The same warrior at r3: fringed blond hair to the shoulders, two eyes with whites, irises and pupils, two dark brows, a nose projecting as a solid wedge with a nostril shadow under it, a dark moustache, a mouth line and a beard over the jaw](docs/images/releases/r3-face-juth.jpg) |
+  | The critic's plate. The legionary's face opening is a blank oval and the Juthungi's face is sealed inside his own hair. | Both plates at each tree's own shipped framing. |
+
+  Two honest notes on the pair. The **legionary** rows are the *same camera* — plate `legio-head`,
+  az −0.6, el 0.06, fill 3.3, aimY 1.585 on both trees — but the pilum shaft and the *galea*'s two
+  cheek pieces cover about a third of the r3 face, so it is a face you can read rather than a clean
+  portrait. The **Juthungi** rows are not the same camera: r3 moved that plate from the man's
+  right-front to his left-front (az −0.45 → +0.45) because with the azimuth convention finally
+  correct his own javelin bundle stood between the lens and his nose. Both are three-quarter fronts
+  of the same warrior; it is a mirror, not a turn.
 - **Houses across Carthage.** Coverage 25.0 → **29.7%** of walled land and 36.6 → **51.5%** between
   street lines, with the dense city at 56.5% roof against the Punic cubit module's arithmetic ceiling
   of 60.9% — the fabric is at its ceiling, and raising the density knob would not move it.
@@ -274,6 +300,11 @@ fight, storm Carthage against actual Carthaginians, and be told who won. Sixty-t
   could not tell which one his men would fight on. The 20 × 6 m ditch stays, moved back onto the main
   wall's own glacis — it is a cut in the heightfield, so zero triangles and zero draw calls, and
   nobody mistakes a hole in the ground for the wall behind it.
+
+  ![A long stretch of Carthage's single curtain seen obliquely from outside with a square tower at each end: the whole length of the parapet lined shoulder to shoulder with defenders, spears up; five scaling ladders leaning against the face; a squadron of Roman cavalry drawn up in about five ranks under a standard on the open ground at the left; and behind the wall the city with umbrella pines, a cypress, tiled roofs and paved streets](docs/images/releases/r3-carthage-assault.jpg)
+
+  One line, garrisoned along its whole length, with the ladders against it — and no second and third
+  crenellated wall behind it for a player to wonder about.
 
 ### Fixed
 
