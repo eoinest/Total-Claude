@@ -338,15 +338,45 @@ export class AbilitySystem implements Subsystem {
   }
 
   /**
+   * Giving ground has to buy something.
+   *
+   * A skirmisher who backs away from a swordsman is out of reach the moment he moves, and that
+   * is the whole trade this ability exists for. One who backs away from a bow that reaches
+   * five times as far as his own arm has bought his enemy another half-minute of shooting and
+   * thrown away the only thing that could have stopped it, which is arriving.
+   *
+   * Measured, and this is `numidian-vs-archers` entire: Numidian cavalry ordered to attack
+   * `sagittarii` closed to 32.9 m at t+15, were pushed back out to **44.7 m** —
+   * `SKIRMISH_FALLBACK * 0.85`, the release point of the rule above — and stood there for
+   * sixty seconds losing **28 of 54** to a weapon they were never going to escape, without a
+   * man of theirs reaching a man of ours. The case is documented "B quickly" and reads "A
+   * wins, B loses 52 %", and it read that way before the missile friendly-fire fix as well as
+   * after it, which is why it was named as already broken.
+   *
+   * The two toggles start engaged (see `statesOf`), so this is on for every skirmisher in the
+   * game by default and nobody has to have asked for it.
+   */
+  private worthGivingGround(u: UnitGroupState): boolean {
+    const b = this.battle;
+    const o = b.unitById(b.frontEnemyOf(u.id));
+    // Nothing identifiable in front: keep the old behaviour, which is to give ground.
+    if (!o) return true;
+    const theirs = b.typeOf(o).missile;
+    if (!theirs) return true;
+    return theirs.range <= (b.typeOf(u).missile?.range ?? 0);
+  }
+
+  /**
    * Skirmishers exist to throw and run. When anything with a sword closes inside
    * `SKIRMISH_STANDOFF` they fall back, and they stop falling back once they have
-   * bought themselves room again.
+   * bought themselves room again — but only when the ground is worth buying:
+   * see `worthGivingGround`.
    */
   private runSkirmish(u: UnitGroupState): void {
     if (u.order === UnitOrder.Rout) return;
     const s = signalsOf(u.id);
     const b = this.battle;
-    if (s.nearestEnemy < SKIRMISH_STANDOFF) {
+    if (s.nearestEnemy < SKIRMISH_STANDOFF && this.worthGivingGround(u)) {
       let ex = 0;
       let ez = 0;
       const units = b.units;

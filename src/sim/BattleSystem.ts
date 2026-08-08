@@ -2688,6 +2688,16 @@ export class BattleSystem implements Subsystem {
   }
 
   /**
+   * Lethal blows this battle for which a unit was named as the killer and refused the credit
+   * because the man who fell was one of its own. Diagnostic; nothing reads it back into the
+   * sim. It should be zero, and a probe that finds it climbing has found a real regression.
+   */
+  private friendlyCredit = 0;
+  get creditRefused(): number {
+    return this.friendlyCredit;
+  }
+
+  /**
    * Apply damage to a soldier. Returns true if the blow was lethal.
    * The combat subsystem calls this; it is the single place a man can die.
    */
@@ -2708,8 +2718,30 @@ export class BattleSystem implements Subsystem {
     p.vz[i] = (dz / l) * 1.4;
     p.target[i] = -1;
 
+    /**
+     * **Nobody is credited with killing his own man**, at the one door every caller comes
+     * through rather than at each caller in turn.
+     *
+     * `Projectiles` already refuses to name a killer for a friendly casualty by passing -1,
+     * and that is the stronger statement and should stay — it also skips `killPulse` and
+     * `noteWallKill`, so a shot into one's own file buys nothing at all. This is the backstop
+     * underneath it, and the reason it is here rather than repeated at four melee call sites
+     * is that the rule belongs to `kills`, not to whoever happens to be swinging.
+     *
+     * Melee cannot reach it today and that was measured, not assumed: `acquireVisit` and
+     * `trampleVisit` are the only two things that ever hand `Combat` a victim, and both reject
+     * `p.faction[j] === own` before scoring. Wrapping this method in the page over three
+     * battles — the Rome assault, the Carthage assault and the Campus Martius, 662 s of sim —
+     * records **2,781 lethal blows, of which 1,889 were melee, and not one same-faction
+     * credit**; the only uncredited deaths are the 46 the missile path deliberately gives to
+     * nobody. So this comparison changes no number in the game as it stands. `creditRefused`
+     * is here so that stays checkable rather than becoming folklore.
+     */
     const killer = this.unitById(attackerUnitId);
-    if (killer) killer.kills++;
+    if (killer) {
+      if (killer.faction !== p.faction[i]) killer.kills++;
+      else this.friendlyCredit++;
+    }
 
     // A dead elephant is scenery with mass. Registered here rather than off `soldierDied`
     // because this is the one door into `Dying` and the list has to stay in kill order.

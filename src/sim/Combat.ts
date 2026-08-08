@@ -1144,9 +1144,8 @@ export class CombatSystem implements Subsystem {
     const through = 1 - armourReduction(armour) * ARMOUR_BITE;
     const total = (dmg * through + ap) * this.rng.range(0.82, 1.18);
 
-    const lethal = b.damage(t, total, p.x[i], p.z[i], u.id);
+    const lethal = this.slay(t, total, p.x[i], p.z[i], u);
     if (lethal) {
-      signalsOf(u.id).killPulse += 1;
       // Carry the blow's momentum into the fall.
       const shove = attackerIsCavalry ? 3.4 : 1.0 + total * 0.02;
       p.vx[t] = -bx * shove;
@@ -1154,6 +1153,34 @@ export class CombatSystem implements Subsystem {
     }
     const kind: 'flesh' | 'armour' = armour > 34 && this.rng.next() < 0.55 ? 'armour' : 'flesh';
     this.emitHit(hx, hy, hz, kind, lethal, u.faction);
+  }
+
+  /**
+   * One blow, and the one place melee decides whether it bought anything.
+   *
+   * Every lethal blow in this file used to read `if (b.damage(...)) signalsOf(x).killPulse++`,
+   * four times over, with no test of whose man had fallen — the same shape as the missile bug,
+   * which credited a garrison with 132 kills in a minute in which thirteen attackers died.
+   * `killPulse` is not cosmetic: it is half of the exchange ratio a unit steadies its nerve on
+   * (see `pushBalance` below) and it feeds the advantage readout, so a unit that killed one of
+   * its own would be *encouraged* by it.
+   *
+   * **Melee cannot express that fault today and this is a fence, not a fix.** `acquireVisit`
+   * and `trampleVisit` are the only two things that ever name a melee victim and both reject
+   * `p.faction[j] === own` before scoring, so the guard is unreachable — measured, not
+   * assumed: 1,889 lethal melee blows across the Rome assault, the Carthage assault and the
+   * Campus Martius, with not one same-faction credit. What it buys is that the next person to
+   * add a way of hitting a man — a rampaging elephant, a rout trampling its own rear rank, a
+   * fourth faction that is only half an ally — gets the rule for free instead of rediscovering
+   * it. `BattleSystem.damage` carries the twin of this for `kills`.
+   */
+  private slay(
+    victim: number, amount: number, fromX: number, fromZ: number, by: UnitGroupState
+  ): boolean {
+    const b = this.battle;
+    const lethal = b.damage(victim, amount, fromX, fromZ, by.id);
+    if (lethal && b.pool.faction[victim] !== by.faction) signalsOf(by.id).killPulse += 1;
+    return lethal;
   }
 
   private emitHit(
@@ -1212,8 +1239,7 @@ export class CombatSystem implements Subsystem {
       const through = 1 - armourReduction(counterArmour) * ARMOUR_BITE;
       const counter = (ddef.meleeDamage * 0.9 * through + ddef.apDamage + ddef.bonusVsCavalry * 1.15)
         * this.rng.range(0.9, 1.25);
-      if (b.damage(i, counter, p.x[t], p.z[t], dv.id)) {
-        signalsOf(dv.id).killPulse += 1;
+      if (this.slay(i, counter, p.x[t], p.z[t], dv)) {
         p.vx[i] = -nx * 2.2;
         p.vz[i] = -nz * 2.2;
       }
@@ -1223,8 +1249,7 @@ export class CombatSystem implements Subsystem {
 
     const armourThrough = 1 - armourReduction(ddef.armour * dmods.armour * 0.85) * ARMOUR_BITE;
     const impact = power * armourThrough * this.rng.range(0.85, 1.2);
-    if (b.damage(t, impact, p.x[i], p.z[i], u.id)) {
-      signalsOf(u.id).killPulse += 1;
+    if (this.slay(t, impact, p.x[i], p.z[i], u)) {
       p.vx[t] = nx * 5.5;
       p.vz[t] = nz * 5.5;
       p.vy[t] = 2.2;
@@ -1246,8 +1271,7 @@ export class CombatSystem implements Subsystem {
       b.hash.query(TRA_X, TRA_Z, 1.1, trampleVisit);
       for (let k = 0; k < TRAMPLE_N; k++) {
         const j = TRAMPLE_HITS[k];
-        if (b.damage(j, impact * 0.45, p.x[i], p.z[i], u.id)) signalsOf(u.id).killPulse += 1;
-        else p.setState(j, SoldierState.Staggered);
+        if (!this.slay(j, impact * 0.45, p.x[i], p.z[i], u)) p.setState(j, SoldierState.Staggered);
         p.vx[j] += nx * 1.6;
         p.vz[j] += nz * 1.6;
       }

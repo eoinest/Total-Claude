@@ -169,6 +169,58 @@ Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`
 
 ## Measured facts that must not be re-derived
 
+- **`tools/matchup.mjs` is exactly reproducible on a quiet box, and its documented ±8% is
+  machine load arriving as a discrete outcome.** Run case by case with the arms alternating in
+  one session, **20 of the 22 cases come back byte-identical** across a real change — same
+  winner, same second, same losses, same melee peak and mean. Run as two whole suites an hour
+  apart at loads 10 and 45 and **four cases flip winner on an unchanged tree**:
+  `spears-vs-legionary` (A 111 s / B 90 s), `legionary-vs-warband` (A 163 s / B 175 s),
+  `chosen-vs-cohort` (B 141 s / timeout) and `even-grind` (A 144 s / B 137 s). All four are
+  near-even by construction, so the winner is whichever side breaks first and a few extra rAF
+  ticks between round-trips decide it. **Never compare two whole-suite runs.** Alternate
+  `--only=<case>` between two ports pinned to two commits; that is the instrument.
+- **`cav-vs-archers` was never about the approach, and no sagittarii stat was wrong.** Sliced
+  by the ten metres the horse is crossing, the charge arrives having lost **2 of 50 — the 4%
+  the case is documented to produce** — both before and after the missile friendly-fire fix.
+  300 arrows over 150 m of open ground buy one dead rider. Every extra loss happens *after*
+  contact, because `inMelee` was `contactLock || engagedFraction > 0.18` and a hundred archers
+  with a fifty-horse wedge standing in them satisfy neither: the wedge presents a tip, five or
+  six men have an opponent, `engagedFraction` reads 0.05. The unit volleyed on at **1.7 m** —
+  55 hits and six dead riders in one second, from arrows the lofted solve draws to **4.6 m/s**
+  over a two-metre gap, doing full listed damage because damage is a roster number and not a
+  function of speed. Before the friendly-fire fix those arrows were eaten by the archers' own
+  front rank at the muzzle. Fixed with a 7 m front-to-front hold, which is the number
+  `Abilities.shouldAuto` already used for a pilum volley.
+- **`skirmish-mode` is on by default on every skirmisher** (`statesOf`: "the two toggles start
+  engaged"), and `runSkirmish` gave ground to *anything* inside 30 m. Numidian cavalry ordered
+  to attack `sagittarii` closed to 32.9 m, were pushed back to 44.7 m — `SKIRMISH_FALLBACK *
+  0.85` exactly — and stood there sixty seconds losing 28 of 54 to a 165 m bow without a man
+  reaching a man. That, and not a stat line, is why `numidian-vs-archers` read the wrong way
+  before the friendly-fire fix as well as after it.
+- **A javelin refusal on Carthage is not a parapet problem.** `maxRange` genuinely was a
+  level-ground bound compared against a horizontal distance and it is now the launch solve's
+  own discriminant envelope — but the fix is **inert on both maps**: attempts and refusals are
+  3,107 / 550 on both arms, because every weapon's roster range is far inside its physical
+  reach even at the **14.7 m** Carthage's garrison stands above the ditch. **No shot in 6,400
+  leaves without a ballistic root**, so "the discriminant goes negative and it fires at 45°
+  into the wall" cannot happen here: a 24 m/s javelin's ceiling is 29.4 m against a 13.4 m
+  parapet. The 43% refusal rate is one early window — sliced it is 40.5 / 47.1 / 21.5 / 31.4 /
+  5.4 / 1.1 / 0 / 0% and pools to **17.7%** — and **448 of 550 refusals are more than twelve
+  metres *below* the muzzle**, with 279 inside 1.1× of the bound and 211 more inside 1.25×.
+  They are the garrison throwing down at men just past a 30 m horizontal bound at the moment
+  a unit acquires a formation whose centre is at the edge of its range, and **a refused shot
+  costs no ammunition** (`p.ammo[i]--` is the last statement in `launch`), so it is a hold.
+  Do not convert `missile.range` for height: doing it takes `punic-levy` to 43.1 m and its
+  hits per attempt from 24.6% to 20.3%, and its own roster comment says the 30 m is a decision.
+- **Melee never credited a kill to the wrong side, and that is now measured rather than
+  argued.** `acquireVisit` and `trampleVisit` are the only two things that name a melee victim
+  and both reject the shooter's own faction. Wrapping `BattleSystem.damage` in the page over
+  the Rome assault, the Carthage assault and the Campus Martius — 662 s — records **2,781
+  lethal blows, 1,889 of them melee, and not one same-faction credit**; the only uncredited
+  deaths are the 46 the missile path gives to nobody on purpose. Kills against bodies: Rome
+  618/699 and 589/612, Carthage 294/309 and 491/493. `damage` now refuses the credit at source
+  and `battle.creditRefused` should stay 0.
+
 - **The game is not slow. It hitches, and the hitch is a shader link.** On an *idle* box
   (load 9.6) Carthage at ultra runs `engine.frame()` at p50 **2.60 ms**, p99 **7.00**, with
   one frame in 2,899 over 16.7 ms and none over 33. The heaviest scenario in the game —
