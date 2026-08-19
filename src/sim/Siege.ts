@@ -4,6 +4,7 @@ import type { BattleSystem, ElevationOwner } from './BattleSystem';
 import { NO_SUPPORT } from './BattleSystem';
 import type { ProjectileSystem } from './Projectiles';
 import { SoldierState, UnitOrder, type UnitGroupState } from './types';
+import { modsOf } from './combatShared';
 import { clamp, lerp } from '../util/math';
 import { hash01, Rng } from '../util/rand';
 import {
@@ -182,6 +183,28 @@ const MACHINE_AIM_R = 30;
  * mouth, and a machine that retired in that gap would drop the rest of the assault.
  */
 const TOWER_IDLE_LIMIT = 20;
+/**
+ * Incoming missile damage a gang takes while it is working a ram, as a multiplier.
+ *
+ * **This is the whole reason a *testudo arietaria* has a roof, and the simulation had the
+ * roof drawn and not modelled.** Measured on the Campus Martius by wrapping
+ * `BattleSystem.damage` and attributing every point of it: the ram crew is 32 men at t+0 and
+ * 6 by t+40, and **4,846 of the 4,846 points that killed them came from two units** —
+ * `ballistarii#0` and `ballistarii#1`, shooting from 53-60 m. Rome's garrison plan puts two
+ * hundred and sixteen hand-spanned crossbowmen on the curtain either side of the gate, at 62
+ * damage and 40 armour-piercing a bolt, and the ram is the nearest thing on the field because
+ * it spawns 62 m out while the towers start at 74-101. The machine has never once landed a
+ * blow on Rome's gate — twelve runs of twelve — and this is why. On Carthage, whose garrison
+ * carries a levy and slings instead, the identical machine takes **zero damage** on the
+ * identical approach and batters the gate down on schedule.
+ *
+ * So the fix is the shed, not the ballista. 0.2 is a shade weaker than the `testudo`
+ * formation's own 0.16 — a roof of hides and green timber against a roof of shields — and it
+ * is applied to the gang and not to the machine, because what is being protected is men.
+ * They are not made safe: at this multiplier the same two units still take the crew down by a
+ * third on the way in, which is the ram being a dangerous job rather than an impossible one.
+ */
+const RAM_SHED_COVER = 0.12;
 /**
  * Units that may queue at one machine at once, crew included.
  *
@@ -4072,8 +4095,38 @@ export class Siege implements ElevationOwner {
     return { pts, arc, n, destStation, queue: [], pace };
   }
 
+  /**
+   * Unit ids whose `missileTaken` this system has written, so it can put them back.
+   *
+   * `modsOf` is a shared per-unit table that `Abilities` also writes, so a multiplier left
+   * behind on a cohort that has stopped crewing anything would follow it round the field for
+   * the rest of the battle. Tracked explicitly and restored the tick the machine stops being
+   * theirs — `recrew` reassigns gangs mid-battle, so this cannot be done at spawn.
+   */
+  private sheltered = new Set<number>();
+
+  /** Put the gang of every live ram under its own roof, and take everyone else out from under it. */
+  private applyShedCover(): void {
+    const want = new Set<number>();
+    for (const r of this.rams) {
+      if (r.wreck || r.state === RamState.Wreck || r.state === RamState.Spent) continue;
+      if (!this.owned.has(r.unitId)) continue;
+      want.add(r.unitId);
+    }
+    for (const id of this.sheltered) {
+      if (want.has(id)) continue;
+      modsOf(id).missileTaken = 1;
+      this.sheltered.delete(id);
+    }
+    for (const id of want) {
+      modsOf(id).missileTaken = RAM_SHED_COVER;
+      this.sheltered.add(id);
+    }
+  }
+
   private updateRams(dt: number): void {
     const b = this.battle;
+    this.applyShedCover();
     for (const r of this.rams) {
       const great = r.kind === RamKind.Great;
       const period = great ? GREAT_RAM_PERIOD : RAM_PERIOD;
