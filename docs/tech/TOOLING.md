@@ -437,6 +437,16 @@ node tools/shoot.mjs --w=2560 --h=1440 --dpr=2
 node tools/shoot.mjs --hud                     # WITH the interface — never gradeable
 ```
 
+> **A defect in this table, found while checking the numbers for this document.** `--set` is
+> `all` when you pass nothing, and `all` is defined as *"not `deck-` and not `ab-`"*. But
+> `'ab2-rome-line'.startsWith('ab-')` is **false** — the third character is `2`, not `-`. So the
+> default set is 32 shots, and 14 of them are the round-two A/B frames with their matched
+> press cameras. `ab1`'s filter carries a `&& !k.startsWith('ab2-')` guard that is redundant
+> for the same reason, which suggests the ambiguity was noticed and then guarded on the wrong
+> side. `node tools/shoot.mjs` with no arguments shoots more than twice what its author
+> intended. Verified by running `--list`: `deck (10), ab1 (14), ab2 (14), all (32)` against 56
+> shots defined.
+
 **Use a named camera. Never hand-place one.** This is the single most important convention in
 the visual tooling and it is not about tidiness. The point of a shot is that the "after" is
 *the same frame* as the "before" and not merely a similar one, and a hand-placed focus cannot
