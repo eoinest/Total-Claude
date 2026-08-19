@@ -290,6 +290,15 @@ export class SelectionController {
      * tell them apart on its own. See `updateGround`.
      */
     sideAt(x: number, z: number): -1 | 1;
+    /**
+     * Countermand a wall plan, and take a unit out of a machine's boarding file.
+     *
+     * Optional, because the whole probe is duck-typed and a build with an older `Siege` must
+     * still run. Both verbs are public on `Siege` and neither had a caller, which is why an
+     * order about the wall was the one order in this game that could not be taken back.
+     */
+    cancelWallPlan?(unitId: number): boolean;
+    releaseEscalade?(unitId: number): boolean;
   } | null = null;
 
   constructor(
@@ -403,9 +412,32 @@ export class SelectionController {
     return this.model.selectedViews.filter((v) => !v.routing).map((v) => v.id);
   }
 
+  /**
+   * Stop. Including whatever the wall was told to do with these men.
+   *
+   * A `halt` event reaches `BattleSystem` and nothing else, so a unit halfway through a wall
+   * order kept executing it: measured on the Aurelian Wall, a traverse aimed two runs along
+   * — across a construction gap no link bridges — left the cursor promising "Along the wall",
+   * the order accepted, and **156 of 158 men stuck with the plan still open at age 3,657
+   * ticks**. `Siege.advancePlans` will not abandon it until `PLAN_TIMEOUT`, ten minutes, and
+   * `updateGarrisons` defers to a live plan, so the cohort could not even re-form where it
+   * stood. The verbs to undo both halves are public on `Siege` and had no callers.
+   *
+   * Not silent: `Siege` owns these men's positions, so the countermand happens before the
+   * halt event rather than after it, and the men are left standing on whatever they are
+   * standing on — which is always a legal place to be, because they were there a tick ago.
+   */
   issueHalt(ctx: EngineContext): void {
     const ids = this.orderIds();
-    if (ids.length) ctx.events.emit('orderIssued', { unitIds: ids, kind: 'halt' });
+    if (!ids.length) return;
+    const probe = this.wallProbe;
+    if (probe) {
+      for (const id of ids) {
+        probe.cancelWallPlan?.(id);
+        probe.releaseEscalade?.(id);
+      }
+    }
+    ctx.events.emit('orderIssued', { unitIds: ids, kind: 'halt' });
   }
 
   /**
@@ -650,23 +682,31 @@ export class SelectionController {
         this.wallZ = PICK.solidZ;
         this.wallY = PICK.solidY;
         this.wallValid = true;
-      } else if (this.wallProbe && PICK.solid >= this.siegeAt && this.selectionIsStorming()) {
+      } else if (this.wallProbe && this.selectionIsStorming()) {
         /*
-         * A siege tower is the one solid that *is* the way up, and it stands in front of the
-         * only pixel that used to mean the wall.
+         * From outside, the thing standing between the cursor and the wall *is* the wall.
          *
-         * Measured on the storm of Carthage: aiming at the bay a tower is working, no camera
-         * on the field side can reach the masonry at all — the ray meets the machine first,
-         * `Siege.wallTargetAt` answers −1 at a point 4.5 m outside the curtain's face
-         * (`WALL_CLICK_BAND` is 1.7 m), `wallValid` is false, and the order goes out as a
-         * plain move to the grass beside the tower. So the route the whole machine exists to
-         * provide could not be commanded by clicking the machine.
+         * The rule above already says that on the storming side any hit on the masonry is a
+         * wall order, because the walk cannot be seen from there at all. What it could not
+         * say was which masonry: `Siege.wallTargetAt` measures against the curtain's own
+         * standing band widened by `WALL_CLICK_BAND` (1.7 m), and two of the three things a
+         * besieger actually points at stick out well past it —
          *
-         * Walked forward along the cursor's own ray rather than guessed at: the first point
-         * within `SIEGE_REACH_M` that the sim itself calls a wall station is the bay this
-         * engine is leaning on. Confined to the storming side and to the siege engines —
-         * everything from `siegeAt` on — so a click on the curtain, on a tower of the wall,
-         * or on anything at all from inside the city is untouched.
+         *  - a **siege tower**, whose front face docks 0.32 m off the stone and which is
+         *    4.2 m deep, so its near face is about 4.5 m out. Measured on the storm of
+         *    Carthage: aiming at the bay a tower is working, *no* camera on the field side
+         *    reaches the masonry, `wallValid` is false at every zoom and both bearings, and
+         *    the order goes out as a plain move to the grass beside the machine. The route
+         *    the whole machine exists to provide could not be commanded by clicking it.
+         *  - a **tower of the wall**, whose mass projects several metres in front of the
+         *    curtain. Same reading: `wallValid false`, `solid true y 25.16`, and a move order
+         *    1.8 m from the parapet the player pointed at.
+         *
+         * Walked forward along the cursor's own ray rather than guessed at, so it is the
+         * geometry that decides and not a table of half-extents: the first point within
+         * `SIEGE_REACH_M` that the sim itself calls a wall station is the bay this thing is
+         * standing against. Confined to the storming side, where every hit on masonry
+         * already means the wall, so nothing about picking from inside the city changes.
          */
         const probe = this.wallProbe;
         const inv = Math.hypot(RAY.dx, RAY.dz);

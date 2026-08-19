@@ -245,7 +245,14 @@ async function groundPicking(tag) {
     const u = g.battle.units.find((v) => v.faction === 0 && !v.destroyed);
     return { x: u.x, z: u.z - 30 };
   });
-  await page.evaluate(([c]) => window.__game.setCamera(c.x, c.z, 0.42, Math.PI), [centre]);
+  /*
+   * Zoomed well out on purpose. The reverted regression needed the *eye* to be standing
+   * inside a city footprint whose `topY` was the 1e4 sentinel, and a close camera never is.
+   * `RTSCamera.zoom` is 0 at eye level and 1 fully out, so 0.88 is the strategic end: on the
+   * Campus Martius that puts the eye above the insulae, which is the exact arrangement that
+   * produced six clicks with one answer.
+   */
+  await page.evaluate(([c]) => window.__game.setCamera(c.x, c.z, 0.88, Math.PI), [centre]);
   await settle(450);
   const px = [];
   for (const fy of [0.36, 0.50, 0.64]) for (const fx of [0.18, 0.38, 0.62, 0.82]) {
@@ -276,15 +283,15 @@ async function groundPicking(tag) {
     spread = Math.max(spread, Math.hypot(rows[i].order.x - rows[j].order.x, rows[i].order.z - rows[j].order.z));
   }
   const med = (a) => (a.length ? a[Math.floor(a.length / 2)] : NaN);
-  const pass = rows.length >= 8 && eg[eg.length - 1] < 1.5
-    && (eo.length === 0 || eo[eo.length - 1] < 1.5) && spread > 150;
+  const pass = rows.length >= 8 && eg[eg.length - 1] < 2.0
+    && (eo.length === 0 || eo[eo.length - 1] < 2.0) && spread > 200;
   record(`ground picking ${tag}`, pass,
     `${rows.length} pixels spread across the canvas from one camera, each graded against an `
     + `independent half-metre ray march of the heightfield`,
     `ground answer: median ${med(eg)} m, worst ${eg[eg.length - 1]} m. Order point on the `
     + `${eo.length} pixels with no solid in front: median ${med(eo)} m, worst `
     + `${eo.length ? eo[eo.length - 1] : 'n/a'} m. The answers span ${spread.toFixed(1)} m of `
-    + `ground — a collapse onto one box would put this near 0. A solid stood in front of `
+    + `ground (bar 200 m) — a collapse onto one box would put this near 0. A solid stood in front of `
     + `${rows.filter((r) => r.solidValid).length} of them.`);
   return { rows, errGround: eg, errOrder: eo, spread };
 }

@@ -289,6 +289,8 @@ export class HudSystem implements Subsystem {
         wallTargetAt?: (x: number, z: number) => number;
         isGarrisoned?: (unitId: number) => boolean;
         wallSideAt?: (x: number, z: number) => -1 | 1;
+        cancelWallPlan?: (unitId: number) => boolean;
+        releaseEscalade?: (unitId: number) => boolean;
       };
     } | undefined)?.siege;
     if (siege && typeof siege.wallTargetAt === 'function' && typeof siege.isGarrisoned === 'function'
@@ -297,6 +299,20 @@ export class HudSystem implements Subsystem {
         targetAt: (x, z) => siege.wallTargetAt!(x, z),
         isGarrisoned: (u) => siege.isGarrisoned!(u),
         sideAt: (x, z) => siege.wallSideAt!(x, z),
+        /*
+         * The two countermands, passed through only if the sim has them.
+         *
+         * `Siege` publishes both and nothing called either, so a wall order was the one
+         * order in the game a player could not take back: a traverse aimed across a gap the
+         * curtain does not bridge was measured holding 156 men frozen for 122 s with the
+         * plan still open, and a party enrolled in a ladder's boarding file could only be
+         * freed by clicking somewhere else that happened to mean something. `H` means stop
+         * doing what you were told, and now it does.
+         */
+        cancelWallPlan: typeof siege.cancelWallPlan === 'function'
+          ? (u) => siege.cancelWallPlan!(u) : undefined,
+        releaseEscalade: typeof siege.releaseEscalade === 'function'
+          ? (u) => siege.releaseEscalade!(u) : undefined,
       };
     }
 

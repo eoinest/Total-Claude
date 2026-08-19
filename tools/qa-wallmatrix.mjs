@@ -634,6 +634,34 @@ async function romeCells() {
               + `${a.plan ? `the plan is still open at age ${a.plan.age} with ${a.plan.stuck} men stuck`
                 : 'no plan is left open'}` }) });
       }
+      /*
+       * And the way out of it. `H` is the halt key the legend already advertises; until this
+       * pass it reached `BattleSystem` and nothing else, so a unit halfway through a wall
+       * order kept executing an order that could not finish.
+       */
+      const frozen = await page.evaluate((id) => window.__census(id), line.id);
+      if (frozen && frozen.plan) {
+        const sel = await select(line.id);
+        if (sel.ok) {
+          await page.keyboard.press('KeyH');
+          await settle(200);
+          await page.evaluate(() => window.__game.engine.advance(2, 166));
+          const freed = await page.evaluate((id) => window.__census(id), line.id);
+          record({ id: 'R2H', route: 'halt', dir: '-', unitId: line.id, unitType: frozen.typeId,
+            pass: !freed.plan,
+            note: `H with the frozen cohort selected: plan goal ${frozen.plan.goal} age `
+              + `${frozen.plan.age} stuck ${frozen.plan.stuck} → `
+              + `${freed.plan ? `STILL OPEN age ${freed.plan.age}` : 'cleared'}; `
+              + `${freed.onStone} men still on the stone, siege-owned ${freed.owned}`,
+            before: frozen, after: freed });
+        } else {
+          record({ id: 'R2H', route: 'halt', dir: '-', unitId: line.id, pass: false,
+            note: `could not select the frozen cohort to halt it — ${sel.why}` });
+        }
+      } else {
+        record({ id: 'R2H', route: 'halt', dir: '-', unitId: line.id, pass: true, skip: true,
+          note: 'no plan was left open by R2X, so there was nothing to countermand' });
+      }
     }
   } else {
     record({ id: 'R2', route: 'traverse', dir: 'along', unitId: line.id, pass: false,
