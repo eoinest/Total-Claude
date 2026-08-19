@@ -118,6 +118,43 @@ const TOWER_HEAVE = 14;
  */
 const TOWER_COMMIT = 12;
 /**
+ * Seconds a re-aimed ram stands still while the crew take up the poles.
+ *
+ * The tower's `TOWER_HEAVE` is fourteen because fifteen tonnes on rollers has to be levered
+ * bodily round; a ram is a shed on four wheels with a trunk slung inside it and turning one
+ * is a job for the same gang in a quarter of the time. Six seconds is still long enough that
+ * a player who changes their mind at the gate watches the cost of it, which is the point of
+ * having a number here at all rather than an instant pivot.
+ */
+const RAM_HEAVE = 6;
+/**
+ * How fast that gang swings the shed onto its new bearing, radians per second.
+ *
+ * `TOWER_SLEW` is 0.09 — a right angle in seventeen seconds. A ram is lighter and shorter in
+ * the wheelbase, so 0.16 turns it in nine, and the two machines still read as different
+ * weights of thing when you order them both round in the same second.
+ */
+const RAM_SLEW = 0.16;
+/**
+ * How near a gate a click has to land before a ram order means *that* gate, metres.
+ *
+ * Generous on purpose. The player is aiming at a gatehouse from a hundred metres up and
+ * behind, the ray lands on whatever masonry is nearest the cursor, and the carriageway
+ * itself is 5.2 m of a 40 m block. Carthage's three gates are 560 m apart, so 55 m cannot
+ * pick the wrong one; what it can do is refuse a click that meant the curtain, which is a
+ * refusal the player needs to see rather than a target the machine invents.
+ */
+const GATE_PICK_R = 55;
+/**
+ * Metres of separation two towers' dock points need before both are allowed to stand there.
+ *
+ * `TOWER_HALF_W` is the half-frontage, so two machines whose centres are inside four
+ * half-widths of each other are drawn intersecting. The refusal exists because "send it to
+ * that bay" is the one order the player can give a tower and the one answer that must never
+ * be "yes, on top of the other one".
+ */
+const TOWER_BERTH = TOWER_HALF_W * 4;
+/**
  * Units that may queue at one machine at once, crew included.
  *
  * A cap rather than a rule about who: four cohorts is already a file long enough to reach
@@ -391,6 +428,28 @@ interface SiegeRam {
   z: number;
   y: number;
   facing: number;
+  /**
+   * The bearing the crew are levering the shed round onto, which is `facing` at rest.
+   *
+   * A ram used to be built pointing at its gate and never turned again, because there was
+   * only ever one gate and it was chosen at spawn. The moment the player can re-aim it, a
+   * shed that snapped ninety degrees on the frame of the click would read as a bug; this is
+   * the same two-field arrangement the tower has had since it could be re-aimed.
+   */
+  wantFacing: number;
+  /** Seconds the gang is still shifting poles and will not roll the machine. See `RAM_HEAVE`. */
+  heave: number;
+  /**
+   * The gate this machine is beating on, by id, or `''` for a great ram at the curtain.
+   *
+   * **Never a literal.** `armGate`, `spawnRam` and the breach all used `getGates()[0]` while
+   * the breach itself once said `'porta-flaminia'` out loud, and on Carthage — which has no
+   * such gate — the ram landed all twenty-six blows into a carriageway that stayed solid for
+   * the rest of the battle. Carrying the id on the machine is what lets three gates exist and
+   * still keeps every consumer reading the same one: the blow counter, the leaves, the
+   * occupancy raster and the report are all keyed off this field.
+   */
+  gateId: string;
   /** Recoil offset of the trunk along its own axis, metres. Negative is drawn back. */
   swing: number;
   /** Seconds until the next blow. */
@@ -636,6 +695,16 @@ interface CityView {
   getGates(): { id: string; x: number; z: number; facing: number; open: boolean }[];
   setGateOpen(id: string, open: boolean): void;
   /**
+   * Optional. Swaps a gate's intact leaves for the pose the ram left them in.
+   *
+   * Optional rather than required because it is *visual only* — it writes no raster, no
+   * obstacle and no `GateOut` — so a city that has not baked a wrecked twin is a gate that
+   * opens rather than a crash. Both circuits have one today.
+   */
+  setGateDoorBroken?(id: string, broken?: boolean): void;
+  /** Optional. True once `setGateDoorBroken` has been called for this gate. */
+  isGateDoorBroken?(id: string): boolean;
+  /**
    * Optional, and the whole reason the stair mechanic reads the city instead of guessing.
    *
    * Absent today. `buildStairs` synthesises a set from the bays when it is, and reports
@@ -649,6 +718,79 @@ interface CityView {
    * the gate. Absent today; see the patch in this workstream's report.
    */
   breachWall?(x: number, z: number, halfWidth: number): void;
+}
+
+/**
+ * What kind of machine a unit's gang is working, as the UI needs to name it.
+ *
+ * `ram` and `greatRam` are one `SiegeRam` with two `RamKind`s in the simulation and two
+ * different orders to the player: one goes at a gate and one goes at masonry, and a cursor
+ * that says "break the gate" while hovering a stretch of curtain would be lying.
+ */
+export type SiegeMachineKind = 'tower' | 'ram' | 'greatRam';
+
+/**
+ * Why a machine order was refused, or `none` when it was not.
+ *
+ * Every one of these is a sentence the player has to be able to read *before* the click.
+ * The tower's refusals in particular are the character of the machine — fifteen tonnes of
+ * green timber is meant to be hard to redirect — but a silent refusal is not character, it
+ * is a broken button, and that distinction is the whole reason this enum exists rather than
+ * a bare `false`.
+ */
+export type SiegeRefusal =
+  /** It will be obeyed. */
+  | 'none'
+  /** The ramp is falling or down: it is landing on the bay it is over. */
+  | 'landed'
+  /** Inside `TOWER_COMMIT` of its bay, where the gang is squaring it on the masonry by eye. */
+  | 'committed'
+  /** It is already going there. */
+  | 'already'
+  /** Another machine has that berth. */
+  | 'taken'
+  /** No stretch of wall under the cursor. */
+  | 'noWall'
+  /** No gate under the cursor that is still shut. */
+  | 'noGate'
+  /** A gate ram cannot break masonry, and a great ram is not for gates. */
+  | 'wrongTarget'
+  /** Wrecked, withdrawing or parked: it has no work left in it. */
+  | 'spent'
+  /** Nobody is pushing it. */
+  | 'unmanned';
+
+/**
+ * What a right-click at a point would do to one machine — the answer to the question the
+ * cursor has to ask before the player commits.
+ *
+ * **One predicate, shared.** `machineOrderAt` and the code that actually moves the machine
+ * both call `resolveMachineOrder` and nothing else, so the hint and the order cannot
+ * disagree. Three separate features in this project have now shipped a preview computed one
+ * way and an action computed another, and every one of them showed up as a control that
+ * looked like it worked.
+ */
+export interface SiegeMachineOrder {
+  kind: SiegeMachineKind;
+  /** Index into `towers` or `rams`. */
+  machineId: number;
+  /** The gang. */
+  unitId: number;
+  /** True when a click here will be obeyed. */
+  ok: boolean;
+  refusal: SiegeRefusal;
+  /** Where the machine will end up standing, or where it is standing now on a refusal. */
+  x: number;
+  z: number;
+  y: number;
+  /** The station it will square up to, or -1 for a gate. */
+  station: number;
+  /** The curtain bay that station belongs to, or -1. */
+  bay: number;
+  /** The gate it will beat on, or `''`. */
+  gateId: string;
+  /** Metres the machine still has to roll to get there. */
+  distance: number;
 }
 
 export class Siege implements ElevationOwner {
@@ -816,7 +958,31 @@ export class Siege implements ElevationOwner {
   private wantDir!: Uint8Array;
 
   // ---- gate ----
-  private gateBlows = 0;
+  /**
+   * Blows landed on each gate, by id — not one counter for "the gate".
+   *
+   * Rome has one gate and Carthage has three plus eight posterns, and a single running total
+   * meant a ram re-aimed half way through its work carried its blows across to the new
+   * timber. Keyed by id for the same reason `SiegeRam.gateId` is: it is the one identifier
+   * every other consumer of the gate — the leaves, the occupancy raster and the report —
+   * already agrees on. Two rams beating the same gate still share one counter, which is what
+   * they should do and what the single total used to do by accident.
+   */
+  private gateBlowsBy = new Map<string, number>();
+  /** Gates whose leaves are down, in the order they fell. */
+  private breachedGates: string[] = [];
+  /**
+   * The worst-battered gate's tally, which is what "the gate" meant when there was one.
+   *
+   * `engineReport` and `gateReport` are read by probes that were written against a single
+   * gate; a maximum keeps them measuring the gate the ram is actually working on instead of
+   * a sum across three that never adds up to a percentage.
+   */
+  private get gateBlows(): number {
+    let most = 0;
+    for (const n of this.gateBlowsBy.values()) if (n > most) most = n;
+    return most;
+  }
   private gateBreached = false;
   /**
    * The gate starts **shut**, and this is the flag that says so before anything has hit it.
@@ -1886,6 +2052,18 @@ export class Siege implements ElevationOwner {
     return null;
   }
 
+  /**
+   * The ram this unit's gang works, or null.
+   *
+   * A wreck is deliberately still returned. It is the crew's machine right up until they are
+   * given another one, and the honest answer to "send it there" is a refusal that says the
+   * thing is burnt, not the silence you get from pretending they crew nothing.
+   */
+  private ramOf(unitId: number): SiegeRam | null {
+    for (const r of this.rams) if (r.unitId === unitId) return r;
+    return null;
+  }
+
   /** True when this unit is somebody's gang and has a machine of its own to work. */
   private crewsAMachine(unitId: number): boolean {
     if (this.towerOf(unitId)) return true;
@@ -1978,15 +2156,272 @@ export class Siege implements ElevationOwner {
    * is what stops the thing behaving like a unit that pivots.
    */
   orderTowerTo(u: UnitGroupState, x: number, z: number): boolean {
-    const t = this.towerOf(u.id);
-    if (!t) return false;
-    const station = this.wallTargetAt(x, z) >= 0 ? this.wallTargetAt(x, z) : this.stationNear(x, z);
-    if (station < 0 || this.dead(station)) return false;
-    if (station === t.station) return false;
-    if (t.state !== TowerState.Approach) return false;
-    if (t.dist > 0 && t.dist < TOWER_COMMIT) return false;
-    this.aimTowerAt(t, station);
-    t.heave = TOWER_HEAVE;
+    const o = this.resolveMachineOrder(u.id, x, z);
+    if (!o || o.kind !== 'tower' || !o.ok) return false;
+    return this.applyMachineOrder(o);
+  }
+
+  /**
+   * Send a ram at a gate the player has chosen — or, for the great ram, at a stretch of
+   * curtain.
+   *
+   * The second half of the owner's ask: *"making the battering ram go wherever you want"*.
+   * `spawnRam` read `getGates()[0]` and nothing ever wrote the target again, so the machine
+   * was aimed once at whichever gate the city happened to publish first and the player had no
+   * say at all. That is a real limitation and not a theoretical one: Rome has one gate, but
+   * **Carthage has three** — Byrsae, Uticensis and Maritima — and the assault could only ever
+   * be delivered against the first of them.
+   *
+   * A ram is lighter than a tower and it is a shed, not a fifteen-tonne frame, so it is
+   * cheaper to change your mind about: `RAM_HEAVE` is six seconds against the tower's
+   * fourteen and it will take a new bearing right up until it has finished. What it will not
+   * do is go back to work once it has withdrawn — a spent machine has been hauled clear on
+   * purpose and dragging it back into the carriageway it just cleared is the corking bug the
+   * withdrawal exists to prevent.
+   */
+  orderRamTo(u: UnitGroupState, x: number, z: number): boolean {
+    const o = this.resolveMachineOrder(u.id, x, z);
+    if (!o || o.kind === 'tower' || !o.ok) return false;
+    return this.applyMachineOrder(o);
+  }
+
+  /**
+   * What a right-click at `(x, z)` would do to whatever machine this unit crews, or null if
+   * it crews none. **Pure — it moves nothing.**
+   *
+   * This is the half the owner could not see. The mechanic existed and worked; what a player
+   * got for hovering the bay they were about to send fifteen tonnes of timber at was the same
+   * "Storm the wall here" cursor a cohort of the line gets, and what they got for a refused
+   * order was nothing whatsoever. Both halves now come out of `resolveMachineOrder`, so the
+   * sentence under the cursor is produced by the same code that will or will not obey it.
+   */
+  machineOrderAt(unitId: number, x: number, z: number): SiegeMachineOrder | null {
+    return this.resolveMachineOrder(unitId, x, z);
+  }
+
+  /**
+   * Where a machine is already going, so the UI can draw the standing order.
+   *
+   * Not the same question as `machineOrderAt`, which is about a point the cursor is over.
+   * A player who has just sent a tower down the wall needs to be able to look away and look
+   * back and still see where it is bound; that is the difference between an order that
+   * happened and an order you can tell happened.
+   */
+  machineDestinationOf(unitId: number): SiegeMachineOrder | null {
+    const t = this.towerOf(unitId);
+    if (t) {
+      return this.describe('tower', t.id, unitId, t.station, '', t.dockX, t.dockZ,
+        Math.hypot(t.dockX - t.x, t.dockZ - t.z), 'none');
+    }
+    const r = this.ramOf(unitId);
+    if (!r) return null;
+    const kind: SiegeMachineKind = r.kind === RamKind.Great ? 'greatRam' : 'ram';
+    return this.describe(kind, r.id, unitId, r.station, r.gateId, r.targetX, r.targetZ,
+      Math.hypot(r.targetX - r.x, r.targetZ - r.z), 'none');
+  }
+
+  /**
+   * Queue a player's machine order for the next tick.
+   *
+   * **Not applied here**, and that is the whole reason this method exists rather than the UI
+   * calling `orderTowerTo` straight. A mouse event arrives in `update`, at whatever rate the
+   * frame is running; every mutation of the simulation has to happen inside `fixedUpdate` or
+   * the battle stops replaying identically. `Siege` already buffers the player's ordinary
+   * move orders exactly this way (see `ordered`), and this is the same arrangement for the
+   * orders that have no `orderIssued` shape — "beat on *that* gate" is not a move order and
+   * pretending it is one is what left the ram unaimable in the first place.
+   *
+   * Deliberately player-only. `src/ai/Orders.ts` emits `orderIssued` through the same channel
+   * the mouse does, so a machine verb wired into `interceptOrders` is a verb the AI can fire
+   * as well — and an AI that drags the ram off the gate every few seconds is worse than no
+   * order at all.
+   */
+  requestMachineOrder(unitId: number, x: number, z: number): void {
+    this.machineOrders.push({ unitId, x, z });
+  }
+
+  /** Player machine orders waiting for the next tick. See `requestMachineOrder`. */
+  private machineOrders: { unitId: number; x: number; z: number }[] = [];
+
+  /** Fill in one order description. Every field the UI reads comes through here. */
+  private describe(
+    kind: SiegeMachineKind, machineId: number, unitId: number, station: number,
+    gateId: string, x: number, z: number, distance: number, refusal: SiegeRefusal
+  ): SiegeMachineOrder {
+    return {
+      kind, machineId, unitId,
+      ok: refusal === 'none',
+      refusal,
+      x, z,
+      y: this.battle.groundAt(x, z),
+      station,
+      bay: station >= 0 && station < this.nStations ? this.sBay[station] : -1,
+      gateId,
+      distance,
+    };
+  }
+
+  /**
+   * The one predicate. What a right-click at `(x, z)` means for this unit's machine.
+   *
+   * Both the cursor and the order call this and nothing else calls anything else. The trap
+   * this is written against has been paid for three times in this repo — most recently
+   * `musterOwned` and `stepCrossing` disagreeing about which men were in a file, which froze
+   * the player's cohort 14.6 m from a 1.6 m admission radius — and it is always the same
+   * shape: two pieces of code answering one question with two slightly different tests.
+   */
+  private resolveMachineOrder(unitId: number, x: number, z: number): SiegeMachineOrder | null {
+    const t = this.towerOf(unitId);
+    if (t) return this.resolveTowerOrder(t, x, z);
+    const r = this.ramOf(unitId);
+    if (r) return this.resolveRamOrder(r, x, z);
+    return null;
+  }
+
+  /**
+   * Where a tower would go, and the three reasons it would not.
+   *
+   * The refusals are the machine's character and they are listed in the order they bite:
+   * a spent tower is scenery, a docking one is landing its ramp on the bay it is over, and
+   * one inside `TOWER_COMMIT` is being squared on the masonry by eye. The fourth — `taken` —
+   * is new, and it answers the question the mechanic never had an answer for: two towers
+   * ordered onto one bay used to both accept and then be drawn through each other.
+   */
+  private resolveTowerOrder(t: SiegeTower, x: number, z: number): SiegeMachineOrder {
+    const here = (refusal: SiegeRefusal, station = t.station): SiegeMachineOrder =>
+      this.describe('tower', t.id, t.unitId, station, '', t.dockX, t.dockZ, t.dist, refusal);
+
+    const onWall = this.wallTargetAt(x, z);
+    const station = onWall >= 0 ? onWall : this.stationNear(x, z);
+    if (station < 0 || this.dead(station)) return here('noWall', -1);
+
+    const standoff = this.sFace[station] + 0.32 + TOWER_HALF_D;
+    const dockX = this.sx[station] + this.snx[station] * standoff;
+    const dockZ = this.sz[station] + this.snz[station] * standoff;
+    const at = (refusal: SiegeRefusal): SiegeMachineOrder =>
+      this.describe('tower', t.id, t.unitId, station, '', dockX, dockZ,
+        Math.hypot(dockX - t.x, dockZ - t.z), refusal);
+
+    if (t.state === TowerState.Spent) return at('spent');
+    if (t.state !== TowerState.Approach) return at('landed');
+    if (station === t.station) return at('already');
+    if (t.dist > 0 && t.dist < TOWER_COMMIT) return at('committed');
+    for (const k of this.towers) {
+      if (k.id === t.id || k.state === TowerState.Spent) continue;
+      if (Math.hypot(k.dockX - dockX, k.dockZ - dockZ) < TOWER_BERTH) return at('taken');
+    }
+    return at('none');
+  }
+
+  /**
+   * Where a ram would go: a shut gate for the light one, a stretch of curtain for the great.
+   *
+   * The two kinds refuse each other's target rather than doing something approximate with it.
+   * A gate ram against 3.5 m of concrete-and-brick would beat on it for ever — twenty-six
+   * blows are sized for twin oak leaves — and the great ram exists precisely so that you can
+   * *refuse* the gate and its killing ground, so aiming it at one throws away the only reason
+   * to have built it. Both refusals are named, and named differently from "there is nothing
+   * there", because "you cannot do that with this machine" is a different sentence from "you
+   * are not pointing at anything".
+   *
+   * An **open** gate is not a target either. Carthage publishes its eight posterns as gates
+   * that are already open — that is the mechanism by which a casemate wall is a wall you can
+   * walk through — and a ram sent to break a hole that is already a hole would land
+   * twenty-six blows and change nothing.
+   */
+  private resolveRamOrder(r: SiegeRam, x: number, z: number): SiegeMachineOrder {
+    const great = r.kind === RamKind.Great;
+    const kind: SiegeMachineKind = great ? 'greatRam' : 'ram';
+    const here = (refusal: SiegeRefusal): SiegeMachineOrder =>
+      this.describe(kind, r.id, r.unitId, r.station, r.gateId, r.targetX, r.targetZ,
+        Math.hypot(r.targetX - r.x, r.targetZ - r.z), refusal);
+
+    if (r.wreck || r.state === RamState.Wreck) return here('spent');
+    if (r.state === RamState.Withdrawing || r.state === RamState.Spent) return here('spent');
+
+    if (great) {
+      const onWall = this.wallTargetAt(x, z);
+      const station = onWall >= 0 ? onWall : this.stationNear(x, z);
+      if (station < 0 || this.dead(station)) return here('noWall');
+      const standoff = this.sFace[station] + 0.4 + GREAT_RAM_HALF_D;
+      const tx = this.sx[station] + this.snx[station] * standoff;
+      const tz = this.sz[station] + this.snz[station] * standoff;
+      const at = (refusal: SiegeRefusal): SiegeMachineOrder =>
+        this.describe(kind, r.id, r.unitId, station, '', tx, tz,
+          Math.hypot(tx - r.x, tz - r.z), refusal);
+      if (station === r.station) return at('already');
+      return at('none');
+    }
+
+    const gate = this.gateNear(x, z);
+    if (!gate) {
+      // Distinguish "you are pointing at the wall, which this machine cannot break" from
+      // "you are pointing at open grass". Both refuse; only one is worth explaining.
+      return here(this.wallTargetAt(x, z) >= 0 ? 'wrongTarget' : 'noGate');
+    }
+    const tx = gate.x + Math.sin(gate.facing) * (RAM_HALF_D + 3.6);
+    const tz = gate.z + Math.cos(gate.facing) * (RAM_HALF_D + 3.6);
+    const at = (refusal: SiegeRefusal): SiegeMachineOrder =>
+      this.describe(kind, r.id, r.unitId, -1, gate.id, tx, tz,
+        Math.hypot(tx - r.x, tz - r.z), refusal);
+    if (gate.id === r.gateId) return at('already');
+    return at('none');
+  }
+
+  /**
+   * The nearest gate to a point that is still shut, within `GATE_PICK_R`, or null.
+   *
+   * Read off `getGates()` every time and never cached, and never a literal id. `7e72785` was
+   * landed because one call site said `'porta-flaminia'` while the other two said
+   * `getGates()[0]`; on Carthage the ram landed every blow and the carriageway stayed solid
+   * for the rest of the battle. Ties break on the smaller index, so the answer is
+   * deterministic when two gates are somehow equidistant.
+   */
+  private gateNear(x: number, z: number): { id: string; x: number; z: number; facing: number } | null {
+    const gates = this.city?.getGates();
+    if (!gates) return null;
+    let best: { id: string; x: number; z: number; facing: number } | null = null;
+    let bestD = GATE_PICK_R * GATE_PICK_R;
+    for (const g of gates) {
+      if (g.open) continue;
+      const d = (g.x - x) * (g.x - x) + (g.z - z) * (g.z - z);
+      if (d < bestD - 1e-6) { bestD = d; best = g; }
+    }
+    return best;
+  }
+
+  /**
+   * Carry out an order `resolveMachineOrder` has already said yes to.
+   *
+   * Re-resolves nothing and decides nothing: every question was settled by the predicate, so
+   * there is no second test here to drift out of step with the first one.
+   */
+  private applyMachineOrder(o: SiegeMachineOrder): boolean {
+    if (!o.ok) return false;
+    if (o.kind === 'tower') {
+      const t = this.towers[o.machineId];
+      if (!t) return false;
+      this.aimTowerAt(t, o.station);
+      t.heave = TOWER_HEAVE;
+      return true;
+    }
+    const r = this.rams[o.machineId];
+    if (!r) return false;
+    r.targetX = o.x;
+    r.targetZ = o.z;
+    r.gateId = o.gateId;
+    r.station = o.station;
+    r.bay = o.station >= 0 ? this.sBay[o.station] : -1;
+    r.wantFacing = Math.atan2(o.x - r.x, o.z - r.z);
+    // Squared up on the bay's own normal for a great ram, because a machine that arrives at
+    // an angle beats on the corner of a block instead of the face of it. A gate ram takes the
+    // bearing of its own approach, which is the road.
+    if (o.station >= 0) r.wantFacing = Math.atan2(-this.snx[o.station], -this.snz[o.station]);
+    r.heave = RAM_HEAVE;
+    r.arrived = false;
+    r.state = RamState.Approach;
+    // The trunk goes back to rest and the blow clock restarts: the crew are off the ropes.
+    r.timer = r.kind === RamKind.Great ? GREAT_RAM_PERIOD : RAM_PERIOD;
     return true;
   }
 
@@ -2061,6 +2496,26 @@ export class Siege implements ElevationOwner {
    */
   private interceptOrders(): void {
     const b = this.battle;
+
+    /**
+     * The player's machine orders, carried out first.
+     *
+     * Before the move orders below, deliberately. A right-click with a tower party selected
+     * emits an ordinary `orderIssued` as well — the HUD does not know or care that this
+     * cohort happens to be pushing a machine — and the tower branch of that loop would
+     * otherwise re-decide the same order a second time on the same tick. Applying this one
+     * first makes the second decision a no-op (`already`), rather than two heaves for one
+     * click.
+     */
+    if (this.machineOrders.length > 0) {
+      for (const m of this.machineOrders) {
+        const u = b.unitById(m.unitId);
+        if (!u || u.destroyed || u.alive === 0) continue;
+        const o = this.resolveMachineOrder(m.unitId, m.x, m.z);
+        if (o && o.ok) this.applyMachineOrder(o);
+      }
+      this.machineOrders.length = 0;
+    }
 
     /**
      * Orders taken off the event, which is the only place the clicked point survives intact.
@@ -2671,14 +3126,23 @@ export class Siege implements ElevationOwner {
     return t.id;
   }
 
-  /** Send a ram at a gate. */
-  spawnRam(x: number, z: number, unitId: number): number {
+  /**
+   * Send a ram at a gate.
+   *
+   * `gateId` is optional and defaults to the city's first gate, which is what every caller
+   * used to get whether it wanted it or not. Naming it is how a scenario points two crews at
+   * two different gates on a city that has three; leaving it out is how the Rome and Carthage
+   * assaults keep the deployment they were measured with. **The default is `getGates()[0]`
+   * and never a literal** — see `SiegeRam.gateId`.
+   */
+  spawnRam(x: number, z: number, unitId: number, gateId?: string): number {
     // Counted by kind, not by `rams.length`: the two machines draw from separate instanced
     // meshes with separate capacities, and sharing one counter meant a great ram on the
     // field silently used up a gate ram's slot.
     const gates = this.rams.reduce((a, r) => a + (r.kind === RamKind.Gate ? 1 : 0), 0);
     if (gates >= MAX_RAMS || !this.city) return -1;
-    const gate = this.city.getGates()[0];
+    const all = this.city.getGates();
+    const gate = (gateId ? all.find((g) => g.id === gateId) : undefined) ?? all[0];
     if (!gate) return -1;
     const r: SiegeRam = {
       id: this.rams.length,
@@ -2686,6 +3150,9 @@ export class Siege implements ElevationOwner {
       x, z,
       y: this.battle.groundAt(x, z),
       facing: Math.atan2(gate.x - x, gate.z - z),
+      wantFacing: Math.atan2(gate.x - x, gate.z - z),
+      heave: 0,
+      gateId: gate.id,
       swing: 0,
       timer: RAM_PERIOD,
       arrived: false,
@@ -2738,6 +3205,9 @@ export class Siege implements ElevationOwner {
       x, z,
       y: this.battle.groundAt(x, z),
       facing: Math.atan2(-nx, -nz),
+      wantFacing: Math.atan2(-nx, -nz),
+      heave: 0,
+      gateId: '',
       swing: 0,
       timer: GREAT_RAM_PERIOD,
       arrived: false,
@@ -3392,12 +3862,34 @@ export class Siege implements ElevationOwner {
       }
 
       if (r.state === RamState.Approach) {
+        /**
+         * Levering the shed round after the player has re-aimed it.
+         *
+         * Same two-phase arrangement as the tower and for the same reason: a machine that
+         * changes bearing on the frame of the click is a cursor, not fifteen hundredweight
+         * of oak on four wheels. The gang stop, shift the poles across the new bearing and
+         * heave, and only then does it start rolling again.
+         */
+        if (r.wantFacing !== r.facing) {
+          let df = r.wantFacing - r.facing;
+          while (df > Math.PI) df -= Math.PI * 2;
+          while (df < -Math.PI) df += Math.PI * 2;
+          const step = RAM_SLEW * dt;
+          r.facing = Math.abs(df) <= step ? r.wantFacing : r.facing + Math.sign(df) * step;
+        }
+        if (r.heave > 0) {
+          r.heave -= dt;
+          r.swing = lerp(r.swing, 0, Math.min(1, dt * 1.2));
+          r.y = b.groundAt(r.x, r.z);
+          continue;
+        }
         const dx = r.targetX - r.x;
         const dz = r.targetZ - r.z;
         const d = Math.hypot(dx, dz);
         if (d <= RAM_SPEED * dt) {
           r.x = r.targetX;
           r.z = r.targetZ;
+          r.facing = r.wantFacing;
           r.arrived = true;
           r.state = RamState.Battering;
         } else {
@@ -3493,8 +3985,20 @@ export class Siege implements ElevationOwner {
         continue;
       }
 
-      this.gateBlows++;
-      if (this.gateBlows >= GATE_BLOWS && !this.gateBreached) {
+      /**
+       * The blow lands on **this machine's** gate.
+       *
+       * It was one counter called `gateBlows` for the whole circuit, which is correct exactly
+       * as long as there is one gate and nobody can re-aim the machine. Both of those stopped
+       * being true in the same commit: Carthage publishes three gates and the player can now
+       * pick which one the ram goes at, and a running total shared between them would carry
+       * a half-broken gate's twenty blows across to a fresh one.
+       */
+      const gid = r.gateId || this.city?.getGates()[0]?.id || '';
+      const struck = (this.gateBlowsBy.get(gid) ?? 0) + 1;
+      this.gateBlowsBy.set(gid, struck);
+      if (struck >= GATE_BLOWS && !this.breachedGates.includes(gid)) {
+        this.breachedGates.push(gid);
         this.gateBreached = true;
         /**
          * The leaves come down and the passage opens — *now*, not at the start of the
@@ -3515,9 +4019,36 @@ export class Siege implements ElevationOwner {
          * push-out for the rest of the battle. Reading the id off the same gate the other
          * two paths use makes all three agree by construction.
          */
-        const broken = this.city?.getGates()[0];
-        if (broken) this.city?.setGateOpen(broken.id, true);
+        const broken = this.city?.getGates().find((g) => g.id === gid);
+        if (broken) {
+          this.city?.setGateOpen(broken.id, true);
+          /**
+           * And the leaves are **wreckage**, not merely absent.
+           *
+           * `setGateOpen(id, true)` hides the intact leaves, because an open gate drawn shut
+           * is wrong however it was opened — but hiding them leaves a clean empty arch where
+           * twenty-six blows of an iron-shod trunk have just landed. `setGateDoorBroken` swaps
+           * the intact chunk for the broken pose the wall workstream baked for exactly this.
+           * Visual only: it writes no raster, no obstacle and no `GateOut`, so it cannot be a
+           * source of divergence. It does nothing on a gate with no modelled leaves, which is
+           * two of Carthage's three, and that is a no-op rather than a crash.
+           */
+          this.city?.setGateDoorBroken?.(broken.id);
+        }
         this.ctx.events.emit('cameraShake', { amplitude: 1.0, decay: 0.9 });
+        /**
+         * Say so in the feed, by the gate's own name.
+         *
+         * `objectiveChanged`'s own comment is "gates breached, walls scaled, capture points
+         * taken", and the HUD already renders it — so the one thing a player most needs to be
+         * told about a siege needed no new channel and no new file. It matters more now than
+         * it did with one gate: on Carthage the ram may be at any of three, and "a gate is
+         * down" is not the same information as "the Porta Uticensis is down".
+         */
+        const crew = this.battle.unitById(r.unitId);
+        this.ctx.events.emit('objectiveChanged', {
+          id: gid, holder: crew ? crew.faction : -1, progress: 1,
+        });
         // And get out of the way of the men who have been waiting behind it.
         this.beginWithdraw(r);
       }
@@ -4568,6 +5099,9 @@ export class Siege implements ElevationOwner {
    */
   ramReport(): {
     id: number; kind: 'gate' | 'great'; state: string; blows: number;
+    /** The gate this machine is aimed at, by id, or `''` for a great ram. */
+    gateId: string; gateBlows: number; heave: number; facing: number; wantFacing: number;
+    targetX: number; targetZ: number;
     x: number; z: number; distFromTarget: number; wreck: boolean;
     crewAlive: number; crewRouting: boolean; crewPinned: boolean; owned: boolean;
     bay: number; bayBlows: number;
@@ -4598,6 +5132,12 @@ export class Siege implements ElevationOwner {
         kind: r.kind === RamKind.Great ? 'great' as const : 'gate' as const,
         state: names[r.state],
         blows: r.blows,
+        gateId: r.gateId,
+        gateBlows: r.gateId ? (this.gateBlowsBy.get(r.gateId) ?? 0) : 0,
+        heave: r.heave,
+        facing: r.facing,
+        wantFacing: r.wantFacing,
+        targetX: r.targetX, targetZ: r.targetZ,
         x: r.x, z: r.z,
         distFromTarget: Math.hypot(r.x - r.targetX, r.z - r.targetZ),
         wreck: r.wreck,
@@ -4629,20 +5169,51 @@ export class Siege implements ElevationOwner {
     return { bays: this.breachedBays.slice(), lanes: this.breachLinks.length, through, deadStations, integrity };
   }
 
-  /** Whether the gate is shut, and what has been done to it. Drives the gate assertions. */
+  /**
+   * Whether the gate is shut, and what has been done to it. Drives the gate assertions.
+   *
+   * The scalar half is **the gate a ram is actually working on**, not `getGates()[0]`. With
+   * one gate those are the same thing and every figure this has ever reported is unchanged;
+   * with three they are not, and a report pinned to the first gate would say "shut, 0 blows,
+   * 100%" all the way through a successful assault on the second one.
+   *
+   * `gates` is the whole circuit, so a probe can assert about a gate by name instead of by
+   * position in an array. Posterns are in it too — they are `GateOut`s that start open — and
+   * `open: true` with `blows: 0` is the honest description of one.
+   */
   gateReport(): {
     shutAtStart: boolean; open: boolean; breached: boolean;
-    blows: number; hp: number; x: number; z: number;
+    blows: number; hp: number; x: number; z: number; id: string;
+    gates: { id: string; x: number; z: number; open: boolean; broken: boolean;
+      blows: number; hp: number }[];
   } {
-    const g = this.city?.getGates()[0];
+    const all = this.city?.getGates() ?? [];
+    // The gate under attack: whichever a live gate ram is aimed at, else the worst battered,
+    // else the city's first. One expression so the four fields below cannot name two gates.
+    let focus = all[0];
+    let mostBlows = -1;
+    for (const r of this.rams) {
+      if (r.kind !== RamKind.Gate || !r.gateId) continue;
+      const n = this.gateBlowsBy.get(r.gateId) ?? 0;
+      if (n > mostBlows) { mostBlows = n; focus = all.find((g) => g.id === r.gateId) ?? focus; }
+    }
+    const blows = focus ? (this.gateBlowsBy.get(focus.id) ?? 0) : 0;
+    const broken = (id: string): boolean =>
+      this.city?.isGateDoorBroken?.(id) ?? this.breachedGates.includes(id);
     return {
       shutAtStart: this.gateShutAtStart,
-      open: g ? g.open : true,
+      open: focus ? focus.open : true,
       breached: this.gateBreached,
-      blows: this.gateBlows,
-      hp: Math.max(0, 1 - this.gateBlows / GATE_BLOWS),
-      x: g ? g.x : NaN,
-      z: g ? g.z : NaN,
+      blows,
+      hp: Math.max(0, 1 - blows / GATE_BLOWS),
+      x: focus ? focus.x : NaN,
+      z: focus ? focus.z : NaN,
+      id: focus ? focus.id : '',
+      gates: all.map((g) => {
+        const n = this.gateBlowsBy.get(g.id) ?? 0;
+        return { id: g.id, x: g.x, z: g.z, open: g.open, broken: broken(g.id),
+          blows: n, hp: Math.max(0, 1 - n / GATE_BLOWS) };
+      }),
     };
   }
 

@@ -814,6 +814,31 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
 .drag-hint[data-tone='move'] { border-left-color: #8fd06c; }
 .drag-hint[data-tone='attack'] { border-left-color: var(--bad); color: #f2c4bb; }
 
+/* The siege-train hint: what a right-click would do to the machine this gang is working,
+   and — the half that did not exist — why it will not. Sits below the frontage hint rather
+   than on top of it, because a right-drag on a tower party is still a frontage drag for the
+   men and both sentences are true at once. Not upper-cased: these are sentences with a gate's
+   proper name in them, and "PORTA UTICENSIS" reads as a label rather than as a target. */
+.siege-hint {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 0.28em 0.62em;
+  font-size: 0.92em;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  color: var(--parchment);
+  background: rgba(10, 8, 5, 0.9);
+  border: 1px solid rgba(217, 178, 95, 0.5);
+  border-left-width: 0.24em;
+  border-radius: 2px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+  z-index: 40;
+}
+.siege-hint[data-tone='move'] { border-left-color: #d9b25f; }
+.siege-hint[data-tone='refuse'] { border-left-color: var(--bad); color: #f2c4bb; }
+
 /* ------------------------------------------------------------- unit cards -- */
 
 .hud-bottom {
