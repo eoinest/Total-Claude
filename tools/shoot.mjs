@@ -1347,7 +1347,11 @@ try {
             else delete rig.radius;
             rig.__savedCam = null;
           }
-          if (s.cam) g.setCamera(fx, fz, 0, fyaw);
+          // `yawAdd` on a `cam` shot, so a frame can be swung off the sun without moving the
+          // subject. Shooting into a low sun turns the whole upper third into one flat
+          // cream wash, which is a lighting-setup signature rather than a rendering one and
+          // is precisely what round two is trying to stop clustering on.
+          if (s.cam) g.setCamera(fx, fz, 0, fyaw + (s.yawAdd ?? 0));
           else if (s.wall) g.setCamera(fx, fz, s.wall.zoom ?? s.zoom, fyaw);
           else g.setCamera(fx, fz, s.zoom, fyaw);
 
@@ -1427,6 +1431,8 @@ try {
            */
           let nearestMan = null;
           let horizonFrac = null;
+          let sunAngle = null;
+          let sunElev = null;
           {
             const cam = rig.camera;
             const fwd = new (cam.position.constructor)(0, 0, -1).applyQuaternion(cam.quaternion);
@@ -1447,6 +1453,24 @@ try {
             const halfTan = Math.tan((cam.fov * Math.PI) / 360);
             const pitchDown = Math.asin(-fwd.y);
             horizonFrac = +(0.5 - (Math.tan(pitchDown) / halfTan) * 0.5).toFixed(3);
+            /*
+             * How far off the sun the lens is pointing, in degrees. 0 is straight into it.
+             *
+             * Not a curiosity. Inside about 45 degrees of a low sun the frame fills with
+             * veiling — bloom, god rays and forward Mie scatter all peak at once — and every
+             * surface in it goes to one flat cream regardless of what it is made of. That is
+             * a *lighting-setup* signature, the exact thing round two exists to stop the deck
+             * clustering on, and it is invisible in a shot table that records only an hour.
+             */
+            const sky = g.engine.context.tryGet('sky');
+            const sd = sky && sky.sunDirection;
+            if (sd) {
+              const fl = Math.hypot(fwd.x, fwd.z) || 1e-6;
+              const sl = Math.hypot(sd.x, sd.z) || 1e-6;
+              const c = (fwd.x * sd.x + fwd.z * sd.z) / (fl * sl);
+              sunAngle = +((Math.acos(Math.max(-1, Math.min(1, c))) * 180) / Math.PI).toFixed(1);
+              sunElev = +((Math.asin(Math.max(-1, Math.min(1, sd.y))) * 180) / Math.PI).toFixed(1);
+            }
           }
 
           let men = 0;
@@ -1461,7 +1485,7 @@ try {
           const st = g.engine.stats();
           return {
             simTime: g.simTime(), men, units, corpses, waterDebug, wallDebug, camDebug,
-            nearestMan, horizonFrac,
+            nearestMan, horizonFrac, sunAngle, sunElev,
             weather: g.engine.context.tryGet('vfx')?.weatherKind ?? 'n/a',
             focusX: Math.round(fx), focusZ: Math.round(fz), yaw: +fyaw.toFixed(2),
             draws: st.calls, tris: st.tris, programs: st.programs,
@@ -1487,7 +1511,8 @@ try {
         `${String(info.men).padStart(5)} men  ${String(info.units).padStart(2)} units  ` +
         `${String(info.draws).padStart(4)} draws  ${(info.tris / 1e6).toFixed(2)}M tris  ` +
         `${info.msPerFrame.toFixed(2)}ms/f  @(${info.focusX},${info.focusZ})` +
-        (info.nearestMan === null ? '' : `  near ${String(info.nearestMan).padStart(6)}m  horizon ${info.horizonFrac}`)
+        (info.nearestMan === null ? '' : `  near ${String(info.nearestMan).padStart(6)}m  horizon ${info.horizonFrac}`) +
+        (info.sunAngle === null ? '' : `  sun ${String(info.sunAngle).padStart(5)}deg@${info.sunElev}`)
       );
     } catch (err) {
       failed++;

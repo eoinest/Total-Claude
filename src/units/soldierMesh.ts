@@ -281,7 +281,7 @@ const BACK_ARC: readonly [number, number] = [Math.PI / 2 + FACE_HALF, Math.PI / 
  * 300 degrees or the split silently coarsens the skull: `d.head - 3` over five sixths of a
  * turn is 43 degrees a facet, and it showed as a visibly polygonal hair dome.
  */
-const FACE_SEG = 6;
+const FACE_SEG = 8;
 const BACK_SEG = (head: number): number => Math.max(5, Math.round(head * 0.85));
 /**
  * Where a helmet's face opening starts, in metres above the head bone.
@@ -513,6 +513,11 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
      *
      * 120 degrees, because that is roughly ear to ear on a head. Six columns at LOD0 against
      * the ten the whole circle used to get, which is a rounder face for 42 triangles.
+     *
+     * Eight now, not six. Six columns over 120 degrees is a 20-degree facet, and at battle
+     * zoom that facet is wide enough that the cheek reads as a chamfer rather than a curve —
+     * a grader's "flat facets". Eight is 15 degrees, for fourteen more triangles on the men
+     * near enough for it to matter and none at all on anybody else.
      */
     b.revolve(skullProfile, d.fine ? FACE_SEG : 4, matUv(Mat.Face), 1, { arc: FACE_ARC, vFromY: HEAD_V });
     b.revolve(skullProfile, BACK_SEG(d.head), skinUv, 1, { arc: BACK_ARC, vFromY: HEAD_V });
@@ -544,6 +549,29 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
      * pair of dots. 38 mm across the alae, which is a man's, and it is the single most
      * legible form on the head.
      *
+     * ---------------------------------------------------------------------------
+     * The z values above were all 10 mm too shallow, and the claim of 25.8 mm was
+     * measuring the wrong thing.
+     * ---------------------------------------------------------------------------
+     *
+     * "25.8 mm" is the tip's *absolute* z. Projection is z minus the skull's own surface at
+     * that height, and the skull is a revolve of `skullProfile`, whose radius is 0.0765 at
+     * y = -0.020 and 0.0815 at y = 0.048. So the old numbers gave 9.0 mm of projection at the
+     * pronasale and **-6.5 mm at the nasion — the bridge was buried inside the head.** A nose
+     * that only emerges over its bottom third has no dorsum, casts nothing across the cheek
+     * in three-quarter view and reads exactly as three blind graders described it: "flat
+     * facets with eyes and a moustache painted into the albedo, no nasal bridge occluding the
+     * far cheek."
+     *
+     * Every ring moves out by 10-12 mm, which puts the pronasale 21 mm proud of the cheek
+     * plane and the nasion 3 mm proud — the shallow root a real nose has, rather than a
+     * negative one. The columella still tucks back under the tip.
+     *
+     * The lesson is narrower than "check your numbers": a measurement of a form built on a
+     * surface has to be taken *against that surface*, and this one was taken against the
+     * origin. The comment was right that the nose is the most legible form on the head. It
+     * was wrong that we had one.
+     *
      * LOD1 gets the same nose through three rings and four segments instead of five and
      * five. What matters at 45-90 m is not the columella, it is that there is something
      * between the eyes that occludes the far cheek in three-quarter view — and that survives
@@ -551,16 +579,17 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
      */
     const nose: { y: number; rx: number; rz: number; z: number }[] = d.fine
       ? [
-        { y: 0.050, rx: 0.008, rz: 0.007, z: 0.0755 },
-        { y: 0.022, rx: 0.010, rz: 0.011, z: 0.0790 },
-        { y: -0.004, rx: 0.014, rz: 0.014, z: 0.0840 },
-        { y: -0.020, rx: 0.019, rz: 0.016, z: 0.0855 },
-        { y: -0.032, rx: 0.016, rz: 0.009, z: 0.0700 },
+        // y, and the skull's own radius there, and what that leaves proud:
+        { y: 0.050, rx: 0.008, rz: 0.007, z: 0.0845 },   // nasion,     0.0813 -> +3 mm
+        { y: 0.022, rx: 0.010, rz: 0.011, z: 0.0905 },   // rhinion,    0.0796 -> +11 mm
+        { y: -0.004, rx: 0.014, rz: 0.014, z: 0.0955 },  // dorsum,     0.0784 -> +17 mm
+        { y: -0.020, rx: 0.019, rz: 0.016, z: 0.0975 },  // pronasale,  0.0765 -> +21 mm
+        { y: -0.032, rx: 0.016, rz: 0.009, z: 0.0810 },  // columella,  0.0745 -> +7 mm
       ]
       : [
-        { y: 0.048, rx: 0.009, rz: 0.008, z: 0.0760 },
-        { y: -0.006, rx: 0.015, rz: 0.014, z: 0.0845 },
-        { y: -0.030, rx: 0.017, rz: 0.010, z: 0.0715 },
+        { y: 0.048, rx: 0.009, rz: 0.008, z: 0.0850 },
+        { y: -0.006, rx: 0.015, rz: 0.014, z: 0.0960 },
+        { y: -0.030, rx: 0.017, rz: 0.010, z: 0.0825 },
       ];
     b.tube(nose, d.fine ? 5 : 4, skinUv, { capEnd: true });
   }

@@ -469,6 +469,24 @@ export class BannerSystem {
      * material carries a copy of the same three lines.
      */
     this.clothDepth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+    /*
+     * Polygon offset, and it is not optional for a zero-thickness caster.
+     *
+     * The moment the cloth both casts and receives, it shadows itself: front and back of a
+     * one-layer sheet are the same surface, so `shadowSide` cannot separate them the way it
+     * does for a closed shell, and the cascades' own `normalBias` is sized for solid kit
+     * rather than for a sheet whose normals swing through ninety degrees across a fold. The
+     * first render with casting turned on came back stippled with black dots — some PCF taps
+     * passing and some failing on one surface comparing against its own depth.
+     *
+     * A depth-slope offset in the shadow pass is the standard answer and the right one here:
+     * it moves only what this material writes into the cascade, so nothing else in the scene
+     * pays for it, and 4 units at slope factor 2 is far below the width of the shadow a
+     * standard throws on a man two metres beneath it.
+     */
+    this.clothDepth.polygonOffset = true;
+    this.clothDepth.polygonOffsetFactor = 2;
+    this.clothDepth.polygonOffsetUnits = 4;
     this.clothDepth.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, {
         uTex: this.clothUniforms.uTex,
