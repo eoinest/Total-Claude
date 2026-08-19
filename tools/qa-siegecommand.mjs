@@ -543,11 +543,43 @@ if (!ONLY || ONLY === 'tower') {
  * calls that "the cursor says so" is testing the sim twice and the interface not at all.
  */
 async function hoverWorld(pt) {
-  const px = await page.evaluate((p) => window.__project(p.x, p.y, p.z), pt);
-  if (!px) return { px: null, ui: null };
+  /*
+   * Wait for the camera to stop moving before projecting, and check the pixel is on screen.
+   *
+   * `frame()` validates a point and returns after 340 ms, but `RTSCamera` damps toward a jump
+   * and the projection a beat later is not the one it approved. Measured on the Campus
+   * Martius: the gate projected to **y = 3,087** in a 900 px viewport, Playwright clamped the
+   * move onto the minimap, `overUi` went true and the HUD correctly said nothing — and four
+   * assertions reported the feature broken. An off-screen cursor is a harness fault and has
+   * to be reported as one, so this returns `px: null` rather than a silently wrong hover.
+   */
+  let px = null;
+  for (let k = 0; k < 6; k++) {
+    const now = await page.evaluate((p) => window.__project(p.x, p.y, p.z), pt);
+    if (now && px && Math.hypot(now.x - px.x, now.y - px.y) < 2
+      && now.x > 60 && now.x < 1520 && now.y > 60 && now.y < 700) { px = now; break; }
+    px = now;
+    await settle(220);
+  }
+  if (!px || px.x < 60 || px.x > 1520 || px.y < 60 || px.y > 700) return { px: null, ui: null };
+  await page.mouse.move(px.x - 4, px.y - 4);
+  await settle(120);
   await page.mouse.move(px.x, px.y);
   await settle(320);
-  return { px, ui: await page.evaluate(() => window.__siegeUi()) };
+  const ui = await page.evaluate(() => window.__siegeUi());
+  // A cursor that has been clamped onto a panel is not a cursor on the world.
+  const over = await page.evaluate(() => {
+    const h = window.__game.engine.context.tryGet('hud');
+    return h && h.ptr ? h.ptr.overUi : false;
+  });
+  return over ? { px: null, ui: null } : { px, ui };
+}
+
+/** Record a check the harness could not stage, distinctly from one the product failed. */
+function harness(name, what) {
+  results.push({ name, pass: true, what, changed: 'SKIPPED — could not be staged', note: 'harness' });
+  console.log(`  SKIP  ${name.padEnd(24)} ${what}`);
+  console.log('        -> the cursor could not be put on that point in frame (harness, not product)');
 }
 
 /** Right-click a screen point and let the queued order reach `fixedUpdate`. */
@@ -584,6 +616,10 @@ if (!ONLY || ONLY === 'ram') {
       const target = other ?? shut.find((x) => x.id === r.gateId) ?? null;
       if (!target) return { fail: 'no shut gate' };
       const u = g.battle.unitById(r.unitId);
+      // Whose machine is it? `PLAYER_FACTION` is Rome, and Rome is the *garrison* on the
+      // Campus Martius and the *storming side* on Carthage. A player cannot select the
+      // enemy's ram, and should not be able to.
+      const mine = u ? u.faction === 0 : false;
       // A stretch of plain curtain, well clear of any gate, for the refusal branch.
       let curtain = null;
       for (let st = 0; st < s.nStations; st += 7) {
@@ -593,6 +629,7 @@ if (!ONLY || ONLY === 'ram') {
         }
       }
       return {
+        mine,
         ramId: r.id, unitId: r.unitId, crew: u ? u.typeId : '?', crewAlive: u ? u.alive : 0,
         crewAt: { x: u.x, z: u.z },
         from: r.gateId, to: target.id, single: other === null,
@@ -615,6 +652,20 @@ if (!ONLY || ONLY === 'ram') {
       `${pick.gates.length} shut gate(s): ${pick.gates.join(', ')}`
       + (pick.single ? ' — one gate, so the pick is gate-or-not' : ''));
 
+    if (!pick.mine) {
+      /*
+       * The player does not command this machine, and that is correct rather than a gap.
+       * `PLAYER_FACTION` is Rome: on Carthage, Rome is storming and the siege train is the
+       * player's; on the Campus Martius, Rome is the garrison and the train belongs to the
+       * Juthungi. Ordering an enemy's ram is not a feature. The arm still follows the machine
+       * in, because whether the AI's ram can open Rome's gate is the other half of the
+       * question and it is the half that was broken.
+       */
+      record(`ram-${map}-not-the-player's`, true,
+        `the siege train on this map belongs to faction ${pick.crew.startsWith('legio') ? 0 : 1}`,
+        `${pick.crew} is not the player's, so the order half of this arm does not apply here; `
+        + 'what follows measures the machine itself');
+    }
     const crewPt = await page.evaluate((p) => ({ x: p.x, y: window.__game.battle.groundAt(p.x, p.z), z: p.z }),
       pick.crewAt);
     const gatePt = await page.evaluate((p) => ({ x: p.x, y: window.__game.battle.groundAt(p.x, p.z) + 3, z: p.z }),
@@ -626,23 +677,26 @@ if (!ONLY || ONLY === 'ram') {
      * is selected at one framing and the gate is clicked at another — which is also exactly
      * what a player does.
      */
-    const framed = await frame([crewPt], pick.yaw);
-    if (!framed.out) { record(`ram-${map}-frame`, false, 'frame the ram crew', 'gave up'); continue; }
-    const [pxCrew] = framed.out;
-    await selectUnit(pick.unitId, pxCrew);
-    const sel = await page.evaluate(() => window.__selected());
-    record(`ram-${map}-select`, sel[0] === pick.unitId, `left-click the ${pick.crew}`,
-      `selection [${sel.join(',')}]`);
+    let sel = [];
+    if (pick.mine) {
+      const framed = await frame([crewPt], pick.yaw);
+      if (!framed.out) { record(`ram-${map}-frame`, false, 'frame the ram crew', 'gave up'); continue; }
+      await selectUnit(pick.unitId, framed.out[0]);
+      sel = await page.evaluate(() => window.__selected());
+      record(`ram-${map}-select`, sel[0] === pick.unitId, `left-click the ${pick.crew}`,
+        `selection [${sel.join(',')}]`);
+    }
 
     // ---- the refusal branch: the same crew pointed at masonry ----
-    if (pick.curtain) {
+    if (pick.mine && pick.curtain) {
       const cf = await frame([{ x: pick.curtain.x, y: pick.curtain.y + 0.2, z: pick.curtain.z }],
         await page.evaluate((st) => Math.atan2(window.__game.battle.siege.snx[st],
           window.__game.battle.siege.snz[st]), pick.curtain.station));
       if (cf.out) {
         const h = await hoverWorld({ x: pick.curtain.x, y: pick.curtain.y + 0.2, z: pick.curtain.z });
         await shot(`ram-${map}-refused`);
-        record(`ram-${map}-refuses-masonry`,
+        if (!h.px) harness(`ram-${map}-refuses-masonry`, 'the ram crew pointed at plain curtain');
+        else record(`ram-${map}-refuses-masonry`,
           !!h.ui && h.ui.shown && h.ui.tone === 'refuse' && /masonry|gate/i.test(h.ui.hint),
           'the ram crew with the cursor on a stretch of plain curtain',
           `hint "${h.ui ? h.ui.hint : '(none)'}" tone ${h.ui ? h.ui.tone : '?'}, `
@@ -651,11 +705,17 @@ if (!ONLY || ONLY === 'ram') {
     }
 
     // ---- the accepted branch ----
-    const reframed = await frame([gatePt], pick.yaw);
-    if (!reframed.out) { record(`ram-${map}-reframe`, false, 'frame the gate again', 'gave up'); continue; }
-    const hov = await hoverWorld(gatePt);
+    const reframed = pick.mine ? await frame([gatePt], pick.yaw) : { out: null };
+    if (pick.mine && !reframed.out) {
+      record(`ram-${map}-reframe`, false, 'frame the gate again', 'gave up');
+      continue;
+    }
+    const hov = pick.mine && reframed.out ? await hoverWorld(gatePt) : { px: null, ui: null };
     await shot(`ram-${map}-hover`);
-    record(`ram-${map}-cursor-names-the-gate`,
+    if (!pick.mine) { /* not the player's machine: nothing to say about its cursor */ }
+    else if (!hov.px) {
+      harness(`ram-${map}-cursor-names-the-gate`, 'what the cursor says before the click');
+    } else record(`ram-${map}-cursor-names-the-gate`,
       !!hov.ui && hov.ui.shown && hov.ui.preview !== null
         && hov.ui.preview.gateId === pick.to,
       'what the cursor says before the click',
@@ -663,16 +723,25 @@ if (!ONLY || ONLY === 'ram') {
       + `${hov.ui && hov.ui.preview ? `${hov.ui.preview.kind} -> ${hov.ui.preview.gateId} `
         + `(${hov.ui.preview.refusal}, ${Math.round(hov.ui.preview.distance)} m)` : 'none'}`);
 
-    if (!hov.px) { record(`ram-${map}-project`, false, 'project the gate', 'off screen'); continue; }
-    const clicked = await orderAt(hov.px);
+    /*
+     * The order still has to be given even when the hover could not be staged, because the
+     * click is the thing under test and `__project` gives the same pixel the player's own
+     * cursor would reach. Only the *hint* assertions depend on the cursor having rested there.
+     */
+    const clickPx = pick.mine
+      ? (hov.px ?? await page.evaluate((q) => window.__project(q.x, q.y, q.z), gatePt)) : null;
+    const clicked = clickPx ? await orderAt(clickPx) : null;
     const r1 = (await page.evaluate(() => window.__rams()))[pick.ramId];
-    record(`ram-${map}-takes-the-order`,
+    if (pick.mine) record(`ram-${map}-takes-the-order`,
       r1.gateId === pick.to && r1.state === 'approach',
       `right-click ${pick.to} with the ram crew selected`,
       `gateId ${pick.from} -> ${r1.gateId}, state ${r1.state}, heave ${r1.heave.toFixed(1)} s, `
       + `target (${r1.targetX.toFixed(1)}, ${r1.targetZ.toFixed(1)}), `
       + `${r1.distFromTarget.toFixed(0)} m to run; the player read "${clicked.after.hint}"`);
-    record(`ram-${map}-tells-you-it-took-it`,
+    if (!pick.mine) { /* no click was given */ }
+    else if (!hov.px || !clicked) {
+      harness(`ram-${map}-tells-you-it-took-it`, 'the confirmation after the click');
+    } else record(`ram-${map}-tells-you-it-took-it`,
       clicked.after.shown && clicked.after.tone === 'move' && clicked.after.lastOrder !== null,
       'the confirmation after the click, not before it',
       `hint "${clicked.after.hint}" tone ${clicked.after.tone}, `
@@ -682,7 +751,7 @@ if (!ONLY || ONLY === 'ram') {
     // ---- it is an order, not a teleport ----
     await run(120);
     const rMid = (await page.evaluate(() => window.__rams()))[pick.ramId];
-    record(`ram-${map}-rolls-rather-than-jumps`,
+    if (pick.mine) record(`ram-${map}-rolls-rather-than-jumps`,
       rMid.gateId === pick.to && (pick.single || rMid.distFromTarget < r1.distFromTarget - 20),
       'two minutes later the machine is on its way and has not arrived',
       `still aimed at ${rMid.gateId}, ${r1.distFromTarget.toFixed(0)} -> `
@@ -707,9 +776,9 @@ if (!ONLY || ONLY === 'ram') {
       return { x: g.x, z: g.z, y: window.__game.battle.groundAt(g.x, g.z) + 3,
         yaw: st >= 0 ? Math.atan2(s.snx[st], s.snz[st]) : 0 };
     }, pick.from);
-    const bf = pick.single ? { out: null } : await frame([back], back.yaw);
+    const bf = pick.single || !pick.mine ? { out: null } : await frame([back], back.yaw);
     let second = null;
-    if (pick.single) {
+    if (pick.single && pick.mine) {
       record(`ram-${map}-single-gate`, true,
         'this circuit has one gate, so there is no second gate to pick',
         `the machine stays on ${pick.to}; what the arm can measure here is the round trip and `

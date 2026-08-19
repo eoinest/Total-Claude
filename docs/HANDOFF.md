@@ -124,9 +124,20 @@ Everything below came from the player. Items not listed here are done and commit
   or dead, so a carcass costs nothing.** `tools/probe-elefield.mjs`; frames in
   `screenshots/elephant-death/`.
 - soldiers use stairs, move laterally along the wall, descend into the city — siege
-- much larger wall-breaking ram — siege
-- tower drawbridge backwards (ropes forward, door opens backwards) — siege
-- **ram jams the gate it just broke** and cannot rout because it is a machine — siege
+- much larger wall-breaking ram — siege. **The machine is built** (`spawnGreatRam`,
+  `strikeCurtain`, 74 blows at 7 s, breach lanes) and **no scenario fields one**, so
+  `breachReport().lanes` is 0 on both maps and the route is unreachable in play. It is
+  orderable the moment one is deployed: `resolveMachineOrder` gives it the same right-click
+  the tower has, at a stretch of curtain rather than a gate.
+- ~~tower drawbridge backwards (ropes forward, door opens backwards)~~ — **does not
+  reproduce**, and the measurement is signed: drawn reach **+1.940 m** off the InstancedMesh
+  matrix (hinge 4.38, head 2.44). Do not "fix" it without a signed measurement saying it is
+  wrong.
+- ~~**ram jams the gate it just broke**~~ — done. It withdraws the moment the leaves come
+  down: measured on both circuits, `withdrawing` at t+220 and `spent` by t+260, 17.4 m clear
+  of the threshold, and the gang is handed back to the player.
+- ~~**you cannot choose where the siege towers attack, or where the ram goes**~~ — **done,
+  this session.** See the session note below.
 - scorpion/catapult fire arrows instead of bolts and stones — artillery
 - big catapults off the walls, manned, immobile, aiming, animated — artillery
 - streets read as a patched quilt; wider and more streets; monuments dropped across housing — streets
@@ -166,6 +177,90 @@ chased:
   manifest entry currently supplies one.**
 
 Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`).
+
+## Session — player command of the siege train, 19 Aug 2026
+
+Branch `e/sim/siege-orders`. `Siege.ts`, one new `src/ui/SiegeOrders.ts`, and a **40-line
+pure insertion** into `HudSystem.ts` (five sites, no deletions, no modified lines).
+
+### The one that matters most: Rome's ram had never once opened Rome's gate
+
+Twelve runs of twelve, `gateHp` 1.00 throughout. The owner's own hypothesis — *"perhaps they
+all die"* — is right, and nothing said who was killing them. Wrapping `BattleSystem.damage`
+and attributing every point: the crew is 32 at t+0 and 6 by t+40, and **4,846 of the 4,846
+points came from two units**, `ballistarii#0` and `ballistarii#1`, shooting from 53–60 m.
+Rome's garrison plan puts **216 hand-spanned crossbowmen** on the curtain either side of the
+gate at 62 damage and 40 AP a bolt, and the ram is the nearest thing on the field because it
+spawns 62 m out while the towers start at 74–101.
+
+**The same instrument on Carthage records zero damage to the identical machine on the
+identical approach.** So it was never the ram, the pathing or the gate: a *testudo arietaria*
+had its shed **drawn and not modelled**, and the gang worked the ropes in the open.
+
+`RAM_SHED_COVER` is a `modsOf(unitId).missileTaken` multiplier on whichever gang is working a
+live ram, taken off them the tick it stops being theirs (`recrew` reassigns mid-battle).
+**0.12 against the `testudo` formation's own 0.16.** Rome now keeps the schedule Carthage
+always kept: leaves at **t+100**, **26 blows**, gate open at **t+220**, spent by **t+260**,
+crew **32 → 24 at the breach and 13 by t+260**. At 0.2 the crew broke at 21 blows with the
+gate on 19 %, so the number is sized against the machine finishing rather than against a
+feeling.
+
+- **`modsOf` is a free lane for this.** Nothing else in `src/` writes a *per-unit*
+  `missileTaken`; only formations write `f.mods`. It is a plain table written inside
+  `fixedUpdate`, so it is deterministic, and `Projectiles` already multiplies both.
+
+### What the player can now do, and what they see before the click
+
+- **One predicate, shared.** `resolveMachineOrder` is the only thing that decides a machine
+  order; `machineOrderAt` draws the cursor from it and `applyMachineOrder` acts on it. Same
+  for escalade: `findEscalade` is shared by `escalade` and the pure `escaladeOfferAt`.
+- The ram carries its own `gateId`, blows are counted **per gate**, and the breach opens that
+  gate and calls `setGateDoorBroken` on it. Never a literal id; `gateNear` reads `getGates()`
+  and skips any gate already open, which is how Carthage's eight posterns stay out of a ram's
+  target list.
+- Measured with a real mouse through the real menu on Carthage: cursor reads *"Break the Porta
+  Uticensis — 563 m, 17 min 10 s"*, the click re-aims the machine **563 m** from the Porta
+  Byrsae, it rolls 563 → 500 m in two minutes, a second click sends it back, and the gate the
+  player **last** clicked comes down at t+420 with 26 blows and its leaves drawn broken —
+  the other two carrying **zero** blows.
+- **Refusals are sentences.** landed / committed inside 12 m / another machine's berth /
+  wrong machine for that target / nothing to climb at this bay / every file here is full.
+- **The 590 s re-aim is not a bug and is now priced.** 0.42 m/s is the speed a gang on levers
+  moves fifteen tonnes of green timber. `SiegeMachineOrder.seconds` carries the cost, heave
+  included.
+
+### Traps this session paid for
+
+- **A berth is a bay, not a radius.** A click meant for the bay another tower held resolved
+  **94 m** along the wall and was accepted, because the ray lands wherever the parapet is
+  under the cursor.
+- **"End the stalled plan and give the unit back" is the wrong fix and the probe said so in
+  one line.** `releaseToGround` clears `elevated`/`support` for *every* man, so the nine still
+  on the parapet were dropped at **313 m/s** and a 106.8 s descent was cut off at 20 s. The
+  right fix is to fix the *question*: `standingOnWall` counts men on a station or a crossing
+  instead of trusting `garrisons.has(id)`. Same distinction as `standingStation` against an
+  assigned station.
+- **`TowerState.Spent` was declared and never assigned.** Towers sat at `boarding` for ever —
+  measured at t+962 on an uncommanded run — pinning their gangs, holding their berths and
+  never being skipped by `escalade`. A/B: four towers `spent` and four gangs freed by **t+361**
+  against four still `boarding` at **t+962** on main.
+- **A draw-call arm that never ran reports free.** The first version of `so-draws` pointed the
+  mouse at **y = −21.9** — above the viewport — Playwright clamped it onto the minimap,
+  `overUi` went true and the HUD correctly drew nothing. Print the live hint as proof the arm
+  ran, pause the world, and carry a control selection that crews nothing.
+
+### Cost, measured
+
+- Siege markers **+1 draw at the assault camera** (200 base / 201 a plain cohort / 202 a tower
+  party / 200 again) and **+0** at a camera where any other marker is already using the air
+  batch. No new mesh, no new material — `WorldOverlay`'s two batches.
+- The gate's leaves against their own wreckage, one paused frame, A/B/A: **135 / 135 / 135**.
+  `setGateDoorBroken` is free.
+- Determinism **unchanged on both recorded baselines**: Rome 0fa6e702 / c6ef8d38 / 02c1ae6e /
+  e4489ef0 / be60dea6 at 8,632; Carthage assault ebf383b0 / 18ead7c2 / 61e21556 / 9a2faabc /
+  2fe6b1d4 at 3,440. The **Rome assault moves deliberately** — it is the battle the ram fix
+  changes: t+0 identical, then 308ccb88 / 079008fa / 2ac50406 / 2132a9e8 against main's
+  b08662d6 / 0885b6b4 / ae6c3bbc / c7b98360, and **+169 men alive at t+200**.
 
 ## Measured facts that must not be re-derived
 
