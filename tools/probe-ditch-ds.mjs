@@ -131,6 +131,22 @@ const out = await page.evaluate(() => {
       }
     : null;
   r.beltDepth = section?.beltDepth ?? null;
+  /**
+   * The wall's own arithmetic, so a ditch cut into the ground the wall is founded on cannot
+   * quietly move the masonry. `buildCarthageWall` samples `heightAt` along the *centreline*
+   * to set each bay's walk, and the ditch's inner lip stands 9.55 m out from it, so nothing
+   * should move — but "should" is not a measurement and the tower footing test reaches
+   * 5.5 m out along the same normal.
+   */
+  r.sectionFaults = section?.faults ? [...section.faults] : null;
+  const bays = city?.getGarrisonBays?.() ?? [];
+  r.wall = {
+    bays: bays.length,
+    towers: bays.filter((b) => b.hasTower).length,
+    garrisonable: bays.filter((b) => b.garrisonable).length,
+    walkYSum: +bays.reduce((a, b) => a + b.walkY, 0).toFixed(3),
+    groundYSum: +bays.reduce((a, b) => a + b.groundY, 0).toFixed(3),
+  };
 
   // ---- transects across the wall's glacis ---------------------------------
   // Perpendicular to the *published* ditch centreline where there is one, otherwise
@@ -335,6 +351,14 @@ if (out.plan) {
   );
 } else {
   console.log('published ditch: none (this map has no Punic circuit)');
+}
+
+if (out.wall) {
+  console.log(
+    `wall: ${out.wall.bays} bays, ${out.wall.towers} towers, ${out.wall.garrisonable} garrisonable; ` +
+      `sum walkY ${out.wall.walkYSum}, sum groundY ${out.wall.groundYSum}; ` +
+      `section faults ${out.sectionFaults === null ? 'n/a' : out.sectionFaults.length === 0 ? 'none' : JSON.stringify(out.sectionFaults)}`,
+  );
 }
 
 console.log('\nglacis transects — d is metres out from the wall centreline');
