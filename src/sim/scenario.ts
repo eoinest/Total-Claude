@@ -698,6 +698,18 @@ const OPEN_SPAN = 3;
  * Rome's curtain steps up at every tower, and framing on the bay under the crosshair put the
  * tower two bays along behind the plaque.
  *
+ * **The ditch.** Carthage's defensive ditch was cut into the heightfield after this was
+ * solved, and it lands inside the shot rather than under it: measured along each bay's own
+ * outward normal, 6.02 to 6.34 m of relief with the floor 20 m out from the curtain, which
+ * projects at screen y 395 with its inner lip at y 331 — between the crest at y 236 and the
+ * deployment ground below. Not one number above moved, because none of them is sampled there.
+ *
+ * The gate bay measures 0.27 m over the same run. That is the causeway, and it is the reason
+ * this shot is aimed where it is: the one line on the whole curtain where the ditch is
+ * bridged is the line the camera is looking down, and on Carthage the gate is the winning
+ * line. A player is shown the way in and the obstacle either side of it in the same frame.
+ * Rome's profile falls 8 to 19 m over the same run and is the Tiber flood plain, not a cut.
+ *
  * `place()` also looks a fraction of a metre above the focus when close — `lerp(1.55, 0, ·)`,
  * 0.36 m at this zoom — which is not modelled here. It tilts the axis by 0.16 degrees, worth
  * 3 px, and in the safe direction: ignoring it lands the crest slightly lower than asked.
