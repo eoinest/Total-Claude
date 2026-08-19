@@ -530,7 +530,9 @@ const SHOTS = {
     // t+140, not t+190: by 190 the lines had come apart on this map and `contact` framed men
     // standing about in grass rather than a fight. The ground is already littered at 140.
     follow: 'contact', at: 140, hour: 12.8, weather: 'overcast',
-    cam: { eye: 1.35, aim: 0.35, dist: 12, fov: 38 },
+    // 16 m and a higher eye. t+140 is a denser fight than t+190 was, so the same twelve
+    // metres that framed men standing about at 190 put a shield 0.46 m from the lens at 140.
+    cam: { eye: 1.95, aim: 0.95, dist: 16, fov: 38 },
   },
   'ab2-rome-wall': {
     // vs s2-17: 2.35:1 siege plate, tower against a curtain, camera up and well back.
@@ -566,7 +568,17 @@ const SHOTS = {
   'ab2-carth-melee': {
     // vs s2-01: close melee in tall grass, camera almost on the ground.
     desc: 'AB2: inside the Punic melee, camera almost in the grass',
-    map: 'carthage', opponent: 2, follow: 'contact', at: 96, hour: 13.4, weather: 'overcast',
+    /*
+     * `unitType`, not `contact`, and this is the same class of fault as the `enemyFront` one.
+     *
+     * `contact` takes the densest cell of *anything* fighting, and on Carthage at t+96 that
+     * is a cavalry clash on a flank — so the frame came back as a wall of horses against a
+     * plate of infantry in tall grass. The selector was doing exactly what it says; what it
+     * says is not "an infantry melee". Naming the unit makes the subject a property of the
+     * shot table rather than of whichever fight happens to be busiest.
+     */
+    map: 'carthage', opponent: 2, follow: 'unitType', unitType: 'libyan-spearmen',
+    at: 110, hour: 13.4, weather: 'overcast',
     /*
      * And the opposite correction to `ab2-rome-melee`, which is worth writing down because
      * it is the argument against tuning the two together.
@@ -579,7 +591,7 @@ const SHOTS = {
      * helmets. Two shots of the same nominal subject, corrected in opposite directions, from
      * one measurement each.
      */
-    cam: { eye: 1.45, aim: 0.57, dist: 8, fov: 36 },
+    cam: { eye: 1.75, aim: 0.85, dist: 11, fov: 36 },
   },
   'ab2-carth-march': {
     // vs s2-16: a barbarian mass advancing, close, camera low among them.
@@ -619,7 +631,7 @@ const SHOTS = {
     map: 'carthage', opponent: 2, follow: 'ownLine', at: 4, hour: 15.4, weather: 'clear',
     // 280 m, not 480. s2-03 is a *high oblique of formations*, and its blocks are legible as
     // blocks; at 480 m ours were specks on an empty plain, which is a picture of ground.
-    cam: { eye: 55, aim: 0, dist: 280, fov: 34 },
+    cam: { eye: 36, aim: 0, dist: 180, fov: 34 },
   },
 };
 
