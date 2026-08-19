@@ -429,23 +429,47 @@ export function buildElephantGeometry(): THREE.InstancedBufferGeometry {
       ],
       UP, 9, scaleUv, { repeatU: 2, repeatV: 3 }
     );
-    // Chest bib: a sheet across the front of the shoulders, hanging to the knees.
+    /**
+     * Chest bib: scale barding slung across the front of the shoulders.
+     *
+     * It was a **rectangle** — six columns by four rows, 1.04 m wide at the top and 0.88 at
+     * the bottom, with four square corners and a straight hem — bulged over a cylinder. At
+     * any distance that reads as a signboard hung on the animal, which is the fourth thing
+     * the model viewer found and the only one of the four that is visible on a *live*
+     * elephant as much as on a dead one.
+     *
+     * Three changes, none of them a new material: the outline is an ellipse narrowed at the
+     * throat and rounded off at the bottom, so no corner is square; the hem is a row of
+     * pointed lappets, which is how lamellar and mail barding actually terminates and the
+     * same device the chamfron's scalloped edge already uses on this mesh; and the surface
+     * carries a shallow fold across it rather than being a section of a perfect cylinder.
+     */
     b.setBone(EB.withers);
-    const cols = 6;
-    const rows = 4;
+    const cols = 9;
+    const rows = 6;
+    /** Half-width of the bib at parameter t down it, metres. */
+    const bibHalf = (t: number): number => {
+      // An ellipse about a waist at t = 0.42: narrower at the throat where it is slung from
+      // the neck strap, widest across the points of the shoulders, drawn in at the bottom.
+      const e = Math.sqrt(Math.max(0, 1 - ((t - 0.42) / 0.75) ** 2 * 0.62));
+      const round = t < 0.76 ? 1 : 1 - 0.62 * ((t - 0.76) / 0.24) ** 1.7;
+      return 0.56 * e * round;
+    };
+    const bibY = (t: number): number => 2.42 - t * 1.06;
+    const bibZ = (t: number, s: number): number => {
+      const bulge = Math.sqrt(Math.max(0, 1 - s * s)) * 0.20;
+      // One shallow fold across the sheet, so it is cloth over mail and not a lathe section.
+      const fold = 0.018 * Math.cos(s * Math.PI * 2.6) * Math.sin(t * Math.PI);
+      return withers[2] + 0.26 + bulge + fold - t * 0.10;
+    };
     const grid: number[][] = [];
     for (let r = 0; r < rows; r++) {
       const t = r / (rows - 1);
       const row: number[] = [];
       for (let cI = 0; cI < cols; cI++) {
         const s = (cI / (cols - 1)) * 2 - 1;
-        const halfW = 0.52 - t * 0.08;
-        const x = s * halfW;
-        const y = 2.36 - t * 1.02;
-        const bulge = Math.sqrt(Math.max(0, 1 - s * s)) * 0.20;
-        const z = withers[2] + 0.26 + bulge - t * 0.10;
-        const [u, v] = MeshBuilder.tileUvWrapped(scaleUv, (s + 1) * 0.5, t, 2, 2);
-        row.push(b.vert(x, y, z, s * 0.6, 0.1, 0.79, u, v));
+        const [u, v] = MeshBuilder.tileUvWrapped(scaleUv, (s + 1) * 0.5, t, 2, 3);
+        row.push(b.vert(s * bibHalf(t), bibY(t), bibZ(t, s), s * 0.6, 0.1, 0.79, u, v));
       }
       grid.push(row);
     }
@@ -453,6 +477,24 @@ export function buildElephantGeometry(): THREE.InstancedBufferGeometry {
       for (let cI = 0; cI < cols - 1; cI++) {
         b.quad(grid[r][cI], grid[r][cI + 1], grid[r + 1][cI + 1], grid[r + 1][cI]);
         b.quad(grid[r][cI], grid[r + 1][cI], grid[r + 1][cI + 1], grid[r][cI + 1]);
+      }
+    }
+    // The lappets. Four pointed tabs off the hem, alternating length so the bottom edge is
+    // not a straight line — the same reason the chamfron's lower edge is scalloped.
+    {
+      const last = grid[rows - 1];
+      for (let cI = 0; cI < cols - 1; cI++) {
+        const s0 = (cI / (cols - 1)) * 2 - 1;
+        const s1 = ((cI + 1) / (cols - 1)) * 2 - 1;
+        const sm = (s0 + s1) * 0.5;
+        const drop = 0.10 + (cI % 2 === 0 ? 0.07 : 0.02);
+        const [u, v] = MeshBuilder.tileUvWrapped(scaleUv, (sm + 1) * 0.5, 1, 2, 3);
+        const tip = b.vert(
+          sm * bibHalf(1) * 0.94, bibY(1) - drop, bibZ(1, sm) - 0.012,
+          sm * 0.5, -0.35, 0.79, u, v
+        );
+        b.tri(last[cI], last[cI + 1], tip);
+        b.tri(last[cI + 1], last[cI], tip);
       }
     }
   }
