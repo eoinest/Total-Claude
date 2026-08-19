@@ -678,7 +678,9 @@ Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`
 
 ## Round four — soldier material fidelity, and two rigs that disagreed
 
-Branch `e/units/cloth-folds`, eight commits off `850843a`. Round three's critics scored mean
+Branch `e/units/cloth-folds`, nine commits off `850843a`, **merged up to `bb789fe` and
+re-verified there** — the bow and elephant-carcass workstreams both landed in
+`src/units/soldierMesh.ts` while this was in flight and the merge was clean. Round three's critics scored mean
 **0.83** with face 0 and all six criteria under 2, and handed down a ranked list: cloth folds
 and silhouette, skin as vinyl, `shieldPanel`'s one tile across a 1.02 m board, a 13.1x texel
 density spread, and a flat-255 regression on `praet-torso`. All five are addressed. What
@@ -689,14 +691,24 @@ follows is the part worth keeping.
 Ten isolated-model plates, `tools/probe-octave.mjs`, interleaved per plate against the tree
 at `850843a`. Both arms shot with the same tool against two vite servers pinned to two trees.
 
+Against `850843a`:
+
 |  | median dR | dE1 | dE2 | dE4 | dE8 | dE16 |
 |---|---|---|---|---|---|---|
 | field preset (what every archived round used) | **−4.0 %** | −2.8 % | +0.8 % | +2.2 % | +2.8 % | +2.0 % |
 | **Battle rig** (the product's own lighting) | **−1.7 %** | −0.4 % | +1.5 % | +1.0 % | +0.8 % | +1.1 % |
 
-Pooled R median: field **1.393 → 1.293**, battle **1.157 → 1.130**. Reference pool 0.520-0.621
-unchanged. **The ratio falls while every mid band rises and the 1 px band does not**, on both
-rigs, which is the one pattern `--selftest` proves a Gaussian cannot produce.
+Re-run after the merge, against `bb789fe`, and it reproduces:
+
+|  | median dR | dE1 | dE2 | dE4 | dE8 | dE16 |
+|---|---|---|---|---|---|---|
+| field preset | **−4.0 %** | −2.8 % | +0.8 % | +2.3 % | +2.6 % | +1.6 % |
+| **Battle rig** | **−1.9 %** | −1.3 % | +0.4 % | +0.3 % | +0.5 % | +1.1 % |
+
+Pooled R median off `850843a`: field **1.393 → 1.293**, battle **1.157 → 1.130**. Reference
+pool 0.520-0.621 unchanged. **The ratio falls while every mid band rises and the 1 px band
+does not**, on both rigs, which is the one pattern `--selftest` proves a Gaussian cannot
+produce.
 
 Cost, measured rather than asserted:
 
@@ -704,7 +716,8 @@ Cost, measured rather than asserted:
 - **LOD2 280 verts / 313 tris, unchanged**, both factions.
 - LOD0 Rome 5296/4786 → 5480/4822 (**+0.75 % triangles**); LOD1 2616 → 2652 (+1.4 %).
   Germanic +12 tris. Every added triangle is a modelled shield grip, twelve per board.
-  Round three paid LOD0 +11.2 % and LOD1 +8.5 %.
+  Round three paid LOD0 +11.2 % and LOD1 +8.5 %. Off `bb789fe` the same figures are Rome LOD0
+  5170/4824 → 5354/4860 and LOD1 3072/2620 → 3218/2656.
 - Whole-frame triangles identical at six of seven cameras; `romanline`, the only one with
   LOD0 men in it, 15.56 M → 15.67 M.
 - Atlas resident, bake time and texture memory unchanged — no cell was added or resized.
