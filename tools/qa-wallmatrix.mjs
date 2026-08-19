@@ -317,6 +317,15 @@ async function frameOn(pts, yaw, want = null, zooms = [0.26, 0.34, 0.42, 0.52, 0
       const tpx = out[out.length - 1];
       await page.mouse.move(tpx.x, tpx.y);
       await settle(220);
+      /*
+       * The HUD is checked first, and it is not a formality. `updateGround` runs before the
+       * `overUi` gate, so `orderX/orderZ` can be perfectly correct at a pixel that is
+       * underneath a panel — and `handleRight` refuses the gesture there, so the cell reports
+       * a descent that issued no order at all rather than a camera that framed it badly.
+       * Measured once, on the line cohort's descent: order NONE, cursor `default`, selection
+       * intact.
+       */
+      if (await page.evaluate(() => window.__overUi())) continue;
       const cur = await page.evaluate(() => window.__cursor());
       const gotWall = cur.wallValid && Math.hypot(cur.wallX - pts[pts.length - 1].x, cur.wallZ - pts[pts.length - 1].z) < 9;
       const gotGround = cur.orderValid && !cur.wallValid
@@ -813,7 +822,7 @@ async function carthageCells() {
    * "nothing reached the parapet" while a Roman cohort stood on it.
    */
   let onWall = null;
-  for (let i = 0; i < 6 && !onWall; i++) {
+  for (let i = 0; i < 12 && !onWall; i++) {
     const all = await page.evaluate(() => window.__units());
     let best = null;
     for (const u of all) {
