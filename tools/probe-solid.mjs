@@ -131,7 +131,7 @@ window.__ps = (() => {
    * the same rule probe-wall arrived at after its gather silently stopped seeing the
    * leaves and reported a 4 m hole that was really a hole in the instrument.
    */
-  const RE = /^(wall-\\d+|gate-door|gate-wreck|gatehouse[\\w-]*|tower[\\w-]*)-lod0$/;
+  const RE = /^(wall-\\d+|gate-door|gate-wreck|postern-door-\\d+|gatehouse[\\w-]*|tower[\\w-]*)-lod0$/;
   const gatherMeshes = () => {
     const out = [];
     const root = city.root;
@@ -141,7 +141,7 @@ window.__ps = (() => {
       if (!RE.test(p)) return;
       // Exactly one of the intact leaves and the wreck is on screen; gathering both would
       // fill a broken carriageway with an intact door.
-      if (/^gate-(door|wreck)-lod0$/.test(p) && !n.parent.visible) return;
+      if (/^(gate-(door|wreck)|postern-door-\\d+)-lod0$/.test(p) && !n.parent.visible) return;
       n.updateWorldMatrix(true, false);
       if (!n.geometry.boundingBox) n.geometry.computeBoundingBox();
       const bb = n.geometry.boundingBox.clone().applyMatrix4(n.matrixWorld);
@@ -246,7 +246,25 @@ if (CASE === 'gates' || CASE === 'all') {
       const rows = [];
       for (const h of [1.0, 1.7, 3.0]) {
         const sx = gate.x + ox * 16, sz = gate.z + oz * 16;
-        const sy = b.groundAt(sx, sz) + h;
+        /*
+         * `h` is measured off the **opening's own ground**, not off the ground 16 m out.
+         *
+         * It was `groundAt(sx, sz) + h`, and once Carthage's ditch was actually cut that
+         * became a probe that measures the ditch. 16 m out is inside a 20 m trench whose bed
+         * is 6 m down, so at h = 1.0 the ray started about four metres below the wall's
+         * footing and flew clean under the plinth, under the walled-up carriageway and out
+         * the far side. It reported `porta-uticensis` and `porta-maritima` as **mesh CLEAR
+         * at every height** while both of those gates' obstacle boxes stopped a man at
+         * 11.25 m: a number that cannot be true given its neighbour.
+         *
+         * The tell that settled it was `postern-62`. At x +908 it is the one opening on the
+         * circuit past the end of the ditch, and it was also the only one whose ray hit
+         * anything. The rest of the frontage was measuring a trench.
+         *
+         * Casting from above the terrain costs nothing here: the set is city meshes only,
+         * and there is no ground in it to fly over.
+         */
+        const sy = gy + h;
         const hits = ps.cast(sx, sy, sz, -ox, 0, -oz, 32);
         // Where the boxes and the raster say the crossing is stopped.
         let boxStop = null, rasterStop = null;
@@ -298,7 +316,12 @@ if (CASE === 'curtain' || CASE === 'all') {
         const gy = b.groundAt(cx, cz);
         // Ray from 12 m outside to 12 m inside, at chest height on the outside ground.
         const sx = cx + nx * 12, sz = cz + nz * 12;
-        const sy = b.groundAt(sx, sz) + 1.5;
+        // Chest height on the wall's **own** ground, for the reason the gates case above
+        // gives at length: 12 m out is the inner slope of the ditch, and a ray launched from
+        // there passes under the footing and reports the curtain as undrawn. It listed the
+        // whole of `porta-uticensis` as a phantom — "not drawn, but solid" — with a metre and
+        // a half of tufa standing in it.
+        const sy = gy + 1.5;
         const hits = ps.cast(sx, sy, sz, -nx, 0, -nz, 24);
         const mesh = hits.length > 0;
         let box = false, raster = false;
