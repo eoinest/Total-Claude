@@ -391,7 +391,11 @@ function browBand(rTop: number, rMid: number, rRim: number): [number, number][] 
 
 export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.InstancedBufferGeometry {
   if (lod === 2) return buildFarGeometry(faction);
-  const b = new MeshBuilder();
+  // `physicalTiles`: a box face takes the share of its tile it physically covers rather than
+  // the whole tile. Deliberately not set on the far builder below — LOD2 is byte-identical by
+  // contract — and not on the elephant, horse or engine builders, which are other
+  // workstreams' surfaces.
+  const b = new MeshBuilder({ physicalTiles: true });
   const d = DETAIL[lod];
   const germanic = faction === Faction.Germanic;
   /**

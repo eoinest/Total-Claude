@@ -48,6 +48,24 @@ export class MeshBuilder {
   private auxU = 0;
   private auxV = 0;
 
+  /**
+   * **Map a box face to the material's real grain instead of stretching one tile over it.**
+   *
+   * Off by default, and the default is load-bearing. `buildFarGeometry` — the 313-triangle
+   * crowd tier eight thousand men are drawn in — must stay byte-identical, and the elephant,
+   * the horse and the siege engines are other workstreams' surfaces which this pass has no
+   * business restyling. Only `buildSoldierGeometry` turns it on.
+   *
+   * A constructor option rather than a setter, because a flag that can be flipped halfway
+   * through a build is a flag that will be, and half a mesh at one grain and half at another
+   * is worse than either.
+   */
+  private readonly physicalTiles: boolean;
+
+  constructor(opts: { physicalTiles?: boolean } = {}) {
+    this.physicalTiles = opts.physicalTiles ?? false;
+  }
+
   setPiece(piece: number, tint: number): this {
     this.piece = piece;
     this.tint = tint;
@@ -610,6 +628,16 @@ export class MeshBuilder {
    * the same texel** and the face rendered as one flat colour. Five engine call sites pass
    * `2`, `3` and `4`. Mapping the whole tile is the honest reading of the intent and is
    * strictly better than a point sample; a genuinely tiled box needs subdivision.
+   *
+   * **With `physicalTiles` and a rect that knows its own world size, a face takes only the
+   * share of the tile it physically covers.** Stretching one tile over an 8 mm arrow shaft
+   * is 31,250 texels per metre on a figure whose bare legs run 570 — and 250 texels of wood
+   * grain crammed into the four screen pixels the shaft occupies is not detail, it is
+   * aliasing, which is the one octave this project already carries 3.7x too much of. The
+   * window is centred and offset by a hash of the box's own position, so five arrows in a
+   * quiver take five different pieces of the tile rather than five copies of its middle.
+   * A face larger than a tile clamps to the whole tile, which is the old behaviour and the
+   * same honest limitation: one quad cannot carry a seam.
    */
   box(
     cx: number, cy: number, cz: number,
@@ -621,6 +649,13 @@ export class MeshBuilder {
     const hx = sx / 2;
     const hy = sy / 2;
     const hz = sz / 2;
+    const tileM = this.physicalTiles ? uv.m : undefined;
+    // A cheap positional hash, 0..1 in each axis. Only used to slide the tile window, so it
+    // wants decorrelation between nearby boxes rather than statistical quality.
+    const jitter = (k: number): number => {
+      const h = Math.sin(cx * 127.1 + cy * 311.7 + cz * 74.7 + k * 43.3) * 43758.5453;
+      return h - Math.floor(h);
+    };
     const faces: [number[], number[]][] = [
       [[1, 0, 0], [hx, hy, hz]],
       [[-1, 0, 0], [-hx, hy, -hz]],
@@ -645,8 +680,23 @@ export class MeshBuilder {
       const ey = [ay[0] * hx, ay[1] * hy, ay[2] * hz];
       const c = [cx + nx * hx, cy + ny * hy, cz + nz * hz];
       const v: number[] = [];
+      // The face's own extent along its two in-plane axes, in metres.
+      const fu = Math.abs(ex[0]) + Math.abs(ex[1]) + Math.abs(ex[2]);
+      const fv = Math.abs(ey[0]) + Math.abs(ey[1]) + Math.abs(ey[2]);
+      let wu = 1;
+      let wv = 1;
+      let ou = 0;
+      let ov = 0;
+      if (tileM) {
+        wu = Math.min(1, (2 * fu) / tileM);
+        wv = Math.min(1, (2 * fv) / tileM);
+        ou = jitter(1) * (1 - wu);
+        ov = jitter(2) * (1 - wv);
+      }
       for (const [su, sv] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
-        const [u, vv] = MeshBuilder.tileUv(uv, (su + 1) / 2, (sv + 1) / 2);
+        const [u, vv] = MeshBuilder.tileUv(
+          uv, ou + ((su + 1) / 2) * wu, ov + ((sv + 1) / 2) * wv
+        );
         v.push(this.vert(
           c[0] + ex[0] * su + ey[0] * sv,
           c[1] + ex[1] * su + ey[1] * sv,

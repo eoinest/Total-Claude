@@ -157,6 +157,23 @@ export interface UvRect {
   v0: number;
   u1: number;
   v1: number;
+  /**
+   * **How much of the world one whole tile of this material covers, in metres.**
+   *
+   * `MAT_TILE_M` has existed since the torso-stretch fix, and until now only the swept
+   * primitives could reach it — `soldierMesh` looked the number up and handed a repeat to
+   * `tube`. Every other primitive was blind to it, and `box` in particular maps one entire
+   * tile onto every face however small the face is: an 8 mm arrow shaft carries 250 texels
+   * across 8 mm, which is **31,250 texels per metre** against a bare leg's 570. That is
+   * most of the 13.1x texel-density spread across one man that round three's critics
+   * recorded, and a man whose material grain changes thirteen-fold from piece to piece
+   * cannot read as authored.
+   *
+   * Carrying it on the rect itself is what lets a primitive size its own mapping without
+   * every call site being edited to say what it already said by choosing the tile.
+   * Optional, because hand-built rects (the emblem block) have no material behind them.
+   */
+  m?: number;
 }
 
 /**
@@ -175,7 +192,7 @@ export function matUv(id: Mat): UvRect {
   const u1 = ((col + 1) * TILE) / ATLAS_W - insetU;
   const v1 = 1 - (row * TILE) / ATLAS_H - insetV;
   const v0 = 1 - ((row + 1) * TILE) / ATLAS_H + insetV;
-  return { u0, v0, u1, v1 };
+  return { u0, v0, u1, v1, m: MAT_TILE_M[id] };
 }
 
 /**
