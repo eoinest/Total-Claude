@@ -11,10 +11,12 @@ to production.
 
 Each entry records the commit that was deployed and the Vercel deployment that carried it. Those
 are not taken on trust: every commit below was matched to its deployment by comparing the SHA-1 of
-every tracked file in the commit against the file digests Vercel holds for that deployment, and all
-four matched at 100%. `r4` was additionally verified by rebuilding the commit in a pinned worktree
-and diffing the output against the bytes the live site serves, and by booting all three maps against
-the live URL and confirming the simulation clock advances on each. See
+every tracked file in the commit against the file digests Vercel holds for that deployment — r1 to
+r4 at 100% of tracked files, and r5 at 567 of 568 with zero digest mismatches, the one absent file
+being `.gitignore`, which the CLI reads rather than uploads. `r4` and `r5` were additionally
+verified by rebuilding the commit in a pinned worktree and diffing the output against the bytes the
+live site serves, and by booting all three maps against the live URL and confirming the simulation
+clock advances on each. See
 [`docs/RELEASING.md`](docs/RELEASING.md) for the procedure.
 
 Every figure quoted here comes from a commit message, from `docs/HANDOFF.md`, or from a measurement
@@ -26,7 +28,7 @@ more useful than the original findings.
 `--use-gl=angle --use-angle=metal` so it is a real GPU rasterisation and not a software one. The
 interface is suppressed unless the entry is *about* the interface, in which case it is shown. Where
 a caption says *before* and *after*, both frames are the same named camera on the same scenario with
-one thing changed. Where the frame carries particle VFX the two arms were additionally interleaved
+one thing changed — and where that is not exactly true, the caption says so and says why. Where the frame carries particle VFX the two arms were additionally interleaved
 in one session with the base arm re-shot last as a drift check, because two runs of this project at
 identical configuration differ on 50-70% of their pixels — the dust reseeds, and a cross-session
 pair of a dusty frame is not a comparison. **A caption says only what its picture shows.**
@@ -35,10 +37,322 @@ text than as a frame that half-supports them.
 
 ---
 
+## r5 — the garrison stops shooting itself, and Carthage's posterns become doors
+
+**18 August 2026** · commit [`850843a`](https://github.com/eoinest/Total-Claude/commit/850843a) ·
+deployment `total-claude-dmr7bx7fq` · **live now**
+
+A correctness release, and the one in which several confident diagnoses turned out to be wrong.
+Rome's garrison had been putting nearly a third of its shots into its own men and being credited
+with more kills than the enemy had bodies. Carthage's posterns were arches painted on solid stone.
+A middle-drag panned by however long the frame took rather than by how far the cursor moved. And
+the war elephant, which stopped vanishing in r4, stopped pirouetting while it died.
+
+### New
+
+- **The model viewer draws the elephant.** The owner: *"the elephants do not render in the model
+  viewer — instead it's just a horse rider."* That is literally what it did, and the readout
+  underneath said so — *"soldier mesh + horse mesh"* — beside a comment claiming the fallback would
+  stand "until an elephant mesh exists". It had existed for some time. `pushManOrRider` branched on
+  `isCavalry`, which is true of `war-elephants` because the roster classes the unit
+  **`heavy-cavalry`**: the *simulation* wants a four-tonne animal pushed, shoved and killed like a
+  mount, and one entry in the soldier pool is one whole elephant — the beast, its mahout and the
+  three men in the tower. `mountKind` is what decides the geometry, and `isElephantUnit` now asks
+  it.
+
+  | before — shot at r4 | after — shot at r5 |
+  |---|---|
+  | ![A model-viewer plate on a plain tan ground with a black-and-white metre staff standing beside it: one Carthaginian rider in a bronze helmet with a shield slung on his back, seated on a bay horse under a red saddlecloth, and a single shadow on the ground under them](docs/images/releases/r4-viewer-horse.jpg) | ![The same plate and the same ground: a grey elephant with a mottled hide, tusks, a wicker crupper and a striped caparison in dye bands over its back, a mahout astride the neck and three crewmen standing in a timber fighting tower strapped over its shoulders, with the metre staff beside its foreleg for scale](docs/images/releases/r5-viewer-elephant.jpg) |
+  | `war-elephants` selected in r4: a man on a horse. | The same selection in r5. |
+
+  The animal comes with **alive / mid-death / carcass** as one button each — the carcass is the
+  death clip held at its last frame, which is the only elephant pose with an audience measured in
+  minutes — its own six clips on its own playhead, the crew placed off the *animated* howdah and
+  mahout tracks and thrown clear by the same recipe the game uses, and the 31-bone rig on the
+  skeleton overlay. It is one tier: **one draw call, 2,993 triangles, no LOD chain and no
+  impostor.** The forward axis was measured rather than assumed, which is the trap this project's
+  plate framing has fallen into three times: the barding centroid sits at Z **+1.22 m** against the
+  hide's +0.39 and the tower's +0.09, and a four-azimuth sweep of the soloed barding reads
+  **53,984 px at azimuth 0 against 31,007 at π**.
+
+- **The isolated-model deck can finally be lit by the lighting the game ships.** Measured off
+  `gl.getShaderSource` over every program three had linked, per preset: `studio` 12 fragment
+  programs, `field` 15, and **`tcShadowGeom` in none of them**; the new `battle` rig, 28 programs
+  with **6**. So every isolated-model plate this project has ever graded — the deck that found the
+  inside-out normals, the culled box faces and the reversed shield boss inside an hour — was lit by
+  a hand-rolled directional key, a hemisphere and a warm bounce through a fixed 3×3 PCF from one
+  non-cascaded sun, standing in for a battle that uses a blocker-search soft shadow across four
+  cascades under a physically derived sky. `studio` and `field` are untouched and stay, because
+  every archived plate was shot under one of them. An hour slider from 04:00 to 21:00 comes with
+  the sky, which is the single most useful knob a lighting review can have and the deck has never
+  had one.
+
+- **A changelog, and the procedure that keeps it true.** The owner: *"can you start publishing a
+  changelog each time you publish a new version to github."* This file, backfilled to r1, with each
+  release matched to its deployment by recomputing the SHA-1 of every tracked file's bytes and
+  comparing it against the digests Vercel holds — 434/434, 475/475, 504/504 and 520/520, each
+  commit matching only its own deployment, the nearest neighbour scoring 96.2%. And
+  [`docs/RELEASING.md`](docs/RELEASING.md), whose ordering is its whole point: pin to an explicit
+  commit in a detached worktree, verify by bundle hash rather than status code — a failed Vercel
+  build leaves the previous deployment live and still returns 200 — boot all three maps and confirm
+  the simulation clock advances, and only then tag and publish. **This release is the first one cut
+  by it.**
+
+### Fixed
+
+- **Rome's garrison was shooting itself in the back, and being paid for it.** The report was "73% of
+  a garrison's hits are on its own men". That is one sentence and at least three separate faults,
+  and the pooled figure is not the one to act on or even to quote: measured per battle, the friendly
+  share of every hit on a man was **30.8% on the Rome assault, 63.9% on Carthage and 41.9% in the
+  field**. What separates the three faults is the distance from the release point to the hit, so
+  every shot now carries where it left from and every friendly casualty is binned by it. **89% of
+  them happened within 0.9 m of the muzzle, 0.067 s into flight, on a man in the shooter's own
+  rank** — the man standing next to him. The arming guard was `0.06` *seconds*, and a second is not
+  a distance: for a ballista bolt at full draw that is 4.7 m, and for the same bolt after the
+  parapet solve re-draws it to 6 m/s to clear a merlon at ten paces it is **0.20 m**.
+
+  The ablation is the interesting part, because the obvious fix on its own makes the battle worse:
+
+  | | friendly kills / 4 min | enemy killed |
+  |---|---|---|
+  | before | 155 | 221 |
+  | arming distance alone (1.3 m) | **360** | — |
+  | with the lane test fixed | **26** | **539** |
+
+  Arming by distance removes the near-muzzle absorption, so the shaft flies on and takes the man in
+  *front* at two metres — and a hit in the back is far more lethal than one in the shoulder
+  (`sameUnitAhead` 26 → 701). The fix is the lane test: it stepped at 1.5 m over ranks 0.86 m apart,
+  so a man could stand in two thirds of the lane and never be looked at; it ran *before* the
+  ballistic solve, against a trajectory nothing flies; and it modelled the lane as a straight ray
+  when the shots that hit their own front rank leave at 5-13 m/s and fall 0.38 m over the 1.44 m to
+  the second rank. It is now one swept query on the parabola the shot is actually about to fly.
+  A unit firing at will also stopped shooting over its own line into a melee — in one 30 s slice,
+  **766 of 788 friendly hits were arrows arriving 12 m or more out on a *different* friendly unit**
+  — and both halves of that condition are load-bearing, because refusing every melee-locked target
+  cost 69 enemy dead to save 3 of our own. An ordered volley still goes in.
+
+  And nobody is credited with shooting his own side any more. **Rome was credited 536 kills over
+  four minutes in which its enemy lost 446** — more kills than there were bodies, which is how
+  "132 kills while 13 attackers die" happens. After: 597 credited against 661 losses on Rome, 403
+  against 403 on Carthage.
+
+  | friendly / enemy kills per minute | before | after |
+  |---|---|---|
+  | Rome assault | 38.8 / 68.3 | **4.7 / 130.8** |
+  | Carthage assault | 19.6 / 21.1 | **3.8 / 42.1** |
+  | Campus Martius | 6.0 / 39.4 | **3.7 / 51.8** |
+
+  Friendly share of every hit on a man: Rome **30.8 → 3.6%**, Carthage 63.9 → 19.3%, field
+  41.9 → 21.9%. Missiles still hit friendlies, and are meant to.
+
+  *No picture. Which side an arrow came from is not a property of any pixel, and a frame of a
+  garrison shooting cannot distinguish the fixed case from the broken one.*
+
+- **Carthage's posterns and gates were drawn, not cut.** r4 stopped the simulation walking columns
+  of men through stone by refusing the passage; this release cuts the stone, which is what the wall
+  was drawn as having all along. Eight posterns were published as already-open gates, so the city
+  duly cut a carriageway through its collision surface for each — but the builder only set a pierced
+  arch *panel* into each face and never touched the curtain's own body. Measured with a ray against
+  the baked chunks, a postern stopped one at **8.03-8.10 m** — the cityward face — at every height
+  from 0.8 to 2.4 m and every lateral offset, and the Porta Byrsae stopped one at **8.4 m** with the
+  gate leaves excluded from the test. No man-tick counter in this repo could see it, because they
+  all grade men against the obstacle set and the obstacle set agreed with itself.
+
+  | before — shot at r4 | after — shot at r5 |
+  |---|---|
+  | ![Square on to a postern in the outer face of Carthage's main wall: coursed ashlar filling the frame with a square tower at the left, a chamfered plinth course along the bottom and a row of dark slots under the parapet at the top — and in the middle of the wall an arch about six metres wide drawn as a slightly raised ring with a straight jamb line dropping from each springing, with the wall's own coursing running straight through the middle of it, course for course, at the same brightness, and no opening, no shadow and no vault behind it](docs/images/releases/r4-postern-solid.jpg) | ![The same wall at the same standoff with the tower at the right instead: the arch is now a hole through the masonry, with dressed jambs, a soffit and the near half of the passage in shadow, and through the opening a paved way, an olive and two cypresses on open ground, and one small figure standing on the city side](docs/images/releases/r5-postern-cut.jpg) |
+  | The arch as r4 ships it: a relief on solid wall. Behind it the collision raster had a 6 m carriageway. | The same recipe on this release. The passage is stone that is actually gone. |
+
+  The passage is now a single `WallCut` hung on the bay and read by the three things that have to
+  agree about it — the stone the main bay lays, the mouth set into the hole, and the stretch of
+  gallery that stands down beside it. Two faults were found underneath it and both are fixed:
+  **posterns moved from `% 8 === 5` to `% 8 === 6`**, because every `% 8 === 5` bay is also
+  `% 4 === 1`, which is the wall-walk ramp's own cadence, so five of them were opening their
+  cityward mouth into the side of a 3.4 m masonry ramp; and **the two gate leaves stopped 30 mm
+  short of the centreline apiece**, so a 60 mm slot ran down the middle of a shut gate and a ray
+  went straight through it. `getUnpiercedGates()` is empty on both circuits and the assertion that
+  used to guard this has retired itself. Measured on the deployed tree: **`probe-carthage-wall`
+  46/46**, 69 rays cast through the mouths and the carriageway against the drawn stone, no solid
+  mouths and no unpierced gates.
+
+- **A middle-drag panned by the clock, not by the cursor.** The drag folded the pointer delta into
+  the same accumulator as WASD and the screen edge, normalised that to unit length and then
+  multiplied by the frame time — and at the default zoom the normalisation is reached at **1.2 px of
+  travel per frame**, so every real drag saturated, the cursor delta was discarded outright, and the
+  pan came out as *rate × elapsed time*. The same gesture moved the world by however long the frame
+  happened to take, which the new adaptive-quality controller deliberately varies.
+
+  | one 300 px drag over 12 frames, frame duration swept 144 fps → 15 fps | distance | s.d. | max/min |
+  |---|---|---|---|
+  | before | 16.67 … 160.07 m | 48.58 | 9.60 |
+  | after | 19.22 m in every row | **0.00** | **1.00** |
+
+  Held instead at a constant 400 ms of elapsed time with the frame rate swept 15-120, the old code
+  returned **80.04 m in all six rows with a standard deviation of exactly 0** — which is the proof
+  that it was integrating the clock and had stopped reading the cursor at all. The drag is now a
+  difference of two ground points, which telescopes, so twelve frames of 25 px and forty-eight of
+  6.25 px land in the same place. Cursor-to-ground tracking error over that 300 px, re-projecting
+  the world point that was under the cursor when the drag began: horizontal **25.9 → 6.5 px**,
+  vertical **142.2 → 8.9 px**. Two more things fell out of the same block: the vertical axis was
+  inverted against the horizontal one, so the camera went backwards as the cursor came down; and the
+  drag no longer takes the shift-key speed multiplier, because a 1:1 gesture that moves 2.4× the
+  cursor is not 1:1. Keyboard and edge pan are rate gestures, keep the frame time and the diagonal
+  normalisation that stops W+D covering `panRate × √2`, and measure **100.05 m and 78.61 m unchanged
+  at every frame rate**, s.d. 0 in both arms.
+
+  *No picture. A drag is a gesture over twelve frames; a still frame of the end of it looks the same
+  whichever way it got there.*
+
+- **A dying elephant pirouetted 180 degrees, and its crew were thrown under it.** r4 put the animal
+  back in the instance buffer; what was left was that the thing now visible turned on the spot while
+  it died. The renderer turns a man with no ragdoll pose toward his own death direction, because a
+  man's death clip drops him one fixed way and something has to aim it — and an elephant is exempt
+  from the ragdoll *by design*, which is the whole of the r4 fix, so it took that branch too. Killed
+  from dead astern, the drawn heading **snapped a full 180 degrees on the frame of the killing
+  blow**, jumped back to 45.6 degrees when the playhead was zeroed, and swung round to 180 again
+  over 0.6 s. Four tonnes pirouetting while it collapses is a stumble, not a death.
+
+  It was three faults rather than one, because three other things are derived from that heading: the
+  fall direction is baked into the clip, so turning the animal turns which way it goes down; the
+  capsule the living are pushed out of is built on the simulation's facing, which the render turn
+  never touched, so the body men avoid was drawn at up to 180 degrees to the body they can see; and
+  the crew's landing side is computed off the same heading and **was already backwards**, so the two
+  errors cancelled — for a blow from dead ahead or astern, and only by accident. Which side the
+  animal lies on is now a measurement rather than a reading of a comment: run the death clip's own
+  forward kinematics and at the last frame the right ear, right foreshoulder and right back hip
+  finish at y **0.30 / 0.20 / 0.41** against their left-side partners at **1.18 / 1.35 / 1.52**. It
+  lies on its right, the tower goes down with it, and a man thrown out of the tower goes that way
+  too — now landing at **−2.5 to −3.2 m** to the side, four of four, lying flat 0.13-0.16 m above the
+  animal's own ground height. The settled root sink went 1.32 → **1.26 m** from the same kinematics,
+  which puts the barrel at 0.94 against a 0.95 target and the lowest bone in the animal at
+  **+0.009 m** — nothing under the ground at all.
+
+- **An ala rode straight through a dead elephant.** The carcass pushes the living out of a
+  4.7 × 2.6 m capsule, and photographed with a cavalry unit ordered over a body it did not work: the
+  squadron settled with riders **1.816 m inside the animal**. Two independent causes, both
+  structural. **A horse is not a man, and here that is a shape and not a mass** — the crowd solver
+  carries no per-man radius at all, one diameter for everybody, with a rider distinguished only by
+  an inverse mass; that is the right model for men shoving each other, where the question is who
+  gives way, and the wrong one against a body on the ground, where the question is how wide the
+  thing is. A cavalryman is a 2.4 m horse drawn around a point the solver treats as 0.42 m. And
+  **the one immovable thing in the tick was served last**: the carcass pass ran at the end of crowd
+  resolution and shared its separation budget, so a man in a dense block had already spent the whole
+  0.22 m on his neighbours and the correction was dropped entirely — which is exactly the case of a
+  formed squadron whose slots happen to lie on a body. A neighbour can be leaned on; a dead elephant
+  cannot. Deepest overlap of a rider's own body with the animal's flank **1.816 → 0.224 m**, and of
+  a foot soldier's **0.026 m**, with at most 11 of 320 touching at once.
+
+  ![Looking down on a mounted squadron halted around a dead war elephant in long grass: the animal on its side with its timber fighting tower canted over against its shoulder and its legs folded, a scuffed ring of bare earth around it, and about thirty riders in a formed block whose ranks run up to the body, stop, and pick up again beyond it, with none of them standing in it](docs/images/releases/r5-carcass-ala.jpg)
+
+  A squadron ordered straight over the body. What the frame shows is the block opening around the
+  carcass and closing again past it. **The "before" here is a number and not a picture** — the
+  1.816 m of overlap above was measured, and the frame that went with it was in a screenshot
+  directory that no longer exists.
+
+  The whole elephant tier costs **5 draw calls — 1 colour plus 4 shadow cascades — at every camera,
+  whether the frame holds one animal or thirty-two and whether they are alive or dead**, so a
+  carcass costs nothing. With 32 carcasses on the field at 8,428 men the whole fixed tick measures a
+  best block of 3.37 ms against a 4 ms budget, and the carcass pass itself measures −0.035 to
+  +0.067 ms, which is inside the noise on either side of zero.
+
+- **A bow is not a weapon at four metres.** A cavalry-versus-archers matchup inverted when the
+  friendly-fire fix above let the rear ranks' arrows through, and the diagnosis handed over was that
+  the archers were overtuned behind a bug. They are not — see the corrections below. What actually
+  happened is that **a hundred archers with a fifty-horse wedge standing in them are not fighting by
+  either test the volley machine had**: the wedge presents a tip, five or six men have an opponent,
+  the engaged fraction reads 0.05 and the contact lock never sets. So the unit volleyed on with the
+  enemy at **1.7 m** — 55 hits and six dead riders in one second, from arrows the lofted solve draws
+  to **4.6 m/s** over a two-metre gap and which do full listed damage, because damage is a roster
+  number and not a function of speed. Before the friendly-fire fix those arrows were eaten by the
+  archers' own front rank at the muzzle, which is why the case read right while being wrong.
+  A formation now stops volleying inside **7 m** of an enemy front — not a new number, it is the one
+  the pilum volley already used — measured on the front-rank segments, so shooting into the backs of
+  a broken enemy is untouched and a garrison shooting down at besiegers is untouched. Leaving the
+  volley machine now clears the aim *pose* as well, because the only way out used to be the contact
+  lock, on the same tick melee starts, which left a hundred men playing a throw all the way through
+  a charge. `cav-vs-archers` **timeout → B at 70 s**, horse losses **24% → 2%**.
+
+- **A skirmisher gave ground to something that outranged him.** Skirmish mode is on by default on
+  every skirmisher — the unit's own state summary says "the two toggles start engaged" — and the
+  behaviour gave ground to *anything* inside 30 m. Numidian cavalry ordered to attack archers closed
+  to 32.9 m, were pushed back to **44.7 m** — the fallback distance times 0.85, exactly — and stood
+  there for sixty seconds losing **28 of 54** to a 165 m bow without a man reaching a man. Backing
+  off from a swordsman is the whole trade; backing off from 165 m of reach buys him another
+  half-minute of shooting. `numidian-vs-archers` **A 78 s → B 111 s**, horse losses **52% → 6%**.
+  Nothing in the roster moved for either case.
+
+- **`flyTo` was the last entry point still parking the camera focus at sea level.** Its sibling was
+  fixed in r1; this one still set the focus to y = 0 and let the next frame re-derive it from the
+  terrain. It is the smaller fault of the two — there is no swoop, only a window in which the focus
+  reads as sea level — and it has **no caller anywhere in the source, the tools, the viewer or the
+  documentation**, which is exactly why it was worth closing before one exists.
+
+- **The viewer's copy of the tone-and-grade shader is gone, not merely corrected.** It carried a
+  hand-copied mirror of the post chain's two shader bodies and the copy had drifted: of the five
+  uniforms they shared, film grain read **0.006** in the shipping chain and **0.016** in the mirror
+  — and 0.016 is the level measured to leave **0.00% of a plate reading as a smooth gradient**
+  against a Rome II reference of 7.09%, which a blind grader named as its single strongest scalar
+  without knowing what it was looking at. The numbers were corrected by hand in an earlier pass and
+  the mirror was left in place, which is the wrong fix: a copy that can drift eventually does, and
+  nothing in the type system was ever going to notice. The shipping chain now exports both shader
+  bodies, two uniform factories and the sample count, and the viewer imports them. One divergence
+  survives on purpose and is documented at both ends — exposure is pinned at 1 against the shipping
+  chain's sky-driven 1.42-5.1 — and it needs a sky to close.
+
+### Corrections to the record
+
+- **No archer stat was ever wrong, and the horse was never losing men on the way in.** The handover
+  said a cavalry-versus-archers inversion meant the *sagittarii* were overtuned. Sliced band by band
+  over the ten metres the horse is crossing, the charge arrives having lost **2 of 50 — the 4% the
+  case is documented to produce** — both before the friendly-fire fix and after it. Three hundred
+  arrows over 150 m of open ground buy one dead rider. Everything the archers gained happens *after*
+  contact, and a nerf would have been tuning the one number in the case that was already right.
+- **The 43% javelin refusal on Carthage is not a height fault and is not 43%.** The range bound
+  genuinely was a level-ground figure compared against a horizontal distance, and it is now the
+  launch solve's own discriminant envelope asked at the real height — but **the fix is measured
+  inert**: attempts and refusals are 3,107 and 550 on both arms, and **no shot in 6,400 leaves
+  without a ballistic root**, because every weapon's roster range is far inside its physical reach
+  even at the 14.7 m Carthage's garrison stands above the ditch. A 24 m/s javelin's ceiling is
+  29.4 m against a 13.4 m parapet, so "the discriminant goes negative and it fires at 45 degrees
+  into the wall" cannot happen here. Sliced into eight thirty-second windows the refusal rate runs
+  40.5 / 47.1 / 21.5 / 31.4 / 5.4 / 1.1 / 0 / 0% and pools to **17.7%**; **448 of the 550 refusals
+  are more than twelve metres *below* the muzzle**, with 279 inside 1.1× of the bound and 211 more
+  inside 1.25×. They are the garrison throwing down at men just past a horizontal bound at the
+  moment a unit acquires a formation whose centre is at the edge of its range, and a refused shot
+  costs no ammunition. It is a hold, not a fault.
+- **Melee has never credited a kill to the wrong side, and that is now measured rather than
+  argued.** Wrapping the damage entry point in the page over the Rome assault, the Carthage assault
+  and the Campus Martius — 662 seconds — records **2,781 lethal blows, 1,889 of them melee, and not
+  one same-faction credit**; the only uncredited deaths are the 46 the missile path deliberately
+  gives to nobody. Kills against bodies: Rome 618/699 and 589/612, Carthage 294/309 and 491/493.
+  The refusal is enforced at source now, with a counter, so it stays checkable rather than folklore.
+- **Never compare two whole-suite runs of the matchup harness.** Run case by case with the two arms
+  alternating in one session, **20 of the 22 cases come back byte-identical** across a real change —
+  same winner, same second, same losses, same melee peak and mean. Run as two whole suites an hour
+  apart at different machine loads and **four cases flip winner on an unchanged tree**, all four
+  near-even by construction, because the winner is whichever side breaks first and a few extra
+  frames between round-trips decide it. The documented ±8% is not a tolerance band; it is that,
+  arriving as a discrete outcome.
+- **Every isolated-model plate this project has graded was lit by something the game does not
+  ship** — see the battle rig above. The deck that found the inside-out normals, the culled box
+  faces and the reversed shield boss was right about all three; the finding is that its *light* was
+  never the product's, and shadow-, roughness- or metal-dependent calls made on that deck should be
+  re-read with that in mind.
+- **A unit class is a simulation fact and a render path is not derivable from it.** The horse the
+  viewer drew where the elephant should be came straight from `isCavalry`, which is true of
+  `war-elephants` for good simulation reasons. Anything else keyed off that predicate should be
+  read again.
+- Two entries in the working notes that said "still open" were not: the viewer had been given the
+  real lighting system, and the mirrored shader had been deleted. A stale "still not done" is worse
+  than no note, because the next person spends an hour re-deriving a map that has already been
+  walked.
+
+---
+
 ## r4 — the frame stops hitching, and there is a way through every tower
 
 **7 August 2026** · commit [`0a42909`](https://github.com/eoinest/Total-Claude/commit/0a42909) ·
-deployment `total-claude-ll0g412dr` · **live now**
+deployment `total-claude-ll0g412dr`
 
 A performance and siege-traversal release. The stutter people were feeling turned out not to be the
 game being slow, men can finally walk past a wall tower, and archers on the parapet stopped shooting
