@@ -556,9 +556,19 @@ const SHOTS = {
     // vs s2-01: close melee in tall grass, camera almost on the ground.
     desc: 'AB2: inside the Punic melee, camera almost in the grass',
     map: 'carthage', opponent: 2, follow: 'contact', at: 96, hour: 13.4, weather: 'overcast',
-    // Same reasoning as `ab2-rome-melee` above, a touch lower because the Punic line is
-    // shallower than a legionary one and lets more ground through.
-    cam: { eye: 2.35, aim: 1.00, dist: 18, fov: 36 },
+    /*
+     * And the opposite correction to `ab2-rome-melee`, which is worth writing down because
+     * it is the argument against tuning the two together.
+     *
+     * The same standoff that buries the camera in a legionary press leaves it well outside a
+     * Punic one: measured, 16 m put the nearest man at **11.59 m** here against 0.88 m there.
+     * A Punic line is Libyan spearmen, Iberian scutarii and Gallic warbands at different
+     * frontages and different depths, and it simply does not pack the way a cohort does. So
+     * this one comes *in* to 8 m and keeps its low eye, while the Roman one goes up over the
+     * helmets. Two shots of the same nominal subject, corrected in opposite directions, from
+     * one measurement each.
+     */
+    cam: { eye: 1.45, aim: 0.57, dist: 8, fov: 36 },
   },
   'ab2-carth-march': {
     // vs s2-16: a barbarian mass advancing, close, camera low among them.
