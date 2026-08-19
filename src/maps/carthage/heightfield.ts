@@ -1079,9 +1079,20 @@ function assertHarbourWorks(heights: Float32Array, res: number, spacing: number)
   }, COTHON.x - R, COTHON.x + R, COTHON.z - R, COTHON.z + R);
   const merchant = survey(() => true, mh.x - mh.hw, mh.x + mh.hw, mh.z - mh.hd, mh.z + mh.hd);
 
-  // The freeboards, sampled exactly where `harbour.ts` samples them, so the two cannot differ.
+  /**
+   * The freeboards, sampled exactly where `harbour.ts` samples them, so the two cannot differ.
+   *
+   * **The merchant harbour's point is the landward quay belt, not the basin centre**, and
+   * that used to be wrong here in a way that printed an impossible pair of numbers next to
+   * each other: "merchant 2.3 % of its water buried, freeboard −3.10 m". Both cannot be
+   * true — a basin whose water is not buried has a quay above the datum — and the
+   * contradiction was the instrument, not the ground. `heightAt(mh.x, mh.z)` is the middle
+   * of the basin, which after the excavation *is* the bed by construction, so the line was
+   * reporting the bed depth under the word "freeboard". `harbour.ts:266` samples
+   * `mh.z - mh.hd - mh.quayWest * 0.5`; this now samples the same point.
+   */
   const cothonFree = at(COTHON.x, COTHON.z) - BASIN_WATER_Y;
-  const merchantFree = at(mh.x, mh.z) - BASIN_WATER_Y;
+  const merchantFree = at(mh.x, mh.z - mh.hd - mh.quayWest * 0.5) - BASIN_WATER_Y;
 
   /**
    * The steepest gradient the pathfinder will meet on the ring quay, over its own 7 m cell.
