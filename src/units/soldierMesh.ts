@@ -978,7 +978,7 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     // triangle, and its Nyquist guard drops it below six segments, so LOD1 and LOD2 are
     // untouched. 13 mm on a 0.15 m body is a real woollen fold; the taper holds it almost
     // flat under the belt and lets it open at the hem, which is what a belted tunic does.
-    fold: { amp: 0.013, lobes: 3, lobes2: 4, phase: 0.6, taper: (t) => 0.22 + 0.78 * t * t },
+    fold: { amp: 0.020, lobes: 3, lobes2: 4, phase: 0.6, taper: (t) => 0.22 + 0.78 * t * t },
   });
   if (d.medium) {
     // Short sleeves over the deltoid.
@@ -1020,7 +1020,7 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
         { y: 0.76, rx: 0.14, rz: 0.1, bone: MB.pelvis },
       ],
       d.torso, woolUv,
-      { repeatU: 2, fold: { amp: 0.011, lobes: 3, lobes2: 4, phase: 1.4, taper: (t) => 0.35 + 0.65 * t } }
+      { repeatU: 2, fold: { amp: 0.017, lobes: 3, lobes2: 4, phase: 1.4, taper: (t) => 0.35 + 0.65 * t } }
     );
   } else {
     // Focale: the neck scarf that stopped mail and plate chafing the throat. Small, but
@@ -1265,7 +1265,7 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
       // Two lobes on a leg, not three: `d.limb` is seven segments at LOD0 and a fold the
       // ring cannot resolve comes out a star. Bracae are cut full and gathered at the
       // ankle, hence the taper running the other way from the tunic's.
-      fold: { amp: 0.007, lobes: 2, lobes2: 3, phase: left ? 0.9 : 2.3, taper: (t) => 0.45 + 0.55 * t },
+      fold: { amp: 0.011, lobes: 2, lobes2: 3, phase: left ? 0.9 : 2.3, taper: (t) => 0.45 + 0.55 * t },
     });
     if (d.medium) {
       b.setPiece(Piece.LegsTrousers, Tint.Atlas);

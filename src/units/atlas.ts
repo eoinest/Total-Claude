@@ -475,6 +475,18 @@ const mailHeight = (u: number, v: number, rings: number): number => {
 const TAU = Math.PI * 2;
 
 /**
+ * How wide the transition across a plank joint is, as a fraction of the plank's half-width.
+ *
+ * 0.34, and the number is an octave argument rather than a taste. A plank is a sixth of a
+ * 0.36 m shield tile, so its half-width is 21 texels; at the 0.14 the other seams use, the
+ * transition is three texels, which on the isolated deck is **2.5 screen px** — E1, the one
+ * band this figure is already 3.7x over on. At 0.34 it is seven texels and about 6 px, which
+ * is E2. Physically it is also the truer number: a shield board's joints are chamfered and
+ * hide-covered, not machined.
+ */
+const PLANK_SEAM_W = 0.34;
+
+/**
  * **A hanging fold, which is the shape cloth has and a noise blotch is not.**
  *
  * Round three's critics led with "cloth has no folds and no silhouette — flat polygon plates
@@ -518,10 +530,9 @@ const foldField = (u: number, v: number, cycles: number, salt: number): number =
  * The profile is a raised cosine over the joint's own width, which is also what a planed
  * board edge looks like: an arris rounded by handling either side of a narrow gap.
  */
-const seamProfile = (t: number, count: number): number => {
+const seamProfile = (t: number, count: number, w = 0.14): number => {
   const f = t * count;
   const d = Math.abs(f - Math.floor(f) - 0.5) * 2;
-  const w = 0.14;
   if (d < 1 - w) return 0;
   return 0.5 - 0.5 * Math.cos(((d - (1 - w)) / w) * Math.PI);
 };
@@ -1080,11 +1091,11 @@ const MATS: Record<Mat, MatDef> = {
       const knot = Math.max(0, fbm(u * 6, v * 6, 3, 6, 71) - 0.72) * 3;
       mix3([0.42, 0.31, 0.19], [0.66, 0.52, 0.34], grain * shade, out);
       mix3(out, [0.2, 0.13, 0.07], Math.min(0.8, knot), out);
-      const seam = 1 - seamProfile(v, 6) * 0.45;
+      const seam = 1 - seamProfile(v, 6, PLANK_SEAM_W) * 0.45;
       out[0] *= seam; out[1] *= seam; out[2] *= seam;
     },
     height: (u, v) =>
-      (1 - seamProfile(v, 6)) * (0.6 + vnoise(u * 4, v * 36, 4, 67) * 0.4),
+      (1 - seamProfile(v, 6, PLANK_SEAM_W)) * (0.6 + vnoise(u * 4, v * 36, 4, 67) * 0.4),
     roughness: 0.78,
     metalness: 0,
     bump: 0.5,
