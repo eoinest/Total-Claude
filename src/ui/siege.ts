@@ -76,6 +76,18 @@ interface FlowView {
 const pct = (n: number, of: number): number => (of > 0 ? Math.max(0, Math.min(1, n / of)) : 0);
 
 /**
+ * Agreement for the counts these lines are built from, which start at one and pass through it
+ * in both directions.
+ *
+ * "1 of ours are past the curtain" and "the gate is standing — 1 blows in" both reached a
+ * screenshot. A siege spends real time at exactly one of most of these — one man through the
+ * breach, the first blow on the gate — so it is the reading a player is most likely to be
+ * staring at when they are trying to work out what the plaque means.
+ */
+const be = (n: number): string => (n === 1 ? 'is' : 'are');
+const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
+
+/**
  * Read the storm off the running battle, or null if this is not one.
  *
  * `BattleFlowSystem.objective` is the test as well as the source: it is non-null exactly when
@@ -171,7 +183,8 @@ const PHASE_COPY: Record<
   ram: {
     storm: {
       label: 'The Ram at the Gate',
-      note: (_o, g) => `The gate is standing — ${g.blows} blows in, ${Math.round(g.hp * 100)}% left`,
+      note: (_o, g) => `The gate is standing — ${plural(g.blows, 'blow')} in, `
+        + `${Math.round(g.hp * 100)}% left`,
     },
     garrison: {
       label: 'The Ram at the Gate',
@@ -205,11 +218,11 @@ const PHASE_COPY: Record<
   streets: {
     storm: {
       label: 'In the Streets',
-      note: (o) => `${o.stormInside} of ours are past the curtain`,
+      note: (o) => `${o.stormInside} of ours ${be(o.stormInside)} past the curtain`,
     },
     garrison: {
       label: 'In the Streets',
-      note: (o) => `${o.stormInside} of them are past the curtain`,
+      note: (o) => `${o.stormInside} of them ${be(o.stormInside)} past the curtain`,
     },
   },
 };

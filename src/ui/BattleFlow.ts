@@ -128,10 +128,12 @@ function wallBlock(s: SiegeRead | null, reason: string): string {
       : s.gate.breached
         ? 'The gate went down; the wall itself was never carried.'
         : 'The wall was never carried.';
+  // A gate that went down to a single blow is a real reading and "1 blows" is not a sentence.
+  const blows = `${s.gate.blows} ${s.gate.blows === 1 ? 'blow' : 'blows'}`;
   const gate = s.gate.breached
-    ? `Broken &mdash; ${s.gate.blows} blows`
+    ? `Broken &mdash; ${blows}`
     : s.gate.blows > 0
-      ? `Held at ${Math.round(s.gate.hp * 100)}% &mdash; ${s.gate.blows} blows`
+      ? `Held at ${Math.round(s.gate.hp * 100)}% &mdash; ${blows}`
       : 'Never struck';
   const row = (dt: string, dd: string, bad = false): string =>
     `<div${bad ? ' class="loss"' : ''}><dt>${dt}</dt><dd>${dd}</dd></div>`;
