@@ -1516,3 +1516,55 @@ same reason. Neither figure is a soldier regression.
   instance count on every frame. Suppress the *emission* instead — override `pushElephant` on
   the instance — and `flush` hides the mesh itself. Same family as the `castShadow` no-op at
   trap 10 and the `shadowRender` knob, and the same tell: a number that is exactly zero.
+
+---
+
+## Session close — 18 Aug 2026
+
+`main` **b255d58**, in sync with `origin/main`. **r5 deployed** at `850843a`
+(https://total-claude.vercel.app); main is 8 commits past it.
+
+### Landed since r5
+- **`dc249b9` the bow.** Was 3-5 unrotated boxes per limb stepped along a curve. Now one
+  continuous `MeshBuilder.sweep` with cross-sections on the curve's tangent. Three faults were
+  invisible in the source: the recurve term `Math.max(0, t-0.78)` **never fired at LOD1** and
+  fired once at LOD0, so there was no recurve; the bow was **strung backwards** (limbs bowed
+  into the archer, string on the target side); and the string was **120 mm clear of both nocks**
+  and out of the bow's plane, because the archery stance runs 26° off the man's facing. The bow
+  was also the **worst-sampled surface on the man** at 12,800 tx/m. LOD2 bit-identical by hash.
+- **`1573296` the elephant carcass.** Two of the four handed-down diagnoses were wrong.
+  "The legs never move" — they do (knees 128°, hocks −104°); the pose had been **graded on bone
+  positions, and a bone is not a leg**. Lowest *skinned vertex*: forelegs at **+1.054 m in the
+  air** over a hind at **−0.213 m buried**. The howdah's "rigid bind" cause differs by
+  **0.000000 m at all 26 frames** — it was the caparison, five quads as a ruled tent over a
+  tapering barrel, plus two "girth ropes" that were **1.44 m wide ribbons driven through the
+  animal**. The crew fix was not `CREW_THROW_ARC` but that all three axes ran on one smoothstep,
+  leaving the platform at zero velocity.
+- **`b255d58` cloth, skin, shield panel, texel density.** R falls while every mid band rises on
+  both lighting rigs. Density variance **13.1x → 7.3x** (an 8 mm arrow shaft carried 31,250 tx/m).
+  Flat-255 was **twelve of 29 tiles**, not one.
+
+### Rules earned this session
+- **Grade under the Battle rig, not a studio preset.** Four commits read −5.9 % under `field`
+  and **+6.3 % under Battle rig** — opposite signs. Chasing it found `WoodPlank`'s seam was a
+  **binary step**, that the bevel's *width* decides which octave it lands in (3 texels = 2.5 px
+  = E1, the band we are trying to reduce; 7 texels = 6 px = E2, the band we want), and that the
+  wood grain **did not tile**.
+- **A bone is not a limb.** Grade a pose on skinned vertices.
+- **A constant copied into the viewer will drift.** `CREW_FALL_SIDE` was `+1` there against
+  `−1` in the render system, so every carcass frame ever shot in the viewer threw the crew onto
+  the wrong flank. All eight are exported and imported now.
+- `shoot-model --light=battle` is **not reproducible on `juth-head`** — 24 settle steps are too
+  few; that plate swings dE1 +15.4 % between shoots of an identical tree. Discard its battle deltas.
+
+### Open, nobody on them
+- **Every isolated plate is monochrome sepia** — helmet, shield, skin, ground and sky in one
+  narrow warm band. Rubric G2 calls this worse than over-saturation. **The next round is colour
+  and head geometry, not texture.**
+- **The head is a stack of hard-edged boxes** with cut-out oval eyes and a faceted nose slab.
+- Rome's assault may still be unwinnable; the great wall-breaking ram is unbuilt.
+- The gatehouse publishes no battlement, so men on the neighbouring bay cannot shoot.
+- `SkySystem.dispose` disposes the sky dome's geometry without removing the mesh.
+- Carthage's ditch is published but never cut; the heightfield does not excavate the harbours.
+- `qa-interact`'s `__unitScreen` projects a unit anchor at ground+1 m — ~48 px above the men at
+  some zooms — so `right-click move`/`attack` read as failing when they are not. **Harness fault.**
