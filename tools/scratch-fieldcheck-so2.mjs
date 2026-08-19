@@ -24,6 +24,12 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 const PORT = Number(process.argv.find((a) => a.startsWith('--port='))?.slice(7) ?? 5403);
 const W = 1600, H = 900;
 const base = `http://127.0.0.1:${PORT}`;
+/**
+ * Extra query string, for a `?battle=` token. Same reason `probe-siegehud.mjs` has one: the
+ * shipped order of battle takes longer to reach a verdict than this check is worth. Every
+ * assertion below is about which words the panels print, not about how many men printed them.
+ */
+const EXTRA = process.argv.find((a) => a.startsWith('--extra='))?.slice(8);
 
 const up = async (ms) => {
   const end = Date.now() + ms;
@@ -73,7 +79,8 @@ page.on('pageerror', (e) => errs.push(`pageerror: ${e.message}`));
 page.on('console', (m) => { if (m.type() === 'error') errs.push(`console.error: ${m.text()}`); });
 
 console.log('\n— the field battle, unchanged');
-await page.goto(`${base}/?menu=0&map=campus-martius&scenario=field&autoplay=1&quality=high`,
+await page.goto(`${base}/?menu=0&map=campus-martius&scenario=field&autoplay=1&quality=high`
+  + (EXTRA ? `&${EXTRA}` : ''),
   { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 300000 });
 await page.waitForTimeout(1500);
