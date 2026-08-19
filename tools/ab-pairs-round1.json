@@ -1,0 +1,76 @@
+{
+  "round": "round-1",
+  "note": "Subject is matched inside each pair so that subject matter cannot be the answer. Rome II side is one of the twenty-two official store screenshots in reference/rome2-steam; see its SOURCES.md for the URL of each. Four of the twenty-two are campaign-map shots with the full interface up and are never eligible.",
+  "pairs": [
+    {
+      "subject": "the line of battle at battle zoom, ranks oblique",
+      "ours": "ab-rome-line",
+      "ref": "s2-04"
+    },
+    {
+      "subject": "the front rank of a line at battle zoom, works behind",
+      "ours": "ab-carth-line",
+      "ref": "s2-09"
+    },
+    {
+      "subject": "inside a melee at close zoom",
+      "ours": "ab-rome-melee",
+      "ref": "s2-00"
+    },
+    {
+      "subject": "inside a melee at close zoom",
+      "ours": "ab-carth-melee",
+      "ref": "s2-01"
+    },
+    {
+      "subject": "infantry on the march, close on the ranks",
+      "ours": "ab-rome-march",
+      "ref": "s2-13"
+    },
+    {
+      "subject": "a non-Roman infantry mass advancing, close",
+      "ours": "ab-carth-march",
+      "ref": "s2-16"
+    },
+    {
+      "subject": "a city wall from outside during an assault",
+      "ours": "ab-rome-wall",
+      "ref": "s2-17"
+    },
+    {
+      "subject": "a walled city under assault, from above",
+      "ours": "ab-carth-wall",
+      "ref": "s2-19"
+    },
+    {
+      "subject": "men on a high defensive work over a city",
+      "ours": "ab-rome-parapet",
+      "ref": "s2-12"
+    },
+    {
+      "subject": "men on a high vantage over the ground below",
+      "ours": "ab-carth-parapet",
+      "ref": "s2-14"
+    },
+    {
+      "subject": "cavalry in motion",
+      "ours": "ab-rome-cavalry",
+      "ref": "s2-15"
+    },
+    {
+      "subject": "war elephants in a battle line",
+      "ours": "ab-carth-elephants",
+      "ref": "s2-08"
+    },
+    {
+      "subject": "the aftermath: bodies on the ground at close range",
+      "ours": "ab-rome-aftermath",
+      "ref": "s2-02"
+    },
+    {
+      "subject": "the whole field from high up, both hosts drawn up",
+      "ours": "ab-carth-wide",
+      "ref": "s2-03"
+    }
+  ]
+}

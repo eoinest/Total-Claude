@@ -28,28 +28,27 @@
  * of a pair share it — and nothing anywhere is interpolated.
  *
  * **The rectangle is chosen against the reference plate's hazards, then applied to ours.**
- *   - *Wordmarks.* Every Rome II store screenshot carries a burned-in lockup in the lower
- *     band. Measured across all twenty-two: nothing intrudes above 80% of frame height. So
- *     the window stops at 80%, exactly as `blind-compare` does, and for the same reason.
+ *   - *Wordmarks.* Every Rome II store screenshot carries a burned-in lockup, and every one
+ *     of them is hard against the **right** edge. The window is therefore 1440 px wide out
+ *     of 1920, which clears the leftmost glyph pixel in the whole set by at least 68 px. See
+ *     `MAX_W` below for how that was measured, and for why the "bottom 20%" rule this
+ *     project has used for twenty-three rounds is false on three of the twenty-two plates.
  *   - *Cinematic bars.* Three of the twenty-two — s2-17, s2-18, s2-19 — are 2.35:1 frames
  *     delivered in a 16:9 file with hard 139-140 px black bars top and bottom. Two of them
  *     are the best siege plates in the set. Dropping them would cost the wall-assault pairs;
  *     using them raw would let a grader sort those pairs on the bars alone with no reference
  *     to render quality. So the bars are measured (`blackBars`) and windowed out, and our
- *     frame is windowed to the *same rows*, which is why those pairs come out at 1920x704
- *     while the rest come out at 1920x864.
- *   - *Odd source widths.* s2-09 is 1728x1080. Its pair is 1728 wide and our frame is
- *     centre-cropped to 1728, so again neither side is resampled.
+ *     frame is windowed to the *same rows*, which is why those pairs come out at 1440x720
+ *     while the rest come out at 1440x800.
+ *   - *Odd source widths.* s2-09 is 1728x1080, which the 1440 cap already covers.
  *
  * **One JPEG generation, then PNG.** The output format is PNG because that is what the deck
  * asks for, and PNG on its own is a leak: the plates arrive with a JPEG generation already
  * baked in and our renders have none, so at 100% zoom one side has ringing around every
  * spear and the other does not. Both sides therefore go through *one identical* mozjpeg
- * generation — same quality, same 4:2:0 chroma subsampling — before being written as PNG.
- * That does not equalise it (theirs has two generations, ours one; the asymmetry is stated
- * in the audit rather than hidden), but it closes the large half of the gap, and 4:2:0 in
- * particular removes a real tell: full-chroma renders have clean colour edges and 4:2:0
- * JPEGs fringe.
+ * generation — same quality, same chroma mode — before being written as PNG. That does not
+ * equalise it (theirs has two generations, ours one; the asymmetry is stated in the audit
+ * rather than hidden), but it closes the large half of the gap.
  *
  * All crop offsets and sizes are multiples of 16. This is not tidiness: the plates already
  * carry a JPEG quantisation grid, and a crop offset that is not a multiple of 16 shifts our
@@ -88,7 +87,7 @@ import path from 'node:path';
 import process from 'node:process';
 import {
   OVERLAY_REFUSE, SEPARABLE_REFUSE, SEPARABLE_WARN,
-  balancedAccuracy, blackBars, flatBorderPx, overlayAudit, rng,
+  balancedAccuracy, blackBars, flatBorderPx, overlayAudit, pictureStats, rng,
 } from './lib/deck-audit.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -282,9 +281,18 @@ for (const [i, p] of order.entries()) {
     const t = Math.min(top, meta.height - h);
     const jpeg = await sharp(src)
       .extract({ left, top: t, width: w, height: h })
-      // One generation, one quality, one chroma mode, both sides. The plates already carry a
-      // generation and ours do not; this does not equalise that, it stops it being 1-vs-0.
-      .jpeg({ quality: QUALITY, mozjpeg: true, chromaSubsampling: '4:2:0' })
+      /*
+       * One generation, one quality, one chroma mode, both sides. The plates already carry a
+       * generation and ours do not; this does not equalise that, it stops it being 1-vs-0.
+       *
+       * 4:4:4, and this was measured rather than assumed. The obvious choice is 4:2:0,
+       * because that is what a web JPEG usually is and because full-chroma renders have
+       * clean colour edges where a subsampled photograph fringes. But every one of the
+       * twenty-two store screenshots is **4:4:4** — Valve serves them at full chroma — so
+       * subsampling here would not be matching the reference, it would be degrading both
+       * pools to make them match each other, and degrading the side that is the target.
+       */
+      .jpeg({ quality: QUALITY, mozjpeg: true, chromaSubsampling: '4:4:4' })
       .toBuffer();
     /*
      * Decode and re-emit as PNG.
@@ -436,6 +444,7 @@ for (const f of outFiles) {
     hasIcc: Boolean(meta.icc), hasExif: Boolean(meta.exif),
     flatBorderPx: await flatBorderPx(f.file),
     blackBar: (await blackBars(f.file)).top + (await blackBars(f.file)).bottom,
+    ...(await pictureStats(f.file)),
   });
 }
 
@@ -520,6 +529,30 @@ console.log('\nseparability (balanced accuracy at the best single threshold; 0.5
 for (const s of separability) {
   console.log(`  ${s.field.padEnd(14)} ${s.score.toFixed(3)}  [${s.class}]  ours ${s.ours}  rome2 ${s.rome2}`);
 }
+/*
+ * The picture statistics, printed per origin.
+ *
+ * Not a gate. This is the objective half of a round's findings — the thing a grader's
+ * "the colour is all in one band" gets argued in, and the thing the next round has to move.
+ * A large gap here is a *finding*, not a leak: it is the renderer differing from the target,
+ * which is what the instrument exists to measure.
+ */
+const picture = ['lum', 'p01', 'p99', 'chroma', 'hueSpread', 'edge', 'vignette'].map((f) => {
+  const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+  const v = stats.map((s) => s[f]);
+  return {
+    field: f,
+    ours: +mean(v.filter((_, i) => isOurs[i])).toFixed(4),
+    rome2: +mean(v.filter((_, i) => !isOurs[i])).toFixed(4),
+    score: balancedAccuracy(v, isOurs),
+  };
+});
+console.log('\npicture statistics (reported, never refused — these are findings, not leaks)');
+for (const p of picture) {
+  console.log(`  ${p.field.padEnd(10)} ours ${String(p.ours).padStart(9)}   rome2 ${String(p.rome2).padStart(9)}   `
+    + `separates at ${p.score.toFixed(3)}`);
+}
+
 console.log('\noverlay audit (origin-exclusive static-and-structured pixels)');
 for (const o of overlay) {
   console.log(`  ${o.origin.padEnd(6)} ${(o.area * 100).toFixed(4)}% of frame, largest blob ${(o.largest * 100).toFixed(4)}%`);
@@ -583,14 +616,14 @@ await writeFile(keyAbs, `${JSON.stringify({
   tool: 'tools/pair-deck.mjs',
   commit: COMMIT,
   seed: SEED,
-  jpegGeneration: { quality: QUALITY, encoder: 'mozjpeg', chroma: '4:2:0' },
+  jpegGeneration: { quality: QUALITY, encoder: 'mozjpeg', chroma: '4:4:4' },
   ours: {
     dir: path.relative(ROOT, oursAbs), commit: rec.commit, hud: rec.hud,
     dpr: rec.dpr, worldOverlay: rec.worldOverlay, width: rec.width, height: rec.height,
   },
   refs: path.relative(ROOT, refsAbs),
   sideBalance: { oursAsA: aIsOurs, pairs: key.length },
-  audit: { separability, overlay, byteReport, windows },
+  audit: { separability, picture, overlay, byteReport, windows },
   key,
 }, null, 2)}\n`);
 

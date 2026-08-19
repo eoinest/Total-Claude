@@ -334,26 +334,26 @@ const SHOTS = {
 
   // ---- Campus Martius, 271 AD ----------------------------------------------
   'ab-rome-line': {
-    desc: 'AB: the Roman line of battle at battle zoom, the host beyond it',
-    follow: 'ownLine', zoom: 0.44, at: 6, hour: 9.0,
+    desc: 'AB: the Roman front rank at battle zoom, ranks receding obliquely',
+    follow: 'romanFront', zoom: 0.34, at: 6, hour: 9.0,
   },
   'ab-rome-melee': {
     desc: 'AB: inside the melee at close zoom',
-    follow: 'contact', zoom: 0.20, at: 96, hour: 15.0,
+    follow: 'contact', zoom: 0.11, at: 96, hour: 15.0,
   },
   'ab-rome-march': {
     desc: 'AB: the legionary cohorts on the march, before contact',
-    follow: 'romanFront', zoom: 0.28, at: 38, hour: 7.8,
+    follow: 'romanFront', zoom: 0.22, at: 40, hour: 7.8,
   },
   'ab-rome-wall': {
     desc: 'AB: the Aurelian Wall from outside, mid-assault — towers, ladders, ram, host',
-    scenario: 'assault', hour: 14.3, at: 300,
-    wall: { bay: 0, stand: 165, lift: 24, zoom: 0.52, yaw: 'in', yawAdd: 0.22 },
+    scenario: 'assault', hour: 14.3, at: 170,
+    wall: { bay: 2, stand: 90, lift: 20, zoom: 0.46, yaw: 'in', yawAdd: -0.55 },
   },
   'ab-rome-parapet': {
     desc: 'AB: men in the embrasures of the Aurelian parapet, shooting down',
-    scenario: 'assault', hour: 11.0, at: 66,
-    wall: { bay: 2, stand: 0.2, lift: 'walk+1.3', zoom: 0.17, yaw: 'along' },
+    scenario: 'assault', hour: 11.0, at: 96,
+    wall: { bay: -2, stand: 0.2, lift: 'walk+1.6', zoom: 0.19, yaw: 'along', yawAdd: Math.PI },
   },
   'ab-rome-cavalry': {
     desc: 'AB: the equites wing sweeping the flank',
@@ -361,7 +361,7 @@ const SHOTS = {
   },
   'ab-rome-aftermath': {
     desc: 'AB: the field after the break — corpses, routs, dust, blood',
-    follow: 'corpses', zoom: 0.30, at: 200, hour: 17.6,
+    follow: 'corpses', zoom: 0.22, at: 200, hour: 16.0,
   },
 
   // ---- Carthage, spring 146 BC ---------------------------------------------
@@ -369,26 +369,26 @@ const SHOTS = {
   // field and — under `assault`, because `CARTHAGE_PLAN.garrison` is Carthage — puts the
   // Romans on the outside of the wall for once.
   'ab-carth-line': {
-    desc: 'AB: the Roman line drawn up before Carthage, the Punic host beyond',
-    map: 'carthage', opponent: 2, follow: 'ownLine', zoom: 0.44, at: 6, hour: 10.2,
+    desc: 'AB: the Punic front rank at battle zoom, the city works behind',
+    map: 'carthage', opponent: 2, follow: 'enemyFront', zoom: 0.28, at: 6, hour: 10.2,
   },
   'ab-carth-melee': {
     desc: 'AB: inside the melee at close zoom, Punic line',
-    map: 'carthage', opponent: 2, follow: 'contact', zoom: 0.20, at: 96, hour: 13.4,
+    map: 'carthage', opponent: 2, follow: 'contact', zoom: 0.11, at: 96, hour: 13.4,
   },
   'ab-carth-march': {
     desc: 'AB: the Punic line advancing — Libyan, Iberian and Gallic blocks',
-    map: 'carthage', opponent: 2, follow: 'enemyFront', zoom: 0.28, at: 38, hour: 8.6,
+    map: 'carthage', opponent: 2, follow: 'enemyFront', zoom: 0.24, at: 40, hour: 8.6,
   },
   'ab-carth-wall': {
     desc: 'AB: the wall of Carthage from outside, mid-assault',
-    map: 'carthage', opponent: 2, scenario: 'assault', hour: 15.2, at: 300,
-    wall: { bay: 0, stand: 165, lift: 24, zoom: 0.52, yaw: 'in', yawAdd: -0.24 },
+    map: 'carthage', opponent: 2, scenario: 'assault', hour: 15.2, at: 170,
+    wall: { bay: 2, stand: 90, lift: 20, zoom: 0.46, yaw: 'in', yawAdd: -0.55 },
   },
   'ab-carth-parapet': {
     desc: 'AB: the Punic garrison in the embrasures of Carthage',
-    map: 'carthage', opponent: 2, scenario: 'assault', hour: 12.2, at: 66,
-    wall: { bay: 2, stand: 0.2, lift: 'walk+1.3', zoom: 0.17, yaw: 'along' },
+    map: 'carthage', opponent: 2, scenario: 'assault', hour: 12.2, at: 96,
+    wall: { bay: -2, stand: 0.2, lift: 'walk+1.6', zoom: 0.19, yaw: 'along', yawAdd: Math.PI },
   },
   'ab-carth-elephants': {
     // Paired against the press set's own elephant plate, so "the one with the elephants" is
@@ -397,37 +397,9 @@ const SHOTS = {
     map: 'carthage', opponent: 2, follow: 'unitType', unitType: 'war-elephants',
     zoom: 0.30, at: 44, hour: 16.0,
   },
-  // ---- TEMPORARY framing sweep. Deleted once round 1's framings are pinned. -------
-  'zz-melee-a': { desc: 'sweep', follow: 'contact', zoom: 0.10, at: 96, hour: 15.0 },
-  'zz-melee-b': { desc: 'sweep', follow: 'contact', zoom: 0.14, at: 96, hour: 15.0 },
-  'zz-after-a': { desc: 'sweep', follow: 'corpses', zoom: 0.26, at: 200, hour: 15.0 },
-  'zz-after-b': { desc: 'sweep', follow: 'corpses', zoom: 0.40, at: 200, hour: 15.0 },
-  'zz-line-a': { desc: 'sweep', follow: 'romanFront', zoom: 0.34, at: 6, hour: 9.0 },
-  'zz-line-b': { desc: 'sweep', follow: 'ownLine', zoom: 0.32, at: 6, hour: 9.0 },
-  'zz-march-a': { desc: 'sweep', follow: 'ownLine', zoom: 0.30, at: 40, hour: 9.0 },
-  'zz-wall-a': {
-    desc: 'sweep', scenario: 'assault', hour: 14.3, at: 300,
-    wall: { bay: -2, stand: 62, lift: 10, zoom: 0.42, yaw: 'in', yawAdd: 0.55 },
-  },
-  'zz-wall-b': {
-    desc: 'sweep', scenario: 'assault', hour: 14.3, at: 300,
-    wall: { bay: 1, stand: 40, lift: 9, zoom: 0.36, yaw: 'in', yawAdd: 0.5 },
-  },
-  'zz-wall-c': {
-    desc: 'sweep', scenario: 'assault', hour: 14.3, at: 300,
-    wall: { bay: -4, stand: 95, lift: 14, zoom: 0.48, yaw: 'in', yawAdd: 0.6 },
-  },
-  'zz-para-a': {
-    desc: 'sweep', scenario: 'assault', hour: 11.0, at: 66,
-    wall: { bay: 2, stand: 0.2, lift: 'walk+1.3', zoom: 0.17, yaw: 'along' },
-  },
-  'zz-para-b': {
-    desc: 'sweep', scenario: 'assault', hour: 11.0, at: 66,
-    wall: { bay: 3, stand: 26, lift: 'crest+3', zoom: 0.22, yaw: 'in', yawAdd: 0.45 },
-  },
   'ab-carth-wide': {
     desc: 'AB: the whole field before Carthage from high up, both hosts drawn up',
-    map: 'carthage', opponent: 2, follow: 'ownLine', zoom: 0.78, at: 4, hour: 17.2,
+    map: 'carthage', opponent: 2, follow: 'ownLine', zoom: 0.62, at: 4, hour: 17.2,
   },
 };
 

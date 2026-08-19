@@ -262,6 +262,86 @@ export function balancedAccuracy(values, isOurs) {
   return best;
 }
 
+/**
+ * Six picture statistics, per frame, reported and never refused.
+ *
+ * These are not leak detectors. They are the objective half of a round's findings: a grader
+ * says "the colour is all in one narrow warm band" and this says how narrow, in a number
+ * that the next round can be measured against. Everything here is computed on the *deck
+ * output*, i.e. on exactly the pixels the grader sees.
+ *
+ *   lum          mean Rec.709 luma, 0-1.
+ *   p01, p99     1st and 99th percentile luma — the dynamic range actually used, and
+ *                whether the top end is clipped.
+ *   chroma       mean sRGB saturation (max-min)/max over non-black pixels. The project's
+ *                own rubric calls a single narrow band worse than over-saturation, so this
+ *                is the number that claim has to be argued in.
+ *   hueSpread    circular standard deviation of hue in degrees, weighted by chroma. A frame
+ *                whose helmet, shield, skin, ground and sky are all one hue scores near 0;
+ *                a frame with red cloaks against bronze against green grass scores high.
+ *   edge         mean |gradient| of luma per pixel. Pixel-scale energy — the statistic that
+ *                `blind-compare.mjs` calls its leading real separator and cannot equalise.
+ *   vignette     mean luma of the central 40% divided by mean luma of the outer ring. A
+ *                post-process present on one pool only shows up here and nowhere else in
+ *                this battery; the press plates have one and a raw render usually does not.
+ */
+export async function pictureStats(file) {
+  const { data, info } = await sharp(file, { failOn: 'none' })
+    .resize(640, null, { fit: 'inside' }).raw().toBuffer({ resolveWithObject: true });
+  const { width: w, height: h, channels: ch } = info;
+  const n = w * h;
+  const lum = new Float32Array(n);
+  let sumC = 0, nC = 0;
+  let sx = 0, sy = 0, sw = 0;
+  for (let i = 0; i < n; i++) {
+    const r = data[i * ch] / 255, g = data[i * ch + 1] / 255, b = data[i * ch + 2] / 255;
+    lum[i] = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    if (mx > 0.02) {
+      const c = (mx - mn) / mx;
+      sumC += c; nC++;
+      if (c > 0.05) {
+        // Hue as an angle, then a chroma-weighted circular mean and spread.
+        let hue;
+        const d = mx - mn;
+        if (mx === r) hue = ((g - b) / d + 6) % 6;
+        else if (mx === g) hue = (b - r) / d + 2;
+        else hue = (r - g) / d + 4;
+        const a = (hue / 6) * 2 * Math.PI;
+        sx += Math.cos(a) * d; sy += Math.sin(a) * d; sw += d;
+      }
+    }
+  }
+  const sorted = Float32Array.from(lum).sort();
+  const R = sw > 0 ? Math.hypot(sx, sy) / sw : 1;
+  let edge = 0;
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      edge += Math.hypot(lum[i + 1] - lum[i - 1], lum[i + w] - lum[i - w]);
+    }
+  }
+  let inner = 0, ni = 0, outer = 0, no = 0;
+  const cx = w / 2, cy = h / 2, rMax = Math.hypot(cx, cy);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const rr = Math.hypot(x - cx, y - cy) / rMax;
+      if (rr < 0.40) { inner += lum[y * w + x]; ni++; }
+      else if (rr > 0.80) { outer += lum[y * w + x]; no++; }
+    }
+  }
+  return {
+    lum: +(lum.reduce((a, v) => a + v, 0) / n).toFixed(4),
+    p01: +sorted[Math.floor(n * 0.01)].toFixed(4),
+    p99: +sorted[Math.floor(n * 0.99)].toFixed(4),
+    chroma: +(nC ? sumC / nC : 0).toFixed(4),
+    // Circular sd in degrees; R near 1 means every chromatic pixel shares one hue.
+    hueSpread: +(Math.sqrt(Math.max(0, -2 * Math.log(Math.max(1e-6, R)))) * (180 / Math.PI)).toFixed(1),
+    edge: +(edge / ((w - 2) * (h - 2))).toFixed(5),
+    vignette: +((inner / Math.max(1, ni)) / Math.max(1e-6, outer / Math.max(1, no))).toFixed(3),
+  };
+}
+
 /** Byte length on disk, so a caller does not have to import `fs` for one line. */
 export const bytesOf = async (f) => (await stat(f)).size;
 
