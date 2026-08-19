@@ -123,6 +123,17 @@ const SIEGE_TOWER_HALF = 2.1;
  */
 const SIEGE_REACH_M = 16;
 
+/**
+ * How far below a solid's own top a hit may be and still count as "on top of it", metres.
+ *
+ * Only used for a selection that is *already on the wall*, where a click on the masonry has
+ * one reading — go there — and the "foot of the wall" reading the height test exists to
+ * protect does not apply. Three metres, because the measured case is a hit at y 25.17 on a
+ * bay whose walk is at 26.50 (1.33 m of merlon and coping in the way), while a click at the
+ * base of the inner face is fourteen metres below the walk and must stay a descent.
+ */
+const WALK_NEAR_TOP_M = 3;
+
 /** What the HUD needs from `AbilitySystem`. Duck-typed so the HUD runs without it. */
 export interface AbilityProbe {
   /** 0 = ready, 1 = just used. */
@@ -682,7 +693,8 @@ export class SelectionController {
         this.wallZ = PICK.solidZ;
         this.wallY = PICK.solidY;
         this.wallValid = true;
-      } else if (this.wallProbe && this.selectionIsStorming()) {
+      } else if (this.wallProbe
+        && (this.selectionIsStorming() || this.nearTopOfHitSolid(PICK.solid, PICK.solidY))) {
         /*
          * From outside, the thing standing between the cursor and the wall *is* the wall.
          *
@@ -771,18 +783,47 @@ export class SelectionController {
    * the frame path to answer a question whose answer cannot change inside one frame.
    */
   private storming = false;
+  /** Selected units whose men are on the wall, and how many were selected. */
+  private onWallCount = 0;
+  private selCount = 0;
   private refreshStorming(): void {
     this.storming = false;
+    this.onWallCount = 0;
+    this.selCount = 0;
     const probe = this.wallProbe;
     if (!probe) return;
     const sel = this.model.selectedViews;
     if (sel.length === 0) return;
+    this.selCount = sel.length;
     let out = 0;
     for (const v of sel) {
-      if (this.onTheWall(v)) continue;
+      if (this.onTheWall(v)) { this.onWallCount++; continue; }
       if (probe.sideAt(v.cx, v.cz) > 0) out++;
     }
     this.storming = out > sel.length * 0.5;
+  }
+
+  /** Most of the selection is standing on the wall. Computed with `storming`, once a frame. */
+  private selectionOnWall(): boolean {
+    return this.selCount > 0 && this.onWallCount > this.selCount * 0.5;
+  }
+
+  /**
+   * A cohort already on the wall, pointing at the top of a piece of the wall.
+   *
+   * The second half of the same defect the storming branch has. A garrison on Carthage's
+   * curtain aiming at a bay along its own wall was measured reading `wallValid false` at a
+   * hit of y 25.17 against a walk at 26.50 — the ray met a merlon, or the flank of the tower
+   * in front of the bay, and `Siege.wallTargetAt` answers about the curtain's own standing
+   * band. The cursor then offered nothing and the right-click issued a plain move.
+   *
+   * Bounded by height, unlike the storming branch, because from inside the city a click low
+   * on the wall's inner face is a real and different order — "come down to the foot of it" —
+   * and turning that into a traverse would take the descent away.
+   */
+  private nearTopOfHitSolid(solid: number, hitY: number): boolean {
+    if (!this.selectionOnWall() || solid < 0 || solid >= this.solids.length) return false;
+    return hitY > this.solids[solid].topY - WALK_NEAR_TOP_M;
   }
 
   /**
@@ -814,8 +855,7 @@ export class SelectionController {
     if (this.wallValid && this.selectionIsStorming()) return 'storm';
     // A mixed selection is named by the majority; every unit still gets the same order and
     // `Siege` decides per unit what that means for it.
-    let onWall = 0;
-    for (const v of sel) if (this.onTheWall(v)) onWall++;
+    const onWall = this.onWallCount;
     if (this.wallValid) return onWall > sel.length * 0.5 ? 'traverse' : 'ascend';
     return onWall > 0 ? 'descend' : null;
   }
