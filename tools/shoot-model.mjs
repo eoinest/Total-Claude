@@ -162,6 +162,22 @@ const DPR = Number(args.get('dpr') ?? 2);
 const W = Number(args.get('w') ?? 900);
 const H = Number(args.get('h') ?? 1200);
 const KEEP_SERVER = args.has('port');
+/**
+ * Which lighting rig the deck is graded under.
+ *
+ * Defaults to the viewer's `field` preset, which is what every archived plate was shot with
+ * and therefore the only setting a round-to-round comparison is valid at. `--light=battle`
+ * registers the product's own `SkySystem` and `LightingSystem` — four cascades, blocker
+ * search, physical sky irradiance, chromatic ground bounce — and is the honest answer to
+ * "does this hold up under the lighting the game ships", which the studio presets cannot be
+ * asked because they have zero cascade uniforms in any program.
+ *
+ * It needs settling frames. `LightingSystem` re-patches materials on a sixteen-frame timer
+ * and the viewer builds its meshes lazily, so a plate taken two frames after a unit switch
+ * photographs an unpatched material at about four times the right exposure.
+ */
+const LIGHT = args.get('light') ?? null;
+const SETTLE = LIGHT === 'battle' ? 24 : 2;
 
 let plates;
 if (args.get('set') === 'turntable') {
@@ -281,13 +297,15 @@ try {
           unit: spec.unit, hash: spec.hash, lod: 0,
           clip: spec.clip, phase: spec.phase,
           azimuth: spec.az, elevation: spec.el, fill: spec.fill, aimY: spec.aimY,
-          light: spec.light,
+          light: spec.light ?? spec.forceLight ?? undefined,
         });
-      }, p);
+      }, { ...p, forceLight: LIGHT });
       // Two animation frames: one to apply the state, one to draw it. The controls damp, so
-      // a single frame photographs the camera on its way to where it was told to go.
-      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+      // a single frame photographs the camera on its way to where it was told to go. Under
+      // the battle rig it is twenty-four, because the cascade rig patches on a timer.
+      for (let k = 0; k < SETTLE; k++) {
+        await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+      }
 
       const stats = await page.evaluate(() => window.__viewer.stats());
       const file = path.join(OUT, `${name}.png`);
@@ -320,6 +338,7 @@ try {
       dpr: DPR,
       size: { w: W, h: H },
       isolated: true,
+      light: LIGHT ?? 'field',
       plates: results,
     }, null, 2)}\n`
   );

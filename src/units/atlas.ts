@@ -414,11 +414,18 @@ interface MatDef {
  * *no roughness signal at all* — a plateau, which is precisely the "flat 255" defect round
  * three's critics recorded on `praet-torso`, whose frame is more than half shield board.
  *
- * The cure is to fit the swing to the headroom instead of clamping it. `up` is capped by the
- * distance to the ceiling and `down` takes the rest, so a material near 1.0 keeps its whole
- * peak-to-peak swing and simply spends it downward — which is also the physically honest
- * direction, since nothing is rougher than fully diffuse. Measured against the bake it
- * takes every one of those plateaux to 0.00 %.
+ * The cure is to fit the swing to the headroom instead of clamping it, **symmetrically about
+ * the authored value**, so the tile's mean roughness is exactly what the material says it is
+ * and only the spread narrows. Every plateau measures 0.00 % after.
+ *
+ * The asymmetric version — cap `up` at the ceiling and spend the remainder downward, keeping
+ * the full peak-to-peak swing — was written first, measured, and **rejected**. It preserves
+ * the swing at the cost of the mean: wool's mean roughness fell 0.836 to 0.705, hair, fur,
+ * plume and rope the same, and under the product's own lighting rig a glossier cloth is a
+ * sharper specular lobe. Graded under Battle rig it cost dE1 +19.5 % pooled, on a figure
+ * that already carries 3.7x the reference's 1 px energy. Under the studio `field` preset the
+ * same arm looked harmless, which is the whole argument for grading under the rig that
+ * ships.
  */
 const ROUGH_MIN = 0.04;
 /** Not 1.0: a texel that lands exactly on the ceiling is a 255, and 255 is the defect. */
@@ -477,6 +484,28 @@ const foldField = (u: number, v: number, cycles: number, salt: number): number =
   const n = fbm(u * cycles * 2, v * cycles, 2, cycles, salt);
   const t = Math.min(1, Math.max(0, n * 1.18 - 0.09));
   return t * t * (3 - 2 * t);
+};
+
+/**
+ * A bevelled seam between two boards: 1 in the bottom of the joint, 0 on the plank face.
+ *
+ * The distinction this exists to make is the one round three's critics named on cloth and
+ * that turned out to matter far more on wood. A seam written as a comparison — "closer than
+ * 0.03 of a plank to the edge" — is a **step**, and a step in a height field differences to
+ * a one-texel normal discontinuity at full amplitude and bakes a hard-edged black line into
+ * the cavity. Under a weak studio light that is a dark line. Under the product's own sun,
+ * with the cavity gating direct light, it is a row of hard shadows one pixel wide, which is
+ * pure 1 px energy and the one octave this figure is already 3.7x over on.
+ *
+ * The profile is a raised cosine over the joint's own width, which is also what a planed
+ * board edge looks like: an arris rounded by handling either side of a narrow gap.
+ */
+const seamProfile = (t: number, count: number): number => {
+  const f = t * count;
+  const d = Math.abs(f - Math.floor(f) - 0.5) * 2;
+  const w = 0.14;
+  if (d < 1 - w) return 0;
+  return 0.5 - 0.5 * Math.cos(((d - (1 - w)) / w) * Math.PI);
 };
 
 /**
@@ -874,7 +903,10 @@ const MATS: Record<Mat, MatDef> = {
       const thread = warpUp * threadTone(u, v, 32, 8, 71)
         + (1 - warpUp) * threadTone(u, v, 8, 32, 73);
       const fold = LINEN_FOLD(u, v);
-      const g = 0.70 + fbm(u * 14, v * 14, 3, 14, 43) * 0.08 + fold * 0.13 + thread * 0.18;
+      // 0.68 + 0.08 + 0.13 + 0.18 sums to 0.97 at the very top of its range, which is the
+      // ceiling this cell is budgeted to. It summed to 1.09 and the clamp took 3.78 % of the
+      // tile to a channel at 255 — detail thrown away in the sheet, before a light touches it.
+      const g = 0.68 + fbm(u * 14, v * 14, 3, 14, 43) * 0.08 + fold * 0.13 + thread * 0.18;
       const dirt = (1 - fold) * 0.13;
       out[0] = g * (1 - dirt * 0.8);
       out[1] = g * 0.985 * (1 - dirt * 0.9);
@@ -966,24 +998,45 @@ const MATS: Record<Mat, MatDef> = {
     metalness: 0,
     bump: 0.7,
   },
-  // Limewood shield planks and spear shafts: straight grain with knots.
+  /**
+   * Limewood shield planks and spear shafts: straight grain with knots.
+   *
+   * **The seam is bevelled now, and the ternary it replaces was the most expensive single
+   * expression in this sheet.** `Math.abs(v * 6 - plank - 0.5) > 0.47 ? 0 : 1` is a binary
+   * step in a *height* field: the normal it differences to is a discontinuity one texel wide
+   * and full amplitude, and the cavity derived from it is a hard black line that occludes
+   * the direct sun completely. Six of those across a board was tolerable only because the
+   * whole tile was stretched over the board and mip-averaged; the moment the board tiled
+   * three deep there were eighteen, and graded under the Battle rig the shield plates paid
+   * **dE1 +22 to +42 %** for them. It is the same defect the critics named on cloth —
+   * "hard unbevelled creases" — in the one material nobody thought to look at.
+   *
+   * `seamProfile` is the same shape a plank edge really has: a rounded arris either side of a
+   * narrow valley. Same seam, same contrast, second derivative finite.
+   *
+   * **The grain is 36 cycles in v, not 90, and 90 did not tile.** `vnoise` wraps at its
+   * `period`, so the argument has to close on an integer number of periods: `v * 90` against
+   * period 4 is 22.5 periods and left a hard discontinuity across the tile boundary. With one
+   * tile stretched over a whole board that seam sat on the board's own edge and nobody saw
+   * it; tiling the board three deep put two of them across the middle of every scutum. 36 is
+   * nine periods and closes. It is also where the grain belongs: at 90 cycles a line is 2.8
+   * texels, which is under the texture's own Nyquist before the render even sees it, and on
+   * a tiled board it lands at 2.4 screen px — the 1 px octave. At 36 it is 7.1 texels and
+   * about 6 screen px, which is E2.
+   */
   [Mat.WoodPlank]: {
     colour(u, v, out) {
       const plank = Math.floor(v * 6);
       const shade = 0.82 + hash2(plank, 3, 61) * 0.28;
-      const grain = vnoise(u * 4, v * 90, 4, 67);
+      const grain = vnoise(u * 4, v * 36, 4, 67);
       const knot = Math.max(0, fbm(u * 6, v * 6, 3, 6, 71) - 0.72) * 3;
       mix3([0.42, 0.31, 0.19], [0.66, 0.52, 0.34], grain * shade, out);
       mix3(out, [0.2, 0.13, 0.07], Math.min(0.8, knot), out);
-      // Plank seam.
-      const seam = Math.abs(v * 6 - plank - 0.5) > 0.47 ? 0.55 : 1;
+      const seam = 1 - seamProfile(v, 6) * 0.45;
       out[0] *= seam; out[1] *= seam; out[2] *= seam;
     },
-    height(u, v) {
-      const plank = Math.floor(v * 6);
-      const seam = Math.abs(v * 6 - plank - 0.5) > 0.47 ? 0 : 1;
-      return seam * (0.6 + vnoise(u * 4, v * 90, 4, 67) * 0.4);
-    },
+    height: (u, v) =>
+      (1 - seamProfile(v, 6)) * (0.6 + vnoise(u * 4, v * 36, 4, 67) * 0.4),
     roughness: 0.78,
     metalness: 0,
     bump: 0.5,
@@ -1207,17 +1260,19 @@ const MATS: Record<Mat, MatDef> = {
       // Two rivet heads and their leather washers — a boss is nailed through the board and
       // the nails are visible from behind. Placed off-centre so a repeated tile does not
       // read as a grid.
-      const rivet = Math.exp(-(((u - 0.31) ** 2 + (v - 0.68) ** 2)) / 0.00042)
-        + Math.exp(-(((u - 0.74) ** 2 + (v - 0.22) ** 2)) / 0.00035);
+      const rivet = Math.exp(-(((u - 0.31) ** 2 + (v - 0.68) ** 2)) / 0.0011)
+        + Math.exp(-(((u - 0.74) ** 2 + (v - 0.22) ** 2)) / 0.0009);
       mix3(out, [0.58, 0.55, 0.50], Math.min(0.8, rivet), out);
-      // A hide facing is stitched in panels; the seam is a hard-worn crease, not a paint line.
-      const seam = Math.exp(-((((u * 2 + v * 0.6) % 1) - 0.5) ** 2) / 0.0009);
-      mix3(out, [0.33, 0.29, 0.25], seam * 0.5, out);
+      // A hide facing is stitched in panels. Two whole cycles in u and one in v, because a
+      // fractional coefficient does not close on the tile edge and leaves a hard line across
+      // the board once the board tiles — and `seamProfile` rather than a modulo for the same
+      // reason the plank seam uses it.
+      mix3(out, [0.33, 0.29, 0.25], seamProfile((u * 2 + v) % 1, 1) * 0.45, out);
     },
     height: (u, v) =>
       fbm(u * 20, v * 20, 3, 20, 157) * 0.62
-      + Math.min(0.9, Math.exp(-(((u - 0.31) ** 2 + (v - 0.68) ** 2)) / 0.00042)
-        + Math.exp(-(((u - 0.74) ** 2 + (v - 0.22) ** 2)) / 0.00035)) * 0.38,
+      + Math.min(0.9, Math.exp(-(((u - 0.31) ** 2 + (v - 0.68) ** 2)) / 0.0011)
+        + Math.exp(-(((u - 0.74) ** 2 + (v - 0.22) ** 2)) / 0.0009)) * 0.38,
     roughness: 0.72,
     metalness: 0.02,
     bump: 0.45,
@@ -2038,8 +2093,10 @@ export function buildSoldierAtlas(anisotropy: number): SoldierAtlas {
     // Roughness swing, fitted to this material's own headroom once rather than clamped per
     // texel. See `ROUGH_SWING`: the clamp is what produced the flat-255 plateaux.
     const want = Math.min(def.roughVar ?? def.roughness * 1.05, ROUGH_SWING);
-    const rUp = Math.min(want * 0.5, Math.max(0, ROUGH_MAX - def.roughness));
-    const rDown = Math.min(want - rUp, Math.max(0, def.roughness - ROUGH_MIN));
+    const rUp = Math.min(
+      want * 0.5, Math.max(0, ROUGH_MAX - def.roughness), Math.max(0, def.roughness - ROUGH_MIN)
+    );
+    const rDown = rUp;
 
     for (let y = 0; y < TILE; y++) {
       for (let x = 0; x < TILE; x++) {
