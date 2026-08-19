@@ -94,6 +94,22 @@ export const WALL_FOOTHOLD = 24;
  */
 export const WALL_HOLD_SECONDS = 20;
 /**
+ * Stretches of walkway either side of a lodgement that must also be clear of the garrison.
+ *
+ * The shoulders, and the reason the rule is not simply "no defender on the bay we are
+ * standing on". `Siege` cuts the spine into *runs* — maximal stretches a man can walk without
+ * leaving the wall — and on the Aurelian circuit there are 45 of them for 45 garrisonable
+ * bays, so a run is one bay: 1,695 stations, ~38 m and ~38 stations apiece. A run boundary is
+ * a fact about the masonry, not about the fight, so a defender standing one station the far
+ * side of a joint is a metre from the lodgement and would not be counted at all if the test
+ * stopped at the run's own edge.
+ *
+ * One run each way is ~38 m of clear parapet: further than a reserve can cross inside
+ * `WALL_HOLD_SECONDS` at a walk, which is the sense in which the ground is *held* rather than
+ * merely momentarily unoccupied.
+ */
+export const WALL_SHOULDER = 1;
+/**
  * Men of the storming side loose *inside* the city, at which point the wall is irrelevant.
  *
  * A storm that is in the streets has won whatever is still happening on the parapet behind
@@ -149,6 +165,15 @@ interface WallCensus {
   stormOnWall: number;
   garrisonOnWall: number;
   stormInside: number;
+  /**
+   * Of `stormOnWall`, the men standing on ground the garrison has stopped contesting.
+   *
+   * The scoped form of "the wall is ours". See `censusWall`; this is the number condition A
+   * is decided on, and it is at most `stormOnWall`.
+   */
+  stormHolding: number;
+  /** Runs carrying those men, lowest first — what the storm actually holds, for the HUD. */
+  holdingRuns: number[];
 }
 
 /** The narrow structural view of the city. `src/sim/` must not import `src/city/`. */
@@ -176,7 +201,23 @@ export class BattleFlowSystem implements Subsystem {
   private quietFor = 0;
   /** Null in a field battle. */
   private wall: WallLine | null = null;
-  private wallCensus: WallCensus = { stormOnWall: 0, garrisonOnWall: 0, stormInside: 0 };
+  private wallCensus: WallCensus = {
+    stormOnWall: 0, garrisonOnWall: 0, stormInside: 0, stormHolding: 0, holdingRuns: [],
+  };
+  /**
+   * Every run the garrison has stood on at any point in the battle.
+   *
+   * The memory that makes "taken" mean taken. Rome's 810 men do not cover the circuit: they
+   * stand in eight or nine blocks of about a hundred, five ranks deep over twenty stations,
+   * and most of the 45 runs have nobody on them from the first tick to the last. Without this
+   * set, a scoped condition A would be satisfied by putting a ladder against a bay nobody was
+   * ever defending and standing on it for twenty seconds — the wall "uncontested" because the
+   * fight is four hundred metres away. A run enters the set the moment a defender is counted
+   * on it and never leaves, so the ground the storm is holding has to be ground the garrison
+   * held, and a garrison that marches to meet a lodgement makes that bay count from then on
+   * whether it wins the fight there or loses it.
+   */
+  private contestedRuns = new Set<number>();
   /** Seconds the storming side has held the parapet with nobody contesting it. */
   private parapetHeldFor = 0;
   /** Fewest men the garrison has ever had on the walkway, and how long since it last fell. */
@@ -252,7 +293,13 @@ export class BattleFlowSystem implements Subsystem {
         this.wallCensus = this.censusWall(this.wall);
       }
       const c = this.wallCensus;
-      const taken = c.stormOnWall >= WALL_FOOTHOLD && c.garrisonOnWall === 0;
+      /*
+       * `stormHolding`, not `stormOnWall` against an empty circuit. The old pair of terms
+       * asked the storm to put two dozen men on the parapet *and* clear every other bay of
+       * the city's wall at the same time; the second half of that was unreachable by
+       * construction and is the whole reason this condition never fired. See `censusWall`.
+       */
+      const taken = c.stormHolding >= WALL_FOOTHOLD;
       this.parapetHeldFor = taken ? this.parapetHeldFor + dt : 0;
       if (this.parapetHeldFor >= WALL_HOLD_SECONDS || c.stormInside >= BREAK_IN) {
         this.finish(ctx, this.wall.storm, 'objective');
@@ -458,18 +505,70 @@ export class BattleFlowSystem implements Subsystem {
    *
    * Men in the city come from a pool walk, because the wall system has no notion of "inside"
    * — it is a fact about the curtain's geometry, and the bays carry it in their own normals.
+   *
+   * ## What the storm is *holding*, as against what it is standing on
+   *
+   * `garrisonOnWall` is a sum over the whole circuit, and condition A used to ask it to reach
+   * zero. On the Aurelian Wall that is 810 men over 1.78 km, and across twelve seeded runs of
+   * the assault the smallest it ever reached was 542 — the bar was never approached, let
+   * alone met, because emptying a mile and a half of parapet is not what taking a wall means
+   * and no assault was ever going to do it. A storm takes a *stretch*.
+   *
+   * So the same walk also bins both sides by run, and a lodgement is scored on three things:
+   *
+   *   - it is a maximal block of consecutive runs the storm has men on;
+   *   - no defender stands on it or on the run either side of it (`WALL_SHOULDER`);
+   *   - at least one of its runs is ground the garrison has held (`contestedRuns`).
+   *
+   * `stormHolding` is the men on every block that passes. Condition A then asks that number,
+   * not `stormOnWall`, to reach `WALL_FOOTHOLD` and stay there for `WALL_HOLD_SECONDS` —
+   * which is the same twenty-four men and the same twenty seconds as before, now asked about
+   * the ground they are actually on.
    */
   private censusWall(w: WallLine): WallCensus {
     const b = this.battle;
     const p = b.pool;
-    const out = { stormOnWall: 0, garrisonOnWall: 0, stormInside: 0 };
+    const out: WallCensus = {
+      stormOnWall: 0, garrisonOnWall: 0, stormInside: 0, stormHolding: 0, holdingRuns: [],
+    };
+    const stormRun = new Map<number, number>();
+    const garrisonRun = new Map<number, number>();
     for (const u of b.units) {
       if (u.destroyed || u.alive === 0) continue;
       if (u.faction !== w.garrison && u.faction !== w.storm) continue;
-      const n = b.siege.unitWallState(u.id).onWall;
-      if (n === 0) continue;
-      if (u.faction === w.garrison) out.garrisonOnWall += n;
-      else out.stormOnWall += n;
+      const st = b.siege.unitWallState(u.id);
+      if (st.onWall === 0) continue;
+      const byRun = u.faction === w.garrison ? garrisonRun : stormRun;
+      if (u.faction === w.garrison) out.garrisonOnWall += st.onWall;
+      else out.stormOnWall += st.onWall;
+      for (const key of Object.keys(st.runCounts)) {
+        const r = Number(key);
+        byRun.set(r, (byRun.get(r) ?? 0) + st.runCounts[r]);
+        if (u.faction === w.garrison) this.contestedRuns.add(r);
+      }
+    }
+    // Maximal blocks of consecutive runs, each judged on its own shoulders and its own
+    // history. A storm split between two cleared stretches holds both.
+    const runs = [...stormRun.keys()].sort((a, c) => a - c);
+    for (let i = 0; i < runs.length;) {
+      let j = i;
+      while (j + 1 < runs.length && runs[j + 1] === runs[j] + 1) j++;
+      const lo = runs[i] - WALL_SHOULDER;
+      const hi = runs[j] + WALL_SHOULDER;
+      let men = 0;
+      let foe = 0;
+      let taken = false;
+      for (let r = lo; r <= hi; r++) {
+        foe += garrisonRun.get(r) ?? 0;
+        if (r < runs[i] || r > runs[j]) continue;
+        men += stormRun.get(r) ?? 0;
+        if (this.contestedRuns.has(r)) taken = true;
+      }
+      if (foe === 0 && taken) {
+        out.stormHolding += men;
+        for (let k = i; k <= j; k++) out.holdingRuns.push(runs[k]);
+      }
+      i = j + 1;
     }
     const last = w.mx.length - 1;
     for (let i = 0; i < p.count; i++) {
@@ -501,9 +600,11 @@ export class BattleFlowSystem implements Subsystem {
     /** Men inside that end it, and how far past the curtain counts as inside. */
     needInside: number;
     insideMargin: number;
-    /** Men on the parapet, with it uncontested, that end it — and for how long. */
+    /** Men holding taken parapet that end it, for how long, and how far either side of a
+     *  lodgement must also be clear for it to count as held. */
     needFoothold: number;
     holdSeconds: number;
+    shoulderRuns: number;
     /** Seconds without progress against the parapet before the storm is judged thrown back,
      *  and how many of them have run. */
     stallSeconds: number;
@@ -519,6 +620,7 @@ export class BattleFlowSystem implements Subsystem {
       insideMargin: INSIDE_MARGIN,
       needFoothold: WALL_FOOTHOLD,
       holdSeconds: WALL_HOLD_SECONDS,
+      shoulderRuns: WALL_SHOULDER,
       stallSeconds: STORM_STALL_SECONDS,
       stalledFor: this.noProgressFor,
     };
