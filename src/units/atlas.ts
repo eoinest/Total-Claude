@@ -428,6 +428,121 @@ const mailHeight = (u: number, v: number, rings: number): number => {
   return Math.min(1, ring * 0.95 + 0.05);
 };
 
+const TAU = Math.PI * 2;
+
+/**
+ * **A hanging fold, which is the shape cloth has and a noise blotch is not.**
+ *
+ * Round three's critics led with "cloth has no folds and no silhouette — flat polygon plates
+ * with a printed weave and hard unbevelled creases", and the fold term the tiles carried was
+ * an isotropic `fbm` at 5 and 11 cycles: a field of round blobs, equally wide in both axes.
+ * Cloth does not do that. A garment hangs, so its creases are *long* along the hang and
+ * *narrow* across it, and the eye reads a garment by the run of those lines.
+ *
+ * Two properties, and both are the point:
+ *
+ *   - **Anisotropy.** The lattice is sampled three times more often across the cloth than
+ *     along it, so a feature is 3:1 long in v. `vnoise` wraps at `period`, so both arguments
+ *     must be integer multiples of it or the tile seams — hence `cycles * 3` by `cycles`.
+ *   - **A bevelled trough.** Raw `fbm` run through the normal difference gives a crease with
+ *     a discontinuous second derivative, which is the "hard unbevelled" half of the note and
+ *     is nearly pure 1 px energy. Shaping it with the smoothstep polynomial rounds the crest
+ *     and widens the valley floor, which moves the same amplitude down into the 2-8 px
+ *     octaves where this project's whole deficit lies.
+ *
+ * Returns 1 on a crest and 0 in the bottom of a crease.
+ */
+const foldField = (u: number, v: number, cycles: number, salt: number): number => {
+  const n = fbm(u * cycles * 3, v * cycles, 2, cycles, salt);
+  const t = Math.min(1, Math.max(0, n * 1.18 - 0.09));
+  return t * t * (3 - 2 * t);
+};
+
+/**
+ * **Yarn tone: irregular along the thread, sharp across it.**
+ *
+ * The albedo weave this replaces was `(sin(u * 2pi * n) + sin(v * 2pi * n)) * 0.22` — a
+ * perfectly periodic plaid. Two things were wrong with it and only the first was ever named.
+ * It is a *printed* pattern, identical in sun and shade, with no over-under anywhere in it;
+ * and being exactly periodic it beats against the pixel grid, which is where the moire on
+ * the bracae came from.
+ *
+ * But deleting it outright cost real mid-band energy, measured: with the plaid gone and only
+ * the slope weave left, E2 fell 2-4 % on every cloth-carrying plate. A weave *is* visible in
+ * a garment's colour — warp and weft take dye differently and a hand-spun yarn varies along
+ * its own length — so the content belongs here. What it must not be is periodic.
+ *
+ * This samples the noise lattice `across / along` times more often across the thread than
+ * along it, which is what a yarn looks like, and it is irregular, so it cannot beat against
+ * anything. `across` must be an integer multiple of `along` or the tile seams — `vnoise`
+ * wraps at its period and both arguments have to close on it.
+ */
+const threadTone = (
+  u: number, v: number, across: number, along: number, salt: number
+): number => fbm(u * across, v * along, 2, along, salt);
+
+/**
+ * **The three cloth fold stacks, and the octave arithmetic that sizes them.**
+ *
+ * The bands this project is short of are 2-8 screen px, and a cycle count only becomes a
+ * screen size once the tile's world size and the plate's magnification are in it. On the
+ * isolated deck a man of 1.75 m fills 1056 device px, i.e. 603 px/m, so a 0.27 m wool tile
+ * is 163 px across and one of its 256 texels is **0.64 screen px**. A difference-of-Gaussian
+ * band at sigma s peaks around a wavelength of 2.2s to 4s, which puts:
+ *
+ *     E1  ->  2-4 px   ->   3-6 texels   ->  40-85 cycles per tile
+ *     E2  ->  5-9 px   ->   8-14 texels  ->  18-32 cycles
+ *     E4  ->  9-18 px  ->  14-28 texels  ->   9-18 cycles
+ *     E8  -> 18-35 px  ->  28-55 texels  ->   5-9 cycles
+ *
+ * That table is not decoration; it was paid for. A nap term at 44 cycles was added here to
+ * "fill the 4 px band", measured, and **reverted**: it lands at 3.7 px, which is E1, and it
+ * took R from 1.308 to 1.451 while moving E2 by 1.5 %. Nothing in a cloth tile should now
+ * sit above about 35 cycles, and each stack below is three octaves chosen to land one in E2,
+ * one in E4 and one in E8.
+ */
+const WOOL_FOLD = (u: number, v: number): number =>
+  foldField(u, v, 5, 211) * 0.50 + foldField(u, v, 11, 217) * 0.32
+  + foldField(u, v, 18, 251) * 0.18;
+const LINEN_FOLD = (u: number, v: number): number =>
+  foldField(u, v, 7, 223) * 0.48 + foldField(u, v, 15, 227) * 0.32
+  + foldField(u, v, 22, 257) * 0.20;
+const CLOAK_FOLD = (u: number, v: number): number =>
+  foldField(u, v, 3, 233) * 0.52 + foldField(u, v, 8, 239) * 0.30
+  + foldField(u, v, 14, 263) * 0.18;
+
+/**
+ * **A plain weave written as slope, not as height — the directional-thread normal.**
+ *
+ * A scalar height field can only produce an isotropic normal: central differences cannot
+ * tell a thread from a pimple, because both are "a bump". That is why every cloth surface in
+ * this game has read as a *printed* weave through three rounds — `max(warp, weft)` in the
+ * height field renders as a diamond lattice, which is a lattice of bumps, and at the
+ * magnification the plates are shot at it is the moire grid the bracae photographed as.
+ *
+ * A real plain weave is two sets of parallel cylinders crossing at right angles, passing
+ * over and under alternately. A cylinder's normal bends in exactly one axis and is dead flat
+ * along its own — so the warp, which runs along v, must tilt the normal in **u only**, and
+ * the weft in **v only**. That cannot be expressed as a height field and it is the whole
+ * reason `MatDef.slope` exists.
+ *
+ * `cos(u) * cos(v)` is the over-under: +1 where the warp is on top, -1 where the weft is,
+ * and smooth between, so there is no hard edge where one thread crosses under the other.
+ * Each thread's own cross-section is the sine, zero on the thread's crown and peaking on its
+ * two flanks, which is what a cylinder does.
+ *
+ * `amp` is in the same units the height difference produces, i.e. before `bump`.
+ */
+const weaveSlope = (
+  u: number, v: number, cycles: number, amp: number, out: [number, number]
+): void => {
+  const cu = Math.cos(u * TAU * cycles);
+  const cv = Math.cos(v * TAU * cycles);
+  const warpUp = 0.5 + 0.5 * cu * cv;
+  out[0] += -amp * Math.sin(u * TAU * cycles) * warpUp;
+  out[1] += -amp * Math.sin(v * TAU * cycles) * (1 - warpUp);
+};
+
 /**
  * A metal's base colour is its **F0**, not a grey that looks about right.
  *
@@ -664,48 +779,93 @@ const MATS: Record<Mat, MatDef> = {
    * Whoever raises the tile again past 256 px should retry this first; it is the change most
    * obviously waiting on that headroom.
    */
+  /**
+   * **The weave is gone from the albedo and the height, and it is now a slope.**
+   *
+   * Everything the two notes above record is still true of a weave *painted into a scalar*,
+   * and the trade they describe — finer thread costs E2 and buys E1 — is a property of that
+   * representation rather than of thread count. `max(warp, weft)` in the height field is a
+   * lattice of bumps, so it differences to an isotropic normal, and painting the same
+   * lattice into the colour puts a hard periodic grid straight into the 1 px band where the
+   * render's own filtering throws it away. Both are why every critic to date has called this
+   * a printed weave.
+   *
+   * Written as `slope` instead, the same 24 threads cost the albedo nothing and the height
+   * nothing: they arrive as a directional tilt that only exists under a light. What used to
+   * be spent on the printed grid is now spent on the fold field, which is what a viewer
+   * actually reads a woollen tunic by at any distance a man is legible from.
+   *
+   * 24 cycles over a 0.27 m tile is an 11 mm thread — coarse for wool, and still a lie, but
+   * a resolvable one at 10.7 texels a cycle, and it lands at 6-7 screen px a cycle on the
+   * isolated deck, which is the middle of the band this project is short of.
+   */
   [Mat.WoolCoarse]: {
     colour(u, v, out) {
-      const warp = Math.sin(u * Math.PI * 2 * 18) * 0.5 + 0.5;
-      const weft = Math.sin(v * Math.PI * 2 * 18) * 0.5 + 0.5;
-      const weave = (warp * 0.5 + weft * 0.5) * 0.22 + 0.78;
+      // The weave in the colour is now yarn tone rather than a plaid: the warp's own
+      // variation where the warp is on top, the weft's where it is, blended by the same
+      // over-under cosine the slope uses so the two agree about which thread is uppermost.
+      const warpUp = 0.5 + 0.5
+        * Math.cos(u * TAU * 24) * Math.cos(v * TAU * 24);
+      const thread = warpUp * threadTone(u, v, 24, 8, 61)
+        + (1 - warpUp) * threadTone(u, v, 8, 24, 67);
       const slub = fbm(u * 12, v * 12, 3, 12, 41);
-      const fold = fbm(u * 5, v * 5, 2, 5, 211) * 0.30 + fbm(u * 11, v * 11, 2, 11, 217) * 0.18;
-      const g = weave * (0.70 + slub * 0.24 + fold * 0.42);
-      out[0] = g; out[1] = g * 0.99; out[2] = g * 0.97;
+      const fold = WOOL_FOLD(u, v);
+      // Wear and grime collect in the bottom of a crease and bleach off a crest. This is the
+      // one thing a fold is allowed to do to the albedo — the shading of it belongs to the
+      // light, and painting that in is what makes cloth read as a photograph of cloth.
+      const g = 0.60 + slub * 0.11 + fold * 0.24 + thread * 0.20;
+      const dirt = (1 - fold) * 0.22;
+      out[0] = g * (1 - dirt * 0.85);
+      out[1] = g * 0.985 * (1 - dirt * 0.95);
+      out[2] = g * 0.955 * (1 - dirt);
     },
-    height(u, v) {
-      const warp = Math.sin(u * Math.PI * 2 * 18) * 0.5 + 0.5;
-      const weft = Math.sin(v * Math.PI * 2 * 18) * 0.5 + 0.5;
-      return Math.max(warp, weft) * 0.42
-        + fbm(u * 16, v * 16, 3, 16, 41) * 0.20
-        + fbm(u * 5, v * 5, 2, 5, 211) * 0.38;
-    },
-    roughness: 0.9,
+    // No weave: the folds are the height field, and the height field is what the cavity and
+    // the coarse normal are differenced from.
+    height: (u, v) => WOOL_FOLD(u, v) * 0.90 + fbm(u * 18, v * 18, 2, 18, 41) * 0.10,
+    cavity: WOOL_FOLD,
+    slope: (u, v, out) => weaveSlope(u, v, 24, 0.18, out),
+    roughness: 0.86,
+    // A fulled woollen tunic is matte everywhere and *slightly* less so where the nap has
+    // been rubbed flat on a crest. 0.34 peak to peak is a real spread and it never plateaus.
+    roughVar: 0.34,
     metalness: 0,
-    bump: 0.5,
+    bump: 0.50,
   },
   // 72 cycles, not 26. The old count was set against a 128 px tile, where 52 was measured at
   // 2.5 px a cycle and dismissed as noise; at 256 px, 72 cycles is 3.6 texels and a 4.6 mm
   // thread, which is a fine linen rather than sacking. Same trade as `WoolCoarse`: the
   // regular term loses amplitude and the irregular fold field gains it.
+  /**
+   * Linen: the same rewrite as the wool, and one number that had to change with it.
+   *
+   * The albedo used to clip. `0.74 + 0.14 + 0.10 + 0.16` sums to 1.14 before the per-channel
+   * scale, and `Math.min(1, g)` took **3.78 % of this tile's texels to a channel at 255** —
+   * detail thrown away in the sheet, before a light has touched it. The bands below are
+   * budgeted to a 0.97 ceiling instead, so the clip is not expressible.
+   *
+   * Linen creases tighter and holds a sharper edge than wool, which is the fold field at 7
+   * and 15 rather than 5 and 11, and a finer thread at 32 cycles — 10 mm on a 0.33 m tile.
+   */
   [Mat.Linen]: {
     colour(u, v, out) {
-      const warp = Math.sin(u * Math.PI * 2 * 26) * 0.5 + 0.5;
-      const weft = Math.sin(v * Math.PI * 2 * 26) * 0.5 + 0.5;
-      const fold = fbm(u * 6, v * 6, 2, 6, 223) * 0.5 + fbm(u * 13, v * 13, 2, 13, 227) * 0.3;
-      const g = 0.74 + (warp * 0.5 + weft * 0.5) * 0.14 + fbm(u * 14, v * 14, 3, 14, 43) * 0.10
-        + fold * 0.16;
-      out[0] = Math.min(1, g); out[1] = Math.min(1, g * 0.98); out[2] = Math.min(1, g * 0.9);
+      const warpUp = 0.5 + 0.5
+        * Math.cos(u * TAU * 32) * Math.cos(v * TAU * 32);
+      const thread = warpUp * threadTone(u, v, 32, 8, 71)
+        + (1 - warpUp) * threadTone(u, v, 8, 32, 73);
+      const fold = LINEN_FOLD(u, v);
+      const g = 0.68 + fbm(u * 14, v * 14, 3, 14, 43) * 0.07 + fold * 0.18 + thread * 0.17;
+      const dirt = (1 - fold) * 0.18;
+      out[0] = g * (1 - dirt * 0.8);
+      out[1] = g * 0.985 * (1 - dirt * 0.9);
+      out[2] = g * 0.925 * (1 - dirt);
     },
-    height(u, v) {
-      const warp = Math.sin(u * Math.PI * 2 * 26) * 0.5 + 0.5;
-      const weft = Math.sin(v * Math.PI * 2 * 26) * 0.5 + 0.5;
-      return Math.max(warp, weft) * 0.55 + fbm(u * 6, v * 6, 2, 6, 223) * 0.45;
-    },
-    roughness: 0.86,
+    height: (u, v) => LINEN_FOLD(u, v) * 0.92 + fbm(u * 22, v * 22, 2, 22, 43) * 0.08,
+    cavity: LINEN_FOLD,
+    slope: (u, v, out) => weaveSlope(u, v, 32, 0.16, out),
+    roughness: 0.82,
+    roughVar: 0.36,
     metalness: 0,
-    bump: 0.3,
+    bump: 0.46,
   },
   // Skin is tinted per man in the shader; the tile carries pore, blotch and — importantly —
   // the crease shading at the elbow and knee. Limb tubes run V from the hip or shoulder to
@@ -921,23 +1081,38 @@ const MATS: Record<Mat, MatDef> = {
   // Finer wool for cloaks and officer cloth.
   // 30 cycles, not 64 — see the note on `WoolCoarse`. This is the cloak, which is the largest
   // single area of cloth a man presents, so it was also the largest contributor.
+  /**
+   * The cloak, which is the largest single area of cloth a man presents and therefore the
+   * largest single contributor to whatever cloth reads as.
+   *
+   * It clipped worse than the linen in one respect: 1.69 % of the tile had a channel at 255
+   * and **0.13 % was flat white in all three**, which is the one value from which a per-man
+   * tint can produce no colour at all. Budgeted to 0.96 here.
+   *
+   * A sagum hangs from two points and falls in a few big folds, so the drape is at 3 and 8
+   * against the tunic's 5 and 11, and `bump` is lower — a cloak's surface is smoother than a
+   * tunic's, its structure is in the drape rather than in the nap.
+   */
   [Mat.ClothFine]: {
     colour(u, v, out) {
-      const warp = Math.sin(u * Math.PI * 2 * 30) * 0.5 + 0.5;
-      const weft = Math.sin(v * Math.PI * 2 * 30) * 0.5 + 0.5;
-      const drape = fbm(u * 4, v * 4, 2, 4, 233) * 0.55 + fbm(u * 9, v * 9, 2, 9, 239) * 0.32;
-      const g = 0.76 + (warp * 0.5 + weft * 0.5) * 0.12 + fbm(u * 10, v * 10, 3, 10, 149) * 0.08
-        + drape * 0.16;
-      out[0] = Math.min(1, g); out[1] = Math.min(1, g); out[2] = Math.min(1, g * 0.98);
+      const warpUp = 0.5 + 0.5
+        * Math.cos(u * TAU * 30) * Math.cos(v * TAU * 30);
+      const thread = warpUp * threadTone(u, v, 30, 10, 79)
+        + (1 - warpUp) * threadTone(u, v, 10, 30, 83);
+      const drape = CLOAK_FOLD(u, v);
+      const g = 0.67 + fbm(u * 10, v * 10, 3, 10, 149) * 0.06 + drape * 0.19 + thread * 0.16;
+      const dirt = (1 - drape) * 0.17;
+      out[0] = g * (1 - dirt * 0.9);
+      out[1] = g * (1 - dirt * 0.95);
+      out[2] = g * 0.975 * (1 - dirt);
     },
-    height(u, v) {
-      const warp = Math.sin(u * Math.PI * 2 * 30) * 0.5 + 0.5;
-      const weft = Math.sin(v * Math.PI * 2 * 30) * 0.5 + 0.5;
-      return Math.max(warp, weft) * 0.42 + fbm(u * 4, v * 4, 2, 4, 233) * 0.58;
-    },
-    roughness: 0.82,
+    height: (u, v) => CLOAK_FOLD(u, v) * 0.92 + fbm(u * 16, v * 16, 2, 16, 149) * 0.08,
+    cavity: CLOAK_FOLD,
+    slope: (u, v, out) => weaveSlope(u, v, 30, 0.15, out),
+    roughness: 0.78,
+    roughVar: 0.34,
     metalness: 0,
-    bump: 0.25,
+    bump: 0.44,
   },
   [Mat.ShieldBack]: {
     colour(u, v, out) {
@@ -1810,6 +1985,12 @@ export function buildSoldierAtlas(anisotropy: number): SoldierAtlas {
         // Canvas Y runs down while the tangent-space green channel runs up.
         let gv = heights[ym * TILE + x] - heights[yp * TILE + x];
         if (def.slope) {
+          // Cleared per texel: `weaveSlope` accumulates so two thread systems can be laid
+          // over one another, and a shared scratch pair that is never reset sums the whole
+          // tile into one texel. It did, and the tell was the shape rather than the value —
+          // mean |n.xy| came back at 1.000 across a tile whose amplitude cannot reach 0.4.
+          slopeOut[0] = 0;
+          slopeOut[1] = 0;
           def.slope(u, v, slopeOut);
           gu += slopeOut[0];
           // Same flip as the difference above: the hook is written in texture space, where

@@ -275,12 +275,58 @@ export class MeshBuilder {
     }[],
     segments: number,
     uv: UvRect,
-    opts: { capStart?: boolean; capEnd?: boolean; repeatV?: number; repeatU?: number } = {}
+    opts: {
+      capStart?: boolean;
+      capEnd?: boolean;
+      repeatV?: number;
+      repeatU?: number;
+      /**
+       * **Fold loops: cloth silhouette for no triangles at all.**
+       *
+       * Round three's critics led with "cloth has no folds and no silhouette — flat polygon
+       * plates with a printed weave". The second half is a texture problem and is fixed in
+       * `atlas.ts`; the first half is not, and no normal map can fix it, because the defect
+       * is in the **outline**. A tunic here was a circular tube, so the edge of every man in
+       * the game was a pair of straight lines and the garment read as a lampshade.
+       *
+       * A hanging garment is not circular in section. It gathers into a few vertical folds —
+       * pulled in at the belt, free at the hem — and its section is a lobed curve. That is
+       * exactly a radial modulation of the ring the tube already emits, so it costs **no
+       * vertex and no triangle**: the same ring, moved.
+       *
+       * Two harmonics rather than one, because a single cosine is a gear wheel. The normal
+       * is the true polar normal of `r(theta)` and not the circular one, or the shading
+       * would keep saying "cylinder" while the silhouette said otherwise, which is worse
+       * than either alone. The end cap takes the same modulation, or the hem cracks open.
+       *
+       * `lobes` must stay under half `segments` or the ring's own sampling aliases it into a
+       * star; the guard below drops the whole option in that case, which is what keeps LOD2
+       * — five segments — byte-identical without any call site having to know the tier.
+       */
+      fold?: {
+        /** Peak radial displacement in metres, before the taper. */
+        amp: number;
+        /** Folds around the body. Aliases into a star at or above `segments / 2`. */
+        lobes: number;
+        /** A second harmonic so the section is not a gear wheel. */
+        lobes2?: number;
+        /** Phase in radians, so two garments on one man do not line up. */
+        phase?: number;
+        /**
+         * Strength along the sweep, 0..1, evaluated at the node's own fraction of the run.
+         * A tunic is pulled flat under a belt and hangs free at the hem, and a fold field
+         * of constant amplitude reads as corrugated iron.
+         */
+        taper?: (t: number) => number;
+      };
+    } = {}
   ): void {
     // Both sweeps carry their tile seams on duplicated vertices — see `repeatStops`. The
     // ring is closed, so the column list always ends with a duplicate of column 0.
     const cols = MeshBuilder.repeatStops(segments, opts.repeatU ?? 1);
     const rows = MeshBuilder.repeatStops(nodes.length - 1, opts.repeatV ?? 1);
+    // Nyquist on the ring: a fold the sweep cannot resolve is not a fold, it is a star.
+    const fold = opts.fold && opts.fold.lobes * 2 < segments ? opts.fold : undefined;
     const rings: number[][] = [];
     for (const row of rows) {
       const n = nodes[row.i];
@@ -293,17 +339,46 @@ export class MeshBuilder {
         const dyy = nodes[row.i + 1].y - nodes[row.i - 1].y;
         dy = dyy !== 0 ? dr / dyy : 0;
       }
+      // Fold amplitude at this node. `row.i` indexes the node list, so the taper is
+      // evaluated against position along the sweep and not against the seam-expanded row.
+      let famp = 0;
+      let k1 = 0;
+      let k2 = 0;
+      if (fold) {
+        const t = nodes.length > 1 ? row.i / (nodes.length - 1) : 0;
+        famp = fold.amp * (fold.taper ? fold.taper(t) : 1);
+        k1 = fold.lobes;
+        k2 = fold.lobes2 ?? fold.lobes * 2;
+      }
       for (const col of cols) {
         const a = (col.i / segments) * Math.PI * 2;
         const cx = Math.cos(a);
         const cz = Math.sin(a);
         const [u, v] = MeshBuilder.tileUv(uv, col.f, row.f);
+        let nx = cx;
+        let nz = cz;
+        let orx = n.rx;
+        let orz = n.rz;
+        if (famp !== 0) {
+          const ph = fold?.phase ?? 0;
+          const g = (Math.cos(a * k1 + ph) * 0.62 + Math.cos(a * k2 + ph * 1.7) * 0.38) * famp;
+          // d(offset)/d(theta): the polar normal of r(theta) is
+          // (r cos + r' sin, r sin - r' cos), and using the circular normal instead would
+          // light a folded section as a cylinder — the worst of both.
+          const gp = (-k1 * Math.sin(a * k1 + ph) * 0.62
+            - k2 * Math.sin(a * k2 + ph * 1.7) * 0.38) * famp;
+          orx = n.rx + g;
+          orz = n.rz + g;
+          const rr = (orx + orz) * 0.5;
+          nx = cx * rr + gp * cz;
+          nz = cz * rr - gp * cx;
+        }
         ring.push(
           this.vert(
-            (n.x ?? 0) + cx * n.rx,
+            (n.x ?? 0) + cx * orx,
             n.y,
-            (n.z ?? 0) + cz * n.rz,
-            cx, -dy, cz,
+            (n.z ?? 0) + cz * orz,
+            nx, -dy * ((orx + orz) * 0.5), nz,
             u, v
           )
         );
@@ -317,15 +392,19 @@ export class MeshBuilder {
         this.quadFacing(rings[r][s], rings[r][s + 1], rings[r + 1][s + 1], rings[r + 1][s]);
       }
     }
-    if (opts.capStart) this.cap(nodes[0], segments, uv, -1);
-    if (opts.capEnd) this.cap(nodes[nodes.length - 1], segments, uv, 1);
+    if (opts.capStart) this.cap(nodes[0], segments, uv, -1, fold, 0);
+    if (opts.capEnd) {
+      this.cap(nodes[nodes.length - 1], segments, uv, 1, fold, 1);
+    }
   }
 
   private cap(
     n: { y: number; rx: number; rz: number; x?: number; z?: number; bone?: number; bone2?: number; w?: number },
     segments: number,
     uv: UvRect,
-    dir: number
+    dir: number,
+    fold?: { amp: number; lobes: number; lobes2?: number; phase?: number; taper?: (t: number) => number },
+    foldT = 0
   ): void {
     if (n.bone !== undefined) this.setBone(n.bone, n.bone2 ?? n.bone, n.w ?? 1);
     const [cu, cv] = MeshBuilder.tileUv(uv, 0.5, 0.5);
@@ -333,11 +412,20 @@ export class MeshBuilder {
     // A cap is mapped radially rather than by sweep parameter, so there is no seam column
     // to duplicate: u and v both come back to the same place after a full turn.
     const ring: number[] = [];
+    // The cap's rim has to sit on the folded ring, not on the circle the ring would have
+    // been: a hem cap emitted at the unmodulated radius leaves a crack all the way round.
+    const famp = fold ? fold.amp * (fold.taper ? fold.taper(foldT) : 1) : 0;
     for (let s = 0; s < segments; s++) {
       const a = (s / segments) * Math.PI * 2;
       const [u, v] = MeshBuilder.tileUv(uv, 0.5 + Math.cos(a) * 0.5, 0.5 + Math.sin(a) * 0.5);
+      const g = famp === 0 || !fold ? 0
+        : (Math.cos(a * fold.lobes + (fold.phase ?? 0)) * 0.62
+          + Math.cos(a * (fold.lobes2 ?? fold.lobes * 2) + (fold.phase ?? 0) * 1.7) * 0.38) * famp;
       ring.push(
-        this.vert((n.x ?? 0) + Math.cos(a) * n.rx, n.y, (n.z ?? 0) + Math.sin(a) * n.rz, 0, dir, 0, u, v)
+        this.vert(
+          (n.x ?? 0) + Math.cos(a) * (n.rx + g), n.y, (n.z ?? 0) + Math.sin(a) * (n.rz + g),
+          0, dir, 0, u, v
+        )
       );
     }
     for (let s = 0; s < segments; s++) {
