@@ -1279,7 +1279,9 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
             { y, x: hipX, rx: 0.05, rz: 0.051 },
             { y: y + 0.055, x: hipX, rx: 0.05, rz: 0.051 },
           ],
-          d.limb, ropeUv, { repeatU: 3 }
+          // Wool, not rope: a puttee is a wound strip of cloth, and the rope tile's helix
+          // put the same barber-pole round every ankle in the army.
+          d.limb, woolUv, { repeatU: 3 }
         );
       }
     }
@@ -1292,8 +1294,15 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     b.setPiece(Piece.Boots, Tint.Atlas);
     b.setBone(foot);
     b.setMatrix(new THREE.Matrix4().makeTranslation(hipX, ankleY, MAN_RIG.restT[foot * 3 + 2]));
-    // Sole: pale, thick, and proud of the upper, so the foot has a readable ground line.
-    b.box(0, -0.052, 0.048, 0.092, 0.028, 0.245, ropeUv);
+    // Sole: thick and proud of the upper, so the foot has a readable ground line.
+    //
+    // Leather, not rope. A caliga sole is layered cowhide with iron hobnails; it took the
+    // rope tile because rope is the palest thing in the sheet and a dark foot reads as a
+    // blob. That only worked while the whole tile was crushed onto a 28 mm edge and
+    // mip-averaged to a mean — once `physicalTiles` gave the face the share of the tile it
+    // actually covers, Rope's helical barber-pole came up at full contrast and every man in
+    // the game photographed with a yellow-and-black hazard stripe round his soles.
+    b.box(0, -0.052, 0.048, 0.092, 0.028, 0.245, leatherUv);
     b.box(0, -0.028, 0.045, 0.086, 0.028, 0.235, darkLeatherUv);
     if (d.medium) {
       // Heel cup and ankle straps.

@@ -460,9 +460,11 @@ const TAU = Math.PI * 2;
  *
  * Two properties, and both are the point:
  *
- *   - **Anisotropy.** The lattice is sampled three times more often across the cloth than
- *     along it, so a feature is 3:1 long in v. `vnoise` wraps at `period`, so both arguments
- *     must be integer multiples of it or the tile seams — hence `cycles * 3` by `cycles`.
+ *   - **Anisotropy.** The lattice is sampled twice as often across the cloth as along it, so
+ *     a feature is 2:1 long in v. `vnoise` wraps at `period`, so both arguments must be
+ *     integer multiples of it or the tile seams — hence `cycles * 2` by `cycles`. It was 3:1
+ *     and that photographed as varnished wood grain down a bracae leg: unbroken streaks the
+ *     whole length of the tile read as timber, not as cloth.
  *   - **A bevelled trough.** Raw `fbm` run through the normal difference gives a crease with
  *     a discontinuous second derivative, which is the "hard unbevelled" half of the note and
  *     is nearly pure 1 px energy. Shaping it with the smoothstep polynomial rounds the crest
@@ -472,7 +474,7 @@ const TAU = Math.PI * 2;
  * Returns 1 on a crest and 0 in the bottom of a crease.
  */
 const foldField = (u: number, v: number, cycles: number, salt: number): number => {
-  const n = fbm(u * cycles * 3, v * cycles, 2, cycles, salt);
+  const n = fbm(u * cycles * 2, v * cycles, 2, cycles, salt);
   const t = Math.min(1, Math.max(0, n * 1.18 - 0.09));
   return t * t * (3 - 2 * t);
 };
@@ -832,8 +834,8 @@ const MATS: Record<Mat, MatDef> = {
       // Wear and grime collect in the bottom of a crease and bleach off a crest. This is the
       // one thing a fold is allowed to do to the albedo — the shading of it belongs to the
       // light, and painting that in is what makes cloth read as a photograph of cloth.
-      const g = 0.60 + slub * 0.11 + fold * 0.24 + thread * 0.20;
-      const dirt = (1 - fold) * 0.22;
+      const g = 0.62 + slub * 0.13 + fold * 0.17 + thread * 0.22;
+      const dirt = (1 - fold) * 0.15;
       out[0] = g * (1 - dirt * 0.85);
       out[1] = g * 0.985 * (1 - dirt * 0.95);
       out[2] = g * 0.955 * (1 - dirt);
@@ -872,8 +874,8 @@ const MATS: Record<Mat, MatDef> = {
       const thread = warpUp * threadTone(u, v, 32, 8, 71)
         + (1 - warpUp) * threadTone(u, v, 8, 32, 73);
       const fold = LINEN_FOLD(u, v);
-      const g = 0.68 + fbm(u * 14, v * 14, 3, 14, 43) * 0.07 + fold * 0.18 + thread * 0.17;
-      const dirt = (1 - fold) * 0.18;
+      const g = 0.70 + fbm(u * 14, v * 14, 3, 14, 43) * 0.08 + fold * 0.13 + thread * 0.18;
+      const dirt = (1 - fold) * 0.13;
       out[0] = g * (1 - dirt * 0.8);
       out[1] = g * 0.985 * (1 - dirt * 0.9);
       out[2] = g * 0.925 * (1 - dirt);
@@ -1119,8 +1121,8 @@ const MATS: Record<Mat, MatDef> = {
       const thread = warpUp * threadTone(u, v, 30, 10, 79)
         + (1 - warpUp) * threadTone(u, v, 10, 30, 83);
       const drape = CLOAK_FOLD(u, v);
-      const g = 0.67 + fbm(u * 10, v * 10, 3, 10, 149) * 0.06 + drape * 0.19 + thread * 0.16;
-      const dirt = (1 - drape) * 0.17;
+      const g = 0.69 + fbm(u * 10, v * 10, 3, 10, 149) * 0.07 + drape * 0.14 + thread * 0.17;
+      const dirt = (1 - drape) * 0.12;
       out[0] = g * (1 - dirt * 0.9);
       out[1] = g * (1 - dirt * 0.95);
       out[2] = g * 0.975 * (1 - dirt);
