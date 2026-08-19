@@ -252,16 +252,38 @@ for (const map of ['carthage', 'campus-martius']) {
   }, null, { timeout: 60000 });
 
   /*
-   * Take the pointer off the card bar before looking at anything.
+   * Take the pointer off the card bar before looking at anything — but not to an edge.
    *
    * BEGIN BATTLE is at (1251, 830) and the unit cards occupy that band once the battle
    * loads, so the pointer is left resting on a card and the unit panel opens over the right
    * half of the frame — 600 px of stat block across the stretch of curtain this run exists to
-   * photograph. Parked at the left edge of the open ground instead, and the panel is asserted
-   * shut rather than assumed to be.
+   * photograph.
+   *
+   * The first attempt parked it at (10, 690), which is inside `RTSCamera`'s edge-pan margin:
+   * 900 ms there walked the focus 70 m along the curtain and the gate came back at x 1152.9
+   * instead of x 800. The framing had not changed at all — the instrument had driven the
+   * camera and then measured where it had driven it to. Parked mid-frame instead, and the
+   * focus is compared against the one `deployBattle` chose so a drift of any size is a
+   * failure rather than a plausible-looking number.
    */
-  await page.mouse.move(10, 690);
+  const focus0 = await page.evaluate(() => {
+    const f = window.__game.engine.rig.focus;
+    return { x: +f.x.toFixed(2), z: +f.z.toFixed(2) };
+  });
+  await page.mouse.move(800, 620);
   await page.waitForTimeout(900);
+  const focus1 = await page.evaluate(() => {
+    const f = window.__game.engine.rig.focus;
+    return { x: +f.x.toFixed(2), z: +f.z.toFixed(2) };
+  });
+  const drift = Math.hypot(focus1.x - focus0.x, focus1.z - focus0.z);
+  if (drift > 0.5) {
+    console.log(`  WARNING: the camera moved ${drift.toFixed(1)} m while the pointer was parked `
+      + `— (${focus0.x}, ${focus0.z}) -> (${focus1.x}, ${focus1.z}). The frame below is not the `
+      + `one the scenario opened on.`);
+  } else {
+    console.log(`  camera steady: focus drifted ${drift.toFixed(2)} m with the pointer parked`);
+  }
   const hover = await page.evaluate(() => {
     const p = document.querySelector('.upanel, .unit-panel, .tooltip');
     return p && getComputedStyle(p).display !== 'none' && p.getBoundingClientRect().width > 80
