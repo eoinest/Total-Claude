@@ -1,0 +1,82 @@
+{
+  "round": "round-2",
+  "note": "Round two. Subject is matched inside each pair, and from this round the *camera* is matched too: every entry names the eye height, aim height, standoff and field of view its Rome II partner was measured at — see the `ab2-` block in tools/shoot.mjs. Round one's graders all three reported that our side was gameplay grabs from a high tactical camera against press captures at ground level, and that framing alone would have sorted the deck after four pairs. Rome II side is one of the twenty-two official store screenshots in reference/rome2-steam; see its SOURCES.md for the URL of each. Four of the twenty-two are campaign-map shots with the full interface up and are never eligible.",
+  "pairs": [
+    {
+      "subject": "the line of battle from helmet height, ranks receding",
+      "note": "s2-04 (Pydna) puts the camera just above the front rank's helmets with the phalanx compressed beyond it. Ours: eye 2.05 m, 0.4 deg depression, 26 deg fov.",
+      "ours": "ab2-rome-line",
+      "ref": "s2-04"
+    },
+    {
+      "subject": "the front rank of a spear line at chest height, works behind",
+      "note": "s2-09 is 1728x1080 and sets the deck's width. Camera at chest height, level.",
+      "ours": "ab2-carth-line",
+      "ref": "s2-09"
+    },
+    {
+      "subject": "inside a melee, camera in the grass",
+      "ours": "ab2-rome-melee",
+      "ref": "s2-00"
+    },
+    {
+      "subject": "inside a melee, camera in the grass",
+      "note": "The pair a materials grader called confidence-4 in round one: 'if the rest of the deck looked like this, I would be near chance.'",
+      "ours": "ab2-carth-melee",
+      "ref": "s2-01"
+    },
+    {
+      "subject": "infantry on the march, close on the ranks, from beside the line",
+      "ours": "ab2-rome-march",
+      "ref": "s2-13"
+    },
+    {
+      "subject": "a non-Roman infantry mass advancing, close and low",
+      "ours": "ab2-carth-march",
+      "ref": "s2-16"
+    },
+    {
+      "subject": "a city wall from outside during an assault, elevated and long",
+      "note": "s2-17 is 2.35:1 in a 16:9 file with 140/139 px bars; pair-deck windows them out and applies the same rows to ours.",
+      "ours": "ab2-rome-wall",
+      "ref": "s2-17"
+    },
+    {
+      "subject": "a walled city under assault, seen from well above",
+      "ours": "ab2-carth-wall",
+      "ref": "s2-19"
+    },
+    {
+      "subject": "men on a high defensive work looking out over a city",
+      "ours": "ab2-rome-parapet",
+      "ref": "s2-12"
+    },
+    {
+      "subject": "men on a high vantage over the ground far below",
+      "ours": "ab2-carth-parapet",
+      "ref": "s2-14"
+    },
+    {
+      "subject": "cavalry in motion, seen from below the riders",
+      "ours": "ab2-rome-cavalry",
+      "ref": "s2-15"
+    },
+    {
+      "subject": "war elephants in a battle line at dusk",
+      "ours": "ab2-carth-elephants",
+      "ref": "s2-08"
+    },
+    {
+      "subject": "close action at ground level with the fallen underfoot",
+      "note": "Re-matched for round two. Round one paired an empty field of corpses against s2-02, which is a *living* close action with one man going down, and two graders flagged that pair as not genuinely subject-matched. Ours now frames men still in contact over ground that is already littered.",
+      "ours": "ab2-rome-aftermath",
+      "ref": "s2-02"
+    },
+    {
+      "subject": "the whole field from high up, both hosts drawn up",
+      "note": "Re-matched for round two. s2-03 is roughly 250 m up over a hillside; round one's partner was 66 m up, which is a different kind of picture even though it is the same subject. Ours now: eye 150 m, 400 m standoff, 20.6 deg depression.",
+      "ours": "ab2-carth-wide",
+      "ref": "s2-03"
+    }
+  ]
+}

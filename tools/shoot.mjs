@@ -426,6 +426,17 @@ const SHOTS = {
    *      tell. The hours below span 8.6 to 17.6 and no two are within twenty minutes, and
    *      four frames are overcast and one is rain, which round one had none of.
    *
+   * **The standoffs are set by arithmetic, not by taste.** At a distance `d` with a vertical
+   * field of view `F`, the focus plane spans `2 d tan(F/2)` metres, so a 1.75 m man occupies
+   * `1.75 / (2 d tan(F/2))` of frame height. The reference plates put a mid-ground man at
+   * roughly a third of the frame, which for these fields of view is six to ten metres, not
+   * the thirteen to thirty this set was first written with. The first pass at these numbers
+   * came back with a thin band of soldiers across the middle of an acre of empty grass — a
+   * *worse* framing match than the tactical camera it replaced, because it had the reference's
+   * eye height and none of its subject size. Depression is then set to put the horizon about
+   * a third down from the top, which is where the reference plates keep it: with the frame
+   * centred on the aim point, that is `atan((eye - aim) / dist) ~ 0.17 * F / 2`.
+   *
    * The `eye >= aim + 0.2` constraint on every entry is not aesthetic. `RTSCamera.place`
    * refuses to put the eye closer than 1.7 m to the plane it thinks is the ground, and at
    * `zoom: 0` that plane sits `aim - 1.55` below the focus, so an entry that aims above its
@@ -438,38 +449,38 @@ const SHOTS = {
     // vs s2-04 (Pydna): packed ranks from just above helmet height, strongly compressed.
     desc: 'AB2: the Roman front rank from helmet height, telephoto down the line',
     follow: 'romanFront', at: 6, hour: 9.0, weather: 'clear',
-    cam: { eye: 2.05, aim: 1.80, dist: 30, fov: 26 },
+    cam: { eye: 2.05, aim: 1.43, dist: 16, fov: 26 },
   },
   'ab2-rome-melee': {
     // vs s2-00: inside the fight, camera in the grass, level.
     desc: 'AB2: inside the melee at eye level',
     follow: 'contact', at: 96, hour: 15.0, weather: 'clear',
-    cam: { eye: 1.60, aim: 1.35, dist: 9, fov: 40 },
+    cam: { eye: 1.60, aim: 1.21, dist: 6.5, fov: 40 },
   },
   'ab2-rome-march': {
     // vs s2-13: a column on the march, camera at a bystander's height beside the road.
     desc: 'AB2: the cohorts on the march, from the side of the line',
     follow: 'romanFront', at: 40, hour: 11.5, weather: 'clear',
-    cam: { eye: 1.90, aim: 1.60, dist: 13, fov: 38 },
+    cam: { eye: 1.90, aim: 1.48, dist: 7.5, fov: 38 },
   },
   'ab2-rome-cavalry': {
     // vs s2-15: cataphracts three-quarter front, the camera below the riders.
     desc: 'AB2: the equites wing, from below the riders',
     follow: 'cavalryUnit', at: 70, hour: 13.0, weather: 'clear',
-    cam: { eye: 1.55, aim: 1.30, dist: 14, fov: 36 },
+    cam: { eye: 1.55, aim: 1.35, dist: 9, fov: 36 },
   },
   'ab2-rome-aftermath': {
     // vs s2-02: a killing at close range, camera low and tipped down at the ground.
     desc: 'AB2: the field after the break, low over the bodies',
     follow: 'corpses', at: 200, hour: 12.8, weather: 'overcast',
-    cam: { eye: 1.30, aim: 0.55, dist: 7, fov: 40 },
+    cam: { eye: 1.30, aim: 0.60, dist: 5.5, fov: 40 },
   },
   'ab2-rome-wall': {
     // vs s2-17: 2.35:1 siege plate, tower against a curtain, camera up and well back.
     desc: 'AB2: the Aurelian Wall from outside, mid-assault, elevated and long',
     scenario: 'assault', hour: 14.3, at: 170, weather: 'clear',
-    wall: { bay: 2, stand: 95, lift: 0, yaw: 'in', yawAdd: -0.55 },
-    cam: { eye: 26, aim: 8, dist: 105, fov: 26 },
+    wall: { bay: 2, stand: 10, lift: 0, yaw: 'in', yawAdd: -0.42 },
+    cam: { eye: 16, aim: 9, dist: 70, fov: 26 },
   },
   'ab2-rome-parapet': {
     // vs s2-12: men on a high work, looking out and down over the city.
@@ -484,19 +495,19 @@ const SHOTS = {
     // vs s2-09: front rank of a spear line, camera at chest height, city behind.
     desc: 'AB2: the Punic front rank at chest height, the works behind',
     map: 'carthage', opponent: 2, follow: 'enemyFront', at: 6, hour: 10.2, weather: 'overcast',
-    cam: { eye: 1.75, aim: 1.50, dist: 15, fov: 34 },
+    cam: { eye: 1.75, aim: 1.28, dist: 9, fov: 34 },
   },
   'ab2-carth-melee': {
     // vs s2-01: close melee in tall grass, camera almost on the ground.
     desc: 'AB2: inside the Punic melee, camera almost in the grass',
     map: 'carthage', opponent: 2, follow: 'contact', at: 96, hour: 13.4, weather: 'overcast',
-    cam: { eye: 1.45, aim: 1.20, dist: 7.5, fov: 42 },
+    cam: { eye: 1.45, aim: 1.10, dist: 5.5, fov: 42 },
   },
   'ab2-carth-march': {
     // vs s2-16: a barbarian mass advancing, close, camera low among them.
     desc: 'AB2: the Punic line advancing, close and low',
     map: 'carthage', opponent: 2, follow: 'enemyFront', at: 40, hour: 8.6, weather: 'clear',
-    cam: { eye: 1.70, aim: 1.45, dist: 10, fov: 40 },
+    cam: { eye: 1.70, aim: 1.28, dist: 6.5, fov: 40 },
   },
   'ab2-carth-elephants': {
     // vs s2-08: elephants behind a spear line at dusk. Paired so "the one with the
@@ -504,14 +515,14 @@ const SHOTS = {
     desc: 'AB2: the Punic elephant line at dusk, from in front of the spears',
     map: 'carthage', opponent: 2, follow: 'unitType', unitType: 'war-elephants',
     at: 44, hour: 17.6, weather: 'clear',
-    cam: { eye: 2.25, aim: 2.00, dist: 26, fov: 30 },
+    cam: { eye: 2.25, aim: 1.55, dist: 16, fov: 30 },
   },
   'ab2-carth-wall': {
     // vs s2-19: a city being stormed, seen from well above, fires and smoke.
     desc: 'AB2: Carthage being stormed, from high above the curtain',
     map: 'carthage', opponent: 2, scenario: 'assault', hour: 15.2, at: 170, weather: 'overcast',
-    wall: { bay: 2, stand: 150, lift: 0, yaw: 'in', yawAdd: -0.35 },
-    cam: { eye: 120, aim: 8, dist: 230, fov: 32 },
+    wall: { bay: 2, stand: 40, lift: 0, yaw: 'in', yawAdd: -0.35 },
+    cam: { eye: 130, aim: 5, dist: 260, fov: 32 },
   },
   'ab2-carth-parapet': {
     // vs s2-14: a high vantage over a valley with armies below. Rain, which round one

@@ -254,18 +254,39 @@ const key = [];
 const outFiles = [];
 const windows = [];
 
-for (const [i, p] of order.entries()) {
+/*
+ * ---------------------------------------------------------------------------
+ * Pass one: resolve every pair's window, then take the smallest.
+ * ---------------------------------------------------------------------------
+ *
+ * The window was per pair, and both members of a pair always shared it exactly — the audit
+ * refuses a deck where they do not — so it could never separate the *pools*. It could still
+ * be noticed, and in round one it was: two graders independently reported "slight aspect
+ * variation between partners", checked it against their own picks, found no correlation and
+ * filed it anyway. Both were describing the real thing one step removed. Pairs came out at
+ * 1440x800 normally and 1440x704 for the three 2.35:1 cinematic plates, so the *deck* varied
+ * in shape even though no *pair* did, and a viewer that fits each image to a pane makes that
+ * look like a difference between two partners.
+ *
+ * It cost nothing to leave and it costs 96 rows to remove, so it is removed. One shape for
+ * the whole deck, set by the tightest pair in it, still with no resampling anywhere: every
+ * frame is a crop out of its own source at native pixels, and now every crop is congruent.
+ *
+ * The offsets stay per pair. The *top* of the window has to clear that plate's own cinematic
+ * bar and the *bottom* has to clear its own wordmark band, and those are properties of the
+ * plate, not of the deck.
+ */
+const plans = [];
+for (const p of order) {
   const oursSrc = await find(oursAbs, p.ours);
   const refSrc = await find(refsAbs, p.ref);
   const om = await sharp(oursSrc).metadata();
   const rm_ = await sharp(refSrc).metadata();
 
   /*
-   * The window, chosen against the plate's hazards and then applied to both.
-   *
    * Rows: start below any cinematic bar, stop above the wordmark band. Columns: the full
-   * width of the narrower source, centred in the wider one. Everything snapped to 16 px so
-   * the plate's own JPEG block grid survives the crop.
+   * width of the narrower source, left-anchored in the wider one. Everything snapped to 16 px
+   * so the plate's own JPEG block grid survives the crop.
    */
   const bars = await blackBars(refSrc);
   const top = alignUp(bars.top);
@@ -275,6 +296,20 @@ for (const [i, p] of order.entries()) {
   // than becoming a 4:3 letterbox of a 16:9 composition.
   const h = align(Math.min(bottomLimit - top, om.height - top, (w * 9) / 16));
   if (h < 320 || w < 640) throw new Error(`${p.ref}: window collapsed to ${w}x${h}`);
+  plans.push({ p, oursSrc, refSrc, om, rm_, bars, top, w, h });
+}
+
+const DECK_W = Math.min(...plans.map((q) => q.w));
+const DECK_H = Math.min(...plans.map((q) => q.h));
+
+for (const [i, plan] of plans.entries()) {
+  const { p, oursSrc, refSrc, om, rm_, bars } = plan;
+  const w = DECK_W;
+  const h = DECK_H;
+  // Re-centre the shortened window inside the rows this plate actually allows, so trimming
+  // to the deck height takes the band off both ends rather than off the bottom only.
+  const room = plan.h - h;
+  const top = align(plan.top + room / 2);
 
   const cut = async (src, meta) => {
     // Left-anchored, both pools. Not centred: the lockups are hard against the *right* edge,
