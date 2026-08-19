@@ -32,6 +32,20 @@ const MAPS = (args.get('maps') ?? 'carthage,campus-martius').split(',');
 const SHOT_DIR = args.get('shots') ? path.resolve(ROOT, args.get('shots')) : null;
 const JSON_OUT = args.get('json') ?? null;
 const LIMIT = Number(args.get('limit') ?? 1600);
+/**
+ * Extra query string appended to both loads, for a `?battle=` token.
+ *
+ * The shipped orders of battle put 3,440 men on Carthage, and `advance(20)` on that runs at
+ * about a tenth of real time by the time two hundred are fighting on the parapet — 35 minutes
+ * of wall clock to reach t+451, and the storm was nowhere near decided. A run that cannot
+ * reach the dispatch cannot check the dispatch. `--extra=battle=<token>` with
+ * `unitSize: small` is a quarter of the men and the same code path, and every phase, count
+ * and threshold on the plaque is read from the sim rather than from the army's size.
+ *
+ * The army it fights is therefore not the shipped one, and any figure taken from a run that
+ * used this has to say so.
+ */
+const EXTRA = args.get('extra') ? `&${args.get('extra')}` : '';
 const STEP = Number(args.get('step') ?? 20);
 const W = 1600, H = 900;
 
@@ -102,7 +116,7 @@ for (const map of MAPS) {
     const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
     page.on('pageerror', (e) => rec.errors.push(`pageerror: ${e.message}`));
     page.on('console', (m) => { if (m.type() === 'error') rec.errors.push(`console.error: ${m.text()}`); });
-    await page.goto(`${base}/?menu=0&map=${map}&scenario=assault&deploy=1&autoplay=0&quality=high`,
+    await page.goto(`${base}/?menu=0&map=${map}&scenario=assault&deploy=1&autoplay=0&quality=high${EXTRA}`,
       { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 300000 });
     await page.waitForTimeout(2500);
@@ -156,7 +170,7 @@ for (const map of MAPS) {
     const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
     page.on('pageerror', (e) => rec.errors.push(`pageerror: ${e.message}`));
     page.on('console', (m) => { if (m.type() === 'error') rec.errors.push(`console.error: ${m.text()}`); });
-    await page.goto(`${base}/?menu=0&map=${map}&scenario=assault&autoplay=1&quality=high`,
+    await page.goto(`${base}/?menu=0&map=${map}&scenario=assault&autoplay=1&quality=high${EXTRA}`,
       { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 300000 });
     await page.waitForTimeout(1500);

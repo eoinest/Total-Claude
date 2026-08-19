@@ -143,6 +143,22 @@ const MEASURE = ([W, H]) => {
    */
   const nearestSolid = () => {
     const hits = [];
+    /*
+     * The rejects, kept rather than only counted.
+     *
+     * Dropping every instance whose bounding sphere is bigger than a plane tree is right —
+     * the foliage billboards share one quad that the vertex shader expands, so their CPU-side
+     * radius is meaningless and the first version of this reported a clearance of
+     * -2,205,242 m. But those rejects *are* the vegetation, so a report built only from what
+     * survived the filter says "nearest solid 13.7 m, inside 0" about a frame with a pine
+     * filling a third of it. That reading was taken at face value once already.
+     *
+     * An instance's *origin* is trustworthy even when its radius is not — it is the matrix
+     * translation, which is where the plant was planted. So the rejects are ranked by origin
+     * distance and the nearest few reported beside the others, under a name that says the
+     * number is a plant's position and not its extent.
+     */
+    const foliage = [];
     let scanned = 0;
     let skipped = 0;
     const p = new V();
@@ -160,7 +176,11 @@ const MEASURE = ([W, H]) => {
         s.setFromMatrixScale(mat);
         const r = bs.radius * Math.max(s.x, s.y, s.z);
         // A tree is under 25 m across. Anything larger is a shader-expanded proxy.
-        if (!(r > 0) || r > 30) { skipped++; return; }
+        if (!(r > 0) || r > 30) {
+          skipped++;
+          foliage.push({ name: tag, originDist: +p.distanceTo(eye).toFixed(2), radius: +r.toFixed(2) });
+          return;
+        }
         const d = p.distanceTo(eye);
         hits.push({
           name: tag, clearance: +(d - r).toFixed(2), dist: +d.toFixed(2), radius: +r.toFixed(2),
@@ -180,7 +200,16 @@ const MEASURE = ([W, H]) => {
       }
     });
     hits.sort((a, b) => a.clearance - b.clearance);
-    return { nearest: hits.slice(0, 4), scanned, skipped, inside: hits.filter((h) => h.clearance < 0).length };
+    foliage.sort((a, b) => a.originDist - b.originDist);
+    return {
+      nearest: hits.slice(0, 4), scanned, skipped,
+      inside: hits.filter((h) => h.clearance < 0).length,
+      // Distance to the *origin* of the nearest shader-expanded instances. A billboard whose
+      // origin is a few metres from the eye is a bush the camera is standing in, whatever its
+      // unusable bounding radius says.
+      nearestFoliage: foliage.slice(0, 4),
+      foliageWithin30: foliage.filter((f) => f.originDist < 30).length,
+    };
   };
 
   const gi = gateBay ? gateBay.index : 0;
@@ -331,6 +360,9 @@ const report = (m, label) => {
   console.log(`  plaque band ends y ${m.plaques?.bandBottom}  every on-screen crest below it: ${clearOfPlaque}`);
   const n = m.solid.nearest[0];
   console.log(`  nearest solid ${n ? `${n.name} clearance ${n.clearance} m` : 'none'}  inside ${m.solid.inside}  [${m.solid.scanned} scanned, ${m.solid.skipped} rejected]`);
+  const f = m.solid.nearestFoliage?.[0];
+  console.log(`  nearest foliage origin ${f ? `${f.name} at ${f.originDist} m` : 'none'}`
+    + `  within 30 m of the eye: ${m.solid.foliageWithin30}`);
 };
 
 const out = {};
