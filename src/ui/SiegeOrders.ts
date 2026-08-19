@@ -66,6 +66,10 @@ export interface EscaladeOfferView {
   refusal: string;
   kind: 'tower' | 'ladder' | null;
   bay: number;
+  /** False while the machine they would climb is still crossing the glacis. */
+  ready: boolean;
+  machineDistance: number;
+  machineSeconds: number;
 }
 
 /** The structural view of `Siege.SiegeMachineOrder` this file needs. */
@@ -319,12 +323,23 @@ export class SiegeOrders {
     const sel = this.model.selectedViews.filter((v) => v.own && !v.destroyed);
     if (sel.length === 0) { this.done(ctx); return; }
     const offer = probe.escaladeOfferAt(sel[0].id, cursor.wallX, cursor.wallZ);
-    if (offer.ok || offer.refusal === 'crew' || offer.refusal === 'noWall') {
-      this.done(ctx);
+    if (offer.refusal === 'crew' || offer.refusal === 'noWall') { this.done(ctx); return; }
+    const bay = offer.bay >= 0 ? `bay ${offer.bay}` : 'that stretch';
+    if (offer.ok) {
+      /*
+       * The order will be obeyed, so the wall cursor's "Storm the wall here" stands and this
+       * says nothing — **unless** the thing they would climb has not arrived. A cohort sent
+       * at a bay a tower is still 118 m from does exactly what it is told and then stands in
+       * an open field for four minutes, and the playtest that reported that read it as the
+       * order having been dropped. It had not been; nobody had quoted the wait.
+       */
+      if (offer.ready || offer.kind !== 'tower') { this.done(ctx); return; }
+      this.showHint(`Queue at the tower — it reaches ${bay} in `
+        + `${clock(offer.machineSeconds)}`, true);
+      this.setCursor('machine');
       return;
     }
     this.stormRefusal = offer.refusal;
-    const bay = offer.bay >= 0 ? `bay ${offer.bay}` : 'that stretch';
     this.showHint(offer.refusal === 'full'
       ? `Every ladder and ramp at ${bay} already has a full file`
       : `Nothing to climb at ${bay} — bring a ladder or a tower`, false);

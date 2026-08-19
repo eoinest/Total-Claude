@@ -32,7 +32,7 @@
  *           (`spawnGreatRam` — which army you bring is not a mouse gesture); the *target* is
  *           the player's click, which is the thing under test.
  *
- * Usage: node tools/qa-siegecommand.mjs --port=5412 [--only=climb|tower|ram|refuse|great]
+ * Usage: node tools/qa-siegecommand.mjs --port=5412 [--only=climb|tower|ram|refuse|great|storm]
  *                                       [--map=carthage|rome] [--shots=dir]
  */
 import { chromium } from 'playwright';
@@ -164,6 +164,24 @@ const INSTALL = () => {
   };
   window.__rams = () => g.battle.siege.ramReport();
   window.__gates = () => g.battle.siege.gateReport();
+  /**
+   * What the *card* says about a unit, which is the thing the playtest report quoted.
+   *
+   * "Garrison, Steady with 160 men in a field" is a sentence about the HUD, so it is read
+   * off the HUD's own model rather than off `UnitGroupState`: a probe that checks the sim
+   * and calls that "what the player sees" is the gap this whole file exists to close.
+   */
+  window.__card = (unitId) => {
+    const c = window.__ctl();
+    const v = c ? c.model.view(unitId) : null;
+    const s = g.battle.siege;
+    const u = g.battle.unitById(unitId);
+    return v ? { name: v.def ? v.def.name : v.unit.typeId, alive: v.alive,
+      order: u ? u.order : -1, orderName: ['idle','moveto','attack','attackmove','halt',
+        'garrison','fallback','rout'][u ? u.order : 0] ?? String(u ? u.order : -1),
+      siegeOwned: s.ownsUnit(unitId), garrisoned: s.isGarrisoned(unitId),
+      onWall: s.unitWallState ? s.unitWallState(unitId).onWall : -1 } : null;
+  };
   window.__crewOf = (unitId) => {
     const u = g.battle.unitById(unitId);
     if (!u) return null;
@@ -433,9 +451,23 @@ if (!ONLY || ONLY === 'tower') {
       await page.mouse.move(pxWall.x, pxWall.y);
       await settle(340);
       const cur = await page.evaluate(() => window.__cursor());
+      const sui = await page.evaluate(() => window.__siegeUi());
       await shot('tower-hover');
-      record('tower-cursor', cur.wallValid, 'the cursor over the bay the player has chosen',
-        `wallValid ${cur.wallValid} at (${cur.wallX}, ${cur.wallZ}), hint "${cur.hint}"`);
+      /*
+       * Both hints, because they answer different questions and only one of them existed.
+       * `.drag-hint` is `SelectionController`'s frontage readout and is blank on a hover;
+       * `.siege-hint` is what a tower party's cursor says, and the assertion is that it names
+       * the bay and quotes what the order costs *before* the click. A cursor that tells you
+       * nothing before you commit was half of the owner's original report.
+       */
+      record('tower-cursor', cur.wallValid && !!sui && sui.shown && sui.preview !== null
+        && sui.preview.ok && sui.preview.bay >= 0,
+        'the cursor over the bay the player has chosen',
+        `wallValid ${cur.wallValid} at (${cur.wallX}, ${cur.wallZ}); siege hint `
+        + `"${sui ? sui.hint : '(none)'}" — preview ${sui && sui.preview
+          ? `${sui.preview.kind} -> bay ${sui.preview.bay} (${sui.preview.refusal}, `
+            + `${Math.round(sui.preview.distance)} m, ${Math.round(sui.preview.seconds)} s)`
+          : 'none'}`);
       await page.mouse.click(pxWall.x, pxWall.y, { button: 'right' });
       await settle(300);
       await page.evaluate(() => window.__game.engine.advance(0.4));
@@ -788,7 +820,8 @@ if (ONLY === 'refuse') {
       crewAt: { x: u.x, z: u.z },
       own: { x: s.sx[t.station], y: s.sy[t.station], z: s.sz[t.station] },
       taken: other ? { x: s.sx[other.station], y: s.sy[other.station], z: s.sz[other.station],
-        station: other.station } : null,
+        station: other.station, bay: s.sBay[other.station], id: other.id,
+        yaw: Math.atan2(s.snx[other.station], s.snz[other.station]) } : null,
     };
   });
   if (pick.fail) record('refuse-setup', false, 'find two towers', pick.fail);
@@ -807,13 +840,24 @@ if (ONLY === 'refuse') {
 
     // (b) another machine's berth
     if (pick.taken) {
-      await frame([crewPt, { x: pick.taken.x, y: pick.taken.y, z: pick.taken.z }], Math.PI);
-      const b = await hoverWorld({ x: pick.taken.x, y: pick.taken.y + 0.2, z: pick.taken.z });
+      /*
+       * Frame the taken bay on its own and confirm the cursor really resolved to *that* bay
+       * before grading the sentence. The first version framed the crew and the bay together,
+       * zoomed out to fit both, and the ray landed 94 m along the wall — so the arm was
+       * grading the right feature at the wrong place and reporting the feature broken.
+       */
+      const tf = await frame([{ x: pick.taken.x, y: pick.taken.y + 0.2, z: pick.taken.z }],
+        pick.taken.yaw);
+      const b = tf.out ? await hoverWorld({ x: pick.taken.x, y: pick.taken.y + 0.2, z: pick.taken.z })
+        : { px: null, ui: null };
       await shot('refuse-taken');
-      record('refuse-taken', !!b.ui && b.ui.shown && b.ui.tone === 'refuse'
+      const onBay = !!b.ui && !!b.ui.preview && b.ui.preview.bay === pick.taken.bay;
+      record('refuse-taken', onBay && b.ui.shown && b.ui.tone === 'refuse'
         && /taken/i.test(b.ui.hint),
-        'the cursor on a bay another machine already has',
-        `hint "${b.ui ? b.ui.hint : '(none)'}" (${b.ui && b.ui.preview ? b.ui.preview.refusal : '?'})`);
+        `the cursor on bay ${pick.taken.bay}, which tower #${pick.taken.id} already has`,
+        `hint "${b.ui ? b.ui.hint : '(none)'}" — preview ${b.ui && b.ui.preview
+          ? `bay ${b.ui.preview.bay} (${b.ui.preview.refusal})` : 'none'}`
+          + `${onBay ? '' : ' — the cursor did not resolve to the intended bay'}`);
     }
 
     // (c) committed / landed — let it get inside twelve metres of its own bay
@@ -844,6 +888,110 @@ if (ONLY === 'refuse') {
     record('refuse-committed-holds', after.station === before.station,
       'and the click really is refused, not merely described as refused',
       `station ${before.station} -> ${after.station}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Arm 6 — a storm order at a bay with nothing to climb
+// ---------------------------------------------------------------------------
+if (!ONLY || ONLY === 'storm') {
+  await boot('storm', MAP);
+  console.log('\n— storm: the order that was accepted, dropped in silence, and then read Garrison');
+  await run(20);
+
+  const pick = await page.evaluate(() => {
+    const g = window.__game;
+    const s = g.battle.siege;
+    /*
+     * A bay with no ladder and no tower within `ESCALADE_REACH` (20 stations) — which is what
+     * "ladderless" means to `escalade`, and therefore the only definition worth testing
+     * against. Taken as far from every machine as the circuit allows so the answer is not
+     * marginal.
+     */
+    const machines = [...s.towers.map((t) => t.station), ...s.ladders.map((l) => l.station)];
+    let best = -1, bestGap = -1;
+    for (let st = 0; st < s.nStations; st += 3) {
+      if (s.dead(st)) continue;
+      let gap = Infinity;
+      for (const m of machines) gap = Math.min(gap, Math.abs(m - st));
+      if (gap > bestGap) { bestGap = gap; best = st; }
+    }
+    if (best < 0 || bestGap <= 20) return { fail: `no ladderless bay (best gap ${bestGap})` };
+    // A cohort of the line on the storming side, crewing nothing.
+    const cands = g.battle.units.filter((u) => u.faction === 0 && !u.destroyed && u.alive > 60
+      && !s.ownsUnit(u.id) && !s.isGarrisoned(u.id) && s.wallSideAt(u.x, u.z) > 0);
+    if (cands.length === 0) return { fail: 'no free storming cohort' };
+    const u = cands[0];
+    return { unitId: u.id, typeId: u.typeId, alive: u.alive, at: { x: u.x, z: u.z },
+      station: best, gap: bestGap, bay: s.sBay[best],
+      wall: { x: s.sx[best], y: s.sy[best], z: s.sz[best] },
+      yaw: Math.atan2(s.snx[best], s.snz[best]) };
+  });
+
+  if (pick.fail) record('storm-setup', false, 'find a ladderless bay and a free cohort', pick.fail);
+  else {
+    console.log(`  cohort ${pick.unitId} (${pick.typeId}, ${pick.alive} men) at bay ${pick.bay}, `
+      + `station ${pick.station} — nearest machine ${pick.gap} stations away (reach is 20)`);
+    const unitPt = await page.evaluate((p) => ({ x: p.x, y: window.__game.battle.groundAt(p.x, p.z), z: p.z }), pick.at);
+    const f1 = await frame([unitPt], pick.yaw);
+    if (!f1.out) record('storm-frame', false, 'frame the cohort', 'gave up');
+    else {
+      await selectUnit(pick.unitId, f1.out[0]);
+      const sel = await page.evaluate(() => window.__selected());
+      record('storm-select', sel[0] === pick.unitId, `left-click the ${pick.typeId}`,
+        `selection [${sel.join(',')}]`);
+
+      const f2 = await frame([{ x: pick.wall.x, y: pick.wall.y + 0.2, z: pick.wall.z }], pick.yaw);
+      if (!f2.out) record('storm-frame-wall', false, 'frame the ladderless bay', 'gave up');
+      else {
+        const h = await hoverWorld({ x: pick.wall.x, y: pick.wall.y + 0.2, z: pick.wall.z });
+        const wall = await page.evaluate(() => window.__cursor());
+        await shot('storm-hover');
+        record('storm-refusal-is-visible',
+          !!h.ui && h.ui.shown && h.ui.tone === 'refuse' && /nothing to climb|full file/i.test(h.ui.hint),
+          'the cursor over a bay with no ladder and no ramp, with a cohort of the line selected',
+          `siege hint "${h.ui ? h.ui.hint : '(none)'}" tone ${h.ui ? h.ui.tone : '?'}; `
+          + `the wall cursor still resolves the parapet (wallValid ${wall.wallValid}) — which is `
+          + 'the promise this sentence is contradicting');
+
+        const before = await page.evaluate((id) => window.__card(id), pick.unitId);
+        if (h.px) { await page.mouse.click(h.px.x, h.px.y, { button: 'right' }); await settle(300); }
+        await run(20);
+        const after = await page.evaluate((id) => window.__card(id), pick.unitId);
+        /*
+         * And the other half of the same report: a bay that *does* have a machine in reach,
+         * but one that is still crossing the glacis. The order is obeyed and correct, and the
+         * cohort then stands in a field waiting for it — which is what "silently dropped"
+         * looked like from the chair.
+         */
+        const near = await page.evaluate(() => {
+          const s = window.__game.battle.siege;
+          const t = s.towers.find((k) => k.state === 0);
+          if (!t) return null;
+          return { x: s.sx[t.station], y: s.sy[t.station], z: s.sz[t.station],
+            yaw: Math.atan2(s.snx[t.station], s.snz[t.station]),
+            dist: Math.hypot(t.dockX - t.x, t.dockZ - t.z) };
+        });
+        if (near) {
+          const f3 = await frame([{ x: near.x, y: near.y + 0.2, z: near.z }], near.yaw);
+          if (f3.out) {
+            const hn = await hoverWorld({ x: near.x, y: near.y + 0.2, z: near.z });
+            await shot('storm-queue');
+            record('storm-quotes-the-wait-for-a-machine-still-coming',
+              !!hn.ui && hn.ui.shown && /queue at the tower/i.test(hn.ui.hint),
+              `the cursor over a bay whose tower is still ${near.dist.toFixed(0)} m out`,
+              `hint "${hn.ui ? hn.ui.hint : '(none)'}" tone ${hn.ui ? hn.ui.tone : '?'}`);
+          }
+        }
+
+        record('storm-refused-order-does-not-fake-a-garrison',
+          !after.garrisoned && !after.siegeOwned && after.onWall <= 0,
+          'and the click really is refused: no phantom Garrison in an open field',
+          `card "${after.name}" ${after.alive} men — order ${before.orderName} -> `
+          + `${after.orderName}, garrisoned ${after.garrisoned}, siege-owned ${after.siegeOwned}, `
+          + `${after.onWall} men on the wall`);
+      }
+    }
   }
 }
 

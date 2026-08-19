@@ -2020,13 +2020,34 @@ export class Siege implements ElevationOwner {
    */
   escaladeOfferAt(unitId: number, x: number, z: number): {
     ok: boolean; refusal: string; kind: 'tower' | 'ladder' | null; bay: number;
+    /**
+     * Whether the thing they would climb is a road yet or still a promise.
+     *
+     * A tower still trundling across the glacis is a legal escalade target — the men walk out
+     * with it and go up when its ramp falls — and that is *why* a cohort given a storm order
+     * ends up standing in an open field with nothing apparently happening. It is queueing,
+     * correctly, for a machine a hundred metres away. Nothing was wrong except that nobody
+     * said so, which is the same defect as the silent refusal wearing better clothes.
+     */
+    ready: boolean;
+    /** Metres the machine still has to roll before anyone can climb it. */
+    machineDistance: number;
+    /** And how long that is. */
+    machineSeconds: number;
   } {
     const f = this.findEscalade(unitId, x, z);
+    const t = f.tower;
+    const run = t ? Math.hypot(t.dockX - t.x, t.dockZ - t.z) : 0;
     return {
       ok: f.refusal === 'none',
       refusal: f.refusal,
       kind: f.kind,
       bay: f.station >= 0 && f.station < this.nStations ? this.sBay[f.station] : -1,
+      // A ladder is raised where it stands, so it is a road the moment it exists; a tower is
+      // one only once its ramp is on the parapet.
+      ready: f.kind === 'ladder' || (!!t && t.state !== TowerState.Approach),
+      machineDistance: run,
+      machineSeconds: run / TOWER_SPEED + (t ? Math.max(0, t.heave) : 0),
     };
   }
 
@@ -2417,8 +2438,24 @@ export class Siege implements ElevationOwner {
     if (t.state !== TowerState.Approach) return at('landed');
     if (station === t.station) return at('already');
     if (t.dist > 0 && t.dist < TOWER_COMMIT) return at('committed');
+    /**
+     * Somebody else's berth, tested by **bay** as well as by metres.
+     *
+     * The distance test alone is the engineer's answer — two machines whose centres are
+     * inside four half-widths of each other are drawn intersecting — and it is not the
+     * player's. A player clicking "the bay that tower is taking" is pointing at a thirty-metre
+     * length of curtain between two towers, and the ray lands wherever the parapet happens to
+     * be under the cursor; measured, a click meant for a bay another machine held resolved
+     * 94 m along the wall and was accepted. A bay is the unit the assault is echeloned in —
+     * the scenario aims four towers at four *adjacent* bays, one apiece — so one machine per
+     * bay is both what the deployment already does and what the sentence says.
+     */
+    const bay = this.sBay[station];
     for (const k of this.towers) {
       if (k.id === t.id || k.state === TowerState.Spent) continue;
+      if (k.station >= 0 && k.station < this.nStations && this.sBay[k.station] === bay) {
+        return at('taken');
+      }
       if (Math.hypot(k.dockX - dockX, k.dockZ - dockZ) < TOWER_BERTH) return at('taken');
     }
     return at('none');
