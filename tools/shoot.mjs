@@ -34,6 +34,24 @@ import process from 'node:process';
 const ROOT = path.resolve(import.meta.dirname, '..');
 
 /** Recorded in `report.json` so a deck can be traced back to the tree that produced it. */
+/**
+ * The tree object of `src/`, which is what actually decides what a frame looks like.
+ *
+ * `COMMIT` moves when a shot table is retuned, and a shot table is not a renderer. The
+ * invariant a deck needs is that every frame in it came out of the *same renderer*, and that
+ * is this hash: identical `src` tree, identical pixels for identical inputs. Recorded beside
+ * the commit rather than instead of it — the commit is still how a human finds the tree.
+ */
+const SRC_TREE = (() => {
+  try { return execFileSync('git', ['rev-parse', 'HEAD:src'], { cwd: ROOT, encoding: 'utf8' }).trim(); }
+  catch { return 'unknown'; }
+})();
+/** `<commit>:src`, so a prior pass that predates `SRC_TREE` can still be checked exactly. */
+const srcTreeOf = (commit) => {
+  try { return execFileSync('git', ['rev-parse', `${commit}:src`], { cwd: ROOT, encoding: 'utf8' }).trim(); }
+  catch { return null; }
+};
+
 const COMMIT = (() => {
   try {
     return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim();
@@ -1583,11 +1601,16 @@ try {
   let merged = results;
   if (existsSync(recPath)) {
     const prior = JSON.parse(await readFile(recPath, 'utf8'));
-    const fixed = { hud: SHOW_HUD, dpr: DPR, width: W, height: H, quality: QUALITY, commit: COMMIT };
+    const fixed = { hud: SHOW_HUD, dpr: DPR, width: W, height: H, quality: QUALITY };
     const clash = Object.entries(fixed).filter(([k, v]) => prior[k] !== undefined && prior[k] !== v);
+    // The renderer, not the commit. A pass written before `srcTree` existed is checked by
+    // resolving its own commit's `src` tree, which is exact rather than lenient.
+    const priorTree = prior.srcTree ?? (prior.commit ? srcTreeOf(prior.commit) : null);
+    if (priorTree === null) clash.push(['srcTree', `unresolvable from commit ${prior.commit ?? '?'}`]);
+    else if (priorTree !== SRC_TREE) clash.push(['srcTree', SRC_TREE]);
     if (clash.length) {
       console.error(`\nREFUSED to merge into ${path.relative(ROOT, recPath)}: `
-        + clash.map(([k, v]) => `${k} was ${prior[k]}, now ${v}`).join('; '));
+        + clash.map(([k, v]) => `${k} was ${prior[k] ?? priorTree}, now ${v}`).join('; '));
       console.error('  Shoot the whole set into a clean directory instead.');
       failed++;
     } else {
@@ -1597,7 +1620,7 @@ try {
       passes.push(...(prior.passes ?? [{ at: prior.at, argv: prior.argv }]));
     }
   }
-  passes.push({ at: new Date().toISOString(), argv: process.argv.slice(2) });
+  passes.push({ at: new Date().toISOString(), argv: process.argv.slice(2), commit: COMMIT, srcTree: SRC_TREE });
 
   await writeFile(
     recPath,
@@ -1613,6 +1636,7 @@ try {
         worldOverlay: overlayHidden,
         blindSafe: !SHOW_HUD,
         commit: COMMIT,
+        srcTree: SRC_TREE,
         width: W, height: H, quality: QUALITY, gl,
         shots: merged,
         consoleErrors: [...new Set(consoleErrors)],
