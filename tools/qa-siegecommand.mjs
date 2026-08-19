@@ -15,8 +15,25 @@
  *           daylight and a ramp lip level with the walk — and the **signed** orientation of
  *           the drawn ramp, read off the InstancedMesh matrix. A ladder once passed 24
  *           assertions while rendered 180 degrees wrong, so a magnitude is not evidence.
+ *   ram     select a ram crew and right-click a gate the player has chosen. On Carthage that
+ *           is a real choice — three gates, and the machine spawns aimed at the first — so
+ *           the arm sends it 560 m down the circuit to the Porta Uticensis and asserts that
+ *           *that* gate opens while the other two stay shut. On Rome there is one gate, so
+ *           what the arm measures there is the other half of a choice: the order round-trips
+ *           to the gate, and the same crew pointed at a stretch of curtain is **refused in a
+ *           sentence the player can read** rather than in silence.
+ *   refuse  the three refusals the tower is meant to have — landed, committed inside twelve
+ *           metres, and another machine's berth — each read off the hint the cursor was
+ *           showing at the moment of the click. Refusing to be redirected is the character of
+ *           fifteen tonnes of green timber; refusing silently is a broken button, and that is
+ *           the distinction this arm exists to hold.
+ *   great   a great ram, which attacks the *curtain* rather than a gate, ordered at a stretch
+ *           of wall by the same right-click. The machine is fielded through the scenario verb
+ *           (`spawnGreatRam` — which army you bring is not a mouse gesture); the *target* is
+ *           the player's click, which is the thing under test.
  *
- * Usage: node tools/qa-siegecommand.mjs --port=5412 [--only=climb|tower] [--shots=dir]
+ * Usage: node tools/qa-siegecommand.mjs --port=5412 [--only=climb|tower|ram|refuse|great]
+ *                                       [--map=carthage|rome] [--shots=dir]
  */
 import { chromium } from 'playwright';
 import { writeFile, mkdir } from 'node:fs/promises';
@@ -30,6 +47,7 @@ const args = new Map(process.argv.slice(2).map((a) => {
 }));
 const PORT = Number(args.get('port') ?? 5412);
 const ONLY = args.get('only') ?? null;
+const MAP = args.get('map') ?? 'carthage';
 const SHOT_DIR = args.get('shots') ? path.resolve(ROOT, args.get('shots')) : null;
 const JSON_OUT = args.get('json') ?? null;
 const W = 1600, H = 900;
@@ -126,6 +144,34 @@ const INSTALL = () => {
       })),
     };
   };
+  /**
+   * The siege-order HUD: what the cursor is offering, and what the last click actually did.
+   *
+   * Read off the live object rather than recomputed, for the same reason the ramp head is
+   * read off the InstancedMesh matrix: a harness that re-derives the answer agrees with the
+   * bug. `hint` is the sentence the player is looking at, taken out of the DOM.
+   */
+  window.__siegeUi = () => {
+    const h = ctx.tryGet('hud');
+    const so = h ? h.siege : null;
+    return {
+      hint: document.querySelector('.siege-hint')?.textContent ?? '',
+      shown: document.querySelector('.siege-hint')?.style.display === 'block',
+      tone: document.querySelector('.siege-hint')?.dataset.tone ?? '',
+      preview: so ? so.preview : null,
+      lastOrder: so ? so.lastOrder : null,
+    };
+  };
+  window.__rams = () => g.battle.siege.ramReport();
+  window.__gates = () => g.battle.siege.gateReport();
+  window.__crewOf = (unitId) => {
+    const u = g.battle.unitById(unitId);
+    if (!u) return null;
+    const p = g.battle.pool;
+    let alive = 0;
+    for (const i of u.members) if (p.aliveAt(i)) alive++;
+    return { alive, order: u.order, routing: u.order === 7, typeId: u.typeId };
+  };
   window.__towers = () => g.battle.siege.towerReport().map((t, i) => ({
     ...t,
     station: g.battle.siege.towers[i].station,
@@ -146,7 +192,7 @@ const INSTALL = () => {
  * on the first run of this file. `probe-walltraffic` learned the same lesson and says so.
  */
 let page, errs, settle, shot, run;
-async function boot(label) {
+async function boot(label, map = MAP) {
   if (page) await page.close();
   page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
   errs = [];
@@ -157,10 +203,10 @@ async function boot(label) {
   // `engine.advance(s, 166)` is exact and four times faster than the default step.
   run = (s) => page.evaluate((n) => window.__game.engine.advance(n, 166), s);
 
-  console.log(`\n— ${label}: Carthage, assault, the real menu, ?autoplay=0`);
+  console.log(`\n— ${label}: ${map}, assault, the real menu, ?autoplay=0`);
   await page.goto(`${base}/?quality=high&autoplay=0`, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.menu .begin', { timeout: 60000 });
-  await page.click('.menu [data-map="carthage"]');
+  await page.click(`.menu [data-map="${map}"]`);
   await settle(220);
   await page.click('.menu [data-scen="assault"]');
   await settle(220);
@@ -448,6 +494,349 @@ if (!ONLY || ONLY === 'tower') {
       record('tower-delivers', t4.crossed > 0,
         'men come over the ramp at the new bay',
         `${t4.crossed} across, ${t4.queued} on the path`);
+    }
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// Helpers shared by the machine arms
+// ---------------------------------------------------------------------------
+
+/**
+ * Put the cursor on a world point and hand back what the siege HUD says about it.
+ *
+ * The hint is read out of the DOM rather than recomputed, because the whole claim being
+ * tested is that *the player can tell*. A harness that asks `Siege` what it would do and
+ * calls that "the cursor says so" is testing the sim twice and the interface not at all.
+ */
+async function hoverWorld(pt) {
+  const px = await page.evaluate((p) => window.__project(p.x, p.y, p.z), pt);
+  if (!px) return { px: null, ui: null };
+  await page.mouse.move(px.x, px.y);
+  await settle(320);
+  return { px, ui: await page.evaluate(() => window.__siegeUi()) };
+}
+
+/** Right-click a screen point and let the queued order reach `fixedUpdate`. */
+async function orderAt(px) {
+  const ui = await page.evaluate(() => window.__siegeUi());
+  await page.mouse.click(px.x, px.y, { button: 'right' });
+  await settle(260);
+  const after = await page.evaluate(() => window.__siegeUi());
+  await page.evaluate(() => window.__game.engine.advance(0.5));
+  return { before: ui, after };
+}
+
+// ---------------------------------------------------------------------------
+// Arm 3 — a ram sent at a gate the player picked
+// ---------------------------------------------------------------------------
+if (!ONLY || ONLY === 'ram') {
+  for (const map of (args.get('map') ? [MAP] : ['carthage', 'rome'])) {
+    await boot(`ram-${map}`, map);
+    console.log(`\n— ram (${map}): the crew, the gate, and the sentence before the click`);
+    // Far enough for the crew to form on the machine; not so far that the ram has arrived.
+    await run(20);
+
+    const pick = await page.evaluate(() => {
+      const g = window.__game;
+      const s = g.battle.siege;
+      const rams = s.ramReport().filter((r) => r.kind === 'gate' && !r.wreck);
+      if (rams.length === 0) return { fail: 'no gate ram on the field' };
+      const r = rams[0];
+      const shut = s.gateReport().gates.filter((x) => !x.open);
+      // The gate the player picks: a shut one that is NOT the one the machine is aimed at,
+      // if the circuit has one. Rome has a single gate, so there the pick is the gate itself
+      // and the choice being measured is the refusal on the other branch.
+      const other = shut.find((x) => x.id !== r.gateId) ?? null;
+      const target = other ?? shut.find((x) => x.id === r.gateId) ?? null;
+      if (!target) return { fail: 'no shut gate' };
+      const u = g.battle.unitById(r.unitId);
+      // A stretch of plain curtain, well clear of any gate, for the refusal branch.
+      let curtain = null;
+      for (let st = 0; st < s.nStations; st += 7) {
+        const x = s.sx[st], z = s.sz[st];
+        if (shut.every((k) => Math.hypot(k.x - x, k.z - z) > 90)) {
+          if (Math.hypot(x - r.x, z - r.z) < 260) { curtain = { x, y: s.sy[st], z, station: st }; break; }
+        }
+      }
+      return {
+        ramId: r.id, unitId: r.unitId, crew: u ? u.typeId : '?', crewAlive: u ? u.alive : 0,
+        crewAt: { x: u.x, z: u.z },
+        from: r.gateId, to: target.id, single: other === null,
+        gates: shut.map((x) => x.id),
+        target: { x: target.x, z: target.z },
+        // Look at the gate from the field, which is where the storming player's camera is.
+        // The outward normal of the bay next to it: `GateOut.facing` uses the same convention
+        // (`atan2(nx, nz)`, pointing out of the city) so one yaw serves a gate and a bay.
+        yaw: (() => { const st = s.stationNear(target.x, target.z);
+          return st >= 0 ? Math.atan2(s.snx[st], s.snz[st]) : 0; })(),
+        curtain,
+        ramAt: { x: r.x, z: r.z },
+      };
+    });
+
+    if (pick.fail) { record(`ram-${map}-setup`, false, 'find a ram and a gate', pick.fail); continue; }
+    console.log(`  ram ${pick.ramId} crewed by ${pick.crew} (${pick.crewAlive} men), aimed at `
+      + `${pick.from}; shut gates on this circuit: ${pick.gates.join(', ')}`);
+    record(`ram-${map}-gates`, true, 'the circuit the player is choosing from',
+      `${pick.gates.length} shut gate(s): ${pick.gates.join(', ')}`
+      + (pick.single ? ' — one gate, so the pick is gate-or-not' : ''));
+
+    const crewPt = await page.evaluate((p) => ({ x: p.x, y: window.__game.battle.groundAt(p.x, p.z), z: p.z }),
+      pick.crewAt);
+    const gatePt = await page.evaluate((p) => ({ x: p.x, y: window.__game.battle.groundAt(p.x, p.z) + 3, z: p.z }),
+      pick.target);
+    /*
+     * Two framings, not one. On Carthage the gate the player is picking is 560 m from the
+     * crew that will go to it, and a camera that holds both in frame is zoomed so far out
+     * that a click lands on the wrong bay. The selection survives a camera move, so the crew
+     * is selected at one framing and the gate is clicked at another — which is also exactly
+     * what a player does.
+     */
+    const framed = await frame([crewPt], pick.yaw);
+    if (!framed.out) { record(`ram-${map}-frame`, false, 'frame the ram crew', 'gave up'); continue; }
+    const [pxCrew] = framed.out;
+    await selectUnit(pick.unitId, pxCrew);
+    const sel = await page.evaluate(() => window.__selected());
+    record(`ram-${map}-select`, sel[0] === pick.unitId, `left-click the ${pick.crew}`,
+      `selection [${sel.join(',')}]`);
+
+    // ---- the refusal branch: the same crew pointed at masonry ----
+    if (pick.curtain) {
+      const cf = await frame([{ x: pick.curtain.x, y: pick.curtain.y + 0.2, z: pick.curtain.z }],
+        await page.evaluate((st) => Math.atan2(window.__game.battle.siege.snx[st],
+          window.__game.battle.siege.snz[st]), pick.curtain.station));
+      if (cf.out) {
+        const h = await hoverWorld({ x: pick.curtain.x, y: pick.curtain.y + 0.2, z: pick.curtain.z });
+        await shot(`ram-${map}-refused`);
+        record(`ram-${map}-refuses-masonry`,
+          !!h.ui && h.ui.shown && h.ui.tone === 'refuse' && /masonry|gate/i.test(h.ui.hint),
+          'the ram crew with the cursor on a stretch of plain curtain',
+          `hint "${h.ui ? h.ui.hint : '(none)'}" tone ${h.ui ? h.ui.tone : '?'}, `
+          + `preview refusal ${h.ui && h.ui.preview ? h.ui.preview.refusal : 'none'}`);
+      }
+    }
+
+    // ---- the accepted branch ----
+    const reframed = await frame([gatePt], pick.yaw);
+    if (!reframed.out) { record(`ram-${map}-reframe`, false, 'frame the gate again', 'gave up'); continue; }
+    const hov = await hoverWorld(gatePt);
+    await shot(`ram-${map}-hover`);
+    record(`ram-${map}-cursor-names-the-gate`,
+      !!hov.ui && hov.ui.shown && hov.ui.preview !== null
+        && hov.ui.preview.gateId === pick.to,
+      'what the cursor says before the click',
+      `hint "${hov.ui ? hov.ui.hint : '(none)'}" — preview `
+      + `${hov.ui && hov.ui.preview ? `${hov.ui.preview.kind} -> ${hov.ui.preview.gateId} `
+        + `(${hov.ui.preview.refusal}, ${Math.round(hov.ui.preview.distance)} m)` : 'none'}`);
+
+    if (!hov.px) { record(`ram-${map}-project`, false, 'project the gate', 'off screen'); continue; }
+    const clicked = await orderAt(hov.px);
+    const r1 = (await page.evaluate(() => window.__rams()))[pick.ramId];
+    record(`ram-${map}-takes-the-order`,
+      r1.gateId === pick.to && r1.state === 'approach',
+      `right-click ${pick.to} with the ram crew selected`,
+      `gateId ${pick.from} -> ${r1.gateId}, state ${r1.state}, heave ${r1.heave.toFixed(1)} s, `
+      + `target (${r1.targetX.toFixed(1)}, ${r1.targetZ.toFixed(1)}), `
+      + `${r1.distFromTarget.toFixed(0)} m to run; the player read "${clicked.after.hint}"`);
+    record(`ram-${map}-tells-you-it-took-it`,
+      clicked.after.shown && clicked.after.tone === 'move' && clicked.after.lastOrder !== null,
+      'the confirmation after the click, not before it',
+      `hint "${clicked.after.hint}" tone ${clicked.after.tone}, `
+      + `lastOrder ${clicked.after.lastOrder ? `${clicked.after.lastOrder.kind} -> `
+        + `${clicked.after.lastOrder.gateId || `bay ${clicked.after.lastOrder.bay}`}` : 'null'}`);
+
+    // ---- follow it in ----
+    const trace = [];
+    let broke = null;
+    const budget = pick.single ? 26 : 44;
+    for (let k = 0; k < budget && !broke; k++) {
+      await run(40);
+      const rr = (await page.evaluate(() => window.__rams()))[pick.ramId];
+      const gg = await page.evaluate(() => window.__gates());
+      const cw = await page.evaluate((id) => window.__crewOf(id), rr.unitId);
+      trace.push({ t: (k + 1) * 40 + 20, state: rr.state, d: +rr.distFromTarget.toFixed(0),
+        blows: rr.gateBlows, crew: cw ? cw.alive : 0, routing: cw ? cw.routing : false });
+      const g = gg.gates.find((x) => x.id === pick.to);
+      if (g && g.open) broke = { at: (k + 1) * 40 + 20, gates: gg.gates, ram: rr };
+    }
+    console.log('  the approach and the battering:');
+    for (const m of trace) {
+      console.log(`    t+${String(m.t).padStart(4)}  ${m.state.padEnd(11)} ${String(m.d).padStart(4)} m `
+        + `to run  ${String(m.blows).padStart(2)} blows  crew ${m.crew}${m.routing ? ' ROUTING' : ''}`);
+    }
+    await shot(`ram-${map}-broken`);
+    const gEnd = await page.evaluate(() => window.__gates());
+    const rEnd = (await page.evaluate(() => window.__rams()))[pick.ramId];
+    const others = gEnd.gates.filter((x) => x.id !== pick.to && !x.id.startsWith('postern'));
+    record(`ram-${map}-breaks-the-gate-it-was-sent-to`, !!broke,
+      `the gate the player picked comes down`,
+      broke
+        ? `${pick.to} open at t+${broke.at}, ${rEnd.gateBlows} blows, leaves broken `
+          + `${gEnd.gates.find((x) => x.id === pick.to).broken}`
+        : `${pick.to} still shut after t+${trace.length * 40 + 20}, ${rEnd.gateBlows} blows, `
+          + `state ${rEnd.state}, ${rEnd.distFromTarget.toFixed(0)} m to run`);
+    record(`ram-${map}-leaves-the-others-alone`,
+      others.every((x) => !x.open),
+      'every other gate on the circuit is still shut',
+      others.length
+        ? others.map((x) => `${x.id} open=${x.open} blows=${x.blows}`).join(', ')
+        : 'this circuit has one gate');
+    const crewEnd = await page.evaluate((id) => window.__crewOf(id), rEnd.unitId);
+    record(`ram-${map}-withdraws`,
+      !broke || rEnd.state === 'withdrawing' || rEnd.state === 'spent',
+      'the machine hauls off the threshold it has just opened',
+      `state ${rEnd.state}, crew ${crewEnd ? crewEnd.alive : '?'}`
+      + `${crewEnd && crewEnd.routing ? ' ROUTING' : ' (not routing)'}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Arm 4 — the tower's refusals, said out loud
+// ---------------------------------------------------------------------------
+if (ONLY === 'refuse') {
+  await boot('refuse');
+  console.log('\n— refuse: the three things a tower will not do, and whether it says so');
+  await run(25);
+
+  const pick = await page.evaluate(() => {
+    const g = window.__game;
+    const s = g.battle.siege;
+    let t = null;
+    for (const k of s.towers) if (k.state === 0 && (!t || k.dist > t.dist)) t = k;
+    if (!t) return { fail: 'no tower approaching' };
+    const u = g.battle.unitById(t.unitId);
+    // Another machine's berth: the station a *different* tower is aimed at.
+    const other = s.towers.find((k) => k.id !== t.id);
+    return {
+      towerId: t.id, unitId: t.unitId, crew: u ? u.typeId : '?',
+      crewAt: { x: u.x, z: u.z },
+      own: { x: s.sx[t.station], y: s.sy[t.station], z: s.sz[t.station] },
+      taken: other ? { x: s.sx[other.station], y: s.sy[other.station], z: s.sz[other.station],
+        station: other.station } : null,
+    };
+  });
+  if (pick.fail) record('refuse-setup', false, 'find two towers', pick.fail);
+  else {
+    const crewPt = await page.evaluate((p) => ({ x: p.x, y: window.__game.battle.groundAt(p.x, p.z), z: p.z }),
+      pick.crewAt);
+    await frame([crewPt, { x: pick.own.x, y: pick.own.y, z: pick.own.z }], Math.PI);
+    const px = await page.evaluate((p) => window.__project(p.x, p.y, p.z), crewPt);
+    if (px) await selectUnit(pick.unitId, px);
+
+    // (a) its own bay — "already going there"
+    const a = await hoverWorld({ x: pick.own.x, y: pick.own.y + 0.2, z: pick.own.z });
+    record('refuse-already', !!a.ui && a.ui.shown && /already/i.test(a.ui.hint),
+      'the cursor on the bay this tower is already aimed at',
+      `hint "${a.ui ? a.ui.hint : '(none)'}" (${a.ui && a.ui.preview ? a.ui.preview.refusal : '?'})`);
+
+    // (b) another machine's berth
+    if (pick.taken) {
+      await frame([crewPt, { x: pick.taken.x, y: pick.taken.y, z: pick.taken.z }], Math.PI);
+      const b = await hoverWorld({ x: pick.taken.x, y: pick.taken.y + 0.2, z: pick.taken.z });
+      await shot('refuse-taken');
+      record('refuse-taken', !!b.ui && b.ui.shown && b.ui.tone === 'refuse'
+        && /taken/i.test(b.ui.hint),
+        'the cursor on a bay another machine already has',
+        `hint "${b.ui ? b.ui.hint : '(none)'}" (${b.ui && b.ui.preview ? b.ui.preview.refusal : '?'})`);
+    }
+
+    // (c) committed / landed — let it get inside twelve metres of its own bay
+    for (let k = 0; k < 12; k++) {
+      await run(20);
+      const t = (await page.evaluate(() => window.__towers()))[pick.towerId];
+      if (t.dist < 11 || t.state !== 'approach') break;
+    }
+    const t2 = (await page.evaluate(() => window.__towers()))[pick.towerId];
+    const far = await page.evaluate((id) => {
+      const s = window.__game.battle.siege;
+      const t = s.towers[id];
+      const want = Math.min(s.nStations - 1, Math.max(0, t.station + 60));
+      return { x: s.sx[want], y: s.sy[want], z: s.sz[want], station: want };
+    }, pick.towerId);
+    await frame([{ x: t2.x, y: t2.y ?? 0, z: t2.z }, { x: far.x, y: far.y, z: far.z }], Math.PI);
+    const c = await hoverWorld({ x: far.x, y: far.y + 0.2, z: far.z });
+    await shot('refuse-committed');
+    record('refuse-committed-is-legible',
+      !!c.ui && c.ui.shown && c.ui.tone === 'refuse'
+        && /committed|too late/i.test(c.ui.hint),
+      `the tower is ${t2.dist.toFixed(1)} m from its bay, state ${t2.state} — the point at `
+      + 'which fifteen tonnes of green timber stops taking orders',
+      `hint "${c.ui ? c.ui.hint : '(none)'}" (${c.ui && c.ui.preview ? c.ui.preview.refusal : '?'})`);
+    const before = (await page.evaluate(() => window.__towers()))[pick.towerId];
+    if (c.px) await orderAt(c.px);
+    const after = (await page.evaluate(() => window.__towers()))[pick.towerId];
+    record('refuse-committed-holds', after.station === before.station,
+      'and the click really is refused, not merely described as refused',
+      `station ${before.station} -> ${after.station}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Arm 5 — the great ram, ordered at a stretch of curtain
+// ---------------------------------------------------------------------------
+if (ONLY === 'great') {
+  await boot('great');
+  console.log('\n— great: the wall-breaking ram, aimed by the player at masonry');
+  await run(15);
+  const pick = await page.evaluate(() => {
+    const g = window.__game;
+    const s = g.battle.siege;
+    /*
+     * Fielding the machine is a scenario decision and not a mouse gesture: no assault
+     * currently brings a great ram, so the arm brings one and then tests the only thing that
+     * is under test here, which is whether the *player's click* aims it.
+     */
+    const cands = g.battle.units.filter((u) => u.faction === 0 && !u.destroyed && u.alive > 40
+      && !s.owned.has(u.id) && !s.isGarrisoned(u.id));
+    if (cands.length === 0) return { fail: 'no free cohort to crew it' };
+    const u = cands[0];
+    const st = Math.floor(s.nStations * 0.5);
+    const id = s.spawnGreatRam(u.x, u.z, s.sx[st], s.sz[st], u.id);
+    if (id < 0) return { fail: 'spawnGreatRam refused' };
+    const r = s.rams[id];
+    // Somewhere else on the curtain entirely — the player's pick.
+    let want = -1;
+    for (const d of [70, 90, 120, 150, 40]) {
+      const c = r.station + d;
+      if (c > 0 && c < s.nStations && !s.dead(c)) { want = c; break; }
+    }
+    if (want < 0) return { fail: 'no second stretch of curtain' };
+    return { ramId: id, unitId: u.id, crew: u.typeId, crewAt: { x: u.x, z: u.z },
+      from: r.station, fromBay: r.bay, to: want,
+      wall: { x: s.sx[want], y: s.sy[want], z: s.sz[want] } };
+  });
+  if (pick.fail) record('great-setup', false, 'field a great ram', pick.fail);
+  else {
+    const crewPt = await page.evaluate((p) => ({ x: p.x, y: window.__game.battle.groundAt(p.x, p.z), z: p.z }),
+      pick.crewAt);
+    const yaw = await page.evaluate((st) => {
+      const s = window.__game.battle.siege;
+      return Math.atan2(s.snx[st], s.snz[st]);
+    }, pick.to);
+    const framed = await frame([crewPt, { x: pick.wall.x, y: pick.wall.y + 0.2, z: pick.wall.z }], yaw);
+    if (!framed.out) record('great-frame', false, 'frame the crew and the curtain', 'gave up');
+    else {
+      await selectUnit(pick.unitId, framed.out[0]);
+      const h = await hoverWorld({ x: pick.wall.x, y: pick.wall.y + 0.2, z: pick.wall.z });
+      await shot('great-hover');
+      record('great-cursor-offers-the-curtain',
+        !!h.ui && h.ui.shown && h.ui.preview !== null && h.ui.preview.kind === 'greatRam'
+          && h.ui.preview.ok,
+        'the cursor over a stretch of curtain with a great-ram crew selected',
+        `hint "${h.ui ? h.ui.hint : '(none)'}" — preview `
+        + `${h.ui && h.ui.preview ? `${h.ui.preview.kind} -> bay ${h.ui.preview.bay} `
+          + `(${h.ui.preview.refusal})` : 'none'}`);
+      if (h.px) {
+        await orderAt(h.px);
+        const r = (await page.evaluate(() => window.__rams()))[pick.ramId];
+        const bay = await page.evaluate((st) => window.__game.battle.siege.sBay[st], pick.to);
+        record('great-takes-the-order', r.bay === bay,
+          `right-click bay ${bay} with the great-ram crew selected`,
+          `bay ${pick.fromBay} -> ${r.bay}, state ${r.state}, heave ${r.heave.toFixed(1)} s, `
+          + `${r.distFromTarget.toFixed(0)} m to run`);
+      }
     }
   }
 }
