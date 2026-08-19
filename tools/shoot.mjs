@@ -401,13 +401,141 @@ const SHOTS = {
     desc: 'AB: the whole field before Carthage from high up, both hosts drawn up',
     map: 'carthage', opponent: 2, follow: 'ownLine', zoom: 0.62, at: 4, hour: 17.2,
   },
+
+  /*
+   * ---------------------------------------------------------------------------
+   * `--set=ab2`: round two, with a matched capture policy.
+   * ---------------------------------------------------------------------------
+   *
+   * Round one of the paired instrument returned 14/14 for three independent graders, and all
+   * three raised the same two methodological faults about the *deck* rather than about the
+   * renderer. Both are answered here, because a round that does not answer them cannot
+   * distinguish "we fixed the rendering" from "the graders ran out of framing cues".
+   *
+   *   1. **Capture-policy leak.** Ours were gameplay grabs from a high tactical camera; the
+   *      Rome II side is press and cinematic captures at ground level. One grader: "after
+   *      four pairs I could have started picking on framing alone." Every field shot here
+   *      therefore names an eye height, an aim height, a standoff and a field of view in
+   *      metres and degrees — see the `cam` block in the page evaluate — chosen against the
+   *      plate it is paired with. The reference set was measured for this: eleven of the
+   *      fourteen eligible plates put the camera between 1.2 and 2.3 m with the horizon in
+   *      the upper third, and the three that do not are the elevated siege frames, which the
+   *      three assault shots here match instead.
+   *   2. **One lighting setup.** Five of round one's fourteen came back under one low warm
+   *      sun at roughly one azimuth — a learnable signature independent of any rendering
+   *      tell. The hours below span 8.6 to 17.6 and no two are within twenty minutes, and
+   *      four frames are overcast and one is rain, which round one had none of.
+   *
+   * The `eye >= aim + 0.2` constraint on every entry is not aesthetic. `RTSCamera.place`
+   * refuses to put the eye closer than 1.7 m to the plane it thinks is the ground, and at
+   * `zoom: 0` that plane sits `aim - 1.55` below the focus, so an entry that aims above its
+   * own eye gets silently lifted. A frame that wants to look *up* at its subject does it by
+   * standing lower, not by tilting.
+   */
+
+  // ---- Campus Martius, 271 AD ----------------------------------------------
+  'ab2-rome-line': {
+    // vs s2-04 (Pydna): packed ranks from just above helmet height, strongly compressed.
+    desc: 'AB2: the Roman front rank from helmet height, telephoto down the line',
+    follow: 'romanFront', at: 6, hour: 9.0, weather: 'clear',
+    cam: { eye: 2.05, aim: 1.80, dist: 30, fov: 26 },
+  },
+  'ab2-rome-melee': {
+    // vs s2-00: inside the fight, camera in the grass, level.
+    desc: 'AB2: inside the melee at eye level',
+    follow: 'contact', at: 96, hour: 15.0, weather: 'clear',
+    cam: { eye: 1.60, aim: 1.35, dist: 9, fov: 40 },
+  },
+  'ab2-rome-march': {
+    // vs s2-13: a column on the march, camera at a bystander's height beside the road.
+    desc: 'AB2: the cohorts on the march, from the side of the line',
+    follow: 'romanFront', at: 40, hour: 11.5, weather: 'clear',
+    cam: { eye: 1.90, aim: 1.60, dist: 13, fov: 38 },
+  },
+  'ab2-rome-cavalry': {
+    // vs s2-15: cataphracts three-quarter front, the camera below the riders.
+    desc: 'AB2: the equites wing, from below the riders',
+    follow: 'cavalryUnit', at: 70, hour: 13.0, weather: 'clear',
+    cam: { eye: 1.55, aim: 1.30, dist: 14, fov: 36 },
+  },
+  'ab2-rome-aftermath': {
+    // vs s2-02: a killing at close range, camera low and tipped down at the ground.
+    desc: 'AB2: the field after the break, low over the bodies',
+    follow: 'corpses', at: 200, hour: 12.8, weather: 'overcast',
+    cam: { eye: 1.30, aim: 0.55, dist: 7, fov: 40 },
+  },
+  'ab2-rome-wall': {
+    // vs s2-17: 2.35:1 siege plate, tower against a curtain, camera up and well back.
+    desc: 'AB2: the Aurelian Wall from outside, mid-assault, elevated and long',
+    scenario: 'assault', hour: 14.3, at: 170, weather: 'clear',
+    wall: { bay: 2, stand: 95, lift: 0, yaw: 'in', yawAdd: -0.55 },
+    cam: { eye: 26, aim: 8, dist: 105, fov: 26 },
+  },
+  'ab2-rome-parapet': {
+    // vs s2-12: men on a high work, looking out and down over the city.
+    desc: 'AB2: the Aurelian parapet, looking down the walk and out over the city',
+    scenario: 'assault', hour: 11.0, at: 96, weather: 'clear',
+    wall: { bay: -2, stand: 0.2, lift: 0, yaw: 'along', yawAdd: Math.PI },
+    cam: { base: 'walk', eye: 1.70, aim: -5.0, dist: 30, fov: 38 },
+  },
+
+  // ---- Carthage, spring 146 BC ---------------------------------------------
+  'ab2-carth-line': {
+    // vs s2-09: front rank of a spear line, camera at chest height, city behind.
+    desc: 'AB2: the Punic front rank at chest height, the works behind',
+    map: 'carthage', opponent: 2, follow: 'enemyFront', at: 6, hour: 10.2, weather: 'overcast',
+    cam: { eye: 1.75, aim: 1.50, dist: 15, fov: 34 },
+  },
+  'ab2-carth-melee': {
+    // vs s2-01: close melee in tall grass, camera almost on the ground.
+    desc: 'AB2: inside the Punic melee, camera almost in the grass',
+    map: 'carthage', opponent: 2, follow: 'contact', at: 96, hour: 13.4, weather: 'overcast',
+    cam: { eye: 1.45, aim: 1.20, dist: 7.5, fov: 42 },
+  },
+  'ab2-carth-march': {
+    // vs s2-16: a barbarian mass advancing, close, camera low among them.
+    desc: 'AB2: the Punic line advancing, close and low',
+    map: 'carthage', opponent: 2, follow: 'enemyFront', at: 40, hour: 8.6, weather: 'clear',
+    cam: { eye: 1.70, aim: 1.45, dist: 10, fov: 40 },
+  },
+  'ab2-carth-elephants': {
+    // vs s2-08: elephants behind a spear line at dusk. Paired so "the one with the
+    // elephants" is not the answer to that pair.
+    desc: 'AB2: the Punic elephant line at dusk, from in front of the spears',
+    map: 'carthage', opponent: 2, follow: 'unitType', unitType: 'war-elephants',
+    at: 44, hour: 17.6, weather: 'clear',
+    cam: { eye: 2.25, aim: 2.00, dist: 26, fov: 30 },
+  },
+  'ab2-carth-wall': {
+    // vs s2-19: a city being stormed, seen from well above, fires and smoke.
+    desc: 'AB2: Carthage being stormed, from high above the curtain',
+    map: 'carthage', opponent: 2, scenario: 'assault', hour: 15.2, at: 170, weather: 'overcast',
+    wall: { bay: 2, stand: 150, lift: 0, yaw: 'in', yawAdd: -0.35 },
+    cam: { eye: 120, aim: 8, dist: 230, fov: 32 },
+  },
+  'ab2-carth-parapet': {
+    // vs s2-14: a high vantage over a valley with armies below. Rain, which round one
+    // had none of anywhere.
+    desc: 'AB2: the Punic garrison on the crest, the ground far below, in rain',
+    map: 'carthage', opponent: 2, scenario: 'assault', hour: 12.2, at: 96, weather: 'rain',
+    wall: { bay: -2, stand: 0.2, lift: 0, yaw: 'along', yawAdd: Math.PI },
+    cam: { base: 'crest', eye: 1.70, aim: -14.0, dist: 48, fov: 34 },
+  },
+  'ab2-carth-wide': {
+    // vs s2-03: both hosts drawn up, seen from high and far, horizon high in frame.
+    desc: 'AB2: the whole field before Carthage, both hosts drawn up',
+    map: 'carthage', opponent: 2, follow: 'ownLine', at: 4, hour: 15.4, weather: 'clear',
+    cam: { eye: 150, aim: 0, dist: 400, fov: 34 },
+  },
 };
 
 /** Named shot sets. `--set=deck` is the only pool a blind round should be built from. */
 const SETS = {
   deck: Object.keys(SHOTS).filter((k) => k.startsWith('deck-')),
-  /** The paired blind instrument. See the block comment above `ab-rome-line`. */
-  ab1: Object.keys(SHOTS).filter((k) => k.startsWith('ab-')),
+  /** The paired blind instrument, round one. See the block comment above `ab-rome-line`. */
+  ab1: Object.keys(SHOTS).filter((k) => k.startsWith('ab-') && !k.startsWith('ab2-')),
+  /** Round two, with a matched capture policy. See the block comment above `ab2-rome-line`. */
+  ab2: Object.keys(SHOTS).filter((k) => k.startsWith('ab2-')),
   all: Object.keys(SHOTS).filter((k) => !k.startsWith('deck-') && !k.startsWith('ab-')),
 };
 
@@ -607,8 +735,19 @@ try {
    */
   // `opponent` joins the key for the same reason `map` does: it is read by `deployBattle`
   // when the armies are placed, before the first frame, and cannot be changed on a live page.
+  /*
+   * `weather` joins the key even though it is live-settable, and that is deliberate.
+   *
+   * Rain and ground mist are *accumulated* — `Weather.emit` spawns into the shared particle
+   * ring at a rate, so a sky switched to `rain` one frame before the shutter photographs an
+   * empty sky with four raindrops in it. Setting it at load and letting the fast-forward to
+   * `at` fill the ring is the only way the frame shows the weather it claims. The cost is a
+   * page load per distinct sky, which is the same trade `hour` already makes and for a
+   * closely related reason.
+   */
   const groupKey = (s) => JSON.stringify([
     s.map ?? null, s.hour ?? null, s.scenario ?? null, s.quality ?? QUALITY, s.opponent ?? null,
+    s.weather ?? null,
   ]);
   const groups = new Map();
   for (const name of requested) {
@@ -672,6 +811,31 @@ try {
       });
       console.log(`• webgl2: ${gl.ok ? `${gl.vendor} / ${gl.renderer}` : 'UNAVAILABLE'}`);
       if (!gl.ok) throw new Error('WebGL2 unavailable in the harness browser');
+    }
+
+    /*
+     * Weather, applied to the live page.
+     *
+     * Round one's second methodological fault, raised by all three graders: **our frames
+     * cluster on one lighting setup** — low warm sun, long raking shadows, roughly one
+     * azimuth, across five of the fourteen. That is a learnable signature with no
+     * relationship to rendering, and it is the same class of mistake as fourteen frames off
+     * one map. The hour already varies; the sky did not, because nothing in this file had
+     * ever asked for anything but `clear`.
+     *
+     * `setWeather` is live-settable — it swaps a preset that drives wind, dust wetness, mist
+     * and rain rate, none of which are baked at init — so unlike `map` and `scenario` it
+     * costs no page load and does not join the group key.
+     */
+    if (shot.weather) {
+      const got = await page.evaluate((w) => {
+        const vfx = window.__game?.engine?.context?.tryGet?.('vfx');
+        if (!vfx || typeof vfx.setWeather !== 'function') return null;
+        vfx.setWeather(w);
+        return vfx.weatherKind;
+      }, shot.weather);
+      if (got === null) throw new Error('vfx subsystem has no setWeather; cannot honour a per-shot weather');
+      if (got !== shot.weather) throw new Error(`weather ${shot.weather} was not applied (vfx reports ${got})`);
     }
 
     // The hour is applied again on the live page as well as through the token, because
@@ -1027,6 +1191,54 @@ try {
            */
           let wallDebug = null;
           const rig = g.engine.rig;
+          /*
+           * -------------------------------------------------------------------------
+           * `cam`: an explicit camera, in metres and degrees, instead of a zoom number.
+           * -------------------------------------------------------------------------
+           *
+           * Round one of the paired blind instrument came back 14/14 for all three graders,
+           * and all three raised the same methodological fault unprompted: **our side is
+           * gameplay grabs from a high tactical camera and the Rome II side is press and
+           * cinematic captures at ground level.** One of them wrote "after four pairs I could
+           * have started picking on framing alone". That is not a rendering property and it
+           * has no business in a rendering instrument.
+           *
+           * The framing came out that way because `setCamera` takes a single `zoom` scalar
+           * and `RTSCamera` derives everything from it — boom distance on an exponential
+           * curve, pitch on `lerp(0.05, 1.03, smoothstep(z)^1.35)`, field of view on
+           * `lerp(32, 52, smoothstep(z))` — and then `place()` refuses to let the eye sit
+           * closer to the ground than `lerp(1.7, 22, smoothstep(z))`. That last clamp is the
+           * one that does the damage: at `zoom: 0.34`, the shot that photographs a line of
+           * battle, the curve asks for an eye 2.8 m up and the clamp overrides it to 7.2 m
+           * while the aim point stays on the grass — so the true depression is 25 degrees
+           * where the reference plates sit at 3 to 8. The camera is not high because anyone
+           * chose a high camera. It is high because a collision guard said so.
+           *
+           * So a shot may now name what a photographer names, and the curves are bypassed:
+           *
+           *   eye    metres above the ground at the focus. 1.6-2.2 is a standing man.
+           *   aim    metres above that same ground that the lens is pointed at.
+           *   dist   metres from the focus, horizontally. This is the framing control.
+           *   fov    vertical field of view in degrees. This is the focal length.
+           *
+           * Depression falls out of the three lengths — `atan((eye - aim) / dist)` — which is
+           * the honest way round: you cannot independently choose an eye height, an aim point,
+           * a standoff and an angle, and a parameter set that pretends you can is a parameter
+           * set that silently ignores one of them.
+           *
+           * Implementation is four overrides on the live rig. `private` in TypeScript is a
+           * compile-time fiction, `radius` is a prototype getter that an own property shadows,
+           * and `heightAt` is already overridden this way by the `wall` path below. The
+           * `- L` in the height override cancels `place()`'s own "look slightly above the
+           * focus" lift so that `aim` means what it says; `zoom` is pinned to 0 so that lift
+           * is the known 1.55 m rather than a function of a zoom this shot no longer uses.
+           *
+           * Everything is put back afterwards, for the same reason the wall path puts its
+           * sampler back: this file interleaves shots inside one page load, and a rig left
+           * pinned silently reframes every frame after it.
+           */
+          let camDebug = null;
+          let wallBay = null;
           if (s.wall) {
             const city = g.engine.context.tryGet('city');
             const bays = city && city.getGarrisonBays ? city.getGarrisonBays() : null;
@@ -1061,12 +1273,62 @@ try {
               bayIndex: bay.index, stage: bay.stage, walkY: +bay.walkY.toFixed(2),
               crestY: +bay.crestY.toFixed(2), focusY: liftY === null ? null : +liftY.toFixed(2),
             };
-            g.setCamera(fx, fz, s.wall.zoom ?? s.zoom, fyaw);
-          } else {
-            // A previous wall shot in the same page load pinned the sampler; put it back.
-            if (rig.__savedHeightAt) rig.heightAt = rig.__savedHeightAt;
-            g.setCamera(fx, fz, s.zoom, fyaw);
+            wallBay = bay;
           }
+          if (!s.wall && !s.cam && rig.__savedHeightAt) {
+            // A previous wall or `cam` shot in this page load pinned the sampler; put it back.
+            rig.heightAt = rig.__savedHeightAt;
+          }
+          if (s.cam) {
+            if (!rig.__savedHeightAt) rig.__savedHeightAt = rig.heightAt;
+            if (!rig.__savedCam) {
+              rig.__savedCam = {
+                pitchForZoom: rig.pitchForZoom,
+                fovForZoom: rig.fovForZoom,
+                radius: Object.getOwnPropertyDescriptor(rig, 'radius') ?? null,
+              };
+            }
+            /*
+             * What "the ground" means for this shot.
+             *
+             * `terrain` is the heightfield at the focus, which is what a field camera wants.
+             * `walk` and `crest` are the wall-walk and the battlement of the bay the `wall`
+             * block above resolved, because a camera standing on a parapet is not standing on
+             * the terrain and expressing its height above the terrain would make every
+             * assault frame depend on how deep the ditch happens to be that day.
+             */
+            const base = s.cam.base ?? 'terrain';
+            const groundY = base === 'walk' && wallBay ? wallBay.walkY
+              : base === 'crest' && wallBay ? wallBay.crestY
+                : rig.__savedHeightAt(fx, fz);
+            // `place()` adds this to the look-at target; pinning zoom to 0 pins it to 1.55.
+            const LIFT = 1.55;
+            const eye = s.cam.eye, aim = s.cam.aim, dist = s.cam.dist;
+            const rise = eye - aim + LIFT;
+            const R = Math.hypot(rise, dist);
+            const P = Math.atan2(rise, dist);
+            rig.zoom = 0;
+            rig.zoomTarget = 0;
+            rig.pitchForZoom = () => P;
+            rig.fovForZoom = () => s.cam.fov;
+            Object.defineProperty(rig, 'radius', { get: () => R, configurable: true });
+            rig.heightAt = () => groundY + aim - LIFT;
+            camDebug = {
+              eye, aim, dist, fov: s.cam.fov,
+              depressionDeg: +((Math.atan2(eye - aim, dist) * 180) / Math.PI).toFixed(2),
+              base, radius: +R.toFixed(2), pitchDeg: +((P * 180) / Math.PI).toFixed(2),
+              groundY: +groundY.toFixed(2),
+            };
+          } else if (rig.__savedCam) {
+            rig.pitchForZoom = rig.__savedCam.pitchForZoom;
+            rig.fovForZoom = rig.__savedCam.fovForZoom;
+            if (rig.__savedCam.radius) Object.defineProperty(rig, 'radius', rig.__savedCam.radius);
+            else delete rig.radius;
+            rig.__savedCam = null;
+          }
+          if (s.cam) g.setCamera(fx, fz, 0, fyaw);
+          else if (s.wall) g.setCamera(fx, fz, s.wall.zoom ?? s.zoom, fyaw);
+          else g.setCamera(fx, fz, s.zoom, fyaw);
 
           // Settle on the *synthetic* clock. Feeding `performance.now()` here would
           // jump Time's accumulator forward by however long the fast-forward took,
@@ -1140,7 +1402,8 @@ try {
 
           const st = g.engine.stats();
           return {
-            simTime: g.simTime(), men, units, corpses, waterDebug, wallDebug,
+            simTime: g.simTime(), men, units, corpses, waterDebug, wallDebug, camDebug,
+            weather: g.engine.context.tryGet('vfx')?.weatherKind ?? 'n/a',
             focusX: Math.round(fx), focusZ: Math.round(fz), yaw: +fyaw.toFixed(2),
             draws: st.calls, tris: st.tris, programs: st.programs,
             msPerFrame, fps: 1000 / msPerFrame,

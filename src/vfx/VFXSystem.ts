@@ -535,7 +535,9 @@ export class VFXSystem implements Subsystem {
 
     this.damage.setLighting(sunDir, this.sunColour, this.ambient);
     this.decals.flush(sunDir, this.sunColour, this.ambient);
-    this.banners.setLighting(sunDir, this.sunColour, this.ambient);
+    // The banner takes its diffuse, specular, shadow and ambient from the scene now; the one
+    // thing it still needs told is the sun's *magnitude*, which `sunColour` does not carry.
+    this.banners.setLighting(sunDir, this.sky?.sunColour ?? this.sunColour, this.sky?.sunIntensity ?? 1);
     this.birds.setLighting(this.sunColour, this.ambient);
 
     const depth = this.softParticles ? (this.postfx?.depthTexture ?? null) : null;

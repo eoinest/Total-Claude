@@ -587,8 +587,27 @@ export function makeBannerTexture(): THREE.DataTexture {
         const weave = 0.80 + 0.20 * f * (0.6 + 0.4 * f2);
 
         if (tile === BANNER_TILE.vexillum) {
-          // Square cloth with a gilded wreath and bar device; fringed lower edge.
-          a = q < 0.1 ? (Math.sin(p * 46) * 0.5 + 0.5 > (0.1 - q) * 11 ? 1 : 0) : 1;
+          /*
+           * Square cloth with a gilded wreath and bar device; fringed lower edge.
+           *
+           * The fringe was `sin(p * 46)` thresholded to a hard 0/1, i.e. seven and a bit
+           * identical teeth of identical length with a hard alpha step at every tip. Three
+           * independent blind graders wrote down "a hem cut as a hard sawtooth" as one of
+           * the things that gave the standard away, and a pure sine is exactly what that
+           * phrase describes — pinking shears, not a fringe.
+           *
+           * A vexillum fringe is a row of *threads*. They are unequal, they are finer than
+           * seven per metre, and they thin to nothing at the tip rather than ending in a
+           * cliff. All three are here: pitch is thirty strands across the tile, length comes
+           * off the noise sheet per strand, and alpha ramps out over the last third of each.
+           */
+          const strandN = 30;
+          const si = Math.floor(p * strandN);
+          const sPhase = p * strandN - si;
+          const sLen = 0.030 + 0.070 * ns(si * 4.3 + tile * 9.1, 0.5);
+          const across = Math.abs(sPhase - 0.5) * 2;
+          const strand = clamp01((0.86 - across) / 0.34);
+          a = q >= sLen ? 1 : strand * clamp01((q / Math.max(1e-4, sLen)) * 1.5);
           // A gilded laurel wreath enclosing a fulmen — Jupiter's thunderbolt, the
           // commonest device on a legionary vexillum. Deliberately not a bar across
           // the wreath: that reads as a modern prohibition sign at any distance.
@@ -605,16 +624,30 @@ export function makeBannerTexture(): THREE.DataTexture {
           lum = weave;
         } else if (tile === BANNER_TILE.signum) {
           // Tall narrow pennant: horizontal bands, swallow-tailed at the bottom.
-          const inU = Math.abs(u) < 0.58 ? 1 : 0;
-          const tail = q < 0.24 ? (Math.abs(u) > (0.24 - q) * 2.6 ? 1 : 0) : 1;
-          a = inU * tail;
+          const inU = clamp01((0.58 - Math.abs(u)) * 90);
+          // The swallow-tail is a cut rather than a fringe, so it stays a V — but a cut made
+          // with shears wanders, and the wander is what stops it reading as a vector path.
+          const notch = 0.24 + 0.020 * (ns(p * 9 + 31, 0.5) - 0.5);
+          const tail = clamp01((Math.abs(u) - (notch - q) * 2.6) * 60);
+          a = inU * (q < notch + 0.03 ? tail : 1);
           device = Math.abs(((q * 5.5) % 1) - 0.5) < 0.20 ? 1 : 0;
           lum = weave;
         } else if (tile === BANNER_TILE.totem) {
           // Germanic war-streamer: torn, uneven, with a crude painted rune.
           a = clamp01((0.82 - Math.abs(u)) * 4) * clamp01((0.96 - Math.abs(v)) * 5);
-          // Ragged lower edge: this cloth has been carried through several summers.
-          if (q < 0.26) a *= Math.sin(p * 27) * 0.5 + 0.5 > (0.26 - q) * 3.2 ? 1 : 0;
+          /*
+           * Ragged lower edge: this cloth has been carried through several summers.
+           *
+           * `sin(p * 27)` thresholded is not ragged, it is scalloped — a repeating unit four
+           * and a bit times across the streamer, every lobe the same depth. Cloth tears
+           * along the weave in runs of unequal length, so the depth comes off two octaves of
+           * noise and the torn ends feather instead of stepping.
+           */
+          if (q < 0.30) {
+            const tear = 0.26 * (0.35 + 0.65 * ns(p * 17 + 7, 3.5))
+              * (0.55 + 0.45 * ns(p * 61 + 19, 8.5));
+            a *= clamp01((q - tear) * 26 + 0.5);
+          }
           // A vertical stroke with two diagonals — a runic mark, not a logo.
           const stem = clamp01((0.055 - Math.abs(u + 0.08)) / 0.03) * clamp01((0.64 - Math.abs(v)) / 0.1);
           const d1 = clamp01((0.065 - Math.abs(u + 0.08 - (v - 0.12) * 0.9)) / 0.04) * clamp01((0.3 - Math.abs(v - 0.26)) / 0.1);

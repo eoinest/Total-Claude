@@ -769,7 +769,18 @@ export class UnitRenderSystem implements Subsystem {
       // trims the probe to 0.6 for the lighting rig's own contrast reasons, so 2.9 here is an
       // effective gain of 1.74 — and it is defensible: the probe is a PMREM of the physical
       // sky with the solar aureole preserved, so this is a real reflection, not a lift.
-      envMapIntensity: 2.9,
+      /*
+       * 2.2, not 2.9, and the reason is a rebalance rather than a retreat.
+       *
+       * `SkySystem.AMBIENT_TRIM` moves 0.60 -> 0.82 in the same pass — the round-one
+       * measurement had our p01 luma at 0.029 against the reference's 0.061, i.e. our
+       * shadows are twice as deep as the thing we are aiming at, and the trim was where that
+       * came from. Soldiers were the one surface already compensating for it locally, at
+       * 2.9 x 0.60 = 1.74 effective, so raising the global trim without lowering this would
+       * have lit the men and nothing else. 2.2 x 0.82 = 1.80 leaves a man where he was and
+       * lets the ground, the masonry and the grass come up to meet him.
+       */
+      envMapIntensity: 2.2,
       roughness: 1,
       metalness: 1,
       normalScale: new THREE.Vector2(0.9, 0.9),

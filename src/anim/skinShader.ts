@@ -234,7 +234,7 @@ void soldierWeaponJitter( float v, inout vec3 p, inout vec3 n ) {
  * something reads as noise rather than as an army.
  */
 void soldierPoseVary( float v, inout vec3 sp, inout vec3 sn ) {
-  // Nine decorrelated draws from the one stored hash. The multipliers are coprime-ish so
+  // Ten decorrelated draws from the one stored hash. The multipliers are coprime-ish so
   // no two of these correlate and produce a visible stripe across a file.
   float hBuild = fract( v * 3.71 ) - 0.5;
   float hWidth = fract( v * 11.31 ) - 0.5;
@@ -245,6 +245,7 @@ void soldierPoseVary( float v, inout vec3 sp, inout vec3 sn ) {
   float hArmR  = fract( v * 67.31 ) - 0.5;
   float hArmL  = fract( v * 79.13 ) - 0.5;
   float hLift  = fract( v * 91.77 ) - 0.5;
+  float hHeadZ = fract( v * 103.51 ) - 0.5;
 
   // ---- build: girth and shoulder width ----
   // Y is untouched, so a stockier man is stockier without leaving the ground.
@@ -271,15 +272,31 @@ void soldierPoseVary( float v, inout vec3 sp, inout vec3 sn ) {
     SOLDIER_TILT( sn.z, sn.x, hArmL * 0.17 * wL )
   }
 
-  // ---- head ----
+  /*
+   * ---- head ----
+   *
+   * Three axes now, and the third one is the point.
+   *
+   * Yaw and pitch were +-9.7 and +-4.6 degrees, which is small enough that a blind grader
+   * reported "the same head at the same yaw across a whole rank" and was not wrong. Both are
+   * widened here. But the axis that was *missing* matters more than either, for a reason
+   * that is geometric rather than aesthetic: **a helmet bowl is a surface of revolution
+   * about the vertical, so its mirror point is invariant under yaw.** Rotating a man's head
+   * about Y moves his face and does not move his highlight by one pixel, which is exactly
+   * why a rank of three hundred men carried three hundred identical glints in the same
+   * relative place on the crown — the one finding all three graders put in their top three.
+   * A roll breaks the symmetry and the glint moves with it.
+   */
   float wH = soldierChain( SOLDIER_HEAD0, SOLDIER_HEAD1 );
   if ( wH > 0.001 ) {
     vec3 d = sp - SOLDIER_NECK;
-    SOLDIER_TILT( d.x, d.z, hHeadY * 0.34 * wH )
-    SOLDIER_TILT( d.y, d.z, hHeadX * 0.16 * wH )
+    SOLDIER_TILT( d.x, d.z, hHeadY * 0.62 * wH )
+    SOLDIER_TILT( d.y, d.z, hHeadX * 0.30 * wH )
+    SOLDIER_TILT( d.x, d.y, hHeadZ * 0.26 * wH )
     sp = d + SOLDIER_NECK;
-    SOLDIER_TILT( sn.x, sn.z, hHeadY * 0.34 * wH )
-    SOLDIER_TILT( sn.y, sn.z, hHeadX * 0.16 * wH )
+    SOLDIER_TILT( sn.x, sn.z, hHeadY * 0.62 * wH )
+    SOLDIER_TILT( sn.y, sn.z, hHeadX * 0.30 * wH )
+    SOLDIER_TILT( sn.x, sn.y, hHeadZ * 0.26 * wH )
   }
 
   // ---- torso yaw and shoulder roll ----
@@ -620,15 +637,42 @@ const TINT_BODY = /* glsl */ `
    * would just make some men's tunics inexplicably shiny.
    */
   float isMetalSlot = step( 6.5, slot ) * step( slot, 7.4 );
-  vSoldierSurf = vec2( iOrient.w, ( 0.5 - polish ) * 0.34 * isMetalSlot );
+  // .z is zero on anything that is not metal and 1 + variant on anything that is, so one
+  // varying carries both "is this ironmongery" and "whose ironmongery" -- see METAL_BREAKUP.
+  // (No backticks in here: this string is itself a template literal.)
+  vSoldierSurf = vec3( iOrient.w, ( 0.5 - polish ) * 0.34 * isMetalSlot, isMetalSlot * ( 1.0 + v ) );
 
+  /*
+   * The shield device, and the four numbers that stop a cohort reading as a tiling.
+   *
+   * A blind grader put it exactly: "a unit's shields all carry the same device at the same
+   * rotation, scale and cleanliness, so the mass reads as a tiling rather than a crowd". The
+   * obvious response — draw a different device per man — is the wrong one and would be a
+   * regression in accuracy: a legion's shields *did* carry one device, and so do Rome II's.
+   * What varies between two shields of one cohort is not the design, it is how the painter
+   * set it out and what the campaign has done to it since.
+   *
+   * So the device stays per unit type and its *placement* becomes per man: a rotation, a
+   * scale, a small offset and a state of wear, all from the same stored hash everything else
+   * on this man is drawn from. The panel UV is transformed about its own centre before it is
+   * mapped into the atlas cell, and clamped there, so a rotated device can never sample its
+   * neighbour in the emblem grid.
+   */
   vSoldierEmblem = vec3( 0.0 );
   if ( slot > 5.5 && slot < 6.5 ) {
     float e = iCol0.w;
     vec2 tile = vec2( mod( e, SOLDIER_EMBLEM_COLS ), floor( e / SOLDIER_EMBLEM_COLS ) );
+    float eRot = ( fract( v * 149.3 ) - 0.5 ) * 0.40;
+    float eScl = 1.0 + ( fract( v * 157.7 ) - 0.5 ) * 0.17;
+    float ec = cos( eRot ), es = sin( eRot );
+    vec2 pan = aPieceTint.zw - 0.5;
+    pan = vec2( pan.x * ec - pan.y * es, pan.x * es + pan.y * ec ) / eScl
+      + vec2( fract( v * 163.1 ) - 0.5, fract( v * 173.9 ) - 0.5 ) * 0.055 + 0.5;
+    pan = clamp( pan, 0.0, 1.0 );
     vSoldierEmblem = vec3(
-      SOLDIER_EMBLEM_ORIGIN + vec2( tile.x + aPieceTint.z, aPieceTint.w - tile.y ) * SOLDIER_EMBLEM_TILE,
-      1.0 );
+      SOLDIER_EMBLEM_ORIGIN + vec2( tile.x + pan.x, pan.y - tile.y ) * SOLDIER_EMBLEM_TILE,
+      // 1 + wear: the flag and the man's own weathering in one component.
+      1.0 + fract( v * 181.7 ) );
   }
 }
 `;
@@ -636,8 +680,13 @@ const TINT_BODY = /* glsl */ `
 const FRAG_DECLS = /* glsl */ `
 uniform float uKitCavity;
 varying vec3 vSoldierTint;
-/** x: grime 0..1. y: this man's roughness offset, signed, metal slots only. */
-varying vec2 vSoldierSurf;
+/*
+ * x: grime 0..1.
+ * y: this man's roughness offset, signed, metal slots only.
+ * z: 0 off metal; 1 + variant on metal, so the breakup field below is both gated and
+ *    seeded by one varying rather than two.
+ */
+varying vec3 vSoldierSurf;
 varying vec3 vSoldierEmblem;
 `;
 
@@ -760,6 +809,80 @@ const KIT_CAVITY_AO = /* glsl */ `
 #endif
 `;
 
+/**
+ * Per-man, *spatially varying* metal, and why a scalar polish offset was not enough.
+ *
+ * Three blind graders independently reported the same thing about our helmets: every crown
+ * carries the same small blown-white four-point star, same size, same relative position,
+ * including on helmets turned away from the sun. One of them proposed the test — photograph
+ * twenty identical helmets and see whether the highlight is the same blob twenty times. It
+ * was. Their conclusion was that specular was not being evaluated per normal. The conclusion
+ * is wrong and the observation is exactly right, which is a combination worth being careful
+ * about, because acting on the conclusion would have changed nothing.
+ *
+ * It *is* per-normal GGX off a real interpolated normal. The blob repeats because of three
+ * facts that happen to compose:
+ *
+ *   1. Every helmet is the same body of revolution about the vertical axis.
+ *   2. Its mirror point is therefore invariant under the only per-man rotation we had, yaw.
+ *   3. Mat.IronPlate sat at roughness 0.22, where GGX's peak is 1 / (pi * alpha^2) — about
+ *      136 — against a sun already at intensity 3. Wherever the mirror condition is met the
+ *      result is not a highlight but a clipped white hole, and clipped white holes are
+ *      identical to one another by construction.
+ *
+ * So the fix is in three parts and this file holds two of them. (1) is answered by the head
+ * roll added to soldierPoseVary above, (3) by roughening the plate in atlas.ts, and (2) —
+ * two bowls of one shape reflecting one sun the same way — by giving each man's metal its own
+ * microsurface. Which is also simply true: a hand-raised iron bowl is a few hundred hammer
+ * faces, no two were planished by the same hand on the same day, and the dust and grease of a
+ * campaign do not settle evenly.
+ *
+ * Two terms at two stages, because they do different jobs. The mottle widens or tightens the
+ * lobe from place to place, which turns one pool into a broken sheen. The planishing *moves*
+ * it, which is what stops twenty men sharing one blob. Neither needs a new attribute, a new
+ * varying or a new tangent frame.
+ */
+/**
+ * Emitted into GLSL as text, so it has to *look* like a float.
+ *
+ * `${37.0}` interpolates to the string "37" — JavaScript has one number type and drops the
+ * trailing zero — and GLSL ES then refuses `float * int` with no implicit conversion. Every
+ * interpolation below therefore goes through `f()`.
+ */
+const METAL_BREAKUP_FREQ = 37;
+const f = (n: number): string => (Number.isInteger(n) ? `${n}.0` : `${n}`);
+
+/** Roughness half of the pair. Injected at <roughnessmap_fragment>, before any normal exists. */
+const METAL_MOTTLE = /* glsl */ ` + step( 0.5, vSoldierSurf.z ) * 0.085 * (
+  sin( vMapUv.x * ${f( METAL_BREAKUP_FREQ )} + vSoldierSurf.z * 97.3 )
+  * sin( vMapUv.y * ${f( METAL_BREAKUP_FREQ * 0.83 )} + vSoldierSurf.z * 61.7 ) )`;
+
+/**
+ * Normal half of the pair: the planishing.
+ *
+ * `tbn` is three's own cotangent frame. <normal_fragment_begin> declares it at function scope
+ * whenever USE_NORMALMAP_TANGENTSPACE is defined, which it always is here — the soldier
+ * material binds a normal map — so the slope can be added straight onto the finished normal
+ * in the frame that normal was built in. No second frame, and no tangent attribute on a
+ * geometry that has none.
+ *
+ * A first-order slope add rather than a re-normalised tangent-space compose: the amplitude is
+ * a couple of degrees and the difference is far below the noise floor of a helmet at battle
+ * zoom. vSoldierSurf.z is in [1, 2) on metal, so it both gates the branch and offsets the
+ * field per man; off metal it is exactly zero and the branch is skipped.
+ */
+const METAL_PLANISH = /* glsl */ `
+if ( vSoldierSurf.z > 0.5 ) {
+  float pf = ${f( METAL_BREAKUP_FREQ * 0.62 )};
+  vec2 pu = vMapUv * pf + vec2( 13.1, 27.9 ) * vSoldierSurf.z;
+  vec2 pg = vec2(
+    cos( pu.x ) * sin( pu.y * 0.91 ),
+    sin( pu.x ) * cos( pu.y * 0.91 ) * 0.91
+  ) * pf;
+  normal = normalize( normal - ( tbn[ 0 ] * pg.x + tbn[ 1 ] * pg.y ) * 0.0016 );
+}
+`;
+
 const SPEC_AA = /* glsl */ `
 {
   vec3 tcDNdx = dFdx( normal );
@@ -778,7 +901,11 @@ diffuseColor.rgb *= vSoldierTint;
     // wood — but it still takes the man's own facing tint, which is what gives a tribal
     // host two hundred differently-painted boards out of four devices.
     vec4 emblem = texture2D( map, vSoldierEmblem.xy );
-    diffuseColor.rgb = mix( diffuseColor.rgb, emblem.rgb * vSoldierTint, emblem.a );
+    // ...and it is repainted at the depot, then carried through a campaign. The device
+    // belongs to the unit; the state of it belongs to the man.
+    float ew = clamp( vSoldierEmblem.z - 1.0, 0.0, 1.0 );
+    vec3 paint = mix( emblem.rgb, emblem.rgb * 0.70 + vec3( 0.15, 0.12, 0.10 ) * 0.30, ew );
+    diffuseColor.rgb = mix( diffuseColor.rgb, paint * vSoldierTint, emblem.a * ( 1.0 - 0.42 * ew ) );
   }
 #endif
 // Blood and dust: pull value and saturation down toward a dry earth colour rather than
@@ -872,7 +999,7 @@ function patch(
 
     let v = shader.vertexShader;
     v = `${defines(o)}\n${DECLS}\nvec3 gSoldierPos;\n${
-      withNormal ? 'varying vec3 vSoldierTint;\nvarying vec2 vSoldierSurf;\nvarying vec3 vSoldierEmblem;\n' : ''
+      withNormal ? 'varying vec3 vSoldierTint;\nvarying vec3 vSoldierSurf;\nvarying vec3 vSoldierEmblem;\n' : ''
     }${v}`;
 
     if (withNormal) {
@@ -895,7 +1022,8 @@ function patch(
       // Dirt and dried blood are matte; they should lift roughness, not just darken.
       f = f.replace(
         '#include <roughnessmap_fragment>',
-        '#include <roughnessmap_fragment>\nroughnessFactor = clamp( roughnessFactor + vSoldierSurf.x * 0.22 + vSoldierSurf.y, 0.035, 1.0 );'
+        '#include <roughnessmap_fragment>\nroughnessFactor = clamp( roughnessFactor + vSoldierSurf.x * 0.22 + vSoldierSurf.y'
+        + METAL_MOTTLE + ', 0.035, 1.0 );'
       );
       // Specular anti-aliasing has to come after the normal chunks, not with the roughness
       // ones: three includes <roughnessmap_fragment> before <normal_fragment_begin>, so at
@@ -905,7 +1033,7 @@ function patch(
       // one that carries the sub-pixel detail we are trying to filter.
       f = f.replace(
         '#include <normal_fragment_maps>',
-        `#include <normal_fragment_maps>\n${KIT_CAVITY_SETUP}\n${SPEC_AA}`
+        `#include <normal_fragment_maps>\n${METAL_PLANISH}\n${KIT_CAVITY_SETUP}\n${SPEC_AA}`
       );
       // Cavity occlusion on the *direct* light. See `KIT_CAVITY_PARS`.
       f = f.replace(
@@ -921,7 +1049,7 @@ function patch(
   // because it changes the injected source: the man has it and the horse does not, and
   // colliding here would give one of them the other's vertex shader.
   const rig = o.poseVary ? 'vary' : 'plain';
-  material.customProgramCacheKey = () => `soldier-skin-v6cav-${variant}-${rig}`;
+  material.customProgramCacheKey = () => `soldier-skin-v7metal-${variant}-${rig}`;
 }
 
 export interface SoldierMaterialSet {

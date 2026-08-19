@@ -719,11 +719,24 @@ const MATS: Record<Mat, MatDef> = {
       vnoise(u * 56, v * 2, 56, 7) * 0.22
       + fbm(u * 8, v * 8, 3, 8, 5) * 0.46
       + fbm(u * 3, v * 3, 2, 3, 151) * 0.32,
-    // Hammered and burnished, and a pure conductor. Low roughness is what puts one tight
-    // readable glint on a helmet crown instead of a flat sheen over the whole bowl, and the
-    // glint is the single thing that most distinguishes a rank of Rome II helmets from a
-    // rank of grey cones.
-    roughness: 0.22,
+    /*
+     * Hammered and burnished, and a pure conductor.
+     *
+     * 0.34, not 0.22, and the earlier note below is preserved because it is half right. A
+     * glint *is* what distinguishes a rank of Rome II helmets from a rank of grey cones, and
+     * 0.22 does produce one. What 0.22 also produces is a glint that cannot be *photographed*:
+     * GGX's peak is 1 / (pi * alpha^2), which at 0.22 is about 136, so against a sun already
+     * at intensity 3 the lobe is clipped white wherever the mirror condition is met. A clipped
+     * white hole carries no shape and no colour, every helmet's is identical to every other's,
+     * and three blind graders in round one independently reported ours as "the same small
+     * blown-white four-point star, same size, same relative position" on every crown. At 0.34
+     * the peak is 27 — still five times a diffuse surface, still unmistakably a burnished
+     * bowl, and now inside the range the tone curve can render as a *shape*.
+     *
+     * The old note, which stands: low roughness is what puts one tight readable glint on a
+     * helmet crown instead of a flat sheen over the whole bowl.
+     */
+    roughness: 0.34,
     metalness: 1,
     bump: 0.25,
   },
@@ -740,10 +753,12 @@ const MATS: Record<Mat, MatDef> = {
     // warm and the sky cannot take it over. Gilt fittings are the one thing on a man that
     // should read as a mirror, and the patina term in `colour` is the only part of this tile
     // that is an oxide — hence 0.95 rather than a flat 1.
-    // 0.30, not 0.23. All three of round two's critics named bronze independently and all
-    // three asked for the same pair; 0.23 is a polished mirror and a cast, wiped, marched-in
-    // bronze scale is not one.
-    roughness: 0.3,
+    // 0.37, not 0.30, not 0.23. Each step has been in the same direction and for the same
+    // reason: a cast, wiped, marched-in bronze is not a mirror, and every round of blind
+    // grading has said so. 0.30 was still inside the range where the punctual sun's lobe
+    // clips to white — see the arithmetic on `Mat.IronPlate` above, which is the same
+    // argument with the same numbers.
+    roughness: 0.37,
     metalness: 1,
     bump: 0.3,
   },
@@ -826,7 +841,9 @@ const MATS: Record<Mat, MatDef> = {
     },
     // Bronze-washed scales, each a small curved mirror. Same reasoning as the mail: the
     // scale edges are what catch the light and they cannot do it without an F0 to do it with.
-    roughness: 0.31,
+    // 0.40, not 0.31: same argument as `Mat.IronPlate`. A plate that clips the sun to white
+    // carries no form, and a rank of them clips identically.
+    roughness: 0.40,
     metalness: 1,
     bump: 0.9,
   },
@@ -1173,7 +1190,9 @@ const MATS: Record<Mat, MatDef> = {
     // Girdle plates are burnished iron with a bronze edging strip. The near-black overlap
     // gutter in `colour` is a shadow rather than a material, so it keeps the plate's
     // metalness and simply reflects less — which is what a gap between two plates does.
-    roughness: 0.32,
+    // 0.40, not 0.32: same argument as `Mat.IronPlate`. A plate that clips the sun to white
+    // carries no form, and a rank of them clips identically.
+    roughness: 0.40,
     metalness: 1,
     bump: 0.9,
   },

@@ -104,8 +104,16 @@ export class LightingSystem implements Subsystem {
    * over the deepest 5 % of the pixels a soldier's own cast shadow darkens, ours measured
    * blue at 0.79 of red at the midcrowd camera — cool, but not as cool as the target, and
    * the fill is the only term that reaches those surfaces.
+   *
+   * 1.55 after round one of the paired blind instrument. Chroma-weighted hue spread over the
+   * deck came back at 25.3 degrees for us against 42.2 for the reference — our frames put
+   * almost every chromatic pixel in one band — and all three graders reported the same thing
+   * in words: shaded faces go inert, a green tunic does not stay green on its shaded side.
+   * Hue spread is bought in the *fill*, because the sun is one colour and everything a hue
+   * can differ from it by has to come from the other illuminant. Luminance-preserving, so
+   * this still costs no contrast.
    */
-  private static readonly FILL_CHROMA_GAIN = 1.35;
+  private static readonly FILL_CHROMA_GAIN = 1.55;
   /**
    * Fraction of the sky's own physically-derived irradiance the hemisphere fill delivers.
    *
@@ -126,8 +134,16 @@ export class LightingSystem implements Subsystem {
    * this term is b/r 3.76, so buying shadow contrast with it is buying it in blue, and the men
    * are most of what sits in that quartile. See `bounce.intensity` for the same trade from the
    * other side.
+   *
+   * 0.42, and that earlier reversion is worth reading carefully rather than as a precedent.
+   * It went to 0.18 — a *5.3x* jump — **and paid for it by cutting the warm bounce**, so what
+   * it measured was not "more sky fill" but "more sky fill and less warm bounce", which is
+   * why the crowd came out colder and darker. Nothing is being paid for here: the sun, the
+   * bounce and the IBL are unchanged apart from the IBL's own trim, which moves the same way.
+   * 0.42 is a 24% lift, not a fivefold one, and it is aimed at the p01 gap the paired
+   * instrument measured (ours 0.029, theirs 0.061) rather than at a warm/cool ratio.
    */
-  private static readonly SKY_FILL_TRIM = 0.34 / Math.PI;
+  private static readonly SKY_FILL_TRIM = 0.42 / Math.PI;
 
   private csm?: CSM;
   private sky?: SkySystem;

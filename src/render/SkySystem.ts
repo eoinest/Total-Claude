@@ -64,8 +64,33 @@ const SKY_CUBE_SIZE = 256;
  * Trimming the fill and paying for it with exposure buys that stop back, and
  * physically it is defensible — half the sky hemisphere is occluded by the man
  * in front of you and none of this pipeline knows that.
+ *
+ * ---------------------------------------------------------------------------
+ * 0.82, and the argument above has been overtaken by a measurement.
+ * ---------------------------------------------------------------------------
+ *
+ * "Rome II's shadows sit nearer 8:1" was an eyeball, and round one of the paired blind
+ * instrument measured it instead, over fourteen matched pairs on exactly the pixels a grader
+ * saw. First-percentile luma: **ours 0.029, theirs 0.061.** Our shadows are not one stop
+ * deeper than the target, they are more than a stop *past* it — we overshot. Mean luma 0.274
+ * against 0.354 and 99th percentile 0.722 against 0.820 say the same thing from the other
+ * end: the whole frame sits low, and the low end is where it sits lowest.
+ *
+ * Three independent graders then described the consequence without seeing any of those
+ * numbers: "value, saturation and hue all fall together toward black and shaded faces go
+ * inert", and "Rome II keeps hue in shadow — a green tunic stays green on its shaded side".
+ * A shadow with no light in it cannot keep a hue, because there is no illuminant left to
+ * carry one. That is this constant.
+ *
+ * 0.82 rather than the physical 1.0 keeps some of the original argument: half the sky
+ * genuinely is occluded by the man in front, and nothing here knows it. It does not keep the
+ * part that was bought on a guess.
+ *
+ * `UnitRenderSystem`'s `envMapIntensity` drops 2.9 -> 2.2 in the same pass, because soldiers
+ * were locally compensating for this trim and would otherwise be the only surface that did
+ * not move. 2.2 x 0.82 = 1.80 against the old 2.9 x 0.60 = 1.74.
  */
-const AMBIENT_TRIM = 0.6;
+const AMBIENT_TRIM = 0.82;
 
 /**
  * Ground albedo the `AMBIENT_TRIM` above was calibrated against — the Campus Martius'

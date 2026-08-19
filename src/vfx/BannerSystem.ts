@@ -28,9 +28,31 @@ import { BANNER_TILE } from './atlas';
  * material path, which is what stops a 3.4 m staff reading as a floating decal.
  */
 
-const GX = 8;
+const GX = 9;
 const GY = 6;
 const NP = GX * GY;
+
+/**
+ * The columns actually tied to the crossbar, and the single most important number in this
+ * file for how a standard reads.
+ *
+ * The top row used to be pinned in its entirety — all eight nodes welded to a mathematically
+ * straight line — which is why three independent graders wrote down "dead-straight top edge"
+ * as the thing that gave the banner away. No cloth hangs like that. A vexillum is suspended
+ * from its bar by ties at intervals and the fabric *between* the ties falls into a catenary,
+ * so the top edge is a row of shallow scallops and every scallop feeds a fold that runs down
+ * the sheet. That is where a flag's vertical folds come from in the first place, and pinning
+ * the whole row removed the cause, not just the symptom.
+ *
+ * Three ties on a nine-column grid puts them at 0, 4 and 8: two even spans of half the
+ * cloth's width, which is what the surviving Egyptian vexillum's loop spacing implies.
+ */
+const TIES = [0, 4, 8] as const;
+const PINNED = (() => {
+  const a = new Uint8Array(NP);
+  for (const t of TIES) a[t] = 1;
+  return a;
+})();
 
 /**
  * Length of the bare staff, in metres. Every finial in `buildStandardGeometry` is placed
@@ -53,6 +75,11 @@ interface Constraint {
   gdx: number;
   gdy: number;
   stiff: number;
+  /** Grid rows of the two ends, so a per-banner crease can find the constraints it crosses. */
+  ay: number;
+  by: number;
+  ax: number;
+  bx: number;
 }
 
 interface Banner {
@@ -66,6 +93,21 @@ interface Banner {
   top: number;
   /** Uniform scale of the whole standard, pole and cloth alike. */
   scale: number;
+  /**
+   * Slack in the top row, as a fraction of the tie spacing.
+   *
+   * A sheet whose top-row rest lengths exactly equal the tie spacing is a taut string
+   * between the ties and hangs dead level however it is pinned. The slack is what the
+   * catenary is made of, and how much of it there is is the difference between a
+   * quartermaster's vexillum and a torn war-streamer lashed on by its corners.
+   */
+  hang: number;
+  /** Normalised v of the horizontal crease this cloth has been furled along. */
+  foldV: number;
+  /** Normalised u of the vertical crease. */
+  foldU: number;
+  /** 0-1 soiling of the painted device: no two standards are equally clean. */
+  wear: number;
   /** Metres the whole standard is lowered by, for a routing unit. */
   dip: number;
   p: Float32Array;
@@ -85,90 +127,192 @@ interface Banner {
   faded: boolean;
 }
 
-const CLOTH_VERT = /* glsl */ `
-precision highp float;
+/*
+ * ---------------------------------------------------------------------------
+ * The cloth material, and why it is no longer a `ShaderMaterial`.
+ * ---------------------------------------------------------------------------
+ *
+ * It was one, with its own hand-written sun-plus-ambient term, and three independent blind
+ * graders each named the standard as the single most decisive tell in a fourteen-pair deck.
+ * Their language was "an emissive sticker in front of the frame rather than dyed wool under
+ * the same sun", and the mechanism turns out to be exactly that literal. A hand-rolled light
+ * model is not a stylistic choice here; it is a second, undocumented lighting rig that
+ * nobody updates when the first one changes, and it had drifted in four separate ways:
+ *
+ *   - **It never received a shadow.** `LightingSystem.affectedByLights` accepts a
+ *     `ShaderMaterial` only if its source mentions `lights_fragment_begin`; this one did
+ *     not, so it was never given `USE_CSM`, never sampled a cascade, and a standard stood in
+ *     full sun inside the shadow of the wall it was assaulting.
+ *   - **It never cast one.** No custom depth material, so `castShadow` could not be turned
+ *     on, so nothing was ever thrown down onto the bearer — the exact absence two graders
+ *     wrote down.
+ *   - **It ignored the sun's intensity.** `VFXSystem` feeds it `sky.sunColour`, which is a
+ *     chromaticity; the magnitude lives in `sky.sunIntensity` and was dropped. So the cloth
+ *     was lit at full noon strength at every hour of the day, while everything around it
+ *     tracked the real sun. That is precisely "the reds refuse the scene's dusk grade", and
+ *     it is worst at the low sun the deck is mostly shot under.
+ *   - **It took no `scene.environment`, no `envMapIntensity` and no aerial perspective.**
+ *
+ * `MeshStandardMaterial` patched through `onBeforeCompile` gets all four back for free and
+ * cannot drift again, because there is only one lighting rig left. What stays hand-written
+ * is the part the standard model genuinely lacks: transmission through thin dyed wool, and
+ * the fold field.
+ */
+
+/** Vertex-stage declarations. `aUv` rather than `uv`: three only declares `uv` under `USE_UV`. */
+const CLOTH_PARS_VERT = /* glsl */ `
 uniform float uAtlasDim;
+attribute vec2 aUv;
 attribute vec3 aTint;
 attribute vec3 aDevice;
 attribute float aTile;
 attribute float aFade;
-varying vec2 vUv;
-varying vec3 vTint;
-varying vec3 vDevice;
-varying vec3 vWorld;
-varying vec3 vNrm;
-varying float vFade;
-void main() {
-  float col = mod(aTile, uAtlasDim);
-  float row = floor(aTile / uAtlasDim);
-  vUv = (vec2(col, row) + uv) / uAtlasDim;
-  vTint = aTint;
-  vDevice = aDevice;
-  vFade = aFade;
-  vWorld = position;
-  // 'normal' is one of the three attributes three declares for every ShaderMaterial, and
-  // this geometry now fills it from the cloth solver each frame. Positions are already in
-  // world space here (no modelMatrix — see the class comment), so the normal is too.
-  vNrm = normal;
-  gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0);
+attribute vec4 aVar;
+varying vec2 vClothUv;
+varying vec2 vAtlasUv;
+varying vec3 vClothTint;
+varying vec3 vClothDevice;
+varying float vClothFade;
+varying vec4 vClothVar;
+`;
+
+const CLOTH_BODY_VERT = /* glsl */ `
+vClothUv = aUv;
+vAtlasUv = ( vec2( mod( aTile, uAtlasDim ), floor( aTile / uAtlasDim ) ) + aUv ) / uAtlasDim;
+vClothTint = aTint;
+vClothDevice = aDevice;
+vClothFade = aFade;
+vClothVar = aVar;
+`;
+
+/**
+ * The fold field, in cloth UV, with its analytic gradient.
+ *
+ * Two creases and a broadband wrinkle. The creases are where this particular standard was
+ * furled when it was last stowed — `aVar.xy`, drawn from the unit's own hash, because "the
+ * same crease in the same place on every flag on the field" is the tiling read that the
+ * shield devices were separately caught for. The solver carries the same two folds in its
+ * rest lengths, so the shading and the silhouette agree rather than fighting.
+ *
+ * Cloth UV, not world space, and that is the whole reason this works: a crease is a property
+ * of the fabric, so it must travel with the fabric. A world-space or screen-space wrinkle
+ * would swim across a flag that is snapping in a gust and read as noise.
+ *
+ * The gradient is analytic rather than three finite differences, because the field is three
+ * sines and two Gaussians and differentiating them costs less than evaluating them twice
+ * more.
+ */
+const CLOTH_FOLDS = /* glsl */ `
+void tcClothFolds( vec2 uvc, vec4 var, out float h, out vec2 g ) {
+  float a = ( uvc.y - var.x ) * 24.0;
+  float ea = exp( -a * a );
+  float b = ( uvc.x - var.y ) * 20.0;
+  float eb = exp( -b * b );
+  float s = var.w * 6.2831853;
+  float p1 = uvc.x * 23.0 + s;
+  float p2 = uvc.y * 15.0 - s * 0.65;
+  float p3 = uvc.x * 8.0 + uvc.y * 12.0 + s * 0.43;
+  h = -0.62 * ( ea + eb ) + 0.24 * ( 0.26 * sin( p1 ) + 0.20 * sin( p2 ) + 0.32 * sin( p3 ) );
+  g.x = 24.80 * b * eb + 0.24 * ( 5.98 * cos( p1 ) + 2.56 * cos( p3 ) );
+  g.y = 29.76 * a * ea + 0.24 * ( 3.00 * cos( p2 ) + 3.84 * cos( p3 ) );
 }
 `;
 
-const CLOTH_FRAG = /* glsl */ `
-precision highp float;
+const CLOTH_PARS_FRAG = /* glsl */ `
 uniform sampler2D uTex;
-uniform vec3 uSun;
-uniform vec3 uSunColour;
-uniform vec3 uAmbient;
-varying vec2 vUv;
-varying vec3 vTint;
-varying vec3 vDevice;
-varying vec3 vWorld;
-varying vec3 vNrm;
-varying float vFade;
+uniform vec3 uSunDir;
+uniform vec3 uSunRadiance;
+uniform float uWrinkle;
+varying vec2 vClothUv;
+varying vec2 vAtlasUv;
+varying vec3 vClothTint;
+varying vec3 vClothDevice;
+varying float vClothFade;
+varying vec4 vClothVar;
+float tcClothH;
+vec2 tcClothG;
+${CLOTH_FOLDS}
+`;
 
-void main() {
-  vec4 t = texture2D(uTex, vUv);
-  if (t.a * vFade < 0.4) discard;
+/**
+ * Albedo. R is cloth luminance — weave, wear, shading baked at bake time — and G marks
+ * where the device sits; see `makeBannerTexture`.
+ *
+ * The device is faded and desaturated by the standard's own weathering rather than stamped
+ * at one fixed strength on every banner in the army. A blind grader's note on the shields
+ * was "the same device at the same rotation, scale and cleanliness, so the mass reads as a
+ * tiling rather than a crowd", and a vexillum device drawn from one tile at one opacity is
+ * the same defect with a sample size of one per unit.
+ */
+const CLOTH_MAP = /* glsl */ `
+vec4 tcTex = texture2D( uTex, vAtlasUv );
+if ( tcTex.a * vClothFade < 0.4 ) discard;
+float tcW = vClothVar.z;
+float tcDev = tcTex.g * ( 1.0 - 0.30 * tcW );
+vec3 tcDevCol = mix( vClothDevice, vec3( dot( vClothDevice, vec3( 0.2126, 0.7152, 0.0722 ) ) ), 0.34 * tcW );
+vec3 tcBase = mix(
+  vClothTint * tcTex.r * ( 1.0 - 0.12 * tcW ),
+  tcDevCol * ( 0.55 + 0.65 * tcTex.r ),
+  tcDev
+);
+diffuseColor.rgb *= tcBase;
+`;
 
-  // Cloth luminance carries the unit's dye; the device mask carries the faction's
-  // metal or paint. Tinting both together is what turns a gilded wreath into a
-  // slightly lighter patch of red.
-  vec3 base = mix(vTint * t.r, vDevice * (0.55 + 0.65 * t.r), t.g);
+/** Painted or gilded device takes a polish; the weave around it does not. */
+const CLOTH_ROUGH = /* glsl */ `
+roughnessFactor *= mix( 1.0, 0.70, tcDev ) * ( 0.96 + 0.06 * tcTex.r );
+`;
 
-  // Interpolated per-vertex normals, not screen-space derivatives.
-  //
-  // 'cross(dFdx(vWorld), dFdy(vWorld))' is the *face* normal: one constant value per
-  // triangle. A banner is 70 triangles hanging from a straight pinned row at 40 % gravity,
-  // so all 70 faces are within a few degrees of coplanar, every one of them resolves to
-  // nearly the same dot with the sun, and the sheet comes out as a single flat value — the
-  // "untextured red slab" a blind critic named. The solver knows the sheet's actual
-  // curvature; writing it into the normal attribute each frame and letting the rasteriser
-  // interpolate is what turns 70 facets into a surface that shades across its folds.
-  vec3 n = normalize(vNrm);
-  if (!gl_FrontFacing) n = -n;
+/**
+ * Perturb the shading normal by the fold field.
+ *
+ * Cotangent frame from screen-space derivatives (Mikkelsen), rather than a tangent
+ * attribute: the solver rewrites this geometry every frame and a tangent buffer would have
+ * to be rewritten with it, for a surface that is fifty-four vertices.
+ */
+const CLOTH_NORMAL = /* glsl */ `
+tcClothFolds( vClothUv, vClothVar, tcClothH, tcClothG );
+{
+  vec3 tcP = - vViewPosition;
+  vec3 dp1 = dFdx( tcP ), dp2 = dFdy( tcP );
+  vec2 du1 = dFdx( vClothUv ), du2 = dFdy( vClothUv );
+  vec3 perp2 = cross( dp2, normal );
+  vec3 perp1 = cross( normal, dp1 );
+  vec3 T = perp2 * du1.x + perp1 * du2.x;
+  vec3 B = perp2 * du1.y + perp1 * du2.y;
+  float im = inversesqrt( max( max( dot( T, T ), dot( B, B ) ), 1e-12 ) );
+  normal = normalize( mat3( T * im, B * im, normal ) * normalize( vec3( - tcClothG * uWrinkle, 1.0 ) ) );
+}
+`;
 
-  float ndl = dot(n, uSun);
-  // Wrapped diffuse. Wool is not a Lambertian dielectric plate: light entering near the
-  // terminator scatters through the yarn and comes back out, so the shading rolls past 90
-  // degrees instead of clipping there. This is what puts a gradient across a fold rather
-  // than a hard lit/unlit boundary.
-  float front = clamp((ndl + 0.35) / 1.35, 0.0, 1.0);
-  float back = clamp(-ndl, 0.0, 1.0);
-  // Thin dyed wool transmits strongly, so a backlit banner glows rather than going
-  // black. That translucency is most of what makes cloth read as cloth.
-  vec3 lit = uAmbient * 0.9 + uSunColour * (front * 1.05 + pow(back, 1.5) * 0.6);
-  base *= lit;
-  // Grazing sheen. A woven surface catches the sky along its silhouette, which is the
-  // other half of reading as cloth rather than as painted card.
-  vec3 vdir = normalize(cameraPosition - vWorld);
-  float rim = pow(1.0 - clamp(abs(dot(n, vdir)), 0.0, 1.0), 3.5);
-  base += uAmbient * rim * 0.55;
+/**
+ * A fold trough sees less of the sky than the ridge beside it.
+ *
+ * Without this the creases are pure normal detail: they appear when the sun rakes across
+ * them and vanish when it does not, which is the one thing a real fold never does. This is
+ * the "no self-shadow in a fold trough" finding, and it is an ambient-occlusion problem
+ * rather than a shadow-map one — the cascades cannot resolve a 3 cm fold at 40 m.
+ */
+const CLOTH_AO = /* glsl */ `
+{
+  float tcAo = 1.0 - 0.42 * clamp( - tcClothH, 0.0, 1.0 );
+  reflectedLight.indirectDiffuse *= tcAo;
+  reflectedLight.indirectSpecular *= tcAo;
+}
+`;
 
-  gl_FragColor = vec4(base, 1.0);
-  #include <tonemapping_fragment>
-  #include <colorspace_fragment>
-  gl_FragColor.a = 1.0;
+/**
+ * Transmission through thin dyed wool — the one term the standard model genuinely lacks.
+ *
+ * A backlit banner glows rather than going black, and that is most of what makes cloth read
+ * as cloth rather than as painted card. Scaled by the real sun radiance, so unlike the term
+ * it replaces it goes out when the sun does.
+ */
+const CLOTH_TRANSMIT = /* glsl */ `
+{
+  float tcBack = clamp( dot( - normal, uSunDir ), 0.0, 1.0 );
+  reflectedLight.directDiffuse += material.diffuseColor * uSunRadiance * RECIPROCAL_PI
+    * pow( tcBack, 1.6 ) * 0.62;
 }
 `;
 
@@ -192,7 +336,7 @@ export class BannerSystem {
   private cA!: Int32Array;
   private cB!: Int32Array;
   private cStiff!: Float32Array;
-  /** Bit 0: `a` is on the pinned top row. Bit 1: `b` is. */
+  /** Bit 0: `a` is tied to the crossbar. Bit 1: `b` is. */
   private cPin!: Uint8Array;
   private maxBanners: number;
 
@@ -202,7 +346,20 @@ export class BannerSystem {
   private deviceAttr: THREE.BufferAttribute;
   private tileAttr: THREE.BufferAttribute;
   private fadeAttr: THREE.BufferAttribute;
-  private clothMat: THREE.ShaderMaterial;
+  private varAttr: THREE.BufferAttribute;
+  private clothMat: THREE.MeshStandardMaterial;
+  private clothDepth: THREE.MeshDepthMaterial;
+  /**
+   * Held by reference and handed to every program this material compiles, so `setLighting`
+   * has one place to write and a quality-driven recompile cannot orphan it.
+   */
+  private clothUniforms = {
+    uTex: { value: null as THREE.Texture | null },
+    uAtlasDim: { value: 2 },
+    uSunDir: { value: new THREE.Vector3(0.4, 0.7, -0.6) },
+    uSunRadiance: { value: new THREE.Color(1, 0.94, 0.82) },
+    uWrinkle: { value: 0.020 },
+  };
   private clothGeo: THREE.BufferGeometry;
   private poleVariant: THREE.InstancedBufferAttribute;
 
@@ -233,6 +390,8 @@ export class BannerSystem {
     this.tileAttr = new THREE.BufferAttribute(new Float32Array(verts), 1);
     this.fadeAttr = new THREE.BufferAttribute(new Float32Array(verts), 1);
     this.fadeAttr.setUsage(THREE.DynamicDrawUsage);
+    // (foldV, foldU, wear, seed) — the four numbers that make one standard not the next.
+    this.varAttr = new THREE.BufferAttribute(new Float32Array(verts * 4), 4);
     const idx = new Uint32Array(quads * 6);
 
     for (let b = 0; b < maxBanners; b++) {
@@ -261,35 +420,91 @@ export class BannerSystem {
 
     this.clothGeo.setAttribute('position', this.posAttr);
     this.clothGeo.setAttribute('normal', this.nrmAttr);
-    this.clothGeo.setAttribute('uv', new THREE.BufferAttribute(uvArr, 2));
+    // `aUv`, not `uv`: three declares `attribute vec2 uv` only under `USE_UV`, and this
+    // material deliberately sets no `map` — the atlas is sampled by hand because its four
+    // channels are a material system rather than a picture.
+    this.clothGeo.setAttribute('aUv', new THREE.BufferAttribute(uvArr, 2));
     this.clothGeo.setAttribute('aTint', this.tintAttr);
     this.clothGeo.setAttribute('aDevice', this.deviceAttr);
     this.clothGeo.setAttribute('aTile', this.tileAttr);
     this.clothGeo.setAttribute('aFade', this.fadeAttr);
+    this.clothGeo.setAttribute('aVar', this.varAttr);
     this.clothGeo.setIndex(new THREE.BufferAttribute(idx, 1));
     this.clothGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);
 
-    this.clothMat = new THREE.ShaderMaterial({
-      vertexShader: CLOTH_VERT,
-      fragmentShader: CLOTH_FRAG,
-      uniforms: {
-        uTex: { value: bannerTexture },
-        uAtlasDim: { value: 2 },
-        uSun: { value: new THREE.Vector3(0.4, 0.7, -0.6) },
-        uSunColour: { value: new THREE.Color(1, 0.94, 0.82) },
-        uAmbient: { value: new THREE.Color(0.2, 0.25, 0.33) },
-      },
+    this.clothUniforms.uTex.value = bannerTexture;
+
+    // Coarse wool at a metalness of zero. The device's polish is applied on top of this per
+    // pixel; a blanket metalness here would route a *cream* albedo into specular F0, which
+    // is the mistake the pole material's own comment records below.
+    this.clothMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.90,
+      metalness: 0,
       side: THREE.DoubleSide,
-      transparent: false,
-      depthWrite: true,
-      depthTest: true,
     });
+    this.clothMat.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, this.clothUniforms);
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', `#include <common>\n${CLOTH_PARS_VERT}`)
+        .replace('#include <begin_vertex>', `#include <begin_vertex>\n${CLOTH_BODY_VERT}`);
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `#include <common>\n${CLOTH_PARS_FRAG}`)
+        .replace('#include <map_fragment>', `#include <map_fragment>\n${CLOTH_MAP}`)
+        .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>\n${CLOTH_ROUGH}`)
+        // `<normal_fragment_maps>` is the first point at which the shading normal exists and
+        // has already been flipped for a back face, which a double-sided sheet needs.
+        .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>\n${CLOTH_NORMAL}`)
+        .replace('#include <aomap_fragment>', `#include <aomap_fragment>\n${CLOTH_AO}`)
+        .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>\n${CLOTH_TRANSMIT}`);
+    };
+    this.clothMat.customProgramCacheKey = () => 'vfx-banner-cloth-v2';
+
+    /*
+     * The depth variant, and it is the whole of "no shadow cast down onto the bearer".
+     *
+     * A standard's silhouette is an alpha cut out of one atlas tile, so the depth pass has to
+     * do the identical discard or the shadow is a rectangle. Three cannot derive that on its
+     * own — the cut is in a channel of a texture it has never been told about — so the depth
+     * material carries a copy of the same three lines.
+     */
+    this.clothDepth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+    this.clothDepth.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, {
+        uTex: this.clothUniforms.uTex,
+        uAtlasDim: this.clothUniforms.uAtlasDim,
+      });
+      shader.vertexShader = shader.vertexShader
+        .replace(
+          '#include <common>',
+          '#include <common>\nuniform float uAtlasDim;\nattribute vec2 aUv;\n'
+          + 'attribute float aTile;\nattribute float aFade;\n'
+          + 'varying vec2 vAtlasUv;\nvarying float vClothFade;'
+        )
+        .replace(
+          '#include <begin_vertex>',
+          '#include <begin_vertex>\n'
+          + 'vAtlasUv = ( vec2( mod( aTile, uAtlasDim ), floor( aTile / uAtlasDim ) ) + aUv ) / uAtlasDim;\n'
+          + 'vClothFade = aFade;'
+        );
+      shader.fragmentShader = shader.fragmentShader
+        .replace(
+          '#include <common>',
+          '#include <common>\nuniform sampler2D uTex;\nvarying vec2 vAtlasUv;\nvarying float vClothFade;'
+        )
+        .replace(
+          '#include <map_fragment>',
+          '#include <map_fragment>\nif ( texture2D( uTex, vAtlasUv ).a * vClothFade < 0.4 ) discard;'
+        );
+    };
+    this.clothDepth.customProgramCacheKey = () => 'vfx-banner-cloth-depth-v2';
 
     this.clothMesh = new THREE.Mesh(this.clothGeo, this.clothMat);
     this.clothMesh.name = 'vfx-banner-cloth';
     this.clothMesh.frustumCulled = false;
-    this.clothMesh.castShadow = false;
-    this.clothMesh.receiveShadow = false;
+    this.clothMesh.castShadow = true;
+    this.clothMesh.receiveShadow = true;
+    this.clothMesh.customDepthMaterial = this.clothDepth;
 
     // Both factions' standards in one geometry, selected per instance. A separate mesh
     // per faction would be simpler but costs a main draw plus one per shadow cascade,
@@ -344,9 +559,16 @@ export class BannerSystem {
     this.poleMesh = new THREE.InstancedMesh(poleGeo, poleMat, maxBanners);
     this.poleMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.poleMesh.count = 0;
-    // No shadow: a 3.4 m staff casts a thin line, and the cloth above it cannot cast
-    // one without a custom depth material. Half a shadow reads worse than none.
-    this.poleMesh.castShadow = false;
+    /*
+     * The staff casts now, and the reason it did not is gone.
+     *
+     * The old note said "the cloth above it cannot cast one without a custom depth material,
+     * and half a shadow reads worse than none". That was the correct trade at the time and it
+     * is the wrong one now: the cloth has a custom depth material, so the two shadows arrive
+     * together and a standard finally lays a stripe of cloth and a line of staff across the
+     * men carrying it.
+     */
+    this.poleMesh.castShadow = true;
     this.poleMesh.receiveShadow = true;
     this.poleMesh.frustumCulled = false;
     this.poleMesh.name = 'vfx-standards';
@@ -355,7 +577,10 @@ export class BannerSystem {
   private buildConstraints(): void {
     const at = (x: number, y: number): number => y * GX + x;
     const push = (a: number, b: number, gdx: number, gdy: number, stiff: number): void => {
-      this.constraints.push({ a, b, gdx, gdy, stiff });
+      this.constraints.push({
+        a, b, gdx, gdy, stiff,
+        ax: a % GX, ay: (a / GX) | 0, bx: b % GX, by: (b / GX) | 0,
+      });
     };
     for (let y = 0; y < GY; y++) {
       for (let x = 0; x < GX; x++) {
@@ -383,7 +608,10 @@ export class BannerSystem {
       this.cA[i] = c.a * 3;
       this.cB[i] = c.b * 3;
       this.cStiff[i] = c.stiff;
-      this.cPin[i] = (c.a < GX ? 1 : 0) | (c.b < GX ? 2 : 0);
+      // Pinned means *tied to the bar*, not merely on the top row. The six untied top-row
+      // nodes are ordinary free particles and must relax like any other, or there is no
+      // catenary between the ties and the whole change above is inert.
+      this.cPin[i] = (PINNED[c.a] ? 1 : 0) | (PINNED[c.b] ? 2 : 0);
     }
   }
 
@@ -578,12 +806,46 @@ export class BannerSystem {
     // The rest lengths carry the scale too, or a scaled-up sheet is simulated as a
     // stretched one and the solver pulls it back into a flat plane.
     const bScale = 0.94 + hash01(u.id * 7 + 13, 17) * 0.14;
+    const seed = u.id * 7 + 13;
+    // A quartermaster's vexillum is laced close to its bar; a Germanic streamer is lashed on
+    // by its corners and bags between them.
+    const hang = (tile === BANNER_TILE.totem ? 0.085 : 0.050) + hash01(seed, 5) * 0.030;
+    /*
+     * Where this cloth was folded when it was last stowed.
+     *
+     * Every standard on the field is carrying the same two creases at the same two places
+     * unless somebody draws them from the unit's own hash, and "the same crease on every
+     * flag" is the tiling read that the shield emblems were separately caught for. The rows
+     * are kept off the pinned edge and off the hem, because a crease at either is invisible.
+     */
+    const foldV = 0.34 + hash01(seed, 23) * 0.30;
+    const foldU = 0.28 + hash01(seed, 29) * 0.42;
+    const wear = hash01(seed, 37);
+    // The nearest grid line to each crease, so the geometric fold and the shaded one agree.
+    const foldRow = Math.max(1, Math.min(GY - 2, Math.round((1 - foldV) * (GY - 1))));
+    const foldCol = Math.max(1, Math.min(GX - 2, Math.round(foldU * (GX - 1))));
     const rest = new Float32Array(this.constraints.length);
     for (let i = 0; i < this.constraints.length; i++) {
       const c = this.constraints[i];
       const rx = (c.gdx / (GX - 1)) * w * bScale;
       const ry = (c.gdy / (GY - 1)) * h * bScale;
-      rest[i] = Math.hypot(rx, ry);
+      let r = Math.hypot(rx, ry);
+      /*
+       * The catenary, and it lives in the rest lengths rather than in a shaping pass.
+       *
+       * Only the top row gets it. Slackening the whole sheet makes a bag, not a flag: the
+       * fabric is woven to size and it is the *suspension* that is loose, so the extra
+       * length is between the ties and nowhere else.
+       */
+      if (c.ay === 0 && c.by === 0) r *= 1 + hang;
+      /*
+       * A fold takes up cloth. Shortening the constraints that cross a crease is what makes
+       * the sheet buckle there under its own tension instead of hanging flat, and because
+       * the shortening is permanent the crease survives a gust — which is what a crease is.
+       */
+      if (c.ay < foldRow !== c.by < foldRow) r *= 0.930;
+      if (c.ax < foldCol !== c.bx < foldCol) r *= 0.955;
+      rest[i] = r;
     }
 
     const b: Banner = {
@@ -598,6 +860,10 @@ export class BannerSystem {
       // cloth pinned at a hard 3.1, and the sheet floated up to 0.31 m clear of the bar it
       // was supposed to hang from, or spilled wider than the bar was long.
       scale: bScale,
+      hang,
+      foldV,
+      foldU,
+      wear,
       dip: 0,
       p: new Float32Array(NP * 3),
       q: new Float32Array(NP * 3),
@@ -608,17 +874,24 @@ export class BannerSystem {
       facing: u.facing,
       active: true,
       presence: 0,
-      seed: u.id * 7 + 13,
+      seed,
       tintWritten: false,
       faded: false,
     };
 
-    // Start already hanging so the cloth does not snap into place on frame one.
+    // Start already hanging so the cloth does not snap into place on frame one, and start
+    // already *scalloped*: the untied top nodes drop by the sag their slack allows, so the
+    // first frame of a newly raised standard is not the one flat frame in its life.
+    const span = (w * b.scale) / (TIES.length - 1);
     for (let y = 0; y < GY; y++) {
       for (let x = 0; x < GX; x++) {
         const v = (y * GX + x) * 3;
+        // Distance from this column to its nearest tie, 0 at a tie and 1 midway between two.
+        let near = 1;
+        for (const t of TIES) near = Math.min(near, Math.abs(x - t) / ((GX - 1) / (TIES.length - 1)));
+        const sag = y === 0 ? span * hang * 1.9 * Math.sin(Math.PI * Math.min(1, near)) : 0;
         b.p[v] = b.anchorX + (x / (GX - 1) - 0.5) * w * b.scale;
-        b.p[v + 1] = b.anchorY + (b.top - (y / (GY - 1)) * h) * b.scale;
+        b.p[v + 1] = b.anchorY + (b.top - (y / (GY - 1)) * h) * b.scale - sag;
         b.p[v + 2] = b.anchorZ;
         b.q[v] = b.p[v];
         b.q[v + 1] = b.p[v + 1];
@@ -696,14 +969,16 @@ export class BannerSystem {
           wind.z + perpZ * osc
         );
 
-        // Pin the top edge to the crossbar, which lies across the unit's frontage.
+        // Pin the *ties* to the crossbar, which lies across the unit's frontage. The rest of
+        // the top row is free and falls into a catenary between them.
         const cx = Math.cos(b.facing);
         const sx = Math.sin(b.facing);
-        for (let x = 0; x < GX; x++) {
+        const barY = b.anchorY + b.top * b.scale;
+        for (const x of TIES) {
           const v = x * 3;
           const lx = (x / (GX - 1) - 0.5) * b.w * b.scale;
           p[v] = b.anchorX + lx * cx;
-          p[v + 1] = b.anchorY + b.top * b.scale;
+          p[v + 1] = barY;
           p[v + 2] = b.anchorZ - lx * sx;
           q[v] = p[v];
           q[v + 1] = p[v + 1];
@@ -711,7 +986,8 @@ export class BannerSystem {
         }
 
         // Free nodes: integrate gravity with light velocity damping.
-        for (let i = GX; i < NP; i++) {
+        for (let i = 0; i < NP; i++) {
+          if (PINNED[i]) continue;
           const v = i * 3;
           const px = p[v];
           const py = p[v + 1];
@@ -759,10 +1035,9 @@ export class BannerSystem {
             const fx = nx * f;
             const fy = ny * f;
             const fz = nz * f;
-            const pinRow = GX * 3;
-            if (a >= pinRow) { p[a] += fx; p[a + 1] += fy; p[a + 2] += fz; }
-            if (b1 >= pinRow) { p[b1] += fx; p[b1 + 1] += fy; p[b1 + 2] += fz; }
-            if (c1 >= pinRow) { p[c1] += fx; p[c1 + 1] += fy; p[c1 + 2] += fz; }
+            if (!PINNED[a / 3]) { p[a] += fx; p[a + 1] += fy; p[a + 2] += fz; }
+            if (!PINNED[b1 / 3]) { p[b1] += fx; p[b1 + 1] += fy; p[b1 + 2] += fz; }
+            if (!PINNED[c1 / 3]) { p[c1] += fx; p[c1 + 1] += fy; p[c1 + 2] += fz; }
           }
         }
 
@@ -818,6 +1093,20 @@ export class BannerSystem {
             }
           }
         }
+
+        /*
+         * The bar is solid: an untied top node may hang below it and may not pass through it.
+         *
+         * Without this the catenary is symmetric — a gust that lifts the sheet carries the
+         * loose top nodes up *through* the crossbar and the cloth reads as pinned to nothing.
+         * A one-sided constraint is the whole of what a loop of cord round a bar does, and it
+         * is also what stops the top edge oscillating: the bar absorbs every upward swing.
+         */
+        for (let x = 0; x < GX; x++) {
+          if (PINNED[x]) continue;
+          const v = x * 3;
+          if (p[v + 1] > barY) { p[v + 1] = barY; q[v + 1] = barY; }
+        }
       }
     }
   }
@@ -829,6 +1118,7 @@ export class BannerSystem {
     const tint = this.tintAttr.array as Float32Array;
     const device = this.deviceAttr.array as Float32Array;
     const tile = this.tileAttr.array as Float32Array;
+    const vari = this.varAttr.array as Float32Array;
     let staticDirty = false;
 
     for (let bi = 0; bi < this.banners.length; bi++) {
@@ -906,6 +1196,11 @@ export class BannerSystem {
           device[s + 1] = dev.g;
           device[s + 2] = dev.b;
           tile[vo + i] = b.tile;
+          const w4 = (vo + i) * 4;
+          vari[w4] = b.foldV;
+          vari[w4 + 1] = b.foldU;
+          vari[w4 + 2] = b.wear;
+          vari[w4 + 3] = hash01(b.seed, 71);
         }
       }
     }
@@ -917,6 +1212,7 @@ export class BannerSystem {
       this.tintAttr.needsUpdate = true;
       this.deviceAttr.needsUpdate = true;
       this.tileAttr.needsUpdate = true;
+      this.varAttr.needsUpdate = true;
     }
   }
 
@@ -951,10 +1247,19 @@ export class BannerSystem {
     this.poleVariant.needsUpdate = true;
   }
 
-  setLighting(sun: THREE.Vector3, sunColour: THREE.Color, ambient: THREE.Color): void {
-    (this.clothMat.uniforms.uSun.value as THREE.Vector3).copy(sun);
-    (this.clothMat.uniforms.uSunColour.value as THREE.Color).copy(sunColour);
-    (this.clothMat.uniforms.uAmbient.value as THREE.Color).copy(ambient);
+  /**
+   * Only the transmission term is fed from here now; everything else comes from the scene's
+   * own lights, `scene.environment` and the cascades, exactly as it does for a soldier.
+   *
+   * `sunIntensity` is separate from `sunColour` and is the parameter this system used to
+   * drop on the floor — `sky.sunColour` is a chromaticity and the magnitude lives in
+   * `sky.sunIntensity`, so a banner lit from the colour alone stays at noon brightness at
+   * every hour of the day. That is the whole of the "emissive sticker" reading, and it is
+   * why the argument is not optional.
+   */
+  setLighting(sun: THREE.Vector3, sunColour: THREE.Color, sunIntensity: number): void {
+    this.clothUniforms.uSunDir.value.copy(sun);
+    this.clothUniforms.uSunRadiance.value.copy(sunColour).multiplyScalar(sunIntensity);
   }
 
   get count(): number {
@@ -974,6 +1279,7 @@ export class BannerSystem {
   dispose(): void {
     this.clothGeo.dispose();
     this.clothMat.dispose();
+    this.clothDepth.dispose();
     this.poleMesh.geometry.dispose();
     (this.poleMesh.material as THREE.Material).dispose();
     this.poleMesh.dispose();

@@ -486,7 +486,22 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     [0.001, 0.14], [0.045, 0.128], [0.072, 0.095], [0.082, 0.045],
     [0.079, 0.0], [0.072, -0.045], [0.055, -0.075], [0.001, -0.055],
   ];
-  if (d.fine) {
+  /*
+   * `d.medium`, not `d.fine`, and this is a correction rather than a tuning.
+   *
+   * The split — and the nose below it — were LOD0-only, so at LOD1 a man had no face tile at
+   * all and no nasal geometry: a bare lathe of `Mat.Skin` with hair on it. LOD1 begins at
+   * 45 m, and **45 m is inside the range a Total War battle is actually watched from**, so
+   * "the head has no nose" was true of most of the army in most graded frames. All three
+   * blind graders in round one wrote it down independently, and the reason none of them
+   * qualified it by distance is that there was no distance at which it was false except the
+   * few metres nobody plays at.
+   *
+   * The nose costs ten triangles at LOD1 rather than the twenty it costs at LOD0, and the
+   * face arc costs the same forty-two it always did. That is about 1.5% of the frame's
+   * triangles for the single most legible form on a man.
+   */
+  if (d.medium) {
     /*
      * The face is one arc of the lathe with its own tile, and the rest of the head is the
      * other. One lathe with one UV rect cannot carry a face: `Mat.Skin` is a tileable noise
@@ -499,12 +514,12 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
      * 120 degrees, because that is roughly ear to ear on a head. Six columns at LOD0 against
      * the ten the whole circle used to get, which is a rounder face for 42 triangles.
      */
-    b.revolve(skullProfile, FACE_SEG, matUv(Mat.Face), 1, { arc: FACE_ARC, vFromY: HEAD_V });
+    b.revolve(skullProfile, d.fine ? FACE_SEG : 4, matUv(Mat.Face), 1, { arc: FACE_ARC, vFromY: HEAD_V });
     b.revolve(skullProfile, BACK_SEG(d.head), skinUv, 1, { arc: BACK_ARC, vFromY: HEAD_V });
   } else {
     b.revolve(skullProfile, d.head, skinUv);
   }
-  if (d.fine) {
+  if (d.medium) {
     /*
      * A nose, and nothing else.
      *
@@ -526,19 +541,28 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
      * shadow across the cheek. Five rings now, named for the landmarks they are: the nasion
      * sits on the brow line so the bridge has a root, the pronasale reaches 25.8 mm, and the
      * columella tucks back under so the nostrils are a real undercut rather than a painted
-     * pair of dots. 38 mm across the alae, which is a man's. Ten triangles more than the
-     * four-ring version at LOD0 only, and it is the single most legible form on the head.
+     * pair of dots. 38 mm across the alae, which is a man's, and it is the single most
+     * legible form on the head.
+     *
+     * LOD1 gets the same nose through three rings and four segments instead of five and
+     * five. What matters at 45-90 m is not the columella, it is that there is something
+     * between the eyes that occludes the far cheek in three-quarter view — and that survives
+     * decimation, because it is a silhouette rather than a surface.
      */
-    b.tube(
-      [
+    const nose: { y: number; rx: number; rz: number; z: number }[] = d.fine
+      ? [
         { y: 0.050, rx: 0.008, rz: 0.007, z: 0.0755 },
         { y: 0.022, rx: 0.010, rz: 0.011, z: 0.0790 },
         { y: -0.004, rx: 0.014, rz: 0.014, z: 0.0840 },
         { y: -0.020, rx: 0.019, rz: 0.016, z: 0.0855 },
         { y: -0.032, rx: 0.016, rz: 0.009, z: 0.0700 },
-      ],
-      5, skinUv, { capEnd: true }
-    );
+      ]
+      : [
+        { y: 0.048, rx: 0.009, rz: 0.008, z: 0.0760 },
+        { y: -0.006, rx: 0.015, rz: 0.014, z: 0.0845 },
+        { y: -0.030, rx: 0.017, rz: 0.010, z: 0.0715 },
+      ];
+    b.tube(nose, d.fine ? 5 : 4, skinUv, { capEnd: true });
   }
   b.setMatrix(null);
 
