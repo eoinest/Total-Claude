@@ -494,30 +494,55 @@ clips.set('attack', buildOverlay(ELEPHANT_RIG, base, {
  *
  * **The last frame of this clip is the carcass**, and it is the only frame most players will
  * ever look at for more than a second: nothing removes a dead elephant from the field, so
- * the pose it holds is a permanent feature of the battlefield. It is therefore authored
- * against measured bone heights (`tools/scratch/elepose-side.mjs` prints every bone's world
- * position on the first and last frame) rather than by eye, to two rules:
+ * the pose it holds is a permanent feature of the battlefield.
  *
- *   1. **Nothing may be under the ground.** The first version rolled the body 78 degrees
- *      with the legs still hanging straight, and a roll swings a foot 0.65 m off the
- *      centreline through 1.3 m of arc: the two right-side feet finished 0.47 m and 0.19 m
- *      *below* the terrain and the trunk tip 0.16 m below it, while the left hind leg stood
- *      1.06 m in the air. The counter is to fold the legs hard — knees to 128 degrees,
- *      hocks to -104 — so all four feet sit near the body's own centreline and the roll
- *      moves them along the ground instead of through it.
- *   2. **The spine lands at the animal's own half-width.** A body 1.9 m across lying on its
- *      side puts the barrel about 0.95 m up. 1.5 m of root sink put the whole animal a third
- *      of a metre into the turf; 1.32 m was arithmetic from a 2.30 m pelvis and measured
- *      0.88 m at the barrel with the right knee still 51 mm under the grass, because the
- *      hard leg fold moves the pivot. **1.26 m is the measured answer**: barrel 0.94 m
- *      against the 0.95 target and the lowest bone in the whole animal at +0.009 m, so
- *      nothing is under the ground at all.
+ * ## Measure the hide, not the bones
+ * The previous authoring was graded on **bone** positions and reported "the lowest bone at
+ * +0.009 m, nothing under the ground at all". A bone is not the animal. Skinning the real
+ * geometry over the same clip and reading the lowest *vertex*
+ * (`tools/scratch/carc-explore-entry.ts`) says something else entirely:
+ *
+ *   | at the settled frame | old | now |
+ *   |---|---|---|
+ *   | left foreleg, lowest vertex | **+1.05 m** | +0.29 |
+ *   | left hind leg | **+1.27 m** | +0.57 |
+ *   | right foreleg | **−0.21 m** | −0.01 |
+ *   | right ear | **−0.35 m** | +0.08 |
+ *   | worst point at any frame | **−0.88 m** | −0.21 |
+ *
+ * So the two upper legs stood a metre and a quarter in the air as rigid parallel columns
+ * while the right foreleg and the whole right ear were buried — which is precisely the
+ * "toppled table" the model viewer showed the first time anyone looked at a carcass close
+ * up. The bones were all fine. **Grade a pose on the skinned mesh; a limb bone sits on the
+ * limb's axis and every leg here is a 0.42-0.60 m cylinder around it.**
+ *
+ * ## What the pose is now
+ *   1. **Three segments per limb, not two.** Only the shoulder/hip and the knee/hock used to
+ *      turn, so each leg folded as two rigid pipes with one elbow. `fUpper`/`bFemur` now
+ *      carry a small break of their own, which is most of what stops a leg reading as
+ *      plumbing.
+ *   2. **The ground-side pair extends, the upper pair drapes.** The right legs are pinned
+ *      under the body and finish nearly along the ground; the left ones fall across them and
+ *      come to rest about a leg's thickness higher, forward of them rather than on top —
+ *      left fore foot at z +0.95 against the right's +0.45, left hind −1.59 against −1.35.
+ *   3. **They are still moving when the body has stopped.** Each upper limb overshoots at
+ *      0.87 and recoils into the settled pose, so the last third of the clip is the legs
+ *      settling rather than the whole animal holding a frozen frame.
+ *   4. **The ears unroll.** An ear does not roll with the skull: the lower one is trapped
+ *      flat under the head and the upper one flops back across the neck. Both are authored
+ *      as a rotation that *cancels* the root roll (+82 and +100 against the root's +84),
+ *      which is why the right ear stops being the deepest thing in the carcass.
+ *   5. **The sink is gravity-shaped.** −0.18 m by 0.30, −0.72 by 0.62, −1.17 by 0.84, −1.26
+ *      at rest. The old curve had the pelvis a metre down at 0.65 while the body had rolled
+ *      only 46 degrees, and the right legs ploughed 0.88 m through the turf on the way.
+ *      Total sink is unchanged at **1.26 m**, so the barrel still settles at 0.94 against
+ *      its 0.95 target.
  *
  * Which side it falls onto is not free either, and it is read from this clip rather than
- * declared: the last frame puts `earR`, `fShoulderR` and `bHipR` at y 0.30/0.20/0.41 against
- * their left-side partners at 1.18/1.35/1.52, so the animal lies on its **right**, the spine
- * moves to −X and the folded legs point +X. `UnitRenderSystem.CREW_FALL_SIDE` throws the
- * tower crew that way and must move with any re-authoring here.
+ * declared: the last frame puts `earR`, `fShoulderR` and `bHipR` low against their left-side
+ * partners, so the animal lies on its **right**, the spine moves to −X and the folded legs
+ * point +X. `UnitRenderSystem.CREW_FALL_SIDE` throws the tower crew that way and must move
+ * with any re-authoring here.
  */
 clips.set('death', buildOverlay(ELEPHANT_RIG, base, {
   name: 'death',
@@ -529,21 +554,48 @@ clips.set('death', buildOverlay(ELEPHANT_RIG, base, {
     // The neck straightens as the head goes over, and the skull comes to rest cheek-down.
     { bone: EB.neck, keys: [[0, 0, 0, 0], [0.4, -14, 0, 0], [1, 10, 0, 0]] },
     { bone: EB.head, keys: [[0, 0, 0, 0], [0.45, -10, 0, 0], [1, 8, 0, -12]] },
-    // The forelegs fold first, which is how a collapsing elephant actually goes down, and
-    // they finish fully folded rather than extended: see rule 1 above.
-    { bone: EB.fShoulderL, keys: [[0, 0, 0, 0], [0.3, -26, 0, 0], [1, -34, 0, 0]] },
-    { bone: EB.fShoulderR, keys: [[0, 0, 0, 0], [0.34, -22, 0, 0], [1, -29, 0, 0]] },
-    { bone: EB.fKneeL, keys: [[0, 0, 0, 0], [0.3, 54, 0, 0], [1, 128, 0, 0]] },
-    { bone: EB.fKneeR, keys: [[0, 0, 0, 0], [0.34, 48, 0, 0], [1, 122, 0, 0]] },
-    { bone: EB.bHipL, keys: [[0, 0, 0, 0], [0.55, 18, 0, 0], [1, 46, 0, 0]] },
-    { bone: EB.bHipR, keys: [[0, 0, 0, 0], [0.6, 14, 0, 0], [1, 41, 0, 0]] },
-    { bone: EB.bHockL, keys: [[0, 0, 0, 0], [0.55, -30, 0, 0], [1, -104, 0, 0]] },
-    { bone: EB.bHockR, keys: [[0, 0, 0, 0], [0.6, -26, 0, 0], [1, -98, 0, 0]] },
+
+    // ---- right fore: the leg it lands on ------------------------------------
+    // Buckles first and hardest, then extends along the ground under the chest. The +Z
+    // component lifts it out of the turf as the body rolls onto it; without it the carpus
+    // finishes 0.21 m under the grass.
+    { bone: EB.fShoulderR, keys: [[0, 0, 0, 0], [0.2, -18, 0, 4], [0.45, -26, 0, 10], [1, -20, 0, 16]] },
+    { bone: EB.fUpperR, keys: [[0, 0, 0, 0], [0.45, 8, 0, 0], [1, 14, 0, 6]] },
+    { bone: EB.fKneeR, keys: [[0, 0, 0, 0], [0.2, 60, 0, 0], [0.45, 110, 0, 0], [1, 104, 0, 0]] },
+    { bone: EB.fFootR, keys: [[0, 0, 0, 0], [1, -24, 0, 0]] },
+
+    // ---- right hind ----------------------------------------------------------
+    // Tucked by 0.45, well before the roll passes halfway. It used to fold on 0.55-0.60 and
+    // the hock swept 0.88 m through the ground on the way over — the worst frame in the clip.
+    { bone: EB.bHipR, keys: [[0, 0, 0, 0], [0.28, 14, 0, -4], [0.45, 30, 0, 4], [1, 34, 0, 8]] },
+    { bone: EB.bFemurR, keys: [[0, 0, 0, 0], [0.55, -8, 0, 0], [1, -14, 0, 4]] },
+    { bone: EB.bHockR, keys: [[0, 0, 0, 0], [0.28, -52, 0, 0], [0.45, -92, 0, 0], [1, -84, 0, 0]] },
+    { bone: EB.bFootR, keys: [[0, 0, 0, 0], [1, 22, 0, 0]] },
+
+    // ---- left fore: the upper leg, which falls across the lower one ----------
+    // The negative Z is the whole fix for the toppled table. A leg hangs along −Y, the root
+    // roll carries −Y onto +X, and a leg with no Z of its own therefore finishes pointing
+    // horizontally out of the animal's flank at shoulder height. Negative Z brings it back
+    // down under gravity. It overshoots at 0.87 and recoils, which is the settle.
+    { bone: EB.fShoulderL, keys: [[0, 0, 0, 0], [0.3, -26, 0, -6], [0.7, -38, 0, -20], [0.87, -45, 0, -36], [1, -42, 0, -30]] },
+    { bone: EB.fUpperL, keys: [[0, 0, 0, 0], [1, 10, 0, -8]] },
+    { bone: EB.fKneeL, keys: [[0, 0, 0, 0], [0.3, 56, 0, 0], [0.87, 124, 0, 0], [1, 116, 0, 0]] },
+    { bone: EB.fFootL, keys: [[0, 0, 0, 0], [1, -20, 0, 0]] },
+
+    // ---- left hind ------------------------------------------------------------
+    { bone: EB.bHipL, keys: [[0, 0, 0, 0], [0.55, 22, 0, -8], [0.87, 52, 0, -36], [1, 48, 0, -30]] },
+    { bone: EB.bFemurL, keys: [[0, 0, 0, 0], [1, -10, 0, -6]] },
+    { bone: EB.bHockL, keys: [[0, 0, 0, 0], [0.55, -40, 0, 0], [0.87, -99, 0, 0], [1, -92, 0, 0]] },
+    { bone: EB.bFootL, keys: [[0, 0, 0, 0], [1, 18, 0, 0]] },
+
     // The trunk goes slack and lies out along the ground rather than curling.
     ...trunkSway(6, 1, -8),
-    ...earTracks(4, 1),
+    // Not `earTracks`: that is a flap, and these two are being pinned and dropped. See
+    // point 4 in the note above for why both turn the same way.
+    { bone: EB.earL, keys: [[0, 0, 0, 0], [0.5, 0, 3, 16], [1, 0, 8, 100]] },
+    { bone: EB.earR, keys: [[0, 0, 0, 0], [0.5, 0, -4, 18], [1, 0, -12, 82]] },
   ],
-  root: [[0, 0, 0, 0], [0.3, 0, -0.35, 0], [0.65, 0, -1.05, 0], [1, 0, -1.26, 0]],
+  root: [[0, 0, 0, 0], [0.3, 0, -0.18, 0], [0.62, 0, -0.72, 0], [0.84, 0, -1.17, 0], [1, 0, -1.26, 0]],
 }));
 
 // ---------------------------------------------------------------------------
