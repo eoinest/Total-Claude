@@ -1508,10 +1508,28 @@ export class PostFXSystem implements Subsystem {
       godTex = this.godRT.texture;
     }
 
-    // 5 ---- depth of field -------------------------------------------------
-    // Restrained by design: only the bottom fifth of the zoom range gets any,
-    // and never more than 70 % opacity. At strategic zoom everything is sharp.
-    const dofAmount = (1 - smoothstep(ctx.rig.zoom / 0.28)) * 0.7;
+    /*
+     * 5 ---- depth of field -------------------------------------------------
+     *
+     * Restrained by design: only the closest few metres of the orbit get any, and never more
+     * than 70 % opacity. At strategic zoom everything is sharp.
+     *
+     * Driven by the orbit *radius* rather than by the `zoom` scalar, and the two are the same
+     * thing for a player: `RTSCamera.radius` is `minZoom * (maxZoom/minZoom)^smoothstep(zoom)`,
+     * so zoom 0 is 3.2 m and zoom 0.28 is 8.8 m, and the curve below reproduces the old fade
+     * over that interval to within a few percent.
+     *
+     * It is emphatically not the same thing for a *harness*. `tools/shoot.mjs` now overrides
+     * `radius`, `pitchForZoom` and `fovForZoom` to shoot a camera specified in metres and
+     * degrees, and pins `zoom` to 0 so that `place()`'s look-at lift and ground clearance are
+     * known constants. Read off `zoom`, this line then put depth of field at *full strength*
+     * on a 480 m strategic overview and blurred the entire near half of the field — an
+     * artefact with no counterpart in anything a player sees, injected into the frames that
+     * exist to be compared against a real game. Radius is the physical quantity the effect is
+     * actually about, it is correct for both callers, and it cannot be pinned out from under
+     * this pass.
+     */
+    const dofAmount = (1 - smoothstep((ctx.rig.orbitRadius - 3.2) / 5.6)) * 0.7;
     if (q.depthOfField && dofAmount > 0.02 && this.mDof && this.mDofMix && this.dofRT) {
       const u = this.mDof.uniforms;
       u.tSrc.value = cur.texture;

@@ -221,7 +221,11 @@ void tcClothFolds( vec2 uvc, vec4 var, out float h, out vec2 g ) {
 const CLOTH_PARS_FRAG = /* glsl */ `
 uniform sampler2D uTex;
 uniform vec3 uSunDir;
-uniform vec3 uSunRadiance;
+// Sun irradiance on a surface facing it: sunColour * sunIntensity, i.e. three's own
+// color * intensity for a directional light. _E per the convention note in
+// shaders/common.glsl.ts -- it is not a radiance, and the RECIPROCAL_PI at the point of use
+// below is the Lambert normalisation and not a units fix.
+uniform vec3 uSun_E;
 uniform float uWrinkle;
 varying vec2 vClothUv;
 varying vec2 vAtlasUv;
@@ -311,7 +315,7 @@ const CLOTH_AO = /* glsl */ `
 const CLOTH_TRANSMIT = /* glsl */ `
 {
   float tcBack = clamp( dot( - normal, uSunDir ), 0.0, 1.0 );
-  reflectedLight.directDiffuse += material.diffuseColor * uSunRadiance * RECIPROCAL_PI
+  reflectedLight.directDiffuse += material.diffuseColor * uSun_E * RECIPROCAL_PI
     * pow( tcBack, 1.6 ) * 0.62;
 }
 `;
@@ -357,7 +361,7 @@ export class BannerSystem {
     uTex: { value: null as THREE.Texture | null },
     uAtlasDim: { value: 2 },
     uSunDir: { value: new THREE.Vector3(0.4, 0.7, -0.6) },
-    uSunRadiance: { value: new THREE.Color(1, 0.94, 0.82) },
+    uSun_E: { value: new THREE.Color(1, 0.94, 0.82) },
     uWrinkle: { value: 0.020 },
   };
   private clothGeo: THREE.BufferGeometry;
@@ -1277,7 +1281,7 @@ export class BannerSystem {
    */
   setLighting(sun: THREE.Vector3, sunColour: THREE.Color, sunIntensity: number): void {
     this.clothUniforms.uSunDir.value.copy(sun);
-    this.clothUniforms.uSunRadiance.value.copy(sunColour).multiplyScalar(sunIntensity);
+    this.clothUniforms.uSun_E.value.copy(sunColour).multiplyScalar(sunIntensity);
   }
 
   get count(): number {

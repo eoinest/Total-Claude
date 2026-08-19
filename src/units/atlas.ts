@@ -735,8 +735,16 @@ const MATS: Record<Mat, MatDef> = {
      *
      * The old note, which stands: low roughness is what puts one tight readable glint on a
      * helmet crown instead of a flat sheen over the whole bowl.
+     *
+     * 0.40 on a second look at the target rather than at the arithmetic. A native-resolution
+     * crop of the reference melee plate shows a bronze helmet whose sheen runs across the
+     * whole crown as a smooth gradient that *follows the form*, with nothing in the frame
+     * clipped to white except the sky itself — armour peaks around 0.85. At 0.34 the peak is
+     * still 27 and the sun is still 3, so the brightest few pixels of a bowl still clip, and
+     * a clipped pixel has no form. 0.40 puts the peak at 12.4, which is eight times a diffuse
+     * surface — unmistakably metal — and inside the range the shoulder can render.
      */
-    roughness: 0.34,
+    roughness: 0.40,
     metalness: 1,
     bump: 0.25,
   },
@@ -757,8 +765,9 @@ const MATS: Record<Mat, MatDef> = {
     // reason: a cast, wiped, marched-in bronze is not a mirror, and every round of blind
     // grading has said so. 0.30 was still inside the range where the punctual sun's lobe
     // clips to white — see the arithmetic on `Mat.IronPlate` above, which is the same
-    // argument with the same numbers.
-    roughness: 0.37,
+    // argument with the same numbers. 0.42 on the same second look as `Mat.IronPlate`: the
+    // reference's bronze is the softest metal in its frame, not the hardest.
+    roughness: 0.42,
     metalness: 1,
     bump: 0.3,
   },
