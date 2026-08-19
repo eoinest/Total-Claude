@@ -19,7 +19,9 @@
 
 import type { EngineContext } from '../core/Engine';
 import type { BattleSystem } from '../sim/BattleSystem';
-import { BREAK_IN, INSIDE_MARGIN, STORM_STALL_SECONDS } from '../sim/BattleFlow';
+import {
+  BREAK_IN, INSIDE_MARGIN, STORM_STALL_SECONDS, WALL_FOOTHOLD, WALL_HOLD_SECONDS,
+} from '../sim/BattleFlow';
 import { Faction } from '../sim/types';
 import { PLAYER_FACTION } from './theme';
 
@@ -51,6 +53,9 @@ export interface SiegeRead {
   needInside: number;
   insideMargin: number;
   onWall: number;
+  /** Of `onWall`, the men on parapet the garrison has stopped contesting — the number the
+   *  wall half of the objective is actually decided on. */
+  holding: number;
   garrisonOnWall: number;
   needFoothold: number;
   heldFor: number;
@@ -67,6 +72,7 @@ export interface SiegeRead {
 interface FlowView {
   objective?: {
     stormOnWall: number;
+    stormHolding: number;
     garrisonOnWall: number;
     stormInside: number;
     heldFor: number;
@@ -135,6 +141,7 @@ export function readSiege(ctx: EngineContext): SiegeRead | null {
     needInside: o.needInside,
     insideMargin: o.insideMargin,
     onWall: o.stormOnWall,
+    holding: o.stormHolding,
     garrisonOnWall: o.garrisonOnWall,
     needFoothold: o.needFoothold,
     heldFor: o.heldFor,
@@ -206,18 +213,32 @@ const PHASE_COPY: Record<
       note: (_o, g) => `The gate is holding at ${Math.round(g.hp * 100)}% — kill the crew`,
     },
   },
+  /*
+   * The one line here that is not a headcount is `stormHolding`, and it is the line that
+   * matters. `garrisonOnWall` is a sum over the whole circuit — 810 men over 1.78 km of
+   * Aurelian Wall — so "42 of ours on the parapet against 655 of theirs" is true, useless and
+   * quietly discouraging: it names a number the storm can do nothing about and says nothing
+   * about the bay the fight is actually in. The arbiter decides the wall on the men holding a
+   * stretch the garrison has stopped contesting, so that is what the plaque leads with the
+   * moment there are any, and the circuit-wide pair is what it falls back to.
+   */
   wall: {
     storm: {
       label: 'The Wall Reached',
-      note: (o) => (o.stormOnWall > 0
-        ? `${o.stormOnWall} of ours on the parapet against ${o.garrisonOnWall} of theirs`
-        : 'The ramps are down; get men onto the walk'),
+      note: (o) => (o.stormHolding > 0
+        ? `${o.stormHolding} of ours hold a stretch of it — ${o.needFoothold} for `
+          + `${o.holdSeconds} s takes the wall`
+        : o.stormOnWall > 0
+          ? `${o.stormOnWall} of ours on the parapet against ${o.garrisonOnWall} of theirs`
+          : 'The ramps are down; get men onto the walk'),
     },
     garrison: {
       label: 'The Wall Reached',
-      note: (o) => (o.stormOnWall > 0
-        ? `${o.stormOnWall} of them on the parapet against ${o.garrisonOnWall} of ours`
-        : 'They are at the stone; keep the walk clear'),
+      note: (o) => (o.stormHolding > 0
+        ? `${o.stormHolding} of them hold a stretch of it — get back onto that bay`
+        : o.stormOnWall > 0
+          ? `${o.stormOnWall} of them on the parapet against ${o.garrisonOnWall} of ours`
+          : 'They are at the stone; keep the walk clear'),
     },
   },
   breach: {
@@ -261,10 +282,14 @@ export function objectiveBrief(role: 'storm' | 'garrison'): string {
   const n = (v: string | number): string => `<b style="color:var(--gold-bright)">${v}</b>`;
   return role === 'storm'
     ? `${n('To take the city')}: get ${n(BREAK_IN)} men ${n(`${INSIDE_MARGIN} m`)} past the `
-      + 'curtain &mdash; through the gate or down off the parapet. Killing the garrison alone '
-      + 'will not do it, and neither will standing on the wall.'
+      + 'curtain &mdash; through the gate or down off the parapet &mdash; or take a stretch of '
+      + `parapet and hold ${n(WALL_FOOTHOLD)} men on it for ${n(`${WALL_HOLD_SECONDS} s`)} with `
+      + 'no defender left on it or on the bay either side. Killing the garrison alone will not '
+      + 'do it.'
     : `${n('To hold the city')}: keep them under ${n(BREAK_IN)} men ${n(`${INSIDE_MARGIN} m`)} `
-      + 'past the curtain, and keep the walk manned. A storm that makes no ground for '
+      + 'past the curtain, and never leave them a bay: '
+      + `${n(WALL_FOOTHOLD)} of them holding one uncontested for ${n(`${WALL_HOLD_SECONDS} s`)} `
+      + 'is the wall gone. A storm that makes no ground for '
       + `${n(`${Math.round(STORM_STALL_SECONDS / 60)} minutes`)} is thrown back.`;
 }
 

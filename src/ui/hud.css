@@ -351,12 +351,27 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
 }
 
+/*
+ * Wide enough for the longest thing the plaque ever says.
+ *
+ * At 24em the centre column measured 342 px at 1600x900 and the phase heading was left 141
+ * of them, sharing its row with the clock and the four speed buttons. "THE RAM AT THE GATE"
+ * wants 239 px on one line at this type, so it took two — and so did THE APPROACH, THE WALL
+ * REACHED and IN THE STREETS. Four of the five siege phases wrapped; only THE BREACH is
+ * short enough to fit, which is why it looked like one heading's problem.
+ *
+ * The bar is centred and sized by its content over a 60em floor, so this is the only number
+ * that has to move: 33em covers the widest heading plus the clock, the buttons and their
+ * gaps, and the whole plaque grows by about 6% of the screen's width to pay for it. In em,
+ * so it holds at every `--ui-scale` and every viewport rather than only at the one it was
+ * measured on.
+ */
 .tb-mid {
   flex: 1;
   display: flex;
   flex-direction: column;
   gap: 0.34em;
-  min-width: 24em;
+  min-width: 33em;
   padding: 0 0.4em;
   border-left: 1px solid rgba(217, 178, 95, 0.16);
   border-right: 1px solid rgba(217, 178, 95, 0.16);
@@ -384,6 +399,9 @@ body[data-cur='select'] #viewport { cursor: crosshair; }
   text-transform: uppercase;
   color: var(--parchment);
   text-shadow: 0 1px 0 #000;
+  /* One line, so the row's height does not change under a longer heading and the widths
+     above have something to be measured against. See `.tb-mid`. */
+  white-space: nowrap;
 }
 
 .topbar[data-phase='clash'] .tb-phase,
@@ -2070,6 +2088,22 @@ input[type='checkbox']:checked::after { opacity: 1; }
   inset: 0;
   z-index: 80;
   display: grid;
+  /*
+   * One row, exactly as tall as the sheet and no taller.
+   *
+   * Without this the grid's single implicit row is `auto`, so it is sized by the panel's
+   * *unconstrained* content — and `.rs-panel`'s `max-height: min(94vh, 100%)` cannot stop it,
+   * because that `100%` is a percentage of the very row being measured and a circular
+   * percentage does not clamp a max-content contribution. Measured at 1600x900 on a siege
+   * dispatch: the row came out 1,228 px, the panel was correctly clamped to 846 px, and
+   * `place-items: center` then centred 846 inside 1,228 and put the card's top at y=190 with
+   * its foot 136 px below the bottom of the screen. The Dismiss button — kept outside the
+   * scroll precisely so it could never be below the fold — was off the screen entirely.
+   *
+   * `minmax(0, 1fr)` makes the row definite at the sheet's own height, which is what the
+   * `100%` was always written against.
+   */
+  grid-template-rows: minmax(0, 1fr);
   place-items: center;
   background:
     radial-gradient(ellipse at 50% 42%, #1a120a, #030406 74%),
@@ -2102,6 +2136,24 @@ input[type='checkbox']:checked::after { opacity: 1; }
 
 /* Head and foot are outside the scroll so the way out is never below the fold. */
 .rs-head { flex: 0 0 auto; }
+/*
+ * The body is a wrapping row, not a stack, and the reason is the wall block.
+ *
+ * A siege dispatch carries one section a field battle does not — THE WALL, the gate, the
+ * breaches and who was left on the parapet. It went in above the roll of honour on purpose,
+ * because the wall is what the battle was about. Stacked, it cost 198 px: measured at
+ * 1600x900 the body is 610 px tall over 992 px of content, the honours began at y=553, and
+ * exactly **one of ten rows** was visible without scrolling. All eight were in the DOM,
+ * grouped, the player's own first, and `overflow-y: auto` above meant they were reachable —
+ * but a roll of honour you have to go looking for is not a roll of honour.
+ *
+ * The panel is `min(86em, 88vw)` wide and the wall block is a four-row list, so the space it
+ * needed was there sideways. `.rs-cols` and `.rs-flavour` still take a line each; the two
+ * `.rs-honours` blocks share one, wall on the left where it is still read first. No row moves
+ * in the DOM and nothing is reordered — the same markup, laid out across the width the card
+ * already had. At a width where the two will not fit side by side they wrap and the card is
+ * exactly what it was.
+ */
 .rs-body {
   flex: 1 1 auto;
   min-height: 0;
@@ -2109,7 +2161,21 @@ input[type='checkbox']:checked::after { opacity: 1; }
   overscroll-behavior: contain;
   /* Room for the scrollbar so a long roll of honour does not shift the columns. */
   padding-right: 0.2em;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  column-gap: 1.6em;
 }
+.rs-body > .rs-cols,
+.rs-body > .rs-flavour { flex: 0 0 100%; }
+/*
+ * Which block is which, told apart by what is in it rather than by a class the markup does
+ * not carry: the wall is a stat list, the roll of honour is a table. A field battle has only
+ * the second, and one item with a 34em basis fills the row on its own — so the same two rules
+ * give a storm two columns and a field battle the single column it always had.
+ */
+.rs-body > .rs-honours:has(> .rs-stats) { flex: 0 1 26em; }
+.rs-body > .rs-honours:has(table) { flex: 1 1 34em; }
 .rs-body::-webkit-scrollbar { width: 0.7em; }
 .rs-body::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.45); }
 .rs-body::-webkit-scrollbar-thumb {
