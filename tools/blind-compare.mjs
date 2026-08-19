@@ -85,6 +85,7 @@ import { readdir, mkdir, readFile, writeFile, rm, stat } from 'node:fs/promises'
 import path from 'node:path';
 import process from 'node:process';
 import sharp from 'sharp';
+import { blackBars } from './lib/deck-audit.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const args = new Map(
@@ -243,6 +244,41 @@ if (!refs.length) { console.error(`no images in ${REFS}`); process.exit(1); }
  */
 if (ours.length < 3) provFailures.push(`--ours has ${ours.length} frame(s); the overlay audit needs at least 3.`);
 if (refs.length < 3) provFailures.push(`--refs has ${refs.length} frame(s); the overlay audit needs at least 3.`);
+
+/*
+ * ---------------------------------------------------------------------------
+ * Gate 1b: cinematic bars on a source, and the wordmark rule this file gets wrong.
+ * ---------------------------------------------------------------------------
+ *
+ * Found while building the paired instrument in `tools/pair-deck.mjs`, on the full
+ * twenty-two-plate official store set rather than the ten this file has always used.
+ *
+ * **Three of the twenty-two are 2.35:1 cinematic frames delivered in a 16:9 file**, with
+ * hard 139-140 px black bars top and bottom (s2-17, s2-18, s2-19 in
+ * `reference/rome2-steam/`). Nothing in this file removes them: the crop takes 20% off the
+ * bottom, which eats one bar and leaves the other, and `flatBorderPx` only fires *after*
+ * the deck exists. A deck built from a pool containing one of them is sortable at a glance.
+ * None of the ten in `reference/rome2/` is affected, which is why this has never bitten —
+ * an accident of which ten somebody happened to download, not a property of the harness.
+ *
+ * **And the bottom-crop rule is false on exactly those three.** They place their lockup
+ * against the letterboxed picture rather than against the file, so on s2-17 the top of
+ * "TOTAL WAR" sits at y≈803 — 74% of frame height, above the 80% line this file's comment
+ * says nothing intrudes above. `pair-deck.mjs` handles both by windowing per pair; this
+ * file has no per-frame window, so the only honest thing it can do is refuse the plate.
+ */
+for (const f of refs) {
+  const bars = await blackBars(f);
+  if (bars.top + bars.bottom >= 8) {
+    provFailures.push(
+      `--refs contains ${path.relative(ROOT, f)} with ${bars.top}/${bars.bottom} px of black bar.\n`
+      + `    That is a 2.35:1 cinematic frame in a 16:9 file. This harness has one crop for the\n`
+      + `    whole deck and cannot window it out, and its 20% bottom crop does not clear the\n`
+      + `    lockup on such a plate either (measured top of "TOTAL WAR" at 74% of frame height).\n`
+      + `    Drop the plate, or build the deck with tools/pair-deck.mjs, which windows per pair.`
+    );
+  }
+}
 
 if (provFailures.length) {
   console.error('\nDECK REFUSED — provenance\n');
