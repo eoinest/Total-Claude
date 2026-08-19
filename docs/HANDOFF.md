@@ -676,6 +676,141 @@ Done: flags now use the median soldier (`5e5ce44`); soldier materials (`5ec90a5`
    **157 visible meshes**, about forty chunks at 5/3/1. Their LOD ladder works; there are just
    too many chunks. The lever is chunk count, and it belongs to `src/city/carthage/`.
 
+## Round four — soldier material fidelity, and two rigs that disagreed
+
+Branch `e/units/cloth-folds`, eight commits off `850843a`. Round three's critics scored mean
+**0.83** with face 0 and all six criteria under 2, and handed down a ranked list: cloth folds
+and silhouette, skin as vinyl, `shieldPanel`'s one tile across a 1.02 m board, a 13.1x texel
+density spread, and a flat-255 regression on `praet-torso`. All five are addressed. What
+follows is the part worth keeping.
+
+### The whole result, both rigs
+
+Ten isolated-model plates, `tools/probe-octave.mjs`, interleaved per plate against the tree
+at `850843a`. Both arms shot with the same tool against two vite servers pinned to two trees.
+
+|  | median dR | dE1 | dE2 | dE4 | dE8 | dE16 |
+|---|---|---|---|---|---|---|
+| field preset (what every archived round used) | **−4.0 %** | −2.8 % | +0.8 % | +2.2 % | +2.8 % | +2.0 % |
+| **Battle rig** (the product's own lighting) | **−1.7 %** | −0.4 % | +1.5 % | +1.0 % | +0.8 % | +1.1 % |
+
+Pooled R median: field **1.393 → 1.293**, battle **1.157 → 1.130**. Reference pool 0.520-0.621
+unchanged. **The ratio falls while every mid band rises and the 1 px band does not**, on both
+rigs, which is the one pattern `--selftest` proves a Gaussian cannot produce.
+
+Cost, measured rather than asserted:
+
+- **Draw calls identical at all seven cameras** — 108 / 166 / 158 / 122 / 88 / 129 / 105.
+- **LOD2 280 verts / 313 tris, unchanged**, both factions.
+- LOD0 Rome 5296/4786 → 5480/4822 (**+0.75 % triangles**); LOD1 2616 → 2652 (+1.4 %).
+  Germanic +12 tris. Every added triangle is a modelled shield grip, twelve per board.
+  Round three paid LOD0 +11.2 % and LOD1 +8.5 %.
+- Whole-frame triangles identical at six of seven cameras; `romanline`, the only one with
+  LOD0 men in it, 15.56 M → 15.67 M.
+- Atlas resident, bake time and texture memory unchanged — no cell was added or resized.
+- `probe-soldiermesh` 0 / 4822.
+
+### Three things that only the Battle rig could see, and one instrument fault
+
+**Grade under Battle rig or you will ship the opposite of what you measured.** The first four
+commits measured −5.9 % median dR under the studio `field` preset and **+6.3 % under the
+Battle rig**, with dE1 +19.5 %. The mechanism is that `field` is three weak hand-rolled lights
+and the battle rig is a physical sun at 2.93 through `KIT_CAVITY_PARS`, which gates *direct*
+light on the cavity — so every hard edge in a height field becomes a hard-edged shadow rather
+than a slightly darker patch. Three faults were invisible under the studio preset:
+
+1. **`WoodPlank`'s seam was a binary step**, `abs(v * 6 - plank - 0.5) > 0.47 ? 0 : 1`. A step
+   in a height field differences to a one-texel normal discontinuity at full amplitude.
+   Survivable while one tile covered a whole board; catastrophic the moment the board tiled
+   three deep. It is the critics' own "hard unbevelled creases", in the one material nobody
+   thought to look at.
+2. **And the bevel's *width* mattered more than its presence.** At 0.14 of a plank half-width
+   the transition is three texels, which is 2.5 screen px — E1. At 0.34 it is seven texels and
+   6 px — E2. That one constant moved the battle-rig median from +1.5 % to **−1.7 %**.
+3. **The wood grain did not tile.** `vnoise(u * 4, v * 90, 4, 67)` is 22.5 periods against a
+   lattice that wraps at 4. With one tile the discontinuity sat on the board's own edge;
+   tiled three deep it put two hard lines across every scutum. 36 closes, and 90 was under the
+   texture's own Nyquist at 2.8 texels a line anyway.
+
+**`shoot-model.mjs --light=battle` is not reproducible on `juth-head`.** Two shoots of a
+byte-identical tree agree to 0.0 % on nine plates and that one swings **dE1 +15.4 %, dE2
++13.2 %, dE4 +10.5 %, dR +2.0 %**. Twenty-four settle steps are not enough for it —
+`LightingSystem` re-patches on a timer and the viewer builds lazily. Discard any battle-rig
+delta on `juth-head` until someone fixes the settle. The `field` deck is unaffected and its
+floor is still the recorded 0.11-0.30 % pooled.
+
+### The octave arithmetic, so nobody re-derives it
+
+A cycle count is not a screen size until the tile's world size and the plate's magnification
+are in it. On this deck a man of 1.75 m fills 1056 logical px, i.e. 603 px/m, so one texel of
+a 0.27 m wool tile is **0.64 screen px**. A DoG band at sigma s peaks around 2.2s to 4s:
+
+    E1  ->  2-4 px   ->   3-6 texels   ->  40-85 cycles per 256 px tile
+    E2  ->  5-9 px   ->   8-14 texels  ->  18-32 cycles
+    E4  ->  9-18 px  ->  14-28 texels  ->   9-18 cycles
+    E8  -> 18-35 px  ->  28-55 texels  ->   5-9 cycles
+
+That table cost a round trip: a "nap" term at 44 cycles was added to fill the 4 px band, lands
+at 3.7 px, and took R from 1.308 to 1.451.
+
+### Findings worth carrying
+
+- **A scalar height field can only produce an isotropic normal.** Central differences cannot
+  tell a thread from a pimple. That is why every cloth surface has read as a *printed* weave
+  for three rounds: `max(warp, weft)` is a lattice of bumps. `MatDef.slope` writes tangent
+  slope directly, so a warp float tilts the normal in u only, which is what a cylinder does.
+- **Twelve of twenty-nine tiles had a region with no roughness signal at all.**
+  `roughness * (0.5 + (1 - h) * 1.05)` clamped into 0..1, and for anything authored above
+  0.645 the clamp bit: elephant hide 48.7 % of its texels pinned at a flat 255, rope 43.0 %,
+  fur 35.4 %, plume 23.9 %, mane 16.6 %, wool 15.3 %, hair 15.0 %, linen 11.9 %, oak 9.2 %,
+  shield back 8.0 %, **shield board 6.3 %**, fine cloth 5.4 %. `praet-torso`, the plate round
+  three recorded as blowing about 6 % of its area to flat 255, is more than half shield board.
+  All 29 cells now measure 0.00 % at 255 in albedo, openness *and* roughness.
+- **Fit a swing to the headroom symmetrically, not asymmetrically.** The first version capped
+  `up` at the ceiling and spent the remainder downward, keeping the full peak-to-peak swing at
+  the cost of the mean — wool 0.836 → 0.705, and hair, fur, plume and rope with it. Under the
+  studio preset that looked free; under the Battle rig a glossier cloth is a sharper specular
+  lobe and it cost dE1 +1.6 %.
+- **`MeshBuilder.box` mapped one whole tile onto every face however small.** An 8 mm arrow
+  shaft carried 31,250 texels/m against a bare leg's 570, which is most of the 13.1x spread.
+  Those texels are not detail: 250 of them across the four screen pixels a shaft occupies is
+  aliasing, manufactured by the mapping. `UvRect` now carries `m` from `MAT_TILE_M` and a face
+  takes the share it covers, slid by a hash of its own position. **Spread 13.1x → 7.3x at
+  LOD0, 14.9x → 7.5x at LOD1; total UV area per world area 133,665 M → 42,179 M.** It is a
+  constructor option and only `buildSoldierGeometry` sets it, which is what keeps LOD2
+  byte-identical and keeps the elephant, horse and engine builders out of it.
+- **A material cell must not carry board-scale features.** The hide tile painted a handgrip at
+  v = 0.5 and a turn-over at all four edges, which pinned `shieldPanel` at one tile across a
+  1.06 m board — 236 texels/m along, the worst-sampled surface on the figure. The rim was a
+  duplicate of binding modelled ten lines away; the grip is now twelve triangles that occlude.
+- **Fold loops are free.** A radial two-harmonic modulation of a ring the tube already emits
+  costs no vertex and no triangle, and a Nyquist guard drops it below six segments so the
+  crowd tier cannot pay for it by accident.
+- **Skin was one hue times a value ramp** and the second-flattest cell in the sheet at
+  |n.xy| 0.112. A capillary-flush field driving the three channels apart is most of what
+  stopped it reading as vinyl; the measured octave move is small and the visible one is not.
+- **Exactly periodic armour is a *material* defect, not a variation defect.** Eighteen
+  identical mail rings on a perfect grid is what a printed mail reads as, and the crowd
+  already carries 57-59 kit masks. Per-ring jitter in gauge, position and tarnish, hashed
+  modulo the lattice count so the tile still closes, moves the octave by 0.1 % and the
+  character by a great deal.
+
+### Still open, in the order a critic would name them
+
+1. **Everything on an isolated plate is monochrome sepia** — helmet, shield, skin, ground and
+   sky all in one narrow warm band. That is the grade and the rig, not the model, and it is
+   the single loudest thing left in these frames. Rubric G2 explicitly calls a monochrome
+   dust-beige frame a worse error than over-saturation.
+2. **The head is a stack of hard-edged boxes.** The galea reads as blocks; the eyes are
+   hard-edged cut-out ovals that stair-step on the lids; the nose is a faceted slab with a
+   seam. Geometry, and the face *tile* still has a 256 px band it does not use.
+3. **`praet-front` is the one plate still the wrong way under the Battle rig** (+5.5 %). It is
+   scale armour and a scutum at full magnification.
+4. **LOD2 still carries the 20.8x density spread** — deliberately, because byte-identity is
+   the contract. Whoever is allowed to break it gets the same 3x reduction the near tiers had.
+5. **`shieldPanel`'s rim UV is a diagonal line at v = 0.5**, so the binding samples a 1D slice
+   of a 2D tile. It was already like that; it is now the least-authored band on the board.
+
 ## Grading
 
 ### CORRECTED — the face was inside out, and round two's fix pointed the deck at the back
