@@ -330,6 +330,47 @@ export interface GateBlockOut {
   halfDepth: number;
   /** Absolute Y of the top of the block's battlements. */
   topY: number;
+  /**
+   * The gatehouse's **battlement**, and why it took four fields to say what a bay says in
+   * two.
+   *
+   * `topY` used to be the whole of it, and `CitySystem.masonryTopAt` returned it flat across
+   * the block's entire 25 x 11.9 m footprint. Both halves of that were wrong and both were
+   * measurable:
+   *
+   *  - The crown a man's shot has to clear is `sillY`, not `topY`. The roof of the block and
+   *    the cornice round it stand at the merlons' feet, so **11 of the block's 11.9 m of
+   *    depth were being reported two metres too high**, and a shot from the wall-walk on
+   *    either side that would have skimmed the roof broke on air.
+   *  - The merlon line itself is crenellated in stone — `buildGate` lays a real
+   *    `crenellation()` on it — and was modelled as a solid barrier. A bay's parapet has
+   *    alternated merlon and crenel since the day an archer was found shooting his own
+   *    battlement; the gatehouse never did, so the 25 m of frontage between two garrisoned
+   *    bays was a wall nobody could shoot through.
+   *
+   * Measured at 4e3145f on Rome: `masonryTopAt` returned **one** distinct height over the
+   * 24 m at the gate, against two over an ordinary 25 m of curtain twenty metres away.
+   */
+  /** Absolute Y of the crenel sills: the crown the merlons stand on, and the roof behind. */
+  sillY: number;
+  /** Normal-offsets of the fieldward merlon line's inner and outer faces. */
+  parapetInner: number;
+  parapetOuter: number;
+  /**
+   * True where the cityward face carries a merlon line as well, mirrored about the
+   * centreline. Rome's gate is crenellated on its field face only; Carthage's is a keep and
+   * is crenellated on both, which is what a gatehouse in a casemated wall is for.
+   */
+  crenelledCityward: boolean;
+  /**
+   * Merlon and crenel lengths **as the stone was cut**, which on Rome is not what the plan
+   * states: `buildGate` lays 1.5 / 0.8 while `rome/plan.ts` publishes 1.7 / 0.95 for the
+   * curtain. Resolving the block through the plan's numbers would put the collision model
+   * out of register with its own masonry by a whole merlon at the block's far end — the
+   * exact failure `crenellationRun` was written to prevent. So the block carries its own.
+   */
+  merlonLength: number;
+  crenelLength: number;
   /** Half the clear width of the carriageway. */
   openHalf: number;
 }
@@ -596,6 +637,17 @@ const GATE_PASS_H = 8.4;
 const GATE_ATTIC = 4.8;
 /** Merlon height on the gate block's crown. */
 const GATE_MERLON_H = 2.0;
+/**
+ * The crown's crenellation, as three numbers the stone and the collision model share.
+ *
+ * `buildGate` used to carry these as literals in its `crenellation()` call and
+ * `GateBlockOut` published none of them, so `masonryTopAt` had nothing to alternate with and
+ * reported the block solid. Named here because two callers now need the same answer.
+ */
+const GATE_CREN_INSET = 0.5;
+const GATE_CREN_T = 0.9;
+const GATE_MERLON_W = 1.5;
+const GATE_CRENEL_W = 0.8;
 /** Height of the brick face's springing above the road, where the barrel vault starts. */
 const GATE_SPRING = 1.15 + 4.3;
 /**
@@ -1051,6 +1103,15 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
     halfRun: GATE_BLOCK_W * 0.5,
     halfDepth: GATE_BLOCK_D * 0.5 + 0.45,
     topY: heightAt(GATE_X, gateCz) + GATE_PASS_H + GATE_ATTIC + GATE_MERLON_H,
+    // The crown, at the merlons' feet. `buildGate` calls the same expression `blockTop`.
+    sillY: heightAt(GATE_X, gateCz) + GATE_PASS_H + GATE_ATTIC,
+    // `buildGate` authors the merlon line at local z = `zF + GATE_CREN_INSET`, and modules
+    // are authored with −Z outward (see `frameOf`), so its offset along `n` is positive.
+    parapetInner: GATE_BLOCK_D * 0.5 - GATE_CREN_INSET - GATE_CREN_T * 0.5,
+    parapetOuter: GATE_BLOCK_D * 0.5 - GATE_CREN_INSET + GATE_CREN_T * 0.5,
+    crenelledCityward: false,
+    merlonLength: GATE_MERLON_W,
+    crenelLength: GATE_CRENEL_W,
     openHalf: GATE_OPEN_WIDTH * 0.5,
   };
 
@@ -2022,7 +2083,10 @@ function buildGate(batch: Batch, detail: number, bay: Bay, heightAt: (x: number,
   box(stone, -blockW / 2 - 0.65, blockTop - 0.55, zF - 0.65, blockW / 2 + 0.65, blockTop, blockD * 0.5 + 0.65, PAL.travertine, {
     topGain: 1.18,
   });
-  crenellation(brick, -blockW / 2, zF + 0.5, blockW / 2, zF + 0.5, blockTop, GATE_MERLON_H, 0.9, PAL.brick, 1.5, 0.8, detail >= 1);
+  crenellation(
+    brick, -blockW / 2, zF + GATE_CREN_INSET, blockW / 2, zF + GATE_CREN_INSET,
+    blockTop, GATE_MERLON_H, GATE_CREN_T, PAL.brick, GATE_MERLON_W, GATE_CRENEL_W, detail >= 1,
+  );
 
   // ---- flanking semicircular towers ---------------------------------------
   // Aurelian's major gates were flanked by semicircular towers rising well above the

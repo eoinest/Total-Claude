@@ -542,6 +542,20 @@ export class CitySystem implements Subsystem {
       this.crenStep[i] = r.step;
       this.crenMerlon[i] = r.merlon;
     }
+    // The gatehouse's battlement, resolved once against its own run for the same reason.
+    // It cannot go through `crenStep` — the block straddles two bays and one x cannot name
+    // two runs, which is why it is a separate record in the first place — and it cannot use
+    // the plan's merlon lengths, because on Rome the stone was cut at 1.5 / 0.8 and the plan
+    // states 1.7 / 0.95. See `GateBlockOut.merlonLength`.
+    if (this.gateBlock) {
+      const gr = crenellationRun(
+        this.gateBlock.halfRun * 2,
+        this.gateBlock.merlonLength,
+        this.gateBlock.crenelLength,
+      );
+      this.gateStep = gr.step;
+      this.gateMerlon = gr.merlon;
+    }
     this.assertUniformBayPitch();
     for (const w of this.checks.warnings ?? []) console.warn(`[city:${this.plan.id}] ${w}`);
 
@@ -1613,6 +1627,9 @@ export class CitySystem implements Subsystem {
   /** Per-bay battlement geometry, parallel to `bays`. See `crenellationRun`. */
   private crenStep = new Float64Array(0);
   private crenMerlon = new Float64Array(0);
+  /** The gatehouse's, on its own run. See `GateBlockOut.merlonLength`. */
+  private gateStep = 0;
+  private gateMerlon = 0;
 
   /**
    * Absolute Y of the top of the masonry at a point, or `-Infinity` where there is none.
@@ -1621,9 +1638,13 @@ export class CitySystem implements Subsystem {
    * itself in the terrain on the far side. O(1): the bay index is arithmetic in x, and the
    * cross-section test is a distance to the bay centreline.
    *
-   * The gatehouse reports its block height across the whole 25 m of the block and ignores
-   * the carriageway, which is deliberate — a missile through the open gate is a
-   * one-in-a-thousand shot and not worth a second branch in a per-projectile hot path.
+   * The gatehouse reports **its own battlement**, on the same merlon/crenel model as a bay
+   * and at its own period — see `gateTopAt`. It used to report `topY` flat across the whole
+   * block, which put its roof two metres into the air and made 25 m of crenellated stone
+   * between two garrisoned bays into a solid barrier.
+   *
+   * It still ignores the carriageway, which is deliberate — a missile through the open gate
+   * is a one-in-a-thousand shot and not worth a second branch in a per-projectile hot path.
    *
    * The block is tested as its own oriented box rather than as "the bay flagged `isGate`".
    * It is 25 m long, centred on where the Via Flaminia actually crosses, and straddles two
@@ -1636,7 +1657,9 @@ export class CitySystem implements Subsystem {
     if (gb) {
       const gt = (x - gb.x) * gb.dx + (z - gb.z) * gb.dz;
       const goff = (x - gb.x) * gb.nx + (z - gb.z) * gb.nz;
-      if (Math.abs(gt) <= gb.halfRun && Math.abs(goff) <= gb.halfDepth) return gb.topY;
+      if (Math.abs(gt) <= gb.halfRun && Math.abs(goff) <= gb.halfDepth) {
+        return this.gateTopAt(gb, gt, goff);
+      }
     }
     /**
      * Carthage's forward lines, tested **before** the main wall.
@@ -1744,19 +1767,33 @@ export class CitySystem implements Subsystem {
    * and `parapetOuter`. `step` is how far along the run the caller would have to move to get
    * there, signed along `dx, dz`.
    *
-   * Null only where there is no wall-walk to stand on: off the circuit, on an unwalkable bay,
-   * and inside the gatehouse block, which reports one flat top across 25 m and publishes no
-   * battlement at all. A bay whose parapet is not raised yet **does** answer, with
-   * `hasParapet: false` and its heights flattened to the walk — because "there is no tooth
-   * here" is an answer a shooter needs, and returning null for it left a rear rank ploughing
-   * its shots into its own walkway with nothing to tell it not to.
+   * Null only where there is no wall-walk to stand on: off the circuit, or on an unwalkable
+   * bay. A bay whose parapet is not raised yet **does** answer, with `hasParapet: false` and
+   * its heights flattened to the walk — because "there is no tooth here" is an answer a
+   * shooter needs, and returning null for it left a rear rank ploughing its shots into its
+   * own walkway with nothing to tell it not to.
+   *
+   * **The gatehouse used to be in that list and no longer is.** It answered null across its
+   * whole 25 x 11.9 m plan footprint, on a test with no height term in it — so it swallowed
+   * not only its own crown but 22.25 m of the *garrisonable bay next door*, whose run it
+   * straddles. Measured on Rome at 4e3145f: 22 of the 49 `Siege` stations within 40 m of
+   * the gate, every one of them on bay 19, stood where the city said there was no
+   * battlement, and 823 garrison shots in four minutes were discarded for it.
+   *
+   * It now answers with the block's own battlement. Note what that does *not* fix: those 22
+   * stations are 6.6 m below the gatehouse's crown, so `Projectiles.aimOverParapet` still
+   * declines them — but now at `notOnThisWalk` rather than `noBattlement`, which is the true
+   * reason. A man cannot shoot over a battlement he is standing six metres underneath, and
+   * the defect that put him inside the block is `Siege.buildSpine`'s, not this file's.
    */
   embrasureAt(x: number, z: number): Embrasure | null {
     const gb = this.gateBlock;
     if (gb) {
       const gt = (x - gb.x) * gb.dx + (z - gb.z) * gb.dz;
       const goff = (x - gb.x) * gb.nx + (z - gb.z) * gb.nz;
-      if (Math.abs(gt) <= gb.halfRun && Math.abs(goff) <= gb.halfDepth) return null;
+      if (Math.abs(gt) <= gb.halfRun && Math.abs(goff) <= gb.halfDepth) {
+        return this.gateEmbrasure(gb, gt, x);
+      }
     }
     const bi = this.bayIndexAt(x);
     if (bi < 0) return null;
@@ -1827,6 +1864,80 @@ export class CitySystem implements Subsystem {
       halfThickness: bay.halfThickness,
       hasParapet: true,
     };
+  }
+
+  /**
+   * The gatehouse's battlement as a place a shot can leave from.
+   *
+   * Same solve as the bay branch of `embrasureAt`, on the block's own run: snap to the
+   * nearest crenel centre, keep it on the block, and report the heights of the crown rather
+   * than of whichever bay's arithmetic happens to reach this x.
+   *
+   * `bay` is the index of the bay whose run contains the point, which keeps that field
+   * meaning what its comment says. Nothing in `src/sim/` reads it today.
+   */
+  private gateEmbrasure(gb: GateBlockOut, gt: number, x: number): Embrasure {
+    const step = this.gateStep > 0 ? this.gateStep : gb.halfRun * 2;
+    const crenel = Math.max(0.01, step - this.gateMerlon);
+    // Run coordinate from the west end, where `crenellation()` starts laying.
+    const t = gt + gb.halfRun;
+    const len = gb.halfRun * 2;
+    let tc = Math.round(t / step) * step;
+    const lo = crenel * 0.5;
+    const hi = len - crenel * 0.5;
+    while (tc < lo) tc += step;
+    while (tc > hi) tc -= step;
+    const mid = clamp(tc, lo, hi) - gb.halfRun;
+    return {
+      bay: this.bayIndexAt(x),
+      x: gb.x + gb.dx * mid,
+      z: gb.z + gb.dz * mid,
+      nx: gb.nx, nz: gb.nz,
+      dx: gb.dx, dz: gb.dz,
+      // The crown is what a man on the gatehouse stands on. It is also `sillY`: there is no
+      // walkway set below the merlons here, the roof *is* the walk.
+      walkY: gb.sillY,
+      sillY: gb.sillY,
+      crestY: gb.topY,
+      parapetInner: gb.parapetInner,
+      parapetOuter: gb.parapetOuter,
+      width: crenel,
+      step: mid - gt,
+      halfThickness: gb.halfDepth,
+      hasParapet: true,
+    };
+  }
+
+  /**
+   * The top of the gatehouse's masonry at a point already known to be inside its footprint.
+   *
+   * The same three-band model `masonryTopAt` runs over a bay, at the block's own
+   * crenellation period rather than the plan's:
+   *
+   *  - **behind or outboard of the merlon line** — the roof of the block and the cornice
+   *    round it, both at `sillY`. This is the band that was two metres too high, and it is
+   *    11 of the block's 11.9 m of depth.
+   *  - **in the merlon line, on a tooth** — `topY`.
+   *  - **in the merlon line, in a gap** — `sillY`, which is what makes a shot from the
+   *    wall-walk on either side able to cross the gate frontage at all.
+   *
+   * `gt` runs from `-halfRun` at the west end, and `crenellation()` lays merlon `i` centred
+   * at `(i + 0.5) * step` from the run's start with half a gap at each end, so the phase is
+   * taken from `gt + halfRun`. Same arithmetic as the bay branch, and for the same reason:
+   * the nominal `merlonW + gapW` pitch is not what the stone was built at.
+   *
+   * Carthage's block carries a mirrored line on its cityward face; Rome's does not.
+   */
+  private gateTopAt(gb: GateBlockOut, gt: number, goff: number): number {
+    const a = Math.abs(goff);
+    const inBand = a >= gb.parapetInner && a <= gb.parapetOuter
+      && (goff > 0 || gb.crenelledCityward);
+    if (!inBand) return gb.sillY;
+    const step = this.gateStep;
+    if (step <= 0) return gb.topY;
+    const t = gt + gb.halfRun;
+    const phase = t - Math.floor(t / step) * step;
+    return Math.abs(phase - step * 0.5) <= this.gateMerlon * 0.5 ? gb.topY : gb.sillY;
   }
 
   /**

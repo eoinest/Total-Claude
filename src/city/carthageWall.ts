@@ -369,6 +369,19 @@ const GATE_PASS_H = 8.0;
 const GATE_ATTIC = 5.4;
 const GATE_MERLON_H = 2.1;
 /**
+ * The crown's crenellation, shared by the stone `buildPunicGate` lays and the battlement
+ * `GateBlockOut` publishes. See that type: the block used to publish only `topY` and the
+ * collision model reported it flat across the whole footprint.
+ *
+ * Carthage's block is crenellated on **both** faces — it is a four-storey keep in a
+ * casemated wall, not a decorated arch — so the two lines are mirrored about the centreline
+ * and `crenelledCityward` is true.
+ */
+const GATE_CREN_INSET = 0.45;
+const GATE_CREN_T = 0.95;
+const GATE_MERLON_W = 1.55;
+const GATE_CRENEL_W = 0.8;
+/**
  * Where the three gates cross, as offsets in x from the map's own gate axis.
  *
  * §4.5 puts the Porta Byrsae on the isthmus road, the Porta Uticensis 560 m north and the
@@ -1425,6 +1438,15 @@ export function buildCarthageWall(
     halfRun: GATE_BLOCK_W * 0.5,
     halfDepth: GATE_BLOCK_D * 0.5 + 0.5,
     topY: gateG + GATE_PASS_H + GATE_ATTIC + GATE_MERLON_H,
+    // `buildPunicGate` calls this `top`: the crown the merlons stand on.
+    sillY: gateG + GATE_PASS_H + GATE_ATTIC,
+    // Authored at local z = `-hd + GATE_CREN_INSET`, and −Z is outward, so the offset along
+    // `n` is positive. The cityward line is its mirror.
+    parapetInner: GATE_BLOCK_D * 0.5 - GATE_CREN_INSET - GATE_CREN_T * 0.5,
+    parapetOuter: GATE_BLOCK_D * 0.5 - GATE_CREN_INSET + GATE_CREN_T * 0.5,
+    crenelledCityward: true,
+    merlonLength: GATE_MERLON_W,
+    crenelLength: GATE_CRENEL_W,
     openHalf: GATE_PASS_W * 0.5,
   };
 
@@ -2371,14 +2393,14 @@ function buildPunicGate(
     stone, -GATE_PASS_W * 0.5 - 0.1, g + GATE_PASS_H, -hd,
     GATE_PASS_W * 0.5 + 0.1, top, hd, col, { bottom: true, top: false }
   );
-  // Crenellated crown across the whole block.
+  // Crenellated crown across the whole block, on both faces.
   crenellation(
-    stone, -GATE_BLOCK_W * 0.5, -hd + 0.45, GATE_BLOCK_W * 0.5, -hd + 0.45,
-    top, GATE_MERLON_H, 0.95, col, 1.55, 0.8, detail >= 1
+    stone, -GATE_BLOCK_W * 0.5, -hd + GATE_CREN_INSET, GATE_BLOCK_W * 0.5, -hd + GATE_CREN_INSET,
+    top, GATE_MERLON_H, GATE_CREN_T, col, GATE_MERLON_W, GATE_CRENEL_W, detail >= 1
   );
   crenellation(
-    stone, -GATE_BLOCK_W * 0.5, hd - 0.45, GATE_BLOCK_W * 0.5, hd - 0.45,
-    top, GATE_MERLON_H, 0.95, col, 1.55, 0.8, false
+    stone, -GATE_BLOCK_W * 0.5, hd - GATE_CREN_INSET, GATE_BLOCK_W * 0.5, hd - GATE_CREN_INSET,
+    top, GATE_MERLON_H, GATE_CREN_T, col, GATE_MERLON_W, GATE_CRENEL_W, false
   );
   // The passage soffit: a flat coffered ceiling, which is what a Punic gate has where a
   // Roman one has a barrel.
