@@ -26,7 +26,7 @@
 
 import { chromium } from 'playwright';
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -472,7 +472,23 @@ const SHOTS = {
     // vs s2-00: inside the fight, camera in the grass, level.
     desc: 'AB2: inside the melee at eye level',
     follow: 'contact', at: 96, hour: 15.0, weather: 'clear',
-    cam: { eye: 1.60, aim: 0.30, dist: 17, fov: 34 },
+    /*
+     * The one shot where standoff does not buy distance.
+     *
+     * `contact` resolves to the densest 40 m cell of a melee eight thousand men deep, so at
+     * eye height the camera is *inside* the press however far back it is set: measured, 14 m
+     * of standoff put the nearest man at 0.75 m and 17 m put him at 0.88. Three metres bought
+     * thirteen centimetres. What came back was a shield filling the lower half of the frame
+     * and no legible action behind it.
+     *
+     * The reference melee plates are shot at about this eye height, and their fights are
+     * *loose* — men in pairs with ground between them — which is a property of their
+     * simulation and not of their camera. Ours is a solid block, so the only lever left is to
+     * put the lens above the helmets and look down into it. 2.55 m is a head taller than the
+     * tallest man here, which is a cameraman on a box rather than a tactical map view, and it
+     * is the closest match available without pretending our formations are theirs.
+     */
+    cam: { eye: 2.55, aim: 1.05, dist: 20, fov: 34 },
   },
   'ab2-rome-march': {
     // vs s2-13: a column on the march, camera at a bystander's height beside the road.
@@ -522,7 +538,9 @@ const SHOTS = {
     // vs s2-01: close melee in tall grass, camera almost on the ground.
     desc: 'AB2: inside the Punic melee, camera almost in the grass',
     map: 'carthage', opponent: 2, follow: 'contact', at: 96, hour: 13.4, weather: 'overcast',
-    cam: { eye: 1.45, aim: 0.25, dist: 16, fov: 36 },
+    // Same reasoning as `ab2-rome-melee` above, a touch lower because the Punic line is
+    // shallower than a legionary one and lets more ground through.
+    cam: { eye: 2.35, aim: 1.00, dist: 18, fov: 36 },
   },
   'ab2-carth-march': {
     // vs s2-16: a barbarian mass advancing, close, camera low among them.
@@ -1545,20 +1563,58 @@ try {
    * true means it is not, and *missing* means nobody knows — all three are distinct, and
    * the third is the one that produced leak six.
    */
+  /*
+   * A partial re-shoot must not destroy the provenance of the frames it did not touch.
+   *
+   * `--shots=a,b` into a directory that already holds a fourteen-frame pass used to overwrite
+   * `report.json` with a two-entry one, so the deck's own record would then describe two of
+   * its members and be silent about the other twelve. Silence is the state that produced leak
+   * six. Retuning one badly framed pair is a normal thing to want — the alternative is a
+   * forty-minute full pass for one frame, which is the pressure that gets provenance skipped.
+   *
+   * So the record merges by shot name, and it refuses to merge across anything that has to be
+   * uniform for the frames to belong in one deck: the HUD policy, the pixel ratio, the frame
+   * size, the quality tier and the commit. A mixed-commit directory is not a pass, it is two
+   * passes in a trench coat, and a deck built from one would be measuring the difference
+   * between them as if it were a difference between renderers.
+   */
+  const recPath = path.join(OUT, 'report.json');
+  const passes = [];
+  let merged = results;
+  if (existsSync(recPath)) {
+    const prior = JSON.parse(await readFile(recPath, 'utf8'));
+    const fixed = { hud: SHOW_HUD, dpr: DPR, width: W, height: H, quality: QUALITY, commit: COMMIT };
+    const clash = Object.entries(fixed).filter(([k, v]) => prior[k] !== undefined && prior[k] !== v);
+    if (clash.length) {
+      console.error(`\nREFUSED to merge into ${path.relative(ROOT, recPath)}: `
+        + clash.map(([k, v]) => `${k} was ${prior[k]}, now ${v}`).join('; '));
+      console.error('  Shoot the whole set into a clean directory instead.');
+      failed++;
+    } else {
+      const byName = new Map((prior.shots ?? []).map((r) => [r.name, r]));
+      for (const r of results) byName.set(r.name, r);
+      merged = [...byName.values()];
+      passes.push(...(prior.passes ?? [{ at: prior.at, argv: prior.argv }]));
+    }
+  }
+  passes.push({ at: new Date().toISOString(), argv: process.argv.slice(2) });
+
   await writeFile(
-    path.join(OUT, 'report.json'),
+    recPath,
     JSON.stringify(
       {
         at: new Date().toISOString(),
         tool: 'tools/shoot.mjs',
         argv: process.argv.slice(2),
+        /** Every pass that contributed a frame to this directory, oldest first. */
+        passes,
         hud: SHOW_HUD,
         dpr: DPR,
         worldOverlay: overlayHidden,
         blindSafe: !SHOW_HUD,
         commit: COMMIT,
         width: W, height: H, quality: QUALITY, gl,
-        shots: results,
+        shots: merged,
         consoleErrors: [...new Set(consoleErrors)],
       },
       null,
