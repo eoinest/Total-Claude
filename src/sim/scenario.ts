@@ -634,11 +634,15 @@ const OPEN_ZOOM = 0.68;
 /**
  * Where the crest is asked to sit, as a fraction of the half-frame above the optical axis.
  *
- * The top plaque and the deployment banner together end at y 158 of 900 — 0.65 of the way up
- * the upper half-frame — so anything above 0.6 is behind furniture. 0.5 leaves 67 px of
- * clear sky over the highest merlon in the framed stretch and keeps the wall in the upper
- * third rather than sinking it to the middle. Being a fraction of the frame rather than a
- * pixel count, it holds at any resolution.
+ * The top plaque and the deployment banner together end at y 178 of 900 — 0.60 of the way up
+ * the upper half-frame — so anything above 0.6 is behind furniture. 0.5 leaves 57 px of clear
+ * sky over the highest merlon in the framed stretch at Carthage and 80 at Rome, and keeps the
+ * wall in the upper third rather than sinking it to the middle. Being a fraction of the frame
+ * rather than a pixel count, it holds at any resolution.
+ *
+ * The band was y 158 while this was first solved and is y 178 now: the objective brief on the
+ * deployment plaque was being deleted by `sync` on its first tick, so it occupied no height.
+ * Re-measured with it on screen, which is the frame the player actually gets.
  */
 const OPEN_CREST_FRAC = 0.5;
 /** Bays either side of the gate whose crest must clear the plaque. */
@@ -649,14 +653,32 @@ const OPEN_SPAN = 3;
  *
  * Both halves of this were wrong and each was wrong on its own.
  *
- * **Azimuth.** The offset was taken from the bay's outward normal but the yaw was the literal
- * `0`, and yaw 0 looks along +Z. So the camera stood square to the wall and then looked past
- * it by exactly the angle the curtain runs off the axis — 3.55 degrees at Carthage, 2.35 at
- * Rome — which is 72 px of a 1600-wide frame at the wall and grows with every metre of the
- * offset. `place()` puts the eye at `focus − (sin yaw, ·, cos yaw)·cos(pitch)·r`, so the view
- * direction is `(sin yaw, ·, cos yaw)` and looking back down the normal is
- * `atan2(−nx, −nz)`. Verified by projection, not by reading: with it the gate bay's midpoint
- * lands at x 800.0 of 1600 on both maps, where before it was 51 px off at Carthage.
+ * **Azimuth — which was two faults, and the smaller one was hiding the larger.** The shot was
+ * aimed with `mid(1)`, the midpoint of the bay *next to* the gate, and then turned with a yaw
+ * of the literal `0`. Measured at 1600x900 by driving the rig to each of the four
+ * combinations at the shipped zoom and projecting the gate bay's own midpoint:
+ *
+ * ```
+ *                                    Carthage        Rome
+ *   mid(1), yaw 0     as shipped     +210.9 px     +268.3 px
+ *   mid(1), yaw normal               +266.0 px     +306.2 px   <- worse
+ *   gate bay, yaw 0                   -52.2 px      -35.5 px
+ *   gate bay, yaw normal                 800.0         800.0
+ * ```
+ *
+ * So the standing hypothesis — that the wall ran off the side because the yaw was `0` on a
+ * curtain that is not axis-aligned — named the wrong cause. Correcting the yaw *on its own
+ * makes it worse*, by 55 px at Carthage and 38 at Rome. The wall ran off the side because the
+ * camera was aimed one bay along the curtain, 30 m at Carthage and 36 at Rome, which is
+ * +263 px and +304 px; the yaw error was worth −52 px and −36 px and was partially cancelling
+ * it. Two wrongs that were quietly subtracting from one another, which is why the frame was
+ * off by 211 px rather than the 263 the bay alone would have given.
+ *
+ * The yaw is still wrong and is still fixed. `place()` puts the eye at
+ * `focus − (sin yaw, ·, cos yaw)·cos(pitch)·r`, so the view direction is `(sin yaw, ·, cos yaw)`
+ * and looking back down the bay's own normal is `atan2(−nx, −nz)` — 3.55 degrees at Carthage,
+ * 2.35 at Rome. Both corrections together, and only both, put the gate bay's midpoint at
+ * x 800.0 of 1600 on both maps. Verified by projection, not by reading.
  *
  * **Elevation, which was the fatal one.** At zoom 0.52 the rig's eye sits 23 m up and 47 m
  * behind the focus, and a crest 96 m *beyond* the focus is then 23.0 degrees above the
@@ -1054,9 +1076,10 @@ function deployAssault(
     /*
      * Outside the gate looking square at it: the curtain across the frame, the gate on the
      * axis, the assault and the ground the player may still move it over below. See
-     * `openingShot` — every number in it is solved off the rig's own orbit, because the two
-     * that were written down here (a yaw of `0` and an offset of 96 m) between them opened
-     * the deployment phase on empty ground with the wall above the top edge of the screen.
+     * `openingShot` — every number in it is solved off the rig's own orbit, because the three
+     * that were written down here (the bay next to the gate, a yaw of `0`, and an offset of
+     * 96 m) between them opened the deployment phase on empty ground with the wall above the
+     * top edge of the screen and the gate 211 px right of where the camera was pointed.
      */
     cameraFocus: openingShot(ctx, bays, gateBay),
   };
