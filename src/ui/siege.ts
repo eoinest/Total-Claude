@@ -23,8 +23,16 @@ import { BREAK_IN, INSIDE_MARGIN, STORM_STALL_SECONDS } from '../sim/BattleFlow'
 import { Faction } from '../sim/types';
 import { PLAYER_FACTION } from './theme';
 
-/** The five things that happen at a wall, in the order they happen. */
-export type SiegePhase = 'approach' | 'wall' | 'ram' | 'breach' | 'streets';
+/**
+ * The five things that happen at a wall, in the order they happen.
+ *
+ * The order is `derivePhase`'s own, read backwards: it returns the *furthest* thing that has
+ * happened, so its first test is the last phase. `wall` outranks `ram` because men on the
+ * parapet is further on than the ram having struck, and a storm is usually doing both.
+ * This union listed them `approach | wall | ram | …` under a comment claiming they were in
+ * order, which is the one place a reader would look to find out which of the two comes first.
+ */
+export type SiegePhase = 'approach' | 'ram' | 'wall' | 'breach' | 'streets';
 
 export interface SiegeRead {
   /** Which side of it the player is on. */
