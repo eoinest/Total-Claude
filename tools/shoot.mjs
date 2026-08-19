@@ -527,15 +527,21 @@ const SHOTS = {
     // Two graders flagged the pair as not subject-matched and they were right. At t+190 the
     // ground is already littered, so framing the fight gets the bodies for nothing.
     desc: 'AB2: still fighting over ground already littered, low and close',
-    follow: 'contact', at: 190, hour: 12.8, weather: 'overcast',
-    cam: { eye: 1.35, aim: 0.35, dist: 15, fov: 38 },
+    // t+140, not t+190: by 190 the lines had come apart on this map and `contact` framed men
+    // standing about in grass rather than a fight. The ground is already littered at 140.
+    follow: 'contact', at: 140, hour: 12.8, weather: 'overcast',
+    cam: { eye: 1.35, aim: 0.35, dist: 12, fov: 38 },
   },
   'ab2-rome-wall': {
     // vs s2-17: 2.35:1 siege plate, tower against a curtain, camera up and well back.
     desc: 'AB2: the Aurelian Wall from outside, mid-assault, elevated and long',
     scenario: 'assault', hour: 14.3, at: 170, weather: 'clear',
-    wall: { bay: 2, stand: 10, lift: 0, yaw: 'in', yawAdd: -0.42 },
-    cam: { eye: 16, aim: 9, dist: 70, fov: 26 },
+    wall: { bay: 2, stand: 10, lift: 0, yaw: 'in', yawAdd: 0.55 },
+    // 9 m, not 16. At sixteen metres the eye clears a twelve-metre curtain from eighty metres
+    // out and photographs the rooftops behind it — a picture of the city, not of the assault
+    // on its wall. Below the parapet the masonry is the subject and the ranks are in front of
+    // it, which is what s2-17 shows. The yaw also swings off a sun measured at 14.7 degrees.
+    cam: { eye: 9, aim: 6, dist: 60, fov: 26 },
   },
   'ab2-rome-parapet': {
     // vs s2-12: men on a high work, looking out and down over the city.
@@ -550,7 +556,11 @@ const SHOTS = {
     // vs s2-09: front rank of a spear line, camera at chest height, city behind.
     desc: 'AB2: the Punic front rank at chest height, the works behind',
     map: 'carthage', opponent: 2, follow: 'enemyFront', at: 6, hour: 10.2, weather: 'overcast',
-    cam: { eye: 1.75, aim: 1.02, dist: 8, fov: 30 },
+    // A Punic line is one or two ranks deep, so a camera square to its face photographs
+    // scattered men in a field. s2-09 looks *along* a rank, which is how a thin line fills a
+    // frame, so this swings a radian off square and comes in to six metres.
+    yawAdd: 1.0,
+    cam: { eye: 1.55, aim: 0.95, dist: 6, fov: 34 },
   },
   'ab2-carth-melee': {
     // vs s2-01: close melee in tall grass, camera almost on the ground.
@@ -589,7 +599,10 @@ const SHOTS = {
     desc: 'AB2: Carthage being stormed, from high above the curtain',
     map: 'carthage', opponent: 2, scenario: 'assault', hour: 15.2, at: 170, weather: 'overcast',
     wall: { bay: 2, stand: 40, lift: 0, yaw: 'in', yawAdd: -0.35 },
-    cam: { eye: 110, aim: 5, dist: 520, fov: 32 },
+    // 200 m out at 45 m up, not 520 at 110. The far version put the whole city in a strip
+    // across the middle of an empty plain; s2-19 fills its frame with roofs. Depression stays
+    // at 11 degrees so the horizon holds the 0.15 the plate keeps it at.
+    cam: { eye: 45, aim: 5, dist: 200, fov: 32 },
   },
   'ab2-carth-parapet': {
     // vs s2-14: a high vantage over a valley with armies below. Rain, which round one
@@ -603,7 +616,9 @@ const SHOTS = {
     // vs s2-03: both hosts drawn up, seen from high and far, horizon high in frame.
     desc: 'AB2: the whole field before Carthage, both hosts drawn up',
     map: 'carthage', opponent: 2, follow: 'ownLine', at: 4, hour: 15.4, weather: 'clear',
-    cam: { eye: 95, aim: 0, dist: 480, fov: 34 },
+    // 280 m, not 480. s2-03 is a *high oblique of formations*, and its blocks are legible as
+    // blocks; at 480 m ours were specks on an empty plain, which is a picture of ground.
+    cam: { eye: 55, aim: 0, dist: 280, fov: 34 },
   },
 };
 
