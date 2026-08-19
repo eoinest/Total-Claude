@@ -151,7 +151,14 @@ type Obj = NonNullable<FlowView['objective']>;
 type Gate = ReturnType<BattleSystem['siege']['gateReport']>;
 
 /**
- * Which of the five it is, taking the furthest thing that has happened.
+ * Which of the five it is, taking the furthest thing that **is** happening.
+ *
+ * Not the furthest thing that *has* happened: this reads the wall's current state, so a phase
+ * can go backwards, and does. Measured on a defence of Rome — t+206 "In the Streets, 1 of them
+ * is past the curtain", t+227 "The Approach, their engines are coming on" — because the last
+ * man inside had been killed and the storm was re-forming for another run at it. That is the
+ * true reading and the useful one for a garrison, but a reader who took "has happened" at face
+ * value would expect a ratchet and write code against one.
  *
  * Read off events at the wall rather than off the clock or the distance between two armies,
  * which is what the field-battle phases do and why they were useless here: two hosts three
