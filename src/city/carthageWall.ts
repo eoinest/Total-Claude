@@ -323,12 +323,15 @@ const PASSAGE_SURROUND = 0.3;
  * what `WallCut.faceEnds`'s own note meant by *"True at a postern, which has nothing else to
  * close it"*: it was describing the defect and reading as a design decision.
  *
- * 1.6 m of the 9.1 m passage is the same fifth-of-the-depth the Porta Byrsae's leaves hang
- * at (3.4 m of 16.6). Deeper than the mouth's own 1.1 m reveal, so the leaf stands in shadow
- * behind a dressed arch rather than flush in it, and far enough forward to be legible from
- * the field — which is the point of shutting a thing where the player can see it.
+ * 1.5 m of the 9.1 m passage is close to the fifth-of-the-depth the Porta Byrsae's leaves
+ * hang at (3.4 m of 16.6). It has to clear the mouth's own 1.1 m reveal — a leaf flush with
+ * that is two coplanar faces and a z-fight — and it wants to be no deeper than that, because
+ * every centimetre further in is a centimetre further into a recess no sun reaches. Measured
+ * at four times of day from 08:30 to 18:00, direct light never enters this opening: the door
+ * is read entirely by its own albedo and the sky, which is why the boarding below is the
+ * *light* timber and the ledges the dark one, the reverse of the great gate's leaves.
  */
-const POSTERN_DOOR_SET = 1.6;
+const POSTERN_DOOR_SET = 1.5;
 const POSTERN_DOOR_T = 0.22;
 /**
  * How far below the void's own floor the leaf is carried.
@@ -2298,21 +2301,31 @@ function buildPosternDoor(batch: Batch, detail: number, bay: MainBay): void {
     const x0 = side < 0 ? -leafW : 0;
     const x1 = side < 0 ? 0 : leafW;
     box(timber, x0, sillY, -POSTERN_DOOR_T * 0.5, x1, headY, POSTERN_DOOR_T * 0.5,
-      PAL.timberDark, { bottom: false });
+      PAL.timber, { bottom: false });
     if (detail >= 1) {
-      // Three ledges, on the field side, where the light is.
+      // Three ledges, proud on the field side. Dark on light, which is the way round that
+      // survives being in permanent shade — the first pass had it the other way and the
+      // leaf photographed as a black rectangle indistinguishable from the hole it replaced.
       for (let k = 0; k < 3; k++) {
         const y = sillY + 0.55 + (k * (headY - sillY - 1.1)) / 2;
         box(timber, x0 + 0.04, y, -POSTERN_DOOR_T * 0.5 - 0.06, x1 - 0.04, y + 0.14,
-          -POSTERN_DOOR_T * 0.5, PAL.timber, { bottom: false });
+          -POSTERN_DOOR_T * 0.5, PAL.timberDark, { bottom: false });
       }
     }
   }
   if (detail >= 1) {
-    // The drawbar, in the same stream and darker: this door is barred, not merely shut.
-    box(timber, -leafW + 0.25, sillY + (headY - sillY) * 0.42, -POSTERN_DOOR_T * 0.5 - 0.14,
-      leafW - 0.25, sillY + (headY - sillY) * 0.42 + 0.22, -POSTERN_DOOR_T * 0.5 - 0.02,
-      PAL.iron, { bottom: false });
+    /**
+     * The drawbar: this door is barred, not merely shut. Timber, and not `PAL.iron`.
+     *
+     * The Porta Byrsae's bar is iron because it is 5.2 m of it on a gate a ram is driven
+     * at. Here `PAL.iron` is a neutral grey (0x4b4842) in a recess lit by nothing but sky,
+     * so it took the sky's colour and photographed as a **bright blue stripe** across the
+     * door — the one thing in the frame that drew the eye, and it read as a rendering
+     * fault. A drawn-back timber bar is what a sally port has anyway.
+     */
+    box(timber, -leafW + 0.25, sillY + (headY - sillY) * 0.42, -POSTERN_DOOR_T * 0.5 - 0.16,
+      leafW - 0.25, sillY + (headY - sillY) * 0.42 + 0.24, -POSTERN_DOOR_T * 0.5 - 0.02,
+      PAL.timberDark, { bottom: false });
   }
   timber.pop();
 }

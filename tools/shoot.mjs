@@ -715,6 +715,57 @@ const SHOTS = {
     wall: { bay: 6, stand: 24, lift: 0, yaw: 'along', yawAdd: -0.40 },
     cam: { eye: 6, aim: 0, dist: 45, fov: 32 },
   },
+
+  /*
+   * ---------------------------------------------------------------------------
+   * The posterns of Carthage: a hole and a door, from the same two eyes.
+   * ---------------------------------------------------------------------------
+   *
+   * Added because the report that opened this — *"in addition to the gate there are some
+   * straight up holes in the wall"* — was made against a crop of a trailer frame, and a crop
+   * of a trailer frame cannot be re-shot. Every camera in this table is repeatable and these
+   * two are placed against measured numbers, so the pair is the same frame rather than a
+   * similar one.
+   *
+   * **`bay: -2` is the postern, not a bay near it.** `wall.bay` is an offset from the gate
+   * bay in `getGarrisonBays()`; the gate is bay 32 and the postern cadence is `% 8 === 6`, so
+   * −2 lands on bay 30 — and a postern sits at its bay's *centre*, which is exactly the point
+   * the `wall` block focuses on when `gate` is not set. `report.json` records the resolved
+   * `bayIndex` for both, so a cadence change cannot quietly reframe these onto solid curtain.
+   *
+   * **Square on, and low.** Both are cast down the passage's own axis at roughly the height
+   * of the opening, because that is the only geometry that can distinguish the two states:
+   * off-axis, an empty 6 m hole nine metres deep and a hole with a door 1.6 m inside it are
+   * both a dark rectangle. On-axis and at 3 m, the empty one shows the far ground and the
+   * shut one shows boarding. That is also, in reverse, why the owner read one postern as
+   * doored and its neighbour as open in a single oblique wide shot: at 30 degrees off the
+   * axis you are looking at the dressed reveal, and the reveal is dark.
+   *
+   * **16.5 h.** Carthage's map is rotated: §2.2 has map −Z as *true west*, so the curtain's
+   * field face is a west face and takes the sun in the afternoon. A morning hour puts the
+   * whole thing in its own shade, which is the condition under which a door and a hole are
+   * genuinely the same pixel.
+   *
+   * **t + 8 s.** The assault deploys at z ≈ −190, some 700 m out, so at eight seconds the
+   * glacis is empty and the subject is the masonry. These are inspection frames.
+   */
+  'carth-postern-wide': {
+    desc: 'Carthage: the curtain from the field, square on the postern two bays west of the gate',
+    map: 'carthage', opponent: 2, scenario: 'assault', hour: 16.5, at: 8, weather: 'clear',
+    wall: { bay: -2, stand: 0, lift: 0, yaw: 'in' },
+    // dist 62: clear of the ditch's outer lip at d = 29.6, far enough that the tower either
+    // side of the bay is in frame and the opening is read against the wall rather than alone.
+    cam: { eye: 3.2, aim: 3.4, dist: 62, fov: 32 },
+  },
+  'carth-postern-close': {
+    desc: 'Carthage: close on one postern from the field — what is actually in the opening',
+    map: 'carthage', opponent: 2, scenario: 'assault', hour: 16.5, at: 8, weather: 'clear',
+    // A sixteen-degree swing off the axis: enough that the 9.1 m of reveal reads as depth
+    // rather than as a flat frame, and at a 1.6 m setback still only 0.46 m of parallax
+    // across the leaf, so the door is not hidden behind its own jamb.
+    wall: { bay: -2, stand: 0, lift: 0, yaw: 'in', yawAdd: -0.28 },
+    cam: { eye: 2.6, aim: 3.2, dist: 26, fov: 30 },
+  },
 };
 
 /** Named shot sets. `--set=deck` is the only pool a blind round should be built from. */
