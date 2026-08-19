@@ -560,7 +560,8 @@ const SHOTS = {
     // scattered men in a field. s2-09 looks *along* a rank, which is how a thin line fills a
     // frame, so this swings a radian off square and comes in to six metres.
     yawAdd: 1.0,
-    cam: { eye: 1.55, aim: 0.95, dist: 6, fov: 34 },
+    // 9 m, not 6: at six the swing put a man's shoulder 1.08 m from the lens.
+    cam: { eye: 1.55, aim: 0.61, dist: 9, fov: 34 },
   },
   'ab2-carth-melee': {
     // vs s2-01: close melee in tall grass, camera almost on the ground.
@@ -1093,13 +1094,21 @@ try {
                  *
                  * The Juthungi warband is `light-infantry` and the rule was written for it.
                  * The Punic line — Libyan spearmen, Iberian scutarii, the Sacred Band — is
-                 * `heavy-infantry`, so the literal `light-infantry` test matched nothing on
-                 * Carthage and the shot silently fell through to the army centroid, i.e. to
-                 * empty ground between the lines. Accept either, and prefer the frontmost.
+                 * **`spear-infantry`**, and the previous version of this comment asserted it
+                 * was `heavy-infantry`. It is not, and `roster.ts` has said so all along. So
+                 * the fixed rule still matched nothing on the Punic line and the shot fell
+                 * through to whichever skirmisher happened to be frontmost: `ab2-carth-line`
+                 * came back as scattered Iberian caetrati in an open field against a plate of
+                 * a packed sarissa hedge, and every number about it was in band.
+                 *
+                 * A guess about a unit class, written into a comment as though it were a
+                 * measurement, survived one round of being "fixed" because the fix was checked
+                 * against the comment rather than against the roster.
                  */
                 if (want === 0
                   ? cls !== 'heavy-infantry'
-                  : (cls !== 'light-infantry' && cls !== 'heavy-infantry')) continue;
+                  : (cls !== 'light-infantry' && cls !== 'heavy-infantry'
+                     && cls !== 'spear-infantry')) continue;
                 // "Frontmost" = nearest the enemy. Rome faces -Z, the Juthungi face +Z.
                 if (!best || (want === 0 ? u.z < best.z : u.z > best.z)) best = u;
               }
