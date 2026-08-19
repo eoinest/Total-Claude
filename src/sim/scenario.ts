@@ -597,6 +597,125 @@ export function deployBattle(
 // ---------------------------------------------------------------------------
 
 /**
+ * A curtain bay, through the narrowest view an assault needs. `src/sim/` does not import
+ * `src/city/`, so this is a structural type and not `import type { GarrisonBay }`.
+ *
+ * `crestY` is the top of the merlons and is what the opening camera is framed against; every
+ * other field is what the deployment stands men on.
+ */
+interface BayView {
+  index: number;
+  x0: number;
+  z0: number;
+  x1: number;
+  z1: number;
+  nx: number;
+  nz: number;
+  walkY: number;
+  crestY: number;
+  garrisonable: boolean;
+  isGate: boolean;
+  stage: string;
+}
+
+/**
+ * Zoom the storm opens at.
+ *
+ * Measured rather than chosen. Sweeping 0.58 / 0.62 / 0.66 / 0.68 / 0.70 against a live
+ * projection at 1600x900 on both maps: below 0.66 the frame's lower edge never reaches the
+ * ground the player is allowed to deploy on — at Carthage the zone's front edge stands 88 m
+ * out from the wall and at zoom 0.62 the bottom of the frame is still 72 m out, so a shot
+ * that looks perfectly composed contains none of the ground the phase is *for*. Above 0.70
+ * the eye passes 150 m and the curtain stops reading as a wall and starts reading as a line
+ * on a map. 0.68 puts the eye 129 m up and 174 m back, shows 32 m of the legal zone at
+ * Carthage and 18 m at Rome, and still draws the merlons of nine bays.
+ */
+const OPEN_ZOOM = 0.68;
+/**
+ * Where the crest is asked to sit, as a fraction of the half-frame above the optical axis.
+ *
+ * The top plaque and the deployment banner together end at y 158 of 900 — 0.65 of the way up
+ * the upper half-frame — so anything above 0.6 is behind furniture. 0.5 leaves 67 px of
+ * clear sky over the highest merlon in the framed stretch and keeps the wall in the upper
+ * third rather than sinking it to the middle. Being a fraction of the frame rather than a
+ * pixel count, it holds at any resolution.
+ */
+const OPEN_CREST_FRAC = 0.5;
+/** Bays either side of the gate whose crest must clear the plaque. */
+const OPEN_SPAN = 3;
+
+/**
+ * Where the battle opens: outside the gate, looking square at it, with the wall in frame.
+ *
+ * Both halves of this were wrong and each was wrong on its own.
+ *
+ * **Azimuth.** The offset was taken from the bay's outward normal but the yaw was the literal
+ * `0`, and yaw 0 looks along +Z. So the camera stood square to the wall and then looked past
+ * it by exactly the angle the curtain runs off the axis — 3.55 degrees at Carthage, 2.35 at
+ * Rome — which is 72 px of a 1600-wide frame at the wall and grows with every metre of the
+ * offset. `place()` puts the eye at `focus − (sin yaw, ·, cos yaw)·cos(pitch)·r`, so the view
+ * direction is `(sin yaw, ·, cos yaw)` and looking back down the normal is
+ * `atan2(−nx, −nz)`. Verified by projection, not by reading: with it the gate bay's midpoint
+ * lands at x 800.0 of 1600 on both maps, where before it was 51 px off at Carthage.
+ *
+ * **Elevation, which was the fatal one.** At zoom 0.52 the rig's eye sits 23 m up and 47 m
+ * behind the focus, and a crest 96 m *beyond* the focus is then 23.0 degrees above the
+ * optical axis against a 21.3-degree half-frame: measured, the nearest bay's crest projected
+ * at y −45 and not one of seventeen bays was on screen. The trap is that the pitch term
+ * dominates — moving the focus in to the wall's own foot still leaves the crest at 0.82 of
+ * the half-frame, and aiming lower makes it worse. What works is getting the eye *above* the
+ * crest, which means more zoom, not less, and then a *smaller* outward offset than the 96 m
+ * the old shot used.
+ *
+ * So the offset is solved rather than written down, and it is solved against the rig's own
+ * orbit rather than against a second copy of `RTSCamera`'s pitch, radius and fov curves —
+ * which is why this jumps the camera to the wall first and reads back where it went. A
+ * duplicate of those curves here would be correct until the day one of them was tuned.
+ *
+ * The crest it clears is the **tallest** in the framed stretch, not the gate bay's own:
+ * Rome's curtain steps up at every tower, and framing on the bay under the crosshair put the
+ * tower two bays along behind the plaque.
+ *
+ * `place()` also looks a fraction of a metre above the focus when close — `lerp(1.55, 0, ·)`,
+ * 0.36 m at this zoom — which is not modelled here. It tilts the axis by 0.16 degrees, worth
+ * 3 px, and in the safe direction: ignoring it lands the crest slightly lower than asked.
+ */
+function openingShot(
+  ctx: EngineContext,
+  bays: readonly BayView[],
+  gateBay: BayView,
+): { x: number; z: number; zoom: number; yaw: number } {
+  const mx = (gateBay.x0 + gateBay.x1) * 0.5;
+  const mz = (gateBay.z0 + gateBay.z1) * 0.5;
+  const yaw = Math.atan2(-gateBay.nx, -gateBay.nz);
+
+  const rig = ctx.rig;
+  // Adopt the zoom standing on the wall itself, then ask the rig where that put the eye.
+  rig.jumpTo(mx, mz, OPEN_ZOOM, yaw);
+  const plan = Math.hypot(rig.camera.position.x - rig.focus.x, rig.camera.position.z - rig.focus.z);
+  const rise = rig.camera.position.y - rig.focus.y;
+  const halfFrame = (rig.camera.fov * Math.PI) / 360;
+  const axis = Math.atan2(rise, plan);
+
+  // The tallest merlon within `OPEN_SPAN` bays of the gate, above the ground the eye orbits.
+  let crest = gateBay.crestY - rig.focus.y;
+  for (let k = -OPEN_SPAN; k <= OPEN_SPAN; k++) {
+    const b = bays[gateBay.index + k];
+    if (b) crest = Math.max(crest, b.crestY - rig.focus.y);
+  }
+
+  // Depression of the crest below the eye that puts it `OPEN_CREST_FRAC` of the way up the
+  // half-frame, and the ground range that satisfies it.
+  const below = axis - OPEN_CREST_FRAC * halfFrame;
+  const range = (rise - crest) / Math.tan(below);
+  // Clamped so a wall taller than the eye, or a degenerate solve, still yields a shot rather
+  // than a camera behind the city.
+  const offset = Math.max(12, Math.min(200, range - plan));
+
+  return { x: mx + gateBay.nx * offset, z: mz + gateBay.nz * offset, zoom: OPEN_ZOOM, yaw };
+}
+
+/**
  * A wall is stormed either side of its gate. Which wall, and by whom, is data.
  *
  * Everything about this deployment is read from the wall itself at run time rather than
@@ -657,11 +776,7 @@ function deployAssault(
    * side is whichever belligerent is not that one.
    */
   const city = ctx.tryGet('city') as unknown as {
-    getGarrisonBays?: () => readonly {
-      index: number; x0: number; z0: number; x1: number; z1: number;
-      nx: number; nz: number; walkY: number; garrisonable: boolean;
-      isGate: boolean; stage: string;
-    }[];
+    getGarrisonBays?: () => readonly BayView[];
     getGates?: () => { id: string; x: number; z: number; facing: number }[];
     cityPlan?: { id: string; name: string; siegeGateId: string; garrison: Faction };
   } | undefined;
@@ -933,27 +1048,17 @@ function deployAssault(
     scenario: `assault-of-${plan?.id ?? 'city'}`,
   });
 
-  const focus = mid(1);
   return {
     roman,
     germanic,
     /*
-     * Outside the wall looking at it, from about where the towers are coming from: the
-     * curtain across the frame, the gate to one side, the assault in the middle distance.
-     * Yaw 0 looks toward +Z, which is the city on every map — that is a fixed engine
-     * convention, not a fact about Rome (`scenario.ts` deploys the attacker at z −190 and the
-     * defender at z +130 whatever the compass says), so this framing carries to any city.
-     *
-     * The offset is taken from the bay's own outward normal rather than as `−96` in z, so a
-     * curtain that runs at an angle — Carthage's falls 121 m of z across its length — is
-     * still framed square rather than obliquely.
+     * Outside the gate looking square at it: the curtain across the frame, the gate on the
+     * axis, the assault and the ground the player may still move it over below. See
+     * `openingShot` — every number in it is solved off the rig's own orbit, because the two
+     * that were written down here (a yaw of `0` and an offset of 96 m) between them opened
+     * the deployment phase on empty ground with the wall above the top edge of the screen.
      */
-    cameraFocus: {
-      x: focus.x + focus.nx * 96,
-      z: focus.z + focus.nz * 96,
-      zoom: 0.52,
-      yaw: 0,
-    },
+    cameraFocus: openingShot(ctx, bays, gateBay),
   };
 }
 
