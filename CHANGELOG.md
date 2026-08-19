@@ -10,13 +10,14 @@ integer says exactly one thing, which is the one thing that is true: how many ti
 to production.
 
 Each entry records the commit that was deployed and the Vercel deployment that carried it. Those
-are not taken on trust: every commit below was matched to its deployment by comparing the SHA-1 of
-every tracked file in the commit against the file digests Vercel holds for that deployment — r1 to
-r4 at 100% of tracked files, and r5 at 567 of 568 with zero digest mismatches, the one absent file
-being `.gitignore`, which the CLI reads rather than uploads. `r4` and `r5` were additionally
+are not taken on trust: every commit below through r5 was matched to its deployment by comparing the
+SHA-1 of every tracked file in the commit against the file digests Vercel holds for that deployment
+— r1 to r4 at 100% of tracked files, and r5 at 567 of 568 with zero digest mismatches, the one
+absent file being `.gitignore`, which the CLI reads rather than uploads. `r4`, `r5` and `r6` were
 verified by rebuilding the commit in a pinned worktree and diffing the output against the bytes the
-live site serves, and by booting all three maps against the live URL and confirming the simulation
-clock advances on each. See
+live site serves — for r6, `index.html` byte-identical and the bundle's SHA-256 matching exactly —
+and by booting all three maps against the live URL and confirming the simulation clock advances on
+each. See
 [`docs/RELEASING.md`](docs/RELEASING.md) for the procedure.
 
 Every figure quoted here comes from a commit message, from `docs/HANDOFF.md`, or from a measurement
@@ -37,10 +38,576 @@ text than as a frame that half-supports them.
 
 ---
 
+## r6 — the ram gets the roof it was drawn with, and the siege says what winning is
+
+**19 August 2026** · commit [`6698e19`](https://github.com/eoinest/Total-Claude/commit/6698e19) ·
+deployment `total-claude-hl505rhbj` · **live now**
+
+A siege release, in two halves that keep turning out to be the same half. The siege train can be
+aimed now — the player picks the gate and the bay, the cursor names the order before the click, and
+a refusal is a sentence rather than a dropped button — and the game finally says, in four places,
+what taking a city means. Under both of those, a run of soldier-fidelity work from earlier in the
+week that had never shipped: cloth with folds in it, a bow that is a bow, and a standard lit by the
+same sun as the men carrying it.
+
+**An unusual number of this release's defects have one shape: the thing was drawn and never
+modelled.** The ram's shed, the gatehouse's merlons, Carthage's ditch and the standard's own
+lighting were each fully present in the picture and entirely absent from the simulation. That is
+not four unrelated bugs; it is the art running ahead of the simulation in a specific, repeatable
+way, and the single most expensive defect in this release is one of them.
+
+### New
+
+- **You can aim the siege train.** The ram was pointed at `getGates()[0]` once, at spawn, and never
+  again; a siege tower could not be redirected at all. Both now take an order. `resolveMachineOrder`
+  is the one predicate — `machineOrderAt` draws the cursor from it and `applyMachineOrder` acts on
+  it, because three features in this repo have shipped a preview computed one way and an action
+  computed another and every one of them looked like it worked. The ram carries its own `gateId`,
+  blows are counted per gate rather than as one total for the circuit, and the breach opens *that*
+  gate and calls `setGateDoorBroken` on it so the leaves are wreckage rather than absent. Measured
+  with a real mouse through the real menu on Carthage, whose gates are 560 m apart: the cursor reads
+  *"Break the Porta Uticensis — 563 m, 17 min 10 s"*, the machine rolls **563 → 500 m in two
+  minutes** — an order, not a teleport — a second click sends it back, and **the gate the player last
+  clicked comes down at t+420 with 26 blows while the other two carry zero apiece.**
+
+  The refusals are the other half of a choice and are now named: landed, committed inside twelve
+  metres, another machine's berth, wrong machine for that target, *"Nothing to climb at bay 14 —
+  bring a ladder or a tower"*, every file here is full. **The 590-second re-aim is not a bug and is
+  quoted before the click** — 0.42 m/s is the speed a gang on levers moves fifteen tonnes of green
+  timber, and the hint reads *"Roll the siege tower to bay 21 — 248 m, 9 min 50 s"*. Three faults
+  found underneath it: a click three hundred metres out in open grass offered to send that timber to
+  whichever bay happened to be nearest, because the fallback search had no distance cap; *"that bay
+  is taken"* was tested in metres, so **a click meant for one tower's bay resolved 94 m along the
+  wall and was accepted**, when a player pointing at a berth means a thirty-metre length of curtain;
+  and a re-aimed ram solved its arrival bearing from wherever it happened to be standing rather than
+  from the gate, which was only ever right because the scenario parks it on the gate's own axis.
+
+- **The siege is on the screen.** It was winnable and undiscoverable. Sixty men fourteen metres past
+  the curtain has been the win condition since the objective landed and was stated nowhere: a
+  hands-off assault that put **~350 men on the parapet lost at t+286 with 41% casualties**, while
+  **one cohort through the broken gate won at t+336**. Every order the interface encouraged was the
+  first of those. It is now said in four places — the deployment plaque states the objective from
+  the player's own side of the wall before a shot is fired, the top plaque runs siege phases off the
+  wall itself, the advantage slot carries *"18 of 60 inside"* instead of judging a storm on a margin
+  a garrison is *meant* to be losing, and the dispatch gains a block about the wall. The thresholds
+  are published by `BattleFlowSystem` and read by one module, so a plaque cannot promise a rule the
+  simulation does not enforce.
+
+  ![The top bar of a storm of Carthage: ROME 1 783 on the left, QART-HADASHT 1 551 on the right, the clock reading 00:46, the heading THE WALL REACHED across the centre with the pause and speed buttons beside it, and beneath the red-and-blue strength bar the lines "25 of ours on the parapet against 1336 of theirs" and "0 OF 60 INSIDE"](docs/images/releases/r6-topbar-siege.jpg)
+
+  The top plaque during a storm. Before this it read what a field battle reads: at t+982, with the
+  gate broken and two siege towers docked, it said *"MISSILE EXCHANGE · Arrows and pila in the air ·
+  Evenly matched"*.
+
+  ![The end-of-battle dispatch card: VICTORY, "by rout — the enemy has quit the field", 11:52 on the field, with Rome and Juthungi columns of committed, surviving, fallen, units lost and destroyed outright; at the lower left a block headed THE WALL giving the gate as "Broken – 26 blows", breaches in the curtain 0, on the parapet at the end 28 storming and 568 holding, inside the walls 4 of 60 needed, and the line "The gate went down; the wall itself was never carried."; the roll of honour beside it lists five Roman units under a ROME heading with their kills and strength bars](docs/images/releases/r6-dispatch-wall.jpg)
+
+  The dispatch after a defence of Rome. The closing sentence is read off *how* the battle ended
+  rather than off who won it — a storm that kills the last of the garrison in the open has taken the
+  city and never carried the wall. The roll of honour is now two groups under their own standards
+  with the player's first; it used to be one `sort` across every unit on the field, so a defeat card
+  led with the enemy's best cohorts and your own dead fell off the bottom.
+
+- **A ditch in front of Carthage.** `carthageWall.ts` had built a 20 × 6 m dry ditch into its own
+  arithmetic for four commits — the defensive belt is 34.1 m wide *because of it*, the section
+  assertion checks it, `getDitch()` hands the record to anyone who asks — and published it with
+  `built: false`, because cutting six metres of ground is a heightfield edit and the heightfield is
+  not the city's to write. Nothing on the other side had ever answered. Measured on the shipped
+  tree, the ground in front of the wall fell **0.16 m at its worst station and 0.00 m at four of
+  sixteen** across the 60 m of glacis: the belt an assault actually crossed was 14.1 m of masonry
+  while every consumer of the plan was told 34.1.
+
+  | before — shot at r5 | after — r6 |
+  |---|---|
+  | ![Looking along the outer face of Carthage's wall from the field: grey ashlar curtain with tan square towers and one arched postern receding into haze at the left, and the ground running flat and unbroken from the foreground right up to the base of the masonry](docs/images/releases/r6-carthage-ditch-before.jpg) | ![The same view along the same wall: a trench now runs the whole length of the frame at the foot of the curtain, its near bank rising in front of the camera and its floor in shadow, the wall standing behind the cut, and the postern's threshold now above a drop](docs/images/releases/r6-carthage-ditch-after.jpg) |
+  | The glacis as r5 ships it. The ditch is in the plan, in the belt arithmetic and in the section assertion; it is not in the ground. | The same camera on this release. Ninety-two commits separate the two trees and **the terrain material and the grass changed in that span too**, so the after frame's ground is greener as well as cut — the ditch is the trench, not the colour. |
+
+  Cut, over 88 stations: **relief median 0.00 → 6.00 m, stations cut 0/88 → 88/88**, none of it taken
+  under the datum, because a dry ditch below sea level renders as water and a moat is a different
+  fortification. The Porta Byrsae keeps its causeway — a ditch is bridged at its gate — and measures
+  a 0.03 m fall across it. Two independent checks came with it. The field's mean height moved
+  8.0594 → 8.0429 m against an arithmetic prediction of 0.017 m for the volume removed; and **it
+  does not delete the battle** — the V's sides run at gradient 0.667, over the impassable bound, but
+  the nav grid's cells are 7 m and its cost is central-differenced over 14, wider than the 9 m
+  slope, so asked of the real grid rather than of a model of it there are **0 unstandable metres
+  across the ditch at every station**, and the two stations that refuse a direct route refused it
+  before as well. The wall's own census is identical to the digit across the change — 66 bays, 31
+  towers, 65 garrisonable, sum `walkY` 1647.000, sum `groundY` 694.473 — which is the claim that
+  matters, because the wall is founded on the ground the cut moved.
+
+### Fixed
+
+- **The ram landed 0 blows in 12 of 12 runs, and Rome's own artillery was killing the crew.** The
+  gate was never touched; `gateHp` finished at 1.00 twelve times out of twelve; the crew was 32 men
+  at t+0 and 6 by t+40. Not pathing, not targeting, and nothing in the tree had ever said who was
+  killing them. Wrapping `BattleSystem.damage` and attributing every point of it to the unit that
+  dealt it: **4,846 of the 4,846 points that killed the gang came from two units — `ballistarii#0`
+  and `ballistarii#1` — shooting from 53-60 m.** Rome's garrison plan stands 216 hand-spanned
+  crossbowmen on the curtain either side of the gate at 62 damage and 40 armour-piercing a bolt, and
+  the ram is the nearest thing on the field, because it spawns 62 m out while the siege towers start
+  at 74-101. The same instrument on Carthage, whose garrison carries a levy and slings, records the
+  identical machine taking **zero** damage on the identical approach and battering its gate down on
+  schedule.
+
+  So it is not the ram. **A *testudo arietaria* is a shed on wheels whose entire purpose is keeping
+  missiles off the men, and this one had its shed drawn and not modelled** — the gang worked the
+  ropes in the open. Cover is now a per-unit missile multiplier applied to whichever gang is working
+  a live ram and taken off them the tick it stops being theirs, because `recrew` reassigns crews
+  mid-battle and it cannot be done at spawn. **0.12, against the `testudo` formation's own 0.16**: a
+  roof of hides and green timber is better than a roof of shields held by tiring men. At 0.2 the
+  crew broke at 21 blows with the gate still on 19% of its hit points, so the number is sized
+  against the machine finishing its work rather than against a feeling.
+
+  Rome now keeps the schedule Carthage's machine has always kept: **at the leaves at t+100, 26
+  blows, the gate open at t+220**, withdrawing at t+220 and spent by t+260, crew **32 → 24 at the
+  breach and 13 by t+260**, and the leaves drawn broken rather than absent. Over the same twelve
+  seeded runs of the assault, **that one change moves the attacker from winning 2 of 12 to 6 of 12.**
+  It moves Rome's determinism baseline deliberately — a battle in which the ram opens the gate is a
+  different battle — and Carthage's not at all, because zero damage times any multiplier is zero;
+  both circuits still replay bit-identically run against run.
+
+  | | |
+  |---|---|
+  | ![Close on the Porta Flaminia from outside: two brick drum towers with pale stone banding and a blind arch on each, the arched gateway between them with a portcullis and a shut leaf behind it, and drawn up against the leaves a shed of hide-covered planks on timber posts with the ram crew packed underneath and around it; a siege tower stands at the right and there is blood on the cobbles](docs/images/releases/r6-ram-at-the-gate.jpg) | ![The same gateway with the leaves gone: the arch is open, the paved road runs through it into a lit street with men standing beyond, a broken leaf and split timbers lie across the passage, and the cobbles outside carry bodies, spent shafts and pools of blood](docs/images/releases/r6-gate-broken.jpg) |
+  | t+104, the first blow. The shed is the thing that was being drawn and not modelled; underneath it are the men Rome's ballistarii had been killing in forty seconds. | t+226, after the leaves went. Both frames are this release; there is no *before* worth publishing, because before this the machine never reached the gate. |
+
+- **The siege opened looking at bare ground with the wall above the screen.** The deployment phase's
+  whole job is arranging men on and against a wall, and on both maps it was conducted over empty
+  barley. Measured off the render matrix at 1600×900: **Carthage's nearest crest projected at
+  y −45 with 0 of 17 bays on screen; Rome's at y −91, with the eye 29 m up inside a pine.** Two
+  independent faults in one four-line literal. The camera's offset came from the bay's outward
+  normal while its yaw was the literal `0`, so it stood square to the wall and then looked past it
+  by however far the curtain runs off the axis; and at that zoom the eye was 23 m up and 47 m behind
+  its focus, so the crest sat 23.0 degrees above the optical axis against a 21.3-degree half-frame —
+  the eye had to get *above* the crest, which means more zoom and a *smaller* offset, not a larger
+  one. The offset is now solved against the rig's own orbit rather than written down, so the
+  camera's pitch, radius and field-of-view curves are never copied into the shot.
+
+  | before — shot at r5 | after — r6 |
+  |---|---|
+  | ![Carthage's deployment phase: the camera looks down on a wide expanse of tan earth and dry grass crossed by a broad pink-brown road, with three dark siege towers casting long shadows, small blocks of infantry drawn up in lines, the yellow deployment boundary running across the middle distance — and no wall anywhere in the frame](docs/images/releases/r6-opening-carthage-before.jpg) | ![The same phase framed on the city: Carthage's curtain runs the full width of the frame with square towers and a shut gate at its centre, the paved road running from the gate towards the camera, four siege towers and blocks of infantry drawn up on the plain in front of it, and a second line on the deployment strip reading "To take the city: get 60 men 14 m past the curtain — through the gate or down off the parapet — or take a stretch of parapet and hold 24 men on it for 20 s with no defender left standing on that stretch. Killing the garrison alone will not do it."](docs/images/releases/r6-opening-carthage-after.jpg) |
+  | ![Rome's deployment phase: bare brown earth under a stand of dark pines with one small tiled outbuilding, the corner of a tower cut off by the top edge of the frame, and the player's own men reduced to a few figures at the left margin](docs/images/releases/r6-opening-rome-before.jpg) | ![The same phase framed on the Aurelian Wall: red brick curtain with merlons running the width of the frame, the twin drum towers of a gate at its centre with the road running out through it, gardens, cypresses, tombs and a rotunda inside the walls, unit banners standing along the parapet and on the ground, and the deployment strip reading "To hold the city: keep them under 60 men 14 m past the curtain, and never leave them a bay: 24 of them holding a stretch with nobody of ours standing on it for 20 s is the wall gone. A storm that makes no ground for 3 minutes is thrown back."](docs/images/releases/r6-opening-rome-after.jpg) |
+  | The first frame of a siege as r5 opens it, on both maps. The *before* arm is a worktree pinned to r5's commit with this release's shooting instrument copied into it — same instrument, older source, which is the honest way round. | The same two frames on this release: nine bays legible on each, the gate bay's midpoint landing at **x 800.0 of 1600** on both maps, every on-screen crest below the plaque band, and the nearest solid to the eye 106 m and 110 m against 13.1 and 13.7 before. The objective on the second line is the other new thing in this release, seen from each side of the same wall. |
+
+- **Three ways the cursor could not find men who were plainly on the screen**, all three found by
+  playing the siege from the menu with a real mouse and none of them visible to a probe that clicks
+  a unit's card. **Nothing on a parapet was clickable for the whole deployment phase** — the level a
+  unit stands at is written only inside `fixedUpdate` and the paused deployment never runs one, so
+  every unit read a stand height of zero, the elevated pick never armed, and **0 of 99 pixels
+  selected a unit already on the wall, 0 of 18 a reserve cohort the player had just dropped onto bay
+  21**. The ground pick then cost 5.4 m of depth at battle zoom, because a ray through a man's chest
+  meets the terrain 1.75/tan 18° behind him — deeper than a tower party is: the fraction of a unit's
+  own drawn crowd that selected it ran **0/77 for a tower party, 22/77 for a ram crew, 22/66 for a
+  ladder party and 39/77 for a line cohort**. Both cases now test one plane at the men's own
+  mid-body; where an order *goes* is untouched, which is the half an earlier attempt at this had to
+  revert. And "on the wall" was a flag rather than a fact — a descent measured from the seat left
+  **91 of 99 archers standing in the street with the flag still set**, so the next click read as a
+  traverse and the hint said *"Along the wall"* over men in a city square.
+
+- **A garrison was the one thing in the game you could not attack.** Over the levy's own men the
+  cursor read *attack*, and the order that went out was *move*, to the parapet behind them. The wall
+  order beating an attack is deliberate and stays; the cursor promising an attack the product was
+  about to eat is not, so the enemy is yielded in the three cases where "the wall order" and "attack
+  him" are not the same wish — his banner, Ctrl held, and both parties already on the same wall —
+  and the drag hint names the override: *"Storm the wall here · Ctrl: attack Citizen Levy V"*.
+  Pointing at a wall was barely better. Swept over one Carthage bay from a genuine field-side eye,
+  **45 of 148 masonry pixels answered as a valid wall target — 30.4%**; the median field ray strikes
+  0.42 m outside the band the simulation will answer for, which is why the storming branch was
+  mostly unreachable. **133 of 148 now, 89.9%.** A click on a siege tower resolves to the bay it is
+  leaning on, because from the field no camera can reach that masonry and the route the whole
+  machine exists to provide could not be commanded by clicking the machine. The defender had the
+  same defect from the other side: a cohort standing on Carthage's curtain and aiming two runs along
+  hit a merlon at y 25.17 against a walk at 26.50, and got a plain move order for its trouble.
+
+  ![A storm in progress, seen over the wall-walk: the unit card at bottom left reads WALL BALLISTARII V, Ballistarii Murales, GARRISON · STEADY, strength 108/108, morale 100%, fatigue 10%, kills 4, frontage 21 m; a white order marker runs up the walk from the selection to a label reading ALONG THE WALL, and the walk itself is crowded with helmeted men](docs/images/releases/r6-wall-order.jpg)
+
+  A garrison cohort selected and offered a traverse along its own wall — the card at the left is the
+  selection and the white lead and the ALONG THE WALL label are the order being previewed. The men
+  crowding the walk in this frame are mostly Juthungi who have got up onto it; the claim here is the
+  marker and the card, not the crowd.
+
+- **`H` was the only order about a wall you could not take back, and it did nothing.** A traverse
+  aimed two runs along the Aurelian Wall — across a construction gap no link bridges — had the
+  cursor promising *"Along the wall"*, the order accepted, and **156 of 158 men stuck with the plan
+  still open at age 3,657 ticks**. Nothing abandons a wall plan before its ten-minute timeout and
+  garrison upkeep defers to a live plan, so the cohort could not even re-form where it stood. The
+  two methods that countermand a wall plan were both public and neither had a caller anywhere in the
+  tree; halt calls them now.
+
+- **Four things handed over in the siege code, none of them polish.** A horse does not climb a
+  ladder — enrolment asked whether a machine was within reach and never whether the unit could use
+  one, and a hand run put **26 horsemen standing on the parapet**, with ballistae admitted too. A
+  traverse accepted a run the wall does not reach: the runs are a chain, so a missing link anywhere
+  between here and there is a gap the router refuses on every tick for every man, measured as **152
+  of 152 men frozen with the plan open at age 3,656 and nothing said**. A descent stayed open for
+  five minutes after it had finished — 152 ordered down, 143 on the terrain, 9 still on the stone,
+  the plan open at **age 9,111** — and the unit stayed garrisoned throughout, so the next order read
+  as a traverse and it could not be sent back up. **The obvious fix for that one is wrong and a probe
+  said so in a line:** ending a stalled descent releases every man at once, which dropped the nine
+  still on the parapet at **313 m/s** and cut a legitimate 106.8-second descent off at 20. So the
+  question was fixed instead of the plan — "is this unit on the wall" is a question about its men,
+  not about a record — and the descent probe went back to 13/13, 88 of 88 down, worst fall 2.27 m/s,
+  with Carthage's determinism hash back at its recorded baseline exactly.
+
+- **A siege tower was never spent.** `Spent` was declared and never assigned anywhere, so a machine
+  went approach, docking, landing, boarding and stayed at boarding for the rest of the battle
+  whether its file had crossed, died or never existed — four towers were reported frozen at boarding
+  at t+904. The cost was not cosmetic: the gang that pushed it could never be given another order,
+  the berth was never released, and escalade skips a spent tower but not a boarding one. A/B on an
+  uncommanded assault: **four towers spent and four gangs freed by t+361, against four still
+  boarding at t+962.** A storm order at a bay with nothing to climb was accepted and dropped in
+  silence, and a storm order at a bay whose tower is still crossing the glacis *was* obeyed and
+  looked dropped — the cohort walks out with the machine and stands in an open field for four
+  minutes, which is correct and which nobody was telling the player. The cursor now reads *"Queue at
+  the tower — it reaches bay 31 in 1 min 56 s"*.
+
+- **The gatehouse carried merlons in stone and published a flat, solid block to the simulation.** A
+  gate block had exactly one battlement field — the merlon *tops* — returned flat across its whole
+  footprint, and both halves of that were wrong. The roof of the block and the cornice round it
+  stand at the merlons' *feet*, so the surface a man is tested against over the gate stood **2.000 m
+  too high on Rome and 2.100 m on Carthage** across 11 of the block's 11.9 m of depth, which is the
+  merlon height exactly. And the merlon line came back solid: over the 24 m at the gate the
+  collision model returned **one** distinct height where an ordinary 25 m of curtain twenty metres
+  away returns two — while both builders lay a real crenellation on the crown in stone. There were
+  no embrasures over the same ground either, on a plan-only test with no height term, which
+  swallowed 22.25 m of Rome's *garrisonable* bay 19 and 22.5 m of Carthage's bay 32. Measured:
+  embrasure-free run **36.25 → 11.00 m** on Rome and 40.25 → 10.25 on Carthage, the residual being a
+  per-bay-boundary sliver that exists at every bay on the circuit, gate or not; **garrison stations
+  within 40 m of the gate with no battlement over them 22/49 → 0 and 8/56 → 0**; and shots thrown
+  away for want of a battlement **823 of 5,301 in four minutes → 0** on Rome, 72 → 30 on Carthage.
+  Swept as station-to-station firing lines across the frontage, **Carthage's 2,832 straddling pairs
+  stopped by the gatehouse go to 0** — its walk is continuous and the whole frontage opens. **Rome's
+  1,512 do not move, and should not**: its walk steps 7.15 m across the gate, bay 19 at 35.75 against
+  bay 21 at 42.90, so the ray passes six metres below the roof and is stopped by the gatehouse's own
+  body, which is what a real gatehouse standing between two walks at different levels does. On
+  Carthage's 180-second autoplay the garrison killed 253 against 239 and lost 922 shots to distant
+  masonry against 1,171. The three crenellation literals in each builder are named constants now,
+  read by both the stone and the record, so they cannot drift apart again. *The other half of this
+  work — clipping the garrison's line of stations to real curtain — did not land; see the
+  corrections below.*
+
+- **Three things the siege told the player that were not true**, all found by playing it rather than
+  by reading it. **The besieger's ADD UNITS palette was the defender's**: Rome plays both sides of an
+  assault, and on Carthage the roster resolved through Rome's role on its *own* map, so an army with
+  no wall was offered `ballistarii` and `wall-slingers` and none of the tower parties, ladder
+  parties, ram crew, batteries or cavalry the pre-battle menu had just sold — and since the
+  deployment refuses anything outside that list, **the entire siege train was unreachable in the one
+  phase that exists to arrange it**. The deployment plaque told the attacker to "drop on the parapet
+  to man the wall" when the only parapet in sight belongs to the enemy. And the defeat card was
+  captioned in the winner's voice: a storm of Carthage that ended with fourteen of twenty Roman
+  units broken and the army streaming off the field read *"Defeat — by rout, the enemy has quit the
+  field"*. Four of the six end reasons name a side, and each now has a won, lost and drawn form.
+
+- **The objective was on screen for one frame and then deleted itself**, because the deployment
+  panel binds its refusal line to the first element of that class in document order and the new
+  brief was emitted immediately above the real one. From outside it is indistinguishable from markup
+  that was never written. Two smaller ones with it: the copy did not agree with its own counts — a
+  live storm at t+103 read *"In the Streets · 1 of ours **are** past the curtain"*, and a siege
+  spends real time at exactly one man through the breach and one blow on the gate — and a siege
+  phase can legitimately go *backwards*, which the comment above the phase resolver denied. Measured
+  on a defence of Rome, t+206 *"In the Streets"* and t+227 *"The Approach"*: the last man who had got
+  inside was killed and the storm was re-forming. That is the right reading for a defender, who
+  wants to know the city is clear again.
+
+- **The dispatch card was 190 px down the screen and the plaque was too narrow for its own words.**
+  Three faults at 1600×900, each measured off a real card rather than read off the markup. The roll
+  of honour was below the fold — 992 px of content in a 610 px scroller with the honours beginning
+  at y=553, so **one of ten rows was visible without scrolling**; the room the wall block needed was
+  sideways, not downward, so the body is a wrapping row now and content falls to 795 px with **six of
+  ten rows visible**. Four of the five siege phase headings wrapped to two lines, THE BREACH being
+  the only one short enough to fit, which is why it read as one heading's problem: the centre column
+  left the heading 141 px of its row against the 226 px the longest of them wants. And the card
+  itself was off the bottom of the screen — its grid row was sized by the panel's unconstrained
+  content at 1,228 px against a 900 px sheet, so a correctly clamped 846 px panel centred in 1,228
+  put its top at y=190 and **its foot 136 px below the bottom of the screen, with the Dismiss button
+  — deliberately kept outside the scroll so it can never be below the fold — off the screen
+  entirely.**
+
+  | before | after |
+  |---|---|
+  | ![The dispatch card sitting low on the screen with its top a third of the way down: the VICTORY title, the two army columns, and a full-width THE WALL block whose last rows run to the bottom edge of the frame; there is no roll of honour in view and no Dismiss button](docs/images/releases/r6-dispatch-before.jpg) | ![The same battle's card centred on the screen: the same title and army columns, with THE WALL as a narrow block at the left and the ROLL OF HONOUR beside it listing five units with kills and strength bars, and the Dismiss button visible at the foot of the card](docs/images/releases/r6-dispatch-after.jpg) |
+  | The same battle, same verdict, same figures — 09:06 on the field, 1 154 committed against 1 920. Everything below the fourth row of the wall block is off the screen. | The wall block and the roll of honour share one row, and Dismiss is on the screen. **This pair is not from the released commit:** both arms were shot from the interface workstream's own tree, after the fix they illustrate and before the siege-order branch merged, which is why the gate in both reads *Never struck*. They are our own render and a genuinely matched pair; the *before* arm cannot be re-derived without standing a third worktree up. |
+
+### The men, close up
+
+A run of soldier work from earlier in the week, none of which had shipped. Everything in this
+section was graded on isolated model plates against a frequency probe, and **the pattern to look for
+is the ratio falling while the mid bands rise** — that is added structure, and it is the one pattern
+a blur cannot produce.
+
+- **Cloth had no folds, no thread direction and no silhouette.** A tunic was a circular tube, so the
+  outline of every man in the game was two straight lines. It now takes two harmonics of radial
+  modulation with the true polar normal rather than the circular one, tapered along the sweep, on
+  the tunic, the bracae and the loincloth — **at no vertex and no triangle**, with a Nyquist guard
+  that drops the whole option below six segments so the crowd tier never sees it. The weave was
+  `max(warp, weft)` in a height field, which differences to an isotropic normal: a weave that cannot
+  tell you which way a thread runs is a *print* of a weave, and it is a slope now, each thread
+  tilting the normal only across its own axis. And the creases were round blobs; they are 3:1 along
+  the hang with a floored trough. Pooled ratio **1.393 → 1.311**, and on the one full-figure plate
+  whose subject is mostly cloth, ratio −10.3% with the 4 px band up 2.0%.
+
+- **The bow was a staircase of unrotated boxes, and it was strung backwards.** Each limb was three
+  or five axis-aligned boxes stepped along a curve with **not one of them rotated to its own
+  tangent**, so the stave was a flight of stairs with a corner at every joint and raising the step
+  count could only make smaller stairs. Three more faults fell out of reading it against the pose it
+  is socketed to: the recurve was dead code that fired exactly once at the finest tier and never at
+  all below it; **the limbs bowed into the archer's face** rather than away, which is a braced bow
+  the wrong way round; and the string floated **120 mm clear of both nocks** and was not even in the
+  bow's plane, because the archery stance runs 26 degrees out of the man's facing. It is one
+  continuous sweep now — a rigid riser, a working limb, and a straight 210 mm siyah, because a
+  composite recurve is stiff-soft-stiff and the stiff parts are what make it recognisable. Costs 38
+  triangles at the finest tier and **saves 126 vertices**, because ten boxes are 240 vertices and a
+  swept stave is 96; the crowd tier is untouched and provably so, hashing bit-identical on all three
+  factions.
+
+- **A single 256-pixel tile was stretched over a whole shield board** — 379 texels per metre across
+  a scutum and 236 along, the worst-sampled surface on the figure by a wide margin, which is what a
+  round of critics had recorded as a black smear across a fifth of two plates. Both faces take
+  integer repeats from the board's own size now, laid out so the seams land on duplicated vertex
+  columns and **cost no triangle**. What had blocked it was that the hide tile painted two
+  *board-scale* features into a *material* cell — a grip band across the middle and a stitched
+  turn-over at all four edges — so tiling it twice grew a shield two grips and a seam. The grip is
+  now a box that stands proud of the board and occludes, instead of a stripe that does not.
+
+- **An 8 mm arrow shaft carried 250 texels of wood grain.** Texel density across one man ran
+  **13.1×** — bare legs at 570 texels/m against a quiver at 7,470 — and almost all of the spread came
+  from one primitive mapping a whole tile onto every face however small the face is. A box face now
+  takes the share of the tile it physically covers, slid by a hash of its own position so five
+  arrows in a quiver take five different pieces of the tile rather than five copies of its middle.
+  Spread **13.1× → 7.3×**, quiver 7,470 → 347 texels/m, at **zero** cost in vertices or triangles.
+  What is left is real material grain: a mail ring is 9 mm and an oak plank is 120.
+
+- **Every man in the army had a hazard stripe round his soles.** A caliga sole took the *rope* tile,
+  because rope is the palest cell in the sheet and a dark foot photographs as a blob — which worked
+  only while one whole tile was crushed onto a 28 mm edge and averaged away by the mip ladder. The
+  moment a box face took its physical share, rope's helical barber-pole came up at full contrast on
+  every boot on the field. Sole to leather, wraps to wool. In the same pass the fold field came down
+  from 3:1 to 2:1, because streaks running unbroken the whole length of a bracae leg photograph as
+  varnished wood grain rather than as cloth.
+
+- **Mail was eighteen identical rings on a perfect grid**, and scale armour fourteen identical
+  plates on another. That is what printed mail looks like, and an exactly periodic lattice is also
+  the one thing guaranteed to beat against the pixel grid into moiré at the range a cohort is
+  legible from. A riveted hauberk is thousands of rings hammered shut one at a time: the gauges now
+  run a tenth either way, the rows wander, some are galled bright where a scabbard rides and some
+  are rusted, hashed off each cell's own coordinates modulo the lattice count so the tile still
+  seams. No geometry, no draw, no vertex.
+
+- **Skin was one hue times a value ramp, and the second-flattest cell in the sheet.** Mean
+  tangent-space normal deflection **0.112**, behind only the animal hides and against mail's 0.792 —
+  the pore field existed but arrived at strength 0.3, which is to say it arrived as nothing. Every
+  texel of every man carried the identical chromaticity, where skin is translucent layers over blood
+  that flush red where thin and go sallow where thick; and there was a hole in the octaves exactly
+  where this deck's 2-8 px band sits. All three are fixed, with a Langer's-line crease network
+  running along a limb rather than in every direction at once. Separately, twelve tiles had a region
+  with **no roughness signal at all** — a flat clamp at 255 over 48.7% of the elephant hide, 43.0% of
+  rope and 6.3% of the shield board — and every plateau measures 0.00% now.
+
+- **The head had a nose and it was buried inside the skull.** Three blind graders independently
+  reported flat facets with the features painted into the albedo. Half of that was the obvious
+  reading — the nose was on the finest tier only — and the other half was that it did not read
+  there either, because its depths had been measured against the origin rather than against the
+  surface they stand on. The tip's absolute z was 25.8 mm, as the comment said; its *projection* past
+  the skull's own revolve was **9.0 mm at the tip and −6.5 mm at the nasion**, so the bridge was
+  inside the head and the nose emerged only over its bottom third with no dorsum to catch a
+  terminator. Every ring moves out 10-12 mm. The face arc and the nose also drop a tier: **the
+  middle tier begins at 45 m and a battle is watched from 45 m**, so "no face" was true of most of
+  the army in most graded frames.
+
+- **The standard was a second lighting rig, and it had drifted four ways.** Three graders named it
+  the single most decisive tell in a blind round, in words that turn out to be literal rather than
+  figurative: *"an emissive sticker in front of the frame rather than dyed wool under the same
+  sun."* The cloth carried its own hand-written sun-plus-ambient term that nobody had updated when
+  the real one changed. It **never received a shadow** — so a standard stood in full sun inside the
+  shadow of the wall it was assaulting — **never cast one**, dropped the sun's *intensity* on the
+  floor and was lit at full noon strength at every hour of the day, and took neither the environment
+  nor aerial perspective. It is a standard material through a shader hook now and cannot drift
+  again; what stays hand-written is what the standard model genuinely lacks, which is transmission
+  through thin dyed wool and the fold field. The geometry was wrong in the way the graders described
+  too — the whole top row was pinned, and no cloth hangs like that. A vexillum is tied to its bar at
+  intervals and the fabric between the ties falls into a catenary, which is where a flag's vertical
+  folds come from in the first place.
+
+  | before — shot at r5 | after — r6 |
+  |---|---|
+  | ![A Roman standard over a line of infantry seen from the front under a low sun: a black staff with a gilt wreath and spearhead finial and a horizontal crossbar, from which the cloth hangs as a flat, evenly bright orange-red rectangle with a dead-straight top edge welded to the bar, no sag, no fold and no shading anywhere across it; helmeted men with oval shields stand in ranks behind and below it](docs/images/releases/r6-standard-before.jpg) | ![The same standard over the same line: the cloth now sags in a catenary between three ties on the crossbar, with vertical folds running down its length and a soft hem, one part of it in shadow and one catching the low sun, and the ranks of men and shields behind it lit by the same light](docs/images/releases/r6-standard-after.jpg) |
+  | The vexillum as r5 draws it, at the hour and camera the after frame uses. | The same standard on this release. The two arms are ninety-two commits apart and the distant haze changed with them; **the claim is the cloth.** |
+
+  One fault was caught by re-reading the diff rather than by looking at a frame, and it could not
+  have been caught any other way: turning shadow casting on for the staff without a matching depth
+  material would have been worse than leaving it off, because both factions' finials live in one
+  geometry and only the *colour* shader collapses the one an instance is not — **every Roman aquila
+  on the field would have laid a Germanic aurochs skull's shadow across its own signifer.**
+
+- **The dead elephant read as a toppled table**, and every part of that was measured on the bones
+  rather than on the animal. Its two upper legs finished 1.05 and 1.27 m in the air as rigid
+  parallel columns while the right foreleg was 0.21 m and the whole right ear 0.35 m under the turf
+  — none of it visible to the instrument the pose was authored against, because "the lowest bone
+  sits at +0.009 m" is true and every leg in the rig is a half-metre cylinder *around* its bone.
+  Skinning the real geometry over the clip reports the hide instead: lowest skinned vertex per limb
+  **1.054 → 0.291**, 1.272 → 0.571, −0.213 → −0.005 and −0.345 → +0.077 m, and the worst point at any
+  frame of the fall **−0.878 → −0.211 m**, which was the right hock ploughing through the ground
+  while the pelvis was already a metre down. Three more with it: the caparison was five quads of
+  ruled tent over a barrel that tapers, with two "girth ropes" that were flat plates 1.44 m wide
+  driven straight through the animal, so all that was ever visible of a rope was the slivers where a
+  flat plate leaves a round back; the chest bib was a rectangle, and a rectangle on an animal is a
+  signboard; and the crew were thrown clear on a smoothstep, **which leaves the platform at zero
+  velocity**, so for the first third of the throw a man hardly moved sideways while four tonnes
+  rolled into him — deepest penetration **0.278 → 0.080 m**, against a measurement floor of 0.097 m,
+  on the same arc to the same landing point on the same frame.
+
+- Two smaller things a player will see. **Depth of field was reading a zoom scalar** rather than the
+  orbit radius it is about, which is a faithful proxy for a player and not for anything else; and
+  iron and bronze were too glossy to hold their own form — at the old roughness a bronze bowl's
+  specular peak is 27 against a sun of 3, so the brightest pixels of a helmet clip to white, and a
+  clipped pixel carries no form at all.
+
+### Corrections to the record
+
+- **I argued for scoping victory condition A, and I was wrong about it mattering.** The condition
+  was genuinely unreachable by construction: it asked for `garrisonOnWall === 0`, and that is a sum
+  over the whole circuit — 810 men in eight or nine blocks along **1,781 m** of Aurelian Wall, fifty
+  bays of which forty-five are garrisonable. Across twelve seeded runs **the smallest it ever reached
+  was 604**. Nothing came within six hundred men of a bar that reads as though it were about the
+  fight in front of you, and one surviving Roman on a tower a mile away denied it for ever. Scoped to
+  the ground the storm is actually standing on — a maximal block of consecutive wall runs, held when
+  no defender is on it, and only counting if the garrison ever held it, so that leaning a ladder
+  against a bay nobody was defending does not win a city — it is reachable, and demonstrated
+  reachable at four wall units and below. **On the shipped order of battle it fires never**, because
+  the storm's own runs never fall below 40 defenders and so no block is ever clear: across twelve
+  seeds at 810 men the storm never cleared a bay. The outcome distribution is identical seed for
+  seed, with end times matching to the second across all twelve runs. The ram was worth 2/12 → 6/12;
+  the victory condition was worth nothing. It is still the right rule, and the honest ranking of the
+  two is not the one I argued for.
+
+- **The agent that fixed it caught its own version of the same bug**, which is the useful part. Its
+  first cut also demanded the run *either side* of a lodgement be clear, on the sound-sounding
+  reasoning that a run boundary is a fact about masonry rather than about the fight. That rule fired
+  **nowhere** — not in the twelve seeded runs, and not in any of six garrisons swept from 810 men on
+  the parapet down to 108, through configurations where the storm put 136, 141, 144, 161 and 203 men
+  on the wall and won the battle four times by another route. The measurement that settled it:
+  **Rome's garrison holds the bay it is given and does not counter-attack along the walkway.** The
+  storm fights for bay 18 from t+251 with 25 men against 57, kills the last defender on it by t+297
+  and then stands on it alone for fifty seconds — while **65 defenders on bay 19 hold at exactly 65
+  and take not one casualty between t+251 and t+347.** "A defender within one bay" therefore
+  measures nothing about contest; it demands the storm additionally destroy men who are not fighting
+  it, which is annihilation again, and annihilation is precisely what was wrong with the original.
+
+- **A phase heading in this release is effectively unreachable in normal play.** THE RAM AT THE GATE
+  is returned only while nobody is inside, nobody is on the parapet, nobody is crossing, *and* the
+  gate has taken a blow — and on both maps the escalade reaches the parapet long before the ram's
+  first blow: **t+12 on Carthage and t+22 on Rome, against a first blow at t+104.** The plate above
+  shows THE WALL REACHED with live counts because that is what a storm actually displays. The
+  heading is correct and its ordering is deliberate — men on the parapet is further on than a ram
+  having struck — but as a description of what a player will see, it is nearly dead.
+
+- **The blind A/B against Rome II returned 42 of 42 across two rounds, and the instrument is the
+  problem.** Three independent graders sorted all fourteen pairs correctly in round one, at
+  confidence 5 on 41 of 42 calls, and named the same two faults with the deck itself, unprompted.
+  **A fourteen-pair deck drawn from a single engine is one trial, not fourteen**: a grader who cracks
+  any pair gets the rest on palette and framing alone, so the accuracy reads 100% until the day it
+  reads 50%, and nothing in between is information. Round two's render work — the standard, the
+  nose, the cloth, the metals, the depth of field — measurably closed **six of eight of the deck's
+  own statistics, the edge-hardness gap by 82%** — and moved the score not at all. Two of its fixes
+  *were* confirmed blind by a grader told nothing about what had changed: aerial perspective and
+  cloth. That is the result, and it should be read as a finding about the deck rather than as a
+  verdict on the renderer.
+
+  Three of the deck's leaks were closed on the way and are worth recording because none of them is
+  about rendering. Summing PNG IDAT chunk lengths and picking the larger **identified our frame in
+  11 of the 14 pairs** — compressed length measures pixel-scale detail and ours carries more of it —
+  and because PNG is lossless, writing every frame at stored-block compression makes the stream's
+  length a function of width and height alone: **3,457,311 bytes for every 1440×800 frame, ours and
+  theirs, identical to the byte.** Three of the twenty-two official press plates turn out to be
+  2.35:1 cinematic frames with hard black bars burned into a 16:9 file, and a deck containing one is
+  sortable at a glance; the only reason that had never bitten is that none of the ten plates anyone
+  had pointed the tool at happened to be one of the three. And the wordmark defence rested on a
+  claim that one crop cleared every lockup on its own, which is false on the wider set in both
+  directions — the invariant is the *conjunction* of the two crops, and it is now written down that
+  way.
+
+  One more, about our own camera rather than theirs. Round one's frames were high tactical grabs
+  against ground-level press captures, and the cause was not that anyone chose a high camera: the
+  rig derives boom, pitch and field of view from one zoom scalar, and then a ground-clearance guard
+  refuses to let the eye sit closer to the ground than a curve that resolves to 7.2 m where the zoom
+  asked for 2.8. True depression 25 degrees, against 3 to 8 on the reference plates. **A collision
+  guard had been choosing our compositions**, for every plate this project has ever shot.
+
+- **"1,180 idle warriors" is a figure I have quoted and it is wrong.** On the Rome assault it is
+  **1,080 foot in six warbands** that are eligible to climb and never receive a storm order, through
+  three independent structural locks and not one `canStorm` predicate. The 1,180 was the whole host
+  minus the siege train; the extra hundred are riders, and cavalry is refused a ladder outright.
+
+- **Rome's assault is winnable 2 of 12 and neither win was an assault.** Both came through men
+  getting inside, and one fired at t+857 in a battle where nothing had stood on the parapet since
+  t+219 and no ladder had been crossed since t+80. The census was suspected before the simulation
+  was, and the census was right. Asked of the city's own movement test every 5 m along the whole
+  circuit, **14 of the 356 samples do not block a 28 m segment driven straight through the wall
+  line** — three bands, at x −550…−536, 372…390 and 404…426, which are bays 2, 28 and 29, whose build
+  stage is *footing*. (That 356 is a count of five-metre samples and I have quoted it as a count of
+  stations; the circuit carries **1,695** garrison stations.) The Aurelian circuit is a building site
+  by design — **50 bays: 35 finished, 6 half-built, 5 with no parapet, 3 at footing and 1 gap, 45 of
+  them garrisonable, with 41 tower passes and 9 stairs** — and a footing is a course of masonry at
+  ground level, so the horse is not riding through stone. It is riding through the part that has not
+  been built yet.
+  That is a legitimate route into Rome, and it is the only one the AI ever finds.
+
+- **Six of the code's own comments were found to be wrong while documenting the simulation**, and
+  the one to know about is `Time.alpha`, documented as `[0,1)` and reaching exactly **5.0** whenever
+  a frame's scaled delta exceeds the step ceiling — a 6 fps frame at 1× and a 41.7 ms frame at 4× —
+  with no consumer clamping it, so soldiers are extrapolated five ticks ahead. Measured against the
+  real clock over 5,000 frames per pacing. With it: the headcount comment says 3,784 Romans where it
+  is 3,772, because the twelve-man scorpion battery is exempt from the unit-size multiplier; the
+  crowd's hard cap is 4 where the comment beside it says three; a spatial-hash callback is promised
+  a squared distance and passed a squared radius (inert — all nine call sites ignore it); the phase
+  union listed its five phases in the opposite order to the one its own comment claimed; and the
+  determinism report labels a divergence dump with the *first* diverging checkpoint while dumping it
+  from pages advanced to the *last*.
+
+- **An audit line that printed on every build could not have been true.** The harbour check reported
+  a basin 97.7% clear of buildings with a quay freeboard of **−3.10 m**, which is not a freeboard, it
+  is the bed: it sampled the middle of the basin, which the excavation digs to the bed by
+  construction, three lines below a comment naming the landward quay belt as the right sample. The
+  ground never moved. Only the instrument did.
+
+- **The yaw was not why the wall ran off the side of the opening frame.** The previous pass fixed
+  that shot correctly and explained it wrongly, which is the part somebody reads next time. There
+  were two horizontal faults, they had opposite signs, and the one that got named was the smaller:
+  correcting the yaw *on its own makes the framing worse*, by 55 px on Carthage and 38 on Rome. The
+  frame was off by 211 px rather than 263 because the aim point and the yaw were quietly subtracting
+  from one another.
+
+- **The other half of the gatehouse work has never once run, and r6 does not fix it.** Rome's siege
+  spine lays a garrison station every 0.86 m along every garrisonable bay, and **22 of bay 19's 36
+  stations stand *inside* the gatehouse** — x 59.89 to 77.94, at a walk height of 35.75, which is
+  6.574 m below the crown, on ground where the curtain was never built. Two workstreams split that
+  cleanly between them: the city published the block's footprint, and the siege clipped its spine
+  against it. Both commits are accurate about their own half and both landed. **The seam between
+  them was never typed.** The siege declares the accessor as returning a half-width, a half-depth
+  and a rotation; the city returns a normal, a half-run and a half-depth under different names — so
+  the inside-the-block test reads `undefined` for every field it wants and answers *false* for every
+  point on the circuit, and the accessor is reached through an `as unknown as`, which is precisely
+  the cast that stops the compiler from saying so. Measured at the released commit: **22 stations
+  inside the footprint, 0 clipped.** The commit that added the clip says it is "inert until that
+  accessor lands"; the accessor had landed forty-eight minutes earlier, under other names. It is not
+  a regression — it was inert before this release and is inert after it, and the battlement fix
+  above is what stopped those men's shots being thrown away — but nothing in r6 clips them, and this
+  entry exists so that nobody reads the two commit messages together and concludes otherwise.
+
+- **Two dispose leaks were fixed in a method the application never calls.** The sky dome and the
+  terrain mesh were each freed and left attached to the scene — eight init/dispose cycles grew the
+  scene from 43 children to 50 while the renderer's geometry count *fell*, which is exactly the
+  signature of a resource freed with its owner still in the graph — along with the fog and the
+  environment map, the latter a live pointer to a destroyed GPU object. All of it is correct now and
+  none of it was ever reachable: **`Engine.dispose()` has no caller anywhere in `src` or `tools`**,
+  because map switching goes through a page reload. That the method is dead code is the larger
+  finding, and it is recorded rather than acted on.
+
+---
+
 ## r5 — the garrison stops shooting itself, and Carthage's posterns become doors
 
 **18 August 2026** · commit [`850843a`](https://github.com/eoinest/Total-Claude/commit/850843a) ·
-deployment `total-claude-dmr7bx7fq` · **live now**
+deployment `total-claude-dmr7bx7fq`
 
 A correctness release, and the one in which several confident diagnoses turned out to be wrong.
 Rome's garrison had been putting nearly a third of its shots into its own men and being credited
