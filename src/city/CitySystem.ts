@@ -1551,6 +1551,25 @@ export class CitySystem implements Subsystem {
    * whether Rome is open is exactly the bug class this whole file keeps producing. The same
    * object is returned each time, so a consumer may hold it and poll it per frame.
    */
+  /**
+   * The gatehouse as a solid, with its battlement. Null on a circuit with no gate block.
+   *
+   * Published because two consumers need the block's *plan footprint* and neither can get
+   * it from `getGarrisonBays()`: the block straddles two bays and one x cannot name two
+   * runs, which is why it was a separate record in the first place.
+   *
+   * The one that matters is `Siege.buildSpine`. It lays a standing station every 0.86 m
+   * along every garrisonable bay, and `wall.ts curtainSpans` cuts the curtain out where the
+   * gatehouse stands — so on Rome, 22 of bay 19's 36 stations sit at x 59.89 to 77.94 on
+   * masonry that was never built, at `walkY` 35.75, which is 6.57 m below the gatehouse
+   * crown occupying that ground. Every shot from those 22 men is discarded. This is the
+   * footprint they have to be clipped against; the clip itself is `Siege.ts`'s and is not
+   * this workstream's to make.
+   */
+  getGateBlock(): GateBlockOut | null {
+    return this.gateBlock;
+  }
+
   getGateDoor(): GateDoorOut | null {
     const door = this.gateDoor;
     if (!door) return null;
