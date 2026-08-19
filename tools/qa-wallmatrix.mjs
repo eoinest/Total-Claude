@@ -366,6 +366,9 @@ async function order(pt, id) {
   await page.mouse.move(pt.x, pt.y);
   await settle(300);
   const cur = await page.evaluate(() => window.__cursor());
+  // Assert the selection at the moment of the order, not when it was made: a cell that lost
+  // it between the click and the right-click reports a broken order for a broken selection.
+  const selNow = await page.evaluate(() => window.__selected());
   const mark = await page.evaluate(() => window.__mark());
   await page.mouse.down({ button: 'right' });
   await settle(160);
@@ -376,8 +379,12 @@ async function order(pt, id) {
   await page.mouse.up({ button: 'right' });
   await settle(320);
   const ord = await page.evaluate(([m, u]) => window.__ordersFor(m, u), [mark, id]);
-  return { cur: { ...cur, hint: held.hint, hintShown: held.hintShown, kind: held.kind },
-    order: ord.length ? ord[ord.length - 1] : null };
+  return {
+    cur: { ...cur, hint: held.hintShown ? held.hint : `(not shown; last was "${held.hint}")`,
+      hintShown: held.hintShown, kind: held.kind, kindBefore: cur.kind, selAtOrder: selNow,
+      wallAtOrder: cur.wallValid },
+    order: ord.length ? ord[ord.length - 1] : null,
+  };
 }
 
 /**
@@ -578,7 +585,10 @@ const downExpect = (wantSide) => (before, after, tick1, res) => {
     + `the terrain (${before.men} set off), ${right} on the ${wantSide < 0 ? 'city' : 'field'} side, fell `
     + `${(before.maxY - after.maxY).toFixed(2)} m, siege-owned ${after.owned}, plan `
     + `${after.plan ? `STILL OPEN age ${after.plan.age} stuck ${after.plan.stuck}` : 'released'}, `
-    + `hint "${res.cur?.hint ?? ''}" cursor ${res.cur?.kind}` };
+    + `hint "${res.cur?.hint ?? ''}" cursor ${res.cur?.kindBefore}/${res.cur?.kind}, `
+    + `selection at the order [${(res.cur?.selAtOrder ?? []).join(',')}], `
+    + `wallValid at the order ${res.cur?.wallAtOrder}, order `
+    + `${res.order ? `${res.order.kind} at (${(res.order.x ?? 0).toFixed(1)},${(res.order.z ?? 0).toFixed(1)})` : 'NONE'}` };
 };
 
 async function romeCells() {
