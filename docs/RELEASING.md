@@ -200,9 +200,14 @@ Then, at release time:
   visible in the frame, not from the entry.
 - **`CHANGELOG.md` renders on GitHub, so repo-relative paths work there** (`docs/images/releases/…`).
   **A GitHub Release body does not resolve them** — it needs the raw form,
-  `https://raw.githubusercontent.com/eoinest/Total-Claude/<tag-or-sha>/docs/images/releases/…`,
-  pinned to a tag or a SHA and never to a branch. Push the images *before* you write the release
+  `https://raw.githubusercontent.com/eoinest/Total-Claude/<sha>/docs/images/releases/…`,
+  pinned to a SHA and never to a branch. Push the images *before* you write the release
   body, or the raw URLs 404.
+
+  **Pin to the changelog commit, not to `rN`.** The tag names the deployed bytes, and the
+  illustrations are committed *after* that commit — so `…/r6/docs/images/…` is a 404 by
+  construction, and all fifteen of r6's were until they were repointed. Use `git rev-parse main`
+  after the changelog has landed.
 - **Check the rendered markdown on both surfaces**, do not assume it:
 
   ```sh
