@@ -6,6 +6,9 @@ import {
 } from '../units/engines';
 import { emptyKit, resolveKit } from '../units/kit';
 import { ELEPHANT_CLIP } from '../anim/elephantClips';
+// Imported, not restated: this page used to hold its own copy of the ladder. See the note
+// at the head of `soldierRig.ts` for the copy that drifted.
+import { LOD_FRACTION } from '../units/UnitRenderSystem';
 import { ELEPHANT_RIG } from '../anim/rig';
 import { hash01 } from '../util/rand';
 import {
@@ -73,14 +76,6 @@ const COARSE_NAMES: Record<number, string> = {
   4: 'Shield (round)', 5: 'Pole arm', 6: 'Blade', 7: 'Cloak',
 };
 
-/**
- * LOD band edges as fractions of `quality.lodFarDistance`.
- *
- * `LOD_FRACTION` is module-private in `UnitRenderSystem.ts:112` and `src/units` belongs to
- * another workstream, so the values are restated here. They multiply
- * `QUALITY_PRESETS.high.lodFarDistance`, which is 220. The report asks for the export.
- */
-const LOD_FRACTION = [0.14, 0.4, 2.0];
 const LOD_FAR_HIGH = 220;
 const LOD_LABELS = ['LOD0', 'LOD1', 'LOD2', 'IMPOSTOR'];
 

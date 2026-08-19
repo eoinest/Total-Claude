@@ -130,7 +130,7 @@ const LOD_COUNT = 3;
  * because every man in them is inside 88 m either way. 0.40 rather than 0.34 only because it
  * keeps a marginal 10 m of real geometry for nothing at 1080p.
  */
-const LOD_FRACTION = [0.14, 0.4, 2.0];
+export const LOD_FRACTION = [0.14, 0.4, 2.0];
 
 /** A standing man, metres. The height every screen-space threshold below is measured against. */
 const MAN_HEIGHT_M = 1.75;
@@ -295,6 +295,13 @@ const rp = { x: 0, y: 0, z: 0 };
 /**
  * Where the tower crew go when the animal goes down, as fractions of the death clip.
  *
+ * **Exported, and `src/viewer/` imports them.** They used to be module-private and the model
+ * viewer carried a hand-copied set with a comment saying so. One of them had already drifted:
+ * `soldierRig.ts` held `CREW_FALL_SIDE = +1` against this file's `-1`, so every carcass frame
+ * ever shot in the viewer threw the crew onto the flank the animal rolls *away* from — the
+ * exact sign the note below spends two paragraphs establishing. A grade mirror in that same
+ * page drifted once before and shipped every model plate at the wrong film grain.
+ *
  * A Punic elephant carries a mahout astride the neck and three men in a crenellated tower
  * 3.06 m up. The animal's fall is 2.6 s and the men are not passengers in it: the forelegs
  * buckle first, the whole platform pitches forward, and they are thrown off it. So they
@@ -304,17 +311,17 @@ const rp = { x: 0, y: 0, z: 0 };
  * settling, which is the right order: the crew land, then the beast comes to rest beside
  * them.
  */
-const CREW_THROW_START = 0.28;
-const CREW_THROW_LEN = 0.22;
+export const CREW_THROW_START = 0.28;
+export const CREW_THROW_LEN = 0.22;
 /** Peak of the thrown crewman's arc above the straight line from tower to ground, metres. */
-const CREW_THROW_ARC = 0.55;
+export const CREW_THROW_ARC = 0.55;
 /**
  * How far from the animal's spine a thrown crewman lands, metres, before his own scatter.
  *
  * Outside the carcass capsule in `BattleSystem` (1.30 m) so a body does not lie inside the
  * animal, and inside the distance at which he would read as belonging to some other death.
  */
-const CREW_LAND_OUT = 1.95;
+export const CREW_LAND_OUT = 1.95;
 /**
  * The side the animal rolls onto, as a sign on the model's own +X axis.
  *
@@ -337,7 +344,7 @@ const CREW_LAND_OUT = 1.95;
  * the loop that uses it: if that clip is ever re-authored to fall the other way, this is the
  * one line that moves with it, and the script above is how to tell which way it now falls.
  */
-const CREW_FALL_SIDE = -1;
+export const CREW_FALL_SIDE = -1;
 /**
  * Lift on a landed crewman's mesh origin, metres.
  *
@@ -347,7 +354,7 @@ const CREW_FALL_SIDE = -1;
  * own figure rather than picking a new one means a crewman lying beside the animal reads at
  * the same height as the men who killed it lying next to him.
  */
-const CREW_GROUND_LIFT = 0.15;
+export const CREW_GROUND_LIFT = 0.15;
 
 /** Scratch for the thrown crew's lie-down quaternion. Four men per animal per frame. */
 const qCrew = new THREE.Quaternion();
@@ -363,7 +370,7 @@ const AXIS_UP = new THREE.Vector3(0, 1, 0);
  * hang off the chest, so `clavL..handL` and `clavR..handR` are each four consecutive
  * indices, and everything from `spineLow` to `handR` is the whole upper body.
  */
-const MAN_POSE_VARY: PoseVaryBones = {
+export const MAN_POSE_VARY: PoseVaryBones = {
   upper: [MB.spineLow, MB.handR],
   head: [MB.neck, MB.head],
   leftArm: [MB.clavL, MB.handL],
@@ -2579,13 +2586,36 @@ export class UnitRenderSystem implements Subsystem {
     const landZ = fromZ - side * sinF + along * cosF;
     const landY = b.groundAt(landX, landZ) + CREW_GROUND_LIFT;
 
-    // Ease out of the tower and into the ground: fast off the platform, slowing as he lands.
-    const s = t * t * (3 - 2 * t);
-    const x = fromX + (landX - fromX) * s;
-    const z = fromZ + (landZ - fromZ) * s;
+    /**
+     * Two easings, because a man leaving a rotating platform is not a man on a rail.
+     *
+     * This used to be one smoothstep driving all three axes, and a smoothstep starts at
+     * *zero velocity* — so for the first third of the throw he barely moved sideways while
+     * the animal rolled into him. Measured against the posed hide
+     * (`tools/scratch/carc-crew-entry.ts`, which inverts the spine's rigid transform and
+     * tests the man's own body capsule against the swept ellipse the hide is built from),
+     * the deepest a crewman got inside the animal was **0.278 m at 33.5 % of the fall** —
+     * the reported "they tumble through its back".
+     *
+     * Out on `t(2 − t)`, which leaves the platform at maximum speed, and down on `t²`, which
+     * is what gravity does. Same peak arc, same landing point, same landing frame: both
+     * curves are 0 at 0 and 1 at 1. Deepest penetration **0.080 m**, and that is the
+     * measurement's own floor — a man standing in the tower already reads 0.097, because
+     * the howdah's floor sits 0.21 m inside the hide and his boots are under the planking
+     * where nothing can see them.
+     *
+     * `CREW_THROW_ARC` is deliberately *not* the fix and is unchanged at 0.55 m. Raising it
+     * to 0.85 with the old easing only takes 0.278 to 0.157; the easing alone takes it to
+     * 0.080 with the arc left alone.
+     */
+    const sOut = t * (2 - t);
+    const sDown = t * t;
+    const x = fromX + (landX - fromX) * sOut;
+    const z = fromZ + (landZ - fromZ) * sOut;
     // A parabola over the straight line, so he clears the animal's back rather than sliding
     // down it. Zero at both ends by construction.
-    const y = fromY + (landY - fromY) * s + CREW_THROW_ARC * Math.sin(Math.PI * s);
+    const y = fromY + (landY - fromY) * sDown + CREW_THROW_ARC * Math.sin(Math.PI * t);
+    const s = sOut;
 
     // Which way he is turned when he lands, and the horizontal axis he tips about: away
     // from the animal, which is the direction he was thrown.
