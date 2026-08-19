@@ -1093,7 +1093,8 @@ try {
               // the focus in open ground between the lines, with the nearest cohort in a
               // corner. A single block fills the frame and is what the shot is for.
               const want = s.follow === 'romanFront' ? 0 : foe;
-              let best = null;
+              let bestLine = null;
+              let bestLight = null;
               for (const u of b.units) {
                 if (u.destroyed || u.faction !== want || u.alive === 0) continue;
                 const cls = b.typeOf(u).unitClass;
@@ -1116,14 +1117,27 @@ try {
                  * A guess about a unit class, written into a comment as though it were a
                  * measurement, survived one round of being "fixed" because the fix was checked
                  * against the comment rather than against the roster.
+                 *
+                 * And widening the class list was still not enough, which is the second half
+                 * of the lesson. "Frontmost of the accepted classes" picks a *skirmisher*,
+                 * because skirmishers are deployed in front of the line — that is what they
+                 * are for. So the accepted set is now ranked rather than flat: the line
+                 * classes are preferred outright and light infantry is a fallback for a host
+                 * that has no line, which is the Juthungi case the original rule was written
+                 * for. Two candidates are tracked, and the skirmisher is only used if the
+                 * other is empty.
                  */
-                if (want === 0
-                  ? cls !== 'heavy-infantry'
-                  : (cls !== 'light-infantry' && cls !== 'heavy-infantry'
-                     && cls !== 'spear-infantry')) continue;
+                const isLine = want === 0
+                  ? cls === 'heavy-infantry'
+                  : (cls === 'heavy-infantry' || cls === 'spear-infantry');
+                const isFallback = want !== 0 && cls === 'light-infantry';
+                if (!isLine && !isFallback) continue;
                 // "Frontmost" = nearest the enemy. Rome faces -Z, the Juthungi face +Z.
-                if (!best || (want === 0 ? u.z < best.z : u.z > best.z)) best = u;
+                const ahead = (a, c) => !c || (want === 0 ? a.z < c.z : a.z > c.z);
+                if (isLine) { if (ahead(u, bestLine)) bestLine = u; }
+                else if (ahead(u, bestLight)) bestLight = u;
               }
+              const best = bestLine ?? bestLight;
               if (best) {
                 fx = best.x;
                 fz = best.z;
