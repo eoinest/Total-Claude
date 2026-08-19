@@ -15,6 +15,9 @@ import {
 } from '../sim/types';
 import { moraleStateOf, PLAYER_FACTION, type MoraleState, type Phase } from './theme';
 
+/** Scratch for the nine `standY` samples; module scope so the HUD allocates nothing per frame. */
+const STAND_SAMPLES = new Float32Array(9);
+
 const ROMAN_NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
 
 /** A per-faction counter table with every faction present at zero. See `HudModel.strength`. */
@@ -199,10 +202,44 @@ export class HudModel {
       v.cx = u.x - s * v.depth * 0.5;
       v.cz = u.z - c * v.depth * 0.5;
       v.cy = battle.groundAt(v.cx, v.cz);
-      // Zero before the first `fixedUpdate` has run, and zero is a legal sea-level height, so
-      // it is not special-cased here — `SelectionController` only trusts this when it is
-      // *above* the terrain, and a spurious zero never is.
-      v.standY = battle.levelOf(u.id);
+      /*
+       * The level this unit's men are standing on, read from the men.
+       *
+       * It used to be `BattleSystem.levelOf`, which is written only in `updateUnitCohesion`
+       * — inside `fixedUpdate`, which the paused deployment phase never runs. So before
+       * BEGIN every unit on the board reads `standY 0`, `ELEVATED_MIN_DY` never trips and the
+       * elevated pick is dead: measured in the hand, **0 of 99 pixels select a unit already
+       * standing on the parapet**, and after dropping a reserve cohort onto bay 21 — which
+       * lands perfectly — **0 of 18 pixels pick it up again**. A player could put men on a
+       * wall and then not touch them until the battle started.
+       *
+       * A **median** of a handful of living men rather than one of them, and that is not
+       * fussiness: a cohort halfway up a ladder has men at every height between the grass and
+       * the walk, and the first index in `members` is whichever man the slot layout happened
+       * to put there. The median says where the unit *is*, which is the question every caller
+       * is asking — and it is what makes a half-dismounted garrison read as "on the ground"
+       * so the cursor offers to send it back up rather than along.
+       *
+       * Nine samples, evenly spaced, because a garrison's men share one y to the centimetre
+       * (`Siege.holdGarrisonsOnTheWalk` snaps each to his own station) and a formation on the
+       * ground varies by the slope under it. Falls back to the sim's own figure when nobody
+       * is left alive to read.
+       */
+      let ns = 0;
+      const n = u.members.length;
+      if (!u.destroyed && n > 0) {
+        for (let k = 0; k < 9; k++) {
+          const i = u.members[Math.min(n - 1, Math.floor((k + 0.5) * n / 9))];
+          if (pool.aliveAt(i)) STAND_SAMPLES[ns++] = pool.y[i];
+        }
+      }
+      if (ns === 0) {
+        v.standY = battle.levelOf(u.id);
+      } else {
+        const win = STAND_SAMPLES.subarray(0, ns);
+        win.sort();
+        v.standY = win[ns >> 1];
+      }
 
       if (!u.destroyed) {
         this.strength[u.faction] += u.alive;

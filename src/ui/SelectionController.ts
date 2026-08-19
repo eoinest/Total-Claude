@@ -779,10 +779,29 @@ export class SelectionController {
     if (sel.length === 0) return;
     let out = 0;
     for (const v of sel) {
-      if (probe.isGarrisoned(v.id)) continue;
+      if (this.onTheWall(v)) continue;
       if (probe.sideAt(v.cx, v.cz) > 0) out++;
     }
     this.storming = out > sel.length * 0.5;
+  }
+
+  /**
+   * Are this unit's **men** on the wall — not merely its record.
+   *
+   * `Siege.isGarrisoned` is a flag on the unit, and it survives states in which almost
+   * nobody is up there. A descent measured from the seat left 91 of 99 archers in the street
+   * with the flag still set and the plan still open, so the next click read as a *traverse*
+   * and the hint said "Along the wall" over a cohort standing in a city square. A ladder
+   * party in the field with a handful of men over the parapet reads "Down off the wall" for
+   * the same reason.
+   *
+   * So the flag is necessary and not sufficient: the men have to be up there too, which
+   * `standY` now answers from the men themselves (see `model.ts`). One predicate, read by
+   * both `wallIntent` and `refreshStorming`, because the last three bugs of this shape in
+   * this project were two functions asking the same question two ways.
+   */
+  private onTheWall(v: UnitView): boolean {
+    return !!this.wallProbe?.isGarrisoned(v.id) && v.standY - v.cy > ELEVATED_MIN_DY;
   }
 
   private wallIntent(): 'ascend' | 'traverse' | 'descend' | 'storm' | null {
@@ -796,7 +815,7 @@ export class SelectionController {
     // A mixed selection is named by the majority; every unit still gets the same order and
     // `Siege` decides per unit what that means for it.
     let onWall = 0;
-    for (const v of sel) if (probe.isGarrisoned(v.id)) onWall++;
+    for (const v of sel) if (this.onTheWall(v)) onWall++;
     if (this.wallValid) return onWall > sel.length * 0.5 ? 'traverse' : 'ascend';
     return onWall > 0 ? 'descend' : null;
   }
@@ -812,10 +831,20 @@ export class SelectionController {
    * instantly. With the curtain garrisoned and about to become traversable that is a whole
    * tactical layer the player cannot reach.
    *
-   * The two paths are kept apart rather than merged. `groundX/groundZ` is untouched and is
-   * still the only thing a non-elevated unit is tested against, so ordinary picking is
-   * unchanged by construction — which matters here, because folding one more question into
-   * the ground ray is exactly what `01db41e` had to revert.
+   * **One plane, and it is the same plane for everybody.** The two paths used to be kept
+   * apart, on the reasoning that leaving the ground path on `groundX/groundZ` made ordinary
+   * picking unchanged by construction. It did — including unchanged in the way it was
+   * already wrong. The camera looks down at about 18 degrees at battle zoom, so a ray aimed
+   * at a man's chest crosses the *terrain* 1.75/tan 18 = **5.4 m behind him**, which is
+   * deeper than several units are: measured in the hand at zoom 0.42, the fraction of a
+   * unit's own drawn crowd that selects it was **0 of 77 pixels** for a tower party, 22/77
+   * for a ram crew, 22/66 for a ladder party and 39/77 for a line cohort. The unit card was
+   * the only reliable handle, which is why every probe that clicked a card saw nothing wrong.
+   *
+   * `MAN_MID_Y` already existed to split exactly this error for elevated units; applying it
+   * to everybody removes the special case rather than adding one, and `groundX/groundZ` —
+   * which the marquee and the order point read — is not touched, so **where an order goes is
+   * unchanged**. That is the half `01db41e` had to revert, and it is not what this moves.
    */
   private pickUnit(ctx: EngineContext): number {
     if (this.ptr.overUi) return -1;
@@ -831,17 +860,12 @@ export class SelectionController {
     let bestD = Infinity;
     for (const v of this.model.views) {
       if (v.destroyed) continue;
-      let px: number;
-      let pz: number;
-      if (v.standY - v.cy > ELEVATED_MIN_DY) {
-        if (!rayPlaneY(RAY, v.standY + MAN_MID_Y, PLANE_AT)) continue;
-        px = PLANE_AT.x;
-        pz = PLANE_AT.z;
-      } else {
-        if (!this.groundValid) continue;
-        px = this.groundX;
-        pz = this.groundZ;
-      }
+      // The level the men are standing on, mid-body. One expression, both cases — a unit on a
+      // wall walk and a unit on grass differ only in which number goes into it.
+      const standing = (v.standY - v.cy > ELEVATED_MIN_DY ? v.standY : v.cy) + MAN_MID_Y;
+      if (!rayPlaneY(RAY, standing, PLANE_AT)) continue;
+      const px = PLANE_AT.x;
+      const pz = PLANE_AT.z;
       footprintOf(v.unit, v.def, FOOT);
       const d = distanceToFootprint(FOOT, px, pz);
       if (d > slack) continue;
@@ -981,10 +1005,18 @@ export class SelectionController {
         this.dragStartZ = this.orderZ;
         this.dragEndX = this.orderX;
         this.dragEndZ = this.orderZ;
-        this.dragHostileId = this.hostileUnder(hovered);
+        /*
+         * Modifiers first, then the target. `hostileUnder` reads `dragCtrl` — ctrl is what
+         * turns a wall order over an enemy garrison into an attack on him — and reading it
+         * before it has been seeded from the pointerdown snapshot answers the first frame of
+         * every gesture with the *previous* gesture's value, which is `false`. Measured: the
+         * order went out as `attackMove` (so `issueDragOrder` saw ctrl) while `dragTarget`
+         * was −1 (so `hostileUnder` had not), on the same click.
+         */
         this.dragCtrl = this.ptr.downCtrl;
         this.dragAlt = this.ptr.downAlt;
         this.dragShift = this.ptr.downShift;
+        this.dragHostileId = this.hostileUnder(hovered);
       }
     }
 
