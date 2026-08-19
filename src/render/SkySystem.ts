@@ -158,6 +158,15 @@ export class SkySystem implements Subsystem {
   private background?: THREE.Mesh;
   private bgMat?: THREE.ShaderMaterial;
   private fog?: THREE.FogExp2;
+  /**
+   * The scene this system installed itself into. `Subsystem.dispose()` takes no
+   * context, and three of the things this system owns live on the scene rather
+   * than under it — the sky quad, `scene.fog` and `scene.environment` — so the
+   * handle has to be kept or dispose cannot detach them. Freeing a texture the
+   * scene still points at is worse than leaking it: the next renderer to walk
+   * that scene binds a destroyed GPU object.
+   */
+  private scene?: THREE.Scene;
   /** Set by PostFX when it takes over atmospheric fading in screen space. */
   private screenSpaceFog = false;
 
@@ -178,6 +187,8 @@ export class SkySystem implements Subsystem {
     this.dayCycle = map.sky.dayCycle;
     this.timeOfDay = map.sky.defaultHour;
     this.preset = { ...(SKY_PRESETS[this.dayCycle[0]] ?? SKY_PRESETS.afternoon) };
+
+    this.scene = ctx.scene;
 
     this.makeCloudNoise();
     this.buildBakeScene(ctx);
@@ -956,16 +967,59 @@ export class SkySystem implements Subsystem {
     if (this.bakeMat) this.bakeMat.uniforms.uAltitude.value = Math.max(2, cam.position.y);
   }
 
+  /**
+   * Every path here follows the same order: **detach, then free**. The bug this
+   * shape prevents is a resource whose owner is left holding it — the sky quad
+   * used to have its geometry disposed while the mesh stayed a child of the
+   * scene, so the renderer kept walking a node whose buffers were gone, and the
+   * child count never came back down across a map change.
+   *
+   * Four things were attached and only one of them was a mesh:
+   *
+   *  - `background` — child of the scene.
+   *  - `scene.fog` — this system constructs it and nothing else writes it.
+   *  - `scene.environment` — the PMREM texture, freed one line later by
+   *    `pmremRT.dispose()`; leaving the pointer behind hands the next frame a
+   *    destroyed texture rather than merely a stale one.
+   *  - the bake sphere — a child of `bakeScene`, which is private, so this one
+   *    only ever leaked until GC. Cleared anyway so the rule has no exceptions.
+   */
   dispose(): void {
+    this.background?.removeFromParent();
     this.background?.geometry.dispose();
+    this.background = undefined;
     this.bgMat?.dispose();
+    this.bgMat = undefined;
+
     this.bakeMat?.dispose();
+    this.bakeMat = undefined;
     this.bakeScene?.traverse((o) => {
       if (o instanceof THREE.Mesh) o.geometry.dispose();
     });
+    this.bakeScene?.clear();
+    this.bakeScene = undefined;
+    this.cubeCam = undefined;
+
+    const scene = this.scene;
+    if (scene) {
+      // Only surrender what this system installed. A later system could in
+      // principle have taken either over, and clearing someone else's fog is the
+      // same class of mistake in the other direction.
+      if (scene.fog === this.fog) scene.fog = null;
+      if (scene.environment === this.environmentTexture) scene.environment = null;
+    }
+    this.fog = undefined;
+    this.scene = undefined;
+
     this.cubeRT?.dispose();
+    this.cubeRT = undefined;
     this.pmremRT?.dispose();
+    this.pmremRT = undefined;
     this.pmrem?.dispose();
+    this.pmrem = undefined;
+    this.environmentTexture = null;
+    this.hdriEnv = null;
     this.cloudNoiseTexture?.dispose();
+    this.cloudNoiseTexture = null;
   }
 }
