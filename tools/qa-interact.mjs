@@ -96,11 +96,35 @@ await page.evaluate(() => {
     if (v.z > 1) return null;
     return { x: (v.x * 0.5 + 0.5) * g.engine.context.viewW, y: (-v.y * 0.5 + 0.5) * g.engine.context.viewH };
   };
-  /** Screen position of a unit's anchor, lifted 1 m so it is not buried in the ground. */
+  /**
+   * Where to put the cursor so `SelectionController.pickUnit` resolves this unit.
+   *
+   * **Not the unit anchor, and not lifted.** This used to project `u.x, groundAt + 1, u.z`,
+   * and both halves of that were wrong. The anchor is the midpoint of the *front rank*, not
+   * the centre of the block the pick tests; and the metre of lift puts the pixel above the
+   * men — measured at ~48 px at some zooms — so `right-click move` and `right-click attack`
+   * read as failing against a product that works. Proven three ways in one session and
+   * recorded in `docs/HANDOFF.md` as a harness fault.
+   *
+   * The point below is exactly the one the controller tests: `picking.footprintOf`'s block
+   * centre, at the level the men are standing on. A unit on a wall walk is tested on a plane
+   * at `standY + MAN_MID_Y` instead, so it is projected there — one function, both cases,
+   * mirroring one function in the product.
+   */
   window.__unitScreen = (id) => {
     const u = g.battle.unitById(id);
     if (!u) return null;
-    return window.__project(u.x, g.battle.groundAt(u.x, u.z) + 1, u.z);
+    const p = g.battle.pool;
+    let n = 0, sy = 0;
+    for (const i of u.members) { if (!p.aliveAt(i)) continue; n++; sy += p.y[i]; }
+    const ranks = Math.max(1, Math.ceil(Math.max(1, u.alive) / Math.max(1, u.width)));
+    const depth = Math.max(1.4, (ranks - 1) * u.spacingZ + 1.3);
+    const cx = u.x - Math.sin(u.facing) * depth * 0.5;
+    const cz = u.z - Math.cos(u.facing) * depth * 0.5;
+    const cy = g.battle.groundAt(cx, cz);
+    const standY = n ? sy / n : cy;
+    const elevated = standY - cy > 2.5;
+    return window.__project(cx, elevated ? standY + 0.9 : cy, cz);
   };
   /** HUD-clear screen points, the ones farthest from any unit anchor first. */
   window.__spotCandidates = () => {
@@ -345,6 +369,30 @@ else {
   pos = await page.evaluate((id) => window.__unitScreen(id), setup.id);
   await page.mouse.click(pos.x, pos.y);
   await settle(350);
+  /*
+   * Assert the selection before ordering.
+   *
+   * `handleRight` does nothing at all with an empty selection, so a click that missed makes
+   * the *next* check report "no orderIssued" — a right-click failure for a selection
+   * failure, one step removed from its cause. One retry on the controller's own hover
+   * answer, then say which of the two actually broke.
+   */
+  let selOk = (await page.evaluate(() => window.__selection())).includes(setup.id);
+  if (!selOk) {
+    for (const [dx, dy] of [[0, 12], [0, -12], [18, 0], [-18, 0], [0, 26], [0, -26]]) {
+      await page.mouse.move(pos.x + dx, pos.y + dy);
+      await settle(120);
+      if ((await page.evaluate(() => window.__game.engine.context.tryGet('hud')?.controller?.model.hoveredId ?? -1)) !== setup.id) continue;
+      await page.mouse.click(pos.x + dx, pos.y + dy);
+      await settle(280);
+      selOk = (await page.evaluate(() => window.__selection())).includes(setup.id);
+      if (selOk) { pos = { x: pos.x + dx, y: pos.y + dy }; break; }
+    }
+  }
+  record('select before ordering', selOk,
+    `left-click unit ${setup.id} at (${Math.round(pos.x)},${Math.round(pos.y)}) — the block centre `
+    + `at the men's own level, not the anchor lifted a metre`,
+    `selection [${(await page.evaluate(() => window.__selection())).join(',')}]`);
   const before = await page.evaluate((id) => window.__unit(id), setup.id);
   mark = await page.evaluate(() => window.__tapeMark());
   /*

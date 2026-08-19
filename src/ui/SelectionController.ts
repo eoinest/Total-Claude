@@ -11,7 +11,8 @@
  *                         the facing, and a ghost formation previews the result
  *   shift + right         queue the order behind the current one
  *   alt + right           run instead of march
- *   ctrl + right          attack-move
+ *   ctrl + right          attack-move; on a man standing on a wall, attack *him* rather
+ *                         than storming the stone he is standing on
  *
  * The camera also wants the right button for yaw, so the rule is: with something selected the
  * right button belongs to the order system (`rig.suppressDrag` holds the camera off); with an
@@ -111,6 +112,17 @@ const MAN_MID_Y = 0.9;
  */
 const SIEGE_TOWER_HALF = 2.1;
 
+/**
+ * How far forward along the cursor's ray a hit on a siege engine may look for the wall it
+ * is leaning on, in metres.
+ *
+ * A docked tower's front face stands 0.32 m off the masonry and the machine is 4.2 m deep,
+ * so a ray that entered its near face has at most about five metres of engine in front of
+ * it. Sixteen leaves room for one still trundling up the glacis without ever reaching past
+ * the curtain into the city behind it.
+ */
+const SIEGE_REACH_M = 16;
+
 /** What the HUD needs from `AbilitySystem`. Duck-typed so the HUD runs without it. */
 export interface AbilityProbe {
   /** 0 = ready, 1 = just used. */
@@ -163,6 +175,15 @@ export class SelectionController {
   deployment: DeploymentHooks | null = null;
   /** Unit under the cursor's banner this frame, or -1. */
   private overBanner = -1;
+  /**
+   * Ctrl as it is *right now*, not as it was when a button went down.
+   *
+   * `dragCtrl` is the gesture's own snapshot and is deliberately sticky, which is right for
+   * deciding what an order was — and useless for the cursor, which has to answer "what would
+   * happen if I clicked here" before any button is pressed. Sampled once a frame in `update`
+   * so `hostileUnder` and `updateCursor` read the same value and cannot disagree.
+   */
+  private ctrlHeld = false;
   /** Ability cooldown expiry times, keyed `unitId:abilityId`, in sim seconds. */
   private cooldowns = new Map<string, number>();
   /** Abilities the sim reports as currently running, keyed `unitId:abilityId`. */
@@ -451,6 +472,7 @@ export class SelectionController {
 
   update(ctx: EngineContext, heightAt: (x: number, z: number) => number): void {
     const input = ctx.input;
+    this.ctrlHeld = input.ctrl;
     this.overBanner = this.bannerAt ? this.bannerAt(this.ptr.x, this.ptr.y) : -1;
     // Published so no other system treats a click aimed at a plaque as a click on the
     // ground behind it. It is only ever true while the cursor is genuinely inside a
@@ -628,6 +650,42 @@ export class SelectionController {
         this.wallZ = PICK.solidZ;
         this.wallY = PICK.solidY;
         this.wallValid = true;
+      } else if (this.wallProbe && PICK.solid >= this.siegeAt && this.selectionIsStorming()) {
+        /*
+         * A siege tower is the one solid that *is* the way up, and it stands in front of the
+         * only pixel that used to mean the wall.
+         *
+         * Measured on the storm of Carthage: aiming at the bay a tower is working, no camera
+         * on the field side can reach the masonry at all — the ray meets the machine first,
+         * `Siege.wallTargetAt` answers −1 at a point 4.5 m outside the curtain's face
+         * (`WALL_CLICK_BAND` is 1.7 m), `wallValid` is false, and the order goes out as a
+         * plain move to the grass beside the tower. So the route the whole machine exists to
+         * provide could not be commanded by clicking the machine.
+         *
+         * Walked forward along the cursor's own ray rather than guessed at: the first point
+         * within `SIEGE_REACH_M` that the sim itself calls a wall station is the bay this
+         * engine is leaning on. Confined to the storming side and to the siege engines —
+         * everything from `siegeAt` on — so a click on the curtain, on a tower of the wall,
+         * or on anything at all from inside the city is untouched.
+         */
+        const probe = this.wallProbe;
+        const inv = Math.hypot(RAY.dx, RAY.dz);
+        if (inv > 1e-6) {
+          const ux = RAY.dx / inv;
+          const uz = RAY.dz / inv;
+          for (let m = 1; m <= SIEGE_REACH_M; m++) {
+            const x = PICK.solidX + ux * m;
+            const z = PICK.solidZ + uz * m;
+            if (probe.targetAt(x, z) < 0) continue;
+            this.wallX = x;
+            this.wallZ = z;
+            // The deck of a docked tower is cut level with the walk, so its own top is the
+            // right height for the marker; the order itself only carries x and z.
+            this.wallY = this.solids[PICK.solid].topY;
+            this.wallValid = true;
+            break;
+          }
+        }
       }
       // A click on a 20 m siege tower means the tower. Without this the ray only ever met
       // the heightfield, so the order went to the grass behind it — 13.6 m past, and 138.8 m
@@ -931,7 +989,14 @@ export class SelectionController {
         const t = this.model.view(this.dragHostileId);
         this.showHint(`Attack ${t ? t.title : 'enemy'}`, 'attack');
       } else if (this.wallIntent()) {
-        this.showHint(WALL_HINT[this.wallIntent()!], 'move');
+        const over = this.garrisonPassedOver(hovered);
+        const t = over >= 0 ? this.model.view(over) : null;
+        // DOM text, so it costs no draw call — see the budget note in ARCHITECTURE §4.
+        this.showHint(
+          t ? `${WALL_HINT[this.wallIntent()!]} · Ctrl: attack ${t.title}`
+            : WALL_HINT[this.wallIntent()!],
+          'move'
+        );
       } else {
         const len = this.dragFrontage;
         const wide = this.ghosts.length ? this.ghosts[0].width : 0;
@@ -975,13 +1040,52 @@ export class SelectionController {
    *
    * Only when the wall order is genuinely on offer (`wallIntent`), so nothing else about
    * attacking changes: an enemy in the open, in a gateway or on a siege tower is unaffected.
+   *
+   * **And that rule, left alone, made a garrison the one thing in the game a player could
+   * not attack.** Measured on the storm of Carthage with a real mouse: the cursor over the
+   * levy's own men read `attack`, `dragTarget` was −1, and the order that went out was
+   * `move` to the parapet. The cursor promised one order and the product issued another,
+   * which is worse than either answer on its own. Three ways out, and each is a case where
+   * "the wall order" and "attack him" are not the same wish:
+   *
+   *  - **His banner.** A plaque floats clear of the masonry — the ray at that pixel never
+   *    meets stone, so `wallValid` is already false there and the attack already went
+   *    through. It is named here rather than left to fall out of the geometry, because a
+   *    change to how banners are placed must not silently take the one working route away.
+   *  - **Ctrl.** The deliberate override, and the modifier that already means *engage* on
+   *    this button. Nothing is lost: `Siege.interceptOrders` treats `MoveTo` and
+   *    `AttackMove` identically at a wall point, so ctrl+right-click on the parapet had no
+   *    distinct meaning to take away.
+   *  - **Both parties already on the same wall.** There is no "get up there" left to do, and
+   *    the traverse the player would otherwise be given is still one click away on the stone
+   *    beside him. `wallIntent() === 'traverse'` is exactly that state, so the two answers
+   *    are decided by one predicate rather than by two that can drift apart.
    */
   private hostileUnder(hovered: number): number {
     if (hovered < 0) return -1;
     const v = this.model.view(hovered);
     if (!v || v.own || v.destroyed) return -1;
-    if (this.wallValid && this.wallProbe?.isGarrisoned(v.id) && this.wallIntent()) return -1;
-    return hovered;
+    if (!this.wallValid) return hovered;
+    if (!this.wallProbe?.isGarrisoned(v.id)) return hovered;
+    const intent = this.wallIntent();
+    if (!intent) return hovered;
+    if (this.overBanner === hovered) return hovered;
+    if (this.ctrlHeld || this.dragCtrl) return hovered;
+    if (intent === 'traverse') return hovered;
+    return -1;
+  }
+
+  /**
+   * The enemy a wall order is about to be given *over the top of*, or -1.
+   *
+   * Only for the readout. When this is non-negative the player is pointing at men and is
+   * going to get an order about stone, so the hint says so and names the key that changes
+   * it — which is the whole of the discoverability of the ctrl override.
+   */
+  private garrisonPassedOver(hovered: number): number {
+    if (hovered < 0 || this.hostileUnder(hovered) >= 0) return -1;
+    const v = this.model.view(hovered);
+    return v && !v.own && !v.destroyed ? hovered : -1;
   }
 
   /**
@@ -1330,6 +1434,14 @@ export class SelectionController {
       const v = hovered >= 0 ? this.model.view(hovered) : undefined;
       const haveSel = this.model.selection.length > 0;
       /*
+       * Asked of the order path itself, not re-derived from `v.own`.
+       *
+       * The glyph used to read `attack` for any enemy under the cursor while `hostileUnder`
+       * was quietly refusing the same unit because a wall order outranked it, so the cursor
+       * advertised an attack and a move went out. One function decides, both read it.
+       */
+      const hostile = haveSel ? this.hostileUnder(hovered) : -1;
+      /*
        * A parapet under the cursor outranks "friend", and that ordering is deliberate.
        *
        * Measured over a column of screen samples down a bay: seven of the eight rows that are
@@ -1341,8 +1453,9 @@ export class SelectionController {
        * the thing the owner said the cursor fails to tell them. A hostile unit still wins
        * outright: attacking is never the surprising reading.
        */
-      if (v && !v.own) c = haveSel ? 'attack' : 'default';
+      if (hostile >= 0) c = 'attack';
       else if (haveSel && this.wallValid && this.wallIntent()) c = 'wall';
+      else if (v && !v.own) c = haveSel ? 'attack' : 'default';
       else if (v && v.own) c = 'friend';
       else if (haveSel && this.orderValid) c = 'move';
     }

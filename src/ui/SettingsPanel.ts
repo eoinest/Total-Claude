@@ -38,7 +38,7 @@ const KEYS: Array<[string, string]> = [
   // Alt is the run modifier now and the camera keeps Q/E, the middle button, and the right
   // button whenever nothing is selected.
   ['Alt + RMB', 'Move at a run'],
-  ['Ctrl + RMB', 'Attack move'],
+  ['Ctrl + RMB', 'Attack move · attack men on a wall'],
   ['Q · E', 'Rotate camera'],
   ['Z X C V B', 'Formations'],
   ['G T Y', 'Abilities'],
