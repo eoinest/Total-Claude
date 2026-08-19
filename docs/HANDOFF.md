@@ -997,27 +997,71 @@ the soloed barding in the flat piece-ID view reads **53,984 px at azimuth 0, 31,
 14-15 k at the two profiles**. Azimuth 0 is in front of the animal's face.
 `__viewer.elephantGroupZ()` exposes the cheap half so nobody re-derives it.
 
-**Four things the carcass shows that no battle frame could, all in `src/units`/`src/anim`
-and none of them the viewer's:**
+**Four things the carcass shows that no battle frame could** — ~~all in `src/units`/`src/anim`
+and none of them the viewer's~~ — **all four now fixed** (`38d7b01`, `a0892ba`, `721b37f`,
+`5d8705b`). Every symptom was real. **Two of the three named causes were wrong**, and both were
+wrong in the same way: they were diagnoses from reading the code rather than from measuring the
+thing the eye complains about.
 
-- **The four legs never move through the whole death clip.** The root rolls 78 degrees and the
-  barrel and head pitch, but the legs stay straight, parallel and rigid, so the settled carcass
-  reads as a toppled table rather than a dead animal. It is the first thing the eye goes to and
-  it is the pose with the longest screen life in the game.
-- **The howdah separates from the back.** The tower is rigid-bound to `barrel`/`loin` at
-  0.72/0.28 while the hide under it skins differently, so the death roll opens a visible gap
-  and the caparison hangs in the air with daylight behind it.
-- **At 39 % of the fall the crew tumble through the animal's own back**, not clear of it. The
-  `CREW_THROW_ARC` parabola of 0.55 m clears a *standing* animal; it does not clear one that is
-  rotating into the arc.
-- The three-man scale bib on the chest is a flat rectangular plate with square corners and
-  reads as a signboard rather than as hanging barding.
+- ~~The four legs never move through the whole death clip.~~ **They move a lot** — the knees
+  fold 128 degrees and the hocks −104. The pose was **graded on bone positions** ("the lowest
+  bone sits at +0.009 m, nothing is under the ground at all"), and a bone is not a leg: every
+  limb here is a 0.42–0.60 m cylinder around its bone. Skinning the real geometry over the same
+  clip and reading the lowest **vertex** says the left foreleg finished **1.05 m** in the air,
+  the left hind **1.27 m**, the right foreleg **0.21 m under the turf** and the right ear
+  **0.35 m** under it, with a worst point of **−0.88 m** during the fall where the right hock
+  ploughed through the ground. That — two rigid parallel columns in the air over a buried
+  foreleg — is the toppled table. Now +0.29 / +0.57 / −0.01 / +0.08, worst −0.21.
+- ~~The tower is rigid-bound to `barrel`/`loin` while the hide skins differently.~~ **That bind
+  cannot move anything.** Nothing but `root` carries a rotation track on the spine in *any*
+  elephant clip, and a delta accumulates unchanged down the chain, so `croup`, `loin`, `barrel`
+  and `withers` hold **identical** skinning transforms on every frame. Skinning the tower's own
+  vertices with `barrel 0.72 / loin 0.28` against `barrel` alone differs by **0.000000 m at all
+  26 frames**. The daylight was the *caparison*: two rings and six columns — **five quads** — at
+  a fixed 0.70 m radius over a barrel that tapers, hard straight ends 60–80 mm proud of the
+  flank, stopping short of the tower fore and aft, and a flat 0.34 m skirt on a horizontal hem.
+  Rebuilt on the hide's own six stations. Found beside it: the two "girth ropes" were **straight
+  vertical ribbons 1.44 m wide** driven through the animal, so all that was ever visible of a
+  rope was the slivers where a flat plate leaves a round back — on a carcass, a pair of striped
+  fins.
+- **At 39 % of the fall the crew tumble through the animal's own back** — true, **0.278 m** deep
+  at 33.5 %, measured against the posed hide. `CREW_THROW_ARC` is *not* the cause and is
+  unchanged: all three axes ran on one **smoothstep**, and a smoothstep leaves the platform at
+  **zero velocity**, so for the first third of the throw the man barely moved sideways while the
+  animal rolled into him. Out on `t(2−t)`, down on `t²`: **0.080 m**, which is the measurement's
+  own floor (a man *standing* in the tower reads 0.097, because the howdah's floor sits 0.21 m
+  inside the hide and his boots are under the planking). Raising the arc to 0.85 with the old
+  easing only reaches 0.157.
+- **The chest bib was a rectangle** — six columns by four rows, four square corners, a straight
+  hem. Ellipse narrowed at the throat, rounded at the bottom, hem of pointed lappets.
 
-**Three restatements the viewer now carries and would rather not.** `src/units/UnitRenderSystem.ts`
-should export `CREW_THROW_START`, `CREW_THROW_LEN`, `CREW_THROW_ARC`, `CREW_LAND_OUT`,
-`CREW_FALL_SIDE` and `CREW_GROUND_LIFT`; it should also export `MAN_POSE_VARY` and
-`LOD_FRACTION`, which two earlier passes already asked for. All eight are copied into
-`src/viewer/` verbatim with comments saying so, and every one of them can drift silently.
+Cost of all four: **2,993 → 3,457 triangles** (+15.5 %, +7.4 k across sixteen animals), one
+material, one piece each. **The whole elephant tier is still 5 draws** — 1 colour + 4 cascades —
+at all four carcass cameras, measured interleaved (tier emitted against suppressed) in one
+session on both arms: 96 / 101 / 115 / 101 with, 91 / 96 / 110 / 96 without, on `850843a` and on
+the fix, **identical**. Determinism unchanged at both baselines.
+
+**The instrument is the finding.** `tools/scratch/carc-skin-entry.ts` and
+`carc-explore-entry.ts` skin `buildElephantGeometry()` over a clip in node — no browser, no dev
+server, 40 ms a candidate — and report the lowest vertex per limb per frame. `carc-gap-entry.ts`
+does the tower/hide separation and carries the bind control. `carc-crew-entry.ts` inverts the
+spine's rigid transform and tests a crewman's body capsule against the swept ellipse the hide is
+built from. **Sample the throw at 200 sub-frame steps, not at the clip's 26 frames**: the same
+arm reads 0.278 against 0.584 depending on which, because the crossing aliases badly.
+
+~~**Three restatements the viewer now carries and would rather not.**~~ **Exported, and one had
+already drifted.** All eight — `CREW_THROW_START`, `CREW_THROW_LEN`, `CREW_THROW_ARC`,
+`CREW_LAND_OUT`, `CREW_FALL_SIDE`, `CREW_GROUND_LIFT`, `MAN_POSE_VARY`, `LOD_FRACTION` — are now
+exported from `src/units/UnitRenderSystem.ts` and imported by `src/viewer/`; the copies are
+deleted, not synchronised. `src/viewer/soldierRig.ts` held **`CREW_FALL_SIDE = +1`** against the
+render system's `−1`, so **every carcass frame ever shot in the model viewer threw the four crew
+onto the flank the animal rolls away from** — the exact sign the render system spends two
+paragraphs establishing, in the copy whose own comment said "if they ever drift, the symptom is
+visible in one frame".
+
+**Not ours, reported not fixed: `SkySystem.dispose` (`src/render/SkySystem.ts:959`) disposes
+`this.background.geometry` and `bgMat` but never removes the mesh from the scene.** Harmless at
+teardown; in a switchable viewer it leaves a draw whose index buffer has been deleted.
 
 ### The octave instrument, and the constants that do not transfer
 
@@ -1288,6 +1332,22 @@ and it is already 153 at the merge-base.** `tools/shoot.mjs` is byte-identical b
 tip and `b7d8aaf`, so the camera did not move; the merge that pulled in the Carthage fabric and
 the water surface is where the scene changed. `city` moved the other way, 218 to 200, for the
 same reason. Neither figure is a soldier regression.
+
+### Two more the carcass pass paid for
+
+- **A pose graded on bone positions is not graded.** "The lowest bone sits at +0.009 m, so
+  nothing is under the ground at all" was true, and the same clip had a foreleg 0.21 m and an
+  ear 0.35 m into the turf and two legs 1.05–1.27 m in the air, because every limb is a
+  0.42–0.60 m cylinder around its bone and the ear is a 1.05 × 0.68 m sheet hung off one. Skin
+  the geometry and read the lowest **vertex** — it is forty milliseconds in node
+  (`tools/scratch/carc-skin-entry.ts`), needs no browser and no dev server, and it is the only
+  view that can see the thing the eye is complaining about.
+- **A cause read off the code is a hypothesis; run the control.** Two of the three named causes
+  in the carcass report were wrong, and each took one arm to retire: skinning the tower with the
+  bind it was blamed for against a single-bone bind differs by **exactly 0.000000 m** (every
+  spine bone in this rig shares one transform, because only `root` has a track), and raising
+  `CREW_THROW_ARC` — the constant the crew defect was attributed to — buys 0.12 m where changing
+  the easing buys 0.20 m. Same family as trap 7: a number that is exactly zero.
 
 ### Two traps the elephant-death pass paid for
 
