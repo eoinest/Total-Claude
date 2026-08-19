@@ -459,31 +459,35 @@ const SHOTS = {
     // vs s2-04 (Pydna): packed ranks from just above helmet height, strongly compressed.
     desc: 'AB2: the Roman front rank from helmet height, telephoto down the line',
     follow: 'romanFront', at: 6, hour: 9.0, weather: 'clear',
-    cam: { eye: 2.05, aim: 0.25, dist: 20, fov: 30 },
+    cam: { eye: 2.05, aim: 1.32, dist: 8, fov: 30 },
   },
   'ab2-rome-melee': {
     // vs s2-00: inside the fight, camera in the grass, level.
     desc: 'AB2: inside the melee at eye level',
     follow: 'contact', at: 96, hour: 15.0, weather: 'clear',
-    cam: { eye: 1.60, aim: 0.70, dist: 14, fov: 34 },
+    cam: { eye: 1.60, aim: 0.30, dist: 17, fov: 34 },
   },
   'ab2-rome-march': {
     // vs s2-13: a column on the march, camera at a bystander's height beside the road.
     desc: 'AB2: the cohorts on the march, from the side of the line',
     follow: 'romanFront', at: 40, hour: 11.5, weather: 'clear',
-    cam: { eye: 1.90, aim: 0.50, dist: 18, fov: 34 },
+    cam: { eye: 1.90, aim: 1.22, dist: 6.5, fov: 34 },
   },
   'ab2-rome-cavalry': {
     // vs s2-15: cataphracts three-quarter front, the camera below the riders.
     desc: 'AB2: the equites wing, from below the riders',
     follow: 'cavalryUnit', at: 70, hour: 13.0, weather: 'clear',
-    cam: { eye: 1.55, aim: 0.50, dist: 13, fov: 30 },
+    cam: { eye: 1.55, aim: 0.82, dist: 8, fov: 30 },
   },
   'ab2-rome-aftermath': {
-    // vs s2-02: a killing at close range, camera low and tipped down at the ground.
-    desc: 'AB2: the field after the break, low over the bodies',
-    follow: 'corpses', at: 200, hour: 12.8, weather: 'overcast',
-    cam: { eye: 1.30, aim: 0.00, dist: 9, fov: 38 },
+    // vs s2-02: a killing at close range, camera low. `contact` rather than `corpses`:
+    // round one pointed this at the corpse centroid and photographed a heap of bodies in an
+    // empty field, against a plate of three *living* men with one going down between them.
+    // Two graders flagged the pair as not subject-matched and they were right. At t+190 the
+    // ground is already littered, so framing the fight gets the bodies for nothing.
+    desc: 'AB2: still fighting over ground already littered, low and close',
+    follow: 'contact', at: 190, hour: 12.8, weather: 'overcast',
+    cam: { eye: 1.35, aim: 0.35, dist: 15, fov: 38 },
   },
   'ab2-rome-wall': {
     // vs s2-17: 2.35:1 siege plate, tower against a curtain, camera up and well back.
@@ -505,19 +509,19 @@ const SHOTS = {
     // vs s2-09: front rank of a spear line, camera at chest height, city behind.
     desc: 'AB2: the Punic front rank at chest height, the works behind',
     map: 'carthage', opponent: 2, follow: 'enemyFront', at: 6, hour: 10.2, weather: 'overcast',
-    cam: { eye: 1.75, aim: 0.40, dist: 18, fov: 30 },
+    cam: { eye: 1.75, aim: 1.02, dist: 8, fov: 30 },
   },
   'ab2-carth-melee': {
     // vs s2-01: close melee in tall grass, camera almost on the ground.
     desc: 'AB2: inside the Punic melee, camera almost in the grass',
     map: 'carthage', opponent: 2, follow: 'contact', at: 96, hour: 13.4, weather: 'overcast',
-    cam: { eye: 1.45, aim: 0.60, dist: 12, fov: 36 },
+    cam: { eye: 1.45, aim: 0.25, dist: 16, fov: 36 },
   },
   'ab2-carth-march': {
     // vs s2-16: a barbarian mass advancing, close, camera low among them.
     desc: 'AB2: the Punic line advancing, close and low',
     map: 'carthage', opponent: 2, follow: 'enemyFront', at: 40, hour: 8.6, weather: 'clear',
-    cam: { eye: 1.70, aim: 0.40, dist: 16, fov: 34 },
+    cam: { eye: 1.70, aim: 0.97, dist: 7, fov: 34 },
   },
   'ab2-carth-elephants': {
     // vs s2-08: elephants behind a spear line at dusk. Paired so "the one with the
@@ -525,7 +529,7 @@ const SHOTS = {
     desc: 'AB2: the Punic elephant line at dusk, from in front of the spears',
     map: 'carthage', opponent: 2, follow: 'unitType', unitType: 'war-elephants',
     at: 44, hour: 17.6, weather: 'clear',
-    cam: { eye: 2.25, aim: 0.40, dist: 22, fov: 30 },
+    cam: { eye: 2.25, aim: 0.97, dist: 14, fov: 30 },
   },
   'ab2-carth-wall': {
     // vs s2-19: a city being stormed, seen from well above, fires and smoke.
