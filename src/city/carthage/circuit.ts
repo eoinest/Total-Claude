@@ -90,6 +90,15 @@ export const CARTHAGE_WALL_LINE: WallLine = {
    * boundary is 13 m wide, which is a footing measured in centimetres of margin.
    */
   waterLevel: SEA_LEVEL,
+  /**
+   * **This map cuts the ditch.** `src/maps/carthage/heightfield.ts` stage 4h reads
+   * `carthageDitchPath(CARTHAGE_WALL_LINE)` and digs the §4.2 profile into the field before
+   * the wall is ever built, so `CarthageDitch.built` is a fact and not an aspiration.
+   *
+   * Rome's circuit under the `?fort=carthage` rig leaves this unset, which is correct: the
+   * Campus Martius heightfield knows nothing about a Punic ditch and its glacis is flat.
+   */
+  ditchIsCut: true,
 };
 
 export interface CircuitGate {

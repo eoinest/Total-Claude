@@ -1,6 +1,8 @@
 import { Rng } from '../../util/rand';
+import { CARTHAGE_WALL_LINE } from '../../city/carthage/circuit';
 import { BASIN_DEPTH, BASIN_WATER_Y, FREEBOARD } from '../../city/carthage/harbour';
 import { COTHON, MERCHANT_HARBOUR } from '../../city/carthage/layout';
+import { CARTHAGE_DITCH_SECTION, carthageDitchPath } from '../../city/carthageWall';
 import { blurField, hydraulicErode } from '../../terrain/erosion';
 import { fbm, gnoise, ridged, sstep, warpedFbm } from '../../terrain/noise';
 import { FIELD_RES, FIELD_SPACING, sampleBilinear, type TerrainData } from '../../terrain/heightfield';
@@ -10,6 +12,7 @@ import {
   BYRSA_Z,
   HALF_EXTENT,
   ROAD_HALF_WIDTH,
+  SEA_LEVEL,
   SEGUIAS,
   WADI_HALF_WIDTH,
   WALL_BENCH_HALF,
@@ -58,6 +61,9 @@ import {
  *  - **Except the harbours, which are dug on purpose.** Stage 4g, and the one place on this
  *    map where the terrain takes an instruction from the city plan rather than the other way
  *    round. See `HARBOUR_GROUND`.
+ *  - **And the ditch, which is the other one.** Stage 4h. `carthageWall.ts` publishes a
+ *    20 x 6 m dry ditch on the wall's own glacis and cannot cut it; this file can. See
+ *    `THE DITCH` below for the profile and for the two places it is not full depth.
  *
  * The control texture's four channels carry the meanings the shader contract fixes, but on
  * this coast in April they describe different things — see stage 5.
@@ -353,6 +359,106 @@ const harbourWater = (x: number, z: number): number => {
     ));
   }
   return w;
+};
+
+// ---------------------------------------------------------------------------
+// THE DITCH (§4.2 row 0) — the second deliberate excavation on this map
+// ---------------------------------------------------------------------------
+
+/**
+ * **The ditch was published and never cut, and that is a worse state than either.**
+ *
+ * `carthageWall.ts` builds a 20 x 6 m dry ditch into its own arithmetic: `BELT_DEPTH` counts
+ * it, `assertSection` checks it, `CARTHAGE_SECTION.beltDepth` reports **34.1 m** of landward
+ * defence, and `CitySystem.getDitch()` hands the record to anyone who asks. What stood on the
+ * ground was flat. Measured with `tools/probe-ditch-ds.mjs` before this stage existed, the
+ * glacis fell **0.16 m at its worst station and 0.00 m at three of eight** across the 60 m in
+ * front of the wall — the belt an assault actually had to cross was the 14.1 m of masonry, and
+ * every consumer of the plan was being told 34.1.
+ *
+ * The wall could not fix it: a 6 m cut is a heightfield edit and `src/maps/` is not the city's.
+ * So the plan crossed the seam as a request with `built: false` on it, and nothing on this side
+ * had ever answered. This stage answers.
+ *
+ * ## The profile is not copied
+ *
+ * Every number below comes from `CARTHAGE_DITCH_SECTION` and every point on the centreline
+ * from `carthageDitchPath(CARTHAGE_WALL_LINE)` — the *same call* `buildCarthageWall` makes to
+ * publish the record. Two files disagreeing about one trench is exactly the fault that put
+ * 84 % of the merchant basin under its own water, and it is not being repeated 400 m west.
+ *
+ * ## Two places it is deliberately not 6 m deep
+ *
+ *  1. **Near the anchors.** §2.2: "the wall's two ends both die on water." `DITCH_END_MARGIN`
+ *     already stops the cut 120 m short of each anchor, but the ground at the cut's own ends
+ *     is only **3.6 m** at the south and **9.2 m** at the north, so a flat 6 m would put the
+ *     bottom 2.4 m *under the Gulf of Tunis* and `WaterSurface` — which renders whatever is
+ *     below the datum, with no coastline polygon — would flood it into a canal. A dry ditch
+ *     that fills with sea is not the work §4.2 describes; it is a moat, and a moat on this
+ *     map is a flank the wall was built to deny. So the depth is capped at whatever
+ *     freeboard the ground has over `SEA_LEVEL`, less `DITCH_DRY_MARGIN`, and the shortfall
+ *     is reported rather than hidden.
+ *  2. **At the Porta Byrsae.** §4.5 calls a gate "a 90 m tunnel through the whole belt — a
+ *     bridged ditch, a gap in the outwork, a gap in the middle wall, and only then the
+ *     leaves", and `carthageWall.ts`'s own gatehouse comment says what survives of that is
+ *     "the ditch causeway and the leaves". A causeway is a permanent earth bank, so it is
+ *     terrain and it belongs here.
+ *
+ *     **Only the principal gate gets one.** `porta-uticensis` and `porta-maritima` are
+ *     "barred with masonry, which is what a city does with the gates it is not using during a
+ *     siege" (`circuit.ts`) — and a city that walls a gate up breaks its causeway too, or it
+ *     has bricked a door and left the bridge to it standing. Three free crossings of a
+ *     1,743 m trench would also have made the ditch decorative, which is the failure this
+ *     whole stage exists to end.
+ *
+ * ## What it costs an assault, and why that is not a barrier
+ *
+ * The V's sides run 9 m for 6 m of fall — gradient 0.667, above `Pathfinding.SLOPE_IMPASSABLE`
+ * of 0.62 — and a naive reading says the ditch is a wall no formed unit can cross. It is not,
+ * because the pathfinder does not measure the ground at 1 m. `CELL` is 7 m and `deriveCost`
+ * central-differences over **14 m**, which is wider than the 9 m slope: the steepest gradient
+ * any nav cell can read across this profile is 6 m over 14, or **0.43**, which is passable at
+ * `1 + 0.43 * 5 = 3.1x` the cost of open ground plus the climb term. That is the right answer
+ * for a game as well as the true one — the ditch slows and disorders an assault, at the foot
+ * of a wall, under fire, and does not forbid it. The measurement is in `assertDitchCut`, which
+ * reports the worst gradient it actually produced rather than this prediction.
+ */
+
+/** How much dry freeboard the bottom of a *dry* ditch keeps over the sea. */
+const DITCH_DRY_MARGIN = 0.6;
+/**
+ * How far the cut takes to die away at each end, along the frontage.
+ *
+ * Without it the trench ends in a 6 m transverse cliff 120 m short of each anchor, which is
+ * both unbuildable and — since the cliff faces along the wall rather than across it — a
+ * gradient the nav grid *does* refuse, sitting exactly where a flanking column would walk.
+ * 45 m is a shade under one and a half bay pitches.
+ */
+const DITCH_RUNOUT = 45;
+/**
+ * Half-width of the flat of the causeway at the Porta Byrsae, and its ramps.
+ *
+ * The flat is the gatehouse block's own width, so the earth under the gate is as wide as the
+ * masonry over it; the ramps then feather the full section in over another 12 m either side.
+ */
+const CAUSEWAY_HALF = CARTHAGE_DITCH_SECTION.gateBlockWidth * 0.5;
+const CAUSEWAY_RAMP = 12;
+
+/**
+ * The V, as a fraction of full depth against distance from the centreline.
+ *
+ * 1 across the flat bottom, falling linearly to 0 at each lip. Linear and not smoothstepped:
+ * a ditch is dug with mattocks to a batter, and the lip and the toe of a real counterscarp
+ * are both angles, not fillets. The heightfield's own bilinear reconstruction rounds them by
+ * a cell anyway, which is the only softening this profile should get.
+ */
+const ditchV = (d: number): number => {
+  const half = CARTHAGE_DITCH_SECTION.width * 0.5;
+  const flat = CARTHAGE_DITCH_SECTION.bottomWidth * 0.5;
+  const a = Math.abs(d);
+  if (a >= half) return 0;
+  if (a <= flat) return 1;
+  return 1 - (a - flat) / (half - flat);
 };
 
 export function buildCarthageTerrain(seedLabel = 'carthage-146bc'): TerrainData {
@@ -661,6 +767,79 @@ export function buildCarthageTerrain(seedLabel = 'carthage-146bc'): TerrainData 
     }
   }
 
+  // -- 4h. **The ditch.** See `THE DITCH` above. Last of all the human marks, and after the
+  //        floor for the same reason 4g is: `softFloor` exists to stop noise and erosion
+  //        digging near the datum by accident, and this cut is on purpose. Running it before
+  //        the floor would have the floor partly fill it back in wherever the glacis is low.
+  {
+    const sec = CARTHAGE_DITCH_SECTION;
+    const line = carthageDitchPath(CARTHAGE_WALL_LINE, 96);
+    const gateX = CARTHAGE_WALL_LINE.gateX;
+    const half = sec.width * 0.5;
+    // Bounding box of the cut, with a cell of slack. The ditch is a thin band across the
+    // whole frontage, so a box is a poor fit and a per-row x window is not worth the code:
+    // the whole box is 2 000 x 60 m, which is 3 % of the field.
+    let bx0 = Infinity, bx1 = -Infinity, bz0 = Infinity, bz1 = -Infinity;
+    for (const p of line) {
+      if (p.x < bx0) bx0 = p.x;
+      if (p.x > bx1) bx1 = p.x;
+      if (p.z < bz0) bz0 = p.z;
+      if (p.z > bz1) bz1 = p.z;
+    }
+    const pad = half + DITCH_RUNOUT + spacing * 2;
+    const bound = (v: number): number =>
+      Math.max(0, Math.min(res - 1, Math.round((v + HALF_EXTENT) / spacing)));
+    const i0 = bound(bx0 - pad);
+    const i1 = bound(bx1 + pad);
+    const j0 = bound(bz0 - pad);
+    const j1 = bound(bz1 + pad);
+    const xEnd0 = line[0].x;
+    const xEnd1 = line[line.length - 1].x;
+
+    /** Perpendicular distance from a point to the ditch's centreline polyline. */
+    const toCentreline = (x: number, z: number): number => {
+      let best = Infinity;
+      for (let k = 0; k + 1 < line.length; k++) {
+        const a = line[k];
+        const b = line[k + 1];
+        const dx = b.x - a.x;
+        const dz = b.z - a.z;
+        const l2 = dx * dx + dz * dz;
+        const t = l2 > 0 ? clamp01(((x - a.x) * dx + (z - a.z) * dz) / l2) : 0;
+        const d = Math.hypot(x - (a.x + dx * t), z - (a.z + dz * t));
+        if (d < best) best = d;
+      }
+      return best;
+    };
+
+    for (let j = j0; j <= j1; j++) {
+      const wz = -HALF_EXTENT + j * spacing;
+      const row = j * res;
+      for (let i = i0; i <= i1; i++) {
+        const wx = -HALF_EXTENT + i * spacing;
+        const d = toCentreline(wx, wz);
+        if (d >= half) continue;
+        let f = ditchV(d);
+        if (f <= 0.0005) continue;
+        // Run out at each end of the cut rather than ending in a transverse cliff.
+        f *= sstep(xEnd0 - 1, xEnd0 + DITCH_RUNOUT, wx)
+          * (1 - sstep(xEnd1 - DITCH_RUNOUT, xEnd1 + 1, wx));
+        // The causeway at the Porta Byrsae, and only there.
+        f *= sstep(CAUSEWAY_HALF, CAUSEWAY_HALF + CAUSEWAY_RAMP, Math.abs(wx - gateX));
+        // Nobody digs a dry ditch into a lagoon margin. Belt and braces over the depth cap
+        // below, because `dryLand` is the term every other cut on this map is weighted by.
+        f *= clamp01(dryLand(wx, wz));
+        if (f <= 0.0005) continue;
+        const h = heights[row + i];
+        // The bottom keeps its freeboard over the sea. See `DITCH_DRY_MARGIN`: a cut taken
+        // under the datum is rendered as water by `WaterSurface`, which turns a dry ditch
+        // into a moat and the wall's two anchors into a flank.
+        const allowed = Math.max(0, h - (SEA_LEVEL + DITCH_DRY_MARGIN));
+        heights[row + i] = h - Math.min(sec.depth, allowed) * f;
+      }
+    }
+  }
+
   // ---------------------------------------------------------------------
   // 5. Control texture.
   //
@@ -756,6 +935,7 @@ export function buildCarthageTerrain(seedLabel = 'carthage-146bc'): TerrainData 
 
   assertSurveyElevations(heights, res, spacing);
   assertHarbourWorks(heights, res, spacing);
+  assertDitchCut(heights, res, spacing);
 
   return {
     heights,
@@ -957,6 +1137,133 @@ function assertHarbourWorks(heights: Float32Array, res: number, spacing: number)
   }
   if (bad.length) {
     console.warn(`[carthage] harbour works off docs/CARTHAGE.md §6.2/§3.3: ${bad.join('; ')}`);
+  }
+}
+
+/**
+ * Was the ditch actually cut, how deep is it, and can an army still cross it?
+ *
+ * Three questions, because the ditch has three ways to be wrong and only the first is the
+ * one it was reported for:
+ *
+ *  1. **Absent.** The state this stage was written to end. The instrument reports the
+ *     achieved relief station by station, from the crest at the wall's face to the deepest
+ *     ground within the profile's own width, so "cut" is a number and not a claim.
+ *  2. **Flooded.** A dry ditch whose bottom falls below `SEA_LEVEL` is rendered as water by
+ *     `WaterSurface` and is a moat. The depth cap prevents it; this checks the cap held.
+ *  3. **Impassable.** The V's own sides run at gradient 0.667, over `SLOPE_IMPASSABLE`, and
+ *     if the nav grid could see them at that angle the ditch would be a wall no assault
+ *     could cross — the defence would work by deleting the battle. It cannot, because
+ *     `Pathfinding.CELL` is 7 m and its gradient is central-differenced over 14, which is
+ *     wider than the 9 m slope. **That is a prediction, so it is measured**: this walks the
+ *     profile with the pathfinder's own 14 m stencil on the pathfinder's own 7 m lattice and
+ *     reports the worst gradient the grid can actually read.
+ *
+ * The numbers print whether they are good or bad, in the same spirit as `assertHarbourWorks`.
+ */
+function assertDitchCut(heights: Float32Array, res: number, spacing: number): void {
+  const at = (x: number, z: number): number => sampleBilinear(heights, res, spacing, x, z);
+  const sec = CARTHAGE_DITCH_SECTION;
+  const line = carthageDitchPath(CARTHAGE_WALL_LINE, 96);
+  const gateX = CARTHAGE_WALL_LINE.gateX;
+
+  /** Fieldward unit normal of the wall at x — the direction a transect runs. */
+  const normalAt = (x: number): { nx: number; nz: number } => {
+    const dz = (carthageWallZ(x + 1) - carthageWallZ(x - 1)) * 0.5;
+    const len = Math.hypot(1, dz);
+    return { nx: dz / len, nz: -1 / len };
+  };
+
+  let worstShortfall = 0;
+  let shortfallAt = 0;
+  let deepestBed = Infinity;
+  let drowned = 0;
+  let cut = 0;
+  const reliefs: number[] = [];
+  // Skip the two run-outs and the causeway: all three are deliberately not full depth and
+  // grading them against 6 m would be grading the design against itself.
+  for (const p of line) {
+    if (Math.abs(p.x - gateX) < CAUSEWAY_HALF + CAUSEWAY_RAMP) continue;
+    if (p.x < line[0].x + DITCH_RUNOUT || p.x > line[line.length - 1].x - DITCH_RUNOUT) continue;
+    const n = normalAt(p.x);
+    const cz = carthageWallZ(p.x);
+    const crest = at(p.x + n.nx * 2, cz + n.nz * 2);
+    const bed = at(p.x, p.z);
+    const relief = crest - bed;
+    reliefs.push(relief);
+    if (relief > 0.5) cut++;
+    if (bed < deepestBed) deepestBed = bed;
+    if (bed < SEA_LEVEL) drowned++;
+    // Shortfall against 6 m is only a fault where the ground had 6 m of freeboard to give.
+    const affordable = Math.min(sec.depth, Math.max(0, crest - (SEA_LEVEL + DITCH_DRY_MARGIN)));
+    if (affordable - relief > worstShortfall) {
+      worstShortfall = affordable - relief;
+      shortfallAt = p.x;
+    }
+  }
+  reliefs.sort((a, b) => a - b);
+  const median = reliefs.length ? reliefs[reliefs.length >> 1] : 0;
+
+  /**
+   * The worst gradient the nav grid can read across the profile, measured its way.
+   *
+   * `Pathfinding` samples on a 7 m lattice anchored at the field's own origin and takes a
+   * central difference over two cells. The lattice phase relative to a 20 m trench matters,
+   * so this sweeps every station rather than trusting one.
+   */
+  const CELL = 7;
+  let worstGrad = 0;
+  let gradAt = '';
+  for (const p of line) {
+    const n = normalAt(p.x);
+    const cz = carthageWallZ(p.x);
+    for (let d = -CELL; d <= sec.offset + sec.width; d += 1) {
+      // Snap to the nav lattice so the stencil straddles the same cells the pathfinder uses.
+      const x = Math.round((p.x + n.nx * d) / CELL) * CELL;
+      const z = Math.round((cz + n.nz * d) / CELL) * CELL;
+      const g = Math.hypot(
+        (at(x + CELL, z) - at(x - CELL, z)) / (CELL * 2),
+        (at(x, z + CELL) - at(x, z - CELL)) / (CELL * 2),
+      );
+      if (g > worstGrad) {
+        worstGrad = g;
+        gradAt = `(${x.toFixed(0)}, ${z.toFixed(0)})`;
+      }
+    }
+  }
+
+  // The causeway has to be a road and not a saddle nobody can use.
+  const gn = normalAt(gateX);
+  const gz = carthageWallZ(gateX);
+  const causewayBed = at(gateX + gn.nx * sec.offset, gz + gn.nz * sec.offset);
+  const causewayCrest = at(gateX + gn.nx * 2, gz + gn.nz * 2);
+
+  console.info(
+    `[carthage] ditch: ${cut}/${reliefs.length} stations cut, relief median ${median.toFixed(2)} m ` +
+      `(spec ${sec.depth} x ${sec.width} m), deepest bed ${deepestBed.toFixed(2)} m, ` +
+      `${drowned} station(s) under the datum. Worst shortfall ${worstShortfall.toFixed(2)} m at ` +
+      `x ${shortfallAt.toFixed(0)}. Causeway at the Porta Byrsae falls ` +
+      `${(causewayCrest - causewayBed).toFixed(2)} m. Worst nav gradient ${worstGrad.toFixed(2)} ` +
+      `at ${gradAt} (impassable past 0.62).`,
+  );
+
+  const bad: string[] = [];
+  if (cut < reliefs.length) bad.push(`${reliefs.length - cut} station(s) have no cut at all`);
+  if (median < sec.depth - 0.6) {
+    bad.push(`the median relief is ${median.toFixed(2)} m against §4.2's ${sec.depth}`);
+  }
+  if (drowned > 0) bad.push(`${drowned} station(s) of a *dry* ditch stand under the sea`);
+  if (worstGrad > 0.62) {
+    bad.push(
+      `the nav grid reads gradient ${worstGrad.toFixed(2)} at ${gradAt}, so no formed unit can ` +
+        'cross the ditch and the assault has been deleted rather than slowed',
+    );
+  }
+  if (causewayCrest - causewayBed > 1.0) {
+    bad.push(`the Porta Byrsae's causeway dips ${(causewayCrest - causewayBed).toFixed(2)} m`);
+  }
+  if (bad.length) {
+    console.warn(`[carthage] ditch off docs/CARTHAGE.md §4.2: ${bad.join('; ')}`);
   }
 }
 

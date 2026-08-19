@@ -246,6 +246,12 @@ const BERM = 5.0;
 /** §4.2 row 0: dry, V-profile with a 2 m flat bottom. */
 const DITCH_W = 20.0;
 const DITCH_D = 6.0;
+/**
+ * The flat of the V, metres. Was a literal in the published record; named because the
+ * heightfield now cuts against it and a profile the terrain and the plan disagree about is
+ * worse than no profile at all.
+ */
+const DITCH_BOTTOM_W = 2.0;
 const DITCH_INNER_LIP = MAIN_FACE + BERM;
 const DITCH_OFF = DITCH_INNER_LIP + DITCH_W * 0.5;
 /**
@@ -380,6 +386,74 @@ const GATE_DOOR_SET = 3.4;
 const GATE_DOOR_SILL = 0.14;
 const GATE_DOOR_T = 0.26;
 
+/**
+ * How many bays the frontage is divided into, and their pitch — **derived from the line
+ * alone**, so anything that needs the wall's bay lattice can have it without building the
+ * wall first.
+ *
+ * `buildCarthageWall` computes the identical pair from the identical expression a few
+ * hundred lines below. It has to: `CitySystem.bayAt` is index arithmetic in x and a second
+ * opinion about the pitch would silently hand every projectile in the game the wrong bay.
+ */
+export function carthageBayLattice(line: WallLine): { nBays: number; pitch: number } {
+  const length = line.xMax - line.xMin;
+  const nBays = Math.max(4, Math.round(length / (PUNIC.towerSpacing * 0.5)) & ~1);
+  return { nBays, pitch: length / nBays };
+}
+
+/**
+ * The ditch's section, as numbers rather than as geometry.
+ *
+ * Published so `src/maps/carthage/heightfield.ts` can cut the real thing. Before this
+ * existed the ditch was a `CarthageDitch` with `built: false` and nothing on the other side
+ * of the seam: the plan said 20 x 6 m and the ground the soldiers walked on was flat to
+ * within 16 cm across the whole glacis, measured. The defence existed in a record and not in
+ * the world, which is the worst of the three possible states — a probe reading the record
+ * would have reported a 34.1 m belt that no assault ever had to cross.
+ */
+export const CARTHAGE_DITCH_SECTION = {
+  /** Lip to lip. */
+  width: DITCH_W,
+  /** Lip to the flat of the V. */
+  depth: DITCH_D,
+  bottomWidth: DITCH_BOTTOM_W,
+  /** Centreline offset from the wall's, along the **outward** (fieldward) normal. */
+  offset: DITCH_OFF,
+  /** Wall face to counterscarp: the berm the footing stands on. */
+  innerLip: DITCH_INNER_LIP,
+  berm: BERM,
+  /** How far short of each anchor the cut stops. See `DITCH_END_MARGIN`. */
+  endMargin: DITCH_END_MARGIN,
+  /** Width of the gatehouse block, which is what a causeway across the ditch has to carry. */
+  gateBlockWidth: GATE_BLOCK_W,
+} as const;
+
+/**
+ * The ditch's centreline for a given wall line — **the one definition**, called both by the
+ * builder that publishes it and by the heightfield that cuts it.
+ *
+ * Offset along each bay's **own** outward normal rather than straight in −z, because on
+ * Carthage's line the curtain leans 6 % and a ditch laid off a global axis would run into the
+ * wall's footing at one end of the frontage and 3 m clear of the berm at the other.
+ */
+export function carthageDitchPath(
+  line: WallLine,
+  samples = 24,
+): { x: number; z: number }[] {
+  const { nBays, pitch } = carthageBayLattice(line);
+  const x0 = line.xMin + DITCH_END_MARGIN;
+  const x1 = line.xMax - DITCH_END_MARGIN;
+  const out: { x: number; z: number }[] = [];
+  for (let k = 0; k <= samples; k++) {
+    const x = lerp(x0, x1, k / samples);
+    const b = clamp(Math.floor((x - line.xMin) / pitch), 0, nBays - 1);
+    const bx0 = line.xMin + b * pitch;
+    const f = frameOf(bx0, line.zAt(bx0), bx0 + pitch, line.zAt(bx0 + pitch));
+    out.push({ x: x + f.nx * DITCH_OFF, z: line.zAt(x) + f.nz * DITCH_OFF });
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Published records
 // ---------------------------------------------------------------------------
@@ -507,8 +581,16 @@ export interface CarthageDitch {
   bottomWidth: number;
   /** Offset of the centreline from the main wall, along the outward normal. */
   offset: number;
-  /** Always false. Nothing here cuts terrain. */
-  built: false;
+  /**
+   * Whether the ground under this plan has actually been cut.
+   *
+   * It was `false` by type — "nothing here cuts terrain" — for as long as no heightfield
+   * honoured the request. `src/maps/carthage/heightfield.ts` stage 4h now does, so the
+   * answer is a fact about the map rather than about this file, and it comes in on
+   * `WallLine.ditchIsCut`. It stays false on Rome's circuit under the `?fort=carthage` rig,
+   * where the same masonry stands on a heightfield that cuts nothing.
+   */
+  built: boolean;
 }
 
 export interface CarthageWallOutput extends WallBuildOutput {
@@ -864,6 +946,15 @@ export interface WallLine {
    * Omitted by Rome, whose circuit touches no water, and then no footing test is made.
    */
   waterLevel?: number;
+  /**
+   * Whether the map behind this line cuts the ditch this builder publishes.
+   *
+   * The wall cannot find this out for itself: it is handed a `heightAt` and has no way to
+   * ask whether the dip it samples is a trench somebody dug for it or a hollow in the
+   * ground. So the map says. It reaches `CarthageDitch.built`, and that field is what
+   * `CitySystem.getDitch()` hands to anything reasoning about the belt's real depth.
+   */
+  ditchIsCut?: boolean;
 }
 
 /**
@@ -934,8 +1025,7 @@ export function buildCarthageWall(
    * The pitch also has to stay uniform, because `CitySystem.bayAt` is index arithmetic in x
    * and a variable pitch silently returns the wrong bay to every projectile in the game.
    */
-  const nBays = Math.max(4, Math.round(WALL_LENGTH / (PUNIC.towerSpacing * 0.5)) & ~1);
-  const pitch = WALL_LENGTH / nBays;
+  const { nBays, pitch } = carthageBayLattice(spec);
   const gateBay = clamp(Math.floor((GATE_X - WALL_X_MIN) / pitch), 1, nBays - 2);
   /**
    * A tower stands at the west end of every *other* bay — 200 ft, §4.5 — and never inside the
@@ -1475,14 +1565,7 @@ export function buildCarthageWall(
    * Carthage's line the curtain leans 6 % and a ditch laid off a global axis would run into
    * the wall's footing at one end of the frontage and 3 m clear of the berm at the other.
    */
-  const ditchX0 = WALL_X_MIN + DITCH_END_MARGIN;
-  const ditchX1 = WALL_X_MAX - DITCH_END_MARGIN;
-  const ditchPath: { x: number; z: number }[] = [];
-  for (let k = 0; k <= 24; k++) {
-    const x = lerp(ditchX0, ditchX1, k / 24);
-    const b = bays[clamp(Math.floor((x - WALL_X_MIN) / pitch), 0, nBays - 1)];
-    ditchPath.push({ x: x + b.frame.nx * DITCH_OFF, z: zAt(x) + b.frame.nz * DITCH_OFF });
-  }
+  const ditchPath = carthageDitchPath(spec);
 
   return {
     path,
@@ -1508,9 +1591,16 @@ export function buildCarthageWall(
       path: ditchPath,
       width: DITCH_W,
       depth: DITCH_D,
-      bottomWidth: 2.0,
+      bottomWidth: DITCH_BOTTOM_W,
       offset: DITCH_OFF,
-      built: false,
+      /**
+       * **True on this map now.** `src/maps/carthage/heightfield.ts` stage 4h cuts the
+       * profile above into the field, so a consumer reading this record is reading a
+       * request that has been honoured. Left on the type as a boolean rather than deleted
+       * because the `?fort=carthage` rig stands the same wall on Rome's circuit, where the
+       * Campus Martius heightfield cuts nothing and the answer is still false.
+       */
+      built: spec.ditchIsCut === true,
     },
     sectionFaults: [...assertSection(), ...cutFaults],
   };
