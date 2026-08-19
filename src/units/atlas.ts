@@ -888,29 +888,71 @@ const MATS: Record<Mat, MatDef> = {
     metalness: 0,
     bump: 0.46,
   },
-  // Skin is tinted per man in the shader; the tile carries pore, blotch and — importantly —
-  // the crease shading at the elbow and knee. Limb tubes run V from the hip or shoulder to
-  // the extremity, so bands at v = 0.42 and 0.58 land on the joint on both arms and legs,
-  // which is the cheapest possible way to stop a bare limb reading as a smooth dowel.
+  /**
+   * **Skin, and why it read as vinyl.**
+   *
+   * Round three's critics put it second, after the cloth. Three things were producing it and
+   * the tile carried none of the counters.
+   *
+   *   1. **It was almost flat.** Mean tangent-space |n.xy| measured **0.112** on the bake —
+   *      the second-flattest cell in the sheet after the animal hides, against mail at 0.792
+   *      and leather at 0.190. A smooth dielectric with a broad sheen and no relief is
+   *      exactly what vinyl is. The pore field was there but `bump` was 0.3, so it arrived
+   *      as nothing.
+   *   2. **It was one hue times a value ramp.** `out = [g, g * 0.955, g * 0.9]` gives every
+   *      texel of every man the identical chromaticity, which no organic surface has. Skin
+   *      is a stack of translucent layers over blood: it flushes red where it is thin or
+   *      creased and goes sallow-olive where it is thick, and that hue *shift* is most of
+   *      what tells an eye it is looking at a person rather than at a painted dowel.
+   *   3. **Nothing lived between the blotch and the pore.** fbm at 7 cycles and at 40, and a
+   *      hole between them — which on this deck is precisely the 2-8 px band the whole
+   *      workstream is short of. `grain` at 18 and the crease network at 22 fill it.
+   *
+   * The crease network is `threadTone`, the same anisotropic sampler the cloth uses, because
+   * Langer's lines *are* directional: the fine diamond crease pattern on a forearm runs along
+   * the limb, not in every direction at once.
+   *
+   * The joint wells stay exactly where they were. Limb tubes run V from the hip or shoulder
+   * to the extremity with `SKIN_LIMB_V` pinning one tile end to end, so v = 0.5 lands on the
+   * elbow or knee and v = 0.94 on the wrist or ankle on every limb — and they are now in
+   * `cavity` rather than only in `height`, so they occlude the direct sun instead of merely
+   * bending a normal that the mip ladder averages away.
+   */
   [Mat.Skin]: {
     colour(u, v, out) {
-      const pore = fbm(u * 40, v * 40, 3, 40, 47) * 0.12;
-      const blotch = fbm(u * 7, v * 7, 3, 7, 53) * 0.16;
-      const crease = Math.exp(-((v - 0.5) ** 2) / 0.0032) * 0.22
-        + Math.exp(-((v - 0.94) ** 2) / 0.0018) * 0.16;
-      const g = 0.6 + pore - blotch * 0.5 - crease;
-      out[0] = Math.min(1, g); out[1] = Math.min(1, g * 0.955); out[2] = Math.min(1, g * 0.9);
+      const pore = fbm(u * 40, v * 40, 3, 40, 47);
+      const grain = fbm(u * 18, v * 18, 3, 18, 89);
+      const blotch = fbm(u * 7, v * 7, 3, 7, 53);
+      const lines = threadTone(u, v, 22, 11, 97);
+      const crease = Math.exp(-((v - 0.5) ** 2) / 0.0032) * 0.20
+        + Math.exp(-((v - 0.94) ** 2) / 0.0018) * 0.14;
+      const g = 0.60 + pore * 0.09 + grain * 0.11 - blotch * 0.09 - lines * 0.05 - crease;
+      // Capillary flush: warm and saturated where the skin is thin or worked, sallow where
+      // it is not. The two ends are a real pair of skin chromaticities, not a tint slider.
+      const flush = Math.min(1, blotch * 0.6 + crease * 2.2 + (1 - lines) * 0.2);
+      out[0] = Math.min(0.97, g * (1 + flush * 0.11));
+      out[1] = Math.min(0.97, g * (0.958 - flush * 0.052));
+      out[2] = Math.min(0.97, g * (0.905 - flush * 0.082));
     },
-    // Elbow at v = 0.5 and wrist or knee at v = 0.94: both cut into the height field so the
-    // cavity AO darkens them, which is the cheapest thing that stops a bare limb reading as
-    // a smooth dowel.
     height: (u, v) =>
-      fbm(u * 44, v * 44, 3, 44, 47) * 0.55
-      + (1 - Math.exp(-((v - 0.5) ** 2) / 0.0032)) * 0.3
-      + (1 - Math.exp(-((v - 0.94) ** 2) / 0.0018)) * 0.15,
-    roughness: 0.55,
+      fbm(u * 40, v * 40, 3, 40, 47) * 0.34
+      + fbm(u * 18, v * 18, 3, 18, 89) * 0.30
+      + threadTone(u, v, 22, 11, 97) * 0.16
+      + (1 - Math.exp(-((v - 0.5) ** 2) / 0.0032)) * 0.13
+      + (1 - Math.exp(-((v - 0.94) ** 2) / 0.0018)) * 0.07,
+    // The joints only. A pore is a bump and averages to nothing two mips down; a 30 mm
+    // hollow at an elbow is a scalar and survives, which is the whole argument recorded
+    // against painted relief in `docs/HANDOFF.md`.
+    cavity: (u, v) =>
+      Math.min(1, 0.30 + fbm(u * 7, v * 7, 3, 7, 53) * 0.22
+        + (1 - Math.exp(-((v - 0.5) ** 2) / 0.0032)) * 0.34
+        + (1 - Math.exp(-((v - 0.94) ** 2) / 0.0018)) * 0.20),
+    // 0.62 rather than 0.55, and the swing now runs 0.37 to 0.87 instead of bottoming out at
+    // 0.30. A broad low-roughness sheen over a whole limb is the specular half of the vinyl
+    // read; sebum sits on the ridges, not over the entire arm.
+    roughness: 0.62,
     metalness: 0,
-    bump: 0.3,
+    bump: 0.62,
   },
   // Hair and beard: strands, tinted per man.
   [Mat.Hair]: {
