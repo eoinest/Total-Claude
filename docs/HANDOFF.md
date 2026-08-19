@@ -723,6 +723,11 @@ Cost, measured rather than asserted:
 - Atlas resident, bake time and texture memory unchanged — no cell was added or resized.
 - `probe-soldiermesh` 0 / 4822.
 
+**One correction against this pass's own commit messages.** `a50eb87` quotes "R median
+1.393 -> 1.245". 1.245 is the *median of the per-plate ratios* at that commit; the pooled R
+median `probe-octave` prints was **1.294**. The per-plate median dR of -7.0 % in the same
+message is right. Read the table above, not that line.
+
 ### Three things that only the Battle rig could see, and one instrument fault
 
 **Grade under Battle rig or you will ship the opposite of what you measured.** The first four
