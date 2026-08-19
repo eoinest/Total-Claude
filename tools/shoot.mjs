@@ -302,12 +302,141 @@ const SHOTS = {
     quality: 'high', hour: 16.2,
     x: 0, z: 60, zoom: 0.60, yaw: Math.PI * 0.82, at: 171,
   },
+
+  /*
+   * ---------------------------------------------------------------------------
+   * `--set=ab1`: the paired blind instrument.
+   * ---------------------------------------------------------------------------
+   *
+   * `--set=deck` shoots ten frames that go into a *pooled* deck — one shuffled line-up the
+   * grader sorts wholesale. This set feeds a *paired* deck instead: each of our frames is
+   * shown beside one Rome II press plate of the same subject and the grader is asked which
+   * of the two is the real game. Pairing changes what the shot list has to do.
+   *
+   *   - **Subject is matched inside the pair, so subject cannot be the tell.** A pooled deck
+   *     can afford a frame of the Tiber, because there is nothing to compare it to. A pair
+   *     cannot: whatever our frame shows, the plate beside it must show the same thing, or
+   *     the grader sorts on "one of these is a river and Rome II press shots are battles".
+   *     So every entry here is chosen to have a counterpart in the press set — a line of
+   *     battle, a melee, a march, a wall from outside, a parapet, cavalry, an aftermath.
+   *   - **Cross-pair inference is still a leak.** Seven of our fourteen frames coming back
+   *     under one identical sun, while fourteen press plates come from fourteen different
+   *     battles, decodes the deck without looking at a single soldier. So the hour varies
+   *     across the set exactly as it does in `deck-*`, and it costs a page load per value.
+   *   - **Both maps and both scenarios.** Campus Martius in 271 and Carthage in 146, field
+   *     and assault. Four worlds, so no family resemblance runs the length of our pool.
+   *
+   * The assault frames use `wall`, which resolves a camera against the live curtain the way
+   * `tools/probe-siege.mjs` does — the rig has no elevation control, so getting an eye onto a
+   * parapet means overriding the ground sampler for the duration of the shot. See `wall`
+   * below.
+   */
+
+  // ---- Campus Martius, 271 AD ----------------------------------------------
+  'ab-rome-line': {
+    desc: 'AB: the Roman line of battle at battle zoom, the host beyond it',
+    follow: 'ownLine', zoom: 0.44, at: 6, hour: 9.0,
+  },
+  'ab-rome-melee': {
+    desc: 'AB: inside the melee at close zoom',
+    follow: 'contact', zoom: 0.20, at: 96, hour: 15.0,
+  },
+  'ab-rome-march': {
+    desc: 'AB: the legionary cohorts on the march, before contact',
+    follow: 'romanFront', zoom: 0.28, at: 38, hour: 7.8,
+  },
+  'ab-rome-wall': {
+    desc: 'AB: the Aurelian Wall from outside, mid-assault — towers, ladders, ram, host',
+    scenario: 'assault', hour: 14.3, at: 300,
+    wall: { bay: 0, stand: 165, lift: 24, zoom: 0.52, yaw: 'in', yawAdd: 0.22 },
+  },
+  'ab-rome-parapet': {
+    desc: 'AB: men in the embrasures of the Aurelian parapet, shooting down',
+    scenario: 'assault', hour: 11.0, at: 66,
+    wall: { bay: 2, stand: 0.2, lift: 'walk+1.3', zoom: 0.17, yaw: 'along' },
+  },
+  'ab-rome-cavalry': {
+    desc: 'AB: the equites wing sweeping the flank',
+    follow: 'cavalryUnit', zoom: 0.26, at: 70, hour: 16.6,
+  },
+  'ab-rome-aftermath': {
+    desc: 'AB: the field after the break — corpses, routs, dust, blood',
+    follow: 'corpses', zoom: 0.30, at: 200, hour: 17.6,
+  },
+
+  // ---- Carthage, spring 146 BC ---------------------------------------------
+  // `opponent: 2` is `Faction.Carthage`, which is what puts a Punic order of battle on the
+  // field and — under `assault`, because `CARTHAGE_PLAN.garrison` is Carthage — puts the
+  // Romans on the outside of the wall for once.
+  'ab-carth-line': {
+    desc: 'AB: the Roman line drawn up before Carthage, the Punic host beyond',
+    map: 'carthage', opponent: 2, follow: 'ownLine', zoom: 0.44, at: 6, hour: 10.2,
+  },
+  'ab-carth-melee': {
+    desc: 'AB: inside the melee at close zoom, Punic line',
+    map: 'carthage', opponent: 2, follow: 'contact', zoom: 0.20, at: 96, hour: 13.4,
+  },
+  'ab-carth-march': {
+    desc: 'AB: the Punic line advancing — Libyan, Iberian and Gallic blocks',
+    map: 'carthage', opponent: 2, follow: 'enemyFront', zoom: 0.28, at: 38, hour: 8.6,
+  },
+  'ab-carth-wall': {
+    desc: 'AB: the wall of Carthage from outside, mid-assault',
+    map: 'carthage', opponent: 2, scenario: 'assault', hour: 15.2, at: 300,
+    wall: { bay: 0, stand: 165, lift: 24, zoom: 0.52, yaw: 'in', yawAdd: -0.24 },
+  },
+  'ab-carth-parapet': {
+    desc: 'AB: the Punic garrison in the embrasures of Carthage',
+    map: 'carthage', opponent: 2, scenario: 'assault', hour: 12.2, at: 66,
+    wall: { bay: 2, stand: 0.2, lift: 'walk+1.3', zoom: 0.17, yaw: 'along' },
+  },
+  'ab-carth-elephants': {
+    // Paired against the press set's own elephant plate, so "the one with the elephants" is
+    // not the answer to that pair.
+    desc: 'AB: the Punic elephant line advancing in front of the centre',
+    map: 'carthage', opponent: 2, follow: 'unitType', unitType: 'war-elephants',
+    zoom: 0.30, at: 44, hour: 16.0,
+  },
+  // ---- TEMPORARY framing sweep. Deleted once round 1's framings are pinned. -------
+  'zz-melee-a': { desc: 'sweep', follow: 'contact', zoom: 0.10, at: 96, hour: 15.0 },
+  'zz-melee-b': { desc: 'sweep', follow: 'contact', zoom: 0.14, at: 96, hour: 15.0 },
+  'zz-after-a': { desc: 'sweep', follow: 'corpses', zoom: 0.26, at: 200, hour: 15.0 },
+  'zz-after-b': { desc: 'sweep', follow: 'corpses', zoom: 0.40, at: 200, hour: 15.0 },
+  'zz-line-a': { desc: 'sweep', follow: 'romanFront', zoom: 0.34, at: 6, hour: 9.0 },
+  'zz-line-b': { desc: 'sweep', follow: 'ownLine', zoom: 0.32, at: 6, hour: 9.0 },
+  'zz-march-a': { desc: 'sweep', follow: 'ownLine', zoom: 0.30, at: 40, hour: 9.0 },
+  'zz-wall-a': {
+    desc: 'sweep', scenario: 'assault', hour: 14.3, at: 300,
+    wall: { bay: -2, stand: 62, lift: 10, zoom: 0.42, yaw: 'in', yawAdd: 0.55 },
+  },
+  'zz-wall-b': {
+    desc: 'sweep', scenario: 'assault', hour: 14.3, at: 300,
+    wall: { bay: 1, stand: 40, lift: 9, zoom: 0.36, yaw: 'in', yawAdd: 0.5 },
+  },
+  'zz-wall-c': {
+    desc: 'sweep', scenario: 'assault', hour: 14.3, at: 300,
+    wall: { bay: -4, stand: 95, lift: 14, zoom: 0.48, yaw: 'in', yawAdd: 0.6 },
+  },
+  'zz-para-a': {
+    desc: 'sweep', scenario: 'assault', hour: 11.0, at: 66,
+    wall: { bay: 2, stand: 0.2, lift: 'walk+1.3', zoom: 0.17, yaw: 'along' },
+  },
+  'zz-para-b': {
+    desc: 'sweep', scenario: 'assault', hour: 11.0, at: 66,
+    wall: { bay: 3, stand: 26, lift: 'crest+3', zoom: 0.22, yaw: 'in', yawAdd: 0.45 },
+  },
+  'ab-carth-wide': {
+    desc: 'AB: the whole field before Carthage from high up, both hosts drawn up',
+    map: 'carthage', opponent: 2, follow: 'ownLine', zoom: 0.78, at: 4, hour: 17.2,
+  },
 };
 
 /** Named shot sets. `--set=deck` is the only pool a blind round should be built from. */
 const SETS = {
   deck: Object.keys(SHOTS).filter((k) => k.startsWith('deck-')),
-  all: Object.keys(SHOTS).filter((k) => !k.startsWith('deck-')),
+  /** The paired blind instrument. See the block comment above `ab-rome-line`. */
+  ab1: Object.keys(SHOTS).filter((k) => k.startsWith('ab-')),
+  all: Object.keys(SHOTS).filter((k) => !k.startsWith('deck-') && !k.startsWith('ab-')),
 };
 
 const args = new Map(
@@ -504,7 +633,11 @@ try {
    * at load means the HDRI probe and the sky preset are chosen for that hour rather than
    * blended onto a rig built for another one.
    */
-  const groupKey = (s) => JSON.stringify([s.map ?? null, s.hour ?? null, s.scenario ?? null, s.quality ?? QUALITY]);
+  // `opponent` joins the key for the same reason `map` does: it is read by `deployBattle`
+  // when the armies are placed, before the first frame, and cannot be changed on a live page.
+  const groupKey = (s) => JSON.stringify([
+    s.map ?? null, s.hour ?? null, s.scenario ?? null, s.quality ?? QUALITY, s.opponent ?? null,
+  ]);
   const groups = new Map();
   for (const name of requested) {
     const k = groupKey(SHOTS[name]);
@@ -525,6 +658,9 @@ try {
     if (shot.map) cfg.map = shot.map;
     if (shot.hour !== undefined) cfg.timeOfDay = shot.hour;
     if (shot.scenario) cfg.scenario = shot.scenario;
+    // 2 is `Faction.Carthage`; `sanitiseConfig` maps anything else back to the Germanic
+    // opponent, so an unrecognised value degrades to the shipped battle rather than failing.
+    if (shot.opponent !== undefined) cfg.opponent = shot.opponent;
     // `--battle=<token>` still grades a configured order of battle rather than the
     // historical one, and wins over the per-shot fields when both are given: it is the
     // caller being explicit about the whole config.
@@ -538,7 +674,16 @@ try {
     // A `{ timeout }` object in the *argument* slot is silently treated as page data and
     // the wait falls back to the 30 s default — nineteen tools in this repo had that bug.
     // Third positional, always.
-    await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 180000 });
+    /*
+     * 420 s, not 180. Carthage builds a second city plan and a second curtain at boot and
+     * `tools/probe-siege.mjs` already had to raise its own deadline for exactly this: past
+     * three minutes the harness stopped reporting what it was measuring and started
+     * reporting `Timeout 180000ms exceeded`, which reads as "the scene is broken" and is
+     * not. Generous, and the elapsed time is printed so a genuine hang is still visible.
+     */
+    const bootT0 = Date.now();
+    await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 420000 });
+    console.log(`• world ready in ${((Date.now() - bootT0) / 1000).toFixed(1)} s`);
 
     if (!gl) {
       // Confirm we actually got a hardware-ish GL context, not a stub. Once is enough.
@@ -640,8 +785,18 @@ try {
             const p = b.pool;
             let sx = 0, sz = 0, n = 0;
             const cells = new Map();
-            // Faction centroids, used to look along the axis between the two armies.
-            const cx = [0, 0], cz = [0, 0], cn = [0, 0];
+            /*
+             * Faction centroids, used to look along the axis between the two armies.
+             *
+             * Three slots, not two, and this is a fix rather than a tidy-up. `Faction` runs
+             * Rome 0, Germanic 1, **Carthage 2**, so on a Punic order of battle every man
+             * wrote to `cx[2]` of a two-element array: `undefined + x` is `NaN`, `fx` came
+             * out `NaN`, and `setCamera(NaN, NaN, ...)` parked the rig at the origin. Every
+             * auto-framed shot of a Carthaginian army was therefore a photograph of
+             * whatever happens to be at (0, 0). `tools/shoot-carthage.mjs` exists partly
+             * because of this and says so in its header.
+             */
+            const cx = [0, 0, 0], cz = [0, 0, 0], cn = [0, 0, 0];
 
             for (let i = 0; i < p.count; i++) {
               const st = p.state[i];
@@ -665,11 +820,20 @@ try {
               }
             }
 
+            /*
+             * Which faction is the enemy, resolved from the field rather than assumed to be 1.
+             *
+             * Rome is always 0 here (`deployBattle` puts the player there on every scenario
+             * this harness shoots). The opponent is whichever *other* faction actually has
+             * men on the ground, which is 1 on the shipped battle and 2 on a Punic one.
+             */
+            const foe = cn[2] > cn[1] ? 2 : 1;
+
             if (s.follow === 'ownLine') {
               // Centroid of the player faction's living men, and of the enemy's, so the
               // camera can sit behind one and aim along the axis at the other.
               const ax = cn[0] ? cx[0] / cn[0] : 0, az = cn[0] ? cz[0] / cn[0] : 0;
-              const bx = cn[1] ? cx[1] / cn[1] : 0, bz = cn[1] ? cz[1] / cn[1] : 0;
+              const bx = cn[foe] ? cx[foe] / cn[foe] : 0, bz = cn[foe] ? cz[foe] / cn[foe] : 0;
               // Focus on our own line. The orbit then puts the eye behind it, so the whole
               // enemy host falls beyond the focus instead of behind the camera.
               fx = ax; fz = az;
@@ -677,12 +841,16 @@ try {
               n = -1;
             }
 
-            if (n === 0 && (s.follow === 'romanFront' || s.follow === 'germanFront')) {
+            // `enemyFront` is `germanFront` with the faction resolved from the field, so the
+            // same shot definition frames a warband on the Campus Martius and a Libyan
+            // spear block in front of Carthage.
+            if (n === 0 && (s.follow === 'romanFront' || s.follow === 'germanFront'
+                            || s.follow === 'enemyFront')) {
               // Frame ONE front-line infantry unit, not the army's centroid. Averaging
               // rank 0 across a 660 m frontage plus the second line and the archers put
               // the focus in open ground between the lines, with the nearest cohort in a
               // corner. A single block fills the frame and is what the shot is for.
-              const want = s.follow === 'romanFront' ? 0 : 1;
+              const want = s.follow === 'romanFront' ? 0 : foe;
               let best = null;
               for (const u of b.units) {
                 if (u.destroyed || u.faction !== want || u.alive === 0) continue;
@@ -691,7 +859,18 @@ try {
                 // urban cohorts refusing the flanks, since they sit a few metres forward
                 // of the main line — and the legionary cohort is the unit whose kit this
                 // shot exists to show.
-                if (want === 0 ? cls !== 'heavy-infantry' : cls !== 'light-infantry') continue;
+                /*
+                 * Heavy infantry for Rome; for the enemy, its own line class.
+                 *
+                 * The Juthungi warband is `light-infantry` and the rule was written for it.
+                 * The Punic line — Libyan spearmen, Iberian scutarii, the Sacred Band — is
+                 * `heavy-infantry`, so the literal `light-infantry` test matched nothing on
+                 * Carthage and the shot silently fell through to the army centroid, i.e. to
+                 * empty ground between the lines. Accept either, and prefer the frontmost.
+                 */
+                if (want === 0
+                  ? cls !== 'heavy-infantry'
+                  : (cls !== 'light-infantry' && cls !== 'heavy-infantry')) continue;
                 // "Frontmost" = nearest the enemy. Rome faces -Z, the Juthungi face +Z.
                 if (!best || (want === 0 ? u.z < best.z : u.z > best.z)) best = u;
               }
@@ -772,6 +951,24 @@ try {
               }
             }
 
+            // The largest living unit of one named type. Exists for the elephants, which are
+            // neither `heavy-cavalry` nor infantry and so are reachable by no other selector
+            // in this table.
+            if (s.follow === 'unitType') {
+              let best = null;
+              for (const u of b.units) {
+                if (u.destroyed || u.alive === 0) continue;
+                if (b.typeOf(u).id !== s.unitType) continue;
+                if (!best || u.alive > best.alive) best = u;
+              }
+              if (best) {
+                fx = best.x;
+                fz = best.z;
+                fyaw = best.facing + Math.PI + 0.35;
+                n = -1;
+              }
+            }
+
             if (s.follow === 'cavalryUnit') {
               // Biggest living mounted unit, and look at its front obliquely.
               let best = null;
@@ -816,19 +1013,88 @@ try {
               // Nothing matched (too early, or everyone already dead): fall back to the
               // midpoint between the two armies rather than to a stale constant.
               const ax = cn[0] ? cx[0] / cn[0] : 0, az = cn[0] ? cz[0] / cn[0] : 0;
-              const bx = cn[1] ? cx[1] / cn[1] : 0, bz = cn[1] ? cz[1] / cn[1] : 0;
+              const bx = cn[foe] ? cx[foe] / cn[foe] : 0, bz = cn[foe] ? cz[foe] / cn[foe] : 0;
               fx = (ax + bx) / 2; fz = (az + bz) / 2;
             }
 
             // Look along the axis between the armies, swung 55 degrees off so the shot is
             // oblique to the line of battle rather than straight down it.
-            if (n !== -1 && cn[0] && cn[1]) {
+            if (n !== -1 && cn[0] && cn[foe]) {
               const ax = cx[0] / cn[0], az = cz[0] / cn[0];
-              const bx = cx[1] / cn[1], bz = cz[1] / cn[1];
+              const bx = cx[foe] / cn[foe], bz = cz[foe] / cn[foe];
               fyaw = Math.atan2(bx - ax, bz - az) + 0.96;
             }
           }
-          g.setCamera(fx, fz, s.zoom, fyaw);
+          /*
+           * ---------------------------------------------------------------------------
+           * `wall`: a camera resolved against the live curtain.
+           * ---------------------------------------------------------------------------
+           *
+           * Ported from `tools/probe-siege.mjs`, which owns the siege cameras and worked
+           * this out first. Two things make a wall shot different from every other shot in
+           * this file:
+           *
+           *   - **The wall is generated, so a world coordinate is a guess with a shelf
+           *     life.** The curtain follows the hill crest and the gate is where the road
+           *     crosses it, not at the centre of any bay. So a shot names a *bay offset from
+           *     the gate* and a *standoff along that bay's own outward normal*, and the page
+           *     resolves both against `city.getGarrisonBays()` at shoot time.
+           *   - **The rig has no elevation control.** `jumpTo` puts the focus on
+           *     `heightAt(focus)` and booms the eye up and back from there, so every camera
+           *     in this file looks *down* at a point on the ground. Aim at a point 13 m out
+           *     from a curtain and you photograph grass with masonry along the top edge; the
+           *     parapet is 8-12 m above the focus and out of frame. The only lever is the
+           *     ground sampler itself, so it is replaced with a constant for the duration of
+           *     the shot and restored immediately after — `lift: 'crest'` puts the eye level
+           *     with the battlement, `'walk'` with the wall-walk, a number is metres above
+           *     the terrain at the focus.
+           *
+           * Restoring matters here in a way it does not in probe-siege: that tool shoots
+           * nothing but wall cameras, this one interleaves them with field shots, and a
+           * sampler left pinned at crest height would silently lift every subsequent frame.
+           */
+          let wallDebug = null;
+          const rig = g.engine.rig;
+          if (s.wall) {
+            const city = g.engine.context.tryGet('city');
+            const bays = city && city.getGarrisonBays ? city.getGarrisonBays() : null;
+            if (!bays || !bays.length) throw new Error('wall camera asked for, but this map has no garrison bays');
+            const gateIdx = bays.findIndex((b) => b.isGate);
+            const bay = bays[Math.max(0, Math.min(bays.length - 1, (gateIdx < 0 ? 0 : gateIdx) + s.wall.bay))];
+            const mx = (bay.x0 + bay.x1) * 0.5;
+            const mz = (bay.z0 + bay.z1) * 0.5;
+            fx = mx + bay.nx * s.wall.stand;
+            fz = mz + bay.nz * s.wall.stand;
+
+            if (!rig.__savedHeightAt) rig.__savedHeightAt = rig.heightAt;
+            const lift = s.wall.lift;
+            let liftY = null;
+            if (lift === 'walk') liftY = bay.walkY;
+            else if (lift === 'crest') liftY = bay.crestY;
+            else if (typeof lift === 'string' && lift.startsWith('walk+')) liftY = bay.walkY + Number(lift.slice(5));
+            else if (typeof lift === 'string' && lift.startsWith('walk-')) liftY = bay.walkY - Number(lift.slice(5));
+            else if (typeof lift === 'string' && lift.startsWith('crest+')) liftY = bay.crestY + Number(lift.slice(6));
+            else if (typeof lift === 'number') liftY = rig.__savedHeightAt(fx, fz) + lift;
+            rig.heightAt = liftY === null ? rig.__savedHeightAt : () => liftY;
+
+            // 'in' looks at the city across the curtain, 'out' away from it, 'along' down
+            // the length of the walk. Written down rather than resolved, the yaw goes stale
+            // the first time the wall line is re-cut.
+            let wy = s.wall.yaw;
+            if (wy === 'in') wy = Math.atan2(-bay.nx, -bay.nz);
+            else if (wy === 'out') wy = Math.atan2(bay.nx, bay.nz);
+            else if (wy === 'along') wy = Math.atan2(bay.dx, bay.dz);
+            fyaw = wy + (s.wall.yawAdd ?? 0);
+            wallDebug = {
+              bayIndex: bay.index, stage: bay.stage, walkY: +bay.walkY.toFixed(2),
+              crestY: +bay.crestY.toFixed(2), focusY: liftY === null ? null : +liftY.toFixed(2),
+            };
+            g.setCamera(fx, fz, s.wall.zoom ?? s.zoom, fyaw);
+          } else {
+            // A previous wall shot in the same page load pinned the sampler; put it back.
+            if (rig.__savedHeightAt) rig.heightAt = rig.__savedHeightAt;
+            g.setCamera(fx, fz, s.zoom, fyaw);
+          }
 
           // Settle on the *synthetic* clock. Feeding `performance.now()` here would
           // jump Time's accumulator forward by however long the fast-forward took,
@@ -902,7 +1168,7 @@ try {
 
           const st = g.engine.stats();
           return {
-            simTime: g.simTime(), men, units, corpses, waterDebug,
+            simTime: g.simTime(), men, units, corpses, waterDebug, wallDebug,
             focusX: Math.round(fx), focusZ: Math.round(fz), yaw: +fyaw.toFixed(2),
             draws: st.calls, tris: st.tris, programs: st.programs,
             msPerFrame, fps: 1000 / msPerFrame,
