@@ -55,7 +55,9 @@
  * re-encode off it, which grinds a *second*, misaligned block grid into the reference side
  * only. Aligned, the re-encode is close to idempotent for them.
  *
- * **Byte lengths are equalised with a PNG private chunk.** `wc -c *.png | sort -n` sorted an
+ * **Byte lengths are equalised twice over.** The IDAT stream is written at stored-block
+ * compression, which makes its length a function of the frame's dimensions and nothing else,
+ * and the file is then padded to one common length with a private ancillary chunk. `wc -c *.png | sort -n` sorted an
  * earlier deck of this project without a pixel being viewed, because compressed length is a
  * measure of high-frequency content and our renders carry far more of it. `blind-compare`
  * pads past the JPEG EOI marker; the PNG equivalent is an ancillary private chunk (`paDd`)
@@ -306,7 +308,27 @@ for (const [i, p] of order.entries()) {
      * much colour variety they carried, which is precisely the kind of content-correlated
      * asymmetry this whole file exists to prevent.
      */
-    const png = await sharp(jpeg).png({ compressionLevel: 9, effort: 10, palette: false }).toBuffer();
+    /*
+     * `compressionLevel: 0`, and it closes a leak rather than saving time.
+     *
+     * At any real compression level the IDAT length is a measure of how much pixel-scale
+     * detail the picture carries, which is precisely the thing that differs between a
+     * renderer and its target. Measured on this deck at level 9: our IDAT was the larger of
+     * the pair in 11 of 14, so `sum the IDAT chunk lengths and pick the bigger` scored
+     * **78.6%** without a pixel being decoded. The whole-file pad does not touch it, because
+     * the pad is a separate chunk and a parser adds up IDAT.
+     *
+     * `blind-compare.mjs` argues, correctly, that the JPEG equivalent cannot be closed: the
+     * only levers there are spending fewer bits on one side, which manufactures the artefact
+     * the grader is then asked to judge. **PNG is not JPEG.** It is lossless, so compressing
+     * *less* costs nothing but bytes. At level 0 the deflate stream is stored blocks and its
+     * length is a pure function of width and height — 3,457,311 for every 1440x800 frame in
+     * this deck, ours and theirs, byte for byte. The leak is not reduced, it is gone, and no
+     * image is degraded by a single bit to do it.
+     *
+     * The cost is disk: every frame is ~3.5 MB before padding instead of ~2.4 MB.
+     */
+    const png = await sharp(jpeg).png({ compressionLevel: 0, palette: false }).toBuffer();
     return stripAncillary(png);
   };
 
@@ -451,16 +473,16 @@ for (const f of outFiles) {
 const isOurs = stats.map((s) => s.origin === 'ours');
 const FIELDS = ['bytes', 'idatBytes', 'width', 'height', 'flatBorderPx', 'blackBar'];
 /*
- * `idatBytes` is measured and printed but does not refuse, and the reason is the one
- * `blind-compare.mjs` gives for `scanBytes`: compressed length is a statement about how much
- * pixel-scale energy the source image carries, and ours genuinely carries more. The only
- * ways to equalise it are to spend fewer bits on our side — which manufactures the artefact
- * the grader is then asked to judge — or to add matched grain to both, which buries the
- * aliasing signal that is the leading real separator. Both destroy the instrument to protect
- * the instrument. It closes when the renderer stops carrying more pixel-scale energy than a
- * press plate, and nothing the harness does can close it first.
+ * Nothing is `open` any more, and `idatBytes` is the reason this set still exists.
+ *
+ * It was open, on `blind-compare.mjs`'s argument for `scanBytes`: compressed length measures
+ * pixel-scale energy, ours genuinely carries more, and equalising it in JPEG means spending
+ * fewer bits on one side. That argument is right for JPEG and wrong for PNG, which is
+ * lossless — see `compressionLevel: 0` above. At stored-block compression the IDAT length is
+ * a function of the frame's dimensions and nothing else, so it is now an exact-equality
+ * field like the rest.
  */
-const OPEN = new Set(['idatBytes']);
+const OPEN = new Set([]);
 /*
  * `width` and `height` vary by pair *on purpose* — the cinematic plates are windowed to
  * 1920x704 and s2-09's pair to 1728x864 — but both members of a pair always share them, so
