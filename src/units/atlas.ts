@@ -275,7 +275,9 @@ export const MAT_TILE_M: Record<Mat, number> = {
   [Mat.Bone]: 0.20,
   // Drape fbm period 4 at 90 mm — a cloak hangs in bigger folds than a tunic sits in.
   [Mat.ClothFine]: 0.36,
-  [Mat.ShieldBack]: 0.45,
+  // 0.36, matching `MeshBuilder.SHIELD_PLANK_M`: this cell is only ever used on a shield and
+  // the two faces of a board must carry the same physical grain or the rim gives it away.
+  [Mat.ShieldBack]: 0.36,
   [Mat.OakBeam]: 0.80,
   [Mat.SinewCord]: 0.15,
   [Mat.ElephantHide]: 0.60,
@@ -1131,34 +1133,47 @@ const MATS: Record<Mat, MatDef> = {
     metalness: 0,
     bump: 0.44,
   },
+  /**
+   * **A tile, not a board-sized decal — and that is what unblocked the shield's tiling.**
+   *
+   * This cell used to paint two *board-scale* features into a *material* cell: a handgrip
+   * band at v = 0.5 and a stitched turn-over at all four tile edges. Both were placed on the
+   * assumption that one tile covers exactly one shield, and that assumption is what pinned
+   * `shieldPanel` at a single tile across a 1.06 m board — 236 texels per metre, the worst
+   * sampled surface on the figure and the reason a scutum's inner face photographed as a
+   * black smear. Tiling it with either feature present grows a shield two grips and a seam
+   * across its middle.
+   *
+   * Neither feature is lost. The rim was a *duplicate*: `shieldPanel` has modelled binding
+   * with its own outward normals, ten lines from where this was painted. The grip is now one
+   * box of 12 triangles that actually stands proud of the board and occludes.
+   *
+   * What is left is hide: grain, scuff, a couple of nail heads where the boss is riveted
+   * through, and the diagonal wear a forearm leaves. Drawn neutral and mid-value on purpose
+   * so a per-man multiply can put it anywhere from pitch to raw hide.
+   */
   [Mat.ShieldBack]: {
     colour(u, v, out) {
       // Hide grain over a neutral mid-value base. 0.62 sRGB is 0.34 linear, which is the
       // middle of the range a per-man tint has to reach both ends of.
-      const grain = fbm(u * 13, v * 13, 4, 13, 157);
+      const grain = fbm(u * 17, v * 17, 4, 17, 157);
       const scuff = Math.max(0, fbm(u * 5, v * 5, 3, 5, 163) - 0.55) * 1.8;
       mix3([0.44, 0.40, 0.35], [0.72, 0.67, 0.60], grain, out);
       mix3(out, [0.34, 0.30, 0.26], Math.min(0.55, scuff), out);
-      // The grip: every shield of every pattern has one horizontal handgrip across the
-      // middle, so a band at v = 0.5 lands on it whatever the board's outline. It is real
-      // structure rather than a repeat — the alternative is a featureless slab.
-      const grip = Math.exp(-((v - 0.5) ** 2) / 0.0016);
-      mix3(out, [0.30, 0.24, 0.18], grip * 0.85, out);
-      // Stitched hide turned over the rim, all four edges.
-      const rim = Math.max(
-        Math.exp(-(u ** 2) / 0.0022) + Math.exp(-((1 - u) ** 2) / 0.0022),
-        Math.exp(-(v ** 2) / 0.0022) + Math.exp(-((1 - v) ** 2) / 0.0022)
-      );
-      mix3(out, [0.26, 0.21, 0.17], Math.min(0.8, rim), out);
+      // Two rivet heads and their leather washers — a boss is nailed through the board and
+      // the nails are visible from behind. Placed off-centre so a repeated tile does not
+      // read as a grid.
+      const rivet = Math.exp(-(((u - 0.31) ** 2 + (v - 0.68) ** 2)) / 0.00042)
+        + Math.exp(-(((u - 0.74) ** 2 + (v - 0.22) ** 2)) / 0.00035);
+      mix3(out, [0.58, 0.55, 0.50], Math.min(0.8, rivet), out);
+      // A hide facing is stitched in panels; the seam is a hard-worn crease, not a paint line.
+      const seam = Math.exp(-((((u * 2 + v * 0.6) % 1) - 0.5) ** 2) / 0.0009);
+      mix3(out, [0.33, 0.29, 0.25], seam * 0.5, out);
     },
-    height(u, v) {
-      const grip = Math.exp(-((v - 0.5) ** 2) / 0.0016);
-      const rim = Math.max(
-        Math.exp(-(u ** 2) / 0.0022) + Math.exp(-((1 - u) ** 2) / 0.0022),
-        Math.exp(-(v ** 2) / 0.0022) + Math.exp(-((1 - v) ** 2) / 0.0022)
-      );
-      return Math.min(1, fbm(u * 16, v * 16, 3, 16, 157) * 0.5 + grip * 0.5 + Math.min(0.6, rim) * 0.5);
-    },
+    height: (u, v) =>
+      fbm(u * 20, v * 20, 3, 20, 157) * 0.62
+      + Math.min(0.9, Math.exp(-(((u - 0.31) ** 2 + (v - 0.68) ** 2)) / 0.00042)
+        + Math.exp(-(((u - 0.74) ** 2 + (v - 0.22) ** 2)) / 0.00035)) * 0.38,
     roughness: 0.72,
     metalness: 0.02,
     bump: 0.45,

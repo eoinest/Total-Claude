@@ -713,7 +713,28 @@ export class MeshBuilder {
    *
    * `curve` is the sagitta in metres: a legionary scutum is a section of a cylinder about
    * 0.30 m deep across its width, which is what makes it wrap the body.
+   *
+   * **The board is tiled now, and it was the worst-sampled surface on the figure.** One
+   * whole tile was stretched across a 0.66 by 1.06 m scutum: 379 texels per metre across and
+   * **236 along**, which at the isolated deck's magnification is one texel over two and a
+   * half screen pixels and over four on the two shield plates. That is not a missing map, it
+   * is a magnified one, and it is why round three's critics recorded a scutum's inner face
+   * as a black smear across 12-20 % of two plates. Both faces now take
+   * `ceil`-free integer repeats derived from the board's own size and the material's
+   * `UvRect.m`, laid out through `repeatStops` so the seams sit on duplicated vertex columns
+   * and **cost no triangle** — the same treatment `tube` and `sheet` already had, and the
+   * reason this cannot reintroduce the reversed-column defect.
+   *
+   * `SHIELD_PLANK_M` is 0.36 rather than the plank tile's own 0.72. The tile draws six
+   * planks, so 0.72 makes them 120 mm, which is a squared beam; the Dura-Europos scutum is
+   * built from strips of **30 to 80 mm**, and six over 0.36 m is 60 mm, the middle of the
+   * find.
+   *
+   * The aux pair still carries the *board* coordinate rather than the tile coordinate, so
+   * the painted device is drawn once across the whole board however finely the boards tile.
    */
+  static readonly SHIELD_PLANK_M = 0.36;
+
   shieldPanel(
     halfW: number,
     halfH: number,
@@ -728,35 +749,44 @@ export class MeshBuilder {
     shape: (sx: number, sy: number) => number,
     piece: number,
     /**
-     * Give the board's edge its own outward-facing band.
+     * Give the board's edge its own outward-facing band, and its back a modelled grip.
      *
      * True everywhere a camera can resolve 20 mm of board, false on the far mesh, where the
      * whole man is 313 triangles and the edge is well under a pixel. Costing the crowd tier
-     * 32 triangles a man for an invisible bevel is the wrong trade at 8,632 men.
+     * 32 triangles a man for an invisible bevel is the wrong trade at 8,632 men — and it is
+     * also what keeps LOD2 byte-identical, since the tiling below is gated on it too: at two
+     * columns and two rows there is nowhere to put a seam.
      */
     rimBand = true
   ): void {
     const z = (sx: number): number => curve * (1 - sx * sx);
+    // Repeats from the board's own size. Gated on `rimBand` so the crowd tier, which has two
+    // divisions on each axis and no room for a seam column, is bit-for-bit what it was.
+    const tileFace = rimBand ? (faceUv.m === undefined ? 0 : MeshBuilder.SHIELD_PLANK_M) : 0;
+    const tileBack = rimBand ? (edgeUv.m === undefined ? 0 : MeshBuilder.SHIELD_PLANK_M) : 0;
+    const rep = (extent: number, tile: number, div: number): number =>
+      tile <= 0 ? 1 : Math.min(Math.max(1, Math.round(extent / tile)), div);
+    const fCols = MeshBuilder.repeatStops(cols, rep(halfW * 2, tileFace, cols));
+    const fRows = MeshBuilder.repeatStops(rows, rep(halfH * 2, tileFace, rows));
+    const bCols = MeshBuilder.repeatStops(cols, rep(halfW * 2, tileBack, cols));
+    const bRows = MeshBuilder.repeatStops(rows, rep(halfH * 2, tileBack, rows));
+
     const front: number[][] = [];
     const back: number[][] = [];
-    const loRim: number[] = [];
-    const hiRim: number[] = [];
-    const lfRim: number[] = [];
-    const rtRim: number[] = [];
 
     this.setPiece(piece, faceTint);
-    for (let r = 0; r <= rows; r++) {
-      const sy = (r / rows) * 2 - 1;
+    for (const rs of fRows) {
+      const sy = (rs.i / rows) * 2 - 1;
       const fRow: number[] = [];
-      for (let c = 0; c <= cols; c++) {
-        const sx = (c / cols) * 2 - 1;
+      for (const cs of fCols) {
+        const sx = (cs.i / cols) * 2 - 1;
         const w = shape(sx, sy);
         const x = sx * halfW * w;
         const y = sy * halfH;
         // Face normal from the cylindrical curvature.
         const slope = -2 * curve * sx / halfW;
         const len = Math.hypot(slope, 1);
-        const [u, v] = MeshBuilder.tileUv(faceUv, (sx + 1) / 2, (sy + 1) / 2);
+        const [u, v] = MeshBuilder.tileUv(faceUv, cs.f, rs.f);
         this.setAux((sx + 1) / 2, (sy + 1) / 2);
         fRow.push(this.vert(x, y, z(sx) + thickness * 0.5, slope / len, 0, 1 / len, u, v));
       }
@@ -764,21 +794,29 @@ export class MeshBuilder {
     }
     this.setPiece(piece, edgeTint);
     this.setAux(0, 0);
-    for (let r = 0; r <= rows; r++) {
-      const sy = (r / rows) * 2 - 1;
+    for (const rs of bRows) {
+      const sy = (rs.i / rows) * 2 - 1;
       const bRow: number[] = [];
-      for (let c = 0; c <= cols; c++) {
-        const sx = (c / cols) * 2 - 1;
+      for (const cs of bCols) {
+        const sx = (cs.i / cols) * 2 - 1;
         const w = shape(sx, sy);
-        const [u, v] = MeshBuilder.tileUv(edgeUv, (sx + 1) / 2, (sy + 1) / 2);
+        const [u, v] = MeshBuilder.tileUv(edgeUv, cs.f, rs.f);
         bRow.push(this.vert(sx * halfW * w, sy * halfH, z(sx) - thickness * 0.5, 0, 0, -1, u, v));
       }
       back.push(bRow);
     }
 
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
+    for (let r = 0; r < fRows.length - 1; r++) {
+      if (fRows[r].i === fRows[r + 1].i) continue;
+      for (let c = 0; c < fCols.length - 1; c++) {
+        if (fCols[c].i === fCols[c + 1].i) continue;
         this.quad(front[r][c], front[r][c + 1], front[r + 1][c + 1], front[r + 1][c]);
+      }
+    }
+    for (let r = 0; r < bRows.length - 1; r++) {
+      if (bRows[r].i === bRows[r + 1].i) continue;
+      for (let c = 0; c < bCols.length - 1; c++) {
+        if (bCols[c].i === bCols[c + 1].i) continue;
         this.quad(back[r][c], back[r + 1][c], back[r + 1][c + 1], back[r][c + 1]);
       }
     }
@@ -794,16 +832,29 @@ export class MeshBuilder {
     // A middle ring pointing outward costs vertices and **no extra triangles** — the same
     // 2*(cols+rows) quads, just split into two bands each. It also takes the hide UV, so the
     // binding reads as leather rather than as more painted board.
+    //
+    // The two shells no longer share an index space, because each tiles at its own repeat.
+    // The rim is therefore walked over the *division* index and both shells are looked up in
+    // their own stop list, which is what `edgeOf` does.
+    const edgeOf = (stops: { i: number; f: number }[], div: number): number[] => {
+      const out: number[] = [];
+      for (let k = 0; k <= div; k++) out.push(stops.findIndex((s) => s.i === k));
+      return out;
+    };
+    const fRowAt = edgeOf(fRows, rows);
+    const fColAt = edgeOf(fCols, cols);
+    const bRowAt = edgeOf(bRows, rows);
+    const bColAt = edgeOf(bCols, cols);
     const rim = (i: number, j: number, dx: number, dy: number): number => {
-      const fi = front[i][j];
-      const bi = back[i][j];
+      const fi = front[fRowAt[i]][fColAt[j]];
+      const bi = back[bRowAt[i]][bColAt[j]];
       // Midway between the shells, in the space they were already emitted into — so the
       // builder transform must not be applied a second time.
       const x = (this.pos[fi * 3] + this.pos[bi * 3]) * 0.5;
       const y = (this.pos[fi * 3 + 1] + this.pos[bi * 3 + 1]) * 0.5;
-      const z = (this.pos[fi * 3 + 2] + this.pos[bi * 3 + 2]) * 0.5;
+      const z2 = (this.pos[fi * 3 + 2] + this.pos[bi * 3 + 2]) * 0.5;
       const [u, v] = MeshBuilder.tileUv(edgeUv, (i / rows) * 0.5 + (j / cols) * 0.5, 0.5);
-      return this.vertWorld(x, y, z, dx, dy, 0, u, v);
+      return this.vertWorld(x, y, z2, dx, dy, 0, u, v);
     };
     this.setPiece(piece, edgeTint);
     if (!rimBand) {
@@ -817,6 +868,10 @@ export class MeshBuilder {
       }
       return;
     }
+    const loRim: number[] = [];
+    const hiRim: number[] = [];
+    const lfRim: number[] = [];
+    const rtRim: number[] = [];
     for (let c = 0; c <= cols; c++) {
       loRim[c] = rim(0, c, 0, -1);
       hiRim[c] = rim(rows, c, 0, 1);
@@ -825,18 +880,34 @@ export class MeshBuilder {
       lfRim[r] = rim(r, 0, -1, 0);
       rtRim[r] = rim(r, cols, 1, 0);
     }
+    const F = (i: number, j: number): number => front[fRowAt[i]][fColAt[j]];
+    const B = (i: number, j: number): number => back[bRowAt[i]][bColAt[j]];
     for (let c = 0; c < cols; c++) {
-      this.quadFacing(front[0][c + 1], front[0][c], loRim[c], loRim[c + 1]);
-      this.quadFacing(loRim[c + 1], loRim[c], back[0][c], back[0][c + 1]);
-      this.quadFacing(front[rows][c], front[rows][c + 1], hiRim[c + 1], hiRim[c]);
-      this.quadFacing(hiRim[c], hiRim[c + 1], back[rows][c + 1], back[rows][c]);
+      this.quadFacing(F(0, c + 1), F(0, c), loRim[c], loRim[c + 1]);
+      this.quadFacing(loRim[c + 1], loRim[c], B(0, c), B(0, c + 1));
+      this.quadFacing(F(rows, c), F(rows, c + 1), hiRim[c + 1], hiRim[c]);
+      this.quadFacing(hiRim[c], hiRim[c + 1], B(rows, c + 1), B(rows, c));
     }
     for (let r = 0; r < rows; r++) {
-      this.quadFacing(front[r][0], front[r + 1][0], lfRim[r + 1], lfRim[r]);
-      this.quadFacing(lfRim[r], lfRim[r + 1], back[r + 1][0], back[r][0]);
-      this.quadFacing(front[r + 1][cols], front[r][cols], rtRim[r], rtRim[r + 1]);
-      this.quadFacing(rtRim[r + 1], rtRim[r], back[r][cols], back[r + 1][cols]);
+      this.quadFacing(F(r, 0), F(r + 1, 0), lfRim[r + 1], lfRim[r]);
+      this.quadFacing(lfRim[r], lfRim[r + 1], B(r + 1, 0), B(r, 0));
+      this.quadFacing(F(r + 1, cols), F(r, cols), rtRim[r], rtRim[r + 1]);
+      this.quadFacing(rtRim[r + 1], rtRim[r], B(r, cols), B(r + 1, cols));
     }
+    // The grip, modelled rather than painted.
+    //
+    // The hide tile used to carry a grip band at v = 0.5 and a stitched turn-over at all
+    // four of its edges. Both were board-scale features living in a *material* cell, which
+    // is what made the inner face untileable — repeat it twice and a shield grows two grips
+    // and a seam across its middle — and the rim was a duplicate of the binding modelled ten
+    // lines above it anyway. One bar of 12 triangles buys back the one feature that was
+    // real, and it buys it with an occluding silhouette instead of a painted stripe.
+    this.setPiece(piece, edgeTint);
+    this.box(
+      0, 0, z(0) - thickness * 0.5 - 0.019,
+      Math.min(0.22, halfW * 1.1), 0.034, 0.030,
+      edgeUv
+    );
   }
 
   /**
