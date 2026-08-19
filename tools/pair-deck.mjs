@@ -80,7 +80,7 @@
  */
 
 import sharp from 'sharp';
-import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
@@ -493,6 +493,21 @@ for (const k of key) {
 
 const overlay = await overlayAudit(outFiles.map((f) => ({ origin: f.origin, file: f.file })));
 
+/*
+ * One timestamp for the whole deck.
+ *
+ * Files are written pair by pair, A then B, so A is always a few milliseconds older than
+ * its B — and the byte-pad pass rewrites them in the same order. `ls -lt` therefore returns
+ * the deck in a fixed order that is not the answer, but `stat` on a single pair still says
+ * which of A and B was produced first, and nothing stops a future change to the write order
+ * from making that correlate with origin. Normalise it rather than reason about it.
+ */
+{
+  const stamp = new Date('2026-01-01T00:00:00Z');
+  for (const f of outFiles) await utimes(f.file, stamp, stamp);
+  await utimes(path.join(outAbs, 'README.md'), stamp, stamp).catch(() => {});
+}
+
 const aIsOurs = key.filter((k) => k.ours.endsWith('-A.png')).length;
 
 // ---------------------------------------------------------------------------
@@ -537,7 +552,7 @@ for (const s of separability) {
  * A large gap here is a *finding*, not a leak: it is the renderer differing from the target,
  * which is what the instrument exists to measure.
  */
-const picture = ['lum', 'p01', 'p99', 'chroma', 'hueSpread', 'edge', 'vignette'].map((f) => {
+const picture = ['lum', 'p01', 'p99', 'chroma', 'hueSpread', 'edge', 'halo', 'vignette'].map((f) => {
   const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
   const v = stats.map((s) => s[f]);
   return {

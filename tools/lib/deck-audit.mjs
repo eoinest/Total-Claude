@@ -281,6 +281,10 @@ export function balancedAccuracy(values, isOurs) {
  *                a frame with red cloaks against bronze against green grass scores high.
  *   edge         mean |gradient| of luma per pixel. Pixel-scale energy — the statistic that
  *                `blind-compare.mjs` calls its leading real separator and cannot equalise.
+ *   halo         mean |Laplacian| over mean |gradient|. An unsharp mask adds a scaled
+ *                Laplacian back into the picture, so it moves this and barely moves `edge`.
+ *                Press material is routinely sharpened on its way out of a publisher and a
+ *                raw framebuffer grab never is; this is how that shows up.
  *   vignette     mean luma of the central 40% divided by mean luma of the outer ring. A
  *                post-process present on one pool only shows up here and nowhere else in
  *                this battery; the press plates have one and a raw render usually does not.
@@ -314,11 +318,23 @@ export async function pictureStats(file) {
   }
   const sorted = Float32Array.from(lum).sort();
   const R = sw > 0 ? Math.hypot(sx, sy) / sw : 1;
-  let edge = 0;
+  let edge = 0, lap = 0;
   for (let y = 1; y < h - 1; y++) {
     for (let x = 1; x < w - 1; x++) {
       const i = y * w + x;
       edge += Math.hypot(lum[i + 1] - lum[i - 1], lum[i + w] - lum[i - w]);
+      /*
+       * Second derivative, for the sharpening-halo test.
+       *
+       * An unsharp mask adds a scaled Laplacian back into the image, so it raises
+       * |Laplacian| much faster than it raises |gradient|. The ratio of the two is
+       * therefore a cheap, scale-free detector for "one of these pools has been
+       * sharpened and the other has not" — which is a real hazard here, because press
+       * material is routinely sharpened on its way out of a publisher and a raw
+       * framebuffer grab never is. Reported, not refused: nothing the harness does can
+       * un-sharpen a plate, and sharpening ours to match would be forging the answer.
+       */
+      lap += Math.abs(4 * lum[i] - lum[i - 1] - lum[i + 1] - lum[i - w] - lum[i + w]);
     }
   }
   let inner = 0, ni = 0, outer = 0, no = 0;
@@ -338,6 +354,7 @@ export async function pictureStats(file) {
     // Circular sd in degrees; R near 1 means every chromatic pixel shares one hue.
     hueSpread: +(Math.sqrt(Math.max(0, -2 * Math.log(Math.max(1e-6, R)))) * (180 / Math.PI)).toFixed(1),
     edge: +(edge / ((w - 2) * (h - 2))).toFixed(5),
+    halo: +(lap / Math.max(1e-9, edge)).toFixed(4),
     vignette: +((inner / Math.max(1, ni)) / Math.max(1e-6, outer / Math.max(1, no))).toFixed(3),
   };
 }
