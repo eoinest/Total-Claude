@@ -1568,3 +1568,81 @@ same reason. Neither figure is a soldier regression.
 - Carthage's ditch is published but never cut; the heightfield does not excavate the harbours.
 - `qa-interact`'s `__unitScreen` projects a unit anchor at ground+1 m — ~48 px above the men at
   some zooms — so `right-click move`/`attack` read as failing when they are not. **Harness fault.**
+
+## Session — 19 Aug 2026: the siege made commandable, and four loose ends closed
+
+Main went `4e3145f` → `f43f2ab` → `7340d02` → `fa0eefe`. Every merge was verified by the
+integrator on the *merged* tree, not taken on the branch's word: `tsc` clean and `qa-deploy`
+28/28 with both determinism arms identical, each time.
+
+### Landed
+
+- **`e/ui/wall-command`** (9 commits). Parapet units were unclickable for the entire
+  deployment phase — `model.standY` read `battle.levelOf(id)`, and `unitY` is only written in
+  `updateUnitCohesion`, i.e. inside `fixedUpdate`, which a paused deployment never runs. Now
+  the median of nine living men: `standY 0 → 35.75`. The ground pick tested the *terrain point*
+  under the cursor, costing 1.75/tan(pitch) ≈ 5.4 m of depth at battle zoom — more than a tower
+  party is deep; both cases now test one plane at mid-body, crowd hit rate 60/180 → 77/200.
+  `selectionIsStorming()` was **unreachable by construction**: a shallow field ray strikes the
+  obstacle at median +4.55 against a band ending at +4.13, so `wallTargetAt` returned −1 every
+  time; 45/148 → 133/148 masonry pixels now answer. Cursor `attack` was issuing a wall order.
+- **`e/city/ditch-and-sky`** (8 commits). Carthage's ditch was published for four commits and
+  never cut: relief 0.00 → **6.00 m median over 88 stations**, cross-checked against the field
+  mean height (0.017 m predicted from the excavated volume, 0.0165 measured). The gatehouse's
+  `masonryTopAt` returned merlon-top height flat across the whole footprint — 2.000 m too high
+  on Rome, 2.100 m on Carthage, over 11 of 11.9 m of depth — and its merlon line was modelled
+  solid; **2,832 of 2,832 straddling firing lines on Carthage opened**. `SkySystem.dispose`
+  freed four resources with their owner still attached.
+- **`fa0eefe`** — `TerrainSystem.dispose` carried the identical fault. Fixed for symmetry.
+
+### Rules earned
+
+- **A base arm pinned to the merge-base cannot distinguish a pre-existing fault from one main
+  has since fixed.** A branch reported `qa-deploy` 26/28 and ran the correct control — but
+  pinned it to its own branch point. Both arms failed identically, which is equally consistent
+  with "not mine" and with "already fixed upstream". It was the latter: the harness fix had
+  landed forty minutes earlier. Rebased, the branch was 28/28. **Pin the control to `main`.**
+- **Do not grade a blind deck until its author declares it frozen.** Three graders were sent at
+  a deck that looked complete — 14 pairs, README, key stored outside — and the builder tore it
+  down minutes later on finding a wordmark leak. All three refused to fabricate picks, which is
+  the behaviour to select for: a grader that feels obliged to find a difference will invent one.
+- **Deck hygiene, from the graders' own reconnaissance:** never build a deck under `/tmp`
+  (macOS reaps it, and it changed under a reader mid-run); nothing named `*key*` in the deck's
+  parent directory; no sibling `report.json`; and if one side of a pair comes from a reference
+  pool and the other from the live renderer, both must pass through an identical final resize
+  and re-encode or resolution alone carries the answer.
+
+### Measured, awaiting a decision
+
+- **Rome's assault is winnable 2 of 12, and never by assault.** Both wins were cavalry riding
+  through bays whose `BayStage` is `footing` — `blocksMovement` leaves 14 of 356 stations open
+  by design, at x −551…−536, 369…389, 404…424. Checked, not believed: one "win" fired at t+857
+  with nothing on the parapet since t+219.
+- **Victory condition A is unreachable by construction.** `garrisonOnWall === 0` asks the
+  attacker to empty ~50 bays of a 1.78 km circuit; Rome garrisons 810 and the best run left
+  542. Scoping it to the bays the storm holds is ~20 lines in `BattleFlow.ts`.
+- **The ram lands 0 blows in 12 of 12 runs.** `gateHp` 1.00, gate never touched, crew down to
+  1 of 32 by t+80. The only implemented way to open Rome's gate. This is a defect, not balance.
+- **The great wall-breaking ram: recommended against.** `spawnGreatRam`, `RamKind.Great`,
+  `WALL_BLOWS = 74`, `strikeCurtain`, `breachBay`, `stormBreach` and the geometry all exist;
+  four seams are missing (no `great-ram-crew` type, no roster entry with both sides at the
+  20-unit cap, `spawnGreatRam` has zero callers, and `CityView.breachWall` is called at
+  `Siege.ts:2856` but not implemented in `CitySystem`). A session across five files — and the
+  *light* ram, fully wired, never lands a blow.
+
+### Open, nobody on them
+- **`Engine.dispose()` has no caller anywhere in `src` or `tools`.** Map switching is a page
+  reload. Both dispose fixes above are correctness in a method the app never reaches.
+- Every isolated model plate is monochrome sepia; the head is a stack of hard-edged boxes with
+  cut-out oval eyes and a faceted nose slab. **Colour and head geometry, not texture.**
+- A descent leaves the wall plan open and the unit `garrisoned`/`owned`, so the next order is
+  read as a traverse and a unit that walked down cannot be sent back up.
+- `moveAlongWall` accepts a run no link reaches and freezes the cohort until `PLAN_TIMEOUT`.
+- `escalade` admits cavalry and wheeled artillery to a ladder's boarding file — 26 horsemen
+  were measured standing on a parapet.
+- Machine crews are offered "Storm the wall here"; the order is emitted and `escalade` discards
+  it at `crewsAMachine`. The UI cannot tell — it needs a `Siege` predicate, as does the tower
+  re-aim hint.
+- `Siege.buildSpine` puts 22 of Rome bay 19's 36 stations inside the gatehouse footprint,
+  6.574 m below the crown on curtain that was never built — 823 of 5,301 garrison shots in
+  240 s, all discarded. `CitySystem.getGateBlock()` is published and waiting for it.
