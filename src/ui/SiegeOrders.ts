@@ -136,7 +136,15 @@ export class SiegeOrders {
   private flash = '';
   private flashOk = true;
   private flashUntil = -1;
-  /** Set on the frame an order is sent, so the probe can assert a click did something. */
+  /**
+   * The last order this HUD sent, kept for as long as its confirmation is on screen.
+   *
+   * Not cleared on the next frame, which is what it used to do and what made it useless: a
+   * mouse click is one frame and anything reading this — a probe, a card, a replay — is
+   * reading it milliseconds later, by which time thirty frames have gone past. It expires
+   * with the flash, because that is the window in which the question "what did I just do"
+   * is being asked.
+   */
   lastOrder: MachineOrderView | null = null;
   /** What the cursor is currently offering, for the probe and for the hint. */
   preview: MachineOrderView | null = null;
@@ -198,7 +206,7 @@ export class SiegeOrders {
    * points read below are written by that call.
    */
   update(ctx: EngineContext, cursor: CursorPoints): void {
-    this.lastOrder = null;
+    if (ctx.time.elapsed >= this.flashUntil) this.lastOrder = null;
     this.preview = null;
     this.stormRefusal = '';
     const probe = this.probe;

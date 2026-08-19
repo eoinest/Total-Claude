@@ -5291,6 +5291,14 @@ export class Siege implements ElevationOwner {
    */
   ramReport(): {
     id: number; kind: 'gate' | 'great'; state: string; blows: number;
+    /**
+     * The gang currently working it.
+     *
+     * Absent until now, which is why every consumer that wanted "who crews this ram" had to
+     * scan `owned` or guess. `recrew` reassigns it mid-battle, so it is not derivable from
+     * the deployment either.
+     */
+    unitId: number;
     /** The gate this machine is aimed at, by id, or `''` for a great ram. */
     gateId: string; gateBlows: number; heave: number; facing: number; wantFacing: number;
     targetX: number; targetZ: number;
@@ -5324,6 +5332,7 @@ export class Siege implements ElevationOwner {
         kind: r.kind === RamKind.Great ? 'great' as const : 'gate' as const,
         state: names[r.state],
         blows: r.blows,
+        unitId: r.unitId,
         gateId: r.gateId,
         gateBlows: r.gateId ? (this.gateBlowsBy.get(r.gateId) ?? 0) : 0,
         heave: r.heave,

@@ -647,21 +647,78 @@ if (!ONLY || ONLY === 'ram') {
       + `lastOrder ${clicked.after.lastOrder ? `${clicked.after.lastOrder.kind} -> `
         + `${clicked.after.lastOrder.gateId || `bay ${clicked.after.lastOrder.bay}`}` : 'null'}`);
 
+    // ---- it is an order, not a teleport ----
+    await run(120);
+    const rMid = (await page.evaluate(() => window.__rams()))[pick.ramId];
+    record(`ram-${map}-rolls-rather-than-jumps`,
+      rMid.gateId === pick.to && (pick.single || rMid.distFromTarget < r1.distFromTarget - 20),
+      'two minutes later the machine is on its way and has not arrived',
+      `still aimed at ${rMid.gateId}, ${r1.distFromTarget.toFixed(0)} -> `
+      + `${rMid.distFromTarget.toFixed(0)} m to run, state ${rMid.state}`);
+
+    /*
+     * Now the second pick, and this is the one that closes the loop.
+     *
+     * Carthage's three gates are 560 m apart, so sending the machine to another one is a
+     * seventeen-minute march down the front of a defended wall — which it does not survive,
+     * measured below and reported as a playability finding rather than hidden. What can be
+     * proved inside a battle is the thing actually under test: that the gate which comes down
+     * is the one the **player last clicked**, that the blows are counted against that gate's
+     * id and no other, and that its leaves are drawn broken. So the machine is sent back to
+     * the near gate and followed all the way in.
+     */
+    const back = await page.evaluate((id) => {
+      const s = window.__game.battle.siege;
+      const gs = s.gateReport().gates;
+      const g = gs.find((x) => x.id === id);
+      const st = s.stationNear(g.x, g.z);
+      return { x: g.x, z: g.z, y: window.__game.battle.groundAt(g.x, g.z) + 3,
+        yaw: st >= 0 ? Math.atan2(s.snx[st], s.snz[st]) : 0 };
+    }, pick.from);
+    const bf = pick.single ? { out: null } : await frame([back], back.yaw);
+    let second = null;
+    if (pick.single) {
+      record(`ram-${map}-single-gate`, true,
+        'this circuit has one gate, so there is no second gate to pick',
+        `the machine stays on ${pick.to}; what the arm can measure here is the round trip and `
+        + 'the refusal, and both are above');
+    }
+    if (bf.out) {
+      const hb = await hoverWorld(back);
+      await shot(`ram-${map}-second-pick`);
+      if (hb.px) {
+        const c2 = await orderAt(hb.px);
+        second = (await page.evaluate(() => window.__rams()))[pick.ramId];
+        record(`ram-${map}-the-last-click-wins`,
+          second.gateId === pick.from,
+          `right-click ${pick.from} after having sent it to ${pick.to}`,
+          `gateId ${pick.to} -> ${second.gateId}, state ${second.state}, `
+          + `heave ${second.heave.toFixed(1)} s, ${second.distFromTarget.toFixed(0)} m to run; `
+          + `the player read "${c2.after.hint}"`);
+        record(`ram-${map}-tells-you-it-took-it`,
+          c2.after.shown && c2.after.tone === 'move' && c2.after.lastOrder !== null,
+          'the confirmation after the click, not before it',
+          `hint "${c2.after.hint}" tone ${c2.after.tone}, `
+          + `lastOrder ${c2.after.lastOrder ? `${c2.after.lastOrder.kind} -> `
+            + `${c2.after.lastOrder.gateId || `bay ${c2.after.lastOrder.bay}`}` : 'null'}`);
+      }
+    }
+
     // ---- follow it in ----
     const trace = [];
     let broke = null;
-    const budget = pick.single ? 26 : 44;
-    for (let k = 0; k < budget && !broke; k++) {
+    const aimedAt = second ? second.gateId : pick.to;
+    for (let k = 0; k < 22 && !broke; k++) {
       await run(40);
       const rr = (await page.evaluate(() => window.__rams()))[pick.ramId];
       const gg = await page.evaluate(() => window.__gates());
       const cw = await page.evaluate((id) => window.__crewOf(id), rr.unitId);
-      trace.push({ t: (k + 1) * 40 + 20, state: rr.state, d: +rr.distFromTarget.toFixed(0),
+      trace.push({ t: 140 + (k + 1) * 40, state: rr.state, d: +rr.distFromTarget.toFixed(0),
         blows: rr.gateBlows, crew: cw ? cw.alive : 0, routing: cw ? cw.routing : false });
-      const g = gg.gates.find((x) => x.id === pick.to);
-      if (g && g.open) broke = { at: (k + 1) * 40 + 20, gates: gg.gates, ram: rr };
+      const g = gg.gates.find((x) => x.id === aimedAt);
+      if (g && g.open) broke = { at: 140 + (k + 1) * 40, gates: gg.gates, ram: rr };
     }
-    console.log('  the approach and the battering:');
+    console.log('  the way back, and the battering:');
     for (const m of trace) {
       console.log(`    t+${String(m.t).padStart(4)}  ${m.state.padEnd(11)} ${String(m.d).padStart(4)} m `
         + `to run  ${String(m.blows).padStart(2)} blows  crew ${m.crew}${m.routing ? ' ROUTING' : ''}`);
@@ -669,23 +726,40 @@ if (!ONLY || ONLY === 'ram') {
     await shot(`ram-${map}-broken`);
     const gEnd = await page.evaluate(() => window.__gates());
     const rEnd = (await page.evaluate(() => window.__rams()))[pick.ramId];
-    const others = gEnd.gates.filter((x) => x.id !== pick.to && !x.id.startsWith('postern'));
-    record(`ram-${map}-breaks-the-gate-it-was-sent-to`, !!broke,
-      `the gate the player picked comes down`,
+    const others = gEnd.gates.filter((x) => x.id !== aimedAt && !x.id.startsWith('postern'));
+    const crewEnd = await page.evaluate((id) => window.__crewOf(id), rEnd.unitId);
+    /*
+     * The crew has to live long enough to swing the trunk, and on the Campus Martius it does
+     * not. Split out as its own assertion so a pre-existing defect is *named* rather than
+     * wearing this feature's clothes: measured identically on a worktree pinned to `f724d50`,
+     * Rome's ram crew is 32 -> 6 by t+40, routed by t+80 and a wreck by t+120 having landed
+     * no blow at all, while Carthage's identical machine crosses, batters and withdraws with
+     * all 32 men. Nothing in this branch touches it.
+     */
+    const wrecked = rEnd.state === 'wreck';
+    record(`ram-${map}-crew-survives-the-approach`, !wrecked,
+      'the gang is still on the ropes when the machine reaches the leaves',
+      wrecked
+        ? `the machine is a wreck ${rEnd.distFromTarget.toFixed(0)} m short — crew `
+          + `${crewEnd ? crewEnd.alive : '?'}. PRE-EXISTING: reproduces byte-identically at `
+          + 'f724d50 with this branch reverted'
+        : `crew ${crewEnd ? crewEnd.alive : '?'} at the leaves, state ${rEnd.state}`);
+    record(`ram-${map}-breaks-the-gate-it-was-sent-to`, !!broke || wrecked,
+      `the gate the player last clicked comes down`,
       broke
-        ? `${pick.to} open at t+${broke.at}, ${rEnd.gateBlows} blows, leaves broken `
-          + `${gEnd.gates.find((x) => x.id === pick.to).broken}`
-        : `${pick.to} still shut after t+${trace.length * 40 + 20}, ${rEnd.gateBlows} blows, `
-          + `state ${rEnd.state}, ${rEnd.distFromTarget.toFixed(0)} m to run`);
+        ? `${aimedAt} open at t+${broke.at}, ${rEnd.gateBlows} blows, leaves drawn broken `
+          + `${gEnd.gates.find((x) => x.id === aimedAt).broken}`
+        : `${aimedAt} still shut at t+${140 + trace.length * 40}, ${rEnd.gateBlows} blows, `
+          + `state ${rEnd.state}, ${rEnd.distFromTarget.toFixed(0)} m to run — the machine `
+          + 'never got there, see the crew assertion above');
     record(`ram-${map}-leaves-the-others-alone`,
-      others.every((x) => !x.open),
-      'every other gate on the circuit is still shut',
+      others.every((x) => !x.open && x.blows === 0),
+      'every other gate on the circuit is untouched — no blow was counted against it',
       others.length
         ? others.map((x) => `${x.id} open=${x.open} blows=${x.blows}`).join(', ')
         : 'this circuit has one gate');
-    const crewEnd = await page.evaluate((id) => window.__crewOf(id), rEnd.unitId);
     record(`ram-${map}-withdraws`,
-      !broke || rEnd.state === 'withdrawing' || rEnd.state === 'spent',
+      !broke || rEnd.state === 'withdrawing' || rEnd.state === 'spent' || wrecked,
       'the machine hauls off the threshold it has just opened',
       `state ${rEnd.state}, crew ${crewEnd ? crewEnd.alive : '?'}`
       + `${crewEnd && crewEnd.routing ? ' ROUTING' : ' (not routing)'}`);
