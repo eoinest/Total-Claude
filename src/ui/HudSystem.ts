@@ -28,6 +28,7 @@ import { Minimap } from './Minimap';
 import { PointerTracker } from './pointer';
 import { SelectionController } from './SelectionController';
 import { SettingsPanel } from './SettingsPanel';
+import { SiegeOrders, type EscaladeOfferView, type MachineOrderView } from './SiegeOrders';
 import { DEFAULT_UI_SCALE } from './theme';
 import { Tooltip } from './Tooltip';
 import { TopBar } from './TopBar';
@@ -59,6 +60,7 @@ export class HudSystem implements Subsystem {
   private ptr!: PointerTracker;
   private overlay!: WorldOverlay;
   private controller!: SelectionController;
+  private siege!: SiegeOrders;
   private cards!: UnitCards;
   private command!: CommandPanel;
   private banners!: Banners;
@@ -160,6 +162,15 @@ export class HudSystem implements Subsystem {
     this.overlay.init(ctx.scene);
 
     this.controller = new SelectionController(this.model, this.overlay, this.ptr);
+    /*
+     * Player command of the siege train.
+     *
+     * Its own object rather than more of `SelectionController`, and its own file: a machine
+     * order is a different verb from a move order, with different refusals and a different
+     * marker. It shares the pointer, the model and the overlay batches, so it costs no draw
+     * call and no second pick. See `SiegeOrders`.
+     */
+    this.siege = new SiegeOrders(this.model, this.overlay, this.ptr);
     // Deliberately NOT anchored to `VFXSystem.standardOf`, which returns the top of the
     // unit's physical cloth standard. That pole stands in rank two — 1.05 m behind the
     // front-rank midpoint, so roughly 3.5 m *in front of* the centre of a nine-rank-deep
@@ -184,6 +195,7 @@ export class HudSystem implements Subsystem {
     // leave the player unable to zoom or rotate wherever the cursor happened to rest.
     this.controller.bannerAt = (x, y) => this.banners.unitAt(x, y);
     this.controller.attach(this.root);
+    this.siege.attach(this.root);
     this.topbar.attach(this.root, ctx);
     this.feed.attach(this.root, ctx);
     // The command plaque is anchored to the top edge of the card bar rather than to a
@@ -313,6 +325,31 @@ export class HudSystem implements Subsystem {
           ? (u) => siege.cancelWallPlan!(u) : undefined,
         releaseEscalade: typeof siege.releaseEscalade === 'function'
           ? (u) => siege.releaseEscalade!(u) : undefined,
+      };
+    }
+
+    /*
+     * And the three verbs the siege train needs, installed the same way and separately.
+     *
+     * Separately because they are optional independently: a build whose `Siege` predates the
+     * machine orders still gets the wall cursor, and one that has them gets both. The whole
+     * of `SiegeOrders` is inert while this is null.
+     */
+    const cmd = siege as unknown as {
+      machineOrderAt?: (u: number, x: number, z: number) => MachineOrderView | null;
+      machineDestinationOf?: (u: number) => MachineOrderView | null;
+      requestMachineOrder?: (u: number, x: number, z: number) => void;
+      escaladeOfferAt?: (u: number, x: number, z: number) => EscaladeOfferView;
+    } | undefined;
+    if (cmd && typeof cmd.machineOrderAt === 'function'
+      && typeof cmd.machineDestinationOf === 'function'
+      && typeof cmd.requestMachineOrder === 'function'
+      && typeof cmd.escaladeOfferAt === 'function') {
+      this.siege.probe = {
+        machineOrderAt: (u, x, z) => cmd.machineOrderAt!(u, x, z),
+        machineDestinationOf: (u) => cmd.machineDestinationOf!(u),
+        requestMachineOrder: (u, x, z) => cmd.requestMachineOrder!(u, x, z),
+        escaladeOfferAt: (u, x, z) => cmd.escaladeOfferAt!(u, x, z),
       };
     }
 
@@ -496,6 +533,9 @@ export class HudSystem implements Subsystem {
       this.overlay.deployZone(z.xMin, z.zMin, z.xMax, z.zMax, this.deployment.frontIsLowZ());
     }
     this.controller.update(ctx, this.heightAt);
+    // After the controller, never before: the three cursor points read here are written by
+    // that call and are one frame stale if this runs first.
+    this.siege.update(ctx, this.controller);
     const hovered = this.model.hoveredId;
     for (const v of this.model.selectedViews) this.overlay.selectionMarker(v);
     if (hovered >= 0 && !this.model.isSelected(hovered)) {

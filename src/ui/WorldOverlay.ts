@@ -414,6 +414,50 @@ export class WorldOverlay {
   }
 
   /**
+   * Where a siege machine is going, or would go if the player clicked here.
+   *
+   * A machine order is not a move order and it must not be drawn like one. A cohort's order
+   * marker says "these men are walking there"; a tower's says "fifteen tonnes of timber is
+   * being levered onto that bay and will be for the next four minutes", and the difference is
+   * the whole reason the player wanted the order in the first place. So this is a berth — a
+   * box the width of the machine's own frontage, squared on the wall, with a dashed lead from
+   * where the machine is standing now — rather than a chevron.
+   *
+   * `ok` false draws it in red and dashes the box as well: a refusal has to be *shown*, not
+   * merely withheld. A tower inside twelve metres of its bay will not be turned, which is
+   * correct and deliberate, and a player who cannot see that they are being refused reads it
+   * as a broken button.
+   *
+   * Into the same two batches as everything else, so it costs triangles and **no draw call**.
+   */
+  machineTarget(
+    fromX: number, fromZ: number, x: number, z: number, y: number,
+    halfW: number, ok: boolean, elevated: boolean
+  ): void {
+    const col = ok ? GOLD : RED;
+    const a = ok ? 0.92 : 0.8;
+    const w = this.px(2.4, 0.9);
+    const batch = elevated ? this.air : this.ground;
+    if (elevated) this.air.levelY = y;
+    const h = Math.max(1.4, halfW);
+    const corners: [number, number][] = [
+      [x - h, z - h], [x + h, z - h], [x + h, z + h], [x - h, z + h],
+    ];
+    for (let i = 0; i < 4; i++) {
+      const [ax, az] = corners[i];
+      const [bx, bz] = corners[(i + 1) % 4];
+      if (ok) batch.segment(ax, az, bx, bz, w, col[0], col[1], col[2], a);
+      else batch.dashed(ax, az, bx, bz, w, Math.max(0.5, h * 0.28), col[0], col[1], col[2], a);
+    }
+    // The lead, always in the air batch: it runs from a machine on the glacis to a berth on
+    // the parapet and the ground batch would bury half of it in the masonry between them.
+    this.air.levelY = elevated ? y : null;
+    this.air.dashed(fromX, fromZ, x, z, this.px(1.8, 0.6), 2.2, col[0], col[1], col[2], 0.5);
+    this.node(x, z, this.px(6, 1.9), col, a);
+    this.air.levelY = null;
+  }
+
+  /**
    * The deployment zone, as a dashed boundary with the front edge drawn solid.
    *
    * Into the *existing* ground batch, so this costs triangles and **no draw call** — the
