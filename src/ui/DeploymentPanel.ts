@@ -145,18 +145,28 @@ export class DeploymentPanel {
   private brief(): string {
     if (this.dep.scenario !== 'assault') return '';
     /*
-     * Its own row, borrowing `.dep-note`'s type but not its warning colour, and `nowrap`.
+     * Its own row, on its own class, styled inline.
      *
      * Not a third line inside `.dep-help`: those are clipped at one line each and this
-     * sentence is twice their length, so it would arrive as an ellipsis. And not wrapped —
-     * the comment over `.dep-help` in `hud.css` records what free-wrapping text did to this
-     * banner once already (346 px of mostly empty panel which, being `interactive`, ate
-     * every right-drag aimed at the ground beneath it). One line, full plaque width, a
-     * height that cannot depend on the text. `hud.css` is another workstream's file this
-     * pass, which is why the three declarations are inline.
+     * sentence is twice their length, so it would arrive as an ellipsis. Not wrapped either
+     * — the comment over `.dep-help` in `hud.css` records what free-wrapping text did to this
+     * banner once already (346 px of mostly empty panel which, being `interactive`, ate every
+     * right-drag aimed at the ground beneath it). One line, full plaque width, a height that
+     * cannot depend on the text.
+     *
+     * And **not** `class="dep-note"`, which is what this was first written as and is the
+     * mistake worth recording: `sync` binds the refusal line with
+     * `this.root.querySelector('.dep-note')`, which takes the *first* match — so the brief
+     * became the refusal element, and the first tick after attach cleared its text and
+     * stripped its `on` class. It rendered for one frame and then vanished, which looked
+     * exactly like markup that had never been emitted.
+     *
+     * `hud.css` belongs to another workstream this pass, so the six declarations are inline
+     * rather than a rule; `.dep-brief` is there for the stylesheet to take over.
      */
-    return `<div class="dep-note on" style="color: rgba(230, 219, 197, 0.86);`
-      + ` white-space: nowrap; overflow: hidden; text-overflow: ellipsis">`
+    return '<div class="dep-brief" style="margin: 0.45em 0.2em 0.1em;'
+      + ' font-family: var(--num); font-size: 0.82em; color: rgba(230, 219, 197, 0.86);'
+      + ' white-space: nowrap; overflow: hidden; text-overflow: ellipsis">'
       + `${objectiveBrief(siegeRole(activeMap().city?.garrison))}</div>`;
   }
 
