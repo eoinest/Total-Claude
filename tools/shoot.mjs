@@ -644,16 +644,91 @@ const SHOTS = {
     // blocks; at 480 m ours were specks on an empty plain, which is a picture of ground.
     cam: { eye: 36, aim: 0, dist: 180, fov: 34 },
   },
+
+  /*
+   * ---------------------------------------------------------------------------
+   * `--set=r6`: the frames the r6 changelog is illustrated with.
+   * ---------------------------------------------------------------------------
+   *
+   * These exist so the pictures in a release note can be re-taken rather than described.
+   * They are not a blind deck and must never be put in one — three of them are chosen to
+   * show one specific fixed defect each, which is exactly the correlation a blind deck is
+   * built to avoid.
+   *
+   * The opening deployment frame and the interface frames are *not* here, deliberately.
+   * Their whole claim is about where the scenario puts the camera and what the HUD says
+   * when it gets there, and this file's job is to put the camera somewhere named. They are
+   * shot by `tools/scratch/r6-openframe.mjs` and `tools/probe-siegehud.mjs`.
+   */
+
+  // Campus Martius, spring 271. `scenario: 'assault'` puts the Juthungi outside the
+  // Aurelian Wall with the ram, and Rome's ballistarii on the parapet above it.
+  // Campus Martius, spring 271. `scenario: 'assault'` puts the Juthungi outside the Aurelian
+  // Wall with the ram, and Rome's ballistarii on the parapet above it. Both frames are at
+  // 09:30 and on the same camera family, so the pair reads as one machine's morning.
+  //
+  // The hour is not decoration. The Aurelian Wall's outer face points north and Rome is at
+  // 41.9N, so that face is in shade at every hour there is — but a camera looking south at it
+  // is looking at the sun, and the first attempt at these frames measured **3.6 degrees off
+  // the sun** and came back as veiled mush. A morning sun is 55 degrees off the same lens.
+  'r6-ram-gate': {
+    // t+150. `64dfb88` measured the machine's schedule once its shed was modelled: at the
+    // leaves by t+100, twenty-six blows, gate open at t+220. Earlier and it is still walking;
+    // later and the leaves are already down.
+    //
+    // `gate: true` matters more here than anywhere else in this file. The Porta Flaminia is
+    // 25 m from the middle of the bay it falls in, and the bay midpoint frames blank curtain.
+    desc: 'R6: the ram at the Porta Flaminia, mid-battery, from outside the gate',
+    scenario: 'assault', hour: 9.5, at: 150,
+    wall: { bay: 0, gate: true, stand: 6, lift: 0, yaw: 'in', yawAdd: -0.30 },
+    cam: { eye: 7, aim: 5, dist: 34, fov: 30 },
+  },
+  'r6-gate-open': {
+    // t+300, closer and wider than `r6-ram-gate`: the subject is no longer the machine but
+    // the hole, so the passage and the roadway have to be in frame and the gatehouse does not.
+    desc: 'R6: the broken gate, the passage open through it',
+    scenario: 'assault', hour: 9.5, at: 300,
+    wall: { bay: 0, gate: true, stand: 6, lift: 0, yaw: 'in', yawAdd: -0.18 },
+    cam: { eye: 6, aim: 4, dist: 26, fov: 36 },
+  },
+
+  /*
+   * The ditch of Carthage, and it took four framings to get a picture of a hole.
+   *
+   * `tools/probe-ditch-ds.mjs` gives the section as numbers and those are what this camera is
+   * placed against. Measured on this tree, the ground is flat at 7.53 m out to d = 8 m from
+   * the wall's centreline, falls to **3.35 m at d = 20**, and is back to 7.45 m by d = 30 — a
+   * 20 m trench with its bed six metres down, which is the section `carthageWall.ts` has been
+   * publishing since before anything cut it.
+   *
+   * Three framings looking *across* it all failed, and they failed for one reason. A ditch
+   * seen square-on from outside is invisible: that is what a ditch is for. From a low eye the
+   * counterscarp occludes the bed; from a high one both banks face the lens and the whole cut
+   * flattens into the tonal band a release note may not pass off as a trench. What works is
+   * looking *along* it from the outer bank, so the two banks converge, the bed holds the
+   * shadow of a low morning sun, and the curtain runs away above it.
+   */
+  'r6-carthage-ditch': {
+    desc: 'R6: along the ditch of Carthage from its outer bank, the curtain above it',
+    map: 'carthage', opponent: 2, scenario: 'assault', hour: 7.7, at: 6, weather: 'clear',
+    // stand 24 m: between the bed at 20 and the outer lip at 30, i.e. on the outer bank.
+    wall: { bay: 6, stand: 24, lift: 0, yaw: 'along', yawAdd: -0.40 },
+    cam: { eye: 6, aim: 0, dist: 45, fov: 32 },
+  },
 };
 
 /** Named shot sets. `--set=deck` is the only pool a blind round should be built from. */
 const SETS = {
   deck: Object.keys(SHOTS).filter((k) => k.startsWith('deck-')),
+  /** The r6 changelog plates. Not a deck — see the block comment above `r6-ram-gate`. */
+  r6: Object.keys(SHOTS).filter((k) => /^r6[ab0-9]*-/.test(k)),
   /** The paired blind instrument, round one. See the block comment above `ab-rome-line`. */
   ab1: Object.keys(SHOTS).filter((k) => k.startsWith('ab-') && !k.startsWith('ab2-')),
   /** Round two, with a matched capture policy. See the block comment above `ab2-rome-line`. */
   ab2: Object.keys(SHOTS).filter((k) => k.startsWith('ab2-')),
-  all: Object.keys(SHOTS).filter((k) => !k.startsWith('deck-') && !k.startsWith('ab-')),
+  // `r6-` is excluded from `all` alongside the decks: it is three release plates, and the
+  // default invocation of this file should keep shooting the graded field set it always has.
+  all: Object.keys(SHOTS).filter((k) => !k.startsWith('deck-') && !k.startsWith('ab-') && !/^r6[ab0-9]*-/.test(k)),
 };
 
 const args = new Map(
@@ -1384,8 +1459,20 @@ try {
             if (!bays || !bays.length) throw new Error('wall camera asked for, but this map has no garrison bays');
             const gateIdx = bays.findIndex((b) => b.isGate);
             const bay = bays[Math.max(0, Math.min(bays.length - 1, (gateIdx < 0 ? 0 : gateIdx) + s.wall.bay))];
-            const mx = (bay.x0 + bay.x1) * 0.5;
-            const mz = (bay.z0 + bay.z1) * 0.5;
+            /*
+             * `gate: true` aims at the gate rather than at the middle of the gate's bay.
+             *
+             * The two are not the same place and on Campus Martius they are 25 m apart: the
+             * Porta Flaminia sits where the Via Flaminia crosses the crest, which is nowhere
+             * near the centre of whichever bay that lands in. `tools/probe-siege.mjs` carries
+             * the same option under the name `subject: 'gate'`, and learned it the same way:
+             * its first ram frame was 1920x1080 of grass. The bay still supplies the outward
+             * normal, the walk height and the crest, because a gate record carries none of
+             * those.
+             */
+            const gateAt = s.wall.gate && city.getGates ? city.getGates()[0] : null;
+            const mx = gateAt ? gateAt.x : (bay.x0 + bay.x1) * 0.5;
+            const mz = gateAt ? gateAt.z : (bay.z0 + bay.z1) * 0.5;
             fx = mx + bay.nx * s.wall.stand;
             fz = mz + bay.nz * s.wall.stand;
 
