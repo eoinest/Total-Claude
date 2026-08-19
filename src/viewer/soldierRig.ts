@@ -22,7 +22,22 @@ import { buildSoldierGeometry, type Lod } from '../units/soldierMesh';
 import {
   buildImpostorGeometry, makeImpostorMaterial, renderImpostorAtlas, type ImpostorAtlas,
 } from '../units/impostor';
+import {
+  CREW_FALL_SIDE, CREW_GROUND_LIFT, CREW_LAND_OUT, CREW_THROW_ARC, CREW_THROW_LEN,
+  CREW_THROW_START, MAN_POSE_VARY,
+} from '../units/UnitRenderSystem';
 import { chainPartsDebug } from './partsDebug';
+
+/**
+ * Eight constants this page used to restate, and now imports.
+ *
+ * `MAN_POSE_VARY` and the six `CREW_*` figures were hand-copied here with comments saying so,
+ * and the copy had drifted: `CREW_FALL_SIDE` read `+1` against the render system's `-1`, so
+ * every carcass frame shot on this page threw the four crew onto the flank the animal rolls
+ * *away* from. `LOD_FRACTION` is imported in `main.ts` for the same reason. Nothing in
+ * `UnitRenderSystem` runs on import — the module's side effects are all inside the class — so
+ * the cost of the dependency is the module graph and nothing else.
+ */
 
 /**
  * Posing one man outside the battle.
@@ -55,50 +70,8 @@ import { chainPartsDebug } from './partsDebug';
 /** Instances per tier. Enough for the widest variance grid (a 6×4 rank) with headroom. */
 const CAP = 48;
 
-/**
- * Pose-variation bone chains, re-derived rather than imported.
- *
- * `MAN_POSE_VARY` in `UnitRenderSystem.ts:263` is module-private and `src/units` is owned by
- * another workstream, so this is the same expression evaluated here. It is derived entirely
- * from exported data (`MAN_RIG`, `MB`, `restPos`, `Piece`), so it cannot silently disagree
- * about bone *indices*; it could only drift if the original changed which chains it varies.
- * The report accompanying this work asks for it to be exported so this copy can go away.
- */
-const MAN_POSE_VARY: PoseVaryBones = {
-  upper: [MB.spineLow, MB.handR],
-  head: [MB.neck, MB.head],
-  leftArm: [MB.clavL, MB.handL],
-  rightArm: [MB.clavR, MB.handR],
-  neckPivot: restPos(MAN_RIG, MB.neck, [0, 0, 0]),
-  leftShoulder: restPos(MAN_RIG, MB.upperArmL, [0, 0, 0]),
-  rightShoulder: restPos(MAN_RIG, MB.upperArmR, [0, 0, 0]),
-  hipY: MAN_RIG.restT[MB.pelvis * 3 + 1],
-  weaponHand: restPos(MAN_RIG, MB.handR, [0, 0, 0]),
-  poleWeapons: [Piece.WeaponSpear, Piece.Pilum, Piece.JavelinBundle],
-  bladeWeapons: [Piece.WeaponSword, Piece.WeaponAxe],
-};
-
 /** Rider clearance above the saddle, metres. Matches `SEAT_RISE` in the render system. */
 const SEAT_RISE = 0.07;
-
-/**
- * The tower crew's fall, restated from `UnitRenderSystem.ts:296-336`.
- *
- * Six module-private constants there, and every one of them is load-bearing for what a
- * player sees for the rest of a battle — a dead elephant and four men lying beside it. A
- * viewer that guessed them would show a different collapse from the one the game runs, which
- * is the failure mode this whole deck exists to prevent, so they are copied exactly and the
- * accompanying report asks for the export. If they ever drift, the symptom is visible in one
- * frame: a crewman standing in mid-air, or landing inside the carcass.
- *
- * `CREW_FALL_SIDE` in particular is hard-coupled to the death clip's own +78 degree roll.
- */
-const CREW_THROW_START = 0.28;
-const CREW_THROW_LEN = 0.22;
-const CREW_THROW_ARC = 0.55;
-const CREW_LAND_OUT = 1.95;
-const CREW_FALL_SIDE = 1;
-const CREW_GROUND_LIFT = 0.15;
 
 /** Scratch for the thrown crew's lie-down quaternion — four per animal per frame. */
 const qCrew = new THREE.Quaternion();
@@ -1167,12 +1140,15 @@ export class SoldierRig {
     const landZ = fromZ - side * sinF + along * cosF;
     const landY = groundY + CREW_GROUND_LIFT;
 
-    const s = t * t * (3 - 2 * t);
-    const x = fromX + (landX - fromX) * s;
-    const z = fromZ + (landZ - fromZ) * s;
-    // A parabola over the straight line, so he clears the animal's back rather than sliding
-    // down it. Zero at both ends by construction.
-    const y = fromY + (landY - fromY) * s + CREW_THROW_ARC * Math.sin(Math.PI * s);
+    // Out fast, down on gravity — the two-easing throw from `UnitRenderSystem.throwCrewman`.
+    // One smoothstep on all three axes starts at zero lateral velocity and let the animal
+    // roll into the man: 0.278 m inside the hide at 33.5 % of the fall, against 0.080 now.
+    const sOut = t * (2 - t);
+    const sDown = t * t;
+    const s = sOut;
+    const x = fromX + (landX - fromX) * sOut;
+    const z = fromZ + (landZ - fromZ) * sOut;
+    const y = fromY + (landY - fromY) * sDown + CREW_THROW_ARC * Math.sin(Math.PI * t);
 
     const outward = e.yaw + (CREW_FALL_SIDE > 0 ? Math.PI / 2 : -Math.PI / 2)
       + (hash01(seed, 83) - 0.5) * 1.1;

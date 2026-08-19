@@ -429,23 +429,47 @@ export function buildElephantGeometry(): THREE.InstancedBufferGeometry {
       ],
       UP, 9, scaleUv, { repeatU: 2, repeatV: 3 }
     );
-    // Chest bib: a sheet across the front of the shoulders, hanging to the knees.
+    /**
+     * Chest bib: scale barding slung across the front of the shoulders.
+     *
+     * It was a **rectangle** — six columns by four rows, 1.04 m wide at the top and 0.88 at
+     * the bottom, with four square corners and a straight hem — bulged over a cylinder. At
+     * any distance that reads as a signboard hung on the animal, which is the fourth thing
+     * the model viewer found and the only one of the four that is visible on a *live*
+     * elephant as much as on a dead one.
+     *
+     * Three changes, none of them a new material: the outline is an ellipse narrowed at the
+     * throat and rounded off at the bottom, so no corner is square; the hem is a row of
+     * pointed lappets, which is how lamellar and mail barding actually terminates and the
+     * same device the chamfron's scalloped edge already uses on this mesh; and the surface
+     * carries a shallow fold across it rather than being a section of a perfect cylinder.
+     */
     b.setBone(EB.withers);
-    const cols = 6;
-    const rows = 4;
+    const cols = 9;
+    const rows = 6;
+    /** Half-width of the bib at parameter t down it, metres. */
+    const bibHalf = (t: number): number => {
+      // An ellipse about a waist at t = 0.42: narrower at the throat where it is slung from
+      // the neck strap, widest across the points of the shoulders, drawn in at the bottom.
+      const e = Math.sqrt(Math.max(0, 1 - ((t - 0.42) / 0.75) ** 2 * 0.62));
+      const round = t < 0.76 ? 1 : 1 - 0.62 * ((t - 0.76) / 0.24) ** 1.7;
+      return 0.56 * e * round;
+    };
+    const bibY = (t: number): number => 2.42 - t * 1.06;
+    const bibZ = (t: number, s: number): number => {
+      const bulge = Math.sqrt(Math.max(0, 1 - s * s)) * 0.20;
+      // One shallow fold across the sheet, so it is cloth over mail and not a lathe section.
+      const fold = 0.018 * Math.cos(s * Math.PI * 2.6) * Math.sin(t * Math.PI);
+      return withers[2] + 0.26 + bulge + fold - t * 0.10;
+    };
     const grid: number[][] = [];
     for (let r = 0; r < rows; r++) {
       const t = r / (rows - 1);
       const row: number[] = [];
       for (let cI = 0; cI < cols; cI++) {
         const s = (cI / (cols - 1)) * 2 - 1;
-        const halfW = 0.52 - t * 0.08;
-        const x = s * halfW;
-        const y = 2.36 - t * 1.02;
-        const bulge = Math.sqrt(Math.max(0, 1 - s * s)) * 0.20;
-        const z = withers[2] + 0.26 + bulge - t * 0.10;
-        const [u, v] = MeshBuilder.tileUvWrapped(scaleUv, (s + 1) * 0.5, t, 2, 2);
-        row.push(b.vert(x, y, z, s * 0.6, 0.1, 0.79, u, v));
+        const [u, v] = MeshBuilder.tileUvWrapped(scaleUv, (s + 1) * 0.5, t, 2, 3);
+        row.push(b.vert(s * bibHalf(t), bibY(t), bibZ(t, s), s * 0.6, 0.1, 0.79, u, v));
       }
       grid.push(row);
     }
@@ -455,15 +479,57 @@ export function buildElephantGeometry(): THREE.InstancedBufferGeometry {
         b.quad(grid[r][cI], grid[r + 1][cI], grid[r + 1][cI + 1], grid[r][cI + 1]);
       }
     }
+    // The lappets. Four pointed tabs off the hem, alternating length so the bottom edge is
+    // not a straight line — the same reason the chamfron's lower edge is scalloped.
+    {
+      const last = grid[rows - 1];
+      for (let cI = 0; cI < cols - 1; cI++) {
+        const s0 = (cI / (cols - 1)) * 2 - 1;
+        const s1 = ((cI + 1) / (cols - 1)) * 2 - 1;
+        const sm = (s0 + s1) * 0.5;
+        const drop = 0.10 + (cI % 2 === 0 ? 0.07 : 0.02);
+        const [u, v] = MeshBuilder.tileUvWrapped(scaleUv, (sm + 1) * 0.5, 1, 2, 3);
+        const tip = b.vert(
+          sm * bibHalf(1) * 0.94, bibY(1) - drop, bibZ(1, sm) - 0.012,
+          sm * 0.5, -0.35, 0.79, u, v
+        );
+        b.tri(last[cI], last[cI + 1], tip);
+        b.tri(last[cI + 1], last[cI], tip);
+      }
+    }
   }
 
   // =========================================================================
   // Caparison and girth
   // =========================================================================
-  // The dyed cloth the tower sits on, hanging down both flanks. Takes the dyed-cloth tint
-  // slot rather than the atlas untouched, for exactly the reason `horseMesh.ts` gives about
-  // its saddle blanket: an untinted wool tile is a near-white slab and would be the brightest
-  // thing on the animal, which is a job the chamfron already has.
+  /**
+   * The dyed cloth the tower sits on, hanging down both flanks.
+   *
+   * ## What it replaces, and what was actually wrong
+   * The reported defect was "the howdah separates from the back, leaving daylight under the
+   * caparison", and the cause on record was "a rigid `barrel`/`loin` bind against the hide's
+   * skinning". **That is provably not the mechanism.** Nothing but `root` carries a rotation
+   * track on the spine in any elephant clip, and a track's delta accumulates unchanged down
+   * the chain, so `croup`, `loin`, `barrel` and `withers` all hold *identical* skinning
+   * transforms on every frame of every clip. Skinning the tower's own vertices with
+   * `barrel 0.72 / loin 0.28` and with `barrel` alone differs by **0.000000 m at all 26
+   * frames of the death clip** (`tools/scratch/carc-gap-entry.ts` runs that control). The
+   * bind could not open a gap and never did.
+   *
+   * What opens the gap is this piece of geometry. It used to be **two rings and six columns
+   * — five quads** — spanning z −0.77 to +1.01 at a fixed 0.70 m radius, so:
+   *   - between its two end rings it was a straight ruled tent over a barrel that tapers,
+   *     and its ends were hard straight edges standing 60-80 mm proud of the flank;
+   *   - it stopped short of the tower fore and aft, so from the side there was nothing
+   *     between the platform's underside and the sky;
+   *   - and at the equator it dropped a flat 0.34 m skirt with a horizontal hem, which is
+   *     the "caparison hanging in the air" in the report.
+   *
+   * It is now a drape on **the hide's own stations**: same z, same axis height, same radii
+   * plus 30 mm of clearance, and each station bound to the bone the hide uses there. It runs
+   * z −1.15 to +1.15, past both ends of the tower, and hangs a scalloped skirt that is
+   * deepest amidships. Cloth, so both windings.
+   */
   {
     // `Tint.Tunic`, not `Tint.Focale`. Focale is the neck-scarf palette and the shader picks
     // it from a hash, which put a bright gold sheet over every animal — by a wide margin the
@@ -471,37 +537,92 @@ export function buildElephantGeometry(): THREE.InstancedBufferGeometry {
     // cloth under the tower is a dark dyed drape. `Tunic` is the slot `pushElephant` writes
     // the per-animal Punic crimson into.
     b.setPiece(ElephantPiece.Tower, Tint.Tunic);
-    b.setBone(HOWDAH_BONES.bone0, HOWDAH_BONES.bone1, HOWDAH_BONES.weight0);
-    const across = [-86, -52, -18, 18, 52, 86];
-    const rows: [number, number][] = [[-0.92, 0], [0.86, 0]];
-    const cols = across.map((deg) => {
-      const a = (deg * Math.PI) / 180;
-      return { s: Math.sin(a), k: Math.cos(a) };
+    /**
+     * One station per ring, read off the hide sweep above rather than invented.
+     *
+     * `cy`, `rx` and `ry` are the hide's own axis height and half-widths at that z — linearly
+     * interpolated between its nodes where a station falls between two — and `bone`/`w` is
+     * the bind that ring of hide carries. Copying them is the whole point: cloth that is
+     * everywhere 30 mm off the animal cannot show daylight against it.
+     */
+    const drape: readonly {
+      z: number; cy: number; rx: number; ry: number;
+      bone: number; bone2?: number; w?: number;
+    }[] = [
+      { z: -1.15, cy: 2.514, rx: 0.622, ry: 0.607, bone: EB.croup, bone2: EB.loin, w: 0.5 },
+      { z: -0.60, cy: 2.540, rx: 0.660, ry: 0.620, bone: EB.loin },
+      { z: 0.15, cy: 2.540, rx: 0.680, ry: 0.660, bone: EB.barrel },
+      { z: 0.535, cy: 2.590, rx: 0.670, ry: 0.660, bone: EB.barrel, bone2: EB.withers, w: 0.5 },
+      { z: 0.920, cy: 2.640, rx: 0.640, ry: 0.640, bone: EB.withers },
+      { z: 1.150, cy: 2.586, rx: 0.586, ry: 0.586, bone: EB.withers },
+    ];
+    /** Clearance off the hide, metres — cloth, not a second skin. */
+    const CLOTH = 0.03;
+    /** Where the drape stops hugging and starts hanging free, as a fraction of the span. */
+    const HANG = 0.78;
+    const COLS = 11;
+    const grid: number[][] = drape.map((st, r) => {
+      const ti = r / (drape.length - 1);
+      // Deepest amidships, shorter over the croup and the shoulder, with a scallop so the
+      // hem is not a straight line down the animal.
+      const drop = (0.30 + 0.22 * Math.sin(Math.PI * ti)) * (1 + 0.10 * Math.cos(r * 2.3));
+      b.setBone(st.bone, st.bone2 ?? st.bone, st.bone2 === undefined ? 1 : (st.w ?? 0.5));
+      const row: number[] = [];
+      for (let cI = 0; cI < COLS; cI++) {
+        const s = (cI / (COLS - 1)) * 2 - 1;
+        const u = Math.max(-1, Math.min(1, s / HANG));
+        const a = u * 1.676;
+        let x = (st.rx + CLOTH) * Math.sin(a);
+        let y = st.cy + (st.ry + CLOTH) * Math.cos(a);
+        const over = Math.max(0, Math.abs(s) - HANG) / (1 - HANG);
+        if (over > 0) {
+          y -= over * drop;
+          x += Math.sign(s) * over * 0.035;
+        }
+        const nx = Math.sin(a);
+        const ny = over > 0 ? Math.cos(a) * 0.4 : Math.cos(a);
+        const [uu, vv] = MeshBuilder.tileUvWrapped(clothUv, (s + 1) * 0.5, ti, 3, 2);
+        row.push(b.vert(x, y, st.z, nx, ny, 0, uu, vv));
+      }
+      return row;
     });
-    const grid = rows.map(([dz], r) => cols.map((pt, cI) => {
-      // Follow the barrel's own cross-section 25 mm off it, and hang a good way down the
-      // flank: the drape is what hides the join between a rigid tower and a moving animal.
-      const edge = cI === 0 || cI === cols.length - 1 ? 0.34 : 0;
-      const x = (0.70) * pt.s;
-      const y = barrel[1] - 0.20 + 0.70 * pt.k - edge;
-      const [u, v] = MeshBuilder.tileUvWrapped(clothUv, cI / (cols.length - 1), r, 2, 1);
-      return b.vert(x, y, barrel[2] + dz, pt.s, pt.k, 0, u, v);
-    }));
-    for (let cI = 0; cI < cols.length - 1; cI++) {
-      b.quad(grid[0][cI], grid[0][cI + 1], grid[1][cI + 1], grid[1][cI]);
-      b.quad(grid[0][cI], grid[1][cI], grid[1][cI + 1], grid[0][cI + 1]);
+    for (let r = 0; r < grid.length - 1; r++) {
+      for (let cI = 0; cI < COLS - 1; cI++) {
+        b.quad(grid[r][cI], grid[r][cI + 1], grid[r + 1][cI + 1], grid[r + 1][cI]);
+        b.quad(grid[r][cI], grid[r + 1][cI], grid[r + 1][cI + 1], grid[r][cI + 1]);
+      }
     }
-    // Two girth ropes over the caparison, which is what actually holds a howdah on.
+
+    /**
+     * Two girth ropes over the caparison, which is what actually holds a howdah on.
+     *
+     * They used to be a *straight vertical ribbon* 1.44 m wide and 90 mm thick driven
+     * through the animal — `rx: 0.72` on a two-node sweep — so all that was ever visible of
+     * a rope was the two slivers where a flat plate emerged from a round back, at 90 degrees
+     * to it. On the carcass, where the whole flank is presented, they read as a pair of
+     * striped fins. Each is now a 70 mm tube following the drape's own section.
+     */
     b.setPiece(ElephantPiece.Tower, Tint.Atlas);
-    for (const gz of [-0.62, 0.58]) {
-      b.setBone(EB.barrel);
-      b.sweep(
-        [
-          { p: [0, barrel[1] + 0.50, barrel[2] + gz], rx: 0.72, rz: 0.045 },
-          { p: [0, barrel[1] - 0.92, barrel[2] + gz], rx: 0.72, rz: 0.045 },
-        ],
-        [0, 0, 1], 8, ropeUv
-      );
+    for (const gz of [-0.47, 0.73]) {
+      // Nearest drape station, so the strap lies on the cloth rather than intersecting it.
+      let st = drape[0];
+      for (const d of drape) if (Math.abs(d.z - gz) < Math.abs(st.z - gz)) st = d;
+      b.setBone(st.bone, st.bone2 ?? st.bone, st.bone2 === undefined ? 1 : (st.w ?? 0.5));
+      const N = 11;
+      const nodes = [];
+      for (let i = 0; i < N; i++) {
+        const a = ((i / (N - 1)) * 2 - 1) * 1.83;
+        nodes.push({
+          p: [
+            (st.rx + CLOTH + 0.045) * Math.sin(a),
+            st.cy + (st.ry + CLOTH + 0.045) * Math.cos(a),
+            gz,
+          ] as [number, number, number],
+          rx: 0.035,
+          rz: 0.035,
+        });
+      }
+      b.sweep(nodes, [0, 0, 1], 5, ropeUv, { repeatV: 3 });
     }
   }
 

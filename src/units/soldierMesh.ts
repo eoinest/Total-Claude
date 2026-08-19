@@ -71,6 +71,20 @@ function socket(
   return new THREE.Matrix4().compose(bonePos(bone), boneQuat(bone), ONE).multiply(local);
 }
 
+/**
+ * Where a bone actually is at an instant of a clip, in the same posed space `socket` works in.
+ *
+ * `socket` places one object against one bone. A bowstring has to reach from the piece
+ * bound to the *bow* hand to the fingers of the *draw* hand, which is a different bone, so
+ * it needs the separation between the two — measured, not guessed. Reading it from the clip
+ * means the string still lands on the fingers if the archery pose is ever re-authored.
+ */
+function posedBonePos(clipName: string, t: number, bone: number): THREE.Vector3 {
+  const clip = MAN_CLIP_SET.clips[MAN_CLIP_SET.index(clipName)];
+  sampleGlobals(MAN_RIG, clip, t, poseQ, poseT);
+  return new THREE.Vector3(poseT[bone * 3], poseT[bone * 3 + 1], poseT[bone * 3 + 2]);
+}
+
 const DEG = Math.PI / 180;
 const euler = (x: number, y = 0, z = 0): THREE.Euler => new THREE.Euler(x * DEG, y * DEG, z * DEG, 'XYZ');
 
@@ -1542,25 +1556,130 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
   }
 
   // Composite recurve bow in the left hand, referenced at full draw.
-  const bowM = socket('drawBow', 0.6, MB.handL, new THREE.Vector3(0, 0, 0), euler(0, 0, 0));
+  //
+  // **This was three or five axis-aligned boxes per limb, stepped along a curve and none of
+  // them rotated to follow it**, so the stave was a staircase with a corner at every joint —
+  // "segmented squares" is exactly what it was. Raising the step count could not fix it; it
+  // only makes smaller stairs. A limb is a swept solid and has to be built as one, with its
+  // cross-section carried on the frame of the curve's own tangent. `MeshBuilder.sweep` does
+  // that (`tube` does not — its rings are always horizontal, so a curved `tube` is the same
+  // bug with rounder corners).
+  //
+  // Three more faults fell out of reading the old block against the pose it is socketed to:
+  //
+  //  - **The recurve was dead code.** `Math.max(0, t - 0.78)` with `t = i / seg` reaches
+  //    0.02 once at LOD0 and *never fires at all* at LOD1, so the "tip kicks forward again"
+  //    term was worth 10 mm on one box and nothing anywhere else. The bow was a plain arc.
+  //  - **The bow was on backwards.** Sampled from the clip, the bow hand stands 0.50 m
+  //    forward of the head and the draw hand 0.08 m behind it, so in the socket's space
+  //    **+Z is the target and -Z is the archer**. The old limbs bowed to z -0.095, i.e. into
+  //    the archer's face, and the string sat at z +0.055 on the target side. A braced bow is
+  //    the other way round: the belly and the string face the shooter and the limbs reflex
+  //    away from him. Both are now the correct way about.
+  //  - **The string never touched the bow.** It was a 1.16 m bar down the middle at z +0.055
+  //    while the tips sat at z -0.065, so it floated 120 mm clear of both nocks.
+  //
+  // The stave is authored as one continuous sweep from the lower nock through the grip to
+  // the upper nock — no seam at the riser, and a taper from a deep 22 x 34 mm handle section
+  // through a wide, thin 24 x 17 mm working limb to a stiff 7 x 10 mm siyah. A bow of one
+  // thickness end to end reads as a rod.
+  const nockOffset = posedBonePos('drawBow', 0.6, MB.handR)
+    .sub(posedBonePos('drawBow', 0.6, MB.handL));
+  // Yaw the whole piece so the bow's own plane contains the arrow. The archery clip is a
+  // side-on stance, so the draw runs 26 degrees off the man's facing; with the socket left
+  // at identity the string would have had to leave the bow plane to reach his fingers.
+  const nockReach = Math.hypot(nockOffset.x, nockOffset.z);
+  const bowM = socket(
+    'drawBow', 0.6, MB.handL, new THREE.Vector3(0, 0, 0),
+    new THREE.Euler(0, Math.atan2(-nockOffset.x, -nockOffset.z), 0, 'XYZ')
+  );
   b.setBone(MB.handL).setMatrix(bowM);
   b.setPiece(Piece.WeaponBow, Tint.Atlas);
   {
-    const seg = d.fine ? 5 : 3;
-    for (const s of [-1, 1]) {
-      for (let i = 0; i < seg; i++) {
-        const t = i / seg;
-        const y = s * (0.08 + t * 0.5);
-        // Limb sweeps back, then the recurved tip kicks forward again.
-        const z = -0.02 - Math.sin(t * Math.PI * 0.9) * 0.075 + Math.max(0, t - 0.78) * 0.5;
-        b.box(0, y, z, 0.02, 0.6 / seg + 0.01, 0.026 - t * 0.008, boneUv);
-      }
-    }
-    b.box(0, 0, -0.015, 0.028, 0.17, 0.035, leatherUv);
+    // Half a limb, grip centre to nock: y up the limb, z toward the target, `rx` the lateral
+    // half-width and `rz` the half-depth through the belly.
+    //
+    // **A composite recurve is three stiff-soft-stiff sections and it is the stiff ones that
+    // make it recognisable.** The first cut of this was one smooth curve from grip to nock
+    // and it photographed as a plain hoop — a bow-shaped loop rather than a bow. So: a rigid
+    // riser at the bottom, a working limb that does all the bending, and a **straight** siyah
+    // for the last 210 mm (the last three nodes are exactly collinear, at 60 degrees off the
+    // limb axis). That straight kicked-back tip is the read.
+    //
+    // The tips stand 380 mm back from the riser, which is a bow well into its draw rather
+    // than at brace. That is deliberate and it is a compromise stated rather than hidden: the
+    // clip's own draw is 0.65 m against a 1.05 m bow, and a *physically* exact full draw
+    // would put the nocks at z -0.53, so deep that the bow reads as a hoop again in the
+    // poses — march, idle, flee, death — where the same rigid piece is also drawn. 380 mm
+    // leaves the string 13 % longer than the stave could really hold and nothing in the game
+    // can measure that; a hoop is visible from fifty metres.
+    const limb = [
+      { y: 0.000, z: 0.012, rx: 0.0110, rz: 0.0180 },
+      { y: 0.070, z: 0.020, rx: 0.0125, rz: 0.0105 },
+      { y: 0.150, z: 0.014, rx: 0.0125, rz: 0.0085 },
+      { y: 0.235, z: -0.014, rx: 0.0118, rz: 0.0080 },
+      { y: 0.320, z: -0.070, rx: 0.0100, rz: 0.0080 },
+      { y: 0.400, z: -0.166, rx: 0.0080, rz: 0.0095 },
+      { y: 0.462, z: -0.273, rx: 0.0062, rz: 0.0090 },
+      { y: 0.524, z: -0.380, rx: 0.0035, rz: 0.0055 },
+    ];
+    // LOD1 keeps the two ends of the siyah and drops its middle — which is free, because the
+    // siyah is straight — plus two nodes out of the shallowest part of the working limb.
+    // Dropping alternate nodes across the whole limb instead leaves a 33 degree kink at the
+    // elbow, which is the defect this whole change exists to remove.
+    const keep = d.fine ? [0, 1, 2, 3, 4, 5, 6, 7] : [0, 2, 4, 5, 7];
+    const half = keep.map((i) => limb[i]);
+    const stave = [
+      ...half.map((n) => ({ ...n, y: -n.y })).reverse(),
+      ...half.slice(1),
+    ];
+    b.sweep(
+      stave.map((n) => ({ p: [0, n.y, n.z] as [number, number, number], rx: n.rx, rz: n.rz })),
+      // Up is +Z, so the frame's lateral axis stays on X and its in-plane axis rotates with
+      // the tangent. The tangent never comes within 20 degrees of Z, so it cannot degenerate.
+      [0, 0, 1],
+      d.fine ? 5 : 4,
+      boneUv,
+      // One `Mat.Bone` tile per 0.20 m of stave. The old boxes mapped a whole 256 px tile
+      // onto each 130 mm block, which made the bow **the worst-sampled surface on the man**
+      // — 12,800 texels/m across the limb against a quiver's 7,470 and bare legs' 570. This
+      // is 4,398 around and 1,254 along, inside the range everything else on him sits in.
+      { ...tileRepeat(stave, Mat.Bone), capStart: true, capEnd: true }
+    );
+    // The grip wrap. This was a box and it was kept as a box on the first cut of this change,
+    // on the reasoning that it is 30 mm across and held inside a closed fist — but the
+    // isolated plate settles it: against a swept stave a 150 mm slab with square corners is
+    // the loudest thing in the frame, and it is the same complaint the limbs had. Eight
+    // triangles for a three-node sweep that follows the riser is a trade worth making.
+    b.sweep(
+      [
+        { p: [0, -0.078, limb[1].z], rx: 0.0140, rz: 0.0135 },
+        { p: [0, 0.000, limb[0].z], rx: 0.0160, rz: 0.0230 },
+        { p: [0, 0.078, limb[1].z], rx: 0.0140, rz: 0.0135 },
+      ],
+      [0, 0, 1], d.fine ? 5 : 4, leatherUv
+    );
     if (d.medium) {
-      // String, near enough straight — a drawn string cannot be baked into a rigid mesh.
-      b.setPiece(Piece.WeaponBow, Tint.Atlas);
-      b.box(0, 0, 0.055, 0.006, 1.16, 0.006, ropeUv);
+      // The string, as the two straight runs a drawn string actually makes: nock groove to
+      // the fingers, fingers to the other nock groove. The old comment said "a drawn string
+      // cannot be baked into a rigid mesh" — but the *whole piece* is baked at full draw, the
+      // same convention the gladius (maximum thrust extension) and the spear (march) use, so
+      // the draw hand is at a fixed offset from the bow hand and the nock is a constant.
+      //
+      // Two three-sided prisms cost 12 triangles, which is exactly what the one straight bar
+      // cost, and 8 fewer vertices. There is no cheaper correct answer, so there was nothing
+      // to trade off.
+      const tip = half[half.length - 1];
+      const nock: [number, number, number] = [0, nockOffset.y, -nockReach];
+      for (const s of [-1, 1]) {
+        b.sweep(
+          [
+            { p: [0, s * tip.y, tip.z], rx: 0.004, rz: 0.004 },
+            { p: nock, rx: 0.004, rz: 0.004 },
+          ],
+          [1, 0, 0], 3, ropeUv
+        );
+      }
     }
   }
   b.setMatrix(null);
