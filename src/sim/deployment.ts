@@ -542,9 +542,20 @@ export class DeploymentSystem implements Subsystem {
   // Adding and removing
   // -------------------------------------------------------------------------
 
-  /** Roster rows this side may field, straight from the pre-battle vocabulary. */
+  /**
+   * Roster rows this side may field, straight from the pre-battle vocabulary.
+   *
+   * The map has to go with it. `rosterFor` defaults `mapId` to the campaign's own map, and
+   * Rome plays both sides of an assault, so without it the storm of Carthage handed the
+   * besieger **the Aurelian Wall's garrison list** — measured in play: the ADD UNITS palette
+   * on Carthage offered `ballistarii` and `wall-slingers`, which are wall troops in an army
+   * that has no wall, and offered neither the tower parties, ladder parties, ram crew,
+   * batteries nor cavalry the pre-battle menu had just let the player buy. `headroom` refuses
+   * anything outside this list, so the whole siege train was unreachable in the one phase
+   * that exists to arrange it.
+   */
   roster(): readonly string[] {
-    return rosterFor(this.playerFaction, this.scenario);
+    return rosterFor(this.playerFaction, this.scenario, this.config?.map);
   }
 
   /** How many of this type are on the field. */

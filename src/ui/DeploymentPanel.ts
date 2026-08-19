@@ -59,10 +59,10 @@ export class DeploymentPanel {
            <i class="dep-zone"></i>
          </span>
          <span class="dep-help">
-           <span><em>Left-click</em> a unit, <em>right-drag</em> to stand it there — the drag
+           <span><em>Left-click</em> a unit, <em>right-drag</em> to stand it there &mdash; the drag
              sets the facing and the frontage</span>
-           <span><em>Z X C V B</em> formation &middot; <em>Delete</em> removes &middot;
-             drop on the parapet to man the wall</span>
+           <span><em>Z X C V B</em> formation &middot; <em>Delete</em> removes${
+             this.dep.zone.wall ? ' &middot; drop on the parapet to man the wall' : ''}</span>
          </span>
          <span class="dep-tally"></span>
          <button type="button" class="dep-add">ADD UNITS</button>

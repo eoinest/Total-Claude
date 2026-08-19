@@ -295,13 +295,47 @@ export class BattleFlow {
      */
     const foe = getOpposingFaction();
 
-    const reasonText: Record<string, string> = {
-      annihilation: 'By annihilation — no formed body of the enemy remains',
-      rout: 'By rout — the enemy has quit the field',
-      timeout: 'The light has gone; both armies still stand',
-      objective: 'By objective — the ground that mattered has been taken',
-      stalemate: 'Neither army will close again; the field has gone quiet',
-      repulsed: 'The storm is thrown back — the parapet is still held',
+    /**
+     * The reason, from the player's own side of the field.
+     *
+     * Every line here used to be written from the winner's mouth and printed under whichever
+     * verdict came out, so a storm of Carthage that ended with fourteen of twenty Roman units
+     * broken and the army streaming away read **"Defeat — by rout, the enemy has quit the
+     * field"**. Four of the six reasons name a side; a draw names neither, so it takes the
+     * neutral column whoever the player is.
+     */
+    const side = victor < 0 ? 2 : player ? 0 : 1;
+    const reasonText: Record<string, readonly [string, string, string]> = {
+      annihilation: [
+        'By annihilation — no formed body of the enemy remains',
+        'By annihilation — no formed body of ours remains',
+        'By annihilation — neither army has a formed body left',
+      ],
+      rout: [
+        'By rout — the enemy has quit the field',
+        'By rout — our army has quit the field',
+        'By rout — the field has emptied',
+      ],
+      timeout: [
+        'The light has gone; both armies still stand',
+        'The light has gone; both armies still stand',
+        'The light has gone; both armies still stand',
+      ],
+      objective: [
+        'By objective — the ground that mattered has been taken',
+        'By objective — the ground that mattered has been lost',
+        'By objective — the ground that mattered is still contested',
+      ],
+      stalemate: [
+        'Neither army will close again; the field has gone quiet',
+        'Neither army will close again; the field has gone quiet',
+        'Neither army will close again; the field has gone quiet',
+      ],
+      repulsed: [
+        'The storm is thrown back — the parapet is still held',
+        'The storm is thrown back — the parapet held against us',
+        'The storm is thrown back — the parapet is still held',
+      ],
     };
 
     const column = (f: Faction): string => {
@@ -374,7 +408,7 @@ export class BattleFlow {
          <button class="rs-x interactive" type="button" title="Dismiss (Esc)" aria-label="Dismiss">&times;</button>
          <div class="rs-head">
            <div class="rs-verdict ${verdict.toLowerCase()}">${verdict}</div>
-           <div class="rs-reason">${reasonText[reason] ?? reason}</div>
+           <div class="rs-reason">${reasonText[reason]?.[side] ?? reason}</div>
            <div class="rs-clock">${fmtClock(tally?.at ?? ctx.time.simTime)} on the field</div>
          </div>
          <div class="rs-body">
