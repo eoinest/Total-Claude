@@ -313,6 +313,32 @@ const PASSAGE_UNDER_GALLERY = 0.4;
 const PASSAGE_REVEAL = 0.06;
 /** Dressed surround each side of a postern's arch, inside the cut and therefore visible. */
 const PASSAGE_SURROUND = 0.3;
+/**
+ * How far behind the outer mouth a postern's leaves hang, and how thick they are.
+ *
+ * **A postern is a sally door and it is shut.** For two releases it was an aperture: r4
+ * found the eight of them cut out of the collision surface and not out of the stone, r5 cut
+ * the stone — and nothing was ever hung in the resulting doorway, so the curtain carried
+ * eight 6 m openings you could see the far ground through and walk a column down. That is
+ * what `WallCut.faceEnds`'s own note meant by *"True at a postern, which has nothing else to
+ * close it"*: it was describing the defect and reading as a design decision.
+ *
+ * 1.6 m of the 9.1 m passage is the same fifth-of-the-depth the Porta Byrsae's leaves hang
+ * at (3.4 m of 16.6). Deeper than the mouth's own 1.1 m reveal, so the leaf stands in shadow
+ * behind a dressed arch rather than flush in it, and far enough forward to be legible from
+ * the field — which is the point of shutting a thing where the player can see it.
+ */
+const POSTERN_DOOR_SET = 1.6;
+const POSTERN_DOOR_T = 0.22;
+/**
+ * How far below the void's own floor the leaf is carried.
+ *
+ * The ground under a 6 m opening is not level — the void's floor is cut to `lowGround - 1.8`
+ * for exactly that reason — so a leaf whose sill sat at `groundY` would stand clear of the
+ * dip at one jamb and leave a slot under itself. It starts at the lowest ground the void was
+ * cut against, less this, and the terrain buries the surplus.
+ */
+const POSTERN_DOOR_BURY = 0.3;
 
 // ---------------------------------------------------------------------------
 // Towers, gate and ramps
@@ -1169,9 +1195,11 @@ export function buildCarthageWall(
       /**
        * §4.4: an access block at every second tower. Towers stand at every other bay, so
        * that is every fourth — 118.7 m at this pitch, which is the spec's 118 to a metre.
-       * Posterns take `% 8 === 5` so the two cadences never land on one bay and cost each
+       * Posterns take `% 8 === 6` so the two cadences never land on one bay and cost each
        * other a door; before that split, half the access blocks were being suppressed and
-       * the enterable gallery was reachable only every 297 m.
+       * the enterable gallery was reachable only every 297 m. (This comment said `=== 5`
+       * for three releases after the cadence moved above at r5's `8213709`, which is the
+       * cheapest possible way to send the next reader to the wrong bays.)
        */
       entranceAt: bay.index % 4 === 3 ? f.len * 0.5 : null,
     };
@@ -1288,10 +1316,12 @@ export function buildCarthageWall(
    * The voids, derived once and hung on the bay for everything that has to agree with them.
    *
    * A bay carries at most one: the gate cadence and the postern cadence are disjoint by
-   * construction, and `assertPassages` says so out loud rather than leaving it to be
-   * believed. Both go through `cutFaults` so a passage that cannot be cut — an arch taller
-   * than the wall that carries it, a mouth narrower than a man — is reported on the output
-   * beside the section's own arithmetic instead of silently drawing nothing.
+   * construction, and the `set` helper below says so out loud rather than leaving it to be
+   * believed. (It was called `assertPassages` in this comment and has never existed under
+   * that name anywhere in the tree.) Both go through `cutFaults` so a passage that cannot
+   * be cut — an arch taller than the wall that carries it, a mouth narrower than a man — is
+   * reported on the output beside the section's own arithmetic instead of silently drawing
+   * nothing.
    */
   const cutFaults: string[] = [];
   {
@@ -1376,11 +1406,37 @@ export function buildCarthageWall(
     for (const bay of bays) {
       const cut = bay.cut;
       if (!cut) continue;
-      // A void wider than the bay, or one whose soffit is under the plinth it is cut
-      // through, is a hole beside the opening rather than an opening. Rome lost 23 m of
-      // curtain that way and the lesson was to say so at build time.
-      if (cut.at - cut.half < 0.5 || cut.at + cut.half > bay.frame.len - 0.5) {
-        cutFaults.push(`${cut.id} is cut past the end of bay ${bay.index}`);
+      /**
+       * A void wider than the bay, or one whose soffit is under the plinth it is cut
+       * through, is a hole beside the opening rather than an opening. Rome lost 23 m of
+       * curtain that way and the lesson was to say so at build time.
+       *
+       * **Two conditions, said apart, because one of them was crying wolf.** This was a
+       * single test at a 0.5 m margin reporting `is cut past the end of bay N`, and
+       * Carthage has printed `porta-uticensis is cut past the end of bay 50` at every boot
+       * since. It is not. Measured: bay 50 is 30.029 m long, the gate axis lands at
+       * `at = 27.255`, and a 5.2 m carriageway therefore ends at 29.855 — **0.174 m inside
+       * the bay**, not past it. The void is whole, the panels either side of it are whole,
+       * and the 0.17 m rib of tufa left at the joint stands inside a 30 m gatehouse where
+       * nothing can see it. What tripped was the *margin*, which is a different sentence.
+       *
+       * The margin is still worth having and is still reported: 0.17 m of clearance is one
+       * retune of `pitch` or `GATE_PASS_W` away from a clipped carriageway, and the reason
+       * the gate lands there at all is that `gateAxes` clamps x into the frontage and then
+       * floors it into a bay without ever asking where in that bay it fell. But a warning
+       * that misstates its own finding gets read once and discounted for ever, so the hard
+       * fault and the near miss now say what each of them actually is.
+       */
+      const over = Math.max(0 - (cut.at - cut.half), cut.at + cut.half - bay.frame.len);
+      if (over > 0) {
+        cutFaults.push(
+          `${cut.id} is cut ${over.toFixed(2)} m past the end of bay ${bay.index}`
+        );
+      } else if (cut.at - cut.half < 0.5 || cut.at + cut.half > bay.frame.len - 0.5) {
+        const clear = Math.min(cut.at - cut.half, bay.frame.len - (cut.at + cut.half));
+        cutFaults.push(
+          `${cut.id} clears the end of bay ${bay.index} by only ${clear.toFixed(2)} m`
+        );
       }
       // The plinth's top follows the *lowest* ground under each sub-panel, so the highest
       // ground inside the void's own span is the worst case a soffit has to clear.
@@ -1398,14 +1454,29 @@ export function buildCarthageWall(
     open: false,
   }));
   /**
-   * The posterns, published as gates that are already **open**.
+   * The posterns, published as gates that are **shut**, like every other way through here.
    *
-   * This is the whole mechanism by which a casemate wall is a wall you can pass *through*
-   * rather than only over, and it needed no new code anywhere: `CitySystem.pushWallBox`
-   * already splits a bay's obstacle box at every open gate, and `CitySystem.init` already
-   * clears an open gate's carriageway out of the occupancy raster. Both were written for one
-   * gate and neither cares how many there are — which is also how the elephants get out of
-   * the stalls Appian puts them in.
+   * They used to be published `open: true`, and that was not a small thing. `open` is the
+   * one word in this record the rest of the engine acts on: `CitySystem.pushWallBox` splits
+   * a bay's obstacle box at an open gate, `CitySystem.init` clears its carriageway out of
+   * the occupancy raster, and `PathfindingSystem.openGates` punches its axis through the nav
+   * grid and locks a route onto it. Eight of them said open, so **measured at `3f4c203` the
+   * curtain failed a 32 m crossing test at 29 of 990 stations in eight bands 4-6 m wide, one
+   * on each postern** — eight unguarded ways into Carthage, no ram needed, on a wall that is
+   * drawn as continuous masonry from every camera that is not standing in one of the eight.
+   *
+   * The justification on the way in was that "a casemate wall is a wall you can pass
+   * *through* rather than only over". It is — the men inside the gallery use these, and so
+   * do Appian's elephants. What a sally port is not is an *aperture*: it is a small door,
+   * shut and barred, that the garrison opens when it wants to come out and nobody else can
+   * use. Shut is therefore the resting state, and the affordance is unchanged and unmoved —
+   * `setGateOpen('postern-N', true)` opens exactly this passage through exactly the code
+   * path the Porta Byrsae uses, and `buildPosternDoor`'s chunk is tagged `gateDoorFor` so
+   * the leaves come off the screen when it does.
+   *
+   * The stone stays cut. r5's work is not undone and must not be: the hole is real, the
+   * mouths are real, and `probe-carthage-wall`'s E7 still casts its rays through the passage
+   * with the leaves excluded by name, because a door is not a wall.
    */
   for (const bay of bays) {
     if (bay.posternAt === null) continue;
@@ -1415,7 +1486,7 @@ export function buildCarthageWall(
       x: bay.x0 + f.dx * bay.posternAt,
       z: bay.z0 + f.dz * bay.posternAt,
       facing: Math.atan2(f.nx, f.nz),
-      open: true,
+      open: false,
     });
   }
 
@@ -1560,6 +1631,40 @@ export function buildCarthageWall(
       build: (batch, detail) => {
         batch.setUvOrigin(ga.x, 0, ga.z);
         buildPunicGateLeaves(batch, detail, bays[ga.bay], ga.x, ga.z, heightAt, true);
+      },
+    });
+  }
+
+  /**
+   * One chunk per postern, for the same reason the gate's leaves are one: a door that a
+   * sally can open has to be separable from the wall it is set in.
+   *
+   * Eight chunks and eight draws, measured, on a circuit that sat at 180 against a cap of
+   * 220 — see `buildPosternDoor` for why each is a single `timber` stream. `radius: 7`
+   * covers a 6.1 m leaf and its ledges with a metre to spare and no more;
+   * `assertNoStrayGeometry` measures every vertex against it and will say so if that is
+   * ever wrong. `castShadow: false` follows `gate-door` exactly, and for the same second
+   * reason: it keeps the leaves out of `buildShadowProxy`, which would otherwise bake a
+   * copy into the wall chunk's merged caster and go on drawing the shadow of a door that a
+   * sally had opened.
+   */
+  for (const bay of bays) {
+    if (bay.posternAt === null || !bay.cut) continue;
+    const f = bay.frame;
+    const px = bay.x0 + f.dx * bay.cut.at;
+    const pz = bay.z0 + f.dz * bay.cut.at;
+    const b = bay;
+    chunks.push({
+      name: `postern-door-${bay.index}`,
+      cx: px,
+      cz: pz,
+      radius: 7,
+      castShadow: false,
+      lodSwitch: [1e9, 1e9],
+      gateDoorFor: `postern-${bay.index}`,
+      build: (batch, detail) => {
+        batch.setUvOrigin(px, 0, pz);
+        buildPosternDoor(batch, detail, b);
       },
     });
   }
@@ -2131,6 +2236,85 @@ function buildPostern(batch: Batch, detail: number, bay: MainBay): void {
     });
     stone.pop();
   }
+}
+
+/**
+ * The leaves that shut a postern, in their own chunk so a sally shows.
+ *
+ * **The thing the owner was looking at when he said *"there are some straight up holes in
+ * the wall which don't seem like a great defensive strategy"*.** There were: eight of them,
+ * one per postern, 6 m wide and 5 m high with the far ground visible through each.
+ *
+ * This is deliberately the Porta Byrsae's mechanism at a fifth of the scale rather than a
+ * second one. Same idiom as `buildPunicGateLeaves` — twin leaves meeting on the centreline,
+ * boarded, ledged, hung behind the mouth's reveal — and the same wiring: a `CityChunkSpec`
+ * tagged `gateDoorFor: 'postern-N'`, so `CitySystem.setGateOpen('postern-N', true)` re-cuts
+ * the raster and the boxes *and* takes the leaves off the screen, with no new call anywhere.
+ * Nothing in `src/sim/` had to learn a new word.
+ *
+ * Three deliberate differences from the great gate's leaves, all of them cost:
+ *
+ *  - **One material stream.** The Porta Byrsae spends `timber` and `metal`, the second on a
+ *    drawbar you can read at 40 m across a causeway. `Batch.toMeshes` bakes one mesh per
+ *    material, so a second stream here is eight more draw calls on a circuit measured at
+ *    180 against a whole-frame cap of 220. The ledges carry the banding instead, in the
+ *    lighter `PAL.timber` against the leaf's `timberDark`, which is what actually reads at
+ *    the distance a postern is ever seen from.
+ *  - **No wrecked pose.** The gate has a second chunk for the shape the ram left it in
+ *    because that gate is the one a player assaults and watches. A postern that is broken
+ *    open is simply open; `applyGateDoorState` hides the leaves and finds no wreck to show,
+ *    which is exactly what the two masonry-barred flanking gates already do.
+ *  - **The leaf spans the void, not the mouth.** `2 * cut.half` is `openW` plus the 0.06 m
+ *    reveal each side, so the meeting stiles run into the dressed jamb instead of stopping
+ *    on the visible arch line. A 60 mm slot down the edge of a shut door is a ray straight
+ *    through it, and this file has already paid for that lesson once — see the note on the
+ *    gate leaves meeting at x = 0.
+ */
+function buildPosternDoor(batch: Batch, detail: number, bay: MainBay): void {
+  const cut = bay.cut;
+  if (bay.posternAt === null || !cut || cut.openW <= 0) return;
+  const timber = batch.s('timber');
+  const f = bay.frame;
+  const cx = bay.x0 + f.dx * cut.at;
+  const cz = bay.z0 + f.dz * cut.at;
+  const rotY = Math.atan2(-f.nx, -f.nz);
+  // The outer face at the soffit, less the setback: the plane the leaves hang in. Same
+  // batter term `buildPostern` sets its mouths on, so the two cannot drift apart.
+  const rise = Math.max(0, cut.headY - (bay.gMin + PLINTH_H));
+  const off = HALF_T - BATTER * rise - 0.05 - POSTERN_DOOR_SET;
+  const dm = place(cx + f.nx * off, 0, cz + f.nz * off, rotY);
+  timber.push(dm);
+
+  // `floorY` is `lowGround - 1.8`; the leaf starts on the lowest ground under its own span.
+  const sillY = cut.floorY + 1.8 - POSTERN_DOOR_BURY;
+  // Up to the soffit. The void behind the arch is a rectangle — `buildMainBay` emits a flat
+  // lintel over it, not a barrel — so a rectangular leaf plugs it exactly and the top
+  // corners stand behind the spandrel the mouth's `archPanel` draws.
+  const headY = cut.headY;
+  const leafW = cut.half;
+  for (const side of [-1, 1]) {
+    // The leaves meet on the centreline. See `buildPunicGateLeaves`: the two faces at x = 0
+    // are coincident and face opposite ways, so each is back-facing from the other's side.
+    const x0 = side < 0 ? -leafW : 0;
+    const x1 = side < 0 ? 0 : leafW;
+    box(timber, x0, sillY, -POSTERN_DOOR_T * 0.5, x1, headY, POSTERN_DOOR_T * 0.5,
+      PAL.timberDark, { bottom: false });
+    if (detail >= 1) {
+      // Three ledges, on the field side, where the light is.
+      for (let k = 0; k < 3; k++) {
+        const y = sillY + 0.55 + (k * (headY - sillY - 1.1)) / 2;
+        box(timber, x0 + 0.04, y, -POSTERN_DOOR_T * 0.5 - 0.06, x1 - 0.04, y + 0.14,
+          -POSTERN_DOOR_T * 0.5, PAL.timber, { bottom: false });
+      }
+    }
+  }
+  if (detail >= 1) {
+    // The drawbar, in the same stream and darker: this door is barred, not merely shut.
+    box(timber, -leafW + 0.25, sillY + (headY - sillY) * 0.42, -POSTERN_DOOR_T * 0.5 - 0.14,
+      leafW - 0.25, sillY + (headY - sillY) * 0.42 + 0.22, -POSTERN_DOOR_T * 0.5 - 0.02,
+      PAL.iron, { bottom: false });
+  }
+  timber.pop();
 }
 
 /**
