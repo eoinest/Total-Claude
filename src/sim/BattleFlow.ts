@@ -84,7 +84,7 @@ const STALL_SECONDS = 120;
  * bay's standing run at the sim's 0.72 m rank pitch, which is the smallest body that can hold
  * a stretch of walkway against a counter-attack up a stair.
  */
-const WALL_FOOTHOLD = 24;
+export const WALL_FOOTHOLD = 24;
 /**
  * Seconds the storming side must hold the parapet uncontested.
  *
@@ -92,7 +92,7 @@ const WALL_FOOTHOLD = 24;
  * the same second, the next unit already climbing — does not hand over the city, and short
  * enough that the player is not left watching a decided wall.
  */
-const WALL_HOLD_SECONDS = 20;
+export const WALL_HOLD_SECONDS = 20;
 /**
  * Men of the storming side loose *inside* the city, at which point the wall is irrelevant.
  *
@@ -101,9 +101,9 @@ const WALL_HOLD_SECONDS = 20;
  * ditch. This is the condition the wall-descent work will satisfy, and it is written now so
  * that the moment men can get down the inside face the battle has somewhere to end.
  */
-const BREAK_IN = 60;
+export const BREAK_IN = 60;
 /** Metres past the curtain's own line a man must be to be "in the city" rather than on it. */
-const INSIDE_MARGIN = 14;
+export const INSIDE_MARGIN = 14;
 /**
  * Seconds an assault may go without reducing the garrison's hold on the parapet before it is
  * judged to have been thrown back.
@@ -121,7 +121,7 @@ const INSIDE_MARGIN = 14;
  * fresh ladder party to climb and re-engage between two pushes, short enough that the answer
  * arrives while the player is still watching.
  */
-const STORM_STALL_SECONDS = 180;
+export const STORM_STALL_SECONDS = 180;
 
 interface Side {
   faction: Faction;
@@ -482,14 +482,45 @@ export class BattleFlowSystem implements Subsystem {
     return out;
   }
 
-  /** How the storm is doing against the objective. Null in a field battle. */
-  get objective(): (WallCensus & { heldFor: number; storm: Faction; garrison: Faction }) | null {
+  /**
+   * How the storm is doing against the objective, and what the objective *is*. Null in a
+   * field battle.
+   *
+   * The thresholds ride along with the census deliberately. Every one of them was a private
+   * constant in this file and nothing on screen said any of them, so the winning move — get
+   * sixty men fourteen metres past the curtain — was undiscoverable: a hands-off assault that
+   * put ~350 men on the parapet lost at t+286 with 41% casualties, while one cohort through
+   * the broken gate won at t+336. A HUD that read the census but re-declared the numbers
+   * would be a second copy of the rules to drift from, so they are published from the one
+   * place that enforces them.
+   */
+  get objective(): (WallCensus & {
+    heldFor: number;
+    storm: Faction;
+    garrison: Faction;
+    /** Men inside that end it, and how far past the curtain counts as inside. */
+    needInside: number;
+    insideMargin: number;
+    /** Men on the parapet, with it uncontested, that end it — and for how long. */
+    needFoothold: number;
+    holdSeconds: number;
+    /** Seconds without progress against the parapet before the storm is judged thrown back,
+     *  and how many of them have run. */
+    stallSeconds: number;
+    stalledFor: number;
+  }) | null {
     if (!this.wall) return null;
     return {
       ...this.wallCensus,
       heldFor: this.parapetHeldFor,
       storm: this.wall.storm,
       garrison: this.wall.garrison,
+      needInside: BREAK_IN,
+      insideMargin: INSIDE_MARGIN,
+      needFoothold: WALL_FOOTHOLD,
+      holdSeconds: WALL_HOLD_SECONDS,
+      stallSeconds: STORM_STALL_SECONDS,
+      stalledFor: this.noProgressFor,
     };
   }
 

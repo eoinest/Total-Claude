@@ -11,6 +11,7 @@ import { Faction, getOpposingFaction } from '../sim/types';
 import { el, fmtClock, fmtCount, html, icon, setClass, setFill, setText } from './dom';
 import { ICON, standardGlyph } from './icons';
 import type { HudModel } from './model';
+import { readSiege } from './siege';
 import { FACTION_UI, PHASE_UI, PLAYER_FACTION } from './theme';
 
 /**
@@ -44,6 +45,12 @@ export class TopBar {
   private unitsG!: HTMLElement;
   private speedBtns = new Map<string, HTMLElement>();
   private lastPhase = '';
+  /**
+   * The siege phase currently on the plaque, kept beside `lastPhase` rather than folded into
+   * it: the two come from different places and a siege phase can change while `model.phase`
+   * does not, which is exactly the case that left "MISSILE EXCHANGE" over a broken gate.
+   */
+  private lastSiege = '';
   /**
    * The opponent this plaque is currently *showing*, which is not the same as the opponent.
    *
@@ -168,12 +175,46 @@ export class TopBar {
     const m = this.model;
     setText(this.clock, fmtClock(ctx.time.simTime));
 
-    const p = PHASE_UI[m.phase];
-    if (m.phase !== this.lastPhase) {
-      this.lastPhase = m.phase;
-      setText(this.phase, p.label);
-      setText(this.note, p.note);
+    /*
+     * The phase, which in a storm is not one of the field-battle phases.
+     *
+     * `derivePhase` in `model.ts` decides between advance / skirmish / clash / rout on the
+     * gap between the two armies and how many are engaged, and every one of those readings
+     * is wrong at a wall: at t+982 with the gate broken and two towers docked this plaque
+     * read "MISSILE EXCHANGE · Arrows and pila in the air". A storm has its own five, and
+     * they are read off the wall — see `readSiege`. The field phases still own a field
+     * battle, and `deployment` and `aftermath` still own their ends of a storm.
+     */
+    const siege = m.phase === 'deployment' || m.phase === 'aftermath' ? null : readSiege(ctx);
+    const key = siege ? `siege:${siege.phase}` : m.phase;
+    if (key !== this.lastPhase) {
+      this.lastPhase = key;
+      const p = PHASE_UI[m.phase];
+      setText(this.phase, siege ? siege.label : p.label);
+      /*
+       * `data-phase` stays the field phase and a second `data-siege` hook is added beside it,
+       * rather than overwriting the first: `hud.css` reads `[data-phase='clash']` and
+       * `[data-phase='rout']` to warm the heading at the sharp end of a battle, and a value
+       * it has never heard of would silently drop that. `hud.css` belongs to another
+       * workstream this pass, so the equivalent emphasis for a breach is applied inline here
+       * — one declaration, and the attribute is there for the stylesheet to take it over.
+       */
       this.root.dataset.phase = m.phase;
+      if (siege) this.root.dataset.siege = siege.phase;
+      else delete this.root.dataset.siege;
+      const sharp = siege ? siege.phase === 'breach' || siege.phase === 'streets' : false;
+      this.phase.style.color = sharp ? '#f0c07a' : '';
+    }
+    // The note carries live counts in a storm, so it is rewritten every tick rather than
+    // only when the phase changes.
+    if (siege) {
+      if (siege.note !== this.lastSiege) {
+        this.lastSiege = siege.note;
+        setText(this.note, siege.note);
+      }
+    } else if (this.lastSiege) {
+      this.lastSiege = '';
+      setText(this.note, PHASE_UI[m.phase].note);
     }
 
     const foe = getOpposingFaction();
@@ -211,18 +252,34 @@ export class TopBar {
     setText(this.unitsR, `${m.unitsLeft[PLAYER_FACTION]} units`);
     setText(this.unitsG, `${m.unitsLeft[foe]} units`);
 
-    // Victory progress: how far the balance of surviving men has swung from parity.
-    const swing = (rf - 0.5) * 2;
-    const pct = Math.round(Math.abs(swing) * 100);
-    if (pct < 4) setText(this.advantage, 'Evenly matched');
-    // Named from the faction table, not from a literal: "Juthungi advantage 25%" over a
-    // Carthaginian army is the same defect as the plaque heading, one line further down.
-    else {
-      const who = FACTION_UI[swing > 0 ? PLAYER_FACTION : foe].short;
-      setText(this.advantage, `${who} advantage ${pct}%`);
+    /*
+     * Victory progress — which in a storm is not the balance of surviving men.
+     *
+     * "Evenly matched" is a true statement about two headcounts and a false statement about
+     * a siege: a garrison is *meant* to be outnumbered, the arbiter refuses to judge either
+     * side of a storm on the margin (`decisiveApplies`), and the battle is decided by ground.
+     * So where there is an objective, this slot carries the objective. The strength balance
+     * is still drawn immediately above it, which is where a player who wants headcounts
+     * looks anyway.
+     */
+    if (siege) {
+      setText(this.advantage, siege.objective);
+      const won = siege.progress;
+      setClass(this.advantage, 'good', siege.mine ? won > 0.02 : won < 0.02);
+      setClass(this.advantage, 'bad', siege.mine ? won < 0.02 : won > 0.02);
+    } else {
+      const swing = (rf - 0.5) * 2;
+      const pct = Math.round(Math.abs(swing) * 100);
+      if (pct < 4) setText(this.advantage, 'Evenly matched');
+      // Named from the faction table, not from a literal: "Juthungi advantage 25%" over a
+      // Carthaginian army is the same defect as the plaque heading, one line further down.
+      else {
+        const who = FACTION_UI[swing > 0 ? PLAYER_FACTION : foe].short;
+        setText(this.advantage, `${who} advantage ${pct}%`);
+      }
+      setClass(this.advantage, 'good', swing > 0.04);
+      setClass(this.advantage, 'bad', swing < -0.04);
     }
-    setClass(this.advantage, 'good', swing > 0.04);
-    setClass(this.advantage, 'bad', swing < -0.04);
 
     const speed = ctx.time.paused ? '0' : String(ctx.time.gameSpeed);
     for (const [k, b] of this.speedBtns) setClass(b, 'on', k === speed);

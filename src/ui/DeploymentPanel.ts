@@ -16,10 +16,12 @@
 
 import type { EngineContext } from '../core/Engine';
 import type { DeploymentSystem } from '../sim/deployment';
+import { activeMap } from '../maps';
 import { unitType } from '../units/roster';
 import { el, html, setClass, setText } from './dom';
 import type { HudModel } from './model';
 import type { SelectionController } from './SelectionController';
+import { objectiveBrief, siegeRole } from './siege';
 import { UNIT_CLASS_LABEL } from './theme';
 
 const fmt = (n: number): string => n.toLocaleString('en-GB');
@@ -69,6 +71,7 @@ export class DeploymentPanel {
          <button type="button" class="dep-remove" disabled>REMOVE</button>
          <button type="button" class="dep-begin">BEGIN BATTLE</button>
        </div>
+       ${this.brief()}
        <div class="dep-note"></div>
        <div class="dep-palette" hidden>
          ${roster.map((id) => {
@@ -122,6 +125,39 @@ export class DeploymentPanel {
     this.beginBtn.addEventListener('click', () => this.dep.commit());
 
     this.sync(ctx);
+  }
+
+  /**
+   * What wins this battle, on the plaque, before a shot is fired.
+   *
+   * A storm is not decided by casualties and the interface never said so. Measured on
+   * Carthage: a hands-off assault that put roughly 350 men on the parapet **lost** at t+286
+   * having taken 41% casualties, while one cohort walked through the broken gate and won at
+   * t+336 — and every order the interface encouraged was the first of those. The rule is
+   * sixty men fourteen metres past the curtain, it has been enforced since the objective
+   * landed, and there was nowhere on screen a player could read it.
+   *
+   * Only on a storm, and worded from the player's own side of the wall. The role comes from
+   * the map's `CityPlan.garrison` rather than from the deployment zone's `wall` flag: the
+   * flag is also true for a scenario that merely happens to have put the player's men on
+   * stone, and the sentence has to be right about who is trying to get in.
+   */
+  private brief(): string {
+    if (this.dep.scenario !== 'assault') return '';
+    /*
+     * Its own row, borrowing `.dep-note`'s type but not its warning colour, and `nowrap`.
+     *
+     * Not a third line inside `.dep-help`: those are clipped at one line each and this
+     * sentence is twice their length, so it would arrive as an ellipsis. And not wrapped —
+     * the comment over `.dep-help` in `hud.css` records what free-wrapping text did to this
+     * banner once already (346 px of mostly empty panel which, being `interactive`, ate
+     * every right-drag aimed at the ground beneath it). One line, full plaque width, a
+     * height that cannot depend on the text. `hud.css` is another workstream's file this
+     * pass, which is why the three declarations are inline.
+     */
+    return `<div class="dep-note on" style="color: rgba(230, 219, 197, 0.86);`
+      + ` white-space: nowrap; overflow: hidden; text-overflow: ellipsis">`
+      + `${objectiveBrief(siegeRole(activeMap().city?.garrison))}</div>`;
   }
 
   /**

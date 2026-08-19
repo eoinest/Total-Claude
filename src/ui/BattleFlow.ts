@@ -13,6 +13,7 @@ import { activeMap } from '../maps';
 import type { MapId } from '../maps';
 import { ICON, standardGlyph } from './icons';
 import type { HudModel } from './model';
+import { readSiege, type SiegeRead } from './siege';
 import { FACTION_UI, HARNESS, PLAYER_FACTION } from './theme';
 
 /**
@@ -94,6 +95,59 @@ const DISPATCH: Record<MapId, Dispatch> = {
     ],
   },
 };
+
+/**
+ * What happened at the wall, on the card that closes a siege.
+ *
+ * The dispatch was excellent and silent about the one thing the battle was about: no gate,
+ * no breach, no men over the parapet, no "the wall held". A player who had just spent
+ * sixteen minutes storming Carthage was handed two headcount columns and a roll of honour,
+ * and nothing on the card distinguished a storm that got in from one that was thrown off
+ * the ladders with identical casualties.
+ *
+ * Nothing here on a field battle: `readSiege` returns null unless the arbiter found a
+ * garrison on a wall, which is the same test it uses to decide the battle by ground.
+ *
+ * The counts are the last census the arbiter took, once a second, so they are what the wall
+ * looked like when it was decided rather than a high-water mark. That is the honest number
+ * to print under a verdict: "18 of 60 inside" beside "Defeat" says exactly how close it was.
+ */
+function wallBlock(s: SiegeRead | null, reason: string): string {
+  if (!s) return '';
+  /*
+   * The verdict is read off *how* the battle ended, not off who won it. A storm that kills
+   * the last man of the garrison in the open has taken the city and never carried the wall,
+   * and `BattleFlowSystem` already distinguishes the two: `objective` is the wall going, and
+   * `repulsed` is the assault stalling in front of it. Everything else is the army breaking,
+   * and then the honest sentence names the gate and stops.
+   */
+  const verdict = reason === 'objective'
+    ? 'The wall was carried.'
+    : reason === 'repulsed'
+      ? 'The storm was thrown off the wall.'
+      : s.gate.breached
+        ? 'The gate went down; the wall itself was never carried.'
+        : 'The wall was never carried.';
+  const gate = s.gate.breached
+    ? `Broken &mdash; ${s.gate.blows} blows`
+    : s.gate.blows > 0
+      ? `Held at ${Math.round(s.gate.hp * 100)}% &mdash; ${s.gate.blows} blows`
+      : 'Never struck';
+  const row = (dt: string, dd: string, bad = false): string =>
+    `<div${bad ? ' class="loss"' : ''}><dt>${dt}</dt><dd>${dd}</dd></div>`;
+  return `<div class="rs-honours">
+      <div class="sec-head">The wall</div>
+      <dl class="rs-stats">
+        ${row('The gate', gate, s.gate.breached)}
+        ${row('Breaches in the curtain', String(s.breachedBays), s.breachedBays > 0)}
+        ${row('On the parapet at the end',
+    `${s.onWall} <span>storming</span> &middot; ${s.garrisonOnWall} <span>holding</span>`)}
+        ${row('Inside the walls', `${s.inside} <span>of ${s.needInside} needed</span>`,
+    s.role === 'garrison' && s.inside > 0)}
+      </dl>
+      <div class="rs-flavour" style="margin-top:0.8em">${verdict}</div>
+    </div>`;
+}
 
 /**
  * The screenshot harness is a measurement rig, not a player: a cinematic title card and
@@ -369,10 +423,20 @@ export class BattleFlow {
         </div>`;
     };
 
-    const honours = m.views
-      .slice()
+    /*
+     * The roll of honour, **your army first**.
+     *
+     * One `sort` across every view on the field put the two armies in one league table, so a
+     * defeat card led with the enemy's best cohorts: the player's own dead were pushed off
+     * the bottom of a list headed "Roll of honour" by the units that had killed them. It is
+     * two groups now, each headed by its own standard, yours above theirs whichever way the
+     * battle went — five of yours and three of theirs, which is the same eight rows the panel
+     * was already measured to fit.
+     */
+    const rows = (f: Faction, limit: number): string => m.views
+      .filter((v) => v.faction === f)
       .sort((a, b) => b.kills - a.kills)
-      .slice(0, 8)
+      .slice(0, limit)
       .map((v) => {
         const fui = FACTION_UI[v.faction];
         const pct = v.initial ? Math.round((v.alive / v.initial) * 100) : 0;
@@ -385,6 +449,13 @@ export class BattleFlow {
           </tr>`;
       })
       .join('');
+    const group = (f: Faction, limit: number): string => {
+      const body = rows(f, limit);
+      if (!body) return '';
+      return `<tr><td colspan="5" style="padding-top:0.7em">`
+        + `<span class="sec-head">${FACTION_UI[f].short}</span></td></tr>${body}`;
+    };
+    const honours = group(PLAYER_FACTION, 5) + group(foe, 3);
 
     /*
      * Three structural rules, all of them from a playtest that could not read this screen.
@@ -413,6 +484,7 @@ export class BattleFlow {
          </div>
          <div class="rs-body">
            <div class="rs-cols">${column(PLAYER_FACTION)}<div class="rs-vs">${icon(ICON.swords, 'rs-vs-ic')}</div>${column(foe)}</div>
+           ${wallBlock(readSiege(ctx), reason)}
            <div class="rs-honours">
              <div class="sec-head">Roll of honour</div>
              <table><tbody>${honours}</tbody></table>
