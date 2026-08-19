@@ -439,19 +439,37 @@ const mix3 = (a: Rgb, b: Rgb, t: number, out: Rgb): void => {
   out[2] = a[2] + (b[2] - a[2]) * t;
 };
 
-/** Ring mail: interlocked rows, each row offset half a ring from its neighbours. */
+/**
+ * Ring mail: interlocked rows, each row offset half a ring from its neighbours.
+ *
+ * **No two rings are the same size and no two sit quite square, and that is the fix rather
+ * than the decoration.** The lattice was exactly periodic — every ring identical, on a
+ * perfect grid — which is what a *printed* mail reads as, and what beats against the pixel
+ * grid into moire at the range a cohort is legible from. A riveted hauberk is thousands of
+ * hand-drawn rings hammered shut by hand: the sizes run a tenth either way, the rows wander,
+ * and a proportion of them are galled flat or rusted proud.
+ *
+ * The jitter is hashed off the ring's own grid cell, so it is stable, tileable (`% rings`
+ * closes the lattice) and free.
+ */
 const mailHeight = (u: number, v: number, rings: number): number => {
   const gy = v * rings;
   const row = Math.floor(gy);
   const fy = gy - row;
   const gx = u * rings + (row % 2) * 0.5;
-  const fx = gx - Math.floor(gx);
-  const dx = fx - 0.5;
-  const dy = fy - 0.5;
+  const col = Math.floor(gx);
+  const fx = gx - col;
+  // Per-ring wander and gauge, from the ring's own cell. `% rings` is what keeps the tile
+  // seamless: the last column's hash has to be the same one column 0 will read.
+  const h1 = hash2(col % rings, row % rings, 313);
+  const h2 = hash2(col % rings, row % rings, 317);
+  const dx = fx - 0.5 + (h1 - 0.5) * 0.16;
+  const dy = fy - 0.5 + (h2 - 0.5) * 0.14;
   const r = Math.hypot(dx, dy) * 2;
   // A torus profile: highest on the ring itself, lowest in the hole and between rings.
-  const ring = Math.exp(-((r - 0.62) ** 2) / 0.055);
-  return Math.min(1, ring * 0.95 + 0.05);
+  const gauge = 0.62 + (h1 - 0.5) * 0.09;
+  const ring = Math.exp(-((r - gauge) ** 2) / 0.055);
+  return Math.min(1, ring * (0.86 + h2 * 0.16) + 0.05);
 };
 
 const TAU = Math.PI * 2;
@@ -723,6 +741,18 @@ const MATS: Record<Mat, MatDef> = {
       const h = mailHeight(u, v, 18);
       const grime = fbm(u * 5, v * 5, 3, 5, 13);
       mix3([0.42, 0.408, 0.39], [0.76, 0.745, 0.715], h * (0.7 + grime * 0.3), out);
+      // A worn hauberk is not one alloy. Some rings are bright where a strap or a scabbard
+      // has polished them, some are rusted, and a patch repaired in the field is a different
+      // wire altogether. Hashed per ring off the same lattice the height uses, so the two
+      // agree about where a ring is.
+      const gx = u * 18 + (Math.floor(v * 18) % 2) * 0.5;
+      const c = Math.floor(gx) % 18;
+      const r18 = Math.floor(v * 18) % 18;
+      const wear = hash2(c, r18, 331);
+      const rust = Math.max(0, fbm(u * 4, v * 4, 3, 4, 337) - 0.56) * 2.2 * hash2(c, r18, 347);
+      const k = 0.86 + wear * 0.30;
+      out[0] *= k; out[1] *= k; out[2] *= k;
+      mix3(out, RUST, Math.min(0.55, rust), out);
     },
     height: (u, v) => mailHeight(u, v, 18),
     // Mail is thousands of small curved rings, so it scatters: rough, and heavily
@@ -739,6 +769,15 @@ const MATS: Record<Mat, MatDef> = {
     bump: 1.0,
   },
   // Lorica squamata: overlapping bronze-washed scales wired to a linen backing.
+  /**
+   * Lorica squamata: overlapping bronze-washed scales wired to a linen backing.
+   *
+   * Same correction as the mail and for the same reason. Fourteen rows of *identical* plates
+   * on a perfect grid is a printed scale; a squamata is a few hundred hand-cut plates wired
+   * on individually, so they sit a little proud and a little askew of one another, they
+   * differ in gauge, and a proportion are dished, sprung or replaced. The jitter is hashed
+   * off the plate's own cell modulo the row count, which is what keeps the tile seamless.
+   */
   [Mat.Scale]: {
     colour(u, v, out) {
       const rows = 14;
@@ -746,13 +785,19 @@ const MATS: Record<Mat, MatDef> = {
       const row = Math.floor(gy);
       const fy = gy - row;
       const gx = u * rows + (row % 2) * 0.5;
-      const fx = gx - Math.floor(gx);
+      const col = Math.floor(gx);
+      const fx = gx - col;
+      const j = hash2(col % rows, row % rows, 353);
+      const j2 = hash2(col % rows, row % rows, 359);
       // Scale plate: rounded bottom edge, darker in the overlap gutter.
-      const edge = Math.min(1, Math.max(0, (1 - fy) * 3));
-      const side = 1 - Math.abs(fx - 0.5) * 1.6;
+      const edge = Math.min(1, Math.max(0, (1 - fy * (0.92 + j * 0.16)) * 3));
+      const side = 1 - Math.abs(fx - 0.5 + (j2 - 0.5) * 0.16) * (1.5 + j * 0.22);
       const lit = Math.max(0, edge * side);
       const n = fbm(u * 8, v * 8, 3, 8, 17);
       mix3(BRONZE_DARK, BRONZE, lit * 0.8 + n * 0.2, out);
+      // Per-plate tarnish: a wired-on scale is its own small object and weathers as one.
+      const k = 0.84 + j2 * 0.32;
+      out[0] *= k; out[1] *= k; out[2] *= k;
       if (fy > 0.9) mix3(out, [0.1, 0.08, 0.05], 0.7, out);
     },
     height(u, v) {
@@ -761,9 +806,12 @@ const MATS: Record<Mat, MatDef> = {
       const row = Math.floor(gy);
       const fy = gy - row;
       const gx = u * rows + (row % 2) * 0.5;
-      const fx = gx - Math.floor(gx);
-      const side = 1 - Math.abs(fx - 0.5) * 1.7;
-      return Math.max(0, Math.min(1, (1 - fy * 0.85) * Math.max(0, side)));
+      const col = Math.floor(gx);
+      const fx = gx - col;
+      const j = hash2(col % rows, row % rows, 353);
+      const j2 = hash2(col % rows, row % rows, 359);
+      const side = 1 - Math.abs(fx - 0.5 + (j2 - 0.5) * 0.16) * (1.6 + j * 0.22);
+      return Math.max(0, Math.min(1, (1 - fy * (0.78 + j * 0.14)) * Math.max(0, side)));
     },
     // Bronze-washed scales, each a small curved mirror. Same reasoning as the mail: the
     // scale edges are what catch the light and they cannot do it without an F0 to do it with.
