@@ -437,6 +437,16 @@ const SHOTS = {
    * a third down from the top, which is where the reference plates keep it: with the frame
    * centred on the aim point, that is `atan((eye - aim) / dist) ~ 0.17 * F / 2`.
    *
+   * The aim heights then follow from where the reference keeps its horizon. With the frame
+   * centred on the aim point the true horizon sits at `0.5 - 0.5 tan(d) / tan(F/2)` of frame
+   * height from the top, where `d = atan((eye - aim) / dist)`, so an entry that wants the
+   * plates' upper-third horizon has to tilt *down* a few degrees and therefore aim at a point
+   * near the ground. That reads oddly next to a 2 m eye height and it is simply what the
+   * geometry requires: a level camera puts the horizon dead centre, which none of the
+   * reference plates do. The two elevated overviews were the worst offenders in the first
+   * pass — at 150 m over a 400 m standoff the horizon was *off the top of the frame*, which
+   * is a bird's-eye plate and not the high oblique s2-03 and s2-19 actually are.
+   *
    * The `eye >= aim + 0.2` constraint on every entry is not aesthetic. `RTSCamera.place`
    * refuses to put the eye closer than 1.7 m to the plane it thinks is the ground, and at
    * `zoom: 0` that plane sits `aim - 1.55` below the focus, so an entry that aims above its
@@ -449,31 +459,31 @@ const SHOTS = {
     // vs s2-04 (Pydna): packed ranks from just above helmet height, strongly compressed.
     desc: 'AB2: the Roman front rank from helmet height, telephoto down the line',
     follow: 'romanFront', at: 6, hour: 9.0, weather: 'clear',
-    cam: { eye: 2.05, aim: 1.43, dist: 16, fov: 26 },
+    cam: { eye: 2.05, aim: 0.25, dist: 20, fov: 30 },
   },
   'ab2-rome-melee': {
     // vs s2-00: inside the fight, camera in the grass, level.
     desc: 'AB2: inside the melee at eye level',
     follow: 'contact', at: 96, hour: 15.0, weather: 'clear',
-    cam: { eye: 1.60, aim: 1.21, dist: 6.5, fov: 40 },
+    cam: { eye: 1.60, aim: 0.70, dist: 14, fov: 34 },
   },
   'ab2-rome-march': {
     // vs s2-13: a column on the march, camera at a bystander's height beside the road.
     desc: 'AB2: the cohorts on the march, from the side of the line',
     follow: 'romanFront', at: 40, hour: 11.5, weather: 'clear',
-    cam: { eye: 1.90, aim: 1.48, dist: 7.5, fov: 38 },
+    cam: { eye: 1.90, aim: 0.50, dist: 18, fov: 34 },
   },
   'ab2-rome-cavalry': {
     // vs s2-15: cataphracts three-quarter front, the camera below the riders.
     desc: 'AB2: the equites wing, from below the riders',
     follow: 'cavalryUnit', at: 70, hour: 13.0, weather: 'clear',
-    cam: { eye: 1.55, aim: 1.35, dist: 9, fov: 36 },
+    cam: { eye: 1.55, aim: 0.50, dist: 13, fov: 30 },
   },
   'ab2-rome-aftermath': {
     // vs s2-02: a killing at close range, camera low and tipped down at the ground.
     desc: 'AB2: the field after the break, low over the bodies',
     follow: 'corpses', at: 200, hour: 12.8, weather: 'overcast',
-    cam: { eye: 1.30, aim: 0.60, dist: 5.5, fov: 40 },
+    cam: { eye: 1.30, aim: 0.00, dist: 9, fov: 38 },
   },
   'ab2-rome-wall': {
     // vs s2-17: 2.35:1 siege plate, tower against a curtain, camera up and well back.
@@ -487,7 +497,7 @@ const SHOTS = {
     desc: 'AB2: the Aurelian parapet, looking down the walk and out over the city',
     scenario: 'assault', hour: 11.0, at: 96, weather: 'clear',
     wall: { bay: -2, stand: 0.2, lift: 0, yaw: 'along', yawAdd: Math.PI },
-    cam: { base: 'walk', eye: 1.70, aim: -5.0, dist: 30, fov: 38 },
+    cam: { base: 'walk', eye: 1.70, aim: -2.5, dist: 34, fov: 38 },
   },
 
   // ---- Carthage, spring 146 BC ---------------------------------------------
@@ -495,19 +505,19 @@ const SHOTS = {
     // vs s2-09: front rank of a spear line, camera at chest height, city behind.
     desc: 'AB2: the Punic front rank at chest height, the works behind',
     map: 'carthage', opponent: 2, follow: 'enemyFront', at: 6, hour: 10.2, weather: 'overcast',
-    cam: { eye: 1.75, aim: 1.28, dist: 9, fov: 34 },
+    cam: { eye: 1.75, aim: 0.40, dist: 18, fov: 30 },
   },
   'ab2-carth-melee': {
     // vs s2-01: close melee in tall grass, camera almost on the ground.
     desc: 'AB2: inside the Punic melee, camera almost in the grass',
     map: 'carthage', opponent: 2, follow: 'contact', at: 96, hour: 13.4, weather: 'overcast',
-    cam: { eye: 1.45, aim: 1.10, dist: 5.5, fov: 42 },
+    cam: { eye: 1.45, aim: 0.60, dist: 12, fov: 36 },
   },
   'ab2-carth-march': {
     // vs s2-16: a barbarian mass advancing, close, camera low among them.
     desc: 'AB2: the Punic line advancing, close and low',
     map: 'carthage', opponent: 2, follow: 'enemyFront', at: 40, hour: 8.6, weather: 'clear',
-    cam: { eye: 1.70, aim: 1.28, dist: 6.5, fov: 40 },
+    cam: { eye: 1.70, aim: 0.40, dist: 16, fov: 34 },
   },
   'ab2-carth-elephants': {
     // vs s2-08: elephants behind a spear line at dusk. Paired so "the one with the
@@ -515,14 +525,14 @@ const SHOTS = {
     desc: 'AB2: the Punic elephant line at dusk, from in front of the spears',
     map: 'carthage', opponent: 2, follow: 'unitType', unitType: 'war-elephants',
     at: 44, hour: 17.6, weather: 'clear',
-    cam: { eye: 2.25, aim: 1.55, dist: 16, fov: 30 },
+    cam: { eye: 2.25, aim: 0.40, dist: 22, fov: 30 },
   },
   'ab2-carth-wall': {
     // vs s2-19: a city being stormed, seen from well above, fires and smoke.
     desc: 'AB2: Carthage being stormed, from high above the curtain',
     map: 'carthage', opponent: 2, scenario: 'assault', hour: 15.2, at: 170, weather: 'overcast',
     wall: { bay: 2, stand: 40, lift: 0, yaw: 'in', yawAdd: -0.35 },
-    cam: { eye: 130, aim: 5, dist: 260, fov: 32 },
+    cam: { eye: 110, aim: 5, dist: 520, fov: 32 },
   },
   'ab2-carth-parapet': {
     // vs s2-14: a high vantage over a valley with armies below. Rain, which round one
@@ -530,13 +540,13 @@ const SHOTS = {
     desc: 'AB2: the Punic garrison on the crest, the ground far below, in rain',
     map: 'carthage', opponent: 2, scenario: 'assault', hour: 12.2, at: 96, weather: 'rain',
     wall: { bay: -2, stand: 0.2, lift: 0, yaw: 'along', yawAdd: Math.PI },
-    cam: { base: 'crest', eye: 1.70, aim: -14.0, dist: 48, fov: 34 },
+    cam: { base: 'crest', eye: 1.70, aim: -9.0, dist: 46, fov: 34 },
   },
   'ab2-carth-wide': {
     // vs s2-03: both hosts drawn up, seen from high and far, horizon high in frame.
     desc: 'AB2: the whole field before Carthage, both hosts drawn up',
     map: 'carthage', opponent: 2, follow: 'ownLine', at: 4, hour: 15.4, weather: 'clear',
-    cam: { eye: 150, aim: 0, dist: 400, fov: 34 },
+    cam: { eye: 95, aim: 0, dist: 480, fov: 34 },
   },
 };
 
@@ -1402,6 +1412,43 @@ try {
           sync();
           const msPerFrame = (performance.now() - t0) / N;
 
+          /*
+           * How far the nearest man in shot actually is, and where the horizon falls.
+           *
+           * `cam.dist` is the standoff from the *focus*, and a focus resolved by `follow` is
+           * the centre of a formation twenty metres deep — so a shot that names a nine-metre
+           * standoff puts the camera inside the block and photographs one man's ear. That is
+           * exactly what the first ground-level pass did, and eyeballing contact sheets to
+           * find it is slow and unrepeatable. Two numbers make the framing a measurement:
+           * the range to the nearest living man in front of the lens, which is what decides
+           * how big a soldier is in frame, and the horizon's height, which is the single
+           * strongest compositional signature of the reference set (it sits in the upper
+           * third on eleven of the fourteen eligible plates).
+           */
+          let nearestMan = null;
+          let horizonFrac = null;
+          {
+            const cam = rig.camera;
+            const fwd = new (cam.position.constructor)(0, 0, -1).applyQuaternion(cam.quaternion);
+            const px = cam.position.x, py = cam.position.y, pz = cam.position.z;
+            let best = Infinity;
+            const pl = g.battle.pool;
+            for (let i = 0; i < pl.count; i++) {
+              const st = pl.state[i];
+              if (st === 11 || st === 10) continue;
+              const dx = pl.x[i] - px, dy = (pl.y ? pl.y[i] : 0) + 0.9 - py, dz = pl.z[i] - pz;
+              if (dx * fwd.x + dy * fwd.y + dz * fwd.z <= 0) continue;
+              const d2 = dx * dx + dy * dy + dz * dz;
+              if (d2 < best) best = d2;
+            }
+            if (best < Infinity) nearestMan = +Math.sqrt(best).toFixed(2);
+            // Elevation of the true horizon above the optical axis, as a fraction of frame
+            // height measured from the top. 0.5 is dead centre; the plates average ~0.33.
+            const halfTan = Math.tan((cam.fov * Math.PI) / 360);
+            const pitchDown = Math.asin(-fwd.y);
+            horizonFrac = +(0.5 - (Math.tan(pitchDown) / halfTan) * 0.5).toFixed(3);
+          }
+
           let men = 0;
           let units = 0;
           let corpses = 0;
@@ -1414,6 +1461,7 @@ try {
           const st = g.engine.stats();
           return {
             simTime: g.simTime(), men, units, corpses, waterDebug, wallDebug, camDebug,
+            nearestMan, horizonFrac,
             weather: g.engine.context.tryGet('vfx')?.weatherKind ?? 'n/a',
             focusX: Math.round(fx), focusZ: Math.round(fz), yaw: +fyaw.toFixed(2),
             draws: st.calls, tris: st.tris, programs: st.programs,
@@ -1438,7 +1486,8 @@ try {
         `  ✓ ${name.padEnd(14)} t+${String(Math.round(info.simTime)).padStart(3)}s  ` +
         `${String(info.men).padStart(5)} men  ${String(info.units).padStart(2)} units  ` +
         `${String(info.draws).padStart(4)} draws  ${(info.tris / 1e6).toFixed(2)}M tris  ` +
-        `${info.msPerFrame.toFixed(2)}ms/f  @(${info.focusX},${info.focusZ})`
+        `${info.msPerFrame.toFixed(2)}ms/f  @(${info.focusX},${info.focusZ})` +
+        (info.nearestMan === null ? '' : `  near ${String(info.nearestMan).padStart(6)}m  horizon ${info.horizonFrac}`)
       );
     } catch (err) {
       failed++;
