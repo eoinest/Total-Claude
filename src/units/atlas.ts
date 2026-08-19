@@ -339,11 +339,73 @@ interface MatDef {
   colour(u: number, v: number, out: Rgb): void;
   /** Surface height 0..1, used to derive the normal map and a cavity term. */
   height(u: number, v: number): number;
+  /**
+   * Mean roughness. The bake spreads a swing around it — see `ROUGH_SWING`.
+   *
+   * It is a *mean*, not a ceiling: a tile authored at 0.9 comes out 0.50 to 0.995 across
+   * its own height field, and the number here is where the middle of that sits.
+   */
   roughness: number;
+  /**
+   * Peak-to-peak roughness swing across the tile, in absolute roughness units.
+   *
+   * Optional; the default reproduces what the multiplicative formula this replaces gave a
+   * material whose range already fitted inside 0..1. Set it explicitly only to widen or
+   * narrow a particular surface's spread on purpose.
+   */
+  roughVar?: number;
   metalness: number;
   /** How strongly the height field bends normals. */
   bump: number;
+  /**
+   * **Extra tangent-space slope, added to the one differenced out of `height`.**
+   *
+   * A scalar height field can only ever produce an *isotropic* normal: central differences
+   * see a thread and a pit identically, because both are "a bump". Cloth is the surface
+   * where that is most wrong. A plain weave is not a field of bumps, it is two sets of
+   * parallel cylinders crossing at right angles, and a cylinder's normal bends in exactly
+   * one axis — along the thread it is flat. Differencing `max(warp, weft)` gives the
+   * diamond lattice that three rounds of critics have called "a printed weave".
+   *
+   * This hook writes the slope directly, so a warp float can tilt the normal in u and leave
+   * v alone. `out[0]` is d(height)/du and `out[1]` d(height)/dv, in the same units the
+   * central difference produces, and it is added *before* `bump` scales the pair.
+   */
+  slope?(u: number, v: number, out: [number, number]): void;
+  /**
+   * Openness for the ORM red channel, 0 = fully enclosed, 1 = open sky. Defaults to
+   * `height`.
+   *
+   * Separate from `height` because the two want different content on cloth: the cavity that
+   * darkens a garment is the *fold*, a 50 mm trough, and it must not be swamped by the
+   * 4 mm thread crests that dominate the height field. A scalar averages down the mip
+   * ladder where a bump's two opposing slopes cancel — the counter recorded for masonry in
+   * `docs/HANDOFF.md` — so this is the channel that survives distance.
+   */
+  cavity?(u: number, v: number): number;
 }
+
+/**
+ * **Roughness is spread around its mean, and the spread cannot plateau.**
+ *
+ * The formula this replaces was `roughness * (0.5 + (1 - h) * 1.05)` clamped into 0..1, and
+ * for every material authored above 0.645 the clamp bit: the wool tile came out with
+ * **15.3 % of its texels at a flat 1.0**, linen 11.9 %, fur 35.4 %, rope 43.0 %, elephant
+ * hide 48.7 %, the shield board 6.3 %. Those are not rough regions, they are regions with
+ * *no roughness signal at all* — a plateau, which is precisely the "flat 255" defect round
+ * three's critics recorded on `praet-torso`, whose frame is more than half shield board.
+ *
+ * The cure is to fit the swing to the headroom instead of clamping it. `up` is capped by the
+ * distance to the ceiling and `down` takes the rest, so a material near 1.0 keeps its whole
+ * peak-to-peak swing and simply spends it downward — which is also the physically honest
+ * direction, since nothing is rougher than fully diffuse. Measured against the bake it
+ * takes every one of those plateaux to 0.00 %.
+ */
+const ROUGH_MIN = 0.04;
+/** Not 1.0: a texel that lands exactly on the ceiling is a 255, and 255 is the defect. */
+const ROUGH_MAX = 0.995;
+/** Cap on the peak-to-peak swing, so a rough material does not swing to a mirror. */
+const ROUGH_SWING = 0.5;
 
 const mix3 = (a: Rgb, b: Rgb, t: number, out: Rgb): void => {
   out[0] = a[0] + (b[0] - a[0]) * t;
@@ -1705,6 +1767,7 @@ export function buildSoldierAtlas(anisotropy: number): SoldierAtlas {
   }
 
   const rgb: Rgb = [0, 0, 0];
+  const slopeOut: [number, number] = [0, 0];
   const heights = new Float32Array(TILE * TILE);
 
   for (let id = 0; id < Mat.Count; id++) {
@@ -1720,6 +1783,12 @@ export function buildSoldierAtlas(anisotropy: number): SoldierAtlas {
         heights[y * TILE + x] = def.height((x + 0.5) / TILE, (y + 0.5) / TILE);
       }
     }
+
+    // Roughness swing, fitted to this material's own headroom once rather than clamped per
+    // texel. See `ROUGH_SWING`: the clamp is what produced the flat-255 plateaux.
+    const want = Math.min(def.roughVar ?? def.roughness * 1.05, ROUGH_SWING);
+    const rUp = Math.min(want * 0.5, Math.max(0, ROUGH_MAX - def.roughness));
+    const rDown = Math.min(want - rUp, Math.max(0, def.roughness - ROUGH_MIN));
 
     for (let y = 0; y < TILE; y++) {
       for (let x = 0; x < TILE; x++) {
@@ -1737,9 +1806,18 @@ export function buildSoldierAtlas(anisotropy: number): SoldierAtlas {
         const xp = (x + 1) % TILE;
         const ym = (y - 1 + TILE) % TILE;
         const yp = (y + 1) % TILE;
-        const dx = (heights[y * TILE + xp] - heights[y * TILE + xm]) * def.bump * TILE * 0.02;
+        let gu = heights[y * TILE + xp] - heights[y * TILE + xm];
         // Canvas Y runs down while the tangent-space green channel runs up.
-        const dy = (heights[ym * TILE + x] - heights[yp * TILE + x]) * def.bump * TILE * 0.02;
+        let gv = heights[ym * TILE + x] - heights[yp * TILE + x];
+        if (def.slope) {
+          def.slope(u, v, slopeOut);
+          gu += slopeOut[0];
+          // Same flip as the difference above: the hook is written in texture space, where
+          // v rises with the canvas row, and green runs the other way.
+          gv -= slopeOut[1];
+        }
+        const dx = gu * def.bump * TILE * 0.02;
+        const dy = gv * def.bump * TILE * 0.02;
         const len = Math.hypot(-dx, -dy, 1);
         nrmData.data[o] = Math.round(((-dx / len) * 0.5 + 0.5) * 255);
         nrmData.data[o + 1] = Math.round(((-dy / len) * 0.5 + 0.5) * 255);
@@ -1753,15 +1831,17 @@ export function buildSoldierAtlas(anisotropy: number): SoldierAtlas {
         // and the gap between two girdle plates actually go dark, which is what the
         // reference frames show and what the rubric's contact-darkening item is asking for.
         const h = heights[y * TILE + x];
-        const ao = 0.3 + h * 0.7;
+        // Openness from `cavity` where a material separates the two — a fold's trough is
+        // what should darken, not a thread's crest. Defaults to the height field.
+        const c = def.cavity ? def.cavity(u, v) : h;
+        const ao = 0.3 + Math.min(1, Math.max(0, c)) * 0.695;
         ormData.data[o] = Math.round(Math.min(1, ao) * 255);
         // Roughness varies *widely* across the surface, not by fifteen percent. A helmet
         // bowl is burnished on the high spots and pitted in the hollows, and it is that
         // spread — a tight glint next to a broad dull sheen a millimetre away — that makes a
         // surface read as metal at all. A near-constant roughness reads as painted plastic
         // however high the metalness is.
-        ormData.data[o + 1] =
-          Math.round(Math.max(0.04, Math.min(1, def.roughness * (0.5 + (1 - h) * 1.05))) * 255);
+        ormData.data[o + 1] = Math.round((def.roughness + rUp - (rUp + rDown) * h) * 255);
         ormData.data[o + 2] = Math.round(def.metalness * 255);
         ormData.data[o + 3] = 255;
       }
