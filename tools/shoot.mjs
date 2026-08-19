@@ -530,9 +530,16 @@ const SHOTS = {
     // t+140, not t+190: by 190 the lines had come apart on this map and `contact` framed men
     // standing about in grass rather than a fight. The ground is already littered at 140.
     follow: 'contact', at: 140, hour: 12.8, weather: 'overcast',
-    // 16 m and a higher eye. t+140 is a denser fight than t+190 was, so the same twelve
-    // metres that framed men standing about at 190 put a shield 0.46 m from the lens at 140.
-    cam: { eye: 1.95, aim: 0.95, dist: 16, fov: 38 },
+    /*
+     * The same answer as `ab2-rome-melee`, arrived at the same way and for the same reason.
+     *
+     * t+140 is a dense fight, and against a dense fight standoff does almost nothing: 12 m
+     * measured 0.46 m to the nearest man and 16 m measured 1.18. Four metres of standoff
+     * bought seventy centimetres, which is the same near-total insensitivity the Roman melee
+     * showed, because in both cases the camera is inside the press rather than outside it.
+     * The lever that works is height. 2.4 m clears the helmets.
+     */
+    cam: { eye: 2.40, aim: 1.05, dist: 18, fov: 38 },
   },
   'ab2-rome-wall': {
     // vs s2-17: 2.35:1 siege plate, tower against a curtain, camera up and well back.
@@ -591,7 +598,11 @@ const SHOTS = {
      * helmets. Two shots of the same nominal subject, corrected in opposite directions, from
      * one measurement each.
      */
-    cam: { eye: 1.75, aim: 0.85, dist: 11, fov: 36 },
+    // 5 m. A named block is a compact object, so the standoff behaves the way the arithmetic
+    // says it should rather than the way a resolved fight does: 11 m measured 11.4 m to the
+    // nearest man, which is a line shot. At five a spearman is half the frame's height and
+    // the frame reads as being inside the ranks, which is what s2-01 is.
+    cam: { eye: 1.75, aim: 1.20, dist: 5, fov: 36 },
   },
   'ab2-carth-march': {
     // vs s2-16: a barbarian mass advancing, close, camera low among them.
