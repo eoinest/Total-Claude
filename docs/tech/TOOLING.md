@@ -235,6 +235,67 @@ A handful of soldiers differing points at one system; thousands points at the sc
 clock. The final line is `✓ deterministic across N checkpoints at M soldiers` or
 `✗ determinism BROKEN at N/M checkpoints`.
 
+**Known fault in this instrument: the hash exists twice.** `qa-determinism.mjs` and the `det`
+arm of `qa-deploy.mjs` each carry their own copy of `window.__poolHash`, injected as a source
+string into `page.evaluate`. Compared line by line at `6698e19` they are semantically
+identical and *already differ cosmetically* — one splits
+`const buf = new ArrayBuffer(4); const dv = new DataView(buf);` across two lines, the other
+inlines it — which is the leading indicator of the drift that matters.
+
+Worse, both hardcode the enum:
+
+```js
+if (p.state[i] !== 10 && p.state[i] !== 11) alive++;
+```
+
+`10` and `11` are `SoldierState.Dying` and `SoldierState.Dead` (`src/sim/types.ts:143-145`).
+Neither tool imports the enum, and it **cannot** — the hash runs in the browser and
+`SoldierState` is not exposed on `window.__game` at all.
+
+Be precise about the harm, because it is narrower than it first looks. The hash itself mixes
+`p.state[i]` raw, so a renumbered enum does not weaken the determinism comparison. What breaks
+is the **reported `alive` count**, and it breaks *identically in both runs*, so the gate still
+passes and simply prints a wrong headcount. That makes it invisible to the gate and visible
+only to a human — which is precisely the failure mode the "a number that cannot be true given
+its neighbour" heuristic exists to catch, now aimed at the instrument that heuristic is
+printed beside.
+
+The fix is two small changes and neither is urgent: publish `SoldierState` on `window.__game`,
+and lift the hash into `tools/lib/pool-hash.mjs` so there is one copy for both gates to inject.
+
+### The invariant with no enforcement
+
+[Simulation](SIMULATION.md#the-rule-and-how-far-it-is-actually-enforced) states the rule and
+audits compliance with it. This section is the other half: what enforcing it would cost.
+
+**The determinism rule is enforced entirely by people remembering it.** Checked at `6698e19`:
+the repository has **no ESLint config, no Biome config, no `.github/` directory, no CI
+workflow of any kind, and no `lint` script in `package.json`.** Nothing greps for
+`Math.random()` in simulation code. `src/util/rand.ts` states the rule in a comment —
+*"`Math.random()` must never be used in sim code"* — and that comment is the whole mechanism.
+
+This is the single most load-bearing invariant in the codebase and the only thing checking it
+is `qa-determinism.mjs`, which is an *end-to-end* check: it tells you the sim diverged, not
+which line did it, and only if somebody runs it.
+
+The current state is clean — the simulation volume audits that call site by call site — so
+this is a gap in the *net*, not a report of a fish through it.
+
+**Priced rather than written**, because it is a check and this is a document:
+
+| | |
+|---|---|
+| Shape | ~40 lines of Node, no dependencies, no browser, no server. Scan `src/sim`, `src/ai`, `src/units` for `Math.random()`, `Date.now()`, `performance.now()`, `new Date(`; skip comment lines |
+| Allowlist needed | **Two entries.** The `const t0 = performance.now()` / `lastCostMs = ... - t0` profiling pair, and the file `src/ai/profile.ts`, which is a profiler |
+| False positives today | Measured by prototyping it: 12 raw hits, 10 cleared by the profiling pattern, 2 remaining — and both of those are in `src/ai/profile.ts`. **Zero after the allowlist** |
+| Runtime | Milliseconds. It could run on every `npm run build` without anyone noticing |
+| What it would not catch | The nondeterminism that actually bites a data-oriented sim: iteration order over a `Set`/`Map` keyed by object identity, and `Array.sort` without a total order. A grep cannot see those, and `qa-determinism.mjs` remains the only thing that can |
+
+The honest summary is that the static check is nearly free and would have caught none of the
+determinism bugs this project has actually had — but it converts the cheapest class of future
+mistake from "found by an end-to-end gate somebody remembered to run" into "found at build
+time".
+
 ### `tools/qa-interact.mjs` — real mouse and keyboard
 
 **33 checks** on port 5224, a fixed linear script of fourteen numbered blocks with no
@@ -565,9 +626,15 @@ rather than refused because *"sharpening ours to match would be forging the answ
 Our renderer has one signature — one grass, one helmet, one sky model, one tone curve. A grader
 who cracks any single pair gets the rest on palette alone. The consequence is that accuracy
 reads **100% until it reads 50%, with no usable range in between**, so the instrument has no
-resolving power precisely in the region where progress happens. Two rounds came back at
-**42/42** while the measured picture statistics improved substantially, which is the signature
-of a scalar that has saturated rather than of a renderer that has not moved.
+resolving power precisely in the region where progress happens.
+
+Round one of the paired instrument **came back 14/14 for each of three independent graders —
+42/42** — and `tools/shoot.mjs` records that all three raised the same two methodological
+faults about the *deck* rather than about the renderer. A second round was built to answer
+them (`tools/ab-pairs-round2.json`, `--set=ab2`, also 14 pairs) and the round-two grader
+results are **not committed anywhere in the tree at `6698e19`**; the claim that it also scored
+42/42 while the measured statistics improved is *unverified here* and should be checked
+against whoever ran it before it is repeated.
 
 The same structural fault is written down for the pooled deck, where it was found first:
 
@@ -658,6 +725,8 @@ Work down this list; it is ordered by how often each has been the answer.
 
 ## Related
 
+- [Simulation](SIMULATION.md) — what the determinism gates are gating, and the enum these
+  harnesses hardcode.
 - [Architecture](../ARCHITECTURE.md) — the systems these tools drive.
 - [Visual rubric](../VISUAL-RUBRIC.md) — the criteria a frame is graded against.
 - [Releasing](../RELEASING.md) — the deploy gate, and verification by bundle hash.
