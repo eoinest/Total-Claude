@@ -112,7 +112,7 @@ await shot('00-opening');
 
 /** Sweep the visible field for a pixel whose *cursor glyph* is `want`. Nothing else. */
 async function findCursor(want, opts = {}) {
-  const { x0 = 140, x1 = W - 140, y0 = 210, y1 = H - 250, step = 40, ctrl = false } = opts;
+  const { x0 = 150, x1 = W - 150, y0 = 300, y1 = H - 285, step = 28, ctrl = false } = opts;
   if (ctrl) await page.keyboard.down('Control');
   try {
     for (let y = y0; y <= y1; y += step) {
@@ -142,22 +142,89 @@ async function clickAndRead(pt, ids, ctrl = false) {
   return { before, hint, curHeld, order: ord.length ? ord[ord.length - 1] : null };
 }
 
+/**
+ * Move the view the way a player does, and re-sweep after each move.
+ *
+ * The screen-edge pan alone is not enough: alternating edges makes the camera oscillate and
+ * travel nowhere, and holding one edge long enough to cross the map takes tens of seconds.
+ * The minimap is the control a player actually uses to cross a battlefield, and
+ * `qa-interact` already grades it as one (950 m of focus travel in a single drag). So the
+ * sweep walks a coarse grid of minimap positions, which covers the whole map in nine presses
+ * and uses nothing but the pointer.
+ */
+async function sweepAround(want, opts = {}) {
+  const first = await findCursor(want, opts);
+  if (first) return { px: first, moves: 0 };
+  const mm = await page.evaluate(() => {
+    const c = document.querySelector('#hud-root .minimap canvas');
+    if (!c) return null;
+    const r = c.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  });
+  if (!mm) return { px: null, moves: 0, why: 'no minimap' };
+  let moves = 0;
+  for (const fy of [0.5, 0.35, 0.65, 0.2, 0.8]) {
+    for (const fx of [0.5, 0.3, 0.7]) {
+      moves++;
+      await page.mouse.move(mm.x + mm.w * fx, mm.y + mm.h * fy);
+      await page.mouse.down();
+      await settle(120);
+      await page.mouse.up();
+      await settle(500);
+      // Off the plate, or the cursor sweep starts inside the minimap's own box.
+      await page.mouse.move(W / 2, H / 2);
+      await settle(250);
+      // Zoom in after the jump. A minimap press moves the focus and leaves the zoom alone,
+      // and at the strategic end a 160-man cohort is a few pixels across — the sweep steps
+      // straight over it. The wheel is the control a player reaches for next.
+      for (let k = 0; k < 4; k++) { await page.mouse.wheel(0, -120); await settle(70); }
+      await settle(350);
+      let px = await findCursor(want, opts);
+      if (px) return { px, moves };
+      // And once more zoomed out again, in case the jump landed on top of the target.
+      for (let k = 0; k < 3; k++) { await page.mouse.wheel(0, 120); await settle(70); }
+      await settle(300);
+      px = await findCursor(want, opts);
+      if (px) return { px, moves };
+    }
+  }
+  return { px: null, moves };
+}
+
 // ---------------------------------------------------------------------------
 // 1. Find one of my own units the way a player does: the "friend" cursor.
 // ---------------------------------------------------------------------------
-const friendPx = await findCursor('friend');
+const found = await sweepAround('friend');
+const friendPx = found.px;
+if (friendPx && found.moves > 0) console.log(`        (the view was moved ${found.moves} times on the minimap first)`);
 say('find my own men', !!friendPx,
   'sweep the opening view for a pixel where the HUD shows the "friend" cursor — no world '
   + 'coordinates, no camera parking',
   friendPx ? `found at (${friendPx.x},${friendPx.y})` : 'no pixel in the opening view reads "friend"');
 let mine = -1;
 if (friendPx) {
-  await page.mouse.click(friendPx.x, friendPx.y);
-  await settle(300);
-  const sel = await page.evaluate(() => window.__sel());
+  /*
+   * Re-check the glyph immediately before pressing, and nudge if the click comes back empty.
+   * The world does not stop between the sweep and the click: a cohort walks, and a pixel that
+   * read "friend" a second ago can be grass by the time the button goes down. Reported as
+   * `nudged` rather than hidden, because a large nudge would itself be a picking result.
+   */
+  let sel = [];
+  let nudged = -1;
+  for (const [dx, dy] of [[0, 0], [0, 14], [0, -14], [16, 0], [-16, 0], [0, 30], [0, -30], [30, 0], [-30, 0]]) {
+    await page.mouse.move(friendPx.x + dx, friendPx.y + dy);
+    await settle(140);
+    if ((await page.evaluate(() => window.__cur())) !== 'friend') continue;
+    await page.mouse.click(friendPx.x + dx, friendPx.y + dy);
+    await settle(300);
+    sel = await page.evaluate(() => window.__sel());
+    if (sel.length) { nudged = Math.hypot(dx, dy); break; }
+  }
+  void nudged;
   mine = sel[0] ?? -1;
   say('click selects it', sel.length === 1,
-    `left-click that pixel`, `selection [${sel.join(',')}] — ${mine >= 0
+    `left-click that pixel${nudged > 0 ? ` (${nudged.toFixed(0)} px of nudge — the cohort had moved)` : ''}`,
+    `selection [${sel.join(',')}] — ${mine >= 0
       ? (await page.evaluate((i) => window.__grade(i), mine)).typeId : 'nothing'}`);
 }
 await shot('01-selected');
@@ -165,12 +232,53 @@ await shot('01-selected');
 // ---------------------------------------------------------------------------
 // 2. Find the wall the way a player does: the "wall" cursor, then read the hint.
 // ---------------------------------------------------------------------------
+/**
+ * Walk the view forward the way a player does, and stop as soon as the wall answers.
+ *
+ * The opening framing is not a place from which the wall can be commanded — measured, 8 of
+ * 184 pixels have masonry under them at all — so a hand pass that gives up there is grading
+ * the scenario's boot camera, not the pick. A player pushes the view forward and zooms in;
+ * the only inputs used here are the screen-edge pan and the wheel, both of which
+ * `qa-interact` already grades as real controls.
+ */
 let wallPx = null;
 if (mine >= 0) {
-  wallPx = await findCursor('wall');
+  const walk = await sweepAround('wall');
+  wallPx = walk.px;
+  if (wallPx) console.log(`        (the view was moved ${walk.moves} times on the minimap first)`);
+  /*
+   * When the sweep finds nothing, say *what it did find*. "No pixel offers a wall order" is
+   * either the most serious result in this file or a badly aimed sweep, and a histogram of
+   * the glyphs the HUD actually showed tells the two apart in one line.
+   */
+  let census = null;
+  if (!wallPx) {
+    census = { kinds: {}, solid: 0, wall: 0, storming: null, n: 0, sample: null };
+    for (let y = 210; y <= H - 250; y += 60) {
+      for (let x = 140; x <= W - 140; x += 60) {
+        await page.mouse.move(x, y); await settle(45);
+        const q = await page.evaluate(() => {
+          const c = window.__ctl();
+          return { cur: window.__cur(), solid: c.solidValid, wall: c.wallValid,
+            storming: !!c.storming, solidY: +c.solidY.toFixed(2), sel: c.model.selection.length };
+        });
+        census.n++;
+        census.kinds[q.cur] = (census.kinds[q.cur] ?? 0) + 1;
+        if (q.solid) { census.solid++; if (!census.sample) census.sample = { x, y, ...q }; }
+        if (q.wall) census.wall++;
+        census.storming = q.storming;
+        census.selN = q.sel;
+      }
+    }
+  }
   say('the wall offers itself', !!wallPx,
     'with that unit selected, sweep for a pixel where the cursor turns to the wall glyph',
-    wallPx ? `found at (${wallPx.x},${wallPx.y})` : 'no pixel in the opening view offers a wall order');
+    wallPx ? `found at (${wallPx.x},${wallPx.y})`
+      : `no pixel in the opening view offers a wall order — over ${census.n} pixels the HUD `
+        + `showed ${JSON.stringify(census.kinds)}, ${census.solid} of them had masonry under `
+        + `the cursor and ${census.wall} answered wallValid; selection size ${census.selN}, `
+        + `SelectionController.storming ${census.storming}`
+        + `${census.sample ? `; first masonry pixel (${census.sample.x},${census.sample.y}) solidY ${census.sample.solidY}` : ''}`);
   if (wallPx) {
     const before = await page.evaluate((i) => window.__grade(i), mine);
     const r = await clickAndRead(wallPx, [mine]);
@@ -207,12 +315,18 @@ if (mine >= 0) {
 // 3. Attack a man on the parapet, found by the cursor turning to "attack" under ctrl.
 // ---------------------------------------------------------------------------
 if (mine >= 0) {
-  const sel = await page.evaluate(() => window.__sel());
-  if (!sel.includes(mine)) {
-    const f = await findCursor('friend');
-    if (f) { await page.mouse.click(f.x, f.y); await settle(280); }
+  // Re-select before asking the attack question. Six minutes of battle have passed since the
+  // last click and the unit may have routed, died or been dropped from the selection; a
+  // right-click with nothing selected issues nothing, which reads as a refusal.
+  let sel = await page.evaluate(() => window.__sel());
+  if (!sel.length) {
+    const f = await sweepAround('friend');
+    if (f.px) { await page.mouse.click(f.px.x, f.px.y); await settle(300); }
+    sel = await page.evaluate(() => window.__sel());
   }
-  const live = (await page.evaluate(() => window.__sel()))[0] ?? mine;
+  const live = sel[0] ?? mine;
+  say('still have a unit in hand', sel.length > 0,
+    'a selection to give the attack order with', `selection [${sel.join(',')}]`);
   const theirs = await page.evaluate(() => window.__theirs());
   // A pixel that reads "wall" plainly and "attack" with ctrl held is, by the interface's own
   // account, a man standing on a wall. That is the whole discoverability claim.

@@ -1275,19 +1275,35 @@ if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, 'hud-final.png')
       const t = document.querySelector('.hud-perf')?.textContent ?? '';
       return Number(t.match(/sel (\d+)/)?.[1] ?? -1);
     });
-    // Frame a unit, then click it. `setCamera` is the harness hook, not an input path, so the
-    // click itself is still a real one at real coordinates.
-    // Project the same way `window.__unitScreen` above does — lifted to the terrain height
-    // plus a metre. A first draft assumed y = 0, which on sloped ground put the click tens of
-    // pixels off the unit and reported selection as broken when it was not.
+    /*
+     * Frame a unit, then click it. `setCamera` is the harness hook, not an input path, so the
+     * click itself is still a real one at real coordinates.
+     *
+     * **The projection is the one `SelectionController.pickUnit` tests, and it used to be a
+     * second copy of the wrong one.** This block carried its own inline `u.x, groundAt + 1,
+     * u.z` — the unit *anchor*, lifted a metre — which is the anchor at the midpoint of the
+     * front rank rather than the centre of the block, at a height above the men's own level.
+     * Fixing `window.__unitScreen` did not fix this, because this page never called it: the
+     * check went red the moment the product's pick started testing the men's mid-body plane
+     * instead of the terrain point 5.4 m behind them. One projection, in one place.
+     */
     const spot = await mp.evaluate(() => {
       const g = window.__game;
       const u = g.battle.units.find((v) => v.faction === 0 && !v.destroyed && v.alive > 100);
       g.setCamera(u.x, u.z, 0.34, u.facing + Math.PI);
       g.advance(0.4);
       const cam = g.engine.context.camera;
+      const p = g.battle.pool;
+      let n = 0, sy = 0;
+      for (const i of u.members) { if (!p.aliveAt(i)) continue; n++; sy += p.y[i]; }
+      const ranks = Math.max(1, Math.ceil(Math.max(1, u.alive) / Math.max(1, u.width)));
+      const depth = Math.max(1.4, (ranks - 1) * u.spacingZ + 1.3);
+      const cx = u.x - Math.sin(u.facing) * depth * 0.5;
+      const cz = u.z - Math.cos(u.facing) * depth * 0.5;
+      const cy = g.battle.groundAt(cx, cz);
+      const standY = n ? sy / n : cy;
       const v = cam.position.clone();
-      v.set(u.x, g.battle.groundAt(u.x, u.z) + 1, u.z).project(cam);
+      v.set(cx, (standY - cy > 2.5 ? standY : cy) + 0.9, cz).project(cam);
       if (v.z > 1) return null;
       return {
         px: (v.x * 0.5 + 0.5) * g.engine.context.viewW,

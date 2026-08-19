@@ -228,6 +228,7 @@ const INSTALL = () => {
     x: +u.x.toFixed(1), z: +u.z.toFixed(1),
     side: g.battle.siege.wallSideAt(u.x, u.z),
     garrisoned: g.battle.siege.isGarrisoned(u.id), owned: g.battle.siege.owned.has(u.id),
+    routing: u.order === 5,
   }));
   window.__draws = () => ctx.renderer.info.render.calls;
 };
@@ -834,7 +835,13 @@ async function carthageCells() {
       const all = await page.evaluate(() => window.__units());
       let best = null;
       for (const u of all) {
-        if (u.faction !== 0 || !u.garrisoned) continue;
+        /*
+         * Not a routing unit. `issueDragOrder` filters routing units out of the selection
+         * before it emits anything, so a cell that picks one measures a right-click that
+         * correctly does nothing: C7 chose a tower party down to 5 of 52 men and reported
+         * "order NONE" against a hint that read "Down off the wall".
+         */
+        if (u.faction !== 0 || !u.garrisoned || u.routing) continue;
         const q = await page.evaluate((id) => window.__census(id), u.id);
         if (q && q.onStone > 15 && (!best || q.onStone > best.q.onStone)) best = { id: u.id, q };
       }
