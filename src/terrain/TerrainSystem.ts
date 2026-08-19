@@ -269,10 +269,22 @@ export class TerrainSystem implements Subsystem {
     this.grass?.dispose();
     this.scatter?.dispose();
     this.water?.dispose();
+
+    // Detach before freeing, and drop the handle after. Disposing the geometry of a mesh
+    // that is still a child of the scene leaves the scene holding a pointer to a dead GPU
+    // object — the same fault `SkySystem.dispose` carried, where eight init/dispose cycles
+    // grew the scene from 43 children to 50 while the renderer's geometry count fell.
+    this.mesh?.removeFromParent();
     this.mesh?.geometry.dispose();
+    this.mesh = undefined;
+
     this.matSet?.dispose();
+    this.matSet = undefined;
     this.textures?.dispose();
+    this.textures = undefined;
     this.heightTex?.dispose();
+    this.heightTex = undefined;
     this.controlTex?.dispose();
+    this.controlTex = undefined;
   }
 }
