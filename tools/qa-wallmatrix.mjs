@@ -821,19 +821,31 @@ async function carthageCells() {
    * a unit no cell has touched — and looking only at the four made three cells report
    * "nothing reached the parapet" while a Roman cohort stood on it.
    */
-  let onWall = null;
-  for (let i = 0; i < 12 && !onWall; i++) {
-    const all = await page.evaluate(() => window.__units());
-    let best = null;
-    for (const u of all) {
-      if (u.faction !== 0 || !u.garrisoned) continue;
-      const q = await page.evaluate((id) => window.__census(id), u.id);
-      if (q && q.onStone > 20 && (!best || q.onStone > best.q.onStone)) best = { id: u.id, q };
+  /**
+   * Re-asked before every cell, not found once and reused.
+   *
+   * A lodgement is the most contested twenty metres on the map. The first version picked one
+   * unit and carried it through three cells; by the third the escalade party it had chosen
+   * was `destroyed: true` and the cell reported "the men never projected", which reads like a
+   * picking failure and is an attrition result.
+   */
+  const findLodgement = async (waitFor = 0) => {
+    for (let i = 0; i <= waitFor; i++) {
+      const all = await page.evaluate(() => window.__units());
+      let best = null;
+      for (const u of all) {
+        if (u.faction !== 0 || !u.garrisoned) continue;
+        const q = await page.evaluate((id) => window.__census(id), u.id);
+        if (q && q.onStone > 15 && (!best || q.onStone > best.q.onStone)) best = { id: u.id, q };
+      }
+      if (best) return best;
+      if (i === waitFor) break;
+      await page.evaluate(() => window.__game.engine.advance(45, 166));
+      await dismissResultsIfUp();
     }
-    if (best) { onWall = best; break; }
-    await page.evaluate(() => window.__game.engine.advance(45, 166));
-    await dismissResultsIfUp();
-  }
+    return null;
+  };
+  let onWall = await findLodgement(12);
   if (onWall) console.log(`    lodgement: unit ${onWall.id} with ${onWall.q.onStone} men on the stone`);
   if (onWall) {
     const here = await stationOfUnit(onWall.id);
@@ -841,11 +853,13 @@ async function carthageCells() {
     const want = rch.hops > 0 ? rch.run : here.run;
     const w = await page.evaluate((r) => window.__stationWorld(r), want);
     const wp = await stationPoint(w.station, 0.2);
-    await cell({ id: 'C6', route: 'traverse', dir: 'along', unitId: onWall.id, seconds: 300,
+    await cell({ id: 'C6', route: 'traverse', dir: 'along', unitId: onWall.id, seconds: 180,
       target: { x: wp.x, y: wp.y, z: wp.z }, yaw: yawFor(1, wp.nx, wp.nz),
       want: 'wall', expect: alongExpect(want) });
 
     // ---- C7 descend into the streets ----
+    onWall = (await findLodgement(2)) ?? onWall;
+    console.log(`    C7 lodgement: unit ${onWall.id} with ${onWall.q.onStone} men on the stone`);
     const h2 = await stationOfUnit(onWall.id);
     const inPt = await page.evaluate(([s, d]) => window.__insidePoint(s, d), [h2.station, 45]);
     const wp2 = await stationPoint(h2.station, 0);
@@ -861,7 +875,7 @@ async function carthageCells() {
         .sort((a, b) => Math.hypot(a.foot[0] - uu.x, a.foot[2] - uu.z)
           - Math.hypot(b.foot[0] - uu.x, b.foot[2] - uu.z))[0];
       const t4 = await stationPoint(s4.station, 0.2);
-      await cell({ id: 'C8', route: 'stairs', dir: 'up', unitId: onWall.id, seconds: 300,
+      await cell({ id: 'C8', route: 'stairs', dir: 'up', unitId: onWall.id, seconds: 180,
         target: { x: t4.x, y: t4.y, z: t4.z }, yaw: yawFor(-1, t4.nx, t4.nz),
         want: 'wall', expect: upExpect(t4.run, 0.3) });
     } else {
