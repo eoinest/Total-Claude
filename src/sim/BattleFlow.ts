@@ -94,22 +94,6 @@ export const WALL_FOOTHOLD = 24;
  */
 export const WALL_HOLD_SECONDS = 20;
 /**
- * Stretches of walkway either side of a lodgement that must also be clear of the garrison.
- *
- * The shoulders, and the reason the rule is not simply "no defender on the bay we are
- * standing on". `Siege` cuts the spine into *runs* — maximal stretches a man can walk without
- * leaving the wall — and on the Aurelian circuit there are 45 of them for 45 garrisonable
- * bays, so a run is one bay: 1,695 stations, ~38 m and ~38 stations apiece. A run boundary is
- * a fact about the masonry, not about the fight, so a defender standing one station the far
- * side of a joint is a metre from the lodgement and would not be counted at all if the test
- * stopped at the run's own edge.
- *
- * One run each way is ~38 m of clear parapet: further than a reserve can cross inside
- * `WALL_HOLD_SECONDS` at a walk, which is the sense in which the ground is *held* rather than
- * merely momentarily unoccupied.
- */
-export const WALL_SHOULDER = 1;
-/**
  * Men of the storming side loose *inside* the city, at which point the wall is irrelevant.
  *
  * A storm that is in the streets has won whatever is still happening on the parapet behind
@@ -517,16 +501,42 @@ export class BattleFlowSystem implements Subsystem {
    * alone met, because emptying a mile and a half of parapet is not what taking a wall means
    * and no assault was ever going to do it. A storm takes a *stretch*.
    *
-   * So the same walk also bins both sides by run, and a lodgement is scored on three things:
+   * So the same walk also bins both sides by run — `Siege` cuts the spine into runs, maximal
+   * stretches a man can walk without leaving the wall, and on this circuit there are 45 of
+   * them for 45 garrisonable bays: 1,695 stations, ~38 m and ~38 stations apiece, so a run is
+   * a bay. A lodgement is a maximal block of consecutive runs the storm has men on, and it
+   * counts as held on two things:
    *
-   *   - it is a maximal block of consecutive runs the storm has men on;
-   *   - no defender stands on it or on the run either side of it (`WALL_SHOULDER`);
+   *   - no man of the garrison stands anywhere on it;
    *   - at least one of its runs is ground the garrison has held (`contestedRuns`).
    *
    * `stormHolding` is the men on every block that passes. Condition A then asks that number,
    * not `stormOnWall`, to reach `WALL_FOOTHOLD` and stay there for `WALL_HOLD_SECONDS` —
    * which is the same twenty-four men and the same twenty seconds as before, now asked about
    * the ground they are actually on.
+   *
+   * ## Why there is no shoulder, which is the one thing here that was measured twice
+   *
+   * The first version of this also required the run *either side* of the lodgement to be
+   * clear, on the reasoning that a run boundary is a fact about the masonry rather than about
+   * the fight and a defender one station the far side of a joint is a metre away. That
+   * reasoning is sound and the rule it produced was **useless**: it never fired, not in twelve
+   * seeded runs of the shipped assault and not in any of six lighter garrisons swept down from
+   * 810 men on the parapet to 108. Which is to say it was the same defect as the one above,
+   * one order of magnitude smaller.
+   *
+   * The measurement that killed it. On a three-bay garrison the storm fought for bay 18 from
+   * t+251 with 25 men against 57, killed the last defender on it by t+297, and then stood on
+   * it with 55 to 84 men and nobody else for the next fifty seconds — while 65 defenders on
+   * bay 19 held exactly 65 men and took **not one casualty** from t+251 to t+347. Rome's
+   * garrison holds the bay it is given; it does not counter-attack along the walkway. So "a
+   * defender within one bay" is not a measurement of contest at all — it is a demand that the
+   * storm also destroy a body of men who are not fighting it, which is annihilation again.
+   *
+   * A run is its own margin. It is 38 m, and a lodgement of two dozen men occupies about 17 m
+   * of that, so clearing the run already puts the nearest possible defender ten metres beyond
+   * either flank — and to be counted at all that defender must be standing somewhere the
+   * garrison chose to hold, having been driven off ground it did hold.
    */
   private censusWall(w: WallLine): WallCensus {
     const b = this.battle;
@@ -550,21 +560,18 @@ export class BattleFlowSystem implements Subsystem {
         if (u.faction === w.garrison) this.contestedRuns.add(r);
       }
     }
-    // Maximal blocks of consecutive runs, each judged on its own shoulders and its own
+    // Maximal blocks of consecutive runs, each judged on its own occupants and its own
     // history. A storm split between two cleared stretches holds both.
     const runs = [...stormRun.keys()].sort((a, c) => a - c);
     for (let i = 0; i < runs.length;) {
       let j = i;
       while (j + 1 < runs.length && runs[j + 1] === runs[j] + 1) j++;
-      const lo = runs[i] - WALL_SHOULDER;
-      const hi = runs[j] + WALL_SHOULDER;
       let men = 0;
       let foe = 0;
       let taken = false;
-      for (let r = lo; r <= hi; r++) {
-        foe += garrisonRun.get(r) ?? 0;
-        if (r < runs[i] || r > runs[j]) continue;
+      for (let r = runs[i]; r <= runs[j]; r++) {
         men += stormRun.get(r) ?? 0;
+        foe += garrisonRun.get(r) ?? 0;
         if (this.contestedRuns.has(r)) taken = true;
       }
       if (foe === 0 && taken) {
@@ -603,11 +610,9 @@ export class BattleFlowSystem implements Subsystem {
     /** Men inside that end it, and how far past the curtain counts as inside. */
     needInside: number;
     insideMargin: number;
-    /** Men holding taken parapet that end it, for how long, and how far either side of a
-     *  lodgement must also be clear for it to count as held. */
+    /** Men holding taken parapet that end it, and for how long. */
     needFoothold: number;
     holdSeconds: number;
-    shoulderRuns: number;
     /** Seconds without progress against the parapet before the storm is judged thrown back,
      *  and how many of them have run. */
     stallSeconds: number;
@@ -623,7 +628,6 @@ export class BattleFlowSystem implements Subsystem {
       insideMargin: INSIDE_MARGIN,
       needFoothold: WALL_FOOTHOLD,
       holdSeconds: WALL_HOLD_SECONDS,
-      shoulderRuns: WALL_SHOULDER,
       stallSeconds: STORM_STALL_SECONDS,
       stalledFor: this.noProgressFor,
     };

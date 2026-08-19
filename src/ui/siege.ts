@@ -284,12 +284,11 @@ export function objectiveBrief(role: 'storm' | 'garrison'): string {
     ? `${n('To take the city')}: get ${n(BREAK_IN)} men ${n(`${INSIDE_MARGIN} m`)} past the `
       + 'curtain &mdash; through the gate or down off the parapet &mdash; or take a stretch of '
       + `parapet and hold ${n(WALL_FOOTHOLD)} men on it for ${n(`${WALL_HOLD_SECONDS} s`)} with `
-      + 'no defender left on it or on the bay either side. Killing the garrison alone will not '
-      + 'do it.'
+      + 'no defender left standing on that stretch. Killing the garrison alone will not do it.'
     : `${n('To hold the city')}: keep them under ${n(BREAK_IN)} men ${n(`${INSIDE_MARGIN} m`)} `
       + 'past the curtain, and never leave them a bay: '
-      + `${n(WALL_FOOTHOLD)} of them holding one uncontested for ${n(`${WALL_HOLD_SECONDS} s`)} `
-      + 'is the wall gone. A storm that makes no ground for '
+      + `${n(WALL_FOOTHOLD)} of them holding a stretch with nobody of ours standing on it for `
+      + `${n(`${WALL_HOLD_SECONDS} s`)} is the wall gone. A storm that makes no ground for `
       + `${n(`${Math.round(STORM_STALL_SECONDS / 60)} minutes`)} is thrown back.`;
 }
 
