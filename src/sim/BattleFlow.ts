@@ -243,6 +243,9 @@ export class BattleFlowSystem implements Subsystem {
     // spawns, so defer the snapshot to the first tick that sees any units.
     this.sides = [];
     this.collapsedFor.clear();
+    // Which bays were defended is a fact about *this* battle, and the one piece of state
+    // here that would silently hand the next one a wall it had already taken.
+    this.contestedRuns.clear();
   }
 
   fixedUpdate(dt: number, ctx: EngineContext): void {
