@@ -106,12 +106,14 @@ const BERTH_HALF: Record<MachineOrderView['kind'], number> = {
 const FLASH_S = 2.5;
 
 /**
- * How far a gate order's marker sits out from the leaves, metres.
+ * Pixels of travel with the right button down before the gesture is a drag, not a click.
  *
- * The berth is where the *head of the trunk* will stand, which is against the timber; drawing
- * the box centred on the gate itself would put it inside the gatehouse and behind the arch.
+ * The same seven `SelectionController.DRAG_PX` uses. Duplicated rather than exported for the
+ * same reason `SIEGE_TOWER_HALF` is duplicated there: one number is cheaper than a build
+ * dependency between two files two workstreams are editing at once, and the arm above
+ * measures the resulting behaviour rather than the constant.
  */
-const GATE_MARK_OUT = 0;
+const DRAG_PX = 7;
 
 export class SiegeOrders {
   /** Installed by `HudSystem` when the battle has a siege system. Null otherwise. */
@@ -126,6 +128,9 @@ export class SiegeOrders {
   lastOrder: MachineOrderView | null = null;
   /** What the cursor is currently offering, for the probe and for the hint. */
   preview: MachineOrderView | null = null;
+  /** Cursor position when the right button went down. See the drag guard in `update`. */
+  private downX = 0;
+  private downY = 0;
 
   constructor(
     private model: HudModel,
@@ -216,15 +221,28 @@ export class SiegeOrders {
 
     if (lead && at) {
       const from = this.machineAt(lead);
-      const mark = this.markPoint(lead);
       if (from) {
-        this.overlay.machineTarget(from.x, from.z, mark.x, mark.z, mark.y,
+        this.overlay.machineTarget(from.x, from.z, lead.x, lead.z, lead.y,
           BERTH_HALF[lead.kind], lead.ok, lead.station >= 0);
       }
     }
 
     // ---- the click ----
-    const released = ctx.input.pointer[2].released;
+    /*
+     * A right *drag* is a frontage command, not a machine order.
+     *
+     * `ctx.input.pointer[2].released` fires at the end of a drag as well as after a click,
+     * and `SelectionController` has always drawn the line at seven pixels of travel: under
+     * that it is a click that means "go here", over it the drag length is a frontage and the
+     * direction is a facing. A tower party is still a body of men and a player is entitled to
+     * dress it, so the same threshold is applied here rather than a second rule — and it is
+     * latched from this file's own pointer samples so no state is read out of a class another
+     * workstream owns.
+     */
+    const btn = ctx.input.pointer[2];
+    if (btn.pressed) { this.downX = this.ptr.x; this.downY = this.ptr.y; }
+    const travelled = Math.hypot(this.ptr.x - this.downX, this.ptr.y - this.downY);
+    const released = btn.released && travelled <= DRAG_PX;
     if (released && at && !this.ptr.overUi) {
       let sent = 0;
       let refused: MachineOrderView | null = null;
@@ -268,11 +286,6 @@ export class SiegeOrders {
     const v = this.model.view(o.unitId);
     if (!v) return null;
     return { x: v.cx, z: v.cz };
-  }
-
-  /** Where the berth marker goes: the dock point, nudged clear of a gate's own arch. */
-  private markPoint(o: MachineOrderView): { x: number; z: number; y: number } {
-    return { x: o.x, z: o.z + GATE_MARK_OUT, y: o.y };
   }
 
   /**

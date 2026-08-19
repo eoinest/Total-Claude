@@ -155,6 +155,19 @@ const GATE_PICK_R = 55;
  */
 const TOWER_BERTH = TOWER_HALF_W * 4;
 /**
+ * How near the wall a click has to land before it means the wall, metres.
+ *
+ * `stationNear` has no distance cap — it is a nearest-neighbour search over the whole spine
+ * and it always answers — so without this a click on open grass three hundred metres from
+ * the circuit resolves to "the bay at the far end" and the cursor cheerfully offers to send
+ * fifteen tonnes of timber there. `wallTargetAt` is asked first and is the strict test (the
+ * standing band plus `WALL_CLICK_BAND`, about 4.9 m); this is the loose one, for the case
+ * the strict test rejects because the ray landed on the glacis at the foot of the masonry
+ * rather than on the walk. Thirty metres is a bay's own frontage, so a click anywhere along
+ * a bay's apron means that bay and a click out in the field means nothing.
+ */
+const MACHINE_AIM_R = 30;
+/**
  * Units that may queue at one machine at once, crew included.
  *
  * A cap rather than a rule about who: four cohorts is already a file long enough to reach
@@ -2292,7 +2305,7 @@ export class Siege implements ElevationOwner {
       this.describe('tower', t.id, t.unitId, station, '', t.dockX, t.dockZ, t.dist, refusal);
 
     const onWall = this.wallTargetAt(x, z);
-    const station = onWall >= 0 ? onWall : this.stationNear(x, z);
+    const station = onWall >= 0 ? onWall : this.nearWallStation(x, z);
     if (station < 0 || this.dead(station)) return here('noWall', -1);
 
     const standoff = this.sFace[station] + 0.32 + TOWER_HALF_D;
@@ -2341,7 +2354,7 @@ export class Siege implements ElevationOwner {
 
     if (great) {
       const onWall = this.wallTargetAt(x, z);
-      const station = onWall >= 0 ? onWall : this.stationNear(x, z);
+      const station = onWall >= 0 ? onWall : this.nearWallStation(x, z);
       if (station < 0 || this.dead(station)) return here('noWall');
       const standoff = this.sFace[station] + 0.4 + GREAT_RAM_HALF_D;
       const tx = this.sx[station] + this.snx[station] * standoff;
@@ -2366,6 +2379,18 @@ export class Siege implements ElevationOwner {
         Math.hypot(tx - r.x, tz - r.z), refusal);
     if (gate.id === r.gateId) return at('already');
     return at('none');
+  }
+
+  /**
+   * The nearest station to a point, but only if the point is near the wall at all.
+   *
+   * The loose half of the wall test. See `MACHINE_AIM_R` for why `stationNear` on its own is
+   * not usable here: it always answers, however far away the click was.
+   */
+  private nearWallStation(x: number, z: number): number {
+    const s = this.stationNear(x, z);
+    if (s < 0) return -1;
+    return Math.hypot(this.sx[s] - x, this.sz[s] - z) <= MACHINE_AIM_R ? s : -1;
   }
 
   /**
@@ -2412,11 +2437,22 @@ export class Siege implements ElevationOwner {
     r.gateId = o.gateId;
     r.station = o.station;
     r.bay = o.station >= 0 ? this.sBay[o.station] : -1;
-    r.wantFacing = Math.atan2(o.x - r.x, o.z - r.z);
-    // Squared up on the bay's own normal for a great ram, because a machine that arrives at
-    // an angle beats on the corner of a block instead of the face of it. A gate ram takes the
-    // bearing of its own approach, which is the road.
-    if (o.station >= 0) r.wantFacing = Math.atan2(-this.snx[o.station], -this.snz[o.station]);
+    /**
+     * Which way the trunk points when it gets there.
+     *
+     * Solved from the *target*, not from where the machine happens to be standing now. A ram
+     * re-aimed 560 m down the circuit arrives on a bearing that has nothing to do with the
+     * gate it is going to beat on, and `spawnRam`'s `atan2(gate - spawn)` was only ever right
+     * because the scenario put the machine on the gate's own axis. Squared on the bay's
+     * normal for a great ram, because a machine that arrives at an angle beats on the corner
+     * of a block instead of the face of it.
+     */
+    if (o.station >= 0) {
+      r.wantFacing = Math.atan2(-this.snx[o.station], -this.snz[o.station]);
+    } else {
+      const g = this.city?.getGates().find((k) => k.id === o.gateId);
+      r.wantFacing = g ? Math.atan2(g.x - o.x, g.z - o.z) : Math.atan2(o.x - r.x, o.z - r.z);
+    }
     r.heave = RAM_HEAVE;
     r.arrived = false;
     r.state = RamState.Approach;
