@@ -56,6 +56,16 @@ export interface SiegeCommandProbe {
   machineOrderAt(unitId: number, x: number, z: number): MachineOrderView | null;
   machineDestinationOf(unitId: number): MachineOrderView | null;
   requestMachineOrder(unitId: number, x: number, z: number): void;
+  /** Whether a storm order here would be obeyed, for a unit that crews nothing. */
+  escaladeOfferAt(unitId: number, x: number, z: number): EscaladeOfferView;
+}
+
+/** The structural view of what `Siege.escaladeOfferAt` answers. */
+export interface EscaladeOfferView {
+  ok: boolean;
+  refusal: string;
+  kind: 'tower' | 'ladder' | null;
+  bay: number;
 }
 
 /** The structural view of `Siege.SiegeMachineOrder` this file needs. */
@@ -72,6 +82,8 @@ export interface MachineOrderView {
   bay: number;
   gateId: string;
   distance: number;
+  /** Seconds the machine will take to get there, heave included. */
+  seconds: number;
 }
 
 /** What the machine is called in a sentence addressed to the player. */
@@ -188,10 +200,11 @@ export class SiegeOrders {
   update(ctx: EngineContext, cursor: CursorPoints): void {
     this.lastOrder = null;
     this.preview = null;
+    this.stormRefusal = '';
     const probe = this.probe;
     const crews = this.crews();
     if (!probe || crews.length === 0) {
-      this.hideHint(ctx);
+      this.stormWarning(ctx, cursor);
       return;
     }
 
@@ -272,6 +285,64 @@ export class SiegeOrders {
     if (ctx.time.elapsed < this.flashUntil) this.showHint(this.flash, this.flashOk);
     else if (lead) this.showHint(this.sentence(lead, 0), lead.ok);
     else this.hideHint(ctx);
+    this.setCursor(lead && lead.ok ? 'machine' : lead ? 'refuse' : '');
+  }
+
+  /** Why a storm order here would be dropped, when it would be. */
+  private stormRefusal = '';
+
+  /**
+   * The other half of the promise: a cohort offered a storm at a bay with nothing to climb.
+   *
+   * `SelectionController` puts "Storm the wall here" under the cursor for any unit standing
+   * outside somebody else's curtain, and `Siege.escalade` then drops the order without a word
+   * when there is no ladder and no ramp within `ESCALADE_REACH` of that bay. A playtest found
+   * it exactly that way: the order was accepted, nothing happened, and the cohort read
+   * "Garrison · Steady" standing in an open field with 160 men.
+   *
+   * Only the **negative** is drawn here, deliberately. The positive is already said by the
+   * wall cursor and its parapet marker, and two labels saying the same thing at one cursor is
+   * how a HUD gets ignored. This file adds the sentence that was missing and nothing else,
+   * which is also why it needs no edit to a file another workstream owns.
+   */
+  private stormWarning(ctx: EngineContext, cursor: CursorPoints): void {
+    const probe = this.probe;
+    if (!probe || this.ptr.overUi || !cursor.wallValid) { this.done(ctx); return; }
+    const sel = this.model.selectedViews.filter((v) => v.own && !v.destroyed);
+    if (sel.length === 0) { this.done(ctx); return; }
+    const offer = probe.escaladeOfferAt(sel[0].id, cursor.wallX, cursor.wallZ);
+    if (offer.ok || offer.refusal === 'crew' || offer.refusal === 'noWall') {
+      this.done(ctx);
+      return;
+    }
+    this.stormRefusal = offer.refusal;
+    const bay = offer.bay >= 0 ? `bay ${offer.bay}` : 'that stretch';
+    this.showHint(offer.refusal === 'full'
+      ? `Every ladder and ramp at ${bay} already has a full file`
+      : `Nothing to climb at ${bay} — bring a ladder or a tower`, false);
+    this.setCursor('refuse');
+  }
+
+  /** Nothing on offer: fall back to the flash, then to nothing. */
+  private done(ctx: EngineContext): void {
+    this.hideHint(ctx);
+    this.setCursor('');
+  }
+
+  /**
+   * A cursor of our own, on our own attribute.
+   *
+   * `SelectionController.updateCursor` owns `document.body.dataset.cur` and is edited by
+   * another workstream this session, so this writes `data-siegecur` instead and the CSS wins
+   * on specificity (`html body[...]`). Two files writing one attribute is a race; two files
+   * writing two attributes with a stated precedence is a rule.
+   */
+  private cur = '';
+  private setCursor(kind: '' | 'machine' | 'refuse'): void {
+    if (kind === this.cur) return;
+    this.cur = kind;
+    if (kind) document.body.dataset.siegecur = kind;
+    else delete document.body.dataset.siegecur;
   }
 
   /**
@@ -307,8 +378,8 @@ export class SiegeOrders {
     switch (o.refusal) {
       case 'none':
         return o.gateId
-          ? `Break the ${where} — ${Math.round(o.distance)} m`
-          : `Roll ${many} to ${where} — ${Math.round(o.distance)} m`;
+          ? `Break the ${where} — ${Math.round(o.distance)} m, ${clock(o.seconds)}`
+          : `Roll ${many} to ${where} — ${Math.round(o.distance)} m, ${clock(o.seconds)}`;
       case 'already':
         return o.gateId
           ? `Already at the ${where}`
@@ -376,6 +447,21 @@ export interface CursorPoints {
  * a no-op on Carthage for a whole workstream. `porta-byrsae` becomes "Porta Byrsae" and
  * anything a future city publishes comes out readable without this file being edited.
  */
+/**
+ * Seconds as something a commander reads, not as a number of seconds.
+ *
+ * "590 s" is data; "9 min 50 s" is a decision. The threshold matters more than the format:
+ * the whole reason this is on the cursor is that a re-aimed tower can cost ten minutes of a
+ * battle and nothing said so until it had happened.
+ */
+function clock(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 90) return `${s} s`;
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return r === 0 ? `${m} min` : `${m} min ${r} s`;
+}
+
 function gateName(id: string): string {
   return id
     .split(/[-_]/)

@@ -115,6 +115,24 @@ body[data-cur='wall'] #viewport {
 
 body[data-cur='select'] #viewport { cursor: crosshair; }
 
+/* Aiming a siege machine, which is not aiming men.
+
+   Its own attribute, not `data-cur`: `SelectionController` owns that one, and two files
+   writing one attribute every frame is a race. `html body[...]` outranks `body[...]` on
+   specificity, so this wins wherever both apply regardless of source order — which is the
+   point, because a right-click with a tower party selected moves fifteen tonnes of timber
+   and the boot glyph says "these men will walk over there". A playtest reported exactly
+   that: the cursor said move, and the ram battered a different gate. */
+html body[data-siegecur='machine'] #viewport {
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'><g stroke='%23140f09' stroke-width='2.4' stroke-linejoin='round' fill='%23f6ead0'><path d='M5 6h18v13H5z'/><path d='M2 4h24v3H2z'/></g><path d='M5 6h18v13H5z' fill='%23f6ead0'/><path d='M2 4h24v3H2z' fill='%23d9b25f'/><path d='M7 21.5h14' stroke='%23140f09' stroke-width='3.6' stroke-linecap='round'/><path d='M7 21.5h14' stroke='%238a6a2f' stroke-width='2' stroke-linecap='round'/><circle cx='9' cy='25' r='3.4' fill='%23f6ead0' stroke='%23140f09' stroke-width='2.2'/><circle cx='19' cy='25' r='3.4' fill='%23f6ead0' stroke='%23140f09' stroke-width='2.2'/><path d='M23 21.5h7' stroke='%23140f09' stroke-width='4' stroke-linecap='round'/><path d='M23 21.5h7' stroke='%23a8202a' stroke-width='2.2' stroke-linecap='round'/></svg>") 4 4, pointer;
+}
+
+/* And the refusal, which has to be a glyph and not merely an absence: the whole complaint
+   about a committed tower was that saying no looked identical to doing nothing. */
+html body[data-siegecur='refuse'] #viewport {
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'><circle cx='16' cy='16' r='12' fill='none' stroke='%23140f09' stroke-width='6'/><circle cx='16' cy='16' r='12' fill='none' stroke='%23c8443a' stroke-width='3.6'/><path d='M7.6 7.6 24.4 24.4' stroke='%23140f09' stroke-width='6' stroke-linecap='round'/><path d='M7.6 7.6 24.4 24.4' stroke='%23c8443a' stroke-width='3.6' stroke-linecap='round'/></svg>") 16 16, not-allowed;
+}
+
 /* ---------------------------------------------------------------- loading -- */
 
 #loading {

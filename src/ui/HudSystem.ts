@@ -28,7 +28,7 @@ import { Minimap } from './Minimap';
 import { PointerTracker } from './pointer';
 import { SelectionController } from './SelectionController';
 import { SettingsPanel } from './SettingsPanel';
-import { SiegeOrders, type MachineOrderView } from './SiegeOrders';
+import { SiegeOrders, type EscaladeOfferView, type MachineOrderView } from './SiegeOrders';
 import { DEFAULT_UI_SCALE } from './theme';
 import { Tooltip } from './Tooltip';
 import { TopBar } from './TopBar';
@@ -339,14 +339,17 @@ export class HudSystem implements Subsystem {
       machineOrderAt?: (u: number, x: number, z: number) => MachineOrderView | null;
       machineDestinationOf?: (u: number) => MachineOrderView | null;
       requestMachineOrder?: (u: number, x: number, z: number) => void;
+      escaladeOfferAt?: (u: number, x: number, z: number) => EscaladeOfferView;
     } | undefined;
     if (cmd && typeof cmd.machineOrderAt === 'function'
       && typeof cmd.machineDestinationOf === 'function'
-      && typeof cmd.requestMachineOrder === 'function') {
+      && typeof cmd.requestMachineOrder === 'function'
+      && typeof cmd.escaladeOfferAt === 'function') {
       this.siege.probe = {
         machineOrderAt: (u, x, z) => cmd.machineOrderAt!(u, x, z),
         machineDestinationOf: (u) => cmd.machineDestinationOf!(u),
         requestMachineOrder: (u, x, z) => cmd.requestMachineOrder!(u, x, z),
+        escaladeOfferAt: (u, x, z) => cmd.escaladeOfferAt!(u, x, z),
       };
     }
 

@@ -168,6 +168,21 @@ const TOWER_BERTH = TOWER_HALF_W * 4;
  */
 const MACHINE_AIM_R = 30;
 /**
+ * Seconds a docked tower stands with an empty file before it is **spent**.
+ *
+ * `TowerState.Spent` was declared and never assigned: a machine went Approach -> Docking ->
+ * Landing -> Boarding and stayed at `Boarding` for the rest of the battle, whether its file
+ * had crossed, died or never existed. Reported from a playtest as four towers frozen at
+ * `boarding` at t+904. The cost was not cosmetic — `crewsAMachine` is true for a tower's gang
+ * for ever, so the cohort that pushed it could never be given another order, `escalade`
+ * skips a spent tower but not a boarding one, and the berth was never released.
+ *
+ * Twenty seconds rather than one tick, because the file empties and refills: the last man of
+ * one cohort steps onto the ramp a few seconds before the next cohort's first man reaches the
+ * mouth, and a machine that retired in that gap would drop the rest of the assault.
+ */
+const TOWER_IDLE_LIMIT = 20;
+/**
  * Units that may queue at one machine at once, crew included.
  *
  * A cap rather than a rule about who: four cohorts is already a file long enough to reach
@@ -356,6 +371,8 @@ interface SiegeTower {
   wantFacing: number;
   /** Seconds the gang is still shifting rollers and will not roll the machine forward. */
   heave: number;
+  /** Seconds docked with nobody left to send up. See `TOWER_IDLE_LIMIT`. */
+  idle: number;
   state: TowerState;
   /** Absolute Y of the fighting deck. */
   deckY: number;
@@ -804,6 +821,17 @@ export interface SiegeMachineOrder {
   gateId: string;
   /** Metres the machine still has to roll to get there. */
   distance: number;
+  /**
+   * Seconds that will take, heave included.
+   *
+   * Published rather than left to the UI to divide, because the divisor is a property of the
+   * machine and the UI does not have it. It is also the number the player most needs and
+   * least expects: a playtest re-aimed a tower and measured **590 seconds** before it reached
+   * the new bay, which is not a bug — 0.42 m/s is the speed a gang on levers and rollers
+   * moves fifteen tonnes of green timber, and the owner asked for exactly that — but a cost
+   * of ten minutes has to be quoted *before* the click, not discovered after it.
+   */
+  seconds: number;
 }
 
 export class Siege implements ElevationOwner {
@@ -1913,6 +1941,96 @@ export class Siege implements ElevationOwner {
   }
 
   /**
+   * What this unit could climb at `(x, z)`, and why it could not.
+   *
+   * **One predicate, shared.** `escalade` acts on this and `escaladeOfferAt` draws it, so the
+   * cursor cannot promise a storm the simulation will not perform. That promise is exactly
+   * what a playtest caught: a storm order given at a bay with no ladder and no ramp within
+   * reach was *accepted* by the cursor, dropped in silence by `escalade`'s bare `return
+   * false`, and the cohort then read "Garrison · Steady" standing in an open field. From the
+   * player's chair a refusal nobody mentions is indistinguishable from a bug.
+   *
+   * The refusals are distinguished because they are different sentences with different
+   * answers. "Nothing to climb here" means bring a machine or pick another bay; "every file
+   * at that bay is full" means wait or pick another bay; "this unit is working a machine of
+   * its own" means it is not free to go and never will be while it has one.
+   */
+  private findEscalade(unitId: number, x: number, z: number): {
+    refusal: 'none' | 'crew' | 'noWall' | 'noWay' | 'full';
+    kind: 'tower' | 'ladder' | null;
+    tower: SiegeTower | null;
+    group: Ladder[] | null;
+    station: number;
+    distance: number;
+  } {
+    const none = (refusal: 'crew' | 'noWall' | 'noWay' | 'full', station = -1) =>
+      ({ refusal, kind: null, tower: null, group: null, station, distance: Infinity } as const);
+    // A gang has its own machine to work. Sending the ram crew up a ladder would abandon
+    // the ram in the carriageway, which is the failure this workstream has already fixed once.
+    if (this.crewsAMachine(unitId)) return none('crew');
+    const dest = this.wallTargetAt(x, z) >= 0 ? this.wallTargetAt(x, z) : this.stationNear(x, z);
+    if (dest < 0) return none('noWall');
+    const u = this.battle.unitById(unitId);
+    if (!u) return none('noWall', dest);
+
+    let bestKind: 'tower' | 'ladder' | null = null;
+    let bestD = Infinity;
+    let bestTower: SiegeTower | null = null;
+    let bestGroup: Ladder[] | null = null;
+    /** Something was in reach but its file was full — a different sentence from "nothing". */
+    let sawFull = false;
+
+    for (const t of this.towers) {
+      // A machine still trundling across the glacis is a promise; one whose ramp is down is
+      // a road. Both count — the men walk out with it and go up when it lands — but a spent
+      // one does not.
+      if (t.state === TowerState.Spent) continue;
+      if (Math.abs(t.station - dest) > ESCALADE_REACH) continue;
+      if (t.boarders.length >= MAX_BOARDING_UNITS && !t.boarders.includes(unitId)) {
+        sawFull = true;
+        continue;
+      }
+      const d = Math.hypot(t.x - u.x, t.z - u.z);
+      if (d < bestD) { bestD = d; bestKind = 'tower'; bestTower = t; bestGroup = null; }
+    }
+    for (const l of this.ladders) {
+      if (Math.abs(l.station - dest) > ESCALADE_REACH) continue;
+      if (l.boarders.length >= MAX_BOARDING_UNITS && !l.boarders.includes(unitId)) {
+        sawFull = true;
+        continue;
+      }
+      const d = Math.hypot(l.x - u.x, l.z - u.z);
+      if (d < bestD) {
+        bestD = d;
+        bestKind = 'ladder';
+        bestTower = null;
+        bestGroup = this.ladders.filter((k) => k.unitId === l.unitId);
+      }
+    }
+    if (bestKind === null) return none(sawFull ? 'full' : 'noWay', dest);
+    return { refusal: 'none', kind: bestKind, tower: bestTower, group: bestGroup,
+      station: dest, distance: bestD };
+  }
+
+  /**
+   * Whether a storm order at `(x, z)` would be obeyed, for the cursor to say so first.
+   *
+   * Pure. The UI's whole job here is to stop offering an order the sim will drop; see
+   * `findEscalade` for the report this came out of.
+   */
+  escaladeOfferAt(unitId: number, x: number, z: number): {
+    ok: boolean; refusal: string; kind: 'tower' | 'ladder' | null; bay: number;
+  } {
+    const f = this.findEscalade(unitId, x, z);
+    return {
+      ok: f.refusal === 'none',
+      refusal: f.refusal,
+      kind: f.kind,
+      bay: f.station >= 0 && f.station < this.nStations ? this.sBay[f.station] : -1,
+    };
+  }
+
+  /**
    * Order a unit standing in the field up onto the wall by whatever is leaning on it.
    *
    * The mirror of `sendToWall`, and the half that did not exist. A besieger is not entitled
@@ -1931,39 +2049,10 @@ export class Siege implements ElevationOwner {
    * cannot climb is a real order and this must not eat it.
    */
   escalade(u: UnitGroupState, x: number, z: number): boolean {
-    // A gang has its own machine to work. Sending the ram crew up a ladder would abandon
-    // the ram in the carriageway, which is the failure this workstream has already fixed once.
-    if (this.crewsAMachine(u.id)) return false;
-    const dest = this.wallTargetAt(x, z) >= 0 ? this.wallTargetAt(x, z) : this.stationNear(x, z);
-    if (dest < 0) return false;
-
-    let bestKind: 'tower' | 'ladder' | null = null;
-    let bestD = Infinity;
-    let bestTower: SiegeTower | null = null;
-    let bestGroup: Ladder[] | null = null;
-
-    for (const t of this.towers) {
-      // A machine still trundling across the glacis is a promise; one whose ramp is down is
-      // a road. Both count — the men walk out with it and go up when it lands — but a spent
-      // one does not.
-      if (t.state === TowerState.Spent) continue;
-      if (Math.abs(t.station - dest) > ESCALADE_REACH) continue;
-      if (t.boarders.length >= MAX_BOARDING_UNITS && !t.boarders.includes(u.id)) continue;
-      const d = Math.hypot(t.x - u.x, t.z - u.z);
-      if (d < bestD) { bestD = d; bestKind = 'tower'; bestTower = t; bestGroup = null; }
-    }
-    for (const l of this.ladders) {
-      if (Math.abs(l.station - dest) > ESCALADE_REACH) continue;
-      if (l.boarders.length >= MAX_BOARDING_UNITS && !l.boarders.includes(u.id)) continue;
-      const d = Math.hypot(l.x - u.x, l.z - u.z);
-      if (d < bestD) {
-        bestD = d;
-        bestKind = 'ladder';
-        bestTower = null;
-        bestGroup = this.ladders.filter((k) => k.unitId === l.unitId);
-      }
-    }
-    if (bestKind === null) return false;
+    const found = this.findEscalade(u.id, x, z);
+    if (found.refusal !== 'none') return false;
+    const bestTower = found.tower;
+    const bestGroup = found.group;
 
     // A unit cannot be queuing at two machines at once, and it cannot be halfway up a stair
     // either. Take it off whatever it was doing first.
@@ -2223,14 +2312,20 @@ export class Siege implements ElevationOwner {
   machineDestinationOf(unitId: number): SiegeMachineOrder | null {
     const t = this.towerOf(unitId);
     if (t) {
-      return this.describe('tower', t.id, unitId, t.station, '', t.dockX, t.dockZ,
+      const d = this.describe('tower', t.id, unitId, t.station, '', t.dockX, t.dockZ,
         Math.hypot(t.dockX - t.x, t.dockZ - t.z), 'none');
+      // Its *remaining* run, not the cost of a fresh order: the heave it is part way through
+      // is `t.heave`, and quoting a full one on a machine already rolling would be a lie.
+      d.seconds = d.distance / TOWER_SPEED + Math.max(0, t.heave);
+      return d;
     }
     const r = this.ramOf(unitId);
     if (!r) return null;
     const kind: SiegeMachineKind = r.kind === RamKind.Great ? 'greatRam' : 'ram';
-    return this.describe(kind, r.id, unitId, r.station, r.gateId, r.targetX, r.targetZ,
+    const d = this.describe(kind, r.id, unitId, r.station, r.gateId, r.targetX, r.targetZ,
       Math.hypot(r.targetX - r.x, r.targetZ - r.z), 'none');
+    d.seconds = d.distance / RAM_SPEED + Math.max(0, r.heave);
+    return d;
   }
 
   /**
@@ -2261,6 +2356,8 @@ export class Siege implements ElevationOwner {
     kind: SiegeMachineKind, machineId: number, unitId: number, station: number,
     gateId: string, x: number, z: number, distance: number, refusal: SiegeRefusal
   ): SiegeMachineOrder {
+    const tower = kind === 'tower';
+    const speed = tower ? TOWER_SPEED : RAM_SPEED;
     return {
       kind, machineId, unitId,
       ok: refusal === 'none',
@@ -2271,6 +2368,7 @@ export class Siege implements ElevationOwner {
       bay: station >= 0 && station < this.nStations ? this.sBay[station] : -1,
       gateId,
       distance,
+      seconds: distance / speed + (tower ? TOWER_HEAVE : RAM_HEAVE),
     };
   }
 
@@ -3138,6 +3236,7 @@ export class Siege implements ElevationOwner {
       facing: 0,
       wantFacing: 0,
       heave: 0,
+      idle: 0,
       state: TowerState.Approach,
       deckY: 0,
       dockX: x,
@@ -3762,7 +3861,64 @@ export class Siege implements ElevationOwner {
       }
 
       if (t.state === TowerState.Landing) t.state = TowerState.Boarding;
+
+      /**
+       * A tower whose file is empty has finished, and says so.
+       *
+       * The condition is asked with `mayBoard` — **the same predicate `stepCrossing` admits
+       * men by** — and not with a hand-rolled "is anybody left" test. That is the trap this
+       * file has paid for three times: `musterOwned` and `stepCrossing` once used different
+       * tests for the same question and a routed party froze the player's cohort 14.6 m from
+       * a 1.6 m admission radius. If a unit is not one this machine will admit, it is not a
+       * unit this machine is waiting for.
+       *
+       * Spending it hands the gang back, exactly as the ram's `Spent` branch does and for the
+       * same reason: a machine that is finished has no further claim on a cohort, and a unit
+       * the siege system owns is steered to absolute muster slots and cannot form line,
+       * charge or be given a formation.
+       */
+      if (t.state === TowerState.Boarding) {
+        let waiting = t.crossing ? t.crossing.queue.length : 0;
+        for (const id of t.boarders) {
+          const bu = b.unitById(id);
+          if (!this.mayBoard(bu)) continue;
+          for (const i of bu.members) {
+            if (!b.pool.aliveAt(i)) continue;
+            // Still on the field side: not up on the stone and not already on the ramp.
+            if (this.stationOf[i] < 0 && this.crossOf[i] === -1 && b.elevated[i] === 0) waiting++;
+          }
+        }
+        if (waiting > 0) t.idle = 0;
+        else {
+          t.idle += dt;
+          if (t.idle >= TOWER_IDLE_LIMIT) {
+            t.state = TowerState.Spent;
+            this.releaseCrew(t.unitId);
+          }
+        }
+      }
     }
+  }
+
+  /**
+   * Give a machine's gang back to the player.
+   *
+   * Lifted out of the ram's `Spent` branch so the tower cannot do three quarters of it. Men
+   * who are up on the stonework or on a crossing are left alone — they are the siege system's
+   * until they are somewhere a formation can stand — and only the ones still on the ground
+   * are handed back to `steerToSlots`.
+   */
+  private releaseCrew(unitId: number): void {
+    if (!this.owned.has(unitId)) return;
+    this.owned.delete(unitId);
+    const u = this.battle.unitById(unitId);
+    if (!u) return;
+    for (const i of u.members) {
+      if (this.stationOf[i] >= 0 || this.crossOf[i] !== -1) continue;
+      this.battle.elevated[i] = 0;
+      this.battle.support[i] = NO_SUPPORT;
+    }
+    if (u.order === UnitOrder.Garrison) u.order = UnitOrder.MoveTo;
   }
 
   /**
