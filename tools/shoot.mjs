@@ -459,6 +459,13 @@ const SHOTS = {
     // vs s2-04 (Pydna): packed ranks from just above helmet height, strongly compressed.
     desc: 'AB2: the Roman front rank from helmet height, telephoto down the line',
     follow: 'romanFront', at: 6, hour: 9.0, weather: 'clear',
+    // Measured at 10 degrees off the sun without this, i.e. straight into it: the men are
+    // backlit, their front faces are the shadowed ones and the upper half of the frame is one
+    // flat cream. The hour cannot fix it — the Roman line faces north on this map, so its
+    // front is away from the sun at every hour there is — so the camera swings instead.
+    // 1.2 rad puts the sun at about 80 degrees, which is the cross-light the reference's own
+    // march and warband plates are shot under and the best form modelling available here.
+    yawAdd: 1.2,
     cam: { eye: 2.05, aim: 1.32, dist: 8, fov: 30 },
   },
   'ab2-rome-melee': {

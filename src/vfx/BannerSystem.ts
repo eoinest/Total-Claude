@@ -353,6 +353,7 @@ export class BannerSystem {
   private varAttr: THREE.BufferAttribute;
   private clothMat: THREE.MeshStandardMaterial;
   private clothDepth: THREE.MeshDepthMaterial;
+  private poleDepth!: THREE.MeshDepthMaterial;
   /**
    * Held by reference and handed to every program this material compiles, so `setLighting`
    * has one place to write and a quality-driven recompile cannot orphan it.
@@ -574,6 +575,31 @@ export class BannerSystem {
     };
     poleMat.customProgramCacheKey = () => 'vfx-standard-variant-metal';
 
+    /*
+     * The staff's depth variant, and it exists because turning `castShadow` on without it is
+     * worse than leaving it off.
+     *
+     * Both factions' finials live in one geometry and the *colour* vertex shader collapses
+     * whichever one the instance is not. Three's generated depth material knows nothing about
+     * `aMask` or `aVariant`, so the shadow pass would draw both — and every Roman aquila on
+     * the field would lay a Germanic aurochs skull's shadow across its own signifer. A
+     * collapse that lives in one of two shaders is not a collapse.
+     */
+    const poleDepth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+    poleDepth.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader
+        .replace(
+          '#include <common>',
+          '#include <common>\nattribute float aMask;\nattribute float aVariant;'
+        )
+        .replace(
+          '#include <begin_vertex>',
+          '#include <begin_vertex>\nif (aMask > 0.5 && abs(aMask - aVariant) > 0.5) transformed = vec3(0.0);'
+        );
+    };
+    poleDepth.customProgramCacheKey = () => 'vfx-standard-depth-variant';
+    this.poleDepth = poleDepth;
+
     this.poleVariant = new THREE.InstancedBufferAttribute(new Float32Array(maxBanners), 1);
     this.poleVariant.setUsage(THREE.DynamicDrawUsage);
     poleGeo.setAttribute('aVariant', this.poleVariant);
@@ -591,6 +617,7 @@ export class BannerSystem {
      * men carrying it.
      */
     this.poleMesh.castShadow = true;
+    this.poleMesh.customDepthMaterial = poleDepth;
     this.poleMesh.receiveShadow = true;
     this.poleMesh.frustumCulled = false;
     this.poleMesh.name = 'vfx-standards';
@@ -1302,6 +1329,7 @@ export class BannerSystem {
     this.clothGeo.dispose();
     this.clothMat.dispose();
     this.clothDepth.dispose();
+    this.poleDepth.dispose();
     this.poleMesh.geometry.dispose();
     (this.poleMesh.material as THREE.Material).dispose();
     this.poleMesh.dispose();
