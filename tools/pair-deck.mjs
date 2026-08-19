@@ -118,19 +118,24 @@ const QUALITY = Number(args.get('quality') ?? 90);
  * "TOTAL WAR / ROME II" in the bottom right of the Rome II side of the wall pair. That is
  * leak one, again, on the first deck this tool ever produced.
  *
- * So the primary defence is the *other* axis, where the margin is much larger. Every lockup
- * in all twenty-two store screenshots sits hard against the right edge. Measured two ways:
+ * So a second defence goes on the *other* axis: every lockup in all twenty-two plates sits
+ * hard against the right edge, so `MAX_W` windows the frame to 1440 px of its 1920.
  *
- *   - cross-plate agreement on the four "Emperor Edition" plates (the only variant whose
- *     glyphs are opaque enough for it) puts that lockup at x 1499-1841, y 887-1026;
- *   - a 140 px vertical band cut at x 1330-1470 from all twenty-two plates contains no glyph
- *     pixel of any variant, including the wide "THE BATTLE OF PYDNA" title.
+ * **Neither axis alone is sufficient**, and it is worth being exact about that, because the
+ * next person to widen one of them will assume the other is carrying it:
  *
- * `MAX_W = 1440` therefore clears the leftmost lockup pixel by at least 30 px on the worst
- * plate and by 59 px on the Emperor Edition ones. The vertical window is kept as well, so a
- * surviving lockup would have to be *both* left of 1440 *and* above 80% of frame height, and
- * none is either. Two independent defences, and a proof sheet of the discarded region is
- * written beside the key every run so the measurement can be re-checked rather than trusted.
+ *   - s2-17 (cinematic) puts the top of "TOTAL WAR" at y≈803, *inside* the 144-864 row
+ *     window that plate gets. Only the 1440 crop excludes it — leftmost glyph x≈1535.
+ *   - s2-04 ("THE BATTLE OF PYDNA") reaches **x≈1427, left of 1440**. Only the height window
+ *     excludes it — that title sits at y≈1010-1050, well under the 800-row cut.
+ *
+ * The invariant is therefore the conjunction: *no lockup element is both left of `MAX_W`
+ * and above the height cut.* Measured rather than assumed — cross-plate agreement on the
+ * four "Emperor Edition" plates puts that lockup at x 1499-1841, y 887-1026, and the
+ * delivered deck was checked at native pixels over the bottom-right 500x280 of all fourteen
+ * Rome II frames, which is empty of glyphs. A proof sheet of the discarded region is written
+ * beside the key every run so the next round re-checks the measurement instead of inheriting
+ * it — which is exactly what inheriting the "bottom 20%" rule cost.
  *
  * Stated plainly, because this is the one gate in this file that is a measurement with a
  * margin rather than an automatic refusal: a detector was tried and rejected. Counting
