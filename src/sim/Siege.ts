@@ -289,18 +289,25 @@ const DERELICT_LIMIT = 40;
 /** Ticks a wall order may run before it is abandoned as impossible. See `advancePlans`. */
 const PLAN_TIMEOUT = 30 * 60 * 10;
 /**
- * Ticks a descent may make no progress before the men who *are* down are given back.
+ * Fraction of a unit's living men that must still be up on the stone for it to count as a
+ * garrison when an order arrives.
  *
- * `PLAN_TIMEOUT` is ten minutes and it is the right number for "this order can never
- * finish"; it is the wrong number for "this order has finished for a hundred and forty-three
- * of a hundred and fifty-two men". Measured on Rome: 152 men ordered down, 143 on the
- * terrain, 9 still on the stone, and the plan still open at **age 9,111** — five minutes in
- * which the unit stayed `garrisoned` and `owned`, so the next order the player gave it was
- * read as a traverse and it could not be sent back up. Twenty seconds of no improvement is
- * far longer than the gap between two men clearing a stair head and far shorter than a
- * player's patience.
+ * **Not a timeout, and the first attempt at this was one.** Rome: 152 men ordered down, 143
+ * on the terrain, 9 still on the stone, plan open at **age 9,111** — five minutes in which
+ * the unit stayed `garrisoned`, so the next order was read as a traverse and it could not be
+ * sent back up. The obvious fix — end a descent that has stopped descending and give the unit
+ * back — is *wrong*, and the probe said so in one line: `releaseToGround` clears `elevated`
+ * and `support` for every man, so the nine still on the parapet were dropped off it at
+ * **313 m/s**, and a legitimate descent that takes 106.8 s was cut off at 20.
+ *
+ * So the plan is left alone and the *question* is fixed instead. "Is this unit on the wall"
+ * is a question about where its men are standing now, not about which map it has a record
+ * in — the same distinction `standingStation` draws against an assigned station, and the same
+ * one that made a 3.62 m teleport. A third is the crossing point because it is comfortably
+ * clear of both cases: a cohort that has begun a descent and a cohort that has nearly
+ * finished one are on opposite sides of it, and nobody falls.
  */
-const DESCENT_STALL = 30 * 20;
+const ON_WALL_FRACTION = 1 / 3;
 /**
  * Metres the order destination must jump before it counts as a new order.
  *
@@ -625,10 +632,6 @@ interface WallPlan {
   age: number;
   /** Men this plan could not move on the last tick. Reported, never silently absorbed. */
   stuck: number;
-  /** Fewest men still to shift that this plan has ever seen. See `DESCENT_STALL`. */
-  best: number;
-  /** Ticks since `best` last improved. */
-  sinceBest: number;
 }
 
 interface Ladder {
@@ -1890,6 +1893,29 @@ export class Siege implements ElevationOwner {
     return this.garrisons.has(unitId);
   }
 
+  /**
+   * Is this unit *standing on the wall right now*, as opposed to having a record saying so?
+   *
+   * `garrisons.has(id)` survives a descent for as long as the plan does, and a plan survives
+   * until its last man is down or `PLAN_TIMEOUT` fires ten minutes later. Every order given
+   * in that window was read as a move along the parapet, so a cohort that had walked into the
+   * city could not be sent back up it. Counting men is the only answer that cannot drift from
+   * the thing it describes. See `ON_WALL_FRACTION`.
+   */
+  private standingOnWall(unitId: number): boolean {
+    const u = this.battle.unitById(unitId);
+    if (!u) return false;
+    const p = this.battle.pool;
+    let alive = 0;
+    let up = 0;
+    for (const i of u.members) {
+      if (!p.aliveAt(i)) continue;
+      alive++;
+      if (this.stationOf[i] >= 0 || this.crossOf[i] !== -1) up++;
+    }
+    return alive > 0 && up >= alive * ON_WALL_FRACTION;
+  }
+
   ownsUnit(unitId: number): boolean {
     return this.owned.has(unitId);
   }
@@ -1976,7 +2002,7 @@ export class Siege implements ElevationOwner {
     u.waypoints.length = 0;
     u.contactLock = false;
     this.plans.set(u.id, {
-      goal: WallGoal.Ascend, destStation: dest, destRun, stair, gx: x, gz: z, age: 0, stuck: 0, best: 1e9, sinceBest: 0,
+      goal: WallGoal.Ascend, destStation: dest, destRun, stair, gx: x, gz: z, age: 0, stuck: 0,
     });
     return true;
   }
@@ -2008,7 +2034,7 @@ export class Siege implements ElevationOwner {
     const fromRun = here >= 0 ? this.sRun[here] : -1;
     if (!this.runsConnected(fromRun, destRun)) return false;
     this.plans.set(u.id, {
-      goal: WallGoal.Traverse, destStation: dest, destRun, stair: -1, gx: x, gz: z, age: 0, stuck: 0, best: 1e9, sinceBest: 0,
+      goal: WallGoal.Traverse, destStation: dest, destRun, stair: -1, gx: x, gz: z, age: 0, stuck: 0,
     });
     // A unit walking somewhere else must be free to re-form when it gets there, even if it
     // arrived as a boarding party. Stickiness is a property of a lodgement, not of a unit.
@@ -2036,7 +2062,7 @@ export class Siege implements ElevationOwner {
     if (stair < 0) return false;
     this.plans.set(u.id, {
       goal: WallGoal.Descend, destStation: -1, destRun: this.links[stair].runB,
-      stair, gx: x, gz: z, age: 0, stuck: 0, best: 1e9, sinceBest: 0,
+      stair, gx: x, gz: z, age: 0, stuck: 0,
     });
     const g = this.garrisons.get(u.id);
     if (g) g.sticky = false;
@@ -2760,7 +2786,7 @@ export class Siege implements ElevationOwner {
     u.waypoints.length = 0;
     this.plans.set(u.id, {
       goal: WallGoal.Storm, destStation: -1, destRun: -1,
-      stair: this.breachLinks[0], gx, gz, age: 0, stuck: 0, best: 1e9, sinceBest: 0,
+      stair: this.breachLinks[0], gx, gz, age: 0, stuck: 0,
     });
     return true;
   }
@@ -2833,7 +2859,8 @@ export class Siege implements ElevationOwner {
       const u = b.unitById(id);
       if (!u || u.destroyed || u.alive === 0) continue;
       if (u.order === UnitOrder.Rout) continue;
-      const onWall = this.garrisons.has(id);
+      // Where his men are, not which map he is in. See `standingOnWall`.
+      const onWall = this.garrisons.has(id) && this.standingOnWall(id);
       if (onWall) {
         // On the stone already: either along it, or off it. `wallTargetAt` is the same query
         // the UI uses to decide a click landed on the parapet.
@@ -3141,34 +3168,9 @@ export class Siege implements ElevationOwner {
         this.layOutArrived(u, g, plan.destStation, arrived);
       }
 
-      /**
-       * How far this plan still has to go, and whether it is getting anywhere.
-       *
-       * `moving` counts men who were handed a slot this tick, not men who advanced, so a plan
-       * whose last few men are wedged at a stair head reports `moving > 0` for ever. The
-       * quantity that actually settles it is how many are left to shift, and whether that
-       * number is still falling.
-       */
-      if (moving < plan.best) { plan.best = moving; plan.sinceBest = 0; }
-      else plan.sinceBest++;
-
       if (moving === 0) {
         if (plan.goal === WallGoal.Descend || plan.goal === WallGoal.Storm) this.releaseToGround(u, plan.gx, plan.gz);
         else if (g) { g.plannedFor = -1; }
-        this.plans.delete(id);
-      } else if (plan.goal === WallGoal.Descend && plan.sinceBest > DESCENT_STALL) {
-        /**
-         * A descent that has stopped descending is finished, and the men who came down are
-         * a field formation again.
-         *
-         * `releaseToGround` takes the whole unit off the stonework, which is the honest
-         * outcome: the nine who could not find a way down walk to the rally point with
-         * everybody else rather than standing on a parapet inside a unit whose other
-         * hundred and forty-three men are in the street below. What must not happen — and
-         * what did — is the unit staying `garrisoned` for another five minutes, because
-         * every order given to it in that window is read as a move along the wall.
-         */
-        this.releaseToGround(u, plan.gx, plan.gz);
         this.plans.delete(id);
       } else if (plan.age > PLAN_TIMEOUT) {
         /**
