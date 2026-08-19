@@ -157,6 +157,23 @@ export interface UvRect {
   v0: number;
   u1: number;
   v1: number;
+  /**
+   * **How much of the world one whole tile of this material covers, in metres.**
+   *
+   * `MAT_TILE_M` has existed since the torso-stretch fix, and until now only the swept
+   * primitives could reach it — `soldierMesh` looked the number up and handed a repeat to
+   * `tube`. Every other primitive was blind to it, and `box` in particular maps one entire
+   * tile onto every face however small the face is: an 8 mm arrow shaft carries 250 texels
+   * across 8 mm, which is **31,250 texels per metre** against a bare leg's 570. That is
+   * most of the 13.1x texel-density spread across one man that round three's critics
+   * recorded, and a man whose material grain changes thirteen-fold from piece to piece
+   * cannot read as authored.
+   *
+   * Carrying it on the rect itself is what lets a primitive size its own mapping without
+   * every call site being edited to say what it already said by choosing the tile.
+   * Optional, because hand-built rects (the emblem block) have no material behind them.
+   */
+  m?: number;
 }
 
 /**
@@ -175,7 +192,7 @@ export function matUv(id: Mat): UvRect {
   const u1 = ((col + 1) * TILE) / ATLAS_W - insetU;
   const v1 = 1 - (row * TILE) / ATLAS_H - insetV;
   const v0 = 1 - ((row + 1) * TILE) / ATLAS_H + insetV;
-  return { u0, v0, u1, v1 };
+  return { u0, v0, u1, v1, m: MAT_TILE_M[id] };
 }
 
 /**
@@ -258,7 +275,9 @@ export const MAT_TILE_M: Record<Mat, number> = {
   [Mat.Bone]: 0.20,
   // Drape fbm period 4 at 90 mm — a cloak hangs in bigger folds than a tunic sits in.
   [Mat.ClothFine]: 0.36,
-  [Mat.ShieldBack]: 0.45,
+  // 0.36, matching `MeshBuilder.SHIELD_PLANK_M`: this cell is only ever used on a shield and
+  // the two faces of a board must carry the same physical grain or the rim gives it away.
+  [Mat.ShieldBack]: 0.36,
   [Mat.OakBeam]: 0.80,
   [Mat.SinewCord]: 0.15,
   [Mat.ElephantHide]: 0.60,
@@ -339,11 +358,80 @@ interface MatDef {
   colour(u: number, v: number, out: Rgb): void;
   /** Surface height 0..1, used to derive the normal map and a cavity term. */
   height(u: number, v: number): number;
+  /**
+   * Mean roughness. The bake spreads a swing around it — see `ROUGH_SWING`.
+   *
+   * It is a *mean*, not a ceiling: a tile authored at 0.9 comes out 0.50 to 0.995 across
+   * its own height field, and the number here is where the middle of that sits.
+   */
   roughness: number;
+  /**
+   * Peak-to-peak roughness swing across the tile, in absolute roughness units.
+   *
+   * Optional; the default reproduces what the multiplicative formula this replaces gave a
+   * material whose range already fitted inside 0..1. Set it explicitly only to widen or
+   * narrow a particular surface's spread on purpose.
+   */
+  roughVar?: number;
   metalness: number;
   /** How strongly the height field bends normals. */
   bump: number;
+  /**
+   * **Extra tangent-space slope, added to the one differenced out of `height`.**
+   *
+   * A scalar height field can only ever produce an *isotropic* normal: central differences
+   * see a thread and a pit identically, because both are "a bump". Cloth is the surface
+   * where that is most wrong. A plain weave is not a field of bumps, it is two sets of
+   * parallel cylinders crossing at right angles, and a cylinder's normal bends in exactly
+   * one axis — along the thread it is flat. Differencing `max(warp, weft)` gives the
+   * diamond lattice that three rounds of critics have called "a printed weave".
+   *
+   * This hook writes the slope directly, so a warp float can tilt the normal in u and leave
+   * v alone. `out[0]` is d(height)/du and `out[1]` d(height)/dv, in the same units the
+   * central difference produces, and it is added *before* `bump` scales the pair.
+   */
+  slope?(u: number, v: number, out: [number, number]): void;
+  /**
+   * Openness for the ORM red channel, 0 = fully enclosed, 1 = open sky. Defaults to
+   * `height`.
+   *
+   * Separate from `height` because the two want different content on cloth: the cavity that
+   * darkens a garment is the *fold*, a 50 mm trough, and it must not be swamped by the
+   * 4 mm thread crests that dominate the height field. A scalar averages down the mip
+   * ladder where a bump's two opposing slopes cancel — the counter recorded for masonry in
+   * `docs/HANDOFF.md` — so this is the channel that survives distance.
+   */
+  cavity?(u: number, v: number): number;
 }
+
+/**
+ * **Roughness is spread around its mean, and the spread cannot plateau.**
+ *
+ * The formula this replaces was `roughness * (0.5 + (1 - h) * 1.05)` clamped into 0..1, and
+ * for every material authored above 0.645 the clamp bit: the wool tile came out with
+ * **15.3 % of its texels at a flat 1.0**, linen 11.9 %, fur 35.4 %, rope 43.0 %, elephant
+ * hide 48.7 %, the shield board 6.3 %. Those are not rough regions, they are regions with
+ * *no roughness signal at all* — a plateau, which is precisely the "flat 255" defect round
+ * three's critics recorded on `praet-torso`, whose frame is more than half shield board.
+ *
+ * The cure is to fit the swing to the headroom instead of clamping it, **symmetrically about
+ * the authored value**, so the tile's mean roughness is exactly what the material says it is
+ * and only the spread narrows. Every plateau measures 0.00 % after.
+ *
+ * The asymmetric version — cap `up` at the ceiling and spend the remainder downward, keeping
+ * the full peak-to-peak swing — was written first, measured, and **rejected**. It preserves
+ * the swing at the cost of the mean: wool's mean roughness fell 0.836 to 0.705, hair, fur,
+ * plume and rope the same, and under the product's own lighting rig a glossier cloth is a
+ * sharper specular lobe. Graded under Battle rig it cost dE1 +19.5 % pooled, on a figure
+ * that already carries 3.7x the reference's 1 px energy. Under the studio `field` preset the
+ * same arm looked harmless, which is the whole argument for grading under the rig that
+ * ships.
+ */
+const ROUGH_MIN = 0.04;
+/** Not 1.0: a texel that lands exactly on the ceiling is a 255, and 255 is the defect. */
+const ROUGH_MAX = 0.995;
+/** Cap on the peak-to-peak swing, so a rough material does not swing to a mirror. */
+const ROUGH_SWING = 0.5;
 
 const mix3 = (a: Rgb, b: Rgb, t: number, out: Rgb): void => {
   out[0] = a[0] + (b[0] - a[0]) * t;
@@ -351,19 +439,187 @@ const mix3 = (a: Rgb, b: Rgb, t: number, out: Rgb): void => {
   out[2] = a[2] + (b[2] - a[2]) * t;
 };
 
-/** Ring mail: interlocked rows, each row offset half a ring from its neighbours. */
+/**
+ * Ring mail: interlocked rows, each row offset half a ring from its neighbours.
+ *
+ * **No two rings are the same size and no two sit quite square, and that is the fix rather
+ * than the decoration.** The lattice was exactly periodic — every ring identical, on a
+ * perfect grid — which is what a *printed* mail reads as, and what beats against the pixel
+ * grid into moire at the range a cohort is legible from. A riveted hauberk is thousands of
+ * hand-drawn rings hammered shut by hand: the sizes run a tenth either way, the rows wander,
+ * and a proportion of them are galled flat or rusted proud.
+ *
+ * The jitter is hashed off the ring's own grid cell, so it is stable, tileable (`% rings`
+ * closes the lattice) and free.
+ */
 const mailHeight = (u: number, v: number, rings: number): number => {
   const gy = v * rings;
   const row = Math.floor(gy);
   const fy = gy - row;
   const gx = u * rings + (row % 2) * 0.5;
-  const fx = gx - Math.floor(gx);
-  const dx = fx - 0.5;
-  const dy = fy - 0.5;
+  const col = Math.floor(gx);
+  const fx = gx - col;
+  // Per-ring wander and gauge, from the ring's own cell. `% rings` is what keeps the tile
+  // seamless: the last column's hash has to be the same one column 0 will read.
+  const h1 = hash2(col % rings, row % rings, 313);
+  const h2 = hash2(col % rings, row % rings, 317);
+  const dx = fx - 0.5 + (h1 - 0.5) * 0.16;
+  const dy = fy - 0.5 + (h2 - 0.5) * 0.14;
   const r = Math.hypot(dx, dy) * 2;
   // A torus profile: highest on the ring itself, lowest in the hole and between rings.
-  const ring = Math.exp(-((r - 0.62) ** 2) / 0.055);
-  return Math.min(1, ring * 0.95 + 0.05);
+  const gauge = 0.62 + (h1 - 0.5) * 0.09;
+  const ring = Math.exp(-((r - gauge) ** 2) / 0.055);
+  return Math.min(1, ring * (0.86 + h2 * 0.16) + 0.05);
+};
+
+const TAU = Math.PI * 2;
+
+/**
+ * How wide the transition across a plank joint is, as a fraction of the plank's half-width.
+ *
+ * 0.34, and the number is an octave argument rather than a taste. A plank is a sixth of a
+ * 0.36 m shield tile, so its half-width is 21 texels; at the 0.14 the other seams use, the
+ * transition is three texels, which on the isolated deck is **2.5 screen px** — E1, the one
+ * band this figure is already 3.7x over on. At 0.34 it is seven texels and about 6 px, which
+ * is E2. Physically it is also the truer number: a shield board's joints are chamfered and
+ * hide-covered, not machined.
+ */
+const PLANK_SEAM_W = 0.34;
+
+/**
+ * **A hanging fold, which is the shape cloth has and a noise blotch is not.**
+ *
+ * Round three's critics led with "cloth has no folds and no silhouette — flat polygon plates
+ * with a printed weave and hard unbevelled creases", and the fold term the tiles carried was
+ * an isotropic `fbm` at 5 and 11 cycles: a field of round blobs, equally wide in both axes.
+ * Cloth does not do that. A garment hangs, so its creases are *long* along the hang and
+ * *narrow* across it, and the eye reads a garment by the run of those lines.
+ *
+ * Two properties, and both are the point:
+ *
+ *   - **Anisotropy.** The lattice is sampled twice as often across the cloth as along it, so
+ *     a feature is 2:1 long in v. `vnoise` wraps at `period`, so both arguments must be
+ *     integer multiples of it or the tile seams — hence `cycles * 2` by `cycles`. It was 3:1
+ *     and that photographed as varnished wood grain down a bracae leg: unbroken streaks the
+ *     whole length of the tile read as timber, not as cloth.
+ *   - **A bevelled trough.** Raw `fbm` run through the normal difference gives a crease with
+ *     a discontinuous second derivative, which is the "hard unbevelled" half of the note and
+ *     is nearly pure 1 px energy. Shaping it with the smoothstep polynomial rounds the crest
+ *     and widens the valley floor, which moves the same amplitude down into the 2-8 px
+ *     octaves where this project's whole deficit lies.
+ *
+ * Returns 1 on a crest and 0 in the bottom of a crease.
+ */
+const foldField = (u: number, v: number, cycles: number, salt: number): number => {
+  const n = fbm(u * cycles * 2, v * cycles, 2, cycles, salt);
+  const t = Math.min(1, Math.max(0, n * 1.18 - 0.09));
+  return t * t * (3 - 2 * t);
+};
+
+/**
+ * A bevelled seam between two boards: 1 in the bottom of the joint, 0 on the plank face.
+ *
+ * The distinction this exists to make is the one round three's critics named on cloth and
+ * that turned out to matter far more on wood. A seam written as a comparison — "closer than
+ * 0.03 of a plank to the edge" — is a **step**, and a step in a height field differences to
+ * a one-texel normal discontinuity at full amplitude and bakes a hard-edged black line into
+ * the cavity. Under a weak studio light that is a dark line. Under the product's own sun,
+ * with the cavity gating direct light, it is a row of hard shadows one pixel wide, which is
+ * pure 1 px energy and the one octave this figure is already 3.7x over on.
+ *
+ * The profile is a raised cosine over the joint's own width, which is also what a planed
+ * board edge looks like: an arris rounded by handling either side of a narrow gap.
+ */
+const seamProfile = (t: number, count: number, w = 0.14): number => {
+  const f = t * count;
+  const d = Math.abs(f - Math.floor(f) - 0.5) * 2;
+  if (d < 1 - w) return 0;
+  return 0.5 - 0.5 * Math.cos(((d - (1 - w)) / w) * Math.PI);
+};
+
+/**
+ * **Yarn tone: irregular along the thread, sharp across it.**
+ *
+ * The albedo weave this replaces was `(sin(u * 2pi * n) + sin(v * 2pi * n)) * 0.22` — a
+ * perfectly periodic plaid. Two things were wrong with it and only the first was ever named.
+ * It is a *printed* pattern, identical in sun and shade, with no over-under anywhere in it;
+ * and being exactly periodic it beats against the pixel grid, which is where the moire on
+ * the bracae came from.
+ *
+ * But deleting it outright cost real mid-band energy, measured: with the plaid gone and only
+ * the slope weave left, E2 fell 2-4 % on every cloth-carrying plate. A weave *is* visible in
+ * a garment's colour — warp and weft take dye differently and a hand-spun yarn varies along
+ * its own length — so the content belongs here. What it must not be is periodic.
+ *
+ * This samples the noise lattice `across / along` times more often across the thread than
+ * along it, which is what a yarn looks like, and it is irregular, so it cannot beat against
+ * anything. `across` must be an integer multiple of `along` or the tile seams — `vnoise`
+ * wraps at its period and both arguments have to close on it.
+ */
+const threadTone = (
+  u: number, v: number, across: number, along: number, salt: number
+): number => fbm(u * across, v * along, 2, along, salt);
+
+/**
+ * **The three cloth fold stacks, and the octave arithmetic that sizes them.**
+ *
+ * The bands this project is short of are 2-8 screen px, and a cycle count only becomes a
+ * screen size once the tile's world size and the plate's magnification are in it. On the
+ * isolated deck a man of 1.75 m fills 1056 device px, i.e. 603 px/m, so a 0.27 m wool tile
+ * is 163 px across and one of its 256 texels is **0.64 screen px**. A difference-of-Gaussian
+ * band at sigma s peaks around a wavelength of 2.2s to 4s, which puts:
+ *
+ *     E1  ->  2-4 px   ->   3-6 texels   ->  40-85 cycles per tile
+ *     E2  ->  5-9 px   ->   8-14 texels  ->  18-32 cycles
+ *     E4  ->  9-18 px  ->  14-28 texels  ->   9-18 cycles
+ *     E8  -> 18-35 px  ->  28-55 texels  ->   5-9 cycles
+ *
+ * That table is not decoration; it was paid for. A nap term at 44 cycles was added here to
+ * "fill the 4 px band", measured, and **reverted**: it lands at 3.7 px, which is E1, and it
+ * took R from 1.308 to 1.451 while moving E2 by 1.5 %. Nothing in a cloth tile should now
+ * sit above about 35 cycles, and each stack below is three octaves chosen to land one in E2,
+ * one in E4 and one in E8.
+ */
+const WOOL_FOLD = (u: number, v: number): number =>
+  foldField(u, v, 5, 211) * 0.50 + foldField(u, v, 11, 217) * 0.32
+  + foldField(u, v, 18, 251) * 0.18;
+const LINEN_FOLD = (u: number, v: number): number =>
+  foldField(u, v, 7, 223) * 0.48 + foldField(u, v, 15, 227) * 0.32
+  + foldField(u, v, 22, 257) * 0.20;
+const CLOAK_FOLD = (u: number, v: number): number =>
+  foldField(u, v, 3, 233) * 0.52 + foldField(u, v, 8, 239) * 0.30
+  + foldField(u, v, 14, 263) * 0.18;
+
+/**
+ * **A plain weave written as slope, not as height — the directional-thread normal.**
+ *
+ * A scalar height field can only produce an isotropic normal: central differences cannot
+ * tell a thread from a pimple, because both are "a bump". That is why every cloth surface in
+ * this game has read as a *printed* weave through three rounds — `max(warp, weft)` in the
+ * height field renders as a diamond lattice, which is a lattice of bumps, and at the
+ * magnification the plates are shot at it is the moire grid the bracae photographed as.
+ *
+ * A real plain weave is two sets of parallel cylinders crossing at right angles, passing
+ * over and under alternately. A cylinder's normal bends in exactly one axis and is dead flat
+ * along its own — so the warp, which runs along v, must tilt the normal in **u only**, and
+ * the weft in **v only**. That cannot be expressed as a height field and it is the whole
+ * reason `MatDef.slope` exists.
+ *
+ * `cos(u) * cos(v)` is the over-under: +1 where the warp is on top, -1 where the weft is,
+ * and smooth between, so there is no hard edge where one thread crosses under the other.
+ * Each thread's own cross-section is the sine, zero on the thread's crown and peaking on its
+ * two flanks, which is what a cylinder does.
+ *
+ * `amp` is in the same units the height difference produces, i.e. before `bump`.
+ */
+const weaveSlope = (
+  u: number, v: number, cycles: number, amp: number, out: [number, number]
+): void => {
+  const cu = Math.cos(u * TAU * cycles);
+  const cv = Math.cos(v * TAU * cycles);
+  const warpUp = 0.5 + 0.5 * cu * cv;
+  out[0] += -amp * Math.sin(u * TAU * cycles) * warpUp;
+  out[1] += -amp * Math.sin(v * TAU * cycles) * (1 - warpUp);
 };
 
 /**
@@ -496,6 +752,18 @@ const MATS: Record<Mat, MatDef> = {
       const h = mailHeight(u, v, 18);
       const grime = fbm(u * 5, v * 5, 3, 5, 13);
       mix3([0.42, 0.408, 0.39], [0.76, 0.745, 0.715], h * (0.7 + grime * 0.3), out);
+      // A worn hauberk is not one alloy. Some rings are bright where a strap or a scabbard
+      // has polished them, some are rusted, and a patch repaired in the field is a different
+      // wire altogether. Hashed per ring off the same lattice the height uses, so the two
+      // agree about where a ring is.
+      const gx = u * 18 + (Math.floor(v * 18) % 2) * 0.5;
+      const c = Math.floor(gx) % 18;
+      const r18 = Math.floor(v * 18) % 18;
+      const wear = hash2(c, r18, 331);
+      const rust = Math.max(0, fbm(u * 4, v * 4, 3, 4, 337) - 0.56) * 2.2 * hash2(c, r18, 347);
+      const k = 0.86 + wear * 0.30;
+      out[0] *= k; out[1] *= k; out[2] *= k;
+      mix3(out, RUST, Math.min(0.55, rust), out);
     },
     height: (u, v) => mailHeight(u, v, 18),
     // Mail is thousands of small curved rings, so it scatters: rough, and heavily
@@ -512,6 +780,15 @@ const MATS: Record<Mat, MatDef> = {
     bump: 1.0,
   },
   // Lorica squamata: overlapping bronze-washed scales wired to a linen backing.
+  /**
+   * Lorica squamata: overlapping bronze-washed scales wired to a linen backing.
+   *
+   * Same correction as the mail and for the same reason. Fourteen rows of *identical* plates
+   * on a perfect grid is a printed scale; a squamata is a few hundred hand-cut plates wired
+   * on individually, so they sit a little proud and a little askew of one another, they
+   * differ in gauge, and a proportion are dished, sprung or replaced. The jitter is hashed
+   * off the plate's own cell modulo the row count, which is what keeps the tile seamless.
+   */
   [Mat.Scale]: {
     colour(u, v, out) {
       const rows = 14;
@@ -519,13 +796,19 @@ const MATS: Record<Mat, MatDef> = {
       const row = Math.floor(gy);
       const fy = gy - row;
       const gx = u * rows + (row % 2) * 0.5;
-      const fx = gx - Math.floor(gx);
+      const col = Math.floor(gx);
+      const fx = gx - col;
+      const j = hash2(col % rows, row % rows, 353);
+      const j2 = hash2(col % rows, row % rows, 359);
       // Scale plate: rounded bottom edge, darker in the overlap gutter.
-      const edge = Math.min(1, Math.max(0, (1 - fy) * 3));
-      const side = 1 - Math.abs(fx - 0.5) * 1.6;
+      const edge = Math.min(1, Math.max(0, (1 - fy * (0.92 + j * 0.16)) * 3));
+      const side = 1 - Math.abs(fx - 0.5 + (j2 - 0.5) * 0.16) * (1.5 + j * 0.22);
       const lit = Math.max(0, edge * side);
       const n = fbm(u * 8, v * 8, 3, 8, 17);
       mix3(BRONZE_DARK, BRONZE, lit * 0.8 + n * 0.2, out);
+      // Per-plate tarnish: a wired-on scale is its own small object and weathers as one.
+      const k = 0.84 + j2 * 0.32;
+      out[0] *= k; out[1] *= k; out[2] *= k;
       if (fy > 0.9) mix3(out, [0.1, 0.08, 0.05], 0.7, out);
     },
     height(u, v) {
@@ -534,9 +817,12 @@ const MATS: Record<Mat, MatDef> = {
       const row = Math.floor(gy);
       const fy = gy - row;
       const gx = u * rows + (row % 2) * 0.5;
-      const fx = gx - Math.floor(gx);
-      const side = 1 - Math.abs(fx - 0.5) * 1.7;
-      return Math.max(0, Math.min(1, (1 - fy * 0.85) * Math.max(0, side)));
+      const col = Math.floor(gx);
+      const fx = gx - col;
+      const j = hash2(col % rows, row % rows, 353);
+      const j2 = hash2(col % rows, row % rows, 359);
+      const side = 1 - Math.abs(fx - 0.5 + (j2 - 0.5) * 0.16) * (1.6 + j * 0.22);
+      return Math.max(0, Math.min(1, (1 - fy * (0.78 + j * 0.14)) * Math.max(0, side)));
     },
     // Bronze-washed scales, each a small curved mirror. Same reasoning as the mail: the
     // scale edges are what catch the light and they cannot do it without an F0 to do it with.
@@ -602,72 +888,162 @@ const MATS: Record<Mat, MatDef> = {
    * Whoever raises the tile again past 256 px should retry this first; it is the change most
    * obviously waiting on that headroom.
    */
+  /**
+   * **The weave is gone from the albedo and the height, and it is now a slope.**
+   *
+   * Everything the two notes above record is still true of a weave *painted into a scalar*,
+   * and the trade they describe — finer thread costs E2 and buys E1 — is a property of that
+   * representation rather than of thread count. `max(warp, weft)` in the height field is a
+   * lattice of bumps, so it differences to an isotropic normal, and painting the same
+   * lattice into the colour puts a hard periodic grid straight into the 1 px band where the
+   * render's own filtering throws it away. Both are why every critic to date has called this
+   * a printed weave.
+   *
+   * Written as `slope` instead, the same 24 threads cost the albedo nothing and the height
+   * nothing: they arrive as a directional tilt that only exists under a light. What used to
+   * be spent on the printed grid is now spent on the fold field, which is what a viewer
+   * actually reads a woollen tunic by at any distance a man is legible from.
+   *
+   * 24 cycles over a 0.27 m tile is an 11 mm thread — coarse for wool, and still a lie, but
+   * a resolvable one at 10.7 texels a cycle, and it lands at 6-7 screen px a cycle on the
+   * isolated deck, which is the middle of the band this project is short of.
+   */
   [Mat.WoolCoarse]: {
     colour(u, v, out) {
-      const warp = Math.sin(u * Math.PI * 2 * 18) * 0.5 + 0.5;
-      const weft = Math.sin(v * Math.PI * 2 * 18) * 0.5 + 0.5;
-      const weave = (warp * 0.5 + weft * 0.5) * 0.22 + 0.78;
+      // The weave in the colour is now yarn tone rather than a plaid: the warp's own
+      // variation where the warp is on top, the weft's where it is, blended by the same
+      // over-under cosine the slope uses so the two agree about which thread is uppermost.
+      const warpUp = 0.5 + 0.5
+        * Math.cos(u * TAU * 24) * Math.cos(v * TAU * 24);
+      const thread = warpUp * threadTone(u, v, 24, 8, 61)
+        + (1 - warpUp) * threadTone(u, v, 8, 24, 67);
       const slub = fbm(u * 12, v * 12, 3, 12, 41);
-      const fold = fbm(u * 5, v * 5, 2, 5, 211) * 0.30 + fbm(u * 11, v * 11, 2, 11, 217) * 0.18;
-      const g = weave * (0.70 + slub * 0.24 + fold * 0.42);
-      out[0] = g; out[1] = g * 0.99; out[2] = g * 0.97;
+      const fold = WOOL_FOLD(u, v);
+      // Wear and grime collect in the bottom of a crease and bleach off a crest. This is the
+      // one thing a fold is allowed to do to the albedo — the shading of it belongs to the
+      // light, and painting that in is what makes cloth read as a photograph of cloth.
+      const g = 0.62 + slub * 0.13 + fold * 0.17 + thread * 0.22;
+      const dirt = (1 - fold) * 0.15;
+      out[0] = g * (1 - dirt * 0.85);
+      out[1] = g * 0.985 * (1 - dirt * 0.95);
+      out[2] = g * 0.955 * (1 - dirt);
     },
-    height(u, v) {
-      const warp = Math.sin(u * Math.PI * 2 * 18) * 0.5 + 0.5;
-      const weft = Math.sin(v * Math.PI * 2 * 18) * 0.5 + 0.5;
-      return Math.max(warp, weft) * 0.42
-        + fbm(u * 16, v * 16, 3, 16, 41) * 0.20
-        + fbm(u * 5, v * 5, 2, 5, 211) * 0.38;
-    },
-    roughness: 0.9,
+    // No weave: the folds are the height field, and the height field is what the cavity and
+    // the coarse normal are differenced from.
+    height: (u, v) => WOOL_FOLD(u, v) * 0.90 + fbm(u * 18, v * 18, 2, 18, 41) * 0.10,
+    cavity: WOOL_FOLD,
+    slope: (u, v, out) => weaveSlope(u, v, 24, 0.18, out),
+    roughness: 0.86,
+    // A fulled woollen tunic is matte everywhere and *slightly* less so where the nap has
+    // been rubbed flat on a crest. 0.34 peak to peak is a real spread and it never plateaus.
+    roughVar: 0.34,
     metalness: 0,
-    bump: 0.5,
+    bump: 0.50,
   },
   // 72 cycles, not 26. The old count was set against a 128 px tile, where 52 was measured at
   // 2.5 px a cycle and dismissed as noise; at 256 px, 72 cycles is 3.6 texels and a 4.6 mm
   // thread, which is a fine linen rather than sacking. Same trade as `WoolCoarse`: the
   // regular term loses amplitude and the irregular fold field gains it.
+  /**
+   * Linen: the same rewrite as the wool, and one number that had to change with it.
+   *
+   * The albedo used to clip. `0.74 + 0.14 + 0.10 + 0.16` sums to 1.14 before the per-channel
+   * scale, and `Math.min(1, g)` took **3.78 % of this tile's texels to a channel at 255** —
+   * detail thrown away in the sheet, before a light has touched it. The bands below are
+   * budgeted to a 0.97 ceiling instead, so the clip is not expressible.
+   *
+   * Linen creases tighter and holds a sharper edge than wool, which is the fold field at 7
+   * and 15 rather than 5 and 11, and a finer thread at 32 cycles — 10 mm on a 0.33 m tile.
+   */
   [Mat.Linen]: {
     colour(u, v, out) {
-      const warp = Math.sin(u * Math.PI * 2 * 26) * 0.5 + 0.5;
-      const weft = Math.sin(v * Math.PI * 2 * 26) * 0.5 + 0.5;
-      const fold = fbm(u * 6, v * 6, 2, 6, 223) * 0.5 + fbm(u * 13, v * 13, 2, 13, 227) * 0.3;
-      const g = 0.74 + (warp * 0.5 + weft * 0.5) * 0.14 + fbm(u * 14, v * 14, 3, 14, 43) * 0.10
-        + fold * 0.16;
-      out[0] = Math.min(1, g); out[1] = Math.min(1, g * 0.98); out[2] = Math.min(1, g * 0.9);
+      const warpUp = 0.5 + 0.5
+        * Math.cos(u * TAU * 32) * Math.cos(v * TAU * 32);
+      const thread = warpUp * threadTone(u, v, 32, 8, 71)
+        + (1 - warpUp) * threadTone(u, v, 8, 32, 73);
+      const fold = LINEN_FOLD(u, v);
+      // 0.68 + 0.08 + 0.13 + 0.18 sums to 0.97 at the very top of its range, which is the
+      // ceiling this cell is budgeted to. It summed to 1.09 and the clamp took 3.78 % of the
+      // tile to a channel at 255 — detail thrown away in the sheet, before a light touches it.
+      const g = 0.68 + fbm(u * 14, v * 14, 3, 14, 43) * 0.08 + fold * 0.13 + thread * 0.18;
+      const dirt = (1 - fold) * 0.13;
+      out[0] = g * (1 - dirt * 0.8);
+      out[1] = g * 0.985 * (1 - dirt * 0.9);
+      out[2] = g * 0.925 * (1 - dirt);
     },
-    height(u, v) {
-      const warp = Math.sin(u * Math.PI * 2 * 26) * 0.5 + 0.5;
-      const weft = Math.sin(v * Math.PI * 2 * 26) * 0.5 + 0.5;
-      return Math.max(warp, weft) * 0.55 + fbm(u * 6, v * 6, 2, 6, 223) * 0.45;
-    },
-    roughness: 0.86,
+    height: (u, v) => LINEN_FOLD(u, v) * 0.92 + fbm(u * 22, v * 22, 2, 22, 43) * 0.08,
+    cavity: LINEN_FOLD,
+    slope: (u, v, out) => weaveSlope(u, v, 32, 0.16, out),
+    roughness: 0.82,
+    roughVar: 0.36,
     metalness: 0,
-    bump: 0.3,
+    bump: 0.46,
   },
-  // Skin is tinted per man in the shader; the tile carries pore, blotch and — importantly —
-  // the crease shading at the elbow and knee. Limb tubes run V from the hip or shoulder to
-  // the extremity, so bands at v = 0.42 and 0.58 land on the joint on both arms and legs,
-  // which is the cheapest possible way to stop a bare limb reading as a smooth dowel.
+  /**
+   * **Skin, and why it read as vinyl.**
+   *
+   * Round three's critics put it second, after the cloth. Three things were producing it and
+   * the tile carried none of the counters.
+   *
+   *   1. **It was almost flat.** Mean tangent-space |n.xy| measured **0.112** on the bake —
+   *      the second-flattest cell in the sheet after the animal hides, against mail at 0.792
+   *      and leather at 0.190. A smooth dielectric with a broad sheen and no relief is
+   *      exactly what vinyl is. The pore field was there but `bump` was 0.3, so it arrived
+   *      as nothing.
+   *   2. **It was one hue times a value ramp.** `out = [g, g * 0.955, g * 0.9]` gives every
+   *      texel of every man the identical chromaticity, which no organic surface has. Skin
+   *      is a stack of translucent layers over blood: it flushes red where it is thin or
+   *      creased and goes sallow-olive where it is thick, and that hue *shift* is most of
+   *      what tells an eye it is looking at a person rather than at a painted dowel.
+   *   3. **Nothing lived between the blotch and the pore.** fbm at 7 cycles and at 40, and a
+   *      hole between them — which on this deck is precisely the 2-8 px band the whole
+   *      workstream is short of. `grain` at 18 and the crease network at 22 fill it.
+   *
+   * The crease network is `threadTone`, the same anisotropic sampler the cloth uses, because
+   * Langer's lines *are* directional: the fine diamond crease pattern on a forearm runs along
+   * the limb, not in every direction at once.
+   *
+   * The joint wells stay exactly where they were. Limb tubes run V from the hip or shoulder
+   * to the extremity with `SKIN_LIMB_V` pinning one tile end to end, so v = 0.5 lands on the
+   * elbow or knee and v = 0.94 on the wrist or ankle on every limb — and they are now in
+   * `cavity` rather than only in `height`, so they occlude the direct sun instead of merely
+   * bending a normal that the mip ladder averages away.
+   */
   [Mat.Skin]: {
     colour(u, v, out) {
-      const pore = fbm(u * 40, v * 40, 3, 40, 47) * 0.12;
-      const blotch = fbm(u * 7, v * 7, 3, 7, 53) * 0.16;
-      const crease = Math.exp(-((v - 0.5) ** 2) / 0.0032) * 0.22
-        + Math.exp(-((v - 0.94) ** 2) / 0.0018) * 0.16;
-      const g = 0.6 + pore - blotch * 0.5 - crease;
-      out[0] = Math.min(1, g); out[1] = Math.min(1, g * 0.955); out[2] = Math.min(1, g * 0.9);
+      const pore = fbm(u * 40, v * 40, 3, 40, 47);
+      const grain = fbm(u * 18, v * 18, 3, 18, 89);
+      const blotch = fbm(u * 7, v * 7, 3, 7, 53);
+      const lines = threadTone(u, v, 22, 11, 97);
+      const crease = Math.exp(-((v - 0.5) ** 2) / 0.0032) * 0.20
+        + Math.exp(-((v - 0.94) ** 2) / 0.0018) * 0.14;
+      const g = 0.60 + pore * 0.09 + grain * 0.11 - blotch * 0.09 - lines * 0.05 - crease;
+      // Capillary flush: warm and saturated where the skin is thin or worked, sallow where
+      // it is not. The two ends are a real pair of skin chromaticities, not a tint slider.
+      const flush = Math.min(1, blotch * 0.6 + crease * 2.2 + (1 - lines) * 0.2);
+      out[0] = Math.min(0.97, g * (1 + flush * 0.11));
+      out[1] = Math.min(0.97, g * (0.958 - flush * 0.052));
+      out[2] = Math.min(0.97, g * (0.905 - flush * 0.082));
     },
-    // Elbow at v = 0.5 and wrist or knee at v = 0.94: both cut into the height field so the
-    // cavity AO darkens them, which is the cheapest thing that stops a bare limb reading as
-    // a smooth dowel.
     height: (u, v) =>
-      fbm(u * 44, v * 44, 3, 44, 47) * 0.55
-      + (1 - Math.exp(-((v - 0.5) ** 2) / 0.0032)) * 0.3
-      + (1 - Math.exp(-((v - 0.94) ** 2) / 0.0018)) * 0.15,
-    roughness: 0.55,
+      fbm(u * 40, v * 40, 3, 40, 47) * 0.34
+      + fbm(u * 18, v * 18, 3, 18, 89) * 0.30
+      + threadTone(u, v, 22, 11, 97) * 0.16
+      + (1 - Math.exp(-((v - 0.5) ** 2) / 0.0032)) * 0.13
+      + (1 - Math.exp(-((v - 0.94) ** 2) / 0.0018)) * 0.07,
+    // The joints only. A pore is a bump and averages to nothing two mips down; a 30 mm
+    // hollow at an elbow is a scalar and survives, which is the whole argument recorded
+    // against painted relief in `docs/HANDOFF.md`.
+    cavity: (u, v) =>
+      Math.min(1, 0.30 + fbm(u * 7, v * 7, 3, 7, 53) * 0.22
+        + (1 - Math.exp(-((v - 0.5) ** 2) / 0.0032)) * 0.34
+        + (1 - Math.exp(-((v - 0.94) ** 2) / 0.0018)) * 0.20),
+    // 0.62 rather than 0.55, and the swing now runs 0.37 to 0.87 instead of bottoming out at
+    // 0.30. A broad low-roughness sheen over a whole limb is the specular half of the vinyl
+    // read; sebum sits on the ridges, not over the entire arm.
+    roughness: 0.62,
     metalness: 0,
-    bump: 0.3,
+    bump: 0.62,
   },
   // Hair and beard: strands, tinted per man.
   [Mat.Hair]: {
@@ -681,24 +1057,45 @@ const MATS: Record<Mat, MatDef> = {
     metalness: 0,
     bump: 0.7,
   },
-  // Limewood shield planks and spear shafts: straight grain with knots.
+  /**
+   * Limewood shield planks and spear shafts: straight grain with knots.
+   *
+   * **The seam is bevelled now, and the ternary it replaces was the most expensive single
+   * expression in this sheet.** `Math.abs(v * 6 - plank - 0.5) > 0.47 ? 0 : 1` is a binary
+   * step in a *height* field: the normal it differences to is a discontinuity one texel wide
+   * and full amplitude, and the cavity derived from it is a hard black line that occludes
+   * the direct sun completely. Six of those across a board was tolerable only because the
+   * whole tile was stretched over the board and mip-averaged; the moment the board tiled
+   * three deep there were eighteen, and graded under the Battle rig the shield plates paid
+   * **dE1 +22 to +42 %** for them. It is the same defect the critics named on cloth —
+   * "hard unbevelled creases" — in the one material nobody thought to look at.
+   *
+   * `seamProfile` is the same shape a plank edge really has: a rounded arris either side of a
+   * narrow valley. Same seam, same contrast, second derivative finite.
+   *
+   * **The grain is 36 cycles in v, not 90, and 90 did not tile.** `vnoise` wraps at its
+   * `period`, so the argument has to close on an integer number of periods: `v * 90` against
+   * period 4 is 22.5 periods and left a hard discontinuity across the tile boundary. With one
+   * tile stretched over a whole board that seam sat on the board's own edge and nobody saw
+   * it; tiling the board three deep put two of them across the middle of every scutum. 36 is
+   * nine periods and closes. It is also where the grain belongs: at 90 cycles a line is 2.8
+   * texels, which is under the texture's own Nyquist before the render even sees it, and on
+   * a tiled board it lands at 2.4 screen px — the 1 px octave. At 36 it is 7.1 texels and
+   * about 6 screen px, which is E2.
+   */
   [Mat.WoodPlank]: {
     colour(u, v, out) {
       const plank = Math.floor(v * 6);
       const shade = 0.82 + hash2(plank, 3, 61) * 0.28;
-      const grain = vnoise(u * 4, v * 90, 4, 67);
+      const grain = vnoise(u * 4, v * 36, 4, 67);
       const knot = Math.max(0, fbm(u * 6, v * 6, 3, 6, 71) - 0.72) * 3;
       mix3([0.42, 0.31, 0.19], [0.66, 0.52, 0.34], grain * shade, out);
       mix3(out, [0.2, 0.13, 0.07], Math.min(0.8, knot), out);
-      // Plank seam.
-      const seam = Math.abs(v * 6 - plank - 0.5) > 0.47 ? 0.55 : 1;
+      const seam = 1 - seamProfile(v, 6, PLANK_SEAM_W) * 0.45;
       out[0] *= seam; out[1] *= seam; out[2] *= seam;
     },
-    height(u, v) {
-      const plank = Math.floor(v * 6);
-      const seam = Math.abs(v * 6 - plank - 0.5) > 0.47 ? 0 : 1;
-      return seam * (0.6 + vnoise(u * 4, v * 90, 4, 67) * 0.4);
-    },
+    height: (u, v) =>
+      (1 - seamProfile(v, 6, PLANK_SEAM_W)) * (0.6 + vnoise(u * 4, v * 36, 4, 67) * 0.4),
     roughness: 0.78,
     metalness: 0,
     bump: 0.5,
@@ -859,52 +1256,82 @@ const MATS: Record<Mat, MatDef> = {
   // Finer wool for cloaks and officer cloth.
   // 30 cycles, not 64 — see the note on `WoolCoarse`. This is the cloak, which is the largest
   // single area of cloth a man presents, so it was also the largest contributor.
+  /**
+   * The cloak, which is the largest single area of cloth a man presents and therefore the
+   * largest single contributor to whatever cloth reads as.
+   *
+   * It clipped worse than the linen in one respect: 1.69 % of the tile had a channel at 255
+   * and **0.13 % was flat white in all three**, which is the one value from which a per-man
+   * tint can produce no colour at all. Budgeted to 0.96 here.
+   *
+   * A sagum hangs from two points and falls in a few big folds, so the drape is at 3 and 8
+   * against the tunic's 5 and 11, and `bump` is lower — a cloak's surface is smoother than a
+   * tunic's, its structure is in the drape rather than in the nap.
+   */
   [Mat.ClothFine]: {
     colour(u, v, out) {
-      const warp = Math.sin(u * Math.PI * 2 * 30) * 0.5 + 0.5;
-      const weft = Math.sin(v * Math.PI * 2 * 30) * 0.5 + 0.5;
-      const drape = fbm(u * 4, v * 4, 2, 4, 233) * 0.55 + fbm(u * 9, v * 9, 2, 9, 239) * 0.32;
-      const g = 0.76 + (warp * 0.5 + weft * 0.5) * 0.12 + fbm(u * 10, v * 10, 3, 10, 149) * 0.08
-        + drape * 0.16;
-      out[0] = Math.min(1, g); out[1] = Math.min(1, g); out[2] = Math.min(1, g * 0.98);
+      const warpUp = 0.5 + 0.5
+        * Math.cos(u * TAU * 30) * Math.cos(v * TAU * 30);
+      const thread = warpUp * threadTone(u, v, 30, 10, 79)
+        + (1 - warpUp) * threadTone(u, v, 10, 30, 83);
+      const drape = CLOAK_FOLD(u, v);
+      const g = 0.69 + fbm(u * 10, v * 10, 3, 10, 149) * 0.07 + drape * 0.14 + thread * 0.17;
+      const dirt = (1 - drape) * 0.12;
+      out[0] = g * (1 - dirt * 0.9);
+      out[1] = g * (1 - dirt * 0.95);
+      out[2] = g * 0.975 * (1 - dirt);
     },
-    height(u, v) {
-      const warp = Math.sin(u * Math.PI * 2 * 30) * 0.5 + 0.5;
-      const weft = Math.sin(v * Math.PI * 2 * 30) * 0.5 + 0.5;
-      return Math.max(warp, weft) * 0.42 + fbm(u * 4, v * 4, 2, 4, 233) * 0.58;
-    },
-    roughness: 0.82,
+    height: (u, v) => CLOAK_FOLD(u, v) * 0.92 + fbm(u * 16, v * 16, 2, 16, 149) * 0.08,
+    cavity: CLOAK_FOLD,
+    slope: (u, v, out) => weaveSlope(u, v, 30, 0.15, out),
+    roughness: 0.78,
+    roughVar: 0.34,
     metalness: 0,
-    bump: 0.25,
+    bump: 0.44,
   },
+  /**
+   * **A tile, not a board-sized decal — and that is what unblocked the shield's tiling.**
+   *
+   * This cell used to paint two *board-scale* features into a *material* cell: a handgrip
+   * band at v = 0.5 and a stitched turn-over at all four tile edges. Both were placed on the
+   * assumption that one tile covers exactly one shield, and that assumption is what pinned
+   * `shieldPanel` at a single tile across a 1.06 m board — 236 texels per metre, the worst
+   * sampled surface on the figure and the reason a scutum's inner face photographed as a
+   * black smear. Tiling it with either feature present grows a shield two grips and a seam
+   * across its middle.
+   *
+   * Neither feature is lost. The rim was a *duplicate*: `shieldPanel` has modelled binding
+   * with its own outward normals, ten lines from where this was painted. The grip is now one
+   * box of 12 triangles that actually stands proud of the board and occludes.
+   *
+   * What is left is hide: grain, scuff, a couple of nail heads where the boss is riveted
+   * through, and the diagonal wear a forearm leaves. Drawn neutral and mid-value on purpose
+   * so a per-man multiply can put it anywhere from pitch to raw hide.
+   */
   [Mat.ShieldBack]: {
     colour(u, v, out) {
       // Hide grain over a neutral mid-value base. 0.62 sRGB is 0.34 linear, which is the
       // middle of the range a per-man tint has to reach both ends of.
-      const grain = fbm(u * 13, v * 13, 4, 13, 157);
+      const grain = fbm(u * 17, v * 17, 4, 17, 157);
       const scuff = Math.max(0, fbm(u * 5, v * 5, 3, 5, 163) - 0.55) * 1.8;
       mix3([0.44, 0.40, 0.35], [0.72, 0.67, 0.60], grain, out);
       mix3(out, [0.34, 0.30, 0.26], Math.min(0.55, scuff), out);
-      // The grip: every shield of every pattern has one horizontal handgrip across the
-      // middle, so a band at v = 0.5 lands on it whatever the board's outline. It is real
-      // structure rather than a repeat — the alternative is a featureless slab.
-      const grip = Math.exp(-((v - 0.5) ** 2) / 0.0016);
-      mix3(out, [0.30, 0.24, 0.18], grip * 0.85, out);
-      // Stitched hide turned over the rim, all four edges.
-      const rim = Math.max(
-        Math.exp(-(u ** 2) / 0.0022) + Math.exp(-((1 - u) ** 2) / 0.0022),
-        Math.exp(-(v ** 2) / 0.0022) + Math.exp(-((1 - v) ** 2) / 0.0022)
-      );
-      mix3(out, [0.26, 0.21, 0.17], Math.min(0.8, rim), out);
+      // Two rivet heads and their leather washers — a boss is nailed through the board and
+      // the nails are visible from behind. Placed off-centre so a repeated tile does not
+      // read as a grid.
+      const rivet = Math.exp(-(((u - 0.31) ** 2 + (v - 0.68) ** 2)) / 0.0011)
+        + Math.exp(-(((u - 0.74) ** 2 + (v - 0.22) ** 2)) / 0.0009);
+      mix3(out, [0.58, 0.55, 0.50], Math.min(0.8, rivet), out);
+      // A hide facing is stitched in panels. Two whole cycles in u and one in v, because a
+      // fractional coefficient does not close on the tile edge and leaves a hard line across
+      // the board once the board tiles — and `seamProfile` rather than a modulo for the same
+      // reason the plank seam uses it.
+      mix3(out, [0.33, 0.29, 0.25], seamProfile((u * 2 + v) % 1, 1) * 0.45, out);
     },
-    height(u, v) {
-      const grip = Math.exp(-((v - 0.5) ** 2) / 0.0016);
-      const rim = Math.max(
-        Math.exp(-(u ** 2) / 0.0022) + Math.exp(-((1 - u) ** 2) / 0.0022),
-        Math.exp(-(v ** 2) / 0.0022) + Math.exp(-((1 - v) ** 2) / 0.0022)
-      );
-      return Math.min(1, fbm(u * 16, v * 16, 3, 16, 157) * 0.5 + grip * 0.5 + Math.min(0.6, rim) * 0.5);
-    },
+    height: (u, v) =>
+      fbm(u * 20, v * 20, 3, 20, 157) * 0.62
+      + Math.min(0.9, Math.exp(-(((u - 0.31) ** 2 + (v - 0.68) ** 2)) / 0.0011)
+        + Math.exp(-(((u - 0.74) ** 2 + (v - 0.22) ** 2)) / 0.0009)) * 0.38,
     roughness: 0.72,
     metalness: 0.02,
     bump: 0.45,
@@ -1705,6 +2132,7 @@ export function buildSoldierAtlas(anisotropy: number): SoldierAtlas {
   }
 
   const rgb: Rgb = [0, 0, 0];
+  const slopeOut: [number, number] = [0, 0];
   const heights = new Float32Array(TILE * TILE);
 
   for (let id = 0; id < Mat.Count; id++) {
@@ -1720,6 +2148,14 @@ export function buildSoldierAtlas(anisotropy: number): SoldierAtlas {
         heights[y * TILE + x] = def.height((x + 0.5) / TILE, (y + 0.5) / TILE);
       }
     }
+
+    // Roughness swing, fitted to this material's own headroom once rather than clamped per
+    // texel. See `ROUGH_SWING`: the clamp is what produced the flat-255 plateaux.
+    const want = Math.min(def.roughVar ?? def.roughness * 1.05, ROUGH_SWING);
+    const rUp = Math.min(
+      want * 0.5, Math.max(0, ROUGH_MAX - def.roughness), Math.max(0, def.roughness - ROUGH_MIN)
+    );
+    const rDown = rUp;
 
     for (let y = 0; y < TILE; y++) {
       for (let x = 0; x < TILE; x++) {
@@ -1737,9 +2173,24 @@ export function buildSoldierAtlas(anisotropy: number): SoldierAtlas {
         const xp = (x + 1) % TILE;
         const ym = (y - 1 + TILE) % TILE;
         const yp = (y + 1) % TILE;
-        const dx = (heights[y * TILE + xp] - heights[y * TILE + xm]) * def.bump * TILE * 0.02;
+        let gu = heights[y * TILE + xp] - heights[y * TILE + xm];
         // Canvas Y runs down while the tangent-space green channel runs up.
-        const dy = (heights[ym * TILE + x] - heights[yp * TILE + x]) * def.bump * TILE * 0.02;
+        let gv = heights[ym * TILE + x] - heights[yp * TILE + x];
+        if (def.slope) {
+          // Cleared per texel: `weaveSlope` accumulates so two thread systems can be laid
+          // over one another, and a shared scratch pair that is never reset sums the whole
+          // tile into one texel. It did, and the tell was the shape rather than the value —
+          // mean |n.xy| came back at 1.000 across a tile whose amplitude cannot reach 0.4.
+          slopeOut[0] = 0;
+          slopeOut[1] = 0;
+          def.slope(u, v, slopeOut);
+          gu += slopeOut[0];
+          // Same flip as the difference above: the hook is written in texture space, where
+          // v rises with the canvas row, and green runs the other way.
+          gv -= slopeOut[1];
+        }
+        const dx = gu * def.bump * TILE * 0.02;
+        const dy = gv * def.bump * TILE * 0.02;
         const len = Math.hypot(-dx, -dy, 1);
         nrmData.data[o] = Math.round(((-dx / len) * 0.5 + 0.5) * 255);
         nrmData.data[o + 1] = Math.round(((-dy / len) * 0.5 + 0.5) * 255);
@@ -1753,15 +2204,17 @@ export function buildSoldierAtlas(anisotropy: number): SoldierAtlas {
         // and the gap between two girdle plates actually go dark, which is what the
         // reference frames show and what the rubric's contact-darkening item is asking for.
         const h = heights[y * TILE + x];
-        const ao = 0.3 + h * 0.7;
+        // Openness from `cavity` where a material separates the two — a fold's trough is
+        // what should darken, not a thread's crest. Defaults to the height field.
+        const c = def.cavity ? def.cavity(u, v) : h;
+        const ao = 0.3 + Math.min(1, Math.max(0, c)) * 0.695;
         ormData.data[o] = Math.round(Math.min(1, ao) * 255);
         // Roughness varies *widely* across the surface, not by fifteen percent. A helmet
         // bowl is burnished on the high spots and pitted in the hollows, and it is that
         // spread — a tight glint next to a broad dull sheen a millimetre away — that makes a
         // surface read as metal at all. A near-constant roughness reads as painted plastic
         // however high the metalness is.
-        ormData.data[o + 1] =
-          Math.round(Math.max(0.04, Math.min(1, def.roughness * (0.5 + (1 - h) * 1.05))) * 255);
+        ormData.data[o + 1] = Math.round((def.roughness + rUp - (rUp + rDown) * h) * 255);
         ormData.data[o + 2] = Math.round(def.metalness * 255);
         ormData.data[o + 3] = 255;
       }

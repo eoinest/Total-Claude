@@ -48,6 +48,24 @@ export class MeshBuilder {
   private auxU = 0;
   private auxV = 0;
 
+  /**
+   * **Map a box face to the material's real grain instead of stretching one tile over it.**
+   *
+   * Off by default, and the default is load-bearing. `buildFarGeometry` — the 313-triangle
+   * crowd tier eight thousand men are drawn in — must stay byte-identical, and the elephant,
+   * the horse and the siege engines are other workstreams' surfaces which this pass has no
+   * business restyling. Only `buildSoldierGeometry` turns it on.
+   *
+   * A constructor option rather than a setter, because a flag that can be flipped halfway
+   * through a build is a flag that will be, and half a mesh at one grain and half at another
+   * is worse than either.
+   */
+  private readonly physicalTiles: boolean;
+
+  constructor(opts: { physicalTiles?: boolean } = {}) {
+    this.physicalTiles = opts.physicalTiles ?? false;
+  }
+
   setPiece(piece: number, tint: number): this {
     this.piece = piece;
     this.tint = tint;
@@ -275,12 +293,58 @@ export class MeshBuilder {
     }[],
     segments: number,
     uv: UvRect,
-    opts: { capStart?: boolean; capEnd?: boolean; repeatV?: number; repeatU?: number } = {}
+    opts: {
+      capStart?: boolean;
+      capEnd?: boolean;
+      repeatV?: number;
+      repeatU?: number;
+      /**
+       * **Fold loops: cloth silhouette for no triangles at all.**
+       *
+       * Round three's critics led with "cloth has no folds and no silhouette — flat polygon
+       * plates with a printed weave". The second half is a texture problem and is fixed in
+       * `atlas.ts`; the first half is not, and no normal map can fix it, because the defect
+       * is in the **outline**. A tunic here was a circular tube, so the edge of every man in
+       * the game was a pair of straight lines and the garment read as a lampshade.
+       *
+       * A hanging garment is not circular in section. It gathers into a few vertical folds —
+       * pulled in at the belt, free at the hem — and its section is a lobed curve. That is
+       * exactly a radial modulation of the ring the tube already emits, so it costs **no
+       * vertex and no triangle**: the same ring, moved.
+       *
+       * Two harmonics rather than one, because a single cosine is a gear wheel. The normal
+       * is the true polar normal of `r(theta)` and not the circular one, or the shading
+       * would keep saying "cylinder" while the silhouette said otherwise, which is worse
+       * than either alone. The end cap takes the same modulation, or the hem cracks open.
+       *
+       * `lobes` must stay under half `segments` or the ring's own sampling aliases it into a
+       * star; the guard below drops the whole option in that case, which is what keeps LOD2
+       * — five segments — byte-identical without any call site having to know the tier.
+       */
+      fold?: {
+        /** Peak radial displacement in metres, before the taper. */
+        amp: number;
+        /** Folds around the body. Aliases into a star at or above `segments / 2`. */
+        lobes: number;
+        /** A second harmonic so the section is not a gear wheel. */
+        lobes2?: number;
+        /** Phase in radians, so two garments on one man do not line up. */
+        phase?: number;
+        /**
+         * Strength along the sweep, 0..1, evaluated at the node's own fraction of the run.
+         * A tunic is pulled flat under a belt and hangs free at the hem, and a fold field
+         * of constant amplitude reads as corrugated iron.
+         */
+        taper?: (t: number) => number;
+      };
+    } = {}
   ): void {
     // Both sweeps carry their tile seams on duplicated vertices — see `repeatStops`. The
     // ring is closed, so the column list always ends with a duplicate of column 0.
     const cols = MeshBuilder.repeatStops(segments, opts.repeatU ?? 1);
     const rows = MeshBuilder.repeatStops(nodes.length - 1, opts.repeatV ?? 1);
+    // Nyquist on the ring: a fold the sweep cannot resolve is not a fold, it is a star.
+    const fold = opts.fold && opts.fold.lobes * 2 < segments ? opts.fold : undefined;
     const rings: number[][] = [];
     for (const row of rows) {
       const n = nodes[row.i];
@@ -293,17 +357,46 @@ export class MeshBuilder {
         const dyy = nodes[row.i + 1].y - nodes[row.i - 1].y;
         dy = dyy !== 0 ? dr / dyy : 0;
       }
+      // Fold amplitude at this node. `row.i` indexes the node list, so the taper is
+      // evaluated against position along the sweep and not against the seam-expanded row.
+      let famp = 0;
+      let k1 = 0;
+      let k2 = 0;
+      if (fold) {
+        const t = nodes.length > 1 ? row.i / (nodes.length - 1) : 0;
+        famp = fold.amp * (fold.taper ? fold.taper(t) : 1);
+        k1 = fold.lobes;
+        k2 = fold.lobes2 ?? fold.lobes * 2;
+      }
       for (const col of cols) {
         const a = (col.i / segments) * Math.PI * 2;
         const cx = Math.cos(a);
         const cz = Math.sin(a);
         const [u, v] = MeshBuilder.tileUv(uv, col.f, row.f);
+        let nx = cx;
+        let nz = cz;
+        let orx = n.rx;
+        let orz = n.rz;
+        if (famp !== 0) {
+          const ph = fold?.phase ?? 0;
+          const g = (Math.cos(a * k1 + ph) * 0.62 + Math.cos(a * k2 + ph * 1.7) * 0.38) * famp;
+          // d(offset)/d(theta): the polar normal of r(theta) is
+          // (r cos + r' sin, r sin - r' cos), and using the circular normal instead would
+          // light a folded section as a cylinder — the worst of both.
+          const gp = (-k1 * Math.sin(a * k1 + ph) * 0.62
+            - k2 * Math.sin(a * k2 + ph * 1.7) * 0.38) * famp;
+          orx = n.rx + g;
+          orz = n.rz + g;
+          const rr = (orx + orz) * 0.5;
+          nx = cx * rr + gp * cz;
+          nz = cz * rr - gp * cx;
+        }
         ring.push(
           this.vert(
-            (n.x ?? 0) + cx * n.rx,
+            (n.x ?? 0) + cx * orx,
             n.y,
-            (n.z ?? 0) + cz * n.rz,
-            cx, -dy, cz,
+            (n.z ?? 0) + cz * orz,
+            nx, -dy * ((orx + orz) * 0.5), nz,
             u, v
           )
         );
@@ -317,15 +410,19 @@ export class MeshBuilder {
         this.quadFacing(rings[r][s], rings[r][s + 1], rings[r + 1][s + 1], rings[r + 1][s]);
       }
     }
-    if (opts.capStart) this.cap(nodes[0], segments, uv, -1);
-    if (opts.capEnd) this.cap(nodes[nodes.length - 1], segments, uv, 1);
+    if (opts.capStart) this.cap(nodes[0], segments, uv, -1, fold, 0);
+    if (opts.capEnd) {
+      this.cap(nodes[nodes.length - 1], segments, uv, 1, fold, 1);
+    }
   }
 
   private cap(
     n: { y: number; rx: number; rz: number; x?: number; z?: number; bone?: number; bone2?: number; w?: number },
     segments: number,
     uv: UvRect,
-    dir: number
+    dir: number,
+    fold?: { amp: number; lobes: number; lobes2?: number; phase?: number; taper?: (t: number) => number },
+    foldT = 0
   ): void {
     if (n.bone !== undefined) this.setBone(n.bone, n.bone2 ?? n.bone, n.w ?? 1);
     const [cu, cv] = MeshBuilder.tileUv(uv, 0.5, 0.5);
@@ -333,11 +430,20 @@ export class MeshBuilder {
     // A cap is mapped radially rather than by sweep parameter, so there is no seam column
     // to duplicate: u and v both come back to the same place after a full turn.
     const ring: number[] = [];
+    // The cap's rim has to sit on the folded ring, not on the circle the ring would have
+    // been: a hem cap emitted at the unmodulated radius leaves a crack all the way round.
+    const famp = fold ? fold.amp * (fold.taper ? fold.taper(foldT) : 1) : 0;
     for (let s = 0; s < segments; s++) {
       const a = (s / segments) * Math.PI * 2;
       const [u, v] = MeshBuilder.tileUv(uv, 0.5 + Math.cos(a) * 0.5, 0.5 + Math.sin(a) * 0.5);
+      const g = famp === 0 || !fold ? 0
+        : (Math.cos(a * fold.lobes + (fold.phase ?? 0)) * 0.62
+          + Math.cos(a * (fold.lobes2 ?? fold.lobes * 2) + (fold.phase ?? 0) * 1.7) * 0.38) * famp;
       ring.push(
-        this.vert((n.x ?? 0) + Math.cos(a) * n.rx, n.y, (n.z ?? 0) + Math.sin(a) * n.rz, 0, dir, 0, u, v)
+        this.vert(
+          (n.x ?? 0) + Math.cos(a) * (n.rx + g), n.y, (n.z ?? 0) + Math.sin(a) * (n.rz + g),
+          0, dir, 0, u, v
+        )
       );
     }
     for (let s = 0; s < segments; s++) {
@@ -522,6 +628,16 @@ export class MeshBuilder {
    * the same texel** and the face rendered as one flat colour. Five engine call sites pass
    * `2`, `3` and `4`. Mapping the whole tile is the honest reading of the intent and is
    * strictly better than a point sample; a genuinely tiled box needs subdivision.
+   *
+   * **With `physicalTiles` and a rect that knows its own world size, a face takes only the
+   * share of the tile it physically covers.** Stretching one tile over an 8 mm arrow shaft
+   * is 31,250 texels per metre on a figure whose bare legs run 570 — and 250 texels of wood
+   * grain crammed into the four screen pixels the shaft occupies is not detail, it is
+   * aliasing, which is the one octave this project already carries 3.7x too much of. The
+   * window is centred and offset by a hash of the box's own position, so five arrows in a
+   * quiver take five different pieces of the tile rather than five copies of its middle.
+   * A face larger than a tile clamps to the whole tile, which is the old behaviour and the
+   * same honest limitation: one quad cannot carry a seam.
    */
   box(
     cx: number, cy: number, cz: number,
@@ -533,6 +649,13 @@ export class MeshBuilder {
     const hx = sx / 2;
     const hy = sy / 2;
     const hz = sz / 2;
+    const tileM = this.physicalTiles ? uv.m : undefined;
+    // A cheap positional hash, 0..1 in each axis. Only used to slide the tile window, so it
+    // wants decorrelation between nearby boxes rather than statistical quality.
+    const jitter = (k: number): number => {
+      const h = Math.sin(cx * 127.1 + cy * 311.7 + cz * 74.7 + k * 43.3) * 43758.5453;
+      return h - Math.floor(h);
+    };
     const faces: [number[], number[]][] = [
       [[1, 0, 0], [hx, hy, hz]],
       [[-1, 0, 0], [-hx, hy, -hz]],
@@ -557,8 +680,23 @@ export class MeshBuilder {
       const ey = [ay[0] * hx, ay[1] * hy, ay[2] * hz];
       const c = [cx + nx * hx, cy + ny * hy, cz + nz * hz];
       const v: number[] = [];
+      // The face's own extent along its two in-plane axes, in metres.
+      const fu = Math.abs(ex[0]) + Math.abs(ex[1]) + Math.abs(ex[2]);
+      const fv = Math.abs(ey[0]) + Math.abs(ey[1]) + Math.abs(ey[2]);
+      let wu = 1;
+      let wv = 1;
+      let ou = 0;
+      let ov = 0;
+      if (tileM) {
+        wu = Math.min(1, (2 * fu) / tileM);
+        wv = Math.min(1, (2 * fv) / tileM);
+        ou = jitter(1) * (1 - wu);
+        ov = jitter(2) * (1 - wv);
+      }
       for (const [su, sv] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
-        const [u, vv] = MeshBuilder.tileUv(uv, (su + 1) / 2, (sv + 1) / 2);
+        const [u, vv] = MeshBuilder.tileUv(
+          uv, ou + ((su + 1) / 2) * wu, ov + ((sv + 1) / 2) * wv
+        );
         v.push(this.vert(
           c[0] + ex[0] * su + ey[0] * sv,
           c[1] + ex[1] * su + ey[1] * sv,
@@ -575,7 +713,28 @@ export class MeshBuilder {
    *
    * `curve` is the sagitta in metres: a legionary scutum is a section of a cylinder about
    * 0.30 m deep across its width, which is what makes it wrap the body.
+   *
+   * **The board is tiled now, and it was the worst-sampled surface on the figure.** One
+   * whole tile was stretched across a 0.66 by 1.06 m scutum: 379 texels per metre across and
+   * **236 along**, which at the isolated deck's magnification is one texel over two and a
+   * half screen pixels and over four on the two shield plates. That is not a missing map, it
+   * is a magnified one, and it is why round three's critics recorded a scutum's inner face
+   * as a black smear across 12-20 % of two plates. Both faces now take
+   * `ceil`-free integer repeats derived from the board's own size and the material's
+   * `UvRect.m`, laid out through `repeatStops` so the seams sit on duplicated vertex columns
+   * and **cost no triangle** — the same treatment `tube` and `sheet` already had, and the
+   * reason this cannot reintroduce the reversed-column defect.
+   *
+   * `SHIELD_PLANK_M` is 0.36 rather than the plank tile's own 0.72. The tile draws six
+   * planks, so 0.72 makes them 120 mm, which is a squared beam; the Dura-Europos scutum is
+   * built from strips of **30 to 80 mm**, and six over 0.36 m is 60 mm, the middle of the
+   * find.
+   *
+   * The aux pair still carries the *board* coordinate rather than the tile coordinate, so
+   * the painted device is drawn once across the whole board however finely the boards tile.
    */
+  static readonly SHIELD_PLANK_M = 0.36;
+
   shieldPanel(
     halfW: number,
     halfH: number,
@@ -590,35 +749,44 @@ export class MeshBuilder {
     shape: (sx: number, sy: number) => number,
     piece: number,
     /**
-     * Give the board's edge its own outward-facing band.
+     * Give the board's edge its own outward-facing band, and its back a modelled grip.
      *
      * True everywhere a camera can resolve 20 mm of board, false on the far mesh, where the
      * whole man is 313 triangles and the edge is well under a pixel. Costing the crowd tier
-     * 32 triangles a man for an invisible bevel is the wrong trade at 8,632 men.
+     * 32 triangles a man for an invisible bevel is the wrong trade at 8,632 men — and it is
+     * also what keeps LOD2 byte-identical, since the tiling below is gated on it too: at two
+     * columns and two rows there is nowhere to put a seam.
      */
     rimBand = true
   ): void {
     const z = (sx: number): number => curve * (1 - sx * sx);
+    // Repeats from the board's own size. Gated on `rimBand` so the crowd tier, which has two
+    // divisions on each axis and no room for a seam column, is bit-for-bit what it was.
+    const tileFace = rimBand ? (faceUv.m === undefined ? 0 : MeshBuilder.SHIELD_PLANK_M) : 0;
+    const tileBack = rimBand ? (edgeUv.m === undefined ? 0 : MeshBuilder.SHIELD_PLANK_M) : 0;
+    const rep = (extent: number, tile: number, div: number): number =>
+      tile <= 0 ? 1 : Math.min(Math.max(1, Math.round(extent / tile)), div);
+    const fCols = MeshBuilder.repeatStops(cols, rep(halfW * 2, tileFace, cols));
+    const fRows = MeshBuilder.repeatStops(rows, rep(halfH * 2, tileFace, rows));
+    const bCols = MeshBuilder.repeatStops(cols, rep(halfW * 2, tileBack, cols));
+    const bRows = MeshBuilder.repeatStops(rows, rep(halfH * 2, tileBack, rows));
+
     const front: number[][] = [];
     const back: number[][] = [];
-    const loRim: number[] = [];
-    const hiRim: number[] = [];
-    const lfRim: number[] = [];
-    const rtRim: number[] = [];
 
     this.setPiece(piece, faceTint);
-    for (let r = 0; r <= rows; r++) {
-      const sy = (r / rows) * 2 - 1;
+    for (const rs of fRows) {
+      const sy = (rs.i / rows) * 2 - 1;
       const fRow: number[] = [];
-      for (let c = 0; c <= cols; c++) {
-        const sx = (c / cols) * 2 - 1;
+      for (const cs of fCols) {
+        const sx = (cs.i / cols) * 2 - 1;
         const w = shape(sx, sy);
         const x = sx * halfW * w;
         const y = sy * halfH;
         // Face normal from the cylindrical curvature.
         const slope = -2 * curve * sx / halfW;
         const len = Math.hypot(slope, 1);
-        const [u, v] = MeshBuilder.tileUv(faceUv, (sx + 1) / 2, (sy + 1) / 2);
+        const [u, v] = MeshBuilder.tileUv(faceUv, cs.f, rs.f);
         this.setAux((sx + 1) / 2, (sy + 1) / 2);
         fRow.push(this.vert(x, y, z(sx) + thickness * 0.5, slope / len, 0, 1 / len, u, v));
       }
@@ -626,21 +794,29 @@ export class MeshBuilder {
     }
     this.setPiece(piece, edgeTint);
     this.setAux(0, 0);
-    for (let r = 0; r <= rows; r++) {
-      const sy = (r / rows) * 2 - 1;
+    for (const rs of bRows) {
+      const sy = (rs.i / rows) * 2 - 1;
       const bRow: number[] = [];
-      for (let c = 0; c <= cols; c++) {
-        const sx = (c / cols) * 2 - 1;
+      for (const cs of bCols) {
+        const sx = (cs.i / cols) * 2 - 1;
         const w = shape(sx, sy);
-        const [u, v] = MeshBuilder.tileUv(edgeUv, (sx + 1) / 2, (sy + 1) / 2);
+        const [u, v] = MeshBuilder.tileUv(edgeUv, cs.f, rs.f);
         bRow.push(this.vert(sx * halfW * w, sy * halfH, z(sx) - thickness * 0.5, 0, 0, -1, u, v));
       }
       back.push(bRow);
     }
 
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
+    for (let r = 0; r < fRows.length - 1; r++) {
+      if (fRows[r].i === fRows[r + 1].i) continue;
+      for (let c = 0; c < fCols.length - 1; c++) {
+        if (fCols[c].i === fCols[c + 1].i) continue;
         this.quad(front[r][c], front[r][c + 1], front[r + 1][c + 1], front[r + 1][c]);
+      }
+    }
+    for (let r = 0; r < bRows.length - 1; r++) {
+      if (bRows[r].i === bRows[r + 1].i) continue;
+      for (let c = 0; c < bCols.length - 1; c++) {
+        if (bCols[c].i === bCols[c + 1].i) continue;
         this.quad(back[r][c], back[r + 1][c], back[r + 1][c + 1], back[r][c + 1]);
       }
     }
@@ -656,16 +832,29 @@ export class MeshBuilder {
     // A middle ring pointing outward costs vertices and **no extra triangles** — the same
     // 2*(cols+rows) quads, just split into two bands each. It also takes the hide UV, so the
     // binding reads as leather rather than as more painted board.
+    //
+    // The two shells no longer share an index space, because each tiles at its own repeat.
+    // The rim is therefore walked over the *division* index and both shells are looked up in
+    // their own stop list, which is what `edgeOf` does.
+    const edgeOf = (stops: { i: number; f: number }[], div: number): number[] => {
+      const out: number[] = [];
+      for (let k = 0; k <= div; k++) out.push(stops.findIndex((s) => s.i === k));
+      return out;
+    };
+    const fRowAt = edgeOf(fRows, rows);
+    const fColAt = edgeOf(fCols, cols);
+    const bRowAt = edgeOf(bRows, rows);
+    const bColAt = edgeOf(bCols, cols);
     const rim = (i: number, j: number, dx: number, dy: number): number => {
-      const fi = front[i][j];
-      const bi = back[i][j];
+      const fi = front[fRowAt[i]][fColAt[j]];
+      const bi = back[bRowAt[i]][bColAt[j]];
       // Midway between the shells, in the space they were already emitted into — so the
       // builder transform must not be applied a second time.
       const x = (this.pos[fi * 3] + this.pos[bi * 3]) * 0.5;
       const y = (this.pos[fi * 3 + 1] + this.pos[bi * 3 + 1]) * 0.5;
-      const z = (this.pos[fi * 3 + 2] + this.pos[bi * 3 + 2]) * 0.5;
+      const z2 = (this.pos[fi * 3 + 2] + this.pos[bi * 3 + 2]) * 0.5;
       const [u, v] = MeshBuilder.tileUv(edgeUv, (i / rows) * 0.5 + (j / cols) * 0.5, 0.5);
-      return this.vertWorld(x, y, z, dx, dy, 0, u, v);
+      return this.vertWorld(x, y, z2, dx, dy, 0, u, v);
     };
     this.setPiece(piece, edgeTint);
     if (!rimBand) {
@@ -679,6 +868,10 @@ export class MeshBuilder {
       }
       return;
     }
+    const loRim: number[] = [];
+    const hiRim: number[] = [];
+    const lfRim: number[] = [];
+    const rtRim: number[] = [];
     for (let c = 0; c <= cols; c++) {
       loRim[c] = rim(0, c, 0, -1);
       hiRim[c] = rim(rows, c, 0, 1);
@@ -687,18 +880,34 @@ export class MeshBuilder {
       lfRim[r] = rim(r, 0, -1, 0);
       rtRim[r] = rim(r, cols, 1, 0);
     }
+    const F = (i: number, j: number): number => front[fRowAt[i]][fColAt[j]];
+    const B = (i: number, j: number): number => back[bRowAt[i]][bColAt[j]];
     for (let c = 0; c < cols; c++) {
-      this.quadFacing(front[0][c + 1], front[0][c], loRim[c], loRim[c + 1]);
-      this.quadFacing(loRim[c + 1], loRim[c], back[0][c], back[0][c + 1]);
-      this.quadFacing(front[rows][c], front[rows][c + 1], hiRim[c + 1], hiRim[c]);
-      this.quadFacing(hiRim[c], hiRim[c + 1], back[rows][c + 1], back[rows][c]);
+      this.quadFacing(F(0, c + 1), F(0, c), loRim[c], loRim[c + 1]);
+      this.quadFacing(loRim[c + 1], loRim[c], B(0, c), B(0, c + 1));
+      this.quadFacing(F(rows, c), F(rows, c + 1), hiRim[c + 1], hiRim[c]);
+      this.quadFacing(hiRim[c], hiRim[c + 1], B(rows, c + 1), B(rows, c));
     }
     for (let r = 0; r < rows; r++) {
-      this.quadFacing(front[r][0], front[r + 1][0], lfRim[r + 1], lfRim[r]);
-      this.quadFacing(lfRim[r], lfRim[r + 1], back[r + 1][0], back[r][0]);
-      this.quadFacing(front[r + 1][cols], front[r][cols], rtRim[r], rtRim[r + 1]);
-      this.quadFacing(rtRim[r + 1], rtRim[r], back[r][cols], back[r + 1][cols]);
+      this.quadFacing(F(r, 0), F(r + 1, 0), lfRim[r + 1], lfRim[r]);
+      this.quadFacing(lfRim[r], lfRim[r + 1], B(r + 1, 0), B(r, 0));
+      this.quadFacing(F(r + 1, cols), F(r, cols), rtRim[r], rtRim[r + 1]);
+      this.quadFacing(rtRim[r + 1], rtRim[r], B(r, cols), B(r + 1, cols));
     }
+    // The grip, modelled rather than painted.
+    //
+    // The hide tile used to carry a grip band at v = 0.5 and a stitched turn-over at all
+    // four of its edges. Both were board-scale features living in a *material* cell, which
+    // is what made the inner face untileable — repeat it twice and a shield grows two grips
+    // and a seam across its middle — and the rim was a duplicate of the binding modelled ten
+    // lines above it anyway. One bar of 12 triangles buys back the one feature that was
+    // real, and it buys it with an occluding silhouette instead of a painted stripe.
+    this.setPiece(piece, edgeTint);
+    this.box(
+      0, 0, z(0) - thickness * 0.5 - 0.019,
+      Math.min(0.22, halfW * 1.1), 0.034, 0.030,
+      edgeUv
+    );
   }
 
   /**

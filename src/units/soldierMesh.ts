@@ -405,7 +405,11 @@ function browBand(rTop: number, rMid: number, rRim: number): [number, number][] 
 
 export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.InstancedBufferGeometry {
   if (lod === 2) return buildFarGeometry(faction);
-  const b = new MeshBuilder();
+  // `physicalTiles`: a box face takes the share of its tile it physically covers rather than
+  // the whole tile. Deliberately not set on the far builder below — LOD2 is byte-identical by
+  // contract — and not on the elephant, horse or engine builders, which are other
+  // workstreams' surfaces.
+  const b = new MeshBuilder({ physicalTiles: true });
   const d = DETAIL[lod];
   const germanic = faction === Faction.Germanic;
   /**
@@ -980,7 +984,16 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
 
   b.setPiece(Piece.Tunic, Tint.Tunic);
   const tunicBody = torsoNodes(1.0, 0.62);
-  b.tube(tunicBody, d.torso, woolUv, { ...tileRepeat(tunicBody, Mat.WoolCoarse, { u: 2, v: 3 }), capEnd: true });
+  b.tube(tunicBody, d.torso, woolUv, {
+    ...tileRepeat(tunicBody, Mat.WoolCoarse, { u: 2, v: 3 }),
+    capEnd: true,
+    // A tunic hangs in folds and this one was a circle in section, so every man's outline
+    // was two straight lines. See `MeshBuilder.tube`'s `fold`: it costs no vertex and no
+    // triangle, and its Nyquist guard drops it below six segments, so LOD1 and LOD2 are
+    // untouched. 13 mm on a 0.15 m body is a real woollen fold; the taper holds it almost
+    // flat under the belt and lets it open at the hem, which is what a belted tunic does.
+    fold: { amp: 0.020, lobes: 3, lobes2: 4, phase: 0.6, taper: (t) => 0.22 + 0.78 * t * t },
+  });
   if (d.medium) {
     // Short sleeves over the deltoid.
     for (const left of [true, false]) {
@@ -1020,7 +1033,8 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
         { y: 0.84, rx: 0.155, rz: 0.11, bone: MB.pelvis },
         { y: 0.76, rx: 0.14, rz: 0.1, bone: MB.pelvis },
       ],
-      d.torso, woolUv, { repeatU: 2 }
+      d.torso, woolUv,
+      { repeatU: 2, fold: { amp: 0.017, lobes: 3, lobes2: 4, phase: 1.4, taper: (t) => 0.35 + 0.65 * t } }
     );
   } else {
     // Focale: the neck scarf that stopped mail and plate chafing the throat. Small, but
@@ -1259,7 +1273,14 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     // Bracae with leg wraps. Universal among Germans, and by 271 common in the legions too.
     b.setPiece(Piece.LegsTrousers, Tint.Legs);
     const bracae = legNodes(1.1);
-    b.tube(bracae, d.limb, woolUv, { ...tileRepeat(bracae, Mat.WoolCoarse, { u: 2, v: 3 }), capEnd: true });
+    b.tube(bracae, d.limb, woolUv, {
+      ...tileRepeat(bracae, Mat.WoolCoarse, { u: 2, v: 3 }),
+      capEnd: true,
+      // Two lobes on a leg, not three: `d.limb` is seven segments at LOD0 and a fold the
+      // ring cannot resolve comes out a star. Bracae are cut full and gathered at the
+      // ankle, hence the taper running the other way from the tunic's.
+      fold: { amp: 0.011, lobes: 2, lobes2: 3, phase: left ? 0.9 : 2.3, taper: (t) => 0.45 + 0.55 * t },
+    });
     if (d.medium) {
       b.setPiece(Piece.LegsTrousers, Tint.Atlas);
       const wraps = d.fine ? 4 : 2;
@@ -1272,7 +1293,9 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
             { y, x: hipX, rx: 0.05, rz: 0.051 },
             { y: y + 0.055, x: hipX, rx: 0.05, rz: 0.051 },
           ],
-          d.limb, ropeUv, { repeatU: 3 }
+          // Wool, not rope: a puttee is a wound strip of cloth, and the rope tile's helix
+          // put the same barber-pole round every ankle in the army.
+          d.limb, woolUv, { repeatU: 3 }
         );
       }
     }
@@ -1285,8 +1308,15 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     b.setPiece(Piece.Boots, Tint.Atlas);
     b.setBone(foot);
     b.setMatrix(new THREE.Matrix4().makeTranslation(hipX, ankleY, MAN_RIG.restT[foot * 3 + 2]));
-    // Sole: pale, thick, and proud of the upper, so the foot has a readable ground line.
-    b.box(0, -0.052, 0.048, 0.092, 0.028, 0.245, ropeUv);
+    // Sole: thick and proud of the upper, so the foot has a readable ground line.
+    //
+    // Leather, not rope. A caliga sole is layered cowhide with iron hobnails; it took the
+    // rope tile because rope is the palest thing in the sheet and a dark foot reads as a
+    // blob. That only worked while the whole tile was crushed onto a 28 mm edge and
+    // mip-averaged to a mean — once `physicalTiles` gave the face the share of the tile it
+    // actually covers, Rope's helical barber-pole came up at full contrast and every man in
+    // the game photographed with a yellow-and-black hazard stripe round his soles.
+    b.box(0, -0.052, 0.048, 0.092, 0.028, 0.245, leatherUv);
     b.box(0, -0.028, 0.045, 0.086, 0.028, 0.235, darkLeatherUv);
     if (d.medium) {
       // Heel cup and ankle straps.
