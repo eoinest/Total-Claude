@@ -289,6 +289,19 @@ const DERELICT_LIMIT = 40;
 /** Ticks a wall order may run before it is abandoned as impossible. See `advancePlans`. */
 const PLAN_TIMEOUT = 30 * 60 * 10;
 /**
+ * Ticks a descent may make no progress before the men who *are* down are given back.
+ *
+ * `PLAN_TIMEOUT` is ten minutes and it is the right number for "this order can never
+ * finish"; it is the wrong number for "this order has finished for a hundred and forty-three
+ * of a hundred and fifty-two men". Measured on Rome: 152 men ordered down, 143 on the
+ * terrain, 9 still on the stone, and the plan still open at **age 9,111** — five minutes in
+ * which the unit stayed `garrisoned` and `owned`, so the next order the player gave it was
+ * read as a traverse and it could not be sent back up. Twenty seconds of no improvement is
+ * far longer than the gap between two men clearing a stair head and far shorter than a
+ * player's patience.
+ */
+const DESCENT_STALL = 30 * 20;
+/**
  * Metres the order destination must jump before it counts as a new order.
  *
  * `trackOwnedAnchors` mirrors a siege-owned unit's centroid into `targetX/targetZ`, so the
@@ -612,6 +625,10 @@ interface WallPlan {
   age: number;
   /** Men this plan could not move on the last tick. Reported, never silently absorbed. */
   stuck: number;
+  /** Fewest men still to shift that this plan has ever seen. See `DESCENT_STALL`. */
+  best: number;
+  /** Ticks since `best` last improved. */
+  sinceBest: number;
 }
 
 interface Ladder {
@@ -758,6 +775,18 @@ interface CityView {
   /** Optional. True once `setGateDoorBroken` has been called for this gate. */
   isGateDoorBroken?(id: string): boolean;
   /**
+   * Optional. The gatehouse's own footprint and the height of its crown.
+   *
+   * Absent until the city workstream lands it, and `buildSpine` no-ops without it — the same
+   * arrangement as `getWallStairs` and `breachWall`. What it is for: `curtainSpans` cuts the
+   * curtain out where the gatehouse stands, but the spine lays a station every
+   * `STATION_PITCH` along every garrisonable bay clipped only by `towerHalf`, so on Rome
+   * **22 of bay 19's 36 stations stand inside the gatehouse footprint with no curtain under
+   * them, 6.574 m below the crown** — and they produced 823 of 5,301 garrison shots in 240 s,
+   * every one of them discarded.
+   */
+  getGateBlock?(): { x: number; z: number; hw: number; hd: number; rot: number; topY: number } | null;
+  /**
    * Optional, and the whole reason the stair mechanic reads the city instead of guessing.
    *
    * Absent today. `buildStairs` synthesises a set from the bays when it is, and reports
@@ -855,6 +884,24 @@ export interface SiegeMachineOrder {
    * of ten minutes has to be quoted *before* the click, not discovered after it.
    */
   seconds: number;
+}
+
+/**
+ * Is this point inside an oriented footprint, in plan?
+ *
+ * Plan only, deliberately: the question `buildSpine` is asking is "is there curtain under
+ * this station", and the gatehouse's answer does not depend on height — it replaces the
+ * curtain for its whole footprint. Height comes back in through `topY` when a crown run is
+ * laid, which is the better fix this one is holding the place for.
+ */
+function insideBlock(
+  b: { x: number; z: number; hw: number; hd: number; rot: number }, x: number, z: number
+): boolean {
+  const dx = x - b.x;
+  const dz = z - b.z;
+  const c = Math.cos(-b.rot);
+  const s = Math.sin(-b.rot);
+  return Math.abs(dx * c - dz * s) <= b.hw && Math.abs(dx * s + dz * c) <= b.hd;
 }
 
 export class Siege implements ElevationOwner {
@@ -1198,6 +1245,8 @@ export class Siege implements ElevationOwner {
     const pmid: number[] = [];
     const phalf: number[] = [];
 
+    /** The gatehouse, if this city publishes one. Read once: the wall does not move. */
+    const gateBlock = this.city.getGateBlock?.() ?? null;
     for (const bay of bays) {
       if (!bay.garrisonable) continue;
       // The doorway through this bay's west tower, as the city cut it. Zero-width where the
@@ -1215,8 +1264,26 @@ export class Siege implements ElevationOwner {
       const count = Math.floor((t1 - t0) / STATION_PITCH);
       for (let k = 0; k <= count; k++) {
         const t = t0 + k * STATION_PITCH;
-        xs.push(bay.x0 + bay.dx * t);
-        zs.push(bay.z0 + bay.dz * t);
+        const px = bay.x0 + bay.dx * t;
+        const pz = bay.z0 + bay.dz * t;
+        /**
+         * Not where the gatehouse is.
+         *
+         * The bay's own run is clipped at its west end by `towerHalf`, because a tower
+         * chamber occupies the walk there; a gatehouse occupies it in exactly the same way
+         * and nothing clipped it. `curtainSpans` cuts the curtain out under the block, so
+         * those stations had **no stone beneath them** — measured on Rome as 22 of bay 19's
+         * 36, standing 6.574 m below the crown and firing 823 shots that were all discarded.
+         *
+         * A garrison *should* be able to stand on a gatehouse roof, and that is the better
+         * fix: a run laid on the crown at the block's own `topY`, with links to the walks
+         * either side. This is the safe half of it — men are no longer placed in mid-air —
+         * and it is written as a clip rather than a special case, so the day the city
+         * publishes a crown run, deleting this is the whole change.
+         */
+        if (gateBlock && insideBlock(gateBlock, px, pz)) continue;
+        xs.push(px);
+        zs.push(pz);
         ys.push(bay.walkY);
         nxs.push(bay.nx);
         nzs.push(bay.nz);
@@ -1909,7 +1976,7 @@ export class Siege implements ElevationOwner {
     u.waypoints.length = 0;
     u.contactLock = false;
     this.plans.set(u.id, {
-      goal: WallGoal.Ascend, destStation: dest, destRun, stair, gx: x, gz: z, age: 0, stuck: 0,
+      goal: WallGoal.Ascend, destStation: dest, destRun, stair, gx: x, gz: z, age: 0, stuck: 0, best: 1e9, sinceBest: 0,
     });
     return true;
   }
@@ -1927,8 +1994,21 @@ export class Siege implements ElevationOwner {
     const dest = this.wallTargetAt(x, z);
     if (dest < 0) return false;
     const destRun = this.sRun[dest];
+    /**
+     * Refuse a run the wall does not join to this one.
+     *
+     * The runs are a chain — run k abuts run k+1 across a tower or a construction step and
+     * nothing else — so a missing link anywhere between here and there is a gap no man can
+     * cross, and `nextHop` returns -1 for every man on every tick. The order used to be
+     * accepted anyway: measured, **152 of 152 men frozen and the plan still open at age
+     * 3,656**, with nothing said to the player at any point. An order that cannot be carried
+     * out has to be refused where it is given.
+     */
+    const here = this.stationNear(u.x, u.z);
+    const fromRun = here >= 0 ? this.sRun[here] : -1;
+    if (!this.runsConnected(fromRun, destRun)) return false;
     this.plans.set(u.id, {
-      goal: WallGoal.Traverse, destStation: dest, destRun, stair: -1, gx: x, gz: z, age: 0, stuck: 0,
+      goal: WallGoal.Traverse, destStation: dest, destRun, stair: -1, gx: x, gz: z, age: 0, stuck: 0, best: 1e9, sinceBest: 0,
     });
     // A unit walking somewhere else must be free to re-form when it gets there, even if it
     // arrived as a boarding party. Stickiness is a property of a lodgement, not of a unit.
@@ -1956,7 +2036,7 @@ export class Siege implements ElevationOwner {
     if (stair < 0) return false;
     this.plans.set(u.id, {
       goal: WallGoal.Descend, destStation: -1, destRun: this.links[stair].runB,
-      stair, gx: x, gz: z, age: 0, stuck: 0,
+      stair, gx: x, gz: z, age: 0, stuck: 0, best: 1e9, sinceBest: 0,
     });
     const g = this.garrisons.get(u.id);
     if (g) g.sticky = false;
@@ -1979,18 +2059,31 @@ export class Siege implements ElevationOwner {
    * its own" means it is not free to go and never will be while it has one.
    */
   private findEscalade(unitId: number, x: number, z: number): {
-    refusal: 'none' | 'crew' | 'noWall' | 'noWay' | 'full';
+    refusal: 'none' | 'crew' | 'noWall' | 'noWay' | 'full' | 'notFoot';
     kind: 'tower' | 'ladder' | null;
     tower: SiegeTower | null;
     group: Ladder[] | null;
     station: number;
     distance: number;
   } {
-    const none = (refusal: 'crew' | 'noWall' | 'noWay' | 'full', station = -1) =>
+    const none = (refusal: 'crew' | 'noWall' | 'noWay' | 'full' | 'notFoot', station = -1) =>
       ({ refusal, kind: null, tower: null, group: null, station, distance: Infinity } as const);
     // A gang has its own machine to work. Sending the ram crew up a ladder would abandon
     // the ram in the carriageway, which is the failure this workstream has already fixed once.
     if (this.crewsAMachine(unitId)) return none('crew');
+    /**
+     * A horse does not climb a ladder, and neither does a cart.
+     *
+     * Reported from a hand run with a number on it: **26 horsemen standing on the parapet**,
+     * and ballistae admitted to a boarding file as well. `escalade` asked whether there was a
+     * machine within reach and never whether the unit could use one, so any unit type in the
+     * game could be enrolled — which on Carthage is easy to do by accident, because the units
+     * nearest the wall are cavalry screens.
+     *
+     * Tested on `unitClass` rather than on a list of type ids, so a new mounted or wheeled
+     * unit is excluded the day it is added instead of the day somebody notices.
+     */
+    if (!this.mayClimb(unitId)) return none('notFoot');
     const dest = this.wallTargetAt(x, z) >= 0 ? this.wallTargetAt(x, z) : this.stationNear(x, z);
     if (dest < 0) return none('noWall');
     const u = this.battle.unitById(unitId);
@@ -2157,7 +2250,24 @@ export class Siege implements ElevationOwner {
    * Same shape as the ram's rule and for the same reason: a machine is a thing you abandon.
    */
   private mayBoard(u: UnitGroupState | undefined): u is UnitGroupState {
-    return !!u && !u.destroyed && u.alive > 0 && u.order !== UnitOrder.Rout;
+    return !!u && !u.destroyed && u.alive > 0 && u.order !== UnitOrder.Rout
+      && this.mayClimb(u.id);
+  }
+
+  /**
+   * Whether this unit's men can go up a ladder or a boarding ramp at all.
+   *
+   * Foot only. Cavalry cannot lead a horse up eight metres of rungs and a wheeled engine
+   * cannot be carried up at all, and both were being admitted — a hand run put twenty-six
+   * horsemen on the wall-walk. Shared with `mayBoard`, which is the predicate `stepCrossing`
+   * admits by and `updateTowers` decides an empty file by, so a unit that cannot climb is
+   * never queued for, never waited on and never let on.
+   */
+  private mayClimb(unitId: number): boolean {
+    const u = this.battle.unitById(unitId);
+    if (!u) return false;
+    const cls = this.battle.typeOf(u).unitClass;
+    return cls !== 'artillery' && cls !== 'heavy-cavalry' && cls !== 'light-cavalry';
   }
 
   /**
@@ -2650,7 +2760,7 @@ export class Siege implements ElevationOwner {
     u.waypoints.length = 0;
     this.plans.set(u.id, {
       goal: WallGoal.Storm, destStation: -1, destRun: -1,
-      stair: this.breachLinks[0], gx, gz, age: 0, stuck: 0,
+      stair: this.breachLinks[0], gx, gz, age: 0, stuck: 0, best: 1e9, sinceBest: 0,
     });
     return true;
   }
@@ -2862,6 +2972,47 @@ export class Siege implements ElevationOwner {
    * That is worth saying out loud: a general graph search here would be a fifty-line A* run
    * for every man every tick to answer a question that has one bit in it.
    */
+  /**
+   * Whether the walk joins these two runs without leaving the wall.
+   *
+   * The chain again: every hop between them must exist. Cheap — the whole circuit is 45 runs
+   * — and it is the same `runNext` the traversal itself walks, so a route this says exists is
+   * a route `nextHop` can produce, hop for hop, rather than a second opinion about it.
+   */
+  private runsConnected(from: number, to: number): boolean {
+    if (from < 0 || to < 0) return false;
+    if (from === to) return true;
+    const lo = Math.min(from, to);
+    const hi = Math.max(from, to);
+    for (let r = lo; r < hi; r++) if (this.runNext[r] < 0) return false;
+    return true;
+  }
+
+  /**
+   * Whether a lateral move along the wall to `(x, z)` would be carried out, for the cursor.
+   *
+   * Published for the same reason `escaladeOfferAt` is: `moveAlongWall` now refuses a run it
+   * cannot reach, and a refusal the player cannot see is the defect this pass keeps finding.
+   * Pure.
+   */
+  traverseOfferAt(unitId: number, x: number, z: number): {
+    ok: boolean; refusal: 'none' | 'notOnWall' | 'noWall' | 'noRoute'; bay: number;
+  } {
+    const u = this.battle.unitById(unitId);
+    if (!u || !this.garrisons.has(unitId)) {
+      return { ok: false, refusal: 'notOnWall', bay: -1 };
+    }
+    const dest = this.wallTargetAt(x, z);
+    if (dest < 0) return { ok: false, refusal: 'noWall', bay: -1 };
+    const bay = this.sBay[dest];
+    const here = this.stationNear(u.x, u.z);
+    const fromRun = here >= 0 ? this.sRun[here] : -1;
+    if (!this.runsConnected(fromRun, this.sRun[dest])) {
+      return { ok: false, refusal: 'noRoute', bay };
+    }
+    return { ok: true, refusal: 'none', bay };
+  }
+
   private nextHop(cur: number, target: number): { link: number; dir: 0 | 1 } {
     if (cur === target || cur < 0 || target < 0) return { link: -1, dir: 0 };
     if (cur < target) return { link: this.runNext[cur] ?? -1, dir: 0 };
@@ -2990,9 +3141,34 @@ export class Siege implements ElevationOwner {
         this.layOutArrived(u, g, plan.destStation, arrived);
       }
 
+      /**
+       * How far this plan still has to go, and whether it is getting anywhere.
+       *
+       * `moving` counts men who were handed a slot this tick, not men who advanced, so a plan
+       * whose last few men are wedged at a stair head reports `moving > 0` for ever. The
+       * quantity that actually settles it is how many are left to shift, and whether that
+       * number is still falling.
+       */
+      if (moving < plan.best) { plan.best = moving; plan.sinceBest = 0; }
+      else plan.sinceBest++;
+
       if (moving === 0) {
         if (plan.goal === WallGoal.Descend || plan.goal === WallGoal.Storm) this.releaseToGround(u, plan.gx, plan.gz);
         else if (g) { g.plannedFor = -1; }
+        this.plans.delete(id);
+      } else if (plan.goal === WallGoal.Descend && plan.sinceBest > DESCENT_STALL) {
+        /**
+         * A descent that has stopped descending is finished, and the men who came down are
+         * a field formation again.
+         *
+         * `releaseToGround` takes the whole unit off the stonework, which is the honest
+         * outcome: the nine who could not find a way down walk to the rally point with
+         * everybody else rather than standing on a parapet inside a unit whose other
+         * hundred and forty-three men are in the street below. What must not happen — and
+         * what did — is the unit staying `garrisoned` for another five minutes, because
+         * every order given to it in that window is read as a move along the wall.
+         */
+        this.releaseToGround(u, plan.gx, plan.gz);
         this.plans.delete(id);
       } else if (plan.age > PLAN_TIMEOUT) {
         /**
