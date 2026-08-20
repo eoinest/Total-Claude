@@ -120,7 +120,6 @@ const isOptionsLiteral = (code, keys) => {
   return keys.some((k) => new RegExp(`(^|[{,\\s])${k}\\s*:`).test(inner));
 };
 
-
 /** Every violation in one file, in source order. */
 const scanFile = (src) => {
   const out = [];
@@ -188,7 +187,7 @@ if (JSON_OUT) {
     console.log(`\nFAIL  ${violations.length} options object(s) in an argument position\n`);
     const w = Math.max(...violations.map((v) => `${v.file}:${v.line}`.length));
     for (const v of violations) console.log(`  ${`${v.file}:${v.line}`.padEnd(w)}  ${v.snippet}`);
-    console.log(`\n  correct form: ${SIGNATURES[0].correct}`);
+    for (const form of [...new Set(violations.map((v) => v.correct))]) console.log(`\n  correct form: ${form}`);
     console.log('  run with --fix to insert `null, ` at each site');
   }
   console.log('\nnot covered: a correct timeout set to a wrong value; APIs outside the SIGNATURES');
