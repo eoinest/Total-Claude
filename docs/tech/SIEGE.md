@@ -958,6 +958,36 @@ in it.
 > (`src/sim/formations.ts`). Both halves of that sentence are stale; the commit message has the
 > reasoning that survived.
 
+### The pinned schedule above no longer holds, and it stopped holding before the ladder fix
+
+Re-run of `tools/scratch/so-ramline.mjs` against `rome`, `quality=high`, at `d128adf` with
+`src/` untouched — that is *main*, with no branch applied:
+
+| | pinned above | measured at `d128adf` | after `e/sim/ladder-queue` |
+|---|---|---|---|
+| blows landed | 26 | **24** | **12** |
+| gate | open at t+220 | never opens, 8 % hp | never opens, 54 % hp |
+| crew | 16 → 13, never routs | **routs at t+220**, 7 men | **routs at t+160**, 15 men |
+
+Two separate findings, and they must not be merged into one:
+
+**The first is not attributable to the ladder work.** On main today the ram lands 24 of the 26
+blows it needs and its gang breaks two short, with the leaves on 8 % hp. The brief that
+`so-ramline.mjs` carries — *"any movement in these figures is a regression rather than a
+decision"* — is therefore already being violated by something that landed between `6698e19`
+and `d128adf`. Nobody has been told. Whatever moved it did not move it far, which is exactly
+why it survived: 24 blows and 8 % hp looks like the gate is about to go, and a reader watching
+the battle would see the ram working and assume it finished.
+
+**The second is.** Releasing a routed gang from its machine — the correctness fix — costs a
+further twelve blows, because the gang now stops swinging the moment it breaks instead of
+continuing to work the ram while routing. The gate ends the battle at 54 % rather than 8 %.
+This is a real balance consequence and it is stated here rather than absorbed, because a ram
+that cannot open a gate is a scenario that no longer has a second way in.
+
+Neither figure has been "fixed" here. The table above is left as it was written so the drift
+stays legible; this note records what the instrument actually reports.
+
 ### 5.2 The pattern, and three more of it
 
 The shape is: **the art asserts a property the simulation does not implement, and every
