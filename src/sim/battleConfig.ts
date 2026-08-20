@@ -238,10 +238,46 @@ export const GARRISON_PLANS: Partial<Record<Faction, GarrisonPlan>> = {
     engines: ['carroballista'],
     reserve: ['legio-cohort'],
   },
-  // Carthage, 146 BC: the levy holds the walk itself — Appian's 30-ft wall leaves 7.1 m of
-  // clear standing band, so a Punic bay carries a formation rather than a picket — with the
-  // freedmen's slings behind them answering the approach. See `siegeUnits.ts` for why there
-  // are no elephants and no Libyan veterans on this wall.
+  /*
+   * Carthage, 146 BC: the levy holds the walk itself — Appian's 30-ft wall leaves 7.1 m of
+   * clear standing band, so a Punic bay carries a formation rather than a picket — with the
+   * freedmen's slings answering the approach. See `siegeUnits.ts` for why there are no
+   * elephants and no Libyan veterans on this wall.
+   *
+   * **The order is deployment order, and it is why the Roman ram cannot be stopped.**
+   * `deployAssault` concatenates this list and `fanOut`s it from the gate outward, so
+   * "the freedmen's slings *behind* them", which this comment means in depth within a bay,
+   * comes out as the freedmen *beyond* them, five bays along the curtain. Measured at
+   * `cc72ea6`, 120 s into the assault: the nearest troops to the ram at the Porta Byrsae are
+   * `punic-levy` at **29 m**, whose missile is a 30 m javelin with three per man, and the
+   * `punic-freedmen` — the only real missile troops on this wall, 168 m slings — stand at
+   * **113 to 158 m**, behind the levy and shooting at something else. So the Roman ram crew
+   * takes **zero** damage: `tools/scratch/so-ramkill.mjs` reports `killed by: nobody,
+   * damage by: none` over 140 s including forty of battering, and the machine goes 26 blows,
+   * gate open at t+220, `spent` with all thirty-two men, on an unvarying schedule. The player
+   * *is* the besieger on this map and has nothing to protect. Rome's own plan is the other
+   * way round — `['ballistarii', 'wall-slingers']` puts 216 crossbows 53-60 m from the
+   * Juthungi ram and kills its crew on every seed — so one siege has an invulnerable ram and
+   * the other a doomed one, and the whole difference is which word comes first in these two
+   * lists.
+   *
+   * **Swapping them was tried and is refused, on the measurement.** `['punic-freedmen',
+   * 'punic-levy']` does exactly what it should to the ram — the freedmen reach it, 1,599
+   * points of damage and three of the crew dead by t+100 — and it costs Carthage the wall.
+   * Over 24 seeds, `probe-footing --only=battle` at `quality=high`, cap 2400 s:
+   *
+   *     wall order                     Rome (the storming player) wins   Carthage routs
+   *     ['punic-levy','punic-freedmen']            15 / 24                     1
+   *     ['punic-freedmen','punic-levy']            21 / 24                    11
+   *
+   * The bays either side of the gate are where `deployAssault` also lands the towers and the
+   * ladders, so putting the slingers there takes the close-fighting troops off the ground the
+   * escalade arrives on: the freedmen are killed on the parapet and the Punic army breaks.
+   * The two jobs — shoot whatever is at the gate, and hold the walk the ramps come down on —
+   * want different troops on the *same* bays, and a flat list fanned outward from the gate
+   * cannot say that. Depth within a bay can, and that is a change to `deployAssault`, not to
+   * this list.
+   */
   [Faction.Carthage]: {
     wall: ['punic-levy', 'punic-freedmen'],
     engines: ['punic-catapults'],
