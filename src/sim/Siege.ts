@@ -279,10 +279,26 @@ const WALL_BLOWS = 74;
 /**
  * How far a derelict machine will look for a fresh gang, and how long it waits.
  *
- * 55 m is inside the assault's own frontage, so a ram at the gate draws on the storm column
- * behind it and never on a unit that has no business being there. 40 s is long enough that a
- * momentary rout does not write the machine off and short enough that an abandoned one stops
- * being a live threat inside the span of a battle.
+ * The radius is meant to be inside the assault's own frontage, so a ram at the gate draws on
+ * the storm column behind it and never on a unit that has no business being there. 40 s is
+ * long enough that a momentary rout does not write the machine off and short enough that an
+ * abandoned one stops being a live threat inside the span of a battle.
+ *
+ * **This comment said "55 m" while the constant said 95, and the gap matters.** Measured on
+ * Rome's assault at ultra at `8f26f7f`: the gate crew breaks at t+210 having landed **24 of
+ * the 26 blows**, and the machine stands derelict at (72, 520) two blows from opening the
+ * Porta Flaminia. Inside 95 m there are three units — `tower-assault` at 12.4 m, an
+ * `escalade-party` at 80.7 m, another `tower-assault` at 90.4 m — and every one of them is
+ * routing at zero morale, so `recrew` refuses all three and returns false. The nearest gang
+ * that would actually take the ropes is `juthungi-warband` at **123 m with 180 men at morale
+ * 60**, with five more behind it at 135–179 m. Forty seconds later the ram is a wreck and
+ * 1,080 fresh men are standing just outside the search that was looking for them.
+ *
+ * The number is deliberately left alone here rather than widened to 125. The nearest eligible
+ * gang is the idle host, so moving this constant is a decision about what that host is for,
+ * and that decision is the owner's and is reserved — see this workstream's report. If the
+ * host is ever given a storm order it will walk past the machine anyway and this radius stops
+ * mattering; if it is not, widening this alone would hand it a job by the back door.
  */
 const RECREW_RADIUS = 95;
 const DERELICT_LIMIT = 40;
