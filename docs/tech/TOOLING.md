@@ -792,6 +792,45 @@ to one grader are one trial with thirteen confirmations; fourteen graders shown 
 are fourteen trials. Nothing in the tooling implements this today — it is a protocol change,
 not a code change, and `pair-deck.mjs` already emits the pairs separately enough to support it.
 
+### Round three, as built and frozen
+
+| | |
+|---|---|
+| deck | `/tmp/tc-r3/deck` — the flat form, `NN-A.png` / `NN-B.png` |
+| isolated | `/tmp/tc-r3/graded/pair-<token>/` — 14 directories, `A.png`, `B.png`, `README.md` |
+| key | `/tmp/tc-r3/keys/round-3.json`, outside both, with the token-to-pair roster |
+| shots | `tools/shoot.mjs --set=ab3 --out=/tmp/tc-r3/shots`, `hud false`, `worldOverlay hidden`, dpr 1, 1920×1080 |
+| renderer | `srcTree d5a0525e7a42`, i.e. `git rev-parse HEAD:src` — not the commit, which moves when a doc does |
+| seed | 307. Side balance: ours is A in 5 of 14 |
+| window | 1440×720, one rectangle per pair applied to both members, no resample |
+| audits | every separability field at 0.500, overlay 0.0000 % on both origins, one distinct file size |
+
+The eight picture statistics, reported and never refused. **These are the round's objective
+findings, not leak detectors**, and the deck is accepted with all of them in it:
+
+| field | ours | Rome II | balanced accuracy at the best single threshold |
+|---|---|---|---|
+| `lum` | 0.4285 | 0.3549 | **0.786** |
+| `p99` | 0.8979 | 0.8189 | 0.750 |
+| `p01` | 0.0397 | 0.0606 | 0.714 |
+| `chroma` | 0.2908 | 0.3332 | 0.714 |
+| `hueSpread` | 29.22° | 42.10° | 0.714 |
+| `halo` | 1.0681 | 0.9880 | 0.714 |
+| `vignette` | 0.9533 | 1.1842 | 0.679 |
+| `edge` | 0.0831 | 0.0847 | **0.607** |
+
+Two things to read off that table.
+
+**`edge` is essentially closed at 0.607**, which is round two's work holding — it was the
+82 %-closed statistic and it is now the weakest separator of the eight.
+
+**`lum` is the strongest, and round three did not cause it.** Our frames are 21 % brighter in
+mean luminance than the plates. Re-shooting two frames on the source at `3f4c203` and
+differencing puts this pass's contribution at **+0.0058 on the close infantry frame and
++0.0006 on the wide one** — 1.5 % and 0.1 % of the 21 % gap. The wrap terms are exactly
+Lambert at `N·L = 1` by construction and only add below the terminator, which is why. The gap
+is an exposure and grade question and it is the clearest target the next round has.
+
 Two related protocol notes, both learned the hard way:
 
 - **A grader spawned inside this repo is never fully cold.** An adversarial grader disclosed
