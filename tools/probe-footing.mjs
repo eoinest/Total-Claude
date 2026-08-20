@@ -1076,13 +1076,24 @@ if (want('battle')) {
     console.log(`  ${String(k).padStart(3)}   ${String(v.stage).padEnd(11)} ${String(v.men).padStart(5)}   `
       + Object.entries(v.types).sort((a, b) => b[1] - a[1]).map(([t, n]) => `${t} ${n}`).join(', '));
   }
-  console.log('\ncrossing time from 10 m out to 10 m in, by unit type');
+  // The thresholds are OUT and IN in the kit above, and this line said 10 and 10 while
+  // they were 15 and 2. A caption that does not match its own instrument is the cheapest
+  // possible way to publish a wrong number, and this file has already done it once.
+  console.log('\ncrossing time from 15 m out to 2 m in, by unit type');
   console.log('  type                     men   mean seconds');
   for (const [k, v] of [...typeAgg].sort((a, b) => b[1].men - a[1].men)) {
     console.log(`  ${k.padEnd(22)} ${String(v.men).padStart(7)}   ${v.n ? (v.sumSecs / v.n).toFixed(1) : '-'}`);
   }
   console.log('\nWHOLE UNITS that walked or rode through the curtain (centroid +15 m to -15 m, not carried)');
-  console.log('  seed         at s   unit type              class            bay  stage      x   secs  alive/initial');
+  /*
+   * `bay`, `stage` and `x` are where this unit's men were **when its centroid finished
+   * crossing**, which is not always where they came through: a squadron that enters at bay
+   * 28 and turns west along the pomerium reads as bay 26 fifteen metres later. The per-man
+   * table above is the one that answers "which hole", and it is also the stricter
+   * instrument — it drops a man who was on a ladder at the previous sample, where this one
+   * admits a unit that is up to a quarter carried.
+   */
+  console.log('  seed         at s   unit type              class          where it was  stage      x   secs  alive/initial');
   let anyUnit = false;
   for (const r of runs) {
     for (const c of r.crossings.unitCross) {
