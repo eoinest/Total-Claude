@@ -539,30 +539,46 @@ makes a sound when it breaks.
   × 14 pairs = 42 calls, so round one is 42/42, round two is 42/42, and the two together are
   **84/84**. The halving came from the hand-over that supplied the figure, not from the graders. It
   is corrected in place in the r6 section above, with the original wording shown; the durable fix
-  is that both rounds now have a citable home in `tools/ab-results.json`, which states the
-  denominator rule in its own header, beside the manifests that produced them. Round two's numbers
-  had previously lived nowhere in the tree at all, and two documentation volumes had correctly
-  refused to cite them.
+  is [`tools/ab-results.json`](tools/ab-results.json), which now holds all three rounds beside the
+  manifests that produced them and states the denominator rule in its own header, so the halving
+  cannot be repeated from it. Round two's numbers had previously lived nowhere in the tree at all,
+  and two documentation volumes had correctly refused to cite them.
 
-- **A third round ran under the protocol the instrument has been proposing for two rounds, and it
-  still scored 14 of 14.** One pair per grader, isolated directories named by an unordered seeded
-  token, the key held outside both, and no shared signature to carry from one pair to the next —
-  which is the fix for the limitation that invalidated the first two rounds, because a fourteen-pair
-  deck drawn from a single engine is one trial with thirteen confirmations rather than fourteen
-  trials. Fourteen graders, fourteen correct calls, eleven at confidence 5 and three at 4, with no
-  1s and no 2s. **The instrument was not the reason. We are genuinely that distinguishable.**
-  *(That score is reported here from the round itself and is the one figure in this section without
-  a home in the tree: `tools/ab-results.json` — added this release so that a grader result has a
-  citable home — carries rounds one and two, and round three's returns are not in it. The deck is
-  recorded: seed 307, ours as side A in 5 of 14, and all eight picture statistics.)*
+- **A third round ran under the protocol the instrument has been proposing for two rounds, and the
+  score did not move.** The limitation that invalidated the first two rounds was the shape of the
+  trial rather than anything in the deck: fourteen pairs shown to one grader is one trial with
+  thirteen free confirmations, because this engine has a single signature and a grader who cracks
+  any pair gets the rest on palette alone — so accuracy reads 100% until it reads 50%, with no
+  resolving power in between. Round three removes every one of those confirmations. **Fourteen
+  graders, one pair each, isolated contexts, directories named by an unordered seeded token with the
+  pair number stripped from the filenames, and the key held outside both.** No grader could see
+  another pair or another grader. The prediction before grading was 10 to 12 of 14 with confidence
+  falling to about 3.
 
-  What the graders name has moved down the stack. On the round-three deck the edge statistic — the
-  one round two closed by 82% — is now the **weakest** separator of the eight at 0.607 balanced
-  accuracy, and mean luminance is the strongest at **0.786**: our frames are 21% brighter than the
-  reference plates. Re-shooting two frames on the source puts this pass's own contribution to that
-  gap at **+0.0058 and +0.0006**, which is 1.5% and 0.1% of it. It is an exposure and grade
-  question, it predates this round, and with it the environment art it is the clearest target the
-  next round has.
+  It came back **14 of 14 — eleven calls at confidence 5, three at 4, and no 1s, 2s or 3s.** The
+  protocol was not what had been hiding the gap. **We are genuinely that distinguishable.** The
+  per-pair picks, truths and confidences are in
+  [`tools/ab-results.json`](tools/ab-results.json) under `round-3`, scored against a key held
+  outside the deck, so the fraction can be re-derived rather than believed — which is the whole
+  reason that file exists, and the reason the "42 of 42" above it went wrong.
+
+  **What the graders name has moved down the stack**, and it is no longer lighting. Four of them
+  independently considered whether our frame was Rome II at minimum settings and rejected it for
+  the same reason — *settings do not change mesh topology*. What they named instead was hands
+  (*"literal rectangular blocks with no finger geometry gripping the spears"*), heads (*"a flat
+  painted mask on a slab that never occludes no matter which way the head turns"*) and environment
+  art: greybox buildings, untextured ground, *"every tree a single-value pale blob with no lit side,
+  no shaded side and no cast shadow."* The eight picture statistics agree — the edge statistic, the
+  one round two closed by 82%, is now the **weakest** separator of the eight at 0.607 balanced
+  accuracy, while mean luminance is the strongest at **0.786**, our frames being 21% brighter than
+  the reference plates. Re-shooting two frames on the source puts this pass's own contribution to
+  that gap at **+0.0058 and +0.0006**, which is 1.5% and 0.1% of it; the exposure and grade question
+  predates this round, and with the environment art it is the clearest target the next one has.
+
+  **And the round predates the face-culling fix.** It was shot before the seven inside-out lathes
+  were found, so the near half of every face was missing from the frames those fourteen graders
+  were judging, and *"a flat painted mask that never occludes"* is a fair description of a hole.
+  The next round will be the first to grade a soldier whose face is actually drawn.
 
 - **"The siege runs at about 0.1× real time" was the harness, not the game.** The reported symptom
   was that the 3,440-man Carthage storm took 35 minutes of wall clock to reach t+451 once about 200
