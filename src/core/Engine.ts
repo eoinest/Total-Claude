@@ -532,8 +532,10 @@ export class Engine {
    * "3,440 men … about a tenth of real time … 35 minutes of wall clock to reach t+451", and
    * every one of those minutes was spent drawing. The same battle on a real `requestAnimation-
    * Frame` loop — a player's page, nothing skipped — reaches **t+466 in 465.8 s, 0.999x real
-   * time**, at p50 4.5 ms and p90 8.1 ms a frame. The simulation was never the problem; the
-   * fast-forward was, and it is a harness, so its cost had been read as the game's.
+   * time**, at a median per-sample p50 of 4.5 ms and p90 of 7.9 ms over 31 samples, and the
+   * frame time does not move when two hundred men reach the parapet. The simulation was never
+   * the problem; the fast-forward was, and it is a harness, so its cost had been read as the
+   * game's.
    *
    * With `render: false` the submit is skipped and nothing else is: every `fixedUpdate`,
    * `update` and `preRender` runs in the same order with the same arguments, so the sim is
