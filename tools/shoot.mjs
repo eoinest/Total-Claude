@@ -789,11 +789,13 @@ const SHOTS = {
    * the axis the comparison is about. The camera here is pinned to the wall's own geometry
    * and does not move between the four frames or between the two builds.
    *
-   * **`yaw: 'along'`.** Looking down the length of the curtain rather than at it. The three
-   * rails of a bank are planted 6.88 m apart *along* the wall, so a camera looking `in` at
-   * the masonry sees them stacked one behind another and a lateral hop of a whole rail
-   * pitch is foreshortened to almost nothing. Along the wall it is the widest thing in
-   * frame. The first cut of these shots was `yaw: 'in'` and the bug was not visible in it.
+   * **`yaw: 'in'`, square on the face.** The three rails of a bank are planted 6.88 m apart
+   * *along* the wall, so the axis the defect moves men on is the wall's own tangent. Looking
+   * `in` puts that axis straight across the frame at full width. The first cut of these
+   * shots was `yaw: 'along'`, down the length of the curtain, which stacks the three rails
+   * one behind another and foreshortens a whole rail pitch into almost nothing — one ladder
+   * was visible in it and the other two were behind that one. Shot, looked at, thrown away:
+   * a frame that cannot show the defect is not evidence of its absence.
    *
    * **t+20 to t+32.** The escalade parties deploy 26 m out (`scenario.ts`) and reach the
    * wall well before the towers do; measured on Campus Martius, the first man is on a rung
@@ -803,26 +805,26 @@ const SHOTS = {
   'escalade-foot-20': {
     desc: 'Escalade: the foot of a ladder bank, t+20 — the queue forming',
     scenario: 'assault', hour: 9.5, at: 20,
-    wall: { bay: -3, stand: 9, lift: 0, yaw: 'along' },
-    cam: { eye: 6.5, aim: 1.7, dist: 30, fov: 34 },
+    wall: { bay: -3, stand: 6, lift: 0, yaw: 'in' },
+    cam: { eye: 13, aim: 2.2, dist: 32, fov: 40 },
   },
   'escalade-foot-24': {
     desc: 'Escalade: the same camera, t+24',
     scenario: 'assault', hour: 9.5, at: 24,
-    wall: { bay: -3, stand: 9, lift: 0, yaw: 'along' },
-    cam: { eye: 6.5, aim: 1.7, dist: 30, fov: 34 },
+    wall: { bay: -3, stand: 6, lift: 0, yaw: 'in' },
+    cam: { eye: 13, aim: 2.2, dist: 32, fov: 40 },
   },
   'escalade-foot-28': {
     desc: 'Escalade: the same camera, t+28',
     scenario: 'assault', hour: 9.5, at: 28,
-    wall: { bay: -3, stand: 9, lift: 0, yaw: 'along' },
-    cam: { eye: 6.5, aim: 1.7, dist: 30, fov: 34 },
+    wall: { bay: -3, stand: 6, lift: 0, yaw: 'in' },
+    cam: { eye: 13, aim: 2.2, dist: 32, fov: 40 },
   },
   'escalade-foot-32': {
     desc: 'Escalade: the same camera, t+32',
     scenario: 'assault', hour: 9.5, at: 32,
-    wall: { bay: -3, stand: 9, lift: 0, yaw: 'along' },
-    cam: { eye: 6.5, aim: 1.7, dist: 30, fov: 34 },
+    wall: { bay: -3, stand: 6, lift: 0, yaw: 'in' },
+    cam: { eye: 13, aim: 2.2, dist: 32, fov: 40 },
   },
 };
 
