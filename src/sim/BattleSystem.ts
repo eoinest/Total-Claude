@@ -13,7 +13,7 @@ import {
   isAlive, type UnitGroupState, type UnitTypeDef,
 } from './types';
 import { Siege } from './Siege';
-import { ObstacleField, type Obstacle, type Resolved, type RoughBox } from './Obstacles';
+import { ObstacleField, ROUGH_SLOWS_MOVEMENT, type Obstacle, type Resolved, type RoughBox } from './Obstacles';
 
 /**
  * What the sim needs from the city subsystem, duck-typed.
@@ -750,7 +750,14 @@ export class BattleSystem implements Subsystem {
     if (gen === this.masonryGen) return;
     try {
       this.masonry.set(src.getObstacles());
-      this.masonry.setRough(src.getRoughGround?.() ?? []);
+      /*
+       * The nav raster charges for standing work unconditionally, because charging nothing
+       * to cross a concrete pour was a defect. Whether a *body* is slowed by it is a
+       * balance question with a measured answer the owner has not chosen yet — see
+       * `ROUGH_SLOWS_MOVEMENT`. Off, the field stays empty and the whole path costs one
+       * boolean a tick.
+       */
+      this.masonry.setRough(ROUGH_SLOWS_MOVEMENT ? (src.getRoughGround?.() ?? []) : []);
       this.masonryGen = gen;
     } catch (err) {
       // A foreign API that throws must not take the simulation down with it.
