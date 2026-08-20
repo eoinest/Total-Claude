@@ -1741,3 +1741,99 @@ integrator on the *merged* tree, not taken on the branch's word: `tsc` clean and
 - `Siege.buildSpine` puts 22 of Rome bay 19's 36 stations inside the gatehouse footprint,
   6.574 m below the crown on curtain that was never built — 823 of 5,301 garrison shots in
   240 s, all discarded. `CitySystem.getGateBlock()` is published and waiting for it.
+
+## Session — 19–20 Aug 2026: seven inside-out lathes, and four seams nobody typed
+
+r6 shipped (`6698e19`, tagged, released, live). Main then ran `4e3145f` → `fa99e97`. The
+technical documentation is published at **https://total-claude-docs.vercel.app** — four new
+volumes (simulation, rendering, siege, tooling) plus the existing documents, built from
+`docs/site/` with its own toolchain so it cannot touch the game's bundle hash.
+
+### The largest finding: the face was being culled, and it was not alone
+
+`revolve` derives its normal from the profile tangent as `(-dy, dr)`, which points outward
+only while y **descends** the point list. Every lathe on the man is written crown-first and is
+correct — except `skullProfile`, written jaw-upward. Its normals pointed into the head,
+`quadFacing` derived matching winding, and **`FrontSide` culled the near half of every face**:
+mean dot of winding against the outward radial **−0.324**, 76 of 123 triangles inward. A
+camera in front of a man saw *through* his face to the inside of the back of his skull, with
+every helmet bowl and beard between the two winning the depth test.
+
+**Then the rewritten probe found six more.** The LOD2 skull at **−0.964** — 29 of 30 triangles
+inward, on the LOD most of the army is drawn with, in `buildFarGeometry`, a different function
+that reversing `skullProfile` never touched. Plus the sword pommel (−0.866), pilum head
+(−0.608), sword point (−0.572), three javelin heads (−0.513) and the spear head (−0.444). A
+static scan of every `revolve` literal agreed with the runtime result seven for seven.
+
+**Why nobody could have found them.** `probe-soldiermesh` asked whether each triangle's shading
+normal agreed with its own winding — and `quadFacing` derives the winding *from* the normal.
+They agree by construction. It was asking whether `quadFacing` had run. It now welds vertices
+by position, splits into connected components, and compares each triangle's **winding** normal
+against the direction from its component's own centroid; shading normals are never read. The
+bar is −0.15 rather than 0 because a flat sheet scores zero. Per *component*, not per piece:
+`Piece.Head` is head and arms and hands, so the old per-piece centroid sat in the man's chest,
+which is why its own `nrm.out`/`wind.out` columns gated nothing.
+
+And one earlier "fix" was a correction *for* the bug: a pass measured "0 face pixels at azimuth
+0, 121,407 at π" with the face painted magenta — visible only from behind the man, through his
+own skull — and added π to the camera, pointing all ten model plates at his back. Reversed, the
+measurement inverts: **466,141 face pixels at the front, 0 at the back.**
+
+### Four cross-subsystem seams were broken, two of them for the life of the project
+
+Consumers declare structural views of other systems to dodge import cycles, and nothing checked
+that the two sides agreed. `getGateBlock` asked for `hw/hd/rot` against an implementation
+publishing `nx,nz,dx,dz,halfRun,halfDepth`, so the gatehouse station clip never once fired
+(0 of 22 stations clipped; now 22, and the garrison fires 3.4% less while killing 16.1% more).
+`BattleAudio`'s `ProjectileView` had four of seven names wrong behind a `Partial<>` that erased
+even the arity check — **fly-by arrow Doppler has never sounded**. `WeatherView` was missing
+`windSpeed` and `rain` outright — **the ambience is weather-deaf**, cicadas through rainstorms.
+And `WaterSurface` reads `postfx.depthTexture` at order −50 while PostFX allocates it at 900, so
+**the soft-intersection fade has been compiled out of every shipped build**.
+
+**The premise behind all of it was false.** `verbatimModuleSyntax: false` means a type-only
+import is erased entirely — a graph edge for TypeScript, where circularity is legal, and no edge
+in the bundle. A shared type was available for every seam the whole time at zero runtime cost.
+The barrier was policy, not the module graph. There are now 15 compile-time witnesses
+(`src/core/seamTypes.ts`) and a 20-seam runtime probe (`tools/probe-seams.mjs`), because three
+of the four faults were invisible to a type: a lifetime, a registry name nothing answers to, and
+a sparse pool iterated as dense.
+
+### One predicate, three bug reports
+
+The owner reported, months apart: men shuffling at a ladder foot, routed men running on the spot
+at a wall, and a routed ram crew still pushing its ram. **One `broken(u)` predicate now serves
+all three.** The shuffle was the whole queue rotating one rail per freed rung — `musterOwned`
+dealt with `group[q % group.length]` where `q` counted only men waiting *that tick*, so every man
+admitted or shot re-dealt everyone behind him: 147 reassignments in 5 s at a median 6.88 m, which
+is exactly the rail pitch, men walking 5.98 m to gain 1.15 m. Now 0 reassignments, every movement
+0.90 m. The rout case: `adoptBoarders` makes a party a garrison the instant one man tops the
+parapet and `releaseBrokenCrews` skipped anything in `garrisons`, so a broken unit kept walking to
+a slot frozen before it broke — 1.49 → 4.11 m/s, stalled man-ticks 11.1% → 0%.
+**Side effect: escalade throughput roughly doubles**, 111 men over the parapet by t+40 against 47.
+
+### Rules earned
+
+- **Six simultaneous agent failures are one cause, not six.** The machine slept; the watchdog
+  killed everything waiting on the wake-up spike, which peaked near load 100 while actual CPU use
+  was about one core of sixteen. Exclude large scratch trees from Spotlight (`.metadata_never_index`)
+  — 1.9 GB of trailer frames was being indexed.
+- **A release body cannot pin images to its own tag.** The tag names the deployed bytes; the
+  illustrations are committed after it. All fifteen of r6's raw URLs 404'd until repointed at the
+  changelog commit.
+- **A self-consistent instrument can never fail.** Compare against something outside the thing
+  being checked — an outward radial, a rendered depth test, the other side of the seam.
+
+### Open, nobody on them
+- **`Engine.dispose()` has no caller** anywhere in `src` or `tools`; map switching is a page
+  reload. Both dispose leak fixes are correctness in an unreachable method.
+- **The gate breaks silently.** `Siege.ts` emits only a `cameraShake` for the collapse and
+  `Synth.ts` has no `gate_*` recipe. The trailer's climax has the blows and not the break.
+- **The clipmap flattens the ditch at range** — 6.0 m of relief survives to 96 m, 4.44–4.73 m at
+  384–768 m, 2.31–3.12 m beyond. The ground the renderer draws diverges from the ground the men
+  walk on by up to 4.3 m.
+- **`shoot.mjs` labels a shot with `git rev-parse HEAD:src`**, so any frame taken with an
+  uncommitted edit is stamped with the previous commit. `blind-compare` matches passes on that field.
+- The environment art is now the loudest blind-grader complaint: greybox buildings, primitive
+  foliage, untextured ground. Our frames are also **21% brighter than the reference plates**, and
+  `lum` is the strongest single separator at 0.786.
