@@ -500,9 +500,11 @@ a blur cannot produce.
   heading is correct and its ordering is deliberate — men on the parapet is further on than a ram
   having struck — but as a description of what a player will see, it is nearly dead.
 
-- **The blind A/B against Rome II returned 42 of 42 across two rounds, and the instrument is the
+- **The blind A/B against Rome II returned 84 of 84 across two rounds, and the instrument is the
   problem.** Three independent graders sorted all fourteen pairs correctly in round one, at
   confidence 5 on 41 of 42 calls, and named the same two faults with the deck itself, unprompted.
+  *(This entry first said "42 of 42 across two rounds". A round is 3 graders × 14 pairs = 42 calls,
+  so two rounds are 84. The wrong denominator came from the hand-over, not the graders.)*
   **A fourteen-pair deck drawn from a single engine is one trial, not fourteen**: a grader who cracks
   any pair gets the rest on palette and framing alone, so the accuracy reads 100% until the day it
   reads 50%, and nothing in between is information. Round two's render work — the standard, the
