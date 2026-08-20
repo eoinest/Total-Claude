@@ -1,0 +1,196 @@
+{
+ "map": "campus-martius",
+ "quality": "low",
+ "runs": [
+  {
+   "seed": 4265438264,
+   "setup": {
+    "seedUsed": null,
+    "units": 32,
+    "strength": {
+     "0": 577,
+     "1": 956,
+     "2": 0
+    },
+    "storm": 1,
+    "garrison": 0
+   },
+   "series": [
+    {
+     "t": 20,
+     "stormOnWall": 0,
+     "garrisonOnWall": 397,
+     "stormInside": 0,
+     "laddersCrossed": 0,
+     "strength": {
+      "0": 575,
+      "1": 897,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 40,
+     "stormOnWall": 37,
+     "garrisonOnWall": 387,
+     "stormInside": 17,
+     "laddersCrossed": 48,
+     "strength": {
+      "0": 564,
+      "1": 882,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 60,
+     "stormOnWall": 84,
+     "garrisonOnWall": 366,
+     "stormInside": 24,
+     "laddersCrossed": 115,
+     "strength": {
+      "0": 543,
+      "1": 836,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 80,
+     "stormOnWall": 63,
+     "garrisonOnWall": 335,
+     "stormInside": 9,
+     "laddersCrossed": 130,
+     "strength": {
+      "0": 507,
+      "1": 779,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 100,
+     "stormOnWall": 27,
+     "garrisonOnWall": 311,
+     "stormInside": 34,
+     "laddersCrossed": 130,
+     "strength": {
+      "0": 484,
+      "1": 729,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 120,
+     "stormOnWall": 25,
+     "garrisonOnWall": 310,
+     "stormInside": 60,
+     "laddersCrossed": 130,
+     "strength": {
+      "0": 483,
+      "1": 715,
+      "2": 0
+     },
+     "result": {
+      "victor": 1,
+      "reason": "objective",
+      "casualties": {
+       "0": 94,
+       "1": 237
+      },
+      "survivors": {
+       "0": 483,
+       "1": 719
+      },
+      "unitsLost": {
+       "0": 1,
+       "1": 5
+      },
+      "unitsTotal": {
+       "0": 12,
+       "1": 20
+      },
+      "at": 113.69999999999611
+     }
+    }
+   ],
+   "result": {
+    "victor": 1,
+    "reason": "objective",
+    "casualties": {
+     "0": 94,
+     "1": 237
+    },
+    "survivors": {
+     "0": 483,
+     "1": 719
+    },
+    "unitsLost": {
+     "0": 1,
+     "1": 5
+    },
+    "unitsTotal": {
+     "0": 12,
+     "1": 20
+    },
+    "at": 113.69999999999611
+   },
+   "crossings": {
+    "byBay": {},
+    "byType": {},
+    "dwell": {
+     "27": {
+      "stage": "gap",
+      "manSecs": 1030
+     },
+     "28": {
+      "stage": "footing",
+      "manSecs": 751
+     }
+    },
+    "insidePeak": {
+     "throughWall": 60,
+     "pastEast": 0,
+     "pastWest": 0
+    },
+    "footprints": {
+     "tower-assault": {
+      "unitClass": "heavy-infantry",
+      "formation": "horde",
+      "strength": 35
+     },
+     "escalade-party": {
+      "unitClass": "light-infantry",
+      "formation": "loose",
+      "strength": 47
+     },
+     "ram-crew": {
+      "unitClass": "heavy-infantry",
+      "formation": "loose",
+      "strength": 16
+     },
+     "onager": {
+      "unitClass": "artillery",
+      "formation": "line",
+      "strength": 12
+     },
+     "juthungi-warband": {
+      "unitClass": "light-infantry",
+      "formation": "loose",
+      "strength": 88
+     },
+     "juthungi-riders": {
+      "unitClass": "light-cavalry",
+      "formation": "wedge",
+      "strength": 24
+     }
+    },
+    "wMin": -631,
+    "wMax": 1144
+   },
+   "errors": [],
+   "wallMs": 13385
+  }
+ ]
+}
