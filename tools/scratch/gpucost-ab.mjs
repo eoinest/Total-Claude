@@ -294,7 +294,7 @@ const diag = await page.evaluate(() => {
     });
   });
 
-  const units = ctx.tryGet('units');
+  const units = ctx.tryGet('unitRender');
   const cam = ctx.camera;
   return {
     perCascade, cascadeInfo,
