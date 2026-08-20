@@ -1950,12 +1950,16 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     const tip = swordM.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.56, 0));
     b.setMatrix(tip);
     b.setPiece(Piece.WeaponSword, Tint.Metal);
-    b.revolve([[0.023, -0.04], [0.016, 0.0], [0.001, 0.05]], 4, plateUv);
+    // Tip first, not base first — `revolve`'s normal is `(-dy, dr)` and is only outward
+    // while y descends. See `SKULL_PROFILE`. Measured inside out at -0.57 before this.
+    b.revolve([[0.001, 0.05], [0.016, 0.0], [0.023, -0.04]], 4, plateUv);
     b.setMatrix(swordM);
     b.setPiece(Piece.WeaponSword, Tint.Atlas);
     b.box(0, 0.07, 0, 0.075, 0.022, 0.03, boneUv);
     b.box(0, 0.0, 0, 0.032, 0.1, 0.03, boneUv);
-    b.revolve([[0.001, -0.06], [0.026, -0.052], [0.026, -0.036], [0.001, -0.03]], 6, bronzeUv);
+    // Same rule, and this one was the worst on the man at -0.87: a pommel lit and culled
+    // from the inside, on the piece a thrust animation puts nearest the camera.
+    b.revolve([[0.001, -0.03], [0.026, -0.036], [0.026, -0.052], [0.001, -0.06]], 6, bronzeUv);
   }
 
   // Sheathed gladius, high on the right hip where a legionary wore it so he could draw
@@ -1988,8 +1992,9 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     Math.max(4, d.limb - 2), woodUv, { repeatV: 6, capStart: true }
   );
   b.setPiece(Piece.WeaponSpear, Tint.Metal);
+  // Point first. Same rule as the skull, and this leaf measured -0.44 written socket-first.
   b.revolve(
-    [[0.001, 1.34], [0.014, 1.38], [0.021, 1.44], [0.013, 1.51], [0.001, 1.55]],
+    [[0.001, 1.55], [0.013, 1.51], [0.021, 1.44], [0.014, 1.38], [0.001, 1.34]],
     Math.max(4, d.limb - 3), plateUv
   );
 
@@ -2175,7 +2180,8 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     [{ y: 0.7, rx: 0.008, rz: 0.008 }, { y: 1.26, rx: 0.007, rz: 0.007 }],
     4, plateUv, { capStart: false }
   );
-  b.revolve([[0.001, 1.25], [0.016, 1.29], [0.001, 1.35]], 4, plateUv);
+  // Point first — see the spear. -0.61 before.
+  b.revolve([[0.001, 1.35], [0.016, 1.29], [0.001, 1.25]], 4, plateUv);
   b.setMatrix(null);
 
   // A fistful of framea. Tacitus: they carry several, and throw them a very long way.
@@ -2193,7 +2199,8 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
       4, woodUv, { repeatV: 3, capStart: true }
     );
     b.setPiece(Piece.JavelinBundle, Tint.Metal);
-    b.revolve([[0.001, 0.59], [0.017, 0.64], [0.001, 0.73]], 4, plateUv);
+    // Point first — see the spear. -0.51 before, on all three shafts of the bundle.
+    b.revolve([[0.001, 0.73], [0.017, 0.64], [0.001, 0.59]], 4, plateUv);
     b.setPiece(Piece.JavelinBundle, Tint.Atlas);
   }
   b.setMatrix(null);
@@ -2514,7 +2521,22 @@ function buildFarGeometry(faction: Faction): THREE.InstancedBufferGeometry {
   b.setPiece(Coarse.Body, Tint.Skin);
   b.setBone(MB.head);
   b.setMatrix(new THREE.Matrix4().makeTranslation(0, headY, 0));
-  b.revolve([[0.001, -0.07], [0.072, -0.02], [0.08, 0.05], [0.001, 0.14]], SEG, skinUv);
+  /*
+   * Crown first, and this is the same defect as the fine skull's, on the LOD that carries
+   * most of the army.
+   *
+   * `e/units/soldier-face` found `skullProfile` written from under the jaw upward, proved
+   * that `revolve`'s `(-dy, dr)` normal is outward only while y descends, and reversed it.
+   * The coarse head is a *different function* — `buildFarGeometry` — and was written the same
+   * way round, so it was never touched and has been inside out ever since. Measured on the
+   * outwardness gate in `tools/probe-soldiermesh.mjs`: **-0.964**, 29 of its 30 triangles
+   * facing into the skull, which is as inverted as a closed lathe can be.
+   *
+   * LOD2 begins where LOD1 ends and is what most of two armies is drawn with in most frames,
+   * so `FrontSide` was culling the near half of nearly every head on the field. Reversing the
+   * four points is the whole fix: same rings, same radii, not one triangle either way.
+   */
+  b.revolve([[0.001, 0.14], [0.08, 0.05], [0.072, -0.02], [0.001, -0.07]], SEG, skinUv);
   b.setMatrix(null);
   // A dark cap of hair, so a bare head is not a bald head at range.
   b.setPiece(Coarse.Body, Tint.Hair);
