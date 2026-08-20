@@ -1328,7 +1328,7 @@ Aerial perspective and cloth were confirmed **good** blind, which is worth recor
 both are recent work: the aerial term samples the real sky cube (§8.1) and the standard is no
 longer a second lighting rig (§4.2).
 
-### 9.1 Shields: the specular highlight does not track the surface normal — *confirmed in mechanism*
+### 9.1 Shields: the specular highlight does not track the surface normal — *confirmed, closed in round three*
 
 A shield boss is built by `b.revolve(...)` (`soldierMesh.ts:1463-1468`) under
 `makeRotationX(PI/2)`, which maps the lathe's axial coordinate onto the shield panel's Z. **It is
@@ -1366,11 +1366,22 @@ banner (`bf75fb0`), and its comment is the clearest statement of the geometry
 The head now gets three decorrelated axes: yaw `±17.8°`, pitch `±8.6°` and the new roll
 `±7.4°`. The shield got nothing. That is the gap.
 
-**[unverified: the perceptual claim itself. I verified the geometry and the shader; I did not
-run a measurement showing that shield highlights are more correlated across a rank than helmet
-highlights now are.]**
+**Closed in round three, and it took two changes rather than one.** Giving the shield arm three
+decorrelated axes — roll `±6.9°`, yaw `±6.3°` and a pitch `±5.7°` that was absent entirely — is
+only half of it, because tipping a 75 mm dome's axis by six degrees moves its mirror point about
+6 mm, which at battle range is under a pixel. The other half is that **the boss is no longer a
+body of revolution**: `soldierMesh.ts`'s `bossWarp` makes an umbo 8.5 % oval with three shallow
+hammer planes, through `revolve`'s new `warp` hook, which is what a raised umbo is and what makes
+the roll visible at all. Either change alone is inert; the pair is what moves the highlight.
 
-### 9.2 One BRDF serves every material — *confirmed*
+Measured by `tools/scratch/r3-specvar.mjs`, which crops each of twelve men's shields to its own
+bounding box (throwing away translation and scale) and takes the mean pairwise absolute
+difference over the brightest decile of the mean image: **6.11 → 7.41** on a legionary scutum,
+with the shield's on-screen aspect spread going **0.0027 → 0.0036**. That is a real move and it
+is a modest one; the honest reading is that the mechanism is now present rather than that the
+defect is gone.
+
+### 9.2 One BRDF serves every material — *confirmed, and split three ways in round three*
 
 The census in §4.3 is the proof: **16 `MeshStandardMaterial` and zero `MeshPhysicalMaterial`**.
 Every lit surface in the game — flesh, wool, linen, plywood, hide, iron, bronze, limestone,
@@ -1391,6 +1402,35 @@ distinguishes a forearm from a painted board. Lambert falls to zero linearly at 
 and takes all three channels with it in the same ratio, which is exactly the "greying" the
 graders described. Real flesh reddens there because red light scatters furthest under the skin,
 and nothing in this pipeline models that.
+
+**Round three splits it three ways, in the one place the pipeline already overrides `RE_Direct`.**
+`vSoldierSurf` widens from `vec3` to `vec4` — free, because a `vec3` varying already occupies a
+whole `vec4` interpolator — and its `.w` carries a material class derived from the tint slot in
+the vertex shader: 0 stock, 1 flesh, 2 cloth.
+
+- **Flesh** takes a per-channel diffuse wrap, `W = (0.38, 0.16, 0.08)`, as
+  `clamp((N·L + W) / (1 + W), 0, 1)`. At `N·L = 1` every channel returns exactly 1, so full sun
+  is bit-for-bit Lambert and this cannot move an exposure; at the terminator it returns
+  `(0.28, 0.14, 0.07)`, which is the colour of blood at a third of the sun's strength. Past the
+  terminator only red survives. The **specular is deliberately not wrapped** — sebum reflects off
+  the surface and obeys the true geometric `N·L` — so the lobe is taken by calling three's own
+  `RE_Direct_Physical` with `diffuseColor` zeroed rather than by scaling the whole result, which
+  would drag a sheen round onto the shadowed side of every face. A grazing transmission term,
+  gated on back-lighting and tinted hard to red, lights ear rims, nostrils and fingers, with
+  `1 - |N·V|` standing in for a thickness map the atlas has no slot for.
+- **Cloth** loses GGX entirely. A microfacet lobe assumes a locally flat surface with a
+  distribution of slopes about its normal, which is true of a hammered plate and false of a nap;
+  linen's highlight is at grazing, round the silhouette, and broad. So GGX is *replaced* by
+  Ashikhmin's inverted-Gaussian velvet distribution in Estévez and Kulla's form, which peaks
+  exactly where GGX is zero, with Ashikhmin's own visibility term to keep the grazing peak
+  finite. Its diffuse takes a wide achromatic wrap of 0.30, because a fibre scatters by geometry
+  rather than by absorption.
+- **Metal** was already F0-tinted through albedo (§4), and this round only fixes *which* metal
+  gets the round-two per-man treatment. That was gated on tint slot 7, which is helmets and
+  bosses; mail, squamata and segmentata are slot 0 and got none of it, so the two smallest metal
+  surfaces on a man were varied and the largest was not. The gate is now the ORM's own
+  metalness — `texelRoughness.b` in the roughness chunk, `metalnessFactor` in the normal chunk —
+  so wood, rope and leather, which share slot 0 with the armour, still do not get it.
 
 ### 9.3 Shadows: no contact darkening, no penumbra growth, no coloured bounce — *does not reproduce as stated*
 
