@@ -238,6 +238,26 @@ export const SEAMS: readonly Seam[] = [
         fields: ['x1', 'z1', 'x2', 'z2', 'height', 'gate', 'halfThickness'],
       },
       getObstacles: { element: true, fields: ['x', 'z', 'hw', 'hd', 'rot', 'topY'] },
+      /**
+       * `openGates` reads all four, and this is the seam a broken gate actually runs through.
+       *
+       * It is listed under `Siege`'s seam above and was not listed here, which left the more
+       * dangerous of the two readers unchecked. `Siege` reads `open` off the record and a
+       * drift there is loud. `openGates` reads `facing` through
+       * `Number.isFinite(facing) ? Math.sin(facing) : 0` and **degrades silently** — a rename
+       * to `bearing` or `rot` takes the fallback branch, cuts the carriageway along `(0, -1)`
+       * instead of along the gate's own normal, and leaves the passage stamped shut on any
+       * circuit whose runs are not north-facing. The ram would land its twenty-six blows,
+       * `CitySystem` would clear its own raster, and A\* would still route round the city.
+       *
+       * That failure is indistinguishable from the one this workstream was sent to find, so
+       * it is worth writing down that on the shipped maps it is **not** what is happening.
+       * Measured at the Porta Flaminia as the leaves gave way: `blocksMovement` across the
+       * door plane goes true → false, the grid's `blocked` and `tight` masks both open at the
+       * axis, and A\* returns a complete route 45 m into the city for every footprint radius
+       * up to 5 m. This entry is here to keep that true, not because it had come apart.
+       */
+      getGates: { element: true, fields: ['id', 'x', 'z', 'facing', 'open'] },
     },
   },
   {
