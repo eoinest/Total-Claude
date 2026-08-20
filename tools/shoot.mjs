@@ -775,6 +775,78 @@ const SHOTS = {
 };
 
 /*
+ * ---------------------------------------------------------------------------
+ * `--set=ab3`: round three. The same cameras, a sun that is not in one band.
+ * ---------------------------------------------------------------------------
+ *
+ * Round three changes the renderer and the *trial structure*, and deliberately does not
+ * change the camera. Round two's `cam` blocks were measured against the plates they are
+ * paired with — eye height, aim height, standoff and field of view, all in metres and
+ * degrees — and re-deriving them would mean a round that cannot distinguish "the soldiers
+ * are better" from "the photographer is different". So `ab3` is generated from `ab2`, entry
+ * for entry, and exactly two fields move.
+ *
+ * **The hour, because the old schedule clustered and said so in a comment that was wrong.**
+ * The `ab2` block above claims "no two are within twenty minutes". Sorted, its hours are
+ * 8.6, 9.0, 10.2, 11.0, 11.5, 12.2, 12.8, **13.0**, 13.4, 14.3, 15.0, **15.2**, **15.4**,
+ * 17.6 — three gaps of 0.2 h, which is twelve minutes, and four of the fourteen inside a
+ * 24-minute band in the middle of the afternoon. A grader shown the whole deck can learn a
+ * sun; four frames under the same one is most of the way to teaching them it.
+ *
+ * The schedule below spans 7.3 to 17.7 against round two's 8.6 to 17.6, and its smallest gap
+ * is **0.5 h**. Each shot keeps its own character where the character was the point: the
+ * elephants are still at dusk, the Carthage parapet is still the rain frame, and the four
+ * overcast frames are still four.
+ *
+ * **The weather assignment, only to keep the overcast frames spread across the new hours.**
+ * The counts are unchanged: nine clear, four overcast, one rain.
+ *
+ * A note on why the hour spread matters *less* this round than it did last, and is still
+ * worth fixing. Under one grader per pair, nothing a grader sees can cluster: they get one
+ * frame of ours and cannot learn our sun from it. The clustering was a defect of the pooled
+ * reading, and the pooled reading is what round three is replacing. It is fixed anyway
+ * because the deck outlives the protocol, and because a deck whose comment says one thing
+ * and whose data says another is a deck nobody can trust the rest of.
+ */
+const AB3 = {
+  'carth-march':     { hour: 7.3, weather: 'clear' },
+  'rome-line':       { hour: 8.2, weather: 'clear' },
+  'carth-line':      { hour: 9.1, weather: 'overcast' },
+  'rome-parapet':    { hour: 10.0, weather: 'clear' },
+  'rome-march':      { hour: 10.9, weather: 'clear' },
+  'carth-parapet':   { hour: 11.8, weather: 'rain' },
+  'rome-aftermath':  { hour: 12.7, weather: 'overcast' },
+  'rome-cavalry':    { hour: 13.6, weather: 'clear' },
+  'carth-melee':     { hour: 14.4, weather: 'overcast' },
+  'rome-wall':       { hour: 15.2, weather: 'clear' },
+  'rome-melee':      { hour: 15.9, weather: 'clear' },
+  'carth-wall':      { hour: 16.6, weather: 'overcast' },
+  'carth-wide':      { hour: 17.2, weather: 'clear' },
+  'carth-elephants': { hour: 17.7, weather: 'clear' },
+};
+for (const [k, v] of Object.entries(SHOTS)) {
+  if (!k.startsWith('ab2-')) continue;
+  const stem = k.slice(4);
+  const o = AB3[stem];
+  if (!o) throw new Error(`ab3: no hour for ${k} — the two sets must stay in step`);
+  SHOTS[`ab3-${stem}`] = {
+    ...v,
+    desc: v.desc.replace(/^AB2:/, 'AB3:'),
+    hour: o.hour,
+    weather: o.weather,
+  };
+}
+{
+  // The claim in the block comment above, checked rather than asserted. A schedule that
+  // silently collides is exactly the defect this set exists to fix.
+  const hrs = Object.values(AB3).map((v) => v.hour).sort((a, b) => a - b);
+  for (let i = 1; i < hrs.length; i++) {
+    const gap = hrs[i] - hrs[i - 1];
+    if (gap < 0.499) throw new Error(`ab3: hours ${hrs[i - 1]} and ${hrs[i]} are ${(gap * 60).toFixed(0)} min apart`);
+  }
+}
+
+/*
  * ---------------------------------------------------------------------------------------
  * Shot families, and the bug that made them a registry instead of four `startsWith` calls.
  * ---------------------------------------------------------------------------------------
@@ -820,6 +892,7 @@ const FAMILIES = {
   deck: 'the pooled blind deck — the only pool a blind round should be built from',
   ab: 'the paired blind instrument, round one. See the block comment above `ab-rome-line`',
   ab2: 'round two, with a matched capture policy. See the block comment above `ab2-rome-line`',
+  ab3: 'round three, one grader per pair. See the block comment above `AB3`',
   r6: 'the r6 changelog plates. Not a deck — see the block comment above `r6-ram-gate`',
 };
 
@@ -873,6 +946,7 @@ const SETS = {
   r6: Object.keys(SHOTS).filter((k) => familyOf(k) === 'r6'),
   ab1: Object.keys(SHOTS).filter((k) => familyOf(k) === 'ab'),
   ab2: Object.keys(SHOTS).filter((k) => familyOf(k) === 'ab2'),
+  ab3: Object.keys(SHOTS).filter((k) => familyOf(k) === 'ab3'),
   /** The graded field set, and the default. Everything with no declared family. */
   all: Object.keys(SHOTS).filter((k) => familyOf(k) === 'field'),
   /** Literally everything, for the rare pass that wants it. Never a deck. */

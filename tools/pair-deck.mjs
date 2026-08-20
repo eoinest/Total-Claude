@@ -149,9 +149,57 @@ const MAX_W = Number(args.get('maxWidth') ?? 1440);
 const WORDMARK_FROM = Number(args.get('wordmarkFrom') ?? 0.80);
 /** Set 0 to skip byte-budget normalisation. */
 const PAD = args.get('pad') === '0' ? 0 : 1;
+/**
+ * ---------------------------------------------------------------------------
+ * `--isolate=<dir>`: one pair per directory, for one grader per pair
+ * ---------------------------------------------------------------------------
+ *
+ * The limitation that invalidated two rounds is not in this file's audits, it is in the
+ * shape of the trial:
+ *
+ *   > A 14-pair deck drawn from a single engine is one trial, not fourteen. Our renderer has
+ *   > one signature — one grass, one helmet, one sky model, one tone curve. A grader who
+ *   > cracks any single pair gets the rest on palette alone, so accuracy reads 100% until it
+ *   > reads 50%, with no usable range in between.
+ *
+ * `docs/tech/TOOLING.md` names the fix and then says nothing in the tooling implements it.
+ * This does. After the full deck is built and every audit has passed on the **pool** — which
+ * they must, because two of them are pooled statistics and degenerate at N=1 — each pair is
+ * copied into a directory of its own containing exactly three files: `A.png`, `B.png` and a
+ * README that knows nothing about any other pair.
+ *
+ * Four things are deliberate about the layout.
+ *
+ * **The files lose their pair number.** In the flat deck they are `07-A.png` and `07-B.png`;
+ * here they are `A.png` and `B.png`. A grader who only ever sees one pair has no use for the
+ * index, and a filename that carries one invites a grader to wonder what the other thirteen
+ * looked like.
+ *
+ * **The directories are named by a token, not by an index.** `pair-3f9c21` rather than
+ * `pair-07`. The token is drawn from the same seeded stream as the side randomisation, so a
+ * run is reproducible, and it is not ordered, so a grader handed one path cannot tell whether
+ * it is the first or the last, nor how many there are. This is the weakest of the four —
+ * anyone can list the parent directory — and it is worth saying plainly that **isolation is a
+ * protocol property and not a filesystem one.** The tool makes it easy to honour; only the
+ * agent spawning the graders can enforce it.
+ *
+ * **The audits run on the pool, before the split.** `overlayAudit` computes a per-origin
+ * standard deviation across the images of one origin, so with a single frame per origin the
+ * SD is zero everywhere and the mask degenerates to "every structured pixel"; the separability
+ * gate needs a population to threshold; and side balance is meaningless at N=1
+ * (`floor(1*0.25) = 0`, `ceil(1*0.75) = 1`, so any answer passes). All three stay where they
+ * are and the split happens after `DECK ACCEPTED`.
+ *
+ * **The deck-wide window shape is kept.** With one pair per grader the cross-pair shape leak
+ * that forced `min(w)`, `min(h)` across the deck no longer exists, and dropping it would give
+ * twelve of the fourteen plates their 96 missing rows back. It is kept anyway: a deck outlives
+ * the protocol it was built for, this one is still written flat as well as split, and a
+ * property that holds under both readings is worth 96 rows.
+ */
+const ISOLATE = args.get('isolate') ?? null;
 
 if (!OURS || !PAIRS) {
-  console.error('usage: pair-deck.mjs --ours=<dir> --pairs=<manifest.json> [--refs=dir] [--out=dir] [--key=file] [--seed=N]');
+  console.error('usage: pair-deck.mjs --ours=<dir> --pairs=<manifest.json> [--refs=dir] [--out=dir] [--key=file] [--seed=N] [--isolate=dir]');
   process.exit(2);
 }
 
@@ -159,9 +207,20 @@ const oursAbs = path.resolve(ROOT, OURS);
 const refsAbs = path.resolve(ROOT, REFS);
 const outAbs = path.resolve(ROOT, OUT);
 const keyAbs = path.resolve(ROOT, KEY);
+const isoAbs = ISOLATE ? path.resolve(ROOT, ISOLATE) : null;
 
 if (path.dirname(keyAbs) === outAbs) {
   console.error('REFUSED: the answer key would land inside the deck directory. That is leak three.');
+  process.exit(3);
+}
+// The same refusal, one directory over. An isolated deck is still a deck.
+if (isoAbs && (path.dirname(keyAbs) === isoAbs || keyAbs.startsWith(`${isoAbs}${path.sep}`))) {
+  console.error('REFUSED: the answer key would land inside the isolated deck tree. That is leak three.');
+  process.exit(3);
+}
+if (isoAbs && (isoAbs === outAbs || isoAbs.startsWith(`${outAbs}${path.sep}`) || outAbs.startsWith(`${isoAbs}${path.sep}`))) {
+  console.error('REFUSED: --isolate and --out overlap. A grader given one pair could list the whole deck');
+  console.error('  by walking up one directory, which is the entire property --isolate exists to provide.');
   process.exit(3);
 }
 
@@ -744,3 +803,102 @@ await writeFile(keyAbs, `${JSON.stringify({
 
 console.log(`key:      ${keyAbs}  (outside the deck; the README does not mention it)`);
 console.log('DECK ACCEPTED');
+
+// ---------------------------------------------------------------------------
+// The split: one pair per directory, for one grader per pair
+// ---------------------------------------------------------------------------
+if (isoAbs) {
+  await rm(isoAbs, { recursive: true, force: true });
+  await mkdir(isoAbs, { recursive: true });
+  const stamp = new Date('2026-01-01T00:00:00Z');
+  /*
+   * Tokens from the same seeded stream the sides came from, so a run reproduces and a
+   * directory name carries no order. Six hex digits is 16.7 M, which is enough that fourteen
+   * of them do not collide and short enough to type; the loop re-draws on the birthday case
+   * rather than pretending it cannot happen.
+   */
+  const taken = new Set();
+  const token = () => {
+    for (;;) {
+      const t = Math.floor(rand() * 0x1000000).toString(16).padStart(6, '0');
+      if (!taken.has(t)) { taken.add(t); return t; }
+    }
+  };
+  const roster = [];
+  for (const k of key) {
+    const t = token();
+    const dir = path.join(isoAbs, `pair-${t}`);
+    await mkdir(dir, { recursive: true });
+    for (const side of ['A', 'B']) {
+      const src = path.join(outAbs, `${k.pair}-${side}.png`);
+      const dst = path.join(dir, `${side}.png`);
+      await writeFile(dst, await readFile(src));
+      await utimes(dst, stamp, stamp);
+    }
+    /*
+     * One README per pair, and it is not the deck's.
+     *
+     * Everything that could act as a prior is gone: how many pairs exist, which subjects are
+     * in them, that there is an index at all. What is added is the one instruction the pooled
+     * form did not need — that this is the whole task — and the one warning the protocol notes
+     * say costs a round if it is missing: a grader who feels obliged to find a difference will
+     * invent one, so refusing is an allowed and useful answer.
+     */
+    const readme = path.join(dir, 'README.md');
+    await writeFile(readme, `# Which of these two frames is Total War: ROME II?
+
+This directory holds two images, \`A.png\` and \`B.png\`, showing a comparable subject.
+**Exactly one of them is a frame from Total War: ROME II and the other is not.** Which side it
+is on was decided at random.
+
+This directory is the whole of your task. There is one pair, it is this one, and there is no
+prior: A and B were equally likely.
+
+Answer with one JSON object and nothing else:
+
+\`\`\`json
+{ "pair": "${t}", "pick": "A", "confidence": 3, "why": "...", "second": "" }
+\`\`\`
+
+- \`pick\` — \`"A"\` or \`"B"\`.
+- \`confidence\` — 1 (pure guess) to 5 (certain).
+- \`why\` — the single most decisive thing you saw, in one sentence. Be specific and
+  physical: name the surface, the edge, the light, the material, the geometry or the motion.
+  "Looks more polished" is not usable. "Every shadow terminates in a hard step with no
+  penumbra" is.
+- \`second\` — a second reason if you had one, otherwise \`""\`.
+
+Rules:
+
+- Answer. If you truly cannot tell, still pick one and set \`confidence\` to 1 — a coin flip
+  recorded honestly is data, and a reason invented to justify a pick is not.
+- View the images at 100%, not scaled to fit.
+- Judge the rendering and the scene. The two frames were chosen to show comparable subjects,
+  so subject matter is not the answer.
+- Read nothing in this directory except the images and this file, and look at nothing outside
+  it — not the parent directory, not the repository, not the web. Do not reverse-image-search
+  anything.
+`);
+    await utimes(readme, stamp, stamp);
+    await utimes(dir, stamp, stamp);
+    roster.push({ token: t, pair: k.pair, dir: path.relative(ROOT, dir) });
+  }
+  /*
+   * The roster goes in the *key*, not beside the decks. It is the token-to-pair mapping and
+   * therefore half the answer: a grader who found it would learn which subject they are
+   * looking at and, through the key, which side is ours.
+   */
+  const keyDoc = JSON.parse(await readFile(keyAbs, 'utf8'));
+  keyDoc.isolate = { root: path.relative(ROOT, isoAbs), roster };
+  for (const r of roster) {
+    const k = keyDoc.key.find((x) => x.pair === r.pair);
+    if (k) k.isolatedAs = { token: r.token, ours: k.ours.endsWith('-A.png') ? 'A.png' : 'B.png' };
+  }
+  await writeFile(keyAbs, `${JSON.stringify(keyDoc, null, 2)}\n`);
+
+  console.log(`\nisolated: ${isoAbs}  (${roster.length} directories, three files each)`);
+  console.log('  one grader per directory, fresh context, nothing else in scope:');
+  for (const r of roster) console.log(`    ${r.dir}`);
+  console.log('\n  Isolation is a protocol property. The parent directory is still listable;');
+  console.log('  what this gives you is fourteen self-contained tasks, not fourteen locked rooms.');
+}

@@ -491,6 +491,66 @@ node tools/shoot.mjs --hud                     # WITH the interface — never gr
 > Nothing programmatic depended on the old meaning: no tool spawns or imports `shoot.mjs`, and
 > the whole dependent surface was four documented invocations with no `--set`.
 
+### `--set=ab3`: round three
+
+Generated from `ab2` entry for entry, in code, so the two cannot drift. **Exactly two fields
+move: the hour and the weather.** Round two's `cam` blocks were measured against the plates
+they are paired with, and re-deriving them would give a round that cannot distinguish "the
+soldiers are better" from "the photographer is different".
+
+The hour moves because the `ab2` block's own claim — *"no two are within twenty minutes"* — is
+false. Sorted, its hours are 8.6, 9.0, 10.2, 11.0, 11.5, 12.2, 12.8, **13.0**, 13.4, 14.3,
+15.0, **15.2**, **15.4**, 17.6: three gaps of 0.2 h, which is twelve minutes, and four of the
+fourteen inside a 24-minute band in the middle of the afternoon. `ab3` spans 7.3 to 17.7 with
+a half-hour floor, checked by a throw in the file rather than asserted in a comment. Counts
+are unchanged at nine clear, four overcast and one rain.
+
+This matters *less* this round than it did last, and is worth fixing anyway. Under one grader
+per pair nothing a grader sees can cluster — they get one frame of ours and cannot learn our
+sun from it. The clustering was a defect of the pooled reading, and the pooled reading is what
+round three replaces. It is fixed because the deck outlives the protocol, and because a deck
+whose comment says one thing and whose data says another is a deck nobody can trust the rest
+of.
+
+**Use a named camera. Never hand-place one.** This is the single most important convention in
+the visual tooling and it is not about tidiness. The point of a shot is that the "after" is
+*the same frame* as the "before" and not merely a similar one, and a hand-placed focus cannot
+give you that — it goes stale the moment the order of battle, the terrain or the deployment
+changes. The table records this happening: `romanline` had a fixed focus, the line moved, and
+the shot "ended up in the top-left corner with 90% of the frame full of grass". Shots
+therefore name a *follow target* (`ownLine`, `contact`, `unitType`, `enemyFront`) and the
+camera is auto-framed on it.
+
+That machinery is itself a source of instrument defects, and the fix pattern is recorded on
+the branch tip at `6698e19`: `follow: 'contact'` means "the densest cell of anything fighting",
+which on Carthage at t+96 is a cavalry clash on a flank, so a shot meant to photograph an
+infantry melee came back as a wall of horses. And "frontmost of the accepted classes" picks a
+*skirmisher* every time, because standing in front of the line is a skirmisher's job. The
+commit message names the check that works:
+
+> The check that works is the focus coordinate in the shot line: it was (75,-130) before the
+> first fix and (75,-130) after it, which said the fix was inert in one glance and would have
+> said so before the frame was ever looked at.
+
+Round two's A/B shots go further and bypass the zoom curve entirely, naming what a
+photographer names — `eye` and `aim` in metres above the ground at the focus, `dist` in metres,
+and a field of view in degrees. The reason is in the block comment: `RTSCamera.place()` refuses
+to let the eye sit closer to the ground than `lerp(1.7, 22, smoothstep(z))`, so at `zoom: 0.34`
+the curve asks for an eye 2.8 m up and the clamp overrides it to 7.2 m while the aim point
+stays on the grass — a true depression of 25° where the reference plates sit at 3–8°. *"The
+camera is not high because anyone chose a high camera. It is high because a collision guard
+said so."*
+
+**`report.json` is provenance, not a log.** Every run writes one, and `hud: <bool>` is the
+field that matters: `false` means the directory is safe to grade blind, `true` means it is
+not, and *missing* means nobody knows. All three are distinct and the deck builders refuse the
+third as firmly as the second. The record also carries `commit` and `srcTree` — the tree object
+of `src/`, because a shot table is not a renderer and `COMMIT` moves when a table is retuned.
+A partial re-shoot **merges by shot name** and refuses to merge across anything that has to be
+uniform for the frames to belong in one deck: HUD policy, pixel ratio, frame size, quality
+tier and `srcTree`. *"A mixed-commit directory is not a pass, it is two passes in a trench
+coat."*
+
 **Use a named camera. Never hand-place one.** This is the single most important convention in
 the visual tooling and it is not about tidiness. The point of a shot is that the "after" is
 *the same frame* as the "before" and not merely a similar one, and a hand-placed focus cannot
