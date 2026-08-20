@@ -1,13 +1,19 @@
 # Trailer — shot list and provenance
 
-Two files on the [r6 release](https://github.com/eoinest/Total-Claude/releases/tag/r6):
+Three files on the [r6 release](https://github.com/eoinest/Total-Claude/releases/tag/r6):
 
 | | resolution | codecs | length | size | sound |
 |---|---|---|---|---|---|
 | `total-claude-trailer-1080p-sound.webm` | **1920 × 1080** | VP9 + Opus | **86.0 s** | **130.2 MB** | **yes** |
 | `total-claude-trailer.webm` | 1600 × 900 | VP8 | 84.0 s | 14.2 MB | no |
+| `total-claude-trailer-720p-twitter.webm` | 1280 × 720 | VP9 + Opus | 21.933 s | **4,689,184 B** | yes |
 
-Both are cut from the live simulation at `6698e196ed84f0e456b13cf1ab04c90eeea07d55`, quality
+The third is a shortened recut of the first — the same master frames and the same per-beat
+mixer recordings, windowed — for a video that autoplays muted in a phone feed under a
+five-megabyte ceiling. `docs/video/README.md` has its shot list and the measurements that
+chose it.
+
+All three are cut from the live simulation at `6698e196ed84f0e456b13cf1ab04c90eeea07d55`, quality
 tier `ultra`. Every frame is our own render and every sound is our own synthesis: no reference
 material, no third-party footage, no sampled audio, no assets beyond the CC0 set already listed
 in `ASSETS.md`.
@@ -303,6 +309,44 @@ RGB round trip and not by compression. The shipped encode is within 0.8 dB of a 
 reference on the hardest frame in the film, and at 100 % the crops show no blocking, no banding
 in the sky gradients, and brick courses and individual men still legible.
 
+### The 720p social encode, and the five-megabyte ceiling
+
+Same pipeline, same measurement, different arithmetic: the file has to come in under 5,000,000
+bytes, so the only free variable once the length was fixed at 21.933 s was the bitrate. VP9's
+rate control overshoots its ask by about 11 % on this material, consistently enough to
+interpolate against.
+
+| asked | delivered | total bytes | headroom |
+|---|---|---|---|
+| 1.00 Mb/s | 1.15 Mb/s | 3,397,748 | 1,602,252 B |
+| 1.40 Mb/s | 1.56 Mb/s | 4,531,082 | 468,918 B |
+| **1.45 Mb/s (shipped)** | **1.62 Mb/s** | **4,689,184** | **310,816 B** |
+| 1.50 Mb/s | 1.66 Mb/s | 4,807,064 | 192,936 B |
+| 4.00 Mb/s (reference) | 4.07 Mb/s | 11,403,134 | −6,403,134 B |
+
+PSNR is against the same source frame put through the *same* downscale the encoder used
+(1920 → 1280 in a 2D context at `imageSmoothingQuality = 'high'`), so the number is compression
+and not resampling, and against the frame the player actually presented, found by search, so it
+is not motion either. Whole frame, and the worst 64 px tile in it:
+
+| encode | 0:02.6 clash | 0:05.2 ladders | 0:07.5 parapet | 0:12.0 gate in shadow | 0:17.5 the cohort |
+|---|---|---|---|---|---|
+| VP9 1.15 Mb/s | 25.40 / 22.15 | 27.39 / 22.68 | 28.05 / 22.48 | 29.75 / 25.20 | 23.59 / 18.66 |
+| **VP9 1.62 Mb/s (shipped)** | **26.02 / 23.52** | **27.95 / 23.92** | **28.53 / 23.47** | **29.93 / 25.57** | **24.10 / 19.60** |
+| VP9 4.07 Mb/s (reference) | 27.45 / 25.67 | 29.14 / 25.48 | 29.50 / 25.44 | 30.56 / 26.71 | 25.34 / 21.49 |
+
+2.4× the file buys 0.63–1.43 dB, so the shipped rate is on the same plateau the 1080p encode is
+on: the content is hard, not starved. It matters more that the *failure mode* is right. At 100 %
+the crops lose specular edges off helmets and texture off grass, and gain no blocking and no
+banding anywhere, including in the shadowed gate mouth — which is what has to be true of a file
+that is a source for someone else's transcoder rather than the finished artefact.
+
+AV1 was encoded at the same ask and came out 14 % smaller (4,036,228 B at 1.38 Mb/s), and is not
+shipped, because it could not be checked. `canPlayType` reports `probably` for
+`av01.0.05M.08` in this build and the review harness — which finishes a VP9 file in under a
+minute — hung on the AV1 file's first seek and was killed after six. An encode nobody can decode
+back and measure is not a candidate.
+
 ## Reproducing it
 
 ```sh
@@ -315,6 +359,19 @@ node tools/scratch/trailer-encode.mjs --codec=vp09.00.41.08 --bitrate=12000000 \
   --out=/tmp/tc-sound/total-claude-trailer-1080p-sound.webm
 node tools/scratch/trailer-review.mjs --file=...                   # watch and listen to it back
 node tools/scratch/trailer-cropcheck.mjs --file=...                # judge the encode at 100 %
+```
+
+The 22 s social cut needs none of the above run again — it reuses the master frames and the
+per-beat recordings on disk:
+
+```sh
+node tools/scratch/trailer-tw-scout.mjs --sheet="field-scale:0,80,179"   # candidates at 400 px
+node tools/scratch/trailer-tw-scout.mjs --diff=rome-ram-gate --box=0.30,0.34,0.40,0.46
+node tools/scratch/trailer-tw-cut.mjs                              # 658 frames + a matching track
+node tools/scratch/trailer-tw-encode.mjs --ladder=1400000,1450000,1500000
+node tools/scratch/trailer-tw-encode.mjs --bitrate=1450000 \
+  --out=/tmp/tc-tw/total-claude-trailer-720p-twitter.webm
+node tools/scratch/trailer-tw-review.mjs                           # decode it back, at 400 px
 ```
 
 `--beats=a,b --keep` re-shoots individual beats in place; the cut is rebuilt from what is on
