@@ -393,8 +393,8 @@ including the Germanic *barritus* that Tacitus and Ammianus both describe.
 Quality is graded from rendered frames, not from source.
 
 ```bash
-npm run shoot                    # the 18 graded field shots → screenshots/
-npm run shoot -- --list          # 59 shots, and the sets and families they belong to
+npm run shoot                    # the graded field shots → screenshots/
+npm run shoot -- --list          # every shot, and the sets and families they belong to
 npm run trace                    # battle state over time: does it advance, clash, resolve?
 npm run perfdiff -- a.json b.json
 npm run lint                     # the two static checks, in milliseconds and no browser

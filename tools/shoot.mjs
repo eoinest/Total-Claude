@@ -7,10 +7,10 @@
  * the ground truth the critic agents judge — nobody grades this project from source.
  *
  * Usage:
- *   node tools/shoot.mjs                          # --set=all: the 18 graded field shots
+ *   node tools/shoot.mjs                          # --set=all: the graded field shots
  *   node tools/shoot.mjs --set=deck               # the ten-frame blind deck, varied
  *   node tools/shoot.mjs --set=ab2                # the round-two A/B plates
- *   node tools/shoot.mjs --set=everything         # all 59, which is never a deck
+ *   node tools/shoot.mjs --set=everything         # every shot defined, which is never a deck
  *   node tools/shoot.mjs --shots=wide,closeup     # a subset
  *   node tools/shoot.mjs --out=screenshots/pass3  # alternate output directory
  *   node tools/shoot.mjs --w=2560 --h=1440        # resolution
@@ -796,9 +796,25 @@ const SHOTS = {
  * be. `all` is the shots with no declared family, which are the graded field shots this file
  * has always shot by default.
  *
- * `assertNoUndeclaredFamily` below closes the loop: the signature of this class of bug is
- * *several shots sharing a first segment that nobody declared*, and that is now a hard error
- * naming the shots, not a silent 14-frame addition to the default set.
+ * `checkFamilies` below closes the loop, and it is deliberately two checks with two different
+ * severities, because the first draft of it was itself the bug it was written to prevent.
+ *
+ * That draft failed any two shots sharing an undeclared first segment. It was clean at
+ * `3f4c203` and it was **wrong**: `main` had meanwhile added `carth-postern-wide` and
+ * `carth-postern-close`, two ordinary field shots that share a topic prefix, and the guard
+ * would have exited 2 on every invocation of the screenshot harness for everybody. A guard
+ * that refuses a legitimate tree is worse than the leak it closes. So:
+ *
+ *   FATAL   an undeclared segment that extends a declared family name, or is extended by one
+ *           — `ab3` against `ab`, `deck2` against `deck`. This cannot false-positive: it is
+ *           the exact `ab2` shape, a sibling naming scheme that a prefix test cannot see.
+ *   WARN    an undeclared segment shared by THREE OR MORE shots. A heuristic, so it does not
+ *           refuse. The four declared families have 3, 10, 14 and 14 members; a pair of field
+ *           shots on one topic is normal and a trio is worth a second look.
+ *
+ * And the real defence, which is neither: every run prints the set it is about to shoot and
+ * how many frames that is, so "32 when I expected 18" is visible in the first line of output
+ * rather than in a directory listing twenty minutes later.
  */
 const FAMILIES = {
   deck: 'the pooled blind deck — the only pool a blind round should be built from',
@@ -813,32 +829,43 @@ const familyOf = (key) => {
   return Object.hasOwn(FAMILIES, seg) ? seg : 'field';
 };
 
-/**
- * Refuse to run if several shots share an undeclared first segment.
- *
- * Every field shot is a one-off name — `wide`, `rout`, `germanhorde` — and every family has
- * fourteen or ten or three members. Two shots sharing an undeclared segment therefore means
- * somebody has started a family and not registered it, which is precisely how `ab2-` ended up
- * in the default set. Zero offenders at `3f4c203`, checked; if this ever fires, either add the
- * segment to `FAMILIES` or rename the shots, but do not delete the check.
- */
-const assertNoUndeclaredFamily = () => {
+/** Three or more is a second look; two field shots on one topic is a normal Tuesday. */
+const CROWD = 3;
+
+/** Fatal on the `ab2` shape, advisory on a crowd. See the block comment above `FAMILIES`. */
+const checkFamilies = () => {
   const bySeg = new Map();
   for (const k of Object.keys(SHOTS)) {
     if (familyOf(k) !== 'field') continue;
-    const seg = k.split('-')[0];
+    const seg = k.slice(0, k.indexOf('-') < 0 ? k.length : k.indexOf('-'));
     bySeg.set(seg, [...(bySeg.get(seg) ?? []), k]);
   }
-  const suspects = [...bySeg].filter(([, ks]) => ks.length > 1);
-  if (!suspects.length) return;
-  console.error('shoot.mjs: undeclared shot family — these shots share a first segment that is');
-  console.error('not in FAMILIES, so they are silently part of the default `all` set:\n');
-  for (const [seg, ks] of suspects) console.error(`  ${seg}-  ${ks.join(', ')}`);
-  console.error('\nAdd the segment to FAMILIES, or rename the shots. This is the exact shape of');
-  console.error('the ab2- defect: a sibling naming scheme that no prefix test could see.');
-  process.exit(2);
+
+  // FATAL: a segment that extends a declared family name, or that one extends.
+  const declared = Object.keys(FAMILIES);
+  const siblings = [...bySeg].filter(([seg]) =>
+    declared.some((d) => (seg.startsWith(d) || d.startsWith(seg)) && seg !== d));
+  if (siblings.length) {
+    console.error('shoot.mjs: a shot family that extends a declared family name, undeclared.\n');
+    for (const [seg, ks] of siblings) {
+      const near = declared.filter((d) => seg.startsWith(d) || d.startsWith(seg));
+      console.error(`  ${seg}-  (beside ${near.map((d) => `${d}-`).join(', ')})  ${ks.join(', ')}`);
+    }
+    console.error('\nThese are in --set=all right now. This is the exact ab2- defect: a sibling');
+    console.error('naming scheme no prefix test can see. Add the segment to FAMILIES, or rename.');
+    process.exit(2);
+  }
+
+  // ADVISORY: a crowd under one undeclared segment. A heuristic, so it does not refuse — the
+  // first draft of this check did, and would have blocked the harness on carth-postern-*.
+  const crowds = [...bySeg].filter(([, ks]) => ks.length >= CROWD);
+  for (const [seg, ks] of crowds) {
+    console.error(`shoot.mjs: note — ${ks.length} shots share the undeclared segment "${seg}-" `
+      + `(${ks.join(', ')}), so they are all in --set=all. Intended? If they are a set, `
+      + 'declare them in FAMILIES.');
+  }
 };
-assertNoUndeclaredFamily();
+checkFamilies();
 
 /** Named shot sets, all derived from `familyOf` so no two of them can disagree. */
 const SETS = {
@@ -881,6 +908,20 @@ const requested = args.get('shots')
 if (!requested) {
   console.error(`Unknown set "${args.get('set')}". Available: ${Object.keys(SETS).join(', ')}`);
   process.exit(2);
+}
+/*
+ * Say what you are about to shoot, before you shoot it.
+ *
+ * This one line is the durable defence against the `ab2-` defect, more than the family
+ * registry or its guard: fourteen extra A/B plates rode along in `--set=all` for as long as
+ * they existed because nothing ever told anybody how many frames a default run was. "32 when
+ * I expected 18" is obvious in the first line of output and invisible in a directory listing
+ * twenty minutes later.
+ */
+{
+  const setName = args.get('shots') ? null : (args.get('set') ?? 'all');
+  const label = setName ? `--set=${setName}` : '--shots';
+  console.log(`• ${requested.length} shot(s) from ${label}: ${requested.join(' ')}`);
 }
 const PORT = Number(args.get('port') ?? 5199);
 /** Device pixel ratio. 1 is what every historical plate was shot at — see the note at `newPage`. */

@@ -28,7 +28,7 @@ partial list, every one of them recorded in the tree:
 | The first Carthage ditch probe | 0.83 m of relief against the 6.00 m the works publish | It sampled the gate bay's own outward normal. A ditch is bridged at its gate; that is a measurement taken down the middle of the road that crosses the thing being measured |
 | A branch's `qa-deploy` control arm | 26/28, "not introduced by my diff" | Already fixed upstream. The control was pinned to the merge-base, which cannot distinguish those two. Rebased, the branch was 28/28 |
 | The `waitForFunction` audit *in this document* | 19 surviving call sites | **9.** Eight of the fourteen it named in `tools/` already passed three arguments and were never broken. The counter asked "is the second argument the literal `null`?" rather than "is the options object in the argument position?" — an instrument written to check an instrument, wrong in the safe direction. `tools/check-tool-args.mjs` now answers it |
-| `node tools/shoot.mjs` with no arguments | the 18 graded field shots | 32, because `'ab2-…'.startsWith('ab-')` is false. Fourteen A/B plates at a 240 s boot each, shot by every default invocation since `ab2-` was added |
+| `node tools/shoot.mjs` with no arguments | the 18 graded field shots at `3f4c203` | 32, because `'ab2-…'.startsWith('ab-')` is false. Fourteen A/B plates at a 240 s boot each, shot by every default invocation since `ab2-` was added |
 
 The last row generalises into a rule the project writes down: **pin a control arm to `main`,
 never to the merge-base.** A base arm at the branch point fails identically whether the fault
@@ -458,7 +458,7 @@ Boots the game in Chromium with a real WebGL context, fast-forwards to a chosen 
 moment, parks the camera at a **named viewpoint** from the `SHOTS` table, and writes a PNG.
 
 ```sh
-node tools/shoot.mjs --list        # 59 shots; deck (10) r6 (3) ab1 (14) ab2 (14) all (18) everything (59)
+node tools/shoot.mjs --list        # at 385474f: 61 shots; deck 10, r6 3, ab1 14, ab2 14, all 20
 node tools/shoot.mjs --shots=wide,romanline    # a subset
 node tools/shoot.mjs --set=deck --out=/tmp/tc-ab/shots-r1
 node tools/shoot.mjs --w=2560 --h=1440 --dpr=2
@@ -476,10 +476,17 @@ node tools/shoot.mjs --hud                     # WITH the interface — never gr
 > **The fix is not the missing `startsWith`.** A shot's family is now the first
 > hyphen-delimited segment of its key, matched by *equality* against a `FAMILIES` registry — so
 > `ab2` is not `ab`, and a future `ab3` will not be either — and every set including `all` is
-> derived from one `familyOf`. `all` is 18, and `10 + 3 + 14 + 14 + 18 = 59 = everything`, an
-> exact partition. `assertNoUndeclaredFamily` exits 2 if two or more shots share a first
-> segment nobody registered, which is the signature of this class of bug; it fires on nothing
-> today and was tested by renaming two field shots to a shared `ab3-` prefix.
+> derived from one `familyOf`, so the sets partition the table exactly (at `385474f`,
+> `10 + 3 + 14 + 14 + 20 = 61`). Every run now prints the set and the frame count as its first
+> line, which is the part that would actually have caught this.
+>
+> `checkFamilies` is **fatal** on an undeclared segment that extends a declared family name
+> (`ab3` beside `ab`) and merely **advisory** on three or more shots sharing any other
+> undeclared segment. It is two severities because the first draft was one, was clean at
+> `3f4c203`, and would have exited 2 on every invocation once `main` landed
+> `carth-postern-wide` and `carth-postern-close` — two ordinary field shots that share a
+> topic prefix. A guard that refuses a legitimate tree is worse than the leak it closes, and
+> that one was caught only by merging `main` before reporting.
 >
 > Nothing programmatic depended on the old meaning: no tool spawns or imports `shoot.mjs`, and
 > the whole dependent surface was four documented invocations with no `--set`.
