@@ -1,11 +1,22 @@
 # Trailer — shot list and provenance
 
-`docs/video/total-claude-trailer.webm` — **1600 × 900, 30 fps, 84.0 s, 14.2 MB, VP8, silent.**
+Two files on the [r6 release](https://github.com/eoinest/Total-Claude/releases/tag/r6):
 
-Cut from the live simulation at `6698e196ed84f0e456b13cf1ab04c90eeea07d55`, quality tier
-`ultra`, by `tools/scratch/trailer-cut.mjs`. Every frame is our own render: no reference
-material, no third-party footage, no assets beyond the CC0 set already listed in
-`ASSETS.md`.
+| | resolution | codecs | length | size | sound |
+|---|---|---|---|---|---|
+| `total-claude-trailer-1080p-sound.webm` | **1920 × 1080** | VP9 + Opus | **86.0 s** | **130.2 MB** | **yes** |
+| `total-claude-trailer.webm` | 1600 × 900 | VP8 | 84.0 s | 14.2 MB | no |
+
+Both are cut from the live simulation at `6698e196ed84f0e456b13cf1ab04c90eeea07d55`, quality
+tier `ultra`. Every frame is our own render and every sound is our own synthesis: no reference
+material, no third-party footage, no sampled audio, no assets beyond the CC0 set already listed
+in `ASSETS.md`.
+
+The picture is `tools/scratch/trailer-recut.mjs`, the sound is
+`tools/scratch/trailer-audio-pass.mjs` + `trailer-mixdown.mjs`, and the encode is
+`tools/scratch/trailer-encode.mjs`. The two passes share their beat table and their camera
+maths through `tools/scratch/trailer-shot.mjs`, which is why they can be checked against each
+other rather than assumed to agree.
 
 ## How it was captured, and why it is not a screen recording
 
@@ -48,13 +59,30 @@ taken from; each beat's screen time equals its sim duration exactly.
 | 8 | 0:40.0 | 0:47.0 | `carth-wall` | Carthage, **assault**, 16:12 | t+12 → t+19 | descending crane, eye 158→44 m, standoff 380→196 m, 34° | The Byrsa, the city and the gulf, then down onto the great wall, its ditch and four siege towers. Caption: *Carthage — Spring, 146 BC* |
 | 9 | 0:47.0 | 0:52.0 | `carth-eles` | Carthage, field, 10:24 | t+96 → t+101 | eye 5.0→3.6 m, standoff 52→32 m, 32° | The war elephants coming on in front of the Punic centre |
 | 10 | 0:52.0 | 0:57.0 | `carth-tower` | Carthage, assault | t+252 → t+257 | eye 26→21 m, standoff 60→44 m, 32° | Two siege towers docked on the Punic parapet, columns queuing up into them |
-| 11 | 0:57.0 | 1:03.0 | `rome-ram` | Campus Martius, assault | t+202 → t+208 | eye 11→8 m, standoff 46→33 m, 34° | The ram under its shed at the Porta Flaminia, blows landing |
-| 12 | 1:03.0 | 1:11.0 | `rome-gate` | Campus Martius, assault | t+210 → t+218 | eye 8.5→6.0 m, standoff 44→30 m, 32° | The twenty-sixth blow. The leaves give way at **t+215** |
-| 13 | 1:11.0 | 1:17.0 | `rome-arch` | Campus Martius, assault | t+218 → t+224 | eye 6.0→4.4 m, standoff 33→25 m, inside the wall | From the street: the arch is open and the last cohort stands in it |
-| 14 | 1:17.0 | 1:24.0 | `endcard` | Campus Martius, assault | t+230 → t+237 | eye 66→58 m, standoff 250→218 m, 32° | The Aurelian Wall with Rome behind it. Title, `8,632 men · one browser tab`, and the URL |
+| 11 | 0:57.0 | **1:13.0** | `rome-ram-gate` | Campus Martius, assault | t+202 → t+218 | **one take**: eye 11→6.0 m, standoff 46→30 m, 34°→32° | The ram under its shed at the Porta Flaminia, the slow push in, and the leaves giving way on the twenty-sixth blow at **t+215** |
+| 12 | 1:13.0 | 1:19.0 | `rome-arch` | Campus Martius, assault | t+218 → t+224 | eye 6.0→4.4 m, standoff 33→25 m, inside the wall | From the street: the arch is open and the last cohort stands in it |
+| 13 | 1:19.0 | 1:26.0 | `endcard` | Campus Martius, assault | t+230 → t+237 | eye 66→58 m, standoff 250→218 m, 32° | The Aurelian Wall with Rome behind it. Title, `8,632 men · one browser tab`, and the URL |
 
 Transitions are hard cuts, except: fade up from black over the first 0.8 s, a 0.6 s dip to
-black at each act boundary (0:40, 0:57), and a fade to black over the last 0.7 s.
+black at each act boundary (0:40, 0:57), and a fade to black over the last 0.7 s. **The sound
+takes the same curve**, computed from the same table, so it goes down with the picture and
+comes back with it.
+
+### Beat 11 was two beats, and that was the one thing wrong with the released cut
+
+The 84 s silent cut plays this as `rome-ram` (t+202→208) and `rome-gate` (t+210→218). Three
+things made the join read as a cut rather than as a move:
+
+1. **A two-second hole in sim time** — t+208 to t+210 was never captured.
+2. **The camera stepped backwards across it** — eye 8 → 8.5 m, standoff 33 → 44 m. A wider
+   frame after a tighter one is exactly what an audience reads as a new setup.
+3. They were separate captures, so nothing carried across.
+
+Re-shot as one sixteen-second beat with a single eased move, monotonic in eye, standoff, aim
+and yaw. It is measured as well as looked at: mean |Δluma| between consecutive frames across
+the beat is 3.60 ± 1.68, and at frame 180 — where the splice used to be — it is 3.41, **z =
+−0.11**. There is no discontinuity there because there is no longer anything there. The whole
+cut is two seconds longer as a result, and the slow push is what the two seconds buy.
 
 ## What moved, per beat
 
@@ -72,8 +100,7 @@ Straight from the capture log. `alive` is the whole field, both sides.
 | `carth-wall` | +6.97 s | 3,431 → 3,426 | +5 | 0 | 0–2 | ≤34 | ≤440 |
 | `carth-eles` | +4.97 s | 7,974 → 7,903 | +71 | 1–30 | 340–374 | 0 | ≤400 |
 | `carth-tower` | +4.97 s | 2,963 → 2,948 | +15 | 49–60 | 92–120 | ≤85 | ≤217 |
-| `rome-ram` | +5.97 s | 2,340 → 2,320 | +20 | 30–42 | 39–42 | ≤4 | ≤495 |
-| `rome-gate` | +7.97 s | 2,316 → 2,293 | +23 | 38–44 | 40–45 | ≤8 | ≤493 |
+| `rome-ram-gate` | +15.97 s | 2,340 → 2,293 | +47 | 30–44 | 39–45 | ≤8 | ≤495 |
 | `rome-arch` | +5.97 s | 2,293 → 2,278 | +15 | 25–44 | 27–42 | ≤7 | ≤493 |
 | `endcard` | +6.97 s | 2,270 → 2,253 | +17 | 33–51 | 0–34 | ≤3 | ≤410 |
 
@@ -84,8 +111,9 @@ measurement above for what is nevertheless moving in it.
 ## What the assault does *not* do, and why the climax is cut the way it is
 
 The gate breaks exactly as advertised: the ram reaches the leaves and begins battering at
-t+100, lands 26 blows, and `gateReport().open` first reads true between t+210 and t+215 (five-second
-sampling; the brief's t+220 is one interval later). **Nobody then comes through it.**
+t+100, lands 26 blows, and `gateReport().open` first reads true between t+210 and t+215
+(five-second sampling; the brief's t+220 is one interval later). **Nobody then comes through
+it.**
 
 Measured with `tools/scratch/trailer-arch.mjs` — attackers cityward of the door plane,
 within 16 m of the gate axis, at street level rather than on the parapet over the arch — the
@@ -101,39 +129,197 @@ towers disgorging onto the parapet, where 80/72/54/33 men have crossed by t+290.
 
 ## Audio
 
-**Silent, deliberately.** Two reasons, in order:
+The 1080p cut has sound. **It is the game's own synthesised output, recorded live off the
+mixer, and nothing else.** No music was added, no sampled sound of any kind was added,
+nothing was licensed or downloaded, and no beat was level-matched, compressed or equalised.
+The only thing done to the recording is the volume envelope that matches the picture's fades.
 
-1. There was no way to encode an audio track. The only video encoder on this machine is the
-   one Playwright ships for `recordVideo`, built `--disable-everything` with `libvpx` and
-   `png` and no audio codec or audio muxer at all. Installing ffmpeg was not in scope.
-2. Nothing would have been captured anyway. `AudioEngine` creates its `AudioContext`
-   suspended under the harness — no user gesture — and schedules nothing.
+### How the sound was recorded, given that the picture is a frame sequence
 
-Worth recording for whoever adds sound later: the game's audio is **entirely synthesised**
-(`src/audio/Synth.ts`, `Ambience.ts`, `Music.ts`) rather than sampled, so it is our own
-material and carries no licence question. Nothing from any commercial game was considered.
+The picture is captured by stepping the engine with the rAF loop stopped, at roughly 12× slower
+than real time. Sound cannot be captured that way: `Mixer.play`, `Mixer.update` and
+`Music.pump` all schedule against `AudioContext.currentTime`, so stepping 2,580 frames through
+ninety seconds of wall clock would pile eighty-six seconds of events into ninety seconds of
+nothing.
+
+So `tools/scratch/trailer-audio-pass.mjs` makes a second pass over the **same fixed 1/30 s sim
+grid** — the same `engine.advance(1/30, 1000/30)`, the same beats, the same cameras — but paces
+it to the wall clock, and taps the mixer. Four things that pass has to get right, each measured
+rather than assumed:
+
+- **The context has to be actually running.** `AudioEngine.init` will not `resume()` without a
+  user gesture, and `Mixer.play` hard-returns while `running` is false, so a suspended context
+  schedules literally nothing and yields a clean, green, silent file. Chromium is launched with
+  `--autoplay-policy=no-user-gesture-required` and `ctx.state` is read back and asserted before
+  a sample is kept. It reads `running` at 48 kHz on every one of the four page loads.
+- **The tap is the last node before the speakers.** The graph tail is
+  `master → pre(0.5) → masterClip(soft clip 0.62/2) → destination`; the recording is taken off
+  `masterClip`, so it includes the master gain and the limiter. Tapping `master` would have been
+  6 dB hot and unlimited.
+- **The listener has to be where the lens was.** `AudioEngine.preRender` takes the listener
+  basis off `ctx.camera.matrixWorld`, so the sound pass rebuilds the camera from the same
+  `trailer-shot.mjs` the picture uses, and compares its own per-frame eye positions against the
+  ones the picture capture recorded. **Zero metres of error on every beat for which a valid
+  picture record exists.**
+- **Fast-forward has to be silent.** Between beats the clock is run flat out; the context is
+  suspended across every fast-forward, which stops `currentTime` and makes `Mixer.running`
+  false, so nothing is scheduled into the void.
+
+Rendering is switched off for the sound pass (`Engine.renderOverride`, the seam the engine
+already has). Nothing audible is downstream of the draw call, and with it on, GPU contention
+put stalls of up to 667 ms into a loop that has to hit a 33.3 ms mark — which does not move a
+beat, because the pacer catches up, but does bunch two thirds of a second of battle into the
+instant afterwards. With it off, no frame in the whole cut is more than 5.7 ms late.
+
+### Level, per beat
+
+`raw` is the recording; `cut` is after the fade envelope; `decoded` is measured by decoding the
+**delivered file** back out of its Opus track, which is the only proof the sound survived the
+mux. Full scale is 1.0.
+
+| Beat | in | out | raw RMS | dBFS | raw peak | cut RMS | decoded RMS | voices | peak voices | score share |
+|------|----|-----|---------|------|----------|---------|-------------|--------|-------------|-------------|
+| `field-line` | 0.0 | 5.0 | 0.1082 | -19.3 | 0.456 | 0.1054 | 0.1053 | 336 | 39 | 37 % |
+| `field-clash` | 5.0 | 12.0 | 0.1591 | -16.0 | 0.878 | 0.1590 | 0.1589 | 535 | 40 | 30 % |
+| `field-cav` | 12.0 | 16.0 | 0.1425 | -16.9 | 0.677 | 0.1425 | 0.1425 | 217 | 40 | 38 % |
+| `field-scale` | 16.0 | 22.0 | 0.1253 | -18.0 | 0.584 | 0.1253 | 0.1252 | 143 | 40 | 43 % |
+| `siege-approach` | 22.0 | 29.0 | 0.1059 | -19.5 | 0.524 | 0.1058 | 0.1058 | 112 | 24 | 43 % |
+| `siege-ladders` | 29.0 | 35.0 | 0.1272 | -17.9 | 0.657 | 0.1272 | 0.1272 | 315 | 40 | 42 % |
+| `siege-parapet` | 35.0 | 40.0 | 0.1281 | -17.9 | 0.702 | 0.1256 | 0.1255 | 344 | 40 | 41 % |
+| `carth-wall` | 40.0 | 47.0 | 0.1014 | -19.9 | 0.458 | 0.1010 | 0.1009 | 142 | 33 | 44 % |
+| `carth-eles` | 47.0 | 52.0 | 0.1400 | -17.1 | 0.731 | 0.1400 | 0.1398 | 335 | 40 | 31 % |
+| `carth-tower` | 52.0 | 57.0 | 0.1374 | -17.2 | 0.796 | 0.1340 | 0.1334 | 273 | 39 | 38 % |
+| `rome-ram-gate` | 57.0 | 73.0 | 0.1231 | -18.2 | 0.669 | 0.1228 | 0.1226 | 474 | 40 | 40 % |
+| `rome-arch` | 73.0 | 79.0 | 0.1287 | -17.8 | 0.690 | 0.1287 | 0.1286 | 183 | 40 | 38 % |
+| `endcard` | 79.0 | 86.0 | 0.1007 | -19.9 | 0.381 | 0.0967 | 0.0967 | 20 | 40 | 47 % |
+
+Whole track: RMS **0.1242 (−18.1 dBFS)**, peak **0.878 (−1.1 dBFS)** — the mixer's soft clip is
+never reached. Decoded RMS agrees with the mixdown to within **0.4 %** on every beat.
+
+"Score share" is the music bus' own RMS as a fraction of the master's, after the 0.425 the bus
+is worth by the time it reaches the tap. It is 30–47 %, so in power terms the game's own
+adaptive score is roughly a tenth to a fifth of what you hear; the rest is the battle.
+
+### Clock, per beat
+
+`drift` is `AudioContext` time across the recorded frames minus the beat's screen time.
+
+| Beat | drift (ms) | worst frame late (ms) | frames > 8 ms late | camera vs picture (m) |
+|------|-----------|----------------------|--------------------|----------------------|
+| `field-line` | 9 | 5.5 | 0 | 0 |
+| `field-clash` | 9 | 4.5 | 0 | — |
+| `field-cav` | 7 | 5.7 | 0 | — |
+| `field-scale` | 12 | 5.4 | 0 | 0 |
+| `siege-approach` | 4 | 5.6 | 0 | — |
+| `siege-ladders` | 7 | 5.6 | 0 | — |
+| `siege-parapet` | 4 | 1.2 | 0 | 0 |
+| `carth-wall` | 4 | 3.8 | 0 | (stale reference — see below) |
+| `carth-eles` | -1 | 2.6 | 0 | (stale reference) |
+| `carth-tower` | 4 | 5.0 | 0 | — |
+| `rome-ram-gate` | **1** | 4.9 | 0 | 0 |
+| `rome-arch` | 7 | 3.4 | 0 | — |
+| `endcard` | 9 | 3.8 | 0 | 0 |
+
+Every beat is within 12 ms of its own length, so nothing drifts against the picture, and each
+beat is trimmed to its exact sample count anyway. A dash means no per-frame camera record
+survives for that beat to check against.
+
+`carth-wall` and `carth-eles` check against `stills.json`, which is older than the beat table
+and disagrees with it (its `carth-wall` ends 59 m from where the shipped frames end, and its
+`field-scale` is 100 m out from `capture.json` for a beat that *does* have a live record). So
+that beat was verified against the pixels instead: re-shooting `carth-wall` from the current
+table gives frames differing from the shipped ones by mean |Δluma| **1.18 and 1.34**, where two
+*consecutive shipped frames* differ by **6.61**. The table reproduces the picture; the stills
+record is stale.
+
+### What is thin, and what is missing
+
+Said plainly, because papering over it would be worse:
+
+- **The gate gives way in silence.** `Siege.ts` emits a `cameraShake` for the collapse and
+  nothing else — there is no `gate_*` recipe in `Synth.ts` at all. The twenty-sixth blow itself
+  *is* audible: a ram blow emits a `projectileImpact` with `material: 'wood' | 'stone'`, so it
+  arrives as `impact_wood` / `impact_stone` through the cluster grid. But the moment the leaves
+  break has no sound of its own.
+- **Arrows have no fly-by.** `BattleAudio.updateFlybys` exists and would Doppler the three
+  nearest projectiles within 45 m, and at this commit it never runs once. See below.
+- **The ambience is weather-deaf.** Wind, rain and cloud are constants at this commit. See below.
+- **The mix has little dynamic shape.** Beat RMS spans just 3.9 dB across the whole film,
+  −16.0 dBFS at the clash to −19.9 at the end card. That is honest — a dense battle bed with
+  hundreds of overlapping voices does not have much dynamic range — but it means the sound does
+  not build the way the picture does. It is not being compressed; that is the game's mix.
+- **The end card is nearly all score.** 20 voices started in seven seconds against 474 in the
+  ram beat, and 47 % of the level is the music bus.
+
+### Two audio fixes that exist on `main` and are deliberately not in this file
+
+Both were fixed after `6698e19`. The trailer is pinned to `6698e19` because a later commit on
+`main` made the garrison 16.1 % more lethal and the ram crew now breaks at t+210 having landed
+24 of 26 blows — the gate never opens, and beat 11 does not exist. Matching the picture matters
+more than the fixes, and a cut assembled from two different trees would be worse than either.
+
+1. **Arrow fly-by Doppler has never once sounded.** `AudioEngine.attachSimSources` resolves the
+   projectile feed through `as unknown as Partial<ProjectileView>`, and `Partial<>` makes every
+   field optional, so the compiler stops checking the names. Four of the seven are wrong:
+   `ProjectileSystem` publishes `inFlight`, `px`, `py`, `pz`, where the view asks for
+   `activeCount`, `x`, `y`, `z`. The runtime `instanceof` guard therefore always fails,
+   `projView` is always `null`, and `updateFlybys()` returns on its first line every frame.
+   Volleys are audible — those are events — but nothing whistles past the camera. Beats 5, 6, 7
+   and 11 are shooting up to 810 arrows at a time and would all gain from it.
+2. **The ambience cannot hear the weather.** `AudioEngine.weather()` reads `windSpeed`, `rain`
+   and `cloud` off the `sky` subsystem, which publishes only `timeOfDay`; the real values live
+   on `vfx` (`VFXSystem.wind`, `Weather.rainRate`), and cloud is inverted there anyway
+   (`cloudCoverage` is *higher* for *less* cloud). So `Ambience` runs on its fallbacks — wind
+   pinned at 0.34, rain at 0, cloud at 0.2 — for the whole film. The wind bed you hear is a
+   three-sine procedural gust that never responds to anything, and the insects do not know
+   whether it is raining.
+
+## The encode, and why it is not 1600 × 900 VP8 any more
+
+The silent cut's resolution and codec were both artefacts of the only encoder reachable at the
+time: Playwright's bundled ffmpeg, built `--disable-everything` with `libvpx` and `png` — VP8
+only, and **no audio encoder or audio muxer at all**. VP8 at 1080p over this material pinned its
+quantiser at the ceiling for the whole run and still came out at 68.8 MB, so the picture was
+downscaled to 1600 × 900 to make a file small enough to commit. It is a release asset now, so
+that constraint is gone.
+
+The 1080p cut is encoded by Chromium's own WebCodecs `VideoEncoder` and `AudioEncoder`, driven
+from a Playwright page and muxed with **`webm-muxer`** (npm, pure JS). No ffmpeg is involved and
+nothing was installed system-wide. `VideoEncoder.isConfigSupported` reports VP8, VP9 (8- and
+10-bit) and AV1 all available in this build; VP9 was chosen for compatibility.
+
+Bitrate was chosen by measuring rather than by guessing, against the 1920 × 1080 JPEG source, on
+1:1 crops centred on the highest-variance tile of the frame — dust over a moving camera at 0:08,
+eight thousand men at 0:19, flat brick at 0:32, the gate mouth in shadow at 1:05:
+
+| encode | size | 0:08 | 0:19 | 0:32 | 1:05 |
+|---|---|---|---|---|---|
+| VP9 12 Mb/s (**shipped**) | 130.2 MB | 27.23 dB | 26.79 | 29.37 | 29.86 |
+| AV1 10 Mb/s | 109.1 MB | 27.56 dB | 26.84 | 29.03 | 29.52 |
+| VP9 25.4 Mb/s (reference) | 274.3 MB | 28.02 dB | 27.59 | 30.24 | 30.05 |
+
+Doubling the bitrate buys 0.2–0.8 dB, which says the number is floored by the RGB → YUV 4:2:0 →
+RGB round trip and not by compression. The shipped encode is within 0.8 dB of a 25 Mb/s
+reference on the hardest frame in the film, and at 100 % the crops show no blocking, no banding
+in the sky gradients, and brick courses and individual men still legible.
 
 ## Reproducing it
 
 ```sh
-npx vite --port 5219 --host 127.0.0.1 --strictPort        # not 5173
-node tools/scratch/trailer-cut.mjs --port=5219 --stills   # 3 frames a beat, to look at
-node tools/scratch/trailer-cut.mjs --port=5219            # capture + encode
-node tools/scratch/trailer-cut.mjs --encode               # re-encode from cached frames
+npx vite --port 5237 --host 127.0.0.1 --strictPort         # not 5173, the owner plays on that
+node tools/scratch/trailer-recut.mjs --port=5237 --stills  # 3 frames a beat, to look at
+node tools/scratch/trailer-recut.mjs --port=5237 --noencode        # picture: 2,580 JPEGs
+node tools/scratch/trailer-audio-pass.mjs --port=5237              # sound: 13 beats of PCM
+node tools/scratch/trailer-mixdown.mjs                             # PCM -> one 86 s track
+node tools/scratch/trailer-encode.mjs --codec=vp09.00.41.08 --bitrate=12000000 \
+  --out=/tmp/tc-sound/total-claude-trailer-1080p-sound.webm
+node tools/scratch/trailer-review.mjs --file=...                   # watch and listen to it back
+node tools/scratch/trailer-cropcheck.mjs --file=...                # judge the encode at 100 %
 ```
 
 `--beats=a,b --keep` re-shoots individual beats in place; the cut is rebuilt from what is on
-disk, so a partial re-shoot cannot silently drop the beats it did not touch.
+disk, so a partial re-shoot cannot silently drop the beats it did not touch. The one dependency
+added for any of this is `webm-muxer`.
 
-Capture takes about ten minutes: 2,520 frames at roughly 80 ms each (render ~5 ms, the
-screenshot round trip the rest), plus four world builds at 5 s and about three minutes of
-fast-forward to reach the later beats.
-
-## Size
-
-14.2 MB. The same 2,520 frames encode to 20.8 MB at qmax 60 and to **68.8 MB** at
-1920 × 1080 with qmax 48 — VP8 has no rate left to give at 1080p on grass, dust and eight
-thousand moving men, and pinned its quantiser at the ceiling for the whole run while still
-overshooting its target by 2×. If 14.2 MB in every clone is still too much, the alternatives
-are, in order of preference: host it off-repo and keep only a still here; drop to 1280 × 720
-(about 9 MB); or shorten the cut — beats 3 and 9 are the two the trailer would miss least.
+The picture takes about ten minutes to capture and one to encode; the sound pass takes about
+eight, most of it fast-forwarding four worlds to the later beats.
