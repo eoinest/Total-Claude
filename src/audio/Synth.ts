@@ -1243,6 +1243,23 @@ def('gate_collapse', {
     normalizePeak(stone.ch, 0.9);
 
     // ---- 1. the failure ----------------------------------------------------
+    /*
+     * This has to be the loudest instant in the buffer, and the first cut of it was not.
+     *
+     * Measured with `tools/scratch/gc-envelope.mjs`: the peak sat at t = 1.206 s, on the
+     * *second leaf landing*, with the failure itself 7.4 dB below it. Peak-normalising then
+     * scaled the whole sound to that landing, so what a player heard when the gate went was
+     * a moderate crack followed by two much bigger thumps — a gate being dropped rather than
+     * a gate breaking. The balance below puts the peak inside the first 150 ms, where the
+     * event is.
+     */
+    // The knock, which is `impact_wood`'s own 760 Hz / 16 ms bandpass transposed to gate
+    // scale: a beam is roughly two and a half times a plank's dimensions and seven times
+    // its decay, so 290 Hz over 110 ms.
+    const knock = burst(n, sr, rng, 0.11, 0.0006);
+    runBiquad(knock, bandpassC(290, 0.85, sr));
+    for (let i = 0; i < n; i++) mono[i] += knock[i] * 3.2;
+
     // `impact_wood`'s plate modes at gate scale. The 831 Hz board mode survives as 388 Hz
     // so the family resemblance is audible; everything below it is new mass.
     const crackEx = burst(n, sr, rng, 0.02, 0.0009);
@@ -1251,7 +1268,7 @@ def('gate_collapse', {
       { f: 107, decay: 0.86, amp: 0.74 },
       { f: 231, decay: 0.52, amp: 0.46 },
       { f: 388, decay: 0.31, amp: 0.25 },
-    ], sr, 1.5);
+    ], sr, 3.1);
 
     // The split running the height of the leaf: a band of noise sweeping *down*, because
     // the tear opens into thicker timber as it goes, and gated by a fast irregular
@@ -1262,7 +1279,7 @@ def('gate_collapse', {
       svfSweep(split, sr, (t) => lerp(700, 150, Math.pow(t, 0.4)), 1.3, 'bp');
       shapeEnv(split, (t) => Math.min(1, t * 70) * Math.exp(-t * 4.6)
         * (0.4 + 0.6 * (Math.sin(t * 511) > -0.15 ? 1 : 0.18)));
-      for (let i = 0; i < split.length; i++) mono[i] += split[i] * 1.9;
+      for (let i = 0; i < split.length; i++) mono[i] += split[i] * 2.7;
     }
 
     // ---- 2. the drawbar and the hinges ------------------------------------
@@ -1270,8 +1287,8 @@ def('gate_collapse', {
     // the first quarter second: a low iron ring, and a grind as the strap comes out of the
     // stone.
     const ironEx = burst(n, sr, rng, 0.0035);
-    modalRing(mono, ironEx, ironModes(382, 0.55, 0.62, 0.05, rng), sr);
-    modalRing(mono, ironEx, ironModes(214, 0.78, 0.4, 0.06, rng), sr);
+    modalRing(mono, ironEx, ironModes(382, 0.55, 0.95, 0.05, rng), sr);
+    modalRing(mono, ironEx, ironModes(214, 0.78, 0.62, 0.06, rng), sr);
     {
       const at = Math.round(sr * 0.16);
       const grind = new Float32Array(Math.round(sr * 0.7));
@@ -1296,9 +1313,9 @@ def('gate_collapse', {
     // ---- 4. two leaves falling, and a last section after them --------------
     // Times chosen so nothing lands on a beat: a gate does not fall in rhythm.
     const FALLS: readonly { at: number; w: number; f0: number }[] = [
-      { at: 0.55, w: 1.0, f0: 48 },
-      { at: 1.18, w: 1.22, f0: 41 },
-      { at: 2.06, w: 0.5, f0: 55 },
+      { at: 0.55, w: 0.66, f0: 48 },
+      { at: 1.18, w: 0.78, f0: 41 },
+      { at: 2.06, w: 0.36, f0: 55 },
     ];
     for (const f of FALLS) {
       const i0 = Math.round(f.at * sr);
@@ -1309,12 +1326,12 @@ def('gate_collapse', {
         const t = i / sr;
         const hz = f.f0 * Math.exp(-t * 2.9) + 24;
         mono[i0 + i] += Math.sin(TAU * hz * t) * Math.exp(-t * 3.4)
-          * Math.min(1, t * 520) * 1.6 * f.w;
+          * Math.min(1, t * 520) * 0.95 * f.w;
       }
       // Earth and rubble under it.
       const thud = burst(len, sr, rng, 0.16, 0.0016);
       runBiquad(thud, lowpassC(190, 0.8, sr), 2);
-      for (let i = 0; i < len; i++) mono[i0 + i] += thud[i] * 1.5 * f.w;
+      for (let i = 0; i < len; i++) mono[i0 + i] += thud[i] * 1.0 * f.w;
       // The leaf is timber, so it rings its own modes as it lands.
       const leafEx = burst(len, sr, rng, 0.006);
       const leaf = new Float32Array(len);
@@ -1322,7 +1339,7 @@ def('gate_collapse', {
         { f: 58 * (1 + rng.jitter(0.06)), decay: 0.62, amp: 1.0 },
         { f: 114 * (1 + rng.jitter(0.06)), decay: 0.4, amp: 0.55 },
         { f: 247 * (1 + rng.jitter(0.08)), decay: 0.24, amp: 0.3 },
-      ], sr, 1.1 * f.w);
+      ], sr, 0.78 * f.w);
       for (let i = 0; i < len; i++) mono[i0 + i] += leaf[i];
       // A burst of splinter grains at each landing, thinner every time.
       debrisScatter(L, R, wood.ch[0], sr, rng, {
@@ -1339,7 +1356,7 @@ def('gate_collapse', {
       pinkNoise(set, rng, 1);
       // Three incommensurate rates, so the ripple never repeats inside the buffer.
       shapeEnv(set, (t) => {
-        const env = Math.min(1, t * 26) * Math.pow(Math.max(0, 1 - t / 0.92), 1.7);
+        const env = Math.min(1, t * 26) * Math.pow(Math.max(0, 1 - t / 0.96), 1.05);
         const rip = 0.42 + 0.58 * clamp01(
           0.5 + 0.5 * Math.sin(t * 37.1) * Math.sin(t * 11.3 + 1.1) + 0.35 * Math.sin(t * 83.7)
         );
@@ -1347,16 +1364,16 @@ def('gate_collapse', {
       });
       runBiquad(set, lowpassC(900, 0.7, sr), 2);
       runBiquad(set, highpassC(60, 0.7, sr));
-      for (let i = 0; i < n; i++) mono[i] += set[i] * 0.7;
+      for (let i = 0; i < n; i++) mono[i] += set[i] * 1.15;
     }
     // Loose timber still coming down, long after the leaves are flat.
     debrisScatter(L, R, wood.ch[0], sr, rng, {
-      count: 34, span: 3.1, delay: 1.0, bias: 0.9,
-      rateLo: 0.45, rateHi: 1.15, gainLo: 0.04, gainHi: 0.2, fade: 0.85,
+      count: 44, span: 3.4, delay: 1.0, bias: 0.95,
+      rateLo: 0.45, rateHi: 1.15, gainLo: 0.06, gainHi: 0.3, fade: 0.6,
     });
     debrisScatter(L, R, stone.ch[0], sr, rng, {
-      count: 18, span: 3.2, delay: 0.9, bias: 0.9,
-      rateLo: 0.5, rateHi: 1.1, gainLo: 0.03, gainHi: 0.13, fade: 0.85,
+      count: 24, span: 3.5, delay: 0.9, bias: 0.95,
+      rateLo: 0.5, rateHi: 1.1, gainLo: 0.05, gainHi: 0.2, fade: 0.6,
     });
 
     softClip(mono, 1.55);
@@ -1382,7 +1399,9 @@ def('gate_collapse', {
  * hiss that outlives both.
  */
 def('wall_breach', {
-  rate: 44100, peak: 0.99,
+  // 22.05 kHz, by the same rule as the crowd beds: five seconds of sub, rubble roll and
+  // dust with nothing of consequence above 8 kHz, and half the memory of the gate.
+  rate: 22050, peak: 0.99,
   make(sr, rng) {
     const p = makePcm(sr, 5.4, 2);
     const n = p.len;
@@ -1471,7 +1490,9 @@ def('wall_breach', {
 def('tower_dock', {
   rate: 44100, peak: 0.97,
   make(sr, rng) {
-    const p = makePcm(sr, 2.0, 2);
+    // 1.4 s, measured rather than guessed: at 2.0 s the last two fifths of the buffer were
+    // below -50 dBFS, which is a voice slot held open for silence.
+    const p = makePcm(sr, 1.4, 2);
     const n = p.len;
     const L = p.ch[0];
     const R = p.ch[1];
@@ -1482,11 +1503,18 @@ def('tower_dock', {
     const wood = RECIPES.impact_wood.make(sr, rng.fork('dock-wood'));
     normalizePeak(wood.ch, 0.9);
 
-    // Iron on stone, at pitch: the lip is a small hard object however big the machine is.
-    addResampled(L, stone.ch[0], 0, 0.86, 0.95);
-    addResampled(R, stone.ch[0], 0, 0.88, 0.92);
+    /*
+     * Iron on stone, at pitch: the lip is a small hard object however big the machine is.
+     *
+     * Held well down. At full level this grain alone set the peak the whole recipe was then
+     * normalised against, and measured a 41:1 crest — one bright spike with three and a half
+     * metres of oak boarding 32 dB underneath it, which is the opposite of what a siege
+     * tower docking should sound like.
+     */
+    addResampled(L, stone.ch[0], 0, 0.86, 0.45);
+    addResampled(R, stone.ch[0], 0, 0.88, 0.43);
     const lipEx = burst(n, sr, rng, 0.0022);
-    modalRing(mono, lipEx, ironModes(660, 0.24, 0.55, 0.05, rng), sr);
+    modalRing(mono, lipEx, ironModes(660, 0.24, 0.7, 0.05, rng), sr);
 
     // The deck. Half `impact_wood`'s frequencies, a third of its decays: heavy, and dead.
     const deckEx = burst(n, sr, rng, 0.014, 0.0008);
@@ -1494,10 +1522,16 @@ def('tower_dock', {
       { f: 88, decay: 0.34, amp: 1.0 },
       { f: 173, decay: 0.24, amp: 0.6 },
       { f: 372, decay: 0.13, amp: 0.32 },
-    ], sr, 1.4);
+    ], sr, 2.1);
     const slam = burst(n, sr, rng, 0.07, 0.0012);
     runBiquad(slam, lowpassC(240, 0.85, sr), 2);
-    for (let i = 0; i < n; i++) mono[i] += slam[i] * 1.5;
+    for (let i = 0; i < n; i++) mono[i] += slam[i] * 2.1;
+    // And the mass of the machine settling on its own frame under all of it.
+    for (let i = 0; i < n; i++) {
+      const t = i / sr;
+      mono[i] += Math.sin(TAU * (52 * Math.exp(-t * 4.2) + 30) * t)
+        * Math.exp(-t * 5.5) * Math.min(1, t * 600) * 1.2;
+    }
 
     // Chains and the frame taking up the slack, over the half second after.
     for (let i = 0; i < 22; i++) {
@@ -1547,9 +1581,9 @@ def('tower_dock', {
  * own losses as an event worth having.
  */
 def('machine_wreck', {
-  rate: 44100, peak: 0.9,
+  rate: 22050, peak: 0.9,
   make(sr, rng) {
-    const p = makePcm(sr, 2.6, 2);
+    const p = makePcm(sr, 2.2, 2);
     const n = p.len;
     const L = p.ch[0];
     const R = p.ch[1];
