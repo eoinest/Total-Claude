@@ -162,6 +162,11 @@ makes a sound when it breaks.
   t+60.** The tower column two branches up had the identical rotation at 0.9 m rather than 6.88,
   which is why it had never earned a report of its own.
 
+  | before — r6 | after — r7 |
+  |---|---|
+  | ![Three scaling ladders leaning against a brick curtain wall seen from above, with defenders lining the parapet: only the middle ladder carries climbers, strung thinly up its length, both outer ladders stand empty, and the whole assault party is packed into one dense clump on the bloodstained grass at the middle ladder's foot](docs/images/releases/r7-ladder-queue-before.jpg) | ![The same three ladders and the same parapet: every rung of all three ladders carries a man from the grass to the wall-walk, and three separate files of soldiers stand on the grass below, one queue behind each ladder foot](docs/images/releases/r7-ladder-queue-after.jpg) |
+  | Twenty seconds into an escalade, square on the face rather than along the wall — the rails are planted along the curtain, so a camera looking down it stacks them one behind another and hides the whole defect. Two thirds of the bank is idle. | The same camera and the same second on this release. **This is the thin pair in the set:** its drift check is 8.42 against a change of 12.42, mean per pixel out of 255, because most of the frame is grass and dust that reseeds every session. One clump against three loaded rails is not in that 8.42. |
+
   **"They stand in place at the base of the wall playing the routed animation."**
   `adoptBoarders` creates a garrison record the moment the *first* man of a party gets over the
   parapet, and the release in `releaseBrokenCrews` skipped anything with such a record — so when
@@ -199,6 +204,11 @@ makes a sound when it breaks.
   against a 220 cap. That the sally still works in both directions was then tested rather than
   asserted, because it was a claim about dead code. Rome is untouched: one gate, doored, and its
   three open bands are its unbuilt footing bays, which stay open by design — see below.
+
+  | before — an r6 frame | after — r7 |
+  |---|---|
+  | ![Close on an arched postern in the ashlar curtain of Carthage from the field: the opening runs clean through the wall and shows lit ground, two dark trees and a bolt-shooter with its crew standing in the city beyond it, with grass and bare earth across the foreground](docs/images/releases/r7-postern-open-before.jpg) | ![The same postern arch with a two-leaf timber door hung in it: dark boards banded by two horizontal iron straps fill the opening to the crown of the arch, nothing of the city shows through, and a sliver of the jamb's inner face catches light at the right edge](docs/images/releases/r7-postern-doored-after.jpg) |
+  | Cast down the passage's own axis, because off-axis an empty six-metre hole nine metres deep and a hole with a door 1.5 m inside it are both a dark rectangle. **This arm was shot at `3f4c203` rather than at r6's own commit** — its `src` tree is `ee34932e`, byte-identical to r6's, so it is an r6 frame by the only invariant that decides pixels. | The same camera carrying both halves of the change: the leaves, and the repaint that stopped them photographing as the hole they had replaced. |
 
   Shooting it found two things no number could. **The leaf photographed as a black rectangle**:
   direct sun never enters this opening at any hour, measured at 08:30, 11:30, 14:00 and 18:00, so
@@ -246,6 +256,11 @@ makes a sound when it breaks.
   **a horse takes 11.0 s to cross the half-built rampart against 4.5, and infantry crossings fall
   83%** — while rider crossings go *up*, because a horse is no longer through in one bound. No arm
   differs significantly from any other on outcomes; every pairwise Fisher p ≥ 0.24.
+
+  | before — r6 | after — r7 |
+  |---|---|
+  | ![Looking down on a half-built stretch of the Aurelian Wall: a low pale concrete footing runs across the frame with timber scaffolding above it, and some twenty Juthungi horsemen with spears and shields are already inside the city, riding along the paved road in a long column through their own dust](docs/images/releases/r7-footing-crossing-before.jpg) | ![The same half-built bay at the same moment: only five horsemen have reached the paved road inside, while the rest of the squadron is still out beyond the low footing wall and its timber palisade, a knot of men and horses standing in dust on the concrete](docs/images/releases/r7-footing-crossing-after.jpg) |
+  | Bay 28, seeded to the same battle on both arms — a pair of one crossing is worthless if the two frames are different battles. The squadron is through in one bound and already strung out along the road inside. | The same bay at the same second with the crossing costed. Five riders in, the rest still on the pour. Drift 7.92 against a change of 55.85, which is the widest margin in this release's set. |
 
   On the record and unchanged, because where a garrison stands is a balance decision: **the
   garrison does not cover its own hole, at any of fifteen samples across 568 seconds.** Defenders
@@ -456,6 +471,11 @@ makes a sound when it breaks.
   line down the side of the head from crown to jaw, which made the visible skin on a bare head a
   rectangle; it is a curve over the temple and behind the ear now.
 
+  | before — r6 | after — r7 |
+  |---|---|
+  | ![A close portrait of a bearded warrior's head against a pale sky: the skull is a flat-sided slab with a straight vertical edge, the hair hangs as a flat curtain down either side of it, and the beard is a pair of separate wedges below a jaw with no chin or cheekbone](docs/images/releases/r7-head-lathe-before.jpg) | ![The same warrior's head: the skull now has a brow ridge over the eye sockets, cheekbones, a hollow beneath them, a jaw angle and a chin, the hair sits as a cap over the crown rather than beside it, and the skin turns warm red where the light falls away](docs/images/releases/r7-head-formed-after.jpg) |
+  | The head as a body of revolution: one straight edge from crown to jaw, the hair standing outside the skull rather than on it, and nothing for a terminator to catch. | The same head built through the warp, with the hair inside the helmet line and flesh on its own BRDF. **Both frames draw the face correctly — this pair is round three's geometry and not the lathe reversal two entries above**, which is on a tier no camera can usefully show. |
+
 - **One BRDF served flesh, cloth and bronze.** The surface varying widens to carry a material class
   — free, because a three-component varying already occupies a four-component slot. Flesh gets a
   per-channel diffuse wrap that is exactly Lambert at head-on incidence and red-orange at the
@@ -499,6 +519,13 @@ makes a sound when it breaks.
   also proved under a *moving* camera, because the cascades are fitted before the rig moves and the
   bands are measured after it, so the two are one frame apart whenever the camera is panning — a
   frozen-camera A/B cannot see that.
+
+  ![The wall of Carthage from the plain outside during an assault: four dark siege towers stand docked against the pale curtain, columns of infantry are drawn up on the red earth in front of it with cavalry and elephants on the right, dust drifts along the foot of the wall, and the white city rises behind](docs/images/releases/r7-shadow-cascade-scene.jpg)
+
+  **This is a scene and not a pair, because there is no after to photograph.** It is
+  `ab-carth-wall`, the camera the measurement above was taken on, and the change moves zero pixels
+  by construction — the three frames of that session hash to one MD5. What moved is underneath it:
+  13.83 M triangles to 9.63 M, and 224 draw calls to 213.
 
 - **The adaptive quality controller had two arms controlling to different frame rates.** The
   budget says the controller never asks for better than 60 Hz — a faster panel is headroom, not a
