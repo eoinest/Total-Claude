@@ -408,6 +408,25 @@ In descending order of what they are worth, and ascending order of what they cos
 3. **The post chain**, but only in the 23 → 15 step at `ssao: false`.
 4. **Nothing the soldier renderer does.** Three to four calls is not where a frame goes.
 
+> **First, "the assault camera" is two cameras, and that is why none of these figures have
+> ever reconciled.** `tools/probe-budget.mjs` means *the scenario's own boot framing*, captured
+> by not calling `setCamera` at all, and it defaults to `--at=0`. `tools/shoot.mjs` means the
+> named entry `ab-rome-wall` / `ab-carth-wall`, resolved against the live curtain at t+170 s.
+> They are different places at different moments and they differ by 15 to 42 draws. Every
+> figure below is a boot-framing figure. Measured at `d128adf`, 1920x1080, ultra, dpr 1:
+>
+> | camera | sim time | men | draws | = shadow + colour + post |
+> |---|---|---|---|---|
+> | Rome, boot framing | t+0 | 3,074 | 191 | 76 + 92 + 23 |
+> | Rome, boot framing | t+170 s | 2,395 | 200 | 80 + 97 + 23 |
+> | Rome, `ab-rome-wall` | t+170 s | 2,395 | 215 | 95 + 97 + 23 |
+> | Carthage, boot framing | t+0 | 3,440 | 172 | 67 + 82 + 23 |
+> | Carthage, boot framing | t+170 s | 2,988 | 182 | 71 + 88 + 23 |
+> | Carthage, `ab-carth-wall` | t+170 s | 2,988 | 224 | 87 + 114 + 23 |
+>
+> So the 204 and 186 below still reproduce at the framing they were taken at. The graded
+> `ab-*-wall` cameras are the ones near the cap, and Carthage's was over it.
+>
 > **Corrections to `ARCHITECTURE.md` §4.** All three of these are worth carrying into the next
 > revision of that file:
 >
@@ -721,7 +740,48 @@ Note the **`Math.min(..., 2048)`**: ultra's `shadowMapSize: 4096` is clamped. Fo
 4096 would be 268 MB of shadow memory for no visible gain once the splits are this tight; 2048
 gives ~2.4 cm/texel in cascade 0.
 
-Four things are added on top of the addon:
+Five things are added on top of the addon, and the fifth is the cheapest frame this workstream
+found:
+
+**Per-cascade band skipping** (`LightingSystem.installBandSkips`). A cascade is a slice of view
+depth; a soldier LOD tier is a radial shell around the camera. At ultra the slices are
+1.5-26 / 26-63 / 63-152 / 152-460 m, so a tier whose instances all lie between 113 and 245 m has
+nothing to say to cascades 0 and 1 — and was submitted to both anyway, because every tier mesh
+sets `frustumCulled = false` (its instance buffer is refilled against the camera frustum each
+frame, so the geometry's own bounding sphere describes nothing) and
+`WebGLShadowMap.renderObject` reads exactly that flag before it reads any bound.
+
+A caster opts in by publishing `userData.shadowRadialBand`; `LightingSystem` knows nothing about
+soldiers. The lever is the instanced form of the one `CitySystem.buildShadowProxy` already uses:
+`onBeforeShadow` is the only place three.js says *which cascade is being drawn*,
+`renderBufferDirect` reads `geometry.instanceCount` after it returns, and
+`WebGLBufferRenderer.renderInstances` returns before `info.update` at zero — so a zeroed tier
+costs neither a GL draw call nor a counted one.
+
+**The band is measured off the instance buffer in `UnitRenderSystem.flush`, never derived from
+`lodDist`,** and the difference is not pedantry. A settled corpse is drawn one tier coarser than
+his distance gives, so the LOD1 buffer holds bodies at five metres; a derived band would have
+skipped cascade 0 for a tier that by the late battle carries a thousand corpses piled under the
+camera. Cavalry past the billboard edge are held at LOD2, stretching that tier past `lodDist[2]`.
+Reading the buffer is immune to both, and skips *more*, because a measured band is tighter than a
+nominal one — at Carthage `horses-lod1` measures 90.9-112.6 m and clears three cascades.
+
+Measured at `d506fdd`, ultra, 1920x1080 dpr 1, both arms interleaved in one page load with the
+base arm re-shot last, `renderScale` 1.00 and adaptive pressure 0.00:
+
+| camera | men | draws | shadow draws | triangles |
+|---|---|---|---|---|
+| `ab-rome-wall` | 2,241 | 221 → **210** | 99 → 88 | 9.27 M → **7.91 M** |
+| `ab-carth-wall` | 2,856 | 224 → **213** | 87 → 76 | 13.83 M → **9.63 M** (−30%) |
+
+Carthage crosses back under the 220 cap. **Zero pixels changed in either scene**, against a
+drift check that is also zero, and all eight `pictureStats` fields identical — the saving is
+entirely geometry that was being transformed and then clipped. Frame time moves −0.05 ms p50 /
+−0.89 best-of-block at Carthage and is inside the noise at Rome; the draws and the triangles are
+the claim, not the milliseconds. `LightingSystem.cascadeTierSkip = false` restores the stock
+submission exactly, which is what lets the two arms interleave.
+
+The other four:
 
 **Custom split distribution.** The addon's `practical` mode derives its logarithmic term from
 `camera.near`, and `RTSCamera` swings near from 0.08 m to 4 m with zoom, which makes the split
@@ -1300,6 +1360,15 @@ changed, so writing it does nothing — "a lever that is wired and silently iner
 most common failure mode"), `antialias`, `lodFarDistance` (a legibility threshold, not a cost
 knob — see §2.4), `bloom`, and `maxSoldiers` (simulation state; not expressible in
 `RenderQualityPatch`).
+
+**The headcount exclusion is a structural guarantee, not a convention, and it is worth saying
+so plainly: the adaptive loop cannot thin an army even by mistake.** `maxSoldiers` lives in its
+own `SimQuality` interface, deliberately outside `RenderQuality`, and the loop's patch type is
+`RenderQualityPatch = Partial<Omit<RenderQuality, 'tier'>>` — so a patch that named it would not
+compile. It is *also* in `AdaptiveQuality.EXCLUDED`, and `Engine.applyRenderQuality` re-pins it
+from `simQuality` after every patch. Three independent mechanisms, one of them the type checker.
+`lodFarDistance` is excluded alongside it, so the loop cannot push men into billboards either.
+Frames are never bought with men.
 
 ---
 
