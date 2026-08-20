@@ -1120,6 +1120,76 @@ The alternatives, for the same decision:
   and "a ram that cannot open a gate is a scenario that no longer has a second way in" may no
   longer be true. That is also a decision, and it is the only one that costs nothing.
 
+### And then it was measured over twelve seeds, and 26 was one of them
+
+*Added at `9eb40c8`, measured at `cc72ea6` with `tools/scratch/sf-ram-emc.mjs` and
+`tools/scratch/sf-gate-emc.mjs`. Everything above this heading in §5.1 is a property of one
+seed, and the seed is 4265438264.*
+
+**The instrument that pins the schedule never asked whether the battle was still going.**
+`so-ramline.mjs` boots `?harness=1&quality=high&map=campus-martius&scenario=assault`, which
+is seed 4265438264, and on that seed **the Juthungi win the objective at t+134**. Every
+figure the table above quotes after that point — 13 blows at t+160, 22 at t+200, 23 blows,
+the crew's rout at t+215, the wreck by t+260 — is read off a tableau in which
+`BattleFlow.finish` has already put every standing Juthungi unit on Hold and Rome's garrison
+is shooting at a machine nobody is defending. `tools/scratch/sf-ramctx-emc.mjs` prints the
+verdict beside the ram; that is the whole of the fix and it is one column.
+
+**Over twelve seeds the ram's blows are a distribution, not a schedule.** Same battle, same
+tier, one page per seed, window 420 s:
+
+| seed | blows | gate hp | gate opened | crew routs |
+|---|---|---|---|---|
+| 1371652111 | 0 | 100 % | never | t+110 |
+| 3638810955 | 3 | 88 % | never | t+120 |
+| 3399460563 | 3 | 88 % | never | t+120 |
+| 1998279420 | 9 | 65 % | never | t+150 |
+| 745024802 | 19 | 27 % | never | t+190 |
+| 2385556337 | 20 | 23 % | never | t+199 |
+| 357747885 | 21 | 19 % | never | t+200 |
+| 3012183646 | 22 | 15 % | never | t+199 |
+| 4026087872 | 23 | 12 % | never | t+209 |
+| 4265438264 | 23 | 12 % | never | t+210 |
+| 984375194 | 25 | 4 % | never | t+219 |
+| 2624906729 | **26** | 0 % | **t+220** | t+220 |
+
+Median 20.5. The gate opens on **one seed of twelve** — it is already a thing that happens.
+And the blow count is `(crewRoutTime − 100) / 4.4` to within one blow on every row, because
+the crew's life is the only variable in it: the machine arrives at t+100 and swings every
+4.4 s until the gang breaks. So "26 blows" is the top of a wide distribution and there is
+nothing to restore. **`RAM_SHED_COVER` 0.12 → 0.08 is a curve fit to seed 4265438264.**
+
+**And the prize is empty.** `sf-gate-emc.mjs` forces the Porta Flaminia open at a time you
+name, with the same `setGateOpen` + `setGateDoorBroken` pair the twenty-sixth blow makes, so
+the carriageway really is repainted in the occupancy raster and the obstacle set. Two live
+seeds, opened at t+229 and left open for the remaining 670 s:
+
+| seed 1998279420 | shipped | gate forced open |
+|---|---|---|
+| storm men ever inside | 60 | **60** |
+| peak `stormInside` | 42 | **42** |
+| host units still holding at t+897 | 9 | **9** |
+| verdict | undecided at t+897 | undecided at t+897 |
+
+| seed 4026087872 | shipped | gate forced open |
+|---|---|---|
+| storm men ever inside | 99 | **99** |
+| peak `stormInside` | 42 | **42** |
+| verdict | undecided at t+897 | undecided at t+897 |
+
+Not one number moves. The Juthungi host stands 132 m out and does not use the gate it has
+spent four minutes making. **Until somebody walks through it, every constant upstream of the
+gate is decoration** — the shed, the recrew radius, the derelict limit, all of it. The third
+arm of the same tool is the counterfactual: ordered through the carriageway at t+229, 936 men
+of the host put **124** men through the gate and **132** inside against 60, and the assault
+is then routed at t+495 rather than grinding to t+1454. The host is the whole question and
+it is not free money.
+
+**The same constant is inert on the other map.** On Carthage the identical machine takes
+*zero* damage — `so-ramkill.mjs`: `killed by: nobody, damage by: none` over 140 s including
+forty of battering — so `RAM_SHED_COVER` multiplies nothing there. The cause is in
+`GARRISON_PLANS`, which carries the measurement and the reason the obvious swap is refused.
+
 ### And a gate, so there is no third time
 
 `tools/qa-determinism.mjs` and `qa-deploy.mjs`'s Arm 4 both compare run A with run B of the
