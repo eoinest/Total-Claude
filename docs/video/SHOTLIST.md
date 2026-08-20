@@ -18,7 +18,7 @@ transcode of the WebM but a second encode from the same 621 master frames and th
 
 **Both social files are on their second edit.** It drops one of the two escalade beats and the
 shot from inside the arch, and puts the Carthage block — the elephants and the towers docked on
-the Punic parapet — between the field battle and the Roman siege. Seven beats still, one second
+the Punic parapet — between the field battle and the Roman siege. Seven beats still, 1.233 s
 shorter, and the ram is still one continuous take. The reasoning, and the 400 px measurements
 that chose between the two escalade beats and sized the ram's tail, are in
 [`README.md`](README.md); the beat table below is the 86 s cut and is unchanged by it.
