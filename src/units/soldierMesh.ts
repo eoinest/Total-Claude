@@ -320,6 +320,243 @@ const HAIRLINE_Y = 0.098;
  * same line.
  */
 const CAP_BRIM_Y = HAIRLINE_Y - 0.008;
+/**
+ * Where a crest sits, in metres above the head bone.
+ *
+ * It was 0.150, chosen against nothing: the Gallic bowl's apex was 0.118 and the ridge
+ * helmet's 0.190, so the same crest floated 32 mm over one helmet and was buried 40 mm inside
+ * the other. Now that every bowl clears the head, the tallest crested apex is the ridge
+ * helmet at 0.172, and a crest is fixed to the bowl rather than to the air above it.
+ */
+const CREST_BASE_Y = 0.174;
+
+// ---------------------------------------------------------------------------
+// The head, as a head rather than as a lathe
+// ---------------------------------------------------------------------------
+/*
+ * Three rounds of blind grading, and both non-materials graders made this their number one:
+ *
+ *   > "The head is a box with a face painted on it — no nose volume, no brow ridge, no chin,
+ *   > no cheekbone; the features live in the albedo; the silhouette against sky is a straight
+ *   > vertical edge."
+ *
+ * A previous pass answered the nose half of that and the graders said it again, so the first
+ * job was to find out which half was wrong. Measured off the shipped profile rather than
+ * argued: the skull lathe runs 0.082 m at y = +0.045, 0.079 at 0, 0.072 at -0.045. That is
+ * **ten millimetres of change over ninety millimetres of height, a six-degree taper**, and it
+ * is why the edge is straight — not because the nose is small, but because *every other form
+ * on a head is a radius that depends on which way you are facing*, and a lathe has one radius
+ * per height. There was nothing to fix in the nose. The complaint was about the skull.
+ *
+ * The numbers below are anthropometric and are the ones being missed. For a 1.75 m man:
+ *
+ *   | landmark                        | real   | lathed | now    |
+ *   |---------------------------------|--------|--------|--------|
+ *   | max head breadth (parietal)     | 152 mm | 164 mm | 152 mm |
+ *   | bizygomatic (cheekbones)        | 139 mm | 158 mm | 141 mm |
+ *   | bigonial (jaw angle)            | 106 mm | 144 mm | 100 mm |
+ *   | head depth at eye level         | 195 mm | 158 mm | 166 mm |
+ *
+ * The width column is the **profile**, which is why `skullProfile` gained a ring: a jaw that
+ * narrows from the cheekbone to the chin is an inflection, and an inflection needs a point.
+ * The depth column and everything anatomical is `headRadius`, through `revolve`'s `warp`.
+ *
+ * **Depth is the one number here that is still short, and it is short on purpose.** 195 mm
+ * would put the forehead through the Intercisa bowl, which clears the skull by about 13 mm at
+ * y = 0.082 and by less at the back. The depth scale is therefore ramped: 1.00 above the brow
+ * where a helmet is, up to 1.16 at cheek height where nothing is. `tools/scratch/r3-headfit.mjs`
+ * measures the remaining clearance on all five bowls, and it is the gate on pushing further.
+ */
+/** Signed angular distance from dead ahead. 0 is the nose, +-PI/2 the ears, +-PI the occiput. */
+const faceAngle = (a: number): number => {
+  const d = a - Math.PI / 2;
+  return Math.atan2(Math.sin(d), Math.cos(d));
+};
+/** A unit bell of width `s`, for a form centred on a landmark. */
+const bell = (d: number, s: number): number => Math.exp(-(d * d) / (s * s));
+/** A raised-cosine window over `[0, w]`, for a form that spans the whole face rather than a spot. */
+const win = (d: number, w: number): number => (d >= w ? 0 : Math.cos((d / w) * (Math.PI / 2)) ** 2);
+/** Piecewise-linear lookup down a table sorted by **descending** y. */
+const byHeight = (t: readonly (readonly [number, number])[], y: number): number => {
+  if (y >= t[0][0]) return t[0][1];
+  for (let i = 1; i < t.length; i++) {
+    if (y >= t[i][0]) {
+      const f = (y - t[i][0]) / (t[i - 1][0] - t[i][0]);
+      return t[i][1] + (t[i - 1][1] - t[i][1]) * f;
+    }
+  }
+  return t[t.length - 1][1];
+};
+/**
+ * Half-depth as a multiple of half-width, front and back, by height above the head bone.
+ *
+ * Both are 1.00 above y = 0.090, which is the region every helmet bowl and every hair cap
+ * encloses. Everything below the brow is free, and that is where the face is.
+ */
+/*
+ * The multiplier climbs as the profile narrows, and that is the point rather than an artefact.
+ *
+ * The profile is a half-*width*, and a face narrows from the cheekbones to the chin while
+ * staying just as far forward — a chin is 52 mm across and 60 mm in front of the head bone.
+ * Expressed as a ratio that is 2.3, and a table that stopped at 1.2 would have pulled the
+ * whole lower face backwards by two centimetres as it narrowed the jaw, turning a fixed head
+ * into a wedge. What the numbers actually say, in metres of half-depth at dead ahead:
+ * forehead 70, brow 86, cheek 88, lip 86, chin 60.
+ *
+ * Both tables are pinned near 1.00 above y = 0.090 and that is a **helmet** constraint, not
+ * an anatomical one. The Intercisa bowl clears the crown by about 3 mm as it is.
+ */
+const HEAD_DEPTH_FRONT: readonly (readonly [number, number])[] = [
+  [0.098, 1.02], [0.070, 1.04], [0.050, 1.07], [0.020, 1.18],
+  [-0.022, 1.38], [-0.048, 1.58], [-0.072, 2.30],
+];
+const HEAD_DEPTH_BACK: readonly (readonly [number, number])[] = [
+  [0.098, 1.00], [0.070, 1.03], [0.010, 1.12], [-0.050, 1.10], [-0.072, 1.60],
+];
+/**
+ * The head's radius at one point on its surface.
+ *
+ * `r` arriving from the profile is the half-**width**; the ellipse below turns it into a
+ * radius that also knows the depth, and the eight terms after it are the forms a lathe cannot
+ * hold. Every one is a bell or a window on `(y, angle-from-the-nose)`, in metres, and every
+ * one is a landmark rather than a tuning:
+ *
+ *   supraorbital ridge, eye sockets, zygomatic arch, sub-malar hollow, mental protuberance,
+ *   jaw angle, ear, temple, occiput.
+ *
+ * The two that matter most to a silhouette are the **zygomatic** and the **jaw angle**,
+ * because they are the pair that puts an inflection into an edge the graders described as
+ * straight. The two that matter most to the light are the **supraorbital ridge** and the
+ * **eye sockets**: a brow that stands 5.5 mm proud of a socket recessed 4.5 mm is 10 mm of
+ * relief across 15 mm of face, which is a hard terminator across the eyes at any sun below
+ * about 40 degrees — the thing a grader means by "the features live in the albedo".
+ *
+ * `form` scales the relief and not the ellipse, because a hair cap over this skull has to
+ * follow its *shape* exactly or it floats, and has to follow its *detail* only partly or it
+ * grows an eye socket.
+ *
+ * The angular positions are not free either: the face arc is 120 degrees across the whole
+ * tile, so the eye sockets sit at +-0.41 rad because `Mat.Face` paints its eyes at
+ * `|u - 0.5| = 0.197`, and `0.197 * (2*PI/3) = 0.41`. Geometry and albedo land on the same
+ * eye or neither is worth having.
+ */
+function headRadius(a: number, r: number, y: number, form: number): number {
+  const d = faceAngle(a);
+  const ad = Math.abs(d);
+  const ca = Math.cos(a);
+  const sa = Math.sin(a);
+  // Plan ellipse, with the front and back semi-axes blended by how far round the ring we are.
+  const zf = byHeight(HEAD_DEPTH_FRONT, y);
+  const zb = byHeight(HEAD_DEPTH_BACK, y);
+  const B = r * (zb + (zf - zb) * (0.5 + 0.5 * sa));
+  let rad = (r * B) / Math.hypot(B * ca, r * sa);
+  rad += form * (
+    +0.0060 * bell(y - 0.050, 0.017) * win(ad, 0.95)          // supraorbital ridge
+    - 0.0050 * bell(y - 0.024, 0.015) * bell(ad - 0.41, 0.22) // eye sockets
+    + 0.0055 * bell(y - 0.004, 0.018) * bell(ad - 1.05, 0.32) // zygomatic arch
+    - 0.0045 * bell(y - 0.030, 0.017) * bell(ad - 1.25, 0.30) // temple
+    - 0.0035 * bell(y + 0.030, 0.019) * bell(ad - 0.62, 0.25) // sub-malar hollow
+    + 0.0060 * bell(y + 0.062, 0.015) * win(ad, 0.36)         // mental protuberance
+    + 0.0045 * bell(y + 0.044, 0.016) * bell(ad - 1.32, 0.28) // jaw angle
+    + 0.0080 * bell(y + 0.004, 0.023) * bell(ad - 1.62, 0.22) // ear
+    + 0.0050 * bell(y - 0.020, 0.034) * win(Math.PI - ad, 0.90) // occiput
+  );
+  return rad;
+}
+/**
+ * The skull, as half-**widths** by height above the head bone.
+ *
+ * Twelve points, and the four in the middle are the whole argument. The old list ran
+ * `0.082 -> 0.079 -> 0.072` from brow to jaw, which is a cylinder with a taper on it; a man is
+ * 152 mm across the parietal, 139 across the cheekbones and 106 across the jaw angle, and the
+ * middle of those three is a **local maximum with a corner under it**. That corner is the
+ * silhouette, and a lathe cannot interpolate one it has no point for.
+ *
+ * The bottom of the head is -0.072 rather than -0.075 so the chin lands inside `HEAD_V`, whose
+ * two numbers are a contract with `atlas.ts`'s `Mat.Face` layout and are deliberately not
+ * being moved in the same pass as the geometry under them.
+ */
+const SKULL_PROFILE: [number, number][] = [
+  [0.001, 0.140],   // vertex — the top of a 1.75 m man's head is at 1.75 m
+  [0.036, 0.130],
+  [0.062, 0.106],
+  [0.0730, 0.076],
+  [0.0760, 0.048],  // maximum breadth, above and behind the ear — 152 mm
+  [0.0742, 0.028],  // temple
+  [0.0716, 0.006],  // bizygomatic — 143 mm
+  [0.0660, -0.016],
+  [0.0580, -0.036],
+  [0.0470, -0.055], // jaw angle — 94 mm
+  [0.0300, -0.072], // chin
+  [0.001, -0.058],  // closes upward into the throat
+];
+/** The skull's half-width at any height, interpolated along `SKULL_PROFILE`. */
+function skullWidthAt(y: number): number {
+  const p = SKULL_PROFILE;
+  if (y >= p[0][1]) return p[0][0];
+  for (let i = 1; i < p.length; i++) {
+    if (y >= p[i][1]) {
+      const f = (y - p[i][1]) / (p[i - 1][1] - p[i][1]);
+      return p[i][0] + (p[i - 1][0] - p[i][0]) * f;
+    }
+  }
+  return p[p.length - 1][0];
+}
+const smoothstep = (a: number, b: number, x: number): number => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
+/** The skull's own warp. */
+const skullWarp = (a: number, r: number, y: number): number => headRadius(a, r, y, 1);
+/**
+ * A hair cap's warp: the same skull, its relief damped, and **a hairline that is a curve**.
+ *
+ * Hair takes the ellipse in full — a cap that stayed circular over an oval head would stand
+ * 12 mm proud at the temple and be flush at the brow — and takes a third of the detail,
+ * because hair fills an eye socket and softens a jaw angle rather than reproducing them.
+ *
+ * ---------------------------------------------------------------------------
+ * Why the hairline could not stay where the arc put it
+ * ---------------------------------------------------------------------------
+ *
+ * This is, on the evidence of a three-quarter head plate, the single mechanism behind
+ * *"the head is a box with a face painted on it"*.
+ *
+ * The hair is two arcs of one lathe: the front 120 degrees stops at `HAIRLINE_Y`, and the
+ * back 300 degrees runs all the way down to y = -0.035. The boundary between them is a
+ * **meridian** — a straight line down the side of the head at 60 degrees from the nose, from
+ * the crown to below the jaw. So the region of visible skin on a bare head is bounded above
+ * by the fringe, below by the jaw, and on both sides by two vertical lines: it is a
+ * rectangle, and no amount of relief inside it stops it reading as one, because the outline
+ * of a painted-on face is exactly a rectangle of skin in a field of not-skin.
+ *
+ * A real hairline does the opposite of a meridian. It runs across the forehead, climbs *back*
+ * over the temple, and only descends behind the ear.
+ *
+ * `warp` cannot move a vertex in y, and should not be able to — `vFromY` pins the face tile to
+ * y in metres and a warp free to move it would slide the eyes off their sockets. But it can
+ * move one in **r**, and hair whose radius is smaller than the skull's is hair inside the
+ * head, which is hair nobody can see. So the hairline is drawn by collapsing the cap onto the
+ * skull below a curve: full thickness above it, 1.2 mm *inside* the skull below it, and a
+ * 25 mm blend across it so the edge is a soft fringe rather than a cut.
+ *
+ * `dropTo` is where that curve ends up behind the ear, and it is the one number that differs
+ * between a Roman crop and a Suebian mane.
+ */
+const hairWarpFor = (dropTo: number) =>
+  (a: number, r: number, y: number): number => {
+    const ad = Math.abs(faceAngle(a));
+    const hl = HAIRLINE_Y + (dropTo - HAIRLINE_Y) * smoothstep(1.02, 2.05, ad);
+    const hair = headRadius(a, r, y, 0.34);
+    const skull = headRadius(a, skullWidthAt(y), y, 1);
+    const t = smoothstep(hl - 0.016, hl + 0.009, y);
+    return skull - 0.0012 + (hair - skull + 0.0012) * t;
+  };
+/** A Roman crop: off the ears, down to the nape. */
+const hairWarp = hairWarpFor(-0.032);
+/** Long hair: the same hairline at the temple, and a mass that keeps falling at the back. */
+const hairWarpLong = hairWarpFor(-0.055);
 
 // LOD0 keeps every rivet-scale form that reads at 5 m. LOD1 drops the sub-pieces —
 // cheek plates, pteruges, crest strands, arrow shafts — which is most of the cost and
@@ -482,10 +719,20 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
    * Reversing the point order is the whole fix — same eight rings, same radii, same
    * `vFromY`, not one triangle added.
    */
-  const skullProfile: [number, number][] = [
-    [0.001, 0.14], [0.045, 0.128], [0.072, 0.095], [0.082, 0.045],
-    [0.079, 0.0], [0.072, -0.045], [0.055, -0.075], [0.001, -0.055],
-  ];
+  /*
+   * See `SKULL_PROFILE`. The profile is the half-**width** of the head, and `headRadius`
+   * supplies the depth.
+   *
+   * Nine points, not eight, and the new one is the jaw angle. The old list ran
+   * `0.082 -> 0.079 -> 0.072` from brow to jaw, which is a cylinder with a taper on it; a man
+   * is 152 mm across the parietal, 139 across the cheekbones and 106 across the jaw angle,
+   * and the middle of those three is a **local maximum with a corner under it**. That corner
+   * is the whole silhouette, and a lathe cannot interpolate one it has no point for.
+   *
+   * The last point still turns back up to y = -0.055 at r = 0.001, closing the throat the way
+   * it always did.
+   */
+  const skullProfile = SKULL_PROFILE;
   /*
    * `d.medium`, not `d.fine`, and this is a correction rather than a tuning.
    *
@@ -519,10 +766,43 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
      * a grader's "flat facets". Eight is 15 degrees, for fourteen more triangles on the men
      * near enough for it to matter and none at all on anybody else.
      */
-    b.revolve(skullProfile, d.fine ? FACE_SEG : 4, matUv(Mat.Face), 1, { arc: FACE_ARC, vFromY: HEAD_V });
-    b.revolve(skullProfile, BACK_SEG(d.head), skinUv, 1, { arc: BACK_ARC, vFromY: HEAD_V });
+    // Even segment counts only, at both tiers. A face arc is symmetric about the nose, so an
+    // odd count straddles the midline and leaves the two forms that sit *on* it — the chin
+    // and the nasal root — sampled at neither of their peaks. Four was even and gave LOD1 a
+    // 30-degree facet, which put the chin on one column and nothing either side of it; six
+    // is 20 degrees and costs forty triangles on a tier that starts at 30 m.
+    /*
+     * LOD1 takes seven of the twelve rings rather than a profile of its own.
+     *
+     * Twelve rings is what the forms need — a bell 17 mm wide between rings 40 mm apart is
+     * invisible, which is why the first attempt at this measured a brow ridge in the source
+     * and none in the mesh. Paying for all twelve at LOD1 as well would be 116 triangles on
+     * the tier that carries most of the army. The seven kept are the ones with a landmark on
+     * them: vertex, hairline, parietal maximum, zygomatic, jaw angle, chin, throat. Dropped
+     * are the four interpolating rings and the temple, none of which changes a silhouette at
+     * thirty metres, and the cost is six triangles.
+     *
+     * Even segment counts at both tiers. A face arc is symmetric about the nose, so an odd
+     * count straddles the midline and samples the two forms that sit *on* it — the chin and
+     * the nasal root — at neither of their peaks.
+     */
+    const prof = d.fine ? skullProfile : [0, 2, 4, 6, 9, 10, 11].map((i) => skullProfile[i]);
+    b.revolve(prof, d.fine ? FACE_SEG : 6, matUv(Mat.Face), 1,
+      { arc: FACE_ARC, vFromY: HEAD_V, warp: skullWarp });
+    /*
+     * The back arc repeats its tile twice, and the face arc once, because that is what puts
+     * the two at the same texel density.
+     *
+     * The face tile spans 120 degrees — about 0.16 m of arc — in 256 px, which is 1,600 px a
+     * metre. At `repeatU = 1` the skin tile spanned the other 300 degrees, 0.40 m, in the
+     * same 256 px: **640 px a metre, two and a half times coarser**. So one side of the seam
+     * had pores and the other had blobs, at the same surface angle, on the same material.
+     * Two repeats over the back arc is 1,280 px a metre and the step stops being legible.
+     */
+    b.revolve(prof, BACK_SEG(d.head), skinUv, 2,
+      { arc: BACK_ARC, vFromY: HEAD_V, warp: skullWarp });
   } else {
-    b.revolve(skullProfile, d.head, skinUv);
+    b.revolve(skullProfile, d.head, skinUv, 1, { warp: skullWarp });
   }
   if (d.medium) {
     /*
@@ -577,19 +857,51 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
      * between the eyes that occludes the far cheek in three-quarter view — and that survives
      * decimation, because it is a silhouette rather than a surface.
      */
+    /*
+     * -----------------------------------------------------------------------
+     * Re-derived a third time, against a skull that is no longer a lathe
+     * -----------------------------------------------------------------------
+     *
+     * The lesson the last pass wrote down — *"a measurement of a form built on a surface has
+     * to be taken against that surface"* — bites its author's own numbers as soon as the
+     * surface moves. `headRadius` pushes the midline forward by 8 to 14 mm below the brow and
+     * puts a 5.5 mm supraorbital ridge over the top of the root, so every projection in the
+     * old table is now wrong by a different amount and the nasion in particular has been
+     * swallowed by the brow it is supposed to grow out from.
+     *
+     * Three things are different this time and only one of them is arithmetic.
+     *
+     * **The projections are quoted from the ring's own front surface, not its centre.** A
+     * tube node is a centre and an `rz`, and the old comments quoted the centre: "the
+     * pronasale reaches 21 mm" described a ring whose *surface* stood 37 mm proud, which is a
+     * nose half again as long as a man's. Quoted the way a tape measure would, the target is
+     * 27-30 mm at the tip, and this table gives 29.
+     *
+     * **The dorsum no longer out-reaches the tip.** Ring centres that follow the skull's own
+     * curve plus a constant give a nose whose most forward point is halfway up it, which is
+     * a boxer's nose. The projections now ramp 4 / 14 / 22 / 29 / 14, so the front surface
+     * runs 0.091 -> 0.098 -> 0.100 -> 0.102 -> 0.081 and the pronasale wins.
+     *
+     * **The root is nearly flush, deliberately.** 4 mm at the nasion under a brow that stands
+     * 5.5 mm means the bridge starts *inside* the shadow of the brow, which is where a nose
+     * starts. The previous pass read a flush root as the bug and pushed the whole nose out;
+     * the bug was that there was no brow for it to be flush against.
+     */
     const nose: { y: number; rx: number; rz: number; z: number }[] = d.fine
       ? [
-        // y, and the skull's own radius there, and what that leaves proud:
-        { y: 0.050, rx: 0.008, rz: 0.007, z: 0.0845 },   // nasion,     0.0813 -> +3 mm
-        { y: 0.022, rx: 0.010, rz: 0.011, z: 0.0905 },   // rhinion,    0.0796 -> +11 mm
-        { y: -0.004, rx: 0.014, rz: 0.014, z: 0.0955 },  // dorsum,     0.0784 -> +17 mm
-        { y: -0.020, rx: 0.019, rz: 0.016, z: 0.0975 },  // pronasale,  0.0765 -> +21 mm
-        { y: -0.032, rx: 0.016, rz: 0.009, z: 0.0810 },  // columella,  0.0745 -> +7 mm
+        // y, the warped skull's own front there, and what this leaves the surface proud by:
+        // y, the warped skull's own front measured there by `r3-headfit`, and the projection
+        // this leaves the nose's front *surface* — `z + rz`, not `z`:
+        { y: 0.050, rx: 0.008, rz: 0.007, z: 0.0830 },   // nasion,     87.0 -> +3 mm
+        { y: 0.022, rx: 0.011, rz: 0.011, z: 0.0871 },   // rhinion,    87.1 -> +11 mm
+        { y: -0.004, rx: 0.015, rz: 0.015, z: 0.0912 },  // dorsum,     89.2 -> +17 mm
+        { y: -0.020, rx: 0.019, rz: 0.016, z: 0.0947 },  // pronasale,  88.7 -> +22 mm
+        { y: -0.032, rx: 0.016, rz: 0.009, z: 0.0871 },  // columella,  87.1 -> +9 mm
       ]
       : [
-        { y: 0.048, rx: 0.009, rz: 0.008, z: 0.0850 },
-        { y: -0.006, rx: 0.015, rz: 0.014, z: 0.0960 },
-        { y: -0.030, rx: 0.017, rz: 0.010, z: 0.0825 },
+        { y: 0.048, rx: 0.009, rz: 0.008, z: 0.0820 },
+        { y: -0.006, rx: 0.016, rz: 0.014, z: 0.0942 },
+        { y: -0.030, rx: 0.017, rz: 0.010, z: 0.0873 },
       ];
     b.tube(nose, d.fine ? 5 : 4, skinUv, { capEnd: true });
   }
@@ -630,12 +942,43 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
       // therefore the distance from the body centreline.
       nodes.push({ y: Math.abs(x), rx: r, rz: r * 0.94, bone: bind.bone, bone2: bind.bone2, w: bind.w });
     };
-    // Deltoid, mid-humerus, elbow, mid-forearm, wrist.
-    push(shX, 0.055);
-    push((shX + elX) / 2, 0.048);
-    push(elX, 0.042);
-    push((elX + wrX) / 2, 0.037);
-    push(wrX, 0.03);
+    /*
+     * Seven nodes, and the two new ones are the elbow and the forearm.
+     *
+     * A grader, on the whole limb: *"cylindrical tube limbs ending in a wooden peg for a
+     * hand."* The peg had already been answered — a hand is a palm, a fist and a thumb since
+     * an earlier pass — and the tube had not. Five nodes at 55, 48, 42, 37, 30 mm is a
+     * **monotonic taper**: a cone. An arm is not a cone in any direction, and the place it is
+     * least like one is the elbow, where a real limb is at its narrowest and immediately
+     * below which it is nearly at its widest again.
+     *
+     * The mass under the elbow is the brachioradialis and the extensor group, and it is the
+     * single most legible thing about a bare forearm: it is why a rolled sleeve reads as a
+     * sleeve, and why an arm holding a shield has a shape rather than a diameter. A cone
+     * cannot have it, because it has to go *out* after having gone *in*.
+     *
+     * Anthropometric radii for a 1.75 m man, at fractions of the shoulder-to-wrist line:
+     * deltoid 58, mid-humerus 50, above the elbow 43, the elbow itself 38, the forearm swell
+     * 48, mid-forearm 38, wrist 27. Twenty-eight triangles an arm at LOD0, and LOD1 keeps its
+     * cone, where an arm is four pixels wide.
+     */
+    const lerpX = (t: number): number => shX + (wrX - shX) * t;
+    const elbowT = (elX - shX) / (wrX - shX);
+    if (d.fine) {
+      push(shX, 0.058);                                   // deltoid
+      push(lerpX(elbowT * 0.34), 0.050);                  // mid-humerus
+      push(lerpX(elbowT * 0.76), 0.0430);                 // above the elbow
+      push(elX, 0.0385);                                  // the elbow: the narrowest point
+      push(lerpX(elbowT + (1 - elbowT) * 0.22), 0.0480);  // brachioradialis
+      push(lerpX(elbowT + (1 - elbowT) * 0.60), 0.0380);
+      push(wrX, 0.0275);                                  // wrist
+    } else {
+      push(shX, 0.055);
+      push((shX + elX) / 2, 0.048);
+      push(elX, 0.042);
+      push((elX + wrX) / 2, 0.037);
+      push(wrX, 0.03);
+    }
     b.tube(nodes, d.limb, skinUv, { capEnd: false });
     b.setMatrix(null);
 
@@ -692,29 +1035,49 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
    * surface — the fourth point it used to carry was both a 16 mm-lower hairline and a 5 mm
    * step at the temple.
    */
+  /*
+   * Re-cut over the anatomical skull, 7 to 9 mm proud of it all the way down.
+   *
+   * The old radii were measured against a skull that was 164 mm wide at the brow and 144 at
+   * the jaw. Against one that is 152 and 100 the same numbers are a wig: 12 mm of hair at the
+   * temple and 23 at the jaw. Hair also takes `hairWarp` rather than no warp at all, because
+   * a circular cap over an oval head is flush at the brow and stands proud at the ear, which
+   * is the one place a cap is supposed to be tight.
+   */
   const hairProfile: [number, number][] = [
-    [0.001, 0.145], [0.05, 0.132], [0.077, HAIRLINE_Y], [0.086, 0.04], [0.088, -0.01], [0.086, -0.035],
+    [0.001, 0.145], [0.042, 0.131], [0.070, HAIRLINE_Y], [0.082, 0.040], [0.073, -0.010], [0.064, -0.035],
   ];
+  /*
+   * The arc split is not `d.fine`, and this was a live defect one tier down.
+   *
+   * The face tile and the nose are built at `d.medium`, so **LOD1 has eyes, a brow and a
+   * mouth** — and its hair was the `else` branch below, a full revolution down to y = -0.035
+   * at a radius 6 mm proud of the skull all the way round. That is the exact dome the
+   * docblock above says was removed: at LOD1 every bare head in the game still had its face
+   * sealed inside its own hair, and LOD1 starts at 30 m on `high`, which is inside the range
+   * a battle is watched from. An arc is cheaper than the dome it replaces, so this costs
+   * nothing but the branch.
+   */
   b.setPiece(Piece.HairShort, Tint.Hair);
-  if (d.fine) {
-    b.revolve(hairProfile, BACK_SEG(d.head), hairUv, 1, { arc: BACK_ARC });
-    b.revolve(hairProfile.slice(0, 3), FACE_SEG, hairUv, 1, { arc: FACE_ARC });
+  if (d.medium) {
+    b.revolve(hairProfile, BACK_SEG(d.head), hairUv, 1, { arc: BACK_ARC, warp: hairWarp });
+    b.revolve(hairProfile.slice(0, 3), FACE_SEG, hairUv, 1, { arc: FACE_ARC, warp: hairWarp });
   } else {
-    b.revolve(hairProfile, d.head, hairUv);
+    b.revolve(hairProfile, d.head, hairUv, 1, { warp: hairWarp });
   }
 
   if (germanic) {
     b.setPiece(Piece.HairLong, Tint.Hair);
     const longProfile: [number, number][] = [
-      [0.001, 0.15], [0.055, 0.135], [0.082, HAIRLINE_Y + 0.002], [0.092, 0.04], [0.094, -0.02],
+      [0.001, 0.150], [0.048, 0.134], [0.076, HAIRLINE_Y + 0.002], [0.089, 0.040], [0.081, -0.020],
     ];
-    if (d.fine) {
-      b.revolve(longProfile, BACK_SEG(d.head), hairUv, 1, { arc: BACK_ARC });
+    if (d.medium) {
+      b.revolve(longProfile, BACK_SEG(d.head), hairUv, 1, { arc: BACK_ARC, warp: hairWarpLong });
       // Same rule as the crop: the front arc is the shared profile truncated at the hairline.
       // Its own fourth point put the Germanic fringe at 0.078, *lower* than the Roman one.
-      b.revolve(longProfile.slice(0, 3), FACE_SEG, hairUv, 1, { arc: FACE_ARC });
+      b.revolve(longProfile.slice(0, 3), FACE_SEG, hairUv, 1, { arc: FACE_ARC, warp: hairWarpLong });
     } else {
-      b.revolve(longProfile, d.head, hairUv);
+      b.revolve(longProfile, d.head, hairUv, 1, { warp: hairWarpLong });
     }
     // A mass of hair falling behind the shoulders. Tacitus on the Suebi: the hair is
     // knotted and drawn back, and it is the first thing a Roman notices.
@@ -750,12 +1113,15 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
    */
   b.setPiece(Piece.Beard, Tint.Hair);
   const beardLen = germanic ? 0.13 : 0.06;
+  // Re-cut against the tapered jaw, for the same reason the hair was. A top ring of 52 mm was
+  // 6 mm narrower than the old jaw and is 6 mm *wider* than the new one, and 68 mm at the
+  // chin line against a chin of 26 mm is a bib rather than a beard.
   b.tube(
     [
-      { y: -0.052, rx: 0.052, rz: 0.048, z: 0.020 },
-      { y: -0.075, rx: 0.068, rz: 0.058, z: 0.012 },
-      { y: -0.075 - beardLen * 0.55, rx: 0.058, rz: 0.050, z: 0.010 },
-      { y: -0.075 - beardLen, rx: 0.03, rz: 0.028, z: 0.008 },
+      { y: -0.050, rx: 0.046, rz: 0.044, z: 0.020 },
+      { y: -0.072, rx: 0.056, rz: 0.050, z: 0.014 },
+      { y: -0.072 - beardLen * 0.55, rx: 0.050, rz: 0.044, z: 0.012 },
+      { y: -0.072 - beardLen, rx: 0.028, rz: 0.026, z: 0.010 },
     ],
     Math.max(4, d.head - 4), hairUv, { capEnd: true }
   );
@@ -780,7 +1146,7 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     b.setPiece(Piece.HelmGallic, Tint.Metal);
     bowlWithFace(
       b,
-      [[0.001, 0.118], [0.052, 0.111], [0.085, 0.082], [0.095, 0.032], [0.097, 0.0], [0.098, -0.016]],
+      [[0.001, 0.156], [0.048, 0.146], [0.078, 0.120], [0.092, 0.078], [0.098, 0.032], [0.100, 0.0], [0.101, -0.016]],
       d.head, plateUv, BROW_Y
     );
     if (d.medium) {
@@ -790,9 +1156,9 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
       // The reinforce is two things, not one ring: a browband on the rim of the face opening
       // and the nape band round the back. As a single ring at y -0.014 it sat at jaw height
       // on a helmet that had no face opening to bind.
-      b.revolve([[0.098, -0.014], [0.107, -0.026], [0.107, -0.044], [0.096, -0.05]],
+      b.revolve([[0.101, -0.014], [0.110, -0.026], [0.110, -0.044], [0.099, -0.05]],
         BACK_SEG(d.head), bronzeUv, 1, { arc: BACK_ARC });
-      b.revolve(browBand(0.0804, 0.0874, 0.0906), FACE_SEG, bronzeUv, 1, { arc: FACE_ARC });
+      b.revolve(browBand(0.0893, 0.0930, 0.0951), FACE_SEG, bronzeUv, 1, { arc: FACE_ARC });
       b.setPiece(Piece.HelmGallic, Tint.Metal);
       // Neck flange, angled down and back.
       // Neck guard. Flared down and back, and the single feature that tells you a
@@ -825,7 +1191,7 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
       for (const s of [-1, 1]) {
         const cheek = new THREE.Matrix4()
           .makeRotationZ(s * 18 * DEG)
-          .premultiply(new THREE.Matrix4().makeTranslation(s * 0.076, -0.070, 0.026));
+          .premultiply(new THREE.Matrix4().makeTranslation(s * 0.082, -0.070, 0.026));
         b.setMatrix(headM.clone().multiply(cheek));
         b.box(0, 0, 0, 0.012, 0.115, 0.085, plateUv);
         b.setMatrix(headM);
@@ -839,22 +1205,22 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     // Intercisa and Berkasovo finds are and what makes the two read apart in a crowd.
     bowlWithFace(
       b,
-      [[0.001, 0.190], [0.024, 0.178], [0.055, 0.140], [0.079, 0.082], [0.089, 0.028],
+      [[0.001, 0.172], [0.026, 0.162], [0.060, 0.130], [0.081, 0.082], [0.089, 0.028],
         [0.092, 0.0], [0.093, -0.018]],
       d.head, plateUv, BROW_Y
     );
     if (d.medium) {
       b.setPiece(Piece.HelmRidge, Tint.Atlas);
       // The ridge itself, fore and aft along the crown, plus the brow band.
-      b.box(0, 0.166, 0, 0.026, 0.062, 0.21, bronzeUv);
+      b.box(0, 0.152, 0, 0.026, 0.058, 0.21, bronzeUv);
       b.revolve([[0.093, -0.016], [0.101, -0.028], [0.101, -0.046], [0.091, -0.052]],
         BACK_SEG(d.head), bronzeUv, 1, { arc: BACK_ARC });
-      b.revolve(browBand(0.0773, 0.0812, 0.0842), FACE_SEG, bronzeUv, 1, { arc: FACE_ARC });
+      b.revolve(browBand(0.0796, 0.0828, 0.0852), FACE_SEG, bronzeUv, 1, { arc: FACE_ARC });
       b.setPiece(Piece.HelmRidge, Tint.Metal);
       for (const s of [-1, 1]) {
         const cheek = new THREE.Matrix4()
           .makeRotationZ(s * 9 * DEG)
-          .premultiply(new THREE.Matrix4().makeTranslation(s * 0.084, -0.074, 0.022));
+          .premultiply(new THREE.Matrix4().makeTranslation(s * 0.089, -0.074, 0.022));
         b.setMatrix(headM.clone().multiply(cheek));
         b.box(0, 0, 0, 0.022, 0.125, 0.09, plateUv);
         b.setMatrix(headM);
@@ -883,17 +1249,17 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     b.setPiece(Piece.HelmCoolus, Tint.Metal);
     bowlWithFace(
       b,
-      [[0.001, 0.107], [0.055, 0.102], [0.085, 0.078], [0.093, 0.032], [0.096, 0.0], [0.097, -0.014]],
+      [[0.001, 0.152], [0.050, 0.144], [0.082, 0.116], [0.093, 0.070], [0.098, 0.026], [0.100, 0.0], [0.101, -0.014]],
       Math.max(5, d.head - 2), plateUv, BROW_Y
     );
     if (d.medium) {
       b.setPiece(Piece.HelmCoolus, Tint.Atlas);
       // The knob is this helmet's whole silhouette signature, so it is drawn big enough
       // to survive a mip level.
-      b.revolve([[0.001, 0.152], [0.026, 0.138], [0.026, 0.116], [0.001, 0.108]], 6, bronzeUv);
-      b.revolve([[0.097, -0.012], [0.105, -0.024], [0.105, -0.04], [0.095, -0.046]],
+      b.revolve([[0.001, 0.196], [0.026, 0.182], [0.026, 0.160], [0.001, 0.152]], 6, bronzeUv);
+      b.revolve([[0.101, -0.012], [0.109, -0.024], [0.109, -0.04], [0.099, -0.046]],
         BACK_SEG(Math.max(5, d.head - 2)), bronzeUv, 1, { arc: BACK_ARC });
-      b.revolve(browBand(0.0750, 0.0864, 0.0892), FACE_SEG, bronzeUv, 1, { arc: FACE_ARC });
+      b.revolve(browBand(0.0892, 0.0930, 0.0948), FACE_SEG, bronzeUv, 1, { arc: FACE_ARC });
       b.setPiece(Piece.HelmCoolus, Tint.Metal);
       const guard = new THREE.Matrix4()
         .makeRotationX(-62 * DEG)
@@ -908,7 +1274,7 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
     b.setPiece(Piece.HelmSpangen, Tint.Metal);
     bowlWithFace(
       b,
-      [[0.004, 0.178], [0.028, 0.158], [0.06, 0.108], [0.088, 0.042], [0.098, -0.002], [0.099, -0.018]],
+      [[0.004, 0.178], [0.030, 0.152], [0.072, 0.104], [0.092, 0.042], [0.100, -0.002], [0.101, -0.018]],
       d.head, plateUv, BROW_Y
     );
     if (d.medium) {
@@ -936,9 +1302,9 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
        * spangenhelm's rim does come down over the ears, and the front gets a brow band above
        * the face opening. The nasal descends from the rim as a Vendel-period nasal does.
        */
-      b.revolve([[0.0995, -0.014], [0.106, -0.026], [0.106, -0.042], [0.0985, -0.048]],
+      b.revolve([[0.1015, -0.014], [0.108, -0.026], [0.108, -0.042], [0.1005, -0.048]],
         BACK_SEG(d.head), bronzeUv, 1, { arc: BACK_ARC });
-      b.revolve(browBand(0.0693, 0.0761, 0.0829), FACE_SEG, bronzeUv, 1, { arc: FACE_ARC });
+      b.revolve(browBand(0.0778, 0.0830, 0.0861), FACE_SEG, bronzeUv, 1, { arc: FACE_ARC });
       b.setPiece(Piece.HelmSpangen, Tint.Metal);
       b.box(0, 0.023, 0.091, 0.018, 0.062, 0.013, plateUv);
     }
@@ -975,7 +1341,7 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
       const t = i / (crestRows - 1);
       const z = 0.085 - t * 0.19;
       const h = 0.075 * Math.sin(Math.PI * (0.18 + t * 0.7));
-      b.box(0, 0.15 + h * 0.5, z, 0.02, h, 0.19 / crestRows + 0.004, plumeUv);
+      b.box(0, CREST_BASE_Y + h * 0.5, z, 0.02, h, 0.19 / crestRows + 0.004, plumeUv);
     }
     // Transverse crest, ear to ear — the centurion's.
     b.setPiece(Piece.CrestTransverse, Tint.Crest);
@@ -983,7 +1349,7 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
       const t = i / (crestRows - 1);
       const x = -0.1 + t * 0.2;
       const h = 0.08 * Math.sin(Math.PI * (0.16 + t * 0.72));
-      b.box(x, 0.15 + h * 0.5, 0, 0.2 / crestRows + 0.004, h, 0.022, plumeUv);
+      b.box(x, CREST_BASE_Y + h * 0.5, 0, 0.2 / crestRows + 0.004, h, 0.022, plumeUv);
     }
     // Plume: a single tuft in a socket at the crown, for cavalry.
     b.setPiece(Piece.CrestPlume, Tint.Crest);
@@ -1460,12 +1826,47 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
    * `faceZ` is where the board's front surface is at the centre: `curve + thickness / 2`.
    * The flange lands 6 mm under it so the boss reads as seated rather than floating.
    */
+  /*
+   * An umbo that is not a surface of revolution, and why that is the whole fix.
+   *
+   * A grader, on the shields: *"you can read the instancing off the highlights alone, without
+   * recognising the device -- every boss shows the same mirror-white teardrop at the same
+   * clock position even on shields angled thirty degrees apart."*
+   *
+   * The reason is a symmetry argument, and it is the one `skinShader.ts` already made about
+   * helmets in round two. Every call site here premultiplies the socket by
+   * `makeRotationX(PI/2)`, which lays the lathe's axis along the **board's face normal**. The
+   * only per-man rotation the shield arm applied about that axis was a roll -- and a body of
+   * revolution is invariant under rotation about its own axis. Rolling it moved the board,
+   * the rim, the planks and the device, and could not move the umbo's mirror point at all.
+   *
+   * Two answers were possible: stop rolling and start tipping, or stop being a body of
+   * revolution. Both are done, because either alone is half a fix -- tipping the normal by a
+   * few degrees moves a mirror point on a 75 mm dome by about 6 mm, which at battle range is
+   * under a pixel.
+   *
+   * This is the geometry half. A real umbo is raised over a stake with a hammer, not spun on
+   * a lathe: it is measurably oval and it carries the planishing facets it was raised with.
+   * Nine per cent of ovality and three shallow hammer planes are enough that a roll about the
+   * axis is a *different shape presented to the sun*, so the existing per-man roll -- widened
+   * to +-6.9 degrees next door -- finally shows.
+   *
+   * The facet term is faded out at the pole by `pole`. A ring whose radius is a millimetre
+   * cannot take a 2 mm perturbation without turning inside out through its own axis, and a
+   * lathe apex is exactly that ring.
+   */
   const boss = (uvIron: UvRect, piece: number, r: number, faceZ: number): void => {
     const z = faceZ + 0.004;
     b.setPiece(piece, Tint.Metal);
+    const bossWarp = (a: number, rr: number, y: number): number => {
+      const pole = Math.min(1, rr / (r * 0.25));
+      const h = Math.min(1, Math.max(0, (y - z) / (r * 0.9)));
+      return rr * (1 + 0.085 * Math.cos(2 * (a - 0.55)))
+        + r * 0.028 * Math.cos(a * 3 + 1.9) * (0.3 + 0.7 * h) * pole;
+    };
     b.revolve(
       [[0.001, z + r * 0.9], [r * 0.45, z + r * 0.8], [r * 0.8, z + r * 0.4], [r, z], [r * 1.15, z - 0.01]],
-      Math.max(5, d.head - 2), uvIron
+      Math.max(6, d.head - 2), uvIron, 1, { warp: bossWarp }
     );
   };
 
