@@ -12,13 +12,34 @@
  * localises the culprit.
  *
  * Usage: node tools/qa-determinism.mjs [--port=5226] [--until=200] [--json=path]
- *                                       [--battle=map=carthage&scenario=assault]
+ *                                       [--battle=map=carthage&scenario=assault] [--render]
  *
  * `--battle` appends extra query parameters, so the gate can be run against a battle other
  * than the default one. It matters now that there are two besiegeable cities: an assault
  * takes an entirely different code path through `deployAssault` and `Siege`, and a garrison
  * pinned to a wall-walk is the part of the sim least like the field battle this gate has
  * always measured.
+ *
+ * ## The gate does not draw, and that is proved rather than assumed
+ *
+ * This is a hash comparison. It never looks at a pixel. But `Engine.advance` rasterised every
+ * synthetic frame, so the Rome arm alone submitted **24,000 frames at 8,632 men** — two runs,
+ * 200 s of battle, sixty frames per simulated second — and the gate that every agent is asked
+ * to run on every change took tens of minutes on a shared box. It was the single most
+ * expensive thing in the workflow and none of it reached the result.
+ *
+ * `{ render: false }` skips the submit and nothing else: every `fixedUpdate`, `update` and
+ * `preRender` still runs, in order, with the same arguments. Measured before it was adopted
+ * here — three independent loads of the Carthage assault advanced by one schedule — the
+ * rendered and unrendered arms agree on every bit at t+0/30/90/150/200:
+ * `ebf383b0 d021b848 8106e2b2 b4fc645e cbfa61c0`. `--render` restores the old behaviour if a
+ * future change to the frame ever makes that worth re-testing.
+ *
+ * **Do not "speed it up" further by coarsening the step.** `advance(dt, 166)` and an
+ * exactly-five-tick `advance(dt, 1000/6)` both produce *different* hashes from
+ * `advance(dt, 1000/60)`. Equal tick counts are not sufficient; how many ticks share a frame
+ * reaches the simulation. Several siege probes use the 166 ms idiom and are therefore not
+ * fast-forwarding the battle this file measures.
  */
 
 import { chromium } from 'playwright';
@@ -38,6 +59,8 @@ const PORT = Number(args.get('port') ?? 5226);
 const JSON_OUT = args.get('json') ?? null;
 const CHECKPOINTS = (args.get('at') ?? '0,30,90,150,200').split(',').map(Number);
 const EXTRA = args.get('battle') ? `&${args.get('battle')}` : '';
+/** Rasterise the fast-forward. Off by default; see the note at the top of this file. */
+const RENDER = args.get('render') === 'true';
 
 const waitForServer = async (url, ms) => {
   const end = Date.now() + ms;
@@ -116,8 +139,12 @@ async function run(label) {
   let prev = 0;
   for (const at of CHECKPOINTS) {
     if (at > prev) {
-      // Identical step size in both runs, so the fixed-step schedule matches exactly.
-      await page.evaluate((secs) => window.__game.engine.advance(secs, 1000 / 60), at - prev);
+      // Identical step size in both runs, so the fixed-step schedule matches exactly. The
+      // third argument is ignored by any build predating it, which only makes the gate slower.
+      await page.evaluate(
+        ([secs, render]) => window.__game.engine.advance(secs, 1000 / 60, { render }),
+        [at - prev, RENDER]
+      );
       prev = at;
     }
     const h = await page.evaluate(() => window.__poolHash());
