@@ -1,0 +1,1746 @@
+{
+ "rome-base-set1": {
+  "label": "RB-s1",
+  "map": "campus-martius",
+  "quality": "high",
+  "until": 2400,
+  "seeds": 12,
+  "stormFaction": 1,
+  "stormWins": 6,
+  "undecided": 0,
+  "meanDecisionS": 948,
+  "crossings": 734,
+  "pageErrors": 0,
+  "outcomes": {
+   "Rome / repulsed": 4,
+   "Juthungi / objective": 6,
+   "-1 / stalemate": 1,
+   "Rome / rout": 1
+  },
+  "perSeed": [
+   {
+    "seed": 357747885,
+    "victor": 0,
+    "reason": "repulsed",
+    "at": 851,
+    "inside": 42,
+    "crossed": 49
+   },
+   {
+    "seed": 745024802,
+    "victor": 1,
+    "reason": "objective",
+    "at": 792,
+    "inside": 49,
+    "crossed": 69
+   },
+   {
+    "seed": 984375194,
+    "victor": -1,
+    "reason": "stalemate",
+    "at": 2039,
+    "inside": 46,
+    "crossed": 49
+   },
+   {
+    "seed": 1371652111,
+    "victor": 0,
+    "reason": "repulsed",
+    "at": 2275,
+    "inside": 49,
+    "crossed": 81
+   },
+   {
+    "seed": 1998279420,
+    "victor": 0,
+    "reason": "repulsed",
+    "at": 1454,
+    "inside": 45,
+    "crossed": 49
+   },
+   {
+    "seed": 2385556337,
+    "victor": 1,
+    "reason": "objective",
+    "at": 204,
+    "inside": 46,
+    "crossed": 49
+   },
+   {
+    "seed": 2624906729,
+    "victor": 0,
+    "reason": "repulsed",
+    "at": 727,
+    "inside": 43,
+    "crossed": 49
+   },
+   {
+    "seed": 3012183646,
+    "victor": 1,
+    "reason": "objective",
+    "at": 188,
+    "inside": 49,
+    "crossed": 49
+   },
+   {
+    "seed": 3399460563,
+    "victor": 1,
+    "reason": "objective",
+    "at": 154,
+    "inside": 45,
+    "crossed": 49
+   },
+   {
+    "seed": 3638810955,
+    "victor": 1,
+    "reason": "objective",
+    "at": 919,
+    "inside": 47,
+    "crossed": 101
+   },
+   {
+    "seed": 4026087872,
+    "victor": 0,
+    "reason": "rout",
+    "at": 1645,
+    "inside": 47,
+    "crossed": 91
+   },
+   {
+    "seed": 4265438264,
+    "victor": 1,
+    "reason": "objective",
+    "at": 134,
+    "inside": 43,
+    "crossed": 49
+   }
+  ]
+ },
+ "rome-base-set2": {
+  "label": "RB-s2",
+  "map": "campus-martius",
+  "quality": "high",
+  "until": 2400,
+  "seeds": 12,
+  "stormFaction": 1,
+  "stormWins": 3,
+  "undecided": 1,
+  "meanDecisionS": 1074,
+  "crossings": 588,
+  "pageErrors": 0,
+  "outcomes": {
+   "Rome / stalemate": 3,
+   "-1 / stalemate": 1,
+   "Rome / repulsed": 3,
+   "Juthungi / objective": 3,
+   "Rome / rout": 1,
+   "undecided": 1
+  },
+  "perSeed": [
+   {
+    "seed": 1234567,
+    "victor": 0,
+    "reason": "stalemate",
+    "at": 2288,
+    "inside": 48,
+    "crossed": 49
+   },
+   {
+    "seed": 388511484,
+    "victor": -1,
+    "reason": "stalemate",
+    "at": 1769,
+    "inside": 48,
+    "crossed": 49
+   },
+   {
+    "seed": 775788401,
+    "victor": 0,
+    "reason": "repulsed",
+    "at": 655,
+    "inside": 48,
+    "crossed": 49
+   },
+   {
+    "seed": 1015138793,
+    "victor": 1,
+    "reason": "objective",
+    "at": 1118,
+    "inside": 44,
+    "crossed": 49
+   },
+   {
+    "seed": 1402415710,
+    "victor": 1,
+    "reason": "objective",
+    "at": 831,
+    "inside": 46,
+    "crossed": 49
+   },
+   {
+    "seed": 2029043019,
+    "victor": 0,
+    "reason": "repulsed",
+    "at": 1298,
+    "inside": 44,
+    "crossed": 49
+   },
+   {
+    "seed": 2416319936,
+    "victor": 0,
+    "reason": "rout",
+    "at": 713,
+    "inside": 46,
+    "crossed": 49
+   },
+   {
+    "seed": 2655670328,
+    "victor": 0,
+    "reason": "repulsed",
+    "at": 592,
+    "inside": 47,
+    "crossed": 49
+   },
+   {
+    "seed": 3042947245,
+    "victor": null,
+    "reason": "undecided",
+    "at": null,
+    "inside": 44,
+    "crossed": 49
+   },
+   {
+    "seed": 3430224162,
+    "victor": 1,
+    "reason": "objective",
+    "at": 126,
+    "inside": 44,
+    "crossed": 49
+   },
+   {
+    "seed": 3669574554,
+    "victor": 0,
+    "reason": "stalemate",
+    "at": 1208,
+    "inside": 48,
+    "crossed": 49
+   },
+   {
+    "seed": 4056851471,
+    "victor": 0,
+    "reason": "stalemate",
+    "at": 1218,
+    "inside": 46,
+    "crossed": 49
+   }
+  ]
+ },
+ "carthage-base-set1": {
+  "label": "CB-s1",
+  "map": "carthage",
+  "quality": "high",
+  "until": 2400,
+  "seeds": 12,
+  "stormFaction": 0,
+  "stormWins": 8,
+  "undecided": 0,
+  "meanDecisionS": 532,
+  "crossings": 677,
+  "pageErrors": 0,
+  "outcomes": {
+   "Rome / objective": 7,
+   "Carthage / repulsed": 4,
+   "Rome / rout": 1
+  },
+  "perSeed": [
+   {
+    "seed": 357747885,
+    "victor": 0,
+    "reason": "objective",
+    "at": 228,
+    "inside": 64,
+    "crossed": 86
+   },
+   {
+    "seed": 745024802,
+    "victor": 2,
+    "reason": "repulsed",
+    "at": 719,
+    "inside": 32,
+    "crossed": 35
+   },
+   {
+    "seed": 984375194,
+    "victor": 0,
+    "reason": "rout",
+    "at": 683,
+    "inside": 27,
+    "crossed": 64
+   },
+   {
+    "seed": 1371652111,
+    "victor": 0,
+    "reason": "objective",
+    "at": 763,
+    "inside": 40,
+    "crossed": 66
+   },
+   {
+    "seed": 1998279420,
+    "victor": 2,
+    "reason": "repulsed",
+    "at": 743,
+    "inside": 30,
+    "crossed": 30
+   },
+   {
+    "seed": 2385556337,
+    "victor": 0,
+    "reason": "objective",
+    "at": 282,
+    "inside": 61,
+    "crossed": 68
+   },
+   {
+    "seed": 2624906729,
+    "victor": 2,
+    "reason": "repulsed",
+    "at": 542,
+    "inside": 0,
+    "crossed": 0
+   },
+   {
+    "seed": 3012183646,
+    "victor": 2,
+    "reason": "repulsed",
+    "at": 1028,
+    "inside": 58,
+    "crossed": 64
+   },
+   {
+    "seed": 3399460563,
+    "victor": 0,
+    "reason": "objective",
+    "at": 674,
+    "inside": 1,
+    "crossed": 10
+   },
+   {
+    "seed": 3638810955,
+    "victor": 0,
+    "reason": "objective",
+    "at": 225,
+    "inside": 97,
+    "crossed": 101
+   },
+   {
+    "seed": 4026087872,
+    "victor": 0,
+    "reason": "objective",
+    "at": 237,
+    "inside": 78,
+    "crossed": 83
+   },
+   {
+    "seed": 4265438264,
+    "victor": 0,
+    "reason": "objective",
+    "at": 257,
+    "inside": 64,
+    "crossed": 70
+   }
+  ]
+ },
+ "carthage-base-set2": {
+  "label": "CB-s2",
+  "map": "carthage",
+  "quality": "high",
+  "until": 2400,
+  "seeds": 12,
+  "stormFaction": 0,
+  "stormWins": 7,
+  "undecided": 0,
+  "meanDecisionS": 541,
+  "crossings": 682,
+  "pageErrors": 0,
+  "outcomes": {
+   "Rome / objective": 7,
+   "Carthage / repulsed": 5
+  },
+  "perSeed": [
+   {
+    "seed": 1234567,
+    "victor": 0,
+    "reason": "objective",
+    "at": 516,
+    "inside": 47,
+    "crossed": 57
+   },
+   {
+    "seed": 388511484,
+    "victor": 0,
+    "reason": "objective",
+    "at": 241,
+    "inside": 71,
+    "crossed": 75
+   },
+   {
+    "seed": 775788401,
+    "victor": 2,
+    "reason": "repulsed",
+    "at": 1143,
+    "inside": 57,
+    "crossed": 74
+   },
+   {
+    "seed": 1015138793,
+    "victor": 0,
+    "reason": "objective",
+    "at": 235,
+    "inside": 70,
+    "crossed": 75
+   },
+   {
+    "seed": 1402415710,
+    "victor": 2,
+    "reason": "repulsed",
+    "at": 552,
+    "inside": 0,
+    "crossed": 0
+   },
+   {
+    "seed": 2029043019,
+    "victor": 0,
+    "reason": "objective",
+    "at": 284,
+    "inside": 65,
+    "crossed": 66
+   },
+   {
+    "seed": 2416319936,
+    "victor": 0,
+    "reason": "objective",
+    "at": 340,
+    "inside": 59,
+    "crossed": 81
+   },
+   {
+    "seed": 2655670328,
+    "victor": 2,
+    "reason": "repulsed",
+    "at": 777,
+    "inside": 32,
+    "crossed": 55
+   },
+   {
+    "seed": 3042947245,
+    "victor": 2,
+    "reason": "repulsed",
+    "at": 766,
+    "inside": 34,
+    "crossed": 35
+   },
+   {
+    "seed": 3430224162,
+    "victor": 0,
+    "reason": "objective",
+    "at": 247,
+    "inside": 65,
+    "crossed": 69
+   },
+   {
+    "seed": 3669574554,
+    "victor": 0,
+    "reason": "objective",
+    "at": 673,
+    "inside": 48,
+    "crossed": 49
+   },
+   {
+    "seed": 4056851471,
+    "victor": 2,
+    "reason": "repulsed",
+    "at": 717,
+    "inside": 17,
+    "crossed": 46
+   }
+  ]
+ },
+ "carthage-freedmen-first-set1": {
+  "label": "CA-s1",
+  "map": "carthage",
+  "quality": "high",
+  "until": 2400,
+  "seeds": 12,
+  "stormFaction": 0,
+  "stormWins": 10,
+  "undecided": 0,
+  "meanDecisionS": 521,
+  "crossings": 539,
+  "pageErrors": 0,
+  "outcomes": {
+   "Rome / rout": 7,
+   "Carthage / repulsed": 2,
+   "Rome / objective": 3
+  },
+  "perSeed": [
+   {
+    "seed": 357747885,
+    "victor": 0,
+    "reason": "rout",
+    "at": 381,
+    "inside": 1,
+    "crossed": 32
+   },
+   {
+    "seed": 745024802,
+    "victor": 0,
+    "reason": "rout",
+    "at": 583,
+    "inside": 21,
+    "crossed": 26
+   },
+   {
+    "seed": 984375194,
+    "victor": 2,
+    "reason": "repulsed",
+    "at": 1237,
+    "inside": 12,
+    "crossed": 15
+   },
+   {
+    "seed": 1371652111,
+    "victor": 0,
+    "reason": "objective",
+    "at": 349,
+    "inside": 28,
+    "crossed": 35
+   },
+   {
+    "seed": 1998279420,
+    "victor": 0,
+    "reason": "rout",
+    "at": 683,
+    "inside": 57,
+    "crossed": 150
+   },
+   {
+    "seed": 2385556337,
+    "victor": 0,
+    "reason": "rout",
+    "at": 396,
+    "inside": 0,
+    "crossed": 13
+   },
+   {
+    "seed": 2624906729,
+    "victor": 0,
+    "reason": "rout",
+    "at": 485,
+    "inside": 11,
+    "crossed": 58
+   },
+   {
+    "seed": 3012183646,
+    "victor": 0,
+    "reason": "objective",
+    "at": 242,
+    "inside": 61,
+    "crossed": 77
+   },
+   {
+    "seed": 3399460563,
+    "victor": 0,
+    "reason": "rout",
+    "at": 348,
+    "inside": 0,
+    "crossed": 3
+   },
+   {
+    "seed": 3638810955,
+    "victor": 2,
+    "reason": "repulsed",
+    "at": 710,
+    "inside": 29,
+    "crossed": 36
+   },
+   {
+    "seed": 4026087872,
+    "victor": 0,
+    "reason": "rout",
+    "at": 443,
+    "inside": 23,
+    "crossed": 53
+   },
+   {
+    "seed": 4265438264,
+    "victor": 0,
+    "reason": "objective",
+    "at": 393,
+    "inside": 21,
+    "crossed": 41
+   }
+  ]
+ },
+ "carthage-freedmen-first-set2": {
+  "label": "CA-s2",
+  "map": "carthage",
+  "quality": "high",
+  "until": 2400,
+  "seeds": 12,
+  "stormFaction": 0,
+  "stormWins": 11,
+  "undecided": 0,
+  "meanDecisionS": 539,
+  "crossings": 785,
+  "pageErrors": 0,
+  "outcomes": {
+   "Rome / rout": 4,
+   "Rome / objective": 7,
+   "Carthage / repulsed": 1
+  },
+  "perSeed": [
+   {
+    "seed": 1234567,
+    "victor": 0,
+    "reason": "rout",
+    "at": 345,
+    "inside": 0,
+    "crossed": 4
+   },
+   {
+    "seed": 388511484,
+    "victor": 0,
+    "reason": "rout",
+    "at": 444,
+    "inside": 30,
+    "crossed": 82
+   },
+   {
+    "seed": 775788401,
+    "victor": 0,
+    "reason": "objective",
+    "at": 346,
+    "inside": 27,
+    "crossed": 56
+   },
+   {
+    "seed": 1015138793,
+    "victor": 0,
+    "reason": "objective",
+    "at": 335,
+    "inside": 32,
+    "crossed": 53
+   },
+   {
+    "seed": 1402415710,
+    "victor": 0,
+    "reason": "objective",
+    "at": 331,
+    "inside": 37,
+    "crossed": 46
+   },
+   {
+    "seed": 2029043019,
+    "victor": 0,
+    "reason": "rout",
+    "at": 604,
+    "inside": 0,
+    "crossed": 28
+   },
+   {
+    "seed": 2416319936,
+    "victor": 0,
+    "reason": "objective",
+    "at": 1009,
+    "inside": 92,
+    "crossed": 212
+   },
+   {
+    "seed": 2655670328,
+    "victor": 0,
+    "reason": "rout",
+    "at": 353,
+    "inside": 10,
+    "crossed": 68
+   },
+   {
+    "seed": 3042947245,
+    "victor": 0,
+    "reason": "objective",
+    "at": 753,
+    "inside": 36,
+    "crossed": 68
+   },
+   {
+    "seed": 3430224162,
+    "victor": 0,
+    "reason": "objective",
+    "at": 879,
+    "inside": 27,
+    "crossed": 41
+   },
+   {
+    "seed": 3669574554,
+    "victor": 0,
+    "reason": "objective",
+    "at": 349,
+    "inside": 27,
+    "crossed": 55
+   },
+   {
+    "seed": 4056851471,
+    "victor": 2,
+    "reason": "repulsed",
+    "at": 719,
+    "inside": 20,
+    "crossed": 72
+   }
+  ]
+ },
+ "lodgement-duration": [
+  {
+   "seed": 745024802,
+   "wouldEnd": {
+    "victor": 1,
+    "reason": "objective",
+    "at": 792
+   },
+   "allCalls": [
+    {
+     "victor": 1,
+     "reason": "objective",
+     "at": 792
+    },
+    {
+     "victor": 1,
+     "reason": "objective",
+     "at": 792
+    },
+    {
+     "victor": 1,
+     "reason": "objective",
+     "at": 792
+    },
+    {
+     "victor": 1,
+     "reason": "objective",
+     "at": 792
+    }
+   ],
+   "maxHeld": 224,
+   "brokeAfter20": null,
+   "errs": 0
+  },
+  {
+   "seed": 3638810955,
+   "wouldEnd": {
+    "victor": 1,
+    "reason": "objective",
+    "at": 919
+   },
+   "allCalls": [
+    {
+     "victor": 1,
+     "reason": "objective",
+     "at": 919
+    },
+    {
+     "victor": 1,
+     "reason": "objective",
+     "at": 919
+    },
+    {
+     "victor": 1,
+     "reason": "objective",
+     "at": 919
+    },
+    {
+     "victor": 1,
+     "reason": "objective",
+     "at": 919
+    }
+   ],
+   "maxHeld": 97,
+   "brokeAfter20": null,
+   "errs": 0
+  },
+  {
+   "seed": 4265438264,
+   "wouldEnd": {
+    "victor": 1,
+    "reason": "objective",
+    "at": 134
+   },
+   "allCalls": [
+    {
+     "victor": 1,
+     "reason": "objective",
+     "at": 134
+    },
+    {
+     "victor": 1,
+     "reason": "objective",
+     "at": 134
+    },
+    {
+     "victor": 1,
+     "reason": "objective",
+     "at": 134
+    },
+    {
+     "victor": 1,
+     "reason": "objective",
+     "at": 134
+    }
+   ],
+   "maxHeld": 66,
+   "brokeAfter20": 140,
+   "errs": 0
+  },
+  {
+   "seed": 3399460563,
+   "wouldEnd": {
+    "victor": 1,
+    "reason": "objective",
+    "at": 154
+   },
+   "allCalls": [
+    {
+     "victor": 1,
+     "reason": "objective",
+     "at": 154
+    },
+    {
+     "victor": 1,
+     "reason": "objective",
+     "at": 154
+    },
+    {
+     "victor": 1,
+     "reason": "objective",
+     "at": 154
+    },
+    {
+     "victor": 1,
+     "reason": "objective",
+     "at": 154
+    }
+   ],
+   "maxHeld": 862,
+   "brokeAfter20": null,
+   "errs": 0
+  },
+  {
+   "seed": 3012183646,
+   "wouldEnd": {
+    "victor": 1,
+    "reason": "objective",
+    "at": 188
+   },
+   "allCalls": [
+    {
+     "victor": 1,
+     "reason": "objective",
+     "at": 188
+    },
+    {
+     "victor": 1,
+     "reason": "objective",
+     "at": 188
+    },
+    {
+     "victor": 1,
+     "reason": "objective",
+     "at": 188
+    },
+    {
+     "victor": 1,
+     "reason": "objective",
+     "at": 189
+    }
+   ],
+   "maxHeld": 21,
+   "brokeAfter20": 195,
+   "errs": 0
+  },
+  {
+   "seed": 2385556337,
+   "wouldEnd": {
+    "victor": 1,
+    "reason": "objective",
+    "at": 204
+   },
+   "allCalls": [
+    {
+     "victor": 1,
+     "reason": "objective",
+     "at": 204
+    },
+    {
+     "victor": 1,
+     "reason": "objective",
+     "at": 204
+    },
+    {
+     "victor": 1,
+     "reason": "objective",
+     "at": 204
+    },
+    {
+     "victor": 1,
+     "reason": "objective",
+     "at": 204
+    }
+   ],
+   "maxHeld": 21,
+   "brokeAfter20": 210,
+   "errs": 0
+  }
+ ],
+ "ram-fate-12-seeds": [
+  {
+   "seed": 4265438264,
+   "maxBlows": 23,
+   "hpEnd": 0.12,
+   "opened": null,
+   "crewRoutAt": 210,
+   "crewEnd": 0,
+   "state": "wreck",
+   "result": {
+    "victor": 1,
+    "reason": "objective",
+    "at": 134
+   },
+   "errs": 0
+  },
+  {
+   "seed": 2624906729,
+   "maxBlows": 26,
+   "hpEnd": 0,
+   "opened": 220,
+   "crewRoutAt": 220,
+   "crewEnd": 0,
+   "state": "wreck",
+   "result": null,
+   "errs": 0
+  },
+  {
+   "seed": 984375194,
+   "maxBlows": 25,
+   "hpEnd": 0.04,
+   "opened": null,
+   "crewRoutAt": 219,
+   "crewEnd": 0,
+   "state": "wreck",
+   "result": null,
+   "errs": 0
+  },
+  {
+   "seed": 3638810955,
+   "maxBlows": 3,
+   "hpEnd": 0.88,
+   "opened": null,
+   "crewRoutAt": 120,
+   "crewEnd": 0,
+   "state": "wreck",
+   "result": null,
+   "errs": 0
+  },
+  {
+   "seed": 1998279420,
+   "maxBlows": 9,
+   "hpEnd": 0.65,
+   "opened": null,
+   "crewRoutAt": 150,
+   "crewEnd": 0,
+   "state": "wreck",
+   "result": null,
+   "errs": 0
+  },
+  {
+   "seed": 357747885,
+   "maxBlows": 21,
+   "hpEnd": 0.19,
+   "opened": null,
+   "crewRoutAt": 200,
+   "crewEnd": 0,
+   "state": "wreck",
+   "result": null,
+   "errs": 0
+  },
+  {
+   "seed": 3012183646,
+   "maxBlows": 22,
+   "hpEnd": 0.15,
+   "opened": null,
+   "crewRoutAt": 199,
+   "crewEnd": 0,
+   "state": "wreck",
+   "result": {
+    "victor": 1,
+    "reason": "objective",
+    "at": 188
+   },
+   "errs": 0
+  },
+  {
+   "seed": 1371652111,
+   "maxBlows": 0,
+   "hpEnd": 1,
+   "opened": null,
+   "crewRoutAt": 110,
+   "crewEnd": 0,
+   "state": "wreck",
+   "result": null,
+   "errs": 0
+  },
+  {
+   "seed": 4026087872,
+   "maxBlows": 23,
+   "hpEnd": 0.12,
+   "opened": null,
+   "crewRoutAt": 209,
+   "crewEnd": 0,
+   "state": "wreck",
+   "result": null,
+   "errs": 0
+  },
+  {
+   "seed": 2385556337,
+   "maxBlows": 20,
+   "hpEnd": 0.23,
+   "opened": null,
+   "crewRoutAt": 199,
+   "crewEnd": 0,
+   "state": "wreck",
+   "result": {
+    "victor": 1,
+    "reason": "objective",
+    "at": 204
+   },
+   "errs": 0
+  },
+  {
+   "seed": 745024802,
+   "maxBlows": 19,
+   "hpEnd": 0.27,
+   "opened": null,
+   "crewRoutAt": 190,
+   "crewEnd": 0,
+   "state": "wreck",
+   "result": null,
+   "errs": 0
+  },
+  {
+   "seed": 3399460563,
+   "maxBlows": 3,
+   "hpEnd": 0.88,
+   "opened": null,
+   "crewRoutAt": 120,
+   "crewEnd": 0,
+   "state": "wreck",
+   "result": {
+    "victor": 1,
+    "reason": "objective",
+    "at": 154
+   },
+   "errs": 0
+  }
+ ],
+ "plug-the-footing-bays": [
+  {
+   "seed": 4265438264,
+   "arm": "plug",
+   "ordered": [
+    {
+     "unit": 10,
+     "bay": 2,
+     "men": 160
+    },
+    {
+     "unit": 11,
+     "bay": 20,
+     "men": 160
+    },
+    {
+     "unit": 10,
+     "bay": 27,
+     "men": 160
+    },
+    {
+     "unit": 11,
+     "bay": 28,
+     "men": 160
+    },
+    {
+     "unit": 10,
+     "bay": 29,
+     "men": 160
+    }
+   ],
+   "openBays": [
+    2,
+    20,
+    27,
+    28,
+    29
+   ],
+   "peakInside": 46,
+   "result": null,
+   "errs": 0
+  },
+  {
+   "seed": 2624906729,
+   "arm": "plug",
+   "ordered": [
+    {
+     "unit": 10,
+     "bay": 2,
+     "men": 160
+    },
+    {
+     "unit": 11,
+     "bay": 20,
+     "men": 160
+    },
+    {
+     "unit": 10,
+     "bay": 27,
+     "men": 160
+    },
+    {
+     "unit": 11,
+     "bay": 28,
+     "men": 160
+    },
+    {
+     "unit": 10,
+     "bay": 29,
+     "men": 160
+    }
+   ],
+   "openBays": [
+    2,
+    20,
+    27,
+    28,
+    29
+   ],
+   "peakInside": 42,
+   "result": {
+    "victor": 1,
+    "reason": "objective",
+    "at": 881
+   },
+   "errs": 0
+  },
+  {
+   "seed": 984375194,
+   "arm": "plug",
+   "ordered": [
+    {
+     "unit": 10,
+     "bay": 2,
+     "men": 160
+    },
+    {
+     "unit": 11,
+     "bay": 20,
+     "men": 160
+    },
+    {
+     "unit": 10,
+     "bay": 27,
+     "men": 160
+    },
+    {
+     "unit": 11,
+     "bay": 28,
+     "men": 160
+    },
+    {
+     "unit": 10,
+     "bay": 29,
+     "men": 160
+    }
+   ],
+   "openBays": [
+    2,
+    20,
+    27,
+    28,
+    29
+   ],
+   "peakInside": 45,
+   "result": {
+    "victor": 0,
+    "reason": "stalemate",
+    "at": 1784
+   },
+   "errs": 0
+  },
+  {
+   "seed": 3638810955,
+   "arm": "plug",
+   "ordered": [
+    {
+     "unit": 10,
+     "bay": 2,
+     "men": 160
+    },
+    {
+     "unit": 11,
+     "bay": 20,
+     "men": 160
+    },
+    {
+     "unit": 10,
+     "bay": 27,
+     "men": 160
+    },
+    {
+     "unit": 11,
+     "bay": 28,
+     "men": 160
+    },
+    {
+     "unit": 10,
+     "bay": 29,
+     "men": 160
+    }
+   ],
+   "openBays": [
+    2,
+    20,
+    27,
+    28,
+    29
+   ],
+   "peakInside": 40,
+   "result": null,
+   "errs": 0
+  },
+  {
+   "seed": 1998279420,
+   "arm": "plug",
+   "ordered": [
+    {
+     "unit": 10,
+     "bay": 2,
+     "men": 160
+    },
+    {
+     "unit": 11,
+     "bay": 20,
+     "men": 160
+    },
+    {
+     "unit": 10,
+     "bay": 27,
+     "men": 160
+    },
+    {
+     "unit": 11,
+     "bay": 28,
+     "men": 160
+    },
+    {
+     "unit": 10,
+     "bay": 29,
+     "men": 160
+    }
+   ],
+   "openBays": [
+    2,
+    20,
+    27,
+    28,
+    29
+   ],
+   "peakInside": 46,
+   "result": {
+    "victor": 0,
+    "reason": "rout",
+    "at": 314
+   },
+   "errs": 0
+  },
+  {
+   "seed": 357747885,
+   "arm": "plug",
+   "ordered": [
+    {
+     "unit": 10,
+     "bay": 2,
+     "men": 160
+    },
+    {
+     "unit": 11,
+     "bay": 20,
+     "men": 160
+    },
+    {
+     "unit": 10,
+     "bay": 27,
+     "men": 160
+    },
+    {
+     "unit": 11,
+     "bay": 28,
+     "men": 160
+    },
+    {
+     "unit": 10,
+     "bay": 29,
+     "men": 160
+    }
+   ],
+   "openBays": [
+    2,
+    20,
+    27,
+    28,
+    29
+   ],
+   "peakInside": 36,
+   "result": {
+    "victor": 1,
+    "reason": "objective",
+    "at": 186
+   },
+   "errs": 0
+  },
+  {
+   "seed": 3012183646,
+   "arm": "plug",
+   "ordered": [
+    {
+     "unit": 10,
+     "bay": 2,
+     "men": 160
+    },
+    {
+     "unit": 11,
+     "bay": 20,
+     "men": 160
+    },
+    {
+     "unit": 10,
+     "bay": 27,
+     "men": 160
+    },
+    {
+     "unit": 11,
+     "bay": 28,
+     "men": 160
+    },
+    {
+     "unit": 10,
+     "bay": 29,
+     "men": 160
+    }
+   ],
+   "openBays": [
+    2,
+    20,
+    27,
+    28,
+    29
+   ],
+   "peakInside": 62,
+   "result": {
+    "victor": 1,
+    "reason": "objective",
+    "at": 429
+   },
+   "errs": 0
+  },
+  {
+   "seed": 1371652111,
+   "arm": "plug",
+   "ordered": [
+    {
+     "unit": 10,
+     "bay": 2,
+     "men": 160
+    },
+    {
+     "unit": 11,
+     "bay": 20,
+     "men": 160
+    },
+    {
+     "unit": 10,
+     "bay": 27,
+     "men": 160
+    },
+    {
+     "unit": 11,
+     "bay": 28,
+     "men": 160
+    },
+    {
+     "unit": 10,
+     "bay": 29,
+     "men": 160
+    }
+   ],
+   "openBays": [
+    2,
+    20,
+    27,
+    28,
+    29
+   ],
+   "peakInside": 46,
+   "result": {
+    "victor": 0,
+    "reason": "stalemate",
+    "at": 786
+   },
+   "errs": 0
+  },
+  {
+   "seed": 4026087872,
+   "arm": "plug",
+   "ordered": [
+    {
+     "unit": 10,
+     "bay": 2,
+     "men": 160
+    },
+    {
+     "unit": 11,
+     "bay": 20,
+     "men": 160
+    },
+    {
+     "unit": 10,
+     "bay": 27,
+     "men": 160
+    },
+    {
+     "unit": 11,
+     "bay": 28,
+     "men": 160
+    },
+    {
+     "unit": 10,
+     "bay": 29,
+     "men": 160
+    }
+   ],
+   "openBays": [
+    2,
+    20,
+    27,
+    28,
+    29
+   ],
+   "peakInside": 45,
+   "result": {
+    "victor": 0,
+    "reason": "stalemate",
+    "at": 1730
+   },
+   "errs": 0
+  },
+  {
+   "seed": 2385556337,
+   "arm": "plug",
+   "ordered": [
+    {
+     "unit": 10,
+     "bay": 2,
+     "men": 160
+    },
+    {
+     "unit": 11,
+     "bay": 20,
+     "men": 160
+    },
+    {
+     "unit": 10,
+     "bay": 27,
+     "men": 160
+    },
+    {
+     "unit": 11,
+     "bay": 28,
+     "men": 160
+    },
+    {
+     "unit": 10,
+     "bay": 29,
+     "men": 160
+    }
+   ],
+   "openBays": [
+    2,
+    20,
+    27,
+    28,
+    29
+   ],
+   "peakInside": 41,
+   "result": {
+    "victor": 0,
+    "reason": "repulsed",
+    "at": 881
+   },
+   "errs": 0
+  },
+  {
+   "seed": 745024802,
+   "arm": "plug",
+   "ordered": [
+    {
+     "unit": 10,
+     "bay": 2,
+     "men": 160
+    },
+    {
+     "unit": 11,
+     "bay": 20,
+     "men": 160
+    },
+    {
+     "unit": 10,
+     "bay": 27,
+     "men": 160
+    },
+    {
+     "unit": 11,
+     "bay": 28,
+     "men": 160
+    },
+    {
+     "unit": 10,
+     "bay": 29,
+     "men": 160
+    }
+   ],
+   "openBays": [
+    2,
+    20,
+    27,
+    28,
+    29
+   ],
+   "peakInside": 45,
+   "result": {
+    "victor": 0,
+    "reason": "stalemate",
+    "at": 1504
+   },
+   "errs": 0
+  },
+  {
+   "seed": 3399460563,
+   "arm": "plug",
+   "ordered": [
+    {
+     "unit": 10,
+     "bay": 2,
+     "men": 160
+    },
+    {
+     "unit": 11,
+     "bay": 20,
+     "men": 160
+    },
+    {
+     "unit": 10,
+     "bay": 27,
+     "men": 160
+    },
+    {
+     "unit": 11,
+     "bay": 28,
+     "men": 160
+    },
+    {
+     "unit": 10,
+     "bay": 29,
+     "men": 160
+    }
+   ],
+   "openBays": [
+    2,
+    20,
+    27,
+    28,
+    29
+   ],
+   "peakInside": 45,
+   "result": {
+    "victor": 1,
+    "reason": "objective",
+    "at": 139
+   },
+   "errs": 0
+  }
+ ],
+ "gate-value-ablation": {
+  "gate-campus-martius-host220-1998279420": {
+   "arm": "host",
+   "at": 220,
+   "seed": 1998279420,
+   "peakEverInside": 132,
+   "peakEverGate": 1,
+   "peakStormInside": 48,
+   "hostIdleAtEnd": 1,
+   "lastT": 498,
+   "result": {
+    "victor": 0,
+    "reason": "rout",
+    "at": 495
+   }
+  },
+  "gate-campus-martius-host220-2624906729": {
+   "arm": "host",
+   "at": 220,
+   "seed": 2624906729,
+   "peakEverInside": 49,
+   "peakEverGate": 17,
+   "peakStormInside": 38,
+   "hostIdleAtEnd": 1,
+   "lastT": 688,
+   "result": {
+    "victor": 0,
+    "reason": "rout",
+    "at": 687
+   }
+  },
+  "gate-campus-martius-host220-4026087872": {
+   "arm": "host",
+   "at": 220,
+   "seed": 4026087872,
+   "peakEverInside": 103,
+   "peakEverGate": 124,
+   "peakStormInside": 42,
+   "hostIdleAtEnd": 2,
+   "lastT": 558,
+   "result": {
+    "victor": 0,
+    "reason": "rout",
+    "at": 550
+   }
+  },
+  "gate-campus-martius-open220-1998279420": {
+   "arm": "open",
+   "at": 220,
+   "seed": 1998279420,
+   "peakEverInside": 60,
+   "peakEverGate": 1,
+   "peakStormInside": 42,
+   "hostIdleAtEnd": 9,
+   "lastT": 897,
+   "result": null
+  },
+  "gate-campus-martius-open220-2624906729": {
+   "arm": "open",
+   "at": 220,
+   "seed": 2624906729,
+   "peakEverInside": 49,
+   "peakEverGate": 17,
+   "peakStormInside": 38,
+   "hostIdleAtEnd": 9,
+   "lastT": 727,
+   "result": {
+    "victor": 0,
+    "reason": "repulsed",
+    "at": 727
+   }
+  },
+  "gate-campus-martius-open220-4026087872": {
+   "arm": "open",
+   "at": 220,
+   "seed": 4026087872,
+   "peakEverInside": 99,
+   "peakEverGate": 5,
+   "peakStormInside": 42,
+   "hostIdleAtEnd": 6,
+   "lastT": 897,
+   "result": null
+  },
+  "gate-campus-martius-shipped-1998279420": {
+   "arm": "shipped",
+   "at": 220,
+   "seed": 1998279420,
+   "peakEverInside": 60,
+   "peakEverGate": 1,
+   "peakStormInside": 42,
+   "hostIdleAtEnd": 9,
+   "lastT": 897,
+   "result": null
+  },
+  "gate-campus-martius-shipped-2624906729": {
+   "arm": "shipped",
+   "at": 220,
+   "seed": 2624906729,
+   "peakEverInside": 49,
+   "peakEverGate": 17,
+   "peakStormInside": 44,
+   "hostIdleAtEnd": 9,
+   "lastT": 727,
+   "result": {
+    "victor": 0,
+    "reason": "repulsed",
+    "at": 727
+   }
+  },
+  "gate-campus-martius-shipped-4026087872": {
+   "arm": "shipped",
+   "at": 220,
+   "seed": 4026087872,
+   "peakEverInside": 99,
+   "peakEverGate": 5,
+   "peakStormInside": 42,
+   "hostIdleAtEnd": 7,
+   "lastT": 897,
+   "result": null
+  }
+ },
+ "played-from-the-defending-chair": {
+  "rig": "tools/scratch/sf-playD-emc.mjs, real menu at ?autoplay=0, quality=high, default seed 4265438264",
+  "lodgement": {
+   "at": 652,
+   "runs": [
+    14,
+    15
+   ],
+   "men": 40,
+   "nearestOwnUnitOnTheWall": "107 m along the wall",
+   "secondsToGiveTheOrder": 4,
+   "secondsTheRulesAllow": 20
+  },
+  "objectiveSlotBefore": "0 of 60 inside \u2014 hold",
+  "objectiveSlotAfter": "40 men hold a stretch of ours \u2014 12 s to clear it",
+  "phaseNoteBothWays": "40 of them hold a stretch of it \u2014 get back onto that bay",
+  "verdictBothWays": "Rome by rout at t+664",
+  "pageErrors": 0
+ },
+ "played-from-the-storming-chair": {
+  "rig": "tools/scratch/pl-runA-emc.mjs, Carthage, real menu at ?autoplay=0, quality=high",
+  "note": "the one order the rig gives the ram \u2014 re-aim it at porta-uticensis \u2014 reads as \"Storm the wall here\" on the cursor and sets a destination 563.7 m away. At RAM_SPEED 0.55 m/s that is a seventeen-minute march and the Porta Byrsae is never touched: gate hp 1.00 and 0 blows at t+761.",
+  "ladderCrossings": 397,
+  "byT": 76,
+  "escaladePartiesAliveAt": {
+   "t": 179,
+   "men": [
+    10,
+    8,
+    30
+   ]
+  },
+  "strengthAt761": {
+   "rome": 977,
+   "carthage": 1177
+  },
+  "romeStartedAt": 1882,
+  "finalPlaque": "The Wall Reached \u2014 99 of ours on the parapet against 993 of theirs \u2014 0 of 60 inside",
+  "pageErrors": 0
+ }
+}
