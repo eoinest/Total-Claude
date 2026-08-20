@@ -1,6 +1,6 @@
 # The trailer
 
-Three files, all attached to the [r6 release](https://github.com/eoinest/Total-Claude/releases/tag/r6)
+Four files, all attached to the [r6 release](https://github.com/eoinest/Total-Claude/releases/tag/r6)
 rather than committed, so none of them sits in every clone forever.
 
 **[`total-claude-trailer-1080p-sound.webm`](https://github.com/eoinest/Total-Claude/releases/download/r6/total-claude-trailer-1080p-sound.webm)**
@@ -15,11 +15,19 @@ connection and because the release links it.
 — **1280 × 720, 30 fps, 21.933 s (658 frames), VP9 + Opus, 4,689,184 bytes.** The social cut:
 under the five-megabyte ceiling with 310,816 bytes to spare, and it has sound.
 
+**[`total-claude-trailer-720p-twitter.mp4`](https://github.com/eoinest/Total-Claude/releases/download/r6/total-claude-trailer-720p-twitter.mp4)**
+— **1280 × 720, 30 fps, 21.933 s (658 frames), H.264 High + AAC-LC, 4,791,207 bytes.** The same
+cut, same beats, same one-take ram, in the container X's uploader will actually accept: that
+endpoint takes MP4 and MOV and does not take WebM at all, so the file above cannot be handed to
+it. 208,793 bytes of headroom.
+
 At a nominal 10 MB/s that is about **thirteen seconds** for the 1080p one, **a second and a
-half** for the small one and **half a second** for the social one; on a 10 Mbit line, about
+half** for the small one and **half a second** for either social one; on a 10 Mbit line, about
 **1 min 45 s**, **11 s** and **4 s**. VP9 and Opus in WebM play in Chrome, Edge, Firefox,
 Safari 14+, VLC and IINA; neither VP9 file will open in QuickTime Player, which has never read
-WebM of any kind.
+WebM of any kind — which is the other thing the MP4 is for. It is High profile rather than
+Baseline: `avc1.640c1f`, level 3.1, `yuv420p`, progressive, which every decoder made this
+decade takes, and Baseline would have cost picture for compatibility nobody needs now.
 
 They are not the same edit. The 1080p cut plays the assault on the Porta Flaminia as **one
 sixteen-second take** — the ram, the push in, and the twenty-sixth blow — where the silent cut

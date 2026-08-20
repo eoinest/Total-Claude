@@ -40,6 +40,7 @@
     "sharp": "^0.35.3",
     "typescript": "^7.0.2",
     "vite": "^8.1.5",
+    "mp4-muxer": "^5.2.2",
     "webm-muxer": "^5.1.4"
   },
   "private": true

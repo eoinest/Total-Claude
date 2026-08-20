@@ -1,17 +1,20 @@
 # Trailer — shot list and provenance
 
-Three files on the [r6 release](https://github.com/eoinest/Total-Claude/releases/tag/r6):
+Four files on the [r6 release](https://github.com/eoinest/Total-Claude/releases/tag/r6):
 
 | | resolution | codecs | length | size | sound |
 |---|---|---|---|---|---|
 | `total-claude-trailer-1080p-sound.webm` | **1920 × 1080** | VP9 + Opus | **86.0 s** | **130.2 MB** | **yes** |
 | `total-claude-trailer.webm` | 1600 × 900 | VP8 | 84.0 s | 14.2 MB | no |
 | `total-claude-trailer-720p-twitter.webm` | 1280 × 720 | VP9 + Opus | 21.933 s | **4,689,184 B** | yes |
+| `total-claude-trailer-720p-twitter.mp4` | 1280 × 720 | H.264 High + AAC-LC | 21.933 s | **4,791,207 B** | yes |
 
 The third is a shortened recut of the first — the same master frames and the same per-beat
 mixer recordings, windowed — for a video that autoplays muted in a phone feed under a
 five-megabyte ceiling. `docs/video/README.md` has its shot list and the measurements that
-chose it.
+chose it. The fourth is that same cut in a container X's upload endpoint will take; it is not a
+transcode of the WebM but a second encode from the same 658 master frames and the same
+`mix-tw.f32`, so nothing is generation-lossed through VP9 on the way.
 
 All three are cut from the live simulation at `6698e196ed84f0e456b13cf1ab04c90eeea07d55`, quality
 tier `ultra`. Every frame is our own render and every sound is our own synthesis: no reference
@@ -341,6 +344,92 @@ the crops lose specular edges off helmets and texture off grass, and gain no blo
 banding anywhere, including in the shadowed gate mouth — which is what has to be true of a file
 that is a source for someone else's transcoder rather than the finished artefact.
 
+### The same cut as MP4, because X's uploader will not take a WebM
+
+Same 658 master frames, same `mix-tw.f32`, same seven beats and the same contiguous ram — only
+the container and the two codecs change. `avc1.64001f` (High, level 3.1), `avc1.4d001f`,
+`avc1.42001f` and `mp4a.40.2` are all reported supported by `VideoEncoder.isConfigSupported` and
+`AudioEncoder.isConfigSupported` in this build; only the software path is available, and it does
+emit real High profile rather than falling back — `avcC` on the delivered file reads
+`01 64 0c 1f`, which is profile_idc 100, and that is read back out of the file rather than
+trusted from the codec string.
+
+**The VP9 ladder does not carry over and none of it was reused.** H.264's rate control here
+tracks its ask far more closely than VP9's does — 9.7 % over at 1.00 Mb/s falling to 1.6 % *under*
+at 4.00, where VP9 sat at a flat 11 % over — so the interpolation is a different line:
+
+| asked | delivered | total bytes | headroom |
+|---|---|---|---|
+| 1.00 Mb/s | 1.10 Mb/s | 3,280,551 | 1,719,449 B |
+| 1.40 Mb/s | 1.47 Mb/s | 4,292,964 | 707,036 B |
+| 1.55 Mb/s | 1.61 Mb/s | 4,672,946 | 327,054 B |
+| **1.60 Mb/s (shipped)** | **1.65 Mb/s** | **4,791,207** | **208,793 B** |
+| 1.65 Mb/s | 1.70 Mb/s | 4,922,240 | 77,760 B |
+| 1.70 Mb/s | 1.76 Mb/s | 5,093,265 | −93,265 B |
+| 4.00 Mb/s (reference) | 3.94 Mb/s | 11,068,443 | −6,068,443 B |
+
+1.65 Mb/s asked would also have fitted, and was not taken: it is 2.4 % more bits for about a
+tenth of a decibel, against 77 kB of headroom. The encoder is threaded and not bit-reproducible
+— the shipped point re-encodes to within about 14 kB run to run, 0.3 % — and 208 kB is forty
+times that. AAC-LC is 96 kb/s stereo, 263,900 bytes of the file; Opus does the same job at 80,
+which is the honest cost of the container swap and not worth clawing back at 0.03 Mb/s of
+picture.
+
+PSNR by the same method as above and the same instrument, both files measured in one run, whole
+frame / worst 64 px tile:
+
+| moment | H.264 1.65 Mb/s (shipped) | VP9 1.62 Mb/s | H.264 3.94 Mb/s (reference) |
+|---|---|---|---|
+| 0:03.6 clash in dust | **24.02 / 21.00** | 26.02 / 23.85 | 24.84 / 22.55 |
+| 0:06.4 parapet | **28.44 / 25.31** | 29.17 / 25.08 | 29.45 / 26.58 |
+| 0:11.5 ram, mid push | **29.03 / 24.66** | 30.07 / 25.77 | 29.86 / 26.30 |
+| 0:15.2 gate mouth in shadow | **30.08 / 26.62** | 30.55 / 27.16 | 30.83 / 27.23 |
+| 0:17.5 the cohort | **23.76 / 20.20** | 24.10 / 19.60 | 24.74 / 21.69 |
+
+2.31× the file buys 0.75–1.01 dB, so the shipped rate is on the same plateau VP9 is on and the
+content is hard rather than starved; going the other way, 0.69× the file only costs 0.42–0.69 dB.
+H.264 is 0.29–2.00 dB behind VP9 at the same delivered rate, which is the codec generation gap
+and not a mistake in the ladder.
+
+**None of that is the number that decides it.** Every figure above is measured at 1280 px, which
+is not a size this file will be seen at. At 400 px — the element sized to 400 and screenshotted
+there, so the browser's own scaler is in the picture — against the master downscaled 1920 → 400:
+
+| moment | H.264 | VP9 | difference | H.264 vs VP9 |
+|---|---|---|---|---|
+| 0:03.6 | 25.55 dB | 26.09 | −0.54 dB | 28.57 dB |
+| 0:06.4 | 27.84 | 28.25 | −0.41 | 33.88 |
+| 0:11.5 | 29.02 | 29.56 | −0.54 | 34.72 |
+| 0:14.2 | 29.46 | 29.64 | −0.18 | 35.50 |
+| 0:15.2 | 29.67 | 29.83 | −0.16 | 35.34 |
+| 0:17.5 | 24.93 | 25.26 | −0.32 | 27.75 |
+| 0:20.0 | 28.06 | 28.38 | −0.32 | 34.65 |
+
+The 0.29–2.00 dB gap at 1280 px collapses to 0.16–0.54 dB at 400, and the two encodes are closer
+to each other (27.7–35.5 dB) than either is to the source. Side by side at feed size, sixteen
+stills across the cut, they are not tellable apart. At 100 % the H.264 file loses spear shafts
+and grass texture — it goes soft, not blocky — and the shadowed gate mouth, which is the place
+this was most likely to fail, still resolves the grille and shows no banding.
+
+**The sound needed one correction the WebM did not.** AAC-LC's encoder delay is left in a plain
+MP4, because there is no edit list to take it off the way a WebM demuxer takes off Opus'
+pre-skip, and the first attempt shipped a track 2,112 samples — 44 ms — behind the picture,
+which is exactly where a viewer starts to be able to hear it. Dropping the leading packets is
+not the fix, since AAC frames overlap and the frame after a dropped one decodes wrong, so the
+compensation is made in the PCM: the encoder is fed the mixdown from sample 2,048 with 2,048
+samples of silence appended. Measured again on the delivered file, the lag is 64 samples,
+1.33 ms. The encoder's whole-frame padding also ran the audio track 83 ms past the last picture
+frame, so frames starting after it are dropped; the track is 21.952 s against 21.933 s of
+picture.
+
+Per-shot RMS decoded out of the delivered AAC, against what the cut wrote: −0.43 % to −0.76 %
+on six of seven shots, and −1.99 % on `field-line`, which is the 43 ms of pre-roll landing
+inside a 1.4 s shot. The same instrument scores the Opus track at −0.19 % to +0.17 %, so AAC's
+band is about four times wider on one shot and four times wider than nothing on the rest, which
+is what a different lossy codec should look like. AAC also overshoots the mixdown's peak by
+0.87 dB (0.9715 against 0.878) where Opus overshoots by 0.07 — under full scale, but it is why
+the peak column is worth printing.
+
 AV1 was encoded at the same ask and came out 14 % smaller (4,036,228 B at 1.38 Mb/s), and is not
 shipped, because it could not be checked. `canPlayType` reports `probably` for
 `av01.0.05M.08` in this build and the review harness — which finishes a VP9 file in under a
@@ -374,9 +463,23 @@ node tools/scratch/trailer-tw-encode.mjs --bitrate=1450000 \
 node tools/scratch/trailer-tw-review.mjs                           # decode it back, at 400 px
 ```
 
+The MP4 reuses that same `cut-tw.json` and `mix-tw.f32` rather than re-cutting, which is what
+makes it the same edit rather than a similar one:
+
+```sh
+node tools/scratch/trailer-mp4-encode.mjs --probe                  # ask, do not assume
+node tools/scratch/trailer-mp4-encode.mjs --ladder=1550000,1600000,1650000,1700000
+node tools/scratch/trailer-mp4-encode.mjs --bitrate=1600000 \
+  --out=/tmp/tc-mp4/total-claude-trailer-720p-twitter.mp4
+node tools/scratch/trailer-mp4-review.mjs --file=... \
+  --vs=/tmp/tc-tw/total-claude-trailer-720p-twitter.webm           # both, one instrument
+```
+
 `--beats=a,b --keep` re-shoots individual beats in place; the cut is rebuilt from what is on
-disk, so a partial re-shoot cannot silently drop the beats it did not touch. The one dependency
-added for any of this is `webm-muxer`.
+disk, so a partial re-shoot cannot silently drop the beats it did not touch. The two
+dependencies added for any of this are `webm-muxer` and `mp4-muxer`, which are siblings; no
+ffmpeg is installed, and Playwright's bundled one could not have made either file — it is built
+`--disable-everything` with libvpx and png, so VP8 only, no audio codec and no audio muxer.
 
 The picture takes about ten minutes to capture and one to encode; the sound pass takes about
 eight, most of it fast-forwarding four worlds to the later beats.
