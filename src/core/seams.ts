@@ -304,6 +304,46 @@ export const SEAMS: readonly Seam[] = [
     provider: 'battle.siege',
     required: { ownsUnit: 'fn', isGarrisoned: 'fn', unitWallState: 'fn', wallTargetAt: 'fn' },
   },
+  /**
+   * The four reports the gate's sound is derived from.
+   *
+   * `Siege` announces a collapse with a `cameraShake` and nothing else, so `BattleAudio`
+   * watches these instead of subscribing to an event — which is why they are a seam rather
+   * than an internal detail, and why they are checked here. `broken` is the one that matters:
+   * it is the field that goes false → true on the tick the leaves come down, and if it were
+   * ever renamed the watch would read `undefined`, never see a transition, and the climax
+   * would go quiet again with every line of the audio subsystem still looking correct.
+   *
+   * `element: true` on all three lists, so an assault that has not built a machine yet is
+   * reported `unchecked` rather than passed in silence.
+   */
+  {
+    consumer: 'audio/BattleAudio.ts SiegeView',
+    provider: 'battle.siege',
+    required: { gateReport: 'fn', towerReport: 'fn', ramReport: 'fn', breachReport: 'fn' },
+    returns: {
+      gateReport: { fields: ['open', 'breached', 'x', 'z', 'gates'] },
+      breachReport: { fields: ['bays'] },
+      ramReport: { element: true, fields: ['id', 'kind', 'x', 'z', 'wreck', 'bay'] },
+      towerReport: { element: true, fields: ['id', 'state', 'x', 'z', 'deckY'] },
+    },
+  },
+  /**
+   * The gate rows, separately, because `broken` is the field the collapse actually turns on
+   * and `returns` takes one spec per accessor. The scalar half is checked above; this reaches
+   * one row deeper, into `gates[]`, which is where the watch reads.
+   */
+  {
+    consumer: 'audio/BattleAudio.ts SiegeView gates[]',
+    provider: 'battle.siege',
+    returns: {
+      gateReport: {
+        element: true,
+        fields: ['id', 'x', 'z', 'open', 'broken', 'blows', 'hp'],
+        call: (s) => (s['gateReport'] as () => { gates: unknown[] }).call(s).gates,
+      },
+    },
+  },
 
   // -- audio, which is where the other two live drifts were ------------------
   {

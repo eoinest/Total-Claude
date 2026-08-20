@@ -1163,6 +1163,449 @@ volleyRecipe('volley_javelin', 'pilum_throw_1', { spread: 0.4, count: 40, whoosh
 volleyRecipe('volley_sling', 'sling_release', { spread: 0.3, count: 34, whoosh: 0.5 });
 volleyRecipe('volley_bolt', 'bolt_release', { spread: 0.5, count: 8, whoosh: 0.3 });
 
+// ---- Siege: the fabric, and what breaking it sounds like ------------------
+
+/**
+ * Scatter one already-built grain across a span, pitched down and thinning out.
+ *
+ * Every siege sound below is made of the *same* `impact_wood` and `impact_stone` grains the
+ * ram has been producing for four minutes, played back slow. That is deliberate and it is
+ * the whole reason these belong to the battle they arrive in: a 4 m oak leaf and a 20 mm
+ * plank are the same material struck at different scales, and resampling a struck-plank
+ * grain to a third of its rate is exactly the transposition that says so. Building a new
+ * "big wood" oscillator instead is how a collapse ends up sounding like a different game's
+ * sound effect landing on top of this one's.
+ *
+ * `pow(rng.next(), bias)` front-loads the scatter: a failure is dense at the instant it
+ * gives and then trails off into stragglers, which is what makes it read as one event
+ * coming apart rather than as a roll of evenly-spaced hits.
+ */
+function debrisScatter(
+  L: Float32Array, R: Float32Array, grain: Float32Array, sr: number, rng: Rng,
+  o: { count: number; span: number; delay?: number; bias?: number;
+    rateLo: number; rateHi: number; gainLo: number; gainHi: number; fade?: number }
+): void {
+  const delay = o.delay ?? 0;
+  const bias = o.bias ?? 0.55;
+  const fade = o.fade ?? 1;
+  for (let i = 0; i < o.count; i++) {
+    const u = Math.pow(rng.next(), bias);
+    const t = delay + u * o.span;
+    // Slower playback is a bigger piece of timber, so the late stragglers are also the
+    // small ones: rate rises as the gain falls.
+    const rate = lerp(o.rateLo, o.rateHi, u * 0.75 + rng.next() * 0.25);
+    const gain = rng.range(o.gainLo, o.gainHi) * (1 - u * fade * 0.8);
+    const pan = rng.jitter(0.85);
+    addResampled(L, grain, t * sr, rate, gain * (1 - pan * 0.5));
+    addResampled(R, grain, t * sr, rate, gain * (1 + pan * 0.5));
+  }
+}
+
+/**
+ * **The gate giving way.** The one sound the siege was missing.
+ *
+ * Twenty-six blows of an iron-shod trunk arrive as `impact_wood` — a 16 ms knock through a
+ * 760 Hz bandpass over plate modes at 196/385/830 Hz — and then the leaves came down in
+ * silence. This is built out of that same material and nothing else, three ways:
+ *
+ *  - **The timber is the same timber, an octave and a half down.** A gate leaf is oak four
+ *    metres tall and a hand thick, so `impact_wood`'s three plate modes reappear here at
+ *    54/107/231 Hz with decays twenty times as long. Same ratios, same excitation, a
+ *    hundred times the mass.
+ *  - **The splintering is literally `impact_wood` grains**, resampled to a third of rate
+ *    and scattered, so the wreckage is made of the blows.
+ *  - **The iron is the drawbar and the pintles**, through the same `ironModes` bank that
+ *    makes a helmet ring — but at 380 Hz with a half-second decay rather than 880 Hz, and
+ *    with a downward grind under it as the straps tear out of the masonry.
+ *
+ * Then the long part, which is what separates a collapse from an impact. Two leaves fall,
+ * not one, and not together: the drawbar goes, the outer leaf swings and drops, the second
+ * follows about six hundred milliseconds later, and a last section of the upper boarding
+ * comes off the hinge a second after that. Under all three is a falling sub — a leaf is
+ * over a tonne — and behind them a ragged four-second settle of debris that is amplitude-
+ * modulated by noise rather than by an exponential, because rubble does not decay smoothly.
+ *
+ * 4.8 seconds against an impact's 0.36. It is thirteen times longer than anything else in
+ * the bank and that is the point.
+ */
+def('gate_collapse', {
+  rate: 44100, peak: 0.99,
+  make(sr, rng) {
+    const p = makePcm(sr, 4.8, 2);
+    const n = p.len;
+    const L = p.ch[0];
+    const R = p.ch[1];
+    const mono = new Float32Array(n);
+
+    const wood = RECIPES.impact_wood.make(sr, rng.fork('gate-wood'));
+    normalizePeak(wood.ch, 0.9);
+    const stone = RECIPES.impact_stone.make(sr, rng.fork('gate-stone'));
+    normalizePeak(stone.ch, 0.9);
+
+    // ---- 1. the failure ----------------------------------------------------
+    // `impact_wood`'s plate modes at gate scale. The 831 Hz board mode survives as 388 Hz
+    // so the family resemblance is audible; everything below it is new mass.
+    const crackEx = burst(n, sr, rng, 0.02, 0.0009);
+    modalRing(mono, crackEx, [
+      { f: 54, decay: 1.25, amp: 1.0 },
+      { f: 107, decay: 0.86, amp: 0.74 },
+      { f: 231, decay: 0.52, amp: 0.46 },
+      { f: 388, decay: 0.31, amp: 0.25 },
+    ], sr, 1.5);
+
+    // The split running the height of the leaf: a band of noise sweeping *down*, because
+    // the tear opens into thicker timber as it goes, and gated by a fast irregular
+    // modulator so it crackles rather than hisses.
+    {
+      const split = new Float32Array(Math.round(sr * 1.2));
+      whiteNoise(split, rng, 1);
+      svfSweep(split, sr, (t) => lerp(700, 150, Math.pow(t, 0.4)), 1.3, 'bp');
+      shapeEnv(split, (t) => Math.min(1, t * 70) * Math.exp(-t * 4.6)
+        * (0.4 + 0.6 * (Math.sin(t * 511) > -0.15 ? 1 : 0.18)));
+      for (let i = 0; i < split.length; i++) mono[i] += split[i] * 1.9;
+    }
+
+    // ---- 2. the drawbar and the hinges ------------------------------------
+    // A gate bar is a baulk in iron shoes and the pintles are set in the jamb. Both fail in
+    // the first quarter second: a low iron ring, and a grind as the strap comes out of the
+    // stone.
+    const ironEx = burst(n, sr, rng, 0.0035);
+    modalRing(mono, ironEx, ironModes(382, 0.55, 0.62, 0.05, rng), sr);
+    modalRing(mono, ironEx, ironModes(214, 0.78, 0.4, 0.06, rng), sr);
+    {
+      const at = Math.round(sr * 0.16);
+      const grind = new Float32Array(Math.round(sr * 0.7));
+      whiteNoise(grind, rng, 1);
+      svfSweep(grind, sr, (t) => lerp(2600, 380, Math.pow(t, 0.6)), 3.4, 'bp');
+      shapeEnv(grind, (t) => Math.min(1, t * 30) * Math.pow(1 - t, 1.4)
+        * (0.5 + 0.5 * Math.sin(t * 213)));
+      for (let i = 0; i < grind.length; i++) mono[at + i] += grind[i] * 0.85;
+    }
+
+    // ---- 3. the splintering, out of the blows themselves -------------------
+    debrisScatter(L, R, wood.ch[0], sr, rng, {
+      count: 46, span: 1.25, bias: 0.5,
+      rateLo: 0.3, rateHi: 0.72, gainLo: 0.2, gainHi: 0.62,
+    });
+    // And the leaves grinding round the stone jamb as they go.
+    debrisScatter(L, R, stone.ch[0], sr, rng, {
+      count: 14, span: 1.6, delay: 0.05, bias: 0.7,
+      rateLo: 0.32, rateHi: 0.6, gainLo: 0.1, gainHi: 0.3,
+    });
+
+    // ---- 4. two leaves falling, and a last section after them --------------
+    // Times chosen so nothing lands on a beat: a gate does not fall in rhythm.
+    const FALLS: readonly { at: number; w: number; f0: number }[] = [
+      { at: 0.55, w: 1.0, f0: 48 },
+      { at: 1.18, w: 1.22, f0: 41 },
+      { at: 2.06, w: 0.5, f0: 55 },
+    ];
+    for (const f of FALLS) {
+      const i0 = Math.round(f.at * sr);
+      const len = n - i0;
+      if (len < 64) continue;
+      // The mass hitting the roadway. Falling pitch is what makes it heavy rather than loud.
+      for (let i = 0; i < len; i++) {
+        const t = i / sr;
+        const hz = f.f0 * Math.exp(-t * 2.9) + 24;
+        mono[i0 + i] += Math.sin(TAU * hz * t) * Math.exp(-t * 3.4)
+          * Math.min(1, t * 520) * 1.6 * f.w;
+      }
+      // Earth and rubble under it.
+      const thud = burst(len, sr, rng, 0.16, 0.0016);
+      runBiquad(thud, lowpassC(190, 0.8, sr), 2);
+      for (let i = 0; i < len; i++) mono[i0 + i] += thud[i] * 1.5 * f.w;
+      // The leaf is timber, so it rings its own modes as it lands.
+      const leafEx = burst(len, sr, rng, 0.006);
+      const leaf = new Float32Array(len);
+      modalRing(leaf, leafEx, [
+        { f: 58 * (1 + rng.jitter(0.06)), decay: 0.62, amp: 1.0 },
+        { f: 114 * (1 + rng.jitter(0.06)), decay: 0.4, amp: 0.55 },
+        { f: 247 * (1 + rng.jitter(0.08)), decay: 0.24, amp: 0.3 },
+      ], sr, 1.1 * f.w);
+      for (let i = 0; i < len; i++) mono[i0 + i] += leaf[i];
+      // A burst of splinter grains at each landing, thinner every time.
+      debrisScatter(L, R, wood.ch[0], sr, rng, {
+        count: Math.round(16 * f.w), span: 0.55, delay: f.at, bias: 0.6,
+        rateLo: 0.34, rateHi: 0.8, gainLo: 0.12, gainHi: 0.4 * f.w,
+      });
+    }
+
+    // ---- 5. the settle -----------------------------------------------------
+    // Four seconds of wreckage finding its level. Modulated by a slow noise walk rather
+    // than an exponential: an exponential tail is a reverb, and this has to be *ragged*.
+    {
+      const set = new Float32Array(n);
+      pinkNoise(set, rng, 1);
+      // Three incommensurate rates, so the ripple never repeats inside the buffer.
+      shapeEnv(set, (t) => {
+        const env = Math.min(1, t * 26) * Math.pow(Math.max(0, 1 - t / 0.92), 1.7);
+        const rip = 0.42 + 0.58 * clamp01(
+          0.5 + 0.5 * Math.sin(t * 37.1) * Math.sin(t * 11.3 + 1.1) + 0.35 * Math.sin(t * 83.7)
+        );
+        return env * rip;
+      });
+      runBiquad(set, lowpassC(900, 0.7, sr), 2);
+      runBiquad(set, highpassC(60, 0.7, sr));
+      for (let i = 0; i < n; i++) mono[i] += set[i] * 0.7;
+    }
+    // Loose timber still coming down, long after the leaves are flat.
+    debrisScatter(L, R, wood.ch[0], sr, rng, {
+      count: 34, span: 3.1, delay: 1.0, bias: 0.9,
+      rateLo: 0.45, rateHi: 1.15, gainLo: 0.04, gainHi: 0.2, fade: 0.85,
+    });
+    debrisScatter(L, R, stone.ch[0], sr, rng, {
+      count: 18, span: 3.2, delay: 0.9, bias: 0.9,
+      rateLo: 0.5, rateHi: 1.1, gainLo: 0.03, gainHi: 0.13, fade: 0.85,
+    });
+
+    softClip(mono, 1.55);
+    // The gatehouse is a stone box either side of the arch, so the whole thing comes back
+    // off it. Longer and wetter than a blow in the open field.
+    schroederTail(mono, mono, sr, 2.6, 0.34, 1.5);
+    dcBlock(mono, sr);
+    spreadStereo(L, R, mono, sr, 15, 23, 0.36);
+    fadeOut(L, sr, 0.45);
+    fadeOut(R, sr, 0.45);
+    return p;
+  },
+});
+
+/**
+ * A bay of the curtain coming down under the great ram.
+ *
+ * The same event in stone rather than timber, so it is built from `impact_stone` grains the
+ * way the gate is built from `impact_wood` ones — and it is *longer and lower*, because a
+ * wall is a rubble core between two faces and it does not fall so much as pour. No modal
+ * ring of any consequence: masonry has no note, which is exactly what distinguishes it from
+ * the gate. What it has instead is a rock-crushing bed, a five-second run-out and a dust
+ * hiss that outlives both.
+ */
+def('wall_breach', {
+  rate: 44100, peak: 0.99,
+  make(sr, rng) {
+    const p = makePcm(sr, 5.4, 2);
+    const n = p.len;
+    const L = p.ch[0];
+    const R = p.ch[1];
+    const mono = new Float32Array(n);
+
+    const stone = RECIPES.impact_stone.make(sr, rng.fork('breach-stone'));
+    normalizePeak(stone.ch, 0.9);
+    const wood = RECIPES.impact_wood.make(sr, rng.fork('breach-wood'));
+    normalizePeak(wood.ch, 0.9);
+
+    // The shove that starts it: a very low descending body, two hundred tonnes losing its
+    // footing rather than an object being struck.
+    for (let i = 0; i < n; i++) {
+      const t = i / sr;
+      const hz = 44 * Math.exp(-t * 1.5) + 21;
+      mono[i] += Math.sin(TAU * hz * t) * Math.exp(-t * 1.55) * Math.min(1, t * 240) * 2.1;
+    }
+
+    // Grinding rubble: broadband, low, and modulated hard so it is a hundred blocks and not
+    // one long noise.
+    {
+      const roll = new Float32Array(n);
+      whiteNoise(roll, rng, 1);
+      svfSweep(roll, sr, (t) => lerp(1400, 220, Math.pow(t, 0.5)), 0.9, 'lp');
+      shapeEnv(roll, (t) => {
+        const env = Math.min(1, t * 55) * Math.pow(Math.max(0, 1 - t / 0.88), 1.5);
+        return env * (0.3 + 0.7 * clamp01(0.5 + 0.5 * Math.sin(t * 57.3)
+          * Math.sin(t * 17.7 + 0.7) + 0.3 * Math.sin(t * 131.9)));
+      });
+      for (let i = 0; i < n; i++) mono[i] += roll[i] * 1.7;
+    }
+
+    // Individual blocks. Dense for the first second, still arriving at four.
+    debrisScatter(L, R, stone.ch[0], sr, rng, {
+      count: 96, span: 3.6, bias: 0.45,
+      rateLo: 0.26, rateHi: 1.05, gainLo: 0.1, gainHi: 0.55, fade: 0.9,
+    });
+    // The bay's own hoarding and the walkway boards go with it.
+    debrisScatter(L, R, wood.ch[0], sr, rng, {
+      count: 20, span: 2.4, delay: 0.1, bias: 0.6,
+      rateLo: 0.35, rateHi: 0.9, gainLo: 0.06, gainHi: 0.26,
+    });
+
+    // Three big pieces landing whole.
+    for (const at of [0.42, 1.05, 1.84]) {
+      const i0 = Math.round(at * sr);
+      const len = n - i0;
+      const thud = burst(len, sr, rng, 0.2, 0.002);
+      runBiquad(thud, lowpassC(150, 0.8, sr), 2);
+      const w = 1 - at * 0.3;
+      for (let i = 0; i < len; i++) mono[i0 + i] += thud[i] * 1.6 * w;
+    }
+
+    // Dust. Outlasts the stone by a second and a half, which is the thing everyone
+    // remembers about a wall coming down.
+    {
+      const dust = new Float32Array(n);
+      pinkNoise(dust, rng, 1);
+      runBiquad(dust, bandpassC(1750, 0.5, sr));
+      shapeEnv(dust, (t) => Math.min(1, t * 4.5) * Math.pow(Math.max(0, 1 - t), 1.1));
+      for (let i = 0; i < n; i++) mono[i] += dust[i] * 0.5;
+    }
+
+    softClip(mono, 1.5);
+    schroederTail(mono, mono, sr, 2.9, 0.3, 1.7);
+    dcBlock(mono, sr);
+    spreadStereo(L, R, mono, sr, 17, 26, 0.4);
+    fadeOut(L, sr, 0.5);
+    fadeOut(R, sr, 0.5);
+    return p;
+  },
+});
+
+/**
+ * A siege tower's ramp coming down on the parapet.
+ *
+ * Short next to the two above — this is a machine working, not a structure failing — but it
+ * is the heaviest single *hit* in the game: three and a half metres of iron-shod boarding
+ * dropped from the deck onto a merlon. Three layers, in the order the ear gets them: the
+ * iron lip striking stone (`impact_stone` at rate, plus a mid iron ring), the deck timber
+ * taking the shock (`impact_wood`'s modes an octave down, damped fast because the ramp is
+ * lying on masonry and cannot ring), and the fall-arrest chains slapping the frame after it.
+ */
+def('tower_dock', {
+  rate: 44100, peak: 0.97,
+  make(sr, rng) {
+    const p = makePcm(sr, 2.0, 2);
+    const n = p.len;
+    const L = p.ch[0];
+    const R = p.ch[1];
+    const mono = new Float32Array(n);
+
+    const stone = RECIPES.impact_stone.make(sr, rng.fork('dock-stone'));
+    normalizePeak(stone.ch, 0.9);
+    const wood = RECIPES.impact_wood.make(sr, rng.fork('dock-wood'));
+    normalizePeak(wood.ch, 0.9);
+
+    // Iron on stone, at pitch: the lip is a small hard object however big the machine is.
+    addResampled(L, stone.ch[0], 0, 0.86, 0.95);
+    addResampled(R, stone.ch[0], 0, 0.88, 0.92);
+    const lipEx = burst(n, sr, rng, 0.0022);
+    modalRing(mono, lipEx, ironModes(660, 0.24, 0.55, 0.05, rng), sr);
+
+    // The deck. Half `impact_wood`'s frequencies, a third of its decays: heavy, and dead.
+    const deckEx = burst(n, sr, rng, 0.014, 0.0008);
+    modalRing(mono, deckEx, [
+      { f: 88, decay: 0.34, amp: 1.0 },
+      { f: 173, decay: 0.24, amp: 0.6 },
+      { f: 372, decay: 0.13, amp: 0.32 },
+    ], sr, 1.4);
+    const slam = burst(n, sr, rng, 0.07, 0.0012);
+    runBiquad(slam, lowpassC(240, 0.85, sr), 2);
+    for (let i = 0; i < n; i++) mono[i] += slam[i] * 1.5;
+
+    // Chains and the frame taking up the slack, over the half second after.
+    for (let i = 0; i < 22; i++) {
+      const t = 0.05 + Math.pow(rng.next(), 0.7) * 0.62;
+      const off = Math.round(t * sr);
+      const len = n - off;
+      if (len < 64) continue;
+      const ex = burst(len, sr, rng, 0.0015);
+      const seg = new Float32Array(len);
+      modalRing(seg, ex, ironModes(rng.range(900, 2600), rng.range(0.03, 0.1), 1, 0.06, rng), sr);
+      const g = rng.range(0.05, 0.19) * (1 - t);
+      const pan = rng.jitter(0.7);
+      for (let k = 0; k < len; k++) {
+        L[off + k] += seg[k] * g * (1 - pan * 0.5);
+        R[off + k] += seg[k] * g * (1 + pan * 0.5);
+      }
+    }
+
+    // Grit and mortar knocked off the merlon.
+    debrisScatter(L, R, stone.ch[0], sr, rng, {
+      count: 12, span: 0.85, delay: 0.03, bias: 0.55,
+      rateLo: 0.7, rateHi: 1.5, gainLo: 0.04, gainHi: 0.16,
+    });
+    debrisScatter(L, R, wood.ch[0], sr, rng, {
+      count: 6, span: 0.6, delay: 0.04, bias: 0.6,
+      rateLo: 0.5, rateHi: 0.95, gainLo: 0.05, gainHi: 0.15,
+    });
+
+    softClip(mono, 1.45);
+    schroederTail(mono, mono, sr, 1.3, 0.22, 1.2);
+    dcBlock(mono, sr);
+    spreadStereo(L, R, mono, sr, 11, 18, 0.3);
+    fadeOut(L, sr, 0.25);
+    fadeOut(R, sr, 0.25);
+    return p;
+  },
+});
+
+/**
+ * A ram or its shed going over — the crew dead or fled and the machine settling into the
+ * mud it was pushed through.
+ *
+ * The gate's material at a tenth of the gate's scale and none of its violence: green timber
+ * and rawhide have almost no ring, so this is mostly a dull earth thud, a short run of
+ * splinter grains, and a slack two-second settle. Deliberately unspectacular. A wrecked
+ * machine is an anticlimax and the sound should say so, or the player learns to hear their
+ * own losses as an event worth having.
+ */
+def('machine_wreck', {
+  rate: 44100, peak: 0.9,
+  make(sr, rng) {
+    const p = makePcm(sr, 2.6, 2);
+    const n = p.len;
+    const L = p.ch[0];
+    const R = p.ch[1];
+    const mono = new Float32Array(n);
+
+    const wood = RECIPES.impact_wood.make(sr, rng.fork('wreck-wood'));
+    normalizePeak(wood.ch, 0.9);
+
+    // The frame letting go: `impact_wood`'s modes down an octave, heavily damped.
+    const ex = burst(n, sr, rng, 0.02, 0.001);
+    modalRing(mono, ex, [
+      { f: 96, decay: 0.52, amp: 1.0 },
+      { f: 191, decay: 0.34, amp: 0.6 },
+      { f: 402, decay: 0.17, amp: 0.32 },
+    ], sr, 1.25);
+
+    // Into the ground, not onto a road: soft, and over quickly.
+    const earth = burst(n, sr, rng, 0.19, 0.0022);
+    runBiquad(earth, lowpassC(210, 0.75, sr), 2);
+    for (let i = 0; i < n; i++) mono[i] += earth[i] * 1.5;
+    for (let i = 0; i < n; i++) {
+      const t = i / sr;
+      mono[i] += Math.sin(TAU * (58 * Math.exp(-t * 3.4) + 28) * t)
+        * Math.exp(-t * 4.6) * Math.min(1, t * 420) * 1.1;
+    }
+
+    debrisScatter(L, R, wood.ch[0], sr, rng, {
+      count: 30, span: 1.5, bias: 0.55,
+      rateLo: 0.42, rateHi: 1.1, gainLo: 0.08, gainHi: 0.36,
+    });
+    debrisScatter(L, R, wood.ch[0], sr, rng, {
+      count: 12, span: 1.3, delay: 0.7, bias: 0.9,
+      rateLo: 0.6, rateHi: 1.3, gainLo: 0.03, gainHi: 0.12, fade: 0.9,
+    });
+
+    // Hide, rope and the sling timbers going slack.
+    {
+      const set = new Float32Array(n);
+      pinkNoise(set, rng, 1);
+      shapeEnv(set, (t) => Math.min(1, t * 30) * Math.pow(Math.max(0, 1 - t / 0.8), 2.0)
+        * (0.45 + 0.55 * clamp01(0.5 + 0.5 * Math.sin(t * 43.7) * Math.sin(t * 13.1))));
+      runBiquad(set, lowpassC(1100, 0.7, sr), 2);
+      runBiquad(set, highpassC(80, 0.7, sr));
+      for (let i = 0; i < n; i++) mono[i] += set[i] * 0.45;
+    }
+
+    softClip(mono, 1.4);
+    schroederTail(mono, mono, sr, 1.5, 0.2, 1.2);
+    dcBlock(mono, sr);
+    spreadStereo(L, R, mono, sr, 13, 19, 0.32);
+    fadeOut(L, sr, 0.3);
+    fadeOut(R, sr, 0.3);
+    return p;
+  },
+});
+
 // ---- Movement -------------------------------------------------------------
 
 /** A single hobnailed caliga landing on dry trampled earth. */

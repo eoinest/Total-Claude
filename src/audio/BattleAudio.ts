@@ -22,6 +22,7 @@ import { clamp, clamp01, damp, lerp } from '../util/math';
 import { hash01 } from '../util/rand';
 import { FACTIONS, Faction, UnitOrder, type UnitGroupState } from '../sim/types';
 import type { ProjectileFeed } from '../sim/Projectiles';
+import type { Siege } from '../sim/Siege';
 import { isCavalry, unitType } from '../units/roster';
 import type { BusName, Mixer } from './Mixer';
 import { Bed } from './Mixer';
@@ -38,7 +39,31 @@ export interface BattleView {
     state: Uint8Array;
   };
   groundAt?(x: number, z: number): number;
+  /**
+   * The siege train, present on every `BattleSystem` and absent from a field-battle stub.
+   *
+   * **This is how the gate gets a sound without a line in `src/sim/Siege.ts`.** The collapse
+   * is already fully described by what the simulation publishes — `gateReport().gates[].broken`
+   * goes false → true on the tick the leaves come down, at the same instant `Siege` emits its
+   * `cameraShake` — so the audio side watches for the transition instead of asking for an
+   * event. Nothing is emitted, nothing is ordered, no shared mutable state is touched, and
+   * the sim file is not opened at all.
+   */
+  siege?: SiegeView;
 }
+
+/**
+ * The four reports the siege watch reads.
+ *
+ * **`Pick<Siege, ...>`, not a hand-written shape.** This file's own history is the argument:
+ * `ProjectileView` below used to restate `ProjectileSystem`'s pool from memory, got four of
+ * seven names wrong, and every fly-by whistle in the game's history was skipped by a guard
+ * that could only ever say no. The premise that forced those restatements — that a `src/sim`
+ * type cannot be imported here — is false: `verbatimModuleSyntax: false` means `import type`
+ * is erased entirely, so this costs nothing at runtime and cannot drift, because the return
+ * types below *are* the simulation's own. Rename `gateReport` and this stops compiling.
+ */
+export type SiegeView = Pick<Siege, 'gateReport' | 'towerReport' | 'ramReport' | 'breachReport'>;
 
 /**
  * Optional feed from a projectile system, if one is registered.
@@ -70,6 +95,16 @@ const DERIVE_DT = 1 / 12;
 const MELEE_DETAIL_RANGE = 130;
 /** Blows per second at which the melee layers are at full level. */
 const HITS_FULL = 180;
+
+/**
+ * How often the siege train's reports are read.
+ *
+ * 50 ms. Fast enough that the collapse lands inside the same camera shake a player sees —
+ * the measured lag from `gateReport().broken` flipping to the buffer starting is under one
+ * poll — and slow enough that four report allocations per tick are free. Polling every frame
+ * would be 60 Hz of garbage for a transition that happens twice a battle.
+ */
+const SIEGE_DT = 1 / 20;
 
 const MELEE_SOUND: Record<string, string> = {
   flesh: 'hit_flesh',
@@ -186,6 +221,10 @@ export interface BattleAudioStats {
   discreteThisFlush: number;
   emitters: number;
   beds: number;
+  /** One-shots the siege watch has fired since the battle was attached. */
+  siegeCues: number;
+  /** The last one it fired, so a probe can name the beat it measured. */
+  lastSiegeCue: string;
 }
 
 export class BattleAudio {
@@ -233,6 +272,17 @@ export class BattleAudio {
   private projectiles: ProjectileView | null = null;
   private flybys: Array<{ handle: ReturnType<Mixer['startLoop']>; idx: number }> = [];
 
+  // ---- the siege watch: last reading of every transition worth a sound ----
+  private siegeTimer = 0;
+  private siegePrimed = false;
+  private gateBroken = new Map<string, boolean>();
+  private gateBreachedSeen = false;
+  private towerPhase = new Map<number, string>();
+  private ramWrecked = new Map<number, boolean>();
+  private baysDown = new Set<number>();
+  private siegeCues = 0;
+  private lastSiegeCue = '';
+
   constructor(
     private readonly mixer: Mixer,
     private readonly opts: { detail?: number } = {}
@@ -245,8 +295,29 @@ export class BattleAudio {
   }
 
   attach(battle: BattleView | null, projectiles: ProjectileView | null): void {
+    /*
+     * Re-prime the siege watch only when the world underneath it has actually changed.
+     *
+     * `AudioEngine.attachSimSources` re-runs every two seconds — deliberately, so a subsystem
+     * that registers late is still picked up — and hands back the *same* `BattleSystem` every
+     * time. Clearing the watch on every call would throw away the previous reading thirty
+     * times a minute, so no transition could ever be observed and the gate would go on being
+     * silent while every line of this file looked correct. That is the exact shape of the two
+     * faults this module already carries a post-mortem for, so the identity test is the point.
+     */
+    if (battle !== this.battle) this.resetSiegeWatch();
     this.battle = battle;
     this.projectiles = projectiles;
+  }
+
+  private resetSiegeWatch(): void {
+    this.siegeTimer = 0;
+    this.siegePrimed = false;
+    this.gateBroken.clear();
+    this.towerPhase.clear();
+    this.ramWrecked.clear();
+    this.baysDown.clear();
+    this.gateBreachedSeen = false;
   }
 
   // -------------------------------------------------------------------------
@@ -420,6 +491,8 @@ export class BattleAudio {
       this.derive(this.deriveTimer);
       this.deriveTimer = 0;
     }
+
+    this.pollSiege(dt);
 
     this.stepEmitters(dt);
     this.updateBeds(dt);
@@ -751,6 +824,151 @@ export class BattleAudio {
     }
   }
 
+
+  // -------------------------------------------------------------------------
+  // The siege, watched rather than listened to
+  // -------------------------------------------------------------------------
+
+  /**
+   * The four beats of an assault that the simulation performs and never announced.
+   *
+   * `Siege` emits exactly two things a listener could hear: a `projectileImpact` per ram
+   * blow (which is why the twenty-six blows on a gate *do* sound, as `impact_wood`), and a
+   * `cameraShake` for each of the four structural events below. A shake is not a sound and
+   * nothing in the audio subsystem was subscribed to one, so the climax of the whole product
+   * — four minutes of battering and then the leaves giving way — arrived mute.
+   *
+   * **The fix is a poll, not an event.** Every one of the four transitions is already fully
+   * described by the reports `Siege` publishes for the HUD and the probes, so nothing has to
+   * be added to `src/sim/Siege.ts`, nothing new crosses the sim boundary, and nothing here
+   * can affect a hash: these four calls only read.
+   *
+   *   | beat                     | transition watched                                |
+   *   |--------------------------|---------------------------------------------------|
+   *   | the gate giving way      | `gateReport().gates[i].broken` false → true        |
+   *   | a bay of curtain down    | a new index in `breachReport().bays`               |
+   *   | a tower's ramp landing   | `towerReport()[i].state` → `landing`               |
+   *   | a machine going over     | `ramReport()[i].wreck` false → true                |
+   *
+   * The first reading of a battle records the state and sounds nothing. Without that, a
+   * scenario that starts with a gate already down — or an `AudioEngine` that attaches after
+   * the storm has begun, which it does whenever the player enables sound mid-battle — would
+   * fire a collapse for a gate that fell before anyone was listening.
+   */
+  private pollSiege(dt: number): void {
+    const s = this.battle?.siege;
+    if (!s) return;
+    this.siegeTimer += dt;
+    if (this.siegeTimer < SIEGE_DT) return;
+    this.siegeTimer = 0;
+    const first = !this.siegePrimed;
+    this.siegePrimed = true;
+
+    // ---- the gate ---------------------------------------------------------
+    const gate = s.gateReport();
+    let gateFired = false;
+    for (const g of gate.gates) {
+      const was = this.gateBroken.get(g.id) === true;
+      this.gateBroken.set(g.id, g.broken);
+      if (first || !g.broken || was) continue;
+      this.gateCollapse(g.x, g.z);
+      gateFired = true;
+    }
+    /*
+     * The scalar, as a backstop for the circuit the per-gate loop cannot see.
+     *
+     * `gates` is `city.getGates()`, so a ram that breaks a gate the city does not publish
+     * under that id sets `breached` and appears in no row. That combination is a bug
+     * elsewhere rather than here, but the one sound the player must never lose is this one,
+     * and a silent climax is a worse failure than a collapse placed on the focus gate.
+     */
+    const wasBreached = this.gateBreachedSeen;
+    this.gateBreachedSeen = gate.breached;
+    if (!first && gate.breached && !wasBreached && !gateFired && Number.isFinite(gate.x)) {
+      this.gateCollapse(gate.x, gate.z);
+    }
+
+    // ---- the machines -----------------------------------------------------
+    const rams = s.ramReport();
+    for (const r of rams) {
+      const was = this.ramWrecked.get(r.id) === true;
+      this.ramWrecked.set(r.id, r.wreck);
+      if (!first && r.wreck && !was) this.machineWreck(r.x, r.z);
+    }
+
+    for (const t of s.towerReport()) {
+      const was = this.towerPhase.get(t.id);
+      this.towerPhase.set(t.id, t.state);
+      if (first || was === undefined || was === t.state) continue;
+      /*
+       * "Was not docked, now is" rather than the literal pair `docking -> landing`.
+       * `Landing` survives exactly one tick before `updateTowers` turns it into `Boarding`,
+       * so at a 50 ms poll the state seen after a dock is usually already `boarding` and a
+       * test written against the pair would fire for perhaps one tower in three.
+       */
+      const wasDocked = was !== 'approach' && was !== 'docking';
+      const isDocked = t.state === 'landing' || t.state === 'boarding';
+      if (!wasDocked && isDocked) this.towerDock(t.x, t.deckY, t.z);
+    }
+
+    // ---- the curtain ------------------------------------------------------
+    const bays = s.breachReport().bays;
+    for (const bay of bays) {
+      if (this.baysDown.has(bay)) continue;
+      this.baysDown.add(bay);
+      if (first) continue;
+      /*
+       * `breachReport` names the bay, not the place. The great ram that brought it down is
+       * standing in front of it and publishes both, so the position comes off the machine —
+       * which is also where a listener would say the noise came from.
+       */
+      const r = rams.find((m) => m.kind === 'great' && m.bay === bay)
+        ?? rams.find((m) => m.kind === 'great');
+      if (r) this.wallBreach(r.x, r.z);
+    }
+  }
+
+  /** The leaves come down. The single loudest thing in the game, and it should be. */
+  private gateCollapse(x: number, z: number): void {
+    this.siegeCue('gate_collapse', x, this.groundAt(x, z) + 2.2, z, 1.3, 8);
+  }
+
+  /** A bay of curtain going over under the great ram. */
+  private wallBreach(x: number, z: number): void {
+    this.siegeCue('wall_breach', x, this.groundAt(x, z) + 3.5, z, 1.2, 8);
+  }
+
+  /** A tower's ramp landing on the parapet — placed at the deck, which is where it is. */
+  private towerDock(x: number, deckY: number, z: number): void {
+    const y = Number.isFinite(deckY) ? deckY : this.groundAt(x, z) + 8;
+    this.siegeCue('tower_dock', x, y, z, 0.95, 3.5);
+  }
+
+  /** A ram or its shed settling into the mud, crew gone. */
+  private machineWreck(x: number, z: number): void {
+    this.siegeCue('machine_wreck', x, this.groundAt(x, z) + 1.2, z, 0.8, 2.2);
+  }
+
+  /**
+   * Fire one structural cue.
+   *
+   * `aggregate` is load-bearing rather than decorative. A collapse is a building-sized
+   * source and this game's camera routinely sits five hundred metres from it; on the point
+   * law (`REF_DIST` 9 m, rolloff 0.85) a gate falling at 400 m arrives at roughly a
+   * fiftieth of its level, under `AUDIBLE_FLOOR`, and `Mixer.play` culls it. The climax
+   * would then be silent for exactly the players watching the whole assault. On the
+   * aggregate law it carries, which is the same reason the melee roar uses it.
+   *
+   * The priority is the highest in the file — a shield-wall clash is 3 — because a 4.8 s
+   * voice has to survive a storm of one-shots for its whole length, and the 250 ms interval
+   * is per id, so two gates cannot double-trigger on one poll.
+   */
+  private siegeCue(id: string, x: number, y: number, z: number, gain: number, priority: number): void {
+    if (!this.mixer.play(id, { x, y, z, gain, bus: 'combat', aggregate: true, priority }, 0.25)) return;
+    this.siegeCues++;
+    this.lastSiegeCue = id;
+  }
+
   /** A cheap advancing hash so successive steps pick different variants. */
   private rotate(e: UnitEmitter): number {
     e.variant = (e.variant * 1.618033988 + 0.31830988) % 1;
@@ -858,6 +1076,8 @@ export class BattleAudio {
       discreteThisFlush: this.discreteThisFlush,
       emitters: this.emitters.size,
       beds,
+      siegeCues: this.siegeCues,
+      lastSiegeCue: this.lastSiegeCue,
     };
   }
 

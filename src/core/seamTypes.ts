@@ -52,7 +52,8 @@ import type { EmbrasureView } from '../sim/Projectiles';
 import type { CityNavProvider, PathfindingSystem } from '../ai/Pathfinding';
 import type { NavProvider, ObstacleSource } from '../sim/BattleSystem';
 import type { BattleSystem } from '../sim/BattleSystem';
-import type { BattleView } from '../audio/BattleAudio';
+import type { BattleView, SiegeView } from '../audio/BattleAudio';
+import type { Siege } from '../sim/Siege';
 import type { TerrainLike } from '../ui/HudSystem';
 import type { SkyLike } from '../ui/SettingsPanel';
 import type { FlowView } from '../ui/siege';
@@ -90,6 +91,16 @@ type _CityForDeploy = Implements<CitySystem, DeployCityView>;
 type _CityForDoctrine = Implements<CitySystem, CityShape>;
 type _NavForBattle = Implements<PathfindingSystem, NavProvider>;
 type _BattleForAudio = Implements<BattleSystem, BattleView>;
+/**
+ * The siege watch that gives the gate its sound.
+ *
+ * `SiegeView` is `Pick<Siege, 'gateReport' | 'towerReport' | 'ramReport' | 'breachReport'>`,
+ * so a rename on the simulation side is a compile error in the `Pick` itself and the field
+ * names inside each report cannot drift at all — they *are* `Siege`'s own return types. This
+ * line is what says the audio side is allowed to reach the reports through `BattleSystem.siege`
+ * rather than through an event, which is the whole reason `src/sim/Siege.ts` needed no change.
+ */
+type _SiegeForAudio = Implements<Siege, SiegeView>;
 type _TerrainForHud = Implements<TerrainSystem, TerrainLike>;
 type _TerrainForDeploy = Implements<TerrainSystem, DeployTerrainView>;
 type _SkyForSettings = Implements<SkySystem, SkyLike>;
