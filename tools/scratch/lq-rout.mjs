@@ -21,12 +21,14 @@ const AT = Number(arg('at', 12));
 const MINFOOT = Number(arg('minfoot', 3));
 const LABEL = arg('label', 'run');
 const OUT = arg('out', '/tmp/lq-rout.json');
+const SHOTS = arg('shots', '');
+const QUALITY = arg('quality', 'low');
 
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader'] });
-const page = await browser.newPage({ viewport: { width: 800, height: 500 } });
+const page = await browser.newPage({ viewport: { width: SHOTS ? 1280 : 800, height: SHOTS ? 720 : 500 } });
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));
-await page.goto(`http://127.0.0.1:${PORT}/?harness=1&scenario=assault&autoplay=1&quality=low${MAP ? `&map=${MAP}` : ''}`,
+await page.goto(`http://127.0.0.1:${PORT}/?harness=1&scenario=assault&autoplay=1&quality=${QUALITY}${MAP ? `&map=${MAP}` : ''}`,
   { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 300000 });
 
@@ -80,6 +82,13 @@ const r = await page.evaluate(`(() => {
   const start = new Map(), yPrev = new Map();
   for (const i of footMen) start.set(i, [p.x[i], p.z[i]]);
   for (const i of wallMen) yPrev.set(i, p.y[i]);
+
+  // Hand the camera the party's own ground, so the frame is the same situation on both
+  // arms even though the two builds do not reach it at the same second. Focus on the
+  // centroid of the men still on the grass, looking at the wall they were queuing for.
+  let cx = 0, cz = 0, cn = 0;
+  for (const i of footMen) { cx += p.x[i]; cz += p.z[i]; cn++; }
+  window.__lqCam = { x: cx / Math.max(1, cn), z: cz / Math.max(1, cn), yaw: pick.group[0].facing };
 
   b.rout(u);
 
