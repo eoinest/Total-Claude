@@ -30,7 +30,7 @@
     }
   },
   "map=campus-martius&scenario=assault": {
-    "note": "Rome's assault. quality=high, which is the same battle as ultra here -- both fit 3,074 men and 933 of Rome, so fittedUnitScale does not bite until medium. Recorded at 88a4aa5, which is NOT the r6 battle: 89e7a44 moved it (ram 26 blows -> 24), b273e5b moved it again (-> 12) and 8b8eb1f moved it back (-> 23). None of those three was announced. This entry is pinned to stop a fourth, not to bless the current numbers -- the balance question is open, see docs/tech/SIEGE.md 5.1. Re-record only in the same commit as the change that moved it.",
+    "note": "Rome's assault. quality=high, which is the same battle as ultra here -- both fit 3,074 men and 933 of Rome, so fittedUnitScale does not bite until medium. Re-recorded here for a movement that is NOT this pass's: cc72ea6 turned ROUGH_SLOWS_MOVEMENT on, published these exact five hashes in its own commit message -- t+0 unchanged at 22bb3df8, then e246f360, 326f06de, fe58e1f0, cedf0a10 -- and did not include this file in the commit, so the gate that exists to stop unannounced movement has been red on main ever since. The pass that recorded it changed the ram shed's cover test and moved nothing: 'default' and 'map=carthage&scenario=assault' are both bit-identical across it, and this entry's new hashes are cc72ea6's own. Re-record only in the same commit as the change that moved it.",
     "checkpoints": {
       "0": {
         "hash": "22bb3df8",
@@ -38,24 +38,24 @@
         "alive": 3074
       },
       "30": {
-        "hash": "8876e4c8",
+        "hash": "e246f360",
         "count": 3074,
-        "alive": 2986
+        "alive": 2982
       },
       "90": {
-        "hash": "1fa41318",
+        "hash": "326f06de",
         "count": 3074,
-        "alive": 2563
+        "alive": 2552
       },
       "150": {
-        "hash": "240b4bb8",
+        "hash": "fe58e1f0",
         "count": 3074,
-        "alive": 2361
+        "alive": 2349
       },
       "200": {
-        "hash": "941a3c1c",
+        "hash": "cedf0a10",
         "count": 3074,
-        "alive": 2182
+        "alive": 2186
       }
     }
   },

@@ -135,7 +135,7 @@ export function readSiege(ctx: EngineContext): SiegeRead | null {
     label: copy.label,
     note: copy.note(o, gate),
     objective: objectiveLine(role, o),
-    progress: pct(o.stormInside, o.needInside),
+    progress: objectiveProgress(o),
     mine: role === 'storm',
     inside: o.stormInside,
     needInside: o.needInside,
@@ -263,11 +263,59 @@ const PHASE_COPY: Record<
   },
 };
 
-/** The live objective, in the fewest words that still name both numbers. */
+/**
+ * The live objective, in the fewest words that still name both numbers.
+ *
+ * **Two conditions decide a storm and this line only ever named one of them.** It read
+ * `${o.stormInside} of ${o.needInside} inside` unconditionally. Measured over 24 seeds of
+ * Rome's assault at `cc72ea6`, **9 of the 24 are decided by the other one** — the lodgement:
+ * `needFoothold` men holding a stretch of parapet the garrison has stopped standing on, for
+ * `holdSeconds` — and on every one of those seeds the break-in count this line prints is at
+ * or near zero while it happens. Played from the defending chair the top plaque therefore
+ * read *"0 of 60 inside — hold"* right up to the moment the city fell, with six hundred
+ * Romans still on the wall and nine hundred alive. There is no other channel: the deployment
+ * plaque states the rule once, before a shot is fired, and then nothing on screen ever
+ * mentions it again.
+ *
+ * The lodgement outranks the break-in whenever it exists, because it is a **countdown** — a
+ * number that reaches its threshold in a fixed number of seconds unless somebody does
+ * something about it — where a break-in count is not. Below the foothold it is still named,
+ * because "17 of 24 on a stretch of ours" is the warning and there is no other.
+ *
+ * No threshold is typed here. All four numbers come off `BattleFlowSystem.objective`, which
+ * is the thing that enforces them, for the reason this module's header gives.
+ */
 function objectiveLine(role: 'storm' | 'garrison', o: Obj): string {
+  if (o.stormHolding >= o.needFoothold) {
+    const left = Math.max(0, Math.ceil(o.holdSeconds - o.heldFor));
+    return role === 'storm'
+      ? `${plural(o.stormHolding, 'man', 'men')} hold a stretch — ${left} s to take the wall`
+      : `${plural(o.stormHolding, 'man', 'men')} hold a stretch of ours — ${left} s to clear it`;
+  }
+  if (o.stormHolding > 0) {
+    return role === 'storm'
+      ? `${o.stormHolding} of ${o.needFoothold} on a cleared stretch`
+      : `${o.stormHolding} of ${o.needFoothold} on a stretch of ours`;
+  }
   return role === 'storm'
     ? `${o.stormInside} of ${o.needInside} inside`
     : `${o.stormInside} of ${o.needInside} inside — hold`;
+}
+
+/**
+ * The bar under the line, following whichever condition the line is naming.
+ *
+ * It followed the break-in alone, so on the nine seeds in twenty-four that end on a lodgement
+ * the bar was at zero when the city fell. The lodgement is two halves — gather
+ * `needFoothold` men on a cleared stretch, then keep them there for `holdSeconds` — so it
+ * fills the bar in two halves, and the bar is the nearer of the two conditions rather than a
+ * blend of them, because a blend would move when neither is moving.
+ */
+function objectiveProgress(o: Obj): number {
+  const lodgement = o.stormHolding >= o.needFoothold
+    ? 0.5 + 0.5 * pct(o.heldFor, o.holdSeconds)
+    : 0.5 * pct(o.stormHolding, o.needFoothold);
+  return Math.max(pct(o.stormInside, o.needInside), lodgement);
 }
 
 /**
