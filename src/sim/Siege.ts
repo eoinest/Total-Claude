@@ -198,13 +198,49 @@ const TOWER_IDLE_LIMIT = 20;
  * carries a levy and slings instead, the identical machine takes **zero damage** on the
  * identical approach and batters the gate down on schedule.
  *
- * So the fix is the shed, not the ballista. 0.2 is a shade weaker than the `testudo`
- * formation's own 0.16 — a roof of hides and green timber against a roof of shields — and it
- * is applied to the gang and not to the machine, because what is being protected is men.
- * They are not made safe: at this multiplier the same two units still take the crew down by a
- * third on the way in, which is the ram being a dangerous job rather than an impossible one.
+ * So the fix is the shed, not the ballista, and it is applied to the gang and not to the
+ * machine, because what is being protected is men.
+ *
+ * **This comment claimed the opposite of the number for its whole life.** It read *"0.2 is a
+ * shade weaker than the `testudo` formation's own 0.16"*. The constant has been 0.12 since
+ * `64dfb88`, and 0.12 is *less* incoming damage than 0.16 — so a roof of hides and green
+ * timber is already better cover than a roof of shields, and the proposal to take it to 0.08
+ * would make it twice as good. That inverted sentence is what the proposal was being read
+ * against.
+ *
+ * **It stays at 0.12, and the reason is that the figure it would be tuned against does not
+ * exist.** `docs/tech/SIEGE.md` 5.1 pins "26 blows, the gate open at t+220" and prices
+ * `0.12 -> 0.08` as restoring it. Measured at `cc72ea6` with `tools/scratch/sf-ram-emc.mjs`
+ * over twelve seeds of the same battle, the blows this machine lands are
+ * **0, 3, 3, 9, 19, 20, 21, 22, 23, 23, 25, 26** — median 20.5, and the gate opens on one
+ * seed of twelve. 26 is the top of a wide distribution, not a schedule. The blow count is
+ * `(crewRoutTime - 100) / 4.4` to within a blow on every seed, because the crew's life is the
+ * only variable in it.
+ *
+ * And on the far side of the gate there is nothing to buy. Forcing the Porta Flaminia open at
+ * t+220 on two live seeds and leaving it open for the rest of the battle
+ * (`tools/scratch/sf-gate-emc.mjs`) changed **not one number**: men ever inside 60 -> 60 and
+ * 99 -> 99, peak inside 42 -> 42, same verdict. The Juthungi host holds 132 m out and does not
+ * use it. Until somebody walks through the gate, every constant upstream of it is decoration.
+ *
+ * It is also, in practice, a **Rome-only** constant. On Carthage the identical machine takes
+ * *zero damage* — not "less damage", zero, attributed at `cc72ea6` with
+ * `tools/scratch/so-ramkill.mjs`: `killed by: nobody, damage by: none` over 140 s including
+ * forty of battering — so any multiplier applied to it is a multiplier on nothing. See
+ * `GARRISON_PLANS` for why, which is where the ram's real dial turned out to be.
  */
 const RAM_SHED_COVER = 0.12;
+/**
+ * Metres behind the machine's own tail that still count as being under its roof.
+ *
+ * Not a new arrangement of men: it is `musterRams`' own layout read back. That function puts
+ * rows 0-3 alongside the trunk at `fz = 1.6 - row * 1.1` and every row after them behind the
+ * tail at `-(halfD + (row - 3) * 0.95)`, so a full 32-man gate crew four abreast reaches
+ * `RAM_HALF_D + 4 * 0.95 = 8.0 m` from the machine's centre. 4.6 clears that by 0.4 m and
+ * nothing more, which is the point: it is the depth of the crew the machine has, not a radius
+ * with an opinion.
+ */
+const SHED_COVER_REACH = 4.6;
 /**
  * Units that may queue at one machine at once, crew included.
  *
@@ -4439,6 +4475,7 @@ export class Siege implements ElevationOwner {
     for (const r of this.rams) {
       if (r.wreck || r.state === RamState.Wreck || r.state === RamState.Spent) continue;
       if (!this.owned.has(r.unitId)) continue;
+      if (!this.atTheMachine(r)) continue;
       want.add(r.unitId);
     }
     for (const id of this.sheltered) {
@@ -4450,6 +4487,56 @@ export class Siege implements ElevationOwner {
       modsOf(id).missileTaken = RAM_SHED_COVER;
       this.sheltered.add(id);
     }
+  }
+
+  /**
+   * Is this machine's gang actually at it, and small enough to shelter under it?
+   *
+   * **`applyShedCover` had no distance test and no size test.** It wrote `missileTaken` on
+   * whichever unit `SiegeRam.unitId` named, wherever its men were standing and however many
+   * of them there were. That is harmless for as long as the crew is the sixteen-to-thirty-two
+   * men who spawned with the machine and never leave its muster — and it is exactly wrong the
+   * moment `recrew` hands the ropes to a body that is not there yet. The nearest gang the
+   * search can reach on Rome is a `juthungi-warband` of **180 men at 123 m**, and under the
+   * old rule all 180 of them took a fifth of the missile damage they should from the instant
+   * of assignment, for the whole fifty-second walk, in the open. A roof they were nowhere
+   * near. Any widening of `RECREW_RADIUS` had to be blocked on this and was.
+   *
+   * Two tests, because two different things are wrong and one predicate cannot say both:
+   *
+   *  - **Distance.** The gang's anchor has to be within the muster `musterRams` lays out, so
+   *    the cover starts when the men arrive rather than when the machine is assigned.
+   *  - **Share.** At least half the unit's living men have to be inside that muster. A shed
+   *    is 3.8 x 8.4 m of hides and green timber over a crew; a warband of 180 does not fit
+   *    under one, and it should not get to behave as though it does merely because its
+   *    anchor is on the machine. This is the honest answer available to a *per-unit*
+   *    multiplier: `missileTaken` is a property of the whole unit, so the choice is cover for
+   *    all of them or none, and "half of them are under it" is the fairest place to put the
+   *    line. A finer model would weight the multiplier by the share, and that is a change to
+   *    what the shed *is* rather than a fix to where it is; it is not made here.
+   *
+   * Both tests are no-ops on the shipped deployment — the gate crew is 32 men laid out in
+   * eight rows reaching 8.0 m back, inside `SHED_COVER_REACH`, and the share is 1.0 — which
+   * is deliberate: `tools/scratch/so-ramline.mjs` prints the same timeline across this
+   * change, so a movement in the ram's figures after it is a real one.
+   */
+  private atTheMachine(r: SiegeRam): boolean {
+    const u = this.battle.unitById(r.unitId);
+    if (!u || u.destroyed || u.alive === 0) return false;
+    const great = r.kind === RamKind.Great;
+    const reach = (great ? GREAT_RAM_HALF_D : RAM_HALF_D) + SHED_COVER_REACH;
+    const r2 = reach * reach;
+    const p = this.battle.pool;
+    let near = 0;
+    let live = 0;
+    for (const i of u.members) {
+      if (!p.aliveAt(i)) continue;
+      live++;
+      const dx = p.x[i] - r.x;
+      const dz = p.z[i] - r.z;
+      if (dx * dx + dz * dz <= r2) near++;
+    }
+    return live > 0 && near * 2 >= live;
   }
 
   private updateRams(dt: number): void {
