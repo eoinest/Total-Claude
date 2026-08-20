@@ -65,6 +65,15 @@ const SEED0 = Number(args.get('seed0') ?? 4265438264);
 const UNTIL = Number(args.get('until') ?? 900);
 const JSON_OUT = args.get('json') ?? '';
 const ONLY = args.has('only') ? new Set(String(args.get('only')).split(',')) : null;
+/**
+ * Ablation: keep the nav raster's charge, throw away the integrator's drag.
+ *
+ * The two halves of the fix land in different subsystems and a single after-arm cannot say
+ * which one moved a number. Emptying `ObstacleField`'s rough set after boot removes the
+ * movement drag and leaves `costBox`'s charge exactly where `restamp` already wrote it, so
+ * this is a clean third arm that needs no second build and no product code behind a flag.
+ */
+const NO_DRAG = args.has('nodrag');
 const want = (k) => !ONLY || ONLY.has(k);
 
 const base = `http://127.0.0.1:${PORT}`;
@@ -109,6 +118,17 @@ async function openPage(seed, extra = '') {
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 420000, polling: 250 });
   await page.evaluate(() => window.__game.engine.stop());
+  if (NO_DRAG) {
+    const dropped = await page.evaluate(() => {
+      const m = window.__game.battle.masonry;
+      if (!m || typeof m.setRough !== 'function') return null;
+      const had = m.noRough ? 0 : 1;
+      m.setRough([]);
+      return { had, noRoughNow: m.noRough };
+    });
+    if (dropped === null) throw new Error('--nodrag asked for on a build with no ObstacleField.setRough');
+    if (!dropped.noRoughNow) throw new Error('--nodrag did not take');
+  }
   return { page, errors };
 }
 

@@ -526,6 +526,7 @@ export class BattleSystem implements Subsystem {
     this.breakingOff = new Uint8Array(256);
     this.press = new Float32Array(ctx.quality.maxSoldiers);
     this.sepUsed = new Float32Array(ctx.quality.maxSoldiers);
+    this.roughDrag = new Float32Array(ctx.quality.maxSoldiers).fill(1);
     this.rallyX = new Float32Array(ctx.quality.maxSoldiers);
     this.rallyZ = new Float32Array(ctx.quality.maxSoldiers);
     this.rallyOn = new Uint8Array(ctx.quality.maxSoldiers);
@@ -1086,6 +1087,8 @@ export class BattleSystem implements Subsystem {
       this.strength[u.faction] += u.alive;
     }
 
+    // Before anything writes a position: what is under each man's feet, as a multiplier.
+    this.refreshRoughDrag();
     this.steerSoldiers(dt);
     this.resolveCrowding(dt);
     this.integrate(dt);
@@ -2178,8 +2181,8 @@ export class BattleSystem implements Subsystem {
       // the neighbour side tested `mounted ? 5 : fighting ? 3 : 1` gave a mounted fighter a
       // 0.08 budget as `i` and 0.22 as `j` against the same `used[i]` counter, so once his
       // neighbours had spent the smaller figure his own correction was silently dropped.
-      const budgetI = !this.mounted[i] && p.state[i] === SoldierState.Fighting
-        ? MAX_SEPARATION_FIGHTING : MAX_SEPARATION_STEP;
+      const budgetI = (!this.mounted[i] && p.state[i] === SoldierState.Fighting
+        ? MAX_SEPARATION_FIGHTING : MAX_SEPARATION_STEP) * this.roughDrag[i];
       let pushX = 0;
       let pushZ = 0;
 
@@ -2230,7 +2233,7 @@ export class BattleSystem implements Subsystem {
         // rare pair that actually exhausts the budget — this is the innermost line of the
         // whole tick and it runs a few hundred thousand times a second.
         // `mj === 3` is exactly "on foot and in melee"; see the mass term above.
-        const budgetJ = mj === 3 ? MAX_SEPARATION_FIGHTING : MAX_SEPARATION_STEP;
+        const budgetJ = (mj === 3 ? MAX_SEPARATION_FIGHTING : MAX_SEPARATION_STEP) * this.roughDrag[j];
         const uj = used[j];
         if (uj < budgetJ) {
           const room = budgetJ - uj;
@@ -2415,8 +2418,8 @@ export class BattleSystem implements Subsystem {
         // The carcass is immovable, so the man takes the whole correction — bounded by the
         // same per-tick budget as every other positional write in this tick, which is what
         // stops a man who wanders into the middle of a body being flung out of it.
-        const budget = p.state[j] === SoldierState.Fighting
-          ? MAX_SEPARATION_FIGHTING : MAX_SEPARATION_STEP;
+        const budget = (p.state[j] === SoldierState.Fighting
+          ? MAX_SEPARATION_FIGHTING : MAX_SEPARATION_STEP) * this.roughDrag[j];
         const room = budget - used[j];
         if (room <= 0) return;
         const step = Math.min(overlap, room);
@@ -2490,6 +2493,25 @@ export class BattleSystem implements Subsystem {
   private press!: Float32Array;
   /** Metres of crowd separation already spent on each man this tick. */
   private sepUsed!: Float32Array;
+  /**
+   * Movement multiplier from standing work under each man, refreshed once a tick.
+   *
+   * **Every metre a body moves on rubble is slowed, not only the metres it chose**, and
+   * getting that wrong is not a matter of degree. The first version of this scaled the
+   * integrator's step and left `resolveCrowding` alone — so on a half-built rampart a horse
+   * advanced 7 m/s x 0.227 / 30 = 0.053 m a tick while his neighbours could still shove him
+   * 0.22 m a tick. The crowd solver outran intent four to one, the squadron was squeezed
+   * back out of the band, and a change meant to make a crossing *cost* something instead
+   * stopped it dead: measured over twelve seeds, 187 crossings became **zero**.
+   *
+   * So the drag is resolved once per man per tick into this array and every positional
+   * write in the tick reads it — the integrator's step and all three separation budgets.
+   * One `dragAt` per living man, against the several hundred thousand pair tests the
+   * innermost crowd loop runs a second, which is why this is an array and not a call.
+   */
+  private roughDrag!: Float32Array;
+  /** True while the array holds anything but ones, so a clear happens exactly once. */
+  private roughDragLive = false;
 
   /** Cache of soldier index -> unit, rebuilt lazily. */
   private soldierUnitCache: (UnitGroupState | undefined)[] = [];
@@ -2499,6 +2521,27 @@ export class BattleSystem implements Subsystem {
     u = this.unitById(this.pool.unitId[i]);
     this.soldierUnitCache[i] = u;
     return u;
+  }
+
+  /**
+   * Resolve the standing-work multiplier for every living man.
+   *
+   * Cleared exactly once when the rough set empties rather than every tick, so a map with
+   * no unfinished bays — which is Carthage, Pydna, and Rome once the circuit is finished —
+   * costs one boolean per tick and nothing else.
+   */
+  private refreshRoughDrag(): void {
+    const p = this.pool;
+    const d = this.roughDrag;
+    if (this.masonry.noRough) {
+      if (this.roughDragLive) {
+        d.fill(1);
+        this.roughDragLive = false;
+      }
+      return;
+    }
+    for (let i = 0; i < p.count; i++) d[i] = this.masonry.dragAt(p.x[i], p.z[i]);
+    this.roughDragLive = true;
   }
 
   private integrate(dt: number): void {
@@ -2516,17 +2559,20 @@ export class BattleSystem implements Subsystem {
       /**
        * Rubble is crossed at a walk.
        *
-       * `dragAt` is 1 everywhere except on standing work the city has published as
+       * `roughDrag` is 1 everywhere except on standing work the city has published as
        * passable-at-a-price — today, the three bays of the Aurelian circuit still at
        * footing level. It scales the *step*, not `vx`/`vz`: writing it back would compound
        * every tick and a man who touched the pour would never get off it.
+       *
+       * The same multiplier is applied to all three crowd-separation budgets. It has to be:
+       * see `roughDrag`, where dragging intent alone turned a 4.4x slowdown into a wall.
        *
        * Applied per man rather than to the block, which is what breaks the formation up.
        * A squadron of fifty enters the pour in line and comes out of it as a straggle,
        * because the men on the concrete are doing a quarter of the speed of the men who
        * are already past — and that is what a half-built rampart does to a charge.
        */
-      const drag = solids.noRough ? 1 : solids.dragAt(ox, oz);
+      const drag = this.roughDrag[i];
       let nx = ox + p.vx[i] * dt * drag;
       let nz = oz + p.vz[i] * dt * drag;
 
