@@ -1,0 +1,94 @@
+{
+ "url": "http://127.0.0.1:5603/?harness=1&w=1600&h=900&quality=ultra&scenario=assault&battle=eyJtYXAiOiJjYXJ0aGFnZSIsInNjZW5hcmlvIjoiYXNzYXVsdCIsIm9wcG9uZW50IjoyLCJ0aW1lT2ZEYXkiOjE2LjV9",
+ "rows": [
+  {
+   "name": "e-z45",
+   "x": -53,
+   "z": 479.9,
+   "zoom": 0.45,
+   "yaw": 0,
+   "eyeY": 23.23,
+   "fov": 40.5,
+   "groundUnderEye": 12.89,
+   "eyeAboveGround": 10.34
+  },
+  {
+   "name": "f-z55",
+   "x": -53,
+   "z": 450.5,
+   "zoom": 0.55,
+   "yaw": 0,
+   "eyeY": 40.68,
+   "fov": 43.5,
+   "groundUnderEye": 12.67,
+   "eyeAboveGround": 28.01
+  },
+  {
+   "name": "g-z65",
+   "x": -53,
+   "z": 398.4,
+   "zoom": 0.65,
+   "yaw": 0,
+   "eyeY": 96.28,
+   "fov": 46.4,
+   "groundUnderEye": 12.72,
+   "eyeAboveGround": 83.56
+  },
+  {
+   "name": "h-z50-alongx",
+   "x": -93.4,
+   "z": 508,
+   "zoom": 0.5,
+   "yaw": 1.5708,
+   "eyeY": 26.96,
+   "fov": 42,
+   "groundUnderEye": 9.62,
+   "eyeAboveGround": 17.34
+  },
+  {
+   "name": "a-oblique-close",
+   "x": -53,
+   "z": 499.5,
+   "zoom": 0.2,
+   "yaw": 0,
+   "eyeY": 16.81,
+   "fov": 34.1,
+   "groundUnderEye": 13,
+   "eyeAboveGround": 3.81
+  },
+  {
+   "name": "b-oblique-mid",
+   "x": -53,
+   "z": 482.2,
+   "zoom": 0.34,
+   "yaw": 0,
+   "eyeY": 20.07,
+   "fov": 37.4,
+   "groundUnderEye": 12.92,
+   "eyeAboveGround": 7.15
+  },
+  {
+   "name": "c-along-the-cut",
+   "x": -60.7,
+   "z": 508,
+   "zoom": 0.26,
+   "yaw": 1.5708,
+   "eyeY": 13.61,
+   "fov": 35.4,
+   "groundUnderEye": 8.5,
+   "eyeAboveGround": 5.11
+  },
+  {
+   "name": "d-field-eye",
+   "x": -53,
+   "z": 465.4,
+   "zoom": 0.16,
+   "yaw": 0,
+   "eyeY": 15.8,
+   "fov": 33.4,
+   "groundUnderEye": 12.7,
+   "eyeAboveGround": 3.1
+  }
+ ],
+ "errors": []
+}

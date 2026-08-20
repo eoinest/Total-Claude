@@ -9,7 +9,7 @@ import { el, html, icon, setClass, setText } from './dom';
 import { ICON } from './icons';
 import { DEFAULT_UI_SCALE, HARNESS } from './theme';
 
-interface SkyLike {
+export interface SkyLike {
   setTimeOfDay?: (h: number) => void;
   timeOfDay?: number;
 }

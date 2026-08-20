@@ -1,0 +1,79 @@
+{
+  "A": [
+    {
+      "at": 0,
+      "hash": "ebf383b0",
+      "count": 3440,
+      "alive": 3440,
+      "simTime": 0
+    },
+    {
+      "at": 30,
+      "hash": "d021b848",
+      "count": 3440,
+      "alive": 3376,
+      "simTime": 30
+    },
+    {
+      "at": 90,
+      "hash": "48ae58ea",
+      "count": 3440,
+      "alive": 3119,
+      "simTime": 90
+    },
+    {
+      "at": 150,
+      "hash": "8d007080",
+      "count": 3440,
+      "alive": 3033,
+      "simTime": 150
+    },
+    {
+      "at": 200,
+      "hash": "db9ebfdc",
+      "count": 3440,
+      "alive": 2999,
+      "simTime": 199.967
+    }
+  ],
+  "B": [
+    {
+      "at": 0,
+      "hash": "ebf383b0",
+      "count": 3440,
+      "alive": 3440,
+      "simTime": 0
+    },
+    {
+      "at": 30,
+      "hash": "d021b848",
+      "count": 3440,
+      "alive": 3376,
+      "simTime": 30
+    },
+    {
+      "at": 90,
+      "hash": "48ae58ea",
+      "count": 3440,
+      "alive": 3119,
+      "simTime": 90
+    },
+    {
+      "at": 150,
+      "hash": "8d007080",
+      "count": 3440,
+      "alive": 3033,
+      "simTime": 150
+    },
+    {
+      "at": 200,
+      "hash": "db9ebfdc",
+      "count": 3440,
+      "alive": 2999,
+      "simTime": 199.967
+    }
+  ],
+  "diffs": [],
+  "firstDiff": null,
+  "errors": []
+}

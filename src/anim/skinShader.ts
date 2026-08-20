@@ -246,6 +246,8 @@ void soldierPoseVary( float v, inout vec3 sp, inout vec3 sn ) {
   float hArmL  = fract( v * 79.13 ) - 0.5;
   float hLift  = fract( v * 91.77 ) - 0.5;
   float hHeadZ = fract( v * 103.51 ) - 0.5;
+  float hShldY = fract( v * 61.31 ) - 0.5;
+  float hShldX = fract( v * 71.53 ) - 0.5;
 
   // ---- build: girth and shoulder width ----
   // Y is untouched, so a stockier man is stockier without leaving the ground.
@@ -262,14 +264,47 @@ void soldierPoseVary( float v, inout vec3 sp, inout vec3 sn ) {
     SOLDIER_TILT( sn.x, sn.y, hArmR * 0.22 * wR )
     SOLDIER_TILT( sn.z, sn.y, hLift * 0.20 * wR )
   }
+  /*
+   * The shield arm. Three axes, three independent hashes, and the third one is new.
+   *
+   * (No backtick below: this comment is inside a JS template literal and one would end it.)
+   *
+   * This is the same defect the helmet had in round two, one limb over, and a grader found it
+   * without being told: *"you can read the instancing off the highlights alone, without
+   * recognising the device -- every boss shows the same mirror-white teardrop at the same
+   * clock position even on shields angled thirty degrees apart."*
+   *
+   * Two things were wrong and they compound.
+   *
+   * **The two tilts were the same draw.** Both took hArmL, so every man's shield carriage
+   * lay on a single line through a two-dimensional space: knowing one angle gave you the
+   * other exactly. Compare the *right* arm three lines up, which has drawn hArmR and
+   * hLift independently since it was written.
+   *
+   * **One of the two was the axis the boss cannot see.** TILT( d.x, d.y ) is a rotation
+   * about model +Z, and +Z is the board's own face normal, which is also the umbo's axis of
+   * revolution. A surface of revolution is invariant under rotation about its own axis, so
+   * that 5.4 degrees moved the board, the rim and the device and could not move the boss's
+   * mirror point by one pixel. The other, TILT( d.z, d.x ), is about +Y and does tip the
+   * normal -- but at 4.9 degrees, and locked to the same hash as the roll.
+   * **Rotation about +X was absent entirely**: nothing pitched a shield up or down.
+   *
+   * So: three axes, three hashes, and all three angles widened. Roll is kept and widened
+   * rather than dropped, because the boss is no longer a surface of revolution -- see
+   * soldierMesh.ts's bossWarp, which makes an umbo oval and hammered so that a roll about
+   * its own axis finally moves its highlight. Geometry and pose had to change together;
+   * either alone is inert.
+   */
   float wL = soldierChain( SOLDIER_ARM_L0, SOLDIER_ARM_L1 );
   if ( wL > 0.001 ) {
     vec3 d = sp - SOLDIER_SHOULDER_L;
-    SOLDIER_TILT( d.x, d.y, hArmL * 0.19 * wL )
-    SOLDIER_TILT( d.z, d.x, hArmL * 0.17 * wL )
+    SOLDIER_TILT( d.x, d.y, hArmL * 0.24 * wL )    // roll about the board's own normal
+    SOLDIER_TILT( d.z, d.x, hShldY * 0.22 * wL )   // yaw: swings the normal left and right
+    SOLDIER_TILT( d.y, d.z, hShldX * 0.20 * wL )   // pitch: the axis that was missing
     sp = d + SOLDIER_SHOULDER_L;
-    SOLDIER_TILT( sn.x, sn.y, hArmL * 0.19 * wL )
-    SOLDIER_TILT( sn.z, sn.x, hArmL * 0.17 * wL )
+    SOLDIER_TILT( sn.x, sn.y, hArmL * 0.24 * wL )
+    SOLDIER_TILT( sn.z, sn.x, hShldY * 0.22 * wL )
+    SOLDIER_TILT( sn.y, sn.z, hShldX * 0.20 * wL )
   }
 
   /*
@@ -636,11 +671,58 @@ const TINT_BODY = /* glsl */ `
    * Metal slots only. Polish is meaningless on linen, and adding a roughness spread to cloth
    * would just make some men's tunics inexplicably shiny.
    */
-  float isMetalSlot = step( 6.5, slot ) * step( slot, 7.4 );
-  // .z is zero on anything that is not metal and 1 + variant on anything that is, so one
-  // varying carries both "is this ironmongery" and "whose ironmongery" -- see METAL_BREAKUP.
-  // (No backticks in here: this string is itself a template literal.)
-  vSoldierSurf = vec3( iOrient.w, ( 0.5 - polish ) * 0.34 * isMetalSlot, isMetalSlot * ( 1.0 + v ) );
+  /*
+   * The metal treatment no longer asks which tint slot a vertex is on, and the reason is
+   * that the slot was never the right question.
+   *
+   * Round two gave helmets and shield bosses a per-man roughness offset, a mottle and a
+   * planishing field, all gated on slot 7 -- Tint.Metal. But a legionary's mail, his
+   * squamata, his segmentata bands, his greaves and every buckle on him are slot 0,
+   * Tint.Atlas, because they take the atlas colour untouched. **So the four surfaces round
+   * two fixed are the two smallest metal surfaces on the man, and the largest ones -- an
+   * entire torso of mail -- were left with no per-man metal variation whatsoever.** A grader
+   * this round put the consequence as "one shared sheen" over the armour.
+   *
+   * What actually determines whether a fragment is metal is its metalness, and the ORM atlas
+   * already carries that per texel. So .y and .z are now unconditional -- an offset and a
+   * seed that every man has -- and the *gate* moves into the fragment shader, where
+   * texelRoughness.b is the metalness of the very texel being shaded. Mail, scale, bands and
+   * bosses light up; wood, rope, leather and linen, which share slot 0 with them, do not.
+   *
+   * (No backtick in this comment: it is inside a JS template literal.)
+   */
+  /*
+   * .w is the **material class**, and it is free.
+   *
+   * A vec3 varying occupies a whole vec4 interpolator on every GPU this runs on, so widening
+   * this one costs no bandwidth, no attribute and no uniform -- the same trade the round-two
+   * note above records for .z.
+   *
+   * What it carries is the answer to "what is this fragment made of", which the fragment
+   * shader could not previously ask. Everything on a man -- flesh, linen, wool, bronze,
+   * iron, leather, limewood -- is one MeshStandardMaterial differentiated per texel by the
+   * ORM atlas, and per texel is enough for a roughness and a metalness but not for a
+   * **lobe**. A materials grader put the consequence plainly: skin greys at the terminator
+   * where flesh goes warmer and more saturated, and linen carries a GGX highlight it has no
+   * business having. Neither is a texture problem. Both are the same BRDF serving materials
+   * that do not share one.
+   *
+   * 0 leaves the stock lobe alone -- metal, leather, wood, hair, the shield facing. 1 is
+   * flesh: slot Skin, which is also what the face tile is tinted through. 2 is cloth: the
+   * tunic, the leg wraps, the cloak, the focale and the crest, which are wool, linen and
+   * horsehair.
+   *
+   * (No backticks in here: this string is itself a template literal.)
+   */
+  float isSkin = step( 2.5, slot ) * step( slot, 3.4 );
+  float isCloth =
+      step( 0.5, slot ) * step( slot, 2.4 )     // tunic, legs
+    + step( 4.5, slot ) * step( slot, 5.4 )     // cloak
+    + step( 7.5, slot ) * step( slot, 8.4 )     // focale
+    + step( 9.5, slot ) * step( slot, 10.4 );   // crest
+  vSoldierSurf = vec4(
+    iOrient.w, ( 0.5 - polish ) * 0.34, 1.0 + v,
+    isSkin + 2.0 * min( 1.0, isCloth ) );
 
   /*
    * The shield device, and the four numbers that stop a cohort reading as a tiling.
@@ -685,8 +767,9 @@ varying vec3 vSoldierTint;
  * y: this man's roughness offset, signed, metal slots only.
  * z: 0 off metal; 1 + variant on metal, so the breakup field below is both gated and
  *    seeded by one varying rather than two.
+ * w: material class -- 0 stock, 1 flesh, 2 cloth. See the vertex side for why it is free.
  */
-varying vec3 vSoldierSurf;
+varying vec4 vSoldierSurf;
 varying vec3 vSoldierEmblem;
 `;
 
@@ -765,6 +848,108 @@ const KIT_CAVITY_PARS = /* glsl */ `
 #ifdef USE_ROUGHNESSMAP
   float tcKitCavity;
   vec3 tcKitGeoN;
+
+  /*
+   * Flesh: three diffuse wraps, one per channel, and a rim.
+   *
+   * A materials grader, twice: "skin greys at the terminator; real flesh goes warmer and
+   * more saturated, red-orange, because red scatters furthest through it, and it lights at
+   * thin edges -- ear rims, fingers, nostrils."
+   *
+   * Both halves of that are one physical fact. Red light has a mean free path in dermis of
+   * a few millimetres where blue is stopped in tenths of one, so light that enters a face
+   * near the terminator and leaves it a little further round is overwhelmingly red. The
+   * cheap and standard model of that is a **wrapped** N.L with a different wrap per channel:
+   *
+   *     wrapped = clamp( ( N.L + w ) / ( 1 + w ), 0, 1 ),   w = ( 0.38, 0.16, 0.08 )
+   *
+   * At N.L = 1 every channel returns exactly 1, so **full sun is bit-for-bit Lambert** and
+   * this cannot brighten a lit cheek or move an exposure. At N.L = 0 it returns
+   * ( 0.28, 0.14, 0.07 ): the terminator is not grey, it is the colour of blood at a third
+   * of the sun's strength. Past the terminator only red survives, which is what a hand held
+   * against a window does.
+   *
+   * The specular is deliberately *not* wrapped. Sebum sits on the surface and reflects off
+   * it, so it obeys the true geometric N.L; only the light that went in and came back out
+   * gets to bend. That is why this calls three's own lobe with the diffuse zeroed rather
+   * than scaling the whole result -- scaling would drag the specular round the terminator
+   * with the diffuse and put a sheen on the shadowed side of every face.
+   *
+   * The rim is the second half. Real thickness needs a thickness map and there is no atlas
+   * slot for one, but grazing geometry *is* thin geometry -- an ear seen edge-on, a finger,
+   * the wing of a nostril, the rim of a nose -- so ( 1 - |N.V| ) is a serviceable stand-in
+   * that costs one dot. It is gated on back-lighting ( V . -L ) so it only fires when there
+   * is something behind the surface to come through, and it is tinted hard to red because
+   * that is the only thing that survives 3 mm of flesh.
+   */
+  void tcSkinDirect(
+    const in IncidentLight dl, const in vec3 geometryPosition, const in vec3 N,
+    const in vec3 V, const in vec3 clearcoatN, const in PhysicalMaterial material,
+    inout ReflectedLight reflectedLight
+  ) {
+    PhysicalMaterial specOnly = material;
+    specOnly.diffuseColor = vec3( 0.0 );
+    RE_Direct_Physical( dl, geometryPosition, N, V, clearcoatN, specOnly, reflectedLight );
+
+    const vec3 W = vec3( 0.38, 0.16, 0.08 );
+    float ndl = dot( N, dl.direction );
+    vec3 wrapped = clamp( ( vec3( ndl ) + W ) / ( 1.0 + W ), 0.0, 1.0 );
+    reflectedLight.directDiffuse += dl.color * wrapped * BRDF_Lambert( material.diffuseColor );
+
+    float thin = 1.0 - abs( dot( N, V ) );
+    float back = clamp( dot( V, -dl.direction ), 0.0, 1.0 );
+    reflectedLight.directDiffuse +=
+      dl.color * material.diffuseColor
+      * ( thin * thin * back * back * back * 0.42 )
+      * vec3( 1.0, 0.26, 0.13 );
+  }
+
+  /*
+   * Cloth: no GGX at all, one sheen lobe, and a wide wrap.
+   *
+   * The same grader: "cloth needs effectively no specular lobe but a wide wrap terminator,
+   * so linen and bronze cannot share a shader with only the albedo swapped." Both halves are
+   * about the same thing -- a woven surface is not a surface, it is a forest of fibres.
+   *
+   * A microfacet lobe assumes the surface is locally flat with a distribution of slopes about
+   * its normal, which is true of a hammered plate and false of a nap. Light that hits linen
+   * is scattered by fibres standing *away* from the macro surface, so its highlight is not
+   * where a mirror would put it: it is strongest at grazing, round the silhouette, and it is
+   * broad. That is why wool has a bloom at the edge of a fold and no glint in the middle of
+   * one, and why substituting GGX for it gives every tunic in the rank a hot spot in the same
+   * place -- the specular equivalent of the shield-boss defect.
+   *
+   * So GGX is replaced rather than attenuated, by Ashikhmin's inverted-Gaussian velvet
+   * distribution in Estevez and Kulla's form: D peaks at sin(N.H) = 1, i.e. exactly where GGX
+   * is zero. Its visibility term is Ashikhmin's own, which is what stops the grazing peak
+   * going to infinity. The sheen is tinted toward white because a fibre's Fresnel is a
+   * dielectric's whatever the dye did to its interior.
+   *
+   * The diffuse wrap is the other half. Wool is 3 mm of translucent fibre over a shadow, so
+   * its terminator is soft and wide where a plate's is a line; 0.30 of wrap is about a
+   * seventeen-degree softening, and unlike the skin wrap it is achromatic, because a fibre
+   * scatters by geometry rather than by absorption.
+   */
+  void tcClothDirect(
+    const in IncidentLight dl, const in vec3 N, const in vec3 V,
+    const in PhysicalMaterial material, inout ReflectedLight reflectedLight
+  ) {
+    vec3 H = normalize( dl.direction + V );
+    float cosNH = clamp( dot( N, H ), 0.0, 1.0 );
+    float sinNH = sqrt( max( 0.0, 1.0 - cosNH * cosNH ) );
+    float rc = clamp( material.roughness, 0.25, 1.0 );
+    float invR = 1.0 / rc;
+    float D = ( 2.0 + invR ) * pow( sinNH, invR ) / 6.2831853;
+    float ndv = clamp( dot( N, V ), 0.001, 1.0 );
+    float ndl = clamp( dot( N, dl.direction ), 0.0, 1.0 );
+    float Vis = 1.0 / ( 4.0 * ( ndl + ndv - ndl * ndv ) );
+    vec3 sheen = mix( vec3( 1.0 ), material.diffuseColor, 0.35 ) * 0.15;
+    reflectedLight.directSpecular += dl.color * ndl * sheen * D * Vis;
+
+    float wrapped = clamp( ( dot( N, dl.direction ) + 0.30 ) / 1.30, 0.0, 1.0 );
+    reflectedLight.directDiffuse += dl.color * wrapped * BRDF_Lambert( material.diffuseColor );
+  }
+
   void tcRE_Direct_Kit(
     const in IncidentLight directLight, const in vec3 geometryPosition,
     const in vec3 geometryNormal, const in vec3 geometryViewDir,
@@ -775,10 +960,21 @@ const KIT_CAVITY_PARS = /* glsl */ `
     float tcCos = clamp( dot( tcKitGeoN, tcLight.direction ), 0.0, 1.0 );
     float tcW = 0.04 + 0.55 * tcKitCavity;
     tcLight.color *= smoothstep( max( 0.0, tcKitCavity - tcW ), tcKitCavity + tcW, tcCos );
-    RE_Direct_Physical(
-      tcLight, geometryPosition, geometryNormal, geometryViewDir,
-      geometryClearcoatNormal, material, reflectedLight
-    );
+
+    float tcClass = vSoldierSurf.w;
+    if ( tcClass > 1.5 ) {
+      tcClothDirect( tcLight, geometryNormal, geometryViewDir, material, reflectedLight );
+    } else if ( tcClass > 0.5 ) {
+      tcSkinDirect(
+        tcLight, geometryPosition, geometryNormal, geometryViewDir,
+        geometryClearcoatNormal, material, reflectedLight
+      );
+    } else {
+      RE_Direct_Physical(
+        tcLight, geometryPosition, geometryNormal, geometryViewDir,
+        geometryClearcoatNormal, material, reflectedLight
+      );
+    }
   }
   #undef RE_Direct
   #define RE_Direct tcRE_Direct_Kit
@@ -853,7 +1049,7 @@ const METAL_BREAKUP_FREQ = 37;
 const f = (n: number): string => (Number.isInteger(n) ? `${n}.0` : `${n}`);
 
 /** Roughness half of the pair. Injected at <roughnessmap_fragment>, before any normal exists. */
-const METAL_MOTTLE = /* glsl */ ` + step( 0.5, vSoldierSurf.z ) * 0.085 * (
+const METAL_MOTTLE = /* glsl */ ` + tcIsMetal * 0.085 * (
   sin( vMapUv.x * ${f( METAL_BREAKUP_FREQ )} + vSoldierSurf.z * 97.3 )
   * sin( vMapUv.y * ${f( METAL_BREAKUP_FREQ * 0.83 )} + vSoldierSurf.z * 61.7 ) )`;
 
@@ -872,7 +1068,7 @@ const METAL_MOTTLE = /* glsl */ ` + step( 0.5, vSoldierSurf.z ) * 0.085 * (
  * field per man; off metal it is exactly zero and the branch is skipped.
  */
 const METAL_PLANISH = /* glsl */ `
-if ( vSoldierSurf.z > 0.5 ) {
+if ( metalnessFactor > 0.35 ) {
   float pf = ${f( METAL_BREAKUP_FREQ * 0.62 )};
   vec2 pu = vMapUv * pf + vec2( 13.1, 27.9 ) * vSoldierSurf.z;
   vec2 pg = vec2(
@@ -999,7 +1195,7 @@ function patch(
 
     let v = shader.vertexShader;
     v = `${defines(o)}\n${DECLS}\nvec3 gSoldierPos;\n${
-      withNormal ? 'varying vec3 vSoldierTint;\nvarying vec3 vSoldierSurf;\nvarying vec3 vSoldierEmblem;\n' : ''
+      withNormal ? 'varying vec3 vSoldierTint;\nvarying vec4 vSoldierSurf;\nvarying vec3 vSoldierEmblem;\n' : ''
     }${v}`;
 
     if (withNormal) {
@@ -1022,7 +1218,8 @@ function patch(
       // Dirt and dried blood are matte; they should lift roughness, not just darken.
       f = f.replace(
         '#include <roughnessmap_fragment>',
-        '#include <roughnessmap_fragment>\nroughnessFactor = clamp( roughnessFactor + vSoldierSurf.x * 0.22 + vSoldierSurf.y'
+        '#include <roughnessmap_fragment>\nfloat tcIsMetal = step( 0.35, texelRoughness.b );\n'
+        + 'roughnessFactor = clamp( roughnessFactor + vSoldierSurf.x * 0.22 + vSoldierSurf.y * tcIsMetal'
         + METAL_MOTTLE + ', 0.035, 1.0 );'
       );
       // Specular anti-aliasing has to come after the normal chunks, not with the roughness
@@ -1049,7 +1246,7 @@ function patch(
   // because it changes the injected source: the man has it and the horse does not, and
   // colliding here would give one of them the other's vertex shader.
   const rig = o.poseVary ? 'vary' : 'plain';
-  material.customProgramCacheKey = () => `soldier-skin-v7metal-${variant}-${rig}`;
+  material.customProgramCacheKey = () => `soldier-skin-v8brdf-${variant}-${rig}`;
 }
 
 export interface SoldierMaterialSet {

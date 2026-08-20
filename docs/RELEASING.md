@@ -108,14 +108,17 @@ A bundle that downloads is not a game that runs. There are three maps — `campu
 and `carthage` — and they have shipped broken independently of each other; Carthage in particular
 has had `city: null`, an unreachable faction and a boot-time hang in its history.
 
-For each of `?map=campus-martius`, `?map=pydna`, `?map=carthage` against the **live URL**:
+For each of `?map=campus-martius`, `?map=pydna`, `?map=carthage` against the **live URL** —
+**and add `&menu=0`**, or the page sits at the menu, `ready` never flips, and all three maps
+report dead with *zero page errors*, which is what happened cutting r6:
 
 1. Load the page and read `window.__game.ready`. `true`, not merely "no timeout".
 2. **Capture `pageerror` and `console`.** Without them a dead app is indistinguishable from a slow
    boot, and agents have lost hours to unexplained 180-second timeouts.
 3. **Read the simulation clock twice, a few seconds apart, and confirm it moved.** A frozen sim
    renders perfectly and looks fine in a screenshot. This project has shipped a field battle that
-   froze for sixteen minutes.
+   froze for sixteen minutes. It is `window.__game.simTime()` — **a function, not a property**;
+   read as a property it returns `undefined`, which reads identically to a dead app.
 
 `tools/qa-preview.mjs` and `tools/qa-deploy.mjs` are the closest existing harnesses; either can be
 pointed at a URL rather than a local vite. If you drive a browser by hand, **do not touch port
@@ -197,9 +200,14 @@ Then, at release time:
   visible in the frame, not from the entry.
 - **`CHANGELOG.md` renders on GitHub, so repo-relative paths work there** (`docs/images/releases/…`).
   **A GitHub Release body does not resolve them** — it needs the raw form,
-  `https://raw.githubusercontent.com/eoinest/Total-Claude/<tag-or-sha>/docs/images/releases/…`,
-  pinned to a tag or a SHA and never to a branch. Push the images *before* you write the release
+  `https://raw.githubusercontent.com/eoinest/Total-Claude/<sha>/docs/images/releases/…`,
+  pinned to a SHA and never to a branch. Push the images *before* you write the release
   body, or the raw URLs 404.
+
+  **Pin to the changelog commit, not to `rN`.** The tag names the deployed bytes, and the
+  illustrations are committed *after* that commit — so `…/r6/docs/images/…` is a 404 by
+  construction, and all fifteen of r6's were until they were repointed. Use `git rev-parse main`
+  after the changelog has landed.
 - **Check the rendered markdown on both surfaces**, do not assume it:
 
   ```sh

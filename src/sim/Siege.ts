@@ -279,10 +279,26 @@ const WALL_BLOWS = 74;
 /**
  * How far a derelict machine will look for a fresh gang, and how long it waits.
  *
- * 55 m is inside the assault's own frontage, so a ram at the gate draws on the storm column
- * behind it and never on a unit that has no business being there. 40 s is long enough that a
- * momentary rout does not write the machine off and short enough that an abandoned one stops
- * being a live threat inside the span of a battle.
+ * The radius is meant to be inside the assault's own frontage, so a ram at the gate draws on
+ * the storm column behind it and never on a unit that has no business being there. 40 s is
+ * long enough that a momentary rout does not write the machine off and short enough that an
+ * abandoned one stops being a live threat inside the span of a battle.
+ *
+ * **This comment said "55 m" while the constant said 95, and the gap matters.** Measured on
+ * Rome's assault at ultra at `8f26f7f`: the gate crew breaks at t+210 having landed **24 of
+ * the 26 blows**, and the machine stands derelict at (72, 520) two blows from opening the
+ * Porta Flaminia. Inside 95 m there are three units — `tower-assault` at 12.4 m, an
+ * `escalade-party` at 80.7 m, another `tower-assault` at 90.4 m — and every one of them is
+ * routing at zero morale, so `recrew` refuses all three and returns false. The nearest gang
+ * that would actually take the ropes is `juthungi-warband` at **123 m with 180 men at morale
+ * 60**, with five more behind it at 135–179 m. Forty seconds later the ram is a wreck and
+ * 1,080 fresh men are standing just outside the search that was looking for them.
+ *
+ * The number is deliberately left alone here rather than widened to 125. The nearest eligible
+ * gang is the idle host, so moving this constant is a decision about what that host is for,
+ * and that decision is the owner's and is reserved — see this workstream's report. If the
+ * host is ever given a storm order it will walk past the machine anyway and this radius stops
+ * mattering; if it is not, widening this alone would hand it a job by the back door.
  */
 const RECREW_RADIUS = 95;
 const DERELICT_LIMIT = 40;
@@ -725,7 +741,7 @@ const TMP_C = new THREE.Color();
 /** Read-back scratch for the diagnostics, kept clear of the ones `setInstance` writes. */
 const TMP_R = new THREE.Vector3();
 
-interface CityBayView {
+export interface CityBayView {
   index: number; x0: number; z0: number; x1: number; z1: number;
   nx: number; nz: number; dx: number; dz: number; length: number;
   walkY: number; groundY: number; crestY: number; sillY: number;
@@ -754,7 +770,7 @@ interface CityBayView {
  * would have to be renegotiated the moment that landed. Two endpoints and a width survive
  * any arrangement of treads between them.
  */
-interface CityStairView {
+export interface CityStairView {
   footX: number; footZ: number; footY: number;
   topX: number; topZ: number; topY: number;
   /** Optional; derived from the endpoints when absent. */
@@ -763,7 +779,35 @@ interface CityStairView {
   side?: number;
 }
 
-interface CityView {
+/**
+ * The gatehouse as a solid, in plan — the six numbers `buildSpine` needs and no more.
+ *
+ * **Field-for-field a subset of `GateBlockOut` in `src/city/wall.ts`**, and it has to stay
+ * that way. It is declared here rather than imported because `src/city/` imports
+ * `src/sim/types` and an import the other way would close the cycle; that is also exactly
+ * why nothing checks the two against each other, so the pair is registered in
+ * `src/core/seams.ts` and compared against the live `CitySystem` at wiring time. If you
+ * rename a field here, that check fails at boot with both name lists in the message.
+ */
+export interface CityGateBlockView {
+  /** Centre of the carriageway, on the wall line. */
+  x: number;
+  z: number;
+  /** Outward normal of the block, matching the bay's. */
+  nx: number;
+  nz: number;
+  /** Along-run unit vector. */
+  dx: number;
+  dz: number;
+  /** Half-extent along the run: the block is 2 x this long on the wall line. */
+  halfRun: number;
+  /** Half-extent across the run, front face to back face. */
+  halfDepth: number;
+  /** Absolute Y of the top of the block's battlements. */
+  topY: number;
+}
+
+export interface CityView {
   getGarrisonBays(): readonly CityBayView[];
   getGates(): { id: string; x: number; z: number; facing: number; open: boolean }[];
   setGateOpen(id: string, open: boolean): void;
@@ -785,10 +829,9 @@ interface CityView {
    * curtain out where the gatehouse stands, but the spine lays a station every
    * `STATION_PITCH` along every garrisonable bay clipped only by `towerHalf`, so on Rome
    * **22 of bay 19's 36 stations stand inside the gatehouse footprint with no curtain under
-   * them, 6.574 m below the crown** — and they produced 823 of 5,301 garrison shots in 240 s,
-   * every one of them discarded.
+   * them, 6.574 m below the crown** — and every shot they take is thrown into the block.
    */
-  getGateBlock?(): { x: number; z: number; hw: number; hd: number; rot: number; topY: number } | null;
+  getGateBlock?(): CityGateBlockView | null;
   /**
    * Optional, and the whole reason the stair mechanic reads the city instead of guessing.
    *
@@ -890,21 +933,27 @@ export interface SiegeMachineOrder {
 }
 
 /**
- * Is this point inside an oriented footprint, in plan?
+ * Is this point inside the gatehouse's plan footprint?
  *
  * Plan only, deliberately: the question `buildSpine` is asking is "is there curtain under
  * this station", and the gatehouse's answer does not depend on height — it replaces the
  * curtain for its whole footprint. Height comes back in through `topY` when a crown run is
  * laid, which is the better fix this one is holding the place for.
+ *
+ * **The frame is the block's own, not an angle.** This used to take `{ hw, hd, rot }` and
+ * build a rotation from `rot`, and no city has ever published any of those three: the record
+ * carries the along-run and outward-normal unit vectors it was built from, precisely so that
+ * nothing downstream has to round-trip them through an `atan2`. The consequence of asking for
+ * the wrong three was not a wrong answer, it was **no answer** — `Math.abs(...) <= undefined`
+ * is `false`, so the clip reported "not inside the gatehouse" for every point on the map and
+ * the feature never fired once. Measured on Rome before the rename: 22 of bay 19's 36
+ * stations inside the footprint, 0 clipped.
  */
-function insideBlock(
-  b: { x: number; z: number; hw: number; hd: number; rot: number }, x: number, z: number
-): boolean {
-  const dx = x - b.x;
-  const dz = z - b.z;
-  const c = Math.cos(-b.rot);
-  const s = Math.sin(-b.rot);
-  return Math.abs(dx * c - dz * s) <= b.hw && Math.abs(dx * s + dz * c) <= b.hd;
+function insideBlock(b: CityGateBlockView, x: number, z: number): boolean {
+  const ex = x - b.x;
+  const ez = z - b.z;
+  return Math.abs(ex * b.dx + ez * b.dz) <= b.halfRun
+    && Math.abs(ex * b.nx + ez * b.nz) <= b.halfDepth;
 }
 
 export class Siege implements ElevationOwner {
@@ -2631,10 +2680,27 @@ export class Siege implements ElevationOwner {
    * there", because "you cannot do that with this machine" is a different sentence from "you
    * are not pointing at anything".
    *
-   * An **open** gate is not a target either. Carthage publishes its eight posterns as gates
-   * that are already open — that is the mechanism by which a casemate wall is a wall you can
-   * walk through — and a ram sent to break a hole that is already a hole would land
-   * twenty-six blows and change nothing.
+   * An **open** gate is not a target either: a ram sent to break a hole that is already a
+   * hole would land twenty-six blows and change nothing. That is now the only thing the
+   * `g.open` skip in `gateNear` is for — a gate this ram or another has already broken, or
+   * one the defender opened to sally. It used to also exclude Carthage's eight posterns,
+   * which were published open; since `385474f` they are hung with doors and shut at build.
+   *
+   * **So a shut postern is a valid light-ram target, and that is deliberate.** It arrived
+   * implicitly with the doors and is kept on three grounds. A sally door is a door and a ram
+   * is the machine that breaks doors, so refusing it would be arbitrary. Refusing it would
+   * also have to be written as a test on the id or the name, and a literal gate id in this
+   * decision is the exact mistake that made the breach a no-op on Carthage for a whole
+   * workstream (`7e72785`) — `gateNear` reads `getGates()` uniformly and must keep doing so.
+   * And a postern a ram can open is one more way into a city that is measurably short of
+   * them: see this workstream's report, where the shipped Rome assault opens its great gate
+   * and sends nobody through it.
+   *
+   * The cost is that `GATE_PICK_R` is 55 m and `postern-30` stands 52.5 m from the Porta
+   * Byrsae, so a click about 26 m off the great gate's axis resolves to the postern instead.
+   * That margin is *visible* rather than silent: `SiegeOrders` builds its hint from
+   * `gateName(o.gateId)`, so the cursor reads "Break the Postern 30" or "Break the Porta
+   * Byrsae" before the player commits. Measured by hand rather than assumed — `gw-postern`.
    */
   private resolveRamOrder(r: SiegeRam, x: number, z: number): SiegeMachineOrder {
     const great = r.kind === RamKind.Great;

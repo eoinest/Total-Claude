@@ -1,0 +1,531 @@
+{
+ "url": "http://127.0.0.1:5603/?harness=1&quality=high&w=960&h=540&scenario=assault&battle=eyJtYXAiOiJjYXJ0aGFnZSIsIm9wcG9uZW50IjoyLCJ1bml0U2l6ZSI6InVsdHJhIiwicXVhbGl0eSI6ImhpZ2giLCJkaWZmaWN1bHR5IjoiaGFyZCIsInNlZWQiOjQyNjU0MzgyNjR9",
+ "map": "carthage",
+ "scenario": "assault",
+ "rev": "166b7b5",
+ "curtain": {
+  "samples": 2046,
+  "meshOpen": 57,
+  "boxOpen": 0,
+  "rasterOpen": 0,
+  "ghost": 0,
+  "phantom": 57,
+  "ghostPct": 0,
+  "rows": [
+   {
+    "kind": "phantom",
+    "bay": 6,
+    "x": -774.9,
+    "z": 593.1,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 6,
+    "x": -773.9,
+    "z": 592.9,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 6,
+    "x": -772.9,
+    "z": 592.8,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 6,
+    "x": -771.9,
+    "z": 592.7,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 6,
+    "x": -770.9,
+    "z": 592.6,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 14,
+    "x": -535.8,
+    "z": 568.9,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 14,
+    "x": -534.8,
+    "z": 568.8,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 14,
+    "x": -533.8,
+    "z": 568.7,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 14,
+    "x": -532.8,
+    "z": 568.6,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 14,
+    "x": -531.8,
+    "z": 568.5,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 14,
+    "x": -530.8,
+    "z": 568.4,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 14,
+    "x": -529.8,
+    "z": 568.3,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 22,
+    "x": -295.7,
+    "z": 548,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 22,
+    "x": -294.7,
+    "z": 548,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 22,
+    "x": -293.7,
+    "z": 547.9,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 22,
+    "x": -292.7,
+    "z": 547.8,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 22,
+    "x": -291.7,
+    "z": 547.7,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 22,
+    "x": -290.7,
+    "z": 547.6,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 22,
+    "x": -289.7,
+    "z": 547.6,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 30,
+    "x": -55.5,
+    "z": 530.6,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 30,
+    "x": -54.5,
+    "z": 530.5,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 30,
+    "x": -53.5,
+    "z": 530.4,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 30,
+    "x": -52.5,
+    "z": 530.4,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 30,
+    "x": -51.5,
+    "z": 530.3,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 30,
+    "x": -50.5,
+    "z": 530.2,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 30,
+    "x": -49.5,
+    "z": 530.2,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 38,
+    "x": 184.6,
+    "z": 516.5,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 38,
+    "x": 185.6,
+    "z": 516.4,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 38,
+    "x": 186.6,
+    "z": 516.4,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 38,
+    "x": 187.6,
+    "z": 516.3,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 38,
+    "x": 188.6,
+    "z": 516.3,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 38,
+    "x": 189.6,
+    "z": 516.2,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 38,
+    "x": 190.6,
+    "z": 516.2,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 46,
+    "x": 424.7,
+    "z": 505.8,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 46,
+    "x": 425.7,
+    "z": 505.8,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 46,
+    "x": 426.7,
+    "z": 505.7,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 46,
+    "x": 427.7,
+    "z": 505.7,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 46,
+    "x": 428.7,
+    "z": 505.7,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 46,
+    "x": 429.7,
+    "z": 505.6,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 46,
+    "x": 430.7,
+    "z": 505.6,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 50,
+    "x": 557.8,
+    "z": 501.4,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 50,
+    "x": 558.8,
+    "z": 501.3,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 50,
+    "x": 559.8,
+    "z": 501.3,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 50,
+    "x": 560.8,
+    "z": 501.3,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 50,
+    "x": 561.8,
+    "z": 501.2,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 54,
+    "x": 664.8,
+    "z": 498.5,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 54,
+    "x": 665.8,
+    "z": 498.5,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 54,
+    "x": 666.8,
+    "z": 498.5,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 54,
+    "x": 667.8,
+    "z": 498.5,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 54,
+    "x": 668.8,
+    "z": 498.4,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 54,
+    "x": 669.8,
+    "z": 498.4,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 54,
+    "x": 670.8,
+    "z": 498.4,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 62,
+    "x": 905.9,
+    "z": 494.6,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 62,
+    "x": 906.9,
+    "z": 494.6,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 62,
+    "x": 907.9,
+    "z": 494.6,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 62,
+    "x": 908.9,
+    "z": 494.6,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 62,
+    "x": 909.9,
+    "z": 494.6,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   }
+  ]
+ },
+ "errors": []
+}

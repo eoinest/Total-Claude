@@ -69,7 +69,7 @@ export interface SiegeRead {
   machines: { towers: number; rams: number; ladders: number; crossing: number };
 }
 
-interface FlowView {
+export interface FlowView {
   objective?: {
     stormOnWall: number;
     stormHolding: number;

@@ -6,8 +6,11 @@
   "scripts": {
     "dev": "vite",
     "viewer": "vite --open /viewer.html",
-    "build": "tsc --noEmit && vite build && node tools/optimize-assets.mjs",
-    "build:full": "tsc --noEmit && vite build && node tools/optimize-assets.mjs --keep-models",
+    "lint": "node tools/check-determinism.mjs && node tools/check-tool-args.mjs",
+    "check:determinism": "node tools/check-determinism.mjs",
+    "check:toolargs": "node tools/check-tool-args.mjs",
+    "build": "npm run lint && tsc --noEmit && vite build && node tools/optimize-assets.mjs",
+    "build:full": "npm run lint && tsc --noEmit && vite build && node tools/optimize-assets.mjs --keep-models",
     "preview": "vite preview --port 4173",
     "typecheck": "tsc --noEmit",
     "shoot": "node tools/shoot.mjs",
@@ -36,7 +39,8 @@
     "playwright": "^1.62.0",
     "sharp": "^0.35.3",
     "typescript": "^7.0.2",
-    "vite": "^8.1.5"
+    "vite": "^8.1.5",
+    "webm-muxer": "^5.1.4"
   },
   "private": true
 }

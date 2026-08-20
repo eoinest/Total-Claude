@@ -406,7 +406,41 @@ export class PostFXSystem implements Subsystem {
   private mCopy?: THREE.ShaderMaterial;
 
   private frameIndex = 0;
+  /**
+   * True once `histA` holds a temporally-accumulated frame. **TAA's flag, and only TAA's.**
+   *
+   * It is set in one place — the `antialias === 'taa'` branch of step 9 — because it means
+   * "there is a resolved history *image* to blend against", which is a statement about a
+   * render target, not about the camera. Anything gated on this outside that branch is
+   * gated on TAA being on.
+   */
   private historyValid = false;
+  /**
+   * True once `prevViewProj` holds the previous frame's camera. **Motion blur's flag.**
+   *
+   * Separate from `historyValid` because it is a different fact about a different thing, and
+   * conflating the two switched camera motion blur off on every tier the game ships. The
+   * blur reprojects the depth buffer through `prevViewProj`; it needs no history image and no
+   * TAA. `historyValid` is set only inside the TAA branch, and `QUALITY_PRESETS` uses `fxaa`
+   * on low and `smaa` on the other three, so `q.motionBlur` was true at high and ultra, the
+   * pass was compiled and its target allocated, and the `if` never once ran. Measured on
+   * Rome at ultra: 0 motion-blur blits in 600 frames before, panning at full rate.
+   *
+   * Written at the end of every frame, immediately after the matrix it describes, so the two
+   * cannot come apart. Cleared with the matrix on a resize, because `prevViewProj` is stale
+   * across a reallocation and a first frame blurred against it smears the whole screen.
+   */
+  private prevViewProjValid = false;
+  /**
+   * How many times each optional pass has actually blitted, and how many frames have gone by.
+   *
+   * Diagnostic only; nothing reads them back. They exist because "the switch is on" and "the
+   * pass ran" are two different facts and this file has now shipped a case where they
+   * disagreed for the whole of the game's life. A count is the only honest answer, and it is
+   * one integer per frame.
+   */
+  private nFrames = 0;
+  private nMotionBlur = 0;
   private readonly projNoJitter = new THREE.Matrix4();
   private readonly prevViewProj = new THREE.Matrix4();
   private readonly curViewProj = new THREE.Matrix4();
@@ -535,6 +569,7 @@ export class PostFXSystem implements Subsystem {
     if (!this.smaa) this.smaa = new SMAAPass();
     this.smaa.setSize(this.w, this.h);
     this.historyValid = false;
+    this.prevViewProjValid = false;
     void ctx;
   }
 
@@ -1549,7 +1584,9 @@ export class PostFXSystem implements Subsystem {
     }
 
     // 6 ---- motion blur ----------------------------------------------------
-    if (q.motionBlur && this.mMotion && this.historyValid) {
+    // Gated on `prevViewProjValid`, not on `historyValid`. See both fields: the second is
+    // TAA's and is set nowhere else, so this pass could not run on any shipped tier.
+    if (q.motionBlur && this.mMotion && this.prevViewProjValid) {
       const u = this.mMotion.uniforms;
       u.tSrc.value = cur.texture;
       (u.uPrevViewProj.value as THREE.Matrix4).copy(this.prevViewProj);
@@ -1559,6 +1596,7 @@ export class PostFXSystem implements Subsystem {
       const other = cur === this.mainA ? this.mainB : this.mainA;
       this.blit(this.mMotion, other);
       cur = other;
+      this.nMotionBlur++;
     }
 
     // 7 ---- bloom ----------------------------------------------------------
@@ -1647,7 +1685,10 @@ export class PostFXSystem implements Subsystem {
       this.jittered = false;
     }
     this.prevViewProj.copy(this.curViewProj);
+    // Set with the matrix it describes, never apart from it.
+    this.prevViewProjValid = true;
     this.frameIndex++;
+    this.nFrames++;
     r.setRenderTarget(null);
   }
 
@@ -1670,6 +1711,33 @@ export class PostFXSystem implements Subsystem {
       this.black.needsUpdate = true;
     }
     return this.black;
+  }
+
+  /**
+   * Which optional passes have actually run, against how many frames. Not used by the game.
+   *
+   * The one question a screenshot cannot answer: a pass whose switch is on, whose material
+   * compiled and whose target was allocated may still never execute, and every symptom of
+   * that is "the effect is subtle". `motionBlurFrames` is the count that was zero on every
+   * shipped tier.
+   */
+  debugPasses(): {
+    frames: number; motionBlurFrames: number;
+    historyValid: boolean; prevViewProjValid: boolean; motionBlurMaterial: boolean;
+  } {
+    return {
+      frames: this.nFrames,
+      motionBlurFrames: this.nMotionBlur,
+      historyValid: this.historyValid,
+      prevViewProjValid: this.prevViewProjValid,
+      motionBlurMaterial: !!this.mMotion,
+    };
+  }
+
+  /** Zero the pass counters, so a probe can measure one interval. */
+  debugResetPasses(): void {
+    this.nFrames = 0;
+    this.nMotionBlur = 0;
   }
 
   dispose(): void {

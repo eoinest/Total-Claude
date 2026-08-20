@@ -76,6 +76,11 @@ viewW, viewH, get(name), tryGet(name)`.
 `src/util/rand.ts` (`rng.fork('my-system')`). Visual-only jitter in `update`/`preRender`
 may use `hash01(index, salt)`.
 
+`npm run lint` checks the call-level half of this and runs ahead of `npm run build`. It is
+narrow on purpose and prints its own blind spots — iteration order, unstable sorts,
+floating-point association — every time it passes. `tools/qa-determinism.mjs` is what actually
+proves a replay is bit-identical.
+
 ---
 
 ## 3. Cross-subsystem contracts
@@ -469,7 +474,8 @@ Rome II's look, in the specifics that matter:
 
 ```bash
 npx tsc --noEmit                              # must be clean
-node tools/shoot.mjs --list                   # available shots
+npm run lint                                  # determinism + tool-argument static checks
+node tools/shoot.mjs --list                   # available shots, sets and families
 node tools/shoot.mjs --shots=wide,romanline   # render specific frames
 node tools/shoot.mjs --out=screenshots/mypass  # to a scratch directory
 ```

@@ -212,7 +212,7 @@ async function arm(fn) {
   await page.goto(
     `${base}/?harness=1&autoplay=0&quality=low&w=480&h=270&scenario=assault${MAP ? `&map=${MAP}` : ''}`,
     { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => window.__game && window.__game.ready === true, { timeout: 150000 });
+  await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 150000 });
   await page.evaluate(HELPERS);
   const r = await page.evaluate(fn);
   await page.close();

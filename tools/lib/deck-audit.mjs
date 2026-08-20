@@ -6,8 +6,9 @@
  * comment, and the reason it now lives in a module is that `tools/pair-deck.mjs` needed the
  * same battery and the two obvious alternatives were both bad: import from a script that
  * builds a deck as a side effect of being loaded, or paste the functions and let the copies
- * drift. This project has eight recorded blind-deck leaks and at least two of them were
- * "the other tool did not have that check yet".
+ * drift. The register of recorded leaks is `LEAKS` below — **this file is the single source
+ * for it**, and at least two of those leaks were "the other tool did not have that check
+ * yet". Do not restate the count anywhere else; import it.
  *
  * The audits, and what each one has actually caught:
  *
@@ -27,6 +28,56 @@
 
 import sharp from 'sharp';
 import { readFile, stat } from 'node:fs/promises';
+
+/**
+ * ---------------------------------------------------------------------------
+ * The leak register. One list, in one file, and every other file imports it.
+ * ---------------------------------------------------------------------------
+ *
+ * It is a list rather than a number because a number drifts. `blind-compare.mjs` said the
+ * harness had "leaked seven times" while this file's header said eight, and both were written
+ * by people reading the same history — the seven are the *closed* ones, and leak eight was
+ * identified later, is measured on every run, and cannot be closed by the harness. Neither
+ * sentence was wrong so much as under-specified, which is how two counts of the same thing
+ * end up in one repository.
+ *
+ * `docs/HANDOFF.md` is the narrative account of each. This is the machine-readable one.
+ *
+ * `status`:
+ *   'refused'    a gate exits non-zero and no deck is produced
+ *   'mitigated'  prevented by construction, but no gate would detect a recurrence
+ *   'open'       measured and printed on every run, deliberately not refused
+ */
+export const LEAKS = [
+  { n: 1, name: 'wordmark', what: 'a legible TOTAL WAR / ROME II lockup surviving the crop',
+    status: 'mitigated', by: 'the conjunction of the bottom crop and MAX_W, plus a proof sheet '
+      + 'of the discarded region so the next round re-measures instead of inheriting. No gate '
+      + 'sees this one — blind-compare.mjs says so in as many words' },
+  { n: 2, name: 'camera EXIF', what: 'EXIF/XMP/ICC naming the renderer or the camera',
+    status: 'refused', by: 'metadata stripped; hasExif on either member fails the pair' },
+  { n: 3, name: 'mislabelled key', what: 'the answer key written inside the deck directory',
+    status: 'refused', by: 'pair-deck.mjs refuses --key under --out' },
+  { n: 4, name: 'file size', what: 'wc -c sorting the deck with no pixel decoded',
+    status: 'refused', by: 'padding past EOI / a paDd chunk to one common length' },
+  { n: 5, name: 'quantisation tables', what: 'the DQT sums that the file-size fix itself introduced',
+    status: 'refused', by: 'exact equality of both DQT sums, plus the separability gate' },
+  { n: 6, name: 'the HUD', what: 'a DOM interface in every frame of one pool',
+    status: 'refused', by: 'the provenance gate and the overlay audit' },
+  { n: 7, name: 'letterbox bars', what: '--fit=contain bars on one pool only',
+    status: 'refused', by: 'flatBorderPx on the output and blackBars on the source' },
+  { n: 8, name: 'true JPEG scan length', what: 'the real compressed length recovered past the pad, 0.850 balanced accuracy',
+    status: 'open', by: 'nothing. It closes when the renderer stops carrying ~1.7x the '
+      + 'pixel-scale energy of a press plate; equalising it any other way is leak five again' },
+];
+
+/** One line, derived, for a header comment or a console banner that wants the count. */
+export const leakSummary = () => {
+  const n = (s) => LEAKS.filter((l) => l.status === s).length;
+  const open = LEAKS.filter((l) => l.status === 'open');
+  return `${LEAKS.length} recorded blind-deck leaks: ${n('refused')} refused by a gate, `
+    + `${n('mitigated')} mitigated by construction with no gate behind it, `
+    + `${n('open')} open (${open.map((l) => `#${l.n} ${l.name}`).join(', ')})`;
+};
 
 /** Mulberry32, so a seed reproduces a deck exactly. */
 export function rng(seed) {
@@ -263,7 +314,18 @@ export function balancedAccuracy(values, isOurs) {
 }
 
 /**
- * Six picture statistics, per frame, reported and never refused.
+ * The keys `pictureStats` returns, in order. **This array is the count.**
+ *
+ * The header below used to open "Six picture statistics" and then list eight, and the
+ * function has returned eight for as long as anybody can find. A prose count beside a list
+ * beside a return statement is three things that can disagree, and two of them did. There is
+ * now one: this array. `pictureStats` asserts its own return against it, so the next
+ * statistic cannot be added without the count following.
+ */
+export const PICTURE_STAT_KEYS = ['lum', 'p01', 'p99', 'chroma', 'hueSpread', 'edge', 'halo', 'vignette'];
+
+/**
+ * `PICTURE_STAT_KEYS.length` picture statistics, per frame, reported and never refused.
  *
  * These are not leak detectors. They are the objective half of a round's findings: a grader
  * says "the colour is all in one narrow warm band" and this says how narrow, in a number
@@ -346,7 +408,7 @@ export async function pictureStats(file) {
       else if (rr > 0.80) { outer += lum[y * w + x]; no++; }
     }
   }
-  return {
+  const out = {
     lum: +(lum.reduce((a, v) => a + v, 0) / n).toFixed(4),
     p01: +sorted[Math.floor(n * 0.01)].toFixed(4),
     p99: +sorted[Math.floor(n * 0.99)].toFixed(4),
@@ -357,6 +419,13 @@ export async function pictureStats(file) {
     halo: +(lap / Math.max(1e-9, edge)).toFixed(4),
     vignette: +((inner / Math.max(1, ni)) / Math.max(1e-6, outer / Math.max(1, no))).toFixed(3),
   };
+  // The count and the return cannot drift apart again without this throwing.
+  const got = Object.keys(out).join(',');
+  if (got !== PICTURE_STAT_KEYS.join(',')) {
+    throw new Error(`pictureStats returned [${got}] but PICTURE_STAT_KEYS says `
+      + `[${PICTURE_STAT_KEYS.join(',')}] — update the array, which is the single source for the count`);
+  }
+  return out;
 }
 
 /** Byte length on disk, so a caller does not have to import `fs` for one line. */

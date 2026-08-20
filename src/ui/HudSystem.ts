@@ -35,7 +35,7 @@ import { TopBar } from './TopBar';
 import { UnitCards } from './UnitCards';
 import { WorldOverlay } from './WorldOverlay';
 
-interface TerrainLike {
+export interface TerrainLike {
   heightAt(x: number, z: number): number;
   readonly heightField: { data: Float32Array; res: number; spacing: number; halfExtent: number };
 }

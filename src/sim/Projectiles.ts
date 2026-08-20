@@ -328,7 +328,7 @@ const SHOULDER = 1.45;
  * A structural mirror, not an import: `src/sim/` does not depend on `src/city/`. Kept
  * deliberately narrow — the fields a launch solve needs and nothing else.
  */
-interface EmbrasureView {
+export interface EmbrasureView {
   x: number;
   z: number;
   nx: number;
@@ -707,6 +707,25 @@ interface FiringBattery {
   onTarget: Int32Array;
   lastAimX: Float32Array;
   lastAimZ: Float32Array;
+}
+
+/**
+ * The live projectile pool as a reader outside the simulation sees it.
+ *
+ * Sparse: `count` is the high-water mark of the slot space, not the number of shafts in the
+ * air, and `alive[i]` is the test. See `ProjectileSystem.projectileFeed`.
+ */
+export interface ProjectileFeed {
+  /** Slots `0..count-1` may hold a projectile. */
+  count: number;
+  /** 1 where the slot holds a shaft that is still in the air. */
+  alive: Uint8Array;
+  px: Float32Array;
+  py: Float32Array;
+  pz: Float32Array;
+  vx: Float32Array;
+  vy: Float32Array;
+  vz: Float32Array;
 }
 
 export class ProjectileSystem implements Subsystem {
@@ -2974,6 +2993,38 @@ export class ProjectileSystem implements Subsystem {
   get spent(): number {
     return this.stuckCount;
   }
+
+  /**
+   * The live shafts, for anything outside the simulation that has to follow them.
+   *
+   * **Exported, and imported by its consumer**, which is the whole point of it. The audio
+   * engine used to reach in through `as unknown as Partial<ProjectileView>` for
+   * `activeCount`, `x`, `y` and `z`; this class has never had any of those four — the pool is
+   * `px`/`py`/`pz` and the count is `inFlight` — so the guard that tested for them failed
+   * every time and fly-by whistles have never once sounded. Nothing failed to compile,
+   * because `Partial<>` of a cast makes every member optional and erases even the arity
+   * check. A type both files name is the only arrangement in which that mistake is a build
+   * error.
+   *
+   * The pool is **sparse**: slots are recycled off a free list, so `0..count` contains dead
+   * entries and a consumer must test `alive`. That is also why this is not `x`/`y`/`z` — the
+   * old names implied a packed array of live projectiles, which this has never been, so a
+   * consumer that had found the arrays would still have read the positions of spent shafts.
+   *
+   * The same object is returned every call, with `count` refreshed, so a per-frame reader
+   * allocates nothing.
+   */
+  projectileFeed(): ProjectileFeed {
+    const f = (this.feed ??= {
+      count: 0, alive: this.alive,
+      px: this.px, py: this.py, pz: this.pz,
+      vx: this.vx, vy: this.vy, vz: this.vz,
+    });
+    f.count = this.highWater;
+    return f;
+  }
+
+  private feed: ProjectileFeed | null = null;
 
   /**
    * Everything `tools/probe-artillery.mjs` needs to answer "what is actually being drawn, and

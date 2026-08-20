@@ -39,7 +39,7 @@ page.on('console', (m) => { if (m.type() === 'error') errs.push(`console: ${m.te
 await page.goto(`${base}/?harness=1&quality=low&w=480&h=270&scenario=assault${MAP ? `&map=${MAP}` : ''}`,
   { waitUntil: 'domcontentloaded' });
 try {
-  await page.waitForFunction(() => window.__game && window.__game.ready === true, { timeout: 150000 });
+  await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 150000 });
 } catch {
   console.error('the page never reached ready\n' + errs.join('\n'));
   await browser.close();

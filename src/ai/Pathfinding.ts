@@ -228,7 +228,7 @@ export interface Footprint {
  * interface; we probe for these two methods and degrade to terrain-only if either the
  * system or the method is absent, so the AI never depends on another agent landing.
  */
-interface CityNavProvider {
+export interface CityNavProvider {
   getWallSegments?: () => unknown;
   /** Oriented solid boxes: the curtain, the towers, the monuments and the insulae. */
   getObstacles?: () => unknown;

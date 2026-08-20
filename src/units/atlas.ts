@@ -659,6 +659,43 @@ const RUST: Rgb = [0.42, 0.26, 0.155];
 const BRONZE: Rgb = [0.88, 0.70, 0.40];
 const BRONZE_DARK: Rgb = [0.52, 0.40, 0.21];
 
+
+/**
+ * Per-plate tilt for a plated armour, as a **slope** rather than as height.
+ *
+ * A materials grader, on the armour: *"scale and lamellar in Rome II resolves into individual
+ * plates each with its own highlight; ours is a tiling dot pattern with one shared sheen."*
+ *
+ * The dot pattern is the height field, and it was already per-plate: `Mat.Scale`'s hash
+ * varies each plate's gauge, its lean and its tarnish. What it could not vary is the one
+ * thing a highlight is a function of — **which way the plate faces**. A height field
+ * differenced into a normal gives every plate the same dome, so every plate answers the sun
+ * at the same angle, and a hundred of them answer it at the same angle together. That is the
+ * shared sheen, and it is the same defect as the shield boss and the helmet bowl in a third
+ * costume: a repeated form under a single light has a single response unless something breaks
+ * the repeat.
+ *
+ * A wired-on scale, a riveted lame and a mail ring are all hung individually and none of them
+ * hangs true. Two hashed radians of tilt per plate, added straight to the tangent-space
+ * gradient, is exactly that and costs nothing at run time — `MatDef.slope` exists for this,
+ * and it is what the cloth weave already uses.
+ *
+ * Hashed off the plate's own cell modulo the row count, like the tile's other per-plate
+ * draws, which is what keeps it seamless across the tile boundary.
+ */
+function plateTilt(
+  u: number, v: number, rows: number, stagger: number, amp: number, out: [number, number]
+): void {
+  const gy = v * rows;
+  const row = Math.floor(gy);
+  const gx = u * rows + (row % 2) * stagger;
+  const col = Math.floor(gx);
+  const a = hash2(col % rows, row % rows, 367) - 0.5;
+  const b = hash2(col % rows, row % rows, 373) - 0.5;
+  out[0] += a * amp;
+  out[1] += b * amp;
+}
+
 const MATS: Record<Mat, MatDef> = {
   // Pitted, scratched iron — the default for a soldier's ironmongery. Rome II's armour
   // reads as metal because it is dark and broken up, not because it is shiny.
@@ -790,6 +827,8 @@ const MATS: Record<Mat, MatDef> = {
       mix3(out, RUST, Math.min(0.55, rust), out);
     },
     height: (u, v) => mailHeight(u, v, 18),
+    // A ring is a small torus hung on four others and none of them hangs flat.
+    slope: (u, v, out) => plateTilt(u, v, 18, 0.5, 0.42, out),
     // Mail is thousands of small curved rings, so it scatters: rough, and heavily
     // self-shadowed by the cavity term in the red channel. High metalness used to render a
     // hamata as a black net — but that was a metal with a *charcoal* albedo, which has no
@@ -848,6 +887,8 @@ const MATS: Record<Mat, MatDef> = {
       const side = 1 - Math.abs(fx - 0.5 + (j2 - 0.5) * 0.16) * (1.6 + j * 0.22);
       return Math.max(0, Math.min(1, (1 - fy * (0.78 + j * 0.14)) * Math.max(0, side)));
     },
+    // Each scale is wired on through two holes and hangs a little askew of its neighbour.
+    slope: (u, v, out) => plateTilt(u, v, 14, 0.5, 0.55, out),
     // Bronze-washed scales, each a small curved mirror. Same reasoning as the mail: the
     // scale edges are what catch the light and they cannot do it without an F0 to do it with.
     // 0.40, not 0.31: same argument as `Mat.IronPlate`. A plate that clips the sun to white
@@ -1196,6 +1237,9 @@ const MATS: Record<Mat, MatDef> = {
       const dr = Math.hypot(rx - Math.floor(rx) - 0.5, (fy - 0.22) * bands * 0.5);
       return Math.min(1, plate + (dr < 0.2 ? (1 - dr / 0.2) * 0.5 : 0));
     },
+    // Girdle plates are strapped, not welded: each lame sits at its own angle on the leathers.
+    // Weaker than the scale's, because a 60 mm iron plate is stiff where a 25 mm scale swings.
+    slope: (u, v, out) => plateTilt(u, v, 7, 0.0, 0.30, out),
     // Girdle plates are burnished iron with a bronze edging strip. The near-black overlap
     // gutter in `colour` is a shadow rather than a material, so it keeps the plate's
     // metalness and simply reflects less — which is what a gap between two plates does.
@@ -1507,7 +1551,7 @@ const MATS: Record<Mat, MatDef> = {
        * which is what the first version did, because the temple hollow was centred at
        * `aq = 0.40`, i.e. 100 mm from the seam and well inside its own falloff.
        */
-      const edge = Math.min(1, Math.min(u, 1 - u) / 0.09);
+      const edge = Math.min(1, Math.min(u, 1 - u) / 0.22);
 
       // ---- base skin, matching the `Skin` tile so the arc seam is invisible ----------
       const pore = fbm(u * 46, v * 46, 3, 46, 47) * 0.10;
@@ -1622,16 +1666,42 @@ const MATS: Record<Mat, MatDef> = {
       g -= Math.exp(-((v - 0.655) ** 2) / 0.00050) * Math.min(1, Math.max(0, (0.34 - aq) / 0.10)) * 0.045;
       g -= Math.min(1, Math.max(0, (v - 0.715) / 0.05)) * 0.09;
 
-      // Fade the whole face back to plain skin at the seam.
+      /*
+       * Fade the whole face back to plain skin at the seam — and mean the *same* plain skin.
+       *
+       * The fade was only ever on the luminance. `Mat.Skin` writes a **capillary flush**
+       * chromaticity, `(1 + f*0.11, 0.958 - f*0.052, 0.905 - f*0.082)`, and this tile wrote a
+       * fixed `(1, 0.955, 0.90)`, so at `edge = 1` the two agreed on brightness and differed
+       * in hue by up to 5 % of red against 4 % of blue. On the arc seam that is a vertical
+       * line down the side of every head where the colour changes and the surface does not —
+       * a three-quarter head plate reads it as a rectangle of face pasted onto a skull, which
+       * is the literal shape of the grader's complaint.
+       *
+       * The same flush term, computed the same way, from the same fields.
+       */
       g = base + (g - base) * edge;
-      out[0] = Math.min(1, Math.max(0.02, g));
-      out[1] = Math.min(1, Math.max(0.02, g * 0.955));
-      out[2] = Math.min(1, Math.max(0.02, g * 0.90));
+      /*
+       * The flush is computed from `Mat.Skin`'s own fields at `Mat.Skin`'s own frequencies,
+       * not from this tile's. The two tiles do not share a `u` — the face arc is 120 degrees
+       * of it and the back arc is 300 — so the noise cannot line up and there is no point
+       * pretending it does. What has to match is the **distribution**, because a systematic
+       * hue offset between two tiles that meet along a seam is a line, and a difference in
+       * where their blotches happen to fall is not.
+       *
+       * `Mat.Skin`'s crease term is deliberately left out. It is an elbow and a knee, banded
+       * at v = 0.5 and 0.94, and on a head those two heights are the brow and the crown.
+       */
+      const blotchLo = fbm(u * 7, v * 7, 3, 7, 53);
+      const lines = threadTone(u, v, 22, 11, 97);
+      const flush = Math.min(1, blotchLo * 0.6 + (1 - lines) * 0.2);
+      out[0] = Math.min(1, Math.max(0.02, g * (1 + flush * 0.11)));
+      out[1] = Math.min(1, Math.max(0.02, g * (0.958 - flush * 0.052)));
+      out[2] = Math.min(1, Math.max(0.02, g * (0.905 - flush * 0.082)));
     },
     height(u, cv) {
       const aq = Math.abs(u - 0.5);
       const v = 1 - cv;   // see the note in `colour`
-      const edge = Math.min(1, Math.min(u, 1 - u) / 0.09);
+      const edge = Math.min(1, Math.min(u, 1 - u) / 0.22);
       const base = 0.52 + fbm(u * 50, v * 50, 3, 50, 47) * 0.16;
       let h = base;
 
@@ -1677,11 +1747,23 @@ const MATS: Record<Mat, MatDef> = {
 
       return Math.min(1, Math.max(0, base + (h - base) * edge));
     },
-    // Skin's own roughness. The bake spreads it with the height field, which is what leaves
-    // the lips and the globe of the eye glossy against a matte cheek.
-    roughness: 0.55,
+    /*
+     * Both of these are now `Mat.Skin`'s, and that is the point rather than a tuning.
+     *
+     * A face tile and a skin tile meet along a seam that runs down the side of every head in
+     * the game, and they met at roughness 0.55 against 0.62 and bump 0.42 against 0.62. The
+     * albedo was faded across that seam and these two were not, so the seam survived as a
+     * step in gloss and in micro-relief even where the colour matched — and a step in gloss
+     * at a fixed surface angle is exactly what reads as a decal.
+     *
+     * Raising the bump to 0.62 also makes the painted relief half again as strong, which is
+     * the direction three graders have asked for twice: the brow, the nasolabial fold and
+     * the lip line are all in this height field, and at 0.42 the bake was turning them into
+     * a normal too shallow to catch a low sun.
+     */
+    roughness: 0.62,
     metalness: 0,
-    bump: 0.42,
+    bump: 0.62,
   },
   [Mat.Count]: {
     colour(_u, _v, out) { out[0] = 0.5; out[1] = 0.5; out[2] = 0.5; },

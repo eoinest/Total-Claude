@@ -7,13 +7,19 @@
  * the ground truth the critic agents judge — nobody grades this project from source.
  *
  * Usage:
- *   node tools/shoot.mjs                          # every shot in the default set
+ *   node tools/shoot.mjs                          # --set=all: the graded field shots
  *   node tools/shoot.mjs --set=deck               # the ten-frame blind deck, varied
+ *   node tools/shoot.mjs --set=ab2                # the round-two A/B plates
+ *   node tools/shoot.mjs --set=everything         # every shot defined, which is never a deck
  *   node tools/shoot.mjs --shots=wide,closeup     # a subset
  *   node tools/shoot.mjs --out=screenshots/pass3  # alternate output directory
  *   node tools/shoot.mjs --w=2560 --h=1440        # resolution
- *   node tools/shoot.mjs --list                   # list available shots
+ *   node tools/shoot.mjs --list                   # shots, sets and families
  *   node tools/shoot.mjs --hud                    # WITH the interface — never gradeable
+ *
+ * A shot belongs to a *family* named by the first segment of its key, and `--set=all` is
+ * "no family" — see `FAMILIES` below and the comment above it, which is about the one time
+ * that went wrong.
  *
  * **The HUD is hidden unless you ask for it.** See `SHOW_HUD` below for why the default was
  * inverted; the short version is that a blind deck shot with the interface up grades the
@@ -644,16 +650,307 @@ const SHOTS = {
     // blocks; at 480 m ours were specks on an empty plain, which is a picture of ground.
     cam: { eye: 36, aim: 0, dist: 180, fov: 34 },
   },
+
+  /*
+   * ---------------------------------------------------------------------------
+   * `--set=r6`: the frames the r6 changelog is illustrated with.
+   * ---------------------------------------------------------------------------
+   *
+   * These exist so the pictures in a release note can be re-taken rather than described.
+   * They are not a blind deck and must never be put in one — three of them are chosen to
+   * show one specific fixed defect each, which is exactly the correlation a blind deck is
+   * built to avoid.
+   *
+   * The opening deployment frame and the interface frames are *not* here, deliberately.
+   * Their whole claim is about where the scenario puts the camera and what the HUD says
+   * when it gets there, and this file's job is to put the camera somewhere named. They are
+   * shot by `tools/scratch/r6-openframe.mjs` and `tools/probe-siegehud.mjs`.
+   */
+
+  // Campus Martius, spring 271. `scenario: 'assault'` puts the Juthungi outside the
+  // Aurelian Wall with the ram, and Rome's ballistarii on the parapet above it.
+  // Campus Martius, spring 271. `scenario: 'assault'` puts the Juthungi outside the Aurelian
+  // Wall with the ram, and Rome's ballistarii on the parapet above it. Both frames are at
+  // 09:30 and on the same camera family, so the pair reads as one machine's morning.
+  //
+  // The hour is not decoration. The Aurelian Wall's outer face points north and Rome is at
+  // 41.9N, so that face is in shade at every hour there is — but a camera looking south at it
+  // is looking at the sun, and the first attempt at these frames measured **3.6 degrees off
+  // the sun** and came back as veiled mush. A morning sun is 55 degrees off the same lens.
+  'r6-ram-gate': {
+    // t+150. `64dfb88` measured the machine's schedule once its shed was modelled: at the
+    // leaves by t+100, twenty-six blows, gate open at t+220. Earlier and it is still walking;
+    // later and the leaves are already down.
+    //
+    // `gate: true` matters more here than anywhere else in this file. The Porta Flaminia is
+    // 25 m from the middle of the bay it falls in, and the bay midpoint frames blank curtain.
+    desc: 'R6: the ram at the Porta Flaminia, mid-battery, from outside the gate',
+    scenario: 'assault', hour: 9.5, at: 150,
+    wall: { bay: 0, gate: true, stand: 6, lift: 0, yaw: 'in', yawAdd: -0.30 },
+    cam: { eye: 7, aim: 5, dist: 34, fov: 30 },
+  },
+  'r6-gate-open': {
+    // t+300, closer and wider than `r6-ram-gate`: the subject is no longer the machine but
+    // the hole, so the passage and the roadway have to be in frame and the gatehouse does not.
+    desc: 'R6: the broken gate, the passage open through it',
+    scenario: 'assault', hour: 9.5, at: 300,
+    wall: { bay: 0, gate: true, stand: 6, lift: 0, yaw: 'in', yawAdd: -0.18 },
+    cam: { eye: 6, aim: 4, dist: 26, fov: 36 },
+  },
+
+  /*
+   * The ditch of Carthage, and it took four framings to get a picture of a hole.
+   *
+   * `tools/probe-ditch-ds.mjs` gives the section as numbers and those are what this camera is
+   * placed against. Measured on this tree, the ground is flat at 7.53 m out to d = 8 m from
+   * the wall's centreline, falls to **3.35 m at d = 20**, and is back to 7.45 m by d = 30 — a
+   * 20 m trench with its bed six metres down, which is the section `carthageWall.ts` has been
+   * publishing since before anything cut it.
+   *
+   * Three framings looking *across* it all failed, and they failed for one reason. A ditch
+   * seen square-on from outside is invisible: that is what a ditch is for. From a low eye the
+   * counterscarp occludes the bed; from a high one both banks face the lens and the whole cut
+   * flattens into the tonal band a release note may not pass off as a trench. What works is
+   * looking *along* it from the outer bank, so the two banks converge, the bed holds the
+   * shadow of a low morning sun, and the curtain runs away above it.
+   */
+  'r6-carthage-ditch': {
+    desc: 'R6: along the ditch of Carthage from its outer bank, the curtain above it',
+    map: 'carthage', opponent: 2, scenario: 'assault', hour: 7.7, at: 6, weather: 'clear',
+    // stand 24 m: between the bed at 20 and the outer lip at 30, i.e. on the outer bank.
+    wall: { bay: 6, stand: 24, lift: 0, yaw: 'along', yawAdd: -0.40 },
+    cam: { eye: 6, aim: 0, dist: 45, fov: 32 },
+  },
+
+  /*
+   * ---------------------------------------------------------------------------
+   * The posterns of Carthage: a hole and a door, from the same two eyes.
+   * ---------------------------------------------------------------------------
+   *
+   * Added because the report that opened this — *"in addition to the gate there are some
+   * straight up holes in the wall"* — was made against a crop of a trailer frame, and a crop
+   * of a trailer frame cannot be re-shot. Every camera in this table is repeatable and these
+   * two are placed against measured numbers, so the pair is the same frame rather than a
+   * similar one.
+   *
+   * **`bay: -2` is the postern, not a bay near it.** `wall.bay` is an offset from the gate
+   * bay in `getGarrisonBays()`; the gate is bay 32 and the postern cadence is `% 8 === 6`, so
+   * −2 lands on bay 30 — and a postern sits at its bay's *centre*, which is exactly the point
+   * the `wall` block focuses on when `gate` is not set. `report.json` records the resolved
+   * `bayIndex` for both, so a cadence change cannot quietly reframe these onto solid curtain.
+   *
+   * **Square on, and low.** Both are cast down the passage's own axis at roughly the height
+   * of the opening, because that is the only geometry that can distinguish the two states:
+   * off-axis, an empty 6 m hole nine metres deep and a hole with a door 1.6 m inside it are
+   * both a dark rectangle. On-axis and at 3 m, the empty one shows the far ground and the
+   * shut one shows boarding. That is also, in reverse, why the owner read one postern as
+   * doored and its neighbour as open in a single oblique wide shot: at 30 degrees off the
+   * axis you are looking at the dressed reveal, and the reveal is dark.
+   *
+   * **16.5 h.** Carthage's map is rotated: §2.2 has map −Z as *true west*, so the curtain's
+   * field face is a west face and takes the sun in the afternoon. A morning hour puts the
+   * whole thing in its own shade, which is the condition under which a door and a hole are
+   * genuinely the same pixel.
+   *
+   * **t + 8 s.** The assault deploys at z ≈ −190, some 700 m out, so at eight seconds the
+   * glacis is empty and the subject is the masonry. These are inspection frames.
+   */
+  'carth-postern-wide': {
+    desc: 'Carthage: the curtain from the field, square on the postern two bays west of the gate',
+    map: 'carthage', opponent: 2, scenario: 'assault', hour: 16.5, at: 8, weather: 'clear',
+    wall: { bay: -2, stand: 0, lift: 0, yaw: 'in' },
+    // dist 62: clear of the ditch's outer lip at d = 29.6, far enough that the tower either
+    // side of the bay is in frame and the opening is read against the wall rather than alone.
+    cam: { eye: 3.2, aim: 3.4, dist: 62, fov: 32 },
+  },
+  'carth-postern-close': {
+    desc: 'Carthage: close on one postern from the field — what is actually in the opening',
+    map: 'carthage', opponent: 2, scenario: 'assault', hour: 16.5, at: 8, weather: 'clear',
+    // A sixteen-degree swing off the axis: enough that the 9.1 m of reveal reads as depth
+    // rather than as a flat frame, and at a 1.6 m setback still only 0.46 m of parallax
+    // across the leaf, so the door is not hidden behind its own jamb.
+    wall: { bay: -2, stand: 0, lift: 0, yaw: 'in', yawAdd: -0.28 },
+    cam: { eye: 2.6, aim: 3.2, dist: 26, fov: 30 },
+  },
 };
 
-/** Named shot sets. `--set=deck` is the only pool a blind round should be built from. */
+/*
+ * ---------------------------------------------------------------------------
+ * `--set=ab3`: round three. The same cameras, a sun that is not in one band.
+ * ---------------------------------------------------------------------------
+ *
+ * Round three changes the renderer and the *trial structure*, and deliberately does not
+ * change the camera. Round two's `cam` blocks were measured against the plates they are
+ * paired with — eye height, aim height, standoff and field of view, all in metres and
+ * degrees — and re-deriving them would mean a round that cannot distinguish "the soldiers
+ * are better" from "the photographer is different". So `ab3` is generated from `ab2`, entry
+ * for entry, and exactly two fields move.
+ *
+ * **The hour, because the old schedule clustered and said so in a comment that was wrong.**
+ * The `ab2` block above claims "no two are within twenty minutes". Sorted, its hours are
+ * 8.6, 9.0, 10.2, 11.0, 11.5, 12.2, 12.8, **13.0**, 13.4, 14.3, 15.0, **15.2**, **15.4**,
+ * 17.6 — three gaps of 0.2 h, which is twelve minutes, and four of the fourteen inside a
+ * 24-minute band in the middle of the afternoon. A grader shown the whole deck can learn a
+ * sun; four frames under the same one is most of the way to teaching them it.
+ *
+ * The schedule below spans 7.3 to 17.7 against round two's 8.6 to 17.6, and its smallest gap
+ * is **0.5 h**. Each shot keeps its own character where the character was the point: the
+ * elephants are still at dusk, the Carthage parapet is still the rain frame, and the four
+ * overcast frames are still four.
+ *
+ * **The weather assignment, only to keep the overcast frames spread across the new hours.**
+ * The counts are unchanged: nine clear, four overcast, one rain.
+ *
+ * A note on why the hour spread matters *less* this round than it did last, and is still
+ * worth fixing. Under one grader per pair, nothing a grader sees can cluster: they get one
+ * frame of ours and cannot learn our sun from it. The clustering was a defect of the pooled
+ * reading, and the pooled reading is what round three is replacing. It is fixed anyway
+ * because the deck outlives the protocol, and because a deck whose comment says one thing
+ * and whose data says another is a deck nobody can trust the rest of.
+ */
+const AB3 = {
+  'carth-march':     { hour: 7.3, weather: 'clear' },
+  'rome-line':       { hour: 8.2, weather: 'clear' },
+  'carth-line':      { hour: 9.1, weather: 'overcast' },
+  'rome-parapet':    { hour: 10.0, weather: 'clear' },
+  'rome-march':      { hour: 10.9, weather: 'clear' },
+  'carth-parapet':   { hour: 11.8, weather: 'rain' },
+  'rome-aftermath':  { hour: 12.7, weather: 'overcast' },
+  'rome-cavalry':    { hour: 13.6, weather: 'clear' },
+  'carth-melee':     { hour: 14.4, weather: 'overcast' },
+  'rome-wall':       { hour: 15.2, weather: 'clear' },
+  'rome-melee':      { hour: 15.9, weather: 'clear' },
+  'carth-wall':      { hour: 16.6, weather: 'overcast' },
+  'carth-wide':      { hour: 17.2, weather: 'clear' },
+  'carth-elephants': { hour: 17.7, weather: 'clear' },
+};
+for (const [k, v] of Object.entries(SHOTS)) {
+  if (!k.startsWith('ab2-')) continue;
+  const stem = k.slice(4);
+  const o = AB3[stem];
+  if (!o) throw new Error(`ab3: no hour for ${k} — the two sets must stay in step`);
+  SHOTS[`ab3-${stem}`] = {
+    ...v,
+    desc: v.desc.replace(/^AB2:/, 'AB3:'),
+    hour: o.hour,
+    weather: o.weather,
+  };
+}
+{
+  // The claim in the block comment above, checked rather than asserted. A schedule that
+  // silently collides is exactly the defect this set exists to fix.
+  const hrs = Object.values(AB3).map((v) => v.hour).sort((a, b) => a - b);
+  for (let i = 1; i < hrs.length; i++) {
+    const gap = hrs[i] - hrs[i - 1];
+    if (gap < 0.499) throw new Error(`ab3: hours ${hrs[i - 1]} and ${hrs[i]} are ${(gap * 60).toFixed(0)} min apart`);
+  }
+}
+
+/*
+ * ---------------------------------------------------------------------------------------
+ * Shot families, and the bug that made them a registry instead of four `startsWith` calls.
+ * ---------------------------------------------------------------------------------------
+ *
+ * `all` used to be written as *"not `deck-`, not `ab-`, not `r6…-`"*. But
+ * `'ab2-rome-line'.startsWith('ab-')` is **false** — the third character is `2`, not a hyphen
+ * — so `node tools/shoot.mjs` with no arguments shot 32 frames, 14 of them the round-two A/B
+ * plates with their matched press cameras, at 240 s of boot each. More than twice what it was
+ * meant to shoot, silently, for as long as `ab2-` existed. `ab1`'s filter even carried a
+ * redundant `&& !k.startsWith('ab2-')` guard: the ambiguity had been noticed once and guarded
+ * on the side that did not need it.
+ *
+ * The narrow fix is to add the missing `!k.startsWith('ab2-')`. That is not the fix, because
+ * the defect is not `ab2`. A character-prefix test cannot tell a family from a sibling family
+ * whose name extends it, so `ab3-` would land in `all` exactly the same way in six weeks.
+ *
+ * So a shot's family is the **first hyphen-delimited segment** of its name, matched by
+ * equality against this registry — `ab2` is not `ab` under segment equality, and never will
+ * be. `all` is the shots with no declared family, which are the graded field shots this file
+ * has always shot by default.
+ *
+ * `checkFamilies` below closes the loop, and it is deliberately two checks with two different
+ * severities, because the first draft of it was itself the bug it was written to prevent.
+ *
+ * That draft failed any two shots sharing an undeclared first segment. It was clean at
+ * `3f4c203` and it was **wrong**: `main` had meanwhile added `carth-postern-wide` and
+ * `carth-postern-close`, two ordinary field shots that share a topic prefix, and the guard
+ * would have exited 2 on every invocation of the screenshot harness for everybody. A guard
+ * that refuses a legitimate tree is worse than the leak it closes. So:
+ *
+ *   FATAL   an undeclared segment that extends a declared family name, or is extended by one
+ *           — `ab3` against `ab`, `deck2` against `deck`. This cannot false-positive: it is
+ *           the exact `ab2` shape, a sibling naming scheme that a prefix test cannot see.
+ *   WARN    an undeclared segment shared by THREE OR MORE shots. A heuristic, so it does not
+ *           refuse. The four declared families have 3, 10, 14 and 14 members; a pair of field
+ *           shots on one topic is normal and a trio is worth a second look.
+ *
+ * And the real defence, which is neither: every run prints the set it is about to shoot and
+ * how many frames that is, so "32 when I expected 18" is visible in the first line of output
+ * rather than in a directory listing twenty minutes later.
+ */
+const FAMILIES = {
+  deck: 'the pooled blind deck — the only pool a blind round should be built from',
+  ab: 'the paired blind instrument, round one. See the block comment above `ab-rome-line`',
+  ab2: 'round two, with a matched capture policy. See the block comment above `ab2-rome-line`',
+  ab3: 'round three, one grader per pair. See the block comment above `AB3`',
+  r6: 'the r6 changelog plates. Not a deck — see the block comment above `r6-ram-gate`',
+};
+
+/** `field` is the absence of a declared family, and `field` is what `--set=all` means. */
+const familyOf = (key) => {
+  const seg = key.slice(0, key.indexOf('-') < 0 ? key.length : key.indexOf('-'));
+  return Object.hasOwn(FAMILIES, seg) ? seg : 'field';
+};
+
+/** Three or more is a second look; two field shots on one topic is a normal Tuesday. */
+const CROWD = 3;
+
+/** Fatal on the `ab2` shape, advisory on a crowd. See the block comment above `FAMILIES`. */
+const checkFamilies = () => {
+  const bySeg = new Map();
+  for (const k of Object.keys(SHOTS)) {
+    if (familyOf(k) !== 'field') continue;
+    const seg = k.slice(0, k.indexOf('-') < 0 ? k.length : k.indexOf('-'));
+    bySeg.set(seg, [...(bySeg.get(seg) ?? []), k]);
+  }
+
+  // FATAL: a segment that extends a declared family name, or that one extends.
+  const declared = Object.keys(FAMILIES);
+  const siblings = [...bySeg].filter(([seg]) =>
+    declared.some((d) => (seg.startsWith(d) || d.startsWith(seg)) && seg !== d));
+  if (siblings.length) {
+    console.error('shoot.mjs: a shot family that extends a declared family name, undeclared.\n');
+    for (const [seg, ks] of siblings) {
+      const near = declared.filter((d) => seg.startsWith(d) || d.startsWith(seg));
+      console.error(`  ${seg}-  (beside ${near.map((d) => `${d}-`).join(', ')})  ${ks.join(', ')}`);
+    }
+    console.error('\nThese are in --set=all right now. This is the exact ab2- defect: a sibling');
+    console.error('naming scheme no prefix test can see. Add the segment to FAMILIES, or rename.');
+    process.exit(2);
+  }
+
+  // ADVISORY: a crowd under one undeclared segment. A heuristic, so it does not refuse — the
+  // first draft of this check did, and would have blocked the harness on carth-postern-*.
+  const crowds = [...bySeg].filter(([, ks]) => ks.length >= CROWD);
+  for (const [seg, ks] of crowds) {
+    console.error(`shoot.mjs: note — ${ks.length} shots share the undeclared segment "${seg}-" `
+      + `(${ks.join(', ')}), so they are all in --set=all. Intended? If they are a set, `
+      + 'declare them in FAMILIES.');
+  }
+};
+checkFamilies();
+
+/** Named shot sets, all derived from `familyOf` so no two of them can disagree. */
 const SETS = {
-  deck: Object.keys(SHOTS).filter((k) => k.startsWith('deck-')),
-  /** The paired blind instrument, round one. See the block comment above `ab-rome-line`. */
-  ab1: Object.keys(SHOTS).filter((k) => k.startsWith('ab-') && !k.startsWith('ab2-')),
-  /** Round two, with a matched capture policy. See the block comment above `ab2-rome-line`. */
-  ab2: Object.keys(SHOTS).filter((k) => k.startsWith('ab2-')),
-  all: Object.keys(SHOTS).filter((k) => !k.startsWith('deck-') && !k.startsWith('ab-')),
+  deck: Object.keys(SHOTS).filter((k) => familyOf(k) === 'deck'),
+  r6: Object.keys(SHOTS).filter((k) => familyOf(k) === 'r6'),
+  ab1: Object.keys(SHOTS).filter((k) => familyOf(k) === 'ab'),
+  ab2: Object.keys(SHOTS).filter((k) => familyOf(k) === 'ab2'),
+  ab3: Object.keys(SHOTS).filter((k) => familyOf(k) === 'ab3'),
+  /** The graded field set, and the default. Everything with no declared family. */
+  all: Object.keys(SHOTS).filter((k) => familyOf(k) === 'field'),
+  /** Literally everything, for the rare pass that wants it. Never a deck. */
+  everything: Object.keys(SHOTS),
 };
 
 const args = new Map(
@@ -668,7 +965,10 @@ if (args.has('list')) {
     const world = [v.map ?? '', v.hour !== undefined ? `${v.hour}h` : '', v.quality ?? ''].filter(Boolean).join(' ');
     console.log(`${k.padEnd(20)} t+${String(v.at).padStart(3)}s  ${world.padEnd(16)} ${v.desc}`);
   }
-  console.log(`\nsets: ${Object.entries(SETS).map(([k, v]) => `${k} (${v.length})`).join(', ')}`);
+  console.log(`\n${Object.keys(SHOTS).length} shots.`
+    + ` sets: ${Object.entries(SETS).map(([k, v]) => `${k} (${v.length})`).join(', ')}`);
+  console.log(`families: ${Object.entries(FAMILIES).map(([k]) => `${k}-`).join(' ')} `
+    + `— everything else is \`field\`, and \`field\` is what --set=all (the default) shoots.`);
   process.exit(0);
 }
 
@@ -682,6 +982,20 @@ const requested = args.get('shots')
 if (!requested) {
   console.error(`Unknown set "${args.get('set')}". Available: ${Object.keys(SETS).join(', ')}`);
   process.exit(2);
+}
+/*
+ * Say what you are about to shoot, before you shoot it.
+ *
+ * This one line is the durable defence against the `ab2-` defect, more than the family
+ * registry or its guard: fourteen extra A/B plates rode along in `--set=all` for as long as
+ * they existed because nothing ever told anybody how many frames a default run was. "32 when
+ * I expected 18" is obvious in the first line of output and invisible in a directory listing
+ * twenty minutes later.
+ */
+{
+  const setName = args.get('shots') ? null : (args.get('set') ?? 'all');
+  const label = setName ? `--set=${setName}` : '--shots';
+  console.log(`• ${requested.length} shot(s) from ${label}: ${requested.join(' ')}`);
 }
 const PORT = Number(args.get('port') ?? 5199);
 /** Device pixel ratio. 1 is what every historical plate was shot at — see the note at `newPage`. */
@@ -1384,8 +1698,20 @@ try {
             if (!bays || !bays.length) throw new Error('wall camera asked for, but this map has no garrison bays');
             const gateIdx = bays.findIndex((b) => b.isGate);
             const bay = bays[Math.max(0, Math.min(bays.length - 1, (gateIdx < 0 ? 0 : gateIdx) + s.wall.bay))];
-            const mx = (bay.x0 + bay.x1) * 0.5;
-            const mz = (bay.z0 + bay.z1) * 0.5;
+            /*
+             * `gate: true` aims at the gate rather than at the middle of the gate's bay.
+             *
+             * The two are not the same place and on Campus Martius they are 25 m apart: the
+             * Porta Flaminia sits where the Via Flaminia crosses the crest, which is nowhere
+             * near the centre of whichever bay that lands in. `tools/probe-siege.mjs` carries
+             * the same option under the name `subject: 'gate'`, and learned it the same way:
+             * its first ram frame was 1920x1080 of grass. The bay still supplies the outward
+             * normal, the walk height and the crest, because a gate record carries none of
+             * those.
+             */
+            const gateAt = s.wall.gate && city.getGates ? city.getGates()[0] : null;
+            const mx = gateAt ? gateAt.x : (bay.x0 + bay.x1) * 0.5;
+            const mz = gateAt ? gateAt.z : (bay.z0 + bay.z1) * 0.5;
             fx = mx + bay.nx * s.wall.stand;
             fz = mz + bay.nz * s.wall.stand;
 

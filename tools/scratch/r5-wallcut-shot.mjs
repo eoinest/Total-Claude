@@ -28,7 +28,7 @@ p.on('pageerror', (e) => errs.push('pageerror: ' + e.message));
 p.on('console', (m) => { if (m.type() === 'error') errs.push('console: ' + m.text()); });
 await p.goto(`http://127.0.0.1:${PORT}/?harness=1&map=${MAP}&quality=ultra&w=1280&h=720&scenario=assault`,
   { waitUntil: 'domcontentloaded' });
-await p.waitForFunction(() => window.__game?.ready === true, { timeout: 180000 });
+await p.waitForFunction(() => window.__game?.ready === true, null, { timeout: 180000 });
 
 // HUD off, the same way `tools/shoot.mjs` does it: strip the DOM *and* hide the
 // world-space overlay group, which a DOM strip does not touch.

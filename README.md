@@ -321,7 +321,7 @@ viewer is how they became visible:
 Static build; no server needed.
 
 ```bash
-npm run build        # typecheck → vite build → asset optimisation
+npm run build        # lint → typecheck → vite build → asset optimisation
 npm run preview      # check the production build locally
 ```
 
@@ -393,16 +393,23 @@ including the Germanic *barritus* that Tacitus and Ammianus both describe.
 Quality is graded from rendered frames, not from source.
 
 ```bash
-npm run shoot                    # 15 repeatable camera shots → screenshots/
-npm run shoot -- --list
+npm run shoot                    # the graded field shots → screenshots/
+npm run shoot -- --list          # every shot, and the sets and families they belong to
 npm run trace                    # battle state over time: does it advance, clash, resolve?
 npm run perfdiff -- a.json b.json
+npm run lint                     # the two static checks, in milliseconds and no browser
 ```
 
 The harness boots the game in headless Chromium on a real GPU, fast-forwards the
 simulation, auto-frames the combat shots on the live engagement centroid, and measures
 true frame cost behind a `readPixels` barrier. `docs/VISUAL-RUBRIC.md` is the 40-criterion
 standard used to judge the output.
+
+`npm run lint` is the exception: two static checks with no browser at all. `check-determinism`
+enforces *"no `Math.random()` or `Date.now()` in `fixedUpdate`"*, which until recently was
+enforced by people remembering it, and prints on every run the list of things it **cannot**
+see. `check-tool-args` catches an options object passed in Playwright's argument slot, where
+it is silently ignored and a 180-second wait becomes a 30-second one.
 
 ---
 

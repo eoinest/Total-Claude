@@ -119,7 +119,7 @@ export interface WallView {
 }
 
 /** The two published city accessors this needs. Duck-typed: a field battle has no city. */
-interface CityShape {
+export interface CityShape {
   getWallStairs(): readonly {
     footX: number; footZ: number; topX: number; topZ: number; nx: number; nz: number;
   }[];

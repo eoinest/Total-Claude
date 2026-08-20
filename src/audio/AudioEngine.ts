@@ -21,7 +21,8 @@ import type { EngineContext, Subsystem } from '../core/Engine';
 import { clamp, clamp01 } from '../util/math';
 import { Faction } from '../sim/types';
 import { Ambience, type WeatherView } from './Ambience';
-import { BattleAudio, type BattleView, type ProjectileView } from './BattleAudio';
+import { BattleAudio, type BattleView } from './BattleAudio';
+import type { ProjectileFeed } from '../sim/Projectiles';
 import { MAX_MUSIC_VOICES, MAX_SPATIAL_VOICES, Mixer } from './Mixer';
 import { Music, type MusicCue } from './Music';
 import { SoundBank, buildSoundBank } from './Synth';
@@ -375,27 +376,71 @@ export class AudioEngine implements Subsystem {
     const ctx = this.engineCtx;
     if (!ctx || !this.battleAudio) return;
     const battle = (ctx.tryGet('battle') as unknown as BattleView | undefined) ?? null;
-    const proj = ctx.tryGet('projectiles') as unknown as Partial<ProjectileView> | undefined;
-    const projView =
-      proj && typeof proj.activeCount === 'number' &&
-      proj.x instanceof Float32Array && proj.y instanceof Float32Array &&
-      proj.z instanceof Float32Array && proj.vx instanceof Float32Array &&
-      proj.vy instanceof Float32Array && proj.vz instanceof Float32Array
-        ? (proj as ProjectileView)
-        : null;
+    /*
+     * One method, and the record it returns is `ProjectileFeed`, which both files import.
+     *
+     * The seven-clause `instanceof` battery this replaces looked like the most careful test
+     * in the file and was in fact the reason nobody looked at it again: it tested for
+     * `activeCount`, `x`, `y` and `z`, which `ProjectileSystem` does not have and never had,
+     * failed on the first clause, and handed `attach` a `null` in silence. A guard that can
+     * only ever say no is indistinguishable from a system that is not registered.
+     */
+    const proj = ctx.tryGet('projectiles') as unknown as
+      { projectileFeed?: () => ProjectileFeed } | undefined;
+    const projView = typeof proj?.projectileFeed === 'function'
+      ? () => proj.projectileFeed!()
+      : null;
     this.battle = battle && battle.units && battle.pool ? battle : null;
     this.battleAudio.attach(this.battle, projView);
   }
 
-  /** Duck-typed weather from whatever the sky system happens to expose. */
+  /**
+   * The weather the ambience bed follows, gathered from the two systems that actually have it.
+   *
+   * **It used to ask `'sky'` for all four fields and got two of them back as `undefined`.**
+   * `SkySystem` has `timeOfDay` and nothing else on that list: no `windSpeed`, no `rain`, and
+   * its cloud cover is `preset.cloudCoverage`, not `cloud`. Every read was guarded with a
+   * `typeof === 'number'`, every guard failed, and `Ambience.update` fell through to its
+   * literals — `cloud = 0.2`, `rain = 0`, `base = 0.34` — for the whole life of the game. The
+   * bed was weather-deaf: cicadas and a dawn chorus through a rainstorm, and a wind bed that
+   * never once answered the gust the banners were visibly bending to.
+   *
+   * Wind and rain live on `VFXSystem`, which owns the weather state (`src/vfx/Weather.ts`).
+   * `wind` there is the instantaneous vector including gusts, which is exactly what a wind bed
+   * wants. Cloud stays with the sky, because cloud is the thing overhead and the sky is what
+   * draws it — but it is `preset.cloudCoverage`, whose sense is **inverted** (its own doc: a
+   * threshold in sigma units centred on 0.5, "LOWER means more cloud"), so it is turned round
+   * here rather than handed over backwards.
+   *
+   * Every field is still optional and still guarded: a viewer scene with no VFX system is a
+   * real configuration and it gets the procedural gust model, which is what the absent case
+   * was always for.
+   */
   private weather(): WeatherView | null {
-    const sky = this.engineCtx?.tryGet('sky') as unknown as WeatherView | undefined;
-    if (!sky) return null;
+    const ctx = this.engineCtx;
+    if (!ctx) return null;
+    const sky = ctx.tryGet('sky') as unknown as
+      { timeOfDay?: number; preset?: { cloudCoverage?: number } } | undefined;
+    const vfx = ctx.tryGet('vfx') as unknown as
+      { wind?: { length(): number }; weatherKind?: string } | undefined;
+    if (!sky && !vfx) return null;
+
+    let cloud: number | undefined;
+    const cov = sky?.preset?.cloudCoverage;
+    if (typeof cov === 'number') {
+      // 0.35 is roughly 84% sky covered and 0.65 roughly 16%; map that band onto 0..1 the
+      // right way up. Clamped, because a preset may sit outside it.
+      cloud = clamp01((0.65 - cov) / 0.3);
+    }
+    // Overcast and rain are weather states, not sky presets, and they win where they exist.
+    if (vfx?.weatherKind === 'overcast') cloud = Math.max(cloud ?? 0, 0.8);
+    else if (vfx?.weatherKind === 'rain') cloud = 1;
+
     return {
-      timeOfDay: typeof sky.timeOfDay === 'number' ? sky.timeOfDay : undefined,
-      windSpeed: typeof sky.windSpeed === 'number' ? sky.windSpeed : undefined,
-      rain: typeof sky.rain === 'number' ? sky.rain : undefined,
-      cloud: typeof sky.cloud === 'number' ? sky.cloud : undefined,
+      timeOfDay: typeof sky?.timeOfDay === 'number' ? sky.timeOfDay : undefined,
+      windSpeed: typeof vfx?.wind?.length === 'function' ? vfx.wind.length() : undefined,
+      rain: vfx?.weatherKind === 'rain' ? 1 : vfx?.weatherKind ? 0 : undefined,
+      cloud,
     };
   }
 

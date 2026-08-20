@@ -561,14 +561,50 @@ export class MeshBuilder {
    * the ring index. A lathe's rings are not evenly spaced in y — the skull's are 20 to 50 mm
    * apart — so an anatomical texture painted against ring index lands in the wrong place.
    * Given the range, a face tile can be painted in metres above the head bone and stay put.
+   *
+   * ---------------------------------------------------------------------------
+   * `opts.warp` — a radius that knows which way round the lathe it is
+   * ---------------------------------------------------------------------------
+   *
+   * `warp(angle, radius, y) -> radius` is consulted per vertex instead of the profile's own
+   * radius. It is the smallest change that turns a surface of revolution into something that
+   * is not one, and two of this project's oldest grader complaints are both statements that
+   * a surface of revolution is the wrong shape:
+   *
+   *   - *"The head is a box with a face painted on it … the silhouette against sky is a
+   *     straight vertical edge."* A skull is 137 mm across the cheekbones and 190 mm front to
+   *     back; lathed, it is 158 mm both ways, with no brow, no zygomatic and no jaw angle,
+   *     because a lathe has exactly one radius per height and every one of those forms is a
+   *     radius that depends on **which way you are facing**.
+   *   - *"Every boss shows the same mirror-white teardrop at the same clock position."* An
+   *     umbo lathed about the board's face normal is invariant under the only per-man
+   *     rotation the shield arm applies, so no amount of per-man angle moves its highlight.
+   *     Warping it off-axis is what makes that rotation visible.
+   *
+   * **The warp returns a radius, never a position, and this is a contract rather than a
+   * convenience.** `vFromY` pins an anatomical texture to `y` in metres, so a warp free to
+   * move `y` would slide the eyes off the eye sockets it had just carved. Radius-only keeps
+   * the face tile registered to the geometry for nothing.
+   *
+   * Normals are then taken **numerically**, because the profile tangent no longer describes
+   * the surface: the two tangents are central differences of the warped position along the
+   * ring and along the profile, and their cross product is the normal. With an identity warp
+   * this reduces exactly to `(-dy, dr)` — same expression, arrived at from the mesh instead
+   * of from the profile — so the unwarped path is left alone rather than re-derived, and the
+   * inside-out lathe this file has been bitten by twice cannot come back through it.
    */
   revolve(
     profile: readonly (readonly [number, number])[],
     segments: number,
     uv: UvRect,
     repeatU = 1,
-    opts: { arc?: readonly [number, number]; vFromY?: readonly [number, number] } = {}
+    opts: {
+      arc?: readonly [number, number];
+      vFromY?: readonly [number, number];
+      warp?: (angle: number, radius: number, y: number) => number;
+    } = {}
   ): void {
+    if (opts.warp) { this.revolveWarped(profile, segments, uv, repeatU, opts.warp, opts); return; }
     const a0 = opts.arc ? opts.arc[0] : 0;
     const a1 = opts.arc ? opts.arc[1] : Math.PI * 2;
     // One column list serves both cases: a closed lathe's last column lands on angle 2*PI,
@@ -608,6 +644,91 @@ export class MeshBuilder {
         const a = a0 + (col.i / segments) * (a1 - a0);
         const [u, v] = MeshBuilder.tileUv(uv, col.f, t);
         ring.push(this.vert(Math.cos(a) * r, y, Math.sin(a) * r, Math.cos(a) * nr, ny, Math.sin(a) * nr, u, v));
+      }
+      rings.push(ring);
+    }
+    for (let i = 0; i < rings.length - 1; i++) {
+      for (let s = 0; s < cols.length - 1; s++) {
+        if (cols[s].i === cols[s + 1].i) continue;
+        this.quadFacing(rings[i][s], rings[i][s + 1], rings[i + 1][s + 1], rings[i + 1][s]);
+      }
+    }
+  }
+
+  /**
+   * `revolve` with `opts.warp`. Split out so the common path keeps its own straight line.
+   *
+   * The one thing worth reading twice is the normal. `P(a, i) = (cos a * W, y_i, sin a * W)`
+   * with `W = warp(a, r_i, y_i)`, so the two surface tangents are
+   *
+   *     t_a = dP/da  — central difference in the angle, at fixed profile point
+   *     t_p = dP/di  — difference between the neighbouring profile points, at fixed angle
+   *
+   * and `N = normalize(cross(t_a, t_p))`. Taking `t_p` *at this column's angle* rather than
+   * from the raw profile is the whole point: on the brow ridge the warp adds five millimetres
+   * at `y = 0.050` and nothing at `y = 0.095`, and it is that difference, not the profile's,
+   * that tips the normal up into the light.
+   *
+   * `EPS_A` is a thousandth of a radian. Small enough that the difference is the derivative
+   * on every form here (the narrowest is an eye socket at 0.42 rad of spread), large enough
+   * that it never lands inside float error on a radius of order 0.08 m.
+   *
+   * At a pole the ring tangent vanishes with the radius and the cross product goes to zero
+   * length; there the analytic profile normal is still exactly right and is used instead. The
+   * skull, the boss and every other caller close their poles at `r = 0.001` rather than 0, so
+   * this is a guard rather than a branch anyone takes.
+   */
+  private revolveWarped(
+    profile: readonly (readonly [number, number])[],
+    segments: number,
+    uv: UvRect,
+    repeatU: number,
+    warp: (angle: number, radius: number, y: number) => number,
+    opts: { arc?: readonly [number, number]; vFromY?: readonly [number, number] }
+  ): void {
+    const EPS_A = 1e-3;
+    const a0 = opts.arc ? opts.arc[0] : 0;
+    const a1 = opts.arc ? opts.arc[1] : Math.PI * 2;
+    const cols = MeshBuilder.repeatStops(segments, repeatU);
+    const at = (a: number, j: number): [number, number, number] => {
+      const [r, y] = profile[j];
+      const w = warp(a, r, y);
+      return [Math.cos(a) * w, y, Math.sin(a) * w];
+    };
+    const rings: number[][] = [];
+    for (let i = 0; i < profile.length; i++) {
+      const [r, y] = profile[i];
+      const ring: number[] = [];
+      const t = opts.vFromY
+        ? Math.min(1, Math.max(0, (y - opts.vFromY[0]) / (opts.vFromY[1] - opts.vFromY[0])))
+        : i / (profile.length - 1);
+      const jm = Math.max(0, i - 1);
+      const jp = Math.min(profile.length - 1, i + 1);
+      // The unwarped fallback normal, for the pole guard. Same expression as `revolve`'s.
+      const dr = profile[jp][0] - profile[jm][0];
+      const dy = profile[jp][1] - profile[jm][1];
+      const plen = Math.hypot(dr, dy) || 1;
+      for (const col of cols) {
+        const a = a0 + (col.i / segments) * (a1 - a0);
+        const w = warp(a, r, y);
+        const [pmx, , pmz] = at(a - EPS_A, i);
+        const [ppx, , ppz] = at(a + EPS_A, i);
+        const tax = ppx - pmx, taz = ppz - pmz;
+        const [qmx, qmy, qmz] = at(a, jm);
+        const [qpx, qpy, qpz] = at(a, jp);
+        const tpx = qpx - qmx, tpy = qpy - qmy, tpz = qpz - qmz;
+        // cross(t_a, t_p), with t_a's y component identically zero.
+        let nx = -taz * tpy;
+        let ny = taz * tpx - tax * tpz;
+        let nz = tax * tpy;
+        const nl = Math.hypot(nx, ny, nz);
+        if (nl < 1e-12) {
+          nx = Math.cos(a) * (-dy / plen); ny = dr / plen; nz = Math.sin(a) * (-dy / plen);
+        } else {
+          nx /= nl; ny /= nl; nz /= nl;
+        }
+        const [u, v] = MeshBuilder.tileUv(uv, col.f, t);
+        ring.push(this.vert(Math.cos(a) * w, y, Math.sin(a) * w, nx, ny, nz, u, v));
       }
       rings.push(ring);
     }

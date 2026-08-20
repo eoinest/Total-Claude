@@ -1,0 +1,966 @@
+{
+ "url": "http://127.0.0.1:5391/?harness=1&quality=high&w=960&h=540&scenario=assault&battle=eyJtYXAiOiJjYXJ0aGFnZSIsIm9wcG9uZW50IjoyLCJ1bml0U2l6ZSI6InVsdHJhIiwicXVhbGl0eSI6ImhpZ2giLCJkaWZmaWN1bHR5IjoiaGFyZCIsInNlZWQiOjQyNjU0MzgyNjR9",
+ "map": "carthage",
+ "scenario": "assault",
+ "rev": "d497628",
+ "gates": [
+  {
+   "id": "porta-byrsae",
+   "open": false,
+   "x": 0,
+   "z": 527,
+   "groundY": 13.02,
+   "rows": [
+    {
+     "h": 1,
+     "meshHits": [
+      {
+       "d": 10.97,
+       "name": "gate-door-lod0",
+       "mat": "city-timber"
+      }
+     ],
+     "meshStop": 10.97,
+     "boxStop": 11.25,
+     "rasterStop": 5,
+     "alt": 11.25
+    },
+    {
+     "h": 1.7,
+     "meshHits": [
+      {
+       "d": 10.97,
+       "name": "gate-door-lod0",
+       "mat": "city-timber"
+      }
+     ],
+     "meshStop": 10.97,
+     "boxStop": 11.25,
+     "rasterStop": 5,
+     "alt": 11.25
+    },
+    {
+     "h": 3,
+     "meshHits": [
+      {
+       "d": 10.97,
+       "name": "gate-door-lod0",
+       "mat": "city-timber"
+      }
+     ],
+     "meshStop": 10.97,
+     "boxStop": 11.25,
+     "rasterStop": 5,
+     "alt": 11.25
+    }
+   ]
+  },
+  {
+   "id": "porta-uticensis",
+   "open": false,
+   "x": 560,
+   "z": 501.3,
+   "groundY": 11.75,
+   "rows": [
+    {
+     "h": 1,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 10.75,
+     "alt": 11.25
+    },
+    {
+     "h": 1.7,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 10.75,
+     "alt": 11.25
+    },
+    {
+     "h": 3,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 10.75,
+     "alt": 11.25
+    }
+   ]
+  },
+  {
+   "id": "porta-maritima",
+   "open": false,
+   "x": -560,
+   "z": 571.2,
+   "groundY": 11.97,
+   "rows": [
+    {
+     "h": 1,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 9,
+     "alt": 11.25
+    },
+    {
+     "h": 1.7,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 9,
+     "alt": 11.25
+    },
+    {
+     "h": 3,
+     "meshHits": [
+      {
+       "d": 20.542,
+       "name": "wall-1-lod0",
+       "mat": "city-stone"
+      },
+      {
+       "d": 23.942,
+       "name": "wall-1-lod0",
+       "mat": "city-stone"
+      }
+     ],
+     "meshStop": 20.542,
+     "boxStop": 11.25,
+     "rasterStop": 9,
+     "alt": 11.25
+    }
+   ]
+  },
+  {
+   "id": "postern-6",
+   "open": false,
+   "x": -772.9,
+   "z": 592.8,
+   "groundY": 7.53,
+   "rows": [
+    {
+     "h": 1,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 11.25,
+     "alt": 11.25
+    },
+    {
+     "h": 1.7,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 11.25,
+     "alt": 11.25
+    },
+    {
+     "h": 3,
+     "meshHits": [
+      {
+       "d": 13.134,
+       "name": "postern-door-6-lod0",
+       "mat": "city-timber"
+      }
+     ],
+     "meshStop": 13.134,
+     "boxStop": 11.25,
+     "rasterStop": 11.25,
+     "alt": 11.25
+    }
+   ]
+  },
+  {
+   "id": "postern-14",
+   "open": false,
+   "x": -532.8,
+   "z": 568.6,
+   "groundY": 11.91,
+   "rows": [
+    {
+     "h": 1,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 11.5,
+     "alt": 11.25
+    },
+    {
+     "h": 1.7,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 11.5,
+     "alt": 11.25
+    },
+    {
+     "h": 3,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 11.5,
+     "alt": 11.25
+    }
+   ]
+  },
+  {
+   "id": "postern-22",
+   "open": false,
+   "x": -292.7,
+   "z": 547.8,
+   "groundY": 12.29,
+   "rows": [
+    {
+     "h": 1,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 8.25,
+     "alt": 11.25
+    },
+    {
+     "h": 1.7,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 8.25,
+     "alt": 11.25
+    },
+    {
+     "h": 3,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 8.25,
+     "alt": 11.25
+    }
+   ]
+  },
+  {
+   "id": "postern-30",
+   "open": false,
+   "x": -52.5,
+   "z": 530.4,
+   "groundY": 13.04,
+   "rows": [
+    {
+     "h": 1,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 9.75,
+     "alt": 11.25
+    },
+    {
+     "h": 1.7,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 9.75,
+     "alt": 11.25
+    },
+    {
+     "h": 3,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 9.75,
+     "alt": 11.25
+    }
+   ]
+  },
+  {
+   "id": "postern-38",
+   "open": false,
+   "x": 187.6,
+   "z": 516.3,
+   "groundY": 12.39,
+   "rows": [
+    {
+     "h": 1,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 7.75,
+     "alt": 11.25
+    },
+    {
+     "h": 1.7,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 7.75,
+     "alt": 11.25
+    },
+    {
+     "h": 3,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 7.75,
+     "alt": 11.25
+    }
+   ]
+  },
+  {
+   "id": "postern-46",
+   "open": false,
+   "x": 427.7,
+   "z": 505.7,
+   "groundY": 12.22,
+   "rows": [
+    {
+     "h": 1,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 10.5,
+     "alt": 11.25
+    },
+    {
+     "h": 1.7,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 10.5,
+     "alt": 11.25
+    },
+    {
+     "h": 3,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 10.5,
+     "alt": 11.25
+    }
+   ]
+  },
+  {
+   "id": "postern-54",
+   "open": false,
+   "x": 667.8,
+   "z": 498.5,
+   "groundY": 11.44,
+   "rows": [
+    {
+     "h": 1,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 9.75,
+     "alt": 11.25
+    },
+    {
+     "h": 1.7,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 9.75,
+     "alt": 11.25
+    },
+    {
+     "h": 3,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 9.75,
+     "alt": 11.25
+    }
+   ]
+  },
+  {
+   "id": "postern-62",
+   "open": false,
+   "x": 907.9,
+   "z": 494.6,
+   "groundY": 8.36,
+   "rows": [
+    {
+     "h": 1,
+     "meshHits": [
+      {
+       "d": 13.139,
+       "name": "postern-door-62-lod0",
+       "mat": "city-timber"
+      }
+     ],
+     "meshStop": 13.139,
+     "boxStop": 11.25,
+     "rasterStop": 9.5,
+     "alt": 11.25
+    },
+    {
+     "h": 1.7,
+     "meshHits": [
+      {
+       "d": 13.139,
+       "name": "postern-door-62-lod0",
+       "mat": "city-timber"
+      }
+     ],
+     "meshStop": 13.139,
+     "boxStop": 11.25,
+     "rasterStop": 9.5,
+     "alt": 11.25
+    },
+    {
+     "h": 3,
+     "meshHits": [
+      {
+       "d": 13.139,
+       "name": "postern-door-62-lod0",
+       "mat": "city-timber"
+      }
+     ],
+     "meshStop": 13.139,
+     "boxStop": 11.25,
+     "rasterStop": 9.5,
+     "alt": 11.25
+    }
+   ]
+  }
+ ],
+ "curtain": {
+  "samples": 2046,
+  "meshOpen": 5,
+  "boxOpen": 0,
+  "rasterOpen": 0,
+  "ghost": 0,
+  "phantom": 5,
+  "ghostPct": 0,
+  "rows": [
+   {
+    "kind": "phantom",
+    "bay": 50,
+    "x": 557.8,
+    "z": 501.4,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 50,
+    "x": 558.8,
+    "z": 501.3,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 50,
+    "x": 559.8,
+    "z": 501.3,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 50,
+    "x": 560.8,
+    "z": 501.3,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   },
+   {
+    "kind": "phantom",
+    "bay": 50,
+    "x": 561.8,
+    "z": 501.2,
+    "mesh": false,
+    "box": true,
+    "raster": true
+   }
+  ]
+ },
+ "walk": {
+  "seconds": 40,
+  "ticks": 2400,
+  "city": "carthage",
+  "unitsOrdered": 13,
+  "rows": {
+   "infantry": {
+    "units": 10,
+    "manTicks": 2757091,
+    "inWallPerMille": 2.08,
+    "inWallCleanPerMille": 2.08,
+    "inWallCleanManTicks": 5731,
+    "cleanWorstDepth": 16.3,
+    "cleanDeepest": {
+     "x": -7.7,
+     "z": 523.3,
+     "y": 12.9,
+     "bay": 31
+    },
+    "boxWallPerMille": 0.18,
+    "boxCityPerMille": 0,
+    "inWallManTicks": 5731,
+    "boxWallManTicks": 494,
+    "boxCityManTicks": 0,
+    "elevatedInWallManTicks": 0,
+    "worstDepth": 16.3,
+    "deepest": {
+     "x": -7.7,
+     "z": 523.3,
+     "y": 12.9,
+     "bay": 31
+    }
+   },
+   "rout": {
+    "units": 1,
+    "manTicks": 28800,
+    "inWallPerMille": 0,
+    "inWallCleanPerMille": 0,
+    "inWallCleanManTicks": 0,
+    "cleanWorstDepth": 0,
+    "cleanDeepest": null,
+    "boxWallPerMille": 0,
+    "boxCityPerMille": 0,
+    "inWallManTicks": 0,
+    "boxWallManTicks": 0,
+    "boxCityManTicks": 0,
+    "elevatedInWallManTicks": 0,
+    "worstDepth": 0,
+    "deepest": null
+   },
+   "cavalry": {
+    "units": 2,
+    "manTicks": 264983,
+    "inWallPerMille": 23.81,
+    "inWallCleanPerMille": 23.81,
+    "inWallCleanManTicks": 6308,
+    "cleanWorstDepth": 16.3,
+    "cleanDeepest": {
+     "x": -3.3,
+     "z": 523,
+     "y": 12.9,
+     "bay": 32
+    },
+    "boxWallPerMille": 0,
+    "boxCityPerMille": 0,
+    "inWallManTicks": 6308,
+    "boxWallManTicks": 0,
+    "boxCityManTicks": 0,
+    "elevatedInWallManTicks": 0,
+    "worstDepth": 16.3,
+    "deepest": {
+     "x": -3.3,
+     "z": 523,
+     "y": 12.9,
+     "bay": 32
+    }
+   },
+   "engine": {
+    "units": 9,
+    "manTicks": 511462,
+    "inWallPerMille": 0,
+    "inWallCleanPerMille": 0,
+    "inWallCleanManTicks": 0,
+    "cleanWorstDepth": 0,
+    "cleanDeepest": null,
+    "boxWallPerMille": 0,
+    "boxCityPerMille": 0,
+    "inWallManTicks": 0,
+    "boxWallManTicks": 0,
+    "boxCityManTicks": 0,
+    "elevatedInWallManTicks": 57473,
+    "worstDepth": 0,
+    "deepest": null
+   },
+   "garrison": {
+    "units": 10,
+    "manTicks": 2934415,
+    "inWallPerMille": 0,
+    "inWallCleanPerMille": 0,
+    "inWallCleanManTicks": 0,
+    "cleanWorstDepth": 0,
+    "cleanDeepest": null,
+    "boxWallPerMille": 0,
+    "boxCityPerMille": 0,
+    "inWallManTicks": 0,
+    "boxWallManTicks": 0,
+    "boxCityManTicks": 0,
+    "elevatedInWallManTicks": 2934415,
+    "worstDepth": 0,
+    "deepest": null
+   }
+  },
+  "crossings": {
+   "total": 1749,
+   "offWay": 1041,
+   "worstOffset": 82.98004913330078,
+   "where": [
+    {
+     "x": -23.1,
+     "z": 528.5,
+     "bay": 31,
+     "stage": "finished"
+    },
+    {
+     "x": -23.9,
+     "z": 528.5,
+     "bay": 31,
+     "stage": "finished"
+    },
+    {
+     "x": -24.8,
+     "z": 528.6,
+     "bay": 31,
+     "stage": "finished"
+    },
+    {
+     "x": -21.6,
+     "z": 528.4,
+     "bay": 31,
+     "stage": "finished"
+    },
+    {
+     "x": -22.4,
+     "z": 528.4,
+     "bay": 31,
+     "stage": "finished"
+    },
+    {
+     "x": -22.1,
+     "z": 528.4,
+     "bay": 31,
+     "stage": "finished"
+    },
+    {
+     "x": -21.3,
+     "z": 528.4,
+     "bay": 31,
+     "stage": "finished"
+    },
+    {
+     "x": 38.2,
+     "z": 524.7,
+     "bay": 33,
+     "stage": "finished"
+    },
+    {
+     "x": -23,
+     "z": 528.5,
+     "bay": 31,
+     "stage": "finished"
+    },
+    {
+     "x": 39,
+     "z": 524.6,
+     "bay": 33,
+     "stage": "finished"
+    },
+    {
+     "x": 35.3,
+     "z": 524.8,
+     "bay": 33,
+     "stage": "finished"
+    },
+    {
+     "x": 35.3,
+     "z": 524.8,
+     "bay": 33,
+     "stage": "finished"
+    },
+    {
+     "x": 39,
+     "z": 524.6,
+     "bay": 33,
+     "stage": "finished"
+    },
+    {
+     "x": 27.2,
+     "z": 525.4,
+     "bay": 33,
+     "stage": "finished"
+    },
+    {
+     "x": 40.3,
+     "z": 524.6,
+     "bay": 33,
+     "stage": "finished"
+    },
+    {
+     "x": 36.1,
+     "z": 524.8,
+     "bay": 33,
+     "stage": "finished"
+    },
+    {
+     "x": 41.6,
+     "z": 524.5,
+     "bay": 33,
+     "stage": "finished"
+    },
+    {
+     "x": 25.5,
+     "z": 525.4,
+     "bay": 33,
+     "stage": "finished"
+    },
+    {
+     "x": 38.7,
+     "z": 524.6,
+     "bay": 33,
+     "stage": "finished"
+    },
+    {
+     "x": -21.6,
+     "z": 528.4,
+     "bay": 31,
+     "stage": "finished"
+    },
+    {
+     "x": 36.9,
+     "z": 524.7,
+     "bay": 33,
+     "stage": "finished"
+    },
+    {
+     "x": 40.8,
+     "z": 524.5,
+     "bay": 33,
+     "stage": "finished"
+    },
+    {
+     "x": -22.8,
+     "z": 528.5,
+     "bay": 31,
+     "stage": "finished"
+    },
+    {
+     "x": 37.7,
+     "z": 524.7,
+     "bay": 33,
+     "stage": "finished"
+    },
+    {
+     "x": 39.4,
+     "z": 524.6,
+     "bay": 33,
+     "stage": "finished"
+    },
+    {
+     "x": -23.6,
+     "z": 528.5,
+     "bay": 31,
+     "stage": "finished"
+    },
+    {
+     "x": 26.6,
+     "z": 525.4,
+     "bay": 33,
+     "stage": "finished"
+    },
+    {
+     "x": 27.2,
+     "z": 525.4,
+     "bay": 33,
+     "stage": "finished"
+    },
+    {
+     "x": -21.3,
+     "z": 528.4,
+     "bay": 31,
+     "stage": "finished"
+    },
+    {
+     "x": 26.9,
+     "z": 525.3,
+     "bay": 33,
+     "stage": "finished"
+    }
+   ]
+  },
+  "offsetHist": [
+   927488,
+   598059,
+   277651,
+   597871,
+   592422,
+   3893,
+   2829,
+   2071,
+   1643,
+   0
+  ],
+  "arrivals": [
+   {
+    "id": 16,
+    "typeId": "legio-tower-party",
+    "cls": "engine",
+    "startX": -54,
+    "startZ": 509,
+    "nowX": -208,
+    "nowZ": 416,
+    "wallZ": 541,
+    "inside": false,
+    "through": false,
+    "bay": 25
+   },
+   {
+    "id": 17,
+    "typeId": "legio-tower-party",
+    "cls": "engine",
+    "startX": 65,
+    "startZ": 493,
+    "nowX": 201,
+    "nowZ": 370,
+    "wallZ": 516,
+    "inside": false,
+    "through": false,
+    "bay": 38
+   },
+   {
+    "id": 23,
+    "typeId": "legio-ballista",
+    "cls": "engine",
+    "startX": -75,
+    "startZ": 335,
+    "nowX": -75,
+    "nowZ": 335,
+    "wallZ": 532,
+    "inside": false,
+    "through": false,
+    "bay": 29
+   },
+   {
+    "id": 24,
+    "typeId": "legio-ballista",
+    "cls": "engine",
+    "startX": -5,
+    "startZ": 331,
+    "nowX": -5,
+    "nowZ": 331,
+    "wallZ": 527,
+    "inside": false,
+    "through": false,
+    "bay": 32
+   },
+   {
+    "id": 25,
+    "typeId": "carroballista",
+    "cls": "rout",
+    "startX": 66,
+    "startZ": 327,
+    "nowX": 65,
+    "nowZ": 308,
+    "wallZ": 523,
+    "inside": false,
+    "through": false,
+    "bay": 34
+   },
+   {
+    "id": 26,
+    "typeId": "legio-cohort",
+    "cls": "infantry",
+    "startX": -159,
+    "startZ": 409,
+    "nowX": -101,
+    "nowZ": 477,
+    "wallZ": 534,
+    "inside": false,
+    "through": false,
+    "bay": 28
+   },
+   {
+    "id": 27,
+    "typeId": "legio-cohort",
+    "cls": "infantry",
+    "startX": -97,
+    "startZ": 405,
+    "nowX": -13,
+    "nowZ": 587,
+    "wallZ": 528,
+    "inside": true,
+    "through": false,
+    "bay": 31
+   },
+   {
+    "id": 28,
+    "typeId": "legio-cohort",
+    "cls": "infantry",
+    "startX": -33,
+    "startZ": 402,
+    "nowX": -20,
+    "nowZ": 665,
+    "wallZ": 528,
+    "inside": true,
+    "through": false,
+    "bay": 31
+   },
+   {
+    "id": 29,
+    "typeId": "legio-cohort",
+    "cls": "infantry",
+    "startX": 32,
+    "startZ": 399,
+    "nowX": 51,
+    "nowZ": 652,
+    "wallZ": 524,
+    "inside": true,
+    "through": false,
+    "bay": 33
+   },
+   {
+    "id": 30,
+    "typeId": "legio-cohort",
+    "cls": "infantry",
+    "startX": 96,
+    "startZ": 393,
+    "nowX": 36,
+    "nowZ": 592,
+    "wallZ": 525,
+    "inside": true,
+    "through": false,
+    "bay": 33
+   },
+   {
+    "id": 31,
+    "typeId": "legio-cohort",
+    "cls": "infantry",
+    "startX": 158,
+    "startZ": 389,
+    "nowX": 229,
+    "nowZ": 440,
+    "wallZ": 514,
+    "inside": false,
+    "through": false,
+    "bay": 39
+   },
+   {
+    "id": 32,
+    "typeId": "equites",
+    "cls": "cavalry",
+    "startX": -308,
+    "startZ": 426,
+    "nowX": -234,
+    "nowZ": 582,
+    "wallZ": 543,
+    "inside": true,
+    "through": false,
+    "bay": 24
+   },
+   {
+    "id": 33,
+    "typeId": "equites",
+    "cls": "cavalry",
+    "startX": 312,
+    "startZ": 388,
+    "nowX": 208,
+    "nowZ": 598,
+    "wallZ": 515,
+    "inside": true,
+    "through": false,
+    "bay": 39
+   }
+  ],
+  "unitsInside": 6,
+  "unitsInsideOffWay": 6
+ },
+ "errors": []
+}

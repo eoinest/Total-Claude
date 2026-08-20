@@ -1,0 +1,469 @@
+{
+ "res": 2049,
+ "spacing": 1.3671875,
+ "halfExtent": 1400,
+ "mipRes": [
+  2049,
+  1024,
+  512,
+  256,
+  128,
+  64,
+  32
+ ],
+ "rings": [
+  {
+   "lvl": 0,
+   "vertexSpacing": 0.5,
+   "reachM": 48,
+   "innerM": 0,
+   "lod": 0
+  },
+  {
+   "lvl": 1,
+   "vertexSpacing": 1,
+   "reachM": 96,
+   "innerM": 48,
+   "lod": 0
+  },
+  {
+   "lvl": 2,
+   "vertexSpacing": 2,
+   "reachM": 192,
+   "innerM": 96,
+   "lod": 0.5487888881676712
+  },
+  {
+   "lvl": 3,
+   "vertexSpacing": 4,
+   "reachM": 384,
+   "innerM": 192,
+   "lod": 1.5487888881676712
+  },
+  {
+   "lvl": 4,
+   "vertexSpacing": 8,
+   "reachM": 768,
+   "innerM": 384,
+   "lod": 2.548788888167671
+  },
+  {
+   "lvl": 5,
+   "vertexSpacing": 16,
+   "reachM": 1536,
+   "innerM": 768,
+   "lod": 3.548788888167671
+  },
+  {
+   "lvl": 6,
+   "vertexSpacing": 32,
+   "reachM": 3072,
+   "innerM": 1536,
+   "lod": 4.548788888167671
+  }
+ ],
+ "transects": [
+  {
+   "x": -400,
+   "rows": [
+    {
+     "what": "heightAt (the sim)",
+     "vs": 1.3671875,
+     "lod": 0,
+     "relief": 5.99
+    },
+    {
+     "what": "clip level 0",
+     "vs": 0.5,
+     "lod": 0,
+     "reachM": 48,
+     "innerM": 0,
+     "relief": 5.99,
+     "reliefWorstPhase": 5.96
+    },
+    {
+     "what": "clip level 1",
+     "vs": 1,
+     "lod": 0,
+     "reachM": 96,
+     "innerM": 48,
+     "relief": 5.99,
+     "reliefWorstPhase": 5.92
+    },
+    {
+     "what": "clip level 2",
+     "vs": 2,
+     "lod": 0.55,
+     "reachM": 192,
+     "innerM": 96,
+     "relief": 5.9,
+     "reliefWorstPhase": 5.67
+    },
+    {
+     "what": "clip level 3",
+     "vs": 4,
+     "lod": 1.55,
+     "reachM": 384,
+     "innerM": 192,
+     "relief": 5.55,
+     "reliefWorstPhase": 4.96
+    },
+    {
+     "what": "clip level 4",
+     "vs": 8,
+     "lod": 2.55,
+     "reachM": 768,
+     "innerM": 384,
+     "relief": 4.44,
+     "reliefWorstPhase": 3.46
+    },
+    {
+     "what": "clip level 5",
+     "vs": 16,
+     "lod": 3.55,
+     "reachM": 1536,
+     "innerM": 768,
+     "relief": 2.93,
+     "reliefWorstPhase": 2.09
+    },
+    {
+     "what": "clip level 6",
+     "vs": 32,
+     "lod": 4.55,
+     "reachM": 3072,
+     "innerM": 1536,
+     "relief": null,
+     "reliefWorstPhase": null
+    }
+   ]
+  },
+  {
+   "x": -200,
+   "rows": [
+    {
+     "what": "heightAt (the sim)",
+     "vs": 1.3671875,
+     "lod": 0,
+     "relief": 6.05
+    },
+    {
+     "what": "clip level 0",
+     "vs": 0.5,
+     "lod": 0,
+     "reachM": 48,
+     "innerM": 0,
+     "relief": 6.06,
+     "reliefWorstPhase": 6.04
+    },
+    {
+     "what": "clip level 1",
+     "vs": 1,
+     "lod": 0,
+     "reachM": 96,
+     "innerM": 48,
+     "relief": 6.06,
+     "reliefWorstPhase": 6.02
+    },
+    {
+     "what": "clip level 2",
+     "vs": 2,
+     "lod": 0.55,
+     "reachM": 192,
+     "innerM": 96,
+     "relief": 5.92,
+     "reliefWorstPhase": 5.77
+    },
+    {
+     "what": "clip level 3",
+     "vs": 4,
+     "lod": 1.55,
+     "reachM": 384,
+     "innerM": 192,
+     "relief": 5.68,
+     "reliefWorstPhase": 5.1
+    },
+    {
+     "what": "clip level 4",
+     "vs": 8,
+     "lod": 2.55,
+     "reachM": 768,
+     "innerM": 384,
+     "relief": 4.61,
+     "reliefWorstPhase": 3.66
+    },
+    {
+     "what": "clip level 5",
+     "vs": 16,
+     "lod": 3.55,
+     "reachM": 1536,
+     "innerM": 768,
+     "relief": 2.35,
+     "reliefWorstPhase": 1.77
+    },
+    {
+     "what": "clip level 6",
+     "vs": 32,
+     "lod": 4.55,
+     "reachM": 3072,
+     "innerM": 1536,
+     "relief": null,
+     "reliefWorstPhase": null
+    }
+   ]
+  },
+  {
+   "x": 200,
+   "rows": [
+    {
+     "what": "heightAt (the sim)",
+     "vs": 1.3671875,
+     "lod": 0,
+     "relief": 6.04
+    },
+    {
+     "what": "clip level 0",
+     "vs": 0.5,
+     "lod": 0,
+     "reachM": 48,
+     "innerM": 0,
+     "relief": 6.05,
+     "reliefWorstPhase": 6.01
+    },
+    {
+     "what": "clip level 1",
+     "vs": 1,
+     "lod": 0,
+     "reachM": 96,
+     "innerM": 48,
+     "relief": 6.04,
+     "reliefWorstPhase": 5.98
+    },
+    {
+     "what": "clip level 2",
+     "vs": 2,
+     "lod": 0.55,
+     "reachM": 192,
+     "innerM": 96,
+     "relief": 5.96,
+     "reliefWorstPhase": 5.73
+    },
+    {
+     "what": "clip level 3",
+     "vs": 4,
+     "lod": 1.55,
+     "reachM": 384,
+     "innerM": 192,
+     "relief": 5.42,
+     "reliefWorstPhase": 5.06
+    },
+    {
+     "what": "clip level 4",
+     "vs": 8,
+     "lod": 2.55,
+     "reachM": 768,
+     "innerM": 384,
+     "relief": 4.73,
+     "reliefWorstPhase": 3.75
+    },
+    {
+     "what": "clip level 5",
+     "vs": 16,
+     "lod": 3.55,
+     "reachM": 1536,
+     "innerM": 768,
+     "relief": 3.1,
+     "reliefWorstPhase": 1.73
+    },
+    {
+     "what": "clip level 6",
+     "vs": 32,
+     "lod": 4.55,
+     "reachM": 3072,
+     "innerM": 1536,
+     "relief": null,
+     "reliefWorstPhase": null
+    }
+   ]
+  },
+  {
+   "x": 400,
+   "rows": [
+    {
+     "what": "heightAt (the sim)",
+     "vs": 1.3671875,
+     "lod": 0,
+     "relief": 6.02
+    },
+    {
+     "what": "clip level 0",
+     "vs": 0.5,
+     "lod": 0,
+     "reachM": 48,
+     "innerM": 0,
+     "relief": 6.02,
+     "reliefWorstPhase": 6.02
+    },
+    {
+     "what": "clip level 1",
+     "vs": 1,
+     "lod": 0,
+     "reachM": 96,
+     "innerM": 48,
+     "relief": 6.02,
+     "reliefWorstPhase": 6.02
+    },
+    {
+     "what": "clip level 2",
+     "vs": 2,
+     "lod": 0.55,
+     "reachM": 192,
+     "innerM": 96,
+     "relief": 5.95,
+     "reliefWorstPhase": 5.72
+    },
+    {
+     "what": "clip level 3",
+     "vs": 4,
+     "lod": 1.55,
+     "reachM": 384,
+     "innerM": 192,
+     "relief": 5.47,
+     "reliefWorstPhase": 4.94
+    },
+    {
+     "what": "clip level 4",
+     "vs": 8,
+     "lod": 2.55,
+     "reachM": 768,
+     "innerM": 384,
+     "relief": 4.71,
+     "reliefWorstPhase": 3.66
+    },
+    {
+     "what": "clip level 5",
+     "vs": 16,
+     "lod": 3.55,
+     "reachM": 1536,
+     "innerM": 768,
+     "relief": 3.12,
+     "reliefWorstPhase": 1.78
+    },
+    {
+     "what": "clip level 6",
+     "vs": 32,
+     "lod": 4.55,
+     "reachM": 3072,
+     "innerM": 1536,
+     "relief": null,
+     "reliefWorstPhase": null
+    }
+   ]
+  },
+  {
+   "x": 700,
+   "rows": [
+    {
+     "what": "heightAt (the sim)",
+     "vs": 1.3671875,
+     "lod": 0,
+     "relief": 6.04
+    },
+    {
+     "what": "clip level 0",
+     "vs": 0.5,
+     "lod": 0,
+     "reachM": 48,
+     "innerM": 0,
+     "relief": 6.04,
+     "reliefWorstPhase": 6.03
+    },
+    {
+     "what": "clip level 1",
+     "vs": 1,
+     "lod": 0,
+     "reachM": 96,
+     "innerM": 48,
+     "relief": 6.04,
+     "reliefWorstPhase": 6.02
+    },
+    {
+     "what": "clip level 2",
+     "vs": 2,
+     "lod": 0.55,
+     "reachM": 192,
+     "innerM": 96,
+     "relief": 5.83,
+     "reliefWorstPhase": 5.76
+    },
+    {
+     "what": "clip level 3",
+     "vs": 4,
+     "lod": 1.55,
+     "reachM": 384,
+     "innerM": 192,
+     "relief": 5.63,
+     "reliefWorstPhase": 5
+    },
+    {
+     "what": "clip level 4",
+     "vs": 8,
+     "lod": 2.55,
+     "reachM": 768,
+     "innerM": 384,
+     "relief": 4.48,
+     "reliefWorstPhase": 3.52
+    },
+    {
+     "what": "clip level 5",
+     "vs": 16,
+     "lod": 3.55,
+     "reachM": 1536,
+     "innerM": 768,
+     "relief": 2.31,
+     "reliefWorstPhase": 1.74
+    },
+    {
+     "what": "clip level 6",
+     "vs": 32,
+     "lod": 4.55,
+     "reachM": 3072,
+     "innerM": 1536,
+     "relief": null,
+     "reliefWorstPhase": null
+    }
+   ]
+  }
+ ],
+ "mipOnly": [
+  {
+   "mip": 0,
+   "texelM": 1.37,
+   "relief": 5.99
+  },
+  {
+   "mip": 1,
+   "texelM": 2.73,
+   "relief": 5.86
+  },
+  {
+   "mip": 2,
+   "texelM": 5.47,
+   "relief": 5.53
+  },
+  {
+   "mip": 3,
+   "texelM": 10.94,
+   "relief": 4
+  },
+  {
+   "mip": 4,
+   "texelM": 21.88,
+   "relief": 2.97
+  },
+  {
+   "mip": 5,
+   "texelM": 43.75,
+   "relief": 1.15
+  }
+ ]
+}

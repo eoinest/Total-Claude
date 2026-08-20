@@ -1,0 +1,401 @@
+{
+ "url": "http://127.0.0.1:5391/?harness=1&quality=high&w=960&h=540&scenario=assault&battle=eyJtYXAiOiJjYXJ0aGFnZSIsIm9wcG9uZW50IjoyLCJ1bml0U2l6ZSI6InVsdHJhIiwicXVhbGl0eSI6ImhpZ2giLCJkaWZmaWN1bHR5IjoiaGFyZCIsInNlZWQiOjQyNjU0MzgyNjR9",
+ "map": "carthage",
+ "scenario": "assault",
+ "rev": "3f4c203",
+ "gates": [
+  {
+   "id": "porta-byrsae",
+   "open": false,
+   "x": 0,
+   "z": 527,
+   "groundY": 13.02,
+   "rows": [
+    {
+     "h": 1,
+     "meshHits": [
+      {
+       "d": 10.97,
+       "name": "gate-door-lod0",
+       "mat": "city-timber"
+      }
+     ],
+     "meshStop": 10.97,
+     "boxStop": 11.25,
+     "rasterStop": 5,
+     "alt": 11.25
+    },
+    {
+     "h": 1.7,
+     "meshHits": [
+      {
+       "d": 10.97,
+       "name": "gate-door-lod0",
+       "mat": "city-timber"
+      }
+     ],
+     "meshStop": 10.97,
+     "boxStop": 11.25,
+     "rasterStop": 5,
+     "alt": 11.25
+    },
+    {
+     "h": 3,
+     "meshHits": [
+      {
+       "d": 10.97,
+       "name": "gate-door-lod0",
+       "mat": "city-timber"
+      }
+     ],
+     "meshStop": 10.97,
+     "boxStop": 11.25,
+     "rasterStop": 5,
+     "alt": 11.25
+    }
+   ]
+  },
+  {
+   "id": "porta-uticensis",
+   "open": false,
+   "x": 560,
+   "z": 501.3,
+   "groundY": 11.75,
+   "rows": [
+    {
+     "h": 1,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 10.75,
+     "alt": 11.25
+    },
+    {
+     "h": 1.7,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 10.75,
+     "alt": 11.25
+    },
+    {
+     "h": 3,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 10.75,
+     "alt": 11.25
+    }
+   ]
+  },
+  {
+   "id": "porta-maritima",
+   "open": false,
+   "x": -560,
+   "z": 571.2,
+   "groundY": 11.97,
+   "rows": [
+    {
+     "h": 1,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 9,
+     "alt": 11.25
+    },
+    {
+     "h": 1.7,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": 11.25,
+     "rasterStop": 9,
+     "alt": 11.25
+    },
+    {
+     "h": 3,
+     "meshHits": [
+      {
+       "d": 20.542,
+       "name": "wall-1-lod0",
+       "mat": "city-stone"
+      },
+      {
+       "d": 23.942,
+       "name": "wall-1-lod0",
+       "mat": "city-stone"
+      }
+     ],
+     "meshStop": 20.542,
+     "boxStop": 11.25,
+     "rasterStop": 9,
+     "alt": 11.25
+    }
+   ]
+  },
+  {
+   "id": "postern-6",
+   "open": true,
+   "x": -772.9,
+   "z": 592.8,
+   "groundY": 7.53,
+   "rows": [
+    {
+     "h": 1,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": null,
+     "rasterStop": null,
+     "alt": null
+    },
+    {
+     "h": 1.7,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": null,
+     "rasterStop": null,
+     "alt": null
+    },
+    {
+     "h": 3,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": null,
+     "rasterStop": null,
+     "alt": null
+    }
+   ]
+  },
+  {
+   "id": "postern-14",
+   "open": true,
+   "x": -532.8,
+   "z": 568.6,
+   "groundY": 11.91,
+   "rows": [
+    {
+     "h": 1,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": null,
+     "rasterStop": null,
+     "alt": null
+    },
+    {
+     "h": 1.7,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": null,
+     "rasterStop": null,
+     "alt": null
+    },
+    {
+     "h": 3,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": null,
+     "rasterStop": null,
+     "alt": null
+    }
+   ]
+  },
+  {
+   "id": "postern-22",
+   "open": true,
+   "x": -292.7,
+   "z": 547.8,
+   "groundY": 12.29,
+   "rows": [
+    {
+     "h": 1,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": null,
+     "rasterStop": null,
+     "alt": null
+    },
+    {
+     "h": 1.7,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": null,
+     "rasterStop": null,
+     "alt": null
+    },
+    {
+     "h": 3,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": null,
+     "rasterStop": null,
+     "alt": null
+    }
+   ]
+  },
+  {
+   "id": "postern-30",
+   "open": true,
+   "x": -52.5,
+   "z": 530.4,
+   "groundY": 13.04,
+   "rows": [
+    {
+     "h": 1,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": null,
+     "rasterStop": null,
+     "alt": null
+    },
+    {
+     "h": 1.7,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": null,
+     "rasterStop": null,
+     "alt": null
+    },
+    {
+     "h": 3,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": null,
+     "rasterStop": null,
+     "alt": null
+    }
+   ]
+  },
+  {
+   "id": "postern-38",
+   "open": true,
+   "x": 187.6,
+   "z": 516.3,
+   "groundY": 12.39,
+   "rows": [
+    {
+     "h": 1,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": null,
+     "rasterStop": null,
+     "alt": null
+    },
+    {
+     "h": 1.7,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": null,
+     "rasterStop": null,
+     "alt": null
+    },
+    {
+     "h": 3,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": null,
+     "rasterStop": null,
+     "alt": null
+    }
+   ]
+  },
+  {
+   "id": "postern-46",
+   "open": true,
+   "x": 427.7,
+   "z": 505.7,
+   "groundY": 12.22,
+   "rows": [
+    {
+     "h": 1,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": null,
+     "rasterStop": null,
+     "alt": null
+    },
+    {
+     "h": 1.7,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": null,
+     "rasterStop": null,
+     "alt": null
+    },
+    {
+     "h": 3,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": null,
+     "rasterStop": null,
+     "alt": null
+    }
+   ]
+  },
+  {
+   "id": "postern-54",
+   "open": true,
+   "x": 667.8,
+   "z": 498.5,
+   "groundY": 11.44,
+   "rows": [
+    {
+     "h": 1,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": null,
+     "rasterStop": null,
+     "alt": null
+    },
+    {
+     "h": 1.7,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": null,
+     "rasterStop": null,
+     "alt": null
+    },
+    {
+     "h": 3,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": null,
+     "rasterStop": null,
+     "alt": null
+    }
+   ]
+  },
+  {
+   "id": "postern-62",
+   "open": true,
+   "x": 907.9,
+   "z": 494.6,
+   "groundY": 8.36,
+   "rows": [
+    {
+     "h": 1,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": null,
+     "rasterStop": null,
+     "alt": null
+    },
+    {
+     "h": 1.7,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": null,
+     "rasterStop": null,
+     "alt": null
+    },
+    {
+     "h": 3,
+     "meshHits": [],
+     "meshStop": null,
+     "boxStop": null,
+     "rasterStop": null,
+     "alt": null
+    }
+   ]
+  }
+ ],
+ "errors": []
+}

@@ -8,11 +8,15 @@
  * want, which is: *can a hostile expert pick ours out of a line-up, and on what evidence?*
  *
  * **This file refuses decks.** Three gates run on every invocation and any one of them exits
- * 3 without leaving frames behind. They exist because the harness has leaked seven times —
- * wordmark, EXIF, mislabelled key, file size, quantisation tables, the HUD, and the
- * letterbox bars `--fit=contain` puts on one pool only — and five of those were found by
- * somebody who was not looking for them. Each was closed by a person resolving to be
- * careful, and the next one arrived anyway. Care is not a mechanism.
+ * 3 without leaving frames behind. They exist because the harness keeps leaking, and five of
+ * the leaks were found by somebody who was not looking for them. Each was closed by a person
+ * resolving to be careful, and the next one arrived anyway. Care is not a mechanism.
+ *
+ * **The register is `LEAKS` in `tools/lib/deck-audit.mjs`, and it is the only count.** This
+ * comment used to say "leaked seven times" and enumerate seven while that module's header
+ * said eight; the seven were the closed ones and the eighth — the true JPEG scan length past
+ * the pad, which gate 3 already measures below — had been identified afterwards and never
+ * folded into this sentence. `--leaks` prints the register.
  *
  *   1. **Provenance.** `--ours` must carry a `report.json` from the shot pass saying
  *      `hud: false`. Missing is refused as firmly as `true`; "nobody recorded it" is the
@@ -85,7 +89,7 @@ import { readdir, mkdir, readFile, writeFile, rm, stat } from 'node:fs/promises'
 import path from 'node:path';
 import process from 'node:process';
 import sharp from 'sharp';
-import { blackBars } from './lib/deck-audit.mjs';
+import { blackBars, LEAKS, leakSummary } from './lib/deck-audit.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const args = new Map(
@@ -94,6 +98,15 @@ const args = new Map(
     return m ? [m[1], m[2] ?? 'true'] : [a, 'true'];
   })
 );
+
+if (args.has('leaks')) {
+  console.log(leakSummary());
+  for (const l of LEAKS) {
+    const verb = { refused: 'closed by', mitigated: 'held by', open: 'closes when' }[l.status];
+    console.log(`\n  ${l.n}. ${l.name} [${l.status}]\n     ${l.what}\n     ${verb}: ${l.by}`);
+  }
+  process.exit(0);
+}
 
 const OURS = args.get('ours');
 const REFS = args.get('refs') ?? 'reference/rome2';

@@ -1,0 +1,84 @@
+{
+ "meshCount": 46,
+ "openings": [
+  {
+   "id": "porta-flaminia",
+   "open": false,
+   "x": 72,
+   "z": 529.4,
+   "groundY": 29.12,
+   "raysCast": 35,
+   "raysStopped": 35,
+   "solidFrac": 1,
+   "minStop": 11.35,
+   "highestClearRay": null,
+   "hits": {
+    "gate-door-lod0": 30,
+    "wall-2-lod0": 5
+   },
+   "boxStop": 12.5,
+   "rasterStop": 6.75,
+   "segBlocked": true,
+   "masonryTop": 42.32
+  }
+ ],
+ "bands": {
+  "samples": 921,
+  "open": 36,
+  "list": [
+   {
+    "x0": -552.5,
+    "x1": -532,
+    "width": 20.5,
+    "samples": 12,
+    "bays": [
+     2
+    ],
+    "stages": [
+     "footing"
+    ]
+   },
+   {
+    "x0": 368.9,
+    "x1": 390.6,
+    "width": 21.7,
+    "samples": 12,
+    "bays": [
+     28
+    ],
+    "stages": [
+     "footing"
+    ]
+   },
+   {
+    "x0": 404.4,
+    "x1": 426.1,
+    "width": 21.7,
+    "samples": 12,
+    "bays": [
+     29
+    ],
+    "stages": [
+     "footing"
+    ]
+   }
+  ]
+ },
+ "bays": [
+  {
+   "gate": "porta-flaminia",
+   "bay": 19,
+   "x0": 43.5,
+   "x1": 79,
+   "len": 35.505,
+   "at": 28.501,
+   "overhangEnd": -3.904,
+   "overhangStart": -25.401
+  }
+ ],
+ "map": "campus-martius",
+ "logs": [
+  "[city:rome] 101 draws (cap 220 whole-frame), 2.38 M tris visible, 23 chunks — wall 44, monuments 22, city 21, road 5, gate 2, aqueducts 2"
+ ],
+ "errors": []
+}

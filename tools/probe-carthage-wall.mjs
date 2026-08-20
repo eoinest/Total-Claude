@@ -78,7 +78,7 @@ page.on('console', (m) => {
 const url = `${base}/?harness=1&fort=carthage&quality=${QUALITY}&w=1280&h=720`;
 await page.goto(url, { waitUntil: 'domcontentloaded' });
 try {
-  await page.waitForFunction('window.__game && window.__game.ready === true', { timeout: 180000 });
+  await page.waitForFunction('window.__game && window.__game.ready === true', null, { timeout: 180000 });
 } catch (e) {
   console.error('! the page never reported ready.');
   for (const p of pageErrors) console.error(`  pageerror: ${p}`);
@@ -228,10 +228,21 @@ const result = await page.evaluate(
     let root = null;
     scene.traverse((o) => { if (o.name === 'city') root = o; });
     const wallMeshes = [];
+    /** The leaves hung in the posterns, kept apart from the wall for E7's sake. See E9. */
+    const doorMeshes = [];
     if (root) {
       root.traverse((o) => {
         if (!o.isMesh || !o.geometry) return;
+        if (/^postern-door-/.test(o.name) || (o.parent && /^postern-door-/.test(o.parent.name || ''))) {
+          doorMeshes.push(o);
+        }
         // Full-detail wall chunks only. Names are `<chunk>-lod<N>-<material>`.
+        //
+        // **A door is not a wall**, and that exclusion is what makes E7 mean anything: the
+        // Porta Byrsae's leaves and, since the posterns were shut, the eight
+        // `postern-door-N` chunks all stand inside passages this probe is trying to prove
+        // are cut. Gathering them would let a hung door pass for uncut tufa and retire the
+        // one assertion in this file that found r4's painted-on posterns.
         if (!/^wall-\d+/.test(o.name)) return;
         if (!/lod2|-l2|detail2/.test(o.name) && o.parent && o.parent.name &&
             !/lod2/.test(o.parent.name)) {
@@ -277,6 +288,31 @@ const result = await page.evaluate(
       }
     }
     out.facts.triangles = tris.length / 9;
+
+    /** The same, for the postern leaves alone. */
+    const doorTris = [];
+    for (const m of doorMeshes.filter((m) => {
+      let q = m;
+      while (q) { if (q.visible === false) return false; q = q.parent; }
+      return true;
+    })) {
+      m.updateWorldMatrix(true, false);
+      const pos = m.geometry.getAttribute('position');
+      const idx = m.geometry.getIndex();
+      const n = idx ? idx.count : pos.count;
+      for (let i = 0; i < n; i += 3) {
+        for (let k = 0; k < 3; k++) {
+          const j = idx ? idx.getX(i + k) : i + k;
+          V.x = pos.getX(j); V.y = pos.getY(j); V.z = pos.getZ(j);
+          const e = m.matrixWorld.elements;
+          const wx = e[0] * V.x + e[4] * V.y + e[8] * V.z + e[12];
+          const wy = e[1] * V.x + e[5] * V.y + e[9] * V.z + e[13];
+          const wz = e[2] * V.x + e[6] * V.y + e[10] * V.z + e[14];
+          doorTris.push(wx, wy, wz);
+        }
+      }
+    }
+    out.facts.posternDoorTriangles = doorTris.length / 9;
 
     // The circuit's x span, from the published bays.
     const x0 = bays[0].x0;
@@ -751,39 +787,72 @@ const result = await page.evaluate(
       casemates.every((c) => typeof c.enterable === 'boolean'),
       casemates.length ? `enterable=${casemates[0].enterable}` : 'none');
 
-    // Posterns: published as open gates, and the obstacle set must really be cut there.
     /**
-     * A postern is a gate that is **open**, not merely one that is not the first.
+     * Posterns: **by id, and shut.**
      *
-     * There are three gates now and two of them are shut, so `id !== gates[0].id` counted
-     * two walled-up gatehouses as sally ports and demanded that men walk through them. The
-     * assertion was right and the population was wrong, which is the failure mode this whole
-     * file is written against.
+     * This population has now been wrong twice in opposite directions and both times the
+     * assertion above it was right. It was first `id !== gates[0].id`, which counted the two
+     * walled-up flanking gatehouses as sally ports and demanded men walk through them. It
+     * was then `gg.open`, which was correct only for as long as a postern was a hole — and
+     * the moment the eight of them were shut, an `open`-keyed population would have gone
+     * silently empty and taken E4, E5, E6 and E7 with it. An empty population passes every
+     * `every()` in this file. That is the shape of a green suite that is measuring nothing,
+     * so the population is now keyed on the id the builder actually publishes and
+     * `E4a` asserts the count before anything asserts a property of it.
      */
-    const posterns = gates.filter((gg) => gg.open);
+    const posterns = gates.filter((gg) => /^postern-/.test(gg.id));
     out.facts.shutGates = gates.filter((gg) => !gg.open).length;
     out.facts.posterns = posterns.length;
-    let posternBlocked = 0;
+    out.facts.openPosterns = posterns.filter((gg) => gg.open).length;
+    /**
+     * Not `=== 8`. The `?fort=carthage` rig builds this circuit on the Campus Martius
+     * heightfield, whose frontage is shorter, so it carries 7 posterns where the Carthage
+     * map carries 8. A count pinned to the map is a check that fails on the rig it is run
+     * on; a count pinned to zero is no check at all. C7 already guards the spacing.
+     */
+    ok('E4a the circuit still publishes its posterns, and they are shut',
+      posterns.length >= 6 && posterns.every((gg) => !gg.open),
+      `${posterns.length} posterns, ${out.facts.openPosterns} of them open`);
+
+    /**
+     * E4: a shut postern stands in the collision surface.
+     *
+     * **This assertion is inverted from the one it replaces, and the inversion is the fix.**
+     * It used to read "every postern is really cut out of the obstacle set" and it passed:
+     * eight 6 m sally ports were published `open: true`, so `CitySystem.pushWallBox` split
+     * the curtain's box at each, `blocksMovement` reported eight open bands across 29 of 990
+     * crossing stations, and the wall an assault has to get over had eight ways round it
+     * that needed no ram. A postern is a small door, shut and barred; the ground at its
+     * centre is masonry-and-timber, not open ground.
+     */
+    /**
+     * **Both skins, not the centreline.** The first draft of this asked whether a wall box
+     * contained the postern's own centre and reported all seven open on a wall that stops a
+     * man dead. It does not: `buildCarthageWall` publishes a casemated bay as its **two
+     * skins** — 1.5 m of field face and 1.2 m of city face with a 6.4 m gallery between them
+     * — precisely so the gallery is a place a man can be, and G4 below asserts that emptiness
+     * on purpose. The centre of a hollow wall is supposed to be outside the box set. What a
+     * shut postern owes the simulation is that neither *skin* is pierced at its station.
+     */
+    let posternPassable = 0;
+    const posternSkins = [];
     for (const p of posterns) {
-      // A postern is open ground at its own centre: no wall box may contain it.
-      let inside = false;
-      for (const o of obstacles) {
-        if (o.kind !== 'wall') continue;
-        const c = Math.cos(-o.rot), s = Math.sin(-o.rot);
-        const dx = p.x - o.x, dz = p.z - o.z;
-        const u = dx * c - dz * s;
-        const v = dx * s + dz * c;
-        if (Math.abs(u) <= o.hw && Math.abs(v) <= o.hd) { inside = true; break; }
+      const b = lineOf(p.x);
+      const gy = terrain ? terrain.heightAt(p.x, p.z) : 0;
+      let open = 0;
+      for (const off of [b.halfThickness - 0.4, -(b.halfThickness - 0.4)]) {
+        if (!boxAt(p.x + b.nx * off, p.z + b.nz * off, gy + 1.0)) open++;
       }
-      if (inside) posternBlocked++;
+      if (open > 0) { posternPassable++; posternSkins.push(`${p.id}:${open}`); }
     }
-    ok('E4 every postern is really cut out of the obstacle set',
-      posterns.length > 0 && posternBlocked === 0,
-      `${posterns.length} posterns, ${posternBlocked} still solid`);
+    ok('E4 every shut postern stands in the obstacle set, not as a gap in it',
+      posterns.length > 0 && posternPassable === 0,
+      `${posterns.length} posterns, ${posternPassable} with a pierced skin` +
+        `${posternSkins.length ? ` (${posternSkins.join(', ')})` : ''}`);
     ok('E5 blocksMovement agrees with the boxes at every postern',
       posterns.every((p) => {
         const b = lineOf(p.x);
-        return !city.blocksMovement(
+        return city.blocksMovement(
           p.x + b.nx * 14, p.z + b.nz * 14, p.x - b.nx * 14, p.z - b.nz * 14);
       }),
       `${posterns.length} passages tested through the full thickness`);
@@ -797,7 +866,7 @@ const result = await page.evaluate(
       posternRoofless === 0, `${posternRoofless} posterns with no masonry over them`);
 
     /**
-     * E7: behind every open mouth the passage is a real tunnel, in the **drawn stone**.
+     * E7: behind every mouth the passage is a real tunnel, in the **drawn stone**.
      *
      * `probe-wall` has carried this assertion for Rome since a curtain was found built
      * straight through the Porta Flaminia's carriageway. Carthage had no equivalent, and
@@ -818,16 +887,16 @@ const result = await page.evaluate(
      * a threshold slab or one badly-aligned sample cannot pass for a passage and a 6 m
      * opening is tested across its width rather than down its centreline.
      */
-    const rayHits = (ox, oy, oz, dx, dy, dz, len) => {
+    const rayHits = (ox, oy, oz, dx, dy, dz, len, T = tris) => {
       let best = Infinity;
-      for (let i = 0; i < tris.length; i += 9) {
-        const e1x = tris[i + 3] - tris[i], e1y = tris[i + 4] - tris[i + 1], e1z = tris[i + 5] - tris[i + 2];
-        const e2x = tris[i + 6] - tris[i], e2y = tris[i + 7] - tris[i + 1], e2z = tris[i + 8] - tris[i + 2];
+      for (let i = 0; i < T.length; i += 9) {
+        const e1x = T[i + 3] - T[i], e1y = T[i + 4] - T[i + 1], e1z = T[i + 5] - T[i + 2];
+        const e2x = T[i + 6] - T[i], e2y = T[i + 7] - T[i + 1], e2z = T[i + 8] - T[i + 2];
         const px = dy * e2z - dz * e2y, py = dz * e2x - dx * e2z, pz = dx * e2y - dy * e2x;
         const det = e1x * px + e1y * py + e1z * pz;
         if (det > -1e-9 && det < 1e-9) continue;
         const inv = 1 / det;
-        const tx = ox - tris[i], ty = oy - tris[i + 1], tz = oz - tris[i + 2];
+        const tx = ox - T[i], ty = oy - T[i + 1], tz = oz - T[i + 2];
         const u = (tx * px + ty * py + tz * pz) * inv;
         if (u < 0 || u > 1) continue;
         const qx = ty * e1z - tz * e1y, qy = tz * e1x - tx * e1z, qz = tx * e1y - ty * e1x;
@@ -877,7 +946,7 @@ const result = await page.evaluate(
     }
     out.facts.passageRays = passageRays;
     out.facts.solidMouths = solidMouths;
-    ok('E7 behind every open mouth the stone is really cut, not painted',
+    ok('E7 behind every mouth the stone is really cut, not painted',
       solidMouths.length === 0,
       `${passageRays} rays through ${posterns.length} posterns and the Porta Byrsae's ` +
         `carriageway${solidMouths.length ? `; stopped: ${solidMouths.slice(0, 6).join(', ')}` : ', none stopped'}`);
@@ -890,12 +959,66 @@ const result = await page.evaluate(
      * obstacle set with masonry standing in it is a man walking through a wall. It is a
      * fail-open guard and it exempts anything the siege opens, so a green E4/E5 with a
      * non-empty verdict here would mean the posterns had been *dropped* rather than cut.
+     *
+     * **It is vacuous on this circuit as it now stands, and the count now says so on the
+     * output.** `assertGatePassages` walks `gateList` and `continue`s on `!gate.open`; with
+     * the eight posterns shut alongside the three gates there is no gate left for it to
+     * examine, so `getUnpiercedGates()` is empty *by construction* rather than by
+     * measurement. That is a check passing because its population is empty — the same shape
+     * as the `gg.open` postern population `E4a` was added to guard against, and the reason
+     * this file exists. E7 and E9 carry the load instead: E7 that the stone is cut, E9 that
+     * a door hangs in it. E8 means something again the moment anything publishes `open`.
      */
     const unpierced = city.getUnpiercedGates ? city.getUnpiercedGates() : [];
+    const guardPopulation = gates.filter((gg) => gg.open).length;
     out.facts.unpiercedGates = [...unpierced];
+    out.facts.unpiercedGuardPopulation = guardPopulation;
     ok('E8 no gate stands open with its passage refused',
       unpierced.length === 0,
-      unpierced.length ? unpierced.join(', ') : 'getUnpiercedGates() is empty');
+      unpierced.length
+        ? unpierced.join(', ')
+        : `getUnpiercedGates() is empty over ${guardPopulation} open gate(s)` +
+          `${guardPopulation === 0 ? ' — vacuous by construction; E7 and E9 are the load-bearing pair' : ''}`);
+
+    /**
+     * E9: and there is something *in* the doorway E7 just proved is empty.
+     *
+     * E7 and E9 are deliberately opposed, and neither is sufficient alone. E7 casts through
+     * the wall chunks and demands the stone be gone; E9 casts through the leaf chunks and
+     * demands the timber be there. Pass one and fail the other and you have either r4's
+     * postern — an arch painted on solid tufa — or r5's, which is the defect this pass was
+     * opened for: a 6 m doorway cut clean through nine metres of curtain with nothing hung
+     * in it, and the far ground visible through all eight.
+     *
+     * The ray height is taken from the **opening's own ground**, not from the ground where
+     * the ray starts. `tools/probe-solid.mjs --case=gates` starts 16 m out at
+     * `groundAt(start) + h` and 16 m out is inside the ditch, so at h = 1.0 its ray flies
+     * four metres under the footing and out the far side; it reported `porta-uticensis` as
+     * "mesh CLEAR" at every height while that gate's own obstacle box stopped a man at
+     * 11.25 m. A number that cannot be true given its neighbour.
+     */
+    const doorlessPosterns = [];
+    let doorRays = 0;
+    for (const gt of posterns) {
+      const b = lineOf(gt.x);
+      const gy = terrain ? terrain.heightAt(gt.x, gt.z) : 0;
+      const reach = b.halfThickness + 3.0;
+      let stopped = 0, shots = 0;
+      for (const h of [0.8, 1.6, 2.4, 3.2]) {
+        for (const off of [-2, 0, 2]) {
+          const ox = gt.x + b.nx * reach + b.dx * off;
+          const oz = gt.z + b.nz * reach + b.dz * off;
+          shots++; doorRays++;
+          if (Number.isFinite(rayHits(ox, gy + h, oz, -b.nx, 0, -b.nz, reach * 2, doorTris))) stopped++;
+        }
+      }
+      if (stopped < shots) doorlessPosterns.push(`${gt.id} ${stopped}/${shots}`);
+    }
+    out.facts.posternDoorRays = doorRays;
+    ok('E9 every postern carries a drawn door across its whole opening',
+      posterns.length > 0 && doorlessPosterns.length === 0,
+      `${doorRays} rays through ${posterns.length} mouths against the leaf chunks` +
+        `${doorlessPosterns.length ? `; open: ${doorlessPosterns.slice(0, 8).join(', ')}` : ', none got through'}`);
 
     // --- G. the spec's own claims ----------------------------------------
     const sec = city.punicSection ? city.punicSection() : null;
@@ -976,7 +1099,9 @@ const result = await page.evaluate(
      * asserting it: at the gallery's own floor level, a point on its centreline is in **no**
      * obstacle, while a point in each of the two skins is in one.
      */
-    const boxAt = (px, pz, y) => {
+    // A declaration rather than a `const` arrow: E4 above uses it too, and a `const` is in
+    // its own temporal dead zone until this line runs.
+    function boxAt(px, pz, y) {
       for (const o of obstacles) {
         if (o.kind !== 'wall') continue;
         if (o.topY <= y + 0.05) continue;
@@ -985,7 +1110,7 @@ const result = await page.evaluate(
         if (Math.abs(dx * c - dz * sn) <= o.hw && Math.abs(dx * sn + dz * c) <= o.hd) return true;
       }
       return false;
-    };
+    }
     let corridorBlocked = 0;
     let skinOpen = 0;
     let tested = 0;
@@ -1100,7 +1225,7 @@ async function armAt(fort) {
   await page.goto(`${base}/?harness=1&fort=${fort}&quality=${QUALITY}&w=1280&h=720`, {
     waitUntil: 'domcontentloaded',
   });
-  await page.waitForFunction('window.__game && window.__game.ready === true', { timeout: 180000 });
+  await page.waitForFunction('window.__game && window.__game.ready === true', null, { timeout: 180000 });
   return page.evaluate(async () => {
     const g = window.__game;
     const ctx = g.engine.context;

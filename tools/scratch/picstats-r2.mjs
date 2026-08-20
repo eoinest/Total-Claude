@@ -1,8 +1,8 @@
-// Scratch: the six deck statistics on a shot directory against its paired reference plates,
+// Scratch: the eight deck statistics on a shot directory against its paired reference plates,
 // without building a deck. Same `pictureStats` the audit uses, so the numbers are comparable.
 import path from 'node:path';
 import { readFile, readdir } from 'node:fs/promises';
-import { pictureStats } from '../lib/deck-audit.mjs';
+import { pictureStats, PICTURE_STAT_KEYS } from '../lib/deck-audit.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
 const arg = (k, d) => process.argv.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d;
@@ -12,7 +12,7 @@ const PAIRS = path.resolve(ROOT, arg('pairs', 'tools/ab-pairs-round2.json'));
 
 const pairs = JSON.parse(await readFile(PAIRS, 'utf8')).pairs;
 const have = new Set((await readdir(OURS)).map((f) => f.replace(/\.[^.]+$/, '')));
-const F = ['lum', 'p01', 'p99', 'chroma', 'hueSpread', 'edge', 'halo', 'vignette'];
+const F = PICTURE_STAT_KEYS;   // the single source for which statistics exist, and how many
 const acc = { ours: [], rome2: [] };
 const rows = [];
 for (const p of pairs) {
