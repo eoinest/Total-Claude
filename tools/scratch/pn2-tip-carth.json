@@ -1,0 +1,258 @@
+{
+ "meshCount": 31,
+ "openings": [
+  {
+   "id": "porta-byrsae",
+   "open": false,
+   "x": 0,
+   "z": 527,
+   "groundY": 13.02,
+   "raysCast": 35,
+   "raysStopped": 35,
+   "solidFrac": 1,
+   "minStop": 10.92,
+   "highestClearRay": null,
+   "hits": {
+    "gate-door-lod0": 35
+   },
+   "boxStop": 11.25,
+   "rasterStop": 5,
+   "segBlocked": true,
+   "masonryTop": 26.42
+  },
+  {
+   "id": "porta-uticensis",
+   "open": false,
+   "x": 560,
+   "z": 501.3,
+   "groundY": 11.75,
+   "raysCast": 35,
+   "raysStopped": 35,
+   "solidFrac": 1,
+   "minStop": 15.1,
+   "highestClearRay": null,
+   "hits": {
+    "wall-5-lod0": 35
+   },
+   "boxStop": 11.25,
+   "rasterStop": 10.75,
+   "segBlocked": true,
+   "masonryTop": 26
+  },
+  {
+   "id": "porta-maritima",
+   "open": false,
+   "x": -560,
+   "z": 571.2,
+   "groundY": 11.97,
+   "raysCast": 35,
+   "raysStopped": 35,
+   "solidFrac": 1,
+   "minStop": 15.1,
+   "highestClearRay": null,
+   "hits": {
+    "wall-1-lod0": 35
+   },
+   "boxStop": 11.25,
+   "rasterStop": 9,
+   "segBlocked": true,
+   "masonryTop": 26
+  },
+  {
+   "id": "postern-6",
+   "open": false,
+   "x": -772.9,
+   "z": 592.8,
+   "groundY": 7.53,
+   "raysCast": 35,
+   "raysStopped": 35,
+   "solidFrac": 1,
+   "minStop": 13.13,
+   "highestClearRay": null,
+   "hits": {
+    "postern-door-6-lod0": 35
+   },
+   "boxStop": 11.25,
+   "rasterStop": 11.25,
+   "segBlocked": true,
+   "masonryTop": 22.5
+  },
+  {
+   "id": "postern-14",
+   "open": false,
+   "x": -532.8,
+   "z": 568.6,
+   "groundY": 11.91,
+   "raysCast": 35,
+   "raysStopped": 35,
+   "solidFrac": 1,
+   "minStop": 13.11,
+   "highestClearRay": null,
+   "hits": {
+    "postern-door-14-lod0": 35
+   },
+   "boxStop": 11.25,
+   "rasterStop": 11.5,
+   "segBlocked": true,
+   "masonryTop": 26
+  },
+  {
+   "id": "postern-22",
+   "open": false,
+   "x": -292.7,
+   "z": 547.8,
+   "groundY": 12.29,
+   "raysCast": 35,
+   "raysStopped": 35,
+   "solidFrac": 1,
+   "minStop": 13.11,
+   "highestClearRay": null,
+   "hits": {
+    "postern-door-22-lod0": 35
+   },
+   "boxStop": 11.25,
+   "rasterStop": 8.25,
+   "segBlocked": true,
+   "masonryTop": 26.5
+  },
+  {
+   "id": "postern-30",
+   "open": false,
+   "x": -52.5,
+   "z": 530.4,
+   "groundY": 13.04,
+   "raysCast": 35,
+   "raysStopped": 35,
+   "solidFrac": 1,
+   "minStop": 13.11,
+   "highestClearRay": null,
+   "hits": {
+    "postern-door-30-lod0": 35
+   },
+   "boxStop": 11.25,
+   "rasterStop": 9.75,
+   "segBlocked": true,
+   "masonryTop": 27
+  },
+  {
+   "id": "postern-38",
+   "open": false,
+   "x": 187.6,
+   "z": 516.3,
+   "groundY": 12.39,
+   "raysCast": 35,
+   "raysStopped": 35,
+   "solidFrac": 1,
+   "minStop": 13.11,
+   "highestClearRay": null,
+   "hits": {
+    "postern-door-38-lod0": 35
+   },
+   "boxStop": 11.25,
+   "rasterStop": 7.75,
+   "segBlocked": true,
+   "masonryTop": 26.5
+  },
+  {
+   "id": "postern-46",
+   "open": false,
+   "x": 427.7,
+   "z": 505.7,
+   "groundY": 12.22,
+   "raysCast": 35,
+   "raysStopped": 35,
+   "solidFrac": 1,
+   "minStop": 13.1,
+   "highestClearRay": null,
+   "hits": {
+    "postern-door-46-lod0": 35
+   },
+   "boxStop": 11.25,
+   "rasterStop": 10.5,
+   "segBlocked": true,
+   "masonryTop": 26
+  },
+  {
+   "id": "postern-54",
+   "open": false,
+   "x": 667.8,
+   "z": 498.5,
+   "groundY": 11.44,
+   "raysCast": 35,
+   "raysStopped": 35,
+   "solidFrac": 1,
+   "minStop": 13.11,
+   "highestClearRay": null,
+   "hits": {
+    "postern-door-54-lod0": 35
+   },
+   "boxStop": 11.25,
+   "rasterStop": 9.75,
+   "segBlocked": true,
+   "masonryTop": 25.5
+  },
+  {
+   "id": "postern-62",
+   "open": false,
+   "x": 907.9,
+   "z": 494.6,
+   "groundY": 8.36,
+   "raysCast": 35,
+   "raysStopped": 35,
+   "solidFrac": 1,
+   "minStop": 13.14,
+   "highestClearRay": null,
+   "hits": {
+    "postern-door-62-lod0": 35
+   },
+   "boxStop": 11.25,
+   "rasterStop": 9.5,
+   "segBlocked": true,
+   "masonryTop": 23
+  }
+ ],
+ "bands": {
+  "samples": 990,
+  "open": 0,
+  "list": []
+ },
+ "bays": [
+  {
+   "gate": "porta-byrsae",
+   "bay": 32,
+   "x0": -7.52,
+   "x1": 22.5,
+   "len": 30.073,
+   "at": 7.53,
+   "overhangEnd": -19.443,
+   "overhangStart": -4.43
+  },
+  {
+   "gate": "porta-uticensis",
+   "bay": 50,
+   "x0": 532.76,
+   "x1": 562.77,
+   "len": 30.029,
+   "at": 27.255,
+   "overhangEnd": 0.326,
+   "overhangStart": -24.155
+  },
+  {
+   "gate": "porta-maritima",
+   "bay": 13,
+   "x0": -577.8,
+   "x1": -547.79,
+   "len": 30.152,
+   "at": 17.883,
+   "overhangEnd": -9.168,
+   "overhangStart": -14.783
+  }
+ ],
+ "map": "carthage",
+ "logs": [
+  "[city:carthage] section faults: porta-uticensis clears the end of bay 50 by only 0.17 m",
+  "[city:carthage] section faults: porta-uticensis clears the end of bay 50 by only 0.17 m",
+  "[city:carthage] 188 draws (cap 220 whole-frame), 0.79 M tris visible, 76 chunks — fabric 63, streets 48, monuments 26, wall 21, harbour 12, postern 8"
+ ],
+ "errors": []
+}

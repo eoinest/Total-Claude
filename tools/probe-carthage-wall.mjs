@@ -959,12 +959,26 @@ const result = await page.evaluate(
      * obstacle set with masonry standing in it is a man walking through a wall. It is a
      * fail-open guard and it exempts anything the siege opens, so a green E4/E5 with a
      * non-empty verdict here would mean the posterns had been *dropped* rather than cut.
+     *
+     * **It is vacuous on this circuit as it now stands, and the count now says so on the
+     * output.** `assertGatePassages` walks `gateList` and `continue`s on `!gate.open`; with
+     * the eight posterns shut alongside the three gates there is no gate left for it to
+     * examine, so `getUnpiercedGates()` is empty *by construction* rather than by
+     * measurement. That is a check passing because its population is empty — the same shape
+     * as the `gg.open` postern population `E4a` was added to guard against, and the reason
+     * this file exists. E7 and E9 carry the load instead: E7 that the stone is cut, E9 that
+     * a door hangs in it. E8 means something again the moment anything publishes `open`.
      */
     const unpierced = city.getUnpiercedGates ? city.getUnpiercedGates() : [];
+    const guardPopulation = gates.filter((gg) => gg.open).length;
     out.facts.unpiercedGates = [...unpierced];
+    out.facts.unpiercedGuardPopulation = guardPopulation;
     ok('E8 no gate stands open with its passage refused',
       unpierced.length === 0,
-      unpierced.length ? unpierced.join(', ') : 'getUnpiercedGates() is empty');
+      unpierced.length
+        ? unpierced.join(', ')
+        : `getUnpiercedGates() is empty over ${guardPopulation} open gate(s)` +
+          `${guardPopulation === 0 ? ' — vacuous by construction; E7 and E9 are the load-bearing pair' : ''}`);
 
     /**
      * E9: and there is something *in* the doorway E7 just proved is empty.

@@ -1,0 +1,460 @@
+{
+  "results": [
+    {
+      "name": "menu-opens-phase",
+      "pass": true,
+      "what": "clicked BEGIN BATTLE in the real menu with no ?harness and no ?deploy",
+      "changed": "ready true  deployment.active true  clock paused true  plaque in DOM true  zone \"1074 × 572 m, parapet included, bounded by the wall of Rome\"",
+      "note": ""
+    },
+    {
+      "name": "plaque-discoverable",
+      "pass": true,
+      "what": "the deployment plaque is on screen before anything else is touched",
+      "changed": "1504×48 px at y 106, \"DEPLOYMENT\", \"BEGIN BATTLE\"",
+      "note": "Left-click a unit, right-drag to stand it there — the drag sets the facing and the frontage Z X C V B formatio"
+    },
+    {
+      "name": "clock-held",
+      "pass": true,
+      "what": "pressed Space during deployment",
+      "changed": "still paused true, phase still active true",
+      "note": ""
+    },
+    {
+      "name": "phase-live",
+      "pass": true,
+      "what": "loaded with ?deploy=1",
+      "changed": "active true  paused true  16 own units, 8632 men, 1368 pool places free",
+      "note": ""
+    },
+    {
+      "name": "select",
+      "pass": true,
+      "what": "left-click on unit 0 (legio-cohort) at (800,562)",
+      "changed": "selectionChanged → [0], unit at (-160, 130) width 41",
+      "note": ""
+    },
+    {
+      "name": "place-by-drag",
+      "pass": true,
+      "what": "right-drag 70 m across open ground",
+      "changed": "unit -160,130 → -157.08,74.58 (55.5 m), 3.0 m from the drag midpoint; men centroid 2.2 m from the anchor",
+      "note": "hint read \"64 m frontage · 75 per rank\""
+    },
+    {
+      "name": "frontage-and-facing",
+      "pass": true,
+      "what": "the same drag sets men-per-rank and the bearing",
+      "changed": "width 41 → 75, facing 3.1416 → 3.1414",
+      "note": ""
+    },
+    {
+      "name": "ai-cannot-touch-it",
+      "pass": true,
+      "what": "2.5 s of wall clock with the phase live",
+      "changed": "sim clock 0 → 0 s, unit drifted 0.0000 m",
+      "note": "the AI re-plans in fixedUpdate, which a paused clock never calls"
+    },
+    {
+      "name": "formation-key",
+      "pass": true,
+      "what": "pressed the formation keys with the unit selected",
+      "changed": "formation line → wedge, width 75 → 31, men now span 23.74 m",
+      "note": ""
+    },
+    {
+      "name": "add-unit",
+      "pass": true,
+      "what": "clicked + on \"legio-cohort\" in the deployment palette",
+      "changed": "units 16 → 17, men 8632 → 8952, pool free 1368 → 1048",
+      "note": ""
+    },
+    {
+      "name": "remove-and-recycle",
+      "pass": true,
+      "what": "clicked − then + again on the same row",
+      "changed": "units 17 → 16 → 17; pool free 1048 → 1048 → 1048",
+      "note": "the second add is served off the bench, so it costs no pool places"
+    },
+    {
+      "name": "zone-refusal",
+      "pass": true,
+      "what": "right-click 120 m past the front edge of the zone with unit 0 selected",
+      "changed": "unit moved 0.000 m; refusal \"That is outside the deployment zone.\"; cursor hint read \"Outside the deployment zone\"",
+      "note": ""
+    },
+    {
+      "name": "perf-line-warns",
+      "pass": true,
+      "what": "added 1 units from the palette to cross PERF_VALIDATED_MEN",
+      "changed": "men 8952 → 9272 against a line of 9000; warning \"9,272 men is past the 9,000 this runs at 60 fps.\"; plaque note shown",
+      "note": "the pre-battle menu warns past this line rather than refusing, and so does this"
+    },
+    {
+      "name": "delete-key",
+      "pass": true,
+      "what": "pressed Delete with 1 unit(s) selected",
+      "changed": "units 17 → 16",
+      "note": ""
+    },
+    {
+      "name": "begin-battle",
+      "pass": true,
+      "what": "clicked BEGIN BATTLE on the deployment plaque",
+      "changed": "active false  paused false  committed true, clock ran to t+5.8 s",
+      "note": ""
+    },
+    {
+      "name": "placement-survives",
+      "pass": true,
+      "what": "5 s of battle after committing",
+      "changed": "the unit placed by hand moved 0.00 m from where it was put",
+      "note": "a placement the first tick overrides is not a placement"
+    },
+    {
+      "name": "plaque-clears",
+      "pass": true,
+      "what": "after commit",
+      "changed": "plaque removed true",
+      "note": ""
+    },
+    {
+      "name": "wall-select",
+      "pass": true,
+      "what": "clicked through the unit cards to a reserve that is not already on the wall",
+      "changed": "selected unit 10 (legio-cohort) from 12 own cards",
+      "note": "45 garrisonable bays, 8 free inside the zone; aiming at bay 15 (no-parapet)"
+    },
+    {
+      "name": "wall-cursor",
+      "pass": true,
+      "what": "moved the cursor over the parapet and asked what the click would act on",
+      "changed": "pixel (800,282) from an eye 63.4 m up resolves to the wall at (-80.8, 509.4) y 41.80 m",
+      "note": "cameras tried: 0m/0.42/eye 38.4m, 0m/0.55/eye 63.4m; zone x -270..449, bay mid x -80.8"
+    },
+    {
+      "name": "wall-garrisoned",
+      "pass": true,
+      "what": "right-click on the parapet of bay 15 (no-parapet)",
+      "changed": "160 of 160 men on the walkway, 0 not, order Garrison=true",
+      "note": ""
+    },
+    {
+      "name": "wall-height",
+      "pass": true,
+      "what": "every man's feet against the bay's own published walkY",
+      "changed": "walkY 41.8 m, men span y 41.8..41.8, worst |Δy| 0 m, 0 inside the masonry",
+      "note": "the terrain under that point is 29.616 m, so they are 12.18 m up"
+    },
+    {
+      "name": "wall-ranks",
+      "pass": true,
+      "what": "rank count against the clear standing band at the sim 0.72 m pitch",
+      "changed": "band 3.251 m (offsets -2.555..0.696) → floor(3.251/0.72)+1 = 5 ranks, capped at MAX_WALL_RANKS 5; measured 5 occupied ranks [0,1,2,3,4]",
+      "note": "across all 45 garrisonable bays the band runs 2.21..4.055 m → 4..5 ranks {\"4\":7,\"5\":38}, walkY 23.1..56.65 m"
+    },
+    {
+      "name": "wall-band",
+      "pass": true,
+      "what": "nobody standing off the edge of the walkway",
+      "changed": "0 men outside [-2.555, 0.696]; measured offsets -2.293..0.696 m",
+      "note": ""
+    },
+    {
+      "name": "wall-to-ground",
+      "pass": true,
+      "what": "right-click open ground with the garrison selected",
+      "changed": "unit 10 retired, legio-cohort 32 stands 0.8 m from the drop with every man on the terrain (worst |Δy| 0 m); 0 of 160 men still hold a wall station",
+      "note": "pool free 6926 → 6766 — the wall bench cannot serve a ground add, so this one costs slots"
+    },
+    {
+      "name": "selection-follows-rebuild",
+      "pass": true,
+      "what": "the unit that was dragged off the wall was rebuilt, not moved",
+      "changed": "selection 10 → 32, the replacement is 32",
+      "note": ""
+    },
+    {
+      "name": "wall-survives-start",
+      "pass": true,
+      "what": "4 s of battle after committing",
+      "changed": "160 men still on the walkway, worst |Δy| 0 m",
+      "note": ""
+    },
+    {
+      "name": "deployment-reproduced",
+      "pass": true,
+      "what": "both runs put the unit in the same place with the same frontage",
+      "changed": "A {\"x\":-160,\"z\":89.24,\"facing\":3.1416,\"width\":41,\"f\":\"line\"}  B {\"x\":-160,\"z\":89.24,\"facing\":3.1416,\"width\":41,\"f\":\"line\"}",
+      "note": ""
+    },
+    {
+      "name": "deployed-battle-replays",
+      "pass": true,
+      "what": "two independent loads driven through the identical hand deployment, then advanced 60 s",
+      "changed": "t+0 A bf85cf88 B bf85cf88 IDENTICAL; t+30 A 473b475e B 473b475e IDENTICAL; t+90 A f5ecc2c8 B f5ecc2c8 IDENTICAL",
+      "note": "pool count 8952 both runs"
+    }
+  ],
+  "measured": {
+    "menuZone": {
+      "xMin": -509,
+      "xMax": 565,
+      "zMin": 51.45743424584005,
+      "zMax": 623.141628164861,
+      "wall": true,
+      "label": "1074 × 572 m, parapet included, bounded by the wall of Rome"
+    },
+    "menuBudget": {
+      "units": 16,
+      "men": 8632,
+      "allocated": 8632,
+      "free": 1368,
+      "poolCap": 10000,
+      "perfLine": 9000,
+      "benched": 0
+    },
+    "fieldZone": {
+      "xMin": -509,
+      "xMax": 565,
+      "zMin": 51.45743424584005,
+      "zMax": 623.141628164861,
+      "wall": true,
+      "label": "1074 × 572 m, parapet included, bounded by the wall of Rome"
+    },
+    "place": {
+      "before": {
+        "id": 0,
+        "typeId": "legio-cohort",
+        "alive": 320,
+        "order": 0,
+        "x": -160,
+        "z": 130,
+        "facing": 3.1416,
+        "width": 41,
+        "formationId": "line",
+        "destroyed": false,
+        "men": 320,
+        "menX": -159.65,
+        "menZ": 133.48,
+        "menY": 12.09,
+        "garrisoned": false
+      },
+      "after": {
+        "id": 0,
+        "typeId": "legio-cohort",
+        "alive": 320,
+        "order": 0,
+        "x": -157.08,
+        "z": 74.58,
+        "facing": 3.1414,
+        "width": 75,
+        "formationId": "line",
+        "destroyed": false,
+        "men": 320,
+        "menX": -155.6,
+        "menZ": 76.26,
+        "menY": 12.01,
+        "garrisoned": false
+      },
+      "dropX": -160,
+      "dropZ": 75
+    },
+    "budget": {
+      "before": {
+        "units": 16,
+        "men": 8632,
+        "allocated": 8632,
+        "free": 1368,
+        "poolCap": 10000,
+        "perfLine": 9000,
+        "benched": 0
+      },
+      "add": {
+        "units": 17,
+        "men": 8952,
+        "allocated": 8952,
+        "free": 1048,
+        "poolCap": 10000,
+        "perfLine": 9000,
+        "benched": 0
+      },
+      "removed": {
+        "units": 16,
+        "men": 8632,
+        "allocated": 8952,
+        "free": 1048,
+        "poolCap": 10000,
+        "perfLine": 9000,
+        "benched": 320
+      },
+      "readd": {
+        "units": 17,
+        "men": 8952,
+        "allocated": 8952,
+        "free": 1048,
+        "poolCap": 10000,
+        "perfLine": 9000,
+        "benched": 0
+      }
+    },
+    "wall": {
+      "setup": {
+        "unitId": 32,
+        "unitType": "legio-cohort",
+        "bay": {
+          "index": 15,
+          "walkY": 41.8,
+          "groundY": 28.454,
+          "innerOff": -2.555,
+          "outerOff": 0.696,
+          "band": 3.251,
+          "stage": "no-parapet",
+          "length": 37.24
+        },
+        "mid": {
+          "x": -80.75,
+          "z": 509.12254666375884,
+          "nx": 0.3024628046151722,
+          "nz": -0.9531611887945944
+        },
+        "bays": 50,
+        "garrisonable": 45,
+        "bandSurvey": {
+          "n": 45,
+          "bandLo": 2.21,
+          "bandHi": 4.055,
+          "rankLo": 4,
+          "rankHi": 5,
+          "rankHistogram": {
+            "4": 7,
+            "5": 38
+          },
+          "walkYLo": 23.1,
+          "walkYHi": 56.65
+        },
+        "freeInZone": 8,
+        "zone": {
+          "xMin": -270.24808163269313,
+          "xMax": 449.14599891810553,
+          "zMin": 402.74388890709645,
+          "zMax": 623.141628164861,
+          "wall": true,
+          "label": "719 × 220 m, parapet included, bounded by the wall of Rome"
+        },
+        "unitPt": {
+          "x": 62.04885757136918,
+          "z": 575.4532383235131,
+          "lift": 1
+        }
+      },
+      "proof": {
+        "garrisoned": true,
+        "order": 6,
+        "alive": 160,
+        "placed": 160,
+        "offWall": 0,
+        "inMasonry": 0,
+        "outOfBand": 0,
+        "maxDy": 0,
+        "walkY": 41.8,
+        "terrainUnder": 29.616,
+        "yLo": 41.8,
+        "yHi": 41.8,
+        "band": 3.251,
+        "innerOff": -2.555,
+        "outerOff": 0.696,
+        "offLo": -2.293,
+        "offHi": 0.696,
+        "ranks": 5,
+        "rankIds": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "baysUsed": 1,
+        "expectedRanks": 5
+      }
+    },
+    "wallAfter": {
+      "on": 160,
+      "maxDy": 0,
+      "garrisoned": true
+    },
+    "determinism": [
+      {
+        "label": "A",
+        "framed": true,
+        "placed": {
+          "x": -160,
+          "z": 89.24,
+          "facing": 3.1416,
+          "width": 41,
+          "f": "line"
+        },
+        "at": [
+          {
+            "t": 0,
+            "sim": 0,
+            "hash": "bf85cf88",
+            "count": 8952,
+            "alive": 8952
+          },
+          {
+            "t": 30,
+            "sim": 30,
+            "hash": "473b475e",
+            "count": 8952,
+            "alive": 8952
+          },
+          {
+            "t": 90,
+            "sim": 90,
+            "hash": "f5ecc2c8",
+            "count": 8952,
+            "alive": 8952
+          }
+        ],
+        "errs": []
+      },
+      {
+        "label": "B",
+        "framed": true,
+        "placed": {
+          "x": -160,
+          "z": 89.24,
+          "facing": 3.1416,
+          "width": 41,
+          "f": "line"
+        },
+        "at": [
+          {
+            "t": 0,
+            "sim": 0,
+            "hash": "bf85cf88",
+            "count": 8952,
+            "alive": 8952
+          },
+          {
+            "t": 30,
+            "sim": 30,
+            "hash": "473b475e",
+            "count": 8952,
+            "alive": 8952
+          },
+          {
+            "t": 90,
+            "sim": 90,
+            "hash": "f5ecc2c8",
+            "count": 8952,
+            "alive": 8952
+          }
+        ],
+        "errs": []
+      }
+    ]
+  }
+}
