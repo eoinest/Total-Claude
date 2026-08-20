@@ -257,6 +257,19 @@ async function census(page) {
       bands, rows,
       obstacleCount: boxes.length,
       wallBoxes: boxes.filter((o) => o.kind === 'wall').length,
+      /**
+       * What the city publishes as standing-but-passable, if it publishes any.
+       *
+       * Absent on a build that predates `getRoughGround`, which is exactly what the before
+       * arm is, so this is probed rather than called. `null` and `[]` mean different things
+       * and are reported as different things.
+       */
+      rough: typeof city.getRoughGround === 'function'
+        ? city.getRoughGround().map((r) => ({
+          bay: r.bay, x: +r.x.toFixed(1), hw: +r.hw.toFixed(2), hd: +r.hd.toFixed(2),
+          rise: +r.rise.toFixed(2), crestY: +r.crestY.toFixed(2),
+        }))
+        : null,
     };
   });
 }
@@ -593,6 +606,75 @@ async function dijkstra(page) {
   });
 }
 
+/**
+ * Does the garrison cover its own hole?
+ *
+ * A gap in your wall is a thing you post men at. Whether Rome does is a fact, and it is a
+ * different fact from whether the gap is expensive to cross: charging a horse four times
+ * the going rate to scramble a rubble bank buys nothing if there is nobody within two
+ * hundred metres to shoot at it while it does. Measured here and **reported rather than
+ * changed** — where the garrison stands is a balance decision and it is the owner's.
+ *
+ * Two numbers per footing bay: how many defenders are within `NEAR` of its centre, and how
+ * that compares with the same count taken over every bay of the circuit. A ratio near 1
+ * means the hole is covered exactly as well as ordinary curtain, which is to say not
+ * deliberately at all.
+ */
+async function cover(seed) {
+  const { page, errors } = await openPage(seed);
+  await page.evaluate(KIT);
+  const out = await page.evaluate(async () => {
+    const { city, bays } = window.__fk;
+    const g = window.__game;
+    const ctx = g.engine.context;
+    const b = g.battle;
+    const flow = ctx.get('battleFlow');
+    const garrison = flow.objective ? flow.objective.garrison : 0;
+    const storm = flow.objective ? flow.objective.storm : 1;
+    const p = b.pool;
+    const NEAR = 60;
+
+    // Static: how far is each footing from the nearest bay a man can be posted on?
+    const stations = bays.filter((x) => x.garrisonable);
+    const gapCover = bays.filter((x) => x.stage === 'footing').map((x) => {
+      const mx = (x.x0 + x.x1) * 0.5, mz = (x.z0 + x.z1) * 0.5;
+      let best = Infinity, bestBay = -1;
+      for (const st of stations) {
+        const d = Math.hypot((st.x0 + st.x1) * 0.5 - mx, (st.z0 + st.z1) * 0.5 - mz);
+        if (d < best) { best = d; bestBay = st.index; }
+      }
+      return { bay: x.index, x: +mx.toFixed(0), nearestStation: bestBay, metres: +best.toFixed(0) };
+    });
+
+    const series = [];
+    const near = (mx, mz, faction) => {
+      let n = 0;
+      for (let i = 0; i < p.count; i++) {
+        if (p.faction[i] !== faction || !p.aliveAt(i)) continue;
+        if (Math.hypot(p.x[i] - mx, p.z[i] - mz) <= NEAR) n++;
+      }
+      return n;
+    };
+    for (let t = 0; t < 600; t += 10) {
+      g.engine.advance(10, 166);
+      const row = { t: +ctx.time.simTime.toFixed(0), footings: [], allBays: 0 };
+      for (const x of bays) {
+        const mx = (x.x0 + x.x1) * 0.5, mz = (x.z0 + x.z1) * 0.5;
+        const d = near(mx, mz, garrison);
+        row.allBays += d;
+        if (x.stage === 'footing') row.footings.push({ bay: x.index, defenders: d, attackers: near(mx, mz, storm) });
+      }
+      row.meanPerBay = +(row.allBays / bays.length).toFixed(1);
+      series.push(row);
+      if (flow.result) break;
+    }
+    void city;
+    return { gapCover, series };
+  });
+  await page.close();
+  return { seed, errors, ...out };
+}
+
 // ---------------------------------------------------------------------------
 // battle — who actually crosses, where, and how long it takes
 // ---------------------------------------------------------------------------
@@ -843,6 +925,15 @@ if (want('census') || want('nav') || want('around') || want('routes') || want('d
     const seam = c.rows.filter((r) => r.rasterShut !== r.navShut);
     console.log(`\nseam check: ${seam.length} bay(s) where blocksMovement and NavGrid.blocked disagree`
       + `${seam.length ? `: ${seam.map((r) => `${r.index}(${r.stage}) raster=${r.rasterShut} nav=${r.navShut}`).join(', ')}` : ''}`);
+    if (c.rough === null) {
+      console.log('\nthe city publishes no getRoughGround(): nothing knows the footings are there');
+    } else {
+      console.log(`\ngetRoughGround(): ${c.rough.length} record(s) — standing work crossed at a price`);
+      for (const r of c.rough) {
+        console.log(`  bay ${String(r.bay).padStart(3)}  x ${String(r.x).padStart(7)}  ${r.hw * 2} x ${r.hd * 2} m`
+          + `  rise ${r.rise} m  crest ${r.crestY}`);
+      }
+    }
     const noBox = c.rows.filter((r) => !r.hasBox);
     console.log(`bays with no oriented solid box at all: ${noBox.length}`
       + `${noBox.length ? ` — ${noBox.map((r) => `${r.index}[${r.stage}]`).join(', ')}` : ''}`);
@@ -921,6 +1012,25 @@ if (want('census') || want('nav') || want('around') || want('routes') || want('d
   if (errors.length) console.log(`\n!! ${errors.length} page error(s): ${[...new Set(errors)].slice(0, 5).join(' | ')}`);
   else console.log('\nno page errors on the static page');
   await page.close();
+}
+
+if (want('cover')) {
+  const c = await cover(SEED0);
+  report.cover = c;
+  console.log('\n=== does the garrison cover its own hole? ===');
+  console.log('  footing bay   x   nearest garrisonable bay   metres away');
+  for (const r of c.gapCover) {
+    console.log(`  ${String(r.bay).padStart(11)} ${String(r.x).padStart(5)} ${String(r.nearestStation).padStart(26)} ${String(r.metres).padStart(13)}`);
+  }
+  console.log('\n  defenders within 60 m of each footing bay, against the mean over all 50 bays');
+  console.log('     t   ' + c.gapCover.map((r) => `bay${String(r.bay).padStart(3)}`).join('  ') + '   meanPerBay   attackers on the footings');
+  for (const row of c.series.filter((_, i) => i % 4 === 0)) {
+    const atk = row.footings.reduce((a, f) => a + f.attackers, 0);
+    console.log(`  ${String(row.t).padStart(4)}   `
+      + row.footings.map((f) => String(f.defenders).padStart(6)).join('  ')
+      + `   ${String(row.meanPerBay).padStart(10)}   ${String(atk).padStart(6)}`);
+  }
+  if (c.errors.length) console.log(`  !! ${c.errors.length} page error(s)`);
 }
 
 if (want('battle')) {

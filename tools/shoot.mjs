@@ -126,6 +126,37 @@ const SHOTS = {
     desc: 'The cavalry wing sweeping the flank',
     follow: 'cavalryUnit', zoom: 0.30, at: 70,
   },
+  /**
+   * The owner reported this by eye, so it has to be answerable by eye.
+   *
+   * *"the horses can go around and through a half constructed / very low wall."* Three of
+   * the Aurelian circuit's fifty bays are at stage `footing` — a travertine plinth and the
+   * first lift of poured concrete, 1.4 to 3.5 m above the ground beside it — and they are
+   * deliberately open, because they are the only way into Rome that needs no ladder. What
+   * was not deliberate is that no subsystem knew they were there: the nav raster charged
+   * less for the wall's own centreline than for the grass in front of it, and a squadron
+   * of horse crossed 6.8 m of concrete in 3.4 seconds at a gallop.
+   *
+   * The pair is a *pair*: the same camera, the same seed, the same sim second, one frame
+   * before the fix and one after. `at` is chosen from the measurement — the riders' centroid
+   * crosses at t+40 on this seed — and the late frame is far enough after it that a
+   * squadron which is through in the before arm is still on the concrete in the after one.
+   *
+   * `follow: 'roughCrossing'` rather than a coordinate. Every hand-placed camera in this
+   * table has photographed empty grass at least once, and this one would be worse than most:
+   * the curtain follows the hill crest so a footing bay's z is not guessable, and *which*
+   * of the three bays the horses use is emergent. The resolver reads the bays the city
+   * publishes and frames the mounted men actually on one — and it reads `getGarrisonBays()`,
+   * which exists on both arms, not `getRoughGround()`, which exists only on the second.
+   */
+  'footing-cross': {
+    desc: 'Juthungi horse crossing the unfinished footing bay — the moment of the crossing',
+    follow: 'roughCrossing', zoom: 0.26, scenario: 'assault', at: 40, seed: 4265438264,
+  },
+  'footing-cross-late': {
+    desc: 'The same bay sixteen seconds later: through, or still on the concrete',
+    follow: 'roughCrossing', zoom: 0.26, scenario: 'assault', at: 56, seed: 4265438264,
+  },
   city: {
     // Was (60, 400) zoom 0.62, which put the camera *inside* the Via Flaminia tomb field
     // rather than on the city. Pulled back and lifted so the wall reads as the foreground
@@ -949,6 +980,8 @@ const FAMILIES = {
   ab3: 'round three, one grader per pair. See the block comment above `AB3`',
   r6: 'the r6 changelog plates. Not a deck — see the block comment above `r6-ram-gate`',
   escalade: 'one ladder foot, four frames from one fixed camera. A sequence, not a deck',
+  footing: 'the unfinished-bay crossing pair. A before/after diptych, not a deck member — '
+    + 'both frames are of the same second of the same seed and only differ by the fix',
 };
 
 /** `field` is the absence of a declared family, and `field` is what `--set=all` means. */
@@ -1003,6 +1036,7 @@ const SETS = {
   ab2: Object.keys(SHOTS).filter((k) => familyOf(k) === 'ab2'),
   ab3: Object.keys(SHOTS).filter((k) => familyOf(k) === 'ab3'),
   escalade: Object.keys(SHOTS).filter((k) => familyOf(k) === 'escalade'),
+  footing: Object.keys(SHOTS).filter((k) => familyOf(k) === 'footing'),
   /** The graded field set, and the default. Everything with no declared family. */
   all: Object.keys(SHOTS).filter((k) => familyOf(k) === 'field'),
   /** Literally everything, for the rare pass that wants it. Never a deck. */
@@ -1234,7 +1268,7 @@ try {
    */
   const groupKey = (s) => JSON.stringify([
     s.map ?? null, s.hour ?? null, s.scenario ?? null, s.quality ?? QUALITY, s.opponent ?? null,
-    s.weather ?? null,
+    s.weather ?? null, s.seed ?? null,
   ]);
   const groups = new Map();
   for (const name of requested) {
@@ -1256,6 +1290,15 @@ try {
     if (shot.map) cfg.map = shot.map;
     if (shot.hour !== undefined) cfg.timeOfDay = shot.hour;
     if (shot.scenario) cfg.scenario = shot.scenario;
+    /*
+     * A pinned seed, for a shot whose subject is a measured event rather than a place.
+     *
+     * Every other field here changes the *world*; this changes which run of it you get, and
+     * a before/after pair of one crossing is worthless if the two arms are different
+     * battles. It joins the group key for the same reason `map` does: two shots on
+     * different seeds cannot share a page.
+     */
+    if (shot.seed !== undefined) cfg.seed = shot.seed;
     // 2 is `Faction.Carthage`; `sanitiseConfig` maps anything else back to the Germanic
     // opponent, so an unrecognised value degrades to the shipped battle rather than failing.
     if (shot.opponent !== undefined) cfg.opponent = shot.opponent;
@@ -1593,6 +1636,47 @@ try {
                 fz = (seg.z1 + seg.z2) / 2 - 6;
                 fyaw = Math.atan2(seg.x2 - seg.x1, seg.z2 - seg.z1) + 0.62;
                 n = -1; // signal: focus already resolved, skip the centroid paths
+              }
+            }
+
+            if (n === 0 && s.follow === 'roughCrossing') {
+              /*
+               * Frame the unfinished bay the storm is actually using.
+               *
+               * Three bays of this circuit are at stage `footing` and any of them could be
+               * the one, so the bay is chosen by where the mounted men are rather than
+               * named: take every living storm horseman within 45 m of a footing bay's
+               * centre, and if there are any, focus on their centroid. If there are none —
+               * too early, too late, or they went somewhere else — fall back to the bay
+               * that saw the most of them, so the frame is still of the right stone and the
+               * absence is visible rather than being replaced by a picture of a melee.
+               *
+               * The yaw is 0.62 off the wall axis, the same oblique `follow: 'wall'` uses:
+               * square-on is a flat wall of brick and end-on is foreshortened tower, and
+               * what has to read here is a body of horse *on* the concrete with the curtain
+               * running away behind it.
+               */
+              const city = g.engine.context.tryGet('city');
+              const bays = (city?.getGarrisonBays?.() ?? []).filter((bay) => bay.stage === 'footing');
+              if (bays.length) {
+                let bestBay = bays[0], bestN = -1, bx = 0, bz = 0;
+                for (const bay of bays) {
+                  const mx = (bay.x0 + bay.x1) / 2, mz = (bay.z0 + bay.z1) / 2;
+                  let hx = 0, hz = 0, hn = 0;
+                  for (const u of b.units) {
+                    if (u.destroyed || u.alive === 0) continue;
+                    const cls = b.typeOf(u).unitClass;
+                    if (cls !== 'heavy-cavalry' && cls !== 'light-cavalry') continue;
+                    if (Math.hypot(u.x - mx, u.z - mz) > 45) continue;
+                    hx += u.x * u.alive; hz += u.z * u.alive; hn += u.alive;
+                  }
+                  if (hn > bestN) { bestN = hn; bestBay = bay; bx = hx; bz = hz; }
+                }
+                const mx = (bestBay.x0 + bestBay.x1) / 2, mz = (bestBay.z0 + bestBay.z1) / 2;
+                fx = bestN > 0 ? bx / bestN : mx;
+                fz = bestN > 0 ? bz / bestN : mz;
+                fyaw = Math.atan2(bestBay.x1 - bestBay.x0, bestBay.z1 - bestBay.z0) + 0.62;
+                n = -1;
               }
             }
 
