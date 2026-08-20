@@ -13,11 +13,11 @@ Each entry records the commit that was deployed and the Vercel deployment that c
 are not taken on trust: every commit below through r5 was matched to its deployment by comparing the
 SHA-1 of every tracked file in the commit against the file digests Vercel holds for that deployment
 — r1 to r4 at 100% of tracked files, and r5 at 567 of 568 with zero digest mismatches, the one
-absent file being `.gitignore`, which the CLI reads rather than uploads. `r4`, `r5` and `r6` were
+absent file being `.gitignore`, which the CLI reads rather than uploads. `r4` through `r7` were
 verified by rebuilding the commit in a pinned worktree and diffing the output against the bytes the
-live site serves — for r6, `index.html` byte-identical and the bundle's SHA-256 matching exactly —
-and by booting all three maps against the live URL and confirming the simulation clock advances on
-each. See
+live site serves — for r6 and again for r7, `index.html` byte-identical and the bundle's SHA-256
+matching exactly — and by booting all three maps against the live URL and confirming the simulation
+clock advances on each. See
 [`docs/RELEASING.md`](docs/RELEASING.md) for the procedure.
 
 Every figure quoted here comes from a commit message, from `docs/HANDOFF.md`, or from a measurement
@@ -38,10 +38,689 @@ text than as a frame that half-supports them.
 
 ---
 
+## r7 — the near half of every face was being culled, and the instrument could not have said so
+
+**20 August 2026** · commit [`0d9960d`](https://github.com/eoinest/Total-Claude/commit/0d9960d) ·
+deployment `total-claude-gnj0eowoy` · **live now**
+
+A correctness release, and the one where the instruments were the bug. Almost everything below had
+been sitting under a check that compared something against itself and therefore could never fail:
+a mesh probe that asked whether the mesh's own normals agreed with winding it had derived from
+those same normals; two determinism arms that compared a battle against a replay of itself; a
+crossing counter that measured speed and reported passage; a wall prober casting its rays through
+a ditch. Six features turn up here that had never once run in any build the project has shipped —
+five of them fixed and the sixth recorded — and every one of them compiled, booted, and did
+nothing.
+
+**The single biggest one is the man's face.** `revolve` derives its normal from the profile
+tangent, which points outward only while y descends the point list, and `skullProfile` was written
+jaw-upward — so the winding pointed into the head and `FrontSide` removed the face. A camera in
+front of a man saw *through* it to the inside of the back of his skull, with every helmet bowl,
+hair dome and beard between the two winning the depth test. The isolated-model critic had scored
+the face **0 of 4 for three rounds**, and what the graders converged on independently was *"no
+nose volume, no brow ridge, no chin, no cheekbone; the silhouette against sky is a straight
+vertical edge."* They were describing a hole.
+
+Under that, three of the owner's own bug reports — filed months apart and closed by one predicate
+— eight arches cut clean through Carthage's curtain with nothing hung in them, the cheapest lane
+across the Rome battlefield running straight through the fortification, and a gate that finally
+makes a sound when it breaks.
+
+### New
+
+- **The gate makes a sound when it goes.** Twenty-six blows arrive on the Porta Flaminia as
+  `impact_wood`, and then the leaves used to give way in silence: `Siege` emitted a `cameraShake`
+  for the collapse and there was no `gate_*` recipe in the bank at all. Four now — `gate_collapse`
+  4.8 s (the split, the drawbar and pintles failing, two leaves falling six hundred milliseconds
+  apart, a ragged settle), `wall_breach` 5.4 s in stone, `tower_dock`, `machine_wreck` — all built
+  out of the `impact_wood` and `impact_stone` grains the ram has been hitting the gate with for
+  four minutes, rather than out of anything new. The bank is 23.0 MB for 94 recipes, up 3.4 MB
+  from 90.
+
+  Two faults found by listening to it rather than by reading it. **The loudest instant in the
+  collapse was the second leaf hitting the roadway** — a 50 ms envelope puts the peak at
+  t = 1.206 s with the failure itself **7.4 dB below it**, so peak-normalising scaled the whole
+  sound to the landing and the gate read as being dropped rather than as breaking; the peak is at
+  t = 0.031 s now. And **a collapse that loses the voice race is retried rather than lost**: a
+  heavy assault culls 14,579 one-shots against 6,251 started at 44.5 of 48 voices sustained, so
+  "the mixer had no slot" is the ordinary case in this game — fine for a melee blow, fatal for a
+  one-shot edge that never comes round again. Measured at the break: cues 1, culled 0.
+
+- **The technical documentation is published**, at
+  [total-claude-docs.vercel.app](https://total-claude-docs.vercel.app) — four new volumes on the
+  simulation, the renderer, the siege and the tooling, beside the existing documents. Every figure
+  in them was re-measured or re-read at the commit rather than copied forward, and the volumes
+  found defects doing it: that there is no depth prepass and never was, that "the assault camera"
+  names two different framings which is most of why four documents never reconciled, that motion
+  blur was gated on a flag no shipped tier sets, and that the determinism rule had no automated
+  enforcement of any kind. The site is a self-contained static build with its own `package.json`
+  and its own `node_modules` — it does not touch `vite.config.ts`, the root build scripts or
+  `dist/`, **so a release verified by bundle hash cannot be invalidated by adding a page to the
+  documentation.** Its image rule is a build-time refusal rather than a convention: images are
+  copied one at a time from `docs/images/` only, and the emitted HTML is then re-audited for
+  anything outside it.
+
+- **A determinism baseline that can catch yesterday.** `qa-determinism` and `qa-deploy`'s
+  determinism arm both compare run A against run B *of the same tree*. They answer "does this
+  battle replay" and cannot answer "is this the same battle as yesterday" — which is why both
+  stayed green through a commit that quietly took Rome's ram from 26 blows to 24 and moved the
+  pool hash at t+0, before a tick had run. The hash that would have caught it was already being
+  computed, printed and thrown away. `tools/determinism-baseline.json` pins it for three battles —
+  the field default, Rome's assault, Carthage's assault — and `--record` is what moves a pin.
+  **It caught one inside the hour of existing**, and that one had also moved the ram again,
+  unannounced, for the third time in two days.
+
+  With it, the rule itself stops being enforced by memory. `npm run lint` is
+  `tools/check-determinism.mjs`, ahead of `build`: no browser, no server, no dependency,
+  milliseconds. It reads code rather than text — three comments that say *don't use
+  `Math.random()`* are not violations, and a raw grep scores 15 where the answer is **12 raw hits,
+  10 cleared, 2 allowlisted, 0 violations**. It pairs the profiling timers rather than
+  pattern-matching them, which is load-bearing: run it over `src/ui` and it correctly reports a
+  `performance.now()` whose value enters program state. **Its header documents what it cannot
+  catch, at length, and it prints an abbreviated version of that list on every run including a
+  pass** — identity-keyed iteration order, unstable sorts, the four `fixedUpdate` bodies outside
+  the scanned directories. It would have caught none of the determinism bugs this project has
+  actually had, and it claims nothing beyond converting the cheapest class of future mistake into
+  a build failure.
+
+- **Two more cuts of the trailer**, both re-edited after four notes came back on the first: two
+  escalade beats is one too many, put Carthage in, put the elephants back, cut the Roman arch.
+  The final social cut is 20.700 s, 621 frames at 1280×720, delivered as WebM (4,703,399 B) and as
+  H.264 in an MP4 (4,691,477 B) for an uploader that will not take WebM. Nothing is re-simulated
+  and nothing is re-captured; the tools choose windows into the same master frames and the same
+  mixdown, and the MP4 reads the same cut and mix files as the WebM rather than transcoding it.
+  **The edit was decided at 400 px, which is about how wide a video is in a phone feed, and twice
+  that overturned the obvious choice**: the 8,144-man flank shot is the most impressive frame in
+  the film on a desktop and a hazy green patchwork at feed size, and the wide ladder beat loses to
+  the close parapet beat on all three measures — gradient 10.07 against 10.86, contrast 32.0
+  against 59.4, motion 2.20 against 3.22. Both delivered files were decoded back and measured
+  rather than trusted, which found the AAC track running 83 ms past the last picture frame and the
+  sound arriving 44 ms late because a plain MP4 has no edit list to take the encoder delay off.
+
+### Fixed
+
+- **Three bug reports the owner filed months apart, and one predicate closes all three.** He
+  asked whether that was possible rather than three patches; it was. `broken(u)` is now the one
+  answer to "has this unit stopped being the siege's to steer", and the ram loop's hand-written
+  copy of it is gone.
+
+  **"Weird shuffling behaviour when the men line up for a ladder."** `musterOwned` deals an
+  escalade party round-robin across its ladder bank, and the index it dealt on was a tally of the
+  men waiting *that tick*. So the instant anybody was admitted to a rung or was shot, every man
+  behind him decremented by one and changed which ladder he was queuing for — and the rails of a
+  bank are planted 6.88 m apart, so this was not a nudge but the whole file picking itself up and
+  walking to the next ladder, in lockstep, for as long as the escalade lasted. Forty men of one
+  party over five seconds of per-tick trace at the storm of Rome: **rail changes 147 → 0, slot
+  reassignments over 3 m 147 → 0, median reassignment 6.88 m → 0.90 m** — the rail pitch, against
+  one row of closing up — worst 13.77 m → 0.90 m. **The men were walking a median of 5.98 m to
+  make 1.15 m of headway; five sixths of all the walking done at the foot of a ladder was this.**
+  The traces are unmistakable once printed: `111...000...222`, the party rotating one rail
+  together each time a rung came free. It was also costing the assault its whole point, because a
+  man walking sideways is not reaching the admission radius: **men over the parapet by t+40 go 47
+  → 111, and the escalade completes at t+46 with 136 men where before it had not completed by
+  t+60.** The tower column two branches up had the identical rotation at 0.9 m rather than 6.88,
+  which is why it had never earned a report of its own.
+
+  **"They stand in place at the base of the wall playing the routed animation."**
+  `adoptBoarders` creates a garrison record the moment the *first* man of a party gets over the
+  parapet, and the release in `releaseBrokenCrews` skipped anything with such a record — so when
+  the party then broke, the men still at the foot of the ladders stayed owned, and `steerToSlots`
+  went on driving each of them at a muster slot frozen at the last tick before they broke, at a
+  walk, toward the wall. A release keyed on the unit while rout is keyed on the man. Same unit,
+  same tick, both arms: **median speed over the ground 1.49 → 4.11 m/s** against a run speed of
+  4.35, **man-ticks under 0.2 m/s 11.1% → 0%**, median distance fled in three seconds 4.26 →
+  10.44 m. Left alone in the natural battle, seven men sat at the wall foot for twenty seconds —
+  the count reading exactly 7 at every two-second sample from t+26 to t+46 — while the unit's
+  strength fell from 19 to 9. They were not retreating slowly. They were being killed where they
+  stood. Nobody on the stonework is dropped by the change: worst single-tick vertical step 0.049 m
+  against 0.050 before, zero men off their support height, zero falls.
+
+  **"The ram gets routed and the people flee yet it keeps moving forward."** Already fixed, by
+  exactly this mechanism — the ram loop gates on ownership and deletes a broken crew — and the
+  ladder path had the same fix written and then disabled for precisely the case that mattered.
+
+- **Carthage's eight posterns were doorways with nothing hung in them.** The owner, looking at the
+  curtain during an assault: *"in addition to the gate there are some straight up holes in the wall
+  which don't seem like a great defensive strategy."* r5 was titled "Carthage's posterns become
+  doors" and that is half true — before it they were arches painted on solid tufa, r5 cut the
+  stone, and nothing was hung in the resulting hole. The record stayed `open: true`, which is the
+  one word in a gate record the rest of the engine acts on: the curtain's obstacle box was split at
+  each, each carriageway was cleared out of the occupancy raster, and the pathfinder punched each
+  axis through the nav grid and locked routes onto it. **Driving a 32 m segment through the wall
+  line every 2 m: 29 of 990 stations passable, in eight bands 4-6 m wide, one centred on each
+  postern. Eight unguarded ways into Carthage, no ram needed.**
+
+  A postern is a sally port, so it is shut and barred, and shut through the mechanism that already
+  existed rather than a second one — twin leaves tagged to the postern exactly as the Porta
+  Byrsae's leaves are, so opening one re-cuts the raster and the boxes *and* takes the leaves off
+  the screen with no new call anywhere. **29/990 → 0/990 and eight bands → none; rays down a
+  postern's own axis 0 of 35 stopped → 35 of 35, on its door.** Assault draw calls 180 → 188
+  against a 220 cap. That the sally still works in both directions was then tested rather than
+  asserted, because it was a claim about dead code. Rome is untouched: one gate, doored, and its
+  three open bands are its unbuilt footing bays, which stay open by design — see below.
+
+  Shooting it found two things no number could. **The leaf photographed as a black rectangle**:
+  direct sun never enters this opening at any hour, measured at 08:30, 11:30, 14:00 and 18:00, so
+  the door is read entirely by its own albedo against the sky, and the great gate's dark boards
+  with light ledges came out indistinguishable from the hole they had replaced. Inverted — light
+  boards, dark ledges. And the drawbar was `PAL.iron`, a neutral grey in a recess lit by nothing
+  but sky, so it took the sky's colour and photographed as a bright blue stripe across the door,
+  the only thing in the frame that drew the eye. A sally port's bar is timber now, which is what
+  it would have been anyway.
+
+  One behaviour changed silently with it and is kept deliberately rather than by inheritance: **a
+  light ram will now resolve to a shut postern**, because a sally door is a door and a ram is what
+  breaks doors. The trap is that the gate-pick radius is 55 m and one postern stands 52.6 m from
+  the Porta Byrsae, so the cursor has to say which opening it means. Measured by hand with a real
+  mouse rather than reasoned about: the crossover is at 27 m off the gate axis, and the cursor
+  names the opening on both sides of it — *"Already at the Porta Byrsae"* at 26 m, *"Break the
+  Postern 30 — 72 m, 2 min 18 s"* at 28 m. The margin is visible before the player commits, so it
+  is a choice and not a silent mis-aim.
+
+- **The horses were riding through the unfinished wall because it was the cheapest ground on the
+  map.** The owner, playing Rome's assault: *"the horses can go around and through a half
+  constructed / very low wall."* Three of the Aurelian circuit's fifty bays are at stage `footing`
+  and they are **deliberately open** — the only way into Rome that needs no ladder, and the
+  assault's whole win rate rides on them. What was not deliberate is that they emitted no blocker
+  at all, and therefore no obstacle box, no occupancy cell and no nav stamp, so *no subsystem in
+  the game knew there was anything on that ground.* Measured on the shipped grid: **the cell on the
+  wall's own centreline at bay 29 cost 1.176, against 1.773 for the open grass seven metres in
+  front of it and 1.152 for open field.** An uncapped Dijkstra over the live grid put the two
+  cheapest ways into the city at bay 28 (662) and bay 29 (676) against 1,353 for the next. The
+  cheapest lane across the battlefield ran through the fortification.
+
+  The wall had two states, solid and absent, and needed a third: standing work that is crossed at
+  a price. Each footing bay now publishes its footprint and the worst rise above the ground under
+  it, derived from the same function the stone is cut from so the record cannot drift from the
+  pour; the price is one function shared by the planner and the mover so the two cannot quote
+  different numbers, and it invents no constant — it is the grid's own rule for sloping ground
+  applied to the published rise over the published run. **The centreline cell goes 1.176 → 5.018.**
+  Bay 28's gradient of 0.68 is over the terrain grid's own impassable bound of 0.62: *the same
+  slope in ground would be refused outright, and it is charged instead*, because sealing these
+  bays is not this change's decision to make. It is not lifted onto the crest either — the pour
+  stands up to 3.5 m and the same-level test is 1.9, so raising a man to the top of it would make
+  him unhittable for the whole crossing, which is the exact opposite of vulnerable.
+
+  Costed, not sealed, and the cost is paid in time under fire: pooled over twenty-four seeds,
+  **a horse takes 11.0 s to cross the half-built rampart against 4.5, and infantry crossings fall
+  83%** — while rider crossings go *up*, because a horse is no longer through in one bound. No arm
+  differs significantly from any other on outcomes; every pairwise Fisher p ≥ 0.24.
+
+  On the record and unchanged, because where a garrison stands is a balance decision: **the
+  garrison does not cover its own hole, at any of fifteen samples across 568 seconds.** Defenders
+  within 60 m of each footing bay read zero every time, against sixty-odd per bay everywhere else,
+  while between 8 and 138 attackers stood on the footings throughout. It is not that the cover is
+  thin — there is none, and there is none by construction, because a footing bay is not
+  garrisonable, so bays 27, 28 and 29 are a **106 m stretch of curtain with no station a defender
+  can stand on**: the longest on the circuit, and precisely where every crossing happens. The
+  nearest place a man can be posted to bay 28 is bay 30, 72 m away.
+
+- **Six features that had never run in any build the game has shipped**, all found by one sweep.
+  Subsystems find each other through a context lookup that returns a type with no members, so every
+  consumer casts, and the honest way to cast is to write down the shape you intend to use — written
+  by the *consumer*, against a provider that does not import it, through an `as unknown as`, which
+  is not even a widening the compiler could object to. When the two disagree the consumer reads
+  `undefined`, the `typeof x === 'function'` guard it is wrapped in passes anyway, and the feature
+  is silently inert. It compiles, it boots, it does nothing.
+
+  - **Fly-by arrow Doppler, dead since it was written.** The audio side declared seven fields;
+    four of them are named something else on the projectile system. The cast was to a `Partial<>`,
+    which makes every member optional and **erases even the arity check**, so a seven-clause
+    battery that looked like the most careful test in the file failed on its first clause every
+    time. Fixed with a real shared type declared by the provider, which also fixed a second bug the
+    rename exposed: the pool is sparse and slots come off a free list, so the old loop would have
+    hung whistles on spent shafts lying in the grass.
+  - **The ambience has been weather-deaf since it was written.** It asked the sky for `windSpeed`,
+    `rain` and `cloud`; the sky has none of the three — wind and rain live on the VFX system, and
+    cloud is a sky preset field whose sense is inverted by its own documentation. All three guards
+    failed and the bed ran on its literals, `cloud = 0.2` and `rain = 0`, for the life of the game.
+  - **Water's soft-intersection fade has been compiled out of every shipped build.** Both of its
+    seams agreed about every field name and were wrong about *when the field has a value*: the
+    depth texture is read in `init`, terrain initialises at subsystem order −50 and PostFX
+    allocates the texture at 900, so the read returns the field initialiser — `null` — on every
+    boot without exception. The define was never added and the program cache key was pinned at
+    `-nodepth`. Its sibling was a lifetime bug of the opposite kind: the sky's ambient colour was
+    copied once at init and the sky mutates it in place, so the water carried the default hour's
+    tint under whatever sky the player picked.
+  - **The gatehouse never clipped a single garrison station**, which is the one r6 wrote up in its
+    own corrections. The consumer asked for a half-width, a half-depth and a rotation; the provider
+    publishes an along-run frame under six other names. `insideBlock` evaluated `Math.abs(…) <=
+    undefined`, which is false for every point on the map, so the test answered *"not inside the
+    gatehouse"* for the inside of the gatehouse. Now: **22 of Rome bay 19's 36 stations were inside
+    the footprint and 0 were clipped; 22 are clipped.** They had been standing at a walk height of
+    35.75 with the gatehouse crown 6.574 m over their heads and no stone under their feet. Garrison
+    shots launched 5,431 → 5,245, **shots that died on their own masonry 682 of 5,431 (12.6%) → 440
+    of 5,245 (8.4%)**, shots that hit a man 2,288 → 2,491, garrison kills 453 → 526. The aiming
+    path's own count of shooters whose support height disagreed with the embrasure under them falls
+    from 882 to 28.
+  - **Camera motion blur has never run on any tier the game ships.** The pass was gated on a flag
+    written in exactly one place — inside the TAA branch of the anti-aliasing step, where it means
+    "there is a resolved history image to blend against" — and no quality preset selects TAA, for
+    the reason documented on the ultra preset. So `motionBlur: true` at high and ultra, and all
+    four adaptive rungs that turn it off, gated a pass that could not execute. It does not need a
+    history image; it reprojects depth through the previous frame's view-projection, and that
+    matrix is written at the end of every frame regardless of tier. The gate is now a flag that
+    describes what the pass actually depends on.
+  - **The leadership aura has never fired**, because **no entry in any roster declares
+    `unitClass: 'general'`** — so the morale system's aura bonus has returned 0 for every unit of
+    every battle in every shipped build, and the banner system has never seen the class either.
+    **This one is recorded, not fixed:** building a general is a balance decision. No type can catch
+    it, because the roster's array annotation widens the literal away; the runtime seam report now
+    prints it every run as an *absent* value a branch is taken on.
+
+  The mechanism is two halves that cover different things. `src/core/seams.ts` is one list of every
+  cross-subsystem contract, checked against the live objects on every boot and not only in the
+  harness — 20 seams, 0 faults on both maps — and it verifies the half the compiler cannot see,
+  which is that *the value an accessor returns* carries the fields the consumer reads off it.
+  `src/core/seamTypes.ts` is fifteen compile-time witnesses that fail the build. **The premise that
+  had blocked the second one for the life of the project was false**: the stated import cycle does
+  not exist for a type-only import, which this project's compiler settings erase entirely — a graph
+  edge for TypeScript, where circularity between types is legal and ordinary, and no edge at all in
+  the emitted bundle. A shared type was available for every one of these seams the whole time, at
+  zero runtime cost, and the barrier was policy. One line would have stopped the gatehouse bug at
+  the build the accessor landed in.
+
+- **A garrison twelve metres overhead was reading as a garrison eleven metres away.** The owner
+  reported Roman units routing *"within seconds of hitting the wall"* at Carthage, and the number
+  is exact: on the build he played, six seeds and twenty-four escalade parties give a **median
+  2.7 s** from arriving at the curtain to breaking, p75 4.1 s. It is not a morale fault — the
+  per-tick trace over the last twenty seconds before each break refutes the obvious suspicion
+  rather than arguing about it, with the flanked fraction averaging 0.05 against a deadband of
+  0.28 and `surrounded` false in every sample. What is left is missile fire and real dead men.
+  But establishing that turned up a genuine one next door: morale asks how near the enemy is in
+  exactly two places, both applying only to a unit that has *already* broken — and in precisely
+  that state both height filters are skipped, so what survives is the raw plan distance between
+  formation anchors. Measured on a broken escalade party, the pursued term sat at exactly
+  2.10 points per second for fifty seconds with morale pinned at zero and the reported enemy
+  distance never rising above 20 m against a rally clearance of 95. **Twenty-four parties broke across six seeds and two trees; not
+  one rallied.** The question is now asked the way the rest of the simulation already asks it: on
+  open ground the filter excludes nothing and the answer is unchanged, and it differs only where
+  one side is standing on masonry. Deliberately not a rebalance, and it measures as one — median
+  rout 48.2 → 48.1 s, casualties at the break 19% → 19%.
+
+- **The objective slot named the one condition that does not decide Rome's assault.** Played from
+  the defending chair through the real menu, the top plaque at the moment the city was being taken
+  read, in two adjacent sentences: *"40 of them hold a stretch of it — get back onto that bay"* and
+  *"0 of 60 inside — hold"*, with the bar under it at zero. The phase note was right and the slot
+  beside it was inert. Over twenty-four seeds, **9 of the 24 assaults of Rome are decided by the
+  lodgement**, and the break-in count the slot printed peaks at 42-48 against its threshold of 60 —
+  it is not close to firing and it is the only thing the slot has ever said. The phase note is not
+  a substitute, because the phase resolver ranks *streets* above *wall* the instant one man is 14 m
+  past the curtain, and on the Campus Martius somebody usually is: the riders come through the
+  footing bay at bay 28 on every seed, and when that happens the lodgement is named nowhere on
+  screen at all. The slot now leads with whichever condition is about to decide it and the bar
+  follows the slot, because a lodgement is a countdown where a break-in count is not. Replayed on
+  the same seed before and after: same lodgement at t+652, same verdict, and the slot reads
+  **"40 men hold a stretch of ours — 12 s to clear it"**.
+
+- **The ram's shed covered a gang 123 m away.** The cover multiplier that r6 added had no distance
+  test and no size test — it was written onto whichever unit the machine named, wherever its men
+  were standing and however many of them there were. Harmless while the crew is the thirty-two men
+  who spawned with the machine, and exactly wrong the moment the ropes are handed to a body that is
+  not there yet: on Rome the nearest gang the search can reach is a warband of **180 men at 123 m**,
+  and all 180 would have taken a fifth of their missile damage for the whole fifty-second walk, in
+  the open, under a roof they were nowhere near. Cover now asks two questions, because one predicate
+  cannot say both: the men have to be inside the muster the machine lays out — read back off that
+  layout rather than written down — and at least half of them have to be. A shed is 3.8 × 8.4 m of
+  hides and green timber; a warband of 180 does not fit under one.
+
+### The men, close up
+
+- **The near half of every soldier's face was being culled.** `revolve` takes its normal from the
+  profile tangent, which points outward only while y *descends* the point list. Every other lathe
+  on the man — the hair, all five helmet bowls, the fur cap — is written crown-first and is
+  correct. `skullProfile` was written from under the jaw upward, so its normals pointed into the
+  head, the builder derived matching inward winding from them, and `FrontSide` removed the face.
+  Measured: **the mean dot of the triangle winding with the outward radial was −0.324 over the face
+  arc, 76 of 123 triangles inward.** Because the surviving surface was the *inside of the back* of
+  the skull, the face was not merely dark — it sat behind the rest of the head in the depth buffer,
+  and every helmet bowl, hair dome and beard between the two won the depth test. Reversing eight
+  points fixes it, at not one triangle added: −0.324 → **+0.540**, and visible face pixels on the
+  isolated-model plates go **580 → 157,649** on a Juthungi head and **744 → 84,782** on a
+  legionary's.
+
+  **An earlier "fix" had been a correction for it.** A previous round measured 0 face pixels at
+  azimuth 0 and 121,407 at π with the face tile painted magenta, and added π to the camera. That
+  magenta was only ever visible *from behind the man, through his own skull* — so turning the
+  camera round pointed all ten model plates at his back for real, which is why every head plate
+  since had photographed a neck guard and a nape band. With the lathe reversed the measurement
+  inverts and strengthens: **466,141 face pixels at the front against 0 at the back.**
+
+  Three more full-revolution head parts came out of the same audit, because a lathe is
+  axisymmetric and a head is not. **The beard was a 360-degree hoop at the height of the mouth** —
+  radius 72 mm over a jaw of 74, at y −0.030 where the face tile puts the mouth at −0.039 and the
+  chin crease at −0.052. Every bearded man in the game had no mouth and no chin: **82% of Germanic
+  warriors, 42% of Romans, 78% of Punic and Libyan foot.** The spangenhelm's brow band was a
+  complete turn 36 mm proud across the mouth, with its "nasal" running chin to lip. And the fur cap
+  was a full revolution of 26 mm of fur all round a skull of 82, so **a capped Juthungi measured
+  zero face pixels.** Three more parts were merely in the way: all three Roman brow bands hung
+  *below* the helmet rim, so the arc-cut bowl uncovered the face and the helmet's own trim covered
+  it again.
+
+- **And the probe could never have found it.** `probe-soldiermesh` asked whether each triangle's
+  shading normal agreed with its own winding — and the mesh builder **derives the winding from the
+  normal.** The two agree by construction. It was asking whether the builder had run, and it had
+  reported 0 disagreements on this piece for as long as it had existed.
+
+  Replaced with a check that compares against something outside the mesh's own opinion of itself:
+  weld the vertices by position, split into connected components, and for each component take the
+  area-weighted mean cosine between each triangle's **winding** normal and the direction from that
+  component's own centroid out to it. The shading normals are never read. A shell wound outward
+  scores positive, an inside-out one negative, a flat sheet zero — which is why the bar is −0.15
+  and not 0. Components rather than pieces, because the head piece is head *and* arms *and* hands
+  and a per-piece centroid sits in the man's chest, which is exactly why the old probe's two
+  outward-facing columns were computed and gated nothing.
+
+  **Run against `main` it failed seven components immediately**, and a static scan of every
+  `revolve` literal in the file agreed with it exactly:
+
+  | component | mean cosine | |
+  |---|---|---|
+  | coarse body — **the LOD2 skull** | **−0.964** | 29 of 30 triangles facing into the head |
+  | sword pommel | −0.866 | |
+  | pilum head | −0.608 | |
+  | sword point | −0.572 | |
+  | javelin heads (×3) | −0.513 | |
+  | spear head | −0.444 | |
+
+  **The LOD2 head is the same defect as the face, on the LOD most of the army is drawn with.** The
+  far geometry is built by a different function, so reversing `skullProfile` never touched it, and
+  it carries its own jaw-upward profile: LOD2 begins where LOD1 ends, so `FrontSide` had been
+  culling the near half of nearly every head on the field. All six are the same one-line fix and
+  all six are free — triangles at the merged tip are Rome 5,228 / 2,898 / 313 and Germanic 4,221 /
+  2,338 / 313 across the three LODs, unchanged by the reversal. A rendered front-side/double-side
+  differential was tried as the external check first and rejected, and the reason is written into
+  the probe's header so the hour is not spent twice: flipping the side needs a material recompile,
+  the lighting system re-patches on a sixteen-frame timer, and the **baseline** arm moved 213,300
+  pixels of a head plate on a mesh the geometric gate passes clean.
+
+- **A head is not a body of revolution, and until this release it was one.** The shipped skull
+  lathe ran 0.082 m at the brow, 0.079 at the cheek and 0.072 at the jaw — ten millimetres over
+  ninety, a six-degree taper — while *every other form on a head is a radius that depends on which
+  way you are facing*, which a lathe cannot hold. `revolve` gains an opt-in warp and the head is
+  built through it: an oval plan, a supraorbital ridge, eye sockets, a zygomatic arch, a sub-malar
+  hollow, a chin, a jaw angle, an ear, a temple and an occiput, with four more rings in the profile
+  because a bell 17 mm wide between rings 40 mm apart is invisible. The head now measures **152 mm
+  across at the parietal, 143 at the cheekbones and 94 at the jaw**, on the anthropometric targets,
+  and there are **four slope-sign changes down its lateral edge against one**. One is a taper; four
+  is a temple, a zygomatic and a jaw angle.
+
+  Two defects the same plate found on the way. **Every helmeted man in the game was wearing his
+  hair on the outside of his helmet** — the Gallic bowl's apex stands at 0.118 and the crown of the
+  head at 0.140, so 22 mm of skull and a whole hair dome stood above it, and the crest floated
+  32 mm over one bowl and sat 40 mm inside another. And the hairline was a **meridian**, a straight
+  line down the side of the head from crown to jaw, which made the visible skin on a bare head a
+  rectangle; it is a curve over the temple and behind the ear now.
+
+- **One BRDF served flesh, cloth and bronze.** The surface varying widens to carry a material class
+  — free, because a three-component varying already occupies a four-component slot. Flesh gets a
+  per-channel diffuse wrap that is exactly Lambert at head-on incidence and red-orange at the
+  terminator, plus a grazing transmission term for ear rims and nostrils, with its specular left on
+  the true geometric term. Cloth loses its microfacet lobe entirely for a sheen lobe that peaks
+  where the old one is zero. **And the round-two metal treatment had been gated on the tint slot
+  that means helmets and bosses**, so mail, squamata and segmentata — the largest metal surfaces on
+  a man — got none of it; the gate is the material's own metalness now, and each plate, ring and
+  lame takes its own hashed tilt so a hundred of them stop answering the sun together. The shield
+  boss had the helmet's round-two bug in a new costume: an umbo lathed about the board's face normal
+  is invariant under the only per-man rotation the shield arm applied, which was a roll about
+  exactly that axis. Three axes, three independent hashes, and the boss is oval and hammered rather
+  than spun, so the roll finally moves its highlight — measured at 6.11 → 7.41 on the cross-man
+  difference over the specular decile, which is a real move and a modest one.
+
+### Faster
+
+- **A shadow cascade no longer receives soldier tiers it cannot reach.** A cascade is a slice of
+  view depth; a soldier LOD tier is a radial shell around the camera. At ultra the slices are
+  1.5-26 / 26-63 / 63-152 / 152-460 m, so a tier that lives between 113 and 245 m has nothing
+  whatever to say to cascades 0 and 1 — and it was submitted to them anyway, because every tier
+  mesh must disable frustum culling (its instance buffer is refilled against the camera frustum
+  each frame and its geometry's bounding sphere describes nothing) and three.js reads exactly that
+  flag before it reads any bound. Interleaved in one page load with the base arm re-shot last:
+
+  | | draws | of which shadow | triangles |
+  |---|---|---|---|
+  | Rome, 2,241 men | 221 → **210** | 99 → 88 | 9.27M → **7.91M** |
+  | Carthage, 2,856 men | 224 → **213** | 87 → 76 | 13.83M → **9.63M** (−30%) |
+
+  **Carthage crosses back under the 220-draw cap it has been over since before this workstream.**
+  **Zero pixels changed in either scene**, against a drift check that is also zero, with all eight
+  of the deck's picture statistics identical to four decimals and the three Carthage frames
+  hashing to one MD5 — the saving is entirely geometry that was being transformed and then
+  clipped. Frame time moves −0.05 ms p50 at Carthage and is inside the noise at Rome; **the draws
+  and the triangles are the claim, the milliseconds are not.** The band is measured off the
+  instance buffer rather than derived from the tier's nominal distance, and that is load-bearing
+  twice: a settled corpse is drawn one tier coarser than its distance gives, so the LOD1 buffer
+  holds bodies at five metres and a derived band would have deleted a thousand corpses' shadows
+  under the camera in the late battle; and cavalry past the billboard edge are held at LOD2. It is
+  also proved under a *moving* camera, because the cascades are fitted before the rig moves and the
+  bands are measured after it, so the two are one frame apart whenever the camera is panning — a
+  frozen-camera A/B cannot see that.
+
+- **The adaptive quality controller had two arms controlling to different frame rates.** The
+  budget says the controller never asks for better than 60 Hz — a faster panel is headroom, not a
+  new obligation — and three lines later the presented-frame arm demanded a present every refresh
+  period, which on a 120 Hz display is 8.33 ms and on 144 Hz is 6.94. Two targets a factor of two
+  apart in one function, and the presented arm always wins, because it is the only one that can
+  say *drop*. Measured on the Carthage assault at 3,440 men where the loop is genuinely quantised:
+  **before, pressure 1.00 and resolution scale 0.65 within nine seconds and held there** — five
+  pressure changes, four drawing-buffer reallocations and four reversals in 35 s — **while its own
+  CPU arm read p50 2.2 / p90 2.6 ms against a 10.2-12.7 ms band.** What the whole ladder bought was
+  120 fps instead of 60, on a target of 60. After: pressure 0.00, scale 1.00, zero changes, zero
+  reallocations, zero reversals, and the same presented frame at full resolution. On a 60 Hz
+  display the two thresholds are equal and this is byte-for-byte what shipped.
+
+- **Motion blur was blitting a full-resolution HDR copy of itself.** The pass averages seven taps
+  along a screen-space velocity, and when the camera has not moved that velocity is identically
+  zero — all seven taps land on the same texel and the pass writes back exactly what it read, at
+  eight texture fetches a pixel. Nothing gated on it, so from the commit that first made the pass
+  reachable it ran on **100% of frames at high and ultra**: every parked screenshot, and every
+  second a player spends watching a battle without touching the mouse. The gate is on the smear
+  *length* in device pixels rather than on camera velocity, because that is the quantity the shader
+  spends — a dolly along the view axis moves the camera metres and the pixels barely at all, and a
+  slow yaw at telephoto does the reverse. The bound reproduces the shader's own arithmetic on the
+  CPU at 27 probe points, 3×3 across the frame at three depths, because reprojection is a
+  projective map whose extremum need not lie at a frustum vertex.
+
+- **The determinism gate spent its whole runtime drawing frames it never looked at.** It compares
+  hashes and does not read a pixel, but the advance call rasterised every synthetic frame — the
+  Rome arm alone submitted **24,000 frames at 8,632 men**, and the gate every agent is asked to run
+  on every change did not finish inside forty minutes on a shared box. That is a tax on every
+  change anyone makes here and none of it reached the result. With the submit skipped the Rome arm
+  completes in **3 m 15 s** and produces the recorded baseline exactly. The equality is measured
+  rather than argued — three independent loads of the Carthage assault, rendered and unrendered
+  arms agreeing on every bit at five checkpoints — and the file now carries the warning that came
+  out of the same experiment: **a coarser step size is not a free speed-up the way the submit is**,
+  because two different step sizes hash differently and are therefore not fast-forwarding the same
+  battle.
+
+### Corrections to the record
+
+- **"42 of 42" in r6's own notes was the wrong denominator.** A round of the blind A/B is 3 graders
+  × 14 pairs = 42 calls, so round one is 42/42, round two is 42/42, and the two together are
+  **84/84**. The halving came from the hand-over that supplied the figure, not from the graders. It
+  is corrected in place in the r6 section above, with the original wording shown; the durable fix
+  is that both rounds now have a citable home in `tools/ab-results.json`, which states the
+  denominator rule in its own header, beside the manifests that produced them. Round two's numbers
+  had previously lived nowhere in the tree at all, and two documentation volumes had correctly
+  refused to cite them.
+
+- **A third round ran under the protocol the instrument has been proposing for two rounds, and it
+  still scored 14 of 14.** One pair per grader, isolated directories named by an unordered seeded
+  token, the key held outside both, and no shared signature to carry from one pair to the next —
+  which is the fix for the limitation that invalidated the first two rounds, because a fourteen-pair
+  deck drawn from a single engine is one trial with thirteen confirmations rather than fourteen
+  trials. Fourteen graders, fourteen correct calls, eleven at confidence 5 and three at 4, with no
+  1s and no 2s. **The instrument was not the reason. We are genuinely that distinguishable.**
+  *(That score is reported here from the round itself and is the one figure in this section without
+  a home in the tree: `tools/ab-results.json` — added this release so that a grader result has a
+  citable home — carries rounds one and two, and round three's returns are not in it. The deck is
+  recorded: seed 307, ours as side A in 5 of 14, and all eight picture statistics.)*
+
+  What the graders name has moved down the stack. On the round-three deck the edge statistic — the
+  one round two closed by 82% — is now the **weakest** separator of the eight at 0.607 balanced
+  accuracy, and mean luminance is the strongest at **0.786**: our frames are 21% brighter than the
+  reference plates. Re-shooting two frames on the source puts this pass's own contribution to that
+  gap at **+0.0058 and +0.0006**, which is 1.5% and 0.1% of it. It is an exposure and grade
+  question, it predates this round, and with it the environment art it is the clearest target the
+  next round has.
+
+- **"The siege runs at about 0.1× real time" was the harness, not the game.** The reported symptom
+  was that the 3,440-man Carthage storm took 35 minutes of wall clock to reach t+451 once about 200
+  men were on the parapet. Measured on a real player's page with the frame loop untouched, the same
+  battle reaches **t+466 in 465.8 s — 0.999× real time** — at p50 4.5 ms and p90 8.1 ms a frame,
+  with the count on the parapet peaking at 210 and the frame time not moving when it did. The 35
+  minutes were the harness's own advance call, which rasterises sixty frames per simulated second
+  with nothing pacing them. That figure had justified a whole workstream, and the collapse was in
+  an instrument that had been read as the game.
+
+- **"The garrison is 16.1% more lethal" is real and is not a scalar.** It describes one specific
+  commit pair — the gatehouse clip, whose garrison kills go 453 → 526 over 240 s — and it was being
+  handed forward as a property of a different change entirely. Counted by faction on the escalade
+  fix, the garrison is more lethal *earlier* and less lethal *later*: **+9.2% attacker dead at
+  t+60, −6.5% at t+90.** What that fix does is start the fight on the parapet sooner and at greater
+  weight — the garrison's own dead rise 50% by t+60 — and a wall fight that begins earlier also
+  finishes earlier, which is why the last column reverses. Anyone re-baselining against a single
+  multiplier would pick a direction and be wrong half the time depending on where they sampled.
+  There is no scalar here; there is a schedule.
+
+- **"191 crossings, and all of them cavalry" was a detector that could not see a slow body.** It
+  differenced consecutive one-second samples and counted a man when he went from two metres outside
+  the wall line to two metres inside it — which is not *he crossed*, it is *he covered four metres
+  of curtain in a second*. A horse at 5 m/s does; the same horse at a quarter of that never
+  registers. So it reported **zero** crossings for the change whose entire purpose was to make
+  crossings slower, twice, and its own neighbours gave it away: the arms that reported 0 crossings
+  also reported 41-53 storm men inside the curtain. Nought and fifty-three cannot both be true.
+  Replaced with a latch — outside is set at +2 m and consumed at −2 m, so the man may take as long
+  as he likes in between — **the same twelve seeds read 824.** The owner's *"I don't know if it's
+  just horses"* was right to doubt it: pooled over twenty-four seeds the unslowed arm records 1,205
+  cavalry crossings **and 306 infantry**.
+
+- **"Twelve seeds is an arm" is false, and every twelve-seed figure this project has quoted sits
+  inside the noise.** The same tree gave **8 of 12 and 4 of 12 on two seed sets** — a band of about
+  ±20 points. The finding that stopped a correctness fix from shipping was measured inside it, and
+  was wrong in both halves: the arm was run on a tree where the ladder-foot defect was still live
+  and the attacker won 1 of 12 anyway, so the "0 of 12" it was compared against was zero against
+  one, which is not an effect. Re-measured properly the change ships, and the twenty-four-seed
+  distributions are reported with their per-seed rows rather than as a scalar: **Rome with the
+  player defending, the storming side wins 9 of 24 at a median verdict of t+851; Carthage with the
+  player storming, 15 of 24 at t+608.**
+
+- **The dial that slows a horse crossing the footing bays is not monotonic, and that is the
+  finding.** A little friction makes the attacker win **four times as often** and a lot of it stops
+  him winning at all — 1/12 at no cost, 2/12 with the nav charge, 4/12 at a middle traverse cost,
+  0/12 at the derived one. That is not noise around a trend, it is two mechanisms crossing over,
+  and the explanation is visible in the baseline: the fifty light horse who ride through bay 28 at
+  a gallop do not survive what they ride into, and their loss is what breaks the army's cohesion.
+  Slow them a little and they arrive as a body; slow them a lot and they never arrive. Any number
+  chosen for it is a balance decision with a non-obvious sign.
+
+- **The ram's pinned 26-blow schedule is one seed's, and that seed's battle was already over.** The
+  instrument the schedule was pinned from defaults to seed 4265438264, and on that seed the
+  attacker wins the objective at **t+134** — so every figure after that is read off a tableau in
+  which the arbiter has already put every standing attacking unit on Hold and the garrison is
+  shooting a stationary machine. Measured over twelve seeds instead, the blows the machine lands
+  are **0, 3, 3, 9, 19, 20, 21, 22, 23, 23, 25, 26**, median 20.5, and the gate opens on one seed
+  of twelve. The count is the crew's rout time minus 100, over 4.4, to within one blow on every
+  row: the machine arrives at t+100 and swings every 4.4 s until the gang breaks, so the whole
+  mechanic is a stopwatch on the crew's life. **26 is the top of a distribution, not a schedule.**
+  A one-line change to the shed's cover multiplier restores it, and was declined for that reason
+  and for a second: **forcing the Porta Flaminia open at t+229 on two live seeds and leaving it
+  open for the remaining 670 s moves not one number** — men ever inside 60 → 60 and 99 → 99, peak
+  inside 42 → 42, same verdict, nine host units still holding at t+897. The prize is empty; the
+  constants upstream of the gate are decoration until the host moves.
+
+  **And 26 was never a property of the ram in the first place.** Bisecting the two blows the
+  machine lost during this release lands on the gatehouse clip above, and it is a consequence
+  rather than a defect: the 22 men that clip took out of the gatehouse and re-laid on real stone
+  are men who can now shoot, and attributing damage at its source shows **one ballista unit putting
+  933 → 1,694 points into the ram crew at the same 19-36 m** — 82% more, same unit, same range. So
+  the cover multiplier was sized against a garrison in which a fifth of the gate bay was shooting
+  into its own gatehouse. The 26 blows was the difference between two systems, one of which was
+  wrong.
+
+  **On Carthage the same machine takes zero damage and opens the Porta Byrsae on schedule every
+  time**, so the multiplier multiplies nothing there and the question "does protecting the ram crew
+  pay?" has no answer on that map: the nearest troops to it are levy at 29 m with a 30 m javelin,
+  and the freedmen's 168 m slings stand at 113-158 m. Reversing the two words that order Carthage's
+  wall plan does start the crew dying — 1,599 points and three men by t+100 — and loses the wall:
+  over 24 seeds the storming player goes from **15 of 24 wins to 21**, and Carthage's own rout rate
+  from **1 to 11**, because the towers and ladders are aimed at the same bays and now land on
+  slingers instead of on the levy. Two jobs want different troops on the same bays, and a flat list
+  fanned outward from the gate cannot say that.
+
+- **A commit in this range turned a movement change on, wrote its five new hashes into its own
+  message, and did not commit the baseline file** — so the gate built to stop unannounced movement
+  had been failing on `main` from that commit until the release. It is recorded here deliberately
+  rather than quietly re-pinned, with the note saying whose movement it is, because quietly
+  re-pinning a baseline to whatever the code does today is exactly how the *previous* unannounced
+  movement went unnoticed. Both determinism arms are bit-identical across the rest of the branch.
+
+- **The instruments that photographed this release's work were wrong three times, and each was
+  caught by something outside itself.** The escalade camera was cut looking down the length of the
+  curtain — and the three rails of a ladder bank are planted 6.88 m apart *along* the wall, so that
+  view stacked them one behind another and foreshortened the entire defect away; a camera that
+  cannot show a defect is not evidence of its absence. The crossing camera resolved to the one hole
+  nobody uses, twice, and reported success both times: it wanted the footing bay with the most
+  mounted men within 45 m, and by the second the shot is timed for the squadron is already 60 m
+  past the bay it came through, so nothing qualified and the fallback took the first bay on the
+  circuit — the one the nav grid refuses on slope and no unit has crossed in 48 measured battles.
+  And the wall prober had been **measuring the ditch**: once r6 actually cut it, the rays that
+  start 12-16 m outside Carthage's wall start inside a trench whose bed is six metres down, so they
+  flew clean under the plinth and out the far side. On `main`, before any of this branch existed,
+  that probe was reporting **seventeen stretches of standing tufa as invisible wall**, and calling
+  two gates mesh-clear at every height in the same run that had their obstacle boxes stopping a man
+  at 11.25 m. It had been sitting green.
+
+  Two more of the same shape, one in a gate suite and one in this project's own release procedure.
+  Carthage's wall assertions had an arm that **was passing because it had nothing left to test** —
+  it walks the gate list and skips anything shut, so with the eight posterns shut alongside the
+  three gates there was no gate left for it to look at, and its population was empty by
+  construction rather than by measurement. It prints the population it was taken over now, and says
+  *"vacuous by construction"* when that is zero. And `docs/RELEASING.md`'s own live-boot step taught
+  the bug that made all three maps report dead with zero page errors and zero console errors while
+  cutting r6: it omitted `&menu=0`, so the page sits at the menu where `ready` never flips, and it
+  read the simulation clock as a property when it is a function, which returns `undefined` and
+  looks exactly like a dead app. Both are named in the step now.
+
+- **Two counts in the grading tools disagreed with the code and with each other**, and both are now
+  single-sourced. The picture-statistics helper opens with the word *six*, then lists eight names,
+  then returns eight; the key list is exported and the header quotes its length. And the blind
+  deck's leaks were *eight* in one file and *seven* in another — the seven are the **closed** ones,
+  and the eighth, recovered past the JPEG pad, sorts a deck at 0.850 balanced accuracy and
+  **cannot be closed by the harness**. The register now carries all eight with a status each: six
+  refused by a gate, one mitigated by construction with no gate behind it, one open. That third
+  status is the one prose kept losing.
+
+- **A published list of nineteen broken tool call sites contained eight that were never broken.**
+  The real count at the branch point is **nine**, counted two independent ways by two scanners
+  sharing no code, and the eight non-bugs were passing three arguments correctly all along. A
+  checker wrong in the safe direction is still a checker that is wrong, and a list of nineteen with
+  eight non-bugs in it teaches the next reader to distrust the other eleven. The same pass found
+  that a bare screenshot run had been shooting **32 frames, fourteen of which nobody asked for** —
+  a prefix test on `ab-` does not exclude `ab2-`, because the third character is a digit — and that
+  the guard written to stop *that* recurring would itself have refused the tree the moment two
+  ordinary shots shared a topic prefix, killing every invocation of the harness before it did
+  anything, including `--list`. Caught only by merging `main` before reporting.
+
+- **`Engine.dispose()` still has no caller anywhere in `src` or `tools`**, because map switching
+  goes through a page reload. Both of r6's dispose-leak fixes are therefore correctness in a method
+  the application never reaches, and this entry exists because that is the larger finding and it
+  has now survived two releases unacted on.
+
+- **`shoot.mjs` labels a frame with `git rev-parse HEAD:src`**, so any frame taken with an
+  uncommitted edit in the tree is stamped with the *previous* commit's hash. That is how a postern
+  repaint looked as though it had not happened: the frames always held the repainted leaf and only
+  their provenance said otherwise, settled by reading the colours off the baked chunk instead of
+  the picture. Not fixed, deliberately — that field is what the blind-comparison tool matches
+  passes on, and changing how it is computed would invalidate every stored report in every other
+  agent's deck.
+
+---
+
 ## r6 — the ram gets the roof it was drawn with, and the siege says what winning is
 
 **19 August 2026** · commit [`6698e19`](https://github.com/eoinest/Total-Claude/commit/6698e19) ·
-deployment `total-claude-hl505rhbj` · **live now**
+deployment `total-claude-hl505rhbj`
 
 A siege release, in two halves that keep turning out to be the same half. The siege train can be
 aimed now — the player picks the gate and the bay, the cursor names the order before the click, and
