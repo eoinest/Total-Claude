@@ -1,0 +1,92 @@
+{
+  "default": {
+    "note": "The shipped field battle: Campus Martius, ultra order of battle, quality=high, 8,632 men. Recorded at 88a4aa5. Re-record only in the same commit as the change that moved it.",
+    "checkpoints": {
+      "0": {
+        "hash": "0fa6e702",
+        "count": 8632,
+        "alive": 8632
+      },
+      "30": {
+        "hash": "c6ef8d38",
+        "count": 8632,
+        "alive": 8632
+      },
+      "90": {
+        "hash": "02c1ae6e",
+        "count": 8632,
+        "alive": 8316
+      },
+      "150": {
+        "hash": "e4489ef0",
+        "count": 8632,
+        "alive": 7459
+      },
+      "200": {
+        "hash": "be60dea6",
+        "count": 8632,
+        "alive": 6623
+      }
+    }
+  },
+  "map=campus-martius&scenario=assault": {
+    "note": "Rome's assault. quality=high, which is the same battle as ultra here -- both fit 3,074 men and 933 of Rome, so fittedUnitScale does not bite until medium. Recorded at 88a4aa5, which is NOT the r6 battle: 89e7a44 moved it (ram 26 blows -> 24), b273e5b moved it again (-> 12) and 8b8eb1f moved it back (-> 23). None of those three was announced. This entry is pinned to stop a fourth, not to bless the current numbers -- the balance question is open, see docs/tech/SIEGE.md 5.1. Re-record only in the same commit as the change that moved it.",
+    "checkpoints": {
+      "0": {
+        "hash": "22bb3df8",
+        "count": 3074,
+        "alive": 3074
+      },
+      "30": {
+        "hash": "8876e4c8",
+        "count": 3074,
+        "alive": 2986
+      },
+      "90": {
+        "hash": "1fa41318",
+        "count": 3074,
+        "alive": 2563
+      },
+      "150": {
+        "hash": "240b4bb8",
+        "count": 3074,
+        "alive": 2361
+      },
+      "200": {
+        "hash": "941a3c1c",
+        "count": 3074,
+        "alive": 2182
+      }
+    }
+  },
+  "map=carthage&scenario=assault": {
+    "note": "Carthage's assault, quality=high. Recorded at 88a4aa5. The five hashes in this tool's own header comment (ebf383b0 d021b848 8106e2b2 b4fc645e cbfa61c0) are an earlier tree and are the reason prose is not a baseline. Re-record only in the same commit as the change that moved it.",
+    "checkpoints": {
+      "0": {
+        "hash": "dbdd3a70",
+        "count": 3440,
+        "alive": 3440
+      },
+      "30": {
+        "hash": "70f1c93e",
+        "count": 3440,
+        "alive": 3373
+      },
+      "90": {
+        "hash": "bb7637c6",
+        "count": 3440,
+        "alive": 2968
+      },
+      "150": {
+        "hash": "dea3387f",
+        "count": 3440,
+        "alive": 2857
+      },
+      "200": {
+        "hash": "a4738c36",
+        "count": 3440,
+        "alive": 2851
+      }
+    }
+  }
+}

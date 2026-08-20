@@ -988,6 +988,161 @@ that cannot open a gate is a scenario that no longer has a second way in.
 Neither figure has been "fixed" here. The table above is left as it was written so the drift
 stays legible; this note records what the instrument actually reports.
 
+### The first movement, bisected: `89e7a44`, and it is one line
+
+`git bisect` over the 40 commits of `6698e19..d128adf`, with `tools/scratch/so-ramline.mjs`
+as the test (good = 26 gate blows *and* `open=true`; the 166 ms stepping idiom held constant
+across every step, because `advance(dt, 166)` is a different battle from
+`advance(dt, 1000/60)` and a bisect that varies it measures the harness):
+
+```
+6698e19  good  26 blows  open  gate 0%      c6d5544  good  26 blows  open
+3ff6d41  good  26 blows  open              7dfe072  bad   24 blows  8% hp
+89e7a44  bad   24 blows  8% hp             8f26f7f  bad   24 blows  8% hp
+first bad commit: 89e7a44
+```
+
+**The tier was constant, and the tier is not the story.** `so-ramline.mjs` pins
+`quality=high` in its own URL, so every bisect step and every control below ran at one tier —
+which matters, because `fittedUnitScale` makes each tier a different order of battle rather
+than a quality slider. Re-measured explicitly, because "the pinned figure may simply never
+have been true at the tier the game is played at" is the right question to ask:
+
+| Rome's assault | pool | Rome alive at t+300 | blows | gate |
+|---|---|---|---|---|
+| `6698e19`, `quality=high` | 3,074 | 933 | 26 | open t+220 |
+| `6698e19`, `quality=ultra` | 3,074 | 933 | 26 | open t+220 |
+| `3ff6d41`, `quality=ultra` | 3,074 | 933 | 26 | open t+220 |
+| `89e7a44`, `quality=ultra` | 3,074 | 1,014 | **24** | 8 % hp |
+
+**`high` and `ultra` are the same battle here** — 3,074 men fits under both caps (10,000 and
+12,000), and the two arms agree line for line — so `high` is a faithful proxy for the tier the
+game ships at, and the boundary lands on the same commit at both. The ram did *not* already
+fail at ultra at r6. `medium` and `low` genuinely are different scenarios and their numbers
+are not comparable with these; the `quality=low` column in the table at the top of §5.1 is
+labelled as such for that reason.
+
+At the boundary, same probe, same port, same idiom, `quality=high`:
+
+| | `3ff6d41` (parent) | `89e7a44` |
+|---|---|---|
+| crew at t+80 / t+100 | 31 / 30 | 27 / **23** |
+| blows at t+200 | 22 | 22 |
+| t+220 | `withdrawing`, 26 blows, gate **open**, crew 25 | `battering`, 24 blows, 8 % hp, crew **7 ROUT** |
+| t+260 | `spent`, crew 8 | `wreck` |
+
+**Of the four seam fixes in `89e7a44`, exactly one reaches the simulation, and it is the
+gatehouse station clip.** Two controls, both run at one commit so nothing else can vary:
+
+- *Negative* — at `89e7a44`, with `insideBlock` forced to `return false` (the pre-fix
+  behaviour, everything else the commit did left in place): **26 blows, gate open at t+220,
+  crew 25 → 22 → 8**, digit for digit the `6698e19` line. So the audio `ProjectileFeed`, the
+  `WaterSurface` ordering fixes and the `src/core/seams.ts` boot check are all sim-inert.
+- *Positive* — at `3ff6d41`, with nothing applied but `insideBlock` reading the block's own
+  `dx/dz/nx/nz/halfRun/halfDepth` frame: **24 blows, gate never opens, 8 % hp.**
+
+**It is a consequence, not a defect.** The mechanism, measured with
+`tools/scratch/so-ramkill.mjs` at `89e7a44` with the clip on and off — same commit, same
+seed, same stepping, damage attributed at `BattleSystem.damage` rather than sampled:
+
+| to the ram crew, by t+140 | clip off | clip on |
+|---|---|---|
+| crew at t+100 | 30 | 23 |
+| crew deaths | 2 | 9 |
+| damage from `ballistarii#0` | 933 | **1,694** |
+| damage from `ballistarii#1` | 583 | 559 |
+| killer's range | 19–26 m | 22–36 m |
+
+One unit, at the same range, landing 82 % more damage; its opposite number across the gate
+unchanged. That is the signature of men who were standing *inside* the gatehouse — `walkY`
+35.75 with the crown at 42.324, 6.574 m of masonry over their heads and the curtain cut out
+from under their feet by `curtainSpans` — being re-laid on stone they can shoot from. The
+clip is also geometrically sound: it removes stations within `halfRun` = `GATE_BLOCK_W/2` =
+12.5 m of the gate axis, against a curtain that is absent over `GATE_CLIP_HALF` = 12.2 m, so
+it over-clips by 0.3 m a side — under half a `STATION_PITCH` — and the 25 m gap it leaves
+correctly severs bay 19's run at the `STATION_PITCH * 1.9` test, because there is no crown
+run to walk across yet.
+
+So `RAM_SHED_COVER = 0.12` was sized at `64dfb88` against a garrison in which a fifth of the
+gate bay was firing into its own gatehouse. **The ram's 26 blows was never a property of the
+ram; it was the difference between two systems, one of which was wrong.** Removing the
+compensating error left the ram two blows short, and then `releaseBrokenCrews` drops the
+broken gang from `owned`, `applyShedCover` puts `missileTaken` back from 0.12 to 1, and the
+remnant goes 21 → 7 in twenty seconds standing in the carriageway.
+
+> **The "16.1 % more lethal" figure has a source and it is being misused.** It is
+> `89e7a44`'s own before/after — garrison kills over 240 s on Rome at seed 4265438264,
+> **453 → 526** — restated at `docs/HANDOFF.md:1787` and `docs/video/SHOTLIST.md:263`. It
+> describes `3ff6d41 → 89e7a44`. `58ea126` could not reproduce it because it measured a
+> different delta: the *escalade* fix's own before/after, on which the sign reverses with
+> sample time. Both measurements are right about different changes. Neither is a scalar to
+> re-baseline on.
+
+### What it would take to land 26 blows again — priced, not done
+
+Measured with `tools/scratch/so-ramline.mjs` at `quality=high`, one arm each. Main moved twice
+more while this was being written, which is itself the finding:
+
+| main at | `RAM_SHED_COVER` | blows | gate | crew |
+|---|---|---|---|---|
+| `45dd19c` | 0.12 | 12 | 54 % hp | routs t+160 |
+| `45dd19c` | **0.08** | **26** | **open at t+220** | routs t+260, wreck by t+300 |
+| `88a4aa5` (after `8b8eb1f`) | 0.12 | 23 | 12 % hp | routs t+220 |
+| `88a4aa5` | **0.08** | **26** | **open at t+220** | routs t+240, wreck by t+300 |
+
+`8b8eb1f` — "men at a wall foot cannot get clear of it" — moved the ram from 12 blows back to
+23 without anybody saying so. That is the *third* unannounced movement in this figure in two
+days, after `89e7a44` and `b273e5b`.
+
+0.08 is arithmetic before it is a measurement: restoring the damage integral the constant was
+tuned against needs `0.12 × 1516/2253 = 0.081`. One line. It buys back four of the five
+numbers this section pins — head at the leaves at t+100, 26 blows, gate open at t+220,
+withdrawn by t+260 — and not the fifth: the crew still breaks during the withdrawal and the
+machine ends a wreck, where at `6698e19` it reached `spent` with eight men. It also moves
+Rome's determinism baseline again, exactly as `64dfb88` did deliberately, and it makes the
+shed twice as strong as the `testudo` formation's own 0.16 rather than the "shade weaker"
+its stale comment still claims. **It is a balance change and it is the owner's.**
+
+The alternatives, for the same decision:
+
+- **`RECREW_RADIUS` 95 → 125** reaches the `juthungi-warband` at 123 m, 180 men, morale 60.
+  `recrew` sets `r.derelictFor = 0` at the moment of *assignment*, not of arrival, so
+  `DERELICT_LIMIT = 40 s` is not a walk-time deadline and the machine is not lost — but the
+  walk is ~50 s, so the gate would open around t+270 rather than t+215, and 1,080 men leave
+  the reserve. **It is blocked by a defect that has to be fixed first**: `applyShedCover` has
+  no distance test, so the instant a unit 123 m away is made the crew it gets
+  `missileTaken = 0.12` — 180 men in the open under a roof they are nowhere near. Gate the
+  cover on being at the muster (~5 lines) before widening anything.
+- **The gatehouse crown run** — the "better fix" `insideBlock`'s own comment holds a place for
+  — restores the 22 men *and* reconnects bay 19's severed walk, and makes the ram's position
+  **worse**, because those men would then have a clear crown embrasure over the machine.
+- **Neither.** With the escalade fix merged, throughput over the parapet has roughly doubled,
+  and "a ram that cannot open a gate is a scenario that no longer has a second way in" may no
+  longer be true. That is also a decision, and it is the only one that costs nothing.
+
+### And a gate, so there is no third time
+
+`tools/qa-determinism.mjs` and `qa-deploy.mjs`'s Arm 4 both compare run A with run B of the
+*same tree*. They answer "does this battle replay" and are structurally incapable of
+answering "is this the same battle as yesterday", which is why both were 28/28 green through
+all of this. The hash that would have caught `89e7a44` was already being computed, printed,
+and thrown away:
+
+| `--at=0,30`, `map=campus-martius&scenario=assault` | `3ff6d41` | `89e7a44` |
+|---|---|---|
+| t+0 | `113cd9f0` | `22bb3df8` |
+| t+30 | `308ccb88` (3010 alive) | `cbd1213e` (2990 alive) |
+
+**t+0** — before a tick has run, because the clip deletes 22 stations and the armies differ
+on the start line. The gate then caught a live one within the hour: pinned at `45dd19c` and
+re-run at `88a4aa5`, it reported t+0 `UNCHANGED` and t+30/90/150/200 `DRIFTED`
+(`20fc8f42 → 8876e4c8`, alive 2575 → 2563 at t+90), which is `8b8eb1f` — a sim fix that starts
+the armies in the same places and fights the battle differently. `tools/determinism-baseline.json` now pins run A's marks per battle and
+`qa-determinism.mjs` asserts against them; `--record` moves a pin, and the whole point is
+that moving one costs a sentence in a commit message. Rome's assault entry is pinned at
+`88a4aa5` — the *regressed* battle — and says so, because pinning it stops drift and does not
+bless it. The table at the top of §5.1 is deliberately still un-re-pinned.
+
 ### 5.2 The pattern, and three more of it
 
 The shape is: **the art asserts a property the simulation does not implement, and every

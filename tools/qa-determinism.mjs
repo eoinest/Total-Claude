@@ -11,8 +11,9 @@
  * first differing soldier index and the field that differs, which is what actually
  * localises the culprit.
  *
- * Usage: node tools/qa-determinism.mjs [--port=5226] [--until=200] [--json=path]
+ * Usage: node tools/qa-determinism.mjs [--port=5226] [--at=0,30,90,150,200] [--json=path]
  *                                       [--battle=map=carthage&scenario=assault] [--render]
+ *                                       [--record]
  *
  * `--battle` appends extra query parameters, so the gate can be run against a battle other
  * than the default one. It matters now that there are two besiegeable cities: an assault
@@ -40,11 +41,38 @@
  * `advance(dt, 1000/60)`. Equal tick counts are not sufficient; how many ticks share a frame
  * reaches the simulation. Several siege probes use the 166 ms idiom and are therefore not
  * fast-forwarding the battle this file measures.
+ *
+ * ## A build compared with itself cannot see a build that changed
+ *
+ * Everything above compares run A with run B of the *same* tree, so it answers "does this
+ * battle replay" and is structurally incapable of answering "is this the same battle as
+ * yesterday". Both determinism arms have this shape — `qa-deploy.mjs`'s Arm 4 as well — and
+ * both were green through the whole of the regression that prompted this: `89e7a44` moved
+ * Rome's assault so that the ram lands 24 blows instead of 26 and the Porta Flaminia never
+ * opens, and nothing said a word. The hash that would have caught it was already being
+ * computed and printed on every run, and then thrown away.
+ *
+ * So the marks of run A are also compared against `tools/determinism-baseline.json`, keyed by
+ * battle. Measured across that boundary, with `--at=0,30`:
+ *
+ *   map=campus-martius&scenario=assault   3ff6d41 (good)   89e7a44 (bad)
+ *     t+0                                 113cd9f0         22bb3df8
+ *     t+30                                308ccb88         cbd1213e   alive 3010 -> 2990
+ *
+ * The **t+0** hash moves, which is the cheapest detection there is: the clip deletes 22
+ * garrison stations, so the armies differ before a tick has run and the gate fails in the
+ * time it takes to load two pages.
+ *
+ * A drift is not by itself a defect — a deliberate balance change moves it too, and
+ * `64dfb88` moved it on purpose and said so. The point of the file is that moving it now
+ * costs one line of `--record` and a sentence in a commit message, instead of costing nobody
+ * anything and being found six weeks later by an agent counting blows. **Re-record only in
+ * the same commit as the change that moved it, and say why in the message.**
  */
 
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -61,6 +89,20 @@ const CHECKPOINTS = (args.get('at') ?? '0,30,90,150,200').split(',').map(Number)
 const EXTRA = args.get('battle') ? `&${args.get('battle')}` : '';
 /** Rasterise the fast-forward. Off by default; see the note at the top of this file. */
 const RENDER = args.get('render') === 'true';
+/** Overwrite this battle's entry in the baseline instead of asserting against it. */
+const RECORD = args.get('record') === 'true';
+
+/**
+ * The battle, as a stable key.
+ *
+ * The pairs are sorted so `scenario=assault&map=carthage` and `map=carthage&scenario=assault`
+ * are one entry rather than two, and the default battle is spelled `default` rather than the
+ * empty string so the file reads.
+ */
+const BATTLE_KEY = args.get('battle')
+  ? args.get('battle').split('&').map((s) => s.trim()).filter(Boolean).sort().join('&')
+  : 'default';
+const BASELINE_PATH = path.resolve(ROOT, 'tools/determinism-baseline.json');
 
 const waitForServer = async (url, ms) => {
   const end = Date.now() + ms;
@@ -196,6 +238,64 @@ if (diffs.length) {
   for (const d of bad) console.log(`    soldier ${String(d.i).padStart(5)} (unit ${d.unitId}): ${d.fields.join('; ')}`);
 }
 
+// ---------------------------------------------------------------------------
+// The battle has not changed since it was last recorded
+// ---------------------------------------------------------------------------
+/*
+ * Run A only. B is already known to agree with it bit for bit, or the run has failed above,
+ * and comparing both against the file would report one drift twice.
+ */
+let baseline = {};
+try { baseline = JSON.parse(await readFile(BASELINE_PATH, 'utf8')); }
+catch { /* first run in a tree that has none */ }
+
+if (RECORD) {
+  baseline[BATTLE_KEY] = {
+    note: baseline[BATTLE_KEY]?.note
+      ?? 'Recorded from run A. Re-record only in the same commit as the change that moved it.',
+    checkpoints: Object.fromEntries(
+      A.marks.map((m) => [String(m.at), { hash: m.hash, count: m.count, alive: m.alive }])
+    ),
+  };
+  const ordered = Object.fromEntries(Object.keys(baseline).sort().map((k) => [k, baseline[k]]));
+  await writeFile(BASELINE_PATH, `${JSON.stringify(ordered, null, 2)}\n`);
+  console.log(`\n• recorded ${A.marks.length} checkpoints for '${BATTLE_KEY}' in tools/determinism-baseline.json`);
+} else {
+  const pinned = baseline[BATTLE_KEY]?.checkpoints ?? null;
+  console.log(`\n--- against tools/determinism-baseline.json ['${BATTLE_KEY}'] ---`);
+  if (!pinned) {
+    /*
+     * Not a failure. A new `--battle` arm has no entry until somebody records one, and
+     * failing here would break every agent who tries a battle nobody has pinned yet. It is
+     * printed loudly instead, because a silent "no baseline" is the same hole this closes.
+     */
+    console.log(`  no baseline for this battle. Record one with:`);
+    console.log(`    node tools/qa-determinism.mjs --record`
+      + (args.get('battle') ? ` --battle='${args.get('battle')}'` : '')
+      + ` --at=${CHECKPOINTS.join(',')}`);
+  } else {
+    let compared = 0;
+    for (const m of A.marks) {
+      const want = pinned[String(m.at)];
+      if (!want) continue;
+      compared++;
+      const same = want.hash === m.hash && want.count === m.count && want.alive === m.alive;
+      console.log(`  t+${String(m.at).padStart(3)}  pinned ${want.hash} (${want.alive}/${want.count})   `
+        + `now ${m.hash} (${m.alive}/${m.count})   ${same ? 'UNCHANGED' : 'DRIFTED'}`);
+      if (!same) failed++;
+    }
+    if (compared === 0) {
+      console.log(`  no checkpoint in --at=${CHECKPOINTS.join(',')} is pinned for this battle`);
+    } else if (failed) {
+      console.log('\n  The battle is not the one that was pinned. That is a finding, not necessarily');
+      console.log('  a fault: if you moved it on purpose, re-record in the same commit and say why.');
+      console.log(`    node tools/qa-determinism.mjs --record`
+        + (args.get('battle') ? ` --battle='${args.get('battle')}'` : '')
+        + ` --at=${CHECKPOINTS.join(',')}`);
+    }
+  }
+}
+
 const errors = [...new Set([...A.errors, ...B.errors])];
 if (errors.length) {
   console.log(`\n${errors.length} console error(s):`);
@@ -206,6 +306,6 @@ if (JSON_OUT) await writeFile(path.resolve(ROOT, JSON_OUT), JSON.stringify({ A: 
 await browser.close();
 if (server) server.kill('SIGTERM');
 console.log(failed
-  ? `\n✗ determinism BROKEN at ${failed}/${CHECKPOINTS.length} checkpoints (${A.marks.at(-1).count} soldiers)`
-  : `\n✓ deterministic across ${CHECKPOINTS.length} checkpoints at ${A.marks.at(-1).count} soldiers`);
+  ? `\n✗ ${failed} failing check(s) across ${CHECKPOINTS.length} checkpoints (${A.marks.at(-1).count} soldiers)`
+  : `\n✓ deterministic and unchanged across ${CHECKPOINTS.length} checkpoints at ${A.marks.at(-1).count} soldiers`);
 process.exit(failed ? 1 : 0);
