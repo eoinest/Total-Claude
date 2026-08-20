@@ -2664,10 +2664,27 @@ export class Siege implements ElevationOwner {
    * there", because "you cannot do that with this machine" is a different sentence from "you
    * are not pointing at anything".
    *
-   * An **open** gate is not a target either. Carthage publishes its eight posterns as gates
-   * that are already open — that is the mechanism by which a casemate wall is a wall you can
-   * walk through — and a ram sent to break a hole that is already a hole would land
-   * twenty-six blows and change nothing.
+   * An **open** gate is not a target either: a ram sent to break a hole that is already a
+   * hole would land twenty-six blows and change nothing. That is now the only thing the
+   * `g.open` skip in `gateNear` is for — a gate this ram or another has already broken, or
+   * one the defender opened to sally. It used to also exclude Carthage's eight posterns,
+   * which were published open; since `385474f` they are hung with doors and shut at build.
+   *
+   * **So a shut postern is a valid light-ram target, and that is deliberate.** It arrived
+   * implicitly with the doors and is kept on three grounds. A sally door is a door and a ram
+   * is the machine that breaks doors, so refusing it would be arbitrary. Refusing it would
+   * also have to be written as a test on the id or the name, and a literal gate id in this
+   * decision is the exact mistake that made the breach a no-op on Carthage for a whole
+   * workstream (`7e72785`) — `gateNear` reads `getGates()` uniformly and must keep doing so.
+   * And a postern a ram can open is one more way into a city that is measurably short of
+   * them: see this workstream's report, where the shipped Rome assault opens its great gate
+   * and sends nobody through it.
+   *
+   * The cost is that `GATE_PICK_R` is 55 m and `postern-30` stands 52.5 m from the Porta
+   * Byrsae, so a click about 26 m off the great gate's axis resolves to the postern instead.
+   * That margin is *visible* rather than silent: `SiegeOrders` builds its hint from
+   * `gateName(o.gateId)`, so the cursor reads "Break the Postern 30" or "Break the Porta
+   * Byrsae" before the player commits. Measured by hand rather than assumed — `gw-postern`.
    */
   private resolveRamOrder(r: SiegeRam, x: number, z: number): SiegeMachineOrder {
     const great = r.kind === RamKind.Great;
