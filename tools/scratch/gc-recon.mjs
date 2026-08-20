@@ -14,6 +14,13 @@ const args = new Map(process.argv.slice(2).map((a) => {
 const PORT = Number(args.get('port') ?? 5344);
 const TO = Number(args.get('to') ?? 260);
 const Q = args.get('quality') ?? 'ultra';
+/*
+ * `--noaudio` clears `AudioEngine.ready`, which makes its `preRender` return on its first
+ * line — every listener update, cluster flush, bed and siege poll included. Run the same
+ * timeline with and without it: if the two are tick-for-tick identical, nothing the audio
+ * subsystem does can be reaching the simulation, which is the claim the siege watch rests on.
+ */
+const NOAUDIO = args.has('noaudio');
 const base = `http://127.0.0.1:${PORT}`;
 
 const browser = await chromium.launch({
@@ -28,10 +35,15 @@ page.on('console', (m) => { if (m.type() === 'error') errs.push(`console: ${m.te
 await page.goto(`${base}/?harness=1&quality=${Q}&w=960&h=540&map=campus-martius&scenario=assault`,
   { waitUntil: 'domcontentloaded', timeout: 90000 });
 await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 420000 });
-await page.evaluate(() => {
+await page.evaluate((off) => {
   window.__game.engine.stop();
   window.__game.engine.renderOverride = () => {};
-});
+  const a = window.__game.engine.context.tryGet('audio');
+  if (!a) throw new Error('no audio subsystem registered');
+  if (off) a.ready = false;
+  return a.ready;
+}, NOAUDIO);
+console.log(`  audio: ${NOAUDIO ? 'DISABLED (ready=false)' : 'live'}`);
 
 const out = await page.evaluate((to) => {
   const g = window.__game;

@@ -105,6 +105,18 @@ const HITS_FULL = 180;
  * would be 60 Hz of garbage for a transition that happens twice a battle.
  */
 const SIEGE_DT = 1 / 20;
+/**
+ * Polls a structural cue is retried for if it loses the voice race. 12 is 0.6 s.
+ *
+ * Not defensive padding. `tools/qa-audio.mjs` measures a heavy assault culling **14,579**
+ * one-shots against 6,251 started, at 44.5 of 48 voices sustained — so "the mixer had no
+ * slot" is the ordinary case in this game, not the exceptional one. A melee blow that is
+ * culled costs nothing, which is the entire design of the cluster grid; a gate collapse that
+ * is culled is the climax of the product going silent, and the transition is a one-shot edge
+ * that will never come round again. `Mixer.play` already returns false rather than throwing,
+ * so all that was missing was somebody reading it.
+ */
+const SIEGE_RETRY = 12;
 
 const MELEE_SOUND: Record<string, string> = {
   flesh: 'hit_flesh',
@@ -225,6 +237,8 @@ export interface BattleAudioStats {
   siegeCues: number;
   /** The last one it fired, so a probe can name the beat it measured. */
   lastSiegeCue: string;
+  /** Times one lost the voice race and had to be requeued. Should be rare; never silent. */
+  siegeCulled: number;
 }
 
 export class BattleAudio {
@@ -282,6 +296,9 @@ export class BattleAudio {
   private baysDown = new Set<number>();
   private siegeCues = 0;
   private lastSiegeCue = '';
+  private siegeCulled = 0;
+  private pendingCues: Array<{ id: string; x: number; y: number; z: number;
+    gain: number; priority: number; tries: number }> = [];
 
   constructor(
     private readonly mixer: Mixer,
@@ -317,6 +334,7 @@ export class BattleAudio {
     this.towerPhase.clear();
     this.ramWrecked.clear();
     this.baysDown.clear();
+    this.pendingCues.length = 0;
     this.gateBreachedSeen = false;
   }
 
@@ -864,6 +882,14 @@ export class BattleAudio {
     const first = !this.siegePrimed;
     this.siegePrimed = true;
 
+    // Anything the mixer had no room for last tick, before anything new is asked for.
+    for (let i = this.pendingCues.length - 1; i >= 0; i--) {
+      const q = this.pendingCues[i];
+      if (this.fire(q.id, q.x, q.y, q.z, q.gain, q.priority) || ++q.tries >= SIEGE_RETRY) {
+        this.pendingCues.splice(i, 1);
+      }
+    }
+
     // ---- the gate ---------------------------------------------------------
     const gate = s.gateReport();
     let gateFired = false;
@@ -964,9 +990,18 @@ export class BattleAudio {
    * is per id, so two gates cannot double-trigger on one poll.
    */
   private siegeCue(id: string, x: number, y: number, z: number, gain: number, priority: number): void {
-    if (!this.mixer.play(id, { x, y, z, gain, bus: 'combat', aggregate: true, priority }, 0.25)) return;
+    if (this.fire(id, x, y, z, gain, priority)) return;
+    // Lost the voice race. Queue it — see `SIEGE_RETRY`. Four deep, because five structural
+    // events inside six hundred milliseconds is not a mix problem, it is a different bug.
+    this.siegeCulled++;
+    if (this.pendingCues.length < 4) this.pendingCues.push({ id, x, y, z, gain, priority, tries: 0 });
+  }
+
+  private fire(id: string, x: number, y: number, z: number, gain: number, priority: number): boolean {
+    if (!this.mixer.play(id, { x, y, z, gain, bus: 'combat', aggregate: true, priority }, 0.25)) return false;
     this.siegeCues++;
     this.lastSiegeCue = id;
+    return true;
   }
 
   /** A cheap advancing hash so successive steps pick different variants. */
@@ -1078,6 +1113,7 @@ export class BattleAudio {
       beds,
       siegeCues: this.siegeCues,
       lastSiegeCue: this.lastSiegeCue,
+      siegeCulled: this.siegeCulled,
     };
   }
 

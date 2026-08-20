@@ -128,6 +128,7 @@ const PAGE = async (workletSrc) => {
       open: r.open, breached: r.breached, blows: r.blows,
       broken: r.gates.filter((x) => x.broken).length,
       cues: st ? st.siegeCues : -1, last: st ? st.lastSiegeCue : '',
+      culled: st ? st.siegeCulled : -1,
       wrecks: rams.filter((m) => m.wreck).length,
       bays: siege.breachReport().bays.length,
       towers: siege.towerReport().map((x) => x.state).join(','),
@@ -353,7 +354,7 @@ for (const [t0, t1] of WINDOWS) {
   const bay0 = f.length ? f[0].bays : 0;
   const bayAt = firstChange((r) => r.bays > bay0);
 
-  const line = (label, r) => console.log(`    ${label.padEnd(22)} ${r ? `sim t+${r.t}  tap ${r.ct.toFixed(3)} s  (cues=${r.cues} last=${r.last || '—'})` : '— never in this window'}`);
+  const line = (label, r) => console.log(`    ${label.padEnd(22)} ${r ? `sim t+${r.t}  tap ${r.ct.toFixed(3)} s  (cues=${r.cues} culled=${r.culled} last=${r.last || '—'})` : '— never in this window'}`);
   console.log(`  pacing: wall ${(run.wallMs / 1000).toFixed(1)} s for ${(t1 - t0).toFixed(0)} s  maxLag ${run.maxLag} ms  frames>8ms late ${run.behind}`);
   line('gate open -> true', openAt);
   line('gate broken -> true', brokenAt);
