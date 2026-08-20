@@ -99,35 +99,38 @@ export const ROUGH_SLOPE_IMPASSABLE = 0.62;
 export const ROUGH_SLOPE_COST_K = 5.0;
 
 /**
- * Does standing work slow a body that crosses it? **Off, and off is a measurement.**
+ * Does standing work slow a body that crosses it? **Yes — and the number that says so is
+ * the third one this question got, because the first two were measured wrong.**
  *
- * The nav raster's half of this is a correctness fix and is always on: charging nothing to
- * cross 6.8 m of concrete was simply wrong, and putting it right does not touch the balance
- * of the battle. Measured over twelve seeds it does not even reduce the traffic — 824
- * crossings become 928 — and the attacker's win rate goes from 1 of 12 to 2 of 12.
+ * Pooled over 24 seeds an arm, all at `4a1fab1` or `4a1fab1` plus this workstream:
  *
- * The integrator's half is different, and the difference is the whole reason this flag
- * exists. There is exactly one magnitude available that is not invented — the grid's own
- * rule for sloping ground, which on bay 28 gives 4.41 — and applied to movement it takes
- * the assault to **0 of 12**:
+ *     arm                    Juthungi wins   rider crossings   warband   rider s   warband s
+ *     base                       12 / 24            1205          306      4.5       11.3
+ *     nav charge only             8 / 24            1210          140      5.0       10.2
+ *     nav charge + drag 4.41     13 / 24            1281           51     11.0       10.5
  *
- *     arm                       Juthungi wins   crossings   rider s   warband s
- *     baseline                        1 / 12         824       9.8        8.4
- *     nav cost only                   2 / 12         928       5.6       16.9
- *     nav cost + drag 4.41x           0 / 12         719      11.3       24.1
+ * The drag does what it was asked to do and nothing it was not. A horse takes **11.0 s to
+ * cross the half-built rampart against 4.5** — two and a half times as long, in the open,
+ * at the foot of a wall — and men on foot are cut by 83 %. The bays stay open: there are
+ * *more* rider crossings with it on than without it, because they are no longer through in
+ * one bound. That is the difference between costing a crossing and forbidding one.
  *
- * It is doing what it was asked to do — infantry crossings fall 61 % and take three times
- * as long — and the side effect is that the three bays stop being a way in. Those bays are
- * deliberate, they are historically right, and they are the attacker's only winning route,
- * so making the battle unlosable is not a call this module gets to make. The mechanism is
- * kept, tested and one word from working; the number is the owner's.
+ * **No arm differs significantly from any other on outcomes** — 12, 8 and 13 of 24, every
+ * pairwise Fisher p >= 0.24. So this is not a balance change of resolvable size, and the
+ * one reason to withhold it has been measured and refused.
  *
- * Turning it on costs nothing while it is off: `BattleSystem` never publishes a rough set,
- * `ObstacleField.noRough` stays true, and the per-man multiplier array stays all ones.
+ * That reason was mine and it was wrong twice over. I first reported the drag taking the
+ * assault to 0 of 12 and gated it off on that basis. Both halves were bad measurement: the
+ * crossing counter could not see a body moving slower than 4 m/s (see `roughDrag`), and the
+ * arm was run at `d128adf`, where the escalade was broken and the attacker won 1 of 12
+ * anyway — 0 against 1 is not an effect. A twelve-seed arm of this battle has a noise band
+ * near +-20 points; the same tree gave 8 of 12 and 4 of 12 on two seed sets.
  *
- * `tools/probe-footing.mjs --traverse=<cost>` sweeps it without a rebuild.
+ * Off costs nothing and remains one word away: `BattleSystem` then publishes no rough set,
+ * `ObstacleField.noRough` stays true, and the per-man multiplier stays all ones.
+ * `tools/probe-footing.mjs --traverse=<cost>` sweeps the magnitude with no rebuild.
  */
-export const ROUGH_SLOWS_MOVEMENT = false;
+export const ROUGH_SLOWS_MOVEMENT = true;
 
 /**
  * What it costs to cross standing work, on the same scale `NavGrid.cost` uses.

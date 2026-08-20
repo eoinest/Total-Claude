@@ -1,0 +1,10682 @@
+{
+ "map": "campus-martius",
+ "quality": "high",
+ "runs": [
+  {
+   "seed": 4265438264,
+   "setup": {
+    "rngState": 4265438264,
+    "units": 32,
+    "strength": {
+     "0": 1154,
+     "1": 1920,
+     "2": 0
+    },
+    "storm": 1,
+    "garrison": 0
+   },
+   "series": [
+    {
+     "t": 20,
+     "stormOnWall": 0,
+     "garrisonOnWall": 810,
+     "stormInside": 0,
+     "laddersCrossed": 0,
+     "strength": {
+      "0": 1154,
+      "1": 1846,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 40,
+     "stormOnWall": 115,
+     "garrisonOnWall": 783,
+     "stormInside": 1,
+     "laddersCrossed": 145,
+     "strength": {
+      "0": 1123,
+      "1": 1807,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 60,
+     "stormOnWall": 192,
+     "garrisonOnWall": 713,
+     "stormInside": 37,
+     "laddersCrossed": 275,
+     "strength": {
+      "0": 1055,
+      "1": 1697,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 80,
+     "stormOnWall": 152,
+     "garrisonOnWall": 650,
+     "stormInside": 33,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 990,
+      "1": 1619,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 100,
+     "stormOnWall": 117,
+     "garrisonOnWall": 621,
+     "stormInside": 4,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 960,
+      "1": 1504,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 120,
+     "stormOnWall": 98,
+     "garrisonOnWall": 606,
+     "stormInside": 1,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 946,
+      "1": 1484,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 140,
+     "stormOnWall": 97,
+     "garrisonOnWall": 604,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 944,
+      "1": 1411,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 160,
+     "stormOnWall": 95,
+     "garrisonOnWall": 599,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 939,
+      "1": 1356,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 179,
+     "stormOnWall": 82,
+     "garrisonOnWall": 594,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 934,
+      "1": 1293,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 199,
+     "stormOnWall": 82,
+     "garrisonOnWall": 593,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 933,
+      "1": 1258,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 219,
+     "stormOnWall": 80,
+     "garrisonOnWall": 585,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 925,
+      "1": 1232,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 239,
+     "stormOnWall": 77,
+     "garrisonOnWall": 581,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 921,
+      "1": 1228,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 259,
+     "stormOnWall": 74,
+     "garrisonOnWall": 580,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 920,
+      "1": 1211,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 279,
+     "stormOnWall": 74,
+     "garrisonOnWall": 575,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 915,
+      "1": 1209,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 299,
+     "stormOnWall": 74,
+     "garrisonOnWall": 571,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 911,
+      "1": 1195,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 319,
+     "stormOnWall": 74,
+     "garrisonOnWall": 567,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 907,
+      "1": 1192,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 339,
+     "stormOnWall": 73,
+     "garrisonOnWall": 561,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 901,
+      "1": 1187,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 359,
+     "stormOnWall": 72,
+     "garrisonOnWall": 553,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 893,
+      "1": 1184,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 379,
+     "stormOnWall": 68,
+     "garrisonOnWall": 550,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 890,
+      "1": 1176,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 399,
+     "stormOnWall": 67,
+     "garrisonOnWall": 548,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 888,
+      "1": 1164,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 419,
+     "stormOnWall": 66,
+     "garrisonOnWall": 547,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 886,
+      "1": 1162,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 438,
+     "stormOnWall": 66,
+     "garrisonOnWall": 547,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 886,
+      "1": 1157,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 458,
+     "stormOnWall": 65,
+     "garrisonOnWall": 543,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 880,
+      "1": 1153,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 478,
+     "stormOnWall": 65,
+     "garrisonOnWall": 542,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 880,
+      "1": 1141,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 498,
+     "stormOnWall": 65,
+     "garrisonOnWall": 542,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 880,
+      "1": 1135,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 518,
+     "stormOnWall": 63,
+     "garrisonOnWall": 539,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 877,
+      "1": 1125,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 538,
+     "stormOnWall": 63,
+     "garrisonOnWall": 533,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 871,
+      "1": 1121,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 558,
+     "stormOnWall": 63,
+     "garrisonOnWall": 530,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 868,
+      "1": 1111,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 578,
+     "stormOnWall": 63,
+     "garrisonOnWall": 530,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 868,
+      "1": 1106,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 598,
+     "stormOnWall": 63,
+     "garrisonOnWall": 528,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 864,
+      "1": 1093,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 618,
+     "stormOnWall": 62,
+     "garrisonOnWall": 523,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 861,
+      "1": 1080,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 638,
+     "stormOnWall": 62,
+     "garrisonOnWall": 520,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 858,
+      "1": 1080,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 658,
+     "stormOnWall": 62,
+     "garrisonOnWall": 520,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 858,
+      "1": 1080,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 677,
+     "stormOnWall": 62,
+     "garrisonOnWall": 516,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 854,
+      "1": 1080,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 697,
+     "stormOnWall": 62,
+     "garrisonOnWall": 515,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 853,
+      "1": 1080,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 717,
+     "stormOnWall": 62,
+     "garrisonOnWall": 507,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 845,
+      "1": 1000,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 737,
+     "stormOnWall": 62,
+     "garrisonOnWall": 504,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 842,
+      "1": 1000,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 757,
+     "stormOnWall": 62,
+     "garrisonOnWall": 499,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 837,
+      "1": 1000,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 777,
+     "stormOnWall": 59,
+     "garrisonOnWall": 499,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 837,
+      "1": 997,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 797,
+     "stormOnWall": 59,
+     "garrisonOnWall": 498,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 836,
+      "1": 997,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 817,
+     "stormOnWall": 59,
+     "garrisonOnWall": 497,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 834,
+      "1": 997,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 837,
+     "stormOnWall": 59,
+     "garrisonOnWall": 490,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 828,
+      "1": 997,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 857,
+     "stormOnWall": 59,
+     "garrisonOnWall": 490,
+     "stormInside": 0,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 827,
+      "1": 997,
+      "2": 0
+     },
+     "result": {
+      "victor": 1,
+      "reason": "objective",
+      "casualties": {
+       "0": 326,
+       "1": 923
+      },
+      "survivors": {
+       "0": 828,
+       "1": 997
+      },
+      "unitsLost": {
+       "0": 2,
+       "1": 12
+      },
+      "unitsTotal": {
+       "0": 12,
+       "1": 20
+      },
+      "at": 838.3999999998948
+     }
+    }
+   ],
+   "result": {
+    "victor": 1,
+    "reason": "objective",
+    "casualties": {
+     "0": 326,
+     "1": 923
+    },
+    "survivors": {
+     "0": 828,
+     "1": 997
+    },
+    "unitsLost": {
+     "0": 2,
+     "1": 12
+    },
+    "unitsTotal": {
+     "0": 12,
+     "1": 20
+    },
+    "at": 838.3999999998948
+   },
+   "crossings": {
+    "byBay": {
+     "28": {
+      "stage": "footing",
+      "men": 49,
+      "types": {
+       "juthungi-riders": 49
+      }
+     }
+    },
+    "byType": {
+     "juthungi-riders": {
+      "men": 49,
+      "sumSecs": 487.5666693369551,
+      "n": 49,
+      "bays": {
+       "28": 49
+      },
+      "firstAt": 34.10000000000006
+     }
+    },
+    "dwell": {
+     "17": {
+      "stage": "no-parapet",
+      "manSecs": 244
+     },
+     "18": {
+      "stage": "finished",
+      "manSecs": 41
+     },
+     "23": {
+      "stage": "half-built",
+      "manSecs": 15
+     },
+     "24": {
+      "stage": "half-built",
+      "manSecs": 1927
+     },
+     "28": {
+      "stage": "footing",
+      "manSecs": 291
+     }
+    },
+    "insidePeak": {
+     "throughWall": 43,
+     "pastEast": 0,
+     "pastWest": 0
+    },
+    "footprints": {
+     "tower-assault": {
+      "unitClass": "heavy-infantry",
+      "formation": "horde",
+      "strength": 72
+     },
+     "escalade-party": {
+      "unitClass": "light-infantry",
+      "formation": "loose",
+      "strength": 96
+     },
+     "ram-crew": {
+      "unitClass": "heavy-infantry",
+      "formation": "loose",
+      "strength": 32
+     },
+     "onager": {
+      "unitClass": "artillery",
+      "formation": "line",
+      "strength": 12
+     },
+     "juthungi-warband": {
+      "unitClass": "light-infantry",
+      "formation": "loose",
+      "strength": 180
+     },
+     "juthungi-riders": {
+      "unitClass": "light-cavalry",
+      "formation": "wedge",
+      "strength": 50
+     }
+    },
+    "unitCross": [
+     {
+      "unitId": 31,
+      "typeId": "juthungi-riders",
+      "unitClass": "light-cavalry",
+      "bay": 27,
+      "stage": "gap",
+      "x": 332,
+      "at": 46,
+      "secs": 18,
+      "alive": 50,
+      "initial": 50
+     }
+    ],
+    "wMin": -631,
+    "wMax": 1144
+   },
+   "errors": [],
+   "wallMs": 49720
+  },
+  {
+   "seed": 2624906729,
+   "setup": {
+    "rngState": 2624906729,
+    "units": 32,
+    "strength": {
+     "0": 1154,
+     "1": 1920,
+     "2": 0
+    },
+    "storm": 1,
+    "garrison": 0
+   },
+   "series": [
+    {
+     "t": 20,
+     "stormOnWall": 0,
+     "garrisonOnWall": 810,
+     "stormInside": 0,
+     "laddersCrossed": 0,
+     "strength": {
+      "0": 1154,
+      "1": 1852,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 40,
+     "stormOnWall": 128,
+     "garrisonOnWall": 783,
+     "stormInside": 1,
+     "laddersCrossed": 151,
+     "strength": {
+      "0": 1120,
+      "1": 1814,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 60,
+     "stormOnWall": 249,
+     "garrisonOnWall": 710,
+     "stormInside": 40,
+     "laddersCrossed": 309,
+     "strength": {
+      "0": 1050,
+      "1": 1729,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 80,
+     "stormOnWall": 207,
+     "garrisonOnWall": 638,
+     "stormInside": 40,
+     "laddersCrossed": 313,
+     "strength": {
+      "0": 975,
+      "1": 1665,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 100,
+     "stormOnWall": 178,
+     "garrisonOnWall": 596,
+     "stormInside": 6,
+     "laddersCrossed": 313,
+     "strength": {
+      "0": 930,
+      "1": 1592,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 120,
+     "stormOnWall": 143,
+     "garrisonOnWall": 567,
+     "stormInside": 1,
+     "laddersCrossed": 313,
+     "strength": {
+      "0": 902,
+      "1": 1549,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 140,
+     "stormOnWall": 132,
+     "garrisonOnWall": 554,
+     "stormInside": 0,
+     "laddersCrossed": 313,
+     "strength": {
+      "0": 890,
+      "1": 1495,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 160,
+     "stormOnWall": 127,
+     "garrisonOnWall": 549,
+     "stormInside": 0,
+     "laddersCrossed": 313,
+     "strength": {
+      "0": 885,
+      "1": 1452,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 180,
+     "stormOnWall": 117,
+     "garrisonOnWall": 544,
+     "stormInside": 0,
+     "laddersCrossed": 313,
+     "strength": {
+      "0": 878,
+      "1": 1362,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 199,
+     "stormOnWall": 115,
+     "garrisonOnWall": 531,
+     "stormInside": 0,
+     "laddersCrossed": 313,
+     "strength": {
+      "0": 866,
+      "1": 1321,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 219,
+     "stormOnWall": 105,
+     "garrisonOnWall": 525,
+     "stormInside": 0,
+     "laddersCrossed": 313,
+     "strength": {
+      "0": 860,
+      "1": 1300,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 239,
+     "stormOnWall": 100,
+     "garrisonOnWall": 524,
+     "stormInside": 0,
+     "laddersCrossed": 313,
+     "strength": {
+      "0": 859,
+      "1": 1295,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 259,
+     "stormOnWall": 92,
+     "garrisonOnWall": 520,
+     "stormInside": 0,
+     "laddersCrossed": 313,
+     "strength": {
+      "0": 855,
+      "1": 1287,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 279,
+     "stormOnWall": 83,
+     "garrisonOnWall": 518,
+     "stormInside": 0,
+     "laddersCrossed": 313,
+     "strength": {
+      "0": 853,
+      "1": 1278,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 299,
+     "stormOnWall": 77,
+     "garrisonOnWall": 515,
+     "stormInside": 0,
+     "laddersCrossed": 313,
+     "strength": {
+      "0": 850,
+      "1": 1220,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 319,
+     "stormOnWall": 72,
+     "garrisonOnWall": 515,
+     "stormInside": 0,
+     "laddersCrossed": 313,
+     "strength": {
+      "0": 850,
+      "1": 1215,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 339,
+     "stormOnWall": 70,
+     "garrisonOnWall": 511,
+     "stormInside": 0,
+     "laddersCrossed": 313,
+     "strength": {
+      "0": 846,
+      "1": 1214,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 359,
+     "stormOnWall": 67,
+     "garrisonOnWall": 511,
+     "stormInside": 0,
+     "laddersCrossed": 313,
+     "strength": {
+      "0": 846,
+      "1": 1196,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 379,
+     "stormOnWall": 64,
+     "garrisonOnWall": 507,
+     "stormInside": 0,
+     "laddersCrossed": 313,
+     "strength": {
+      "0": 842,
+      "1": 1193,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 399,
+     "stormOnWall": 62,
+     "garrisonOnWall": 507,
+     "stormInside": 0,
+     "laddersCrossed": 313,
+     "strength": {
+      "0": 842,
+      "1": 1191,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 419,
+     "stormOnWall": 62,
+     "garrisonOnWall": 507,
+     "stormInside": 0,
+     "laddersCrossed": 313,
+     "strength": {
+      "0": 842,
+      "1": 1191,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 439,
+     "stormOnWall": 59,
+     "garrisonOnWall": 507,
+     "stormInside": 0,
+     "laddersCrossed": 313,
+     "strength": {
+      "0": 842,
+      "1": 1188,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 458,
+     "stormOnWall": 55,
+     "garrisonOnWall": 507,
+     "stormInside": 0,
+     "laddersCrossed": 313,
+     "strength": {
+      "0": 842,
+      "1": 1184,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 478,
+     "stormOnWall": 46,
+     "garrisonOnWall": 507,
+     "stormInside": 0,
+     "laddersCrossed": 313,
+     "strength": {
+      "0": 842,
+      "1": 1175,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 498,
+     "stormOnWall": 43,
+     "garrisonOnWall": 507,
+     "stormInside": 0,
+     "laddersCrossed": 313,
+     "strength": {
+      "0": 842,
+      "1": 1172,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 518,
+     "stormOnWall": 40,
+     "garrisonOnWall": 507,
+     "stormInside": 0,
+     "laddersCrossed": 313,
+     "strength": {
+      "0": 842,
+      "1": 1169,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 538,
+     "stormOnWall": 36,
+     "garrisonOnWall": 507,
+     "stormInside": 0,
+     "laddersCrossed": 313,
+     "strength": {
+      "0": 842,
+      "1": 1165,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 558,
+     "stormOnWall": 35,
+     "garrisonOnWall": 507,
+     "stormInside": 0,
+     "laddersCrossed": 313,
+     "strength": {
+      "0": 841,
+      "1": 1164,
+      "2": 0
+     },
+     "result": {
+      "victor": 0,
+      "reason": "repulsed",
+      "casualties": {
+       "0": 312,
+       "1": 756
+      },
+      "survivors": {
+       "0": 842,
+       "1": 1164
+      },
+      "unitsLost": {
+       "0": 2,
+       "1": 11
+      },
+      "unitsTotal": {
+       "0": 12,
+       "1": 20
+      },
+      "at": 553.1000000001543
+     }
+    }
+   ],
+   "result": {
+    "victor": 0,
+    "reason": "repulsed",
+    "casualties": {
+     "0": 312,
+     "1": 756
+    },
+    "survivors": {
+     "0": 842,
+     "1": 1164
+    },
+    "unitsLost": {
+     "0": 2,
+     "1": 11
+    },
+    "unitsTotal": {
+     "0": 12,
+     "1": 20
+    },
+    "at": 553.1000000001543
+   },
+   "crossings": {
+    "byBay": {
+     "28": {
+      "stage": "footing",
+      "men": 49,
+      "types": {
+       "juthungi-riders": 49
+      }
+     }
+    },
+    "byType": {
+     "juthungi-riders": {
+      "men": 49,
+      "sumSecs": 487.36669782002787,
+      "n": 49,
+      "bays": {
+       "28": 49
+      },
+      "firstAt": 34.13333333333339
+     }
+    },
+    "dwell": {
+     "17": {
+      "stage": "no-parapet",
+      "manSecs": 83
+     },
+     "23": {
+      "stage": "half-built",
+      "manSecs": 5772
+     },
+     "26": {
+      "stage": "finished",
+      "manSecs": 174
+     },
+     "28": {
+      "stage": "footing",
+      "manSecs": 287
+     }
+    },
+    "insidePeak": {
+     "throughWall": 45,
+     "pastEast": 0,
+     "pastWest": 0
+    },
+    "footprints": {
+     "tower-assault": {
+      "unitClass": "heavy-infantry",
+      "formation": "horde",
+      "strength": 72
+     },
+     "escalade-party": {
+      "unitClass": "light-infantry",
+      "formation": "loose",
+      "strength": 96
+     },
+     "ram-crew": {
+      "unitClass": "heavy-infantry",
+      "formation": "loose",
+      "strength": 32
+     },
+     "onager": {
+      "unitClass": "artillery",
+      "formation": "line",
+      "strength": 12
+     },
+     "juthungi-warband": {
+      "unitClass": "light-infantry",
+      "formation": "loose",
+      "strength": 180
+     },
+     "juthungi-riders": {
+      "unitClass": "light-cavalry",
+      "formation": "wedge",
+      "strength": 50
+     }
+    },
+    "unitCross": [
+     {
+      "unitId": 31,
+      "typeId": "juthungi-riders",
+      "unitClass": "light-cavalry",
+      "bay": 27,
+      "stage": "gap",
+      "x": 331,
+      "at": 46,
+      "secs": 18,
+      "alive": 50,
+      "initial": 50
+     }
+    ],
+    "wMin": -631,
+    "wMax": 1144
+   },
+   "errors": [],
+   "wallMs": 33635
+  },
+  {
+   "seed": 984375194,
+   "setup": {
+    "rngState": 984375194,
+    "units": 32,
+    "strength": {
+     "0": 1154,
+     "1": 1920,
+     "2": 0
+    },
+    "storm": 1,
+    "garrison": 0
+   },
+   "series": [
+    {
+     "t": 20,
+     "stormOnWall": 0,
+     "garrisonOnWall": 810,
+     "stormInside": 0,
+     "laddersCrossed": 0,
+     "strength": {
+      "0": 1154,
+      "1": 1858,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 40,
+     "stormOnWall": 119,
+     "garrisonOnWall": 784,
+     "stormInside": 2,
+     "laddersCrossed": 147,
+     "strength": {
+      "0": 1123,
+      "1": 1822,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 60,
+     "stormOnWall": 240,
+     "garrisonOnWall": 723,
+     "stormInside": 46,
+     "laddersCrossed": 312,
+     "strength": {
+      "0": 1065,
+      "1": 1718,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 80,
+     "stormOnWall": 201,
+     "garrisonOnWall": 649,
+     "stormInside": 36,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 988,
+      "1": 1650,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 100,
+     "stormOnWall": 147,
+     "garrisonOnWall": 610,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 947,
+      "1": 1556,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 120,
+     "stormOnWall": 136,
+     "garrisonOnWall": 583,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 920,
+      "1": 1525,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 140,
+     "stormOnWall": 134,
+     "garrisonOnWall": 581,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 918,
+      "1": 1491,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 160,
+     "stormOnWall": 132,
+     "garrisonOnWall": 575,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 912,
+      "1": 1451,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 180,
+     "stormOnWall": 116,
+     "garrisonOnWall": 572,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 907,
+      "1": 1351,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 199,
+     "stormOnWall": 118,
+     "garrisonOnWall": 570,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 905,
+      "1": 1305,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 219,
+     "stormOnWall": 123,
+     "garrisonOnWall": 559,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 893,
+      "1": 1292,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 239,
+     "stormOnWall": 115,
+     "garrisonOnWall": 555,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 889,
+      "1": 1270,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 259,
+     "stormOnWall": 110,
+     "garrisonOnWall": 551,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 885,
+      "1": 1264,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 279,
+     "stormOnWall": 108,
+     "garrisonOnWall": 551,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 885,
+      "1": 1261,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 299,
+     "stormOnWall": 108,
+     "garrisonOnWall": 545,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 879,
+      "1": 1246,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 319,
+     "stormOnWall": 106,
+     "garrisonOnWall": 545,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 879,
+      "1": 1230,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 339,
+     "stormOnWall": 105,
+     "garrisonOnWall": 538,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 872,
+      "1": 1228,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 359,
+     "stormOnWall": 104,
+     "garrisonOnWall": 536,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 870,
+      "1": 1218,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 379,
+     "stormOnWall": 102,
+     "garrisonOnWall": 532,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 866,
+      "1": 1212,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 399,
+     "stormOnWall": 100,
+     "garrisonOnWall": 532,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 866,
+      "1": 1207,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 419,
+     "stormOnWall": 99,
+     "garrisonOnWall": 531,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 862,
+      "1": 1202,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 439,
+     "stormOnWall": 96,
+     "garrisonOnWall": 531,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 862,
+      "1": 1191,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 458,
+     "stormOnWall": 93,
+     "garrisonOnWall": 524,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 854,
+      "1": 1183,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 478,
+     "stormOnWall": 91,
+     "garrisonOnWall": 523,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 853,
+      "1": 1174,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 498,
+     "stormOnWall": 91,
+     "garrisonOnWall": 522,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 852,
+      "1": 1168,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 518,
+     "stormOnWall": 91,
+     "garrisonOnWall": 521,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 851,
+      "1": 1159,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 538,
+     "stormOnWall": 90,
+     "garrisonOnWall": 519,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 849,
+      "1": 1153,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 558,
+     "stormOnWall": 90,
+     "garrisonOnWall": 516,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 844,
+      "1": 1147,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 578,
+     "stormOnWall": 90,
+     "garrisonOnWall": 511,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 841,
+      "1": 1142,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 598,
+     "stormOnWall": 80,
+     "garrisonOnWall": 508,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 838,
+      "1": 1116,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 618,
+     "stormOnWall": 60,
+     "garrisonOnWall": 505,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 835,
+      "1": 1075,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 638,
+     "stormOnWall": 54,
+     "garrisonOnWall": 504,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 831,
+      "1": 1067,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 658,
+     "stormOnWall": 53,
+     "garrisonOnWall": 502,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 828,
+      "1": 1065,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 678,
+     "stormOnWall": 53,
+     "garrisonOnWall": 501,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 827,
+      "1": 1000,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 697,
+     "stormOnWall": 51,
+     "garrisonOnWall": 499,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 825,
+      "1": 996,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 717,
+     "stormOnWall": 50,
+     "garrisonOnWall": 497,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 823,
+      "1": 993,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 737,
+     "stormOnWall": 50,
+     "garrisonOnWall": 496,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 822,
+      "1": 985,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 757,
+     "stormOnWall": 49,
+     "garrisonOnWall": 494,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 818,
+      "1": 980,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 777,
+     "stormOnWall": 48,
+     "garrisonOnWall": 493,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 817,
+      "1": 976,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 797,
+     "stormOnWall": 48,
+     "garrisonOnWall": 491,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 814,
+      "1": 974,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 817,
+     "stormOnWall": 44,
+     "garrisonOnWall": 491,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 814,
+      "1": 963,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 837,
+     "stormOnWall": 43,
+     "garrisonOnWall": 488,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 810,
+      "1": 958,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 857,
+     "stormOnWall": 43,
+     "garrisonOnWall": 488,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 810,
+      "1": 950,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 877,
+     "stormOnWall": 43,
+     "garrisonOnWall": 483,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 805,
+      "1": 943,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 897,
+     "stormOnWall": 43,
+     "garrisonOnWall": 479,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 801,
+      "1": 936,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 917,
+     "stormOnWall": 40,
+     "garrisonOnWall": 476,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 798,
+      "1": 925,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 937,
+     "stormOnWall": 40,
+     "garrisonOnWall": 475,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 794,
+      "1": 920,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 956,
+     "stormOnWall": 40,
+     "garrisonOnWall": 473,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 792,
+      "1": 917,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 976,
+     "stormOnWall": 39,
+     "garrisonOnWall": 469,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 786,
+      "1": 911,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 996,
+     "stormOnWall": 39,
+     "garrisonOnWall": 467,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 784,
+      "1": 910,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1016,
+     "stormOnWall": 39,
+     "garrisonOnWall": 467,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 784,
+      "1": 905,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1036,
+     "stormOnWall": 39,
+     "garrisonOnWall": 466,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 783,
+      "1": 903,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1056,
+     "stormOnWall": 39,
+     "garrisonOnWall": 464,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 778,
+      "1": 875,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1076,
+     "stormOnWall": 39,
+     "garrisonOnWall": 457,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 773,
+      "1": 844,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1096,
+     "stormOnWall": 39,
+     "garrisonOnWall": 456,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 772,
+      "1": 840,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1116,
+     "stormOnWall": 36,
+     "garrisonOnWall": 455,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 771,
+      "1": 837,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1136,
+     "stormOnWall": 36,
+     "garrisonOnWall": 455,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 771,
+      "1": 800,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1156,
+     "stormOnWall": 36,
+     "garrisonOnWall": 455,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 771,
+      "1": 800,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1176,
+     "stormOnWall": 35,
+     "garrisonOnWall": 455,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 771,
+      "1": 799,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1195,
+     "stormOnWall": 34,
+     "garrisonOnWall": 454,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 770,
+      "1": 798,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1215,
+     "stormOnWall": 34,
+     "garrisonOnWall": 453,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 769,
+      "1": 798,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1235,
+     "stormOnWall": 34,
+     "garrisonOnWall": 453,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 769,
+      "1": 798,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1255,
+     "stormOnWall": 34,
+     "garrisonOnWall": 453,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 769,
+      "1": 798,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1275,
+     "stormOnWall": 34,
+     "garrisonOnWall": 452,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 768,
+      "1": 798,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1295,
+     "stormOnWall": 34,
+     "garrisonOnWall": 452,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 768,
+      "1": 798,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1315,
+     "stormOnWall": 34,
+     "garrisonOnWall": 452,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 767,
+      "1": 798,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1335,
+     "stormOnWall": 34,
+     "garrisonOnWall": 450,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 765,
+      "1": 798,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1355,
+     "stormOnWall": 34,
+     "garrisonOnWall": 450,
+     "stormInside": 6,
+     "laddersCrossed": 320,
+     "strength": {
+      "0": 765,
+      "1": 795,
+      "2": 0
+     },
+     "result": {
+      "victor": 1,
+      "reason": "objective",
+      "casualties": {
+       "0": 389,
+       "1": 1122
+      },
+      "survivors": {
+       "0": 765,
+       "1": 798
+      },
+      "unitsLost": {
+       "0": 2,
+       "1": 13
+      },
+      "unitsTotal": {
+       "0": 12,
+       "1": 20
+      },
+      "at": 1338.5333333327733
+     }
+    }
+   ],
+   "result": {
+    "victor": 1,
+    "reason": "objective",
+    "casualties": {
+     "0": 389,
+     "1": 1122
+    },
+    "survivors": {
+     "0": 765,
+     "1": 798
+    },
+    "unitsLost": {
+     "0": 2,
+     "1": 13
+    },
+    "unitsTotal": {
+     "0": 12,
+     "1": 20
+    },
+    "at": 1338.5333333327733
+   },
+   "crossings": {
+    "byBay": {
+     "28": {
+      "stage": "footing",
+      "men": 49,
+      "types": {
+       "juthungi-riders": 49
+      }
+     }
+    },
+    "byType": {
+     "juthungi-riders": {
+      "men": 49,
+      "sumSecs": 487.36669782002787,
+      "n": 49,
+      "bays": {
+       "28": 49
+      },
+      "firstAt": 34.13333333333339
+     }
+    },
+    "dwell": {
+     "17": {
+      "stage": "no-parapet",
+      "manSecs": 216
+     },
+     "23": {
+      "stage": "half-built",
+      "manSecs": 6530
+     },
+     "28": {
+      "stage": "footing",
+      "manSecs": 287
+     }
+    },
+    "insidePeak": {
+     "throughWall": 47,
+     "pastEast": 0,
+     "pastWest": 0
+    },
+    "footprints": {
+     "tower-assault": {
+      "unitClass": "heavy-infantry",
+      "formation": "horde",
+      "strength": 72
+     },
+     "escalade-party": {
+      "unitClass": "light-infantry",
+      "formation": "loose",
+      "strength": 96
+     },
+     "ram-crew": {
+      "unitClass": "heavy-infantry",
+      "formation": "loose",
+      "strength": 32
+     },
+     "onager": {
+      "unitClass": "artillery",
+      "formation": "line",
+      "strength": 12
+     },
+     "juthungi-warband": {
+      "unitClass": "light-infantry",
+      "formation": "loose",
+      "strength": 180
+     },
+     "juthungi-riders": {
+      "unitClass": "light-cavalry",
+      "formation": "wedge",
+      "strength": 50
+     }
+    },
+    "unitCross": [
+     {
+      "unitId": 31,
+      "typeId": "juthungi-riders",
+      "unitClass": "light-cavalry",
+      "bay": 27,
+      "stage": "gap",
+      "x": 338,
+      "at": 45,
+      "secs": 17,
+      "alive": 50,
+      "initial": 50
+     }
+    ],
+    "wMin": -631,
+    "wMax": 1144
+   },
+   "errors": [],
+   "wallMs": 74639
+  },
+  {
+   "seed": 3638810955,
+   "setup": {
+    "rngState": 3638810955,
+    "units": 32,
+    "strength": {
+     "0": 1154,
+     "1": 1920,
+     "2": 0
+    },
+    "storm": 1,
+    "garrison": 0
+   },
+   "series": [
+    {
+     "t": 20,
+     "stormOnWall": 0,
+     "garrisonOnWall": 810,
+     "stormInside": 0,
+     "laddersCrossed": 0,
+     "strength": {
+      "0": 1154,
+      "1": 1847,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 40,
+     "stormOnWall": 113,
+     "garrisonOnWall": 783,
+     "stormInside": 1,
+     "laddersCrossed": 143,
+     "strength": {
+      "0": 1124,
+      "1": 1808,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 60,
+     "stormOnWall": 210,
+     "garrisonOnWall": 722,
+     "stormInside": 45,
+     "laddersCrossed": 290,
+     "strength": {
+      "0": 1064,
+      "1": 1706,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 80,
+     "stormOnWall": 155,
+     "garrisonOnWall": 658,
+     "stormInside": 9,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 997,
+      "1": 1620,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 100,
+     "stormOnWall": 120,
+     "garrisonOnWall": 635,
+     "stormInside": 13,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 974,
+      "1": 1549,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 120,
+     "stormOnWall": 95,
+     "garrisonOnWall": 620,
+     "stormInside": 8,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 957,
+      "1": 1503,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 140,
+     "stormOnWall": 81,
+     "garrisonOnWall": 612,
+     "stormInside": 5,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 949,
+      "1": 1422,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 160,
+     "stormOnWall": 74,
+     "garrisonOnWall": 600,
+     "stormInside": 5,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 936,
+      "1": 1344,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 180,
+     "stormOnWall": 73,
+     "garrisonOnWall": 591,
+     "stormInside": 5,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 928,
+      "1": 1299,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 199,
+     "stormOnWall": 70,
+     "garrisonOnWall": 586,
+     "stormInside": 5,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 923,
+      "1": 1281,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 219,
+     "stormOnWall": 70,
+     "garrisonOnWall": 585,
+     "stormInside": 8,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 921,
+      "1": 1281,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 239,
+     "stormOnWall": 68,
+     "garrisonOnWall": 585,
+     "stormInside": 28,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 920,
+      "1": 1278,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 259,
+     "stormOnWall": 66,
+     "garrisonOnWall": 585,
+     "stormInside": 29,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 919,
+      "1": 1267,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 279,
+     "stormOnWall": 64,
+     "garrisonOnWall": 583,
+     "stormInside": 29,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 918,
+      "1": 1245,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 299,
+     "stormOnWall": 60,
+     "garrisonOnWall": 581,
+     "stormInside": 29,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 916,
+      "1": 1238,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 319,
+     "stormOnWall": 59,
+     "garrisonOnWall": 580,
+     "stormInside": 29,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 915,
+      "1": 1237,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 339,
+     "stormOnWall": 56,
+     "garrisonOnWall": 577,
+     "stormInside": 28,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 912,
+      "1": 1233,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 359,
+     "stormOnWall": 54,
+     "garrisonOnWall": 574,
+     "stormInside": 28,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 909,
+      "1": 1218,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 379,
+     "stormOnWall": 53,
+     "garrisonOnWall": 570,
+     "stormInside": 28,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 905,
+      "1": 1217,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 399,
+     "stormOnWall": 50,
+     "garrisonOnWall": 567,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 902,
+      "1": 1213,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 419,
+     "stormOnWall": 50,
+     "garrisonOnWall": 563,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 898,
+      "1": 1213,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 439,
+     "stormOnWall": 50,
+     "garrisonOnWall": 563,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 898,
+      "1": 1213,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 458,
+     "stormOnWall": 50,
+     "garrisonOnWall": 563,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 898,
+      "1": 1213,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 478,
+     "stormOnWall": 50,
+     "garrisonOnWall": 563,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 897,
+      "1": 1213,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 498,
+     "stormOnWall": 48,
+     "garrisonOnWall": 562,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 897,
+      "1": 1211,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 518,
+     "stormOnWall": 48,
+     "garrisonOnWall": 560,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 895,
+      "1": 1210,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 538,
+     "stormOnWall": 47,
+     "garrisonOnWall": 558,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 893,
+      "1": 1209,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 558,
+     "stormOnWall": 46,
+     "garrisonOnWall": 555,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 890,
+      "1": 1208,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 578,
+     "stormOnWall": 46,
+     "garrisonOnWall": 552,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 887,
+      "1": 1208,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 598,
+     "stormOnWall": 46,
+     "garrisonOnWall": 550,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 885,
+      "1": 1208,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 618,
+     "stormOnWall": 46,
+     "garrisonOnWall": 549,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 884,
+      "1": 1207,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 638,
+     "stormOnWall": 45,
+     "garrisonOnWall": 540,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 875,
+      "1": 1207,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 658,
+     "stormOnWall": 45,
+     "garrisonOnWall": 539,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 874,
+      "1": 1207,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 678,
+     "stormOnWall": 45,
+     "garrisonOnWall": 539,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 874,
+      "1": 1207,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 697,
+     "stormOnWall": 43,
+     "garrisonOnWall": 538,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 873,
+      "1": 1205,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 717,
+     "stormOnWall": 43,
+     "garrisonOnWall": 530,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 865,
+      "1": 1205,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 737,
+     "stormOnWall": 42,
+     "garrisonOnWall": 526,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 861,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 757,
+     "stormOnWall": 42,
+     "garrisonOnWall": 517,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 852,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 777,
+     "stormOnWall": 42,
+     "garrisonOnWall": 517,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 852,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 797,
+     "stormOnWall": 42,
+     "garrisonOnWall": 513,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 848,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 817,
+     "stormOnWall": 42,
+     "garrisonOnWall": 512,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 846,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 837,
+     "stormOnWall": 42,
+     "garrisonOnWall": 507,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 842,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 857,
+     "stormOnWall": 42,
+     "garrisonOnWall": 502,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 837,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 877,
+     "stormOnWall": 42,
+     "garrisonOnWall": 501,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 835,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 897,
+     "stormOnWall": 42,
+     "garrisonOnWall": 501,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 833,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 917,
+     "stormOnWall": 42,
+     "garrisonOnWall": 497,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 831,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 937,
+     "stormOnWall": 42,
+     "garrisonOnWall": 489,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 823,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 956,
+     "stormOnWall": 42,
+     "garrisonOnWall": 487,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 821,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 976,
+     "stormOnWall": 42,
+     "garrisonOnWall": 484,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 818,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 996,
+     "stormOnWall": 42,
+     "garrisonOnWall": 482,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 816,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1016,
+     "stormOnWall": 42,
+     "garrisonOnWall": 482,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 816,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1036,
+     "stormOnWall": 42,
+     "garrisonOnWall": 481,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 815,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1056,
+     "stormOnWall": 42,
+     "garrisonOnWall": 472,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 806,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1076,
+     "stormOnWall": 42,
+     "garrisonOnWall": 471,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 805,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1096,
+     "stormOnWall": 42,
+     "garrisonOnWall": 468,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 802,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1116,
+     "stormOnWall": 42,
+     "garrisonOnWall": 467,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 801,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1136,
+     "stormOnWall": 42,
+     "garrisonOnWall": 454,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 788,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1156,
+     "stormOnWall": 42,
+     "garrisonOnWall": 452,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 785,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1176,
+     "stormOnWall": 42,
+     "garrisonOnWall": 450,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 784,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1195,
+     "stormOnWall": 42,
+     "garrisonOnWall": 448,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 782,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1215,
+     "stormOnWall": 42,
+     "garrisonOnWall": 447,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 781,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1235,
+     "stormOnWall": 42,
+     "garrisonOnWall": 438,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 772,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1255,
+     "stormOnWall": 42,
+     "garrisonOnWall": 434,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 768,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1275,
+     "stormOnWall": 42,
+     "garrisonOnWall": 429,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 763,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1295,
+     "stormOnWall": 42,
+     "garrisonOnWall": 424,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 758,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1315,
+     "stormOnWall": 42,
+     "garrisonOnWall": 423,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 757,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1335,
+     "stormOnWall": 42,
+     "garrisonOnWall": 423,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 757,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1355,
+     "stormOnWall": 42,
+     "garrisonOnWall": 416,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 750,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1375,
+     "stormOnWall": 42,
+     "garrisonOnWall": 416,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 750,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1395,
+     "stormOnWall": 42,
+     "garrisonOnWall": 415,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 749,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1415,
+     "stormOnWall": 42,
+     "garrisonOnWall": 415,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 749,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1435,
+     "stormOnWall": 42,
+     "garrisonOnWall": 412,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 746,
+      "1": 1204,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1454,
+     "stormOnWall": 42,
+     "garrisonOnWall": 412,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 746,
+      "1": 1202,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1474,
+     "stormOnWall": 42,
+     "garrisonOnWall": 409,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 743,
+      "1": 1202,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1494,
+     "stormOnWall": 41,
+     "garrisonOnWall": 409,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 743,
+      "1": 1200,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1514,
+     "stormOnWall": 41,
+     "garrisonOnWall": 403,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 737,
+      "1": 1200,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1534,
+     "stormOnWall": 41,
+     "garrisonOnWall": 403,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 737,
+      "1": 1200,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1554,
+     "stormOnWall": 41,
+     "garrisonOnWall": 401,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 735,
+      "1": 1200,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1574,
+     "stormOnWall": 41,
+     "garrisonOnWall": 400,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 734,
+      "1": 1200,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1594,
+     "stormOnWall": 41,
+     "garrisonOnWall": 400,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 734,
+      "1": 1200,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1614,
+     "stormOnWall": 41,
+     "garrisonOnWall": 399,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 733,
+      "1": 1200,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1634,
+     "stormOnWall": 41,
+     "garrisonOnWall": 398,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 732,
+      "1": 1200,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1654,
+     "stormOnWall": 41,
+     "garrisonOnWall": 395,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 729,
+      "1": 1200,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1674,
+     "stormOnWall": 41,
+     "garrisonOnWall": 395,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 729,
+      "1": 1200,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1694,
+     "stormOnWall": 41,
+     "garrisonOnWall": 394,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 728,
+      "1": 1200,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1713,
+     "stormOnWall": 41,
+     "garrisonOnWall": 394,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 728,
+      "1": 1200,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1733,
+     "stormOnWall": 41,
+     "garrisonOnWall": 394,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 728,
+      "1": 1200,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1753,
+     "stormOnWall": 41,
+     "garrisonOnWall": 393,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 727,
+      "1": 1200,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1773,
+     "stormOnWall": 41,
+     "garrisonOnWall": 392,
+     "stormInside": 27,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 726,
+      "1": 1200,
+      "2": 0
+     },
+     "result": {
+      "victor": 1,
+      "reason": "objective",
+      "casualties": {
+       "0": 428,
+       "1": 720
+      },
+      "survivors": {
+       "0": 726,
+       "1": 1200
+      },
+      "unitsLost": {
+       "0": 2,
+       "1": 11
+      },
+      "unitsTotal": {
+       "0": 12,
+       "1": 20
+      },
+      "at": 1768.399999999049
+     }
+    }
+   ],
+   "result": {
+    "victor": 1,
+    "reason": "objective",
+    "casualties": {
+     "0": 428,
+     "1": 720
+    },
+    "survivors": {
+     "0": 726,
+     "1": 1200
+    },
+    "unitsLost": {
+     "0": 2,
+     "1": 11
+    },
+    "unitsTotal": {
+     "0": 12,
+     "1": 20
+    },
+    "at": 1768.399999999049
+   },
+   "crossings": {
+    "byBay": {
+     "28": {
+      "stage": "footing",
+      "men": 102,
+      "types": {
+       "juthungi-riders": 102
+      }
+     }
+    },
+    "byType": {
+     "juthungi-riders": {
+      "men": 102,
+      "sumSecs": 1640.800049463858,
+      "n": 102,
+      "bays": {
+       "28": 102
+      },
+      "firstAt": 34.13333333333339
+     }
+    },
+    "dwell": {
+     "23": {
+      "stage": "half-built",
+      "manSecs": 11382
+     },
+     "24": {
+      "stage": "half-built",
+      "manSecs": 6711
+     },
+     "27": {
+      "stage": "gap",
+      "manSecs": 5079
+     },
+     "28": {
+      "stage": "footing",
+      "manSecs": 2970
+     }
+    },
+    "insidePeak": {
+     "throughWall": 47,
+     "pastEast": 0,
+     "pastWest": 0
+    },
+    "footprints": {
+     "tower-assault": {
+      "unitClass": "heavy-infantry",
+      "formation": "horde",
+      "strength": 72
+     },
+     "escalade-party": {
+      "unitClass": "light-infantry",
+      "formation": "loose",
+      "strength": 96
+     },
+     "ram-crew": {
+      "unitClass": "heavy-infantry",
+      "formation": "loose",
+      "strength": 32
+     },
+     "onager": {
+      "unitClass": "artillery",
+      "formation": "line",
+      "strength": 12
+     },
+     "juthungi-warband": {
+      "unitClass": "light-infantry",
+      "formation": "loose",
+      "strength": 180
+     },
+     "juthungi-riders": {
+      "unitClass": "light-cavalry",
+      "formation": "wedge",
+      "strength": 50
+     }
+    },
+    "unitCross": [
+     {
+      "unitId": 31,
+      "typeId": "juthungi-riders",
+      "unitClass": "light-cavalry",
+      "bay": 27,
+      "stage": "gap",
+      "x": 338,
+      "at": 45,
+      "secs": 17,
+      "alive": 50,
+      "initial": 50
+     },
+     {
+      "unitId": 30,
+      "typeId": "juthungi-riders",
+      "unitClass": "light-cavalry",
+      "bay": 26,
+      "stage": "finished",
+      "x": 314,
+      "at": 229,
+      "secs": 39,
+      "alive": 32,
+      "initial": 50
+     }
+    ],
+    "wMin": -631,
+    "wMax": 1144
+   },
+   "errors": [],
+   "wallMs": 100177
+  },
+  {
+   "seed": 1998279420,
+   "setup": {
+    "rngState": 1998279420,
+    "units": 32,
+    "strength": {
+     "0": 1154,
+     "1": 1920,
+     "2": 0
+    },
+    "storm": 1,
+    "garrison": 0
+   },
+   "series": [
+    {
+     "t": 20,
+     "stormOnWall": 0,
+     "garrisonOnWall": 810,
+     "stormInside": 0,
+     "laddersCrossed": 0,
+     "strength": {
+      "0": 1154,
+      "1": 1848,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 40,
+     "stormOnWall": 120,
+     "garrisonOnWall": 783,
+     "stormInside": 1,
+     "laddersCrossed": 147,
+     "strength": {
+      "0": 1123,
+      "1": 1802,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 60,
+     "stormOnWall": 216,
+     "garrisonOnWall": 715,
+     "stormInside": 40,
+     "laddersCrossed": 293,
+     "strength": {
+      "0": 1057,
+      "1": 1700,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 80,
+     "stormOnWall": 164,
+     "garrisonOnWall": 668,
+     "stormInside": 34,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 1005,
+      "1": 1617,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 100,
+     "stormOnWall": 143,
+     "garrisonOnWall": 650,
+     "stormInside": 12,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 987,
+      "1": 1560,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 120,
+     "stormOnWall": 132,
+     "garrisonOnWall": 639,
+     "stormInside": 10,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 976,
+      "1": 1540,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 140,
+     "stormOnWall": 122,
+     "garrisonOnWall": 633,
+     "stormInside": 9,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 970,
+      "1": 1397,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 160,
+     "stormOnWall": 132,
+     "garrisonOnWall": 626,
+     "stormInside": 8,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 963,
+      "1": 1343,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 180,
+     "stormOnWall": 109,
+     "garrisonOnWall": 619,
+     "stormInside": 2,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 955,
+      "1": 1296,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 199,
+     "stormOnWall": 98,
+     "garrisonOnWall": 616,
+     "stormInside": 0,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 950,
+      "1": 1264,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 219,
+     "stormOnWall": 80,
+     "garrisonOnWall": 614,
+     "stormInside": 0,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 946,
+      "1": 1263,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 239,
+     "stormOnWall": 75,
+     "garrisonOnWall": 612,
+     "stormInside": 0,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 944,
+      "1": 1253,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 259,
+     "stormOnWall": 78,
+     "garrisonOnWall": 610,
+     "stormInside": 0,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 941,
+      "1": 1247,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 279,
+     "stormOnWall": 50,
+     "garrisonOnWall": 608,
+     "stormInside": 0,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 940,
+      "1": 1222,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 299,
+     "stormOnWall": 50,
+     "garrisonOnWall": 603,
+     "stormInside": 0,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 935,
+      "1": 1209,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 319,
+     "stormOnWall": 50,
+     "garrisonOnWall": 601,
+     "stormInside": 0,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 933,
+      "1": 1190,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 339,
+     "stormOnWall": 50,
+     "garrisonOnWall": 598,
+     "stormInside": 0,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 930,
+      "1": 1175,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 359,
+     "stormOnWall": 50,
+     "garrisonOnWall": 596,
+     "stormInside": 0,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 928,
+      "1": 1157,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 379,
+     "stormOnWall": 49,
+     "garrisonOnWall": 595,
+     "stormInside": 0,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 927,
+      "1": 1147,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 399,
+     "stormOnWall": 49,
+     "garrisonOnWall": 594,
+     "stormInside": 0,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 926,
+      "1": 1133,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 419,
+     "stormOnWall": 48,
+     "garrisonOnWall": 591,
+     "stormInside": 0,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 922,
+      "1": 1131,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 439,
+     "stormOnWall": 47,
+     "garrisonOnWall": 589,
+     "stormInside": 0,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 920,
+      "1": 1130,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 458,
+     "stormOnWall": 47,
+     "garrisonOnWall": 588,
+     "stormInside": 0,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 918,
+      "1": 1129,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 478,
+     "stormOnWall": 46,
+     "garrisonOnWall": 587,
+     "stormInside": 0,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 917,
+      "1": 1128,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 498,
+     "stormOnWall": 44,
+     "garrisonOnWall": 584,
+     "stormInside": 0,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 914,
+      "1": 1128,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 518,
+     "stormOnWall": 46,
+     "garrisonOnWall": 584,
+     "stormInside": 0,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 914,
+      "1": 1128,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 538,
+     "stormOnWall": 46,
+     "garrisonOnWall": 583,
+     "stormInside": 0,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 913,
+      "1": 1128,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 558,
+     "stormOnWall": 44,
+     "garrisonOnWall": 580,
+     "stormInside": 0,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 910,
+      "1": 1128,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 578,
+     "stormOnWall": 42,
+     "garrisonOnWall": 580,
+     "stormInside": 2,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 910,
+      "1": 1126,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 598,
+     "stormOnWall": 42,
+     "garrisonOnWall": 578,
+     "stormInside": 2,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 908,
+      "1": 1126,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 618,
+     "stormOnWall": 42,
+     "garrisonOnWall": 578,
+     "stormInside": 2,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 908,
+      "1": 1126,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 638,
+     "stormOnWall": 42,
+     "garrisonOnWall": 574,
+     "stormInside": 2,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 904,
+      "1": 1126,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 658,
+     "stormOnWall": 42,
+     "garrisonOnWall": 574,
+     "stormInside": 2,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 904,
+      "1": 1126,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 678,
+     "stormOnWall": 42,
+     "garrisonOnWall": 568,
+     "stormInside": 2,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 898,
+      "1": 1126,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 697,
+     "stormOnWall": 41,
+     "garrisonOnWall": 568,
+     "stormInside": 2,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 898,
+      "1": 1125,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 717,
+     "stormOnWall": 41,
+     "garrisonOnWall": 568,
+     "stormInside": 2,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 898,
+      "1": 1125,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 737,
+     "stormOnWall": 41,
+     "garrisonOnWall": 568,
+     "stormInside": 2,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 898,
+      "1": 1125,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 757,
+     "stormOnWall": 41,
+     "garrisonOnWall": 566,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 896,
+      "1": 1124,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 777,
+     "stormOnWall": 41,
+     "garrisonOnWall": 566,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 896,
+      "1": 1123,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 797,
+     "stormOnWall": 41,
+     "garrisonOnWall": 564,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 894,
+      "1": 1123,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 817,
+     "stormOnWall": 41,
+     "garrisonOnWall": 564,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 894,
+      "1": 1123,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 837,
+     "stormOnWall": 41,
+     "garrisonOnWall": 555,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 885,
+      "1": 1123,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 857,
+     "stormOnWall": 40,
+     "garrisonOnWall": 552,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 882,
+      "1": 1122,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 877,
+     "stormOnWall": 40,
+     "garrisonOnWall": 551,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 881,
+      "1": 1122,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 897,
+     "stormOnWall": 40,
+     "garrisonOnWall": 550,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 880,
+      "1": 1122,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 917,
+     "stormOnWall": 40,
+     "garrisonOnWall": 550,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 880,
+      "1": 1122,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 937,
+     "stormOnWall": 40,
+     "garrisonOnWall": 550,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 880,
+      "1": 1122,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 956,
+     "stormOnWall": 40,
+     "garrisonOnWall": 548,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 878,
+      "1": 1122,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 976,
+     "stormOnWall": 40,
+     "garrisonOnWall": 547,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 877,
+      "1": 1122,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 996,
+     "stormOnWall": 40,
+     "garrisonOnWall": 547,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 877,
+      "1": 1121,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1016,
+     "stormOnWall": 40,
+     "garrisonOnWall": 545,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 875,
+      "1": 1121,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1036,
+     "stormOnWall": 40,
+     "garrisonOnWall": 545,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 875,
+      "1": 1121,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1056,
+     "stormOnWall": 39,
+     "garrisonOnWall": 542,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 871,
+      "1": 1120,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1076,
+     "stormOnWall": 38,
+     "garrisonOnWall": 541,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 871,
+      "1": 1119,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1096,
+     "stormOnWall": 38,
+     "garrisonOnWall": 541,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 871,
+      "1": 1119,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1116,
+     "stormOnWall": 38,
+     "garrisonOnWall": 541,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 871,
+      "1": 1119,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1136,
+     "stormOnWall": 38,
+     "garrisonOnWall": 528,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 858,
+      "1": 1119,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1156,
+     "stormOnWall": 38,
+     "garrisonOnWall": 528,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 858,
+      "1": 1119,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1176,
+     "stormOnWall": 38,
+     "garrisonOnWall": 528,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 858,
+      "1": 1119,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1195,
+     "stormOnWall": 37,
+     "garrisonOnWall": 528,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 857,
+      "1": 1118,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1215,
+     "stormOnWall": 37,
+     "garrisonOnWall": 527,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 857,
+      "1": 1118,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1235,
+     "stormOnWall": 37,
+     "garrisonOnWall": 525,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 855,
+      "1": 1118,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1255,
+     "stormOnWall": 37,
+     "garrisonOnWall": 525,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 855,
+      "1": 1118,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1275,
+     "stormOnWall": 37,
+     "garrisonOnWall": 522,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 852,
+      "1": 1118,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1295,
+     "stormOnWall": 36,
+     "garrisonOnWall": 522,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 852,
+      "1": 1117,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1315,
+     "stormOnWall": 36,
+     "garrisonOnWall": 522,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 852,
+      "1": 1117,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1335,
+     "stormOnWall": 36,
+     "garrisonOnWall": 522,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 852,
+      "1": 1117,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1355,
+     "stormOnWall": 36,
+     "garrisonOnWall": 520,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 850,
+      "1": 1117,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1375,
+     "stormOnWall": 36,
+     "garrisonOnWall": 517,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 847,
+      "1": 1117,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1395,
+     "stormOnWall": 36,
+     "garrisonOnWall": 513,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 843,
+      "1": 1117,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1415,
+     "stormOnWall": 36,
+     "garrisonOnWall": 513,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 843,
+      "1": 1116,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1435,
+     "stormOnWall": 35,
+     "garrisonOnWall": 509,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 839,
+      "1": 1116,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1454,
+     "stormOnWall": 35,
+     "garrisonOnWall": 509,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 839,
+      "1": 1116,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1474,
+     "stormOnWall": 35,
+     "garrisonOnWall": 506,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 836,
+      "1": 1116,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1494,
+     "stormOnWall": 35,
+     "garrisonOnWall": 504,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 834,
+      "1": 1116,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1514,
+     "stormOnWall": 35,
+     "garrisonOnWall": 504,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 834,
+      "1": 1116,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1534,
+     "stormOnWall": 35,
+     "garrisonOnWall": 504,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 834,
+      "1": 1116,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1554,
+     "stormOnWall": 35,
+     "garrisonOnWall": 502,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 832,
+      "1": 1116,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1574,
+     "stormOnWall": 35,
+     "garrisonOnWall": 497,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 827,
+      "1": 1116,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1594,
+     "stormOnWall": 34,
+     "garrisonOnWall": 496,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 826,
+      "1": 1115,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1614,
+     "stormOnWall": 34,
+     "garrisonOnWall": 496,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 826,
+      "1": 1115,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1634,
+     "stormOnWall": 34,
+     "garrisonOnWall": 496,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 826,
+      "1": 1115,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1654,
+     "stormOnWall": 34,
+     "garrisonOnWall": 494,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 824,
+      "1": 1115,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1674,
+     "stormOnWall": 33,
+     "garrisonOnWall": 494,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 824,
+      "1": 1114,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1694,
+     "stormOnWall": 33,
+     "garrisonOnWall": 493,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 823,
+      "1": 1114,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1713,
+     "stormOnWall": 32,
+     "garrisonOnWall": 492,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 822,
+      "1": 1113,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1733,
+     "stormOnWall": 32,
+     "garrisonOnWall": 485,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 815,
+      "1": 1113,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1753,
+     "stormOnWall": 32,
+     "garrisonOnWall": 484,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 814,
+      "1": 1113,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1773,
+     "stormOnWall": 31,
+     "garrisonOnWall": 481,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 811,
+      "1": 1112,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1793,
+     "stormOnWall": 31,
+     "garrisonOnWall": 481,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 811,
+      "1": 1112,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1813,
+     "stormOnWall": 31,
+     "garrisonOnWall": 477,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 807,
+      "1": 1112,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1833,
+     "stormOnWall": 31,
+     "garrisonOnWall": 473,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 803,
+      "1": 1112,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1853,
+     "stormOnWall": 31,
+     "garrisonOnWall": 473,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 803,
+      "1": 1112,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1873,
+     "stormOnWall": 31,
+     "garrisonOnWall": 473,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 803,
+      "1": 1112,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1893,
+     "stormOnWall": 31,
+     "garrisonOnWall": 473,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 803,
+      "1": 1112,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1913,
+     "stormOnWall": 30,
+     "garrisonOnWall": 468,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 798,
+      "1": 1111,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1933,
+     "stormOnWall": 30,
+     "garrisonOnWall": 468,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 798,
+      "1": 1111,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1952,
+     "stormOnWall": 29,
+     "garrisonOnWall": 468,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 798,
+      "1": 1110,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1972,
+     "stormOnWall": 29,
+     "garrisonOnWall": 467,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 797,
+      "1": 1110,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1992,
+     "stormOnWall": 29,
+     "garrisonOnWall": 467,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 797,
+      "1": 1110,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 2012,
+     "stormOnWall": 29,
+     "garrisonOnWall": 467,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 797,
+      "1": 1110,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 2032,
+     "stormOnWall": 29,
+     "garrisonOnWall": 465,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 795,
+      "1": 1110,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 2052,
+     "stormOnWall": 29,
+     "garrisonOnWall": 465,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 795,
+      "1": 1110,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 2072,
+     "stormOnWall": 29,
+     "garrisonOnWall": 465,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 795,
+      "1": 1110,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 2092,
+     "stormOnWall": 29,
+     "garrisonOnWall": 465,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 795,
+      "1": 1110,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 2112,
+     "stormOnWall": 28,
+     "garrisonOnWall": 464,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 794,
+      "1": 1109,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 2132,
+     "stormOnWall": 27,
+     "garrisonOnWall": 464,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 792,
+      "1": 1108,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 2152,
+     "stormOnWall": 27,
+     "garrisonOnWall": 462,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 792,
+      "1": 1108,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 2172,
+     "stormOnWall": 27,
+     "garrisonOnWall": 461,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 791,
+      "1": 1108,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 2192,
+     "stormOnWall": 27,
+     "garrisonOnWall": 461,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 791,
+      "1": 1108,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 2211,
+     "stormOnWall": 27,
+     "garrisonOnWall": 459,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 789,
+      "1": 1108,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 2231,
+     "stormOnWall": 27,
+     "garrisonOnWall": 459,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 789,
+      "1": 1108,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 2251,
+     "stormOnWall": 26,
+     "garrisonOnWall": 459,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 789,
+      "1": 1107,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 2271,
+     "stormOnWall": 25,
+     "garrisonOnWall": 459,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 789,
+      "1": 1106,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 2291,
+     "stormOnWall": 25,
+     "garrisonOnWall": 459,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 789,
+      "1": 1106,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 2311,
+     "stormOnWall": 25,
+     "garrisonOnWall": 458,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 788,
+      "1": 1106,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 2331,
+     "stormOnWall": 25,
+     "garrisonOnWall": 456,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 786,
+      "1": 1106,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 2351,
+     "stormOnWall": 25,
+     "garrisonOnWall": 453,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 783,
+      "1": 1106,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 2371,
+     "stormOnWall": 25,
+     "garrisonOnWall": 450,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 780,
+      "1": 1106,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 2391,
+     "stormOnWall": 25,
+     "garrisonOnWall": 450,
+     "stormInside": 1,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 780,
+      "1": 1106,
+      "2": 0
+     },
+     "result": null
+    }
+   ],
+   "result": null,
+   "crossings": {
+    "byBay": {
+     "28": {
+      "stage": "footing",
+      "men": 49,
+      "types": {
+       "juthungi-riders": 49
+      }
+     }
+    },
+    "byType": {
+     "juthungi-riders": {
+      "men": 49,
+      "sumSecs": 488.36669782002787,
+      "n": 49,
+      "bays": {
+       "28": 49
+      },
+      "firstAt": 34.13333333333339
+     }
+    },
+    "dwell": {
+     "14": {
+      "stage": "finished",
+      "manSecs": 46240
+     },
+     "15": {
+      "stage": "no-parapet",
+      "manSecs": 69623
+     },
+     "23": {
+      "stage": "half-built",
+      "manSecs": 369
+     },
+     "28": {
+      "stage": "footing",
+      "manSecs": 286
+     }
+    },
+    "insidePeak": {
+     "throughWall": 45,
+     "pastEast": 0,
+     "pastWest": 0
+    },
+    "footprints": {
+     "tower-assault": {
+      "unitClass": "heavy-infantry",
+      "formation": "horde",
+      "strength": 72
+     },
+     "escalade-party": {
+      "unitClass": "light-infantry",
+      "formation": "loose",
+      "strength": 96
+     },
+     "ram-crew": {
+      "unitClass": "heavy-infantry",
+      "formation": "loose",
+      "strength": 32
+     },
+     "onager": {
+      "unitClass": "artillery",
+      "formation": "line",
+      "strength": 12
+     },
+     "juthungi-warband": {
+      "unitClass": "light-infantry",
+      "formation": "loose",
+      "strength": 180
+     },
+     "juthungi-riders": {
+      "unitClass": "light-cavalry",
+      "formation": "wedge",
+      "strength": 50
+     }
+    },
+    "unitCross": [
+     {
+      "unitId": 31,
+      "typeId": "juthungi-riders",
+      "unitClass": "light-cavalry",
+      "bay": 27,
+      "stage": "gap",
+      "x": 331,
+      "at": 46,
+      "secs": 18,
+      "alive": 50,
+      "initial": 50
+     }
+    ],
+    "wMin": -631,
+    "wMax": 1144
+   },
+   "errors": [],
+   "wallMs": 133886
+  },
+  {
+   "seed": 357747885,
+   "setup": {
+    "rngState": 357747885,
+    "units": 32,
+    "strength": {
+     "0": 1154,
+     "1": 1920,
+     "2": 0
+    },
+    "storm": 1,
+    "garrison": 0
+   },
+   "series": [
+    {
+     "t": 20,
+     "stormOnWall": 0,
+     "garrisonOnWall": 810,
+     "stormInside": 0,
+     "laddersCrossed": 0,
+     "strength": {
+      "0": 1154,
+      "1": 1852,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 40,
+     "stormOnWall": 103,
+     "garrisonOnWall": 779,
+     "stormInside": 0,
+     "laddersCrossed": 138,
+     "strength": {
+      "0": 1122,
+      "1": 1801,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 60,
+     "stormOnWall": 207,
+     "garrisonOnWall": 715,
+     "stormInside": 34,
+     "laddersCrossed": 284,
+     "strength": {
+      "0": 1057,
+      "1": 1698,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 80,
+     "stormOnWall": 164,
+     "garrisonOnWall": 649,
+     "stormInside": 36,
+     "laddersCrossed": 288,
+     "strength": {
+      "0": 986,
+      "1": 1638,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 100,
+     "stormOnWall": 108,
+     "garrisonOnWall": 634,
+     "stormInside": 13,
+     "laddersCrossed": 288,
+     "strength": {
+      "0": 969,
+      "1": 1538,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 120,
+     "stormOnWall": 97,
+     "garrisonOnWall": 621,
+     "stormInside": 9,
+     "laddersCrossed": 290,
+     "strength": {
+      "0": 955,
+      "1": 1498,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 140,
+     "stormOnWall": 86,
+     "garrisonOnWall": 614,
+     "stormInside": 7,
+     "laddersCrossed": 290,
+     "strength": {
+      "0": 947,
+      "1": 1398,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 160,
+     "stormOnWall": 78,
+     "garrisonOnWall": 608,
+     "stormInside": 7,
+     "laddersCrossed": 290,
+     "strength": {
+      "0": 939,
+      "1": 1351,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 180,
+     "stormOnWall": 63,
+     "garrisonOnWall": 605,
+     "stormInside": 5,
+     "laddersCrossed": 290,
+     "strength": {
+      "0": 934,
+      "1": 1289,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 199,
+     "stormOnWall": 73,
+     "garrisonOnWall": 592,
+     "stormInside": 2,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 919,
+      "1": 1259,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 219,
+     "stormOnWall": 41,
+     "garrisonOnWall": 581,
+     "stormInside": 2,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 908,
+      "1": 1234,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 239,
+     "stormOnWall": 42,
+     "garrisonOnWall": 578,
+     "stormInside": 1,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 903,
+      "1": 1217,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 259,
+     "stormOnWall": 13,
+     "garrisonOnWall": 576,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 900,
+      "1": 1207,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 279,
+     "stormOnWall": 13,
+     "garrisonOnWall": 576,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 900,
+      "1": 1200,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 299,
+     "stormOnWall": 9,
+     "garrisonOnWall": 572,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 896,
+      "1": 1195,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 319,
+     "stormOnWall": 9,
+     "garrisonOnWall": 572,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 896,
+      "1": 1190,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 339,
+     "stormOnWall": 9,
+     "garrisonOnWall": 567,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 889,
+      "1": 1190,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 359,
+     "stormOnWall": 9,
+     "garrisonOnWall": 567,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 889,
+      "1": 1189,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 379,
+     "stormOnWall": 9,
+     "garrisonOnWall": 565,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 886,
+      "1": 1189,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 399,
+     "stormOnWall": 9,
+     "garrisonOnWall": 565,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 886,
+      "1": 1189,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 419,
+     "stormOnWall": 9,
+     "garrisonOnWall": 564,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 885,
+      "1": 1189,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 439,
+     "stormOnWall": 9,
+     "garrisonOnWall": 564,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 885,
+      "1": 1189,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 458,
+     "stormOnWall": 9,
+     "garrisonOnWall": 564,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 885,
+      "1": 1189,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 478,
+     "stormOnWall": 9,
+     "garrisonOnWall": 564,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 885,
+      "1": 1189,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 498,
+     "stormOnWall": 9,
+     "garrisonOnWall": 563,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 884,
+      "1": 1189,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 518,
+     "stormOnWall": 9,
+     "garrisonOnWall": 563,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 884,
+      "1": 1188,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 538,
+     "stormOnWall": 9,
+     "garrisonOnWall": 563,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 884,
+      "1": 1188,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 558,
+     "stormOnWall": 9,
+     "garrisonOnWall": 563,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 884,
+      "1": 1188,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 578,
+     "stormOnWall": 9,
+     "garrisonOnWall": 560,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 881,
+      "1": 1188,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 598,
+     "stormOnWall": 9,
+     "garrisonOnWall": 559,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 880,
+      "1": 1188,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 618,
+     "stormOnWall": 9,
+     "garrisonOnWall": 559,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 880,
+      "1": 1188,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 638,
+     "stormOnWall": 9,
+     "garrisonOnWall": 555,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 876,
+      "1": 1188,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 658,
+     "stormOnWall": 9,
+     "garrisonOnWall": 555,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 876,
+      "1": 1188,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 678,
+     "stormOnWall": 9,
+     "garrisonOnWall": 555,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 875,
+      "1": 1188,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 697,
+     "stormOnWall": 9,
+     "garrisonOnWall": 555,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 875,
+      "1": 1188,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 717,
+     "stormOnWall": 9,
+     "garrisonOnWall": 550,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 870,
+      "1": 1188,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 737,
+     "stormOnWall": 9,
+     "garrisonOnWall": 550,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 870,
+      "1": 1188,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 757,
+     "stormOnWall": 9,
+     "garrisonOnWall": 549,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 869,
+      "1": 1188,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 777,
+     "stormOnWall": 9,
+     "garrisonOnWall": 549,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 869,
+      "1": 1188,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 797,
+     "stormOnWall": 9,
+     "garrisonOnWall": 548,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 868,
+      "1": 1188,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 817,
+     "stormOnWall": 9,
+     "garrisonOnWall": 548,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 868,
+      "1": 1188,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 837,
+     "stormOnWall": 9,
+     "garrisonOnWall": 546,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 866,
+      "1": 1188,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 857,
+     "stormOnWall": 9,
+     "garrisonOnWall": 546,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 866,
+      "1": 1188,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 877,
+     "stormOnWall": 9,
+     "garrisonOnWall": 546,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 865,
+      "1": 1188,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 897,
+     "stormOnWall": 9,
+     "garrisonOnWall": 546,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 862,
+      "1": 1188,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 917,
+     "stormOnWall": 9,
+     "garrisonOnWall": 537,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 856,
+      "1": 1187,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 937,
+     "stormOnWall": 9,
+     "garrisonOnWall": 535,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 854,
+      "1": 1187,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 956,
+     "stormOnWall": 9,
+     "garrisonOnWall": 535,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 854,
+      "1": 1187,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 976,
+     "stormOnWall": 9,
+     "garrisonOnWall": 532,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 851,
+      "1": 1187,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 996,
+     "stormOnWall": 9,
+     "garrisonOnWall": 532,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 851,
+      "1": 1187,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1016,
+     "stormOnWall": 9,
+     "garrisonOnWall": 527,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 846,
+      "1": 1187,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1036,
+     "stormOnWall": 9,
+     "garrisonOnWall": 527,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 846,
+      "1": 1187,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1056,
+     "stormOnWall": 9,
+     "garrisonOnWall": 526,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 845,
+      "1": 1187,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1076,
+     "stormOnWall": 9,
+     "garrisonOnWall": 526,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 845,
+      "1": 1187,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1096,
+     "stormOnWall": 9,
+     "garrisonOnWall": 519,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 838,
+      "1": 1187,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1116,
+     "stormOnWall": 9,
+     "garrisonOnWall": 519,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 838,
+      "1": 1187,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1136,
+     "stormOnWall": 9,
+     "garrisonOnWall": 516,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 835,
+      "1": 1187,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1156,
+     "stormOnWall": 9,
+     "garrisonOnWall": 516,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 835,
+      "1": 1187,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1176,
+     "stormOnWall": 9,
+     "garrisonOnWall": 516,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 835,
+      "1": 1187,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1195,
+     "stormOnWall": 9,
+     "garrisonOnWall": 516,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 835,
+      "1": 1187,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1215,
+     "stormOnWall": 9,
+     "garrisonOnWall": 516,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 835,
+      "1": 1187,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1235,
+     "stormOnWall": 9,
+     "garrisonOnWall": 516,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 835,
+      "1": 1187,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1255,
+     "stormOnWall": 9,
+     "garrisonOnWall": 516,
+     "stormInside": 0,
+     "laddersCrossed": 291,
+     "strength": {
+      "0": 835,
+      "1": 1187,
+      "2": 0
+     },
+     "result": {
+      "victor": 0,
+      "reason": "stalemate",
+      "casualties": {
+       "0": 319,
+       "1": 733
+      },
+      "survivors": {
+       "0": 835,
+       "1": 1187
+      },
+      "unitsLost": {
+       "0": 3,
+       "1": 10
+      },
+      "unitsTotal": {
+       "0": 12,
+       "1": 20
+      },
+      "at": 1241.7333333328613
+     }
+    }
+   ],
+   "result": {
+    "victor": 0,
+    "reason": "stalemate",
+    "casualties": {
+     "0": 319,
+     "1": 733
+    },
+    "survivors": {
+     "0": 835,
+     "1": 1187
+    },
+    "unitsLost": {
+     "0": 3,
+     "1": 10
+    },
+    "unitsTotal": {
+     "0": 12,
+     "1": 20
+    },
+    "at": 1241.7333333328613
+   },
+   "crossings": {
+    "byBay": {
+     "28": {
+      "stage": "footing",
+      "men": 50,
+      "types": {
+       "juthungi-riders": 50
+      }
+     }
+    },
+    "byType": {
+     "juthungi-riders": {
+      "men": 50,
+      "sumSecs": 519.5999954223631,
+      "n": 50,
+      "bays": {
+       "28": 50
+      },
+      "firstAt": 34.16666666666672
+     }
+    },
+    "dwell": {
+     "14": {
+      "stage": "finished",
+      "manSecs": 25186
+     },
+     "15": {
+      "stage": "no-parapet",
+      "manSecs": 36504
+     },
+     "16": {
+      "stage": "no-parapet",
+      "manSecs": 82
+     },
+     "17": {
+      "stage": "no-parapet",
+      "manSecs": 6
+     },
+     "23": {
+      "stage": "half-built",
+      "manSecs": 367
+     },
+     "24": {
+      "stage": "half-built",
+      "manSecs": 13
+     },
+     "28": {
+      "stage": "footing",
+      "manSecs": 319
+     }
+    },
+    "insidePeak": {
+     "throughWall": 43,
+     "pastEast": 0,
+     "pastWest": 0
+    },
+    "footprints": {
+     "tower-assault": {
+      "unitClass": "heavy-infantry",
+      "formation": "horde",
+      "strength": 72
+     },
+     "escalade-party": {
+      "unitClass": "light-infantry",
+      "formation": "loose",
+      "strength": 96
+     },
+     "ram-crew": {
+      "unitClass": "heavy-infantry",
+      "formation": "loose",
+      "strength": 32
+     },
+     "onager": {
+      "unitClass": "artillery",
+      "formation": "line",
+      "strength": 12
+     },
+     "juthungi-warband": {
+      "unitClass": "light-infantry",
+      "formation": "loose",
+      "strength": 180
+     },
+     "juthungi-riders": {
+      "unitClass": "light-cavalry",
+      "formation": "wedge",
+      "strength": 50
+     }
+    },
+    "unitCross": [
+     {
+      "unitId": 31,
+      "typeId": "juthungi-riders",
+      "unitClass": "light-cavalry",
+      "bay": 26,
+      "stage": "finished",
+      "x": 325,
+      "at": 47,
+      "secs": 19,
+      "alive": 50,
+      "initial": 50
+     }
+    ],
+    "wMin": -631,
+    "wMax": 1144
+   },
+   "errors": [],
+   "wallMs": 71977
+  },
+  {
+   "seed": 3012183646,
+   "setup": {
+    "rngState": 3012183646,
+    "units": 32,
+    "strength": {
+     "0": 1154,
+     "1": 1920,
+     "2": 0
+    },
+    "storm": 1,
+    "garrison": 0
+   },
+   "series": [
+    {
+     "t": 20,
+     "stormOnWall": 0,
+     "garrisonOnWall": 810,
+     "stormInside": 0,
+     "laddersCrossed": 0,
+     "strength": {
+      "0": 1154,
+      "1": 1844,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 40,
+     "stormOnWall": 105,
+     "garrisonOnWall": 785,
+     "stormInside": 2,
+     "laddersCrossed": 145,
+     "strength": {
+      "0": 1123,
+      "1": 1798,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 60,
+     "stormOnWall": 173,
+     "garrisonOnWall": 729,
+     "stormInside": 46,
+     "laddersCrossed": 269,
+     "strength": {
+      "0": 1067,
+      "1": 1683,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 80,
+     "stormOnWall": 127,
+     "garrisonOnWall": 692,
+     "stormInside": 37,
+     "laddersCrossed": 277,
+     "strength": {
+      "0": 1027,
+      "1": 1602,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 100,
+     "stormOnWall": 105,
+     "garrisonOnWall": 674,
+     "stormInside": 6,
+     "laddersCrossed": 277,
+     "strength": {
+      "0": 1006,
+      "1": 1548,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 120,
+     "stormOnWall": 98,
+     "garrisonOnWall": 654,
+     "stormInside": 6,
+     "laddersCrossed": 277,
+     "strength": {
+      "0": 987,
+      "1": 1514,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 140,
+     "stormOnWall": 82,
+     "garrisonOnWall": 638,
+     "stormInside": 6,
+     "laddersCrossed": 277,
+     "strength": {
+      "0": 971,
+      "1": 1379,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 160,
+     "stormOnWall": 70,
+     "garrisonOnWall": 635,
+     "stormInside": 6,
+     "laddersCrossed": 277,
+     "strength": {
+      "0": 968,
+      "1": 1366,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 180,
+     "stormOnWall": 42,
+     "garrisonOnWall": 633,
+     "stormInside": 1,
+     "laddersCrossed": 277,
+     "strength": {
+      "0": 966,
+      "1": 1292,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 199,
+     "stormOnWall": 25,
+     "garrisonOnWall": 633,
+     "stormInside": 1,
+     "laddersCrossed": 277,
+     "strength": {
+      "0": 963,
+      "1": 1250,
+      "2": 0
+     },
+     "result": {
+      "victor": 1,
+      "reason": "objective",
+      "casualties": {
+       "0": 189,
+       "1": 635
+      },
+      "survivors": {
+       "0": 965,
+       "1": 1285
+      },
+      "unitsLost": {
+       "0": 2,
+       "1": 8
+      },
+      "unitsTotal": {
+       "0": 12,
+       "1": 20
+      },
+      "at": 188.4333333333252
+     }
+    }
+   ],
+   "result": {
+    "victor": 1,
+    "reason": "objective",
+    "casualties": {
+     "0": 189,
+     "1": 635
+    },
+    "survivors": {
+     "0": 965,
+     "1": 1285
+    },
+    "unitsLost": {
+     "0": 2,
+     "1": 8
+    },
+    "unitsTotal": {
+     "0": 12,
+     "1": 20
+    },
+    "at": 188.4333333333252
+   },
+   "crossings": {
+    "byBay": {
+     "28": {
+      "stage": "footing",
+      "men": 49,
+      "types": {
+       "juthungi-riders": 49
+      }
+     }
+    },
+    "byType": {
+     "juthungi-riders": {
+      "men": 49,
+      "sumSecs": 486.3666978200279,
+      "n": 49,
+      "bays": {
+       "28": 49
+      },
+      "firstAt": 34.13333333333339
+     }
+    },
+    "dwell": {
+     "14": {
+      "stage": "finished",
+      "manSecs": 207
+     },
+     "16": {
+      "stage": "no-parapet",
+      "manSecs": 14
+     },
+     "23": {
+      "stage": "half-built",
+      "manSecs": 277
+     },
+     "24": {
+      "stage": "half-built",
+      "manSecs": 280
+     },
+     "28": {
+      "stage": "footing",
+      "manSecs": 286
+     }
+    },
+    "insidePeak": {
+     "throughWall": 49,
+     "pastEast": 0,
+     "pastWest": 0
+    },
+    "footprints": {
+     "tower-assault": {
+      "unitClass": "heavy-infantry",
+      "formation": "horde",
+      "strength": 72
+     },
+     "escalade-party": {
+      "unitClass": "light-infantry",
+      "formation": "loose",
+      "strength": 96
+     },
+     "ram-crew": {
+      "unitClass": "heavy-infantry",
+      "formation": "loose",
+      "strength": 32
+     },
+     "onager": {
+      "unitClass": "artillery",
+      "formation": "line",
+      "strength": 12
+     },
+     "juthungi-warband": {
+      "unitClass": "light-infantry",
+      "formation": "loose",
+      "strength": 180
+     },
+     "juthungi-riders": {
+      "unitClass": "light-cavalry",
+      "formation": "wedge",
+      "strength": 50
+     }
+    },
+    "unitCross": [
+     {
+      "unitId": 31,
+      "typeId": "juthungi-riders",
+      "unitClass": "light-cavalry",
+      "bay": 27,
+      "stage": "gap",
+      "x": 338,
+      "at": 45,
+      "secs": 17,
+      "alive": 50,
+      "initial": 50
+     }
+    ],
+    "wMin": -631,
+    "wMax": 1144
+   },
+   "errors": [],
+   "wallMs": 14368
+  },
+  {
+   "seed": 1371652111,
+   "setup": {
+    "rngState": 1371652111,
+    "units": 32,
+    "strength": {
+     "0": 1154,
+     "1": 1920,
+     "2": 0
+    },
+    "storm": 1,
+    "garrison": 0
+   },
+   "series": [
+    {
+     "t": 20,
+     "stormOnWall": 0,
+     "garrisonOnWall": 810,
+     "stormInside": 0,
+     "laddersCrossed": 0,
+     "strength": {
+      "0": 1154,
+      "1": 1860,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 40,
+     "stormOnWall": 115,
+     "garrisonOnWall": 781,
+     "stormInside": 1,
+     "laddersCrossed": 138,
+     "strength": {
+      "0": 1121,
+      "1": 1824,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 60,
+     "stormOnWall": 244,
+     "garrisonOnWall": 710,
+     "stormInside": 47,
+     "laddersCrossed": 307,
+     "strength": {
+      "0": 1051,
+      "1": 1733,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 80,
+     "stormOnWall": 201,
+     "garrisonOnWall": 671,
+     "stormInside": 36,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 1011,
+      "1": 1667,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 100,
+     "stormOnWall": 171,
+     "garrisonOnWall": 665,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 1004,
+      "1": 1579,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 120,
+     "stormOnWall": 160,
+     "garrisonOnWall": 660,
+     "stormInside": 16,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 999,
+      "1": 1552,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 140,
+     "stormOnWall": 138,
+     "garrisonOnWall": 658,
+     "stormInside": 27,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 994,
+      "1": 1473,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 160,
+     "stormOnWall": 120,
+     "garrisonOnWall": 652,
+     "stormInside": 26,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 986,
+      "1": 1395,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 180,
+     "stormOnWall": 116,
+     "garrisonOnWall": 647,
+     "stormInside": 9,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 981,
+      "1": 1300,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 199,
+     "stormOnWall": 109,
+     "garrisonOnWall": 644,
+     "stormInside": 4,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 978,
+      "1": 1284,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 219,
+     "stormOnWall": 107,
+     "garrisonOnWall": 639,
+     "stormInside": 9,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 973,
+      "1": 1282,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 239,
+     "stormOnWall": 104,
+     "garrisonOnWall": 638,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 972,
+      "1": 1279,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 259,
+     "stormOnWall": 98,
+     "garrisonOnWall": 636,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 970,
+      "1": 1262,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 279,
+     "stormOnWall": 94,
+     "garrisonOnWall": 634,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 968,
+      "1": 1241,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 299,
+     "stormOnWall": 92,
+     "garrisonOnWall": 628,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 962,
+      "1": 1237,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 319,
+     "stormOnWall": 92,
+     "garrisonOnWall": 626,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 960,
+      "1": 1237,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 339,
+     "stormOnWall": 90,
+     "garrisonOnWall": 624,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 958,
+      "1": 1235,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 359,
+     "stormOnWall": 90,
+     "garrisonOnWall": 623,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 957,
+      "1": 1235,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 379,
+     "stormOnWall": 90,
+     "garrisonOnWall": 617,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 949,
+      "1": 1235,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 399,
+     "stormOnWall": 88,
+     "garrisonOnWall": 614,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 946,
+      "1": 1233,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 419,
+     "stormOnWall": 88,
+     "garrisonOnWall": 612,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 942,
+      "1": 1233,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 439,
+     "stormOnWall": 88,
+     "garrisonOnWall": 610,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 940,
+      "1": 1233,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 458,
+     "stormOnWall": 88,
+     "garrisonOnWall": 610,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 940,
+      "1": 1233,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 478,
+     "stormOnWall": 88,
+     "garrisonOnWall": 610,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 940,
+      "1": 1233,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 498,
+     "stormOnWall": 88,
+     "garrisonOnWall": 606,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 936,
+      "1": 1233,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 518,
+     "stormOnWall": 87,
+     "garrisonOnWall": 604,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 934,
+      "1": 1232,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 538,
+     "stormOnWall": 86,
+     "garrisonOnWall": 603,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 932,
+      "1": 1231,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 558,
+     "stormOnWall": 85,
+     "garrisonOnWall": 598,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 926,
+      "1": 1230,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 578,
+     "stormOnWall": 85,
+     "garrisonOnWall": 598,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 925,
+      "1": 1230,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 598,
+     "stormOnWall": 84,
+     "garrisonOnWall": 597,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 923,
+      "1": 1229,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 618,
+     "stormOnWall": 84,
+     "garrisonOnWall": 594,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 920,
+      "1": 1229,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 638,
+     "stormOnWall": 84,
+     "garrisonOnWall": 592,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 918,
+      "1": 1229,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 658,
+     "stormOnWall": 84,
+     "garrisonOnWall": 591,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 917,
+      "1": 1229,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 678,
+     "stormOnWall": 83,
+     "garrisonOnWall": 587,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 911,
+      "1": 1228,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 697,
+     "stormOnWall": 83,
+     "garrisonOnWall": 586,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 910,
+      "1": 1227,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 717,
+     "stormOnWall": 82,
+     "garrisonOnWall": 584,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 908,
+      "1": 1227,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 737,
+     "stormOnWall": 81,
+     "garrisonOnWall": 582,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 906,
+      "1": 1226,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 757,
+     "stormOnWall": 81,
+     "garrisonOnWall": 582,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 901,
+      "1": 1226,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 777,
+     "stormOnWall": 81,
+     "garrisonOnWall": 581,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 900,
+      "1": 1226,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 797,
+     "stormOnWall": 81,
+     "garrisonOnWall": 580,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 895,
+      "1": 1226,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 817,
+     "stormOnWall": 80,
+     "garrisonOnWall": 578,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 893,
+      "1": 1225,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 837,
+     "stormOnWall": 80,
+     "garrisonOnWall": 577,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 889,
+      "1": 1225,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 857,
+     "stormOnWall": 80,
+     "garrisonOnWall": 576,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 888,
+      "1": 1225,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 877,
+     "stormOnWall": 80,
+     "garrisonOnWall": 575,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 885,
+      "1": 1225,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 897,
+     "stormOnWall": 80,
+     "garrisonOnWall": 574,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 884,
+      "1": 1225,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 917,
+     "stormOnWall": 80,
+     "garrisonOnWall": 574,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 882,
+      "1": 1225,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 937,
+     "stormOnWall": 79,
+     "garrisonOnWall": 573,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 880,
+      "1": 1224,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 956,
+     "stormOnWall": 79,
+     "garrisonOnWall": 573,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 880,
+      "1": 1224,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 976,
+     "stormOnWall": 78,
+     "garrisonOnWall": 573,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 878,
+      "1": 1223,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 996,
+     "stormOnWall": 78,
+     "garrisonOnWall": 569,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 875,
+      "1": 1223,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1016,
+     "stormOnWall": 78,
+     "garrisonOnWall": 568,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 872,
+      "1": 1223,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1036,
+     "stormOnWall": 78,
+     "garrisonOnWall": 567,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 871,
+      "1": 1223,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1056,
+     "stormOnWall": 78,
+     "garrisonOnWall": 566,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 870,
+      "1": 1223,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1076,
+     "stormOnWall": 78,
+     "garrisonOnWall": 566,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 870,
+      "1": 1223,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1096,
+     "stormOnWall": 76,
+     "garrisonOnWall": 566,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 867,
+      "1": 1221,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1116,
+     "stormOnWall": 76,
+     "garrisonOnWall": 565,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 866,
+      "1": 1221,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1136,
+     "stormOnWall": 75,
+     "garrisonOnWall": 565,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 864,
+      "1": 1220,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1156,
+     "stormOnWall": 75,
+     "garrisonOnWall": 565,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 864,
+      "1": 1220,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1176,
+     "stormOnWall": 75,
+     "garrisonOnWall": 564,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 863,
+      "1": 1220,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1195,
+     "stormOnWall": 75,
+     "garrisonOnWall": 564,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 863,
+      "1": 1220,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1215,
+     "stormOnWall": 74,
+     "garrisonOnWall": 564,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 861,
+      "1": 1219,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1235,
+     "stormOnWall": 74,
+     "garrisonOnWall": 564,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 861,
+      "1": 1219,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1255,
+     "stormOnWall": 74,
+     "garrisonOnWall": 564,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 861,
+      "1": 1219,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1275,
+     "stormOnWall": 74,
+     "garrisonOnWall": 564,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 861,
+      "1": 1219,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1295,
+     "stormOnWall": 73,
+     "garrisonOnWall": 564,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 861,
+      "1": 1218,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1315,
+     "stormOnWall": 73,
+     "garrisonOnWall": 563,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 860,
+      "1": 1218,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1335,
+     "stormOnWall": 72,
+     "garrisonOnWall": 563,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 860,
+      "1": 1217,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1355,
+     "stormOnWall": 72,
+     "garrisonOnWall": 562,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 856,
+      "1": 1217,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1375,
+     "stormOnWall": 72,
+     "garrisonOnWall": 560,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 854,
+      "1": 1217,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1395,
+     "stormOnWall": 72,
+     "garrisonOnWall": 560,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 853,
+      "1": 1217,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1415,
+     "stormOnWall": 72,
+     "garrisonOnWall": 560,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 853,
+      "1": 1217,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1435,
+     "stormOnWall": 72,
+     "garrisonOnWall": 560,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 852,
+      "1": 1217,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1454,
+     "stormOnWall": 71,
+     "garrisonOnWall": 560,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 852,
+      "1": 1216,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1474,
+     "stormOnWall": 71,
+     "garrisonOnWall": 560,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 851,
+      "1": 1216,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1494,
+     "stormOnWall": 70,
+     "garrisonOnWall": 560,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 851,
+      "1": 1215,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1514,
+     "stormOnWall": 70,
+     "garrisonOnWall": 560,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 848,
+      "1": 1215,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1534,
+     "stormOnWall": 70,
+     "garrisonOnWall": 560,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 847,
+      "1": 1215,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1554,
+     "stormOnWall": 70,
+     "garrisonOnWall": 560,
+     "stormInside": 17,
+     "laddersCrossed": 319,
+     "strength": {
+      "0": 847,
+      "1": 1215,
+      "2": 0
+     },
+     "result": {
+      "victor": 0,
+      "reason": "repulsed",
+      "casualties": {
+       "0": 307,
+       "1": 705
+      },
+      "survivors": {
+       "0": 847,
+       "1": 1215
+      },
+      "unitsLost": {
+       "0": 1,
+       "1": 11
+      },
+      "unitsTotal": {
+       "0": 12,
+       "1": 20
+      },
+      "at": 1535.7999999992605
+     }
+    }
+   ],
+   "result": {
+    "victor": 0,
+    "reason": "repulsed",
+    "casualties": {
+     "0": 307,
+     "1": 705
+    },
+    "survivors": {
+     "0": 847,
+     "1": 1215
+    },
+    "unitsLost": {
+     "0": 1,
+     "1": 11
+    },
+    "unitsTotal": {
+     "0": 12,
+     "1": 20
+    },
+    "at": 1535.7999999992605
+   },
+   "crossings": {
+    "byBay": {
+     "28": {
+      "stage": "footing",
+      "men": 80,
+      "types": {
+       "juthungi-riders": 80
+      }
+     }
+    },
+    "byType": {
+     "juthungi-riders": {
+      "men": 80,
+      "sumSecs": 1457.9999627431587,
+      "n": 80,
+      "bays": {
+       "28": 80
+      },
+      "firstAt": 34.16666666666672
+     }
+    },
+    "dwell": {
+     "27": {
+      "stage": "gap",
+      "manSecs": 4425
+     },
+     "28": {
+      "stage": "footing",
+      "manSecs": 978
+     },
+     "29": {
+      "stage": "footing",
+      "manSecs": 18
+     },
+     "30": {
+      "stage": "finished",
+      "manSecs": 1
+     }
+    },
+    "insidePeak": {
+     "throughWall": 49,
+     "pastEast": 0,
+     "pastWest": 0
+    },
+    "footprints": {
+     "tower-assault": {
+      "unitClass": "heavy-infantry",
+      "formation": "horde",
+      "strength": 72
+     },
+     "escalade-party": {
+      "unitClass": "light-infantry",
+      "formation": "loose",
+      "strength": 96
+     },
+     "ram-crew": {
+      "unitClass": "heavy-infantry",
+      "formation": "loose",
+      "strength": 32
+     },
+     "onager": {
+      "unitClass": "artillery",
+      "formation": "line",
+      "strength": 12
+     },
+     "juthungi-warband": {
+      "unitClass": "light-infantry",
+      "formation": "loose",
+      "strength": 180
+     },
+     "juthungi-riders": {
+      "unitClass": "light-cavalry",
+      "formation": "wedge",
+      "strength": 50
+     }
+    },
+    "unitCross": [
+     {
+      "unitId": 31,
+      "typeId": "juthungi-riders",
+      "unitClass": "light-cavalry",
+      "bay": 27,
+      "stage": "gap",
+      "x": 338,
+      "at": 45,
+      "secs": 17,
+      "alive": 50,
+      "initial": 50
+     },
+     {
+      "unitId": 30,
+      "typeId": "juthungi-riders",
+      "unitClass": "light-cavalry",
+      "bay": 26,
+      "stage": "finished",
+      "x": 320,
+      "at": 139,
+      "secs": 51,
+      "alive": 35,
+      "initial": 50
+     }
+    ],
+    "wMin": -631,
+    "wMax": 1144
+   },
+   "errors": [],
+   "wallMs": 90205
+  },
+  {
+   "seed": 4026087872,
+   "setup": {
+    "rngState": 4026087872,
+    "units": 32,
+    "strength": {
+     "0": 1154,
+     "1": 1920,
+     "2": 0
+    },
+    "storm": 1,
+    "garrison": 0
+   },
+   "series": [
+    {
+     "t": 20,
+     "stormOnWall": 0,
+     "garrisonOnWall": 810,
+     "stormInside": 0,
+     "laddersCrossed": 0,
+     "strength": {
+      "0": 1154,
+      "1": 1824,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 40,
+     "stormOnWall": 106,
+     "garrisonOnWall": 787,
+     "stormInside": 1,
+     "laddersCrossed": 133,
+     "strength": {
+      "0": 1126,
+      "1": 1785,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 60,
+     "stormOnWall": 173,
+     "garrisonOnWall": 732,
+     "stormInside": 38,
+     "laddersCrossed": 256,
+     "strength": {
+      "0": 1072,
+      "1": 1680,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 80,
+     "stormOnWall": 134,
+     "garrisonOnWall": 672,
+     "stormInside": 39,
+     "laddersCrossed": 259,
+     "strength": {
+      "0": 1010,
+      "1": 1620,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 100,
+     "stormOnWall": 106,
+     "garrisonOnWall": 651,
+     "stormInside": 2,
+     "laddersCrossed": 259,
+     "strength": {
+      "0": 983,
+      "1": 1553,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 120,
+     "stormOnWall": 98,
+     "garrisonOnWall": 639,
+     "stormInside": 1,
+     "laddersCrossed": 260,
+     "strength": {
+      "0": 972,
+      "1": 1480,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 140,
+     "stormOnWall": 98,
+     "garrisonOnWall": 632,
+     "stormInside": 1,
+     "laddersCrossed": 260,
+     "strength": {
+      "0": 965,
+      "1": 1400,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 160,
+     "stormOnWall": 83,
+     "garrisonOnWall": 629,
+     "stormInside": 0,
+     "laddersCrossed": 260,
+     "strength": {
+      "0": 961,
+      "1": 1360,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 180,
+     "stormOnWall": 29,
+     "garrisonOnWall": 629,
+     "stormInside": 0,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 960,
+      "1": 1245,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 199,
+     "stormOnWall": 42,
+     "garrisonOnWall": 626,
+     "stormInside": 0,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 956,
+      "1": 1215,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 219,
+     "stormOnWall": 27,
+     "garrisonOnWall": 612,
+     "stormInside": 0,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 940,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 239,
+     "stormOnWall": 3,
+     "garrisonOnWall": 609,
+     "stormInside": 0,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 937,
+      "1": 1152,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 259,
+     "stormOnWall": 0,
+     "garrisonOnWall": 604,
+     "stormInside": 1,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 929,
+      "1": 1140,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 279,
+     "stormOnWall": 0,
+     "garrisonOnWall": 603,
+     "stormInside": 3,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 929,
+      "1": 1133,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 299,
+     "stormOnWall": 0,
+     "garrisonOnWall": 599,
+     "stormInside": 3,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 925,
+      "1": 1128,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 319,
+     "stormOnWall": 0,
+     "garrisonOnWall": 598,
+     "stormInside": 3,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 924,
+      "1": 1111,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 339,
+     "stormOnWall": 0,
+     "garrisonOnWall": 595,
+     "stormInside": 3,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 921,
+      "1": 1106,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 359,
+     "stormOnWall": 0,
+     "garrisonOnWall": 595,
+     "stormInside": 3,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 921,
+      "1": 1104,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 379,
+     "stormOnWall": 0,
+     "garrisonOnWall": 591,
+     "stormInside": 27,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 916,
+      "1": 1104,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 399,
+     "stormOnWall": 0,
+     "garrisonOnWall": 591,
+     "stormInside": 44,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 916,
+      "1": 1095,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 419,
+     "stormOnWall": 0,
+     "garrisonOnWall": 590,
+     "stormInside": 44,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 915,
+      "1": 1089,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 439,
+     "stormOnWall": 0,
+     "garrisonOnWall": 589,
+     "stormInside": 31,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 914,
+      "1": 1070,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 458,
+     "stormOnWall": 0,
+     "garrisonOnWall": 588,
+     "stormInside": 25,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 912,
+      "1": 1057,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 478,
+     "stormOnWall": 0,
+     "garrisonOnWall": 588,
+     "stormInside": 24,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 912,
+      "1": 1049,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 498,
+     "stormOnWall": 0,
+     "garrisonOnWall": 587,
+     "stormInside": 23,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 911,
+      "1": 1044,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 518,
+     "stormOnWall": 0,
+     "garrisonOnWall": 585,
+     "stormInside": 22,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 909,
+      "1": 1041,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 538,
+     "stormOnWall": 0,
+     "garrisonOnWall": 584,
+     "stormInside": 14,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 908,
+      "1": 1032,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 558,
+     "stormOnWall": 0,
+     "garrisonOnWall": 584,
+     "stormInside": 14,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 908,
+      "1": 1024,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 578,
+     "stormOnWall": 0,
+     "garrisonOnWall": 584,
+     "stormInside": 14,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 908,
+      "1": 1017,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 598,
+     "stormOnWall": 0,
+     "garrisonOnWall": 583,
+     "stormInside": 14,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 905,
+      "1": 1010,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 618,
+     "stormOnWall": 0,
+     "garrisonOnWall": 581,
+     "stormInside": 14,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 905,
+      "1": 1006,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 638,
+     "stormOnWall": 0,
+     "garrisonOnWall": 579,
+     "stormInside": 14,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 903,
+      "1": 996,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 658,
+     "stormOnWall": 0,
+     "garrisonOnWall": 579,
+     "stormInside": 14,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 903,
+      "1": 981,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 678,
+     "stormOnWall": 0,
+     "garrisonOnWall": 576,
+     "stormInside": 14,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 900,
+      "1": 974,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 697,
+     "stormOnWall": 0,
+     "garrisonOnWall": 574,
+     "stormInside": 14,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 898,
+      "1": 971,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 717,
+     "stormOnWall": 0,
+     "garrisonOnWall": 574,
+     "stormInside": 14,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 898,
+      "1": 965,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 737,
+     "stormOnWall": 0,
+     "garrisonOnWall": 572,
+     "stormInside": 14,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 896,
+      "1": 948,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 757,
+     "stormOnWall": 0,
+     "garrisonOnWall": 571,
+     "stormInside": 14,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 895,
+      "1": 931,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 777,
+     "stormOnWall": 0,
+     "garrisonOnWall": 570,
+     "stormInside": 14,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 894,
+      "1": 920,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 797,
+     "stormOnWall": 0,
+     "garrisonOnWall": 569,
+     "stormInside": 14,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 893,
+      "1": 905,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 817,
+     "stormOnWall": 0,
+     "garrisonOnWall": 568,
+     "stormInside": 14,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 892,
+      "1": 816,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 837,
+     "stormOnWall": 0,
+     "garrisonOnWall": 568,
+     "stormInside": 14,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 892,
+      "1": 805,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 857,
+     "stormOnWall": 0,
+     "garrisonOnWall": 568,
+     "stormInside": 14,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 892,
+      "1": 805,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 877,
+     "stormOnWall": 0,
+     "garrisonOnWall": 565,
+     "stormInside": 14,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 888,
+      "1": 779,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 897,
+     "stormOnWall": 0,
+     "garrisonOnWall": 557,
+     "stormInside": 14,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 877,
+      "1": 723,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 917,
+     "stormOnWall": 0,
+     "garrisonOnWall": 556,
+     "stormInside": 14,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 876,
+      "1": 658,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 937,
+     "stormOnWall": 0,
+     "garrisonOnWall": 556,
+     "stormInside": 14,
+     "laddersCrossed": 261,
+     "strength": {
+      "0": 872,
+      "1": 640,
+      "2": 0
+     },
+     "result": {
+      "victor": 0,
+      "reason": "rout",
+      "casualties": {
+       "0": 278,
+       "1": 1265
+      },
+      "survivors": {
+       "0": 876,
+       "1": 655
+      },
+      "unitsLost": {
+       "0": 2,
+       "1": 15
+      },
+      "unitsTotal": {
+       "0": 12,
+       "1": 20
+      },
+      "at": 918.9333333331549
+     }
+    }
+   ],
+   "result": {
+    "victor": 0,
+    "reason": "rout",
+    "casualties": {
+     "0": 278,
+     "1": 1265
+    },
+    "survivors": {
+     "0": 876,
+     "1": 655
+    },
+    "unitsLost": {
+     "0": 2,
+     "1": 15
+    },
+    "unitsTotal": {
+     "0": 12,
+     "1": 20
+    },
+    "at": 918.9333333331549
+   },
+   "crossings": {
+    "byBay": {
+     "28": {
+      "stage": "footing",
+      "men": 100,
+      "types": {
+       "juthungi-riders": 49,
+       "juthungi-warband": 51
+      }
+     }
+    },
+    "byType": {
+     "juthungi-riders": {
+      "men": 49,
+      "sumSecs": 488.36669782002787,
+      "n": 49,
+      "bays": {
+       "28": 49
+      },
+      "firstAt": 34.13333333333339
+     },
+     "juthungi-warband": {
+      "men": 51,
+      "sumSecs": 537.6662902835556,
+      "n": 51,
+      "bays": {
+       "28": 51
+      },
+      "firstAt": 365.8000000000064
+     }
+    },
+    "dwell": {
+     "14": {
+      "stage": "finished",
+      "manSecs": 23008
+     },
+     "15": {
+      "stage": "no-parapet",
+      "manSecs": 30432
+     },
+     "16": {
+      "stage": "no-parapet",
+      "manSecs": 8064
+     },
+     "17": {
+      "stage": "no-parapet",
+      "manSecs": 339
+     },
+     "18": {
+      "stage": "finished",
+      "manSecs": 178
+     },
+     "19": {
+      "stage": "finished",
+      "manSecs": 64
+     },
+     "23": {
+      "stage": "half-built",
+      "manSecs": 10
+     },
+     "24": {
+      "stage": "half-built",
+      "manSecs": 510
+     },
+     "26": {
+      "stage": "finished",
+      "manSecs": 7343
+     },
+     "27": {
+      "stage": "gap",
+      "manSecs": 7860
+     },
+     "28": {
+      "stage": "footing",
+      "manSecs": 6788
+     }
+    },
+    "insidePeak": {
+     "throughWall": 46,
+     "pastEast": 0,
+     "pastWest": 0
+    },
+    "footprints": {
+     "tower-assault": {
+      "unitClass": "heavy-infantry",
+      "formation": "horde",
+      "strength": 72
+     },
+     "escalade-party": {
+      "unitClass": "light-infantry",
+      "formation": "loose",
+      "strength": 96
+     },
+     "ram-crew": {
+      "unitClass": "heavy-infantry",
+      "formation": "loose",
+      "strength": 32
+     },
+     "onager": {
+      "unitClass": "artillery",
+      "formation": "line",
+      "strength": 12
+     },
+     "juthungi-warband": {
+      "unitClass": "light-infantry",
+      "formation": "loose",
+      "strength": 180
+     },
+     "juthungi-riders": {
+      "unitClass": "light-cavalry",
+      "formation": "wedge",
+      "strength": 50
+     }
+    },
+    "unitCross": [
+     {
+      "unitId": 31,
+      "typeId": "juthungi-riders",
+      "unitClass": "light-cavalry",
+      "bay": 27,
+      "stage": "gap",
+      "x": 331,
+      "at": 46,
+      "secs": 18,
+      "alive": 50,
+      "initial": 50
+     }
+    ],
+    "wMin": -631,
+    "wMax": 1144
+   },
+   "errors": [],
+   "wallMs": 54567
+  },
+  {
+   "seed": 2385556337,
+   "setup": {
+    "rngState": 2385556337,
+    "units": 32,
+    "strength": {
+     "0": 1154,
+     "1": 1920,
+     "2": 0
+    },
+    "storm": 1,
+    "garrison": 0
+   },
+   "series": [
+    {
+     "t": 20,
+     "stormOnWall": 0,
+     "garrisonOnWall": 810,
+     "stormInside": 0,
+     "laddersCrossed": 0,
+     "strength": {
+      "0": 1154,
+      "1": 1860,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 40,
+     "stormOnWall": 121,
+     "garrisonOnWall": 784,
+     "stormInside": 1,
+     "laddersCrossed": 147,
+     "strength": {
+      "0": 1123,
+      "1": 1821,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 60,
+     "stormOnWall": 222,
+     "garrisonOnWall": 715,
+     "stormInside": 39,
+     "laddersCrossed": 296,
+     "strength": {
+      "0": 1056,
+      "1": 1707,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 80,
+     "stormOnWall": 173,
+     "garrisonOnWall": 657,
+     "stormInside": 43,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 995,
+      "1": 1639,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 100,
+     "stormOnWall": 142,
+     "garrisonOnWall": 649,
+     "stormInside": 10,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 980,
+      "1": 1557,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 120,
+     "stormOnWall": 101,
+     "garrisonOnWall": 640,
+     "stormInside": 10,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 971,
+      "1": 1461,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 140,
+     "stormOnWall": 99,
+     "garrisonOnWall": 638,
+     "stormInside": 10,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 969,
+      "1": 1397,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 160,
+     "stormOnWall": 95,
+     "garrisonOnWall": 631,
+     "stormInside": 10,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 961,
+      "1": 1360,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 180,
+     "stormOnWall": 92,
+     "garrisonOnWall": 630,
+     "stormInside": 6,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 960,
+      "1": 1300,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 199,
+     "stormOnWall": 75,
+     "garrisonOnWall": 627,
+     "stormInside": 4,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 955,
+      "1": 1250,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 219,
+     "stormOnWall": 68,
+     "garrisonOnWall": 618,
+     "stormInside": 1,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 946,
+      "1": 1220,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 239,
+     "stormOnWall": 66,
+     "garrisonOnWall": 615,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 939,
+      "1": 1208,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 259,
+     "stormOnWall": 66,
+     "garrisonOnWall": 610,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 933,
+      "1": 1194,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 279,
+     "stormOnWall": 66,
+     "garrisonOnWall": 606,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 930,
+      "1": 1194,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 299,
+     "stormOnWall": 66,
+     "garrisonOnWall": 601,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 925,
+      "1": 1189,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 319,
+     "stormOnWall": 65,
+     "garrisonOnWall": 599,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 920,
+      "1": 1183,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 339,
+     "stormOnWall": 65,
+     "garrisonOnWall": 594,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 915,
+      "1": 1183,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 359,
+     "stormOnWall": 65,
+     "garrisonOnWall": 593,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 914,
+      "1": 1183,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 379,
+     "stormOnWall": 65,
+     "garrisonOnWall": 585,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 903,
+      "1": 1183,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 399,
+     "stormOnWall": 64,
+     "garrisonOnWall": 583,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 901,
+      "1": 1182,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 419,
+     "stormOnWall": 64,
+     "garrisonOnWall": 582,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 900,
+      "1": 1182,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 439,
+     "stormOnWall": 63,
+     "garrisonOnWall": 578,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 896,
+      "1": 1181,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 458,
+     "stormOnWall": 62,
+     "garrisonOnWall": 573,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 891,
+      "1": 1180,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 478,
+     "stormOnWall": 62,
+     "garrisonOnWall": 571,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 889,
+      "1": 1180,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 498,
+     "stormOnWall": 62,
+     "garrisonOnWall": 564,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 882,
+      "1": 1180,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 518,
+     "stormOnWall": 62,
+     "garrisonOnWall": 563,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 881,
+      "1": 1180,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 538,
+     "stormOnWall": 62,
+     "garrisonOnWall": 561,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 879,
+      "1": 1180,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 558,
+     "stormOnWall": 60,
+     "garrisonOnWall": 557,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 875,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 578,
+     "stormOnWall": 60,
+     "garrisonOnWall": 552,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 870,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 598,
+     "stormOnWall": 60,
+     "garrisonOnWall": 551,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 869,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 618,
+     "stormOnWall": 60,
+     "garrisonOnWall": 551,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 869,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 638,
+     "stormOnWall": 60,
+     "garrisonOnWall": 549,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 867,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 658,
+     "stormOnWall": 60,
+     "garrisonOnWall": 545,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 863,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 678,
+     "stormOnWall": 60,
+     "garrisonOnWall": 536,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 854,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 697,
+     "stormOnWall": 60,
+     "garrisonOnWall": 535,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 853,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 717,
+     "stormOnWall": 60,
+     "garrisonOnWall": 535,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 853,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 737,
+     "stormOnWall": 60,
+     "garrisonOnWall": 534,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 852,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 757,
+     "stormOnWall": 60,
+     "garrisonOnWall": 522,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 840,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 777,
+     "stormOnWall": 60,
+     "garrisonOnWall": 521,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 839,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 797,
+     "stormOnWall": 60,
+     "garrisonOnWall": 518,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 836,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 817,
+     "stormOnWall": 60,
+     "garrisonOnWall": 516,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 834,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 837,
+     "stormOnWall": 60,
+     "garrisonOnWall": 515,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 833,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 857,
+     "stormOnWall": 60,
+     "garrisonOnWall": 513,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 831,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 877,
+     "stormOnWall": 60,
+     "garrisonOnWall": 513,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 829,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 897,
+     "stormOnWall": 60,
+     "garrisonOnWall": 511,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 827,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 917,
+     "stormOnWall": 60,
+     "garrisonOnWall": 510,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 824,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 937,
+     "stormOnWall": 60,
+     "garrisonOnWall": 505,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 819,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 956,
+     "stormOnWall": 60,
+     "garrisonOnWall": 505,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 819,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 976,
+     "stormOnWall": 60,
+     "garrisonOnWall": 503,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 817,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 996,
+     "stormOnWall": 60,
+     "garrisonOnWall": 503,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 817,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1016,
+     "stormOnWall": 60,
+     "garrisonOnWall": 498,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 812,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1036,
+     "stormOnWall": 60,
+     "garrisonOnWall": 498,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 812,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1056,
+     "stormOnWall": 60,
+     "garrisonOnWall": 498,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 812,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1076,
+     "stormOnWall": 60,
+     "garrisonOnWall": 498,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 812,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1096,
+     "stormOnWall": 60,
+     "garrisonOnWall": 491,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 805,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1116,
+     "stormOnWall": 60,
+     "garrisonOnWall": 491,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 805,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1136,
+     "stormOnWall": 60,
+     "garrisonOnWall": 483,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 797,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1156,
+     "stormOnWall": 60,
+     "garrisonOnWall": 481,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 795,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1176,
+     "stormOnWall": 60,
+     "garrisonOnWall": 477,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 791,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1195,
+     "stormOnWall": 60,
+     "garrisonOnWall": 476,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 790,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1215,
+     "stormOnWall": 60,
+     "garrisonOnWall": 476,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 789,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1235,
+     "stormOnWall": 60,
+     "garrisonOnWall": 474,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 787,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1255,
+     "stormOnWall": 60,
+     "garrisonOnWall": 474,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 787,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1275,
+     "stormOnWall": 60,
+     "garrisonOnWall": 471,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 784,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1295,
+     "stormOnWall": 60,
+     "garrisonOnWall": 471,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 784,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1315,
+     "stormOnWall": 60,
+     "garrisonOnWall": 471,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 782,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1335,
+     "stormOnWall": 60,
+     "garrisonOnWall": 471,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 782,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1355,
+     "stormOnWall": 60,
+     "garrisonOnWall": 470,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 778,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1375,
+     "stormOnWall": 60,
+     "garrisonOnWall": 470,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 778,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1395,
+     "stormOnWall": 60,
+     "garrisonOnWall": 467,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 773,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1415,
+     "stormOnWall": 60,
+     "garrisonOnWall": 467,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 773,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1435,
+     "stormOnWall": 60,
+     "garrisonOnWall": 465,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 767,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1454,
+     "stormOnWall": 60,
+     "garrisonOnWall": 465,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 767,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1474,
+     "stormOnWall": 60,
+     "garrisonOnWall": 461,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 763,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1494,
+     "stormOnWall": 60,
+     "garrisonOnWall": 461,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 763,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1514,
+     "stormOnWall": 60,
+     "garrisonOnWall": 455,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 757,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1534,
+     "stormOnWall": 60,
+     "garrisonOnWall": 455,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 756,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1554,
+     "stormOnWall": 60,
+     "garrisonOnWall": 453,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 754,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1574,
+     "stormOnWall": 60,
+     "garrisonOnWall": 448,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 749,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1594,
+     "stormOnWall": 60,
+     "garrisonOnWall": 447,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 748,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1614,
+     "stormOnWall": 60,
+     "garrisonOnWall": 441,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 741,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1634,
+     "stormOnWall": 60,
+     "garrisonOnWall": 441,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 741,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1654,
+     "stormOnWall": 60,
+     "garrisonOnWall": 433,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 733,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 1674,
+     "stormOnWall": 60,
+     "garrisonOnWall": 433,
+     "stormInside": 0,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 733,
+      "1": 1178,
+      "2": 0
+     },
+     "result": {
+      "victor": 1,
+      "reason": "objective",
+      "casualties": {
+       "0": 421,
+       "1": 742
+      },
+      "survivors": {
+       "0": 733,
+       "1": 1178
+      },
+      "unitsLost": {
+       "0": 2,
+       "1": 11
+      },
+      "unitsTotal": {
+       "0": 12,
+       "1": 20
+      },
+      "at": 1656.7999999991505
+     }
+    }
+   ],
+   "result": {
+    "victor": 1,
+    "reason": "objective",
+    "casualties": {
+     "0": 421,
+     "1": 742
+    },
+    "survivors": {
+     "0": 733,
+     "1": 1178
+    },
+    "unitsLost": {
+     "0": 2,
+     "1": 11
+    },
+    "unitsTotal": {
+     "0": 12,
+     "1": 20
+    },
+    "at": 1656.7999999991505
+   },
+   "crossings": {
+    "byBay": {
+     "28": {
+      "stage": "footing",
+      "men": 49,
+      "types": {
+       "juthungi-riders": 49
+      }
+     }
+    },
+    "byType": {
+     "juthungi-riders": {
+      "men": 49,
+      "sumSecs": 488.36669782002787,
+      "n": 49,
+      "bays": {
+       "28": 49
+      },
+      "firstAt": 34.13333333333339
+     }
+    },
+    "dwell": {
+     "23": {
+      "stage": "half-built",
+      "manSecs": 185
+     },
+     "28": {
+      "stage": "footing",
+      "manSecs": 286
+     }
+    },
+    "insidePeak": {
+     "throughWall": 46,
+     "pastEast": 0,
+     "pastWest": 0
+    },
+    "footprints": {
+     "tower-assault": {
+      "unitClass": "heavy-infantry",
+      "formation": "horde",
+      "strength": 72
+     },
+     "escalade-party": {
+      "unitClass": "light-infantry",
+      "formation": "loose",
+      "strength": 96
+     },
+     "ram-crew": {
+      "unitClass": "heavy-infantry",
+      "formation": "loose",
+      "strength": 32
+     },
+     "onager": {
+      "unitClass": "artillery",
+      "formation": "line",
+      "strength": 12
+     },
+     "juthungi-warband": {
+      "unitClass": "light-infantry",
+      "formation": "loose",
+      "strength": 180
+     },
+     "juthungi-riders": {
+      "unitClass": "light-cavalry",
+      "formation": "wedge",
+      "strength": 50
+     }
+    },
+    "unitCross": [
+     {
+      "unitId": 31,
+      "typeId": "juthungi-riders",
+      "unitClass": "light-cavalry",
+      "bay": 27,
+      "stage": "gap",
+      "x": 331,
+      "at": 46,
+      "secs": 18,
+      "alive": 50,
+      "initial": 50
+     }
+    ],
+    "wMin": -631,
+    "wMax": 1144
+   },
+   "errors": [],
+   "wallMs": 91190
+  },
+  {
+   "seed": 745024802,
+   "setup": {
+    "rngState": 745024802,
+    "units": 32,
+    "strength": {
+     "0": 1154,
+     "1": 1920,
+     "2": 0
+    },
+    "storm": 1,
+    "garrison": 0
+   },
+   "series": [
+    {
+     "t": 20,
+     "stormOnWall": 0,
+     "garrisonOnWall": 810,
+     "stormInside": 0,
+     "laddersCrossed": 0,
+     "strength": {
+      "0": 1154,
+      "1": 1843,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 40,
+     "stormOnWall": 116,
+     "garrisonOnWall": 782,
+     "stormInside": 1,
+     "laddersCrossed": 141,
+     "strength": {
+      "0": 1124,
+      "1": 1802,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 60,
+     "stormOnWall": 227,
+     "garrisonOnWall": 720,
+     "stormInside": 49,
+     "laddersCrossed": 293,
+     "strength": {
+      "0": 1061,
+      "1": 1713,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 80,
+     "stormOnWall": 177,
+     "garrisonOnWall": 668,
+     "stormInside": 28,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 1005,
+      "1": 1653,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 100,
+     "stormOnWall": 147,
+     "garrisonOnWall": 657,
+     "stormInside": 16,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 995,
+      "1": 1580,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 120,
+     "stormOnWall": 139,
+     "garrisonOnWall": 654,
+     "stormInside": 0,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 991,
+      "1": 1555,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 140,
+     "stormOnWall": 143,
+     "garrisonOnWall": 651,
+     "stormInside": 0,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 988,
+      "1": 1469,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 160,
+     "stormOnWall": 143,
+     "garrisonOnWall": 645,
+     "stormInside": 0,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 982,
+      "1": 1420,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 180,
+     "stormOnWall": 105,
+     "garrisonOnWall": 643,
+     "stormInside": 0,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 980,
+      "1": 1308,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 199,
+     "stormOnWall": 105,
+     "garrisonOnWall": 638,
+     "stormInside": 0,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 975,
+      "1": 1284,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 219,
+     "stormOnWall": 104,
+     "garrisonOnWall": 633,
+     "stormInside": 0,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 970,
+      "1": 1282,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 239,
+     "stormOnWall": 103,
+     "garrisonOnWall": 625,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 961,
+      "1": 1262,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 259,
+     "stormOnWall": 102,
+     "garrisonOnWall": 620,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 952,
+      "1": 1258,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 279,
+     "stormOnWall": 102,
+     "garrisonOnWall": 615,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 951,
+      "1": 1229,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 299,
+     "stormOnWall": 102,
+     "garrisonOnWall": 610,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 944,
+      "1": 1220,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 319,
+     "stormOnWall": 101,
+     "garrisonOnWall": 604,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 940,
+      "1": 1198,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 339,
+     "stormOnWall": 97,
+     "garrisonOnWall": 599,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 935,
+      "1": 1178,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 359,
+     "stormOnWall": 95,
+     "garrisonOnWall": 596,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 932,
+      "1": 1147,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 379,
+     "stormOnWall": 94,
+     "garrisonOnWall": 588,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 924,
+      "1": 1140,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 399,
+     "stormOnWall": 94,
+     "garrisonOnWall": 582,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 918,
+      "1": 1120,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 419,
+     "stormOnWall": 94,
+     "garrisonOnWall": 575,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 911,
+      "1": 1106,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 439,
+     "stormOnWall": 93,
+     "garrisonOnWall": 574,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 910,
+      "1": 1076,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 458,
+     "stormOnWall": 93,
+     "garrisonOnWall": 565,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 900,
+      "1": 1051,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 478,
+     "stormOnWall": 92,
+     "garrisonOnWall": 564,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 898,
+      "1": 1034,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 498,
+     "stormOnWall": 91,
+     "garrisonOnWall": 561,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 895,
+      "1": 1009,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 518,
+     "stormOnWall": 90,
+     "garrisonOnWall": 557,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 890,
+      "1": 938,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 538,
+     "stormOnWall": 90,
+     "garrisonOnWall": 552,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 885,
+      "1": 873,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 558,
+     "stormOnWall": 89,
+     "garrisonOnWall": 548,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 881,
+      "1": 872,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 578,
+     "stormOnWall": 87,
+     "garrisonOnWall": 544,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 877,
+      "1": 870,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 598,
+     "stormOnWall": 87,
+     "garrisonOnWall": 542,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 875,
+      "1": 870,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 618,
+     "stormOnWall": 87,
+     "garrisonOnWall": 540,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 873,
+      "1": 870,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 638,
+     "stormOnWall": 87,
+     "garrisonOnWall": 539,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 872,
+      "1": 870,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 658,
+     "stormOnWall": 85,
+     "garrisonOnWall": 536,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 869,
+      "1": 868,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 678,
+     "stormOnWall": 83,
+     "garrisonOnWall": 536,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 869,
+      "1": 866,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 697,
+     "stormOnWall": 82,
+     "garrisonOnWall": 531,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 864,
+      "1": 865,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 717,
+     "stormOnWall": 82,
+     "garrisonOnWall": 528,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 861,
+      "1": 865,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 737,
+     "stormOnWall": 82,
+     "garrisonOnWall": 528,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 861,
+      "1": 865,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 757,
+     "stormOnWall": 82,
+     "garrisonOnWall": 527,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 860,
+      "1": 865,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 777,
+     "stormOnWall": 82,
+     "garrisonOnWall": 526,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 859,
+      "1": 865,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 797,
+     "stormOnWall": 82,
+     "garrisonOnWall": 526,
+     "stormInside": 13,
+     "laddersCrossed": 300,
+     "strength": {
+      "0": 856,
+      "1": 865,
+      "2": 0
+     },
+     "result": {
+      "victor": 1,
+      "reason": "objective",
+      "casualties": {
+       "0": 295,
+       "1": 1055
+      },
+      "survivors": {
+       "0": 859,
+       "1": 865
+      },
+      "unitsLost": {
+       "0": 1,
+       "1": 13
+      },
+      "unitsTotal": {
+       "0": 12,
+       "1": 20
+      },
+      "at": 780.5333333332808
+     }
+    }
+   ],
+   "result": {
+    "victor": 1,
+    "reason": "objective",
+    "casualties": {
+     "0": 295,
+     "1": 1055
+    },
+    "survivors": {
+     "0": 859,
+     "1": 865
+    },
+    "unitsLost": {
+     "0": 1,
+     "1": 13
+    },
+    "unitsTotal": {
+     "0": 12,
+     "1": 20
+    },
+    "at": 780.5333333332808
+   },
+   "crossings": {
+    "byBay": {
+     "28": {
+      "stage": "footing",
+      "men": 69,
+      "types": {
+       "juthungi-riders": 69
+      }
+     }
+    },
+    "byType": {
+     "juthungi-riders": {
+      "men": 69,
+      "sumSecs": 727.4332932789573,
+      "n": 69,
+      "bays": {
+       "28": 69
+      },
+      "firstAt": 34.13333333333339
+     }
+    },
+    "dwell": {
+     "17": {
+      "stage": "no-parapet",
+      "manSecs": 36
+     },
+     "23": {
+      "stage": "half-built",
+      "manSecs": 144
+     },
+     "24": {
+      "stage": "half-built",
+      "manSecs": 3961
+     },
+     "27": {
+      "stage": "gap",
+      "manSecs": 7
+     },
+     "28": {
+      "stage": "footing",
+      "manSecs": 953
+     }
+    },
+    "insidePeak": {
+     "throughWall": 49,
+     "pastEast": 0,
+     "pastWest": 0
+    },
+    "footprints": {
+     "tower-assault": {
+      "unitClass": "heavy-infantry",
+      "formation": "horde",
+      "strength": 72
+     },
+     "escalade-party": {
+      "unitClass": "light-infantry",
+      "formation": "loose",
+      "strength": 96
+     },
+     "ram-crew": {
+      "unitClass": "heavy-infantry",
+      "formation": "loose",
+      "strength": 32
+     },
+     "onager": {
+      "unitClass": "artillery",
+      "formation": "line",
+      "strength": 12
+     },
+     "juthungi-warband": {
+      "unitClass": "light-infantry",
+      "formation": "loose",
+      "strength": 180
+     },
+     "juthungi-riders": {
+      "unitClass": "light-cavalry",
+      "formation": "wedge",
+      "strength": 50
+     }
+    },
+    "unitCross": [
+     {
+      "unitId": 31,
+      "typeId": "juthungi-riders",
+      "unitClass": "light-cavalry",
+      "bay": 27,
+      "stage": "gap",
+      "x": 338,
+      "at": 45,
+      "secs": 17,
+      "alive": 50,
+      "initial": 50
+     }
+    ],
+    "wMin": -631,
+    "wMax": 1144
+   },
+   "errors": [],
+   "wallMs": 46323
+  },
+  {
+   "seed": 3399460563,
+   "setup": {
+    "rngState": 3399460563,
+    "units": 32,
+    "strength": {
+     "0": 1154,
+     "1": 1920,
+     "2": 0
+    },
+    "storm": 1,
+    "garrison": 0
+   },
+   "series": [
+    {
+     "t": 20,
+     "stormOnWall": 0,
+     "garrisonOnWall": 810,
+     "stormInside": 0,
+     "laddersCrossed": 0,
+     "strength": {
+      "0": 1154,
+      "1": 1835,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 40,
+     "stormOnWall": 118,
+     "garrisonOnWall": 788,
+     "stormInside": 1,
+     "laddersCrossed": 142,
+     "strength": {
+      "0": 1130,
+      "1": 1807,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 60,
+     "stormOnWall": 230,
+     "garrisonOnWall": 725,
+     "stormInside": 45,
+     "laddersCrossed": 299,
+     "strength": {
+      "0": 1067,
+      "1": 1711,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 80,
+     "stormOnWall": 181,
+     "garrisonOnWall": 637,
+     "stormInside": 34,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 977,
+      "1": 1633,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 100,
+     "stormOnWall": 128,
+     "garrisonOnWall": 570,
+     "stormInside": 5,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 908,
+      "1": 1519,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 120,
+     "stormOnWall": 117,
+     "garrisonOnWall": 540,
+     "stormInside": 5,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 877,
+      "1": 1494,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 140,
+     "stormOnWall": 114,
+     "garrisonOnWall": 523,
+     "stormInside": 5,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 860,
+      "1": 1447,
+      "2": 0
+     },
+     "result": null
+    },
+    {
+     "t": 160,
+     "stormOnWall": 117,
+     "garrisonOnWall": 519,
+     "stormInside": 5,
+     "laddersCrossed": 304,
+     "strength": {
+      "0": 852,
+      "1": 1442,
+      "2": 0
+     },
+     "result": {
+      "victor": 1,
+      "reason": "objective",
+      "casualties": {
+       "0": 298,
+       "1": 478
+      },
+      "survivors": {
+       "0": 856,
+       "1": 1442
+      },
+      "unitsLost": {
+       "0": 3,
+       "1": 7
+      },
+      "unitsTotal": {
+       "0": 12,
+       "1": 20
+      },
+      "at": 153.29999999999387
+     }
+    }
+   ],
+   "result": {
+    "victor": 1,
+    "reason": "objective",
+    "casualties": {
+     "0": 298,
+     "1": 478
+    },
+    "survivors": {
+     "0": 856,
+     "1": 1442
+    },
+    "unitsLost": {
+     "0": 3,
+     "1": 7
+    },
+    "unitsTotal": {
+     "0": 12,
+     "1": 20
+    },
+    "at": 153.29999999999387
+   },
+   "crossings": {
+    "byBay": {
+     "28": {
+      "stage": "footing",
+      "men": 49,
+      "types": {
+       "juthungi-riders": 49
+      }
+     }
+    },
+    "byType": {
+     "juthungi-riders": {
+      "men": 49,
+      "sumSecs": 489.2000199635825,
+      "n": 49,
+      "bays": {
+       "28": 49
+      },
+      "firstAt": 34.16666666666672
+     }
+    },
+    "dwell": {
+     "16": {
+      "stage": "no-parapet",
+      "manSecs": 317
+     },
+     "17": {
+      "stage": "no-parapet",
+      "manSecs": 382
+     },
+     "23": {
+      "stage": "half-built",
+      "manSecs": 482
+     },
+     "24": {
+      "stage": "half-built",
+      "manSecs": 243
+     },
+     "28": {
+      "stage": "footing",
+      "manSecs": 289
+     }
+    },
+    "insidePeak": {
+     "throughWall": 45,
+     "pastEast": 0,
+     "pastWest": 0
+    },
+    "footprints": {
+     "tower-assault": {
+      "unitClass": "heavy-infantry",
+      "formation": "horde",
+      "strength": 72
+     },
+     "escalade-party": {
+      "unitClass": "light-infantry",
+      "formation": "loose",
+      "strength": 96
+     },
+     "ram-crew": {
+      "unitClass": "heavy-infantry",
+      "formation": "loose",
+      "strength": 32
+     },
+     "onager": {
+      "unitClass": "artillery",
+      "formation": "line",
+      "strength": 12
+     },
+     "juthungi-warband": {
+      "unitClass": "light-infantry",
+      "formation": "loose",
+      "strength": 180
+     },
+     "juthungi-riders": {
+      "unitClass": "light-cavalry",
+      "formation": "wedge",
+      "strength": 50
+     }
+    },
+    "unitCross": [
+     {
+      "unitId": 31,
+      "typeId": "juthungi-riders",
+      "unitClass": "light-cavalry",
+      "bay": 27,
+      "stage": "gap",
+      "x": 338,
+      "at": 45,
+      "secs": 17,
+      "alive": 50,
+      "initial": 50
+     }
+    ],
+    "wMin": -631,
+    "wMax": 1144
+   },
+   "errors": [],
+   "wallMs": 11665
+  }
+ ]
+}
