@@ -9,7 +9,7 @@ await p.waitForSelector('.menu .begin', { timeout: 60000 });
 await p.click(`.menu [data-map="${map}"]`); await p.waitForTimeout(220);
 await p.click('.menu [data-scen="assault"]'); await p.waitForTimeout(220);
 await p.click('.menu .begin');
-await p.waitForFunction(() => window.__game?.ready === true, { timeout: 240000 });
+await p.waitForFunction(() => window.__game?.ready === true, null, { timeout: 240000 });
 await p.waitForTimeout(500);
 const dep = await p.evaluate(() => !!document.querySelector('.dep-begin'));
 const before = await p.evaluate(() => {

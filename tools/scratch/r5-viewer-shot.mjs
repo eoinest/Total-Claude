@@ -14,7 +14,7 @@ const errs = [];
 p.on('pageerror', (e) => errs.push('pageerror: ' + e.message));
 p.on('console', (m) => { if (m.type() === 'error') errs.push('console: ' + m.text()); });
 await p.goto(`http://127.0.0.1:${PORT}/viewer.html`, { waitUntil: 'load', timeout: 60000 });
-await p.waitForFunction(() => window.__viewer && window.__viewer.ready === true, { timeout: 120000 });
+await p.waitForFunction(() => window.__viewer && window.__viewer.ready === true, null, { timeout: 120000 });
 // The panel is the interface, and this entry is not about the interface.
 await p.addStyleTag({ content: '#viewer-panel, #viewer-readout, #viewer-boot { display: none !important; }' });
 // `display: none` on the panel does not resize the canvas — the viewer only resizes on a

@@ -78,7 +78,7 @@ page.on('console', (m) => {
 const url = `${base}/?harness=1&fort=carthage&quality=${QUALITY}&w=1280&h=720`;
 await page.goto(url, { waitUntil: 'domcontentloaded' });
 try {
-  await page.waitForFunction('window.__game && window.__game.ready === true', { timeout: 180000 });
+  await page.waitForFunction('window.__game && window.__game.ready === true', null, { timeout: 180000 });
 } catch (e) {
   console.error('! the page never reported ready.');
   for (const p of pageErrors) console.error(`  pageerror: ${p}`);
@@ -1225,7 +1225,7 @@ async function armAt(fort) {
   await page.goto(`${base}/?harness=1&fort=${fort}&quality=${QUALITY}&w=1280&h=720`, {
     waitUntil: 'domcontentloaded',
   });
-  await page.waitForFunction('window.__game && window.__game.ready === true', { timeout: 180000 });
+  await page.waitForFunction('window.__game && window.__game.ready === true', null, { timeout: 180000 });
   return page.evaluate(async () => {
     const g = window.__game;
     const ctx = g.engine.context;

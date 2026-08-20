@@ -152,7 +152,7 @@ if (!await page.waitForFunction(() => window.__game?.ready === true, null, { tim
   await page.evaluate(() => window.__game.engine.stop());
   await page.mouse.click(480, 500);
   const resumed = await page.waitForFunction(
-    () => window.__game.engine.context.tryGet('audio').stats().state === 'running', { timeout: 20000 }
+    () => window.__game.engine.context.tryGet('audio').stats().state === 'running', null, { timeout: 20000 }
   ).then(() => true).catch(() => false);
   if (!resumed) {
     const s = await page.evaluate(() => window.__game.engine.context.tryGet('audio').stats());
