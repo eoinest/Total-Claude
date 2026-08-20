@@ -38,7 +38,7 @@ text than as a frame that half-supports them.
 
 ---
 
-## r7 — the near half of every face was being culled, and the instrument could not have said so
+## r7 — the head most of the army is drawn with was inside out, and the instrument could not have said so
 
 **20 August 2026** · commit [`0d9960d`](https://github.com/eoinest/Total-Claude/commit/0d9960d) ·
 deployment `total-claude-gnj0eowoy` · **live now**
@@ -52,14 +52,15 @@ a ditch. Six features turn up here that had never once run in any build the proj
 five of them fixed and the sixth recorded — and every one of them compiled, booted, and did
 nothing.
 
-**The single biggest one is the man's face.** `revolve` derives its normal from the profile
-tangent, which points outward only while y descends the point list, and `skullProfile` was written
-jaw-upward — so the winding pointed into the head and `FrontSide` removed the face. A camera in
-front of a man saw *through* it to the inside of the back of his skull, with every helmet bowl,
-hair dome and beard between the two winning the depth test. The isolated-model critic had scored
-the face **0 of 4 for three rounds**, and what the graders converged on independently was *"no
-nose volume, no brow ridge, no chin, no cheekbone; the silhouette against sky is a straight
-vertical edge."* They were describing a hole.
+**The biggest of them is a head.** A soldier's fine face was found inside out in early August and
+reversed for r5: `revolve` derives its normal from the profile tangent, which points outward only
+while y descends the point list, and that profile had been written jaw-upward, so `FrontSide`
+removed the face. Everyone then assumed the head was done. **The coarse head is built by a
+different function**, was written the same way round, and nobody looked — so through r5 and r6 the
+skull on **LOD2, the tier most of two armies is drawn with in most frames**, was still inverted,
+and the near half of nearly every head on the field was still being culled. It is fixed here,
+along with six weapon tips in the same condition, and the reason none of them was found earlier is
+that the probe standing over this file could not have found any of them.
 
 Under that, three of the owner's own bug reports — filed months apart and closed by one predicate
 — eight arches cut clean through Carthage's curtain with nothing hung in them, the cheapest lane
@@ -288,11 +289,13 @@ makes a sound when it breaks.
     undefined`, which is false for every point on the map, so the test answered *"not inside the
     gatehouse"* for the inside of the gatehouse. Now: **22 of Rome bay 19's 36 stations were inside
     the footprint and 0 were clipped; 22 are clipped.** They had been standing at a walk height of
-    35.75 with the gatehouse crown 6.574 m over their heads and no stone under their feet. Garrison
-    shots launched 5,431 → 5,245, **shots that died on their own masonry 682 of 5,431 (12.6%) → 440
-    of 5,245 (8.4%)**, shots that hit a man 2,288 → 2,491, garrison kills 453 → 526. The aiming
-    path's own count of shooters whose support height disagreed with the embrasure under them falls
-    from 882 to 28.
+    35.75 with the gatehouse crown 6.574 m over their heads and no stone under their feet; men
+    standing inside the block at t+240 go **70 → 2**. Garrison shots launched 5,431 → 5,245,
+    **shots that died on their own masonry 682 of 5,431 (12.6%) → 440 of 5,245 (8.4%)**, shots that
+    hit a man 2,288 → 2,491, **garrison kills 453 → 526**. The aiming path's own count of shooters
+    whose support height disagreed with the embrasure under them falls from 882 to 28. The
+    battlements those men shoot through, and the 823 shots a merlon-less gate bay used to throw
+    away, are r6's work and not this release's; what is new here is only that the clip fires.
   - **Camera motion blur has never run on any tier the game ships.** The pass was gated on a flag
     written in exactly one place — inside the TAA branch of the anti-aliasing step, where it means
     "there is a resolved history image to blend against" — and no quality preset selects TAA, for
@@ -366,41 +369,42 @@ makes a sound when it breaks.
 
 ### The men, close up
 
-- **The near half of every soldier's face was being culled.** `revolve` takes its normal from the
-  profile tangent, which points outward only while y *descends* the point list. Every other lathe
-  on the man — the hair, all five helmet bowls, the fur cap — is written crown-first and is
-  correct. `skullProfile` was written from under the jaw upward, so its normals pointed into the
-  head, the builder derived matching inward winding from them, and `FrontSide` removed the face.
-  Measured: **the mean dot of the triangle winding with the outward radial was −0.324 over the face
-  arc, 76 of 123 triangles inward.** Because the surviving surface was the *inside of the back* of
-  the skull, the face was not merely dark — it sat behind the rest of the head in the depth buffer,
-  and every helmet bowl, hair dome and beard between the two won the depth test. Reversing eight
-  points fixes it, at not one triangle added: −0.324 → **+0.540**, and visible face pixels on the
-  isolated-model plates go **580 → 157,649** on a Juthungi head and **744 → 84,782** on a
-  legionary's.
+- **The head most of the army is drawn with was inside out, and had been since it was written.**
+  `revolve` takes its normal from the profile tangent, which points outward only while y *descends*
+  the point list. A branch in early August found the *fine* skull written from under the
+  jaw upward, proved exactly that, and reversed it — and that fix reached mainline in `db19e4a` and
+  shipped in **r5**, so the face a camera sees in close-up has been drawn correctly for two
+  releases. What nobody then checked was the other one. `buildFarGeometry` is a different function
+  from `buildSoldierGeometry`, it draws its own coarse skull, and it was written the same way
+  round:
 
-  **An earlier "fix" had been a correction for it.** A previous round measured 0 face pixels at
-  azimuth 0 and 121,407 at π with the face tile painted magenta, and added π to the camera. That
-  magenta was only ever visible *from behind the man, through his own skull* — so turning the
-  camera round pointed all ten model plates at his back for real, which is why every head plate
-  since had photographed a neck guard and a nape band. With the lathe reversed the measurement
-  inverts and strengthens: **466,141 face pixels at the front against 0 at the back.**
+  ```
+  r6  b.revolve([[0.001, -0.07], [0.072, -0.02], [0.08, 0.05], [0.001,  0.14]], SEG, skinUv);
+  r7  b.revolve([[0.001,  0.14], [0.08,  0.05], [0.072, -0.02], [0.001, -0.07]], SEG, skinUv);
+  ```
 
-  Three more full-revolution head parts came out of the same audit, because a lathe is
-  axisymmetric and a head is not. **The beard was a 360-degree hoop at the height of the mouth** —
-  radius 72 mm over a jaw of 74, at y −0.030 where the face tile puts the mouth at −0.039 and the
-  chin crease at −0.052. Every bearded man in the game had no mouth and no chin: **82% of Germanic
-  warriors, 42% of Romans, 78% of Punic and Libyan foot.** The spangenhelm's brow band was a
-  complete turn 36 mm proud across the mouth, with its "nasal" running chin to lip. And the fur cap
-  was a full revolution of 26 mm of fur all round a skull of 82, so **a capped Juthungi measured
-  zero face pixels.** Three more parts were merely in the way: all three Roman brow bands hung
-  *below* the helmet rim, so the arc-cut bowl uncovered the face and the helmet's own trim covered
-  it again.
+  Four ascending points against the hair cap and the helmet bowl immediately below them in the same
+  function, both of which descend and are correct. Scored against the direction from the
+  component's own centroid it comes to **−0.964, with 29 of its 30 triangles facing into the
+  head** — against 76 of 123 on the fine face, because a four-ring lathe has nothing else in it to
+  dilute the count. **LOD2 begins where LOD1 ends**, which is to say it is what two armies are made
+  of in almost every frame of an actual battle, so `FrontSide` had been culling the
+  near half of nearly every head on the field for as long as the fine one had been — and then for
+  two releases longer, while the fine one was fixed and photographed and graded and everyone moved
+  on. Reversing the four points is the whole fix: same rings, same radii, **not one triangle either
+  way**, and the coarse tier stays at 313 triangles on both factions.
 
-- **And the probe could never have found it.** `probe-soldiermesh` asked whether each triangle's
-  shading normal agreed with its own winding — and the mesh builder **derives the winding from the
-  normal.** The two agree by construction. It was asking whether the builder had run, and it had
-  reported 0 disagreements on this piece for as long as it had existed.
+  It is a good argument for building the far tier out of the near tier's own numbers, and that is
+  not what happened here — the two functions still hold two literals. What they now have is a
+  check that reads both.
+
+- **And the probe could never have said so — about either head.** `probe-soldiermesh` asked
+  whether each triangle's shading normal agreed with its own winding, and the mesh builder
+  **derives the winding from the normal.** The two agree by construction. It was asking whether the
+  builder had run. It reported 0 disagreements on the fine skull for the whole time that skull was
+  inverted, it reported 0 on the coarse one for two releases after that, and it would have gone on
+  reporting 0 for ever: the fine face was found by a human looking at a plate, which is not a
+  method that scales to a hundred lathes.
 
   Replaced with a check that compares against something outside the mesh's own opinion of itself:
   weld the vertices by position, split into connected components, and for each component take the
@@ -411,8 +415,8 @@ makes a sound when it breaks.
   and a per-piece centroid sits in the man's chest, which is exactly why the old probe's two
   outward-facing columns were computed and gated nothing.
 
-  **Run against `main` it failed seven components immediately**, and a static scan of every
-  `revolve` literal in the file agreed with it exactly:
+  **Run against `main` it failed seven components immediately** — six lathes, one of them used
+  three times — and a static scan of every `revolve` literal in the file agreed with it exactly:
 
   | component | mean cosine | |
   |---|---|---|
@@ -423,12 +427,12 @@ makes a sound when it breaks.
   | javelin heads (×3) | −0.513 | |
   | spear head | −0.444 | |
 
-  **The LOD2 head is the same defect as the face, on the LOD most of the army is drawn with.** The
-  far geometry is built by a different function, so reversing `skullProfile` never touched it, and
-  it carries its own jaw-upward profile: LOD2 begins where LOD1 ends, so `FrontSide` had been
-  culling the near half of nearly every head on the field. All six are the same one-line fix and
-  all six are free — triangles at the merged tip are Rome 5,228 / 2,898 / 313 and Germanic 4,221 /
-  2,338 / 313 across the three LODs, unchanged by the reversal. A rendered front-side/double-side
+  The coarse skull is the entry above. The other five are a sword point, a sword pommel, a pilum
+  head, a spear head and one javelin head that is instanced three times, which is why six lathes
+  make seven components — every one of them a tip written base-first, and every one of them
+  present in r6. All six are the same one-line fix and all six are free: triangles at the merged
+  tip are Rome 5,228 / 2,898 / 313 and Germanic 4,221 / 2,338 / 313 across the three LODs,
+  unchanged by the reversal. A rendered front-side/double-side
   differential was tried as the external check first and rejected, and the reason is written into
   the probe's header so the hour is not spent twice: flipping the side needs a material recompile,
   the lighting system re-patches on a sixteen-frame timer, and the **baseline** arm moved 213,300
@@ -575,10 +579,12 @@ makes a sound when it breaks.
   that gap at **+0.0058 and +0.0006**, which is 1.5% and 0.1% of it; the exposure and grade question
   predates this round, and with the environment art it is the clearest target the next one has.
 
-  **And the round predates the face-culling fix.** It was shot before the seven inside-out lathes
-  were found, so the near half of every face was missing from the frames those fourteen graders
-  were judging, and *"a flat painted mask that never occludes"* is a fair description of a hole.
-  The next round will be the first to grade a soldier whose face is actually drawn.
+  **And the round predates the lathe fixes.** It was shot before the seven inside-out components
+  were found, so in every one of those fourteen frames the coarse skull was still inverted — and a
+  graded battle camera is mostly LOD2, which is exactly the tier that was being culled. *"A flat
+  painted mask on a slab that never occludes no matter which way the head turns"* is a fair
+  description of a head with its near half removed. The next round will be the first in which the
+  men at the back of the frame have faces at all.
 
 - **"The siege runs at about 0.1× real time" was the harness, not the game.** The reported symptom
   was that the 3,440-man Carthage storm took 35 minutes of wall clock to reach t+451 once about 200
