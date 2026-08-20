@@ -1,0 +1,143 @@
+diff --git a/src/sim/Morale.ts b/src/sim/Morale.ts
+index 52fd112..1cbe451 100644
+--- a/src/sim/Morale.ts
++++ b/src/sim/Morale.ts
+@@ -250,6 +250,28 @@ export const TERM_NAMES = [
+ ] as const;
+ const TERM_COUNT = TERM_NAMES.length;
+ 
++/**
++ * MEASUREMENT SCAFFOLD — applied by `tools/scratch/mwf-ablate.patch`, never shipped.
++ *
++ * Ablation is the only honest way to answer "which term is doing it". The pressure sum is
++ * low-passed by `PRESSURE_TAU` and then clipped by `MAX_FALL_RATE`, so a term's share of the
++ * *reported* breakdown is not its share of the *realised* fall; zeroing it and re-running the
++ * same seed is. Reached through `ctx.get('morale')` — a module-level export is the obvious
++ * place and the wrong one, because the dev server stamps `?t=` on an edited module and a
++ * probe's `import()` then mutates a second copy of the bindings. Eight arms came back
++ * byte-identical before that was noticed, including one that disables a whole branch.
++ */
++export interface MoraleMeasure {
++  /** Per-term multiplier, indexed as `TERM_NAMES`. */
++  scale: Float32Array;
++  /** Force the out-of-contact recovery branch, whatever the engagement says. */
++  forceClear: boolean;
++  /** Override the share of a unit that must be trading blows before recovery is cut. */
++  engagedThreshold: number;
++  /** Interpolate recovery between clear and engaged instead of stepping at a threshold. */
++  proportionalRecovery: boolean;
++}
++
+ export const enum MoraleBand {
+   Steady = 0,
+   Wavering = 1,
+@@ -288,6 +310,13 @@ export class MoraleSystem implements Subsystem {
+   /** Share of each faction's surviving units that are currently broken. */
+   private brokenShare: [number, number] = [0, 0];
+ 
++  readonly measure: MoraleMeasure = {
++    scale: new Float32Array(TERM_COUNT).fill(1),
++    forceClear: false,
++    engagedThreshold: 0.02,
++    proportionalRecovery: false,
++  };
++
+   lastCostMs = 0;
+ 
+   init(ctx: EngineContext): void {
+@@ -382,6 +411,7 @@ export class MoraleSystem implements Subsystem {
+     const s = signalsOf(u.id);
+     const prev = u.morale;
+     const routing = u.order === UnitOrder.Rout;
++    const MS = this.measure.scale;
+ 
+     const aliveFrac = clamp01(u.alive / Math.max(1, u.initialStrength));
+     const lossFrac = 1 - aliveFrac;
+@@ -394,37 +424,37 @@ export class MoraleSystem implements Subsystem {
+     // ---- pressure ----
+     // Attrition. The exponent is what makes the last third of a unit fold much
+     // faster than the first third: 20% losses is uncomfortable, 50% is terminal.
+-    const tAttrition = P_ATTRITION * Math.pow(lossFrac, P_ATTRITION_EXP);
++    const tAttrition = P_ATTRITION * Math.pow(lossFrac, P_ATTRITION_EXP) * MS[0];
+     // The immediate shock of men going down, amplified once the unit is thin.
+-    const tCasualty = (s.casualtyPulse * P_CASUALTY) / (0.4 + aliveFrac);
++    const tCasualty = ((s.casualtyPulse * P_CASUALTY) / (0.4 + aliveFrac)) * MS[1];
+ 
+     // Being outflanked and being surrounded are separate horrors.
+     const surrounded = this.isSurrounded(s);
+     s.surrounded = surrounded;
+     const flanked = Math.max(0, s.flankedFraction - FLANK_DEADBAND) / (1 - FLANK_DEADBAND);
+-    const tFlank = flanked * P_FLANKED + (surrounded ? P_SURROUNDED : 0);
++    const tFlank = (flanked * P_FLANKED + (surrounded ? P_SURROUNDED : 0)) * MS[2];
+ 
+     // Who is winning the exchange in front of you.
+     const exch = (s.killPulse - s.casualtyPulse)
+       / (s.killPulse + s.casualtyPulse + P_EXCHANGE_FLOOR);
+-    const tExchange = -exch * P_EXCHANGE;
++    const tExchange = -exch * P_EXCHANGE * MS[3];
+ 
+     // Infantry with no answer to horses.
+     const tCavalry = !isCavalry(def) && def.bonusVsCavalry < 12
+-      ? s.cavalryPressure * P_CAVALRY : 0;
++      ? s.cavalryPressure * P_CAVALRY * MS[4] : 0;
+ 
+-    const tFatigue = u.fatigue * P_FATIGUE;
+-    const tMissile = Math.min(s.missilePulse * P_MISSILE, P_MISSILE_CAP);
++    const tFatigue = u.fatigue * P_FATIGUE * MS[5];
++    const tMissile = Math.min(s.missilePulse * P_MISSILE, P_MISSILE_CAP) * MS[6];
+ 
+     // What the men can see happening to either side.
+-    const tWitness = this.witnessPressure(u);
++    const tWitness = this.witnessPressure(u) * MS[7];
+ 
+     // Ground. Two metres of slope in your favour is worth real nerve.
+     const enemy = s.meleeEnemy >= 0 ? this.unitById(s.meleeEnemy) : undefined;
+     let tGround = 0;
+     if (enemy) {
+       const dh = b.groundAt(u.x, u.z) - b.groundAt(enemy.x, enemy.z);
+-      tGround = -clamp(dh / 8, -1, 1) * 2;
++      tGround = -clamp(dh / 8, -1, 1) * 2 * MS[8];
+     }
+ 
+     // Being chased is its own pressure; a rout that is not pursued calms down.
+@@ -439,9 +469,10 @@ export class MoraleSystem implements Subsystem {
+     const gap = clamp(foe - own, -0.6, 1);
+     const tArmy = gap * P_ARMY * (gap > 0 ? 1 : P_ARMY_WINNING)
+       + Math.min(P_ARMY_BROKEN_CAP, this.brokenShare[side] * P_ARMY_BROKEN);
++    const tArmyS = tArmy * MS[9];
+ 
+     const raw = tAttrition + tCasualty + tFlank + tExchange + tCavalry
+-      + tFatigue + tMissile + tWitness + tGround + tArmy;
++      + tFatigue + tMissile + tWitness + tGround + tArmyS;
+     // Chase the instantaneous pressure rather than applying it, so a step change in the
+     // situation ramps in over a few seconds. See `PRESSURE_TAU`.
+     const k = 1 - Math.exp(-dt / PRESSURE_TAU);
+@@ -454,10 +485,15 @@ export class MoraleSystem implements Subsystem {
+     let recovery = mods.moraleRegen;
+     // "Engaged" for morale means men of this unit are actually trading blows, not
+     // that its anchor happens to be near an enemy.
+-    const fighting = u.engaged || s.engagedFraction > 0.02;
+-    recovery += fighting
+-      ? R_ENGAGED
+-      : R_CLEAR + Math.max(0, baseline - u.morale) * R_CLEAR_SPRING;
++    const clearRate = R_CLEAR + Math.max(0, baseline - u.morale) * R_CLEAR_SPRING;
++    const fighting = (u.engaged || s.engagedFraction > this.measure.engagedThreshold)
++      && !this.measure.forceClear;
++    if (this.measure.proportionalRecovery) {
++      const w = clamp01(s.engagedFraction / 0.25);
++      recovery += this.measure.forceClear ? clearRate : clearRate + (R_ENGAGED - clearRate) * w;
++    } else {
++      recovery += fighting ? R_ENGAGED : clearRate;
++    }
+     if (routing && u.routTimer > RALLY_DELAY && chased > RALLY_CLEAR) recovery += R_RALLYING;
+ 
+     const oneShot = this.shock[u.id];
+@@ -476,7 +512,7 @@ export class MoraleSystem implements Subsystem {
+     this.terms[to + 6] = tMissile / resist;
+     this.terms[to + 7] = tWitness / resist;
+     this.terms[to + 8] = tGround / resist;
+-    this.terms[to + 9] = tArmy / resist;
++    this.terms[to + 9] = tArmyS / resist;
+     this.terms[to + 10] = recovery;
+ 
+     // The rate limiter. Applied to the net, after discipline, so no combination of

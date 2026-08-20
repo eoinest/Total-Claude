@@ -66,6 +66,8 @@
  */
 
 import type { EngineContext } from './Engine';
+import { ALL_UNITS } from '../units/roster';
+import type { UnitClass } from '../sim/types';
 
 // ---------------------------------------------------------------------------
 // The spec language
@@ -533,8 +535,48 @@ export function verifySeams(ctx: EngineContext): SeamReport {
     }
   }
 
+  checkRosterBranches(absent);
+
   return { checked, skipped, faults, absent, unchecked };
 }
+
+/**
+ * Branches taken on a *value* the data never produces.
+ *
+ * The seams above ask whether a provider has the member a consumer named. This asks the other
+ * half of the same question: a consumer can name a member that exists, read it correctly, and
+ * still be unreachable because nothing in the data ever puts the value there. No type catches
+ * it — `ROMAN_UNITS: UnitTypeDef[]` widens every `unitClass` to the whole union the moment it
+ * is annotated, so `'general'` is a legal member of a union that no entry inhabits.
+ *
+ * Found by measurement, not by reading: `MoraleSystem.auraBonus` walks every friendly unit
+ * looking for `typeOf(o).unitClass === 'general'` and adds up to 9 morale points to the
+ * baseline of everyone within 110 m. **No entry in `ROMAN_UNITS`, `GERMANIC_UNITS`,
+ * `CARTHAGINIAN_UNITS` or `SIEGE_UNITS` declares that class**, so the function has returned 0
+ * for every unit of every battle in every shipped build, and the morale model's leadership
+ * term has never once fired. `BannerSystem` tests the same class and has never seen it either.
+ *
+ * Recorded through `absent` rather than as a fault, for the same reason `CityView.breachWall`
+ * is: a general nobody has built is a real state and the reader degrades correctly. What is
+ * not acceptable is that it degrade *silently*, because "declared, read, and nothing produces
+ * it" is precisely how a feature comes to be believed in. Adding a general to a roster is a
+ * balance decision and is deliberately not made here.
+ */
+function checkRosterBranches(absent: string[]): void {
+  const present = new Set(ALL_UNITS.map((u) => u.unitClass));
+  for (const [cls, readers] of Object.entries(CLASS_READERS)) {
+    if (present.has(cls as UnitClass)) continue;
+    for (const r of readers) absent.push(`${r} -> no roster entry has unitClass '${cls}'`);
+  }
+}
+
+/** Unit classes the simulation branches on, and who branches on them. */
+const CLASS_READERS: Readonly<Record<string, readonly string[]>> = {
+  general: [
+    'sim/Morale.ts auraBonus (the general\'s steadying aura, worth up to +9 baseline)',
+    'vfx/BannerSystem.ts (standard selection)',
+  ],
+};
 
 /**
  * Format one fault as the sentence somebody reading a console needs.

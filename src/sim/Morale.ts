@@ -1,6 +1,7 @@
 import type { EngineContext, Subsystem } from '../core/Engine';
 import type { BattleSystem } from './BattleSystem';
-import { Faction, SoldierState, UnitOrder } from './types';
+import { SAME_LEVEL_DY } from './BattleSystem';
+import { areEnemies, Faction, SoldierState, UnitOrder } from './types';
 import type { UnitGroupState } from './types';
 import { formation } from './formations';
 import { isCavalry } from '../units/roster';
@@ -66,6 +67,14 @@ const BREAK_FRAC = 0.12;
 const RALLY_FRAC = 0.34;
 /** Metres a routed unit must put between itself and the enemy before it can rally. */
 const RALLY_CLEAR = 95;
+/**
+ * Metres within which a routed unit counts as being chased.
+ *
+ * Named rather than inline because it and `RALLY_CLEAR` are the only two places morale asks
+ * how near the enemy is, they must be answered by the same measurement, and that measurement
+ * is not the one on the blackboard. See `nearestReachableEnemy`.
+ */
+const PURSUIT_RANGE = 60;
 /** Seconds it must spend running first. Nobody stops the instant they break. */
 const RALLY_DELAY = 12;
 /** How far a rout is visible and infectious, in metres. */
@@ -264,8 +273,8 @@ export class MoraleSystem implements Subsystem {
   /** How many times each unit has broken. Each time costs it permanent nerve. */
   private routCount = new Uint8Array(0);
   /**
-   * Last tick's pressure breakdown per unit: 10 slots, laid out as `TERM_NAMES`.
-   * Kept unconditionally — it is ten stores for a couple of dozen units, and both the
+   * Last tick's pressure breakdown per unit: `TERM_COUNT` slots, laid out as `TERM_NAMES`.
+   * Kept unconditionally — it is eleven stores for a couple of dozen units, and both the
    * unit card's "why is this cohort wavering" tooltip and any balance pass need it.
    */
   private terms = new Float32Array(0);
@@ -419,7 +428,8 @@ export class MoraleSystem implements Subsystem {
     }
 
     // Being chased is its own pressure; a rout that is not pursued calms down.
-    if (routing && s.nearestEnemy < 60) tGround += P_PURSUED;
+    const chased = routing ? this.nearestReachableEnemy(u) : Infinity;
+    if (chased < PURSUIT_RANGE) tGround += P_PURSUED;
 
     // How the battle as a whole is going. Positive when we have been bled harder than
     // they have, plus a capped step term for how much of our own army has already run.
@@ -448,7 +458,7 @@ export class MoraleSystem implements Subsystem {
     recovery += fighting
       ? R_ENGAGED
       : R_CLEAR + Math.max(0, baseline - u.morale) * R_CLEAR_SPRING;
-    if (routing && u.routTimer > RALLY_DELAY && s.nearestEnemy > RALLY_CLEAR) recovery += R_RALLYING;
+    if (routing && u.routTimer > RALLY_DELAY && chased > RALLY_CLEAR) recovery += R_RALLYING;
 
     const oneShot = this.shock[u.id];
     if (oneShot !== 0) {
@@ -498,7 +508,7 @@ export class MoraleSystem implements Subsystem {
       const rallies = this.routCount[u.id];
       const canRally = rallies <= MAX_RALLIES
         && u.routTimer > RALLY_DELAY
-        && s.nearestEnemy > RALLY_CLEAR
+        && chased > RALLY_CLEAR
         && frac > RALLY_FRAC + 0.09 * (rallies - 1)
         && u.alive >= Math.max(6, u.initialStrength * 0.2);
       if (canRally) this.rally(u);
@@ -532,6 +542,63 @@ export class MoraleSystem implements Subsystem {
     }
     // Capped: a general collapse should cascade over tens of seconds, not instantly.
     return Math.min(friend, P_WITNESS_CAP) - Math.min(foe, P_WITNESS_CAP);
+  }
+
+  /**
+   * Metres to the nearest enemy that could actually reach this unit, or `Infinity`.
+   *
+   * Deliberately **not** `signals.nearestEnemy`, and this is the one place in the file where
+   * that distinction matters. `Combat` writes that field from a height-filtered probe over
+   * enemy *soldiers* — but only for a unit that is not routing:
+   *
+   *     if (!routing && bestD < CONTACT_SCAN_RANGE) { ...hash probe, |dy| <= SAME_LEVEL_DY... }
+   *     else { s.nearestEnemy = Math.min(bestD, frontGap); }
+   *
+   * and `BattleSystem` short-circuits `frontGapOf` to `Infinity` for a routing unit as well.
+   * So for a routing unit — the *only* state in which morale reads the value — both height
+   * filters are skipped and what survives is `bestD`, the raw plan distance between formation
+   * anchors. At the foot of a curtain that reports a garrison standing twelve metres overhead
+   * as eleven metres away.
+   *
+   * Measured at Carthage before this existed: an escalade party breaks at the wall foot, and
+   * for the next fifty seconds it is scored as *pursued* — the ground term sits at exactly
+   * `P_PURSUED / discipline` = 2.10 pts/s — by men who cannot leave the parapet, while
+   * `RALLY_CLEAR` can never be satisfied because the reading never rises above 20 m. Its
+   * morale is pinned at zero and it is shot from 71 men to 5 standing where it broke. Across
+   * six seeds and two trees, twenty-four escalade parties broke and not one rallied.
+   *
+   * `SAME_LEVEL_DY` is the rule the rest of the simulation already applies to the question
+   * "can these two get at each other" — `acquireVisit`, `nearestEnemyVisit`, `trampleVisit`,
+   * `resolveCrowding` and `nearestEnemyFront` all carry it, and `nearestEnemyFront`'s own
+   * comment gives the argument. This asks the same question the same way. On open ground the
+   * filter excludes nothing and the answer is what it always was; it only differs where one
+   * side is standing on masonry, which is exactly where the old answer was wrong.
+   *
+   * Anchors rather than soldiers, matching what it replaces: the two thresholds it feeds are
+   * 60 m and 95 m, and at that range a formation's anchor is the right resolution.
+   *
+   * The pin described above had a second cause in `Siege` — a party that had topped the
+   * parapet became a garrison, and `releaseBrokenCrews` skipped garrisons, so a broken unit
+   * went on walking to a muster slot frozen before it broke. That is fixed separately, and on
+   * a tree carrying both fixes the escalade breaks *on the walkway* rather than under it, at
+   * which point the garrison is at its level, `chased` is correctly small, and `P_PURSUED`
+   * fires — which is right, because on four metres of wall-walk you genuinely are being
+   * pursued. The two fixes are independent and this one is the reason the answer is right in
+   * both places rather than accidentally right in one.
+   */
+  private nearestReachableEnemy(u: UnitGroupState): number {
+    const b = this.battle;
+    const units = b.units;
+    const myY = b.levelOf(u.id);
+    let best = Infinity;
+    for (let k = 0; k < units.length; k++) {
+      const o = units[k];
+      if (o.destroyed || o.alive === 0 || !areEnemies(o.faction, u.faction)) continue;
+      if (Math.abs(b.levelOf(o.id) - myY) > SAME_LEVEL_DY) continue;
+      const d = Math.hypot(o.x - u.x, o.z - u.z);
+      if (d < best) best = d;
+    }
+    return best;
   }
 
   /** A friendly general or an active `inspire` steadies everyone around it. */
