@@ -328,9 +328,20 @@ stays inside 16.7 ms, that is fine. If frame time regresses, no triangle count e
 
 **`renderer.info.render.triangles` counts every pass, not unique geometry.** Measured at
 the cavalry camera, unique visible geometry was 10.6 M while the counter reported 35.5 M —
-roughly 3.3x, because shadow cascades and the depth prepass each re-draw the scene. So the
+roughly 3.3x, because every shadow cascade re-draws every caster. So the
 budget above is a budget on the *reported* figure, which is the honest way to read it: it
 is a proxy for total vertex work, not a model complexity count.
+
+> **There is no depth prepass, and this paragraph used to say there was.** `PostFX.ts:13-16`
+> states the decision and the reason: a second geometry pass over the animated men costs more
+> than reconstructing view normals from the scene target's own depth attachment, which is
+> exact except across silhouettes. Nothing in `src/` does a prepass — the only `colorWrite:
+> false` material in the tree is `CitySystem`'s *shadow* proxy. The multiplier is therefore
+> the cascades alone, which is also why it is not a constant: a caster is drawn `1 + cascades`
+> times and a non-caster (terrain, grass) exactly once, so the ratio moves with how much of
+> the frame casts. Measured at `ab-rome-wall`, ultra, 1920x1080, t+171 s by masking each
+> cascade's `shadow.autoUpdate` in turn: the four cascades carry **4.54 M of the frame's
+> 9.21 M** reported triangles, and the colour pass alone is 4.67 M.
 
 **The `rout` shot exceeds the triangle proxy on purpose, and that is not a bug to fix.**
 It reports 18.3 M against the 16 M line while carrying only 6.97 M of unique geometry
@@ -392,6 +403,42 @@ The assault camera is the binding one and it is at the line, not under it: panni
 interactive session touches **226**. The next lever, if more headroom is wanted, is the
 cascade count — one cascade off ultra is worth about 39 draws — and it is a quality
 decision, not a bug fix.
+
+> **"The assault camera" names two different framings, and that is most of why these figures
+> never reconcile.** `tools/probe-budget.mjs` means *the scenario's own boot framing*, captured
+> by not calling `setCamera` at all, and it defaults to `--at=0`. `tools/shoot.mjs` means the
+> named entry `ab-rome-wall`, resolved against the live curtain at t+170 s. They are different
+> places at different moments and they do not produce the same number. Any figure in this
+> section is unreadable without both, so quote the camera *and* the sim time or do not quote it.
+>
+> Measured at `8633f3f`, 1920x1080, ultra, dpr 1, via `tools/shoot.mjs` and checked with
+> `tools/perfdiff.mjs --budget`:
+>
+> | camera | sim time | men | draws | verdict |
+> |---|---|---|---|---|
+> | `ab-rome-wall` | t+171 s | 2,395 | **217** | ok |
+> | `ab-carth-wall` | t+171 s | 2,988 | **228** | **over the 220 cap** |
+>
+> `851c479` independently reports `ab3-rome-wall` at 223 and `ab3-rome-parapet` at 224, and
+> confirms both read the same on the source before that pass — so the breach is where the
+> ceiling stands, not something a recent change did. The per-map "neutral" figures at the boot
+> framing are Rome 199 and Carthage 187, which is the family the 204/186 in
+> `docs/tech/RENDERING.md` belongs to.
+>
+> **"One cascade off ultra is worth about 39 draws" does not reproduce.** Measured at
+> `ab-rome-wall` by masking each cascade in turn, the shadow pass is 95 draws in four almost
+> equal parts — **23 / 23 / 24 / 25** — so a cascade is worth about **24**, and the whole
+> shadow pass is 95 of 215. In time it is **2.68 ms at p50 and 3.97 ms best-of-block** out of a
+> 17.66 ms frame, i.e. 15-22%, and it is not spread evenly: cascade 0 alone accounts for
+> 1.27-2.35 ms of it, because its 37 m footprint fills the 2048² map while cascade 3's 714 m
+> footprint barely marks it.
+
+> **The 242 below is stale, but the conclusion is not.** At the boot framing Carthage now
+> renders 187 (`851c479`), and `docs/tech/RENDERING.md` records 186 = 88 + 75 + 23 at
+> `6698e19` — so the 157-call `fabric` family this paragraph goes on to describe is gone.
+> Carthage is nonetheless still the over-budget map at the camera that is actually graded:
+> `ab-carth-wall` measures **228** at ultra against Rome's 217, which is the only figure in
+> this section that `tools/perfdiff.mjs --budget` currently fails on.
 
 **Carthage is now the over-budget map, and for the opposite reason.** With
 `city: CARTHAGE_PLAN` wired in, its assault camera renders **242** at ultra: 134 colour + 85
