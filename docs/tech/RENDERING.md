@@ -482,6 +482,10 @@ and all three named the unit standard as the single most decisive tell. Their wo
 emissive sticker in front of the frame rather than dyed wool under the same sun". That turned
 out to be literal.
 
+> Round two closed the loop the only way a blind instrument can: a grader told nothing about
+> this fix **volunteered the cloth as good**. Recorded in `tools/ab-results.json`. The deck
+> still came back 14/14 — see §9 for why those two facts are not in tension.
+
 The cloth was a raw `ShaderMaterial` with a hand-written sun-plus-ambient term — a second,
 undocumented lighting rig that nobody updated when the first one changed. It had drifted in
 four ways at once (`BannerSystem.ts:129-162`, and commit `bf75fb0`):
@@ -1310,8 +1314,12 @@ figure commit `bf75fb0` records, and the same in round two. So the renderer is s
 from the reference at a glance, and the interesting output is not the score but *why* each
 grader said they sorted it.
 
-**[unverified: the round-two score. Round one's is in commit `bf75fb0`; round two's is in the
-release record, and the `CHANGELOG.md` entry for this release is not written at `6698e19`.]**
+Both rounds are now recorded in **`tools/ab-results.json`**, which is the citable source. Round
+two: deck `round-2`, seed 173, three graders on three lenses, 14/14 each with identical picks,
+41 of 42 calls at confidence 5. It closed six of the eight `pictureStats` fields — the `edge`
+gap by 82%, `halo` by 46% — and moved the score not at all, which is the whole argument of §9.
+Two of its fixes were confirmed **blind** by a grader told nothing about them: aerial
+perspective, and cloth.
 
 Their converged findings are below, each checked against the code. Two are confirmed. One is
 not, and saying so is the point of this section.

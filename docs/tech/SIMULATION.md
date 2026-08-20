@@ -518,11 +518,19 @@ battle, which is what determinism actually requires.
 > (`rng.fork('my-system')`). Visual-only jitter in `update`/`preRender` may use
 > `hash01(index, salt)`.
 
-**There is no automated enforcement of this rule anywhere in the repository.** No ESLint
-config exists (and `eslint` is not a dependency); there is no `.github`, no CI, no
-grep-based checker in `tools/`, and no npm script that looks for banned calls.
-`tools/typecheck.mjs` only classifies `tsc --noEmit` output. The rule is held up by review
-and by the hash gates below.
+**`tools/check-determinism.mjs` enforces the call-level half of this rule**, from `3f4c203`.
+It runs under `npm run lint` and ahead of `npm run build`: it blanks comments and strings,
+scans `src/sim`, `src/ai` and `src/units` for `Math.random()`, `Date.now()`, `new Date(` and
+`performance.now()`, clears the profiling pairs below by *pairing* them rather than by shape,
+and allowlists two exact source lines in `src/ai/profile.ts`. 12 raw hits, 10 cleared, 2
+allowlisted, 0 violations. There is still no ESLint config, no `.github` and no CI.
+
+**A pass from it is narrow and it says so on every run.** It cannot see iteration order over an
+identity-keyed `Set`/`Map`, an unstable or non-total sort, floating-point differences from
+parallelism, a banned call reached through an alias, or the camera read in
+`RagdollSystem.fixedUpdate` below — that is not a call, it is an input. Nor does it scan the
+`fixedUpdate` bodies outside those three directories. The hash gates remain the only instrument
+that can see any of it.
 
 The codebase does comply, in the sense that matters:
 

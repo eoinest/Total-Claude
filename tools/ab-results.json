@@ -1,0 +1,68 @@
+{
+  "what": "A RECORD OF WHAT GRADERS RETURNED. Not a claim about the renderer.",
+  "why_this_file_exists": "Round one's result lived only in commit messages and in three prose volumes. Round two's lived nowhere in the tree at all, and two documentation volumes independently refused to cite it — correctly, because an uncitable number is not a result. This file is the durable record for both rounds, beside the pair manifests that produced them (tools/ab-pairs-round1.json, tools/ab-pairs-round2.json). A score in here is evidence about a deck; the finding under `limitation` is the reason a score in here is worth much less than it looks.",
+  "how_to_read_a_score_here": "A round is three graders x fourteen pairs = 42 calls. Do not add rounds together into a single fraction: round one is 42/42 and round two is 42/42, which is 84/84 across both rounds, and '42/42 across both rounds' — which is how this was first handed over — halves the denominator.",
+  "recorded_at": "2026-08-19",
+  "recorded_by": "the instruments pass at 3f4c203",
+
+  "rounds": [
+    {
+      "round": "round-1",
+      "manifest": "tools/ab-pairs-round1.json",
+      "shot_set": "ab",
+      "pairs": 14,
+      "graders": 3,
+      "score": "14/14 for each of three graders; 42 of 42 calls correct",
+      "provenance": "commit bf75fb0, and docs/tech/RENDERING.md 9, docs/tech/SIEGE.md, docs/tech/TOOLING.md",
+      "verified_here": "no. Carried over from the commit record; the deck and its key are not in the tree.",
+      "what_the_graders_named": [
+        "the unit standard: 'an emissive sticker in front of the frame rather than dyed wool under the same sun' — traced to a raw ShaderMaterial with its own sun term and fixed in bf75fb0",
+        "framing: all three reported our side as gameplay grabs from a high tactical camera against press captures at ground level, and that framing alone would have sorted the deck after four pairs. This is what round two's matched cameras answer."
+      ]
+    },
+    {
+      "round": "round-2",
+      "manifest": "tools/ab-pairs-round2.json",
+      "shot_set": "ab2",
+      "deck": "round-2",
+      "seed": 173,
+      "pairs": 14,
+      "graders": 3,
+      "lenses": ["open", "materials-and-lighting", "form-and-crowd"],
+      "score": "14/14 for each of three graders, with identical picks; 42 of 42 calls correct",
+      "confidence": "41 of the 42 calls at confidence 5",
+      "side_balance": {
+        "ours_as_A": 7,
+        "of": 14,
+        "sequence": "BABABBBAABBAAA",
+        "verified_here": "yes. Reproduced from tools/ab-pairs-round2.json with the same seeded Mulberry32 pair-deck.mjs uses (rng(173), a 13-draw Fisher-Yates over the 14 pairs, then one draw per pair). Seed 173 gives 7 of 14; seeds 91, 1 and 7 give 8, 11 and 9. So the deck really was built at seed 173 from this manifest, which is the one detail of the round-two report that could be checked without the frames, and it checks out."
+      },
+      "picture_statistics": {
+        "reported": "round two measurably closed six of the eight pictureStats fields, the edge gap by 82% and halo by 46%",
+        "verified_here": "no. The graded shot directories are not in the tree and reference/ is local-only. Re-derive with tools/scratch/picstats-r2.mjs against a fresh --set=ab2 pass if it needs to be checked.",
+        "note": "'eight statistics' agrees with PICTURE_STAT_KEYS in tools/lib/deck-audit.mjs, which is the single source for that count."
+      },
+      "confirmed_blind": [
+        "aerial perspective — called good by a grader told nothing about it",
+        "cloth — likewise"
+      ],
+      "the_result_that_matters": "The score did not move. Six of eight measured statistics did. That is the finding, not the 42/42."
+    }
+  ],
+
+  "limitation": {
+    "headline": "A 14-pair deck drawn from a single engine is one trial, not fourteen.",
+    "detail": "Our renderer has one signature — one grass, one helmet, one sky model, one tone curve. A grader who cracks any single pair gets the rest on palette alone, so the fourteen calls are not fourteen independent observations. Accuracy therefore reads 100% until it reads 50%, with no usable range in between, and the instrument has no resolving power precisely in the region where progress happens. Round two is the demonstration: six of eight statistics closed, the edge gap by 82%, and the score moved not at all.",
+    "consequence": "Neither 42/42 is evidence about the size of the remaining gap. Both are evidence that the gap is not yet zero, which is all a saturated instrument can say."
+  },
+
+  "proposal_not_implemented": {
+    "status": "PROPOSAL. Not implemented at 3f4c203. Do not cite this as protocol.",
+    "shape": "One pair per grader, in a fresh context. That restores independence between calls — a grader who has seen no other pair cannot carry a cracked signature into the next one — at the cost of needing many more graders for the same number of observations.",
+    "open_questions": [
+      "how many graders per round to get a usable confidence interval near 50%",
+      "whether 'fresh context' is achievable for a grader who has ever seen this project's output",
+      "what the per-pair difficulty spread is, which the pooled protocol has never measured because it never had independent trials"
+    ]
+  }
+}

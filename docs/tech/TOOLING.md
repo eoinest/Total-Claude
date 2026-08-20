@@ -27,6 +27,8 @@ partial list, every one of them recorded in the tree:
 | `PostFX` depth of field, under the shot harness | a blurred near half of the field on a 480 m strategic overview | `dofAmount` read `ctx.rig.zoom`, which is a faithful proxy for orbit radius for a player and not for a harness — and `shoot.mjs` pins `zoom` to 0 so its metres-and-degrees camera has known constants (`1d9dd18`) |
 | The first Carthage ditch probe | 0.83 m of relief against the 6.00 m the works publish | It sampled the gate bay's own outward normal. A ditch is bridged at its gate; that is a measurement taken down the middle of the road that crosses the thing being measured |
 | A branch's `qa-deploy` control arm | 26/28, "not introduced by my diff" | Already fixed upstream. The control was pinned to the merge-base, which cannot distinguish those two. Rebased, the branch was 28/28 |
+| The `waitForFunction` audit *in this document* | 19 surviving call sites | **9.** Eight of the fourteen it named in `tools/` already passed three arguments and were never broken. The counter asked "is the second argument the literal `null`?" rather than "is the options object in the argument position?" — an instrument written to check an instrument, wrong in the safe direction. `tools/check-tool-args.mjs` now answers it |
+| `node tools/shoot.mjs` with no arguments | the 18 graded field shots | 32, because `'ab2-…'.startsWith('ab-')` is false. Fourteen A/B plates at a 240 s boot each, shot by every default invocation since `ab2-` was added |
 
 The last row generalises into a rule the project writes down: **pin a control arm to `main`,
 never to the merge-base.** A base arm at the branch point fails identically whether the fault
@@ -114,22 +116,27 @@ context, which surfaces as a spurious "page crashed" at a random simulation time
 `waitForFunction(pageFunction, arg, options)`. Passing `{ timeout: N }` in the second position
 makes it the *argument to the function*, and the 30 s default silently applies. The correct
 form is `waitForFunction(fn, null, { timeout: 180000 })`. This bug was fixed across the tool
-directory in `60a3f9c`, but **it was never fixed everywhere.** Counted at `6698e19` by
-matching parentheses rather than by line-grep, because many of these calls span several lines:
-137 call sites are correct and **19 still pass the options object in the argument position** —
-14 in `tools/` and 5 under `tools/scratch/`. Among them is a real gate, `qa-audio.mjs:154`, and
-several probes that are run regularly:
+directory in `60a3f9c` — whose message says nineteen tools while its diff converts 17 call
+sites in 14 files — and **it was not fixed everywhere.**
 
-```
-banner-check.mjs:715      probe-melee.mjs:124        probe-siege.mjs:300
-grab-video-frames.mjs:206 probe-meleegeom.mjs:286    probe-towerpass.mjs:347
-matchup.mjs:413           probe-ram.mjs:42           probe-wall.mjs:157
-probe-carthage-wall.mjs:81, :1103                    probe-walltraffic.mjs:215
-probe-shimmer.mjs:70      qa-audio.mjs:154
-```
+There is now a check, and you should run it rather than grep: `node tools/check-tool-args.mjs`,
+wired into `npm run lint`. It matches parentheses over a comment- and string-aware lexer
+(`tools/lib/jsscan.mjs`), so a call spanning any number of lines is counted correctly, and
+`--fix` repairs the ones it finds. **At `3f4c203` it found 9 violations in 160 call sites** —
+`probe-carthage-wall.mjs:81` and `:1103`, `probe-ram.mjs:42`, `probe-towerpass.mjs:347`,
+`probe-walltraffic.mjs:215`, `qa-audio.mjs:154`, and three under `scratch/` — all now fixed.
 
-Every one of those is a 30-second wait wearing a costume. Check the call you are editing, and
-prefer the parenthesis-matching count over a grep — a single-line grep finds 3 of the 19.
+**This document previously published a list of 19, and eight of the fourteen it named in
+`tools/` were never broken.** `banner-check.mjs:715`, `grab-video-frames.mjs:206`,
+`matchup.mjs:413`, `probe-melee.mjs:124`, `probe-meleegeom.mjs:286`, `probe-shimmer.mjs:70`,
+`probe-siege.mjs:300` and `probe-wall.mjs:157` all pass three arguments; the signature is
+`(pageFunction, arg, options)` and `null`, `undefined` and `{}` are equally fine in the
+argument slot. The counter had asked "is the second argument the literal `null`?" instead of
+"is the options object in the argument position?" — wrong in the safe direction, which is still
+wrong, and a list of 19 with 8 non-bugs in it teaches the reader to distrust the other 11.
+`node tools/check-tool-args.mjs --explain` prints that correction.
+
+A single-line grep finds 3 of the 9. That is why the check exists and the grep does not.
 
 **Never touch port 5173.** `vite.config.ts` pins the game's interactive dev server there and
 it belongs to whoever is playtesting. Every harness carries its own default in the 5199–5847
@@ -263,38 +270,59 @@ printed beside.
 The fix is two small changes and neither is urgent: publish `SoldierState` on `window.__game`,
 and lift the hash into `tools/lib/pool-hash.mjs` so there is one copy for both gates to inject.
 
-### The invariant with no enforcement
+### `tools/check-determinism.mjs` — the invariant that used to have no enforcement
 
 [Simulation](SIMULATION.md#the-rule-and-how-far-it-is-actually-enforced) states the rule and
-audits compliance with it. This section is the other half: what enforcing it would cost.
+audits compliance with it call site by call site. This section is the check.
 
-**The determinism rule is enforced entirely by people remembering it.** Checked at `6698e19`:
-the repository has **no ESLint config, no Biome config, no `.github/` directory, no CI
-workflow of any kind, and no `lint` script in `package.json`.** Nothing greps for
-`Math.random()` in simulation code. `src/util/rand.ts` states the rule in a comment —
-*"`Math.random()` must never be used in sim code"* — and that comment is the whole mechanism.
+Until `3f4c203` **the determinism rule was enforced entirely by people remembering it.**
+Re-verified rather than taken on report: no ESLint config, no Biome config, no `.github/`
+directory, no CI workflow of any kind, and no `lint` script in `package.json`. `src/util/rand.ts`
+states the rule in a comment and that comment was the whole mechanism. It is the single most
+load-bearing invariant in the codebase.
 
-This is the single most load-bearing invariant in the codebase and the only thing checking it
-is `qa-determinism.mjs`, which is an *end-to-end* check: it tells you the sim diverged, not
-which line did it, and only if somebody runs it.
+```sh
+npm run lint                       # check-determinism, then check-tool-args
+node tools/check-determinism.mjs --verbose      # show what was cleared, and why
+node tools/check-determinism.mjs --scope=src/sim,src/ai,src/units,src/city
+```
 
-The current state is clean — the simulation volume audits that call site by call site — so
-this is a gap in the *net*, not a report of a fish through it.
-
-**Priced rather than written**, because it is a check and this is a document:
+Milliseconds, no browser, no server, no dependency, and it runs ahead of `npm run build`.
+It reproduces the price an earlier pass put on it exactly:
 
 | | |
 |---|---|
-| Shape | ~40 lines of Node, no dependencies, no browser, no server. Scan `src/sim`, `src/ai`, `src/units` for `Math.random()`, `Date.now()`, `performance.now()`, `new Date(`; skip comment lines |
-| Allowlist needed | **Two entries.** The `const t0 = performance.now()` / `lastCostMs = ... - t0` profiling pair, and the file `src/ai/profile.ts`, which is a profiler |
-| False positives today | Measured by prototyping it: 12 raw hits, 10 cleared by the profiling pattern, 2 remaining — and both of those are in `src/ai/profile.ts`. **Zero after the allowlist** |
-| Runtime | Milliseconds. It could run on every `npm run build` without anyone noticing |
-| What it would not catch | The nondeterminism that actually bites a data-oriented sim: iteration order over a `Set`/`Map` keyed by object identity, and `Array.sort` without a total order. A grep cannot see those, and `qa-determinism.mjs` remains the only thing that can |
+| Scope | `src/sim`, `src/ai`, `src/units` — 39 files. `Math.random()`, `Date.now()`, `new Date(`, `performance.now()` |
+| Result at `3f4c203` | **12 raw hits, 10 cleared by the profiling pattern, 2 allowlisted, 0 violations** |
+| Allowlist | Two entries, both `src/ai/profile.ts`, both pinned to the **exact source line** — edit the line and the hit comes back. An allowlist keyed on a file or a line number silently covers whatever is written there next |
+| Comment handling | It blanks comments and string bodies before matching, which is why the answer is 12 and a raw grep says 15. Three of those 15 are comments *forbidding* `Math.random()` |
 
-The honest summary is that the static check is nearly free and would have caught none of the
-determinism bugs this project has actually had — but it converts the cheapest class of future
-mistake from "found by an end-to-end gate somebody remembered to run" into "found at build
-time".
+**The profiling pattern is a pairing, not a shape.** `const t0 = performance.now()` clears only
+if a `… = performance.now() - t0` exists in the same file *and `t0` has no other use at all*.
+That clause is load-bearing and there is a live example: point the tool at `src/ui` and
+`HudSystem.ts:460` is reported, correctly, because its `t0` also feeds
+`const dt = t0 - this.lastFrameAt` and `this.lastFrameAt = t0`. A wall-clock value entering
+program state is precisely what the rule bans, and a checker that whitelisted the `t0` *shape*
+would have waved it through.
+
+**What a PASS does not mean.** The tool prints this on every run, including a pass, and the
+header says it at length:
+
+- identity-keyed iteration order — `Set`/`Map` insertion order, object-keyed maps;
+- unstable or non-total sorts, and sorts keyed on a float two runs can compute 1 ULP apart;
+- floating-point differences from parallelism, SIMD, or a JIT tier change;
+- non-deterministic *inputs* that are not calls — `RagdollSystem.fixedUpdate` reads the camera
+  position, and its safety rests on write-isolation that nothing checks;
+- a banned call reached through an alias, a helper outside the scope, or `globalThis`;
+- every `fixedUpdate` outside the three scanned directories. `CitySystem`, `VFXSystem`,
+  `AdaptiveQuality` and `Engine` all have one and none is scanned — `AdaptiveQuality`'s entire
+  job is to read the clock. Directory scope is a *proxy* for "the simulation path" and it is
+  wrong in both directions.
+
+`qa-determinism.mjs` remains the only instrument that can see any of that. The static check
+converts the cheapest class of future mistake from "found by an end-to-end gate somebody
+remembered to run" into "found at build time", and it would have caught none of the determinism
+bugs this project has actually had. It claims nothing beyond that, in its own output.
 
 ### `tools/qa-interact.mjs` — real mouse and keyboard
 
@@ -430,22 +458,31 @@ Boots the game in Chromium with a real WebGL context, fast-forwards to a chosen 
 moment, parks the camera at a **named viewpoint** from the `SHOTS` table, and writes a PNG.
 
 ```sh
-node tools/shoot.mjs --list                    # 56 shots; sets deck (10), ab1 (14), ab2 (14), all (32)
+node tools/shoot.mjs --list        # 59 shots; deck (10) r6 (3) ab1 (14) ab2 (14) all (18) everything (59)
 node tools/shoot.mjs --shots=wide,romanline    # a subset
 node tools/shoot.mjs --set=deck --out=/tmp/tc-ab/shots-r1
 node tools/shoot.mjs --w=2560 --h=1440 --dpr=2
 node tools/shoot.mjs --hud                     # WITH the interface — never gradeable
 ```
 
-> **A defect in this table, found while checking the numbers for this document.** `--set` is
-> `all` when you pass nothing, and `all` is defined as *"not `deck-` and not `ab-`"*. But
-> `'ab2-rome-line'.startsWith('ab-')` is **false** — the third character is `2`, not `-`. So the
-> default set is 32 shots, and 14 of them are the round-two A/B frames with their matched
-> press cameras. `ab1`'s filter carries a `&& !k.startsWith('ab2-')` guard that is redundant
-> for the same reason, which suggests the ambiguity was noticed and then guarded on the wrong
-> side. `node tools/shoot.mjs` with no arguments shoots more than twice what its author
-> intended. Verified by running `--list`: `deck (10), ab1 (14), ab2 (14), all (32)` against 56
-> shots defined.
+> **A defect in this table, found while checking the numbers for this document, since fixed.**
+> `--set` is `all` when you pass nothing, and `all` was defined as *"not `deck-` and not
+> `ab-`"*. But `'ab2-rome-line'.startsWith('ab-')` is **false** — the third character is `2`,
+> not `-` — so the default set was 32 shots, 14 of them the round-two A/B frames with their
+> matched press cameras and their 240 s boots. `ab1`'s filter carried a redundant
+> `&& !k.startsWith('ab2-')`: the ambiguity had been noticed once and guarded on the side that
+> did not need it.
+>
+> **The fix is not the missing `startsWith`.** A shot's family is now the first
+> hyphen-delimited segment of its key, matched by *equality* against a `FAMILIES` registry — so
+> `ab2` is not `ab`, and a future `ab3` will not be either — and every set including `all` is
+> derived from one `familyOf`. `all` is 18, and `10 + 3 + 14 + 14 + 18 = 59 = everything`, an
+> exact partition. `assertNoUndeclaredFamily` exits 2 if two or more shots share a first
+> segment nobody registered, which is the signature of this class of bug; it fires on nothing
+> today and was tested by renaming two field shots to a shared `ab3-` prefix.
+>
+> Nothing programmatic depended on the old meaning: no tool spawns or imports `shoot.mjs`, and
+> the whole dependent surface was four documented invocations with no `--set`.
 
 **Use a named camera. Never hand-place one.** This is the single most important convention in
 the visual tooling and it is not about tidiness. The point of a shot is that the "after" is
@@ -495,9 +532,13 @@ Two deck builders and the shared audit battery.
 - **`pair-deck.mjs`** builds the **paired** instrument: `NN-A.png` / `NN-B.png`, one of ours
   and one real Rome II frame of the same subject, side randomised.
 - **`tools/lib/deck-audit.mjs`** holds the leak audits, lifted out of `blind-compare.mjs` so a
-  second deck builder cannot quietly ship a weaker copy of them. Its own header explains why
-  that mattered: *"This project has eight recorded blind-deck leaks and at least two of them
-  were 'the other tool did not have that check yet'."*
+  second deck builder cannot quietly ship a weaker copy of them, *"and at least two of those
+  leaks were 'the other tool did not have that check yet'."* It also holds `LEAKS`, the
+  register, which is the single source for the count — `node tools/blind-compare.mjs --leaks`
+  prints it. **Eight leaks: six refused by a gate, one (the wordmark) mitigated by construction
+  with no gate behind it, one open.** The two files used to say eight and seven respectively;
+  the seven were the closed ones, and leak eight — the true JPEG scan length recovered past the
+  pad, 0.850 balanced accuracy — cannot be closed by the harness at all.
 
 ---
 
@@ -621,8 +662,9 @@ The separability gate scores each header field by **balanced accuracy at the bes
 threshold** — a constant statistic scores 0.5, a perfect tell scores 1.0 — and refuses at 0.95.
 Alongside it, `pictureStats` returns **eight** numbers per frame — `lum`, `p01`, `p99`,
 `chroma`, `hueSpread`, `edge`, `halo`, `vignette` — which are **reported and never refused**.
-(Its own header comment says "Six picture statistics" and then lists more than six; the
-comment is stale, the code returns eight. Verified by calling it.)
+(Its header used to open "Six picture statistics" and then list eight. The count now comes from
+`PICTURE_STAT_KEYS`, which the function asserts its own return against, so prose and code
+cannot disagree again.)
 Those are not leak detectors; they are the objective half of a round's findings, so that "the
 colour is all in one narrow warm band" becomes a number the next round can be measured against.
 `halo` — mean |Laplacian| over mean |gradient| — exists because press material is routinely
@@ -640,11 +682,31 @@ resolving power precisely in the region where progress happens.
 
 Round one of the paired instrument **came back 14/14 for each of three independent graders —
 42/42** — and `tools/shoot.mjs` records that all three raised the same two methodological
-faults about the *deck* rather than about the renderer. A second round was built to answer
-them (`tools/ab-pairs-round2.json`, `--set=ab2`, also 14 pairs) and the round-two grader
-results are **not committed anywhere in the tree at `6698e19`**; the claim that it also scored
-42/42 while the measured statistics improved is *unverified here* and should be checked
-against whoever ran it before it is repeated.
+faults about the *deck* rather than about the renderer. A second round was built to answer them
+(`tools/ab-pairs-round2.json`, `--set=ab2`, also 14 pairs) and it also came back **42/42**,
+with all three graders returning identical picks and 41 of the 42 calls at confidence 5.
+
+**Both rounds are now recorded in `tools/ab-results.json`**, beside the manifests that produced
+them, and that file is the citable source — this was previously true of round one only, and two
+documentation volumes correctly refused to cite round two because its numbers were nowhere in
+the tree. Note the denominator: a round is 3 graders × 14 pairs = 42 calls, so the two rounds
+together are **84/84**, not 42/42. The record file says so in its own header, because the
+handover that supplied it did not.
+
+**Round two is the demonstration of the limitation, not an exception to it.** It measurably
+closed six of the eight `pictureStats` fields — the `edge` gap by 82%, `halo` by 46% — and the
+score did not move by one call. Two of its fixes were confirmed *blind*, by a grader told
+nothing about them: aerial perspective, and cloth. That is the useful output of a saturated
+instrument: the statistics have resolving power and the score does not.
+
+One detail of the round-two report was checkable without the frames and was checked: the deck
+was built at seed 173, and replaying `pair-deck.mjs`'s seeded Mulberry32 over
+`ab-pairs-round2.json` — a 13-draw Fisher–Yates, then one draw per pair — puts ours on side A
+in exactly **7 of 14**, sequence `BABABBBAABBAAA`. Seeds 91, 1 and 7 give 8, 11 and 9.
+
+**The protocol fix is a proposal, not a practice.** One pair per grader in a fresh context is
+recorded in `tools/ab-results.json` under `proposal_not_implemented`, with its open questions.
+Nothing implements it.
 
 The same structural fault is written down for the pooled deck, where it was found first:
 
