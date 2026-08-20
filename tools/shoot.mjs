@@ -772,6 +772,58 @@ const SHOTS = {
     wall: { bay: -2, stand: 0, lift: 0, yaw: 'in', yawAdd: -0.28 },
     cam: { eye: 2.6, aim: 3.2, dist: 26, fov: 30 },
   },
+
+  /*
+   * ---------------------------------------------------------------------------
+   * `--set=escalade`: the foot of one ladder bank, four frames from one camera.
+   * ---------------------------------------------------------------------------
+   *
+   * A *sequence*, and that is the whole point of it. The defect these were cut for — the
+   * queue at a ladder foot rotating bodily across the bank every time a rung came free —
+   * is invisible in a single frame, because any single frame shows men standing in tidy
+   * files. It is only in the motion between frames that you see the same man in file 2,
+   * then file 1, then file 0. One still cannot show it; four from a fixed camera can.
+   *
+   * That is also why the camera is *not* `follow`-framed. An auto-framed camera chases the
+   * subject, so the men appear to stand still while the world slides — which is precisely
+   * the axis the comparison is about. The camera here is pinned to the wall's own geometry
+   * and does not move between the four frames or between the two builds.
+   *
+   * **`yaw: 'along'`.** Looking down the length of the curtain rather than at it. The three
+   * rails of a bank are planted 6.88 m apart *along* the wall, so a camera looking `in` at
+   * the masonry sees them stacked one behind another and a lateral hop of a whole rail
+   * pitch is foreshortened to almost nothing. Along the wall it is the widest thing in
+   * frame. The first cut of these shots was `yaw: 'in'` and the bug was not visible in it.
+   *
+   * **t+20 to t+32.** The escalade parties deploy 26 m out (`scenario.ts`) and reach the
+   * wall well before the towers do; measured on Campus Martius, the first man is on a rung
+   * at t+13 and the bank is still 30-odd deep at t+32. Before t+18 there is no queue to
+   * photograph and after t+45 there is nobody left at the foot to photograph.
+   */
+  'escalade-foot-20': {
+    desc: 'Escalade: the foot of a ladder bank, t+20 — the queue forming',
+    scenario: 'assault', hour: 9.5, at: 20,
+    wall: { bay: -3, stand: 9, lift: 0, yaw: 'along' },
+    cam: { eye: 6.5, aim: 1.7, dist: 30, fov: 34 },
+  },
+  'escalade-foot-24': {
+    desc: 'Escalade: the same camera, t+24',
+    scenario: 'assault', hour: 9.5, at: 24,
+    wall: { bay: -3, stand: 9, lift: 0, yaw: 'along' },
+    cam: { eye: 6.5, aim: 1.7, dist: 30, fov: 34 },
+  },
+  'escalade-foot-28': {
+    desc: 'Escalade: the same camera, t+28',
+    scenario: 'assault', hour: 9.5, at: 28,
+    wall: { bay: -3, stand: 9, lift: 0, yaw: 'along' },
+    cam: { eye: 6.5, aim: 1.7, dist: 30, fov: 34 },
+  },
+  'escalade-foot-32': {
+    desc: 'Escalade: the same camera, t+32',
+    scenario: 'assault', hour: 9.5, at: 32,
+    wall: { bay: -3, stand: 9, lift: 0, yaw: 'along' },
+    cam: { eye: 6.5, aim: 1.7, dist: 30, fov: 34 },
+  },
 };
 
 /*
@@ -894,6 +946,7 @@ const FAMILIES = {
   ab2: 'round two, with a matched capture policy. See the block comment above `ab2-rome-line`',
   ab3: 'round three, one grader per pair. See the block comment above `AB3`',
   r6: 'the r6 changelog plates. Not a deck — see the block comment above `r6-ram-gate`',
+  escalade: 'one ladder foot, four frames from one fixed camera. A sequence, not a deck',
 };
 
 /** `field` is the absence of a declared family, and `field` is what `--set=all` means. */
@@ -947,6 +1000,7 @@ const SETS = {
   ab1: Object.keys(SHOTS).filter((k) => familyOf(k) === 'ab'),
   ab2: Object.keys(SHOTS).filter((k) => familyOf(k) === 'ab2'),
   ab3: Object.keys(SHOTS).filter((k) => familyOf(k) === 'ab3'),
+  escalade: Object.keys(SHOTS).filter((k) => familyOf(k) === 'escalade'),
   /** The graded field set, and the default. Everything with no declared family. */
   all: Object.keys(SHOTS).filter((k) => familyOf(k) === 'field'),
   /** Literally everything, for the rare pass that wants it. Never a deck. */

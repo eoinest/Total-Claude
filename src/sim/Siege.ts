@@ -1045,6 +1045,17 @@ export class Siege implements ElevationOwner {
   private garrisons = new Map<number, Garrison>();
   /** Units whose men the siege system places. Includes garrisons and boarding parties. */
   private owned = new Set<number>();
+  /**
+   * Machine crews this system let go of *because they broke*, and may take back on a rally.
+   *
+   * Distinct from "not owned" on purpose. A party leaves `owned` for two quite different
+   * reasons — it has broken, or the player has ordered it down off the wall and
+   * `releaseToGround` has handed it back to the field — and only the first of those should
+   * be undone when the unit rallies. Without the distinction, `releaseBrokenCrews` would
+   * re-adopt an escalade party the tick after it was released and steer it back to the
+   * ladders it had just been ordered to leave.
+   */
+  private brokeOff = new Set<number>();
   /** Movement orders the player or the AI has given a unit about the wall. */
   private plans = new Map<number, WallPlan>();
 
@@ -1119,6 +1130,15 @@ export class Siege implements ElevationOwner {
   /** The link he is walking toward and will be admitted to, or -1. */
   private wantLink!: Int32Array;
   private wantDir!: Uint8Array;
+  /**
+   * How deep each file of one machine's muster is, this tick. Scratch for `musterOwned`.
+   *
+   * One array reused by both branches — a tower column is four files and a ladder bank is
+   * one file per rail, and `MAX_LADDERS` is the larger — because this is rebuilt from zero
+   * for every machine in the tick and allocating it there would be per-tick garbage in a
+   * function that already runs over every man of every boarding party.
+   */
+  private fileRows = new Int32Array(MAX_LADDERS);
 
   // ---- gate ----
   /**
@@ -2330,6 +2350,24 @@ export class Siege implements ElevationOwner {
   }
 
   /**
+   * Has this unit stopped being able to work a machine or hold a place in its file?
+   *
+   * The one predicate behind all three of "the siege is still driving men who have broken":
+   * the ram crew that fled while the ram went on rolling, the tower gang, and the escalade
+   * party that stood at the foot of its own ladders playing a run cycle. Each of those was
+   * written out longhand at its own call site, and the three copies did not agree.
+   *
+   * Deliberately **not** `!mayBoard(u)`. That is a type predicate, so its false branch
+   * narrows `u` to `undefined` — which is exactly wrong here, because a live unit that is
+   * merely routing is the case this exists for and its men are the ones to let go of. It is
+   * also a different question: `mayBoard` additionally asks whether a man *can* climb, and
+   * a squadron of horse is not broken merely because it cannot go up a ladder.
+   */
+  private broken(u: UnitGroupState | undefined): boolean {
+    return !u || u.destroyed || u.alive === 0 || u.order === UnitOrder.Rout;
+  }
+
+  /**
    * Whether this unit's men can go up a ladder or a boarding ramp at all.
    *
    * Foot only. Cavalry cannot lead a horse up eight metres of rungs and a wheeled engine
@@ -3350,14 +3388,27 @@ export class Siege implements ElevationOwner {
     /**
      * The head of the queue must stand inside `LINK_ADMIT` of the mouth, or nobody starts.
      *
-     * Four abreast at 0.9 m centres put files 0 and 3 of the first row at
-     * `hypot(0.9, 1.35) = 1.62 m` from the foot — outside the 1.5 m admission radius. With
-     * men already on the flight the queue reshuffles and somebody eventually lands in range,
-     * but at the *start* nobody is in range and nobody ever will be: the file deadlocks with
-     * a hundred and sixty men standing a metre and a half from a stair they cannot step onto.
-     * Measured as `0/160 men on the wall, men were observed on a stair path on 0 ticks`.
+     * Three abreast at 0.8 m centres and 0.7 m back puts the worst man of the first row at
+     * `hypot(0.8, 0.7) = 1.06 m` from the foot, which clears the admission test with room to
+     * spare. The four-abreast layout this replaced put files 0 and 3 of the first row at
+     * `hypot(0.9, 1.35) = 1.62 m`.
      *
-     * Three abreast at 0.8 m and 0.7 m back puts the worst first-row man at 1.06 m.
+     * **The prose that used to be here reasoned against "the 1.5 m admission radius", and
+     * there has never been such a number.** The radius that governs this queue is
+     * `LINK_ADMIT`, and it is 2.0 m — `footSlot` hands its men to `noteWaiting`, which puts
+     * them in the bucket `advanceLinks` reads and `pickWaiting` admits from, and
+     * `pickWaiting` measures against `LINK_ADMIT`. `ADMIT_RADIUS` (1.6 m) is a different
+     * thing for a different mechanism: it is what `stepCrossing` admits a *machine's*
+     * boarders by, and no man placed by this function is ever tested against it. 1.5 m is
+     * neither. It was written in the same commit that set `LINK_ADMIT = 2.0` and was wrong
+     * on the day it was written.
+     *
+     * That matters beyond tidiness, because the arithmetic it was attached to no longer
+     * supports its conclusion: 1.62 m is *inside* a 2.0 m radius, so "nobody is in range and
+     * nobody ever will be" cannot have been what deadlocked the measured `0/160 men on the
+     * wall`. Whatever that was, it was not this geometry failing to reach. Three abreast is
+     * kept because it demonstrably works and is comfortably inside both radii — not because
+     * four abreast is out of range, which it is not.
      */
     const file = (q % 3) - 1;
     const row = Math.floor(q / 3);
@@ -3986,18 +4037,52 @@ export class Siege implements ElevationOwner {
      * same pin the ram had. Released here, it becomes an ordinary routing formation. It is
      * *not* dropped from `boarders`, because a rally puts it straight back to work; the
      * `mayBoard` test is what keeps it out of the file in the meantime.
+     *
+     * **The release used to be skipped entirely for any party that was also a garrison, and
+     * that is the second thing the owner reported.** `adoptBoarders` creates a `garrisons`
+     * entry the moment the *first* man of an escalade party gets over the parapet, so from
+     * that instant `garrisons.has(unitId)` was true and this loop `continue`d past the party
+     * for the rest of the battle. When it then broke, the forty men still standing at the
+     * foot of the ladders stayed `owned`; `musterOwned` had already stopped writing their
+     * slots, because `mayBoard` is false for a routing unit, so `steerToSlots` went on
+     * driving each of them at a **muster slot frozen at the last tick before they broke**.
+     *
+     * Measured at the storm of Rome, one escalade party over 3 s of rout: median speed over
+     * the ground **1.11 m/s against the 4.35 m/s a routing man runs at** — and 1.11 is not
+     * even a walk toward safety, it is `steerToSlots`' walk toward the wall — with 13.5% of
+     * all man-ticks under 0.2 m/s and the men who had already arrived at their stale slot
+     * sitting at exactly `|v| = 0`. A man rooted to the spot playing a run cycle: the
+     * animation was the only honest part of it.
+     *
+     * Keyed on the unit while rout is keyed on the man is what made this hard to see, and it
+     * is why the guard is now on the *man* — `stationOf === -1`, he is on the grass — and not
+     * on whether some mate of his is up a ladder.
      */
     for (const m of [...this.towers, ...this.ladders]) {
-      if (!this.owned.has(m.unitId) || this.garrisons.has(m.unitId)) continue;
       const u = b.unitById(m.unitId);
-      // Written out rather than `!mayBoard(u)`: that is a type predicate, and its false
-      // branch narrows `u` to `undefined` — which is wrong here, because a live unit that is
-      // merely routing also fails it and its men are exactly the ones to release.
-      if (u && !u.destroyed && u.alive > 0 && u.order !== UnitOrder.Rout) continue;
-      this.owned.delete(m.unitId);
+      if (!this.broken(u)) {
+        // Rallied, and the machine is still theirs. Only a unit this loop let go of is taken
+        // back: `releaseToGround` also drops a party out of `owned`, on purpose, when the
+        // player has ordered it down off the wall — re-adopting that one would pin an
+        // escalade party to the ladders it had just been ordered to leave.
+        if (this.brokeOff.delete(m.unitId)) this.owned.add(m.unitId);
+        continue;
+      }
+      if (this.owned.delete(m.unitId)) this.brokeOff.add(m.unitId);
       if (!u) continue;
       for (const i of u.members) {
-        if (this.crossOf[i] !== -1 || this.stationOf[i] >= 0) continue;
+        /**
+         * Only a man who is demonstrably standing on the ground.
+         *
+         * Was `stationOf[i] >= 0`, which is the test every *layout* consumer uses and the
+         * wrong one here: `PENDING_SLOT` and `ON_LINK` are both negative, so a man who had
+         * just come over the parapet — or who was standing in a tower doorway — read as
+         * "on the ground" and had his `support` cut from under him. `crossOf` covers the
+         * doorway case today and so it never fired, but this is the shape of the fault that
+         * once dropped nine climbing men from eight metres, and it costs nothing to ask the
+         * question that is actually meant. `-1` is the only value that means the grass.
+         */
+        if (this.crossOf[i] !== -1 || this.stationOf[i] !== -1) continue;
         b.elevated[i] = 0;
         b.support[i] = NO_SUPPORT;
       }
@@ -4005,10 +4090,8 @@ export class Siege implements ElevationOwner {
     for (const r of this.rams) {
       if (r.wreck) continue;
       const u = b.unitById(r.unitId);
-      const gone = !u || u.destroyed || u.alive === 0;
-      const broken = !gone && u.order === UnitOrder.Rout;
 
-      if (gone || broken) {
+      if (this.broken(u)) {
         /**
          * Derelict. Somebody else can have a turn.
          *
@@ -4047,8 +4130,9 @@ export class Siege implements ElevationOwner {
       }
       r.derelictFor = 0;
 
-      // Working normally.
-      if (!this.owned.has(u.id)) this.owned.add(u.id);
+      // Working normally. `broken` is an ordinary boolean rather than a type predicate — see
+      // the note on it — so `u` is narrowed here by hand rather than by control flow.
+      if (u && !this.owned.has(u.id)) this.owned.add(u.id);
     }
   }
 
@@ -4973,18 +5057,26 @@ export class Siege implements ElevationOwner {
        * a fact about the *file*, and counting it per unit gives two men the same slot and
        * neither of them the mouth. The crew are first in `boarders`, so the gang on the
        * levers keeps the front of the column and anybody the player has sent falls in behind.
+       *
+       * Split in two for the same reason the ladder bank below is: the *file* a man stands in
+       * is his own and must not move when somebody else boards, while the *row* he stands in
+       * is a live count and should close up when the man in front of him goes up the ramp.
+       * A tower column is only 0.9 m between files against a ladder bank's 6.88 m, so this
+       * never earned a bug report of its own — but it is the same rotation and it is two
+       * lines away from the one that did.
        */
-      let q = 0;
+      let seat = 0;
+      const rows = this.fileRows;
+      rows.fill(0, 0, 4);
       for (const uid of t.boarders) {
         const u = b.unitById(uid);
         if (!this.mayBoard(u)) continue;
         for (const i of u.members) {
+          // A column behind the tower, four abreast, which is also the gang pushing it.
+          const file = seat++ % 4;
           if (!p.aliveAt(i)) continue;
           if (this.stationOf[i] >= 0 || this.crossOf[i] !== -1) continue;
-          // A column behind the tower, four abreast, which is also the gang pushing it.
-          const file = q % 4;
-          const row = Math.floor(q / 4);
-          q++;
+          const row = rows[file]++;
           const rx = (file - 1.5) * 0.9;
           /**
            * Local −Z, which is the side *away* from the wall.
@@ -5025,19 +5117,51 @@ export class Siege implements ElevationOwner {
     for (const group of byUnit.values()) {
       // Every ladder a party raised is one bank, and `escalade` enrols a unit on the bank
       // rather than on one rail of it, so the whole group shares a boarder list.
-      let q = 0;
+      /**
+       * **The reported shuffle, and it is the queue-index trap wearing its third costume.**
+       *
+       * Round-robin across the party's ladders is right; deriving it from a tally of the men
+       * who *happen to be waiting this tick* is not. `q` counted only men who were alive, on
+       * the ground and not already on a crossing, so the instant anybody was admitted to a
+       * rung — or shot — every man behind him in the bank decremented by one and therefore
+       * changed **which ladder he was queuing for**. The rails of a bank are planted 7 m
+       * apart (`scenario.ts` spreads three across the bay's frontage), so that is not a
+       * nudge: it is the whole file picking itself up and walking to the next ladder,
+       * repeatedly, in lockstep, for as long as the escalade lasts.
+       *
+       * Measured at the storm of Rome, 40 men of one party over 5 s: **147 slot
+       * reassignments, every one of them larger than 3 m, median 6.88 m — exactly the rail
+       * pitch — and 13.77 m at the worst.** 0.74 rail changes per man per second. The men
+       * walked a median of 5.98 m to make 1.15 m of headway, so five sixths of all the
+       * walking done at the foot of a ladder was this. Carthage measured worse, at 1.07.
+       * The rail traces are unmistakable once you print them: `111…000…222`, every man of
+       * the party rotating one rail to the left together each time a rung came free.
+       *
+       * The fix is to make the rail a fact about *the man* rather than about the length of a
+       * list. `seat` counts every member of every unit in the file — dead, climbing, already
+       * over the parapet, it does not matter — so it cannot move under him: `u.members` is
+       * append-only (`BattleSystem` pushes at spawn and never splices) and `boarders` only
+       * changes when a whole unit joins or leaves the bank, which is a real event and should
+       * move the file. His *row* is still a live count, per rail, which is the part that
+       * ought to change: when the man ahead of him steps onto the rungs he closes up 0.9 m
+       * toward the foot, and nobody on the other two rails moves at all.
+       */
+      let seat = 0;
+      const rows = this.fileRows;
+      rows.fill(0, 0, group.length);
       for (const uid of group[0].boarders) {
         const u = b.unitById(uid);
         if (!this.mayBoard(u)) continue;
         for (const i of u.members) {
+          // Before the liveness tests, or it is a tally of the waiting again.
+          const rail = seat++ % group.length;
           if (!p.aliveAt(i)) continue;
           if (this.stationOf[i] >= 0 || this.crossOf[i] !== -1) continue;
-          // Round-robin across the party's ladders, in a file behind each foot. The
-          // admission test in `stepCrossing` only takes a man within `ADMIT_RADIUS` of the
-          // foot, so the file forms itself: the head of it is admitted, everyone shuffles up.
-          const l = group[q % group.length];
-          const row = Math.floor(q / group.length);
-          q++;
+          // The admission test in `stepCrossing` only takes a man within `ADMIT_RADIUS` of
+          // the foot, so the file feeds itself: the head of it is admitted and his own rail
+          // shuffles up one row behind him.
+          const l = group[rail];
+          const row = rows[rail]++;
           const back = 1.1 + row * 0.9;
           b.elevated[i] = 0;
           b.support[i] = NO_SUPPORT;
