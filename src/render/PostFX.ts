@@ -72,6 +72,22 @@ const HALTON: ReadonlyArray<readonly [number, number]> = [
   [0.625, 0.777778], [0.375, 0.222222], [0.875, 0.555556], [0.0625, 0.888889],
 ];
 
+/**
+ * NDC probe points for the motion-blur smear-length bound. 3 x 3 across the frame, at the
+ * near plane, the mid depth and the far plane.
+ *
+ * Corners alone are not enough. Reprojection through `prevViewProj` is a *projective* map,
+ * so the displacement field over the frustum is a ratio of linears and its extremum need
+ * not lie at a vertex — a pure dolly, for instance, moves the frame centre by zero and the
+ * mid-depth edges by the most. Nine columns at three depths costs 27 `Vector4.applyMatrix4`
+ * calls a frame, which is unmeasurable next to the full-resolution blit it decides about.
+ */
+const MB_PROBE: ReadonlyArray<readonly [number, number, number]> = (() => {
+  const pts: Array<readonly [number, number, number]> = [];
+  for (const z of [-1, 0, 1]) for (const y of [-1, 0, 1]) for (const x of [-1, 0, 1]) pts.push([x, y, z]);
+  return pts;
+})();
+
 interface RTOpts {
   scale?: number;
   hdr?: boolean;
@@ -441,9 +457,34 @@ export class PostFXSystem implements Subsystem {
    */
   private nFrames = 0;
   private nMotionBlur = 0;
+  private nMotionBlurSkipped = 0;
+  /**
+   * Smear length, in device pixels, below which the motion-blur blit is skipped.
+   *
+   * The pass is a full-resolution HDR blit with a depth fetch and seven colour fetches, and
+   * when the camera has not moved it returns its own input. `vel` is `(vUv - prev) * uScale`
+   * and the seven taps span `vUv -/+ vel/2`, so a smear shorter than one pixel cannot move a
+   * texel: at 0.5 px the extreme taps sit a quarter of a pixel either side of centre and the
+   * bilinear result differs from the source by a quarter of the local gradient, which is
+   * below the quantisation of the 8-bit target the chain resolves to two passes later.
+   *
+   * This is not a quality lever and must not become one. It is the condition under which the
+   * pass is *arithmetically* a copy. Raising it past a pixel would start removing real smear,
+   * so it is clamped at 1.0 where it is read.
+   *
+   * **0 disables the skip entirely**, which is what the "before" arm of an A/B sets: the
+   * bound is a length and is never negative, so `bound < 0` is false on every frame and the
+   * blit runs exactly as it did. Keeping the off-switch inside the same code path is what
+   * lets both arms be interleaved in one page load, which is the only comparison this
+   * project accepts.
+   */
+  motionBlurMinPixels = 0.5;
   private readonly projNoJitter = new THREE.Matrix4();
   private readonly prevViewProj = new THREE.Matrix4();
   private readonly curViewProj = new THREE.Matrix4();
+  /** Scratch for the smear bound: `curViewProj` inverted, and one probe point. */
+  private readonly invViewProj = new THREE.Matrix4();
+  private readonly mbProbe = new THREE.Vector4();
   private readonly sunUv = new THREE.Vector2(0.5, 0.5);
   private sunOnScreen = 0;
   private readonly dbSize = new THREE.Vector2();
@@ -1418,6 +1459,40 @@ export class PostFXSystem implements Subsystem {
     }
   }
 
+  /**
+   * Upper bound on the motion-blur smear length this frame, in device pixels.
+   *
+   * Reproduces the shader's own arithmetic on the CPU at `MB_PROBE`'s sample points. For a
+   * point whose current position is NDC `p`, the shader recovers its world position from the
+   * depth buffer and pushes it through `uPrevViewProj`; the same point is reached here by
+   * unprojecting `p` through the inverse of the *current* view-projection, which is exact for
+   * anything actually in the depth buffer. `vel` is a uv-space vector, so scaling its
+   * components by the drawing-buffer size converts a smear to pixels.
+   *
+   * A bound, not a measurement: the true maximum is over every pixel and this is over 27 of
+   * them. That is the right direction to be wrong in only because it is paired with a
+   * threshold well under a pixel — see `motionBlurMinPixels`.
+   */
+  private motionBlurSmearPixels(uScale: number): number {
+    this.invViewProj.copy(this.curViewProj).invert();
+    const w = this.w;
+    const h = this.h;
+    let worst = 0;
+    for (const [x, y, z] of MB_PROBE) {
+      // Unproject through the current camera, then reproject through the previous one.
+      const v = this.mbProbe.set(x, y, z, 1).applyMatrix4(this.invViewProj);
+      const iw = 1 / (Math.abs(v.w) > 1e-9 ? v.w : 1e-9);
+      v.set(v.x * iw, v.y * iw, v.z * iw, 1).applyMatrix4(this.prevViewProj);
+      const pw = Math.max(v.w, 1e-5);
+      // `(vUv - prev)` in uv is half the NDC difference, because uv = ndc * 0.5 + 0.5.
+      const du = (x - v.x / pw) * 0.5 * uScale * w;
+      const dv = (y - v.y / pw) * 0.5 * uScale * h;
+      const d = Math.hypot(du, dv);
+      if (d > worst) worst = d;
+    }
+    return worst;
+  }
+
   private blit(
     mat: THREE.ShaderMaterial, target: THREE.WebGLRenderTarget | null, clear = true,
   ): void {
@@ -1588,15 +1663,38 @@ export class PostFXSystem implements Subsystem {
     // TAA's and is set nowhere else, so this pass could not run on any shipped tier.
     if (q.motionBlur && this.mMotion && this.prevViewProjValid) {
       const u = this.mMotion.uniforms;
-      u.tSrc.value = cur.texture;
-      (u.uPrevViewProj.value as THREE.Matrix4).copy(this.prevViewProj);
       // Normalise by frame time so the smear length is shutter-like rather than
       // frame-rate dependent.
-      u.uScale.value = clamp(0.5 * (ctx.time.frameDt * 60), 0.15, 1.2);
-      const other = cur === this.mainA ? this.mainB : this.mainA;
-      this.blit(this.mMotion, other);
-      cur = other;
-      this.nMotionBlur++;
+      const uScale = clamp(0.5 * (ctx.time.frameDt * 60), 0.15, 1.2);
+      /*
+       * Skip the blit when nothing on screen would move far enough to smear.
+       *
+       * With a stationary camera `uPrevViewProj` equals the current view-projection, `vel`
+       * is identically zero, all seven taps land on the same texel and the pass writes back
+       * exactly what it read — a full-resolution HDR blit with eight texture fetches per
+       * pixel for a bit-identical copy. Nothing in the pass gated on that, so from the frame
+       * the pass was first made reachable it has run on 100% of frames at high and ultra,
+       * including every parked screenshot and every second a player spends watching a battle
+       * without touching the mouse.
+       *
+       * The bound is on the smear *length*, not on camera velocity, because that is the
+       * quantity the shader actually spends: a fast dolly along the view axis moves the
+       * camera metres and the pixels barely at all, and a slow yaw at telephoto does the
+       * reverse. Skipping leaves `cur` pointing at the buffer the previous pass wrote, which
+       * is exactly what the pass would have copied.
+       */
+      const bound = this.motionBlurSmearPixels(uScale);
+      if (bound < Math.min(this.motionBlurMinPixels, 1)) {
+        this.nMotionBlurSkipped++;
+      } else {
+        u.tSrc.value = cur.texture;
+        (u.uPrevViewProj.value as THREE.Matrix4).copy(this.prevViewProj);
+        u.uScale.value = uScale;
+        const other = cur === this.mainA ? this.mainB : this.mainA;
+        this.blit(this.mMotion, other);
+        cur = other;
+        this.nMotionBlur++;
+      }
     }
 
     // 7 ---- bloom ----------------------------------------------------------
@@ -1722,12 +1820,13 @@ export class PostFXSystem implements Subsystem {
    * shipped tier.
    */
   debugPasses(): {
-    frames: number; motionBlurFrames: number;
+    frames: number; motionBlurFrames: number; motionBlurSkipped: number;
     historyValid: boolean; prevViewProjValid: boolean; motionBlurMaterial: boolean;
   } {
     return {
       frames: this.nFrames,
       motionBlurFrames: this.nMotionBlur,
+      motionBlurSkipped: this.nMotionBlurSkipped,
       historyValid: this.historyValid,
       prevViewProjValid: this.prevViewProjValid,
       motionBlurMaterial: !!this.mMotion,
@@ -1738,6 +1837,7 @@ export class PostFXSystem implements Subsystem {
   debugResetPasses(): void {
     this.nFrames = 0;
     this.nMotionBlur = 0;
+    this.nMotionBlurSkipped = 0;
   }
 
   dispose(): void {
