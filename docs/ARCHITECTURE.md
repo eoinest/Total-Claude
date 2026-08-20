@@ -411,34 +411,49 @@ decision, not a bug fix.
 > places at different moments and they do not produce the same number. Any figure in this
 > section is unreadable without both, so quote the camera *and* the sim time or do not quote it.
 >
-> Measured at `8633f3f`, 1920x1080, ultra, dpr 1, via `tools/shoot.mjs` and checked with
-> `tools/perfdiff.mjs --budget`:
+> Measured at **`d128adf`**, 1920x1080, ultra, dpr 1, both framings in one boot per map, draw
+> split taken from the real frame by wrapping `WebGLShadowMap.render` and `WebGLRenderer.render`:
 >
-> | camera | sim time | men | draws | verdict |
+> | camera | sim time | men | draws | = shadow + colour + post |
 > |---|---|---|---|---|
-> | `ab-rome-wall` | t+171 s | 2,395 | **217** | ok |
-> | `ab-carth-wall` | t+171 s | 2,988 | **228** | **over the 220 cap** |
+> | Rome, boot framing | t+0 | 3,074 | 191 | 76 + 92 + 23 |
+> | Rome, boot framing | t+170 s | 2,395 | **200** | 80 + 97 + 23 |
+> | Rome, `ab-rome-wall` | t+170 s | 2,395 | **215** | 95 + 97 + 23 |
+> | Carthage, boot framing | t+0 | 3,440 | 172 | 67 + 82 + 23 |
+> | Carthage, boot framing | t+170 s | 2,988 | **182** | 71 + 88 + 23 |
+> | Carthage, `ab-carth-wall` | t+170 s | 2,988 | **224** | 87 + 114 + 23 |
 >
-> `851c479` independently reports `ab3-rome-wall` at 223 and `ab3-rome-parapet` at 224, and
-> confirms both read the same on the source before that pass — so the breach is where the
-> ceiling stands, not something a recent change did. The per-map "neutral" figures at the boot
-> framing are Rome 199 and Carthage 187, which is the family the 204/186 in
-> `docs/tech/RENDERING.md` belongs to.
+> So the 204 / 186 that circulate as "the assault camera" are the *boot framing* figures and
+> they still reproduce there (200 and 182 at t+170). The `ab-*-wall` cameras run 15 to 42 draws
+> heavier, and Carthage's is over the cap. `851c479` independently reports `ab3-rome-wall` at
+> 223 and `ab3-rome-parapet` at 224 and confirms both read the same before that pass, so the
+> breach is where the ceiling stands rather than something a recent change did.
 >
 > **"One cascade off ultra is worth about 39 draws" does not reproduce.** Measured at
-> `ab-rome-wall` by masking each cascade in turn, the shadow pass is 95 draws in four almost
-> equal parts — **23 / 23 / 24 / 25** — so a cascade is worth about **24**, and the whole
-> shadow pass is 95 of 215. In time it is **2.68 ms at p50 and 3.97 ms best-of-block** out of a
-> 17.66 ms frame, i.e. 15-22%, and it is not spread evenly: cascade 0 alone accounts for
-> 1.27-2.35 ms of it, because its 37 m footprint fills the 2048² map while cascade 3's 714 m
-> footprint barely marks it.
+> `ab-rome-wall` by masking each cascade's `shadow.autoUpdate` in turn, the shadow pass is 95
+> draws in four almost equal parts — **23 / 23 / 24 / 25** — so a cascade is worth about **24**,
+> and the whole shadow pass is 95 of 215 draws and 4.54 M of 9.25 M triangles. In time it is
+> **2.68 ms p50 / 3.97 ms best-of-block** out of a 17.66 ms frame, and it is not spread evenly:
+> cascade 0 alone is 1.27-2.35 ms of it, because its 37 m footprint fills the 2048² map while
+> cascade 3's 714 m footprint barely marks it.
+>
+> Much of that is submitted to cascades it cannot possibly reach. A soldier LOD tier is a
+> *radial shell* and a cascade is a *view-depth slice* — 1.5-26 / 26-63 / 63-152 / 152-460 m
+> against tier bands 0-44.8 / 44.8-128 / 128-640 m — but every tier mesh sets
+> `frustumCulled = false` (its instance buffer is filled per camera-frustum, so a bounding
+> sphere would mean nothing) and `WebGLShadowMap.js:515` therefore draws it into all four.
+> Zeroing `geometry.instanceCount` from `onBeforeShadow` for the cascades a tier cannot reach —
+> the instanced form of the trick `buildShadowProxy` already uses — measures
+> **215 -> 207 draws and 9.25 M -> 7.89 M triangles at Rome, 225 -> 215 and 14.46 M -> 10.05 M at
+> Carthage, with the frame byte-identical in both scenes.** See
+> `tools/scratch/gpucost-cascskip.mjs`.
 
 > **The 242 below is stale, but the conclusion is not.** At the boot framing Carthage now
 > renders 187 (`851c479`), and `docs/tech/RENDERING.md` records 186 = 88 + 75 + 23 at
 > `6698e19` — so the 157-call `fabric` family this paragraph goes on to describe is gone.
 > Carthage is nonetheless still the over-budget map at the camera that is actually graded:
-> `ab-carth-wall` measures **228** at ultra against Rome's 217, which is the only figure in
-> this section that `tools/perfdiff.mjs --budget` currently fails on.
+> `ab-carth-wall` measures **224** at ultra against Rome's 215, and it is the only figure in
+> this section that `tools/perfdiff.mjs --budget` fails on.
 
 **Carthage is now the over-budget map, and for the opposite reason.** With
 `city: CARTHAGE_PLAN` wired in, its assault camera renders **242** at ultra: 134 colour + 85
