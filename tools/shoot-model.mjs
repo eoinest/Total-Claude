@@ -116,6 +116,38 @@ const PLATES = {
     unit: 'urban-cohort', hash: 0.83, clip: 'idleAlertReady', phase: 0.32,
     az: -0.7, el: 0.05, fill: 0.88, desc: 'Urban cohort, three-quarter front',
   },
+
+  // --- The far tier, magnified. `lod: 2`, which every other plate in this table leaves at 0.
+  //
+  // LOD2 is the mesh most of the army is drawn with — `LOD_FRACTION` puts its band at
+  // 0.4 to 2.0 of the far distance — and it is a different function (`buildFarGeometry`)
+  // from the one the deck photographs, so a defect can live in it indefinitely while every
+  // plate above says the man is fine. That is exactly what happened to the coarse skull.
+  //
+  // These exist to photograph that tier at a magnification a human can read. They are
+  // deliberately *not* in `SETS.deck`: a 313-triangle man does not belong in a pool graded
+  // against press plates. Camera fixed here rather than by hand so the two arms of a
+  // before/after are the same frame.
+  //
+  // **They were added to illustrate `d128adf` for r7 and they cannot do it.** Shot at
+  // `6698e19` against `0d9960d` the coarse skull is almost entirely inside its own helmet
+  // bowl at this LOD, so reversing it changes a wedge of a few hundred pixels under the
+  // brow — 5.6 % of `lod2-legio-head` at a mean of 1.31/255, against a session drift of
+  // 0.0 % — and at the tier's own band, 0.4 to 2.0 of the far distance, a head is a
+  // handful of pixels. The defect is real, the probe measures it at -0.964, and there is
+  // no frame of it. Kept so the next pass does not spend the afternoon finding that out.
+  'lod2-legio-head': {
+    unit: 'legio-cohort', hash: 0.62, clip: 'idleAlertReady', phase: 0.32, lod: 2,
+    az: 0, el: 0.05, fill: 3.3, aimY: 1.585, desc: 'Legionary head at LOD2, dead ahead',
+  },
+  'lod2-juth-head': {
+    unit: 'juthungi-warband', hash: 0.51, clip: 'idleAlertReady', phase: 0.32, lod: 2,
+    az: 0, el: 0.05, fill: 3.6, aimY: 1.62, desc: 'Juthungi head at LOD2, dead ahead',
+  },
+  'lod2-legio-front': {
+    unit: 'legio-cohort', hash: 0.37, clip: 'idleAlertReady', phase: 0.32, lod: 2,
+    az: 0, el: 0.05, fill: 0.88, desc: 'Legionary at LOD2, whole man, dead ahead',
+  },
 };
 
 /** A turntable of one man: eight azimuths at one elevation. Silhouette and material both. */
@@ -294,7 +326,7 @@ try {
     try {
       await page.evaluate((spec) => {
         window.__viewer.plate({
-          unit: spec.unit, hash: spec.hash, lod: 0,
+          unit: spec.unit, hash: spec.hash, lod: spec.lod ?? 0,
           clip: spec.clip, phase: spec.phase,
           azimuth: spec.az, elevation: spec.el, fill: spec.fill, aimY: spec.aimY,
           light: spec.light ?? spec.forceLight ?? undefined,
