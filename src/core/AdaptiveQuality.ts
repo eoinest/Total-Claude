@@ -698,7 +698,23 @@ export class AdaptiveQualitySystem implements Subsystem {
      * This is the same argument as the `sample` gate one level up, and it belongs on both
      * halves of the loop or on neither.
      */
-    if (this.engine.isAdvancing) return;
+    if (this.engine.isAdvancing) {
+      /*
+       * Keep the camera baseline current on the way past, even though nothing else runs.
+       *
+       * `trackCamera` differences the camera against where it was on the previous `update`.
+       * Returning without touching it would leave that baseline thousands of synthetic frames
+       * stale, so the *first real frame* after the fast-forward would see the whole distance
+       * the camera had covered arrive in one delta, trip `REGRESS_SPEED_M`, and enter motion
+       * regression for a pan that never happened. Sitting out the decision is the point;
+       * sitting out the bookkeeping would just move the bug.
+       */
+      const p = this.ctx.camera.position;
+      this.lastCamX = p.x;
+      this.lastCamY = p.y;
+      this.lastCamZ = p.z;
+      return;
+    }
 
     const now = performance.now();
     this.trackCamera(now);
