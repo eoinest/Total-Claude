@@ -21,7 +21,19 @@
  *
  *   2. **Helmet clearance.** Every helmet bowl is a lathe over the same skull, and the skull
  *      just got deeper. For each helmet piece, the minimum signed gap between the bowl and the
- *      skull surface underneath it, and where it occurs. Negative is a head through a hat.
+ *      envelope of skull-and-hair underneath it, in twelve 30-degree sectors so a bowl cut
+ *      away at the brow is not compared to the face it deliberately does not cover.
+ *
+ *      **A known confound, stated rather than fixed.** A helmet *piece* is not only its bowl:
+ *      the cheek plates, the neck flange and the Coolus knob carry the same piece id, and they
+ *      are boxes. A box has eight corners, so it lands in a sector at one or two heights and
+ *      leaves the sector's maximum radius at whatever that corner happens to be — which for a
+ *      cheek plate's inner-bottom corner is inside the ear. The last two millimetres of
+ *      "negative gap" this reports on the Gallic and ridge helmets are that corner, not a
+ *      skull through a hat; the real poke-through this probe was written to find was 26 mm of
+ *      crown standing above the Gallic bowl's apex, and that reads as `crown stands N mm above
+ *      the bowl apex` rather than as a gap. Trust the apex line and an elevated render; treat
+ *      the last 2 mm of the gap as noise.
  *
  *   3. **Nose projection.** Each nose ring's front surface against the skull's own front at
  *      that height — the measurement the last two passes each got wrong in a different way,
