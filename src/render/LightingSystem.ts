@@ -79,6 +79,22 @@ const PCF_RADIUS_FALLBACK = 2.0;
  */
 const MAX_NORMAL_BIAS = 0.09;
 
+/**
+ * Slack, in metres, on the test that decides a caster cannot reach a cascade.
+ *
+ * Two things have to fit inside it. A man is 1.8 m and the presets' lowest sun sits around
+ * 26 deg, so he throws about 3.7 m of shadow along the ground and can therefore matter to a
+ * cascade he is that far outside. And `UnitRenderSystem`'s LOD hysteresis lets him sit 12%
+ * past his band edge before he changes tier, which at the widest band edge that ever gets
+ * skipped is another 3 m or so.
+ *
+ * 8 m covers both with room. It is deliberately not tuned down: the whole value of this
+ * optimisation is that it removes geometry that provably contributes nothing, and the moment
+ * the margin is tight enough to argue about, it has stopped being that and become a quality
+ * setting. The cost of being generous is a handful of draws, and it is measured.
+ */
+const SHADOW_BAND_MARGIN = 8;
+
 export class LightingSystem implements Subsystem {
   readonly name = 'lighting';
   readonly order = -80;
@@ -156,6 +172,31 @@ export class LightingSystem implements Subsystem {
   private readonly shadowGeom: THREE.Vector2[] = [];
   private readonly csmDepth = new THREE.Vector2(SPLIT_NEAR, SHADOW_FAR_MIN);
   private shadowFar = SHADOW_FAR_MIN;
+  /**
+   * Do not submit a caster to a cascade its own distance band cannot reach.
+   *
+   * A cascade is a slice of *view depth*; a soldier LOD tier is a *radial shell* around the
+   * camera. At ultra the slices are 1.5-26 / 26-63 / 63-152 / 152-460 m and the tiers are
+   * 0-44.8 / 44.8-128 / 128-640 m, so each tier is submitted to two cascades that cannot
+   * contain one of its instances. They are submitted anyway because every tier mesh sets
+   * `frustumCulled = false` — it has to, since its instance buffer is filled per camera
+   * frustum and a bounding sphere would describe nothing — and `WebGLShadowMap.renderObject`
+   * reads exactly that flag before it reads any bound.
+   *
+   * A caster opts in by publishing `userData.shadowRadialBand = [near, far]`; nothing here
+   * knows what a soldier is. That is the same `userData` contract `CitySystem`'s shadow proxy
+   * already uses to pair itself with the meshes it replaces.
+   *
+   * **Setting this false restores the stock submission exactly**, which is what lets both
+   * arms of an A/B be interleaved in one page load — the only comparison this project accepts.
+   */
+  cascadeTierSkip = true;
+  /** Per cascade, the view-depth slice it covers, in metres. Refreshed every frame. */
+  private readonly cascadeDepth: Array<[number, number]> = [];
+  /** Which cascade a shadow camera belongs to. Rebuilt whenever the cascade set is. */
+  private readonly cascadeOfCamera = new Map<THREE.Camera, number>();
+  /** Casters this system has already fitted with band hooks. */
+  private banded = new WeakSet<THREE.Object3D>();
   private patched = new WeakSet<THREE.Material>();
   /** Same membership as `patched`, kept iterable so a define can be re-flipped on all of
    *  them at once. Cleared wholesale by `rebuild`, so it cannot outlive its materials. */
@@ -253,7 +294,9 @@ export class LightingSystem implements Subsystem {
 
     this.installShaderChunks();
     this.syncBreakUniforms();
+    this.syncCascadeDepth();
     this.discoverMaterials(ctx.scene);
+    this.installBandSkips(ctx.scene);
   }
 
   /** Stretch a colour's chroma about its own luminance by `FILL_CHROMA_GAIN`. */
@@ -427,6 +470,74 @@ export class LightingSystem implements Subsystem {
     });
   }
 
+  /**
+   * Fit every caster that publishes a distance band with a per-cascade skip.
+   *
+   * `onBeforeShadow` fires once per shadow draw and is handed the shadow camera, which is the
+   * only place three.js says *which cascade is being drawn*. `renderBufferDirect` reads
+   * `geometry.instanceCount` after it returns, and `WebGLBufferRenderer.renderInstances`
+   * returns before `info.update` when that count is zero — so zeroing it here costs neither a
+   * GL draw call nor a counted one. This is the instanced form of the draw-range trick
+   * `CitySystem.buildShadowProxy` uses to keep its merged proxy out of the colour pass.
+   *
+   * The saved count goes in `userData` rather than a closure variable because the same mesh is
+   * drawn once per cascade and the restore has to pair with its own skip, not with whichever
+   * one ran last.
+   */
+  private installBandSkips(root: THREE.Object3D): void {
+    root.traverse((o) => {
+      if (this.banded.has(o)) return;
+      // Key presence, not a truthy band: the band is empty on the frame a tier is built and
+      // only fills once something has been pushed into it, so testing the value would leave
+      // the hooks uninstalled until the first traversal that happened to catch a full buffer.
+      if (!('shadowRadialBand' in o.userData) || !(o as THREE.Mesh).isMesh) return;
+      this.banded.add(o);
+      o.onBeforeShadow = (_r, obj, _cam, shadowCam, geometry) => {
+        if (!this.cascadeTierSkip) return;
+        const i = this.cascadeOfCamera.get(shadowCam);
+        if (i === undefined) return;
+        const slice = this.cascadeDepth[i];
+        const b = (obj.userData as { shadowRadialBand?: [number, number] }).shadowRadialBand;
+        if (!slice || !b) return;
+        // The band is a radial distance from the camera and the slice is a view depth, so the
+        // band is an upper bound on the depth its instances can have. Comparing them the way
+        // round below is therefore conservative in the safe direction.
+        if (b[0] - SHADOW_BAND_MARGIN > slice[1] || b[1] + SHADOW_BAND_MARGIN < slice[0]) {
+          const g = geometry as THREE.InstancedBufferGeometry;
+          obj.userData.tcBandSaved = g.instanceCount;
+          g.instanceCount = 0;
+        }
+      };
+      o.onAfterShadow = (_r, obj, _cam, _shadowCam, geometry) => {
+        const saved = (obj.userData as { tcBandSaved?: number }).tcBandSaved;
+        if (saved === undefined) return;
+        (geometry as THREE.InstancedBufferGeometry).instanceCount = saved;
+        obj.userData.tcBandSaved = undefined;
+      };
+    });
+  }
+
+  /**
+   * The view-depth slice each cascade covers, in metres.
+   *
+   * `breaks` holds the same lerp factors the shader compares `viewZ` against, so this is the
+   * cascade boundary the *shading* uses and not a second opinion about it.
+   */
+  private syncCascadeDepth(): void {
+    const near = this.csmDepth.x;
+    const far = this.csmDepth.y;
+    this.cascadeDepth.length = this.breaks.length;
+    for (let i = 0; i < this.breaks.length; i++) {
+      const b = this.breaks[i];
+      this.cascadeDepth[i] = [near + b.x * (far - near), near + b.y * (far - near)];
+    }
+    const lights = this.csm?.lights ?? [];
+    if (this.cascadeOfCamera.size !== lights.length) {
+      this.cascadeOfCamera.clear();
+      for (let i = 0; i < lights.length; i++) this.cascadeOfCamera.set(lights[i].shadow.camera, i);
+    }
+  }
+
   /** Only materials that run the lighting template need patching. */
   private affectedByLights(m: THREE.Material): boolean {
     switch (m.type) {
@@ -458,7 +569,10 @@ export class LightingSystem implements Subsystem {
     // Sixteen frames apart is invisible to the eye and keeps the traversal off
     // the per-frame budget.
     this.traverseTimer++;
-    if ((this.traverseTimer & 15) === 0) this.discoverMaterials(ctx.scene);
+    if ((this.traverseTimer & 15) === 0) {
+      this.discoverMaterials(ctx.scene);
+      this.installBandSkips(ctx.scene);
+    }
 
     if (sky) {
       csm.lightDirection.copy(sky.sunDirection).negate().normalize();
@@ -606,6 +720,8 @@ export class LightingSystem implements Subsystem {
     csm.update();
     this.syncBreakUniforms();
     this.csmDepth.set(SPLIT_NEAR, this.shadowFar);
+    // After the breaks and the depth range, because it is derived from both.
+    this.syncCascadeDepth();
 
     // Per-cascade bias and filter geometry from the *actual* fitted extents.
     const n = csm.lights.length;

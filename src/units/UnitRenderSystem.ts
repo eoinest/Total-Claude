@@ -900,7 +900,18 @@ export class UnitRenderSystem implements Subsystem {
     mesh.name = name;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
+    /*
+     * A tier cannot be frustum-culled: its instance buffer is refilled against the camera
+     * frustum every frame, so the geometry's own bounding sphere describes nothing. That is
+     * also why it needs `shadowRadialBand` — `WebGLShadowMap.renderObject` reads exactly this
+     * flag before it reads any bound, so without a band the tier is submitted to every
+     * cascade whatever that cascade covers.
+     */
     mesh.frustumCulled = false;
+    // Declared here, filled by `publishBand` every frame. Declaring the key at construction is
+    // what lets `LightingSystem` fit the skip hooks on its first traversal instead of on
+    // whichever later one first happens to catch a non-empty buffer.
+    mesh.userData.shadowRadialBand = undefined;
     mesh.customDepthMaterial = mat.depth;
     mesh.customDistanceMaterial = mat.distance;
     mesh.visible = false;
@@ -2221,7 +2232,7 @@ export class UnitRenderSystem implements Subsystem {
       }
     }
 
-    this.flush();
+    this.flush(camX, camY, camZ);
     if (!this.warmed) {
       this.warmed = true;
       this.prewarm(ctx);
@@ -2870,7 +2881,44 @@ export class UnitRenderSystem implements Subsystem {
     animB[a + 3] = variant;
   }
 
-  private flush(): void {
+  /**
+   * Publish the radial distance band a tier's instances actually occupy this frame.
+   *
+   * `LightingSystem` reads this off `userData` and uses it to skip the cascades the tier
+   * cannot reach — see `SHADOW_BAND_MARGIN` there for why it is allowed to.
+   *
+   * **Measured off the instance buffer, not derived from `lodDist`.** The derivation looks
+   * obvious and is wrong: a settled corpse is drawn one tier coarser than his distance gives,
+   * so the LOD1 buffer holds bodies at five metres, and a band of `[lodDist[0], lodDist[1]]`
+   * would have skipped cascade 0 for a tier that by the late battle holds a thousand corpses
+   * piled directly under the camera. Cavalry past the billboard edge are likewise held at
+   * LOD2, stretching that tier's far end past `lodDist[2]`. Reading the buffer is immune to
+   * both, and to the next promotion rule somebody adds without thinking of this.
+   *
+   * One pass over the positions already written, squared throughout with a single square root
+   * per tier at the end.
+   */
+  private publishBand(t: Tier, camX: number, camY: number, camZ: number): void {
+    const n = t.buf.count;
+    if (n === 0) {
+      t.mesh.userData.shadowRadialBand = undefined;
+      return;
+    }
+    const p = t.buf.pos;
+    let lo = Infinity;
+    let hi = 0;
+    for (let i = 0; i < n; i++) {
+      const dx = p[i * 3] - camX;
+      const dy = p[i * 3 + 1] - camY;
+      const dz = p[i * 3 + 2] - camZ;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 < lo) lo = d2;
+      if (d2 > hi) hi = d2;
+    }
+    t.mesh.userData.shadowRadialBand = [Math.sqrt(lo), Math.sqrt(hi)];
+  }
+
+  private flush(camX: number, camY: number, camZ: number): void {
     // With the bench active nobody is drawn but the one machine. Enforced here rather than at
     // emission because `push` rewrites `mesh.visible` from the instance count every frame, so a
     // probe that reached in and set `visible = false` would have it restored on the next tick —
@@ -2881,12 +2929,16 @@ export class UnitRenderSystem implements Subsystem {
       const n = men === 0 ? 0 : t.buf.count;
       t.geometry.instanceCount = n;
       t.mesh.visible = n > 0;
-      if (n === 0) return;
+      if (n === 0) {
+        t.mesh.userData.shadowRadialBand = undefined;
+        return;
+      }
       const mark = (a: THREE.InstancedBufferAttribute, stride: number): void => {
         a.clearUpdateRanges();
         a.addUpdateRange(0, n * stride);
         a.needsUpdate = true;
       };
+      this.publishBand(t, camX, camY, camZ);
       mark(t.attrs.pos, Stride.Pos);
       mark(t.attrs.orient, Stride.Orient);
       mark(t.attrs.col0, Stride.Col0);
