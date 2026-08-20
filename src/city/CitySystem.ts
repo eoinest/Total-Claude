@@ -17,7 +17,7 @@ import { buildReferenceOverlay, type OverlayOptions, type ReferencePlan } from '
 import { romeAmphitheatreCount } from './rome/plan';
 import {
   unfinishedTopAt, type CityChunkSpec, type GarrisonBay, type GateBlockOut, type GateDoorOut,
-  type GateOut, type WallSegmentOut, type WallStair,
+  type GateOut, type RoughGround, type WallSegmentOut, type WallStair,
 } from './wall';
 
 /**
@@ -436,6 +436,8 @@ export class CitySystem implements Subsystem {
   private obstacles: Obstacle[] = [];
   /** Kept so opening or closing a gate can re-cut the curtain boxes. */
   private wallBlockers: readonly WallBlocker[] = [];
+  /** Standing work that is crossed at a price rather than stopped at. See `RoughGround`. */
+  private rough: readonly RoughGround[] = [];
   /**
    * Bumped whenever `getObstacles()` changes shape — a gate opening, a wall breached — so
    * consumers holding a spatial index know to rebuild it.
@@ -520,6 +522,7 @@ export class CitySystem implements Subsystem {
       console.warn(`[city:${this.plan.id}] section faults: ${this.punic.faults.join('; ')}`);
     }
     this.segments = wall.segments;
+    this.rough = wall.roughGround;
     this.gateList = wall.gates;
     this.gateBlock = wall.gateBlock;
     this.bays = wall.garrisonBays;
@@ -777,8 +780,11 @@ export class CitySystem implements Subsystem {
   private pushWallFamily(out: Obstacle[]): void {
     // ---- curtain ------------------------------------------------------------
     // One box per blocked bay, with the wall-walk as its top so the garrison standing on
-    // it is *on* the wall rather than inside it. `blockers` already omits the bare footing
-    // courses, which are ankle-high and which the occupancy grid deliberately leaves open.
+    // it is *on* the wall rather than inside it. `blockers` omits the bare footing bays,
+    // which the occupancy grid deliberately leaves open — and which are **not** ankle-high,
+    // whatever this comment used to claim: measured, 1.35–3.54 m of standing concrete. They
+    // are published separately by `getRoughGround()`, so what is open is still open and is
+    // no longer free.
     for (const b of this.wallBlockers) {
       const mx = (b.x1 + b.x2) * 0.5;
       const bay = this.bayAt(mx);
@@ -1308,6 +1314,28 @@ export class CitySystem implements Subsystem {
    */
   getObstacles(): readonly Obstacle[] {
     return this.obstacles;
+  }
+
+  /**
+   * Built work a body can cross but should not cross for free.
+   *
+   * The third state the wall never had. `getObstacles()` answers "is this solid" and the
+   * occupancy raster answers "is this shut", and a bay at stage `footing` is neither: it is
+   * 6.8 m of travertine and poured concrete standing 1.4–3.5 m above the ground beside it,
+   * deliberately open because it is the only way into Rome that needs no ladder, and until
+   * this existed it was open in the sense that *nothing in the game knew it was there*.
+   *
+   * Empty on any circuit with no unfinished bays, which today is Carthage. Read through the
+   * optional-method idiom the pathfinder and the sim already use for this API, so a consumer
+   * that has not been taught about it degrades to the old behaviour rather than failing.
+   *
+   * **Deliberately not folded into `getObstacles()`.** Every consumer of that list treats
+   * what it finds as impassable — the nav stamp, the push-out, the picker — so adding the
+   * footing bays there would seal the three bays the assault depends on, which is the one
+   * outcome this must not have.
+   */
+  getRoughGround(): readonly RoughGround[] {
+    return this.rough;
   }
 
   /** Gate positions and whether they are open. `facing` points out of the city. */

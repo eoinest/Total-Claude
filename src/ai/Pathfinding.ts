@@ -3,6 +3,7 @@ import type { TerrainSystem } from '../terrain/TerrainSystem';
 import { HALF_EXTENT } from '../terrain/TerrainSystem';
 import { BASE_SPACING_X, formation, FORMATIONS } from '../sim/formations';
 import type { UnitGroupState, UnitTypeDef } from '../sim/types';
+import { roughTraverseCost, ROUGH_SLOPE_COST_K, ROUGH_SLOPE_IMPASSABLE, type RoughBox } from '../sim/Obstacles';
 import { isCavalry } from '../units/roster';
 import { profileBegin, profileEnd } from './profile';
 
@@ -41,9 +42,9 @@ const COARSE_MUL = 4;
  * Above this gradient a formed unit cannot climb at all (about 32 degrees). Men can
  * scramble up worse than this, but not in ranks and not carrying a scutum.
  */
-const SLOPE_IMPASSABLE = 0.62;
+const SLOPE_IMPASSABLE = ROUGH_SLOPE_IMPASSABLE;
 /** Cost multiplier per unit of gradient — a 1-in-3 slope roughly halves march speed. */
-const SLOPE_COST_K = 5.0;
+const SLOPE_COST_K = ROUGH_SLOPE_COST_K;
 /** Extra metres-equivalent charged per metre climbed, on top of the slope cost. */
 const CLIMB_COST_K = 1.4;
 /**
@@ -233,6 +234,14 @@ export interface CityNavProvider {
   /** Oriented solid boxes: the curtain, the towers, the monuments and the insulae. */
   getObstacles?: () => unknown;
   getGates?: () => unknown;
+  /**
+   * Standing work that is crossed at a price rather than stopped at.
+   *
+   * Optional and probed, like everything else here. A circuit with no unfinished bays
+   * answers with an empty list and nothing changes; a city that has never heard of the
+   * method degrades to the behaviour that shipped before it, which is to charge nothing.
+   */
+  getRoughGround?: () => unknown;
   blocksMovement?: (x1: number, z1: number, x2: number, z2: number) => boolean;
 }
 
@@ -573,6 +582,60 @@ export class NavGrid {
         }
       }
     }
+  }
+
+  /**
+   * Charge for an oriented box that is crossed rather than blocked.
+   *
+   * **The third thing a structure can be, and until now the grid could not say it.** A cell
+   * was firm ground or it was masonry; `cost` was derived from gradient and water depth
+   * alone and nothing a city published could touch it. So an unfinished bay of the Aurelian
+   * curtain — 6.8 m of travertine and poured concrete standing 1.4 to 3.5 m above the turf
+   * beside it — was neither. It was omitted from `getObstacles()`, correctly, because it is
+   * deliberately a way in; and having been omitted it was *free*. Measured on the shipped
+   * grid before this existed: the cell on the wall's own centreline at bay 29 cost **1.176**
+   * against **1.773** for the open grass seven metres in front of it and **1.152** for open
+   * field. The cheapest lane across the battlefield ran through the wall.
+   *
+   * The charge is `roughTraverseCost`, shared with the integrator so the mover pays what the
+   * planner quoted, and it is a floor rather than a replacement: ground that is already
+   * expensive for its own reasons — a slope, a wade — does not become cheaper for having a
+   * rampart on it.
+   *
+   * No skirt. `blockBox` grows a solid by half a cell because a one-cell hole in a curtain
+   * is a hole an army walks through; the opposite error here is charging a cohort for ground
+   * it is not on, and a footing bay is 35.5 m long against a 7 m cell, so the exact
+   * footprint already lands on cells.
+   */
+  costBox(cx: number, cz: number, hw: number, hd: number, rot: number, cost: number): number {
+    if (!(cost > 1)) return 0;
+    const c = Math.cos(rot);
+    const s = Math.sin(rot);
+    const ex = Math.abs(c) * hw + Math.abs(s) * hd;
+    const ez = Math.abs(s) * hw + Math.abs(c) * hd;
+    const x0 = this.toCell(cx - ex);
+    const x1 = this.toCell(cx + ex);
+    const z0 = this.toCell(cz - ez);
+    const z1 = this.toCell(cz + ez);
+    let touched = 0;
+    for (let gz = z0; gz <= z1; gz++) {
+      const wz = this.toWorld(gz);
+      const row = gz * this.res;
+      for (let gx = x0; gx <= x1; gx++) {
+        const dx = this.toWorld(gx) - cx;
+        const dz = wz - cz;
+        const u = dx * c + dz * s;
+        if (u < -hw || u > hw) continue;
+        const v = -dx * s + dz * c;
+        if (v < -hd || v > hd) continue;
+        const i = row + gx;
+        if (this.cost[i] < cost) {
+          this.cost[i] = cost;
+          touched++;
+        }
+      }
+    }
+    return touched;
   }
 
   /**
@@ -1127,6 +1190,19 @@ export class PathfindingSystem implements Subsystem {
   private portals: { x: number; z: number; nx: number; nz: number }[] = [];
   /** The terrain-only mask, kept so a re-stamp does not have to resample the heightfield. */
   private terrainMask: Uint8Array | null = null;
+  /**
+   * The terrain-only cost field, snapshotted for the same reason the mask is.
+   *
+   * `costBox` writes a floor into `cost`, and a re-stamp happens whenever the city's solids
+   * change — the ram breaking the Porta Flaminia, most often. Restoring the terrain figures
+   * first means a charge is applied once against clean ground rather than accumulating, and
+   * that a piece of standing work which *stopped* being standing work stops being charged
+   * for. `costBox`'s floor makes the first of those harmless today; the second is not
+   * expressible any other way.
+   */
+  private terrainCost: Float32Array | null = null;
+  /** Cells `stampRough` charged on the last re-stamp, for the harness. */
+  private roughCells = 0;
   /** `obstacleGeneration` the grid was last stamped against. */
   private cityGeneration = -1;
   private queue: PathRequest[] = [];
@@ -1175,6 +1251,8 @@ export class PathfindingSystem implements Subsystem {
     restamps: 0,
     /** Tick of the most recent re-stamp, for the determinism probe. */
     lastRestampTick: -1,
+    /** Cells charged for standing work the last time the grid was stamped. */
+    roughCells: 0,
   };
 
   init(ctx: EngineContext): void {
@@ -1216,10 +1294,16 @@ export class PathfindingSystem implements Subsystem {
     } else {
       this.terrainMask = this.grid.blocked.slice();
     }
+    if (this.terrainCost) {
+      this.grid.cost.set(this.terrainCost);
+    } else {
+      this.terrainCost = this.grid.cost.slice();
+    }
 
     let stamped = 0;
     try {
       stamped = city.getObstacles ? this.stampObstacles(city) : this.stampWallSegments(city);
+      stamped += this.stampRough(city);
       this.openGates(city);
     } catch (err) {
       // A foreign API that throws must not take the AI down with it.
@@ -1232,6 +1316,7 @@ export class PathfindingSystem implements Subsystem {
       for (const f of this.flows.values()) f.downsample(this.grid);
     }
     this.stats.cityObstacles = stamped;
+    this.stats.roughCells = this.roughCells;
     this.cityGeneration = Number(
       (city as unknown as { obstacleGeneration?: number }).obstacleGeneration ?? 0
     );
@@ -1312,9 +1397,66 @@ export class PathfindingSystem implements Subsystem {
       if (!Number.isFinite(x1) || !Number.isFinite(z1) || !Number.isFinite(x2) || !Number.isFinite(z2)) continue;
       // A gate is a hole in the wall, not a wall.
       if (s.gate === true || s.isGate === true || s.passable === true) continue;
+      /*
+       * Nor is a bay that is standing but not a barrier.
+       *
+       * `getObstacles()` and `getWallSegments()` disagreed about the footing bays for as
+       * long as both existed: the obstacle list omits them and the segment list carries
+       * them at a height, so this fallback would have stamped three bays solid that the
+       * live provider leaves open — and sealed the only way into Rome that needs no ladder.
+       * It never fired, because `CitySystem` publishes `getObstacles` and the branch above
+       * takes it. That is the definition of a fault that is one edit away from mattering.
+       */
+      if (s.rough === true) continue;
       const half = Number(s.halfThickness);
       const thickness = Number.isFinite(half) ? half * 2 : Number(s.thickness ?? s.width ?? 3.5);
       this.grid.blockSegment(x1, z1, x2, z2, Number.isFinite(thickness) ? thickness : 3.5);
+      stamped++;
+    }
+    return stamped;
+  }
+
+  /**
+   * Charge the raster for standing work that is crossed rather than blocked.
+   *
+   * The correctness fix under the owner's report that horses ride through a half-built
+   * wall. The three bays of the Aurelian circuit at stage `footing` emit no obstacle box —
+   * by design, they are the only way into Rome that needs no ladder — and having emitted
+   * none they cost the pathfinder nothing at all. Measured before this: at a 4 m footprint
+   * radius the two cheapest entries into the city were bay 28 at **662** and bay 29 at
+   * **676**, against **1,353** for the next-best way in; the wall's own centreline was the
+   * cheapest cell on its transect.
+   *
+   * The charge comes from `roughTraverseCost`, which is the grid's own rule for sloping
+   * ground applied to the published rise. Two consequences worth stating:
+   *
+   *  - The same gradient in *terrain* is above `SLOPE_IMPASSABLE` and would be refused. It
+   *    is charged instead. Charging rather than refusing is the whole point: sealing these
+   *    bays takes the assault from winning sometimes to winning never, and that is a
+   *    balance decision this file is not entitled to make.
+   *  - It is a real charge and it is still small against a 600-cost route, because a 7 m
+   *    cell cannot express a 7 m obstruction as anything but a couple of expensive cells.
+   *    The raster is not what decides this crossing; the integrator's drag is. This closes
+   *    the planning half so the two halves agree.
+   */
+  private stampRough(city: CityNavProvider): number {
+    this.roughCells = 0;
+    const raw = city.getRoughGround?.();
+    if (!Array.isArray(raw)) return 0;
+    let stamped = 0;
+    for (const r of raw) {
+      const o = r as Partial<RoughBox>;
+      const x = Number(o.x);
+      const z = Number(o.z);
+      const hw = Number(o.hw);
+      const hd = Number(o.hd);
+      const rise = Number(o.rise);
+      const rot = Number(o.rot ?? 0);
+      if (!Number.isFinite(x) || !Number.isFinite(z) || !Number.isFinite(hw) || !Number.isFinite(hd)) continue;
+      if (!Number.isFinite(rise) || rise <= 0) continue;
+      this.roughCells += this.grid.costBox(
+        x, z, hw, hd, Number.isFinite(rot) ? rot : 0, roughTraverseCost(rise, hd),
+      );
       stamped++;
     }
     return stamped;

@@ -184,8 +184,73 @@ export interface WallSegmentOut {
   height: number;
   /** True for the bay the gate passage runs through: masonry, but with a hole in it. */
   gate: boolean;
+  /**
+   * True for a bay whose work is standing but is not a barrier — today, a bare footing.
+   *
+   * It exists to close a disagreement between two published views of the same stone.
+   * `blockers`, and therefore `getObstacles()` and the occupancy raster, omit a footing bay
+   * entirely; `segments` has always included it, at a height, and `Pathfinding`'s
+   * `stampWallSegments` fallback would have stamped it solid. Only one of those two
+   * providers is live — the city publishes `getObstacles`, so the fallback never runs — so
+   * the disagreement has never cost anything. It is exactly the shape of the four
+   * cross-subsystem faults found this week, two of which meant a feature had never worked
+   * in any shipped build, and it is a one-line edit away from mattering.
+   *
+   * A consumer that turns a segment into a barrier must skip these. A consumer that wants
+   * to know what a body has to get over should read `roughGround`, which carries the
+   * measured rise rather than a nominal height.
+   */
+  rough: boolean;
   /** Half-thickness of the curtain, so a consumer stamping an obstacle gets it right. */
   halfThickness: number;
+}
+
+/**
+ * Built work that stands in a body's way without stopping it.
+ *
+ * The Aurelian circuit in 271 is a building site, and three of its fifty bays are at stage
+ * `footing`: a travertine plinth and the first lift of poured concrete between shuttering
+ * boards. Those three bays are deliberately open — they are the only way into Rome that
+ * does not need a ladder, and closing them would make the battle unlosable — but until this
+ * existed they were open in the strongest possible sense. They emitted no blocker, so no
+ * obstacle box, so no occupancy cell and no nav stamp, and *nothing in the game knew there
+ * was anything there at all*: a squadron of horse crossed 6.8 m of concrete in 3.4 seconds
+ * at a flat gallop, and the nav raster charged 1.18 for the cell on the wall's centreline
+ * against 1.77 for the open grass seven metres in front of it. The cheapest lane across the
+ * battlefield ran through the wall.
+ *
+ * So this is the third state the wall never had: **standing work, passable, at a price.**
+ *
+ * `rise` is what a body actually has to get over, and it is not a nominal figure — it is
+ * `unfinishedTopAt` (the function the stone itself is cut from) evaluated against the
+ * ground under the same point, taken at its worst along the run. Measured on the shipped
+ * circuit: bay 2 1.35–3.54 m, bay 28 1.35–2.33 m, bay 29 1.94–2.75 m. Four comments in this
+ * repository called that pour "ankle-high" or "knee-high"; it is chest-high on a man and
+ * withers-high on a horse, and those comments have been corrected rather than the stone,
+ * because the stone is what Roman construction actually gives you: 1.35 m of travertine
+ * plinth with a 1.0 m lift of concrete on top of it.
+ */
+export interface RoughGround {
+  /** Which bay this is, so a consumer can name it. */
+  bay: number;
+  /** Centre of the footprint. */
+  x: number;
+  z: number;
+  /** Half-extents along the run and across it. */
+  hw: number;
+  hd: number;
+  /** Yaw of the run about +Y. */
+  rot: number;
+  /** Absolute Y of the top of the built work, at its highest along the run. */
+  crestY: number;
+  /**
+   * Metres a body must climb to get over it, worst case along the run.
+   *
+   * Worst case rather than mean, because a formation crosses on a frontage and the man on
+   * the bad metre is the one who holds it up.
+   */
+  rise: number;
+  stage: BayStage;
 }
 
 /**
@@ -574,6 +639,8 @@ export interface WallBuildOutput {
   /** Where the gatehouse masonry actually stands. See `GateBlockOut`. */
   gateBlock: GateBlockOut;
   blockers: Blocker[];
+  /** Standing work that slows a body without stopping it. See `RoughGround`. */
+  roughGround: RoughGround[];
   trees: TreeRequest[];
   towerCount: number;
   bayStages: BayStage[];
@@ -786,6 +853,37 @@ export function unfinishedTopAt(stage: BayStage, bayGroundY: number, localGround
 }
 
 /**
+ * Worst rise of an unfinished bay's work above the ground under that very point, metres.
+ *
+ * The number a body has to get over, and deliberately not the number the bay reports as
+ * its height. `unfinishedTopAt` answers per point because the work follows the ground
+ * across 35.5 m of terrain that varies by ten metres; subtract the ground at the same
+ * point and you have the step. Taken at its maximum along the run, because a formation
+ * crosses on a frontage and the worst metre is the one that holds it up.
+ *
+ * Sampled at 1/32 intervals **strictly inside** the run. Sampling the endpoints is how the
+ * first instrument to ask this question reported bay 2's pour as standing 40.55 m proud:
+ * `x0` belongs to the previous bay by index arithmetic, and bay 2's neighbour is finished
+ * curtain with its walk 40 m up.
+ */
+export function worstRiseOf(
+  bay: { x0: number; z0: number; x1: number; z1: number; g0: number; g1: number; gMax: number; stage: BayStage },
+  heightAt: (x: number, z: number) => number
+): number {
+  const gMin = Math.min(bay.g0, bay.g1);
+  let worst = 0;
+  for (let k = 0; k <= 32; k++) {
+    const t = 0.02 + (k / 32) * 0.96;
+    const px = lerp(bay.x0, bay.x1, t);
+    const pz = lerp(bay.z0, bay.z1, t);
+    const g = heightAt(px, pz);
+    const rise = unfinishedTopAt(bay.stage, gMin, g) - g;
+    if (rise > worst) worst = rise;
+  }
+  return worst;
+}
+
+/**
  * Where the top of this bay is, and where on it a man can stand.
  *
  * **The single source of truth for the wall-walk's height**, called both by the geometry
@@ -819,15 +917,25 @@ function walkGeometry(bay: Bay): {
   const innerLip = -(T * 0.5 - 0.025);
 
   if (stage === 'footing' || stage === 'gap') {
-    // No walkway: a footing is a knee-high concrete pour and a gap is an earth rampart
-    // with a palisade on it. Both are places to fight *at*, not on.
+    // No walkway: a footing is the first lift of a concrete pour on its travertine plinth,
+    // and a gap is an earth rampart with a palisade on it. Both are places to fight *at*,
+    // not on.
+    //
+    // **Not knee-high, whatever this comment used to say.** `unfinishedTopAt` puts the
+    // pour at `min(g0,g1) + 1.35 + 1.0`, and measured against the ground under each point
+    // of the shipped circuit that is 1.35–3.54 m on bay 2, 1.35–2.33 on bay 28 and
+    // 1.94–2.75 on bay 29 — chest-high on a man, withers-high on a horse. The stone is
+    // right; Roman practice is a 1.35 m plinth with a 1.0 m lift on it. The description
+    // was wrong, and it was wrong in four places, one of which (`Obstacles.TOP_SLACK`)
+    // sized a step-up allowance at 0.4 m for "a low footing course" that is six times
+    // that. See `RoughGround`.
     //
     // The height reported is what has been *built*, not `bay.topY`, which is the level
     // the finished wall will eventually reach. Those are the same number nowhere on this
     // circuit and forty metres apart on the Tiber bank, where bay 2's footing is a pour
     // at ground + 2.35 and its construction level is 48.4 because the level is held over
     // pairs of bays and its neighbour climbs a hill. `masonryTopAt` reported the latter,
-    // so an arrow shot at an ankle-high footing stopped dead in clear air above it, and a
+    // so an arrow shot at a chest-high footing stopped dead in clear air above it, and a
     // gap bay's obstacle box was a forty-metre invisible tower.
     //
     // One number for a whole bay, so it is the bay-wide *maximum*: `unfinishedTopAt`
@@ -952,6 +1060,7 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
   const bays: Bay[] = [];
   const segments: WallSegmentOut[] = [];
   const blockers: Blocker[] = [];
+  const roughGround: RoughGround[] = [];
   const bayStages: BayStage[] = [];
   const trees: TreeRequest[] = [];
   const garrisonBays: GarrisonBay[] = [];
@@ -977,15 +1086,51 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
     };
     bays.push(bay);
     bayStages.push(stage);
-    const h = stage === 'footing' ? 1.1 : stage === 'gap' ? 3.1 : stage === 'half-built' ? 3.4 : WALL.height;
+    /*
+     * Rise of the work above the ground under it.
+     *
+     * A footing's is **derived**, not a literal. It was `1.1`, and `unfinishedTopAt` — the
+     * function `buildFootingSite` and `masonryTopAt` both answer from — puts the pour at
+     * `min(g0,g1) + plinthHeight + 1.0`, which is 2.35 m over the low end of the bay and
+     * more where the ground falls away under it. Two numbers for one piece of concrete, in
+     * one file, two hundred lines apart, and the smaller one is what every consumer of
+     * `getWallSegments()` was being told.
+     */
+    const footingRise = stage === 'footing' ? worstRiseOf(bay, heightAt) : 0;
+    const h = stage === 'footing' ? footingRise
+      : stage === 'gap' ? 3.1 : stage === 'half-built' ? 3.4 : WALL.height;
     segments.push({
       x1: bay.x0, z1: bay.z0, x2: bay.x1, z2: bay.z1, height: h,
       gate: isGate,
+      rough: stage === 'footing',
       halfThickness: HALF_T,
     });
-    // A bare footing does not stop a man; everything else does.
+    /*
+     * A bare footing does not *stop* a man; everything else does.
+     *
+     * It does not follow that it costs him nothing, and for as long as this was the whole
+     * story it did: no blocker means no obstacle box, no occupancy cell and no nav stamp,
+     * so the pour existed in the geometry and in nothing else. The third state is
+     * `roughGround` — published below, standing work that is crossed at a price.
+     */
     if (stage !== 'footing') {
       blockers.push({ x1: bay.x0, z1: bay.z0, x2: bay.x1, z2: bay.z1, halfW: HALF_T });
+    } else {
+      const f0 = frameOf(bay.x0, bay.z0, bay.x1, bay.z1);
+      roughGround.push({
+        bay: b,
+        x: (bay.x0 + bay.x1) * 0.5,
+        z: (bay.z0 + bay.z1) * 0.5,
+        // Along the run and across it. The pour is `CURTAIN_T` wide and the travertine
+        // plinth projects `plinthProject` beyond it on both faces, which is the footprint
+        // a body actually has to climb over.
+        hw: f0.len * 0.5,
+        hd: HALF_T + WALL.plinthProject,
+        rot: Math.atan2(f0.dz, f0.dx),
+        crestY: unfinishedTopAt(stage, Math.min(bay.g0, bay.g1), bay.gMax),
+        rise: footingRise,
+        stage,
+      });
     }
 
     const f = frameOf(bay.x0, bay.z0, bay.x1, bay.z1);
@@ -1235,7 +1380,7 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
   }
 
   return {
-    path, chunks, segments, gates, gateBlock, gateDoor, blockers, trees,
+    path, chunks, segments, gates, gateBlock, gateDoor, blockers, roughGround, trees,
     towerCount, bayStages, garrisonBays, stairs, wallZAt: zAt,
   };
 }

@@ -13,7 +13,7 @@ import {
   isAlive, type UnitGroupState, type UnitTypeDef,
 } from './types';
 import { Siege } from './Siege';
-import { ObstacleField, type Obstacle, type Resolved } from './Obstacles';
+import { ObstacleField, type Obstacle, type Resolved, type RoughBox } from './Obstacles';
 
 /**
  * What the sim needs from the city subsystem, duck-typed.
@@ -24,6 +24,15 @@ import { ObstacleField, type Obstacle, type Resolved } from './Obstacles';
  */
 export interface ObstacleSource {
   getObstacles(): readonly Obstacle[];
+  /**
+   * Standing work a body crosses at a price rather than stops at — an unfinished bay.
+   *
+   * Optional, and probed rather than required, for the same reason the rest of this
+   * interface is: the city agent owns it, Pydna has no city, and a circuit with nothing
+   * half-built answers with an empty list. A sim that has not been taught about it simply
+   * runs the collision path it always did.
+   */
+  getRoughGround?(): readonly RoughBox[];
   obstacleGeneration?: number;
 }
 
@@ -740,6 +749,7 @@ export class BattleSystem implements Subsystem {
     if (gen === this.masonryGen) return;
     try {
       this.masonry.set(src.getObstacles());
+      this.masonry.setRough(src.getRoughGround?.() ?? []);
       this.masonryGen = gen;
     } catch (err) {
       // A foreign API that throws must not take the simulation down with it.
@@ -1430,7 +1440,11 @@ export class BattleSystem implements Subsystem {
       const align = Math.cos(wrapAngle(u.facing - travelFacing));
       headingAlign = align;
       const heading = align > 0 ? 0.25 + 0.75 * align : Math.max(0.06, 0.25 + align * 0.19);
-      let step = Math.min(distToTarget, speed * heading * dt);
+      // The block pays the same toll its men do while its anchor is on standing work, so
+      // `u.x` — which the tactical layer reads to decide where the unit *is* — does not
+      // sail across a half-built rampart while the men are still scrambling over it.
+      const anchorDrag = this.masonry.noRough ? 1 : this.masonry.dragAt(u.x, u.z);
+      let step = Math.min(distToTarget, speed * heading * dt * anchorDrag);
 
       // Block collision: never walk the front rank through an enemy's. Routing units
       // are exempt — broken men go through anything — and so is anyone whose objective
@@ -2499,8 +2513,22 @@ export class BattleSystem implements Subsystem {
 
       const ox = p.x[i];
       const oz = p.z[i];
-      let nx = ox + p.vx[i] * dt;
-      let nz = oz + p.vz[i] * dt;
+      /**
+       * Rubble is crossed at a walk.
+       *
+       * `dragAt` is 1 everywhere except on standing work the city has published as
+       * passable-at-a-price — today, the three bays of the Aurelian circuit still at
+       * footing level. It scales the *step*, not `vx`/`vz`: writing it back would compound
+       * every tick and a man who touched the pour would never get off it.
+       *
+       * Applied per man rather than to the block, which is what breaks the formation up.
+       * A squadron of fifty enters the pour in line and comes out of it as a straggle,
+       * because the men on the concrete are doing a quarter of the speed of the men who
+       * are already past — and that is what a half-built rampart does to a charge.
+       */
+      const drag = solids.noRough ? 1 : solids.dragAt(ox, oz);
+      let nx = ox + p.vx[i] * dt * drag;
+      let nz = oz + p.vz[i] * dt * drag;
 
       /**
        * Masonry is solid.

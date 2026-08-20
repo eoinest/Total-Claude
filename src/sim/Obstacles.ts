@@ -60,6 +60,70 @@ const TOP_SLACK = 0.4;
 /** Broadphase cell, metres. Roughly two insulae across; 3,000 boxes land ~1.5 per cell. */
 const BIN = 16;
 
+// ---------------------------------------------------------------------------
+// Standing work that is crossed rather than stopped at
+// ---------------------------------------------------------------------------
+
+/**
+ * A solid low enough to get over, published so it can be charged for rather than sealed.
+ *
+ * The case this exists for is the three bays of the Aurelian circuit at stage `footing`:
+ * 6.8 m of travertine plinth and poured concrete standing 1.4–3.5 m above the ground beside
+ * it. They are deliberately the only way into Rome that needs no ladder, so they must not
+ * become `Obstacle`s — every consumer of that list treats what it finds as impassable. But
+ * until this existed they were not in *any* list, and the consequence was measured: a
+ * squadron of horse crossed one at a flat gallop in 3.4 seconds, and the nav raster charged
+ * less for the cell on the wall's own centreline than for the open grass in front of it.
+ */
+export interface RoughBox {
+  x: number;
+  z: number;
+  hw: number;
+  hd: number;
+  rot: number;
+  /** Metres a body has to climb to get over it, worst case. */
+  rise: number;
+}
+
+/**
+ * Gradient above which a formed body cannot climb at all — about 32 degrees.
+ *
+ * **This is the definition, not a copy of one.** It lived in `src/ai/Pathfinding.ts` as
+ * `SLOPE_IMPASSABLE` and now lives here, because two consumers need it and the dependency
+ * only runs one way: `src/ai` imports `src/sim` in five files and the reverse would invert
+ * it. `Pathfinding` aliases these rather than restating them, so there is no second number
+ * to drift.
+ */
+export const ROUGH_SLOPE_IMPASSABLE = 0.62;
+/** Cost multiplier per unit of gradient — a 1-in-3 slope roughly halves march speed. */
+export const ROUGH_SLOPE_COST_K = 5.0;
+
+/**
+ * What it costs to cross standing work, on the same scale `NavGrid.cost` uses.
+ *
+ * **One function, because the planner and the mover must not disagree.** The pathfinder
+ * charges this into the raster so a route over a footing is no longer free, and the
+ * integrator turns the same number into a speed multiplier so the body pays what the plan
+ * was quoted. Two derivations of "how hard is this to cross" is the defect class this
+ * repository keeps producing.
+ *
+ * The rule is the grid's own rule for terrain and introduces no constant of its own: a
+ * body goes up `rise` over `run` metres, that is a gradient, and a gradient costs
+ * `1 + g * ROUGH_SLOPE_COST_K`. Two things are worth saying plainly about it:
+ *
+ *  - **It is the lenient reading.** Bay 28's pour is 2.33 m over a 3.42 m half-depth, a
+ *    gradient of 0.68, and `ROUGH_SLOPE_IMPASSABLE` is 0.62 — the same slope in *terrain*
+ *    would be refused outright and no route would exist. It is charged instead, because
+ *    the bay is deliberately a way in and sealing it is not this function's decision.
+ *  - **It is not a balance constant.** Nothing here was chosen to make the battle come out
+ *    a particular way; the numbers are the two the grid already used for sloping ground.
+ */
+export function roughTraverseCost(rise: number, run: number): number {
+  if (!(rise > 0) || !(run > 0)) return 1;
+  const gradient = Math.min(1, rise / run);
+  return 1 + gradient * ROUGH_SLOPE_COST_K;
+}
+
 /** Hard cap on how far one tick may shove a man who begins inside a solid. */
 const MAX_PUSH = 1.1;
 
@@ -73,6 +137,9 @@ export interface Resolved {
   blockedZ: boolean;
 }
 
+/** Neutral drag: firm level ground charges nothing. */
+export const NO_DRAG = 1;
+
 /**
  * A static set of solids with a uniform-grid broadphase.
  *
@@ -85,6 +152,23 @@ export class ObstacleField {
   private sin = new Float32Array(0);
   /** Absolute Y of each box top, unpacked so the hot loop reads one flat array. */
   private topY = new Float32Array(0);
+  /**
+   * Standing work that is crossed, not stopped at. See `RoughBox`.
+   *
+   * Held as a plain list with no broadphase, deliberately. There are three of these on the
+   * Aurelian circuit and none on the Punic one, so an index would cost more to build and
+   * more to consult than the linear scan it replaces — and `dragAt` early-rejects on a
+   * world AABB before it does any trigonometry, so the common case is three float compares.
+   */
+  private roughItems: RoughBox[] = [];
+  private roughCos = new Float32Array(0);
+  private roughSin = new Float32Array(0);
+  /** Speed multiplier inside each box, precomputed from its rise. */
+  private roughDrag = new Float32Array(0);
+  private roughMinX = Infinity;
+  private roughMaxX = -Infinity;
+  private roughMinZ = Infinity;
+  private roughMaxZ = -Infinity;
 
   private minX = 0;
   private minZ = 0;
@@ -185,6 +269,72 @@ export class ObstacleField {
   private binZ(v: number): number {
     const c = Math.floor((v - this.minZ) / BIN);
     return c < 0 ? 0 : c >= this.nz ? this.nz - 1 : c;
+  }
+
+  /**
+   * Replace the standing-but-passable set. Called from the same place `set` is.
+   *
+   * The drag is precomputed here because it is a division and this is asked once per living
+   * man per tick. It is `1 / roughTraverseCost`, so a body pays exactly what the pathfinder
+   * charged for planning the same step: the two cannot drift, because there is one formula.
+   */
+  setRough(list: readonly RoughBox[]): void {
+    this.roughItems = list.slice();
+    const n = this.roughItems.length;
+    this.roughCos = new Float32Array(n);
+    this.roughSin = new Float32Array(n);
+    this.roughDrag = new Float32Array(n);
+    this.roughMinX = Infinity;
+    this.roughMaxX = -Infinity;
+    this.roughMinZ = Infinity;
+    this.roughMaxZ = -Infinity;
+    for (let i = 0; i < n; i++) {
+      const o = this.roughItems[i];
+      this.roughCos[i] = Math.cos(o.rot);
+      this.roughSin[i] = Math.sin(o.rot);
+      // `hd` is the half-depth across the work, which is the run a body climbs over.
+      this.roughDrag[i] = 1 / roughTraverseCost(o.rise, o.hd);
+      const ex = Math.abs(this.roughCos[i]) * o.hw + Math.abs(this.roughSin[i]) * o.hd;
+      const ez = Math.abs(this.roughSin[i]) * o.hw + Math.abs(this.roughCos[i]) * o.hd;
+      if (o.x - ex < this.roughMinX) this.roughMinX = o.x - ex;
+      if (o.x + ex > this.roughMaxX) this.roughMaxX = o.x + ex;
+      if (o.z - ez < this.roughMinZ) this.roughMinZ = o.z - ez;
+      if (o.z + ez > this.roughMaxZ) this.roughMaxZ = o.z + ez;
+    }
+  }
+
+  /** True when there is no rough ground at all, so callers can skip the whole path. */
+  get noRough(): boolean {
+    return this.roughItems.length === 0;
+  }
+
+  /**
+   * Speed multiplier for a body standing at (x,z). 1 everywhere but on standing work.
+   *
+   * **Not applied to `y`.** A man scrambling over a rubble bank is modelled as slowed, not
+   * as lifted: raising him to the crest would put him 2.35 m above the men beside him, and
+   * `SAME_LEVEL_DY` is 1.9 — he would become unhittable for the whole crossing, which is
+   * the exact opposite of what a body in the open on top of a half-built wall should be.
+   * The cost is paid in time under fire, at ground level, where the garrison can reach it.
+   */
+  dragAt(x: number, z: number): number {
+    const n = this.roughItems.length;
+    if (n === 0) return NO_DRAG;
+    if (x < this.roughMinX || x > this.roughMaxX || z < this.roughMinZ || z > this.roughMaxZ) {
+      return NO_DRAG;
+    }
+    let worst = NO_DRAG;
+    for (let i = 0; i < n; i++) {
+      const o = this.roughItems[i];
+      const dx = x - o.x;
+      const dz = z - o.z;
+      const u = dx * this.roughCos[i] + dz * this.roughSin[i];
+      if (u < -o.hw || u > o.hw) continue;
+      const v = -dx * this.roughSin[i] + dz * this.roughCos[i];
+      if (v < -o.hd || v > o.hd) continue;
+      if (this.roughDrag[i] < worst) worst = this.roughDrag[i];
+    }
+    return worst;
   }
 
   /**

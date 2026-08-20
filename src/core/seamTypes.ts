@@ -46,11 +46,12 @@
 
 import type { CitySystem } from '../city/CitySystem';
 import type { Embrasure } from '../city/CitySystem';
-import type { GarrisonBay, GateBlockOut, GateOut, WallStair } from '../city/wall';
+import type { GarrisonBay, GateBlockOut, GateOut, RoughGround, WallStair } from '../city/wall';
 import type { CityBayView, CityGateBlockView, CityStairView, CityView } from '../sim/Siege';
 import type { EmbrasureView } from '../sim/Projectiles';
 import type { CityNavProvider, PathfindingSystem } from '../ai/Pathfinding';
 import type { NavProvider, ObstacleSource } from '../sim/BattleSystem';
+import type { RoughBox } from '../sim/Obstacles';
 import type { BattleSystem } from '../sim/BattleSystem';
 import type { BattleView, SiegeView } from '../audio/BattleAudio';
 import type { Siege } from '../sim/Siege';
@@ -84,6 +85,18 @@ type _CityForNav = Implements<CitySystem, CityNavProvider>;
 
 // -- the battlement the projectile system aims through -----------------------
 type _Embrasure = Implements<Embrasure, EmbrasureView>;
+
+/*
+ * -- standing work that is crossed rather than stopped at --------------------
+ *
+ * The city publishes `RoughGround`; both the integrator and the nav raster consume it as
+ * `RoughBox`. This line is what stops the two coming apart, and the failure it guards
+ * against is a silent one in both directions: `stampRough` and `setRough` each read `rise`
+ * through a finite test and skip a record that does not answer, so a rename here does not
+ * throw and does not warn — it restores, exactly, the behaviour that let a squadron of
+ * horse cross a half-built rampart at a gallop for free.
+ */
+type _RoughForSim = Implements<RoughGround, RoughBox>;
 
 // -- everything else that reaches a subsystem through a shape it wrote itself -
 type _CityForObstacles = Implements<CitySystem, ObstacleSource>;

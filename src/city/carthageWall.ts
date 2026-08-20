@@ -1217,6 +1217,8 @@ export function buildCarthageWall(
       x1: bay.x0, z1: bay.z0, x2: bay.x1, z2: bay.z1,
       height: PUNIC.mainHeight,
       gate: bay.isGate,
+      // Every bay of a finished monumental circuit is a barrier. See `RoughGround`.
+      rough: false,
       halfThickness: HALF_T,
     });
     /**
@@ -1705,6 +1707,9 @@ export function buildCarthageWall(
     gateBlock,
     gateDoor,
     blockers,
+    // Nothing on this circuit is standing-but-passable: the eight posterns were shut at
+    // `385474f` and every bay is finished. The field is on the contract, so it is answered.
+    roughGround: [],
     trees,
     towerCount: bays.filter((b) => towerAt(b.index, b.x0)).length + 1,
     // Every bay of a finished monumental circuit. `BayStage` exists for Aurelian's building

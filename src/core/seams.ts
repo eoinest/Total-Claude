@@ -225,8 +225,8 @@ export const SEAMS: readonly Seam[] = [
     consumer: 'ai/Pathfinding.ts CityNavProvider',
     provider: 'city',
     optional: {
-      getWallSegments: 'fn', getObstacles: 'fn', getGates: 'fn', blocksMovement: 'fn',
-      obstacleGeneration: 'prop',
+      getWallSegments: 'fn', getObstacles: 'fn', getGates: 'fn', getRoughGround: 'fn',
+      blocksMovement: 'fn', obstacleGeneration: 'prop',
     },
     returns: {
       /**
@@ -237,7 +237,25 @@ export const SEAMS: readonly Seam[] = [
        */
       getWallSegments: {
         element: true,
-        fields: ['x1', 'z1', 'x2', 'z2', 'height', 'gate', 'halfThickness'],
+        fields: ['x1', 'z1', 'x2', 'z2', 'height', 'gate', 'rough', 'halfThickness'],
+      },
+      /**
+       * The third state a piece of wall can be in, and the seam that carries it.
+       *
+       * `stampRough` reads `x`, `z`, `hw`, `hd`, `rot` and `rise`, and it degrades on every
+       * one of them the same silent way `openGates` degrades on `facing`: a missing or
+       * renamed `rise` fails `Number.isFinite` and the bay is skipped, which restores
+       * exactly the behaviour this workstream was sent to fix — a half-built rampart that
+       * costs a galloping horse nothing. There is no loud failure available, because
+       * charging nothing is what the grid did before and looks like nothing at all.
+       *
+       * `rise` in particular is checked as a *number* rather than as a present key, because
+       * the wrong answer here is not absence but zero: `worstRiseOf` returning 0 for a bay
+       * whose stage stopped being `footing` would publish a record that stamps no cost.
+       */
+      getRoughGround: {
+        element: true,
+        fields: ['x', 'z', 'hw', 'hd', 'rot', 'rise', 'crestY'],
       },
       getObstacles: { element: true, fields: ['x', 'z', 'hw', 'hd', 'rot', 'topY'] },
       /**
@@ -265,7 +283,22 @@ export const SEAMS: readonly Seam[] = [
   {
     consumer: 'sim/BattleSystem.ts ObstacleSource',
     provider: 'city',
-    optional: { getObstacles: 'fn', obstacleGeneration: 'prop' },
+    optional: { getObstacles: 'fn', getRoughGround: 'fn', obstacleGeneration: 'prop' },
+    returns: {
+      /**
+       * The integrator's half of the same seam the pathfinder reads above.
+       *
+       * Two consumers, one provider, and the whole point of both entries is that the mover
+       * and the planner charge the *same* number for the same piece of ground —
+       * `roughTraverseCost` is one function precisely so they cannot disagree. If this list
+       * and the nav one ever come apart, a body will be slowed across work a route was
+       * planned over for free, or the reverse.
+       */
+      getRoughGround: {
+        element: true,
+        fields: ['x', 'z', 'hw', 'hd', 'rot', 'rise'],
+      },
+    },
   },
   {
     consumer: 'ai/WallDoctrine.ts CityShape',
