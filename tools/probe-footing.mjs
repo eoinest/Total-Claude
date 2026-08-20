@@ -74,6 +74,18 @@ const ONLY = args.has('only') ? new Set(String(args.get('only')).split(',')) : n
  * this is a clean third arm that needs no second build and no product code behind a flag.
  */
 const NO_DRAG = args.has('nodrag');
+/**
+ * Override the traverse cost the *integrator* charges, leaving the nav raster's charge
+ * where the build put it.
+ *
+ * The derived figure — the grid's own rule for sloping ground, applied to the measured
+ * rise — comes out at 4.41 on bay 28, and measured it does not slow a crossing, it stops
+ * one. That makes the magnitude a balance question, and a balance question deserves a dial
+ * with measured points on it rather than an argument. `rise` is re-solved from the wanted
+ * cost through the same `roughTraverseCost` the product uses, so this sweeps the real
+ * mechanism and not a parallel one.
+ */
+const TRAVERSE = args.has('traverse') ? Number(args.get('traverse')) : null;
 const want = (k) => !ONLY || ONLY.has(k);
 
 const base = `http://127.0.0.1:${PORT}`;
@@ -118,6 +130,23 @@ async function openPage(seed, extra = '') {
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 420000, polling: 250 });
   await page.evaluate(() => window.__game.engine.stop());
+  if (TRAVERSE !== null) {
+    const got = await page.evaluate((want) => {
+      const g = window.__game;
+      const city = g.engine.context.get('city');
+      const m = g.battle.masonry;
+      if (!city.getRoughGround || !m || typeof m.setRough !== 'function') return null;
+      // cost = 1 + min(1, rise/hd) * 5  =>  rise = (cost - 1) / 5 * hd
+      const list = city.getRoughGround().map((r) => ({
+        x: r.x, z: r.z, hw: r.hw, hd: r.hd, rot: r.rot,
+        rise: ((want - 1) / 5) * r.hd,
+      }));
+      m.setRough(list);
+      return list.length;
+    }, TRAVERSE);
+    if (got === null) throw new Error('--traverse asked for on a build with no rough ground');
+    if (got === 0) throw new Error('--traverse: the city published no rough ground to scale');
+  }
   if (NO_DRAG) {
     const dropped = await page.evaluate(() => {
       const m = window.__game.battle.masonry;
@@ -842,8 +871,24 @@ window.__fkBattle = (() => {
   const storm = flow.objective ? flow.objective.storm : 1;
   const p = b.pool;
   const cap = p.capacity ?? p.x.length;
-  /** Last sampled depth per pool slot, so a sign change is a crossing. */
-  const prev = new Float32Array(cap).fill(NaN);
+  /**
+   * Has this man been definitely outside since he was last counted? A latch, not a memory
+   * of the previous sample.
+   *
+   * **This was a differencing test and the differencing test was wrong**, in the one
+   * direction that matters here. It counted a man only when *consecutive* one-second
+   * samples went from depth > +2 to depth <= -2 — that is, only when he covered four
+   * metres of curtain in a second. A galloping horse does; a horse crossing the same
+   * ground four times slower does not. It sits at +1, then 0, then -1, and on the sample
+   * where it finally passes -2 the previous depth is -1, which fails the test.
+   *
+   * So the instrument reported **zero crossings** for exactly the change that was supposed
+   * to make crossings slower, and it reported it in two separate arms before its own
+   * neighbours gave it away: the same runs counted 41-53 storm men inside the curtain and
+   * showed every rider unit's centroid crossing at t+45. Nought and fifty-three cannot both
+   * be true. A latch has no such blind spot at any speed.
+   */
+  const outside = new Uint8Array(cap);
   /** Sim time this slot was last seen at depth > +OUT, so a duration can be closed. */
   const outAt = new Float32Array(cap).fill(NaN);
   /** Crossings, keyed bay index -> { typeId -> {men, sumSecs, n} }. */
@@ -899,8 +944,8 @@ window.__fkBattle = (() => {
         (dwell[k] ??= { stage: L.stage, manSecs: 0 }).manSecs += 1;
       }
       if (!carried && d > OUT) outAt[i] = t;
-      const was = prev[i];
-      if (!carried && !Number.isNaN(was) && was > START && d <= -IN) {
+      if (!carried && d > START) outside[i] = 1;
+      if (!carried && outside[i] === 1 && d <= -IN) {
         const L = lineAt(p.x[i]);
         const k = L.bay;
         const ty = typeOf(i);
@@ -911,10 +956,12 @@ window.__fkBattle = (() => {
         tr.men++;
         tr.bays[k] = (tr.bays[k] ?? 0) + 1;
         if (!Number.isNaN(outAt[i])) { tr.sumSecs += t - outAt[i]; tr.n++; }
-        prev[i] = NaN;
+        outside[i] = 0;
         continue;
       }
-      if (!carried) prev[i] = d; else prev[i] = NaN;
+      // A man the siege system picks up has not walked anywhere: drop the latch so he
+      // cannot be counted as having crossed when he is set down on the far side.
+      if (carried) outside[i] = 0;
     }
     if (inWall > insidePeak.throughWall) insidePeak.throughWall = inWall;
     if (inEast > insidePeak.pastEast) insidePeak.pastEast = inEast;
