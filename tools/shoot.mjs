@@ -151,11 +151,11 @@ const SHOTS = {
    */
   'footing-cross': {
     desc: 'Juthungi horse crossing the unfinished footing bay — the moment of the crossing',
-    follow: 'roughCrossing', zoom: 0.26, scenario: 'assault', at: 40, seed: 4265438264,
+    follow: 'roughCrossing', zoom: 0.46, scenario: 'assault', at: 36, seed: 4265438264,
   },
   'footing-cross-late': {
-    desc: 'The same bay sixteen seconds later: through, or still on the concrete',
-    follow: 'roughCrossing', zoom: 0.26, scenario: 'assault', at: 56, seed: 4265438264,
+    desc: 'The same bay ten seconds later: through, or still on the concrete',
+    follow: 'roughCrossing', zoom: 0.46, scenario: 'assault', at: 46, seed: 4265438264,
   },
   city: {
     // Was (60, 400) zoom 0.62, which put the camera *inside* the Via Flaminia tomb field
@@ -1658,23 +1658,45 @@ try {
                */
               const city = g.engine.context.tryGet('city');
               const bays = (city?.getGarrisonBays?.() ?? []).filter((bay) => bay.stage === 'footing');
+              /*
+               * Choose the bay by *nearest horse*, with no cut-off.
+               *
+               * The first draft took the footing bay with the most mounted men inside 45 m
+               * and fell back to `bays[0]` when none qualified. Both halves were wrong. By
+               * the second the shot is timed for, the squadron's anchor is already 60 m
+               * past the bay it came through, so nothing qualified — and `bays[0]` on this
+               * circuit is bay 2, which the nav grid refuses on slope and which no unit has
+               * ever crossed in 48 measured battles. It photographed the one hole nobody
+               * uses, twice, and reported success both times.
+               */
               if (bays.length) {
-                let bestBay = bays[0], bestN = -1, bx = 0, bz = 0;
+                let horse = null;
+                for (const u of b.units) {
+                  if (u.destroyed || u.alive === 0) continue;
+                  const cls = b.typeOf(u).unitClass;
+                  if (cls !== 'heavy-cavalry' && cls !== 'light-cavalry') continue;
+                  if (!horse || u.alive > horse.alive) horse = u;
+                }
+                let bestBay = bays[0], bestD = Infinity;
                 for (const bay of bays) {
                   const mx = (bay.x0 + bay.x1) / 2, mz = (bay.z0 + bay.z1) / 2;
-                  let hx = 0, hz = 0, hn = 0;
-                  for (const u of b.units) {
-                    if (u.destroyed || u.alive === 0) continue;
-                    const cls = b.typeOf(u).unitClass;
-                    if (cls !== 'heavy-cavalry' && cls !== 'light-cavalry') continue;
-                    if (Math.hypot(u.x - mx, u.z - mz) > 45) continue;
-                    hx += u.x * u.alive; hz += u.z * u.alive; hn += u.alive;
-                  }
-                  if (hn > bestN) { bestN = hn; bestBay = bay; bx = hx; bz = hz; }
+                  const d = horse ? Math.hypot(horse.x - mx, horse.z - mz) : bay.index;
+                  if (d < bestD) { bestD = d; bestBay = bay; }
                 }
                 const mx = (bestBay.x0 + bestBay.x1) / 2, mz = (bestBay.z0 + bestBay.z1) / 2;
-                fx = bestN > 0 ? bx / bestN : mx;
-                fz = bestN > 0 ? bz / bestN : mz;
+                // Frame the men if they are anywhere near the stone, otherwise the stone.
+                let hx = 0, hz = 0, hn = 0;
+                for (const u of b.units) {
+                  if (u.destroyed || u.alive === 0) continue;
+                  const cls = b.typeOf(u).unitClass;
+                  if (cls !== 'heavy-cavalry' && cls !== 'light-cavalry') continue;
+                  if (Math.hypot(u.x - mx, u.z - mz) > 90) continue;
+                  hx += u.x * u.alive; hz += u.z * u.alive; hn += u.alive;
+                }
+                // Bias the focus onto the bay itself so the pour is always in frame even
+                // when the squadron has run on past it.
+                fx = hn > 0 ? (hx / hn + mx) / 2 : mx;
+                fz = hn > 0 ? (hz / hn + mz) / 2 : mz;
                 fyaw = Math.atan2(bestBay.x1 - bestBay.x0, bestBay.z1 - bestBay.z0) + 0.62;
                 n = -1;
               }
