@@ -607,6 +607,141 @@ async function dijkstra(page) {
 }
 
 /**
+ * Is bay 28 special, or merely the one nearest the attacker's approach?
+ *
+ * The twelve-seed before arm is unambiguous: 191 crossings, every one at bay 28, none at
+ * bay 2 or bay 29 — and all three are open in `blocksMovement`. So permission and route are
+ * different things, and this asks which of the two separates them. Four candidates, all
+ * measured against the *riders' own deployment position* rather than a convenient origin,
+ * because "nearest the approach" is a claim about where they start:
+ *
+ *   admission   `clearance` at the band against the footprint radius. A body wider than the
+ *               aperture is refused by A* whatever the cost.
+ *   terrain     the nav grid's own `blocked` mask. Bay 2 crosses a knoll.
+ *   cost        the uncapped least cost from the riders' start to a point 50 m behind each
+ *               band at radius 2.2 — `BattleSystem.ROUTE_RADIUS`, the constant an attack
+ *               order is actually searched at, regardless of the unit's real frontage.
+ *   proximity   straight-line metres from the riders' start to each band.
+ *
+ * If cost and proximity rank the three bands the same way, "nearest" explains it and the
+ * fix has to hold for all three. If admission or terrain rules two of them out, bay 28 is
+ * special and the other two were never live.
+ */
+async function bands(page) {
+  return page.evaluate(() => {
+    const { nav, bays, lineAt, city } = window.__fk;
+    const b = window.__game.battle;
+    const flow = window.__game.engine.context.get('battleFlow');
+    const storm = flow.objective ? flow.objective.storm : 1;
+    const g = nav.grid;
+    const res = g.res, N = res * res, CELL = g.cell, S2 = Math.SQRT2, CLIMB_K = 1.4;
+    const DX = [1, -1, 0, 0, 1, 1, -1, -1];
+    const DZ = [0, 0, 1, -1, 1, -1, 1, -1];
+
+    let horse = null;
+    for (const u of b.units) {
+      if (u.faction !== storm || u.destroyed || u.alive === 0) continue;
+      const cls = b.typeOf(u).unitClass;
+      if (cls !== 'heavy-cavalry' && cls !== 'light-cavalry') continue;
+      if (!horse || u.alive > horse.alive) horse = u;
+    }
+    const src = horse ? g.cellAt(horse.x, horse.z) : g.cellAt(0, -300);
+
+    const dijkstra = (radius) => {
+      const dist = new Float64Array(N).fill(Infinity);
+      const done = new Uint8Array(N);
+      const heap = new Int32Array(N * 2);
+      let hn = 0;
+      const push = (c) => {
+        let i = hn++; const k = dist[c];
+        while (i > 0) { const par = (i - 1) >> 1; if (dist[heap[par]] <= k) break; heap[i] = heap[par]; i = par; }
+        heap[i] = c;
+      };
+      const pop = () => {
+        const top = heap[0]; const last = heap[--hn];
+        if (hn > 0) {
+          let i = 0; const k = dist[last];
+          for (;;) {
+            const l = i * 2 + 1; if (l >= hn) break;
+            const r = l + 1; const ch = r < hn && dist[heap[r]] < dist[heap[l]] ? r : l;
+            if (dist[heap[ch]] >= k) break;
+            heap[i] = heap[ch]; i = ch;
+          }
+          heap[i] = last;
+        }
+        return top;
+      };
+      dist[src] = 0; push(src);
+      while (hn > 0) {
+        const c = pop();
+        if (done[c]) continue;
+        done[c] = 1;
+        const cx = c % res, cz = (c - cx) / res;
+        const gc = dist[c], cc = g.cost[c], hc = g.height[c];
+        for (let k = 0; k < 8; k++) {
+          const nx = cx + DX[k], nz = cz + DZ[k];
+          if (nx < 0 || nz < 0 || nx >= res || nz >= res) continue;
+          const n = nz * res + nx;
+          if (g.blocked[n]) continue;
+          if (g.clearance[n] < radius) continue;
+          const diag = k >= 4;
+          if (diag && (g.blocked[cz * res + nx] || g.blocked[nz * res + cx])) continue;
+          const stepLen = diag ? CELL * S2 : CELL;
+          const climb = g.height[n] - hc;
+          const t = gc + stepLen * (cc + g.cost[n]) * 0.5 + (climb > 0 ? climb * CLIMB_K : 0);
+          if (t < dist[n] - 1e-6) { dist[n] = t; push(n); }
+        }
+      }
+      return dist;
+    };
+
+    const d22 = dijkstra(2.2);
+    const d11 = dijkstra(11);
+
+    const rows = bays.filter((x) => x.stage === 'footing' || x.stage === 'gap').map((x) => {
+      const mx = (x.x0 + x.x1) * 0.5, mz = (x.z0 + x.z1) * 0.5;
+      const centre = g.cellAt(mx, mz);
+      const inside = g.cellAt(mx - x.nx * 50, mz - x.nz * 50);
+      let bestClear = 0;
+      for (let t = 0.1; t <= 0.9; t += 0.05) {
+        const px = x.x0 + (x.x1 - x.x0) * t, pz = x.z0 + (x.z1 - x.z0) * t;
+        const c = g.cellAt(px, pz);
+        if (!g.blocked[c] && g.clearance[c] > bestClear) bestClear = g.clearance[c];
+      }
+      return {
+        bay: x.index, stage: x.stage, x: +mx.toFixed(0),
+        navBlockedAtCentre: g.blocked[centre] !== 0,
+        costAtCentre: +g.cost[centre].toFixed(3),
+        bestClearance: +bestClear.toFixed(1),
+        fromHorse: horse ? +Math.hypot(mx - horse.x, mz - horse.z).toFixed(0) : null,
+        entryCost22: Number.isFinite(d22[inside]) ? +d22[inside].toFixed(0) : null,
+        entryCost11: Number.isFinite(d11[inside]) ? +d11[inside].toFixed(0) : null,
+      };
+    });
+
+    const gate = city.getGates()[0];
+    if (gate) {
+      const L = lineAt(gate.x);
+      const inside = g.cellAt(gate.x - L.nx * 50, gate.z - L.nz * 50);
+      rows.push({
+        bay: 'gate', stage: gate.open ? 'open' : 'shut', x: +gate.x.toFixed(0),
+        navBlockedAtCentre: g.blockedAt(gate.x, gate.z),
+        costAtCentre: +g.costAt(gate.x, gate.z).toFixed(3),
+        bestClearance: +g.clearanceAt(gate.x, gate.z).toFixed(1),
+        fromHorse: horse ? +Math.hypot(gate.x - horse.x, gate.z - horse.z).toFixed(0) : null,
+        entryCost22: Number.isFinite(d22[inside]) ? +d22[inside].toFixed(0) : null,
+        entryCost11: Number.isFinite(d11[inside]) ? +d11[inside].toFixed(0) : null,
+      });
+    }
+
+    return {
+      horse: horse ? { typeId: horse.typeId, x: +horse.x.toFixed(0), z: +horse.z.toFixed(0), alive: horse.alive } : null,
+      rows,
+    };
+  });
+}
+
+/**
  * Does the garrison cover its own hole?
  *
  * A gap in your wall is a thing you post men at. Whether Rome does is a fact, and it is a
@@ -1011,6 +1146,26 @@ if (want('census') || want('nav') || want('around') || want('routes') || want('d
   }
   if (errors.length) console.log(`\n!! ${errors.length} page error(s): ${[...new Set(errors)].slice(0, 5).join(' | ')}`);
   else console.log('\nno page errors on the static page');
+  await page.close();
+}
+
+if (want('bands')) {
+  const { page, errors } = await openPage(SEED0);
+  await page.evaluate(KIT);
+  report.bands = await bands(page);
+  const bd = report.bands;
+  console.log('\n=== is bay 28 special, or merely nearest? ===');
+  console.log(`the storm's horse starts at (${bd.horse ? bd.horse.x : '?'}, ${bd.horse ? bd.horse.z : '?'})`
+    + ` — ${bd.horse ? bd.horse.typeId : '?'}, ${bd.horse ? bd.horse.alive : '?'} men`);
+  console.log('  band   stage      x   navBlocked   cost   widest clear   m from horse   entry r=2.2   entry r=11');
+  for (const r of bd.rows) {
+    console.log(`  ${String(r.bay).padStart(4)}   ${String(r.stage).padEnd(9)} ${String(r.x).padStart(5)}`
+      + ` ${String(r.navBlockedAtCentre).padStart(12)} ${String(r.costAtCentre).padStart(6)}`
+      + ` ${String(r.bestClearance).padStart(14)} ${String(r.fromHorse).padStart(14)}`
+      + ` ${String(r.entryCost22 === null ? 'unreachable' : r.entryCost22).padStart(13)}`
+      + ` ${String(r.entryCost11 === null ? 'unreachable' : r.entryCost11).padStart(12)}`);
+  }
+  if (errors.length) console.log(`  !! ${errors.length} page error(s)`);
   await page.close();
 }
 
