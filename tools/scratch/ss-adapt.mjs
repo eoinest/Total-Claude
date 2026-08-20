@@ -31,7 +31,7 @@ for (let i = 0; i < SECS; i++) {
     return { st, ivP50: q(0.5), ivIQR: +(q(0.75) - q(0.25)).toFixed(2), ivP90: q(0.9), n: iv.length };
   });
   const a = s.st;
-  console.log(`${String(i).padStart(2)}  ${a.pressure.toFixed(2)}  ${a.appliedScale.toFixed(2)}  ${a.refreshMs.toFixed(2).padStart(6)} ${a.ivP90.toFixed(1).padStart(6)}`
+  console.log(`${String(i).padStart(2)}  ${a.pressure.toFixed(2)}  ${a.appliedScale.toFixed(2)}  ${a.refreshMs.toFixed(2).padStart(6)} ${a.ivP90.toFixed(1).padStart(6)} q${(a.ivQuant ?? -1).toFixed(3)}`
     + ` | ${a.p50.toFixed(1).padStart(6)} ${a.p90.toFixed(1).padStart(6)}  ${a.raiseMs.toFixed(1)}-${a.dropMs.toFixed(1)}`
     + `  ${a.simP90.toFixed(1).padStart(5)} ${String(a.warm).padStart(5)} ${String(a.latched).padStart(5)} ${String(a.reversals).padStart(3)} ${String(a.changes).padStart(3)} ${String(a.reallocs).padStart(3)}`
     + ` | ${String(s.ivP50).padStart(5)} ${String(s.ivIQR).padStart(5)} ${String(s.ivP90).padStart(5)} ${String(s.n).padStart(4)}`);

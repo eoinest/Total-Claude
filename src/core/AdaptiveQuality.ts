@@ -801,8 +801,34 @@ export class AdaptiveQualitySystem implements Subsystem {
      * hunting for a cause the loop cannot address — the same principle as discarding the frames
      * that link a shader program.
      */
+    /*
+     * The presented arm judges against the *budget*, in whole refresh periods — not against one
+     * period.
+     *
+     * Two lines of this function disagreed about what frame rate the loop is for.
+     * `targetMs = max(DEFAULT_TARGET_MS, refresh)` says the controller never asks for better
+     * than 60 Hz, deliberately: a faster panel is headroom, not a new obligation. The old
+     * `ivP90 > refreshMs * MISS_FACTOR` said the opposite — on a 120 Hz display it demanded a
+     * present every 8.33 ms, and on 144 Hz every 6.94. So on any high-refresh panel the two
+     * arms were controlling to targets a factor of two apart, and the presented one always won,
+     * because it can only say "drop".
+     *
+     * Measured on the Carthage assault, headless, where the loop is genuinely quantised to
+     * 8.33 ms: at pressure 0 the CPU arm read p50 2.2 / p90 2.6 ms against a 10.2-12.7 ms band
+     * — five times the headroom it needed — while the presented arm saw ivP90 16.5-17.1 against
+     * a 10.0 ms threshold and drove the ladder end to end in three seconds. Five pressure steps,
+     * four drawing-buffer reallocations, and it settled at the tier floor. The frame it bought
+     * was 120 fps instead of 60, at 0.65 resolution, on a target of 60.
+     *
+     * The threshold is `targetMs`, because `targetMs` is what the budget *is*. A present is
+     * late when it exceeds the budget, and quantisation only decides which discrete values it
+     * can take: at 120 Hz two scanouts (16.67 ms) is on budget and three (25.0) is not; at
+     * 90 Hz one (11.1) is on budget and two (22.2) is not. On a 60 Hz display `targetMs` and
+     * `refreshMs` are the same number, so this is byte-for-byte the behaviour that shipped —
+     * the change is confined to the panels where the two disagreed.
+     */
     const missingFrames = this.refreshMs > 0
-      && this.ivP90 > this.refreshMs * MISS_FACTOR
+      && this.ivP90 > this.targetMs * MISS_FACTOR
       && this.simP90 < this.targetMs * SIM_DOMINANT_SHARE;
     const inBand = !missingFrames && this.p90 <= dropMs && this.p90 >= raiseMs;
     if (inBand) {
@@ -829,7 +855,7 @@ export class AdaptiveQualitySystem implements Subsystem {
       // quantised to whole refresh periods, so it is converted to an equivalent share of the
       // budget rather than used raw.
       const cpuOver = this.p90 / dropMs;
-      const gpuOver = missingFrames ? this.ivP90 / this.refreshMs : 0;
+      const gpuOver = missingFrames ? this.ivP90 / this.targetMs : 0;
       const over = Math.max(cpuOver, gpuOver);
       const step = Math.min(DROP_STEP_MAX, Math.max(DROP_STEP_MIN, (over - 1) * DROP_GAIN));
       this.move(Math.min(1, this.pressure + step), 'down', now);
