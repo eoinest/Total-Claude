@@ -71,8 +71,13 @@ const SCENES = {
  * drift check.
  */
 const ARMS = [
-  ['base', 'tc.mbMin(0)'],
-  ['mbskip', 'tc.mbMin(0.5)'],
+  ['base', 'tc.mbMin(0); tc.mbOn(1)'],
+  ['mbskip', 'tc.mbMin(0.5); tc.mbOn(1)'],
+  // The pass switched off at the quality flag. This is the *ceiling* on what the sub-pixel
+  // skip can ever recover, measured the same way in the same session: if `base` and `mboff`
+  // are indistinguishable then the pass is not worth skipping and no amount of gating it
+  // more cleverly will show up in a frame time.
+  ['mboff', 'tc.mbMin(0); tc.mbOn(0)'],
 ];
 
 const tree = (() => {
@@ -149,12 +154,36 @@ await page.evaluate(() => {
   const renderer = ctx.renderer;
   const info = renderer.info;
 
-  const acc = { shadow: 0, render: 0 };
+  /*
+   * Stop the engine's own rAF loop before anything else.
+   *
+   * Without this the game keeps rendering in real time between `page.evaluate` and
+   * `page.screenshot`, so a "frozen" frame is whatever the loop last drew and two shots of
+   * the *same* arm differ on 81% of pixels. That is a second problem on top of the VFX
+   * reseeding `RELEASING.md` §4a describes, and it makes the drift check fail for a reason
+   * that has nothing to do with the arms. Measured: with the loop running, base-1 vs base-2
+   * differed on 0.81 of the frame at a mean of 5.2/255, which is larger than any render lever
+   * under test here and made the whole picture comparison inconclusive.
+   */
+  g.engine.stop();
+
+  const acc = { shadow: 0, scene: 0, quad: 0 };
   const sm = renderer.shadowMap;
   const origShadow = sm.render.bind(sm);
   sm.render = (...z) => { const b = info.render.calls; origShadow(...z); acc.shadow += info.render.calls - b; };
+  /*
+   * `FullScreenQuad.render` goes through `renderer.render`, so one wrapper cannot tell the
+   * colour pass from a post blit — the first cut of this probe reported post = 0 and a colour
+   * pass 25 calls too large. The scene render is the one whose first argument is the world
+   * scene; every other call is a fullscreen quad.
+   */
   const origRender = renderer.render.bind(renderer);
-  renderer.render = (...z) => { const b = info.render.calls; origRender(...z); acc.render += info.render.calls - b; };
+  renderer.render = (...z) => {
+    const b = info.render.calls;
+    origRender(...z);
+    const d = info.render.calls - b;
+    if (z[0] === ctx.scene) acc.scene += d; else acc.quad += d;
+  };
 
   const gl = renderer.getContext();
   const px = new Uint8Array(4);
@@ -165,21 +194,26 @@ await page.evaluate(() => {
     sync: () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px),
     /** The one knob under test. 0 restores the stock behaviour exactly. */
     mbMin: (v) => { postfx.motionBlurMinPixels = v; },
+    /** The tier's own motion-blur flag, which is what `AdaptiveQuality`'s rung drives. */
+    mbOn: (v) => { ctx.quality.motionBlur = !!v; },
     /** Re-issue the same timestamp: frameDt 0, no fixed step, no emitter advance. */
     freeze: () => { window.__tcFrozenAt = g.engine.time.elapsed * 1000; },
     still: (n) => { for (let i = 0; i < n; i++) g.engine.frame(window.__tcFrozenAt); },
     /** A real advancing frame, for the panning arm. */
     live: (n) => { for (let i = 0; i < n; i++) g.engine.frame(g.engine.time.elapsed * 1000 + 16.7); },
     split: () => {
-      acc.shadow = 0; acc.render = 0;
+      acc.shadow = 0; acc.scene = 0; acc.quad = 0;
       g.engine.frame(window.__tcFrozenAt);
       window.tc.sync();
       const total = info.render.calls;
       return {
         total, tris: info.render.triangles,
-        shadow: acc.shadow, colour: acc.render - acc.shadow, post: total - acc.render,
+        shadow: acc.shadow, colour: acc.scene - acc.shadow, post: acc.quad,
+        unattributed: total - acc.scene - acc.quad,
       };
     },
+    /** Rig yaw, so a "panning" arm can be shown to have actually panned. */
+    yaw: () => ctx.rig.yaw,
     passes: () => postfx.debugPasses(),
     resetPasses: () => postfx.debugResetPasses(),
     men: () => {
@@ -205,6 +239,102 @@ await page.evaluate(async (c) => {
 const pop = await page.evaluate(() => window.tc.men());
 console.log(`# headcount ${pop.men} men / ${pop.units} units (fixed across every arm below)`);
 
+// ---- structural diagnostics, on the base arm, before anything is varied --
+const diag = await page.evaluate(() => {
+  const g = window.__game;
+  const ctx = g.engine.context ?? g.engine.ctx;
+  const info = ctx.renderer.info;
+
+  // Per-cascade shadow draws, via three's own early-out at WebGLShadowMap.js:170
+  // (`shadow.autoUpdate === false && shadow.needsUpdate === false` -> continue). That skips
+  // one light's shadow render without touching a material define, so no recompile and no
+  // change to NUM_DIR_LIGHT_SHADOWS.
+  const lighting = ctx.tryGet('lighting');
+  const csm = lighting && lighting.csm;
+  const perCascade = [];
+  let cascadeInfo = null;
+  if (csm && csm.lights) {
+    cascadeInfo = {
+      lights: csm.lights.length, mapSize: csm.shadowMapSize, maxFar: csm.maxFar,
+      extents: csm.lights.map((l) => +(l.shadow.camera.right - l.shadow.camera.left).toFixed(1)),
+      texels: csm.lights.map((l) => +((l.shadow.camera.right - l.shadow.camera.left) / csm.shadowMapSize).toFixed(3)),
+    };
+    for (let i = 0; i < csm.lights.length; i++) {
+      for (let j = 0; j < csm.lights.length; j++) {
+        csm.lights[j].shadow.autoUpdate = j === i;
+        csm.lights[j].shadow.needsUpdate = j === i;
+      }
+      window.tc.acc.shadow = 0;
+      g.engine.frame(window.__tcFrozenAt);
+      window.tc.sync();
+      perCascade.push(window.tc.acc.shadow);
+    }
+    for (const l of csm.lights) { l.shadow.autoUpdate = true; l.shadow.needsUpdate = false; }
+    g.engine.frame(window.__tcFrozenAt);
+  }
+
+  // Who casts, and who ignores the per-cascade frustum. An object with frustumCulled=false
+  // is redrawn into every cascade whatever that cascade covers (WebGLShadowMap.js:515).
+  const casters = [];
+  ctx.scene.traverse((o) => {
+    if (!o.castShadow || !(o.isMesh || o.isLine || o.isPoints)) return;
+    let vis = true, n = o;
+    while (n) { if (!n.visible) { vis = false; break; } n = n.parent; }
+    if (!vis) return;
+    const cnt = o.isInstancedMesh ? o.count : (o.geometry?.instanceCount ?? 1);
+    if (o.isInstancedMesh && o.count === 0) return;
+    const idx = o.geometry?.index;
+    const pos = o.geometry?.attributes?.position;
+    let t = idx ? idx.count / 3 : pos ? pos.count / 3 : 0;
+    if (Number.isFinite(cnt)) t *= cnt;
+    let top = o; while (top.parent && top.parent !== ctx.scene) top = top.parent;
+    casters.push({
+      name: o.name || o.type, top: top.name || top.type,
+      fc: !!o.frustumCulled, cnt: Number.isFinite(cnt) ? cnt : 1, tris: Math.round(t),
+    });
+  });
+
+  const units = ctx.tryGet('units');
+  const cam = ctx.camera;
+  return {
+    perCascade, cascadeInfo,
+    casters: casters.sort((a, b) => b.tris - a.tris),
+    quality: {
+      tier: ctx.quality.tier, shadowMapSize: ctx.quality.shadowMapSize,
+      shadowCascades: ctx.quality.shadowCascades, motionBlur: ctx.quality.motionBlur,
+      depthOfField: ctx.quality.depthOfField, ssao: ctx.quality.ssao,
+      volumetricLight: ctx.quality.volumetricLight, bloom: ctx.quality.bloom,
+      antialias: ctx.quality.antialias, lodFarDistance: ctx.quality.lodFarDistance,
+      maxSoldiers: ctx.quality.maxSoldiers,
+    },
+    lod: {
+      lodDist: units && units.lodDist ? units.lodDist.map((v) => +v.toFixed(1)) : null,
+      camFov: +cam.fov.toFixed(2), viewH: ctx.viewH, zoom: +ctx.rig.zoom.toFixed(3),
+      orbitRadius: +ctx.rig.orbitRadius.toFixed(1),
+      tierCounts: (() => {
+        const r = {};
+        ctx.scene.traverse((o) => {
+          if (o.isInstancedMesh && o.count > 0 && /soldier|horse|impostor|elephant/i.test(o.name || '')) r[o.name] = o.count;
+        });
+        return r;
+      })(),
+    },
+    voidInfo: info.render.calls,
+  };
+});
+console.log(`# quality  ${JSON.stringify(diag.quality)}`);
+console.log(`# cascades ${JSON.stringify(diag.cascadeInfo)}`);
+console.log(`# per-cascade shadow draws: ${diag.perCascade.join(' / ')} (sum ${diag.perCascade.reduce((a, b) => a + b, 0)})`);
+console.log(`# lod      ${JSON.stringify(diag.lod)}`);
+{
+  const un = diag.casters.filter((c) => !c.fc);
+  console.log(`# shadow casters ${diag.casters.length}, of which frustumCulled=false: ${un.length}`
+    + ` (each redrawn into all ${diag.cascadeInfo ? diag.cascadeInfo.lights : '?'} cascades)`);
+  for (const c of diag.casters.slice(0, 14)) {
+    console.log(`#   ${c.fc ? ' ' : '!'} ${String(c.tris).padStart(9)}t x${String(c.cnt).padStart(5)}  ${c.top.padEnd(22)} ${c.name}`);
+  }
+}
+
 // ---- 1. picture: base, then each arm, then base again --------------------
 const order = [['base-1', ARMS[0][1]], ...ARMS.slice(1).map(([n, s]) => [n, s]), ['base-2', ARMS[0][1]]];
 const shots = [];
@@ -222,7 +352,8 @@ for (const [name, src] of order) {
   const s = info.split;
   console.log(`  ${name.padEnd(9)} draws ${String(s.total).padStart(4)} = shadow ${String(s.shadow).padStart(3)}`
     + ` + colour ${String(s.colour).padStart(3)} + post ${String(s.post).padStart(3)}`
-    + `   tris ${(s.tris / 1e6).toFixed(2)}M   mb ran ${info.passes.motionBlurFrames} skipped ${info.passes.motionBlurSkipped}`);
+    + `   tris ${(s.tris / 1e6).toFixed(2)}M   mb ran ${info.passes.motionBlurFrames} skipped ${info.passes.motionBlurSkipped}`
+    + `  smearPx ${info.passes.lastSmearPx === undefined ? '?' : info.passes.lastSmearPx.toFixed(3)}`);
 }
 
 // ---- 2. frame time: parked, arms rotated, order alternated ---------------
@@ -259,14 +390,22 @@ for (let b = 0; b < BLOCKS; b++) {
       window.tc.live(2);
       window.tc.resetPasses();
       window.tc.sync();
+      const yaw0 = window.tc.yaw();
       const t0 = performance.now();
       for (let k = 0; k < frames; k++) {
-        g.engine.context.rig.yawTarget = cam.yaw + (k + 1) * 0.02;
+        // Drive `yaw` itself, not `yawTarget`. The rig damps toward the target and
+        // `RTSCamera.update` recomputes `yaw` from it every frame, so writing the target and
+        // then letting one frame run gives a fraction of the intended step — and the first
+        // cut of this probe panned so slowly that the sub-pixel gate fired on all 40 frames,
+        // which read as "the skip is unsafe" when it was the pan that was not real.
+        const r = g.engine.context.rig;
+        r.yawTarget = cam.yaw + (k + 1) * 0.02;
+        r.yaw = r.yawTarget;
         g.engine.frame(g.engine.time.elapsed * 1000 + 16.7);
       }
       window.tc.sync();
       const ms = (performance.now() - t0) / frames;
-      return { ms, passes: window.tc.passes() };
+      return { ms, passes: window.tc.passes(), yawMoved: +(window.tc.yaw() - yaw0).toFixed(3) };
     }, { src, frames: FRAMES, cam: { x: rec.focusX, z: rec.focusZ, zoom: scene.zoom, yaw: rec.yaw } });
     panning.get(name).push({ ...r });
   }
@@ -309,14 +448,23 @@ console.log(`  ${'arm'.padEnd(10)} ${'parked p50'.padStart(11)} ${'p90'.padStart
 for (const [name] of ARMS) {
   const p = parked.get(name);
   const v = panning.get(name).map((x) => x.ms);
-  const last = panning.get(name).at(-1).passes;
+  const lastRec = panning.get(name).at(-1);
+  const last = lastRec.passes;
   console.log(`  ${name.padEnd(10)} ${q(p, 0.5).toFixed(2).padStart(11)} ${q(p, 0.9).toFixed(2).padStart(7)} ${Math.min(...p).toFixed(2).padStart(7)}`
     + ` | ${q(v, 0.5).toFixed(2).padStart(8)} ${q(v, 0.9).toFixed(2).padStart(7)} ${Math.min(...v).toFixed(2).padStart(7)}`
-    + `   ${last.motionBlurFrames}/${last.motionBlurSkipped}`);
+    + `   ${last.motionBlurFrames}/${last.motionBlurSkipped}  yawMoved ${lastRec.yawMoved}`
+    + `  smearPx ${last.lastSmearPx === undefined ? '?' : last.lastSmearPx.toFixed(2)}`);
 }
-const pb = parked.get(ARMS[0][0]); const pm = parked.get(ARMS[1][0]);
-console.log(`  parked delta: ${(q(pm, 0.5) - q(pb, 0.5)).toFixed(2)} ms p50, `
-  + `${(Math.min(...pm) - Math.min(...pb)).toFixed(2)} ms best-of-block`);
+const pb = parked.get(ARMS[0][0]);
+for (const [name] of ARMS.slice(1)) {
+  const pm = parked.get(name);
+  const vm = panning.get(name).map((x) => x.ms);
+  const vb = panning.get(ARMS[0][0]).map((x) => x.ms);
+  console.log(`  ${name} vs base — parked ${(q(pm, 0.5) - q(pb, 0.5)).toFixed(2)} ms p50 / `
+    + `${(Math.min(...pm) - Math.min(...pb)).toFixed(2)} best;  panning `
+    + `${(q(vm, 0.5) - q(vb, 0.5)).toFixed(2)} ms p50 / ${(Math.min(...vm) - Math.min(...vb)).toFixed(2)} best`);
+}
+console.log('  (negative = faster than base. best-of-block is the least contaminated read on a shared box.)');
 
 if (pageErrors.length) {
   console.error(`\npageerror x${pageErrors.length}:`);

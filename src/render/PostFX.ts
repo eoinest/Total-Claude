@@ -458,6 +458,8 @@ export class PostFXSystem implements Subsystem {
   private nFrames = 0;
   private nMotionBlur = 0;
   private nMotionBlurSkipped = 0;
+  /** Last computed smear bound, device pixels. Diagnostic: `debugPasses` reports it. */
+  private lastSmearPx = 0;
   /**
    * Smear length, in device pixels, below which the motion-blur blit is skipped.
    *
@@ -1684,6 +1686,7 @@ export class PostFXSystem implements Subsystem {
        * is exactly what the pass would have copied.
        */
       const bound = this.motionBlurSmearPixels(uScale);
+      this.lastSmearPx = bound;
       if (bound < Math.min(this.motionBlurMinPixels, 1)) {
         this.nMotionBlurSkipped++;
       } else {
@@ -1821,12 +1824,14 @@ export class PostFXSystem implements Subsystem {
    */
   debugPasses(): {
     frames: number; motionBlurFrames: number; motionBlurSkipped: number;
+    lastSmearPx: number;
     historyValid: boolean; prevViewProjValid: boolean; motionBlurMaterial: boolean;
   } {
     return {
       frames: this.nFrames,
       motionBlurFrames: this.nMotionBlur,
       motionBlurSkipped: this.nMotionBlurSkipped,
+      lastSmearPx: this.lastSmearPx,
       historyValid: this.historyValid,
       prevViewProjValid: this.prevViewProjValid,
       motionBlurMaterial: !!this.mMotion,
