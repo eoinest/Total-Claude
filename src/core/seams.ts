@@ -141,6 +141,14 @@ export interface SeamReport {
    * so the city can cut the passage out of its own occupancy raster, and no circuit has one.
    */
   absent: string[];
+  /**
+   * Accessors whose fields could not be compared because the list they returned was empty.
+   *
+   * Recorded rather than passed over in silence: "no fault" and "nothing to check" are
+   * different answers and a check that conflates them is the kind of green tick this whole
+   * file exists to distrust. `towerReport` is empty until a siege tower is built.
+   */
+  unchecked: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -356,6 +364,23 @@ export const SEAMS: readonly Seam[] = [
     provider: 'battleFlow',
     optional: { objective: 'prop', result: 'prop' },
   },
+
+  /**
+   * Registered here so the gap is on the record every run.
+   *
+   * `Combat.resolveClipInfo` resolves `ctx.tryGet<AnimationProvider>('animation')` and nothing
+   * in the tree ever registers that name — it is the one resolved subsystem key with no
+   * `readonly name` to match it. Harmless today: the guard falls through to a dynamic
+   * `import('../anim/clips')`, which exports a matching `clipInfo` and always wins. It is
+   * listed because the branch reads as one of two live options and is in fact unreachable, and
+   * a probe that prints "skipped: provider not registered" says that once a run instead of
+   * waiting for somebody to grep for it.
+   */
+  {
+    consumer: 'sim/Combat.ts AnimationProvider',
+    provider: 'animation',
+    required: { clipInfo: 'fn' },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -413,6 +438,7 @@ export function verifySeams(ctx: EngineContext): SeamReport {
   const faults: SeamFault[] = [];
   const skipped: string[] = [];
   const absent: string[] = [];
+  const unchecked: string[] = [];
   let checked = 0;
 
   for (const seam of SEAMS) {
@@ -461,7 +487,11 @@ export function verifySeams(ctx: EngineContext): SeamReport {
           });
           continue;
         }
-        if (arr.length === 0) continue; // an empty circuit is a real state
+        if (arr.length === 0) {
+          // An empty circuit is a real state; say so rather than counting it as agreement.
+          unchecked.push(`${seam.consumer} -> '${seam.provider}'.${name} (empty list)`);
+          continue;
+        }
         target = arr[0];
       }
       if (typeof target !== 'object' || target === null) {
@@ -483,7 +513,7 @@ export function verifySeams(ctx: EngineContext): SeamReport {
     }
   }
 
-  return { checked, skipped, faults, absent };
+  return { checked, skipped, faults, absent, unchecked };
 }
 
 /**

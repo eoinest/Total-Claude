@@ -22,7 +22,7 @@ import { ObstacleField, type Obstacle, type Resolved } from './Obstacles';
  * probed rather than imported: a map with no city yields an empty `ObstacleField` and the
  * whole collision path costs one `empty` test per tick.
  */
-interface ObstacleSource {
+export interface ObstacleSource {
   getObstacles(): readonly Obstacle[];
   obstacleGeneration?: number;
 }
@@ -35,7 +35,7 @@ interface ObstacleSource {
  * ordering a cohort to the far side of the Aurelian Wall got a unit that walked into it and
  * stopped, which is the second half of "they should path find around the wall".
  */
-interface NavProvider {
+export interface NavProvider {
   directRouteClear(x1: number, z1: number, x2: number, z2: number, radius: number): boolean;
   clearLineFraction(x1: number, z1: number, x2: number, z2: number, radius: number): number;
   requestPath(

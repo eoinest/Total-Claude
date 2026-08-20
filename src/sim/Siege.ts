@@ -725,7 +725,7 @@ const TMP_C = new THREE.Color();
 /** Read-back scratch for the diagnostics, kept clear of the ones `setInstance` writes. */
 const TMP_R = new THREE.Vector3();
 
-interface CityBayView {
+export interface CityBayView {
   index: number; x0: number; z0: number; x1: number; z1: number;
   nx: number; nz: number; dx: number; dz: number; length: number;
   walkY: number; groundY: number; crestY: number; sillY: number;
@@ -754,7 +754,7 @@ interface CityBayView {
  * would have to be renegotiated the moment that landed. Two endpoints and a width survive
  * any arrangement of treads between them.
  */
-interface CityStairView {
+export interface CityStairView {
   footX: number; footZ: number; footY: number;
   topX: number; topZ: number; topY: number;
   /** Optional; derived from the endpoints when absent. */
@@ -773,7 +773,7 @@ interface CityStairView {
  * `src/core/seams.ts` and compared against the live `CitySystem` at wiring time. If you
  * rename a field here, that check fails at boot with both name lists in the message.
  */
-interface CityGateBlockView {
+export interface CityGateBlockView {
   /** Centre of the carriageway, on the wall line. */
   x: number;
   z: number;
@@ -791,7 +791,7 @@ interface CityGateBlockView {
   topY: number;
 }
 
-interface CityView {
+export interface CityView {
   getGarrisonBays(): readonly CityBayView[];
   getGates(): { id: string; x: number; z: number; facing: number; open: boolean }[];
   setGateOpen(id: string, open: boolean): void;

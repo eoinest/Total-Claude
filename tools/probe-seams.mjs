@@ -101,6 +101,7 @@ for (const map of MAPS) {
       + `faults ${report.faults.length}`);
     for (const s of report.skipped) console.log(`  skipped (provider not registered): ${s}`);
     for (const a of report.absent ?? []) console.log(`  absent optional: ${a}`);
+    for (const u of report.unchecked ?? []) console.log(`  not compared: ${u}`);
     for (const f of report.faults) {
       console.log(`  FAULT ${f.kind}: ${f.consumer} -> '${f.provider}'.${f.member}`
         + (f.missingFields ? ` missing [${f.missingFields.join(', ')}]` : '')

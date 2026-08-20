@@ -328,7 +328,7 @@ const SHOULDER = 1.45;
  * A structural mirror, not an import: `src/sim/` does not depend on `src/city/`. Kept
  * deliberately narrow — the fields a launch solve needs and nothing else.
  */
-interface EmbrasureView {
+export interface EmbrasureView {
   x: number;
   z: number;
   nx: number;

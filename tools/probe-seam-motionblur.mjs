@@ -22,6 +22,7 @@
  */
 
 import { chromium } from 'playwright';
+import sharp from 'sharp';
 import { spawn } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -100,26 +101,55 @@ for (const tier of TIERS) {
     return out;
   }, [FRAMES]);
 
-  // --- pixels: the same panning frame, blur on and blur off -----------------
+  /*
+   * Pixels, with a control.
+   *
+   * A bare "are the two frames different" is worthless here: the final pass stirs grain with
+   * `uTime`, so two frames of the *same* settings differ too. So three shots — blur off,
+   * blur off again, blur on — and the question is whether MAD(off, on) stands clear of
+   * MAD(off, off). Each shot re-runs the same two-frame camera schedule from the same place,
+   * so the reprojection has the same velocity every time.
+   */
+  // The clock is stopped for this arm. Otherwise the control pair differs by two ticks of
+  // 2 500 men marching, which is far larger than the effect being measured and would bury it.
+  await page.evaluate(() => { window.__game.engine.time.paused = true; });
   const shot = async (on) => {
     await page.evaluate(async (want) => {
       const g = window.__game;
-      const ctx = g.engine.context;
-      ctx.quality.motionBlur = want;
-      // Land on exactly the same camera and the same previous camera both times.
+      g.engine.context.quality.motionBlur = want;
       g.setCamera(0, 0, 140, 0.6);
       g.advance(1 / 60);
-      g.setCamera(24, 14, 140, 0.62);
+      g.setCamera(60, 34, 140, 0.66);
       g.advance(1 / 60);
     }, on);
     return page.screenshot({ type: 'png' });
   };
-  const a = await shot(false);
-  const b = await shot(true);
-  row.pixelsIdentical = Buffer.compare(a, b) === 0;
-  row.pngBytesOff = a.length;
-  row.pngBytesOn = b.length;
+  const off1 = await shot(false);
+  const off2 = await shot(false);
+  const on = await shot(true);
+  const grey = async (buf) => {
+    const { data } = await sharp(buf).greyscale().raw().toBuffer({ resolveWithObject: true });
+    return data;
+  };
+  /*
+   * Two statistics, because grain and blur live at different amplitudes. MAD is dominated by
+   * the grain, which touches every pixel by a level or two; `pctOver8` counts pixels that
+   * moved by more than 8 of 255, which grain does not do and a smear across a contrast edge
+   * does. The second is the one that separates them.
+   */
+  const stats = (a, b) => {
+    let s = 0, over = 0, max = 0;
+    for (let i = 0; i < a.length; i++) {
+      const d = Math.abs(a[i] - b[i]);
+      s += d; if (d > 8) over++; if (d > max) max = d;
+    }
+    return { mad: +(s / a.length).toFixed(4), pctOver8: +((100 * over) / a.length).toFixed(3), max };
+  };
+  const [g1, g2, g3] = await Promise.all([grey(off1), grey(off2), grey(on)]);
+  row.control = stats(g1, g2);
+  row.blur = stats(g1, g3);
   row.pageerrors = log.filter((l) => l.startsWith('PAGEERROR')).length;
+  await page.evaluate(() => { window.__game.engine.time.paused = false; });
 
   console.log(JSON.stringify(row));
   rows.push(row);

@@ -93,14 +93,14 @@ export interface PlaceOutcome {
 }
 
 /** The narrow view of the city this phase needs. `src/sim/` does not import `src/city/`. */
-interface CityView {
+export interface CityView {
   getGarrisonBays?: () => readonly {
     x0: number; z0: number; x1: number; z1: number; walkY: number; garrisonable: boolean;
   }[];
   cityPlan?: { id: string; name: string; garrison: Faction; battlefieldZ: number };
 }
 
-interface TerrainView {
+export interface TerrainView {
   heightField?: { halfExtent: number };
 }
 
