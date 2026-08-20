@@ -12,15 +12,16 @@ resolution, and it has sound.
 connection and because the release links it.
 
 **[`total-claude-trailer-720p-twitter.webm`](https://github.com/eoinest/Total-Claude/releases/download/r6/total-claude-trailer-720p-twitter.webm)**
-— **1280 × 720, 30 fps, 21.933 s (658 frames), VP9 + Opus, 4,689,184 bytes.** The social cut:
-under the five-megabyte ceiling with 310,816 bytes to spare, and it has sound.
+— **1280 × 720, 30 fps, 20.700 s (621 frames), VP9 + Opus, 4,703,399 bytes.** The social cut:
+under the five-megabyte ceiling with 296,601 bytes to spare, and it has sound.
 
 **[`total-claude-trailer-720p-twitter.mp4`](https://github.com/eoinest/Total-Claude/releases/download/r6/total-claude-trailer-720p-twitter.mp4)**
-— **1280 × 720, 30 fps, 21.933 s (658 frames), H.264 High + AAC-LC, 4,791,207 bytes.** The same
+— **1280 × 720, 30 fps, 20.700 s (621 frames), H.264 High + AAC-LC, 4,691,477 bytes.** The same
 cut, same beats, same one-take ram, in the container X's uploader will actually accept: that
 endpoint takes MP4 and MOV and does not take WebM at all, so the file above cannot be handed to
-it. 208,793 bytes of headroom.
+it. 308,523 bytes of headroom.
 
+Both social files are on their **second edit**; the section below says what changed and why.
 At a nominal 10 MB/s that is about **thirteen seconds** for the 1080p one, **a second and a
 half** for the small one and **half a second** for either social one; on a 10 Mbit line, about
 **1 min 45 s**, **11 s** and **4 s**. VP9 and Opus in WebM play in Chrome, Edge, Firefox,
@@ -35,53 +36,157 @@ broke it into two shots with a two-second hole in sim time and a camera that ste
 across the join. That is the only editorial difference between those two, and it is why the
 newer of them is two seconds longer.
 
-## The 22-second cut, and why it is short rather than small
+## The 21-second cut, and why it is short rather than small
 
 Five megabytes over eighty-six seconds is 465 kb/s. Dust, smoke and eight thousand moving men
 do not survive that at any resolution, so the social cut spends the same five megabytes on a
-fifth of the film instead: 21.933 s at 1.62 Mb/s, which is clean.
+quarter of the film instead: 20.700 s at 1.72 Mb/s, which is clean.
 
 It is cut for a video that autoplays **muted, in a feed, on a phone**, where the frame is about
-400 px wide, and every beat in it was chosen by looking at the master downscaled to exactly
-that width rather than by looking at the shot list. Two of those looks overturned the obvious
-edit. `field-scale` — 8,144 men from the flank at ninety metres, the most impressive frame in
-the film on a desktop — is a hazy green patchwork at 400 px in which the smudges do not read as
-men, so it is not in this cut at all. `field-line` reads unmistakably and is the cold open, but
-it only holds for about 1.4 s: the beat tracks *along* the line, so the army is in the near
-field from frame 60 to 85 and a receding band by frame 100, and the shot is exactly as long as
-the thing in it.
+400 px wide, and no beat is in it because the shot list liked it. Every candidate was put
+through `tools/scratch/trailer-tw-legible.mjs`, which downscales the master to exactly the
+delivered width and reports two numbers: how much **gradient energy** survives the resample —
+the structure a viewer can still see — and how much the picture **moves between frames** at that
+size, which is what peripheral vision in a feed actually picks up. Both are computed on the same
+`imageSmoothingQuality = 'high'` path the encoder and the browser use, and nothing anywhere is
+upscaled.
 
-| # | in | out | beat | what it is |
+| beat | gradient | frame contrast | motion | in the cut? |
+|------|---------:|---------------:|-------:|-------------|
+| `rome-arch` | **17.39** | 39.7 | 6.16 | no — cut on the owner's note |
+| `carth-eles` | 17.19 | 48.3 | **10.28** | yes |
+| `field-line` | 13.79 | **77.0** | 11.31 | yes |
+| `field-clash` | 13.09 | 59.3 | 4.77 | yes |
+| `carth-tower` | 10.88 | 55.4 | 2.61 | yes |
+| `siege-parapet` | 10.86 | 59.4 | 3.22 | yes |
+| `siege-ladders` | 10.07 | 32.0 | 2.20 | no |
+| `rome-ram-gate` | 7.30 | 28.7 | 1.78 | yes |
+| `endcard` | 6.28 | 27.6 | 1.22 | yes |
+
+Two results from the first pass still stand. `field-scale` — 8,144 men from the flank at ninety
+metres, the most impressive frame in the film on a desktop — is a hazy green patchwork at 400 px
+in which the smudges do not read as men, so it is not in this cut either. And `field-line` reads
+unmistakably and is the cold open, but only holds for about 1.4 s: the beat tracks *along* the
+line, so the army is in the near field from frame 60 to 85 and a receding band by frame 100, and
+the shot is exactly as long as the thing in it.
+
+| # | in | out | beat | what it is, and why it is there |
 |---|----|-----|------|-----------|
 | 1 | 0:00.00 | 0:01.40 | `field-line` | The shield wall, filling the frame, with its caption. The frame a feed will freeze on |
 | 2 | 0:01.40 | 0:04.00 | `field-clash` | The melee and the dust band along it |
-| 3 | 0:04.00 | 0:06.53 | `siege-ladders` | The Aurelian Wall, wide: ladders up, the garrison massed above |
-| 4 | 0:06.53 | 0:08.93 | `siege-parapet` | The same escalade at crest height |
-| 5 | 0:08.93 | 0:16.27 | `rome-ram-gate` | **One take.** In on a ram blow, the slow push, and the leaves giving way |
-| 6 | 0:16.27 | 0:18.93 | `rome-arch` | The open arch from the street, the cohort standing in it |
-| 7 | 0:18.93 | 0:21.93 | `endcard` | Title, URL, fade |
+| 3 | 0:04.00 | 0:06.60 | `carth-eles` | The war elephants, coming on and growing. The most legible beat in the cut, and a *field* beat, so the map changes on a cut where the colour does not |
+| 4 | 0:06.60 | 0:08.77 | `carth-tower` | Two siege towers docked on the Punic parapet, columns queuing into them. Dark timber on pale limestone |
+| 5 | 0:08.77 | 0:11.20 | `siege-parapet` | The Aurelian Wall at crest height: a ladder with a chain of men on it, the garrison massed above. Hands off from one wall being climbed to another |
+| 6 | 0:11.20 | 0:17.37 | `rome-ram-gate` | **One take.** In on a ram blow, the slow push, and the leaves giving way |
+| 7 | 0:17.37 | 0:20.70 | `endcard` | Title, URL, fade |
 
 Hard cuts throughout and no fade up at the head, because a feed video that opens on black has
 already lost; the only fade is the end card's, which is burned into the master frames, and the
-sound is given that same curve.
+sound is given that same curve. The 86 s cut's other burned fades — the dips to black at its two
+act boundaries — are now **asserted** around rather than remembered: `trailer-tw-cut.mjs` walks
+every window and throws if any frame in it sits at less than full picture gain, `endcard`
+excepted.
 
-**The ram is still one take.** Its window is a single contiguous run of master frames, and the
-tool asserts that it is. It enters *on* a blow rather than before one: the shed's hide fills the
-lens until frame 152 of the beat, a blow lands at 212–231, and the leaves give way at 353–369.
-That last number is measured rather than taken from the simulation's five-second `gateReport()`
-sampling — mean |Δluma| in the gate mouth runs at 1.06 through the quiet push and spikes to 6.54
-there, and the pale leaf panel is present at frame 352 and gone by 362. The shot holds 1.9 s past
-it, and then shot 6 says the same thing in a way that survives being 400 px wide.
+### What changed in the second edit, and why Carthage is not a non-sequitur
 
-At 400 px the break itself is a small dark change inside an already dark arch, which is why the
-cut does not end on it. `rome-arch` — a black void in a warm brick wall with a packed cohort and
-a red standard in front of it — is the most legible frame in the whole film at feed size, and it
-is what tells a phone that the gate is open.
+Four notes came back on the first cut: two escalade beats is one too many, put Carthage in, put
+the elephants back, and cut `rome-arch`. All four are done, and the two questions they left open
+were settled with the instrument above rather than by taste.
+
+**The close escalade beat survives, not the wide one.** The obvious keep was `siege-ladders` —
+the whole wall, the ladders, the assault massed at the foot, the best *photograph* of the two.
+At 400 px it loses on every axis: gradient 10.07 against `siege-parapet`'s 10.86, frame contrast
+32.0 against 59.4, motion 2.20 against 3.22. The reason is visible the moment both are put at
+that width. The wide shot is mid-brown wall on mid-green grass and its ladders are two faint
+diagonals; the close one is hard sky against dark brick with a ladder that has men on the rungs.
+It is also the *closer* of the two, which matters now that a Punic wall precedes it: the back
+half of the film pushes in the whole way and never steps back.
+
+**Carthage sits in the middle, as a block, hinged at both ends.** The pass before this one cut
+Carthage on the grounds that a 146 BC white-sand map dropped into a twenty-second Roman
+escalation is a non-sequitur. That was right about *dropping* it in, so it is not dropped in.
+The film enters Carthage on `carth-eles`, a field beat whose green grass, gold stubble and pale
+sky are the same palette as the `field-clash` it cuts from — one field shot to another field
+shot, and the map changes underneath a cut the eye does not notice. It leaves Carthage on
+`carth-tower`, a wall being escaladed, and cuts to `siege-parapet`, a wall being escaladed — the
+colour changes and the activity does not. One boundary is motivated by palette, the other by
+subject, and neither is a jump.
+
+What the film then reads as is not one battle but **a sweep across the war that narrows into one
+gate**: field, field, wall, wall, gate, with the palette walking green → gold → pale limestone →
+red brick → shadow in the same direction the camera is pushing. For a twenty-second feed video
+that is the right genre; a single continuous engagement is what the eighty-six second cut is for.
+
+### The gate breaking, at 400 px, honestly
+
+**The ram is still one take.** Its window is a single contiguous run of master frames and the
+tool asserts it. It enters *on* a blow: the shed's hide fills the lens until frame 152 and a blow
+lands at 212–231, so cutting in at 206 puts the shake 0.2 s after the cut.
+
+The first edit put `rome-arch` last on the grounds that the break is invisible at feed size.
+Measured, that is half right, and the half it gets wrong matters. **The break is the largest
+thing that happens in the shot**: whole-frame |Δluma| at 400 px peaks at 9.54 on frame 356
+against a beat mean of 1.78 ± 1.23 — z = +6.3 — and the leaves are gone between frames 355 and
+370. A muted viewer feels that. What they do not get is the *consequence*. The gate mouth is
+dark before and dark after; the change is a pale panel leaving an already dark arch, so the
+frame's contrast **falls** across the aftermath, 28.6 → 23.3, and its motion decays
+monotonically, 1.67 → 0.58, the emptiest picture in the film.
+
+That makes "hold longer on the collapse" the wrong way round, and the window is fifteen frames
+*shorter* than the first edit's rather than longer. The surge of men on the road runs at 2.38
+through frame 389 against a pre-break 1.88 and is back at 1.84 by 434, so the take ends at 390,
+on the last frame where it is still doing something, and the second that buys goes to the end
+card. Cutting to the title while the gate is still coming apart lands the break on the title
+instead of letting it dissipate against brick.
+
+It is a softer ending than the first cut's. `rome-arch` — a black void in a warm brick wall with
+a packed cohort and a red standard in front of it — measures 17.39, the highest gradient energy
+of any beat in the film, and it was doing real work. Without it the film ends on an event the
+viewer feels rather than a picture they read.
 
 ![The Porta Flaminia during the assault: two round brick towers flanking a stone-voussoired arch
 with a portcullis behind it, a hide-roofed shed on timber posts standing in the gate mouth with its
 crew packed underneath, broken timber lying in the passage, and infantry drawn up on the road to the
 right.](trailer-poster.jpg)
+
+### What the bits cost, and how both files were checked
+
+Neither ladder was carried over from the first edit, because the material changed: the elephants
+are the most motion-heavy shot in the film at 400 px (inter-frame |Δluma| 10.28 against 2.20 for
+the wide escalade beat they helped displace) and a codec has to be asked again when that changes.
+Both were re-derived from zero on the finished 621-frame cut.
+
+| ask | VP9 → video | bytes | | ask | H.264 → video | bytes |
+|----:|------------:|------:|-|----:|--------------:|------:|
+| 1.60 | 1.72 Mb/s (+7.5 %) | **4,703,399** | | 1.65 | 1.71 Mb/s (+3.8 %) | **4,691,477** |
+| 1.70 | 1.83 Mb/s (+7.6 %) | 4,979,553 | | 1.75 | 1.83 Mb/s (+4.3 %) | 4,980,328 |
+| 1.80 | 1.93 Mb/s (+7.2 %) | 5,243,202 ✗ | | 1.85 | 1.91 Mb/s (+3.2 %) | 5,195,946 ✗ |
+
+VP9 overshoots its ask by about 8 % on this cut and H.264 by about 4 %, and the rung above the
+one shipped leaves twenty thousand bytes of headroom, which is not headroom. Both files carry
+about three hundred thousand.
+
+Both were then **decoded back and measured**, which is the only evidence that survives the mux.
+The MP4 is walked as bytes first: `ftyp isom`, `moov` before `mdat` so an uploader need not
+buffer the whole file, `avc1.640c1f` High profile level 3.1, and an `AudioSpecificConfig` of
+`11 90` — AAC-LC, 48 kHz, stereo. Per-shot RMS is taken from the delivered **Opus** and **AAC**
+tracks against the mixdown the cut wrote: the WebM agrees to within **−0.40 %…+0.14 %** and the
+MP4 to within **−1.99 %…−0.28 %**. The MP4's outlier is `field-line`, the quiet opening shot, and
+it is not this edit's: the shipped file reproduces it at −1.99 % on the same 1.4 s of audio.
+
+**The AAC encoder-delay trap is still handled and still measured.** A plain MP4 written from raw
+AAC frames carries no edit list, so nothing takes off the encoder's priming delay and an early
+cut of this file came back 44 ms out of sync. 2,048 samples — two whole AAC frames — are taken
+off in the PCM domain before encoding, and the delivered track cross-correlates against the
+mixdown at a residual lag of **64 samples, 1.33 ms**, well inside one frame of picture, with an
+envelope correlation of r = 0.9944.
+
+Picture, against the source downscaled the way the encoder downscaled it and aligned first so the
+number is compression rather than camera travel: **23.2–30.4 dB** for the WebM and **22.5–29.7 dB**
+for the MP4 at 1280 px, worst case in both at the elephants, where the grass texture is what the
+bitrate spends itself on. At 400 px — the size either file will actually be watched at — the two
+are **25.3–29.8 dB** and **24.8–29.6 dB**, a gap of 0.26–0.72 dB, and they score 27.5–35.0 dB
+against *each other*.
 
 ## What the sound is, and what it is not
 
