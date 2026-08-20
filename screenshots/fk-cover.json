@@ -1,0 +1,250 @@
+{
+ "map": "campus-martius",
+ "quality": "low",
+ "cover": {
+  "seed": 4265438264,
+  "errors": [],
+  "gapCover": [
+   {
+    "bay": 2,
+    "x": -542,
+    "nearestStation": 1,
+    "metres": 39
+   },
+   {
+    "bay": 28,
+    "x": 381,
+    "nearestStation": 30,
+    "metres": 72
+   },
+   {
+    "bay": 29,
+    "x": 416,
+    "nearestStation": 30,
+    "metres": 36
+   }
+  ],
+  "series": [
+   {
+    "t": 10,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 0
+     }
+    ],
+    "allBays": 1720,
+    "meanPerBay": 34.4
+   },
+   {
+    "t": 20,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 0
+     }
+    ],
+    "allBays": 1720,
+    "meanPerBay": 34.4
+   },
+   {
+    "t": 30,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 24
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 24
+     }
+    ],
+    "allBays": 1714,
+    "meanPerBay": 34.3
+   },
+   {
+    "t": 40,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 3
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 0
+     }
+    ],
+    "allBays": 1684,
+    "meanPerBay": 33.7
+   },
+   {
+    "t": 50,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 0
+     }
+    ],
+    "allBays": 1657,
+    "meanPerBay": 33.1
+   },
+   {
+    "t": 60,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 144
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 0
+     }
+    ],
+    "allBays": 1594,
+    "meanPerBay": 31.9
+   },
+   {
+    "t": 70,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 176
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 85
+     }
+    ],
+    "allBays": 1536,
+    "meanPerBay": 30.7
+   },
+   {
+    "t": 80,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 268
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 176
+     }
+    ],
+    "allBays": 1473,
+    "meanPerBay": 29.5
+   },
+   {
+    "t": 90,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 287
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 183
+     }
+    ],
+    "allBays": 1445,
+    "meanPerBay": 28.9
+   },
+   {
+    "t": 100,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 369
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 117
+     }
+    ],
+    "allBays": 1427,
+    "meanPerBay": 28.5
+   }
+  ]
+ }
+}

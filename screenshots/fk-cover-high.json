@@ -1,0 +1,1350 @@
+{
+ "map": "campus-martius",
+ "quality": "high",
+ "cover": {
+  "seed": 4265438264,
+  "errors": [],
+  "gapCover": [
+   {
+    "bay": 2,
+    "x": -542,
+    "nearestStation": 1,
+    "metres": 39
+   },
+   {
+    "bay": 28,
+    "x": 381,
+    "nearestStation": 30,
+    "metres": 72
+   },
+   {
+    "bay": 29,
+    "x": 416,
+    "nearestStation": 30,
+    "metres": 36
+   }
+  ],
+  "series": [
+   {
+    "t": 10,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 0
+     }
+    ],
+    "allBays": 3431,
+    "meanPerBay": 68.6
+   },
+   {
+    "t": 20,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 0
+     }
+    ],
+    "allBays": 3467,
+    "meanPerBay": 69.3
+   },
+   {
+    "t": 30,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 50
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 50
+     }
+    ],
+    "allBays": 3471,
+    "meanPerBay": 69.4
+   },
+   {
+    "t": 40,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 28
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 5
+     }
+    ],
+    "allBays": 3419,
+    "meanPerBay": 68.4
+   },
+   {
+    "t": 50,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 5
+     }
+    ],
+    "allBays": 3395,
+    "meanPerBay": 67.9
+   },
+   {
+    "t": 60,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 5
+     }
+    ],
+    "allBays": 3345,
+    "meanPerBay": 66.9
+   },
+   {
+    "t": 70,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 5
+     }
+    ],
+    "allBays": 3294,
+    "meanPerBay": 65.9
+   },
+   {
+    "t": 80,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 5
+     }
+    ],
+    "allBays": 3287,
+    "meanPerBay": 65.7
+   },
+   {
+    "t": 90,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 5
+     }
+    ],
+    "allBays": 3264,
+    "meanPerBay": 65.3
+   },
+   {
+    "t": 100,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 5
+     }
+    ],
+    "allBays": 3229,
+    "meanPerBay": 64.6
+   },
+   {
+    "t": 110,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 4
+     }
+    ],
+    "allBays": 3209,
+    "meanPerBay": 64.2
+   },
+   {
+    "t": 120,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 4
+     }
+    ],
+    "allBays": 3214,
+    "meanPerBay": 64.3
+   },
+   {
+    "t": 130,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 4
+     }
+    ],
+    "allBays": 3211,
+    "meanPerBay": 64.2
+   },
+   {
+    "t": 140,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 4
+     }
+    ],
+    "allBays": 3214,
+    "meanPerBay": 64.3
+   },
+   {
+    "t": 150,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 4
+     }
+    ],
+    "allBays": 3187,
+    "meanPerBay": 63.7
+   },
+   {
+    "t": 160,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 4
+     }
+    ],
+    "allBays": 3186,
+    "meanPerBay": 63.7
+   },
+   {
+    "t": 170,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 4
+     }
+    ],
+    "allBays": 3176,
+    "meanPerBay": 63.5
+   },
+   {
+    "t": 180,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 4
+     }
+    ],
+    "allBays": 3177,
+    "meanPerBay": 63.5
+   },
+   {
+    "t": 190,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 4
+     }
+    ],
+    "allBays": 3181,
+    "meanPerBay": 63.6
+   },
+   {
+    "t": 199,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 3
+     }
+    ],
+    "allBays": 3171,
+    "meanPerBay": 63.4
+   },
+   {
+    "t": 209,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 3
+     }
+    ],
+    "allBays": 3156,
+    "meanPerBay": 63.1
+   },
+   {
+    "t": 219,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 3
+     }
+    ],
+    "allBays": 3134,
+    "meanPerBay": 62.7
+   },
+   {
+    "t": 229,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 3
+     }
+    ],
+    "allBays": 3139,
+    "meanPerBay": 62.8
+   },
+   {
+    "t": 239,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 3
+     }
+    ],
+    "allBays": 3124,
+    "meanPerBay": 62.5
+   },
+   {
+    "t": 249,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 3
+     }
+    ],
+    "allBays": 3124,
+    "meanPerBay": 62.5
+   },
+   {
+    "t": 259,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 3
+     }
+    ],
+    "allBays": 3103,
+    "meanPerBay": 62.1
+   },
+   {
+    "t": 269,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 3
+     }
+    ],
+    "allBays": 3128,
+    "meanPerBay": 62.6
+   },
+   {
+    "t": 279,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 3
+     }
+    ],
+    "allBays": 3126,
+    "meanPerBay": 62.5
+   },
+   {
+    "t": 289,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 3
+     }
+    ],
+    "allBays": 3127,
+    "meanPerBay": 62.5
+   },
+   {
+    "t": 299,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 3
+     }
+    ],
+    "allBays": 3091,
+    "meanPerBay": 61.8
+   },
+   {
+    "t": 309,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 3
+     }
+    ],
+    "allBays": 3091,
+    "meanPerBay": 61.8
+   },
+   {
+    "t": 319,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 3
+     }
+    ],
+    "allBays": 3095,
+    "meanPerBay": 61.9
+   },
+   {
+    "t": 329,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 3
+     }
+    ],
+    "allBays": 3108,
+    "meanPerBay": 62.2
+   },
+   {
+    "t": 339,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 3
+     }
+    ],
+    "allBays": 3109,
+    "meanPerBay": 62.2
+   },
+   {
+    "t": 349,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 3
+     }
+    ],
+    "allBays": 3111,
+    "meanPerBay": 62.2
+   },
+   {
+    "t": 359,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 3
+     }
+    ],
+    "allBays": 3110,
+    "meanPerBay": 62.2
+   },
+   {
+    "t": 369,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 3
+     }
+    ],
+    "allBays": 3108,
+    "meanPerBay": 62.2
+   },
+   {
+    "t": 379,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 3
+     }
+    ],
+    "allBays": 3103,
+    "meanPerBay": 62.1
+   },
+   {
+    "t": 389,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 3
+     }
+    ],
+    "allBays": 3100,
+    "meanPerBay": 62
+   },
+   {
+    "t": 399,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 3
+     }
+    ],
+    "allBays": 3100,
+    "meanPerBay": 62
+   },
+   {
+    "t": 409,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 3
+     }
+    ],
+    "allBays": 3091,
+    "meanPerBay": 61.8
+   },
+   {
+    "t": 419,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 3
+     }
+    ],
+    "allBays": 3093,
+    "meanPerBay": 61.9
+   },
+   {
+    "t": 429,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 3
+     }
+    ],
+    "allBays": 3102,
+    "meanPerBay": 62
+   },
+   {
+    "t": 439,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 5
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 3
+     }
+    ],
+    "allBays": 3116,
+    "meanPerBay": 62.3
+   },
+   {
+    "t": 449,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 100
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 38
+     }
+    ],
+    "allBays": 3139,
+    "meanPerBay": 62.8
+   },
+   {
+    "t": 458,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 100
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 98
+     }
+    ],
+    "allBays": 3155,
+    "meanPerBay": 63.1
+   },
+   {
+    "t": 468,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 100
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 98
+     }
+    ],
+    "allBays": 3157,
+    "meanPerBay": 63.1
+   },
+   {
+    "t": 478,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 99
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 19
+     }
+    ],
+    "allBays": 3148,
+    "meanPerBay": 63
+   },
+   {
+    "t": 488,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 60
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 12
+     }
+    ],
+    "allBays": 3136,
+    "meanPerBay": 62.7
+   },
+   {
+    "t": 498,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 15
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 12
+     }
+    ],
+    "allBays": 3139,
+    "meanPerBay": 62.8
+   },
+   {
+    "t": 508,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 14
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 12
+     }
+    ],
+    "allBays": 3150,
+    "meanPerBay": 63
+   },
+   {
+    "t": 518,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 14
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 12
+     }
+    ],
+    "allBays": 3143,
+    "meanPerBay": 62.9
+   },
+   {
+    "t": 528,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 44
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 12
+     }
+    ],
+    "allBays": 3139,
+    "meanPerBay": 62.8
+   },
+   {
+    "t": 538,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 44
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 11
+     }
+    ],
+    "allBays": 3142,
+    "meanPerBay": 62.8
+   },
+   {
+    "t": 548,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 45
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 13
+     }
+    ],
+    "allBays": 3140,
+    "meanPerBay": 62.8
+   },
+   {
+    "t": 558,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 45
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 37
+     }
+    ],
+    "allBays": 3128,
+    "meanPerBay": 62.6
+   },
+   {
+    "t": 568,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 44
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 36
+     }
+    ],
+    "allBays": 3122,
+    "meanPerBay": 62.4
+   },
+   {
+    "t": 578,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 44
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 36
+     }
+    ],
+    "allBays": 3122,
+    "meanPerBay": 62.4
+   },
+   {
+    "t": 588,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 42
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 34
+     }
+    ],
+    "allBays": 3122,
+    "meanPerBay": 62.4
+   },
+   {
+    "t": 598,
+    "footings": [
+     {
+      "bay": 2,
+      "defenders": 0,
+      "attackers": 0
+     },
+     {
+      "bay": 28,
+      "defenders": 0,
+      "attackers": 42
+     },
+     {
+      "bay": 29,
+      "defenders": 0,
+      "attackers": 34
+     }
+    ],
+    "allBays": 3107,
+    "meanPerBay": 62.1
+   }
+  ]
+ }
+}
