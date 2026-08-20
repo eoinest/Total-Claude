@@ -6,15 +6,22 @@ Four files on the [r6 release](https://github.com/eoinest/Total-Claude/releases/
 |---|---|---|---|---|---|
 | `total-claude-trailer-1080p-sound.webm` | **1920 × 1080** | VP9 + Opus | **86.0 s** | **130.2 MB** | **yes** |
 | `total-claude-trailer.webm` | 1600 × 900 | VP8 | 84.0 s | 14.2 MB | no |
-| `total-claude-trailer-720p-twitter.webm` | 1280 × 720 | VP9 + Opus | 21.933 s | **4,689,184 B** | yes |
-| `total-claude-trailer-720p-twitter.mp4` | 1280 × 720 | H.264 High + AAC-LC | 21.933 s | **4,791,207 B** | yes |
+| `total-claude-trailer-720p-twitter.webm` | 1280 × 720 | VP9 + Opus | 20.700 s | **4,703,399 B** | yes |
+| `total-claude-trailer-720p-twitter.mp4` | 1280 × 720 | H.264 High + AAC-LC | 20.700 s | **4,691,477 B** | yes |
 
 The third is a shortened recut of the first — the same master frames and the same per-beat
 mixer recordings, windowed — for a video that autoplays muted in a phone feed under a
 five-megabyte ceiling. `docs/video/README.md` has its shot list and the measurements that
 chose it. The fourth is that same cut in a container X's upload endpoint will take; it is not a
-transcode of the WebM but a second encode from the same 658 master frames and the same
+transcode of the WebM but a second encode from the same 621 master frames and the same
 `mix-tw.f32`, so nothing is generation-lossed through VP9 on the way.
+
+**Both social files are on their second edit.** It drops one of the two escalade beats and the
+shot from inside the arch, and puts the Carthage block — the elephants and the towers docked on
+the Punic parapet — between the field battle and the Roman siege. Seven beats still, 1.233 s
+shorter, and the ram is still one continuous take. The reasoning, and the 400 px measurements
+that chose between the two escalade beats and sized the ram's tail, are in
+[`README.md`](README.md); the beat table below is the 86 s cut and is unchanged by it.
 
 All three are cut from the live simulation at `6698e196ed84f0e456b13cf1ab04c90eeea07d55`, quality
 tier `ultra`. Every frame is our own render and every sound is our own synthesis: no reference
