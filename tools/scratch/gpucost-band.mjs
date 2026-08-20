@@ -136,6 +136,29 @@ for (const [label, arm] of order) {
   console.log(`  ${label.padEnd(9)} draws ${String(s.draws).padStart(4)} = shadow ${String(s.shadow).padStart(3)} + colour ${String(s.colour).padStart(3)} + post ${String(s.post).padStart(2)}   tris ${(s.tris / 1e6).toFixed(2)}M`);
 }
 
+// ---- panning check --------------------------------------------------------
+// A frozen camera cannot show a stale band. `LightingSystem.update` fits the cascades before
+// `rig.update` moves the camera and `preRender` measures the bands after it, so the two are one
+// frame apart under motion; this drives a deterministic pan and compares the arms at the end of
+// it. Identical frames mean the 8 m margin absorbs a frame of camera travel.
+const panShots = [];
+for (const arm of ['base', 'bandskip', 'base']) {
+  await page.evaluate(({ arm, cam }) => {
+    const g = window.__game;
+    window.tc.arm(arm);
+    g.setCamera(cam.x, cam.z, cam.zoom, cam.yaw);
+    const r = g.engine.context.rig;
+    for (let k = 0; k < 40; k++) {
+      r.yawTarget = cam.yaw + (k + 1) * 0.02;
+      r.yaw = r.yawTarget;
+      g.engine.frame(window.__f);
+    }
+  }, { arm, cam: sc.cam });
+  const f = path.join(OUT, `${SCENE_ID}-pan-${arm}-${panShots.length}.png`);
+  await page.screenshot({ path: f, type: 'png' });
+  panShots.push(f);
+}
+
 const times = new Map(ARMS.map((a) => [a, []]));
 for (let b = 0; b < BLOCKS; b++) {
   const idx = b % 2 ? [...ARMS.keys()].reverse() : [...ARMS.keys()];
@@ -162,7 +185,9 @@ async function diff(a, b) {
   }
   return { changedPx: n, changedFrac: +(n / (A.data.length / ch)).toFixed(6), meanOverChanged: +(n ? sum / n : 0).toFixed(2), max };
 }
-console.log(`\n  DRIFT base-1 vs base-2 : ${JSON.stringify(await diff(shots[0].file, shots[2].file))}`);
+console.log(`\n  PAN base vs base       : ${JSON.stringify(await diff(panShots[0], panShots[2]))}`);
+console.log(`  PAN bandskip vs base   : ${JSON.stringify(await diff(panShots[0], panShots[1]))}`);
+console.log(`  DRIFT base-1 vs base-2 : ${JSON.stringify(await diff(shots[0].file, shots[2].file))}`);
 console.log(`  bandskip vs base-1     : ${JSON.stringify(await diff(shots[0].file, shots[1].file))}`);
 console.log(`\n  ${'arm'.padEnd(10)} ${'p50'.padStart(7)} ${'p90'.padStart(7)} ${'best'.padStart(7)}`);
 for (const a of ARMS) { const t = times.get(a); console.log(`  ${a.padEnd(10)} ${q(t, 0.5).toFixed(2).padStart(7)} ${q(t, 0.9).toFixed(2).padStart(7)} ${Math.min(...t).toFixed(2).padStart(7)}`); }
