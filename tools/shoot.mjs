@@ -7,13 +7,19 @@
  * the ground truth the critic agents judge — nobody grades this project from source.
  *
  * Usage:
- *   node tools/shoot.mjs                          # every shot in the default set
+ *   node tools/shoot.mjs                          # --set=all: the 18 graded field shots
  *   node tools/shoot.mjs --set=deck               # the ten-frame blind deck, varied
+ *   node tools/shoot.mjs --set=ab2                # the round-two A/B plates
+ *   node tools/shoot.mjs --set=everything         # all 59, which is never a deck
  *   node tools/shoot.mjs --shots=wide,closeup     # a subset
  *   node tools/shoot.mjs --out=screenshots/pass3  # alternate output directory
  *   node tools/shoot.mjs --w=2560 --h=1440        # resolution
- *   node tools/shoot.mjs --list                   # list available shots
+ *   node tools/shoot.mjs --list                   # shots, sets and families
  *   node tools/shoot.mjs --hud                    # WITH the interface — never gradeable
+ *
+ * A shot belongs to a *family* named by the first segment of its key, and `--set=all` is
+ * "no family" — see `FAMILIES` below and the comment above it, which is about the one time
+ * that went wrong.
  *
  * **The HUD is hidden unless you ask for it.** See `SHOW_HUD` below for why the default was
  * inverted; the short version is that a blind deck shot with the interface up grades the
@@ -768,18 +774,82 @@ const SHOTS = {
   },
 };
 
-/** Named shot sets. `--set=deck` is the only pool a blind round should be built from. */
+/*
+ * ---------------------------------------------------------------------------------------
+ * Shot families, and the bug that made them a registry instead of four `startsWith` calls.
+ * ---------------------------------------------------------------------------------------
+ *
+ * `all` used to be written as *"not `deck-`, not `ab-`, not `r6…-`"*. But
+ * `'ab2-rome-line'.startsWith('ab-')` is **false** — the third character is `2`, not a hyphen
+ * — so `node tools/shoot.mjs` with no arguments shot 32 frames, 14 of them the round-two A/B
+ * plates with their matched press cameras, at 240 s of boot each. More than twice what it was
+ * meant to shoot, silently, for as long as `ab2-` existed. `ab1`'s filter even carried a
+ * redundant `&& !k.startsWith('ab2-')` guard: the ambiguity had been noticed once and guarded
+ * on the side that did not need it.
+ *
+ * The narrow fix is to add the missing `!k.startsWith('ab2-')`. That is not the fix, because
+ * the defect is not `ab2`. A character-prefix test cannot tell a family from a sibling family
+ * whose name extends it, so `ab3-` would land in `all` exactly the same way in six weeks.
+ *
+ * So a shot's family is the **first hyphen-delimited segment** of its name, matched by
+ * equality against this registry — `ab2` is not `ab` under segment equality, and never will
+ * be. `all` is the shots with no declared family, which are the graded field shots this file
+ * has always shot by default.
+ *
+ * `assertNoUndeclaredFamily` below closes the loop: the signature of this class of bug is
+ * *several shots sharing a first segment that nobody declared*, and that is now a hard error
+ * naming the shots, not a silent 14-frame addition to the default set.
+ */
+const FAMILIES = {
+  deck: 'the pooled blind deck — the only pool a blind round should be built from',
+  ab: 'the paired blind instrument, round one. See the block comment above `ab-rome-line`',
+  ab2: 'round two, with a matched capture policy. See the block comment above `ab2-rome-line`',
+  r6: 'the r6 changelog plates. Not a deck — see the block comment above `r6-ram-gate`',
+};
+
+/** `field` is the absence of a declared family, and `field` is what `--set=all` means. */
+const familyOf = (key) => {
+  const seg = key.slice(0, key.indexOf('-') < 0 ? key.length : key.indexOf('-'));
+  return Object.hasOwn(FAMILIES, seg) ? seg : 'field';
+};
+
+/**
+ * Refuse to run if several shots share an undeclared first segment.
+ *
+ * Every field shot is a one-off name — `wide`, `rout`, `germanhorde` — and every family has
+ * fourteen or ten or three members. Two shots sharing an undeclared segment therefore means
+ * somebody has started a family and not registered it, which is precisely how `ab2-` ended up
+ * in the default set. Zero offenders at `3f4c203`, checked; if this ever fires, either add the
+ * segment to `FAMILIES` or rename the shots, but do not delete the check.
+ */
+const assertNoUndeclaredFamily = () => {
+  const bySeg = new Map();
+  for (const k of Object.keys(SHOTS)) {
+    if (familyOf(k) !== 'field') continue;
+    const seg = k.split('-')[0];
+    bySeg.set(seg, [...(bySeg.get(seg) ?? []), k]);
+  }
+  const suspects = [...bySeg].filter(([, ks]) => ks.length > 1);
+  if (!suspects.length) return;
+  console.error('shoot.mjs: undeclared shot family — these shots share a first segment that is');
+  console.error('not in FAMILIES, so they are silently part of the default `all` set:\n');
+  for (const [seg, ks] of suspects) console.error(`  ${seg}-  ${ks.join(', ')}`);
+  console.error('\nAdd the segment to FAMILIES, or rename the shots. This is the exact shape of');
+  console.error('the ab2- defect: a sibling naming scheme that no prefix test could see.');
+  process.exit(2);
+};
+assertNoUndeclaredFamily();
+
+/** Named shot sets, all derived from `familyOf` so no two of them can disagree. */
 const SETS = {
-  deck: Object.keys(SHOTS).filter((k) => k.startsWith('deck-')),
-  /** The r6 changelog plates. Not a deck — see the block comment above `r6-ram-gate`. */
-  r6: Object.keys(SHOTS).filter((k) => /^r6[ab0-9]*-/.test(k)),
-  /** The paired blind instrument, round one. See the block comment above `ab-rome-line`. */
-  ab1: Object.keys(SHOTS).filter((k) => k.startsWith('ab-') && !k.startsWith('ab2-')),
-  /** Round two, with a matched capture policy. See the block comment above `ab2-rome-line`. */
-  ab2: Object.keys(SHOTS).filter((k) => k.startsWith('ab2-')),
-  // `r6-` is excluded from `all` alongside the decks: it is three release plates, and the
-  // default invocation of this file should keep shooting the graded field set it always has.
-  all: Object.keys(SHOTS).filter((k) => !k.startsWith('deck-') && !k.startsWith('ab-') && !/^r6[ab0-9]*-/.test(k)),
+  deck: Object.keys(SHOTS).filter((k) => familyOf(k) === 'deck'),
+  r6: Object.keys(SHOTS).filter((k) => familyOf(k) === 'r6'),
+  ab1: Object.keys(SHOTS).filter((k) => familyOf(k) === 'ab'),
+  ab2: Object.keys(SHOTS).filter((k) => familyOf(k) === 'ab2'),
+  /** The graded field set, and the default. Everything with no declared family. */
+  all: Object.keys(SHOTS).filter((k) => familyOf(k) === 'field'),
+  /** Literally everything, for the rare pass that wants it. Never a deck. */
+  everything: Object.keys(SHOTS),
 };
 
 const args = new Map(
@@ -794,7 +864,10 @@ if (args.has('list')) {
     const world = [v.map ?? '', v.hour !== undefined ? `${v.hour}h` : '', v.quality ?? ''].filter(Boolean).join(' ');
     console.log(`${k.padEnd(20)} t+${String(v.at).padStart(3)}s  ${world.padEnd(16)} ${v.desc}`);
   }
-  console.log(`\nsets: ${Object.entries(SETS).map(([k, v]) => `${k} (${v.length})`).join(', ')}`);
+  console.log(`\n${Object.keys(SHOTS).length} shots.`
+    + ` sets: ${Object.entries(SETS).map(([k, v]) => `${k} (${v.length})`).join(', ')}`);
+  console.log(`families: ${Object.entries(FAMILIES).map(([k]) => `${k}-`).join(' ')} `
+    + `— everything else is \`field\`, and \`field\` is what --set=all (the default) shoots.`);
   process.exit(0);
 }
 
