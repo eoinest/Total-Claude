@@ -1,38 +1,62 @@
 /**
- * trailer-tw-cut.mjs — a twenty-two second cut of the trailer, for a muted phone feed.
+ * trailer-tw-cut.mjs — a twenty-one second cut of the trailer, for a muted phone feed.
  *
  * Nothing is re-simulated and nothing is re-captured. The master is the 3,000-frame
  * 1920x1080 JPEG sequence at `/tmp/tc-trailer-frames` and the thirteen per-beat mixer
  * recordings at `/tmp/tc-sound/beats`, both from `6698e196ed84f0e456b13cf1ab04c90eeea07d55`;
  * this only chooses windows into them and rebuilds the sound to match.
  *
- * Why the windows are what they are is a measurement, not a taste: every candidate beat was
- * downscaled to 400 px — a video in a phone feed is about that wide — and looked at
- * (`trailer-tw-scout.mjs`). Two results decided the cut.
+ * This is the second edit. The first shipped seven beats and 21.933 s and the owner sent four
+ * notes back: two escalade beats is one too many, he wants Carthage, he wants the elephants,
+ * and cut `rome-arch`. All four are in here, and the two questions the notes left open — which
+ * escalade beat survives, and what carries the ending once `rome-arch` is gone — were answered
+ * with an instrument rather than with taste (`trailer-tw-legible.mjs`, which downscales to the
+ * delivered 400 px and reports how much gradient energy survives the resample and how much the
+ * picture moves between frames at that size).
  *
- *  - **The scale shot does not survive.** `field-scale` is 8,144 men from the flank at 90 m
- *    and it is the most impressive frame in the film on a desktop. At 400 px it is a hazy
- *    green patchwork with grey smudges on it and the smudges do not read as men. It is out,
- *    despite being the obvious cold open.
- *  - **`field-line` is the mass shot that does read.** A dense band of shields and helmets
- *    across the frame at 2.5 m eye height, hard cross-lit at 08:12, with its own caption
- *    already burned in. It opens the film — but it only holds for about 1.4 s, because the
- *    beat tracks along the line and the line is only in the near field for that long.
+ *  - **The close escalade beat wins, not the wide one.** At 400 px `siege-parapet` beats
+ *    `siege-ladders` on every axis the instrument has: gradient energy 10.86 vs 10.07, frame
+ *    contrast 59.4 vs 32.0, inter-frame motion 3.22 vs 2.20. The wide shot is the better
+ *    photograph and the worse thumbnail: it is one mid-brown wall against mid-green grass, and
+ *    its ladders are two faint diagonals. The close one is hard sky against dark brick with a
+ *    ladder full of men on it. It also puts the only Roman escalade *closer* than the Punic one
+ *    that now precedes it, so the back half of the film pushes in the whole way.
+ *  - **Carthage goes in the middle, as a block, hinged at both ends.** The previous pass cut
+ *    Carthage on the grounds that a 146 BC white-sand map dropped into a Roman escalation is a
+ *    non-sequitur, and that was right about *dropping* it in. So it is not dropped in: the film
+ *    enters Carthage on `carth-eles`, which is a field beat with the same green-and-gold palette
+ *    as the `field-clash` it cuts from, and leaves it on `carth-tower`, which is a wall being
+ *    escaladed and cuts to a wall being escaladed. One boundary is motivated by palette and the
+ *    other by subject, and neither is a jump. What the film then reads as is a sweep across the
+ *    war that narrows into one gate: field, field, wall, wall, gate — with the palette walking
+ *    green -> gold -> pale stone -> red brick -> shadow in the same direction.
  *
  * The other constraint is editorial and comes from the owner: **the ram is one take.** Beats
  * 12 and 13 of the released silent cut were rejoined into a single sixteen-second push and
- * that join must not come back. Trimming the head of a take is not a cut inside it, so the
- * window is contiguous — one `[from, to]` into `rome-ram-gate`, asserted below — and it ends
- * after the leaves give way, never across it.
+ * that join must not come back. Trimming the head or the tail of a take is not a cut inside it,
+ * so the window is contiguous — one `[from, to]` into `rome-ram-gate`, asserted below.
+ *
+ * **The tail of that take is shorter than last time, and that is the opposite of what was
+ * asked.** The brief suggested holding longer on the collapse now that `rome-arch` is not there
+ * to pay it off. Measured at 400 px, holding longer is the wrong way round: the leaves give way
+ * at frames 355-370 and that is a genuine event — whole-frame |dluma| peaks at 9.54 against a
+ * beat mean of 1.78 +/- 1.23, z = +6.3, the largest thing that happens in the shot — but
+ * *afterwards* the picture decays. Inter-frame motion falls monotonically 1.67 -> 0.58 across
+ * the aftermath and frame contrast falls 28.6 -> 23.3, because what the break does to the
+ * picture is take a pale panel out of a dark arch. Every frame held past the break is emptier
+ * than the one before it. So the window ends at 390, thirty-five frames tighter than the
+ * shipped cut, on the last frame where the surge of men on the road is still above its
+ * pre-break level — and the second that buys goes to the end card instead, which is the one
+ * thing in the back half of the film that is unambiguous at 400 px.
  *
  * The picture's fades are burned into the master frames, so the windows are chosen around
- * them rather than over them: every window clears its beat's fade-up and stops short of its
- * fade-out, except `endcard`, which runs to 209 precisely so that it keeps its fade to black.
- * There is no fade *up* at the head: a feed video autoplays muted and one that opens on black
- * has already lost. The sound is given the same curve, recomputed from the same formula
- * `trailer-mixdown.mjs` uses, so the track goes down with the picture at the end.
+ * them rather than over them, and that is now asserted rather than remembered: every window is
+ * checked to sit at full picture gain, except `endcard`, which runs to 209 precisely so that it
+ * keeps its fade to black. There is no fade *up* at the head: a feed video autoplays muted and
+ * one that opens on black has already lost. The sound is given the same curve, recomputed from
+ * the same formula `trailer-mixdown.mjs` uses, so the track goes down with the picture at the end.
  *
- *   node tools/scratch/trailer-tw-cut.mjs
+ *   node tools/scratch/trailer-tw-cut.mjs --work=/tmp/tc-recut-work
  */
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
@@ -61,34 +85,62 @@ export const SHOTS = [
        + 'tracks *along* the line: frames 0-23 are the burned fade-up, 24-55 are empty grass '
        + 'ahead of the line, 60-85 is the army filling the frame, and by 100 it has receded to '
        + 'a dusty band. 1.4 s is what the shot actually has, so 1.4 s is what it gets — and '
-       + 'frame 60 is the thumbnail a feed will freeze on.' },
+       + 'frame 60 is the thumbnail a feed will freeze on. Unchanged from the first edit.' },
   { id: 'field-clash', len: 210, src: [100, 177], one: false,
     why: 'The lines are already in contact by frame 80; this is the melee with the dust band '
        + 'along it and the camera still closing. Two dark hosts and a bright seam: it reads '
-       + 'small because it is three big shapes, not because of any detail in it.' },
-  { id: 'siege-ladders', len: 180, src: [104, 179], one: false,
-    why: 'The wall, wide. Horizontal masonry, diagonal ladders, the garrison as a dark line on '
-       + 'the parapet and the assault massed at the foot — the most legible geometry in the '
-       + 'film after the arch. Late in the beat, where the crowd at the foot is thickest.' },
-  { id: 'siege-parapet', len: 150, src: [44, 115], one: false,
-    why: 'The wall, close, at the height of the crest: the same escalade one step further on, '
-       + 'with the garrison massed in the embrasures. Ends at 115 because 141-149 are a burned '
-       + 'fade to black — the act boundary of the 86 s cut, which this cut does not have.' },
-  { id: 'rome-ram-gate', len: 480, src: [206, 425], one: true,
+       + 'small because it is three big shapes, not because of any detail in it. Unchanged.' },
+  { id: 'carth-eles', len: 150, src: [72, 149], one: false,
+    why: 'The elephants, asked for by name, and the door into Carthage. Two reasons it is this '
+       + 'beat that opens the block rather than the wall or the towers: it is the most legible '
+       + 'thing in the film after `rome-arch` — gradient energy 17.19 at 400 px against 13.79 '
+       + 'for `field-line` and 7.30 for the ram — and it is a *field* beat, green grass and gold '
+       + 'stubble under a pale sky, so cutting to it from `field-clash` is a cut between two '
+       + 'shots of the same colour. That is what stops 146 BC reading as a mistake. The window '
+       + 'runs to the last frame of the beat because the camera is closing the whole way (eye '
+       + '5.0 -> 3.6 m, standoff 52 -> 32 m) and the animals are largest at the end: at 72 they '
+       + 'are a legible row, at 149 they fill the lower half of the frame. Nothing is burned '
+       + 'into this beat at either end.' },
+  { id: 'carth-tower', len: 150, src: [76, 140], one: false,
+    why: 'The Carthage action, and the door out. Two siege towers docked on the Punic parapet '
+       + 'with columns queuing into them: dark timber against a pale limestone curtain, which is '
+       + 'the highest-contrast geometry on that map (frame contrast 55.4 at 400 px, against '
+       + '32.0 for the wide Roman escalade this cut drops). It leaves the block on a wall being '
+       + 'climbed and hands to a wall being climbed, so the map changes on a cut where the '
+       + 'subject does not. Ends at 140 because 141-149 are a burned fade to black — the act '
+       + 'boundary of the 86 s cut, which this cut does not have.' },
+  { id: 'siege-parapet', len: 150, src: [68, 140], one: false,
+    why: 'The Aurelian Wall, close, at the height of the crest, and the survivor of the two '
+       + 'escalade beats. Measured at 400 px it beats the wide `siege-ladders` on all three '
+       + 'numbers — gradient 10.86 vs 10.07, contrast 59.4 vs 32.0, motion 3.22 vs 2.20 — and '
+       + 'the reason is visible as soon as both are put at that size: the wide shot is brown '
+       + 'wall on green grass with two faint diagonals on it, and this one is hard sky against '
+       + 'dark brick with a ladder that has a chain of men on it. It is also the closer of the '
+       + 'two, which matters now that a Punic wall precedes it: wide wall, close wall, gate '
+       + 'mouth, and the film pushes in without a step backwards. Ends at 140, before the '
+       + 'burned fade at 141-149.' },
+  { id: 'rome-ram-gate', len: 480, src: [206, 390], one: true,
     why: 'ONE TAKE, contiguous, no join. It cuts in *on* a ram blow: the shed hide fills the '
        + 'lens until frame 152, a blow lands at 212-231 so entering at 206 puts the shake 0.2 s '
-       + 'after the cut, the leaves give way at 353-369 (measured: mean |dluma| in the gate '
-       + 'mouth goes 1.06 -> 6.54, and the pale leaf panel is present at frame 352 and gone at '
-       + '362), and it holds 1.9 s past that. Ending before 480 trims the take; it does not cut '
-       + 'inside it.' },
-  { id: 'rome-arch', len: 180, src: [100, 179], one: false,
-    why: 'The consequence, and the shot that makes the payoff legible at phone size: the arch '
-       + 'is a black void in a warm brick wall with a packed cohort and a red standard in '
-       + 'front of it. The break itself is a small dark change in a dark arch; this is what '
-       + 'tells a 400 px viewer the gate is open.' },
-  { id: 'endcard', len: 210, src: [120, 209], one: false,
-    why: 'Title and URL already at full opacity at 120, so no dead time, and it keeps the '
-       + 'burned fade to black over the last 21 frames.' },
+       + 'after the cut, and the leaves give way at 355-370 (measured at the delivered size: '
+       + 'whole-frame |dluma| peaks at 9.54 there against a beat mean of 1.78 +/- 1.23, z = '
+       + '+6.3, and it is the largest thing that happens in the shot). It then holds 0.67 s '
+       + 'and leaves while the picture is still moving. Not longer, and the brief asked for '
+       + 'longer: across 370-479 the whole-frame motion decays 1.67 -> 0.58 and the frame '
+       + 'contrast 28.6 -> 23.3, because what the break does to the picture is *remove* a pale '
+       + 'panel from a dark arch. The surge of men on the road (box 0.55,0.50,0.45,0.45) runs '
+       + '2.38 through frame 389 against a pre-break 1.88 and is back at 1.84 by 434, so 390 is '
+       + 'the last frame on which the shot is still doing something. Everything after it is the '
+       + 'shot dying, and the end card is a better use of that second. Trimming either end of a '
+       + 'take is not a cut inside it; the window is one contiguous run and it is asserted.' },
+  { id: 'endcard', len: 210, src: [110, 209], one: false,
+    why: 'Title and URL are at full opacity by frame 88, so entering at 110 costs no dead time, '
+       + 'and the window keeps the burned fade to black over the last 21 frames. It is a third '
+       + 'of a second longer than the first edit gave it, taken off the end of the ram. That is '
+       + 'deliberate: with `rome-arch` gone the card has to carry the ending, and at 400 px the '
+       + 'white title is the most legible thing in the whole back half of the film. Cutting to '
+       + 'it while the gate is still coming apart lands the break on the title rather than '
+       + 'letting the break dissipate against brick first.' },
 ];
 
 /** The black-plane opacity the capture photographed through, for frame `i` of a full beat. */
@@ -127,6 +179,21 @@ for (const s of SHOTS) {
    */
   if (s.one && list.some((p) => p.includes(`/${s.id}-`))) {
     throw new Error(`${s.id} is marked one-take and already appears in the cut — that is a join`);
+  }
+  /*
+   * The burned-fade assertion. The 86 s cut's dips to black are photographed *into* the master
+   * frames, so a window that overlaps one delivers black frames in the middle of a hard-cut
+   * feed video. Every window was chosen by hand to miss them, and the first edit relied on
+   * remembering which beats had them; this checks it instead. `endcard` is the one window
+   * allowed to end inside a fade, because its fade to black is the end of the film.
+   */
+  if (s.id !== 'endcard') {
+    for (let i = a; i <= b; i++) {
+      const f = pictureFade(s.id, i, s.len, s.id === 'field-line');
+      if (f > 1e-6) {
+        throw new Error(`${s.id}: frame ${i} sits ${(f * 100).toFixed(0)} % inside a burned fade`);
+      }
+    }
   }
   keyAt.push(cursor);
   for (let i = a; i <= b; i++) list.push(path.join(FRAMES, `${s.id}-${String(i).padStart(4, '0')}.jpg`));
