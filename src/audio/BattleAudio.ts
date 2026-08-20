@@ -21,6 +21,7 @@
 import { clamp, clamp01, damp, lerp } from '../util/math';
 import { hash01 } from '../util/rand';
 import { FACTIONS, Faction, UnitOrder, type UnitGroupState } from '../sim/types';
+import type { ProjectileFeed } from '../sim/Projectiles';
 import { isCavalry, unitType } from '../units/roster';
 import type { BusName, Mixer } from './Mixer';
 import { Bed } from './Mixer';
@@ -39,16 +40,21 @@ export interface BattleView {
   groundAt?(x: number, z: number): number;
 }
 
-/** Optional feed from a projectile system, if one is registered. */
-export interface ProjectileView {
-  activeCount: number;
-  x: Float32Array;
-  y: Float32Array;
-  z: Float32Array;
-  vx: Float32Array;
-  vy: Float32Array;
-  vz: Float32Array;
-}
+/**
+ * Optional feed from a projectile system, if one is registered.
+ *
+ * **A shared type, not a restatement of one.** `ProjectileFeed` is declared and returned by
+ * `src/sim/Projectiles.ts` and imported here, so the two sides cannot name different fields.
+ * They did: this interface used to declare `activeCount`, `x`, `y`, `z`, and the projectile
+ * system has never had any of them — the pool is `px`/`py`/`pz` and the count is `inFlight`.
+ * `AudioEngine` guarded on `typeof proj.activeCount === 'number'`, the guard read `undefined`,
+ * `attach` was handed `null`, and every fly-by whistle in the game's history was skipped
+ * before it made a sound. Nothing failed to compile; the cast was to `Partial<ProjectileView>`,
+ * which makes every member optional and erases even the arity check.
+ *
+ * A function rather than the record, because the record is refreshed per frame.
+ */
+export type ProjectileView = () => ProjectileFeed;
 
 /** Grid cell size for clustering, metres. Roughly a platoon frontage. */
 const CELL = 15;
@@ -794,17 +800,21 @@ export class BattleAudio {
    * and the volley buffer's massed whoosh carries the moment instead.
    */
   private updateFlybys(): void {
-    const p = this.projectiles;
-    if (!p || !Number.isFinite(p.activeCount)) {
+    const feed = this.projectiles;
+    if (!feed) {
       for (const f of this.flybys) f.handle?.stop(0.1);
       this.flybys.length = 0;
       return;
     }
-    const n = Math.min(p.activeCount, p.x.length, p.vx.length);
-    // Find the three nearest.
+    const p = feed();
+    const n = Math.min(p.count, p.px.length, p.vx.length);
+    // Find the three nearest. The pool is sparse — slots come off a free list — so a dead
+    // slot still holds the last position of a shaft that has already landed, and following
+    // one would hang a whistle on a spent arrow lying in the grass.
     const best: Array<{ i: number; d: number }> = [];
     for (let i = 0; i < n; i++) {
-      const d = this.mixer.distanceTo(p.x[i], p.y[i], p.z[i]);
+      if (p.alive[i] === 0) continue;
+      const d = this.mixer.distanceTo(p.px[i], p.py[i], p.pz[i]);
       if (d > 45) continue;
       best.push({ i, d });
     }
@@ -827,7 +837,7 @@ export class BattleAudio {
       const speed = Math.hypot(p.vx[i], p.vy[i], p.vz[i]);
       const closing = speed > 0.01 ? 1 : 0;
       const shift = clamp(343 / (343 - closing * speed * 0.55), 0.7, 1.6);
-      f.handle.setPosition(p.x[i], p.y[i], p.z[i], 0.01);
+      f.handle.setPosition(p.px[i], p.py[i], p.pz[i], 0.01);
       f.handle.setGain(clamp01(1 - d / 45) * 0.55, 0.05);
       f.handle.setRate(shift);
     }

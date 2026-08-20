@@ -180,6 +180,14 @@ export class WaterSurface {
   private material?: THREE.MeshStandardMaterial;
   private uniforms: Record<string, THREE.IUniform> = {};
   private time = 0;
+  /**
+   * The scene depth attachment as of the last frame, and the sky's ambient colour.
+   *
+   * Both are held here rather than read once in `init`, and that is the whole of the fix
+   * described on `refreshSeams`. `sceneDepth` also feeds `customProgramCacheKey`, so the key
+   * has to be a read of this field and not of a local captured at build time.
+   */
+  private sceneDepth: THREE.DepthTexture | null = null;
 
   /** Quads emitted, so the cost of the carrier is reportable rather than assumed. */
   stats = { quads: 0, vertices: 0, basins: 0 };
@@ -349,8 +357,9 @@ export class WaterSurface {
     // Structurally typed views of the two subsystems: the water only needs the sky's ambient
     // colour and, if the post chain has one, its depth prepass.
     const sky = ctx.tryGet<Subsystem & { ambientColour?: THREE.Color }>('sky');
-    const postfx = ctx.tryGet<Subsystem & { depthTexture?: THREE.DepthTexture | null }>('postfx');
-    const sceneDepth = postfx?.depthTexture ?? null;
+    // Deliberately not read here — see `refreshSeams`. `init` runs at `order` -50 and PostFX
+    // allocates at 900, so this is always null at this point and always will be.
+    const sceneDepth = null;
 
     const [wa, wb] = p.waves;
     this.uniforms = {
@@ -393,7 +402,6 @@ export class WaterSurface {
       depthWrite: false,
       side: THREE.FrontSide,
     });
-    if (sceneDepth) mat.defines = { ...(mat.defines ?? {}), USE_SCENE_DEPTH: '' };
 
     mat.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, this.uniforms);
@@ -540,8 +548,11 @@ float bedHeight(vec2 wxz) {
 `
         );
     };
+    // A read of the live field, not of a local: the define is toggled at runtime the first
+    // frame a depth attachment exists, and a cache key frozen at build time would hand the
+    // recompiled material the old program.
     mat.customProgramCacheKey = () =>
-      `water-${p.cacheKey}-v1-${sceneDepth ? 'depth' : 'nodepth'}`;
+      `water-${p.cacheKey}-v1-${this.sceneDepth ? 'depth' : 'nodepth'}`;
 
     this.material = mat;
     this.mesh = new THREE.Mesh(geo, mat);
@@ -573,6 +584,61 @@ float bedHeight(vec2 wxz) {
       const pr = ctx.renderer.getPixelRatio();
       p.set(cam.near, cam.far, 1 / (ctx.viewW * pr), 1 / (ctx.viewH * pr));
     }
+    this.refreshSeams(ctx);
+  }
+
+  /**
+   * Re-read the two subsystems this material borrows from, every frame.
+   *
+   * **A seam can agree about every field name and still be wrong about when the field has a
+   * value.** Both of these did, and both failed silently:
+   *
+   *  - `postfx.depthTexture` was read in `init`. `TerrainSystem.order` is −50 and
+   *    `PostFXSystem.order` is 900, and `Engine.initAll` walks the systems in `order`, so the
+   *    read happens roughly a thousand order-units before PostFX allocates anything and the
+   *    answer is the field initialiser, `null`, on every boot without exception. Three things
+   *    then followed from one `?? null`: `uSceneDepth` bound to nothing, the
+   *    `USE_SCENE_DEPTH` define never added, and the program cache key pinned at `-nodepth`.
+   *    The soft-intersection fade — the whole point of which is to stop the water cutting a
+   *    hard aliased line through a man wading, a quay wall or a bridge pier — has been
+   *    compiled out of every build the game has ever shipped.
+   *  - `sky.ambientColour` was `.copy()`d in `init`, once. It is a `THREE.Color` the sky
+   *    **mutates in place** whenever the hour moves, and `main.ts` applies the player's chosen
+   *    hour *after* `initAll` resolves. So the water's sky tint was the map's default hour's,
+   *    under whatever sky the player actually picked, and frozen there for the whole battle on
+   *    a map with a day cycle.
+   *
+   * Neither is a shape disagreement and neither would be caught by comparing field names. The
+   * general rule they share: **a value borrowed from another subsystem is read where it is
+   * used, not where it is convenient.** `VFXSystem` reads the same `depthTexture` per frame
+   * for its soft particles and its soft particles work.
+   *
+   * Reallocation is handled by the same path: `PostFX.freeTargets` nulls the texture and
+   * `makeRT` mints a fresh one on every resize and quality change, so an init-time read would
+   * also have gone stale — and dangled on a disposed texture — at the first of either.
+   */
+  private refreshSeams(ctx: EngineContext): void {
+    const mat = this.material;
+    if (!mat) return;
+
+    const sky = ctx.tryGet<Subsystem & { ambientColour?: THREE.Color }>('sky');
+    if (sky?.ambientColour) {
+      (this.uniforms.uSkyColour?.value as THREE.Color | undefined)?.copy(sky.ambientColour);
+    }
+
+    const postfx = ctx.tryGet<Subsystem & { depthTexture?: THREE.DepthTexture | null }>('postfx');
+    const depth = postfx?.depthTexture ?? null;
+    if (depth === this.sceneDepth) return;
+    this.sceneDepth = depth;
+    if (this.uniforms.uSceneDepth) this.uniforms.uSceneDepth.value = depth;
+    const had = !!mat.defines && 'USE_SCENE_DEPTH' in mat.defines;
+    const want = depth !== null;
+    if (had === want) return;
+    // Only a change in *presence* costs a recompile; a new texture of the same kind is a
+    // uniform rebind, which is why the define is toggled inside this branch and not above it.
+    if (want) mat.defines = { ...(mat.defines ?? {}), USE_SCENE_DEPTH: '' };
+    else { const d = { ...(mat.defines ?? {}) }; delete d.USE_SCENE_DEPTH; mat.defines = d; }
+    mat.needsUpdate = true;
   }
 
   dispose(): void {

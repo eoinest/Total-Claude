@@ -31,6 +31,7 @@ import { deployBattle } from './sim/scenario';
 import { type Difficulty, type ScenarioId, sanitiseConfig } from './sim/battleConfig';
 import { MainMenu, resolveConfig } from './ui/MainMenu';
 import { ALL_FACTIONS, Faction } from './sim/types';
+import { installSeamCheck } from './core/seams';
 
 /**
  * Entry point. Builds the engine, registers every subsystem, deploys the scenario
@@ -266,6 +267,18 @@ async function boot(): Promise<void> {
 
   // After the armies are on the field, because the deployment zone is measured off them.
   deployment?.begin(config, playerFaction);
+
+  /**
+   * Compare every cross-subsystem seam against the objects on the other side of it.
+   *
+   * Here and not in `initAll` because this is the first line at which every provider is
+   * bound: `Siege` finds the projectile system lazily, the HUD finds the deployment phase
+   * through `tryGet`, and the city's rasters are only final once the scenario has run. It
+   * reads already-built state, costs under a millisecond and shouts on the console with both
+   * field-name lists when two sides disagree. See `src/core/seams.ts` for why a check that
+   * runs at runtime is the one that catches this — every one of these seams typechecks.
+   */
+  installSeamCheck(engine.context);
 
   if (harness) {
     loading?.remove();

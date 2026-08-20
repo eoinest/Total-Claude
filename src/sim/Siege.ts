@@ -763,6 +763,34 @@ interface CityStairView {
   side?: number;
 }
 
+/**
+ * The gatehouse as a solid, in plan — the six numbers `buildSpine` needs and no more.
+ *
+ * **Field-for-field a subset of `GateBlockOut` in `src/city/wall.ts`**, and it has to stay
+ * that way. It is declared here rather than imported because `src/city/` imports
+ * `src/sim/types` and an import the other way would close the cycle; that is also exactly
+ * why nothing checks the two against each other, so the pair is registered in
+ * `src/core/seams.ts` and compared against the live `CitySystem` at wiring time. If you
+ * rename a field here, that check fails at boot with both name lists in the message.
+ */
+interface CityGateBlockView {
+  /** Centre of the carriageway, on the wall line. */
+  x: number;
+  z: number;
+  /** Outward normal of the block, matching the bay's. */
+  nx: number;
+  nz: number;
+  /** Along-run unit vector. */
+  dx: number;
+  dz: number;
+  /** Half-extent along the run: the block is 2 x this long on the wall line. */
+  halfRun: number;
+  /** Half-extent across the run, front face to back face. */
+  halfDepth: number;
+  /** Absolute Y of the top of the block's battlements. */
+  topY: number;
+}
+
 interface CityView {
   getGarrisonBays(): readonly CityBayView[];
   getGates(): { id: string; x: number; z: number; facing: number; open: boolean }[];
@@ -785,10 +813,9 @@ interface CityView {
    * curtain out where the gatehouse stands, but the spine lays a station every
    * `STATION_PITCH` along every garrisonable bay clipped only by `towerHalf`, so on Rome
    * **22 of bay 19's 36 stations stand inside the gatehouse footprint with no curtain under
-   * them, 6.574 m below the crown** — and they produced 823 of 5,301 garrison shots in 240 s,
-   * every one of them discarded.
+   * them, 6.574 m below the crown** — and every shot they take is thrown into the block.
    */
-  getGateBlock?(): { x: number; z: number; hw: number; hd: number; rot: number; topY: number } | null;
+  getGateBlock?(): CityGateBlockView | null;
   /**
    * Optional, and the whole reason the stair mechanic reads the city instead of guessing.
    *
@@ -890,21 +917,27 @@ export interface SiegeMachineOrder {
 }
 
 /**
- * Is this point inside an oriented footprint, in plan?
+ * Is this point inside the gatehouse's plan footprint?
  *
  * Plan only, deliberately: the question `buildSpine` is asking is "is there curtain under
  * this station", and the gatehouse's answer does not depend on height — it replaces the
  * curtain for its whole footprint. Height comes back in through `topY` when a crown run is
  * laid, which is the better fix this one is holding the place for.
+ *
+ * **The frame is the block's own, not an angle.** This used to take `{ hw, hd, rot }` and
+ * build a rotation from `rot`, and no city has ever published any of those three: the record
+ * carries the along-run and outward-normal unit vectors it was built from, precisely so that
+ * nothing downstream has to round-trip them through an `atan2`. The consequence of asking for
+ * the wrong three was not a wrong answer, it was **no answer** — `Math.abs(...) <= undefined`
+ * is `false`, so the clip reported "not inside the gatehouse" for every point on the map and
+ * the feature never fired once. Measured on Rome before the rename: 22 of bay 19's 36
+ * stations inside the footprint, 0 clipped.
  */
-function insideBlock(
-  b: { x: number; z: number; hw: number; hd: number; rot: number }, x: number, z: number
-): boolean {
-  const dx = x - b.x;
-  const dz = z - b.z;
-  const c = Math.cos(-b.rot);
-  const s = Math.sin(-b.rot);
-  return Math.abs(dx * c - dz * s) <= b.hw && Math.abs(dx * s + dz * c) <= b.hd;
+function insideBlock(b: CityGateBlockView, x: number, z: number): boolean {
+  const ex = x - b.x;
+  const ez = z - b.z;
+  return Math.abs(ex * b.dx + ez * b.dz) <= b.halfRun
+    && Math.abs(ex * b.nx + ez * b.nz) <= b.halfDepth;
 }
 
 export class Siege implements ElevationOwner {
