@@ -220,12 +220,14 @@ let prev = 0;
 for (const at of AT) {
   if (at > prev) {
     const t0 = Date.now();
-    await page.evaluate(([secs, noRender]) => {
-      const e = window.__game.engine, p = window.__ss;
-      if (noRender) e.renderOverride = () => {};
-      e.advance(secs, 1000 / 60);
-      if (noRender) e.renderOverride = p.wrappedRender;
-    }, [at - prev, FF_NORENDER]);
+    // `{ render: false }` is the engine's own flag now, not this tool stubbing `renderOverride`
+    // behind its back. Same effect, but the skip is inside `Engine.frame` where it is
+    // documented and hash-tested, rather than a monkey-patch a future refactor would silently
+    // defeat — leaving the fast-forward rendering again and this probe merely slow.
+    await page.evaluate(
+      ([secs, noRender]) => window.__game.engine.advance(secs, 1000 / 60, { render: !noRender }),
+      [at - prev, FF_NORENDER]
+    );
     console.log(`  ff ${prev} -> ${at}  (${((Date.now() - t0) / 1000).toFixed(1)}s wall${FF_NORENDER ? ', no submit' : ''})`);
     prev = at;
   }
