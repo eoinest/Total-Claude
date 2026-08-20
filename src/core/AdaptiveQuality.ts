@@ -219,6 +219,23 @@ const REFRESH_MS = [1000 / 60, 1000 / 90, 1000 / 120, 1000 / 144];
 const MISS_FACTOR = 1.2;
 
 /**
+ * How closely presented intervals must sit on whole multiples of a refresh period before the
+ * loop will believe there is a display behind them, as a fraction of the period.
+ *
+ * A vsync-paced loop cannot present between two scanouts, so every interval is one period, or
+ * two, or three, and the mean distance to the nearest multiple is compositor jitter — under
+ * 0.05 in practice. A loop running flat out has intervals wherever the work lands, spread
+ * across the period, and averages about 0.25. Measured headless on the Carthage assault: 0.19
+ * to 0.31 against a 60 Hz period, on the very loop whose median and interquartile spread were
+ * passing the old test.
+ *
+ * 0.12 is placed between the two populations rather than at the edge of either, because both
+ * mistakes are real: too tight and a real display with a busy compositor loses the arm that
+ * sees GPU-bound frames, too loose and a probe drives the resolution to the floor.
+ */
+const REFRESH_QUANTISATION_MAX = 0.12;
+
+/**
  * If the *simulation* is eating this much of the frame, the overrun is not something a render
  * lever can fix, and the presented-frame arm must not act on it. Half the budget: at 8,632 men
  * `fixedUpdate` is 3.657 ms against 16.67, so this only trips at game speed 4x or on a machine
@@ -408,6 +425,12 @@ export interface AdaptiveState {
   refreshMs: number;
   /** p90 of the presented-frame interval. */
   ivP90: number;
+  /**
+   * How well the presented intervals sit on whole multiples of a refresh period, as a fraction
+   * of that period, taking the best candidate. Under `REFRESH_QUANTISATION_MAX` means vsync;
+   * around 0.25 means a loop running flat out. The number `refreshMs` is decided by.
+   */
+  ivQuant: number;
   /** p90 of the fixed-step half, which the controller excludes but must watch. */
   simP90: number;
   changes: number;
@@ -489,6 +512,8 @@ export class AdaptiveQualitySystem implements Subsystem {
   private refreshMs = 0;
   private ivP90 = 0;
   private simP90 = 0;
+  /** Best (lowest) quantisation residual over the candidate refresh periods. Reported, not controlled on. */
+  private ivQuant = 1;
 
   private framesSeen = 0;
   private startMs = 0;
@@ -601,6 +626,31 @@ export class AdaptiveQualitySystem implements Subsystem {
     if (this.ringN < WINDOW) this.ringN++;
   }
 
+  /**
+   * Mean distance from each presented interval to the nearest whole multiple of `period`,
+   * expressed as a fraction of the period. 0 is perfect quantisation; 0.25 is uniform noise.
+   *
+   * The nearest multiple is floored at one, so an interval *shorter* than the period counts
+   * fully against the hypothesis rather than being rounded down to zero — a loop presenting
+   * faster than the display it claims to be paced by is the clearest possible evidence that
+   * it is not paced by one.
+   *
+   * Reads the ring unsorted; order is irrelevant to a mean and the sorted scratch is in use.
+   */
+  private quantisation(period: number, n: number): number {
+    let acc = 0;
+    let m = 0;
+    for (let i = 0; i < n; i++) {
+      const iv = this.ivRing[i];
+      // Zero is the first frame of a window, which has no predecessor to difference against.
+      if (iv <= 0) continue;
+      const k = iv / period;
+      acc += Math.abs(k - Math.max(1, Math.round(k)));
+      m++;
+    }
+    return m ? acc / m : 1;
+  }
+
   private resetWindow(): void {
     this.ringN = 0;
     this.ringHead = 0;
@@ -631,6 +681,25 @@ export class AdaptiveQualitySystem implements Subsystem {
   update(): void {
     if (!this.enabled || !this.ctx) return;
 
+    /*
+     * Sit out a synthetic fast-forward entirely.
+     *
+     * `Engine.frame` already refuses to `sample()` while `advance` is running, for the stated
+     * reason that a frame with nothing pacing it says nothing about a dropped frame. But
+     * `update` is an ordinary subsystem hook, so it kept running — thousands of times inside a
+     * single `advance` call, on a window of stale samples, against a `performance.now()` that
+     * is genuinely elapsing. Every dwell timer in the control law is wall-clock, so a long
+     * fast-forward satisfies all of them: measured on a 200 s `advance` of the Carthage
+     * assault, the controller took five pressure steps and three drawing-buffer
+     * reallocations — nineteen render targets rebuilt each time — while the harness thought
+     * it was measuring the simulation. The battle then continued at a resolution the player
+     * never chose and no measurement had justified.
+     *
+     * This is the same argument as the `sample` gate one level up, and it belongs on both
+     * halves of the loop or on neither.
+     */
+    if (this.engine.isAdvancing) return;
+
     const now = performance.now();
     this.trackCamera(now);
 
@@ -653,7 +722,6 @@ export class AdaptiveQualitySystem implements Subsystem {
     this.sorted.subarray(0, n).sort();
     const ivP50 = percentile(this.sorted, n, 0.5);
     this.ivP90 = percentile(this.sorted, n, 0.9);
-    const ivSpread = percentile(this.sorted, n, 0.75) - percentile(this.sorted, n, 0.25);
     this.sorted.set(this.simRing.subarray(0, n));
     this.sorted.subarray(0, n).sort();
     this.simP90 = percentile(this.sorted, n, 0.9);
@@ -661,15 +729,46 @@ export class AdaptiveQualitySystem implements Subsystem {
     /*
      * Is this loop actually paced by a display?
      *
-     * The signature of vsync is a median interval sitting on a real refresh period with a tight
-     * interquartile spread. Headless Chromium has neither: measured p50 41-65 ms with a spread
-     * of tens of milliseconds, because it renders as fast as it can and nothing throttles it.
-     * Reading that as "a machine dropping four frames in five" would drive the loop to its floor
-     * in every probe, so the presented-frame arm switches itself off unless it can see a display.
+     * The signature of vsync is not a median near a refresh period — it is *quantisation*.
+     * `MISS_FACTOR` above already says so in as many words ("the interval is quantised to
+     * multiples of the refresh period: a frame either makes it in one period or takes two"),
+     * but the test written here did not measure that. It asked for a median within 15 % of a
+     * period and an interquartile spread under half a period, and a free-running loop passes
+     * both by coincidence as soon as it happens to average around 60 fps.
+     *
+     * It does. Measured on the Carthage assault at 3,440 men, headless, this commit:
+     * ivP50 15.3-16.8 ms against 16.67, ivIQR 8.3-8.9 ms against a threshold of 8.33 — sitting
+     * exactly on the boundary and flickering across it. Each time it latched, `ivP90` of 23-25
+     * ms cleared `16.67 * 1.2` and the presented arm called it missed frames, so the controller
+     * dropped. Meanwhile its own CPU arm read **p50 2.8 ms, p90 3.2 ms against a 7.2-12.7 ms
+     * band** — six times the headroom it needed. Those two numbers cannot both be true. Over
+     * 35 s the loop took five pressure steps, three drawing-buffer reallocations and three
+     * direction reversals, and settled nowhere.
+     *
+     * The file's own comment asserted this could not happen ("measured p50 41-65 ms, nowhere
+     * near a refresh period"). That was true of the headless loop when it was written and is
+     * not true of it now; later in the same run it does drift out to 41-50 ms. A detector
+     * whose premise is a measurement of the environment goes stale when the environment does,
+     * so this one tests the property instead.
+     *
+     * `quantisation` returns the mean distance from each interval to the nearest whole
+     * multiple of the candidate period. Real vsync lands under 0.05 of a period even with
+     * compositor jitter; a loop running flat out is spread across the period and averages
+     * about 0.25. 0.12 sits between them with room on both sides.
+     *
+     * Two things this buys beyond the false positive:
+     *  - a display that is genuinely dropping every other frame has ivP50 at *two* periods and
+     *    failed the old median test outright, switching the arm off exactly when it was most
+     *    needed. Quantisation reads that case correctly.
+     *  - the arm can no longer be turned on by a machine that is merely fast.
      */
     let refresh = 0;
+    this.ivQuant = 1;
     for (const r of REFRESH_MS) {
-      if (Math.abs(ivP50 - r) < r * 0.15 && ivSpread < r * 0.5) { refresh = r; break; }
+      // Not faster than the period it is claiming to be paced by, and quantised to it.
+      const q = this.quantisation(r, n);
+      if (q < this.ivQuant) this.ivQuant = q;
+      if (ivP50 >= r * 0.75 && q < REFRESH_QUANTISATION_MAX) { refresh = r; break; }
     }
     this.refreshMs = refresh;
     if (refresh > 0 && !this.targetLocked) this.targetMs = Math.max(DEFAULT_TARGET_MS, refresh);
@@ -934,6 +1033,7 @@ export class AdaptiveQualitySystem implements Subsystem {
       targetMs: this.targetMs,
       refreshMs: this.refreshMs,
       ivP90: this.ivP90,
+      ivQuant: this.ivQuant,
       simP90: this.simP90,
       changes: this.changes,
       reallocs: this.reallocs,

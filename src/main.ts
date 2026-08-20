@@ -300,6 +300,17 @@ declare global {
       ready: boolean;
       /** Run the sim forward `seconds` without waiting on real time. */
       advance(seconds: number): void;
+      /**
+       * The same fast-forward with the rasterisation left out, which is the whole of its cost.
+       *
+       * `advance` draws every synthetic frame — sixty per simulated second at its default step
+       * — and on the full-scale Carthage storm that is minutes of wall clock per minute of
+       * battle, which is why no probe had ever reached the end of one. This skips the submit
+       * and nothing else, so the simulation is bit-identical and roughly twenty times faster.
+       * It leaves the canvas showing the frame before the call, so screenshot after a real
+       * frame has run, not straight after this.
+       */
+      fastForward(seconds: number, stepMs?: number): void;
       /** Park the camera for a repeatable screenshot. */
       setCamera(x: number, z: number, zoom: number, yaw: number): void;
       /** Sim seconds elapsed. */
@@ -323,6 +334,24 @@ window.__game = {
   battle,
   ready: false,
   advance: (seconds: number) => engine.advance(seconds),
+  /*
+   * The step stays at `advance`'s own default, and that is not a detail to tune away.
+   *
+   * Measured on the Carthage assault, three independent loads advanced by one schedule and
+   * hashed at t+30/90/150/200: `advance(dt, 1000/60)` and `advance(dt, 1000/60, {render:
+   * false})` agree on every bit at every checkpoint, so skipping the submit is free. But
+   * `advance(dt, 166)` — the "five ticks a frame, four times cheaper" idiom several siege
+   * probes use — produces *different hashes*, and so does an exactly-five-tick 1000/6 step
+   * that lands on the same total elapsed time. The tick count is not the whole of it; how
+   * many ticks share a frame reaches the simulation somehow. Same survivor count, different
+   * battle.
+   *
+   * So a coarse step is not a free speed-up, it is a different run, and a fast-forward that
+   * took one would quietly stop being comparable with `qa-determinism`. This one is only ever
+   * the same battle, sooner.
+   */
+  fastForward: (seconds: number, stepMs = 1000 / 60) =>
+    engine.advance(seconds, stepMs, { render: false }),
   setCamera: (x, z, zoom, yaw) => engine.rig.jumpTo(x, z, zoom, yaw),
   simTime: () => engine.time.simTime,
   deployment,

@@ -143,6 +143,17 @@ export const QUALITY_PRESETS: Record<QualityTier, QualitySettings> = {
   },
 };
 
+/** Options for a synthetic fast-forward. See `Engine.advance`. */
+export interface AdvanceOptions {
+  /**
+   * Rasterise each synthetic frame. Default `true`, which is what the screenshot harness
+   * needs and what makes a long fast-forward cost minutes instead of seconds. Pass `false`
+   * when only the simulation state at the far end matters; the canvas is then stale until
+   * something draws again.
+   */
+  render?: boolean;
+}
+
 export interface EngineOptions {
   canvas: HTMLCanvasElement;
   quality?: QualityTier;
@@ -200,6 +211,18 @@ export class Engine {
   lastRenderMs = 0;
   lastFrameMs = 0;
   private advancing = false;
+  private skipSubmit = false;
+
+  /**
+   * Whether a synthetic fast-forward is in progress.
+   *
+   * Published because a subsystem cannot otherwise tell a frame the player will see from one
+   * of the thousands `advance` fires at whatever rate the CPU manages. Anything that reasons
+   * about *wall clock* — the adaptive controller above all — has to sit those frames out.
+   */
+  get isAdvancing(): boolean {
+    return this.advancing;
+  }
 
   /**
    * Installed by the post-processing subsystem. When present the engine calls this
@@ -427,8 +450,19 @@ export class Engine {
     for (const s of this.systems) s.preRender?.(this.ctx);
 
     this.renderer.info.reset();
-    if (this.renderOverride) this.renderOverride(this.ctx);
-    else this.renderer.render(this.scene, this.rig.camera);
+    /*
+     * The submit, and the one case that skips it.
+     *
+     * `skipSubmit` is only ever set by `advance({ render: false })`. Everything above this
+     * line still runs — every `fixedUpdate`, every `update`, every `preRender` — so the sim
+     * and every subsystem's visual state are exactly what a rendered frame would have left
+     * behind. What is dropped is the rasterisation of a frame nobody will look at, and on a
+     * fast-forward that is essentially the whole cost. See `advance` for the measurement.
+     */
+    if (!this.skipSubmit) {
+      if (this.renderOverride) this.renderOverride(this.ctx);
+      else this.renderer.render(this.scene, this.rig.camera);
+    }
 
     this.input.endFrame();
 
@@ -489,8 +523,37 @@ export class Engine {
   /**
    * Advance the simulation by a wall-clock duration without waiting for real time.
    * The screenshot harness uses this to reach a specific battle state fast.
+   *
+   * ## `{ render: false }`, and why a fast-forward was the slowest thing in the project
+   *
+   * Every synthetic frame here rasterises a frame nobody will ever look at, and at the
+   * default `stepMs` there are sixty of them per simulated second. That is the entire reason
+   * a full-scale siege was believed to be unwatchable: `tools/probe-siegehud.mjs` records
+   * "3,440 men … about a tenth of real time … 35 minutes of wall clock to reach t+451", and
+   * every one of those minutes was spent drawing. The same battle on a real `requestAnimation-
+   * Frame` loop — a player's page, nothing skipped — reaches **t+466 in 465.8 s, 0.999x real
+   * time**, at p50 4.5 ms and p90 8.1 ms a frame. The simulation was never the problem; the
+   * fast-forward was, and it is a harness, so its cost had been read as the game's.
+   *
+   * With `render: false` the submit is skipped and nothing else is: every `fixedUpdate`,
+   * `update` and `preRender` runs in the same order with the same arguments, so the sim is
+   * bit-identical (asserted by `tools/qa-determinism.mjs`, and by `--ffnorender` in
+   * `tools/probe-siegescale.mjs`, which prints the pool hash at every checkpoint).
+   *
+   * **Do not also coarsen `stepMs` to buy more.** Three independent loads of the Carthage
+   * assault, advanced by one schedule and hashed at t+30/90/150/200: `advance(dt, 1000/60)`
+   * and `advance(dt, 1000/60, { render: false })` agree on every bit at every checkpoint,
+   * while `advance(dt, 166)` and an exactly-five-tick `advance(dt, 1000/6)` both diverge from
+   * them at t+30 and stay diverged. Equal tick counts are not enough; how many ticks share a
+   * frame reaches the simulation. Several siege probes use the 166 ms idiom for speed and are
+   * therefore not fast-forwarding the same battle `qa-determinism.mjs` measures. The submit is
+   * the free saving; the step size is not.
+   *
+   * **It leaves the canvas stale.** Anything that screenshots after an advance must render a
+   * frame first, which the live rAF loop does on its own and a stopped one does not. That is
+   * why it is opt-in rather than the default.
    */
-  advance(seconds: number, stepMs = 1000 / 60): void {
+  advance(seconds: number, stepMs = 1000 / 60, opts: AdvanceOptions = {}): void {
     const n = Math.max(1, Math.round((seconds * 1000) / stepMs));
     let t = this.time.elapsed * 1000;
     /*
@@ -520,12 +583,21 @@ export class Engine {
     // and a resolution change part-way through an `advance` would make the harness's shots
     // depend on how loaded the machine was.
     const wasAdvancing = this.advancing;
+    const wasSkipping = this.skipSubmit;
     this.advancing = true;
-    for (let i = 0; i < n; i++) {
-      t += stepMs;
-      this.frame(t);
+    this.skipSubmit = opts.render === false;
+    try {
+      for (let i = 0; i < n; i++) {
+        t += stepMs;
+        this.frame(t);
+      }
+    } finally {
+      // `finally`, because a subsystem that throws mid-fast-forward must not leave the engine
+      // permanently unable to draw. The old code left `advancing` true on the same path and
+      // the page went quietly blind.
+      this.advancing = wasAdvancing;
+      this.skipSubmit = wasSkipping;
     }
-    this.advancing = wasAdvancing;
     // Hand the clock back to real time; the next rAF timestamp must not be differenced
     // against a synthetic one.
     this.time.rebase();
