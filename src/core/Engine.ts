@@ -551,6 +551,18 @@ export class Engine {
    * therefore not fast-forwarding the same battle `qa-determinism.mjs` measures. The submit is
    * the free saving; the step size is not.
    *
+   * **Annotated 21 August 2026 — the advice above is right and its stated reason is wrong.**
+   * Coarsening `stepMs` *does* change the battle at a given elapsed time, but not because
+   * frame grouping reaches the simulation. It is a tick count: at t+30, a 1000/60 step runs
+   * 900 ticks, a 166 ms step runs 901 and an exactly-five-tick 1000/6 step runs 899, because
+   * `double(1/6)` is about 7e-18 short of five times `double(1/30)` so the fifth subtraction
+   * fails once and `maxStepsPerFrame = 5` means the tick is never made up. The arms were never
+   * comparing equal tick counts. Held to an *equal tick count* — which `advanceTicks` below
+   * exists to do — a 6,407-tick battle carrying real recorded player input is bit-identical at
+   * 1000/6 and at 1000/60 on the pool hash, both unit hashes and `BattleFlow.result`, measured
+   * by `tools/qa-replay.mjs`. So the simulation is a pure function of (config, seed, tick
+   * index), and a probe that wants a cheap fast-forward should ask for ticks, not for seconds.
+   *
    * **It leaves the canvas stale.** Anything that screenshots after an advance must render a
    * frame first, which the live rAF loop does on its own and a stopped one does not. That is
    * why it is opt-in rather than the default.
@@ -603,6 +615,54 @@ export class Engine {
     // Hand the clock back to real time; the next rAF timestamp must not be differenced
     // against a synthetic one.
     this.time.rebase();
+  }
+
+  /**
+   * Advance until the simulation has executed **exactly** `ticks` more fixed steps.
+   *
+   * `advance(seconds, stepMs)` cannot do this. A frame runs up to `maxStepsPerFrame` ticks,
+   * so the last one overshoots by up to four — and four ticks of lateness is already a
+   * different battle. `Time.tickCeiling` closes that: the clock stops handing out steps at
+   * the target and the accumulator holds whatever it is owed.
+   *
+   * This is what lets a replay be compared with its recording across *different frame
+   * schedules*. The record is keyed to the tick index, so the only fair comparison is at an
+   * equal tick count, and equal elapsed seconds is not the same thing — measured, `t+30`
+   * comes out as 900 ticks at a 1000/60 step, 901 at 166 ms and 899 at an exactly-five-tick
+   * 1000/6, because `double(1/6)` is about 7e-18 short of five times `double(1/30)` and the
+   * fifth subtraction fails once. Three "identical" arms were never comparing equal tick
+   * counts.
+   *
+   * Returns the number of frames it took, which is the arm's own description of its schedule.
+   */
+  advanceTicks(ticks: number, stepMs = 1000 / 60, opts: AdvanceOptions = {}): number {
+    const target = this.time.tick + Math.max(0, Math.round(ticks));
+    const prevCeiling = this.time.tickCeiling;
+    this.time.tickCeiling = target;
+    let t = this.time.elapsed * 1000;
+    this.time.rebase(t);
+    const wasAdvancing = this.advancing;
+    const wasSkipping = this.skipSubmit;
+    this.advancing = true;
+    this.skipSubmit = opts.render === false;
+    // Bounded, because a paused clock never reaches the target and a spin is worse than a
+    // short run: at 30 Hz a tick needs 33.3 ms of scaled time, so this is generous by 4x.
+    const need = Math.max(0, target - this.time.tick);
+    const maxFrames = 256 + Math.ceil((need * (1000 / 30)) / Math.max(0.001, stepMs)) * 4;
+    let frames = 0;
+    try {
+      while (this.time.tick < target && frames < maxFrames) {
+        t += stepMs;
+        this.frame(t);
+        frames++;
+      }
+    } finally {
+      this.advancing = wasAdvancing;
+      this.skipSubmit = wasSkipping;
+      this.time.tickCeiling = prevCeiling;
+    }
+    this.time.rebase();
+    return frames;
   }
 
   private attachResize(): void {

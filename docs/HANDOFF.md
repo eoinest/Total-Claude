@@ -1907,7 +1907,7 @@ No netcode exists and none should yet. Against `MULTIPLAYER.md` §3 Stage 0:
 |---|---|---|
 | 1 | `Math.hypot` → `sqrt` | **done in the simulation scope.** 222 sites. `src/sim`, `src/ai`, `src/city` clean; **27 remain in terrain and map generation**, 12 of them in `src/maps/carthage/heightfield.ts` |
 | 2 | portability linter | **done, wider than designed** — `PORT_SCOPE` covers `src/city`, `src/terrain`, `src/maps`, with a ranked table (`tan` 41%, `hypot` 37%, `atan2`/`acos` 17%, `exp` 10%, `sin` 4%) |
-| 3 | hash into the product | **not done.** `uf64` and `uctl` exist, but `src/sim/stateHash.ts` does not — the harness still injects the hash as a string |
+| 3 | hash into the product | **done, 21 Aug** — `src/sim/stateHash.ts`, reached through `window.__game.hashes()` by `qa-determinism`, `qa-deploy`'s det arm and `qa-replay`. Arithmetic unchanged to the bit; no pin moved. See the next session |
 | 4 | extend the gate past the cliff | **done**, t+250 and t+400 (the design asked for t+300/t+600) |
 | 5 | **cross-engine arm** | **not done, and it is the one that matters** — the arm that goes red on Carthage's t+0 split and that would catch a Chrome patch |
 
@@ -1916,7 +1916,110 @@ through every pinned checkpoint and **diverge at t+205.5**; Carthage's assault d
 cause is implementation-approximated `Math`; the float32 pool is a firewall holding ~6,000 ticks;
 `UnitGroupState` is float64 with no firewall and had never been hashed.
 
-**Next, and unstarted: Stage 1, the replay record** — seed, config token, and an order log stamped
-with execution ticks. About 1.1 kB compressed for a 200-second battle. It is a shippable
-single-player feature on its own, it is the precondition for every realtime option, and it is the
-only instrument in the project that could catch a twenty-fourth out-of-band mutation.
+~~**Next, and unstarted: Stage 1, the replay record.**~~ **Built the next morning** — see the
+session below. Seed, config, and an order log stamped with execution ticks; measured at about
+1.2 kB for a 226-second battle against the design's 1.1 kB; and it does catch a twenty-fourth
+out-of-band mutation, which is checked rather than claimed by three arms of `qa-replay.mjs`
+that break the battle on purpose.
+
+---
+
+## Session — 21 Aug 2026: the replay record, and the gate that watches the input paths
+
+Branch `e/sim/replay-record`. Stage 1 of `docs/MULTIPLAYER.md`, plus Stage 0 item 3, which was
+never done and which Stage 1 needed. No networking of any kind — the design is explicit that
+realtime is a later decision to be re-made with better evidence, and nothing here touches it.
+
+### What a record is
+
+The seed, the config, and the order log with each order stamped with the tick it executed on.
+`src/sim/replay.ts` holds the format, the codec and `ReplaySystem`, which sits at **order 5** —
+ahead of `BattleSystem`'s 10, and therefore ahead of every `fixedUpdate` in the tree, so the
+queue drains at the top of a tick and nothing a frame boundary does can move an order.
+
+Four things ship from it and the fourth is the reason it was worth doing:
+
+- **save** — `Save replay` on the end card writes a `.tcr`
+- **share** — `Copy replay link` writes `?replay=<token>` to the clipboard
+- **watch** — `?replay=<token>` boots the recorded battle and plays it
+- **take command from here** — `&from=<seconds>`, or the `TAKE COMMAND` button. This one is one
+  comparison in `ReplaySystem.pump`: withholding the rest of the log *is* taking over. The
+  taken-over battle records itself from there, so it can be saved and shared in turn.
+
+### `tools/qa-replay.mjs`, and why it is not another determinism gate
+
+`qa-determinism.mjs` loads one build twice. Both of its runs take the same twenty-three
+out-of-band writes in the same order and agree perfectly, so it can answer *does this battle
+replay* and cannot answer *did the player's input reach the simulation through a path anybody
+recorded*. The new gate boots through the front door with a real mouse, records what that
+produces, and replays it in a fresh page **on a deliberately different frame schedule**.
+
+**16/16, seven arms, port 5245.** Three of the arms are failures if they go green:
+
+| broken on purpose | caught |
+|---|---|
+| one player order shifted **1 tick** later | pool hash at the next 30 s checkpoint |
+| an unrecorded `orderIssued` straight onto the bus at tick 3,203 | tick 3,600, by the product's own check |
+| `UnitGroupState.width` written from outside a tick at tick 2,135 | tick 2,700 |
+
+The design quotes four ticks of lateness as "already a different battle". **One is enough.**
+
+### Two measurements worth keeping
+
+**A 200-second battle is 1,224 bytes.** Measured: 226.1 s, 2,247 men, 34 recorded events (31
+player orders, 3 deployment operations), 9 checkpoints — 2,809 B of JSON, **1,224 B gzipped**, a
+1,632-character token. The design's estimate was 1.1 kB and it is right. Gzipped in isolation the
+split is config 476 B, order log 451 B, checkpoints 250 B, so **the order log alone is 14.5 bytes
+per order** against the design's 11–13 B estimate for a hand-rolled bit layout.
+
+**Frame grouping does not reach the simulation.** Three shipped comments say it does
+(`Engine.ts`'s `advance`, `main.ts`'s `fastForward`, `qa-determinism.mjs`'s header). Held to an
+**equal tick count** — which is what `Time.tickCeiling` and `Engine.advanceTicks` were added for
+— a 6,783-tick battle carrying real recorded player input is bit-identical at 1000/6 ms (five
+ticks a frame) and 1000/60 ms (one tick every two frames), on the pool hash, both unit hashes
+and `BattleFlow.result`. The three comments' *advice* is still right for the tools they sit in,
+because those drive by seconds and a coarser step there runs a different number of ticks (900 at
+1000/60, 901 at 166 ms, 899 at 1000/6). All three are now annotated with the real mechanism.
+
+### The gate earned its keep on its first run
+
+It found the bug `MULTIPLAYER.md` §4 warns Stage 4 about — *"round-trip your own orders through
+the codec … the commonest real lockstep bug, and it appeared in none of the three designs"* —
+twice, in Stage 1, in the deployment path. A right-drag placement was **recorded quantised and
+applied raw**, and an absent coordinate was **encoded as zero**, which stood a whole regiment at
+the world origin on playback. Both showed the exact signature the document predicts: `uctl`
+matching perfectly while `hash` and `uf64` did not.
+
+Positions in an order are therefore snapped to int16 over ±1400 m — 4.27 cm — **at the moment the
+order enters the queue, in live play as well as in playback**, so the number the simulation
+applies is the number the record carries. 4.27 cm against a 0.72 m rank pitch.
+
+### What moved in the product
+
+- **`src/sim/stateHash.ts`** — the gate's hash, in the product at last (`§1.10`'s last bullet).
+  `qa-determinism.mjs`, `qa-deploy.mjs`'s det arm and `qa-replay.mjs` all read it through
+  `window.__game.hashes()`. Arithmetic unchanged to the bit; all three battles, all seven
+  checkpoints, `hash`/`uf64`/`uctl` unmoved. **Do not "fix" `poolHash` into real FNV-1a** — it
+  multiplies with a float that rounds above 2^53 and twenty-one pins are keyed to that.
+- **`orderIssued.source` is required**, so the compiler finds the sixteenth emit site. Fifteen
+  today: seven in `SelectionController`, seven in `ai/Orders.ts`, one in `deployment.ts`.
+- **`SelectionController`'s direct `u.width` write is gone**, as its own comment asked.
+- **`issueHalt`'s two `Siege` countermands** run at the top of the tick the halt lands on,
+  still before `BattleSystem` hears it — the documented ordering is not inverted.
+- **`Time.tickCeiling`** and **`Engine.advanceTicks(n, stepMs)`**: run exactly n ticks at any
+  frame schedule. Inert at -1, which is every other run in the project.
+- **`vite.config.ts` reads `TC_VITE_CACHE_DIR`.** Every agent worktree symlinks `node_modules`
+  at the shared checkout, so the default `node_modules/.vite` is one dependency cache written by
+  as many vite processes as there are agents running a gate.
+
+### Left on the floor
+
+- **No build SHA.** Nothing in the bundle knows its own — `deploy-vercel.mjs` uploads a static
+  tree with no build step — so a foreign build is refused by its **t+0 checkpoint** instead,
+  which is a stronger test and cannot produce the link to an immutable deployment the design
+  wanted. The field is in the format for whoever adds a stamp.
+- **Every record commands Rome**, because `PLAYER_FACTION` is still a compile-time constant.
+- **A record made at `high` is refused at `low`**, by name, rather than silently fitted to a
+  smaller army. Right behaviour, bad outcome, and §7.5 of the design says so.
+- The checkpoint grid is 30 s, so a playback can be up to 30 s of battle behind the fault it is
+  about to report. Cheap to tighten if it ever matters; nothing suggests it does.

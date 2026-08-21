@@ -539,6 +539,95 @@ to cross-engine play and should be priced before anything realtime is started.
 
 ### Stage 1 — The replay record. 2–3 weeks. Ships: save, share, watch, take command.
 
+> **Built, 21 August 2026 — `e/sim/replay-record`.** All six items below are in the tree.
+> This block records what the building measured, including the four places it corrects this
+> document and the two places it did something other than what was asked.
+>
+> **What shipped.** `src/sim/replay.ts` (the format, the codec and `ReplaySystem`, at order 5
+> so its drain is the first thing in a tick), `src/sim/stateHash.ts` (Stage 0 item 3, which was
+> never done and which this needed), `src/ui/ReplayBar.ts`, two buttons on the end card, and
+> `tools/qa-replay.mjs` — **17 checks in seven arms**, booting through the front door
+> with a real mouse. `?replay=<token>` watches; `&from=<seconds>` takes command.
+>
+> **The size estimate is right. 1,224 bytes.** Measured on a battle driven through the real
+> menu with a real mouse: 226.1 s, 2,247 men, 34 recorded events (31 player orders and 3
+> deployment operations — one order every 7.3 s, which is somebody actually playing), 9
+> checkpoints. 2,809 B of JSON, **1,224 B gzipped**, a 1,632-character token that fits in a URL
+> with room to spare. Scaled to exactly 200 s that is about 1,180 B against the design's
+> **1.1 kB [M: async]** — inside 10%, from a completely different instrument. Gzipped in
+> isolation the split is config 476 B, order log 451 B, checkpoints 250 B, so the **order log
+> alone is 14.5 bytes per order** against §1.7's 11–13 B for a hand-rolled bit layout. The
+> difference is JSON tuples rather than packed bits, and it buys a format that is readable in a
+> debugger and versionable by appending. Note that a record is *not* only the order log: the
+> config is 39% of it, because the menu keeps every order of battle a player has ever built and
+> the token carries all seven so it is self-contained.
+>
+> **Item 4 was built and is not for what it says.** "A tick ceiling in `Time`, so the replay
+> player cannot step past the next order's tick" describes a problem the record does not have:
+> orders are keyed to a tick index and fed at the top of that tick from inside `fixedUpdate`,
+> so a frame boundary has nowhere to put one. `Time.tickCeiling` exists, but for the *gate* —
+> it is what makes `advanceTicks(n, stepMs)` run exactly n ticks, and without that a record and
+> a replay on two frame schedules cannot be compared at all, only at two different tick counts
+> that look like the same moment.
+>
+> **Item 5's deliberately-wrong arm is three arms, and one tick is enough.** An order shifted
+> by **one** tick moves the pool hash at the next 30 s checkpoint. §3 item 4 quotes the async
+> pass at "four ticks (133 ms) of lateness is already a different battle" — four is an upper
+> bound, not the threshold. The other two arms are the ones that matter more: an unrecorded
+> `orderIssued` emitted straight onto the bus mid-battle (the twenty-fourth input path,
+> simulated), and a direct write to `UnitGroupState.width` from outside a tick (the shape of the
+> bug §1.10 names at `SelectionController.ts:1538`). Both fork the battle and both are caught,
+> by the product's own checkpoint comparison, without the tool comparing anything.
+>
+> **§1.6 is confirmed by a fourth instrument, and this is the strongest form of it yet.** A
+> 6,407-tick battle carrying real recorded player input replays **bit-identically at 1000/6 ms
+> (five ticks a frame) and at 1000/60 ms (one tick every two frames)** — pool, `uf64` and `uctl`
+> at every checkpoint, and the same `BattleFlow.result`. The earlier cadence rigs measured a
+> battle with no player in it; this one measures a battle whose orders arrived at frame
+> boundaries that the two arms do not share. The three shipped comments §1.6 calls false are
+> still in the tree and are now annotated rather than deleted, because their *advice* is right
+> for the tool they sit in: `qa-determinism.mjs` drives by seconds, so coarsening its step does
+> change the tick count and does move the hash. The stated mechanism was the wrong one.
+>
+> **Four items of §1.10 are closed.** The gate's hash is in the product (`src/sim/stateHash.ts`,
+> arithmetic unchanged to the bit — all three battles, all seven checkpoints, `hash`, `uf64` and
+> `uctl` unmoved across the move). `orderIssued` carries `source: 'local' | 'ai' | 'deploy'`,
+> **required**, so the compiler finds the sixteenth emit site; the fifteen the document counts is
+> exactly right (seven in `SelectionController`, seven in `ai/Orders.ts`, one in `deployment.ts`).
+> `SelectionController.ts`'s direct `u.width` write is deleted. `issueHalt`'s two `Siege`
+> countermands now run at the top of the tick the halt lands on, still before `BattleSystem`
+> hears it, so the documented ordering is not inverted.
+>
+> **Two things were done differently, on purpose.**
+>
+> *There is no build SHA, and the refusal is measured instead.* §3 item 6 wants the record to
+> carry one and to refuse a foreign build "with a link to that build's immutable Vercel
+> deployment". Nothing in this bundle knows its own SHA — `tools/deploy-vercel.mjs` uploads a
+> static tree with no build step — so instead the record carries its checkpoint at tick 0 and the
+> playback recomputes it. A build that changed the battle is refused by name at t+0, before a
+> tick has run, which is a strictly stronger test of the thing the SHA is a proxy for. What is
+> lost is the link, and the field is in the format for whoever adds a stamp.
+>
+> *Ordered positions are quantised in live play, not only in the record.* §4's Stage 4 warning —
+> "round-trip your own orders through the codec … it is the commonest real lockstep bug and it
+> appeared in none of the three designs" — was applied one stage early: `x`/`z` are snapped to
+> int16 over ±1400 m (4.27 cm) at the moment an order enters the queue, so the number the
+> simulation applies is the number the record carries, in both directions. This is a behaviour
+> change to live play of 4.27 cm against a 0.72 m rank pitch. **It was worth it and the gate
+> proved so on its first execution**, which found the bug twice in the deployment path: a
+> right-drag placement recorded quantised and applied raw, and an absent coordinate encoded as
+> zero, which stood a whole regiment at the world origin. Both showed as `uctl` matching
+> perfectly while `hash` and `uf64` did not — the exact signature the document predicts. What
+> would change my mind: a case where the 4.27 cm snap flips a `Siege.wallTargetAt` decision, in
+> which case the raw float64 goes in the record and the round trip has to be found elsewhere.
+>
+> **What Stage 1 does *not* fix, and inherits.** `PLAYER_FACTION` is still a compile-time
+> constant, so every record commands Rome. Pause and speed are still raw writes to the clock —
+> harmless here, because a record is driven by tick index and a pause cannot displace an order,
+> but still true. And §7.5 stands unchanged: a record made at `high` is refused at `low` rather
+> than silently fitted to a smaller army, which is the right behaviour and still a bad outcome.
+
+
 1. **Add provenance to `orderIssued`** — a `source: 'local' | 'ai' | 'deploy'` field, set at all
    fifteen emit sites. Without it a bus recorder captures the AI's orders and double-applies them
    on playback (§1.10). This is unavoidable and it is why this stage is not two days.

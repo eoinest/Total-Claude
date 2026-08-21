@@ -41,6 +41,21 @@ export interface GameEvents {
     kind:
       | 'move' | 'attack' | 'attackMove' | 'halt' | 'formation' | 'facing' | 'ability'
       | 'gait' | 'garrison';
+    /**
+     * Who issued it. Required, so the compiler finds the sixteenth emit site.
+     *
+     * The channel carries the player's mouse and `src/ai/Orders.ts` on the same wire, and
+     * the AI emits about 6,159 orders per 200 s of the field battle. Anything that records
+     * "the player's orders" off this bus without a provenance test records all of those too,
+     * and on playback the AI regenerates them from the same seed while the recorder re-emits
+     * them — every order applied twice. That is why `src/sim/replay.ts` exists and why it
+     * only ever records `local`.
+     *
+     * `deploy` is the halt `DeploymentSystem.place` raises so that `applyOrder` re-plants
+     * `holdX/holdZ`. It is a consequence of a deployment operation that is recorded in its
+     * own right, so recording it as well would apply it twice.
+     */
+    source: 'local' | 'ai' | 'deploy';
     x?: number;
     z?: number;
     facing?: number;

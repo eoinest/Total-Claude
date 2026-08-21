@@ -242,33 +242,72 @@ A handful of soldiers differing points at one system; thousands points at the sc
 clock. The final line is `✓ deterministic across N checkpoints at M soldiers` or
 `✗ determinism BROKEN at N/M checkpoints`.
 
-**Known fault in this instrument: the hash exists twice.** `qa-determinism.mjs` and the `det`
-arm of `qa-deploy.mjs` each carry their own copy of `window.__poolHash`, injected as a source
-string into `page.evaluate`. Compared line by line at `6698e19` they are semantically
-identical and *already differ cosmetically* — one splits
-`const buf = new ArrayBuffer(4); const dv = new DataView(buf);` across two lines, the other
-inlines it — which is the leading indicator of the drift that matters.
+**~~Known fault in this instrument: the hash exists twice.~~ Fixed — and it went into the
+product, not into `tools/lib/`.** It used to be that `qa-determinism.mjs` and the `det` arm of
+`qa-deploy.mjs` each carried their own copy of `window.__poolHash` as a source string, that
+the two had *already* drifted cosmetically, and that both hardcoded `SoldierState.Dying` and
+`Dead` as the literals `10` and `11` with no way to import the enum, because the hash ran in
+the browser and `SoldierState` was not on `window.__game` at all.
 
-Worse, both hardcode the enum:
+The arithmetic now lives in **`src/sim/stateHash.ts`** and both tools reach it through
+`window.__game.hashes()`. `tools/qa-replay.mjs` is the third consumer and the reason this was
+worth doing: a replay gate carrying its own fourth copy of those forty lines is a gate that
+can pass while the other two fail. The enum is spelled once, in a file that can see it.
 
-```js
-if (p.state[i] !== 10 && p.state[i] !== 11) alive++;
+Two things about that file are deliberate and must survive any tidying:
+
+- **`poolHash` is not FNV-1a and must not be "fixed" into it.** It multiplies with
+  `h = (h * 0x01000193) >>> 0`, and above 2^53 that float product rounds — about 87.5% of the
+  products do. Twenty-one recorded hashes in `determinism-baseline.json` are keyed to exactly
+  that rounding. `unitHash`, written later with nothing pinned to it, *is* real FNV-1a via
+  `Math.imul`. The two being different is load-bearing.
+- **`hashes()` computes both halves in one pass.** The gate used to call `__poolHash()` and
+  `__unitHash()` separately per checkpoint, which walked the pool and the unit array twice for
+  one line of output.
+
+Verified across the move: all three battles, all seven checkpoints, `hash`, `uf64` and `uctl`
+unchanged.
+
+### `tools/qa-replay.mjs` — the record, driven by a real mouse through the real menu
+
+The instrument that can see an input path nobody told it about. **17 checks in seven arms** on
+port 5245.
+
+```sh
+node tools/qa-replay.mjs                                  # all arms, 200 s of battle
+node tools/qa-replay.mjs --only=record,replay --seconds=30   # the fast pair
+node tools/qa-replay.mjs --json=/tmp/replay.json --shots=/tmp/replay-shots
 ```
 
-`10` and `11` are `SoldierState.Dying` and `SoldierState.Dead` (`src/sim/types.ts:143-145`).
-Neither tool imports the enum, and it **cannot** — the hash runs in the browser and
-`SoldierState` is not exposed on `window.__game` at all.
+`qa-determinism.mjs` loads one build twice and compares the two runs. That answers *does this
+battle replay* and is structurally incapable of answering *did the player's input reach the
+simulation through a path anybody recorded* — both of its runs take the same out-of-band
+writes, in the same order, and agree perfectly. This file closes that gap: it boots through
+the front door, the setup sheet, BEGIN BATTLE and the deployment plaque, drives a real mouse
+and real keys, records what that produces, and replays the record in a fresh page.
 
-Be precise about the harm, because it is narrower than it first looks. The hash itself mixes
-`p.state[i]` raw, so a renumbered enum does not weaken the determinism comparison. What breaks
-is the **reported `alive` count**, and it breaks *identically in both runs*, so the gate still
-passes and simply prints a wrong headcount. That makes it invisible to the gate and visible
-only to a human — which is precisely the failure mode the "a number that cannot be true given
-its neighbour" heuristic exists to catch, now aimed at the instrument that heuristic is
-printed beside.
+| Arm | `--only=` | What it covers |
+|---|---|---|
+| record | `record` | The recorder saw the mouse: orders, keys, and the deployment plaque — and left the AI's thousands of orders on the bus where they belong |
+| replay | `replay` | Every checkpoint bit-identical; the re-recorded log is byte-identical; same `BattleFlow.result` |
+| coarse | `coarse` | The same battle at **five ticks a frame** instead of one every two |
+| late | `late` | An order shifted 1/2/4/8 ticks — a ladder, reporting the smallest lateness the gate can see |
+| bus | `bus` | An unrecorded `orderIssued` straight onto the bus, mid-battle — the twenty-fourth input path |
+| write | `write` | A direct write to `UnitGroupState` from outside a tick |
+| command | `command` | `?replay=…&from=<s>` — identical to the handover tick, then nothing fed |
 
-The fix is two small changes and neither is urgent: publish `SoldierState` on `window.__game`,
-and lift the hash into `tools/lib/pool-hash.mjs` so there is one copy for both gates to inject.
+**Three of the arms are failures if they go green.** `late`, `bus` and `write` break the battle
+on purpose and are only useful as evidence that the gate can see the fault it exists to catch.
+
+**Measured on the shipped field battle at `small`**: 226.1 s, 2,247 men, 34 recorded events,
+2,809 B of JSON, **1,224 B gzipped**, a 1,632-character token — config 476 B, order log 451 B,
+checkpoints 250 B when each is gzipped alone.
+
+**Comparison is at an equal tick count, never an equal elapsed time.** `window.__game
+.advanceTicks(n, stepMs)` runs exactly *n* ticks at whatever frame schedule is asked for,
+using the `Time.tickCeiling` added for it — because at t+30 a 1000/60 step gives 900 ticks, a
+166 ms step gives 901 and an exactly-five-tick 1000/6 step gives 899, and three earlier passes
+compared those arms as though they were the same battle at the same moment.
 
 ### `tools/check-determinism.mjs` — the invariant that used to have no enforcement
 

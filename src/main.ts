@@ -32,6 +32,8 @@ import { type Difficulty, type ScenarioId, sanitiseConfig } from './sim/battleCo
 import { MainMenu, resolveConfig } from './ui/MainMenu';
 import { ALL_FACTIONS, Faction } from './sim/types';
 import { installSeamCheck } from './core/seams';
+import { decodeReplay, type ReplayRecord, ReplaySystem } from './sim/replay';
+import { stateHashes, UNIT_CTL_FIELDS, UNIT_F64_FIELDS } from './sim/stateHash';
 
 /**
  * Entry point. Builds the engine, registers every subsystem, deploys the scenario
@@ -66,13 +68,22 @@ const loadText = document.getElementById('load-text') as HTMLElement | null;
  * and Battle leads into the setup flow this comment describes. `?menu=battle` opens straight
  * on the setup, which is what the probes that drive it use.
  *
- * Skipped entirely under `?harness=1` or `?menu=0`. Ultra is the default tier for players as
+ * Skipped entirely under `?harness=1`, `?menu=0`, or `?replay=` — a record carries its own
+ * battle and there is nothing left to choose. Ultra is the default tier for players as
  * well as the harness: the 16-shot pass measures every graded camera at ultra and the
  * slowest is 61-64 fps, so the tier the game is tuned and judged at is the one it opens on.
  * `?quality=` and `?difficulty=` still override, which is what the harness uses and the
  * escape hatch for weaker hardware.
  */
-const skipMenu = harness || params.get('menu') === '0';
+/*
+ * `?replay=` carries the battle inside it — config, seed, tier and the order log — so there is
+ * no menu to show and nothing for a stored preference to say. It is decoded below, after the
+ * `?quality=`/`?difficulty=` overlay, because the record's own answers win over all of them.
+ * `?from=<seconds>` plays that much of it and then hands the army over, which is "take command
+ * from here" and costs one comparison in `ReplaySystem.pump`.
+ */
+const replayToken = params.get('replay');
+const skipMenu = harness || params.get('menu') === '0' || replayToken !== null;
 let config = resolveConfig(params, !harness);
 {
   const q = params.get('quality') as QualityTier | null;
@@ -87,6 +98,37 @@ let config = resolveConfig(params, !harness);
   if (sc) config = { ...config, scenario: sc };
   config = sanitiseConfig(config);
 }
+let replayRecord: ReplayRecord | null = null;
+if (replayToken !== null) {
+  replayRecord = await decodeReplay(replayToken);
+  if (replayRecord) {
+    // The record's own config wins outright, including the tier: the army size is fitted to
+    // the tier and a record played at another one is a different battle, not a smaller one.
+    config = sanitiseConfig({ ...replayRecord.cfg, quality: replayRecord.quality });
+  } else {
+    console.error('[replay] ?replay= did not decode; falling back to the ordinary battle');
+  }
+}
+/**
+ * Drop a `.tcr` on the window to watch it.
+ *
+ * The file *is* the token — the same base64url string `Copy replay link` puts on the
+ * clipboard — so a record can travel as a file or as a URL and there is only one thing to
+ * read either way. Installed before the menu so it works on the front door, and left
+ * installed so it works mid-battle: dropping a record is a request to watch that one instead.
+ */
+addEventListener('dragover', (e) => e.preventDefault());
+addEventListener('drop', (e) => {
+  const file = e.dataTransfer?.files?.[0];
+  if (!file || !file.name.endsWith('.tcr')) return;
+  e.preventDefault();
+  void file.text().then((text) => {
+    const url = new URL(location.href);
+    url.search = '';
+    url.searchParams.set('replay', text.trim());
+    location.href = url.toString();
+  });
+});
 if (!skipMenu) {
   const menuHost = document.getElementById('menu-root') as HTMLElement;
   // The loading panel sits at z-index 100, above the menu, so it has to leave the layer
@@ -110,7 +152,11 @@ const difficulty = config.difficulty;
  */
 // Explicit `?autoplay=0` wins over the harness default, so an interaction test can load
 // the harness (for `window.__game`) while still leaving Rome under player control.
-const autoplay = params.has('autoplay') ? params.get('autoplay') === '1' : harness;
+// A replay is never autoplay: the log commands Rome, and handing Rome to the AI as well
+// would have two commanders fighting over one army — the same failure `installAI`'s
+// `commanded` argument exists to prevent.
+const autoplay = replayRecord ? false
+  : params.has('autoplay') ? params.get('autoplay') === '1' : harness;
 const playerFaction = Faction.Rome;
 
 /**
@@ -127,9 +173,9 @@ const playerFaction = Faction.Rome;
  * forces it off so a player can skip straight to the fight. It is refused outright under
  * autoplay: with both armies handed to the AI there is no player to deploy for.
  */
-const deployPhase = params.has('deploy')
-  ? params.get('deploy') === '1' && !autoplay
-  : !skipMenu && !autoplay;
+const deployPhase = replayRecord ? replayRecord.deployPhase
+  : params.has('deploy') ? params.get('deploy') === '1' && !autoplay
+    : !skipMenu && !autoplay;
 
 const engine = new Engine({
   canvas,
@@ -179,6 +225,15 @@ const battle = engine.add(new BattleSystem());
 // rather than replaced for the same reason: the forks hold no reference to this object, but
 // anything that later captures `battle.rng` would be left pointing at the discarded instance.
 battle.rng.setState(config.seed === 0 ? 0x9e3779b9 : config.seed >>> 0);
+/*
+ * The order log, at order 5 — ahead of every `fixedUpdate` in the tree.
+ *
+ * Registered here rather than with the UI because it is simulation, not interface: it owns
+ * the queue that turns "the player clicked" into "an order was applied at tick N", and the
+ * whole point of the tick number is that it does not depend on which frame the click landed
+ * in. `main.ts` binds its three non-bus outlets in `boot()`, once they exist.
+ */
+const replay = engine.add(new ReplaySystem());
 engine.add(new CombatSystem());
 engine.add(new ProjectileSystem());
 engine.add(new MoraleSystem());
@@ -276,6 +331,26 @@ async function boot(): Promise<void> {
   // After the armies are on the field, because the deployment zone is measured off them.
   deployment?.begin(config, playerFaction);
 
+  /*
+   * The record's header and its three outlets, in the one place all four exist.
+   *
+   * `unitSizeScale` and the pool count are only final once the scenario has run, and the
+   * deployment phase is only open one line above. `Siege` serves two of the outlets: the
+   * machine orders that have no `orderIssued` shape, and the two wall countermands `H` has
+   * to fire before the halt reaches `BattleSystem`.
+   */
+  replay.begin(config, config.quality, deployPhase);
+  if (deployment) replay.bindDeployment(deployment);
+  replay.bindMachines(battle.siege);
+  replay.bindWall(battle.siege);
+  if (replayRecord) {
+    const from = params.get('from');
+    const fromTick = from === null ? undefined : Math.max(0, Math.round(Number(from) * 30));
+    if (!replay.play(replayRecord, { fromTick })) {
+      if (loadText) loadText.textContent = replay.refusal;
+    }
+  }
+
   /**
    * Compare every cross-subsystem seam against the objects on the other side of it.
    *
@@ -319,6 +394,12 @@ declare global {
        * frame has run, not straight after this.
        */
       fastForward(seconds: number, stepMs?: number): void;
+      /**
+       * Run **exactly** `ticks` more fixed steps, at whatever frame schedule `stepMs` asks
+       * for. The one entry point a replay comparison can use: equal elapsed seconds is not
+       * equal tick counts (see `Engine.advanceTicks`), and the record is keyed to ticks.
+       */
+      advanceTicks(ticks: number, stepMs?: number): number;
       /** Park the camera for a repeatable screenshot. */
       setCamera(x: number, z: number, zoom: number, yaw: number): void;
       /** Sim seconds elapsed. */
@@ -333,6 +414,20 @@ declare global {
        * read through this.
        */
       deployment: DeploymentSystem | null;
+      /**
+       * The determinism marks, computed by the product.
+       *
+       * `tools/qa-determinism.mjs` used to inject the whole of this arithmetic as a template
+       * string, so the project's canonical state hash lived only in a test tool and a second
+       * consumer had to copy it. `tools/qa-replay.mjs` is that second consumer. See
+       * `src/sim/stateHash.ts`; the arithmetic is unchanged to the bit, because twenty-one
+       * pinned hashes are keyed to it.
+       */
+      hashes(): ReturnType<typeof stateHashes>;
+      /** The exact field lists the two unit hashes cover, so a localiser reads the same set. */
+      hashFields(): { f64: readonly string[]; ctl: readonly string[] };
+      /** The order log. Save, share, watch, and take command from here. */
+      replay: ReplaySystem;
     };
   }
 }
@@ -357,12 +452,28 @@ window.__game = {
    * So a coarse step is not a free speed-up, it is a different run, and a fast-forward that
    * took one would quietly stop being comparable with `qa-determinism`. This one is only ever
    * the same battle, sooner.
+   *
+   * **Annotated 21 August 2026 — right conclusion, wrong reason, and there is now a third
+   * option.** A coarse step at the same elapsed time runs a different *number of ticks* — 900
+   * at 1000/60, 901 at 166 ms, 899 at an exactly-five-tick 1000/6, because `double(1/6)` is
+   * about 7e-18 short of five times `double(1/30)` and `maxStepsPerFrame = 5` means the lost
+   * tick is never made up. Frame grouping itself does not reach the simulation: held to an
+   * equal tick count, five ticks a frame and one tick every two frames are bit-identical on
+   * the pool hash, both unit hashes and `BattleFlow.result` across a 6,407-tick battle with
+   * real recorded player orders in it (`tools/qa-replay.mjs`). If what you want is the same
+   * battle *cheaper*, ask for ticks: `advanceTicks` below does exactly n of them at whatever
+   * frame schedule you like.
    */
   fastForward: (seconds: number, stepMs = 1000 / 60) =>
     engine.advance(seconds, stepMs, { render: false }),
   setCamera: (x, z, zoom, yaw) => engine.rig.jumpTo(x, z, zoom, yaw),
+  advanceTicks: (ticks: number, stepMs = 1000 / 60) =>
+    engine.advanceTicks(ticks, stepMs, { render: false }),
   simTime: () => engine.time.simTime,
   deployment,
+  hashes: () => stateHashes(battle.pool, battle.units),
+  hashFields: () => ({ f64: UNIT_F64_FIELDS, ctl: UNIT_CTL_FIELDS }),
+  replay,
 };
 
 boot()

@@ -126,6 +126,29 @@ frame costs 13.4 ms at 8,644 men, 16.1 ms at 9,584 and 19.2 ms at 11,255.
 "Historical order of battle" restores the 271 AD deployment. "Copy link to this battle" puts
 the whole setup in the URL so it can be shared or replayed.
 
+### Replays
+
+When a battle ends, the dispatch offers **Copy replay link** and **Save replay**. Both carry
+the same thing: the seed, the setup, and every order you gave, each stamped with the exact
+simulation tick it executed on. A 200-second battle is about **1.2 kB** — small enough that the
+link *is* the file — and the `.tcr` can be dropped back onto the window to watch it.
+
+Watching a record is `?replay=<token>`. Adding `&from=<seconds>` plays it up to that moment and
+then hands you the army: **take command from here**, which is not a separate feature so much as
+what happens when the rest of the order log is withheld. The battle you take over records
+itself from there, so it can be saved and shared in turn.
+
+A record is refused rather than approximated. A quality tier that cannot field the recorded
+army is refused by name — `fittedUnitScale` would happily fit 1,515 men where 8,632 were
+recorded, and that is a different battle, not a smaller one — and so is a build of the game
+whose armies differ before a tick has run.
+
+`tools/qa-replay.mjs` is the gate: it boots through the real menu with a real mouse, records
+what that produces, and replays it in a fresh page on a deliberately different frame schedule,
+demanding bit-equality of the soldier pool, both unit-state hashes and the verdict. Three of
+its seven arms break the battle on purpose — an order applied one tick late, an order that
+skipped the recorder, a field written from outside a tick — and are failures if they *pass*.
+
 The setup screen is the *second* screen. The menu opens on a front door with three
 destinations — **Battle**, which is the setup screen above; **Technical documentation**, the
 four volumes at [total-claude-docs.vercel.app](https://total-claude-docs.vercel.app); and the
@@ -375,7 +398,8 @@ by name and communicate over a typed event bus. Four quality tiers.
 uniform-grid spatial hash rebuilt every tick. At 9,000 men an array-of-objects layout
 spends most of its time chasing pointers. Nothing in a fixed step touches `Math.random()`;
 every stochastic decision draws from a seeded stream, so a battle replays identically —
-verified by hashing every soldier's state across independent runs.
+verified by hashing every soldier's state across independent runs, and, since the replay
+record, by recording a battle driven by a real mouse and playing it back tick for tick.
 
 **Combat** resolves per soldier: only men who can actually reach an enemy fight, rear ranks
 press forward and step into gaps, blows land on the animation's weapon-contact frame, and

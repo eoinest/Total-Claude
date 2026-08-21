@@ -17,6 +17,7 @@
 import type { EngineContext, QualityTier, Subsystem } from '../core/Engine';
 import type { BattleSystem } from '../sim/BattleSystem';
 import type { DeploymentSystem } from '../sim/deployment';
+import type { PlayerOrder } from '../sim/replay';
 import { Banners, type WallSegment } from './Banners';
 import { BattleFlow } from './BattleFlow';
 import { CommandPanel } from './CommandPanel';
@@ -26,6 +27,7 @@ import { EventFeed } from './EventFeed';
 import { HudModel } from './model';
 import { Minimap } from './Minimap';
 import { PointerTracker } from './pointer';
+import { ReplayBar } from './ReplayBar';
 import { SelectionController } from './SelectionController';
 import { SettingsPanel } from './SettingsPanel';
 import {
@@ -69,6 +71,8 @@ export class HudSystem implements Subsystem {
   private minimap!: Minimap;
   private topbar!: TopBar;
   private feed!: EventFeed;
+  /** The REPLAY strip and the TAKE COMMAND button. Hidden unless a record is playing. */
+  private replayBar!: ReplayBar;
   private flow!: BattleFlow;
   private settings!: SettingsPanel;
   private tooltip!: Tooltip;
@@ -186,6 +190,7 @@ export class HudSystem implements Subsystem {
     this.minimap = new Minimap(this.model);
     this.topbar = new TopBar(this.model);
     this.feed = new EventFeed(this.model);
+    this.replayBar = new ReplayBar();
     this.flow = new BattleFlow(this.model);
     this.settings = new SettingsPanel();
 
@@ -200,6 +205,7 @@ export class HudSystem implements Subsystem {
     this.siege.attach(this.root);
     this.topbar.attach(this.root, ctx);
     this.feed.attach(this.root, ctx);
+    this.replayBar.attach(this.root);
     // The command plaque is anchored to the top edge of the card bar rather than to a
     // fixed offset, so the bar can wrap to a second row at large HUD scales without the
     // two panels colliding.
@@ -355,6 +361,22 @@ export class HudSystem implements Subsystem {
     }
 
     /*
+     * The order channel, and the reason the HUD no longer emits on the bus.
+     *
+     * `ReplaySystem` is registered by `main.ts` at order 5, ahead of every `fixedUpdate` in
+     * the tree. Everything the player commands goes through it: it quantises the click to
+     * the grid the record carries, drains at the top of the next tick, and writes the order
+     * into the log with that tick's number on it. With the system absent — a HUD built over
+     * a bare battle in a test — `SelectionController.send` falls back to the bus and nothing
+     * changes except that nothing is recorded.
+     */
+    const replay = ctx.tryGet('replay') as unknown as {
+      issue(o: PlayerOrder, opts?: { countermandWall?: boolean }): void;
+      machineOrder(unitId: number, x: number, z: number): void;
+    } | undefined;
+    if (replay) this.controller.orderSink = (o, opts) => replay.issue(o, opts);
+
+    /*
      * And the three verbs the siege train needs, installed the same way and separately.
      *
      * Separately because they are optional independently: a build whose `Siege` predates the
@@ -376,7 +398,20 @@ export class HudSystem implements Subsystem {
       this.siege.probe = {
         machineOrderAt: (u, x, z) => cmd.machineOrderAt!(u, x, z),
         machineDestinationOf: (u) => cmd.machineDestinationOf!(u),
-        requestMachineOrder: (u, x, z) => cmd.requestMachineOrder!(u, x, z),
+        /*
+         * Through the log if there is one, and it is the same tick either way.
+         *
+         * `Siege.requestMachineOrder` already queues to `machineOrders` and drains inside
+         * `fixedUpdate`, so this was the one input path in the game that was already
+         * correct — but it was not *numbered*, and "beat on that gate" has no `orderIssued`
+         * shape to be recorded off the bus. Routing it through the replay queue costs no
+         * latency: the queue drains at order 5 and `Siege`'s own drain runs inside
+         * `BattleSystem` at order 10, in the same tick.
+         */
+        requestMachineOrder: (u, x, z) => {
+          if (replay) replay.machineOrder(u, x, z);
+          else cmd.requestMachineOrder!(u, x, z);
+        },
         escaladeOfferAt: (u, x, z) => cmd.escaladeOfferAt!(u, x, z),
         crewStatusOf: (u) => cmd.crewStatusOf!(u),
       };
@@ -523,6 +558,8 @@ export class HudSystem implements Subsystem {
       // the wall and missile troops in range it reports "Missile Exchange" — over a battle
       // that has not started. The phase the player is in is the one the plaque says.
       if (this.deployment?.active) this.model.phase = 'deployment';
+      // On the 10 Hz tick with everything else: the strip only changes when the log does.
+      this.replayBar.update(ctx);
       if (this.model.pruneSelection()) {
         ctx.events.emit('selectionChanged', { unitIds: this.model.selection.slice() });
       }

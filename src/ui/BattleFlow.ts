@@ -494,6 +494,8 @@ export class BattleFlow {
            <div class="rs-flavour">${flavour}</div>
          </div>
          <div class="rs-foot">
+           <button class="rs-save ghost interactive" type="button" title="Download this battle as a .tcr file">Save replay</button>
+           <button class="rs-share ghost interactive" type="button" title="A link that plays this battle back">Copy replay link</button>
            <button class="rs-close interactive" type="button">Dismiss</button>
            <span class="rs-esc">Esc</span>
          </div>
@@ -511,16 +513,71 @@ export class BattleFlow {
     for (const sel of ['.rs-close', '.rs-x']) {
       this.results.querySelector(sel)?.addEventListener('click', dismiss);
     }
+    this.wireReplay(ctx);
     // The scrim itself, but not the panel: clicking the sheet around a modal closes it.
     this.results.addEventListener('click', (e) => {
       if (e.target === this.results) dismiss();
     });
     this.onKey = (e: KeyboardEvent) => {
+      // Enter dismisses — but not while it is being used to press one of the other three
+      // buttons, which would copy a link and then throw the panel away in one keystroke.
+      if (e.key === 'Enter'
+        && (document.activeElement as HTMLElement | null)?.closest('.rs-foot button:not(.rs-close)')) return;
       if (e.key === 'Escape' || e.key === 'Enter') dismiss();
     };
     window.addEventListener('keydown', this.onKey);
     // Focus so the keyboard reaches the dialog even if the canvas had it.
     (this.results.querySelector('.rs-close') as HTMLElement | null)?.focus();
+  }
+
+  /**
+   * The two buttons that make a finished battle a thing you can keep.
+   *
+   * A record is the seed, the config and the order log with each order stamped with the
+   * tick it executed on — a couple of kilobytes for a battle, which is small enough that
+   * the link *is* the file. `Save replay` writes the same bytes to disk for the ones that
+   * are not, and for anybody who would rather have a file than a URL.
+   *
+   * Both are inert with no `ReplaySystem` registered, which is the case in any harness that
+   * builds a HUD over a bare battle.
+   */
+  private wireReplay(ctx: EngineContext): void {
+    const rp = ctx.tryGet('replay') as unknown as { token(): Promise<string> } | undefined;
+    const save = this.results.querySelector('.rs-save') as HTMLButtonElement | null;
+    const share = this.results.querySelector('.rs-share') as HTMLButtonElement | null;
+    if (!rp) {
+      save?.remove();
+      share?.remove();
+      return;
+    }
+    const flash = (b: HTMLButtonElement | null, msg: string, back: string): void => {
+      if (!b) return;
+      b.textContent = msg;
+      setTimeout(() => { b.textContent = back; }, 2200);
+    };
+    share?.addEventListener('click', async () => {
+      const token = await rp.token();
+      const url = new URL(location.href);
+      url.search = '';
+      url.searchParams.set('replay', token);
+      try {
+        await navigator.clipboard.writeText(url.toString());
+        flash(share, 'Link copied', 'Copy replay link');
+      } catch {
+        // Clipboard is permission-gated and unavailable over plain http on some browsers.
+        history.replaceState(null, '', url);
+        flash(share, 'Link in address bar', 'Copy replay link');
+      }
+    });
+    save?.addEventListener('click', async () => {
+      const token = await rp.token();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([token], { type: 'application/octet-stream' }));
+      a.download = `battle-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '')}.tcr`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      flash(save, 'Saved', 'Save replay');
+    });
   }
 
   /** Close the dispatch and hand the HUD back. Idempotent. */

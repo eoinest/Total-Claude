@@ -32,6 +32,7 @@ import {
 } from './picking';
 import type { PointerTracker } from './pointer';
 import { abilityUI, PLAYER_FACTION } from './theme';
+import type { PlayerOrder } from '../sim/replay';
 import type { GhostSpec, WorldOverlay } from './WorldOverlay';
 
 export type CursorKind = 'default' | 'move' | 'attack' | 'friend' | 'select' | 'wall' | 'refuse';
@@ -285,6 +286,25 @@ export class SelectionController {
   wallValid = false;
 
   /**
+   * Where a player order goes. Installed by `HudSystem`; without it, straight to the bus.
+   *
+   * Not `ctx.events.emit` any more, and the difference is the whole of Stage 1. An order
+   * raised here lands in the gap *after* a frame's ticks — `Engine.frame` runs every
+   * `fixedUpdate` before any `update`, and this runs from `HudSystem.update` at order 700 —
+   * so it has always been tick-adjacent by accident and never tick-numbered. `ReplaySystem`
+   * queues it, quantises it, stamps it with the tick it is drained on, and puts it in the
+   * log. Same point in the tick sequence, now with a number on it.
+   *
+   * The fallback keeps a controller built without a sim behaving as it always did.
+   */
+  orderSink: ((o: PlayerOrder, opts?: { countermandWall?: boolean }) => void) | null = null;
+
+  private send(ctx: EngineContext, o: PlayerOrder, opts?: { countermandWall?: boolean }): void {
+    if (this.orderSink) this.orderSink(o, opts);
+    else ctx.events.emit('orderIssued', { ...o, source: 'local' });
+  }
+
+  /**
    * What the HUD needs from `Siege` to know a parapet when the cursor is over one.
    *
    * Duck-typed and installed by `HudSystem`, like `bannerAt` and `abilityProbe`: with no siege
@@ -470,14 +490,16 @@ export class SelectionController {
   issueHalt(ctx: EngineContext): void {
     const ids = this.orderIds();
     if (!ids.length) return;
-    const probe = this.wallProbe;
-    if (probe) {
-      for (const id of ids) {
-        probe.cancelWallPlan?.(id);
-        probe.releaseEscalade?.(id);
-      }
-    }
-    ctx.events.emit('orderIssued', { unitIds: ids, kind: 'halt' });
+    /*
+     * The two countermands now travel *with* the halt instead of running here.
+     *
+     * They used to be called on this line, from the update phase, outside any tick — two
+     * writes into `Siege`'s private maps that no recorder could see and no replay could
+     * reproduce. `ReplaySystem.dispatchOrder` fires them at the top of the tick the halt
+     * lands on, still before `BattleSystem` hears the event, which is the ordering the
+     * original comment insists on and the reason the halt sticks.
+     */
+    this.send(ctx, { unitIds: ids, kind: 'halt' }, { countermandWall: true });
   }
 
   /**
@@ -500,7 +522,7 @@ export class SelectionController {
       for (const uid of ids) dep.setFormation(uid, id);
       return;
     }
-    ctx.events.emit('orderIssued', { unitIds: ids, kind: 'formation', formation: id });
+    this.send(ctx, { unitIds: ids, kind: 'formation', formation: id });
   }
 
   /** Take the selection off the field. Deployment only; in play a unit is lost, not removed. */
@@ -522,7 +544,7 @@ export class SelectionController {
       ids.push(v.id);
     }
     if (!ids.length) return;
-    ctx.events.emit('orderIssued', { unitIds: ids, kind: 'ability', ability: id });
+    this.send(ctx, { unitIds: ids, kind: 'ability', ability: id });
     // Optimistic only on the fallback path; with the probe installed the sim's next tick
     // reports the real cooldown and this map is never read.
     if (!this.abilityProbe) {
@@ -1493,7 +1515,7 @@ export class SelectionController {
 
     // Attacking a specific unit overrides any frontage the drag implied.
     if (this.dragHostileId >= 0 && dragPx < DRAG_PX * 3) {
-      ctx.events.emit('orderIssued', {
+      this.send(ctx, {
         unitIds: sel.map((v) => v.id),
         kind: 'attack',
         targetUnitId: this.dragHostileId,
@@ -1518,7 +1540,7 @@ export class SelectionController {
      * ignores queued orders — a waypoint appended to a march is not a decision about the wall.
      */
     if (this.wallValid && !queued) {
-      ctx.events.emit('orderIssued', {
+      this.send(ctx, {
         unitIds: sel.map((v) => v.id),
         kind: attackMove ? 'attackMove' : 'move',
         x: this.wallX,
@@ -1530,13 +1552,16 @@ export class SelectionController {
 
     this.buildGhosts(ctx, dragPx);
     for (const g of this.ghosts) {
-      // `orderIssued.width` is the contract for a frontage order, but
-      // `BattleSystem.applyOrder` does not read it yet, so the width is also written
-      // through until it does. `width` is only consumed by the formation slot layout, so
-      // the duplicate cannot desynchronise anything; delete the assignment, not the
-      // event field, once the sim honours it.
-      if (g.width !== g.unit.width) g.unit.width = g.width;
-      ctx.events.emit('orderIssued', {
+      /*
+       * The direct write to `u.width` is gone, and its own comment asked for that.
+       *
+       * `orderIssued.width` is the contract, `BattleSystem.applyOrder` has honoured it for
+       * some time, and the duplicate was a UI file reaching into `UnitGroupState` from the
+       * update phase — a frontage change that happened outside any tick and was invisible
+       * to anything watching the bus. Deleting it costs one tick of latency on the ghost
+       * settling into its new frontage and buys a frontage order that can be recorded.
+       */
+      this.send(ctx, {
         unitIds: [g.unit.id],
         kind: attackMove ? 'attackMove' : 'move',
         x: g.x,
@@ -1571,7 +1596,7 @@ export class SelectionController {
       this.runByDefault = !this.runByDefault;
       const ids = this.model.selectedViews.filter((v) => !v.routing).map((v) => v.id);
       if (ids.length) {
-        ctx.events.emit('orderIssued', { unitIds: ids, kind: 'gait', running: this.runByDefault });
+        this.send(ctx, { unitIds: ids, kind: 'gait', running: this.runByDefault });
       }
     }
     if (input.keyPressed('Tab')) this.cycle(ctx);
