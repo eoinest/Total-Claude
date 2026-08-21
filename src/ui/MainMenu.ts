@@ -177,6 +177,9 @@ const ASIDES: readonly { id: string; label: string; sub: string; href: string }[
  * an enemy has already said where it wants to go; answering it with a screen that asks
  * "battle, docs or viewer?" is a worse answer than the question deserved.
  */
+/** Announced, never drawn. Every link on the front door but Battle carries it. */
+const NEW_TAB = ' <span class="sr-only">Opens in a new tab.</span>';
+
 const OPENS_ON_SETUP = ['battle', 'map', 'scenario', 'enemy'] as const;
 
 const startStep = (params?: URLSearchParams): MenuStep => {
@@ -415,8 +418,11 @@ export class MainMenu {
    */
   private homeMarkup(): string {
     const dest = (d: Destination): string => {
+      // The arrow-out-of-the-box glyph is the only thing on the plaque that says a click
+      // will leave the game, and a glyph says nothing to a screen reader. `NEW_TAB` is the
+      // same fact in words, clipped out of the visual layout — see `.sr-only` in `menu.css`.
       const body = `${icon(d.ic, 'dest-ic')}
-        <span class="dest-txt"><b>${d.label}</b><i>${d.sub}</i></span>
+        <span class="dest-txt"><b>${d.label}</b><i>${d.sub}${d.href ? NEW_TAB : ''}</i></span>
         <span class="dest-go" aria-hidden="true">${d.href ? '&#8599;' : '&rsaquo;'}</span>`;
       return d.href
         ? `<a class="dest dest-${d.id}" data-dest="${d.id}" href="${d.href}"
@@ -437,7 +443,7 @@ export class MainMenu {
       <footer class="home-foot">
         ${ASIDES.map((a) => `
           <a class="aside" data-aside="${a.id}" href="${a.href}" target="_blank" rel="noopener">
-            <b>${a.label}</b><i>${a.sub}</i>
+            <b>${a.label}</b><i>${a.sub}${NEW_TAB}</i>
           </a>`).join('')}
       </footer>
     </div>`;
