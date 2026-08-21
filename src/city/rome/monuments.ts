@@ -198,7 +198,7 @@ export function buildLandmarks(heightAt: Ground, seed: string): LandmarkOutput {
     cx /= members.length;
     cz /= members.length;
     let radius = 60;
-    for (const m of members) radius = Math.max(radius, Math.hypot(m.x - cx, m.z - cz) + m.clear + 40);
+    for (const m of members) radius = Math.max(radius, Math.sqrt((m.x - cx) * (m.x - cx) + (m.z - cz) * (m.z - cz)) + m.clear + 40);
     chunks.push({
       name: band.name,
       cx,
@@ -241,7 +241,7 @@ export function buildLandmarks(heightAt: Ground, seed: string): LandmarkOutput {
       cx /= n;
       cz /= n;
       let radius = 60;
-      for (const aq of AQUEDUCTS) for (const p of aq.path) radius = Math.max(radius, Math.hypot(p.x - cx, p.z - cz) + 30);
+      for (const aq of AQUEDUCTS) for (const p of aq.path) radius = Math.max(radius, Math.sqrt((p.x - cx) * (p.x - cx) + (p.z - cz) * (p.z - cz)) + 30);
       chunks.push({
         name: 'aqueducts',
         cx,
@@ -615,7 +615,7 @@ function buildSubstructure(
   for (let c = 0; c < 4; c++) {
     const [x0, z0] = corners[c];
     const [x1, z1] = corners[(c + 1) % 4];
-    const len = Math.hypot(x1 - x0, z1 - z0);
+    const len = Math.sqrt((x1 - x0) * (x1 - x0) + (z1 - z0) * (z1 - z0));
     const segs = Math.max(1, Math.round(len / 26));
     const dx = (x1 - x0) / len;
     const dz = (z1 - z0) / len;
@@ -921,7 +921,9 @@ function buildColosseum(batch: Batch, detail: number, g: number): void {
       const px = Math.cos(tm) * a * scale;
       const pz = Math.sin(tm) * b * scale;
       // Bay width from the chord between successive division points.
-      const bw = Math.hypot(Math.cos(t1) * a - Math.cos(t0) * a, Math.sin(t1) * b - Math.sin(t0) * b);
+      const chordX = Math.cos(t1) * a - Math.cos(t0) * a;
+      const chordZ = Math.sin(t1) * b - Math.sin(t0) * b;
+      const bw = Math.sqrt(chordX * chordX + chordZ * chordZ);
       // Tangent angle of the ellipse, so panels sit square to the façade.
       const ang = Math.atan2(Math.cos(tm) * a, -Math.sin(tm) * b);
       stone.push(new THREE.Matrix4().makeRotationY(ang).setPosition(px, y, pz));
@@ -953,7 +955,9 @@ function buildColosseum(batch: Batch, detail: number, g: number): void {
     const tm = (t0 + t1) / 2;
     const px = Math.cos(tm) * a * 0.976;
     const pz = Math.sin(tm) * b * 0.976;
-    const bw = Math.hypot(Math.cos(t1) * a - Math.cos(t0) * a, Math.sin(t1) * b - Math.sin(t0) * b);
+    const chordX = Math.cos(t1) * a - Math.cos(t0) * a;
+    const chordZ = Math.sin(t1) * b - Math.sin(t0) * b;
+    const bw = Math.sqrt(chordX * chordX + chordZ * chordZ);
     const ang = Math.atan2(Math.cos(tm) * a, -Math.sin(tm) * b);
     stone.push(new THREE.Matrix4().makeRotationY(ang).setPosition(px, y, pz));
     box(stone, -bw / 2 - 0.04, 0, 0, bw / 2 + 0.04, atticH, wallT, PAL.travertine, { topGain: 1.1 });
@@ -2587,7 +2591,7 @@ function buildCastra(batch: Batch, detail: number, g: number, W: number, D: numb
     [W / 2, -D / 2, W / 2, D / 2],
   ];
   for (const [x0, z0, x1, z1] of sides) {
-    const len = Math.hypot(x1 - x0, z1 - z0);
+    const len = Math.sqrt((x1 - x0) * (x1 - x0) + (z1 - z0) * (z1 - z0));
     const dx = (x1 - x0) / len;
     const dz = (z1 - z0) / len;
     const g0 = heightAt(m.x + x0, m.z + z0) - g;
@@ -2753,7 +2757,7 @@ function buildAqueduct(
   for (let seg = 0; seg + 1 < aq.path.length; seg++) {
     const a = aq.path[seg];
     const b = aq.path[seg + 1];
-    const len = Math.hypot(b.x - a.x, b.z - a.z);
+    const len = Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.z - a.z) * (b.z - a.z));
     const n = Math.max(1, Math.round(len / bay));
     const dirY = Math.atan2(b.x - a.x, b.z - a.z);
     for (let i = 0; i < n; i++) {
@@ -2941,7 +2945,7 @@ function planRoadTombs(heightAt: Ground, rng: Rng): { sites: TombSite[]; trees: 
     // Keep the carriageway clear and stop tombs growing into one another.
     if (Math.abs(x - roadCentreX(z)) < 13) continue;
     let tooClose = false;
-    for (const p of sites) if (Math.hypot(p.x - x, p.z - z) < size + p.size + 12) tooClose = true;
+    for (const p of sites) if (Math.sqrt((p.x - x) * (p.x - x) + (p.z - z) * (p.z - z)) < size + p.size + 12) tooClose = true;
     if (tooClose) continue;
     sites.push({ x, z, kind, rot, size, tone });
     if (kind === 'tumulus') {

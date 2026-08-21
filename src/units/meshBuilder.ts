@@ -622,7 +622,7 @@ export class MeshBuilder {
       const q = profile[Math.min(profile.length - 1, i + 1)];
       const dr = q[0] - p[0];
       const dy = q[1] - p[1];
-      const len = Math.hypot(dr, dy) || 1;
+      const len = Math.sqrt(dr * dr + dy * dy) || 1;
       // Sign set by the ring winding below, not by taste.
       //
       // `quad(ring[i][s], ring[i][s2], ring[i+1][s2], ring[i+1][s])` has a right-hand-rule
@@ -707,7 +707,7 @@ export class MeshBuilder {
       // The unwarped fallback normal, for the pole guard. Same expression as `revolve`'s.
       const dr = profile[jp][0] - profile[jm][0];
       const dy = profile[jp][1] - profile[jm][1];
-      const plen = Math.hypot(dr, dy) || 1;
+      const plen = Math.sqrt(dr * dr + dy * dy) || 1;
       for (const col of cols) {
         const a = a0 + (col.i / segments) * (a1 - a0);
         const w = warp(a, r, y);
@@ -721,7 +721,7 @@ export class MeshBuilder {
         let nx = -taz * tpy;
         let ny = taz * tpx - tax * tpz;
         let nz = tax * tpy;
-        const nl = Math.hypot(nx, ny, nz);
+        const nl = Math.sqrt(nx * nx + ny * ny + nz * nz);
         if (nl < 1e-12) {
           nx = Math.cos(a) * (-dy / plen); ny = dr / plen; nz = Math.sin(a) * (-dy / plen);
         } else {
@@ -906,7 +906,7 @@ export class MeshBuilder {
         const y = sy * halfH;
         // Face normal from the cylindrical curvature.
         const slope = -2 * curve * sx / halfW;
-        const len = Math.hypot(slope, 1);
+        const len = Math.sqrt(slope * slope + 1 * 1);
         const [u, v] = MeshBuilder.tileUv(faceUv, cs.f, rs.f);
         this.setAux((sx + 1) / 2, (sy + 1) / 2);
         fRow.push(this.vert(x, y, z(sx) + thickness * 0.5, slope / len, 0, 1 / len, u, v));
@@ -1078,7 +1078,7 @@ export class MeshBuilder {
           at(tu, tv, p);
           const [u, v] = MeshBuilder.tileUv(uv, cs.f, rs.f);
           // Push each shell a half-thickness along its own outward normal.
-          const nl = Math.hypot(p.nx, p.ny, p.nz) || 1;
+          const nl = Math.sqrt(p.nx * p.nx + p.ny * p.ny + p.nz * p.nz) || 1;
           const off = (facing * thickness) / (2 * nl);
           row.push(this.vert(
             p.x + p.nx * off, p.y + p.ny * off, p.z + p.nz * off,

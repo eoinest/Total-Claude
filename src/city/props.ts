@@ -47,7 +47,7 @@ export function buildTreeChunks(trees: TreeRequest[], heightAt: Ground): CityChu
     cx /= b.members.length;
     cz /= b.members.length;
     let radius = 40;
-    for (const t of b.members) radius = Math.max(radius, Math.hypot(t.x - cx, t.z - cz) + 20);
+    for (const t of b.members) radius = Math.max(radius, Math.sqrt((t.x - cx) * (t.x - cx) + (t.z - cz) * (t.z - cz)) + 20);
     chunks.push({
       name: b.name,
       cx,

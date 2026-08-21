@@ -726,7 +726,7 @@ function openingShot(
   const rig = ctx.rig;
   // Adopt the zoom standing on the wall itself, then ask the rig where that put the eye.
   rig.jumpTo(mx, mz, OPEN_ZOOM, yaw);
-  const plan = Math.hypot(rig.camera.position.x - rig.focus.x, rig.camera.position.z - rig.focus.z);
+  const plan = Math.sqrt((rig.camera.position.x - rig.focus.x) * (rig.camera.position.x - rig.focus.x) + (rig.camera.position.z - rig.focus.z) * (rig.camera.position.z - rig.focus.z));
   const rise = rig.camera.position.y - rig.focus.y;
   const halfFrame = (rig.camera.fov * Math.PI) / 360;
   const axis = Math.atan2(rise, plan);

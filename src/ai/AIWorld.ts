@@ -482,7 +482,7 @@ export class AIWorld {
       let visible = !e.concealed;
       if (!visible) {
         for (const m of mine) {
-          if (Math.hypot(m.x - e.x, m.z - e.z) <= SPOT_RANGE) {
+          if (Math.sqrt((m.x - e.x) * (m.x - e.x) + (m.z - e.z) * (m.z - e.z)) <= SPOT_RANGE) {
             visible = true;
             break;
           }
@@ -549,7 +549,7 @@ export class AIWorld {
         if (!other || other.destroyed) continue;
         const dxc = mem.x - u.x;
         const dzc = mem.z - u.z;
-        const centreDist = Math.hypot(dxc, dzc);
+        const centreDist = Math.sqrt(dxc * dxc + dzc * dzc);
         if (centreDist > THREAT_RANGE + rec.halfFront + mem.halfFront) continue;
 
         frontSegment(other, mem.halfFront, SEG_B);
@@ -725,7 +725,7 @@ export class AIWorld {
   friendlyFireRisk(shooter: UnitGroupState, targetX: number, targetZ: number): boolean {
     const dx = targetX - shooter.x;
     const dz = targetZ - shooter.z;
-    const len = Math.hypot(dx, dz);
+    const len = Math.sqrt(dx * dx + dz * dz);
     if (len < 1e-3) return false;
     const ux = dx / len;
     const uz = dz / len;
@@ -780,8 +780,8 @@ export class AIWorld {
       // than off to one side or already behind the target?
       const d2 = pointSegDist2(mem.x, mem.z, fromX, fromZ, target.x, target.z);
       if (d2 > (mem.halfFront + 22) * (mem.halfFront + 22)) continue;
-      const toTarget = Math.hypot(target.x - fromX, target.z - fromZ);
-      const toBlock = Math.hypot(mem.x - fromX, mem.z - fromZ);
+      const toTarget = Math.sqrt((target.x - fromX) * (target.x - fromX) + (target.z - fromZ) * (target.z - fromZ));
+      const toBlock = Math.sqrt((mem.x - fromX) * (mem.x - fromX) + (mem.z - fromZ) * (mem.z - fromZ));
       if (toBlock < toTarget - 6) return true;
     }
     return false;

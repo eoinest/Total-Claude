@@ -232,7 +232,7 @@ export class AbilitySystem implements Subsystem {
         for (let k = 0; k < units.length; k++) {
           const o = units[k];
           if (o.destroyed || o.faction === u.faction || o.alive === 0) continue;
-          const d = Math.hypot(o.x - u.x, o.z - u.z);
+          const d = Math.sqrt((o.x - u.x) * (o.x - u.x) + (o.z - u.z) * (o.z - u.z));
           if (d > WARCRY_RANGE) continue;
           const odef = this.battle.typeOf(o);
           o.morale = Math.max(
@@ -328,7 +328,7 @@ export class AbilitySystem implements Subsystem {
     for (let k = 0; k < units.length; k++) {
       const o = units[k];
       if (o.destroyed || o.faction !== u.faction || o.alive === 0) continue;
-      const d = Math.hypot(o.x - u.x, o.z - u.z);
+      const d = Math.sqrt((o.x - u.x) * (o.x - u.x) + (o.z - u.z) * (o.z - u.z));
       if (d > INSPIRE_RANGE) continue;
       const near = 1 - d / INSPIRE_RANGE;
       const m = modsOf(o.id);
@@ -385,13 +385,13 @@ export class AbilitySystem implements Subsystem {
         if (o.destroyed || o.faction === u.faction || o.alive === 0) continue;
         const dx = o.x - u.x;
         const dz = o.z - u.z;
-        const d = Math.hypot(dx, dz);
+        const d = Math.sqrt(dx * dx + dz * dz);
         if (d > 70) continue;
         const w = 1 / Math.max(8, d);
         ex += dx * w;
         ez += dz * w;
       }
-      const l = Math.hypot(ex, ez) || 1;
+      const l = Math.sqrt(ex * ex + ez * ez) || 1;
       u.order = UnitOrder.MoveTo;
       u.running = true;
       u.waypoints.length = 0;
@@ -433,7 +433,7 @@ export class AbilitySystem implements Subsystem {
           const o = units[k];
           if (o.destroyed || o.faction !== u.faction || o.id === u.id) continue;
           if (signalsOf(o.id).band === 0) continue;
-          if (Math.hypot(o.x - u.x, o.z - u.z) < INSPIRE_RANGE) return true;
+          if (Math.sqrt((o.x - u.x) * (o.x - u.x) + (o.z - u.z) * (o.z - u.z)) < INSPIRE_RANGE) return true;
         }
         return false;
       }
@@ -445,7 +445,7 @@ export class AbilitySystem implements Subsystem {
           const o = units[k];
           if (o.destroyed || o.faction === u.faction || o.alive === 0) continue;
           if (!isCavalry(b.typeOf(o))) continue;
-          if (Math.hypot(o.x - u.x, o.z - u.z) < 48) return true;
+          if (Math.sqrt((o.x - u.x) * (o.x - u.x) + (o.z - u.z) * (o.z - u.z)) < 48) return true;
         }
         return false;
       }

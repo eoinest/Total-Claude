@@ -142,7 +142,7 @@ export function normalFromHeight(
       const nx = -dx;
       const ny = -dy;
       const nz = 1;
-      const l = Math.hypot(nx, ny, nz);
+      const l = Math.sqrt(nx * nx + ny * ny + nz * nz);
       const o = (j * size + i) * 4;
       out[o] = Math.round(((nx / l) * 0.5 + 0.5) * 255);
       out[o + 1] = Math.round(((ny / l) * 0.5 + 0.5) * 255);
@@ -738,7 +738,7 @@ export function basaltPaving(size = 256): GeneratedMaps {
           const cy = ((gy + oy) % cells + cells) % cells;
           const px = (gx + ox + hash2(cx, cy, 5)) / cells;
           const py = (gy + oy + hash2(cx, cy, 9)) / cells;
-          const d = Math.hypot(u - px, v - py);
+          const d = Math.sqrt((u - px) * (u - px) + (v - py) * (v - py));
           if (d < d0) {
             d1 = d0;
             d0 = d;

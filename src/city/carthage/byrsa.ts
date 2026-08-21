@@ -102,9 +102,11 @@ function revetmentRing(
     const z1 = Math.sin(a1) * hd;
     const mx = (x0 + x1) * 0.5;
     const mz = (z0 + z1) * 0.5;
-    const nl = Math.hypot(mx / (hw * hw), mz / (hd * hd)) || 1;
-    const nx = mx / (hw * hw) / nl;
-    const nz = mz / (hd * hd) / nl;
+    const gx = mx / (hw * hw);
+    const gz = mz / (hd * hd);
+    const nl = Math.sqrt(gx * gx + gz * gz) || 1;
+    const nx = gx / nl;
+    const nz = gz / nl;
     // A Punic retaining wall leans back about 1 in 12, and the batter is what separates a
     // revetment from a curtain at any distance.
     const bat = (y1 - y0) / 12;

@@ -272,7 +272,7 @@ export function buildHarbours(heightAt: (x: number, z: number) => number): Harbo
     name: 'harbour-merchant',
     cx: mh.x,
     cz: mh.z,
-    radius: Math.hypot(mh.hw + mh.quayWest, mh.hd + mh.quayEast) + 20,
+    radius: Math.sqrt((mh.hw + mh.quayWest) * (mh.hw + mh.quayWest) + (mh.hd + mh.quayEast) * (mh.hd + mh.quayEast)) + 20,
     castShadow: true,
     lodSwitch: [300, 1100],
     farMaterial: 'stone',

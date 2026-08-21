@@ -664,7 +664,7 @@ const triBuffer = (): {
     let nx = uy * vz2 - uz * vy2;
     let ny = uz * vx2 - ux * vz2;
     let nz = ux * vy2 - uy * vx2;
-    const l = Math.hypot(nx, ny, nz) || 1;
+    const l = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
     nx /= l; ny /= l; nz /= l;
     const base = pos.length / 3;
     pos.push(ax, ay, az, bx, by, bz, cx, cy, cz);
@@ -1258,7 +1258,7 @@ export class ProjectileSystem implements Subsystem {
       for (let k = 0; k < units.length; k++) {
         const o = units[k];
         if (o.destroyed || o.faction === u.faction || o.alive === 0) continue;
-        const d = Math.hypot(o.x - u.x, o.z - u.z);
+        const d = Math.sqrt((o.x - u.x) * (o.x - u.x) + (o.z - u.z) * (o.z - u.z));
         if (d >= bestD) continue;
         if (d >= this.effectiveRange(m.kind, m.range, b.levelOf(o.id) - ownY)) continue;
         // Only for a candidate that would actually become the target, so the corridor scan
@@ -1529,7 +1529,7 @@ export class ProjectileSystem implements Subsystem {
     for (let k = 0; k < units.length; k++) {
       const o = units[k];
       if (o.destroyed || o.faction === u.faction || o.alive === 0) continue;
-      const d = Math.hypot(o.x - u.x, o.z - u.z);
+      const d = Math.sqrt((o.x - u.x) * (o.x - u.x) + (o.z - u.z) * (o.z - u.z));
       if (d > range) continue;
       let score: number;
       if (stone) {
@@ -1610,12 +1610,12 @@ export class ProjectileSystem implements Subsystem {
     }
 
     // Two passes of lead, same as the volley solve.
-    let d = Math.hypot(tx - fx, tz - fz);
+    let d = Math.sqrt((tx - fx) * (tx - fx) + (tz - fz) * (tz - fz));
     for (let pass = 0; pass < 2; pass++) {
       const tof = d / Math.max(6, phys.speed * 0.8);
       const lx = tx + tvx * tof;
       const lz = tz + tvz * tof;
-      d = Math.hypot(lx - fx, lz - fz);
+      d = Math.sqrt((lx - fx) * (lx - fx) + (lz - fz) * (lz - fz));
       if (pass === 1) { tx = lx; tz = lz; }
     }
     if (d < 8 || d > range) return false;
@@ -1624,7 +1624,7 @@ export class ProjectileSystem implements Subsystem {
     // The correction survives only while this machine keeps shooting at the same block and
     // that block stays roughly where it was. A target that has moved 18 m has moved further
     // than the bracket is worth, and the crew starts again.
-    const moved = Math.hypot(tx - bat.lastAimX[k], tz - bat.lastAimZ[k]);
+    const moved = Math.sqrt((tx - bat.lastAimX[k]) * (tx - bat.lastAimX[k]) + (tz - bat.lastAimZ[k]) * (tz - bat.lastAimZ[k]));
     if (bat.rangedOn[k] !== target.id || moved > 18) {
       bat.rangedOn[k] = target.id;
       bat.onTarget[k] = 0;
@@ -1772,7 +1772,7 @@ export class ProjectileSystem implements Subsystem {
 
     const dx = toX - PARAPET_X;
     const dz = toZ - PARAPET_Z;
-    const dLen = Math.hypot(dx, dz);
+    const dLen = Math.sqrt(dx * dx + dz * dz);
     if (dLen < 1e-3) { this.wSkip[3]++; return; }
     // Only an outward shot has a battlement in front of it. A man shooting back into the city
     // — at besiegers who have taken a stretch of the walk, or down the stair behind him — has
@@ -1866,7 +1866,7 @@ export class ProjectileSystem implements Subsystem {
     // ---- predicted aim point, two passes ----
     let tx = p.x[t];
     let tz = p.z[t];
-    let d = Math.hypot(tx - sx, tz - sz);
+    let d = Math.sqrt((tx - sx) * (tx - sx) + (tz - sz) * (tz - sz));
     // Both bounds, and the second is the fix for the Balearic slingers. `m.range` is what the
     // roster claims; `effectiveRange` is what the physics can actually deliver, and for the two
     // `arc: 'high'` weapons those disagreed — a sling could throw 104 m and claimed 180. Past
@@ -1903,7 +1903,7 @@ export class ProjectileSystem implements Subsystem {
     for (let pass = 0; pass < 2; pass++) {
       tx = p.x[t] + p.vx[t] * tof;
       tz = p.z[t] + p.vz[t] * tof;
-      d = Math.hypot(tx - sx, tz - sz);
+      d = Math.sqrt((tx - sx) * (tx - sx) + (tz - sz) * (tz - sz));
       tof = d / Math.max(6, phys.speed * 0.8);
     }
     // Aim at the man, not at the ground he is nominally over. This read used to be
@@ -1988,7 +1988,7 @@ export class ProjectileSystem implements Subsystem {
      * under the lane's own half-width.
      */
     // ---- accuracy ----
-    const moving = Math.hypot(p.vx[i], p.vz[i]) > 0.5 ? 1 : 0;
+    const moving = Math.sqrt(p.vx[i] * p.vx[i] + p.vz[i] * p.vz[i]) > 0.5 ? 1 : 0;
     const mods = modsOf(u.id);
     const spread = m.accuracy * mods.missileSpread
       * (1 + 0.9 * (d / m.range))
@@ -2104,7 +2104,7 @@ export class ProjectileSystem implements Subsystem {
     const phys = physicsOf(opts.kind);
     const dx = opts.toX - opts.fromX;
     const dz = opts.toZ - opts.fromZ;
-    const d = Math.hypot(dx, dz);
+    const d = Math.sqrt(dx * dx + dz * dz);
     if (d < 1) return false;
     const h = opts.toY - opts.fromY;
     const dComp = d * (1 + phys.dragComp * d);
@@ -2262,7 +2262,7 @@ export class ProjectileSystem implements Subsystem {
       if (this.life[i] > ARM_TIME) {
         const midX = (x0 + x1) * 0.5;
         const midZ = (z0 + z1) * 0.5;
-        const half = Math.hypot(x1 - x0, z1 - z0) * 0.5;
+        const half = Math.sqrt((x1 - x0) * (x1 - x0) + (z1 - z0) * (z1 - z0)) * 0.5;
         SEG_X0 = x0; SEG_Z0 = z0; SEG_Y0 = y0;
         SEG_X1 = x1; SEG_Z1 = z1; SEG_Y1 = y1;
         SEG_BEST_T = 2;
@@ -2372,7 +2372,7 @@ export class ProjectileSystem implements Subsystem {
       const j = BLAST_HIT[n];
       const dv = this.unitById(p.unitId[j]);
       if (!dv) continue;
-      const d = Math.hypot(p.x[j] - x, p.z[j] - z);
+      const d = Math.sqrt((p.x[j] - x) * (p.x[j] - x) + (p.z[j] - z) * (p.z[j] - z));
       const t = 1 - Math.min(1, d / R);
       const f = t * t * 0.7;
       if (f < 0.02) continue;
@@ -2427,7 +2427,7 @@ export class ProjectileSystem implements Subsystem {
       return;
     }
     this.wSelfLife[r] += this.life[i];
-    this.wSelfRange[r] += Math.hypot(this.px[i] - this.srcX[i], this.pz[i] - this.srcZ[i]);
+    this.wSelfRange[r] += Math.sqrt((this.px[i] - this.srcX[i]) * (this.px[i] - this.srcX[i]) + (this.pz[i] - this.srcZ[i]) * (this.pz[i] - this.srcZ[i]));
     this.wSelfUp[r] += this.py[i] - this.wFootY[i];
     const e = this.wall !== null ? this.wall.embrasureAt(this.px[i], this.pz[i]) : null;
     if (e === null) this.wSelfNoBay[r]++;
@@ -2470,15 +2470,15 @@ export class ProjectileSystem implements Subsystem {
     i: number, j: number, friendly: boolean, hx: number, hz: number, victimUnit: number
   ): void {
     const arc = this.kindLofted[this.kindIdx[i]];
-    const bin = ffBand(Math.hypot(hx - this.srcX[i], hz - this.srcZ[i]), FF_BAND_M);
+    const bin = ffBand(Math.sqrt((hx - this.srcX[i]) * (hx - this.srcX[i]) + (hz - this.srcZ[i]) * (hz - this.srcZ[i])), FF_BAND_M);
     // The first 48 after a reset and then nothing, so the one allocation in this method stops
     // happening at all in the hot path rather than merely being overwritten.
     if (friendly && this.ffSampleAt < 48) {
       const p0 = this.battle.pool;
       this.ffSample[this.ffSampleAt++] = [
         this.kindIdx[i], +this.life[i].toFixed(4),
-        +Math.hypot(hx - this.srcX[i], hz - this.srcZ[i]).toFixed(3),
-        +Math.hypot(this.vx[i], this.vy[i], this.vz[i]).toFixed(2),
+        +Math.sqrt((hx - this.srcX[i]) * (hx - this.srcX[i]) + (hz - this.srcZ[i]) * (hz - this.srcZ[i])).toFixed(3),
+        +Math.sqrt(this.vx[i] * this.vx[i] + this.vy[i] * this.vy[i] + this.vz[i] * this.vz[i]).toFixed(2),
         this.srcRank[i], p0.rank[j], this.ownerUnit[i], victimUnit,
         +this.srcY[i].toFixed(2), +p0.y[j].toFixed(2), this.fromWall[i],
       ];
@@ -2515,7 +2515,7 @@ export class ProjectileSystem implements Subsystem {
   /** Score a landing against the point it was solved for. See `aimX`. */
   private noteMiss(i: number, x: number, z: number): void {
     const k = this.kindIdx[i];
-    this.cMiss[k] += Math.hypot(x - this.aimX[i], z - this.aimZ[i]);
+    this.cMiss[k] += Math.sqrt((x - this.aimX[i]) * (x - this.aimX[i]) + (z - this.aimZ[i]) * (z - this.aimZ[i]));
     this.cMissN[k]++;
   }
 
@@ -2550,7 +2550,7 @@ export class ProjectileSystem implements Subsystem {
     const df = formation(dv.formationId);
 
     // Incoming direction, from the defender's point of view.
-    const sp = Math.hypot(this.vx[i], this.vz[i]) || 1;
+    const sp = Math.sqrt(this.vx[i] * this.vx[i] + this.vz[i] * this.vz[i]) || 1;
     const bx = -this.vx[i] / sp;
     const bz = -this.vz[i] / sp;
     const cosMan = bx * Math.sin(p.facing[j]) + bz * Math.cos(p.facing[j]);
@@ -2664,7 +2664,7 @@ export class ProjectileSystem implements Subsystem {
     this.stuckCursor = (s + 1) % MAX_STUCK;
     if (this.stuckCount < MAX_STUCK) this.stuckCount++;
 
-    const sp = Math.hypot(this.vx[i], this.vy[i], this.vz[i]) || 1;
+    const sp = Math.sqrt(this.vx[i] * this.vx[i] + this.vy[i] * this.vy[i] + this.vz[i] * this.vz[i]) || 1;
     this.sx[s] = x;
     this.sy[s] = y;
     this.sz[s] = z;
@@ -2868,7 +2868,7 @@ export class ProjectileSystem implements Subsystem {
     const col = new Float32Array(p.count * 3);
     for (let i = 0; i < p.count; i++) {
       const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-      const l = Math.hypot(x, y, z) || 1;
+      const l = Math.sqrt(x * x + y * y + z * z) || 1;
       const ux = x / l, uy = y / l, uz = z / l;
       // Two octaves of a direction-only lumpiness. Continuous in direction, so every copy of a
       // shared corner lands on exactly the same point.

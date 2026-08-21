@@ -262,7 +262,7 @@ interface StrayReport {
  */
 function outworkSpans(ow: OutworkOut): [number, number, number, number][] {
   if (ow.standsDown) return [];
-  const len = Math.hypot(ow.x1 - ow.x0, ow.z1 - ow.z0);
+  const len = Math.sqrt((ow.x1 - ow.x0) * (ow.x1 - ow.x0) + (ow.z1 - ow.z0) * (ow.z1 - ow.z0));
   const at = (t: number): [number, number] => [ow.x0 + ow.dx * t, ow.z0 + ow.dz * t];
   if (ow.passageAt === null) return [[ow.x0, ow.z0, ow.x1, ow.z1]];
   const half = 3.0;
@@ -342,7 +342,7 @@ function stairSolid(s: WallStair): {
 } | null {
   const dx = s.headX - s.footX;
   const dz = s.headZ - s.footZ;
-  const len = Math.hypot(dx, dz);
+  const len = Math.sqrt(dx * dx + dz * dz);
   if (!(len > 1e-3) || !(s.rise > 0)) return null;
   // Fraction of the rake left open at the foot. Capped at half the flight so a shallow
   // stair — one that never gets 1.2 m off the ground — still presents a solid upper half
@@ -681,7 +681,7 @@ export class CitySystem implements Subsystem {
       if (!solid) continue;
       const dx = solid.x2 - solid.x1;
       const dz = solid.z2 - solid.z1;
-      const len = Math.hypot(dx, dz);
+      const len = Math.sqrt(dx * dx + dz * dz);
       if (len < 0.5) continue;
       const back = Math.min(0.6, (OCC_CELL * 0.5 + solid.halfW) / len);
       this.markSegment(
@@ -868,7 +868,7 @@ export class CitySystem implements Subsystem {
      */
     for (const ow of this.outworks) {
       for (const [ax, az, bx, bz] of outworkSpans(ow)) {
-        const len = Math.hypot(bx - ax, bz - az);
+        const len = Math.sqrt((bx - ax) * (bx - ax) + (bz - az) * (bz - az));
         if (len < 0.5) continue;
         out.push({
           x: (ax + bx) * 0.5, z: (az + bz) * 0.5,
@@ -900,7 +900,7 @@ export class CitySystem implements Subsystem {
       if (!solid) continue;
       const dx = solid.x2 - solid.x1;
       const dz = solid.z2 - solid.z1;
-      const len = Math.hypot(dx, dz);
+      const len = Math.sqrt(dx * dx + dz * dz);
       if (len < 0.5) continue;
       out.push({
         x: (solid.x1 + solid.x2) * 0.5, z: (solid.z1 + solid.z2) * 0.5,
@@ -928,7 +928,7 @@ export class CitySystem implements Subsystem {
   ): void {
     const dx = x2 - x1;
     const dz = z2 - z1;
-    const len = Math.hypot(dx, dz);
+    const len = Math.sqrt(dx * dx + dz * dz);
     if (len < 1e-4) return;
     // `rot` is the yaw of the box's u axis, and the u axis is (cos rot, sin rot) in (x,z) —
     // the same convention `markRect` uses — so this points u along the wall.
@@ -1085,7 +1085,7 @@ export class CitySystem implements Subsystem {
           for (let i = 0; i < pos.count; i++) {
             const x = arr[i * 3];
             const z = arr[i * 3 + 2];
-            const d = Math.hypot(x - c.cx, z - c.cz);
+            const d = Math.sqrt((x - c.cx) * (x - c.cx) + (z - c.cz) * (z - c.cz));
             if (d > farD) {
               farD = d;
               fx = x;
@@ -1224,10 +1224,10 @@ export class CitySystem implements Subsystem {
   ): boolean {
     const dx = bx - ax, dy = by - ay, dz = bz - az;
     const mx = (ax + bx) * 0.5, mz = (az + bz) * 0.5;
-    const reach = Math.hypot(dx, dy, dz) * 0.5;
+    const reach = Math.sqrt(dx * dx + dy * dy + dz * dz) * 0.5;
     for (const c of this.chunks) {
       if (c.gateDoorFor || c.gateWreckFor || c.scenery) continue;
-      if (Math.hypot(c.cx - mx, c.cz - mz) > c.radius + reach) continue;
+      if (Math.sqrt((c.cx - mx) * (c.cx - mx) + (c.cz - mz) * (c.cz - mz)) > c.radius + reach) continue;
       for (const child of c.levels[0].group.children) {
         const mesh = child as THREE.Mesh;
         if (!mesh.isMesh) continue;
@@ -2475,7 +2475,7 @@ export class CitySystem implements Subsystem {
   }
 
   private markSegment(x1: number, z1: number, x2: number, z2: number, halfW: number, value = 1): void {
-    const len = Math.hypot(x2 - x1, z2 - z1);
+    const len = Math.sqrt((x2 - x1) * (x2 - x1) + (z2 - z1) * (z2 - z1));
     const steps = Math.max(1, Math.ceil(len / (OCC_CELL * 0.5)));
     const r = Math.ceil((halfW + OCC_CELL) / OCC_CELL);
     // Distance-tested rather than a square stamp: a square would clear or block a
@@ -2491,7 +2491,7 @@ export class CitySystem implements Subsystem {
         for (let i = -r; i <= r; i++) {
           const wx = (cx + i) * OCC_CELL - HALF_EXTENT + OCC_CELL * 0.5;
           const wz = (cz + j) * OCC_CELL - HALF_EXTENT + OCC_CELL * 0.5;
-          if (Math.hypot(wx - px, wz - pz) > lim) continue;
+          if (Math.sqrt((wx - px) * (wx - px) + (wz - pz) * (wz - pz)) > lim) continue;
           this.paint(cx + i, cz + j, value);
         }
       }

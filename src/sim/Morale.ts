@@ -534,7 +534,7 @@ export class MoraleSystem implements Subsystem {
       const o = units[k];
       if (o === u || o.destroyed || o.alive === 0) continue;
       if (o.order !== UnitOrder.Rout) continue;
-      const d = Math.hypot(o.x - u.x, o.z - u.z);
+      const d = Math.sqrt((o.x - u.x) * (o.x - u.x) + (o.z - u.z) * (o.z - u.z));
       if (d > CONTAGION_RANGE) continue;
       const near = 1 - d / CONTAGION_RANGE;
       if (o.faction === u.faction) friend += P_WITNESS_FRIEND * near;
@@ -595,7 +595,7 @@ export class MoraleSystem implements Subsystem {
       const o = units[k];
       if (o.destroyed || o.alive === 0 || !areEnemies(o.faction, u.faction)) continue;
       if (Math.abs(b.levelOf(o.id) - myY) > SAME_LEVEL_DY) continue;
-      const d = Math.hypot(o.x - u.x, o.z - u.z);
+      const d = Math.sqrt((o.x - u.x) * (o.x - u.x) + (o.z - u.z) * (o.z - u.z));
       if (d < best) best = d;
     }
     return best;
@@ -610,7 +610,7 @@ export class MoraleSystem implements Subsystem {
       if (o.destroyed || o.faction !== u.faction || o === u) continue;
       if (this.battle.typeOf(o).unitClass !== 'general') continue;
       if (o.order === UnitOrder.Rout) continue;
-      const d = Math.hypot(o.x - u.x, o.z - u.z);
+      const d = Math.sqrt((o.x - u.x) * (o.x - u.x) + (o.z - u.z) * (o.z - u.z));
       if (d > 110) continue;
       best = Math.max(best, 9 * (1 - d / 110));
     }
@@ -641,7 +641,7 @@ export class MoraleSystem implements Subsystem {
       const o = units[k];
       if (o.destroyed || o.id === unitId || o.faction !== src.faction) continue;
       if (o.order === UnitOrder.Rout) continue;
-      const d = Math.hypot(o.x - src.x, o.z - src.z);
+      const d = Math.sqrt((o.x - src.x) * (o.x - src.x) + (o.z - src.z) * (o.z - src.z));
       if (d > CONTAGION_RANGE) continue;
       this.grow(o.id + 1);
       this.shock[o.id] += CONTAGION_SHOCK * (1 - d / CONTAGION_RANGE);

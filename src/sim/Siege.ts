@@ -1614,7 +1614,7 @@ export class Siege implements ElevationOwner {
       if (i > 0) {
         const dx = this.sx[i] - this.sx[i - 1];
         const dz = this.sz[i] - this.sz[i - 1];
-        const plan = Math.hypot(dx, dz);
+        const plan = Math.sqrt(dx * dx + dz * dz);
         const dy = Math.abs(this.sy[i] - this.sy[i - 1]);
         // A dead station on either side of the joint is a break: you cannot walk over a
         // hole, and you cannot walk out of one.
@@ -1667,7 +1667,7 @@ export class Siege implements ElevationOwner {
         // Reject a published flight whose head is nowhere near the standing surface: a
         // stair that does not actually reach the walk is not a way onto the wall, and
         // silently accepting one would put men on a path to nothing.
-        if (Math.hypot(s.topX - this.sx[station], s.topZ - this.sz[station]) > 6) continue;
+        if (Math.sqrt((s.topX - this.sx[station]) * (s.topX - this.sx[station]) + (s.topZ - this.sz[station]) * (s.topZ - this.sz[station])) > 6) continue;
         const dx = s.footX - this.sx[station];
         const dz = s.footZ - this.sz[station];
         const off = dx * this.snx[station] + dz * this.snz[station];
@@ -1744,7 +1744,7 @@ export class Siege implements ElevationOwner {
       const b = this.runLo[r + 1];
       if (a < 0 || b < 0) continue;
       if (this.dead(a) || this.dead(b)) continue;
-      const gap = Math.hypot(this.sx[b] - this.sx[a], this.sz[b] - this.sz[a]);
+      const gap = Math.sqrt((this.sx[b] - this.sx[a]) * (this.sx[b] - this.sx[a]) + (this.sz[b] - this.sz[a]) * (this.sz[b] - this.sz[a]));
       if (gap > LINK_MAX_GAP) continue;
       const rise = this.sy[b] - this.sy[a];
       /**
@@ -2515,7 +2515,7 @@ export class Siege implements ElevationOwner {
         sawFull = true;
         continue;
       }
-      const d = Math.hypot(t.x - u.x, t.z - u.z);
+      const d = Math.sqrt((t.x - u.x) * (t.x - u.x) + (t.z - u.z) * (t.z - u.z));
       if (d < bestD) { bestD = d; bestKind = 'tower'; bestTower = t; bestGroup = null; }
     }
     for (const l of this.ladders) {
@@ -2524,7 +2524,7 @@ export class Siege implements ElevationOwner {
         sawFull = true;
         continue;
       }
-      const d = Math.hypot(l.x - u.x, l.z - u.z);
+      const d = Math.sqrt((l.x - u.x) * (l.x - u.x) + (l.z - u.z) * (l.z - u.z));
       if (d < bestD) {
         bestD = d;
         bestKind = 'ladder';
@@ -2562,7 +2562,7 @@ export class Siege implements ElevationOwner {
   } {
     const f = this.findEscalade(unitId, x, z);
     const t = f.tower;
-    const run = t ? Math.hypot(t.dockX - t.x, t.dockZ - t.z) : 0;
+    const run = t ? Math.sqrt((t.dockX - t.x) * (t.dockX - t.x) + (t.dockZ - t.z) * (t.dockZ - t.z)) : 0;
     return {
       ok: f.refusal === 'none',
       refusal: f.refusal,
@@ -2928,7 +2928,7 @@ export class Siege implements ElevationOwner {
     const hingeOff = this.sFace[station] + 0.32;
     t.rampReach = Math.max(0.6, hingeOff - this.sOuter[station]);
     const drop = this.sy[station] - t.deckY;
-    t.rampLen = Math.hypot(t.rampReach, drop);
+    t.rampLen = Math.sqrt(t.rampReach * t.rampReach + drop * drop);
     t.rampLanded = Math.atan2(drop, t.rampReach);
   }
 
@@ -3009,7 +3009,7 @@ export class Siege implements ElevationOwner {
     const t = this.towerOf(unitId);
     if (t) {
       const d = this.describe('tower', t.id, unitId, t.station, '', t.dockX, t.dockZ,
-        Math.hypot(t.dockX - t.x, t.dockZ - t.z), 'none');
+        Math.sqrt((t.dockX - t.x) * (t.dockX - t.x) + (t.dockZ - t.z) * (t.dockZ - t.z)), 'none');
       // Its *remaining* run, not the cost of a fresh order: the heave it is part way through
       // is `t.heave`, and quoting a full one on a machine already rolling would be a lie.
       d.seconds = d.distance / TOWER_SPEED + Math.max(0, t.heave);
@@ -3019,7 +3019,7 @@ export class Siege implements ElevationOwner {
     if (!r) return null;
     const kind: SiegeMachineKind = r.kind === RamKind.Great ? 'greatRam' : 'ram';
     const d = this.describe(kind, r.id, unitId, r.station, r.gateId, r.targetX, r.targetZ,
-      Math.hypot(r.targetX - r.x, r.targetZ - r.z), 'none');
+      Math.sqrt((r.targetX - r.x) * (r.targetX - r.x) + (r.targetZ - r.z) * (r.targetZ - r.z)), 'none');
     d.seconds = d.distance / RAM_SPEED + Math.max(0, r.heave);
     return d;
   }
@@ -3125,7 +3125,7 @@ export class Siege implements ElevationOwner {
     const dockZ = this.sz[station] + this.snz[station] * standoff;
     const at = (refusal: SiegeRefusal): SiegeMachineOrder =>
       this.describe('tower', t.id, t.unitId, station, '', dockX, dockZ,
-        Math.hypot(dockX - t.x, dockZ - t.z), refusal);
+        Math.sqrt((dockX - t.x) * (dockX - t.x) + (dockZ - t.z) * (dockZ - t.z)), refusal);
 
     if (t.state === TowerState.Spent) return at('spent');
     if (t.state !== TowerState.Approach) return at('landed');
@@ -3149,7 +3149,7 @@ export class Siege implements ElevationOwner {
       if (k.station >= 0 && k.station < this.nStations && this.sBay[k.station] === bay) {
         return at('taken');
       }
-      if (Math.hypot(k.dockX - dockX, k.dockZ - dockZ) < TOWER_BERTH) return at('taken');
+      if (Math.sqrt((k.dockX - dockX) * (k.dockX - dockX) + (k.dockZ - dockZ) * (k.dockZ - dockZ)) < TOWER_BERTH) return at('taken');
     }
     return at('none');
   }
@@ -3192,7 +3192,7 @@ export class Siege implements ElevationOwner {
     const kind: SiegeMachineKind = great ? 'greatRam' : 'ram';
     const here = (refusal: SiegeRefusal): SiegeMachineOrder =>
       this.describe(kind, r.id, r.unitId, r.station, r.gateId, r.targetX, r.targetZ,
-        Math.hypot(r.targetX - r.x, r.targetZ - r.z), refusal);
+        Math.sqrt((r.targetX - r.x) * (r.targetX - r.x) + (r.targetZ - r.z) * (r.targetZ - r.z)), refusal);
 
     if (r.wreck || r.state === RamState.Wreck) return here('spent');
     if (r.state === RamState.Withdrawing || r.state === RamState.Spent) return here('spent');
@@ -3206,7 +3206,7 @@ export class Siege implements ElevationOwner {
       const tz = this.sz[station] + this.snz[station] * standoff;
       const at = (refusal: SiegeRefusal): SiegeMachineOrder =>
         this.describe(kind, r.id, r.unitId, station, '', tx, tz,
-          Math.hypot(tx - r.x, tz - r.z), refusal);
+          Math.sqrt((tx - r.x) * (tx - r.x) + (tz - r.z) * (tz - r.z)), refusal);
       if (station === r.station) return at('already');
       return at('none');
     }
@@ -3221,7 +3221,7 @@ export class Siege implements ElevationOwner {
     const tz = gate.z + Math.cos(gate.facing) * (RAM_HALF_D + 3.6);
     const at = (refusal: SiegeRefusal): SiegeMachineOrder =>
       this.describe(kind, r.id, r.unitId, -1, gate.id, tx, tz,
-        Math.hypot(tx - r.x, tz - r.z), refusal);
+        Math.sqrt((tx - r.x) * (tx - r.x) + (tz - r.z) * (tz - r.z)), refusal);
     if (gate.id === r.gateId) return at('already');
     return at('none');
   }
@@ -3235,7 +3235,7 @@ export class Siege implements ElevationOwner {
   private nearWallStation(x: number, z: number): number {
     const s = this.stationNear(x, z);
     if (s < 0) return -1;
-    return Math.hypot(this.sx[s] - x, this.sz[s] - z) <= MACHINE_AIM_R ? s : -1;
+    return Math.sqrt((this.sx[s] - x) * (this.sx[s] - x) + (this.sz[s] - z) * (this.sz[s] - z)) <= MACHINE_AIM_R ? s : -1;
   }
 
   /**
@@ -3370,7 +3370,7 @@ export class Siege implements ElevationOwner {
     for (let r = lo; r < hi; r++) {
       const l = this.links[this.runNext[r]];
       if (!l) return Infinity;
-      d += Math.hypot(l.ax - l.bx, l.az - l.bz) + Math.abs(l.ay - l.by);
+      d += Math.sqrt((l.ax - l.bx) * (l.ax - l.bx) + (l.az - l.bz) * (l.az - l.bz)) + Math.abs(l.ay - l.by);
       // Every run strictly between the two is crossed end to end.
       if (r + 1 < hi) d += (this.runHi[r + 1] - this.runLo[r + 1]) * STATION_PITCH;
     }
@@ -3426,7 +3426,7 @@ export class Siege implements ElevationOwner {
       const along = this.walkDistance(l.stationB, run);
       if (!isFinite(along)) continue;
       // Plus the walk to the foot of the flight, which is ground and is not free either.
-      const approach = Math.hypot(l.ax - x, l.az - z);
+      const approach = Math.sqrt((l.ax - x) * (l.ax - x) + (l.az - z) * (l.az - z));
       const d = along + approach;
       if (d < bestD - 1e-6) { bestD = d; best = l.id; }
     }
@@ -3582,7 +3582,7 @@ export class Siege implements ElevationOwner {
        * these fields while the siege system owns it, so they move — but they move
        * continuously, by centimetres, and a click moves them metres at once.
        */
-      const moved = Math.hypot(u.targetX - g.lastTx, u.targetZ - g.lastTz);
+      const moved = Math.sqrt((u.targetX - g.lastTx) * (u.targetX - g.lastTx) + (u.targetZ - g.lastTz) * (u.targetZ - g.lastTz));
       g.lastTx = u.targetX;
       g.lastTz = u.targetZ;
       if (moved < ORDER_JUMP) {
@@ -3928,7 +3928,7 @@ export class Siege implements ElevationOwner {
     // Back away from the flight along its own axis, four abreast.
     let ax = l.ax - l.bx;
     let az = l.az - l.bz;
-    const len = Math.hypot(ax, az) || 1;
+    const len = Math.sqrt(ax * ax + az * az) || 1;
     ax /= len; az /= len;
     /**
      * The head of the queue must stand inside `LINK_ADMIT` of the mouth, or nobody starts.
@@ -4853,7 +4853,7 @@ export class Siege implements ElevationOwner {
     for (const t of this.towers) {
       const dx = t.dockX - t.x;
       const dz = t.dockZ - t.z;
-      t.dist = Math.hypot(dx, dz);
+      t.dist = Math.sqrt(dx * dx + dz * dz);
 
       /**
        * A tower nobody is pushing does not roll. Same defect as the ram, same fix.
@@ -5096,7 +5096,7 @@ export class Siege implements ElevationOwner {
       const dx = pts[k * 3] - pts[(k - 1) * 3];
       const dy = pts[k * 3 + 1] - pts[(k - 1) * 3 + 1];
       const dz = pts[k * 3 + 2] - pts[(k - 1) * 3 + 2];
-      arc[k] = arc[k - 1] + Math.hypot(dx, dy, dz);
+      arc[k] = arc[k - 1] + Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
     return { pts, arc, n, destStation, queue: [], pace };
   }
@@ -5224,7 +5224,7 @@ export class Siege implements ElevationOwner {
         }
         const dx = r.targetX - r.x;
         const dz = r.targetZ - r.z;
-        const d = Math.hypot(dx, dz);
+        const d = Math.sqrt(dx * dx + dz * dz);
         if (d <= RAM_SPEED * dt) {
           r.x = r.targetX;
           r.z = r.targetZ;
@@ -5254,7 +5254,7 @@ export class Siege implements ElevationOwner {
         r.swing = lerp(r.swing, 0, Math.min(1, dt * 1.4));
         const dx = r.parkX - r.x;
         const dz = r.parkZ - r.z;
-        const d = Math.hypot(dx, dz);
+        const d = Math.sqrt(dx * dx + dz * dz);
         if (d <= RAM_SPEED * dt) {
           r.x = r.parkX;
           r.z = r.parkZ;
@@ -5716,7 +5716,7 @@ export class Siege implements ElevationOwner {
     const z = lerp(c.pts[a + 2], c.pts[bI + 2], f);
     let tx = c.pts[bI] - c.pts[a];
     let tz = c.pts[bI + 2] - c.pts[a + 2];
-    const l = Math.hypot(tx, tz);
+    const l = Math.sqrt(tx * tx + tz * tz);
     if (l > 1e-4) { tx /= l; tz /= l; } else { tx = 0; tz = 0; }
     return { x, y, z, tx, tz };
   }
@@ -6420,13 +6420,13 @@ export class Siege implements ElevationOwner {
       const a = this.runHi[r];
       const b = this.runLo[r + 1];
       if (a < 0 || b < 0 || this.dead(a) || this.dead(b)) continue;
-      const gap = Math.hypot(this.sx[b] - this.sx[a], this.sz[b] - this.sz[a]);
+      const gap = Math.sqrt((this.sx[b] - this.sx[a]) * (this.sx[b] - this.sx[a]) + (this.sz[b] - this.sz[a]) * (this.sz[b] - this.sz[a]));
       if (gap > LINK_MAX_GAP) continue;
       if (this.stepAcross(this.sy[b] - this.sy[a], gap) === Joint.Broken) refusedSteps++;
     }
     for (const l of this.links) {
       if (l.kind !== LinkKind.TowerPass && l.kind !== LinkKind.Step) continue;
-      const gap = Math.hypot(l.bx - l.ax, l.bz - l.az);
+      const gap = Math.sqrt((l.bx - l.ax) * (l.bx - l.ax) + (l.bz - l.az) * (l.bz - l.az));
       const dy = Math.abs(l.rise);
       if (dy > worstStep) worstStep = dy;
       const pitch = gap > 1e-6 ? dy / gap : Infinity;
@@ -6456,7 +6456,7 @@ export class Siege implements ElevationOwner {
         rise: s.topY - s.footY,
       })),
       linkUse: this.links.map((l) => {
-        const gap = Math.hypot(l.bx - l.ax, l.bz - l.az);
+        const gap = Math.sqrt((l.bx - l.ax) * (l.bx - l.ax) + (l.bz - l.az) * (l.bz - l.az));
         return {
           id: l.id, kind: kinds[l.kind], runA: l.runA, runB: l.runB, used: l.used, gap,
           rise: l.rise, pitch: gap > 1e-6 ? Math.abs(l.rise) / gap : Infinity,
@@ -6600,7 +6600,7 @@ export class Siege implements ElevationOwner {
         wantFacing: r.wantFacing,
         targetX: r.targetX, targetZ: r.targetZ,
         x: r.x, z: r.z,
-        distFromTarget: Math.hypot(r.x - r.targetX, r.z - r.targetZ),
+        distFromTarget: Math.sqrt((r.x - r.targetX) * (r.x - r.targetX) + (r.z - r.targetZ) * (r.z - r.targetZ)),
         wreck: r.wreck,
         crewAlive: u ? u.alive : 0,
         crewRouting: routing,

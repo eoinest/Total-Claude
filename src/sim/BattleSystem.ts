@@ -803,7 +803,7 @@ export class BattleSystem implements Subsystem {
     if (!nav) return;
     const dx = gx - u.x;
     const dz = gz - u.z;
-    const len = Math.hypot(dx, dz);
+    const len = Math.sqrt(dx * dx + dz * dz);
     if (len < 1e-3) return;
     const f = nav.clearLineFraction(u.x, u.z, gx, gz, ROUTE_RADIUS);
     const reach = Math.max(0, len * f - ROUTE_RADIUS);
@@ -848,7 +848,7 @@ export class BattleSystem implements Subsystem {
       // exact goal cell, but `store` still writes the best route it found, and walking as
       // far toward the objective as the ground allows is what a player expects from a
       // click — certainly more than standing still because the last ten metres are a wall.
-      const fresh = p && p.n >= 2 && Math.hypot(p.goalX - req.gx, p.goalZ - req.gz) < 8;
+      const fresh = p && p.n >= 2 && Math.sqrt((p.goalX - req.gx) * (p.goalX - req.gx) + (p.goalZ - req.gz) * (p.goalZ - req.gz)) < 8;
       if (!fresh) {
         /*
          * Nothing is in flight and nothing usable came back, so the pathfinder has given
@@ -1548,7 +1548,7 @@ export class BattleSystem implements Subsystem {
   ): number {
     const solids = this.masonry;
     if (solids.empty) return maxLen;
-    const len = Math.hypot(dx, dz);
+    const len = Math.sqrt(dx * dx + dz * dz);
     if (len < 1e-6) return maxLen;
     const ux = dx / len;
     const uz = dz / len;
@@ -1576,7 +1576,7 @@ export class BattleSystem implements Subsystem {
     const solids = this.masonry;
     if (solids.empty) return want;
     if (solids.blocked(x, z, y, SOLDIER_RADIUS)) return want;
-    const len = Math.hypot(dx, dz);
+    const len = Math.sqrt(dx * dx + dz * dz);
     if (len < 1e-6) return want;
     // Lateral unit vector: the direction of travel rotated a quarter turn.
     const lx = -dz / len;
@@ -1708,7 +1708,7 @@ export class BattleSystem implements Subsystem {
     // along its facing, so a formation standing in a gate mouth stays filed up.
     let dx = u.targetX - u.x;
     let dz = u.targetZ - u.z;
-    let len = Math.hypot(dx, dz);
+    let len = Math.sqrt(dx * dx + dz * dz);
     if (len < 0.35) {
       dx = Math.sin(u.facing);
       dz = Math.cos(u.facing);
@@ -1905,7 +1905,7 @@ export class BattleSystem implements Subsystem {
       const cz = this.trailZ[base + k];
       const dx = cx - u.x;
       const dz = cz - u.z;
-      const d = Math.hypot(dx, dz);
+      const d = Math.sqrt(dx * dx + dz * dz);
       // A crumb underfoot is not somewhere to run to.
       if (d < ROUT_MIN_RUN) continue;
       if (this.clearRun(u.x, u.z, dx, dz, y, d, ROUT_CORRIDOR) < d - ROUT_RAY_STEP) continue;
@@ -1966,7 +1966,7 @@ export class BattleSystem implements Subsystem {
         closestPointOnSegment(u.x, u.z, SEG_OTHER, AIM);
         const dx = AIM.x - u.x;
         const dz = AIM.z - u.z;
-        const d = Math.hypot(dx, dz) || 1;
+        const d = Math.sqrt(dx * dx + dz * dz) || 1;
         // Stop with the fronts a shield's width apart. `resolveCrowding` and the press
         // then close the last few centimetres, which is what makes the seam ragged.
         const standoff = CONTACT_GAP;
@@ -2017,7 +2017,7 @@ export class BattleSystem implements Subsystem {
 
     const dx = u.targetX - u.x;
     const dz = u.targetZ - u.z;
-    const distToTarget = Math.hypot(dx, dz);
+    const distToTarget = Math.sqrt(dx * dx + dz * dz);
     // Where the anchor stood before this step, for the stall watchdog below.
     const beforeX = u.x;
     const beforeZ = u.z;
@@ -2042,7 +2042,7 @@ export class BattleSystem implements Subsystem {
       if (!e) breakingOff = true;
       else {
         // Positive dot = the ordered move closes on the enemy; negative = it opens away.
-        const toE = Math.hypot(e.x - u.x, e.z - u.z) || 1;
+        const toE = Math.sqrt((e.x - u.x) * (e.x - u.x) + (e.z - u.z) * (e.z - u.z)) || 1;
         const dot = ((e.x - u.x) / toE) * (dx / distToTarget)
                   + ((e.z - u.z) / toE) * (dz / distToTarget);
         breakingOff = dot < -0.25;
@@ -2079,7 +2079,7 @@ export class BattleSystem implements Subsystem {
       // which is a unit with somewhere to be rather than one standing about.
       if (!routing && !breakingOff && !u.contactLock && this.orderGrace[u.id] <= 0
         && u.waypoints.length < 3
-        && Math.hypot(u.targetX - u.x, u.targetZ - u.z) < 0.35) {
+        && Math.sqrt((u.targetX - u.x) * (u.targetX - u.x) + (u.targetZ - u.z) * (u.targetZ - u.z)) < 0.35) {
         this.closeToContact(u, near.dist, near.id, dt);
       }
     } else {
@@ -2338,7 +2338,7 @@ export class BattleSystem implements Subsystem {
     closestPointOnSegment(u.x, u.z, SEG_OTHER, AIM);
     const dx = AIM.x - u.x;
     const dz = AIM.z - u.z;
-    const d = Math.hypot(dx, dz);
+    const d = Math.sqrt(dx * dx + dz * dz);
     if (d < 1e-3) return;
     const want = Math.atan2(dx, dz);
 
@@ -2456,7 +2456,7 @@ export class BattleSystem implements Subsystem {
       this.stallTicks[u.id] = 0;
       return;
     }
-    if (Math.hypot(u.x - beforeX, u.z - beforeZ) > STALL_EPS) {
+    if (Math.sqrt((u.x - beforeX) * (u.x - beforeX) + (u.z - beforeZ) * (u.z - beforeZ)) > STALL_EPS) {
       this.stallTicks[u.id] = 0;
       return;
     }
@@ -2486,7 +2486,7 @@ export class BattleSystem implements Subsystem {
   private resumeRoute(u: UnitGroupState): boolean {
     const g = this.routeGoals.get(u.id);
     if (!g) return false;
-    if (Math.hypot(g.gx - u.x, g.gz - u.z) <= ROUTE_ARRIVE_TOL) {
+    if (Math.sqrt((g.gx - u.x) * (g.gx - u.x) + (g.gz - u.z) * (g.gz - u.z)) <= ROUTE_ARRIVE_TOL) {
       this.routeGoals.delete(u.id);
       return false;
     }
@@ -2568,7 +2568,7 @@ export class BattleSystem implements Subsystem {
     let n = 0;
     for (const o of this.units) {
       if (o.destroyed || o.faction === u.faction) continue;
-      const d = Math.hypot(o.x - u.x, o.z - u.z);
+      const d = Math.sqrt((o.x - u.x) * (o.x - u.x) + (o.z - u.z) * (o.z - u.z));
       if (d > 220) continue;
       const w = 1 / Math.max(12, d);
       ex += (o.x - u.x) * w;
@@ -2576,7 +2576,7 @@ export class BattleSystem implements Subsystem {
       n++;
     }
     if (n === 0) return { x: 0, z: -1 };
-    const l = Math.hypot(ex, ez) || 1;
+    const l = Math.sqrt(ex * ex + ez * ez) || 1;
     return { x: -ex / l, z: -ez / l };
   }
 
@@ -2612,7 +2612,7 @@ export class BattleSystem implements Subsystem {
       let nearestEnemy = Infinity;
       for (const o of this.units) {
         if (o.destroyed || o.faction === u.faction || o.order === UnitOrder.Rout) continue;
-        const d = Math.hypot(o.x - u.x, o.z - u.z);
+        const d = Math.sqrt((o.x - u.x) * (o.x - u.x) + (o.z - u.z) * (o.z - u.z));
         if (d < nearestEnemy) nearestEnemy = d;
       }
       if (edge || nearestEnemy > 260) {
@@ -2731,7 +2731,7 @@ export class BattleSystem implements Subsystem {
         // real distance, so it cannot miss a straggler; the exact test then runs only for
         // the handful it lets through, instead of a square root for every man every tick.
         if (Math.abs(tx - p.x[i]) + Math.abs(tz - p.z[i]) > STRAGGLER_DIST
-          && Math.hypot(tx - p.x[i], tz - p.z[i]) > STRAGGLER_DIST) {
+          && Math.sqrt((tx - p.x[i]) * (tx - p.x[i]) + (tz - p.z[i]) * (tz - p.z[i])) > STRAGGLER_DIST) {
           const now = this.tickCount * dt;
           if (now >= this.rallyUntil[i]) {
             // Phase-jittered per man from his own stable hash, so a cohort that is stranded
@@ -2758,7 +2758,7 @@ export class BattleSystem implements Subsystem {
 
         const dx = tx - p.x[i];
         const dz = tz - p.z[i];
-        const d = Math.hypot(dx, dz);
+        const d = Math.sqrt(dx * dx + dz * dz);
 
         if (d < 0.06) {
           p.vx[i] = damp(p.vx[i], 0, 11, dt);
@@ -2815,7 +2815,7 @@ export class BattleSystem implements Subsystem {
       }
       const dx = this.slotX[i] - p.x[i];
       const dz = this.slotZ[i] - p.z[i];
-      const d = Math.hypot(dx, dz);
+      const d = Math.sqrt(dx * dx + dz * dz);
       if (d < SLOT_ARRIVED) {
         p.vx[i] = damp(p.vx[i], 0, 11, dt);
         p.vz[i] = damp(p.vz[i], 0, 11, dt);
@@ -3084,7 +3084,7 @@ export class BattleSystem implements Subsystem {
         let overlap: number;
         if (d2 < 1e-8) {
           nx = az; nz = -ax;
-          const l = Math.hypot(nx, nz) || 1;
+          const l = Math.sqrt(nx * nx + nz * nz) || 1;
           nx /= l; nz /= l;
           overlap = r;
         } else {
@@ -3289,7 +3289,7 @@ export class BattleSystem implements Subsystem {
       p.y[i] = st === SoldierState.Dying ? Math.max(ground, p.y[i] - 1.8 * dt) : ground;
 
       // Face the direction of travel, but only once actually moving.
-      const speed = Math.hypot(p.vx[i], p.vz[i]);
+      const speed = Math.sqrt(p.vx[i] * p.vx[i] + p.vz[i] * p.vz[i]);
       if (speed > 0.22 && st !== SoldierState.Fighting) {
         const want = Math.atan2(p.vx[i], p.vz[i]);
         p.facing[i] = turnToward(p.facing[i], want, dt * 7.5);
@@ -3361,7 +3361,7 @@ export class BattleSystem implements Subsystem {
 
       let clip: Clip;
       let rateScale = 1;
-      const speed = Math.hypot(p.vx[i], p.vz[i]);
+      const speed = Math.sqrt(p.vx[i] * p.vx[i] + p.vz[i] * p.vz[i]);
 
       switch (st) {
         case SoldierState.Dying:
@@ -3461,7 +3461,7 @@ export class BattleSystem implements Subsystem {
 
     const dx = p.x[i] - fromX;
     const dz = p.z[i] - fromZ;
-    const l = Math.hypot(dx, dz) || 1;
+    const l = Math.sqrt(dx * dx + dz * dz) || 1;
     p.deathDirX[i] = dx / l;
     p.deathDirZ[i] = dz / l;
     p.setState(i, SoldierState.Dying);

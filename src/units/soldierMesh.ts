@@ -166,7 +166,10 @@ function tileRepeat(
   for (let i = 1; i < nodes.length; i++) {
     const p = nodes[i - 1];
     const q = nodes[i];
-    along += Math.hypot(q.y - p.y, (q.x ?? 0) - (p.x ?? 0), (q.z ?? 0) - (p.z ?? 0));
+    const sy = q.y - p.y;
+    const sx = (q.x ?? 0) - (p.x ?? 0);
+    const sz = (q.z ?? 0) - (p.z ?? 0);
+    along += Math.sqrt(sy * sy + sx * sx + sz * sz);
   }
   return {
     repeatU: Math.max(was.u ?? 1, Math.round(around / tile)),
@@ -449,7 +452,7 @@ function headRadius(a: number, r: number, y: number, form: number): number {
   const zf = byHeight(HEAD_DEPTH_FRONT, y);
   const zb = byHeight(HEAD_DEPTH_BACK, y);
   const B = r * (zb + (zf - zb) * (0.5 + 0.5 * sa));
-  let rad = (r * B) / Math.hypot(B * ca, r * sa);
+  let rad = (r * B) / Math.sqrt((B * ca) * (B * ca) + (r * sa) * (r * sa));
   rad += form * (
     +0.0060 * bell(y - 0.050, 0.017) * win(ad, 0.95)          // supraorbital ridge
     - 0.0050 * bell(y - 0.024, 0.015) * bell(ad - 0.41, 0.22) // eye sockets
@@ -2047,7 +2050,7 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
   // Yaw the whole piece so the bow's own plane contains the arrow. The archery clip is a
   // side-on stance, so the draw runs 26 degrees off the man's facing; with the socket left
   // at identity the string would have had to leave the bow plane to reach his fingers.
-  const nockReach = Math.hypot(nockOffset.x, nockOffset.z);
+  const nockReach = Math.sqrt(nockOffset.x * nockOffset.x + nockOffset.z * nockOffset.z);
   const bowM = socket(
     'drawBow', 0.6, MB.handL, new THREE.Vector3(0, 0, 0),
     new THREE.Euler(0, Math.atan2(-nockOffset.x, -nockOffset.z), 0, 'XYZ')

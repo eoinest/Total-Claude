@@ -149,7 +149,7 @@ export class GeoStream {
     let vx = E2.x - uax * d;
     let vy = E2.y - uay * d;
     let vz = E2.z - uaz * d;
-    const vl = Math.hypot(vx, vy, vz) || 1;
+    const vl = Math.sqrt(vx * vx + vy * vy + vz * vz) || 1;
     vx /= vl;
     vy /= vl;
     vz /= vl;
@@ -1033,7 +1033,7 @@ export function pediment(st: GeoStream, w: number, y0: number, depth: number, co
   const cornice = Math.max(0.35, w * 0.022);
   const bright = new THREE.Color().copy(col).multiplyScalar(1.16);
   // Rake direction, for the top face's normal.
-  const rl = Math.hypot(w / 2, h) || 1;
+  const rl = Math.sqrt((w / 2) * (w / 2) + h * h) || 1;
   for (const face of [-1, 1]) {
     const zIn = (face * depth) / 2;
     const zOut = zIn + face * cornice;
@@ -1090,7 +1090,7 @@ export function quadPrism(
 ): void {
   const t = thickness * 0.5;
   const bat = (opts.batter ?? 0) * (y1 - y0);
-  const dl = Math.hypot(bx - ax, bz - az) || 1;
+  const dl = Math.sqrt((bx - ax) * (bx - ax) + (bz - az) * (bz - az)) || 1;
   const dx = (bx - ax) / dl;
   const dz = (bz - az) / dl;
   const low = new THREE.Color().copy(col).multiplyScalar(0.87);
@@ -1202,7 +1202,7 @@ export function crenellation(
   gapW = 0.72,
   arrowSlit = true
 ): void {
-  const len = Math.hypot(x1 - x0, z1 - z0);
+  const len = Math.sqrt((x1 - x0) * (x1 - x0) + (z1 - z0) * (z1 - z0));
   if (len < 0.4) return;
   const dx = (x1 - x0) / len;
   const dz = (z1 - z0) / len;

@@ -163,7 +163,7 @@ function place(m: RomeMonument): LandmarkPlacement {
     hw,
     hd,
     planScale,
-    clear: Math.hypot(hw, hd),
+    clear: Math.sqrt(hw * hw + hd * hd),
     mound: m.mound,
     moundRadius: m.moundRadius === undefined ? undefined : m.moundRadius * planScale,
     where: m.where,
@@ -331,7 +331,7 @@ function resolveOverlaps(list: LandmarkPlacement[], sweeps = 9000): void {
         //    with a proportionate margin, so it never fights the separation constraint.
         const ix = b.idealX - a.idealX;
         const iz = b.idealZ - a.idealZ;
-        const ilen = Math.hypot(ix, iz);
+        const ilen = Math.sqrt(ix * ix + iz * iz);
         if (ilen > ORDER_FLOOR) {
           const ux = ix / ilen;
           const uz = iz / ilen;
@@ -1219,7 +1219,7 @@ function feeders(base: readonly CityWay[]): CityWay[] {
         const t = len2 < 1e-6 ? 0 : clamp(((x - a.x) * ax + (z - a.z) * az) / len2, 0, 1);
         const px = a.x + ax * t;
         const pz = a.z + az * t;
-        const d = Math.hypot(x - px, z - pz);
+        const d = Math.sqrt((x - px) * (x - px) + (z - pz) * (z - pz));
         if (d < best.d) best = { x: px, z: pz, d, cls: w.cls };
       }
     }
@@ -1333,7 +1333,7 @@ function deflect(way: CityWay): void {
   for (let i = 0; i + 1 < way.path.length; i++) {
     const a = way.path[i];
     const b = way.path[i + 1];
-    const n = Math.max(1, Math.round(Math.hypot(b.x - a.x, b.z - a.z) / 30));
+    const n = Math.max(1, Math.round(Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.z - a.z) * (b.z - a.z)) / 30));
     for (let s = 0; s < n; s++) dense.push({ x: lerp(a.x, b.x, s / n), z: lerp(a.z, b.z, s / n) });
   }
   dense.push({ ...way.path[way.path.length - 1] });
@@ -1499,7 +1499,7 @@ export const PLAZAS: CityPlaza[] = (() => {
   // Cluster: two junctions 60 m apart are one square, not two.
   const clusters: { x: number; z: number; rank: number; rot: number; n: number }[] = [];
   for (const h of hits) {
-    const near = clusters.find((c) => Math.hypot(c.x - h.x, c.z - h.z) < 70);
+    const near = clusters.find((c) => Math.sqrt((c.x - h.x) * (c.x - h.x) + (c.z - h.z) * (c.z - h.z)) < 70);
     if (near) {
       near.x = (near.x * near.n + h.x) / (near.n + 1);
       near.z = (near.z * near.n + h.z) / (near.n + 1);
@@ -1520,7 +1520,7 @@ export const PLAZAS: CityPlaza[] = (() => {
     const rot = c.rot;
     if (LANDMARKS.some((l) => !l.soft && obbOverlap({ x: c.x, z: c.z, hw, hd, rot }, l, 4))) continue;
     if (c.z < CITY_Z_MIN(c.x) + hd + 8 || c.z > CITY_Z_MAX - hd) continue;
-    if (out.some((p) => Math.hypot(p.x - c.x, p.z - c.z) < hw + p.hw + 24)) continue;
+    if (out.some((p) => Math.sqrt((p.x - c.x) * (p.x - c.x) + (p.z - c.z) * (p.z - c.z)) < hw + p.hw + 24)) continue;
     out.push({ id: `forum-${out.length}`, x: c.x, z: c.z, hw, hd, rot, porticoed: c.rank >= 3 });
   }
   return out;
@@ -1563,7 +1563,7 @@ export function wayMix(
     const e = acc.get(cls) ?? { count: 0, km: 0 };
     e.count++;
     for (let i = 0; i + 1 < path.length; i++) {
-      e.km += Math.hypot(path[i + 1].x - path[i].x, path[i + 1].z - path[i].z) / 1000;
+      e.km += Math.sqrt((path[i + 1].x - path[i].x) * (path[i + 1].x - path[i].x) + (path[i + 1].z - path[i].z) * (path[i + 1].z - path[i].z)) / 1000;
     }
     acc.set(cls, e);
   };

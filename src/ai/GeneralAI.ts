@@ -437,7 +437,7 @@ export class GeneralAISystem implements Subsystem {
           if (!a || a.role !== 'line') continue;
           const cmd = w.commandOf(u.id);
           if (!cmd) continue;
-          if (Math.hypot(cmd.stationX - u.x, cmd.stationZ - u.z) > this.profile.lineTolerance * 2.5) {
+          if (Math.sqrt((cmd.stationX - u.x) * (cmd.stationX - u.x) + (cmd.stationZ - u.z) * (cmd.stationZ - u.z)) > this.profile.lineTolerance * 2.5) {
             formed = false;
             break;
           }
@@ -468,7 +468,7 @@ export class GeneralAISystem implements Subsystem {
           const cmd = w.commandOf(u.id);
           const rec = w.infoOf(u.id);
           if (cmd && rec) {
-            const onStation = Math.hypot(cmd.stationX - u.x, cmd.stationZ - u.z) < 22;
+            const onStation = Math.sqrt((cmd.stationX - u.x) * (cmd.stationX - u.x) + (cmd.stationZ - u.z) * (cmd.stationZ - u.z)) < 22;
             const reach = (rec.def.missile?.range ?? 30) * 1.2;
             if (onStation && rec.nearestEnemyDist > reach) screenIdle = true;
           }
@@ -746,7 +746,7 @@ export class GeneralAISystem implements Subsystem {
     // the lines are close the centroid bearing swings wildly with every casualty, and a
     // line that chases it spends the battle wheeling instead of fighting.
     if (enemy.seen) {
-      const d = Math.hypot(enemy.x - plan.lineX, enemy.z - plan.lineZ);
+      const d = Math.sqrt((enemy.x - plan.lineX) * (enemy.x - plan.lineX) + (enemy.z - plan.lineZ) * (enemy.z - plan.lineZ));
       if (d > 110) {
         const want = Math.atan2(enemy.x - plan.lineX, enemy.z - plan.lineZ);
         let f = plan.lineFacing + angleDelta(plan.lineFacing, want) * 0.35;
@@ -843,7 +843,7 @@ export class GeneralAISystem implements Subsystem {
         for (const u of v.fighting) {
           const rec = w.infoOf(u.id);
           if (!rec || !isMissileClass(rec.def.unitClass)) continue;
-          if (Math.hypot(u.x - mem.x, u.z - mem.z) < 90) nearSoft = true;
+          if (Math.sqrt((u.x - mem.x) * (u.x - mem.x) + (u.z - mem.z) * (u.z - mem.z)) < 90) nearSoft = true;
         }
         if (!nearSoft) continue;
         plan.rearThreat = true;

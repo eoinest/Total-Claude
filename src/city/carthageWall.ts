@@ -702,7 +702,7 @@ interface Frame {
  * convention so a consumer that reads one reads the other.
  */
 function frameOf(x0: number, z0: number, x1: number, z1: number): Frame {
-  const len = Math.hypot(x1 - x0, z1 - z0) || 1;
+  const len = Math.sqrt((x1 - x0) * (x1 - x0) + (z1 - z0) * (z1 - z0)) || 1;
   const dx = (x1 - x0) / len;
   const dz = (z1 - z0) / len;
   return { nx: dz, nz: -dx, dx, dz, len };

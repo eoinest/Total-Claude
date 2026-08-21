@@ -232,7 +232,7 @@ export class RagdollSystem implements Subsystem {
     this.angle[i] = 0;
     // Momentum from the blow becomes rotational energy. A horse throws a man;
     // a sword leaves him folding at the knees.
-    const speed = Math.hypot(p.vx[i], p.vz[i]);
+    const speed = Math.sqrt(p.vx[i] * p.vx[i] + p.vz[i] * p.vz[i]);
     this.angVel[i] = 0.6 + speed * 0.42 + hash01(i, 17) * 0.5;
 
     this.deaths++;
@@ -317,7 +317,7 @@ export class RagdollSystem implements Subsystem {
       const dx = (REST[a] - REST[b]) * scale;
       const dy = (REST[a + 1] - REST[b + 1]) * scale;
       const dz = (REST[a + 2] - REST[b + 2]) * scale;
-      this.restLen[slot * LINK_COUNT + l] = Math.hypot(dx, dy, dz);
+      this.restLen[slot * LINK_COUNT + l] = Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
     this.slotOwner[slot] = i;
