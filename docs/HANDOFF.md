@@ -2194,10 +2194,17 @@ already within 5 m of the Pincian's toe at x 800. `riseToeZ`'s own comment still
 
 ## Session — the two rams, 21 Aug 2026
 
-Branch `e/sim/rams`, off `5338249`. Six source files, two tools: `sim/scenario.ts`,
-`sim/battleConfig.ts`, `sim/Siege.ts`, `units/siegeUnits.ts`, `city/CitySystem.ts`,
-`ui/siege.ts` and one widened type in `ui/SiegeOrders.ts`; `tools/probe-siege.mjs` and
-`tools/determinism-baseline.json`.
+Branch `e/sim/rams`. Six source files, two tools: `sim/scenario.ts`, `sim/battleConfig.ts`,
+`sim/Siege.ts`, `units/siegeUnits.ts`, `city/CitySystem.ts`, `ui/siege.ts` and one widened type
+in `ui/SiegeOrders.ts`; `tools/probe-siege.mjs` and `tools/determinism-baseline.json`.
+
+**Two trees appear in the numbers below and the distinction is load-bearing.** The diagnosis
+was taken at `5338249`; §15 task 14 then widened both deployment boxes and moved
+`battleCoreMask` onto the deployment axis, which moves the ground the storm crosses, so every
+headline number was re-taken after merging `15e209f`. Where a figure is quoted at `5338249` it
+is a *diagnosis* — what was wrong and why — and where it is quoted on the merged tree it is a
+*result*. They agree on every conclusion; only the third decimal of the incidental figures
+moved.
 
 ### Part 1: the light ram's defect had inverted, and the new one is worse
 
@@ -2310,6 +2317,17 @@ Four seams named in the record, all four shut, plus a fifth nobody had named.
    `stormBreach` with a rally point 30 m inside the curtain, and `Siege.breachAt(x, z)` is the
    published loose test the order path and the cursor both read.
 
+6. **The sixth seam, which the fifth exposed: a second breach destroyed the first one.**
+   `buildLinks` opens with `this.links = []` and a breach appends its lanes to that array, so
+   the second bay to fall wiped the first bay’s five lanes and left `breachLinks` naming stairs
+   and tower passes. `probe-siege` spawns a great ram alongside the one the scenario now
+   deploys, and with two breaches it reported *“-18 men climbed the rubble … across 10 lanes”*
+   and a waiting man **190 m** from a lane mouth. Lane construction is now
+   `cutBreachLanes(station)`, re-run for every entry in `breachStations` after each collapse,
+   with the crossings already made banked into `breachThroughBase` before `buildLinks` can
+   destroy the counters. Reachable only because a scenario finally fields one — which is the
+   argument for fielding things.
+
 ### `WALL_BLOWS` 74 → 44, timed rather than chosen
 
 74 was picked before anything fielded one, so it could not be timed. It can now: the machine
@@ -2340,7 +2358,10 @@ machine it deploys.
 
 ### Determinism
 
-Three arms, all quoted so the `&` cannot background the shell, on the final tree:
+Three arms, all quoted so the `&` cannot background the shell, on the final merged tree.
+**§15 task 14 re-recorded `default` (all seven) and the Rome assault (t+90 onward; t+0 and t+30
+were unchanged at 3,074, because the box widening moves the ground and not the start line).
+This pass moves Rome again, from t+0, because the deployment itself changes.**
 
 - `node tools/qa-determinism.mjs` — **UNCHANGED** at all seven checkpoints, **8,632**.
 - `node tools/qa-determinism.mjs --battle="map=carthage&scenario=assault"` — **UNCHANGED** at
@@ -2368,6 +2389,13 @@ gate bay, and the storm fields a nineteenth unit and a twentieth machine.
   attributed zero points to the ram crew and that *was* the finding — but the same wrap counting
   *every* victim reports 106,336 points in 5,291 events, which is what makes the zero a
   measurement rather than a broken instrument.
+- **A damage ledger keyed on "the ram crews" silently gained a second machine.**
+  `rm-tier-emc` builds its victim set from `ramReport()`, so the moment the scenario fielded a
+  great ram the ledger began pooling two crews 134 m apart and the *gate* crew’s attribution
+  stopped being separable from the great ram’s. The clean measure of the shed is
+  `ramReport()[gate].crewAlive`, which is per-machine; the pooled points are still the right
+  number for “how much fire the roofs absorbed”, but they are not the number the gate ram’s
+  entry in the table describes. Labelled rather than re-run.
 - **"The three nearest free units" is not the population an order is about.** Ordering men
   through the breach picked, on two seeds of three, units that were *already inside the city*
   through the unbuilt bays — `interceptOrders` branches on `sideOf` first and gives them the

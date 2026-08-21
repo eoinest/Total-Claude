@@ -1311,7 +1311,11 @@ bless it. The table at the top of §5.1 is deliberately still un-re-pinned.
 ### The circuit rebuild inverted this defect, and everything above is now history
 
 **At `5338249` the ram lands 26 of 26 blows and opens the Porta Flaminia at t+220 on eight
-seeds of eight, at `ultra` and at `medium`, taking zero damage from anybody on the wall.** The
+seeds of eight, at `ultra` and at `medium`, taking zero damage from anybody on the wall.**
+(§15 task 14 later widened both deployment boxes and moved `battleCoreMask` onto the deployment
+axis, which moves the ground the storm crosses. Every conclusion below was re-taken after that
+merge and none of them moved; the headcount is 3,072 rather than 3,074 for a roster reason of
+this pass s own, see §7.1.) The
 distribution above — 0, 3, 3, 9, 19, 20, 21, 22, 23, 23, 25, 26, one gate opened in twelve — was
 measured at `cc72ea6` and does not reproduce. Neither does the tier-dependence that was reported
 alongside it: `ultra` and `medium` produce the same ram schedule blow for blow, because
@@ -1759,6 +1763,15 @@ station — *ahead* of towers and ladders, because 8 m of storming front outrank
 time on a rung — `escalade` routes it to `stormBreach` with a rally point 30 m inside the
 curtain, and `Siege.breachAt(x, z)` is the published loose test the order path and the cursor
 both read.
+
+And a sixth that the fifth exposed: **`buildLinks` empties `this.links`, so a *second* breach
+wiped the first breach’s five lanes and left `breachLinks` holding indices that now named stairs
+and tower passes.** `probe-siege` spawns a great ram of its own alongside the one the scenario
+now deploys, and with two breaches it reported *"-18 men climbed the rubble ... across 10 lanes"*
+with a waiting man 190 m from a lane mouth. A negative count is the tell; walking a storming
+column into a tower doorway is the cost. Lane construction is now `cutBreachLanes(station)`,
+re-run for every entry in `breachStations` after each collapse, and what has already come
+through is banked into `breachThroughBase` *before* `buildLinks` destroys the counters.
 
 **What is still missing, and it is visual only: the curtain is drawn standing over the hole.**
 The mechanic is complete — five lanes, dead stations, the garrison rehoused, the raster open,

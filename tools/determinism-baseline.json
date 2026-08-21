@@ -61,62 +61,62 @@
     }
   },
   "map=campus-martius&scenario=assault": {
-    "note": "Rome's assault. quality=high, which is the same battle as ultra here -- both fit 3,074 men and 933 of Rome, so fittedUnitScale does not bite until medium. Re-recorded here for a movement that is NOT this pass's: cc72ea6 turned ROUGH_SLOWS_MOVEMENT on, published these exact five hashes in its own commit message -- t+0 unchanged at 22bb3df8, then e246f360, 326f06de, fe58e1f0, cedf0a10 -- and did not include this file in the commit, so the gate that exists to stop unannounced movement has been red on main ever since. The pass that recorded it changed the ram shed's cover test and moved nothing: 'default' and 'map=carthage&scenario=assault' are both bit-identical across it, and this entry's new hashes are cc72ea6's own. Re-record only in the same commit as the change that moved it. ||| Re-recorded again by the aperture pass, which is the change that moved it. Two mechanisms in src/sim/BattleSystem.ts reach this battle: fitToAperture squeezes a formation's frontage down to what the corridor ahead of it will take and spreads it back out once its tail is through, and aimRout deflects a broken unit's flight line round whatever it is about to run into. Both are inert on a map with no masonry on it, and the evidence is in this file: 'default' is bit-identical across the pass at all five checkpoints, and so are t+0 and t+30 of both assaults, which are before anything has routed or entered a gate. The drift starts at t+90 in both. Checked against a second worktree pinned at 7dd9616, which reproduces the previous pins exactly at all five, so the movement is this pass's and not something inherited. ||| Re-recorded by the determinism-cliff pass, and this one is a re-record of the FORMAT rather than of the battle. Two things changed. (1) Two checkpoints added past t+200: the gate used to stop 5.5 s before the only cross-engine divergence anyone has measured (the field battle forks at t+205.5 s), so t+250 is the sentinel just past the fork and t+400 is the second half of the battle nothing had ever looked at. (2) Two new marks per checkpoint. `uf64` is the exact float64 bits of every continuous UnitGroupState field plus the waypoint queue — the layer the float32 pool hash cannot see, and which nothing in this repository hashed until now. `uctl` is the discrete half: order, target, formation, width, alive, kills, membership, flags, and unit array order. The five original pool hashes are UNCHANGED at all three battles across the whole pass, including across the Math.hypot -> Math.sqrt(a*a + b*b) substitution in the same branch, and so are all 21 survivor counts. Every `uf64` moved, and no `uctl` did: the substitution perturbs the simulation own float64 state everywhere, never reaches a control-flow decision, and never survives the float32 round trip. That is the quantisation firewall, and it is why the old five-checkpoint pool-only gate would have reported that a 222-call-site change did nothing. A `uf64` drift with `hash` and `uctl` unchanged is a PORTABILITY finding — a browser update is enough to cause one — and the gate warns rather than fails on it. A `uctl` or `hash` drift is a real change in the battle and still fails. Recorded from three independent page loads per battle, cross-checked against an earlier independent pair of runs: all 21 checkpoints reproduced exactly. Headcounts 8,632 / 3,074 / 3,440 confirm each arm measured the battle it names. ||| **Red on main since c44ded0, and NOT re-recorded here, because this pass did not move it.** The Tiber-and-bench commit moved the ground the storm crosses and its message states only that *Carthage* is bit-identical across it; nothing was said about this arm and this file was not touched. Measured at 70fc191 in a worktree pinned to that SHA, and independently in the deployment pass's worktree on top of it: **the two agree on every bit at all seven checkpoints** — t+0 b9e8c568 (83d398c9/9d8ccf31), t+30 3b07115a (e0b1a2db/42c1eabd), t+90 75567cd0 (32392741/3ced5951), t+150 52a369de (9ccb7d92/77b0f108), t+200 7e2e28fc (0a383ab4/4b2e5e55), t+250 4b691ba6 (218caa98/c6b5628e), t+400 a6e14b66 (e9c370fe/8cb6137c). So this arm is a clean control for the deployment change and a live alarm about the terrain one. It is left red deliberately: `docs/ROME.md` §15 tasks 3-11 all rebuild the wall this assault storms, so recording these numbers now would pin a transient, and recording somebody else's movement under this pass's name is the thing this file exists to prevent. Whoever lands the next circuit change owns it: `node tools/qa-determinism.mjs --record --battle='map=campus-martius&scenario=assault'`. ||| **Re-recorded by the Phase B circuit pass, which is the change that moved it, and the note above named that pass as its owner.** `docs/ROME.md` §15 tasks 3, 4 and 5: the wall line moved off the terrain's crest and onto the twelve surveyed waypoints of §2.5 (157 m at its widest), the bay grid went from 33 bays at 35.5 m to 36 at 37.02 m between two survey anchors, the heightfield banks the Pincian against the back of the Muro Torto, and the circuit gained the Porta Salaria, the Porta Nomentana and the Posterula Pinciana. Every one of those moves the ground the storm crosses and the masonry it crosses it toward, so every checkpoint drifted and all seven were expected to. **The two controls are bit-identical across the same tree**, measured on the same dev server minutes before this was recorded: `default` UNCHANGED at all seven checkpoints at 8,632 soldiers, and `map=carthage&scenario=assault` UNCHANGED at all seven at 3,440. Headcount here is 3,074, which is the tell that this arm measured Rome. A and B agree on every bit at all seven checkpoints across two independent page loads. Tasks 6-14 rebuild this wall further and each of them owns its own re-record. ||| **Re-recorded by §15 task 14's box widening, and the deployment did not move — the ground did.** `deployAssault` never calls `standOnDeploymentGround`, and the evidence is in the marks: `uf64` and `uctl` are **UNCHANGED at all seven checkpoints**, as are all seven survivor counts (3,074 / 2,888 / 2,553 / 2,468 / 2,418 / 2,389 / 2,233), so no order, target, formation, width, membership or continuous unit field differs anywhere in the battle. Only the float32 pool moved, and only from t+90: t+0 and t+30 are UNCHANGED. That is the signature of men walking over ground that shifted rather than of a different battle. What shifted: widening both deployment boxes east and taking `battleCoreMask` from x −540…540 to −540…950 changes the heightfield east of the gate, which is ground the storm's flanks cross. Carthage is bit-identical across the same tree at all seven checkpoints at 3,440 men, and `default` moved for its own stated reason. Headcount 3,074 is the tell that this arm measured Rome.",
+    "note": "Rome's assault. quality=high, which is the same battle as ultra here -- both fit 3,074 men and 933 of Rome, so fittedUnitScale does not bite until medium. Re-recorded here for a movement that is NOT this pass's: cc72ea6 turned ROUGH_SLOWS_MOVEMENT on, published these exact five hashes in its own commit message -- t+0 unchanged at 22bb3df8, then e246f360, 326f06de, fe58e1f0, cedf0a10 -- and did not include this file in the commit, so the gate that exists to stop unannounced movement has been red on main ever since. The pass that recorded it changed the ram shed's cover test and moved nothing: 'default' and 'map=carthage&scenario=assault' are both bit-identical across it, and this entry's new hashes are cc72ea6's own. Re-record only in the same commit as the change that moved it. ||| Re-recorded again by the aperture pass, which is the change that moved it. Two mechanisms in src/sim/BattleSystem.ts reach this battle: fitToAperture squeezes a formation's frontage down to what the corridor ahead of it will take and spreads it back out once its tail is through, and aimRout deflects a broken unit's flight line round whatever it is about to run into. Both are inert on a map with no masonry on it, and the evidence is in this file: 'default' is bit-identical across the pass at all five checkpoints, and so are t+0 and t+30 of both assaults, which are before anything has routed or entered a gate. The drift starts at t+90 in both. Checked against a second worktree pinned at 7dd9616, which reproduces the previous pins exactly at all five, so the movement is this pass's and not something inherited. ||| Re-recorded by the determinism-cliff pass, and this one is a re-record of the FORMAT rather than of the battle. Two things changed. (1) Two checkpoints added past t+200: the gate used to stop 5.5 s before the only cross-engine divergence anyone has measured (the field battle forks at t+205.5 s), so t+250 is the sentinel just past the fork and t+400 is the second half of the battle nothing had ever looked at. (2) Two new marks per checkpoint. `uf64` is the exact float64 bits of every continuous UnitGroupState field plus the waypoint queue — the layer the float32 pool hash cannot see, and which nothing in this repository hashed until now. `uctl` is the discrete half: order, target, formation, width, alive, kills, membership, flags, and unit array order. The five original pool hashes are UNCHANGED at all three battles across the whole pass, including across the Math.hypot -> Math.sqrt(a*a + b*b) substitution in the same branch, and so are all 21 survivor counts. Every `uf64` moved, and no `uctl` did: the substitution perturbs the simulation own float64 state everywhere, never reaches a control-flow decision, and never survives the float32 round trip. That is the quantisation firewall, and it is why the old five-checkpoint pool-only gate would have reported that a 222-call-site change did nothing. A `uf64` drift with `hash` and `uctl` unchanged is a PORTABILITY finding — a browser update is enough to cause one — and the gate warns rather than fails on it. A `uctl` or `hash` drift is a real change in the battle and still fails. Recorded from three independent page loads per battle, cross-checked against an earlier independent pair of runs: all 21 checkpoints reproduced exactly. Headcounts 8,632 / 3,074 / 3,440 confirm each arm measured the battle it names. ||| **Red on main since c44ded0, and NOT re-recorded here, because this pass did not move it.** The Tiber-and-bench commit moved the ground the storm crosses and its message states only that *Carthage* is bit-identical across it; nothing was said about this arm and this file was not touched. Measured at 70fc191 in a worktree pinned to that SHA, and independently in the deployment pass's worktree on top of it: **the two agree on every bit at all seven checkpoints** — t+0 b9e8c568 (83d398c9/9d8ccf31), t+30 3b07115a (e0b1a2db/42c1eabd), t+90 75567cd0 (32392741/3ced5951), t+150 52a369de (9ccb7d92/77b0f108), t+200 7e2e28fc (0a383ab4/4b2e5e55), t+250 4b691ba6 (218caa98/c6b5628e), t+400 a6e14b66 (e9c370fe/8cb6137c). So this arm is a clean control for the deployment change and a live alarm about the terrain one. It is left red deliberately: `docs/ROME.md` §15 tasks 3-11 all rebuild the wall this assault storms, so recording these numbers now would pin a transient, and recording somebody else's movement under this pass's name is the thing this file exists to prevent. Whoever lands the next circuit change owns it: `node tools/qa-determinism.mjs --record --battle='map=campus-martius&scenario=assault'`. ||| **Re-recorded by the Phase B circuit pass, which is the change that moved it, and the note above named that pass as its owner.** `docs/ROME.md` §15 tasks 3, 4 and 5: the wall line moved off the terrain's crest and onto the twelve surveyed waypoints of §2.5 (157 m at its widest), the bay grid went from 33 bays at 35.5 m to 36 at 37.02 m between two survey anchors, the heightfield banks the Pincian against the back of the Muro Torto, and the circuit gained the Porta Salaria, the Porta Nomentana and the Posterula Pinciana. Every one of those moves the ground the storm crosses and the masonry it crosses it toward, so every checkpoint drifted and all seven were expected to. **The two controls are bit-identical across the same tree**, measured on the same dev server minutes before this was recorded: `default` UNCHANGED at all seven checkpoints at 8,632 soldiers, and `map=carthage&scenario=assault` UNCHANGED at all seven at 3,440. Headcount here is 3,074, which is the tell that this arm measured Rome. A and B agree on every bit at all seven checkpoints across two independent page loads. Tasks 6-14 rebuild this wall further and each of them owns its own re-record. ||| **Re-recorded by §15 task 14's box widening, and the deployment did not move — the ground did.** `deployAssault` never calls `standOnDeploymentGround`, and the evidence is in the marks: `uf64` and `uctl` are **UNCHANGED at all seven checkpoints**, as are all seven survivor counts (3,074 / 2,888 / 2,553 / 2,468 / 2,418 / 2,389 / 2,233), so no order, target, formation, width, membership or continuous unit field differs anywhere in the battle. Only the float32 pool moved, and only from t+90: t+0 and t+30 are UNCHANGED. That is the signature of men walking over ground that shifted rather than of a different battle. What shifted: widening both deployment boxes east and taking `battleCoreMask` from x −540…540 to −540…950 changes the heightfield east of the gate, which is ground the storm's flanks cross. Carthage is bit-identical across the same tree at all seven checkpoints at 3,440 men, and `default` moved for its own stated reason. Headcount 3,074 is the tell that this arm measured Rome. ||| **Re-recorded by the two-rams pass, which is the change that moved it, and it moved it from t+0 because the deployment itself changed. Two edits reach this battle and both were intended.** (1) `deployAssault` fans the garrison out from bay offset **0** instead of 1. That was correct while a gate bay could not be garrisoned; the redesigned circuit made Rome's garrisonable on purpose and put the Porta Flaminia at bay 1 between four `footing`/`gap` bays, so `holdable` rejected -1, +1, +2 and +3, offset 0 was never offered, and the nearest defender to the gate the ram attacks stood **134 m** away. Measured at 5338249: the gate crew took ZERO damage and the ram landed 26 of 26 blows on eight seeds of eight at both ultra and medium. One ballistarii unit now holds the gate bay's own 19-station run at 65 m, and the crew absorbs real fire and still lands 26 of 26 with the gate open at t+220 on every seed of eight before the merge and three of three after it. No unit strength, count or damage value was touched; the same five ballistarii and three slinger units deploy, one bay nearer the gate apiece. (2) The Juthungi field a **great ram**: `great-ram-crew` 1 in, `juthungi-riders` 2 -> 1 out, so the side is still at exactly MAX_UNITS_PER_SIDE and the headcount goes **3,074 -> 3,072**. That is the tell for this arm from here on: an arm reporting 3,074 measured a tree without the great ram in it. **Both controls are bit-identical across the same tree, measured on the same dev server minutes before this was recorded**: `default` UNCHANGED at all seven checkpoints at 8,632, and `map=carthage&scenario=assault` UNCHANGED at all seven at 3,440. Carthage is a real control here rather than a nominal one, because Scipio's train was deliberately NOT given a great ram and `carthageWall.ts` sets `garrisonable: !bay.isGate`, so `holdable(0)` is false there and its picked-bay list does not move. A and B agree on every bit at all seven checkpoints. Recorded on top of §15 task 14's re-record, which had moved t+90 onward and left t+0 and t+30 alone; this one moves t+0 too, which is the signature of a deployment change landing on top of that pass's ground change.",
     "checkpoints": {
       "0": {
-        "hash": "b74dd2b2",
-        "count": 3074,
-        "alive": 3074,
-        "uf64": "a46d0ead",
-        "uctl": "9d8ccf31",
+        "hash": "40627ea8",
+        "count": 3072,
+        "alive": 3072,
+        "uf64": "dcba6e38",
+        "uctl": "7c45e360",
         "units": 32
       },
       "30": {
-        "hash": "1076449e",
-        "count": 3074,
-        "alive": 2888,
-        "uf64": "373ba0d7",
-        "uctl": "b9c20b0c",
+        "hash": "183e14c8",
+        "count": 3072,
+        "alive": 2884,
+        "uf64": "2e7ca2b9",
+        "uctl": "bd9fad9d",
         "units": 32
       },
       "90": {
-        "hash": "d9aa38b0",
-        "count": 3074,
-        "alive": 2553,
-        "uf64": "17b3fffb",
-        "uctl": "0955cea4",
+        "hash": "07262e16",
+        "count": 3072,
+        "alive": 2543,
+        "uf64": "a3de9858",
+        "uctl": "7f0bee3d",
         "units": 32
       },
       "150": {
-        "hash": "3fe8d038",
-        "count": 3074,
-        "alive": 2468,
-        "uf64": "29af5fe9",
-        "uctl": "4f3d713f",
+        "hash": "ad7e2110",
+        "count": 3072,
+        "alive": 2500,
+        "uf64": "5fac794a",
+        "uctl": "14da106c",
         "units": 32
       },
       "200": {
-        "hash": "f08b711e",
-        "count": 3074,
-        "alive": 2418,
-        "uf64": "1e6baac6",
-        "uctl": "716bff02",
+        "hash": "3a7ed1fa",
+        "count": 3072,
+        "alive": 2413,
+        "uf64": "acbb6cec",
+        "uctl": "76b67098",
         "units": 32
       },
       "250": {
-        "hash": "4ea38480",
-        "count": 3074,
-        "alive": 2389,
-        "uf64": "ee3615a5",
-        "uctl": "b02ef875",
+        "hash": "bb45b432",
+        "count": 3072,
+        "alive": 2333,
+        "uf64": "deb5c806",
+        "uctl": "d705dc51",
         "units": 32
       },
       "400": {
-        "hash": "863a0472",
-        "count": 3074,
-        "alive": 2233,
-        "uf64": "53ea7cc1",
-        "uctl": "f795e25d",
+        "hash": "60a7ce58",
+        "count": 3072,
+        "alive": 1883,
+        "uf64": "36f00430",
+        "uctl": "e370a7d6",
         "units": 32
       }
     }
