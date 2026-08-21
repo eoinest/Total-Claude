@@ -614,9 +614,14 @@ the browser coalesces and two runs placed the same unit at widths one apart; and
 `engine.stop()` *before* clicking BEGIN rather than after, because otherwise run A reached
 sim 0.233 s and run B 0.200 s before either had been advanced at all.
 
-Also worth knowing: **the hash function is copy-pasted between the two files**
+~~Also worth knowing: **the hash function is copy-pasted between the two files**
 (`qa-determinism.mjs:67` and `qa-deploy.mjs:1010`), with no shared module, and both hardcode
-the literals `10` and `11` for `Dying`/`Dead` rather than importing `SoldierState`.
+the literals `10` and `11` for `Dying`/`Dead` rather than importing `SoldierState`.~~
+**Fixed, 21 August 2026.** It is now `src/sim/stateHash.ts`, in the product rather than in a
+shared tools module, and both gates plus `tools/qa-replay.mjs` reach it through
+`window.__game.hashes()`. The enum is spelled once, in a file that can see it. The arithmetic
+did not move: all three battles, all seven checkpoints, `hash`/`uf64`/`uctl` unchanged across
+the relocation.
 
 ### What a hash divergence actually tells you
 
@@ -1417,11 +1422,13 @@ indices, fields and percentage shown are the end state under the wrong heading.
 **5. `--until` is documented and unread; `--at` is real and undocumented.**
 `tools/qa-determinism.mjs:14`.
 
-**6. The state hash is duplicated, not shared.**
-`tools/qa-determinism.mjs:67` and `tools/qa-deploy.mjs:1010` define the same FNV-1a
-byte-for-byte with no shared module, and both hardcode `10`/`11` for `Dying`/`Dead` instead
-of importing `SoldierState`. Renumbering the enum would silently break the `alive` count in
-both gates; changing one hash would silently desync them.
+**6. ~~The state hash is duplicated, not shared.~~ Fixed, 21 August 2026 — `src/sim/stateHash.ts`.**
+Both gates and `tools/qa-replay.mjs` now read it off `window.__game.hashes()`, the enum is
+imported rather than spelled `10`/`11`, and the two halves are computed in one pass instead of
+two. Note for anyone tidying it: `poolHash` multiplies with `h = (h * 0x01000193) >>> 0`, which
+rounds above 2^53 for about 87.5% of its products and is therefore **not FNV-1a**. Twenty-one
+recorded hashes are keyed to that rounding. `unitHash` beside it *is* real FNV-1a via
+`Math.imul`, because it was written later with nothing pinned to it.
 
 **7. The two gates assert on different fields.**
 `qa-determinism.mjs` compares `hash`, `count`, `alive` and ignores `simTime`;

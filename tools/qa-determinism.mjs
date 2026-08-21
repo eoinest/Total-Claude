@@ -124,6 +124,16 @@
  * reaches the simulation. Several siege probes use the 166 ms idiom and are therefore not
  * fast-forwarding the battle this file measures.
  *
+ * **Annotated 21 August 2026 — the advice is right and its stated reason is wrong.** This file
+ * drives by *seconds*, and a coarser step at the same elapsed time runs a different number of
+ * ticks: 900 at 1000/60, 901 at 166 ms, 899 at an exactly-five-tick 1000/6, because
+ * `double(1/6)` is about 7e-18 short of five times `double(1/30)` so the fifth subtraction
+ * fails once and `maxStepsPerFrame = 5` means the tick is never made up. So do not coarsen
+ * this file's step — but not because frame grouping reaches the simulation. Held to an equal
+ * *tick count*, five ticks a frame and one tick every two frames are bit-identical on all
+ * three hashes across a 6,407-tick battle with real player orders in it
+ * (`tools/qa-replay.mjs`, which uses `window.__game.advanceTicks`).
+ *
  * ## A build compared with itself cannot see a build that changed
  *
  * Everything above compares run A with run B of the *same* tree, so it answers "does this
@@ -219,28 +229,29 @@ const browser = await chromium.launch({
   args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
 });
 
+/**
+ * The page-side readers.
+ *
+ * The two hashes themselves are **no longer injected here**. They live in
+ * `src/sim/stateHash.ts` and are reached through `window.__game.hashes()`, so the
+ * arithmetic this file pins is the arithmetic the product computes and a second consumer —
+ * `tools/qa-replay.mjs` — cannot drift from it by copying forty lines slightly wrong. The
+ * bit patterns are unchanged: `poolHash` still multiplies with the float `h * 0x01000193`
+ * that rounds above 2^53 and is therefore not FNV, because twenty-one recorded hashes are
+ * keyed to it, and `unitHash` is still the real `Math.imul` FNV-1a it was written as.
+ *
+ * What stays here is the *localiser*: the raw dumps this file reads when something has
+ * already gone wrong, which are a harness concern and have nothing pinned to them. They
+ * read their field lists off `window.__game.hashFields()` for the same reason — the thing
+ * that reports a drift must never be reading a different set from the thing that found it.
+ */
 const HASH_FN = `
-  window.__poolHash = () => {
-    const p = window.__game.battle.pool;
-    // FNV-1a over the exact bit patterns, so a 1-ULP drift is caught rather than rounded
-    // away. Reading the float bits via a shared DataView avoids any toFixed() smoothing.
-    const buf = new ArrayBuffer(4);
-    const dv = new DataView(buf);
-    let h = 0x811c9dc5;
-    const mix = (u) => {
-      h ^= u & 0xff;        h = (h * 0x01000193) >>> 0;
-      h ^= (u >>> 8) & 0xff;  h = (h * 0x01000193) >>> 0;
-      h ^= (u >>> 16) & 0xff; h = (h * 0x01000193) >>> 0;
-      h ^= (u >>> 24) & 0xff; h = (h * 0x01000193) >>> 0;
-    };
-    const f = (v) => { dv.setFloat32(0, v); mix(dv.getUint32(0)); };
-    let alive = 0;
-    for (let i = 0; i < p.count; i++) {
-      f(p.x[i]); f(p.z[i]); mix(p.state[i]); f(p.hp[i]);
-      if (p.state[i] !== 10 && p.state[i] !== 11) alive++;
-    }
-    return { hash: (h >>> 0).toString(16).padStart(8, '0'), count: p.count, alive };
-  };
+  window.__marks = () => window.__game.hashes();
+  window.__poolHash = () => { const h = window.__game.hashes(); return { hash: h.hash, count: h.count, alive: h.alive }; };
+  window.__unitHash = () => { const h = window.__game.hashes(); return { uf64: h.uf64, uctl: h.uctl, units: h.units }; };
+  window.__UNIT_F64 = window.__game.hashFields().f64;
+  window.__UNIT_CTL = window.__game.hashFields().ctl;
+
   window.__poolDump = () => {
     const p = window.__game.battle.pool;
     return {
@@ -251,79 +262,6 @@ const HASH_FN = `
       hp: Array.from(p.hp.subarray(0, p.count)),
       unitId: Array.from(p.unitId.subarray(0, p.count)),
     };
-  };
-
-  // ---------------------------------------------------------------------------
-  // The float64 layer: UnitGroupState, which nothing in this repository hashed
-  // ---------------------------------------------------------------------------
-  //
-  // One source of truth for the field lists, shared by the hash and by the localiser, so
-  // the thing that reports a drift can never be reading a different set from the thing
-  // that found it.
-  //
-  // F64: every continuous field. These are integrated in place with no quantisation step,
-  // which is why they drift between engines within a second of simulated time while the
-  // float32 pool holds for six thousand ticks.
-  window.__UNIT_F64 = [
-    'x', 'z', 'facing', 'targetX', 'targetZ', 'targetFacing',
-    'morale', 'maxMorale', 'fatigue', 'ammo', 'chargeTimer', 'routTimer',
-    'spacingX', 'spacingZ',
-  ];
-  // CTL: the discrete half. What the unit decided, not where the arithmetic put it.
-  window.__UNIT_CTL = [
-    'id', 'typeId', 'faction', 'order', 'targetUnitId', 'width', 'alive',
-    'initialStrength', 'kills', 'formationId',
-    'running', 'engaged', 'contactLock', 'charging', 'destroyed', 'concealed',
-  ];
-
-  window.__unitHash = () => {
-    const units = window.__game.battle.units;
-    const buf = new ArrayBuffer(8);
-    const dv = new DataView(buf);
-    /*
-     * Real FNV-1a, via Math.imul.
-     *
-     * Deliberately *not* the pool hash's \`h = (h * 0x01000193) >>> 0\`, which rounds above
-     * 2^53 for about 87.5% of its products and is therefore not FNV at all. That one is kept
-     * verbatim because fifteen recorded hashes are keyed to it and "fixing" it would silently
-     * invalidate all of them. This hash has nothing pinned to it yet, so it is the real thing.
-     */
-    const mk = () => {
-      let h = 0x811c9dc5;
-      const b = (u) => { h = Math.imul(h ^ (u & 0xff), 0x01000193) >>> 0; };
-      const u32 = (u) => { b(u); b(u >>> 8); b(u >>> 16); b(u >>> 24); };
-      return {
-        u32,
-        f64: (v) => { dv.setFloat64(0, v); u32(dv.getUint32(0)); u32(dv.getUint32(4)); },
-        bool: (v) => b(v ? 1 : 0),
-        str: (s) => { const t = String(s); for (let k = 0; k < t.length; k++) u32(t.charCodeAt(k)); b(0); },
-        hex: () => (h >>> 0).toString(16).padStart(8, '0'),
-      };
-    };
-    const f = mk();
-    const c = mk();
-    /*
-     * Array order is hashed, not sorted away. \`battle.units\` is iterated in place by the
-     * tick loop, so its order is simulation state in the same way Map insertion order is;
-     * sorting by id here would hide a reordering rather than report it.
-     */
-    for (const u of units) {
-      for (const k of window.__UNIT_F64) f.f64(u[k]);
-      const wp = u.waypoints ?? [];
-      f.u32(wp.length);
-      for (let i = 0; i < wp.length; i++) f.f64(wp[i]);
-
-      for (const k of window.__UNIT_CTL) {
-        const v = u[k];
-        if (typeof v === 'string') c.str(v);
-        else if (typeof v === 'boolean') c.bool(v);
-        else c.f64(v);
-      }
-      const mem = u.members ?? [];
-      c.u32(mem.length);
-      for (let i = 0; i < mem.length; i++) c.u32(mem[i]);
-    }
-    return { uf64: f.hex(), uctl: c.hex(), units: units.length };
   };
 
   window.__unitDump = () => window.__game.battle.units.map((u) => ({
@@ -360,8 +298,11 @@ async function run(label) {
       );
       prev = at;
     }
-    const h = await page.evaluate(() => window.__poolHash());
-    const u = await page.evaluate(() => window.__unitHash());
+    // One call, not two: `hashes()` computes both halves in one pass over the pool and the
+    // unit array, and asking twice would double the only cost this loop has.
+    const m = await page.evaluate(() => window.__marks());
+    const h = { hash: m.hash, count: m.count, alive: m.alive };
+    const u = { uf64: m.uf64, uctl: m.uctl, units: m.units };
     marks.push({ at, ...h, ...u, simTime: await page.evaluate(() => +window.__game.simTime().toFixed(3)) });
     console.log(`  ${label}  t+${String(at).padStart(3)}  simTime ${marks.at(-1).simTime.toFixed(3)}  ` +
       `count ${h.count}  alive ${h.alive}  hash ${h.hash}  uf64 ${u.uf64}  uctl ${u.uctl}`);

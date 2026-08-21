@@ -1154,23 +1154,19 @@ if (!ONLY || ONLY === 'det') {
    * `battle.rng` — `spawnUnit` forks a child stream and `Rng.fork` does not mutate its
    * parent — so the claim is that a hand-placed army is as replayable as a scripted one.
    */
+  /*
+   * The hash is the product's, not this file's.
+   *
+   * It used to be forty lines of FNV injected as a source string here and forty more in
+   * `qa-determinism.mjs`, and TOOLING.md's own note on that pair said they had *already*
+   * drifted cosmetically and both hardcoded `SoldierState.Dying`/`Dead` as 10 and 11 with no
+   * way to import the enum. Both now read `src/sim/stateHash.ts` through `window.__game`, so
+   * there is one copy, it is the one twenty-one pinned baselines are keyed to, and the enum
+   * is spelled once in a file that can see it.
+   */
   const HASH = `window.__poolHash = () => {
-    const p = window.__game.battle.pool;
-    const dv = new DataView(new ArrayBuffer(4));
-    let h = 0x811c9dc5;
-    const mix = (u) => {
-      h ^= u & 0xff; h = (h * 0x01000193) >>> 0;
-      h ^= (u >>> 8) & 0xff; h = (h * 0x01000193) >>> 0;
-      h ^= (u >>> 16) & 0xff; h = (h * 0x01000193) >>> 0;
-      h ^= (u >>> 24) & 0xff; h = (h * 0x01000193) >>> 0;
-    };
-    const f = (v) => { dv.setFloat32(0, v); mix(dv.getUint32(0)); };
-    let alive = 0;
-    for (let i = 0; i < p.count; i++) {
-      f(p.x[i]); f(p.z[i]); mix(p.state[i]); f(p.hp[i]);
-      if (p.state[i] !== 10 && p.state[i] !== 11) alive++;
-    }
-    return { hash: (h >>> 0).toString(16).padStart(8, '0'), count: p.count, alive };
+    const h = window.__game.hashes();
+    return { hash: h.hash, count: h.count, alive: h.alive, uf64: h.uf64, uctl: h.uctl };
   };`;
   const marks = [];
   for (const label of ['A', 'B']) {
