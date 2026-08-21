@@ -729,6 +729,28 @@ lat/lon to pixel coordinates against that image's stated bounding box.
   contours are too sparse to interpolate and everything reads ~10 m.
 - Local: `sitar-ptrs-1924-contours-1m-central-rome-EPSG4326.geo.json`
 
+**7b. The same layer, north-east quadrant** — fetched 2026-08-20 for `docs/ROME.md` §3.3,
+because item 7's extract stops short of the Pincian, the Quirinal and the Castra Praetoria and
+returns nothing usable there.
+- Same creator, licence and required citation as item 7.
+- **File:** GeoServer WFS `GetFeature`, **`version=1.1.0`**,
+  `typeName=sitar_potenziale:p_1924_contour_lines_ptrs`, `outputFormat=application/json`,
+  `srsName=EPSG:4326`, **`propertyName=geom,altitudine`**,
+  `bbox=2310000,4640500,2314800,4644500,urn:ogc:def:crs:EPSG::3004`, host
+  `https://repositar.archeositarproject.it/geoserver/ows`
+- **The `propertyName` filter is required.** WFS 2.0.0 with JSON output returns
+  `PSQLException: column "data_provider" does not exist` — a server-side schema mismatch on the
+  layer. Restricting the requested properties to the geometry and the altitude works.
+- 3,053 features, 42,340 vertices, altitudes 8–66 m, bbox `12.45756, 41.87228, 12.53159, 41.93238`.
+- **Known limit, and it is why `docs/ROME.md` §3.3 carries a warning before its results.** The
+  1924 survey drew contours where there is relief and **nothing at all on the flat**. On the
+  Campus Martius the nearest contour to any sample is 100–600 m away, so a naive
+  two-nearest interpolation returns a number that means nothing — it returned "10.5 m" for the
+  Pincian summit and "47.5 m" for the Porta Nomentana on a first pass. Any sample whose nearest
+  contour is more than ~35 m away is not a measurement.
+- Sampled by `tools/scratch/rome-contour.mjs`, `rome-wallprofile.mjs` and `rome-transect.mjs`.
+- Local: `sitar-ptrs-1924-contours-ne-quadrant-EPSG4326.geo.json` (1.6 MB)
+
 ### Referenced but deliberately NOT used
 - **Stanford Digital Forma Urbis Romae** (formaurbis.stanford.edu) — its meshes and photos
   are fetchable without authentication, but `docs/FURcopyright.html` states they "may not be
@@ -986,3 +1008,185 @@ permitted-format list; they are cited in `docs/CARTHAGE.md` as reading, not fetc
 reconstruction render, artist's impression or game screenshot of Carthage was fetched from any
 source, and none may be: the reconstruction imagery that dominates a search for this city is
 overwhelmingly either unlicensed, of unknown provenance, or extracted from a commercial game.
+
+---
+
+## Aurelian Rome reference — `reference/rome-aurelian/` (layout and accuracy only, not shipped, not deck-eligible)
+
+Gathered for the map design of the **Aurelian Wall and the Campus Martius, Rome, AD 271**.
+Purpose: settle the standing fabric of Aurelian's circuit — the brick curtain, the square
+tower interval, the parapet, the inner-face arcading, the gate types — and the plan of the
+northern Campus Martius, against a photograph of the real wall or a published measured
+drawing rather than against an opinion. 16 files, **29 MB** total. `reference/` is gitignored
+and this directory carries `.metadata_never_index`.
+
+**Deck eligibility: none.** `reference/rome2/` remains the **sole** blind render-quality plate
+pool. Everything here is a photograph of a real place, an eighteenth-century etching, or a
+georeferenced survey raster; a grader separates photography from rendering on sensor noise
+alone and would score 100% without looking at a shadow. Mixing provenance has been got wrong
+twice on this project. **Nothing in this pool is deck-eligible.** These are for the **accuracy
+and layout** pass only.
+
+**The provenance rule that governed this pass, stated plainly.** A large fraction of the
+"Aurelian Wall reconstruction" imagery in circulation is extracted from commercial games —
+*Total War: Rome II* above all — or is an artist's impression with no traceable source.
+**Nothing was taken from Total War, Creative Assembly, any video game, any game wiki, any
+modding site, any reconstruction render, or any artist's impression of unknown provenance.**
+No such file was downloaded, and none may be.
+
+**How the licence was verified.** Every Commons candidate was taken through the
+`action=query&prop=imageinfo&iiprop=extmetadata` API — which returns the licence recorded on
+that individual file's own description page — **before** any byte was fetched, and then the
+page's own **wikitext** was read so the licence *template* could be recorded verbatim rather
+than paraphrased from a rendered box. Only CC0, Public domain, CC BY or CC BY-SA were
+accepted; every accepted file returned an empty `Restrictions` field. The two WMS rasters were
+verified against the publisher's own licence page, re-read during this pass (see the two
+verbatim quotations below the table). No PDF was fetched: the permitted formats were JPEG,
+PNG, SVG and TIFF, and every file here is JPEG.
+
+**What was actually done to check the files, stated honestly.** There is no on-demand AV
+scanner in this environment, so this is signature-and-structure checking, not scanning. Each
+download was fetched directly from `upload.wikimedia.org` or from the publisher's own OGC
+endpoint — no mirror, no shortener — held in memory, and written to disk only after its
+**leading magic bytes** matched the declared type (`FF D8 FF` for JPEG, `89 50 4E 47 0D 0A 1A
+0A` for PNG) **and** its trailing bytes matched a complete container (`FF D9` for JPEG,
+`IEND®B\`‚` for PNG). Anything failing either test was to be discarded unwritten; nothing
+failed. No archives were involved, so nothing was extracted; no executable, installer or
+script was downloaded or run. Where a Commons original was larger than the pass's byte budget
+it was taken as a **rendition from Wikimedia's own thumbnail service** (`Special:FilePath?width=N`,
+which snaps to Wikimedia's standard buckets — asking for 4096 or 3200 returns 3840, asking for
+2560 returns 1920), which is the same practice as the Lanciani `3840px-` plates above.
+
+### The pool
+
+| File | What it is for | Creator / date | Licence (template, verbatim) | Source page | px | Bytes | SHA-256 (first 16) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `muro-torto-lean-and-fabric-joris-2006.jpg` | **The Muro Torto** — the leaning Pincian retaining wall close to, showing its batter, its height and its brick-and-rubble fabric with a buttress stub. The single most wanted item. | Joris (van Rooden), 2006-01-03 | `{{self\|GFDL\|Cc-by-sa-3.0-migrated\|Cc-by-sa-2.5,2.0,1.0}}` — multi-licensed; taken under **CC BY-SA 3.0** | <https://commons.wikimedia.org/wiki/File:Aurelian_Wall_Mura_delle_torte.JPG> | 2048 × 1536 | 1 502 111 | `de86286975df0bcf` |
+| `muro-torto-viale-and-pincio-indeciso42-2024.jpg` | The Muro Torto in section: the sunk Viale del Muro Torto, the leaning wall on the Pincian side, the casino above, the retaining wall opposite. Gives the depth of the cut and the road width. | it:indeciso42, 2024-07-20 | `{{Self\|cc-by-sa-4.0}}` — **CC BY-SA 4.0** | <https://commons.wikimedia.org/wiki/File:MUROTORTOPINCIO20072024_014A.jpg> | 1600 × 1065 | 523 079 | `1183762c54121412` |
+| `piranesi-1756-tavXI-muro-torto-speroni-plan-3840px.jpg` | **Measured plan of the Muro Torto's buttresses** — "Pianta de Speroni del muro del Busto, detto Muro Torto", *Le antichità Romane* t. I, tav. XI. The buttress spacing and the wall's plan thickness, surveyed. | Giovanni Battista Piranesi, 1756 | `{{Piranesi\|…}}`, which renders `{{PD-Art}}` + `{{PD-old-100}}` + `{{PD-US-expired}}`: "This work is in the public domain in its country of origin and other countries and areas where the copyright term is the author's life plus 100 years or fewer." / "This work is in the public domain in the United States because it was published (or registered with the U.S. Copyright Office) before January 1, 1931." / "This file has been identified as being free of known restrictions under copyright law, including all related and neighboring rights." | <https://commons.wikimedia.org/wiki/File:Piranesi-1016.jpg> | 3840 × 2591 (orig. 6400 × 4318) | 3 919 126 | `5c14a9f61f393bab` |
+| `wall-inner-face-arcading-via-campania-sailko.jpg` | **The inner-face arcading.** Via Campania: the row of tall blind arches carrying the chemin de ronde, with a tower behind. This is the single clearest statement of how the wall is built on the city side. | Sailko, 2016-10-15 | `{{self\|cc-by-3.0}}` — **CC BY 3.0** | <https://commons.wikimedia.org/wiki/File:Mura_aureliane_in_via_campania_a_roma.jpg> | 2724 × 2200 | 4 453 002 | `7eb3b3fd70539514` |
+| `wall-walk-parapet-tower-museo-delle-mura-3840px.jpg` | **The wall-walk from above** — parapet, merlons, the gallery floor, a square tower and the run of the curtain, seen from the Museo delle Mura at Porta San Sebastiano. Gives the walk width and the tower interval in one frame. | Pierfelice Licitra, 2013-04-25 (Panoramio) | `{{cc-by-3.0\|Pierfelice Licitra}}` + `{{Panoramioreview}}` — **CC BY 3.0** | <https://commons.wikimedia.org/wiki/File:Mura_aureliane_veduta_dal_Museo_delle_Mura_-_panoramio.jpg> | 3840 × 2880 (orig. 4000 × 3000) | 2 465 841 | `aca4935c71cc7c6e` |
+| `wall-corso-ditalia-tower-interval-blackcat-2012.jpg` | The Corso d'Italia stretch (Porta Pinciana → Porta Pia): the curtain seen along its length with successive square towers. Tower interval and the modern street grade against the wall foot. | Blackcat (Sergio D'Afflitto), 2012-07-04 | `{{User:Blackcat/Permission\|3.0\|2012\|07}}`, which renders: "This photograph is a 2012 work by Sergio D'Afflitto. It is released under the terms of CC-BY-SA-3.0 licence. Anyone who reuses this work must give appropriate credit to its author." (API reports `cc-by-sa-3.0-it`) | <https://commons.wikimedia.org/wiki/File:2012-07-04_Roma_Corso_d%27Italia.jpg> | 2817 × 1878 | 1 207 769 | `ed8da18ba3ca4a54` |
+| `wall-porta-sansebastiano-to-porta-latina-lalupa.jpg` | The Porta San Sebastiano → Porta Latina stretch as a 3.5:1 panorama — the best-preserved run on the circuit, string courses and tower rhythm legible end to end. | Lalupa, 2012 | `{{PD-user\|Lalupa}}`: "This work has been released into the public domain by its author, Lalupa. This applies worldwide." | <https://commons.wikimedia.org/wiki/File:Le_mura_tra_porta_san_Sebastiano_e_porta_Latina_2012st.JPG> | 3040 × 868 | 579 481 | `25e0f5064d74172c` |
+| `middleton-1911-eb11-aurelian-wall-tower-plan.jpg` | **Measured plan and section of one wall segment with its tower**, showing the passage in the thickness of the wall. The only measured drawing of the wall's own cross-section in the pool. | John Henry Middleton, *Encyclopædia Britannica* 11th ed., v. 23, 1911, "Rome", p. 607 fig. 13 | `{{PD-Britannica}}`: "This image comes from the 13th edition of the Encyclopædia Britannica or earlier. The copyrights for that book have expired in the United States because the book was first published in the US with the publication occurring before January 1, 1931. As such, this image is in the public domain in the United States." | <https://commons.wikimedia.org/wiki/File:EB1911_Rome_-_Aurelian%27s_Wall.jpg> | 780 × 406 | 104 562 | `054f41292fa64756` |
+| `porta-san-sebastiano-porta-appia-frontal-raboe-2025-3840px.jpg` | **Porta San Sebastiano (Porta Appia) frontal** — the type specimen of the twin-tower gate: two semicircular towers on square marble-faced bases, the Honorian raising, the single arch, the merlons. | Raboe001, 2025-04-25 | `{{cc-by-sa-3.0}}` — **CC BY-SA 3.0** (page also carries `{{GFDL\|migration=redundant}}`) | <https://commons.wikimedia.org/wiki/File:Rom_2025_-_Mura_aureliane_-_by-RaBoe_001.jpg> | 3840 × 1974 (orig. 5334 × 2742) | 1 614 673 | `cd35a05a3ae39750` |
+| `porta-salaria-ancient-gate-photo-c1870.jpg` | **Porta Salaria as it stood before demolition** — photograph made *c.* 1870, i.e. the **ancient** gate, before the 1870 breach damage, Vespignani's 1873 replacement, and the 1921 demolition of that replacement. The only pre-demolition record in the pool. | photographer not recorded; Rome, *c.* 1870 | `{{PD-old}}`: "This work is in the public domain in its country of origin and other countries and areas where the copyright term is the author's life plus 70 years or fewer." | <https://commons.wikimedia.org/wiki/File:Porta_Salaria.jpg> | 1417 × 1063 | 333 222 | `da01c72b3616fc6f` |
+| `porta-pinciana-external-face-joris-2006.jpg` | **Porta Pinciana, external face** — the northern-arc gate that survives largely as built: a single arch between two semicircular towers on square bases. The northern counterpart to Porta San Sebastiano. | Joris (van Rooden), 2006-01-03 | `{{PD-self}}`: "I, the copyright holder of this work, release this work into the public domain. This applies worldwide." | <https://commons.wikimedia.org/wiki/File:Porta_Pinciana_front.JPG> | 2048 × 1536 | 1 459 365 | `5fb225a30de2019b` |
+| `castra-praetoria-north-wall-joris-2006.jpg` | **The Castra Praetoria north wall standing** — the Tiberian camp wall that Aurelian absorbed into the circuit and heightened; shows the earlier fabric under the Aurelianic raising. | Joris (van Rooden), 2006-01-03 | `{{self\|GFDL\|Cc-by-sa-3.0-migrated\|Cc-by-sa-2.5,2.0,1.0}}` — taken under **CC BY-SA 3.0** | <https://commons.wikimedia.org/wiki/File:Castra_Praetoria_North_Wall.JPG> | 2048 × 1536 | 1 467 859 | `7b7c747dff63c169` |
+| `piranesi-1756-tavXXXIX-castra-praetoria-plan-3840px.jpg` | **Plan of the Castra Praetoria** — "Pianta della forma del Castro di Tiberio innanzi al suo disfacimento", *Le antichità Romane* t. I, tav. XXXIX. Camp outline, gates and internal arrangement. Piranesi states his own sources on the plate (the surviving remains, the Arch of Constantine relief, coins, ancient writers), so parts of it are **restoration, not survey** — read it against the Lanciani raster below. | Giovanni Battista Piranesi, 1756 | `{{Piranesi\|…}}` → same PD-Art / PD-old-100 / PD-US-expired text quoted for tav. XI above | <https://commons.wikimedia.org/wiki/File:Piranesi-1071.jpg> | 3840 × 5619 (orig. 4374 × 6400) | 5 794 444 | `0567804d0e599e5e` |
+| `opus-latericium-putlog-holes-caracalla-villa-2023-1920px.jpg` | **Third-century *opus latericium* close to**, with a brick relieving arch and a clear row of **putlog holes** across the face. Baths of Caracalla, AD 212–216 — the same Roman brick industry, 55–60 years before the wall. | Paolo Villa, 2023-10-06 | `{{cc-by-sa-4.0}}` — **CC BY-SA 4.0** | <https://commons.wikimedia.org/wiki/File:10_2023_-_Terme_(Baths_of)_Caracalla,_Arte_Romana,_Viale_Guido_Baccelli,_Rome,_Roma,_Lazio,_00154,_Italy_-_Photo_Paolo_Villa_-_FO232092_-_Architettura_e_mattoni.jpg> | 1920 × 2899 (orig. 3264 × 4928) | 2 136 017 | `d30e5ecfb74cde16` |
+| `lanciani-sitar-northern-arc-campus-martius-EPSG4326-12.4660_41.8955_12.5100_41.9155-4096px.jpg` | **The plan.** Lanciani's *Forma Urbis Romae* rendered over the **northern arc and the northern Campus Martius**: Porta Flaminia, the Muro Torto and the Pincian, Porta Pinciana, Porta Salaria, Porta Nomentana, the Castra Praetoria with the wall running along its north and east sides, the Mausoleum of Augustus, the Horologium/Ara Pacis quarter, Via Lata, the Stadium of Domitian, the Tiber bend. Tower ticks are individually resolved. | Rodolfo Lanciani (1845–1929), Milan 1893–1901, 1:1000; georectification by Gruppo di lavoro SITAR, SSABAP-RM | Publisher's own statement, re-read this pass — see the two verbatim quotations below the table. Map content **public domain by age** (author d. 1929); georectification **CC BY-SA 4.0** to SSABAP-RM | <https://www.archeositarproject.it/geoservizi/> | 4096 × 2496 | 1 449 231 | `0c0bba8acc84a978` |
+| `agea-2012-ortofoto-northern-campus-martius-EPSG4326-12.4660_41.9000_12.4900_41.9160-2048px.jpg` | **The modern aerial.** Piazza del Popolo and Porta del Popolo, the Pincio and the Muro Torto cut, the Mausoleum of Augustus and the Ara Pacis, Via del Corso on the line of the Via Lata, and the **Tiber's width and bend** at the Campus Martius with the Ponte Cavour / Regina Margherita / Margherita crossings. Also serves as the Tiber reference. | Agenzia per le Erogazioni in Agricoltura (AGEA), flown 2012; published by the Geoportale Nazionale, MASE | **CC BY 4.0**, verbatim from `gn.mase.gov.it/portale/note-legali` — see below | <https://gn.mase.gov.it/> | 2048 × 1831 | 1 388 493 | `f066ccb76f0ba0b6` |
+
+### The two raster licences, verbatim
+
+- **SITAR** (`https://www.archeositarproject.it/open-data/`, re-read this pass): *"geoservizi
+  di rete" allineati agli standard OGC rilasciati con licenza "CC-BY-SA 4.0"*; the same page
+  repeats *"i dati SITAR, rilasciati con licenza CC-BY-SA 4.0"* under both **Elastic Search**
+  and **API REST**. The caveat recorded for `reference/rome-plans/` still applies: SITAR's
+  `/termini-e-condizioni/` carves *scanned imagery* out of the open licence under the Beni
+  Culturali Standard label, so the safe reading is map content public domain by age,
+  georectification CC-BY-SA 4.0 to SSABAP-RM. Required citation form as recorded above.
+- **AGEA / Geoportale Nazionale** (`https://gn.mase.gov.it/portale/note-legali`, re-read this
+  pass): *"I dati scaricabili tramite il servizio di Download del Geoportale sono messi a
+  disposizione con licenza CC BY 4.0."* Attribution: *AGEA / Geoportale Nazionale — MASE,
+  CC BY 4.0*.
+
+### Georeference of the two rasters
+
+Both were requested as **WMS 1.1.1 `GetMap`, `srs=EPSG:4326`** — plain plate carrée, north-up,
+no rotation, so the mapping from pixel to WGS84 is a two-line affine with no grid convergence
+term. **This is not the EPSG:3004 frame used by `reference/rome-plans/` items 5 and 8 and by
+`src/city/overlay.ts`; these two are *not* pixel-registered to those.**
+
+```
+Lanciani  bbox 12.4660, 41.8955, 12.5100, 41.9155   4096 × 2496
+          lon = 12.4660 + px · (0.0440 / 4096)      lat = 41.9155 − py · (0.0200 / 2496)
+AGEA      bbox 12.4660, 41.9000, 12.4900, 41.9160   2048 × 1831
+          lon = 12.4660 + px · (0.0240 / 2048)      lat = 41.9160 − py · (0.0160 / 1831)
+```
+
+The pixel counts were chosen so that the **ground pixel is square in metres**, not square in
+degrees: `W/H` was set to `(Δlon · 82 855) / (Δlat · 111 100)` at latitude 41.9°. Lanciani
+resolves to **0.890 m/px**, AGEA to **0.971 m/px** (0.5 m native, downsampled). The AGEA
+service refuses any `WIDTH` or `HEIGHT` above 2048 — *"Image size out of range, WIDTH and
+HEIGHT must be between 1 and 2048 pixels"* — and there is no image library in this environment
+to mosaic tiles, so the orthophoto was framed tighter than the plan rather than stitched.
+
+The Lanciani raster was first pulled as PNG at 18.5 MB, which alone would have blown the pass's
+byte budget. It was re-pulled as JPEG at 1.4 MB and the two were **compared at native scale on
+a 1024 × 849 window over the Castra Praetoria**: at 1:1 the JPEG resolves the sheet's small
+red capitals (`PORTA·PRAETORIA`, `PORTA·COLLINA`, `PORTA·NOMENTANA`) and the individual tower
+ticks along the curtain, so the PNG was deleted and the JPEG kept.
+
+### Attribution, as the licences require
+
+Joris (van Rooden) — 3 files, two CC BY-SA 3.0 and one released to the public domain; Giovanni
+Battista Piranesi — 2 plates, public domain; Lalupa — public domain; Sailko — CC BY 3.0;
+Pierfelice Licitra — CC BY 3.0; Sergio D'Afflitto ("Blackcat") — CC BY-SA 3.0; Raboe001 —
+CC BY-SA 3.0; it:indeciso42 — CC BY-SA 4.0; Paolo Villa — CC BY-SA 4.0; John Henry Middleton —
+public domain; Rodolfo Lanciani with georectification by Gruppo di lavoro SITAR, SSABAP-RM —
+CC BY-SA 4.0; AGEA / Geoportale Nazionale — MASE — CC BY 4.0.
+
+### Wanted, and NOT found under an acceptable licence
+
+- **Ian Richmond, *The City Wall of Imperial Rome* (Oxford, 1930)** — the measured survey of
+  the circuit, and the thing this pass most wanted. Richmond died in 1965, so the work is in
+  copyright in the UK and the EU until 2036, and its 1930 US publication is outside the
+  pre-1930 expiry window. **No plate of it is on Commons or in any open-access repository
+  under a usable licence. Not fetched.** `middleton-1911-eb11-aurelian-wall-tower-plan.jpg`
+  is the substitute and it is a much thinner drawing.
+- **A measured elevation of the Aurelian curtain** — a scaled drawing showing course heights,
+  string-course spacing, arcade pier spacing and parapet height as dimensioned lines. Nothing
+  of the kind was found under any acceptable licence. Everything on offer is either a modern
+  Wikipedia-editor schematic of unstated provenance (`File:Mur d'Aurélien - Dimensions,
+  composition et galerie.svg` and its siblings — CC-licensed, but they cite no source and are
+  interpretive drawings, so they were **rejected on provenance, not on licence**) or a plate
+  inside a copyrighted monograph.
+- **The *Bullettino della Commissione Archeologica Comunale di Roma*** — the excavation
+  reports on the wall and its gates. Runs of it are digitised, but as **PDF**, which the
+  format rule excludes; nothing was extracted.
+- **Lanciani's *Storia degli scavi di Roma*, Rossini's *Piante icnografiche*, Middleton's
+  *Ancient Rome in 1888*, Parker's *The Archaeology of Rome*, Burn's *Rome and the Campagna***
+  — all public domain, all on Commons or the Internet Archive as **PDF only**. Excluded by the
+  format rule; cited as reading, not fetched.
+- **A 19th-century photograph of the Muro Torto.** Piranesi's 1756 plate is the only
+  pre-modern record of it in the pool.
+- **Any aerial of the northern Campus Martius from a photographer under CC.** The Commons
+  aerials of Rome are of the Vatican, the Forum, the Colosseum and the suburbs; none frames
+  the Piazza del Popolo / Pincio. The AGEA orthophoto is the substitute and is better for
+  measurement anyway, being nadir and 0.5 m native.
+
+### Checked, licence verified, and deliberately NOT fetched
+
+- **Porta del Popolo (Porta Flaminia).** Several usable files exist — e.g.
+  `File:0 Porta del Popolo (Rome).JPG` (Jean-Pol GRANDMONT, **CC BY 4.0**, 3888 × 2592) — and
+  the licence was verified. **None was fetched, because none of them shows ancient fabric.**
+  What stands is: the **outer façade of 1562–65**, commissioned by Pius IV via Michelangelo and
+  built by **Nanni di Baccio Bigio**; the **inner façade by Bernini, 1655**, made for Christina
+  of Sweden's entry on 23 December 1655; the **two flanking towers demolished in 1879** and the
+  **two lateral archways cut in 1887**. Aurelianic remains and the bases of the gate's
+  *cylindrical* towers were found in 19th-century work but are not standing and not visible.
+  For the AD 271 map, Porta Flaminia must be reconstructed from the **type** — see
+  `porta-pinciana-external-face-joris-2006.jpg`, which is the surviving northern-arc gate of
+  the same round-tower family — and from the Lanciani raster for its position, **not** from a
+  photograph of the present gate.
+- **Porta Asinaria** (`File:Aurelian Walls - Porta Asinaria.jpg`, MrPanyGoff, CC BY-SA 4.0,
+  2674 × 1650) and **Porta Nomentana** (`File:Porta Nomentana 28 09 2019.jpg`, Gustavo La Pizza,
+  CC BY-SA 4.0, 3840 × 2880). Both verified and both good; both dropped only to hold the pass
+  to 16 files, and both are one command away if the gate work needs more of the twin-tower type.
+- **`File:Ludovisi - mura e area sepolcrale a piazza Fiume 1865.JPG`** (Lalupa, `{{PD-user}}`).
+  Filed under Porta Salaria and dated 1865 in its name, but the EXIF and the camera category
+  show it is a **modern digital photograph** of the site; the 1865 date belongs to the
+  sepulchral area, not to the picture. **Not a pre-demolition record**, so not used as one.
+- **`File:1 Porta salaria.PNG`** and its seven siblings (Ragusaibla, CC BY-SA 4.0). Small
+  reproductions of what appear to be historic views, uploaded in 2014 as **"own work"**. The
+  licence is clean but the **provenance is not**, so they were rejected on the same rule that
+  rejects a game render.
+
+### Not searched, and why
+
+No search was made on any game wiki, mod repository, asset store, or "ancient Rome
+reconstruction" image board. Those are exactly where the *Rome II* extractions live, and the
+cost of one of them entering a pool that sits next to `reference/rome2/` is far higher than
+the value of anything they contain.
