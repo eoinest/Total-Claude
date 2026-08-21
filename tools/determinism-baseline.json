@@ -30,7 +30,7 @@
     }
   },
   "map=campus-martius&scenario=assault": {
-    "note": "Rome's assault. quality=high, which is the same battle as ultra here -- both fit 3,074 men and 933 of Rome, so fittedUnitScale does not bite until medium. Re-recorded here for a movement that is NOT this pass's: cc72ea6 turned ROUGH_SLOWS_MOVEMENT on, published these exact five hashes in its own commit message -- t+0 unchanged at 22bb3df8, then e246f360, 326f06de, fe58e1f0, cedf0a10 -- and did not include this file in the commit, so the gate that exists to stop unannounced movement has been red on main ever since. The pass that recorded it changed the ram shed's cover test and moved nothing: 'default' and 'map=carthage&scenario=assault' are both bit-identical across it, and this entry's new hashes are cc72ea6's own. Re-record only in the same commit as the change that moved it.",
+    "note": "Rome's assault. Re-recorded for THIS pass's change and no other: CitySystem.masonryTopAt gained a tower branch. A tower is stamped into the obstacle set as a solid box towerHalf square rising towerRise above the crest, but the projectile height field had no tower test at all -- it resolved a bay and tested the curtain cross-section, so it answered walkY 52.80 at the centre of a tower standing to 59.85, and every shot that reached the upper storey flew through it. Measured on Rome at 7dd9616: a lofted onager stone aimed into a tower crossed the whole footprint and landed 37 m inside the city. Towers now report their own roof, so stones stop on them; the movement is entirely garrison casualties NOT taken behind a tower that used to be transparent -- alive at t+200 2186 -> 2229. Determinism itself is intact: runs A and B are bit-identical at every checkpoint in both arms, and the field battle (default) did not move at all. Re-record only in the same commit as the change that moved it.",
     "checkpoints": {
       "0": {
         "hash": "22bb3df8",
@@ -38,29 +38,29 @@
         "alive": 3074
       },
       "30": {
-        "hash": "e246f360",
+        "hash": "27758336",
         "count": 3074,
-        "alive": 2982
+        "alive": 2983
       },
       "90": {
-        "hash": "326f06de",
+        "hash": "8c37ee10",
         "count": 3074,
-        "alive": 2552
+        "alive": 2572
       },
       "150": {
-        "hash": "fe58e1f0",
+        "hash": "e8a9d23c",
         "count": 3074,
-        "alive": 2349
+        "alive": 2363
       },
       "200": {
-        "hash": "cedf0a10",
+        "hash": "58260384",
         "count": 3074,
-        "alive": 2186
+        "alive": 2229
       }
     }
   },
   "map=carthage&scenario=assault": {
-    "note": "Carthage's assault, quality=high. Recorded at 88a4aa5. The five hashes in this tool's own header comment (ebf383b0 d021b848 8106e2b2 b4fc645e cbfa61c0) are an earlier tree and are the reason prose is not a baseline. Re-record only in the same commit as the change that moved it.",
+    "note": "Carthage's assault. Re-recorded for THIS pass's change and no other: CitySystem.masonryTopAt gained a tower branch. A tower is stamped into the obstacle set as a solid box towerHalf square rising towerRise above the crest, but the projectile height field had no tower test at all -- it resolved a bay and tested the curtain cross-section, so it answered walkY 52.80 at the centre of a tower standing to 59.85, and every shot that reached the upper storey flew through it. Measured on Rome at 7dd9616: a lofted onager stone aimed into a tower crossed the whole footprint and landed 37 m inside the city. Towers now report their own roof, so stones stop on them; the movement is entirely garrison casualties NOT taken behind a tower that used to be transparent -- alive at t+200 2851 -> 2821. Determinism itself is intact: runs A and B are bit-identical at every checkpoint in both arms, and the field battle (default) did not move at all. Re-record only in the same commit as the change that moved it.",
     "checkpoints": {
       "0": {
         "hash": "dbdd3a70",
@@ -68,24 +68,24 @@
         "alive": 3440
       },
       "30": {
-        "hash": "70f1c93e",
+        "hash": "06f0358e",
         "count": 3440,
-        "alive": 3373
+        "alive": 3385
       },
       "90": {
-        "hash": "bb7637c6",
+        "hash": "c254ed06",
         "count": 3440,
-        "alive": 2968
+        "alive": 3031
       },
       "150": {
-        "hash": "dea3387f",
+        "hash": "059cd073",
         "count": 3440,
-        "alive": 2857
+        "alive": 2885
       },
       "200": {
-        "hash": "a4738c36",
+        "hash": "03111276",
         "count": 3440,
-        "alive": 2851
+        "alive": 2821
       }
     }
   }

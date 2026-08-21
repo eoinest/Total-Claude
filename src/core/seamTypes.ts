@@ -48,7 +48,7 @@ import type { CitySystem } from '../city/CitySystem';
 import type { Embrasure } from '../city/CitySystem';
 import type { GarrisonBay, GateBlockOut, GateOut, RoughGround, WallStair } from '../city/wall';
 import type { CityBayView, CityGateBlockView, CityStairView, CityView } from '../sim/Siege';
-import type { EmbrasureView } from '../sim/Projectiles';
+import type { EmbrasureView, MasonryView } from '../sim/Projectiles';
 import type { CityNavProvider, PathfindingSystem } from '../ai/Pathfinding';
 import type { NavProvider, ObstacleSource } from '../sim/BattleSystem';
 import type { RoughBox } from '../sim/Obstacles';
@@ -86,6 +86,18 @@ type _CityForNav = Implements<CitySystem, CityNavProvider>;
 
 // -- the battlement the projectile system aims through -----------------------
 type _Embrasure = Implements<Embrasure, EmbrasureView>;
+
+/*
+ * -- the masonry every projectile is tested against --------------------------
+ *
+ * `Projectiles.init` probes `masonryTopAt` with `typeof ... === 'function'` and stores `null`
+ * when it does not answer. That is correct — a battle on open ground has no city — and it is
+ * also the failure mode with no symptom: if the method were renamed, every shot in the game
+ * would pass through every wall and nothing would throw, warn, or fail to compile. This line
+ * is what makes that a build error. The runtime seam in `src/core/seams.ts` covers the other
+ * half, that a city registered under `'city'` actually answers to it at boot.
+ */
+type _MasonryForProjectiles = Implements<CitySystem, MasonryView>;
 
 /*
  * -- standing work that is crossed rather than stopped at --------------------

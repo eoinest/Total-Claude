@@ -540,10 +540,35 @@ export class CitySystem implements Subsystem {
     // and `embrasureAt` cannot drift apart. See `crenellationRun`.
     this.crenStep = new Float64Array(this.bays.length);
     this.crenMerlon = new Float64Array(this.bays.length);
+    /**
+     * Each bay's tower, resolved here for the same reason and from the same numbers
+     * `buildObstacles` stamps its tower box from.
+     *
+     * A tower was solid to a *body* and transparent to a *shot*: `buildObstacles` pushes an
+     * oriented box `towerHalf` square rising `towerRise` above the crest, and `masonryTopAt`
+     * had no tower branch at all — it resolved a bay and tested the curtain cross-section, so
+     * it answered `walkY` at the centre of a tower standing 7 m higher. Measured on Rome at
+     * 7dd9616: a lofted onager stone aimed into a tower's upper storey crossed the whole
+     * footprint with the model reporting 52.8 against an obstacle top of 59.85 and landed
+     * 37 m inside the city. That is the reported "catapult projectiles pass through walls".
+     *
+     * `towerTopY` is `-Infinity` where there is no tower, or where the bay has no finite crest
+     * to raise one from — the branch then falls through to the curtain test rather than
+     * shadowing it with a height taken from an unbuilt bay.
+     */
+    this.towerHalfY = new Float64Array(this.bays.length);
+    this.towerTopY = new Float64Array(this.bays.length);
     for (let i = 0; i < this.bays.length; i++) {
       const r = crenellationRun(this.bays[i].length, this.plan.merlonLength, this.plan.crenelLength);
       this.crenStep[i] = r.step;
       this.crenMerlon[i] = r.merlon;
+      const bay = this.bays[i];
+      // `hasTower`, not `towerHalf > 0`, exactly as `buildObstacles` does: `towerHalf` also
+      // carries the gatehouse's intrusion into the bay it lands in, and a tower there is a
+      // phantom the obstacle set does not stamp either.
+      const solid = bay.hasTower && bay.towerHalf > 0 && Number.isFinite(bay.crestY);
+      this.towerHalfY[i] = solid ? bay.towerHalf : 0;
+      this.towerTopY[i] = solid ? bay.crestY + this.towerRise : -Infinity;
     }
     // The gatehouse's battlement, resolved once against its own run for the same reason.
     // It cannot go through `crenStep` — the block straddles two bays and one x cannot name
@@ -1674,6 +1699,12 @@ export class CitySystem implements Subsystem {
   /** Per-bay battlement geometry, parallel to `bays`. See `crenellationRun`. */
   private crenStep = new Float64Array(0);
   private crenMerlon = new Float64Array(0);
+  /**
+   * Per-bay tower geometry, parallel to `bays`. Half-extent of the box at the bay's `x0` end,
+   * and the absolute Y of its roof; `0` / `-Infinity` where that bay carries no tower.
+   */
+  private towerHalfY = new Float64Array(0);
+  private towerTopY = new Float64Array(0);
   /** The gatehouse's, on its own run. See `GateBlockOut.merlonLength`. */
   private gateStep = 0;
   private gateMerlon = 0;
@@ -1728,6 +1759,37 @@ export class CitySystem implements Subsystem {
     const px = bay.x0 + bay.dx * t;
     const pz = bay.z0 + bay.dz * t;
     const off = (x - px) * bay.nx + (z - pz) * bay.nz;
+
+    /**
+     * ---- towers ----
+     *
+     * Before the curtain test, because a tower is wider than the curtain: it is `towerHalf`
+     * square against a `halfThickness` of 3 m, so it projects past the outer face on the
+     * besieger's side and past the inner one on the city's. Testing the cross-section first
+     * would reject the projecting part as "not masonry" and never reach this.
+     *
+     * A tower stands at each bay's `x0` end — the segment joint — which is where
+     * `buildObstacles` puts its box, so the footprint test is `|t| <= towerHalf` against the
+     * distance already computed along this bay's run. Two candidates, not one: the joint at
+     * the far end of this bay belongs to the *next* bay's record, and a point within
+     * `towerHalf` of it is inside that tower while still resolving to this bay in x. Both are
+     * an index and two compares, so `masonryTopAt` stays O(1) — it runs per projectile per
+     * tick and is the reason these tables are resolved at build time.
+     *
+     * The neighbour's offset is measured in *this* bay's frame. The circuit turns a few
+     * degrees at a joint, so that is out by a centimetre or two at the corner of the box,
+     * which is far below the 0.34 m of the smallest thing it has to stop.
+     */
+    const th = this.towerHalfY[bi];
+    if (th > 0 && t < th && t > -th && off < th && off > -th) return this.towerTopY[bi];
+    const nb = bi + 1;
+    if (nb < this.bays.length) {
+      const th2 = this.towerHalfY[nb];
+      if (th2 > 0 && off < th2 && off > -th2) {
+        const tn = t - bay.length;
+        if (tn < th2 && tn > -th2) return this.towerTopY[nb];
+      }
+    }
 
     /**
      * `bay.halfThickness`, **not** `WALL.thickness * 0.5`.

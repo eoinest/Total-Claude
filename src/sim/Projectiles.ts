@@ -323,6 +323,23 @@ const ffBand = (v: number, edges: readonly number[]): number => {
 const SHOULDER = 1.45;
 
 /**
+ * The masonry height field this system tests every projectile against.
+ *
+ * Named and exported rather than written inline at the call site, so `src/core/seamTypes.ts`
+ * can assert `Implements<CitySystem, MasonryView>` and a rename on the city side becomes a
+ * build error. Inline, it was an `as unknown as` with an optional-method check: the exact
+ * shape that hid four faults in this tree, two of which meant a feature had never worked in
+ * any shipped build, because a method that stops answering to its name silently leaves
+ * `this.city === null` and *nothing* in the game collides with a wall again.
+ *
+ * The method stays optional on the view — a battle on open ground has no city and every unit
+ * test runs without one — but the *signature* is now checked rather than asserted.
+ */
+export interface MasonryView {
+  masonryTopAt(x: number, z: number): number;
+}
+
+/**
  * One gap in a battlement, as `CitySystem.embrasureAt` publishes it.
  *
  * A structural mirror, not an import: `src/sim/` does not depend on `src/city/`. Kept
@@ -747,7 +764,7 @@ export class ProjectileSystem implements Subsystem {
    * The city, if there is one, for the masonry collision test. Duck-typed and optional so
    * a battle on open ground — and every unit test — needs no city at all.
    */
-  private city: { masonryTopAt(x: number, z: number): number } | null = null;
+  private city: MasonryView | null = null;
   /**
    * The battlement, if the city publishes one, for placing a garrison's shots.
    *
@@ -1051,10 +1068,12 @@ export class ProjectileSystem implements Subsystem {
     this.rng = this.battle.rng.fork('projectiles');
     this.artRng = this.battle.rng.fork('artillery');
     POOL = this.battle.pool;
-    const city = ctx.tryGet('city') as unknown as { masonryTopAt?: (x: number, z: number) => number } | undefined;
-    this.city = city && typeof city.masonryTopAt === 'function'
-      ? (city as { masonryTopAt(x: number, z: number): number })
-      : null;
+    // `Partial<MasonryView>` rather than `as unknown as { masonryTopAt?: ... }`. The optional
+    // method is still probed at runtime, because a map with no city legitimately has none —
+    // but the shape is a named type now, witnessed against the real `CitySystem` in
+    // `src/core/seamTypes.ts`, so a rename is a build error instead of a silent `null`.
+    const city = ctx.tryGet('city') as Partial<MasonryView> | undefined;
+    this.city = typeof city?.masonryTopAt === 'function' ? (city as MasonryView) : null;
     const battlement = city as unknown as
       { embrasureAt?: (x: number, z: number) => EmbrasureView | null } | undefined;
     this.wall = battlement && typeof battlement.embrasureAt === 'function'
