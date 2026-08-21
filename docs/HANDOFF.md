@@ -2376,14 +2376,53 @@ is `rome/apertures.ts curtainSpans`, already the single place that decides where
 *not* laid: give it the breach list and re-bake the affected chunk. That is a city-workstream
 change and it is written down rather than half-done.
 
-### `probe-siege`'s great-ram assertions had not run since `0372fc2`
+### `probe-siege`: 42/48 on this tree against 41/48 on the control
 
-Pointed at HEAD it is **36/44**, and one of the failures is *"a great ram can be sent against a
-curtain bay — no garrisonable bay clear of the gate"*. The probe searched `gi - 6` down to `0`
-and nothing else. The Porta Flaminia used to be bay 19 of 33 and is now bay **1** of 36, so the
-loop started at −5 and never ran: six assertions were not failing, they were not being taken.
-It now fans outward in both directions, which is also the rule `deployAssault` uses to aim the
-machine it deploys.
+Two of its aiming rules were written when the Porta Flaminia was bay 19 of 33 and every
+neighbour was finished curtain. On the redesigned circuit the gate is bay **1** of 36 and both
+rules walk off the end of the wall:
+
+- the great-ram search ran `gi - 6` down to `0`, so it started at -5, never ran, and reported
+  *"no garrisonable bay clear of the gate"* — **six assertions were not failing, they were not
+  being taken**, since `0372fc2`;
+- the ascent test aimed at `bays[gi + 3]`, which is bay **4**, one of §4.8's bare `footing`
+  bays: no walkway, no stations, `wallTargetAt` correctly -1. That is why *"a click on the
+  parapet resolves to a wall station"* has been red for two passes — the probe was clicking on
+  a construction site — and the assertions downstream of it were measuring whatever
+  `stationNear` returned for a point with no masonry under it.
+
+Both now fan outward in both directions to a bay that can carry men, which is also the rule
+`deployAssault` uses. Measured like-for-like with the same probe against `15e209f` served
+alongside on another port:
+
+| | this tree | `15e209f` control |
+|---|---|---|
+| total | **42/48** | 41/48 |
+| a click on the parapet resolves to a wall station | PASS | PASS *(red on both before the aim fix)* |
+| a great ram can be sent against a curtain bay | PASS | PASS *(not taken at all before the aim fix)* |
+| nobody teleports or is flung while using a stair | PASS | FAIL |
+| a run that is already occupied is shared, not overwritten | PASS | FAIL |
+| men can actually get through the gate the ram opened | **FAIL** | PASS |
+| a breach is a way into the city | FAIL, closest man **7.09 m** from a lane mouth | FAIL, closest man **59.20 m** |
+
+**The gate assertion is red because the fix worked.** It orders the four nearest free attacking
+units at the carriageway and counts who walks in. On the control the nearest is **14 m** from
+the gate and strolls through, because nothing defends it. On this tree the nearest is **63 m**
+and the ground between is a fight: the Porta Flaminia has 108 ballistarii over it now. The
+gate's own mechanical assertions still pass — *"the ram breaks the gate open and the passage
+clears"* with `blocksMovement` false, *"no ram is left standing in the passage it opened"*,
+*"no crew is pinned to a machine it has broken from"*. What changed is that walking in
+unopposed is no longer a thing that happens, which is the point of the pass. The assertion is
+worth restating as "can a unit **fight** its way in", and that is a probe decision rather than
+this branch's to make silently.
+
+**The breach assertion is red on both, and much less red here.** Its men now queue **7.09 m**
+from a lane mouth against 59.20 on the control — they reach the hole instead of never
+approaching it — and admission is 2 m, so it is one shuffle short inside its own budget. The
+mechanic itself is demonstrated by the instrument that goes through the player's order path
+instead of calling `stormBreach` directly: **412, 197 and 312 men inside the curtain on three
+seeds of three.** `probe-siege` spends its budget on a battle already advanced through eleven
+other tests with two great rams and two breaches in it.
 
 ### Determinism
 

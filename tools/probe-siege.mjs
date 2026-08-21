@@ -881,11 +881,34 @@ try {
     const g = window.__game;
     const b = g.battle;
     const s = b.siege;
-    // Aim at a stretch of wall near the gate. `wallTargetAt` is the same query the UI would
-    // use to decide the click meant the parapet.
+    /*
+     * Aim at a stretch of wall near the gate — **a stretch that has a wall on it.**
+     *
+     * This was `bays[gi + 3]`, written when the Porta Flaminia was bay 19 of 33 and every
+     * neighbour was finished curtain. On the redesigned circuit the gate is bay 1 and
+     * `gi + 3` is bay **4**, one of §4.8's bare `footing` bays: no walkway, no stations, and
+     * `wallTargetAt` correctly answers -1. That is why "a click on the parapet resolves to a
+     * wall station" has been red since `0372fc2` — the probe was clicking on a construction
+     * site — and why the three assertions downstream of it were measuring whatever
+     * `stationNear` happened to return for a point with no masonry under it. Same defect as
+     * the `gi - 6` great-ram search below, in the same file, from the same change.
+     *
+     * Third garrisonable bay out, either way, so the intent — near the gate, not the gate —
+     * survives a circuit whose gate sits one bay from the end of the line.
+     */
     const bays = g.engine.context.get('city').getGarrisonBays();
     const gi = bays.findIndex((x) => x.isGate);
-    const bay = bays[gi + 3] ?? bays[gi];
+    let bay = bays[gi];
+    let seen = 0;
+    for (let d = 1; d < bays.length && seen < 3; d++) {
+      for (const sgn of [1, -1]) {
+        const k = gi + sgn * d;
+        if (k < 0 || k >= bays.length || !bays[k].garrisonable) continue;
+        seen++;
+        bay = bays[k];
+        if (seen >= 3) break;
+      }
+    }
     const tx = (bay.x0 + bay.x1) * 0.5;
     const tz = (bay.z0 + bay.z1) * 0.5;
 
