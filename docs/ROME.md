@@ -230,7 +230,9 @@ redesign than before it:
 Carthage has two (the Byrsa's gradient, and open spaces that must be fought in). Rome has two
 and they are different ones.
 
-**(a) Anything whose slope matters.** Heights are not compressed and positions are, so **every
+#### 2.4a Anything whose slope matters
+
+Heights are not compressed and positions are, so **every
 gradient steepens by 1/`KX` = 2.26× along the wall and by 1/`KZ` = 4.50× across it.** Two
 consequences, and only the second needs an override:
 
@@ -247,7 +249,9 @@ consequences, and only the second needs an override:
 **Author the relief profile from the gradients you want, not from projected elevations.** That
 is the whole rule, and §3.5 is the table.
 
-**(b) The tower interval.** Carthage states the rule: a tower interval is a real length used
+#### 2.4b The tower interval
+
+Carthage states the rule: a tower interval is a real length used
 uncompressed, so the modelled stretch carries fewer towers than the real wall did. Rome's
 current `WALL.towerSpacing = 35.5` is *one actus*, 120 *pedes*, and the comment beside it
 concedes that *"parts of the circuit run at 100 pedes, 29.6 m"*.
@@ -485,7 +489,7 @@ are above `WATER_LEVEL`-datum ground, i.e. add them to `regionalPlain(x, z)`.
 | **+790 … +1050** | the east shoulder | 35 → 48 | 23 → 36 | rising back onto the Quirinal's northern spur |
 | **+1050 … +1335** | the Castra Praetoria platform | 48 → 50 | **36 → 38** | level, and the camp is built on a made platform |
 
-**The two consequences a builder must design for.** First, the **wall-walk steps**: `walkY` is
+**Three consequences a builder must design for.** First, the **wall-walk steps**: `walkY` is
 quantised in 0.55 m construction increments over pairs of bays (`src/city/wall.ts`), and
 `Siege.recut()` severs a run at any step over **0.62 m**. A 38 m climb across 36 bays is
 **1.06 m of average step** — **every bay boundary on the Muro Torto and in the Vallis Sallustiana
@@ -495,6 +499,18 @@ the wall's footing sits and it must be re-derived from the new profile in the sa
 heightfield grades the bench with, or half the circuit stands off its footing — the exact
 fault `cityPlan.ts` records for Carthage's three competing wall lines.
 
+**And third, which is a live question rather than a task.** `recut` severs a run on *height*
+(`dy > 0.62`) but `buildLinks` rejoins two runs on *horizontal* gap alone — at most
+`LINK_MAX_GAP = 14 m`, classified `TowerPass` past `STATION_PITCH × 3` and `Step` below it.
+**Nothing in the classifier looks at the height difference it is bridging.** Rome today carries
+a 28.39 m bay-to-bay step and 41 `TowerPass` links across 45 runs **[MEAS]**, so either that
+step is one of the three unbridged boundaries or **there is a crossing on this circuit that
+walks a garrison up twenty-eight metres of air.** Which of the two it is has not been measured
+and this document does not claim to know. **§15 task 3 measures it**: print, for every link,
+the height difference between the two stations it joins, and assert none exceeds a step a man
+can climb. On the redesigned relief the worst case is the Muro Torto's ~5 m per bay, which is
+well inside `LINK_MAX_GAP` horizontally and nowhere near climbable vertically.
+
 ### 3.6 Ground conditions
 
 | condition | extent | effect | tag |
@@ -502,7 +518,7 @@ fault `cityPlan.ts` records for Carthage's three competing wall lines.
 | **Tiber water meadow** | within ~175 world m of the east bank, below 5.4 m of freeboard | already modelled as willow thicket in `CAMPUS_SCATTER` **[SRC]**. Make it also **`soft`**: no engine placement, half speed for anything wheeled. | [GAME] from [MOD] |
 | **Flood ground** | the whole Campus Martius floor below 13 m | the Tiber flooded the Campus regularly; in autumn it is wet, not dry. Render as heavy clay and standing water in the lows, and **carry it into the control texture's `b` (trodden) channel** so the scatter already thins there. | [MOD] |
 | **The Via Flaminia agger** | `roadCentreX(z) ± 5.4 m`, paving `± 2.3` **[SRC]** | the one hard road on the approach. **Keep it.** It is where a ram must travel and the only place on the north half of the map that is not soft or steep. | [ARCH] [SRC] |
-| **The Pincian scarp** | x +250 … +420, outside the wall | 1:5.2 built. Passable to infantry in loose order, closed to everything wheeled, and **cohesion must break on it**. | [DER] [GAME] |
+| **The Pincian scarp** | x +187 … +446, outside the wall | **1:3.2 built** across the line, from a real 1:14 through `KZ` (§2.4a). Passable to infantry in loose order, closed to everything wheeled, and **cohesion must break on it**. | [DER] [GAME] |
 | **The construction site** | §4.7 | `RoughGround` — already a type in `src/city/wall.ts` and already keyed to `BayStage`. This is the map's answer to Carthage's ditch and it is §4.8. | [GAME] from [HA] |
 
 The net effect, and it is worth stating as the design intent: **an attacker on this map has
@@ -1026,7 +1042,8 @@ several bays, not the gate bay**, or you will measure a causeway.
 The whole-frame cap is **220** and the assault at ultra measures **192** at `3595b48`, of which
 the city is **101 draws / 2.38 M triangles in 23 chunks** — wall 44, monuments 22, city 21,
 road 5, gate 2, aqueducts 2. **[MEAS]** So the redesign has about **28 draws of headroom** and
-it is adding a Muro Torto, three gates, five posterns, a fort and two returns.
+it is adding a Muro Torto, **two more gates and a posterula, six posterns**, a fort and two
+returns.
 
 Priced item by item, against the measured 44-draw wall family:
 
@@ -2014,7 +2031,7 @@ a pomerium the storm will be shooting across.**
 decides it, not a designer.* That is the defender's central problem on this map and it is the
 map's, not the AI's.
 
-### 10.3 Four gates, four kinds of ground, and one of them is a garden
+### 10.3 Four apertures, four kinds of ground, and two of them are gardens
 
 `CARTHAGE.md` §7.7 argues the Megara — market gardens, hedges, irrigation ditches, scattered
 villas — earns its place because an attacker who gets over the north wall "does not arrive in
@@ -2276,7 +2293,7 @@ twice on this project.
 | **§4.4 a measured plan and section of one segment and its tower**, from Middleton's 1911 *Britannica* article | `middleton-1911-eb11-aurelian-wall-tower-plan.jpg` |
 | **§5 gates** — the twin-tower type at Porta Appia, the round-tower northern-arc type at Porta Pinciana, and **the ancient Porta Salaria photographed *c.* 1870, before its 1921 demolition** | `porta-san-sebastiano-porta-appia-frontal-raboe-2025-3840px.jpg`, `porta-pinciana-external-face-joris-2006.jpg`, `porta-salaria-ancient-gate-photo-c1870.jpg` |
 | **§4.7 the Castra Praetoria** — the standing Tiberian wall under the Aurelianic raising, and Piranesi's plan | `castra-praetoria-north-wall-joris-2006.jpg`, `piranesi-1756-tavXXXIX-castra-praetoria-plan-3840px.jpg` |
-| **§4.9 the building site** — third-century *opus latericium* coursing with a clear row of **putlog holes** | `opus-latericium-putlog-holes-caracalla-villa-2023-1920px.jpg` |
+| **§4.9 the building site** — third-century *opus latericium* coursing, and a clear row of putlog holes **for what the Aurelian wall does *not* have**: the plate is Caracalla's villa, and putlogs are the diagnostic that separates 403 from 271 (§4.9). Use it for the coursing and the brick faces, and as the negative for the scaffolding. | `opus-latericium-putlog-holes-caracalla-villa-2023-1920px.jpg` |
 | **§2.5, §6 the plan and the ground** — Lanciani's northern arc georectified, and the modern orthophoto of the same frame showing **the Tiber's width and bend** | `lanciani-sitar-northern-arc-campus-martius-…-4096px.jpg`, `agea-2012-ortofoto-northern-campus-martius-…-2048px.jpg` |
 
 **Three cautions, and the third is the one that will cost a builder a day.**
@@ -2577,6 +2594,14 @@ faults on the output** — the section sum, the worst bay-to-bay `walkY` step an
 gate's clearance inside its bay, the count of bays footed below `WATER_LEVEL`, and the tower
 lane against `MIN_LANE`. `wall.ts` has no build-time self-check of any kind today and
 `carthageWall.ts` has three.
+
+*And one measurement that belongs here because nobody has taken it* (§3.5): **print the height
+difference across every link `buildLinks` creates.** The classifier bridges on horizontal gap
+alone and never looks at `dy`, while `recut` severs on `dy` alone — so the two disagree by
+construction, and Rome carries a 28.39 m bay-to-bay step today. **Assert that no `TowerPass` or
+`Step` link joins two stations more than 1.2 m apart in height.** If the shipped circuit fails
+this at `3595b48`, that is a defect in the tree and not in the redesign, and it should be
+written up before it is fixed.
 
 **4. The Muro Torto.** §4.5. Seven bays, outward batter of 6°–7°, ~15 m, built **against
 earth** so the city side is hillside: garrisonable, **no tower stairs and none needed**, a
