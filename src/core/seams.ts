@@ -319,7 +319,19 @@ export const SEAMS: readonly Seam[] = [
     consumer: 'ui/HudSystem.ts wallProbe',
     provider: 'battle.siege',
     required: { wallTargetAt: 'fn', isGarrisoned: 'fn', wallSideAt: 'fn' },
-    optional: { cancelWallPlan: 'fn', releaseEscalade: 'fn' },
+    /**
+     * `escaladeOfferAt` reaches the wall probe as `stormOfferAt`.
+     *
+     * The wall cursor stops promising "Storm the wall here" when the sim would drop the
+     * order, and it decides that from the same function `SiegeOrders` builds the sentence
+     * from. If this ever stops answering, the cursor quietly goes back to promising every
+     * storm — which is the state it shipped in — so it is named here rather than left to be
+     * an implementation detail of one install block.
+     */
+    optional: {
+      cancelWallPlan: 'fn', releaseEscalade: 'fn',
+      escaladeOfferAt: 'fn', traverseOfferAt: 'fn',
+    },
   },
   {
     consumer: 'ui/HudSystem.ts + ui/SiegeOrders.ts machine orders',
@@ -327,9 +339,31 @@ export const SEAMS: readonly Seam[] = [
     optional: {
       machineOrderAt: 'fn', machineDestinationOf: 'fn',
       requestMachineOrder: 'fn', escaladeOfferAt: 'fn', towerReport: 'fn',
+      crewStatusOf: 'fn',
     },
     returns: {
       towerReport: { element: true, fields: ['x', 'z', 'baseY', 'deckY'] },
+      /**
+       * The predicate that decides whether the men under the cursor are a crew.
+       *
+       * Checked by field and not merely by existence, because the whole of the defect it
+       * fixes was a boolean read off the wrong question: `SiegeOrders` inferred "crew" from
+       * `machineDestinationOf` returning something, and a tower's `unitId` is never cleared,
+       * so eighty men standing on a parapet were answered "Too late — the ramp is down" for
+       * the rest of the battle. If `commands` ever went missing the read would be
+       * `undefined`, every crew would fall through as infantry, and the tower would silently
+       * stop being aimable — the same class of silent shape drift as `hw/hd/rot`.
+       */
+      crewStatusOf: {
+        fields: ['crew', 'commands', 'kind', 'done'],
+        /*
+         * Asked about a unit id no army has, on purpose. All four fields are written on
+         * every path through `crewStatusOf` — the "this man is nobody's gang" answer fills
+         * them in exactly as the crew answer does — so the shape is checkable at boot,
+         * before a machine has been built, without this file needing a handle on a unit.
+         */
+        call: (s) => (s['crewStatusOf'] as (u: number) => unknown).call(s, -1),
+      },
     },
   },
   {

@@ -969,6 +969,30 @@ export interface SiegeMachineOrder {
 }
 
 /**
+ * Whether a unit is a machine's gang, and whether that machine is still theirs to aim.
+ *
+ * The answer to a question the UI was asking a different function: `SiegeOrders` decided a
+ * selected unit was a crew if `machineDestinationOf` gave it anything, and a tower's
+ * `unitId` is never cleared, so a party that had crossed its own ramp and was standing on
+ * the parapet went on being answered about the machine for the rest of the battle. See
+ * `Siege.machineWithWork` for the measurement.
+ */
+export interface SiegeCrewStatus {
+  /** They are a machine's own gang — including one whose machine has finished. */
+  crew: boolean;
+  /**
+   * The machine still has work for them and will still take a destination from them.
+   *
+   * False is the interesting value: it means these men are infantry now, wherever they are
+   * standing, and every order given to them is an order about men.
+   */
+  commands: boolean;
+  kind: SiegeMachineKind | 'ladder' | null;
+  /** Why it is no longer theirs to aim: `''` while it still is. */
+  done: '' | 'landed' | 'spent';
+}
+
+/**
  * Is this point inside the gatehouse's plan footprint?
  *
  * Plan only, deliberately: the question `buildSpine` is asking is "is there curtain under
@@ -2199,8 +2223,18 @@ export class Siege implements ElevationOwner {
   } {
     const none = (refusal: 'crew' | 'noWall' | 'noWay' | 'full' | 'notFoot', station = -1) =>
       ({ refusal, kind: null, tower: null, group: null, station, distance: Infinity } as const);
-    // A gang has its own machine to work. Sending the ram crew up a ladder would abandon
-    // the ram in the carriageway, which is the failure this workstream has already fixed once.
+    /*
+     * A gang with a machine that still needs working is not free to go up anything.
+     *
+     * Sending the ram crew up a ladder would abandon the ram in the carriageway, which is the
+     * failure this workstream has already fixed once. What this must *not* do is refuse men
+     * whose machine is finished with them: `crewsAMachine` used to mean "was this unit ever
+     * given a machine", so every tower party, ram crew and escalade party in the army was
+     * refused for the whole battle. On Carthage the units nearest the wall are all machine
+     * crews, and a ladder party — whose ladder is planted and needs nobody — was refused the
+     * one order it exists to be given, in silence, while the cursor read "Storm the wall
+     * here". See `machineWithWork`.
+     */
     if (this.crewsAMachine(unitId)) return none('crew');
     /**
      * A horse does not climb a ladder, and neither does a cart.
@@ -2323,8 +2357,10 @@ export class Siege implements ElevationOwner {
     const bestGroup = found.group;
 
     // A unit cannot be queuing at two machines at once, and it cannot be halfway up a stair
-    // either. Take it off whatever it was doing first.
-    this.releaseEscalade(u.id);
+    // either. Take it off whatever it was doing first — every file except the one it is
+    // joining, which it may already be at the head of. See `dropFromFiles`.
+    this.dropFromFiles(
+      u.id, bestTower ? [bestTower.boarders] : bestGroup!.map((l) => l.boarders), true);
     this.plans.delete(u.id);
 
     const enrol = (list: number[]): void => { if (!list.includes(u.id)) list.push(u.id); };
@@ -2353,12 +2389,53 @@ export class Siege implements ElevationOwner {
    *
    * The crew of a machine is never released this way: `boarders[0]` is the gang, and a gang
    * that stops being enrolled stops pushing.
+   *
+   * **That rule survived an attempt to relax it, and the measurement is why it is written
+   * down twice.** The obvious improvement, once a docked tower's gang could be ordered
+   * about, was to let the crew slot go for any machine that no longer needs a gang — a
+   * planted ladder needs nobody, so a ladder party could finally be countermanded off its
+   * own rails. What that missed is *who calls this*. `interceptOrders` calls it for **any**
+   * move order whose destination is not a wall point, and on an AI-driven assault that is
+   * every routine repositioning order the army gives. Measured on the Carthage assault under
+   * the determinism harness: every ladder went from `boarders: [18]` to `boarders: []`
+   * within thirty seconds, the four escalade parties were dropped from `owned`, and **327
+   * men who cross the rails by t+91 became 0 men, ever**. The whole escalade stopped
+   * happening and 191 more men were alive at t+200 because nobody was climbing into the
+   * killing ground.
+   *
+   * So the generic countermand keeps every crew where it is, and the one caller that has
+   * earned the right to move a gang — `escalade`, which is about to enrol it somewhere else
+   * on purpose — asks for that explicitly. See `dropFromFiles`.
    */
   releaseEscalade(unitId: number): boolean {
+    return this.dropFromFiles(unitId, null, false);
+  }
+
+  /**
+   * `releaseEscalade`, with two things the generic countermand must not do.
+   *
+   * `keep` is the file the unit is about to join. `escalade` releases before it enrols and
+   * `enrol` pushes at the *back*, so without this, re-issuing a storm order at the bank a
+   * party is already queuing on takes it out of its place and puts it behind everyone who
+   * arrived later — and takes a gang out of the head of its own boarding file for pointing
+   * at the bay its own ramp is on. That is the queue-index trap this file has paid for three
+   * times: a place in a file is a fact about the man, not a side effect of the order that
+   * put him there.
+   *
+   * `freeCrew` is the permission to give up a crew slot at all, and only `escalade` has it.
+   * It is safe there and nowhere else, because `findEscalade` refuses any unit whose machine
+   * still has work in it (`crewsAMachine`), so the only gangs that reach this call are ones
+   * whose machine is finished with them — a planted ladder's party, or a tower's gang after
+   * the ramp is down.
+   */
+  private dropFromFiles(unitId: number, keep: number[][] | null, freeCrew: boolean): boolean {
     let found = false;
     const drop = (list: number[]): void => {
+      if (keep !== null && keep.includes(list)) return;
       const k = list.indexOf(unitId);
-      if (k > 0) { list.splice(k, 1); found = true; }
+      if (k < 0 || (k === 0 && !freeCrew)) return;
+      list.splice(k, 1);
+      found = true;
     };
     for (const t of this.towers) drop(t.boarders);
     for (const l of this.ladders) drop(l.boarders);
@@ -2469,12 +2546,80 @@ export class Siege implements ElevationOwner {
     return null;
   }
 
-  /** True when this unit is somebody's gang and has a machine of its own to work. */
+  /**
+   * The machine this unit's gang **still has work at**, or null — the one predicate behind
+   * "is this man a crew, or is he infantry standing somewhere".
+   *
+   * This used to be `crewsAMachine`, and it asked a question one word away from this one:
+   * *has this unit ever been given a machine*. A tower's `unitId` is written at spawn and
+   * never cleared, so the answer stayed true for the rest of the battle — and that single
+   * word is the owner's report. Once a tower has docked and put its ramp on the parapet,
+   * its gang is eighty men standing on a wall; the game went on treating them as a crew,
+   * answered every right-click with a sentence about the machine, and refused it. Measured
+   * on Carthage at t+290, with all seventy-eight of unit 14's men on the walk of run 20 and
+   * `isGarrisoned` true: `machineOrderAt` returned `refusal: 'spent'`, the cursor read
+   * `refuse`, and the hint read *"The siege tower has finished its work"* over a cohort the
+   * simulation was perfectly willing to march along the parapet.
+   *
+   * So the test is **work left**, per machine kind, and each answer is the window in which
+   * the machine can still be given a destination *and* still needs the gang to give it one:
+   *
+   *  - **A tower** while it is on `Approach`. Past that it is landing its ramp on the bay it
+   *    is over and no order will ever be accepted again — every branch of
+   *    `resolveTowerOrder` from `Docking` on is a refusal — so there is nothing left for the
+   *    gang to command and nothing left for them to push.
+   *  - **A ram** while it is a weapon rather than a wreck or a parked machine. Unchanged in
+   *    meaning; the `wreck` clause was already here, and `Withdrawing`/`Spent` join it
+   *    because `resolveRamOrder` already refuses both with `spent`.
+   *  - **A ladder, never.** It is planted where `spawnLadder` raises it and needs nobody to
+   *    hold it up. The party that raised it is only ever *first in the file*, which is a
+   *    place in a queue and not a job — and treating it as a job is what made every escalade
+   *    party in the game unable to be given the one order it exists for. See `findEscalade`.
+   */
+  private machineWithWork(unitId: number): SiegeMachineKind | null {
+    const t = this.towerOf(unitId);
+    if (t) return t.state === TowerState.Approach ? 'tower' : null;
+    const r = this.ramOf(unitId);
+    if (!r) return null;
+    if (r.wreck || r.state === RamState.Wreck) return null;
+    if (r.state === RamState.Withdrawing || r.state === RamState.Spent) return null;
+    return r.kind === RamKind.Great ? 'greatRam' : 'ram';
+  }
+
+  /** True when this unit is somebody's gang and that machine still has work for it. */
   private crewsAMachine(unitId: number): boolean {
-    if (this.towerOf(unitId)) return true;
-    for (const r of this.rams) if (r.unitId === unitId && !r.wreck) return true;
-    for (const l of this.ladders) if (l.unitId === unitId) return true;
-    return false;
+    return this.machineWithWork(unitId) !== null;
+  }
+
+  /**
+   * What this unit is to the siege train right now, for the cursor to ask before it draws.
+   *
+   * **Pure, and published for the same reason `machineOrderAt` and `escaladeOfferAt` are.**
+   * The UI has to decide, every frame, whether the men under the cursor are a crew — whose
+   * sentence is about a machine — or infantry, whose sentence is about the ground. It had no
+   * way to ask, so it inferred it from `machineDestinationOf` returning non-null, which is a
+   * different question and answered yes for ever.
+   *
+   * `crew` and `commands` are deliberately two fields. A tower's gang whose machine has
+   * docked is still that machine's gang — they are `boarders[0]`, they will be first up their
+   * own ramp, and `SiegeOrders` should not draw a berth marker for a machine that has
+   * arrived — but they no longer command it, and every order a player gives them is an order
+   * about men.
+   */
+  crewStatusOf(unitId: number): SiegeCrewStatus {
+    const commands = this.machineWithWork(unitId) !== null;
+    const t = this.towerOf(unitId);
+    const r = this.ramOf(unitId);
+    const kind: SiegeCrewStatus['kind'] = t ? 'tower'
+      : r ? (r.kind === RamKind.Great ? 'greatRam' : 'ram')
+      : this.ladders.some((l) => l.unitId === unitId) ? 'ladder' : null;
+    // `done` is only about a machine that *could* be aimed and no longer can. A ladder is
+    // planted where it was raised and never took a destination, so its party is a crew that
+    // commands nothing and has finished nothing.
+    let done: SiegeCrewStatus['done'] = '';
+    if (!commands && t) done = t.state === TowerState.Spent ? 'spent' : 'landed';
+    else if (!commands && r) done = 'spent';
+    return { crew: kind !== null, commands, kind, done };
   }
 
   /**
@@ -2613,6 +2758,10 @@ export class Siege implements ElevationOwner {
    * happened and an order you can tell happened.
    */
   machineDestinationOf(unitId: number): SiegeMachineOrder | null {
+    // Same gate as `resolveMachineOrder`, and it has to be: this is what the HUD counts to
+    // decide a selected unit is a crew at all, so a machine that has arrived must stop
+    // answering here too or the men go on being drawn a berth they are already standing on.
+    if (!this.crewsAMachine(unitId)) return null;
     const t = this.towerOf(unitId);
     if (t) {
       const d = this.describe('tower', t.id, unitId, t.station, '', t.dockX, t.dockZ,
@@ -2685,6 +2834,24 @@ export class Siege implements ElevationOwner {
    * shape: two pieces of code answering one question with two slightly different tests.
    */
   private resolveMachineOrder(unitId: number, x: number, z: number): SiegeMachineOrder | null {
+    /**
+     * A gang whose machine has finished is not answered about the machine at all.
+     *
+     * `null` and a refusal are two different things and the difference is the owner's
+     * report. A refusal means *this order, here, no* — the tower is committed, the bay is
+     * taken, a ram cannot break masonry — and it is worth a sentence and a cursor, because
+     * a different click would be obeyed. `null` means *this is not a machine question*, and
+     * it is what has to come back once no click anywhere on the map would be obeyed: the
+     * ramp is down, the men are on the wall, and the thing the player is pointing at is
+     * ground for them to walk on. Answering `refusal: 'landed'` for the rest of the battle
+     * put a red no-entry cursor and *"Too late — the ramp is down on bay 31"* over eighty
+     * men the simulation would have marched anywhere they were sent.
+     *
+     * Gated here rather than in `machineOrderAt` so that `orderTowerTo`, `orderRamTo`,
+     * `interceptOrders` and the cursor all stop at the same line. One predicate, shared —
+     * the same rule the rest of this function was written for.
+     */
+    if (!this.crewsAMachine(unitId)) return null;
     const t = this.towerOf(unitId);
     if (t) return this.resolveTowerOrder(t, x, z);
     const r = this.ramOf(unitId);
@@ -3027,8 +3194,19 @@ export class Siege implements ElevationOwner {
          */
         if (this.sideOf(u.x, u.z) === -1) {
           if (!this.owned.has(id)) this.sendToWall(u, dest.x, dest.z);
-        } else if (this.towerOf(id)) {
-          // A tower's own gang told to go at a different stretch of wall moves the tower.
+        } else if (this.crewsAMachine(id) && this.towerOf(id)) {
+          /*
+           * A tower's own gang told to go at a different stretch of wall moves the tower —
+           * but only while the tower is still theirs to aim.
+           *
+           * `towerOf` alone sent every wall order the gang was ever given into
+           * `orderTowerTo` for the rest of the battle, and `orderTowerTo` returns false for
+           * a docked machine, so the click bought a walk to the foot of the wall and no
+           * escalade. Falling through to `escalade` is the right reading once the ramp is
+           * down: their own tower is a road, it is within `ESCALADE_REACH` of the bay they
+           * are pointing at, and enrolling a unit already at the head of that file is a
+           * no-op.
+           */
           this.orderTowerTo(u, dest.x, dest.z);
         } else {
           this.escalade(u, dest.x, dest.z);

@@ -34,7 +34,7 @@ import type { PointerTracker } from './pointer';
 import { abilityUI, PLAYER_FACTION } from './theme';
 import type { GhostSpec, WorldOverlay } from './WorldOverlay';
 
-export type CursorKind = 'default' | 'move' | 'attack' | 'friend' | 'select' | 'wall';
+export type CursorKind = 'default' | 'move' | 'attack' | 'friend' | 'select' | 'wall' | 'refuse';
 
 /** One phrase per wall order, so the hint and the cursor cannot describe different things. */
 const WALL_HINT: Record<'ascend' | 'traverse' | 'descend' | 'storm', string> = {
@@ -310,6 +310,35 @@ export class SelectionController {
      */
     cancelWallPlan?(unitId: number): boolean;
     releaseEscalade?(unitId: number): boolean;
+    /**
+     * Whether a storm order at this point would actually be carried out.
+     *
+     * `Siege.escaladeOfferAt`, unchanged and pure. **Not a second predicate**: `SiegeOrders`
+     * builds the sentence from this same call, so the words under the cursor and the promise
+     * this file stops making are decided by one function in the simulation. That is the rule
+     * this project has now paid for four times, and the one this asks for is the fourth
+     * case: `wallIntent` said `storm` from geometry alone — you are outside, that is a wall —
+     * while `Siege.escalade` dropped the order because there was nothing at that bay to
+     * climb, or because the men were a machine's gang. The cursor read `wall`, the drag hint
+     * read "STORM THE WALL HERE" in green, and beneath it the siege hint read "Nothing to
+     * climb at bay 35" in red. Two sentences, one cursor, and the green one was the lie.
+     */
+    stormOfferAt?(unitId: number, x: number, z: number): { ok: boolean; refusal: string };
+    /**
+     * Whether a lateral move along the parapet would actually be carried out.
+     *
+     * `Siege.traverseOfferAt`, which was **published for exactly this and had no caller**.
+     * `moveAlongWall` refuses a run the curtain does not join to this one — a construction
+     * step, a gatehouse, a bay the great ram has brought down — and `interceptOrders` sets
+     * the unit back to `Garrison` whether it accepted or not, so a refused traverse is not
+     * degraded to a walk: it is eaten whole. Measured by hand on Carthage: a tower party
+     * standing on bay 31 was shown "ALONG THE WALL" in green for bay 34, the order went out,
+     * `traverseOfferAt` says `noRoute`, and sixty seconds later all 51 men were on the same
+     * three metres of stone they started on with no plan open and nothing said.
+     */
+    traverseOfferAt?(unitId: number, x: number, z: number): {
+      ok: boolean; refusal: string; bay: number;
+    };
   } | null = null;
 
   constructor(
@@ -524,6 +553,9 @@ export class SelectionController {
 
     this.refreshStorming();
     this.updateGround(ctx, heightAt);
+    // After `updateGround`, which is what writes `wallX/wallZ`, and before anything that
+    // reads `wallIntent`.
+    this.refreshWallOffer();
     const hovered = this.pickUnit(ctx);
     if (!this.ptr.overUi) this.model.hoveredId = hovered;
 
@@ -542,7 +574,7 @@ export class SelectionController {
    * inside the masonry and under it. Suppressed during deployment, which draws its own.
    */
   private drawWallTarget(): void {
-    if (!this.wallValid || this.deployment?.active) return;
+    if (!this.wallValid || this.deployment?.active || this.traverseRefusal) return;
     const intent = this.wallIntent();
     if (intent !== 'ascend' && intent !== 'traverse' && intent !== 'storm') return;
     let men = 0;
@@ -781,8 +813,15 @@ export class SelectionController {
    * to four times a frame (the pick, the hover marker, the hit test and the cursor glyph), so
    * asking the sim each time would put fifteen hundred distance tests per selected unit into
    * the frame path to answer a question whose answer cannot change inside one frame.
+   *
+   * The field is public because `SiegeOrders` has to read it too, and reading it is the
+   * difference between a sentence about a wall you are storming and a sentence about the
+   * wall you are standing on. Measured: a tower party that had crossed its own ramp,
+   * right-clicking a defender twenty metres along the same parapet, was shown *"Nothing to
+   * climb at bay 30 — bring a ladder or a tower"* and a red refusal cursor, over an attack
+   * the game then went ahead and carried out.
    */
-  private storming = false;
+  storming = false;
   /** Selected units whose men are on the wall, and how many were selected. */
   private onWallCount = 0;
   private selCount = 0;
@@ -806,6 +845,51 @@ export class SelectionController {
   /** Most of the selection is standing on the wall. Computed with `storming`, once a frame. */
   private selectionOnWall(): boolean {
     return this.selCount > 0 && this.onWallCount > this.selCount * 0.5;
+  }
+
+  /**
+   * True when the simulation would refuse the storm the cursor is pointing at, this frame.
+   *
+   * Recomputed once per frame for the same reason `storming` is — `escaladeOfferAt` walks
+   * the whole spine to find the bay, and `wallIntent` is asked four times a frame — and for
+   * one unit rather than for the selection, because that unit is the one `SiegeOrders` builds
+   * its sentence from. Asking about a different unit than the one the sentence names is how
+   * two readers of one predicate come apart again.
+   */
+  private stormRefused = false;
+  /**
+   * The sentence to show instead of "Along the wall", or `''` when the traverse is real.
+   *
+   * Kept as the finished sentence rather than as a refusal code because this file is the one
+   * that owns the wall verbs' words and their cursor — `SiegeOrders` owns the machine verbs'
+   * — and one owner per glyph is the rule that stopped two files fighting over
+   * `document.body.dataset.cur` in the first place.
+   */
+  private traverseRefusal = '';
+  private refreshWallOffer(): void {
+    this.stormRefused = false;
+    this.traverseRefusal = '';
+    const probe = this.wallProbe;
+    if (!probe || this.deployment?.active || !this.wallValid) return;
+    // The same lead `SiegeOrders.stormWarning` uses: first own, undestroyed unit in the
+    // selection, in selection order. Asking about a different unit than the one the sentence
+    // names is how two readers of one predicate come apart again.
+    const lead = this.model.selectedViews.find((v) => v.own && !v.destroyed);
+    if (!lead) return;
+    if (this.storming) {
+      if (probe.stormOfferAt) {
+        this.stormRefused = !probe.stormOfferAt(lead.id, this.wallX, this.wallZ).ok;
+      }
+      return;
+    }
+    // Only where `wallIntent` would answer `traverse`: `traverseOfferAt` tests the garrison
+    // record and not where the men are standing, so a cohort that has walked down into the
+    // city still has one and would be answered about a walk it is not on.
+    if (!this.selectionOnWall() || !probe.traverseOfferAt) return;
+    const o = probe.traverseOfferAt(lead.id, this.wallX, this.wallZ);
+    if (o.ok || o.refusal !== 'noRoute') return;
+    const where = o.bay >= 0 ? `bay ${o.bay}` : 'that stretch';
+    this.traverseRefusal = `No way along the wall to ${where} — the walk is broken in between`;
   }
 
   /**
@@ -850,9 +934,18 @@ export class SelectionController {
     if (!probe) return null;
     const sel = this.model.selectedViews;
     if (sel.length === 0) return null;
-    // From outside, "up" means over a ramp or a ladder, and it is worth saying so before the
-    // player commits: an escalade is a different thing from walking up your own stairs.
-    if (this.wallValid && this.selectionIsStorming()) return 'storm';
+    /*
+     * From outside, "up" means over a ramp or a ladder, and it is worth saying so before the
+     * player commits: an escalade is a different thing from walking up your own stairs.
+     *
+     * And it is only on offer if the sim will do it. `storming` is geometry — these men are
+     * outside somebody else's curtain and the cursor is on it — which is necessary and not
+     * sufficient: `Siege.escalade` still wants a ramp or a ladder within reach of that bay
+     * and men who are not busy pushing a machine. Without this, the one order in the game
+     * whose refusal the player most needed to see before committing was the one the cursor
+     * promised hardest. See `refreshStormOffer`.
+     */
+    if (this.wallValid && this.selectionIsStorming()) return this.stormRefused ? null : 'storm';
     // A mixed selection is named by the majority; every unit still gets the same order and
     // `Siege` decides per unit what that means for it.
     const onWall = this.onWallCount;
@@ -1100,6 +1193,10 @@ export class SelectionController {
       } else if (this.dragHostileId >= 0) {
         const t = this.model.view(this.dragHostileId);
         this.showHint(`Attack ${t ? t.title : 'enemy'}`, 'attack');
+      } else if (this.traverseRefusal) {
+        // The refusal comes first, because it is the one sentence here that changes what the
+        // player should do next. See `refreshWallOffer`.
+        this.showHint(this.traverseRefusal, 'attack');
       } else if (this.wallIntent()) {
         const over = this.garrisonPassedOver(hovered);
         const t = over >= 0 ? this.model.view(over) : null;
@@ -1566,6 +1663,9 @@ export class SelectionController {
        * outright: attacking is never the surprising reading.
        */
       if (hostile >= 0) c = 'attack';
+      // A wall order that will be eaten gets its own glyph, on this file's own attribute:
+      // `SiegeOrders` owns `data-siegecur` and two files writing one attribute is a race.
+      else if (haveSel && this.wallValid && this.traverseRefusal) c = 'refuse';
       else if (haveSel && this.wallValid && this.wallIntent()) c = 'wall';
       else if (v && !v.own) c = haveSel ? 'attack' : 'default';
       else if (v && v.own) c = 'friend';

@@ -28,7 +28,9 @@ import { Minimap } from './Minimap';
 import { PointerTracker } from './pointer';
 import { SelectionController } from './SelectionController';
 import { SettingsPanel } from './SettingsPanel';
-import { SiegeOrders, type EscaladeOfferView, type MachineOrderView } from './SiegeOrders';
+import {
+  SiegeOrders, type CrewStatusView, type EscaladeOfferView, type MachineOrderView,
+} from './SiegeOrders';
 import { DEFAULT_UI_SCALE } from './theme';
 import { Tooltip } from './Tooltip';
 import { TopBar } from './TopBar';
@@ -303,6 +305,9 @@ export class HudSystem implements Subsystem {
         wallSideAt?: (x: number, z: number) => -1 | 1;
         cancelWallPlan?: (unitId: number) => boolean;
         releaseEscalade?: (unitId: number) => boolean;
+        escaladeOfferAt?: (u: number, x: number, z: number) => EscaladeOfferView;
+        traverseOfferAt?: (u: number, x: number, z: number)
+          => { ok: boolean; refusal: string; bay: number };
       };
     } | undefined)?.siege;
     if (siege && typeof siege.wallTargetAt === 'function' && typeof siege.isGarrisoned === 'function'
@@ -325,6 +330,27 @@ export class HudSystem implements Subsystem {
           ? (u) => siege.cancelWallPlan!(u) : undefined,
         releaseEscalade: typeof siege.releaseEscalade === 'function'
           ? (u) => siege.releaseEscalade!(u) : undefined,
+        /*
+         * The storm offer, so the wall cursor can stop promising an order the sim will drop.
+         *
+         * Handed to the controller as well as to `SiegeOrders` — one function on `Siege`,
+         * two readers — because the two halves of that promise are drawn by two files: the
+         * cursor glyph and the drag hint here, the sentence that says *why* there. Passing
+         * the same accessor to both is what stops them coming apart; giving the controller
+         * its own test is what let them come apart in the first place.
+         */
+        stormOfferAt: typeof siege.escaladeOfferAt === 'function'
+          ? (u, x, z) => siege.escaladeOfferAt!(u, x, z) : undefined,
+        /*
+         * `Siege.traverseOfferAt` was published for the cursor and never wired to it.
+         *
+         * Its own comment says so — *"published for the same reason `escaladeOfferAt` is:
+         * `moveAlongWall` now refuses a run it cannot reach, and a refusal the player cannot
+         * see is the defect this pass keeps finding"* — and then nothing called it, so the
+         * defect it was written against went on shipping. This line is the call.
+         */
+        traverseOfferAt: typeof siege.traverseOfferAt === 'function'
+          ? (u, x, z) => siege.traverseOfferAt!(u, x, z) : undefined,
       };
     }
 
@@ -340,16 +366,19 @@ export class HudSystem implements Subsystem {
       machineDestinationOf?: (u: number) => MachineOrderView | null;
       requestMachineOrder?: (u: number, x: number, z: number) => void;
       escaladeOfferAt?: (u: number, x: number, z: number) => EscaladeOfferView;
+      crewStatusOf?: (u: number) => CrewStatusView;
     } | undefined;
     if (cmd && typeof cmd.machineOrderAt === 'function'
       && typeof cmd.machineDestinationOf === 'function'
       && typeof cmd.requestMachineOrder === 'function'
-      && typeof cmd.escaladeOfferAt === 'function') {
+      && typeof cmd.escaladeOfferAt === 'function'
+      && typeof cmd.crewStatusOf === 'function') {
       this.siege.probe = {
         machineOrderAt: (u, x, z) => cmd.machineOrderAt!(u, x, z),
         machineDestinationOf: (u) => cmd.machineDestinationOf!(u),
         requestMachineOrder: (u, x, z) => cmd.requestMachineOrder!(u, x, z),
         escaladeOfferAt: (u, x, z) => cmd.escaladeOfferAt!(u, x, z),
+        crewStatusOf: (u) => cmd.crewStatusOf!(u),
       };
     }
 

@@ -58,6 +58,7 @@ import type { Siege } from '../sim/Siege';
 import type { TerrainLike } from '../ui/HudSystem';
 import type { SkyLike } from '../ui/SettingsPanel';
 import type { FlowView } from '../ui/siege';
+import type { SiegeCommandProbe } from '../ui/SiegeOrders';
 import type { CityShape } from '../ai/WallDoctrine';
 import type {
   CityView as DeployCityView, TerrainView as DeployTerrainView,
@@ -114,6 +115,19 @@ type _BattleForAudio = Implements<BattleSystem, BattleView>;
  * rather than through an event, which is the whole reason `src/sim/Siege.ts` needed no change.
  */
 type _SiegeForAudio = Implements<Siege, SiegeView>;
+/**
+ * The order layer's view of the siege train.
+ *
+ * `SiegeCommandProbe` is five accessors `HudSystem` installs duck-typed, behind five
+ * `typeof x === 'function'` guards — which is the exact arrangement that let `hw/hd/rot`
+ * ship against `halfRun/halfDepth` for two releases. Four of the five predate this line and
+ * happened to agree; `crewStatusOf` is the one this session added, and it carries the
+ * boolean the whole HUD now uses to tell a machine's gang from infantry standing on a wall.
+ * A rename of `commands` would read `undefined`, every crew would fall through as infantry,
+ * and the siege tower would silently stop being aimable at all — with `tsc` green, because
+ * the guard would still pass. This line is what makes that a build error.
+ */
+type _SiegeForCommand = Implements<Siege, SiegeCommandProbe>;
 type _TerrainForHud = Implements<TerrainSystem, TerrainLike>;
 type _TerrainForDeploy = Implements<TerrainSystem, DeployTerrainView>;
 type _SkyForSettings = Implements<SkySystem, SkyLike>;

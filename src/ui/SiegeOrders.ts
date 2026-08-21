@@ -58,6 +58,27 @@ export interface SiegeCommandProbe {
   requestMachineOrder(unitId: number, x: number, z: number): void;
   /** Whether a storm order here would be obeyed, for a unit that crews nothing. */
   escaladeOfferAt(unitId: number, x: number, z: number): EscaladeOfferView;
+  /** Whether these men are still a crew — asked, not inferred. See `CrewStatusView`. */
+  crewStatusOf(unitId: number): CrewStatusView;
+}
+
+/**
+ * The structural view of `Siege.crewStatusOf`.
+ *
+ * This file used to decide "is this unit a crew" by asking `machineDestinationOf` and
+ * treating a non-null answer as yes. That is a different question, and the simulation
+ * answered it yes for the whole battle: a tower's `unitId` is written at spawn and never
+ * cleared. So a party that had crossed its own ramp and was standing on the parapet was
+ * still being answered about the machine — cursor `refuse`, hint *"Too late — the ramp is
+ * down on bay 31"* — for every click the player made with them selected. Measured on
+ * Carthage at t+290 with all 78 of their men on the walk of run 20.
+ */
+export interface CrewStatusView {
+  crew: boolean;
+  /** The machine still has work for them and will still take a destination from them. */
+  commands: boolean;
+  kind: 'tower' | 'ram' | 'greatRam' | 'ladder' | null;
+  done: string;
 }
 
 /** The structural view of what `Siege.escaladeOfferAt` answers. */
@@ -179,6 +200,16 @@ export class SiegeOrders {
     if (!probe) return out;
     for (const v of this.model.selectedViews) {
       if (!v.own || v.destroyed) continue;
+      /*
+       * Asked, not inferred.
+       *
+       * `machineDestinationOf` now returns null for a machine that has finished with its
+       * gang, so this test is belt and braces — but it is the *stated* one, and the whole
+       * defect this file shipped was a crew test read off the side effect of a different
+       * question. A reader should not have to know that `machineDestinationOf` happens to
+       * be gated to know what makes these men a crew.
+       */
+      if (!probe.crewStatusOf(v.id).commands) continue;
       const dest = probe.machineDestinationOf(v.id);
       if (dest) out.push({ unitId: v.id, dest });
     }
@@ -320,9 +351,32 @@ export class SiegeOrders {
   private stormWarning(ctx: EngineContext, cursor: CursorPoints): void {
     const probe = this.probe;
     if (!probe || this.ptr.overUi || !cursor.wallValid) { this.done(ctx); return; }
+    /*
+     * You cannot storm a wall you are standing on.
+     *
+     * `escaladeOfferAt` answers for anybody, and this file used to ask it for anybody whose
+     * cursor was over a parapet — including men who had already crossed and were fighting
+     * along it. On Carthage that put *"Nothing to climb at bay 30 — bring a ladder or a
+     * tower"* and a red refusal cursor over a right-click on a defender nineteen metres
+     * away, on the same walk, which the game then obeyed as an attack. The controller
+     * already decides this question once a frame for the wall cursor; asking it rather than
+     * repeating it is what keeps the two answers the same one.
+     */
+    if (!cursor.storming) { this.done(ctx); return; }
     const sel = this.model.selectedViews.filter((v) => v.own && !v.destroyed);
     if (sel.length === 0) { this.done(ctx); return; }
     const offer = probe.escaladeOfferAt(sel[0].id, cursor.wallX, cursor.wallZ);
+    /*
+     * Two silences that are still correct, and one that no longer happens.
+     *
+     * `noWall` means the cursor is not on anybody's parapet and there is nothing to say.
+     * `crew` used to mean "this unit was handed a machine at some point in the battle",
+     * which was true of every tower party, ram crew and ladder party for the whole battle
+     * and is why the storm refusal the player most needed was the one he never saw. It now
+     * means the narrow thing it says — these men are working a machine right now — and in
+     * that state the branch above has already put the machine's own sentence under the
+     * cursor, so this one keeps quiet on purpose rather than by accident.
+     */
     if (offer.refusal === 'crew' || offer.refusal === 'noWall') { this.done(ctx); return; }
     const bay = offer.bay >= 0 ? `bay ${offer.bay}` : 'that stretch';
     if (offer.ok) {
@@ -457,6 +511,13 @@ export class SiegeOrders {
  * a plain object.
  */
 export interface CursorPoints {
+  /**
+   * Whether the selection is outside somebody else's curtain looking at it.
+   *
+   * `SelectionController.refreshStorming` computes this once a frame over the whole
+   * selection; a storm sentence is meaningless without it. See `stormWarning`.
+   */
+  storming: boolean;
   wallX: number; wallZ: number; wallValid: boolean;
   solidX: number; solidZ: number; solidValid: boolean;
   orderX: number; orderZ: number; orderValid: boolean;
