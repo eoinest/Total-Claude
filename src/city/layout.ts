@@ -122,7 +122,8 @@ export function obbHitsCircle(o: Obb, x: number, z: number, r: number): boolean 
 }
 
 // ---------------------------------------------------------------------------
-// The street network
+// The street network — the rank only. Each city sets its own widths against it:
+// Rome's WAY_WIDTH in rome/layout.ts, Carthage's PUNIC_WAY_WIDTH in carthage/layout.ts.
 // ---------------------------------------------------------------------------
 
 /**
@@ -144,6 +145,10 @@ export function obbHitsCircle(o: Obb, x: number, z: number, r: number): boolean 
  * continuous named line across the city. That is what a street is.
  */
 export type WayClass = 'artery' | 'secondary' | 'local' | 'vicus';
+
+// ---------------------------------------------------------------------------
+// Reservation: the map both cities' fabric generators consult before they build
+// ---------------------------------------------------------------------------
 
 /** Rectangular keep-out, used for landmarks and street corridors. */
 export interface KeepOutCircle {
@@ -394,6 +399,11 @@ export function assertNoFabricOverlaps(
   }
   return { ok: count === 0, count, worst: +worst.toFixed(2), buildingsHit: hit.size };
 }
+
+// ---------------------------------------------------------------------------
+// The wall line, as a vocabulary. Where it *runs* is each city's own business:
+// rome/circuit.ts's fitWallPath, carthageWall.ts's WallLine.
+// ---------------------------------------------------------------------------
 
 export interface WallNode {
   x: number;

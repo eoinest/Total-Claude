@@ -780,6 +780,11 @@ function nearbyDrift(x: number, z: number): { x: number; z: number } {
   return wt > 0 ? { x: wx / wt, z: wz / wt } : { x: 0, z: 0 };
 }
 
+// ---------------------------------------------------------------------------
+// The street network. `WayClass` — the rank — is shared, in `city/layout.ts`;
+// these are Rome's widths for it.
+// ---------------------------------------------------------------------------
+
 export const WAY_WIDTH: Readonly<Record<WayClass, number>> = {
   /** A cohort in line, 35 m, with 3.5 m either side. Or two columns abreast. */
   artery: 42,
