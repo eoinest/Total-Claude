@@ -1939,7 +1939,8 @@ queue drains at the top of a tick and nothing a frame boundary does can move an 
 
 Four things ship from it and the fourth is the reason it was worth doing:
 
-- **save** — `Save replay` on the end card writes a `.tcr`
+- **save** — `Save replay` on the end card writes a `.tcr`; drop it on the front door to
+  watch it, which is the same string the link carries
 - **share** — `Copy replay link` writes `?replay=<token>` to the clipboard
 - **watch** — `?replay=<token>` boots the recorded battle and plays it
 - **take command from here** — `&from=<seconds>`, or the `TAKE COMMAND` button. This one is one
@@ -1954,7 +1955,7 @@ replay* and cannot answer *did the player's input reach the simulation through a
 recorded*. The new gate boots through the front door with a real mouse, records what that
 produces, and replays it in a fresh page **on a deliberately different frame schedule**.
 
-**20/20, eight arms, port 5245.** Three of the arms are failures if they go green:
+**21/21, nine arms, port 5245.** Three of the arms are failures if they go green:
 
 | broken on purpose | caught |
 |---|---|
@@ -1966,11 +1967,12 @@ The design quotes four ticks of lateness as "already a different battle". **One 
 
 ### Two measurements worth keeping
 
-**A 200-second battle is 1,188 bytes.** Measured: 226.1 s, 2,247 men, 32 recorded events (29
-player orders, 3 deployment operations), 9 checkpoints — 2,726 B of JSON, **1,188 B gzipped**, a
-1,584-character token. The design's estimate was 1.1 kB and it is right to within 2%. Gzipped in
-isolation the split is config 476 B, order log 423 B, checkpoints 245 B, so **the order log alone
-is 14.6 bytes per order** against the design's 11–13 B estimate for a hand-rolled bit layout.
+**A 200-second battle is about 1.2 kB.** Measured over three runs of the same script — a real
+mouse does not click the same number of times twice — 226.1 s, 2,247 men, 32/34/34 recorded
+events, **1,188 / 1,219 / 1,224 B gzipped**, tokens of about 1,600 characters, 9 checkpoints
+each. Scaled to exactly 200 s that is ~1.1 kB against the design's 1.1 kB estimate. Gzipped in
+isolation the split is config 476 B, order log 423–451 B, checkpoints ~246 B, so **the order log
+is 13.6–14.6 bytes an order** against the design's 11–13 B for a hand-rolled bit layout.
 Over the same battle the `orderIssued` bus carried **3,258 AI orders against the player's 29**,
 and the record has the 29 — which is what the `source` field is for.
 

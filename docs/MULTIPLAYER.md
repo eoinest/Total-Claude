@@ -546,7 +546,7 @@ to cross-engine play and should be priced before anything realtime is started.
 > **What shipped.** `src/sim/replay.ts` (the format, the codec and `ReplaySystem`, at order 5
 > so its drain is the first thing in a tick), `src/sim/stateHash.ts` (Stage 0 item 3, which was
 > never done and which this needed), `src/ui/ReplayBar.ts`, two buttons on the end card, and
-> `tools/qa-replay.mjs` — **20 checks in eight arms, 20/20**, booting through the front door
+> `tools/qa-replay.mjs` — **21 checks in nine arms**, booting through the front door
 > with a real mouse. `?replay=<token>` watches; `&from=<seconds>` takes command.
 >
 > **The size estimate is right. 1,188 bytes.** Measured on a battle driven through the real
@@ -554,10 +554,11 @@ to cross-engine play and should be priced before anything realtime is started.
 > deployment operations — one order every 7.8 s, which is somebody actually playing), 9
 > checkpoints. 2,726 B of JSON, **1,188 B gzipped**, a 1,584-character token that fits in a URL
 > with room to spare. Scaled to exactly 200 s that is about 1,090 B against the design's
-> **1.1 kB [M: async]** — inside 2%, from a completely different instrument. (Two runs of the
-> same script recorded 32 and 34 events and came out at 1,188 B and 1,224 B; a real mouse does
-> not click the same number of times twice.) Gzipped in isolation the split is config 476 B,
-> order log 423 B, checkpoints 245 B, so the **order log alone is 14.6 bytes per order** against
+> **1.1 kB [M: async]** — inside 2%, from a completely different instrument. (Three runs of the
+> same script recorded 32, 34 and 34 events and came out at 1,188 B, 1,219 B and 1,224 B; a real
+> mouse does not click the same number of times twice.) Gzipped in isolation the split is config
+> 476 B, order log 423–451 B, checkpoints ~246 B, so the **order log is 13.6–14.6 bytes an order**
+> against
 > §1.7's 11–13 B for a hand-rolled bit layout. The difference is JSON tuples rather than packed
 > bits, and it buys a format readable in a debugger and versionable by appending. Note that a
 > record is *not* only the order log: the config is 40% of it, because the menu keeps every

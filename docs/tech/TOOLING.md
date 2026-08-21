@@ -270,7 +270,7 @@ unchanged.
 
 ### `tools/qa-replay.mjs` — the record, driven by a real mouse through the real menu
 
-The instrument that can see an input path nobody told it about. **20 checks in eight arms** on
+The instrument that can see an input path nobody told it about. **21 checks in nine arms** on
 port 5245.
 
 ```sh
@@ -292,6 +292,7 @@ and real keys, records what that produces, and replays the record in a fresh pag
 | replay | `replay` | Every checkpoint bit-identical; the re-recorded log is byte-identical; same `BattleFlow.result` |
 | coarse | `coarse` | The same battle at **five ticks a frame** instead of one every two |
 | tier | `tier` | The record's graphics tier beats the URL's; a record whose army this run cannot field is refused by name |
+| drop | `drop` | A `.tcr` dropped on the front door opens that battle |
 | late | `late` | An order shifted 1/2/4/8 ticks — a ladder, reporting the smallest lateness the gate can see |
 | bus | `bus` | An unrecorded `orderIssued` straight onto the bus, mid-battle — the twenty-fourth input path |
 | write | `write` | A direct write to `UnitGroupState` from outside a tick |
@@ -311,10 +312,11 @@ real invocations are `--battle="map=campus-martius&scenario=assault"`,
 `--battle="map=carthage&scenario=assault"`, and no flag at all — confirm with the headcount,
 8,632 / 3,074 / 3,440, which is printed on every line for exactly this reason.
 
-**Measured on the shipped field battle at `small`**: 226.1 s, 2,247 men, 32 recorded events,
-2,726 B of JSON, **1,188 B gzipped**, a 1,584-character token — config 476 B, order log 423 B,
-checkpoints 245 B when each is gzipped alone. The bus carried 3,258 AI orders over the same
-battle and the record has none of them.
+**Measured on the shipped field battle at `small`**: 226.1 s, 2,247 men, and — over three runs,
+because a real mouse does not click the same number of times twice — 32/34/34 recorded events
+for **1,188 / 1,219 / 1,224 B gzipped**, a token of about 1,600 characters. Gzipped alone that
+splits config 476 B, order log 423–451 B, checkpoints ~246 B. The bus carried 3,258 AI orders
+over the same battle and the record has none of them.
 
 **Comparison is at an equal tick count, never an equal elapsed time.** `window.__game
 .advanceTicks(n, stepMs)` runs exactly *n* ticks at whatever frame schedule is asked for,

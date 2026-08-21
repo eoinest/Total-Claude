@@ -3,7 +3,7 @@
  * QA: the replay record, driven by a real mouse through the real menu.
  *
  * Usage: node tools/qa-replay.mjs [--port=5245] [--json=path] [--shots=dir]
- *                                 [--only=record|replay|coarse|tier|late|bus|write|command]
+ *                                 [--only=record|replay|coarse|tier|drop|late|bus|write|command]
  *                                 [--seconds=200]
  *
  * An unknown flag, or an unknown `--only=` arm, exits 2 rather than running a subset of
@@ -75,7 +75,7 @@ const args = new Map(
  * go green is the defect this file exists to catch, so it must not have it: every flag and
  * every `--only=` value below is checked against this list and an unknown one is fatal.
  */
-const ARMS = ['record', 'replay', 'coarse', 'tier', 'late', 'bus', 'write', 'command'];
+const ARMS = ['record', 'replay', 'coarse', 'tier', 'drop', 'late', 'bus', 'write', 'command'];
 const FLAGS = ['port', 'json', 'shots', 'only', 'seconds'];
 
 const bad = [...args.keys()].filter((k) => !FLAGS.includes(k));
@@ -655,6 +655,41 @@ if (wanted('tier')) {
     'a record whose army this run cannot field is refused by name, not quietly fitted',
     refused.rp.refusal || 'NOT REFUSED — it played a different battle and said nothing',
     `${refused.rec.events.length} event(s) applied`);
+}
+
+if (wanted('drop')) {
+  console.log('\n=== dropping a .tcr on the window ===');
+  /*
+   * The other half of "save".
+   *
+   * `Save replay` writes the token to a file, so the file and the URL carry the identical
+   * string and there is one thing to read either way — but a write with no read is a dead
+   * feature, and a twelve-line handler nobody has fired is exactly the kind of thing this
+   * project ships and finds later. Dropped onto the front door, before any battle is built,
+   * because that is where somebody with a file in their downloads folder actually is.
+   */
+  const page = await newPage();
+  await page.goto(`${base}/?menu=battle`, { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.menu .begin', { timeout: 60000 });
+  await page.evaluate((text) => {
+    const dt = new DataTransfer();
+    dt.items.add(new File([text], 'battle.tcr', { type: 'application/octet-stream' }));
+    window.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+  }, R.token);
+  let landed = false;
+  try {
+    await page.waitForURL((u) => u.searchParams.get('replay') === R.token, { timeout: 30000 });
+    landed = true;
+  } catch { /* it did not navigate */ }
+  const seen = page.url().slice(0, 60);
+  const errs = page.__errs.slice();
+  await page.close();
+  measured.drop = { landed, url: seen, errs };
+  record('tcr-drop', landed && errs.length === 0,
+    'a .tcr dropped on the front door opens that battle',
+    landed ? `navigated to ${seen}… with the token intact`
+      : `no navigation; the URL is still ${seen}…`,
+    errs.length ? errs.slice(0, 2).join(' ; ') : 'no console error');
 }
 
 // ---------------------------------------------------------------------------
