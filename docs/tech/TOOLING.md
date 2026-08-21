@@ -222,12 +222,39 @@ node tools/qa-determinism.mjs                                   # port 5226, def
 node tools/qa-determinism.mjs --at=0,30,90,150,200              # checkpoints, in sim seconds
 node tools/qa-determinism.mjs --battle='map=carthage&scenario=assault'
 node tools/qa-determinism.mjs --json=/tmp/det.json
+node tools/qa-determinism.mjs --tiers=off                       # skip the cross-tier arm
+node tools/qa-determinism.mjs --tier-at=0,30,90,150,200,250,400 # and the full sweep of it
 ```
 
 `--battle` appends query parameters, which matters now there are two besiegeable cities: an
 assault takes an entirely different path through `deployAssault` and `Siege`, and a garrison
 pinned to a wall-walk is the part of the sim least like the field battle this gate has always
-measured.
+measured. Its value is validated: every segment must be `key=value` with a key `src/` reads, or
+the run exits 2 — see the note further down about being pointable at nothing.
+
+**Three arms per invocation.** *A vs B* is two loads of this build: does this battle replay?
+*cross-tier* is the same battle at `low`, `medium`, `high` and `ultra`: does a graphics setting
+change the battle? *baseline* is run A against `tools/determinism-baseline.json`: is this the same
+battle as yesterday?
+
+The **cross-tier arm** exists because it was measured that a graphics setting changed the outcome
+of a battle. `quality.maxSoldiers` sized the soldier pool, `fittedUnitScale` fitted the whole order
+of battle to the pool, and `unitSizeScale` is a simulation input — so the Campus Martius assault at
+one seed fielded 3,074 men at `ultra` with the ram crew dead 16 m short of the door and 3,009 at
+`medium` with the Porta Flaminia open by t+240. The fix is `SOLDIER_POOL_CAPACITY` in
+`src/sim/types.ts`; this arm is what keeps it fixed, and it is the cheap near half of the
+cross-engine arm `docs/MULTIPLAYER.md` §3 Stage 0 has asked for since the pass that wrote it.
+
+It carries four assertions and three of them exist only to make the fourth mean something: the
+page must report the tier it was asked for, read off `engine.quality.tier` rather than assumed from
+the URL; at least one render field must actually differ from the gate tier's, so that four
+identically-configured runs agreeing on a hash is not mistaken for tier independence;
+`pool.capacity` and the effective `unitSizeScale` are compared separately from the hashes, which is
+what caught `ultra` carrying a 12,000-slot pool against `high`'s 10,000 while every hash matched;
+and only then does bit-equality of `hash`, `uf64`, `uctl`, `count`, `alive` and `units` count for
+anything. It compares at the first three checkpoints of `--at` by default, because the coupling it
+exists to catch is an *input* and is visible at t+0 before a tick has run, while t+30 and t+90 cover
+a render field read from inside `fixedUpdate` that t+0 would miss.
 
 **Reading a failure.** It does the localisation for you. On divergence it dumps both pools and
 reports how many soldiers differ, as a count and a percentage, then names the first twelve by
@@ -291,7 +318,7 @@ and real keys, records what that produces, and replays the record in a fresh pag
 | record | `record` | The recorder saw the mouse: orders, keys, and the deployment plaque — and left the AI's thousands of orders on the bus where they belong |
 | replay | `replay` | Every checkpoint bit-identical; the re-recorded log is byte-identical; same `BattleFlow.result` |
 | coarse | `coarse` | The same battle at **five ticks a frame** instead of one every two |
-| tier | `tier` | The record's graphics tier beats the URL's; a record whose army this run cannot field is refused by name |
+| tier | `tier` | A record replays identically at another graphics tier; a record whose army this run cannot field is refused by name |
 | drop | `drop` | A `.tcr` dropped on the front door opens that battle |
 | late | `late` | An order shifted 1/2/4/8 ticks — a ladder, reporting the smallest lateness the gate can see |
 | bus | `bus` | An unrecorded `orderIssued` straight onto the bus, mid-battle — the twenty-fourth input path |
@@ -306,11 +333,15 @@ rather than running a subset of nothing and printing a tick; the record arm asse
 a tick count and a checkpoint count before anything is compared, because two empty checkpoint
 lists agree with each other; each negative arm asserts that its sabotage actually landed; and a
 run that recorded zero checks fails. This is deliberate and it is not hypothetical:
-`qa-determinism.mjs --battle=rome` appends a meaningless `&rome`, loads the **default field
-battle**, looks up a baseline key that does not exist, compares nothing, and exits 0. The three
+`qa-determinism.mjs --battle=rome` appended a meaningless `&rome`, loaded the **default field
+battle**, looked up a baseline key that does not exist, compared nothing, and exited 0. The three
 real invocations are `--battle="map=campus-martius&scenario=assault"`,
 `--battle="map=carthage&scenario=assault"`, and no flag at all — confirm with the headcount,
-8,632 / 3,074 / 3,440, which is printed on every line for exactly this reason.
+8,632 / 3,074 / 3,440, which is printed on every line for exactly this reason. **`qa-determinism.mjs`
+validates the flag now**: every segment must be `key=value` with a key `src/` reads, or it exits 2
+and prints those three invocations. Documenting the trap in two files for months did not close it,
+and the same pass added a cross-tier arm to that tool whose entire design problem was not being
+allowed to pass vacuously.
 
 **Measured on the shipped field battle at `small`**: 226.1 s, 2,247 men, and — over three runs,
 because a real mouse does not click the same number of times twice — 32/34/34 recorded events
