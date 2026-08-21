@@ -1,5 +1,12 @@
 # The trailer
 
+> **There is a second one.** [`TRAILER-2.md`](TRAILER-2.md) — *War Machine*, 28.267 s, eleven
+> shots, cut to a licensed piece of music, authored as a shot script
+> ([`tools/shots/war-machine.shot.mjs`](../../tools/shots/war-machine.shot.mjs)) rather than
+> compiled into a tool. It carries the two things this page's measurements can no longer be
+> trusted on: **the gate does break at quality `ultra` again** on the re-surveyed circuit, and
+> **`bay k: -3` no longer means anything**. Everything else below still stands.
+
 > **Making a new one? Read [`SHOT-FORMAT.md`](SHOT-FORMAT.md) first.**
 > Everything below was shot by a hand-written tool with its beat table compiled into it
 > (`tools/scratch/trailer-recut.mjs`). It is still the reference for what a finished film costs

@@ -323,9 +323,10 @@ endcard: { title: 'TOTAL CLAUDE', tagline: 'ONE BROWSER TAB', url: 'total-claude
 ```
 
 `in` and `out` are fractions of the shot, with a 0.1 crossfade either side. The first shot of a
-cut fades up from black over 0.8 s unless it names its own `fadeIn`. Everything else is a hard
-cut, because the brief is cuts on action and a dissolve between two moving cameras reads as a
-smear.
+cut fades up from black over 0.8 s unless it names its own `fadeIn` — **including `fadeIn: 0`,
+which means no fade and not "unset"**. That distinction was a bug until `war-machine` hit it; see
+[`TRAILER-2.md`](TRAILER-2.md). Everything else is a hard cut, because the brief is cuts on action
+and a dissolve between two moving cameras reads as a smear.
 
 ---
 
