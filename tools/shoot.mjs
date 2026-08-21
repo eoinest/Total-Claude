@@ -857,6 +857,107 @@ const SHOTS = {
     wall: { bay: -3, stand: 6, lift: 0, yaw: 'in' },
     cam: { eye: 13, aim: 2.2, dist: 32, fov: 40 },
   },
+
+  /*
+   * ---------------------------------------------------------------------------
+   * `--set=eyeline`: the eye line, on top of the wall. A before/after pair set.
+   * ---------------------------------------------------------------------------
+   *
+   * The player's report was that at full zoom-in you walk at a soldier's eye line, and that
+   * you should be able to do that on top of a wall too. You could not: the rig resolved every
+   * height it needed from `heightAt`, which is the bare-earth heightfield, so a focus standing
+   * on Carthage's wall-walk at 26.50 put the eye at 14.43 — 12.07 m *under* the walkway,
+   * inside the masonry, aimed at a look-at point twelve metres over its own head.
+   *
+   * **Every shot here is `lift: 'stand'`, and that is what makes them a pair set.** The other
+   * wall shots in this file pin `rig.heightAt` to a constant so the eye can be lifted level
+   * with a parapet — a workaround for exactly the defect these are cut for, and one that would
+   * hide it. These pin nothing. So a tree from before `walkableTopAt` and a tree from after it
+   * run the identical camera through the identical resolver and differ only by the fix, which
+   * is the only arrangement in which "before" and "after" mean anything.
+   *
+   * `zoom: 0` throughout, because the whole report is about the near end of the zoom. At 0 the
+   * orbit puts the eye 0.16 m over the focus and `place()`'s clamp raises it to 1.7 — so the
+   * clamp *is* the eye line here rather than a safety net, and it is the line that was reading
+   * the wrong ground.
+   *
+   * Six subjects, and each is one of the things the wall is actually made of: the open
+   * curtain, the lip you walk off, a stair, a tower where the walk steps, the gatehouse crown,
+   * and — Carthage only — the 6 m ditch cut this week, which is *earth* and must read exactly
+   * as it did before. Carthage carries the second half of the set because its wall is
+   * uniformly finished and 13.8 m tall; Rome's is a building site and carries the stages.
+   *
+   * `at: 8` and no HUD: these are inspection frames, not battle frames. The assault deploys
+   * 700 m out, so at eight seconds the subject is the masonry and the camera on it.
+   */
+  'eyeline-rome-along': {
+    desc: 'Rome: eye level on the wall-walk, looking down the curtain',
+    scenario: 'assault', hour: 9.5, at: 8,
+    wall: { bay: 4, stand: 0, lift: 'stand', yaw: 'along', zoom: 0 },
+  },
+  'eyeline-rome-out': {
+    desc: 'Rome: eye level on the wall-walk, looking out over the field from the parapet',
+    scenario: 'assault', hour: 9.5, at: 8,
+    wall: { bay: 4, stand: 0, lift: 'stand', yaw: 'out', zoom: 0 },
+  },
+  'eyeline-rome-lip': {
+    // 5 m outboard of the centreline is 2 m clear of a 3.0 m half-thickness: past the lip,
+    // over the drop, and the frame the rate bound is for. A still of a transient is only
+    // meaningful because the transient is *settled* here — the camera is parked, not moving.
+    desc: 'Rome: parked 5 m outboard of the wall-walk — over the edge, on the ground',
+    scenario: 'assault', hour: 9.5, at: 8,
+    wall: { bay: 4, stand: 5, lift: 'stand', yaw: 'along', zoom: 0 },
+  },
+  'eyeline-rome-stair': {
+    desc: 'Rome: eye level halfway up a wall stair, climbing toward the walk',
+    scenario: 'assault', hour: 9.5, at: 8,
+    wall: { bay: 4, stand: 0, stair: 0.5, lift: 'stand', yaw: 'along', yawAdd: Math.PI, zoom: 0 },
+  },
+  'eyeline-rome-tower': {
+    // `along: -0.5 * 35.5` from the bay midpoint is the bay's own origin, which is where the
+    // tower stands and where the walk steps between two construction levels.
+    desc: 'Rome: eye level in a tower pass, where the wall-walk steps between two bays',
+    scenario: 'assault', hour: 9.5, at: 8,
+    wall: { bay: 4, stand: 0, along: -17.75, lift: 'stand', yaw: 'along', zoom: 0 },
+  },
+  'eyeline-rome-gate': {
+    desc: 'Rome: eye level on the crown of the Porta Flaminia',
+    scenario: 'assault', hour: 9.5, at: 8,
+    wall: { bay: 0, gate: true, stand: 0, lift: 'stand', yaw: 'along', zoom: 0 },
+  },
+  'eyeline-carth-along': {
+    desc: 'Carthage: eye level on the wall-walk, looking down the curtain',
+    map: 'carthage', opponent: 2, scenario: 'assault', hour: 16.5, at: 8, weather: 'clear',
+    wall: { bay: 4, stand: 0, lift: 'stand', yaw: 'along', zoom: 0 },
+  },
+  'eyeline-carth-out': {
+    desc: 'Carthage: eye level on the wall-walk, looking out across the ditch',
+    map: 'carthage', opponent: 2, scenario: 'assault', hour: 16.5, at: 8, weather: 'clear',
+    wall: { bay: 4, stand: 0, lift: 'stand', yaw: 'out', zoom: 0 },
+  },
+  'eyeline-carth-lip': {
+    desc: 'Carthage: parked 7 m outboard of the wall-walk — over the edge, on the berm',
+    map: 'carthage', opponent: 2, scenario: 'assault', hour: 16.5, at: 8, weather: 'clear',
+    wall: { bay: 4, stand: 7, lift: 'stand', yaw: 'along', zoom: 0 },
+  },
+  'eyeline-carth-stair': {
+    desc: 'Carthage: eye level halfway up a wall stair, climbing toward the walk',
+    map: 'carthage', opponent: 2, scenario: 'assault', hour: 16.5, at: 8, weather: 'clear',
+    wall: { bay: 4, stand: 0, stair: 0.5, lift: 'stand', yaw: 'along', yawAdd: Math.PI, zoom: 0 },
+  },
+  'eyeline-carth-ditch': {
+    // The floor of the cut: 19.55 m out on the bay's own normal, which is where the profile
+    // in `carthageWall.ts` puts it. This is earth, not masonry, and the frame exists to prove
+    // that nothing here moved.
+    desc: 'Carthage: eye level on the floor of the ditch, looking up at the wall',
+    map: 'carthage', opponent: 2, scenario: 'assault', hour: 16.5, at: 8, weather: 'clear',
+    wall: { bay: 4, stand: 19.55, lift: 'stand', yaw: 'in', zoom: 0 },
+  },
+  'eyeline-carth-gate': {
+    desc: 'Carthage: eye level on the crown of the gate keep',
+    map: 'carthage', opponent: 2, scenario: 'assault', hour: 16.5, at: 8, weather: 'clear',
+    wall: { bay: 0, gate: true, stand: 0, lift: 'stand', yaw: 'along', zoom: 0 },
+  },
 };
 
 /*
@@ -982,6 +1083,9 @@ const FAMILIES = {
   escalade: 'one ladder foot, four frames from one fixed camera. A sequence, not a deck',
   footing: 'the unfinished-bay crossing pair. A before/after diptych, not a deck member — '
     + 'both frames are of the same second of the same seed and only differ by the fix',
+  eyeline: 'the eye line on top of a wall, twelve frames, both circuits. A before/after pair '
+    + 'set: every one is `lift: \'stand\'`, so nothing is pinned and the rig resolves the '
+    + 'surface itself. See the block comment above `eyeline-rome-along`',
 };
 
 /** `field` is the absence of a declared family, and `field` is what `--set=all` means. */
@@ -1037,6 +1141,7 @@ const SETS = {
   ab3: Object.keys(SHOTS).filter((k) => familyOf(k) === 'ab3'),
   escalade: Object.keys(SHOTS).filter((k) => familyOf(k) === 'escalade'),
   footing: Object.keys(SHOTS).filter((k) => familyOf(k) === 'footing'),
+  eyeline: Object.keys(SHOTS).filter((k) => familyOf(k) === 'eyeline'),
   /** The graded field set, and the default. Everything with no declared family. */
   all: Object.keys(SHOTS).filter((k) => familyOf(k) === 'field'),
   /** Literally everything, for the rare pass that wants it. Never a deck. */
@@ -1872,12 +1977,47 @@ try {
              * those.
              */
             const gateAt = s.wall.gate && city.getGates ? city.getGates()[0] : null;
-            const mx = gateAt ? gateAt.x : (bay.x0 + bay.x1) * 0.5;
-            const mz = gateAt ? gateAt.z : (bay.z0 + bay.z1) * 0.5;
-            fx = mx + bay.nx * s.wall.stand;
-            fz = mz + bay.nz * s.wall.stand;
+            let mx = gateAt ? gateAt.x : (bay.x0 + bay.x1) * 0.5;
+            let mz = gateAt ? gateAt.z : (bay.z0 + bay.z1) * 0.5;
+            /*
+             * `stair: f` aims at the flight serving this bay, `f` of the way up its rake.
+             *
+             * A wall stair is not at any offset this block could otherwise name: it stands
+             * against the *inner* face at `-(halfThickness + width/2)` across the run and at
+             * one end of the bay along it, and both of those are solved per bay at build time
+             * against the ground the flight happens to land on. So the shot names the flight
+             * and the page reads `city.getWallStairs()`, for the same reason the bay is named
+             * by an offset from the gate rather than by an x: a written-down coordinate here
+             * is a coordinate with a shelf life.
+             *
+             * `f = 0` is the foot, `1` the head, and above 1 it runs on into the landing that
+             * bridges across onto the walkway.
+             */
+            if (typeof s.wall.stair === 'number' && city.getWallStairs) {
+              const flights = city.getWallStairs();
+              let best = null;
+              for (const st of flights) {
+                if (!best || Math.abs(st.bay - bay.index) < Math.abs(best.bay - bay.index)) best = st;
+              }
+              if (!best) throw new Error('stair camera asked for, and this circuit has no flights');
+              const f = Math.min(1, s.wall.stair);
+              const ex = f < 1 ? best.headX : best.topX;
+              const ez = f < 1 ? best.headZ : best.topZ;
+              const g2 = Math.max(0, s.wall.stair - 1);
+              mx = best.footX + (best.headX - best.footX) * f + (best.topX - ex) * g2;
+              mz = best.footZ + (best.headZ - best.footZ) * f + (best.topZ - ez) * g2;
+            }
+            // `along`: metres along the bay's own run from wherever the subject landed. The
+            // normal offset (`stand`) could always be named and the tangent one could not,
+            // which is the axis a tower, a joint and a stair head all sit on.
+            const alongM = s.wall.along ?? 0;
+            fx = mx + bay.nx * s.wall.stand + bay.dx * alongM;
+            fz = mz + bay.nz * s.wall.stand + bay.dz * alongM;
 
             if (!rig.__savedHeightAt) rig.__savedHeightAt = rig.heightAt;
+            // Saved with an `undefined` sentinel rather than a falsy one: `null` is the value
+            // a map with no city has, and is a legitimate thing to restore.
+            if (rig.__savedWalkAt === undefined) rig.__savedWalkAt = rig.walkableTopAt ?? null;
             const lift = s.wall.lift;
             let liftY = null;
             if (lift === 'walk') liftY = bay.walkY;
@@ -1887,6 +2027,27 @@ try {
             else if (typeof lift === 'string' && lift.startsWith('crest+')) liftY = bay.crestY + Number(lift.slice(6));
             else if (typeof lift === 'number') liftY = rig.__savedHeightAt(fx, fz) + lift;
             rig.heightAt = liftY === null ? rig.__savedHeightAt : () => liftY;
+            /*
+             * A pinned ground sampler has to pin **both** of them, and `lift: 'stand'` is the
+             * option that pins neither.
+             *
+             * Everything above is a workaround for a rig that could not stand on masonry: it
+             * replaces the ground under the camera with a constant so the eye can be put level
+             * with a wall-walk. `RTSCamera.walkableTopAt` is the fix for that, and it is a
+             * *second* sampler — so a shot that pins the first and leaves the second live has
+             * two answers fighting. Measured on `carth-postern-wide`, whose focus stands on
+             * the wall centreline: the pin says 14.58 and the city says 26.50, and the frame
+             * came out 11.92 m in the air. So pinning one nulls the other, and every existing
+             * wall and `cam` shot is bit-identical across the change that introduced it.
+             *
+             * `lift: 'stand'` is the new option and is the whole point of the `eyeline-`
+             * family below: leave both samplers alone and let the rig resolve the surface
+             * itself, which is the thing under test. It reads as "unrecognised" to the chain
+             * above and falls through to the unpinned branch, so a tree that predates
+             * `walkableTopAt` runs the same shot with the same inputs — which is what makes
+             * the before/after pair a pair.
+             */
+            rig.walkableTopAt = liftY === null ? rig.__savedWalkAt : null;
 
             // 'in' looks at the city across the curtain, 'out' away from it, 'along' down
             // the length of the walk. Written down rather than resolved, the yaw goes stale
@@ -1903,11 +2064,13 @@ try {
             wallBay = bay;
           }
           if (!s.wall && !s.cam && rig.__savedHeightAt) {
-            // A previous wall or `cam` shot in this page load pinned the sampler; put it back.
+            // A previous wall or `cam` shot in this page load pinned the samplers; put both back.
             rig.heightAt = rig.__savedHeightAt;
+            if (rig.__savedWalkAt !== undefined) rig.walkableTopAt = rig.__savedWalkAt;
           }
           if (s.cam) {
             if (!rig.__savedHeightAt) rig.__savedHeightAt = rig.heightAt;
+            if (rig.__savedWalkAt === undefined) rig.__savedWalkAt = rig.walkableTopAt ?? null;
             if (!rig.__savedCam) {
               rig.__savedCam = {
                 pitchForZoom: rig.pitchForZoom,
@@ -1940,6 +2103,9 @@ try {
             rig.fovForZoom = () => s.cam.fov;
             Object.defineProperty(rig, 'radius', { get: () => R, configurable: true });
             rig.heightAt = () => groundY + aim - LIFT;
+            // The whole point of a `cam` shot is that the four lengths decide the frame. A
+            // live city surface underneath them would add a fifth. See the note above.
+            rig.walkableTopAt = null;
             camDebug = {
               eye, aim, dist, fov: s.cam.fov,
               depressionDeg: +((Math.atan2(eye - aim, dist) * 180) / Math.PI).toFixed(2),

@@ -106,6 +106,27 @@ export class RTSCamera {
    */
   private standLift = 0;
 
+  /**
+   * The smoothed **earth** under the focus. `smoothFocus.y` is this plus `standLift`.
+   *
+   * Split out because the two halves want different smoothing and putting one damp across
+   * both of them aimed the camera at the sky. `smoothFocus.y` used to damp toward `focus.y` at
+   * rate 9, which lags a moving target by `v / 9` — and the lift moves at up to 16 m/s coming
+   * off a parapet, so the lag was 1.78 m. `place()` puts the eye at `smoothFocus.y + 0.16` and
+   * aims it at `smoothFocus.y + 1.55`, and the floor that normally corrects that — putting the
+   * eye 1.7 m up, 0.15 m *above* the aim, which is what makes an eye-level shot level — is
+   * computed off the unlagged surface and so stopped binding. Net: the whole of a descent was
+   * shot at 23 degrees of elevation. Filmed; `screenshots/walleye/` frame 50 of "over the
+   * edge" is 1280x720 of cloud.
+   *
+   * The lift is already bounded by its own rate limiter, so it needs no second smoothing and
+   * gets none: it is added after the damp. The earth still gets the damp it always had, which
+   * is what a camera panning at 340 m/s over rolling ground needs. On open ground the lift is
+   * zero and this field is `smoothFocus.y` exactly, damped from exactly the same value at
+   * exactly the same rate.
+   */
+  private smoothGroundY = 0;
+
   /** Multiplier on pan speed; raised while shift is held. */
   panSpeed = 1;
   edgePanEnabled = true;
@@ -228,6 +249,7 @@ export class RTSCamera {
     this.standLift = this.liftAt(x, z, ground);
     this.focus.set(x, ground + this.standLift, z);
     this.smoothFocus.copy(this.focus);
+    this.smoothGroundY = ground;
     this.zoom = this.zoomTarget = clamp(zoom, 0, 1);
     this.yaw = this.yawTarget = yaw;
     this.applyImmediate();
@@ -254,8 +276,16 @@ export class RTSCamera {
    * ever finds. There is no caller today; that is why it is worth closing now.
    */
   flyTo(x: number, z: number, zoom: number, yaw: number): void {
+    /*
+     * The lift is deliberately *not* adopted here, where `jumpTo` adopts it.
+     *
+     * This method leaves `smoothFocus` alone on purpose — the ease is the damp — so writing a
+     * new lift straight into `standLift` would put a step of the whole height of a wall into
+     * `smoothFocus.y`, which is the one thing this method is written not to do. `update`
+     * resolves it from the new position on the next frame and ramps it at the bounded rate,
+     * which is the ease this method is asking for anyway.
+     */
     const ground = this.heightAt ? this.heightAt(x, z) : 0;
-    this.standLift = this.liftAt(x, z, ground);
     this.focus.set(x, ground + this.standLift, z);
     this.zoomTarget = clamp(zoom, 0, 1);
     this.yawTarget = yaw;
@@ -316,7 +346,10 @@ export class RTSCamera {
     this.zoom = damp(this.zoom, this.zoomTarget, 11, dt);
     this.yaw = wrapAngle(this.yaw + wrapAngle(this.yawTarget - this.yaw) * (1 - Math.exp(-13 * dt)));
     this.smoothFocus.x = damp(this.smoothFocus.x, this.focus.x, 16, dt);
-    this.smoothFocus.y = damp(this.smoothFocus.y, this.focus.y, 9, dt);
+    // The earth is damped and the lift is not: see `smoothGroundY`. With no city under the
+    // focus the lift is 0 and this is `damp(smoothFocus.y, focus.y, 9, dt)`, unchanged.
+    this.smoothGroundY = damp(this.smoothGroundY, this.focus.y - this.standLift, 9, dt);
+    this.smoothFocus.y = this.smoothGroundY + this.standLift;
     this.smoothFocus.z = damp(this.smoothFocus.z, this.focus.z, 16, dt);
 
     this.pitch = this.pitchForZoom(this.zoom);
