@@ -579,6 +579,13 @@ boot()
   })
   .catch((err) => {
     console.error('[boot] failed:', err);
+    // The plate stays — a dark photograph is a better place to read a failure than a black
+    // screen — but the historical cards stop rotating. A fact about Appian changing every
+    // seven seconds behind "Failed: …" reads as though nothing had gone wrong.
+    if (loreTimer !== null) {
+      clearInterval(loreTimer);
+      loreTimer = null;
+    }
     if (loadText) {
       loadText.textContent = `Failed: ${err instanceof Error ? err.message : String(err)}`;
       loadText.style.color = '#e2564b';
