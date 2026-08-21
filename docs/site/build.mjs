@@ -284,6 +284,8 @@ function shell({ title, out, body, toc, desc }) {
 <title>${esc(title)} — Total Claude</title>
 ${desc ? `<meta name="description" content="${esc(desc)}">` : ''}
 <link rel="stylesheet" href="${up}style.css">
+<!-- Vercel Web Analytics; served by the platform when the project has it enabled. -->
+<script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
