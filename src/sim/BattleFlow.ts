@@ -502,18 +502,41 @@ export class BattleFlowSystem implements Subsystem {
    * and no assault was ever going to do it. A storm takes a *stretch*.
    *
    * So the same walk also bins both sides by run — `Siege` cuts the spine into runs, maximal
-   * stretches a man can walk without leaving the wall, and on this circuit there are 45 of
-   * them for 45 garrisonable bays: 1,695 stations, ~38 m and ~38 stations apiece, so a run is
-   * a bay. A lodgement is a maximal block of consecutive runs the storm has men on, and it
-   * counts as held on two things:
+   * stretches a man can walk without leaving the wall, and there is one per garrisonable bay
+   * because every break on either circuit is a tower: ~38 m and ~38 stations apiece, so a run
+   * is a bay. **The run is the unit of decision**, and it is held on two things:
    *
-   *   - no man of the garrison stands anywhere on it;
-   *   - at least one of its runs is ground the garrison has held (`contestedRuns`).
+   *   - no man of the garrison stands on it;
+   *   - it is ground the garrison has held (`contestedRuns`).
    *
-   * `stormHolding` is the men on every block that passes. Condition A then asks that number,
+   * `stormHolding` is the men on every run that passes. Condition A then asks that number,
    * not `stormOnWall`, to reach `WALL_FOOTHOLD` and stay there for `WALL_HOLD_SECONDS` —
    * which is the same twenty-four men and the same twenty seconds as before, now asked about
    * the ground they are actually on.
+   *
+   * ## Why a run and not a lodgement, which is the third time this has been narrowed
+   *
+   * The rule this replaces judged a **maximal block of consecutive runs the storm had men
+   * on**, all or nothing: one defender anywhere in the block and none of it counted. That is
+   * the shoulder again — it asks the storm to clear ground it is not fighting for — and this
+   * time it was the whole footprint of the escalade rather than one bay either side of it. A
+   * shipped storm plants four banks of ladders on four adjacent bays and spills men onto the
+   * two beyond them, so the block is five or six runs and about a hundred and fifty
+   * defenders. Measured over twelve seeded runs of the Aurelian Wall with the host storming:
+   * **`stormHolding` was 0 in eleven of twelve and touched 24 in none of them**, while
+   * `stormOnWall` peaked at 207-250 and the garrison on the walkway was driven from 810 to
+   * 515-693. Two hundred and fifty men on the parapet and the number the win is read off
+   * never leaves zero: that is an instrument disagreeing with the battle in front of it.
+   *
+   * The same sentence that killed the shoulder decides this: **a run is its own margin.** It
+   * is 38 m, a lodgement of two dozen men occupies about 17 m of it, and to count at all it
+   * must be ground the garrison chose to hold and has been driven off. If that is enough
+   * margin to stop counting the defender one station past the joint, it is enough to stop
+   * counting the one two bays away — and "the block" was counting him.
+   *
+   * What would change this back: a circuit whose runs are much shorter than a bay, where 24
+   * men on one run would be a foothold rather than a capture and the block would be doing
+   * real work. `Siege.wallReport().runs` is the number to check.
    *
    * ## Why there is no shoulder, which is the one thing here that was measured twice
    *
@@ -537,6 +560,22 @@ export class BattleFlowSystem implements Subsystem {
    * of that, so clearing the run already puts the nearest possible defender ten metres beyond
    * either flank — and to be counted at all that defender must be standing somewhere the
    * garrison chose to hold, having been driven off ground it did hold.
+   *
+   * ## And a unit that has broken is not contesting anything
+   *
+   * `garrisonOnWall` counts men, because it is a physical fact and condition C reads it as
+   * one. **`garrisonRun` counts defenders**, and a unit under `UnitOrder.Rout` is not one.
+   * That is not a special case invented here: `effectiveMen` in this file already excludes
+   * routers from an army, `Siege.mayBoard` refuses a broken unit a place in a file,
+   * `WallDoctrine.decideWall` skips a routing enemy, and the whole victory model in the
+   * header is "a battle ends when one side stops being an army".
+   *
+   * It matters because a routed man on a parapet has nowhere to run to. Measured at the end
+   * of twelve seeded storms of the Aurelian Wall: **four to six of Rome's twelve garrison
+   * units had broken and were still standing on 105 to 120 stations** — three bays' worth of
+   * curtain, denied to the storm for the rest of the battle by men who had stopped fighting.
+   * Counting them is the annihilation demand for the third time, at the smallest scale yet:
+   * one terrified man holds 38 m for ever.
    */
   private censusWall(w: WallLine): WallCensus {
     const b = this.battle;
@@ -551,34 +590,33 @@ export class BattleFlowSystem implements Subsystem {
       if (u.faction !== w.garrison && u.faction !== w.storm) continue;
       const st = b.siege.unitWallState(u.id);
       if (st.onWall === 0) continue;
-      const byRun = u.faction === w.garrison ? garrisonRun : stormRun;
-      if (u.faction === w.garrison) out.garrisonOnWall += st.onWall;
+      const held = u.faction === w.garrison;
+      if (held) out.garrisonOnWall += st.onWall;
       else out.stormOnWall += st.onWall;
+      // A broken unit is still men on the stone — `garrisonOnWall` above counts them — and it
+      // is no longer a defence, so it does not deny a run. See the note on breaking.
+      const contests = !held || u.order !== UnitOrder.Rout;
       for (const key of Object.keys(st.runCounts)) {
         const r = Number(key);
-        byRun.set(r, (byRun.get(r) ?? 0) + st.runCounts[r]);
-        if (u.faction === w.garrison) this.contestedRuns.add(r);
+        if (contests) {
+          const byRun = held ? garrisonRun : stormRun;
+          byRun.set(r, (byRun.get(r) ?? 0) + st.runCounts[r]);
+        }
+        // Ground the garrison stood on counts as ground it held whether it is still fighting
+        // for it or not: a run that has been taken from a unit that then broke on it is
+        // exactly the case condition A exists to reward.
+        if (held) this.contestedRuns.add(r);
       }
     }
-    // Maximal blocks of consecutive runs, each judged on its own occupants and its own
-    // history. A storm split between two cleared stretches holds both.
+    // Run by run, each judged on its own occupants and its own history. A storm split
+    // between two cleared stretches holds both, and a run it has a toe-hold on but has not
+    // cleared costs it nothing.
     const runs = [...stormRun.keys()].sort((a, c) => a - c);
-    for (let i = 0; i < runs.length;) {
-      let j = i;
-      while (j + 1 < runs.length && runs[j + 1] === runs[j] + 1) j++;
-      let men = 0;
-      let foe = 0;
-      let taken = false;
-      for (let r = runs[i]; r <= runs[j]; r++) {
-        men += stormRun.get(r) ?? 0;
-        foe += garrisonRun.get(r) ?? 0;
-        if (this.contestedRuns.has(r)) taken = true;
-      }
-      if (foe === 0 && taken) {
-        out.stormHolding += men;
-        for (let k = i; k <= j; k++) out.holdingRuns.push(runs[k]);
-      }
-      i = j + 1;
+    for (const r of runs) {
+      if ((garrisonRun.get(r) ?? 0) !== 0) continue;
+      if (!this.contestedRuns.has(r)) continue;
+      out.stormHolding += stormRun.get(r) ?? 0;
+      out.holdingRuns.push(r);
     }
     const last = w.mx.length - 1;
     for (let i = 0; i < p.count; i++) {
