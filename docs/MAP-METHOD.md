@@ -49,6 +49,22 @@ Distilled from §3. Short, and each one traceable to an entry that paid for it.
    back from the scene — not the plan that generated the geometry.
 7. **Verify a reference before you trust it.** Confirm it depicts the city you think it does, at the
    date you think it does, and that its licence permits use.
+8. **A layout region must be a *partition*, not a set of rectangles.** Overlapping regions allocate
+   ground by planning order rather than by plan, and planning order is invisible in the output. Rome's
+   seventeen districts claimed **266 %** of the ground with 79 overlapping pairs, and the file's own
+   comment justified it — *"a district costs nothing where it overlaps a neighbour."* It costs the
+   whole fabric. Use a real administrative division, which tiles because that is what it is.
+9. **Orientation must come from the streets, not from a hash.** A block's angle is a property of the
+   lines that bound it. Rome seeded each district's rotation from `hash2(...)` at ±20°, so two blocks
+   either side of an invisible boundary sit at different angles with a random offset. **That is the
+   definition of a quilt**, and no amount of texture or massing hides it. Carthage's `CITY_BEARING = 0`
+   plus a world-snapped lattice is the crude version of the same rule and it is why Carthage reads.
+10. **Before choosing a projection, compute whether the module fits inside it.** Take the real
+   spacing of the smallest repeated thing the map needs — an insula between two cross-streets, a
+   tower interval, a plot frontage — project it, and check the uncompressed cross-section still fits
+   in the projected gap. At Rome's `KZ` a true-scale insula did not fit between two projected
+   cross-streets **at any point in the real range**, so the grid step was arithmetically impossible
+   before anyone wrote a line of it. One division would have found this in 2019 as easily as in 2026.
 
 ---
 
@@ -61,19 +77,65 @@ beliefs after the fact.
   `reference/rome-plans/` already held georeferenced Lanciani 1901 plates and SITAR vector data
   before any of this. So "we did not have references" is *not* the explanation, and any diagnosis
   that stops there is wrong.
-- **The leading hypothesis is arithmetic, not carelessness.** Rome projects positions through a
-  roughly 10× horizontal compression while shrinking building footprints only to
-  `PLAN_SCALE = 0.65`. If that is right, two monuments 200 real metres apart land ~20 world metres
-  apart carrying two-thirds of their real footprint — so they *must* intersect, and no amount of
-  careful placement in that frame fixes it. **Unconfirmed at time of writing.** A probe is being
-  built to settle it.
-- **If the hypothesis holds, the frame itself has to change**, and `ROME.md` §2.3's argument for
-  keeping the projection — that everything is already surveyed against it — is much weaker than it
-  looks, because "everything" is exactly what is being discarded.
-- **Prediction to check later:** the rebuild will succeed or fail on the *grid* step, not the
-  landmark step. Landmarks are few and individually surveyable; the ordinary fabric is thousands of
-  buildings and can only be right if it is derived from something. If the rebuild goes wrong again,
-  the most likely place is here.
+- ~~**The leading hypothesis is arithmetic, not carelessness.**~~ **CONFIRMED, 21 Aug 2026, with one
+  correction that changes what the fix looks like.** `docs/ROME-FABRIC.md` §2.2 settles it. The
+  closed form is
+
+  ```
+  clear world ground = K·G − (PLAN_SCALE·PRECINCT − K)·(a + b) − STREET_GAP
+  ```
+
+  for two monuments with half-extents `a`, `b`, a real clear gap `G`, and an axis compression `K`.
+  At `PLAN_SCALE = 0.65` that is negative unless `G > 0.570·(a+b) + 15.8 m` east–west and
+  **`G > 2.133·(a+b) + 31.5 m` north–south.** Measured over the 465 pairs in Rome's survey: **34
+  pairs are closer than the 7 m street the code itself demands, 31 interpenetrate, and 29 of the 34
+  are separate in reality.** The Stadium of Domitian and the Theatre of Pompey are **273 real metres
+  apart and overlap by 49.6 world metres** — a 323 m swing.
+
+  **The correction: the fault is anisotropic, and it is 4.5× worse north–south than east–west,**
+  because `KX` = 0.443 and `KZ` = 0.222. The prior stated it as a single ~10× areal figure. Any fix
+  that treats it as one scalar will half-work, which is exactly what `PLAN_SCALE = 0.65` is: it was
+  measured and tuned against a mean, so it is roughly right in x and hopeless in z.
+
+- **And the hypothesis was *not the whole cause*, which is the more useful finding.** It explains the
+  monuments. It does not explain the quilt. There is a **second, independent** fault of comparable
+  size and it is nothing to do with `PLAN_SCALE`: Rome's seventeen fabric districts are inflated
+  **7.17× over the honest projection** (`he·KX·2.05`, `hn·KZ·3.5`), claim **266 % of the available
+  ground** in 79 overlapping pairs, and each lays its own lattice in its own hash-seeded frame at
+  ±20°. `ROME-FABRIC.md` §2.3. **A diagnosis that had stopped at `PLAN_SCALE` would have fixed the
+  monuments and shipped the same quilt.** New rules 8 and 9 above are what that cost.
+
+- ~~**If the hypothesis holds, the frame itself has to change.**~~ **Half right, and the half that is
+  wrong matters.** The frame does have to change — but it cannot change much, and changing it is not
+  sufficient. Measured: **`KX` is within 5 % of a hard ceiling** (0.443 against 0.466, at which the
+  circuit's east anchor lands exactly on the map edge), so east–west compression is not a lever at
+  all. `KZ` can rise, but only by pushing the southern city off the +Z edge. And **no combination of
+  `KX`, `KZ` and a single `PLAN_SCALE` gives zero overlaps**: even at `KZ` = 0.413, within 7 % of
+  isotropic and with 14 of 34 monuments already off the +Z edge, three pairs still conflict at
+  `PLAN_SCALE` 0.65. The largest uniform footprint scale with zero conflicts is **0.232**, which
+  draws a 44 m Colosseum. The cause is monument *density in one band*, not overall coverage — twelve
+  of the survey's monuments sit in the Campus Martius, and the projection allots it 454 world metres. So the answer is a frame change *plus*
+  per-monument authored footprints *plus* merging the five complexes the survey wrongly models as
+  free-standing boxes. `ROME-FABRIC.md` §4.5 recommends `KZ` = 0.35 and answers `ROME.md` §2.3's
+  three arguments one at a time. Two of the three turn out to be preserved intact by the
+  recommendation, and the third — that a player's distance intuition should transfer between Rome and
+  Carthage — is the one genuine cost.
+
+- **Prediction, confirmed in advance of the build and worth keeping:** the rebuild will succeed or
+  fail on the *grid* step, not the landmark step. **I agree, and there is now evidence rather than
+  intuition.** The grid step is exactly where the fabric died the first time: the districts, their
+  overlap and their per-district rotation are the grid step, and they were never graded by anything.
+  The landmark step, by contrast, already has the project's best artefact — a 34-row survey with
+  real coordinates, real dimensions, measured bearings and a citation per row, several of which argue
+  against their own earlier wrong values.
+
+  **One refinement to the prediction.** The grid step's risk is not that it is hard to write; it is
+  that **it has no natural instrument**, so it will be graded by screenshots. Non-intersection is
+  easy to check and will pass on a quilt; a quilt is only detectable as a *distribution* — block
+  orientation over patch size, against the orthophoto's 150–400 m / 15–40° grain.
+  `ROME-FABRIC.md` §4.4 check 5 is the only check in the plan that can fail on a quilt and pass on a
+  city, and it is the one most likely to be dropped as "nice to have". **If the rebuild goes wrong
+  again, that is where, and the mechanism will be that check 5 was never written.**
 
 ---
 
@@ -123,5 +185,65 @@ georeferencing the wrong city, and that failure would have been slow to detect b
 still produces a plausible-looking result. Rule 7.
 
 ---
+
+### 21 Aug 2026 — the fabric diagnosis, and the decision to rebuild the layout layer
+
+**What we did.** Read `CARTHAGE.md` end to end and reverse-engineered its method as a procedure from
+the *code* as well as the document (`docs/ROME-FABRIC.md` §1). Then re-derived Rome's projection,
+`place()` and `worldRot()` from scratch in a throwaway script rather than importing them, parsed the
+34-row survey out of `survey.ts`, and measured every pair. Then priced every available lever —
+`KX`, `KZ`, uniform `PLAN_SCALE`, anisotropic footprint scale, culling, and merging — against the
+same measurement. Verified and catalogued four reference plates, rejected three.
+
+**What we expected.** Honestly: that `PLAN_SCALE = 0.65` against a ~10× compressed plan would turn
+out to be the cause, that the fix would be a smaller `PLAN_SCALE` or a re-fitted projection, and
+that the diagnosis would take an afternoon and the recommendation would be one number.
+
+**What happened.** Three surprises, in ascending order of how much they changed the plan.
+
+1. **The `PLAN_SCALE` hypothesis was right and insufficient.** It is confirmed with a closed form
+   and 34 measured conflicting pairs — but it explains the *monuments*, not the *quilt*. The quilt
+   has a separate cause of comparable size: districts inflated 7.17× over the projection, claiming
+   266 % of the ground in 79 overlapping pairs, each with its own hash-seeded rotation. Two faults,
+   not one. **A diagnosis that had stopped at the confirmed hypothesis would have fixed the
+   monuments and shipped the same city.**
+2. **There is no single number that fixes it.** `KX` is already within 5 % of its hard ceiling. The
+   largest uniform footprint scale with zero overlaps is 0.232 — a 44 m Colosseum. True footprints
+   admit 11 monuments out of 25. Anisotropic footprints squash every round building 2:1. Twelve
+   surveyed monuments share one 454-metre band, and no constant absorbs that.
+3. **The strongest argument for the recommendation was not the one I went looking for.** I expected
+   to argue about monument overlap. The decisive number turned out to be the *module*: at
+   `KZ` = 0.222 a real 50–90 m cross-street pitch projects to 11–20 world metres, and a true-scale
+   insula is 22 m deep — **so a grid derived from projected streets could not have worked at any
+   point in the real range.** The grid step was arithmetically impossible before anyone wrote it.
+   That is now rule 10.
+
+**Verdict — the method's gap was not diagnosis, it was the *order* of diagnosis.** Reading
+`CARTHAGE.md`'s §2.4 compression rule and then immediately dividing one real module by one
+compression factor would have found the blocking constraint in a minute. Instead the project built
+a 2,764-line design document, a survey, a projection, a circuit and a fabric generator on top of a
+frame that could not host the fabric — and every acceptance measurement it wrote passed, because
+every one of them was about the wall, the ground or the survey.
+
+**One methodological thing that worked and should be repeated:** re-deriving the projection and the
+placement arithmetic in a throwaway script instead of importing the module under test. It cost
+twenty minutes and it is the only reason the numbers in `ROME-FABRIC.md` are evidence rather than an
+echo — two existing tools in `tools/scratch/` grade the fabric by re-importing or re-implementing
+the code that produced it, and one reports the resolver's distance from its own projection as its
+error.
+
+**What we would do differently.**
+
+- **Do the module division before writing the design document, not after building it.** Rule 10.
+- **Do not accept a tuned constant as a finding.** `PLAN_SCALE = 0.65` arrived with a five-row
+  measured table showing that it reduced mean monument displacement from 174 m to 43 m, and that
+  table is honest and correct. It was also read as a solution when it was a *symptom being
+  minimised* — 43 metres of displacement is still a solver moving surveyed monuments. **A constant
+  whose justification is "it makes the residual smaller" is a description of a fault, not a fix.**
+- **Two minutes of looking at a reference is the highest-return work available.** One of six
+  supplied plates was a different city with a live copyright notice on it. Rule 7 again.
+- **Write the fabric's instrument in the same phase as the fabric's design.** `ROME-FABRIC.md` §5
+  Phase 2 puts three of the six probe checks live before any block is generated, specifically so
+  that the previous entry's verdict cannot repeat.
 
 <!-- Append new entries above this line. -->
