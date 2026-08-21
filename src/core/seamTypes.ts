@@ -45,6 +45,7 @@
  */
 
 import type { CitySystem } from '../city/CitySystem';
+import type { CameraSurfaceView } from './RTSCamera';
 import type { Embrasure } from '../city/CitySystem';
 import type { GarrisonBay, GateBlockOut, GateOut, RoughGround, WallStair } from '../city/wall';
 import type { CityBayView, CityGateBlockView, CityStairView, CityView } from '../sim/Siege';
@@ -86,6 +87,22 @@ type _CityForNav = Implements<CitySystem, CityNavProvider>;
 
 // -- the battlement the projectile system aims through -----------------------
 type _Embrasure = Implements<Embrasure, EmbrasureView>;
+
+/**
+ * -- the surface the camera stands on ----------------------------------------
+ *
+ * The rig resolved every height it needed from `heightAt`, which is the bare-earth
+ * heightfield, so the eye-level camera the whole game is sold on could not be walked along a
+ * wall: on Carthage it sat 12.1 m *under* the walkway, inside the masonry, aimed at a look-at
+ * point twelve metres over its own head. `CitySystem.walkableTopAt` is the query that fixes
+ * it, and this is the line that says the rig and the city mean the same thing by it.
+ *
+ * Worth one line for the same reason `_GateBlock` was: the rig reaches this through a
+ * function pointer `CitySystem.init` assigns, `(x, z) => this.walkableTopAt(x, z)`, which is
+ * a shape nothing else compares. A rename on the city side would leave a null pointer and a
+ * camera that silently went back to bare earth.
+ */
+type _CityForCamera = Implements<CitySystem, CameraSurfaceView>;
 
 /*
  * -- the masonry every projectile is tested against --------------------------

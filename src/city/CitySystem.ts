@@ -3,7 +3,7 @@ import type { EngineContext, Subsystem } from '../core/Engine';
 import type { Obstacle } from '../sim/Obstacles';
 import type { TerrainSystem } from '../terrain/TerrainSystem';
 import { HALF_EXTENT } from '../terrain/topography';
-import { clamp } from '../util/math';
+import { clamp, lerp } from '../util/math';
 import { Batch, crenellationRun } from './build';
 import type {
   CARTHAGE_SECTION, CarthageDitch, CasemateOut, OutworkOut,
@@ -586,6 +586,34 @@ export class CitySystem implements Subsystem {
     }
     this.assertUniformBayPitch();
     for (const w of this.checks.warnings ?? []) console.warn(`[city:${this.plan.id}] ${w}`);
+
+    /**
+     * Hand the camera rig the surface a body could stand on, the way `TerrainSystem` hands it
+     * the earth (`ctx.rig.heightAt`, `TerrainSystem.init`).
+     *
+     * The rig resolved every height it needed from the heightfield, which is bare earth, so a
+     * focus standing on a wall-walk 13.8 m up on Carthage put the eye 1.7 m over the ground at
+     * the *foot* of the wall — 12.1 m under the walkway, inside the masonry, looking up. This
+     * is the query that fixes it and there is nothing else to it: the clearance logic that was
+     * already there does the rest. See `RTSCamera.walkableTopAt` and `src/core/seams.ts`.
+     *
+     * Installed here rather than resolved by the rig through `tryGet('city')` for the same
+     * reason the terrain is: a map with no city registers no provider, and a null function
+     * pointer is a state the rig already handles, where a registry miss is a silent one.
+     */
+    /*
+     * `bind`, and not `(x, z) => this.walkableTopAt(x, z)` the way the terrain sampler next
+     * door is written. That arrow is what was here first and it silently dropped the third
+     * argument — the storey the caller is standing on — so the rig asked every question with
+     * the default, and a camera marching through the Punic gate climbed 13.4 m onto the
+     * gatehouse roof and back down again over 55 m of pan. Measured; see
+     * `tools/probe-walleye.mjs`, walk `through-the-arch`.
+     *
+     * TypeScript cannot see it: a two-parameter function is assignable to a three-parameter
+     * type, which is the whole point of that rule and is exactly wrong here. `bind` forwards
+     * whatever it is given and cannot be written with the wrong arity.
+     */
+    ctx.rig.walkableTopAt = this.walkableTopAt.bind(this);
 
     // ---- bake ---------------------------------------------------------------
     for (const spec of built.chunks) this.bakeChunk(spec, heightAt);
@@ -1855,6 +1883,131 @@ export class CitySystem implements Subsystem {
   }
 
   /**
+   * Absolute Y of the topmost surface a **body could stand on** at a point, or `-Infinity`
+   * where there is none.
+   *
+   * Not `masonryTopAt`, and the difference is the parapet. That one answers "what stops a
+   * missile", so through the battlement band it alternates merlon crest and crenel sill two
+   * metres over the walk, and over the gatehouse it answers the merlon line's own crown.
+   * Neither of those is a surface anything stands on. This answers the walk *under* all of
+   * it, and it adds the three things a walk is reached by that a missile has never needed:
+   *
+   *  - **The stair flights.** `masonryTopAt` reports `-Infinity` over every tread on both
+   *    circuits — nine flights on Rome, thirteen on Carthage — because an arrow that lands
+   *    on a staircase has landed on the ground as far as it is concerned.
+   *  - **The tower passes.** The walk *steps* at a tower — 1.00 m on Carthage, median 1.65 m
+   *    on Rome and up to 7.70 — and the tower carries the flight between the two walks
+   *    inside its own footprint (`GarrisonBay.passLoY`/`passHiY`). `masonryTopAt` puts the
+   *    whole step at the bay joint, in nought metres.
+   *  - **The gatehouse crown**, at `sillY`: the roof the merlons stand on, which is the
+   *    surface, and not `topY`, which is two metres of merlon above it.
+   *
+   * Written for the camera rig, which asks it twice a frame rather than two thousand times a
+   * tick, so the stair test is a linear pass over the flights on the circuit instead of an
+   * index. Everything else is the same O(1) bay arithmetic `masonryTopAt` uses.
+   *
+   * Two things are deliberately not modelled. The part of a tower's footprint that projects
+   * past the curtain's own faces — 0.80 m each side on Rome, 0.95 on Carthage — because the
+   * walk does not go out there; the pass lane is a band *inside* the thickness. And
+   * Carthage's forward lines, which do publish a `walkY`: `getOutworks()` is empty on both
+   * circuits as built, and a branch no data reaches is a branch nothing has ever checked.
+   */
+  walkableTopAt(x: number, z: number, fromY = Infinity): number {
+    /*
+     * The gatehouse, tested first and returned from, as its own oriented box — for the reason
+     * `masonryTopAt` does it that way: the block is 25 m long, straddles two 35.5 m bays and
+     * is not "the bay flagged `isGate`". Reading it off the flagged bay reported a fifteen-
+     * metre gatehouse standing over 23 m of open grass. Returning rather than taking a
+     * maximum with the curtain matters on Carthage, where the walk beside the gate stands
+     * 0.58 m *above* the keep's roof: the block is what is built here, and stepping down onto
+     * it and up again is what the stone does.
+     *
+     * **And the carriageway, which `masonryTopAt` deliberately does not model.** It can
+     * afford not to: a missile through an open gate is a one-in-a-thousand shot and not worth
+     * a branch in a per-projectile path. A camera cannot — the player marches through that
+     * gate the moment the ram is done, and answering "the roof" to a query from inside the
+     * passage would lift the eye thirteen metres through the vault. `fromY` is what makes one
+     * number enough for a footprint with two surfaces in it: the crown for a caller already
+     * up on the wall, the road for one underneath it. The 2 m margin is a hand's breadth
+     * either side of the walk that reaches the crown, which is the only way onto it.
+     */
+    const gb = this.gateBlock;
+    if (gb) {
+      const gt = (x - gb.x) * gb.dx + (z - gb.z) * gb.dz;
+      const goff = (x - gb.x) * gb.nx + (z - gb.z) * gb.nz;
+      if (Math.abs(gt) <= gb.halfRun && Math.abs(goff) <= gb.halfDepth) {
+        const underTheVault = Math.abs(gt) <= gb.openHalf && fromY < gb.sillY - 2;
+        return underTheVault ? -Infinity : gb.sillY;
+      }
+    }
+
+    let top = -Infinity;
+    const bi = this.bayIndexAt(x);
+    if (bi >= 0) {
+      const bay = this.bays[bi];
+      const t = (x - bay.x0) * bay.dx + (z - bay.z0) * bay.dz;
+      const px = bay.x0 + bay.dx * t;
+      const pz = bay.z0 + bay.dz * t;
+      const off = (x - px) * bay.nx + (z - pz) * bay.nz;
+      // `bay.halfThickness`, not `WALL.thickness * 0.5`: the curtain that is built is 6.0 m
+      // on Rome and 9.1 on Carthage, and the constant is the historical 3.5.
+      if (Math.abs(off) <= bay.halfThickness) {
+        const w = this.curtainWalkAt(bi, bay, t, x, z);
+        if (w > top) top = w;
+      }
+    }
+
+    for (let i = 0; i < this.stairs.length; i++) {
+      const w = stairSurfaceAt(this.stairs[i], x, z);
+      if (w > top) top = w;
+    }
+
+    return top;
+  }
+
+  /**
+   * The walking surface of one bay at along-run parameter `t`, ramped through its towers.
+   *
+   * Both sides of a tower resolve to the same ramp — the bay to the west enters it through
+   * the `next` branch at `t = lenToNext - towerHalf` and the bay to the east through the
+   * `prev` branch at `t = -towerHalf`, and at the joint itself both read the midpoint — which
+   * is what makes the crossing continuous rather than a step at whichever bay index
+   * `bayIndexAt` happens to award the boundary x to.
+   */
+  private curtainWalkAt(bi: number, bay: GarrisonBay, t: number, x: number, z: number): number {
+    /*
+     * A footing or a rubble gap has no construction level to report. The work follows the
+     * ground across 35.5 m of terrain that can vary by ten metres, so it is evaluated per
+     * point exactly as `masonryTopAt` does it: `bay.crestY` is the maximum over the run and
+     * stands nine metres proud at one end of Rome's bay 2.
+     */
+    if (!bay.walkable) {
+      const gnd = this.groundAt ? this.groundAt(x, z) : bay.groundY;
+      return unfinishedTopAt(bay.stage, bay.groundY, gnd);
+    }
+
+    const prev = bi > 0 ? this.bays[bi - 1] : undefined;
+    if (bay.hasTower && bay.towerHalf > 0 && t <= bay.towerHalf && prev && prev.walkable) {
+      const s = clamp((t + bay.towerHalf) / (2 * bay.towerHalf), 0, 1);
+      return lerp(prev.walkY, bay.walkY, s);
+    }
+
+    const next = this.bays[bi + 1];
+    if (next && next.hasTower && next.towerHalf > 0 && next.walkable) {
+      // Along-run distance to the next bay's origin, measured rather than read off
+      // `bay.length`: the bay index is a fixed pitch in x and the chord of a bowed run is not
+      // the pitch. Carthage's line is bowed; Rome's is straight and the two agree there.
+      const lenToNext = (next.x0 - bay.x0) * bay.dx + (next.z0 - bay.z0) * bay.dz;
+      if (t >= lenToNext - next.towerHalf) {
+        const s = clamp((t - (lenToNext - next.towerHalf)) / (2 * next.towerHalf), 0, 1);
+        return lerp(bay.walkY, next.walkY, s);
+      }
+    }
+
+    return bay.walkY;
+  }
+
+  /**
    * The nearest embrasure to a point on the wall-walk, or null where there is none.
    *
    * A crenellated parapet is merlon (the solid tooth) alternating with embrasure (the gap),
@@ -2382,4 +2535,53 @@ export class CitySystem implements Subsystem {
     this.root.removeFromParent();
     this.mats.dispose();
   }
+}
+
+/**
+ * Absolute Y of a stair's treads at a point, or `-Infinity` off the flight.
+ *
+ * Derived **entirely from the published `WallStair` record** — the two segments `foot -> head`
+ * and `head -> top`, and the record's own `width` — so it cannot drift from the stone the way
+ * a second copy of `STAIR_RISE`, `STAIR_W` and `STAIR_LANDING` would. That is not a
+ * hypothetical on this wall: the tower pass was derived twice and the two answers were 1.36 m
+ * apart, which is how forty-two towers came to have a doorway nobody walked through.
+ *
+ * Each segment is a **capsule**, not a rectangle, and not two discs at the ends. Rome's
+ * landing is 2.31 m long against a 2.80 m tread width, so two discs of radius `width / 2`
+ * would just cover it; Carthage's is 3.53 m against 3.40 m and two discs leave a 0.13 m hole
+ * straight through the middle of the one surface that joins the stair to the wall. A swept
+ * segment cannot leave one at any width.
+ *
+ * The rake is the **chord**, not the treads. A tread stands half a riser above the chord and
+ * steps 0.29 m at a time; a camera walking up at 11 m/s crosses twenty-six of them a second,
+ * and 0.29 m of bob at that rate is not a stair, it is a fault.
+ */
+function stairSurfaceAt(s: WallStair, x: number, z: number): number {
+  const r2 = s.width * s.width * 0.25;
+  let top = -Infinity;
+
+  // The landing at the head, flat at the walk's own level. `topY === headY` by construction.
+  const lx = s.topX - s.headX;
+  const lz = s.topZ - s.headZ;
+  const ll = lx * lx + lz * lz;
+  const lt = ll > 1e-9 ? clamp(((x - s.headX) * lx + (z - s.headZ) * lz) / ll, 0, 1) : 0;
+  const lqx = x - (s.headX + lx * lt);
+  const lqz = z - (s.headZ + lz * lt);
+  if (lqx * lqx + lqz * lqz <= r2) top = s.topY;
+
+  // The rake, foot to head.
+  const rx = s.headX - s.footX;
+  const rz = s.headZ - s.footZ;
+  const rl = rx * rx + rz * rz;
+  if (rl > 1e-9) {
+    const rt = clamp(((x - s.footX) * rx + (z - s.footZ) * rz) / rl, 0, 1);
+    const rqx = x - (s.footX + rx * rt);
+    const rqz = z - (s.footZ + rz * rt);
+    if (rqx * rqx + rqz * rqz <= r2) {
+      const y = s.footY + (s.headY - s.footY) * rt;
+      if (y > top) top = y;
+    }
+  }
+
+  return top;
 }

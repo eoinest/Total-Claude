@@ -731,11 +731,26 @@ function openingShot(
   const halfFrame = (rig.camera.fov * Math.PI) / 360;
   const axis = Math.atan2(rise, plan);
 
-  // The tallest merlon within `OPEN_SPAN` bays of the gate, above the ground the eye orbits.
-  let crest = gateBay.crestY - rig.focus.y;
+  /*
+   * The tallest merlon within `OPEN_SPAN` bays of the gate, above the ground the eye orbits.
+   *
+   * `rig.heightAt`, not `rig.focus.y`, and the two used to be the same number here. Since the
+   * rig learned to stand on masonry (`RTSCamera.walkableTopAt`), a `jumpTo` on a bay
+   * centreline parks the focus on the **wall-walk** — 13.77 m up on Carthage — and this solve
+   * wants the plain the final camera will actually orbit over, 43 to 66 m out in the field.
+   * Left unfixed it shrank `crest` by the height of the wall, pushed the eye 23 m further back
+   * and dropped the crest 30-odd pixels down the frame.
+   *
+   * `rise` and `plan` above are datum-free by construction — `place()` puts the eye at
+   * `smoothFocus.y + sin(pitch) * r` and `jumpTo` copies one into the other, so both are pure
+   * functions of the zoom — which is why `crest` is the only line that needed touching, and
+   * why this reads back off the rig at all instead of re-deriving the orbit.
+   */
+  const datum = rig.heightAt ? rig.heightAt(mx, mz) : rig.focus.y;
+  let crest = gateBay.crestY - datum;
   for (let k = -OPEN_SPAN; k <= OPEN_SPAN; k++) {
     const b = bays[gateBay.index + k];
-    if (b) crest = Math.max(crest, b.crestY - rig.focus.y);
+    if (b) crest = Math.max(crest, b.crestY - datum);
   }
 
   // Depression of the crest below the eye that puts it `OPEN_CREST_FRAC` of the way up the

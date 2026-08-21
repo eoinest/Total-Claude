@@ -21,6 +21,26 @@ export interface CameraLimits {
   boundsZ: number;
 }
 
+/**
+ * The city, as the camera rig uses it: one query, and it returns a number.
+ *
+ * Declared here so `src/core/seamTypes.ts` can assert that `CitySystem` really satisfies it
+ * and `src/core/seams.ts` can call it at boot. Both halves are needed and neither replaces
+ * the other — a name that drifts is a compile error in the first, and a query that is present
+ * and answers `-Infinity` over its own wall-walk is a boot-time fault in the second. That
+ * second failure is the one this project keeps shipping: present, called, `?.`-guarded, inert.
+ */
+export interface CameraSurfaceView {
+  /**
+   * Absolute Y of the topmost surface a body could stand on, or `-Infinity` where none.
+   *
+   * `fromY` is the level the caller is currently standing at, and it decides which surface a
+   * footprint with two of them answers with — a gatehouse crown over its own carriageway is
+   * the one on both circuits. Omit it and the highest wins.
+   */
+  walkableTopAt(x: number, z: number, fromY?: number): number;
+}
+
 export class RTSCamera {
   readonly camera: THREE.PerspectiveCamera;
 
@@ -51,6 +71,41 @@ export class RTSCamera {
   /** Ground-height sampler installed by the terrain system so the camera never clips. */
   heightAt: ((x: number, z: number) => number) | null = null;
 
+  /**
+   * The top of the *walkable* masonry at a point, or `-Infinity` where there is none.
+   * Installed by `CitySystem.init`; null on a map with no city, and on every headless rig.
+   *
+   * This is the whole of the wall-walk fix. `heightAt` is the heightfield — bare earth — so
+   * standing on Carthage's wall-walk 13.8 m up, `place()` read the ground at the *foot* of the
+   * wall and put the eye 1.7 m above that: 12.1 m under the walkway, inside the stone, aimed
+   * at a look-at point twelve metres over its own head. Measured at 7dd9616 on both circuits.
+   *
+   * Deliberately **not** `CitySystem.masonryTopAt`, which is the missile-collision surface: in
+   * the battlement band that answers merlon crest or crenel sill, two metres over the walk and
+   * alternating every 2.7 m along the run, and over the gatehouse it answers the merlon line's
+   * crown rather than the roof behind it. A camera that stood on those would ride a 2 m square
+   * wave along every parapet on the map. See `CitySystem.walkableTopAt`.
+   */
+  walkableTopAt: ((x: number, z: number, fromY?: number) => number) | null = null;
+
+  /**
+   * How far the surface the focus is standing on rises above the bare earth under it.
+   *
+   * **Zero everywhere on open ground, and that is the whole of the safety argument.** At
+   * `standLift === 0` every expression that reads it below is character-for-character the one
+   * that shipped, evaluated against `heightAt` alone — so the field cases, the graded deck and
+   * the opening camera cannot move. It leaves zero only where the city says there is a walkable
+   * surface over the earth: a wall-walk, a stair rake, a tower's internal flight, a gatehouse
+   * crown, the pour on a bare footing.
+   *
+   * It is the *lift* rather than the absolute surface because the lift is the only part that
+   * steps. The earth is continuous in x and z and needs no help; a parapet line is a cliff, and
+   * 27 m of it crossed in one frame is not a camera move. So the bound lives here and nowhere
+   * else, and `smoothFocus.y`'s own damp — which has to track terrain at 340 m/s of pan — is
+   * left exactly as it was.
+   */
+  private standLift = 0;
+
   /** Multiplier on pan speed; raised while shift is held. */
   panSpeed = 1;
   edgePanEnabled = true;
@@ -78,6 +133,27 @@ export class RTSCamera {
    * the zooms where the correction is small and stops short of the singularity.
    */
   private readonly dragForwardGain = 3;
+
+  /**
+   * Bound on how fast `standLift` may move, as a multiple of the orbit radius per second.
+   *
+   * A screen-space statement rather than a world one, because "this is a cut, not a move" is a
+   * statement about the frame and not about metres: the 13.77 m Carthage's wall-walk stands
+   * over its own footing is four times the eye-level orbit of 3.2 m and a sixteenth of the
+   * strategic 226 m. A fixed metres-per-second that reads as a controlled descent at the near
+   * end reads as a stall at the far end, where the same step is a few pixels.
+   *
+   * At the eye-level orbit these work out at 16 m/s down and 29 m/s up: Carthage's wall in
+   * 0.86 s and 0.48 s, Rome's tallest curtain in twice that. Faster up than down on purpose —
+   * the eye is *inside masonry* while it climbs, and only over open air while it falls.
+   *
+   * Neither binds on anything continuous, which is the test that matters. Walking a stair at
+   * the eye-level pan rate of 11 m/s changes the lift at 6.3 m/s on Carthage's 23.9 m flight;
+   * crossing a tower changes it at 2.4 m/s; walking into the new ditch is the earth moving and
+   * not the lift at all, so it is not bounded here and reads exactly as it did before.
+   */
+  private readonly liftFallGain = 5;
+  private readonly liftRiseGain = 9;
 
   constructor(aspect: number) {
     this.camera = new THREE.PerspectiveCamera(45, aspect, 0.35, 8000);
@@ -138,7 +214,19 @@ export class RTSCamera {
      * `heightAt` is installed by TerrainSystem during `initAll`, before any caller reaches
      * here; the fallback keeps a headless or terrain-less rig working.
      */
-    this.focus.set(x, this.heightAt ? this.heightAt(x, z) : 0, z);
+    const ground = this.heightAt ? this.heightAt(x, z) : 0;
+    /*
+     * Adopted rather than eased, and both halves of that matter.
+     *
+     * A jump onto the wall — the minimap, a garrison unit card, the shot harness's
+     * `setCamera` — has to land *on* the walkway in the frame it is asked for. Letting
+     * `update` ramp the lift into place instead would restore this method's own defect one
+     * storey up: an unrequested climb over the second after every jump, and a screenshot
+     * harness that treats `setCamera` as instant measuring 31 frames through a still-moving
+     * camera.
+     */
+    this.standLift = this.liftAt(x, z, ground);
+    this.focus.set(x, ground + this.standLift, z);
     this.smoothFocus.copy(this.focus);
     this.zoom = this.zoomTarget = clamp(zoom, 0, 1);
     this.yaw = this.yawTarget = yaw;
@@ -166,7 +254,9 @@ export class RTSCamera {
    * ever finds. There is no caller today; that is why it is worth closing now.
    */
   flyTo(x: number, z: number, zoom: number, yaw: number): void {
-    this.focus.set(x, this.heightAt ? this.heightAt(x, z) : 0, z);
+    const ground = this.heightAt ? this.heightAt(x, z) : 0;
+    this.standLift = this.liftAt(x, z, ground);
+    this.focus.set(x, ground + this.standLift, z);
     this.zoomTarget = clamp(zoom, 0, 1);
     this.yawTarget = yaw;
   }
@@ -203,7 +293,24 @@ export class RTSCamera {
     const { boundsX, boundsZ } = this.limits;
     this.focus.x = clamp(this.focus.x, -boundsX, boundsX);
     this.focus.z = clamp(this.focus.z, -boundsZ, boundsZ);
-    if (this.heightAt) this.focus.y = this.heightAt(this.focus.x, this.focus.z);
+    /*
+     * The surface under the focus: the earth, plus whatever the city has standing on it.
+     *
+     * `this.radius` is read here off *last* frame's zoom, a few frames' worth of the wheel out
+     * of date, which is immaterial to a rate bound and saves reordering the damps below around
+     * a term that is zero on open ground.
+     */
+    if (this.heightAt) {
+      const ground = this.heightAt(this.focus.x, this.focus.z);
+      // The storey the focus is on, so a gatehouse answers with its crown to a camera
+      // walking the wall and with its road to one marching through the arch.
+      const lift = this.liftAt(this.focus.x, this.focus.z, ground, ground + this.standLift);
+      const r0 = this.radius;
+      const step = lift - this.standLift;
+      const cap = (step > 0 ? this.liftRiseGain : this.liftFallGain) * r0 * dt;
+      this.standLift += clamp(step, -cap, cap);
+      this.focus.y = ground + this.standLift;
+    }
 
     // Critically-damped smoothing on everything the player drives.
     this.zoom = damp(this.zoom, this.zoomTarget, 11, dt);
@@ -400,6 +507,22 @@ export class RTSCamera {
     this.panGround(t0 * u0 - t1 * u1, clamp(fwd, -maxFwd, maxFwd), true);
   }
 
+  /**
+   * How far the walkable surface at a point stands above the earth there, or 0.
+   *
+   * `-Infinity` is the city's answer for "no masonry here", so the comparison and not a
+   * subtraction is what keeps `NaN` out of the camera. There is one other thing this guards:
+   * a `footing` bay's pour stands a hand's breadth over the turf at its low end, and calling
+   * that a wall would switch the eye's floor on for nothing — but it is honestly a step up
+   * onto concrete, so it is left in rather than filtered by a threshold that would then have
+   * to be defended against the ditch, the glacis and the berm.
+   */
+  private liftAt(x: number, z: number, ground: number, fromY?: number): number {
+    if (!this.walkableTopAt) return 0;
+    const top = this.walkableTopAt(x, z, fromY);
+    return top > ground ? top - ground : 0;
+  }
+
   /** Position the camera on its orbit and aim it at the focus. */
   private place(r: number): void {
     const cp = Math.cos(this.pitch);
@@ -408,11 +531,31 @@ export class RTSCamera {
     const eyeZ = this.smoothFocus.z - Math.cos(this.yaw) * cp * r;
     let eyeY = this.smoothFocus.y + sp * r;
 
-    // Never let the eye sink into a hill.
+    /*
+     * Never let the eye sink into a hill — and, since the city started answering for its own
+     * masonry, never let it sink into a wall either.
+     *
+     * At the eye-level end this clamp is not a safety net, it *is* the mechanism: the orbit
+     * puts the eye 0.16 m above the focus at zoom 0 and the clamp raises it to 1.7 m, which is
+     * the soldier's eye line the whole feature is named after. So a walk resolved from bare
+     * earth does not merely clip — it pins the eye 12 m *below* the walkway the focus is
+     * standing on and aims it at a look-at point over its own head, which is exactly what
+     * standing on Carthage's parapet used to look like.
+     *
+     * `standLift` is the lift under the *focus*, not under the eye, and that is deliberate
+     * twice over. It keeps the view level: the eye ends up `minClear` over the surface the
+     * camera is looking at, so walking a stair reads as walking a stair rather than as the
+     * horizon sawing up and down. And it takes the step out of the eye's own term: the eye
+     * trails the focus by 3.19 m at this zoom, so a floor sampled at the eye would cross the
+     * parapet line a third of a second before or after the focus did and cut twice.
+     *
+     * On open ground `standLift` is 0 and this is the clamp that shipped.
+     */
     if (this.heightAt) {
       const ground = this.heightAt(eyeX, eyeZ);
       const minClear = lerp(1.7, 22, smoothstep(this.zoom));
-      if (eyeY < ground + minClear) eyeY = ground + minClear;
+      const floor = ground + this.standLift + minClear;
+      if (eyeY < floor) eyeY = floor;
     }
 
     this.camera.position.set(eyeX, eyeY, eyeZ);

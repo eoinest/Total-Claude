@@ -221,6 +221,38 @@ export const SEAMS: readonly Seam[] = [
       },
     },
   },
+  // -- the wall, as the camera stands on it -----------------------------------
+  {
+    consumer: 'core/RTSCamera.ts CameraSurfaceView',
+    provider: 'city',
+    optional: { walkableTopAt: 'fn' },
+    returns: {
+      /**
+       * The one seam in this file whose accessor returns a **number**, and the check is not
+       * about its shape.
+       *
+       * `walkableTopAt` answers `-Infinity` for "no masonry here", which is a legitimate
+       * answer over most of the map and is indistinguishable — to a type, to a
+       * `typeof === 'function'` guard, and to the camera's own `top > ground` test — from a
+       * query that has quietly stopped finding the wall. That is the exact failure this file
+       * exists for: present, called, guarded, and inert. So the call asks it about a point on
+       * the circuit's own wall-walk, taken off `getGarrisonBays()` rather than from a
+       * constant, and reports the answer as a field only when it is finite. A city that
+       * cannot find its own walkway fails here at boot instead of at the first time somebody
+       * tries to walk it.
+       */
+      walkableTopAt: {
+        fields: ['standable'],
+        call: (city) => {
+          const p = sampleWallPoint(city);
+          if (!p) return null;
+          const fn = city['walkableTopAt'] as (x: number, z: number) => number;
+          const y = fn.call(city, p[0], p[1]);
+          return Number.isFinite(y) ? { standable: y } : {};
+        },
+      },
+    },
+  },
   {
     consumer: 'ai/Pathfinding.ts CityNavProvider',
     provider: 'city',
