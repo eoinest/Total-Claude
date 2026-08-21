@@ -950,8 +950,16 @@ const SHOTS = {
     // in `carthageWall.ts` puts it. This is earth, not masonry, and the frame exists to prove
     // that nothing here moved.
     desc: 'Carthage: eye level on the floor of the ditch, looking up at the wall',
-    map: 'carthage', opponent: 2, scenario: 'assault', hour: 16.5, at: 8, weather: 'clear',
-    wall: { bay: 4, stand: 19.55, lift: 'stand', yaw: 'in', zoom: 0 },
+    // **t+2, not t+8 like the rest of the set.** Shot at 8 and looked at: a Roman skirmisher
+    // screen is already standing in the cut, and the frame came back as one banner 0.89 m from
+    // the lens. The subject here is the profile of the ditch and where the eye sits in it, and
+    // a frame that cannot show that is not evidence of anything.
+    map: 'carthage', opponent: 2, scenario: 'assault', hour: 16.5, at: 2, weather: 'clear',
+    // `along`, not `in`. Shot both ways and looked at both: standing on the floor of a 6 m cut
+    // with 20 m of width, the inner bank rises 31 degrees and fills the frame from edge to
+    // edge, so looking at the wall from down here photographs a bank. Looking *down* the cut
+    // is the frame that shows what the camera is standing in.
+    wall: { bay: 4, stand: 19.55, lift: 'stand', yaw: 'along', zoom: 0 },
   },
   'eyeline-carth-gate': {
     desc: 'Carthage: eye level on the crown of the gate keep',

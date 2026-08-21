@@ -21,6 +21,11 @@ screenshots/**/*.jpg
 screenshots/**/*.jpeg
 screenshots/**/*.webp
 screenshots/**/*.avif
+# Video too, for the same reason and a bigger one: `tools/film-walleye.mjs` records the page
+# with Playwright's own screencast and a thirty-second walk is six to ten megabytes of WebM.
+# A camera pass writes four of them. Hand the files over; do not commit them.
+screenshots/**/*.webm
+screenshots/**/*.mp4
 screenshots/**/report.json
 !screenshots/keep/**
 
