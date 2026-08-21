@@ -340,7 +340,7 @@ if (await waitForServer(base, 1200)) {
    * and Vite's default `cacheDir` is `<pkgDir>/node_modules/.vite` — a *path*, resolved through
    * that symlink. So six agents on six branches share one dependency-optimiser cache and one
    * transform cache, and the failure that produces is the worst kind: a page that loads
-   * perfectly while serving another branch's modules. `TC_VITE_CACHE` is read by
+   * perfectly while serving another branch's modules. `TC_VITE_CACHE_DIR` is read by
    * `vite.config.ts`; the directory is named for the port so two runs cannot collide either.
    */
   const cacheDir = path.join(WORK_ROOT, '.vite-cache', `p${PORT}`);
@@ -349,7 +349,7 @@ if (await waitForServer(base, 1200)) {
   server = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
     cwd: ROOT,
     stdio: 'ignore',
-    env: { ...process.env, TC_NO_HMR: '1', TC_VITE_CACHE: cacheDir, FORCE_COLOR: '0' },
+    env: { ...process.env, TC_NO_HMR: '1', TC_VITE_CACHE_DIR: cacheDir, FORCE_COLOR: '0' },
   });
   if (!(await waitForServer(base, 90000))) {
     console.error(`vite did not start on ${PORT}`);

@@ -23,15 +23,6 @@ const vercelAnalytics = () => ({
 
 export default defineConfig({
   plugins: [vercelAnalytics()],
-  /**
-   * Where Vite keeps its dependency pre-bundle.
-   *
-   * Default is `node_modules/.vite`, and every agent worktree in this repo symlinks
-   * `node_modules` at the shared checkout — so two agents running a headless gate at the
-   * same time write one cache directory from two processes. Set `TC_VITE_CACHE_DIR` to a
-   * per-worktree path and each gets its own. Unset, this is exactly the old behaviour.
-   */
-  cacheDir: process.env.TC_VITE_CACHE_DIR || undefined,
   // Served from the domain root on Vercel, and the runtime fetches
   // `/assets/manifest.json` absolutely, so the base must be absolute too.
   base: '/',
@@ -41,12 +32,18 @@ export default defineConfig({
    * Unset — the normal case — this is `undefined` and Vite uses its default,
    * `<pkgDir>/node_modules/.vite`, exactly as it always has. The reason it is a knob at all is
    * that agent worktrees under `.claude/worktrees/` **symlink `node_modules` back to the main
-   * checkout**, and Vite resolves that default as a path, through the symlink. So six agents on
-   * six branches share one optimiser cache, and the failure that produces is the worst kind: a
-   * page that loads perfectly while serving another branch's modules. `tools/film.mjs` sets
-   * this per port; any long-running harness in a worktree should too.
+   * checkout**, and Vite resolves that default as a path, *through* the symlink. So every agent
+   * on every branch shares one optimiser cache and one transform cache, written by several
+   * processes at once, and the failure that produces is the worst kind: a page that loads
+   * perfectly while serving another branch's modules.
+   *
+   * Two agents found this independently on the same day and each added this field with its own
+   * environment variable, which git merged cleanly into a duplicate key — and a duplicate key in
+   * an object literal is not an error, it is the second one winning. That silently disabled the
+   * other harness's isolation. **One name, and it is this one.** Any long-running harness in a
+   * worktree must set it; `tools/film.mjs` and `tools/lib/menu-boot.mjs` both do, per port.
    */
-  cacheDir: process.env.TC_VITE_CACHE || undefined,
+  cacheDir: process.env.TC_VITE_CACHE_DIR || undefined,
   server: {
     port: 5173,
     host: '127.0.0.1',
