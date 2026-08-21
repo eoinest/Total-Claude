@@ -1468,8 +1468,20 @@ export class PathfindingSystem implements Subsystem {
    * The carriageway is 4.3 m and a fine cell is 7 m, so a conservative stamp closes it.
    * One cell of clearance is the honest answer anyway: `clearance` there comes out near
    * 3.5 m, so A\* admits only a unit whose footprint radius is under that — a column, not
-   * a line. That is what a gate *is*, and `narrowestFormation` already exists to let a
-   * cohort make itself thin enough to use one.
+   * a line. That is what a gate *is*.
+   *
+   * **The second half of that sentence used to say `narrowestFormation` already exists to
+   * let a cohort make itself thin enough to use one, and it was not true.** That helper
+   * returns the narrowest formation the *roster* offers, which for every cavalry unit in
+   * the game is the wedge it is already in — `footprintOf(equites)` is max 8.07, min 8.07 —
+   * and of the eleven unit types on the Carthage field only three have a narrowest
+   * footprint that fits inside a gate at all. Nor could the sim's own routes ever reach the
+   * `narrow` flag that triggers it: `BattleSystem` requests them with
+   * `radius === minRadius`, and `narrow` is `radius < wantRadius - 0.5`. Making a formation
+   * fit a hole is now `BattleSystem.fitToAperture`, which sets the frontage from the
+   * measured corridor instead of choosing a formation from a menu, and which measures that
+   * corridor against the obstacle boxes rather than against this lattice for the reason
+   * this very comment gives: at 7 m a cell, the lattice cannot see a gate.
    */
   private openGates(city: CityNavProvider): void {
     this.portals.length = 0;
