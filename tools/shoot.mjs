@@ -897,6 +897,22 @@ const SHOTS = {
     wall: { bay: -2, stand: 26, lift: 0, yaw: 'in' },
     cam: { eye: 30, aim: 19, dist: 30, fov: 36 },
   },
+  /*
+   * The rout pair. Carthage, because that is where the escalade parties are.
+   *
+   * `rout.at: 70` is late enough that a party ordered up the ladders at the scenario's own
+   * start is genuinely straddled — men over the parapet, men on the rungs, men still at the
+   * foot — and `at: 130` is a minute later, which on the old tree is long enough for the
+   * men on the stone to have walked to the end of their run and stopped, and on the new one
+   * long enough for them to have got down a stair and gone.
+   */
+  'parapetfile-rout-ladder': {
+    desc: 'An escalade party broken while it is half up the wall, one minute later',
+    scenario: 'assault', hour: 12.2, at: 130,
+    rout: { unit: 'escalade-party', at: 40 },
+    follow: 'routed', yaw: 0,
+    cam: { eye: 30, aim: 16, dist: 46, fov: 38 },
+  },
   'escalade-foot-32': {
     desc: 'Escalade: the same camera, t+32',
     scenario: 'assault', hour: 9.5, at: 32,
@@ -1661,6 +1677,51 @@ try {
               orderDebug = { unitId: -1, why: u ? 'no station' : `no free ${s.order.unit}` };
             }
           }
+          /**
+           * `rout`: break a party while it is spread over the wall, and photograph that.
+           *
+           * The second half of the owner's report is a unit in three places at once — men on
+           * the parapet, men on the rungs, men on the grass — and no camera can find that
+           * moment by waiting for it, because whether a given party breaks while it is
+           * straddled is a coin toss of the seed. So the frame *makes* the state: it runs to
+           * `rout.at`, picks the party of that type with men in all three places (falling
+           * back to the largest of the type if none is straddled, and saying which in the
+           * record), and calls `BattleSystem.rout` — the same entry `Morale` uses.
+           *
+           * Not a siege verb, and deliberately not: everything this pass changed about rout
+           * hangs off `u.order === Rout` and `releaseBrokenCrews`, and a frame that reached
+           * past them into `Siege` would be photographing the harness.
+           */
+          let routDebug = null;
+          if (s.rout) {
+            while (g.simTime() < s.rout.at - 1e-6) {
+              g.advance(Math.min(STEP, s.rout.at - g.simTime()));
+            }
+            const b = g.battle;
+            const sg = b.siege;
+            const p = b.pool;
+            const spread = (u) => {
+              let stone = 0, rung = 0, grass = 0;
+              for (const i of u.members) {
+                if (!p.aliveAt(i)) continue;
+                if (sg.crossOf[i] !== -1) rung++;
+                else if (sg.stationOf[i] !== -1) stone++;
+                else grass++;
+              }
+              return { stone, rung, grass };
+            };
+            let pick = null, fall = null;
+            for (const u of b.units) {
+              if (u.destroyed || u.typeId !== s.rout.unit || u.order === 5) continue;
+              if (!fall || u.alive > fall.alive) fall = u;
+              const k = spread(u);
+              if (k.stone >= 2 && k.rung >= 2 && k.grass >= 2 && !pick) pick = u;
+            }
+            const u = pick ?? fall;
+            if (u) { routDebug = { unitId: u.id, alive: u.alive, ...spread(u), straddled: !!pick, at: s.rout.at }; b.rout(u); }
+            else routDebug = { unitId: -1, why: `no live ${s.rout.unit}`,
+              saw: b.units.filter((q) => !q.destroyed).map((q) => `${q.typeId}:${q.alive}:${q.order}`) };
+          }
           while (g.simTime() < s.at - 1e-6) {
             g.advance(Math.min(STEP, s.at - g.simTime()));
           }
@@ -1696,6 +1757,19 @@ try {
               let take = false;
               if (s.follow === 'contact') take = st === 4;            // Fighting
               else if (s.follow === 'corpses') take = st === 11 || st === 10;
+              /*
+               * `follow: 'routed'` — the party `rout` just broke, wherever it has got to.
+               *
+               * A fixed bay cannot frame this. The subject is one unit spread over three
+               * levels of one stretch of wall, and which stretch depends on which ladder
+               * bank the scenario put its party against; a hand-picked bay photographed
+               * the empty curtain forty metres along from it. Taken over the whole unit
+               * rather than only its men on the stone, because "half on and half off" is
+               * the subject and cropping to the half on the wall would hide it.
+               */
+              else if (s.follow === 'routed' && routDebug && routDebug.unitId >= 0) {
+                take = p.unitId[i] === routDebug.unitId && st !== 11 && st !== 10;
+              }
               if (take) {
                 sx += p.x[i]; sz += p.z[i]; n++;
                 // Also bucket into a coarse grid, because a battle usually has more than
@@ -2376,7 +2450,7 @@ try {
 
           const st = g.engine.stats();
           return {
-            simTime: g.simTime(), men, units, corpses, waterDebug, wallDebug, camDebug, orderDebug,
+            simTime: g.simTime(), men, units, corpses, waterDebug, wallDebug, camDebug, orderDebug, routDebug,
             nearestMan, horizonFrac, sunAngle, sunElev,
             weather: g.engine.context.tryGet('vfx')?.weatherKind ?? 'n/a',
             focusX: Math.round(fx), focusZ: Math.round(fz), yaw: +fyaw.toFixed(2),
