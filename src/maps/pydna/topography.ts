@@ -31,6 +31,8 @@
  * reading a blurry control texture — keep the two in step.
  */
 
+import type { DeployGround } from '../types';
+
 import { HALF_EXTENT } from '../../terrain/topography';
 
 export { HALF_EXTENT };
@@ -191,10 +193,28 @@ const rectMask = (
   return dx * dx * (3 - 2 * dx) * (dz * dz * (3 - 2 * dz));
 };
 
+/**
+ * The two boxes as data, with the masks derived from them.
+ *
+ * `sim/scenario.ts` forms its lines up on this. See `maps/types.ts`'s `DeployGround`.
+ *
+ * The battle's axis is 0 and the southern box carries its own 10 m offset, which is how it has
+ * always been drawn and is not the axis the two lines face each other along. Keeping the 10 m
+ * on the box rather than promoting it to `axisX` is what leaves this map's field battle exactly
+ * where it was.
+ */
+export const DEPLOY_GROUND = {
+  axisX: 0,
+  north: { cx: 0, cz: -196, hx: 490, hz: 130 },
+  south: { cx: 10, cz: 150, hx: 490, hz: 120 },
+} as const satisfies DeployGround;
+
 export const macedonianDeployMask = (x: number, z: number): number =>
-  rectMask(x, z, 0, -196, 490, 130, 80);
+  rectMask(x, z, DEPLOY_GROUND.north.cx, DEPLOY_GROUND.north.cz,
+    DEPLOY_GROUND.north.hx, DEPLOY_GROUND.north.hz, 80);
 export const romanDeployMask = (x: number, z: number): number =>
-  rectMask(x, z, 10, 150, 490, 120, 80);
+  rectMask(x, z, DEPLOY_GROUND.south.cx, DEPLOY_GROUND.south.cz,
+    DEPLOY_GROUND.south.hx, DEPLOY_GROUND.south.hz, 80);
 
 /**
  * The fighting corridor. High-frequency relief is damped here and the broad swells kept.

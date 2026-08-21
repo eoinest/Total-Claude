@@ -197,6 +197,37 @@ const SHOTS = {
     scenario: 'assault', hour: 9.5, at: 3,
     x: 0, z: 210, zoom: 0.74, yaw: Math.PI * 0.02,
   },
+  /**
+   * The field battle's opening frame, before and after the deployment was put on its ground.
+   *
+   * `docs/ROME.md` §15 task 1 moved the Campus Martius' deployment masks east with the
+   * corrected Tiber. `sim/scenario.ts` laid both lines out about x 0 and never read those
+   * masks, so on the corrected ground **747 of 8,632 men stood in the river** and 412 more
+   * stood dry on the far bank, in the wrong battle. An army in a river is not a number, it is
+   * a thing you can see, which is what these two frames are for.
+   *
+   * Two shots, and they are different kinds of evidence on purpose.
+   *
+   *  - `deploy-opening` is `follow: 'ownLine'`, so it resolves the camera onto whatever the
+   *    army is and wherever it stands. It is the frame the player is actually given, in both
+   *    arms, and the fix moves the camera with the army. Comparing it is comparing two
+   *    battles, not two crops of one.
+   *  - `deploy-westflank` is a **fixed** camera on the Roman left wing's *old* position, over
+   *    the Tiber at z 185. The before arm has a cavalry squadron and two urban cohorts
+   *    standing in open water; the after arm has the same camera on an empty river, with the
+   *    army 271 m east of it. It is the only one of the two where the same point in the world
+   *    is photographed twice, which is what makes it a diptych.
+   *
+   * `at: 0` on both. The subject is the *deployment*, and by t+2 the AI has the host moving.
+   */
+  'deploy-opening': {
+    desc: "The field battle as the player is given it: Rome's line, the host beyond it",
+    follow: 'ownLine', zoom: 0.78, hour: 9.5, at: 0,
+  },
+  'deploy-westflank': {
+    desc: "Rome's left wing where it used to stand: the Tiber at z 185, from the east bank",
+    x: -195, z: 185, zoom: 0.62, yaw: Math.PI * 1.60, hour: 9.5, at: 0,
+  },
   city: {
     // Was (60, 400) zoom 0.62, which put the camera *inside* the Via Flaminia tomb field
     // rather than on the city. Pulled back and lifted so the wall reads as the foreground
@@ -1292,6 +1323,8 @@ const FAMILIES = {
   ground: 'the Tiber on the survey and the bench under the wall — ROME.md §15 tasks 1 and '
     + '2. A before/after set of four fixed cameras, not a deck: see the block comment above '
     + "'ground-tiber'",
+  deploy: 'the field battle standing on its own ground — ROME.md §15 task 14. A before/after '
+    + "pair, not a deck: see the block comment above 'deploy-opening'",
   menu: 'the front door and where each of its doors goes. Interface, not renderer — every '
     + 'one of these frames is a `ui` shot and none may ever enter a blind deck',
 };
@@ -1360,6 +1393,7 @@ const SETS = {
   eyeline: Object.keys(SHOTS).filter((k) => familyOf(k) === 'eyeline'),
   parapetfile: Object.keys(SHOTS).filter((k) => familyOf(k) === 'parapetfile'),
   ground: Object.keys(SHOTS).filter((k) => familyOf(k) === 'ground'),
+  deploy: Object.keys(SHOTS).filter((k) => familyOf(k) === 'deploy'),
   menu: Object.keys(SHOTS).filter((k) => familyOf(k) === 'menu'),
   /** The graded field set, and the default. Everything with no declared family. */
   all: Object.keys(SHOTS).filter((k) => familyOf(k) === 'field'),

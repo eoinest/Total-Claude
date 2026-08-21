@@ -1,7 +1,7 @@
 import { PYDNA_AERIAL_MEAN, PYDNA_LAYERS, PYDNA_SPLAT_GLSL } from './pydna/ground';
 import { buildPydnaTerrain } from './pydna/heightfield';
 import { PYDNA_SCATTER } from './pydna/scatter';
-import { PYDNA_TOPO_GLSL, SEA_LEVEL } from './pydna/topography';
+import { DEPLOY_GROUND, PYDNA_TOPO_GLSL, SEA_LEVEL } from './pydna/topography';
 import type { MapDefinition } from './types';
 
 /**
@@ -120,6 +120,7 @@ export const PYDNA: MapDefinition = {
     // makes ground look like a tech demo.
     grass: { heightScale: 1.3, densityScale: 1.18, dryness: 0.72 },
     scatter: PYDNA_SCATTER,
+    deploy: DEPLOY_GROUND,
   },
   /**
    * A field battle, so no city — and the field is `null` rather than a flag saying so. This

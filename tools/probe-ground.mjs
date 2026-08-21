@@ -52,7 +52,13 @@ const OUT = path.resolve(ROOT, args.get('out') ?? 'screenshots/crit-world/ground
 const W = Number(args.get('w') ?? 1600);
 const H = Number(args.get('h') ?? 900);
 const KEEP_UNITS = args.has('units');
-const requested = args.get('views') ? String(args.get('views')).split(',') : Object.keys(VIEWS);
+const requested = args.get('views') === 'none'
+  ? []
+  : args.get('views') ? String(args.get('views')).split(',') : Object.keys(VIEWS);
+/** Quality tier. `high` is the tier `qa-determinism` pins, so the headcounts compare. */
+const QUALITY = args.get('quality') ?? 'ultra';
+/** Extra query, in `qa-determinism`'s spelling: `--battle=map=carthage&scenario=assault`. */
+const EXTRA = args.get('battle') ? `&${args.get('battle')}` : '';
 
 async function waitForServer(url, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
@@ -85,8 +91,20 @@ const browser = await chromium.launch({
 });
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
 page.on('pageerror', (e) => console.log('[pageerror]', e.message.slice(0, 300)));
-await page.goto(`${base}/?harness=1&quality=ultra&w=${W}&h=${H}`, { waitUntil: 'domcontentloaded' });
+await page.goto(`${base}/?harness=1&quality=${QUALITY}&w=${W}&h=${H}${EXTRA}`, { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 120000 });
+
+/*
+ * Stop the rAF loop before anything is measured.
+ *
+ * `boot()` calls `engine.start()`, so between `ready` and the first `page.evaluate` the
+ * simulation runs for however long the round trip took — a tenth of a second on a warm
+ * machine, several on a cold one. That is enough for crowd resolution to nudge every
+ * formation off its deployed anchor: the same units measured twice came back at x -300.017
+ * and x -300.000. Nothing below wants a battle in progress; everything below wants t+0. The
+ * screenshot loop drives `engine.frame` by hand and is unaffected.
+ */
+await page.evaluate(() => window.__game.engine.stop());
 
 // Hide everything that is not the world, so the ground can be judged on its own.
 const hidden = await page.evaluate((keepUnits) => {
@@ -164,6 +182,188 @@ if (deploy) {
       + (d.wettest ? `, wettest (${d.wettest.x}, ${d.wettest.z}) at ${d.wettest.h} m` : '')
       + (d.steepest ? `, steepest (${d.steepest.x}, ${d.steepest.z})` : ''));
   }
+}
+
+/**
+ * Deployment audit — **the men**, which is a different question from the ground.
+ *
+ * The audit above asks whether the deployment *boxes* are dry. It says nothing about the
+ * army, and the note on `DEPLOY_AXIS_X` is explicit that it cannot: the masks flatten
+ * ground and `sim/scenario.ts` places units. Task 1 moved the boxes east onto dry land and
+ * left the order of battle where it was, so on the corrected ground the two questions have
+ * different answers and only this one is about soldiers.
+ *
+ * Everything here is measured off the pool at t+0 — real men at real positions, not the
+ * anchors the deployment asked for — and the boxes are measured off the mask *functions*
+ * by scanning them, never read off the arguments they were called with. A centre
+ * transcribed from a call site is the fault this probe exists to catch.
+ *
+ * Two independent tests for "in the river", because one of them could be wrong:
+ *   `wet`     ground height under `WATER_LEVEL` — the man is standing in water;
+ *   `channel` inside `±RIVER_HALF_WIDTH` of the bed's own centreline.
+ * They measure the same thing by different routes and are printed side by side. A large
+ * disagreement means the instrument is broken, not the battle.
+ *
+ * `farBank` is the subtler half and is deliberately *dry*: a man west of the west bank is
+ * not drowning, he is in the wrong battle.
+ */
+const army = await page.evaluate(async () => {
+  const g = window.__game;
+  const t = g.engine.ctx.get('terrain');
+  let topo = null;
+  let maps = null;
+  try {
+    topo = await import('/src/terrain/topography.ts');
+    maps = await import('/src/maps/index.ts');
+  } catch { return null; }
+  const mapId = maps?.activeMap?.().id ?? null;
+  // This audit reads Rome's topography module directly, so it can only speak about Rome's
+  // map. Saying so beats reporting the Tiber's bank on a map that has no Tiber.
+  if (mapId !== 'campus-martius' || !topo.germanDeployMask) return { mapId, skipped: true };
+
+  const WATER = topo.WATER_LEVEL;
+
+  /** Centroid and extent of a mask, scanned rather than transcribed. */
+  const boxOf = (mask) => {
+    let n = 0, sx = 0, sz = 0;
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (let z = -1400; z <= 1400; z += 4) {
+      for (let x = -1400; x <= 1400; x += 4) {
+        if (mask(x, z) < 0.02) continue;
+        n++; sx += x; sz += z;
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (z < z0) z0 = z;
+        if (z > z1) z1 = z;
+      }
+    }
+    return n ? { cx: sx / n, cz: sz / n, x0, x1, z0, z1 } : null;
+  };
+  const boxes = [
+    { key: 'attacker box', mask: topo.germanDeployMask, box: boxOf(topo.germanDeployMask) },
+    { key: 'defender box', mask: topo.romanDeployMask, box: boxOf(topo.romanDeployMask) },
+  ].filter((b) => b.box);
+
+  const pool = g.battle.pool;
+  const factions = [...new Set(g.battle.units.map((u) => u.faction))].sort((a, b) => a - b);
+  const rows = [];
+  for (const faction of factions) {
+    const us = g.battle.units.filter((u) => u.faction === faction);
+    const zc = us.reduce((s, u) => s + u.z, 0) / us.length;
+    // The army's own box is the nearer of the two in z. Keyed on where the army stands, not
+    // on what it is called: at Carthage the same code would have Rome in the northern box.
+    const own = boxes.reduce((a, b) =>
+      Math.abs(b.box.cz - zc) < Math.abs(a.box.cz - zc) ? b : a);
+
+    let men = 0, wet = 0, channel = 0, farBank = 0, outside = 0;
+    let outsideWest = 0, outsideEast = 0, steep = 0, worstSlope = 0;
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    let deepest = null, worstWest = null;
+    // Coarse bucket grid of this army's men, so the vegetation test below is a lookup rather
+    // than 8,632 x 2,377 distance computations.
+    const CELL = 8;
+    const grid = new Map();
+    for (let i = 0; i < pool.count; i++) {
+      if (pool.faction[i] !== faction || pool.hp[i] <= 0) continue;
+      men++;
+      const x = pool.x[i];
+      const z = pool.z[i];
+      grid.set(`${Math.floor(x / CELL)},${Math.floor(z / CELL)}`, 1);
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (z < minZ) minZ = z;
+      if (z > maxZ) maxZ = z;
+      const h = t.heightAt(x, z);
+      if (h < WATER) {
+        wet++;
+        if (!deepest || h < deepest.h) deepest = { x: +x.toFixed(1), z: +z.toFixed(1), h: +h.toFixed(2) };
+      }
+      const off = topo.riverOffset(x, z);
+      if (Math.abs(off) < topo.RIVER_HALF_WIDTH) channel++;
+      if (h >= WATER && x < topo.riverBankX(z, -1)) {
+        farBank++;
+        if (!worstWest || x < worstWest.x) worstWest = { x: +x.toFixed(1), z: +z.toFixed(1) };
+      }
+      if (own.mask(x, z) < 0.02) {
+        outside++;
+        if (x < own.box.cx) outsideWest++; else outsideEast++;
+      }
+      // The other way a parade ground can be spoiled, and the reason the boxes flatten
+      // anything at all: `ROUGH_SLOPE_IMPASSABLE` is 0.62 in `src/sim/Obstacles.ts`.
+      const sl = Math.hypot((t.heightAt(x + 4, z) - t.heightAt(x - 4, z)) / 8,
+        (t.heightAt(x, z + 4) - t.heightAt(x, z - 4)) / 8);
+      if (sl > worstSlope) worstSlope = sl;
+      if (sl > 0.62) steep++;
+    }
+    /*
+     * Trees standing in the ranks.
+     *
+     * The boxes exclude vegetation *"so no tree stands inside a formation"*, and that
+     * exclusion is keyed on the mask. Any part of a line standing outside its own box is
+     * therefore standing on ground that was planted, so this counts what is actually in
+     * among the men rather than assuming the exclusion covered them.
+     */
+    let treesAmong = 0;
+    const scatter = t.scatter;
+    for (const gr of (scatter?.groups ?? [])) {
+      for (const it of gr.items) {
+        const cx0 = Math.floor((it.x - 4) / CELL), cx1 = Math.floor((it.x + 4) / CELL);
+        const cz0 = Math.floor((it.z - 4) / CELL), cz1 = Math.floor((it.z + 4) / CELL);
+        let hit = false;
+        for (let cx = cx0; cx <= cx1 && !hit; cx++) {
+          for (let cz = cz0; cz <= cz1 && !hit; cz++) hit = grid.has(`${cx},${cz}`);
+        }
+        if (hit) treesAmong++;
+      }
+    }
+    rows.push({
+      faction, box: own.key, units: us.length, men,
+      wet, channel, farBank, outside, outsideWest, outsideEast,
+      steep, worstSlope: +worstSlope.toFixed(3), treesAmong,
+      frontage: +(maxX - minX).toFixed(1), depth: +(maxZ - minZ).toFixed(1),
+      xSpan: [+minX.toFixed(1), +maxX.toFixed(1)],
+      zSpan: [+minZ.toFixed(1), +maxZ.toFixed(1)],
+      deepest, worstWest,
+      anchors: us.map((u) => ({
+        id: u.id, type: u.typeId,
+        x: +u.x.toFixed(3), z: +u.z.toFixed(3), facing: +u.facing.toFixed(6),
+        width: u.width, spacingX: +u.spacingX.toFixed(3), spacingZ: +u.spacingZ.toFixed(3),
+        alive: u.alive,
+      })),
+    });
+  }
+  return {
+    mapId,
+    boxes: boxes.map((b) => ({
+      key: b.key,
+      cx: +b.box.cx.toFixed(1), cz: +b.box.cz.toFixed(1),
+      x: [b.box.x0, b.box.x1], z: [b.box.z0, b.box.z1],
+    })),
+    armies: rows,
+  };
+});
+if (army && !army.skipped) {
+  for (const b of army.boxes) {
+    console.log(`• ${b.key}: centre x ${b.cx}, z ${b.cz}; x ${b.x[0]}..${b.x[1]}, z ${b.z[0]}..${b.z[1]}`);
+  }
+  for (const a of army.armies) {
+    console.log(`• faction ${a.faction} (${a.box}): ${a.men} men in ${a.units} units, `
+      + `frontage ${a.frontage} m (x ${a.xSpan[0]}..${a.xSpan[1]}), depth ${a.depth} m `
+      + `(z ${a.zSpan[0]}..${a.zSpan[1]})`);
+    console.log(`    IN WATER ${a.wet} (channel test ${a.channel}) · FAR BANK ${a.farBank} · `
+      + `outside its own box ${a.outside} (${a.outsideWest} west, ${a.outsideEast} east)`
+      + (a.deepest ? ` · deepest (${a.deepest.x}, ${a.deepest.z}) at ${a.deepest.h} m` : '')
+      + (a.worstWest ? ` · furthest west dry (${a.worstWest.x}, ${a.worstWest.z})` : ''));
+    console.log(`    over the impassable slope ${a.steep} (worst ${a.worstSlope}) · `
+      + `trees within 4 m of a man ${a.treesAmong}`);
+  }
+} else if (army?.skipped) {
+  console.log(`• men audit skipped: this audit reads Rome's topography and the map is '${army.mapId}'`);
+}
+if (args.get('dump')) {
+  await writeFile(path.resolve(ROOT, args.get('dump')),
+    JSON.stringify({ deploy, army }, null, 2));
+  console.log(`• dumped to ${args.get('dump')}`);
 }
 
 // Vegetation keep-out audit: read the placed instances straight out of the scatter field.

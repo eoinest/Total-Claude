@@ -4,6 +4,7 @@ import { GROUND_LAYERS } from '../terrain/groundTextures';
 import { buildTerrain } from '../terrain/heightfield';
 import { fbm, sstep } from '../terrain/noise';
 import {
+  DEPLOY_GROUND,
   QUARRIES,
   TOPO_GLSL,
   WATER_LEVEL,
@@ -226,6 +227,7 @@ export const CAMPUS_MARTIUS: MapDefinition = {
     roadGlsl: `${TOPO_GLSL}\nfloat grassRoadCentreX(float z) { return topoRoadCentreX(z); }`,
     grass: { heightScale: 1, densityScale: 1, dryness: 0 },
     scatter: CAMPUS_SCATTER,
+    deploy: DEPLOY_GROUND,
   },
   city: ROME_PLAN,
 };

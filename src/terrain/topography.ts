@@ -22,6 +22,8 @@
  * instead of reading a blurry control texture — keep the two in step.
  */
 
+import type { DeployGround } from '../maps/types';
+
 /** Battlefield half-size in metres. Part of the public terrain contract. */
 export const HALF_EXTENT = 1400;
 
@@ -426,17 +428,22 @@ const rectMask = (
  * narrower to clear its own, which is the map's own argument rather than a compromise —
  * *"there is one good way to bring a mass at this gate, and the defender knows it."*
  *
- * **What this does not do, and it is the loudest finding of this pass.** These masks flatten
- * ground, exclude vegetation and paint the trodden channel of the control texture. They do
- * **not** place anybody: `sim/scenario.ts`'s field deployment lays both lines out at fixed x
- * about zero — `centred(n, 64)`, `flanking(n, lineHalf + 50, 52)` — and knows nothing about
- * them. So §3.2's own remedy names the wrong mechanism, and moving these boxes leaves the
- * shipped field order of battle exactly where it was: with the Tiber on the survey, the
- * Roman left wing and both urban cohorts stand on the *far* bank and the westernmost line
- * cohort straddles the channel. That is §15 task 8's to size, it is a change to the shipped
- * battle rather than to the ground, and it is measured and reported rather than made here.
+ * **What this used to not do, and it was the loudest finding of the pass that moved it.** These
+ * masks flatten ground, exclude vegetation and paint the trodden channel of the control
+ * texture. They did **not** place anybody: `sim/scenario.ts`'s field deployment laid both lines
+ * out at fixed x about zero — `centred(n, 64)`, `flanking(n, lineHalf + 50, 52)` — and knew
+ * nothing about them. So §3.2's own remedy named the wrong mechanism, and moving these boxes
+ * left the shipped field order of battle exactly where it was: 747 of 8,632 men in the Tiber
+ * and 412 dry on the far bank, measured by `tools/probe-ground.mjs`.
+ *
+ * **Closed.** `DEPLOY_GROUND` below is the seam, and `standOnDeploymentGround` in
+ * `sim/scenario.ts` is the reader. The reference to "§15 task 8" that stood here was a slip for
+ * **task 14**, which is where the order of battle lives; task 8 is the building site.
  */
 export const DEPLOY_AXIS_X = 205;
+
+/** Soft edge on every deployment box, in metres. */
+const DEPLOY_FEATHER = 80;
 
 /**
  * Where the armies form up. Terrain inside these boxes is flattened onto the regional
@@ -448,11 +455,32 @@ export const DEPLOY_AXIS_X = 205;
  * urban cohorts refusing both flanks at ±320 m and the cavalry wings out at ±450. §3.2
  * takes the attacker's to 380; the defender's is 250 because it stands where the funnel has
  * already closed. See `DEPLOY_AXIS_X`.
+ *
+ * **This is now data, and the masks are derived from it**, because `sim/scenario.ts` reads it
+ * too — see `maps/types.ts`'s `DeployGround`. The paragraph above about the field order of
+ * battle knowing nothing about these boxes was true when it was written and is not any more.
+ *
+ * **The line is wider than the ground, and that is a real finding rather than a rounding.**
+ * At `DEFAULT_CONFIG` and the `high` tier the Roman line measures **684 m** across its own
+ * men and the box is **500 m**; the Juthungi host measures 783 m against 760 m. Rome's box was
+ * narrowed to ±250 to clear the funnel, and nothing checked it against the army that has to
+ * stand in it. Whoever sizes §15 task 14 has to choose between a narrower Roman frontage and a
+ * box that reaches further east — the east is open plain out to x 700 and dry — and it is a
+ * change to the shipped battle either way. Until then the line overhangs its ground to the
+ * east, which is grass, rather than to the west, which is the Tiber.
  */
+export const DEPLOY_GROUND = {
+  axisX: DEPLOY_AXIS_X,
+  north: { cx: DEPLOY_AXIS_X, cz: -196, hx: 380, hz: 130 },
+  south: { cx: DEPLOY_AXIS_X, cz: 150, hx: 250, hz: 120 },
+} as const satisfies DeployGround;
+
 export const germanDeployMask = (x: number, z: number): number =>
-  rectMask(x, z, DEPLOY_AXIS_X, -196, 380, 130, 80);
+  rectMask(x, z, DEPLOY_GROUND.north.cx, DEPLOY_GROUND.north.cz,
+    DEPLOY_GROUND.north.hx, DEPLOY_GROUND.north.hz, DEPLOY_FEATHER);
 export const romanDeployMask = (x: number, z: number): number =>
-  rectMask(x, z, DEPLOY_AXIS_X, 150, 250, 120, 80);
+  rectMask(x, z, DEPLOY_GROUND.south.cx, DEPLOY_GROUND.south.cz,
+    DEPLOY_GROUND.south.hx, DEPLOY_GROUND.south.hz, DEPLOY_FEATHER);
 
 /** The whole fighting corridor. High-frequency relief is damped here, swells are kept. */
 export const battleCoreMask = (x: number, z: number): number =>

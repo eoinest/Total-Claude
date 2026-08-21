@@ -1070,6 +1070,46 @@ export class BattleSystem implements Subsystem {
     return u.id;
   }
 
+  /**
+   * Slide every unit already deployed, and every man in it, `dx` metres along x.
+   *
+   * A deployment is laid out about x 0 — `centred`, `flanking` — because every block in it is
+   * symmetric about the line of advance, and that is the shape it reads best in. Where that
+   * line *is* on a given map is the map's business, not the order of battle's, so the two are
+   * separated: `sim/scenario.ts` builds the deployment about zero and then puts it on the
+   * ground the map prepared. See `standOnDeploymentGround` there for the rule.
+   *
+   * It lives here rather than in the scenario because moving a unit is not just moving its
+   * anchor. A man's `y` is sampled off the heightfield at spawn and has to be re-sampled at
+   * his new x, the interpolation history has to move with him or the first frame draws every
+   * soldier sliding, and `holdX` — where a unit was told to stand, which its self-initiated
+   * drift is measured against — has to move too. Three of those are private to this class.
+   *
+   * **Deployment only.** It rewrites positions without consulting crowding, obstacles or
+   * masonry, which is safe before the first tick and is not safe afterwards. Nothing calls it
+   * mid-battle and nothing should.
+   */
+  translateDeployment(dx: number): void {
+    if (dx === 0) return;
+    const p = this.pool;
+    for (const u of this.units) {
+      u.x += dx;
+      u.targetX += dx;
+      // Flat [x, z, facing] triples. Empty at deployment; moved anyway, so this stays correct
+      // if a scenario ever queues a march before handing the battle over.
+      for (let k = 0; k < u.waypoints.length; k += 3) u.waypoints[k] += dx;
+      this.growUnitScratch(u.id + 1);
+      if (this.holdSet[u.id]) this.holdX[u.id] += dx;
+      for (const i of u.members) {
+        const x = p.x[i] + dx;
+        p.x[i] = x;
+        p.px[i] = x;
+        p.y[i] = this.groundAt(x, p.z[i]);
+        p.py[i] = p.y[i];
+      }
+    }
+  }
+
   private baseSpacingX(def: UnitTypeDef): number {
     return isCavalry(def) ? BASE_SPACING_X.mounted : BASE_SPACING_X.foot;
   }
