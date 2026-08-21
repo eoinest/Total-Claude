@@ -5,6 +5,9 @@ license and SHA-256. Nothing in this directory was extracted from a commercial g
 and nothing was obtained from a source whose license could not be read directly from
 the publisher.
 
+`public/` has one other directory of shipped binaries, `public/menu/`, and it is entirely this
+project's own render — see the section immediately below.
+
 | | |
 | --- | --- |
 | Files tracked | **172** (4 HDRI, 72 texture maps across 18 sets, 96 models) |
@@ -15,6 +18,52 @@ the publisher.
 | Attribution required | No (credited anyway - see [Credits](#credits)) |
 | Machine-readable index | `public/assets/manifest.json` |
 | Reproducible fetcher | `tools/fetch-assets.mjs` |
+
+## `public/menu/` — nine files, and none of them is anybody else's
+
+The one directory of shipped binaries that is **not** third-party at all: the cinematic plates
+behind the main menu and the loading screen. There is nothing to license, because every pixel
+of every one of them came out of this engine.
+
+| | |
+| --- | --- |
+| Files | **9** — three WebM clips, three AVIF posters, three AVIF thumbnails |
+| Total on disk | **2.99 MB** (2,986,750 bytes) |
+| Author | this project. All frames rendered by `src/` on the tree named in `film.json` |
+| Third-party content | **none** |
+| Licence | same as the repository |
+| Reproducible | `node tools/menu-plates.mjs` |
+
+| file | what it is | bytes |
+|---|---|---:|
+| `campus-martius.webm` | 1280 × 720 VP9, 8.97 s, seamless loop — the Aurelian Wall | 832,736 |
+| `campus-martius.avif` | 1600 × 900 poster, frame 0 of the clip | 133,575 |
+| `campus-martius-thumb.avif` | 480 × 270, for the battlefield button | 11,321 |
+| `carthage.webm` | the great wall across the isthmus, the Byrsa behind | 821,691 |
+| `carthage.avif` | poster | 128,890 |
+| `carthage-thumb.avif` | thumbnail | 9,148 |
+| `pydna.webm` | the Roman line on the Pierian plain | 857,764 |
+| `pydna.avif` | poster | 180,426 |
+| `pydna-thumb.avif` | thumbnail | 11,199 |
+
+**How to satisfy yourself that they are ours.** Do not take the claim; re-run it. Every plate is
+declared in `tools/shots/menu-plates.shot.mjs` — map, scenario, hour, seed, unit size, quality
+tier, and a camera rail in metres — and `tools/menu-plates.mjs` shoots it through
+`tools/film.mjs`, which drives the real `Engine` over the real terrain and photographs the
+canvas. One command regenerates all nine files, and the manifest it writes carries the commit,
+the content hash of `src/` and the per-frame head counts, eye positions and sun angles.
+
+The standing rule on this project is that **no asset may come from *Total War: Rome II* or any
+other commercial game**, and the reason this directory needs a note at all is that a menu
+backdrop is exactly the kind of file somebody would be tempted to source from a wallpaper site.
+Nothing here was sourced. The grain overlay on top of the plates is an inline `feTurbulence` in
+`menu.css` — a CSS rule, not an image — and there is no other decorative art anywhere in the
+menu: `hud.css` and `menu.css` draw every panel, border, bar and icon in CSS and inline SVG.
+
+*Rome II*'s menus were looked at for **composition, pacing and mood** — a full-bleed plate, a
+title block in the lower left, a historical caption opposite it, a slow camera. That is a
+description of a layout, and layouts are not copyrightable expression. No frame of it was
+sampled, traced, colour-picked or used as a source for anything in `public/menu/`.
 
 ## Re-fetching
 
