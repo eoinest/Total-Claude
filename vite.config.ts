@@ -26,6 +26,18 @@ export default defineConfig({
   // Served from the domain root on Vercel, and the runtime fetches
   // `/assets/manifest.json` absolutely, so the base must be absolute too.
   base: '/',
+  /**
+   * Somewhere for a worktree to put its own dependency and transform cache.
+   *
+   * Unset — the normal case — this is `undefined` and Vite uses its default,
+   * `<pkgDir>/node_modules/.vite`, exactly as it always has. The reason it is a knob at all is
+   * that agent worktrees under `.claude/worktrees/` **symlink `node_modules` back to the main
+   * checkout**, and Vite resolves that default as a path, through the symlink. So six agents on
+   * six branches share one optimiser cache, and the failure that produces is the worst kind: a
+   * page that loads perfectly while serving another branch's modules. `tools/film.mjs` sets
+   * this per port; any long-running harness in a worktree should too.
+   */
+  cacheDir: process.env.TC_VITE_CACHE || undefined,
   server: {
     port: 5173,
     host: '127.0.0.1',
