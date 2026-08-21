@@ -1,3 +1,15 @@
+/**
+ * How far does one second of held W actually move the focus, in real time?
+ *
+ * Written because `tools/film-walleye.mjs` was converting shot lengths to seconds at a pan
+ * rate taken off `RTSCamera.panRate`'s source, and a shot came back short. The nominal figure
+ * is `lerp(11, 340, smoothstep(zoom))`, so 11 m/s at zoom 0 — and the answer is that it is
+ * exactly that, in real time, on this machine, at three durations, with the screencast
+ * running. The overshoot was the walk length, not the rate.
+ *
+ * Kept because the number is load-bearing in that tool and "measured, not nominal" should be
+ * re-runnable. Needs a dev server on --port; edit the port below.
+ */
 import { chromium } from 'playwright';
 const token = Buffer.from(JSON.stringify({ map: 'carthage', scenario: 'assault' }))
   .toString('base64').replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
