@@ -573,7 +573,7 @@ export class CombatSystem implements Subsystem {
       // Closing speed of the formation as a whole, for the charge bonus.
       const adx = u.x - this.lastAnchorX[id];
       const adz = u.z - this.lastAnchorZ[id];
-      const anchorSpeed = Math.hypot(adx, adz) / dt;
+      const anchorSpeed = Math.sqrt(adx * adx + adz * adz) / dt;
       this.lastAnchorX[id] = u.x;
       this.lastAnchorZ[id] = u.z;
       // Peak-hold with a two-second half-life, so the speed a unit was making when it
@@ -591,7 +591,7 @@ export class CombatSystem implements Subsystem {
         if (o.destroyed || o.faction === u.faction || o.alive === 0) continue;
         const dx = o.x - u.x;
         const dz = o.z - u.z;
-        const d = Math.hypot(dx, dz);
+        const d = Math.sqrt(dx * dx + dz * dz);
         if (d < bestD) {
           bestD = d;
           best = o.id;
@@ -743,7 +743,7 @@ export class CombatSystem implements Subsystem {
         }
 
         if (cav) {
-          const sp = Math.hypot(p.vx[i], p.vz[i]);
+          const sp = Math.sqrt(p.vx[i] * p.vx[i] + p.vz[i] * p.vz[i]);
           const decayed = this.approach[i] * 0.9;
           this.approach[i] = sp > decayed ? sp : decayed;
         }
@@ -904,7 +904,7 @@ export class CombatSystem implements Subsystem {
               // the entire point of cavalry and it has to survive to the impact.
               p.vx[i] += edx * 7 * dt;
               p.vz[i] += edz * 7 * dt;
-              const sp = Math.hypot(p.vx[i], p.vz[i]);
+              const sp = Math.sqrt(p.vx[i] * p.vx[i] + p.vz[i] * p.vz[i]);
               if (sp > def.chargeSpeed) {
                 const g = def.chargeSpeed / sp;
                 p.vx[i] *= g;
@@ -917,7 +917,7 @@ export class CombatSystem implements Subsystem {
               const push = nerve < 0.32 ? -1.2 : 2.2 * (0.45 + 0.55 * nerve);
               p.vx[i] += edx * push * dt;
               p.vz[i] += edz * push * dt;
-              const sp = Math.hypot(p.vx[i], p.vz[i]);
+              const sp = Math.sqrt(p.vx[i] * p.vx[i] + p.vz[i] * p.vz[i]);
               if (sp > 1.1) {
                 const g = 1.1 / sp;
                 p.vx[i] *= g;
@@ -940,7 +940,7 @@ export class CombatSystem implements Subsystem {
       // Publish where the fight is and who it is against. Both are low-passed: the
       // instantaneous average over a few dozen duels jitters, and a unit that re-aims on
       // the jitter wheels on the spot instead of fighting.
-      const nl = Math.hypot(nx, nz);
+      const nl = Math.sqrt(nx * nx + nz * nz);
       if (nl > 1e-3) {
         /*
          * How hard to low-pass the contact normal.
@@ -963,7 +963,7 @@ export class CombatSystem implements Subsystem {
         const k = 0.03 + 0.09 * clamp01(engaged / 12);
         this.normalX[id] += (nx / nl - this.normalX[id]) * k;
         this.normalZ[id] += (nz / nl - this.normalZ[id]) * k;
-        const l2 = Math.hypot(this.normalX[id], this.normalZ[id]) || 1;
+        const l2 = Math.sqrt(this.normalX[id] * this.normalX[id] + this.normalZ[id] * this.normalZ[id]) || 1;
         this.normalX[id] /= l2;
         this.normalZ[id] /= l2;
       } else if (!s.contactLock) {
@@ -1065,7 +1065,7 @@ export class CombatSystem implements Subsystem {
 
     const dx = p.x[t] - p.x[i];
     const dz = p.z[t] - p.z[i];
-    const d = Math.hypot(dx, dz) || 1;
+    const d = Math.sqrt(dx * dx + dz * dz) || 1;
     // Direction from the defender back to his attacker.
     const bx = -dx / d;
     const bz = -dz / d;
@@ -1219,7 +1219,7 @@ export class CombatSystem implements Subsystem {
 
     const dx = p.x[t] - p.x[i];
     const dz = p.z[t] - p.z[i];
-    const d = Math.hypot(dx, dz) || 1;
+    const d = Math.sqrt(dx * dx + dz * dz) || 1;
     const nx = dx / d;
     const nz = dz / d;
 

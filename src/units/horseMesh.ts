@@ -167,7 +167,7 @@ export function buildHorseGeometry(lod: Lod): THREE.InstancedBufferGeometry {
     const dirx = head[0] - neck3[0];
     const diry = head[1] - neck3[1];
     const dirz = head[2] - neck3[2];
-    const len = Math.hypot(dirx, diry, dirz) || 1;
+    const len = Math.sqrt(dirx * dirx + diry * diry + dirz * dirz) || 1;
     // The skull carries on past the head bone, angled down toward the muzzle.
     const muzzle: [number, number, number] = [
       head[0] + (dirx / len) * 0.02,

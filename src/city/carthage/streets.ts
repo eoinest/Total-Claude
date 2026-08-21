@@ -71,7 +71,7 @@ function ribbon(
   for (let s = 0; s + 1 < r.path.length; s++) {
     const a = r.path[s];
     const c = r.path[s + 1];
-    const len = Math.hypot(c.x - a.x, c.z - a.z);
+    const len = Math.sqrt((c.x - a.x) * (c.x - a.x) + (c.z - a.z) * (c.z - a.z));
     if (len < 0.5) continue;
     // A stepped street is sampled at its 1.2 m tread, so every riser is a real riser.
     const n = Math.max(1, Math.round(len / (r.stepped ? 1.2 : detail >= 1 ? 12 : 34)));
@@ -192,7 +192,7 @@ export function buildStreets(
     chunks.push({
       name: `streets-${key}`,
       cx, cz,
-      radius: Math.hypot(maxX - minX, maxZ - minZ) * 0.5 + 4,
+      radius: Math.sqrt((maxX - minX) * (maxX - minX) + (maxZ - minZ) * (maxZ - minZ)) * 0.5 + 4,
       castShadow: false,
       lodSwitch: [420, 1300],
       farMaterial: 'road',

@@ -181,7 +181,7 @@ const isGun = (c: Ctx): boolean => c.def.unitClass === 'artillery';
 const distToEnemy = (c: Ctx, enemyId: number): number => {
   const mem = c.w.perceived(c.u.faction, enemyId);
   if (!mem) return Infinity;
-  return Math.max(0, Math.hypot(mem.x - c.u.x, mem.z - c.u.z) - c.info.halfFront * 0.4 - mem.halfFront * 0.4);
+  return Math.max(0, Math.sqrt((mem.x - c.u.x) * (mem.x - c.u.x) + (mem.z - c.u.z) * (mem.z - c.u.z)) - c.info.halfFront * 0.4 - mem.halfFront * 0.4);
 };
 
 // ---------------------------------------------------------------------------
@@ -197,7 +197,7 @@ const HoldLine: Behaviour = {
   applies: (c) => isFoot(c) || isGun(c),
   score: (c) => {
     if (c.info.inContact) return 8; // fighting beats standing
-    const d = Math.hypot(c.brain.standX - c.u.x, c.brain.standZ - c.u.z);
+    const d = Math.sqrt((c.brain.standX - c.u.x) * (c.brain.standX - c.u.x) + (c.brain.standZ - c.u.z) * (c.brain.standZ - c.u.z));
     // High when already in place; the march behaviour outbids it when we are not.
     return d < c.prof.lineTolerance ? 34 : 12;
   },
@@ -214,7 +214,7 @@ const MarchToStation: Behaviour = {
   applies: (c) => !isHorse(c),
   score: (c) => {
     if (c.info.inContact) return 6;
-    const d = Math.hypot(c.brain.standX - c.u.x, c.brain.standZ - c.u.z);
+    const d = Math.sqrt((c.brain.standX - c.u.x) * (c.brain.standX - c.u.x) + (c.brain.standZ - c.u.z) * (c.brain.standZ - c.u.z));
     if (d < c.prof.lineTolerance) return 4;
     // Grows with distance so a badly out-of-place unit prioritises getting back.
     return 30 + Math.min(22, d * 0.22);
@@ -357,7 +357,7 @@ const Testudo: Behaviour = {
     c.self.orders.formation(c.u, 'testudo');
     c.self.orders.ability(c.u, 'testudo', CD_TESTUDO);
     // Keep walking toward the objective under shields rather than standing to be shot.
-    const d = Math.hypot(c.brain.standX - c.u.x, c.brain.standZ - c.u.z);
+    const d = Math.sqrt((c.brain.standX - c.u.x) * (c.brain.standX - c.u.x) + (c.brain.standZ - c.u.z) * (c.brain.standZ - c.u.z));
     if (d > c.prof.lineTolerance) c.self.moveTo(c, c.brain.standX, c.brain.standZ, c.brain.standFacing, false);
     else c.self.orders.halt(c.u);
   },
@@ -442,7 +442,7 @@ const Shoot: Behaviour = {
     if (!mem) return;
     c.brain.fireTargetId = t;
     const range = c.def.missile!.range;
-    const d = Math.hypot(mem.x - c.u.x, mem.z - c.u.z);
+    const d = Math.sqrt((mem.x - c.u.x) * (mem.x - c.u.x) + (mem.z - c.u.z) * (mem.z - c.u.z));
     const bearing = Math.atan2(mem.x - c.u.x, mem.z - c.u.z);
 
     c.self.orders.ability(c.u, 'fire-at-will', 30 * 60);
@@ -527,7 +527,7 @@ const Skirmish: Behaviour = {
     const mem = c.w.perceived(c.u.faction, t);
     if (!mem) return;
     const range = c.def.missile!.range;
-    const d = Math.hypot(mem.x - c.u.x, mem.z - c.u.z);
+    const d = Math.sqrt((mem.x - c.u.x) * (mem.x - c.u.x) + (mem.z - c.u.z) * (mem.z - c.u.z));
     const bearing = Math.atan2(mem.x - c.u.x, mem.z - c.u.z);
     const brain = c.brain;
     const tick = c.w.tick;
@@ -638,7 +638,7 @@ const CavalryCycle: Behaviour = {
           brain.cavPhaseSince = tick;
           return;
         }
-        const d = Math.hypot(brain.swingX - c.u.x, brain.swingZ - c.u.z);
+        const d = Math.sqrt((brain.swingX - c.u.x) * (brain.swingX - c.u.x) + (brain.swingZ - c.u.z) * (brain.swingZ - c.u.z));
         self.moveTo(c, brain.swingX, brain.swingZ, Math.atan2(mem.x - brain.swingX, mem.z - brain.swingZ), true);
         // Arrived on the flank, or the swing has taken too long and the moment is gone.
         if (d < 26 || tick - brain.cavPhaseSince > 30 * 22) {
@@ -742,7 +742,7 @@ const Inspire: Behaviour = {
     let wobbly = 0;
     for (const rec of c.w.info.values()) {
       if (rec.faction !== c.u.faction || rec.unitId === c.u.id) continue;
-      if (Math.hypot(rec.unit.x - c.u.x, rec.unit.z - c.u.z) > 90) continue;
+      if (Math.sqrt((rec.unit.x - c.u.x) * (rec.unit.x - c.u.x) + (rec.unit.z - c.u.z) * (rec.unit.z - c.u.z)) > 90) continue;
       if (rec.unit.morale < rec.unit.maxMorale * 0.55) wobbly++;
     }
     return wobbly >= 2 ? 46 + wobbly * 3 : -1;
@@ -773,7 +773,7 @@ const CavalryHold: Behaviour = {
   act: (c) => {
     c.brain.cavPhase = 'hunt';
     c.brain.cavTargetId = -1;
-    const d = Math.hypot(c.brain.standX - c.u.x, c.brain.standZ - c.u.z);
+    const d = Math.sqrt((c.brain.standX - c.u.x) * (c.brain.standX - c.u.x) + (c.brain.standZ - c.u.z) * (c.brain.standZ - c.u.z));
     if (d > 14) c.self.moveTo(c, c.brain.standX, c.brain.standZ, c.brain.standFacing, d > 90);
     else {
       c.self.orders.halt(c.u);
@@ -805,7 +805,7 @@ const CavalryScreen: Behaviour = {
     const threatId = c.self.enemyHorseOnOurWing(c);
     const mem = threatId >= 0 ? c.w.perceived(c.u.faction, threatId) : undefined;
     if (!mem) return;
-    const d = Math.hypot(mem.x - c.u.x, mem.z - c.u.z);
+    const d = Math.sqrt((mem.x - c.u.x) * (mem.x - c.u.x) + (mem.z - c.u.z) * (mem.z - c.u.z));
     const bearing = Math.atan2(mem.x - c.u.x, mem.z - c.u.z);
 
     // Inside charge range the screen becomes a charge: better to hit them moving than to
@@ -1130,7 +1130,7 @@ export class TacticalAISystem implements Subsystem {
     // case a flow field exists for.
     const key = `army${u.faction}`;
     const field = this.nav.flowField(key, c.cmd.stationX, c.cmd.stationZ);
-    if (field.ready && Math.hypot(field.goalX - gx, field.goalZ - gz) < 45) {
+    if (field.ready && Math.sqrt((field.goalX - gx) * (field.goalX - gx) + (field.goalZ - gz) * (field.goalZ - gz)) < 45) {
       const n = this.nav.flowRoute(key, gx, gz, u.x, u.z, fp.max, FLOW_OUT);
       if (n >= 2) {
         this.orders.followPath(u, FLOW_OUT, n, facing, running);
@@ -1211,7 +1211,7 @@ export class TacticalAISystem implements Subsystem {
     let inZ = 0;
     for (const mem of c.w.view(c.u.faction).seen.values()) {
       if (mem.alive <= 0 || mem.routing) continue;
-      const d = Math.hypot(mem.x - c.u.x, mem.z - c.u.z);
+      const d = Math.sqrt((mem.x - c.u.x) * (mem.x - c.u.x) + (mem.z - c.u.z) * (mem.z - c.u.z));
       if (wall.isGarrisoned(mem.unitId)) {
         if (d < wallD) { wallD = d; wallX = mem.x; wallZ = mem.z; }
       } else if (d < inD && mem.alive >= BREAK_IN_MEN && this.doctrine.inside(mem.x, mem.z)) {
@@ -1305,7 +1305,7 @@ export class TacticalAISystem implements Subsystem {
     for (const mem of v.seen.values()) {
       if (!isCavalryClass(mem.unitClass) || mem.routing || mem.alive <= 0) continue;
       if (Math.sign(mem.x - v.lineX) !== ourSide) continue;
-      const d = Math.hypot(mem.x - c.u.x, mem.z - c.u.z);
+      const d = Math.sqrt((mem.x - c.u.x) * (mem.x - c.u.x) + (mem.z - c.u.z) * (mem.z - c.u.z));
       if (d < bestD) {
         bestD = d;
         best = mem.unitId;
@@ -1356,14 +1356,14 @@ export class TacticalAISystem implements Subsystem {
     if (ourSide !== side) {
       // Riding the long way round the whole line is usually worse than taking the near
       // flank; only insist on the outside if it is not much further.
-      const dOut = Math.hypot(
-        target.x + rx * side * reachFor(side) - c.u.x,
-        target.z + rz * side * reachFor(side) - c.u.z
-      );
-      const dOur = Math.hypot(
-        target.x + rx * ourSide * reachFor(ourSide) - c.u.x,
-        target.z + rz * ourSide * reachFor(ourSide) - c.u.z
-      );
+      const outReach = reachFor(side);
+      const outX = target.x + rx * side * outReach - c.u.x;
+      const outZ = target.z + rz * side * outReach - c.u.z;
+      const dOut = Math.sqrt(outX * outX + outZ * outZ);
+      const ourReach = reachFor(ourSide);
+      const ourX = target.x + rx * ourSide * ourReach - c.u.x;
+      const ourZ = target.z + rz * ourSide * ourReach - c.u.z;
+      const dOur = Math.sqrt(ourX * ourX + ourZ * ourZ);
       if (dOur + 70 < dOut) side = ourSide;
     }
 
@@ -1454,7 +1454,7 @@ export class TacticalAISystem implements Subsystem {
     if (pref >= 0) {
       const mem = w.perceived(c.u.faction, pref);
       if (mem && mem.alive > 0 && !mem.routing && !(skipWall && this.wall!.isGarrisoned(pref))) {
-        const d = Math.hypot(mem.x - c.u.x, mem.z - c.u.z);
+        const d = Math.sqrt((mem.x - c.u.x) * (mem.x - c.u.x) + (mem.z - c.u.z) * (mem.z - c.u.z));
         const off = Math.abs(angleDelta(c.brain.standFacing, Math.atan2(mem.x - c.u.x, mem.z - c.u.z)));
         if (d < 260 && off < arc) return pref;
       }
@@ -1467,7 +1467,7 @@ export class TacticalAISystem implements Subsystem {
       if (skipWall && this.wall!.isGarrisoned(mem.unitId)) continue;
       const dx = mem.x - c.u.x;
       const dz = mem.z - c.u.z;
-      const d = Math.hypot(dx, dz);
+      const d = Math.sqrt(dx * dx + dz * dz);
       if (d > 240) continue;
       const bearing = Math.atan2(dx, dz);
       const off = Math.abs(angleDelta(c.brain.standFacing, bearing));
@@ -1496,7 +1496,7 @@ export class TacticalAISystem implements Subsystem {
     let bestScore = -Infinity;
     for (const mem of w.view(c.u.faction).seen.values()) {
       if (!mem.visible || mem.alive <= 0) continue;
-      const d = Math.hypot(mem.x - c.u.x, mem.z - c.u.z);
+      const d = Math.sqrt((mem.x - c.u.x) * (mem.x - c.u.x) + (mem.z - c.u.z) * (mem.z - c.u.z));
       if (d > m.range * 1.35) continue;
       // A flat-trajectory weapon needs a clear line; an arcing one drops over hills.
       if (m.arc === 'flat' && !this.nav.directRouteClear(c.u.x, c.u.z, mem.x, mem.z, 0)) continue;
@@ -1529,7 +1529,7 @@ export class TacticalAISystem implements Subsystem {
       if (mem.alive <= 0) continue;
       const target = this.battle.unitById(mem.unitId);
       if (!target || target.destroyed) continue;
-      const d = Math.hypot(mem.x - c.u.x, mem.z - c.u.z);
+      const d = Math.sqrt((mem.x - c.u.x) * (mem.x - c.u.x) + (mem.z - c.u.z) * (mem.z - c.u.z));
       if (d > 420) continue;
 
       const def = this.battle.typeOf(target);
@@ -1570,7 +1570,7 @@ export class TacticalAISystem implements Subsystem {
     let bestD = 260;
     for (const mem of w.view(c.u.faction).seen.values()) {
       if (!mem.routing || mem.alive <= 0) continue;
-      const d = Math.hypot(mem.x - c.u.x, mem.z - c.u.z);
+      const d = Math.sqrt((mem.x - c.u.x) * (mem.x - c.u.x) + (mem.z - c.u.z) * (mem.z - c.u.z));
       if (d < bestD) {
         bestD = d;
         best = mem.unitId;

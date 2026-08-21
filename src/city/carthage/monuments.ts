@@ -208,7 +208,7 @@ export function buildMonuments(heightAt: (x: number, z: number) => number): Monu
       name: `monuments-${m.id}`,
       cx: m.x,
       cz: m.z,
-      radius: Math.hypot(m.hw, m.hd) + 14,
+      radius: Math.sqrt(m.hw * m.hw + m.hd * m.hd) + 14,
       castShadow: true,
       lodSwitch: [340, 1100],
       farMaterial: 'stone',

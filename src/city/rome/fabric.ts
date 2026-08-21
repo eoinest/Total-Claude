@@ -198,7 +198,7 @@ class PlotGrid {
   }
 
   add(p: Plot): void {
-    const r = Math.hypot(p.hw, p.hd);
+    const r = Math.sqrt(p.hw * p.hw + p.hd * p.hd);
     for (let z = p.z - r; z <= p.z + r + PlotGrid.CELL; z += PlotGrid.CELL) {
       for (let x = p.x - r; x <= p.x + r + PlotGrid.CELL; x += PlotGrid.CELL) {
         const k = this.key(x, z);
@@ -219,7 +219,7 @@ class PlotGrid {
    */
   hits(x: number, z: number, hw: number, hd: number, rot: number, pad = -0.5): boolean {
     const a: Obb = { x, z, hw, hd, rot };
-    const r = Math.hypot(hw, hd);
+    const r = Math.sqrt(hw * hw + hd * hd);
     for (let cz = z - r; cz <= z + r + PlotGrid.CELL; cz += PlotGrid.CELL) {
       for (let cx = x - r; cx <= x + r + PlotGrid.CELL; cx += PlotGrid.CELL) {
         const list = this.cells.get(this.key(cx, cz));
@@ -803,7 +803,7 @@ export function buildDistricts(
     cx /= specs.length;
     cz /= specs.length;
     let radius = 60;
-    for (const d of specs) radius = Math.max(radius, Math.hypot(d.x - cx, d.z - cz) + Math.hypot(d.hw, d.hd));
+    for (const d of specs) radius = Math.max(radius, Math.sqrt((d.x - cx) * (d.x - cx) + (d.z - cz) * (d.z - cz)) + Math.sqrt(d.hw * d.hw + d.hd * d.hd));
     chunks.push({
       name: grp.name,
       cx,
@@ -1492,7 +1492,7 @@ function buildWays(batch: Batch, detail: number, heightAt: Ground, lanes: readon
     for (let s = 0; s + 1 < way.path.length; s++) {
       const a = way.path[s];
       const b = way.path[s + 1];
-      const len = Math.hypot(b.x - a.x, b.z - a.z);
+      const len = Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.z - a.z) * (b.z - a.z));
       if (len < 0.5) continue;
       const n = Math.max(1, Math.round(len / (detail >= 1 ? 11 : 30)));
       const dx = (b.x - a.x) / len;

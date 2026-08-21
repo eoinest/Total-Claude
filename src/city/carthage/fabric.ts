@@ -169,7 +169,7 @@ class PlacedGrid {
   }
 
   add(b: Block): void {
-    const r = Math.hypot(b.hw, b.hd);
+    const r = Math.sqrt(b.hw * b.hw + b.hd * b.hd);
     for (let x = b.x - r; x <= b.x + r + PlacedGrid.CELL; x += PlacedGrid.CELL) {
       for (let z = b.z - r; z <= b.z + r + PlacedGrid.CELL; z += PlacedGrid.CELL) {
         const k = PlacedGrid.key(x, z);
@@ -189,7 +189,7 @@ class PlacedGrid {
    * its buildings — Rome's own generator has the same note against the same mistake.
    */
   hits(x: number, z: number, hw: number, hd: number, rot: number): boolean {
-    const r = Math.hypot(hw, hd);
+    const r = Math.sqrt(hw * hw + hd * hd);
     for (let cx = x - r; cx <= x + r + PlacedGrid.CELL; cx += PlacedGrid.CELL) {
       for (let cz = z - r; cz <= z + r + PlacedGrid.CELL; cz += PlacedGrid.CELL) {
         const list = this.cells.get(PlacedGrid.key(cx, cz));
@@ -808,7 +808,7 @@ export function buildFabric(heightAt: Ground, keepOut: KeepOut, seed: string): F
     cx /= run.length;
     cz /= run.length;
     let radius = 0;
-    for (const b of run) radius = Math.max(radius, Math.hypot(b.x - cx, b.z - cz) + Math.hypot(b.hw, b.hd) + 2);
+    for (const b of run) radius = Math.max(radius, Math.sqrt((b.x - cx) * (b.x - cx) + (b.z - cz) * (b.z - cz)) + Math.sqrt(b.hw * b.hw + b.hd * b.hd) + 2);
     chunks.push({
       name, cx, cz, radius,
       castShadow: true,

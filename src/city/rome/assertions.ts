@@ -83,7 +83,7 @@ export function assertTopology(): { ok: boolean; checks: number; failures: strin
       const s = ((a.x - b.x) * ux + (a.z - b.z) * uz) / len2;
       const px = b.x + ux * s;
       const pz = b.z + uz * s;
-      const off = Math.hypot(a.x - px, a.z - pz);
+      const off = Math.sqrt((a.x - px) * (a.x - px) + (a.z - pz) * (a.z - pz));
       if (s < 0.15 || s > 0.85 || off > Math.sqrt(len2) * 0.5) {
         failures.push(`${t.a} is not between ${t.b} and ${t.c} (t=${s.toFixed(2)}, offset ${off.toFixed(0)} m)`);
       }
@@ -251,7 +251,7 @@ export function assertWaysClearOfMonuments(): {
     for (let i = 0; i + 1 < w.path.length; i++) {
       const a = w.path[i];
       const b = w.path[i + 1];
-      const steps = Math.max(1, Math.round(Math.hypot(b.x - a.x, b.z - a.z) / 10));
+      const steps = Math.max(1, Math.round(Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.z - a.z) * (b.z - a.z)) / 10));
       for (let s = 0; s <= steps; s++) {
         const x = lerp(a.x, b.x, s / steps);
         const z = lerp(a.z, b.z, s / steps);

@@ -262,7 +262,7 @@ export class WallDoctrine {
     if (this.nearestFlightDist(bx, bz) > WALL_SPAN) return false;
     const dx = bx - fromX;
     const dz = bz - fromZ;
-    const d = Math.hypot(dx, dz);
+    const d = Math.sqrt(dx * dx + dz * dz);
     if (d <= KEEP_IN) { out.x = fromX; out.z = fromZ; return true; }
     out.x = fromX + (dx / d) * (d - KEEP_IN);
     out.z = fromZ + (dz / d) * (d - KEEP_IN);
@@ -285,7 +285,7 @@ export class WallDoctrine {
   ): boolean {
     const dx = toX - fromX;
     const dz = toZ - fromZ;
-    const d = Math.hypot(dx, dz);
+    const d = Math.sqrt(dx * dx + dz * dz);
     let px = toX;
     let pz = toZ;
     if (d > STANDOFF + 1) {

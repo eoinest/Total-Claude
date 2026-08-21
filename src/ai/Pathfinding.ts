@@ -455,7 +455,7 @@ export class NavGrid {
         const zp = cz < res - 1 ? i + res : i;
         const dhx = (height[xp] - height[xm]) / (CELL * (xp === xm ? 1 : 2));
         const dhz = (height[zp] - height[zm]) / (CELL * (zp === zm ? 1 : 2));
-        const slope = Math.min(1, Math.hypot(dhx, dhz));
+        const slope = Math.min(1, Math.sqrt(dhx * dhx + dhz * dhz));
         const h = height[i];
 
         let c = 1 + slope * SLOPE_COST_K;
@@ -654,7 +654,9 @@ export class NavGrid {
       for (let dx = -pad; dx <= pad; dx++) {
         const gx = bx + dx;
         if (gx < 0 || gx >= this.res) continue;
-        if (Math.hypot(this.toWorld(gx) - x, this.toWorld(gz) - z) > radius) continue;
+        const wx = this.toWorld(gx) - x;
+        const wz = this.toWorld(gz) - z;
+        if (Math.sqrt(wx * wx + wz * wz) > radius) continue;
         const i = gz * this.res + gx;
         if (this.blocked[i] === 2) this.blocked[i] = 0;
         if (this.tight[i] === 2) this.tight[i] = 0;
@@ -665,7 +667,7 @@ export class NavGrid {
   /** Stamp a wall segment of the given thickness as impassable. */
   blockSegment(x1: number, z1: number, x2: number, z2: number, thickness: number): void {
     const r = Math.max(CELL * 0.5, thickness * 0.5);
-    const steps = Math.max(1, Math.ceil(Math.hypot(x2 - x1, z2 - z1) / (CELL * 0.5)));
+    const steps = Math.max(1, Math.ceil(Math.sqrt((x2 - x1) * (x2 - x1) + (z2 - z1) * (z2 - z1)) / (CELL * 0.5)));
     const pad = Math.ceil(r / CELL);
     for (let s = 0; s <= steps; s++) {
       const t = s / steps;
@@ -679,7 +681,9 @@ export class NavGrid {
         for (let dx = -pad; dx <= pad; dx++) {
           const cx = bx + dx;
           if (cx < 0 || cx >= this.res) continue;
-          if (Math.hypot(this.toWorld(cx) - x, this.toWorld(cz) - z) <= r) {
+          const wx = this.toWorld(cx) - x;
+          const wz = this.toWorld(cz) - z;
+          if (Math.sqrt(wx * wx + wz * wz) <= r) {
             this.blocked[cz * this.res + cx] = 2;
             this.tight[cz * this.res + cx] = 2;
           }
@@ -717,7 +721,7 @@ export class NavGrid {
   corridorClear(x1: number, z1: number, x2: number, z2: number, radius: number): boolean {
     const dx = x2 - x1;
     const dz = z2 - z1;
-    const len = Math.hypot(dx, dz);
+    const len = Math.sqrt(dx * dx + dz * dz);
     const steps = Math.max(1, Math.ceil(len / (CELL * 0.5)));
     for (let s = 0; s <= steps; s++) {
       const t = s / steps;
@@ -1539,7 +1543,7 @@ export class PathfindingSystem implements Subsystem {
       let at = -1;
       let bestD = PORTAL_REACH;
       for (let i = 0; i < n; i++) {
-        const d = Math.hypot(RAW_PTS[i * 2] - p.x, RAW_PTS[i * 2 + 1] - p.z);
+        const d = Math.sqrt((RAW_PTS[i * 2] - p.x) * (RAW_PTS[i * 2] - p.x) + (RAW_PTS[i * 2 + 1] - p.z) * (RAW_PTS[i * 2 + 1] - p.z));
         if (d < bestD) { bestD = d; at = i; }
       }
       if (at < 0) continue;
@@ -1660,7 +1664,7 @@ export class PathfindingSystem implements Subsystem {
   clearLineFraction(x1: number, z1: number, x2: number, z2: number, radius: number): number {
     const dx = x2 - x1;
     const dz = z2 - z1;
-    const len = Math.hypot(dx, dz);
+    const len = Math.sqrt(dx * dx + dz * dz);
     if (len < 1e-3) return 1;
     const steps = Math.max(1, Math.ceil(len / (CELL * 0.5)));
     let last = 0;
@@ -1778,7 +1782,7 @@ export class PathfindingSystem implements Subsystem {
     if (!p.ok) return true;
     if (p.generation !== this.grid.generation) return true;
     if (this.tick - p.tick > maxAgeTicks) return true;
-    return Math.hypot(gx - p.goalX, gz - p.goalZ) > 14;
+    return Math.sqrt((gx - p.goalX) * (gx - p.goalX) + (gz - p.goalZ) * (gz - p.goalZ)) > 14;
   }
 
   // -------------------------------------------------------------------------
@@ -1796,7 +1800,7 @@ export class PathfindingSystem implements Subsystem {
       f = new FlowField(this.grid);
       this.flows.set(key, f);
     }
-    const moved = Math.hypot(gx - f.goalX, gz - f.goalZ) > 45;
+    const moved = Math.sqrt((gx - f.goalX) * (gx - f.goalX) + (gz - f.goalZ) * (gz - f.goalZ)) > 45;
     if (!f.building && (!f.ready || moved)) {
       f.begin(gx, gz);
       this.stats.flowRebuilds++;
@@ -2068,7 +2072,9 @@ export class PathfindingSystem implements Subsystem {
     p.generation = this.grid.generation;
     let len = 0;
     for (let i = 1; i < n; i++) {
-      len += Math.hypot(p.pts[i * 2] - p.pts[(i - 1) * 2], p.pts[i * 2 + 1] - p.pts[(i - 1) * 2 + 1]);
+      const sx = p.pts[i * 2] - p.pts[(i - 1) * 2];
+      const sz = p.pts[i * 2 + 1] - p.pts[(i - 1) * 2 + 1];
+      len += Math.sqrt(sx * sx + sz * sz);
     }
     p.length = len;
   }

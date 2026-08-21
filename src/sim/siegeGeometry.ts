@@ -61,7 +61,7 @@ class Mesher {
     let nx = uy * vz - uz * vy;
     let ny = uz * vx - ux * vz;
     let nz = ux * vy - uy * vx;
-    const l = Math.hypot(nx, ny, nz) || 1;
+    const l = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
     nx /= l; ny /= l; nz /= l;
     this.pos.push(ax, ay, az, bx, by, bz, cx, cy, cz);
     for (let k = 0; k < 3; k++) {
@@ -98,12 +98,12 @@ class Mesher {
     r: number, c: THREE.Color
   ): void {
     const dx = bx - ax, dy = by - ay, dz = bz - az;
-    const len = Math.hypot(dx, dy, dz) || 1;
+    const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
     const ux = dx / len, uy = dy / len, uz = dz / len;
     // Any vector not parallel to the axis gives a usable first perpendicular.
     let px = -uy, py = ux, pz = 0;
-    if (Math.hypot(px, py, pz) < 1e-4) { px = 1; py = 0; pz = 0; }
-    const pl = Math.hypot(px, py, pz);
+    if (Math.sqrt(px * px + py * py + pz * pz) < 1e-4) { px = 1; py = 0; pz = 0; }
+    const pl = Math.sqrt(px * px + py * py + pz * pz);
     px /= pl; py /= pl; pz /= pl;
     const qx = uy * pz - uz * py;
     const qy = uz * px - ux * pz;

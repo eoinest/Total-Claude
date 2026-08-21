@@ -465,7 +465,7 @@ const mailHeight = (u: number, v: number, rings: number): number => {
   const h2 = hash2(col % rings, row % rings, 317);
   const dx = fx - 0.5 + (h1 - 0.5) * 0.16;
   const dy = fy - 0.5 + (h2 - 0.5) * 0.14;
-  const r = Math.hypot(dx, dy) * 2;
+  const r = Math.sqrt(dx * dx + dy * dy) * 2;
   // A torus profile: highest on the ring itself, lowest in the hole and between rings.
   const gauge = 0.62 + (h1 - 0.5) * 0.09;
   const ring = Math.exp(-((r - gauge) ** 2) / 0.055);
@@ -1222,7 +1222,9 @@ const MATS: Record<Mat, MatDef> = {
       // Rivets: a row of bright dots near the top edge of every plate.
       const rivets = 9;
       const rx = u * rivets;
-      const dr = Math.hypot(rx - Math.floor(rx) - 0.5, (fy - 0.22) * bands * 0.5);
+      const rvu = rx - Math.floor(rx) - 0.5;
+      const rvv = (fy - 0.22) * bands * 0.5;
+      const dr = Math.sqrt(rvu * rvu + rvv * rvv);
       if (dr < 0.2) mix3(out, [0.78, 0.79, 0.8], 1 - dr / 0.2, out);
       // Bronze plate edging every other band, as on the Corbridge finds.
       if (band % 2 === 1 && fy < 0.08) mix3(out, BRONZE, 0.7, out);
@@ -1234,7 +1236,9 @@ const MATS: Record<Mat, MatDef> = {
       const plate = fy > 0.8 ? 0 : 0.4 + (1 - fy) * 0.6;
       const rivets = 9;
       const rx = u * rivets;
-      const dr = Math.hypot(rx - Math.floor(rx) - 0.5, (fy - 0.22) * bands * 0.5);
+      const rvu = rx - Math.floor(rx) - 0.5;
+      const rvv = (fy - 0.22) * bands * 0.5;
+      const dr = Math.sqrt(rvu * rvu + rvv * rvv);
       return Math.min(1, plate + (dr < 0.2 ? (1 - dr / 0.2) * 0.5 : 0));
     },
     // Girdle plates are strapped, not welded: each lame sits at its own angle on the leathers.
@@ -2301,7 +2305,7 @@ export function buildSoldierAtlas(anisotropy: number): SoldierAtlas {
         }
         const dx = gu * def.bump * TILE * 0.02;
         const dy = gv * def.bump * TILE * 0.02;
-        const len = Math.hypot(-dx, -dy, 1);
+        const len = Math.sqrt((-dx) * (-dx) + (-dy) * (-dy) + 1 * 1);
         nrmData.data[o] = Math.round(((-dx / len) * 0.5 + 0.5) * 255);
         nrmData.data[o + 1] = Math.round(((-dy / len) * 0.5 + 0.5) * 255);
         nrmData.data[o + 2] = Math.round((1 / len) * 0.5 * 255 + 127.5);

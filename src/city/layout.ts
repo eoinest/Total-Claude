@@ -277,7 +277,7 @@ export class KeepOut {
       const b = path[i + 1];
       const dx = b.x - a.x;
       const dz = b.z - a.z;
-      const len = Math.hypot(dx, dz);
+      const len = Math.sqrt(dx * dx + dz * dz);
       if (len < 1e-4) continue;
       this.grid = null;
       this.shapes.push({
@@ -381,12 +381,12 @@ export function assertNoFabricOverlaps(
   let worst = 0;
   const hit = new Set<number>();
   for (const m of monuments) {
-    const reach = Math.hypot(m.hw, m.hd);
+    const reach = Math.sqrt(m.hw * m.hw + m.hd * m.hd);
     for (let i = 0; i < buildings.length; i++) {
       const b = buildings[i];
       // Cheap circumradius reject first: 34 monuments against a few thousand plots is
       // 100k pairs and the full SAT on all of them is wasted work.
-      const rr = reach + Math.hypot(b.hw, b.hd);
+      const rr = reach + Math.sqrt(b.hw * b.hw + b.hd * b.hd);
       const dx = b.x - m.x;
       const dz = b.z - m.z;
       if (dx * dx + dz * dz > rr * rr) continue;

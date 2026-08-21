@@ -61,7 +61,7 @@ export function circuitZAt(x: number): number {
 /** Fieldward (−z) unit normal of the circuit at x. */
 export function circuitNormalAt(x: number): { nx: number; nz: number } {
   const dz = (circuitZAt(x + 1) - circuitZAt(x - 1)) * 0.5;
-  const len = Math.hypot(1, dz);
+  const len = Math.sqrt(1 * 1 + dz * dz);
   return { nx: dz / len, nz: -1 / len };
 }
 

@@ -129,7 +129,7 @@ export class OrderBook {
     const r = this.rec(u.id);
     const same =
       r.kind === 'move' &&
-      Math.hypot(x - r.x, z - r.z) < MOVE_EPS &&
+      Math.sqrt((x - r.x) * (x - r.x) + (z - r.z) * (z - r.z)) < MOVE_EPS &&
       Math.abs(angleDelta(r.facing, facing)) < FACING_EPS &&
       r.running === running;
     if (same) return false;

@@ -202,7 +202,7 @@ for (const f of fabric.footprints) {
   let best = '';
   let bestD = Infinity;
   for (const d of DISTRICTS) {
-    const dd = Math.hypot(f.x - d.x, f.z - d.z);
+    const dd = Math.sqrt((f.x - d.x) * (f.x - d.x) + (f.z - d.z) * (f.z - d.z));
     if (dd < bestD) {
       bestD = dd;
       best = d.id;
@@ -233,7 +233,7 @@ const rows = LANDMARKS.map((l) => {
     hw: +l.hw.toFixed(1),
     hd: +l.hd.toFixed(1),
     /** How far the overlap resolver had to move it from the projected position. */
-    drift: +Math.hypot(l.x - l.idealX, l.z - l.idealZ).toFixed(1),
+    drift: +Math.sqrt((l.x - l.idealX) * (l.x - l.idealX) + (l.z - l.idealZ) * (l.z - l.idealZ)).toFixed(1),
   };
 });
 

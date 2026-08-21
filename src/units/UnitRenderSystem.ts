@@ -1964,7 +1964,7 @@ export class UnitRenderSystem implements Subsystem {
     // the rotation matrix, projected to the ground.
     const ax = 2 * (c.qx * c.qy - c.qz * c.qw);
     const az = 2 * (c.qx * c.qw + c.qy * c.qz);
-    let len = Math.hypot(ax, az);
+    let len = Math.sqrt(ax * ax + az * az);
     let ux = 1;
     let uz = 0;
     if (len > 1e-3) { ux = ax / len; uz = az / len; }
@@ -1983,7 +1983,7 @@ export class UnitRenderSystem implements Subsystem {
     const qy = c.qy * k + c.qw * s;
     const qz = c.qz * k - c.qx * s;
     const qw = c.qw * k - c.qy * s;
-    len = Math.hypot(qx, qy, qz, qw) || 1;
+    len = Math.sqrt(qx * qx + qy * qy + qz * qz + qw * qw) || 1;
     c.qx = qx / len; c.qy = qy / len; c.qz = qz / len; c.qw = qw / len;
   }
 

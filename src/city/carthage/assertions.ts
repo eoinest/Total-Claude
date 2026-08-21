@@ -134,7 +134,7 @@ export function assertCarthage(inp: AssertInput): CarthageChecks {
     const dz = b.z2 - b.z1;
     return {
       x: (b.x1 + b.x2) * 0.5, z: (b.z1 + b.z2) * 0.5,
-      hw: Math.hypot(dx, dz) * 0.5, hd: b.halfW, rot: Math.atan2(dz, dx),
+      hw: Math.sqrt(dx * dx + dz * dz) * 0.5, hd: b.halfW, rot: Math.atan2(dz, dx),
     };
   });
   const solids: Obb[] = [...inp.footprints.map((f) => ({ ...f, rot: f.rot })), ...asRects];
@@ -154,7 +154,7 @@ export function assertCarthage(inp: AssertInput): CarthageChecks {
       for (let s = 0; s + 1 < w.path.length; s++) {
         const a = w.path[s];
         const b = w.path[s + 1];
-        const len = Math.hypot(b.x - a.x, b.z - a.z);
+        const len = Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.z - a.z) * (b.z - a.z));
         const n = Math.max(1, Math.round(len / 6));
         for (let i = 0; i <= n; i++) {
           const x = a.x + ((b.x - a.x) * i) / n;
@@ -208,7 +208,7 @@ export function assertCarthage(inp: AssertInput): CarthageChecks {
     const key = (x: number, z: number): number =>
       ((Math.floor(x / CELL) + 2048) << 12) | (Math.floor(z / CELL) + 2048);
     all.forEach((f, i) => {
-      const r = Math.hypot(f.hw, f.hd);
+      const r = Math.sqrt(f.hw * f.hw + f.hd * f.hd);
       for (let x = f.x - r; x <= f.x + r + CELL; x += CELL) {
         for (let z = f.z - r; z <= f.z + r + CELL; z += CELL) {
           const k = key(x, z);
@@ -378,12 +378,12 @@ export function assertCarthage(inp: AssertInput): CarthageChecks {
     let wayArea = 0;
     for (const w of PUNIC_WAYS) {
       for (let s = 0; s + 1 < w.path.length; s++) {
-        wayArea += Math.hypot(w.path[s + 1].x - w.path[s].x, w.path[s + 1].z - w.path[s].z) * w.width;
+        wayArea += Math.sqrt((w.path[s + 1].x - w.path[s].x) * (w.path[s + 1].x - w.path[s].x) + (w.path[s + 1].z - w.path[s].z) * (w.path[s + 1].z - w.path[s].z)) * w.width;
       }
     }
     for (const l of inp.lanes) {
       for (let s = 0; s + 1 < l.path.length; s++) {
-        wayArea += Math.hypot(l.path[s + 1].x - l.path[s].x, l.path[s + 1].z - l.path[s].z) * l.width;
+        wayArea += Math.sqrt((l.path[s + 1].x - l.path[s].x) * (l.path[s + 1].x - l.path[s].x) + (l.path[s + 1].z - l.path[s].z) * (l.path[s + 1].z - l.path[s].z)) * l.width;
       }
     }
     const pctWalled = (roof / walled) * 100;

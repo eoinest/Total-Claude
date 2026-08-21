@@ -207,7 +207,7 @@ export const CARTHAGE_PLAN: CityPlan = {
     for (const l of lanes) {
       let km = 0;
       for (let i = 0; i + 1 < l.path.length; i++) {
-        km += Math.hypot(l.path[i + 1].x - l.path[i].x, l.path[i + 1].z - l.path[i].z);
+        km += Math.sqrt((l.path[i + 1].x - l.path[i].x) * (l.path[i + 1].x - l.path[i].x) + (l.path[i + 1].z - l.path[i].z) * (l.path[i + 1].z - l.path[i].z));
       }
       const row = acc.get(l.cls) ?? { count: 0, km: 0 };
       row.count++;
@@ -256,7 +256,7 @@ function harbourRects(segs: readonly Blocker[]): PlanRect[] {
   for (const b of segs) {
     const dx = b.x2 - b.x1;
     const dz = b.z2 - b.z1;
-    const len = Math.hypot(dx, dz);
+    const len = Math.sqrt(dx * dx + dz * dz);
     if (len < 0.4) continue;
     out.push({
       x: (b.x1 + b.x2) * 0.5,

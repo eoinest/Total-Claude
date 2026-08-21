@@ -454,7 +454,7 @@ function beam(
     // Outward normal of this facet, averaged at the vertex so the chamfer reads as a bevel
     // rather than as another hard edge.
     const n = [0, 0, 0];
-    const nl = Math.hypot(ring[i][0] / h1, ring[i][1] / h2) || 1;
+    const nl = Math.sqrt((ring[i][0] / h1) * (ring[i][0] / h1) + (ring[i][1] / h2) * (ring[i][1] / h2)) || 1;
     n[a1] = ring[i][0] / h1 / nl;
     n[a2] = ring[i][1] / h2 / nl;
     // `repeat` tiles along the beam's *length* only.
@@ -548,7 +548,7 @@ function skein(
   }
 ): void {
   const ax = [to[0] - from[0], to[1] - from[1], to[2] - from[2]];
-  const len = Math.hypot(ax[0], ax[1], ax[2]) || 1;
+  const len = Math.sqrt(ax[0] * ax[0] + ax[1] * ax[1] + ax[2] * ax[2]) || 1;
   const d = [ax[0] / len, ax[1] / len, ax[2] / len];
   // Any two unit vectors across the axis. Picking the smallest component of `d` to cross
   // against keeps this well conditioned for an axis along X (the onager) or Y (the scorpio).
@@ -558,7 +558,7 @@ function skein(
     d[2] * seed[0] - d[0] * seed[2],
     d[0] * seed[1] - d[1] * seed[0],
   ];
-  const ul = Math.hypot(u[0], u[1], u[2]) || 1;
+  const ul = Math.sqrt(u[0] * u[0] + u[1] * u[1] + u[2] * u[2]) || 1;
   for (let i = 0; i < 3; i++) u[i] /= ul;
   const v = [
     d[1] * u[2] - d[2] * u[1],
