@@ -12,7 +12,7 @@ import {
   type AtlasCell,
   type Species,
 } from './proceduralPlants';
-import { HALF_EXTENT, crestZAt } from './topography';
+import { HALF_EXTENT, romeWallZ } from './topography';
 import type { ScatterProfile } from '../maps/types';
 import type { TerrainSystem } from './TerrainSystem';
 
@@ -41,8 +41,9 @@ const MID_DIST = 440;
 const NEAR_CAPACITY = 340;
 
 /**
- * Keep-out around the Aurelian Wall, measured from `crestZAt(x)` — the line the city
- * agent builds the curtain along.
+ * Keep-out around the Aurelian Wall, measured from `romeWallZ(x)` — the one export the
+ * curtain, the terrain's bench and this glacis all read. §14.5, §15 task 2. It was
+ * `crestZAt`, the terrain's own brow, which the wall happened to stand on.
  *
  * Outward: a besieged city clears its glacis. Aurelian's engineers demolished and felled
  * everything within bowshot of the new circuit, and the frames showed 20 m umbrella pines
@@ -89,8 +90,8 @@ export class ScatterField {
 
   /**
    * Whether this map has a city wall to keep clear of. The Aurelian curtain is fitted to the
-   * `crestZAt` line, so on the Campus Martius nothing may be planted or dropped past it; on a
-   * field battle there is no wall and the whole map is plantable.
+   * `romeWallZ` line, so on the Campus Martius nothing may be planted or dropped past it; on
+   * a field battle there is no wall and the whole map is plantable.
    */
   private readonly hasWall: boolean;
 
@@ -188,7 +189,7 @@ export class ScatterField {
    * where it reports everything as clear.
    */
   wallClearance(x: number, z: number): number {
-    return this.profile.species.length > 0 && this.hasWall ? crestZAt(x) - z : Infinity;
+    return this.profile.species.length > 0 && this.hasWall ? romeWallZ(x) - z : Infinity;
   }
 
   private placeTrees(): Map<Species, Placed[]> {
@@ -351,7 +352,7 @@ export class ScatterField {
         const z = -HALF_EXTENT + (gj + 0.5) * cell + (h2 - 0.5) * cell;
         const h = this.terrain.heightAt(x, z);
         const slope = this.terrain.slopeAt(x, z);
-        if (this.hasWall && z > crestZAt(x) - WALL_CLEAR_ROCK_OUT) continue;
+        if (this.hasWall && z > romeWallZ(x) - WALL_CLEAR_ROCK_OUT) continue;
         this.terrain.controlAt(x, z, ctl);
         const d = this.profile.rock(x, z, h, slope, ctl);
         if (h3 > d) continue;

@@ -1,5 +1,5 @@
 import { HALF_EXTENT } from '../../terrain/TerrainSystem';
-import { crestZAt, RIVER_HALF_WIDTH, riverCentreX, roadCentreX } from '../../terrain/topography';
+import { crestZAt, riverBankX, roadCentreX } from '../../terrain/topography';
 import { clamp } from '../../util/math';
 
 /**
@@ -566,15 +566,21 @@ export const CITY_Z_MIN = (x: number): number => crestZAt(clamp(x, -HALF_EXTENT,
 export const CITY_Z_MAX = HALF_EXTENT - 26;
 
 /**
- * The far bank. The terrain's Tiber is a fixed two-term meander that does not agree
- * with a scaled real one — at the latitude of the Theatre of Pompey the modelled channel
- * is 500 m closer in than Rome's is — so anything Trans Tiberim is placed a set distance
- * west of the actual centreline at its own depth rather than by the affine map. That
- * keeps Hadrian's mausoleum on the correct side of the water, which is the fact that
- * matters.
+ * The far bank.
+ *
+ * This existed because the terrain's Tiber was a fixed two-term meander that did not agree
+ * with a scaled real one — at the latitude of the Theatre of Pompey the modelled channel was
+ * 500 m closer in than Rome's — so anything Trans Tiberim was placed a set distance west of
+ * the actual centreline at its own depth rather than by the affine map, which at least kept
+ * Hadrian's mausoleum on the correct side of the water. **§15 task 1 removed the
+ * disagreement**: the channel is the survey's now, and the affine map and the river agree to
+ * within a metre at all twelve of its points. The offset stays because a monument on the far
+ * bank still wants a known clearance from the water rather than a projected position that
+ * happens to land near it, and `mausoleum-hadrian` is now on the far bank by the
+ * archaeology as well as by construction — the survey puts it at x -284 and the corrected
+ * channel at x -189 at its own z, 95 m of water between them (§6.6).
  */
-export const FAR_BANK = (z: number, offset: number): number =>
-  riverCentreX(z) - RIVER_HALF_WIDTH - offset;
+export const FAR_BANK = (z: number, offset: number): number => riverBankX(z, -1) - offset;
 
 /** East bank of the Tiber at a given depth, the western limit of the city proper. */
-export const EAST_BANK = (z: number): number => riverCentreX(z) + RIVER_HALF_WIDTH;
+export const EAST_BANK = (z: number): number => riverBankX(z, 1);

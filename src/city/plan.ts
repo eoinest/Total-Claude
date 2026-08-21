@@ -1,5 +1,5 @@
 import { HALF_EXTENT } from '../terrain/TerrainSystem';
-import { crestZAt, RIVER_HALF_WIDTH, riverCentreX, roadCentreX } from '../terrain/topography';
+import { crestZAt, riverBankX, roadCentreX, romeWallZ } from '../terrain/topography';
 import { KeepOut } from './layout';
 import { GATE_X } from './rome/apertures';
 import {
@@ -55,8 +55,11 @@ const push = (n: SVGElement): void => {
 // ---- water and roads ------------------------------------------------------
 {
   const pts: string[] = [];
-  for (let z = VIEW_MIN_Z; z <= VIEW_MAX_Z; z += 10) pts.push(`${riverCentreX(z) - RIVER_HALF_WIDTH},${z}`);
-  for (let z = VIEW_MAX_Z; z >= VIEW_MIN_Z; z -= 10) pts.push(`${riverCentreX(z) + RIVER_HALF_WIDTH},${z}`);
+  // The banks in x, not the centreline plus a perpendicular half-width: the surveyed
+  // channel runs at up to 78 degrees to the z axis and a plan drawn the old way pinches the
+  // great bend to a fifth of its width. See `riverBankX`.
+  for (let z = VIEW_MIN_Z; z <= VIEW_MAX_Z; z += 10) pts.push(`${riverBankX(z, -1)},${z}`);
+  for (let z = VIEW_MAX_Z; z >= VIEW_MIN_Z; z -= 10) pts.push(`${riverBankX(z, 1)},${z}`);
   push(el('polygon', { points: pts.join(' '), fill: '#9fb6bd', stroke: '#7d979f', 'stroke-width': 2 }));
   const road: string[] = [];
   for (let z = VIEW_MIN_Z; z <= crestZAt(GATE_X) + 10; z += 10) road.push(`${roadCentreX(z)},${z}`);

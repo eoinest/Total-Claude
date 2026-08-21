@@ -42,6 +42,29 @@ import {
  * plan resists undermining by the current far better than a square one, which is why
  * every Roman river terminus is round.
  */
+/**
+ * Where the terminus drum stands and how much ground it occupies, in plan.
+ *
+ * **The single place its footprint is decided**, called by the stone `buildRiverTerminus`
+ * lays *and* by `buildWall`, which publishes the `Blocker` for it. Until §15 task 1 there
+ * was no blocker at all: a 15.2 m masonry drum, footed 4.5 m below the flood line and drawn
+ * in every frame, that a cohort walked straight through — the same class of defect §14.2
+ * records for Carthage's posterns, arches with nothing hung in them. It went unnoticed
+ * because the wall's west end used to be 8 m from a modelled channel whose bed was below
+ * drowning depth, so the pathfinder refused the ground either side of it and no route ever
+ * came this way. With the Tiber on the survey the bank is dry and this is the closure.
+ *
+ * `radius` is the brick drum a shoulder meets, not the travertine footing under it: the
+ * footing flares to `R + 1.5` but it is below the walking surface.
+ */
+export function riverTerminusPlan(bay: Bay): { cx: number; cz: number; radius: number } {
+  const f = frameOf(bay.x0, bay.z0, bay.x1, bay.z1);
+  return { cx: bay.x0 - f.dx * 2.5, cz: bay.z0 - f.dz * 2.5, radius: TERMINUS_R + 0.4 };
+}
+
+/** Radius of the terminus drum at the springing of its brick face. */
+const TERMINUS_R = 7.6;
+
 export function buildRiverTerminus(
   batch: Batch,
   detail: number,
@@ -51,13 +74,11 @@ export function buildRiverTerminus(
   const brick = batch.s('brick');
   const stone = batch.s('stone');
   const roof = batch.s('roof');
-  const f = frameOf(bay.x0, bay.z0, bay.x1, bay.z1);
   const g = heightAt(bay.x0, bay.z0);
-  const R = 7.6;
+  const R = TERMINUS_R;
   const top = Math.max(bay.topY, g + 6.5) + 5.6;
   const seg = detail >= 2 ? 22 : detail === 1 ? 13 : 7;
-  const cx = bay.x0 - f.dx * 2.5;
-  const cz = bay.z0 - f.dz * 2.5;
+  const { cx, cz } = riverTerminusPlan(bay);
 
   // Battered travertine footing carried well below the flood line.
   cylinder(stone, cx, g - 4.5, cz, R + 1.5, R + 0.7, 5.4, seg, PAL.travertineDirty, { shadeLow: 0.28 });

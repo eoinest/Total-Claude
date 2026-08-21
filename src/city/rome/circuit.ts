@@ -3,7 +3,7 @@ import * as THREE from 'three';
 // constant. `TerrainSystem` imports `activeMap`, so taking it from there closes an ESM cycle
 // the moment a map declares its city: maps/index -> campusMartius -> city/rome/plan ->
 // city/rome/circuit -> terrain/TerrainSystem -> maps/index. `topography` imports nothing.
-import { crestZAt, HALF_EXTENT, RIVER_HALF_WIDTH, riverCentreX } from '../../terrain/topography';
+import { romeWallZ, WALL_X_MAX, WALL_X_MIN } from '../../terrain/topography';
 import { clamp, lerp } from '../../util/math';
 import { Rng, hash2 } from '../../util/rand';
 import { archPanel, box, crenellation, hipRoof, quadPrism, type Batch, type GeoStream } from '../build';
@@ -74,6 +74,7 @@ import {
   buildRiverTerminus,
   buildScaffold,
   buildYard,
+  riverTerminusPlan,
 } from './works';
 
 /**
@@ -107,22 +108,34 @@ import {
 
 
 /**
- * West end of the circuit. The Tiber crosses the crest line near x = −687, and the
- * historical wall terminated at the river with a tower rather than running masonry
- * into water, so the westernmost bay sits just clear of the bank.
+ * The circuit's two anchors and its line, **re-exported from one definition**.
+ *
+ * All three used to be computed here, off `crestZAt` — the terrain's own crest, which was
+ * simultaneously the hill's brow, the wall's line, the scatter's glacis datum and the
+ * city fabric's inner limit. §14.5 is about exactly that: four meanings of one function and
+ * nothing to change when one of them has to move. They now live in `terrain/topography.ts`
+ * beside the bench that is graded under them, which is Carthage's arrangement
+ * (`maps/carthage/topography.ts` owns `carthageWallZ`, `WALL_X_MIN/MAX` and
+ * `WALL_BENCH_HALF`, and `city/carthage/circuit.ts` re-exports them), and it is the
+ * arrangement the import graph forces: `terrain/heightfield.ts` cannot import this file.
+ *
+ * `WALL_X_MIN` moved from **-631 to +1** when the Tiber went onto the survey: it was
+ * derived from the modelled channel's bank, and the modelled channel was 594 world metres
+ * west of the real one at that latitude, so five bays of Aurelian curtain stood at 3.5-9.1 m
+ * — at and below `WATER_LEVEL` — and 633 world metres of it stood where the Tiber belongs.
+ * §2.5 puts the surveyed north-west angle at x +2.2; the derivation lands on +1.
  */
-export const WALL_X_MIN = Math.round(riverCentreX(crestZAt(-660)) + RIVER_HALF_WIDTH + 8);
-/**
- * East end: the Castra Praetoria. Aurelian took the camp's own north and east walls
- * into the circuit, so the curtain does not stop in open country — it runs into the
- * Praetorian barracks. This is also one of the two anchors that fix the plan's
- * east–west scale; see `KX` in `survey.ts`.
- */
-export const WALL_X_MAX = 1150;
+export { WALL_X_MAX, WALL_X_MIN };
 export const WALL_LENGTH = WALL_X_MAX - WALL_X_MIN;
 
-/** Wall-line helper, straight from the terrain contract. */
-export const wallCrestZ = (x: number): number => crestZAt(clamp(x, -HALF_EXTENT, HALF_EXTENT));
+/**
+ * Wall-line helper, straight from the terrain contract — and now the *only* line.
+ *
+ * `romeWallZ` is what the heightfield's bench, this file's `fitWallPath`, `ScatterField`'s
+ * glacis clearance and `campusMartius.ts`'s scatter exclusion all read. §15 task 3 replaces
+ * its body with the projected survey polyline and every one of them moves with it.
+ */
+export const wallCrestZ = romeWallZ;
 
 /**
  * Clear ground between the wall's centreline and the nearest building, metres.
@@ -144,15 +157,36 @@ export const wallCrestZ = (x: number): number => crestZAt(clamp(x, -HALF_EXTENT,
 export const POMERIUM = 60;
 
 /**
+ * How far a bay may be lifted by being held at its neighbour's construction level, metres.
+ *
+ * Four 0.55 m increments. See the levelling loop in `buildWall` for the derivation: it is
+ * half of what `Siege.stepAcross` will carry across a 5.4 m tower gap, and the paired joint
+ * is about twice the lift.
+ */
+const PAIR_MAX_LIFT = 2.2;
+
+/**
  * Sample the wall line. Real fortification practice puts the curtain on the crest, and
  * the terrain publishes exactly that line, so there is nothing to search for: follow
  * `crestZAt` and let the wall wander the 150 m in plan that it wants to.
  */
-export function fitWallPath(heightAt: (x: number, z: number) => number, spacing = 55): WallNode[] {
-  const n = Math.round(WALL_LENGTH / spacing) + 1;
+export function fitWallPath(
+  heightAt: (x: number, z: number) => number,
+  spacing = 55,
+  /**
+   * The span to fit, defaulting to the circuit's own.
+   *
+   * Only `carthageWall.ts`'s `aurelianLine` passes anything else, and it passes the span
+   * Rome's circuit had when `probe-carthage-wall`'s assertions were written. See there.
+   */
+  xMin = WALL_X_MIN,
+  xMax = WALL_X_MAX
+): WallNode[] {
+  const length = xMax - xMin;
+  const n = Math.round(length / spacing) + 1;
   const out: WallNode[] = [];
   for (let i = 0; i < n; i++) {
-    const x = WALL_X_MIN + (i * WALL_LENGTH) / (n - 1);
+    const x = xMin + (i * length) / (n - 1);
     const z = wallCrestZ(x);
     out.push({ x, z, ground: heightAt(x, z) });
   }
@@ -243,12 +277,38 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
     }
     gMaxOf[b] = fine;
   }
-  // Quantise to 0.55 m construction increments, held over pairs of bays: flat runs
-  // of ~71 m with a visible step between them.
+  /*
+   * Quantise to 0.55 m construction increments, held over pairs of bays: flat runs of ~71 m
+   * with a visible step between them.
+   *
+   * **Except where the pair would double a step the ground is already making.** Holding two
+   * bays at one level takes the higher of the two, so on a climb the second bay is lifted by
+   * a whole bay's worth of rise and the joint at the *pair* boundary carries twice what a
+   * bay boundary would. On flat ground that is free and it is why the rule exists. On the
+   * Muro Torto, where §3.5's profile climbs 36 m over 259 world metres, it is not: measured
+   * with the bench in and the pairing unconditional, the worst bay-to-bay `walkY` step was
+   * **10.45 m at x 286** — two bays' rise of 4.9 m each, welded into one — against 4.95 m
+   * when each bay takes its own level.
+   *
+   * That difference decides whether a man can get up the hill. A tower gap is about 5.4 m of
+   * plan, and `Siege.stepAcross` admits a joint up to `gap x 0.912` — the tread module the
+   * flight would be built from — so a 4.95 m step at pitch 0.909 is a flight and a 10.45 m
+   * step at 1.9 is a hole. `PAIR_MAX_LIFT` is set so a paired joint stays inside what the
+   * tread module can carry: pairing lifts the lower bay by one bay's rise, the paired joint
+   * is about twice that, and 2.2 m of lift is 4 construction increments and a joint of about
+   * 4.4 m against the 4.9 m limit.
+   *
+   * This is not a smoothing of the step. §3.5 is explicit that *"every bay boundary on the
+   * Muro Torto and in the Vallis Sallustiana will sever a run. That is correct behaviour and
+   * it is what §9 budgets stairs against; it is not a bug to smooth away."* The steps stay;
+   * they are the ones the ground makes, not twice them.
+   */
   const level = new Float64Array(nBays);
   for (let b = 0; b < nBays; b++) {
     const pair = b - (b % 2);
-    level[b] = Math.ceil(Math.max(need[pair], need[Math.min(nBays - 1, pair + 1)]) / 0.55) * 0.55;
+    const paired = Math.ceil(Math.max(need[pair], need[Math.min(nBays - 1, pair + 1)]) / 0.55) * 0.55;
+    const own = Math.ceil(need[b] / 0.55) * 0.55;
+    level[b] = paired - own <= PAIR_MAX_LIFT ? paired : own;
   }
 
   const bays: Bay[] = [];
@@ -374,6 +434,20 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
       passHiY: lane ? lane.hiY : 0,
       isGate,
     });
+  }
+
+  /*
+   * The river terminus is masonry, and it now says so.
+   *
+   * A degenerate segment blocker is a disc, which is the drum's plan. It closes the last
+   * metres between the circuit's west end and the Tiber: `WALL_RIVER_CLEAR` is set so the
+   * drum's west face reaches the water's edge, and without this the tower was drawn and
+   * collided with nothing. §4.6's river wall down the left bank (§15 task 9) is the proper
+   * closure; this is the one that exists today.
+   */
+  {
+    const t = riverTerminusPlan(bays[0]);
+    blockers.push({ x1: t.cx, z1: t.cz, x2: t.cx, z2: t.cz, halfW: t.radius });
   }
 
   /**

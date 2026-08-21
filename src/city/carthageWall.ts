@@ -18,7 +18,7 @@ import { type WallNode } from './layout';
  * as one: it used to read as a generic import from `city/layout.ts`.
  */
 import { GATE_X } from './rome/apertures';
-import { fitWallPath, WALL_X_MAX, WALL_X_MIN } from './rome/circuit';
+import { fitWallPath } from './rome/circuit';
 import { PAL } from './palette';
 import type {
   Blocker,
@@ -1007,12 +1007,28 @@ export interface WallLine {
  * Reproduces exactly what this function did before the line became a parameter: the same
  * `fitWallPath` nodes at the same 55 m spacing, interpolated the same way. Kept so the
  * `?fort=carthage` rig and its probe measure an unchanged wall.
+ *
+ * **And the span is pinned, because "unchanged" has to mean unchanged.** It read
+ * `rome/circuit.ts`'s live `WALL_X_MIN`/`WALL_X_MAX`, so when `ROME.md` §15 task 1 put the
+ * Tiber on the survey and Rome's west anchor moved from x -631 to x -28, this rig's wall
+ * lost 603 m with it: **60 bays became 40, seven posterns became five, and
+ * `probe-carthage-wall` went from 48/48 to 43/48** — two apertures landing in one bay, a
+ * postern with no leaf, a ditch tolerance — none of it about Carthage, all of it about a
+ * fixture that moved under its own test. The shipped Carthage map was bit-identical across
+ * the same change, measured by `qa-determinism --battle=map=carthage&scenario=assault`.
+ *
+ * So the rig's frontage is the 1,781 m the Aurelian circuit was when these assertions were
+ * written, and it stays there whatever Rome does. It is a test fixture; that is the point
+ * of one.
  */
+const RIG_X_MIN = -631;
+const RIG_X_MAX = 1150;
+
 function aurelianLine(heightAt: (x: number, z: number) => number): WallLine {
-  const p: WallNode[] = fitWallPath(heightAt);
+  const p: WallNode[] = fitWallPath(heightAt, 55, RIG_X_MIN, RIG_X_MAX);
   return {
-    xMin: WALL_X_MIN,
-    xMax: WALL_X_MAX,
+    xMin: RIG_X_MIN,
+    xMax: RIG_X_MAX,
     gateX: GATE_X,
     zAt: (x: number): number => {
       if (x <= p[0].x) return p[0].z;

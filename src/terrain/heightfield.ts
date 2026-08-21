@@ -8,18 +8,26 @@ import {
   PLAIN_LEVEL,
   QUARRIES,
   RISE_RUN,
+  RIVER_HALF_WIDTH,
   ROAD_HALF_WIDTH,
   WATER_LEVEL,
+  WALL_BENCH_HALF,
+  WALL_X_MAX,
+  WALL_X_MIN,
   battleCoreMask,
+  crestHeightAt,
   germanDeployMask,
   regionalPlain,
   riseAmplitude,
   riseToeZ,
   riverCentreX,
   riverInfluence,
+  riverOffset,
+  riverPerpScale,
   riverProfile,
   roadCentreX,
   romanDeployMask,
+  romeWallZ,
   streamDistance,
 } from './topography';
 
@@ -33,8 +41,11 @@ import {
  *   3. 2× Catmull-Rom upsample to 2049² (1.37 m/sample) and a fine detail octave, so a
  *      camera at eye level has real relief under it rather than a smooth interpolation.
  *   4. Human marks carved at full resolution: the Tiber's exact channel profile, the
- *      Via Flaminia's graded agger and ditches, field boundaries, hillside terraces,
- *      quarry workings and the Petronia Amnis.
+ *      deployment grounds, hillside terraces, **the graded bench under the Aurelian wall**,
+ *      quarry workings, the Petronia Amnis, field boundaries and the Via Flaminia's graded
+ *      agger and ditches, in that order — each stage may dig into the one before it, so the
+ *      bench comes after the terraces it would otherwise be quantised by and before the
+ *      road that has to cross it at the gate.
  *   5. Deployment zones flattened onto the regional plane so formations stay intact.
  *
  * The erosion by-products (water volume, material removed, material deposited) become
@@ -105,7 +116,10 @@ function baseHeight(x: number, z: number, seed: number): number {
   h += north * (ridged(x, z, 3, 1 / 420, seed + 13, 0.45) - 0.42) * 14;
 
   // --- Tiber valley -------------------------------------------------------
-  const d = x - riverCentreX(z);
+  // Perpendicular, not horizontal: the surveyed channel runs at up to 78 degrees to the z
+  // axis and an offset measured along a row draws it a fifth of its width. See
+  // `riverPerpScale`.
+  const d = riverOffset(x, z);
   const inf = riverInfluence(d, z);
   if (inf > 0.001) {
     h += (riverProfile(d, z, h) - h) * inf;
@@ -146,7 +160,7 @@ export function buildTerrain(seedLabel = 'campus-martius-271'): TerrainData {
     const toe = riseToeZ(x);
     const onHill = sstep(toe - 130, toe + 60, z);
     const north = sstep(-560, -1000, z) * sstep(-200, 480, x);
-    const bank = 1 - sstep(60, 210, Math.abs(x - riverCentreX(z)));
+    const bank = 1 - sstep(60, 210, Math.abs(riverOffset(x, z)));
     return Math.max(onHill, Math.max(north, bank * 0.7));
   };
   const maps = hydraulicErode(work, wres, rng.fork('erode'), hillRegion);
@@ -217,16 +231,17 @@ export function buildTerrain(seedLabel = 'campus-martius-271'): TerrainData {
   // Per-row / per-column caches: these are trigonometric and would otherwise be
   // evaluated 4.2 million times each.
   const rowRiverX = new Float32Array(res);
+  /** Horizontal-to-perpendicular scale of the channel on this row. See `riverPerpScale`. */
+  const rowRiverS = new Float32Array(res);
   const rowRoadX = new Float32Array(res);
   const colToe = new Float32Array(res);
-  const colRise = new Float32Array(res);
   for (let j = 0; j < res; j++) {
     const wz = -HALF_EXTENT + j * spacing;
     rowRiverX[j] = riverCentreX(wz);
+    rowRiverS[j] = riverPerpScale(wz);
     rowRoadX[j] = roadCentreX(wz);
     const wx = -HALF_EXTENT + j * spacing;
     colToe[j] = riseToeZ(wx);
-    colRise[j] = riseAmplitude(wx);
   }
 
   // -- 4a. Re-impose the Tiber's cross-section. Erosion and the upsample both smear the
@@ -235,9 +250,10 @@ export function buildTerrain(seedLabel = 'campus-martius-271'): TerrainData {
     const wz = -HALF_EXTENT + j * spacing;
     const row = j * res;
     const cx = rowRiverX[j];
+    const cs = rowRiverS[j];
     for (let i = 0; i < res; i++) {
       const wx = -HALF_EXTENT + i * spacing;
-      const d = wx - cx;
+      const d = (wx - cx) * cs;
       if (Math.abs(d) > 270) continue;
       const inf = riverInfluence(d, wz);
       if (inf < 0.002) continue;
@@ -255,14 +271,31 @@ export function buildTerrain(seedLabel = 'campus-martius-271'): TerrainData {
     const wz = -HALF_EXTENT + j * spacing;
     if (wz < -340 || wz > 320) continue;
     const row = j * res;
+    const cx = rowRiverX[j];
+    const cs = rowRiverS[j];
     for (let i = 0; i < res; i++) {
       const wx = -HALF_EXTENT + i * spacing;
       const m = Math.max(germanDeployMask(wx, wz), romanDeployMask(wx, wz));
       if (m < 0.002) continue;
+      /*
+       * The parade ground may not fill the Tiber.
+       *
+       * Before §15 task 1 the modelled channel was 800 m west of both boxes and this could
+       * not arise. It can now: the surveyed river runs at x -403 at the German box's own
+       * latitude, and a box wide enough to reach it would be flattened onto the plain 90 %
+       * of the way, which is a 12 m earth dam across 260 m of the river's length — and it
+       * would do it silently, because a flattened channel reports no water and passes the
+       * very acceptance test that is supposed to catch a cohort standing in it.
+       * `DEPLOY_AXIS_X` keeps the boxes clear; this makes the failure impossible rather
+       * than merely absent, and costs one lerp on ground the boxes should never cover.
+       */
+      const inChannel = riverInfluence((wx - cx) * cs, wz);
+      const w = m * (1 - inChannel);
+      if (w < 0.002) continue;
       const target = regionalPlain(wx, wz);
       // 0.9 rather than 1.0: a trace of relief keeps the ground from looking milled,
       // while the residual mean gradient stays around 1% — invisible to a formation.
-      heights[row + i] += (target - heights[row + i]) * m * 0.9;
+      heights[row + i] += (target - heights[row + i]) * w * 0.9;
     }
   }
 
@@ -289,7 +322,60 @@ export function buildTerrain(seedLabel = 'campus-martius-271'): TerrainData {
     }
   }
 
-  // -- 4d. Quarry workings: a flat floor, a steep back wall, a spoil heap downhill.
+  /*
+   * -- 4d. **The bench under the wall line.** §15 task 2, §4.1, §3.5.
+   *
+   * `docs/ROME.md` §4.1: *"Rome's heightfield cuts no bench under the wall. Carthage's
+   * grades one — stage 4d, `WALL_BENCH_HALF = 40` … The Aurelian wall stands on ungraded
+   * natural crest, and `buildWall` levels each bay to whatever ground it finds."* That is
+   * the mechanism behind a **28.39 m** worst bay-to-bay `walkY` step, and it is fixed here
+   * rather than in the wall because a wall that levels itself to broken ground is doing the
+   * only thing it can.
+   *
+   * **Graded to the published profile, not to a smoothed sample of itself.** Carthage's
+   * bench smooths `benchProfile` along its own length, which is right there: its line is a
+   * quadratic through three survey anchors and the wall is meant to follow the ground. Rome
+   * has a published elevation for every x — §3.5's staircase, which `crestHeightAt` is —
+   * and the acceptance is against that table, so grading to a low-pass of the natural crest
+   * would faithfully reproduce the ±5 m mean offset of the ridged multifractal underneath
+   * it. `crestHeightAt` and this stage are the same call, which is exactly what §3.5 asks
+   * for: *"it must be re-derived from the new profile in the same call the heightfield
+   * grades the bench with, or half the circuit stands off its footing."*
+   *
+   * 0.92 rather than 1.0, and the same number Carthage uses: eight per cent of the natural
+   * relief survives so the bench is a graded platform rather than a milled one, which on
+   * measured ground is ±0.6 m against the ±1.5 m the acceptance allows.
+   */
+  for (let i = 0; i < res; i++) {
+    const wx = -HALF_EXTENT + i * spacing;
+    if (wx < WALL_X_MIN - 60 || wx > WALL_X_MAX + 60) continue;
+    // Full strength across every metre the wall actually stands on, feathering out beyond
+    // its anchors. Not Carthage's ramp, which starts 60 m short of its own wall and reaches
+    // full strength 40 m inside it: that leaves the end bays under-graded, and Rome's west
+    // end is the one that has to be right — it is a river terminus, and it is where the
+    // 28.39 m step was.
+    const ends = sstep(WALL_X_MIN - 55, WALL_X_MIN - 5, wx)
+      * (1 - sstep(WALL_X_MAX + 5, WALL_X_MAX + 55, wx));
+    if (ends < 0.002) continue;
+    const cz = romeWallZ(wx);
+    const base = crestHeightAt(wx);
+    const j0 = Math.max(0, Math.floor((cz - WALL_BENCH_HALF * 2.2 + HALF_EXTENT) / spacing));
+    const j1 = Math.min(res - 1, Math.ceil((cz + WALL_BENCH_HALF * 2.2 + HALF_EXTENT) / spacing));
+    for (let j = j0; j <= j1; j++) {
+      const wz = -HALF_EXTENT + j * spacing;
+      const d = Math.abs(wz - cz);
+      // Never over open water. The circuit's west end stands on the Tiber's bank, so the
+      // bench's own feather reaches the channel; grading a 13.5 m platform across it would
+      // dam the river at the one place §3.2 says the flank closes for free.
+      const dry = sstep(RIVER_HALF_WIDTH - 6, RIVER_HALF_WIDTH + 14, Math.abs(riverOffset(wx, wz)));
+      const w = (1 - sstep(WALL_BENCH_HALF, WALL_BENCH_HALF * 2.1, d)) * ends * dry;
+      if (w < 0.002) continue;
+      const k = j * res + i;
+      heights[k] += (base - heights[k]) * w * 0.92;
+    }
+  }
+
+  // -- 4e. Quarry workings: a flat floor, a steep back wall, a spoil heap downhill.
   for (const q of QUARRIES) {
     const gi = Math.round((q.x + HALF_EXTENT) / spacing);
     const gj = Math.round((q.z + HALF_EXTENT) / spacing);
@@ -320,7 +406,7 @@ export function buildTerrain(seedLabel = 'campus-martius-271'): TerrainData {
     }
   }
 
-  // -- 4e. The Petronia Amnis, draining the Quirinal into the Tiber.
+  // -- 4f. The Petronia Amnis, draining the Quirinal into the Tiber.
   for (let j = 0; j < res; j++) {
     const wz = -HALF_EXTENT + j * spacing;
     if (wz < -190 || wz > 400) continue;
@@ -341,7 +427,7 @@ export function buildTerrain(seedLabel = 'campus-martius-271'): TerrainData {
     }
   }
 
-  // -- 4f. Field boundaries. Roman surveyors laid out the ager on a grid that ignores
+  // -- 4g. Field boundaries. Roman surveyors laid out the ager on a grid that ignores
   //        the compass, so this lattice sits a few degrees off the world axes.
   const FIELD_ANGLE = 0.213;
   const fa = Math.cos(FIELD_ANGLE);
@@ -355,7 +441,7 @@ export function buildTerrain(seedLabel = 'campus-martius-271'): TerrainData {
       // Not in the channel, not on the hills, not where the armies stand.
       const toe = colToe[i];
       let m = 1 - sstep(toe - 90, toe - 10, wz);
-      m *= sstep(150, 250, Math.abs(wx - rowRiverX[j]));
+      m *= sstep(150, 250, Math.abs((wx - rowRiverX[j]) * rowRiverS[j]));
       m *= 1 - Math.max(germanDeployMask(wx, wz), romanDeployMask(wx, wz));
       m *= 1 - sstep(26, 12, Math.abs(wx - rowRoadX[j]));
       if (m < 0.02) continue;
@@ -372,7 +458,7 @@ export function buildTerrain(seedLabel = 'campus-martius-271'): TerrainData {
     }
   }
 
-  // -- 4g. The Via Flaminia. Roman engineers graded the alignment, so the road is
+  // -- 4h. The Via Flaminia. Roman engineers graded the alignment, so the road is
   //        smoothed along its length before the camber and ditches are cut.
   const roadProfile = new Float32Array(res);
   for (let j = 0; j < res; j++) {
@@ -422,6 +508,7 @@ export function buildTerrain(seedLabel = 'campus-martius-271'): TerrainData {
   for (let j = 0; j < wres; j++) {
     const wz = -HALF_EXTENT + j * wspacing;
     const cx = riverCentreX(wz);
+    const cs = riverPerpScale(wz);
     const rx = roadCentreX(wz);
     for (let i = 0; i < wres; i++) {
       const wx = -HALF_EXTENT + i * wspacing;
@@ -461,7 +548,7 @@ export function buildTerrain(seedLabel = 'campus-martius-271'): TerrainData {
       // rather than everywhere they might stand.
       let tramp = Math.max(germanDeployMask(wx, wz), romanDeployMask(wx, wz)) * 0.34 * churn;
       tramp = Math.max(tramp, (1 - sstep(AGGER_HALF_WIDTH, AGGER_HALF_WIDTH + 9, Math.abs(wx - rx))) * 0.8);
-      const fordTrack = (1 - sstep(9, 30, Math.abs(wz + 520))) * (1 - sstep(90, 320, Math.abs(wx - cx)));
+      const fordTrack = (1 - sstep(9, 30, Math.abs(wz + 520))) * (1 - sstep(90, 320, Math.abs((wx - cx) * cs)));
       tramp = Math.max(tramp, fordTrack * 0.75 * churn);
 
       const siltV = clamp01((silt[k] / siltMax) * 4.0);

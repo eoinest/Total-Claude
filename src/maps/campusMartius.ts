@@ -7,12 +7,12 @@ import {
   QUARRIES,
   TOPO_GLSL,
   WATER_LEVEL,
-  crestZAt,
   germanDeployMask,
   riseToeZ,
-  riverCentreX,
+  riverOffset,
   roadCentreX,
   romanDeployMask,
+  romeWallZ,
   streamDistance,
 } from '../terrain/topography';
 import type { WaterProfile } from '../terrain/WaterSurface';
@@ -77,8 +77,9 @@ const FIELD_SIN = Math.sin(FIELD_ANGLE);
 const FIELD_PERIOD = 94;
 
 /**
- * Keep-out around the Aurelian Wall, measured from `crestZAt(x)` — the line the city agent
- * builds the curtain along.
+ * Keep-out around the Aurelian Wall, measured from `romeWallZ(x)` — the one line the city
+ * agent builds the curtain along, the heightfield benches under and the scatter clears
+ * outside. §14.5, §15 task 2.
  *
  * Outward: a besieged city clears its glacis. Aurelian's engineers demolished and felled
  * everything within bowshot of the new circuit, and the frames showed 20 m umbrella pines
@@ -99,7 +100,7 @@ const CAMPUS_SCATTER: ScatterProfile = {
     if (Math.max(germanDeployMask(x, z), romanDeployMask(x, z)) > 0.12) return true;
     if (Math.abs(x - roadCentreX(z)) < 10.5) return true;
     // Everything from the cleared glacis inward belongs to the city.
-    if (z > crestZAt(x) - clearance) return true;
+    if (z > romeWallZ(x) - clearance) return true;
     for (const q of QUARRIES) {
       if (Math.hypot((x - q.x) / q.radius, (z - q.z) / (q.radius * 0.8)) < 1.25) return true;
     }
@@ -111,7 +112,7 @@ const CAMPUS_SCATTER: ScatterProfile = {
 
     const toe = riseToeZ(x);
     const onHill = z > toe - 50;
-    const dRiver = Math.abs(x - riverCentreX(z));
+    const dRiver = Math.abs(riverOffset(x, z));
     const dRoad = Math.abs(x - roadCentreX(z));
     const above = h - WATER_LEVEL;
 
@@ -159,7 +160,7 @@ const CAMPUS_SCATTER: ScatterProfile = {
 
   understorey(x, z, h, slope, ctl, hash) {
     const above = h - WATER_LEVEL;
-    const dRiver = Math.abs(x - riverCentreX(z));
+    const dRiver = Math.abs(riverOffset(x, z));
     const dStream = z > -220 && z < 420 && x > -880 && x < 280 ? streamDistance(x, z) : 999;
 
     // Reeds stand in the water's edge and along the drainage stream, where the deployment
