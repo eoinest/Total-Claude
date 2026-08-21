@@ -13,11 +13,13 @@ Each entry records the commit that was deployed and the Vercel deployment that c
 are not taken on trust: every commit below through r5 was matched to its deployment by comparing the
 SHA-1 of every tracked file in the commit against the file digests Vercel holds for that deployment
 — r1 to r4 at 100% of tracked files, and r5 at 567 of 568 with zero digest mismatches, the one
-absent file being `.gitignore`, which the CLI reads rather than uploads. `r4` through `r7` were
+absent file being `.gitignore`, which the CLI reads rather than uploads. `r4` through `r8` were
 verified by rebuilding the commit in a pinned worktree and diffing the output against the bytes the
-live site serves — for r6 and again for r7, `index.html` byte-identical and the bundle's SHA-256
-matching exactly — and by booting all three maps against the live URL and confirming the simulation
-clock advances on each. See
+live site serves — for r6, r7 and r8, `index.html` byte-identical and the bundle's SHA-256 matching
+exactly — and by booting all three maps against the live URL and confirming the simulation clock
+advances on each. For r8 the comparison was taken further: all nine build outputs matched on
+SHA-256, and the SHA-1 digest Vercel holds for every one of the deployment's **86 files matched the
+rebuild's, in both directions, with nothing deployed that is not in `dist/`.** See
 [`docs/RELEASING.md`](docs/RELEASING.md) for the procedure.
 
 Every figure quoted here comes from a commit message, from `docs/HANDOFF.md`, or from a measurement
@@ -38,10 +40,628 @@ text than as a frame that half-supports them.
 
 ---
 
+## r8 — the owner filed six reports and every one of them was about the wall
+
+**21 August 2026** · commit [`5338249`](https://github.com/eoinest/Total-Claude/commit/5338249) ·
+deployment `total-claude-ndeeo9sap` · **live now**
+
+Six things the owner reported, filed as six different problems, turned out to be one place. A
+cohort that cannot stand on a wall. A tower party that cannot be ordered along one. Men who break
+half way up one and neither climb nor flee. An order that walks a garrison at a stair on the far
+side of one. Cavalry that rides *through* the gate in one. A catapult stone that goes through one.
+All six are closed here, and in five of them the code was asking a question one step to the side of
+the one that mattered — *was this unit ever given a machine* instead of *does this machine still
+need it*, the shortest line across the wall instead of the shortest walk along it, a per-unit flag
+for three per-man facts. The sixth was a branch nobody had written: `masonryTopAt` resolved a bay,
+tested the curtain, and had no case for a tower at all, so five metres of solid stone above every
+crest was transparent to every high-arcing shot in the game.
+
+Under that, **the west of the Rome map moved onto the survey.** `romeWallZ` was the terrain's crest wearing the
+wall's name, and the two were 157 m apart; the Tiber was an almost-straight trench fitted to
+nothing, up to 776 m west of where the survey puts it. Both are on the surveyed line now, the
+circuit is 36 bays and three gates instead of one invented count, and the wall checks its own
+section at boot and publishes the result as data.
+
+And a battle is now a thing you can keep. **Save it, send someone the link, watch it back, and take
+command of it from any second** — a 226-second battle is about 1.2 kB, because a record is a seed
+and an order log and nothing else.
+
+### New
+
+- **Save a battle, share it as a link, watch it, and take command from the middle of it.** Stage 1
+  of [`docs/MULTIPLAYER.md`](docs/MULTIPLAYER.md), and there is **no networking in it**: no
+  transport, no relay, no lobby, no Worker. The design says realtime is a later decision to be
+  re-made with better evidence, and nothing here touches it.
+
+  A record is the seed, the config, and the order log with each order stamped with the tick it
+  executed on. `ReplaySystem` sits at system order 5 — ahead of `BattleSystem`'s 10, and therefore
+  ahead of every `fixedUpdate` in the tree — so the queue drains at the top of a tick and no frame
+  boundary can move an order. Four things fall out, and the fourth is why it was worth changing the
+  simulation for:
+
+  | | |
+  |---|---|
+  | **save** | `Save replay` on the end card writes a `.tcr`; drop it back on the window to watch it |
+  | **share** | `Copy replay link` puts `?replay=<token>` on the clipboard |
+  | **watch** | `?replay=<token>` boots the recorded battle and plays it |
+  | **command** | `&from=<seconds>`, or the `TAKE COMMAND` button — one comparison in `ReplaySystem.pump`, because withholding the rest of the log *is* taking over. The battle you take over records itself from there, so you can save and share that in turn. |
+
+  **A 226.1-second battle of 2,247 men is 1,188 to 1,224 bytes gzipped**, measured over three runs
+  of the same script because a real mouse does not click the same number of times twice — 32, 34 and
+  34 recorded events, tokens about 1,600 characters, nine checkpoints each. Scaled to 200 s that is
+  ~1.1 kB against the design's own 1.1 kB estimate. Gzipped in isolation: config 476 B, order log
+  423–451 B, checkpoints ~246 B, so **13.6–14.6 bytes an order** against the 11–13 the design
+  budgeted for a hand-rolled bit layout. Over that same battle the order bus carried **3,258 AI
+  orders against the player's 29**, and the record holds the 29 — which is what the new required
+  `orderIssued.source` field is for. Without it a bus recorder captures the AI's thousands and
+  double-applies every one.
+
+  It found the bug the design warns Stage 4 about — *"round-trip your own orders through the codec…
+  the commonest real lockstep bug, and it appeared in none of the three designs"* — **twice, in
+  Stage 1, in the deployment path.** A right-drag placement was recorded quantised and applied raw;
+  an absent coordinate was encoded as zero, standing a whole regiment at the world origin on
+  playback. Both showed the exact signature the document predicts: `uctl` matching perfectly while
+  the pool hash and `uf64` did not. So ordered positions are now snapped to int16 over ±1400 m —
+  **4.27 cm** — at the moment an order enters the queue, in live play as well as in playback. The
+  number the simulation applies is the number the record carries, in both directions, by
+  construction.
+
+  **And frame grouping does not reach the simulation, which three shipped comments said it did.**
+  Held to an equal tick count, a 6,783-tick battle carrying real recorded player input is
+  bit-identical at 1000/6 ms — five ticks a frame — and at 1000/60 ms, on the pool hash, both unit
+  hashes and `BattleFlow.result`. The three comments are annotated rather than deleted, because
+  their *advice* is right for the tools they sit in: those drive by seconds, and a coarser step
+  there runs a different number of ticks (900 at 1000/60, 901 at 166 ms, 899 at 1000/6). The stated
+  mechanism was the wrong one.
+
+- **A gate that watches the input paths, not just the arithmetic.** `qa-determinism` loads one build
+  twice; both runs take the same twenty-three out-of-band writes in the same order and agree
+  perfectly, so it can answer *does this battle replay* and cannot answer *did the player's input
+  reach the simulation through a path anybody recorded.* `tools/qa-replay.mjs` boots through the
+  front door with a real mouse — setup sheet, BEGIN BATTLE, the deployment plaque, real clicks on
+  real pixels — records what that produces, and replays it in a fresh page on a deliberately
+  different frame schedule. **21/21 in nine arms**, and three of them are failures if they go green:
+
+  | broken on purpose | caught at |
+  |---|---|
+  | one player order shifted **one tick** later | the next 30 s checkpoint, on the pool hash |
+  | an unrecorded `orderIssued` put straight on the bus at tick 3,203 | tick 3,600, by the product's own check |
+  | `UnitGroupState.width` written from outside a tick at tick 2,135 | tick 2,700 |
+
+  The design quotes four ticks of lateness as *"already a different battle"*. **One is enough.**
+
+  Two of the nine arms exist because **the graphics tier is a simulation input.** Same map, same
+  scenario, same seed 4265438264: ultra fields 3,074 men and medium 3,009, and at ultra the ram crew
+  is shot off the road and dies sixteen metres short of the Porta Flaminia, landing nothing by
+  t+520, while at medium it lands 26 blows and the gate opens between t+180 and t+240. So a record
+  carries its tier and the gate proves the tier wins: `tier-in-record` plays a `high` record under
+  `?quality=low` and requires the record's own army (2,247 men, every checkpoint identical),
+  `tier-refused` plays a token whose claimed army this run cannot field and requires a refusal *by
+  name* rather than a quiet fit. The scope was verified rather than assumed — `SimQuality` has
+  exactly one member, `maxSoldiers`, and every `ctx.quality.*` read in `src/sim`, `src/ai` and
+  `src/units` is either that or `lodFarDistance`, which is render-only.
+
+- **The main menu has a front door.** The owner: *"The main menu should have a battle button but also
+  allow you to go to the docs or model viewer. When you go to battle, then it follows current flow
+  where you set everything up."* So the menu gains a level. It opened straight onto army setup; it
+  now opens on three destinations, and BATTLE leads into exactly the screen that shipped, with
+  nothing in it moved. **Two of the three were already built and already served and could only be
+  reached by typing a URL**: `viewer.html`, the model inspector that is the second Rollup entry of
+  this same build, and the published technical documentation.
+
+  ![The game's main menu on a dark background: a bordered panel headed TOTAL CLAUDE, The Siege of Rome · 271 AD, with three stacked rows — BATTLE highlighted in red with crossed-swords icon, TECHNICAL DOCUMENTATION with a books icon, MODEL VIEWER with a cube icon, each carrying a one-line description — and a footer rank with Trailer and Changelog links](docs/images/releases/r8-front-door.jpg)
+
+  *The door itself. Battle is a `<button>` with no href and is the only destination that stays in
+  this tab; the other two and both footer links are anchors with `target=_blank` and `rel=noopener`,
+  so a player two minutes into an order of battle cannot lose it to one mis-aimed click. That rule
+  is made of three attributes, which is the kind of thing that survives a refactor only if something
+  asserts it — `front-door-leaves-safely` now does.*
+
+  Both screens live in one `.menu` root and the setup DOM is built once, because a screen rebuilt on
+  navigation leaves detached rows carrying live click handlers — which is how a menu ends up
+  silently editing an army the player is no longer looking at. Nothing rebuilds on Back, and
+  `setup-back-keeps-army` is the check the whole two-screens-one-DOM design exists to pass: add a
+  unit, change the battle size, Escape, click Battle again, and compare every count, the seed and
+  the hour. `qa-deploy`'s menu arm goes from 3 checks to 8 and the gate from 28 to 33. `?menu=0` and
+  `?harness=1` are untouched and still skip the menu entirely; `?menu=battle` is the new explicit
+  sibling, and so is any URL that already names a battle, because a share link has already answered
+  the front door's question. The ↗ glyph on the two external plaques is `aria-hidden`, so *"Opens in
+  a new tab."* is now in the accessibility tree behind an `.sr-only` clip — `display: none` would
+  have taken it out of that tree as well, which is the point of the idiom.
+
+- **The eye-level camera can be walked on top of a wall.** `RTSCamera` resolved every height it
+  needed from the bare-earth heightfield, so the camera the whole game is sold on could not be
+  walked along a parapet. Measured on Carthage's bay 33: the walkway stands at 26.50 and the ground
+  under it at 12.73, and the eye sat at **14.43 — 12.07 m under the walkway its focus was standing
+  on**, inside the masonry, aimed at a look-at point twelve metres over its own head. Rome the same,
+  3.08 m under bay 24's half-built lift and 13.5 m under bay 1's.
+
+  | before — r7 | after — r8 |
+  |---|---|
+  | ![Standing in long grass at the foot of a brick wall, looking up: a plain brick tower face fills the upper left, a stone plinth course runs along its base, and the boots and lower legs of a file of soldiers are visible at the very top of the frame on a walk far overhead, with timber scaffolding and a hanging standard to the right](docs/images/releases/r8-wall-eye-before.jpg) | ![Eye level among the garrison on the wall-walk itself: a legionary in scale armour with a red-and-white shield stands an arm's length away in the right foreground, another shield fills the left, and the brick face of the tower with its doorway lintel rises behind them against the sky](docs/images/releases/r8-wall-eye-after.jpg) |
+  | `eyeline-rome-along`, whose whole point is that it pins nothing: the other wall shots in the harness fix `rig.heightAt` to a constant so the eye can be lifted level with a parapet, which is a workaround for this exact defect and would have hidden it. Fully zoomed in with the focus standing on the wall-walk, the eye is down on the grass at the wall's foot and the garrison is a row of boots overhead. | The same named shot on this release. `CitySystem.walkableTopAt` is new and answers for the walk, the stair flights, the tower passes and the gatehouse crown — the three things a walk is *reached* by that a missile has never needed. **It is not quite the same viewpoint and the reason is in this release too:** the shot names its bay as an offset from the gate and resolves it against the live wall, because a written-down coordinate on a generated circuit has a shelf life — so when the circuit moved, the camera moved with it, focus (239, 527) → (206, 534). The frames are 33 m apart along the same curtain, which is why the mean-pixel figures for this pair (change 61.45 against a re-shoot drift of 14.96, out of 255) measure the move as well as the fix. What they do show at any coordinate on this wall is where the eye sits relative to the walk. |
+
+  It is not `masonryTopAt`, which is the missile-collision surface: through the battlement band that
+  answers merlon crest or crenel sill two metres over the walk, alternating every 2.28 m along the
+  run, so a camera standing on it rides a square wave. It reports `-Infinity` over every stair tread
+  on both circuits, which is why the camera used to walk along the ground *beside* a flight rather
+  than up it. On the rig the whole change is one term, `standLift`, and it is **zero everywhere on
+  open ground** — at zero every expression that reads it is character-for-character the one that
+  shipped.
+
+  **And filming it found a defect no station number could see**, because it is a property of the
+  transition and every probe measures settled cameras: the descent off a parapet was shot at 23
+  degrees of elevation, and one plate came out 1280×720 of cloud. `place()` aims 1.39 m above the eye
+  over a 3.19 m stand-off; what makes the shot level is a floor clamp computed from the *unsmoothed*
+  surface, while `smoothFocus.y` damps toward the target at rate 9 and therefore lags a moving one by
+  `v / 9`. Coming off Carthage's parapet the lift falls at its bound of 16 m/s, so the lag was 1.78 m,
+  the clamp stopped binding for the whole descent, and the camera spent it looking at the sky. The
+  earth and the lift are damped separately now. Twelve named plates and four films cover both
+  circuits; along the parapet the eye reads 28.2 flat where it read 14.4 flat, up the stair it climbs
+  13.9 → 26.6 where it was 13.8 flat, and through the gate arch it is **identical at 14.7 throughout**,
+  because the carriageway never moved.
+
+- **A video design studio.** `tools/film.mjs` reads a declarative shot script and shoots it out of
+  the live simulation: cameras on rails through N stations, pushes in and out, cuts against *events*
+  rather than against sim times, slow motion, freeze frames, time-lapse, staged orders of battle, and
+  a manifest that says which frames were arranged. Three worked examples, all shot: **795 / 660 / 498
+  frames at 1920×1080 — 26.5 s, 22.0 s and 16.6 s.**
+
+  **A script is data — no functions at any depth, refused by the validator.** That is the
+  load-bearing decision and it is cheap now and impossible later: `--json` writes the normalised film
+  and `film.mjs <that>.json` shoots it, and the round trip is a fixed point, verified by two
+  successive passes coming out byte-identical. An editor's read and write paths are therefore one
+  format. `--check` prints a whole film's frame plan without launching a browser, which is what a
+  timeline would draw, and `--vocabulary` prints every field out of the code rather than out of a
+  document.
+
+  Reproducibility is the requirement, so it is measured: `aurelian-gate` was shot twice, two browser
+  sessions apart, and its `corpses >= 900` cue resolved to the same tick both times (t+143.7333 s),
+  its anchor to fifteen significant figures (x 261.8454311247795, z 529.015789204259, densest cell
+  155 men), and its head counts to the man. Slow motion is frame-doubling under `Time.paused`, so a
+  0.25× shot fires exactly the ticks a 1× shot of the same window fires, in the same order; fast
+  motion runs the extra ticks with `{ render: false }`. Neither can move a hash. The alternative — a
+  finer `stepMs` — was measured and **diverges**, and is opt-in with the cost written down.
+
+  What the cues found is the point of having them. The film was written as the trailer's climax, the
+  ram at the Porta Flaminia cut against `find: 'gateOpen'`, **and the cue refused**: at `ultra` the
+  ram crew is dead sixteen metres short of the door by t+100 and the gate is not struck once in
+  nearly nine minutes. An `at: [210, 215]` written down would have photographed an empty gate and
+  said nothing. The film was rewritten to what the battle actually does — the host crosses, the
+  ladders go up, the parapet holds, the ram is cut to pieces on the road, and the assault dies at the
+  foot of the wall. `src/` is byte-identical across the whole studio: no simulation change, no hook
+  added.
+
+- **Web analytics on the game and the documentation site** — one cookieless script tag per page,
+  served by the platform. It is injected by a build-only Vite plugin rather than written into the
+  source HTML, because the source form made every local page load log a 404 on `/_vercel/insights/`
+  and `qa-deploy`'s three console arms went red on it within the hour. Worth keeping as the reason:
+  those arms exist to catch exactly this, and the first thing they caught was us.
+
+### Fixed — the six reports
+
+- **A cohort tried to hold a wall-walk in formation and 45 men ended up on one stone.** The owner:
+  *"units on a wall try and stay in formation on top of the wall. If the formation is too large they
+  get stuck."* A legio-cohort is 41 m of frontage and a wall-walk is 3.25 m wide. Traced with 160 men
+  right-clicked onto run 18 — the shortest of the circuit's 45 runs, every station already claimed by
+  the ballistarii garrisoned there — and sampled every tick for 280 s: at t=200, **149 men placed
+  across 17 distinct standing points, worst pile 45 on one point, 137 of them sharing a point with
+  somebody, max rank 142 on a walkway five deep, garrison span one station, overflow reported 0.**
+  Mean speed 1.49 m/s — the cohort's entire walking speed — flat, and mean distance to slot 4.66 m,
+  flat and not falling. They never arrived and never stopped trying.
+
+  Two faults compounding, both in the layout. **`freeWindow` was a fence, not a preference:** it
+  returns the longest stretch no other living friendly unit has claimed, which on an already
+  garrisoned bay is zero, so it fell through to a one-station fallback. **And `rank` had no bound:**
+  `floor(k / perRank)` with `perRank` 1 handed out ranks 0 to 142, and `slotAt` clamps every rank
+  deeper than the band to the same offset. *The seats were distinct in the ledger and identical on
+  the ground*, which is why the obvious instrument — duplicate `(station, rank)` pairs — read zero
+  through the entire run.
+
+  A unit on a wall is a *file the wall's depth* now: depth taken from the run's narrowest point,
+  length bounded only by the run and allowed to overlap friendly claims because two cohorts holding
+  one stretch of wall stand among each other, surplus wrapped evenly and counted. Same cohort, same
+  run: **worst pile 45 → 2, distinct standing points 17 → 104, max rank 142 → 4, span 1 → 14
+  stations, men sharing a point 137/149 → 50/129, mean distance to slot 4.66 → 2.23 m**, and
+  `overflow` reads 59 where it used to read a wrong 0. On a 38-station run that can hold the cohort,
+  mean speed at t=280 falls 1.41 → 0.68 m/s with the file 30 stations long, five deep, and no man
+  sharing a place. **Named and not fixed:** 129 men still cannot stand on a 12 m run of 3.25 m
+  walkway, which is 70 places; the residual 1.37 m/s is that crush and not a solver fault, and the
+  real answer is a file that spills across the tower onto the next run.
+
+- **"Too late" on a tower party that had nothing left to be too late for.** The owner: *"it says
+  'too late' when I try to direct the siege tower units. They should be able to be moved around
+  freely and attack other units on top of the wall."* Reproduced by hand on Carthage through the real
+  menu with a real mouse: eighty men, ramp down on bay 33, cursor over bay 35 — *"Too late — the ramp
+  is down on bay 35"*; and a hundred seconds later, with 77 of them standing on the wall-walk, *"The
+  siege tower has finished its work"* **and** *"Along the wall"* at the same time, contradicting each
+  other, over an order the simulation was perfectly willing to obey.
+
+  **The defect is one word in one predicate.** `crewsAMachine` asked *was this unit ever given a
+  machine*, and a tower's `unitId` is written at spawn and never cleared, so it answered yes for the
+  rest of the battle. Everything downstream inherited it. The question that was meant — *does this
+  machine still have work for these men, and will it still take a destination from them* — is now
+  asked by name and published, so the interface asks instead of inferring. Once the ramp is down, a
+  tower's gang is infantry on a wall.
+
+  Three interface lies went with it, and the second is the one worth naming: **`traverseOfferAt` was
+  published for the cursor and had no caller.** Its own comment says *"a refusal the player cannot
+  see is the defect this pass keeps finding"*, and then nothing called it — so a tower party was
+  shown ALONG THE WALL in green for a bay it could not reach, the order was emitted, and sixty
+  seconds later all 51 men stood on the same three metres of stone with no plan open and nothing
+  said. It now reads *"No way along the wall to bay 33 — the walk is broken in between."* And a fix
+  the measurement caught **before** it shipped: relaxing `releaseEscalade` so a planted ladder's party
+  could be countermanded looked right and was not — `interceptOrders` calls it for any move order not
+  aimed at a wall, which on an AI-driven assault is every routine repositioning order, and every
+  ladder emptied within thirty seconds. **327 men who cross the rails by t+91 would have become 0
+  men, ever.**
+
+- **Men who broke half way up a ladder finished climbing the wall they were fleeing.** The owner:
+  *"routed units that are half up the wall are a little strange… they kind of are all stuck half on
+  the wall half off the wall."* Traced on one escalade party of 92 at the storm of Rome, broken at the
+  instant it stood 2 men on the parapet, 41 on the rungs and 49 on the grass. The 49 on the grass ran,
+  correctly. **The 41 on the rungs finished the climb — the parapet count went 2 → 38 while the unit
+  was routing** — and every man up there, the unit no longer being siege-owned, was handed a field
+  formation slot at the rout point: mean 260 m away, worst 325 m, on the ground, through the curtain.
+  Five men had not moved for ten seconds at the end of the trace.
+
+  Rout, release and elevation were three per-man facts being carried on one per-unit flag. Each man
+  now resolves from where he is: a party with anybody on the stone is kept rather than released,
+  because the siege system is the only thing that can place a man on a wall, and a descent is opened
+  to the nearest *reachable* stair — which is only an honest plan because of the fix below it. Same
+  party, after: a descent plan open at t+1, the rungs empty at t+18 with nobody dropped, and at t+42
+  the parapet clear, the garrison record gone and the unit handed back to the field as an ordinary
+  routing formation, with the men on the grass moving at 2.5–3.65 m/s throughout. **Men still nailed
+  in place after 10 seconds: 5 → 0.** Named and not fixed: a lodgement that breaks on the parapet with
+  no reachable stair now *holds* rather than chasing a slot on the far side of a wall it cannot leave.
+  It came up a ladder and this system only runs a ladder upward. Climbing back down under fire is the
+  next piece of work.
+
+- **The nearest stair was measured as a line across the wall, not a walk along it.** A wall is a
+  graph: runs are joined at towers and severed where the curtain is unbuilt, so two points ten metres
+  apart in plan can be infinitely far apart on foot. `nearestStairLink` ranked flights by squared plan
+  distance across the whole circuit **with no reachability test of any kind.** Surveyed by walking
+  every run's midpoint: Rome's wall-walk is **four disconnected components** and Carthage's is two.
+  Rome's runs 0 and 1 — 78 stations of finished curtain — were handed the stair on run 13, in another
+  component, which no man standing there can reach. Carthage's run 21 was handed the stair across the
+  severed joint at run 20 when the reachable one on run 23 is 81 m away along the stone. An order
+  aimed at one of those is accepted, the men walk at a link mouth that leads nowhere, every one of
+  them counts as stuck, and the plan sits open until it times out ten minutes later. There is a
+  `walkDistance` now, in metres along the walk or `Infinity`, and a stair that cannot be reached is
+  not a candidate; when the wall offers no way at all the answer is a refusal the caller has to pass
+  on, rather than an order that cannot complete.
+
+- **Cavalry went through the gatehouse instead of through the gateway.** Sixty equites in wedge are 23.32 m
+  of frontage, ordered through a 5.2 m carriageway. Measured on Carthage's Porta Byrsae at the
+  playable scale:
+
+  | | before | after |
+  |---|---|---|
+  | body touching stone | 30,098 man-ticks | **4,615** |
+  | mount overlapping stone | 33,274 | **12,632** |
+  | wall-plane crossings off the carriageway | 3 of 47 | **0 of 56** |
+  | worst lateral offset | 11.42 m | **3.97 m** |
+  | ninety per cent of them inside the city | never | **21.6 s** |
+  | through after 70 s | 46 of 60 | **54 of 60** |
+
+  At the harness's smaller scale — 26 equites — every one of the penetration figures goes to **zero**
+  and all 26 are through in 12.5 s; Rome's Porta Flaminia behaves the same way, 3,701 → 0 and
+  6,355 → 0. The reporter's guess at the mechanism was right in substance and the constant was not
+  the fix. Two things stopped the existing narrowing machinery from ever reaching a gate, and both
+  were verified by measurement rather than by reading: `BattleSystem` requests every route with
+  `radius === minRadius`, while `NavPath.narrow` is set from `radius < wantRadius - 0.5`, **so a
+  player or attack order can never be flagged narrow at all**; and the response to that flag could
+  not have helped if it fired, because `narrowestFormation` returns the narrowest formation the
+  *roster* offers, and for every cavalry unit in the game that is the wedge it is already in. Of the
+  eleven unit types on the Carthage field, three have a narrowest footprint that fits a gate. **No
+  cavalry unit has one, in any formation, on any map.** So the frontage is set by the hole instead of
+  chosen from a menu: the free lateral corridor is measured along the line of march against the
+  oriented-box field the integrator itself collides with — the 7 m nav lattice cannot see a 5.2 m gate
+  at all — and the unit is squeezed to the files that fit and restored once its tail is through. One
+  geometric, continuous mechanism serves a player order, an AI attack order and a broken unit
+  squeezing back out, with none of them taught about gates.
+
+  The same report had a second root and they are **not** the same defect. A broken unit's heading was
+  `position + threatBearing × 60` and consulted nothing, so it ran at whatever was in front of it. A
+  cohort broken 35 m inside Carthage: **routing ticks with a solid inside 3 m of its heading 40% →
+  0%**, closest that heading came to a solid 0.5 m → 22.5 m, man-ticks with a body in the stone
+  121.4‰ → 7.6‰. Pathfinder requests made on its behalf: 0, before and after. That is not a failure —
+  a broken unit does not need a search, it needs a heading that is not into masonry, and failing that,
+  its own breadcrumb trail walked backwards, which is *flee the way you came in* for the price of a
+  corridor trace.
+
+- **A catapult stone flew through five metres of solid tower.** Not tunnelling — a boulder is 52 m/s
+  and steps 1.35 m into a 6 m curtain, and a 200-substep swept test reports zero tunnelled ticks on
+  every shot of every kind. `masonryTopAt` resolves a bay and tests the curtain cross-section, and
+  **had no tower branch at all**, while the obstacle builder stamps each tower as a solid box rising
+  above the crest. At Rome's tower at (256.5, 528.1) the box tops out at 59.85 and `masonryTopAt`
+  answered 52.80: **7.05 m of solid tower, 5.00 of it above the crest, transparent to every
+  projectile. Tower coverage 62.3% → 99.0%.** Only the onager and the legio-ballista throw with a high
+  arc, which is why this read as *catapults pass through walls and arrows do not* — a flat bolt
+  strikes the curtain face below the walk and never reaches the height where the hole was. The hole
+  itself was kind-independent. The projectile system reached the city through an `as unknown as` cast;
+  it is a named view with a compile-time witness now, because a rename of `masonryTopAt` used to be a
+  silent null with every shot passing through every wall.
+
+### Fixed — two nobody asked for
+
+- **The wall was cut on height and sewn back together on distance.** `Siege.recut` severs a run when
+  two consecutive stations differ by more than 0.62 m in y. `buildLinks` then rejoined the two halves
+  on horizontal gap alone: it computed `const step = Math.abs(sy[b] - sy[a])`, and **the next line was
+  `void step;`**, under a comment describing a classifier that used it. So the number that split the
+  run was measured, named, and thrown away by the code that put it back — and because a link is an
+  authored polyline sampled by arc length, the result is not a difficulty. It is a way through a face.
+
+  Measured on Rome by reading every link off the live simulation: **22 of 41 walk-to-walk crossings
+  bridged more than the 0.62 m that split the run, 11 more than a storey, and 3 more than the whole
+  curtain is tall. The worst was 7.70 m across 5.03 m of plan — one 9.20 m leg at 56.8 degrees, with
+  the man 3.16 m clear of the surface the city reports at the mouth he starts from.** Carthage, whose
+  circuit is described as level and which nobody had measured, has the same fault in a different
+  shape: 12 of 38 over 0.62 m, and four links taking 1.50 m in 1.30 m of plan — 49 degrees, running
+  0.91 m *inside* the masonry.
+
+  There is one predicate now, asked once, and both functions call it: level if the rise is walked
+  without changing gait, a flight if the rake is one stone can be built at — the same pitch every
+  tread of the tower flights is laid out from — and otherwise no crossing at all, with the runs left
+  cut. The 1.2 m height cap the design proposed was measured against both circuits and **fails in
+  opposite directions**: Carthage joins two walks 2.00 m apart across a 7.32 m tower, which is a 15
+  degree ramp any man walks, and two walks 1.50 m apart across 1.30 m, which is 49 degrees. A height
+  alone refuses both. No one-way descent variant either, because every consumer walks the run chain in
+  both directions and a cohort that drops onto a stairless run can never leave it.
+
+- **The determinism gate stopped 5.5 seconds before the only divergence anyone has measured, and
+  hashed only the half of the state a firewall was protecting.** The default field battle runs bit-identically
+  in Chromium, Firefox and WebKit through every checkpoint this project pinned — t+0, 30, 90, 150,
+  200 — and forks at **t+205.5 s**, never re-converging: 2,766 men alive against 4,281 by t+600. Three
+  separate passes ran three engines, reported IDENTICAL, and were all correct, because all three
+  stopped where the gate stopped.
+
+  Two checkpoints added, chosen rather than inherited: **t+250**, the sentinel 44.5 s past the fork,
+  and **t+400**, the half of the battle nothing had ever looked at — t+200 leaves 6,623 of 8,632 men
+  standing on the field. The ceiling is t+400 and not t+600 on purpose, because detection is binary on
+  a hash and t+600 would add about a minute per battle per invocation to measure the amplitude of a
+  divergence already reported. *A gate nobody runs because it is slow is how t+205.5 stayed unseen for
+  a year.*
+
+  And it hashed only the float32 soldier pool. Every tick reads float32, computes in float64 and
+  writes float32; that round trip is a quantisation firewall and it is the entire reason three engines
+  agree for six thousand ticks. `UnitGroupState` sits on the near side of it — position, facing,
+  target, morale, fatigue, ammo, timers, all plain float64 integrated in place — and **nothing in this
+  repository hashed it.** Drift over 35 units × 11 fields: 3 of 385 fields differ by tick 30, 168 of
+  385 by tick 6,000, worst 16,974 ULP. There are two more marks per checkpoint now, at deliberately
+  different strictness — `uf64`, the exact float64 bits, and `uctl`, the discrete half — and each was
+  proved sensitive before it was trusted: +1 ULP on one unit's x moves `uf64` and nothing else; one
+  extra kill moves `uctl` and nothing else; two units swapped in the array move both and not the pool.
+  **The pool hash is blind to all three, which is the finding.**
+
+  The proof that it had been blind arrived immediately. `Math.hypot` is implementation-approximated in
+  ECMA-262 — 37% of inputs disagree between the three engines, up to 2 ULP — and it is the hottest
+  transcendental in the tick loop, 28,524 of the 60,839 calls per tick at 8,632 men. Replacing it with
+  `Math.sqrt`, which IEEE-754 requires correctly rounded and which measured 0% disagreement, touched
+  **222 call sites**. Every pinned float32 pool hash and every survivor count was **unchanged at all
+  21 checkpoints of all three battles** — and `uf64` **moved at 21 of 21**, while `uctl` moved at none.
+  A change touching 222 sites perturbed the simulation's own float64 state everywhere, never reached a
+  control-flow decision, and never survived the float32 round trip. **The old gate would have reported
+  that nothing happened.**
+
+  The linter learned the same distinction. It banned `Math.random`, `Date.now`, `new Date` and
+  `performance.now` — the reproducibility hazards, none of which is why the same battle is a different
+  battle in a different browser. It now also counts the transcendentals and ranks them by measured
+  disagreement across 1,340 calls in 100 files: `tan` 41% of inputs and 7 sites, `atan2` 17% and 96,
+  `exp` 10% and 89, `sin` and `cos` 4% and 845 between them, `pow` 0% across three engines but 10.5%
+  between two Chrome builds. **It warns and does not fail, and says so in its own output**, because
+  there are 1,300 of these and the real fix is a vendored software libm. Its scope is deliberately
+  wider than the ban's: Carthage's cross-engine split at t+0 is 361 wall-garrison men at identical x
+  and z differing in *y* by up to 3.87 mm, from curved-wall geometry built in `src/city`, which the
+  ban has never scanned.
+
+### Rome
+
+- **The Tiber was up to 776 metres from where the survey puts it, and the wall's line was the
+  terrain's crest wearing the wall's name.** The river was an almost-straight trench oscillating
+  between x −620 and −690 that fitted nothing; measured against the twelve survey points of the
+  design, projected through the map's own transform, it was **250 to 776 world metres too far west at
+  every one of them.** It is a shape-preserving cubic through those twelve points now, sampled into a
+  lookup: **worst error 0.1 m** against the 25 m the task allowed.
+
+  | before — r7 | after — r8 |
+  |---|---|
+  | ![Looking down at the west end of the Aurelian circuit from above: a brick curtain and two tile-roofed towers run diagonally across dry green and ploughed farmland, with a long rank of timber scaffolding along the outer face, a crane and building rubble on the pomerium road behind, and no water anywhere in the frame](docs/images/releases/r8-tiber-flank-before.jpg) | ![The same viewpoint with the Tiber filling the left half of the frame: the curtain now runs down to the water and ends in a round brick drum with a tiled conical roof standing on the bank, its merlons stepping down to the waterline, with the river's far bank and a marching column visible beyond](docs/images/releases/r8-tiber-flank-after.jpg) |
+  | `ground-angle`, the circuit's west end — **the one exact pair in this release**: focus (−20, 500) and yaw 3.61 in both arms, to the digit. At r7 the wall's west anchor stood at x −631, six hundred metres from the river, and the river was not in the frame at all. | `WALL_X_MIN` is derived from the river bank plus a clearance and always was, so correcting the bank by 594 m moved it to −28; five bays that stood on ground at and below water level are gone, and fifty bays became thirty-three — and then thirty-six, when the surveyed line landed on top of this. **The west flank is shut**, which the design said closes "for free" and does not: the 42 m between river and wall was a dry corridor round the end of the wall, and the terminus drum in the frame — drawn in every frame since it was written — now publishes a blocker. `probe-nav --only=flank` reaches **0 cells behind the curtain round the west end at both body widths, against 8,405 round the east end.** Change 46.33 out of 255 against a drift of 6.95. |
+
+  Three more things came with the river. The cross-channel distance was being computed as
+  `x − riverCentreX(z)`, which is only the perpendicular on a north-south reach; two segments of the
+  surveyed course run at 66 and 78 degrees, so at the great bend it drew the Tiber **twenty metres
+  wide instead of ninety-four**, with the Insula Tiberina — 270 m long, placed on the centreline —
+  sticking out of both banks. Two Gaussians in the relief function put a 22–34 m rise under every bay
+  of a wall that crosses a flood plain for its first 200 m, so the one stretch with no terrain
+  advantage at all was the best-defended ground on the map; they are a seven-band staircase now, and
+  relief against the specification goes from 24.04 m worst and 264 of 267 stations out of band to
+  **0.70 m worst and 0 of 230.** And the heightfield cuts a bench under the circuit for the first
+  time, which took the worst bay-to-bay step in the wall-walk from **28.39 m to 8.11 m.**
+
+- **747 men were standing in the Tiber, because nothing told the army where the ground was.** Moving
+  the river moved the deployment masks and did not move the order of battle, which lays both lines out
+  about x 0 and had no way to read a mask. Measured on the built heightfield: **Rome 647 men in the
+  water and 412 dry on the far bank, the host 100 in the water — 747 of 8,632.** The far-bank half is
+  the subtler one and is not a drowning: that bank is dry and passable, so those 412 were simply in
+  the wrong battle, with ninety-four metres of river between them and their own line.
+
+  | before — mid-release, at `70fc191` | after — r8 |
+  |---|---|
+  | ![A high oblique over the Tiber's east bank: centuriated fields in strips of green and ploughed earth run down to the water, which fills the lower half of the frame, and at the top right a dense dark block of men stands at the very edge of the water with a second rank of cavalry drawn up on the grass above it](docs/images/releases/r8-tiber-deploy-before.jpg) | ![The identical viewpoint and the identical stretch of bank and river, with the fields, scrub and trees in the same places and no soldiers anywhere in the frame](docs/images/releases/r8-tiber-deploy-after.jpg) |
+  | `deploy-westflank`, a genuinely fixed camera on where Rome's left wing used to stand: focus (−195, 185) and yaw 5.03 in both arms and in the drift arm. **The before arm is `70fc191`, not r7** — it has to be, because this state existed only *inside* this release, between the commit that moved the river and the commit that moved the army. | Each map now states its two deployment boxes as data and derives its masks from them, and the whole deployment is translated once after spawn by a single number, **271.146 m**, so the two lines keep their relative alignment to the metre. **The whole-frame drift check fails on this pair, and why it fails is worth more than the pair:** change 12.45 against a drift of 11.88 out of 255, because the lower half of the frame is animated river surface that reseeds every session. Measured on the water alone it is change 28.38 against drift 28.32 — no information at all. Measured on the land where the men stand, it is **change 3.20 against drift 0.78.** The statistic was reporting the river. |
+
+  **This is not a balance change and the evidence is the discrete state.** Roman line 3,772 men in 16
+  units before and after; Juthungi host 4,860 in 19; frontages 684.3 m and 783.4 m, unmoved; facing,
+  width and spacing identical for every unit; every one of the 35 units displaced by the same
+  271.146 m. Men in water **747 → 0**, on the far bank **412 → 0**, over impassable slope 0 → 0 with
+  the worst gradient improving 0.529 → 0.315. And the mark that says it better than the table: the
+  determinism gate's `uctl` — order, target, formation, width, alive, kills, membership, flags and
+  unit array order — reads `2b2ac282` at t+0 and `13f5b86e` at t+30, **which are the values recorded
+  before the terrain moved and before this** — and are what the gate still prints on the deployed
+  commit, re-run for this entry. The discrete half of the battle is byte-identical to the
+  one that shipped. Only x moved. What is left is the owner's: the lines are wider than the ground
+  they are given — Rome 684 m in a 500 m box, the host 783 m in a 760 m one — and no translation fixes
+  that.
+
+- **Rome's circuit is the survey's now: 36 bays, three gates, and a wall that checks itself at boot.**
+  The wall's line was still the terrain's crest, and the two were **157 m apart at x +868**. It is the
+  twelve surveyed waypoints now, projected, with the affine map moved down into the terrain because
+  nothing in it ever needed the city. Measured live on the deployed commit, off the game's own boot
+  line: **36 bays at 37.02 m, x 2.0 … 1334.5 against the survey's +2 and +1335 — 0.01 m and 0.45 m off
+  their anchors — worst bay-pitch deviation 0.0%.** The shipped 35.5 m *actus* was the wrong number
+  twice over; 29.6 m is the clear curtain and 37.1 m the interaxis the attested tower count closes on.
+
+  | the circuit at r7 | the circuit at r8 |
+  |---|---|
+  | ![A stretch of brick curtain wall photographed from above and outside, running from lower left to upper right across flat unworked ground: one square tile-roofed tower, a long line of timber scaffolding poles standing against the outer face, and a paved road with scattered building stone on the city side](docs/images/releases/r8-circuit-before.jpg) | ![A taller finished stretch of curtain wall from the same elevation and angle: three tile-roofed towers step along it, the merlon line and the wall-walk run continuously between them, the wall stands on a level graded shelf above the field, and scaffolding and a builders' yard are confined to the far end](docs/images/releases/r8-circuit-after.jpg) |
+  | **These are two scenes and not a before/after pair, and the reason is the change itself.** `wall` names its subject relative to the circuit and resolves it against the live wall, so when the circuit moved 157 m and its west anchor moved 600 m, the camera went with it: focus (−81, 503) at r7 against (391, 548) here. A mean-pixel comparison between them would be measuring the camera move. | What each frame is good for is the wall it stands on. At r7 the curtain sits on ungraded natural crest with a bay grid derived from a 35.5 m *actus*; here it stands on a graded bench at the surveyed line, at the interaxis the attested tower count actually closes on. |
+
+  **`wall.ts` has a build-time self-check for the first time**, and it publishes its results as data
+  on the output rather than as a `console.warn` or a throw. Read off the running game at this commit:
+  the section sums to 8.55 m against 8.55; **worst bay-to-bay walk step 5.23 m at x 372** at a rake of
+  0.60 against the 0.912 tread module, where the design measured 28.39 m and Phase A left 8.11; **0
+  bays footed below water level**, where the design found five bays of Aurelian curtain standing in
+  the Tiber; worst tower lane 1.97 m against a 0.9 m minimum; **0 faults.** The construction census is
+  the document's own table rather than a camera rationale — 23 finished bays, 4 half-built, 5 without
+  a parapet, 3 at footing and 1 gap — with the footings and the gap on the flat neck by the river,
+  because that is the only stretch of this front that had to be built from nothing.
+
+  The Muro Torto is seven bays built against a hillside, which is a *mechanic* and needs the ground to
+  be true: the mass stands at crest level on the city side, so the stretch is garrisonable and needs
+  no stairs. On the flat bench Phase A graded, none of that was true. The hill is banked against the
+  back of it now, from one record the terrain and the masonry both read: **seven aprons, worst rise
+  0.31 m over 45.7–56.1 m of run** — a level joint, walked onto rather than climbed — and **7 of 7
+  routes from the Horti Aciliorum to an apron foot succeed.** Its height is 13.32 m, which is 45
+  *pedes* on the section's own five-*pes* module, and not the 15 the design suggested, because 15 puts
+  two bays at a rise the siege prober refuses within five bays of a gate.
+
+  Three gates and a posterula, each one record with one width, each snapped to its bay centre with the
+  snap printed at boot: **+11.76 m** for the Pinciana, **+9.70 m** for the Salaria, **−9.35 m** for the
+  Nomentana. **The Porta Flaminia is not snapped, and that is not a relaxation** — it is the
+  projection's own anchor, so moving it 14.5 m would move every monument on the map and would leave the
+  Via Flaminia's agger entering the curtain beside its own gate. It is cut where the road crosses,
+  leaving **1.89 m** of masonry east of the opening against 30.8 m west: a pass on the ≥ 1.0 m test,
+  printed at every boot, and exactly the fault the research says to leave standing — Richmond's
+  *"glaring cases of bungling in the setting out of the gate in relation to the Wall"*, at this very
+  gate. No portcullis on any of them: the *cataracta* is Honorian and unattested on an Aurelianic gate.
+
+  **The wall's own prober caught the one thing this had got wrong**, which is what it is for: with the
+  two new gates drawn and no leaves hung in them, **8 rays of 1,215 passed clean through the circuit.**
+  They have doors now, built into the curtain's own chunk. The siege prober caught the other — one of
+  the seven aprons came out at −0.10 m, a flight that descends, against a contract that says a flight
+  only ever climbs. And the whole city got **cheaper** while gaining two gates, a posterula, a
+  river-wall stub and seven aprons: **92 draw calls and 2.06 M visible triangles in 21 chunks against
+  101, 2.38 M and 23 — the wall family 44 → 35** — because 36 bays is five chunks where 50 was seven.
+  The draws, the triangles and the chunk count are read off the deployed commit; the whole frame was measured at 194 against a 220 cap when this landed.
+
+- **A bay's two ends were clipped by different amounts, so men stood inside the tower.** The spine
+  clipped a bay's west end by the tower's half-footprint plus a margin and its east end by the bare
+  margin, on the note that "the east end is the next bay's tower, which that bay's own margin handles."
+  A margin cannot do that — a bay's margin clips its own stations and cannot reach back into the
+  previous bay's, and nothing did. So the last four or five stations of every bay ran into the next
+  tower's footprint while still levelled to their own bay's height, which is exactly the number that is
+  wrong in there. **Rome: 166 of 1,673 stations inside a tower box, 9.9%, the deepest 3.21 m in and the
+  worst standing 3.16 m above the drawn walk. Carthage: 177 of 2,016, 8.8%, deepest 4.41 m.** After, on
+  both circuits: **zero**, and every station's height equal to the walk at its own plan point to float
+  precision. It costs standing room — Rome 1,673 → 1,486 stations — and that is standing room a
+  garrison had only because it was standing in a ballista chamber at the wrong height. The consequence
+  is the reason it was worth doing: the gaps the crossings are priced over become the gaps the stone
+  actually has, Rome's tower gaps go 4.94–5.68 m → 8.71–9.52 m, and **all five joints the new predicate
+  refused become flights.**
+
+  A balance consequence came with it and is **reported rather than tuned, because balance is the
+  owner's.** At t+200, Rome's defenders go 818 → 875 (+57, +7.0%) and its attackers 1,230 → 1,201
+  (−29, −2.4%); Carthage moves within noise, +17 and +2. Rome's defenders do better by about a
+  cohort's worth of men, and that is the direct consequence of a garrison that can walk to the
+  fighting arriving at it. Nothing was retuned to compensate and nothing should be until the owner has
+  seen it.
+
+  Measured on this release's own tree rather than quoted forward, because the circuit was rebuilt
+  underneath these numbers afterwards: booting both maps in both scenarios reports **Rome 1,016 spine
+  stations with 33 of 34 runs reachable from a stair, Carthage 1,830 with 37 of 40**, at 3,074 / 3,440
+  men in the assaults and 8,632 in the field battles, with zero page errors and zero console errors on
+  all four. The 43-of-45 quoted during the Phase A work was true of the 50-bay circuit that has since
+  been replaced.
+
+- **Rome gets a directory.** Carthage has owned `src/city/carthage/` since it was built; Rome's plan
+  was 227 lines and everything else Rome is lived in the generic namespace, which is why the second
+  city's builders had to read Rome's files to find out what a wall was. Eight modules now, split as a
+  tree and not a cycle, with the generic files keeping only what a third city would need. No behaviour
+  change: the city's boot line is byte-identical across the move. It was verified by reconstruction
+  rather than by eye — strip the import blocks and the `export` keywords from the two old files and
+  from the eight they became, and the multiset of remaining lines differs only in the new headers and
+  seventeen comments that were repointed at files which no longer exist.
+
+### Corrections to the record
+
+- **Git merged two agents' independently correct fixes into a duplicate object key, and the second one
+  silently disabled the first.** The video studio and the replay gate hit the same hazard on the same
+  day — agent worktrees symlink `node_modules` back at the shared checkout, so Vite resolves its
+  default cache path through the symlink and every branch writes one cache — and each added a
+  `cacheDir` field to `vite.config.ts`. The hunks were at different offsets, so git merged both
+  cleanly, **and a duplicate key in an object literal is not an error: the second one wins.**
+  `TC_VITE_CACHE` silently disabled `TC_VITE_CACHE_DIR`, which is the variable the replay gate's
+  menu-boot sets, so that harness would have lost its isolation without a single conflict marker to
+  say so. One field, one name, and every caller follows it. There is nothing clever to learn here
+  except that a clean merge of two correct changes is not a correct change, and that no tool in the
+  chain flagged it.
+
+- **`--battle=rome` is not an arm of the determinism gate, and three agents were told it was.** It
+  appends a meaningless `&rome` to the query, loads the **default field battle**, looks up a baseline
+  key that does not exist, compares nothing, and exits 0. The three real invocations are no flag at
+  all, `--battle="map=campus-martius&scenario=assault"` and `--battle="map=carthage&scenario=assault"`
+  — quoted, or the shell backgrounds on the `&` — **and the headcount is the only tell: 8,632 for the
+  field battle, 3,074 for Rome, 3,440 for Carthage.** An arm that reports the wrong number of soldiers
+  measured the wrong battle. The gate that was being written at the time now exits 2 on an unknown
+  flag and lists the ones it knows, because an instrument whose whole purpose is to notice when the
+  battle changes must not have the shape of the bug it is watching for. This is the second time in
+  this release window that a mistyped flag was silently ignored: an earlier re-record used `--extra=`
+  where the flag is `--battle=`, so all three "re-records" ran the field battle and only one pin was
+  written — and the tell was in the output, a **Carthage assault reporting 8,632 soldiers.**
+  One copy of the broken form is still standing and is called out here rather than quietly patched,
+  because it is the copy that matters: `docs/HANDOFF.md`'s live-state gate table — the first thing
+  a new agent reads — prints the arm as `--battle=<default|rome|carthage>`, two thousand lines above
+  its own explanation of why that is wrong. Whoever next edits that file owns it.
+
+- **`--ours` on a baseline file discards a measurement, and a measurement is not a preference.** The
+  ground pass moved Rome's terrain and correctly re-recorded its determinism pin. When that branch was
+  rebased the baseline file conflicted, the conflict was resolved by taking one side, and the
+  re-record went with it — so the pin described a tree that no longer existed for three merges, and
+  the next agent found it red and correctly refused to launder somebody else's movement under its own
+  name. It is re-recorded here, attributed to the change that actually moved it, with Carthage and the
+  field battle held as bit-identical controls. **A conflict in a pin file is resolved by re-measuring,
+  never by choosing a side.**
+
+- **`docs/CARTHAGE.md` said Rome's wall costs 216 draw calls. It costs 44.** That is the number the
+  Punic wall's "largest single design risk" was assessed against. The boot line has printed the
+  breakdown at every start for months; 216 is close to the whole-frame figure of the era and looks
+  like a total that lost its label on the way into a comparison about a wall. Recorded because it is
+  that document's own first lesson in miniature: a figure with no instrument beside it reads as a
+  measurement, survives review, and gets quoted forward. On this release the wall family is **35**.
+
+- **A comment claiming two independent surveys "agree to a metre" was wrong by 28.6 m**, and the
+  circuit's angle stands 40.5 m east of the modelled east bank. The survey wins; the 30 m of dry bank
+  that opens behind it is closed by the first stretch of the river wall, built early rather than left
+  as a hole for a later task to inherit. Two smaller ones in the same sweep: the siege document printed
+  the spine's arithmetic as a four-line block and one of those lines described a clip that names no
+  tower at all, and a banner in the shared city files claimed two helpers were "exported for the
+  other city builders" when all four of their importers are Rome.
+
+- **`docs/video/README.md` describes a trailer beat that the battle no longer produces.** It documents
+  the `rome-ram-gate` shot at `ultra` with the gate breaking at t+215; measured for the video studio
+  at the same map, scenario and seed, the ram crew at `ultra` is dead sixteen metres short of the door
+  by t+100 and the gate is never struck once through t+520. That page now carries the measurement
+  beside the description rather than a corrected time, because the two are different claims and the
+  battle is the one that moved.
+
+---
+
 ## r7 — the head most of the army is drawn with was inside out, and the instrument could not have said so
 
 **20 August 2026** · commit [`0d9960d`](https://github.com/eoinest/Total-Claude/commit/0d9960d) ·
-deployment `total-claude-gnj0eowoy` · **live now**
+deployment `total-claude-gnj0eowoy`
 
 A correctness release, and the one where the instruments were the bug. Almost everything below had
 been sitting under a check that compared something against itself and therefore could never fail:

@@ -79,18 +79,32 @@ const SOUTH = 0; // facing toward +Z
  *  1. `axisX` — the axis the two lines form up on. One number per map rather than one per box,
  *     because the two lines have to face each other: an axis per side would rotate the
  *     engagement rather than move it.
- *  2. **No man stands west of the west edge of his own deployment box.** This only ever wins
- *     when a line is wider than the ground it was given, and at `DEFAULT_CONFIG` it does win:
- *     the Roman line measures 684 m across its own men and its box is 500 m, so centring it on
- *     the axis would leave its outer cavalry squadron — 108 men — in the Tiber. Measured, not
- *     assumed; `tools/probe-ground.mjs` counts them.
+ *  2. **No man stands west of the west edge of his own deployment box, inset by the box's own
+ *     feather.** This only ever wins when a line is wider than the ground it was given, and at
+ *     `DEFAULT_CONFIG` it does win: the Roman line measures 684 m across its own men and its
+ *     box was 500 m, so centring it on the axis would leave its outer cavalry squadron — 108
+ *     men — in the Tiber. Measured, not assumed; `tools/probe-ground.mjs` counts them.
  *
  *     The asymmetry is the map's, not a convention. At Rome the river is west of the
  *     deployment ground and the east is open plain out to x 700; task 1 moved both boxes east
- *     rather than widening them for exactly that reason. So a line that does not fit overhangs
- *     onto grass rather than into water. The box's own west edge is used rather than the
- *     waterline, which inherits the 23–39 m clearance task 1 measured instead of shaving the
- *     line to the bank.
+ *     rather than widening them for exactly that reason, and §15 task 14 has since widened
+ *     them east as well. So a line that does not fit overhangs onto grass rather than into
+ *     water. The box's own west edge is used rather than the waterline, which inherits the
+ *     23–39 m clearance task 1 measured instead of shaving the line to the bank.
+ *
+ *     **The inset is `box.feather` and it is not a fudge factor.** The rectangle's edge is
+ *     where the mask reaches *zero*: the heightfield lerps toward the regional plane in
+ *     proportion to the mask and the scatter does not exclude a tree until it passes 0.12, so
+ *     a file parked on the edge stands on ground the box did nothing to. Without the inset,
+ *     `tools/probe-ground.mjs --quality=high` counted **14 Roman men outside their own box to
+ *     the west** — the four leftmost files of the left-wing equites, on the contour where the
+ *     mask is 0.00 — while the rule that put them there was reporting success. With it, the
+ *     whole line stands inside the box's full-strength core and the count is 0.
+ *
+ *     It costs 80 m of eastward shift at Rome, 271.146 → 351.146, and **nothing at all at
+ *     Carthage or Pydna**: both are 980 m boxes about x 0 holding the same ~684 m line, so the
+ *     rule was slack by ~148 m there and the inset spends 80 of it. Their field battles still
+ *     report a shift of exactly 0.
  *
  * One shift for the whole battle, so the two lines keep their relative alignment to the metre:
  * this moves the engagement, it does not change it. Frontage, spacing, facing, formation and
@@ -111,7 +125,7 @@ function standOnDeploymentGround(battle: BattleSystem, config: BattleConfig): nu
     // width and spacing, and the widest overhang here is a 33 m loose cavalry screen.
     let westmost = Infinity;
     for (const i of u.members) if (battle.pool.x[i] < westmost) westmost = battle.pool.x[i];
-    shift = Math.max(shift, box.cx - box.hx - westmost);
+    shift = Math.max(shift, box.cx - box.hx + box.feather - westmost);
   }
   battle.translateDeployment(shift);
   return shift;
@@ -125,6 +139,13 @@ function standOnDeploymentGround(battle: BattleSystem, config: BattleConfig): nu
  * wide enough to push the right wing into them would be a composition that does not fit the
  * map, and the honest place to catch that is a boot assertion with a measured limit behind it,
  * not a magic constant here.
+ *
+ * Re-measured past that range by `tools/scratch/probe-deployfit.mjs` when §15 task 14 added the
+ * feather inset, because 351.146 is outside it: at the shipped shift the worst slope under any
+ * man is **0.076** on the host's side and **0.074** on Rome's, against the 0.62 that stops one,
+ * with 0 wet and 0 on the far bank. The unprepared plain at both box latitudes stays under a
+ * 0.06 slope out to x 1000 north and rises only to 0.28 in the x 680–780 band south, where the
+ * Pincian's toe first shows; the box flattens that band, and the acceptance measures it after.
  */
 
 /**
@@ -138,7 +159,7 @@ function standOnDeploymentGround(battle: BattleSystem, config: BattleConfig): nu
  * whole thing onto the map's own deployment axis once everything is spawned, so the offsets
  * here are relative and the shipped x are those plus the shift. This used to say "symmetric
  * about the Via Flaminia", which was true when the road ran through x 20-50 and the army stood
- * on x 0; the deployment ground is now 271 m east of the road and the sentence was quietly
+ * on x 0; the deployment ground is now 351 m east of the road and the sentence was quietly
  * describing a different map.
  */
 const centred = (n: number, spacing: number): number[] =>
