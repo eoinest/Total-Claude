@@ -1076,23 +1076,10 @@ function deployAssault(
   }
 
   // ---- The storm ---------------------------------------------------------
-  /**
-   * Towers against the curtain nearest the gate, where the parapet fight will be worth
-   * watching. Echeloned back 9 m apiece so four machines converging on four adjacent bays do
-   * not arrive in one rank and foul each other.
-   *
-   * **`holdable`, not `real`, and on Rome's surveyed circuit that is the difference between
-   * four siege towers and none.** A boarding ramp has to land on a wall-walk; a bay whose
-   * stage is `footing` or `gap` is a foundation trench with nothing above it, and a machine
-   * aimed at one drives to the line and stops. It never mattered while the bays either side
-   * of a gate were finished curtain. Since the survey circuit landed, the four bays around
-   * the Porta Flaminia are `footing, GATE, footing, gap, footing` — so all four towers were
-   * being sent at holes. Measured over twelve seeded runs of the assault at `5338249`:
-   * **towers docked 0 of 4 in 12 of 12 runs, 288 men and four machines that never reached
-   * the wall.** Same four towers, same crews, same echelon; only the aim changes.
-   */
-  const towerBays = fanOut(n(stormComp, storm.tower), 1, holdable);
-  for (const [i, k] of towerBays.entries()) {
+  // Towers against the curtain nearest the gate, where the parapet fight will be worth
+  // watching. Echeloned back 9 m apiece so four machines converging on four adjacent bays do
+  // not arrive in one rank and foul each other.
+  for (const [i, k] of fanOut(n(stormComp, storm.tower), 1, real).entries()) {
     const m = mid(k);
     const [sx, sz] = out(k, 74 + i * 9);
     const id = battle.spawnUnit(storm.tower, sx, sz - m.nz * 12, Math.atan2(-m.nx, -m.nz), 'line');
@@ -1101,20 +1088,14 @@ function deployAssault(
     push(storming, id, siegeNameFor(storm.tower, i));
   }
 
-  /*
-   * Ladders against the stretch beyond the bays the towers are taking. At Rome that is the
-   * curtain with no parapet raised yet — the obvious place to go over, and obvious from the
-   * ground, which is the point of building the wall unfinished in the first place.
-   *
-   * The towers' own bays are excluded by *name* rather than by starting three bays out from
-   * the gate. `ladderStart = 3` was the right guess while the towers took offsets +-1 and
-   * +-2 by construction; now that they skip anything with no walk it is arithmetic about a
-   * layout that no longer happens, and it put both machine types on the same four bays.
-   */
-  const ladderBays = fanOut(
-    n(stormComp, storm.ladder), 1, (k2) => holdable(k2) && !towerBays.includes(k2),
-  );
-  for (const [i, k] of ladderBays.entries()) {
+  // Ladders against the stretch beyond the bays the towers are taking. At Rome that is the
+  // curtain with no parapet raised yet — the obvious place to go over, and obvious from the
+  // ground, which is the point of building the wall unfinished in the first place.
+  // Beyond bay +-2 while there are towers, because those bays are the towers' — but a player
+  // who fields no towers at all should get their ladders against the gate bays rather than
+  // sending every party to the far end of the circuit for no reason.
+  const ladderStart = n(stormComp, storm.tower) === 0 ? 1 : 3;
+  for (const [i, k] of fanOut(n(stormComp, storm.ladder), ladderStart, holdable).entries()) {
     const m = mid(k);
     const [sx, sz] = out(k, 26);
     const id = battle.spawnUnit(storm.ladder, sx, sz, Math.atan2(-m.nx, -m.nz), 'loose');
@@ -1168,29 +1149,11 @@ function deployAssault(
     }
   }
 
-  /**
-   * The host, waiting its turn in the open. An assault is mostly men standing about
-   * watching other men die on a ladder, and leaving them out makes the field look empty.
-   *
-   * **Behind the storm's own frontage, not behind the gate.** It was centred on the gate bay
-   * from the day the assault was written, which was right while the machines stood on the
-   * bays either side of it. They no longer do: on Rome's surveyed circuit the four bays round
-   * the Porta Flaminia are a building site with no walk, so the escalade is 200-460 m along
-   * the curtain and the host was deployed with its nearest ladder **300 m away**. Measured
-   * with the storm order wired and the host still on the gate: six warbands enrolled by
-   * t+20, `onWall` **0 for all six at t+120**, and the battle decided at t+105 by a cavalry
-   * squadron that had ridden through a `footing` bay — 1,080 men still walking to a fight
-   * that was over. The frontage is the gate at one end and the outermost machine at the
-   * other, so the host stands behind its midpoint and still reaches both.
-   */
+  // The host, waiting its turn in the open. An assault is mostly men standing about
+  // watching other men die on a ladder, and leaving them out makes the field look empty.
   {
-    const frontage = [0, ...towerBays, ...ladderBays];
-    let lo = frontage[0];
-    let hi = frontage[0];
-    for (const k of frontage) { if (k < lo) lo = k; if (k > hi) hi = k; }
-    const hub = Math.round((lo + hi) / 2);
-    const m = mid(hub);
-    const [bx, bz] = out(hub, 132);
+    const m = mid(0);
+    const [bx, bz] = out(0, 132);
     let i = 0;
     for (const type of storm.host) {
       for (const along of centred(n(stormComp, type), 62)) {

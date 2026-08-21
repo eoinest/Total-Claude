@@ -522,11 +522,14 @@ export class BattleFlowSystem implements Subsystem {
    * time it was the whole footprint of the escalade rather than one bay either side of it. A
    * shipped storm plants four banks of ladders on four adjacent bays and spills men onto the
    * two beyond them, so the block is five or six runs and about a hundred and fifty
-   * defenders. Measured over twelve seeded runs of the Aurelian Wall with the host storming:
-   * **`stormHolding` was 0 in eleven of twelve and touched 24 in none of them**, while
-   * `stormOnWall` peaked at 207-250 and the garrison on the walkway was driven from 810 to
-   * 515-693. Two hundred and fifty men on the parapet and the number the win is read off
-   * never leaves zero: that is an instrument disagreeing with the battle in front of it.
+   * defenders. Measured over twelve seeded runs of the Aurelian Wall with the host storming,
+   * both rules on the same seeds: the block form reported **`stormHolding` 0 in 12 of 12 and
+   * never within an order of magnitude of the 24 it wants**, while `stormOnWall` peaked at
+   * 115-164 and the garrison on the walkway was driven from 810 down to 661-778. Off the
+   * shipped plan, with the escalade aimed at a stretch it could actually take, the block form
+   * stayed at 0 through peaks of 237 men on the parapet and the per-run form read 220. Two
+   * hundred men on the parapet and the number the win is read off never leaving zero is an
+   * instrument disagreeing with the battle in front of it.
    *
    * The same sentence that killed the shoulder decides this: **a run is its own margin.** It
    * is 38 m, a lodgement of two dozen men occupies about 17 m of it, and to count at all it
@@ -571,11 +574,12 @@ export class BattleFlowSystem implements Subsystem {
    * header is "a battle ends when one side stops being an army".
    *
    * It matters because a routed man on a parapet has nowhere to run to. Measured at the end
-   * of twelve seeded storms of the Aurelian Wall: **four to six of Rome's twelve garrison
-   * units had broken and were still standing on 105 to 120 stations** — three bays' worth of
-   * curtain, denied to the storm for the rest of the battle by men who had stopped fighting.
-   * Counting them is the annihilation demand for the third time, at the smallest scale yet:
-   * one terrified man holds 38 m for ever.
+   * of seeded storms of the Aurelian Wall: **three to six of Rome's garrison units had broken
+   * and were still standing on 6 to 170 stations** — up to five bays' worth of curtain, denied
+   * to the storm for the rest of the battle by men who had stopped fighting. Counting them is
+   * the annihilation demand for the third time, at the smallest scale yet: one terrified man
+   * holds 38 m for ever. On the arm where condition A becomes reachable at all, excluding them
+   * is what takes `stormHolding` from 0 to 66-220 and fires the condition.
    */
   private censusWall(w: WallLine): WallCensus {
     const b = this.battle;

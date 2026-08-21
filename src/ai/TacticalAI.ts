@@ -864,10 +864,9 @@ const Parapet: Behaviour = {
  *   2. a unit inside the curtain is a garrison or a reserve, not a storming party — the
  *      besieger's route is the ramp and the ladder, and `interceptOrders` reads a wall order
  *      from the city side as "walk up your own stairs";
- *   3. spread across the train — the bank with the most room first, nearest to break the tie
- *      — because six warbands all picking the nearest machine is four refusals and one
- *      queue eighty metres deep;
- *   4. a road before a promise: a planted ladder or a docked tower before one still rolling.
+ *   3. a road before a promise: a planted ladder or a docked tower before one still rolling;
+ *   4. then the nearest bank that still has room, a full one being a refusal — see
+ *      `decideStorm` for the arm that spread instead and what separated the two.
  *
  * `escaladeOfferAt` gates every bid, so this cannot issue an order the simulation drops in
  * silence — the failure the same predicate was built to stop the *cursor* committing.
@@ -1334,20 +1333,25 @@ export class TacticalAISystem implements Subsystem {
    *
    * The choice is **a road before a promise, then the nearest bank with room**, and `free` is
    * a gate rather than a preference: any room is as good as an empty machine. So the host
-   * fills the near banks before it walks to the far ones, which is to say it masses.
+   * fills the near banks before it walks to the far ones, which is to say it masses. Dexippus'
+   * escalade is five men and then five hundred, at one place (`ROME.md` §8.5).
    *
-   * That is a decision and the alternative was built and measured. Preferring the *emptiest*
-   * bank and dealing ties round-robin by unit id spreads six warbands evenly over four banks;
-   * it looks tidier, and `MAX_BOARDING_UNITS` at 4 means four banks is sixteen slots against
-   * six claimants, so nothing is refused either way. Twelve seeds each, same rig, the numbers
-   * are in the session note. A bank's throughput is its rails and not its queue, so the
-   * spread buys nothing in men per second — it only decides *where* they land, and a storm is
-   * decided by whether a run gets cleared. Dexippus' escalade is five men and then five
-   * hundred, at **one** place (`ROME.md` §8.5).
+   * **The alternative was built and could not be separated, and that is worth writing down so
+   * nobody re-runs it expecting an answer.** Preferring the *emptiest* bank spreads six
+   * warbands evenly over four; it looks tidier, and `MAX_BOARDING_UNITS` at 4 means four banks
+   * hold sixteen units against six claimants, so nothing is refused either way. Twelve seeds
+   * each on the shipped storm plan: the verdict, its time and all four objective numbers are
+   * **identical arm to arm on every seed** — the two rules put the same men over the same
+   * rails and only ladder crossings move, by 1-5 %, which is inside this rig's own
+   * reproducibility. A bank's throughput is its rails and not its queue, so the spread buys
+   * nothing in men per second; it only decides where they land, and on the shipped garrison
+   * nothing lands hard enough anywhere for that to matter.
    *
-   * What would change this: `MAX_BOARDING_UNITS` large enough that "nearest with room" stops
-   * distributing at all and the whole host queues behind one bank's rails, or a garrison thin
-   * enough that a single warband clears a bay on its own and spreading takes four bays at once.
+   * What would separate them: a storm that can actually clear a bay. In an off-plan arm where
+   * the escalade was aimed two bays further along the curtain — onto the three wall-slinger
+   * units instead of the five of ballistarii — the spread arm carried condition A in 5 of 12
+   * seeds against the massed arm's 3, with peak `stormHolding` 220 against 136. That is the
+   * arm to re-run if the storm plan or the garrison ever moves (`ROME.md` §15 task 14).
    */
   decideStorm(c: Ctx): boolean {
     const brain = c.brain;
