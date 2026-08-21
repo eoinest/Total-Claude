@@ -34,6 +34,15 @@ draft would have gone wrong:
   Juthungi were destroyed. It is also the *specific* counterfactual Aurelian names as his
   reason for building it, and it nearly happened eleven years earlier — §1.
 
+**And one live defect in the shipped tree fell out of the research rather than being looked
+for.** `Siege.buildLinks` measures the height difference between the two runs it is joining and
+then writes `void step;`, classifying on horizontal gap alone — so **22 of Rome's 41
+walk-to-walk crossings bridge more than the 0.62 m that split the run in the first place, 11
+bridge more than a storey, and 3 bridge more than the whole curtain is tall.** The worst walks
+a garrison up **7.70 metres over a 5.03 metre gap**, as though it were level ground. §3.5 has
+the measurement; it is recorded rather than fixed, in the same disposition `SIEGE.md` §2.8
+takes with the `footing` holes.
+
 **Read `docs/CARTHAGE.md` first if you have not.** It is the exemplar and this document reuses
 its idioms on purpose. §14 lists, plainly, the places where Carthage's approach cost this
 project something and Rome is built not to repeat it.
@@ -499,17 +508,56 @@ the wall's footing sits and it must be re-derived from the new profile in the sa
 heightfield grades the bench with, or half the circuit stands off its footing — the exact
 fault `cityPlan.ts` records for Carthage's three competing wall lines.
 
-**And third, which is a live question rather than a task.** `recut` severs a run on *height*
-(`dy > 0.62`) but `buildLinks` rejoins two runs on *horizontal* gap alone — at most
-`LINK_MAX_GAP = 14 m`, classified `TowerPass` past `STATION_PITCH × 3` and `Step` below it.
-**Nothing in the classifier looks at the height difference it is bridging.** Rome today carries
-a 28.39 m bay-to-bay step and 41 `TowerPass` links across 45 runs **[MEAS]**, so either that
-step is one of the three unbridged boundaries or **there is a crossing on this circuit that
-walks a garrison up twenty-eight metres of air.** Which of the two it is has not been measured
-and this document does not claim to know. **§15 task 3 measures it**: print, for every link,
-the height difference between the two stations it joins, and assert none exceeds a step a man
-can climb. On the redesigned relief the worst case is the Muro Torto's ~5 m per bay, which is
-well inside `LINK_MAX_GAP` horizontally and nowhere near climbable vertically.
+**And third: the wall's crossings bridge heights nobody checks, and three of them bridge more
+than the wall is tall.**
+
+`recut` severs a run on *height* — `dy > 0.62` — and `buildLinks` puts the two halves back
+together on *horizontal gap alone*. It is not an oversight of omission; the height is measured
+and then explicitly discarded, three lines apart (`src/sim/Siege.ts:1600-1607`) **[SRC]**:
+
+```ts
+const gap  = Math.hypot(this.sx[b] - this.sx[a], this.sz[b] - this.sz[a]);
+if (gap > LINK_MAX_GAP) continue;
+const step = Math.abs(this.sy[b] - this.sy[a]);
+// A tower is a long gap in plan; a construction step is a short one with a jump in
+// height. Both are crossable and they are drawn differently, so they are named
+// differently, but the path is built the same way.
+const kind = gap > STATION_PITCH * 3 ? LinkKind.TowerPass : LinkKind.Step;
+void step;
+```
+
+**The comment describes a classifier that uses `step`. The code below it voids `step` and
+classifies on `gap`.** And because a link is a `Crossing` — an authored polyline walked at
+constant arc-length speed, which is precisely what makes a man on it unfallable — the height
+is not a difficulty. It is a levitation.
+
+**Measured at `3595b48`** by `tools/scratch/probe-linkstep.mjs`, reading every link off the
+live sim on the Rome assault at ultra:
+
+| | |
+|---|---|
+| walk-to-walk crossings | **41** across 45 runs |
+| bridging more than **0.62 m** — the threshold that split the run | **22 of 41** |
+| more than 1.2 m (`STAIR_STEP_OVER`, mid-thigh) | **21** |
+| more than 3.0 m (a storey) | **11** |
+| **more than 6.0 m — the full height of the curtain** | **3** |
+| worst | **7.70 m over a 5.03 m gap**, runs 12→13 at x −134.6, `ay` 49.50 → `by` 41.80 |
+| next two | 6.60 m at x −64.0 and 6.60 m at x +148.9 |
+| published stairs, for scale | 9, rising **7.10–11.38 m** — *the worst tower pass is as tall as a staircase* |
+
+So the 28.39 m bay-to-bay step is **not** bridged; it is one of the three unbridged boundaries,
+and the run machinery is doing its job there. But on twenty-two other boundaries a garrison
+ordered along the walk **walks up or down a step of between 0.6 and 7.7 metres as though it
+were level ground**, inside a tower, in about a second.
+
+**This is a live defect in the shipped tree, not a consequence of the redesign, and it is
+recorded here rather than fixed** — the same disposition `SIEGE.md` §2.8 takes with the
+`footing` holes. The redesign makes it *more* pressing, because a circuit that climbs 38 m
+across 36 bays has a step at almost every boundary (1.06 m mean, ~5 m worst on the Muro
+Torto). **§15 task 3 asserts on it.** The fix is one line — classify and cap on `step`, and
+either refuse the link or give it a real flight — and the constant is already in the file:
+`STAIR_STEP_OVER = 1.2`, *"mid-thigh to chest: below it the stone is something to step onto,
+above it something to walk round."*
 
 ### 3.6 Ground conditions
 
@@ -2595,13 +2643,12 @@ gate's clearance inside its bay, the count of bays footed below `WATER_LEVEL`, a
 lane against `MIN_LANE`. `wall.ts` has no build-time self-check of any kind today and
 `carthageWall.ts` has three.
 
-*And one measurement that belongs here because nobody has taken it* (§3.5): **print the height
-difference across every link `buildLinks` creates.** The classifier bridges on horizontal gap
-alone and never looks at `dy`, while `recut` severs on `dy` alone — so the two disagree by
-construction, and Rome carries a 28.39 m bay-to-bay step today. **Assert that no `TowerPass` or
-`Step` link joins two stations more than 1.2 m apart in height.** If the shipped circuit fails
-this at `3595b48`, that is a defect in the tree and not in the redesign, and it should be
-written up before it is fixed.
+*And assert on the link heights* (§3.5). `tools/scratch/probe-linkstep.mjs` measures them:
+at `3595b48`, **22 of Rome's 41 walk-to-walk crossings bridge more than the 0.62 m that split
+the run, 11 bridge more than a storey, and 3 bridge more than the curtain is tall** — the
+worst 7.70 m over a 5.03 m gap. **Assert that no `TowerPass` or `Step` joins two stations more
+than `STAIR_STEP_OVER = 1.2 m` apart in height.** The shipped circuit fails this today; it is a
+defect in the tree, not in the redesign, and the fix is to stop voiding `step`.
 
 **4. The Muro Torto.** §4.5. Seven bays, outward batter of 6°–7°, ~15 m, built **against
 earth** so the city side is hillside: garrisonable, **no tower stairs and none needed**, a
