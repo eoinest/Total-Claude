@@ -12,6 +12,31 @@
  * two armies facing each other across the middle, and the battle's conditions underneath.
  * What it does not copy is the funds budget, which exists to price units against a campaign
  * economy that does not exist here.
+ *
+ * ---------------------------------------------------------------------------
+ * Two steps, not one: the front door and the setup screen
+ * ---------------------------------------------------------------------------
+ *
+ * This screen used to *be* the main menu, and it opened straight onto the army setup. It is
+ * now the second of two steps. The first — `menu-home`, the front door — offers the three
+ * places a visitor can go: the battle, the technical documentation, and the model viewer.
+ * The last two were both already built, both already served, and both reachable only by
+ * someone who knew the URL to type.
+ *
+ * Both steps live in one `.menu` root and one `MainMenu` instance, and the setup DOM is
+ * built once at `show()` rather than on each visit. That is deliberate and it is the same
+ * hazard `buildArmies` documents at length: a screen rebuilt on navigation leaves detached
+ * rows carrying live click handlers, which is how a menu ends up silently editing an army
+ * the player is no longer looking at. Nothing here rebuilds on Back — the step is a class on
+ * the root, `this.cfg` is untouched, and returning to the setup finds the army exactly as it
+ * was left, down to the seed.
+ *
+ * **Battle is the only destination that stays in this tab.** Everything else — the docs, the
+ * viewer, the trailer, the changelog — opens in a new one. The rule is uniform so that it can
+ * be stated in one sentence, and it exists because a player who has spent two minutes
+ * building an order of battle must not be able to lose it to one mis-aimed click. The
+ * in-progress config is held in memory and is only ever written to storage by `commit`, so
+ * a navigation away really would take the army with it.
  */
 
 import type { QualityTier } from '../core/Engine';
@@ -45,6 +70,119 @@ const SIDE_LABEL: Record<number, string> = {
   [Faction.Rome]: 'ROME',
   [Faction.Germanic]: 'JUTHUNGI',
   [Faction.Carthage]: 'QART-HADASHT',
+};
+
+/** Which of the two screens the menu is showing. */
+export type MenuStep = 'home' | 'setup';
+
+/** The same mark as the loading screen, so every screen of this game reads as one game. */
+const EAGLE = `<svg viewBox="0 0 64 64" class="menu-ic" aria-hidden="true">
+  <path fill="currentColor" opacity=".85"
+    d="M32 4l4 8 10-4-3 9 11 1-8 6 8 6-11 1 3 9-10-4-4 8-4-8-10 4 3-9-11-1 8-6-8-6 11-1-3-9 10 4z" />
+</svg>`;
+
+const REPO = 'https://github.com/eoinest/Total-Claude';
+/** The published documentation site. Its own build, its own deployment — see `docs/site`. */
+const DOCS_URL = 'https://total-claude-docs.vercel.app';
+/**
+ * Absolute, not relative. `viewer.html` is the second Rollup entry (see `vite.config.ts`)
+ * and `base` is `/`, so it is served from the domain root on Vercel and from the dev
+ * server's root locally. A relative href would resolve correctly today and silently stop
+ * doing so the first time this page is served from anywhere but `/`.
+ */
+const VIEWER_URL = '/viewer.html';
+
+interface Destination {
+  id: string;
+  label: string;
+  sub: string;
+  /** Inline SVG body from `ICON`. */
+  ic: string;
+  /** Absent means the destination is inside this app; present means a new tab. */
+  href?: string;
+}
+
+/**
+ * The front door, in the order it is offered.
+ *
+ * Three, and the owner named all three: *"The main menu should have a battle button but also
+ * allow you to go to the docs or model viewer."* Battle first and visually loudest, because
+ * it is the reason the page is open and every other destination is a detour from it.
+ *
+ * The two external ones are described by what is *in* them rather than by what they are
+ * called. "Docs" is a word that tells a visitor nothing about whether it is worth a click;
+ * "four volumes — simulation, rendering, siege, tooling" tells them exactly.
+ */
+const DESTINATIONS: readonly Destination[] = [
+  {
+    id: 'battle',
+    label: 'Battle',
+    ic: ICON.swords,
+    sub: 'Choose the battlefield and the engagement, draw up both orders of battle, '
+      + 'set the hour &mdash; then fight it.',
+  },
+  {
+    id: 'docs',
+    label: 'Technical documentation',
+    ic: ICON.volumes,
+    href: DOCS_URL,
+    sub: 'Four volumes &mdash; simulation, rendering, siege and tooling &mdash; with the '
+      + 'architecture, Carthage, the release procedure and the visual rubric.',
+  },
+  {
+    id: 'viewer',
+    label: 'Model viewer',
+    ic: ICON.turntable,
+    href: VIEWER_URL,
+    sub: 'Every unit in the roster turned in the light, one mesh at a time, with its '
+      + 'animation and its levels of detail.',
+  },
+];
+
+/**
+ * The second rank: things worth one line and not a plaque.
+ *
+ * **The trailer is here rather than beside Battle, and that is a judgement about hosting.**
+ * The four cuts live as GitHub release assets on `r6`, and a release asset is a download and
+ * not a stream: the good one — 1080p with sound — is 130 MB, and a button on the front door
+ * reading TRAILER promises a play button it cannot deliver. Linked to the release page, with
+ * the sizes stated, the click is at least an informed one. If the trailer is ever hosted
+ * somewhere that streams it, it has earned a plaque; today it has not.
+ *
+ * The changelog is here for the returning player, who has exactly one question the front door
+ * can answer: what changed. It is one line and it is honest about being a Markdown file.
+ */
+const ASIDES: readonly { id: string; label: string; sub: string; href: string }[] = [
+  {
+    id: 'trailer',
+    label: 'Trailer',
+    href: `${REPO}/releases/tag/r6`,
+    sub: 'Four cuts on the r6 release &mdash; 1080p with sound at 130 MB, 720p at 4.7 MB',
+  },
+  {
+    id: 'changelog',
+    label: 'Changelog',
+    href: `${REPO}/blob/main/CHANGELOG.md`,
+    sub: 'Every release that reached production, newest first',
+  },
+];
+
+/**
+ * Whether a URL has already answered the front door's question.
+ *
+ * `?menu=battle` is the explicit form and the one the probes use: a sibling of the existing
+ * `?menu=0`, which skips the menu altogether and which **nothing here changes**. The rest is
+ * inference, and it covers the case the share button creates. `Copy link to this battle`
+ * writes `?battle=<token>`, and a link that names an order of battle, a map, an engagement or
+ * an enemy has already said where it wants to go; answering it with a screen that asks
+ * "battle, docs or viewer?" is a worse answer than the question deserved.
+ */
+const OPENS_ON_SETUP = ['battle', 'map', 'scenario', 'enemy'] as const;
+
+const startStep = (params?: URLSearchParams): MenuStep => {
+  if (!params) return 'home';
+  if (params.get('menu') === 'battle') return 'setup';
+  return OPENS_ON_SETUP.some((k) => params.has(k)) ? 'setup' : 'home';
 };
 
 /**
@@ -234,15 +372,25 @@ export class MainMenu {
   private stepBtns: Array<{ el: HTMLButtonElement; f: Faction; id: string; d: number }> = [];
   /** Set when picking a map without a wall has just taken the assault away from the player. */
   private droppedAssault = false;
+  /**
+   * Which of the two screens is up. Named `screen` rather than `step` because `step` is
+   * already this class's unit-count stepper, and a field that shadows a method is the kind
+   * of collision the compiler catches once and a reader trips over forever.
+   */
+  private screen: MenuStep;
+  /** The front door's plaques, in DOM order, for the arrow-key roving focus. */
+  private destEls: HTMLElement[] = [];
 
-  constructor(initial: BattleConfig) {
+  constructor(initial: BattleConfig, params?: URLSearchParams) {
     this.cfg = sanitiseConfig(initial);
+    this.screen = startStep(params);
   }
 
   /** Resolves once the player commits. */
   show(host: HTMLElement): Promise<MenuResult> {
     this.root = el('div', 'menu', host);
     this.build();
+    this.applyStep();
     this.refresh();
     // Two frames, so the browser has laid the panel out before the transition starts and
         // the fade actually runs instead of being skipped as an initial style.
@@ -252,18 +400,66 @@ export class MainMenu {
     });
   }
 
+  /**
+   * The front door.
+   *
+   * One plaque per destination, each with a name and a sentence, laid out in the same
+   * gradient-and-gold chrome the option buttons on the setup screen use — `.dest` is
+   * `.menu-opts button` with a wider box and a sentence in it, deliberately, because the
+   * two screens are one product and a front door in different clothes would say otherwise.
+   *
+   * A `<button>` for Battle and an `<a>` for everything else, which is not a styling
+   * choice: the anchors are real links, so middle-click, cmd-click, "copy link address"
+   * and a screen reader's list of links all work on them, and none of that is true of a
+   * button with a click handler that calls `location.assign`.
+   */
+  private homeMarkup(): string {
+    const dest = (d: Destination): string => {
+      const body = `${icon(d.ic, 'dest-ic')}
+        <span class="dest-txt"><b>${d.label}</b><i>${d.sub}</i></span>
+        <span class="dest-go" aria-hidden="true">${d.href ? '&#8599;' : '&rsaquo;'}</span>`;
+      return d.href
+        ? `<a class="dest dest-${d.id}" data-dest="${d.id}" href="${d.href}"
+             target="_blank" rel="noopener">${body}</a>`
+        : `<button type="button" class="dest dest-${d.id}" data-dest="${d.id}">${body}</button>`;
+    };
+    return `<div class="menu-sheet menu-home">
+      <header class="home-head">
+        <div class="home-eagle">${EAGLE}</div>
+        <div>
+          <h1>TOTAL CLAUDE</h1>
+          <h2>The Siege of Rome &middot; 271 AD</h2>
+        </div>
+      </header>
+      <nav class="home-dest" aria-label="Main menu">
+        ${DESTINATIONS.map(dest).join('')}
+      </nav>
+      <footer class="home-foot">
+        ${ASIDES.map((a) => `
+          <a class="aside" data-aside="${a.id}" href="${a.href}" target="_blank" rel="noopener">
+            <b>${a.label}</b><i>${a.sub}</i>
+          </a>`).join('')}
+      </footer>
+    </div>`;
+  }
+
   private build(): void {
     html(
       this.root,
       `<div class="menu-bg"></div>
-       <div class="menu-sheet">
+       ${this.homeMarkup()}
+       <div class="menu-sheet menu-setup" tabindex="-1">
          <header class="menu-head">
+           <!--
+             Back to the front door. In the header rather than the footer because it is a
+             navigation and not an action: the footer is where BEGIN BATTLE lives, and a
+             control that abandons the screen does not belong beside the one that commits it.
+           -->
+           <button type="button" class="menu-back" title="Back to the main menu (Esc)">
+             <span aria-hidden="true">&lsaquo;</span> MENU
+           </button>
            <div class="menu-eagle">
-             <!-- The same mark as the loading screen, so the two screens read as one game. -->
-             <svg viewBox="0 0 64 64" class="menu-ic" aria-hidden="true">
-               <path fill="currentColor" opacity=".85"
-                 d="M32 4l4 8 10-4-3 9 11 1-8 6 8 6-11 1 3 9-10-4-4 8-4-8-10 4 3-9-11-1 8-6-8-6 11-1-3-9 10 4z" />
-             </svg>
+             ${EAGLE}
            </div>
            <div>
              <h1>TOTAL CLAUDE</h1>
@@ -481,10 +677,101 @@ export class MainMenu {
     });
     this.q('.share').addEventListener('click', () => this.share());
     this.q('.begin').addEventListener('click', () => this.commit());
+    this.q('.menu-back').addEventListener('click', () => this.toHome());
+
+    // Battle is the only destination handled in script. The other two are anchors and the
+    // browser already knows what to do with them.
+    this.q('[data-dest="battle"]').addEventListener('click', () => this.toSetup());
+
+    /*
+     * Roving arrow keys over the front door, on top of the Tab order the anchors and the
+     * button already have for free.
+     *
+     * This game is played with a mouse in one hand and the keyboard under the other, and a
+     * three-item vertical list is the one shape where Up and Down are what a hand reaches
+     * for. `preventDefault` because the alternative is the sheet scrolling under the
+     * selection, which on a short viewport moves the thing the player is aiming at.
+     */
+    this.destEls = this.qsa('.home-dest .dest');
+    this.q('.home-dest').addEventListener('keydown', (e) => {
+      const ke = e as KeyboardEvent;
+      const d = ke.key === 'ArrowDown' ? 1 : ke.key === 'ArrowUp' ? -1 : 0;
+      if (d === 0 || this.destEls.length === 0) return;
+      ke.preventDefault();
+      const i = this.destEls.indexOf(document.activeElement as HTMLElement);
+      this.destEls[(Math.max(i, 0) + d + this.destEls.length) % this.destEls.length].focus();
+    });
 
     this.root.addEventListener('keydown', (e) => {
-      if ((e as KeyboardEvent).key === 'Enter') this.commit();
+      const ke = e as KeyboardEvent;
+      if (ke.key === 'Escape') {
+        // Back out of the setup, keeping the army. Nothing to escape from on the front door.
+        if (this.screen === 'setup') this.toHome();
+        return;
+      }
+      if (ke.key !== 'Enter') return;
+      /*
+       * Enter is each screen's shortcut for its own obvious action — BEGIN BATTLE on the
+       * setup, Battle on the front door — but only when no control owns the keystroke.
+       *
+       * A focused `<button>` or `<a>` turns Enter into a click, and this listener runs
+       * *before* that default action. Without the guard, Enter with the focus ring on
+       * "Historical order of battle" started the battle instead of restoring the order of
+       * battle, and Enter on the back arrow started it instead of going back. That was
+       * already true of the ghost buttons before this screen had a back arrow; it is fixed
+       * here rather than left, because a second control with the same fault is a pattern.
+       *
+       * Inputs are deliberately not in the guard: Enter in the seed box has always meant
+       * "done, fight it", there is no form for the browser to submit, and a number field
+       * that swallowed Enter would be a regression.
+       */
+      const t = ke.target as HTMLElement | null;
+      if (t && t.closest('button, a')) return;
+      if (this.screen === 'setup') this.commit();
+      else this.toSetup();
     });
+  }
+
+  /** Paint the current step onto the root. CSS hides the sheet that is not it. */
+  private applyStep(): void {
+    setClass(this.root, 'at-home', this.screen === 'home');
+    setClass(this.root, 'at-setup', this.screen === 'setup');
+  }
+
+  /**
+   * Into the setup flow, which from here on is exactly the screen that shipped.
+   *
+   * Focus lands on the sheet rather than on a control inside it. Putting it on BEGIN BATTLE
+   * would mean the Enter that opened this screen was one keystroke away from starting the
+   * battle without the player having chosen anything; putting it on the back arrow would
+   * point the keyboard at the exit. The sheet is `tabindex="-1"` so it can take focus
+   * without joining the Tab order, and Tab from there walks the screen in reading order.
+   */
+  private toSetup(): void {
+    if (this.screen === 'setup') return;
+    this.screen = 'setup';
+    this.applyStep();
+    this.q('.menu-setup').focus();
+  }
+
+  /**
+   * Back to the front door, with the army intact.
+   *
+   * Nothing is rebuilt and nothing is written: `this.cfg` is the only state the setup screen
+   * has, it is not touched here, and the DOM it drives is merely hidden. Come back and the
+   * order of battle, the map, the hour and the seed are all as they were.
+   *
+   * It is deliberately *not* written to storage on the way out. `storeConfig` runs in
+   * `commit` and only there, so what a later visit restores is the last battle actually
+   * fought rather than the last one idly poked at — and `resolveConfig` reads that same
+   * store on every `?menu=0` load, so widening who writes to it would quietly change which
+   * battle a probe measures.
+   */
+  private toHome(): void {
+    if (this.screen === 'home') return;
+    this.screen = 'home';
+    this.applyStep();
+    (this.q('[data-dest="battle"]') as HTMLElement).focus();
   }
 
   /**

@@ -62,6 +62,10 @@ const loadText = document.getElementById('load-text') as HTMLElement | null;
  * answer — the same order Total War uses, configure then load then fight, which also means a
  * player who wants a small battle never waits for a big one's assets.
  *
+ * Two screens, not one: it opens on the front door — battle, documentation, model viewer —
+ * and Battle leads into the setup flow this comment describes. `?menu=battle` opens straight
+ * on the setup, which is what the probes that drive it use.
+ *
  * Skipped entirely under `?harness=1` or `?menu=0`. Ultra is the default tier for players as
  * well as the harness: the 16-shot pass measures every graded camera at ultra and the
  * slowest is 61-64 fps, so the tier the game is tuned and judged at is the one it opens on.
@@ -88,7 +92,11 @@ if (!skipMenu) {
   // The loading panel sits at z-index 100, above the menu, so it has to leave the layer
   // rather than merely fade — otherwise the menu is built underneath an opaque sheet.
   if (loading) loading.hidden = true;
-  const chosen = await new MainMenu(config).show(menuHost);
+  // `params` so the menu can tell a visit from a link: `?menu=battle`, or any URL that
+  // already names a battle, opens straight on the setup screen instead of the front door.
+  // See `startStep` in `MainMenu.ts`. `?menu=0` and `?harness=1` are unaffected — they are
+  // handled above and never build a menu at all.
+  const chosen = await new MainMenu(config, params).show(menuHost);
   config = chosen.config;
   if (loading) loading.hidden = false;
 }

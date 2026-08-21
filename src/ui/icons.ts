@@ -146,6 +146,16 @@ export const ICON = {
     `<path d="M6 4.2c3.6-1.6 6.6.8 10 .2l-1.6 6c-3.4.6-6.4-1.8-8.4-.2z" opacity=".9"/>`,
   eye: `<path d="M12 5.4c5 0 9 4.2 10.4 6.6C21 14.4 17 18.6 12 18.6S3 14.4 1.6 12C3 9.6 7 5.4 12 5.4z" ${S}/><circle cx="12" cy="12" r="3" ${S}/>`,
   sun: `<circle cx="12" cy="12" r="4.4" ${S}/><path d="M12 1.6v3M12 19.4v3M1.6 12h3M19.4 12h3M4.6 4.6l2.2 2.2M17.2 17.2l2.2 2.2M19.4 4.6l-2.2 2.2M6.8 17.2l-2.2 2.2" ${S}/>`,
+  // Three volumes on a shelf, the third leaning — the technical documentation. Spines
+  // rather than an open book, because the docs are four volumes and a shelf says so.
+  volumes:
+    `<path d="M3.4 5.4h3.8v14.2H3.4zM8.8 5.4h3.8v14.2H8.8z" ${S}/>` +
+    `<path d="m14.8 6.4 3.7-1 3.1 13.8-3.7 1z" ${S}/>` +
+    `<path d="M3.4 9.2h3.8M8.8 9.2h3.8" ${St} opacity=".72"/>`,
+  // An isometric case seen corner-on, for the model viewer: one object, turned.
+  turntable:
+    `<path d="M12 2.6 20.4 7.4v9.2L12 21.4 3.6 16.6V7.4z" ${S}/>` +
+    `<path d="M3.6 7.4 12 12.2l8.4-4.8M12 12.2v9.2" ${St} opacity=".7"/>`,
 } as const;
 
 // ---------------------------------------------------------------------------
