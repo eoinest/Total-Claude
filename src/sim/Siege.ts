@@ -60,6 +60,23 @@ import {
 /** Lateral spacing of men along a wall-walk. Same as the field spacing: shoulder to shoulder. */
 const STATION_PITCH = 0.86;
 /**
+ * Clear metres a station keeps between itself and the tower at either end of its bay.
+ *
+ * **One constant because there is one rule**, and it is not symmetry for its own sake. A
+ * tower's footprint is a ballista chamber a man cannot stand in, and — the part that was
+ * costing height — it is also where `CitySystem.curtainWalkAt` ramps the drawn walk from one
+ * bay's `walkY` to the next's. Outside `towerHalf` of a tower's centre the walk is flat at
+ * the bay's own `walkY`, which is the single number `buildSpine` levels a whole bay to;
+ * inside it, that number is a description of neither end. So the clip is the *tower's own
+ * half-footprint* at whichever end it stands, plus this margin, and the two ends of a bay
+ * are the same sentence read in opposite directions.
+ *
+ * This much and no more: 0.55 m is a man's shoulder clear of the masonry, and every metre
+ * spent here is standing room a garrison does not get. It was already the west margin's
+ * value and is unchanged; what changed is that the east end now has one at all.
+ */
+const STATION_CLEAR = 0.55;
+/**
  * Front-to-back spacing of the ranks on a walkway, metres.
  *
  * Three ranks in the 1.57 m of clear band that 3.5 m of Aurelianic curtain leaves once the
@@ -381,12 +398,33 @@ const CROSS_PASS = 1.05;
 /**
  * How far apart two consecutive runs' ends may be and still be linked, metres.
  *
- * A run break is one of three things: a tower (the stations stop `towerHalf + 0.55` short
- * of the tower centre on each side, so the gap across a 3.8 m half-footprint is about
- * 8.7 m), a construction step where `walkY` jumps, or a bay that carries no walkway at all.
- * The first two are crossable and the third is a hole in the wall. 14 m separates them:
- * measured, the tower gaps on this circuit run 8.3–9.4 m and the nearest unbuilt-bay gap is
- * 44 m, so the classifier has thirty metres of daylight in it.
+ * A run break is one of three things: a tower, a construction step where `walkY` jumps, or a
+ * bay that carries no walkway at all. The first two are crossable and the third is a hole in
+ * the wall, and this number is what separates them.
+ *
+ * **The gap across a tower is derivable, not sampled**, and that is the only reason 14 is
+ * safe to state. `buildSpine` stops the stations `towerHalf + STATION_CLEAR` short of the
+ * tower's centre **at both ends** — see `STATION_CLEAR`; it used to do so at one end only —
+ * and the last station falls where the pitch leaves it, so
+ *
+ *     gap = 2 * (towerHalf + STATION_CLEAR) + r,   r in [0, STATION_PITCH)
+ *
+ * Rome's towerHalf is 3.8 m: a ceiling of 9.56 m, measured 8.71–9.52 across 41 towers.
+ * Carthage's is 5.5 m: a ceiling of 12.96 m, measured 12.30–12.50 across 31. The first gap
+ * that must **not** be crossed is an unbuilt bay — 47.81 m on Rome, 38.65 m at Carthage's
+ * gate block — so 14 sits 1.04 m above the worst crossing this arithmetic can produce and
+ * 24.65 m below the nearest hole. Both numbers matter and only the second one used to be
+ * quoted; the daylight is not thirty metres, it is one.
+ *
+ * That one metre is a ceiling on the towers, not on the wall: a circuit whose `towerHalf`
+ * exceeds **6.02 m** — `(LINK_MAX_GAP - STATION_PITCH) / 2 - STATION_CLEAR` — would have its
+ * tower passes silently refused as holes, and `wallReport().unbridged` is where that shows.
+ * Neither circuit is near it. Raise this when one is, and not before: what it admits is what
+ * the wall connects, which is a design property and not a tolerance.
+ *
+ * (This comment claimed 8.3–9.4 m for a year while the code produced 4.94–5.68, because it
+ * was written for the two-ended clip that `buildSpine` did not have. The measurement
+ * convicted the code. See the commit that made the two ends agree.)
  */
 const LINK_MAX_GAP = 14;
 /**
@@ -944,9 +982,11 @@ export interface CityView {
    * Absent until the city workstream lands it, and `buildSpine` no-ops without it — the same
    * arrangement as `getWallStairs` and `breachWall`. What it is for: `curtainSpans` cuts the
    * curtain out where the gatehouse stands, but the spine lays a station every
-   * `STATION_PITCH` along every garrisonable bay clipped only by `towerHalf`, so on Rome
-   * **22 of bay 19's 36 stations stand inside the gatehouse footprint with no curtain under
-   * them, 6.574 m below the crown** — and every shot they take is thrown into the block.
+   * `STATION_PITCH` along every garrisonable bay, clipped only by the towers at its two ends,
+   * so before this record existed **22 of bay 19's 36 stations on Rome stood inside the
+   * gatehouse footprint with no curtain under them, 6.574 m below the crown** — and every
+   * shot they took was thrown into the block. The block is not a tower and `towerHalf` does
+   * not describe it: it straddles two bays, so it needs its own footprint and its own clip.
    */
   getGateBlock?(): CityGateBlockView | null;
   /**
@@ -1470,7 +1510,8 @@ export class Siege implements ElevationOwner {
 
     /** The gatehouse, if this city publishes one. Read once: the wall does not move. */
     const gateBlock = this.city.getGateBlock?.() ?? null;
-    for (const bay of bays) {
+    for (let bi = 0; bi < bays.length; bi++) {
+      const bay = bays[bi];
       if (!bay.garrisonable) continue;
       // The doorway through this bay's west tower, as the city cut it. Zero-width where the
       // city publishes none, which puts `linkPath` back on the cityward lip.
@@ -1478,11 +1519,43 @@ export class Siege implements ElevationOwner {
       const pIn = bay.passInner ?? 0;
       const laneMid = (pOut + pIn) * 0.5;
       const laneHalf = Math.max(0, (pOut - pIn) * 0.5);
-      // A tower stands at the bay's west end and its ballista chamber occupies the walk
-      // there, so the standing run starts clear of it. The east end is the next bay's
-      // tower, which that bay's own margin handles.
-      const t0 = bay.towerHalf + 0.55;
-      const t1 = bay.length - 0.55;
+      /**
+       * The two ends of the run, clipped by the tower that stands at each.
+       *
+       * **These used to be different sentences and that was the defect.** The west end was
+       * `towerHalf + 0.55` and the east end was a bare `0.55` off `bay.length`, on the note
+       * that "the east end is the next bay's tower, which that bay's own margin handles" —
+       * which is not what a margin does. A bay's own margin clips *its* stations; it cannot
+       * reach back and clip the previous bay's, and nothing did. So the last four or five
+       * stations of every bay on Rome stood inside the next tower's footprint, at this bay's
+       * `walkY`, while `CitySystem.curtainWalkAt` had already ramped the drawn walk part of
+       * the way to the next bay's. Measured at `66b220b`: 166 of Rome's 1,673 stations inside
+       * a tower box, the worst 3.16 m above the stone `walkableTopAt` reports under it, and
+       * 177 of Carthage's 2,016 at up to 0.80 m.
+       *
+       * A station is a place a man stands. Two things have to be true of it and this is the
+       * one clip that makes both: he is not inside a ballista chamber, and the height he is
+       * levelled to is the height the drawn surface has there. They are the same clip because
+       * the tower footprint is exactly the band the walk ramps across — see `STATION_CLEAR`.
+       *
+       * `towerHalf`, not `hasTower ? towerHalf : 0`: both circuits publish `towerHalf` as 0
+       * wherever `hasTower` is false, and `hasTower` is not on `CityBayView`. If a city ever
+       * publishes the gatehouse's intrusion as a `towerHalf` with no tower under it — the
+       * case `CitySystem.buildObstacles` guards against — this clips a little standing room
+       * it did not have to. That is the safe direction: room lost is room, and room kept
+       * wrongly is a man in the air.
+       *
+       * The chord to the next bay's origin is measured rather than read off `bay.length`, for
+       * the reason `curtainWalkAt` measures it: the bay index is a fixed pitch in x and the
+       * chord of a bowed run is not the pitch. They agree to 0 m on both circuits as built,
+       * and the day one bows they will not.
+       */
+      const next = bays[bi + 1];
+      const toNext = next
+        ? (next.x0 - bay.x0) * bay.dx + (next.z0 - bay.z0) * bay.dz
+        : bay.length;
+      const t0 = bay.towerHalf + STATION_CLEAR;
+      const t1 = toNext - (next ? next.towerHalf : 0) - STATION_CLEAR;
       if (t1 - t0 < STATION_PITCH) continue;
       const count = Math.floor((t1 - t0) / STATION_PITCH);
       for (let k = 0; k <= count; k++) {
@@ -1577,15 +1650,23 @@ export class Siege implements ElevationOwner {
    * a stuck-man factory. Where the stone carries a flight, both directions are real; where
    * it does not, neither is.
    *
-   * `run` is the *plan* distance the crossing actually has, not the tower's footprint. Those
-   * differ on both circuits — `buildSpine` clips a bay's west end by `towerHalf + 0.55` and
-   * its east end by 0.55, so a bay's last stations stand inside the next tower's footprint
-   * (four of them on Rome) and the crossing gets about 5 m of plan where the flight
-   * `wall.ts` draws gets about 8 — but the crossing is what a man is walked along, and
-   * licensing a path with a length the path does not have is the shape of half the defects
-   * in this file's history.
-   * The asymmetry is measured in `probe-linkstep.mjs` and is not fixed here; when it is,
-   * these gaps grow and four of Rome's five refusals become flights with no change to this.
+   * `run` is the *plan* distance the crossing actually has, not the tower's footprint, and
+   * the crossing is what a man is walked along: licensing a path with a length the path does
+   * not have is the shape of half the defects in this file's history.
+   *
+   * **Those two used to differ and no longer do.** `buildSpine` clipped a bay's west end by
+   * `towerHalf + 0.55` and its east end by a bare `0.55`, so a bay's last stations stood
+   * inside the next tower's footprint and the crossing was handed about 5 m of plan where the
+   * flight `wall.ts` draws through the tower has about 9. Every joint on Rome was therefore
+   * being asked to be twice as steep as the stone under it. Clipping both ends by their own
+   * tower (see `STATION_CLEAR`) moved Rome's tower gaps from 4.94–5.68 m to 8.71–9.52 and
+   * **all five** of its refusals became flights — the worst being 7.70 m of rise, refused at
+   * a fictional 5.03 m of run and now a 0.825-pitch flight over the 9.33 m the tower really
+   * gives it. Not one line of this function changed, which is the whole argument for having
+   * put the rake test in one place first: the classifier was right and the geometry it was
+   * being fed was not. Carthage's four refusals are unmoved and are correctly refused —
+   * they are construction steps at bay joints with **no tower**, 1.5 m of rise across
+   * 1.30–1.48 m of plan at pitch 1.01–1.15, and there is no stone there to carry a flight.
    */
   private stepAcross(rise: number, run: number): Joint {
     const dy = Math.abs(rise);
