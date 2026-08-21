@@ -559,7 +559,8 @@ were level ground**, inside a tower, in about a second.
 
 **This is a live defect in the shipped tree, not a consequence of the redesign, and it is
 recorded here rather than fixed** — the same disposition `SIEGE.md` §2.8 takes with the
-`footing` holes. The redesign makes it *more* pressing, because a circuit that climbs 38 m
+`footing` holes. *(Fixed since, at `596e03b`, by `Siege.stepAcross`; see §15 task 3 for what
+the measurement said about the 1.2 m form of the assertion.)* The redesign makes it *more* pressing, because a circuit that climbs 38 m
 across 36 bays has a step at almost every boundary (1.06 m mean, ~5 m worst on the Muro
 Torto). **§15 task 3 asserts on it.** The fix is one line — classify and cap on `step`, and
 either refuse the link or give it a real flight — and the constant is already in the file:
@@ -2656,6 +2657,34 @@ the run, 11 bridge more than a storey, and 3 bridge more than the curtain is tal
 worst 7.70 m over a 5.03 m gap. **Assert that no `TowerPass` or `Step` joins two stations more
 than `STAIR_STEP_OVER = 1.2 m` apart in height.** The shipped circuit fails this today; it is a
 defect in the tree, not in the redesign, and the fix is to stop voiding `step`.
+
+> **Done, and the 1.2 m form of the assertion is not the one that shipped — measurement
+> disagreed with it.** `Siege.stepAcross` is now the single predicate `recut` and `buildLinks`
+> both call, and it tests the *rake* rather than the height: a joint is `Level` under
+> `WALK_STEP_OVER = 0.62 m`, a `Flight` while `dy <= gap * (0.31 / 0.34)` — the tread module
+> `wall.ts` lays the tower stair out from — and `Broken` above that, which leaves the runs cut
+> and makes the order refuse in front of the player. See `docs/tech/SIEGE.md` §2.4a.
+>
+> A bare 1.2 m cap fails in both directions and Carthage is the proof: it refuses Carthage's
+> 2.00 m tower passes, which are 15° ramps across a 7.32 m tower that any man walks, and it has
+> nothing to say about the 1.30 m plan gap that makes a *1.50 m* step 49° and runs 0.91 m inside
+> the masonry. Measured at `596e03b`, 1.2 m refuses 21 of Rome's 41 walk links and 9 of
+> Carthage's 38, leaving 19 of Rome's 45 runs reachable from the ground; the rake test refuses
+> 5 and 4 and leaves 28. Worst rake bridged falls from 56.8° to 41.2° on Rome and 49.2° to
+> 34.4° on Carthage, and nothing steeper than the tread module survives on either.
+>
+> Two things the same probe measured and did **not** fix, both upstream of this task:
+>
+>  - **`buildSpine`'s east margin is asymmetric.** A bay's west end is clipped by
+>    `towerHalf + 0.55` and its east end by 0.55, so the last four stations of every bay stand
+>    inside the next tower's footprint while being levelled to their own bay's `walkY`.
+>    Measured against `CitySystem.walkableTopAt`, Rome's worst station stands **3.16 m** above
+>    the drawn walking surface and Carthage's 0.80 m; and the tower gaps come out at 4.99–5.61 m
+>    against the 8.3–9.4 m `LINK_MAX_GAP`'s own comment claims. Fixing it widens the gaps and
+>    four of Rome's five refusals become flights again, with no change to `stepAcross`.
+>  - **The city publishes no flight west of bay 14 (x −130).** 518 m of curtain over thirteen
+>    bays, 39.4 % of the walk, has no way up from the ground; until this change the whole of it
+>    hung off the single 7.70 m link at x −134.6. That is task 10's, and task 10 closes it.
 
 **4. The Muro Torto.** §4.5. Seven bays, outward batter of 6°–7°, ~15 m, built **against
 earth** so the city side is hillside: garrisonable, **no tower stairs and none needed**, a

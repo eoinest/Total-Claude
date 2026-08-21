@@ -215,10 +215,14 @@ is actually cut (§2.9).
 `recut()` splits the spine wherever consecutive stations are not walkable between:
 
 ```ts
-if (Math.hypot(dx, dz) > STATION_PITCH * 1.9   // 1.63 m — a tower, or a missing bay
-  || dy > 0.62                                 // a construction step
+if (plan > STATION_PITCH * 1.9                        // 1.63 m — a tower, or a missing bay
+  || this.stepAcross(dy, plan) !== Joint.Level        // a construction step
   || this.sDead[i] !== this.sDead[i - 1]) run++;
 ```
+
+`stepAcross` is shared with `buildLinks` and is the subject of §2.4a; `Joint.Level` is
+`dy <= WALK_STEP_OVER = 0.62`, so this test is unchanged in behaviour from the literal it
+replaced.
 
 `walkY` is quantised in 0.55 m construction increments held over *pairs* of bays
 (`src/city/wall.ts`), and over rolling ground two neighbouring bays can differ by far more
@@ -240,8 +244,9 @@ const enum LinkKind { TowerPass = 0, Step = 1, Stair = 2, Breach = 3 }
 ```
 
 - Consecutive runs are joined when the gap between their ends is at most
-  `LINK_MAX_GAP = 14 m`. `gap > STATION_PITCH * 3` classifies it a `TowerPass`, otherwise a
-  `Step`. Beyond 14 m the wall really is broken and no order walks a cohort across it.
+  `LINK_MAX_GAP = 14 m` **and `stepAcross` says there is stone that carries the height**
+  (§2.4a). `gap > STATION_PITCH * 3` classifies it a `TowerPass`, otherwise a `Step`. Beyond
+  14 m the wall really is broken and no order walks a cohort across it.
 - Stairs join the ground to a run, **traversable in both directions**, which is what makes
   "pull the archers back and put infantry up" one mechanism rather than two. One stair per
   run: a second flight onto a run a man can already reach adds a routing choice and no
@@ -275,6 +280,27 @@ heightfield, which is a fixed `FIELD_RES = 2049` lattice, so these are quality-i
 | runs reachable from a stair | 43 of 45 | 40 of 40 |
 | unbridged run boundaries | 3 (at runs 1, 18, 24) | 1 (at run 20) |
 
+And re-measured at `596e03b` across the `stepAcross` change, by
+`tools/scratch/probe-linkstep.mjs`:
+
+| | Rome before | Rome after | Carthage before | Carthage after |
+|---|---|---|---|---|
+| walk-to-walk links | 41 | **36** | 38 | **34** |
+| bridging > 0.62 m | 22 | 17 | 12 | 8 |
+| bridging > 3.0 m | 11 | 6 | 0 | 0 |
+| worst step bridged | **7.70 m** | **4.72 m** | 2.00 m | 2.00 m |
+| worst rake bridged | **56.8°** | **41.2°** | **49.2°** | **34.4°** |
+| steeper than the tread module | 5 | **0** | 4 | **0** |
+| unbridged boundaries | 3 | 8 | 2 | 6 |
+| runs reachable from a stair | 43 of 45 | 28 of 45 | 40 of 40 | 37 of 40 |
+
+Rome's reachability figure is the change's most conspicuous consequence and it is a *report*
+of an existing defect rather than a new one. The city publishes nine flights and the
+westernmost is on bay 14 at x −130: **there is no way onto the Aurelian wall-walk anywhere
+west of that**, 518 m of curtain over thirteen bays. Until this change the whole of it hung off
+one link — the 7.70 m joint at x −134.6, which is the boundary between the stairless west and
+the first flight. §15 task 10 of `ROME.md` puts a stair inside every tower, which closes it.
+
 Two consequences worth naming. On Rome every run is exactly one bay, so every break is a
 tower and `Step` never occurs; on Carthage a run spans more than one bay and the 0.62 m
 height test is what produces the seven `Step` links. And Rome's westernmost two runs carry no
@@ -285,6 +311,53 @@ boot.
 > The `LINK_MAX_GAP` comment states "the tower gaps on this circuit run 8.3–9.4 m". Measured
 > at `6698e19` they run 4.94–5.68 m. The classifier still has ample daylight (the nearest
 > unbridged gap is far past 14 m), but the quoted range is stale.
+
+### 2.4a One question about a joint, asked once
+
+`recut` used to sever on height and `buildLinks` used to rejoin on plan distance. The line
+between them read:
+
+```ts
+const step = Math.abs(this.sy[b] - this.sy[a]);
+// A tower is a long gap in plan; a construction step is a short one with a jump in height.
+const kind = gap > STATION_PITCH * 3 ? LinkKind.TowerPass : LinkKind.Step;
+void step;
+```
+
+The comment describes a classifier that uses the height; the code voided it. So a joint the
+spine had cut *because* of its height was sewn back up without the height being consulted, and
+the seam was walkable at a pace: a link is a `Crossing`, and a `Crossing` cannot be fallen
+off. Measured on Rome at `596e03b` by `tools/scratch/probe-linkstep.mjs`, **22 of 41
+walk-to-walk crossings bridged more than the 0.62 m that split the run, 11 more than a storey
+and 3 more than the curtain is tall** — worst 7.70 m across 5.03 m of plan, 56.8°.
+
+`stepAcross(rise, run)` is now the single predicate, called by both, returning one of three
+answers:
+
+| | test | meaning |
+|---|---|---|
+| `Joint.Level` | `dy <= WALK_STEP_OVER` (0.62 m) | walked without changing gait; not a boundary |
+| `Joint.Flight` | `dy <= run * FLIGHT_PITCH` | a flight, at a rake the tread module can carry |
+| `Joint.Broken` | otherwise | no stone reaches; `recut` cuts and `buildLinks` leaves it cut |
+
+`FLIGHT_PITCH = 0.31 / 0.34` is `STAIR_SLOPE` inverted and is the pair `wall.ts` lays every
+tread of the tower flight out from, so a joint this admits is one the stone can be built for.
+
+**A bare height cap cannot do this job, and the two circuits disagree about it in opposite
+directions.** Carthage joins two walks 2.00 m apart across a 7.32 m tower — a 15.3° ramp — and
+two walks 1.50 m apart across 1.30 m of plan, 49.2°, which `CitySystem.walkableTopAt` reports
+as running **0.91 m inside the masonry**. `STAIR_STEP_OVER = 1.2 m` refuses both; the rake test
+refuses the second and keeps the first. Measured over both circuits, a 1.2 m cap refuses 21 of
+Rome's 41 and 9 of Carthage's 38 and leaves 19 of Rome's 45 runs reachable from the ground; the
+rake test refuses 5 and 4 and leaves 28.
+
+There is no one-way variant. A descent-only link is the honest physical asymmetry and a trap:
+`nextHop`, `runsConnected` and `walkDistance` all walk the run chain in both directions, and a
+cohort that drops onto a stairless run can never leave it.
+
+A third threshold is already in the file and the three are now ordered rather than
+independent: `segmentAt`'s `dy / len > 0.6` is a **sine**, so 36.9°, and it is what puts a leg
+on `CROSS_CLIMB` with the climbing clip. Walk (≤ 0.62 m), climb (> 36.9°), nothing (> 42.4°).
 
 ### 2.5 Stairs come from the city, or are synthesised and say so
 

@@ -1402,6 +1402,34 @@ try {
       `${wall.runs} runs over ${wall.stations} stations; ` +
       `${wall.links.towerPass} tower passes, ${wall.links.step} steps, ${wall.links.stair} stairs; ` +
       `${wall.reachable}/${wall.runs} runs reachable from the ground without leaving the wall`);
+
+    /**
+     * And no link is steeper than a flight the stone can be built for.
+     *
+     * `ROME.md` §15 task 3 asks for this assertion and proposes it as a *height* cap of
+     * `STAIR_STEP_OVER = 1.2 m`. It is written as a rake instead, for the reason
+     * `docs/tech/SIEGE.md` §2.4a gives: Carthage bridges 2.00 m across a 7.32 m tower, which
+     * is a 15 degree ramp and entirely walkable, and 1.50 m across 1.30 m of plan, which is
+     * 49 degrees and runs a man through the masonry. One number cannot tell those apart and
+     * `Siege.stepAcross` does not try to. `FLIGHT_PITCH` is 0.31 / 0.34 — the tread module
+     * `wall.ts` lays the tower stair out from.
+     *
+     * Before `stepAcross` this failed on both circuits: Rome's worst bridged rake was 56.8
+     * degrees over a 7.70 m step and Carthage's 49.2 over 1.50 m.
+     */
+    const FLIGHT_PITCH = 0.31 / 0.34;
+    const steep = wall.linkUse.filter((l) => (l.kind === 'towerPass' || l.kind === 'step')
+      && l.pitch > FLIGHT_PITCH + 1e-6);
+    const deg = (p2) => ((Math.atan(p2) * 180) / Math.PI).toFixed(1);
+    check('no walk-to-walk link is steeper than a flight the stone can carry',
+      steep.length === 0,
+      `worst bridged step ${wall.worstStep.toFixed(2)} m at ${deg(wall.worstPitch)} degrees ` +
+      `(the tread module allows ${deg(FLIGHT_PITCH)}); ${wall.unbridged} unbridged boundaries, ` +
+      `${wall.refusedSteps} of them refused on the step` +
+      (steep.length
+        ? ` — OVER: ${steep.slice(0, 4).map((l) => `${l.runA}→${l.runB} ` +
+          `${Math.abs(l.rise).toFixed(2)} m over ${l.gap.toFixed(2)} m (${deg(l.pitch)}°)`).join(', ')}`
+        : ''));
   }
 
   if (great.ok) {

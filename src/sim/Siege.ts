@@ -389,6 +389,60 @@ const CROSS_PASS = 1.05;
  * 44 m, so the classifier has thirty metres of daylight in it.
  */
 const LINK_MAX_GAP = 14;
+/**
+ * Height a man steps over without changing gait, metres.
+ *
+ * **This is the number `recut` and `buildLinks` were disagreeing about, and it is now one
+ * number in one place.** `recut` severed a run when consecutive stations differed by more
+ * than 0.62 m; `buildLinks` then rejoined the two halves on horizontal gap alone, having
+ * computed the very same height and written `void step;` under a comment describing a
+ * classifier that used it. So the wall was cut on height and sewn back together on
+ * distance, and the joint between the two was a levitation: a link is a `Crossing`, an
+ * authored polyline sampled by arc length, which is exactly what makes a man on it
+ * unfallable — and therefore exactly what let a 7.70 m rise across 5.03 m of plan be a way
+ * through. Measured on Rome at `596e03b` by `tools/scratch/probe-linkstep.mjs`: 22 of 41
+ * walk-to-walk crossings bridged more than this, 11 more than a storey, 3 more than the
+ * curtain is tall, and the worst of them ran 3.16 m above the surface
+ * `CitySystem.walkableTopAt` reports at its own mouth.
+ *
+ * `advanceQueue` was not *quite* walking him up it at strolling pace — `segmentAt` has a
+ * per-leg steepness test and puts anything over 36.9 degrees on `CROSS_CLIMB` with the
+ * climbing clip, so the 57 degree leg was crossed at 0.78 m/s. That is the difference
+ * between a man strolling up a wall and a man climbing one hand over hand with nothing
+ * under his feet, and it is not a defence of either.
+ *
+ * Both files now ask `stepAcross` instead, and it is the same call with the same two
+ * arguments. 0.62 m is a high step but a possible one; keeping the old value is deliberate,
+ * because moving it would change which runs exist as well as which are joined, and only one
+ * of those two is this pass's business.
+ */
+const WALK_STEP_OVER = 0.62;
+/**
+ * Steepest flight a man may be walked up, as rise over plan run.
+ *
+ * 0.31 m of rise on 0.34 m of going, which is not a number invented here: it is
+ * `STAIR_SLOPE` inverted, and it is the pair `wall.ts` lays every tread of the tower flight
+ * out from (`treads = ceil(rise / 0.31)`, `going = min(0.34, ...)`). A crossing steeper than
+ * this cannot be built out of the stairs this project builds stairs from, so there is no
+ * stone under it and it is not a way through.
+ *
+ * **A height alone cannot answer this and the two circuits prove it in opposite
+ * directions.** Carthage joins two walks 2.00 m apart across a 7.32 m tower — a 15 degree
+ * ramp any man walks — and also two walks 1.50 m apart across 1.30 m of plan, which is 49
+ * degrees and which `CitySystem.walkableTopAt` says runs 0.91 m *inside the masonry*. A cap
+ * of `STAIR_STEP_OVER = 1.2 m` refuses both; this refuses the second and keeps the first.
+ * See `stepAcross`.
+ *
+ * **This is the third pitch-shaped threshold in the file and the three are now ordered, on
+ * purpose.** `WALK_STEP_OVER` says when a joint stops being level; `segmentAt`'s
+ * `dy / len > 0.6` — a *sine*, so 36.9 degrees, not the 31 it reads like — says when a leg
+ * stops being walked and becomes `CROSS_CLIMB` with the climbing clip; and this says when
+ * there stops being stone. Walk, climb, nothing, in that order and with daylight between
+ * them, so every flight this admits steeper than 36.9 degrees is already climbed rather than
+ * strolled. No fourth pace was added here, deliberately: a second opinion about how fast a
+ * man goes up a slope is the same class of defect as the one being fixed.
+ */
+const FLIGHT_PITCH = 0.31 / 0.34;
 /** Farthest a click may be from the wall's plan footprint and still mean "get on the wall". */
 const WALL_CLICK_BAND = 1.7;
 /**
@@ -634,6 +688,24 @@ const enum LinkKind {
   Breach = 3,
 }
 
+/**
+ * What the stone does between two places a man can stand.
+ *
+ * Three answers, and they are the whole of the reconciliation between `recut` and
+ * `buildLinks`: one is "keep walking", one is "this is a boundary and there is a flight over
+ * it", one is "this is a boundary and there is nothing over it". `recut` cuts a run wherever
+ * the answer is not `Level`; `buildLinks` bridges wherever it is not `Broken`. Neither owns
+ * the predicate. See `Siege.stepAcross`.
+ */
+const enum Joint {
+  /** A man walks it without changing gait. Not a run boundary at all. */
+  Level = 0,
+  /** A flight: real stone at a rake the tread module can carry, climbed rather than walked. */
+  Flight = 1,
+  /** Neither. No arrangement of treads reaches from one to the other. */
+  Broken = 2,
+}
+
 interface WallLink {
   id: number;
   kind: LinkKind;
@@ -647,6 +719,15 @@ interface WallLink {
   /** Mouth of the link at each end, in world space — where a man must get to. */
   ax: number; az: number; ay: number;
   bx: number; bz: number; by: number;
+  /**
+   * Height the link climbs, a to b, signed. Negative is a descent.
+   *
+   * **This is the number that used to be `void step;`.** It is kept rather than recomputed
+   * because three separate things need it and each of them recomputing `by - ay` is three
+   * chances to take the absolute value in one place and not another: the pace the crossing
+   * is walked at, the report, and the assertion in the probe.
+   */
+  rise: number;
   /** Paths, authored a->b and b->a. Built lazily, because most links are never used. */
   ab: Crossing | null;
   ba: Crossing | null;
@@ -1459,6 +1540,60 @@ export class Siege implements ElevationOwner {
   }
 
   /**
+   * What the stone does between two places a man could stand, given the height and the plan
+   * run between them.
+   *
+   * **One question, asked in one place, by both of the functions that used to answer it
+   * differently.** `recut` severed a run on height; `buildLinks` rejoined it on horizontal
+   * distance, having measured the height, named it `step`, and written `void step;` under a
+   * comment describing a classifier that used it. The wall was therefore cut by one rule and
+   * sewn up by another, and every joint where the two disagreed became a way through a face
+   * no man could get up. Measured on Rome: the worst was 7.70 m of rise across 5.03 m of
+   * plan — one 9.20 m leg at 56.8 degrees, with the man 3.16 m clear of the stone
+   * `CitySystem.walkableTopAt` reports at the mouth he starts from.
+   *
+   * Three answers and no fourth:
+   *
+   *  - **`Level`** — under `WALK_STEP_OVER`. A man steps over it without changing gait, and
+   *    it is not a run boundary at all.
+   *  - **`Flight`** — over that, but shallow enough that the tread module can carry it.
+   *    There is stone here and a man climbs it. It *is* a run boundary — a run is a stretch
+   *    you walk along without changing gait — and `buildLinks` bridges it. The pace is not
+   *    set here: `segmentAt` already prices a crossing leg by leg, `CROSS_CLIMB` and the
+   *    climbing clip above 36.9 degrees and `CROSS_PASS` below, which is the right answer
+   *    for a 4 degree tower ramp and for a 41 degree tower stair alike.
+   *  - **`Broken`** — steeper than any flight this project builds. `recut` cuts here and
+   *    `buildLinks` leaves it cut, so `runNext` stays -1, `runsConnected` says no, and
+   *    `moveAlongWall` refuses the order in front of the player instead of accepting it and
+   *    levitating a cohort. Nothing else needs a special case: the whole file already treats
+   *    an unbridged boundary as the edge of the world, because a breach makes one.
+   *
+   * **Why the answer is not "make it a one-way drop".** A man can fall further than he can
+   * climb, so a descent-only link is physically the honest asymmetry — and it is a trap. The
+   * run chain is walked in both directions by `nextHop`, `runsConnected` and `walkDistance`,
+   * and a one-way edge would make "reachable" mean two different things depending on which
+   * way you asked; worse, a cohort that drops onto a run with no stair can never leave it,
+   * and this file's failure mode of record is men who cannot finish an order. A trapdoor is
+   * a stuck-man factory. Where the stone carries a flight, both directions are real; where
+   * it does not, neither is.
+   *
+   * `run` is the *plan* distance the crossing actually has, not the tower's footprint. Those
+   * differ on both circuits — `buildSpine` clips a bay's west end by `towerHalf + 0.55` and
+   * its east end by 0.55, so a bay's last stations stand inside the next tower's footprint
+   * (four of them on Rome) and the crossing gets about 5 m of plan where the flight
+   * `wall.ts` draws gets about 8 — but the crossing is what a man is walked along, and
+   * licensing a path with a length the path does not have is the shape of half the defects
+   * in this file's history.
+   * The asymmetry is measured in `probe-linkstep.mjs` and is not fixed here; when it is,
+   * these gaps grow and four of Rome's five refusals become flights with no change to this.
+   */
+  private stepAcross(rise: number, run: number): Joint {
+    const dy = Math.abs(rise);
+    if (dy <= WALK_STEP_OVER) return Joint.Level;
+    return dy <= run * FLIGHT_PITCH ? Joint.Flight : Joint.Broken;
+  }
+
+  /**
    * (Re)split the spine into walkable runs and index their bounds.
    *
    * Called at init and again whenever a great ram takes a bay down, because a breach is
@@ -1469,7 +1604,8 @@ export class Siege implements ElevationOwner {
    * special case anywhere but here.
    *
    * 0.62 m is a high step but a possible one; the breaks this is really catching are metres
-   * deep.
+   * deep. The threshold is `stepAcross`'s, not this function's — see there for why the two
+   * ends of the same joint used to be measured by two different rules.
    */
   private recut(): void {
     this.sRun = new Int32Array(this.nStations);
@@ -1478,10 +1614,11 @@ export class Siege implements ElevationOwner {
       if (i > 0) {
         const dx = this.sx[i] - this.sx[i - 1];
         const dz = this.sz[i] - this.sz[i - 1];
+        const plan = Math.hypot(dx, dz);
         const dy = Math.abs(this.sy[i] - this.sy[i - 1]);
         // A dead station on either side of the joint is a break: you cannot walk over a
         // hole, and you cannot walk out of one.
-        if (Math.hypot(dx, dz) > STATION_PITCH * 1.9 || dy > 0.62
+        if (plan > STATION_PITCH * 1.9 || this.stepAcross(dy, plan) !== Joint.Level
           || this.sDead[i] !== this.sDead[i - 1]) run++;
       }
       this.sRun[i] = run;
@@ -1609,18 +1746,29 @@ export class Siege implements ElevationOwner {
       if (this.dead(a) || this.dead(b)) continue;
       const gap = Math.hypot(this.sx[b] - this.sx[a], this.sz[b] - this.sz[a]);
       if (gap > LINK_MAX_GAP) continue;
-      const step = Math.abs(this.sy[b] - this.sy[a]);
+      const rise = this.sy[b] - this.sy[a];
+      /**
+       * The height, and whether there is any stone that carries it.
+       *
+       * This is the line that read `void step;`. `recut` had already severed this joint —
+       * on the height, or on the plan gap where a tower stands — and the only question left
+       * is whether the sever was a doorway or a hole. `stepAcross` answers it with the same
+       * two numbers `recut` used, which is what stops the two ends of one joint being
+       * measured by two rules.
+       */
+      if (this.stepAcross(rise, gap) === Joint.Broken) continue;
       // A tower is a long gap in plan; a construction step is a short one with a jump in
       // height. Both are crossable and they are drawn differently, so they are named
-      // differently, but the path is built the same way.
+      // differently, but the path is built the same way — and `segmentAt` prices the rise
+      // out of the path's own geometry, so nothing further is needed here.
       const kind = gap > STATION_PITCH * 3 ? LinkKind.TowerPass : LinkKind.Step;
-      void step;
       this.runNext[r] = this.links.length;
       this.links.push({
         id: this.links.length, kind,
         runA: r, runB: r + 1, stationA: a, stationB: b,
         ax: this.sx[a], az: this.sz[a], ay: this.sy[a],
         bx: this.sx[b], bz: this.sz[b], by: this.sy[b],
+        rise,
         ab: null, ba: null, used: 0, lane: 0,
       });
     }
@@ -1639,6 +1787,10 @@ export class Siege implements ElevationOwner {
         bx: this.sx[s.station] + this.snx[s.station] * this.sInner[s.station],
         bz: this.sz[s.station] + this.snz[s.station] * this.sInner[s.station],
         by: s.topY,
+        // A flight is authored at its own rake by whoever built it, so this is recorded and
+        // not classified: `stepAcross` would refuse most of them, and rightly — a stair from
+        // the ground to a 14 m walk is not a joint between two runs.
+        rise: s.topY - s.footY,
         ab: null, ba: null, used: 0, lane: 0,
       });
     }
@@ -4285,6 +4437,7 @@ export class Siege implements ElevationOwner {
         runA: -1, runB: -1, stationA: -1, stationB: -1,
         ax: ox, az: oz, ay: this.battle.groundAt(ox, oz),
         bx: ix, bz: iz, by: this.battle.groundAt(ix, iz),
+        rise: this.battle.groundAt(ix, iz) - this.battle.groundAt(ox, oz),
         ab: null, ba: null, used: 0, lane: k,
       };
       // Over the rubble in the middle: a breach is climbed, and the stub of wall left
@@ -6207,11 +6360,29 @@ export class Siege implements ElevationOwner {
     links: { towerPass: number; step: number; stair: number; breach: number };
     /** Runs reachable from the ground without leaving the wall, over total runs. */
     reachable: number;
+    /**
+     * Consecutive run pairs the walk does **not** join, and why.
+     *
+     * `unbridged` counts every `r -> r + 1` with no link, whatever the reason — a missing
+     * bay, a breach, or a joint `stepAcross` refused. `refusedSteps` is the last of those on
+     * its own, and it is the number `buildLinks` used to report as zero by bridging them:
+     * five on Rome and four on Carthage at `596e03b`. `worstStep`/`worstPitch` are the
+     * tallest and the steepest joint that *was* bridged, which is what an acceptance test
+     * asserts on.
+     */
+    unbridged: number;
+    refusedSteps: number;
+    worstStep: number;
+    worstPitch: number;
     stairDetail: {
       station: number; run: number; footY: number; topY: number;
       terrainAtFoot: number; walkYAtHead: number; side: number; rise: number;
     }[];
-    linkUse: { id: number; kind: string; runA: number; runB: number; used: number; gap: number }[];
+    linkUse: {
+      id: number; kind: string; runA: number; runB: number; used: number; gap: number;
+      /** Signed height a to b, and the rake it implies. See `stepAcross`. */
+      rise: number; pitch: number;
+    }[];
   } {
     const kinds = ['towerPass', 'step', 'stair', 'breach'] as const;
     const counts = { towerPass: 0, step: 0, stair: 0, breach: 0 };
@@ -6235,6 +6406,33 @@ export class Siege implements ElevationOwner {
     let deadStations = 0;
     for (let s = 0; s < this.nStations; s++) if (this.sDead[s]) deadStations++;
 
+    // The joints the walk does not cross, split into "nothing was ever built here" and
+    // "`stepAcross` looked at it and said no". Recomputed from the spine rather than
+    // remembered by `buildLinks`, so a disagreement between the two shows up as a wrong
+    // number in the report instead of being hidden behind a shared variable.
+    let unbridged = 0;
+    let refusedSteps = 0;
+    let worstStep = 0;
+    let worstPitch = 0;
+    for (let r = 0; r + 1 < this.nRuns; r++) {
+      if (this.runNext[r] >= 0) continue;
+      unbridged++;
+      const a = this.runHi[r];
+      const b = this.runLo[r + 1];
+      if (a < 0 || b < 0 || this.dead(a) || this.dead(b)) continue;
+      const gap = Math.hypot(this.sx[b] - this.sx[a], this.sz[b] - this.sz[a]);
+      if (gap > LINK_MAX_GAP) continue;
+      if (this.stepAcross(this.sy[b] - this.sy[a], gap) === Joint.Broken) refusedSteps++;
+    }
+    for (const l of this.links) {
+      if (l.kind !== LinkKind.TowerPass && l.kind !== LinkKind.Step) continue;
+      const gap = Math.hypot(l.bx - l.ax, l.bz - l.az);
+      const dy = Math.abs(l.rise);
+      if (dy > worstStep) worstStep = dy;
+      const pitch = gap > 1e-6 ? dy / gap : Infinity;
+      if (pitch > worstPitch) worstPitch = pitch;
+    }
+
     return {
       source: this.stairs.length === 0 ? 'none' : (this.stairsFromCity ? 'published' : 'synthesised'),
       stairs: this.stairs.length,
@@ -6243,6 +6441,10 @@ export class Siege implements ElevationOwner {
       deadStations,
       links: counts,
       reachable,
+      unbridged,
+      refusedSteps,
+      worstStep,
+      worstPitch,
       stairDetail: this.stairs.map((s) => ({
         station: s.station,
         run: this.sRun[s.station],
@@ -6253,10 +6455,13 @@ export class Siege implements ElevationOwner {
         side: s.side,
         rise: s.topY - s.footY,
       })),
-      linkUse: this.links.map((l) => ({
-        id: l.id, kind: kinds[l.kind], runA: l.runA, runB: l.runB, used: l.used,
-        gap: Math.hypot(l.bx - l.ax, l.bz - l.az),
-      })),
+      linkUse: this.links.map((l) => {
+        const gap = Math.hypot(l.bx - l.ax, l.bz - l.az);
+        return {
+          id: l.id, kind: kinds[l.kind], runA: l.runA, runB: l.runB, used: l.used, gap,
+          rise: l.rise, pitch: gap > 1e-6 ? Math.abs(l.rise) / gap : Infinity,
+        };
+      }),
     };
   }
 
