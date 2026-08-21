@@ -1780,7 +1780,14 @@ one of five `wall-N` chunks at load and nothing can re-bake one. The seam is
 `rome/apertures.ts curtainSpans`, already the single place that decides where curtain is *not*
 laid: give it the breach list and re-bake the chunk. That is a city-workstream change.
 
-`WALL_BLOWS` was **74 and is now 44**; see §5.2.
+`WALL_BLOWS` was **74 and is now 44**, timed rather than chosen. `deployAssault` starts the
+machine 62 m out, which is 97 s of rolling, so the breach lands at `97 + blows x 7`: t+620 at
+74 and **t+420** at 44, measured, against the gate ram s t+220. At 74 the hole opened with
+nothing left of the battle to use it — three units ordered through it put 6 and 0 men inside
+before an 800 s window ran out. At 44 the two nearest foot units on the field side, ordered at it,
+put **412, 197 and 312** men inside the curtain on three seeds of three. 44 is still 5 min 08 s of battering against the gate ram s 1 min 54 s, so the wall
+is plainly 2.7x the job the door is. Re-time it, do not re-guess it, the day the host is given
+a storm order.
 
 ### 7.2 The gatehouse station clip does not fire
 

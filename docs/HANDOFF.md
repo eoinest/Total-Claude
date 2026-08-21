@@ -2243,6 +2243,10 @@ After it, at ultra over eight seeds:
 - the crew takes **1,012–2,916** points and ends at 30, 11, 30, 31, 30, 30, 15, 16 of 32;
 - **26 of 26 blows and the gate open at t+220 on 8 of 8** — and `withdrawing` → `spent` intact,
   17.4 m clear, which was the thing not to break;
+- and the same on the merged tree after §15 task 14 moved the ground: **26 of 26 and t+220 on
+  3 of 3**, with the crew now taking fire from four units instead of none
+  (`ballistarii#1` 2,341–2,608 the heaviest, because the great ram is parked under its bay).
+  Eleven seeds across two trees, no variance in either the blow count or the hour;
 - Carthage is byte-identical: `carthageWall.ts` sets `garrisonable: !bay.isGate`, so
   `holdable(0)` is false there and the picked-bay list does not move.
 
@@ -2336,7 +2340,7 @@ starts 62 m out, which is 97 s of rolling, so the breach lands at `97 + blows ×
 | blows | breach at | what the battle looks like there |
 |---|---|---|
 | 74 | **t+620** ×2 seeds | the gate has been open 400 s; three units ordered through the hole the second it opened put **6 and 0** men inside before an 800 s window ran out |
-| 44 | **t+420** ×6 seeds | gate at t+220, wall 200 s later — two ways in, in one battle, far enough apart to be two events |
+| 44 | **t+420** on 6 of 6 seeds, 3 before the box widening and 3 after | gate at t+220, wall 200 s later — two ways in, in one battle, far enough apart to be two events |
 
 A breach nobody can reach is the same as no breach, which is the defect this pass exists to
 close, so the number is sized against the machine finishing inside a battle. 44 is still
@@ -2346,6 +2350,31 @@ fire or sally if one is ever built. **What would move it back up:** the host sto
 Nothing in `src/ai/` sends a warband at a breach or through an open gate, so the men who should
 be waiting at the hole are 132 m out on Hold. The day they are there, a late breach stops
 costing anything. Re-time it then; do not re-guess it.
+
+### What a breach looks like as a route
+
+`breachReport()` goes from `lanes: 0` on both maps to **5 lanes across one bay**, `sDead` set
+over ±4.5 m, the garrison on that stretch rehoused rather than killed, the occupancy raster
+open and the oriented boxes split either side of the hole. Men are ordered through it by
+`events.emit('orderIssued', …)` — the same event the player's right-click and `ai/Orders.ts`
+both fire, deliberately not `stormBreach` itself, because a probe that calls the verb it is
+asserting about can never fail.
+
+**The number is the whole argument for the machine.** The two nearest foot units on the field
+side, ordered at the hole the second it opened, put **412, 197 and 312 men** inside the curtain
+on three seeds of three on the merged tree at the shipped tier. For comparison `probe-siege`'s own gate assertion — four units ordered into the city through
+the carriageway the light ram opened, nearest 44 m away — measures *"2 at the moment of the
+breach, peak 3"*. A gate is 4.3 m of carriageway with a gatehouse round it and a killing ground
+behind it; a breach is 8 m of front with nothing behind it but the city. That is what "wider
+than a gate" buys, and it is a number now rather than a sentence. Before §15 task 14 widened
+the boxes the same order put 186 and 156 men through — the host now starts on prepared ground
+and closer in, so more of it arrives.
+
+**Not done, and visual only: the curtain is still drawn standing over the hole.** A bay's
+masonry is baked into one of five `wall-N` chunks at load and nothing can re-bake one. The seam
+is `rome/apertures.ts curtainSpans`, already the single place that decides where curtain is
+*not* laid: give it the breach list and re-bake the affected chunk. That is a city-workstream
+change and it is written down rather than half-done.
 
 ### `probe-siege`'s great-ram assertions had not run since `0372fc2`
 
