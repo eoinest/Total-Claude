@@ -33,29 +33,29 @@
     "note": "Rome's assault. quality=high, which is the same battle as ultra here -- both fit 3,074 men and 933 of Rome, so fittedUnitScale does not bite until medium. Re-recorded here for a movement that is NOT this pass's: cc72ea6 turned ROUGH_SLOWS_MOVEMENT on, published these exact five hashes in its own commit message -- t+0 unchanged at 22bb3df8, then e246f360, 326f06de, fe58e1f0, cedf0a10 -- and did not include this file in the commit, so the gate that exists to stop unannounced movement has been red on main ever since. The pass that recorded it changed the ram shed's cover test and moved nothing: 'default' and 'map=carthage&scenario=assault' are both bit-identical across it, and this entry's new hashes are cc72ea6's own. Re-record only in the same commit as the change that moved it. ||| Re-recorded again by the aperture pass, which is the change that moved it. Two mechanisms in src/sim/BattleSystem.ts reach this battle: fitToAperture squeezes a formation's frontage down to what the corridor ahead of it will take and spreads it back out once its tail is through, and aimRout deflects a broken unit's flight line round whatever it is about to run into. Both are inert on a map with no masonry on it, and the evidence is in this file: 'default' is bit-identical across the pass at all five checkpoints, and so are t+0 and t+30 of both assaults, which are before anything has routed or entered a gate. The drift starts at t+90 in both. Checked against a second worktree pinned at 7dd9616, which reproduces the previous pins exactly at all five, so the movement is this pass's and not something inherited.",
     "checkpoints": {
       "0": {
-        "hash": "22bb3df8",
+        "hash": "55a19c06",
         "count": 3074,
         "alive": 3074
       },
       "30": {
-        "hash": "e246f360",
+        "hash": "921b7b7e",
         "count": 3074,
-        "alive": 2982
+        "alive": 2976
       },
       "90": {
-        "hash": "052502f3",
+        "hash": "ebbb7ad2",
         "count": 3074,
-        "alive": 2552
+        "alive": 2514
       },
       "150": {
-        "hash": "b01a4320",
+        "hash": "6c71c40e",
         "count": 3074,
-        "alive": 2342
+        "alive": 2182
       },
       "200": {
-        "hash": "ed3db0af",
+        "hash": "e3ceb428",
         "count": 3074,
-        "alive": 2167
+        "alive": 2048
       }
     }
   },
@@ -63,29 +63,29 @@
     "note": "Carthage's assault, quality=high. Recorded at 88a4aa5. The five hashes in this tool's own header comment (ebf383b0 d021b848 8106e2b2 b4fc645e cbfa61c0) are an earlier tree and are the reason prose is not a baseline. Re-record only in the same commit as the change that moved it. ||| Re-recorded again by the aperture pass, which is the change that moved it. Two mechanisms in src/sim/BattleSystem.ts reach this battle: fitToAperture squeezes a formation's frontage down to what the corridor ahead of it will take and spreads it back out once its tail is through, and aimRout deflects a broken unit's flight line round whatever it is about to run into. Both are inert on a map with no masonry on it, and the evidence is in this file: 'default' is bit-identical across the pass at all five checkpoints, and so are t+0 and t+30 of both assaults, which are before anything has routed or entered a gate. The drift starts at t+90 in both. Checked against a second worktree pinned at 7dd9616, which reproduces the previous pins exactly at all five, so the movement is this pass's and not something inherited.",
     "checkpoints": {
       "0": {
-        "hash": "dbdd3a70",
+        "hash": "ade40cb0",
         "count": 3440,
         "alive": 3440
       },
       "30": {
-        "hash": "70f1c93e",
+        "hash": "0260ccde",
         "count": 3440,
-        "alive": 3373
+        "alive": 3399
       },
       "90": {
-        "hash": "5ed733a4",
+        "hash": "1558c788",
         "count": 3440,
-        "alive": 2979
+        "alive": 3017
       },
       "150": {
-        "hash": "a99f6998",
+        "hash": "6976d666",
         "count": 3440,
-        "alive": 2844
+        "alive": 2842
       },
       "200": {
-        "hash": "8d696bf8",
+        "hash": "a476b55e",
         "count": 3440,
-        "alive": 2837
+        "alive": 2833
       }
     }
   }
