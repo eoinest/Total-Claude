@@ -59,7 +59,11 @@ page.on('console', (m) => { if (m.type() === 'error') errs.push(`console.error: 
 const settle = (ms = 220) => page.waitForTimeout(ms);
 const shot = async (n) => { if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, `${n}.png`) }); };
 
-await page.goto(`${base}/?quality=high&autoplay=0`, { waitUntil: 'domcontentloaded' });
+// `&menu=battle` opens the menu on the setup screen instead of the front door.
+// The front door is `qa-deploy`'s and `qa-interact`'s subject; here it is one click
+// between this probe and what it measures. `?menu=0` would skip the menu entirely,
+// which is not what this wants — it drives the real setup screen with a real mouse.
+await page.goto(`${base}/?quality=high&autoplay=0&menu=battle`, { waitUntil: 'domcontentloaded' });
 await page.waitForSelector('.menu .begin', { timeout: 90000 });
 await page.click(`.menu [data-map="${MAP}"]`); await settle(250);
 await page.click('.menu [data-scen="assault"]'); await settle(250);

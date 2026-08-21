@@ -182,10 +182,157 @@ const window_W = W, window_H = H;
 // Arm 1 — the true player path: the menu, and what you land in
 // ---------------------------------------------------------------------------
 if (!ONLY || ONLY === 'menu') {
-  console.log('\n— menu → deployment (no ?harness, the real player path)');
+  console.log('\n— front door → setup → deployment (no ?harness, the real player path)');
   const page = await newPage();
   await page.goto(`${base}/?quality=high`, { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('.menu .begin', { timeout: 60000 });
+  /*
+   * The menu opens on the front door, and the setup screen is one click in.
+   *
+   * No `?menu=battle` here, which is the escape hatch the wall probes use: this arm's whole
+   * job is the path a player takes, and a player takes the door. `waitForSelector` defaults
+   * to waiting for *visibility*, so if the front door ever failed to hand over, this would
+   * time out on `.menu .begin` rather than silently clicking a hidden button.
+   */
+  await page.waitForSelector('.menu.at-home .dest-battle', { timeout: 60000 });
+  await settle(page, 600);
+  await shot(page, 'menu-front-door');
+
+  // What is actually on the door, and where each plaque goes.
+  const door = await page.evaluate(() => {
+    const dest = [...document.querySelectorAll('.menu-home .dest')].map((e) => {
+      const r = e.getBoundingClientRect();
+      return {
+        id: e.dataset.dest,
+        tag: e.tagName,
+        href: e.getAttribute('href'),
+        target: e.getAttribute('target'),
+        rel: e.getAttribute('rel'),
+        label: e.querySelector('.dest-txt b')?.textContent ?? '',
+        sub: (e.querySelector('.dest-txt i')?.textContent ?? '').replace(/\s+/g, ' ').trim(),
+        w: Math.round(r.width), h: Math.round(r.height),
+      };
+    });
+    const setup = document.querySelector('.menu-setup');
+    return {
+      dest,
+      asides: [...document.querySelectorAll('.menu-home .aside')].map((a) => ({
+        id: a.dataset.aside, href: a.getAttribute('href'), target: a.getAttribute('target'),
+      })),
+      // `offsetParent` is null for a `display: none` subtree, which is how the step is hidden.
+      setupHidden: !!setup && setup.offsetParent === null,
+    };
+  });
+  const ids = door.dest.map((d) => d.id).join(',');
+  record('front-door-destinations', ids === 'battle,docs,viewer' && door.setupHidden
+    && door.dest.every((d) => d.w > 400 && d.h > 40 && d.sub.length > 40),
+    'load with no flags at all and read the three plaques off the front door',
+    `${ids || 'none'}  ·  setup screen hidden ${door.setupHidden}  ·  `
+      + door.dest.map((d) => `${d.id} ${d.w}×${d.h}`).join(', '),
+    door.dest.map((d) => d.label).join(' / '));
+
+  /*
+   * Battle stays in this tab; everything else leaves in a new one.
+   *
+   * That is the rule the front door is built on — a player two minutes into an order of
+   * battle must not be able to lose it to one mis-aimed click — and it is a rule made of
+   * three attributes, which is exactly the kind of thing that survives a refactor only if
+   * something asserts it. `rel=noopener` on every `target=_blank` as well.
+   */
+  const battle = door.dest.find((d) => d.id === 'battle');
+  const external = door.dest.filter((d) => d.id !== 'battle');
+  const externalOk = external.length === 2 && external.every(
+    (d) => d.tag === 'A' && d.target === '_blank' && (d.rel ?? '').includes('noopener') && !!d.href);
+  const asidesOk = door.asides.length >= 2
+    && door.asides.every((a) => a.target === '_blank' && /^https:\/\//.test(a.href));
+  record('front-door-leaves-safely',
+    !!battle && battle.tag === 'BUTTON' && !battle.href && externalOk && asidesOk,
+    'every destination that is not Battle must be an anchor into a new tab',
+    `battle is a <${(battle?.tag ?? '?').toLowerCase()}> with href ${battle?.href ?? 'none'};  `
+      + external.map((d) => `${d.id} → ${d.href} target ${d.target} rel ${d.rel}`).join(';  '),
+    door.asides.map((a) => `${a.id} → ${a.href}`).join('  '));
+
+  // The two links that point at things this deployment is supposed to serve. The docs are a
+  // separate deployment and are not fetched here — a network check on someone else's host is
+  // a flake generator — but the viewer is the second Rollup entry of *this* build, so a 404
+  // on it would mean the front door offers a page that is not there.
+  const viewerHref = door.dest.find((d) => d.id === 'viewer')?.href ?? '';
+  let viewerStatus = 0;
+  try {
+    viewerStatus = (await fetch(`${base}${viewerHref}`, { signal: AbortSignal.timeout(8000) })).status;
+  } catch (e) { viewerStatus = `error ${e.message}`; }
+  record('front-door-viewer-served', viewerHref === '/viewer.html' && viewerStatus === 200,
+    'GET the model-viewer URL the front door links to',
+    `${viewerHref} → ${viewerStatus}`);
+
+  /*
+   * The keyboard, which is half of how this game is played.
+   *
+   * Tab to the first plaque, arrow down and back up over the list, then Enter to go in. No
+   * mouse touches the page until the next block, so a regression that left the front door
+   * pointer-only would fail here rather than in a bug report.
+   */
+  await page.keyboard.press('Tab');
+  const kbTab = await page.evaluate(() => document.activeElement?.dataset?.dest ?? '?');
+  await page.keyboard.press('ArrowDown');
+  const kbDown = await page.evaluate(() => document.activeElement?.dataset?.dest ?? '?');
+  await page.keyboard.press('ArrowUp');
+  const kbUp = await page.evaluate(() => document.activeElement?.dataset?.dest ?? '?');
+  await page.keyboard.press('Enter');
+  await settle(page, 400);
+  const kbIn = await page.evaluate(() => ({
+    cls: document.querySelector('.menu')?.className ?? '',
+    beginVisible: !!document.querySelector('.menu .begin')?.offsetParent,
+  }));
+  record('front-door-keyboard',
+    kbTab === 'battle' && kbDown === 'docs' && kbUp === 'battle'
+    && kbIn.cls.includes('at-setup') && kbIn.beginVisible,
+    'Tab, ArrowDown, ArrowUp and Enter on the front door, with no pointer at all',
+    `Tab → ${kbTab}, Down → ${kbDown}, Up → ${kbUp}, Enter → "${kbIn.cls}" `
+      + `with BEGIN BATTLE visible ${kbIn.beginVisible}`);
+
+  /*
+   * Back out of the setup and return: the army must still be there.
+   *
+   * This is the whole reason the two screens share one `MainMenu` and one DOM. A menu that
+   * rebuilt the setup on each visit would pass every check above and quietly throw away two
+   * minutes of work here — and worse, would leave the old rows in memory with live handlers,
+   * which is the failure `buildArmies` is commented about.
+   */
+  const armyOf = () => page.evaluate(() => ({
+    scen: [...document.querySelectorAll('.menu [data-scen]')]
+      .filter((b) => b.classList.contains('on')).map((b) => b.dataset.scen).join(),
+    counts: [...document.querySelectorAll('.menu .ucount')].map((c) => c.textContent).join(','),
+    seed: document.querySelector('.menu .seed')?.value ?? '',
+    hour: document.querySelector('.menu .tod')?.value ?? '',
+  }));
+  await page.click('.menu .army .plus');
+  await page.click('.menu [data-size="large"]');
+  await settle(page, 250);
+  const armyBefore = await armyOf();
+  await page.keyboard.press('Escape');
+  await settle(page, 400);
+  const wentHome = await page.evaluate(() => ({
+    cls: document.querySelector('.menu')?.className ?? '',
+    focus: document.activeElement?.dataset?.dest ?? '?',
+  }));
+  await shot(page, 'menu-back-at-door');
+  await page.click('.menu-home .dest-battle');
+  await settle(page, 400);
+  const armyAfter = await armyOf();
+  record('setup-back-keeps-army',
+    wentHome.cls.includes('at-home') && wentHome.focus === 'battle'
+    && JSON.stringify(armyBefore) === JSON.stringify(armyAfter),
+    'edit the order of battle, press Escape, and click Battle again',
+    `Escape → "${wentHome.cls}" with focus on ${wentHome.focus};  army `
+      + (JSON.stringify(armyBefore) === JSON.stringify(armyAfter) ? 'identical' : 'CHANGED'),
+    `${armyBefore.counts} @ seed ${armyBefore.seed}`);
+
+  // Put the historical order of battle back, so the deployment this arm actually measures is
+  // DEFAULT_CONFIG and not the two clicks above. `restore` keeps map, scenario and enemy.
+  await page.click('.menu .restore');
+  await page.click('.menu [data-size="ultra"]');
+  await settle(page, 250);
+
   // The stored preference is empty in a fresh context, so this is DEFAULT_CONFIG: the
   // Campus Martius, field battle, ultra size, the historical order of battle.
   // `page.click` rather than a raw coordinate: the menu fades in over two frames and a

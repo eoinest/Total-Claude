@@ -212,11 +212,16 @@ for (const map of ['carthage', 'campus-martius']) {
   page.on('requestfailed', (r) => errs.push(`requestfailed: ${r.url()} ${r.failure()?.errorText}`));
 
   // The menu, with nothing in the URL but the quality and the paused clock the brief asked
-  // for. No ?harness, no ?menu=0, no ?map, no ?scenario — every one of those is chosen here
-  // with the mouse.
+  // for. No ?harness, no ?menu=0, no ?menu=battle, no ?map, no ?scenario — every one of
+  // those is chosen here with the mouse, front door included.
   await page.goto(`${base}/?autoplay=0&quality=high`, { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('.menu .begin', { timeout: 90000 });
+  await page.waitForSelector('.menu.at-home .dest-battle', { timeout: 90000 });
   await page.waitForTimeout(900);
+  await page.screenshot({ path: path.join(SHOT_DIR, `menu-home-${map}.png`) });
+  const atDoor = await mouseClick(page, '.dest-battle');
+  console.log(`  BATTLE on the front door at (${atDoor.x},${atDoor.y})`);
+  await page.waitForSelector('.menu .begin', { timeout: 90000 });
+  await page.waitForTimeout(500);
   await page.screenshot({ path: path.join(SHOT_DIR, `menu-0-${map}.png`) });
 
   const atMap = await mouseClick(page, `[data-map="${map}"]`);

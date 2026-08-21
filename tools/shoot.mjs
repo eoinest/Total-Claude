@@ -1155,6 +1155,86 @@ for (const [k, v] of Object.entries(SHOTS)) {
  * how many frames that is, so "32 when I expected 18" is visible in the first line of output
  * rather than in a directory listing twenty minutes later.
  */
+/**
+ * ---------------------------------------------------------------------------
+ * `menu-*` — the front door, and where each of its doors goes
+ * ---------------------------------------------------------------------------
+ *
+ * These are the first screen anybody sees, and until now nothing in this file could
+ * photograph a screen. Every other shot in the table loads `?harness=1`, which exists
+ * precisely to *skip* the menu, then fast-forwards a battle and points a camera at it. A
+ * frame of the menu has no `at`, no camera, no world and no `window.__game` to read numbers
+ * out of; what it has is a URL, a selector to wait for and a short list of things to click.
+ *
+ * So a shot may instead carry a `ui` block, and `shootUi` runs it on its own page:
+ *
+ *   url      page to open. Relative to the dev server, or absolute for an external site.
+ *   wait     selector that must be *visible* before anything is done.
+ *   steps    ordered list of `{click}`, `{key}`, `{wait}`, `{ready}` and `{ms}`.
+ *   settle   extra milliseconds before the shutter. Default 700 — the menu fades in.
+ *   external true for a site this repository does not build. Its console is not our console.
+ *
+ * **None of these frames may enter a blind deck.** They are interface top to bottom, which
+ * is the exact leak `SHOW_HUD` was inverted to prevent, so `menu` is a declared family (out
+ * of `--set=all`) *and* any pass that shoots one records `blindSafe: false` whatever `--hud`
+ * said. Two independent guards, because one of them is a naming convention.
+ *
+ * The path filmed is the player's, not a shortcut: no `?harness=1`, no `?menu=0`, no
+ * `?menu=battle`. `menu-battle` clicks BATTLE and then BEGIN BATTLE and waits for the world
+ * to build, which is the one shot here that costs a real boot.
+ */
+const MENU_SHOTS = {
+  'menu-door': {
+    desc: 'The front door as it opens — battle, documentation, model viewer',
+    at: 0,
+    ui: { url: '/', wait: '.menu.at-home .dest-battle', settle: 1100 },
+  },
+  'menu-door-keyboard': {
+    desc: 'The same door with the keyboard on it: Tab to BATTLE, arrow down to the docs',
+    at: 0,
+    ui: {
+      url: '/', wait: '.menu.at-home .dest-battle',
+      steps: [{ key: 'Tab' }, { key: 'ArrowDown' }],
+      settle: 700,
+    },
+  },
+  'menu-setup': {
+    desc: 'BATTLE clicked — the setup flow, unchanged, with the back arrow in its header',
+    at: 0,
+    ui: {
+      url: '/', wait: '.menu.at-home .dest-battle',
+      steps: [{ click: '.dest-battle' }, { wait: '.menu .begin' }],
+      settle: 700,
+    },
+  },
+  'menu-viewer': {
+    desc: 'Where the MODEL VIEWER plaque goes: viewer.html, built and served all along',
+    at: 0,
+    ui: {
+      url: '/viewer.html', wait: '#viewer-panel',
+      steps: [{ ready: 'viewer' }, { ms: 1800 }],
+      settle: 700,
+    },
+  },
+  'menu-docs': {
+    desc: 'Where the DOCUMENTATION plaque goes: the published technical site',
+    at: 0,
+    ui: { url: 'https://total-claude-docs.vercel.app', wait: 'main', external: true, settle: 1400 },
+  },
+  'menu-battle': {
+    desc: 'The whole path in one frame: front door, setup, BEGIN BATTLE, deployment',
+    at: 0,
+    ui: {
+      url: '/?quality=high', wait: '.menu.at-home .dest-battle',
+      steps: [
+        { click: '.dest-battle' }, { wait: '.menu .begin' }, { click: '.menu .begin' },
+        { ready: 'game' }, { wait: '.deploy' }, { ms: 2600 },
+      ],
+      settle: 900,
+    },
+  },
+};
+
 const FAMILIES = {
   deck: 'the pooled blind deck — the only pool a blind round should be built from',
   ab: 'the paired blind instrument, round one. See the block comment above `ab-rome-line`',
@@ -1169,6 +1249,8 @@ const FAMILIES = {
     + 'surface itself. See the block comment above `eyeline-rome-along`',
   parapetfile: 'a cohort ordered onto the wall, two cameras. A before/after diptych, not a '
     + 'deck member — see the block comment above `parapetfile-order-along`',
+  menu: 'the front door and where each of its doors goes. Interface, not renderer — every '
+    + 'one of these frames is a `ui` shot and none may ever enter a blind deck',
 };
 
 /** `field` is the absence of a declared family, and `field` is what `--set=all` means. */
@@ -1216,6 +1298,14 @@ const checkFamilies = () => {
 checkFamilies();
 
 /** Named shot sets, all derived from `familyOf` so no two of them can disagree. */
+/*
+ * Folded in after the fact rather than written inline, so the interface shots sit together
+ * under their own block comment instead of scattered through 900 lines of camera work.
+ * `Object.assign` on the existing object keeps `SHOTS` one identity, which `familyOf`,
+ * `checkFamilies`, `--list` and every set below all read.
+ */
+Object.assign(SHOTS, MENU_SHOTS);
+
 const SETS = {
   deck: Object.keys(SHOTS).filter((k) => familyOf(k) === 'deck'),
   r6: Object.keys(SHOTS).filter((k) => familyOf(k) === 'r6'),
@@ -1226,6 +1316,7 @@ const SETS = {
   footing: Object.keys(SHOTS).filter((k) => familyOf(k) === 'footing'),
   eyeline: Object.keys(SHOTS).filter((k) => familyOf(k) === 'eyeline'),
   parapetfile: Object.keys(SHOTS).filter((k) => familyOf(k) === 'parapetfile'),
+  menu: Object.keys(SHOTS).filter((k) => familyOf(k) === 'menu'),
   /** The graded field set, and the default. Everything with no declared family. */
   all: Object.keys(SHOTS).filter((k) => familyOf(k) === 'field'),
   /** Literally everything, for the rare pass that wants it. Never a deck. */
@@ -1242,7 +1333,8 @@ const args = new Map(
 if (args.has('list')) {
   for (const [k, v] of Object.entries(SHOTS)) {
     const world = [v.map ?? '', v.hour !== undefined ? `${v.hour}h` : '', v.quality ?? ''].filter(Boolean).join(' ');
-    console.log(`${k.padEnd(20)} t+${String(v.at).padStart(3)}s  ${world.padEnd(16)} ${v.desc}`);
+    const when = v.ui ? '   ui  ' : `t+${String(v.at).padStart(3)}s`;
+    console.log(`${k.padEnd(20)} ${when}  ${world.padEnd(16)} ${v.desc}`);
   }
   console.log(`\n${Object.keys(SHOTS).length} shots.`
     + ` sets: ${Object.entries(SETS).map(([k, v]) => `${k} (${v.length})`).join(', ')}`);
@@ -1473,6 +1565,63 @@ try {
   const battleToken = (o) => Buffer.from(JSON.stringify(o)).toString('base64')
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
+  /** True once any `ui` shot has been taken in this pass. See `blindSafe` below. */
+  let shotInterface = false;
+
+  /**
+   * An interface frame: a page, a selector, a short list of clicks, a shutter.
+   *
+   * Its own page every time, and that is the whole design. The world page carries a console
+   * listener whose findings fail the pass, a HUD-suppressing style tag, and a `loadedKey`
+   * saying which world is currently built — navigating it to the menu or to somebody else's
+   * production site would invalidate all three, and quietly. A fresh page costs nothing and
+   * cannot interfere with a group that is mid-flight.
+   *
+   * `external: true` means the page is not built by this repository. Its console errors are
+   * printed but do not fail the pass: a shot of the published documentation site should show
+   * whether the site is there, not adopt its analytics beacons as our build failures.
+   */
+  async function shootUi(name, shot) {
+    const u = shot.ui;
+    const url = /^https?:/.test(u.url) ? u.url : `${base}${u.url}`;
+    const p = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: DPR });
+    const local = [];
+    p.on('console', (m) => { if (m.type() === 'error') local.push(m.text()); });
+    p.on('pageerror', (e) => local.push(`pageerror: ${e.message}`));
+    try {
+      console.log(`• ui ${url}`);
+      await p.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
+      if (u.wait) await p.waitForSelector(u.wait, { timeout: 120000 });
+      for (const st of u.steps ?? []) {
+        // 420 s on the waits that can sit behind a world build, for the same reason
+        // `loadScene` uses it: Carthage takes minutes and a 180 s failure reads as a hang.
+        if (st.click) await p.click(st.click, { timeout: 60000 });
+        if (st.key) await p.keyboard.press(st.key);
+        if (st.wait) await p.waitForSelector(st.wait, { timeout: 420000 });
+        if (st.ready === 'game') {
+          await p.waitForFunction(() => window.__game && window.__game.ready === true, null,
+            { timeout: 420000 });
+        }
+        if (st.ready === 'viewer') {
+          await p.waitForFunction(() => window.__viewer && window.__viewer.ready === true, null,
+            { timeout: 420000 });
+        }
+        if (st.ms) await p.waitForTimeout(st.ms);
+      }
+      await p.waitForTimeout(u.settle ?? 700);
+      await p.screenshot({ path: path.join(OUT, `${name}.png`), type: 'png' });
+      const seen = [...new Set(local)];
+      if (seen.length) {
+        if (u.external) console.log(`    (${seen.length} console error(s) on ${url} — not ours, not counted)`);
+        else consoleErrors.push(...seen.map((e) => `${name}: ${e}`));
+      }
+      shotInterface = true;
+      return { ui: true, url, title: await p.title(), consoleErrors: seen.length };
+    } finally {
+      await p.close().catch(() => {});
+    }
+  }
+
   let gl = null;
   async function loadScene(shot) {
     const cfg = {};
@@ -1610,6 +1759,16 @@ try {
     const shot = SHOTS[name];
     const t0 = Date.now();
     try {
+      // An interface frame has no world, no camera and no `window.__game` to read numbers
+      // out of, so it takes the whole branch and none of the machinery below it.
+      if (shot.ui) {
+        const info = await shootUi(name, shot);
+        const file = path.join(OUT, `${name}.png`);
+        results.push({ name, file, ...info, ms: Date.now() - t0, desc: shot.desc });
+        console.log(`  ✓ ${name.padEnd(20)} ui  ${((Date.now() - t0) / 1000).toFixed(1)} s  `
+          + `${info.url}${info.consoleErrors ? `  ${info.consoleErrors} console error(s)` : ''}`);
+        continue;
+      }
       // Inside the try, so a group whose world fails to build costs that group and not the
       // rest of the pass. `loadedKey` is only advanced on success, so the next shot in a
       // broken group retries rather than shooting whatever happens to be on screen.
@@ -2553,7 +2712,17 @@ try {
         hud: SHOW_HUD,
         dpr: DPR,
         worldOverlay: overlayHidden,
-        blindSafe: !SHOW_HUD,
+        /*
+         * `--hud` is not the only way a directory stops being gradeable blind.
+         *
+         * A `menu-*` pass is interface top to bottom and runs with the HUD flag off, so
+         * `!SHOW_HUD` alone would record it as safe to pool — which is leak six's exact
+         * shape, a frame whose provenance nobody wrote down. The family registry keeps
+         * these out of `--set=all`; this keeps them out of a deck even if somebody names
+         * them explicitly.
+         */
+        blindSafe: !SHOW_HUD && !shotInterface,
+        interfaceShots: shotInterface,
         commit: COMMIT,
         srcTree: SRC_TREE,
         width: W, height: H, quality: QUALITY, gl,

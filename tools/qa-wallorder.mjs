@@ -149,7 +149,11 @@ const shot = async (n) => { if (SHOT_DIR) await page.screenshot({ path: path.joi
 // The owner's path in
 // ---------------------------------------------------------------------------
 console.log(`\n— the real menu, ?autoplay=0, no ?harness, map ${MAP}`);
-await page.goto(`${base}/?quality=high&autoplay=0`, { waitUntil: 'domcontentloaded' });
+// `&menu=battle` opens the menu on the setup screen instead of the front door.
+// The front door is `qa-deploy`'s and `qa-interact`'s subject; here it is one click
+// between this probe and what it measures. `?menu=0` would skip the menu entirely,
+// which is not what this wants — it drives the real setup screen with a real mouse.
+await page.goto(`${base}/?quality=high&autoplay=0&menu=battle`, { waitUntil: 'domcontentloaded' });
 await page.waitForSelector('.menu .begin', { timeout: 60000 });
 // Real buttons in the real menu, in the order a player would press them: the battlefield
 // first, because picking a map re-labels the scenario row and can take the assault away.

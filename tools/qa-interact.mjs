@@ -1189,10 +1189,16 @@ if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, 'hud-final.png')
   await mp.goto(`${base}/?autoplay=0&quality=high`, { waitUntil: 'domcontentloaded' });
 
   const sawMenu = await mp.waitForSelector('.menu.in', { timeout: 60000 }).then(() => true).catch(() => false);
-  record('menu appears', sawMenu, 'load with no harness flag and wait for the setup screen',
+  record('menu appears', sawMenu, 'load with no harness flag and wait for the front door',
     sawMenu ? 'the menu rendered and faded in' : 'no .menu.in appeared');
 
   if (sawMenu) {
+    // The menu opens on the front door now — battle, documentation, model viewer — and the
+    // setup screen is one click in. No `?menu=battle` here on purpose: this block exists to
+    // prove the pointer works on the path a player actually takes, and that path starts at
+    // the front door.
+    await mp.click('.menu-home .dest-battle');
+    await mp.waitForSelector('.menu .begin', { timeout: 60000 });
     await mp.click('.begin');
     await mp.waitForFunction(() => window.__game?.ready === true, null, { timeout: 180000 });
     // Long enough for the intro fade to finish and the menu node to be removed.
