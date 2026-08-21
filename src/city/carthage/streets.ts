@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Batch } from '../build';
-import type { Lane } from '../insulae';
+import type { Lane } from '../cityPlan';
 import type { WayClass } from '../layout';
 import type { CityChunkSpec } from '../wall';
 import { MONUMENTS, PUNIC_WAYS } from './layout';

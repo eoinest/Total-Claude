@@ -31,7 +31,13 @@ try {
   catch (e) { console.log('NOT READY:', e.message.split('\n')[0]); code = 1; }
   if (!code) {
     const out = await p.evaluate(async () => {
-      const L = await import('/src/city/layout.ts');
+      // §15 task 0 split `city/layout.ts` into the generic part and `city/rome/`.
+      // `KeepOut` is still the shared one; the plan and the circuit are Rome's.
+      const L = {
+        ...(await import('/src/city/layout.ts')),
+        ...(await import('/src/city/rome/circuit.ts')),
+        ...(await import('/src/city/rome/layout.ts')),
+      };
       const { Rng, hash2 } = await import('/src/util/rand.ts');
       const g = window.__game.engine;
       const city = g.ctx?.get ? g.ctx.get('city') : g.byName?.get('city');

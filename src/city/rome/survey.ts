@@ -1,6 +1,6 @@
-import { HALF_EXTENT } from '../terrain/TerrainSystem';
-import { crestZAt, RIVER_HALF_WIDTH, riverCentreX, roadCentreX } from '../terrain/topography';
-import { clamp } from '../util/math';
+import { HALF_EXTENT } from '../../terrain/TerrainSystem';
+import { crestZAt, RIVER_HALF_WIDTH, riverCentreX, roadCentreX } from '../../terrain/topography';
+import { clamp } from '../../util/math';
 
 /**
  * The real plan of imperial Rome, and the projection that puts it on the battlefield.

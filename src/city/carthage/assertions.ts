@@ -1,5 +1,5 @@
 import type { CityAssertion, PlanRect } from '../cityPlan';
-import type { Lane } from '../insulae';
+import type { Lane } from '../cityPlan';
 import {
   APRON_DEPTH, APRON_HALF_RUN, CIRCUIT_X_MAX, CIRCUIT_X_MIN, circuitZAt,
   INTERVALLUM, intervallumDepthAt, STAIR_APRONS,

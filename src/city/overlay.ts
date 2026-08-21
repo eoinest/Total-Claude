@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { HALF_EXTENT } from '../terrain/TerrainSystem';
-import { CITY_Z_MAX, worldOf } from './rome';
+import { CITY_Z_MAX, worldOf } from './rome/survey';
 
 /**
  * Debug-only reference overlay: a georeferenced archaeological plan of Rome, laid on the

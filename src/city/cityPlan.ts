@@ -1,5 +1,5 @@
 import type { Faction } from '../sim/types';
-import type { Lane } from './insulae';
+import type { WayClass } from './layout';
 
 /**
  * The seam between `CitySystem` and *which city it is building*.
@@ -180,7 +180,19 @@ export type {
  */
 export type { CarthageDitch, CasemateOut, OutworkOut } from './carthageWall';
 
-export type { Lane } from './insulae';
+/**
+ * A lane a district cut for itself, in world space. Drawn with the rest of the network.
+ *
+ * Defined here rather than in a city's own fabric module because both cities' generators
+ * emit it and `CityBuild` carries it: a shared shape belongs with the contract, not inside
+ * whichever city happened to declare it first. It lived in Rome's insula generator until
+ * `src/city/rome/` existed, which made every Carthage module import a Rome file for a type.
+ */
+export interface Lane {
+  path: { x: number; z: number }[];
+  cls: WayClass;
+  width: number;
+}
 
 // ---------------------------------------------------------------------------
 // The plan

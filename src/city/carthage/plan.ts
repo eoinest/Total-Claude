@@ -1,7 +1,7 @@
 import { Faction } from '../../sim/types';
 import { buildCarthageWall, CARTHAGE_SECTION, PUNIC } from '../carthageWall';
 import type { CityBuild, CityPlan, PlanRect } from '../cityPlan';
-import type { Lane } from '../insulae';
+import type { Lane } from '../cityPlan';
 import { KeepOut } from '../layout';
 import { buildTreeChunks } from '../props';
 import type { Blocker, CityChunkSpec, TreeRequest } from '../wall';

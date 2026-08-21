@@ -10,13 +10,15 @@ import {
   type Batch,
   type GeoStream,
 } from './build';
-import {
-  fitWallPath,
-  GATE_X,
-  WALL_X_MAX,
-  WALL_X_MIN,
-  type WallNode,
-} from './layout';
+import { type WallNode } from './layout';
+/**
+ * Rome's line, imported only by `aurelianLine` below — the `?fort=carthage` development rig
+ * that stands the Punic wall on the Aurelian circuit so one dev server can drive both. It is
+ * the last Carthage->Rome edge in the tree and `docs/ROME.md` §14.6 is why it is now visible
+ * as one: it used to read as a generic import from `city/layout.ts`.
+ */
+import { GATE_X } from './rome/apertures';
+import { fitWallPath, WALL_X_MAX, WALL_X_MIN } from './rome/circuit';
 import { PAL } from './palette';
 import type {
   Blocker,

@@ -1,21 +1,17 @@
 import { HALF_EXTENT } from '../terrain/TerrainSystem';
 import { crestZAt, RIVER_HALF_WIDTH, riverCentreX, roadCentreX } from '../terrain/topography';
 import { KeepOut } from './layout';
+import { GATE_X } from './rome/apertures';
 import {
   assertHillRing,
   assertNoFootprintOverlaps,
   assertOneAmphitheatre,
   assertTopology,
-  AQUEDUCTS,
-  DISTRICTS,
-  GATE_X,
-  LANDMARKS,
-  STREETS,
-  WALL_X_MAX,
-  WALL_X_MIN,
-} from './layout';
-import { buildDistricts } from './insulae';
-import { KX, KZ, ROME } from './rome';
+} from './rome/assertions';
+import { WALL_X_MAX, WALL_X_MIN } from './rome/circuit';
+import { AQUEDUCTS, DISTRICTS, LANDMARKS, STREETS } from './rome/layout';
+import { buildDistricts } from './rome/fabric';
+import { KX, KZ, ROME } from './rome/survey';
 
 /**
  * Plan-view diagnostic: the city from directly overhead, with every landmark footprint

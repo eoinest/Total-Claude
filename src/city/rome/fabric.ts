@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { clamp, lerp } from '../util/math';
-import { Rng, hash2 } from '../util/rand';
+import { clamp, lerp } from '../../util/math';
+import { Rng, hash2 } from '../../util/rand';
 import {
   archPanel,
   box,
@@ -11,24 +11,22 @@ import {
   quadPrism,
   type Batch,
   type GeoStream,
-} from './build';
+} from '../build';
+import { KeepOut, obbOverlap, type Obb, type WayClass } from '../layout';
+import { POMERIUM } from './circuit';
 import {
   DISTRICTS,
-  KeepOut,
-  obbOverlap,
   onMonument,
   PLAZAS,
-  POMERIUM,
   WAY_FRONTAGE,
   WAY_WIDTH,
   WAYS,
   type DistrictSpec,
-  type Obb,
-  type WayClass,
 } from './layout';
-import type { CityMatKey } from './materials';
-import { PAL } from './palette';
-import { cylinderBetween, type CityChunkSpec, type TreeRequest } from './wall';
+import type { Lane } from '../cityPlan';
+import type { CityMatKey } from '../materials';
+import { PAL } from '../palette';
+import { cylinderBetween, type CityChunkSpec, type TreeRequest } from '../wall';
 
 /**
  * The city fabric: *insulae*, streets and courtyards.
@@ -116,13 +114,6 @@ interface Plot {
   perimeter?: boolean;
   /** 1 in the heart of the district, falling to 0 at its frayed edge. */
   edge: number;
-}
-
-/** A lane the district cut for itself, in world space. Drawn with the rest of the network. */
-export interface Lane {
-  path: { x: number; z: number }[];
-  cls: WayClass;
-  width: number;
 }
 
 /**

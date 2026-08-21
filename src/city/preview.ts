@@ -6,9 +6,9 @@ import { TerrainSystem } from '../terrain/TerrainSystem';
 import { ROME_PLAN } from './rome/plan';
 import { hash01 } from '../util/rand';
 import { CitySystem } from './CitySystem';
-import { LANDMARKS } from './layout';
+import { LANDMARKS } from './rome/layout';
 import { REFERENCE_PLANS, type OverlayOptions } from './overlay';
-import { ROME } from './rome';
+import { ROME } from './rome/survey';
 
 /**
  * Standalone preview harness for the city.

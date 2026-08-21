@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { box, type Batch } from '../build';
-import type { Lane } from '../insulae';
+import type { Lane } from '../cityPlan';
 import { KeepOut, type WayClass } from '../layout';
 import type { CityChunkSpec, TreeRequest } from '../wall';
 import {

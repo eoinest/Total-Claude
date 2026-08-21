@@ -11,12 +11,20 @@ import type {
 import type {
   CityAssertion, CityBuild, CityChecks, CityLandmarkRef, CityPlan, PlanRect,
 } from './cityPlan';
-import type { Lane } from './insulae';
+import type { Lane } from './cityPlan';
 import { CITY_MAT_KEYS, CityMaterials } from './materials';
 import { buildReferenceOverlay, type OverlayOptions, type ReferencePlan } from './overlay';
 import { romeAmphitheatreCount } from './rome/plan';
+/**
+ * Rome's, and knowingly so — see the note in `wall.ts`. A bay that is a bare footing or a
+ * rubble gap has no walk level to report, and what is standing there is Aurelian's
+ * construction programme and Aurelian's plinth. Carthage never reaches the branch: every
+ * Punic bay is `finished`. A third city that ships unfinished stretches has to publish its
+ * own answer, and the honest place for it is the bay record rather than an import.
+ */
+import { unfinishedTopAt } from './rome/section';
 import {
-  unfinishedTopAt, type CityChunkSpec, type GarrisonBay, type GateBlockOut, type GateDoorOut,
+  type CityChunkSpec, type GarrisonBay, type GateBlockOut, type GateDoorOut,
   type GateOut, type RoughGround, type WallSegmentOut, type WallStair,
 } from './wall';
 

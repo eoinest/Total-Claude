@@ -2,27 +2,22 @@ import { Faction } from '../../sim/types';
 import { buildCarthageWall, CARTHAGE_SECTION } from '../carthageWall';
 import { activeFortification } from '../fortification';
 import type { CityBuild, CityPlan } from '../cityPlan';
-import { buildDistricts } from '../insulae';
-import { buildLandmarks } from '../landmarks';
+import { assertNoFabricOverlaps, KeepOut } from '../layout';
+import { buildTreeChunks } from '../props';
+import { type CityChunkSpec, type TreeRequest } from '../wall';
+import { GATE_OPEN_WIDTH } from './apertures';
 import {
-  AQUEDUCTS,
   assertHillRing,
-  assertNoFabricOverlaps,
   assertNoFootprintOverlaps,
   assertOneAmphitheatre,
   assertTopology,
   assertWaysClearOfMonuments,
-  GATE_OPEN_WIDTH,
-  KeepOut,
-  LANDMARKS,
-  PLAZAS,
-  WALL,
-  WAY_FRONTAGE,
-  wayMix,
-  WAYS,
-} from '../layout';
-import { buildTreeChunks } from '../props';
-import { buildWall, type CityChunkSpec, type TreeRequest } from '../wall';
+} from './assertions';
+import { buildWall } from './circuit';
+import { buildDistricts } from './fabric';
+import { AQUEDUCTS, LANDMARKS, PLAZAS, WAY_FRONTAGE, wayMix, WAYS } from './layout';
+import { buildLandmarks } from './monuments';
+import { WALL } from './section';
 
 /**
  * Rome, 271 AD: the Aurelian Wall under construction and the city behind it.
