@@ -81,6 +81,23 @@ narrow on purpose and prints its own blind spots — iteration order, unstable s
 floating-point association — every time it passes. `tools/qa-determinism.mjs` is what actually
 proves a replay is bit-identical.
 
+**Portability rule, which is a weaker and separate thing.** The rule above is about one build
+replaying itself. It says nothing about the *same* battle in a different browser, and that is
+a different battle today. `Math.sin`, `cos`, `tan`, `atan`, `atan2`, `asin`, `acos`, `exp`,
+`log`, `pow`, `cbrt` and friends are implementation-approximated in ECMA-262 — the spec
+recommends fdlibm and requires nothing — so each can return a different last bit in a
+different engine, or in a different build of the same engine. Only `+ - * /` and `Math.sqrt`
+are correctly rounded, and JavaScript has no fused multiply-add. Measured across Chromium,
+Firefox and WebKit: `tan` disagrees on 41% of inputs, `hypot` on 37%, `atan2` and `acos` on
+17%, `exp` on 10%, `sin`/`cos` on 4%, `sqrt` on none. The default field battle forks between
+engines at t+205.5 s; the Carthage assault is a different battle before a single tick runs.
+
+`npm run lint` counts these and **warns**. It never fails on them: there are ~1,300 in the
+simulation and world-building directories and the real fix is a vendored software libm.
+Prefer the exact primitive where one exists — `Math.hypot(a, b)` has already been replaced by
+`Math.sqrt(a * a + b * b)` throughout `src/sim`, `src/ai`, `src/units` and `src/city`, so a
+`Math.hypot` in those four is a regression and the linter names it as one.
+
 ---
 
 ## 3. Cross-subsystem contracts
