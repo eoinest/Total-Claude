@@ -851,6 +851,52 @@ const SHOTS = {
     wall: { bay: -3, stand: 6, lift: 0, yaw: 'in' },
     cam: { eye: 13, aim: 2.2, dist: 32, fov: 40 },
   },
+  /*
+   * ---------------------------------------------------------------------------
+   * `--set=parapetfile`: a cohort ordered onto the wall, before and after.
+   * ---------------------------------------------------------------------------
+   *
+   * A diptych, not a deck. Both frames are the same second of the same seed from the same
+   * camera and differ only by the tree they were shot from, which is the only way a
+   * before/after pair says anything: the owner reported this by eye and a number cannot
+   * answer him.
+   *
+   * The camera stands off the wall's inner face, above the walk, looking along it, so the
+   * *depth* of the formation is what the frame is about. That is the whole subject: on the
+   * old tree a 160-man cohort ordered here is 45 men standing on one point of stone with
+   * ranks running to 142 on a walkway that takes five; on the new one it is a file along
+   * the run, five deep, one man to a place.
+   *
+   * `at: 260` because the ascent is a queue up one flight — 160 men through a stair mouth
+   * that admits by proximity — and a frame taken before the cohort is up photographs the
+   * grass it is still standing on. The order goes in at t+8, once the deployment has
+   * settled and before the assault reaches this stretch.
+   */
+  'parapetfile-order-along': {
+    desc: 'A legionary cohort ordered onto the wall: straight down onto the walk it holds',
+    scenario: 'assault', hour: 11.0, at: 260,
+    order: { unit: 'legio-cohort', bay: -1, at: 8 },
+    wall: { bay: -2, stand: 1.0, lift: 0, yaw: 'in' },
+    cam: { base: 'walk', eye: 17, aim: 0.6, dist: 13, fov: 42 },
+  },
+  /*
+   * A different hour, and that is load-bearing rather than decorative.
+   *
+   * `groupKey` is `[map, hour, scenario, quality, opponent, weather, seed]`, so two shots
+   * that agree on all of it share one page load — and the second then starts from wherever
+   * the first left the battle. Shot at the same hour, this pair issued its order twice into
+   * one world: the first frame moved cohort 10 and the second, finding 10 already on the
+   * wall at t+261, ordered cohort 11 and photographed a different battle. A diptych whose
+   * halves are different battles is worse than no diptych. Each half is compared against
+   * *itself* on the other tree, so the two halves need not share a sun.
+   */
+  'parapetfile-order-across': {
+    desc: 'The same order, from outside and above the curtain, twenty-four minutes of sun apart',
+    scenario: 'assault', hour: 11.4, at: 260,
+    order: { unit: 'legio-cohort', bay: -1, at: 8 },
+    wall: { bay: -2, stand: 26, lift: 0, yaw: 'in' },
+    cam: { eye: 30, aim: 19, dist: 30, fov: 36 },
+  },
   'escalade-foot-32': {
     desc: 'Escalade: the same camera, t+32',
     scenario: 'assault', hour: 9.5, at: 32,
@@ -1105,6 +1151,8 @@ const FAMILIES = {
   eyeline: 'the eye line on top of a wall, twelve frames, both circuits. A before/after pair '
     + 'set: every one is `lift: \'stand\'`, so nothing is pinned and the rig resolves the '
     + 'surface itself. See the block comment above `eyeline-rome-along`',
+  parapetfile: 'a cohort ordered onto the wall, two cameras. A before/after diptych, not a '
+    + 'deck member — see the block comment above `parapetfile-order-along`',
 };
 
 /** `field` is the absence of a declared family, and `field` is what `--set=all` means. */
@@ -1161,6 +1209,7 @@ const SETS = {
   escalade: Object.keys(SHOTS).filter((k) => familyOf(k) === 'escalade'),
   footing: Object.keys(SHOTS).filter((k) => familyOf(k) === 'footing'),
   eyeline: Object.keys(SHOTS).filter((k) => familyOf(k) === 'eyeline'),
+  parapetfile: Object.keys(SHOTS).filter((k) => familyOf(k) === 'parapetfile'),
   /** The graded field set, and the default. Everything with no declared family. */
   all: Object.keys(SHOTS).filter((k) => familyOf(k) === 'field'),
   /** Literally everything, for the rare pass that wants it. Never a deck. */
@@ -1560,6 +1609,58 @@ try {
           // requested alongside it. Two runs of `aftermath` reached 6,329 and 6,892 men.
           // A fixed grid makes any subset of shots follow the same path.
           const STEP = 0.5;
+          /**
+           * `order`: send a cohort onto the wall part way through the fast-forward.
+           *
+           * Everything else in this table photographs a battle that fights itself, and for a
+           * defect the player only sees after he has *given an order* that is a camera aimed
+           * at the wrong thing. This runs the clock to `s.order.at`, emits one `orderIssued`
+           * — the same event `SelectionController` emits and the only one that carries the
+           * clicked point intact — and then runs on to `s.at`.
+           *
+           * The target is a spine *station*, not a bay midpoint. On Rome the bay nearest the
+           * gate has no stations inside the gate block, so its midpoint is 2.22 m along the
+           * wall from the nearest one and `wallTargetAt` correctly answers "not the parapet";
+           * a probe that aimed there measured a unit that was never given an order at all.
+           *
+           *   order: { unit: 'legio-cohort', bay: 0, at: 8 }
+           *
+           * `bay` is relative to the gate, as `wall.bay` is, so a shot's camera and its order
+           * can name the same stretch of curtain the same way.
+           */
+          let orderDebug = null;
+          if (s.order) {
+            while (g.simTime() < s.order.at - 1e-6) {
+              g.advance(Math.min(STEP, s.order.at - g.simTime()));
+            }
+            const b = g.battle;
+            const sg = b.siege;
+            const city = g.engine.context.tryGet('city');
+            const bays = city && city.getGarrisonBays ? city.getGarrisonBays() : [];
+            const gi = bays.findIndex((q) => q.isGate);
+            const bay = bays[Math.max(0, Math.min(bays.length - 1, (gi < 0 ? 0 : gi) + s.order.bay))];
+            const cx = (bay.x0 + bay.x1) * 0.5;
+            const cz = (bay.z0 + bay.z1) * 0.5;
+            let st = -1, bd = Infinity;
+            for (let i = 0; i < sg.stationCount; i++) {
+              const d = (sg.sx[i] - cx) ** 2 + (sg.sz[i] - cz) ** 2;
+              if (d < bd) { bd = d; st = i; }
+            }
+            let u = null;
+            for (const q of b.units) {
+              if (q.destroyed || q.typeId !== s.order.unit) continue;
+              if (sg.ownsUnit(q.id) || sg.isGarrisoned(q.id)) continue;
+              if (!u || q.alive > u.alive) u = q;
+            }
+            if (u && st >= 0) {
+              g.engine.events.emit('orderIssued',
+                { unitIds: [u.id], kind: 'move', x: sg.sx[st], z: sg.sz[st] });
+              orderDebug = { unitId: u.id, alive: u.alive, station: st, run: sg.sRun[st],
+                bay: bay.index, at: s.order.at };
+            } else {
+              orderDebug = { unitId: -1, why: u ? 'no station' : `no free ${s.order.unit}` };
+            }
+          }
           while (g.simTime() < s.at - 1e-6) {
             g.advance(Math.min(STEP, s.at - g.simTime()));
           }
@@ -2275,7 +2376,7 @@ try {
 
           const st = g.engine.stats();
           return {
-            simTime: g.simTime(), men, units, corpses, waterDebug, wallDebug, camDebug,
+            simTime: g.simTime(), men, units, corpses, waterDebug, wallDebug, camDebug, orderDebug,
             nearestMan, horizonFrac, sunAngle, sunElev,
             weather: g.engine.context.tryGet('vfx')?.weatherKind ?? 'n/a',
             focusX: Math.round(fx), focusZ: Math.round(fz), yaw: +fyaw.toFixed(2),

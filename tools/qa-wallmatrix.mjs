@@ -601,6 +601,84 @@ const downExpect = (wantSide) => (before, after, tick1, res) => {
     + `${res.order ? `${res.order.kind} at (${(res.order.x ?? 0).toFixed(1)},${(res.order.z ?? 0).toFixed(1)})` : 'NONE'}` };
 };
 
+/**
+ * S1 — the stair a unit will be sent to is one it can walk to.
+ *
+ * Read-only, no mouse, and it runs on both maps before any order goes out. `Siege` picks a
+ * flight with `nearestStairLink(x, z, run)`, and every descent and every ascent in this
+ * matrix rests on that choice; a cell that only grades the outcome cannot tell "the unit
+ * refused to move" from "it was sent to a stair on the far side of a break". This asks the
+ * question directly, for the midpoint of every run on the circuit:
+ *
+ *   1. is the chosen stair on a run the walk actually joins to this one?
+ *   2. is it the nearest such stair *along the walk*?
+ *
+ * The second half is the case that would have caught the original defect the day it was
+ * written: the old body took the first stair in `this.links` order whose `runB` matched and
+ * never improved on it, so a run carrying two flights walked to whichever happened to be
+ * indexed first — possibly at the far end, in the opposite direction. `buildLinks` keeps one
+ * stair link per run today so no shipped map can express it, which is exactly why it needs a
+ * test rather than an inspection: the map that adds a second flight will not think to look.
+ */
+async function stairChoiceCell() {
+  if (ONLY && !ONLY.has('S1')) return;
+  const r = await page.evaluate(() => {
+    const s = window.__game.battle.siege;
+    const nRuns = s.runNext.length;
+    const lo = [], hi = [];
+    for (let i = 0; i < s.stationCount; i++) {
+      const q = s.sRun[i];
+      if (lo[q] === undefined) lo[q] = i;
+      hi[q] = i;
+    }
+    // Components under the chain rule the sim itself walks.
+    const comp = new Array(nRuns).fill(-1);
+    let nc = 0;
+    for (let q = 0; q < nRuns; q++) {
+      if (comp[q] >= 0) continue;
+      let e = q;
+      while (e + 1 < nRuns && s.runNext[e] >= 0) e++;
+      for (let k = q; k <= e; k++) comp[k] = nc;
+      nc++;
+    }
+    const stairs = s.links.filter((l) => l.kind === 2);
+    const bad = [];
+    let checked = 0, noWay = 0;
+    for (let q = 0; q < nRuns; q++) {
+      if (lo[q] === undefined) continue;
+      const mid = (lo[q] + hi[q]) >> 1;
+      const reachable = stairs.filter((l) => comp[l.runB] === comp[q]);
+      const picked = s.nearestStairLink(s.sx[mid], s.sz[mid], q);
+      if (reachable.length === 0) {
+        // No flight serves this stretch of wall at all. The honest answer is -1.
+        if (picked >= 0) bad.push({ run: q, picked, why: 'named a stair from another component' });
+        else noWay++;
+        checked++;
+        continue;
+      }
+      const pl = picked >= 0 ? s.links[picked] : null;
+      if (!pl || comp[pl.runB] !== comp[q]) {
+        bad.push({ run: q, picked, pickedRun: pl ? pl.runB : -1, why: 'unreachable' });
+      } else {
+        let best = -1, bd = Infinity;
+        for (const l of reachable) {
+          const d = s.walkDistance(l.stationB, q) + Math.hypot(l.ax - s.sx[mid], l.az - s.sz[mid]);
+          if (d < bd - 1e-6) { bd = d; best = l.id; }
+        }
+        if (best !== picked) bad.push({ run: q, picked, best, why: 'not the nearest along the walk' });
+      }
+      checked++;
+    }
+    return { nRuns, components: nc, stairs: stairs.length, checked, noWay, bad };
+  });
+  record({ id: 'S1', route: 'stairs', dir: '-', unitId: -1, unitType: '', pass: r.bad.length === 0,
+    note: `${r.checked} runs across ${r.components} component(s) of the walk, ${r.stairs} flights: `
+      + `${r.bad.length} wrong choice(s)`
+      + (r.noWay ? `, ${r.noWay} run(s) correctly answered "no way down"` : '')
+      + (r.bad.length ? ` — ${JSON.stringify(r.bad.slice(0, 6))}` : ''),
+    detail: r });
+}
+
 async function romeCells() {
   const line = units.find((u) => u.typeId === 'legio-cohort' && u.faction === 0);
   const arch = units.find((u) => u.typeId === 'ballistarii' && u.garrisoned);
@@ -918,6 +996,7 @@ async function breachCell() {
 }
 
 console.log('\n— the matrix —');
+await stairChoiceCell();
 if (MAP === 'carthage') await carthageCells(); else await romeCells();
 await breachCell();
 
