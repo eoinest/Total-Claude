@@ -450,6 +450,14 @@ export interface ElevationOwner {
   postIntegrate(dt: number): void;
   /** True while this unit's men are placed by the siege system rather than by a formation. */
   ownsUnit(unitId: number): boolean;
+  /**
+   * True while *this man* is standing on a structure or walking a path onto one.
+   *
+   * Per soldier, and deliberately not derivable from `ownsUnit`. A boarding party is one
+   * unit spread over three places — the parapet, the rungs and the grass — and every fault
+   * this area has produced came from answering a per-man question with the unit's flag.
+   */
+  manOnStructure(index: number): boolean;
 }
 
 export class BattleSystem implements Subsystem {
@@ -2150,13 +2158,27 @@ export class BattleSystem implements Subsystem {
    */
   private steerToSlots(u: UnitGroupState, def: UnitTypeDef, dt: number): void {
     const p = this.pool;
+    const owner = this.elevation;
     // Men shuffling along a walkway move at a walk whatever the unit's orders say. There
     // is no room up there to run and nowhere to run to.
-    const maxSpeed = def.walkSpeed * (1 - u.fatigue * 0.42);
-    const accel = maxSpeed * 5.5;
+    const walk = def.walkSpeed * (1 - u.fatigue * 0.42);
+    /**
+     * A broken man who is already on the grass runs, and he is the only one who does.
+     *
+     * The wall keeps its walk: there is no room to run on a 3.25 m parapet and a man who
+     * sprinted along one would be shoved off it. But a party that broke half way up a wall
+     * stays siege-owned while any of it is on the stone — `Siege.routOffTheWall` — and
+     * without this its men at the foot flee at 1.55 m/s against the 4.35 m/s a routing man
+     * runs at, which is the pin this whole area has been bitten by twice. Decided per man
+     * rather than per unit, because "on the wall" is a per-man fact and the unit is in three
+     * places at once.
+     */
+    const flee = u.order === UnitOrder.Rout ? def.runSpeed * 1.06 * (1 - u.fatigue * 0.42) : 0;
     for (const i of u.members) {
       const st = p.state[i] as SoldierState;
       if (st === SoldierState.Dead || st === SoldierState.Dying) continue;
+      const maxSpeed = flee > 0 && owner !== null && !owner.manOnStructure(i) ? flee : walk;
+      const accel = maxSpeed * 5.5;
       if (st === SoldierState.Fighting) {
         p.vx[i] = damp(p.vx[i], 0, 9, dt);
         p.vz[i] = damp(p.vz[i], 0, 9, dt);

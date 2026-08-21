@@ -2129,6 +2129,18 @@ export class Siege implements ElevationOwner {
     return this.owned.has(unitId);
   }
 
+  /**
+   * Is this man on the stonework, or on a path onto it?
+   *
+   * `-1` is the only `stationOf` value that means the grass — `PENDING_SLOT` and `ON_LINK`
+   * are both negative and both mean he is up. The same predicate `releaseBrokenCrews` uses
+   * to decide whose `support` it may cut, published so `BattleSystem` can ask it about one
+   * man instead of inferring it from his unit.
+   */
+  manOnStructure(index: number): boolean {
+    return this.crossOf[index] !== -1 || this.stationOf[index] !== -1;
+  }
+
   // -------------------------------------------------------------------------
   // The wall as somewhere you can be ordered
   // -------------------------------------------------------------------------
@@ -3800,6 +3812,95 @@ export class Siege implements ElevationOwner {
     b.slotFacing[i] = Math.atan2(-ax, -az);
   }
 
+  /** Has this unit anybody on the stonework or on a path up it, right now? */
+  private someoneOnTheStone(u: UnitGroupState): boolean {
+    const p = this.battle.pool;
+    for (const i of u.members) {
+      if (!p.aliveAt(i)) continue;
+      if (this.crossOf[i] !== -1 || this.stationOf[i] !== -1) return true;
+    }
+    return false;
+  }
+
+  /**
+   * A broken party runs for the stairs, and keeps the men who cannot reach one on the stone.
+   *
+   * Called once per tick for a party that has broken while any of it is still up. Opening a
+   * plan is idempotent — `plans.has` guards it — so this is a no-op on all but the first
+   * tick and on the ticks after an existing plan has finished.
+   *
+   * The rally point is the foot of the flight pushed 40 m further along the wall's own
+   * outward normal *on the side the unit is fleeing to*, which is the city for a garrison
+   * and the field for a lodgement. It is not the unit's anchor: the anchor of a party half
+   * way up a wall is inside the masonry, and `groundSlot` would then form the survivors up
+   * inside the curtain.
+   *
+   * **When there is no reachable stair there is nothing honest to do but hold.** A lodgement
+   * that has broken on a parapet cannot use the defenders' flights — they come out among the
+   * men who just threw it off — and it did not come up one, it came up a ladder, which this
+   * system only runs upward. Held, it stands and fights and dies where it is, which is what
+   * a broken lodgement does; released, it walks at a slot on the far side of a wall it
+   * cannot leave, which is what the owner reported. Held is also *safe*: nothing clears
+   * `elevated` for a man on the stone, so nobody falls. Going down a ladder under fire is
+   * the next piece of work and it is named in the report rather than half-built here.
+   */
+  private routOffTheWall(u: UnitGroupState): void {
+    this.owned.add(u.id);
+    this.brokeOff.delete(u.id);
+    if (this.plans.has(u.id)) return;
+    if (!this.garrisons.has(u.id)) return;
+    const here = this.stationNear(u.x, u.z);
+    if (here < 0) return;
+    const stair = this.nearestStairLink(u.x, u.z, this.sRun[here]);
+    if (stair < 0) return;
+    const l = this.links[stair];
+    const st = l.stationB >= 0 ? l.stationB : here;
+    // Inward for a defender, outward for a besieger: away from whoever broke him.
+    const side = this.sideOf(u.x, u.z);
+    const gx = l.ax + this.snx[st] * side * 40;
+    const gz = l.az + this.snz[st] * side * 40;
+    this.plans.set(u.id, {
+      goal: WallGoal.Descend, destStation: -1, destRun: l.runB,
+      stair, gx, gz, age: 0, stuck: 0,
+    });
+    const g = this.garrisons.get(u.id);
+    if (g) g.sticky = false;
+  }
+
+  /**
+   * Where a man of a broken party who is already on the grass should run.
+   *
+   * Straight away from the wall, on the side he is standing. Recomputed from his own
+   * position each tick, so it is a receding point rather than a destination — which is what
+   * flight is, and which lets `BattleSystem`'s "escaped" test retire him at 260 m from the
+   * nearest enemy exactly as it does for any other routing man.
+   *
+   * This exists because the party stays siege-owned while its mates are on the parapet (see
+   * `routOffTheWall`), and a siege-owned man whose slot nobody writes keeps walking at a
+   * **slot frozen at the last tick before he broke** — the measured 1.11 m/s pin this file
+   * already carries a note about, arriving by a new route. Writing the flight slot is what
+   * makes keeping the unit safe.
+   */
+  private fleeSlot(i: number, u: UnitGroupState): void {
+    const b = this.battle;
+    const p = b.pool;
+    const st = this.stationNear(p.x[i], p.z[i]);
+    b.elevated[i] = 0;
+    b.support[i] = NO_SUPPORT;
+    if (st < 0) {
+      b.slotX[i] = p.x[i];
+      b.slotZ[i] = p.z[i];
+      return;
+    }
+    const side = this.sideOf(p.x[i], p.z[i]);
+    const nx = this.snx[st] * side;
+    const nz = this.snz[st] * side;
+    b.slotX[i] = p.x[i] + nx * 60;
+    b.slotZ[i] = p.z[i] + nz * 60;
+    b.slotFacing[i] = Math.atan2(nx, nz);
+    void u;
+  }
+
   /** Steer a man who has come off the wall toward the rally point, in a loose block. */
   private groundSlot(i: number, u: UnitGroupState, gx: number, gz: number, q: number): void {
     const b = this.battle;
@@ -3825,6 +3926,18 @@ export class Siege implements ElevationOwner {
   private releaseToGround(u: UnitGroupState, gx: number, gz: number): void {
     const p = this.battle.pool;
     for (const i of u.members) {
+      /**
+       * Never take the floor out from under a man who is still on one.
+       *
+       * The caller only reaches this when its `moving` tally is zero, so on paper nobody is
+       * on a crossing — but this function is one stall timeout away from being called on a
+       * party that is, and the last time that happened **nine men who were still climbing
+       * fell from full height at 313 m/s**. The measured safe state after that fix is a
+       * worst vertical step of 0.049 m and zero falls, and it is held by asking the
+       * question per man rather than by trusting the caller's arithmetic. A blanket clear
+       * on a per-unit flag is precisely the shape of the fault.
+       */
+      if (this.crossOf[i] !== -1) continue;
       this.stationOf[i] = -1;
       this.rankOf[i] = 0;
       this.wantLink[i] = -1;
@@ -4447,6 +4560,37 @@ export class Siege implements ElevationOwner {
         // player has ordered it down off the wall — re-adopting that one would pin an
         // escalade party to the ladders it had just been ordered to leave.
         if (this.brokeOff.delete(m.unitId)) this.owned.add(m.unitId);
+        continue;
+      }
+      /**
+       * A party that breaks half way up a wall is in three places, and the release has to
+       * answer for each of them separately.
+       *
+       * This is the owner's second report — *"some of the soldiers on top of the wall are
+       * routed, some of the soldiers at the bottom are routed, and so they kind of are all
+       * stuck half on the wall half off"* — and it is what "release the unit" means when the
+       * unit is not in one place. Traced on an escalade party of 92 at the storm of Rome, 2
+       * men on the parapet, 41 on the rungs and 49 on the grass at the instant it broke:
+       *
+       *  - the 49 on the grass were released and ran, correctly;
+       *  - the 41 on the rungs **finished climbing onto the wall they were fleeing**, so the
+       *    parapet count went 2 → 38 while the unit was routing;
+       *  - and every one of those men, the unit no longer being siege-owned, was handed a
+       *    *field formation slot* at the rout point — 260 m away in the mean and 325 m at
+       *    the worst, on the ground, through solid masonry. `holdGarrisonsOnTheWalk` keeps
+       *    him on the stone because he is still in `garrisons`, so he grinds along the
+       *    parapet at the end of his run for the rest of the battle.
+       *
+       * So the release is now conditional on where the men actually are. A party with
+       * anybody still on the stonework or on a path **stays siege-owned** — that is the only
+       * thing in this simulation that can place a man on a wall — and is given a descent
+       * plan, which is what a broken garrison does: it runs for the stairs. Its men on the
+       * grass are steered away by `musterOwned`'s flight slot, at a run, so keeping the unit
+       * does not re-create the pin that this loop exists to prevent. Only when the last man
+       * is off the stone does the unit go back to the field.
+       */
+      if (u && this.someoneOnTheStone(u)) {
+        this.routOffTheWall(u);
         continue;
       }
       if (this.owned.delete(m.unitId)) this.brokeOff.add(m.unitId);
@@ -5481,6 +5625,25 @@ export class Siege implements ElevationOwner {
   private musterOwned(): void {
     const b = this.battle;
     const p = b.pool;
+    /**
+     * A broken party's men on the grass are given flight, not a muster place.
+     *
+     * First, and for every owned unit rather than only the ones on a machine, because a
+     * party that has broken while half of it is on the parapet stays owned — see
+     * `routOffTheWall` — and the loops below skip it (`mayBoard` is false for a routing
+     * unit), which is exactly the state that leaves a man walking at a slot frozen at the
+     * tick before he broke.
+     */
+    for (const id of this.owned) {
+      const u = b.unitById(id);
+      if (!u || u.destroyed || u.order !== UnitOrder.Rout) continue;
+      for (const i of u.members) {
+        if (!p.aliveAt(i)) continue;
+        // Men on the stone or on a path keep their siege slot; only the grass runs.
+        if (this.crossOf[i] !== -1 || this.stationOf[i] !== -1) continue;
+        this.fleeSlot(i, u);
+      }
+    }
     for (const t of this.towers) {
       const cos = Math.cos(t.facing);
       const sin = Math.sin(t.facing);
