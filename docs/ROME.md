@@ -2675,16 +2675,26 @@ defect in the tree, not in the redesign, and the fix is to stop voiding `step`.
 >
 > Two things the same probe measured and did **not** fix, both upstream of this task:
 >
->  - **`buildSpine`'s east margin is asymmetric.** A bay's west end is clipped by
->    `towerHalf + 0.55` and its east end by 0.55, so the last four stations of every bay stand
->    inside the next tower's footprint while being levelled to their own bay's `walkY`.
->    Measured against `CitySystem.walkableTopAt`, Rome's worst station stands **3.16 m** above
->    the drawn walking surface and Carthage's 0.80 m; and the tower gaps come out at 4.99–5.61 m
->    against the 8.3–9.4 m `LINK_MAX_GAP`'s own comment claims. Fixing it widens the gaps and
->    four of Rome's five refusals become flights again, with no change to `stepAcross`.
+>  - **`buildSpine`'s east margin was asymmetric.** *(Fixed since, at `2598f1e`.)* A bay's west
+>    end was clipped by `towerHalf + 0.55` and its east end by a bare 0.55, so the last four or
+>    five stations of every bay stood inside the next tower's footprint while being levelled to
+>    their own bay's `walkY`. Measured against `CitySystem.walkableTopAt` at `66b220b`, 166 of
+>    Rome's 1,673 stations were inside a tower box with the worst **3.16 m** above the drawn
+>    walk, and 177 of Carthage's 2,016 at up to 0.80 m; the tower gaps came out at 4.94–5.68 m
+>    against the 8.3–9.4 m `LINK_MAX_GAP`'s own comment claimed. Both ends are now clipped by
+>    their own tower. Both counts are 0, Rome's gaps measure 8.71–9.52 m, and **all five** of
+>    its refusals became flights with no change to `stepAcross` — `unbridged` 8 → 3 and 43 of
+>    45 runs reachable from a stair against 28. It cost 187 stations on Rome and 186 on
+>    Carthage, and a tower pass now takes a median 9.5 s against 6.0, because the crossing is
+>    priced over the run the stone actually has.
 >  - **The city publishes no flight west of bay 14 (x −130).** 518 m of curtain over thirteen
 >    bays, 39.4 % of the walk, has no way up from the ground; until this change the whole of it
 >    hung off the single 7.70 m link at x −134.6. That is task 10's, and task 10 closes it.
+>    *(The margin fix at `2598f1e` restored that link, so the thirteen bays are reachable along
+>    the wall again and the stranded stretch falls to 54 m over runs 0–1, 4.6 % of the walk. It
+>    does not close task 10: a garrison that has to walk 500 m from the nearest flight to reach
+>    its post is not a garrison with a way up, and one link carrying thirteen bays is a single
+>    point of failure a breach removes.)*
 
 **4. The Muro Torto.** §4.5. Seven bays, outward batter of 6°–7°, ~15 m, built **against
 earth** so the city side is hillside: garrisonable, **no tower stairs and none needed**, a

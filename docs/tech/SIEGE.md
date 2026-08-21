@@ -163,11 +163,33 @@ early-outs on the first two.
 *stations* — a place a man can stand.
 
 ```
-STATION_PITCH = 0.86 m          lateral spacing along the walk, the field spacing
-t0 = bay.towerHalf + 0.55       first station, clear of the tower at the bay's west end
-t1 = bay.length − 0.55          last station
+STATION_PITCH  = 0.86 m                              lateral spacing, the field spacing
+STATION_CLEAR  = 0.55 m                              clear of the tower at either end
+toNext = (next.x0 − bay.x0)·dx + (next.z0 − bay.z0)·dz    chord, measured not read
+t0 = bay.towerHalf  + STATION_CLEAR                  first station
+t1 = toNext − next.towerHalf − STATION_CLEAR         last station
 count = floor((t1 − t0) / STATION_PITCH)
 ```
+
+**Both ends are clipped by the tower that stands at that end, and until `2598f1e` only one
+was.** `t1` was `bay.length − 0.55`, which names no tower at all, so the last four or five
+stations of every bay ran into the next tower's footprint while still being levelled to their
+own bay's `walkY` — and that footprint is exactly the band `CitySystem.curtainWalkAt` ramps
+the drawn walk across, so `walkY` is the one number that is wrong in there. Measured at
+`66b220b`: 166 of Rome's 1,673 stations inside a tower box, the worst standing **3.16 m above
+the surface `CitySystem.walkableTopAt` reports under it**, and 177 of Carthage's 2,016 at up
+to 0.80 m. Both are 0 now, and every station's height equals `walkableTopAt` at its own plan
+point to float precision.
+
+The knock-on is larger than the clip. A crossing is priced over the plan run between the two
+stations it joins, so shortening the run on one side halved every tower gap: Rome's were
+4.94–5.68 m where the tower really gives 8.71–9.52, and `stepAcross` was being asked to
+carry a 7.70 m rise over 5.03 m of plan. It refused, correctly. With the run honest, all five
+of Rome's refusals are flights, `unbridged` falls 8 → 3, and **43 of 45 runs are reachable
+from a stair against 28**. The cost is time and standing room: Rome 1,673 → 1,486 stations,
+Carthage 2,016 → 1,830, and a tower pass takes a median 9.5 s against 6.0. See `STATION_CLEAR`
+and `LINK_MAX_GAP` in `Siege.ts` for the arithmetic and for the 6.02 m ceiling it puts on a
+future circuit's `towerHalf`.
 
 Fifteen parallel arrays are written per station, and their names are the whole vocabulary of
 the rest of the file:
