@@ -43,3 +43,7 @@ reference-crops/
 tools/scratch/.grid/
 tools/scratch/.preview/
 tools/scratch/.try/
+# Per-worktree vite cache. `cacheDir` in `vite.config.ts` explains why every long-running
+# harness in a worktree must set `TC_VITE_CACHE_DIR`, and the conventional place to point it
+# is here — which put an optimiser cache on a committable path in three worktrees at once.
+.vite-cache/
