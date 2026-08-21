@@ -157,6 +157,46 @@ const SHOTS = {
     desc: 'The same bay ten seconds later: through, or still on the concrete',
     follow: 'roughCrossing', zoom: 0.46, scenario: 'assault', at: 46, seed: 4265438264,
   },
+  /**
+   * The ground, after `docs/ROME.md` §15 tasks 1 and 2 — the two things on this map a
+   * measurement can prove and a frame has to show.
+   *
+   * **The Tiber moved 250 to 776 world metres east** onto its surveyed course, which is the
+   * largest single survey error the map had; the 690 m between the modelled bank and the
+   * real one were the invented ground the Aurelian curtain was standing on. **And the
+   * heightfield now cuts a bench under the wall**, which it never did — the curtain stood on
+   * ungraded natural crest and `buildWall` levelled each bay to whatever it found, which is
+   * where a 28.39 m bay-to-bay step in the wall-walk came from.
+   *
+   * Four frames, and none of them is a deck member: they are a before/after set, so every
+   * one is a fixed camera at a fixed second on the default seed and the two arms differ only
+   * by the tree. Cameras are coordinates rather than `follow` because the subject is the
+   * *ground* — there is no unit to resolve onto, and the whole point of the pair is that the
+   * same point in the world is photographed twice.
+   */
+  'ground-tiber': {
+    desc: 'The Tiber on its surveyed course, down the west side of the approach',
+    scenario: 'assault', hour: 9.5, at: 3,
+    x: -60, z: 250, zoom: 0.72, yaw: Math.PI * 0.95,
+  },
+  'ground-angle': {
+    desc: "The circuit's west end: the terminus tower on the river bank, where the flank closes",
+    scenario: 'assault', hour: 9.5, at: 3,
+    x: -20, z: 500, zoom: 0.58, yaw: Math.PI * 1.15,
+  },
+  'ground-bench': {
+    // From the field side, oblique, high enough to see the footing run level under a wall
+    // that is climbing 1:7.2. At eye level on the glacis this photographs grass, which is
+    // what every hand-placed camera in this table has done at least once.
+    desc: 'The wall on its graded bench, climbing the Muro Torto — from the field',
+    scenario: 'assault', hour: 9.5, at: 3,
+    x: 330, z: 538, zoom: 0.42, yaw: Math.PI * 1.06,
+  },
+  'ground-funnel': {
+    desc: 'Down the funnel from the attacker\'s line: river left, Via Flaminia, the gate',
+    scenario: 'assault', hour: 9.5, at: 3,
+    x: 0, z: 210, zoom: 0.74, yaw: Math.PI * 0.02,
+  },
   city: {
     // Was (60, 400) zoom 0.62, which put the camera *inside* the Via Flaminia tomb field
     // rather than on the city. Pulled back and lifted so the wall reads as the foreground
@@ -1249,6 +1289,9 @@ const FAMILIES = {
     + 'surface itself. See the block comment above `eyeline-rome-along`',
   parapetfile: 'a cohort ordered onto the wall, two cameras. A before/after diptych, not a '
     + 'deck member — see the block comment above `parapetfile-order-along`',
+  ground: 'the Tiber on the survey and the bench under the wall — ROME.md §15 tasks 1 and '
+    + '2. A before/after set of four fixed cameras, not a deck: see the block comment above '
+    + "'ground-tiber'",
   menu: 'the front door and where each of its doors goes. Interface, not renderer — every '
     + 'one of these frames is a `ui` shot and none may ever enter a blind deck',
 };
@@ -1316,6 +1359,7 @@ const SETS = {
   footing: Object.keys(SHOTS).filter((k) => familyOf(k) === 'footing'),
   eyeline: Object.keys(SHOTS).filter((k) => familyOf(k) === 'eyeline'),
   parapetfile: Object.keys(SHOTS).filter((k) => familyOf(k) === 'parapetfile'),
+  ground: Object.keys(SHOTS).filter((k) => familyOf(k) === 'ground'),
   menu: Object.keys(SHOTS).filter((k) => familyOf(k) === 'menu'),
   /** The graded field set, and the default. Everything with no declared family. */
   all: Object.keys(SHOTS).filter((k) => familyOf(k) === 'field'),

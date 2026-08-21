@@ -113,13 +113,74 @@ const hidden = await page.evaluate((keepUnits) => {
 }, KEEP_UNITS);
 console.log(`• hidden: ${hidden.join(', ') || 'nothing'}`);
 
+/**
+ * Deployment-ground audit: is there water or an impassable slope where an army forms up?
+ *
+ * `docs/ROME.md` §15 tasks 1 and 2 both close on this file. Task 1 moves the Tiber onto the
+ * survey, which brings the channel from x -800 to x -400 at the attacker's own latitude and
+ * puts §3.2's *"cohort deployed in the Tiber"* within reach for the first time; task 2
+ * re-cuts the relief, which is the other way to spoil a parade ground. Both are asked of the
+ * built heightfield here rather than of the masks that shaped it.
+ *
+ * "Inside" is `mask >= 0.02`, ten times the 0.002 the heightfield itself uses to decide a
+ * cell is worth flattening — so this is strictly the stronger claim: everywhere the terrain
+ * build thought it was levelling.
+ *
+ * **It does not say the armies are dry.** These masks flatten ground; `sim/scenario.ts`
+ * places units at fixed x about zero and never reads them. See `DEPLOY_AXIS_X`.
+ */
+const deploy = await page.evaluate(async () => {
+  const t = window.__game.engine.ctx.get('terrain');
+  let topo = null;
+  try { topo = await import('/src/terrain/topography.ts'); } catch { return null; }
+  if (!topo.germanDeployMask) return null;
+  const WATER = topo.WATER_LEVEL;
+  const IMPASSABLE = 0.62; // ROUGH_SLOPE_IMPASSABLE, src/sim/Obstacles.ts
+  const rows = [];
+  for (const [name, mask] of [['attacker', topo.germanDeployMask], ['defender', topo.romanDeployMask]]) {
+    let cells = 0, wet = 0, steep = 0, minH = Infinity, maxSlope = 0;
+    let wettest = null, steepest = null;
+    for (let z = -420; z <= 420; z += 4) {
+      for (let x = -800; x <= 800; x += 4) {
+        if (mask(x, z) < 0.02) continue;
+        cells++;
+        const h = t.heightAt(x, z);
+        if (h < minH) minH = h;
+        if (h < WATER) { wet++; if (!wettest || h < wettest.h) wettest = { x, z, h: +h.toFixed(2) }; }
+        const s = Math.hypot((t.heightAt(x + 4, z) - t.heightAt(x - 4, z)) / 8,
+          (t.heightAt(x, z + 4) - t.heightAt(x, z - 4)) / 8);
+        if (s > maxSlope) { maxSlope = s; steepest = { x, z, s: +s.toFixed(3) }; }
+        if (s > IMPASSABLE) steep++;
+      }
+    }
+    rows.push({ name, cells, wet, steep, minH: +minH.toFixed(2), maxSlope: +maxSlope.toFixed(3), wettest, steepest });
+  }
+  return rows;
+});
+if (deploy) {
+  for (const d of deploy) {
+    console.log(`• ${d.name} deployment ground: ${d.cells} cells, ${d.wet} under water, `
+      + `${d.steep} over the impassable slope; lowest ${d.minH} m, steepest ${d.maxSlope}`
+      + (d.wettest ? `, wettest (${d.wettest.x}, ${d.wettest.z}) at ${d.wettest.h} m` : '')
+      + (d.steepest ? `, steepest (${d.steepest.x}, ${d.steepest.z})` : ''));
+  }
+}
+
 // Vegetation keep-out audit: read the placed instances straight out of the scatter field.
-const keepout = await page.evaluate(() => {
+const keepout = await page.evaluate(async () => {
   const t = window.__game.engine.ctx.get('terrain');
   const scatter = t.scatter;
   if (!scatter || !scatter.groups) return null;
-  // crestZAt from src/terrain/topography.ts, inlined: the probe cannot import modules.
-  const crest = (x) => 330 + 52 * Math.sin(x * 0.00476) + 26 * Math.sin(x * 0.01053 + 2.1) + 175;
+  /*
+   * The wall's line, read from the module rather than transcribed.
+   *
+   * It was an inlined copy of `crestZAt` — `330 + 52 sin(0.00476 x) + 26 sin(0.01053 x + 2.1)
+   * + 175` — which was right until §15 task 2 gave the wall's line its own name and left
+   * `crestZAt` as the terrain's brow. A transcribed constant in a probe measures the tree it
+   * was written against, not the one in front of it.
+   */
+  const topo = await import('/src/terrain/topography.ts');
+  const crest = topo.romeWallZ;
   const rows = [];
   for (const g of scatter.groups) {
     let deepest = -1e9;

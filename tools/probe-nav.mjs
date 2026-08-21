@@ -18,6 +18,7 @@
  *                 told to attack.
  *   corridor      free-space width between blocks and the depth of the open ground behind
  *                 the wall, from a distance transform of the same bitmap.
+ *   flank         is there a way round an *end* of the wall, as opposed to through it.
  *   stamp         what the pathfinder actually stamped into its nav grid.
  *
  * Usage:
@@ -587,6 +588,117 @@ window.__nav = (() => {
         cellsReached: reached, cellsInsideCity: inside,
         nearestInside, nearestInsideDistance: Number.isFinite(nearestD) ? +nearestD.toFixed(0) : null,
         crossSections: cut,
+      };
+    },
+
+    /**
+     * Is there a way round the **end** of the wall, as opposed to through it?
+     *
+     * 'connectivity' cannot answer this. It floods from the attacker's side and counts what
+     * it reaches inside the circuit, and on a map whose construction state deliberately
+     * leaves 'footing' bays open (Rome, §4.8) the answer is always "yes, through a footing" —
+     * so it says nothing about the flank. This runs the same flood with one extra rule: a
+     * step may not cross the wall line anywhere the wall actually stands. Anything it then
+     * reaches on the city's side arrived past an end, and the x it crossed at says which.
+     *
+     * docs/ROME.md §15 task 1 is the caller: with the Tiber where the survey puts it, the
+     * circuit's west end should die on the river and *"there is no flank march on this map
+     * after the redesign"* (§2.5). §4.1 measured the opposite at 3595b48 — 254 open metres
+     * off the *east* end, which §15 task 9 closes with the Castra Praetoria.
+     */
+    flankRoute(radius, seal) {
+      if (!nav || !nav.grid || segs.length === 0) return { ok: false, why: 'no nav grid or no wall' };
+      const gr = nav.grid;
+      const res = gr.res;
+      const xMin = Math.min(...segs.map((q) => Math.min(q.x1, q.x2)));
+      const xMax = Math.max(...segs.map((q) => Math.max(q.x1, q.x2)));
+      const sx = 0;
+      const sz = (wallZAt(0) ?? 400) - 90;
+      const start = gr.cellAt(sx, sz);
+      if (gr.blocked[start]) return { ok: false, why: 'start cell is blocked' };
+      /*
+       * Which side of the line a cell is on, and where the line is a wall.
+       *
+       * The line is *extended* past both anchors, clamped, so every cell on the map has a
+       * definite side; the wall is only where it stands. A step that changes side where
+       * there is wall goes through the curtain and is refused. A step that changes side
+       * past an end is the thing being looked for, and its x says which end.
+       *
+       * Getting this wrong the first time made the probe say the west end was open: with
+       * "no side" past the anchors, the fill went round the *east* end, flooded the city,
+       * walked back west along the pomerium and re-entered the count as a crossing at the
+       * west anchor. The two ends have to be told apart or the measurement is worthless.
+       */
+      const lineZ = (wx) => wallZAt(wx < xMin ? xMin : wx > xMax ? xMax : wx);
+      const side = (wx, wz) => (wz > lineZ(wx) ? 1 : -1);
+      /*
+       * 'seal' shuts one end by fiat, which is the only way to tell the two apart.
+       *
+       * With neither sealed the fill goes round whichever end is open and floods the whole
+       * city, so a single run says "there is a way in" and never says where. Sealing the
+       * east end and finding the city still reachable means the way in is at the *west*,
+       * and the reverse. Rome at 3595b48 had 254 open metres off the east end (§4.1) and
+       * would have failed both arms.
+       */
+      const walled = (wx) => (wx >= xMin - 3 && wx <= xMax + 3)
+        || (seal === 'east' && wx > xMax) || (seal === 'west' && wx < xMin);
+      const seen = new Uint8Array(res * res);
+      const q = new Int32Array(res * res);
+      let head = 0, tail = 0;
+      q[tail++] = start;
+      seen[start] = 1;
+      let inside = 0;
+      let behind = 0;
+      let deepest = null;
+      const crossings = [];
+      const DX = [1, -1, 0, 0], DZ = [0, 0, 1, -1];
+      while (head < tail) {
+        const c = q[head++];
+        const cx = c % res, cz = (c - cx) / res;
+        const wx = gr.toWorld(cx), wz = gr.toWorld(cz);
+        if (wx > xMin && wx < xMax && wz > lineZ(wx) + 20) {
+          inside++;
+          /*
+           * And the same count 60 m in from the anchors, which is the one to read.
+           *
+           * At Rome the circuit's west anchor stands on the Tiber's left bank and the river
+           * then swings *east*, so a 4 m sliver of ground just inside the anchor at z 1100
+           * is 140 m west of the channel — it is Trans Tiberim, not the city, and §6.6 says
+           * so. It is reachable, it always was, and it gets you nowhere. Counting it as a
+           * flank march is how this probe first reported the west end as open.
+           */
+          if (wx > xMin + 60 && wx < xMax - 60) {
+            behind++;
+            if (!deepest || wz - lineZ(wx) > deepest.behind) {
+              deepest = { x: +wx.toFixed(0), z: +wz.toFixed(0), behind: +(wz - lineZ(wx)).toFixed(0) };
+            }
+          }
+        }
+        for (let k = 0; k < 4; k++) {
+          const nx = cx + DX[k], nz = cz + DZ[k];
+          if (nx < 0 || nz < 0 || nx >= res || nz >= res) continue;
+          const n = nz * res + nx;
+          if (seen[n] || gr.blocked[n] || gr.clearance[n] < radius) continue;
+          const ax = gr.toWorld(nx), az = gr.toWorld(nz);
+          const a = side(wx, wz), b = side(ax, az);
+          if (a !== b) {
+            if (walled(wx) && walled(ax)) continue;
+            if (a < 0) crossings.push(+ax.toFixed(0));
+          }
+          seen[n] = 1;
+          q[tail++] = n;
+        }
+      }
+      crossings.sort((u, v) => u - v);
+      return {
+        ok: true, radius, seal: seal || 'none', from: { x: sx, z: +sz.toFixed(0) },
+        wallX: [+xMin.toFixed(0), +xMax.toFixed(0)],
+        cellsInsideCity: inside, cellsBehindCurtain: behind, deepest,
+        pastWestEnd: crossings.filter((v) => v < xMin).length,
+        pastEastEnd: crossings.filter((v) => v > xMax).length,
+        westmostCrossing: crossings.length ? crossings[0] : null,
+        eastmostCrossing: crossings.length ? crossings[crossings.length - 1] : null,
+        crossings: crossings.length,
       };
     },
 
@@ -2624,6 +2736,24 @@ if (want('connectivity')) {
       console.log(`  ${x.what}: ` + x.row.map((r) => `${r.d >= 0 ? '+' : ''}${r.d}${r.blocked ? 'X' : '.'}${r.clear}`).join('  '));
     }
   }
+}
+
+if (want('flank')) {
+  console.log(`\n── a way round the end of the wall ─────────────────────`);
+  out.flankArms = [];
+  for (const [seal, what] of [['east', 'round the WEST end'], ['west', 'round the EAST end'], ['none', 'round either end']]) {
+    for (const rr of [2.2, 8]) {
+      const r = await page.evaluate(([v, sl]) => window.__nav.flankRoute(v, sl), [rr, seal]);
+      out.flankArms.push(r);
+      if (!r.ok) { console.log(`  ${what}, radius ${rr} m: ${r.why}`); continue; }
+      console.log(`  ${what.padEnd(18)} body ${String(rr * 2).padStart(4)} m wide:`
+        + ` wall x ${r.wallX[0]}..${r.wallX[1]},`
+        + ` cells behind the curtain ${String(r.cellsBehindCurtain).padStart(6)}`
+        + ` (${String(r.cellsInsideCity).padStart(6)} counting the 60 m slivers at the anchors)`
+        + (r.deepest ? `  deepest (${r.deepest.x}, ${r.deepest.z}), ${r.deepest.behind} m behind the line` : ''));
+    }
+  }
+  out.flank = out.flankArms[0];
 }
 
 if (want('penetration')) {

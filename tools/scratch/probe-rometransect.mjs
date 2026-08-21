@@ -37,6 +37,7 @@ import { writeFile } from 'node:fs/promises';
 const arg = (k, d) => (process.argv.find((a) => a.startsWith(`--${k}=`)) ?? `--${k}=${d}`).split('=')[1];
 const PORT = Number(arg('port', 5941));
 const MAP = arg('map', 'campus-martius');
+const SCENARIO = arg('scenario', 'assault');
 const JSON_OUT = arg('json', '');
 const ONLY = arg('only', '');
 const want = (k) => !ONLY || ONLY.split(',').includes(k);
@@ -91,9 +92,9 @@ const ROUGH_SLOPE_IMPASSABLE = 0.62;
 /** `src/city/carthage/topography.ts`. The bench Rome is being given one of. */
 const WALL_BENCH_HALF = 40;
 
-const token = Buffer.from(JSON.stringify({ map: MAP, scenario: 'assault' })).toString('base64')
+const token = Buffer.from(JSON.stringify({ map: MAP, scenario: SCENARIO })).toString('base64')
   .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-const url = `http://127.0.0.1:${PORT}/?harness=1&w=1280&h=720&quality=ultra&scenario=assault&battle=${token}`;
+const url = `http://127.0.0.1:${PORT}/?harness=1&w=1280&h=720&quality=ultra&scenario=${SCENARIO}&battle=${token}`;
 const probe = await fetch(`http://127.0.0.1:${PORT}/src/main.ts`).catch(() => null);
 if (!probe || !probe.ok) { console.error('no dev server on', PORT); process.exit(2); }
 
@@ -166,9 +167,35 @@ const out = await page.evaluate(async (K) => {
   const steps = walkY.slice(1).map((v, i) => +(v - walkY[i]).toFixed(2));
   let worstStep = 0;
   let worstStepAt = 0;
+  /*
+   * And the same step counted only where both sides carry a wall-walk.
+   *
+   * `walkY` on an unfinished bay is not a construction level, it is the top of whatever is
+   * standing — `unfinishedTopAt` puts a footing's pour 2.35 m over the *low* end of the bay
+   * — so a footing beside a finished curtain reports a step that is four metres of missing
+   * masonry plus a bay's worth of grade, and no man can be on either side of it. §4.1's
+   * 28.39 m at x -524.5 was exactly that: bay 2, a footing, against bay 3, finished, across
+   * the west-end cliff. Both numbers are reported because the published one is the
+   * all-bays one and the one that describes the walk is this.
+   */
+  let worstWalkStep = 0;
+  let worstWalkStepAt = 0;
+  let worstWalkStepBays = '';
+  // Both sides built to the full 6.5 m. A footing's top is a 1.35 m plinth course and a
+  // half-built bay's is 3.4 m of rubble, so a step across either is mostly masonry that was
+  // never laid rather than ground: bay 11 -> 12 is 3.13 m of grade and 5.15 m of missing
+  // curtain. That is `bayStage`'s doing (§4.7, §15 task 7), not the heightfield's.
+  const carries = (b) => b.stage === 'finished' || b.stage === 'no-parapet';
   for (let i = 0; i < steps.length; i++) {
     if (Math.abs(steps[i]) > Math.abs(worstStep)) { worstStep = steps[i]; worstStepAt = bays[i + 1].x0; }
+    if (!carries(bays[i]) || !carries(bays[i + 1])) continue;
+    if (Math.abs(steps[i]) > Math.abs(worstWalkStep)) {
+      worstWalkStep = steps[i];
+      worstWalkStepAt = bays[i + 1].x0;
+      worstWalkStepBays = `${bays[i].index}(${bays[i].stage}) -> ${bays[i + 1].index}(${bays[i + 1].stage})`;
+    }
   }
+  const stageAt = bays.map((b) => `${b.index}:${b.stage}`);
 
   /**
    * The bench under the *stations*, which is what the acceptance actually asks for.
@@ -198,6 +225,60 @@ const out = await page.evaluate(async (K) => {
         offDrawn: Number.isFinite(drawn) ? +(siege.sy[i] - drawn).toFixed(2) : null,
       });
     }
+  }
+
+  // ---- wetunits ---------------------------------------------------------------
+  /*
+   * How much of the order of battle is standing in the Tiber.
+   *
+   * §3.2: *"Do not attempt this change without also moving the deployment box; a cohort
+   * deployed in the Tiber is the failure mode."* The remedy it names does not reach: the
+   * deployment *masks* flatten ground and exclude vegetation, and `sim/scenario.ts` places
+   * every unit at a fixed x about zero without reading them. So this asks the men.
+   *
+   * Three categories, because they are three different problems. "wet" is standing below
+   * `WATER_LEVEL` and is a bug in any tree. "far bank" is dry ground on the wrong side of
+   * 94 m of unfordable water — §6.6's ager Vaticanus, from which the battle cannot be
+   * joined. "off the parade ground" is outside both deployment masks, which means ungraded
+   * ground with trees standing in the formation.
+   */
+  const wetunits = [];
+  if (g.battle && g.battle.pool) {
+    const pool = g.battle.pool;
+    const units = new Map();
+    for (let i = 0; i < pool.count; i++) {
+      if (pool.alive && !pool.alive[i]) continue;
+      const ux = pool.x[i];
+      const uz = pool.z[i];
+      const u = pool.unit ? pool.unit[i] : -1;
+      let r = units.get(u);
+      if (!r) { r = { unit: u, men: 0, wet: 0, farBank: 0, offGround: 0, x: 0, z: 0 }; units.set(u, r); }
+      r.men++; r.x += ux; r.z += uz;
+      if (h(ux, uz) < K.WATER_LEVEL) r.wet++;
+      if (ux < topo.riverBankX(uz, -1)) r.farBank++;
+      if (Math.max(topo.germanDeployMask(ux, uz), topo.romanDeployMask(ux, uz)) < 0.02) r.offGround++;
+    }
+    for (const r of units.values()) {
+      r.x = +(r.x / r.men).toFixed(0);
+      r.z = +(r.z / r.men).toFixed(0);
+      wetunits.push(r);
+    }
+    wetunits.sort((a, b) => a.x - b.x);
+  }
+
+  // ---- funnel ---------------------------------------------------------------
+  // Where the water actually ends, row by row. §3.2's second consequence is that the
+  // corrected river turns the approach into a funnel, and every deployment box, ford and
+  // wall terminus on the west side of this map has to be sized against these numbers
+  // rather than against the centreline.
+  const funnel = [];
+  for (let z = -400; z <= 600; z += 20) {
+    let east = null;
+    let west = null;
+    for (let x = -1390; x <= 700; x += 2) {
+      if (h(x, z) < K.WATER_LEVEL) { if (west === null) west = x; east = x; }
+    }
+    funnel.push({ z, centre: +topo.riverCentreX(z).toFixed(1), west, east });
   }
 
   // ---- deploy ---------------------------------------------------------------
@@ -234,12 +315,13 @@ const out = await page.evaluate(async (K) => {
   }
 
   return {
-    tiber, relief, stations, deploy,
+    tiber, relief, stations, deploy, funnel, wetunits,
     wall: {
       xMin: +xMin.toFixed(1), xMax: +xMax.toFixed(1), bays: bays.length,
       walkYMin: walkY.length ? +Math.min(...walkY).toFixed(2) : null,
       walkYMax: walkY.length ? +Math.max(...walkY).toFixed(2) : null,
-      worstStep, worstStepAt: +worstStepAt.toFixed(1), steps,
+      worstStep, worstStepAt: +worstStepAt.toFixed(1), steps, stageAt,
+      worstWalkStep, worstWalkStepAt: +worstWalkStepAt.toFixed(1), worstWalkStepBays,
     },
     report: siege ? (() => {
       const w = siege.wallReport();
@@ -334,13 +416,39 @@ if (want('walk')) {
   say('\n── 2c. the wall-walk ───────────────────────────────────────────────');
   say(`  walkY ${out.wall.walkYMin} .. ${out.wall.walkYMax} m over ${out.wall.bays} bays`);
   say(`  WORST BAY-TO-BAY STEP ${Math.abs(out.wall.worstStep).toFixed(2)} m at x ${out.wall.worstStepAt}`
-    + '   (task 2 accepts < 6, today 28.39)');
+    + '   (all bays; §4.1 measured 28.39)');
+  say(`  worst step where both sides are built to full height: ${Math.abs(out.wall.worstWalkStep).toFixed(2)} m`
+    + ` at x ${out.wall.worstWalkStepAt}, bays ${out.wall.worstWalkStepBays || 'n/a'}`
+    + '   (task 2 accepts < 6)');
   if (out.report) {
     const r = out.report;
     say(`  runs ${r.runs}, stations ${r.stations}, REACHABLE FROM A STAIR ${r.reachable}/${r.runs}`
       + `, stairs ${r.stairs} (${r.source})`);
     say(`  links ${JSON.stringify(r.links)}; ${r.unbridged} unbridged, ${r.refusedSteps} refused;`
       + ` worst bridged step ${r.worstStep} m at pitch ${r.worstPitch}`);
+  }
+}
+
+if (want('wetunits')) {
+  say('\n── the order of battle against the corrected river ─────────────────');
+  const tot = out.wetunits.reduce((a, u) => a + u.men, 0);
+  const wet = out.wetunits.reduce((a, u) => a + u.wet, 0);
+  const far = out.wetunits.reduce((a, u) => a + u.farBank, 0);
+  const off = out.wetunits.reduce((a, u) => a + u.offGround, 0);
+  say(`  ${out.wetunits.length} units, ${tot} men:  ${wet} standing in water,`
+    + `  ${far} on the far bank,  ${off} off the graded deployment ground`);
+  for (const u of out.wetunits) {
+    if (u.wet === 0 && u.farBank === 0) continue;
+    say(`    unit ${String(u.unit).padStart(3)} at (${fmt(u.x, 6)}, ${fmt(u.z, 5)}): ${u.men} men,`
+      + ` ${u.wet} wet, ${u.farBank} on the far bank`);
+  }
+}
+
+if (want('funnel')) {
+  say('\n── the funnel: where the water ends, per row ───────────────────────');
+  say('       z |  centre |   west |   east');
+  for (const f of out.funnel) {
+    say(`  ${fmt(f.z, 6)} | ${fmt(f.centre)} | ${fmt(f.west, 6)} | ${fmt(f.east, 6)}`);
   }
 }
 
