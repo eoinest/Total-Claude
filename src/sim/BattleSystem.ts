@@ -156,6 +156,157 @@ const ATTACK_REROUTE_TICKS = 45;
 /** Scratch for the standable-goal nudge. */
 const ROUTE_GOAL = { x: 0, z: 0 };
 
+// ---------------------------------------------------------------------------
+// Apertures — a formation entering a hole narrower than itself
+//
+// `ROUTE_RADIUS` above is the width a *route* is proved at, and it is deliberately far
+// narrower than any formation on the field. That bargain — prove the centre line, let the
+// per-man collider sort out the frontage — holds down a street and fails at a hole in a
+// wall, because a street has room either side of the corridor and a gate has three and a
+// half metres of masonry. Measured on Carthage's Porta Byrsae at the playable scale, 60
+// equites in wedge with 23.32 m of frontage ordered through a 5.2 m carriageway: of 34,974
+// man-ticks spent inside the gatehouse, 32,698 were outside the carriageway; 264 in every
+// thousand man-ticks of the whole transit had the mount's own footprint overlapping stone;
+// one man was pressed against the same face for 61 seconds; and fourteen of the sixty were
+// still outside the wall seventy seconds after the order.
+//
+// The pathfinder already has a name for this — `NavPath.narrow`, "the route only fits if
+// the unit narrows its frontage first" — and `TacticalAI` already acts on it by switching
+// to `narrowestFormation`. Neither can reach this case:
+//
+//   * the sim asks for its routes with `radius === minRadius === ROUTE_RADIUS`, and
+//     `narrow` is set from `radius < wantRadius - 0.5`, so a player order can never be
+//     flagged narrow. Measured: one `requestPath` call per gate order, (2.2, 2.2), and
+//     `narrow: false` on the path that came back.
+//   * and it would not help if it could. `narrowestFormation` returns the narrowest
+//     formation the *roster* offers, and for every cavalry unit in the game that is the
+//     wedge it is already in — `footprintOf` gives equites max 8.07, min 8.07. Of the
+//     eleven unit types on the Carthage field, three have a narrowest footprint that fits
+//     inside a gate. No cavalry unit has one, in any formation, on any map.
+//
+// So the frontage has to be set by the hole rather than chosen from a menu, which is what
+// this does: file up on the way in, spread out on the way out.
+// ---------------------------------------------------------------------------
+
+/**
+ * How far ahead along the line of march the corridor is measured, metres.
+ *
+ * A unit-depth of warning. Shorter and a block reaches the gate before it has decided to
+ * file up; longer and it files up for a hole it may never be sent through, in a city where
+ * something is nearly always narrow somewhere ahead.
+ */
+const APERTURE_LOOK = 22;
+/**
+ * And behind it, in metres of the block's own depth.
+ *
+ * **The trailing half is what makes re-forming work, and leaving it out is not a small
+ * error.** With look-ahead alone a unit spreads back out the instant its *anchor* is
+ * through the gate, which is when its tail is still thirty metres back inside the passage:
+ * measured, a squeezed column of equites filed up for exactly one second of a seventy-second
+ * transit and spent the rest of it nine files wide with its own rear ranks in the gatehouse.
+ * A formation is through an aperture when its last rank is through it.
+ *
+ * The cap is generous because the thing being measured is genuinely long: sixty horses at
+ * two files is thirty ranks and 88 m of column. Capped at 34 m the tail beyond that was
+ * invisible, the squeeze released with a third of the squadron still in the passage, and the
+ * frames show twelve mounts back in the stone. It costs one cheap box test per 1.5 m.
+ */
+const APERTURE_TRAIL_MAX = 90;
+/**
+ * Spacing of the samples along that span, metres.
+ *
+ * **Fixed, and fine enough that no masonry can fall between two of them.** The first cut of
+ * this sampled at four named look-aheads and three fractions of the block depth, and the
+ * consequence is worth recording because it is the same class of defect as an instrument
+ * that cannot see what it is measuring: a curtain wall is 3.5 m thick, the trailing samples
+ * for a 38 m column land 13.6, 25.5 and 34 m behind the anchor, and all three of them
+ * stepped clean over the gate the column was still standing in. The squeeze released after
+ * four seconds of a transit that takes thirteen.
+ *
+ * 1.5 m is under half the thinnest thing on either circuit.
+ */
+const APERTURE_SCAN = 1.5;
+/**
+ * Most lateral corridor measurements one pass will make.
+ *
+ * The cheap gate — one fat-radius `solidAt` per sample — answers "is anything near this
+ * line at all" for the whole span at about forty box tests. Only the samples it trips on
+ * get the full lateral walk, and inside a city that can be most of them, so the walks are
+ * capped and taken nearest-to-the-unit first: a corridor four metres ahead decides what
+ * this formation does next, and one thirty metres behind does not.
+ */
+const APERTURE_PROBES = 8;
+/** Lateral sampling step for the corridor measurement, metres. Under half a file. */
+const APERTURE_STEP = 0.6;
+/** Ticks between two corridor measurements for the same unit. A third of a second. */
+const APERTURE_TICKS = 10;
+/**
+ * Metres of slack the corridor must gain before a filed-up unit spreads out again.
+ *
+ * Pure hysteresis, and it has to be at least a sampling step wide or a block sitting in a
+ * gate mouth measures 5.4 m, spreads, measures 5.3 m, files up, and does that every ten
+ * ticks for as long as it stands there. 2 m is a file and a half of infantry.
+ */
+const APERTURE_RELEASE = 2;
+/**
+ * Fewest files a formation will ever be squeezed to.
+ *
+ * Two, not one. A single file through a gate is a five-minute transit for a cohort and it
+ * is not what a gate is for — the Porta Byrsae is 5.2 m precisely so that a cart and a
+ * file of men pass at once. One file is reserved for a hole that genuinely admits one man,
+ * where the alternative is not entering at all.
+ */
+const APERTURE_MIN_FILES = 2;
+
+// ---------------------------------------------------------------------------
+// A broken unit, and the wall in front of it
+// ---------------------------------------------------------------------------
+
+/**
+ * Metres of the flight line a broken unit needs clear before it will commit to running
+ * down it.
+ *
+ * The flight target has always been `position + threatBearing * 60` with nothing between
+ * it and the ground truth — no route, no corridor test, not one call into the pathfinder.
+ * On open field that is exactly right and this whole section costs one `empty` test. Inside
+ * a city it is a unit running at a wall: measured on Carthage, a cohort broken 35 m inside
+ * the circuit spent **40% of its routing ticks with a solid inside three metres of its own
+ * heading**, came within half a metre of two successive faces and slid along both, put 121
+ * of every thousand man-ticks of the flight with a body in the stone, and never found its
+ * way back out through the gate it had come in by. Zero pathfinder requests were made on
+ * its behalf in the whole flight, and not one waypoint was ever queued.
+ *
+ * 22 m is about seven seconds of running. Shorter and a unit commits to a direction it
+ * cannot use; longer and it refuses headings that would have served perfectly well for the
+ * next few seconds, which on a battlefield full of masonry is most of them.
+ */
+const ROUT_LOOK = 22;
+/** Metres of clear run below which the current flight heading is abandoned. */
+const ROUT_MIN_RUN = 7;
+/**
+ * Half-width the flight corridor is tested at, metres.
+ *
+ * A file of running men, not a formation — deliberately narrower than `ROUTE_RADIUS`,
+ * because a rout is the one movement in the game that genuinely is a stream of individuals
+ * and the alternative to a narrow gap is standing still while being cut down.
+ */
+const ROUT_CORRIDOR = 1.2;
+/** Step along a flight ray while testing it, metres. Under a running stride. */
+const ROUT_RAY_STEP = 0.9;
+/** Seconds a chosen deviation from the threat bearing is held before being re-examined. */
+const ROUT_STEER_HOLD = 1.1;
+/**
+ * Deviations from the threat bearing a broken unit will consider, radians, nearest first.
+ *
+ * Nearest-first order is what makes the choice deterministic without a tie-break rule: the
+ * scan keeps a candidate only on a strictly longer clear run, so among equals the smallest
+ * deviation wins by arriving first. Capped at 90 degrees — running past the enemy is not
+ * fleeing, and a corner with the enemy behind it is what the breadcrumb trail is for.
+ */
+const ROUT_FAN = [
+  0, 0.3927, -0.3927, 0.7854, -0.7854, 1.1781, -1.1781, 1.5708, -1.5708,
+] as const;
+
 /**
  * Offset applied to a unit id when the sim asks the pathfinder for a route.
  *
@@ -1002,6 +1153,12 @@ export class BattleSystem implements Subsystem {
           // A right-click-drag sets frontage as well as destination. Reading it here means
           // the UI no longer has to reach in and write `u.width` itself.
           if (o.width !== undefined && o.width > 0) {
+            // The drag outranks anything an aperture squeezed this unit down to, and it
+            // replaces what a later release would have spread it back out to. Dropping the
+            // remembered width rather than overwriting it: the player has just said what
+            // the frontage is, and the next corridor measurement will squeeze *that*.
+            this.growUnitScratch(u.id + 1);
+            this.fileRestore[u.id] = -1;
             u.width = Math.max(1, Math.round(o.width));
           }
           break;
@@ -1087,6 +1244,11 @@ export class BattleSystem implements Subsystem {
     if (!def.formations.includes(id)) return;
     const f = formation(id);
     u.formationId = id;
+    // A new formation is a new frontage, so whatever an aperture had this unit squeezed
+    // down from is stale. Leaving it would spread a testudo back out to the line's files
+    // the next time the corridor opened, at the testudo's much tighter spacing.
+    this.growUnitScratch(u.id + 1);
+    this.fileRestore[u.id] = -1;
     u.width = f.width(u.alive || u.initialStrength);
     u.spacingX = this.baseSpacingX(def) * f.spacingXMul;
     u.spacingZ = this.baseSpacingZ(def) * f.spacingZMul;
@@ -1115,6 +1277,10 @@ export class BattleSystem implements Subsystem {
 
     for (const u of this.units) {
       if (u.destroyed) continue;
+      // Before the order is resolved, not after: `frontHalf` — and so the contact test at
+      // the top of `updateUnitOrder` — is computed from `u.width`, and a block that is
+      // filing into a gate has a two-man front while it does so.
+      this.fitToAperture(u);
       this.updateUnitOrder(u, dt);
       this.layTrail(u);
       this.updateUnitCohesion(u);
@@ -1147,6 +1313,49 @@ export class BattleSystem implements Subsystem {
   private routDirZ = new Float32Array(64);
   /** Seconds before a broken unit may pick a new direction to run in. */
   private routHold = new Float32Array(64);
+  /**
+   * The heading a broken unit is actually running on, which is the threat bearing deflected
+   * around whatever is in the way. Zero until it has been chosen. See `ROUT_FAN`.
+   *
+   * Kept apart from `routDir` on purpose: `routDir` is *why* the unit is running and is
+   * what the 70-degree re-aim test is measured against, so folding a wall deflection into
+   * it would make every corner look like a new threat and cost the unit another turn.
+   */
+  private routSteerX = new Float32Array(64);
+  private routSteerZ = new Float32Array(64);
+  /** Seconds before the deflection is re-examined. See `ROUT_STEER_HOLD`. */
+  private routSteerHold = new Float32Array(64);
+  /**
+   * Files this unit had before an aperture squeezed it, or -1 when it has not been
+   * squeezed. See `fitToAperture`.
+   *
+   * The original rather than a boolean, because what the unit spreads back out to is a
+   * number the player may have chosen with a right-click drag and which `formation.width`
+   * cannot reproduce.
+   */
+  private fileRestore = new Int32Array(64).fill(-1);
+  /** Tick each unit last measured the corridor ahead of it. */
+  private apertureAt = new Float32Array(64).fill(-1e9);
+  /**
+   * And where it stood at the time, so a unit that has not moved does not measure again.
+   *
+   * The great majority of units in a siege are standing still — in a melee, on a wall, in
+   * reserve — and the corridor round a stationary block cannot change unless the masonry
+   * does, which `masonryGen` covers. Without this the measurement runs for every unit for
+   * the whole battle to re-derive an answer it already has.
+   */
+  private apertureX = new Float32Array(64).fill(NaN);
+  private apertureZ = new Float32Array(64).fill(NaN);
+  /** `masonryGen` the last measurement was taken against. */
+  private apertureGen = new Int32Array(64).fill(-1);
+  /**
+   * The narrowest corridor each unit's last measurement found, metres.
+   *
+   * Kept only so the instruments can read it. A probe that can see the frontage but not the
+   * width it was compared against can tell you that a unit filed up and not whether it
+   * should have, and this project has lost more time to that than to any single defect.
+   */
+  private apertureFree = new Float32Array(64).fill(Infinity);
   /**
    * Tick at which each unit last examined its route to the enemy it is attacking.
    *
@@ -1232,6 +1441,33 @@ export class BattleSystem implements Subsystem {
     const uy = new Float32Array(size);
     uy.set(this.unitY);
     this.unitY = uy;
+    const rsx = new Float32Array(size);
+    rsx.set(this.routSteerX);
+    this.routSteerX = rsx;
+    const rsz = new Float32Array(size);
+    rsz.set(this.routSteerZ);
+    this.routSteerZ = rsz;
+    const rsh = new Float32Array(size);
+    rsh.set(this.routSteerHold);
+    this.routSteerHold = rsh;
+    const fr = new Int32Array(size).fill(-1);
+    fr.set(this.fileRestore);
+    this.fileRestore = fr;
+    const aa = new Float32Array(size).fill(-1e9);
+    aa.set(this.apertureAt);
+    this.apertureAt = aa;
+    const af = new Float32Array(size).fill(Infinity);
+    af.set(this.apertureFree);
+    this.apertureFree = af;
+    const apx = new Float32Array(size).fill(NaN);
+    apx.set(this.apertureX);
+    this.apertureX = apx;
+    const apz = new Float32Array(size).fill(NaN);
+    apz.set(this.apertureZ);
+    this.apertureZ = apz;
+    const apg = new Int32Array(size).fill(-1);
+    apg.set(this.apertureGen);
+    this.apertureGen = apg;
   }
 
   /** Mean foot height of a unit's living men. Terrain height for everyone on the ground. */
@@ -1289,6 +1525,395 @@ export class BattleSystem implements Subsystem {
       }
     }
     return { dist: best, id: bestId };
+  }
+
+  // -------------------------------------------------------------------------
+  // Apertures
+  // -------------------------------------------------------------------------
+
+  /**
+   * Metres of clear ground along a ray, up to `maxLen`, for a body of `radius`.
+   *
+   * Against `masonry` and not against the nav grid, and the difference is the whole reason
+   * this exists rather than calling `NavProvider.clearLineFraction`. That walks the 7 m nav
+   * lattice and consults `clearance`, so it cannot see a 5.2 m gate at all — the grid
+   * reports 7 m of clearance in the gate cell because one cell step is as fine as it gets,
+   * which is exactly why `routeThroughPortals` has to lock a route onto the gate's axis by
+   * hand. `masonry` is the oriented-box field the integrator itself collides against, with
+   * the carriageway punched out of it by the city, so it is the only truth in the process
+   * that agrees with where a man is actually allowed to stand.
+   */
+  private clearRun(
+    x: number, z: number, dx: number, dz: number, y: number, maxLen: number, radius: number
+  ): number {
+    const solids = this.masonry;
+    if (solids.empty) return maxLen;
+    const len = Math.hypot(dx, dz);
+    if (len < 1e-6) return maxLen;
+    const ux = dx / len;
+    const uz = dz / len;
+    for (let d = ROUT_RAY_STEP; d <= maxLen; d += ROUT_RAY_STEP) {
+      if (solids.blocked(x + ux * d, z + uz * d, y, radius)) return d - ROUT_RAY_STEP;
+    }
+    return maxLen;
+  }
+
+  /**
+   * Metres of lateral room a body has at (x,z), measured across (dx,dz), capped at `want`.
+   *
+   * The span available to a man's *centre*, so it is directly comparable with a formation's
+   * frontage: `width` files at `spacingX` need `(width - 1) * spacingX` of it. Probed with
+   * `SOLDIER_RADIUS`, which is the radius the integrator stops a man at, so the answer is
+   * the room the men will actually find rather than the room the geometry contains.
+   *
+   * Returns `want` when the centre itself is solid. A probe point inside masonry cannot
+   * report a corridor — it is not in one — and returning zero there would file a unit up
+   * because its look-ahead happened to land in a building it is walking past.
+   */
+  private corridorAt(
+    x: number, z: number, dx: number, dz: number, y: number, want: number
+  ): number {
+    const solids = this.masonry;
+    if (solids.empty) return want;
+    if (solids.blocked(x, z, y, SOLDIER_RADIUS)) return want;
+    const len = Math.hypot(dx, dz);
+    if (len < 1e-6) return want;
+    // Lateral unit vector: the direction of travel rotated a quarter turn.
+    const lx = -dz / len;
+    const lz = dx / len;
+    let left = want;
+    for (let d = APERTURE_STEP; d <= want; d += APERTURE_STEP) {
+      if (solids.blocked(x - lx * d, z - lz * d, y, SOLDIER_RADIUS)) {
+        left = d - APERTURE_STEP;
+        break;
+      }
+    }
+    let right = want;
+    for (let d = APERTURE_STEP; d <= want; d += APERTURE_STEP) {
+      if (solids.blocked(x + lx * d, z + lz * d, y, SOLDIER_RADIUS)) {
+        right = d - APERTURE_STEP;
+        break;
+      }
+    }
+    return Math.min(want, left + right);
+  }
+
+  /**
+   * Files of this unit's own lateral spacing that fit in `free` metres of room.
+   *
+   * `width` files span `(width - 1) * spacingX`, so the arithmetic is `free / spacingX + 1`
+   * — and this deliberately does not add the 1. One file of conservatism is what keeps a
+   * column off the jambs rather than flush against them, and flush against them is the
+   * thing being fixed.
+   *
+   * Public because the wall is the same problem one storey up: a 3.25 m wall-walk is an
+   * aperture with a 41-file cohort being asked to enter it, and `Siege` owns that placement.
+   * This is the primitive it needs, and `narrowToFiles` is the write.
+   */
+  filesInWidth(u: UnitGroupState, free: number): number {
+    const sx = u.spacingX > 1e-3 ? u.spacingX : 1;
+    return Math.max(1, Math.floor(free / sx));
+  }
+
+  /**
+   * Squeeze a unit's frontage to `files`, remembering what it had.
+   *
+   * Idempotent and re-entrant: called every measurement while the unit is in a gate, and
+   * the remembered width is only captured on the first one.
+   */
+  narrowToFiles(u: UnitGroupState, files: number): void {
+    this.growUnitScratch(u.id + 1);
+    const want = Math.max(1, Math.min(files, u.width));
+    if (this.fileRestore[u.id] < 0) this.fileRestore[u.id] = u.width;
+    u.width = want;
+  }
+
+  /** Spread a squeezed unit back out. A no-op for a unit that was never squeezed. */
+  restoreFiles(u: UnitGroupState): void {
+    this.growUnitScratch(u.id + 1);
+    const was = this.fileRestore[u.id];
+    if (was < 0) return;
+    this.fileRestore[u.id] = -1;
+    u.width = was;
+  }
+
+  /** Files this unit is squeezed down from, or -1. Read by the probes and the HUD. */
+  squeezedFrom(unitId: number): number {
+    return this.fileRestore[unitId] ?? -1;
+  }
+
+  /** The narrowest corridor this unit's last measurement found, metres. */
+  corridorOf(unitId: number): number {
+    return this.apertureFree[unitId] ?? Infinity;
+  }
+
+  /**
+   * File up to enter a hole narrower than the formation, and spread out once through it.
+   *
+   * Geometric and continuous rather than a flag on a route, which is what makes one
+   * mechanism serve three cases that were being argued about separately: a player order
+   * through a gate, an AI attack order through the same gate, and a broken unit squeezing
+   * back out of one. None of them has to be taught about apertures; the corridor is
+   * measured where the unit is going and the frontage follows it.
+   *
+   * Costs one boolean on any map with no city on it. On a map with one, measured on the
+   * Carthage assault by wrapping `ObstacleField.solidAt` and counting: 1,287 box tests a
+   * tick before this pass and 1,388 after — about a hundred a tick across thirty units,
+   * against the several hundred thousand pair tests `resolveCrowding` already runs every
+   * second. The whole-tick cost, A/B'd against a worktree pinned at 7dd9616 with the two
+   * arms **interleaved**, is 1.035x. Interleaved because the same measurement taken as two
+   * ordered runs on this shared box reported 2.42 and then 5.03 ms/tick, and then 3.20 for
+   * a repeat of the *first* arm.
+   */
+  private fitToAperture(u: UnitGroupState): void {
+    const solids = this.masonry;
+    if (solids.empty) return;
+    // A unit the siege system places is not in a formation this code can reason about: its
+    // men stand where the stonework says. See `steerSoldiers`.
+    if (this.siege.ownsUnit(u.id)) return;
+    /*
+     * And a unit that is locked in a fight keeps whatever frontage it brought to it.
+     *
+     * Both directions of this are wrong mid-melee and the reasons differ. Squeezing a line
+     * that is fighting with its back to a building would collapse a contact front into a
+     * column, and because `frontHalf` is computed from `u.width` the contact test would then
+     * stop seeing the enemy it is fighting — the lock would drop and the two blocks would
+     * walk through each other. Spreading one out would push men sideways into the masonry
+     * that made the corridor narrow in the first place. The width a unit fights at is the
+     * width it arrived at, and that is the whole of the rule.
+     *
+     * `contactLock` is a tick stale here — `updateUnitOrder` writes it a few lines later —
+     * which costs one tick of the wrong answer at the moment of contact and is the price of
+     * this running before the frontage is read rather than after.
+     */
+    if (u.contactLock) return;
+    this.growUnitScratch(u.id + 1);
+    if (this.tickCount - this.apertureAt[u.id] < APERTURE_TICKS) return;
+    // A block that has not moved a sampling step since its last measurement, over masonry
+    // that has not changed, will get the same answer. A squeezed unit is exempt: it is the
+    // one that has to notice the moment it may spread out again, and it may be standing
+    // still in a gate mouth while it waits.
+    if (this.fileRestore[u.id] < 0 && this.apertureGen[u.id] === this.masonryGen
+      && Math.abs(u.x - this.apertureX[u.id]) + Math.abs(u.z - this.apertureZ[u.id])
+        < APERTURE_SCAN) {
+      return;
+    }
+    this.apertureAt[u.id] = this.tickCount;
+    this.apertureX[u.id] = u.x;
+    this.apertureZ[u.id] = u.z;
+    this.apertureGen[u.id] = this.masonryGen;
+
+    // Where is it going? The current target, which after `routeThroughPortals` is the
+    // gate's own axis for anything routed through one. A unit with nowhere to be measures
+    // along its facing, so a formation standing in a gate mouth stays filed up.
+    let dx = u.targetX - u.x;
+    let dz = u.targetZ - u.z;
+    let len = Math.hypot(dx, dz);
+    if (len < 0.35) {
+      dx = Math.sin(u.facing);
+      dz = Math.cos(u.facing);
+      len = 1;
+    }
+    const ux = dx / len;
+    const uz = dz / len;
+
+    const was = this.fileRestore[u.id];
+    const files = was >= 0 ? was : u.width;
+    const frontage = Math.max(0, files - 1) * u.spacingX;
+    // Nothing to reconcile: a two-file column and a scorpion crew fit anything.
+    if (frontage < APERTURE_STEP) {
+      this.apertureFree[u.id] = Infinity;
+      this.restoreFiles(u);
+      return;
+    }
+    const want = frontage + APERTURE_RELEASE;
+    const y = this.unitY[u.id] ?? this.groundAt(u.x, u.z);
+    /*
+     * How long is the block?
+     *
+     * While it is *moving*, against the width it currently has, because the tail being
+     * measured is where the men actually are: sixty horses are five ranks and 15 m deep at
+     * thirteen files and thirty ranks and 88 m deep at two.
+     *
+     * Once it has **arrived**, against the width it is going back to — and that clause is
+     * load-bearing rather than a refinement. A squeezed column's own tail is longer than the
+     * approach to any gate, so measured against the current width it always contains the
+     * gate, so the release condition can never be met: measured, a squadron ordered 60 m
+     * inside Carthage halted at its destination as an 88 m two-file column with twenty of
+     * its sixty men still outside the wall, and stood in it. A formation at rest takes the
+     * shape it was ordered into; the stragglers then walk through the hole one at a time,
+     * which is what the straggler rally already exists to handle.
+     *
+     * A unit *halted inside a gate* is not caught by this, and must not be: the sample at
+     * its own position still reads the carriageway, so `free` is still 4.8 m and it stays a
+     * column.
+     */
+    const moving = u.waypoints.length > 0
+      || (u.targetX - u.x) * (u.targetX - u.x) + (u.targetZ - u.z) * (u.targetZ - u.z) > 4;
+    const depth = Math.min(
+      APERTURE_TRAIL_MAX,
+      ranksFor(u.members.length, Math.max(1, moving ? u.width : files)) * u.spacingZ
+    );
+    // Ahead only as far as there is somewhere to go: a unit ordered *into* a gate mouth
+    // would otherwise measure the open ground beyond it and spread out on arrival.
+    const ahead = Math.min(APERTURE_LOOK, Math.max(0, len));
+    const half = want * 0.5 + SOLDIER_RADIUS;
+
+    /*
+     * Sample the span nearest-first, in one pass, so an early exit keeps the constraints
+     * that matter. `k` walks outward from the unit and `sign` alternates, which visits
+     * 0, +1.5, -1.5, +3.0, -3.0 … — the order the cap below wants.
+     */
+    const steps = Math.ceil(Math.max(ahead, depth) / APERTURE_SCAN);
+    let free = want;
+    let probes = 0;
+    let tight = false;
+    for (let k = 0; k <= steps; k++) {
+      for (let sign = 1; sign >= -1; sign -= 2) {
+        if (k === 0 && sign < 0) continue;
+        const d = sign * k * APERTURE_SCAN;
+        if (d > ahead || -d > depth) continue;
+        const px = u.x + ux * d;
+        const pz = u.z + uz * d;
+        // The cheap gate: could a block this wide be centred here at all? One box test
+        // against an inflated footprint, and on open ground it is the only test that runs.
+        if (!solids.blocked(px, pz, y, half)) continue;
+        tight = true;
+        if (probes >= APERTURE_PROBES) continue;
+        probes++;
+        const w = this.corridorAt(px, pz, ux, uz, y, want);
+        if (w < free) free = w;
+      }
+      // Already down to the floor: nothing further along the span can change the answer.
+      if (free < APERTURE_MIN_FILES * u.spacingX) break;
+    }
+
+    this.apertureFree[u.id] = tight ? free : Infinity;
+    if (!tight || free >= want) {
+      this.restoreFiles(u);
+      return;
+    }
+    // Tight, but the frontage still fits without its margin: hold whatever it has rather
+    // than flapping between two widths on the hysteresis boundary.
+    if (free >= frontage) return;
+    const fit = Math.max(APERTURE_MIN_FILES, this.filesInWidth(u, free));
+    // Never widen through this path: only the release above may do that, and only on the
+    // hysteresis margin. Without the guard a column halfway through a gate whose far probes
+    // have cleared the wall would spread inside the passage.
+    if (fit >= u.width) return;
+    this.narrowToFiles(u, fit);
+  }
+
+  // -------------------------------------------------------------------------
+  // Flight
+  // -------------------------------------------------------------------------
+
+  /**
+   * Where a broken unit should actually run, given where it wants to run.
+   *
+   * Three tiers, cheapest first. On a map with no masonry only the first exists.
+   *
+   *   1. the threat bearing, if the ground ahead is clear. This is the behaviour that was
+   *      here before and it is right nine times out of ten.
+   *   2. the least deflection from it with a longer clear run — `ROUT_FAN`, nearest first.
+   *   3. the unit's own breadcrumb trail, walked backwards. A trail is a route the unit
+   *      demonstrably walked, so it is walkable by construction, and walking it backwards
+   *      is "flee the way you came in" without a path search. This is what gets a broken
+   *      invader back out of a city rather than sliding along an insula for nine seconds.
+   */
+  private aimRout(u: UnitGroupState, dt: number): void {
+    const id = u.id;
+    const ax = this.routDirX[id];
+    const az = this.routDirZ[id];
+    // Open field: one boolean, and the flight line is the answer it always was.
+    if (this.masonry.empty) {
+      u.targetX = u.x + ax * 60;
+      u.targetZ = u.z + az * 60;
+      u.targetFacing = Math.atan2(ax, az);
+      return;
+    }
+
+    const y = this.unitY[id] ?? this.groundAt(u.x, u.z);
+    this.routSteerHold[id] = Math.max(0, this.routSteerHold[id] - dt);
+    let sx = this.routSteerX[id];
+    let sz = this.routSteerZ[id];
+    const committed = sx !== 0 || sz !== 0;
+    const run = committed ? this.clearRun(u.x, u.z, sx, sz, y, ROUT_LOOK, ROUT_CORRIDOR) : 0;
+    // Re-choose when there is nothing committed, when the hold has run out, or the moment
+    // the committed line stops being usable — a unit that has just met a wall must not
+    // spend another second walking into it waiting for a timer.
+    if (!committed || run < ROUT_MIN_RUN || this.routSteerHold[id] <= 0) {
+      let bestX = ax;
+      let bestZ = az;
+      let bestRun = -1;
+      for (const dev of ROUT_FAN) {
+        // Rotate the threat bearing by `dev`. (ax, az) is (sin, cos) of a yaw, so this is
+        // a yaw addition and not a vector rotation, which keeps it consistent with every
+        // other heading in this file.
+        const c = Math.cos(dev);
+        const s2 = Math.sin(dev);
+        const hx = ax * c + az * s2;
+        const hz = az * c - ax * s2;
+        const r = this.clearRun(u.x, u.z, hx, hz, y, ROUT_LOOK, ROUT_CORRIDOR);
+        if (r > bestRun) {
+          bestRun = r;
+          bestX = hx;
+          bestZ = hz;
+        }
+        // Nothing beats a clear run to the horizon, and the nearest deflection that
+        // achieves one is the one wanted, so stop looking.
+        if (r >= ROUT_LOOK) break;
+      }
+      if (bestRun < ROUT_MIN_RUN && this.flightTrail(u, y, SCRATCH2)) {
+        u.targetX = SCRATCH2.x;
+        u.targetZ = SCRATCH2.z;
+        u.targetFacing = Math.atan2(SCRATCH2.x - u.x, SCRATCH2.z - u.z);
+        // Deliberately not committed as a steer: the crumb is a point, not a bearing, and
+        // the next measurement should pick a fresh one from wherever the unit has got to.
+        this.routSteerX[id] = 0;
+        this.routSteerZ[id] = 0;
+        this.routSteerHold[id] = ROUT_STEER_HOLD;
+        return;
+      }
+      sx = bestX;
+      sz = bestZ;
+      this.routSteerX[id] = sx;
+      this.routSteerZ[id] = sz;
+      this.routSteerHold[id] = ROUT_STEER_HOLD;
+    }
+    u.targetX = u.x + sx * 60;
+    u.targetZ = u.z + sz * 60;
+    u.targetFacing = Math.atan2(sx, sz);
+  }
+
+  /**
+   * The oldest breadcrumb this unit can see, as a flight destination.
+   *
+   * Oldest and not newest, which is the opposite of `rallyPoint` and for the opposite
+   * reason: a straggler wants to catch up with his unit, and a broken unit wants to be as
+   * far back down the road it came by as it can get to in one leg. Bounded by `RALLY_SCAN`
+   * traces for the same cost reason.
+   */
+  private flightTrail(u: UnitGroupState, y: number, out: { x: number; z: number }): boolean {
+    const id = u.id;
+    const n = this.trailN[id];
+    if (n === 0) return false;
+    const base = id * TRAIL_LEN;
+    const scanned = Math.min(n, RALLY_SCAN);
+    for (let k = 0; k < scanned; k++) {
+      const cx = this.trailX[base + k];
+      const cz = this.trailZ[base + k];
+      const dx = cx - u.x;
+      const dz = cz - u.z;
+      const d = Math.hypot(dx, dz);
+      // A crumb underfoot is not somewhere to run to.
+      if (d < ROUT_MIN_RUN) continue;
+      if (this.clearRun(u.x, u.z, dx, dz, y, d, ROUT_CORRIDOR) < d - ROUT_RAY_STEP) continue;
+      out.x = cx;
+      out.z = cz;
+      return true;
+    }
+    return false;
   }
 
   /** Move the formation anchor toward its objective and consume waypoints. */
@@ -1378,12 +2003,16 @@ export class BattleSystem implements Subsystem {
         this.routDirZ[u.id] = away.z;
         this.routHold[u.id] = 3;
       }
-      u.targetX = u.x + this.routDirX[u.id] * 60;
-      u.targetZ = u.z + this.routDirZ[u.id] * 60;
-      u.targetFacing = Math.atan2(this.routDirX[u.id], this.routDirZ[u.id]);
+      // And then run somewhere that is not a wall. `aimRout` owns the destination from
+      // here: on open ground it is `position + bearing * 60` exactly as before, and inside
+      // a city it is the least deflection from that bearing with somewhere to go.
+      this.aimRout(u, dt);
     } else if (this.routDirX[u.id] !== 0 || this.routDirZ[u.id] !== 0) {
       this.routDirX[u.id] = 0;
       this.routDirZ[u.id] = 0;
+      this.routSteerX[u.id] = 0;
+      this.routSteerZ[u.id] = 0;
+      this.routSteerHold[u.id] = 0;
     }
 
     const dx = u.targetX - u.x;

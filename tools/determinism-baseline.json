@@ -30,62 +30,62 @@
     }
   },
   "map=campus-martius&scenario=assault": {
-    "note": "Rome's assault, re-recorded at the wall-file pass (a unit on a wall is a file the wall's depth). The garrison's *initial* layout changes, which is why t+0 moves at all: layOutOnWall spreads a garrison along its run at the band's depth instead of heaping it into the largest unclaimed gap, so every defender starts on a different stone. Attrition moves with it -- alive at t+200 2186 -> 2099, 87 more dead across 3074 -- because a garrison that actually mans its parapet is a garrison that can be shot at. That is a consequence of the fix and not a lever anyone chose; it is called out in the report for the owner. The field battle ('default') is bit-identical across the same change, which is the check that says this is confined to the wall. Re-record only in the same commit as the change that moved it.",
+    "note": "Rome's assault. quality=high, which is the same battle as ultra here -- both fit 3,074 men and 933 of Rome, so fittedUnitScale does not bite until medium. Re-recorded here for a movement that is NOT this pass's: cc72ea6 turned ROUGH_SLOWS_MOVEMENT on, published these exact five hashes in its own commit message -- t+0 unchanged at 22bb3df8, then e246f360, 326f06de, fe58e1f0, cedf0a10 -- and did not include this file in the commit, so the gate that exists to stop unannounced movement has been red on main ever since. The pass that recorded it changed the ram shed's cover test and moved nothing: 'default' and 'map=carthage&scenario=assault' are both bit-identical across it, and this entry's new hashes are cc72ea6's own. Re-record only in the same commit as the change that moved it. ||| Re-recorded again by the aperture pass, which is the change that moved it. Two mechanisms in src/sim/BattleSystem.ts reach this battle: fitToAperture squeezes a formation's frontage down to what the corridor ahead of it will take and spreads it back out once its tail is through, and aimRout deflects a broken unit's flight line round whatever it is about to run into. Both are inert on a map with no masonry on it, and the evidence is in this file: 'default' is bit-identical across the pass at all five checkpoints, and so are t+0 and t+30 of both assaults, which are before anything has routed or entered a gate. The drift starts at t+90 in both. Checked against a second worktree pinned at 7dd9616, which reproduces the previous pins exactly at all five, so the movement is this pass's and not something inherited.",
     "checkpoints": {
       "0": {
-        "hash": "55a19c06",
+        "hash": "22bb3df8",
         "count": 3074,
         "alive": 3074
       },
       "30": {
-        "hash": "0891bd72",
+        "hash": "e246f360",
         "count": 3074,
-        "alive": 2974
+        "alive": 2982
       },
       "90": {
-        "hash": "b890a7ca",
+        "hash": "052502f3",
         "count": 3074,
-        "alive": 2516
+        "alive": 2552
       },
       "150": {
-        "hash": "db248ef0",
+        "hash": "b01a4320",
         "count": 3074,
-        "alive": 2238
+        "alive": 2342
       },
       "200": {
-        "hash": "10a7b518",
+        "hash": "ed3db0af",
         "count": 3074,
-        "alive": 2099
+        "alive": 2167
       }
     }
   },
   "map=carthage&scenario=assault": {
-    "note": "Carthage's assault, re-recorded at the wall-file pass for the same reason as the Rome entry above -- see it. Alive at t+200 2851 -> 2773. Re-record only in the same commit as the change that moved it.",
+    "note": "Carthage's assault, quality=high. Recorded at 88a4aa5. The five hashes in this tool's own header comment (ebf383b0 d021b848 8106e2b2 b4fc645e cbfa61c0) are an earlier tree and are the reason prose is not a baseline. Re-record only in the same commit as the change that moved it. ||| Re-recorded again by the aperture pass, which is the change that moved it. Two mechanisms in src/sim/BattleSystem.ts reach this battle: fitToAperture squeezes a formation's frontage down to what the corridor ahead of it will take and spreads it back out once its tail is through, and aimRout deflects a broken unit's flight line round whatever it is about to run into. Both are inert on a map with no masonry on it, and the evidence is in this file: 'default' is bit-identical across the pass at all five checkpoints, and so are t+0 and t+30 of both assaults, which are before anything has routed or entered a gate. The drift starts at t+90 in both. Checked against a second worktree pinned at 7dd9616, which reproduces the previous pins exactly at all five, so the movement is this pass's and not something inherited.",
     "checkpoints": {
       "0": {
-        "hash": "ade40cb0",
+        "hash": "dbdd3a70",
         "count": 3440,
         "alive": 3440
       },
       "30": {
-        "hash": "984b07d0",
+        "hash": "70f1c93e",
         "count": 3440,
-        "alive": 3380
+        "alive": 3373
       },
       "90": {
-        "hash": "b3872a46",
+        "hash": "5ed733a4",
         "count": 3440,
         "alive": 2979
       },
       "150": {
-        "hash": "6c84799a",
+        "hash": "a99f6998",
         "count": 3440,
-        "alive": 2797
+        "alive": 2844
       },
       "200": {
-        "hash": "b74dec58",
+        "hash": "8d696bf8",
         "count": 3440,
-        "alive": 2773
+        "alive": 2837
       }
     }
   }
