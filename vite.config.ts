@@ -1,7 +1,28 @@
 import { defineConfig } from 'vite';
 import { fileURLToPath } from 'node:url';
 
+/**
+ * Vercel Web Analytics, injected at build time only.
+ *
+ * The platform serves `/_vercel/insights/script.js` for a project that has analytics
+ * enabled. Nothing serves it locally, so a tag written into the source HTML makes every
+ * dev page load log a 404 — which `qa-deploy`'s three console arms correctly failed on
+ * the moment it was added. Injecting here keeps `dist` instrumented and the dev server
+ * quiet, and means a probe that captures `console` is measuring the game rather than a
+ * missing analytics beacon.
+ */
+const vercelAnalytics = () => ({
+  name: 'tc-vercel-analytics',
+  apply: 'build' as const,
+  transformIndexHtml: {
+    order: 'post' as const,
+    handler: (html: string) =>
+      html.replace('</head>', '  <script defer src="/_vercel/insights/script.js"></script>\n  </head>'),
+  },
+});
+
 export default defineConfig({
+  plugins: [vercelAnalytics()],
   // Served from the domain root on Vercel, and the runtime fetches
   // `/assets/manifest.json` absolutely, so the base must be absolute too.
   base: '/',
