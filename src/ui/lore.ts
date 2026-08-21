@@ -12,9 +12,11 @@
  * **Every card is traceable to `docs/ROME.md`, `docs/CARTHAGE.md` or the map's own header,
  * and nothing is written from memory.** Those documents tag their evidence — `[ANC]` an
  * ancient source, `[ARCH]` archaeology, `[MOD]` modern scholarship, `[DER]` derived from
- * them, `[GAME]` this project's own invention — and **only the first three are allowed here**.
- * Anything the research itself hedges is out, and the list of what was rejected is as much
- * a part of this file as the list of what survived:
+ * them, `[GAME]` this project's own invention — and **only the first three are allowed here**,
+ * plus arithmetic over them: "2,800 m of the circuit already stood" is `[DER]`, and it is the
+ * sum of three `[MOD]` figures, which is a calculator and not an inference. Anything the
+ * research itself hedges is out, and the list of what was rejected is as much a part of this
+ * file as the list of what survived:
  *
  * - **Placentia.** `README.md` says Aurelian beat the Juthungi there; `ROME.md` §2 quotes the
  *   *Historia Augusta* saying he was beaten there so badly the empire was nearly dissolved.
@@ -55,8 +57,8 @@ export interface LoreCard {
 const ROME: readonly LoreCard[] = [
   {
     title: 'A wall four months old',
-    text: 'Aurelian began Rome’s wall in 271. It was still unfinished when he died, and was '
-      + 'completed under Probus between 276 and 282.',
+    text: 'Aurelian began Rome’s wall in 271, and it was finished under Probus — between 276 '
+      + 'and 282, after Aurelian himself was dead.',
     cite: 'Zosimus I.49',
   },
   {
@@ -74,15 +76,15 @@ const ROME: readonly LoreCard[] = [
   },
   {
     title: 'Second-hand brick',
-    text: 'There are no Aurelianic brickstamps anywhere on the circuit. In one curtain east of the '
-      + 'Porta Asinaria, 37 per cent of the stamps are Hadrianic — the wall went up out of '
-      + 'salvaged brick, sorted by size.',
+    text: 'There are no Aurelianic brickstamps anywhere on the circuit. In the sixth curtain east '
+      + 'of the Porta Asinaria, 37 per cent of the stamps are Hadrianic — the wall went up out '
+      + 'of salvaged brick, sorted by size.',
     cite: 'Lanciani, 1892',
   },
   {
     title: 'A tower every 37 metres',
-    text: 'Fourteen kilometres of land circuit at a 37.1 m interaxis gives 384 towers. The '
-      + 'Einsiedeln itinerary, walking the wall centuries later, counted 383.',
+    text: '14,237 m of land circuit at a 37.1 m interaxis gives 384 towers. The Einsiedeln '
+      + 'itinerary counted 383.',
     cite: 'Dey, 2011',
   },
   {
@@ -118,8 +120,8 @@ const CARTHAGE: readonly LoreCard[] = [
   },
   {
     title: 'Stables inside the masonry',
-    text: 'The wall was hollow, in two vaulted levels: the lower held stalls for 300 elephants with '
-      + 'their fodder, the upper for 4,000 horses.',
+    text: 'Appian’s main wall is hollow, in two vaulted levels: the lower holds stalls for 300 '
+      + 'elephants with their fodder, the upper for 4,000 horses.',
     cite: 'Appian, Punica',
   },
   {
@@ -137,7 +139,7 @@ const CARTHAGE: readonly LoreCard[] = [
     title: 'The cothon',
     text: 'The circular naval basin was 325 m across, with a 125 m artificial island at its centre. '
       + 'Its sea entrance was 21 m wide and closed with iron chains.',
-    cite: 'Hurst, British Mission',
+    cite: 'Hurst, British Mission; Appian',
   },
   {
     title: 'Six days up three streets',
@@ -156,8 +158,8 @@ const PYDNA: readonly LoreCard[] = [
   },
   {
     title: 'About the ninth hour',
-    text: 'Plutarch has the fighting begin around 14:30, the phalanx broken within the hour, and '
-      + 'the pursuit run until dark.',
+    text: 'Plutarch has the fighting begin at the ninth hour — roughly 14:30 on a Pierian '
+      + 'midsummer day — the phalanx broken within the hour, and the pursuit run until dark.',
     cite: 'Plutarch, Aemilius',
   },
   {
