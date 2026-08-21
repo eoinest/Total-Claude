@@ -31,7 +31,7 @@
  * ---------------------------------------------------------------------------
  *
  * Positions are authored in real metres from the summit of the Byrsa and projected. Getting
- * Carthage wrong should require getting the survey wrong, which is how `rome.ts` works.
+ * Carthage wrong should require getting the survey wrong, which is how `city/rome/survey.ts` works.
  *
  *     x = KN · n              KN = 0.45   across the map, true north
  *     z = Z0 + KE · e         KE = 0.22   into the map, true east,  Z0 = 945

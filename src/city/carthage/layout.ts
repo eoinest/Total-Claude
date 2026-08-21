@@ -285,7 +285,7 @@ export const MONUMENTS: readonly Monument[] = [
 /**
  * §7.2. **This is where the analogy to Rome breaks, and it breaks hard.**
  *
- * Rome runs 42 / 24 / 14 / 8 m, and `layout.ts` concedes in its own comment that a real
+ * Rome runs 42 / 24 / 14 / 8 m, and `rome/layout.ts` concedes in its own comment that a real
  * Roman *via* is about 4.8 m and 42 is a compromise so a 35 m cohort can move. Carthage has
  * no equivalent of even the honest end of that: the widest street anywhere in the excavated
  * Punic city is 9 m and the literature calls it exceptional. The ordinary Punic street is

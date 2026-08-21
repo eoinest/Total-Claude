@@ -1,3 +1,4 @@
+// `terrain/topography`, not `terrain/TerrainSystem` — see the note in `circuit.ts`.
 import { HALF_EXTENT, riverCentreX } from '../../terrain/topography';
 import { clamp, lerp } from '../../util/math';
 import { hash2 } from '../../util/rand';
@@ -26,7 +27,7 @@ import {
  * and must stay clear.
  *
  * **This file no longer contains any hand-typed monument position.** Every landmark is
- * projected from the measured survey in `rome.ts`, which carries real metres, real
+ * projected from the measured survey in `survey.ts`, which carries real metres, real
  * dimensions, a real long-axis bearing and a citation per entry. What this file adds is
  * the three things the projection cannot do on its own:
  *
@@ -181,7 +182,7 @@ function place(m: RomeMonument): LandmarkPlacement {
  *
  * Zero overlaps is necessary but not sufficient: a solver that separates everything into
  * a tidy grid has also destroyed the city. These are the adjacency facts that make the
- * plan Rome rather than a Roman-looking town, taken from the survey in `rome.ts` and from
+ * plan Rome rather than a Roman-looking town, taken from the survey in `survey.ts` and from
  * the relationships the brief calls out — the Circus in the Vallis Murcia between the
  * Palatine and the Aventine, the Colosseum east of the Forum, the Palatine between the
  * two, the Campus Martius in the Tiber's bend north-west of the Capitol.
@@ -255,7 +256,7 @@ export const TOPOLOGY: readonly (
 
 /**
  * Landmark placements. Order follows `ROME`, which runs north to south, so the depth
- * banding in `landmarks.ts` groups neighbours together.
+ * banding in `monuments.ts` groups neighbours together.
  */
 export const LANDMARKS: LandmarkPlacement[] = ROME.map(place);
 

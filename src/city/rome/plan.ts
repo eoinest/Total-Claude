@@ -52,7 +52,7 @@ export const ROME_PLAN: CityPlan = {
   towerChamberHeight: WALL.towerChamberHeight,
   /**
    * 1.7 m merlons on 0.95 m gaps, which is exactly what the `crenellation()` call in
-   * `wall.ts` builds. They must match: `masonryTopAt` alternates the two per projectile per
+   * `circuit.ts` builds. They must match: `masonryTopAt` alternates the two per projectile per
    * tick to decide whether a shot passes through an embrasure or breaks on a merlon, and a
    * mismatch is what put 491 missile impacts on our own masonry in one minute of battle.
    */
@@ -76,7 +76,7 @@ export const ROME_PLAN: CityPlan = {
      * precisely what you get, which is why it is a rig and says so.
      *
      * Note what it is standing on: `carthageWall.ts` takes `WALL_X_MIN`, `WALL_X_MAX`,
-     * `GATE_X` and `fitWallPath` from Rome's `layout.ts`, so the triple wall is currently
+     * `GATE_X` from Rome's `apertures.ts` and `fitWallPath` from Rome's `circuit.ts`, so the triple wall is currently
      * built along the **Aurelian** line. On the Carthage map the line is
      * `maps/carthage/topography.ts:carthageWallZ` — the terrain has already graded a bench
      * under it and the scatter already clears its glacis there. See the seam note in

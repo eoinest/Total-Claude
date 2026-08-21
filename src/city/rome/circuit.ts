@@ -1,4 +1,8 @@
 import * as THREE from 'three';
+// `terrain/topography`, not `terrain/TerrainSystem`, which merely re-exports the same
+// constant. `TerrainSystem` imports `activeMap`, so taking it from there closes an ESM cycle
+// the moment a map declares its city: maps/index -> campusMartius -> city/rome/plan ->
+// city/rome/circuit -> terrain/TerrainSystem -> maps/index. `topography` imports nothing.
 import { crestZAt, HALF_EXTENT, RIVER_HALF_WIDTH, riverCentreX } from '../../terrain/topography';
 import { clamp, lerp } from '../../util/math';
 import { Rng, hash2 } from '../../util/rand';
@@ -81,6 +85,11 @@ import {
  * and gaps blocked in a hurry with palisade and rubble. `bayStage` decides which is which
  * and `./works` dresses it.
  *
+ * Dimensions (sources in `./section`): 6.5 m to the wall-walk, `CURTAIN_T` thick,
+ * brick-faced concrete on a travertine footing, square towers projecting 3.5 m at
+ * one *actus* (35.5 m) intervals, each carrying a ballista chamber under a tiled
+ * roof. The monumental gate sits on the axis of the Via Flaminia.
+ *
  * The curtain is built bay by bay between towers. Within a bay the wall-walk is
  * *level*; between bays it steps. That is how real Roman curtains cross sloping
  * ground — they step the courses rather than shearing them.
@@ -107,7 +116,7 @@ export const WALL_X_MIN = Math.round(riverCentreX(crestZAt(-660)) + RIVER_HALF_W
  * East end: the Castra Praetoria. Aurelian took the camp's own north and east walls
  * into the circuit, so the curtain does not stop in open country — it runs into the
  * Praetorian barracks. This is also one of the two anchors that fix the plan's
- * east–west scale; see `KX` in rome.ts.
+ * east–west scale; see `KX` in `survey.ts`.
  */
 export const WALL_X_MAX = 1150;
 export const WALL_LENGTH = WALL_X_MAX - WALL_X_MIN;

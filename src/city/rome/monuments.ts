@@ -25,7 +25,7 @@ import {
   type ColumnOrder,
   type GeoStream,
 } from '../build';
-// See the note in `layout.ts`: `TerrainSystem` imports `activeMap`, so taking HALF_EXTENT
+// See the note in `circuit.ts`: `TerrainSystem` imports `activeMap`, so taking HALF_EXTENT
 // from there would close an ESM cycle once a map declares its city.
 import { crestZAt, HALF_EXTENT, roadCentreX } from '../../terrain/topography';
 import { CITY_MAT_KEYS, type CityMatKey } from '../materials';
@@ -167,7 +167,7 @@ export function buildLandmarks(heightAt: Ground, seed: string): LandmarkOutput {
 
   // Group monuments into depth bands so a whole band shares one LOD and one set of
   // merged meshes. Individual LODs per monument would triple the draw count. The cuts
-  // are derived from the plan rather than hardcoded, because the projection in `rome.ts`
+  // are derived from the plan rather than hardcoded, because the projection in `survey.ts`
   // decides where the monuments actually land: a fixed band edge silently produced an
   // empty chunk and a 500 m-radius one the last time the plan moved.
   const zs = LANDMARKS.map((l) => l.z).sort((a, b) => a - b);
@@ -2398,7 +2398,7 @@ const side1 = (s: number): number => (s < 0 ? -1 : 1);
 /**
  * A hilltop quarter: the Aventine and the Caelian. By the third century both were
  * quiet, grand and green — great courtyard houses and a temple or two among gardens,
- * not tenements. Built here rather than in `insulae.ts` because the whole hill is
+ * not tenements. Built here rather than in `fabric.ts` because the whole hill is
  * reserved as one landmark footprint.
  */
 function buildHillQuarter(batch: Batch, detail: number, g: number, L: number, W: number, rng: Rng, temple: boolean): void {

@@ -8,7 +8,7 @@ import { CITY_Z_MAX, worldOf } from './rome/survey';
  *
  * ## Why
  *
- * The survey in `rome.ts` carries a citation per monument, but a citation is not a
+ * The survey in `rome/survey.ts` carries a citation per monument, but a citation is not a
  * measurement of *this* build: nothing in it proves that the projection, the overlap
  * solver and the geometry builders together put the Colosseum where the plan says it is.
  * A three-quarter screenshot cannot answer that either. What answers it is putting the
@@ -18,7 +18,7 @@ import { CITY_Z_MAX, worldOf } from './rome/survey';
  * ## Georeference
  *
  * A raster carries a plain 6-parameter affine from its own pixels to the survey frame of
- * `rome.ts` (metres east/north of the Temple of Jupiter OM). For the Lanciani sheet that
+ * `rome/survey.ts` (metres east/north of the Temple of Jupiter OM). For the Lanciani sheet that
  * affine was fitted against a full inverse of its native CRS — Monte Mario / Gauss-Boaga
  * Est, EPSG:3004 — over a 13 x 13 grid spanning the whole plate, and reproduces it to
  * **1.26 m worst-case over 7 km**, which is a twentieth of a pixel of the compressed

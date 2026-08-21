@@ -31,7 +31,7 @@ export const WALL = {
    *
    * Richmond's 3.5 m is what he measured on the surviving Aurelianic core, and it is kept
    * here because it is the citation. The curtain the game actually stands on is `CURTAIN_T`
-   * in `wall.ts` — 6.0 m, widened so an army can form up on the walk — and every consumer
+   * below — 6.0 m, widened so an army can form up on the walk — and every consumer
    * that needs the built thickness reads `GarrisonBay.halfThickness` from the same function
    * that emits the stone. A live-looking constant that nothing reads is how the next person
    * builds against the wrong number, so: this one is a footnote, not an input.
@@ -66,8 +66,8 @@ export const WALL = {
  * Thickness of the curtain, metres.
  *
  * **Deliberately not `WALL.thickness`**, which is the historical 3.5 m that Richmond
- * measured on the surviving Aurelianic core and which `layout.ts` publishes to the rest
- * of the city. This is a *playable* wall and the difference is the point.
+ * measured on the surviving Aurelianic core and which `WALL.thickness` above publishes to
+ * the rest of the city. This is a *playable* wall and the difference is the point.
  *
  * Why 6.0. Three things fix it, and they very nearly meet:
  *

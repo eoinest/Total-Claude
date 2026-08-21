@@ -126,7 +126,7 @@ export const CARTHAGE_SCATTER: ScatterProfile = {
      *
      * **This is provisional and is meant to be taken over.** When `src/city/carthage/`
      * builds the suburb it will plant its own garden trees through `TreeRequest`, as Rome's
-     * `landmarks.ts` and `insulae.ts` already do, and this branch should shrink to the strip
+     * `rome/monuments.ts` and `rome/fabric.ts` already do, and this branch should shrink to the strip
      * between the wall and the built edge. Leaving the ground bare in the meantime would
      * make every frame of the map read as a wall with nothing behind it.
      */

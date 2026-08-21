@@ -19,7 +19,7 @@ import { ROME } from './survey';
  * names in its result exactly what it compared.
  *
  * Split out of `layout.ts` by §15 task 0. §15 task 3 adds `assertRomeSection` — the
- * build-time self-check `wall.ts` has never had and `carthageWall.ts` has three of
+ * build-time self-check Rome's wall builder has never had and `carthageWall.ts` has three of
  * (§14.4a) — and this is the file it goes in.
  */
 
@@ -117,7 +117,7 @@ export function assertTopology(): { ok: boolean; checks: number; failures: strin
  *  3. the two theatres, whose flat 117 m scaenae-frons slab and thin radial seating made
  *     them read as half-amphitheatres rather than as theatres.
  *
- * All three are fixed in `landmarks.ts`. This assertion guards the fourth possibility — a
+ * All three are fixed in `monuments.ts`. This assertion guards the fourth possibility — a
  * landmark accidentally duplicated or an amphitheatre kit reused — by name and by the
  * geometry that actually gets an arcaded elliptical façade.
  */
@@ -137,7 +137,7 @@ export const AMPHITHEATRE_IDS: ReadonlySet<string> = new Set(['colosseum']);
  * squeezed. The published ring of bearings from the Palatine is
  * Capitoline 326° → Pincian 347° → Quirinal 004° → Viminal 034° → Oppius 056° →
  * Esquiline 066° → Caelian 140° → Aventinus Maior 228° → Janiculum 278°, and the survey in
- * `rome.ts` reproduces it: Capitolium 318°, Serapis (Quirinal) 000°, Castra (Viminal) 040°,
+ * `survey.ts` reproduces it: Capitolium 318°, Serapis (Quirinal) 000°, Castra (Viminal) 040°,
  * Baths of Trajan (Oppius) 056°, Baths of Titus (Esquiline) 062°, Caelian 116°,
  * Aventine 231°, Janiculum 271° — seven of eight within 6°, which is a good independent
  * check on the coordinates. (The Horti Sallustiani sit in the *valley* between the Pincian

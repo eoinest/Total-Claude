@@ -62,7 +62,7 @@ try {
       const koMon = mk((k) => { for (const l of L.LANDMARKS) { k.addRect(l.x, l.z, l.hw, l.hd, l.rot); if (l.mound) k.addCircle(l.x, l.z, (l.moundRadius ?? l.clear) * 1.02); } });
       const koPlaza = mk((k) => { for (const pz of L.PLAZAS) k.addRect(pz.x, pz.z, pz.hw + 2, pz.hd + 2, pz.rot); });
 
-      // District mask, replicated from insulae.ts's `districtMask`.
+      // District mask, replicated from city/rome/fabric.ts's `districtMask`.
       const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
       const maskOf = (d, u, v) => {
         const tu = Math.abs(u) / d.hw, tv = Math.abs(v) / d.hd;

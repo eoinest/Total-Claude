@@ -143,7 +143,7 @@ import type { WayClass } from './layout';
  *
  * **These are `export type`, so importing them here costs nothing at runtime.** TypeScript
  * erases a type-only re-export entirely, which means `src/city/carthage/wall.ts` can import
- * the whole contract from this module without pulling Rome's 135 KB `wall.ts` — and its
+ * the whole contract from this module without pulling Rome's `rome/circuit.ts` — and its
  * Aurelian brick coursing, relieving arches, scaffolding and cranes — into the module graph.
  * Verify that with `import type` on the far side too; a value import of any of these names
  * would drag the lot in.

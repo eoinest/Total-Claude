@@ -288,9 +288,9 @@ interface WallBlocker {
  * Convert a **plan** rotation into an **occupancy** rotation. They are mirror images, and
  * for years everything here has quietly conflated them.
  *
- * A footprint out of `layout.ts` or `landmarks.ts` follows three.js: `makeRotationY(r)`
+ * A footprint out of `rome/layout.ts` or `rome/monuments.ts` follows three.js: `makeRotationY(r)`
  * sends the box's local +X to world `(cos r, −sin r)` and +Z to `(sin r, cos r)`, and
- * `rome.ts`'s `worldRot` says so in as many words. The occupancy grid's `markRect` and
+ * `rome/survey.ts`'s `worldRot` says so in as many words. The occupancy grid's `markRect` and
  * `Obstacles.ts` use the opposite hand — local u to `(cos r, +sin r)` — which is the same
  * rectangle reflected in the X axis.
  *
@@ -1277,7 +1277,7 @@ export class CitySystem implements Subsystem {
    * `city` camera: `monuments-d` is 1,526 m across, so the correction was 840 m against a
    * switch at 400; `city-campus-n` 619 m against 300; `city-south` 533 m against 280. Six of
    * twenty-one chunks could never leave full detail from anywhere on a 2.8 km map, and
-   * `insulae.ts` had already worked around it by merging six districts into one chunk with
+   * `rome/fabric.ts` had already worked around it by merging six districts into one chunk with
    * the comment that "a chunk 700 m across is never far away by that measure".
    *
    * Capping the forgiveness at half the near switch distance keeps the intent — a big chunk

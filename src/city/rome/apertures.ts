@@ -43,7 +43,7 @@ import { GATE_X as GATE_X_SOLVED } from './survey';
  * Imports `./section` and never `./circuit`, so the wall modules form a tree.
  */
 
-/** The Porta Flaminia, where the Via Flaminia crosses the crest. Solved in rome.ts. */
+/** The Porta Flaminia, where the Via Flaminia crosses the crest. Solved in `survey.ts`. */
 export const GATE_X = GATE_X_SOLVED;
 /** Clear width of the Porta Flaminia carriageway. */
 export const GATE_OPEN_WIDTH = 4.3;

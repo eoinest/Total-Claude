@@ -58,7 +58,7 @@ import { cylinderBetween, type CityChunkSpec, type TreeRequest } from '../wall';
  *
  * **Streets first, blocks second, buildings third** — the order a Roman surveyor works in.
  *
- *  - `layout.ts` publishes `WAYS`, a city-wide armature of named viae, the military road
+ *  - `rome/layout.ts` publishes `WAYS`, a city-wide armature of named viae, the military road
  *    inside the wall, a ring round every monument, and the feeders that connect them. It is
  *    a graph, it is continuous, and it is graded by rank rather than by accident.
  *  - Each district lays a **spine-and-rib** lattice inside that armature: two to six
@@ -161,7 +161,7 @@ const PARTY_GAP = 0.35;
 /**
  * The district's own frame, in the **same rotation convention the geometry uses**.
  *
- * `makeRotationY(r)` sends local +X to world (cos r, −sin r), and `layout.ts`'s `Obb`
+ * `makeRotationY(r)` sends local +X to world (cos r, −sin r), and `city/layout.ts`'s `Obb`
  * follows it. The previous district mapping sent local u to (cos r, **+**sin r) — the
  * mirror — so a building drawn with `makeRotationY(d.rot)` was skewed by `2·d.rot` from
  * the subdivision that placed it. At ±0.08 rad of district rotation that is nine degrees,
