@@ -1395,7 +1395,14 @@ Positions are in the survey frame of §2.3, converted from a gazetteer authored 
 **Pantheon rotunda's centre** (41.898616 N, 12.476833 E). **The two surveys are independent and
 they agree**: the gazetteer puts the Pantheon at repo `e −453, n +680` against `rome.ts`'s
 `e −447, n +678` — **6 metres apart** — and puts the Porta Flaminia at world x 74 against
-`GATE_X`'s 72. Where the two differ by more than 30 world metres the entry says so.
+`GATE_X`'s 72.
+
+**Checked monument by monument, only two of the twelve already in `ROME` differ by more than
+30 world metres in either axis: the Baths of Nero (38 in x) and the Horologium (40 in x).**
+[DER] Both are well inside `resolveOverlaps`'s own displacement, which `layout.ts` measures at
+a **mean of 43 world metres** at `PLAN_SCALE = 0.65` **[SRC]** — so neither is worth moving,
+and the agreement is better than the resolver's own resolution. **Do not re-survey what is
+already surveyed;** the entries below correct *dimensions* and *state in 271*, not positions.
 
 Sources throughout: **Platner & Ashby 1929**, **Digital Augustan Rome**, the **Severan Marble
 Plan** (dated 203–211, so a snapshot **60–68 years before this map**, and the primary
