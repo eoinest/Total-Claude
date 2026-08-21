@@ -395,6 +395,25 @@ const MAX_SEPARATION_STEP = 0.22;
 const MAX_SEPARATION_FIGHTING = 0.08;
 
 /**
+ * How near his place a man on a structure has to get before he stops walking at it.
+ *
+ * Six centimetres — the value this replaced — is a tenth of a body and is unreachable by
+ * anybody standing in a crowd. `resolveCrowding` will not let two men closer than
+ * `SOLDIER_RADIUS * 2 = 0.84 m`, so on a wall-walk that is carrying more men than it has
+ * places, every man is permanently outside his own arrival radius: `steerToSlots` drives him
+ * at a full walk, `resolveCrowding` shoves him back off, and the pair repeat at 30 Hz for the
+ * rest of the battle. Measured on a 160-man cohort ordered onto a 12 m run: mean speed pinned
+ * at **1.49 m/s** — the unit's whole walk speed — with the mean distance to slot flat at
+ * 4.4 m and not falling, four minutes after the last man got off the ladder. Men walking on
+ * the spot for ever is what the owner was looking at.
+ *
+ * A body radius, near enough. A man who is within one of his post *is at his post*; the
+ * remaining shove is the crowd, and the crowd is allowed to win. Only `steerToSlots` reads
+ * this, so it touches units the siege system places and nothing in the field.
+ */
+const SLOT_ARRIVED = 0.4;
+
+/**
  * The footprint of a fallen war elephant, as a capsule on the ground.
  *
  * A live animal is about 4.2 m nose to tail and 2.0 m across the body. Lying on its side
@@ -2146,7 +2165,7 @@ export class BattleSystem implements Subsystem {
       const dx = this.slotX[i] - p.x[i];
       const dz = this.slotZ[i] - p.z[i];
       const d = Math.hypot(dx, dz);
-      if (d < 0.06) {
+      if (d < SLOT_ARRIVED) {
         p.vx[i] = damp(p.vx[i], 0, 11, dt);
         p.vz[i] = damp(p.vz[i], 0, 11, dt);
         // Standing at his post, a defender faces the way the wall faces, not the way he

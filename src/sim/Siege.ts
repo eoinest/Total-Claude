@@ -1199,6 +1199,15 @@ export class Siege implements ElevationOwner {
    * function that already runs over every man of every boarding party.
    */
   private fileRows = new Int32Array(MAX_LADDERS);
+  /**
+   * Which men `layOutArrived` is allowed to place this tick. Scratch, one bit per soldier.
+   *
+   * A typed array rather than the `Set` this obviously wants to be, because `advancePlans`
+   * runs it for every unit under orders on every fixed step, and the set would be per-tick
+   * garbage in the hottest loop this file has. Written and cleared over the arrival list
+   * only, never over the pool.
+   */
+  private placeMark!: Uint8Array;
 
   // ---- gate ----
   /**
@@ -1291,6 +1300,7 @@ export class Siege implements ElevationOwner {
     this.linkDir = new Uint8Array(cap);
     this.wantLink = new Int32Array(cap).fill(-1);
     this.wantDir = new Uint8Array(cap);
+    this.placeMark = new Uint8Array(cap);
 
     this.buildSpine();
     this.buildStairs();
@@ -1797,6 +1807,41 @@ export class Siege implements ElevationOwner {
     return best;
   }
 
+  /**
+   * How many ranks the walkway will take here. **A property of the wall, not of the unit.**
+   *
+   * This is the whole of a unit's frontage once it is on the stone, and it is the number the
+   * owner's report turns on: a `legio-cohort` is 160 men at a 41 m frontage in the field, and
+   * a wall-walk on the Aurelian circuit is a 3.251 m band — 2.21 to 4.055 m across the 45
+   * garrisonable bays — which takes four or five men at `WALL_RANK_PITCH`. A unit up here is
+   * not a rectangle that has been squeezed; it is a file as deep as the stone allows and as
+   * long as the run needs, and everything that lays men out has to agree on the depth or two
+   * of them end up at the same offset.
+   */
+  private ranksAt(station: number): number {
+    const s = clamp(station, 0, this.nStations - 1) | 0;
+    const band = this.sOuter[s] - this.sInner[s];
+    return clamp(Math.floor(band / WALL_RANK_PITCH) + 1, 1, MAX_WALL_RANKS);
+  }
+
+  /**
+   * The depth the *narrowest* station of a run will take, which is the depth the whole file
+   * must use.
+   *
+   * A file laid out at the centre station's depth and then run along a bay that pinches
+   * would have its back rank clamped into the rank in front of it by `slotAt`, which is the
+   * collapse this pass exists to remove. One number for the run, taken from its worst point.
+   */
+  private ranksOnRun(station: number): number {
+    const b = this.runBounds(station);
+    let r = MAX_WALL_RANKS;
+    for (let s = b.lo; s <= b.hi; s++) {
+      const n = this.ranksAt(s);
+      if (n < r) r = n;
+    }
+    return Math.max(1, r);
+  }
+
   /** World position of a man standing at `station` in `rank`, written into `out`. */
   private slotAt(
     i: number, station: number, rank: number,
@@ -1819,14 +1864,33 @@ export class Siege implements ElevationOwner {
      */
     const jAlong = (hash01(i, 0x51e9e) - 0.5) * 0.42;
     const jOff = (hash01(i, 0x9a11) - 0.5) * 0.26;
+    /**
+     * Never two ranks at one offset, and this line is the fault the owner was looking at.
+     *
+     * The clamp below is load-bearing — a man must not be placed off the walk — but for
+     * years it was also the only thing standing between a caller and nonsense: a rank
+     * deeper than the band takes clamps to `sInner`, and *every* rank past that clamps to
+     * the same `sInner`. Measured on the shipped tree, a 160-man cohort ordered onto a
+     * 14-station run whose stations were already claimed: `layOutArrived` handed out ranks
+     * 0 to **142** on a walkway five deep, and 149 men were being steered at **17 distinct
+     * points, 45 of them at one point**. They never arrive, so `steerToSlots` drives them
+     * at a full 1.49 m/s walk for the rest of the battle while `resolveCrowding` shoves
+     * them apart and `holdGarrisonsOnTheWalk` pushes them back in. That churn is what
+     * "they get stuck" looks like from the chair.
+     *
+     * `ranksAt` is the wall's own answer to how deep a file may be, so folding the rank
+     * into it here means no caller can produce a duplicate place however it counts. The
+     * clamp stays underneath as the guard it was always meant to be.
+     */
+    const r = Math.min(rank, this.ranksAt(s) - 1);
     // Rank 0 stands against the parapet; each rank behind steps back toward the city.
     const off = clamp(
-      this.sOuter[s] - rank * WALL_RANK_PITCH + jOff,
+      this.sOuter[s] - r * WALL_RANK_PITCH + jOff,
       this.sInner[s], this.sOuter[s]
     );
     // Odd ranks shift half a station along the wall so the packing interlocks. See
     // `WALL_RANK_PITCH`.
-    const along = ((rank & 1) === 0 ? 0 : WALL_RANK_STAGGER) + jAlong;
+    const along = ((r & 1) === 0 ? 0 : WALL_RANK_STAGGER) + jAlong;
     // The along-wall direction is perpendicular to the outward normal, in plan.
     const ax = -this.snz[s];
     const az = this.snx[s];
@@ -1899,57 +1963,73 @@ export class Siege implements ElevationOwner {
       living.push(i);
     }
     if (living.length === 0) return;
-
-    // How many ranks the narrowest part of this run will take. Two is the practical
-    // maximum on 3.5 m of curtain once the parapet and the gallery piers are subtracted.
-    const mid = centre ?? g.from + (g.span >> 1);
-    const m = clamp(mid, 0, this.nStations - 1);
-    const band = this.sOuter[m] - this.sInner[m];
-    // As many ranks as the clear band will take at the interlocking pitch.
-    let ranks = clamp(Math.floor(band / WALL_RANK_PITCH) + 1, 1, MAX_WALL_RANKS);
-    // A unit holds one continuous stretch of walkway. It may not straddle a tower or a
-    // construction step, so the run it is centred on bounds it — and if that run is
-    // shorter than the unit, the unit stands deeper rather than spilling over the break.
-    const bounds = this.runBounds(m);
-    const free = this.freeWindow(m, bounds, u.id, Math.ceil(living.length / ranks));
-    /**
-     * Deepen before spilling.
-     *
-     * This is the answer to "what happens when the run you want is already occupied". The
-     * free stretch is whatever the other units on this run have left; if it is too short for
-     * the incoming unit at its natural depth, the unit stands *deeper* first — three ranks
-     * instead of two is what a wall under assault actually looks like — and only the men who
-     * still do not fit are counted as overflow and pushed along the wall to the next run.
-     * A unit is never silently truncated and men are never stacked on one station.
-     */
-    while (ranks < MAX_WALL_RANKS && free.span * ranks < living.length) ranks++;
-    const perRank = Math.max(1, Math.min(free.span, Math.ceil(living.length / ranks)));
-    const from = clamp(free.from, bounds.lo, Math.max(bounds.lo, bounds.hi - perRank + 1));
-
-    g.from = from;
-    g.span = perRank;
-    g.ranks = ranks;
+    this.layOutOnWall(u, g, centre ?? g.from + (g.span >> 1), living);
     g.plannedFor = living.length;
-    g.overflow = Math.max(0, living.length - perRank * ranks);
+  }
+
+  /**
+   * Lay a body of men out along one run of the wall-walk, and write the garrison window.
+   *
+   * **One solver, shared by the garrison path and the arrival path**, because there were two
+   * and they disagreed. `layOutGarrison` deepened a unit before spilling it and recorded an
+   * `overflow`; `layOutArrived` did neither and let `rank` run away without limit. They are
+   * the same question — where do these men stand on this stretch of stone — and the answer
+   * has to be the same or a unit changes shape the moment its plan completes.
+   *
+   * The model, stated once:
+   *
+   *  - **Depth is the wall's**. `ranksOnRun` — four or five on this circuit, one on a ledge.
+   *    Nothing about the unit changes it. A unit up here is not a formation with a frontage.
+   *  - **Length is the roster's**, bounded only by the run. `ceil(n / ranks)` files, up to
+   *    the whole run. This is the change that matters: the old code bounded the file by
+   *    `freeWindow`, the largest stretch *no other living friendly unit had claimed*, and on
+   *    a bay that already had a garrison on it that is zero — so `freeWindow` fell through to
+   *    its one-station fallback and the entire cohort was assigned **one station**. Measured
+   *    on the shipped tree: 149 men, `span` 1, ranks 0–142, 45 men at a single point.
+   *    Ownership is a preference for *where to start*, not a fence. Two friendly units
+   *    holding one stretch of wall stand among each other, which is what they do.
+   *  - **Surplus is admitted and counted, not hidden.** A run seats `files * ranks` men. If
+   *    the roster is larger — 160 men want 32 files and the shortest run on the circuit has
+   *    14 — the remainder wraps evenly over the same places rather than piling on the last
+   *    one, so the worst crush is `ceil(n / seats)` men deep and every man still has a
+   *    distinct rank. `g.overflow` records how many the stone could not seat properly.
+   *
+   * Fill order is front rank first, unchanged: a wall is held at the parapet, and a
+   * half-strength garrison should be one full line of men shooting, not two half lines.
+   */
+  private layOutOnWall(
+    u: UnitGroupState, g: Garrison, centre: number, men: readonly number[],
+    place?: (i: number) => boolean
+  ): void {
+    if (men.length === 0 || this.nStations === 0) return;
+    const m = clamp(centre, 0, this.nStations - 1) | 0;
+    const ranks = this.ranksOnRun(m);
+    const bounds = this.runBounds(m);
+    const runLen = bounds.hi - bounds.lo + 1;
+    const want = Math.ceil(men.length / ranks);
+    // The free window still chooses *where*: a unit sent onto a busy stretch prefers the
+    // gap if the gap will hold it, and only overlaps its neighbours when it must.
+    const free = this.freeWindow(m, bounds, u.id, want);
+    const files = clamp(Math.max(want, free.span), 1, runLen);
+    const from = clamp(free.from, bounds.lo, Math.max(bounds.lo, bounds.hi - files + 1));
+    const seats = files * ranks;
 
     this.releaseClaim(g);
-    for (let f = 0; f < perRank; f++) this.sOwner[clamp(from + f, bounds.lo, bounds.hi)] = u.id;
+    g.from = from;
+    g.span = files;
+    g.ranks = ranks;
+    g.overflow = Math.max(0, men.length - seats);
+    for (let f = 0; f < files; f++) this.sOwner[clamp(from + f, bounds.lo, bounds.hi)] = u.id;
 
-    for (let k = 0; k < living.length; k++) {
-      const i = living[k];
-      // Fill the front rank first: a wall is held at the parapet, and a half-strength
-      // garrison should be one full line of men shooting, not two half lines.
-      const rank = Math.floor(k / perRank);
-      const file = k % perRank;
-      if (rank >= ranks) {
-        // Overflow. He keeps a legal station so he is never in mid-air, but he is flagged so
-        // `advancePlans` can walk him along the wall to the next run instead.
-        this.stationOf[i] = clamp(from + (file % perRank), bounds.lo, bounds.hi);
-        this.rankOf[i] = (ranks - 1) as number;
-        continue;
-      }
-      this.stationOf[i] = clamp(from + file, bounds.lo, bounds.hi);
-      this.rankOf[i] = Math.min(255, rank);
+    for (let k = 0; k < men.length; k++) {
+      const i = men[k];
+      if (place && !place(i)) continue;
+      // Wraps over the run's places when the roster is bigger than the stone. `seat` is
+      // always inside `seats`, so `rank` is always inside the band and `slotAt` can never
+      // be handed two ranks that resolve to one offset.
+      const seat = k % seats;
+      this.stationOf[i] = clamp(from + (seat % files), bounds.lo, bounds.hi);
+      this.rankOf[i] = Math.min(255, Math.floor(seat / files));
     }
   }
 
@@ -3583,29 +3663,34 @@ export class Siege implements ElevationOwner {
     }
   }
 
-  /** Lay the men who have reached the destination run out along it, and no others. */
+  /**
+   * Lay the men who have reached the destination run out along it, and no others.
+   *
+   * The same solver the settled garrison uses — see `layOutOnWall` for why there is only
+   * one of them now.
+   *
+   * **Sized for the whole cohort, filled by the men who have arrived**, and the difference
+   * is the second half of "they get stuck". Sized for the arrivals alone, the window is a
+   * different width on every tick of an ascent: the file was 1 station wide when the first
+   * man topped the stair, 5 when a fifth of them were up and 14 when the run filled, and
+   * `from` walked six stations along the wall as it grew. Every man's seat therefore moved
+   * under him every tick, so nobody was ever within `steerToSlots`' 6 cm arrival radius and
+   * the whole cohort walked at a flat 1.5 m/s for as long as the plan was open. Reserving
+   * each man's place from the first tick — a hole in the line until he gets there, which is
+   * what a place *is* — makes the file stand still while the rest of it files up.
+   */
   private layOutArrived(
     u: UnitGroupState, g: Garrison, centre: number, arrived: readonly number[]
   ): void {
-    if (centre < 0 || this.nStations === 0) return;
-    const m = clamp(centre, 0, this.nStations - 1);
-    const band = this.sOuter[m] - this.sInner[m];
-    let ranks = clamp(Math.floor(band / WALL_RANK_PITCH) + 1, 1, MAX_WALL_RANKS);
-    const bounds = this.runBounds(m);
-    const free = this.freeWindow(m, bounds, u.id, Math.ceil(arrived.length / ranks));
-    while (ranks < MAX_WALL_RANKS && free.span * ranks < arrived.length) ranks++;
-    const perRank = Math.max(1, Math.min(free.span, Math.ceil(arrived.length / ranks)));
-    const from = clamp(free.from, bounds.lo, Math.max(bounds.lo, bounds.hi - perRank + 1));
-    this.releaseClaim(g);
-    g.from = from;
-    g.span = perRank;
-    g.ranks = ranks;
-    for (let f = 0; f < perRank; f++) this.sOwner[clamp(from + f, bounds.lo, bounds.hi)] = u.id;
-    for (let k = 0; k < arrived.length; k++) {
-      const i = arrived[k];
-      this.stationOf[i] = clamp(from + (k % perRank), bounds.lo, bounds.hi);
-      this.rankOf[i] = Math.min(255, Math.floor(k / perRank));
-    }
+    if (centre < 0) return;
+    const p = this.battle.pool;
+    const roll: number[] = [];
+    for (const i of u.members) if (p.aliveAt(i)) roll.push(i);
+    if (roll.length === 0) return;
+    const mark = this.placeMark;
+    for (const i of arrived) mark[i] = 1;
+    this.layOutOnWall(u, g, centre, roll, (i) => mark[i] === 1);
+    for (const i of arrived) mark[i] = 0;
   }
 
   /**
@@ -3643,13 +3728,23 @@ export class Siege implements ElevationOwner {
     if (st < 0) return;
     const q = this.fileIndex(l.id, dir);
     const bounds = this.runBounds(st);
-    // Step back into the run away from the mouth, three abreast, so a hundred men waiting
-    // for a tower door are a crowd on the walkway and not a single file across two bays.
-    const back = Math.floor(q / MAX_WALL_RANKS);
+    /**
+     * As many abreast as the walkway takes here, not a constant.
+     *
+     * Was `MAX_WALL_RANKS`, which is the *cap* on the depth and not the depth. On a bay
+     * whose clear band is 2.21 m — the narrowest of the 45 on this circuit — the walk takes
+     * four, so the man handed rank 4 stood at exactly the offset `slotAt` had already
+     * clamped rank 3 to, and two men in a queue shared one place. `ranksAt` is the wall's
+     * own answer and is now the only source of it anywhere in this file.
+     */
+    const abreast = this.ranksAt(st);
+    // Step back into the run away from the mouth, so a hundred men waiting for a tower
+    // door are a crowd on the walkway and not a single file across two bays.
+    const back = Math.floor(q / abreast);
     // Which way "back" is depends on which end of the run the mouth is.
     const inward = st === bounds.hi ? -1 : 1;
     this.stationOf[i] = clamp(st + inward * back, bounds.lo, bounds.hi);
-    this.rankOf[i] = q % MAX_WALL_RANKS;
+    this.rankOf[i] = q % abreast;
     this.wantLink[i] = l.id;
     this.wantDir[i] = dir;
     this.noteWaiting(i, l.id, dir);
@@ -5286,11 +5381,13 @@ export class Siege implements ElevationOwner {
     // behind before spreading further along the wall — a lodgement widening from a point,
     // which is what a lodgement does.
     const p = this.battle.pool;
+    // The lodgement is as deep as the bay it lands on, for the same reason `queueAtLink` is.
+    const abreast = this.ranksAt(destStation);
     for (const i of u.members) {
       if (!p.aliveAt(i) || this.stationOf[i] !== PENDING_SLOT) continue;
       const n = g.filled++;
-      const rank = n % MAX_WALL_RANKS;
-      const step = Math.floor(n / MAX_WALL_RANKS);
+      const rank = n % abreast;
+      const step = Math.floor(n / abreast);
       // 0, +1, -1, +2, -2, ... outward from where they came over.
       const spread = (step % 2 === 0 ? 1 : -1) * Math.ceil(step / 2);
       const bounds = this.runBounds(destStation);
