@@ -19,7 +19,7 @@
 import type { QualityTier } from '../core/Engine';
 import { DEFAULT_MAP_ID, getMap, isMapId, type MapId } from '../maps';
 import { formation } from './formations';
-import { Faction } from './types';
+import { Faction, SOLDIER_POOL_CAPACITY } from './types';
 import { unitType } from '../units/roster';
 
 export type Difficulty = 'easy' | 'normal' | 'hard' | 'legendary';
@@ -627,25 +627,32 @@ export function baseStrength(c: BattleConfig, s: ScenarioId = c.scenario): numbe
 }
 
 /**
- * The largest unit-size scale whose battle still fits the quality tier's soldier pool.
+ * The largest unit-size scale whose battle still fits the soldier pool.
  *
  * This matters more than it looks. `spawnUnit` stops allocating when the pool is full, and
- * Rome deploys first — so at `low` (1,600 men) and `medium` (3,200) the default order of
- * battle exhausted the pool partway through the Roman line and **the entire Juthungi army
- * spawned with zero men**. The two sides then stood 130 m apart for the whole battle with
- * nobody in contact, which read as a broken AI rather than a broken pool.
+ * Rome deploys first — so when the pool was small the default order of battle exhausted it
+ * partway through the Roman line and **the entire Juthungi army spawned with zero men**. The
+ * two sides then stood 130 m apart for the whole battle with nobody in contact, which read as
+ * a broken AI rather than a broken pool.
  *
- * Scaling every unit down keeps all units present and the tactical picture intact at every
- * tier; losing an army does not. The 6% headroom absorbs the artillery crews, which
- * `spawnUnit` deliberately does not scale.
+ * Scaling every unit down keeps all units present and the tactical picture intact; losing an
+ * army does not. The 6% headroom absorbs the artillery crews, which `spawnUnit` deliberately
+ * does not scale.
+ *
+ * **It no longer takes the pool size as an argument, and that is the point rather than tidying.**
+ * The pool used to be `quality.maxSoldiers`, so this function fitted the army to the graphics
+ * tier and a shadow-quality dropdown decided how many men fought — measured as two entirely
+ * different outcomes of one seeded assault. `SOLDIER_POOL_CAPACITY` is one number at every
+ * tier on every machine, so the clamp is now a property of the engine rather than of the
+ * settings, and the mistake cannot come back through a call site: there is no parameter left to
+ * pass a setting into. See the constant's comment in `./types` for the measurement and for what
+ * a low tier gives up instead.
  */
-export function fittedUnitScale(
-  c: BattleConfig, maxSoldiers: number, s: ScenarioId = c.scenario
-): number {
+export function fittedUnitScale(c: BattleConfig, s: ScenarioId = c.scenario): number {
   const asked = scaleAppliesTo(s) ? unitSizePreset(c.unitSize).scale : 1;
   const base = baseStrength(c, s);
   if (base <= 0) return asked;
-  return Math.min(asked, (maxSoldiers * 0.94) / base);
+  return Math.min(asked, (SOLDIER_POOL_CAPACITY * 0.94) / base);
 }
 
 /**
@@ -667,11 +674,9 @@ export function fittedUnitScale(
 export const scaleAppliesTo = (s: ScenarioId): boolean => s !== 'assault';
 
 /** True when the pool forced a smaller battle than the menu asked for. */
-export const isScaleClamped = (
-  c: BattleConfig, maxSoldiers: number, s: ScenarioId = c.scenario
-): boolean =>
+export const isScaleClamped = (c: BattleConfig, s: ScenarioId = c.scenario): boolean =>
   scaleAppliesTo(s)
-  && fittedUnitScale(c, maxSoldiers, s) < unitSizePreset(c.unitSize).scale - 1e-6;
+  && fittedUnitScale(c, s) < unitSizePreset(c.unitSize).scale - 1e-6;
 
 /**
  * Headcount above which the 60 fps floor has been measured to fail.
@@ -697,10 +702,8 @@ export const isScaleClamped = (
 export const PERF_VALIDATED_MEN = 9000;
 
 /** Total men both sides field at the fitted scale. */
-export const totalMen = (
-  c: BattleConfig, maxSoldiers: number, s: ScenarioId = c.scenario
-): number =>
-  belligerents(c).reduce((n, f) => n + summarise(c, f, maxSoldiers, s).men, 0);
+export const totalMen = (c: BattleConfig, s: ScenarioId = c.scenario): number =>
+  belligerents(c).reduce((n, f) => n + summarise(c, f, s).men, 0);
 
 /**
  * The types that stand in the main battle line, for the line-width figure.
@@ -769,9 +772,9 @@ export interface SideSummary {
  * earlier draft estimated both and was out by 400 men at `small`.
  */
 export function summarise(
-  c: BattleConfig, f: Faction, maxSoldiers: number, sc: ScenarioId = c.scenario
+  c: BattleConfig, f: Faction, sc: ScenarioId = c.scenario
 ): SideSummary {
-  const scale = fittedUnitScale(c, maxSoldiers, sc);
+  const scale = fittedUnitScale(c, sc);
   const line = lineTypesFor(sc, f, c.map);
   let men = 0;
   let frontage = 0;

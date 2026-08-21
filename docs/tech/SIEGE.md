@@ -1042,7 +1042,8 @@ and sampling every 5 s, it holds to within one sample interval:
 | `Spent` | t+260 | t+255 |
 | crew at the breach → at spend | 32 → 24 → 13 | 16 → 13 → 5 |
 
-The crew figures differ because `fittedUnitScale` halves unit strengths at the `low` tier;
+The crew figures differ because `fittedUnitScale` halved unit strengths at the `low` tier (it
+does not any more — see the note in §5.1 below and `SOLDIER_POOL_CAPACITY`);
 the timings do not, because they are governed by `RAM_SPEED`, `RAM_PERIOD` and `GATE_BLOWS`.
 At t+280 in the same run the crew count jumps to 81 — `recrew` has put a warband on the parked
 machine, which is `RECREW_RADIUS` working as designed on a machine that no longer has any work
@@ -1113,9 +1114,15 @@ have been true at the tier the game is played at" is the right question to ask:
 **`high` and `ultra` are the same battle here** — 3,074 men fits under both caps (10,000 and
 12,000), and the two arms agree line for line — so `high` is a faithful proxy for the tier the
 game ships at, and the boundary lands on the same commit at both. The ram did *not* already
-fail at ultra at r6. `medium` and `low` genuinely are different scenarios and their numbers
+fail at ultra at r6. `medium` and `low` genuinely were different scenarios and their numbers
 are not comparable with these; the `quality=low` column in the table at the top of §5.1 is
 labelled as such for that reason.
+
+> **All four tiers are the same battle now** — `e/core/quality-sim-split`. The soldier pool is
+> `SOLDIER_POOL_CAPACITY`, one number at every tier, because a graphics setting sizing the armies
+> meant a graphics setting decided the outcome. The `high`/`ultra` numbers above are unaffected
+> and are the shipped battle at every tier; the `medium` and `low` figures in this file are
+> history. `tools/qa-determinism.mjs` carries a cross-tier arm that asserts it.
 
 At the boundary, same probe, same port, same idiom, `quality=high`:
 
@@ -1563,7 +1570,8 @@ that can put him anywhere else.
 
 The two shipped assault orders of battle (assault does not scale with the battle-size
 multiplier — `scaleAppliesTo('assault')` is false — but `fittedUnitScale` may still lower it to
-fit the quality tier's soldier pool):
+fit `SOLDIER_POOL_CAPACITY`, which is one number at every quality tier and no longer the tier's
+own):
 
 | Rome garrisons the Aurelian Wall | | The Juthungi storm | |
 |---|---|---|---|
@@ -1758,13 +1766,20 @@ units and the condition fires.
 `Siege.stats()` reports `garrisoned: 8, garrisonMen: 810` at t=0 — five `ballistarii` of 108
 and three `wall-slingers` of 90.
 
-That number is also the reason to be careful with the quality tier when measuring an assault.
-At `quality=low`, `fittedUnitScale` drops the same eight units to **301 men on the parapet**,
-which is well inside the range the sweep says condition A becomes reachable in — and in the
-low-tier run used for the ram timeline above, `BattleFlow` wrote a Juthungi victory on the
-assault objective at `result.at = 92.0` — before the ram had landed a blow. That is a
-legitimate result for a quarter-strength garrison and it is *not* the shipped battle. Timings
-scale with the tier; outcomes do not.
+That number **used to be the reason to be careful with the quality tier when measuring an
+assault, and that hazard is now gone.** At `quality=low`, `fittedUnitScale` dropped the same
+eight units to **301 men on the parapet**, which is well inside the range the sweep says
+condition A becomes reachable in — and in the low-tier run used for the ram timeline above,
+`BattleFlow` wrote a Juthungi victory on the assault objective at `result.at = 92.0`, before the
+ram had landed a blow. That was a legitimate result for a quarter-strength garrison and it was
+*not* the shipped battle. It was a graphics setting changing the outcome of a battle, the owner
+ruled on it, and the soldier pool is `SOLDIER_POOL_CAPACITY` now — one number at every tier. All
+four tiers put 810 men on this parapet.
+
+**So the `quality=low` column in the table at the top of §5.1 describes a battle this build does
+not produce at any tier**, and the numbers in it are kept as history rather than as a
+reproduction target. Timings still scale with the tier, because a slower machine runs fewer ticks
+per wall second; the *battle* no longer does.
 
 So on the shipped Rome assault the besieger's realistic routes are the gate (which now opens at
 t+220, §5.1) and the three unbuilt footings (§2.8) — and the AI only ever finds the second.

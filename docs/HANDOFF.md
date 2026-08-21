@@ -38,8 +38,14 @@ Quote the value or your shell backgrounds on the `&`. **`--battle=rome` is not a
 is `--battle=carthage`.** The flag's value is appended verbatim as query parameters *and* used as
 the baseline key, so a short name appends a meaningless parameter, loads the **field battle**, and
 looks up a key that does not exist — a run that measured the wrong battle against no pin at all. It
-does not go red. It asserts nothing. Those three spellings above are the only three keys the
-baseline holds.
+used not to go red and it asserted nothing. **It exits 2 now**: every segment of `--battle` must be
+`key=value` with a key `src/` actually reads, and the failure prints the three invocations above.
+Those three spellings are still the only three keys the baseline holds.
+
+Each of those three runs now carries a **cross-tier arm**: the same battle at `low`, `medium`,
+`high` and `ultra`, requiring the pool hash, `uf64`, `uctl`, headcount and unit count to be
+identical, because a graphics setting must not change the battle. `--tiers=off` skips it and says
+so out loud; `--tier-at=` moves where it compares (default: the first three of `--at`).
 
 Confirm every run by headcount, always: **field battle 8,632 / Rome 3,074 / Carthage 3,440.** A
 Carthage run reporting 8,632 measured something else.
@@ -430,12 +436,16 @@ feeling.
   when a field actually moved.
 - **`LightingSystem.resize` early-returns unless the cascade count changed, so writing
   `shadowMapSize` at runtime is a silent no-op.** Another instance of the house failure mode.
-- **`quality.maxSoldiers` is sim-side and `setQuality` used to overwrite it.**
-  `BattleSystem.init` sizes the `SoldierPool` and eight typed arrays from it and
-  `scenario.ts:293/644` scale unit size through `fittedUnitScale`, so a runtime tier switch
-  took a deployed battle's cap to 1,600. It is pinned now. **`low` is not merely a render
-  tier** — it deploys 1,515 men against ultra's 8,632, which is why a low-tier frame
-  photographs a different battle.
+- ~~**`quality.maxSoldiers` is sim-side and `setQuality` used to overwrite it.**~~ **The field
+  is gone, `e/core/quality-sim-split`.** It sized the `SoldierPool` and eight typed arrays, and
+  `scenario.ts` scaled unit size through `fittedUnitScale`, so `low` was never merely a render
+  tier: it deployed 1,515 men against ultra's 8,632 and a low-tier frame photographed a
+  different battle. Pinning it at construction stopped a *runtime* tier switch resizing a
+  deployed army and did nothing about the tier choosing the army at boot, which was the actual
+  defect and which the owner ruled on. The pool is `SOLDIER_POOL_CAPACITY = 12000`
+  (`src/sim/types.ts`), one number at every tier; `SimQuality` is deleted and
+  `QualitySettings = RenderQuality`. **`low` is now merely a render tier**, which is what it
+  should always have been, and `tools/qa-determinism.mjs`'s cross-tier arm holds it there.
 - **MSAA `medium: 2` is gone.** 4x against none is 1.18 ms and 4x against 2x is 0.07 ms, so
   2x paid 94 % of full price for half the samples. `MSAA_SAMPLES` is now a binary 0-or-4
   lever worth 1.18 ms. `low` has always run 0 and grass sets `alphaToCoverage`
@@ -1565,9 +1575,13 @@ figures are inflated by family resemblance to an unknown degree.
 
 Two things were tried inside that set and rejected — do not retry them. Pydna at its 19:00 preset
 renders at a few percent luminance with a blown sun blob and nothing else legible, which a grader
-sorts as "the dark one". And the honest non-ultra frame must be `high`, not `low`: `maxSoldiers`
-is 1,600 at low and 3,200 at medium against an order of battle of 8,632, so a low-tier frame
-photographs a different battle and is sorted on headcount rather than filtering.
+sorts as "the dark one". And the honest non-ultra frame was `high` rather than `low` because
+`quality.maxSoldiers` was 1,600 at low and 3,200 at medium against an order of battle of 8,632, so
+a low-tier frame photographed a different battle and was sorted on headcount rather than
+filtering. **That reason has since been removed at the source** — the soldier pool is
+`SOLDIER_POOL_CAPACITY`, one number at every tier — so `low` is now a legitimate deck tier and the
+graded set has an unexplored axis in it. `high` is kept in `deck-rout` because the deck's numbers
+were measured there; moving it is a grading decision, not a side effect of this.
 
 `reference/museum/` holds 41 licence-verified photographs (PD/CC0/CC BY/CC BY-SA, provenance in
 `ASSETS.md`) for **accuracy only** — a grader separates photography from rendering on sensor noise
@@ -2038,36 +2052,54 @@ applies is the number the record carries. 4.27 cm against a 0.72 m rank pitch.
   at the shared checkout, so the default `node_modules/.vite` is one dependency cache written by
   as many vite processes as there are agents running a gate.
 
-### The graphics tier is a simulation input, and only through one field
+### The graphics tier was a simulation input, through one field, and is not any more
 
 The video pass measured it as an outcome rather than a headcount — Campus Martius assault,
 seed 4265438264, hard: **ultra 3,074 men, medium 3,009**; at ultra the ram crew dies 16 m short
 of the door and lands nothing by t+520, at medium it lands 26 blows and the Porta Flaminia opens
-by t+240. A record has to carry the tier or a replay watched at another one is a different
-battle that will read as a determinism bug.
+by t+240. The owner's ruling was verbatim: *"definitely graphics settings should not change
+outcome of battle lol."*
 
-So the scope was checked rather than assumed, and it is narrow and well-typed:
-`QualitySettings = SimQuality & RenderQuality`, **`SimQuality` has exactly one member**,
-`maxSoldiers`. `Engine` freezes it at construction and re-asserts
+The scope was checked rather than assumed, and it was narrow and well-typed:
+`QualitySettings = SimQuality & RenderQuality`, **`SimQuality` had exactly one member**,
+`maxSoldiers`. `Engine` froze it at construction and re-asserted
 `q.maxSoldiers = this.simQuality.maxSoldiers` after every patch, so a mid-battle tier press
-cannot resize the army. Every read of `ctx.quality.*` across `src/sim`, `src/ai` and
-`src/units` is either `maxSoldiers` — thirteen sites, all in `BattleSystem.init` and the two
+could not resize the army. Every read of `ctx.quality.*` across `src/sim`, `src/ai` and
+`src/units` was either `maxSoldiers` — thirteen sites, all in `BattleSystem.init` and the two
 `fittedUnitScale` calls in `scenario.ts` — or `lodFarDistance`, which is the impostor swap
-distance. **Nothing else on the settings path reaches the simulation.** Pause and speed are the
-other three UI writes to sim-adjacent state (`TopBar`, `HudSystem` hotkeys, `deployment`), and
-they change how many ticks happen per wall second rather than what a tick does — which the
-record is immune to by construction, because it is keyed to the tick index.
+distance and is render-only. **Nothing else on the settings path reaches the simulation.**
+Independently re-verified on `e/core/quality-sim-split`, and two near-misses are worth naming
+because both look like leaks and are not: `Ragdoll.claimSlot` reads the camera position inside a
+fixed step, which is player input in a tick and is safe only because the system is
+write-isolated from the pool (its own comment says so); and `roughDrag` is published by
+`ObstacleField` from the city's standing work, not by `grassDensity`, which is a render field
+read only by `GrassField`. Pause and speed are the other three UI writes to sim-adjacent state
+(`TopBar`, `HudSystem` hotkeys, `deployment`), and they change how many ticks happen per wall
+second rather than what a tick does.
 
-The record carries `quality`, the effective `unitScale` and `pool.count` at t+0; `?quality=` is
-applied *before* `?replay=` is decoded so the record's answer overwrites it; and a token whose
-army this run cannot field is refused by name. Two arms of the gate check exactly that.
+**The one field is deleted.** `SOLDIER_POOL_CAPACITY = 12000` in `src/sim/types.ts`, one number
+at every tier; `SimQuality` is gone and `QualitySettings = RenderQuality`, so a future
+simulation-side quality setting cannot be added by widening an intersection — it would have to
+arrive as a `BattleConfig` field, which is something a player chooses and which travels in the
+`?battle=` token and in a replay record. `fittedUnitScale` no longer takes a pool-size argument,
+so there is no parameter left through which a setting could be passed in. `low` and `medium` grew
+to the `high`/`ultra` battle; `high` and `ultra` did not move, and **all 21 pinned checkpoints of
+`tools/determinism-baseline.json` are bit-identical across the change** — `Math.min` was already
+binding on the asked unit size at `high`, and the new ceiling is the old `ultra` one.
+
+The record still carries `quality`, the effective `unitScale` and `pool.count` at t+0. The tier is
+provenance now; the `unitScale` refusal is kept because a *build* can still fit a different scale
+for the same config, and that is the case where a silent substitution would be worst.
 
 ### The other thing a gate must not be: pointable at nothing
 
-`node tools/qa-determinism.mjs --battle=rome` appends a meaningless `&rome`, loads the
-**default field battle**, looks up `baseline['rome']` which does not exist, compares nothing,
-and exits 0. The three real invocations are no flag, `--battle="map=campus-martius&scenario=assault"`
+`node tools/qa-determinism.mjs --battle=rome` appended a meaningless `&rome`, loaded the
+**default field battle**, looked up `baseline['rome']` which does not exist, compared nothing,
+and exited 0. The three real invocations are no flag, `--battle="map=campus-martius&scenario=assault"`
 and `--battle="map=carthage&scenario=assault"`; the headcount is the tell, 8,632 / 3,074 / 3,440.
+**`--battle` is validated now rather than documented** — every segment must be `key=value` with a
+key `src/` actually reads, or the run exits 2 with those three invocations printed. Documenting a
+trap for months did not close it.
 
 `qa-replay.mjs` was written not to inherit that. An unknown flag or `--only=` arm exits 2. The
 record arm asserts a headcount, a tick count and a checkpoint count before anything is compared,

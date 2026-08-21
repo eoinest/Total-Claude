@@ -389,7 +389,7 @@ const setup = await page.evaluate((deep) => {
     dpr: e.renderer.getPixelRatio(),
     drawing: [e.renderer.domElement.width, e.renderer.domElement.height],
     tier: e.quality.tier,
-    maxSoldiers: e.quality.maxSoldiers,
+    poolCap: window.__game.battle.pool.capacity,
     override: !!e.renderOverride,
   };
 }, DEEP);

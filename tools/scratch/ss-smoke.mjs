@@ -22,13 +22,13 @@ const boot = await page.evaluate(() => {
   const g = window.__game, e = g.engine, b = g.battle;
   const keys = Object.keys(b);
   return {
-    tier: e.quality.tier, maxSoldiers: e.quality.maxSoldiers,
+    tier: e.quality.tier, poolCap: window.__game.battle.pool.capacity,
     strength: b.strength, simTime: g.simTime(),
     systems: e.systems.map((s) => s.name),
     battleKeys: keys.slice(0, 80),
   };
 });
-console.log('tier', boot.tier, 'maxSoldiers', boot.maxSoldiers, 'simTime', boot.simTime);
+console.log('tier', boot.tier, 'poolCap', boot.poolCap, 'simTime', boot.simTime);
 console.log('strength', JSON.stringify(boot.strength), 'total', Object.values(boot.strength ?? {}).reduce((a, b) => a + b, 0));
 console.log('systems:', boot.systems.join(' '));
 console.log('battle keys:', boot.battleKeys.join(' '));

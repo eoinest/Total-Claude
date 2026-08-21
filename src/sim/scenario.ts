@@ -369,7 +369,7 @@ export function deployBattle(
   // Always the *field* composition, whatever `config.scenario` says: `deployAssault` falls
   // back through here when there is no wall on the map, and it must then lay out a field
   // battle from the field's order of battle rather than from the siege one.
-  battle.unitSizeScale = fittedUnitScale(config, ctx.quality.maxSoldiers, 'field');
+  battle.unitSizeScale = fittedUnitScale(config, 'field');
 
   /**
    * Who Rome is fighting, and the one place the whole battle learns it.
@@ -892,14 +892,18 @@ function deployAssault(
    * Establishment, not the menu's battle-size multiplier — but still fitted to the pool.
    *
    * `scaleAppliesTo('assault')` is false, so `fittedUnitScale` asks for x1 and then only ever
-   * lowers it to make the battle fit the quality tier's soldier pool. See its comment for the
-   * measurement behind that: a wall-walk run holds about 84 men and a ballistarii unit is
-   * already 108, so doubling establishment puts nobody new on the parapet, it stacks men
-   * inside each other at the inner edge. This is strictly better than the flat `= 1` it
-   * replaces, which overflowed the pool at the `low` tier and lost whole units off the end of
-   * the deployment.
+   * lowers it to make the battle fit the soldier pool. See its comment for the measurement
+   * behind that: a wall-walk run holds about 84 men and a ballistarii unit is already 108, so
+   * doubling establishment puts nobody new on the parapet, it stacks men inside each other at
+   * the inner edge. This is strictly better than the flat `= 1` it replaces, which overflowed
+   * the pool and lost whole units off the end of the deployment.
+   *
+   * The pool is `SOLDIER_POOL_CAPACITY` and no longer the graphics tier's, so this storm is now
+   * the same storm at every tier. It was not: at `medium` the fitted scale was x0.9785, the
+   * garrison and the host were 65 men lighter, and the ram reached the Porta Flaminia and opened
+   * it while at `ultra` the ram crew died 16 m short of the door.
    */
-  battle.unitSizeScale = fittedUnitScale(config, ctx.quality.maxSoldiers, 'assault');
+  battle.unitSizeScale = fittedUnitScale(config, 'assault');
 
   const n = (comp: Readonly<Record<string, number>>, id: string): number =>
     Math.max(0, comp[id] ?? 0);
