@@ -4,13 +4,27 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>TOTAL CLAUDE — Siege of Rome</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <!--
+      No `preconnect` to fonts.googleapis.com. There was one here for months and nothing
+      ever fetched from that origin: there is no `@font-face`, no `@import` and no font
+      stylesheet anywhere in the tree, and `--serif` / `--num` in `hud.css` are local font
+      stacks. A preconnect to an origin you never use is a DNS lookup, a TCP handshake and a
+      TLS negotiation on the critical path, spent on nothing.
+    -->
     <link rel="stylesheet" href="/src/ui/hud.css" />
     <link rel="stylesheet" href="/src/ui/menu.css" />
   </head>
   <body>
     <div id="app">
       <canvas id="viewport"></canvas>
+      <!--
+        The cinematic backdrop lives here and is filled in by `MenuBackdrop`, from `main.ts`,
+        and only on the paths that show a menu. It is deliberately EMPTY in the served
+        document: the first paint must not wait on a 134 kB photograph, and `?harness=1`,
+        `?menu=0` and `?replay=` must fetch exactly the bytes they fetched before — every
+        probe and every determinism arm goes through one of those three.
+      -->
+      <div id="backdrop-root"></div>
       <div id="hud-root"></div>
       <div id="menu-root"></div>
       <div id="loading">
@@ -25,10 +39,23 @@
             </svg>
           </div>
           <h1>TOTAL CLAUDE</h1>
-          <h2>The Siege of Rome &middot; 271 AD</h2>
+          <h2 id="load-sub">The Siege of Rome &middot; 271 AD</h2>
           <div class="bar"><i id="load-bar"></i></div>
           <p id="load-text">Mustering the legions&hellip;</p>
         </div>
+        <!--
+          The historical card. Empty and hidden in the served document, filled by `main.ts`
+          from `src/ui/lore.ts` once the map is known — which is only ever after the menu has
+          resolved, so it never appears on the pre-boot splash and never appears at all under
+          the harness. Every line of it is cited to `docs/ROME.md`, `docs/CARTHAGE.md` or the
+          map's own header; see the header of `lore.ts` for the rule and for the list of
+          facts that were rejected for being disputed.
+        -->
+        <aside class="load-lore" id="load-lore" hidden>
+          <b id="load-lore-title"></b>
+          <p id="load-lore-text"></p>
+          <cite id="load-lore-cite"></cite>
+        </aside>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

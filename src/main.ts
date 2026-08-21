@@ -26,7 +26,9 @@ import { HudSystem } from './ui/HudSystem';
 import { PostFXSystem } from './render/PostFX';
 
 import { DeploymentSystem } from './sim/deployment';
-import { getMap } from './maps';
+import { MenuBackdrop } from './ui/MenuBackdrop';
+import { loreFor } from './ui/lore';
+import { getMap, type MapId } from './maps';
 import { deployBattle } from './sim/scenario';
 import { type Difficulty, type ScenarioId, sanitiseConfig } from './sim/battleConfig';
 import { MainMenu, resolveConfig } from './ui/MainMenu';
@@ -54,6 +56,65 @@ const canvas = document.getElementById('viewport') as HTMLCanvasElement;
 const loading = document.getElementById('loading') as HTMLElement | null;
 const loadBar = document.getElementById('load-bar') as HTMLElement | null;
 const loadText = document.getElementById('load-text') as HTMLElement | null;
+
+/**
+ * The historical card's rotation handle, so it can be stopped when the panel goes.
+ *
+ * An interval on a removed element is not a leak the profiler will ever show you and it is
+ * still a timer firing forever behind a running battle.
+ */
+let loreTimer: number | null = null;
+
+/**
+ * Turn the loading panel into the cinematic one, now that the battlefield is known.
+ *
+ * Called on exactly one path — a player who came through the menu — for two reasons. The
+ * plate is already in the browser's cache, because the menu has been showing it, so this
+ * costs no request. And the pre-boot splash and every harness path keep the opaque centred
+ * sheet they have always had, which is what makes this change invisible to `qa-deploy`,
+ * `probe-*` and the determinism arms.
+ */
+function dressLoadingScreen(panel: HTMLElement, map: MapId): void {
+  panel.classList.add('with-plate');
+  const sub = document.getElementById('load-sub');
+  // `innerHTML`: `MapDefinition.subtitle` carries a literal `&middot;`, the way the menu
+  // header and the title card both consume it.
+  if (sub) sub.innerHTML = getMap(map).subtitle;
+
+  const card = document.getElementById('load-lore');
+  const title = document.getElementById('load-lore-title');
+  const body = document.getElementById('load-lore-text');
+  const cite = document.getElementById('load-lore-cite');
+  if (!card || !title || !body || !cite) return;
+
+  const cards = loreFor(map);
+  let i = 0;
+  const paint = (): void => {
+    const c = cards[i % cards.length];
+    title.textContent = c.title;
+    body.textContent = c.text;
+    cite.textContent = c.cite ?? '';
+  };
+  paint();
+  card.hidden = false;
+  requestAnimationFrame(() => card.classList.add('in'));
+
+  /*
+   * Seven seconds a card, and the number is a measurement rather than a guess: a boot is
+   * 3.7-5.4 s on this machine (`tools/scratch/menu-boot-cost.mjs`) and several times that on
+   * weaker hardware. One card would be a half-read sentence for the fast case and a wasted
+   * twenty seconds for the slow one. 360 ms is the fade-out in `hud.css`; keeping the two in
+   * step is why the swap is written as two steps rather than as one text assignment.
+   */
+  loreTimer = window.setInterval(() => {
+    card.classList.remove('in');
+    window.setTimeout(() => {
+      i++;
+      paint();
+      card.classList.add('in');
+    }, 360);
+  }, 7000);
+}
 
 /**
  * Pre-battle menu, before anything is built.
@@ -129,18 +190,42 @@ addEventListener('drop', (e) => {
     location.href = url.toString();
   });
 });
+/**
+ * The cinematic plate behind the menu and the loading screen.
+ *
+ * Built here rather than inside `MainMenu` because it outlives the menu by exactly one
+ * screen: BEGIN BATTLE fades the menu out and fades the loading panel in over the *same*
+ * photograph of the battlefield that was just chosen, and a backdrop owned by the screen
+ * that goes away could not do that.
+ *
+ * `null` on every path that skips the menu — `?harness=1`, `?menu=0`, `?replay=`. Those are
+ * the paths the screenshot deck, `qa-determinism`, `qa-deploy` and every `probe-*` take, and
+ * not one of them may acquire a new network request or a new element in the layer stack
+ * because the front door got a picture. See the comment in `index.html`.
+ */
+let backdrop: MenuBackdrop | null = null;
 if (!skipMenu) {
   const menuHost = document.getElementById('menu-root') as HTMLElement;
   // The loading panel sits at z-index 100, above the menu, so it has to leave the layer
   // rather than merely fade — otherwise the menu is built underneath an opaque sheet.
   if (loading) loading.hidden = true;
+  const bdHost = document.getElementById('backdrop-root');
+  if (bdHost) backdrop = new MenuBackdrop(bdHost);
   // `params` so the menu can tell a visit from a link: `?menu=battle`, or any URL that
   // already names a battle, opens straight on the setup screen instead of the front door.
   // See `startStep` in `MainMenu.ts`. `?menu=0` and `?harness=1` are unaffected — they are
   // handled above and never build a menu at all.
-  const chosen = await new MainMenu(config, params).show(menuHost);
+  const chosen = await new MainMenu(config, params, {
+    onMap: (id) => backdrop?.setMap(id),
+    onMapPeek: (id) => backdrop?.prefetch(id),
+  }).show(menuHost);
   config = chosen.config;
   if (loading) loading.hidden = false;
+  // The loading screen goes cinematic: the plate the menu has been showing stays up, the
+  // title block drops to the lower left, and a cited historical card comes in beside it.
+  // Only on this path — the pre-boot splash and the harness keep the opaque centred sheet
+  // they have always had.
+  if (loading && backdrop) dressLoadingScreen(loading, config.map);
 }
 const difficulty = config.difficulty;
 /**
@@ -363,11 +448,23 @@ async function boot(): Promise<void> {
    */
   installSeamCheck(engine.context);
 
+  if (loreTimer !== null) {
+    clearInterval(loreTimer);
+    loreTimer = null;
+  }
   if (harness) {
     loading?.remove();
   } else {
     loading?.classList.add('done');
-    setTimeout(() => loading?.remove(), 1400);
+    // The plate dissolves on the panel's own curve, then both leave together. `#backdrop-root`
+    // sits at z-index 5, between the canvas and the HUD, so a plate left behind would be a
+    // still photograph over a running battle.
+    backdrop?.fadeOut();
+    setTimeout(() => {
+      loading?.remove();
+      backdrop?.dispose();
+      backdrop = null;
+    }, 1400);
   }
 
   engine.start();

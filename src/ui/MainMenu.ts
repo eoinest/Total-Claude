@@ -75,6 +75,29 @@ const SIDE_LABEL: Record<number, string> = {
 /** Which of the two screens the menu is showing. */
 export type MenuStep = 'home' | 'setup';
 
+/**
+ * What the menu tells the outside world while it is open.
+ *
+ * There is exactly one thing, and it is the battlefield on screen. `main.ts` owns the
+ * cinematic backdrop (`MenuBackdrop`) because it has to outlive this screen by one — the
+ * loading panel comes up over the same plate — so the menu cannot own it and instead names
+ * the map and lets the caller decide what that means.
+ *
+ * Both hooks are optional and the menu is fully functional without them, which is not
+ * politeness: `?menu=0`, `?harness=1` and every probe reach `MainMenu` through
+ * `resolveConfig` and never build a backdrop at all, so a required hook would be a required
+ * dependency on a file none of them wants.
+ */
+export interface MenuHooks {
+  /** The battlefield the player is looking at: once when the menu opens, then on each change. */
+  onMap?: (id: MapId) => void;
+  /**
+   * A battlefield the pointer or the keyboard has touched but not chosen. Used to warm its
+   * plate, so the switch that is a quarter of a second away has already been decoded.
+   */
+  onMapPeek?: (id: MapId) => void;
+}
+
 /** The same mark as the loading screen, so every screen of this game reads as one game. */
 const EAGLE = `<svg viewBox="0 0 64 64" class="menu-ic" aria-hidden="true">
   <path fill="currentColor" opacity=".85"
@@ -384,9 +407,12 @@ export class MainMenu {
   /** The front door's plaques, in DOM order, for the arrow-key roving focus. */
   private destEls: HTMLElement[] = [];
 
-  constructor(initial: BattleConfig, params?: URLSearchParams) {
+  private hooks: MenuHooks;
+
+  constructor(initial: BattleConfig, params?: URLSearchParams, hooks: MenuHooks = {}) {
     this.cfg = sanitiseConfig(initial);
     this.screen = startStep(params);
+    this.hooks = hooks;
   }
 
   /** Resolves once the player commits. */
@@ -395,6 +421,10 @@ export class MainMenu {
     this.build();
     this.applyStep();
     this.refresh();
+    // The plate for the battlefield the menu is opening on, which is the stored one for a
+    // returning player and the shipped one for a first visit. Before the fade-in, so the
+    // push-in and the sheet arrive together rather than one after the other.
+    this.hooks.onMap?.(this.cfg.map);
     // Two frames, so the browser has laid the panel out before the transition starts and
         // the fade actually runs instead of being skipped as an initial style.
     requestAnimationFrame(() => requestAnimationFrame(() => this.root.classList.add('in')));
@@ -434,7 +464,13 @@ export class MainMenu {
         <div class="home-eagle">${EAGLE}</div>
         <div>
           <h1>TOTAL CLAUDE</h1>
-          <h2>The Siege of Rome &middot; 271 AD</h2>
+          <!--
+            The subtitle follows the battlefield, because the plate behind it does. A front
+            door that reads "The Siege of Rome" over a photograph of the Byrsa is a worse
+            first impression than no photograph at all, and a returning player opens on
+            whichever map they last fought.
+          -->
+          <h2 data-home-sub></h2>
         </div>
       </header>
       <nav class="home-dest" aria-label="Main menu">
@@ -481,6 +517,8 @@ export class MainMenu {
            <div class="menu-opts map-opts">
              ${MAPS.map((m) => `
                <button type="button" data-map="${m.id}">
+                 <span class="map-thumb"
+                   style="background-image:url(/menu/${m.id}-thumb.avif)"></span>
                  <b>${m.label}</b>
                  <i>${m.subtitle}</i>
                </button>`).join('')}
@@ -597,7 +635,15 @@ export class MainMenu {
         this.droppedAssault = before === 'assault' && this.cfg.scenario !== 'assault';
         this.buildArmies();
         this.refresh();
+        // The background flies over the battlefield that was just chosen. See
+        // `MenuBackdrop.setMap` — the plate crossfades and pushes in from a 14% over-zoom,
+        // and the incoming clip restarts at the head of its own crane.
+        this.hooks.onMap?.(id);
       });
+      // Warm the plate on approach, so the switch is already decoded when the click lands.
+      // `pointerenter` and not `mouseover`: it fires once per entry rather than per move.
+      b.addEventListener('pointerenter', () => this.hooks.onMapPeek?.(id));
+      b.addEventListener('focus', () => this.hooks.onMapPeek?.(id));
     }
     for (const b of this.qsa('[data-scen]')) {
       const id = b.dataset.scen as ScenarioId;
@@ -912,6 +958,7 @@ export class MainMenu {
     // The heading follows the battlefield and the battle, so the screen never claims to be
     // an engagement the player has just navigated away from.
     html(this.q('.menu-head h2'), `${mapDef.subtitle} &middot; ${scDef.label}`);
+    html(this.q('[data-home-sub]'), mapDef.subtitle);
 
     // The scenario row, and the one pairing that cannot be had. A blocked option is disabled
     // and *says why* on the blurb line rather than being hidden or silently ignored — a

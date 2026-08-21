@@ -220,6 +220,178 @@ html body[data-siegecur='refuse'] #viewport {
   min-height: 1.2em;
 }
 
+/* ------------------------------------------------- loading, over a plate --
+ *
+ * Two loading screens, one element.
+ *
+ * The panel above is the *first paint* — the state a visitor sees while the module graph is
+ * still downloading, before any code has run and before anything knows which battlefield is
+ * wanted. It stays exactly as it was: an opaque sheet, centred, no image, and therefore no
+ * request on the critical path. That is the whole reason the plate is not in the served HTML.
+ *
+ * `.with-plate` is the *second* loading screen, the one after BEGIN BATTLE, when the map is
+ * known and its plate is already in the browser's cache because the menu spent the last
+ * minute showing it. `main.ts` adds the class, and the layout goes cinematic: the sheet stops
+ * being opaque so the photograph shows through, the title block moves down to the lower left
+ * where the scrim in `.bd-scrim` is heaviest, and a historical card sits opposite it. It is
+ * Rome II's loading screen, which is a painting, a title and a fact.
+ */
+
+#loading.with-plate {
+  /* Not `transparent`: the plate is behind, but a wall of full-contrast photograph under
+     11 px letterspaced text is unreadable. This is the same grade `.bd-scrim` uses, doubled
+     at the bottom where the type is. */
+  background:
+    radial-gradient(120% 92% at 50% 24%, transparent 38%, rgba(3, 2, 1, 0.3) 100%),
+    linear-gradient(180deg, rgba(6, 5, 3, 0.3) 0%, transparent 22%, transparent 48%,
+      rgba(3, 2, 2, 0.62) 84%, rgba(2, 2, 1, 0.78) 100%);
+  place-items: end stretch;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 26rem);
+  gap: 0 clamp(1.5rem, 6vw, 6rem);
+  padding: 0 clamp(1.5rem, 5vw, 5rem) clamp(2rem, 6vh, 4.5rem);
+  align-content: end;
+}
+
+#loading.with-plate .load-inner {
+  text-align: left;
+  max-width: none;
+  padding: 0;
+}
+
+/* The eagle shrinks and moves inline with the title, because at this size it is a maker's
+   mark and not the subject of the screen — the photograph is. */
+#loading.with-plate .load-inner { display: grid; gap: 0; }
+#loading.with-plate .eagle {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 2px;
+}
+#loading.with-plate .eagle svg { width: 40px; height: 40px; }
+
+#loading.with-plate h1 {
+  margin: 0;
+  font-size: clamp(26px, 3.4vw, 44px);
+  letter-spacing: 0.26em;
+}
+
+#loading.with-plate h2 {
+  margin: 4px 0 18px;
+  letter-spacing: 0.3em;
+  color: rgba(239, 230, 210, 0.72);
+}
+
+/*
+ * The bar needs a floor over a photograph. `rgba(217,178,95,0.14)` is a perfectly good track
+ * on the opaque splash and it is invisible over a sunlit limestone wall — worse than
+ * invisible, it reads as a full bar. Black underneath, with the gold hairline on top of it.
+ */
+#loading.with-plate .bar {
+  margin: 0;
+  width: min(520px, 100%);
+  height: 4px;
+  background: rgba(0, 0, 0, 0.55);
+  box-shadow: inset 0 0 0 1px rgba(217, 178, 95, 0.26);
+}
+
+#loading.with-plate #load-text { margin-top: 12px; }
+
+/* Everything in the caption sits on the picture, so everything in it gets a shadow. */
+#loading.with-plate h1,
+#loading.with-plate h2,
+#loading.with-plate #load-text,
+#loading.with-plate .load-lore {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85), 0 0 18px rgba(0, 0, 0, 0.55);
+}
+
+/*
+ * The historical card.
+ *
+ * `align-self: end` and a bottom margin that matches the progress bar's line, so the fact and
+ * the title read as two columns of one caption rather than as a panel floating beside a
+ * screen. Bronze rule on the left in place of a box, which is the same device the HUD's
+ * `.hud-panel` uses for its inner fillet — one product, one register.
+ */
+.load-lore {
+  align-self: end;
+  margin-bottom: 2px;
+  padding: 0 0 0 1.15rem;
+  border-left: 2px solid rgba(217, 178, 95, 0.42);
+  color: rgba(239, 230, 210, 0.82);
+  text-align: left;
+  /*
+   * Transitions and not an animation, because this element is swapped every few seconds and
+   * an `animation` with `fill-mode: both` wins against a transition *forever* once it has
+   * finished — the card would arrive beautifully and then never fade again. The asymmetry is
+   * deliberate: `.in` carries the 0.3 s delay so the first card lands a beat after the
+   * picture, and taking `.in` away falls back to the undelayed base rule, so a swap fades out
+   * immediately instead of hanging for a third of a second.
+   */
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.34s ease, transform 0.34s ease;
+}
+
+.load-lore.in {
+  opacity: 1;
+  transform: none;
+  transition: opacity 0.6s ease 0.3s, transform 0.6s ease 0.3s;
+}
+
+.load-lore[hidden] { display: none; }
+
+.load-lore b {
+  display: block;
+  font-family: var(--serif);
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.load-lore p {
+  margin: 8px 0 0;
+  font-family: var(--num);
+  font-size: 14px;
+  line-height: 1.55;
+  color: rgba(239, 230, 210, 0.78);
+}
+
+.load-lore cite {
+  display: block;
+  margin-top: 9px;
+  font-family: var(--num);
+  font-style: normal;
+  font-size: 11.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(217, 178, 95, 0.6);
+}
+
+.load-lore cite:empty { display: none; }
+
+/*
+ * One column on anything narrow, and the card goes above the title rather than below it: the
+ * progress bar is the thing a waiting player looks at, so it stays closest to the bottom.
+ */
+@media (max-width: 820px) {
+  #loading.with-plate {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.6rem 0;
+  }
+  #loading.with-plate .load-inner { order: 2; }
+  .load-lore { order: 1; margin-bottom: 0; }
+}
+
+/*
+ * Reduced motion: the eagle stops breathing and the card stops sliding. Both are decorative
+ * loops on a screen somebody is stuck looking at, which is the worst place to put either.
+ */
+@media (prefers-reduced-motion: reduce) {
+  #loading .eagle { animation: none; }
+  .load-lore,
+  .load-lore.in { transform: none; transition: opacity 0.2s linear; }
+}
+
 /* ------------------------------------------------------------------ panels -- */
 
 .hud-panel {

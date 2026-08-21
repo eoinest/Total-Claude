@@ -51,12 +51,197 @@
 .menu.in { opacity: 1; }
 .menu.out { opacity: 0; pointer-events: none; }
 
+/*
+ * The menu's own backdrop layer, which is now a *scrim* rather than a picture.
+ *
+ * `#backdrop-root` sits behind this (see below) and carries the flyover of whichever
+ * battlefield is selected. This element's job changed with it: it used to be the whole
+ * background, and it is now the thing that keeps a sheet of 11 pt text legible over a
+ * photograph. The vignette is heaviest where the sheet is — a wide, soft ellipse in the
+ * middle — and lightest at the four corners, which is the part of the plate a player can
+ * actually see past the sheet.
+ *
+ * With no backdrop element present (nothing constructs one under `?menu=0`, `?harness=1` or
+ * `?replay=`, and none of those shows a menu either) this is a slightly darker version of
+ * the gradient that shipped before, so nothing regresses to a blank screen.
+ */
 .menu-bg {
   position: absolute;
   inset: 0;
   background:
+    radial-gradient(84% 70% at 50% 52%, rgba(4, 3, 2, 0.6) 0%, rgba(4, 3, 2, 0.34) 50%, transparent 82%),
+    linear-gradient(180deg, rgba(8, 6, 4, 0.34) 0%, rgba(10, 8, 5, 0.08) 32%, rgba(5, 4, 3, 0.5) 100%);
+}
+
+/* ------------------------------------------------------------- the backdrop -- */
+
+/*
+ * The cinematic plate behind the menu and the loading screen.
+ *
+ * Owned by `main.ts` rather than by `MainMenu`, and that is the whole design: it outlives
+ * the menu by exactly one screen. Press BEGIN BATTLE and the menu fades out while the
+ * loading panel fades *in over the same photograph of the map you just chose*, which is the
+ * continuity Rome II gets from having one art department and this gets for free by not
+ * putting the picture inside the thing that goes away.
+ *
+ * `z-index: 5` — above `#viewport` (auto) and below `#menu-root` (40) and `#loading` (100).
+ * It is removed outright once the battle's first frame is up, because a still photograph
+ * over a running game is not a subtle bug.
+ */
+#backdrop-root {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  /* The floor. A plate that has not arrived, or a browser with no AVIF, leaves exactly the
+     background this menu had before any of this existed. */
+  background:
     radial-gradient(120% 90% at 50% 0%, rgba(58, 40, 22, 0.55), transparent 70%),
     linear-gradient(180deg, #0a0906 0%, #12100b 45%, #070604 100%);
+}
+
+/*
+ * The handover to the battle. Exactly `#loading`'s own curve — `opacity 0.9s ease 0.15s` —
+ * so the plate and the panel over it dissolve as one thing and the first frame of the game
+ * comes up underneath both. Anything faster and the photograph vanishes out from under a
+ * loading screen that is still fading.
+ */
+.backdrop.bd-out {
+  opacity: 0;
+  transition: opacity 0.9s ease 0.15s;
+}
+
+.bd-layer {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  /* Long enough to read as a dissolve rather than a switch, short enough that a player
+     clicking down the map row does not stack three of them. */
+  transition: opacity 0.72s ease;
+  will-change: opacity;
+}
+
+.bd-layer.on { opacity: 1; }
+
+/*
+ * The push-in. This is the "zoom over the map" the whole feature is named for.
+ *
+ * It rides on the same class as the fade, so there is one state per layer and no way for the
+ * two to disagree. 1.14 to 1 over 2.6 s at a decelerating curve: the incoming battlefield
+ * arrives already moving and settles, which is a camera landing rather than an image
+ * appearing. The clip inside is itself a crane over the same terrain, so the motion carries
+ * on after the transform has finished instead of stopping dead.
+ */
+.bd-media {
+  position: absolute;
+  inset: 0;
+  transform: scale(1.2);
+  /* Above centre, so the crop that the rest scale of 1.05 buys comes off the bottom of the
+     frame. All three plates put their subject in the upper two-thirds — the Roman skyline,
+     the Byrsa, the far host — and their foreground is ground. */
+  transform-origin: 52% 42%;
+  transition: transform 2.6s cubic-bezier(0.16, 0.62, 0.24, 1);
+  will-change: transform;
+  /*
+   * A light grade on the plate itself. The rubric's G2 was corrected once already for saying
+   * "sun-bleached, slightly desaturated" — "a monochrome dust-beige frame is a far worse
+   * error than mild over-saturation" — and a backdrop seen through two scrims loses more
+   * chroma than a bare frame does. Both of these are compositor-side in Chromium, so the
+   * cost is nil.
+   */
+  filter: saturate(1.12) contrast(1.05);
+}
+
+/* Not 1: the plate rests very slightly enlarged, which crops the empty foreground off the
+   bottom and keeps the push-in's travel (1.20 -> 1.05) the same 14% it was. */
+.bd-layer.on .bd-media { transform: scale(1.05); }
+
+.bd-still,
+.bd-clip {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/*
+ * The still is underneath and the clip fades in on top of it once it has produced a frame.
+ * Both are the *same frame* — `tools/menu-plates.mjs` cuts the poster from the exact source
+ * frame the encoder emits first — so the handover has nothing to see.
+ */
+.bd-clip { opacity: 0; transition: opacity 0.9s ease; }
+.bd-layer.playing .bd-clip { opacity: 1; }
+
+/*
+ * Ambient drift for the case where there is no clip: reduced motion is off but VP9 would not
+ * decode, or the connection said no. Forty seconds for a 4% pan is under a pixel a second at
+ * 1080p and reads as a photograph that is very slightly alive.
+ */
+@keyframes bd-drift {
+  0% { transform: scale(1.045) translate3d(-0.6%, 0.35%, 0); }
+  50% { transform: scale(1.045) translate3d(0.6%, -0.35%, 0); }
+  100% { transform: scale(1.045) translate3d(-0.6%, 0.35%, 0); }
+}
+
+.bd-layer.on .bd-still { animation: bd-drift 40s ease-in-out infinite; }
+.bd-layer.playing .bd-still { animation: none; }
+
+/*
+ * A warm grade and a vignette over the whole plate, so three battlefields shot at three
+ * latitudes in three seasons read as one product. The multiply band at the bottom is what
+ * the loading screen's text sits on.
+ */
+/*
+ * This is a *grade*, not a darkening. The two consumers each add their own — `.menu-bg`
+ * behind the setup sheet, `#loading.with-plate` behind the loading caption — and when all
+ * three tried to be the one that made the text legible the result was a black rectangle with
+ * a rumour of a city in it. One job each: this one unifies three battlefields shot at three
+ * latitudes in three seasons, and nothing more.
+ */
+.bd-scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(132% 104% at 50% 40%, transparent 46%, rgba(3, 2, 1, 0.44) 100%),
+    linear-gradient(180deg, rgba(12, 8, 4, 0.26) 0%, transparent 22%, transparent 74%, rgba(4, 3, 2, 0.34) 100%);
+}
+
+/*
+ * Grain. Two jobs: the rubric asks for it (G4), and it dithers the banding VP9 leaves in a
+ * clear sky at the 700 kb/s a menu backdrop is worth. An inline SVG turbulence rather than a
+ * PNG, so it costs no request and no bytes beyond this rule.
+ */
+.bd-grain {
+  position: absolute;
+  inset: -50%;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/*
+ * The setting this whole feature is what somebody had in mind when they turned it on.
+ *
+ * No push-in, no drift, and a crossfade short enough to read as a change of state rather
+ * than as a transition. `MenuBackdrop` independently refuses to fetch a clip at all under
+ * the same query, so this is a second lock on the same door and not the only one — a code
+ * path that forgets cannot bring the motion back.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .bd-layer { transition: opacity 0.24s linear; }
+  .bd-media,
+  .bd-layer.on .bd-media { transform: none; transition: none; }
+  .bd-layer.on .bd-still { animation: none; }
+  .bd-clip { transition: none; }
 }
 
 .menu-sheet {
@@ -462,11 +647,52 @@
 
 .map-row { border-bottom: none; padding-bottom: 0.5rem; }
 
-.map-opts button { min-width: 11.5rem; }
+/*
+ * The battlefield buttons carry a picture of the battlefield.
+ *
+ * A row of three words is a form control; a row of three photographs is a choice. The image
+ * is the same plate that is about to fill the screen behind the sheet, cut to 480x270 by
+ * `tools/menu-plates.mjs` — about 10 kB of AVIF each, and none of the three is fetched until
+ * the setup screen is shown, because `.menu.at-home .menu-setup` is `display: none` and a
+ * background on a `display: none` subtree is never requested.
+ *
+ * Unselected thumbnails are desaturated and dim, so the chosen battlefield is the only one in
+ * colour and the row reads at a glance from across the table.
+ */
+.map-opts button {
+  min-width: 11.5rem;
+  padding: 0;
+  overflow: hidden;
+  gap: 0;
+}
+
+.map-thumb {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 7;
+  background-size: cover;
+  background-position: center 58%;
+  filter: saturate(0.46) brightness(0.62);
+  transition: filter 0.22s ease, transform 0.5s ease;
+  border-bottom: 1px solid rgba(217, 178, 95, 0.2);
+}
+
+.map-opts button:hover .map-thumb { filter: saturate(0.7) brightness(0.76); }
+.map-opts button.on .map-thumb { filter: none; transform: scale(1.035); }
+
+.map-opts button b,
+.map-opts button i { padding: 0 0.7rem; }
+.map-opts button b { padding-top: 0.42rem; }
 .map-opts button i {
   font-size: 0.66rem;
   letter-spacing: 0.045em;
   white-space: nowrap;
+  padding-bottom: 0.45rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-thumb { transition: none; }
+  .map-opts button.on .map-thumb { transform: none; }
 }
 
 .map-blurb {
