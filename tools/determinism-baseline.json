@@ -30,62 +30,62 @@
     }
   },
   "map=campus-martius&scenario=assault": {
-    "note": "Rome's assault. Re-recorded for THIS pass's change and no other: CitySystem.masonryTopAt gained a tower branch. A tower is stamped into the obstacle set as a solid box towerHalf square rising towerRise above the crest, but the projectile height field had no tower test at all -- it resolved a bay and tested the curtain cross-section, so it answered walkY 52.80 at the centre of a tower standing to 59.85, and every shot that reached the upper storey flew through it. Measured on Rome at 7dd9616: a lofted onager stone aimed into a tower crossed the whole footprint and landed 37 m inside the city. Towers now report their own roof, so stones stop on them; the movement is entirely garrison casualties NOT taken behind a tower that used to be transparent -- alive at t+200 2186 -> 2229. Determinism itself is intact: runs A and B are bit-identical at every checkpoint in both arms, and the field battle (default) did not move at all. Re-record only in the same commit as the change that moved it.",
+    "note": "Rome's assault, re-recorded at the wall-file pass (a unit on a wall is a file the wall's depth). The garrison's *initial* layout changes, which is why t+0 moves at all: layOutOnWall spreads a garrison along its run at the band's depth instead of heaping it into the largest unclaimed gap, so every defender starts on a different stone. Attrition moves with it -- alive at t+200 2186 -> 2099, 87 more dead across 3074 -- because a garrison that actually mans its parapet is a garrison that can be shot at. That is a consequence of the fix and not a lever anyone chose; it is called out in the report for the owner. The field battle ('default') is bit-identical across the same change, which is the check that says this is confined to the wall. Re-record only in the same commit as the change that moved it.",
     "checkpoints": {
       "0": {
-        "hash": "22bb3df8",
+        "hash": "55a19c06",
         "count": 3074,
         "alive": 3074
       },
       "30": {
-        "hash": "27758336",
+        "hash": "0891bd72",
         "count": 3074,
-        "alive": 2983
+        "alive": 2974
       },
       "90": {
-        "hash": "8c37ee10",
+        "hash": "b890a7ca",
         "count": 3074,
-        "alive": 2572
+        "alive": 2516
       },
       "150": {
-        "hash": "e8a9d23c",
+        "hash": "db248ef0",
         "count": 3074,
-        "alive": 2363
+        "alive": 2238
       },
       "200": {
-        "hash": "58260384",
+        "hash": "10a7b518",
         "count": 3074,
-        "alive": 2229
+        "alive": 2099
       }
     }
   },
   "map=carthage&scenario=assault": {
-    "note": "Carthage's assault. Re-recorded for THIS pass's change and no other: CitySystem.masonryTopAt gained a tower branch. A tower is stamped into the obstacle set as a solid box towerHalf square rising towerRise above the crest, but the projectile height field had no tower test at all -- it resolved a bay and tested the curtain cross-section, so it answered walkY 52.80 at the centre of a tower standing to 59.85, and every shot that reached the upper storey flew through it. Measured on Rome at 7dd9616: a lofted onager stone aimed into a tower crossed the whole footprint and landed 37 m inside the city. Towers now report their own roof, so stones stop on them; the movement is entirely garrison casualties NOT taken behind a tower that used to be transparent -- alive at t+200 2851 -> 2821. Determinism itself is intact: runs A and B are bit-identical at every checkpoint in both arms, and the field battle (default) did not move at all. Re-record only in the same commit as the change that moved it.",
+    "note": "Carthage's assault, re-recorded at the wall-file pass for the same reason as the Rome entry above -- see it. Alive at t+200 2851 -> 2773. Re-record only in the same commit as the change that moved it.",
     "checkpoints": {
       "0": {
-        "hash": "dbdd3a70",
+        "hash": "ade40cb0",
         "count": 3440,
         "alive": 3440
       },
       "30": {
-        "hash": "06f0358e",
+        "hash": "984b07d0",
         "count": 3440,
-        "alive": 3385
+        "alive": 3380
       },
       "90": {
-        "hash": "c254ed06",
+        "hash": "b3872a46",
         "count": 3440,
-        "alive": 3031
+        "alive": 2979
       },
       "150": {
-        "hash": "059cd073",
+        "hash": "6c84799a",
         "count": 3440,
-        "alive": 2885
+        "alive": 2797
       },
       "200": {
-        "hash": "03111276",
+        "hash": "b74dec58",
         "count": 3440,
-        "alive": 2821
+        "alive": 2773
       }
     }
   }
