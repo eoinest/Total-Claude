@@ -2444,6 +2444,26 @@ namespace only what a *third* city would also need. This is §15 task 0 and it i
 task in the list that changes no behaviour. **Do it first anyway**: five agents cannot build
 §3, §4, §5, §6 and §9 in parallel out of one 2,337-line `layout.ts`.
 
+### 14.6a And one number in it is wrong by a factor of five
+
+`CARTHAGE.md` §2.5, arguing for the Punic wall's cost: *"modelled wall length 1,984 m against
+Rome's 1,781 m… **Rome's wall costs 216 draw calls.** Carthage's is 12 % longer, three walls
+deep and casemated. **Budget for it early; this is the map's largest single risk.**"*
+
+**Measured at `3595b48` on the assault at ultra, the whole city is 101 draws and the `wall`
+family is 44 of them** — the boot line prints the breakdown at every start: *"101 draws (cap
+220 whole-frame), 2.38 M tris visible, 23 chunks — wall 44, monuments 22, city 21, road 5,
+gate 2, aqueducts 2."* **[MEAS]** `probe-boot-carthage.mjs --map=campus-martius
+--scenario=assault --quality=ultra`. 216 is very close to the *whole-frame* figure of the era
+and looks like a total that lost its label on the way into a comparison about a wall.
+
+Two reasons this matters more than a stray digit. First, it is the number Carthage's largest
+design risk was assessed against, and it made the wall look five times more expensive than it
+is — which is the kind of error that gets a good feature cut. Second, it is exactly §14.7's
+first bullet in miniature: **a figure with no instrument beside it reads as a measurement**,
+survives review, and gets quoted forward. §4.10 of this document prices every item of the
+redesign against the measured 44 and prints the arithmetic.
+
 ### 14.7 And one thing about the document itself
 
 `CARTHAGE.md` is 1,068 lines and it earns most of them. The parts a build pass actually
