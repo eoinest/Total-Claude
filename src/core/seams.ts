@@ -19,7 +19,7 @@
  * passes, and the feature is silently inert.
  *
  * It has happened, and it is what this file is for. `Siege`'s `CityView` declared
- * `getGateBlock?(): { x, z, hw, hd, rot, topY }`. `CitySystem.getGateBlock()` returns a
+ * `getGateBlock?(): { x, z, hw, hd, rot, topY }`. `CitySystem`'s gate-block accessor returns a
  * `GateBlockOut`, whose plan fields are `nx, nz, dx, dz, halfRun, halfDepth`. There is no
  * `hw`, no `hd` and no `rot` on it and there never was. `insideBlock` compared
  * `Math.abs(...) <= undefined`, which is `false` for every point on the map, so the gatehouse
@@ -177,7 +177,7 @@ export const SEAMS: readonly Seam[] = [
     provider: 'city',
     required: { getGarrisonBays: 'fn', getGates: 'fn', setGateOpen: 'fn' },
     optional: {
-      setGateDoorBroken: 'fn', isGateDoorBroken: 'fn', getGateBlock: 'fn',
+      setGateDoorBroken: 'fn', isGateDoorBroken: 'fn', getGateBlocks: 'fn',
       getWallStairs: 'fn', breachWall: 'fn',
     },
     returns: {
@@ -185,8 +185,13 @@ export const SEAMS: readonly Seam[] = [
        * The six fields `buildSpine` and `insideBlock` read. `hw`/`hd`/`rot` used to be three
        * of them and were never on the record; the plan footprint is published as an
        * along-run/across-run frame, so these are the names that exist.
+       *
+       * A **list** since Rome gained its other two attested gates (§5.1, §15 task 5): one
+       * record meant `buildSpine` clipped one block and laid a rank inside the other two,
+       * which is §5.4's twenty-two stations-in-masonry defect reinstated twice.
        */
-      getGateBlock: {
+      getGateBlocks: {
+        element: true,
         fields: ['x', 'z', 'nx', 'nz', 'dx', 'dz', 'halfRun', 'halfDepth', 'topY'],
       },
       getGarrisonBays: {

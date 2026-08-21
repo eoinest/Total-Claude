@@ -1,7 +1,9 @@
 import * as THREE from 'three';
+import { riverBankX } from '../../terrain/topography';
 import { lerp } from '../../util/math';
 import { Rng, hash2 } from '../../util/rand';
 import { archPanel, box, cylinder, hipRoof, quadPrism, type Batch } from '../build';
+import type { CityMatKey } from '../materials';
 import { PAL } from '../palette';
 import { cylinderBetween, strut } from '../wall';
 import {
@@ -64,6 +66,76 @@ export function riverTerminusPlan(bay: Bay): { cx: number; cz: number; radius: n
 
 /** Radius of the terminus drum at the springing of its brick face. */
 const TERMINUS_R = 7.6;
+
+// ---------------------------------------------------------------------------
+// The river wall — §4.6, and the first thirty metres of §15 task 9's west return
+// ---------------------------------------------------------------------------
+
+/**
+ * §4.6's section for the river wall, from the one surviving fragment.
+ *
+ * *"The Aurelian circuit did not stop at the Tiber and leave the bank open. It ran down the
+ * left bank for about 4,600 metres… the same brick-faced concrete, towered, but markedly
+ * lighter."* The fragment opposite the ex-Mattatoio at Testaccio is **1.20 m thick and
+ * 5–6 m high**, and that is what this is. It is **not** the land curtain: no bays, no
+ * parapet worth standing behind, no towers on this stub — §4.6 is explicit that the returns
+ * publish *"`Blocker`s, `occBlockers` and obstacle boxes, and no spine. They are closure."*
+ */
+export const RIVER_WALL_T = 1.2;
+export const RIVER_WALL_H = 5.6;
+
+/**
+ * The stub from the terminus drum to the water's edge, or null if the drum already reaches.
+ *
+ * §15 task 3 put the circuit's west anchor on §2.5's surveyed north-west angle at x +2.0,
+ * and the modelled Tiber's east bank at that latitude is at **x −38.5**. The two are
+ * separately projected surveys and they disagree by 40.5 m; the drum spans 16 of it. This is
+ * the rest, and it is measured against `riverBankX` at build time rather than assumed, so it
+ * closes whatever gap the two tables actually leave.
+ */
+export function riverWallPlan(
+  bay: Bay
+): { x0: number; x1: number; z: number; halfT: number } | null {
+  const t = riverTerminusPlan(bay);
+  const x1 = t.cx - t.radius + 0.4;
+  // Into the channel by a couple of metres: a wall that stops at the waterline leaves a
+  // cell of dry bank the raster can round, and the fragment at Testaccio stands in the
+  // embankment rather than beside it.
+  const x0 = riverBankX(bay.z0, 1) - 3;
+  if (x1 - x0 < 2) return null;
+  return { x0, x1, z: bay.z0, halfT: RIVER_WALL_T * 0.5 };
+}
+
+/** Every stream `buildRiverWall` touches. See `Batch.distinct`. */
+const RIVER_WALL_KEYS: readonly CityMatKey[] = ['brick', 'stone'];
+
+/** The stub itself: brick-faced concrete on a travertine footing, capped with a coping. */
+export function buildRiverWall(
+  batch: Batch,
+  detail: number,
+  bay: Bay,
+  heightAt: (x: number, z: number) => number
+): void {
+  const plan = riverWallPlan(bay);
+  if (!plan) return;
+  const brick = batch.s('brick');
+  const stone = batch.s('stone');
+  const used = batch.pushAll(RIVER_WALL_KEYS, new THREE.Matrix4());
+  const subs = detail >= 2 ? 10 : detail === 1 ? 4 : 1;
+  for (let s = 0; s < subs; s++) {
+    const ax = lerp(plan.x0, plan.x1, s / subs);
+    const bx = lerp(plan.x0, plan.x1, (s + 1) / subs);
+    const g = Math.min(heightAt(ax, plan.z), heightAt(bx, plan.z));
+    const c = new THREE.Color().copy(PAL.brick).multiplyScalar(0.86 + hash2(s, 3, 41) * 0.22);
+    // Footed well below the flood line: this stands in the bank, and the Tiber moves it.
+    box(stone, ax, g - 3.4, plan.z - plan.halfT - 0.3, bx, g + 0.7, plan.z + plan.halfT + 0.3,
+      PAL.travertineDirty);
+    box(brick, ax, g + 0.7, plan.z - plan.halfT, bx, g + RIVER_WALL_H, plan.z + plan.halfT, c);
+    box(stone, ax, g + RIVER_WALL_H, plan.z - plan.halfT - 0.12, bx, g + RIVER_WALL_H + 0.34,
+      plan.z + plan.halfT + 0.12, PAL.travertine, { topGain: 1.1 });
+  }
+  batch.popAll(used);
+}
 
 export function buildRiverTerminus(
   batch: Batch,

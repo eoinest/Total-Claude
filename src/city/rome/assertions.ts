@@ -1,6 +1,10 @@
+// `romeWallZ` rather than `./circuit`'s `wallCrestZ`, which is the same function under
+// another name: `./circuit` now calls `assertRomeSection` below, and importing it back would
+// close a cycle in a file tree the wall modules are deliberately a tree in.
+import { MURO_TORTO, romeWallZ as wallCrestZ, WATER_LEVEL } from '../../terrain/topography';
 import { lerp } from '../../util/math';
 import { obbOverlap, type Obb } from '../layout';
-import { wallCrestZ } from './circuit';
+import { BAY_COUNT, CURTAIN_T, MIN_LANE, WALL } from './section';
 import {
   LANDMARKS,
   PRECINCT,
@@ -270,4 +274,253 @@ export function assertWaysClearOfMonuments(): {
     if (!worst || pct > worst.pct) worst = { id: w.id, pct: +pct.toFixed(0) };
   }
   return { ok: inside === 0, samples, inside, worst };
+}
+
+// ---------------------------------------------------------------------------
+// assertRomeSection — §14.4a, §15 task 3
+// ---------------------------------------------------------------------------
+
+/** §2.5's two anchors, as the acceptance in §15 task 3 states them. */
+const SURVEY_WEST = 2;
+const SURVEY_EAST = 1335;
+/** §14.3's own figure: masonry either side of a clear opening, inside its own bay. */
+const GATE_BAY_MARGIN = 1.0;
+/**
+ * `Siege`'s `WALK_STEP_OVER`, restated: a joint under this is `Level` and needs no flight.
+ *
+ * Restated and not imported, because `city/` may not depend on `sim/` and because this is an
+ * acceptance target rather than a shared input — §14.1's rule is that the instrument states
+ * what it is grading against so a source that drifts measures as wrong instead of as itself.
+ */
+const WALK_STEP_OVER = 0.62;
+/**
+ * **§4.8's stage census.** A table of thirty-six entries is easy to mistype and impossible to
+ * eyeball; this is the count the document itself publishes, so a slip shows up as a fault.
+ */
+const STAGE_CENSUS: Readonly<Record<string, number>> = {
+  finished: 23, 'half-built': 4, 'no-parapet': 5, footing: 3, gap: 1,
+};
+
+/**
+ * Everything `assertRomeSection` measured, as data on the wall's own output.
+ *
+ * §14.4a is the whole argument for this type existing: *"`wall.ts` has no build-time
+ * self-check of any kind. This is the largest structural asymmetry between the two wall files
+ * and the most portable thing Carthage has."* `carthageWall.ts` publishes three —
+ * `assertSection`, `cutFaults` and `sectionFaults` — *"all as data on the output, not as a
+ * `console.warn` and not as a throw"*, and its own comment says why: *"a build-time
+ * `console.warn` is invisible to a probe and an exception takes the page down… prose does not
+ * run."*
+ *
+ * *"Nothing checks that Rome's section closes, that a gate fits its bay, that `walkY` steps
+ * are survivable, or that a bay's published `passOuter`/`passInner` match the stone it cut.
+ * Every defect in §4.1 and §5 above is one an eight-line assertion would have printed at
+ * every boot for the last six months."* This is that assertion, and every scalar below is one
+ * §15 task 3 names by hand.
+ */
+export interface RomeSection {
+  /** Plinth + lift + parapet, against the height to the merlon tops. */
+  sectionSum: number;
+  sectionTarget: number;
+  /** Bays laid, and the pitch they were laid at. */
+  bays: number;
+  pitch: number;
+  /** Worst deviation of a bay's own x-pitch from the nominal, as a fraction. §2.1. */
+  pitchDeviation: number;
+  /** The two anchors, as built. §2.5 puts them at +2 and +1335. */
+  westEnd: number;
+  eastEnd: number;
+  /** Worst bay-to-bay `walkY` step, and the x it is at. */
+  worstWalkStep: number;
+  worstWalkStepX: number;
+  /** Worst rake of a bay-to-bay joint, as rise over the tower gap it is bridged across. */
+  worstWalkRake: number;
+  /** Bays whose footing stands at or below `WATER_LEVEL`. §4.1: five of them used to. */
+  baysBelowWater: number;
+  /** Narrowest published tower lane, against `MIN_LANE`, and how many are under it. */
+  worstLane: number;
+  lanesUnderMin: number;
+  /** Every aperture, with what §14.3's test asks of it. */
+  apertures: {
+    id: string;
+    x: number;
+    /** How far it was moved to reach a bay centre. §15 task 5 requires this printed. */
+    snap: number;
+    bay: number;
+    clearWidth: number;
+    /** `min(distance from either edge of the clear opening to the end of its bay)`. */
+    clearance: number;
+  }[];
+  /** The Muro Torto: its seven bays, and the worst rise a man steps up off the hillside. */
+  tortoBays: number;
+  tortoWorstApron: number;
+  /** Stage census, against §4.8's own totals. */
+  stages: Record<string, number>;
+  /** Empty means every one of the above closed. */
+  faults: string[];
+}
+
+/** What `assertRomeSection` grades. Supplied by `buildWall` from what it has just built. */
+export interface RomeSectionInput {
+  bays: readonly {
+    index: number; x0: number; x1: number; stage: string; walkY: number; groundY: number;
+    garrisonable: boolean; passOuter: number; passInner: number; hasTower: boolean;
+  }[];
+  apertures: readonly { id: string; x: number; snap: number; bay: number; clearWidth: number }[];
+  stairs: readonly { bay: number; rise: number }[];
+  pitch: number;
+  xMin: number;
+  xMax: number;
+  /** Plan gap a joint is bridged across — the tower's own footprint plus its two margins. */
+  towerGap: number;
+}
+
+/**
+ * Does Rome's section close, does every gate fit its bay, and can a man walk the wall?
+ *
+ * Faults are returned, never thrown and never logged from here — see `RomeSection`. The
+ * caller (`rome/plan.ts`) prints them once at boot and publishes the whole record through
+ * `CitySystem.stats()`, which is what makes them measurable by a probe rather than by reading
+ * a console.
+ */
+export function assertRomeSection(inp: RomeSectionInput): RomeSection {
+  const f: string[] = [];
+
+  // ---- the section sums to the height it claims ---------------------------
+  // §4.3: 1.35 m of travertine plinth carries 5.15 m of brick-faced lift to a 6.5 m walk,
+  // and a 2.05 m parapet stands on that for 8.55 m to the merlon tops. If this does not
+  // close, `crestY` is not where the drawn crenellation is and every shot at a merlon is
+  // resolved against air.
+  const lift = WALL.height - WALL.plinthHeight;
+  const sectionSum = WALL.plinthHeight + lift + WALL.parapetHeight;
+  const sectionTarget = WALL.height + WALL.parapetHeight;
+  if (Math.abs(sectionSum - sectionTarget) > 1e-9) {
+    f.push(`section sums to ${sectionSum.toFixed(3)} m, not ${sectionTarget.toFixed(3)}`);
+  }
+  // §4.3a: the clear standing band has to seat five ranks at the sim's 0.72 m pitch on the
+  // *worst* bay, which is the tallest — the batter has eaten most off its outer lip there.
+  const tallest = inp.bays.reduce((m, b) => Math.max(m, b.walkY - b.groundY), 0);
+  const band = CURTAIN_T - WALL.parapetThickness - 0.8 - WALL.batter * tallest;
+  if (band < 5 * 0.72) {
+    f.push(`clear standing band ${band.toFixed(2)} m on the tallest bay holds under five ranks`);
+  }
+
+  // ---- the bay grid -------------------------------------------------------
+  if (inp.bays.length !== BAY_COUNT) f.push(`${inp.bays.length} bays laid, not ${BAY_COUNT}`);
+  let pitchDeviation = 0;
+  for (let i = 1; i < inp.bays.length; i++) {
+    const d = inp.bays[i].x0 - inp.bays[i - 1].x0;
+    pitchDeviation = Math.max(pitchDeviation, Math.abs(d - inp.pitch) / Math.abs(inp.pitch));
+  }
+  // `CitySystem.bayAt` indexes arithmetically in x and `assertUniformBayPitch` warns past
+  // 12 %. Graded here as well so the number is *printed* rather than only warned about.
+  if (pitchDeviation > 0.12) {
+    f.push(`bay pitch deviates ${(pitchDeviation * 100).toFixed(1)} %, past \`bayAt\`'s 12 % tolerance`);
+  }
+  const westEnd = inp.xMin;
+  const eastEnd = inp.xMax;
+  if (Math.abs(westEnd - SURVEY_WEST) > 2) {
+    f.push(`west end at x ${westEnd.toFixed(2)}, ${Math.abs(westEnd - SURVEY_WEST).toFixed(2)} m off the surveyed +${SURVEY_WEST}`);
+  }
+  if (Math.abs(eastEnd - SURVEY_EAST) > 2) {
+    f.push(`east end at x ${eastEnd.toFixed(2)}, ${Math.abs(eastEnd - SURVEY_EAST).toFixed(2)} m off the surveyed +${SURVEY_EAST}`);
+  }
+
+  // ---- the walk a garrison has to move along ------------------------------
+  let worstWalkStep = 0;
+  let worstWalkStepX = 0;
+  let worstWalkRake = 0;
+  for (let i = 1; i < inp.bays.length; i++) {
+    const a = inp.bays[i - 1];
+    const b = inp.bays[i];
+    if (!a.garrisonable || !b.garrisonable) continue;
+    const step = Math.abs(b.walkY - a.walkY);
+    if (step > worstWalkStep) {
+      worstWalkStep = step;
+      worstWalkStepX = b.x0;
+    }
+    worstWalkRake = Math.max(worstWalkRake, step / inp.towerGap);
+  }
+  /*
+   * §15 task 3 asked for a bare 1.2 m cap and the measurement disagreed with it: `stepAcross`
+   * tests the **rake**, because a bare height refuses Carthage's 2.00 m tower passes (15°
+   * ramps any man walks) and admits a 1.50 m step across 1.30 m of plan that runs 0.91 m
+   * inside the masonry. `STAIR_SLOPE` inverted — 0.31 of rise on 0.34 of going — is the
+   * steepest flight this project builds flights out of, so it is the steepest joint there is
+   * stone under, and it is the number the wall is graded against here as well.
+   */
+  if (worstWalkRake > 0.31 / 0.34) {
+    f.push(`worst bay joint rakes ${worstWalkRake.toFixed(2)} at x ${worstWalkStepX.toFixed(0)}, past the tread module`);
+  }
+
+  // ---- five bays of Aurelian curtain used to stand in the Tiber -----------
+  const baysBelowWater = inp.bays.filter((b) => b.groundY <= WATER_LEVEL).length;
+  if (baysBelowWater > 0) {
+    f.push(`${baysBelowWater} bay(s) footed at or below WATER_LEVEL ${WATER_LEVEL} m`);
+  }
+
+  // ---- the doorway through every tower ------------------------------------
+  let worstLane = Infinity;
+  let lanesUnderMin = 0;
+  for (const b of inp.bays) {
+    if (!b.hasTower || b.passOuter === 0) continue;
+    const lane = b.passOuter - b.passInner;
+    worstLane = Math.min(worstLane, lane);
+    if (lane < MIN_LANE) lanesUnderMin++;
+  }
+  if (!Number.isFinite(worstLane)) worstLane = 0;
+  if (lanesUnderMin > 0) {
+    f.push(`${lanesUnderMin} tower lane(s) narrower than MIN_LANE ${MIN_LANE} m, worst ${worstLane.toFixed(2)}`);
+  }
+
+  /*
+   * ---- §14.3's test: does every aperture fit the bay it is cut through? ----
+   *
+   * Carthage prints *"porta-uticensis is cut past the end of bay 50"* at every boot and has
+   * done for four commits, because *"the gate's x was chosen in the survey and the bay grid
+   * was laid independently, so nothing forced them to agree."* §15 task 5: *"at boot, for each
+   * gate, `min(distance from either edge of the clear opening to the end of its bay) >= 1.0 m`,
+   * printed. Any gate that cannot satisfy it moves a bay."*
+   */
+  const apertures = inp.apertures.map((a) => {
+    const b = inp.bays[a.bay];
+    const half = a.clearWidth * 0.5;
+    const clearance = b ? Math.min(a.x - half - b.x0, b.x1 - (a.x + half)) : -Infinity;
+    if (!b) f.push(`${a.id} is booked to bay ${a.bay}, which does not exist`);
+    else if (clearance < GATE_BAY_MARGIN) {
+      f.push(`${a.id} leaves ${clearance.toFixed(2)} m of masonry inside bay ${a.bay}, under ${GATE_BAY_MARGIN}`);
+    }
+    return { id: a.id, x: a.x, snap: a.snap, bay: a.bay, clearWidth: a.clearWidth, clearance };
+  });
+
+  // ---- the Muro Torto walks onto the hillside -----------------------------
+  const torto = inp.bays.filter((b) => b.x1 > MURO_TORTO.x0 + 1 && b.x0 < MURO_TORTO.x1 - 1);
+  const aprons = torto.map((b) => inp.stairs.find((s) => s.bay === b.index));
+  const missing = aprons.filter((s) => s === undefined).length;
+  const tortoWorstApron = aprons.reduce((m, s) => Math.max(m, s ? s.rise : Infinity), 0);
+  if (missing > 0) {
+    f.push(`${missing} of the Muro Torto's ${torto.length} bays have no apron onto the hillside`);
+  } else if (tortoWorstApron > WALK_STEP_OVER) {
+    f.push(`the Muro Torto's worst apron rises ${tortoWorstApron.toFixed(2)} m, past a level joint at ${WALK_STEP_OVER}`);
+  }
+
+  // ---- §4.8's stage census ------------------------------------------------
+  const stages: Record<string, number> = {};
+  for (const b of inp.bays) stages[b.stage] = (stages[b.stage] ?? 0) + 1;
+  for (const [k, want] of Object.entries(STAGE_CENSUS)) {
+    if ((stages[k] ?? 0) !== want) f.push(`${stages[k] ?? 0} \`${k}\` bays, not §4.8's ${want}`);
+  }
+
+  return {
+    sectionSum, sectionTarget,
+    bays: inp.bays.length, pitch: inp.pitch, pitchDeviation,
+    westEnd, eastEnd,
+    worstWalkStep, worstWalkStepX, worstWalkRake,
+    baysBelowWater,
+    worstLane, lanesUnderMin,
+    apertures,
+    tortoBays: torto.length, tortoWorstApron,
+    stages,
+    faults: f,
+  };
 }

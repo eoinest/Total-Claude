@@ -3,7 +3,14 @@ import * as THREE from 'three';
 // constant. `TerrainSystem` imports `activeMap`, so taking it from there closes an ESM cycle
 // the moment a map declares its city: maps/index -> campusMartius -> city/rome/plan ->
 // city/rome/circuit -> terrain/TerrainSystem -> maps/index. `topography` imports nothing.
-import { romeWallZ, WALL_X_MAX, WALL_X_MIN } from '../../terrain/topography';
+import {
+  MURO_TORTO,
+  muroTortoTopAt,
+  romeWallZ,
+  WALL_LENGTH,
+  WALL_X_MAX,
+  WALL_X_MIN,
+} from '../../terrain/topography';
 import { clamp, lerp } from '../../util/math';
 import { Rng, hash2 } from '../../util/rand';
 import { archPanel, box, crenellation, hipRoof, quadPrism, type Batch, type GeoStream } from '../build';
@@ -23,14 +30,18 @@ import {
   type WallSegmentOut,
   type WallStair,
 } from '../wall';
+import { assertRomeSection, type RomeSection } from './assertions';
 import {
+  APERTURES,
+  apertureOfBay,
   buildGate,
   buildGateLeaves,
+  buildPosterula,
   curtainSpans,
+  GATES,
   GATE_ATTIC,
-  GATE_BLOCK_D,
-  GATE_BLOCK_W,
   GATE_CREN_INSET,
+  type Aperture,
   GATE_CREN_T,
   GATE_CRENEL_W,
   GATE_DOOR_H,
@@ -39,12 +50,11 @@ import {
   GATE_DOOR_T,
   GATE_MERLON_H,
   GATE_MERLON_W,
-  GATE_OPEN_WIDTH,
   GATE_PASS_H,
-  GATE_X,
   inGateBlock,
 } from './apertures';
 import {
+  BAY_COUNT,
   clipBay,
   CURTAIN_T,
   frameOf,
@@ -72,9 +82,11 @@ import {
   buildFootingSite,
   buildGapBarricade,
   buildRiverTerminus,
+  buildRiverWall,
   buildScaffold,
   buildYard,
   riverTerminusPlan,
+  riverWallPlan,
 } from './works';
 
 /**
@@ -125,8 +137,7 @@ import {
  * — at and below `WATER_LEVEL` — and 633 world metres of it stood where the Tiber belongs.
  * §2.5 puts the surveyed north-west angle at x +2.2; the derivation lands on +1.
  */
-export { WALL_X_MAX, WALL_X_MIN };
-export const WALL_LENGTH = WALL_X_MAX - WALL_X_MIN;
+export { WALL_LENGTH, WALL_X_MAX, WALL_X_MIN };
 
 /**
  * Wall-line helper, straight from the terrain contract — and now the *only* line.
@@ -193,22 +204,86 @@ export function fitWallPath(
   return out;
 }
 
+/**
+ * What stage of construction each of the 36 bays is at, **and now there is a reason**.
+ * §4.8, §15 task 3.
+ *
+ * The old rule keyed every stage off `k = bayIndex − gateBay` and explicitly discarded
+ * `bayCount`, and its own comment gave the reason as a *camera* one: the stages were *"placed
+ * close to the gate on purpose, so the construction story lands in the frames that matter"*.
+ * Where the wall was, what it stood on, and what was already there when Aurelian's surveyors
+ * arrived had no bearing on it at all.
+ *
+ * §4.8 replaces that with the archaeology, and the archaeology is arithmetic. Lanciani lists
+ * the ready-made works the surveyors took into the line on this front — the Horti Aciliorum's
+ * terrace substruction at 550 real m, the Horti Sallustiani's enclosure at 1,200, the Castra
+ * Praetoria's north and east walls at 1,050 — **2,800 m of about 4,000, seventy per cent**.
+ * The stretch with nothing to reuse is Cozza's 263 m from the Tiber angle to the Porta
+ * Flaminia plus his 114 m from the gate to the Pincian's north-west corner: 377 real m, which
+ * at `KX` is 167 world metres and four and a half bays, and which is exactly the flat Campus
+ * Martius neck between the river and the hill.
+ *
+ * *The only stretch of this circuit Aurelian had to build from nothing is the stretch the map
+ * is named after, and it is the stretch with no terrain advantage, at the end of the only
+ * road, in the funnel.* So bays 0, 2 and 4 are `footing` and bay 3 is a `gap`, which is where
+ * the assault goes; bays 5–11 are the Muro Torto, finished before the wall was begun; and the
+ * two garden estates and the camp carry the rest.
+ *
+ * Written as a table against **absolute** bay indices because §4.8's is, and because a
+ * construction state that moves when the gate moves is the thing being replaced. It is only
+ * meaningful for `BAY_COUNT = 36`; anything else falls through to `finished`, and
+ * `assertRomeSection` grades the resulting stage census against §4.8's own totals.
+ */
+const BAY_STAGES: readonly BayStage[] = [
+  /*  0 */ 'footing',     // the Tiber angle and the corner tower *Lo Trullo* — nothing here
+  /*  1 */ 'finished',    // Porta Flaminia: everything, first, because a circuit with no way
+  /*  2 */ 'footing',     //   through it is useless to the city inside it
+  /*  3 */ 'gap',         // the Campus neck — 190 world m of unbuilt wall either side of the
+  /*  4 */ 'footing',     //   finished gate, on the flat, at the end of the road
+  /*  5 */ 'finished',    // ---- the Muro Torto: 550 real m of standing terrace, gigantic,
+  /*  6 */ 'finished',    //      and Lanciani records that Aurelian added nothing to it
+  /*  7 */ 'finished',
+  /*  8 */ 'finished',
+  /*  9 */ 'finished',
+  /* 10 */ 'finished',
+  /* 11 */ 'finished',
+  /* 12 */ 'no-parapet',  // the Pincian crest: *horti* enclosure walls, heightened
+  /* 13 */ 'no-parapet',
+  /* 14 */ 'half-built',  // Posterula Pinciana, in a garden wall
+  /* 15 */ 'half-built',  // ---- the Horti Sallustiani, west: 1,200 real m of standing
+  /* 16 */ 'half-built',  //      enclosure
+  /* 17 */ 'finished',
+  /* 18 */ 'finished',
+  /* 19 */ 'finished',
+  /* 20 */ 'finished',    // Porta Salaria
+  /* 21 */ 'no-parapet',  // ---- the Sallustian east shoulder and the tomb frontage
+  /* 22 */ 'no-parapet',
+  /* 23 */ 'finished',
+  /* 24 */ 'finished',
+  /* 25 */ 'finished',
+  /* 26 */ 'finished',
+  /* 27 */ 'finished',
+  /* 28 */ 'finished',
+  /* 29 */ 'half-built',  // Porta Nomentana
+  /* 30 */ 'no-parapet',  // the approach to the camp: little to reuse
+  /* 31 */ 'finished',    // ---- the Castra Praetoria: 1,050 real m of standing military
+  /* 32 */ 'finished',    //      wall, heightened by the men who lived inside it
+  /* 33 */ 'finished',
+  /* 34 */ 'finished',
+  /* 35 */ 'finished',
+];
+
 export function bayStage(bayIndex: number, bayCount: number, gateBay: number): BayStage {
-  // Only the gate itself and its immediate flanks were finished first; everything else
-  // in 271 is somewhere between a trench and a parapet. The stages are placed close to
-  // the gate on purpose, so the construction story lands in the frames that matter.
-  const k = bayIndex - gateBay;
-  if (k === 0 || k === 1 || k === -1) return 'finished';
-  if (k === 3 || k === 4) return 'half-built';
-  if (k === -3 || k === -4 || k === -5) return 'no-parapet';
-  if (k === 7) return 'gap';
-  if (k === 8 || k === 9) return 'footing';
-  if (k === -9 || k === -10) return 'half-built';
-  if (k === 13 || k === -14) return 'no-parapet';
-  if (k === 17 || k === 18) return 'half-built';
-  if (k === -18) return 'footing';
   void bayCount;
-  return 'finished';
+  void gateBay;
+  return BAY_STAGES[bayIndex] ?? 'finished';
+}
+
+/** True where this bay is one of the Muro Torto's seven. §4.5. */
+export function onMuroTorto(bayIndex: number): boolean {
+  const x0 = WALL_X_MIN + bayIndex * WALL.towerSpacing;
+  const x1 = x0 + WALL.towerSpacing;
+  return x1 > MURO_TORTO.x0 + 1 && x0 < MURO_TORTO.x1 - 1;
 }
 
 /**
@@ -231,11 +306,34 @@ function towerPassOf(bay: Bay, prev: Bay | undefined): TowerPassOut | null {
   return lane.outer - lane.inner >= MIN_LANE ? lane : null;
 }
 
-export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: string): WallBuildOutput {
+/**
+ * What Rome's builder returns: `WallBuildOutput`, plus its own build-time self-check.
+ *
+ * `carthageWall.ts` has `CarthageWallOutput extends WallBuildOutput` for exactly this reason
+ * — a city may add fields to the contract and may not change one. §14.4a asked for
+ * `assertRomeSection`'s results *as data on the output*, and this is the type that carries
+ * them narrowly enough for `rome/plan.ts` to read without a cast.
+ */
+export interface RomeWallOutput extends WallBuildOutput {
+  gateBlocks: GateBlockOut[];
+  section: RomeSection;
+  sectionFaults: readonly string[];
+}
+
+export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: string): RomeWallOutput {
   const rng = new Rng(rngSeed);
   const path = fitWallPath(heightAt);
-  const towerCount = Math.floor(WALL_LENGTH / WALL.towerSpacing) + 1;
-  const gateBay = clamp(Math.round((GATE_X - WALL_X_MIN) / WALL.towerSpacing), 1, towerCount - 3);
+  /*
+   * **36 bays between two surveyed anchors, and the count is the input.** §4.4, §15 task 3.
+   *
+   * It was `floor(WALL_LENGTH / WALL.towerSpacing) + 1`, which is the right shape when the
+   * pitch is chosen and the ends fall where they may. Both ends of this circuit are survey
+   * positions — the Tiber angle at x +2.0 and the Castra Praetoria's north-east angle at
+   * x +1334.6 — so the count is what is chosen and the pitch is derived from it
+   * (`WALL.towerSpacing`). Deriving it back out of a floating-point division would also put
+   * the whole circuit one bay short on the wrong side of a rounding boundary.
+   */
+  const towerCount = BAY_COUNT + 1;
 
   const zAt = (x: number): number => {
     if (x <= path[0].x) return path[0].z;
@@ -268,7 +366,24 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
       const g = heightAt(x, zAt(x));
       if (g > gmax) gmax = g;
     }
-    need[b] = gmax + WALL.height;
+    /*
+     * §4.5: the Muro Torto is a garden-terrace substruction and *"the tallest thing on the
+     * northern front"*, so its seven bays are built to `MURO_TORTO.height` and not to the
+     * curtain's 6.5 m. See that constant for why the figure is 13.32 m and not §4.5's 15.
+     */
+    /*
+     * On the Muro Torto the level is taken from **the terrace the heightfield graded**, not
+     * from the measured ground under the centreline, and the two are different numbers.
+     * `muroTortoTopAt` is the same call stage 4d2 banks the hillside to; `gmax` is that call
+     * plus whatever eight per cent of natural relief the bench left standing on the wall
+     * line. Levelling to `gmax` therefore puts the walk up to a metre above the ground a man
+     * is supposed to step onto it from, uncorrelated bay by bay, and the apron carries the
+     * error. Levelling to the published terrace means the wall and the hill behind it are
+     * derived from one function, which is §14.5's rule applied across the terrain seam.
+     */
+    need[b] = onMuroTorto(b)
+      ? Math.max(muroTortoTopAt(x0), muroTortoTopAt(x1))
+      : gmax + WALL.height;
     let fine = gmax;
     for (let s = 0; s <= 24; s++) {
       const x = lerp(x0, x1, s / 24);
@@ -307,8 +422,29 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
   for (let b = 0; b < nBays; b++) {
     const pair = b - (b % 2);
     const paired = Math.ceil(Math.max(need[pair], need[Math.min(nBays - 1, pair + 1)]) / 0.55) * 0.55;
-    const own = Math.ceil(need[b] / 0.55) * 0.55;
-    level[b] = paired - own <= PAIR_MAX_LIFT ? paired : own;
+    /*
+     * **And the Muro Torto is not quantised at all**, because nothing was built here.
+     *
+     * 0.55 m is a *construction increment* — the lift a gang pours in one operation, which is
+     * why the finished curtain steps in multiples of it. §4.5's whole point is that Aurelian's
+     * men laid no lifts on this stretch: it is the Horti Aciliorum's terrace substruction,
+     * standing since the Julio-Claudians, and Lanciani records that the extra works added to
+     * it were *none*. Its crest is the terrace's own level, and rounding that up to the next
+     * pour puts the walk up to 0.55 m above the hillside a man steps onto it from — half the
+     * apron's whole error budget, spent on a lift nobody poured.
+     */
+    const own = onMuroTorto(b) ? need[b] : Math.ceil(need[b] / 0.55) * 0.55;
+    /*
+     * **And never on the Muro Torto**, whatever `PAIR_MAX_LIFT` would allow. §4.5, §15 task 4.
+     *
+     * Everywhere else a paired lift buys a flat 74 m run for the price of a slightly taller
+     * bay. Here it costs the thing the stretch exists for: the earth is banked against the
+     * back of the mass to crest level, and a bay held 2.2 m above its own need is a bay whose
+     * walk stands 2.2 m over the hillside it is supposed to be walked onto. Measured with the
+     * pairing left in, the worst apron rose **2.12 m** against a 0.62 m level joint, and every
+     * centimetre of it was the pair lift.
+     */
+    level[b] = !onMuroTorto(b) && paired - own <= PAIR_MAX_LIFT ? paired : own;
   }
 
   const bays: Bay[] = [];
@@ -322,8 +458,11 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
   for (let b = 0; b < nBays; b++) {
     const x0 = WALL_X_MIN + b * WALL.towerSpacing;
     const x1 = x0 + WALL.towerSpacing;
-    const isGate = b === gateBay;
-    const stage: BayStage = isGate ? 'finished' : bayStage(b, nBays, gateBay);
+    // Which bay carries which aperture is `APERTURES`' answer, by containment and not by
+    // rounding: §14.3's fault at Carthage is a gate whose index and whose x disagree.
+    const ap = apertureOfBay(b);
+    const isGate = ap !== null && ap.kind !== 'posterula';
+    const stage: BayStage = bayStage(b, nBays, 0);
     const bay: Bay = {
       index: b,
       x0,
@@ -413,17 +552,25 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
       parapetOuter: walk.parapetOuter,
       innerOff: walk.innerOff,
       outerOff: walk.outerOff,
-      // The gate block interrupts this run with monumental masonry whose crown is at its
-      // own level, so no rank may be laid across it and the bay stands down as a whole.
-      //
-      // The 30 m of curtain this fix restored east of the block *is* an ordinary walk and
-      // could carry a rank — pushing `towerHalf` past the block is enough to express it,
-      // and it was tried. It is deliberately not done: bay 20's walk stands 14.50 m over
-      // its own ground, because the construction level is held over the pair 20/21 and
-      // bay 21 climbs to 36 m while bay 20's west end is at 28. `probe-siege` requires
-      // every bay within five of the gate to be under 14 m so an escalade can reach it,
-      // and manning a bay the ladders cannot take is worse than leaving it empty.
-      garrisonable: walk.garrisonable && !isGate,
+      /**
+       * **A gate bay is garrisonable again, and the arithmetic in §4.8 is why.**
+       *
+       * It was `walk.garrisonable && !isGate`, and the reason given was escalade: on the old
+       * circuit bay 20's walk stood 14.50 m over its own ground because the construction
+       * level was held over the pair 20/21 while bay 21 climbed a hill, and `probe-siege`
+       * refuses any bay within five of the gate that rises past 14 m. On the redesigned
+       * circuit the Porta Flaminia is bay 1, on the 12.2 m Campus Martius plain between two
+       * `footing` bays, and it rises 6.5 m. *That is not luck; it is the reason the gate is
+       * where it is* (§5.4).
+       *
+       * §4.8's census wants **32** garrisonable bays out of 36 — every bay that is not one of
+       * the three `footing`s or the `gap` — and the curtain either side of a gatehouse is
+       * ordinary curtain a rank can stand on. What must not happen is a rank laid *across* the
+       * block, and that is `Siege.buildSpine`'s gate-block clip, which is now published for
+       * all three blocks through `getGateBlocks()`. `Siege.recut` then severs the two stubs
+       * into their own runs, because 25 m of masonry is a long way past `STATION_PITCH`.
+       */
+      garrisonable: walk.garrisonable,
       walkable: walk.garrisonable,
       halfThickness: HALF_T,
       towerHalf: hasTower ? WALL.towerWidth * 0.5 : 0,
@@ -448,6 +595,26 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
   {
     const t = riverTerminusPlan(bays[0]);
     blockers.push({ x1: t.cx, z1: t.cz, x2: t.cx, z2: t.cz, halfW: t.radius });
+    /*
+     * **The first thirty metres of §4.6's west return, built early because task 3 opened a
+     * hole that was not there before.**
+     *
+     * `WALL_X_MIN` was solved from the water — `riverBankX(romeWallZ(x), 1) + 12` — so the
+     * drum's west face reached the channel and the circuit's west end was shut. §15 task 3
+     * moves the anchor onto the survey's north-west angle at x +2.0, which is **40.5 m east
+     * of the modelled east bank**: the two are independently projected surveys and they do
+     * not agree, whatever the comment on `WALL_RIVER_CLEAR` used to claim. Left alone that
+     * is 30 m of dry, level, unblocked ground round the end of the Aurelian Wall — the
+     * *east* flank's defect (§4.1) reproduced on the west, by this pass, tonight.
+     *
+     * So the return starts here rather than in task 9. It is §4.6's own section and not the
+     * land curtain: **1.20 m thick and 5–6 m high**, the dimensions of the one surviving
+     * fragment of the river wall opposite the ex-Mattatoio, *"markedly lighter"* than the
+     * land walls in Dey's words. Drawn by `buildRiverWall` and blockered here, so the width
+     * the eye sees and the width the collision surface sees are the same 1.20 m.
+     */
+    const rw = riverWallPlan(bays[0]);
+    if (rw) blockers.push({ x1: rw.x0, z1: rw.z, x2: rw.x1, z2: rw.z, halfW: rw.halfT });
   }
 
   /**
@@ -464,68 +631,136 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
    * they would foul each other on the same bay.
    */
   const stairs: WallStair[] = [];
+  /**
+   * Which bays could carry a masonry flight at all, in order along the circuit.
+   *
+   * The cadence used to be `bay.index % 4 !== 2`, an arithmetic every-fourth-bay taken over
+   * the whole circuit, and §4.8's construction programme broke it: the finished stretches are
+   * now *clustered* — the two garden estates and the camp — and the unfinished ones are the
+   * western third, so an every-fourth-bay rule landed on three finished bays out of thirty-six
+   * and left the east half with a flight every 148 m and the west with none at all.
+   *
+   * So the cadence runs along the bays that can actually take one: every second **eligible**
+   * bay, which is one per 74 m of finished curtain — near enough the spacing of the surviving
+   * Aurelianic stairs, and the interval §9 is written against. Task 10 deletes all of them and
+   * puts the stair inside the tower, at which point this whole rule goes.
+   */
+  const stairable = bays.filter((bay) =>
+    bay.stage === 'finished'
+    && !onMuroTorto(bay.index)
+    && !inGateBlock(bay.x0)
+    && !inGateBlock(bay.x0 + STAIR_MAX_RUN));
+  const stairBays = new Set(stairable.filter((_, k) => k % 2 === 0).map((b) => b.index));
   for (const bay of bays) {
-    if (bay.stage !== 'finished') continue;
-    if (bay.index % 4 !== 2 && bay.index !== gateBay + 1) continue;
-    // Not into the gatehouse block, which owns its own 25 m of the circuit.
-    if (inGateBlock(bay.x0) || inGateBlock(bay.x0 + STAIR_MAX_RUN)) continue;
+    /*
+     * **The Muro Torto gets an apron, not a flight.** §4.5, §15 task 4.
+     *
+     * *"It needs no stairs, because a man walks onto it off the Pincian's own hillside. It
+     * publishes a `WallStair` with a rise near zero at each end, or a graded apron, so the
+     * garrison is not stranded — which is exactly the failure runs 0 and 1 have today,
+     * arrived at from the opposite direction."* `muroTortoApron` below is that object; a
+     * masonry flight here would be the *"extra works of defence"* Lanciani records Aurelian
+     * as having added none of.
+     */
+    if (onMuroTorto(bay.index)) {
+      const apron = muroTortoApron(bay, walkGeometry(bay).walkY, heightAt);
+      if (apron) stairs.push(apron);
+      continue;
+    }
+    if (!stairBays.has(bay.index)) continue;
     const plan = stairPlan(bay, walkGeometry(bay).walkY, heightAt);
     if (plan) stairs.push(plan);
   }
   const stairByBay = new Map<number, WallStair>();
   for (const s of stairs) stairByBay.set(s.bay, s);
 
-  const gateBayRef = bays[gateBay];
-  const gFrame = frameOf(gateBayRef.x0, gateBayRef.z0, gateBayRef.x1, gateBayRef.z1);
-  const gateCz = lerp(gateBayRef.z0, gateBayRef.z1, (GATE_X - gateBayRef.x0) / WALL.towerSpacing);
   /**
-   * **Shut.**
+   * **Three gates and a *posterula*, from one table.** §5.1, §14.3, §15 task 5.
    *
-   * It was `open: true`, so the one road into Rome stood wide open with a Germanic host on
-   * the plain, the ram in the siege train had nothing to break, and the assault could walk
-   * in. The leaves are geometry — see `buildGate` — and this is the flag every consumer
-   * reads: `CitySystem.pushWallBox` stops punching the carriageway out of the movement
-   * obstacles, and `setGateOpen('porta-flaminia', true)` is what the siege system calls when
-   * the ram finally brings them down.
+   * Every aperture's position, class, block and clear width comes off `APERTURES`, which is
+   * also where the snap to the bay grid happens and where the snap distance is recorded.
+   * Nothing here chooses a width: §5.2's rule is that a gate publishes `clearWidth` and
+   * nothing else computes one, and the three views that still disagree about it —
+   * drawn / collided / rastered — are task 6's to reconcile against this record.
+   *
+   * The *posterula* is deliberately **not** in `gates`. §5.1: *"Porta Pinciana is a postern
+   * in 271 and must not be built as a gate."* It is drawn by `buildPosterula` into the
+   * curtain's own chunk, it publishes no `GateOut`, no `GateBlockOut` and no passage, and it
+   * is shut. §15 task 7 gives it a `Crossing`.
    */
-  const gates: GateOut[] = [
-    { id: 'porta-flaminia', x: GATE_X, z: gateCz, facing: Math.atan2(gFrame.nx, gFrame.nz), open: false },
-  ];
-  const gateG = heightAt(GATE_X, gateCz);
+  const gates: GateOut[] = [];
+  const gateBlocks: GateBlockOut[] = [];
+  for (const ap of GATES) {
+    const ref = bays[ap.bay];
+    const fr = frameOf(ref.x0, ref.z0, ref.x1, ref.z1);
+    const cz = lerp(ref.z0, ref.z1, (ap.x - ref.x0) / WALL.towerSpacing);
+    const gg = heightAt(ap.x, cz);
+    // A second-class gate is a lower building; `buildGate` takes the same two numbers off
+    // `ap.kind` and this has to agree with it or `masonryTopAt` reports a crown that is not
+    // there. Kept as one expression per class in one place for that reason.
+    const passH = ap.kind === 'first' ? GATE_PASS_H : GATE_PASS_H - 1.2;
+    const attic = ap.kind === 'first' ? GATE_ATTIC : GATE_ATTIC - 1.4;
+    /**
+     * **Shut.**
+     *
+     * It was `open: true`, so the one road into Rome stood wide open with a Germanic host on
+     * the plain, the ram in the siege train had nothing to break, and the assault could walk
+     * in. The leaves are geometry — see `buildGate` — and this is the flag every consumer
+     * reads: `CitySystem.pushWallBox` stops punching the carriageway out of the movement
+     * obstacles, and `setGateOpen('porta-flaminia', true)` is what the siege system calls when
+     * the ram finally brings them down.
+     */
+    gates.push({ id: ap.id, x: ap.x, z: cz, facing: Math.atan2(fr.nx, fr.nz), open: false });
+    // The gatehouse as a solid, for the consumers that need to know where the masonry is.
+    // Held separately from the bays because a block straddles two of them: reading it off
+    // `bay.isGate` reported the block over 37 m of ground it does not stand on and missed
+    // the metres of it that stand in the bay next door.
+    gateBlocks.push({
+      id: ap.id,
+      x: ap.x,
+      z: cz,
+      nx: fr.nx, nz: fr.nz, dx: fr.dx, dz: fr.dz,
+      halfRun: ap.blockW * 0.5,
+      halfDepth: ap.blockD * 0.5 + 0.45,
+      topY: gg + passH + attic + GATE_MERLON_H,
+      // The crown, at the merlons' feet. `buildGate` calls the same expression `blockTop`.
+      sillY: gg + passH + attic,
+      // `buildGate` authors the merlon line at local z = `zF + GATE_CREN_INSET`, and modules
+      // are authored with -Z outward (see `frameOf`), so its offset along `n` is positive.
+      parapetInner: ap.blockD * 0.5 - GATE_CREN_INSET - GATE_CREN_T * 0.5,
+      parapetOuter: ap.blockD * 0.5 - GATE_CREN_INSET + GATE_CREN_T * 0.5,
+      crenelledCityward: false,
+      merlonLength: GATE_MERLON_W,
+      crenelLength: GATE_CRENEL_W,
+      openHalf: ap.clearWidth * 0.5,
+    });
+  }
+
+  /**
+   * The leaves the ram breaks, and there is still exactly one set of them.
+   *
+   * `siegeGateId` stays `porta-flaminia` (§5.1): it is on firm ground, at the end of the one
+   * road, and the only aperture on the map a ram can reach (§3.6). The Salaria and the
+   * Nomentana are shut and are drawn shut; giving them a `GateDoorOut` would publish two more
+   * things the siege system can be told to break and cannot get to.
+   */
+  const siegeAp = GATES.find((a) => a.siege) as Aperture;
+  const gateBayRef = bays[siegeAp.bay];
+  const gFrame = frameOf(gateBayRef.x0, gateBayRef.z0, gateBayRef.x1, gateBayRef.z1);
+  const gateCz = lerp(gateBayRef.z0, gateBayRef.z1, (siegeAp.x - gateBayRef.x0) / WALL.towerSpacing);
+  const gateG = heightAt(siegeAp.x, gateCz);
   const gateDoor: GateDoorOut = {
-    gateId: 'porta-flaminia',
-    x: GATE_X + gFrame.nx * (GATE_BLOCK_D * 0.5 - GATE_DOOR_SET),
+    gateId: siegeAp.id,
+    x: siegeAp.x + gFrame.nx * (siegeAp.blockD * 0.5 - GATE_DOOR_SET),
     y: gateG + GATE_DOOR_SILL,
-    z: gateCz + gFrame.nz * (GATE_BLOCK_D * 0.5 - GATE_DOOR_SET),
+    z: gateCz + gFrame.nz * (siegeAp.blockD * 0.5 - GATE_DOOR_SET),
     nx: gFrame.nx, nz: gFrame.nz, dx: gFrame.dx, dz: gFrame.dz,
-    halfWidth: GATE_OPEN_WIDTH * 0.5,
+    halfWidth: siegeAp.clearWidth * 0.5,
     height: GATE_DOOR_H,
     thickness: GATE_DOOR_T,
     setback: GATE_DOOR_SET,
     open: false,
     broken: false,
-  };
-  // The gatehouse as a solid, for the consumers that need to know where the masonry is.
-  // Held separately from the bays because the block straddles two of them: reading it off
-  // `bay.isGate` reported the block over 35.5 m of ground it does not stand on and missed
-  // the 12.5 m of it that stands in the bay next door.
-  const gateBlock: GateBlockOut = {
-    x: GATE_X,
-    z: gateCz,
-    nx: gFrame.nx, nz: gFrame.nz, dx: gFrame.dx, dz: gFrame.dz,
-    halfRun: GATE_BLOCK_W * 0.5,
-    halfDepth: GATE_BLOCK_D * 0.5 + 0.45,
-    topY: heightAt(GATE_X, gateCz) + GATE_PASS_H + GATE_ATTIC + GATE_MERLON_H,
-    // The crown, at the merlons' feet. `buildGate` calls the same expression `blockTop`.
-    sillY: heightAt(GATE_X, gateCz) + GATE_PASS_H + GATE_ATTIC,
-    // `buildGate` authors the merlon line at local z = `zF + GATE_CREN_INSET`, and modules
-    // are authored with −Z outward (see `frameOf`), so its offset along `n` is positive.
-    parapetInner: GATE_BLOCK_D * 0.5 - GATE_CREN_INSET - GATE_CREN_T * 0.5,
-    parapetOuter: GATE_BLOCK_D * 0.5 - GATE_CREN_INSET + GATE_CREN_T * 0.5,
-    crenelledCityward: false,
-    merlonLength: GATE_MERLON_W,
-    crenelLength: GATE_CRENEL_W,
-    openHalf: GATE_OPEN_WIDTH * 0.5,
   };
 
   // --- chunk the curtain for culling and LOD --------------------------------
@@ -561,12 +796,35 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
               rng.fork(i === 0 ? `bay-${bay.index}` : `bay-${bay.index}-${i}`)
             );
           }
-          if (bay.isGate) buildGate(batch, detail, bay, heightAt, rng.fork(`gate-${bay.index}`));
+          const ap = apertureOfBay(bay.index);
+          if (ap && ap.kind === 'posterula') {
+            buildPosterula(batch, detail, bay, ap, heightAt);
+          } else if (ap) {
+            buildGate(batch, detail, bay, ap, heightAt, rng.fork(`gate-${bay.index}`));
+            /*
+             * **And its leaves, unless the ram can reach it.** §14.2.
+             *
+             * The Porta Flaminia's hang in their own chunk so `setGateDoorBroken` can swap
+             * them for the wreck; the other two are shut for the whole battle and are built
+             * into the curtain's chunk, which costs no draw call of its own and is §4.10's
+             * *"merge the leaves into one stream per chunk"*.
+             *
+             * Leaving them out is not an option and `probe-wall` proved it in one run: with
+             * the two new gates drawn and unhung, **eight rays out of 1,215 passed clean
+             * through the circuit** at x 759.5–762.5 and x 1092.5–1093.5. That is §14.2's
+             * defect — *"posterns that were arches with nothing hung in them"* — arriving on
+             * Rome by way of two gates that had never had a door modelled.
+             */
+            if (!ap.siege) buildGateLeaves(batch, detail, bay, ap, heightAt);
+          }
           // The flight up onto the walk, against the inner face. Planned once in
           // `buildWall` and looked up here, so the stone and the published `WallStair`
           // cannot disagree about where it is.
+          //
+          // The Muro Torto's is an *apron* — banked earth, cut by the heightfield, not
+          // masonry — so it publishes a `WallStair` and lays no stone. See `muroTortoApron`.
           const stair = stairByBay.get(bay.index);
-          if (stair) buildWallStair(batch, detail, bay, stair, heightAt);
+          if (stair && !onMuroTorto(bay.index)) buildWallStair(batch, detail, bay, stair, heightAt);
         }
         // A tower at the west end of every bay, plus the far end of the last chunk.
         // A west end swallowed by the gatehouse gets none: the gate carries its own pair
@@ -584,7 +842,10 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
           // passage — there is nothing on the other side of it to walk to.
           buildTower(batch, detail, last.x1, last.z1, last.topY, heightAt, bays.length, last.stage, frameOf(last.x0, last.z0, last.x1, last.z1), null);
         }
-        if (from === 0) buildRiverTerminus(batch, detail, bays[0], heightAt);
+        if (from === 0) {
+          buildRiverTerminus(batch, detail, bays[0], heightAt);
+          buildRiverWall(batch, detail, bays[0], heightAt);
+        }
       },
     });
   }
@@ -605,38 +866,61 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
     const gb = gateBayRef;
     chunks.push({
       name: 'gate-door',
-      cx: GATE_X,
+      cx: siegeAp.x,
       cz: gateCz,
       radius: 16,
       castShadow: false,
       lodSwitch: [1e9, 1e9],
       gateDoorFor: gateDoor.gateId,
       build: (batch, detail) => {
-        batch.setUvOrigin(GATE_X, 0, gb.z0);
-        buildGateLeaves(batch, detail, gb, heightAt);
+        batch.setUvOrigin(siegeAp.x, 0, gb.z0);
+        buildGateLeaves(batch, detail, gb, siegeAp, heightAt);
       },
     });
     // The same leaves in the pose the ram left them. Baked and hidden; `setGateDoorBroken`
     // swaps the two, so the pair costs one chunk's worth of draws whichever is on screen.
     chunks.push({
       name: 'gate-wreck',
-      cx: GATE_X,
+      cx: siegeAp.x,
       cz: gateCz,
       radius: 22,
       castShadow: false,
       lodSwitch: [1e9, 1e9],
       gateWreckFor: gateDoor.gateId,
       build: (batch, detail) => {
-        batch.setUvOrigin(GATE_X, 0, gb.z0);
-        buildGateLeaves(batch, detail, gb, heightAt, true);
+        batch.setUvOrigin(siegeAp.x, 0, gb.z0);
+        buildGateLeaves(batch, detail, gb, siegeAp, heightAt, true);
       },
     });
   }
 
+  /**
+   * **The build-time self-check `wall.ts` has never had.** §14.4a, §15 task 3.
+   *
+   * Run here, on what was just built, and published on the output as data — not warned, not
+   * thrown. `carthageWall.ts` has had three of these for months and its own comment gives the
+   * reason: *"a build-time `console.warn` is invisible to a probe and an exception takes the
+   * page down… prose does not run."* `rome/plan.ts` prints the faults once and hands the whole
+   * record to `CitySystem.stats()`, so a probe reads the builder's own arithmetic instead of
+   * re-deriving it.
+   *
+   * The tower gap it grades joints against is the plan distance `Siege.buildLinks` actually
+   * bridges: a tower's own width plus the two `STATION_CLEAR` margins either side of it.
+   */
+  const section = assertRomeSection({
+    bays: garrisonBays,
+    apertures: APERTURES,
+    stairs,
+    pitch: WALL.towerSpacing,
+    xMin: bays[0].x0,
+    xMax: bays[bays.length - 1].x1,
+    towerGap: WALL.towerWidth + 2 * 0.55,
+  });
+
   // Cypress and pine against the inner face — the *pomerium* strip was planted.
   for (let i = 0; i < 220; i++) {
     const x = rng.range(WALL_X_MIN + 30, WALL_X_MAX - 30);
-    if (Math.abs(x - GATE_X) < 30) continue;
+    if (GATES.some((a) => Math.abs(x - a.x) < 30)) continue;
     trees.push({
       x,
       // Kept clear of the curtain: a 20 m cypress planted three metres from the wall
@@ -648,8 +932,9 @@ export function buildWall(heightAt: (x: number, z: number) => number, rngSeed: s
   }
 
   return {
-    path, chunks, segments, gates, gateBlock, gateDoor, blockers, roughGround, trees,
+    path, chunks, segments, gates, gateBlocks, gateDoor, blockers, roughGround, trees,
     towerCount, bayStages, garrisonBays, stairs, wallZAt: zAt,
+    section, sectionFaults: section.faults,
   };
 }
 
@@ -1451,6 +1736,121 @@ function stairPlan(
     rise: walkY - footG,
     steps: n,
     // Every flight on this circuit is built against the inner face; see `buildWallStair`.
+    side: -1,
+  };
+}
+
+/**
+ * The Muro Torto's apron — **a way onto the crest that is not a stair.** §4.5, §15 task 4.
+ *
+ * The Horti Aciliorum's terrace substruction is *"completamente costruito contro terra"*
+ * (Cozza 1992): solid mass built against the hillside, with no wall-gallery and sentries on
+ * the crest. `heightfield.ts` stage 4d2 banks that hillside up behind it, so the ground on
+ * the city side reaches crest level about 46 m back. This publishes the last step of the
+ * walk onto it as a `WallStair`, because a `WallStair` is the object `Siege.buildStairs`
+ * reads and `wallReport().reachable` floods from — but with a **rise near zero**, which is
+ * §4.5's own phrase and is the whole difference between this and a flight.
+ *
+ * The foot is placed at the x within the bay where the banked ground comes closest to the
+ * bay's own walk level, not at the bay's midpoint. It has to be: the bank follows §3.5's
+ * smooth profile plus 13.32 m, while `walkY` is quantised to 0.55 m construction increments
+ * and held to the highest ground in the bay, so on a stretch climbing 5 m per bay the two
+ * are level at one end and five metres apart at the other. Searching for the level end costs
+ * eleven `heightAt` calls per bay at build time and is the difference between an apron and a
+ * step a man cannot take.
+ *
+ * Returns null if nothing inside the bay gets within `STAIR_RISE` of the walk, which is the
+ * honest answer: the bank did not reach and `assertRomeSection` will say so.
+ */
+function muroTortoApron(
+  bay: Bay,
+  walkY: number,
+  heightAt: (x: number, z: number) => number
+): WallStair | null {
+  const f = frameOf(bay.x0, bay.z0, bay.x1, bay.z1);
+  /** How far cityward the foot stands: the top of the bank, plus the curtain's half-thickness. */
+  const off = -(HALF_T + MURO_TORTO.bank);
+  const at = (t: number, o: number): { x: number; z: number } => ({
+    x: bay.x0 + f.dx * t + f.nx * o,
+    z: bay.z0 + f.dz * t + f.nz * o,
+  });
+  let bestT = -1;
+  let bestOff = off;
+  let bestG = 0;
+  let best = Infinity;
+  /*
+   * The **foot** may stand anywhere on the terrace behind this bay; only the **top** has to
+   * land where a station is, and `Siege.buildStairs` rejects a published flight whose head is
+   * more than 6 m from one. So the two are searched separately: the foot across the bay's
+   * whole width in x and out along 72 m of level terrace, and the top clamped back inside the
+   * band the towers leave. Searching them together is what left two of the seven bays without
+   * an apron — the terrace is highest at a bay's east end and the stations stop 4.8 m short of
+   * it, which on a stretch climbing 5 m a bay is two thirds of a metre the apron cannot lose.
+   */
+  for (let k = 0; k <= 16; k++) {
+    // Past the bay's own east end by a bay's worth of the normal offset: the foot stands
+    // `MURO_TORTO.bank` metres cityward, the run's normal carries 13 % of that into x, and
+    // the terrace climbs 5 m a bay — so the ground level with *this* bay's crest lies a few
+    // metres east of where a purely lateral search can reach. The crossing runs obliquely;
+    // it is a path up a hillside, not a flight bolted to a wall.
+    const t = -4 + ((f.len + 18) * k) / 16;
+    /*
+     * The foot stays inside the *pomerium*. `POMERIUM` is 60 m of consecrated clear ground
+     * behind the curtain and the fabric generator honours it; past that is the Horti
+     * Aciliorum, and searching out to 120 m put two of the seven aprons' feet **inside a
+     * building** — `NavGrid.blockedAt` true at the published foot, so the route to it failed
+     * while the apron itself measured a perfect zero rise. A way onto the wall that ends in
+     * somebody's *piscina* is not a way onto the wall.
+     */
+    for (let j = 0; j <= 3; j++) {
+      const o = off - j * 3;
+      const p = at(t, o);
+      const g = heightAt(p.x, p.z);
+      /*
+       * **Never above the crest.** `WallStair.rise` is contracted as *"always positive: the
+       * flight only ever climbs from foot to top"*, and a plain nearest-match search does not
+       * respect it — one of the seven aprons came out at **−0.10 m**, a flight that descends,
+       * which `probe-siege`'s *"every stair stands on the ground and reaches the walkway"*
+       * correctly reads as a head below its own foot. So ground above the walk is not a
+       * candidate at all; the terrace ramps up to it from bench level over 46 m, so there is
+       * always ground just under the crest to stand the foot on.
+       */
+      if (g > walkY) continue;
+      const d = walkY - g;
+      if (d < best) {
+        best = d;
+        bestT = t;
+        bestOff = o;
+        bestG = g;
+      }
+    }
+  }
+  // A rise this side of one tread is not a step at all; anything past a flight's worth of
+  // rise means the bank did not arrive and the bay should report as unserved rather than
+  // pretend a ramp.
+  if (bestT < 0 || walkY - bestG > 3.0) return null;
+
+  // Where the apron delivers onto the walk: inside the band the two towers leave, which is
+  // where `buildSpine` lays stations and therefore the only place a `WallStair` head can be.
+  const margin = WALL.towerWidth * 0.5 + 1.6;
+  const topT = Math.min(Math.max(bestT, margin), f.len - margin);
+  const foot = at(bestT, bestOff);
+  const head = at(topT, -(HALF_T + 1.2));
+  const top = at(topT, -(HALF_T - 0.6));
+  const run = Math.hypot(foot.x - head.x, foot.z - head.z);
+  return {
+    bay: bay.index,
+    footX: foot.x, footY: bestG, footZ: foot.z,
+    headX: head.x, headY: walkY, headZ: head.z,
+    topX: top.x, topY: walkY, topZ: top.z,
+    // The apron runs *across* the wall, from the hillside onto the crest, not along it —
+    // and obliquely where the terrace's high point is not opposite a station.
+    dx: (head.x - foot.x) / Math.max(1e-6, run), dz: (head.z - foot.z) / Math.max(1e-6, run),
+    nx: f.nx, nz: f.nz,
+    width: 6.0,
+    run,
+    rise: Math.max(0, walkY - bestG),
+    steps: Math.max(1, Math.round(Math.max(0, walkY - bestG) / STAIR_RISE)),
     side: -1,
   };
 }

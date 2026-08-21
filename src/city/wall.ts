@@ -241,6 +241,15 @@ export interface GateOut {
  * came to report a fifteen-metre gatehouse standing over 23 m of open grass.
  */
 export interface GateBlockOut {
+  /**
+   * Which aperture this block belongs to, matching the `GateOut.id` beside it.
+   *
+   * Added when Rome went from one gate to three (§5.1, §15 task 5). One block needed no name;
+   * three do, and the consumers that need to ask "is this point inside a gatehouse" now walk
+   * a list. Carthage publishes one and names it, so the two circuits still return the same
+   * shape.
+   */
+  id: string;
   /** Centre of the carriageway, on the wall line. */
   x: number;
   z: number;
@@ -496,8 +505,16 @@ export interface WallBuildOutput {
   chunks: CityChunkSpec[];
   segments: WallSegmentOut[];
   gates: GateOut[];
-  /** Where the gatehouse masonry actually stands. See `GateBlockOut`. */
-  gateBlock: GateBlockOut;
+  /**
+   * Where the gatehouse masonry actually stands, one per gate. See `GateBlockOut`.
+   *
+   * **Plural since §15 task 5**, which gave Rome its other two attested gates. It was a
+   * single record, and with three gates a single record is §5.4's defect reinstated twice
+   * over: `Siege.buildSpine` clips stations inside *the* gate block, so the two unpublished
+   * blocks would have carried a rank apiece standing in solid masonry, exactly as bay 19's
+   * twenty-two stations did at `6698e19`. Carthage publishes a one-element list.
+   */
+  gateBlocks: GateBlockOut[];
   blockers: Blocker[];
   /** Standing work that slows a body without stopping it. See `RoughGround`. */
   roughGround: RoughGround[];
@@ -512,6 +529,17 @@ export interface WallBuildOutput {
   gateDoor: GateDoorOut;
   /** Where the wall line sits, for the insula generator to build up against. */
   wallZAt: (x: number) => number;
+  /**
+   * The builder's own arithmetic, surfaced rather than trusted. §14.4a.
+   *
+   * Optional because it is per-city: Rome publishes `assertRomeSection`'s whole record and
+   * Carthage publishes `assertSection`'s faults under `punicSection`. A city with no
+   * self-check leaves both out and reports honestly rather than reporting a zero that reads
+   * as a pass — the same rule `CityChecks` is written to.
+   */
+  section?: unknown;
+  /** Every fault the builder's own check found. Empty means the section closes. */
+  sectionFaults?: readonly string[];
 }
 
 // ---------------------------------------------------------------------------

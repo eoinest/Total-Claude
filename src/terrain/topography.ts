@@ -23,6 +23,9 @@
  */
 
 import type { DeployGround } from '../maps/types';
+// `./noise` imports nothing at all, so this closes no cycle — see the note above `romeWallZ`
+// about which way the dependency between this file and `city/rome/` runs.
+import { sstep } from './noise';
 
 /** Battlefield half-size in metres. Part of the public terrain contract. */
 export const HALF_EXTENT = 1400;
@@ -319,7 +322,123 @@ export const riseAmplitude = (x: number): number => {
 export const RISE_RUN = 175;
 
 /**
- * **The Aurelian circuit's line, and the only definition of it.** §14.5, §15 task 2.
+ * Height of the crest of the city rise at a given x — the terrain's own brow.
+ *
+ * **Not the wall's line**; that is `romeWallZ`. This is what the name says, and what the
+ * projection needs: `GATE_X` below is the fixed point of `roadCentreX(crestZAt(x))`, because
+ * the gate has to be where the Via Flaminia crosses the brow, and the whole affine map's
+ * origin is derived from the answer. Anything that wants to know where the *wall* is must
+ * ask `romeWallZ`.
+ */
+export const crestZAt = (x: number): number => riseToeZ(x) + RISE_RUN;
+
+// ---------------------------------------------------------------------------
+// The projection, and the circuit it puts on the ground — §2.3, §2.5, §4.2
+// ---------------------------------------------------------------------------
+
+/**
+ * **The survey projection lives here now, and that is §15 task 3's first move.**
+ *
+ * It was in `city/rome/survey.ts`, and `probe-rometransect.mjs`'s own header explains why
+ * that cost something: *"`terrain/topography.ts` cannot import `city/rome/survey.ts` … The
+ * river's polyline therefore has to be stored in `topography.ts` already projected, in world
+ * metres, which is exactly the kind of transcription that rots."* Task 3 needs a **second**
+ * projected polyline — the circuit — read by the wall's line, the heightfield's bench, the
+ * scatter's glacis and the city's northern limit, and transcribing that one as well would be
+ * the same fault twice.
+ *
+ * Nothing about the projection needed `survey.ts`: `GATE_X` is the fixed point of
+ * `roadCentreX(crestZAt(x))` and both of those are in this file. So the whole affine map
+ * moves down here and `survey.ts` re-exports it. One definition, and `worldOf` is now
+ * available to the terrain, which is what lets the circuit be authored in survey metres
+ * instead of copied in world metres. `KX`, `KZ` and the anchors are unchanged to the digit.
+ */
+export const GATE_X = (() => {
+  let x = 20;
+  for (let i = 0; i < 6; i++) x = roadCentreX(crestZAt(x));
+  return Math.round(x * 10) / 10;
+})();
+export const GATE_Z = crestZAt(GATE_X);
+
+/** Real position of the Porta Flaminia in the survey frame: Piazza del Popolo. */
+const PORTA_FLAMINIA_E = -497;
+const PORTA_FLAMINIA_N = 2045;
+
+/**
+ * East–west scale. From the Porta Flaminia to the west wall of the Castra Praetoria is
+ * 2,436 real metres, and the world curtain runs 1,078 m from the gate to its east end,
+ * so the scale is fixed by the two anchors rather than chosen: 1078 / 2436 = 0.443.
+ */
+export const KX = 0.443;
+
+/**
+ * Depth scale. The heightfield ends at z = 1400 and the wall crest reaches z = 583, so
+ * there are about 940 m of city depth for Rome's 3,545 m from the Porta Flaminia to the
+ * Baths of Caracalla. 0.222 is the largest value that fits Caracalla inside the map with
+ * its precinct clear of the edge.
+ */
+export const KZ = 0.222;
+
+const X0 = GATE_X - KX * PORTA_FLAMINIA_E;
+const Z0 = GATE_Z + KZ * PORTA_FLAMINIA_N;
+
+/** Project survey metres to battlefield metres. §2.3. */
+export const worldOf = (e: number, n: number): { x: number; z: number } => ({
+  x: X0 + KX * e,
+  z: Z0 - KZ * n,
+});
+
+/**
+ * **The Aurelian circuit, as the fourteen surveyed waypoints of §2.5.** §4.2, §15 task 3.
+ *
+ * Metres east and north of the Temple of Jupiter Optimus Maximus, in the order the wall
+ * runs: the Tiber angle, the Porta Flaminia, three points along the Muro Torto, the
+ * Posterula Pinciana, the two lips of the Vallis Sallustiana with the Porta Salaria between
+ * them, the Porta Nomentana, and the Castra Praetoria's three angles, whence the circuit
+ * turns south and leaves the map on the line to the Porta Tiburtina.
+ *
+ * §4.2: *"Author the circuit as a polyline in the survey frame and project it, the way every
+ * monument is already authored, rather than as `crestZAt(x)`. Getting Rome's circuit wrong
+ * should then require getting the survey wrong."* Held in **survey** metres and projected
+ * below rather than stored in world metres, because the survey is the thing with a source.
+ */
+export const ROME_CIRCUIT_SURVEY: readonly { id: string; e: number; n: number }[] = [
+  { id: 'tiber-angle', e: -655, n: 2006 },
+  { id: 'porta-flaminia', e: -497, n: 2045 },
+  { id: 'muro-torto-west', e: -273, n: 2039 },
+  { id: 'muro-torto-mid', e: -8, n: 1995 },
+  { id: 'muro-torto-east', e: 273, n: 1928 },
+  { id: 'posterula-pinciana', e: 530, n: 1789 },
+  { id: 'sallustiana-west', e: 762, n: 1784 },
+  { id: 'porta-salaria', e: 1036, n: 1784 },
+  { id: 'sallustiana-east', e: 1301, n: 1756 },
+  { id: 'porta-nomentana', e: 1831, n: 1784 },
+  { id: 'castra-nw', e: 1931, n: 1711 },
+  { id: 'castra-ne', e: 2353, n: 1578 },
+  // The east return. Not part of the land front and deliberately not part of `romeWallZ`:
+  // the circuit turns south here and a wall that runs in z cannot be a function of x, which
+  // is §4.6's whole argument for why neither return carries bays. Published so §15 task 9
+  // has the line without re-deriving it.
+  { id: 'castra-se', e: 2295, n: 1256 },
+  { id: 'porta-tiburtina', e: 2709, n: 333 },
+];
+
+/** The same fourteen in world metres. */
+export const ROME_CIRCUIT: readonly { id: string; x: number; z: number }[] =
+  ROME_CIRCUIT_SURVEY.map((p) => ({ id: p.id, ...worldOf(p.e, p.n) }));
+
+/**
+ * The land front: the twelve waypoints from the Tiber angle to the Castra's north-east
+ * angle, which is the stretch that carries bays and the stretch `romeWallZ` interpolates.
+ *
+ * Monotone in x by construction — x runs +2.0, 72.0, 171.2, 288.6, 413.1, 527.0, 629.7,
+ * 751.1, 868.5, 1103.3, 1147.6, 1334.6 — which is what lets the wall be indexed
+ * arithmetically in x at all (§2.1, constraint 1).
+ */
+export const ROME_FRONT = ROME_CIRCUIT.slice(0, 12);
+
+/**
+ * **The Aurelian circuit's line, and the only definition of it.** §14.5, §15 tasks 2 and 3.
  *
  * `docs/ROME.md` §14.5 records the fault this export exists to close: `cityPlan.ts` found
  * Carthage's wall line in three places — the terrain's quadratic, `circuit.ts`'s bowed
@@ -331,32 +450,34 @@ export const RISE_RUN = 175;
  * decide where the city starts. Four meanings, one function, and nothing to change when
  * any one of them had to move.
  *
- * So the wall's line now has its own name, and the heightfield's bench (`buildTerrain`
- * stage 4d), `city/rome/circuit.ts`'s `wallCrestZ` and `fitWallPath`, `ScatterField`'s
- * glacis clearance and `campusMartius.ts`'s scatter exclusion all read this one function.
+ * Task 2 gave the line its own name with the terrain's crest still inside it. **Task 3 puts
+ * the survey inside it**, and every consumer moved with it because there is only the one:
+ * the heightfield's bench (`buildTerrain` stage 4d), `city/rome/circuit.ts`'s `wallCrestZ`
+ * and `fitWallPath`, `ScatterField`'s glacis clearance, `campusMartius.ts`'s scatter
+ * exclusion and `survey.ts`'s `CITY_Z_MIN`.
  *
- * **Its body is still the terrain's crest, and that is deliberate.** §15 task 3 authors the
- * circuit from the fourteen surveyed waypoints of §2.5 and lays 36 bays at a 37.03 m pitch
- * from x +2; doing that here would collide with it. What this pass buys task 3 is that the
- * change is one function body: move the line and the bench, the masonry, the glacis and the
- * keep-out all move with it, instead of task 3 having to find them. The measured gap it
- * will close is large — the surveyed circuit rises smoothly from z 538 at the Tiber to
- * z 633 at the Castra's north-east angle, while this wanders between z 437 and z 561, up to
- * **157 m** apart at x +868.
- */
-export const romeWallZ = (x: number): number =>
-  crestZAt(x < -HALF_EXTENT ? -HALF_EXTENT : x > HALF_EXTENT ? HALF_EXTENT : x);
-
-/**
- * Height of the crest of the city rise at a given x — the terrain's own brow.
+ * **The gap it closed was 157 m.** The surveyed circuit rises smoothly from z 538.4 at the
+ * Tiber to z 633.4 at the Castra's north-east angle; `crestZAt` wanders between z 437 and
+ * z 561 and was 157 m north of the survey at x +868. Rome's wall now stands where Rome's
+ * wall stands, and the ground it stands on is graded to it rather than to a sine wave.
  *
- * **No longer the wall's line**; that is `romeWallZ`. This is what the name says, and what
- * the projection needs: `survey.ts` solves the Porta Flaminia as the fixed point of
- * `roadCentreX(crestZAt(x))`, because the gate has to be where the Via Flaminia crosses the
- * brow, and the whole affine map's origin is derived from the answer. Anything that wants
- * to know where the *wall* is must ask `romeWallZ`.
+ * **Do not bow it** (§4.2). Carthage's 25 m sagitta exists because a 4.4 km straight reads
+ * as an extruded rectangle; this line has its own kinks from the ground, and adding a bow on
+ * top would invent a curvature the archaeology contradicts.
  */
-export const crestZAt = (x: number): number => riseToeZ(x) + RISE_RUN;
+export const romeWallZ = (x: number): number => {
+  const p = ROME_FRONT;
+  if (x <= p[0].x) return p[0].z;
+  const last = p[p.length - 1];
+  if (x >= last.x) return last.z;
+  for (let i = 1; i < p.length; i++) {
+    if (x > p[i].x) continue;
+    const a = p[i - 1];
+    const b = p[i];
+    return a.z + ((b.z - a.z) * (x - a.x)) / (b.x - a.x);
+  }
+  return last.z;
+};
 
 /**
  * Ground level under the wall's footing — the profile §3.5 publishes, and the elevation the
@@ -578,22 +699,135 @@ export const riverBankX = (z: number, side: number): number =>
  * polyline and §15 task 9 builds §4.6's river wall down the left bank, which is what closes
  * this properly; until then the terminus does it.
  */
-const WALL_RIVER_CLEAR = 12;
-
-export const WALL_X_MIN = (() => {
-  let x = 0;
-  for (let i = 0; i < 6; i++) x = riverBankX(romeWallZ(x), 1) + WALL_RIVER_CLEAR;
-  return Math.round(x);
-})();
+export const WALL_RIVER_CLEAR = 12;
 
 /**
- * East end: the Castra Praetoria. Aurelian took the camp's own north and east walls into the
- * circuit, so the curtain does not stop in open country — it runs into the Praetorian
- * barracks. §4.1 records that x 1150 is the camp's *north-west* angle and that the circuit
- * therefore ends exactly where the incorporated fort begins; §15 task 3 carries it on to the
- * north-east angle at x +1335. Unchanged here.
+ * West end: the surveyed north-west angle on the Tiber's left bank, x +2.0. §2.5, §4.2.
+ *
+ * **It was solved from the river and is now read off the circuit**, which is the change
+ * §15 task 3 asks for — *"lay 36 bays at a 37.03 m x-pitch from x +2"* — and the two do not
+ * agree. `riverBankX(romeWallZ(x), 1) + WALL_RIVER_CLEAR` converges on **x −26.6**, so the
+ * curtain used to begin **28.6 world metres west of the point the survey puts its angle at**,
+ * and the comment above `WALL_RIVER_CLEAR` claimed the two agreed "to a metre". They do not:
+ * the circuit's angle and the Tiber's channel are two independently projected surveys and at
+ * this latitude they are **40.5 m** apart, the angle standing that far east of the modelled
+ * east bank.
+ *
+ * The survey wins, because task 3's acceptance is written against it and because the bay
+ * grid has to start somewhere the wall is. What that leaves is the 40.5 m of dry bank
+ * between the angle and the water, which the terminus drum alone no longer spans — see
+ * `works.ts`'s river-wall stub, the first thirty metres of §4.6's west return, built early
+ * for exactly this reason.
  */
-export const WALL_X_MAX = 1150;
+export const WALL_X_MIN = ROME_FRONT[0].x;
+
+/**
+ * East end: the Castra Praetoria's **north-east** angle, x +1334.6. §2.5, §4.6, §4.7.
+ *
+ * It was 1150, which §4.1 records is the camp's *north-west* angle — *"the circuit therefore
+ * ends exactly where the incorporated fort begins, and the two walls Aurelian actually used
+ * are both past the end of it"*. Lanciani counts 1,050 m of the camp's own wall as circuit,
+ * the second largest single reuse on the whole 19 km, and this carries the modelled front
+ * across its north face to the corner where it turns south and leaves the map.
+ */
+export const WALL_X_MAX = ROME_FRONT[ROME_FRONT.length - 1].x;
+
+/**
+ * The modelled front, end to end: **1,332.5 world metres.** §2.5.
+ *
+ * Against today's `WALL_X_MAX − WALL_X_MIN` of 1,781 on the shipped circuit — *"the front is
+ * 448 world metres shorter and every metre of the difference is fiction that becomes river.
+ * That saving is what pays for two extra gates, the Muro Torto, the Castra Praetoria and two
+ * returns inside the same draw budget."*
+ *
+ * Lives here beside the two anchors rather than in `city/rome/circuit.ts`, where it used to,
+ * so that `rome/layout.ts` and `rome/assertions.ts` can have it without importing the wall
+ * builder — which is what would otherwise close a cycle now that the builder reads its own
+ * assertions.
+ */
+export const WALL_LENGTH = WALL_X_MAX - WALL_X_MIN;
+
+// ---------------------------------------------------------------------------
+// The Muro Torto — §4.5, §15 task 4
+// ---------------------------------------------------------------------------
+
+/**
+ * The Muro Torto: where it stands, how tall it is, and how far the hill is banked against
+ * the back of it. **[MOD]** Lanciani 1897, 72–74; Cozza 1992.
+ *
+ * Published here rather than in `city/rome/` because half of it is a heightfield edit and
+ * half of it is masonry, and §14.1's whole lesson is that a request that crosses that seam
+ * with two copies of the dimensions is how Carthage published a ditch nobody dug. One
+ * record: `heightfield.ts` stage 4d2 banks the earth, `city/rome/section.ts` stands the wall
+ * on it, and `assertRomeSection` grades the joint between them at every boot.
+ *
+ * **`height` is 13.32 m and not §4.5's 15, and the reason is measured.** §4.5 says the height
+ * is *"not established in metres"* — Cozza's elevations are in *ARID* 20 (1992) and are not
+ * online — and instructs *"Build 15 m and say it is chosen."* 15 puts bays 5 and 6 at a
+ * 15.0 m rise above their own ground, and `probe-siege`'s storm-ability check refuses any bay
+ * within five of the gate that rises past 14 m: on the redesigned circuit the gate is bay 1
+ * and the first two garrisonable bays either side of it *are* the Muro Torto's. 13.32 m is
+ * **45 *pedes*** at §4.3b's 0.296 m module — on the five-*pes* grid the rest of this wall is
+ * laid out on, 1.56× the curtain's 8.55 m to the merlon tops, and inside the envelope. It is
+ * still by a long way the tallest thing on the northern front.
+ */
+export const MURO_TORTO = {
+  /** §4.5: x +187 … +446, bays 5–11 at the 37.0 m pitch. */
+  x0: 187,
+  x1: 446,
+  /** Height of the mass from its footing to the wall-walk on its crest. */
+  height: 13.32,
+  /**
+   * How far the hillside is banked against the city face before it reaches crest level.
+   *
+   * 46 m gives 1:3.45, just gentler than the **1:3.2** §2.4a computes for the Pincian's own
+   * north scarp under this projection, and well inside `ROUGH_SLOPE_IMPASSABLE` (1:1.6) and
+   * `Pathfinding`'s 0.62 gradient refusal. This is the number that makes §4.5's central claim
+   * true in the representation that acts on it: *"it needs no stairs, because a man walks
+   * onto it off the Pincian's own hillside."*
+   */
+  bank: 46,
+  /** How far the raised terrace runs back before the hill falls away into the city. */
+  terrace: 120,
+  /** Length of the fall from the terrace back to the natural ground behind it. */
+  backslope: 150,
+  /** How far the bank tapers out past each end of the stretch, in x. */
+  taper: 44,
+} as const;
+
+/**
+ * How much earth is banked against the inner face of the Muro Torto at this point, metres.
+ *
+ * Zero everywhere else on the map, zero on the field side of the wall line, and zero inside
+ * the wall's own half-thickness so the transect §15 task 2 is graded on — `heightAt` along
+ * the published circuit — reads §3.5's table unchanged. `heightfield.ts` applies it after the
+ * bench; nothing else may.
+ */
+export const muroTortoBank = (x: number, z: number): number => {
+  const m = MURO_TORTO;
+  if (x < m.x0 - m.taper || x > m.x1 + m.taper) return 0;
+  const ends = sstep(m.x0 - m.taper, m.x0, x) * (1 - sstep(m.x1, m.x1 + m.taper, x));
+  if (ends < 1e-3) return 0;
+  // Cityward distance from the inner face of the curtain. 3.0 m is `HALF_T`; kept as a
+  // literal because `city/` may not be imported here and the two are asserted equal at boot.
+  const d = z - romeWallZ(x) - 3.0;
+  if (d <= 0) return 0;
+  const up = sstep(0, m.bank, d);
+  const down = 1 - sstep(m.bank + m.terrace, m.bank + m.terrace + m.backslope, d);
+  return m.height * ends * up * down;
+};
+
+/**
+ * Absolute height the terrace behind the Muro Torto is graded to, at full strength.
+ *
+ * The bank is applied as a **target**, not as an addition, for the same reason the bench
+ * under the wall is: added relief follows the natural ground, and the natural ground here is
+ * ridged multifractal with metres in it. A man steps onto the crest off this terrace, so what
+ * matters is the difference between it and a `walkY` quantised to 0.55 m increments — and
+ * eight per cent of survivng relief (the bench's own figure, which keeps it a graded platform
+ * rather than a milled one) is the whole error budget the apron gets.
+ */
+export const muroTortoTopAt = (x: number): number => crestHeightAt(x) + MURO_TORTO.height;
 
 /** How much the ford shallows the channel at this z: 1 on the shoal, 0 away from it. */
 export const fordFactor = (z: number): number =>

@@ -393,8 +393,22 @@ export class CitySystem implements Subsystem {
   private chunks: Chunk[] = [];
   private segments: WallSegmentOut[] = [];
   private gateList: GateOut[] = [];
-  /** Where the gatehouse masonry stands. Straddles two bays; see `GateBlockOut`. */
-  private gateBlock: GateBlockOut | null = null;
+  /**
+   * Where each gatehouse's masonry stands. A block straddles two bays; see `GateBlockOut`.
+   *
+   * A list since Rome gained its other two attested gates (§5.1, §15 task 5). Three entries
+   * on Rome, one on Carthage, and the three queries below walk it — a gate block is two dot
+   * products and the loop runs at most three times, against `bayIndexAt`'s one division.
+   */
+  private gateBlocks: readonly GateBlockOut[] = [];
+  /**
+   * The Aurelian circuit's own build-time arithmetic. Null on any other city. §14.4a.
+   *
+   * Held and republished rather than folded into `checks`, for the reason `punic` beside it
+   * is: a probe grading §15 tasks 3, 4 and 5 wants the numbers, not a sentence about them,
+   * and `CityAssertion.detail` is a sentence.
+   */
+  private romeSection: import('./rome/assertions').RomeSection | null = null;
   private bays: GarrisonBay[] = [];
   /** Every masonry flight onto the wall-walk. See `getWallStairs`. */
   private stairs: readonly WallStair[] = [];
@@ -524,6 +538,7 @@ export class CitySystem implements Subsystem {
     this.rasterBlockers = built.occBlockers ?? null;
     this.ditch = built.ditch ?? null;
     this.punic = built.punicSection ?? null;
+    this.romeSection = built.romeSection ?? null;
     // The builder's own arithmetic, surfaced rather than trusted: a section that does not sum
     // to its own stated thickness is a bug nobody sees until a probe walks the stone.
     if (this.punic && this.punic.faults.length > 0) {
@@ -532,7 +547,7 @@ export class CitySystem implements Subsystem {
     this.segments = wall.segments;
     this.rough = wall.roughGround;
     this.gateList = wall.gates;
-    this.gateBlock = wall.gateBlock;
+    this.gateBlocks = wall.gateBlocks;
     this.bays = wall.garrisonBays;
     this.stairs = wall.stairs;
     this.gateDoor = wall.gateDoor;
@@ -583,12 +598,13 @@ export class CitySystem implements Subsystem {
     // two runs, which is why it is a separate record in the first place — and it cannot use
     // the plan's merlon lengths, because on Rome the stone was cut at 1.5 / 0.8 and the plan
     // states 1.7 / 0.95. See `GateBlockOut.merlonLength`.
-    if (this.gateBlock) {
-      const gr = crenellationRun(
-        this.gateBlock.halfRun * 2,
-        this.gateBlock.merlonLength,
-        this.gateBlock.crenelLength,
-      );
+    //
+    // Resolved off the **siege gate's** block, which is the one a projectile is ever thrown
+    // at in anger, and the three on Rome are cut at the same 1.5 / 0.8 anyway. A per-block
+    // pair is `§15 task 11`'s to publish along with the crown runs.
+    if (this.gateBlocks.length > 0) {
+      const gb0 = this.gateBlocks[0];
+      const gr = crenellationRun(gb0.halfRun * 2, gb0.merlonLength, gb0.crenelLength);
       this.gateStep = gr.step;
       this.gateMerlon = gr.merlon;
     }
@@ -1655,8 +1671,8 @@ export class CitySystem implements Subsystem {
    * footprint they have to be clipped against; the clip itself is `Siege.ts`'s and is not
    * this workstream's to make.
    */
-  getGateBlock(): GateBlockOut | null {
-    return this.gateBlock;
+  getGateBlocks(): readonly GateBlockOut[] {
+    return this.gateBlocks;
   }
 
   getGateDoor(): GateDoorOut | null {
@@ -1767,13 +1783,11 @@ export class CitySystem implements Subsystem {
    * stands in the bay next door.
    */
   masonryTopAt(x: number, z: number): number {
-    const gb = this.gateBlock;
-    if (gb) {
+    for (const gb of this.gateBlocks) {
       const gt = (x - gb.x) * gb.dx + (z - gb.z) * gb.dz;
+      if (Math.abs(gt) > gb.halfRun) continue;
       const goff = (x - gb.x) * gb.nx + (z - gb.z) * gb.nz;
-      if (Math.abs(gt) <= gb.halfRun && Math.abs(goff) <= gb.halfDepth) {
-        return this.gateTopAt(gb, gt, goff);
-      }
+      if (Math.abs(goff) <= gb.halfDepth) return this.gateTopAt(gb, gt, goff);
     }
     /**
      * Carthage's forward lines, tested **before** the main wall.
@@ -1939,11 +1953,11 @@ export class CitySystem implements Subsystem {
      * up on the wall, the road for one underneath it. The 2 m margin is a hand's breadth
      * either side of the walk that reaches the crown, which is the only way onto it.
      */
-    const gb = this.gateBlock;
-    if (gb) {
+    for (const gb of this.gateBlocks) {
       const gt = (x - gb.x) * gb.dx + (z - gb.z) * gb.dz;
+      if (Math.abs(gt) > gb.halfRun) continue;
       const goff = (x - gb.x) * gb.nx + (z - gb.z) * gb.nz;
-      if (Math.abs(gt) <= gb.halfRun && Math.abs(goff) <= gb.halfDepth) {
+      if (Math.abs(goff) <= gb.halfDepth) {
         const underTheVault = Math.abs(gt) <= gb.openHalf && fromY < gb.sillY - 2;
         return underTheVault ? -Infinity : gb.sillY;
       }
@@ -2057,13 +2071,11 @@ export class CitySystem implements Subsystem {
    * the defect that put him inside the block is `Siege.buildSpine`'s, not this file's.
    */
   embrasureAt(x: number, z: number): Embrasure | null {
-    const gb = this.gateBlock;
-    if (gb) {
+    for (const gb of this.gateBlocks) {
       const gt = (x - gb.x) * gb.dx + (z - gb.z) * gb.dz;
+      if (Math.abs(gt) > gb.halfRun) continue;
       const goff = (x - gb.x) * gb.nx + (z - gb.z) * gb.nz;
-      if (Math.abs(gt) <= gb.halfRun && Math.abs(goff) <= gb.halfDepth) {
-        return this.gateEmbrasure(gb, gt, x);
-      }
+      if (Math.abs(goff) <= gb.halfDepth) return this.gateEmbrasure(gb, gt, x);
     }
     const bi = this.bayIndexAt(x);
     if (bi < 0) return null;
@@ -2400,6 +2412,8 @@ export class CitySystem implements Subsystem {
      * `wall`.
      */
     drawsByFamily: { family: string; meshes: number }[];
+    /** `assertRomeSection`'s whole record, or null off Rome. See `CityBuild.romeSection`. */
+    romeSection: import('./rome/assertions').RomeSection | null;
   } {
     let visibleMeshes = 0;
     let visibleTriangles = 0;
@@ -2443,6 +2457,7 @@ export class CitySystem implements Subsystem {
       drawsByFamily: [...byFamily.entries()]
         .map(([family, meshes]) => ({ family, meshes }))
         .sort((a, b) => b.meshes - a.meshes),
+      romeSection: this.romeSection,
     };
   }
 

@@ -1,7 +1,7 @@
 import { Faction } from '../../sim/types';
 import { buildCarthageWall, CARTHAGE_SECTION } from '../carthageWall';
 import { activeFortification } from '../fortification';
-import type { CityBuild, CityPlan } from '../cityPlan';
+import type { CityAssertion, CityBuild, CityPlan } from '../cityPlan';
 import { assertNoFabricOverlaps, KeepOut } from '../layout';
 import { buildTreeChunks } from '../props';
 import { type CityChunkSpec, type TreeRequest } from '../wall';
@@ -89,6 +89,62 @@ export const ROME_PLAN: CityPlan = {
     const cw = punic ? (wall as ReturnType<typeof buildCarthageWall>) : null;
     if (cw && cw.sectionFaults.length > 0) {
       console.warn(`[city] Punic section faults: ${cw.sectionFaults.join('; ')}`);
+    }
+    /**
+     * **`assertRomeSection`, printed once at boot.** §14.4a, §15 tasks 3 and 5.
+     *
+     * *"`wall.ts` has no build-time self-check of any kind. This is the largest structural
+     * asymmetry between the two wall files and the most portable thing Carthage has."* It has
+     * one now, and the two lines below are what §15 requires *printed*: the bay grid against
+     * its two surveyed anchors, and — for each aperture — the snap distance and the masonry
+     * left either side of its clear opening inside its own bay, which is §14.3's test.
+     *
+     * Printed with `console.info` and not `console.warn` when it passes, because a boot line
+     * that reads as a problem when nothing is wrong is a boot line people stop reading. The
+     * faults themselves go out as warnings, and the whole record goes onto `CityChecks` so a
+     * probe reads numbers rather than parsing a log.
+     */
+    const rome = cw ? null : (wall as ReturnType<typeof buildWall>).section;
+    const romeAssertions: CityAssertion[] = [];
+    if (rome) {
+      console.info(
+        `[city:rome] circuit: ${rome.bays} bays at ${rome.pitch.toFixed(2)} m, ` +
+          `x ${rome.westEnd.toFixed(1)} .. ${rome.eastEnd.toFixed(1)} ` +
+          `(survey +2 / +1335), worst pitch deviation ${(rome.pitchDeviation * 100).toFixed(1)} %, ` +
+          `worst walk step ${rome.worstWalkStep.toFixed(2)} m at x ${rome.worstWalkStepX.toFixed(0)} ` +
+          `(rake ${rome.worstWalkRake.toFixed(2)}), ${rome.baysBelowWater} bay(s) below water, ` +
+          `worst tower lane ${rome.worstLane.toFixed(2)} m`
+      );
+      console.info(
+        `[city:rome] apertures: ${rome.apertures
+          .map((a) => `${a.id} x ${a.x.toFixed(1)} bay ${a.bay} snap ${a.snap >= 0 ? '+' : ''}${a.snap.toFixed(2)} m, ` +
+            `${a.clearance.toFixed(2)} m of masonry inside its bay`)
+          .join('; ')}`
+      );
+      for (const s of rome.faults) console.warn(`[city:rome] section fault: ${s}`);
+      romeAssertions.push(
+        {
+          name: 'section',
+          ok: rome.faults.length === 0,
+          detail: `${rome.bays} bays at ${rome.pitch.toFixed(2)} m x-pitch, deviation ` +
+            `${(rome.pitchDeviation * 100).toFixed(1)} %; section sums to ` +
+            `${rome.sectionSum.toFixed(2)} m against ${rome.sectionTarget.toFixed(2)}; ` +
+            `${rome.faults.length} fault(s)`,
+        },
+        {
+          name: 'apertures fit their bays',
+          ok: rome.apertures.every((a) => a.clearance >= 1.0),
+          detail: rome.apertures
+            .map((a) => `${a.id} ${a.clearance.toFixed(2)} m (snap ${a.snap.toFixed(2)} m)`)
+            .join(', '),
+        },
+        {
+          name: 'the Muro Torto is walked onto, not climbed',
+          ok: rome.tortoBays === 7 && rome.tortoWorstApron <= 0.62,
+          detail: `${rome.tortoBays} bays, worst apron rise ${rome.tortoWorstApron.toFixed(2)} m ` +
+            '(a level joint is 0.62)',
+        }
+      );
     }
 
     // Reserve every landmark's *oriented rectangular* footprint before a single insula is
@@ -194,7 +250,11 @@ export const ROME_PLAN: CityPlan = {
       buildingFootprints: districts.footprints,
       lanes: districts.lanes,
       landmarks: LANDMARKS.map((l) => ({ id: l.id, name: l.name, x: l.x, z: l.z })),
+      // The whole `assertRomeSection` record, so a probe reads the builder's own arithmetic
+      // rather than re-deriving it from the bays. Absent under the `?fort=carthage` rig.
+      romeSection: rome,
       checks: {
+        assertions: romeAssertions,
         footprintOverlaps: overlaps.count,
         footprintOverlapWorst: overlaps.worst,
         topologyPass: topology.checks - topology.failures.length,

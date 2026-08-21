@@ -1,6 +1,25 @@
 import * as THREE from 'three';
+// `terrain/topography`, not `terrain/TerrainSystem` — see the note at the top of
+// `./circuit.ts` about the ESM cycle that closes the moment a map declares its city.
+import { WALL_X_MAX, WALL_X_MIN } from '../../terrain/topography';
 import { lerp } from '../../util/math';
 import type { BayStage } from '../layout';
+
+/**
+ * How many bays the modelled front carries. §4.4, §4.8, §15 task 3.
+ *
+ * **36, against the shipped 50 and the 33 the corrected west anchor left.** The front is the
+ * 1,332 world metres between the two surveyed anchors of §2.5 — the Tiber angle at x +2.0
+ * and the Castra Praetoria's north-east angle at x +1334.6 — and 36 bays is the whole number
+ * that puts the interaxis nearest Dey's attested 37.1 m. §4.4: *"Going from 50 bays at 35.5 m
+ * to 36 at 37.1 m is the single largest saving in the redesign and it costs nothing
+ * historical — it is a more accurate pitch on a shorter and truer line."*
+ *
+ * One modelled tower therefore stands for about 2.6 real ones, which is Carthage's 33-for-75
+ * trade at Rome. §4.8's stage table is written bay by bay against this count and will not
+ * survive a change to it.
+ */
+export const BAY_COUNT = 36;
 
 /**
  * The cross-section of the Aurelian curtain — `docs/ROME.md` §4.3 — and the per-bay
@@ -21,8 +40,8 @@ import type { BayStage } from '../layout';
  *
  * Height 6.5 m to the wall-walk and 3.5 m thick: Richmond, *The City Wall of
  * Imperial Rome* (1930), measuring the surviving Aurelianic core before Maxentius
- * doubled the height. Tower spacing is one *actus* — 120 Roman *pedes* of 0.296 m,
- * so 35.5 m (parts of the circuit run at 100 pedes, 29.6 m).
+ * doubled the height. The tower interaxis is **125 *pedes*, 37.1 m** — see `towerSpacing`,
+ * which is where the *actus* this comment used to claim went, and why.
  */
 export const WALL = {
   height: 6.5,
@@ -45,7 +64,24 @@ export const WALL = {
   parapetThickness: 0.9,
   /** Face batter: Roman curtains lean back about 1 in 30. */
   batter: 0.032,
-  towerSpacing: 35.5,
+  /**
+   * **The bay pitch: the tower interaxis, derived from the two survey anchors.** §4.4, §2.4b.
+   *
+   * It was **35.5 m** — one *actus*, 120 *pedes* — under a comment conceding that *"parts of
+   * the circuit run at 100 pedes, 29.6 m"*. §2.4b calls that second number the trap: 29.6 m
+   * is the **clear curtain between towers** and the **interaxis is 37.1 m**, which is what a
+   * bay is spaced on. Dey does the arithmetic explicitly — 14,237.5 m of land circuit ÷ 37.1
+   * = 383.8 towers, corroborating the Einsiedeln count of 383, where "a tower every 29.6 m"
+   * demands 481.
+   *
+   * The value here is not 37.1 but `(WALL_X_MAX − WALL_X_MIN) / 36` = **37.02 m**, because
+   * both ends of this circuit are surveyed points and 36 bays is what fits between them:
+   * pinning the pitch and letting the east end fall where it may would put the Castra's
+   * north-east angle 2.9 m off its own survey position. 0.08 m short of the attested
+   * interaxis over a 1,332 m front is the closest a whole number of bays comes, and it is
+   * derived here rather than typed so the two anchors and the count are the only inputs.
+   */
+  towerSpacing: (WALL_X_MAX - WALL_X_MIN) / BAY_COUNT,
   /** Blind arched recesses in the inner face, an Aurelianic economy measure. */
   innerArchSpacing: 6.4,
   /** Towers are square, project 3.5 m beyond the outer face, and stand 7.5 m wide. */

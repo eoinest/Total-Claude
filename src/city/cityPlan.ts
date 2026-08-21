@@ -331,6 +331,18 @@ export interface CityBuild {
   punicSection?: (typeof import('./carthageWall').CARTHAGE_SECTION & {
     faults: readonly string[];
   }) | null;
+  /**
+   * `assertRomeSection`'s whole record — the Aurelian circuit's own arithmetic. §14.4a.
+   *
+   * The Rome-shaped counterpart of `punicSection` above and named for the same reason: both
+   * are one city's cross-section published so a probe can read the builder's numbers instead
+   * of re-deriving them from the bays. §14.4a is the argument — *"`wall.ts` has no build-time
+   * self-check of any kind … Every defect in §4.1 and §5 above is one an eight-line assertion
+   * would have printed at every boot for the last six months."*
+   *
+   * The same rule as the Punic one applies to generalising it: wait for a third circuit.
+   */
+  romeSection?: import('./rome/assertions').RomeSection | null;
 }
 
 /**

@@ -988,7 +988,7 @@ export interface CityView {
    * shot they took was thrown into the block. The block is not a tower and `towerHalf` does
    * not describe it: it straddles two bays, so it needs its own footprint and its own clip.
    */
-  getGateBlock?(): CityGateBlockView | null;
+  getGateBlocks?(): readonly CityGateBlockView[];
   /**
    * Optional, and the whole reason the stair mechanic reads the city instead of guessing.
    *
@@ -1508,8 +1508,8 @@ export class Siege implements ElevationOwner {
     const pmid: number[] = [];
     const phalf: number[] = [];
 
-    /** The gatehouse, if this city publishes one. Read once: the wall does not move. */
-    const gateBlock = this.city.getGateBlock?.() ?? null;
+    /** Every gatehouse this city publishes. Read once: the wall does not move. */
+    const gateBlocks = this.city.getGateBlocks?.() ?? [];
     for (let bi = 0; bi < bays.length; bi++) {
       const bay = bays[bi];
       if (!bay.garrisonable) continue;
@@ -1577,7 +1577,7 @@ export class Siege implements ElevationOwner {
          * and it is written as a clip rather than a special case, so the day the city
          * publishes a crown run, deleting this is the whole change.
          */
-        if (gateBlock && insideBlock(gateBlock, px, pz)) continue;
+        if (gateBlocks.some((gb) => insideBlock(gb, px, pz))) continue;
         xs.push(px);
         zs.push(pz);
         ys.push(bay.walkY);
@@ -6437,6 +6437,15 @@ export class Siege implements ElevationOwner {
    */
   wallReport(): {
     source: 'published' | 'synthesised' | 'none';
+    /**
+     * Bays the city published, and how many of them a rank may stand on.
+     *
+     * Added for `ROME.md` §15 tasks 3 and 4, whose acceptance is stated in bays — 36 laid and
+     * 32 garrisonable — and which had nowhere to read either from: this report describes the
+     * *spine*, and the spine only exists where a bay is garrisonable, so a bay that published
+     * itself as unstandable was invisible to every instrument aimed at the wall.
+     */
+    bays: number; garrisonableBays: number;
     stairs: number; runs: number; stations: number; deadStations: number;
     links: { towerPass: number; step: number; stair: number; breach: number };
     /** Runs reachable from the ground without leaving the wall, over total runs. */
@@ -6514,8 +6523,11 @@ export class Siege implements ElevationOwner {
       if (pitch > worstPitch) worstPitch = pitch;
     }
 
+    const cityBays = this.city ? this.city.getGarrisonBays() : [];
     return {
       source: this.stairs.length === 0 ? 'none' : (this.stairsFromCity ? 'published' : 'synthesised'),
+      bays: cityBays.length,
+      garrisonableBays: cityBays.filter((b) => b.garrisonable).length,
       stairs: this.stairs.length,
       runs: this.nRuns,
       stations: this.nStations,

@@ -1,5 +1,5 @@
 import { HALF_EXTENT } from '../../terrain/TerrainSystem';
-import { crestZAt, riverBankX, roadCentreX } from '../../terrain/topography';
+import { KZ, riverBankX, romeWallZ } from '../../terrain/topography';
 import { clamp } from '../../util/math';
 
 /**
@@ -493,47 +493,25 @@ export const ROME: readonly RomeMonument[] = [
 // ---------------------------------------------------------------------------
 
 /**
- * Porta Flaminia. Solved by fixed-point iteration on `x = roadCentreX(crestZAt(x))`,
- * because the gate has to be where the Via Flaminia crosses the crest — which is also
- * the saddle the terrain cuts for it. Three passes converge to a tenth of a metre.
+ * **The affine map is `terrain/topography.ts`'s now, and this re-exports it.** §15 task 3.
+ *
+ * It was defined here and could be, because nothing in it needs anything of the city's:
+ * `GATE_X` is the fixed point of `roadCentreX(crestZAt(x))` and both live in the terrain.
+ * Task 3 needed the *circuit* authored in survey metres and projected — and the terrain owns
+ * the wall's line, the bench under it and the city's northern limit, so leaving `worldOf`
+ * up here would have forced a second, transcribed copy of the polyline in world metres.
+ * `probe-rometransect.mjs`'s header calls that *"exactly the kind of transcription that
+ * rots"*, having already had to write a probe to stop the Tiber's copy rotting.
+ *
+ * So the projection moved down and every constant in it is unchanged to the digit:
+ * `GATE_X = 72.0`, `GATE_Z = 529.746`, `KX = 0.443`, `KZ = 0.222`. Monuments still project
+ * through `worldOf` from here and cannot tell the difference.
  */
-export const GATE_X = (() => {
-  let x = 20;
-  for (let i = 0; i < 6; i++) x = roadCentreX(crestZAt(x));
-  return Math.round(x * 10) / 10;
-})();
-export const GATE_Z = crestZAt(GATE_X);
+export { GATE_X, GATE_Z, KX, KZ, worldOf } from '../../terrain/topography';
 
-/** Real position of the Porta Flaminia in the survey frame: Piazza del Popolo. */
-const PORTA_FLAMINIA_E = -497;
-const PORTA_FLAMINIA_N = 2045;
-
-/**
- * East–west scale. From the Porta Flaminia to the west wall of the Castra Praetoria is
- * 2,436 real metres, and the world curtain runs 1,078 m from the gate to its east end,
- * so the scale is fixed by the two anchors rather than chosen: 1078 / 2436 = 0.443.
- */
-export const KX = 0.443;
-
-/**
- * Depth scale. The heightfield ends at z = 1400 and the wall crest reaches z = 583, so
- * there are about 940 m of city depth for Rome's 3,545 m from the Porta Flaminia to the
- * Baths of Caracalla. 0.222 is the largest value that fits Caracalla inside the map with
- * its precinct clear of the edge.
- */
-export const KZ = 0.222;
 
 /** Effective east-west : north-south anisotropy for plan rotations. See `worldRot`. */
 export const ROT_RATIO = 1.45;
-
-const X0 = GATE_X - KX * PORTA_FLAMINIA_E;
-const Z0 = GATE_Z + KZ * PORTA_FLAMINIA_N;
-
-/** Project survey metres to battlefield metres. */
-export const worldOf = (e: number, n: number): { x: number; z: number } => ({
-  x: X0 + KX * e,
-  z: Z0 - KZ * n,
-});
 
 /**
  * Map a compass bearing through the same anisotropic transform and return the plan
@@ -561,8 +539,16 @@ export const worldRot = (bearingDeg: number, axis: 'x' | 'z' = 'x'): number => {
   return Math.atan2(dx, dz);
 };
 
-/** Where the city may build: the plateau behind the crest, inside the heightfield. */
-export const CITY_Z_MIN = (x: number): number => crestZAt(clamp(x, -HALF_EXTENT, HALF_EXTENT)) + 24;
+/**
+ * Where the city may build: **behind the wall**, inside the heightfield.
+ *
+ * It read `crestZAt` — the terrain's brow — and that was harmless only while the wall stood
+ * on the brow. §15 task 3 put the circuit on the survey, and east of x +500 the survey runs
+ * up to **157 m south of the brow**, so a floor computed from `crestZAt` sat *outside* the
+ * circuit and the resolver was free to push a monument through the curtain onto the glacis.
+ * `romeWallZ` is the line the masonry actually stands on and this is a clearance behind it.
+ */
+export const CITY_Z_MIN = (x: number): number => romeWallZ(clamp(x, -HALF_EXTENT, HALF_EXTENT)) + 24;
 export const CITY_Z_MAX = HALF_EXTENT - 26;
 
 /**

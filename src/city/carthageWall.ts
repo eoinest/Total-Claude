@@ -1527,6 +1527,8 @@ export function buildCarthageWall(
     broken: false,
   };
   const gateBlock: GateBlockOut = {
+    // Named since `GateBlockOut` went plural for Rome's three gates. Carthage has one.
+    id: gateAxes[0].id,
     x: GATE_X, z: gateCz,
     nx: gf.nx, nz: gf.nz, dx: gf.dx, dz: gf.dz,
     halfRun: GATE_BLOCK_W * 0.5,
@@ -1722,7 +1724,10 @@ export function buildCarthageWall(
     chunks,
     segments,
     gates,
-    gateBlock,
+    // A one-element list: `WallBuildOutput.gateBlocks` went plural when Rome gained its
+    // other two attested gates, and this circuit's `porta-uticensis` is still the only
+    // block on it.
+    gateBlocks: [gateBlock],
     gateDoor,
     blockers,
     // Nothing on this circuit is standing-but-passable: the eight posterns were shut at
