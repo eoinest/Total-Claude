@@ -50,7 +50,16 @@
  *
  *  5. **Two producers, cross-checked.** Monument-versus-wall and monument-versus-street are
  *     read as one producer's output against another's — the monument builder never sees the
- *     wall builder's stone — and corroborated on the drawn geometry of both.
+ *     wall builder's stone — and corroborated on the drawn geometry of both. The block
+ *     orientation test is the same idea and the sharpest instance of it: a block's angle is
+ *     graded against **the road graph, which is upstream of the block generator** and does not
+ *     know the fabric exists.
+ *
+ *  6. **A mathematical property, which is the only ruler that cannot rot.** Layout regions
+ *     must *partition* the ground, so claimed area over available area is **1.00** — not a
+ *     tuned constant, a definition. The denominator is sampled from the terrain and the built
+ *     circuit and has the monuments' own ground subtracted out of it, so nothing the region
+ *     list publishes can flatter it.
  *
  * ---------------------------------------------------------------------------
  * THE ONE BLIND SPOT, STATED RATHER THAN PAPERED OVER
@@ -1839,6 +1848,9 @@ try {
     for (const e of [...stoneInBld.values()].sort((a, b) => b.hits - a.hits).slice(0, 4)) {
       push('drawn-stone-in-a-building', `${e.stone} stone standing in ${e.standingIn}`, e.hits * 4, null, e.x, e.z, e.x, e.z);
     }
+    for (const e of [...stoneInMon.values()].sort((a, b) => b.hits - a.hits).slice(0, 4)) {
+      push('drawn-stone-in-a-monument', `${e.stone} stone standing in ${e.standingIn}`, e.hits * 4, null, e.x, e.z, e.x, e.z);
+    }
     faults.sort((a, b) => b.m2 - a.m2);
     const chosen = [];
     const seen = new Set();
@@ -1938,7 +1950,14 @@ try {
       // centres puts both structures side by side in frame, which is what makes an overlap
       // legible rather than foreshortened.
       const yaw = f.yaw + Math.PI / 2;
-      const zoom = Math.max(0.52, Math.min(0.84, 0.52 + (f.spanM ?? 60) / 900));
+      /*
+       * High oblique, not close. The rig couples zoom to pitch and to eye height, so a low
+       * zoom sits in the grass: the first version of this shot used 0.52 and photographed
+       * four square metres of paving with the fault entirely outside the frame. The shot
+       * table's own city framings are the calibration — `campus` 0.80, `deep` 0.86, `wide`
+       * 0.95 — so a fault and the street it stands in wants the 0.84-0.90 band.
+       */
+      const zoom = Math.max(0.84, Math.min(0.90, 0.84 + (f.spanM ?? 0) / 2000));
       await page.evaluate(([x, z, zm, yw]) => {
         // The HUD is not the subject. Hidden once, before the first frame is asked for.
         const r = document.getElementById('hud-root');
