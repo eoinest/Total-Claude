@@ -539,6 +539,125 @@ to cross-engine play and should be priced before anything realtime is started.
 
 ### Stage 1 — The replay record. 2–3 weeks. Ships: save, share, watch, take command.
 
+> **Built, 21 August 2026 — `e/sim/replay-record`.** All six items below are in the tree.
+> This block records what the building measured, including the four places it corrects this
+> document and the two places it did something other than what was asked.
+>
+> **What shipped.** `src/sim/replay.ts` (the format, the codec and `ReplaySystem`, at order 5
+> so its drain is the first thing in a tick), `src/sim/stateHash.ts` (Stage 0 item 3, which was
+> never done and which this needed), `src/ui/ReplayBar.ts`, two buttons on the end card, and
+> `tools/qa-replay.mjs` — **21 checks in nine arms**, booting through the front door
+> with a real mouse. `?replay=<token>` watches; `&from=<seconds>` takes command.
+>
+> **The size estimate is right. 1,188 bytes.** Measured on a battle driven through the real
+> menu with a real mouse: 226.1 s, 2,247 men, 32 recorded events (29 player orders and 3
+> deployment operations — one order every 7.8 s, which is somebody actually playing), 9
+> checkpoints. 2,726 B of JSON, **1,188 B gzipped**, a 1,584-character token that fits in a URL
+> with room to spare. Scaled to exactly 200 s that is about 1,090 B against the design's
+> **1.1 kB [M: async]** — inside 2%, from a completely different instrument. (Three runs of the
+> same script recorded 32, 34 and 34 events and came out at 1,188 B, 1,219 B and 1,224 B; a real
+> mouse does not click the same number of times twice.) Gzipped in isolation the split is config
+> 476 B, order log 423–451 B, checkpoints ~246 B, so the **order log is 13.6–14.6 bytes an order**
+> against
+> §1.7's 11–13 B for a hand-rolled bit layout. The difference is JSON tuples rather than packed
+> bits, and it buys a format readable in a debugger and versionable by appending. Note that a
+> record is *not* only the order log: the config is 40% of it, because the menu keeps every
+> order of battle a player has built and the token carries all seven so it is self-contained.
+>
+> **Item 4 was built and is not for what it says.** "A tick ceiling in `Time`, so the replay
+> player cannot step past the next order's tick" describes a problem the record does not have:
+> orders are keyed to a tick index and fed at the top of that tick from inside `fixedUpdate`,
+> so a frame boundary has nowhere to put one. `Time.tickCeiling` exists, but for the *gate* —
+> it is what makes `advanceTicks(n, stepMs)` run exactly n ticks, and without that a record and
+> a replay on two frame schedules cannot be compared at all, only at two different tick counts
+> that look like the same moment.
+>
+> **Item 5's deliberately-wrong arm is three arms, and one tick is enough.** An order shifted
+> by **one** tick moves the pool hash at the next 30 s checkpoint. §3 item 4 quotes the async
+> pass at "four ticks (133 ms) of lateness is already a different battle" — four is an upper
+> bound, not the threshold. The other two arms are the ones that matter more: an unrecorded
+> `orderIssued` emitted straight onto the bus mid-battle (the twenty-fourth input path,
+> simulated), and a direct write to `UnitGroupState.width` from outside a tick (the shape of the
+> bug §1.10 names at `SelectionController.ts:1538`). Both fork the battle and both are caught,
+> by the product's own checkpoint comparison, without the tool comparing anything.
+>
+> **§1.6 is confirmed by a fourth instrument, and this is the strongest form of it yet.** A
+> 6,783-tick battle carrying real recorded player input replays **bit-identically at 1000/6 ms
+> (five ticks a frame) and at 1000/60 ms (one tick every two frames)** — pool, `uf64` and `uctl`
+> at every checkpoint, and the same `BattleFlow.result`. The earlier cadence rigs measured a
+> battle with no player in it; this one measures a battle whose orders arrived at frame
+> boundaries that the two arms do not share. The three shipped comments §1.6 calls false are
+> still in the tree and are now annotated rather than deleted, because their *advice* is right
+> for the tool they sit in: `qa-determinism.mjs` drives by seconds, so coarsening its step does
+> change the tick count and does move the hash. The stated mechanism was the wrong one.
+>
+> **The provenance field is not a precaution, it is load-bearing, and here is the number.**
+> Over one 226-second recording the `orderIssued` bus carried **3,258 orders from the AI, 29
+> from the player and 2 from the deployment phase**; the record has the 29. Without `source`
+> a bus recorder captures all 3,289 and playback applies every AI order twice, because the AI
+> regenerates its own from the same seed and the same state. §3 item 1 says this is why the
+> stage is not two days, and it is right.
+>
+> **Four items of §1.10 are closed.** The gate's hash is in the product (`src/sim/stateHash.ts`,
+> arithmetic unchanged to the bit — all three battles, all seven checkpoints, `hash`, `uf64` and
+> `uctl` unmoved across the move). `orderIssued` carries `source: 'local' | 'ai' | 'deploy'`,
+> **required**, so the compiler finds the sixteenth emit site; the fifteen the document counts is
+> exactly right (seven in `SelectionController`, seven in `ai/Orders.ts`, one in `deployment.ts`).
+> `SelectionController.ts`'s direct `u.width` write is deleted. `issueHalt`'s two `Siege`
+> countermands now run at the top of the tick the halt lands on, still before `BattleSystem`
+> hears it, so the documented ordering is not inverted.
+>
+> **Two things were done differently, on purpose.**
+>
+> *There is no build SHA, and the refusal is measured instead.* §3 item 6 wants the record to
+> carry one and to refuse a foreign build "with a link to that build's immutable Vercel
+> deployment". Nothing in this bundle knows its own SHA — `tools/deploy-vercel.mjs` uploads a
+> static tree with no build step — so instead the record carries its checkpoint at tick 0 and the
+> playback recomputes it. A build that changed the battle is refused by name at t+0, before a
+> tick has run, which is a strictly stronger test of the thing the SHA is a proxy for. What is
+> lost is the link, and the field is in the format for whoever adds a stamp.
+>
+> *Ordered positions are quantised in live play, not only in the record.* §4's Stage 4 warning —
+> "round-trip your own orders through the codec … it is the commonest real lockstep bug and it
+> appeared in none of the three designs" — was applied one stage early: `x`/`z` are snapped to
+> int16 over ±1400 m (4.27 cm) at the moment an order enters the queue, so the number the
+> simulation applies is the number the record carries, in both directions. This is a behaviour
+> change to live play of 4.27 cm against a 0.72 m rank pitch. **It was worth it and the gate
+> proved so on its first execution**, which found the bug twice in the deployment path: a
+> right-drag placement recorded quantised and applied raw, and an absent coordinate encoded as
+> zero, which stood a whole regiment at the world origin. Both showed as `uctl` matching
+> perfectly while `hash` and `uf64` did not — the exact signature the document predicts. What
+> would change my mind: a case where the 4.27 cm snap flips a `Siege.wallTargetAt` decision, in
+> which case the raw float64 goes in the record and the round trip has to be found elsewhere.
+>
+> **The graphics tier is a simulation input, and the record carries it.** §1.10 already names
+> the mechanism — `fittedUnitScale` fits the army to `quality.maxSoldiers` — and a measurement
+> taken during this pass by the video pass sharpens it into an outcome rather than a headcount:
+> Campus Martius assault, seed 4265438264, hard, **ultra 3,074 men and medium 3,009**, and at
+> ultra the ram crew dies 16 m short of the door and lands nothing by t+520 while at medium it
+> lands 26 blows and the Porta Flaminia opens between t+180 and t+240. Two different battles
+> from a graphics setting.
+>
+> Verified here, because a record has to know what it must carry: **the tier reaches the
+> simulation through exactly one field, at boot, and nothing else on the settings path reaches
+> it at all.** `QualitySettings = SimQuality & RenderQuality`; `SimQuality` has one member,
+> `maxSoldiers`; `Engine` freezes it at construction (`this.simQuality = Object.freeze(...)`)
+> and re-asserts `q.maxSoldiers = this.simQuality.maxSoldiers` after *every* patch, so a
+> mid-battle tier press cannot resize the army. Every read of `ctx.quality.*` in `src/sim`,
+> `src/ai` and `src/units` is either `maxSoldiers` (thirteen sites, all in `BattleSystem.init`
+> and the two `fittedUnitScale` calls in `scenario.ts`) or `lodFarDistance`, which is the
+> impostor swap distance and is render-only. **[V]** So the record carries `quality`, the
+> effective `unitScale` and `pool.count` at t+0; `?quality=` is applied *before* `?replay=` is
+> decoded and the record's answer overwrites it; and a token claiming an army this run cannot
+> field is refused by name. Two arms of the gate check exactly that.
+>
+> **What Stage 1 does *not* fix, and inherits.** `PLAYER_FACTION` is still a compile-time
+> constant, so every record commands Rome. Pause and speed are still raw writes to the clock —
+> harmless here, because a record is driven by tick index and a pause cannot displace an order,
+> but still true. And §7.5 stands unchanged: a record made at `high` is refused at `low` rather
+> than silently fitted to a smaller army, which is the right behaviour and still a bad outcome.
+
+
 1. **Add provenance to `orderIssued`** — a `source: 'local' | 'ai' | 'deploy'` field, set at all
    fifteen emit sites. Without it a bus recorder captures the AI's orders and double-applies them
    on playback (§1.10). This is unavoidable and it is why this stage is not two days.
@@ -795,6 +914,20 @@ the ones locked out. An explicit refusal is the right behaviour and is still a b
 number in the game and might double the tick cost. It is the only road to cross-engine play, and
 if the performance measurement comes back badly, the honest answer is that this game does not get
 cross-browser multiplayer, and Stages 0–2 are what it gets instead.
+
+**7.7bis The tier is a second portability firewall, and it is not made of floating point.**
+§7.1 frames the pairing risk as libm: Chrome-on-Alice against Chrome-on-Bob, same version,
+possibly different CPUs. There is a larger and much cruder breach in front of it. The graphics
+tier fixes `quality.maxSoldiers`, `fittedUnitScale` fits the army to it, and the field battle
+therefore boots 8,632 men at `high` and 1,515 at `low` **[M×2]** — and the Campus Martius
+assault at one seed is 3,074 men at ultra against 3,009 at medium, with the ram crew dead 16 m
+short of the gate at one tier and the gate open by t+240 at the other. **[M: video]** Two
+players who accept their own defaults on different hardware are simulating different armies
+before a single `Math` call has had the chance to disagree, and no amount of Stage 3 fixes it.
+Any realtime pairing must exchange and pin the **effective `unitSizeScale` and `pool.count`**,
+not the tier name — §1.10 says the same thing about `high` and `ultra` being identical, which
+is true and is not the general case. The replay record does this already and refuses a mismatch
+by name; a lobby would have to do the same in its handshake.
 
 **7.7 The social modes are a population bet with no evidence behind them.** Stage 1 has real
 single-player value and I have leaned on that deliberately. Stages 2 and 4 are worth nothing at

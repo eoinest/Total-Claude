@@ -135,7 +135,7 @@ export class OrderBook {
     if (same) return false;
     if (this.tick - r.tick < MIN_REISSUE_TICKS && r.kind === 'move') return false;
 
-    this.events.emit('orderIssued', { unitIds: [u.id], kind: 'move', x, z, facing, running });
+    this.events.emit('orderIssued', { unitIds: [u.id], kind: 'move', source: 'ai', x, z, facing, running });
     r.kind = 'move';
     r.x = x;
     r.z = z;
@@ -168,7 +168,7 @@ export class OrderBook {
       const facing =
         i === n - 1 ? finalFacing : Math.atan2(pts[i * 2] - pts[(i - 1) * 2], pts[i * 2 + 1] - pts[(i - 1) * 2 + 1]);
       this.events.emit('orderIssued', {
-        unitIds: [u.id], kind: 'move', x, z, facing, running, queued: i > 1,
+        unitIds: [u.id], kind: 'move', source: 'ai', x, z, facing, running, queued: i > 1,
       });
     }
     r.kind = 'path';
@@ -188,7 +188,7 @@ export class OrderBook {
     if (r.kind === 'attack' && r.targetUnitId === targetUnitId) return false;
     if (this.tick - r.tick < MIN_REISSUE_TICKS && r.kind === 'attack') return false;
 
-    this.events.emit('orderIssued', { unitIds: [u.id], kind: 'attack', targetUnitId });
+    this.events.emit('orderIssued', { unitIds: [u.id], kind: 'attack', source: 'ai', targetUnitId });
     r.kind = 'attack';
     r.targetUnitId = targetUnitId;
     r.running = true;
@@ -201,7 +201,7 @@ export class OrderBook {
   halt(u: UnitGroupState): boolean {
     const r = this.rec(u.id);
     if (r.kind === 'halt') return false;
-    this.events.emit('orderIssued', { unitIds: [u.id], kind: 'halt' });
+    this.events.emit('orderIssued', { unitIds: [u.id], kind: 'halt', source: 'ai' });
     r.kind = 'halt';
     r.x = u.x;
     r.z = u.z;
@@ -221,7 +221,7 @@ export class OrderBook {
     const r = this.rec(u.id);
     if (Math.abs(angleDelta(u.targetFacing, facing)) < FACING_EPS) return false;
     if (this.tick - r.facingTick < FACING_REISSUE_TICKS) return false;
-    this.events.emit('orderIssued', { unitIds: [u.id], kind: 'facing', facing });
+    this.events.emit('orderIssued', { unitIds: [u.id], kind: 'facing', source: 'ai', facing });
     r.facing = facing;
     r.facingTick = this.tick;
     this.stats.facings++;
@@ -232,7 +232,7 @@ export class OrderBook {
     if (u.formationId === id) return false;
     const r = this.rec(u.id);
     if (r.formation === id && this.tick - r.tick < 30) return false;
-    this.events.emit('orderIssued', { unitIds: [u.id], kind: 'formation', formation: id });
+    this.events.emit('orderIssued', { unitIds: [u.id], kind: 'formation', source: 'ai', formation: id });
     r.formation = id;
     this.stats.formations++;
     return true;
@@ -247,7 +247,7 @@ export class OrderBook {
     const ready = r.abilityReady.get(id) ?? -1;
     if (this.tick < ready) return false;
     r.abilityReady.set(id, this.tick + cooldownTicks);
-    this.events.emit('orderIssued', { unitIds: [u.id], kind: 'ability', ability: id });
+    this.events.emit('orderIssued', { unitIds: [u.id], kind: 'ability', source: 'ai', ability: id });
     this.stats.abilities++;
     return true;
   }

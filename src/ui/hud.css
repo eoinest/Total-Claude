@@ -2622,3 +2622,76 @@ input[type='checkbox']:checked::after { opacity: 1; }
 
 /* While deploying, the result screen and the event feed have nothing to say. */
 .hud.deploying .feed { opacity: 0.25; }
+
+/* ------------------------------------------------------------- replay bar -- */
+/* Watching rather than fighting, and the one button that changes that.
+   Parked under the top plaque, centred, above nothing else — the strip only exists while
+   a record is being played back, and while it is, it is the most important thing on the
+   screen after the battle itself. `.interactive` because `#hud-root` is pointer-events
+   none and the button has to be clickable. */
+.replay-bar {
+  position: absolute;
+  top: 9.5em;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.9em;
+  padding: 0.45em 0.9em;
+  background: linear-gradient(180deg, rgba(18, 14, 9, 0.88), rgba(12, 9, 6, 0.92));
+  border: 1px solid rgba(217, 178, 95, 0.28);
+  border-radius: 2px;
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.55);
+  pointer-events: auto;
+}
+.rp-badge {
+  font-family: var(--num);
+  font-size: 1.05em;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  color: #241a0a;
+  background: linear-gradient(180deg, var(--gold-bright), var(--bronze-lit));
+  border-radius: 2px;
+  padding: 0.12em 0.6em;
+}
+.rp-note {
+  font-family: var(--num);
+  font-size: 0.95em;
+  color: rgba(226, 214, 190, 0.78);
+  max-width: 48em;
+}
+.rp-take {
+  appearance: none;
+  font-family: var(--num);
+  font-size: 0.92em;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--parchment);
+  background: transparent;
+  border: 1px solid var(--gold-dim);
+  border-radius: 2px;
+  padding: 0.3em 1em;
+  cursor: pointer;
+}
+.rp-take:hover { border-color: var(--gold-bright); color: var(--gold-bright); }
+/* A record that will not play says so here rather than only in the console. */
+.replay-bar.bad { border-color: rgba(226, 86, 75, 0.55); }
+.replay-bar.bad .rp-badge { background: linear-gradient(180deg, #e2564b, #8d2a22); color: #f7e9e6; }
+
+/* The two record buttons on the end card. Ghosts beside the gold Dismiss, because saving
+   the battle is an offer and leaving is the decision. `.ghost` proper lives in menu.css
+   scoped to `.menu-foot`, so the recipe is repeated here rather than un-scoped there. */
+.rs-foot .ghost {
+  appearance: none;
+  font-family: var(--num);
+  font-size: 0.9em;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(226, 214, 190, 0.82);
+  background: transparent;
+  border: 1px solid var(--gold-dim);
+  border-radius: 2px;
+  padding: 0.55em 1.2em;
+  cursor: pointer;
+}
+.rs-foot .ghost:hover { border-color: var(--gold-bright); color: var(--gold-bright); }

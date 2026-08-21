@@ -30,6 +30,23 @@ export class Time {
   gameSpeed = 1;
   paused = false;
 
+  /**
+   * Hard ceiling on `tick`. Negative disables it, and it is negative in normal play.
+   *
+   * This is the one lever a replay driver needs that the accumulator does not give it. A
+   * frame can run up to `maxStepsPerFrame` ticks, so "advance until the sim has done exactly
+   * N more ticks" is otherwise unanswerable — the last frame overshoots by up to four, and
+   * four ticks of lateness is already a different battle. With a ceiling set, `beginFrame`
+   * simply stops returning steps at that tick and the accumulator holds; clear it and the
+   * battle carries on from precisely where it stopped.
+   *
+   * It also underwrites the gate's second arm. Driving a replay to an exact tick count means
+   * the record and the replay can be run on deliberately different frame schedules and still
+   * be compared bit for bit, which is what proves the record is keyed to the tick index and
+   * not to the frame boundary it happened to be issued near.
+   */
+  tickCeiling = -1;
+
   /** Guard against the death spiral: if we fall behind, drop simulation time. */
   private maxStepsPerFrame = 5;
   private accumulator = 0;
@@ -61,7 +78,10 @@ export class Time {
     this.accumulator += this.scaledDt;
 
     let steps = 0;
-    while (this.accumulator >= this.fixedDt && steps < this.maxStepsPerFrame) {
+    // The ceiling is tested before the accumulator is spent, so time held back here is
+    // still owed and is paid the moment the ceiling lifts.
+    const room = this.tickCeiling < 0 ? Infinity : this.tickCeiling - this.tick;
+    while (this.accumulator >= this.fixedDt && steps < this.maxStepsPerFrame && steps < room) {
       this.accumulator -= this.fixedDt;
       steps++;
     }

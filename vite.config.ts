@@ -23,6 +23,15 @@ const vercelAnalytics = () => ({
 
 export default defineConfig({
   plugins: [vercelAnalytics()],
+  /**
+   * Where Vite keeps its dependency pre-bundle.
+   *
+   * Default is `node_modules/.vite`, and every agent worktree in this repo symlinks
+   * `node_modules` at the shared checkout — so two agents running a headless gate at the
+   * same time write one cache directory from two processes. Set `TC_VITE_CACHE_DIR` to a
+   * per-worktree path and each gets its own. Unset, this is exactly the old behaviour.
+   */
+  cacheDir: process.env.TC_VITE_CACHE_DIR || undefined,
   // Served from the domain root on Vercel, and the runtime fetches
   // `/assets/manifest.json` absolutely, so the base must be absolute too.
   base: '/',

@@ -44,6 +44,7 @@ import {
 import { formation, ranksFor } from './formations';
 import { Faction, SoldierState, UnitOrder, type UnitGroupState } from './types';
 import { unitType } from '../units/roster';
+import { type DeployEvent, dequantAngle, dequantXZ, quantAngle, quantXZ } from './replay';
 
 /**
  * Where the player is allowed to stand their army.
@@ -158,9 +159,25 @@ export class DeploymentSystem implements Subsystem {
   /** Spawn cursor for `add`, so successive additions fan along the rear of the zone. */
   private addIndex = 0;
 
+  /**
+   * The replay log, if one is running. Every public verb below is wrapped in `note`.
+   *
+   * Hooked here rather than at the UI call sites deliberately. The plaque, the palette
+   * rows, the right-drag and the Delete key are four routes into these five methods today
+   * and there is nothing stopping a fifth being added; a recorder that sits on the verbs
+   * captures that fifth one on the day it lands, and a recorder that sits on the buttons
+   * does not. That difference is the whole reason `tools/qa-replay.mjs` can catch an input
+   * path nobody told it about.
+   */
+  private recorder: { noteDeploy(e: Omit<DeployEvent, 't'>): void } | null = null;
+  /** Re-entrancy depth: `place` calls `remove` and `add`, and `add` calls `place`. */
+  private recDepth = 0;
+
   init(ctx: EngineContext): void {
     this.ctx = ctx;
     this.battle = ctx.get<BattleSystem>('battle');
+    this.recorder = (ctx.tryGet('replay') as unknown as
+      { noteDeploy(e: Omit<DeployEvent, 't'>): void } | undefined) ?? null;
     this.city = ctx.tryGet('city') as unknown as CityView | undefined;
     const terrain = ctx.tryGet('terrain') as unknown as TerrainView | undefined;
     if (terrain?.heightField) this.halfExtent = terrain.heightField.halfExtent;
@@ -198,6 +215,10 @@ export class DeploymentSystem implements Subsystem {
    * off on the first tick to a destination it was given before the player moved it.
    */
   commit(): void {
+    this.note({ verb: 'commit' }, () => this.commitInner());
+  }
+
+  private commitInner(): void {
     if (!this.active) return;
     this.active = false;
     this.committed = true;
@@ -388,6 +409,30 @@ export class DeploymentSystem implements Subsystem {
   }
 
   /**
+   * Run a deployment verb and put it in the record, once.
+   *
+   * Only the outermost call is logged. `place` retires a garrison and stands a fresh unit
+   * on the grass by calling `remove` then `add` then `place` again; logging those would
+   * replay the effect three times over, and the ids would not survive it.
+   */
+  private note<T>(ev: Omit<DeployEvent, 't'>, body: () => T): T {
+    const rec = this.recorder;
+    if (!rec || this.recDepth > 0) return body();
+    this.recDepth++;
+    try {
+      const out = body();
+      // `add` is the only verb that returns a number, and the number is the assertion:
+      // `spawnUnit` runs `nextUnitId++` before `rng.fork('unit' + id)`, so an id that comes
+      // back different means a different RNG stream and different pool slots.
+      if (typeof out === 'number') (ev as { gotId?: number }).gotId = out;
+      rec.noteDeploy(ev);
+      return out;
+    } finally {
+      this.recDepth--;
+    }
+  }
+
+  /**
    * Stand a unit at a point, facing a bearing, with a given frontage.
    *
    * Returns false and sets `lastRefusal` when the point is outside the zone. A point on the
@@ -396,6 +441,26 @@ export class DeploymentSystem implements Subsystem {
    * walkway's clear band takes at the sim's rank pitch, capped at `MAX_WALL_RANKS`.
    */
   place(unitId: number, x: number, z: number, facing: number, width?: number): boolean {
+    /*
+     * Quantised here and then **dequantised back before the body runs**, so live play lays
+     * the unit down on the same 4.3 cm grid the record carries.
+     *
+     * Recording the quantised number and applying the raw one is the commonest real lockstep
+     * bug there is, and this gate found it on its first run: a right-drag placement replayed
+     * a few centimetres off, `uctl` matched perfectly, and `hash` and `uf64` did not. Doing
+     * the round trip in one place means there is no second path to disagree with.
+     */
+    const qx = quantXZ(x);
+    const qz = quantXZ(z);
+    const qf = quantAngle(facing);
+    const w = width === undefined ? undefined : Math.max(1, Math.round(width));
+    return this.note(
+      { verb: 'place', unitId, qx, qz, qf, width: w },
+      () => this.placeInner(unitId, dequantXZ(qx), dequantXZ(qz), dequantAngle(qf), w)
+    );
+  }
+
+  private placeInner(unitId: number, x: number, z: number, facing: number, width?: number): boolean {
     this.lastReplacement = null;
     if (!this.active) return false;
     const u = this.battle.unitById(unitId);
@@ -458,7 +523,7 @@ export class DeploymentSystem implements Subsystem {
      * set of order kinds, and those fields are private. Without it a unit dragged 200 m
      * during deployment would spend the battle believing it had drifted 200 m off station.
      */
-    this.ctx.events.emit('orderIssued', { unitIds: [u.id], kind: 'halt' });
+    this.ctx.events.emit('orderIssued', { unitIds: [u.id], kind: 'halt', source: 'deploy' });
     u.order = UnitOrder.Hold;
     u.targetX = x;
     u.targetZ = z;
@@ -467,6 +532,11 @@ export class DeploymentSystem implements Subsystem {
 
   /** Adopt a formation and re-stand the men in it, without moving the unit. */
   setFormation(unitId: number, formationId: string): boolean {
+    return this.note({ verb: 'formation', unitId, formation: formationId },
+      () => this.setFormationInner(unitId, formationId));
+  }
+
+  private setFormationInner(unitId: number, formationId: string): boolean {
     if (!this.active) return false;
     const u = this.battle.unitById(unitId);
     if (!u || u.destroyed || u.faction !== this.playerFaction) return false;
@@ -619,6 +689,21 @@ export class DeploymentSystem implements Subsystem {
    * Returns the new unit's id, or -1 with `lastRefusal` set.
    */
   add(typeId: string, x?: number, z?: number, facing?: number): number {
+    // Absent is not zero. `add(typeId)` parks the unit at the rear of the zone by its own
+    // arithmetic; `add(typeId, 0, 0, 0)` stands it at the world origin.
+    const qx = x === undefined ? undefined : quantXZ(x);
+    const qz = z === undefined ? undefined : quantXZ(z);
+    const qf = facing === undefined ? undefined : quantAngle(facing);
+    return this.note(
+      { verb: 'add', typeId, qx, qz, qf },
+      () => this.addInner(typeId,
+        qx === undefined ? undefined : dequantXZ(qx),
+        qz === undefined ? undefined : dequantXZ(qz),
+        qf === undefined ? undefined : dequantAngle(qf))
+    );
+  }
+
+  private addInner(typeId: string, x?: number, z?: number, facing?: number): number {
     if (!this.active) return -1;
     const wantWall = x !== undefined && z !== undefined && this.isWallPoint(x, z);
     const refusal = this.headroom(typeId, wantWall);
@@ -661,6 +746,10 @@ export class DeploymentSystem implements Subsystem {
    * if a unit of the same type is added again.
    */
   remove(unitId: number): boolean {
+    return this.note({ verb: 'remove', unitId }, () => this.removeInner(unitId));
+  }
+
+  private removeInner(unitId: number): boolean {
     if (!this.active) return false;
     const u = this.battle.unitById(unitId);
     if (!u || u.faction !== this.playerFaction) return false;
