@@ -1190,3 +1190,77 @@ No search was made on any game wiki, mod repository, asset store, or "ancient Ro
 reconstruction" image board. Those are exactly where the *Rome II* extractions live, and the
 cost of one of them entering a pool that sits next to `reference/rome2/` is far higher than
 the value of anything they contain.
+
+---
+
+## Trailer music — `tools/scratch/trailer2-music.mjs` input (not shipped, not in `public/`)
+
+One audio file was downloaded for the second trailer's music bed. **It is not a game asset**: it
+is not under `public/assets/`, it is not in `public/assets/manifest.json`, `fetch-assets.mjs`
+does not know about it, and no build or runtime code path reads it. The game's own sound remains
+100 % procedurally synthesised by `src/audio/Synth.ts` with no sampled audio of any kind, exactly
+as `docs/video/README.md` describes. This entry exists because the asset rules apply to anything
+downloaded, shipped or not.
+
+| | |
+| --- | --- |
+| Title | **Song Of The Forge** |
+| Creator | **Scott Buckley** |
+| Asset page | <https://www.scottbuckley.com.au/library/song-of-the-forge/> |
+| Download URL | `https://www.scottbuckley.com.au/library/wp-content/uploads/2025/11/SongOfTheForge.mp3` |
+| Licence | **CC BY 4.0** — <https://creativecommons.org/licenses/by/4.0/> |
+| Format | MP3, MPEG-1 Layer III, 320 kb/s, 44.1 kHz, joint stereo, 205.869 s |
+| Size | 8,238,222 bytes |
+| SHA-256 | `5be7859f5846bf80f93c4d936991e76616c8b147c178ba7e77b292191b3b5d48` |
+| Attribution | **required** — see below |
+| Where it is used | `docs/video/TRAILER-2.md`; the bed is the track's 166.24 s – 194.51 s |
+
+### The licence, quoted from the track's own page
+
+> This work is licensed under a Creative Commons Attribution 4.0 International License; meaning
+> it's free for use in any project (including commercial) as long as I'm credited.
+
+### The attribution, in the form the creator's own page asks for
+
+> 'Song Of The Forge' by Scott Buckley - released under CC-BY 4.0. www.scottbuckley.com.au
+
+That string is reproduced **in the trailer itself**, as a credit line burned into the end card's
+last 3.5 s, and here. CC BY 4.0 §3(a)(1) requires identification of the creator, a copyright
+notice or licence notice where supplied, the licence URI, and an indication of whether the
+material was modified. Taken in order: the creator is named; the licence is named and its URI is
+above; and **the material was modified** — a 28.267 s window was excerpted from the 205.869 s
+original and given a linear fade over its last 0.9 s. Nothing was pitched, time-stretched,
+re-equalised, layered or remixed.
+
+### Verification performed on the download
+
+- **Licence read on the individual asset's own page**, not on a listing page and not on an
+  aggregator. The library index states CC BY 4.0 for the collection and the track page states it
+  again for this track, with the attribution string to use.
+- **Downloaded from the creator's own domain**, over the URL published on that page, in one hop:
+  `curl` reported `http=200`, `content-type: audio/mpeg`, and a final effective URL identical to
+  the requested one — no redirect to a mirror, no re-upload site, no link shortener, no
+  intermediary. No account was created, nothing was logged into, and no payment information was
+  entered anywhere.
+- **Format allowlist:** `.mp3`. No archive, no installer, no executable, no script was downloaded
+  in the course of this work.
+- **Magic bytes and payload shape:** `file` reports `Audio file with ID3 version 2.3.0, contains:
+  MPEG ADTS, layer III, v1, 320 kbps, 44.1 kHz, JntStereo`. The head matches none of
+  `fetch-assets.mjs`'s `FORBIDDEN_HEADS` (`MZ`, `ELF`, the four Mach-O magics, the fat/Java magic,
+  `#!`) and is not an HTML or XML error page. It decoded cleanly to 9,881,712 samples per channel
+  through `OfflineAudioContext.decodeAudioData`, which is the strongest available evidence that
+  the bytes are what they claim to be: a non-audio payload does not decode.
+- **Malware tooling on this machine:** there is no ClamAV, `rkhunter` or `chkrootkit` installed,
+  and macOS's `xprotect` command exposes `update`/`logs`/`version`/`check`/`status` and no
+  per-file scan subcommand. What was checked instead: `xprotect status` reports **launch scans
+  enabled and background scans enabled** with signature version **5356 (installed 2026-08-19)**,
+  so the file has been seen by the system scanner in the ordinary course; `xattr -l` shows the
+  file carries no `com.apple.quarantine` flag and only `com.apple.provenance`; and `spctl` /
+  `codesign` are not applicable, because the payload is not an executable or a bundle. The
+  SHA-256 above pins exactly what was examined.
+- **Nothing was taken from a game.** No Total War, Rome II or other commercial-game audio was
+  downloaded, extracted, referenced or listened to. The alternative sources considered were
+  Kevin MacLeod's `freepd.com` — **rejected because the site is offline as of August 2026 and its
+  closure notice is not a licence statement** — and Pixabay, rejected because the Pixabay Content
+  Licence is neither CC0 nor CC BY and its redistribution terms are not clean for a video that
+  ships as a release asset.
