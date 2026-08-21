@@ -1329,12 +1329,28 @@ try {
     const g = window.__game;
     const b = g.battle;
     const s = b.siege;
-    // A bay well away from the gate, so a breach cannot be confused with the gateway.
+    /*
+     * A bay well away from the gate, so a breach cannot be confused with the gateway —
+     * **searched in both directions**, which it was not.
+     *
+     * This walked `gi - 6` down to 0 and nothing else. On the circuit before §15 task 3 the
+     * Porta Flaminia was bay 19 of 33 and there were always six bays to its west; on the
+     * redesigned circuit it is bay **1** of 36, so the loop started at -5, never ran, and
+     * every great-ram and breach assertion in this file has been reporting *"no garrisonable
+     * bay clear of the gate"* since `0372fc2`. That is a probe measuring its own arithmetic:
+     * the six assertions it guards were not failing, they were not being taken.
+     *
+     * Outward from the gate in both directions, nearest first, which is also the rule
+     * `deployAssault` uses to aim the machine it now deploys.
+     */
     const bays = g.engine.context.get('city').getGarrisonBays();
     const gi = bays.findIndex((x) => x.isGate);
     let bay = null;
-    for (let k = gi - 6; k >= 0; k--) {
-      if (bays[k] && bays[k].garrisonable) { bay = bays[k]; break; }
+    for (let d = 6; d < bays.length && !bay; d++) {
+      for (const s2 of [-1, 1]) {
+        const k = gi + s2 * d;
+        if (k >= 0 && k < bays.length && bays[k].garrisonable) { bay = bays[k]; break; }
+      }
     }
     if (!bay) return { ok: false, why: 'no garrisonable bay clear of the gate' };
     const tx = (bay.x0 + bay.x1) * 0.5;
@@ -1433,8 +1449,11 @@ try {
   }
 
   if (great.ok) {
-    // Top up whatever the traversal tests did not already advance. 74 blows at 7 s is over
-    // eight minutes of battering and the test waits rather than shortening the machine.
+    // Top up whatever the traversal tests did not already advance. `WALL_BLOWS` at
+    // `GREAT_RAM_PERIOD` is five minutes of battering and the test waits rather than
+    // shortening the machine. Note the scenario now deploys a great ram of its own at the
+    // first holdable bay, so the breach that ends this loop may be *that* machine's; both
+    // assertions below are about a great ram and a bay and neither cares which.
     const broke = await page.evaluate(async () => {
       const g = window.__game;
       const s = g.battle.siege;
