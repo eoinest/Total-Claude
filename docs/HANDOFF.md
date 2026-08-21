@@ -52,9 +52,15 @@ A Carthage run reporting 8,632 measured something else.
 
 ### Reserved for the owner — do not decide these
 
-- Whether battle lines should **fit** their deployment boxes rather than merely be dry. Rome's line
-  is 684 m across in a 500 m box; the host is 783 m in a 760 m one. Written into `ROME.md` §15
-  task 14 so it gets decided rather than rediscovered.
+- ~~Whether battle lines should **fit** their deployment boxes rather than merely be dry~~ —
+  **decided by the owner and discharged on `e/sim/deploy-boxes`.** *"Battle lines should fit their
+  deployment boxes. I would recommend widening boxes east."* Both boxes widened east with their
+  west edges pinned where task 1 measured them against the Tiber, `standOnDeploymentGround`
+  insetting by the box's own feather (shift 271.146 → 351.146 m), and `battleCoreMask` moved onto
+  the deployment axis. Men outside their own box **562 + 182 → 0 + 0**; frontages, strengths and
+  counts untouched. `ROME.md` §15 task 14 carries the numbers. One number left with no margin and
+  it is written down there: the defender's box is under-sized in **depth**, not width, and the
+  twelve-man scorpio battery at z 262.5 sits at mask 0.024 against a 0.02 threshold.
 - **The Rome balance shift** — defenders gained roughly a cohort as a side effect of walls that
   now work.
 - The host storm order, the great wall-breaking ram, and the trailer's `rome-arch` beat.
@@ -69,8 +75,13 @@ A Carthage run reporting 8,632 measured something else.
 - **The docs-site analytics toggle.** One dashboard click at
   `vercel.com/ernest-4753/total-claude-docs` → Analytics → Enable. No API exposes it.
 - `Engine.dispose()` has no caller; the clipmap flattens the ditch beyond 768 m; `shoot.mjs` stamps
-  `srcTree` from `HEAD:src` so uncommitted edits mislabel frames; `battleCoreMask` is still centred
-  on x 0; ground outside a deployment box is never flattened or cleared of vegetation.
+  `srcTree` from `HEAD:src` so uncommitted edits mislabel frames. ~~`battleCoreMask` is still
+  centred on x 0~~ and ~~ground outside a deployment box is never flattened or cleared of
+  vegetation~~ — both closed on `e/sim/deploy-boxes`: the corridor is on the deployment axis at a
+  745 m half-width (**440 men were fighting outside it**, now 0) and the boxes now cover every man,
+  which is **+14.67 ha** of flattened and cleared ground and 61 scatter instances removed. Ground
+  outside a box is still unprepared — that has not changed and should not; there is just no longer
+  anybody standing on it.
 
 ## The player's outstanding list, with owners
 
@@ -2084,3 +2095,69 @@ holding those scripts open after their last line.
   smaller army. Right behaviour, bad outcome, and §7.5 of the design says so.
 - The checkpoint grid is 30 s, so a playback can be up to 30 s of battle behind the fault it is
   about to report. Cheap to tighten if it ever matters; nothing suggests it does.
+
+## Session — 21 Aug 2026: the deployment boxes widened east, on `e/sim/deploy-boxes`
+
+The owner's decision, verbatim: *"battle lines should fit their deployment boxes. I would
+recommend widening boxes east."* That discharges the half of `ROME.md` §15 task 14 that was
+reserved for the owner, and §15 task 14 now carries the whole thing with its numbers. **Not
+merged; branch reported and left for the orchestrator.**
+
+**What was wrong.** Task 1 moved the Tiber onto the survey and moved both deployment boxes east
+with it. Nothing sized either box against the army standing in it: the Roman line is 684 m across
+its own men in a 500 m box and the host 783 m in a 760 m one, so **562 Roman and 182 Juthungi men
+stood outside their own box**. Outside a box the heightfield never flattens and the scatter never
+clears, and `battleCoreMask` was still centred on x 0 with a 540 m half-width while the battle
+stood 271 m east of it — so **440 men were fighting outside the damped corridor entirely**.
+
+**What changed, and the numbers on each.**
+
+| | before | after |
+|---|---:|---:|
+| Roman / Juthungi men outside their own box | 562 / 182 | **0 / 0** |
+| worst slope under a man, Rome / host | 0.315 / 0.048 | **0.074 / 0.076** |
+| trees within 4 m of a man, Rome / host | 1 / 4 | **0 / 0** |
+| ground the boxes flatten and clear | 18,247 cells | **27,417, +14.67 ha** |
+| men outside `battleCoreMask` | 440 | **0** |
+| damped corridor | 44,740 cells | **62,312, +28.1 ha** |
+| `standOnDeploymentGround` shift, Rome / Carthage / Pydna | 271.146 / 0 / 0 | **351.146 / 0 / 0** |
+
+Attacker box half-width 380 → 515 about cx 205 → 340; defender 250 → 425 about 205 → 380.
+**Both west edges are unmoved** — they are the lines task 1 measured against standing water, and
+a symmetric widening would have put a quarter of the Roman parade ground in the Tiber. The 80 m
+eastward shift is one feather: `standOnDeploymentGround` anchors the line's west end to the box
+and was anchoring it to the rectangle's edge, which is the contour where the mask reaches
+**zero** — that was the four leftmost files of the left-wing equites, 14 men, standing on ground
+the box had done nothing to while the rule reported success. `DeployBox.feather` is published as
+data for the inset to read; Carthage's and Pydna's 980 m boxes were slack by ~148 m, so their
+field battles still report a shift of exactly 0.000 m.
+
+**Nothing about the order of battle moved.** `uctl` at t+0 is still `2b2ac282`, the value
+recorded at `88a4aa5`: order, target, formation, width, alive, kills, membership, flags and unit
+array order are byte-identical to the battle that shipped. This was a positioning change.
+
+**Determinism, re-recorded deliberately.** Both Rome arms moved and both were re-recorded in the
+same commit with the reason in `determinism-baseline.json`. `default` (8,632) moved because the
+men moved and because the ground beneath the ones that did not is now prepared — survivors at
+t+400 4,288 → 4,660. `map=campus-martius&scenario=assault` (3,074) moved from **t+90 only**, with
+`uf64`, `uctl` and all seven survivor counts unchanged: `deployAssault` never calls the placement
+rule, so that arm is men crossing ground that shifted east of the gate. **Carthage (3,440) is
+bit-identical at all seven checkpoints on all three marks** and is the control. The instruction
+for this pass named the field battle as a control; it is not one — `default` *is* the Campus
+Martius field battle, and Carthage is the only arm that can play that part here.
+
+**Two instruments were wrong and are fixed.** `probe-ground.mjs`'s box audit scanned a literal
+`x −800…800`, which the widened attacker box now overruns by 48 m — it would have gone on
+reporting "0 under water, 0 over the impassable slope" over ground it never looked at. The window
+is derived from `DEPLOY_GROUND`. Same fault, same fix, one layer down: `heightfield.ts`'s row skip
+over the boxes was a transcription of their z extent and is now derived (it changes no height —
+both masks are 0 out there).
+
+**Left on the floor, and it is a number with no margin.** The defender's box is under-sized in
+**depth**, not width. Its full-strength core is z 110…190 and the Roman line is 141 m deep, so the
+twelve-man scorpio battery at z 262.5 stands where the mask reads **0.024** against the 0.02 the
+acceptance tests — inside the box by the arithmetic, on ground 2 % flattened and never cleared of
+trees. The fix is `hz` 120 → about 150, and it was left because this decision was about width,
+because at 150 the south edge comes within 17 m of the quarry at (724, 328), and because z 270 is
+already within 5 m of the Pincian's toe at x 800. `riseToeZ`'s own comment still claims the box
+"reaches z 255", which it has not for two passes.

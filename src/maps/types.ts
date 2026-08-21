@@ -137,6 +137,22 @@ export interface DeployBox {
   readonly hx: number;
   /** Half-depth in z. */
   readonly hz: number;
+  /**
+   * Width of the mask's soft edge, in metres, measured **inward** from the rectangle.
+   *
+   * The mask is 1 over `|x − cx| ≤ hx − feather` and ramps to 0 at `hx`, so this band is the
+   * part of the box that is only fractionally prepared: the heightfield lerps toward the
+   * regional plane in proportion to the mask, and the scatter's own exclusion does not bite
+   * until the mask passes 0.12 — about a fifth of the way in. A man standing on the feather
+   * is inside the box by the arithmetic and standing in unmown grass with a tree beside him
+   * in fact.
+   *
+   * It is here rather than a private constant in each topography module because
+   * `sim/scenario.ts` has to inset by it: the placement rule anchors the line's west end to
+   * the box, and anchoring it to the rectangle's edge puts the outermost file exactly on the
+   * contour where the mask reaches zero. Measured at `5338249`, that was 14 of Rome's men.
+   */
+  readonly feather: number;
 }
 
 /**
