@@ -1,5 +1,24 @@
 # The trailer
 
+> **Making a new one? Read [`SHOT-FORMAT.md`](SHOT-FORMAT.md) first.**
+> Everything below was shot by a hand-written tool with its beat table compiled into it
+> (`tools/scratch/trailer-recut.mjs`). It is still the reference for what a finished film costs
+> and how the sound was made, and its camera maths is the maths the studio uses. But a *new*
+> film is a declarative shot script — `tools/shots/*.shot.mjs`, run by `tools/film.mjs` — which
+> gets rails through several stations, cuts against events rather than against sim times,
+> slow motion, freeze frames, staged orders of battle, and a manifest that says which frames
+> were arranged. Three worked examples are in `tools/shots/`.
+>
+> One thing the studio found that this page still asserts: **the ram no longer reaches the
+> gate at quality `ultra`.** Same map, same scenario, same seed 4265438264, no camera near it —
+> the crew is shot off the road at (68, 514), sixteen metres short of the door at (72, 530), and
+> is dead by t+100 with zero blows landed by t+520. At quality `medium` the same seed puts 26
+> blows in and the gate opens between t+180 and t+240. The tier fixes the soldier pool, which
+> fixes the fitted unit scale — 3,074 men against 3,009 — so it is a different battle, not a
+> different picture. The `rome-ram-gate` beat described below was shot at `ultra` at `6698e19`;
+> it cannot be re-shot at that tier today. See the header of
+> [`tools/shots/aurelian-gate.shot.mjs`](../../tools/shots/aurelian-gate.shot.mjs).
+
 Four files, all attached to the [r6 release](https://github.com/eoinest/Total-Claude/releases/tag/r6)
 rather than committed, so none of them sits in every clone forever.
 
