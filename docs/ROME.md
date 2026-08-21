@@ -617,7 +617,7 @@ bank, and the modelled river is 594 world metres west of the real one at that la
 The two runs with no stair, the 28.39 m step and the 26 m cliff are all one fault: **five bays
 of Aurelian curtain standing in the Tiber.** The redesign deletes them.
 
-The last row is the whole reason for this document. **A 245-world-metre gap at the end of a
+The last row is the whole reason for this document. **A 254-world-metre gap at the end of a
 wall is not a defect in the wall, it is the absence of a circuit.** The AI has never found it;
 a human finds it once and never plays the map again.
 
@@ -1281,8 +1281,10 @@ player expects to hold. Concretely:
 | The clip | **delete it.** "The clip is written as a clip so that deleting it is the whole of that change" **[SRC]** |
 
 The 7.15 m step is a consequence of `walkY`'s 0.55 m quantisation over rolling ground, and on
-the redesigned circuit the Porta Flaminia is at bay 2 on **flat ground** (§3.5), so its
-neighbours are naturally level. **That is not luck; it is the reason the gate is where it is.**
+the redesigned circuit the Porta Flaminia is **bay 1, on flat ground** (§3.5, §4.8) — its
+neighbours are bay 0 and bay 2, both `footing`, both on the 12.2 m Campus Martius plain. So the
+two walks either side are naturally level. **That is not luck; it is the reason the gate is
+where it is.**
 
 ### 5.5 The *cataracta* — delete it
 
@@ -2448,16 +2450,42 @@ task in the list that changes no behaviour. **Do it first anyway**: five agents 
 executed from are §2 (the projection), §4 (the wall), §5.1a (the one override), §7.1–7.3 (the
 module and the grain) and §12 (the build order) — call it 400 lines. The rest is
 justification, and justification is what makes the numbers trustworthy, so it is not waste.
-But two habits in it cost this project real time and Rome should not copy them:
+But five habits in it cost this project real time and Rome should not copy them:
 
 - **A number stated without an instrument reads as a measurement.** `CARTHAGE.md` mixes
   derived, measured and chosen figures in one column with a tag that distinguishes *evidence*
-  but not *provenance*. This document adds **[MEAS]** and **[SRC]** to the tag set for exactly
-  that reason, and every measured number here names the tool and the commit.
+  but not *provenance*. That is how `beltDepth = 34.1` sat in a table for four commits looking
+  like a fact. This document adds **[MEAS]** and **[SRC]** to the tag set for exactly that
+  reason, and every measured number here names the tool and the commit.
 - **A build order without acceptance criteria is a wish list.** `CARTHAGE.md` §12 is four
-  paragraphs of "who goes first". The ditch shipped unbuilt for four commits under it. §15 is
-  a numbered list where **every task carries the measurement that closes it** and the
-  instrument that takes the measurement.
+  paragraphs of "who goes first". The ditch shipped unbuilt underneath it. §15 is a numbered
+  list where **every task carries the measurement that closes it** and the instrument that
+  takes it.
+- **It never asks what the engine can represent.** `OCC_CELL = 4`, `Pathfinding.CELL = 7`,
+  `bayAt`'s arithmetic index in x, `recut`'s 0.62 m step, `LINK_MAX_GAP = 14` — every one of
+  those decided something about how Carthage turned out, and every one was discovered
+  afterwards. Eight posterns became eight permanently-open four-metre holes because nobody
+  asked whether a 1.5 m door could exist. **§2.1 of this document is the section
+  `CARTHAGE.md` is missing**, and every feature in §4 and §5 is priced against it before it
+  is specified.
+- **It reaches for [GAME] before it has exhausted the archaeology.** Fair at Carthage, where
+  no gate is attested. But the same instinct applied to Rome would have invented gates that
+  are *standing*, a portcullis that is *Honorian*, and a stair type that *never existed*. The
+  procedural rule: **exhaust the record first, and where you must invent, invent the smallest
+  thing.**
+- **It argues about play and never measures it.** `CARTHAGE.md` §8 is nine excellent arguments
+  for how the map plays differently, and not one carries a number or names a probe. Six months
+  later `SIEGE.md` §7.4 measured that the escalade *cannot clear a bay* on the shipped
+  garrison — the map does not play the way §8 says it does, and nothing in §8 could have
+  caught that. §10 here is the same kind of argument; **§15 task 14 is the probe that makes it
+  falsifiable**, and if it comes back red the argument is wrong, not the measurement.
+
+**And what to keep, because most of it is right:** the survey-and-projection discipline (§2),
+the rule that positions compress and cross-sections do not (§2.4), the explicit
+one-place-we-override section (§5.1a there, §2.4a here), the frankness about what a source can
+and cannot bear (§4.6 there), and above all **authoring the fabric on the ancient module
+rather than on metres** (§7.3 there, §4.3b and §6.4 here) — which is the single best idea in
+the document and which Rome had available and had never used.
 
 ---
 
@@ -2467,8 +2495,17 @@ Fifteen tasks. Each names its owner-shaped scope, what it changes, and **the mea
 closes it**. A task without a green measurement is not done, and the measurement is taken in
 the representation that has to act on the property, not in the plan that publishes it (§14.1).
 
-Every probe below runs against a dev server on **its own port**, never 5173. Launch Chromium
-with `--use-gl=angle --use-angle=metal` or headless software-rasterises the siege.
+Every probe below runs against a dev server on **its own port**, never 5173, killed by PID.
+Launch Chromium with `--use-gl=angle --use-angle=metal` or headless software-rasterises the
+siege.
+
+**Eight of the instruments this document used are checked in** and are the "before" side of
+several of these measurements: `tools/scratch/probe-romeflank.mjs` (the open bands, the wall
+report, the stairs), `probe-romeflank2.mjs` (the Tiber's bed, the crest profile, the `walkY`
+steps), `probe-romeaperture.mjs` (the gate's three widths), and `rome-geo.mjs`,
+`rome-contour.mjs`, `rome-wallprofile.mjs`, `rome-transect.mjs`, `rome-fur-grain.mjs` for the
+survey and the ground. The two that matter most already existed: **`tools/probe-footing.mjs
+--only=census,around`** and **`tools/probe-solid.mjs --case=gates`**.
 
 ### Phase A — make the work parallelisable and put the ground where it belongs
 
@@ -2488,13 +2525,18 @@ compares against `riverCentreX(z)` reports **worst error ≤ 25 world m** (today
 `probe-ground.mjs` shows no water inside either deployment mask. `probe-nav.mjs` finds no
 route from the attacker box to inside the city round the west end.
 
-**2. Re-cut the relief along the circuit.** §3.5. Replace `riseAmplitude`'s two Gaussians with
-the seven-band staircase. `crestZAt` stops being the wall's line (§14.5) and the circuit
-polyline becomes the single export both the heightfield's bench and the wall builder read.
+**2. Re-cut the relief along the circuit, and grade a bench under it.** §3.5. Replace
+`riseAmplitude`'s two Gaussians with the seven-band staircase. `crestZAt` stops being the
+wall's line (§14.5) and the circuit polyline becomes the single export the heightfield, the
+wall builder and the scatter's glacis clearance all read. **Rome's heightfield cuts no bench
+today** (§4.1) — the wall stands on ungraded natural crest and `buildWall` levels each bay to
+whatever it finds, which is the mechanism behind the 28.39 m walk step. Add one, on Carthage's
+`WALL_BENCH_HALF = 40` pattern.
 *Acceptance:* a transect of `TerrainSystem.heightAt` along the published circuit at 5 m
 intervals matches §3.5's table to **±1.5 m at every station**; the graded bench is at least
-`WALL_BENCH_HALF` wide under **100 %** of stations; `probe-ground.mjs` reports no slope over
-`ROUGH_SLOPE_IMPASSABLE` inside either deployment mask.
+40 m wide under **100 %** of stations; the worst bay-to-bay `walkY` step, printed by
+`assertRomeSection`, is **under 6 m** against today's 28.39; and `probe-ground.mjs` reports no
+slope over `ROUGH_SLOPE_IMPASSABLE` inside either deployment mask.
 
 ### Phase B — the circuit
 
@@ -2609,6 +2651,8 @@ band the map sits in today**, and the assault camera's triangle count at or belo
 
 ### The one number that says the redesign worked
 
-> **`probe-nav`: zero routes from the attacker's deployment box to the interior that do not
-> pass a gate or a `footing` bay.** Today there is one, it is 245 world metres wide, and it is
-> at x +1155.
+> **`probe-footing --only=around`: zero routes from the attacker's deployment box to the
+> interior that do not pass a gate or a `footing` bay.** Today there is one; the instrument
+> already prints where it starts — *"first open crossing east of the wall: x 1154"* — and from
+> x 1304 to the map edge it is 0 blocked cells out of 9 across the wall line and 0 out of 21
+> for the whole hundred and sixty metres behind it.
