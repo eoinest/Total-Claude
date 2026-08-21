@@ -14,8 +14,8 @@ import type { CityMatKey } from './materials';
  * `rome/works.ts`, the cross-section primitives they share to `rome/section.ts`.
  *
  * What stays is what a **third** city has to satisfy, which is the whole point of
- * `cityPlan.ts`: `WallBuildOutput` and the records it carries, and two mesh helpers the
- * other city builders already import from here.
+ * `cityPlan.ts`: `WallBuildOutput` and the eleven records it carries. Two mesh helpers ride
+ * along at the bottom for want of a better home; see the note above them.
  *
  * **One thing did not divide cleanly, and it is recorded rather than fixed.**
  * `unfinishedTopAt` — the top of the masonry on a bay that is a bare footing or a rubble
@@ -515,7 +515,14 @@ export interface WallBuildOutput {
 }
 
 // ---------------------------------------------------------------------------
-// Small helpers, exported for the other city builders
+// Two mesh helpers, kept here because they are geometry and not a wall
+//
+// Both are generic — a capsule between two points — and both are, as of §15 task 0, used
+// only by Rome's builders (`rome/apertures.ts`, `rome/works.ts`, `rome/monuments.ts`,
+// `rome/fabric.ts`); Carthage builds its timber out of `build.ts`'s `quadPrism`. The banner
+// above them used to claim "the other city builders", which was never true. They arguably
+// belong in `build.ts` beside `cylinder`; moving them is a decision about `build.ts`, not
+// about this file, so it is recorded rather than taken here.
 // ---------------------------------------------------------------------------
 
 const SEG_A = new THREE.Vector3();
