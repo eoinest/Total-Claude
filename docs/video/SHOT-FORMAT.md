@@ -453,7 +453,7 @@ what is on disk, so `--shots=ram-push` into a finished film replaces one shot an
 written.
 
 The runner reuses a dev server already on its port and starts one otherwise, with `TC_NO_HMR=1`
-and its own `TC_VITE_CACHE`. That last one is a worktree trap rather than a nicety: agent
+and its own `TC_VITE_CACHE_DIR`. That last one is a worktree trap rather than a nicety: agent
 worktrees symlink `node_modules` back to the main checkout, and Vite's default cache directory is
 a path resolved through that symlink, so several agents on several branches otherwise share one
 optimiser cache. The failure that produces is a page which loads perfectly while serving another
