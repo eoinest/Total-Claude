@@ -5,7 +5,12 @@ last. Update the top, append to the bottom, do not let it rot.
 
 ## Live state — 21 Aug 2026
 
-`main` is **`5f9030e`**, pushed, `origin/main` identical. **64 commits since the `r7` tag.**
+`main` is **`aa4dcf4`**, **not yet pushed** — `origin/main` is still at `5f9030e`. Since that point:
+the video design studio, the replay record, and Rome §15 tasks 3–5, all three merged and gated
+together on 21 Aug. The full gate is green on the combined tree: tsc clean, lint 2/2, qa-deploy
+33/33, seams PASS both maps, **`qa-replay` 21/21**, and all three determinism arms UNCHANGED at
+all seven checkpoints (8,632 / 3,074 / 3,440) — Rome's pin re-recorded for the circuit and
+matched by the combined tree, so neither the studio nor the replay record moved it.
 No agents are running. The seven-agent roster that used to sit here belonged to the 20 Aug machine
 crash and is now history — but its fix is still load-bearing: `.metadata_never_index` in
 `screenshots/` and `reference/`, because Spotlight indexing 9.3 GB of agent frames, not the agents
@@ -56,9 +61,9 @@ A Carthage run reporting 8,632 measured something else.
 
 ### Queued, unassigned
 
-- **`ROME.md` §15 tasks 3–15.** Phase A (tasks 0–2) has landed. Next in sequence: the circuit as a
-  fourteen-waypoint survey polyline (36 bays at 37.03 m pitch), the Muro Torto, three gates and two
-  posterulae.
+- **`ROME.md` §15 tasks 6–15.** Tasks 0–5 have landed. Next: the twin-arched Porta Flaminia and
+  the aperture rule (task 6), which the circuit pass deliberately left because splitting a gate's
+  drawn/collided/rastered triple across two passes is how a gate becomes three widths.
 - **The video design studio.** The owner asked for it and answered both questions — *script format
   first, GUI on top later*, and *staged setups allowed* — and it has never been spawned.
 - **The docs-site analytics toggle.** One dashboard click at
