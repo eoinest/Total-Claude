@@ -46,6 +46,26 @@ it is.
 
 ## 1. What the measurement says
 
+> **Superseded in part, 21 August 2026 — `e/tools/determinism-cliff`.** Three claims in §1 are
+> no longer true of the tree, and the change that falsified them is the one this document
+> recommended. The gate now runs to **t+250 and t+400**, so t+200 is no longer the last
+> checkpoint. `UnitGroupState` **is** hashed — twice, as `uf64` (exact float64 bits, warning
+> against the baseline, hard-fail A-vs-B) and `uctl` (the discrete half, hard-fail
+> everywhere). And the linter's portability scope now covers `src/city`, `src/terrain` and
+> `src/maps` as well. The `Math.hypot` substitution landed at **222 sites** and was free
+> exactly as measured: zero pool hashes moved across 21 checkpoints of three battles, and all
+> 21 survivor counts were identical.
+>
+> The call-site figures in §1.3 were also slightly off — `hypot` was 158 in `sim+ai+units` and
+> 89 in `terrain+maps+city`, now 0 and 25.
+>
+> One result is worth adding to the record because it justifies the whole pass: that 222-site
+> change moved **`uf64` at 21 of 21 checkpoints and `uctl` at 0 of 21**. It perturbed the
+> simulation's own float64 state everywhere, never reached a control-flow decision, and never
+> survived the float32 round trip. **The gate as it stood would have reported that nothing
+> happened.**
+
+
 ### 1.1 Everyone who stopped at t+200 said IDENTICAL. Everyone who went past it said DIVERGENT
 
 `tools/determinism-baseline.json` pins five checkpoints per battle: t+0, t+30, t+90, t+150,
