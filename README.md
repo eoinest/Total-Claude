@@ -124,7 +124,19 @@ under 60 fps, with the measured numbers, because it does: on an M4 Max at 1920×
 frame costs 13.4 ms at 8,644 men, 16.1 ms at 9,584 and 19.2 ms at 11,255.
 
 "Historical order of battle" restores the 271 AD deployment. "Copy link to this battle" puts
-the whole setup in the URL so it can be shared or replayed. `?menu=0` skips the screen.
+the whole setup in the URL so it can be shared or replayed.
+
+The setup screen is the *second* screen. The menu opens on a front door with three
+destinations — **Battle**, which is the setup screen above; **Technical documentation**, the
+four volumes at [total-claude-docs.vercel.app](https://total-claude-docs.vercel.app); and the
+**Model viewer** at `/viewer.html`, which turns any unit in the roster in the light. Battle is
+the only one that stays in this tab; everything else opens a new one, so nothing you have set
+up can be lost to a mis-aimed click. Escape, or the arrow in the setup screen's header, goes
+back to the door with the army exactly as you left it.
+
+`?menu=0` skips the menu entirely. `?menu=battle` opens it on the setup screen instead of the
+door, and so does any link that already names a battle — `?battle=`, `?map=`, `?scenario=` or
+`?enemy=`.
 
 ### Deployment
 

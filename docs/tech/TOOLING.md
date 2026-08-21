@@ -463,7 +463,46 @@ node tools/shoot.mjs --shots=wide,romanline    # a subset
 node tools/shoot.mjs --set=deck --out=/tmp/tc-ab/shots-r1
 node tools/shoot.mjs --w=2560 --h=1440 --dpr=2
 node tools/shoot.mjs --hud                     # WITH the interface — never gradeable
+node tools/shoot.mjs --set=menu                # the front door and its destinations
 ```
+
+#### `ui` shots: a screen, not a world
+
+Every shot above loads `?harness=1`, which exists precisely to *skip* the menu, fast-forwards
+a battle and parks a camera. A frame of a **screen** has no `at`, no camera, no world and no
+`window.__game` to read numbers out of, so a shot may instead carry a `ui` block and take a
+different branch entirely:
+
+```js
+'menu-setup': {
+  desc: 'BATTLE clicked — the setup flow, unchanged',
+  at: 0,
+  ui: {
+    url: '/',                                   // relative to the dev server, or absolute
+    wait: '.menu.at-home .dest-battle',         // must be *visible* before anything is done
+    steps: [{ click: '.dest-battle' }, { wait: '.menu .begin' }],
+    settle: 700,                                // extra ms before the shutter
+  },
+},
+```
+
+Steps are `{click}`, `{key}`, `{wait}`, `{ready: 'game'|'viewer'}` and `{ms}`. `external: true`
+marks a page this repository does not build — the published docs site — whose console errors
+are printed but do not fail the pass, because adopting somebody else's analytics beacon as our
+build failure is not a useful gate.
+
+Each `ui` shot runs on **its own page**. The world page carries a console listener whose
+findings fail the pass, a HUD-suppressing style tag and a `loadedKey` recording which world is
+currently built; navigating it to a menu would invalidate all three, quietly.
+
+> **These frames are interface top to bottom and there are two guards, not one.** `menu` is a
+> declared family, so `--set=all` does not shoot them; and any pass that takes a `ui` frame
+> writes `blindSafe: false` into `report.json` whatever `--hud` said. One of those guards is a
+> naming convention, which is exactly the kind of thing leak six got past.
+
+An `ui` shot's page is loaded with **no flags at all** — no `?harness=1`, no `?menu=0`, no
+`?menu=battle` — so `menu-battle` walks the door, the setup screen and BEGIN BATTLE and then
+waits on a real world build. It is the one frame in that set that costs a boot.
 
 > **A defect in this table, found while checking the numbers for this document, since fixed.**
 > `--set` is `all` when you pass nothing, and `all` was defined as *"not `deck-` and not
