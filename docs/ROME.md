@@ -61,7 +61,7 @@ Every dimension carries a tag:
 | **[MOD]** | Modern scholarly consensus, or a measurement off modern topography, survey data or aerial imagery. |
 | **[DER]** | Derived here by arithmetic from other entries. The arithmetic is shown. |
 | **[SRC]** | Read out of this repository's own source at `3595b48`. File and symbol given. |
-| **[MEAS]** | Measured by a named instrument at a named commit. If a number here has no tool beside it, it is not a measurement. |
+| **[MEAS]** | Measured by a named instrument at a named commit. If a number here has no tool beside it, it is not a measurement. Everything tagged **[MEAS]** here was taken at **`3595b48`** except §3.5's link heights, which were taken at `216f175` after the branch was rebased under this pass and which §3.5 shows to hold at both. |
 | **[GAME]** | A decision with no ancient authority. Called out every time so nobody later cites us to ourselves. |
 
 **Units.** All real-world dimensions are metres. Elevations are metres above sea level on
@@ -513,7 +513,8 @@ than the wall is tall.**
 
 `recut` severs a run on *height* — `dy > 0.62` — and `buildLinks` puts the two halves back
 together on *horizontal gap alone*. It is not an oversight of omission; the height is measured
-and then explicitly discarded, three lines apart (`src/sim/Siege.ts:1600-1607`) **[SRC]**:
+and then explicitly discarded, three lines apart — `src/sim/Siege.ts:1600-1607` at `3595b48`
+and `:1610-1617` at `216f175`, **byte-identical at both** **[SRC]**:
 
 ```ts
 const gap  = Math.hypot(this.sx[b] - this.sx[a], this.sz[b] - this.sz[a]);
@@ -531,8 +532,14 @@ classifies on `gap`.** And because a link is a `Crossing` — an authored polyli
 constant arc-length speed, which is precisely what makes a man on it unfallable — the height
 is not a difficulty. It is a levitation.
 
-**Measured at `3595b48`** by `tools/scratch/probe-linkstep.mjs`, reading every link off the
-live sim on the Rome assault at ultra:
+**Measured by `tools/scratch/probe-linkstep.mjs`, reading every link off the live sim on the
+Rome assault at ultra.** *Provenance, carefully, because this one number was taken later than
+the rest:* the branch was rebased from `3595b48` onto `216f175` by another hand while this pass
+was running, so this probe ran against `216f175`. **`buildLinks`, `STATION_PITCH` and
+`LINK_MAX_GAP` are byte-identical between the two commits**, and the probe independently
+returned **45 runs, 1,673 stations and 41 walk-to-walk links** — the same three figures
+`probe-romeflank.mjs` measured at `3595b48` before the rebase. The result therefore holds at
+both.
 
 | | |
 |---|---|
