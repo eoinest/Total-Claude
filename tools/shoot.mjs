@@ -914,11 +914,22 @@ const SHOTS = {
     wall: { bay: 4, stand: 0, stair: 0.5, lift: 'stand', yaw: 'along', yawAdd: Math.PI, zoom: 0 },
   },
   'eyeline-rome-tower': {
-    // `along: -0.5 * 35.5` from the bay midpoint is the bay's own origin, which is where the
-    // tower stands and where the walk steps between two construction levels.
-    desc: 'Rome: eye level in a tower pass, where the wall-walk steps between two bays',
+    /*
+     * 12 m short of the bay's own origin, which is where the tower stands and where the walk
+     * steps between two construction levels.
+     *
+     * Aimed three times and looked at three times, which is the whole of why it is `-30`.
+     * `-17.75` is exactly half a 35.5 m bay and lands the focus *on* the tower with the eye
+     * 3.19 m behind it, inside the shaft: 1600 x 900 of unlit internal stair. `-12` is worse
+     * and reads as pure black, because `yaw: 'along'` looks down +d, so the tower is now
+     * *behind* the camera and the eye at `t = 2.56` is still inside its 3.80 m half-footprint
+     * with nothing lit in front of it. The tower has to be ahead, which means standing in the
+     * bay before it: 12 m short of its own centre, which is the stand-off the Carthage film
+     * uses for the same subject and the one that shows the walk running into the doorway.
+     */
+    desc: 'Rome: eye level on the walk approaching a tower, where it steps between two bays',
     scenario: 'assault', hour: 9.5, at: 8,
-    wall: { bay: 4, stand: 0, along: -17.75, lift: 'stand', yaw: 'along', zoom: 0 },
+    wall: { bay: 4, stand: 0, along: -30, lift: 'stand', yaw: 'along', zoom: 0 },
   },
   'eyeline-rome-gate': {
     desc: 'Rome: eye level on the crown of the Porta Flaminia',
