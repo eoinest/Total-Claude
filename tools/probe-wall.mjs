@@ -453,8 +453,25 @@ try {
     const castNear = (ox, oy, oz, dx, dy, dz, maxT, xs) => {
       let best = Infinity;
       const seen = new Set();
+      /*
+       * The bucket the x falls in **and its two neighbours**, which is not fastidiousness.
+       *
+       * Buckets are 2 m wide and phased off `X0 = bays[0].x0`, so which triangles a given x
+       * can see depends on where the wall happens to start. Moving Rome's west anchor from
+       * x -631 to x -28 (ROME.md §15 task 1, the Tiber onto the survey) shifted the phase by
+       * 1 m and the Porta Flaminia's leaves — which straddle x 69.2..74.6 and are struck at
+       * x 71.85 — fell into the bucket next door. This file then reported "3 of 4 rays pass
+       * straight through the gate; it is standing open" about a gate that was shut, and
+       * `THREE.Raycaster` over the same two meshes hit all four at 12.79 m.
+       *
+       * A carriageway ray also drifts up to 0.75 m in x across the block because it runs
+       * along the bay's normal and the bay is not axis-aligned, so one bucket was never
+       * enough even with a lucky phase. Widening can only find *more* triangles, so every
+       * assertion here gets stricter and none can be masked by it.
+       */
       for (const x of xs) {
-        const b = Math.floor((x - X0) / BUCKET);
+        const b0 = Math.floor((x - X0) / BUCKET);
+        for (const b of [b0 - 1, b0, b0 + 1]) {
         if (b < 0 || b >= NB || seen.has(b)) continue;
         seen.add(b);
         for (const ti of buckets[b]) {
@@ -473,6 +490,7 @@ try {
           if (v < 0 || u + v > 1) continue;
           const t = (e2x * qx + e2y * qy + e2z * qz) * inv;
           if (t > 0.01 && t < maxT && t < best) best = t;
+        }
         }
       }
       return best;
