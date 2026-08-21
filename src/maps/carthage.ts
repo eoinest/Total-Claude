@@ -5,7 +5,7 @@ import type { WaterProfile } from '../terrain/WaterSurface';
 import { CARTHAGE_AERIAL_MEAN, CARTHAGE_LAYERS, CARTHAGE_SPLAT_GLSL } from './carthage/ground';
 import { buildCarthageTerrain } from './carthage/heightfield';
 import { CARTHAGE_SCATTER } from './carthage/scatter';
-import { CARTHAGE_TOPO_GLSL, SEA_LEVEL } from './carthage/topography';
+import { CARTHAGE_TOPO_GLSL, DEPLOY_GROUND, SEA_LEVEL } from './carthage/topography';
 import type { MapDefinition } from './types';
 
 /**
@@ -278,6 +278,7 @@ export const CARTHAGE: MapDefinition = {
      */
     grass: { heightScale: 0.85, densityScale: 1.05, dryness: 0.72 },
     scatter: CARTHAGE_SCATTER,
+    deploy: DEPLOY_GROUND,
   },
   /**
    * The city — and this field is the only thing that selects one.

@@ -20,6 +20,13 @@ import type { WaterProfile } from '../terrain/WaterSurface';
  * than moving the armies, which is a real constraint but not a limiting one — every criterion
  * in docs/VISUAL-RUBRIC.md that a map can influence is about the ground, the plants and the
  * light.
+ *
+ * **In x that is no longer true, and the reason it changed is worth keeping.** The sentence
+ * above held while every map's boxes were centred on x 0. `docs/ROME.md` §15 task 1 moved the
+ * Campus Martius' boxes to x +205 to clear the corrected Tiber, the order of battle stayed at
+ * zero, and 747 men deployed into the river. `TerrainProfile.deploy` is the seam that closed
+ * it: a map now states where its armies form up in x and `scenario.ts` reads it. In z the
+ * constraint stands.
  */
 
 /** Registry key. Also the value persisted in `BattleConfig.map` and the `?battle=` token. */
@@ -110,6 +117,54 @@ export interface ScatterProfile {
   excluded(x: number, z: number, h: number, slope: number, clearance: number): boolean;
 }
 
+/**
+ * One army's deployment ground, as a rectangle rather than as a mask.
+ *
+ * The mask functions in each map's topography module are *built from* this, not the other
+ * way round, and that direction is the whole point. `sim/scenario.ts` now forms its lines up
+ * on this ground, so if the box and the order of battle disagree the army stands somewhere it
+ * was not meant to stand — which is exactly what happened when the Tiber moved onto the
+ * survey: the boxes moved east with it and the shipped deployment, which knew nothing about
+ * them, stayed at x 0 and put 747 men in the river. A number the placement reads and the mask
+ * also reads cannot drift apart; two copies of it can.
+ */
+export interface DeployBox {
+  /** Centre in x. */
+  readonly cx: number;
+  /** Centre in z. */
+  readonly cz: number;
+  /** Half-width in x. */
+  readonly hx: number;
+  /** Half-depth in z. */
+  readonly hz: number;
+}
+
+/**
+ * Where the two armies form up, keyed by which side of the field they are on.
+ *
+ * **North and south, not attacker and defender, and not by faction.** `sim/scenario.ts`'s
+ * field deployment always puts Rome's array at +z and the other side at −z, whoever they are;
+ * the masks are named for whoever the map's own story has standing there, and those two
+ * namings already disagree — Carthage's `romanDeployMask` is the −z box, because Rome
+ * besieges there, while the Campus Martius' is the +z box. Keying on the ground removes the
+ * question.
+ */
+export interface DeployGround {
+  /**
+   * The axis both lines form up on.
+   *
+   * One number for the battle rather than one per box: the two lines have to face each other,
+   * so an axis per side would rotate the whole engagement rather than move it. Where a map's
+   * two boxes are not concentric — Pydna's differ by 10 m — this is the battle's axis and the
+   * box carries its own offset.
+   */
+  readonly axisX: number;
+  /** The −z ground: the attacker's side on every map here. */
+  readonly north: DeployBox;
+  /** The +z ground: the city's side. */
+  readonly south: DeployBox;
+}
+
 /** Everything the ground stack needs that differs between maps. */
 export interface TerrainProfile {
   /** Deterministic content seed. Changing it regenerates the landscape. */
@@ -167,6 +222,8 @@ export interface TerrainProfile {
   /** Grass tint and height. Macedonian summer pasture is taller, drier and paler than Latian turf. */
   grass: { heightScale: number; densityScale: number; dryness: number };
   scatter: ScatterProfile;
+  /** Where the armies form up. See `DeployGround`. */
+  readonly deploy: DeployGround;
 }
 
 export interface MapDefinition {

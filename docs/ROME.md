@@ -2794,6 +2794,34 @@ footings; `tools/probe-budget.mjs` reports the whole-frame draw count **at or be
 band the map sits in today**, and the assault camera's triangle count at or below Carthage's
 14.45 M.
 
+> **The half of this that was a correctness bug is done; the half that is a design decision is
+> not, and it is stated here with numbers so it can be decided rather than discovered.**
+>
+> Task 1 moved the deployment masks east with the corrected Tiber and `sim/scenario.ts` did not
+> follow, because it laid both lines out about x 0 and had no way to read a mask. Measured on
+> the built heightfield by `tools/probe-ground.mjs --quality=high`, at `70fc191`: **747 of 8,632
+> men standing in the Tiber and 412 more dry on the far bank.** `TerrainProfile.deploy` is now
+> the seam — each map's topography module states its deployment boxes as data and derives its
+> masks from them — and `standOnDeploymentGround` translates the whole battle onto the axis
+> those boxes define. One shift of **271.146 m** for every unit of both armies: frontage,
+> spacing, width, facing, formation, unit count and headcount are identical to the metre, and
+> the `uctl` determinism mark at t+0 is byte-identical to the one recorded at `88a4aa5`. In
+> water 747 → 0, far bank 412 → 0, worst slope under a man 0.529 → 0.315, trees within 4 m of a
+> man 7 → 5. Carthage's and Pydna's field battles are unmoved: the same probe reports dx 0 on
+> both.
+>
+> **What is left is a real design question and it is the owner's.** The lines are wider than
+> the ground task 1 gave them. At `DEFAULT_CONFIG` on the `high` tier the Roman line measures
+> **684 m** across its own men against a **500 m** box, and the Juthungi host **783 m** against
+> **760 m**. No translation fixes that: 562 Roman and 182 Juthungi men stand outside their own
+> box, all but 14 of them to the east, which is why the rule overhangs east — that side is open
+> plain, dry, under a 0.32 slope, out to x 700. The choices are a narrower Roman frontage
+> (§8.3's business) or a box that reaches further east (task 1's), and either is a change to the
+> shipped battle. Two consequences to price with it: everything outside a box stands on ground
+> the heightfield never flattened and the scatter never cleared, and `battleCoreMask` — the
+> corridor whose relief is damped — is still centred on x 0 with a 540 m half-width, so the
+> Juthungi right wing at x 691 is outside the fighting corridor entirely.
+
 ### The one number that says the redesign worked
 
 > **`probe-footing --only=around`: zero routes from the attacker's deployment box to the

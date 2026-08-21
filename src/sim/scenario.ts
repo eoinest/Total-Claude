@@ -1,4 +1,5 @@
 import type { EngineContext } from '../core/Engine';
+import { getMap } from '../maps';
 import type { BattleSystem } from './BattleSystem';
 import {
   type BattleConfig, type ScenarioId, DEFAULT_CONFIG, GARRISON_PLANS, STORM_PLANS,
@@ -56,11 +57,89 @@ const NORTH = Math.PI; // facing toward -Z
 const SOUTH = 0; // facing toward +Z
 
 /**
+ * Put the deployment on the ground the map prepared for it, and return how far it moved.
+ *
+ * **Why this exists.** Both lines below are laid out about x 0, because every block in them is
+ * symmetric about the line of advance and that is the shape the placement rules read best in.
+ * Nothing here used to know where that line was, and for as long as the Campus Martius' own
+ * deployment boxes were centred on x 0 nothing had to. `docs/ROME.md` §15 task 1 moved the
+ * Tiber onto the survey; the boxes moved east with the corrected channel; the order of battle
+ * stayed at zero, and **747 of 8,632 men were standing in the river** with another 412 dry on
+ * the far bank, in the wrong battle. This is the seam that was missing.
+ *
+ * **Where the number comes from, and why not from a document.** Every term is read off
+ * `map.terrain.deploy`, which is the same data each map's topography module builds its
+ * deployment masks out of — not a copy of it. §3.2 of the redesign says the attacker's box is
+ * "±380 m about x +40"; the agent that cut the ground measured +40 as insufficient and shipped
+ * +205. A constant transcribed from the prose would have been 165 m wrong on the day it was
+ * written. This reads 205 because that is what the mask is.
+ *
+ * **The rule, in two terms.**
+ *
+ *  1. `axisX` — the axis the two lines form up on. One number per map rather than one per box,
+ *     because the two lines have to face each other: an axis per side would rotate the
+ *     engagement rather than move it.
+ *  2. **No man stands west of the west edge of his own deployment box.** This only ever wins
+ *     when a line is wider than the ground it was given, and at `DEFAULT_CONFIG` it does win:
+ *     the Roman line measures 684 m across its own men and its box is 500 m, so centring it on
+ *     the axis would leave its outer cavalry squadron — 108 men — in the Tiber. Measured, not
+ *     assumed; `tools/probe-ground.mjs` counts them.
+ *
+ *     The asymmetry is the map's, not a convention. At Rome the river is west of the
+ *     deployment ground and the east is open plain out to x 700; task 1 moved both boxes east
+ *     rather than widening them for exactly that reason. So a line that does not fit overhangs
+ *     onto grass rather than into water. The box's own west edge is used rather than the
+ *     waterline, which inherits the 23–39 m clearance task 1 measured instead of shaving the
+ *     line to the bank.
+ *
+ * One shift for the whole battle, so the two lines keep their relative alignment to the metre:
+ * this moves the engagement, it does not change it. Frontage, spacing, facing, formation and
+ * composition are untouched — see the acceptance in `docs/ROME.md` §15 task 14.
+ *
+ * A unit is assigned to the nearer box **in z**, so this needs no notion of which army is
+ * which. On the Carthage map the same code has Rome in the northern box, correctly, because
+ * Rome besieges there.
+ */
+function standOnDeploymentGround(battle: BattleSystem, config: BattleConfig): number {
+  const ground = getMap(config.map).terrain.deploy;
+  let shift = ground.axisX;
+  for (const u of battle.units) {
+    const box = Math.abs(u.z - ground.north.cz) <= Math.abs(u.z - ground.south.cz)
+      ? ground.north
+      : ground.south;
+    // The men, not the anchor: how far a formation reaches past its own centre depends on its
+    // width and spacing, and the widest overhang here is a 33 m loose cavalry screen.
+    let westmost = Infinity;
+    for (const i of u.members) if (battle.pool.x[i] < westmost) westmost = battle.pool.x[i];
+    shift = Math.max(shift, box.cx - box.hx - westmost);
+  }
+  battle.translateDeployment(shift);
+  return shift;
+}
+/*
+ * Deliberately unclamped on the east, and the reason is that any clamp would be a made-up
+ * number. Sweeping the shift from 0 to 320 m against the built heightfield
+ * (`tools/scratch/probe-deployshift.mjs`) finds not one man over `ROUGH_SLOPE_IMPASSABLE`
+ * anywhere in that range and the eastern plain dry the whole way, so there is nothing to clamp
+ * *to* short of the hills, which start well past where any composition reaches. A composition
+ * wide enough to push the right wing into them would be a composition that does not fit the
+ * map, and the honest place to catch that is a boot assertion with a measured limit behind it,
+ * not a magic constant here.
+ */
+
+/**
  * Centred positions for `n` units on `spacing` centres.
  *
- * Every block in the deployment is symmetric about the Via Flaminia, so this is the only
+ * Every block in the deployment is symmetric about the line of advance, so this is the only
  * placement rule the line units need and it keeps the army centred whatever the count. At
- * the default six cohorts on 64 m centres it reproduces the shipped x of -160..+160.
+ * the default six cohorts on 64 m centres it produces -160..+160.
+ *
+ * **About zero, and zero is not where the battle is.** `standOnDeploymentGround` translates the
+ * whole thing onto the map's own deployment axis once everything is spawned, so the offsets
+ * here are relative and the shipped x are those plus the shift. This used to say "symmetric
+ * about the Via Flaminia", which was true when the road ran through x 20-50 and the army stood
+ * on x 0; the deployment ground is now 271 m east of the road and the sentence was quietly
+ * describing a different map.
  */
 const centred = (n: number, spacing: number): number[] =>
   Array.from({ length: n }, (_, k) => (k - (n - 1) / 2) * spacing);
@@ -489,11 +568,15 @@ export function deployBattle(
       u.targetZ = u.faction === Faction.Rome ? punZ + 40 : romanZ - 40;
     }
 
+    // Last, so the orders above can be written about the line's own centre: the shift carries
+    // `targetX` with it.
+    const fieldX = standOnDeploymentGround(battle, config);
+
     ctx.events.emit('battleStarted', { seed: battle.rng.getState(), scenario: 'carthage-271' });
     return {
       roman,
       germanic,
-      cameraFocus: { x: 0, z: romanZ - 10, zoom: 0.78, yaw: Math.PI },
+      cameraFocus: { x: fieldX, z: romanZ - 10, zoom: 0.78, yaw: Math.PI },
     };
   }
 
@@ -563,6 +646,9 @@ export function deployBattle(
   // Both sides start holding their ground; the AI takes it from here.
   for (const u of battle.units) u.order = UnitOrder.Hold;
 
+  // And the ground they hold is the ground the map prepared, which is not x 0 on every map.
+  const fieldX = standOnDeploymentGround(battle, config);
+
   ctx.events.emit('battleStarted', { seed: battle.rng.getState(), scenario: 'siege-of-rome-271' });
 
   return {
@@ -588,7 +674,11 @@ export function deployBattle(
     // as ranked blocks rather than specks, and the leading Juthungi banners visible along the
     // top edge. 0.82 fits more of the enemy but shrinks the line and pushes their banners up
     // behind the top bar.
-    cameraFocus: { x: 0, z: romanZ - 10, zoom: 0.78, yaw: Math.PI },
+    //
+    // `x` follows the deployment for the same reason `z` follows `romanZ`: the framing was
+    // measured against the army, and an opening shot parked on x 0 while the army stands 271 m
+    // east of it is the same defect this comment already describes, with the axis swapped.
+    cameraFocus: { x: fieldX, z: romanZ - 10, zoom: 0.78, yaw: Math.PI },
   };
 }
 

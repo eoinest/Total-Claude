@@ -46,6 +46,8 @@
  * thing in this file and it is the Byrsa; see `BYRSA_HW`.
  */
 
+import type { DeployGround } from '../types';
+
 import { HALF_EXTENT } from '../../terrain/topography';
 
 export { HALF_EXTENT };
@@ -596,10 +598,29 @@ const rectMask = (
   return dx * dx * (3 - 2 * dx) * (dz * dz * (3 - 2 * dz));
 };
 
+/**
+ * The two boxes as data, with the masks derived from them.
+ *
+ * `sim/scenario.ts` forms its lines up on this, so a copy of these numbers in the placement
+ * code could drift away from the ground they name. See `maps/types.ts`'s `DeployGround`.
+ * Carthage's are concentric on the map's own axis, so the field battle here stands exactly
+ * where it always did.
+ *
+ * Note the naming: `romanDeployMask` is the **northern** box on this map, because Rome is the
+ * besieger here. `DeployGround` keys on the ground rather than on the army for that reason.
+ */
+export const DEPLOY_GROUND = {
+  axisX: 0,
+  north: { cx: 0, cz: -196, hx: 490, hz: 130 },
+  south: { cx: 0, cz: 150, hx: 490, hz: 120 },
+} as const satisfies DeployGround;
+
 export const romanDeployMask = (x: number, z: number): number =>
-  rectMask(x, z, 0, -196, 490, 130, 80);
+  rectMask(x, z, DEPLOY_GROUND.north.cx, DEPLOY_GROUND.north.cz,
+    DEPLOY_GROUND.north.hx, DEPLOY_GROUND.north.hz, 80);
 export const punicDeployMask = (x: number, z: number): number =>
-  rectMask(x, z, 0, 150, 490, 120, 80);
+  rectMask(x, z, DEPLOY_GROUND.south.cx, DEPLOY_GROUND.south.cz,
+    DEPLOY_GROUND.south.hx, DEPLOY_GROUND.south.hz, 80);
 
 /** The fighting corridor: high-frequency relief damped, broad form kept. */
 export const battleCoreMask = (x: number, z: number): number =>
