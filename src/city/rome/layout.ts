@@ -4,7 +4,9 @@ import { clamp, lerp } from '../../util/math';
 import { hash2 } from '../../util/rand';
 import { AX, axisU, axisV, obbOverlap, obbRadius, type Obb, type WayClass } from '../layout';
 import { GATE_X } from './apertures';
-import { WALL_LENGTH, WALL_X_MIN, wallCrestZ } from './circuit';
+// Straight from the terrain, not through `./circuit`: the wall builder now reads
+// `./assertions`, which reads this file, and `./circuit` would close the cycle.
+import { WALL_LENGTH, WALL_X_MIN, romeWallZ as wallCrestZ } from '../../terrain/topography';
 import {
   CITY_Z_MAX,
   CITY_Z_MIN,

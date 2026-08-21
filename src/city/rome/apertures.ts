@@ -16,7 +16,9 @@ import {
 import type { CityMatKey } from '../materials';
 import { PAL } from '../palette';
 import { cylinderBetween, strut } from '../wall';
+import { WALL_X_MIN } from '../../terrain/topography';
 import {
+  BAY_COUNT,
   frameOf,
   OUT,
   P0,
@@ -27,7 +29,7 @@ import {
   type Bay,
   type Frame,
 } from './section';
-import { GATE_X as GATE_X_SOLVED } from './survey';
+import { GATE_X as GATE_X_SOLVED, worldOf } from './survey';
 
 /**
  * The Porta Flaminia — `docs/ROME.md` §5, the gates and the one number an aperture is
@@ -45,8 +47,58 @@ import { GATE_X as GATE_X_SOLVED } from './survey';
 
 /** The Porta Flaminia, where the Via Flaminia crosses the crest. Solved in `survey.ts`. */
 export const GATE_X = GATE_X_SOLVED;
-/** Clear width of the Porta Flaminia carriageway. */
+/**
+ * Clear width of a carriageway, metres.
+ *
+ * **4.30 m, and the archaeology will not let it be inflated.** §5.2: the only directly
+ * published Aurelianic gate span is Porta Latina at **4.20 m** (Giovenale 1931), and Di
+ * Cola's 2017 re-measurement of Porta Appia gives arches of **4.50 m** — 15 *pedes* — while
+ * explicitly rejecting Richmond's 3.81 because *"the fornices of the original gates are all
+ * over 4 m wide"*. 4.30 m is 14.5 *pedes* and sits between the two published figures.
+ *
+ * §5.2's table gives the Porta Salaria and the Porta Nomentana the same 4.30 m and the Porta
+ * Flaminia two lanes of 4.50 m about a 3.00 m pier. **The second lane is task 6's**, not this
+ * one's: it changes the drawn / collided / rastered triple that `probe-solid --case=gates`
+ * grades, and splitting that work across two passes is how a gate ends up three different
+ * widths — which is the fault §5.2 exists to close. One width per aperture, published on
+ * `Aperture.clearWidth`, is what this pass owes task 6.
+ */
 export const GATE_OPEN_WIDTH = 4.3;
+
+/**
+ * The three other apertures on this front, in world metres, from §2.5's survey table.
+ *
+ * Projected there through the same affine map as everything else; written as constants here
+ * because they are the *published* positions and `APERTURES` below is where the bay grid is
+ * allowed to argue with them.
+ */
+const PINCIANA_X = worldOf(530, 1789).x;
+const SALARIA_X = worldOf(1036, 1784).x;
+const NOMENTANA_X = worldOf(1831, 1784).x;
+
+/**
+ * Clear width of a *posterula*, metres. **[ARCH]**
+ *
+ * The measured width of the postern of the Via Nomentana, which has a monolithic travertine
+ * lintel and two relieving arches over it. Two other Aurelianic posterns are measured — Vigna
+ * Casali at 2.90 m and Porta Ostiensis West at 3.60 m — and §5.2's table takes this one,
+ * which is 9 *pedes* exactly.
+ */
+export const POSTERULA_WIDTH = 2.7;
+/** Clear height of a *posterula* to the soffit of its lintel. Two men, one behind the other. */
+export const POSTERULA_H = 3.4;
+
+/**
+ * Along-run width and depth of a **second-class** gate's block. §5.1.
+ *
+ * 21 m against the Porta Flaminia's 25: a single arch between two smaller semicircular
+ * towers rather than a twin archway between two large ones. Both fit wholly inside a 37.0 m
+ * bay when the gate is snapped to its centre, which is the property §14.3's acceptance is
+ * about — 21/2 + 0.3 of curtain clip leaves 8.0 m of masonry either side of the block itself
+ * before the bay ends, and 16.4 m either side of the 4.30 m opening.
+ */
+export const GATE2_BLOCK_W = 21;
+export const GATE2_BLOCK_D = 9.5;
 
 // ---------------------------------------------------------------------------
 // The gatehouse block, as a span the curtain has to make room for
@@ -108,28 +160,155 @@ export const GATE_DOOR_T = 0.22;
 /**
  * Half-width of the span the curtain is cut out of, 0.3 m inside the block's own face so
  * the curtain dies *inside* the brick and no seam can open between the two.
+ *
+ * Per aperture since §15 task 5, because three gates have three block widths — see
+ * `clipHalfOf`, which is this expression applied to whichever block is being asked about.
  */
 export const GATE_CLIP_HALF = GATE_BLOCK_W * 0.5 - 0.3;
 
-/** True where the gatehouse block stands, so nothing else may be built there. */
-export function inGateBlock(x: number): boolean {
-  return Math.abs(x - GATE_X) <= GATE_CLIP_HALF;
+// ---------------------------------------------------------------------------
+// The apertures — §5.1, §5.2, §14.3, §15 task 5
+// ---------------------------------------------------------------------------
+
+/**
+ * One aperture on the land front, and **the one number it is allowed to have.**
+ *
+ * §5.2's rule, in the form the build can execute: *"A gate publishes `clearWidth` and
+ * nothing else computes a width. The drawn jambs, the obstacle boxes and the raster clear
+ * all derive from it, in one helper."* Task 6 is the pass that makes the collision and the
+ * raster read `clearWidth`; task 5's job is to get every aperture onto **one** record with
+ * **one** width so task 6 has a single thing to point three views at, instead of a fourth
+ * literal per gate.
+ */
+export interface Aperture {
+  id: string;
+  /** Which of §5.1's three classes this is. Decides the block and the flanking towers. */
+  kind: 'first' | 'second' | 'posterula';
+  /** Where §2.5's survey puts it, before the bay grid has any say. */
+  surveyX: number;
+  /** Where it is actually cut. See `APERTURES` for when the two differ and why. */
+  x: number;
+  /** `x − surveyX`: §15 task 5 requires this printed rather than tidied away. */
+  snap: number;
+  /** The bay it is cut through, by containment and not by rounding. §14.3. */
+  bay: number;
+  /** **The** width. Drawn, collided and (task 6) rastered from this and nothing else. */
+  clearWidth: number;
+  /** Along-run width of the masonry block, and its front-to-back depth. */
+  blockW: number;
+  blockD: number;
+  /** True where the siege train can reach it and the ram has something to break. */
+  siege: boolean;
 }
 
 /**
- * The parts of a run from `x0` to `x1` that the gatehouse does not stand in: the whole
- * run, one piece of it, or the two flanks either side of the block.
+ * The three gates and the *posterula* of §5.1, snapped to the bay grid where they may be.
+ *
+ * §14.3 records what happens when they are not: Carthage prints *"porta-uticensis is cut
+ * past the end of bay 50"* at every boot, because *"the gate's x was chosen in the survey and
+ * the bay grid was laid independently, so nothing forced them to agree."* The remedy it
+ * prescribes is to **snap each aperture to the nearest bay centre and report the snap
+ * distance**, and the acceptance is that every clear opening lies wholly inside one bay with
+ * at least a metre of masonry either side.
+ *
+ * **The Porta Flaminia is the one exception and it is not a relaxation of the rule.** Its
+ * position is not merely surveyed: `GATE_X` is the fixed point of `roadCentreX(crestZAt(x))`
+ * and the projection's whole origin is solved from it (§2.3), so moving the gate 14.5 m onto
+ * bay 1's centre would move `X0`, and with it every monument on the map, and would leave the
+ * Via Flaminia's agger — which the *heightfield* builds — entering the curtain beside its own
+ * gate. It is therefore cut where the road crosses the wall, which leaves **1.9 m** of
+ * masonry between the east jamb and the end of bay 1 against 30.8 m on the west. That is a
+ * pass, it is printed at every boot by `assertRomeSection`, and it is exactly the fault §4.9
+ * says to leave standing: Richmond's *"glaring cases of bungling in the setting out of the
+ * gate in relation to the Wall"* at this very gate, which is one of his two named examples.
+ *
+ * The other three fall in the bays §4.8's stage table books them into — 14, 20 and 29 — which
+ * is a check on the pitch as much as on the gates: nothing forced the two tables to agree.
+ */
+export const APERTURES: readonly Aperture[] = (() => {
+  const pitch = WALL.towerSpacing;
+  const centreOf = (bay: number): number => WALL_X_MIN + (bay + 0.5) * pitch;
+  const bayOf = (x: number): number =>
+    Math.min(BAY_COUNT - 1, Math.max(0, Math.floor((x - WALL_X_MIN) / pitch)));
+  const mk = (
+    id: string,
+    kind: Aperture['kind'],
+    surveyX: number,
+    clearWidth: number,
+    blockW: number,
+    blockD: number,
+    snapped: boolean,
+    siege = false
+  ): Aperture => {
+    const bay = bayOf(surveyX);
+    const x = snapped ? centreOf(bay) : surveyX;
+    return { id, kind, surveyX, x, snap: x - surveyX, bay, clearWidth, blockW, blockD, siege };
+  };
+  return [
+    // First class, twin-arched, semicircular brick towers. The only aperture a ram can
+    // reach (§3.6), so the only one with leaves the siege system can break.
+    mk('porta-flaminia', 'first', GATE_X, GATE_OPEN_WIDTH, GATE_BLOCK_W, GATE_BLOCK_D, false, true),
+    // Third class. **Not a gate**: it was made one by Honorius and in 271 it is a small
+    // door (§5.1). Drawn at the measured 2.70 m of the Via Nomentana postern, shut, with no
+    // block, no towers and no passage through the curtain at all — §5.3, and §15 task 7 is
+    // what gives it a `Crossing` to be a sally port through.
+    mk('posterula-pinciana', 'posterula', PINCIANA_X, POSTERULA_WIDTH, 0, 0, true),
+    // Second class: single arch, brick façade, two semicircular towers with three
+    // round-headed windows apiece.
+    mk('porta-salaria', 'second', SALARIA_X, GATE_OPEN_WIDTH, GATE2_BLOCK_W, GATE2_BLOCK_D, true),
+    // Second class. *"The only example of one of Aurelian's original gates which has not
+    // been re-faced"* (§5.1).
+    mk('porta-nomentana', 'second', NOMENTANA_X, GATE_OPEN_WIDTH, GATE2_BLOCK_W, GATE2_BLOCK_D, true),
+  ];
+})();
+
+/** Every aperture that is a gate: a `GateOut`, a carriageway, and leaves that can open. */
+export const GATES: readonly Aperture[] = APERTURES.filter((a) => a.kind !== 'posterula');
+
+/** The aperture a given bay carries, or null. At most one: §14.3's fault is two. */
+export function apertureOfBay(bay: number): Aperture | null {
+  return APERTURES.find((a) => a.bay === bay) ?? null;
+}
+
+/** Half-width of the curtain cut this aperture asks for. Zero for a postern. */
+export const clipHalfOf = (a: Aperture): number => (a.blockW > 0 ? a.blockW * 0.5 - 0.3 : 0);
+
+/** True where a gatehouse block stands, so nothing else may be built there. */
+export function inGateBlock(x: number): boolean {
+  for (const a of APERTURES) {
+    if (a.blockW > 0 && Math.abs(x - a.x) <= clipHalfOf(a)) return true;
+  }
+  return false;
+}
+
+/**
+ * The parts of a run from `x0` to `x1` that no gatehouse stands in: the whole run, one
+ * piece of it, or the flanks either side of a block.
+ *
+ * Written as a subtraction over every block rather than over the one, because with three
+ * gates a bay can now be clipped by a neighbour's block as well as by its own — the Porta
+ * Flaminia's 25 m block is centred 14.5 m off bay 1's centre and 8.5 m of it stands in bay 2.
  */
 export function curtainSpans(x0: number, x1: number, out: [number, number][]): [number, number][] {
   out.length = 0;
-  const a = GATE_X - GATE_CLIP_HALF;
-  const b = GATE_X + GATE_CLIP_HALF;
-  if (b <= x0 || a >= x1) {
-    out.push([x0, x1]);
-    return out;
+  out.push([x0, x1]);
+  for (const ap of APERTURES) {
+    const half = clipHalfOf(ap);
+    if (half <= 0) continue;
+    const a = ap.x - half;
+    const b = ap.x + half;
+    const next: [number, number][] = [];
+    for (const [s0, s1] of out) {
+      if (b <= s0 || a >= s1) {
+        next.push([s0, s1]);
+        continue;
+      }
+      if (s0 < a) next.push([s0, Math.min(a, s1)]);
+      if (s1 > b) next.push([Math.max(b, s0), s1]);
+    }
+    out.length = 0;
+    for (const s of next) out.push(s);
   }
-  if (x0 < a) out.push([x0, Math.min(a, x1)]);
-  if (x1 > b) out.push([Math.max(b, x0), x1]);
   return out;
 }
 
@@ -140,7 +319,14 @@ export function curtainSpans(x0: number, x1: number, out: [number, number][]): [
 /** Every stream `buildGate` touches. See `Batch.distinct`. */
 const GATE_KEYS: readonly CityMatKey[] = ['brick', 'stone', 'metal', 'timber', 'roof', 'road'];
 
-export function buildGate(batch: Batch, detail: number, bay: Bay, heightAt: (x: number, z: number) => number, rng: Rng): void {
+export function buildGate(
+  batch: Batch,
+  detail: number,
+  bay: Bay,
+  ap: Aperture,
+  heightAt: (x: number, z: number) => number,
+  rng: Rng
+): void {
   const brick = batch.s('brick');
   const stone = batch.s('stone');
   const metal = batch.s('metal');
@@ -149,14 +335,23 @@ export function buildGate(batch: Batch, detail: number, bay: Bay, heightAt: (x: 
   const road = batch.s('road');
 
   const f = frameOf(bay.x0, bay.z0, bay.x1, bay.z1);
-  const cx = GATE_X;
-  const cz = lerp(bay.z0, bay.z1, (GATE_X - bay.x0) / WALL.towerSpacing);
+  const cx = ap.x;
+  const cz = lerp(bay.z0, bay.z1, (ap.x - bay.x0) / WALL.towerSpacing);
   const g = heightAt(cx, cz);
+  const openW = ap.clearWidth;
 
-  // The approach: built in world space before the gate's own frame is pushed, so the
-  // carriageway can follow the ground. Everything the camera sees in the foreground of
-  // the standard `city` viewpoint lives here, and without it that frame is half grass.
-  buildGateApproach(batch, detail, cx, cz, f, heightAt, rng);
+  /*
+   * The approach: built in world space before the gate's own frame is pushed, so the
+   * carriageway can follow the ground. Everything the camera sees in the foreground of
+   * the standard `city` viewpoint lives here, and without it that frame is half grass.
+   *
+   * **Only at the Porta Flaminia.** It is a hundred metres of paved agger with milestones,
+   * tombs and a fountain, authored for the one road the heightfield actually builds an
+   * embankment for (`roadCentreX`); running it at the Salaria and the Nomentana would lay
+   * basalt across open hillside with no road under it, and would triple its cost for two
+   * gates the camera never stands in front of.
+   */
+  if (ap.siege) buildGateApproach(batch, detail, cx, cz, f, heightAt, rng);
 
   const m = new THREE.Matrix4().makeRotationY(f.rotY).setPosition(cx, 0, cz);
   // See `Batch.distinct`: at mid detail these six keys are three streams and at far detail
@@ -166,10 +361,13 @@ export function buildGate(batch: Batch, detail: number, bay: Bay, heightAt: (x: 
   // 11 m of masonry front to back so the passage is a real tunnel, and an attic
   // above the arch for the dedicatory inscription. The curtain is cut back to leave this
   // span clear — see `GATE_BLOCK_W` and `curtainSpans`.
-  const blockW = GATE_BLOCK_W;
-  const blockD = GATE_BLOCK_D;
-  const passH = GATE_PASS_H;
-  const attic = GATE_ATTIC;
+  const blockW = ap.blockW;
+  const blockD = ap.blockD;
+  // A second-class gate is a lower building than a first-class one: one arch, a shorter
+  // attic and no dedicatory inscription worth 8 m of marble. §5.1.
+  const first = ap.kind === 'first';
+  const passH = first ? GATE_PASS_H : GATE_PASS_H - 1.2;
+  const attic = first ? GATE_ATTIC : GATE_ATTIC - 1.4;
   const blockTop = g + passH + attic;
   const zF = -blockD * 0.5;
 
@@ -180,7 +378,7 @@ export function buildGate(batch: Batch, detail: number, bay: Bay, heightAt: (x: 
   // below it, so the one road into Rome had a chest-high step in it, 3.4 m behind the
   // doors where no camera could see it. A ray down the centreline at 0.5 m struck it.
   const socleHalf = blockW / 2 + 0.45;
-  const openHalf = GATE_OPEN_WIDTH * 0.5;
+  const openHalf = openW * 0.5;
   for (const s of [-1, 1]) {
     box(stone, s > 0 ? openHalf : -socleHalf, g - 2.4, zF - 0.45, s > 0 ? socleHalf : -openHalf, g + 1.15, blockD * 0.5 + 0.45, PAL.travertineDirty, {
       topGain: 1.08,
@@ -196,7 +394,7 @@ export function buildGate(batch: Batch, detail: number, bay: Bay, heightAt: (x: 
   archPanel(brick, blockW, passH + attic - 1.15, PAL.brick, {
     depth: blockD,
     spring: 4.3,
-    openWidth: GATE_OPEN_WIDTH,
+    openWidth: openW,
     segments: detail >= 2 ? 16 : 8,
     backFace: true,
     archivolt: detail >= 1 ? 0.4 : 0,
@@ -225,7 +423,7 @@ export function buildGate(batch: Batch, detail: number, bay: Bay, heightAt: (x: 
   // Travertine voussoirs framing the arch. The gate was dressed in stone even where
   // the curtain is bare brick, because it is the face the city shows the world.
   if (detail >= 1) {
-    const r = GATE_OPEN_WIDTH * 0.5;
+    const r = openW * 0.5;
     const spring = g + 1.15 + 4.3;
     const nV = 13;
     const midR = r + 0.32;
@@ -255,17 +453,20 @@ export function buildGate(batch: Batch, detail: number, bay: Bay, heightAt: (x: 
   }
 
   // ---- inscribed attic ----------------------------------------------------
+  // Sized off the block rather than off the Porta Flaminia's 25 m: a panel authored at a
+  // fixed ±8.1 m stands 1.4 m proud of each end of a second-class gate's 21 m block.
   const insY = g + passH + 1.0;
-  box(stone, -7.6, insY, zF - 0.58, 7.6, insY + 2.8, zF, PAL.marble, { topGain: 1.1 });
-  box(stone, -8.1, insY - 0.38, zF - 0.76, 8.1, insY, zF, PAL.travertine, { topGain: 1.2 });
-  box(stone, -8.1, insY + 2.8, zF - 0.76, 8.1, insY + 3.2, zF, PAL.travertine, { topGain: 1.2 });
-  if (detail >= 1) {
+  const insHalf = Math.min(7.6, blockW * 0.5 - 1.9);
+  box(stone, -insHalf, insY, zF - 0.58, insHalf, insY + 2.8, zF, PAL.marble, { topGain: 1.1 });
+  box(stone, -insHalf - 0.5, insY - 0.38, zF - 0.76, insHalf + 0.5, insY, zF, PAL.travertine, { topGain: 1.2 });
+  box(stone, -insHalf - 0.5, insY + 2.8, zF - 0.76, insHalf + 0.5, insY + 3.2, zF, PAL.travertine, { topGain: 1.2 });
+  if (detail >= 1 && first) {
     // The inscription: gilt-bronze letters set into cut beds. Modelled as rows of
     // small raised blocks — legible as lettering at 60 m, which is all that matters.
     for (let line = 0; line < 3; line++) {
       const y = insY + 2.05 - line * 0.78;
-      let px = -6.6 - hash2(line, 1, 5) * 0.35;
-      while (px < 6.3) {
+      let px = -insHalf + 1.0 - hash2(line, 1, 5) * 0.35;
+      while (px < insHalf - 1.3) {
         const w = 0.22 + hash2(Math.round(px * 10), line, 9) * 0.2;
         box(metal, px, y, zF - 0.65, px + w, y + 0.46, zF - 0.58, PAL.gilt, { zMax: false });
         px += w + 0.15 + hash2(Math.round(px * 7), line + 3, 13) * 0.12;
@@ -286,9 +487,9 @@ export function buildGate(batch: Batch, detail: number, bay: Bay, heightAt: (x: 
   // Aurelian's major gates were flanked by semicircular towers rising well above the
   // curtain; the Porta Flaminia's survive inside the later Porta del Popolo.
   // Slender enough to read as towers rather than chimneys: 9.2 m across, 18.6 tall.
-  const towerR = 4.6;
-  const towerX = GATE_OPEN_WIDTH * 0.5 + towerR + 1.9;
-  const towerTop = g + 18.6;
+  const towerR = first ? 4.6 : 3.8;
+  const towerX = openW * 0.5 + towerR + (first ? 1.9 : 1.5);
+  const towerTop = g + (first ? 18.6 : 14.6);
   const seg = detail >= 2 ? 16 : detail === 1 ? 10 : 6;
   for (const s of [-1, 1]) {
     const tx = s * towerX;
@@ -388,18 +589,28 @@ export function buildGate(batch: Batch, detail: number, bay: Bay, heightAt: (x: 
    */
   const barTop = g + passH - 0.15;
   const barBottom = g + passH - 3.1;
-  for (let i = 0; i <= 12; i++) {
-    const bx = -GATE_OPEN_WIDTH * 0.5 + (GATE_OPEN_WIDTH * i) / 12;
+  /*
+   * **Not repeated at the two new gates**, and §5.5 is why: Richmond puts the portcullis in
+   * period III — *"All the new gateways were fitted with a portcullis"*, Honorius, 401–403 —
+   * and on the Aurelianic phase says *"It is not possible… to know whether there was a
+   * portcullis."* No published measurement of an Aurelianic groove exists at all. §5.5 asks
+   * for the Porta Flaminia's to come out as well; that is its own task and this pass will not
+   * make the error twice while waiting for it.
+   */
+  for (let i = 0; first && i <= 12; i++) {
+    const bx = -openW * 0.5 + (openW * i) / 12;
     box(metal, bx - 0.05, barBottom, zF + 0.85, bx + 0.05, barTop, zF + 0.98, PAL.iron);
   }
-  for (let k = 0; k < 3; k++) {
+  for (let k = 0; first && k < 3; k++) {
     const y = barBottom + k * 1.35;
-    box(metal, -GATE_OPEN_WIDTH * 0.5, y, zF + 0.83, GATE_OPEN_WIDTH * 0.5, y + 0.12, zF + 1.0, PAL.iron);
+    box(metal, -openW * 0.5, y, zF + 0.83, openW * 0.5, y + 0.12, zF + 1.0, PAL.iron);
   }
-  box(metal, -GATE_OPEN_WIDTH * 0.5, barBottom - 0.38, zF + 0.82, GATE_OPEN_WIDTH * 0.5, barBottom, zF + 1.01, PAL.iron);
+  if (first) {
+    box(metal, -openW * 0.5, barBottom - 0.38, zF + 0.82, openW * 0.5, barBottom, zF + 1.01, PAL.iron);
+  }
 
   const doorZ = zF + GATE_DOOR_SET;
-  const leafHalf = GATE_OPEN_WIDTH * 0.5;
+  const leafHalf = openW * 0.5;
   const headY = g + GATE_SPRING;
 
   /**
@@ -424,10 +635,10 @@ export function buildGate(batch: Batch, detail: number, bay: Bay, heightAt: (x: 
   }
 
   // Polygonal basalt carriageway, rutted by two centuries of carts.
-  box(road, -GATE_OPEN_WIDTH * 0.5 - 0.6, g + 0.02, zF - 0.5, GATE_OPEN_WIDTH * 0.5 + 0.6, g + 0.1, blockD * 0.5 + 18, PAL.basalt);
+  box(road, -openW * 0.5 - 0.6, g + 0.02, zF - 0.5, openW * 0.5 + 0.6, g + 0.1, blockD * 0.5 + 18, PAL.basalt);
 
   // Guardhouse lean-to inside the gate.
-  if (detail >= 1) {
+  if (detail >= 1 && first) {
     const gx = 13.5;
     const gz = 10.5;
     const gg = heightAt(cx + gx * Math.cos(f.rotY), cz + gz) - g;
@@ -442,6 +653,114 @@ export function buildGate(batch: Batch, detail: number, bay: Bay, heightAt: (x: 
 
 /** Guardhouse walls and roof; one stream at far detail. See `Batch.distinct`. */
 const GUARD_KEYS: readonly CityMatKey[] = ['brick', 'roof'];
+
+/** Every stream `buildPosterula` touches. See `Batch.distinct`. */
+const POSTERULA_KEYS: readonly CityMatKey[] = ['brick', 'stone', 'timber', 'metal'];
+
+/**
+ * The **Posterula Pinciana** — §5.1, §5.3, §15 task 5.
+ *
+ * *"Porta Pinciana is a postern in 271 and must not be built as a gate."* It was made a gate
+ * by Honorius; before that it is a small door through the curtain to the *clivus* up onto the
+ * Pincian, into the Horti Aciliorum. So: no block, no flanking towers, no carriageway, no
+ * attic — a **2.70 m** opening in the face of an otherwise ordinary bay, with a monolithic
+ * travertine lintel, two relieving arches over it and a pair of leaves hung inside, shut.
+ *
+ * **It publishes no passage of any kind and that is the whole point.** §14.2 is the record of
+ * what Carthage did instead: eight posterns published as `GateOut`s that are already `open`
+ * and that measure as *"eight bands about 4 m wide"* in the collision surface — a 1.5 m arch
+ * and a 4 m hole are not the same door, and a postern that is permanently open is eight
+ * unguarded holes in a wall whose premise is that it cannot be got through. Here the drawn
+ * width is 2.70, the collided width is 0 (the curtain is unbroken; the recess is 1.1 m deep
+ * in a 6.0 m wall) and the rastered width is 0. All three are correct and they are correct
+ * for the same reason: **the door is shut**. §15 task 7 is what gives it a `Crossing` to be a
+ * sally port through when it opens, and that is the only thing missing.
+ *
+ * Built into the curtain's own chunk, so it costs no draw call of its own — §4.10 asks for
+ * the postern leaves to share one `timber` stream per chunk and this is that arrangement.
+ */
+export function buildPosterula(
+  batch: Batch,
+  detail: number,
+  bay: Bay,
+  ap: Aperture,
+  heightAt: (x: number, z: number) => number
+): void {
+  const brick = batch.s('brick');
+  const stone = batch.s('stone');
+  const timber = batch.s('timber');
+  const metal = batch.s('metal');
+
+  const f = frameOf(bay.x0, bay.z0, bay.x1, bay.z1);
+  const cx = ap.x;
+  const cz = lerp(bay.z0, bay.z1, (ap.x - bay.x0) / WALL.towerSpacing);
+  const g = heightAt(cx, cz);
+  const used = batch.pushAll(POSTERULA_KEYS, new THREE.Matrix4().makeRotationY(f.rotY).setPosition(cx, 0, cz));
+
+  const half = ap.clearWidth * 0.5;
+  const h = POSTERULA_H;
+  // Outward face of the curtain in the local frame. Modules are authored with −Z outward.
+  const zF = -3.0;
+  // A recess, not a hole: the reveal is 1.1 m into a 6.0 m curtain, which is what the leaves
+  // hang in. Nothing is cut through, so nothing downstream has a passage to find.
+  const depth = 1.1;
+
+  // Travertine jambs and a monolithic lintel — the Via Nomentana postern's own arrangement.
+  for (const s of [-1, 1]) {
+    box(stone, s > 0 ? half : -half - 0.42, g, zF, s > 0 ? half + 0.42 : -half, g + h, zF + depth,
+      PAL.travertineDirty, { topGain: 1.06 });
+  }
+  box(stone, -half - 0.42, g + h, zF - 0.06, half + 0.42, g + h + 0.52, zF + depth, PAL.travertine, {
+    topGain: 1.12,
+  });
+  // The recess itself: a dark reveal so the door reads as set into the wall.
+  box(brick, -half, g, zF + depth - 0.02, half, g + h, zF + depth, new THREE.Color(0.05, 0.045, 0.04));
+
+  // Two relieving arches over the lintel, which is what carries 12 m of curtain across a
+  // 2.7 m opening without cracking the travertine.
+  if (detail >= 1) {
+    for (let k = 0; k < 2; k++) {
+      const y = g + h + 0.6 + k * 1.15;
+      const r = half + 0.5 + k * 0.22;
+      const nseg = detail >= 2 ? 9 : 5;
+      for (let i = 0; i < nseg; i++) {
+        const a0 = Math.PI - (Math.PI * i) / nseg;
+        const a1 = Math.PI - (Math.PI * (i + 1)) / nseg;
+        const c = new THREE.Color().copy(PAL.tileCourse).multiplyScalar(0.9 + hash2(i, k, 17) * 0.2);
+        P0.set(Math.cos(a0) * r, y + Math.sin(a0) * r * 0.5, zF - 0.04);
+        P1.set(Math.cos(a1) * r, y + Math.sin(a1) * r * 0.5, zF - 0.04);
+        P2.set(Math.cos(a1) * (r + 0.34), y + Math.sin(a1) * (r + 0.34) * 0.5, zF - 0.04);
+        P3.set(Math.cos(a0) * (r + 0.34), y + Math.sin(a0) * (r + 0.34) * 0.5, zF - 0.04);
+        OUT.set(0, 0, -1);
+        brick.quadN(OUT, P0, P1, P2, P3, c);
+      }
+    }
+  }
+
+  // The leaves, shut and barred. Half the Porta Flaminia's thickness: this is a door two
+  // men pass through in file, not one a ram is brought to.
+  const leafT = 0.16;
+  const dz = zF + depth - leafT;
+  const planks = detail >= 2 ? 7 : detail === 1 ? 4 : 1;
+  for (const s of [-1, 1]) {
+    for (let k = 0; k < planks; k++) {
+      const a = (s > 0 ? 0 : -half) + (half * k) / planks;
+      const b = (s > 0 ? 0 : -half) + (half * (k + 1)) / planks;
+      const c = new THREE.Color().copy(PAL.timberDark).multiplyScalar(0.84 + hash2(k, s + 1, 29) * 0.26);
+      box(timber, a + 0.012, g + 0.05, dz, b - 0.012, g + h - 0.08, dz + leafT, c);
+    }
+  }
+  if (detail >= 1) {
+    for (let k = 0; k < 2; k++) {
+      const y = g + 0.7 + k * 1.7;
+      box(metal, -half + 0.04, y, dz - 0.03, half - 0.04, y + 0.11, dz + leafT + 0.03, PAL.iron);
+    }
+    // The drawbar, on the city side of the leaves.
+    box(timber, -half - 0.3, g + 1.5, dz + leafT, half + 0.3, g + 1.78, dz + leafT + 0.16, PAL.timberDark);
+  }
+
+  batch.popAll(used);
+}
 
 /** The two streams the leaves and their ironwork land in. See `Batch.distinct`. */
 const GATE_DOOR_KEYS: readonly CityMatKey[] = ['timber', 'metal'];
@@ -481,20 +800,21 @@ export function buildGateLeaves(
   batch: Batch,
   detail: number,
   bay: Bay,
+  ap: Aperture,
   heightAt: (x: number, z: number) => number,
   wrecked = false
 ): void {
   const metal = batch.s('metal');
   const timber = batch.s('timber');
   const f = frameOf(bay.x0, bay.z0, bay.x1, bay.z1);
-  const cx = GATE_X;
-  const cz = lerp(bay.z0, bay.z1, (GATE_X - bay.x0) / WALL.towerSpacing);
+  const cx = ap.x;
+  const cz = lerp(bay.z0, bay.z1, (ap.x - bay.x0) / WALL.towerSpacing);
   const g = heightAt(cx, cz);
-  const zF = -GATE_BLOCK_D * 0.5;
+  const zF = -ap.blockD * 0.5;
   const used = batch.pushAll(GATE_DOOR_KEYS, new THREE.Matrix4().makeRotationY(f.rotY).setPosition(cx, 0, cz));
 
   const doorZ = zF + GATE_DOOR_SET;
-  const leafHalf = GATE_OPEN_WIDTH * 0.5;
+  const leafHalf = ap.clearWidth * 0.5;
   const sillY = g + GATE_DOOR_SILL;
   const headY = g + GATE_SPRING;
   const planks = detail >= 2 ? 11 : detail === 1 ? 6 : 1;
@@ -707,7 +1027,7 @@ export function buildGateLeaves(
       const hx0 = hash2(k, 3, 91);
       const hz0 = hash2(k, 8, 37);
       const ha = hash2(k, 12, 61);
-      const px = (hx0 - 0.5) * GATE_OPEN_WIDTH * 1.45;
+      const px = (hx0 - 0.5) * ap.clearWidth * 1.45;
       const pz = doorZ - 5.2 + hz0 * 11.0;
       const sm = new THREE.Matrix4()
         .makeTranslation(px, g + 0.12, pz)

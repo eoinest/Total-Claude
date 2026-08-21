@@ -14,8 +14,11 @@ import {
   WALL_BENCH_HALF,
   WALL_X_MAX,
   WALL_X_MIN,
+  MURO_TORTO,
   battleCoreMask,
   crestHeightAt,
+  muroTortoBank,
+  muroTortoTopAt,
   germanDeployMask,
   regionalPlain,
   riseAmplitude,
@@ -372,6 +375,61 @@ export function buildTerrain(seedLabel = 'campus-martius-271'): TerrainData {
       if (w < 0.002) continue;
       const k = j * res + i;
       heights[k] += (base - heights[k]) * w * 0.92;
+    }
+  }
+
+  /*
+   * -- 4d2. **The hill banked against the back of the Muro Torto.** §4.5, §15 task 4.
+   *
+   * §4.5's central claim is a *mechanic* and not a description: the Muro Torto is the
+   * substruction of the Horti Aciliorum's garden terrace, *"completamente costruito contro
+   * terra"* (Cozza 1992), so the ground on the city side stands at crest level — which is
+   * why it *"is garrisonable"*, why it *"needs no stairs, because a man walks onto it off
+   * the Pincian's own hillside"*, and why *"behind the stone is hillside"* makes a breach
+   * there meaningless.
+   *
+   * **None of that is true of a wall standing on a flat 80 m bench**, which is what stage 4d
+   * had just built under it: the walk would have stood 13.32 m over level ground on both
+   * sides and the seven bays would have needed a flight apiece — the exact opposite of the
+   * design, and §14.1's fault in miniature (the art asserting a property the simulation does
+   * not implement). So the earth is banked here, in the heightfield, in the representation
+   * `Pathfinding` and `heightAt` actually read, and `assertRomeSection` grades the joint
+   * between the bank and the walk at every boot.
+   *
+   * Applied **after** the bench and only cityward of the curtain's inner face, so the
+   * transect §15 task 2 is graded on — `heightAt` along the published circuit — is untouched
+   * by construction, and so is the whole field side the assault crosses.
+   */
+  for (let i = 0; i < res; i++) {
+    const wx = -HALF_EXTENT + i * spacing;
+    if (wx < MURO_TORTO.x0 - MURO_TORTO.taper || wx > MURO_TORTO.x1 + MURO_TORTO.taper) continue;
+    const cz = romeWallZ(wx);
+    const j0 = Math.max(0, Math.floor((cz + HALF_EXTENT) / spacing));
+    const reach = MURO_TORTO.bank + MURO_TORTO.terrace + MURO_TORTO.backslope + 8;
+    const j1 = Math.min(res - 1, Math.ceil((cz + reach + HALF_EXTENT) / spacing));
+    const target = muroTortoTopAt(wx);
+    for (let j = j0; j <= j1; j++) {
+      const wz = -HALF_EXTENT + j * spacing;
+      const lift = muroTortoBank(wx, wz);
+      if (lift < 0.002) continue;
+      /*
+       * Graded **to** the published terrace height, not by adding a lift to whatever is
+       * there, and at full strength on the plateau.
+       *
+       * Both halves of that are measured corrections. Adding the lift leaves the terrace
+       * carrying the ridged multifractal the hill is made of, and the apron then has to
+       * bridge it: worst rise **2.12 m**. Blending 0.92 of the way, which is what the bench
+       * under the wall does, loses eight per cent of a *thirteen-metre* correction rather
+       * than of a one-metre one — **1.07 m** of pure bias, and the worst apron measured 2.64.
+       * Full strength here, and the shaping is the bank's own profile: the ramp up, the
+       * plateau and the fall away behind it are all `muroTortoBank`'s, so the terrace is
+       * level exactly where §4.5 says a man steps off it onto the crest.
+       *
+       * A garden terrace is a made platform and is supposed to be flat; the Horti Aciliorum
+       * are terraces cut into the Pincian, not a hillside.
+       */
+      const w = lift / MURO_TORTO.height;
+      heights[j * res + i] += (target - heights[j * res + i]) * w;
     }
   }
 
