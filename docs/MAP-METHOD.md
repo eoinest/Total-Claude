@@ -42,7 +42,12 @@ Distilled from §3. Short, and each one traceable to an entry that paid for it.
    explicitly rather than bending the projection quietly. (`CARTHAGE.md` §2.4.)
 5. **A layout must be correct by construction, not corrected afterwards.** A resolver that nudges
    overlapping buildings apart is evidence the layout step was wrong. It also hides the fault from
-   whoever looks next.
+   whoever looks next. **And the sharper reason, measured: Rome's resolver *works*.** It takes 31
+   intersecting pairs and 48,343 m² to **zero**, and its own assertion is honest about it. What it
+   cannot do is hide the bill — a mean **65.3 m** and worst **167.7 m** of displacement off the
+   surveyed position, which is then paid by the street network (26 of 31 monuments standing in a
+   carriageway) and by the fabric (six quarters buried, 789 insulae). **A resolver converts one
+   layout error you can see into two you cannot.**
 6. **Every invariant needs an instrument, and the instrument must compare against something outside
    the thing being checked.** This project's most expensive recurring failure is a check that
    compares something against itself. Real published dimensions, a georeferenced plate, geometry read
@@ -65,6 +70,16 @@ Distilled from §3. Short, and each one traceable to an entry that paid for it.
    in the projected gap. At Rome's `KZ` a true-scale insula did not fit between two projected
    cross-streets **at any point in the real range**, so the grid step was arithmetically impossible
    before anyone wrote a line of it. One division would have found this in 2019 as easily as in 2026.
+11. **The footprint the game collides with and the stone the player sees are two objects, and one
+   instrument has to compare them.** This is rule 6 applied to the one place both maps break it, and
+   it is the fault that survives every fix to the projection. A monument publishes a rectangle to the
+   keep-out map and the obstacle set; a geometry builder draws stone; nothing checks the second
+   against the first. Measured: **Rome draws stone outside its own published footprint on 23 of 31
+   structures, worst overhang 72.2 m per side** (Circus Maximus), and **1,153 sampled monument
+   vertices stand inside 23 buildings** — on a city whose footprints are provably disjoint.
+   **Carthage has the same defect, 2 of 10 structures, worst 14.85 m.** So both builds can report zero overlaps, correctly, while the picture shows a bath
+   house standing in a terrace of houses. Derive the reserved rectangle *from* the geometry builder's
+   own extents rather than typing it into a survey table, and gate it.
 
 ---
 
@@ -96,6 +111,17 @@ beliefs after the fact.
   because `KX` = 0.443 and `KZ` = 0.222. The prior stated it as a single ~10× areal figure. Any fix
   that treats it as one scalar will half-work, which is exactly what `PLAN_SCALE = 0.65` is: it was
   measured and tuned against a mean, so it is roughly right in x and hopeless in z.
+
+- **And the confirmed fault is not what is on the screen, which took a second instrument to
+  establish.** Everything above is measured at the *projected* positions, before
+  `resolveOverlaps` runs. `tools/probe-fabric.mjs` measures the same city **after** it, with
+  independent arithmetic, and finds **0 intersecting monument pairs and 0 buildings inside a
+  monument**. The resolver discharges the whole 31 pairs / 48,343 m² / 64.69 m — at a cost of
+  **mean 65.3 m and worst 167.7 m** of displacement off the surveyed position. So both statements
+  are true and only together are they useful: **the arithmetic forces overlaps, the resolver removes
+  them, and what the player sees is what removing them costs** — 60,932 m² of monument standing in a
+  carriageway, six buried quarters, and hash-derived grain. Read §3's gate entry before concluding
+  the shipped city interpenetrates; it does not.
 
 - **And the hypothesis was *not the whole cause*, which is the more useful finding.** It explains the
   monuments. It does not explain the quilt. There is a **second, independent** fault of comparable
@@ -245,5 +271,190 @@ error.
 - **Write the fabric's instrument in the same phase as the fabric's design.** `ROME-FABRIC.md` §5
   Phase 2 puts three of the six probe checks live before any block is generated, specifically so
   that the previous entry's verdict cannot repeat.
+
+### 21 Aug 2026 — the fabric got a gate: `tools/probe-fabric.mjs`, and it runs on both maps
+
+**What we did.** Turned the fabric's acceptance measurement into a **gate** rather than a report:
+twenty-one checks over any candidate city, each with its threshold as a named constant and the
+reasoning in a comment beside it, `PASS`/`FAIL` per check, an `n/21` verdict and a non-zero exit. Run
+on Rome and on Carthage. It covers **both** faults `ROME-FABRIC.md` §2 establishes — G1–G3 and
+G12–G16 for the monument arithmetic, **G18–G21 for the quilt** — because a gate that measured only
+intersection would pass a quilt, and Rome proves that below.
+
+Four rulers, all outside the thing being checked (rule 6): published dimensions typed into the tool
+with a citation per figure, never read from `survey.ts`; the vertices that will actually be
+rasterised, read off the baked `BufferGeometry` in the live scene; the probe's own polygon-clip and
+SAT arithmetic, so it never calls `obbOverlap` or `assertNoFabricOverlaps`; and, for fidelity,
+**aspect ratio**, which is invariant under uniform plan compression and so needs to know nothing
+about the projection — with the absolute-scale test taking its reference from the **median of the
+cohort's own ratios**, so it needs no repo constant either.
+
+**What we expected.** Rome filthy and Carthage clean; the visible fault to be monuments intersecting
+each other and intersecting houses; the quilt checks to be the hard ones to write.
+
+**What happened. Rome 6/21, Carthage 12/21 — and the expected fault does not exist.**
+
+- **Rome has zero intersecting monument footprints and zero buildings inside a monument, measured
+  *after* the resolver.** `ROME-FABRIC.md` §2.2 measured the *projected* positions; this measures
+  the same city after `resolveOverlaps` has run, with independent arithmetic, and finds **0 pairs
+  and 0 m²** — the build's own assertion agrees. The two passes are consistent, and together they
+  say what neither says alone: **the arithmetic fault is real, the resolver discharges it
+  completely, and the thing the owner is looking at is therefore not residual intersection.**
+  Re-measured here at the ideal positions: **31 pairs, 48,343 m², worst penetration 64.69 m → 0, 0,
+  0**, at a cost of **mean 65.3 m, median 68.7 m, worst 167.7 m** of displacement off the surveyed
+  position. That displacement is the bill, and the streets and the fabric pay it.
+- **The streets pay first.** **60,932 m²** of monument footprint stands in a carriageway, over
+  **121 street segments and 26 of the 31 monuments**, and **29,868 of 129,228 sampled drawn
+  carriageway vertices — 23.1 % — are drawn underneath a monument.** Carthage on the same
+  instrument: 3,918 m², 7 monuments, **0.56 %**. A 41× difference on the same measure.
+- **The fabric pays second.** Six quarters print *"the quarter is buried"* at every boot —
+  `velabrum` at **0 buildings from 260 candidate frontages** — and the whole walled city carries
+  **789 insulae** against Carthage's 685 on a smaller circuit. Clearance across all 820 Roman
+  structures: median **0.68 m**, p25 0.16 m, **543 of 820 inside the XII Tables' 1.48 m *ambitus***,
+  7 negative, worst −3.54 m. Carthage's 727 structures: median **4.00 m**, **zero negative, zero
+  under a metre**, worst +3.36 m.
+- **A fifth fault, not in `ROME-FABRIC.md`, shared with Carthage, and probably the one the owner can
+  actually see: the collision footprint and the drawn stone are two different objects and nothing
+  compares them.** Rome draws stone outside its own published footprint on **23 of 31 structures,
+  worst overhang 72.2 m per side** (Circus Maximus), and **1,153 sampled monument vertices stand
+  inside 23 buildings** — on a city whose footprints are provably disjoint. Carthage: 2 of 10, worst
+  14.85 m. That is now rule 11, and it is the fault that survives every change to the projection.
+- **The grain check §2's prediction said would be dropped now exists, and it separates the two
+  cities with an empty gap.** This is the result worth more than the rest of the entry, because the
+  prediction was explicit: *"the only check in the plan that can fail on a quilt and pass on a city,
+  and the one most likely to be dropped as nice-to-have. If the rebuild goes wrong again, that is
+  where."*
+
+  | grain measure | Rome | Carthage | a hash would give |
+  |---|---:|---:|---:|
+  | block orientation vs the nearest street, median | **9.17°** | **0.00°** | 22.5° |
+  | same, p90 / max | 25.1° / 44.1° | 0.00° / 42.3° | — |
+  | blocks more than 5° off their own street | **556 of 788** | **29 of 685** | — |
+  | neighbouring blocks within 40 m, median difference | 4.27° | **0.00°** | 22.5° |
+  | neighbour pairs rotating > 15° across a 40 m gap | **335 of 1,966 (17.0 %)** | **0 of 1,125** | — |
+
+  Carthage's blocks are *exactly* parallel to their streets and to each other. Rome's are drawn from
+  a distribution. **Neither city needed a screenshot for this.**
+- **And the regions do not partition.** Rome's **17 districts** claim **1.33×** the 2,105,600 m² of
+  land inside the circuit that is not already a monument's, over **75 overlapping pairs**, with
+  **1,602,624 m² claimed more than once** — while **only 0.569× of that ground is covered at all.**
+  Simultaneously over-claiming and under-covering: 43 % of the land inside the walls is in no
+  district, and 1.6 km² is in two or more. (Their declared rectangles total **1.831×** the same
+  denominator; `ROME-FABRIC.md` §2.3's 266 % is the same fault over a smaller denominator — that
+  pass measured against 1.45 km² of walled ground and this one against 2.11 km² of non-monument land
+  out to the heightfield edge. The numbers agree about the city and differ about the frame; use
+  whichever, and say which.) Carthage: **16 quarters, 0.824× claimed, 21 overlapping pairs,
+  174,080 m² double-claimed, 0.722× covered.** The same fault, an order of magnitude milder, and
+  failing on the *under*-covering side.
+- **Carthage is better exactly where rule 1 predicts and is NOT a clean city.** It wins on every
+  fabric measure — 0 building-versus-building overlaps against Rome's 4, 0 monument stone in a
+  building against Rome's 1,153 vertices, monument-to-fabric clearance 7.68 m against 1.02 m, no
+  buried quarters, and both grain checks — and it still fails monument-in-a-carriageway,
+  region partition, monument-to-monument clearance (**4.07 m** between the two harbours, under the
+  7 m the rule asks for) and stone-outside-its-own-footprint. **Copy the method; do not assume the
+  result it produced is passing.**
+
+**The footprint-fidelity table, which is the artefact that outlives the probe.** The published
+figures and their citations live in `PUBLISHED` at the top of `tools/probe-fabric.mjs`; rows that
+could not be sourced are marked `unsourced` there and are never gated on. Measured plan compression
+across the sourced cohort is **0.650** — so the projection arithmetic is uniform and honest, and
+every exception below is a *modelling* error rather than a projection error.
+
+| monument | published | modelled | modelled ÷ published | published aspect | modelled aspect | verdict |
+|---|---|---|---:|---:|---:|---|
+| Colosseum | 188 × 156 | 122.9 × 101.4 | 0.653 | 1.205 | 1.212 | ok |
+| **Circus Maximus** | **621 × 118** | 403.7 × 123.5 | 0.650 | **5.263** | **3.268** | **wrong shape — built to its outer envelope, not its track** |
+| **Baths of Caracalla** | **218 × 112** | 141.7 × 91.0 | 0.650 | **1.946** | **1.557** | **wrong shape — `survey.ts` says "218 × 112, the block is what is modelled" and models 218 × 140** |
+| Pantheon | 84 × 58 *(derived)* | 54.6 × 37.7 | 0.650 | 1.448 | 1.448 | ok in plan; the *drawn* rotunda is 48.3 × 47.7, i.e. square |
+| Castra Praetoria | 440 × 380 | 260.0 × 245.1 | 0.591 | 1.158 | 1.061 | small, and **documented** — at true size it is a tenth of the buildable city |
+| Theatre of Marcellus | 129.8 × 115 | 84.5 × 74.8 | 0.651 | 1.129 | 1.130 | ok |
+| Stadium of Domitian | 275 × 106 | 178.8 × 68.9 | 0.650 | 2.594 | 2.594 | ok |
+| Mausoleum of Augustus | 87 × 87 | 56.6 × 56.6 | 0.650 | 1.000 | 1.000 | ok |
+| Ara Pacis | 11.625 × 10.55 | 7.54 × 6.89 | 0.649 | 1.102 | 1.094 | ok |
+| Porticus Octaviae | 132 × 119 | 85.8 × 77.4 | 0.650 | 1.109 | 1.109 | ok |
+| Temple of Jupiter OM | 62.25 × 53.5 | 41.0 × 34.5 | 0.658 | 1.164 | 1.189 | ok |
+| **Iseum Campense** | **200 × 50** | 45.5 × 22.1 | **0.228** | **4.000** | **2.059** | **wrong size AND shape — 2.85× too small, which is the measurement of `ROME.md` §6.3's "too small by a factor of three"** |
+| Baths of Diocletian | 376 × 361 | *absent* | — | — | — | **correctly absent** — begun AD 298, 27 years after this map |
+
+**Verdict — the two passes together are worth more than either, and the order mattered.** The
+research pass proved the arithmetic *must* produce overlaps; this pass proves the shipped city *has
+none*, and that every visible fault is downstream: displacement into the streets, starved quarters,
+hash-derived grain, regions that do not tile, and stone drawn outside its own footprint. Had only
+one of the two been done, the rebuild would have begun by changing `KX`/`KZ` and would have shipped
+the same city with a different projection.
+
+**What we would do differently.**
+
+- **Write the gate before the thing it grades.** Every number above is one boot and ~1,400 lines.
+- **Prefer the geometry read.** Five of the twenty-one checks found faults no plan-side test could
+  ever find (G5, G7, G14–G16), and all five came from reading vertices. Three workstreams in a row
+  now: the winding probe, `probe-solid`, and this.
+- **A median cannot see a quilt, and this file nearly shipped a gate that proved it.** G21's first
+  version gated on the median neighbour-orientation difference. Rome's is **4.27°** and it *passed*,
+  because most neighbours sit inside one district and share its lattice — the quilt lives at the
+  *boundaries*, where **17 % of pairs rotate more than 15° across a 40 m gap** against Carthage's
+  **0 %**. A distribution's tail is the signal; its middle is the thing the fault hides behind.
+  Same lesson as the HUD's median frame time, found again in a different file.
+- **Instrument bugs are product bugs. This one had four.** (i) Nearest-*centre* attribution handed
+  635 of the Theatre of Pompey's vertices to Tiber Island, whose centre was nearer than the
+  theatre's own — fixed by normalising distance by each claimant's own reach. (ii) A composite
+  decomposed into boxes reported its own joints as overlaps: the Cothon's 28-box quay ring produced
+  **28 "monument overlaps" of 9.93 m² at 2.09 m each, identical to the centimetre**, and taking one
+  of those 28 boxes as "the Cothon" reported the 325 m harbour at **0.098** of its published size —
+  fixed by aggregating a composite before measuring it, and by discriminating a joint from a
+  collision by depth, the two populations being three orders of magnitude apart. (iii) The partition
+  denominator counted monument ground as a region's responsibility until it was subtracted.
+  (iv) The median-versus-tail error above. **Grade the gate as a product.**
+- **A bare `chromium.launch()` on this box rasterises in software, and it costs everything.** The
+  GPU process came up `--use-angle=swiftshader-webgl`; boots took four to six minutes and every
+  screenshot timed out, at 30 s and again at 180 s, on both maps — which reads as a hung page and is
+  a missing flag. With `--use-angle=metal` (which `tools/shoot.mjs:1548` has carried since the shot
+  harness was written) the same frames advance in **35–255 ms and capture in 149–247 ms**. Before
+  believing any timing taken through Playwright here, check
+  `ps -A -o command | grep 'type=gpu-process'`.
+- **`page.screenshot` still cannot photograph this project even on Metal.** Playwright waits for the
+  page to reach a stable state and a page driving a rAF loop over a 3.1 M-triangle scene never
+  does. CDP `Page.captureScreenshot` returns in milliseconds.
+- **Attribute a server by its `cwd` before killing it.** Chasing an orphaned vite on 5951 I killed a
+  two-minute-old process on that port without checking whose it was; a later process on the same
+  port turned out to belong to another agent's worktree. `lsof -a -p <pid> -d cwd` is one command.
+  The other half of the same rule earned itself the first time it fired: **never reuse a server this
+  process did not start.** A run that had reused the foreign 5951 would have graded another branch's
+  modules, and it failed instead with `Failed to fetch dynamically imported module`, which reads as
+  a code fault and is not one.
+- **One check in `ROME-FABRIC.md` §4.4 could not be written, and it is not the one anybody would
+  guess.** See the next entry.
+
+### 21 Aug 2026 — a blind spot on the record: the plates are not a machine ruler
+
+**What we did.** Tried to make the georeferenced plates the independent ruler for footprint
+fidelity, as rule 6 asks and as `ROME-FABRIC.md` §4.4 check 3 specifies, rather than published
+dimensions typed into a tool.
+
+**What happened. Two facts, both worth writing down.**
+
+- **A git worktree cannot see `reference/`.** It is gitignored local-only material, so it exists in
+  the main checkout and in no worktree — `git worktree add` does not copy untracked files. An agent
+  working in a worktree will look, find nothing, and conclude the plates do not exist. They do. This
+  probe's first draft said so in its own header comment. Copy or symlink the directory in.
+- **The only machine-readable plate carries no names.**
+  `sitar-forma-urbis-severiana-vector-EPSG4326.geo.json` is 8,150 features whose entire property set
+  is `{admapkey, layer, path}` — fragments and interior wall lines, with no monument identification
+  at all. A probe cannot read "the Circus Maximus is 621 × 118" off it, and the Lanciani and AGEA
+  rasters would each need digitising per monument. (`ROME.md` §6.4 records a related negative: the
+  same file cannot recover the *pes monetalis* either, because the digitiser's own metre grid
+  dominates the signal.)
+
+**Verdict — a real limitation, stated rather than papered over.** `probe-fabric` can prove a
+footprint is the wrong **size** and cannot prove it is in the wrong **place**, so
+`ROME-FABRIC.md` §4.4's check 3 is **not implemented and cannot be as written.** Until somebody
+digitises an outline per monument, the plates stay a *visual* comparator through
+`src/city/overlay.ts`, and the position check is a human looking at one image.
+
+**What we would do differently:** budget the digitising. Twenty monuments' corner coordinates read
+off the georeferenced Lanciani raster, in a table shaped like `PUBLISHED`, turns the whole position
+question into a gate — and the rebuild is placing every monument from those plates anyway, so
+somebody will read those coordinates regardless. Write them into a file instead of into a commit
+message.
 
 <!-- Append new entries above this line. -->
