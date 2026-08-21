@@ -131,7 +131,7 @@
  * fails once and `maxStepsPerFrame = 5` means the tick is never made up. So do not coarsen
  * this file's step — but not because frame grouping reaches the simulation. Held to an equal
  * *tick count*, five ticks a frame and one tick every two frames are bit-identical on all
- * three hashes across a 6,407-tick battle with real player orders in it
+ * three hashes across a 6,783-tick battle with real player orders in it
  * (`tools/qa-replay.mjs`, which uses `window.__game.advanceTicks`).
  *
  * ## A build compared with itself cannot see a build that changed

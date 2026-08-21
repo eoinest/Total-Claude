@@ -558,7 +558,7 @@ export class Engine {
    * `double(1/6)` is about 7e-18 short of five times `double(1/30)` so the fifth subtraction
    * fails once and `maxStepsPerFrame = 5` means the tick is never made up. The arms were never
    * comparing equal tick counts. Held to an *equal tick count* — which `advanceTicks` below
-   * exists to do — a 6,407-tick battle carrying real recorded player input is bit-identical at
+   * exists to do — a 6,783-tick battle carrying real recorded player input is bit-identical at
    * 1000/6 and at 1000/60 on the pool hash, both unit hashes and `BattleFlow.result`, measured
    * by `tools/qa-replay.mjs`. So the simulation is a pure function of (config, seed, tick
    * index), and a probe that wants a cheap fast-forward should ask for ticks, not for seconds.

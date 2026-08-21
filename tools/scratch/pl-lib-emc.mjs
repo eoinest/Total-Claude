@@ -2,6 +2,7 @@
 import { chromium } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { bootThroughMenu, ensureServer } from '../lib/menu-boot.mjs';
 
 export const ROOT = path.resolve(import.meta.dirname, '../..');
 
@@ -105,8 +106,22 @@ const INSTALL = () => {
   });
 };
 
+/**
+ * Boot through the real menu.
+ *
+ * The click sequence now comes from `tools/lib/menu-boot.mjs`, shared with
+ * `tools/qa-replay.mjs`. It used to be written out here, and it had been broken since
+ * `8534b23` on 20 August put a **front door** in front of the setup sheet: `menu.css` hides
+ * `.menu-setup` while `.menu` is `at-home`, and `?autoplay=0` does not name a battle, so
+ * `startStep` opens on the front door and `[data-map=…]` was never visible to be clicked.
+ * None of the six scripts in this directory asserts anything, so all six went on producing
+ * narrative logs about a menu they could not reach. That is the argument for the shared file.
+ *
+ * It also starts a server if there is none, which this never did — it assumed one on `port`.
+ */
 export async function boot({ port, map, tier = 'high', out, size = 'default', label }) {
   await mkdir(out, { recursive: true });
+  const { base } = await ensureServer({ port, root: ROOT });
   const browser = await chromium.launch({
     args: ['--use-gl=angle', '--use-angle=metal', '--ignore-gpu-blocklist', '--hide-scrollbars'],
   });
@@ -116,22 +131,15 @@ export async function boot({ port, map, tier = 'high', out, size = 'default', la
   page.on('console', m => { if (m.type() === 'error') { cerrs.push(m.text()); console.log('  !! CONSOLE', m.text().slice(0, 240)); } });
 
   const t0 = Date.now();
-  await page.goto(`http://127.0.0.1:${port}/?autoplay=0`, { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('.menu-sheet', { timeout: 60000 });
-  await page.click(`[data-map="${map}"]`);
-  await page.click('[data-scen="assault"]');
-  await page.click(`[data-tier="${tier}"]`);
-  if (size !== 'default') await page.click(`[data-size="${size}"]`);
-  await page.waitForTimeout(250);
-  await page.screenshot({ path: path.join(out, `${label}-00-menu.png`) });
-  await page.click('.begin');
-  let ready = false;
-  for (let i = 0; i < 240 && !ready; i++) {
-    ready = await page.evaluate(() => !!window.__game?.ready).catch(() => false);
-    if (!ready) await page.waitForTimeout(500);
-  }
+  await bootThroughMenu(page, {
+    base,
+    map,
+    scenario: 'assault',
+    tier,
+    size: size === 'default' ? undefined : size,
+    onSetup: (p) => p.screenshot({ path: path.join(out, `${label}-00-menu.png`) }),
+  });
   const bootS = (Date.now() - t0) / 1000;
-  if (!ready) throw new Error(`not ready after ${bootS}s`);
   await page.waitForTimeout(1200);
   await page.evaluate(INSTALL);
   return { browser, page, errs, cerrs, bootS };

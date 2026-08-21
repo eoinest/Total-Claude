@@ -270,7 +270,7 @@ unchanged.
 
 ### `tools/qa-replay.mjs` — the record, driven by a real mouse through the real menu
 
-The instrument that can see an input path nobody told it about. **17 checks in seven arms** on
+The instrument that can see an input path nobody told it about. **20 checks in eight arms** on
 port 5245.
 
 ```sh
@@ -291,6 +291,7 @@ and real keys, records what that produces, and replays the record in a fresh pag
 | record | `record` | The recorder saw the mouse: orders, keys, and the deployment plaque — and left the AI's thousands of orders on the bus where they belong |
 | replay | `replay` | Every checkpoint bit-identical; the re-recorded log is byte-identical; same `BattleFlow.result` |
 | coarse | `coarse` | The same battle at **five ticks a frame** instead of one every two |
+| tier | `tier` | The record's graphics tier beats the URL's; a record whose army this run cannot field is refused by name |
 | late | `late` | An order shifted 1/2/4/8 ticks — a ladder, reporting the smallest lateness the gate can see |
 | bus | `bus` | An unrecorded `orderIssued` straight onto the bus, mid-battle — the twenty-fourth input path |
 | write | `write` | A direct write to `UnitGroupState` from outside a tick |
@@ -299,9 +300,21 @@ and real keys, records what that produces, and replays the record in a fresh pag
 **Three of the arms are failures if they go green.** `late`, `bus` and `write` break the battle
 on purpose and are only useful as evidence that the gate can see the fault it exists to catch.
 
-**Measured on the shipped field battle at `small`**: 226.1 s, 2,247 men, 34 recorded events,
-2,809 B of JSON, **1,224 B gzipped**, a 1,632-character token — config 476 B, order log 451 B,
-checkpoints 250 B when each is gzipped alone.
+**It refuses to be pointed at nothing.** An unknown flag or an unknown `--only=` arm exits 2
+rather than running a subset of nothing and printing a tick; the record arm asserts a headcount,
+a tick count and a checkpoint count before anything is compared, because two empty checkpoint
+lists agree with each other; each negative arm asserts that its sabotage actually landed; and a
+run that recorded zero checks fails. This is deliberate and it is not hypothetical:
+`qa-determinism.mjs --battle=rome` appends a meaningless `&rome`, loads the **default field
+battle**, looks up a baseline key that does not exist, compares nothing, and exits 0. The three
+real invocations are `--battle="map=campus-martius&scenario=assault"`,
+`--battle="map=carthage&scenario=assault"`, and no flag at all — confirm with the headcount,
+8,632 / 3,074 / 3,440, which is printed on every line for exactly this reason.
+
+**Measured on the shipped field battle at `small`**: 226.1 s, 2,247 men, 32 recorded events,
+2,726 B of JSON, **1,188 B gzipped**, a 1,584-character token — config 476 B, order log 423 B,
+checkpoints 245 B when each is gzipped alone. The bus carried 3,258 AI orders over the same
+battle and the record has none of them.
 
 **Comparison is at an equal tick count, never an equal elapsed time.** `window.__game
 .advanceTicks(n, stepMs)` runs exactly *n* ticks at whatever frame schedule is asked for,

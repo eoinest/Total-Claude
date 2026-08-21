@@ -3,8 +3,14 @@
  * QA: the replay record, driven by a real mouse through the real menu.
  *
  * Usage: node tools/qa-replay.mjs [--port=5245] [--json=path] [--shots=dir]
- *                                 [--only=record|replay|coarse|late|bus|write|command]
- *                                 [--seconds=200] [--keep]
+ *                                 [--only=record|replay|coarse|tier|late|bus|write|command]
+ *                                 [--seconds=200]
+ *
+ * An unknown flag, or an unknown `--only=` arm, exits 2 rather than running a subset of
+ * nothing and printing a tick. That is not hypothetical: `qa-determinism.mjs --battle=rome`
+ * appends a meaningless `&rome`, loads the default field battle, looks up a baseline key that
+ * does not exist, compares nothing and exits 0. A gate that can be pointed at nothing and
+ * still go green is precisely the defect this file exists to catch, so it must not have it.
  *
  * ## What this is for, and why nothing else in the project can do it
  *
@@ -46,11 +52,11 @@
  */
 
 import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import { bootThroughMenu, ensureServer } from './lib/menu-boot.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const args = new Map(
@@ -59,12 +65,44 @@ const args = new Map(
     return m ? [m[1], m[2] ?? 'true'] : [a, 'true'];
   })
 );
+/**
+ * The arms, and the reason this list is a constant rather than a string in six `if`s.
+ *
+ * An unknown flag is silently ignored by the argument parser every tool here shares, and
+ * `qa-determinism.mjs` has already been run as `--battle=rome` — which appends a meaningless
+ * `&rome`, loads the default field battle, looks up a baseline key that does not exist, and
+ * reports success having compared nothing. A gate that can be pointed at nothing and still
+ * go green is the defect this file exists to catch, so it must not have it: every flag and
+ * every `--only=` value below is checked against this list and an unknown one is fatal.
+ */
+const ARMS = ['record', 'replay', 'coarse', 'tier', 'late', 'bus', 'write', 'command'];
+const FLAGS = ['port', 'json', 'shots', 'only', 'seconds'];
+
+const bad = [...args.keys()].filter((k) => !FLAGS.includes(k));
+if (bad.length) {
+  console.error(`unknown flag(s): ${bad.map((k) => `--${k}`).join(', ')}`);
+  console.error(`known: ${FLAGS.map((k) => `--${k}`).join(' ')}`);
+  process.exit(2);
+}
+
 const PORT = Number(args.get('port') ?? 5245);
 const JSON_OUT = args.get('json') ?? null;
 const SHOT_DIR = args.get('shots') ? path.resolve(ROOT, args.get('shots')) : null;
 const ONLY = args.get('only') ?? null;
+if (ONLY) {
+  const unknown = ONLY.split(',').filter((a) => !ARMS.includes(a));
+  if (unknown.length) {
+    console.error(`unknown arm(s) in --only: ${unknown.join(', ')}`);
+    console.error(`known arms: ${ARMS.join(', ')}`);
+    process.exit(2);
+  }
+}
 /** Simulated seconds of battle to record. The design's size estimate is for 200. */
 const SECONDS = Number(args.get('seconds') ?? 200);
+if (!Number.isFinite(SECONDS) || SECONDS < 10) {
+  console.error(`--seconds must be a number of at least 10; got '${args.get('seconds')}'`);
+  process.exit(2);
+}
 const W = 1600;
 const H = 900;
 
@@ -83,36 +121,7 @@ const wanted = (name) => !ONLY || ONLY.split(',').includes(name);
 // Server and browser
 // ---------------------------------------------------------------------------
 
-const waitForServer = async (url, ms) => {
-  const end = Date.now() + ms;
-  while (Date.now() < end) {
-    try {
-      const r = await fetch(url, { signal: AbortSignal.timeout(2000) });
-      if (r.ok || r.status === 304) return true;
-    } catch { /* not up */ }
-    await new Promise((r) => setTimeout(r, 300));
-  }
-  return false;
-};
-
-const base = `http://127.0.0.1:${PORT}`;
-let server = null;
-if (!(await waitForServer(base, 1200))) {
-  server = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
-    cwd: ROOT,
-    stdio: 'ignore',
-    // A per-worktree dependency cache. Every agent worktree symlinks `node_modules` at the
-    // shared checkout, so the default `node_modules/.vite` is one directory written by as
-    // many vite processes as there are agents running a gate.
-    env: {
-      ...process.env,
-      TC_NO_HMR: '1',
-      TC_VITE_CACHE_DIR: process.env.TC_VITE_CACHE_DIR
-        ?? path.join('/tmp', `tc-vite-${path.basename(ROOT)}`),
-    },
-  });
-  if (!(await waitForServer(base, 90000))) { console.error('vite did not start'); process.exit(1); }
-}
+const { base, server } = await ensureServer({ port: PORT, root: ROOT });
 console.log(`server ${base}${server ? ' (started here)' : ' (already up)'}`);
 if (SHOT_DIR) await mkdir(SHOT_DIR, { recursive: true });
 
@@ -230,21 +239,18 @@ const INSTALL = () => {
  */
 async function recordBattle() {
   const page = await newPage();
-  await page.goto(`${base}/?autoplay=0`, { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('.menu.at-home .dest-battle', { timeout: 60000 });
-  await shot(page, 'rp-00-home');
-  // `page.click`, never a coordinate: the menu fades in over two frames and a raw
-  // coordinate press lands during the transition and is swallowed.
-  await page.click('.menu-home .dest-battle');
-  await page.waitForSelector('.menu .begin', { timeout: 60000 });
-  await page.click('.menu [data-map="campus-martius"]');
-  await page.click('.menu [data-scen="field"]');
-  await page.click('.menu [data-tier="high"]');
-  await page.click('.menu [data-size="small"]');
-  await settle(page, 250);
-  await shot(page, 'rp-01-setup');
-  await page.click('.menu .begin');
-  await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 240000 });
+  // `bootThroughMenu` is the playability rig's own sequence, moved into `tools/lib/` so this
+  // gate and `tools/scratch/pl-*-emc.mjs` drive the menu one way rather than two. The rig's
+  // copy had been unable to reach the setup sheet since the front door landed, which is what
+  // a shared driver is for.
+  await bootThroughMenu(page, {
+    base,
+    map: 'campus-martius',
+    scenario: 'field',
+    tier: 'high',
+    size: 'small',
+    onSetup: (p) => shot(p, 'rp-01-setup'),
+  });
   await settle(page, 2200);
   await page.evaluate(INSTALL);
 
@@ -378,9 +384,12 @@ async function recordBattle() {
  * `stepMs` is the frame schedule. `injectAt`/`inject` break the battle on purpose part way
  * through, which is how the negative arms prove this gate can see the fault it exists for.
  */
-async function playback(token, { stepMs = 1000 / 60, ticks, fromTick, injectAt, inject, shotName } = {}) {
+async function playback(token, {
+  stepMs = 1000 / 60, ticks, fromTick, injectAt, inject, shotName, quality,
+} = {}) {
   const page = await newPage();
-  const q = fromTick === undefined ? '' : `&from=${(fromTick / 30).toFixed(6)}`;
+  const q = (fromTick === undefined ? '' : `&from=${(fromTick / 30).toFixed(6)}`)
+    + (quality === undefined ? '' : `&quality=${quality}`);
   await page.goto(`${base}/?replay=${token}${q}`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 240000 });
   await page.evaluate(INSTALL);
@@ -401,6 +410,14 @@ async function playback(token, { stepMs = 1000 / 60, ticks, fromTick, injectAt, 
   });
 
   const target = ticks;
+  /*
+   * Did the sabotage actually land?
+   *
+   * A negative arm that injects nothing and then reports "no difference" is a check that
+   * cannot fail, dressed as one that just did. Every `inject` below returns a truthy value
+   * on success, and the arm asserts on it separately from the divergence.
+   */
+  let injected = null;
   // A frame of the replay for the eye as well as the hash: the REPLAY strip, the orders still
   // to come, and the TAKE COMMAND button, over a battle nobody is playing.
   if (shotName && SHOT_DIR) {
@@ -414,7 +431,7 @@ async function playback(token, { stepMs = 1000 / 60, ticks, fromTick, injectAt, 
     // the page is still at tick 0.
     const now = await page.evaluate(() => window.__game.engine.time.tick);
     await page.evaluate(([n, s]) => window.__game.advanceTicks(n, s), [injectAt - now, stepMs]);
-    await page.evaluate(inject);
+    injected = await page.evaluate(inject);
     await page.evaluate(([n, s]) => window.__game.advanceTicks(n, s), [target - injectAt, stepMs]);
   } else {
     const done = await page.evaluate(() => window.__game.engine.time.tick);
@@ -422,6 +439,7 @@ async function playback(token, { stepMs = 1000 / 60, ticks, fromTick, injectAt, 
   }
 
   const out = {
+    injected,
     rec: await page.evaluate(() => window.__rec()),
     rp: await page.evaluate(() => window.__rp()),
     hashes: await page.evaluate(() => window.__game.hashes()),
@@ -462,8 +480,13 @@ function logDiff(a, b) {
 /** Rewrite one field of the wire JSON and re-seal the token. Node's gzip, browser's gunzip. */
 function remake(token, edit) {
   const json = JSON.parse(gunzipSync(Buffer.from(token, 'base64url')).toString('utf8'));
+  const before = JSON.stringify(json);
   edit(json);
-  return gzipSync(Buffer.from(JSON.stringify(json), 'utf8')).toString('base64url');
+  const after = JSON.stringify(json);
+  // An edit that changed nothing would make the arm below compare a record with itself and
+  // call the resulting agreement a pass.
+  if (before === after) throw new Error('remake: the edit changed nothing');
+  return gzipSync(Buffer.from(after, 'utf8')).toString('base64url');
 }
 
 // ---------------------------------------------------------------------------
@@ -533,6 +556,18 @@ if (wanted('record')) {
   record('record-deploy', depEvents >= 1,
     'the deployment phase is in the record',
     `${depEvents} deployment operation(s), commit included`);
+  /*
+   * The headcount and the checkpoint count, asserted rather than printed.
+   *
+   * Everything downstream compares one checkpoint list against another, and two empty lists
+   * agree. A battle that recorded no army, or one checkpoint, would sail through every arm
+   * below. `2247` is what `campus-martius` / `field` / `small` / `high` fields; if that moves,
+   * the run is not measuring the battle this file thinks it is.
+   */
+  record('record-scale', rec.count0 > 1000 && rec.marks.length >= 4 && rec.ticks > 3000,
+    'the recorded battle is big enough for the comparisons below to mean anything',
+    `${rec.count0} men, ${rec.ticks} ticks, ${rec.marks.length} checkpoints`,
+    'two empty checkpoint lists agree with each other');
   record('record-provenance', orderEvents === R.bus.local && R.bus.ai > 50 && R.bus.none === 0,
     'the recorder took the player\'s orders off the bus and left the AI\'s',
     `bus carried ${R.bus.ai} AI, ${R.bus.local} local, ${R.bus.deploy} deploy`
@@ -545,14 +580,14 @@ if (wanted('record')) {
 }
 
 let base60 = null;
-if (wanted('replay') || wanted('coarse') || wanted('late') || wanted('bus')
-  || wanted('write') || wanted('command')) {
+// Only the `replay` arm needs this run; every other arm compares against the record itself.
+if (wanted('replay')) {
   console.log('\n=== replaying at the recording schedule (1000/60 ms) ===');
   base60 = await playback(R.token, { stepMs: 1000 / 60, ticks: rec.ticks, shotName: 'rp-04-replay' });
   const d = markDiff(rec.marks, base60.rec.marks);
   measured.replay60 = { marks: base60.rec.marks.length, diverged: base60.rp.divergedAt,
     refusal: base60.rp.refusal, diff: d };
-  if (wanted('replay')) {
+  {
     record('replay-hashes', d === null,
       'every checkpoint of the replay matches the record, bit for bit',
       d === null ? `${rec.marks.length} checkpoints identical (pool, uf64, uctl, survivors)`
@@ -586,6 +621,40 @@ if (wanted('coarse')) {
   record('coarse-result', sameResult(R.flow, coarse.flow),
     'and the same verdict',
     coarse.flow ? `${coarse.flow.reason}, victor ${coarse.flow.victor}` : 'battle still running');
+}
+
+if (wanted('tier')) {
+  console.log('\n=== the graphics tier is a simulation input ===');
+  /*
+   * Measured elsewhere, on the Campus Martius assault at one seed: **ultra fields 3,074 men
+   * and medium 3,009**, the ram crew dies 16 m short of the door at ultra and lands 26 blows
+   * at medium, and the Porta Flaminia opens at one tier and never at the other. Same map,
+   * same scenario, same seed. The chain is one field — `quality.maxSoldiers` sizes the pool,
+   * `fittedUnitScale` fits the army to it, `scenario.ts` writes `battle.unitSizeScale`. A
+   * "graphics setting" is a simulation input.
+   *
+   * So a record has to carry the tier and a replay has to honour it, and both halves are
+   * checked here rather than assumed. The second one uses a tampered token instead of a real
+   * tier change, because whether `low` actually clamps *this* army is arithmetic that could
+   * change; whether the refusal fires when the recorded army differs from the fitted one
+   * must not depend on that.
+   */
+  const forced = await playback(R.token, { stepMs: 1000 / 60, ticks: rec.ticks, quality: 'low' });
+  const d = markDiff(rec.marks, forced.rec.marks);
+  measured.tier = { urlTier: 'low', recordedTier: rec.quality, count0: forced.rec.count0, diff: d };
+  record('tier-in-record', d === null && forced.rec.count0 === rec.count0,
+    "the record's tier beats the URL's, so a replay cannot be watched at another army size",
+    `?quality=low over a record made at '${rec.quality}': `
+      + `${forced.rec.count0} men against ${rec.count0} recorded, `
+      + (d === null ? 'every checkpoint identical' : `diverged at ${d.at}: ${d.why}`));
+
+  const lying = remake(R.token, (j) => { j.us = j.us * 0.5; });
+  const refused = await playback(lying, { stepMs: 1000 / 60, ticks: 60 });
+  measured.tierRefusal = refused.rp.refusal;
+  record('tier-refused', refused.rp.refusal !== '' && refused.rec.events.length === 0,
+    'a record whose army this run cannot field is refused by name, not quietly fitted',
+    refused.rp.refusal || 'NOT REFUSED — it played a different battle and said nothing',
+    `${refused.rec.events.length} event(s) applied`);
 }
 
 // ---------------------------------------------------------------------------
@@ -636,20 +705,22 @@ if (wanted('bus')) {
     inject: () => {
       const g = window.__game;
       const u = g.battle.units.find((x) => !x.destroyed && x.faction === 0 && x.alive > 0);
-      if (u) {
-        g.engine.context.events.emit('orderIssued', {
-          unitIds: [u.id], kind: 'move', source: 'local',
-          x: u.x + 30, z: u.z + 30, running: true,
-        });
-      }
+      if (!u) return null;
+      g.engine.context.events.emit('orderIssued', {
+        unitIds: [u.id], kind: 'move', source: 'local',
+        x: u.x + 30, z: u.z + 30, running: true,
+      });
+      return u.id;
     },
   });
   const d = markDiff(rec.marks, out.rec.marks);
   measured.bus = { at: half, diff: d, productSaid: out.rp.divergedAt };
-  record('unrecorded-order', d !== null,
+  record('unrecorded-order', d !== null && out.injected !== null,
     'an order that skipped the recorder forks the battle, and the gate sees it',
-    d ? `diverged at tick ${d.at}: ${d.why}` : 'NO DIFFERENCE — the gate is blind to this',
-    `injected at tick ${half}; the product's own check said ${out.rp.divergedAt}`);
+    out.injected === null ? 'NOTHING WAS INJECTED — this arm proved nothing'
+      : d ? `diverged at tick ${d.at}: ${d.why}` : 'NO DIFFERENCE — the gate is blind to this',
+    `injected on unit ${out.injected} at tick ${half}; `
+      + `the product's own check said ${out.rp.divergedAt}`);
   record('unrecorded-selfcheck', out.rp.divergedAt >= 0,
     'and the product refuses on its own, without this tool comparing anything',
     out.rp.divergedAt >= 0 ? `ReplaySystem reported tick ${out.rp.divergedAt}: ${out.rp.refusal}`
@@ -672,15 +743,18 @@ if (wanted('write')) {
     injectAt: at,
     inject: () => {
       const u = window.__game.battle.units.find((x) => !x.destroyed && x.faction === 0 && x.alive > 8);
-      if (u) u.width = Math.max(1, u.width - 1);
+      if (!u) return null;
+      u.width = Math.max(1, u.width - 1);
+      return u.id;
     },
   });
   const d = markDiff(rec.marks, out.rec.marks);
   measured.write = { at, diff: d, productSaid: out.rp.divergedAt };
-  record('out-of-band-write', d !== null,
+  record('out-of-band-write', d !== null && out.injected !== null,
     'a field written from outside a tick forks the battle, and the gate sees it',
-    d ? `diverged at tick ${d.at}: ${d.why}` : 'NO DIFFERENCE — the gate is blind to this',
-    `one unit's frontage changed by 1 at tick ${at}`);
+    out.injected === null ? 'NOTHING WAS WRITTEN — this arm proved nothing'
+      : d ? `diverged at tick ${d.at}: ${d.why}` : 'NO DIFFERENCE — the gate is blind to this',
+    `unit ${out.injected}'s frontage changed by 1 at tick ${at}`);
 }
 
 if (wanted('command')) {
@@ -728,6 +802,12 @@ if (server) server.kill('SIGTERM');
 console.log(`\nrecord size: ${measured.record.gzipBytes} B gzipped `
   + `(${measured.record.rawJsonBytes} B raw, ${measured.record.tokenChars}-char token) for `
   + `${measured.record.seconds} s and ${measured.record.events} events`);
+// A run that asserted nothing is a failure, not a pass. `--only=` with a stale arm name is
+// caught above; this catches every other way of arriving here having checked nothing.
+if (results.length === 0) {
+  console.log('\n✗ no checks ran — nothing was measured');
+  failed = 1;
+}
 console.log(`\n${failed === 0 ? '✓' : '✗'} ${results.length - failed}/${results.length} checks passed`);
 if (JSON_OUT) {
   await writeFile(path.resolve(ROOT, JSON_OUT), JSON.stringify({ results, measured }, null, 2));

@@ -459,7 +459,7 @@ window.__game = {
    * about 7e-18 short of five times `double(1/30)` and `maxStepsPerFrame = 5` means the lost
    * tick is never made up. Frame grouping itself does not reach the simulation: held to an
    * equal tick count, five ticks a frame and one tick every two frames are bit-identical on
-   * the pool hash, both unit hashes and `BattleFlow.result` across a 6,407-tick battle with
+   * the pool hash, both unit hashes and `BattleFlow.result` across a 6,783-tick battle with
    * real recorded player orders in it (`tools/qa-replay.mjs`). If what you want is the same
    * battle *cheaper*, ask for ticks: `advanceTicks` below does exactly n of them at whatever
    * frame schedule you like.

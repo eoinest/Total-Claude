@@ -1954,11 +1954,11 @@ replay* and cannot answer *did the player's input reach the simulation through a
 recorded*. The new gate boots through the front door with a real mouse, records what that
 produces, and replays it in a fresh page **on a deliberately different frame schedule**.
 
-**16/16, seven arms, port 5245.** Three of the arms are failures if they go green:
+**20/20, eight arms, port 5245.** Three of the arms are failures if they go green:
 
 | broken on purpose | caught |
 |---|---|
-| one player order shifted **1 tick** later | pool hash at the next 30 s checkpoint |
+| one player order shifted **1 tick** later | pool hash at tick 900, the next 30 s checkpoint |
 | an unrecorded `orderIssued` straight onto the bus at tick 3,203 | tick 3,600, by the product's own check |
 | `UnitGroupState.width` written from outside a tick at tick 2,135 | tick 2,700 |
 
@@ -1966,17 +1966,20 @@ The design quotes four ticks of lateness as "already a different battle". **One 
 
 ### Two measurements worth keeping
 
-**A 200-second battle is 1,224 bytes.** Measured: 226.1 s, 2,247 men, 34 recorded events (31
-player orders, 3 deployment operations), 9 checkpoints — 2,809 B of JSON, **1,224 B gzipped**, a
-1,632-character token. The design's estimate was 1.1 kB and it is right. Gzipped in isolation the
-split is config 476 B, order log 451 B, checkpoints 250 B, so **the order log alone is 14.5 bytes
-per order** against the design's 11–13 B estimate for a hand-rolled bit layout.
+**A 200-second battle is 1,188 bytes.** Measured: 226.1 s, 2,247 men, 32 recorded events (29
+player orders, 3 deployment operations), 9 checkpoints — 2,726 B of JSON, **1,188 B gzipped**, a
+1,584-character token. The design's estimate was 1.1 kB and it is right to within 2%. Gzipped in
+isolation the split is config 476 B, order log 423 B, checkpoints 245 B, so **the order log alone
+is 14.6 bytes per order** against the design's 11–13 B estimate for a hand-rolled bit layout.
+Over the same battle the `orderIssued` bus carried **3,258 AI orders against the player's 29**,
+and the record has the 29 — which is what the `source` field is for.
 
 **Frame grouping does not reach the simulation.** Three shipped comments say it does
 (`Engine.ts`'s `advance`, `main.ts`'s `fastForward`, `qa-determinism.mjs`'s header). Held to an
 **equal tick count** — which is what `Time.tickCeiling` and `Engine.advanceTicks` were added for
 — a 6,783-tick battle carrying real recorded player input is bit-identical at 1000/6 ms (five
-ticks a frame) and 1000/60 ms (one tick every two frames), on the pool hash, both unit hashes
+ticks a frame) and 1000/60 ms (one tick every two frames), at all nine checkpoints, on the
+pool hash, both unit hashes
 and `BattleFlow.result`. The three comments' *advice* is still right for the tools they sit in,
 because those drive by seconds and a coarser step there runs a different number of ticks (900 at
 1000/60, 901 at 166 ms, 899 at 1000/6). All three are now annotated with the real mechanism.
@@ -2011,6 +2014,57 @@ applies is the number the record carries. 4.27 cm against a 0.72 m rank pitch.
 - **`vite.config.ts` reads `TC_VITE_CACHE_DIR`.** Every agent worktree symlinks `node_modules`
   at the shared checkout, so the default `node_modules/.vite` is one dependency cache written by
   as many vite processes as there are agents running a gate.
+
+### The graphics tier is a simulation input, and only through one field
+
+The video pass measured it as an outcome rather than a headcount — Campus Martius assault,
+seed 4265438264, hard: **ultra 3,074 men, medium 3,009**; at ultra the ram crew dies 16 m short
+of the door and lands nothing by t+520, at medium it lands 26 blows and the Porta Flaminia opens
+by t+240. A record has to carry the tier or a replay watched at another one is a different
+battle that will read as a determinism bug.
+
+So the scope was checked rather than assumed, and it is narrow and well-typed:
+`QualitySettings = SimQuality & RenderQuality`, **`SimQuality` has exactly one member**,
+`maxSoldiers`. `Engine` freezes it at construction and re-asserts
+`q.maxSoldiers = this.simQuality.maxSoldiers` after every patch, so a mid-battle tier press
+cannot resize the army. Every read of `ctx.quality.*` across `src/sim`, `src/ai` and
+`src/units` is either `maxSoldiers` — thirteen sites, all in `BattleSystem.init` and the two
+`fittedUnitScale` calls in `scenario.ts` — or `lodFarDistance`, which is the impostor swap
+distance. **Nothing else on the settings path reaches the simulation.** Pause and speed are the
+other three UI writes to sim-adjacent state (`TopBar`, `HudSystem` hotkeys, `deployment`), and
+they change how many ticks happen per wall second rather than what a tick does — which the
+record is immune to by construction, because it is keyed to the tick index.
+
+The record carries `quality`, the effective `unitScale` and `pool.count` at t+0; `?quality=` is
+applied *before* `?replay=` is decoded so the record's answer overwrites it; and a token whose
+army this run cannot field is refused by name. Two arms of the gate check exactly that.
+
+### The other thing a gate must not be: pointable at nothing
+
+`node tools/qa-determinism.mjs --battle=rome` appends a meaningless `&rome`, loads the
+**default field battle**, looks up `baseline['rome']` which does not exist, compares nothing,
+and exits 0. The three real invocations are no flag, `--battle="map=campus-martius&scenario=assault"`
+and `--battle="map=carthage&scenario=assault"`; the headcount is the tell, 8,632 / 3,074 / 3,440.
+
+`qa-replay.mjs` was written not to inherit that. An unknown flag or `--only=` arm exits 2. The
+record arm asserts a headcount, a tick count and a checkpoint count before anything is compared,
+because two empty checkpoint lists agree with each other. Every negative arm asserts that its
+sabotage actually landed, separately from whether the battle then diverged. `remake` throws if
+its edit changed nothing. A run that recorded zero checks fails.
+
+### The playability rig had been broken for two days
+
+`tools/scratch/pl-lib-emc.mjs` landed on 18 August clicking `[data-map=…]` as soon as the menu
+appeared. The **front door** landed on 20 August (`8534b23`); `menu.css` hides `.menu-setup`
+while `.menu` is `at-home`, and `startStep` only opens on the setup sheet for `?menu=battle` or
+a URL naming a battle. `?autoplay=0` does neither. So all six playability scripts had been
+unable to reach the setup rows, and nobody noticed **because none of them asserts anything**.
+
+The click sequence now lives in `tools/lib/menu-boot.mjs` and is shared by the rig and by
+`qa-replay.mjs`, which is the point: one menu-driving idiom, and the gate that asserts keeps the
+rig that does not honest. `ensureServer` is there too — the rig never started a server, it
+assumed one — and it `unref`s the child with an exit hook, because a live child handle was
+holding those scripts open after their last line.
 
 ### Left on the floor
 
