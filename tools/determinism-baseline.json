@@ -80,43 +80,43 @@
         "units": 32
       },
       "90": {
-        "hash": "ebbb7ad2",
+        "hash": "823e67e0",
         "count": 3074,
-        "alive": 2514,
-        "uf64": "93358633",
-        "uctl": "229e51e0",
+        "alive": 2553,
+        "uf64": "18895355",
+        "uctl": "707d7bcb",
         "units": 32
       },
       "150": {
-        "hash": "6c71c40e",
+        "hash": "e9987aa0",
         "count": 3074,
-        "alive": 2182,
-        "uf64": "d3467b33",
-        "uctl": "21dea9f1",
+        "alive": 2224,
+        "uf64": "e875b391",
+        "uctl": "0137b6dc",
         "units": 32
       },
       "200": {
-        "hash": "e3ceb428",
+        "hash": "32fe2130",
         "count": 3074,
-        "alive": 2048,
-        "uf64": "97098846",
-        "uctl": "9de04bfe",
+        "alive": 2076,
+        "uf64": "bf5c0498",
+        "uctl": "c355cb3b",
         "units": 32
       },
       "250": {
-        "hash": "da24a1f8",
+        "hash": "8ef741a4",
         "count": 3074,
-        "alive": 1993,
-        "uf64": "94a4c774",
-        "uctl": "55c73523",
+        "alive": 2026,
+        "uf64": "e932d712",
+        "uctl": "bbf3014b",
         "units": 32
       },
       "400": {
-        "hash": "cef49a30",
+        "hash": "6a415e40",
         "count": 3074,
-        "alive": 1782,
-        "uf64": "5a5e0e7f",
-        "uctl": "3ca63855",
+        "alive": 1613,
+        "uf64": "ca8fc254",
+        "uctl": "3e7fbce0",
         "units": 32
       }
     }
@@ -125,7 +125,7 @@
     "note": "Carthage's assault, quality=high. Recorded at 88a4aa5. The five hashes in this tool's own header comment (ebf383b0 d021b848 8106e2b2 b4fc645e cbfa61c0) are an earlier tree and are the reason prose is not a baseline. Re-record only in the same commit as the change that moved it. ||| Re-recorded again by the aperture pass, which is the change that moved it. Two mechanisms in src/sim/BattleSystem.ts reach this battle: fitToAperture squeezes a formation's frontage down to what the corridor ahead of it will take and spreads it back out once its tail is through, and aimRout deflects a broken unit's flight line round whatever it is about to run into. Both are inert on a map with no masonry on it, and the evidence is in this file: 'default' is bit-identical across the pass at all five checkpoints, and so are t+0 and t+30 of both assaults, which are before anything has routed or entered a gate. The drift starts at t+90 in both. Checked against a second worktree pinned at 7dd9616, which reproduces the previous pins exactly at all five, so the movement is this pass's and not something inherited. ||| Re-recorded by the determinism-cliff pass, and this one is a re-record of the FORMAT rather than of the battle. Two things changed. (1) Two checkpoints added past t+200: the gate used to stop 5.5 s before the only cross-engine divergence anyone has measured (the field battle forks at t+205.5 s), so t+250 is the sentinel just past the fork and t+400 is the second half of the battle nothing had ever looked at. (2) Two new marks per checkpoint. `uf64` is the exact float64 bits of every continuous UnitGroupState field plus the waypoint queue — the layer the float32 pool hash cannot see, and which nothing in this repository hashed until now. `uctl` is the discrete half: order, target, formation, width, alive, kills, membership, flags, and unit array order. The five original pool hashes are UNCHANGED at all three battles across the whole pass, including across the Math.hypot -> Math.sqrt(a*a + b*b) substitution in the same branch, and so are all 21 survivor counts. Every `uf64` moved, and no `uctl` did: the substitution perturbs the simulation own float64 state everywhere, never reaches a control-flow decision, and never survives the float32 round trip. That is the quantisation firewall, and it is why the old five-checkpoint pool-only gate would have reported that a 222-call-site change did nothing. A `uf64` drift with `hash` and `uctl` unchanged is a PORTABILITY finding — a browser update is enough to cause one — and the gate warns rather than fails on it. A `uctl` or `hash` drift is a real change in the battle and still fails. Recorded from three independent page loads per battle, cross-checked against an earlier independent pair of runs: all 21 checkpoints reproduced exactly. Headcounts 8,632 / 3,074 / 3,440 confirm each arm measured the battle it names.",
     "checkpoints": {
       "0": {
-        "hash": "ade40cb0",
+        "hash": "8ca295e0",
         "count": 3440,
         "alive": 3440,
         "uf64": "b835cac3",
@@ -133,51 +133,51 @@
         "units": 34
       },
       "30": {
-        "hash": "0260ccde",
+        "hash": "5b08e7b0",
         "count": 3440,
-        "alive": 3399,
-        "uf64": "c6b57d22",
-        "uctl": "e4470f56",
+        "alive": 3390,
+        "uf64": "64d53c53",
+        "uctl": "3828e8f4",
         "units": 34
       },
       "90": {
-        "hash": "1558c788",
+        "hash": "69be5398",
         "count": 3440,
-        "alive": 3017,
-        "uf64": "ce636e26",
-        "uctl": "4e8a467a",
+        "alive": 3035,
+        "uf64": "965bdfbc",
+        "uctl": "71554801",
         "units": 34
       },
       "150": {
-        "hash": "6976d666",
+        "hash": "d113c36a",
         "count": 3440,
-        "alive": 2842,
-        "uf64": "d85cfdcc",
-        "uctl": "a9fb02db",
+        "alive": 2870,
+        "uf64": "79b0cc9d",
+        "uctl": "0927dd8f",
         "units": 34
       },
       "200": {
-        "hash": "a476b55e",
+        "hash": "ada4abb6",
         "count": 3440,
-        "alive": 2833,
-        "uf64": "6a43c8d0",
-        "uctl": "b3b9df15",
+        "alive": 2852,
+        "uf64": "88b5a571",
+        "uctl": "3e494dd9",
         "units": 34
       },
       "250": {
-        "hash": "3b8bc738",
+        "hash": "7235eb60",
         "count": 3440,
-        "alive": 2792,
-        "uf64": "8e978923",
-        "uctl": "02d9d548",
+        "alive": 2756,
+        "uf64": "be041749",
+        "uctl": "bb90bec8",
         "units": 34
       },
       "400": {
-        "hash": "45330d68",
+        "hash": "286731a8",
         "count": 3440,
-        "alive": 2319,
-        "uf64": "9dbc7c88",
-        "uctl": "e14a30ea",
+        "alive": 2193,
+        "uf64": "87b93b09",
+        "uctl": "820eb4ff",
         "units": 34
       }
     }
