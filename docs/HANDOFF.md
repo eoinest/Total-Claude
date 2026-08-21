@@ -5,17 +5,14 @@ last. Update the top, append to the bottom, do not let it rot.
 
 ## Live state — 21 Aug 2026
 
-`main` is **`aa4dcf4`**, **not yet pushed** — `origin/main` is still at `5f9030e`. Since that point:
-the video design studio, the replay record, and Rome §15 tasks 3–5, all three merged and gated
-together on 21 Aug. The full gate is green on the combined tree: tsc clean, lint 2/2, qa-deploy
-33/33, seams PASS both maps, **`qa-replay` 21/21**, and all three determinism arms UNCHANGED at
-all seven checkpoints (8,632 / 3,074 / 3,440) — Rome's pin re-recorded for the circuit and
-matched by the combined tree, so neither the studio nor the replay record moved it.
-No agents are running. The seven-agent roster that used to sit here belonged to the 20 Aug machine
-crash and is now history — but its fix is still load-bearing: `.metadata_never_index` in
-`screenshots/` and `reference/`, because Spotlight indexing 9.3 GB of agent frames, not the agents
-themselves, is what took the machine down. Every agent still deletes its screenshot directory when
-it finishes.
+`main` is **`f694ad6`**, pushed. **`r8` is live** at total-claude.vercel.app — deployment proved to be
+this tree three ways: `index.html` byte-identical to a rebuild, all nine build outputs SHA-256
+identical, and Vercel's own SHA-1 digest matching the rebuild for 86 of 86 files in both
+directions. All three maps boot against the live URL with the clock advancing.
+
+The full gate is green on this tree: tsc clean, lint 2/2, qa-deploy 33/33, seams PASS both maps,
+**`qa-replay` 21/21**, and all three determinism arms UNCHANGED at all seven checkpoints
+(8,632 / 3,074 / 3,440).
 
 **The gate, and how to re-run it.** All green at `5f9030e`:
 
@@ -25,13 +22,32 @@ it finishes.
 | lint | `npm run lint` | 2/2 |
 | deploy | `node tools/qa-deploy.mjs` | 33/33 |
 | seams | `node tools/probe-seams.mjs` | PASS, both maps |
-| determinism | `node tools/qa-determinism.mjs --battle=<default\|rome\|carthage>` | 3 arms, 7 checkpoints |
+| replay | `node tools/qa-replay.mjs` | 21/21 |
+| determinism | the three arms below, **spelled exactly** | 7 checkpoints each |
 
 Determinism is pinned in `tools/determinism-baseline.json` at **t+0/30/90/150/200/250/400**, three
-hashes each: the float32 pool, `uf64` (exact float64 unit state) and `uctl` (discrete state). The
-arms select with **`--battle=`**. An unknown flag is *silently ignored*, so the only way to know you
-measured the map you meant is the headcount: **field battle 8,632 / Rome 3,074 / Carthage 3,440.**
-A Carthage run reporting 8,632 measured something else.
+hashes each: the float32 pool, `uf64` (exact float64 unit state) and `uctl` (discrete state).
+
+```
+node tools/qa-determinism.mjs
+node tools/qa-determinism.mjs --battle="map=campus-martius&scenario=assault"
+node tools/qa-determinism.mjs --battle="map=carthage&scenario=assault"
+```
+
+Quote the value or your shell backgrounds on the `&`. **`--battle=rome` is not an arm, and neither
+is `--battle=carthage`.** The flag's value is appended verbatim as query parameters *and* used as
+the baseline key, so a short name appends a meaningless parameter, loads the **field battle**, and
+looks up a key that does not exist — a run that measured the wrong battle against no pin at all. It
+does not go red. It asserts nothing. Those three spellings above are the only three keys the
+baseline holds.
+
+Confirm every run by headcount, always: **field battle 8,632 / Rome 3,074 / Carthage 3,440.** A
+Carthage run reporting 8,632 measured something else.
+
+> This table itself printed `--battle=<default|rome|carthage>` for a day, two thousand lines above
+> the passage explaining why that is wrong, and three agents were dispatched with it. **A summary
+> that contradicts its own document is worse than no summary**, because the summary is what gets
+> read. If you correct something here, correct it everywhere it is spelled out.
 
 ### Standing rules, all earned
 
