@@ -1,54 +1,71 @@
 # Handoff — live state
 
-Written after a machine crash took down seven background agents at once. This is the state
-that must survive a context compaction. Update it, do not let it rot.
+A running log. The top section is current; everything below it is dated session history, newest
+last. Update the top, append to the bottom, do not let it rot.
 
-## Agent roster and where each one was
+## Live state — 21 Aug 2026
 
-All seven were mid-task when the machine crashed. Their transcripts are on disk and each can be
-resumed with `SendMessage` to its id; resuming replays its own context, so a short "resume,
-here is what changed" message is enough.
+`main` is **`5f9030e`**, pushed, `origin/main` identical. **64 commits since the `r7` tag.**
+No agents are running. The seven-agent roster that used to sit here belonged to the 20 Aug machine
+crash and is now history — but its fix is still load-bearing: `.metadata_never_index` in
+`screenshots/` and `reference/`, because Spotlight indexing 9.3 GB of agent frames, not the agents
+themselves, is what took the machine down. Every agent still deletes its screenshot directory when
+it finishes.
 
-| id | workstream | last known position |
+**The gate, and how to re-run it.** All green at `5f9030e`:
+
+| check | command | expected |
 |---|---|---|
-| `abfdfd21b8a18fae1` | Melee: stalled fights, chokepoint, `R`, stragglers | **FINISHED** — committed `ab8b957` |
-| `a6cc76a93cdfce176` | Wall geometry: wider curtain, parallel stairs, scaffolding inside, gate shut | fresh agent; predecessor's transcript died in the crash |
-| `ace11fa044ae8d5a8` | Siege: wall traversal, gate breach, heavy ram, tower ramp, **ram jamming the gate** | writing the public order API and plan executor |
-| `aebaeeaacbc24699a` | Artillery: wrong projectiles, catapults off walls, slinger zero damage, **+ GroundDamage shadow bug** | building `damage-shadow.mjs` |
-| `a5e7269998ab37764` | Rome streets: quilt, wider streets, monument overlap, **owns the YouTube reference** | fresh agent; predecessor's transcript died in the crash |
-| `a26c20d608c42a659` | Lighting: chromatic ground bounce, the missing π | both halves written, measuring |
-| `a179733306e97836f` | Blind critic: A/B against Rome II, reference sourcing | round 21 done, 20/20 |
-| `a2ca69d0ce89dcaae` | **Anti-aliasing, mip and specular filtering** | new — owns the leading separator |
+| types | `npx tsc --noEmit` | clean |
+| lint | `npm run lint` | 2/2 |
+| deploy | `node tools/qa-deploy.mjs` | 33/33 |
+| seams | `node tools/probe-seams.mjs` | PASS, both maps |
+| determinism | `node tools/qa-determinism.mjs --battle=<default\|rome\|carthage>` | 3 arms, 7 checkpoints |
 
-**The crash was Spotlight, not the agents' servers.** Load hit 20 with *zero* node processes:
-`fileproviderd` 118%, `mds`+`mdsync` 76%, indexing **9.3 GB of agent screenshots across 287
-directories**. Fixed with `.metadata_never_index` in `screenshots/` and `reference/`. Seven agents
-rendering battles headlessly sustains load ~33 on 16 cores with 93% memory free and zero pageouts,
-which is saturation, not the crash signature. Every agent must still delete its screenshot
-directory when it finishes.
+Determinism is pinned in `tools/determinism-baseline.json` at **t+0/30/90/150/200/250/400**, three
+hashes each: the float32 pool, `uf64` (exact float64 unit state) and `uctl` (discrete state). The
+arms select with **`--battle=`**. An unknown flag is *silently ignored*, so the only way to know you
+measured the map you meant is the headcount: **field battle 8,632 / Rome 3,074 / Carthage 3,440.**
+A Carthage run reporting 8,632 measured something else.
 
-## Tree state
+### Standing rules, all earned
 
-`HEAD` is `51d50be`, and **it boots** — verified by loading the page and reading
-`window.__game.ready`, not by typecheck.
+- **Agents do not merge to `main`.** Leave the branch, report, integration belongs to the
+  orchestrator, who is the only one who sees every branch. One agent self-merged on 20 Aug and
+  tripped a security review.
+- **Never `git stash` in this repo while other agents run.** The stash stack is repo-global; two
+  agents pushed in the same window and each popped the other's work. *Earlier guidance in this file
+  said to stash — it was wrong.* Park work on a branch.
+- **`--ours` on a baseline file discards a measurement, and a measurement is not a preference.**
+  A conflict in a pin file is resolved by re-measuring, never by choosing a side.
+- **Never grade an A/B deck its author has not declared frozen.**
+- **A self-consistent instrument can never fail.** Compare against something outside the thing
+  being checked.
+- Worktrees need an isolated vite `cacheDir`. **Port 5173 is the owner's.**
+- Unattended agents carry: *where you would normally ask, make the call, write down what you chose
+  and why, and name what would change your mind.*
 
-**`5ec90a5` through `148f394` did not boot at all.** `5ec90a5` committed `UnitRenderSystem.ts`
-with four call sites against `engines.ts`/`Projectiles.ts` code that was never staged with it:
-`engineAnchor` (an ESM binding error at import, fatal to the whole app) and
-`projectiles.engineCycle`/`.engineTargets`/`.engineSite` (`?.` guards a null receiver, not a
-missing method). Two more commits were stacked on a tree that had never run, including a camera
-fix whose entire justification was screenshot framing. Fixed at `d7b2a58`. The Vercel build fails
-on an unresolved named import rather than shipping it, so the live site was never affected.
+### Reserved for the owner — do not decide these
 
-Landed since: `55d8c54` camera, `148f394` clock, `d7b2a58` boot, `ab8b957` melee, `51d50be` blind
-harness. The working tree still carries in-flight agent work and currently has a **runtime** TDZ
-throw in `insulae.ts` (`terrace()`, `keep` before initialization) that kills the page at module
-init — it typechecks clean, so `tsc` will not catch it.
+- Whether battle lines should **fit** their deployment boxes rather than merely be dry. Rome's line
+  is 684 m across in a 500 m box; the host is 783 m in a 760 m one. Written into `ROME.md` §15
+  task 14 so it gets decided rather than rediscovered.
+- **The Rome balance shift** — defenders gained roughly a cohort as a side effect of walls that
+  now work.
+- The host storm order, the great wall-breaking ram, and the trailer's `rome-arch` beat.
 
-If work must be parked: `git stash push -u -m "..."` the agent files and `git stash pop` to
-restore. **Never commit a subset of a multi-file change** — that is exactly what broke mainline.
-Verify a candidate commit set by grafting only those files onto a detached worktree at `HEAD`
-and typechecking there, then load the page.
+### Queued, unassigned
+
+- **`ROME.md` §15 tasks 3–15.** Phase A (tasks 0–2) has landed. Next in sequence: the circuit as a
+  fourteen-waypoint survey polyline (36 bays at 37.03 m pitch), the Muro Torto, three gates and two
+  posterulae.
+- **The video design studio.** The owner asked for it and answered both questions — *script format
+  first, GUI on top later*, and *staged setups allowed* — and it has never been spawned.
+- **The docs-site analytics toggle.** One dashboard click at
+  `vercel.com/ernest-4753/total-claude-docs` → Analytics → Enable. No API exposes it.
+- `Engine.dispose()` has no caller; the clipmap flattens the ditch beyond 768 m; `shoot.mjs` stamps
+  `srcTree` from `HEAD:src` so uncommitted edits mislabel frames; `battleCoreMask` is still centred
+  on x 0; ground outside a deployment box is never flattened or cleared of vegetation.
 
 ## The player's outstanding list, with owners
 
@@ -1837,3 +1854,69 @@ a slot frozen before it broke — 1.49 → 4.11 m/s, stalled man-ticks 11.1% →
 - The environment art is now the loudest blind-grader complaint: greybox buildings, primitive
   foliage, untextured ground. Our frames are also **21% brighter than the reference plates**, and
   `lum` is the strongest single separator at 0.786.
+
+---
+
+## Session — 20–21 Aug 2026: the overnight pass, six reports closed, and Stage 0
+
+64 commits since `r7`. Every item the owner reported is closed; two things nobody had asked about
+turned out to matter more than any of them.
+
+### The six reports
+
+- **Units stuck on a wall.** A cohort is 41 m of frontage and a wall-walk is 3.25 m, so the
+  formation solver put **45 men on one station** and drove them at a full walk into a crowd solver,
+  forever. A unit on a wall is now a *file* the wall's depth. Worst pile 45 → 2; distinct standing
+  points 17 → 104.
+- **"Too late" on a tower party.** `crewsAMachine` asked *was this unit ever given a machine*, and
+  the answer never changed. Once the ramp is down a tower's gang is infantry on a wall. Two more UI
+  lies went with it, including a public refusal method with no caller.
+- **Routed men half way up a ladder.** Rout, release and elevation were three per-man facts carried
+  on one per-unit flag. Each man now resolves from where he is. Men still nailed after 10 s: 5 → 0.
+- **Wall pathfinding.** `nearestStairLink` measured a straight line and ignored reachability —
+  Rome's walk is four disconnected components, and runs 0–1 were handed a stair in another one.
+- **Cavalry through a gate.** Routes planned for a 4.4 m corridor, executed by a 23.3 m wedge.
+  Bodies in stone 30,098 → 4,615 man-ticks; crossings off the carriageway 3 → 0.
+- **Catapult shot through a wall.** Not tunnelling: `masonryTopAt` had **no tower branch at all**,
+  so 5 m of solid tower above every crest was transparent to projectiles. Coverage 62.3% → 99.0%.
+
+### The two nobody asked for
+
+**The determinism gate stopped 5.5 s before the only divergence anyone had measured**, and hashed
+only the float32 pool while the float64 unit layer drifted from t+1 s unwatched. Now seven
+checkpoints to t+400 and three hashes. Proof it was blind: the 222-site `Math.hypot` change moved
+`uf64` at **21 of 21** checkpoints, and the old gate would have reported nothing happened.
+
+**`buildLinks` computed the height it was bridging and wrote `void step;`.** Three of Rome's
+crossings bridged more than the entire curtain — worst **7.70 m**, with **3.16 m of air** under the
+men walking it.
+
+### Rome
+
+`ROME.md` landed at 2,764 lines. Phase A: the map into its own module; the Tiber onto the survey
+(**775.8 m → 0.1 m** of survey error); the first graded bench Rome has had (worst bay step
+**28.39 → 8.11 m**); reachable runs **28 of 45 → 43 of 45**; and 747 men taken back out of the
+river the Tiber move had put them in, with `uctl` bit-identical at t+0 and t+30 as proof the
+composition never moved.
+
+### Multiplayer — Stage 0, roughly three and a half of five
+
+No netcode exists and none should yet. Against `MULTIPLAYER.md` §3 Stage 0:
+
+| # | item | state |
+|---|---|---|
+| 1 | `Math.hypot` → `sqrt` | **done in the simulation scope.** 222 sites. `src/sim`, `src/ai`, `src/city` clean; **27 remain in terrain and map generation**, 12 of them in `src/maps/carthage/heightfield.ts` |
+| 2 | portability linter | **done, wider than designed** — `PORT_SCOPE` covers `src/city`, `src/terrain`, `src/maps`, with a ranked table (`tan` 41%, `hypot` 37%, `atan2`/`acos` 17%, `exp` 10%, `sin` 4%) |
+| 3 | hash into the product | **not done.** `uf64` and `uctl` exist, but `src/sim/stateHash.ts` does not — the harness still injects the hash as a string |
+| 4 | extend the gate past the cliff | **done**, t+250 and t+400 (the design asked for t+300/t+600) |
+| 5 | **cross-engine arm** | **not done, and it is the one that matters** — the arm that goes red on Carthage's t+0 split and that would catch a Chrome patch |
+
+The measurement that started it stands: all three engines run the default battle bit-identically
+through every pinned checkpoint and **diverge at t+205.5**; Carthage's assault differs at t+0. The
+cause is implementation-approximated `Math`; the float32 pool is a firewall holding ~6,000 ticks;
+`UnitGroupState` is float64 with no firewall and had never been hashed.
+
+**Next, and unstarted: Stage 1, the replay record** — seed, config token, and an order log stamped
+with execution ticks. About 1.1 kB compressed for a 200-second battle. It is a shippable
+single-player feature on its own, it is the precondition for every realtime option, and it is the
+only instrument in the project that could catch a twenty-fourth out-of-band mutation.
