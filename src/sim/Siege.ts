@@ -3099,22 +3099,94 @@ export class Siege implements ElevationOwner {
   }
 
   /**
+   * How far it is *along the walk* from `station` to the near end of `run`, or `Infinity`
+   * if the wall does not join them.
+   *
+   * Metres, and the only metric in this file that means anything for a man on a parapet. A
+   * wall is a chain of runs joined at towers; two points 10 m apart in plan can be on
+   * opposite sides of a severed joint and infinitely far apart on foot. Rome's circuit is
+   * **four** such components (runs 0–1, 2–18, 19–24, 25–44) and Carthage's is two — measured,
+   * not assumed — so this is not a hypothetical.
+   *
+   * Stations are charged at `STATION_PITCH` and each intervening tower pass at its own plan
+   * length, which is what `linkPath` will actually make the man walk.
+   */
+  private walkDistance(station: number, run: number): number {
+    if (station < 0 || run < 0 || run >= this.nRuns) return Infinity;
+    const from = this.sRun[station];
+    if (from === run) {
+      const mid = (this.runLo[run] + this.runHi[run]) >> 1;
+      return Math.abs(station - mid) * STATION_PITCH;
+    }
+    const lo = Math.min(from, run);
+    const hi = Math.max(from, run);
+    let d = from < run
+      ? (this.runHi[from] - station) * STATION_PITCH
+      : (station - this.runLo[from]) * STATION_PITCH;
+    for (let r = lo; r < hi; r++) {
+      const l = this.links[this.runNext[r]];
+      if (!l) return Infinity;
+      d += Math.hypot(l.ax - l.bx, l.az - l.bz) + Math.abs(l.ay - l.by);
+      // Every run strictly between the two is crossed end to end.
+      if (r + 1 < hi) d += (this.runHi[r + 1] - this.runLo[r + 1]) * STATION_PITCH;
+    }
+    // And half of the destination run, to its middle, so two stairs on one run are still
+    // separable and the answer does not depend on which end the caller happened to name.
+    const mid = (this.runLo[run] + this.runHi[run]) >> 1;
+    d += Math.abs((from < run ? this.runLo[run] : this.runHi[run]) - mid) * STATION_PITCH;
+    return d;
+  }
+
+  /**
    * The stair link that best serves a unit at `(x, z)` wanting run `run`.
    *
-   * Prefers a flight that lands on the run itself; otherwise the nearest one in plan, which
-   * the traversal then walks along the wall from. Deterministic: ties break on link id.
+   * **Rewritten, because it measured the wrong thing twice.** The old body did this:
+   *
+   * ```
+   * if (l.runB === run) { onRun = onRun < 0 ? l.id : onRun; }   // first in array order
+   * const d = (l.ax - x) ** 2 + (l.az - z) ** 2;                // plan distance
+   * if (d < bestD - 1e-6) { bestD = d; best = l.id; }
+   * return onRun >= 0 ? onRun : best;
+   * ```
+   *
+   * — which is (a) *the first* stair on the wanted run in `this.links` order rather than the
+   * nearest one, set once and never improved, and (b) a fallback that ranks every other
+   * stair on the whole circuit by straight-line distance with **no reachability test at
+   * all**. Both are the same error: a wall is a graph and this was measuring across it.
+   *
+   * Measured on the shipped tree before the change, walking every run's midpoint through
+   * both maps: Rome runs 0 and 1 — 78 stations of finished curtain — were told to use the
+   * stair on run 13, which is in a different component of the walk and which no man
+   * standing there can ever reach; Carthage run 21 was told to use the stair on run 19,
+   * across the severed joint at 20, when the reachable one on run 23 is 81 m away along the
+   * stone. An order aimed at one of those is accepted, the men walk to a link mouth that
+   * leads nowhere, `advancePlans` reports `stuck` for every one of them, and the plan sits
+   * open until `PLAN_TIMEOUT` ten minutes later. That is the "152 men frozen, plan still
+   * open at age 3,656" signature this file already carries a note about, arriving by a
+   * second route.
+   *
+   * Now: only stairs whose wall end is on a run the walk actually joins to `run` are
+   * eligible, and among those the nearest **along the walk** wins — the ground approach to
+   * the foot is added, because a unit still has to get there. -1 when the wall offers this
+   * unit no way up or down at all, which is a refusal the caller must pass on rather than
+   * an order that cannot complete. Deterministic: ties break on link id.
    */
   private nearestStairLink(x: number, z: number, run: number): number {
-    let onRun = -1;
     let best = -1;
     let bestD = Infinity;
     for (const l of this.links) {
       if (l.kind !== LinkKind.Stair) continue;
-      if (l.runB === run) { onRun = onRun < 0 ? l.id : onRun; }
-      const d = (l.ax - x) * (l.ax - x) + (l.az - z) * (l.az - z);
+      if (l.stationB < 0 || this.dead(l.stationB)) continue;
+      // Reachability first, and it is not a tie-break. A stair the unit cannot walk from to
+      // where it is going is not a worse choice, it is not a choice.
+      const along = this.walkDistance(l.stationB, run);
+      if (!isFinite(along)) continue;
+      // Plus the walk to the foot of the flight, which is ground and is not free either.
+      const approach = Math.hypot(l.ax - x, l.az - z);
+      const d = along + approach;
       if (d < bestD - 1e-6) { bestD = d; best = l.id; }
     }
-    return onRun >= 0 ? onRun : best;
+    return best;
   }
 
   /**
