@@ -1367,6 +1367,21 @@ export class Siege implements ElevationOwner {
    */
   private fileRows = new Int32Array(MAX_LADDERS);
   /**
+   * Scratch for `escaladePoints`, which the AI reads once per thinking unit per think.
+   *
+   * Two pieces so nothing is allocated after the first battle-second: `escaladePool` grows
+   * to the number of machines and its entries are overwritten in place, and
+   * `escaladeScratch` is the view handed out, refilled from the pool on every call. See
+   * `escaladePoints` for why the array must not be retained.
+   */
+  private escaladePool: {
+    x: number; z: number; station: number; kind: 'tower' | 'ladder'; ready: boolean; free: number;
+  }[] = [];
+  private escaladeScratch: {
+    x: number; z: number; station: number; kind: 'tower' | 'ladder'; ready: boolean; free: number;
+  }[] = [];
+  private escaladeSeen = new Set<number>();
+  /**
    * Which men `layOutArrived` is allowed to place this tick. Scratch, one bit per soldier.
    *
    * A typed array rather than the `Set` this obviously wants to be, because `advancePlans`
@@ -2779,6 +2794,65 @@ export class Siege implements ElevationOwner {
       machineDistance: run,
       machineSeconds: run / TOWER_SPEED + (t ? Math.max(0, t.heave) : 0),
     };
+  }
+
+  /**
+   * Every way up this army has put against the wall, one entry per **bank**.
+   *
+   * Published for the same reason `escaladeOfferAt` and `machineOrderAt` are: anything that
+   * has to *choose* a storm has to see the same set the verb will act on. The player sees it
+   * — the machines are drawn — and until now nothing else could, which is the whole of "the
+   * host never storms": `escalade` has existed since the siege-orders pass and the only
+   * caller was a right-click.
+   *
+   * A bank, not a rail, because `escalade` enrols on a bank: three ladders raised by one
+   * party share a boarder list and `musterOwned` round-robins across them. The point is the
+   * **station's** own world position rather than the machine's, so a caller aims at the
+   * stonework — which is what `wallTargetAt` reads and what a player's click lands on.
+   *
+   * `free` is the number of units that may still join, so a caller can spread a host across
+   * the train instead of piling it onto whichever machine happens to be nearest; without it
+   * six warbands all pick one bank and four of them are refused. `ready` distinguishes a
+   * road from a promise on exactly the rule `escaladeOfferAt` uses.
+   *
+   * **The array is reused between calls** and must not be retained. This is read once per
+   * thinking unit per think inside `fixedUpdate`, and a fresh array there is the per-tick
+   * allocation this engine does not have anywhere else.
+   */
+  escaladePoints(): readonly {
+    x: number; z: number; station: number; kind: 'tower' | 'ladder'; ready: boolean; free: number;
+  }[] {
+    const out = this.escaladeScratch;
+    out.length = 0;
+    const push = (
+      x: number, z: number, station: number, kind: 'tower' | 'ladder', ready: boolean, free: number,
+    ): void => {
+      const slot = this.escaladePool[out.length]
+        ?? (this.escaladePool[out.length] = { x: 0, z: 0, station: 0, kind: 'ladder', ready: false, free: 0 });
+      slot.x = x; slot.z = z; slot.station = station;
+      slot.kind = kind; slot.ready = ready; slot.free = free;
+      out.push(slot);
+    };
+    for (const t of this.towers) {
+      // Same exclusion `findEscalade` makes: a spent machine is scenery.
+      if (t.state === TowerState.Spent) continue;
+      const s = t.station;
+      if (s < 0 || s >= this.nStations) continue;
+      push(this.sx[s], this.sz[s], s, 'tower', t.state !== TowerState.Approach,
+        MAX_BOARDING_UNITS - t.boarders.length);
+    }
+    // One entry per party. `escalade` enrols on every rail the party raised at once, so
+    // three rails of one bank would otherwise read as three separate ways up.
+    const seen = this.escaladeSeen;
+    seen.clear();
+    for (const l of this.ladders) {
+      if (seen.has(l.unitId)) continue;
+      seen.add(l.unitId);
+      const s = l.station;
+      if (s < 0 || s >= this.nStations) continue;
+      push(this.sx[s], this.sz[s], s, 'ladder', true, MAX_BOARDING_UNITS - l.boarders.length);
+    }
+    return out;
   }
 
   /**

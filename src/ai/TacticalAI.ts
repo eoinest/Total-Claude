@@ -12,7 +12,7 @@ import {
   type Difficulty, type DifficultyProfile, type UnitCommand,
 } from './types';
 import {
-  BREAK_IN_MEN, DESCEND_R, FIGHT_R, NEAR_WALL, ORDER_COOLDOWN, REACH_R,
+  BREAK_IN_MEN, DESCEND_R, FIGHT_R, NEAR_WALL, ORDER_COOLDOWN, REACH_R, STORM_BID,
   WallDoctrine, type WallView,
 } from './WallDoctrine';
 
@@ -114,7 +114,7 @@ interface UnitBrain {
    * member list and the selector calls `score` for every candidate before it calls one
    * `act`. `wallOrderTick` is the cooldown clock — see `ORDER_COOLDOWN`.
    */
-  wallMove: 'none' | 'descend' | 'traverse';
+  wallMove: 'none' | 'descend' | 'traverse' | 'storm';
   wallX: number;
   wallZ: number;
   wallOrderTick: number;
@@ -848,10 +848,40 @@ const Parapet: Behaviour = {
   act: (c) => c.self.issueWall(c),
 };
 
+/**
+ * Go up whatever your own army has leaned against the enemy's wall.
+ *
+ * `Parapet`'s mirror image, and the half that was never written. An assault is the one
+ * situation in this game where the enemy is unreachable by every ordinary behaviour at once:
+ * `pickMeleeTarget` refuses a garrisoned unit to anybody not garrisoned themselves (see
+ * `skipWall`), so `engage` scores −1 for the whole host; `march` and `hold-line` then win by
+ * default and the storm is whoever the scenario happened to hand a machine to.
+ *
+ * Four rules, and they are deliberately the same shape as `WallDoctrine`'s:
+ *
+ *   1. men the stonework already owns are not re-ordered — they are in a file, and a place
+ *      in a file is a fact about the man (`Siege.dropFromFiles`);
+ *   2. a unit inside the curtain is a garrison or a reserve, not a storming party — the
+ *      besieger's route is the ramp and the ladder, and `interceptOrders` reads a wall order
+ *      from the city side as "walk up your own stairs";
+ *   3. a road before a promise: a planted ladder or a docked tower before one still rolling;
+ *   4. then the nearest bank that still has room, a full one being a refusal — see
+ *      `decideStorm` for the arm that spread instead and what separated the two.
+ *
+ * `escaladeOfferAt` gates every bid, so this cannot issue an order the simulation drops in
+ * silence — the failure the same predicate was built to stop the *cursor* committing.
+ */
+const Storm: Behaviour = {
+  name: 'storm',
+  applies: (c) => isFoot(c) && c.self.mayStorm(c.u),
+  score: (c) => (c.self.decideStorm(c) ? STORM_BID : -1),
+  act: (c) => c.self.issueWall(c),
+};
+
 const BEHAVIOURS: Behaviour[] = [
   HoldLine, MarchToStation, Engage, Brace, Testudo, PlugGap, RefuseFlank,
   Shoot, MissileWithdraw, Skirmish, CavalryHold, CavalryScreen, CavalryCycle, Pursue, Inspire,
-  Parapet,
+  Parapet, Storm,
 ];
 
 // ---------------------------------------------------------------------------
@@ -878,7 +908,7 @@ export class TacticalAISystem implements Subsystem {
   private tick = 0;
   difficulty: Difficulty;
 
-  readonly stats = { thinks: 0, forcedThinks: 0, wallOrders: 0, descents: 0, traverses: 0 };
+  readonly stats = { thinks: 0, forcedThinks: 0, wallOrders: 0, descents: 0, traverses: 0, storms: 0 };
 
   /**
    * Factions this layer issues orders for. Anything not listed is left alone.
@@ -1073,8 +1103,18 @@ export class TacticalAISystem implements Subsystem {
      * t+250 without the storm having cleared a single bay. The garrison did not die on the
      * walk; the AI walked it off. `Parapet` is the one behaviour allowed to move these
      * units, and it goes straight to the order book with a single point.
+     *
+     * **`ownsUnit`, not `isGarrisoned`, and the wider test is what the comment above always
+     * meant.** `garrisons` is men standing on the stone; `owned` is every unit the siege
+     * system places, which also includes a party queuing at the foot of a ladder. Those were
+     * unguarded, and the consequence is not cosmetic: `interceptOrders` reads a ground
+     * destination given to a unit that is neither garrisoned nor pointed at the parapet as
+     * `releaseEscalade`, so the field mover **cancelled the storm order it had just given**
+     * on the next think. It never showed before because the only boarder a shipped battle
+     * ever had was the party that raised the machine, and `dropFromFiles` refuses to drop
+     * `boarders[0]` — so the one case in the game was the one case that was immune.
      */
-    if (this.wall !== null && this.wall.isGarrisoned(u.id)) return;
+    if (this.wall !== null && this.wall.ownsUnit(u.id)) return;
     /**
      * A unit whose own anchor is inside the curtain's footprint is given no order at all,
      * and **no choice of destination is a substitute** — that was measured twice.
@@ -1262,7 +1302,90 @@ export class TacticalAISystem implements Subsystem {
     this.orders.move(c.u, brain.wallX, brain.wallZ, facing, true);
     this.stats.wallOrders++;
     if (brain.wallMove === 'descend') this.stats.descents++;
+    else if (brain.wallMove === 'storm') this.stats.storms++;
     else this.stats.traverses++;
+  }
+
+  /**
+   * Is this unit free to storm at all? The cheap gate, run before any geometry.
+   *
+   * Three exclusions, each of which was a real failure somewhere else in this system first:
+   * a unit the stonework already places is in a file and re-ordering it moves it to the back
+   * of one; a unit inside the curtain is the defence, and `Siege.interceptOrders` would read
+   * its wall order as a walk up its own stairs; and a gang whose machine still needs working
+   * is refused by `findEscalade` anyway, so bidding for it would be a behaviour that wins the
+   * selector every think and does nothing.
+   */
+  mayStorm(u: UnitGroupState): boolean {
+    const wall = this.wall;
+    if (wall === null || !this.doctrine.ready) return false;
+    if (wall.ownsUnit(u.id)) return false;
+    if (u.order === UnitOrder.Rout) return false;
+    return !this.doctrine.inside(u.x, u.z);
+  }
+
+  /**
+   * Pick the bank this unit should go up, and write it to the brain.
+   *
+   * Resolved in `score` and issued in `act` for the same reason `decideWall` is: the selector
+   * calls every candidate's `score` before it calls one `act`, and this walks the whole
+   * siege train.
+   *
+   * The choice is **a road before a promise, then the nearest bank with room**, and `free` is
+   * a gate rather than a preference: any room is as good as an empty machine. So the host
+   * fills the near banks before it walks to the far ones, which is to say it masses. Dexippus'
+   * escalade is five men and then five hundred, at one place (`ROME.md` §8.5).
+   *
+   * **The alternative was built and could not be separated, and that is worth writing down so
+   * nobody re-runs it expecting an answer.** Preferring the *emptiest* bank spreads six
+   * warbands evenly over four; it looks tidier, and `MAX_BOARDING_UNITS` at 4 means four banks
+   * hold sixteen units against six claimants, so nothing is refused either way. Twelve seeds
+   * each on the shipped storm plan: the verdict, its time and all four objective numbers are
+   * **identical arm to arm on every seed** — the two rules put the same men over the same
+   * rails and only ladder crossings move, by 1-5 %, which is inside this rig's own
+   * reproducibility. A bank's throughput is its rails and not its queue, so the spread buys
+   * nothing in men per second; it only decides where they land, and on the shipped garrison
+   * nothing lands hard enough anywhere for that to matter.
+   *
+   * What would separate them: a storm that can actually clear a bay. In an off-plan arm where
+   * the escalade was aimed two bays further along the curtain — onto the three wall-slinger
+   * units instead of the five of ballistarii — the spread arm carried condition A in 5 of 12
+   * seeds against the massed arm's 3, with peak `stormHolding` 220 against 136. That is the
+   * arm to re-run if the storm plan or the garrison ever moves (`ROME.md` §15 task 14).
+   */
+  decideStorm(c: Ctx): boolean {
+    const brain = c.brain;
+    brain.wallMove = 'none';
+    const wall = this.wall;
+    if (wall === null) return false;
+    // A unit that is being fought does not walk away to find a ladder. `engage` outbids this
+    // in contact anyway; the explicit test is so a storm is never *chosen* out of a melee.
+    if (c.info.inContact) return false;
+    if (this.tick - brain.wallOrderTick < ORDER_COOLDOWN) return false;
+
+    const points = wall.escaladePoints();
+    let best = -1;
+    let bestReady = false;
+    let bestD = Infinity;
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i];
+      // `free` is a hard gate and never a preference: a full bank is a refusal, and one with
+      // any room at all is as good as an empty one.
+      if (p.free <= 0) continue;
+      const d = Math.sqrt((p.x - c.u.x) * (p.x - c.u.x) + (p.z - c.u.z) * (p.z - c.u.z));
+      if (best >= 0 && (p.ready !== bestReady ? !p.ready : d >= bestD)) continue;
+      // Only now, because this is the expensive question: the offer resolves the point to a
+      // station and searches the train around it.
+      if (!wall.escaladeOfferAt(c.u.id, p.x, p.z).ok) continue;
+      best = i;
+      bestReady = p.ready;
+      bestD = d;
+    }
+    if (best < 0) return false;
+    brain.wallMove = 'storm';
+    brain.wallX = points[best].x;
+    brain.wallZ = points[best].z;
+    return true;
   }
 
   /**
