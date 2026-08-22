@@ -1182,6 +1182,45 @@ which snaps to Wikimedia's standard buckets — asking for 4096 or 3200 returns 
 | `lanciani-sitar-northern-arc-campus-martius-EPSG4326-12.4660_41.8955_12.5100_41.9155-4096px.jpg` | **The plan.** Lanciani's *Forma Urbis Romae* rendered over the **northern arc and the northern Campus Martius**: Porta Flaminia, the Muro Torto and the Pincian, Porta Pinciana, Porta Salaria, Porta Nomentana, the Castra Praetoria with the wall running along its north and east sides, the Mausoleum of Augustus, the Horologium/Ara Pacis quarter, Via Lata, the Stadium of Domitian, the Tiber bend. Tower ticks are individually resolved. | Rodolfo Lanciani (1845–1929), Milan 1893–1901, 1:1000; georectification by Gruppo di lavoro SITAR, SSABAP-RM | Publisher's own statement, re-read this pass — see the two verbatim quotations below the table. Map content **public domain by age** (author d. 1929); georectification **CC BY-SA 4.0** to SSABAP-RM | <https://www.archeositarproject.it/geoservizi/> | 4096 × 2496 | 1 449 231 | `0c0bba8acc84a978` |
 | `agea-2012-ortofoto-northern-campus-martius-EPSG4326-12.4660_41.9000_12.4900_41.9160-2048px.jpg` | **The modern aerial.** Piazza del Popolo and Porta del Popolo, the Pincio and the Muro Torto cut, the Mausoleum of Augustus and the Ara Pacis, Via del Corso on the line of the Via Lata, and the **Tiber's width and bend** at the Campus Martius with the Ponte Cavour / Regina Margherita / Margherita crossings. Also serves as the Tiber reference. | Agenzia per le Erogazioni in Agricoltura (AGEA), flown 2012; published by the Geoportale Nazionale, MASE | **CC BY 4.0**, verbatim from `gn.mase.gov.it/portale/note-legali` — see below | <https://gn.mase.gov.it/> | 2048 × 1831 | 1 388 493 | `f066ccb76f0ba0b6` |
 
+### 13. AGEA 2012 orthophoto — the **northern extension**, six tiles and a mosaic
+
+Added by the Tiber re-survey pass, 21 Aug 2026. **Same service, same layer, same CRS, same licence
+as item 8** — this is item 8's bbox extended 7,011 m north, nothing else.
+
+- **Why it was needed.** Item 8 and item 5 share one bbox and cover survey n −2436 … +2450, i.e.
+  world z 388 … 1400 at `KZ` = 0.35. The battlefield runs z −1400 … +1400, so **1,788 world metres
+  of the map's river — the ford at z −520 and the whole attacker's approach — was north of every
+  plate in `reference/`.** Phase 1's answer was a run-out on the mean bearing. The whole point of
+  this pass is that extrapolating between real points is what bent the river the wrong way.
+- **Creator / publisher:** as item 8. Agenzia per le Erogazioni in Agricoltura (AGEA), flown 2012;
+  published by the Geoportale Nazionale, MASE.
+- **Licence:** **CC BY 4.0**, verbatim from `gn.mase.gov.it/portale/note-legali`. Re-read from the
+  live `GetCapabilities` before a byte was fetched this pass:
+  `<Fees>Nessuna condizione applicata</Fees>`, `<AccessConstraints>Nessuno</AccessConstraints>`.
+  Attribution: *AGEA / Geoportale Nazionale — MASE, CC BY 4.0*.
+- **Request:** WMS 1.1.1 `GetMap`, `layers=OI.ORTOIMMAGINI.2012.33`, `srs=EPSG:3004`,
+  `format=image/jpeg`, host
+  `http://wms.pcn.minambiente.it/ogc?map=/ms_ogc/WMS_v1.3/raster/ortofoto_colore_12.map`.
+  Six tiles of 2048 × 1365 on a 2 × 3 grid, held in memory and written only after the leading
+  `FF D8 FF` and trailing `FF D9` both matched JPEG. `node tools/scratch/tiber-fetch-north.mjs`
+  reproduces it; `tools/scratch/tiber-north-tiles.json` records each tile's bbox and SHA-256.
+- **Tiling, and why it matters:** each tile's left edge and pixel size are item 8's own —
+  `X0 = 2307658.1627`, 1.712209 m/px — and `(4643263.3909 − 4650273.89167) / 1.711966 = −4095.000`
+  exactly, so the mosaic is item 8's pixel grid extended upward by exactly 4,095 rows.
+  `tools/scratch/tiber-raster.mjs` treats the two as **one raster** with `py` running −4095 … 2734,
+  and `src/city/overlay.ts`'s published pixel → survey affine serves both without refitting.
+- **Verified rather than assumed:** the Stadio Olimpico read off the mosaic lands at survey
+  e −2285, n 4608 against its published 41.93389 N, 12.45472 E — 60 m, inside the reading error at
+  1.71 m/px for a 300 m stadium.
+- **CRS / extent:** EPSG:3004, X 2307658.16 … 2314671.37, Y 4643263.39 … 4650273.89. Together with
+  item 8 that is survey n −2436 … +8180, world z −1505 … +1400 — the whole battlefield.
+- Local: `agea-2012-ortofoto-EPSG3004-north-r{0,1,2}c{0,1}-*-2048px.jpg` (six tiles, 5 289 054 bytes
+  total) and the mosaic `agea-2012-ortofoto-EPSG3004-north-mosaic-4096x4095.jpg`
+  (8 211 946 bytes, SHA-256 `958ee37a3ee2e8a3…`). Tile SHA-256 prefixes: r0c0 `09d21db5606d5dfc`,
+  r0c1 `3277458a2d80441e`, r1c0 `7cdd49a01f250f12`, r1c1 `14e70f440dc4c41f`,
+  r2c0 `5ac1b726b2aae39b`, r2c1 `1de53931d02159e0`. Nothing ships: `reference/` is gitignored in
+  full and carries `.metadata_never_index`.
+
 ### The two raster licences, verbatim
 
 - **SITAR** (`https://www.archeositarproject.it/open-data/`, re-read this pass): *"geoservizi

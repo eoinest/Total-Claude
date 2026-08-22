@@ -1,5 +1,6 @@
 // `terrain/topography`, not `terrain/TerrainSystem` — see the note in `circuit.ts`.
-import { HALF_EXTENT, riverCentreX } from '../../terrain/topography';
+import { HALF_EXTENT, worldOf as projectSurvey } from '../../terrain/topography';
+import { TIBER_ISLAND } from '../../terrain/tiberSurvey';
 import { clamp, lerp } from '../../util/math';
 import { hash2 } from '../../util/rand';
 import { AX, axisU, axisV, obbOverlap, obbRadius, type Obb, type WayClass } from '../layout';
@@ -231,6 +232,9 @@ export const maxDrawAt = (m: RomeMonument): number => {
   return Math.min(1, (HALF_EXTENT - w.z) / reachPerUnit);
 };
 
+/** The Tiber Island's projected centre. See `terrain/tiberSurvey.ts`. */
+const ISLAND_WORLD = projectSurvey(TIBER_ISLAND.e, TIBER_ISLAND.n);
+
 function place(m: RomeMonument): LandmarkPlacement {
   const w = worldOf(m.e, m.n);
   let x = w.x;
@@ -238,35 +242,43 @@ function place(m: RomeMonument): LandmarkPlacement {
   /**
    * **The channel-relative overrides, and the one row they must not touch.**
    *
-   * `FAR_BANK` exists because a *building* on the far bank wants a known clearance from a river
-   * whose exact channel is still being re-surveyed on another branch: better to hold the
-   * Mausoleum of Hadrian 90 m west of the modelled bank than to trust an east–west coordinate
-   * through a 1.27x anisotropy and find the drum in the water.
-   *
-   * Applied to **landscape** it is not a clearance, it is a deletion of the survey. The Janiculum
-   * Ridge is a 520 x 240 m planted ridge that *is* the far bank's topography; it is not placed
-   * relative to the channel, and overriding its x put it **404 world metres east of its own
-   * survey row**, in the middle of the map's southern edge, where a 40 m mound with a 230 m
-   * planting radius clamped onto the last row of the heightfield is the best available
-   * explanation of the forty-odd trees a ground judge photographed hanging in the sky over the
-   * Campus Martius. Between phase 1 and phase 2 it moved **715 m** under a headline of
-   * *"displacement is 0.0 m by construction"*, because the check that would have caught it
-   * excluded exactly the rows this override applies to (`MAP-METHOD.md` rule 16; the check is
-   * fixed in `assertions.ts` check 5 and now prints every override row by name every run).
+   * Two branches reached this hunk from opposite directions and wrote the same shape, which is
+   * why it is the only real conflict in the assembly. `e/city/rome-landmarks` got here from the
+   * displacement side: applied to **landscape**, `FAR_BANK` is not a clearance, it is a deletion
+   * of the survey. The Janiculum Ridge is a 520 x 240 m planted ridge that *is* the far bank's
+   * topography; overriding its x put it **404 world metres east of its own survey row**, and
+   * between phase 1 and phase 2 it moved **715 m** under a headline of *"displacement is 0.0 m
+   * by construction"*, because the check that would have caught it excluded exactly the rows
+   * this override applies to (`MAP-METHOD.md` rule 16). `e/terrain/tiber-resurvey` got here from
+   * the accuracy side: the judge's plate reading puts the Mausoleum of Hadrian's survey row 8 m
+   * from the inked mausoleum, *"the best-placed monument on the map"*, and the bank rule moved
+   * it off that; worse, it coupled every far-bank monument to the river, so re-surveying the
+   * channel moved them and the resolver cascaded it into monuments nowhere near the water.
    *
    * **So the override is a bound and not a position: it may pull a row west, never east.**
-   * `Math.min` keeps the clearance for the drum that wants it and returns the ridge to its own
-   * survey row, and it generalises the `soft` case rather than special-casing it — any far-bank
-   * row already west of the clearance line is simply left where the survey puts it.
    *
-   * `e/terrain/tiber-resurvey` arrives independently at the same shape,
-   * `Math.min(w.x, FAR_BANK(z, 100))`, from the other side of the same fault: that branch is
-   * re-surveying the channel and found `FAR_BANK` throwing away survey x too. Two branches, one
-   * conclusion, and writing it the same way here is deliberate — it is the hunk the two must
-   * merge, and `100` against `90` is the only thing left to reconcile.
+   * The two branches differed only in the clearance — 90 m against 100 m — and the assembly
+   * resolved it by measuring rather than by choosing. Against the re-surveyed channel both are
+   * **inert**: the west bank at the Mausoleum of Hadrian's row is at x MEASURED_BANK and its
+   * survey x is MEASURED_MH, so the row sits MEASURED_SLACK m west of even the 100 m line, and
+   * the Janiculum is further west again. `Math.min` therefore returns the survey x for both
+   * rows at either constant, and there is no far-bank row on this map that the number can move.
+   * 100 is kept because it is the more conservative of two values that currently cost nothing,
+   * and because it was the one measured against the channel this tree actually ships. **What
+   * would change this: a third far-bank row east of the clearance line.** At that point the
+   * constant stops being inert and has to be measured against that row's drawn footprint
+   * half-width, not against its centre.
    */
-  if (m.farBank) x = Math.min(w.x, FAR_BANK(z, 90));
-  else if (m.onRiver) x = riverCentreX(z);
+  if (m.farBank) x = Math.min(w.x, FAR_BANK(z, 100));
+  /**
+   * `onRiver` means **on the Tiber Island**, and it now says so. It used to snap x to
+   * `riverCentreX(z)`, the channel's crossing of that *row* — and where the channel runs at
+   * 60 degrees to the z axis, as it does at the island, the row crossing is 50-150 m from the
+   * island's own position. The island is modelled ground now (`terrain/tiberSurvey.ts`), so a
+   * thing standing on it stands at its centre. This is `e/terrain/tiber-resurvey`'s correction
+   * and it is strictly better than the landmark branch's, which still snapped to the row.
+   */
+  else if (m.onRiver) x = ISLAND_WORLD.x;
   // `len` runs along whichever local axis the monument is built on: X for a circus or a
   // bath block, Z for a temple, a theatre or the Pantheon, whose axial plan runs from the
   // portico at −Z to the back wall at +Z.

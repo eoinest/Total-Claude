@@ -1,0 +1,11 @@
+{
+ "file": "reference/rome-plans/agea-2012-ortofoto-EPSG3004-north-mosaic-4096x4095.jpg",
+ "widthPx": 4096,
+ "heightPx": 4095,
+ "epsg3004": {
+  "x0": 2307658.1627,
+  "y0": 4650273.89167,
+  "mppX": 1.712209,
+  "mppY": 1.711966
+ }
+}
