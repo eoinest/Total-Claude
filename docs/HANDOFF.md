@@ -55,6 +55,40 @@ Carthage run reporting 8,632 measured something else.
 > that contradicts its own document is worse than no summary**, because the summary is what gets
 > read. If you correct something here, correct it everywhere it is spelled out.
 
+### The autonomous run — 21 Aug 2026 onward, while the owner is away
+
+Two standing objectives, both given verbatim, both open-ended. **Neither stops at "the gate is green."**
+
+1. *"we want the city to literally be like as realistic as possible, so please have eval judge
+   agents and dont stop until theyre satisfied with the plans."*
+2. *"don't stop until multiplayer is completely functional and testing agents are absolutely wowed
+   by game play as well."*
+
+He has also said: **do not ask questions until he says he is back.** So every decision that would
+normally come back to him is made by the agent holding it, recorded with its reasoning and with what
+would change its mind. Decisions genuinely reserved — army composition and balance numbers — get
+made provisionally, flagged loudly, and are cheap to reverse.
+
+**The loop, which is the point.** Builders build; independent judges grade against something outside
+the build; findings go back to builders; repeat. Three judges are standing:
+
+| judge | lens |
+|---|---|
+| `e/judge/rome-plan` | plan fidelity from above — position, footprint, **bearing**, the river's curvature, against the georeferenced plates |
+| `e/judge/rome-ground` | how the city reads from a soldier's eye, with Carthage as the control |
+| `e/judge/gameplay` | plays the battle through the real menu and says whether commanding it is any good |
+
+**A judge that never passes anything is as useless as one that passes everything**, so each is asked
+to say what is already good. And no judge signs off on work that is merely better than before — the
+standard is the plate, or the experience, not the previous commit.
+
+**Multiplayer's fork.** `MULTIPLAYER.md` §2 recommends not building realtime yet; the owner has
+overridden that, having heard the argument. The cross-engine arm decides the road: if removing the
+26 `hypot` sites in `src/terrain`/`src/maps` closes Carthage's t+0 split and all three engines agree
+through every checkpoint, realtime lockstep over a relay is tractable. If not, §3 Stage 3
+(vendoring transcendentals) is the only road to cross-engine play and must be priced before a lobby
+exists. A relay, not peer-to-peer, either way — §4.1's total-order problem, not latency.
+
 ### Standing rules, all earned
 
 - **Agents do not merge to `main`.** Leave the branch, report, integration belongs to the
