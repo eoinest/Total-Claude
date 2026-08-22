@@ -162,11 +162,10 @@
  * the same commit as the change that moved it, and say why in the message.**
  */
 
-import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import { launchBrowser, startVite } from './lib/browser-budget.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const args = new Map(
@@ -204,29 +203,34 @@ const BATTLE_KEY = args.get('battle')
   : 'default';
 const BASELINE_PATH = path.resolve(ROOT, 'tools/determinism-baseline.json');
 
-const waitForServer = async (url, ms) => {
-  const end = Date.now() + ms;
-  while (Date.now() < end) {
-    try {
-      const r = await fetch(url, { signal: AbortSignal.timeout(2000) });
-      if (r.ok || r.status === 304) return true;
-    } catch { /* not up */ }
-    await new Promise((r) => setTimeout(r, 300));
-  }
-  return false;
-};
-
-const base = `http://127.0.0.1:${PORT}`;
-let server = null;
-if (!(await waitForServer(base, 1200))) {
-  server = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
-    cwd: ROOT, stdio: 'ignore', env: { ...process.env, TC_NO_HMR: '1' },
-  });
-  if (!(await waitForServer(base, 60000))) { console.error('vite did not start'); process.exit(1); }
-}
-
-const browser = await chromium.launch({
+/*
+ * ## The browser comes first, and it comes from the budget
+ *
+ * Two changes here, both from the 22 Aug 2026 incident — load average 160 on 16 cores, 136
+ * concurrent `vite` and `chrome-headless-shell` processes, machine down.
+ *
+ * **`launchBrowser` instead of `chromium.launch`.** Every agent runs this in its own worktree
+ * and this file had no idea any other copy of it existed. It now takes one of a small number
+ * of machine-wide slots (`tools/lib/browser-budget.mjs`), and queues, loudly, if they are all
+ * taken. `node tools/browsers.mjs` says who has them.
+ *
+ * **The browser is acquired before the server is started**, which is the reverse of the old
+ * order and is deliberate: a run that is going to spend ten minutes in the queue should not
+ * spend them holding a Vite server open on a port nobody can use.
+ *
+ * **`startVite` instead of `spawn('npx', ['vite', …])`.** The handle this file used to hold was
+ * npx, not Vite, so `server.kill('SIGTERM')` at the bottom signalled a wrapper and left the
+ * real server on the port. It also silently reused *any* listener on 5226 — including one
+ * serving a different worktree, which is a determinism gate confidently measuring another
+ * branch. `startVite` asks the listener which tree it is serving and refuses if it is not
+ * this one.
+ */
+const browser = await launchBrowser({
+  label: 'qa-determinism', port: PORT, root: ROOT,
   args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+});
+const { base, close: closeServer } = await startVite({
+  port: PORT, root: ROOT, label: 'qa-determinism', slot: browser.budgetSlot,
 });
 
 /**
@@ -540,7 +544,7 @@ if (JSON_OUT) {
     JSON.stringify({ battle: BATTLE_KEY, A: A.marks, B: B.marks, diffs, unitDiffs, firstDiff, firstUnitDiff, errors }, null, 2));
 }
 await browser.close();
-if (server) server.kill('SIGTERM');
+await closeServer();
 console.log(failed
   ? `\n✗ ${failed} failing check(s) across ${CHECKPOINTS.length} checkpoints (${A.marks.at(-1).count} soldiers)`
   : `\n✓ deterministic and unchanged across ${CHECKPOINTS.length} checkpoints at ${A.marks.at(-1).count} soldiers`

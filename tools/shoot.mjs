@@ -30,7 +30,7 @@
  * agents can use it as a build gate.
  */
 
-import { chromium } from 'playwright';
+import { launchBrowser, startVite } from './lib/browser-budget.mjs';
 import { spawn, execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -1501,32 +1501,26 @@ async function waitForServer(url, timeoutMs = 60000) {
   return false;
 }
 
+/*
+ * `startVite` — `tools/lib/browser-budget.mjs`, 22 Aug 2026.
+ *
+ * What was here spawned `npx vite`, and `server.kill('SIGTERM')` in `stopServer` therefore
+ * signalled the npx wrapper while Vite kept the port. Nineteen servers were swept off this
+ * machine in one morning for that reason. `startVite` runs Vite under `node` directly, so the
+ * handle is the server, and the server also polls this process and exits within two seconds
+ * of losing it — which is the part that survives a SIGKILL or a machine that falls over.
+ */
 let server = null;
-async function startServer() {
-  const base = `http://127.0.0.1:${PORT}`;
-  if (await waitForServer(base, 1200)) {
-    console.log(`• reusing dev server already on ${PORT}`);
-    return base;
-  }
-  console.log(`• starting vite on ${PORT}`);
-  server = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
-    cwd: ROOT,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, FORCE_COLOR: '0', TC_NO_HMR: '1' },
-  });
-  let serverLog = '';
-  server.stdout.on('data', (d) => { serverLog += d.toString(); });
-  server.stderr.on('data', (d) => { serverLog += d.toString(); });
-  if (!(await waitForServer(base, 60000))) {
-    console.error('vite failed to start:\n' + serverLog.slice(-4000));
-    throw new Error('dev server did not come up');
-  }
-  return base;
+async function startServer(slot = null) {
+  const r = await startVite({ port: PORT, root: ROOT, label: 'shoot', slot });
+  console.log(r.started ? `• started vite on ${PORT}` : `• reusing dev server already on ${PORT}`);
+  server = r.started ? r : null;
+  return r.base;
 }
 
 function stopServer() {
   if (server && !KEEP_SERVER) {
-    server.kill('SIGTERM');
+    void server.close();
     server = null;
   }
 }
@@ -1542,10 +1536,9 @@ let browser = null;
 let overlayHidden = 'n/a';
 
 try {
-  const base = await startServer();
-  await mkdir(OUT, { recursive: true });
-
-  browser = await chromium.launch({
+  // The slot before the server: a run that has to queue should not queue holding a port.
+  browser = await launchBrowser({
+    label: 'shoot', port: PORT, root: ROOT,
     args: [
       // Software rasterisation still gives a real GL context; SwiftShader is
       // deterministic across machines, which matters for A/B comparison.
@@ -1558,6 +1551,8 @@ try {
       '--hide-scrollbars',
     ],
   });
+  const base = await startServer(browser.budgetSlot);
+  await mkdir(OUT, { recursive: true });
 
   /*
    * Device pixel ratio, and the reason this is a flag rather than a constant.

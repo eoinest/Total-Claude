@@ -19,11 +19,18 @@ The full gate is green on this tree: tsc clean, lint 2/2, qa-deploy 33/33, seams
 | check | command | expected |
 |---|---|---|
 | types | `npx tsc --noEmit` | clean |
-| lint | `npm run lint` | 2/2 |
+| lint | `npm run lint` | **3/3** — see the note below |
 | deploy | `node tools/qa-deploy.mjs` | 33/33 |
 | seams | `node tools/probe-seams.mjs` | PASS, both maps |
 | replay | `node tools/qa-replay.mjs` | 21/21 |
 | determinism | the three arms below, **spelled exactly** | 7 checkpoints each |
+
+> **`lint` is three checks now, not two — changed 22 Aug 2026.** `check-determinism` and
+> `check-tool-args` are joined by **`check-browser-budget`**, which fails when a file in
+> `tools/` opens a browser or spawns `npx vite` without going through
+> `tools/lib/browser-budget.mjs`. It carries an allowlist of the 91 files in `tools/` (237
+> including `scratch/`) that predate the budget; that list may shrink and must not grow. If you
+> were told "lint 2/2", this is why it says 3/3. See `docs/tech/BROWSER-BUDGET.md`.
 
 Determinism is pinned in `tools/determinism-baseline.json` at **t+0/30/90/150/200/250/400**, three
 hashes each: the float32 pool, `uf64` (exact float64 unit state) and `uctl` (discrete state).
@@ -63,6 +70,12 @@ Carthage run reporting 8,632 measured something else.
 - **A self-consistent instrument can never fail.** Compare against something outside the thing
   being checked.
 - Worktrees need an isolated vite `cacheDir`. **Port 5173 is the owner's.**
+- **At most four headless browsers on this machine at once, and the filesystem now enforces it.**
+  22 Aug 2026: load average 160 on 16 cores, 136 `vite` and `chrome-headless-shell` processes,
+  machine recovered by hand; and nineteen orphaned dev servers swept off it the same morning.
+  Use `launchBrowser`/`startVite` from `tools/lib/browser-budget.mjs` — one line each, and they
+  queue rather than pile on. `node tools/browsers.mjs` says what is running and who owns it.
+  **How many agents to run at once is below.** Full account: `docs/tech/BROWSER-BUDGET.md`.
 - Unattended agents carry: *where you would normally ask, make the call, write down what you chose
   and why, and name what would change your mind.*
 

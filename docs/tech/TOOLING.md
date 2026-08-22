@@ -88,25 +88,29 @@ Both are fixed in `tools/scratch/r6-liveboot.mjs`, which now navigates to
 They are all the same programme, and knowing it makes an unfamiliar one readable in a minute.
 
 ```js
-// 1. Find or start a dev server on this tool's OWN port.
-const base = `http://127.0.0.1:${PORT}`;
-if (!(await waitForServer(base, 1200))) {
-  server = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'],
-    { cwd: ROOT, stdio: 'ignore', env: { ...process.env, TC_NO_HMR: '1' } });
-}
-// 2. Launch Chromium with a real GPU path.
-const browser = await chromium.launch({
-  args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader',
-    '--ignore-gpu-blocklist', '--hide-scrollbars'],
+import { launchBrowser, startVite } from './lib/browser-budget.mjs';
+
+// 1. Take a browser slot FIRST — machine-wide, capped, queued if the machine is full.
+const browser = await launchBrowser({ label: 'probe-x', port: PORT, root: ROOT });
+// 2. Then find or start a dev server on this tool's OWN port.
+const { base, close: closeServer } = await startVite({
+  port: PORT, root: ROOT, label: 'probe-x', slot: browser.budgetSlot,
 });
 // 3. Boot, wait for the game's own ready flag — with `null` in the arg position.
 await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 180000 });
 // 4. Drive it with real events, assert on state read back out of `window.__game`.
 // 5. record(name, pass, what, changed, note) → console, and optionally --json.
-// 6. process.exit(failed === 0 ? 0 : 1)
+// 6. await browser.close(); await closeServer();  →  process.exit(failed === 0 ? 0 : 1)
 ```
 
-Four conventions follow from that, and breaking any of them has cost this project a day.
+**Steps 1 and 2 replaced `chromium.launch()` and `spawn('npx', ['vite', …])` on 22 Aug 2026,
+and the order of them is deliberate.** See `docs/tech/BROWSER-BUDGET.md`; the short version is
+that every agent runs one of these in its own worktree, no copy of any harness could see any
+other, and twelve of them at once put this machine at load average 160 on 16 cores with 136
+`vite` and `chrome-headless-shell` processes. The slot comes before the server so that a run
+which has to queue queues holding nothing.
+
+Five conventions follow from that, and breaking any of them has cost this project a day.
 
 **`TC_NO_HMR=1` is not optional.** `vite.config.ts` disables HMR when it sees that variable.
 Without it, an agent editing a file mid-run reloads the page and destroys the execution
@@ -137,6 +141,14 @@ wrong, and a list of 19 with 8 non-bugs in it teaches the reader to distrust the
 `node tools/check-tool-args.mjs --explain` prints that correction.
 
 A single-line grep finds 3 of the 9. That is why the check exists and the grep does not.
+
+**Take a slot, and take it through `launchBrowser`.** `node tools/browsers.mjs` says who
+holds one, on which port, in which worktree, and for how long; `node tools/browsers.mjs reap`
+frees a slot whose holder is dead. The cap defaults to **4** on this machine and is set for
+everyone at once with `node tools/browsers.mjs cap <n>`. A new tool that calls
+`chromium.launch` directly fails `node tools/check-browser-budget.mjs`, which is wired into
+`npm run lint`; it carries an allowlist of the files that predate the budget, and that list
+may shrink and must not grow.
 
 **Never touch port 5173.** `vite.config.ts` pins the game's interactive dev server there and
 it belongs to whoever is playtesting. Every harness carries its own default in the 5199–5847

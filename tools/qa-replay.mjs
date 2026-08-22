@@ -51,12 +51,12 @@
  * 5245, and never 5173, which belongs to whoever is playing the game.
  */
 
-import { chromium } from 'playwright';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { bootThroughMenu, ensureServer } from './lib/menu-boot.mjs';
+import { launchBrowser } from './lib/browser-budget.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const args = new Map(
@@ -121,14 +121,24 @@ const wanted = (name) => !ONLY || ONLY.split(',').includes(name);
 // Server and browser
 // ---------------------------------------------------------------------------
 
-const { base, server } = await ensureServer({ port: PORT, root: ROOT });
-console.log(`server ${base}${server ? ' (started here)' : ' (already up)'}`);
-if (SHOT_DIR) await mkdir(SHOT_DIR, { recursive: true });
-
-const browser = await chromium.launch({
+/*
+ * The browser first, then the server — 22 Aug 2026, `tools/lib/browser-budget.mjs`.
+ *
+ * `launchBrowser` takes one of a small number of machine-wide slots and queues if they are all
+ * held, which is the whole point: every agent runs this in its own worktree and no copy of it
+ * could see any other. Taking the slot *before* `ensureServer` means a run that has to wait in
+ * the queue is not sitting on a dev server and a port while it waits.
+ */
+const browser = await launchBrowser({
+  label: 'qa-replay', port: PORT, root: ROOT,
   args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader',
     '--ignore-gpu-blocklist', '--hide-scrollbars'],
 });
+const { base, server, close: closeServer } = await ensureServer({
+  port: PORT, root: ROOT, label: 'qa-replay', slot: browser.budgetSlot,
+});
+console.log(`server ${base}${server ? ' (started here)' : ' (already up)'}`);
+if (SHOT_DIR) await mkdir(SHOT_DIR, { recursive: true });
 
 const settle = (page, ms = 320) => page.waitForTimeout(ms);
 const shot = async (page, name) => {
@@ -832,7 +842,7 @@ if (wanted('command')) {
 // ---------------------------------------------------------------------------
 
 await browser.close();
-if (server) server.kill('SIGTERM');
+await closeServer();
 
 console.log(`\nrecord size: ${measured.record.gzipBytes} B gzipped `
   + `(${measured.record.rawJsonBytes} B raw, ${measured.record.tokenChars}-char token) for `

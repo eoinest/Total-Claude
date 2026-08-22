@@ -20,7 +20,7 @@
  *   node tools/probe-siege.mjs --port=5353 --shots=walkway,tower --out=screenshots/x
  */
 
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser-budget.mjs';
 import { createServer } from 'node:http';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
@@ -270,9 +270,14 @@ let browser = null;
 let srv = null;
 try {
   srv = await ensureServer();
-  browser = await chromium.launch({
-    args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader',
-      '--ignore-gpu-blocklist', '--disable-dev-shm-usage'],
+  /*
+   * `launchBrowser` — 22 Aug 2026. This file's own `ensureServer` is a `node:http` static
+   * server, which dies with the process and never orphaned anything; the browser is the part
+   * that needed counting. The GPU flags are `GPU_ARGS` now and are supplied by default.
+   */
+  browser = await launchBrowser({
+    label: 'probe-siege', port: PORT, root: ROOT,
+    args: ['--disable-dev-shm-usage'],
   });
   const VW = SHOT_MODE ? SHOT_W : 1280;
   const VH = SHOT_MODE ? SHOT_H : 720;

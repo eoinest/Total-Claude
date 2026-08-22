@@ -17,11 +17,10 @@
  *                                   [--scenario=assault] [--json=path]
  */
 
-import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import { launchBrowser, startVite } from './lib/browser-budget.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const args = new Map(process.argv.slice(2).map((a) => {
@@ -55,19 +54,23 @@ const waitForServer = async (b, ms) => {
   return false;
 };
 
-const base = `http://127.0.0.1:${PORT}`;
-let server = null;
-if (!(await waitForServer(base, 1200))) {
-  console.log(`• starting vite on ${PORT}`);
-  server = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
-    cwd: ROOT, stdio: 'ignore', env: { ...process.env, TC_NO_HMR: '1' },
-  });
-  if (!(await waitForServer(base, 120000))) { console.error('vite did not start'); process.exit(1); }
-} else console.log(`• reusing dev server on ${PORT}`);
-
-const browser = await chromium.launch({
+/*
+ * Server and browser via `tools/lib/browser-budget.mjs` — 22 Aug 2026.
+ *
+ * The browser slot is taken **first** and the server started second, so a run that has to
+ * queue queues holding nothing. `startVite` replaces `spawn('npx', ['vite', …])`, whose
+ * handle was the npx wrapper rather than Vite and so left the server on the port when it was
+ * killed; it also refuses to reuse a listener that is serving a different worktree, which
+ * this file used to do silently.
+ */
+const browser = await launchBrowser({
+  label: 'probe-seams', port: PORT, root: ROOT,
   args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
 });
+const { base, close: closeServer } = await startVite({
+  port: PORT, root: ROOT, label: 'probe-seams', slot: browser.budgetSlot,
+});
+
 
 const results = [];
 let bad = 0;
@@ -122,6 +125,6 @@ if (JSON_OUT) {
 }
 
 await browser.close();
-if (server) server.kill('SIGTERM');
+await closeServer();
 console.log(bad === 0 ? '\nPASS — every seam agrees on every map' : `\nFAIL — ${bad} map(s) with faults`);
 process.exit(bad === 0 ? 0 : 1);
