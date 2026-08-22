@@ -629,4 +629,153 @@ and it caught four things in a branch that had already been graded once by a pla
 ground judge, and once by a twenty-one-check external gate.** That is the argument for the seat,
 and it is an argument for making the *rails* a committed artefact rather than the frames.
 
+---
+
+### 21 Aug 2026 — the gate corrected against its own adjudication: 5/21 to 7/25, and every added check red
+
+**What we did.** Implemented `docs/CITY-GROUND-JUDGE.md` §11 in `tools/probe-fabric.mjs` and
+nothing else. No source under `src/` changed; the three pinned determinism hashes are unchanged at
+8,632 / 3,074 / 3,440 soldiers, `tsc` is clean, `lint` is 2/2 and `qa-deploy` is 33/33. The work
+was split off the build deliberately — a phase that edits its own gate cannot report a before and
+an after — and the split is why there is a before column at all.
+
+Six changes. G8 keeps its 7 m of street and loses the population its own comment was wrong
+about. **G8c** and **G8d** are the price of that: a pair inside one declared `complex` must be
+*joined*, and the complex as a whole must be *one connected piece*. **G13** is retired; **G13a**
+(an absolute band against typed-in published dimensions) and **G13b** (no inverted size order)
+replace it. **G11** gains an off-frame category gated on the five agreed names. **G22** is the
+water check, shipped with the exclusion accounting the judge made a condition of endorsing it.
+
+**What we expected.** The judge's table: 5/21 → 7/25, sixteen failing checks becoming eighteen,
+every added check failing today.
+
+**What happened.** Measured, both maps, and the control column is as informative as the subject's:
+
+| | Rome before | Rome after | Carthage before | Carthage after |
+|---|---|---|---|---|
+| verdict | 5/21 | **7/25** | 12/21 | **13/22** (3 n/a) |
+| failing | 16 | **18** | 9 | 9 |
+| G8 street | FAIL 0.66 m | **PASS** — 0 of 310 cross-complex pairs short, closest legal 13.66 m | FAIL 4.07 m | FAIL 4.07 m, unchanged |
+| G8c joined | — | **FAIL** — 3 of 41 in-complex pairs in the (2.5, 7) m no-man's-land | — | n/a, no complexes declared |
+| G8d one piece | — | **FAIL** — 4 of 5 complexes are not one piece | — | n/a |
+| G13a band | — | **FAIL** — 2 of 10 gated rows below the 0.45 floor | — | **PASS** — 0 of 2 |
+| G13b order | — | **FAIL** — 10 of 43 asserting pairs inverted, 23 % | — | n/a, 0 asserting pairs |
+| G15 trespass | FAIL 11 pairs | **FAIL 2 pairs** | FAIL 2 pairs | FAIL 2 pairs |
+| G22 water | — | **FAIL** — 78 solids under a 5.0 m surface | — | **FAIL** — 1 solid under sea level |
+| G11 present | FAIL | **PASS** | PASS | PASS |
+
+**The headline number is exactly the prediction and its composition is not.** The judge's table
+has G15 passing and does not score G11; the measurement has G11 passing and G15 failing. Two
+pairs are declared one `complex` and stand 3.14 m and 3.17 m apart — inside G8c's own
+no-man's-land — so the complex licenses nothing and G15's second condition refuses them. **The
+predicted PASS does not survive the judge's own conjunction**, which is the more interesting
+outcome: the three conditions were written down correctly and then scored as if the first one
+implied the other two.
+
+**Five things worth the log.**
+
+- **The exemption hazard is now demonstrable in one run rather than arguable in prose.**
+  `--inject=complex-invent` on Carthage declares the two closest monuments to be one complex.
+  G8c and G8d go red, **and G8 goes green on the same run** — 1 of 45 pairs short becomes 0 of
+  44. That is precisely what "treat a complex as one owner" would have done to all twenty-one
+  rows, and it took four lines of injection to turn rule 18's argument into a table. **An
+  argument about a check is worth much less than a run of the check with the fault in it.**
+- **A third outcome was unavoidable, and the denominators now differ between maps.** G8c, G8d
+  and G13b have no population on Carthage: it declares no complexes, and its two published
+  monuments are 325 m and 320 m, which is 1.6 % apart and inside every citation's own error bar,
+  so the pair asserts no size order at all. Counting those green would have put three checks that
+  cannot fail into a passing score — the exact thing this project has shipped several times. They
+  report `n/a` with the reason and the sample size and come out of that map's denominator, so
+  Carthage is 13/**22** and Rome is 7/**25**. **A map is asked fewer questions because it makes
+  fewer claims, and that is not a defect in the gate.** The candidate rule, offered to §1 rather
+  than written into it: *a check whose population is empty must say so and leave the denominator;
+  a vacuous pass is worse than a missing check because it is indistinguishable from a real one.*
+- **The water check would have been wrong on the control map without its exclusion list, and
+  that was measurable rather than hypothetical.** `--inject=water-no-exclusions` fails Carthage
+  on **34** monument solids, of which **33 are the Cothon and the merchant basin** — 325 m and
+  320 × 150 m *of water*, per Hurst 1994 and `CARTHAGE.md` §6.2. Rule 16 predicted this shape
+  exactly ("a check born blind to a mechanism measures its absence") and the condition the judge
+  attached to endorsing G22 was load-bearing, not procedural. With the list in place the check
+  finds **one** thing on Carthage and it is real: **The Temple by the Sea, a 44 × 64 m
+  `solid: true` monument standing entirely offshore with its centre 9.2 m below sea level**, three
+  of four corners wet, photographed. Nothing in the tree had ever named it. On Rome it finds the
+  Theatre of Marcellus at 1.52 m under a 5.0 m surface — the judge's own figure, to the
+  centimetre, from an independent computation — and **77 insula solids standing in the Tiber**.
+- **The external ruler is smaller than the internal one, and the size of that gap is the
+  finding.** The judge measured 56 of 345 inverted size relations and 13 of 27 rows below a 0.45
+  floor, both against the survey's own `len`. That is the right measurement for a judge and the
+  wrong reference for a gate: `len` is an input to the build, and rule 6 forbids it. Against
+  `PUBLISHED` — typed into the probe, one citation per figure — the population is **10 sourced
+  rows and 43 asserting pairs**, and it fails at 10 of 43 (23 %) and 2 of 10. The direction, the
+  magnitude and the worst offender all agree with the judge (the Castra Praetoria drawn 0.84x a
+  Mausoleum of Augustus it is 5.06x the length of), so the small population is not hiding the
+  fault. **What it cannot do is see the other seventeen monuments**, because `PUBLISHED` has no
+  row for the Ludus Magnus, Trajan's Markets, the Baths of Titus or the Temple of Venus and
+  Rome. Widening it is a literature task with a citation per figure, not a code task, and
+  inventing the citations would be worse than the gap. The count over the wider *sourced*
+  population is printed every run and not gated: 31 of 100.
+- **One arithmetic correction to the adjudication, which changes nothing it concludes.** §11.1
+  reports *"pairs inside one declared complex: 27"* and *"of the 27, fourteen stand 7 m or more
+  apart, up to 59 m"*. Five complexes of 7, 5, 4, 3 and 2 rows have `21 + 10 + 6 + 3 + 1` = **41**
+  pairs, which is forced, and **28** of them stand 7 m or more apart, **up to 165.13 m**
+  (`temple-jupiter` / `trajan-market`, both filed `forum-valley`). The judge's enumeration was
+  evidently bounded by a proximity query — its own maximum, 58.95 m, is the largest pair a
+  neighbour search would return — so the two numbers are not comparable and the smaller one
+  understates the case it is making. Every named pair and every conclusion in §11.1 survives.
+
+- **Two of Rome's five complexes fail for opposite reasons and one number hides it.** At the
+  2.5 m joint bound four of five are not one piece; at any threshold under 20 m, three are. The
+  difference is `campus-medius`, which becomes one piece at **3.17 m** — the Stadium of Domitian
+  is 67 cm outside the party-wall bound and 3.8 m inside the street bound, which is neither
+  thing. `pompey` needs **17.36 m** (the judge measured 17.4 for the Theatre of Pompey against
+  its own *porticus post scaenam*, from a different computation), `forum-valley` needs 23.72 m
+  and `colosseum-valley` 27.58 m. So `connectAtM` — the longest edge in the complex's minimum
+  spanning tree — is printed beside every complex, because "not one piece" is a verdict and "not
+  one piece until 27.58 m" is an instruction.
+
+**Two smaller ones, both about the instrument rather than the city.**
+
+- **`Number('8c')` is `NaN`.** The check table sorted on `Number(id.slice(1))`, so the moment
+  checks were named G8c, G8d, G13a and G13b the printed table would have come out in push order
+  and read as scrambled. Found by reading the sort line before the first run, which is luck rather
+  than method — no test in the tree looks at the order of a gate's own table. **A gate's own presentation
+  layer is part of the gate**, and the first thing a new check id breaks is the ordering nobody
+  thinks of as code.
+- **The illustration budget was three frames and there are now ten fault classes.** The shot list
+  ranks by area and takes one frame per class, so a class whose unit of harm is small in square
+  metres can never be photographed while a larger class is unfixed: G8d's headline — a complex
+  whose two halves stand 17.4 m apart — scored 301 m² against 5,688 m² of paving in the wrong
+  forum and was fifth in a queue of three. Raised to five. **A gate that can fail for a reason it
+  could not fail for before and cannot show that reason has only half shipped.**
+
+**Verdict — the score fell and the instrument improved, and the only way to tell those apart is
+the injection list.** Of the eight checks this pass touched, seven go red on live data — G8c,
+G8d, G13a, G13b, G15 and G22 on Rome, G8 on Carthage — which proves those seven. G11 passes on
+both maps, and a passing check proves nothing whatever about itself. So every limb that live data
+cannot reach has a named `--inject` that breaks one of
+the probe's own inputs — never the game, never `src/` — and states which check must go red:
+G13a's upper band (nothing on either map exceeds it), G11's exclusion-membership limb, G22's
+stale-licence limb, and G8c/G8d on a map with no complexes. All seven fired. An injected run
+prints a banner, tags the checks it expects to flip, always exits non-zero, and exits **3** if a
+check that was supposed to go red did not — which caught a real defect in the harness on its first
+use, where `complex-invent`'s expectation string listed G8 as needing to go red when G8 going
+*green* is the whole demonstration.
+
+**What we would do differently.**
+
+- **Type the published dimensions in before building the thing they grade, not after.**
+  `PUBLISHED` has 26 rows for a city with 27 drawn monuments, and only 10 of them are both gated
+  and present. Every gap in it is a monument the absolute band and the size order cannot see, and the
+  gap was created by the build getting ahead of the literature rather than by anything hard.
+- **Write down what a relation costs at the moment the relation is added.** `complex` was added
+  to the survey with an argument, evidence per group, and a 2.4 m bound — and the bound lived in
+  the offline script that granted the licence, so declaring a complex was free. The obligation
+  had to be added by a separate agent two phases later, against an adjudication. **A licence and
+  its price belong in the same commit.**
+- **State the exclusion list's failure mode, not only its membership.** G22's first draft faulted
+  Rome's `tiber-island` licence as stale, because the row is `soft` and publishes no collision
+  solid at all — there was nothing to be wet. A licence can go unused two ways and only one of
+  them means the list has rotted; conflating them made the probe report a fault in itself as a
+  fault in the city, which is the most expensive kind of false positive a gate can produce.
+
 <!-- Append new entries above this line. -->
