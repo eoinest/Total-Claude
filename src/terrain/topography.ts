@@ -54,7 +54,16 @@ export const FORD_SIGMA = 78;
  * The Tiber's course, as the survey gives it — `docs/ROME.md` §3.2 and §15 task 1.
  *
  * Twelve points from above the Pons Milvius to below the Aventine, in world metres,
- * projected from latitude and longitude through the affine map in `city/rome/survey.ts`.
+ * projected from latitude and longitude through the affine map below.
+ *
+ * **Re-projected at `KZ` = 0.35** (`ROME-FABRIC.md` §5 phase 1 — *"same survey polylines, new
+ * `KZ`"*). Every `x` is unchanged to the centimetre because `KX` is unchanged; every `z`
+ * moved, and it had to, because these are world metres and the world's depth scale changed.
+ * The twelve latitudes and longitudes below are the survey and did not move at all, which is
+ * the whole point of keeping them written down here: re-projecting is
+ * `node tools/scratch/rome-frame.mjs`, and `probe-rometransect.mjs --only=tiber` re-runs them
+ * through `worldOf` in the running page and fails if this table has drifted from them.
+ *
  * They are stored already projected because the dependency only runs one way: `survey.ts`
  * solves `GATE_X` as the fixed point of `roadCentreX(crestZAt(x))` and derives the
  * projection's origin from it, so `survey.ts` imports this file and this file cannot import
@@ -82,34 +91,44 @@ export const FORD_SIGMA = 78;
  * sine terms as well as being the honest shape.
  */
 export const TIBER_PATH: readonly number[] = [
-  -526.37, -311.51,
-  -269.43, -69.73,
-  -159.31, 132.58,
-  -115.26, 305.27,
-  -93.24, 477.97,
-  -74.89, 670.41,
-  -287.78, 766.63,
-  -379.54, 885.05,
-  -159.31, 971.40,
-  127.00, 1033.08,
-  60.93, 1242.78,
-  -85.90, 1538.84,
+  -526.37, -796.55,
+  -269.43, -415.37,
+  -159.31, -96.42,
+  -115.26, 175.85,
+  -93.24, 448.12,
+  -74.89, 751.51,
+  -287.78, 903.21,
+  -379.54, 1089.91,
+  -159.31, 1226.05,
+  127.00, 1323.29,
+  60.93, 1653.91,
+  -85.90, 2120.66,
 ];
 
 /**
  * Mean bearing of the whole surveyed course, dx/dz, and the bearing the channel runs out
  * on past either end of the survey.
  *
- * The last surveyed segment at the north end runs at **1.063**, which is the Tor di Quinto
- * meander seen through a projection that compresses north-south twice as hard as
- * east-west. Extended at that bearing the Tiber leaves the *west* edge of the map at
- * z -1216 and the north-west quarter of the battlefield is dry, which is both wrong and
- * ugly; the ford at `FORD_Z = -520` would sit at x -747 with nothing north of it. Past the
- * last surveyed point the course is not surveyed, so it runs out on the mean bearing of
- * everything that is — 440 m of x over 1,851 m of z — eased in over `TIBER_RUNOUT_BLEND`
- * so there is no kink at the join.
+ * The last surveyed segment at the north end ran at **1.063** at `KZ` = 0.222, which was the
+ * Tor di Quinto meander seen through a projection that compressed north-south twice as hard
+ * as east-west. Extended at that bearing the Tiber left the *west* edge of the map at z -1216
+ * and the north-west quarter of the battlefield was dry, which was both wrong and ugly; the
+ * ford at `FORD_Z = -520` sat at x -747 with nothing north of it. Past the last surveyed point
+ * the course is not surveyed, so it runs out on the mean bearing of everything that is, eased
+ * in over `TIBER_RUNOUT_BLEND` so there is no kink at the join.
+ *
+ * **At `KZ` = 0.35 both numbers fall and the runout stops mattering.** The same 440 m of x now
+ * spans **2,917 m** of z rather than 1,851, so the mean slope is **0.151**; the north segment
+ * runs at **0.674**. Two consequences, both measured by `tools/scratch/rome-frame.mjs`:
+ *
+ *  - Extended at 0.674 the channel reaches only x **-933** at the map's north edge z -1400,
+ *    which is inside the map, so the pathology the blend exists to prevent no longer arises
+ *    at either slope. The blend stays because a kink at the join would still be visible.
+ *  - **`FORD_Z = -520` is now inside the surveyed range** — the first surveyed point moved from
+ *    z -311.5 to z -796.6 — so the ford stands on surveyed river instead of on extrapolation.
+ *    That is a free improvement and nothing had to be done to get it.
  */
-const TIBER_MEAN_SLOPE = 0.238;
+const TIBER_MEAN_SLOPE = 0.151;
 const TIBER_RUNOUT_BLEND = 150;
 
 /**
@@ -122,8 +141,35 @@ const TIBER_RUNOUT_BLEND = 150;
  * finer than the 15 m cut bank the profile draws.
  */
 const RIVER_LUT_STEP = 4;
-const RIVER_LUT_Z0 = -HALF_EXTENT - 200;
-const RIVER_LUT_N = Math.round((2 * HALF_EXTENT + 400) / RIVER_LUT_STEP) + 1;
+/**
+ * **The table's z range is derived from the survey it samples, not from the map.**
+ *
+ * It was `-HALF_EXTENT - 200` to `+HALF_EXTENT + 200`, which covered the whole battlefield with
+ * a 200 m margin and was right for `KZ` = 0.222, where the twelve surveyed knots spanned
+ * z −311 to z +1539. At `KZ` = 0.35 they span **z −797 to z +2121**, so the last two knots fell
+ * outside the sampled range and `riverCentreX` clamped: it returned the value at z +1600 for
+ * every z past it, which is **161.6 world metres** from the survey at the twelfth point.
+ *
+ * That is off the map and nothing on the ground could see it. It still had to be fixed rather
+ * than excused, because `probe-rometransect --only=tiber` is the *external* instrument that
+ * stops this transcribed table rotting, and a probe you teach to look away from a range is a
+ * probe that stops being one. So the range is now the union of the map plus its margin and the
+ * **whole authored polyline** plus the same margin, computed from `TIBER_PATH` itself — which
+ * means it covers the survey at any `KZ` by construction and cannot be got wrong again by a
+ * projection change. The cost is 1,101 doubles instead of 801: 4.8 KB, once.
+ */
+const RIVER_LUT_MARGIN = 200;
+const RIVER_LUT_Z0 = (() => {
+  let lo = -HALF_EXTENT;
+  for (let i = 1; i < TIBER_PATH.length; i += 2) lo = Math.min(lo, TIBER_PATH[i]);
+  return lo - RIVER_LUT_MARGIN;
+})();
+const RIVER_LUT_Z1 = (() => {
+  let hi = HALF_EXTENT;
+  for (let i = 1; i < TIBER_PATH.length; i += 2) hi = Math.max(hi, TIBER_PATH[i]);
+  return hi + RIVER_LUT_MARGIN;
+})();
+const RIVER_LUT_N = Math.round((RIVER_LUT_Z1 - RIVER_LUT_Z0) / RIVER_LUT_STEP) + 1;
 
 /**
  * Cubic Hermite through the survey, with Catmull-Rom tangents limited to the local secants.
@@ -387,12 +433,51 @@ const PORTA_FLAMINIA_N = 2045;
 export const KX = 0.443;
 
 /**
- * Depth scale. The heightfield ends at z = 1400 and the wall crest reaches z = 583, so
- * there are about 940 m of city depth for Rome's 3,545 m from the Porta Flaminia to the
- * Baths of Caracalla. 0.222 is the largest value that fits Caracalla inside the map with
- * its precinct clear of the edge.
+ * Depth scale. **0.35, and the constraint that produced it is a fabric, not a monument.**
+ *
+ * It was **0.222**, and that number was *"the largest value that fits Caracalla inside the map
+ * with its precinct clear of the edge"* — the Baths of Caracalla being 3,545 real metres south
+ * of the Porta Flaminia and the heightfield being 940 m deep behind the crest. That is a real
+ * constraint honestly stated, and it was the wrong constraint. `docs/ROME-FABRIC.md` §4.3 and
+ * §4.5 are the measurement that replaced it:
+ *
+ *  - Real cross-street pitch in the Campus Martius is **50–90 m**. At `KZ` = 0.222 that
+ *    projects to **11.1–20.0 world m**, and a true-depth insula needs `INSULA_DEPTH_MAX` 22 m
+ *    plus two frontages — about **30 m**. **A true-scale insula did not fit between two
+ *    projected cross-streets at any point in the range.** Any generator deriving blocks from
+ *    projected streets was therefore forced to drop two cross-streets in three and stand one
+ *    22 m building in a 60 m gap, which is the blobs-between-voids the owner objected to,
+ *    arrived at honestly. At 0.35 the pitch is **17.5–31.5 m** and a street front is possible.
+ *  - The Campus Martius — the 700 world metres behind the gate the assault comes through, where
+ *    the battle's second act happens — went from **450 world metres** of depth holding 2,117
+ *    real metres of the densest monumental quarter in the ancient world to **709**, +58 %.
+ *  - Anisotropy against `KX` falls from **2.00×** to **1.266×**.
+ *  - Conflicting monument pairs, footprints at 0.65 and the five §4.1 complexes merged, fall
+ *    from **22** to **13**, each one now a named authored exception rather than a solve.
+ *
+ * **What it costs, and the cost was accepted in writing before it was taken.** Five monuments
+ * and one ridge fall past the +Z edge and are not drawn: the Palatine, the Circus Maximus, the
+ * Aventine temples, the Baths of Caracalla, the Caelian villas, and the Janiculum ridge. All
+ * are 700–800 world metres behind the wall, in `ROME.md` §6.1's backdrop zone, and none is
+ * fought over. The Colosseum, the Ludus Magnus, the Oppian baths, the Forum Romanum, the
+ * Capitolium, the Theatre of Marcellus and the Tiber Island all survive. See
+ * `offMapSouth` in `city/rome/layout.ts` for the predicate that drops them, and
+ * `ROME-FABRIC.md` §1.2 for why holding all of Rome was the thing that could not work:
+ * *"Carthage did not model Carthage."*
+ *
+ * **`KX` is not changing and cannot.** The front runs from the Tiber angle at `e` −655 to the
+ * Castra's north-east angle at `e` +2353, and the east end lands at `72 + 2850·KX`: 1334.5 at
+ * 0.443, 1400.1 at 0.466. There is 65 m of headroom on a 2,800 m map and nothing to win.
+ *
+ * **Neither anchor moves with this.** `GATE_X` is the fixed point of
+ * `roadCentreX(crestZAt(x))` and `GATE_Z = crestZAt(GATE_X)`; both are functions of x and z
+ * alone and contain no `KZ`, so the 725.7 m approach from the attacker's box to the gate is
+ * unchanged, and so are the front's length, its 36 bays and their 37.015 m pitch.
+ *
+ * Reproduce every number above with `node tools/scratch/rome-frame.mjs`, which re-derives the
+ * projection from the two anchors rather than importing it from here.
  */
-export const KZ = 0.222;
+export const KZ = 0.35;
 
 const X0 = GATE_X - KX * PORTA_FLAMINIA_E;
 const Z0 = GATE_Z + KZ * PORTA_FLAMINIA_N;

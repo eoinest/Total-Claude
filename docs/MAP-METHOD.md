@@ -42,7 +42,14 @@ Distilled from §3. Short, and each one traceable to an entry that paid for it.
    explicitly rather than bending the projection quietly. (`CARTHAGE.md` §2.4.)
 5. **A layout must be correct by construction, not corrected afterwards.** A resolver that nudges
    overlapping buildings apart is evidence the layout step was wrong. It also hides the fault from
-   whoever looks next.
+   whoever looks next — **and hiding it is not the worst of it.** Measured on Rome: the shipped city
+   has zero intersecting monument pairs and zero buildings inside a monument, and it buys that by
+   displacing every monument a mean of 65 and a worst of 168 world metres from its own surveyed
+   position. The resolver does not fail to fix the overlap; it fixes the overlap and *creates the
+   fault the owner reported*. And it gets worse when you give it room: raising `KZ` from 0.222 to
+   0.35 left it 13 conflicts to discharge instead of 22 and it moved everything **twice as far**
+   (mean 142 m, worst 399 m). **A solver given more space does not do less work. It does more,
+   further.**
 6. **Every invariant needs an instrument, and the instrument must compare against something outside
    the thing being checked.** This project's most expensive recurring failure is a check that
    compares something against itself. Real published dimensions, a georeferenced plate, geometry read
@@ -65,6 +72,23 @@ Distilled from §3. Short, and each one traceable to an entry that paid for it.
    in the projected gap. At Rome's `KZ` a true-scale insula did not fit between two projected
    cross-streets **at any point in the real range**, so the grid step was arithmetically impossible
    before anyone wrote a line of it. One division would have found this in 2019 as easily as in 2026.
+11. **Measure the complaint first, in the units of the complaint.** When somebody says the map is
+   wrong, the first measurement of the pass is of *that*, on the unchanged tree, before anything is
+   touched. Rome's fabric was diagnosed as an overlap problem and rebuilt on that basis; the shipped
+   city has **zero** overlapping monuments, and what the owner was looking at was **displacement** —
+   a solver moving surveyed monuments a mean of 65 and a worst of 168 world metres to make the
+   overlaps go away. Both diagnoses point at the same fix, so nothing was wasted, but for two passes
+   nobody could say how big the reported fault was.
+12. **When a projection constant changes, grep every expression that multiplies by it and ask whether
+   that expression meant it.** A district extent written `hn * KZ * 3.5`, a lookup table bounded by
+   `HALF_EXTENT + 200`, a `clamp` to the map's south edge — none of those was *about* depth, and all
+   three would have shipped as silent side effects of changing `KZ`. **A constant appearing in a
+   formula is not the same as a constant the formula is about.**
+13. **A check that goes dark is worse than a check that fails.** Removing five monuments from Rome's
+   frame silently took `assertTopology` from 44 rules to 34 and `assertHillRing` from 8 members to 6,
+   and it exposed a latent bug in the second that would have failed a correct build. Any check that
+   can lose part of its population must separate "excluded by design" from "missing", count the
+   exclusions, and print them by name.
 
 ---
 
@@ -245,5 +269,84 @@ error.
 - **Write the fabric's instrument in the same phase as the fabric's design.** `ROME-FABRIC.md` §5
   Phase 2 puts three of the six probe checks live before any block is generated, specifically so
   that the previous entry's verdict cannot repeat.
+
+### 21 Aug 2026 — Rome fabric phase 1: the projection change, and the survey re-laid on it
+
+**What we did.** Raised `KZ` from 0.222 to 0.35 and left `KX` alone. Re-projected the Tiber's twelve
+surveyed knots and re-derived its runout slope. The Aurelian circuit re-projected itself, because it
+was already held in survey metres. Wrote `tools/scratch/rome-frame.mjs` — Phase 0's checked-in script
+— which re-derives the projection from the two anchors instead of importing it and **parses**
+`survey.ts` instead of restating it. Added `assertRomeFrame`, printing `ROME-FABRIC.md` §4.1's
+whole-map sanity checks at every boot and publishing them on `CityChecks`. Built a control checkout
+at the base commit on a second port and measured everything twice.
+
+**What we expected.** That the wall would come through untouched (`KX` unchanged), that the
+georeference would survive (it is upstream of `KZ`), that the Tiber would re-fit to the same 0.1 m,
+and that the visible city would improve somewhat because the Campus Martius gets 58 % more depth.
+
+**What happened.** The first three held exactly. The fourth was half right, and the half that was
+wrong is the finding.
+
+1. **Every invariant held by construction, and "by construction" is checkable.** 36 bays, west end
+   x 2.006, east end x 1334.55, pitch 37.01511 m — byte-identical, because `x = X0 + KX·e` contains
+   no `KZ` and `GATE_X`/`GATE_Z` are functions of x and z alone. The 725.7 m approach likewise.
+   Tiber survey error 0.1 m → 0.1 m. Bench 266/266 stations ≥ 40 m. Worst walk step 5.23 → 5.50 m, and
+   that one *had* to move because the wall line moved 5–60 world m south and stands on new ground.
+   **A control checkout on a second port cost fifteen minutes and turned every one of those from an
+   argument into a measurement.**
+2. **The fabric got measurably better with no fabric work at all.** Buried quarters 6 → 2, and
+   `via-lata` — the quarter behind the assaulted gate, the 2.9 % that is the headline symptom in the
+   diagnosis — stopped being one of them. Solids the collision layer publishes 903 → 1,259, +39 %.
+   Ranked-way samples inside a monument 302/1,040 → 98/956. `probe-fabric` 6/21 → 7/21, with G9 and
+   G15 gained.
+3. **And the fault the owner actually reported got worse.** `probe-fabric` had just established that
+   nothing overlaps on the shipped city because `resolveOverlaps` displaces monuments — mean 65 m,
+   worst 168 m — so *displacement* is what "everything is completely off" describes. At `KZ` 0.35 the
+   resolver displaces **mean 142 m, worst 399 m**; in real metres, mean 226 → 351 and worst 672 →
+   1,098. It has **fewer** conflicts to discharge (13 against 22) and it moves everything further,
+   because a deeper band and five fewer southern monuments give it more room to push into and no
+   reason not to use it. **A solver given more room does not do less work. It does more, further.**
+4. **Four faults that predate this pass and that nothing had measured.** Insulae standing in the
+   Tiber — 37 of 903 solids entirely under `WATER_LEVEL` at the base commit, 60 of 1,259 here, with
+   `assertNoFabricOverlaps` and `probe-fabric` G1/G2 all reporting zero. `assertHillRing`'s
+   cyclic-order test, which normalised each step to the shortest turn and therefore could not
+   distinguish a legitimate 213° arc from a 147° inversion — latent until two ring members went off
+   the map, at which point it failed a correct build. `place()`'s z clamp, which would have stacked
+   five southern monuments on the single line z = 1374 instead of removing them, silently. And a
+   district depth written as `hn * KZ * 3.5`, which would have inflated every district 57.7 % as a
+   side effect of a projection change.
+
+**Verdict — the frame is right, the frame was never the visible fault, and phase 1 has made the
+visible fault worse on its way to fixing it.** Every number `ROME-FABRIC.md` §4.5 promised is
+delivered and measured. None of them is what the owner was looking at. He was looking at
+`resolveOverlaps`, which phase 2 deletes, and which this phase provoked. That is a real cost of
+splitting the work across a review gate and it was accepted deliberately: the alternative was to ship
+the frame change and the landmark rebuild together, which would have made it impossible for him to
+tell which of the two he was approving, and would have wasted the landmark work if he had rejected
+the frame.
+
+**What we would do differently.**
+
+- **Measure the thing the owner complained about, on the base commit, before changing anything.** The
+  displacement figures took ten minutes and they reframed the whole phase. Had they been taken at the
+  start, the brief would have said "phase 1 will make the visible fault worse, here is by how much,
+  here is why that is still the right order" — instead of that being a finding at the end. **The
+  first measurement of any pass should be of the complaint, in the units of the complaint.**
+- **When a projection constant changes, grep for every expression that multiplies by it and ask
+  whether each one meant it.** Three of the four faults in point 4 were things that read `KZ` (or a
+  bound derived from the map) for reasons that had nothing to do with depth: a district extent, a
+  lookup table's range, a clamp. Each would have shipped as a silent side effect. **A constant that
+  appears in a formula is not the same as a constant the formula is about.**
+- **A check that goes dark is worse than a check that fails.** Taking five monuments off the map
+  silently reduced `assertTopology` from 44 rules to 34 and `assertHillRing` from 8 members to 6.
+  Both now separate "the id is off this map" from "the id is a typo", count the skips and print them
+  by name. A check count that quietly falls is the shape of the fault this whole file exists about.
+- **`--absorb` should have been in the design document.** `ROME-FABRIC.md` §4.5 recommends
+  per-monument authored footprints *"seeded at 0.65 and adjusted only where the probe says a pair
+  conflicts"* without ever running that adjustment to see where it lands. Running it takes forty
+  lines and it changes the recommendation's honesty: zero intersections at frozen positions is
+  reachable, but only at a 0.36 floor and a 68 m Colosseum, and three pairs are unabsorbable at any
+  floor because two of the three are east–west and `KX` cannot move. **A design that proposes an
+  optimisation should run it once before recommending it.**
 
 <!-- Append new entries above this line. -->

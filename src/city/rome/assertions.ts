@@ -1,7 +1,15 @@
 // `romeWallZ` rather than `./circuit`'s `wallCrestZ`, which is the same function under
 // another name: `./circuit` now calls `assertRomeSection` below, and importing it back would
 // close a cycle in a file tree the wall modules are deliberately a tree in.
-import { MURO_TORTO, romeWallZ as wallCrestZ, WATER_LEVEL } from '../../terrain/topography';
+import {
+  GATE_Z,
+  MURO_TORTO,
+  romeWallZ as wallCrestZ,
+  WALL_LENGTH,
+  WALL_X_MAX,
+  WALL_X_MIN,
+  WATER_LEVEL,
+} from '../../terrain/topography';
 import { lerp } from '../../util/math';
 import { obbOverlap, type Obb } from '../layout';
 import { BAY_COUNT, CURTAIN_T, MIN_LANE, WALL } from './section';
@@ -12,7 +20,7 @@ import {
   WAY_RANK,
   WAYS,
 } from './layout';
-import { ROME } from './survey';
+import { GATE_X, KX, KZ, ROME, worldOf } from './survey';
 
 /**
  * Build-time checks on Rome's plan.
@@ -63,10 +71,41 @@ export function assertNoFootprintOverlaps(): {
 }
 
 
-export function assertTopology(): { ok: boolean; checks: number; failures: string[] } {
+/**
+ * Ids the survey knows about, whatever the frame did with them.
+ *
+ * **The distinction this draws is load-bearing.** A rule naming an id that is not in `ROME` at
+ * all is a typo and always a fault. A rule naming an id that *is* in `ROME` but is not placed
+ * has been ruled out by the frame — at `KZ` = 0.35 six rows fall past the +Z edge (see
+ * `layout.ts:offMapSouth`) — and is not a fault about the plan. Reporting the two the same way
+ * is how a real typo gets read as expected noise and ignored, so they are counted separately
+ * and the off-map skips are printed with their names.
+ */
+const SURVEY_IDS: ReadonlySet<string> = new Set(ROME.map((m) => m.id));
+
+export function assertTopology(): {
+  ok: boolean;
+  checks: number;
+  offMapSkips: number;
+  skipped: string[];
+  failures: string[];
+} {
   const by = new Map(LANDMARKS.map((l) => [l.id, l]));
   const failures: string[] = [];
+  const skipped: string[] = [];
+  /** True if every id in the rule is a real survey row but at least one is not on this map. */
+  const offMap = (...ids: string[]): boolean => {
+    if (!ids.every((id) => SURVEY_IDS.has(id))) return false;
+    return ids.some((id) => !by.has(id));
+  };
+  let checks = 0;
   for (const t of TOPOLOGY) {
+    const ids = t.rule === 'between' ? [t.a, t.b, t.c] : [t.a, t.b];
+    if (offMap(...ids)) {
+      skipped.push(`${t.rule}(${ids.join(', ')})`);
+      continue;
+    }
+    checks++;
     const a = by.get(t.a);
     const b = by.get(t.b);
     if (!a || !b) {
@@ -100,7 +139,7 @@ export function assertTopology(): { ok: boolean; checks: number; failures: strin
       : a.x < b.x;
     if (!ok) failures.push(`${t.a} is not ${t.rule} of ${t.b}`);
   }
-  return { ok: failures.length === 0, checks: TOPOLOGY.length, failures };
+  return { ok: failures.length === 0, checks, offMapSkips: skipped.length, skipped, failures };
 }
 
 
@@ -176,45 +215,92 @@ const worldBearing = (ax: number, az: number, bx: number, bz: number): number =>
   return b;
 };
 
-export function assertHillRing(): { ok: boolean; checks: number; failures: string[] } {
+export function assertHillRing(): {
+  ok: boolean;
+  checks: number;
+  offMapSkips: number;
+  skipped: string[];
+  failures: string[];
+} {
   const by = new Map(LANDMARKS.map((l) => [l.id, l]));
   const survey = new Map(ROME.map((m) => [m.id, m]));
-  const hub = by.get('palatine');
   const hubReal = survey.get('palatine');
   const failures: string[] = [];
-  if (!hub || !hubReal) return { ok: false, checks: 0, failures: ['no palatine'] };
+  if (!hubReal) return { ok: false, checks: 0, offMapSkips: 0, skipped: [], failures: ['no palatine in the survey'] };
 
+  /**
+   * **The hub is the *projected* Palatine, not the placed one, and that is stricter.**
+   *
+   * At `KZ` = 0.35 the Palatine is past the +Z edge and is not built (`layout.ts:offMapSouth`),
+   * so there is no placement to read a hub from. Rather than let this check go dark — a dark
+   * check is `MAP-METHOD.md` rule 6's whole complaint — the hub is `worldOf(e, n)` of the
+   * Palatine's own survey row, which exists whether or not anything stands there.
+   *
+   * That is an improvement on what this used to do rather than a workaround for it. The check
+   * claims to grade *"that the projection and the overlap solver preserved the real angular
+   * order"*, and it used to measure every bearing from wherever the resolver had pushed the
+   * Palatine to — up to 130 world metres from its survey position — so the reference moved with
+   * the thing being graded. It does not now.
+   */
+  const hub = worldOf(hubReal.e, hubReal.n);
+
+  // Ring members the frame put off this map are skipped by name and counted, never silently.
+  const skipped = HILL_RING.filter((id) => !by.has(id));
   // Expected order: sorted by the *real* bearing from the Palatine.
-  const ring = HILL_RING.map((id) => {
-    const l = by.get(id)!;
-    const m = survey.get(id)!;
-    // Real bearing, degrees clockwise from north, in the survey's own east/north frame.
-    let real = (Math.atan2(m.e - hubReal.e, m.n - hubReal.n) * 180) / Math.PI;
-    if (real < 0) real += 360;
-    return { id, real, world: worldBearing(hub.x, hub.z, l.x, l.z) };
-  }).sort((a, b) => a.real - b.real);
+  const ring = HILL_RING.filter((id) => by.has(id))
+    .map((id) => {
+      const l = by.get(id)!;
+      const m = survey.get(id)!;
+      // Real bearing, degrees clockwise from north, in the survey's own east/north frame.
+      let real = (Math.atan2(m.e - hubReal.e, m.n - hubReal.n) * 180) / Math.PI;
+      if (real < 0) real += 360;
+      return { id, real, world: worldBearing(hub.x, hub.z, l.x, l.z) };
+    })
+    .sort((a, b) => a.real - b.real);
 
+  /**
+   * **A shortest-turn test cannot tell a 213° arc from a 147° inversion, and this used to be
+   * one.** The bug was latent for as long as the ring had all eight members, because no two
+   * adjacent-in-real-order members were then more than 180° apart. `KZ` = 0.35 takes the Caelian
+   * and the Aventine off the map, which opens a **209°** real gap between the Baths of Titus and
+   * the Janiculum — and the old test normalised the corresponding 213° world gap to −147° and
+   * reported the ring as out of order. The plan was fine; the instrument was wrong, and it was
+   * wrong in the direction that matters: it would have failed a correct build.
+   *
+   * So the comparison is between the **forward** turn in world space and the **forward** turn in
+   * the survey, both taken the same way round. An inversion is a step the survey says to take
+   * the short way and the world takes the long way. That is unambiguous at any gap size.
+   */
+  const fwd = (deg: number): number => ((deg % 360) + 360) % 360;
   for (let i = 0; i + 1 < ring.length; i++) {
     const a = ring[i];
     const b = ring[i + 1];
-    // Signed shortest turn from a to b. Positive is clockwise, the direction the ring runs.
-    let step = b.world - a.world;
-    while (step <= -180) step += 360;
-    while (step > 180) step -= 360;
+    const worldFwd = fwd(b.world - a.world);
+    const realFwd = fwd(b.real - a.real);
     // Tolerance. The map inflates every bearing toward east-west — a real 40° becomes 51°
     // under a 1.45:1 frame — and the two things pinned hardest, the Castra Praetoria at the
     // east edge of the heightfield and the Baths of Trajan wedged against it, land within
     // 13° of each other in the wrong order. This check exists to catch a hill on the wrong
     // *side* of the city, which is what makes a plan unrecognisable; a degree-level
-    // inversion between two complexes in the same quarter is not visible in any frame.
-    if (step < -RING_TOLERANCE) {
+    // inversion between two complexes in the same quarter is not visible in any frame — so a
+    // backward step of up to `RING_TOLERANCE` is allowed and anything past it is not.
+    const inverted = worldFwd > 180 && realFwd < 180 && 360 - worldFwd > RING_TOLERANCE;
+    if (inverted) {
       failures.push(
         `hill ring out of order: ${a.id} (${a.world.toFixed(0)}°, real ${a.real.toFixed(0)}°) ` +
-          `then ${b.id} (${b.world.toFixed(0)}°, real ${b.real.toFixed(0)}°)`
+          `then ${b.id} (${b.world.toFixed(0)}°, real ${b.real.toFixed(0)}°) — ` +
+          `the survey turns ${realFwd.toFixed(0)}° forward and the world turns ` +
+          `${(360 - worldFwd).toFixed(0)}° back`
       );
     }
   }
-  return { ok: failures.length === 0, checks: ring.length - 1, failures };
+  return {
+    ok: failures.length === 0,
+    checks: Math.max(0, ring.length - 1),
+    offMapSkips: skipped.length,
+    skipped,
+    failures,
+  };
 }
 
 /**
@@ -522,5 +608,276 @@ export function assertRomeSection(inp: RomeSectionInput): RomeSection {
     tortoBays: torto.length, tortoWorstApron,
     stages,
     faults: f,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// assertRomeFrame — ROME-FABRIC.md §4.1's post-build sanity checks
+// ---------------------------------------------------------------------------
+
+/**
+ * **`CARTHAGE.md` §2.5's tail, for Rome, and instrumented this time.**
+ *
+ * Carthage's method ends its survey table with four numbers — 642 m of approach, 418 m of city
+ * depth, 231 m from the Byrsa to the shore, 1,984 m of modelled wall — under the heading *"how
+ * you find out the build went wrong while it is still cheap to fix."* `ROME-FABRIC.md` §1.1
+ * step 4 then records the finding that matters about them: **they were never implemented.**
+ * Grepping `418`, `642`, `231` and `1984` across `tools/probe-carthage*.mjs` returns zero hits.
+ * The one part of the Carthage method that is about the whole map rather than one system is the
+ * part nothing ever measured.
+ *
+ * This is Rome's version, and it is printed at every boot and published on `CityChecks` for the
+ * same reason `assertRomeSection` is: *"a build-time `console.warn` is invisible to a probe and
+ * an exception takes the page down… prose does not run."*
+ *
+ * ## Why the pending rows are here and not left out
+ *
+ * `MAP-METHOD.md` §3's verdict on the previous Rome attempt is the reason this type has a
+ * `pending` field at all: *"every acceptance measurement in `ROME.md` §15 was about the wall,
+ * the ground or the survey, and not one was about whether the city looked like Rome. So the
+ * fabric was never graded, so it drifted."* A 2,764-line design document did not prevent that,
+ * because the document had the same blind spot.
+ *
+ * So the fabric's measurements are written down **now**, in phase 1, before there is any fabric
+ * to grade, with the value they currently have and the phase that is supposed to close them.
+ * A check with a number and an owner is hard to forget. A check that does not exist yet is
+ * exactly what got forgotten last time. `pending` rows are printed, are excluded from `ok`, and
+ * name the phase — so the boot line reads as "not yet" rather than as either a pass or a fault.
+ */
+export interface RomeFrameCheck {
+  name: string;
+  /** What was measured, in world metres or as a count. */
+  value: number;
+  /** What it has to be. `null` where the check is a report rather than a target. */
+  target: string;
+  ok: boolean;
+  /** Non-null means this cannot pass yet, and names the phase that closes it. */
+  pending: string | null;
+  detail: string;
+}
+
+export interface RomeFrame {
+  kx: number;
+  kz: number;
+  anisotropy: number;
+  gateX: number;
+  gateZ: number;
+  /** Survey rows the frame put past the +Z edge, by name. The accepted cost, made visible. */
+  offMap: string[];
+  checks: RomeFrameCheck[];
+  faults: string[];
+}
+
+/**
+ * The attacker's own deployment z, restated rather than imported from `sim/`.
+ *
+ * `city/` may not depend on `sim/`, and `assertRomeSection`'s `WALK_STEP_OVER` comment gives the
+ * other half of the reason: *"this is an acceptance target rather than a shared input — the
+ * instrument states what it is grading against so a source that drifts measures as wrong instead
+ * of as itself."*
+ */
+const GERMAN_DEPLOY_Z = -196;
+
+/** Real cross-street pitch in the Campus Martius, metres. `ROME-FABRIC.md` §4.3. */
+const REAL_CROSS_STREET = [50, 90] as const;
+/** A true-depth insula plus two frontages, world metres. §4.3, `ROME.md` §6.4. */
+const INSULA_NEEDS = 30;
+
+export function assertRomeFrame(): RomeFrame {
+  const checks: RomeFrameCheck[] = [];
+  const add = (
+    name: string,
+    value: number,
+    target: string,
+    ok: boolean,
+    detail: string,
+    pending: string | null = null
+  ): void => void checks.push({ name, value, target, ok, pending, detail });
+
+  const surveyById = new Map(ROME.map((m) => [m.id, m]));
+  const placed = new Map(LANDMARKS.map((l) => [l.id, l]));
+
+  // ---- 1. the approach ---------------------------------------------------
+  // §4.1 check 1: unchanged at any KZ, because GATE_Z is the fixed point of
+  // `roadCentreX(crestZAt(x))` and does not depend on the projection.
+  const approach = GATE_Z - GERMAN_DEPLOY_Z;
+  add(
+    'approach: attacker deployment to the Porta Flaminia',
+    approach,
+    '>= 700 m, and invariant in KZ',
+    approach >= 700,
+    `${approach.toFixed(1)} m from z ${GERMAN_DEPLOY_Z} to the gate at z ${GATE_Z.toFixed(2)}`
+  );
+
+  // ---- 2. the front ------------------------------------------------------
+  // §4.1 check 2. Unchanged because KX is unchanged; if any of these three moves, something
+  // other than the projection changed too, and that is what this is for.
+  add(
+    'front: modelled length, NW angle to Castra NE',
+    WALL_LENGTH,
+    '1332.5 m +/- 1',
+    Math.abs(WALL_LENGTH - 1332.54) <= 1,
+    `x ${WALL_X_MIN.toFixed(2)} .. ${WALL_X_MAX.toFixed(2)}`
+  );
+  const pitch = WALL_LENGTH / BAY_COUNT;
+  add(
+    'front: bay pitch',
+    pitch,
+    '37.015 m +/- 0.05 over 36 bays',
+    Math.abs(pitch - 37.015) <= 0.05 && BAY_COUNT === 36,
+    `${BAY_COUNT} bays at ${pitch.toFixed(3)} m`
+  );
+
+  // ---- 3. the Campus Martius's depth ------------------------------------
+  // §4.1 check 3. **Measured on the projection, not on the placement**, because the placement
+  // is still the resolver's until phase 2 deletes it and this number is about the frame.
+  const capitol = surveyById.get('temple-jupiter');
+  const bandDepth = capitol ? worldOf(capitol.e, capitol.n).z - GATE_Z : 0;
+  add(
+    'Campus Martius depth, Porta Flaminia to the Capitol',
+    bandDepth,
+    '>= 650 world m (it was 450 at KZ 0.222)',
+    bandDepth >= 650,
+    `${bandDepth.toFixed(1)} world m for ${(bandDepth / KZ).toFixed(0)} real m of city`
+  );
+
+  // ---- 4. the arithmetic that makes a grid possible ---------------------
+  // §4.3's decisive number, and the strongest single argument for the projection change:
+  // at KZ 0.222 a true-depth insula fitted between two projected cross-streets at no point
+  // in the real 50-90 m range.
+  const pitchLo = REAL_CROSS_STREET[0] * KZ;
+  const pitchHi = REAL_CROSS_STREET[1] * KZ;
+  const pitchMed = 70 * KZ;
+  add(
+    'projected cross-street pitch, median',
+    pitchMed,
+    `>= ${INSULA_NEEDS - 8} world m, so a true-depth insula fits`,
+    pitchMed >= INSULA_NEEDS - 8,
+    `real ${REAL_CROSS_STREET[0]}-${REAL_CROSS_STREET[1]} m projects to ${pitchLo.toFixed(1)}-${pitchHi.toFixed(1)} m; ` +
+      `an insula needs ${INSULA_NEEDS} m`
+  );
+
+  // ---- 5. every monument stands where the survey puts it ----------------
+  // §4.1 check 5, and the check that proves the resolver is gone. It is not gone yet.
+  let worstDrift = 0;
+  let worstDriftId = '';
+  for (const l of LANDMARKS) {
+    const m = surveyById.get(l.id);
+    if (!m || m.farBank || m.onRiver) continue; // placed off the river, not by the affine map
+    const w = worldOf(m.e, m.n);
+    const dx = l.x - w.x;
+    const dz = l.z - w.z;
+    const d = Math.sqrt(dx * dx + dz * dz);
+    if (d > worstDrift) {
+      worstDrift = d;
+      worstDriftId = l.id;
+    }
+  }
+  add(
+    'every monument centre at worldOf(e, n)',
+    worstDrift,
+    '<= 0.5 m',
+    worstDrift <= 0.5,
+    `worst ${worstDrift.toFixed(1)} m (${worstDriftId || 'none'}) — this is resolveOverlaps' own displacement`,
+    'phase 2: delete resolveOverlaps, merge the five complexes, author footprints per monument'
+  );
+
+  // ---- 6. nothing solid intersects anything solid -----------------------
+  // §4.1 check 4. `assertNoFootprintOverlaps` is monument-vs-monument only and never looks at
+  // an insula, which `ROME-FABRIC.md` §2.5 measures as the fault that let the others survive.
+  // The whole-population version is `tools/probe-fabric.mjs`, external and going live in
+  // phase 2; this row exists so the target is written down before there is anything to grade.
+  const fp = assertNoFootprintOverlaps();
+  add(
+    'zero intersecting solids, min clear gap 7.0 m',
+    fp.count,
+    '0 pairs over EVERY solid, monuments and insulae together',
+    false,
+    `${fp.count} monument/monument pair(s) intersect, worst ${fp.worst.toFixed(1)} m; ` +
+      'insulae are not in this population at all',
+    'phase 2 (landmarks) and phase 5 (fabric), graded by tools/probe-fabric.mjs'
+  );
+
+  // ---- 7. the fabric's own two numbers ----------------------------------
+  // §4.1 checks 6 and 7. Written down at phase 1 on purpose. See this type's docstring.
+  add(
+    'roof coverage between street lines',
+    0,
+    '60-70 % per region, against the AGEA 2012 orthophoto',
+    false,
+    'not measured: the fabric is not rebuilt yet',
+    'phase 5, graded per region and not as a city mean'
+  );
+  add(
+    'the Campus Martius quarter builds its frontages',
+    0,
+    '>= 60 % (it was 2.9 %: 17 buildings from 593 frontages)',
+    false,
+    'not measured: the fabric is not rebuilt yet',
+    'phase 5'
+  );
+
+  // ---- 8. the accepted cost, by name ------------------------------------
+  /**
+   * **Five, and `ROME-FABRIC.md` §4.5 predicted six.** The sixth was the Janiculum ridge, and it
+   * survives — not by anyone saving it, but because it is `farBank`: its x comes from
+   * `FAR_BANK(z)` off the terrain's own channel rather than from the affine map, so
+   * `offMapSouth` does not apply to it and `place()`'s clamp holds it at `CITY_Z_MAX`. The ridge
+   * projects to z 1382 and stands at z 1374, eight metres north of where the survey puts it, on
+   * a `soft` landscape footprint 520 m long. Eight metres on a half-kilometre ridge is beneath
+   * anything a camera can see, so it is kept and the clamp is reported rather than hidden — see
+   * the `clamped` row below, which is the general form of the same question.
+   */
+  const offMap = ROME.filter((m) => !placed.has(m.id)).map((m) => m.id);
+  add(
+    'monuments past the +Z edge',
+    offMap.length,
+    '5, agreed in writing: palatine, circus-maximus, aventine-temples, baths-caracalla, ' +
+      'caelian-villas (the Janiculum is far-bank and survives, clamped 8 m)',
+    offMap.length === 5,
+    offMap.length === 0 ? 'none' : offMap.join(', ')
+  );
+
+  /**
+   * **How far `place()`'s clamp had to move anything it kept.**
+   *
+   * `place()` clamps every monument's z into `[CITY_Z_MIN(x) + 20, CITY_Z_MAX]`. That clamp is
+   * what `offMapSouth` exists to pre-empt: without it, raising `KZ` would have stacked six
+   * monuments on the single line z = 1374 instead of removing them. This row is the residual —
+   * whatever the clamp still had to do to the rows it kept — so a clamp that starts quietly
+   * doing real work again is a printed number rather than a surprise in a screenshot.
+   */
+  let worstClamp = 0;
+  let worstClampId = '';
+  for (const l of LANDMARKS) {
+    const m = surveyById.get(l.id);
+    if (!m || m.farBank || m.onRiver) {
+      // Far-bank and on-river rows take their x from the channel, so only z is comparable.
+      if (!m) continue;
+    }
+    const d = Math.abs(l.idealZ - worldOf(m.e, m.n).z);
+    if (d > worstClamp) {
+      worstClamp = d;
+      worstClampId = l.id;
+    }
+  }
+  add(
+    'z clamp applied to a monument the frame kept',
+    worstClamp,
+    '<= 10 m, or the row belongs in offMapSouth instead',
+    worstClamp <= 10,
+    `worst ${worstClamp.toFixed(1)} m (${worstClampId || 'none'})`
+  );
+
+  const faults = checks.filter((c) => !c.ok && c.pending === null).map((c) => `${c.name}: ${c.detail}`);
+  return {
+    kx: KX,
+    kz: KZ,
+    anisotropy: KX / KZ,
+    gateX: GATE_X,
+    gateZ: GATE_Z,
+    offMap,
+    checks,
+    faults,
   };
 }

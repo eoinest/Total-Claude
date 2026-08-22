@@ -39,31 +39,44 @@ import { clamp } from '../../util/math';
  * ## Projection
  *
  * `worldOf` is a plain anisotropic affine map: `x = X0 + KX·e`, `z = Z0 − KZ·n`.
- * The battlefield only offers ~940 m of depth between the wall crest and the edge of
- * the heightfield for Rome's ~3.3 km of north–south extent, so depth is compressed
- * 4.5× and width 2.2×. The two anchors are non-negotiable and both come from the
- * terrain:
+ * The battlefield offers ~940 m of depth between the wall crest and the edge of the
+ * heightfield, so depth is compressed **2.86×** and width 2.26×, an anisotropy of **1.27×**.
+ * **It was 4.5× and 2.00×**, and `terrain/topography.ts:KZ` carries the measurement that
+ * changed it: at 0.222 a true-scale insula did not fit between two projected cross-streets
+ * anywhere in the Campus Martius's real 50–90 m pitch, so the fabric could not be laid at
+ * all. The price is that Rome's deep south — the Palatine, the Circus Maximus, the Aventine,
+ * the Baths of Caracalla, the Caelian and the Janiculum — is past the +Z edge and is not
+ * drawn. `ROME-FABRIC.md` §1.2: Carthage's own method never modelled all of Carthage either.
+ *
+ * The two anchors are non-negotiable, neither contains `KZ`, and both come from the terrain:
  *
  *  - the **Porta Flaminia** must sit where the Via Flaminia crosses the crest, because
  *    the terrain cuts a saddle for it there (`roadCentreX ∘ crestZAt`);
  *  - the **Castra Praetoria** must sit at the east end of the curtain, because Aurelian
  *    incorporated the camp's own north and east walls into the circuit.
  *
- * With `KX = 0.45` those two anchors are 2,436 real metres and 1,078 world metres
- * apart, which is where `KX` comes from rather than being a taste decision. `KZ = 0.22`
- * is then the largest value that fits the Baths of Caracalla inside the heightfield.
+ * With `KX = 0.443` those two anchors are 2,436 real metres and 1,078 world metres
+ * apart, which is where `KX` comes from rather than being a taste decision — and `KX`
+ * could not now be anything else: the east end lands at `72 + 2850·KX`, which is 1334.5
+ * at 0.443 and off a 2,800 m map at 0.466. `KZ` = 0.35 is what §4.3's insula arithmetic
+ * forces; see `terrain/topography.ts:KZ` for the measurement and for what it costs.
  *
  * A monument's *footprint* is compressed too, by `PLAN_SCALE` in layout.ts, and only there.
- * Positions compress by 0.443 × 0.222 and a building at 1:1 therefore covers ten times its
+ * Positions compress by 0.443 × 0.35 and a building at 1:1 therefore covers 6.4× its
  * real share of the ground: summed over this table the masonry comes to 727,000 m² against
- * about 1.7 M m² of buildable city, and the overlap resolver had to move every monument 174
- * world metres on average — 560 real metres of depth — to make it fit. Heights are untouched.
- * The measurement behind the number is tabulated at `PLAN_SCALE`.
+ * about 1.7 M m² of buildable city. `ROME-FABRIC.md` §4.5's conclusion is that no single
+ * `PLAN_SCALE` can work at any `KX`/`KZ` — the largest uniform scale with zero conflicts is
+ * 0.232, which is a 44 m Colosseum — so the global scale is to be replaced in phase 2 by a
+ * per-monument authored footprint held beside the real dimension it departs from. Heights
+ * are untouched either way.
  *
- * Anisotropy rotates plan angles, so `worldBearing` transforms the long axis through
- * the same map instead of copying the compass bearing — otherwise the Circus Maximus
- * would sit at its true 142° in a frame that has squashed north–south by 2× relative
- * to east–west, and its ends would land 100 m off the valley floor.
+ * Anisotropy rotates plan angles, so `worldRot` transforms the long axis through the same
+ * map instead of copying the compass bearing. **Note that `worldRot` is scale-invariant in
+ * `KZ`** — the factor cancels inside the `atan2` — so raising `KZ` moved no bearing by a
+ * millidegree, and only `ROT_RATIO` decides the correction. At 1.27× anisotropy that
+ * correction is nearly identity: the worst monument in the table differs by 3.78° between
+ * `ROT_RATIO` = 1.45 and the true 1.266, which is `ROME-FABRIC.md` §4.5's argument for
+ * deleting it in phase 2 rather than re-fitting it now.
  *
  * Everything on the **far bank** is placed relative to the terrain's own meander
  * instead, because the modelled Tiber is a fixed analytic curve that does not agree
@@ -503,9 +516,14 @@ export const ROME: readonly RomeMonument[] = [
  * `probe-rometransect.mjs`'s header calls that *"exactly the kind of transcription that
  * rots"*, having already had to write a probe to stop the Tiber's copy rotting.
  *
- * So the projection moved down and every constant in it is unchanged to the digit:
- * `GATE_X = 72.0`, `GATE_Z = 529.746`, `KX = 0.443`, `KZ = 0.222`. Monuments still project
- * through `worldOf` from here and cannot tell the difference.
+ * So the projection moved down, and that move is what made the phase-1 rebuild a recompile.
+ * `GATE_X = 72.0`, `GATE_Z = 529.746` and `KX = 0.443` are unchanged to the digit; `KZ` is
+ * **0.35**, having been 0.222, and re-projecting thirty-four monuments against it took editing
+ * one number in one file because every row is held in survey metres. `ROME.md` §2.3 argued
+ * against ever moving the projection on the grounds that "every monument in `ROME` is already
+ * surveyed against it"; the opposite turned out to be true, and for the reason
+ * `ROME_CIRCUIT_SURVEY`'s own docstring gives — *"held in survey metres and projected below
+ * rather than stored in world metres, because the survey is the thing with a source."*
  */
 export { GATE_X, GATE_Z, KX, KZ, worldOf } from '../../terrain/topography';
 

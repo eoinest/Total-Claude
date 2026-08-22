@@ -429,9 +429,20 @@ function buildLandmark(batch: Batch, detail: number, world: LandmarkPlacement, h
     case 'baths-trajan':
       buildBaths(batch, detail, podium, 330, 215, rng);
       break;
-    case 'baths-diocletian':
-      buildBaths(batch, detail, podium, 376, 361, rng);
-      break;
+    // **There is deliberately no `baths-diocletian` case, and there was one.**
+    //
+    // The Baths of Diocletian were begun in 298 and dedicated in 305–306, which is 27 to 35
+    // years after this map. `survey.ts` has recorded the omission for as long as the survey has
+    // existed — and this switch still carried a working 376 × 361 m builder for them, keyed on
+    // an id no survey row supplies. A dead builder for a monument that must never be drawn is
+    // not harmless: it is the one line that turns "somebody adds a row" into "the map is wrong
+    // by thirty years", with nothing in between to object. Removed, and the reason left here so
+    // it is not helpfully restored.
+    //
+    // The same date filter applies to anything traced off the Shepherd plate, which is dated
+    // c. 350 AD and therefore draws these baths at full size on the Viminal. A reference can be
+    // authentic and still wrong for your date. Same for the Baths of Constantine, the Basilica
+    // of Maxentius and the Arch of Constantine, none of which is in the survey.
     case 'baths-caracalla':
       buildBaths(batch, detail, podium, 337, 328, rng);
       break;

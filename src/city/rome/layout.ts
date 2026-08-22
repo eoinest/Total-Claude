@@ -14,7 +14,6 @@ import {
   FAR_BANK,
   GATE_Z,
   KX,
-  KZ,
   ROME,
   worldOf,
   worldRot,
@@ -112,13 +111,23 @@ const STREET_GAP = 7;
 /**
  * Plan scale of monumental masonry, measured rather than chosen.
  *
+ * **This constant is scheduled for deletion and should not be re-tuned.** `ROME-FABRIC.md`
+ * §4.5's recommendation, approved: *"abolish the single global `PLAN_SCALE` and replace it
+ * with a per-monument authored world footprint, held in the survey table beside the real
+ * published dimension it departs from, seeded at 0.65 of the real plan and adjusted only
+ * where the probe says a pair conflicts."* The proof that no single value works is measured:
+ * the largest uniform scale with **zero** conflicting pairs is **0.232**, which is a 44 × 36 m
+ * Colosseum and a 19 × 13 m Pantheon. That is phase 2. Until then 0.65 stays, unchanged.
+ *
  * **A monument at 1:1 does not fit in this plan, and that is arithmetic, not taste.** The
- * projection compresses position by `KX` = 0.443 east–west and `KZ` = 0.222 north–south —
- * a geometric mean of 0.314 — while a building keeps its true footprint, so every monument
- * covers `(1/0.314)² ≈ 10×` its real share of the ground. Summed over the survey, the 30
- * masonry monuments come to 727,000 m² of plan; the buildable city is about 1.7 M m². They
- * are 49 % of Rome at 1:1 against 5.3 % of the real walled area, before a single street or
- * insula. The overlap resolver then has no choice but to rearrange the city, and it did:
+ * projection compresses position by `KX` = 0.443 east–west and `KZ` = 0.35 north–south —
+ * a geometric mean of 0.394 — while a building keeps its true footprint, so every monument
+ * covers `(1/0.394)² ≈ 6.4×` its real share of the ground. It was 10× at `KZ` = 0.222.
+ * Summed over the survey, the 30 masonry monuments come to 727,000 m² of plan; the buildable
+ * city is about 1.7 M m². They are 49 % of Rome at 1:1 against 5.3 % of the real walled area,
+ * before a single street or insula. The overlap resolver then has no choice but to rearrange
+ * the city, and it did — the table below was measured at `KZ` = 0.222 and is kept as the
+ * record of why the resolver is being deleted rather than as a current measurement:
  *
  * | footprint scale | mean drift from the projected position | worst | insulae built |
  * |---|---|---|---|
@@ -142,6 +151,44 @@ const STREET_GAP = 7;
  * area is already compressed by the map exactly as a district is.
  */
 export const PLAN_SCALE = 0.65;
+
+/**
+ * **Is this monument past the +Z edge, and therefore not on this map at all?**
+ *
+ * `ROME-FABRIC.md` §4.5's accepted cost: at `KZ` = 0.35 five monuments and one ridge project
+ * south of the heightfield — the Palatine, the Circus Maximus, the Aventine temples, the Baths
+ * of Caracalla, the Caelian villas and the Janiculum. All six are 700–800 world metres behind
+ * the wall in `ROME.md` §6.1's backdrop zone, none is fought over, and the owner took the cost
+ * knowingly. `ROME-FABRIC.md` §1.2 is the reason it is a cost worth taking: *"Carthage did not
+ * model Carthage"* — it modelled the front, the hill, the harbours and one excavated quarter,
+ * and trying to hold all of Rome is what produced a compression no grid could survive.
+ *
+ * **This predicate exists because the alternative was silent and much worse.** `place()` below
+ * clamps a monument's z into `[CITY_Z_MIN + 20, CITY_Z_MAX]`. Left alone, raising `KZ` would not
+ * have removed these six: it would have clamped all six onto z 1374 — one line of ground —
+ * where they would have stacked on each other and on the Colosseum, and the overlap resolver
+ * would then have shoved the pile north into the city. The measurement is in
+ * `assertRomeFrame`'s `offMap` list, which prints the names at every boot, so the cost is
+ * visible rather than implied.
+ *
+ * The bound is `HALF_EXTENT`, the heightfield's own edge, and the test is on the **footprint**
+ * and not the centre — which is what `topography.ts:KZ`'s original docstring meant by *"with
+ * its precinct clear of the edge"*, and what reproduces `ROME-FABRIC.md` §4.5's off-map sets at
+ * every swept `KZ`. A monument whose centre is on the map but whose south half hangs over the
+ * edge is a monument with a straight cut through it, which is worse than an absent one.
+ *
+ * **Phase 6, not now:** whether these six can come back as off-field silhouette geometry beyond
+ * the heightfield is tagged **[?]** in §4.5 and is measured by
+ * `tools/scratch/rome-frame.mjs --backdrop`. Do not add them back without that measurement.
+ */
+export const offMapSouth = (m: RomeMonument): boolean => {
+  const w = worldOf(m.e, m.n);
+  if (m.farBank || m.onRiver) return false; // placed off the river, not by the affine map
+  const alongZ = (m.axis ?? 'x') === 'z';
+  const planScale = m.soft ? 1 : PLAN_SCALE;
+  const hd = (alongZ ? m.len : m.wid) * 0.5 * PRECINCT * planScale;
+  return w.z + hd > HALF_EXTENT;
+};
 
 function place(m: RomeMonument): LandmarkPlacement {
   const w = worldOf(m.e, m.n);
@@ -259,8 +306,15 @@ export const TOPOLOGY: readonly (
 /**
  * Landmark placements. Order follows `ROME`, which runs north to south, so the depth
  * banding in `monuments.ts` groups neighbours together.
+ *
+ * **Filtered by `offMapSouth`.** The survey still carries all thirty-four rows — a monument
+ * that is off *this* map is not a monument we have stopped knowing about, and it comes back for
+ * free the moment the frame changes. What is dropped is its placement.
  */
-export const LANDMARKS: LandmarkPlacement[] = ROME.map(place);
+export const LANDMARKS: LandmarkPlacement[] = ROME.filter((m) => !offMapSouth(m)).map(place);
+
+/** The rows the frame put past the +Z edge. Printed at boot by `assertRomeFrame`. */
+export const OFF_MAP_SOUTH: readonly RomeMonument[] = ROME.filter(offMapSouth);
 
 /**
  * Pull interpenetrating footprints apart.
@@ -720,8 +774,23 @@ export const DISTRICTS: DistrictSpec[] = DISTRICT_PLAN.map((d) => {
   // plot grid gives the ground to whichever quarter is planned first) and costs nothing where
   // it overlaps a monument or a street (the keep-out map rejects it), so over-covering is the
   // cheap error and under-covering is the expensive one.
+  //
+  // **The depth factor is a world scale now, not a multiple of `KZ`, and that is a hold rather
+  // than a fix.** `ROME-FABRIC.md` §2.3 measures this pair of lines as fault 2: the seventeen
+  // districts claim **266 %** of the ground inside the circuit, with 79 overlapping pairs and
+  // 5.18 km² double-claimed, and *"a district costs nothing where it overlaps a neighbour"* is
+  // the quilt in the file's own words. §4.3 deletes `DISTRICT_PLAN` outright in phase 5 and
+  // replaces it with the fourteen Augustan regions as a partition.
+  //
+  // Phase 1 raised `KZ` from 0.222 to 0.35. Written as `KZ * 3.5` this line would have made
+  // every district **57.7 % deeper** and pushed the over-claim past 350 % as a side effect of a
+  // projection change — growing a fault a later phase deletes, on a map the owner is about to
+  // review. `0.222 * 3.5 = 0.777` is the world scale it has actually had, so it is written as
+  // that and the districts do not move. **Do not re-couple this to `KZ` to make it look
+  // tidier**; the coupling was never meaningful, which is exactly why the number could be read
+  // off and pinned.
   const hw = Math.max(150, d.he * KX * 2.05);
-  const hd = Math.max(120, d.hn * KZ * 3.5);
+  const hd = Math.max(120, d.hn * 0.777);
   let x = w.x;
   let z = clamp(w.z, CITY_Z_MIN(w.x) + hd + 6, CITY_Z_MAX);
   const farBank = d.id === 'trastevere' || d.id === 'vaticanus';
