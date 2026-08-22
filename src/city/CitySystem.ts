@@ -409,6 +409,7 @@ export class CitySystem implements Subsystem {
    * and `CityAssertion.detail` is a sentence.
    */
   private romeSection: import('./rome/assertions').RomeSection | null = null;
+  private romeFrame: import('./rome/assertions').RomeFrame | null = null;
   private bays: GarrisonBay[] = [];
   /** Every masonry flight onto the wall-walk. See `getWallStairs`. */
   private stairs: readonly WallStair[] = [];
@@ -544,6 +545,7 @@ export class CitySystem implements Subsystem {
     this.ditch = built.ditch ?? null;
     this.punic = built.punicSection ?? null;
     this.romeSection = built.romeSection ?? null;
+    this.romeFrame = built.romeFrame ?? null;
     // The builder's own arithmetic, surfaced rather than trusted: a section that does not sum
     // to its own stated thickness is a bug nobody sees until a probe walks the stone.
     if (this.punic && this.punic.faults.length > 0) {
@@ -2491,6 +2493,8 @@ export class CitySystem implements Subsystem {
     drawsByFamily: { family: string; meshes: number }[];
     /** `assertRomeSection`'s whole record, or null off Rome. See `CityBuild.romeSection`. */
     romeSection: import('./rome/assertions').RomeSection | null;
+    /** `assertRomeFrame`'s whole record, or null off Rome. See `CityBuild.romeFrame`. */
+    romeFrame: import('./rome/assertions').RomeFrame | null;
   } {
     let visibleMeshes = 0;
     let visibleTriangles = 0;
@@ -2535,6 +2539,7 @@ export class CitySystem implements Subsystem {
         .map(([family, meshes]) => ({ family, meshes }))
         .sort((a, b) => b.meshes - a.meshes),
       romeSection: this.romeSection,
+      romeFrame: this.romeFrame,
     };
   }
 

@@ -48,6 +48,14 @@ Distilled from §3. Short, and each one traceable to an entry that paid for it.
    surveyed position, which is then paid by the street network (26 of 31 monuments standing in a
    carriageway) and by the fabric (six quarters buried, 789 insulae). **A resolver converts one
    layout error you can see into two you cannot.**
+   whoever looks next — **and hiding it is not the worst of it.** Measured on Rome: the shipped city
+   has zero intersecting monument pairs and zero buildings inside a monument, and it buys that by
+   displacing every monument a mean of 65 and a worst of 168 world metres from its own surveyed
+   position. The resolver does not fail to fix the overlap; it fixes the overlap and *creates the
+   fault the owner reported*. And it gets worse when you give it room: raising `KZ` from 0.222 to
+   0.35 left it 13 conflicts to discharge instead of 22 and it moved everything **twice as far**
+   (mean 142 m, worst 399 m). **A solver given more space does not do less work. It does more,
+   further.**
 6. **Every invariant needs an instrument, and the instrument must compare against something outside
    the thing being checked.** This project's most expensive recurring failure is a check that
    compares something against itself. Real published dimensions, a georeferenced plate, geometry read
@@ -80,6 +88,74 @@ Distilled from §3. Short, and each one traceable to an entry that paid for it.
    **Carthage has the same defect, 2 of 10 structures, worst 14.85 m.** So both builds can report zero overlaps, correctly, while the picture shows a bath
    house standing in a terrace of houses. Derive the reserved rectangle *from* the geometry builder's
    own extents rather than typing it into a survey table, and gate it.
+11. **Measure the complaint first, in the units of the complaint.** When somebody says the map is
+   wrong, the first measurement of the pass is of *that*, on the unchanged tree, before anything is
+   touched. Rome's fabric was diagnosed as an overlap problem and rebuilt on that basis; the shipped
+   city has **zero** overlapping monuments, and what the owner was looking at was **displacement** —
+   a solver moving surveyed monuments a mean of 65 and a worst of 168 world metres to make the
+   overlaps go away. Both diagnoses point at the same fix, so nothing was wasted, but for two passes
+   nobody could say how big the reported fault was.
+12. **When a projection constant changes, grep every expression that multiplies by it and ask whether
+   that expression meant it.** A district extent written `hn * KZ * 3.5`, a lookup table bounded by
+   `HALF_EXTENT + 200`, a `clamp` to the map's south edge — none of those was *about* depth, and all
+   three would have shipped as silent side effects of changing `KZ`. **A constant appearing in a
+   formula is not the same as a constant the formula is about.**
+13. **A check that goes dark is worse than a check that fails.** Removing five monuments from Rome's
+   frame silently took `assertTopology` from 44 rules to 34 and `assertHillRing` from 8 members to 6,
+   and it exposed a latent bug in the second that would have failed a correct build. Any check that
+   can lose part of its population must separate "excluded by design" from "missing", count the
+   exclusions, and print them by name.
+14. **Compress a *position* anisotropically if you must; compress a *building* isotropically or not
+   at all.** Rule 4 covers positions against cross-sections and misses the case that bit Rome: a
+   building's own plan scaled without its own height. `PLAN_SCALE = 0.65` applied to the plan with
+   height left at 1.0 multiplies the height-to-width ratio of **all 31** masonry monuments by
+   **1.538** — a 45 m tumulus 87 m across becomes a 45 m tower 57 m across, and a 189 m
+   amphitheatre becomes a 123 m one at its full 48.5 m. The eye has no ruler for absolute size and
+   an excellent one for shape, so this is the *first* thing wrong with a monument at eye level and
+   the last thing a plan view can show. Hold **one** scale per monument, applied to all three axes,
+   recorded in the survey row beside the real dimension it departs from. Where isotropy is
+   genuinely unaffordable, record the anisotropy as a named exception with the ratio printed —
+   never as a global constant that nothing states.
+15. **Grade a map from 1.75 m before grading it from 150 m.** Every visual instrument this project
+   had photographs the city from a tactical camera 30–150 m up, and at that altitude a monument
+   shrunk to fit, a street with a building standing in it and a quarter with no street at all all
+   look acceptable. One shot script and one scene probe at a standing man's eye scored the shipped
+   Rome **0.8 / 4** on the new `VISUAL-RUBRIC.md` §H, on a map that `probe-fabric`, the plan
+   diagnostic, `assertNoFootprintOverlaps` and `assertNoFabricOverlaps` had all passed. **The
+   altitude of the camera is part of the instrument and nobody had written it down.**
+16. **Count and name every exclusion, and treat a check whose exclusion list is exactly the rows a
+   mechanism touches as a measurement of that mechanism's absence.** Rule 13 covers a check that
+   *loses* part of its population; this covers one that never had it. Rome's displacement
+   assertion prints *"every monument centre at `worldOf(e, n)`: worst 0.0 m"* and skips `farBank`
+   and `onRiver` rows — the two rows whose x is overridden by a placement rule rather than by the
+   affine map, which is to say **exactly the rows that can be displaced.** The Janiculum Ridge
+   stands **404 world metres** from its surveyed position and moved **715 m** between two phases
+   under a headline of zero. An exclusion is a claim, so it needs a count, a list of names printed
+   every run, and a gate on the count so that a sixth excluded row fails rather than joining a
+   category.
+17. **When you replace a constant with a table, write down what the constant was silently
+   guaranteeing, and gate each guarantee separately.** A per-item authored departure must be graded
+   on the **distribution** it produces and not only on each item. Rome replaced one `PLAN_SCALE` of
+   0.65 with twenty-seven authored footprints; the cohort's median came out at **0.667** — the same
+   number — with a **5.26× spread** around it, and **56 of 345 pairs of monuments had their size
+   order reversed against the archaeology, against 0 of 345 before**, because a uniform scale
+   preserves order by definition and a per-row scale has no reason to. That invariant was never
+   written down, so nothing missed it, and the only instrument that could have caught it was the
+   one the change asked to have retired for failing. **The list is short and it is always
+   available: enumerate the invariants a scalar makes free.**
+18. **When a check is wrong about the world, give it the missing relation — never an exemption.**
+   `probe-fabric` G8 demanded 7 m of street between every pair of monuments, which is right about
+   free-standing precincts and false about Rome, where the Basilica Ulpia stands *inside* Trajan's
+   Forum. The obvious repair — read the build's own `complex` field and skip those pairs — removes
+   the same 21 rows from **three** checks at once and leaves the licence enforced only by the
+   offline script that granted it. The repair that is a correction rather than a relaxation adds
+   the relation the gate lacked and makes it **cost something to invoke**: a declared complex must
+   be *joined* (nested or abutting, never a 3 m no-man's-land), and the complex as a whole must be
+   **connected** under that relation. **Test for the difference: the new class must be able to
+   fail, and declaring it must take on an obligation rather than shed one.** Three of Rome's five
+   declared complexes fail the connected test at any threshold under 20 m — the Theatre of Pompey
+   stands 17.4 m from its own *porticus post scaenam* — which is exactly the kind of thing an
+   exemption would have hidden for ever.
 
 ---
 
@@ -456,5 +532,461 @@ off the georeferenced Lanciani raster, in a table shaped like `PUBLISHED`, turns
 question into a gate — and the rebuild is placing every monument from those plates anyway, so
 somebody will read those coordinates regardless. Write them into a file instead of into a commit
 message.
+### 21 Aug 2026 — Rome fabric phase 1: the projection change, and the survey re-laid on it
+
+**What we did.** Raised `KZ` from 0.222 to 0.35 and left `KX` alone. Re-projected the Tiber's twelve
+surveyed knots and re-derived its runout slope. The Aurelian circuit re-projected itself, because it
+was already held in survey metres. Wrote `tools/scratch/rome-frame.mjs` — Phase 0's checked-in script
+— which re-derives the projection from the two anchors instead of importing it and **parses**
+`survey.ts` instead of restating it. Added `assertRomeFrame`, printing `ROME-FABRIC.md` §4.1's
+whole-map sanity checks at every boot and publishing them on `CityChecks`. Built a control checkout
+at the base commit on a second port and measured everything twice.
+
+**What we expected.** That the wall would come through untouched (`KX` unchanged), that the
+georeference would survive (it is upstream of `KZ`), that the Tiber would re-fit to the same 0.1 m,
+and that the visible city would improve somewhat because the Campus Martius gets 58 % more depth.
+
+**What happened.** The first three held exactly. The fourth was half right, and the half that was
+wrong is the finding.
+
+1. **Every invariant held by construction, and "by construction" is checkable.** 36 bays, west end
+   x 2.006, east end x 1334.55, pitch 37.01511 m — byte-identical, because `x = X0 + KX·e` contains
+   no `KZ` and `GATE_X`/`GATE_Z` are functions of x and z alone. The 725.7 m approach likewise.
+   Tiber survey error 0.1 m → 0.1 m. Bench 266/266 stations ≥ 40 m. Worst walk step 5.23 → 5.50 m, and
+   that one *had* to move because the wall line moved 5–60 world m south and stands on new ground.
+   **A control checkout on a second port cost fifteen minutes and turned every one of those from an
+   argument into a measurement.**
+2. **The fabric got measurably better with no fabric work at all.** Buried quarters 6 → 2, and
+   `via-lata` — the quarter behind the assaulted gate, the 2.9 % that is the headline symptom in the
+   diagnosis — stopped being one of them. Solids the collision layer publishes 903 → 1,259, +39 %.
+   Ranked-way samples inside a monument 302/1,040 → 98/956. `probe-fabric` 6/21 → 7/21, with G9 and
+   G15 gained.
+3. **And the fault the owner actually reported got worse.** `probe-fabric` had just established that
+   nothing overlaps on the shipped city because `resolveOverlaps` displaces monuments — mean 65 m,
+   worst 168 m — so *displacement* is what "everything is completely off" describes. At `KZ` 0.35 the
+   resolver displaces **mean 142 m, worst 399 m**; in real metres, mean 226 → 351 and worst 672 →
+   1,098. It has **fewer** conflicts to discharge (13 against 22) and it moves everything further,
+   because a deeper band and five fewer southern monuments give it more room to push into and no
+   reason not to use it. **A solver given more room does not do less work. It does more, further.**
+4. **Four faults that predate this pass and that nothing had measured.** Insulae standing in the
+   Tiber — 37 of 903 solids entirely under `WATER_LEVEL` at the base commit, 60 of 1,259 here, with
+   `assertNoFabricOverlaps` and `probe-fabric` G1/G2 all reporting zero. `assertHillRing`'s
+   cyclic-order test, which normalised each step to the shortest turn and therefore could not
+   distinguish a legitimate 213° arc from a 147° inversion — latent until two ring members went off
+   the map, at which point it failed a correct build. `place()`'s z clamp, which would have stacked
+   five southern monuments on the single line z = 1374 instead of removing them, silently. And a
+   district depth written as `hn * KZ * 3.5`, which would have inflated every district 57.7 % as a
+   side effect of a projection change.
+
+**Verdict — the frame is right, the frame was never the visible fault, and phase 1 has made the
+visible fault worse on its way to fixing it.** Every number `ROME-FABRIC.md` §4.5 promised is
+delivered and measured. None of them is what the owner was looking at. He was looking at
+`resolveOverlaps`, which phase 2 deletes, and which this phase provoked. That is a real cost of
+splitting the work across a review gate and it was accepted deliberately: the alternative was to ship
+the frame change and the landmark rebuild together, which would have made it impossible for him to
+tell which of the two he was approving, and would have wasted the landmark work if he had rejected
+the frame.
+
+**What we would do differently.**
+
+- **Measure the thing the owner complained about, on the base commit, before changing anything.** The
+  displacement figures took ten minutes and they reframed the whole phase. Had they been taken at the
+  start, the brief would have said "phase 1 will make the visible fault worse, here is by how much,
+  here is why that is still the right order" — instead of that being a finding at the end. **The
+  first measurement of any pass should be of the complaint, in the units of the complaint.**
+- **When a projection constant changes, grep for every expression that multiplies by it and ask
+  whether each one meant it.** Three of the four faults in point 4 were things that read `KZ` (or a
+  bound derived from the map) for reasons that had nothing to do with depth: a district extent, a
+  lookup table's range, a clamp. Each would have shipped as a silent side effect. **A constant that
+  appears in a formula is not the same as a constant the formula is about.**
+- **A check that goes dark is worse than a check that fails.** Taking five monuments off the map
+  silently reduced `assertTopology` from 44 rules to 34 and `assertHillRing` from 8 members to 6.
+  Both now separate "the id is off this map" from "the id is a typo", count the skips and print them
+  by name. A check count that quietly falls is the shape of the fault this whole file exists about.
+- **`tools/qa-determinism.mjs` reuses whatever is already serving the port, with no ownership
+  check, and that can silently record a pin from another agent's branch.** `probe-fabric.mjs` and
+  `probe-seams.mjs` refuse a port they did not start — *"a reused port serves another branch's
+  modules, and the probe then grades a tree it is not standing in"* — and `qa-determinism.mjs`
+  does not. With six agents on the box and orphaned servers accumulating, that is one collision
+  away from a determinism baseline recorded against somebody else's tree, which is the most
+  expensive possible version of this project's recurring "the check compared the wrong thing"
+  fault. **Before recording a pin, start your own server, confirm it serves your tree by fetching
+  a file and grepping for the change you made, and pass that port.** Every arm in this pass was
+  re-verified that way after the fact; all three were clean, and they were clean by luck rather
+  than by construction.
+
+- **`--absorb` should have been in the design document.** `ROME-FABRIC.md` §4.5 recommends
+  per-monument authored footprints *"seeded at 0.65 and adjusted only where the probe says a pair
+  conflicts"* without ever running that adjustment to see where it lands. Running it takes forty
+  lines and it changes the recommendation's honesty: zero intersections at frozen positions is
+  reachable, but only at a 0.36 floor and a 68 m Colosseum, and three pairs are unabsorbable at any
+  floor because two of the three are east–west and `KX` cannot move. **A design that proposes an
+  optimisation should run it once before recommending it.**
+
+### 21 Aug 2026 — Rome fabric phase 2: the resolver is gone, and the survey was the bigger fault
+
+**What we did.** Deleted `resolveOverlaps`, abolished the global `PLAN_SCALE`, replaced it with a
+per-monument authored footprint beside the real published dimension, declared five complexes and
+seven authored abutments, and froze every monument at `worldOf(e, n)`. `docs/ROME-FABRIC.md` §8.
+
+**What happened, in the order it mattered.**
+
+- **Displacement went from a mean of 142 world metres to zero, by construction**, and the
+  eighteen inverted spatial relations the plan judge found went to **zero of 858**. The second
+  number is the interesting one and it is a *proof* rather than a measurement: `worldOf` is
+  strictly monotone in both axes, so with nothing moving after it, no relation can invert. All
+  eighteen were the solver's.
+- **The biggest single lever was not in the plan.** `ROME-FABRIC.md` §4.5 framed the problem as
+  geometry — too much footprint in too little ground — and prescribed merging and shrinking.
+  Both help. But **fourteen of thirty-five survey rows were in the wrong place**, five of them by
+  more than 100 m, and no amount of merging or shrinking fixes a wrong coordinate. Two of the
+  three "unabsorbable east–west pairs" §7.8 escalated to the owner as a taste decision turned out
+  to be **measurement faults in the survey**, and they evaporated when the coordinates were
+  corrected. *The rule this earns:* before optimising a layout, check that the layout's inputs are
+  right. A solver's residual is only evidence about the solver if its inputs are.
+- **A survey row has four independent things that can be wrong, and the fourth has no
+  instrument.** The coordinate, the dimension, the bearing — and **which part of the building the
+  coordinate refers to.** The Porticus Octaviae was cited at its *propylon*, which is the
+  precinct's south edge, so a 132 × 119 m quadriportico centred on its own front door sat half
+  inside the Theatre of Marcellus. The Theatre of Pompey was cited at its *cavea* and dimensioned
+  as the *whole complex*. Both rows are internally consistent, both cite a real place, and both
+  put a building 120 m from where it stands. Only a plate finds that.
+- **`draw` was compressing two axes out of three, and nobody noticed for three passes.** The old
+  `PLAN_SCALE` scaled plan and left height at 1:1, and the code said so as though it were a
+  feature. A ground-level judge measured the result: Rome's monuments read **1.54× too tall for
+  their width**. *The rule:* when a scale factor is applied to a subset of a thing's dimensions,
+  say which subset in the constant's own name, and state the ratio it produces.
+
+**What we would do differently.**
+
+- **Digitise the plate before authoring against it, not after.** Nine of the fourteen corrections
+  came from reading the georeferenced raster directly and five came from a control table another
+  agent digitised mid-pass. The control table was worth more than everything this phase built for
+  the purpose, and §3's own previous entry had already asked for it — *"budget the digitising"* —
+  and it was not budgeted. It cost a pass.
+- **Check an instrument against a hand-computed case before trusting it, especially when it
+  agrees with you.** This phase's own `--realgaps` had a sign error in the bearing convention that
+  mirrored every box in `n`. It is invisible on an axis-aligned building and inverts every rotated
+  one, and it reproduced a figure the design document had computed independently — 49 real metres
+  of Octavia–Marcellus overlap — closely enough to look like corroboration. It was wrong, and so
+  was the document. Separately, the judge's own control table disclosed that nine of its sixteen
+  rows restated `survey.ts` rather than reading the plate. **Two instruments built to enforce rule
+  6 both broke rule 6 in the same day.** An instrument that agrees with the document it is
+  checking is not thereby correct; it may only be inbred.
+- **A plate is not one ruler, it is a ruler per zoom level.** The judge's contact sheet at
+  1.0 m/px reported the Theatre of Marcellus at zero error; at 0.46 m/px the same reader measured
+  39 m. This phase made the same mistake in the other direction, reading a 20 m Pantheon offset at
+  zoom 4 that vanished at zoom 5. **Record the reading scale beside every plate-derived number**,
+  and treat a reading taken at a coarser scale than the error being claimed as no reading at all.
+
+**One thing that was kept against the plan, and the reason generalises.** §5 listed `TOPOLOGY` for
+deletion with the resolver, because the solver used it as a constraint set. But it is also an
+independently written statement of Rome's adjacency, and with positions frozen it becomes exactly
+what rule 6 asks for: a check on the survey whose reference is outside the survey. It is the only
+thing in the tree that would have caught this pass mistyping one of fourteen corrected
+coordinates. **Deleting a check because a solver used to borrow it is the wrong reason to delete a
+check.**
+
+---
+
+### 21 Aug 2026 — the city judged from a standing man's eye, on both maps
+
+**What we did.** An independent judge, changing no source. Two shot scripts (42 eye-level cameras,
+every Rome shot with a Carthage twin on identical rail numbers), one scene probe
+(`tools/scratch/judge-fabric.mjs`, which reads `CitySystem.getObstacles()` and raycasts the built
+scene graph and imports nothing from `src/city/**`), and a new `VISUAL-RUBRIC.md` §H of ten
+criteria that only score on frames taken at 1.75 m with a near-level lens. Measured `58bc584`
+(`main`) and `bc2e0f2` (the builders' base) and Carthage as the control. `docs/CITY-GROUND-JUDGE.md`.
+
+**What we expected.** From the brief: that the monuments would read *small* next to a man, and
+that the pass would end up arguing for a higher footprint floor.
+
+**What happened.** Three things, and the first two were not on anyone's list.
+
+1. **The monuments do not read small. They read 1.54× too tall for their width.** `place()` scales
+   every masonry footprint by `PLAN_SCALE = 0.65` and `layout.ts:139` says in as many words that
+   heights are not scaled; the plan diagnostic confirms 0.695 (0.65 × `PRECINCT`) for all 31 rows to
+   three decimals. So the pass ended up arguing the *opposite* of what it was sent to argue: not
+   "raise the floor" but "**use one scale for all three axes**". Rule 13.
+2. **Carthage is better urbanism and worse architecture, and the rebuild must not copy it
+   wholesale.** From the parapet, Rome is three painted blocks in a field and Carthage is an
+   unbroken mat running to a citadel — but at eight metres Carthage's blocks are untextured prisms
+   with no aperture of any kind, and Rome's have stucco, tile, windows, balconies and modelled
+   *tabernae*. **Take Carthage's grain, continuity, module and terminus; keep Rome's buildings.**
+3. **The two worst faults from the ground are both road faults, and both were already measured
+   from above without anyone noticing what they meant at eye level.** 29.0 % of ranked way inside a
+   monument means that a man walking in on the Porta Flaminia's own axis is **inside masonry for
+   34 % of the first 700 m** — the Mausoleum of Augustus at 95, the Baths of Nero at 220, and 105
+   unbroken metres of the Theatre of Pompey at 360. And a median `H/W` of **0.19** against an
+   ancient street's 1.0–3.0 means Rome does not have streets at all; the narrowest long corridor in
+   the whole walled city is 5 m wide, floored with turf, and stops after fifteen metres.
+
+**Phase 1 re-graded from the ground.** Ranked way in a monument 29.0 % → **10.3 %**, axis blocked
+34 % → **18 %**, p90 distance to the nearest built thing 48 m → **25 m**, buildings 789 → 1,150.
+Real and visible, and `pair-kz-before-after.jpg` shows it without a table. But the axis still
+carries 105 unbroken metres of monument, ranked way in a monument is still five times its own
+Phase 3 acceptance, and median `H/W` **fell** from 0.19 to 0.14 — more buildings in the same space
+narrowed the gaps without giving anything a taller frontage. **Enclosure is not a by-product of
+density. It is a by-product of blocks that address a line.**
+
+**Verdict — the altitude of the camera was the whole gap.** Nothing here needed a new idea; it
+needed a camera 148 metres lower. Five instruments passed this city and a person did not, and the
+difference was not rigour.
+
+**What we would do differently.**
+
+- **Write the camera height into the instrument.** `VISUAL-RUBRIC.md` A–G can all be scored from a
+  tactical camera and every graded frame this project has is one. §H now says explicitly what
+  height it scores at and refuses frames above it. An instrument that does not state where it
+  stands is not reproducible.
+- **Pair every finding with a control shot on the map that works.** Six of the ten findings only
+  became arguable when the same camera was pointed at Carthage; two of them *reversed* when it was.
+  Rome's `H/W` on the gate axis is 0.19 and Carthage's is 0.06 — Carthage is worse on that axis and
+  better everywhere else, and a pass without the control would have published the wrong cause.
+- **Aim eye-level cameras off a measured walk, not off round numbers.** Pass one parked the eye at
+  20, 120, 250 and 400 m inside each gate and four of twelve interior frames came back inside
+  masonry, partly because `stand` positions the *focus* and the eye sits `dist` further out. The
+  fix was to walk the axis with the probe first and shoot only clear stations. **Half an hour of
+  measurement bought back an hour of re-shooting, and the frames it threw away turned out to be
+  the headline finding.**
+
+
+---
+
+### Phase 2 graded from the ground — the landmark rework, and three ways a good change hid its own cost
+
+**What we expected.** The first ground pass (above) had argued for one thing: make the monument
+scale isotropic. The branch did it — `RomeMonument.drawY` defaults to `draw` — so the expectation
+going in was a re-score, a confirmation, and a short entry. The prediction was that the H8
+criterion would move two ranks and nothing else would change much.
+
+**What happened.** H8 moved one rank, three other criteria moved, and **two of the four things
+this pass found were introduced by the change that was right.** Rome went 0.8 → 1.5 on
+`VISUAL-RUBRIC.md` §H. The isotropy argument is upheld and turned out to rest on a different
+foundation than either the plan or the first pass gave it. And the branch's own headline number
+had a blind spot big enough to hide a 404-metre error.
+
+**Four things worth the log.**
+
+1. **The strongest argument for a change was found by re-using the previous pass's camera, not by
+   arguing.** `docs/CITY-GROUND-JUDGE.md` §10.3 is one frame at pass one's exact rail — 90 m out,
+   eye 1.75, `fov` 50 — and the finding is that at 48 m the Colosseum **does not fit in the
+   frame**: no attic, no ends, no silhouette, unidentifiable. At 27 m it fits and it is
+   unmistakable. Nobody had said that, because nobody had a *pair* of frames at one rail. The plan
+   argued from the published ratio; the first ground pass argued that the eye reads proportion
+   before size; **the thing that actually decides it is that recognition needs a silhouette and a
+   silhouette needs the object to fit in the lens at a standoff a man can take.** That is now
+   `VISUAL-RUBRIC.md` H8(c), and it cost one re-used camera and no new idea. **Re-use the rail.
+   Move the focus, never the lens.**
+
+2. **The pass's own headline number was wrong for two hours, and only a second method found it.**
+   §10.4.1's first draft measured the median monument's proportion error at 2.37 → 2.22 — a 6 %
+   gain against a claimed 35 % — reported nine rows getting *worse*, and built a mechanism on
+   them: §8.5b (isotropy) and §8.5c (fit the stone to the box) pulling opposite ways. It was
+   plausible, it was specific, and it was an artefact. The inherited instrument takes a monument's
+   height as the maximum of an 11 × 11 grid of rays dropped from 260 m; over a 30 m box in a
+   declared complex the grid hits whatever leans over it. A second method — the largest `y` among
+   the monument's *own* vertices, no rays — gives **2.41 → 1.42, a 41 % gain, 22 of 25 rows
+   improving**, agrees with the first to 3 % on the nine largest monuments and disagrees with it by
+   up to **3.3×** on the small ones. **Pass one already knew this**: it recorded three answers for
+   the Colosseum's height and refused to publish an absolute. What it did not do was extend the
+   refusal to a *ratio*, which is where the same contamination hides. **Two methods, or no number.
+   And prefer the method with fewer ways to be fooled: a vertex belongs to a building, a ray
+   belongs to whatever it hits.**
+3. **A change that is right can carry its cost in a relation nobody counted.** The branch's
+   headline is *"0 of 860 spatial relations inverted"* — north-of, west-of, between — against 18 of
+   184 on the shipped map. Real, and a proof rather than a measurement. Ask the same question about
+   **size** and the answer is **56 of 345 pairs inverted, 16.2 %, against 0 of 345 under the global
+   scale it replaced**, and a steady 10 % among pairs close enough to share a frame. The Castra
+   Praetoria is drawn smaller than the Mausoleum of Augustus it is 4.6 times the length of. **A
+   uniform constant is not just a compromise; it is silently guaranteeing invariants, and the
+   moment you replace it with a per-item table you have to list what it was guaranteeing and gate
+   each one.** Nobody did, and the instrument that would have caught it — `probe-fabric` G13 — was
+   the check the branch asked to have retired. Proposed as rule 17.
+
+4. **A check that was born blind to a mechanism is worse than a check that goes dark, because
+   nothing marks the moment it stopped looking.** `assertRomeFrame` check 5 reports *"every
+   monument centre at `worldOf(e, n)`: worst **0.0 m**"* and skips `farBank` and `onRiver` rows by
+   construction. The Janiculum Ridge is `farBank`: a 520 × 240 m planted ridge with a 40 m mound,
+   which `place()` puts at world **(−12.6, 1374)** while its own survey row projects to
+   **(−416.2, 1381.6)**. It stands **404 world metres** from its surveyed position, clamped onto the
+   last row of the heightfield in the middle of the map's southern edge, and it moved **715 m**
+   between phase 1 and phase 2 — on the pass whose result is *"displacement is 0.0 m by
+   construction"*. It is very probably also why about fifty umbrella pines are hanging in the air
+   over the Campus Martius (`lm2-floating-grove.jpg`). Rule 13 covers a check that *loses* part of
+   its population. This one never had it. Proposed as rule 16.
+
+**Two more from the same afternoon, smaller and both about instruments.**
+
+- **We reproduced the exact sign error the branch had already confessed to, in the same
+  quantity.** `ROME-FABRIC.md` §8.8 records that its `--realgaps` built each oriented box with the
+  bearing mirrored, which is invisible on an axis-aligned building and inverts every rotated one.
+  This pass's own `judge-monuments.mjs` did the same thing and reported the Basilica Ulpia and
+  Trajan's Column interpenetrating by **13.6 m** where the city's own assertion said 1.0 m. The
+  recomputation using `probe-fabric`'s own `obPoly` then agreed with the city to **0.05 m**. A
+  written-down failure mode is worth reading twice: **the second reader of a confession is the
+  person most likely to repeat it, because they now think they understand it.**
+- **Half the eye-level cameras aimed at a monument that has moved will end up inside masonry.**
+  Three of twenty-five did here, one of them ninety metres from its subject. Pass one recorded the
+  same thing and its own fix — walk the axis with the probe first, shoot only clear stations — was
+  not applied to *monument* cameras because those are aimed at a coordinate rather than along a
+  walk. **A camera aimed at a monument needs the same clearance test as one aimed down a street**,
+  and it is one `solidAt(x, z)` call per rail before the browser starts.
+
+**Verdict on the method, not the map.** The instrument that produced everything above already
+existed: it is the first pass's own shot script and scene probe, run again on a different tree at
+the same rail numbers. **The cost of a second opinion on this project is now about ninety minutes,
+and it caught four things in a branch that had already been graded once by a plan judge, once by a
+ground judge, and once by a twenty-one-check external gate.** That is the argument for the seat,
+and it is an argument for making the *rails* a committed artefact rather than the frames.
+
+---
+
+### 21 Aug 2026 — the gate corrected against its own adjudication: 5/21 to 7/25, and every added check red
+
+**What we did.** Implemented `docs/CITY-GROUND-JUDGE.md` §11 in `tools/probe-fabric.mjs` and
+nothing else. No source under `src/` changed; the three pinned determinism hashes are unchanged at
+8,632 / 3,074 / 3,440 soldiers, `tsc` is clean, `lint` is 2/2 and `qa-deploy` is 33/33. The work
+was split off the build deliberately — a phase that edits its own gate cannot report a before and
+an after — and the split is why there is a before column at all.
+
+Six changes. G8 keeps its 7 m of street and loses the population its own comment was wrong
+about. **G8c** and **G8d** are the price of that: a pair inside one declared `complex` must be
+*joined*, and the complex as a whole must be *one connected piece*. **G13** is retired; **G13a**
+(an absolute band against typed-in published dimensions) and **G13b** (no inverted size order)
+replace it. **G11** gains an off-frame category gated on the five agreed names. **G22** is the
+water check, shipped with the exclusion accounting the judge made a condition of endorsing it.
+
+**What we expected.** The judge's table: 5/21 → 7/25, sixteen failing checks becoming eighteen,
+every added check failing today.
+
+**What happened.** Measured, both maps, and the control column is as informative as the subject's:
+
+| | Rome before | Rome after | Carthage before | Carthage after |
+|---|---|---|---|---|
+| verdict | 5/21 | **7/25** | 12/21 | **13/22** (3 n/a) |
+| failing | 16 | **18** | 9 | 9 |
+| G8 street | FAIL 0.66 m | **PASS** — 0 of 310 cross-complex pairs short, closest legal 13.66 m | FAIL 4.07 m | FAIL 4.07 m, unchanged |
+| G8c joined | — | **FAIL** — 3 of 41 in-complex pairs in the (2.5, 7) m no-man's-land | — | n/a, no complexes declared |
+| G8d one piece | — | **FAIL** — 4 of 5 complexes are not one piece | — | n/a |
+| G13a band | — | **FAIL** — 2 of 10 gated rows below the 0.45 floor | — | **PASS** — 0 of 2 |
+| G13b order | — | **FAIL** — 10 of 43 asserting pairs inverted, 23 % | — | n/a, 0 asserting pairs |
+| G15 trespass | FAIL 11 pairs | **FAIL 2 pairs** | FAIL 2 pairs | FAIL 2 pairs |
+| G22 water | — | **FAIL** — 78 solids under a 5.0 m surface | — | **FAIL** — 1 solid under sea level |
+| G11 present | FAIL | **PASS** | PASS | PASS |
+
+**The headline number is exactly the prediction and its composition is not.** The judge's table
+has G15 passing and does not score G11; the measurement has G11 passing and G15 failing. Two
+pairs are declared one `complex` and stand 3.14 m and 3.17 m apart — inside G8c's own
+no-man's-land — so the complex licenses nothing and G15's second condition refuses them. **The
+predicted PASS does not survive the judge's own conjunction**, which is the more interesting
+outcome: the three conditions were written down correctly and then scored as if the first one
+implied the other two.
+
+**Five things worth the log.**
+
+- **The exemption hazard is now demonstrable in one run rather than arguable in prose.**
+  `--inject=complex-invent` on Carthage declares the two closest monuments to be one complex.
+  G8c and G8d go red, **and G8 goes green on the same run** — 1 of 45 pairs short becomes 0 of
+  44. That is precisely what "treat a complex as one owner" would have done to all twenty-one
+  rows, and it took four lines of injection to turn rule 18's argument into a table. **An
+  argument about a check is worth much less than a run of the check with the fault in it.**
+- **A third outcome was unavoidable, and the denominators now differ between maps.** G8c, G8d
+  and G13b have no population on Carthage: it declares no complexes, and its two published
+  monuments are 325 m and 320 m, which is 1.6 % apart and inside every citation's own error bar,
+  so the pair asserts no size order at all. Counting those green would have put three checks that
+  cannot fail into a passing score — the exact thing this project has shipped several times. They
+  report `n/a` with the reason and the sample size and come out of that map's denominator, so
+  Carthage is 13/**22** and Rome is 7/**25**. **A map is asked fewer questions because it makes
+  fewer claims, and that is not a defect in the gate.** The candidate rule, offered to §1 rather
+  than written into it: *a check whose population is empty must say so and leave the denominator;
+  a vacuous pass is worse than a missing check because it is indistinguishable from a real one.*
+- **The water check would have been wrong on the control map without its exclusion list, and
+  that was measurable rather than hypothetical.** `--inject=water-no-exclusions` fails Carthage
+  on **34** monument solids, of which **33 are the Cothon and the merchant basin** — 325 m and
+  320 × 150 m *of water*, per Hurst 1994 and `CARTHAGE.md` §6.2. Rule 16 predicted this shape
+  exactly ("a check born blind to a mechanism measures its absence") and the condition the judge
+  attached to endorsing G22 was load-bearing, not procedural. With the list in place the check
+  finds **one** thing on Carthage and it is real: **The Temple by the Sea, a 44 × 64 m
+  `solid: true` monument standing entirely offshore with its centre 9.2 m below sea level**, three
+  of four corners wet, photographed. Nothing in the tree had ever named it. On Rome it finds the
+  Theatre of Marcellus at 1.52 m under a 5.0 m surface — the judge's own figure, to the
+  centimetre, from an independent computation — and **77 insula solids standing in the Tiber**.
+- **The external ruler is smaller than the internal one, and the size of that gap is the
+  finding.** The judge measured 56 of 345 inverted size relations and 13 of 27 rows below a 0.45
+  floor, both against the survey's own `len`. That is the right measurement for a judge and the
+  wrong reference for a gate: `len` is an input to the build, and rule 6 forbids it. Against
+  `PUBLISHED` — typed into the probe, one citation per figure — the population is **10 sourced
+  rows and 43 asserting pairs**, and it fails at 10 of 43 (23 %) and 2 of 10. The direction, the
+  magnitude and the worst offender all agree with the judge (the Castra Praetoria drawn 0.84x a
+  Mausoleum of Augustus it is 5.06x the length of), so the small population is not hiding the
+  fault. **What it cannot do is see the other seventeen monuments**, because `PUBLISHED` has no
+  row for the Ludus Magnus, Trajan's Markets, the Baths of Titus or the Temple of Venus and
+  Rome. Widening it is a literature task with a citation per figure, not a code task, and
+  inventing the citations would be worse than the gap. The count over the wider *sourced*
+  population is printed every run and not gated: 31 of 100.
+- **One arithmetic correction to the adjudication, which changes nothing it concludes.** §11.1
+  reports *"pairs inside one declared complex: 27"* and *"of the 27, fourteen stand 7 m or more
+  apart, up to 59 m"*. Five complexes of 7, 5, 4, 3 and 2 rows have `21 + 10 + 6 + 3 + 1` = **41**
+  pairs, which is forced, and **28** of them stand 7 m or more apart, **up to 165.13 m**
+  (`temple-jupiter` / `trajan-market`, both filed `forum-valley`). The judge's enumeration was
+  evidently bounded by a proximity query — its own maximum, 58.95 m, is the largest pair a
+  neighbour search would return — so the two numbers are not comparable and the smaller one
+  understates the case it is making. Every named pair and every conclusion in §11.1 survives.
+
+- **Two of Rome's five complexes fail for opposite reasons and one number hides it.** At the
+  2.5 m joint bound four of five are not one piece; at any threshold under 20 m, three are. The
+  difference is `campus-medius`, which becomes one piece at **3.17 m** — the Stadium of Domitian
+  is 67 cm outside the party-wall bound and 3.8 m inside the street bound, which is neither
+  thing. `pompey` needs **17.36 m** (the judge measured 17.4 for the Theatre of Pompey against
+  its own *porticus post scaenam*, from a different computation), `forum-valley` needs 23.72 m
+  and `colosseum-valley` 27.58 m. So `connectAtM` — the longest edge in the complex's minimum
+  spanning tree — is printed beside every complex, because "not one piece" is a verdict and "not
+  one piece until 27.58 m" is an instruction.
+
+**Two smaller ones, both about the instrument rather than the city.**
+
+- **`Number('8c')` is `NaN`.** The check table sorted on `Number(id.slice(1))`, so the moment
+  checks were named G8c, G8d, G13a and G13b the printed table would have come out in push order
+  and read as scrambled. Found by reading the sort line before the first run, which is luck rather
+  than method — no test in the tree looks at the order of a gate's own table. **A gate's own presentation
+  layer is part of the gate**, and the first thing a new check id breaks is the ordering nobody
+  thinks of as code.
+- **The illustration budget was three frames and there are now ten fault classes.** The shot list
+  ranks by area and takes one frame per class, so a class whose unit of harm is small in square
+  metres can never be photographed while a larger class is unfixed: G8d's headline — a complex
+  whose two halves stand 17.4 m apart — scored 301 m² against 5,688 m² of paving in the wrong
+  forum and was fifth in a queue of three. Raised to five. **A gate that can fail for a reason it
+  could not fail for before and cannot show that reason has only half shipped.**
+
+**Verdict — the score fell and the instrument improved, and the only way to tell those apart is
+the injection list.** Of the eight checks this pass touched, seven go red on live data — G8c,
+G8d, G13a, G13b, G15 and G22 on Rome, G8 on Carthage — which proves those seven. G11 passes on
+both maps, and a passing check proves nothing whatever about itself. So every limb that live data
+cannot reach has a named `--inject` that breaks one of
+the probe's own inputs — never the game, never `src/` — and states which check must go red:
+G13a's upper band (nothing on either map exceeds it), G11's exclusion-membership limb, G22's
+stale-licence limb, and G8c/G8d on a map with no complexes. All seven fired. An injected run
+prints a banner, tags the checks it expects to flip, always exits non-zero, and exits **3** if a
+check that was supposed to go red did not — which caught a real defect in the harness on its first
+use, where `complex-invent`'s expectation string listed G8 as needing to go red when G8 going
+*green* is the whole demonstration.
+
+**What we would do differently.**
+
+- **Type the published dimensions in before building the thing they grade, not after.**
+  `PUBLISHED` has 26 rows for a city with 27 drawn monuments, and only 10 of them are both gated
+  and present. Every gap in it is a monument the absolute band and the size order cannot see, and the
+  gap was created by the build getting ahead of the literature rather than by anything hard.
+- **Write down what a relation costs at the moment the relation is added.** `complex` was added
+  to the survey with an argument, evidence per group, and a 2.4 m bound — and the bound lived in
+  the offline script that granted the licence, so declaring a complex was free. The obligation
+  had to be added by a separate agent two phases later, against an adjudication. **A licence and
+  its price belong in the same commit.**
+- **State the exclusion list's failure mode, not only its membership.** G22's first draft faulted
+  Rome's `tiber-island` licence as stale, because the row is `soft` and publishes no collision
+  solid at all — there was nothing to be wet. A licence can go unused two ways and only one of
+  them means the list has rotted; conflating them made the probe report a fault in itself as a
+  fault in the city, which is the most expensive kind of false positive a gate can produce.
 
 <!-- Append new entries above this line. -->

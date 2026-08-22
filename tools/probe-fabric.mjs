@@ -91,13 +91,90 @@
  * THE GATE
  * ============================================================================
  *
- * Twenty-one checks, each with its threshold as a named constant and the reasoning beside it.
- * The verdict is `n/21` and the exit code is non-zero on any failure, so this can sit in a
- * pre-merge gate for the city rebuild.
+ * Twenty-five checks, each with its threshold as a named constant and the reasoning beside it.
+ * The verdict is `n/<applicable>` and the exit code is non-zero on any failure, so this can sit
+ * in a pre-merge gate for the city rebuild.
+ *
+ * ----------------------------------------------------------------------------
+ * READ THIS BEFORE YOU READ THE SCORE. THE SCORE WENT DOWN ON PURPOSE.
+ * ----------------------------------------------------------------------------
+ *
+ * `docs/CITY-GROUND-JUDGE.md` §11 adjudicated this file's twenty-one checks against the
+ * landmark rework and its framing is the one to read the number with:
+ *
+ *   > **"5/21 -> 7/25, failing checks 16 -> 18, every added check failing today. The test is
+ *   > not the score; it is whether the gate can fail for reasons it could not before."**
+ *
+ * Measured, both maps, this file as it stands:
+ *
+ *   | | before | after |
+ *   |---|---|---|
+ *   | Rome    | 5/21, 16 failing | **7/25, 18 failing** |
+ *   | Carthage| 12/21, 9 failing | **13/22, 9 failing, 3 not applicable (G8c, G8d, G13b)** |
+ *
+ * The judge's prediction of 7/25 and 18 is exactly right and **its composition is not**: the
+ * table has G15 passing and does not score G11, and the measurement has G11 passing and G15
+ * failing. Two pairs are declared one complex and stand 3.1 m apart — inside G8c's own
+ * no-man's-land — so the complex licences nothing and G15's second condition refuses them. A
+ * check that licensed them anyway would be the exemption with one more indirection.
+ *
+ * Do not read the changed denominator as a regression and revert it: **the gate now fails for
+ * five reasons it was blind to** — a declared complex that is not joined, a declared complex
+ * that is not one piece of fabric, a monument drawn at a fifth of its published plan, a pair of
+ * monuments whose size order is inverted against the archaeology, and masonry under the Tiber.
+ * And it stops failing in two places where it was wrong about Rome rather than about the build.
+ *
+ * **Every check this pass touched has been shown going red, on purpose.** Seven of the eight do
+ * it on live data: G8c, G8d, G13a, G13b, G15 and G22 on Rome, G8 on Carthage. The eighth — G11 —
+ * and the limbs live data cannot reach (G13a's upper band, G22's stale-licence limb, and G8c/G8d
+ * on a map that declares no complexes) are proved by named `--inject` runs that perturb this
+ * file's own reference data and exit non-zero whatever they find.
+ *
+ * `--inject=complex-invent` on Carthage is worth running once for its own sake: it declares one
+ * pair a complex, G8c and G8d go red, **and G8 goes green on the same run** — 1 of 45 pairs short
+ * becomes 0 of 44. That is the whole argument of §11.1 in one table, and it is what "treat a
+ * complex as one owner" would have done to all twenty-one rows.
+ *
+ * What changed, and why, one line each (the argument is in `CITY-GROUND-JUDGE.md` §11 and the
+ * rule is `MAP-METHOD.md` §1 rule 18):
+ *
+ *   - **G8 keeps its 7 m and loses the population it was wrong about.** A monument pair in one
+ *     declared `complex` is not two precincts facing each other across a missing street; the
+ *     Basilica Ulpia stands *inside* Trajan's Forum. G8 now asks its question of pairs in
+ *     DIFFERENT complexes, which is exactly the population its own comment is right about.
+ *   - **G8c and G8d are the price of that, and they are stricter than what they replace.** The
+ *     repair the builder asked for — "treat a complex as one owner" — would have removed the
+ *     same 21 rows from G1, G8 and G15 at once and left the 2.4 m joint bound enforced only by
+ *     an offline script. That is an exemption wearing a relation's clothes. So declaring a
+ *     complex now TAKES ON an obligation: its members must be *joined* (G8c) and the complex
+ *     must be *one connected piece* (G8d). A row put in a complex to dodge a 3 m gap fails
+ *     immediately.
+ *   - **G13 is retired and replaced by two checks with an external ruler.** Its premise was one
+ *     uniform plan compression and the design abolished that. The replacement the builder
+ *     offered — grade the built extent against `draw x len` — is `draw` grading itself, which
+ *     is the one failure mode this file's header exists to forbid. G13a is an absolute band
+ *     against `PUBLISHED`; G13b is the check nobody had: the SIZE ORDER between two monuments.
+ *     The previous phase proved 0 of 860 inverted *position* relations and everybody read that
+ *     as covering the ground. Nothing counted inverted *size* relations, and the Castra
+ *     Praetoria is drawn smaller than a mausoleum it is 4.6x the length of.
+ *   - **G22 is the water check, and it is not shipped without its exclusion accounting.** A
+ *     check born blind to a mechanism measures that mechanism's absence (`MAP-METHOD.md` rule
+ *     16), and Carthage's Cothon is 325 m of *water* that would fail a naive test. So every
+ *     excluded row is named, counted and gated against a typed-in list.
+ *   - **G11 gains the off-frame category the same way.** Five survey rows are off this map's
+ *     +Z edge by a decision the owner took in writing. The category is gated against those five
+ *     BY NAME, so a sixth row falling off the frame fails rather than joining a category.
+ *
+ * **Not applicable is a third outcome, and it is not a pass.** A check whose population is
+ * empty on a map — G8c and G8d on Carthage, which declares no complexes — is reported `n/a`
+ * with the reason, is excluded from that map's denominator, and can never be mistaken for a
+ * green light. `MAP-METHOD.md` rule 12: a statistic whose sample has collapsed returns a
+ * confident number rather than an error, so every figure below prints its own sample size and
+ * G13b refuses rather than reports when it has fewer than `SIZE_ORDER_MIN_PAIRS` relations.
  *
  * **It gates BOTH of Rome's two independent faults.** `docs/ROME-FABRIC.md` §2 establishes
  * that the fabric is broken twice over: monuments that must intersect because positions
- * compress 10.2x areally while footprints compress 2.07x (G1-G3, G12-G13), *and* seventeen
+ * compress 10.2x areally while footprints compress 2.07x (G1-G3, G12, G13a-G13b), *and* seventeen
  * layout regions claiming 266% of the city, each laying its own hash-rotated lattice
  * (G18-G21). The second one is invisible to every overlap test ever written on this project,
  * because contested ground is handed to whichever quarter was planned first and the buildings
@@ -110,12 +187,26 @@
  *   G6-G7    nothing stands inside the curtain, a tower or a gate. Plan, then drawn stone.
  *   G8-G10   every class keeps its stated clearance: a street between monuments, the XII
  *            Tables' *ambitus* between a monument and a house, and no negative gap anywhere.
- *   G11      every sourced monument is present, and the anachronisms are absent.
+ *   G8       ... and G8 asks it of monuments in DIFFERENT declared complexes only.
+ *   G8c-G8d  a declared `complex` costs something to declare: its pairs must be JOINED
+ *            (nested or abutting, never a no-man's-land in `(ABUT_DEPTH_M, CLEAR_MON_MON)`),
+ *            and the complex as a whole must be ONE CONNECTED PIECE of fabric under that
+ *            relation. This is the check the exemption would have hidden: three of Rome's
+ *            five complexes are not one piece at any threshold under 20 m, and the Theatre of
+ *            Pompey stands 17.4 m from its own porticus post scaenam.
+ *   G11      every sourced monument is present, the anachronisms are absent, and the rows
+ *            excluded for being off this map's frame are exactly the agreed five, by name.
  *   G12      every sourced monument has its published ASPECT RATIO. Scale-free.
- *   G13      every sourced monument is compressed by the same factor as its cohort.
+ *   G13a     every gated monument's drawn long dimension is inside an ABSOLUTE band against
+ *            its published figure. The last thing between a 0.57 Colosseum and a 0.19 one.
+ *   G13b     no pair of monuments has its SIZE ORDER inverted against the published pair.
  *   G14-G16  the stone the player sees is the footprint the game collides with, and it does
- *            not stand in anybody else's plot. Read from vertices; no plan involved.
+ *            not stand in anybody else's plot. Read from vertices; no plan involved. G15
+ *            licenses a trespass only inside one complex, only where the pair is joined, and
+ *            only as deep as a party wall.
  *   G17      no quarter reports itself unable to build.
+ *   G22      no structure's footprint stands below the water surface, with every excluded row
+ *            named and the exclusion list gated.
  *   G18-G19  the layout REGIONS partition the ground — no overlapping pair, and claimed area
  *            over available ground = 1.00. This is the second, independent fault
  *            (`docs/ROME-FABRIC.md` §2.3): seventeen rectangles claiming 266% of the city.
@@ -129,9 +220,12 @@
  *
  *   TC_NO_HMR=1 node tools/probe-fabric.mjs --map=campus-martius --port=5951
  *   TC_NO_HMR=1 node tools/probe-fabric.mjs --map=carthage       --port=5951
- *   ... --shots            three frames of the three worst faults
+ *   ... --shots            five frames, one per fault class, biggest first
  *   ... --json=<path>      the whole record
  *   ... --no-gate          always exit 0 (for taking a "before" reading in CI)
+ *   ... --inject=a,b       break one of the probe's own inputs and prove a check goes red.
+ *                          Never a clean run: an injected run always exits non-zero, and exits
+ *                          3 if a check that was supposed to go red did not.
  *
  * Port 5173 belongs to the owner; use the 5900s. This tool **never reuses a server it did
  * not start** — six agents run vite on this box and a reused port serves another branch's
@@ -161,6 +255,78 @@ const PORT = Number(args.get('port') ?? 5951);
 const TIER = args.get('quality') ?? 'high';
 const SHOTS = args.get('shots') === 'true';
 const NO_GATE = args.get('no-gate') === 'true';
+/**
+ * `--inject=a,b,c` — **the instrument's own self-test, and it is not optional equipment.**
+ *
+ * This project has shipped several checks that had never gone red, and a check that has never
+ * gone red is not a check. Six of the twenty-five below fail on Rome today, which proves those
+ * six; the rest pass, and a passing check proves nothing about itself. So each injection
+ * deliberately breaks ONE input to the gate — always the probe's own reference data or its own
+ * thresholds, never the game, never `src/` — and names the check that must go red as a result.
+ *
+ * `node tools/probe-fabric.mjs --map=carthage --inject=complex-invent,water-no-exclusions`
+ *
+ * An injected run prints a banner, tags every check it expects to flip, records the list in the
+ * JSON, and **always exits non-zero**, so an injected run can never be mistaken for a clean one
+ * in a log or in CI.
+ */
+const INJECT = (args.get('inject') ?? '').split(',').map((v) => v.trim()).filter(Boolean);
+const INJECTIONS = {
+  'off-frame-sixth': {
+    hits: 'G11',
+    what: 'adds `pantheon` — a row that IS on the map — to OFF_FRAME_AGREED, so the agreed '
+      + 'exclusion list no longer matches the build. Proves the off-frame category is gated on '
+      + 'MEMBERSHIP and not on length, which is the condition CITY-GROUND-JUDGE.md §11.4 '
+      + 'attached to endorsing it.',
+  },
+  'off-frame-drop': {
+    hits: 'G11',
+    what: 'drops the first agreed off-frame name, so the build excludes a row the probe has not '
+      + 'agreed to. Proves a SIXTH row falling off the frame fails rather than joining a '
+      + 'category — MAP-METHOD.md rule 16.',
+  },
+  'water-no-exclusions': {
+    hits: 'G22',
+    what: 'empties WATER_EXPECTED. Proves the exclusion accounting is load-bearing rather than '
+      + 'decorative: without it G22 fails Carthage on thirty-three harbour solids that are '
+      + 'water by definition, which is exactly a check measuring a mechanism\'s absence.',
+  },
+  'water-stale-licence': {
+    hits: 'G22',
+    what: 'grants a water licence to a structure that publishes solids and is dry. Proves the '
+      + 'stale-licence limb fires: an exclusion list that describes a city that has moved is '
+      + 'rule 13\'s check gone dark.',
+  },
+  'band-ceiling': {
+    hits: 'G13a',
+    what: 'halves every gated PUBLISHED dimension, so every drawn/published ratio doubles. '
+      + 'Proves the UPPER limb of the absolute band fires — nothing on either map exceeds it '
+      + 'today, so it is the one limb of G13a that live data cannot prove.',
+  },
+  'size-order-relax': {
+    hits: 'G13b',
+    what: 'sets SIZE_ORDER_MIN_RATIO to 1.0 and SIZE_ORDER_MIN_PAIRS to 1. Proves BOTH halves '
+      + 'of G13b at once on Carthage: the refusal is a fact about the population (two harbours '
+      + 'published 1.6 % apart assert no order), and the moment the check is told to grade that '
+      + 'noise it goes red on it.',
+  },
+  'complex-invent': {
+    hits: 'G8c, G8d',
+    what: 'declares the closest pair of monuments in DIFFERENT complexes to be one complex. '
+      + 'Proves G8c and G8d are a population fact rather than dead code on a map that declares '
+      + 'no complexes — and demonstrates the hazard the adjudication refused, live: the pair '
+      + 'leaves G8\'s population, so **G8 goes GREEN on the same run** that G8c and G8d go red. '
+      + 'That is what "treat a complex as one owner" would have done to all twenty-one rows, '
+      + 'and it is why the licence has to cost something. G8 going green here is the '
+      + 'demonstration, not a miss, so it is not in `hits`.',
+  },
+};
+for (const k of INJECT) {
+  if (!(k in INJECTIONS)) {
+    console.error(`[probe-fabric] unknown --inject=${k}. Known: ${Object.keys(INJECTIONS).join(', ')}`);
+    process.exit(2);
+  }
+}
 const JSON_OUT = args.get('json') ?? null;
 const SHOT_DIR = path.join(ROOT, 'screenshots', 'probe-fabric');
 
@@ -211,6 +377,21 @@ const T = {
    * pair sharing a party wall fails, a genuinely tight service lane passes. Roman practice
    * agrees on the direction — a monumental precinct is entered from a street, not from
    * another precinct.
+   *
+   * **The threshold is unchanged and its POPULATION is corrected.** That last sentence is true
+   * of Rome's free-standing precincts and false of its nested ones: the Basilica Ulpia and
+   * Trajan's Column stand *inside* Trajan's Forum, and the Tabularium's facade *is* the Forum
+   * Romanum's west wall. A gate with one relation where the city has three fails a correct
+   * build for ever. So G8 asks for 7 m between monuments in DIFFERENT declared complexes, and
+   * `CLEAR_MON_MON` is also the top of G8c's no-man's-land: inside one complex a pair must be
+   * joined at `ABUT_DEPTH_M` or standing apart at `CLEAR_MON_MON`, and the open interval
+   * between the two is the one thing a complex cannot mean.
+   *
+   * This is `MAP-METHOD.md` rule 18 and `CITY-GROUND-JUDGE.md` §11.1. The repair NOT made:
+   * reading `complex` and skipping those pairs, which removes the same 21 rows from G1, G8 and
+   * G15 at once and leaves the joint bound enforced only by `tools/scratch/rome-landmarks.mjs`
+   * — the script that also chooses `draw`. An exemption from a check is not a weaker check, it
+   * is no check.
    */
   CLEAR_MON_MON: 7.0,
 
@@ -363,17 +544,94 @@ const T = {
   GRAIN_SEAM_FRACTION: 0.01,
 
   /**
-   * Scale consistency: each monument's modelled/published ratio must sit within this
-   * fraction of the **median ratio of the cohort**.
+   * **RETIRED, and the retirement is the point.** `SCALE_SPREAD_TOL` used to gate G13 —
+   * "every monument is compressed by the same factor as its cohort", against the cohort's own
+   * median. Its premise was a single uniform plan compression, and `docs/ROME-FABRIC.md` §8
+   * deliberately abolished that in favour of twenty-seven authored footprints. Its own
+   * threshold comment said 0.15 was chosen to catch the Iseum Campense at a third of its
+   * published size; that row is now 200 x 50 and the calibrating fault is fixed by other
+   * means. `CITY-GROUND-JUDGE.md` §11.2 retires it and this is where it stood.
    *
-   * A map is allowed to compress plan uniformly — Rome's `PLAN_SCALE` is a documented and
-   * defended decision. It is not allowed to compress one monument differently from
-   * another, because that is a modelling error and not a projection. Taking the reference
-   * from the cohort's own median means the gate needs no repo constant and survives a
-   * change of plan scale. 0.15 catches the Iseum Campense, which `docs/ROME.md` §6.3 says
-   * is "too small by a factor of three".
+   * The cohort median and its spread are still MEASURED and REPORTED — `fidelity.cohort` —
+   * because `MAP-METHOD.md` rule 17 asks for the distribution a per-item authored departure
+   * produces, and 0.667 with a 5.26x spread is the sentence that rule wants. It is a
+   * statistic, not a gate: G13a and G13b are the gates, and both of their rulers are outside
+   * the build.
    */
-  SCALE_SPREAD_TOL: 0.15,
+
+  /**
+   * G13a, the absolute band. A gated monument's DRAWN long dimension over its PUBLISHED long
+   * dimension must lie in `[SCALE_FLOOR, 1 + SCALE_CEIL_TOL]`.
+   *
+   * **The floor.** 0.45 is the point below which recognition fails rather than degrades.
+   * `CITY-GROUND-JUDGE.md` §4.4's eye-level hierarchy is the argument and §10.6 is the
+   * measurement: the Theatre of Marcellus is a 129.8 m building with a 32.6 m three-order
+   * facade, drawn at 44 m, and from the ground it reads as *"a curved garden wall with a tree
+   * inside it"*. At any proportion, a 44 m Theatre of Marcellus is not the Theatre of
+   * Marcellus. Below about 0.45 the answer is not to shrink further but to move something
+   * else, and that is a decision for the plan rather than a tolerance for the gate.
+   *
+   * **The reference is `PUBLISHED`, which is typed into this file.** So this cannot be
+   * satisfied by agreeing with `survey.ts` — which is precisely what the replacement offered
+   * for G13 ("does the built extent match `draw x len`?") would have measured. `draw` is an
+   * INPUT to the build.
+   *
+   * **The ceiling.** 1.25, and looser than the floor on purpose, because the drawn read
+   * includes the podium, the steps and the precinct paving and the published figure usually
+   * does not — the same argument as `ASPECT_TOL_DRAWN`, and `PRECINCT` is 1.07 of it before a
+   * single step is drawn. What the ceiling catches is a monument drawn BIGGER than published,
+   * which nothing in this file gated from the plan side at all.
+   *
+   * 0.45 fails Rome on 2 of its 10 gated present rows today (the Castra Praetoria at 0.175,
+   * which `survey.ts` documents as a deliberate compromise, and the Theatre of Marcellus at
+   * 0.221, which nothing documents). It passes Carthage on both of its rows. **This is the
+   * owner's number to raise or lower in one line, and lowering it is a statement about how
+   * small a monument may be and still be that monument.**
+   */
+  SCALE_FLOOR: 0.45,
+  SCALE_CEIL_TOL: 0.25,
+
+  /**
+   * G13b, the size order. How much bigger one published figure must be than another before
+   * the pair is taken to ASSERT an order at all.
+   *
+   * 1.05, and it is not a fudge: the literature's own spread on a single monument is a few
+   * percent — the Colosseum is published at 188 m and at 189, Caracalla's block at 214 x 110
+   * and at 218 x 112 — so two monuments published within 5 % of each other are not making a
+   * claim about which is bigger, and grading one would be grading noise. Carthage is the case
+   * that proves it: the Cothon at 325 m and the merchant harbour at 320 m differ by 1.6 %,
+   * which is inside every citation's own error bar.
+   *
+   * Rome fails at 10 of 43 asserting pairs. The count is stable across the filter — 10 of 45
+   * unfiltered, 9 of 42 at a 1.10 filter — so no inversion in the list is an artefact of it.
+   */
+  SIZE_ORDER_MIN_RATIO: 1.05,
+
+  /**
+   * G13b's refusal floor: fewer asserting pairs than this and the check reports `n/a` with the
+   * sample size instead of a verdict.
+   *
+   * `MAP-METHOD.md` rule 12 — a statistic whose sample has collapsed returns a confident
+   * number rather than an error. "0 of 1 pairs inverted" is a green light drawn from one
+   * relation and it would let a two-monument map pass a check about the order of a city.
+   * Six is the smallest population in which a 10 % inversion rate — the rate the judge
+   * measured among Rome's pairs close enough to share a frame — can register at all.
+   *
+   * Carthage lands here today: after the 1.05 filter it has NO asserting pair, so G13b is
+   * not applicable there and says so rather than passing.
+   */
+  SIZE_ORDER_MIN_PAIRS: 6,
+
+  /**
+   * When two monuments in one declared `complex` count as NESTED rather than merely near:
+   * the smaller footprint's area lying inside the larger, as a fraction of the smaller.
+   *
+   * 0.95 rather than 1.0 because a nested precinct's corner may legitimately poke out of its
+   * container's rectangle — the Basilica Ulpia is a hall inside Trajan's Forum and the two are
+   * modelled as boxes, not as the buildings. Below 0.95 the relation is an abutment or it is
+   * nothing, and `ABUT_DEPTH_M` decides which.
+   */
+  NEST_FRAC: 0.95,
 };
 
 // ===========================================================================
@@ -404,9 +662,14 @@ const PUBLISHED = {
     },
     {
       id: 'circus-maximus', name: 'Circus Maximus (track — the published pair)',
-      len: 621, wid: 118, conf: 'published', gate: true,
+      len: 621, wid: 118, conf: 'published', gate: true, offFrame: true,
       src: 'Humphrey, Roman Circuses: Arenas for Chariot Racing (1986), 56-131 — the arena '
-        + '621 × 118 m. This is the pair the owner\'s brief names.',
+        + '621 × 118 m. This is the pair the owner\'s brief names. ABSENT FROM THE MODEL AND '
+        + 'CORRECTLY SO, but for a different reason from the Baths of Diocletian: it is not an '
+        + 'anachronism, it is off this map\'s +Z edge. `layout.ts:offMapSouth` drops it because '
+        + 'its projected centre is past `CITY_Z_MAX`, and a monument with a straight cut through '
+        + 'it is worse than an absent one. See `OFF_FRAME_AGREED`: the gate checks that this row '
+        + 'is absent AND that the off-frame list is exactly the five names agreed.',
     },
     {
       id: 'circus-maximus', name: 'Circus Maximus (outer envelope, with the seating banks)',
@@ -418,12 +681,14 @@ const PUBLISHED = {
     },
     {
       id: 'baths-caracalla', name: 'Baths of Caracalla (bathing block)',
-      len: 218, wid: 112, conf: 'repo-cited', gate: true,
+      len: 218, wid: 112, conf: 'repo-cited', gate: true, offFrame: true,
       src: 'Platner & Ashby 1929 s.v. Thermae Antoninianae for the complex; DeLaine, The Baths '
         + 'of Caracalla (JRA Suppl. 25, 1997) measures the block at c. 214 × 110 m. 218 × 112 is '
         + 'the pair survey.ts states and it sits inside DeLaine\'s spread. NOTE: survey.ts\'s '
         + 'own prose says "the block is what is modelled ... 218 × 112" and then models '
-        + '218 × 140. This gate is measuring that discrepancy.',
+        + '218 × 140. This gate is measuring that discrepancy — when the row is on the map. It '
+        + 'is not: like the Circus Maximus it is off the +Z edge, and it is marked `offFrame` '
+        + 'rather than counted missing. See `OFF_FRAME_AGREED`.',
     },
     {
       id: 'baths-caracalla', name: 'Baths of Caracalla (whole precinct)',
@@ -605,6 +870,81 @@ const PUBLISHED = {
   ],
 };
 
+// ===========================================================================
+// THE EXCLUSION REGISTRIES
+//
+// `MAP-METHOD.md` rule 13: a check that goes dark is worse than a check that fails. Rule 16:
+// count and name every exclusion, and treat a check whose exclusion list is exactly the rows a
+// mechanism touches as a measurement of that mechanism's absence.
+//
+// Both lists below are typed HERE, in the probe, so that the build cannot grow its own
+// exemptions. Each is gated on its exact membership, not on its length: adding a row to the
+// build's off-frame set, or putting a sixth monument in the river, fails the gate rather than
+// joining a category.
+// ===========================================================================
+
+/**
+ * The survey rows agreed, in writing, to be off this map's +Z frame.
+ *
+ * `src/city/rome/assertions.ts` already carries the count and the sentence — *"5, agreed in
+ * writing: palatine, circus-maximus, aventine-temples, baths-caracalla, caelian-villas (the
+ * Janiculum is far-bank and survives, clamped 8 m)"* — and gates `offMap.length === 5`. **It
+ * gates the count and not the names**, so swapping the Palatine for the Pantheon passes the
+ * build's own assertion. This list gates the names, from outside the build.
+ *
+ * `docs/ROME-FABRIC.md` §4.5 is the decision and `layout.ts:offMapSouth` is the mechanism: a
+ * monument whose centre projects past `CITY_Z_MAX` is not built, because a monument with a
+ * straight cut through it is worse than an absent one. Phase 6 may bring them back as
+ * off-field silhouettes; until then their absence is a decision, not a defect, and G11
+ * distinguishes the three kinds of absence — anachronism (`absentExpected`), off-frame
+ * (`offFrame`), and missing (neither, which is a fault).
+ */
+const OFF_FRAME_AGREED = {
+  'campus-martius': [
+    'palatine', 'circus-maximus', 'aventine-temples', 'baths-caracalla', 'caelian-villas',
+  ],
+  carthage: [],
+};
+
+/**
+ * Structures whose footprint is expected to stand at or below the water surface.
+ *
+ * **G22 is not shippable without this list, and that is the judge's condition, not a
+ * convenience.** `CITY-GROUND-JUDGE.md` §11.4 endorses a water check *"conditional on
+ * exclusions being counted, named and gated"*, on rule 16's ground that a check born blind to
+ * a mechanism measures that mechanism's absence. The mechanism here is deliberate water
+ * siting, and it exists on both maps:
+ *
+ *  - **Rome, `tiber-island`.** `survey.ts` places it with `onRiver: true` and `layout.ts`
+ *    takes its x from `riverCentreX(z)` rather than from the affine map. An island in the
+ *    Tiber whose apron is at the water surface is the correct model of the Insula Tiberina,
+ *    and it is `soft` besides. The judge's own table measures its centre datum at 0.58 m and
+ *    marks it *"by design, `onRiver`"*.
+ *  - **Carthage, `cothon` and `merchant-harbour`.** These are not buildings near water; they
+ *    are water. `docs/CARTHAGE.md` §6.2 gives the merchant basin as *"320 × 150 m of water"*
+ *    and Hurst 1994 gives the Cothon as a 325 m basin. Their obstacle boxes are the basins,
+ *    so a naive water check fails them by construction — which is exactly the shape of a check
+ *    that measures a mechanism's absence rather than a fault.
+ *
+ * **What is NOT on this list, deliberately: the Theatre of Marcellus.** Its centre datum is
+ * 1.52 m against a 5.0 m water surface and three of its four box corners are wet
+ * (`CITY-GROUND-JUDGE.md` §10.6). The branch flagged it and left it drawn on the ground that
+ * the Tiber resurvey owns the channel. That reasoning is right and it is not a licence: a
+ * monument three and a half metres under the surface is visible from the ground, in the
+ * quarter the assault crosses. The right handling of a fault you must not fix is to stop
+ * drawing it — the `offMapSouth` treatment, with the name printed at boot — not to write it
+ * down. So G22 fails on it, and it fails until either the channel moves or the row does.
+ */
+const WATER_EXPECTED = {
+  'campus-martius': [
+    { id: 'tiber-island', why: 'survey.ts `onRiver: true`; x from riverCentreX(z), soft; the Insula Tiberina is in the river' },
+  ],
+  carthage: [
+    { id: 'cothon', why: 'the obstacle IS the basin — Hurst 1994, a 325 m circular harbour of water' },
+    { id: 'merchant-harbour', why: 'the obstacle IS the basin — CARTHAGE.md 6.2, "320 x 150 m of water"' },
+  ],
+};
+
 // ---------------------------------------------------------------------------
 // Server. Never reuse one this process did not start.
 // ---------------------------------------------------------------------------
@@ -709,7 +1049,39 @@ try {
   );
   await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 300000 });
 
-  const out = await page.evaluate(async ({ MAPID, PUB, TH }) => {
+  const out = await page.evaluate(async ({ MAPID, PUB, TH, OFF_FRAME, WATER_OK, INJ, DRY_ROW }) => {
+    // =====================================================================
+    // FAULT INJECTION. See `INJECTIONS` above the browser boundary for what each one proves.
+    // Every one of these perturbs the PROBE's reference data or the PROBE's thresholds. None
+    // of them touches the game, the scene, or anything under `src/`.
+    // =====================================================================
+    const injected = new Set(INJ ?? []);
+    const injectNotes = [];
+    if (injected.has('off-frame-sixth')) {
+      OFF_FRAME = [...OFF_FRAME, 'pantheon'];
+      injectNotes.push('OFF_FRAME_AGREED += pantheon (which is on the map)');
+    }
+    if (injected.has('off-frame-drop')) {
+      injectNotes.push(`OFF_FRAME_AGREED -= ${OFF_FRAME[0] ?? '(empty)'}`);
+      OFF_FRAME = OFF_FRAME.slice(1);
+    }
+    if (injected.has('water-no-exclusions')) {
+      injectNotes.push(`WATER_EXPECTED emptied (was ${WATER_OK.map((w) => w.id).join(', ') || 'empty'})`);
+      WATER_OK = [];
+    }
+    if (injected.has('water-stale-licence')) {
+      WATER_OK = [...WATER_OK, { id: DRY_ROW, why: 'INJECTED — this row is dry and publishes solids' }];
+      injectNotes.push(`WATER_EXPECTED += ${DRY_ROW} (dry)`);
+    }
+    if (injected.has('band-ceiling')) {
+      PUB = PUB.map((r) => (r.gate ? { ...r, len: r.len / 2, wid: r.wid / 2 } : r));
+      injectNotes.push('every gated PUBLISHED dimension halved, so drawn/published doubles');
+    }
+    if (injected.has('size-order-relax')) {
+      TH = { ...TH, SIZE_ORDER_MIN_RATIO: 1.0, SIZE_ORDER_MIN_PAIRS: 1 };
+      injectNotes.push('SIZE_ORDER_MIN_RATIO 1.05 -> 1.0, SIZE_ORDER_MIN_PAIRS 6 -> 1');
+    }
+
     // =====================================================================
     // Geometry, written here rather than imported. See the header: reusing
     // `obbOverlap` would restate the answer of the code under test.
@@ -906,6 +1278,27 @@ try {
     /** Shrink a rectangle toward its centre by `m` metres on each side. */
     const erode = (o, m) => ({ ...o, hw: Math.max(0.01, o.hw - m), hd: Math.max(0.01, o.hd - m) });
 
+    /**
+     * How far inside a polygon a point lies: the shortest distance from the point to any of
+     * the polygon's edges. Used by G15 to tell a party wall from a building in somebody
+     * else's plot — a shared wall crosses the boundary by the width of the wall, and 35 m is
+     * not a wall.
+     */
+    const depthInside = (poly, x, z) => {
+      let best = Infinity;
+      for (let i = 0; i < poly.length; i++) {
+        const a = poly[i];
+        const b = poly[(i + 1) % poly.length];
+        const ex = b.x - a.x;
+        const ez = b.z - a.z;
+        const l2 = ex * ex + ez * ez;
+        const t = l2 > 1e-9 ? Math.max(0, Math.min(1, ((x - a.x) * ex + (z - a.z) * ez) / l2)) : 0;
+        const d = Math.hypot(x - (a.x + ex * t), z - (a.z + ez * t));
+        if (d < best) best = d;
+      }
+      return best;
+    };
+
     const pct = (sorted, p) => {
       if (!sorted.length) return null;
       const i = Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * p)));
@@ -952,6 +1345,12 @@ try {
      * and against the number 1.00, which is what a partition means.
      */
     let regions = null;
+    /**
+     * The build's own claim about which survey rows are off this map's frame, read as a
+     * DECLARATION and graded against `OFF_FRAME_AGREED`, which is typed into the probe. Not a
+     * ruler: the question asked of it is "are these the five that were agreed?".
+     */
+    let declaredOffFrame = null;
     const importNotes = [];
     try {
       if (MAPID === 'campus-martius') {
@@ -960,18 +1359,26 @@ try {
         planLandmarks = L.LANDMARKS;
         planScaleDeclared = L.PLAN_SCALE;
         precinctDeclared = L.PRECINCT;
-        owners = L.LANDMARKS.map((l) => ({ id: l.id, name: l.name, x: l.x, z: l.z, reach: Math.hypot(l.hw, l.hd), soft: !!l.soft }));
+        owners = L.LANDMARKS.map((l) => ({
+          id: l.id, name: l.name, x: l.x, z: l.z, reach: Math.hypot(l.hw, l.hd), soft: !!l.soft,
+          complex: l.complex ?? null, onRiver: !!l.onRiver, farBank: !!l.farBank,
+        }));
         regions = L.DISTRICTS.map((d) => ({ id: d.id, x: d.x, z: d.z, hw: d.hw, hd: d.hd, rot: d.rot }));
+        declaredOffFrame = (L.OFF_MAP_SOUTH ?? []).map((m) => m.id);
       } else if (MAPID === 'carthage') {
         const L = await import('/src/city/carthage/layout.ts');
         armature = L.PUNIC_WAYS.map((w) => ({ id: w.id, cls: w.cls, path: w.path, width: w.width }));
-        owners = L.MONUMENTS.map((m) => ({ id: m.id, name: m.name, x: m.x, z: m.z, reach: Math.hypot(m.hw + m.clear, m.hd + m.clear), soft: false }));
+        owners = L.MONUMENTS.map((m) => ({
+          id: m.id, name: m.name, x: m.x, z: m.z, reach: Math.hypot(m.hw + m.clear, m.hd + m.clear),
+          soft: false, complex: m.complex ?? null, onRiver: false, farBank: false,
+        }));
         regions = L.QUARTERS.map((q) => ({ id: q.id, x: q.x, z: q.z, hw: q.hw, hd: q.hd, rot: q.rot }));
+        declaredOffFrame = [];
       }
     } catch (e) {
       importNotes.push(`plan import failed: ${e && e.message ? e.message : String(e)}`);
     }
-    if (!owners) owners = landmarkRefs.map((l) => ({ id: l.id, name: l.name, x: l.x, z: l.z, reach: 60, soft: false }));
+    if (!owners) owners = landmarkRefs.map((l) => ({ id: l.id, name: l.name, x: l.x, z: l.z, reach: 60, soft: false, complex: null, onRiver: false, farBank: false }));
     /** The owner whose own footprint a point is most plausibly inside. */
     const ownerAt = (x, z) => {
       let best = null;
@@ -1012,6 +1419,169 @@ try {
     const monArea = mons.reduce((s, e) => s + e.area, 0);
     const bldArea = bldgs.reduce((s, e) => s + e.area, 0);
     const builtArea = monArea + bldArea;
+
+    // =====================================================================
+    // STRUCTURES AND COMPLEXES
+    //
+    // Everything above works in published BOXES. A complex is a claim about STRUCTURES — the
+    // Theatre of Pompey and its porticus post scaenam are one piece of fabric — and a
+    // structure may be several boxes (Carthage's Cothon is thirty-one). So the complex tests
+    // run on a structure-level table built from the same boxes, and every gap below is the
+    // minimum over the two structures' boxes.
+    //
+    // `complex` is read from `LANDMARKS`, which is the build's own DECLARATION. That is the
+    // point: `MAP-METHOD.md` rule 18 says a check that is wrong about the world gets the
+    // missing relation, and the relation is only worth having if the declaration itself is
+    // gradeable. What is graded is not "is this pair allowed to touch" — the build asserts
+    // that — but "does the drawn city contain the relation the survey asserts".
+    // =====================================================================
+    const structs = new Map();
+    for (const e of mons) {
+      let st = structs.get(e.id);
+      if (!st) {
+        const o = owners.find((q) => q.id === e.id) ?? null;
+        structs.set(e.id, (st = {
+          id: e.id, name: e.name, soft: !!e.soft,
+          complex: o ? (o.complex ?? null) : null,
+          onRiver: o ? !!o.onRiver : false, farBank: o ? !!o.farBank : false,
+          boxes: [], area: 0, x: e.o.x, z: e.o.z, biggest: 0,
+        }));
+      }
+      st.boxes.push(e);
+      st.area += e.area;
+      if (e.area > st.biggest) { st.biggest = e.area; st.x = e.o.x; st.z = e.o.z; }
+    }
+    const structList = [...structs.values()];
+
+    /**
+     * The relation between two structures, measured on their boxes and nothing else.
+     *
+     *  `gapM`     the closest approach. Negative where they interpenetrate, and then it is the
+     *             SAT depth, so `-0.9` means nine tenths of a metre of shared masonry.
+     *  `nestFrac` the smaller structure's area lying inside the larger, over its own area.
+     *  `joined`   nested at `NEST_FRAC`, or abutting at `ABUT_DEPTH_M`. This is G8c's relation
+     *             and G8d's edge, and it is the whole cost of declaring a complex.
+     */
+    const relate = (a, b) => {
+      let gap = Infinity;
+      let inside = 0;
+      for (const ea of a.boxes) {
+        for (const eb of b.boxes) {
+          const ar = bbClear(ea.bb, eb.bb) ? 0 : clipArea(ea.poly, eb.poly);
+          inside += ar;
+          const v = ar > TH.NOISE_M2 ? -satDepth(ea.poly, eb.poly) : polyGap(ea.poly, eb.poly);
+          if (v < gap) gap = v;
+        }
+      }
+      const smaller = Math.min(a.area, b.area);
+      // Boxes of one composite may overlap each other, so the summed clip can exceed the
+      // smaller structure's own area. Clamped, and the clamp is only reachable on a composite.
+      const nestFrac = smaller > 0 ? Math.min(1, inside / smaller) : 0;
+      const nested = nestFrac >= TH.NEST_FRAC;
+      const abutting = Math.abs(gap) <= TH.ABUT_DEPTH_M;
+      return {
+        a, b, gapM: gap, overlapM2: inside, nestFrac, nested, abutting,
+        joined: nested || abutting,
+        sameComplex: a.complex !== null && a.complex === b.complex,
+      };
+    };
+
+    /** Every unordered pair of distinct structures, related. 27 structures on Rome, so 351. */
+    let structPairs = [];
+    for (let i = 0; i < structList.length; i++) {
+      for (let j = i + 1; j < structList.length; j++) {
+        structPairs.push(relate(structList[i], structList[j]));
+      }
+    }
+    if (injected.has('complex-invent')) {
+      const cand = structPairs
+        .filter((r) => !r.a.soft && !r.b.soft && !r.sameComplex)
+        .sort((x, y) => x.gapM - y.gapM)[0] ?? null;
+      if (cand) {
+        cand.a.complex = 'INJECTED';
+        cand.b.complex = 'INJECTED';
+        injectNotes.push(`declared ${cand.a.id} + ${cand.b.id} one complex "INJECTED" (they stand ${cand.gapM.toFixed(2)} m apart)`);
+        structPairs = [];
+        for (let i = 0; i < structList.length; i++) {
+          for (let j = i + 1; j < structList.length; j++) {
+            structPairs.push(relate(structList[i], structList[j]));
+          }
+        }
+      } else {
+        injectNotes.push('complex-invent found no cross-complex pair to join');
+      }
+    }
+
+    /**
+     * The declared complexes, and whether each is ONE PIECE of fabric.
+     *
+     * `MAP-METHOD.md` rule 18's test for a correction rather than a relaxation: the new class
+     * must be able to fail, and declaring it must take on an obligation rather than shed one.
+     * This is the obligation. Union-find over the complex's own rows with an edge wherever
+     * `relate().joined`, then count the components — *not* "every pair abuts", because a chain
+     * of abutments is one building whose two ends do not touch, and connected is what "one
+     * continuous masonry front" means.
+     *
+     * `connectAtM` is the diagnostic that makes the failure actionable: the smallest gap
+     * threshold at which the complex WOULD be one piece, which is the longest edge in its
+     * minimum spanning tree. A complex that needs 27 m is not a complex.
+     */
+    const complexes = (() => {
+      const byName = new Map();
+      for (const st of structList) {
+        if (!st.complex) continue;
+        if (!byName.has(st.complex)) byName.set(st.complex, []);
+        byName.get(st.complex).push(st);
+      }
+      const out = [];
+      for (const [name, rows] of byName) {
+        const idx = new Map(rows.map((r, i) => [r.id, i]));
+        const parent = rows.map((_, i) => i);
+        const find = (i) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+        const link = (i, j) => { const a = find(i); const b = find(j); if (a !== b) parent[a] = b; };
+        const pairs = [];
+        for (let i = 0; i < rows.length; i++) {
+          for (let j = i + 1; j < rows.length; j++) {
+            const r = relate(rows[i], rows[j]);
+            pairs.push(r);
+            if (r.joined) link(i, j);
+          }
+        }
+        const comps = new Map();
+        for (let i = 0; i < rows.length; i++) {
+          const root = find(i);
+          if (!comps.has(root)) comps.set(root, []);
+          comps.get(root).push(rows[i].id);
+        }
+        // Kruskal on the gap, to find the threshold that would make it one piece.
+        const p2 = rows.map((_, i) => i);
+        const f2 = (i) => { while (p2[i] !== i) { p2[i] = p2[p2[i]]; i = p2[i]; } return i; };
+        let joinedCount = 0;
+        let connectAt = 0;
+        for (const r of [...pairs].sort((x, y) => x.gapM - y.gapM)) {
+          const a = f2(idx.get(r.a.id));
+          const b = f2(idx.get(r.b.id));
+          if (a === b) continue;
+          p2[a] = b;
+          joinedCount++;
+          connectAt = Math.max(connectAt, r.gapM);
+          if (joinedCount === rows.length - 1) break;
+        }
+        out.push({
+          name, rows: rows.length, members: rows.map((r) => r.id),
+          pieces: comps.size,
+          piecesDetail: [...comps.values()].map((ids) => ids.join('+')),
+          connectAtM: rows.length > 1 ? connectAt : null,
+          pairs,
+          degenerate: rows.length < 2,
+          noMansLand: pairs.filter((r) => r.gapM > TH.ABUT_DEPTH_M && r.gapM < TH.CLEAR_MON_MON),
+          apart: pairs.filter((r) => r.gapM >= TH.CLEAR_MON_MON),
+          joinedPairs: pairs.filter((r) => r.joined).length,
+        });
+      }
+      out.sort((a, b) => b.rows - a.rows);
+      return out;
+    })();
 
     // ---- 1. overlaps, by area ------------------------------------------
     /**
@@ -1155,7 +1725,7 @@ try {
      * has never asked: is a monument's drawn stone standing inside somebody else's plot?
      * Eroded 0.5 m so a shared kerb line is not a hit.
      */
-    const plots = [...mons, ...bldgs].map((e) => ({ id: e.id, name: e.name, kind: e.o.kind, poly: obPoly(erode(e.o, 0.5)), bb: e.bb }));
+    const plots = [...mons, ...bldgs].map((e) => ({ id: e.id, name: e.name, kind: e.o.kind, poly: obPoly(erode(e.o, 0.5)), bb: e.bb, cx: e.o.x, cz: e.o.z }));
     const plotGrid = makeGrid(plots.map((e) => ({ bb: e.bb })));
     const stoneInMon = new Map();
     const stoneInBld = new Map();
@@ -1224,10 +1794,43 @@ try {
               // not gated.
               const sink = c.soft ? stoneSoft : (q.kind === 'monument' ? stoneInMon : stoneInBld);
               const key = `${c.id}>${q.id}`;
-              const cur = sink.get(key) ?? { stone: c.name, standingIn: q.name, hits: 0, x: 0, z: 0 };
+              const cur = sink.get(key) ?? {
+                stone: c.name, standingIn: q.name, stoneId: c.id, intoId: q.id,
+                hits: 0, x: 0, z: 0, deepestM: 0, toFarEdgeM: null,
+              };
               cur.hits++;
               cur.x = x;
               cur.z = z;
+              // How far past the boundary this vertex is. `q.poly` is eroded 0.5 m (see
+              // `plots`), so the true depth is half a metre more and the 0.5 is added back:
+              // a party wall must not be reported as a trespass by the width of the erosion.
+              const dIn = depthInside(q.poly, x, z) + 0.5;
+              if (dIn > cur.deepestM) { cur.deepestM = dIn; cur.x = x; cur.z = z; }
+              /*
+               * And how close this vertex gets to the container's FAR boundary, which is what
+               * "through its far side" means. The axis is from the container's centre toward the
+               * trespasser's centre; `far` is the container's own reach along the opposite
+               * direction; `s` is how far past the centre this vertex has travelled that way.
+               * `far - s` is what is left on the other side, and once that is a party wall's
+               * thickness the stone has crossed the building.
+               */
+              const cx = q.cx;
+              const cz = q.cz;
+              let ux = c.x - cx;
+              let uz = c.z - cz;
+              const ul = Math.hypot(ux, uz);
+              if (ul > 1e-6) {
+                ux /= ul;
+                uz /= ul;
+                let far = 0;
+                for (const v of q.poly) {
+                  const t = -((v.x - cx) * ux + (v.z - cz) * uz);
+                  if (t > far) far = t;
+                }
+                const sProj = -((x - cx) * ux + (z - cz) * uz);
+                const left = far - sProj;
+                if (cur.toFarEdgeM === null || left < cur.toFarEdgeM) cur.toFarEdgeM = left;
+              }
               sink.set(key, cur);
             });
           }
@@ -1372,7 +1975,7 @@ try {
       const drawnShort = d ? Math.min(d.u, d.v) : null;
       fid.push({
         id: row.id, name: row.name, conf: row.conf, gate: !!row.gate, alt: !!row.alt,
-        absentExpected: !!row.absentExpected,
+        absentExpected: !!row.absentExpected, offFrame: !!row.offFrame,
         publishedLong: pubLong, publishedShort: pubShort, publishedAspect: r3(pubAspect),
         present: !!m,
         publishedBoxes: m ? m.boxes : 0,
@@ -1400,6 +2003,121 @@ try {
       f.scaleErrPlan = f.planScaleRatio === null || medPlan === null ? null : r3(Math.abs(f.planScaleRatio / medPlan - 1));
       f.scaleErrDrawn = f.drawnScaleRatio === null || medDrawn === null ? null : r3(Math.abs(f.drawnScaleRatio / medDrawn - 1));
     }
+    /**
+     * The cohort's distribution — REPORTED, NOT GATED. This is what retired G13 used to gate
+     * and `MAP-METHOD.md` rule 17 is why it is still printed: *"a per-item authored departure
+     * must be graded on the distribution it produces and not only on each item"*, and the
+     * sentence that rule wants about this build is a median of 0.667 with a 5.26x spread.
+     * Sample size is printed with it, because a median of three rows is not a cohort.
+     */
+    const cohort = {
+      n: gated.length,
+      medianDrawnOverPublished: r3(medDrawn),
+      medianPlanOverPublished: r3(medPlan),
+      minDrawnOverPublished: r3(drawnRatios[0] ?? null),
+      maxDrawnOverPublished: r3(drawnRatios[drawnRatios.length - 1] ?? null),
+      spreadX: drawnRatios.length > 1 && drawnRatios[0] > 0
+        ? r2(drawnRatios[drawnRatios.length - 1] / drawnRatios[0]) : null,
+      note: 'reported only. G13 gated this and is retired; G13a and G13b gate against PUBLISHED.',
+    };
+
+    /**
+     * G13a — the ABSOLUTE band. Drawn long dimension over published long dimension, per row,
+     * against `SCALE_FLOOR` and `1 + SCALE_CEIL_TOL`.
+     *
+     * Per-ROW, not a statistic, so a sample of two is two verdicts rather than a collapsed
+     * average — which is why this reads on Carthage's two rows and G13b does not. The ruler is
+     * `PUBLISHED`, typed into this file, so agreeing with `survey.ts` cannot satisfy it.
+     */
+    const band = (() => {
+      const rowsIn = gated.filter((f) => f.drawnScaleRatio !== null);
+      const lo = rowsIn.filter((f) => f.drawnScaleRatio < TH.SCALE_FLOOR);
+      const hi = rowsIn.filter((f) => f.drawnScaleRatio > 1 + TH.SCALE_CEIL_TOL);
+      return {
+        n: rowsIn.length,
+        belowFloor: lo.sort((a, b) => a.drawnScaleRatio - b.drawnScaleRatio)
+          .map((f) => ({ id: f.id, ratio: f.drawnScaleRatio, drawnLong: f.drawnLong, publishedLong: f.publishedLong })),
+        aboveCeiling: hi.sort((a, b) => b.drawnScaleRatio - a.drawnScaleRatio)
+          .map((f) => ({ id: f.id, ratio: f.drawnScaleRatio, drawnLong: f.drawnLong, publishedLong: f.publishedLong })),
+      };
+    })();
+
+    /**
+     * G13b — the SIZE ORDER, which is the check nobody had.
+     *
+     * The previous phase proved **0 of 860 inverted position relations** and the tree read that
+     * as covering the ground. It does not: a uniform plan scale preserves size order by
+     * definition and twenty-seven authored footprints have no reason to. The reference is two
+     * typed-in published dimensions, so this is not the survey grading its own `draw`.
+     *
+     * A pair only counts where the published figures differ by more than
+     * `SIZE_ORDER_MIN_RATIO` — two monuments published within the literature's own spread of
+     * each other are not asserting an order, and grading one would be grading noise. Below
+     * `SIZE_ORDER_MIN_PAIRS` asserting pairs the check REFUSES rather than reports, per rule 12.
+     */
+    const order = (() => {
+      const rowsIn = gated.filter((f) => f.drawnScaleRatio !== null && !f.alt);
+      const seen = new Set();
+      const uniq = [];
+      for (const f of rowsIn) { if (!seen.has(f.id)) { seen.add(f.id); uniq.push(f); } }
+      const inverted = [];
+      let asserting = 0;
+      for (let i = 0; i < uniq.length; i++) {
+        for (let j = i + 1; j < uniq.length; j++) {
+          const a = uniq[i];
+          const b = uniq[j];
+          const pubR = Math.max(a.publishedLong, b.publishedLong) / Math.min(a.publishedLong, b.publishedLong);
+          if (!(pubR > TH.SIZE_ORDER_MIN_RATIO)) continue;
+          asserting++;
+          if ((a.publishedLong - b.publishedLong) * (a.drawnLong - b.drawnLong) >= 0) continue;
+          const big = a.publishedLong > b.publishedLong ? a : b;
+          const small = a.publishedLong > b.publishedLong ? b : a;
+          inverted.push({
+            biggerPublished: big.id, smallerPublished: small.id,
+            publishedRatio: r2(big.publishedLong / small.publishedLong),
+            drawnRatio: r2(big.drawnLong / small.drawnLong),
+            wrongByX: r2((big.publishedLong / small.publishedLong) / (big.drawnLong / small.drawnLong)),
+            publishedM: `${big.publishedLong} v ${small.publishedLong}`,
+            drawnM: `${big.drawnLong} v ${small.drawnLong}`,
+          });
+        }
+      }
+      inverted.sort((x, y) => y.wrongByX - x.wrongByX);
+      /**
+       * The same count over the wider SOURCED population — every row with a citation, gated or
+       * not. Reported and never gated, because several of those rows are a documented choice
+       * between two published readings of one monument (the Baths of Trajan's precinct against
+       * its block), and an inversion there is a design decision rather than a fault.
+       */
+      const wide = (() => {
+        const w = [];
+        const seenW = new Set();
+        for (const f of fid) {
+          if (f.conf === 'unsourced' || f.alt || !f.present || f.drawnLong === null) continue;
+          if (seenW.has(f.id)) continue;
+          seenW.add(f.id);
+          w.push(f);
+        }
+        let tot = 0;
+        let inv = 0;
+        for (let i = 0; i < w.length; i++) {
+          for (let j = i + 1; j < w.length; j++) {
+            const pubR = Math.max(w[i].publishedLong, w[j].publishedLong) / Math.min(w[i].publishedLong, w[j].publishedLong);
+            if (!(pubR > TH.SIZE_ORDER_MIN_RATIO)) continue;
+            tot++;
+            if ((w[i].publishedLong - w[j].publishedLong) * (w[i].drawnLong - w[j].drawnLong) < 0) inv++;
+          }
+        }
+        return { rows: w.length, assertingPairs: tot, inverted: inv };
+      })();
+      return {
+        rows: uniq.length, assertingPairs: asserting, invertedPairs: inverted.length,
+        pctInverted: asserting > 0 ? r2((inverted.length / asserting) * 100) : null,
+        enough: asserting >= TH.SIZE_ORDER_MIN_PAIRS,
+        worst: inverted.slice(0, 12),
+        widerSourcedPopulation_notGated: wide,
+      };
+    })();
 
     // =====================================================================
     // 4. Where the ordinary fabric comes from
@@ -1514,6 +2232,106 @@ try {
       return circuit[circuit.length - 1].z;
     };
     const terrain = ctx.tryGet ? ctx.tryGet('terrain') : null;
+
+    // =====================================================================
+    // G22 — nothing stands under the water surface.
+    //
+    // `heightAt` appeared ONCE in the two thousand lines of this file before this pass, in
+    // G19's denominator, and the judge's §7.9 had measured sixty solids entirely below the
+    // water line two phases earlier. The datum is `terrain.waterLevel` — the height the
+    // renderer actually draws the water at, per map, 5.0 m on Rome and the sea level on
+    // Carthage — because the question is not "where does the survey think the river is" but
+    // "is this masonry under the water the player can see".
+    //
+    // Five samples per solid: the centre and the four corners of its own oriented box. A
+    // solid is a FAULT when its centre is under the surface; `cornersWet` and `allWet` are
+    // reported beside it, because a building with two wet corners is on a bank and a building
+    // with five is in the channel, and the two want different fixes.
+    //
+    // Every exclusion is named, counted, and gated on its MEMBERSHIP against `WATER_EXPECTED`
+    // — `MAP-METHOD.md` rule 16, and the condition the judge attached to endorsing this check.
+    // =====================================================================
+    const water = (() => {
+      if (!terrain || typeof terrain.heightAt !== 'function') {
+        return { measured: false, why: 'no terrain system in this context' };
+      }
+      const level = typeof terrain.waterLevel === 'number' ? terrain.waterLevel : null;
+      if (level === null) return { measured: false, why: 'the terrain publishes no waterLevel' };
+      const okIds = new Set(WATER_OK.map((w) => w.id));
+      const sampled = [];
+      const rowsFor = (list, kind) => {
+        for (const e of list) {
+          const pts = [{ x: e.o.x, z: e.o.z }, ...e.poly.map((q) => ({ x: q.x, z: q.z }))];
+          const hs = pts.map((q) => terrain.heightAt(q.x, q.z));
+          const centreH = hs[0];
+          const cornersWet = hs.slice(1).filter((h) => h <= level).length;
+          sampled.push({
+            id: e.id, name: e.name, kind,
+            centreDatumM: r2(centreH), cornersWet, corners: hs.length - 1,
+            centreWet: centreH <= level,
+            allWet: hs.every((h) => h <= level),
+            areaM2: e.area, x: r2(e.o.x), z: r2(e.o.z),
+          });
+        }
+      };
+      rowsFor(mons, 'monument');
+      rowsFor(bldgs, 'building');
+      rowsFor(walls, 'wall');
+      const wet = sampled.filter((r) => r.centreWet);
+      const excluded = wet.filter((r) => okIds.has(r.id));
+      const faults = wet.filter((r) => !okIds.has(r.id));
+      /*
+       * The exclusion accounting, gated on MEMBERSHIP rather than on length — and it
+       * distinguishes two ways a licence can go unused, because the first draft of this check
+       * conflated them and reported a false fault.
+       *
+       *  - **stale**: the row publishes solids and none of them is wet. The list is describing
+       *    a city that is no longer here, which is rule 13's "check that goes dark", and it is
+       *    a fault.
+       *  - **not built**: the row publishes no collision solid at all. Rome's `tiber-island` is
+       *    `soft` landscape and is not in `getObstacles()`, so there is nothing to be wet. That
+       *    is not a stale list, it is a licence held against a row that may become solid later,
+       *    and faulting it would fault the probe rather than the city. Reported, not gated.
+       */
+      const solidIds = new Set(sampled.map((r) => r.id));
+      const excludedIds = new Set(excluded.map((r) => r.id));
+      const staleLicences = WATER_OK.filter((w) => !excludedIds.has(w.id) && solidIds.has(w.id));
+      const notBuilt = WATER_OK.filter((w) => !solidIds.has(w.id));
+      const byName = new Map();
+      for (const f of faults) {
+        const cur = byName.get(f.id) ?? { id: f.id, name: f.name, kind: f.kind, solids: 0, worstDatumM: 99, allWet: 0, areaM2: 0, x: f.x, z: f.z };
+        cur.solids++;
+        cur.areaM2 += f.areaM2;
+        if (f.centreDatumM < cur.worstDatumM) { cur.worstDatumM = f.centreDatumM; cur.x = f.x; cur.z = f.z; }
+        if (f.allWet) cur.allWet++;
+        byName.set(f.id, cur);
+      }
+      return {
+        measured: true,
+        waterLevelM: level,
+        solidsSampled: sampled.length,
+        centreWet: wet.length,
+        entirelyWet: sampled.filter((r) => r.allWet).length,
+        anyCornerWet: sampled.filter((r) => r.cornersWet > 0).length,
+        faultSolids: faults.length,
+        faultStructures: [...byName.values()].sort((a, b) => a.worstDatumM - b.worstDatumM),
+        faultsByKind: {
+          monument: faults.filter((r) => r.kind === 'monument').length,
+          building: faults.filter((r) => r.kind === 'building').length,
+          wall: faults.filter((r) => r.kind === 'wall').length,
+        },
+        excludedSolids: excluded.length,
+        excludedNamed: WATER_OK.map((w) => ({
+          id: w.id, why: w.why,
+          solidsPublished: sampled.filter((r) => r.id === w.id).length,
+          wetSolids: excluded.filter((r) => r.id === w.id).length,
+        })),
+        staleLicences: staleLicences.map((w) => w.id),
+        licencesNotBuiltAsSolids: notBuilt.map((w) => w.id),
+        worstWet: sampled.filter((r) => r.cornersWet > 0 || r.centreWet)
+          .sort((a, b) => a.centreDatumM - b.centreDatumM).slice(0, 12),
+      };
+    })();
     const partition = await (async () => {
       if (!regions || !terrain || circuit.length === 0) {
         return { measured: false, why: !regions ? 'no region list for this map' : 'no terrain or no built circuit' };
@@ -1693,7 +2511,20 @@ try {
     // =====================================================================
     const checks = [];
     let boxStoneMismatch = [];
-    const gate = (id, question, ok, measured, threshold) => checks.push({ id, question, ok: !!ok, measured, threshold });
+    let out_g15 = [];
+    const gate = (id, question, ok, measured, threshold) => checks.push({ id, question, ok: !!ok, na: false, measured, threshold });
+    /**
+     * **Not applicable is a third outcome and it is not a pass.**
+     *
+     * A check whose population is empty on this map — G8c and G8d on Carthage, which declares
+     * no complexes — cannot fail, and a check that cannot fail is not an instrument. Counting
+     * it green would put a number on the verdict line that this project has shipped several
+     * times: a gate that has never gone red. So it is reported `n/a` with the reason and the
+     * sample size, it is taken OUT of this map's denominator, and the verdict line names it.
+     * The denominators therefore differ between maps, which is correct: Carthage is being asked
+     * fewer questions because Carthage makes fewer claims.
+     */
+    const skip = (id, question, why, threshold) => checks.push({ id, question, ok: false, na: true, measured: `n/a — ${why}`, threshold });
 
     gate('G1', 'no two monument footprints intersect',
       mm.pairs === 0, `${mm.pairs} faulting pairs, ${r2(mm.totalM2)} m2, worst depth ${r2(mm.worstDepth)} m`
@@ -1710,10 +2541,78 @@ try {
       monVsWall.totalM2 <= TH.WALL_INTRUSION_M2, `${monVsWall.pairs} pairs, ${r2(monVsWall.totalM2)} m2, ${monVsWall.distinctA} monuments`, `<= ${TH.WALL_INTRUSION_M2} m2`);
     gate('G7', 'no DRAWN wall stone is drawn inside a monument (geometry)',
       wallInMon.size === 0, `${[...wallInMon.values()].reduce((s, e) => s + e.hits, 0)} sampled wall vertices inside ${wallInMon.size} monument footprints, of ${geomStats.wallVerts} sampled`, '0 vertices');
+    /**
+     * G8 / G8c / G8d — the street, the joint, and the complex.
+     *
+     * One measurement, three questions, and the split is the whole of `CITY-GROUND-JUDGE.md`
+     * §11.1. G8's threshold and comment are unchanged; what changed is that it is now asked of
+     * the population its comment is right about. G8c and G8d are what declaring a complex now
+     * costs. Sample sizes are printed on all three, per rule 12.
+     */
+    const monPairs = structPairs.filter((r) => !r.a.soft && !r.b.soft);
+    const softPairs = structPairs.filter((r) => r.a.soft || r.b.soft);
     {
-      const k = clearance.byClass['monument/monument'];
-      gate('G8', 'every monument keeps its street from its neighbour',
-        k ? k.minM >= TH.CLEAR_MON_MON : true, k ? `min ${k.minM} m (${k.between})` : 'no monument pairs', `>= ${TH.CLEAR_MON_MON} m`);
+      const cross = monPairs.filter((r) => !r.sameComplex);
+      const short = cross.filter((r) => r.gapM < TH.CLEAR_MON_MON).sort((x, y) => x.gapM - y.gapM);
+      const softNames = [...new Set(structList.filter((st) => st.soft).map((st) => st.id))];
+      const softClose = softPairs.filter((r) => r.gapM < TH.CLEAR_MON_MON).length;
+      gate('G8', 'every monument keeps its street from a monument in ANOTHER complex',
+        short.length === 0,
+        `${short.length} of ${cross.length} cross-complex pairs short of the street`
+        + (short.length ? `; worst ${r2(short[0].gapM)} m (${short[0].a.id} / ${short[0].b.id})` : '')
+        + `; closest legal ${r2(cross.length ? Math.min(...cross.map((r) => r.gapM)) : null)} m`
+        + ` | EXCLUSION, named: landscape (soft) ${softNames.length} rows`
+        + (softNames.length
+          ? ` [${softNames.join(', ')}], ${softClose} of ${softPairs.length} soft pairs inside`
+            + ` ${TH.CLEAR_MON_MON} m — reported, not gated, because the survey says in as many`
+            + ` words that "a temple standing in the middle of the Horti Sallustiani is how Rome`
+            + ` actually worked"`
+          : ' — no soft row publishes a collision box on this map, so this exclusion is EMPTY'
+            + ' rather than granted, and nothing is using the licence')
+        + ` | excluded, one complex: ${monPairs.length - cross.length} pairs -> G8c and G8d`,
+        `0 pairs under ${TH.CLEAR_MON_MON} m`);
+    }
+    {
+      const inC = monPairs.filter((r) => r.sameComplex);
+      const bad = inC.filter((r) => r.gapM > TH.ABUT_DEPTH_M && r.gapM < TH.CLEAR_MON_MON)
+        .sort((x, y) => x.gapM - y.gapM);
+      if (inC.length === 0) {
+        skip('G8c', 'a pair inside one declared complex is JOINED, not in a no-man\'s-land',
+          `this map declares no complexes, so there are no in-complex pairs to grade`
+          + ` (${structList.length} monument structures, ${structPairs.length} pairs, 0 in a complex)`,
+          `0 pairs in (${TH.ABUT_DEPTH_M}, ${TH.CLEAR_MON_MON}) m`);
+      } else {
+        gate('G8c', 'a pair inside one declared complex is JOINED, not in a no-man\'s-land',
+          bad.length === 0,
+          `${bad.length} of ${inC.length} in-complex pairs stand in the`
+          + ` (${TH.ABUT_DEPTH_M}, ${TH.CLEAR_MON_MON}) m no-man's-land`
+          + (bad.length ? `: ${bad.map((r) => `${r.a.id}/${r.b.id} ${r2(r.gapM)} m`).join('; ')}` : '')
+          + ` | joined: ${inC.filter((r) => r.joined).length}`
+          + ` (nested ${inC.filter((r) => r.nested).length}, abutting ${inC.filter((r) => r.abutting && !r.nested).length})`
+          + `; standing apart at >= ${TH.CLEAR_MON_MON} m: ${inC.filter((r) => r.gapM >= TH.CLEAR_MON_MON).length}`
+          + ` (G8d's problem, not this one)`,
+          `0 pairs in (${TH.ABUT_DEPTH_M}, ${TH.CLEAR_MON_MON}) m — a complex is a party wall or it is a street`);
+      }
+    }
+    {
+      const gradeable = complexes.filter((c) => !c.degenerate);
+      const broken = gradeable.filter((c) => c.pieces > 1);
+      if (gradeable.length === 0) {
+        skip('G8d', 'a declared complex is ONE connected piece of fabric',
+          `this map declares no complexes with more than one row`
+          + ` (${complexes.length} declared, ${complexes.filter((c) => c.degenerate).length} of them single-row)`,
+          '1 connected component per complex');
+      } else {
+        gate('G8d', 'a declared complex is ONE connected piece of fabric',
+          broken.length === 0,
+          `${broken.length} of ${gradeable.length} declared complexes are not one piece`
+          + (broken.length
+            ? `: ${broken.map((c) => `${c.name} ${c.pieces} pieces [${c.piecesDetail.join(' | ')}], one piece only at ${r2(c.connectAtM)} m`).join('; ')}`
+            : '')
+          + ` | all: ${complexes.map((c) => `${c.name} ${c.rows} rows ${c.pieces}p@${r2(c.connectAtM)}m`).join(', ')}`,
+          '1 connected component per complex, joined at nested or <= '
+          + `${TH.ABUT_DEPTH_M} m`);
+      }
     }
     {
       const k = clearance.byClass['building/monument'];
@@ -1725,13 +2624,41 @@ try {
       gate('G10', 'no building has negative clearance to another',
         k ? k.minM >= TH.CLEAR_BLD_BLD : true, k ? `min ${k.minM} m (${k.between})` : 'no pairs', `>= ${TH.CLEAR_BLD_BLD} m`);
     }
+    /**
+     * G11 — three kinds of absence, and only one of them is a fault.
+     *
+     * An anachronism (`absentExpected`) is absent because it did not exist in 271. A row off
+     * the +Z frame (`offFrame`) is absent because the owner decided in writing that a monument
+     * with a straight cut through it is worse than an absent one. Anything else absent is
+     * missing, which is a fault.
+     *
+     * **The category is gated on its MEMBERSHIP, not its size**, which is the condition
+     * `CITY-GROUND-JUDGE.md` §11.4 attached and rule 16 demands. `src/city/rome/assertions.ts`
+     * gates `offMap.length === 5` and names the five only in its message, so swapping the
+     * Palatine for the Pantheon passes the build's own assertion and fails this one.
+     */
     {
-      const missing = fid.filter((f) => f.gate && !f.present && !f.absentExpected).map((f) => f.name);
+      const missing = fid.filter((f) => f.gate && !f.present && !f.absentExpected && !f.offFrame).map((f) => f.name);
       const wrongPresent = fid.filter((f) => f.absentExpected && f.present).map((f) => f.name);
-      gate('G11', 'every sourced monument is present, and the anachronisms are not',
-        missing.length === 0 && wrongPresent.length === 0,
-        missing.length || wrongPresent.length ? `missing: [${missing.join(', ')}]; present but should not be: [${wrongPresent.join(', ')}]` : `${gated.length} sourced monuments present`,
-        'all present, no anachronisms');
+      const offFrameDrawn = fid.filter((f) => f.offFrame && f.present).map((f) => f.name);
+      const declared = [...(declaredOffFrame ?? [])].sort();
+      const agreed = [...OFF_FRAME].sort();
+      const unexpectedOff = declared.filter((id) => !agreed.includes(id));
+      const missingOff = agreed.filter((id) => !declared.includes(id));
+      const listOk = declaredOffFrame !== null && unexpectedOff.length === 0 && missingOff.length === 0;
+      gate('G11', 'every sourced monument is present; the anachronisms and the off-frame rows are the agreed ones, by name',
+        missing.length === 0 && wrongPresent.length === 0 && offFrameDrawn.length === 0 && listOk,
+        `${gated.length} of ${fid.filter((f) => f.gate).length} gated rows present`
+        + `; missing (a fault): [${missing.join(', ')}]`
+        + `; anachronisms drawn anyway: [${wrongPresent.join(', ')}]`
+        + `; off-frame rows drawn anyway: [${offFrameDrawn.join(', ')}]`
+        + ` | EXCLUSIONS, named: absent as anachronism ${fid.filter((f) => f.absentExpected).length}`
+        + ` [${fid.filter((f) => f.absentExpected).map((f) => f.id).join(', ')}]`
+        + `; off this map's +Z frame ${declared.length} [${declared.join(', ')}]`
+        + (declaredOffFrame === null ? ' (NOT READ: the plan import failed)' : '')
+        + (unexpectedOff.length ? `; NOT AGREED: [${unexpectedOff.join(', ')}]` : '')
+        + (missingOff.length ? `; agreed but on the map: [${missingOff.join(', ')}]` : ''),
+        `0 missing, 0 anachronisms drawn, and the off-frame set == the ${agreed.length} agreed names`);
     }
     {
       const badPlan = gated.filter((f) => f.aspectErrPlan !== null && f.aspectErrPlan > TH.ASPECT_TOL);
@@ -1768,11 +2695,85 @@ try {
         `${mismatch.length} of ${aggregate.size} monuments draw stone beyond their own collision box; worst overhang ${mismatch.length ? mismatch[0].overhangM : 0} m per side (${mismatch.length ? mismatch[0].name : '-'})`,
         `drawn/box <= ${1 + TH.BOX_VS_STONE_TOL}`);
     }
+    /**
+     * G15 — a monument's drawn stone inside another monument's footprint.
+     *
+     * Licensed on THREE conjunctive conditions, per `CITY-GROUND-JUDGE.md` §11.1, and every one
+     * of them has to hold:
+     *
+     *   (a) the two are in one declared `complex`;
+     *   (b) their footprints are JOINED in G8c's sense — nested, or abutting inside
+     *       `ABUT_DEPTH_M`. A pair declared one complex and standing 17 m apart licenses
+     *       nothing;
+     *   (c) the trespassing vertices lie INSIDE the container rather than THROUGH ITS FAR SIDE.
+     *       Measured, and the measurement needs stating because "far side" is not obvious to
+     *       compute: take the axis from the container's centre to the trespasser's centre, find
+     *       the container's own extent along the far half of that axis, and ask how close the
+     *       deepest trespassing vertex gets to that far boundary. Inside `ABUT_DEPTH_M` of it,
+     *       the stone has crossed the container and what is left on the other side is a party
+     *       wall's thickness — so it has gone through, and it is a fault. No new constant.
+     *
+     * Without (c) this is the exemption the adjudication refused, one indirection further out.
+     *
+     * **A second, stricter reading of (c) is measured, reported and NOT gated, and this file's
+     * author thinks it is the better instrument.** `deepestM` is how far the stone runs past the
+     * container's boundary. A party wall is `ABUT_DEPTH_M` of shared masonry, and on Rome today
+     * four of eleven trespasses run deeper: `stadium-domitian` 13.22 m into `baths-nero`,
+     * `forum-romanum` 12.47 m into `imperial-fora`, `basilica-ulpia` 4.99 m into `imperial-fora`
+     * and `baths-trajan` 2.98 m into `baths-titus`. Gating on it would fail **three** pairs more
+     * than (c) does — the stadium is already a fault under (b) — and it is not gated for two
+     * reasons that are about the boxes rather than about the stone.
+     *
+     * The Basilica Ulpia's real relation to Trajan's Forum is NESTING: it is a hall standing
+     * inside it, `CITY-GROUND-JUDGE.md` §11.1 says so, and the modelled boxes read as an
+     * abutment instead — so a depth gate would fault the box modelling through G15 while G8c
+     * and G14 already fault it directly, and two instruments for one fault is how a gate gets
+     * reverted. And the Forum Romanum's "stone" is paving: two adjoining fora with continuous
+     * pavement is what Rome was, and a check that cannot tell a pavement from a wall should not
+     * be the one deciding. `overlaps.drawnStoneTrespassAdjudicated` carries the depth for every
+     * pair, so raising it to a gate is one line the day the boxes carry the relation and the
+     * geometry read distinguishes paving from masonry.
+     */
     {
-      const n = [...stoneInMon.values()].reduce((s, e) => s + e.hits, 0);
-      gate('G15', "no monument's drawn stone stands inside another monument's footprint",
-        stoneInMon.size === 0,
-        `${n} sampled monument vertices across ${stoneInMon.size} monument pairs`, '0 vertices');
+      const relByKey = new Map();
+      for (const r of structPairs) {
+        relByKey.set(`${r.a.id}>${r.b.id}`, r);
+        relByKey.set(`${r.b.id}>${r.a.id}`, r);
+      }
+      const rows = [...stoneInMon.values()].map((e) => {
+        const r = relByKey.get(`${e.stoneId}>${e.intoId}`) ?? null;
+        const smaller = r ? (r.a.area <= r.b.area ? r.a.id : r.b.id) : null;
+        const stoneIsNested = !!r && r.nested && smaller === e.stoneId;
+        const through = e.toFarEdgeM !== null && e.toFarEdgeM <= TH.ABUT_DEPTH_M;
+        const licensed = !!r && r.sameComplex && r.joined && !through;
+        let why = 'no relation found';
+        if (r && !r.sameComplex) why = 'not one complex';
+        else if (r && !r.joined) why = `one complex but not joined (${r2(r.gapM)} m apart)`;
+        else if (r && through) why = `one complex, joined, but the stone reaches within ${r2(e.toFarEdgeM)} m of the far side`;
+        else if (r) why = stoneIsNested ? 'nested' : 'joined, and the stone stays inside';
+        return {
+          ...e, licensed, why, through,
+          complex: r && r.sameComplex ? r.a.complex : null,
+          gapM: r ? r2(r.gapM) : null,
+          nested: stoneIsNested,
+        };
+      });
+      const faults = rows.filter((e) => !e.licensed).sort((a, b) => b.deepestM - a.deepestM);
+      const ok = rows.filter((e) => e.licensed);
+      const n = faults.reduce((t, e) => t + e.hits, 0);
+      gate('G15', "no monument's drawn stone stands inside another monument's footprint, unless one complex licenses it",
+        faults.length === 0,
+        `${faults.length} faulting pairs, ${n} sampled vertices, of ${rows.length} trespassing pairs`
+        + (faults.length
+          ? `; faults: ${faults.slice(0, 5).map((e) => `${e.stoneId} into ${e.intoId} (${e.why})`).join('; ')}`
+          : '')
+        + ` | licensed by a complex: ${ok.length}`
+        + ` [${ok.map((e) => `${e.stoneId}>${e.intoId} ${e.why}, ${r2(e.deepestM)} m in`).join('; ')}]`
+        + ` | NOT GATED, the depth reading: ${rows.filter((e) => e.deepestM > TH.ABUT_DEPTH_M).length}`
+        + ` of ${rows.length} trespasses run deeper than a ${TH.ABUT_DEPTH_M} m party wall`
+        + ` [${rows.filter((e) => e.deepestM > TH.ABUT_DEPTH_M).sort((a, b) => b.deepestM - a.deepestM).map((e) => `${e.stoneId}>${e.intoId} ${r2(e.deepestM)} m`).join('; ')}]`,
+        `0 unlicensed pairs; a licence needs one complex + joined + not through the far side`);
+      out_g15 = rows;
     }
     {
       const n = [...stoneInBld.values()].reduce((s, e) => s + e.hits, 0);
@@ -1782,11 +2783,47 @@ try {
         `${n} sampled monument vertices standing in ${bset.size} buildings, over ${stoneInBld.size} monument/building pairs`, '0 vertices');
     }
     {
-      const bad = gated.filter((f) => f.scaleErrPlan !== null && f.scaleErrPlan > TH.SCALE_SPREAD_TOL);
-      gate('G13', 'every sourced monument is compressed by the same factor as its cohort',
-        bad.length === 0,
-        `cohort median modelled/published = ${r3(medPlan)} (plan) / ${r3(medDrawn)} (drawn); out of tolerance: ${bad.length} [${bad.map((f) => `${f.id} ${f.planScaleRatio}`).join('; ')}]`,
-        `<= ${TH.SCALE_SPREAD_TOL} relative to the cohort median`);
+      const bad = [...band.belowFloor, ...band.aboveCeiling];
+      if (band.n === 0) {
+        skip('G13a', "every gated monument's drawn plan is inside an absolute band against the literature",
+          'no gated monument on this map has both a published figure and drawn geometry',
+          `drawn/published in [${TH.SCALE_FLOOR}, ${1 + TH.SCALE_CEIL_TOL}]`);
+      } else {
+        gate('G13a', "every gated monument's drawn plan is inside an absolute band against the literature",
+          bad.length === 0,
+          `${bad.length} of ${band.n} gated rows outside the band`
+          + `; below the ${TH.SCALE_FLOOR} floor: ${band.belowFloor.length}`
+          + ` [${band.belowFloor.map((f) => `${f.id} ${f.ratio} (${f.drawnLong} of ${f.publishedLong} m)`).join('; ')}]`
+          + `; above ${1 + TH.SCALE_CEIL_TOL}: ${band.aboveCeiling.length}`
+          + ` [${band.aboveCeiling.map((f) => `${f.id} ${f.ratio}`).join('; ')}]`
+          + ` | cohort n=${cohort.n}, median ${cohort.medianDrawnOverPublished},`
+          + ` range ${cohort.minDrawnOverPublished}..${cohort.maxDrawnOverPublished} (${cohort.spreadX}x spread) — reported, not gated`,
+          `drawn/published in [${TH.SCALE_FLOOR}, ${1 + TH.SCALE_CEIL_TOL}] against PUBLISHED, per row`);
+      }
+    }
+    {
+      if (!order.enough) {
+        skip('G13b', 'no pair of monuments has its size order inverted against the published pair',
+          `${order.assertingPairs} asserting pairs from ${order.rows} gated rows, under the`
+          + ` ${TH.SIZE_ORDER_MIN_PAIRS} this check refuses below — a size-order rate computed on`
+          + ` ${order.assertingPairs} relation(s) is a confident number rather than a measurement`
+          + ` (MAP-METHOD rule 12). The wider sourced population has`
+          + ` ${order.widerSourcedPopulation_notGated.assertingPairs} asserting pairs and`
+          + ` ${order.widerSourcedPopulation_notGated.inverted} inverted, reported not gated.`,
+          '0 inverted pairs');
+      } else {
+        gate('G13b', 'no pair of monuments has its size order inverted against the published pair',
+          order.invertedPairs === 0,
+          `${order.invertedPairs} of ${order.assertingPairs} asserting pairs inverted`
+          + ` (${order.pctInverted} %), from ${order.rows} gated rows`
+          + (order.worst.length
+            ? `; worst: ${order.worst.slice(0, 4).map((w) => `${w.biggerPublished} / ${w.smallerPublished} real ${w.publishedRatio}x -> drawn ${w.drawnRatio}x (${w.wrongByX}x wrong)`).join('; ')}`
+            : '')
+          + ` | wider sourced population, not gated: ${order.widerSourcedPopulation_notGated.inverted}`
+          + ` of ${order.widerSourcedPopulation_notGated.assertingPairs} over`
+          + ` ${order.widerSourcedPopulation_notGated.rows} rows`,
+          `0 inverted pairs among published figures more than ${TH.SIZE_ORDER_MIN_RATIO}x apart`);
+      }
     }
 
     {
@@ -1826,7 +2863,40 @@ try {
         + ` 15 deg across a 40 m gap`,
         `median <= ${TH.GRAIN_SEAM_TOL_DEG} deg AND seams <= ${(TH.GRAIN_SEAM_FRACTION * 100).toFixed(0)}%`);
     }
-    const passed = checks.filter((c) => c.ok).length;
+    {
+      const W = water;
+      if (!W.measured) {
+        skip('G22', 'no structure stands below the water surface',
+          W.why, 'no solid with a wet centre, outside the named list');
+      } else {
+        const mons22 = W.faultStructures.filter((f) => f.kind === 'monument');
+        gate('G22', 'no structure stands below the water surface',
+          W.faultSolids === 0 && W.staleLicences.length === 0,
+          `${W.faultSolids} solids with their centre under water of ${W.solidsSampled} sampled`
+          + ` (water at ${W.waterLevelM} m; ${W.entirelyWet} entirely wet, ${W.anyCornerWet} with a wet corner)`
+          + `; by kind: ${W.faultsByKind.monument} monument, ${W.faultsByKind.building} building,`
+          + ` ${W.faultsByKind.wall} wall`
+          + (mons22.length
+            ? `; monuments: ${mons22.map((f) => `${f.id} at ${f.worstDatumM} m`).join('; ')}`
+            : '')
+          + (W.faultStructures.length
+            ? `; worst overall: ${W.faultStructures.slice(0, 4).map((f) => `${f.id} at ${f.worstDatumM} m`).join('; ')}`
+            : '')
+          + ` | EXCLUSIONS, named and gated: ${W.excludedNamed.length}`
+          + ` [${W.excludedNamed.map((e) => `${e.id}: ${e.wetSolids} wet of ${e.solidsPublished} solid(s)`).join(', ')}]`
+          + (W.staleLicences.length
+            ? `; STALE LICENCE — the row publishes solids and none is wet, so this list describes`
+              + ` a city that is no longer here: [${W.staleLicences.join(', ')}]`
+            : '')
+          + (W.licencesNotBuiltAsSolids.length
+            ? `; licence held against a row that publishes no solid (soft landscape), reported not`
+              + ` gated: [${W.licencesNotBuiltAsSolids.join(', ')}]`
+            : ''),
+          'no solid with a wet centre outside WATER_EXPECTED, and no stale licence');
+      }
+    }
+    const passed = checks.filter((c) => c.ok && !c.na).length;
+    const applicable = checks.filter((c) => !c.na).length;
 
     // ---- the worst faults, with a camera for each -----------------------
     const faults = [];
@@ -1851,21 +2921,62 @@ try {
     for (const e of [...stoneInMon.values()].sort((a, b) => b.hits - a.hits).slice(0, 4)) {
       push('drawn-stone-in-a-monument', `${e.stone} stone standing in ${e.standingIn}`, e.hits * 4, null, e.x, e.z, e.x, e.z);
     }
+    /*
+     * The two new fault classes get an illustration slot too. A gate that can fail for a reason
+     * it could not fail for before and cannot PHOTOGRAPH that reason has only half shipped: the
+     * judge's water finding is a photograph, and the whole of this pass's argument for G8d is a
+     * complex whose two halves stand 17 m apart, which is a thing a person can see.
+     */
+    if (water.measured) {
+      for (const f of (water.faultStructures ?? []).slice(0, 4)) {
+        push('structure-under-water', `${f.id} at ${f.worstDatumM} m, water at ${water.waterLevelM} m`,
+          f.areaM2, null, f.x, f.z, f.x, f.z);
+      }
+    }
+    for (const c of complexes.filter((k) => k.pieces > 1)) {
+      // The shortest link between two pieces: the gap the declaration is wrong about.
+      const cross = c.pairs.filter((r) => !r.joined).sort((x, y) => x.gapM - y.gapM)[0];
+      if (!cross) continue;
+      push('a-complex-that-is-not-one-piece',
+        `${c.name}: ${cross.a.id} stands ${r2(cross.gapM)} m from ${cross.b.id} in its own complex`,
+        cross.gapM * cross.gapM, null, cross.a.x, cross.a.z, cross.b.x, cross.b.z);
+    }
     faults.sort((a, b) => b.m2 - a.m2);
+    /*
+     * **Five frames, not three, and the reason is the two new fault classes.**
+     *
+     * The illustration list is ranked by area and takes one frame per CLASS, so a class whose
+     * unit of harm is small in square metres can never be photographed while a bigger class is
+     * unfixed. There are now ten classes. A complex whose two halves stand 27 m apart scores
+     * `gap²` = 760 m² against 5,688 m² of paving in the wrong forum, so at three slots the
+     * headline finding of G8d — the Theatre of Pompey standing 17.4 m from its own porticus
+     * post scaenam — was fifth in the queue and never got a camera. A gate that can fail for a
+     * reason it could not fail for before and cannot show that reason has only half shipped.
+     */
+    const SHOT_SLOTS = 5;
     const chosen = [];
     const seen = new Set();
     for (const f of faults) {
       if (seen.has(f.cls)) continue;
       seen.add(f.cls);
       chosen.push(f);
-      if (chosen.length === 3) break;
+      if (chosen.length === SHOT_SLOTS) break;
     }
-    for (const f of faults) { if (chosen.length >= 3) break; if (!chosen.includes(f)) chosen.push(f); }
+    for (const f of faults) { if (chosen.length >= SHOT_SLOTS) break; if (!chosen.includes(f)) chosen.push(f); }
 
     return {
       map: MAPID, cityId: stats.id, triangles: stats.triangles,
-      verdict: { passed, of: checks.length, ok: passed === checks.length },
+      verdict: {
+        passed,
+        of: applicable,
+        failing: applicable - passed,
+        notApplicable: checks.filter((c) => c.na).map((c) => c.id),
+        declared: checks.length,
+        ok: passed === applicable,
+      },
       checks,
+      injected: [...injected],
+      injectNotes,
       counts: { monuments: mons.length, buildings: bldgs.length, wallSolids: walls.length, obstacles: obstacles.length },
       areas: { monumentM2: r2(monArea), buildingM2: r2(bldArea), builtM2: r2(builtArea), carriagewayM2: r2(roadArea) },
       overlaps: {
@@ -1880,16 +2991,48 @@ try {
         drawnStoneInsideABuilding: [...stoneInBld.values()].sort((a, b) => b.hits - a.hits).slice(0, 15),
         landscapeUnderMasonry_notGated: [...stoneSoft.values()].sort((a, b) => b.hits - a.hits).slice(0, 10),
         boxVsStoneMismatch: boxStoneMismatch.slice(0, 20),
+        drawnStoneTrespassAdjudicated: out_g15
+          .map((e) => ({ stone: e.stoneId, into: e.intoId, hits: e.hits, deepestM: r2(e.deepestM), toFarEdgeM: r2(e.toFarEdgeM), gapM: e.gapM, complex: e.complex, nested: e.nested, throughFarSide: e.through, licensed: e.licensed, why: e.why }))
+          .sort((a, b) => b.deepestM - a.deepestM),
         totalStructureOverlapM2: r2(mm.totalM2 + mb.totalM2 + bb2.totalM2),
         pctOfBuiltArea: r2(((mm.totalM2 + mb.totalM2 + bb2.totalM2) / Math.max(1, builtArea)) * 100),
       },
       clearance,
-      fidelity: { measuredPlanCompression: r3(medPlan), measuredDrawnCompression: r3(medDrawn), rows: fid },
+      fidelity: {
+        measuredPlanCompression: r3(medPlan), measuredDrawnCompression: r3(medDrawn),
+        cohort, absoluteBand: band, sizeOrder: order, rows: fid,
+      },
+      complexes: complexes.map((c) => ({
+        name: c.name, rows: c.rows, members: c.members, pieces: c.pieces,
+        piecesDetail: c.piecesDetail, connectAtM: r2(c.connectAtM),
+        joinedPairs: c.joinedPairs, pairs: c.pairs.length,
+        inNoMansLand: c.noMansLand.map((r) => `${r.a.id}/${r.b.id} ${r2(r.gapM)} m`),
+        standingApart: c.apart.map((r) => `${r.a.id}/${r.b.id} ${r2(r.gapM)} m`),
+      })),
+      structures: {
+        n: structList.length,
+        soft: structList.filter((st) => st.soft).map((st) => st.id),
+        declaredComplexes: complexes.length,
+        pairs: structPairs.length,
+        crossComplexPairs: structPairs.filter((r) => !r.a.soft && !r.b.soft && !r.sameComplex).length,
+        inComplexPairs: structPairs.filter((r) => r.sameComplex).length,
+      },
+      water,
       geometryRead: { ...geomStats, monumentsWithGeometry: drawn.size },
       fabric, partition, grain, resolver, selfReport, importNotes,
       faults: chosen.map((f) => ({ cls: f.cls, label: f.label, m2: r2(f.m2), depthM: r2(f.depth), at: { x: r2(f.cx), z: r2(f.cz) }, spanM: r2(f.span), yaw: f.pairYaw })),
     };
-  }, { MAPID: MAP, PUB: PUBLISHED[MAP] ?? [], TH: T });
+  }, {
+    MAPID: MAP, PUB: PUBLISHED[MAP] ?? [], TH: T,
+    OFF_FRAME: OFF_FRAME_AGREED[MAP] ?? [], WATER_OK: WATER_EXPECTED[MAP] ?? [],
+    INJ: INJECT,
+    /**
+     * A dry structure that publishes collision solids, per map, for `water-stale-licence`.
+     * Named here rather than found in the browser so the injection is declarative and the same
+     * run is reproducible.
+     */
+    DRY_ROW: MAP === 'carthage' ? 'byrsa' : 'colosseum',
+  });
 
   /**
    * G17 — the one check that reads the product's own counter, and why that is admissible.
@@ -1916,20 +3059,50 @@ try {
       threshold: '0 buried quarters',
     });
     out.buriedQuarters = buried;
-    out.verdict.passed = out.checks.filter((c) => c.ok).length;
-    out.verdict.of = out.checks.length;
+    out.verdict.passed = out.checks.filter((c) => c.ok && !c.na).length;
+    out.verdict.of = out.checks.filter((c) => !c.na).length;
+    out.verdict.failing = out.verdict.of - out.verdict.passed;
+    out.verdict.notApplicable = out.checks.filter((c) => c.na).map((c) => c.id);
+    out.verdict.declared = out.checks.length;
     out.verdict.ok = out.verdict.passed === out.verdict.of;
   }
 
   // ---- the verdict, first, because that is what a gate is for -----------
   console.log(`\n=== probe-fabric  ${out.map}  (city plan "${out.cityId}") ===`);
-  out.checks.sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)));
+  if (INJECT.length) {
+    console.log('\n  !!! FAULT INJECTION RUN — THIS IS NOT A READING OF THE CITY !!!');
+    for (const k of INJECT) {
+      console.log(`      --inject=${k}  must turn ${INJECTIONS[k].hits} red`);
+      console.log(`          ${INJECTIONS[k].what}`);
+    }
+    for (const n of out.injectNotes ?? []) console.log(`      applied: ${n}`);
+    console.log('');
+  }
+  /*
+   * `Number(id.slice(1))` was the sort and `Number('8c')` is NaN, so G8c, G8d, G13a and G13b
+   * would have sorted into whatever order they were pushed in and the table would have read as
+   * scrambled. Sort on the numeric part and then on the suffix.
+   */
+  const sortKey = (id) => {
+    const m = /^G(\d+)([a-z]*)$/.exec(id);
+    return m ? [Number(m[1]), m[2]] : [999, id];
+  };
+  out.checks.sort((a, b) => {
+    const ka = sortKey(a.id);
+    const kb = sortKey(b.id);
+    return ka[0] - kb[0] || (ka[1] < kb[1] ? -1 : ka[1] > kb[1] ? 1 : 0);
+  });
   for (const c of out.checks) {
-    console.log(`  ${c.ok ? 'PASS' : 'FAIL'}  ${c.id}  ${c.question}`);
+    console.log(`  ${c.na ? 'n/a ' : c.ok ? 'PASS' : 'FAIL'}  ${c.id}  ${c.question}`);
     console.log(`         measured: ${c.measured}`);
     console.log(`         gate:     ${c.threshold}`);
   }
-  console.log(`\n  VERDICT  ${out.verdict.passed}/${out.verdict.of}  ${out.verdict.ok ? 'PASS' : 'FAIL'}\n`);
+  const na = out.verdict.notApplicable;
+  console.log(
+    `\n  VERDICT  ${out.verdict.passed}/${out.verdict.of}  ${out.verdict.ok ? 'PASS' : 'FAIL'}`
+    + `   (${out.verdict.failing} failing, ${out.verdict.declared} checks declared`
+    + `${na.length ? `, ${na.length} not applicable on this map: ${na.join(', ')}` : ''})\n`
+  );
 
   console.log(JSON.stringify(out, null, 1));
   if (cityLog.length) {
@@ -1995,7 +3168,21 @@ try {
     }
   }
 
-  if (!out.verdict.ok && !NO_GATE) exitCode = 1;
+  if (INJECT.length) {
+    const expect = new Set();
+    for (const k of INJECT) for (const id of INJECTIONS[k].hits.split(/[ ,(]+/)) if (/^G\d/.test(id)) expect.add(id);
+    const red = new Set(out.checks.filter((c) => !c.ok && !c.na).map((c) => c.id));
+    const missed = [...expect].filter((id) => !red.has(id));
+    console.log(
+      `  INJECTION RESULT  expected red: [${[...expect].join(', ')}]`
+      + `  actually red: [${[...red].join(', ')}]`
+      + (missed.length ? `  *** DID NOT GO RED: ${missed.join(', ')} ***` : '  — every injected check went red')
+    );
+    // An injected run is never a pass, whatever the checks said.
+    exitCode = missed.length ? 3 : 1;
+  } else if (!out.verdict.ok && !NO_GATE) {
+    exitCode = 1;
+  }
 } catch (err) {
   console.error('[probe-fabric] failed:', err && err.stack ? err.stack : err);
   exitCode = 2;
