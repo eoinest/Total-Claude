@@ -11,8 +11,19 @@ identical, and Vercel's own SHA-1 digest matching the rebuild for 86 of 86 files
 directions. All three maps boot against the live URL with the clock advancing.
 
 The full gate is green on this tree: tsc clean, lint 2/2, qa-deploy 33/33, seams PASS both maps,
-**`qa-replay` 21/21**, and all three determinism arms UNCHANGED at all seven checkpoints
-(8,632 / 3,074 / 3,440).
+**`qa-replay` 27/27**, **`qa-net` 30/30**, and all three determinism arms UNCHANGED at all seven
+checkpoints (8,632 / 3,074 / 3,440).
+
+> **`qa-replay` grew from 21 to 27 checks on 21 Aug**, and the six new ones are the ones that
+> mattered: it had only ever recorded `campus-martius / field`, so **no siege record had ever
+> been through it** and every siege replay in the project was being refused by its own t+0
+> checkpoint while the gate reported 21/21. Fixed in `bb2eb84`; the new `matrix` arm reads the
+> shipped `(map, scenario)` set out of the product and fails if the run did not cover it.
+>
+> **`qa-net` runs nine arms by default and `xengine` is opt-in** (`--only=xengine` or `--all`).
+> It boots two full-scale battles in two browser engines and times out on `page.goto` when the
+> machine is busy; a gate that goes red because the laptop is loaded teaches people to ignore
+> it. It passes on a quiet machine — see the session record at the bottom of this file.
 
 **The gate, and how to re-run it.** All green at `5f9030e`:
 
@@ -22,8 +33,8 @@ The full gate is green on this tree: tsc clean, lint 2/2, qa-deploy 33/33, seams
 | lint | `npm run lint` | 2/2 |
 | deploy | `node tools/qa-deploy.mjs` | 33/33 |
 | seams | `node tools/probe-seams.mjs` | PASS, both maps |
-| replay | `node tools/qa-replay.mjs` | 21/21 |
-| **multiplayer** | `node tools/relay.mjs` is not needed — `node tools/qa-net.mjs` starts its own | 22/22 |
+| replay | `node tools/qa-replay.mjs` | **27/27** |
+| **multiplayer** | `node tools/qa-net.mjs` (starts its own relays and server) | **30/30** |
 | determinism | the three arms below, **spelled exactly** | 7 checkpoints each |
 
 Determinism is pinned in `tools/determinism-baseline.json` at **t+0/30/90/150/200/250/400**, three
@@ -2158,6 +2169,14 @@ open 'http://127.0.0.1:5173/?mp=1'      # create a room; the invite goes to the 
 
 ### Traps that cost time
 
+- **A `throw` inside a top-level `await` is an *unhandled rejection*, not an uncaught exception.**
+  `tools/qa-net.mjs` had only `process.on('uncaughtException')`, so when Firefox timed out on
+  `page.goto` its `cleanup()` never ran and two browsers and a relay were left holding CPU. Both
+  handlers now. An agent that starts a server owns killing it, and that has to include the paths
+  where it fails.
+- **`waitForServer` accepts any 2xx and a vite dev server answers 200 for every unknown path**,
+  so a relay port already held by another agent's vite passed the "is it up" check and the arm
+  opened WebSockets against a game bundle. Read the body.
 - `HudSystem`'s `deploymentEnded` handler tore down the local player's deployment plaque when the
   *opponent's* phase ended — a relayed battle runs two `DeploymentSystem`s per machine and both
   raise the event. Guarded on `dep.active`.
@@ -2172,10 +2191,13 @@ open 'http://127.0.0.1:5173/?mp=1'      # create a room; the invite goes to the 
 
 ### Measured facts that must not be re-derived
 
-- **Input delay, through the real mouse, click to executing tick:** 3.5 ticks (117 ms) at 0 ms
-  round trip, 4.0 (133 ms) at 50 ms, 5.7 (189 ms) at 120 ms. Zero stalls at all three. The legal
-  range is 3 to 6 ticks; **below 3 means an order reached the simulation without going through
-  the relay.**
+- **Input delay, through the real mouse, click to executing tick.** Three runs agree on the
+  shape: **3.0–3.7 ticks (100–122 ms) at a ~146 ms round trip, 4.0–4.2 (133–139 ms) at ~175 ms,
+  5.5–5.7 (183–189 ms) at ~232 ms**, and zero stalls at every latency in the last two runs. The
+  floor is the assertion that matters: an order cannot execute before the next scheduled turn, so
+  **below 3 ticks means an order reached the simulation without going through the relay.** The
+  ceiling is soft — an op arriving after a turn boundary lands a turn later — so the gate refuses
+  above 12, not above 6.
 - **A one-ULP perturbation of one `UnitGroupState` float64 field is detected in one simulated
   second**, on `uf64`, and attributed to exactly one regiment of thirty-five.
 - **Without the `UnitGroupState` quantisation firewall** (which is on `e/tools/xengine-arm`, not

@@ -1029,15 +1029,16 @@ real mouse events and timed from the click to the tick the order executed on:
 
 | one-way | round trip | input delay | stalls | stalled |
 |---|---|---|---|---|
-| 0 ms (localhost) | 146 / 153 ms | **3.5 / 3.7 ticks — 117 / 122 ms** | 0 / 0 | 0 / 0 ms |
-| 25 ms | 180 / 228 ms | **4.0 / 7.0 ticks — 133 / 233 ms** | 0 / 2 | 0 / 222 ms |
-| 60 ms | 229 / 240 ms | **5.7 / 6.0 ticks — 189 / 200 ms** | 0 / 0 | 0 / 0 ms |
+| 0 ms (localhost) | 146 / 153 / 146 ms | **3.5 / 3.7 / 3.0 ticks — 117 / 122 / 100 ms** | 0 / 0 / 0 | 0 / 0 / 0 ms |
+| 25 ms | 180 / 228 / 175 ms | **4.0 / 7.0 / 4.2 ticks — 133 / 233 / 139 ms** | 0 / 2 / 0 | 0 / 222 / 0 ms |
+| 60 ms | 229 / 240 / 232 ms | **5.7 / 6.0 / 5.5 ticks — 189 / 200 / 183 ms** | 0 / 0 / 0 | 0 / 0 / 0 ms |
 
-Two runs, both reported, because the spread between them is the instrument and not the link: the
+Three runs, all reported, because the spread between them is the instrument and not the link: the
 orders are issued by a real mouse against a real HUD, so *which* 100 ms turn a click lands in is
-timing this gate does not control. Take the shape rather than the digits — **an input delay of
-about 120 ms on a free link, rising to roughly 200 ms at a 240 ms round trip**, and the battle
-never waiting on the network for more than a fifth of a second in total.
+timing this gate does not control, and the middle run was taken while six other agents' Playwright
+runs had the machine's load average over 100. Take the shape rather than the digits — **an input
+delay of 100–120 ms on a free link, rising to about 185 ms at a 232 ms round trip**, and the
+battle never waiting on the network at all in the two quiet runs.
 
 **The floor is 3 ticks and it is the assertion that matters.** An order cannot execute sooner
 than the start of the next scheduled turn, so anything below 3 would mean an order had reached
