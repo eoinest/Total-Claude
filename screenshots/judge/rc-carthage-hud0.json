@@ -1,0 +1,100 @@
+{
+ "phase": "Deployment",
+ "speed": "",
+ "clock": "00:00",
+ "blocks": [
+  {
+   "name": "ROME",
+   "men": "1 884",
+   "units": "20 units",
+   "loss": "−0",
+   "line": "1 884\n              −0\n              20 units"
+  },
+  {
+   "name": "QART-HADASHT",
+   "men": "1 556",
+   "units": "14 units",
+   "loss": "−0",
+   "line": "1 556\n              −0\n              14 units"
+  }
+ ],
+ "adv": "ROME advantage 10%",
+ "note": "The lines are dressing",
+ "mid": "00:00 Deployment The lines are dressing ROME advantage 10%",
+ "topAll": "00:00 Deployment",
+ "feed": [],
+ "cmd": {
+  "name": "—",
+  "native": "",
+  "order": "Holding",
+  "state": "Holding·Steady",
+  "nums": "Kills 0 Frontage 0 m",
+  "mor": "Steady",
+  "buttons": [
+   {
+    "t": "H",
+    "off": false,
+    "on": false
+   },
+   {
+    "t": "R",
+    "off": false,
+    "on": false
+   }
+  ]
+ },
+ "cards": [
+  "Legionary Tower Party I",
+  "Legionary Tower Party II",
+  "Legionary Tower Party III",
+  "Legionary Tower Party IV",
+  "Velite Ladder Party I",
+  "Velite Ladder Party II",
+  "Velite Ladder Party III",
+  "Velite Ladder Party IV",
+  "Ram Crew",
+  "Legionary Cohort I",
+  "Legionary Cohort II",
+  "Legionary Cohort III",
+  "Legionary Cohort IV",
+  "Legionary Cohort V",
+  "Legionary Cohort VI",
+  "Roman Cavalry I",
+  "Roman Cavalry II",
+  "Stone-Thrower Battery I",
+  "Stone-Thrower Battery II",
+  "Carroballista"
+ ],
+ "hint": null,
+ "cursor": "",
+ "banner": [
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  ""
+ ],
+ "result": null,
+ "objectiveish": [],
+ "deploy": {
+  "title": "DEPLOYMENT 719 × 179 m, bounded by Carthage at z 250",
+  "step": "− 4 +",
+  "zone": "719 × 179 m, bounded by Carthage at z 250",
+  "help": "Left-click a unit, right-drag to stand it there — the drag sets the facing and the frontage Z X C V B formation · Delete removes",
+  "note": "",
+  "tally": "20/20 units 3,440 men 8,560 free",
+  "brief": "To take the city: get 60 men 14 m past the curtain — through the gate or down off the parapet — or take a stretch of parapet and hold 24 men on it for 20 s with no defender left standing on that stretch. Killing the garrison alone will not do it.",
+  "rows": [
+   "legio-tower-party=4",
+   "legio-escalade=4",
+   "legio-ram-crew=1",
+   "legio-ballista=2",
+   "carroballista=1",
+   "legio-cohort=6",
+   "equites=2"
+  ]
+ }
+}

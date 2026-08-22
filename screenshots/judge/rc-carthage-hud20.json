@@ -1,0 +1,83 @@
+{
+ "phase": "The Wall Reached",
+ "speed": "",
+ "clock": "00:25",
+ "blocks": [
+  {
+   "name": "ROME",
+   "men": "1 883",
+   "units": "20 units",
+   "loss": "−1",
+   "line": "1 883\n              −1\n              20 units"
+  },
+  {
+   "name": "QART-HADASHT",
+   "men": "1 555",
+   "units": "14 units",
+   "loss": "−1",
+   "line": "1 555\n              −1\n              14 units"
+  }
+ ],
+ "adv": "0 of 60 inside",
+ "note": "The ramps are down; get men onto the walk",
+ "mid": "00:25 The Wall Reached The ramps are down; get men onto the walk 0 of 60 inside",
+ "topAll": "00:25 The Wall Reached",
+ "feed": [],
+ "cmd": {
+  "name": "—",
+  "native": "",
+  "order": "Holding",
+  "state": "Holding·Steady",
+  "nums": "Kills 0 Frontage 0 m",
+  "mor": "Steady",
+  "buttons": [
+   {
+    "t": "H",
+    "off": false,
+    "on": false
+   },
+   {
+    "t": "R",
+    "off": false,
+    "on": false
+   }
+  ]
+ },
+ "cards": [
+  "Legionary Tower Party I",
+  "Legionary Tower Party II",
+  "Legionary Tower Party III",
+  "Legionary Tower Party IV",
+  "Velite Ladder Party I",
+  "Velite Ladder Party II",
+  "Velite Ladder Party III",
+  "Velite Ladder Party IV",
+  "Ram Crew",
+  "Legionary Cohort I",
+  "Legionary Cohort II",
+  "Legionary Cohort III",
+  "Legionary Cohort IV",
+  "Legionary Cohort V",
+  "Legionary Cohort VI",
+  "Roman Cavalry I",
+  "Roman Cavalry II",
+  "Stone-Thrower Battery I",
+  "Stone-Thrower Battery II",
+  "Carroballista"
+ ],
+ "hint": null,
+ "cursor": "",
+ "banner": [
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  ""
+ ],
+ "result": null,
+ "objectiveish": [],
+ "deploy": null
+}

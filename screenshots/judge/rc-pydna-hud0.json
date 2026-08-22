@@ -1,0 +1,95 @@
+{
+ "phase": "Deployment",
+ "speed": "",
+ "clock": "00:00",
+ "blocks": [
+  {
+   "name": "ROME",
+   "men": "3 772",
+   "units": "16 units",
+   "loss": "−0",
+   "line": "3 772\n              −0\n              16 units"
+  },
+  {
+   "name": "JUTHUNGI",
+   "men": "4 860",
+   "units": "19 units",
+   "loss": "−0",
+   "line": "4 860\n              −0\n              19 units"
+  }
+ ],
+ "adv": "JUTHUNGI advantage 13%",
+ "note": "The lines are dressing",
+ "mid": "00:00 Deployment The lines are dressing JUTHUNGI advantage 13%",
+ "topAll": "00:00 Deployment",
+ "feed": [],
+ "cmd": {
+  "name": "—",
+  "native": "",
+  "order": "Holding",
+  "state": "Holding·Steady",
+  "nums": "Kills 0 Frontage 0 m",
+  "mor": "Steady",
+  "buttons": [
+   {
+    "t": "H",
+    "off": false,
+    "on": false
+   },
+   {
+    "t": "R",
+    "off": false,
+    "on": false
+   }
+  ]
+ },
+ "cards": [
+  "Legionary Cohort I",
+  "Legionary Cohort II",
+  "Legionary Cohort III",
+  "Legionary Cohort IV",
+  "Legionary Cohort V",
+  "Legionary Cohort VI",
+  "Praetorian Guard I",
+  "Praetorian Guard II",
+  "Urban Cohort I",
+  "Urban Cohort II",
+  "Auxiliary Archers I",
+  "Auxiliary Archers II",
+  "Roman Cavalry I",
+  "Roman Cavalry II",
+  "Roman Cavalry III",
+  "Scorpion Battery"
+ ],
+ "hint": null,
+ "cursor": "",
+ "banner": [
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  ""
+ ],
+ "result": null,
+ "objectiveish": [],
+ "deploy": {
+  "title": "DEPLOYMENT 1074 × 1189 m, bounded by the edge of the field",
+  "step": "− 6 +",
+  "zone": "1074 × 1189 m, bounded by the edge of the field",
+  "help": "Left-click a unit, right-drag to stand it there — the drag sets the facing and the frontage Z X C V B formation · Delete removes",
+  "note": "",
+  "tally": "16/20 units 8,632 men 3,368 free",
+  "brief": null,
+  "rows": [
+   "legio-cohort=6",
+   "praetorian-cohort=2",
+   "urban-cohort=2",
+   "sagittarii=2",
+   "equites=3",
+   "scorpio=1"
+  ]
+ }
+}

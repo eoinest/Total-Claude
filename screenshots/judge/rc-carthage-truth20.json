@@ -1,0 +1,1021 @@
+{
+ "t": 25.2,
+ "tick": 756,
+ "strength": {
+  "0": 1883,
+  "1": 0,
+  "2": 1555
+ },
+ "per": {
+  "0": {
+   "units": 20,
+   "alive": 1883,
+   "routing": 0,
+   "dead": 0
+  },
+  "2": {
+   "units": 14,
+   "alive": 1555,
+   "routing": 0,
+   "dead": 0
+  }
+ },
+ "flowResult": null,
+ "objectives": null,
+ "siege": {
+  "gate": {
+   "shutAtStart": true,
+   "open": false,
+   "breached": false,
+   "blows": 0,
+   "hp": 1,
+   "x": 0,
+   "z": 527.0058713399015,
+   "id": "porta-byrsae",
+   "gates": [
+    {
+     "id": "porta-byrsae",
+     "x": 0,
+     "z": 527.0058713399015,
+     "open": false,
+     "broken": false,
+     "blows": 0,
+     "hp": 1
+    },
+    {
+     "id": "porta-uticensis",
+     "x": 560,
+     "z": 501.2885174673775,
+     "open": false,
+     "broken": false,
+     "blows": 0,
+     "hp": 1
+    },
+    {
+     "id": "porta-maritima",
+     "x": -560,
+     "z": 571.19923738176,
+     "open": false,
+     "broken": false,
+     "blows": 0,
+     "hp": 1
+    },
+    {
+     "id": "postern-6",
+     "x": -772.9015151515151,
+     "z": 592.8361618555155,
+     "open": false,
+     "broken": false,
+     "blows": 0,
+     "hp": 1
+    },
+    {
+     "id": "postern-14",
+     "x": -532.780303030303,
+     "z": 568.6169770276916,
+     "open": false,
+     "broken": false,
+     "blows": 0,
+     "hp": 1
+    },
+    {
+     "id": "postern-22",
+     "x": -292.6590909090909,
+     "z": 547.79385997434,
+     "open": false,
+     "broken": false,
+     "blows": 0,
+     "hp": 1
+    },
+    {
+     "id": "postern-30",
+     "x": -52.537878787878746,
+     "z": 530.3668106954603,
+     "open": false,
+     "broken": false,
+     "blows": 0,
+     "hp": 1
+    },
+    {
+     "id": "postern-38",
+     "x": 187.58333333333326,
+     "z": 516.3358291910527,
+     "open": false,
+     "broken": false,
+     "blows": 0,
+     "hp": 1
+    },
+    {
+     "id": "postern-46",
+     "x": 427.7045454545455,
+     "z": 505.70091546111684,
+     "open": false,
+     "broken": false,
+     "blows": 0,
+     "hp": 1
+    },
+    {
+     "id": "postern-54",
+     "x": 667.8257575757575,
+     "z": 498.4620695056531,
+     "open": false,
+     "broken": false,
+     "blows": 0,
+     "hp": 1
+    },
+    {
+     "id": "postern-62",
+     "x": 907.9469696969697,
+     "z": 494.6192913246614,
+     "open": false,
+     "broken": false,
+     "blows": 0,
+     "hp": 1
+    }
+   ]
+  },
+  "breach": {
+   "bays": [],
+   "lanes": 0,
+   "through": 0,
+   "deadStations": 0,
+   "integrity": []
+  },
+  "stats": {
+   "stations": 1830,
+   "garrisoned": 10,
+   "garrisonMen": 1340,
+   "towers": 4,
+   "rams": 1,
+   "ladders": 12,
+   "crossing": 163,
+   "gateBreached": false
+  },
+  "towers": [
+   {
+    "id": 0,
+    "state": "approach",
+    "dist": 56.954661598843494,
+    "docked": false,
+    "rampDrawn": true,
+    "rampY": 29.566456389427184,
+    "rampHeadOff": 61.31602806735718,
+    "rampHingeOff": 61.316022394922,
+    "rampReach": -0.000005672435179349122,
+    "wantHeadOff": 2.435469627380371,
+    "innerOff": -3.305000066757202,
+    "walkY": 27,
+    "crossed": 0,
+    "queued": 0,
+    "x": -26.535819275536156,
+    "z": 465.1382975611655,
+    "baseY": 13.205422546857214,
+    "groundY": 13.205422546857214,
+    "deckY": 27.55,
+    "faceGap": 57.260552883061884
+   },
+   {
+    "id": 1,
+    "state": "approach",
+    "dist": 65.94109099497763,
+    "docked": false,
+    "rampDrawn": true,
+    "rampY": 29.066456389427184,
+    "rampHeadOff": 70.31602173674287,
+    "rampHingeOff": 70.31602528845899,
+    "rampReach": 0.000003551716119432058,
+    "wantHeadOff": 2.4490370750427246,
+    "innerOff": -3.305000066757202,
+    "walkY": 26.5,
+    "crossed": 0,
+    "queued": 0,
+    "x": 33.17462791800733,
+    "z": 452.4209422471473,
+    "baseY": 12.956878917251935,
+    "groundY": 12.956878917251935,
+    "deckY": 27.05,
+    "faceGap": 66.24698833727689
+   },
+   {
+    "id": 2,
+    "state": "approach",
+    "dist": 74.95337118291947,
+    "docked": false,
+    "rampDrawn": true,
+    "rampY": 29.56645659208298,
+    "rampHeadOff": 79.31608971934008,
+    "rampHingeOff": 79.31609583801036,
+    "rampReach": 0.000006118670270893745,
+    "wantHeadOff": 2.4375040531158447,
+    "innerOff": -3.305000066757202,
+    "walkY": 27,
+    "crossed": 0,
+    "queued": 0,
+    "x": -57.90772290974944,
+    "z": 449.12796498873155,
+    "baseY": 12.564592121539862,
+    "groundY": 12.564592121539862,
+    "deckY": 27.55,
+    "faceGap": 75.25859162716144
+   },
+   {
+    "id": 3,
+    "state": "approach",
+    "dist": 83.94153820382381,
+    "docked": false,
+    "rampDrawn": true,
+    "rampY": 29.06645659208298,
+    "rampHeadOff": 88.31608648776003,
+    "rampHingeOff": 88.31608119344479,
+    "rampReach": -0.000005294315243986603,
+    "wantHeadOff": 2.449232816696167,
+    "innerOff": -3.305000066757202,
+    "walkY": 26.5,
+    "crossed": 0,
+    "queued": 0,
+    "x": 62.205611481259425,
+    "z": 432.667192002823,
+    "baseY": 13.027385437622884,
+    "groundY": 13.027385437622884,
+    "deckY": 27.05,
+    "faceGap": 84.24684824855768
+   }
+  ],
+  "engines": {
+   "shots": 1,
+   "hits": 1172,
+   "kills": 0,
+   "ramBlows": 0,
+   "gateHp": 1,
+   "ladders": 12,
+   "laddersCrossed": 0,
+   "ladderHeadMiss": [
+    {
+     "face": -0.30950522530422075,
+     "crest": -3.8146972514141453e-7,
+     "leanDeg": 20.629251365941734,
+     "footOff": 9.51345099976096,
+     "headOff": 3.7355015267099394,
+     "rake": 5.777956930587873,
+     "drawn": true
+    },
+    {
+     "face": -0.3266678057478476,
+     "crest": -3.8146972514141453e-7,
+     "leanDeg": 20.633059633069532,
+     "footOff": 9.488351639590187,
+     "headOff": 3.7183389462663126,
+     "rake": 5.770038366040239,
+     "drawn": true
+    },
+    {
+     "face": -0.27071299712163555,
+     "crest": -3.8146972514141453e-7,
+     "leanDeg": 20.636986536480155,
+     "footOff": 9.462709225750192,
+     "headOff": 3.7742937548925246,
+     "rake": 5.688391457381039,
+     "drawn": true
+    },
+    {
+     "face": -0.30898375674711787,
+     "crest": -3.8146972514141453e-7,
+     "leanDeg": 20.658607327196393,
+     "footOff": 9.344134781897768,
+     "headOff": 3.7544351084567396,
+     "rake": 5.589693340605611,
+     "drawn": true
+    },
+    {
+     "face": -0.3009287260471418,
+     "crest": -3.8146972514141453e-7,
+     "leanDeg": 20.656222723254608,
+     "footOff": 9.35890443719758,
+     "headOff": 3.7624901391567156,
+     "rake": 5.596401849962348,
+     "drawn": true
+    },
+    {
+     "face": -0.2510546468825572,
+     "crest": -3.8146972514141453e-7,
+     "leanDeg": 20.653650022783246,
+     "footOff": 9.37493152361807,
+     "headOff": 3.8123642183213002,
+     "rake": 5.5625750649190655,
+     "drawn": true
+    },
+    {
+     "face": -0.3116870684588493,
+     "crest": 5.722045912648355e-7,
+     "leanDeg": 20.639201918955592,
+     "footOff": 9.456325316501347,
+     "headOff": 3.7412957387005745,
+     "rake": 5.714999107893051,
+     "drawn": true
+    },
+    {
+     "face": -0.24893857666560804,
+     "crest": -3.8146972514141453e-7,
+     "leanDeg": 20.643123573569035,
+     "footOff": 9.431089120484026,
+     "headOff": 3.804044230493816,
+     "rake": 5.627044457106784,
+     "drawn": true
+    },
+    {
+     "face": -0.314538108910563,
+     "crest": -3.8146972514141453e-7,
+     "leanDeg": 20.64772596072351,
+     "footOff": 9.401769736544276,
+     "headOff": 3.738444698248861,
+     "rake": 5.663338392195548,
+     "drawn": true
+    },
+    {
+     "face": -0.31175745189924164,
+     "crest": -3.8146972514141453e-7,
+     "leanDeg": 20.647288378838056,
+     "footOff": 9.40803283374708,
+     "headOff": 3.744715326421071,
+     "rake": 5.663319470172811,
+     "drawn": true
+    },
+    {
+     "face": -0.2600063406395865,
+     "crest": -3.8146972514141453e-7,
+     "leanDeg": 20.64531143720421,
+     "footOff": 9.420600813951777,
+     "headOff": 3.796466437680726,
+     "rake": 5.6241301827677965,
+     "drawn": true
+    },
+    {
+     "face": -0.2970736580346838,
+     "crest": -3.8146972514141453e-7,
+     "leanDeg": 20.64274602882165,
+     "footOff": 9.436997625873861,
+     "headOff": 3.7593991202856287,
+     "rake": 5.6776098227943255,
+     "drawn": true
+    }
+   ]
+  },
+  "ram": [
+   {
+    "dims": {
+     "halfW": 1.9,
+     "halfD": 4.2,
+     "shedH": 2.7,
+     "reach": 7.15,
+     "footprint": 31.919999999999998
+    },
+    "id": 0,
+    "kind": "gate",
+    "state": "approach",
+    "blows": 0,
+    "unitId": 22,
+    "gateId": "porta-byrsae",
+    "gateBlows": 0,
+    "heave": 0,
+    "facing": 0.061889556081127776,
+    "wantFacing": 0.061889556081127776,
+    "targetX": -0.48243042283091225,
+    "targetZ": 519.2208048092207,
+    "x": -2.977461609625766,
+    "z": 478.9580376492526,
+    "distFromTarget": 40.34000000001093,
+    "wreck": false,
+    "crewAlive": 32,
+    "crewRouting": false,
+    "crewPinned": false,
+    "owned": true,
+    "bay": -1,
+    "bayBlows": 0
+   }
+  ],
+  "wall": {
+   "source": "published",
+   "bays": 66,
+   "garrisonableBays": 65,
+   "stairs": 13,
+   "runs": 40,
+   "stations": 1830,
+   "deadStations": 0,
+   "links": {
+    "towerPass": 31,
+    "step": 3,
+    "stair": 13,
+    "breach": 0
+   },
+   "reachable": 37,
+   "unbridged": 5,
+   "refusedSteps": 4,
+   "worstStep": 2,
+   "worstPitch": 0.6857382661814319,
+   "stairDetail": [
+    {
+     "station": 37,
+     "run": 1,
+     "footY": 1.3763204413202048,
+     "topY": 15.5,
+     "terrainAtFoot": 1.3763204413202048,
+     "walkYAtHead": 15.5,
+     "side": -1,
+     "rise": 14.123679558679795
+    },
+    {
+     "station": 149,
+     "run": 5,
+     "footY": 6.681607232072726,
+     "topY": 20.5,
+     "terrainAtFoot": 6.681607232072726,
+     "walkYAtHead": 20.5,
+     "side": -1,
+     "rise": 13.818392767927275
+    },
+    {
+     "station": 260,
+     "run": 9,
+     "footY": 12.28445786581343,
+     "topY": 26.5,
+     "terrainAtFoot": 12.28445786581343,
+     "walkYAtHead": 26.5,
+     "side": -1,
+     "rise": 14.21554213418657
+    },
+    {
+     "station": 373,
+     "run": 11,
+     "footY": 11.882700566202002,
+     "topY": 26,
+     "terrainAtFoot": 11.882700566202002,
+     "walkYAtHead": 26,
+     "side": -1,
+     "rise": 14.117299433797998
+    },
+    {
+     "station": 484,
+     "run": 13,
+     "footY": 12.069739632195374,
+     "topY": 26,
+     "terrainAtFoot": 12.069739632195374,
+     "walkYAtHead": 26,
+     "side": -1,
+     "rise": 13.930260367804626
+    },
+    {
+     "station": 597,
+     "run": 15,
+     "footY": 12.131323599915973,
+     "topY": 26,
+     "terrainAtFoot": 12.131323599915973,
+     "walkYAtHead": 26,
+     "side": -1,
+     "rise": 13.868676400084027
+    },
+    {
+     "station": 708,
+     "run": 17,
+     "footY": 12.090450778801262,
+     "topY": 26,
+     "terrainAtFoot": 12.090450778801262,
+     "walkYAtHead": 26,
+     "side": -1,
+     "rise": 13.909549221198738
+    },
+    {
+     "station": 821,
+     "run": 19,
+     "footY": 12.918908823445104,
+     "topY": 27,
+     "terrainAtFoot": 12.918908823445104,
+     "walkYAtHead": 27,
+     "side": -1,
+     "rise": 14.081091176554896
+    },
+    {
+     "station": 1015,
+     "run": 23,
+     "footY": 12.420590935927617,
+     "topY": 26.5,
+     "terrainAtFoot": 12.420590935927617,
+     "walkYAtHead": 26.5,
+     "side": -1,
+     "rise": 14.079409064072383
+    },
+    {
+     "station": 1126,
+     "run": 25,
+     "footY": 12.476821062426124,
+     "topY": 26.5,
+     "terrainAtFoot": 12.476821062426124,
+     "walkYAtHead": 26.5,
+     "side": -1,
+     "rise": 14.023178937573876
+    },
+    {
+     "station": 1238,
+     "run": 27,
+     "footY": 12.281513877779286,
+     "topY": 26.5,
+     "terrainAtFoot": 12.281513877779286,
+     "walkYAtHead": 26.5,
+     "side": -1,
+     "rise": 14.218486122220714
+    },
+    {
+     "station": 1462,
+     "run": 31,
+     "footY": 11.638151688018782,
+     "topY": 26,
+     "terrainAtFoot": 11.638151688018782,
+     "walkYAtHead": 26,
+     "side": -1,
+     "rise": 14.361848311981218
+    },
+    {
+     "station": 1574,
+     "run": 33,
+     "footY": 11.870780685545082,
+     "topY": 26,
+     "terrainAtFoot": 11.870780685545082,
+     "walkYAtHead": 26,
+     "side": -1,
+     "rise": 14.129219314454918
+    }
+   ],
+   "linkUse": [
+    {
+     "id": 0,
+     "kind": "step",
+     "runA": 0,
+     "runB": 1,
+     "used": 0,
+     "gap": 1.8452952443897994,
+     "rise": 0.5,
+     "pitch": 0.27095935001194865
+    },
+    {
+     "id": 1,
+     "kind": "towerPass",
+     "runA": 1,
+     "runB": 2,
+     "used": 0,
+     "gap": 12.499090001986856,
+     "rise": 1,
+     "pitch": 0.08000582441130034
+    },
+    {
+     "id": 2,
+     "kind": "step",
+     "runA": 2,
+     "runB": 3,
+     "used": 0,
+     "gap": 1.4930035746259176,
+     "rise": 1,
+     "pitch": 0.6697907607157316
+    },
+    {
+     "id": 3,
+     "kind": "towerPass",
+     "runA": 3,
+     "runB": 4,
+     "used": 0,
+     "gap": 12.486988590321118,
+     "rise": 1.5,
+     "pitch": 0.12012503968832614
+    },
+    {
+     "id": 4,
+     "kind": "towerPass",
+     "runA": 5,
+     "runB": 6,
+     "used": 0,
+     "gap": 12.47522149675331,
+     "rise": 2,
+     "pitch": 0.16031779479991615
+    },
+    {
+     "id": 5,
+     "kind": "towerPass",
+     "runA": 7,
+     "runB": 8,
+     "used": 0,
+     "gap": 12.463802147683419,
+     "rise": 1.5,
+     "pitch": 0.12034850860327538
+    },
+    {
+     "id": 6,
+     "kind": "step",
+     "runA": 8,
+     "runB": 9,
+     "used": 0,
+     "gap": 1.4582823349913816,
+     "rise": 1,
+     "pitch": 0.6857382661814319
+    },
+    {
+     "id": 7,
+     "kind": "towerPass",
+     "runA": 9,
+     "runB": 10,
+     "used": 0,
+     "gap": 12.452784435043917,
+     "rise": 0,
+     "pitch": 0
+    },
+    {
+     "id": 8,
+     "kind": "towerPass",
+     "runA": 10,
+     "runB": 11,
+     "used": 0,
+     "gap": 12.442174357204067,
+     "rise": 0,
+     "pitch": 0
+    },
+    {
+     "id": 9,
+     "kind": "towerPass",
+     "runA": 11,
+     "runB": 12,
+     "used": 0,
+     "gap": 12.431838248271038,
+     "rise": 0,
+     "pitch": 0
+    },
+    {
+     "id": 10,
+     "kind": "towerPass",
+     "runA": 12,
+     "runB": 13,
+     "used": 0,
+     "gap": 12.421964502611946,
+     "rise": 0,
+     "pitch": 0
+    },
+    {
+     "id": 11,
+     "kind": "towerPass",
+     "runA": 13,
+     "runB": 14,
+     "used": 0,
+     "gap": 12.412426210226847,
+     "rise": 0,
+     "pitch": 0
+    },
+    {
+     "id": 12,
+     "kind": "towerPass",
+     "runA": 14,
+     "runB": 15,
+     "used": 0,
+     "gap": 12.403269648232593,
+     "rise": 0,
+     "pitch": 0
+    },
+    {
+     "id": 13,
+     "kind": "towerPass",
+     "runA": 15,
+     "runB": 16,
+     "used": 0,
+     "gap": 12.39444830530391,
+     "rise": 0.5,
+     "pitch": 0.040340641848983054
+    },
+    {
+     "id": 14,
+     "kind": "towerPass",
+     "runA": 16,
+     "runB": 17,
+     "used": 0,
+     "gap": 12.386043421613506,
+     "rise": 0,
+     "pitch": 0
+    },
+    {
+     "id": 15,
+     "kind": "towerPass",
+     "runA": 17,
+     "runB": 18,
+     "used": 0,
+     "gap": 12.377978793052463,
+     "rise": 0,
+     "pitch": 0
+    },
+    {
+     "id": 16,
+     "kind": "towerPass",
+     "runA": 18,
+     "runB": 19,
+     "used": 0,
+     "gap": 12.370307497217949,
+     "rise": 0,
+     "pitch": 0
+    },
+    {
+     "id": 17,
+     "kind": "towerPass",
+     "runA": 19,
+     "runB": 20,
+     "used": 0,
+     "gap": 12.362987247243625,
+     "rise": 0,
+     "pitch": 0
+    },
+    {
+     "id": 18,
+     "kind": "towerPass",
+     "runA": 21,
+     "runB": 22,
+     "used": 0,
+     "gap": 12.349488529493456,
+     "rise": 0,
+     "pitch": 0
+    },
+    {
+     "id": 19,
+     "kind": "towerPass",
+     "runA": 22,
+     "runB": 23,
+     "used": 0,
+     "gap": 12.343295155101943,
+     "rise": 0,
+     "pitch": 0
+    },
+    {
+     "id": 20,
+     "kind": "towerPass",
+     "runA": 23,
+     "runB": 24,
+     "used": 0,
+     "gap": 12.337478754776066,
+     "rise": 0,
+     "pitch": 0
+    },
+    {
+     "id": 21,
+     "kind": "towerPass",
+     "runA": 24,
+     "runB": 25,
+     "used": 0,
+     "gap": 12.33204109207852,
+     "rise": 0.5,
+     "pitch": 0.04054478867421021
+    },
+    {
+     "id": 22,
+     "kind": "towerPass",
+     "runA": 25,
+     "runB": 26,
+     "used": 0,
+     "gap": 12.326990025534572,
+     "rise": 0,
+     "pitch": 0
+    },
+    {
+     "id": 23,
+     "kind": "towerPass",
+     "runA": 26,
+     "runB": 27,
+     "used": 0,
+     "gap": 12.322260096892336,
+     "rise": 0,
+     "pitch": 0
+    },
+    {
+     "id": 24,
+     "kind": "towerPass",
+     "runA": 27,
+     "runB": 28,
+     "used": 0,
+     "gap": 12.317960618859225,
+     "rise": -0.5,
+     "pitch": 0.04059113480477301
+    },
+    {
+     "id": 25,
+     "kind": "towerPass",
+     "runA": 28,
+     "runB": 29,
+     "used": 0,
+     "gap": 12.313996559931747,
+     "rise": 0,
+     "pitch": 0
+    },
+    {
+     "id": 26,
+     "kind": "towerPass",
+     "runA": 29,
+     "runB": 30,
+     "used": 0,
+     "gap": 12.310433255748134,
+     "rise": -0.5,
+     "pitch": 0.040615954744446875
+    },
+    {
+     "id": 27,
+     "kind": "towerPass",
+     "runA": 30,
+     "runB": 31,
+     "used": 0,
+     "gap": 12.307266597965096,
+     "rise": 0,
+     "pitch": 0
+    },
+    {
+     "id": 28,
+     "kind": "towerPass",
+     "runA": 31,
+     "runB": 32,
+     "used": 0,
+     "gap": 12.304438280881765,
+     "rise": -0.5,
+     "pitch": 0.04063574367119901
+    },
+    {
+     "id": 29,
+     "kind": "towerPass",
+     "runA": 32,
+     "runB": 33,
+     "used": 0,
+     "gap": 12.30194594272016,
+     "rise": 0.5,
+     "pitch": 0.04064397635366636
+    },
+    {
+     "id": 30,
+     "kind": "towerPass",
+     "runA": 33,
+     "runB": 34,
+     "used": 0,
+     "gap": 12.299913127893625,
+     "rise": 0,
+     "pitch": 0
+    },
+    {
+     "id": 31,
+     "kind": "towerPass",
+     "runA": 34,
+     "runB": 35,
+     "used": 0,
+     "gap": 12.298156560318965,
+     "rise": -0.5,
+     "pitch": 0.04065649982154984
+    },
+    {
+     "id": 32,
+     "kind": "towerPass",
+     "runA": 35,
+     "runB": 36,
+     "used": 0,
+     "gap": 12.296858498514972,
+     "rise": -1.5,
+     "pitch": 0.12198237461878148
+    },
+    {
+     "id": 33,
+     "kind": "towerPass",
+     "runA": 37,
+     "runB": 38,
+     "used": 0,
+     "gap": 12.295897860644805,
+     "rise": -2,
+     "pitch": 0.1626558729315208
+    },
+    {
+     "id": 34,
+     "kind": "stair",
+     "runA": -1,
+     "runB": 1,
+     "used": 0,
+     "gap": 25.341706774268367,
+     "rise": 14.123679558679795,
+     "pitch": 0.5573294523721974
+    },
+    {
+     "id": 35,
+     "kind": "stair",
+     "runA": -1,
+     "runB": 5,
+     "used": 0,
+     "gap": 24.89482610055254,
+     "rise": 13.818392767927275,
+     "pitch": 0.5550708694293943
+    },
+    {
+     "id": 36,
+     "kind": "stair",
+     "runA": -1,
+     "runB": 9,
+     "used": 0,
+     "gap": 26.643233177665902,
+     "rise": 14.21554213418657,
+     "pitch": 0.5335516916956973
+    },
+    {
+     "id": 37,
+     "kind": "stair",
+     "runA": -1,
+     "runB": 11,
+     "used": 0,
+     "gap": 25.341673822624657,
+     "rise": 14.117299433797998,
+     "pitch": 0.5570784129181826
+    },
+    {
+     "id": 38,
+     "kind": "stair",
+     "runA": -1,
+     "runB": 13,
+     "used": 0,
+     "gap": 26.196070167326358,
+     "rise": 13.930260367804626,
+     "pitch": 0.5317690889826467
+    },
+    {
+     "id": 39,
+     "kind": "stair",
+     "runA": -1,
+     "runB": 15,
+     "used": 0,
+     "gap": 24.894800222603813,
+     "rise": 13.868676400084027,
+     "pitch": 0.5570912911962892
+    },
+    {
+     "id": 40,
+     "kind": "stair",
+     "runA": -1,
+     "runB": 17,
+     "used": 0,
+     "gap": 25.748962353877783,
+     "rise": 13.909549221198738,
+     "pitch": 0.5401984371266894
+    },
+    {
+     "id": 41,
+     "kind": "stair",
+     "runA": -1,
+     "runB": 19,
+     "used": 0,
+     "gap": 25.341705518961486,
+     "rise": 14.081091176554896,
+     "pitch": 0.5556489150274028
+    },
+    {
+     "id": 42,
+     "kind": "stair",
+     "runA": -1,
+     "runB": 23,
+     "used": 0,
+     "gap": 25.34169697304849,
+     "rise": 14.079409064072383,
+     "pitch": 0.5555827251444991
+    },
+    {
+     "id": 43,
+     "kind": "stair",
+     "runA": -1,
+     "runB": 25,
+     "used": 0,
+     "gap": 26.19607948679027,
+     "rise": 14.023178937573876,
+     "pitch": 0.5353159408699021
+    },
+    {
+     "id": 44,
+     "kind": "stair",
+     "runA": -1,
+     "runB": 27,
+     "used": 0,
+     "gap": 26.643253263180384,
+     "rise": 14.218486122220714,
+     "pitch": 0.5336617860353389
+    },
+    {
+     "id": 45,
+     "kind": "stair",
+     "runA": -1,
+     "runB": 31,
+     "used": 0,
+     "gap": 26.64326651993977,
+     "rise": 14.361848311981218,
+     "pitch": 0.5390423243048235
+    },
+    {
+     "id": 46,
+     "kind": "stair",
+     "runA": -1,
+     "runB": 33,
+     "used": 0,
+     "gap": 26.19604385461524,
+     "rise": 14.129219314454918,
+     "pitch": 0.5393646228747484
+    }
+   ]
+  }
+ }
+}

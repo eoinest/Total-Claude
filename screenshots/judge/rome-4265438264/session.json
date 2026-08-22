@@ -1,0 +1,328 @@
+{
+ "seed": 4265438264,
+ "passive": false,
+ "rows": [
+  {
+   "name": "deployment states the win condition",
+   "ok": true,
+   "expected": "the brief names the thresholds",
+   "actual": "To hold the city: keep them under 60 men 14 m past the curta"
+  },
+  {
+   "name": "deployment: cohort 10 selects",
+   "ok": true,
+   "expected": "one click selects it",
+   "actual": "first click"
+  },
+  {
+   "name": "deployment: the parapet offers a wall placement",
+   "ok": true,
+   "expected": "hovering the walkway reads wallValid",
+   "actual": "yes"
+  },
+  {
+   "name": "deployment: the hint says it is a wall placement",
+   "ok": true,
+   "expected": "\"Place on the wall\"",
+   "actual": "Place on the wall"
+  },
+  {
+   "name": "deployment: cohort 10 went to the wall I chose",
+   "ok": false,
+   "expected": "near x316.63 at y>47.2",
+   "actual": "x26.16 y50.2"
+  },
+  {
+   "name": "opening runs at 30 fps or better",
+   "ok": true,
+   "expected": ">=30",
+   "actual": 120.2
+  },
+  {
+   "name": "t+25.33: \"0 of 60 inside — hold\" matches stormInside",
+   "ok": true,
+   "expected": "0 of 60",
+   "actual": "0 of 60 inside — hold"
+  },
+  {
+   "name": "t+45.9: \"31 of 60 inside — hold\" matches stormInside",
+   "ok": true,
+   "expected": "31 of 60",
+   "actual": "31 of 60 inside — hold"
+  },
+  {
+   "name": "men on my parapet is visible on the plaque",
+   "ok": false,
+   "expected": "the plaque names the parapet",
+   "actual": "In the Streets | 31 of them are past the curtain | 31 of 60 inside — hold"
+  },
+  {
+   "name": "reaction 1: the reserve selects",
+   "ok": false,
+   "expected": "selectable"
+  },
+  {
+   "name": "t+71.97: \"33 of 60 inside — hold\" matches stormInside",
+   "ok": true,
+   "expected": "33 of 60",
+   "actual": "33 of 60 inside — hold"
+  },
+  {
+   "name": "reaction 2: the reserve selects",
+   "ok": true,
+   "expected": "selectable",
+   "actual": "first click"
+  },
+  {
+   "name": "reaction 2: hovering the enemy identifies the enemy",
+   "ok": false,
+   "expected": 16,
+   "actual": 1
+  },
+  {
+   "name": "reaction 2: the order made the unit do something",
+   "ok": false,
+   "expected": "moved or changed order",
+   "actual": "moved 1.1 m, order 6->6"
+  },
+  {
+   "name": "reaction 3: the reserve selects",
+   "ok": true,
+   "expected": "selectable",
+   "actual": "first click"
+  },
+  {
+   "name": "reaction 3: hovering the enemy identifies the enemy",
+   "ok": false,
+   "expected": 16,
+   "actual": 10
+  },
+  {
+   "name": "reaction 3: the order made the unit do something",
+   "ok": false,
+   "expected": "moved or changed order",
+   "actual": "moved 4.4 m, order 6->6"
+  },
+  {
+   "name": "the result names a reason",
+   "ok": true,
+   "expected": "a reason",
+   "actual": "By objective — the ground that mattered has been lost"
+  },
+  {
+   "name": "the printed reason is the reason the arbiter used",
+   "ok": true,
+   "expected": "arbiter reason=objective victor=1",
+   "actual": "panel says \"By objective — the ground that mattered has been lost\""
+  },
+  {
+   "name": "no page errors all battle",
+   "ok": true,
+   "expected": 0,
+   "actual": 0
+  },
+  {
+   "name": "no console errors all battle",
+   "ok": true,
+   "expected": 0,
+   "actual": 0
+  }
+ ],
+ "log": [
+  "booted in 6.1 s",
+  "\n--- DEPLOYMENT ---",
+  "brief:  To hold the city: keep them under 60 men 14 m past the curtain, and never leave them a bay: 24 of them holding a stretch with nobody of ours standing on it for 20 s is the wall gone. A storm that makes no ground for 3 minutes is thrown back.",
+  "help:   Left-click a unit, right-drag to stand it there — the drag sets the facing and the frontage Z X C V B formation · Delete removes · drop on the parapet to man the wall",
+  "zone:   802 × 188 m, parapet included, bounded by the wall of Rome",
+  "tally:  12/20 units 3,072 men 8,928 free",
+  "rows:   [\"ballistarii=5\",\"wall-slingers=3\",\"carroballista=2\",\"legio-cohort=2\"]",
+  "  [PASS] deployment states the win condition  expected=\"the brief names the thresholds\" actual=\"To hold the city: keep them under 60 men 14 m past the curta\"",
+  "36 bays, 32 garrisonable, 3 gates",
+  "my order of battle: [{\"id\":0,\"t\":\"ballistarii\",\"n\":108,\"x\":57.53,\"z\":532.47,\"y\":20.9},{\"id\":1,\"t\":\"ballistarii\",\"n\":108,\"x\":205.59,\"z\":534,\"y\":34.52},{\"id\":2,\"t\":\"ballistarii\",\"n\":108,\"x\":242.6,\"z\":537.02,\"y\":39.74},{\"id\":3,\"t\":\"ballistarii\",\"n\":108,\"x\":279.62,\"z\":540.38,\"y\":44.97},{\"id\":4,\"t\":\"ballistarii\",\"n\":108,\"x\":316.63,\"z\":544.3,\"y\":50.2},{\"id\":5,\"t\":\"wall-slingers\",\"n\":90,\"x\":353.65,\"z\":548.61,\"y\":55.43},{\"id\":6,\"t\":\"wall-slingers\",\"n\":90,\"x\":390.66,\"z\":553.87,\"y\":60.66},{\"id\":7,\"t\":\"wall-slingers\",\"n\":90,\"x\":427.68,\"z\":560.8,\"y\":65.46},{\"id\":8,\"t\":\"carroballista\",\"n\":12,\"x\":131.37,\"z\":544.54,\"y\":14.71},{\"id\":9,\"t\":\"carroballista\",\"n\":12,\"x\":167.92,\"z\":545.64,\"y\":16.92},{\"id\":10,\"t\":\"legio-cohort\",\"n\":160,\"x\":26.16,\"z\":581.77,\"y\":12.67},{\"id\":11,\"t\":\"legio-cohort\",\"n\":160,\"x\":95.57,\"z\":576.7,\"y\":14.72}]",
+  "\nmoving cohort 10 (legio-cohort, 160 men) onto bay 8 at x316.63 z544.3 walkY 50.2",
+  "  [PASS] deployment: cohort 10 selects  expected=\"one click selects it\" actual=\"first click\"",
+  "  [PASS] deployment: the parapet offers a wall placement  expected=\"hovering the walkway reads wallValid\" actual=\"yes\"",
+  "hint while dragging on the parapet: \"Place on the wall\" cursor=wall",
+  "  [PASS] deployment: the hint says it is a wall placement  expected=\"\\\"Place on the wall\\\"\" actual=\"Place on the wall\"",
+  "cohort 10 after the drop: {\"id\":10,\"type\":\"legio-cohort\",\"faction\":0,\"alive\":160,\"order\":6,\"x\":26.16,\"z\":581.77,\"morale\":68,\"kills\":0,\"destroyed\":false,\"routing\":false,\"meanY\":50.2,\"elevated\":160,\"n\":160}",
+  "  [FAIL] deployment: cohort 10 went to the wall I chose  expected=\"near x316.63 at y>47.2\" actual=\"x26.16 y50.2\"",
+  "\n--- BEGIN ---",
+  "real-time frame rate at the opening: {\"fps\":120.2,\"n\":481,\"worstMs\":10,\"p95Ms\":10,\"medMs\":8}",
+  "  [PASS] opening runs at 30 fps or better  expected=\">=30\" actual=120.2",
+  "\n--- THE BATTLE ---",
+  "\n  t+25.33 PHASE -> The Wall Reached — \"They are at the stone; keep the walk clear\"",
+  "  t+25.33 {\"onWall\":0,\"holding\":0,\"garr\":968,\"inside\":0,\"heldFor\":0,\"stalled\":10} adv=\"0 of 60 inside — hold\" gate={\"hp\":1,\"blows\":0,\"breached\":false,\"open\":false} breach={\"bays\":0,\"lanes\":0,\"through\":0} crossing=149 ROME 1 152 −2 | JUTHUNGI 1 836 −82",
+  "  [PASS] t+25.33: \"0 of 60 inside — hold\" matches stormInside  expected=\"0 of 60\" actual=\"0 of 60 inside — hold\"",
+  "\n  t+45.9 PHASE -> In the Streets — \"31 of them are past the curtain\"",
+  "  t+45.9 {\"onWall\":47,\"holding\":0,\"garr\":956,\"inside\":31,\"heldFor\":0,\"stalled\":0} adv=\"31 of 60 inside — hold\" gate={\"hp\":1,\"blows\":0,\"breached\":false,\"open\":false} breach={\"bays\":0,\"lanes\":0,\"through\":0} crossing=171 ROME 1 126 −28 | JUTHUNGI 1 764 −154",
+  "      feed: [\"Carroballista II — heavy losses / 4 men lost · 8 still standing\",\"Carroballista II destroyed / ROME · wiped from the field\",\"Ladder Party III has broken / JUTHUNGI · the line is giving way\"]",
+  "  [PASS] t+45.9: \"31 of 60 inside — hold\" matches stormInside  expected=\"31 of 60\" actual=\"31 of 60 inside — hold\"",
+  "\n  *** THEY ARE ON MY PARAPET at t+45.9: onWall=47 holding=0 ***",
+  "  plaque: phase=\"In the Streets\" note=\"31 of them are past the curtain\" adv=\"31 of 60 inside — hold\"",
+  "  [FAIL] men on my parapet is visible on the plaque  expected=\"the plaque names the parapet\" actual=\"In the Streets | 31 of them are past the curtain | 31 of 60 inside — hold\"",
+  "\n  --- REACTION 1: they are on the wall, counter-attacking ---",
+  "  reserve 10 (legio-cohort, 158 men, at x315.87 z544.98 y50.2) -> enemy 16 (escalade-party, 79 men, elevated 79, at x206.11 z530.1 y29.81)",
+  "  [FAIL] reaction 1: the reserve selects  expected=\"selectable\" actual=undefined",
+  "  t+71.97 {\"onWall\":98,\"holding\":0,\"garr\":911,\"inside\":33,\"heldFor\":0,\"stalled\":1} adv=\"33 of 60 inside — hold\" gate={\"hp\":1,\"blows\":0,\"breached\":false,\"open\":false} breach={\"bays\":0,\"lanes\":0,\"through\":0} crossing=0 ROME 1 079 −75 | JUTHUNGI 1 662 −256",
+  "      feed: [\"Ladder Party II — heavy losses / 24 men lost · 47 still standing\"]",
+  "  [PASS] t+71.97: \"33 of 60 inside — hold\" matches stormInside  expected=\"33 of 60\" actual=\"33 of 60 inside — hold\"",
+  "\n  --- REACTION 2: they are on the wall, counter-attacking ---",
+  "  reserve 10 (legio-cohort, 158 men, at x315.92 z545.04 y50.2) -> enemy 16 (escalade-party, 49 men, elevated 49, at x209.21 z535.57 y34.52)",
+  "  [PASS] reaction 2: the reserve selects  expected=\"selectable\" actual=\"first click\"",
+  "  hovering the enemy: cursor=wall hovered=1 (want 16) wallValid=true",
+  "  [FAIL] reaction 2: hovering the enemy identifies the enemy  expected=16 actual=1",
+  "  hint while held: \"Along the wall\" cursor=wall",
+  "  30 s later: reserve at x314.78 z545.01 y49.87 order=6 (moved 1.1 m); enemy 49 -> 25",
+  "  [FAIL] reaction 2: the order made the unit do something  expected=\"moved or changed order\" actual=\"moved 1.1 m, order 6->6\"",
+  "\n  t+125.5 PHASE -> Aftermath — \"The field is decided\"",
+  "  t+125.5 {\"onWall\":2,\"holding\":0,\"garr\":869,\"inside\":62,\"heldFor\":0,\"stalled\":1} adv=\"JUTHUNGI advantage 20%\" gate={\"hp\":0.77,\"blows\":6,\"breached\":false,\"open\":false} breach={\"bays\":0,\"lanes\":0,\"through\":0} crossing=0 ROME 1 037 −117 | JUTHUNGI 1 566 −352",
+  "\n  --- REACTION 3: they are on the wall, counter-attacking ---",
+  "  reserve 10 (legio-cohort, 158 men, at x313.5 z544.81 y49.76) -> enemy 16 (escalade-party, 24 men, elevated 4, at x218.82 z610.81 y34.12)",
+  "  [PASS] reaction 3: the reserve selects  expected=\"selectable\" actual=\"first click\"",
+  "  hovering the enemy: cursor=default hovered=10 (want 16) wallValid=false",
+  "  [FAIL] reaction 3: hovering the enemy identifies the enemy  expected=16 actual=10",
+  "  hint while held: \"\" cursor=default",
+  "  30 s later: reserve at x309.11 z544.29 y49.14 order=6 (moved 4.4 m); enemy 24 -> 22",
+  "  [FAIL] reaction 3: the order made the unit do something  expected=\"moved or changed order\" actual=\"moved 4.4 m, order 6->6\"",
+  "\n*** RESULT at t+125.5: {\"verdict\":\"Defeat\",\"reason\":\"By objective — the ground that mattered has been lost\"} ***",
+  "result panel: {\n \"verdict\": \"Defeat\",\n \"reason\": \"By objective — the ground that mattered has been lost\",\n \"clock\": \"01:59 on the field\",\n \"flavour\": [\n  \"The wall was carried.\",\n  \"The field belongs to the tribes. Rome will remember this day every time she looks at the height of her new walls.\"\n ],\n \"cols\": [\n  {\n   \"f\": \"rome\",\n   \"txt\": \"ROME Senatus Populusque Romanus Committed1 154 Surviving1 037 Fallen117 (10%) Units lost1 of 12 Destroyed outright1 of 12\"\n  },\n  {\n   \"f\": \"juthungi\",\n   \"txt\": \"JUTHUNGI Juthungi Confederation Committed1 918 Surviving1 566 Fallen352 (18%) Units lost4 of 20 Destroyed outright1 of 20\"\n  }\n ],\n \"honours\": \"The wall The gateHeld at 85% — 4 blows Breaches in the curtain0 On the parapet at the end2 storming · 869 holding Inside the walls62 of 60 needed The wall was carried.\",\n \"buttons\": [\n  \"Save replay\",\n  \"Copy replay link\",\n  \"Dismiss\"\n ]\n}",
+  "  [PASS] the result names a reason  expected=\"a reason\" actual=\"By objective — the ground that mattered has been lost\"",
+  "arbiter's own result: {\"victor\":1,\"reason\":\"objective\",\"casualties\":{\"0\":117,\"1\":352},\"survivors\":{\"0\":1037,\"1\":1566},\"unitsLost\":{\"0\":1,\"1\":4},\"unitsTotal\":{\"0\":12,\"1\":20},\"at\":119.89999999999576}",
+  "arbiter's objective at the end: {\"stormOnWall\":2,\"garrisonOnWall\":869,\"stormInside\":62,\"stormHolding\":0,\"holdingRuns\":[],\"heldFor\":0,\"storm\":1,\"garrison\":0,\"needInside\":60,\"insideMargin\":14,\"needFoothold\":24,\"holdSeconds\":20,\"stallSeconds\":180,\"stalledFor\":0.9999999999999999}",
+  "  [PASS] the printed reason is the reason the arbiter used  expected=\"arbiter reason=objective victor=1\" actual=\"panel says \\\"By objective — the ground that mattered has been lost\\\"\"",
+  "  [PASS] no page errors all battle  expected=0 actual=0",
+  "  [PASS] no console errors all battle  expected=0 actual=0"
+ ],
+ "snaps": [
+  {
+   "t": 25.33,
+   "phase": "The Wall Reached",
+   "note": "They are at the stone; keep the walk clear",
+   "adv": "0 of 60 inside — hold",
+   "men": [
+    "ROME 1 152 −2",
+    "JUTHUNGI 1 836 −82"
+   ],
+   "obj": {
+    "onWall": 0,
+    "holding": 0,
+    "garr": 968,
+    "inside": 0,
+    "heldFor": 0,
+    "stalled": 10
+   },
+   "gate": {
+    "hp": 1,
+    "blows": 0,
+    "breached": false,
+    "open": false
+   },
+   "breach": {
+    "bays": 0,
+    "lanes": 0,
+    "through": 0
+   },
+   "crossing": 149,
+   "feed": []
+  },
+  {
+   "t": 45.9,
+   "phase": "In the Streets",
+   "note": "31 of them are past the curtain",
+   "adv": "31 of 60 inside — hold",
+   "men": [
+    "ROME 1 126 −28",
+    "JUTHUNGI 1 764 −154"
+   ],
+   "obj": {
+    "onWall": 47,
+    "holding": 0,
+    "garr": 956,
+    "inside": 31,
+    "heldFor": 0,
+    "stalled": 0
+   },
+   "gate": {
+    "hp": 1,
+    "blows": 0,
+    "breached": false,
+    "open": false
+   },
+   "breach": {
+    "bays": 0,
+    "lanes": 0,
+    "through": 0
+   },
+   "crossing": 171,
+   "feed": [
+    "Carroballista II — heavy losses",
+    "Carroballista II destroyed",
+    "Ladder Party III has broken"
+   ]
+  },
+  {
+   "t": 71.97,
+   "phase": "In the Streets",
+   "note": "33 of them are past the curtain",
+   "adv": "33 of 60 inside — hold",
+   "men": [
+    "ROME 1 079 −75",
+    "JUTHUNGI 1 662 −256"
+   ],
+   "obj": {
+    "onWall": 98,
+    "holding": 0,
+    "garr": 911,
+    "inside": 33,
+    "heldFor": 0,
+    "stalled": 1
+   },
+   "gate": {
+    "hp": 1,
+    "blows": 0,
+    "breached": false,
+    "open": false
+   },
+   "breach": {
+    "bays": 0,
+    "lanes": 0,
+    "through": 0
+   },
+   "crossing": 0,
+   "feed": [
+    "Ladder Party II — heavy losses"
+   ]
+  },
+  {
+   "t": 125.5,
+   "phase": "Aftermath",
+   "note": "The field is decided",
+   "adv": "JUTHUNGI advantage 20%",
+   "men": [
+    "ROME 1 037 −117",
+    "JUTHUNGI 1 566 −352"
+   ],
+   "obj": {
+    "onWall": 2,
+    "holding": 0,
+    "garr": 869,
+    "inside": 62,
+    "heldFor": 0,
+    "stalled": 1
+   },
+   "gate": {
+    "hp": 0.77,
+    "blows": 6,
+    "breached": false,
+    "open": false
+   },
+   "breach": {
+    "bays": 0,
+    "lanes": 0,
+    "through": 0
+   },
+   "crossing": 0,
+   "feed": []
+  }
+ ]
+}

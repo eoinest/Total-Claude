@@ -1,0 +1,89 @@
+{
+ "phase": "Deployment",
+ "speed": "",
+ "clock": "00:00",
+ "blocks": [
+  {
+   "name": "ROME",
+   "men": "1 154",
+   "units": "12 units",
+   "loss": "−0",
+   "line": "1 154\n              −0\n              12 units"
+  },
+  {
+   "name": "JUTHUNGI",
+   "men": "1 920",
+   "units": "20 units",
+   "loss": "−0",
+   "line": "1 920\n              −0\n              20 units"
+  }
+ ],
+ "adv": "JUTHUNGI advantage 25%",
+ "note": "The lines are dressing",
+ "mid": "00:00 Deployment The lines are dressing JUTHUNGI advantage 25%",
+ "topAll": "00:00 Deployment",
+ "feed": [],
+ "cmd": {
+  "name": "—",
+  "native": "",
+  "order": "Holding",
+  "state": "Holding·Steady",
+  "nums": "Kills 0 Frontage 0 m",
+  "mor": "Steady",
+  "buttons": [
+   {
+    "t": "H",
+    "off": false,
+    "on": false
+   },
+   {
+    "t": "R",
+    "off": false,
+    "on": false
+   }
+  ]
+ },
+ "cards": [
+  "Legionary Cohort I",
+  "Legionary Cohort II",
+  "Wall Ballistarii I",
+  "Wall Ballistarii II",
+  "Wall Ballistarii III",
+  "Wall Ballistarii IV",
+  "Wall Ballistarii V",
+  "Wall Slingers I",
+  "Wall Slingers II",
+  "Wall Slingers III",
+  "Carroballista I",
+  "Carroballista II"
+ ],
+ "hint": null,
+ "cursor": "",
+ "banner": [
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  ""
+ ],
+ "result": null,
+ "objectiveish": [],
+ "deploy": {
+  "title": "DEPLOYMENT 989 × 188 m, parapet included, bounded by the wall of Rome",
+  "step": "− 5 +",
+  "zone": "989 × 188 m, parapet included, bounded by the wall of Rome",
+  "help": "Left-click a unit, right-drag to stand it there — the drag sets the facing and the frontage Z X C V B formation · Delete removes · drop on the parapet to man the wall",
+  "note": "",
+  "tally": "12/20 units 3,074 men 8,926 free",
+  "brief": "To hold the city: keep them under 60 men 14 m past the curtain, and never leave them a bay: 24 of them holding a stretch with nobody of ours standing on it for 20 s is the wall gone. A storm that makes no ground for 3 minutes is thrown back.",
+  "rows": [
+   "ballistarii=5",
+   "wall-slingers=3",
+   "carroballista=2",
+   "legio-cohort=2"
+  ]
+ }
+}

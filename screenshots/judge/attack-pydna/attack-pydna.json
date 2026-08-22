@@ -1,0 +1,148 @@
+{
+ "map": "pydna",
+ "at": 130,
+ "mine": {
+  "probes": 64,
+  "named": 40,
+  "other": 0,
+  "curs": {
+   "move": 24,
+   "friend": 40
+  },
+  "box": {
+   "n": 640,
+   "x0": -99.46184678319376,
+   "x1": 1703.5392084837724,
+   "y0": 311.8210966718308,
+   "y1": 502.3125657296544
+  },
+  "u": {
+   "id": 1,
+   "type": "legio-cohort",
+   "faction": 0,
+   "alive": 320,
+   "order": 0,
+   "x": -96,
+   "z": 130,
+   "morale": 71,
+   "kills": 0,
+   "destroyed": false,
+   "routing": false,
+   "meanY": 30.27,
+   "elevated": 0,
+   "n": 320
+  },
+  "first": {
+   "x": 101,
+   "y": 339
+  }
+ },
+ "theirs": {
+  "probes": 28,
+  "named": 7,
+  "other": 9,
+  "curs": {
+   "move": 9,
+   "friend": 4,
+   "attack": 12,
+   "default": 3
+  },
+  "box": {
+   "n": 710,
+   "x0": 67.77838046323481,
+   "x1": 2347.963498191021,
+   "y0": 274.5333216057437,
+   "y1": 1351.232518078448
+  },
+  "u": {
+   "id": 21,
+   "type": "juthungi-warband",
+   "faction": 1,
+   "alive": 356,
+   "order": 3,
+   "x": -164.9,
+   "z": 130.39,
+   "morale": 74,
+   "kills": 18,
+   "destroyed": false,
+   "routing": false,
+   "meanY": 30.88,
+   "elevated": 0,
+   "n": 356
+  },
+  "first": {
+   "x": 68,
+   "y": 428
+  }
+ },
+ "rows": [
+  {
+   "name": "something of mine is selected before the sweep",
+   "ok": true,
+   "expected": "a non-empty selection",
+   "actual": "[1]"
+  },
+  {
+   "name": "my own men can be picked out of the crowd",
+   "ok": true,
+   "expected": ">0 pixels",
+   "actual": "40/64"
+  },
+  {
+   "name": "THE ENEMY can be picked out of the crowd",
+   "ok": true,
+   "expected": ">0 pixels",
+   "actual": "7/28"
+  },
+  {
+   "name": "the enemy is as pickable as my own men (within 3x)",
+   "ok": true,
+   "expected": "enemy hit rate within 3x of my own 63%",
+   "actual": "25%"
+  },
+  {
+   "name": "the cursor turns to \"attack\" over an enemy",
+   "ok": true,
+   "expected": "attack",
+   "actual": "attack"
+  },
+  {
+   "name": "the hint offers to attack a named enemy",
+   "ok": true,
+   "expected": "\"Attack <name>\"",
+   "actual": "Attack Tribal Warband II"
+  },
+  {
+   "name": "the order became an attack order (not a plain move)",
+   "ok": true,
+   "expected": "UnitOrder Attack(2) or AttackMove(3)",
+   "actual": 3
+  },
+  {
+   "name": "no console errors",
+   "ok": true,
+   "expected": 0,
+   "actual": 0
+  }
+ ],
+ "log": [
+  "t+133.1",
+  "  [PASS] something of mine is selected before the sweep  expected=\"a non-empty selection\" actual=\"[1]\"",
+  "\n--- the control: sweep one of MY units ---",
+  "  my own unit (unit 1, 320 men, box 1803x190 px): 40/64 pixels name it, 0 name someone else; cursors {\"move\":24,\"friend\":40}",
+  "\n--- the test: sweep one of THEIRS ---",
+  "  the enemy unit (unit 21, 356 men, box 2280x1077 px): 7/28 pixels name it, 9 name someone else; cursors {\"move\":9,\"friend\":4,\"attack\":12,\"default\":3}",
+  "  [PASS] my own men can be picked out of the crowd  expected=\">0 pixels\" actual=\"40/64\"",
+  "  [PASS] THE ENEMY can be picked out of the crowd  expected=\">0 pixels\" actual=\"7/28\"",
+  "  [PASS] the enemy is as pickable as my own men (within 3x)  expected=\"enemy hit rate within 3x of my own 63%\" actual=\"25%\"",
+  "\n--- the order ---",
+  "  aiming at a pixel that answered with the enemy: {\"x\":68,\"y\":428}",
+  "  hovering the middle of the enemy: cursor=attack hovered=21 (want 21)",
+  "  [PASS] the cursor turns to \"attack\" over an enemy  expected=\"attack\" actual=\"attack\"",
+  "  the hint while held: \"Attack Tribal Warband II\" cursor=attack",
+  "  [PASS] the hint offers to attack a named enemy  expected=\"\\\"Attack <name>\\\"\" actual=\"Attack Tribal Warband II\"",
+  "  45 s later: mine order 3->3 kills 0->70; target 351->278",
+  "  [PASS] the order became an attack order (not a plain move)  expected=\"UnitOrder Attack(2) or AttackMove(3)\" actual=3",
+  "  [PASS] no console errors  expected=0 actual=0"
+ ]
+}

@@ -1,0 +1,1454 @@
+{
+ "seed": 4265438264,
+ "arm": "play",
+ "rows": [
+  {
+   "name": "a field battle gets a brief telling me how to win it",
+   "ok": false,
+   "expected": "some sentence",
+   "actual": "(null — nothing at all)"
+  },
+  {
+   "name": "opening runs at 30 fps or better",
+   "ok": true,
+   "expected": ">=30",
+   "actual": 120.2
+  },
+  {
+   "name": "the clash is announced somewhere",
+   "ok": false,
+   "expected": "the plaque or feed says the lines met",
+   "actual": "Missile Exchange | The lines are dressing | "
+  },
+  {
+   "name": "the praetorian reserve 6 selects",
+   "ok": true,
+   "expected": "selectable",
+   "actual": "hunted 54/81"
+  },
+  {
+   "name": "the reserve order reports its frontage",
+   "ok": false,
+   "expected": "a frontage in metres and men per rank",
+   "actual": "Move here"
+  },
+  {
+   "name": "the reserve 6 actually marched",
+   "ok": true,
+   "expected": ">15 m in 40 s",
+   "actual": "49 m"
+  },
+  {
+   "name": "the praetorian reserve 7 selects",
+   "ok": true,
+   "expected": "selectable",
+   "actual": "hunted 53/81"
+  },
+  {
+   "name": "the reserve order reports its frontage",
+   "ok": false,
+   "expected": "a frontage in metres and men per rank",
+   "actual": "Move here"
+  },
+  {
+   "name": "the reserve 7 actually marched",
+   "ok": true,
+   "expected": ">15 m in 40 s",
+   "actual": "61 m"
+  },
+  {
+   "name": "squadron 12 selects",
+   "ok": true,
+   "expected": "selectable",
+   "actual": "yes"
+  },
+  {
+   "name": "hovering an enemy unit in the open names it",
+   "ok": false,
+   "expected": 18,
+   "actual": -1
+  },
+  {
+   "name": "the attack hint names the target",
+   "ok": false,
+   "expected": "a hint containing \"attack\"",
+   "actual": "Move here"
+  },
+  {
+   "name": "the cavalry charge did damage",
+   "ok": true,
+   "expected": "kills or casualties on the target",
+   "actual": "kills +3, target -0"
+  },
+  {
+   "name": "squadron 13 selects",
+   "ok": true,
+   "expected": "selectable",
+   "actual": "yes"
+  },
+  {
+   "name": "hovering an enemy unit in the open names it",
+   "ok": false,
+   "expected": 18,
+   "actual": -1
+  },
+  {
+   "name": "the attack hint names the target",
+   "ok": false,
+   "expected": "a hint containing \"attack\"",
+   "actual": "Move here"
+  },
+  {
+   "name": "the cavalry charge did damage",
+   "ok": true,
+   "expected": "kills or casualties on the target",
+   "actual": "kills +5, target -0"
+  },
+  {
+   "name": "the plaque tells me my line is breaking",
+   "ok": true,
+   "expected": "the plaque says something about it",
+   "actual": "The Clash | The lines are dressing | JUTHUNGI advantage 18%"
+  },
+  {
+   "name": "the result explains why, not just who",
+   "ok": true,
+   "expected": "a sentence",
+   "actual": "By rout — the enemy has quit the field"
+  },
+  {
+   "name": "no page errors",
+   "ok": true,
+   "expected": 0,
+   "actual": 0
+  },
+  {
+   "name": "no console errors",
+   "ok": true,
+   "expected": 0,
+   "actual": 0
+  }
+ ],
+ "log": [
+  "title: DEPLOYMENT 1074 × 1189 m, bounded by the edge of the field",
+  "brief: null",
+  "help:  Left-click a unit, right-drag to stand it there — the drag sets the facing and the frontage Z X C V B formation · Delete removes",
+  "tally: 16/20 units 8,632 men 3,368 free",
+  "rows:  [\"legio-cohort=6\",\"praetorian-cohort=2\",\"urban-cohort=2\",\"sagittarii=2\",\"equites=3\",\"scorpio=1\"]",
+  "  [FAIL] a field battle gets a brief telling me how to win it  expected=\"some sentence\" actual=\"(null — nothing at all)\"",
+  "banners at t+0: [\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]",
+  "Rome: [{\"id\":0,\"t\":\"legio-cohort\",\"n\":320,\"x\":-160,\"z\":130},{\"id\":1,\"t\":\"legio-cohort\",\"n\":320,\"x\":-96,\"z\":130},{\"id\":2,\"t\":\"legio-cohort\",\"n\":320,\"x\":-32,\"z\":130},{\"id\":3,\"t\":\"legio-cohort\",\"n\":320,\"x\":32,\"z\":130},{\"id\":4,\"t\":\"legio-cohort\",\"n\":320,\"x\":96,\"z\":130},{\"id\":5,\"t\":\"legio-cohort\",\"n\":320,\"x\":160,\"z\":130},{\"id\":6,\"t\":\"praetorian-cohort\",\"n\":240,\"x\":-44,\"z\":216},{\"id\":7,\"t\":\"praetorian-cohort\",\"n\":240,\"x\":44,\"z\":216},{\"id\":8,\"t\":\"urban-cohort\",\"n\":300,\"x\":-250,\"z\":122},{\"id\":9,\"t\":\"urban-cohort\",\"n\":300,\"x\":250,\"z\":122},{\"id\":10,\"t\":\"sagittarii\",\"n\":200,\"x\":-104,\"z\":208},{\"id\":11,\"t\":\"sagittarii\",\"n\":200,\"x\":104,\"z\":208},{\"id\":12,\"t\":\"equites\",\"n\":120,\"x\":-300,\"z\":164},{\"id\":13,\"t\":\"equites\",\"n\":120,\"x\":300,\"z\":164},{\"id\":14,\"t\":\"equites\",\"n\":120,\"x\":352,\"z\":190},{\"id\":15,\"t\":\"scorpio\",\"n\":12,\"x\":0,\"z\":262}]",
+  "Foe:  [{\"id\":16,\"t\":\"juthungi-skirmishers\",\"n\":220,\"x\":-180,\"z\":-122},{\"id\":17,\"t\":\"juthungi-skirmishers\",\"n\":220,\"x\":0,\"z\":-122},{\"id\":18,\"t\":\"juthungi-skirmishers\",\"n\":220,\"x\":180,\"z\":-122},{\"id\":19,\"t\":\"juthungi-warband\",\"n\":360,\"x\":-184,\"z\":-184},{\"id\":20,\"t\":\"juthungi-spears\",\"n\":340,\"x\":-138,\"z\":-190},{\"id\":21,\"t\":\"juthungi-warband\",\"n\":360,\"x\":-92,\"z\":-184},{\"id\":22,\"t\":\"juthungi-warband\",\"n\":360,\"x\":-46,\"z\":-184},{\"id\":23,\"t\":\"juthungi-spears\",\"n\":340,\"x\":0,\"z\":-190},{\"id\":24,\"t\":\"juthungi-warband\",\"n\":360,\"x\":46,\"z\":-184},{\"id\":25,\"t\":\"juthungi-warband\",\"n\":360,\"x\":92,\"z\":-184},{\"id\":26,\"t\":\"juthungi-spears\",\"n\":340,\"x\":138,\"z\":-190},{\"id\":27,\"t\":\"juthungi-warband\",\"n\":360,\"x\":184,\"z\":-184},{\"id\":28,\"t\":\"juthungi-chosen\",\"n\":200,\"x\":-70,\"z\":-248},{\"id\":29,\"t\":\"juthungi-chosen\",\"n\":200,\"x\":70,\"z\":-248},{\"id\":30,\"t\":\"juthungi-berserkers\",\"n\":160,\"x\":-150,\"z\":-242},{\"id\":31,\"t\":\"juthungi-berserkers\",\"n\":160,\"x\":150,\"z\":-242},{\"id\":32,\"t\":\"juthungi-riders\",\"n\":100,\"x\":-330,\"z\":-144},{\"id\":33,\"t\":\"juthungi-riders\",\"n\":100,\"x\":330,\"z\":-144},{\"id\":34,\"t\":\"juthungi-riders\",\"n\":100,\"x\":386,\"z\":-178}]",
+  "real-time frame rate at the opening: {\"fps\":120.2,\"n\":481,\"worstMs\":10,\"p95Ms\":10,\"medMs\":8}",
+  "  [PASS] opening runs at 30 fps or better  expected=\">=30\" actual=120.2",
+  "  t+25.33 [The Advance] \"The lines are dressing\" adv=\"JUTHUNGI advantage 13%\" ROME 3 772 −0 | JUTHUNGI 4 860 −0 routing R0/16 F0/19",
+  "  t+46.07 [The Advance] \"The lines are dressing\" adv=\"JUTHUNGI advantage 13%\" ROME 3 772 −0 | JUTHUNGI 4 860 −0 routing R0/16 F0/19",
+  "  t+66.53 [Missile Exchange] \"The lines are dressing\" adv=\"JUTHUNGI advantage 13%\" ROME 3 772 −0 | JUTHUNGI 4 860 −0 routing R0/16 F0/19",
+  "  t+87.1 [Missile Exchange] \"The lines are dressing\" adv=\"JUTHUNGI advantage 13%\" ROME 3 772 −0 | JUTHUNGI 4 860 −0 routing R0/16 F0/19",
+  "  t+107.53 [Missile Exchange] \"The lines are dressing\" adv=\"JUTHUNGI advantage 12%\" ROME 3 771 −1 | JUTHUNGI 4 796 −64 routing R0/16 F0/19",
+  "\n  *** THE LINES HAVE MET at t+107.53 ***",
+  "  [FAIL] the clash is announced somewhere  expected=\"the plaque or feed says the lines met\" actual=\"Missile Exchange | The lines are dressing | \"",
+  "  t+130.73 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 12%\" ROME 3 694 −78 | JUTHUNGI 4 728 −132 routing R0/16 F1/19",
+  "  t+151.17 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 14%\" ROME 3 528 −244 | JUTHUNGI 4 649 −211 routing R1/16 F1/19",
+  "      feed: [\"Legionary Cohort I has broken — ROME · the line is giving way\",\"The lines have met — Contact along the front\"]",
+  "  t+171.63 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 14%\" ROME 3 440 −332 | JUTHUNGI 4 518 −342 routing R1/16 F2/19",
+  "\n  --- ORDER: commit the praetorian reserve into the worst of the line ---",
+  "  weakest cohort: 0 morale 0 at x-201.07 z194.82",
+  "  [PASS] the praetorian reserve 6 selects  expected=\"selectable\" actual=\"hunted 54/81\"",
+  "  reserve 6 -> the gap: hint \"Move here\" cursor=move",
+  "  [FAIL] the reserve order reports its frontage  expected=\"a frontage in metres and men per rank\" actual=\"Move here\"",
+  "  40 s later: moved 49 m to x-83.93 z188.15, order 1->1",
+  "  [PASS] the reserve 6 actually marched  expected=\">15 m in 40 s\" actual=\"49 m\"",
+  "  [PASS] the praetorian reserve 7 selects  expected=\"selectable\" actual=\"hunted 53/81\"",
+  "  reserve 7 -> the gap: hint \"Move here\" cursor=move",
+  "  [FAIL] the reserve order reports its frontage  expected=\"a frontage in metres and men per rank\" actual=\"Move here\"",
+  "  40 s later: moved 61 m to x-11.57 z189.59, order 1->1",
+  "  [PASS] the reserve 7 actually marched  expected=\">15 m in 40 s\" actual=\"61 m\"",
+  "\n  --- ORDER: the horse round the flank, into the enemy's rear ---",
+  "  target on the wing: 18 juthungi-skirmishers 220 men at x160.37 z9.67",
+  "  [PASS] squadron 12 selects  expected=\"selectable\" actual=\"yes\"",
+  "  hovering the enemy squadron: cursor=move hovered=-1 (want 18)",
+  "  [FAIL] hovering an enemy unit in the open names it  expected=18 actual=-1",
+  "  order: hint \"Move here\" cursor=move",
+  "  [FAIL] the attack hint names the target  expected=\"a hint containing \\\"attack\\\"\" actual=\"Move here\"",
+  "  50 s later: squadron moved 137 m, kills 0->3; target 220->220 morale 40->40",
+  "  [PASS] the cavalry charge did damage  expected=\"kills or casualties on the target\" actual=\"kills +3, target -0\"",
+  "  [PASS] squadron 13 selects  expected=\"selectable\" actual=\"yes\"",
+  "  hovering the enemy squadron: cursor=move hovered=-1 (want 18)",
+  "  [FAIL] hovering an enemy unit in the open names it  expected=18 actual=-1",
+  "  order: hint \"Move here\" cursor=move",
+  "  [FAIL] the attack hint names the target  expected=\"a hint containing \\\"attack\\\"\" actual=\"Move here\"",
+  "  50 s later: squadron moved 23 m, kills 0->5; target 220->220 morale 40->42",
+  "  [PASS] the cavalry charge did damage  expected=\"kills or casualties on the target\" actual=\"kills +5, target -0\"",
+  "  t+400.87 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 18%\" ROME 2 518 −1 254 | JUTHUNGI 3 612 −1 248 routing R4/16 F4/19",
+  "\n  *** THREE OF MY UNITS ARE ROUTING at t+400.87 ***",
+  "  plaque: [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 18%\"",
+  "  [PASS] the plaque tells me my line is breaking  expected=\"the plaque says something about it\" actual=\"The Clash | The lines are dressing | JUTHUNGI advantage 18%\"",
+  "  t+421.43 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 20%\" ROME 2 384 −1 388 | JUTHUNGI 3 586 −1 274 routing R4/16 F4/19",
+  "      feed: [\"Legionary Cohort I — heavy losses — 82 men lost · 73 still standing\",\"Legionary Cohort V has rallied — Standards raised, ranks re-formed\",\"The lines have met — Contact along the front\"]",
+  "  t+441.87 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 21%\" ROME 2 287 −1 485 | JUTHUNGI 3 530 −1 330 routing R4/16 F4/19",
+  "      feed: [\"Tribal Warband II has broken — JUTHUNGI · the line is giving way\",\"Tribal Spearmen I has rallied — Standards raised, ranks re-formed\",\"Chieftain's Chosen I — heavy losses — 51 men lost · 149 still standing\"]",
+  "  t+462.43 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 22%\" ROME 2 194 −1 578 | JUTHUNGI 3 463 −1 397 routing R3/16 F4/19",
+  "      feed: [\"Urban Cohort I — heavy losses — 76 men lost · 224 still standing\",\"The lines have met — Contact along the front\"]",
+  "  t+483.07 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 23%\" ROME 2 156 −1 616 | JUTHUNGI 3 421 −1 439 routing R3/16 F6/19",
+  "      feed: [\"Tribal Warband I has broken — JUTHUNGI · the line is giving way\"]",
+  "  t+503.6 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 23%\" ROME 2 121 −1 651 | JUTHUNGI 3 356 −1 504 routing R4/16 F9/19",
+  "      feed: [\"The lines have met — Contact along the front\",\"Tribal Horse Raiders III has broken — JUTHUNGI · the line is giving way\",\"Tribal Spearmen II has broken — JUTHUNGI · the line is giving way\"]",
+  "  t+524.2 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 22%\" ROME 2 120 −1 652 | JUTHUNGI 3 293 −1 567 routing R3/16 F9/19",
+  "      feed: [\"Tribal Skirmishers II has broken — JUTHUNGI · the line is giving way\",\"Tribal Spearmen II has rallied — Standards raised, ranks re-formed\",\"Chieftain's Chosen I has rallied — Standards raised, ranks re-formed\"]",
+  "  t+544.63 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 21%\" ROME 2 120 −1 652 | JUTHUNGI 3 281 −1 579 routing R3/16 F7/19",
+  "  t+565.17 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 21%\" ROME 2 097 −1 675 | JUTHUNGI 3 235 −1 625 routing R3/16 F7/19",
+  "      feed: [\"Praetorian Guard II has broken — ROME · the line is giving way\"]",
+  "  t+585.7 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 19%\" ROME 2 056 −1 716 | JUTHUNGI 3 011 −1 849 routing R6/16 F7/19",
+  "      feed: [\"Auxiliary Archers II has broken — ROME · the line is giving way\",\"Tribal Warband II destroyed — JUTHUNGI · wiped from the field\",\"Tribal Warband II — heavy losses — 178 men lost · 0 still standing\"]",
+  "  t+606.27 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 19%\" ROME 2 056 −1 716 | JUTHUNGI 3 004 −1 856 routing R6/16 F7/19",
+  "      feed: [\"The lines have met — Contact along the front\"]",
+  "  t+626.8 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 19%\" ROME 2 056 −1 716 | JUTHUNGI 3 004 −1 856 routing R6/16 F7/19",
+  "  t+647.37 [Missile Exchange] \"The lines are dressing\" adv=\"JUTHUNGI advantage 19%\" ROME 2 056 −1 716 | JUTHUNGI 3 004 −1 856 routing R6/16 F7/19",
+  "  t+667.9 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 19%\" ROME 2 056 −1 716 | JUTHUNGI 3 004 −1 856 routing R6/16 F7/19",
+  "      feed: [\"The lines have met — Contact along the front\"]",
+  "  t+688.63 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 19%\" ROME 2 054 −1 718 | JUTHUNGI 3 004 −1 856 routing R7/16 F7/19",
+  "      feed: [\"Urban Cohort I has broken — ROME · the line is giving way\"]",
+  "  t+709.17 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 15%\" ROME 2 054 −1 718 | JUTHUNGI 2 764 −2 096 routing R7/16 F7/19",
+  "  t+729.7 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 15%\" ROME 2 054 −1 718 | JUTHUNGI 2 764 −2 096 routing R7/16 F7/19",
+  "      feed: [\"The lines have met — Contact along the front\"]",
+  "  t+750.13 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 15%\" ROME 2 054 −1 718 | JUTHUNGI 2 764 −2 096 routing R6/16 F7/19",
+  "  t+770.7 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 15%\" ROME 2 054 −1 718 | JUTHUNGI 2 764 −2 096 routing R6/16 F7/19",
+  "      feed: [\"The lines have met — Contact along the front\"]",
+  "  t+791.23 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 15%\" ROME 2 047 −1 725 | JUTHUNGI 2 758 −2 102 routing R6/16 F7/19",
+  "      feed: [\"Chieftain's Chosen II — heavy losses — 51 men lost · 149 still standing\"]",
+  "  t+811.77 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 19%\" ROME 1 872 −1 900 | JUTHUNGI 2 758 −2 102 routing R6/16 F7/19",
+  "      feed: [\"Legionary Cohort VI destroyed — ROME · wiped from the field\",\"Legionary Cohort VI — heavy losses — 239 men lost · 0 still standing\"]",
+  "  t+832.3 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 19%\" ROME 1 872 −1 900 | JUTHUNGI 2 758 −2 102 routing R6/16 F7/19",
+  "      feed: [\"The lines have met — Contact along the front\"]",
+  "  t+852.87 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 19%\" ROME 1 872 −1 900 | JUTHUNGI 2 758 −2 102 routing R6/16 F8/19",
+  "      feed: [\"The lines have met — Contact along the front\"]",
+  "  t+873.4 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 19%\" ROME 1 872 −1 900 | JUTHUNGI 2 758 −2 102 routing R6/16 F8/19",
+  "  t+894.13 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 19%\" ROME 1 872 −1 900 | JUTHUNGI 2 758 −2 102 routing R6/16 F9/19",
+  "      feed: [\"Tribal Skirmishers II has broken — JUTHUNGI · the line is giving way\"]",
+  "  t+914.67 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 16%\" ROME 1 872 −1 900 | JUTHUNGI 2 593 −2 267 routing R6/16 F9/19",
+  "      feed: [\"Tribal Spearmen I destroyed — JUTHUNGI · wiped from the field\",\"Tribal Spearmen I — heavy losses — 167 men lost · 0 still standing\"]",
+  "  t+935.2 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 16%\" ROME 1 863 −1 909 | JUTHUNGI 2 573 −2 287 routing R6/16 F11/19",
+  "      feed: [\"Tribal Spearmen II has broken — JUTHUNGI · the line is giving way\"]",
+  "  t+955.73 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 16%\" ROME 1 863 −1 909 | JUTHUNGI 2 561 −2 299 routing R6/16 F10/19",
+  "      feed: [\"Chieftain's Chosen II has rallied — Standards raised, ranks re-formed\"]",
+  "  t+976.3 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 16%\" ROME 1 863 −1 909 | JUTHUNGI 2 557 −2 303 routing R6/16 F11/19",
+  "      feed: [\"The lines have met — Contact along the front\"]",
+  "  t+996.83 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 16%\" ROME 1 861 −1 911 | JUTHUNGI 2 556 −2 304 routing R6/16 F11/19",
+  "      feed: [\"The lines have met — Contact along the front\"]",
+  "  t+1017.37 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 17%\" ROME 1 803 −1 969 | JUTHUNGI 2 556 −2 304 routing R6/16 F11/19",
+  "      feed: [\"Praetorian Guard II destroyed — ROME · wiped from the field\",\"Praetorian Guard II — heavy losses — 118 men lost · 0 still standing\"]",
+  "  t+1037.9 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 13%\" ROME 1 803 −1 969 | JUTHUNGI 2 348 −2 512 routing R6/16 F11/19",
+  "      feed: [\"Tribal Spearmen II destroyed — JUTHUNGI · wiped from the field\",\"Tribal Spearmen II — heavy losses — 254 men lost · 0 still standing\"]",
+  "  t+1058.43 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 13%\" ROME 1 803 −1 969 | JUTHUNGI 2 348 −2 512 routing R6/16 F11/19",
+  "  t+1079.03 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 13%\" ROME 1 794 −1 978 | JUTHUNGI 2 347 −2 513 routing R6/16 F11/19",
+  "  t+1099.77 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 18%\" ROME 1 628 −2 144 | JUTHUNGI 2 347 −2 513 routing R6/16 F13/19",
+  "      feed: [\"Tribal Skirmishers III has broken — JUTHUNGI · the line is giving way\"]",
+  "  t+1120.3 [The Clash] \"The lines are dressing\" adv=\"JUTHUNGI advantage 18%\" ROME 1 628 −2 144 | JUTHUNGI 2 347 −2 513 routing R6/16 F13/19",
+  "  t+1140.87 [Aftermath] \"The lines are dressing\" adv=\"JUTHUNGI advantage 18%\" ROME 1 628 −2 144 | JUTHUNGI 2 339 −2 521 routing R6/16 F14/19",
+  "\n*** RESULT at t+1140.87: {\"verdict\":\"Victory\",\"reason\":\"By rout — the enemy has quit the field\"} ***",
+  "result panel: {\n \"verdict\": \"Victory\",\n \"reason\": \"By rout — the enemy has quit the field\",\n \"clock\": \"18:57 on the field\",\n \"flavour\": [\n  \"The field under Olocrus is Rome’s. Macedon put her whole levy into one line, and one line is what she has lost.\"\n ],\n \"cols\": [\n  {\n   \"f\": \"rome\",\n   \"txt\": \"ROME Senatus Populusque Romanus Committed3 772 Surviving1 628 Fallen2 144 (57%) Units lost7 of 16 Destroyed outright6 of 16\"\n  },\n  {\n   \"f\": \"juthungi\",\n   \"txt\": \"JUTHUNGI Juthungi Confederation Committed4 860 Surviving2 339 Fallen2 521 (52%) Units lost15 of 19 Destroyed outright7 of 19\"\n  }\n ],\n \"honours\": \"Roll of honour ROME Urban Cohort ICohors Urbana 331 164/300 Held Praetorian Guard ICohors Praetoria 306 162/240 Held Legionary Cohort IICohors Legionaria 151 146/320 Held Legionary Cohort IIICohors Legionaria 113 172/320 Held Auxiliary Archers IISagittarii Auxiliares 112 186/200 Routed JUTHUNGI Tribal Horse Raiders IIIMarharjis 254 0/100 Destroyed Naked Fanatics IBerhtjos 250 18/160 Held Chieftain's Chosen IGadrauhts 164 121/200 Routed\",\n \"buttons\": [\n  \"Save replay\",\n  \"Copy replay link\",\n  \"Dismiss\"\n ]\n}",
+  "arbiter: {\"victor\":0,\"reason\":\"rout\",\"casualties\":{\"0\":2144,\"1\":2521},\"survivors\":{\"0\":1628,\"1\":2339},\"unitsLost\":{\"0\":7,\"1\":15},\"unitsTotal\":{\"0\":16,\"1\":19},\"at\":1137.199999999623}",
+  "  [PASS] the result explains why, not just who  expected=\"a sentence\" actual=\"By rout — the enemy has quit the field\"",
+  "first contact at t+107.53",
+  "  [PASS] no page errors  expected=0 actual=0",
+  "  [PASS] no console errors  expected=0 actual=0"
+ ],
+ "snaps": [
+  {
+   "t": 25.33,
+   "phase": "The Advance",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 13%",
+   "men": [
+    "ROME 3 772 −0",
+    "JUTHUNGI 4 860 −0"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 3772,
+     "routing": 0,
+     "dead": 0
+    },
+    "1": {
+     "units": 19,
+     "alive": 4860,
+     "routing": 0,
+     "dead": 0
+    }
+   },
+   "feed": []
+  },
+  {
+   "t": 46.07,
+   "phase": "The Advance",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 13%",
+   "men": [
+    "ROME 3 772 −0",
+    "JUTHUNGI 4 860 −0"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 3772,
+     "routing": 0,
+     "dead": 0
+    },
+    "1": {
+     "units": 19,
+     "alive": 4860,
+     "routing": 0,
+     "dead": 0
+    }
+   },
+   "feed": []
+  },
+  {
+   "t": 66.53,
+   "phase": "Missile Exchange",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 13%",
+   "men": [
+    "ROME 3 772 −0",
+    "JUTHUNGI 4 860 −0"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 3772,
+     "routing": 0,
+     "dead": 0
+    },
+    "1": {
+     "units": 19,
+     "alive": 4860,
+     "routing": 0,
+     "dead": 0
+    }
+   },
+   "feed": []
+  },
+  {
+   "t": 87.1,
+   "phase": "Missile Exchange",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 13%",
+   "men": [
+    "ROME 3 772 −0",
+    "JUTHUNGI 4 860 −0"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 3772,
+     "routing": 0,
+     "dead": 0
+    },
+    "1": {
+     "units": 19,
+     "alive": 4860,
+     "routing": 0,
+     "dead": 0
+    }
+   },
+   "feed": []
+  },
+  {
+   "t": 107.53,
+   "phase": "Missile Exchange",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 12%",
+   "men": [
+    "ROME 3 771 −1",
+    "JUTHUNGI 4 796 −64"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 3771,
+     "routing": 0,
+     "dead": 0
+    },
+    "1": {
+     "units": 19,
+     "alive": 4796,
+     "routing": 0,
+     "dead": 0
+    }
+   },
+   "feed": []
+  },
+  {
+   "t": 130.73,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 12%",
+   "men": [
+    "ROME 3 694 −78",
+    "JUTHUNGI 4 728 −132"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 3694,
+     "routing": 0,
+     "dead": 0
+    },
+    "1": {
+     "units": 19,
+     "alive": 4727,
+     "routing": 1,
+     "dead": 0
+    }
+   },
+   "feed": []
+  },
+  {
+   "t": 151.17,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 14%",
+   "men": [
+    "ROME 3 528 −244",
+    "JUTHUNGI 4 649 −211"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 3526,
+     "routing": 1,
+     "dead": 0
+    },
+    "1": {
+     "units": 19,
+     "alive": 4647,
+     "routing": 1,
+     "dead": 0
+    }
+   },
+   "feed": [
+    "Legionary Cohort I has broken",
+    "The lines have met"
+   ]
+  },
+  {
+   "t": 171.63,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 14%",
+   "men": [
+    "ROME 3 440 −332",
+    "JUTHUNGI 4 518 −342"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 3439,
+     "routing": 1,
+     "dead": 0
+    },
+    "1": {
+     "units": 19,
+     "alive": 4518,
+     "routing": 2,
+     "dead": 1
+    }
+   },
+   "feed": []
+  },
+  {
+   "t": 400.87,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 18%",
+   "men": [
+    "ROME 2 518 −1 254",
+    "JUTHUNGI 3 612 −1 248"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 2518,
+     "routing": 4,
+     "dead": 2
+    },
+    "1": {
+     "units": 19,
+     "alive": 3612,
+     "routing": 4,
+     "dead": 1
+    }
+   },
+   "feed": []
+  },
+  {
+   "t": 421.43,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 20%",
+   "men": [
+    "ROME 2 384 −1 388",
+    "JUTHUNGI 3 586 −1 274"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 2382,
+     "routing": 4,
+     "dead": 2
+    },
+    "1": {
+     "units": 19,
+     "alive": 3586,
+     "routing": 4,
+     "dead": 1
+    }
+   },
+   "feed": [
+    "Legionary Cohort I — heavy losses",
+    "Legionary Cohort V has rallied",
+    "The lines have met"
+   ]
+  },
+  {
+   "t": 441.87,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 21%",
+   "men": [
+    "ROME 2 287 −1 485",
+    "JUTHUNGI 3 530 −1 330"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 2287,
+     "routing": 4,
+     "dead": 2
+    },
+    "1": {
+     "units": 19,
+     "alive": 3530,
+     "routing": 4,
+     "dead": 1
+    }
+   },
+   "feed": [
+    "Tribal Warband II has broken",
+    "Tribal Spearmen I has rallied",
+    "Chieftain's Chosen I — heavy losses"
+   ]
+  },
+  {
+   "t": 462.43,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 22%",
+   "men": [
+    "ROME 2 194 −1 578",
+    "JUTHUNGI 3 463 −1 397"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 2194,
+     "routing": 3,
+     "dead": 3
+    },
+    "1": {
+     "units": 19,
+     "alive": 3463,
+     "routing": 4,
+     "dead": 1
+    }
+   },
+   "feed": [
+    "Urban Cohort I — heavy losses",
+    "The lines have met"
+   ]
+  },
+  {
+   "t": 483.07,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 23%",
+   "men": [
+    "ROME 2 156 −1 616",
+    "JUTHUNGI 3 421 −1 439"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 2156,
+     "routing": 3,
+     "dead": 3
+    },
+    "1": {
+     "units": 19,
+     "alive": 3420,
+     "routing": 6,
+     "dead": 1
+    }
+   },
+   "feed": [
+    "Tribal Warband I has broken"
+   ]
+  },
+  {
+   "t": 503.6,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 23%",
+   "men": [
+    "ROME 2 121 −1 651",
+    "JUTHUNGI 3 356 −1 504"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 2121,
+     "routing": 4,
+     "dead": 3
+    },
+    "1": {
+     "units": 19,
+     "alive": 3356,
+     "routing": 9,
+     "dead": 1
+    }
+   },
+   "feed": [
+    "The lines have met",
+    "Tribal Horse Raiders III has broken",
+    "Tribal Spearmen II has broken"
+   ]
+  },
+  {
+   "t": 524.2,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 22%",
+   "men": [
+    "ROME 2 120 −1 652",
+    "JUTHUNGI 3 293 −1 567"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 2120,
+     "routing": 3,
+     "dead": 3
+    },
+    "1": {
+     "units": 19,
+     "alive": 3293,
+     "routing": 9,
+     "dead": 2
+    }
+   },
+   "feed": [
+    "Tribal Skirmishers II has broken",
+    "Tribal Spearmen II has rallied",
+    "Chieftain's Chosen I has rallied"
+   ]
+  },
+  {
+   "t": 544.63,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 21%",
+   "men": [
+    "ROME 2 120 −1 652",
+    "JUTHUNGI 3 281 −1 579"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 2120,
+     "routing": 3,
+     "dead": 3
+    },
+    "1": {
+     "units": 19,
+     "alive": 3281,
+     "routing": 7,
+     "dead": 2
+    }
+   },
+   "feed": []
+  },
+  {
+   "t": 565.17,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 21%",
+   "men": [
+    "ROME 2 097 −1 675",
+    "JUTHUNGI 3 235 −1 625"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 2097,
+     "routing": 3,
+     "dead": 3
+    },
+    "1": {
+     "units": 19,
+     "alive": 3235,
+     "routing": 7,
+     "dead": 3
+    }
+   },
+   "feed": [
+    "Praetorian Guard II has broken"
+   ]
+  },
+  {
+   "t": 585.7,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 19%",
+   "men": [
+    "ROME 2 056 −1 716",
+    "JUTHUNGI 3 011 −1 849"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 2056,
+     "routing": 6,
+     "dead": 3
+    },
+    "1": {
+     "units": 19,
+     "alive": 3011,
+     "routing": 7,
+     "dead": 4
+    }
+   },
+   "feed": [
+    "Auxiliary Archers II has broken",
+    "Tribal Warband II destroyed",
+    "Tribal Warband II — heavy losses"
+   ]
+  },
+  {
+   "t": 606.27,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 19%",
+   "men": [
+    "ROME 2 056 −1 716",
+    "JUTHUNGI 3 004 −1 856"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 2056,
+     "routing": 6,
+     "dead": 3
+    },
+    "1": {
+     "units": 19,
+     "alive": 3004,
+     "routing": 7,
+     "dead": 4
+    }
+   },
+   "feed": [
+    "The lines have met"
+   ]
+  },
+  {
+   "t": 626.8,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 19%",
+   "men": [
+    "ROME 2 056 −1 716",
+    "JUTHUNGI 3 004 −1 856"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 2056,
+     "routing": 6,
+     "dead": 3
+    },
+    "1": {
+     "units": 19,
+     "alive": 3004,
+     "routing": 7,
+     "dead": 4
+    }
+   },
+   "feed": []
+  },
+  {
+   "t": 647.37,
+   "phase": "Missile Exchange",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 19%",
+   "men": [
+    "ROME 2 056 −1 716",
+    "JUTHUNGI 3 004 −1 856"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 2056,
+     "routing": 6,
+     "dead": 3
+    },
+    "1": {
+     "units": 19,
+     "alive": 3004,
+     "routing": 7,
+     "dead": 4
+    }
+   },
+   "feed": []
+  },
+  {
+   "t": 667.9,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 19%",
+   "men": [
+    "ROME 2 056 −1 716",
+    "JUTHUNGI 3 004 −1 856"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 2056,
+     "routing": 6,
+     "dead": 3
+    },
+    "1": {
+     "units": 19,
+     "alive": 3004,
+     "routing": 7,
+     "dead": 4
+    }
+   },
+   "feed": [
+    "The lines have met"
+   ]
+  },
+  {
+   "t": 688.63,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 19%",
+   "men": [
+    "ROME 2 054 −1 718",
+    "JUTHUNGI 3 004 −1 856"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 2054,
+     "routing": 7,
+     "dead": 3
+    },
+    "1": {
+     "units": 19,
+     "alive": 3004,
+     "routing": 7,
+     "dead": 4
+    }
+   },
+   "feed": [
+    "Urban Cohort I has broken"
+   ]
+  },
+  {
+   "t": 709.17,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 15%",
+   "men": [
+    "ROME 2 054 −1 718",
+    "JUTHUNGI 2 764 −2 096"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 2054,
+     "routing": 7,
+     "dead": 3
+    },
+    "1": {
+     "units": 19,
+     "alive": 2764,
+     "routing": 7,
+     "dead": 5
+    }
+   },
+   "feed": []
+  },
+  {
+   "t": 729.7,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 15%",
+   "men": [
+    "ROME 2 054 −1 718",
+    "JUTHUNGI 2 764 −2 096"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 2054,
+     "routing": 7,
+     "dead": 3
+    },
+    "1": {
+     "units": 19,
+     "alive": 2764,
+     "routing": 7,
+     "dead": 5
+    }
+   },
+   "feed": [
+    "The lines have met"
+   ]
+  },
+  {
+   "t": 750.13,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 15%",
+   "men": [
+    "ROME 2 054 −1 718",
+    "JUTHUNGI 2 764 −2 096"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 2054,
+     "routing": 6,
+     "dead": 3
+    },
+    "1": {
+     "units": 19,
+     "alive": 2764,
+     "routing": 7,
+     "dead": 5
+    }
+   },
+   "feed": []
+  },
+  {
+   "t": 770.7,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 15%",
+   "men": [
+    "ROME 2 054 −1 718",
+    "JUTHUNGI 2 764 −2 096"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 2054,
+     "routing": 6,
+     "dead": 3
+    },
+    "1": {
+     "units": 19,
+     "alive": 2764,
+     "routing": 7,
+     "dead": 5
+    }
+   },
+   "feed": [
+    "The lines have met"
+   ]
+  },
+  {
+   "t": 791.23,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 15%",
+   "men": [
+    "ROME 2 047 −1 725",
+    "JUTHUNGI 2 758 −2 102"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 2047,
+     "routing": 6,
+     "dead": 3
+    },
+    "1": {
+     "units": 19,
+     "alive": 2758,
+     "routing": 7,
+     "dead": 5
+    }
+   },
+   "feed": [
+    "Chieftain's Chosen II — heavy losses"
+   ]
+  },
+  {
+   "t": 811.77,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 19%",
+   "men": [
+    "ROME 1 872 −1 900",
+    "JUTHUNGI 2 758 −2 102"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 1872,
+     "routing": 6,
+     "dead": 4
+    },
+    "1": {
+     "units": 19,
+     "alive": 2758,
+     "routing": 7,
+     "dead": 5
+    }
+   },
+   "feed": [
+    "Legionary Cohort VI destroyed",
+    "Legionary Cohort VI — heavy losses"
+   ]
+  },
+  {
+   "t": 832.3,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 19%",
+   "men": [
+    "ROME 1 872 −1 900",
+    "JUTHUNGI 2 758 −2 102"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 1872,
+     "routing": 6,
+     "dead": 4
+    },
+    "1": {
+     "units": 19,
+     "alive": 2758,
+     "routing": 7,
+     "dead": 5
+    }
+   },
+   "feed": [
+    "The lines have met"
+   ]
+  },
+  {
+   "t": 852.87,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 19%",
+   "men": [
+    "ROME 1 872 −1 900",
+    "JUTHUNGI 2 758 −2 102"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 1872,
+     "routing": 6,
+     "dead": 4
+    },
+    "1": {
+     "units": 19,
+     "alive": 2758,
+     "routing": 8,
+     "dead": 5
+    }
+   },
+   "feed": [
+    "The lines have met"
+   ]
+  },
+  {
+   "t": 873.4,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 19%",
+   "men": [
+    "ROME 1 872 −1 900",
+    "JUTHUNGI 2 758 −2 102"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 1872,
+     "routing": 6,
+     "dead": 4
+    },
+    "1": {
+     "units": 19,
+     "alive": 2758,
+     "routing": 8,
+     "dead": 5
+    }
+   },
+   "feed": []
+  },
+  {
+   "t": 894.13,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 19%",
+   "men": [
+    "ROME 1 872 −1 900",
+    "JUTHUNGI 2 758 −2 102"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 1872,
+     "routing": 6,
+     "dead": 4
+    },
+    "1": {
+     "units": 19,
+     "alive": 2758,
+     "routing": 9,
+     "dead": 5
+    }
+   },
+   "feed": [
+    "Tribal Skirmishers II has broken"
+   ]
+  },
+  {
+   "t": 914.67,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 16%",
+   "men": [
+    "ROME 1 872 −1 900",
+    "JUTHUNGI 2 593 −2 267"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 1872,
+     "routing": 6,
+     "dead": 4
+    },
+    "1": {
+     "units": 19,
+     "alive": 2593,
+     "routing": 9,
+     "dead": 6
+    }
+   },
+   "feed": [
+    "Tribal Spearmen I destroyed",
+    "Tribal Spearmen I — heavy losses"
+   ]
+  },
+  {
+   "t": 935.2,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 16%",
+   "men": [
+    "ROME 1 863 −1 909",
+    "JUTHUNGI 2 573 −2 287"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 1863,
+     "routing": 6,
+     "dead": 4
+    },
+    "1": {
+     "units": 19,
+     "alive": 2573,
+     "routing": 11,
+     "dead": 6
+    }
+   },
+   "feed": [
+    "Tribal Spearmen II has broken"
+   ]
+  },
+  {
+   "t": 955.73,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 16%",
+   "men": [
+    "ROME 1 863 −1 909",
+    "JUTHUNGI 2 561 −2 299"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 1863,
+     "routing": 6,
+     "dead": 4
+    },
+    "1": {
+     "units": 19,
+     "alive": 2561,
+     "routing": 10,
+     "dead": 6
+    }
+   },
+   "feed": [
+    "Chieftain's Chosen II has rallied"
+   ]
+  },
+  {
+   "t": 976.3,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 16%",
+   "men": [
+    "ROME 1 863 −1 909",
+    "JUTHUNGI 2 557 −2 303"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 1863,
+     "routing": 6,
+     "dead": 4
+    },
+    "1": {
+     "units": 19,
+     "alive": 2557,
+     "routing": 11,
+     "dead": 6
+    }
+   },
+   "feed": [
+    "The lines have met"
+   ]
+  },
+  {
+   "t": 996.83,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 16%",
+   "men": [
+    "ROME 1 861 −1 911",
+    "JUTHUNGI 2 556 −2 304"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 1861,
+     "routing": 6,
+     "dead": 4
+    },
+    "1": {
+     "units": 19,
+     "alive": 2556,
+     "routing": 11,
+     "dead": 6
+    }
+   },
+   "feed": [
+    "The lines have met"
+   ]
+  },
+  {
+   "t": 1017.37,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 17%",
+   "men": [
+    "ROME 1 803 −1 969",
+    "JUTHUNGI 2 556 −2 304"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 1803,
+     "routing": 6,
+     "dead": 5
+    },
+    "1": {
+     "units": 19,
+     "alive": 2556,
+     "routing": 11,
+     "dead": 6
+    }
+   },
+   "feed": [
+    "Praetorian Guard II destroyed",
+    "Praetorian Guard II — heavy losses"
+   ]
+  },
+  {
+   "t": 1037.9,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 13%",
+   "men": [
+    "ROME 1 803 −1 969",
+    "JUTHUNGI 2 348 −2 512"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 1803,
+     "routing": 6,
+     "dead": 5
+    },
+    "1": {
+     "units": 19,
+     "alive": 2348,
+     "routing": 11,
+     "dead": 7
+    }
+   },
+   "feed": [
+    "Tribal Spearmen II destroyed",
+    "Tribal Spearmen II — heavy losses"
+   ]
+  },
+  {
+   "t": 1058.43,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 13%",
+   "men": [
+    "ROME 1 803 −1 969",
+    "JUTHUNGI 2 348 −2 512"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 1803,
+     "routing": 6,
+     "dead": 5
+    },
+    "1": {
+     "units": 19,
+     "alive": 2348,
+     "routing": 11,
+     "dead": 7
+    }
+   },
+   "feed": []
+  },
+  {
+   "t": 1079.03,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 13%",
+   "men": [
+    "ROME 1 794 −1 978",
+    "JUTHUNGI 2 347 −2 513"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 1793,
+     "routing": 6,
+     "dead": 5
+    },
+    "1": {
+     "units": 19,
+     "alive": 2347,
+     "routing": 11,
+     "dead": 7
+    }
+   },
+   "feed": []
+  },
+  {
+   "t": 1099.77,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 18%",
+   "men": [
+    "ROME 1 628 −2 144",
+    "JUTHUNGI 2 347 −2 513"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 1628,
+     "routing": 6,
+     "dead": 6
+    },
+    "1": {
+     "units": 19,
+     "alive": 2347,
+     "routing": 13,
+     "dead": 7
+    }
+   },
+   "feed": [
+    "Tribal Skirmishers III has broken"
+   ]
+  },
+  {
+   "t": 1120.3,
+   "phase": "The Clash",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 18%",
+   "men": [
+    "ROME 1 628 −2 144",
+    "JUTHUNGI 2 347 −2 513"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 1628,
+     "routing": 6,
+     "dead": 6
+    },
+    "1": {
+     "units": 19,
+     "alive": 2347,
+     "routing": 13,
+     "dead": 7
+    }
+   },
+   "feed": []
+  },
+  {
+   "t": 1140.87,
+   "phase": "Aftermath",
+   "note": "The lines are dressing",
+   "adv": "JUTHUNGI advantage 18%",
+   "men": [
+    "ROME 1 628 −2 144",
+    "JUTHUNGI 2 339 −2 521"
+   ],
+   "per": {
+    "0": {
+     "units": 16,
+     "alive": 1628,
+     "routing": 6,
+     "dead": 6
+    },
+    "1": {
+     "units": 19,
+     "alive": 2339,
+     "routing": 14,
+     "dead": 7
+    }
+   },
+   "feed": []
+  }
+ ]
+}

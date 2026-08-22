@@ -1,0 +1,450 @@
+{
+ "map": "campus-martius",
+ "runs": 12,
+ "rows": [
+  {
+   "seed": 4265438264,
+   "verdict": "Defeat",
+   "reason": "objective",
+   "victor": 1,
+   "at": 118,
+   "cond": "B: 60 inside",
+   "gateAt": null,
+   "breachAt": null,
+   "onWallAt": 52.57,
+   "insideAt": 52.57,
+   "peak": {
+    "onWall": 145,
+    "holding": 0,
+    "inside": 62,
+    "heldFor": 0,
+    "stalled": 2.033333333333336
+   },
+   "casualties": {
+    "0": 148,
+    "1": 310
+   },
+   "snaps": [
+    {
+     "t": 52.57,
+     "phase": "In the Streets",
+     "adv": "24 of 60 inside — hold",
+     "onWall": 96,
+     "holding": 0,
+     "inside": 24
+    }
+   ]
+  },
+  {
+   "seed": 1,
+   "verdict": "Defeat",
+   "reason": "objective",
+   "victor": 1,
+   "at": 109,
+   "cond": "B: 60 inside",
+   "gateAt": null,
+   "breachAt": null,
+   "onWallAt": 52.53,
+   "insideAt": 52.53,
+   "peak": {
+    "onWall": 127,
+    "holding": 0,
+    "inside": 61,
+    "heldFor": 0,
+    "stalled": 0.9999999999999999
+   },
+   "casualties": {
+    "0": 170,
+    "1": 326
+   },
+   "snaps": [
+    {
+     "t": 52.53,
+     "phase": "In the Streets",
+     "adv": "40 of 60 inside — hold",
+     "onWall": 96,
+     "holding": 0,
+     "inside": 40
+    }
+   ]
+  },
+  {
+   "seed": 7,
+   "verdict": "Defeat",
+   "reason": "objective",
+   "victor": 1,
+   "at": 110,
+   "cond": "B: 60 inside",
+   "gateAt": null,
+   "breachAt": null,
+   "onWallAt": 52.57,
+   "insideAt": 52.57,
+   "peak": {
+    "onWall": 134,
+    "holding": 0,
+    "inside": 60,
+    "heldFor": 0,
+    "stalled": 0.9999999999999999
+   },
+   "casualties": {
+    "0": 155,
+    "1": 317
+   },
+   "snaps": [
+    {
+     "t": 52.57,
+     "phase": "In the Streets",
+     "adv": "27 of 60 inside — hold",
+     "onWall": 97,
+     "holding": 0,
+     "inside": 27
+    }
+   ]
+  },
+  {
+   "seed": 99,
+   "verdict": "Defeat",
+   "reason": "objective",
+   "victor": 1,
+   "at": 111,
+   "cond": "B: 60 inside",
+   "gateAt": null,
+   "breachAt": null,
+   "onWallAt": 52.53,
+   "insideAt": 52.53,
+   "peak": {
+    "onWall": 131,
+    "holding": 0,
+    "inside": 60,
+    "heldFor": 0,
+    "stalled": 1.5333333333333348
+   },
+   "casualties": {
+    "0": 162,
+    "1": 337
+   },
+   "snaps": [
+    {
+     "t": 52.53,
+     "phase": "In the Streets",
+     "adv": "38 of 60 inside — hold",
+     "onWall": 92,
+     "holding": 0,
+     "inside": 38
+    }
+   ]
+  },
+  {
+   "seed": 12345,
+   "verdict": "Defeat",
+   "reason": "objective",
+   "victor": 1,
+   "at": 120,
+   "cond": "B: 60 inside",
+   "gateAt": null,
+   "breachAt": null,
+   "onWallAt": 52.57,
+   "insideAt": 52.57,
+   "peak": {
+    "onWall": 143,
+    "holding": 0,
+    "inside": 60,
+    "heldFor": 0,
+    "stalled": 3.466666666666664
+   },
+   "casualties": {
+    "0": 173,
+    "1": 319
+   },
+   "snaps": [
+    {
+     "t": 52.57,
+     "phase": "In the Streets",
+     "adv": "13 of 60 inside — hold",
+     "onWall": 99,
+     "holding": 0,
+     "inside": 13
+    }
+   ]
+  },
+  {
+   "seed": 777777,
+   "verdict": "Defeat",
+   "reason": "objective",
+   "victor": 1,
+   "at": 107,
+   "cond": "B: 60 inside",
+   "gateAt": null,
+   "breachAt": null,
+   "onWallAt": 52.57,
+   "insideAt": 52.57,
+   "peak": {
+    "onWall": 128,
+    "holding": 0,
+    "inside": 61,
+    "heldFor": 0,
+    "stalled": 2.033333333333336
+   },
+   "casualties": {
+    "0": 121,
+    "1": 320
+   },
+   "snaps": [
+    {
+     "t": 52.57,
+     "phase": "In the Streets",
+     "adv": "41 of 60 inside — hold",
+     "onWall": 89,
+     "holding": 0,
+     "inside": 41
+    }
+   ]
+  },
+  {
+   "seed": 2718281828,
+   "verdict": "Defeat",
+   "reason": "objective",
+   "victor": 1,
+   "at": 115,
+   "cond": "B: 60 inside",
+   "gateAt": null,
+   "breachAt": null,
+   "onWallAt": 52.33,
+   "insideAt": 52.33,
+   "peak": {
+    "onWall": 133,
+    "holding": 0,
+    "inside": 60,
+    "heldFor": 0,
+    "stalled": 3.0666666666666655
+   },
+   "casualties": {
+    "0": 141,
+    "1": 319
+   },
+   "snaps": [
+    {
+     "t": 52.33,
+     "phase": "In the Streets",
+     "adv": "25 of 60 inside — hold",
+     "onWall": 106,
+     "holding": 0,
+     "inside": 25
+    }
+   ]
+  },
+  {
+   "seed": 31415926,
+   "verdict": "Defeat",
+   "reason": "objective",
+   "victor": 1,
+   "at": 121,
+   "cond": "B: 60 inside",
+   "gateAt": null,
+   "breachAt": null,
+   "onWallAt": 52.3,
+   "insideAt": 52.3,
+   "peak": {
+    "onWall": 123,
+    "holding": 0,
+    "inside": 60,
+    "heldFor": 0,
+    "stalled": 3.0666666666666655
+   },
+   "casualties": {
+    "0": 167,
+    "1": 334
+   },
+   "snaps": [
+    {
+     "t": 52.3,
+     "phase": "In the Streets",
+     "adv": "29 of 60 inside — hold",
+     "onWall": 99,
+     "holding": 0,
+     "inside": 29
+    }
+   ]
+  },
+  {
+   "seed": 8675309,
+   "verdict": "Defeat",
+   "reason": "objective",
+   "victor": 1,
+   "at": 107,
+   "cond": "B: 60 inside",
+   "gateAt": null,
+   "breachAt": null,
+   "onWallAt": 52.5,
+   "insideAt": 52.5,
+   "peak": {
+    "onWall": 144,
+    "holding": 0,
+    "inside": 60,
+    "heldFor": 0,
+    "stalled": 2.833333333333333
+   },
+   "casualties": {
+    "0": 170,
+    "1": 307
+   },
+   "snaps": [
+    {
+     "t": 52.5,
+     "phase": "In the Streets",
+     "adv": "34 of 60 inside — hold",
+     "onWall": 96,
+     "holding": 0,
+     "inside": 34
+    }
+   ]
+  },
+  {
+   "seed": 424242,
+   "verdict": "Defeat",
+   "reason": "objective",
+   "victor": 1,
+   "at": 109,
+   "cond": "B: 60 inside",
+   "gateAt": null,
+   "breachAt": null,
+   "onWallAt": 52.5,
+   "insideAt": 52.5,
+   "peak": {
+    "onWall": 122,
+    "holding": 0,
+    "inside": 63,
+    "heldFor": 0,
+    "stalled": 2.033333333333336
+   },
+   "casualties": {
+    "0": 173,
+    "1": 313
+   },
+   "snaps": [
+    {
+     "t": 52.5,
+     "phase": "In the Streets",
+     "adv": "26 of 60 inside — hold",
+     "onWall": 94,
+     "holding": 0,
+     "inside": 26
+    }
+   ]
+  },
+  {
+   "seed": 1000003,
+   "verdict": "Defeat",
+   "reason": "objective",
+   "victor": 1,
+   "at": 105,
+   "cond": "B: 60 inside",
+   "gateAt": null,
+   "breachAt": null,
+   "onWallAt": 52.47,
+   "insideAt": 52.47,
+   "peak": {
+    "onWall": 131,
+    "holding": 0,
+    "inside": 60,
+    "heldFor": 0,
+    "stalled": 2.033333333333336
+   },
+   "casualties": {
+    "0": 226,
+    "1": 295
+   },
+   "snaps": [
+    {
+     "t": 52.47,
+     "phase": "In the Streets",
+     "adv": "34 of 60 inside — hold",
+     "onWall": 96,
+     "holding": 0,
+     "inside": 34
+    }
+   ]
+  },
+  {
+   "seed": 4000000000,
+   "verdict": "Defeat",
+   "reason": "objective",
+   "victor": 1,
+   "at": 103,
+   "cond": "B: 60 inside",
+   "gateAt": null,
+   "breachAt": null,
+   "onWallAt": 52.53,
+   "insideAt": 52.53,
+   "peak": {
+    "onWall": 119,
+    "holding": 0,
+    "inside": 60,
+    "heldFor": 0,
+    "stalled": 2.033333333333336
+   },
+   "casualties": {
+    "0": 165,
+    "1": 304
+   },
+   "snaps": [
+    {
+     "t": 52.53,
+     "phase": "In the Streets",
+     "adv": "34 of 60 inside — hold",
+     "onWall": 96,
+     "holding": 0,
+     "inside": 34
+    }
+   ]
+  }
+ ],
+ "checks": [
+  {
+   "name": "the seed field actually changes the battle",
+   "ok": true,
+   "expected": "12 distinct t+30 hashes",
+   "actual": "12 distinct"
+  },
+  {
+   "name": "more than one outcome across the seed set",
+   "ok": false,
+   "expected": ">1 distinct verdict/reason",
+   "actual": "Defeat/objective"
+  },
+  {
+   "name": "the battle is still being fought when the gate opens (t+220)",
+   "ok": false,
+   "expected": "over half the runs last past t+220",
+   "actual": "0/12"
+  },
+  {
+   "name": "the great ram's breach (t+420) ever matters",
+   "ok": false,
+   "expected": "at least one run lasts past t+420",
+   "actual": "0/12"
+  }
+ ],
+ "log": [
+  "seed 4265438264  Defeat   objective   at t+ 118  B: 60 inside           | first: onWall t+52.57 inside t+52.57 gate t+- breach t+- | peak onWall 145 holding 0 inside 62 held 0s",
+  "seed          1  Defeat   objective   at t+ 109  B: 60 inside           | first: onWall t+52.53 inside t+52.53 gate t+- breach t+- | peak onWall 127 holding 0 inside 61 held 0s",
+  "seed          7  Defeat   objective   at t+ 110  B: 60 inside           | first: onWall t+52.57 inside t+52.57 gate t+- breach t+- | peak onWall 134 holding 0 inside 60 held 0s",
+  "seed         99  Defeat   objective   at t+ 111  B: 60 inside           | first: onWall t+52.53 inside t+52.53 gate t+- breach t+- | peak onWall 131 holding 0 inside 60 held 0s",
+  "seed      12345  Defeat   objective   at t+ 120  B: 60 inside           | first: onWall t+52.57 inside t+52.57 gate t+- breach t+- | peak onWall 143 holding 0 inside 60 held 0s",
+  "seed     777777  Defeat   objective   at t+ 107  B: 60 inside           | first: onWall t+52.57 inside t+52.57 gate t+- breach t+- | peak onWall 128 holding 0 inside 61 held 0s",
+  "seed 2718281828  Defeat   objective   at t+ 115  B: 60 inside           | first: onWall t+52.33 inside t+52.33 gate t+- breach t+- | peak onWall 133 holding 0 inside 60 held 0s",
+  "seed   31415926  Defeat   objective   at t+ 121  B: 60 inside           | first: onWall t+52.3 inside t+52.3 gate t+- breach t+- | peak onWall 123 holding 0 inside 60 held 0s",
+  "seed    8675309  Defeat   objective   at t+ 107  B: 60 inside           | first: onWall t+52.5 inside t+52.5 gate t+- breach t+- | peak onWall 144 holding 0 inside 60 held 0s",
+  "seed     424242  Defeat   objective   at t+ 109  B: 60 inside           | first: onWall t+52.5 inside t+52.5 gate t+- breach t+- | peak onWall 122 holding 0 inside 63 held 0s",
+  "seed    1000003  Defeat   objective   at t+ 105  B: 60 inside           | first: onWall t+52.47 inside t+52.47 gate t+- breach t+- | peak onWall 131 holding 0 inside 60 held 0s",
+  "seed 4000000000  Defeat   objective   at t+ 103  B: 60 inside           | first: onWall t+52.53 inside t+52.53 gate t+- breach t+- | peak onWall 119 holding 0 inside 60 held 0s",
+  "  [PASS] the seed field actually changes the battle  expected=\"12 distinct t+30 hashes\" actual=\"12 distinct\"",
+  "\noutcomes: {\"Defeat/objective\":12}",
+  "objective conditions that fired: {\"B: 60 inside\":12}",
+  "decided at: min 103 median 110 max 121",
+  "the gate opened in 0/12 runs; a bay came down in 0/12",
+  "  [FAIL] more than one outcome across the seed set  expected=\">1 distinct verdict/reason\" actual=\"Defeat/objective\"",
+  "  [FAIL] the battle is still being fought when the gate opens (t+220)  expected=\"over half the runs last past t+220\" actual=\"0/12\"",
+  "  [FAIL] the great ram's breach (t+420) ever matters  expected=\"at least one run lasts past t+420\" actual=\"0/12\""
+ ]
+}

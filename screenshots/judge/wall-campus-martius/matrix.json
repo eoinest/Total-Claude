@@ -1,0 +1,771 @@
+{
+ "seed": 4265438264,
+ "map": "campus-martius",
+ "at": 40,
+ "matrix": [
+  {
+   "unit": 0,
+   "bay": 5,
+   "dx": 155,
+   "kind": "attack (men in the way)",
+   "hint": "",
+   "cursor": "attack",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 6,
+   "dx": 192,
+   "kind": "attack (men in the way)",
+   "hint": "",
+   "cursor": "attack",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 7,
+   "dx": 229,
+   "kind": "attack (men in the way)",
+   "hint": "",
+   "cursor": "attack",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 8,
+   "dx": 266,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 9,
+   "dx": 303,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 10,
+   "dx": 340,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 11,
+   "dx": 377,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 12,
+   "dx": 414,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 13,
+   "dx": 451,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 14,
+   "dx": 488,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 15,
+   "dx": 525,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 16,
+   "dx": 562,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 17,
+   "dx": 599,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 18,
+   "dx": 636,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 19,
+   "dx": 673,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 20,
+   "offered": "nothing framed"
+  },
+  {
+   "unit": 0,
+   "bay": 21,
+   "dx": 747,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 22,
+   "dx": 784,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 23,
+   "dx": 821,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 24,
+   "dx": 858,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 25,
+   "dx": 895,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 26,
+   "dx": 932,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 27,
+   "dx": 969,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 28,
+   "dx": 1006,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 29,
+   "offered": "nothing framed"
+  },
+  {
+   "unit": 0,
+   "bay": 30,
+   "dx": 1080,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 31,
+   "dx": 1117,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 32,
+   "dx": 1154,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 33,
+   "dx": 1191,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 34,
+   "dx": 1228,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 0,
+   "bay": 35,
+   "dx": 1265,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 1,
+   "dx": -259,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 5,
+   "dx": -111,
+   "kind": "ACCEPTED",
+   "hint": "",
+   "cursor": "wall",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 6,
+   "dx": -74,
+   "kind": "ACCEPTED",
+   "hint": "",
+   "cursor": "wall",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 7,
+   "dx": -37,
+   "kind": "ACCEPTED",
+   "hint": "",
+   "cursor": "wall",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 9,
+   "dx": 37,
+   "kind": "ACCEPTED",
+   "hint": "",
+   "cursor": "wall",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 10,
+   "dx": 74,
+   "kind": "ACCEPTED",
+   "hint": "",
+   "cursor": "wall",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 11,
+   "dx": 111,
+   "kind": "ACCEPTED",
+   "hint": "",
+   "cursor": "wall",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 12,
+   "dx": 148,
+   "kind": "ACCEPTED",
+   "hint": "",
+   "cursor": "wall",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 13,
+   "dx": 185,
+   "kind": "ACCEPTED",
+   "hint": "",
+   "cursor": "wall",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 14,
+   "dx": 222,
+   "kind": "ACCEPTED",
+   "hint": "",
+   "cursor": "wall",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 15,
+   "dx": 259,
+   "kind": "ACCEPTED",
+   "hint": "",
+   "cursor": "wall",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 16,
+   "dx": 296,
+   "kind": "ACCEPTED",
+   "hint": "",
+   "cursor": "wall",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 17,
+   "dx": 333,
+   "kind": "ACCEPTED",
+   "hint": "",
+   "cursor": "wall",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 18,
+   "dx": 370,
+   "kind": "ACCEPTED",
+   "hint": "",
+   "cursor": "wall",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 19,
+   "dx": 407,
+   "kind": "ACCEPTED",
+   "hint": "",
+   "cursor": "wall",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 20,
+   "offered": "nothing framed"
+  },
+  {
+   "unit": 4,
+   "bay": 21,
+   "dx": 481,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 22,
+   "dx": 518,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 23,
+   "dx": 555,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 24,
+   "dx": 592,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 25,
+   "dx": 629,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 26,
+   "dx": 666,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 27,
+   "dx": 703,
+   "kind": "REFUSED",
+   "hint": "",
+   "cursor": "refuse",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 28,
+   "dx": 740,
+   "kind": "nothing offered",
+   "hint": "",
+   "cursor": "default",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 29,
+   "offered": "nothing framed"
+  },
+  {
+   "unit": 4,
+   "bay": 30,
+   "dx": 814,
+   "kind": "nothing offered",
+   "hint": "",
+   "cursor": "default",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 31,
+   "dx": 851,
+   "kind": "nothing offered",
+   "hint": "",
+   "cursor": "default",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 32,
+   "dx": 888,
+   "kind": "nothing offered",
+   "hint": "",
+   "cursor": "default",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 33,
+   "dx": 925,
+   "kind": "nothing offered",
+   "hint": "",
+   "cursor": "default",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 34,
+   "dx": 962,
+   "kind": "nothing offered",
+   "hint": "",
+   "cursor": "default",
+   "wallValid": true
+  },
+  {
+   "unit": 4,
+   "bay": 35,
+   "dx": 999,
+   "kind": "nothing offered",
+   "hint": "",
+   "cursor": "default",
+   "wallValid": true
+  }
+ ],
+ "probes": [
+  {
+   "d": 20,
+   "cursor": "default",
+   "hint": "",
+   "groundValid": true,
+   "solidValid": false,
+   "wallValid": false
+  },
+  {
+   "d": 30,
+   "cursor": "default",
+   "hint": "",
+   "groundValid": true,
+   "solidValid": false,
+   "wallValid": false
+  },
+  {
+   "d": 45,
+   "cursor": "default",
+   "hint": "",
+   "groundValid": true,
+   "solidValid": false,
+   "wallValid": false
+  },
+  {
+   "d": 60,
+   "cursor": "default",
+   "hint": "",
+   "groundValid": true,
+   "solidValid": false,
+   "wallValid": false
+  },
+  {
+   "d": 90,
+   "cursor": "default",
+   "hint": "",
+   "groundValid": true,
+   "solidValid": false,
+   "wallValid": false
+  },
+  {
+   "d": 130,
+   "cursor": "default",
+   "hint": "",
+   "groundValid": true,
+   "solidValid": false,
+   "wallValid": false
+  },
+  {
+   "d": 180,
+   "cursor": "default",
+   "hint": "",
+   "groundValid": true,
+   "solidValid": false,
+   "wallValid": false
+  }
+ ],
+ "rows": [
+  {
+   "name": "unit 0: the wall offers it somewhere to go",
+   "ok": false,
+   "expected": ">0 bays accepted",
+   "actual": 0
+  },
+  {
+   "name": "unit 4: the wall offers it somewhere to go",
+   "ok": true,
+   "expected": ">0 bays accepted",
+   "actual": 14
+  },
+  {
+   "name": "an accepted order to bay 19 (407 m) is carried out",
+   "ok": false,
+   "expected": ">25 m of progress in 60 s",
+   "actual": "0 m"
+  },
+  {
+   "name": "an accepted order to bay 18 (370 m) is carried out",
+   "ok": false,
+   "expected": ">25 m of progress in 60 s",
+   "actual": "0 m"
+  },
+  {
+   "name": "an accepted order to bay 7 (37 m) is carried out",
+   "ok": false,
+   "expected": ">11 m of progress in 60 s",
+   "actual": "0 m"
+  },
+  {
+   "name": "an accepted order to bay 9 (37 m) is carried out",
+   "ok": false,
+   "expected": ">11 m of progress in 60 s",
+   "actual": "0 m"
+  },
+  {
+   "name": "somewhere inside my own wall reads as ordinary ground I can send men to",
+   "ok": true,
+   "expected": ">0 of the 7 points inside",
+   "actual": "7/7"
+  },
+  {
+   "name": "a wall unit ordered into the city gets down off the wall",
+   "ok": false,
+   "expected": "fewer than 40% of 88 still up",
+   "actual": 88
+  },
+  {
+   "name": "no page errors",
+   "ok": true,
+   "expected": 0,
+   "actual": 0
+  },
+  {
+   "name": "no console errors",
+   "ok": true,
+   "expected": 0,
+   "actual": 0
+  }
+ ],
+ "log": [
+  "t+41.7",
+  "my units on the wall: [{\"id\":0,\"t\":\"ballistarii\",\"n\":104,\"x\":50.94,\"y\":20.9,\"up\":103},{\"id\":1,\"t\":\"ballistarii\",\"n\":107,\"x\":205.65,\"y\":34.52,\"up\":107},{\"id\":2,\"t\":\"ballistarii\",\"n\":106,\"x\":243.09,\"y\":39.74,\"up\":106},{\"id\":3,\"t\":\"ballistarii\",\"n\":107,\"x\":279.62,\"y\":44.97,\"up\":107},{\"id\":4,\"t\":\"ballistarii\",\"n\":108,\"x\":316.56,\"y\":50.2,\"up\":108},{\"id\":5,\"t\":\"wall-slingers\",\"n\":90,\"x\":353.69,\"y\":55.43,\"up\":90},{\"id\":6,\"t\":\"wall-slingers\",\"n\":90,\"x\":390.56,\"y\":60.66,\"up\":90},{\"id\":7,\"t\":\"wall-slingers\",\"n\":90,\"x\":427.74,\"y\":65.46,\"up\":90}]",
+  "32 garrisonable bays: [\"1@x58/y20.9\",\"5@x206/y34.52\",\"6@x243/y39.74\",\"7@x280/y44.97\",\"8@x317/y50.2\",\"9@x354/y55.43\",\"10@x391/y60.66\",\"11@x428/y65.46\",\"12@x465/y62.15\",\"13@x502/y62.15\",\"14@x539/y60.16\",\"15@x576/y61.17\",\"16@x613/y61.17\",\"17@x650/y64.35\",\"18@x687/y59.4\",\"19@x724/y55\",\"20@x761/y51.15\",\"21@x798/y47.3\",\"22@x835/y50.6\",\"23@x872/y50.6\",\"24@x909/y54.45\",\"25@x946/y54.45\",\"26@x983/y58.3\",\"27@x1020/y58.3\",\"28@x1057/y59.95\",\"29@x1094/y56.78\",\"30@x1131/y60.5\",\"31@x1168/y60.5\",\"32@x1205/y60.5\",\"33@x1242/y60.5\",\"34@x1279/y61.05\",\"35@x1316/y61.05\"]",
+  "\n=== 1. WHAT IS OFFERED, unit x bay ===",
+  "\n  --- unit 0 (ballistarii, 104 men) standing on bay 1 at x50.94 y20.9 ---",
+  "    bay  5 (  155 m, walkY 34.52): attack (men in the way) cur=attack   wv=true \"\"",
+  "    bay  6 (  192 m, walkY 39.74): attack (men in the way) cur=attack   wv=true \"\"",
+  "    bay  7 (  229 m, walkY 44.97): attack (men in the way) cur=attack   wv=true \"\"",
+  "    bay  8 (  266 m, walkY  50.2): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay  9 (  303 m, walkY 55.43): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 10 (  340 m, walkY 60.66): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 11 (  377 m, walkY 65.46): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 12 (  414 m, walkY 62.15): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 13 (  451 m, walkY 62.15): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 14 (  488 m, walkY 60.16): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 15 (  525 m, walkY 61.17): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 16 (  562 m, walkY 61.17): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 17 (  599 m, walkY 64.35): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 18 (  636 m, walkY  59.4): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 19 (  673 m, walkY    55): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 21 (  747 m, walkY  47.3): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 22 (  784 m, walkY  50.6): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 23 (  821 m, walkY  50.6): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 24 (  858 m, walkY 54.45): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 25 (  895 m, walkY 54.45): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 26 (  932 m, walkY  58.3): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 27 (  969 m, walkY  58.3): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 28 ( 1006 m, walkY 59.95): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 30 ( 1080 m, walkY  60.5): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 31 ( 1117 m, walkY  60.5): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 32 ( 1154 m, walkY  60.5): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 33 ( 1191 m, walkY  60.5): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 34 ( 1228 m, walkY 61.05): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 35 ( 1265 m, walkY 61.05): REFUSED         cur=refuse   wv=true \"\"",
+  "  unit 0: 0 bays accepted, 26 refused out loud, 5 offered nothing",
+  "  [FAIL] unit 0: the wall offers it somewhere to go  expected=\">0 bays accepted\" actual=0",
+  "\n  --- unit 4 (ballistarii, 108 men) standing on bay 8 at x316.56 y50.2 ---",
+  "    bay  1 ( -259 m, walkY  20.9): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay  5 ( -111 m, walkY 34.52): ACCEPTED        cur=wall     wv=true \"\"",
+  "    bay  6 (  -74 m, walkY 39.74): ACCEPTED        cur=wall     wv=true \"\"",
+  "    bay  7 (  -37 m, walkY 44.97): ACCEPTED        cur=wall     wv=true \"\"",
+  "    bay  9 (   37 m, walkY 55.43): ACCEPTED        cur=wall     wv=true \"\"",
+  "    bay 10 (   74 m, walkY 60.66): ACCEPTED        cur=wall     wv=true \"\"",
+  "    bay 11 (  111 m, walkY 65.46): ACCEPTED        cur=wall     wv=true \"\"",
+  "    bay 12 (  148 m, walkY 62.15): ACCEPTED        cur=wall     wv=true \"\"",
+  "    bay 13 (  185 m, walkY 62.15): ACCEPTED        cur=wall     wv=true \"\"",
+  "    bay 14 (  222 m, walkY 60.16): ACCEPTED        cur=wall     wv=true \"\"",
+  "    bay 15 (  259 m, walkY 61.17): ACCEPTED        cur=wall     wv=true \"\"",
+  "    bay 16 (  296 m, walkY 61.17): ACCEPTED        cur=wall     wv=true \"\"",
+  "    bay 17 (  333 m, walkY 64.35): ACCEPTED        cur=wall     wv=true \"\"",
+  "    bay 18 (  370 m, walkY  59.4): ACCEPTED        cur=wall     wv=true \"\"",
+  "    bay 19 (  407 m, walkY    55): ACCEPTED        cur=wall     wv=true \"\"",
+  "    bay 21 (  481 m, walkY  47.3): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 22 (  518 m, walkY  50.6): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 23 (  555 m, walkY  50.6): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 24 (  592 m, walkY 54.45): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 25 (  629 m, walkY 54.45): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 26 (  666 m, walkY  58.3): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 27 (  703 m, walkY  58.3): REFUSED         cur=refuse   wv=true \"\"",
+  "    bay 28 (  740 m, walkY 59.95): nothing offered cur=default  wv=true \"\"",
+  "    bay 30 (  814 m, walkY  60.5): nothing offered cur=default  wv=true \"\"",
+  "    bay 31 (  851 m, walkY  60.5): nothing offered cur=default  wv=true \"\"",
+  "    bay 32 (  888 m, walkY  60.5): nothing offered cur=default  wv=true \"\"",
+  "    bay 33 (  925 m, walkY  60.5): nothing offered cur=default  wv=true \"\"",
+  "    bay 34 (  962 m, walkY 61.05): nothing offered cur=default  wv=true \"\"",
+  "    bay 35 (  999 m, walkY 61.05): nothing offered cur=default  wv=true \"\"",
+  "  unit 4: 14 bays accepted, 8 refused out loud, 9 offered nothing",
+  "  [PASS] unit 4: the wall offers it somewhere to go  expected=\">0 bays accepted\" actual=14",
+  "  unit 7: WOULD NOT SELECT (no pixel answers)",
+  "\n=== 2. DO THE ACCEPTED ORDERS HAPPEN? ===",
+  "\n  unit 4 -> bay 19 (407 m away): hint \"\"",
+  "    60 s later x317.04 -> 317.04; closed 0 of 407 m",
+  "    wall state: goal none->none, destRun -1->-1, planAge -1->-1, stuck 0->0, runs [4]->[4]",
+  "  [FAIL] an accepted order to bay 19 (407 m) is carried out  expected=\">25 m of progress in 60 s\" actual=\"0 m\"",
+  "\n  unit 4 -> bay 18 (370 m away): hint \"\"",
+  "    60 s later x317.04 -> 317; closed 0 of 370 m",
+  "    wall state: goal none->none, destRun -1->-1, planAge -1->-1, stuck 0->0, runs [4]->[4]",
+  "  [FAIL] an accepted order to bay 18 (370 m) is carried out  expected=\">25 m of progress in 60 s\" actual=\"0 m\"",
+  "\n  unit 4 -> bay 7 (37 m away): hint \"\"",
+  "    60 s later x317 -> 317; closed 0 of 37 m",
+  "    wall state: goal none->none, destRun -1->-1, planAge -1->-1, stuck 0->0, runs [4]->[6]",
+  "  [FAIL] an accepted order to bay 7 (37 m) is carried out  expected=\">11 m of progress in 60 s\" actual=\"0 m\"",
+  "\n  unit 4 -> bay 9 (37 m away): hint \"\"",
+  "    60 s later x317 -> 317; closed 0 of 37 m",
+  "    wall state: goal none->none, destRun -1->-1, planAge -1->-1, stuck 0->0, runs [6]->[6]",
+  "  [FAIL] an accepted order to bay 9 (37 m) is carried out  expected=\">11 m of progress in 60 s\" actual=\"0 m\"",
+  "\n=== 3. CAN I ORDER A COHORT INTO MY OWN CITY? ===",
+  "   20 m inside bay 20: cur=default  groundValid=true solidValid=false wallValid=false hint=\"\"",
+  "   30 m inside bay 20: cur=default  groundValid=true solidValid=false wallValid=false hint=\"\"",
+  "   45 m inside bay 20: cur=default  groundValid=true solidValid=false wallValid=false hint=\"\"",
+  "   60 m inside bay 20: cur=default  groundValid=true solidValid=false wallValid=false hint=\"\"",
+  "   90 m inside bay 20: cur=default  groundValid=true solidValid=false wallValid=false hint=\"\"",
+  "  130 m inside bay 20: cur=default  groundValid=true solidValid=false wallValid=false hint=\"\"",
+  "  180 m inside bay 20: cur=default  groundValid=true solidValid=false wallValid=false hint=\"\"",
+  "  [PASS] somewhere inside my own wall reads as ordinary ground I can send men to  expected=\">0 of the 7 points inside\" actual=\"7/7\"",
+  "  ordering unit 4 20 m inside: hint \"\"",
+  "  80 s later: y 50.2 -> 50.2, elevated 88 -> 88, at x317 z544.8 (target x760 z609)",
+  "  [FAIL] a wall unit ordered into the city gets down off the wall  expected=\"fewer than 40% of 88 still up\" actual=88",
+  "  [PASS] no page errors  expected=0 actual=0",
+  "  [PASS] no console errors  expected=0 actual=0"
+ ]
+}

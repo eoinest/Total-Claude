@@ -1,0 +1,75 @@
+{
+ "phase": "The Wall Reached",
+ "speed": "",
+ "clock": "00:25",
+ "blocks": [
+  {
+   "name": "ROME",
+   "men": "1 151",
+   "units": "12 units",
+   "loss": "−3",
+   "line": "1 151\n              −3\n              12 units"
+  },
+  {
+   "name": "JUTHUNGI",
+   "men": "1 793",
+   "units": "20 units",
+   "loss": "−127",
+   "line": "1 793\n              −127\n              20 units"
+  }
+ ],
+ "adv": "0 of 60 inside — hold",
+ "note": "They are at the stone; keep the walk clear",
+ "mid": "00:25 The Wall Reached They are at the stone; keep the walk clear 0 of 60 inside — hold",
+ "topAll": "00:25 The Wall Reached",
+ "feed": [],
+ "cmd": {
+  "name": "—",
+  "native": "",
+  "order": "Holding",
+  "state": "Holding·Steady",
+  "nums": "Kills 0 Frontage 0 m",
+  "mor": "Steady",
+  "buttons": [
+   {
+    "t": "H",
+    "off": false,
+    "on": false
+   },
+   {
+    "t": "R",
+    "off": false,
+    "on": false
+   }
+  ]
+ },
+ "cards": [
+  "Legionary Cohort I",
+  "Legionary Cohort II",
+  "Wall Ballistarii I",
+  "Wall Ballistarii II",
+  "Wall Ballistarii III",
+  "Wall Ballistarii IV",
+  "Wall Ballistarii V",
+  "Wall Slingers I",
+  "Wall Slingers II",
+  "Wall Slingers III",
+  "Carroballista I",
+  "Carroballista II"
+ ],
+ "hint": null,
+ "cursor": "",
+ "banner": [
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  ""
+ ],
+ "result": null,
+ "objectiveish": [],
+ "deploy": null
+}

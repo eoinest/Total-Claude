@@ -1,0 +1,223 @@
+{
+ "rows": [
+  {
+   "name": "campus-martius: reached ready",
+   "ok": true,
+   "expected": "ready",
+   "actual": "ready"
+  },
+  {
+   "name": "campus-martius: boot under 90 s",
+   "ok": true,
+   "expected": "<90 s",
+   "actual": "5.7 s"
+  },
+  {
+   "name": "campus-martius: the seed I typed is the seed that runs",
+   "ok": false,
+   "expected": 4265438264,
+   "actual": null
+  },
+  {
+   "name": "campus-martius: the scenario I clicked is the scenario that runs",
+   "ok": false,
+   "expected": "assault",
+   "actual": null
+  },
+  {
+   "name": "campus-martius: playable frame rate at t+0 (>=30 fps)",
+   "ok": true,
+   "expected": ">=30 fps",
+   "actual": "120.2 fps"
+  },
+  {
+   "name": "campus-martius: playable frame rate in battle (>=30 fps)",
+   "ok": true,
+   "expected": ">=30 fps",
+   "actual": "120.2 fps"
+  },
+  {
+   "name": "campus-martius: no page errors",
+   "ok": true,
+   "expected": 0,
+   "actual": 0
+  },
+  {
+   "name": "campus-martius: no console errors",
+   "ok": true,
+   "expected": 0,
+   "actual": 0
+  },
+  {
+   "name": "carthage: reached ready",
+   "ok": true,
+   "expected": "ready",
+   "actual": "ready"
+  },
+  {
+   "name": "carthage: boot under 90 s",
+   "ok": true,
+   "expected": "<90 s",
+   "actual": "5.9 s"
+  },
+  {
+   "name": "carthage: the seed I typed is the seed that runs",
+   "ok": false,
+   "expected": 4265438264,
+   "actual": null
+  },
+  {
+   "name": "carthage: the scenario I clicked is the scenario that runs",
+   "ok": false,
+   "expected": "assault",
+   "actual": null
+  },
+  {
+   "name": "carthage: playable frame rate at t+0 (>=30 fps)",
+   "ok": true,
+   "expected": ">=30 fps",
+   "actual": "120.1 fps"
+  },
+  {
+   "name": "carthage: playable frame rate in battle (>=30 fps)",
+   "ok": true,
+   "expected": ">=30 fps",
+   "actual": "120.1 fps"
+  },
+  {
+   "name": "carthage: no page errors",
+   "ok": true,
+   "expected": 0,
+   "actual": 0
+  },
+  {
+   "name": "carthage: no console errors",
+   "ok": true,
+   "expected": 0,
+   "actual": 0
+  },
+  {
+   "name": "pydna: reached ready",
+   "ok": true,
+   "expected": "ready",
+   "actual": "ready"
+  },
+  {
+   "name": "pydna: boot under 90 s",
+   "ok": true,
+   "expected": "<90 s",
+   "actual": "4.3 s"
+  },
+  {
+   "name": "pydna: the seed I typed is the seed that runs",
+   "ok": false,
+   "expected": 4265438264,
+   "actual": null
+  },
+  {
+   "name": "pydna: the scenario I clicked is the scenario that runs",
+   "ok": false,
+   "expected": "field",
+   "actual": null
+  },
+  {
+   "name": "pydna: playable frame rate at t+0 (>=30 fps)",
+   "ok": true,
+   "expected": ">=30 fps",
+   "actual": "120.3 fps"
+  },
+  {
+   "name": "pydna: playable frame rate in battle (>=30 fps)",
+   "ok": true,
+   "expected": ">=30 fps",
+   "actual": "120.1 fps"
+  },
+  {
+   "name": "pydna: no page errors",
+   "ok": true,
+   "expected": 0,
+   "actual": 0
+  },
+  {
+   "name": "pydna: no console errors",
+   "ok": true,
+   "expected": 0,
+   "actual": 0
+  }
+ ],
+ "log": [
+  "\n================ campus-martius / assault / seed 4265438264 ================",
+  "  [PASS] campus-martius: reached ready  expected=\"ready\" actual=\"ready\"",
+  "  [PASS] campus-martius: boot under 90 s  expected=\"<90 s\" actual=\"5.7 s\"",
+  "  config as the sim sees it: {\"seed\":null,\"map\":null,\"scen\":null,\"diff\":null,\"q\":null}",
+  "  [FAIL] campus-martius: the seed I typed is the seed that runs  expected=4265438264 actual=null",
+  "  [FAIL] campus-martius: the scenario I clicked is the scenario that runs  expected=\"assault\" actual=null",
+  "  t+0 HUD phase=\"Deployment\" deploy=yes",
+  "  t+0 blocks: [{\"name\":\"ROME\",\"men\":\"1 154\",\"units\":\"12 units\",\"loss\":\"−0\",\"line\":\"1 154\\n              −0\\n              12 units\"},{\"name\":\"JUTHUNGI\",\"men\":\"1 920\",\"units\":\"20 units\",\"loss\":\"−0\",\"line\":\"1 920\\n              −0\\n              20 units\"}]",
+  "  t+0 strength: {\"0\":0,\"1\":0,\"2\":0}  per-faction {\"0\":{\"units\":12,\"alive\":1154,\"routing\":0,\"dead\":0},\"1\":{\"units\":20,\"alive\":1920,\"routing\":0,\"dead\":0}}",
+  "  t+0 feed: []",
+  "  t+0 deployment: {\"title\":\"DEPLOYMENT 989 × 188 m, parapet included, bounded by the wall of Rome\",\"step\":\"− 5 +\",\"zone\":\"989 × 188 m, parapet included, bounded by the wall of Rome\",\"help\":\"Left-click a unit, right-drag to stand it there — the drag sets the facing and the frontage Z X C V B formation · Delete removes · drop on the parapet to man the wall\",\"note\":\"\",\"tally\":\"12/20 units 3,074 men 8,926 free\",\"brief\":\"To hold the city: keep them under 60 men 14 m past the curtain, and never leave them a bay: 24 of them holding a stretch with nobody of ours standing on it for 20 s is the wall gone. A storm that makes no ground for 3 minutes is thrown back.\",\"rows\":[\"ballistarii=5\",\"wall-slingers=3\",\"carroballista=2\",\"legio-cohort=2\"]}",
+  "  real-time at t+0: {\"fps\":120.2,\"n\":361,\"worstMs\":10,\"p95Ms\":10,\"medMs\":8}",
+  "  [PASS] campus-martius: playable frame rate at t+0 (>=30 fps)  expected=\">=30 fps\" actual=\"120.2 fps\"",
+  "  pressed BEGIN on the deployment panel",
+  "  real-time once the battle is live: {\"fps\":120.2,\"n\":481,\"worstMs\":10,\"p95Ms\":9,\"medMs\":8}",
+  "  [PASS] campus-martius: playable frame rate in battle (>=30 fps)  expected=\">=30 fps\" actual=\"120.2 fps\"",
+  "  at {\"t\":25.2,\"tick\":757}: phase=\"The Wall Reached\" adv=\"0 of 60 inside — hold\"",
+  "  blocks: [{\"name\":\"ROME\",\"men\":\"1 151\",\"units\":\"12 units\",\"loss\":\"−3\",\"line\":\"1 151\\n              −3\\n              12 units\"},{\"name\":\"JUTHUNGI\",\"men\":\"1 793\",\"units\":\"20 units\",\"loss\":\"−127\",\"line\":\"1 793\\n              −127\\n              20 units\"}]",
+  "  feed: []",
+  "  siege at t+20: {\"gate\":{\"shutAtStart\":true,\"open\":false,\"breached\":false,\"blows\":0,\"hp\":1,\"x\":72,\"z\":531.4172989783327,\"id\":\"porta-flaminia\",\"gates\":[{\"id\":\"porta-flaminia\",\"x\":72,\"z\":531.4172989783327,\"open\":false,\"broken\":false,\"blows\":0,\"hp\":1},{\"id\":\"porta-salaria\",\"x\":760.8157777777777,\"z\":588.6831878059043,\"open\":false,\"broken\":false,\"blows\":0,\"hp\":1},{\"id\":\"porta-nomentana\",\"x\":1093.9517777777778,\"z\":590.3295993782313,\"open\":false,\"broken\":false,\"blows\":0,\"hp\":1}]},\"breach\":{\"bays\":[],\"lanes\":0,\"through\":0,\"deadStations\":0,\"integrity\":[]},\"stats\":{\"stations\":1016,\"garrisoned\":8,\"garrisonMen\":807,\"towers\":4,\"rams\":1,\"ladders\":12,\"crossing\":147,\"gateBreached\":false}}",
+  "  [PASS] campus-martius: no page errors  expected=0 actual=0",
+  "  [PASS] campus-martius: no console errors  expected=0 actual=0",
+  "\n================ carthage / assault / seed 4265438264 ================",
+  "  [PASS] carthage: reached ready  expected=\"ready\" actual=\"ready\"",
+  "  [PASS] carthage: boot under 90 s  expected=\"<90 s\" actual=\"5.9 s\"",
+  "  config as the sim sees it: {\"seed\":null,\"map\":null,\"scen\":null,\"diff\":null,\"q\":null}",
+  "  [FAIL] carthage: the seed I typed is the seed that runs  expected=4265438264 actual=null",
+  "  [FAIL] carthage: the scenario I clicked is the scenario that runs  expected=\"assault\" actual=null",
+  "  t+0 HUD phase=\"Deployment\" deploy=yes",
+  "  t+0 blocks: [{\"name\":\"ROME\",\"men\":\"1 884\",\"units\":\"20 units\",\"loss\":\"−0\",\"line\":\"1 884\\n              −0\\n              20 units\"},{\"name\":\"QART-HADASHT\",\"men\":\"1 556\",\"units\":\"14 units\",\"loss\":\"−0\",\"line\":\"1 556\\n              −0\\n              14 units\"}]",
+  "  t+0 strength: {\"0\":0,\"1\":0,\"2\":0}  per-faction {\"0\":{\"units\":20,\"alive\":1884,\"routing\":0,\"dead\":0},\"2\":{\"units\":14,\"alive\":1556,\"routing\":0,\"dead\":0}}",
+  "  t+0 feed: []",
+  "  t+0 deployment: {\"title\":\"DEPLOYMENT 719 × 179 m, bounded by Carthage at z 250\",\"step\":\"− 4 +\",\"zone\":\"719 × 179 m, bounded by Carthage at z 250\",\"help\":\"Left-click a unit, right-drag to stand it there — the drag sets the facing and the frontage Z X C V B formation · Delete removes\",\"note\":\"\",\"tally\":\"20/20 units 3,440 men 8,560 free\",\"brief\":\"To take the city: get 60 men 14 m past the curtain — through the gate or down off the parapet — or take a stretch of parapet and hold 24 men on it for 20 s with no defender left standing on that stretch. Killing the garrison alone will not do it.\",\"rows\":[\"legio-tower-party=4\",\"legio-escalade=4\",\"legio-ram-crew=1\",\"legio-ballista=2\",\"carroballista=1\",\"legio-cohort=6\",\"equites=2\"]}",
+  "  real-time at t+0: {\"fps\":120.1,\"n\":361,\"worstMs\":10,\"p95Ms\":9,\"medMs\":8}",
+  "  [PASS] carthage: playable frame rate at t+0 (>=30 fps)  expected=\">=30 fps\" actual=\"120.1 fps\"",
+  "  pressed BEGIN on the deployment panel",
+  "  real-time once the battle is live: {\"fps\":120.1,\"n\":481,\"worstMs\":10,\"p95Ms\":10,\"medMs\":8}",
+  "  [PASS] carthage: playable frame rate in battle (>=30 fps)  expected=\">=30 fps\" actual=\"120.1 fps\"",
+  "  at {\"t\":25.2,\"tick\":756}: phase=\"The Wall Reached\" adv=\"0 of 60 inside\"",
+  "  blocks: [{\"name\":\"ROME\",\"men\":\"1 883\",\"units\":\"20 units\",\"loss\":\"−1\",\"line\":\"1 883\\n              −1\\n              20 units\"},{\"name\":\"QART-HADASHT\",\"men\":\"1 555\",\"units\":\"14 units\",\"loss\":\"−1\",\"line\":\"1 555\\n              −1\\n              14 units\"}]",
+  "  feed: []",
+  "  siege at t+20: {\"gate\":{\"shutAtStart\":true,\"open\":false,\"breached\":false,\"blows\":0,\"hp\":1,\"x\":0,\"z\":527.0058713399015,\"id\":\"porta-byrsae\",\"gates\":[{\"id\":\"porta-byrsae\",\"x\":0,\"z\":527.0058713399015,\"open\":false,\"broken\":false,\"blows\":0,\"hp\":1},{\"id\":\"porta-uticensis\",\"x\":560,\"z\":501.2885174673775,\"open\":false,\"broken\":false,\"blows\":0,\"hp\":1},{\"id\":\"porta-maritima\",\"x\":-560,\"z\":571.19923738176,\"open\":false,\"broken\":false,\"blows\":0,\"hp\":1},{\"id\":\"postern-6\",\"x\":-772.9015151515151,\"z\":592.8361618555155,\"open\":false,\"broken\":false,\"blows\":0,\"hp\":1},{\"id\":\"postern-14\",\"x\":-532.780303030303,\"z\":568.6169770276916,\"open\":false,\"broken\":false,\"blows\":0,\"hp\":1},{\"id\":\"postern-22\",\"x\":-292.6590909090909,\"z\":547.79385997434,\"open\":false,\"broken\":false,\"blows\":0,\"hp\":1},{\"id\":\"postern-30\",\"x\":-52.537878787878746,\"z\":530.3668106954603,\"open\":false,\"broken\":false,\"blows\":0,\"hp\":1},{\"id\":\"postern-38\",\"x\":187.58333333333326,\"z\":516.3358291910527,\"open\":false,\"broken\":false,\"blows\":0,\"hp\":1},{\"id\":\"postern-46\",\"x\":427.7045454545455,\"z\":505.70091546111684,\"open\":false,\"broken\":false,\"blows\":0,\"hp\":1},{\"id\":\"postern-54\",\"x\":667.8257575757575,\"z\":498.4620695056531,\"open\":false,\"broken\":false,\"blows\":0,\"hp\":1},{\"id\":\"postern-62\",\"x\":907.9469696969697,\"z\":494.6192913246614,\"open\":false,\"broken\":false,\"blows\":0,\"hp\":1}]},\"breach\":{\"bays\":[],\"lanes\":0,\"through\":0,\"deadStations\":0,\"integrity\":[]},\"stats\":{\"stations\":1830,\"garrisoned\":10,\"garrisonMen\":1340,\"towers\":4,\"rams\":1,\"ladders\":12,\"crossing\":163,\"gateBreached\":false}}",
+  "  [PASS] carthage: no page errors  expected=0 actual=0",
+  "  [PASS] carthage: no console errors  expected=0 actual=0",
+  "\n================ pydna / field / seed 4265438264 ================",
+  "  [PASS] pydna: reached ready  expected=\"ready\" actual=\"ready\"",
+  "  [PASS] pydna: boot under 90 s  expected=\"<90 s\" actual=\"4.3 s\"",
+  "  config as the sim sees it: {\"seed\":null,\"map\":null,\"scen\":null,\"diff\":null,\"q\":null}",
+  "  [FAIL] pydna: the seed I typed is the seed that runs  expected=4265438264 actual=null",
+  "  [FAIL] pydna: the scenario I clicked is the scenario that runs  expected=\"field\" actual=null",
+  "  t+0 HUD phase=\"Deployment\" deploy=yes",
+  "  t+0 blocks: [{\"name\":\"ROME\",\"men\":\"3 772\",\"units\":\"16 units\",\"loss\":\"−0\",\"line\":\"3 772\\n              −0\\n              16 units\"},{\"name\":\"JUTHUNGI\",\"men\":\"4 860\",\"units\":\"19 units\",\"loss\":\"−0\",\"line\":\"4 860\\n              −0\\n              19 units\"}]",
+  "  t+0 strength: {\"0\":0,\"1\":0,\"2\":0}  per-faction {\"0\":{\"units\":16,\"alive\":3772,\"routing\":0,\"dead\":0},\"1\":{\"units\":19,\"alive\":4860,\"routing\":0,\"dead\":0}}",
+  "  t+0 feed: []",
+  "  t+0 deployment: {\"title\":\"DEPLOYMENT 1074 × 1189 m, bounded by the edge of the field\",\"step\":\"− 6 +\",\"zone\":\"1074 × 1189 m, bounded by the edge of the field\",\"help\":\"Left-click a unit, right-drag to stand it there — the drag sets the facing and the frontage Z X C V B formation · Delete removes\",\"note\":\"\",\"tally\":\"16/20 units 8,632 men 3,368 free\",\"brief\":null,\"rows\":[\"legio-cohort=6\",\"praetorian-cohort=2\",\"urban-cohort=2\",\"sagittarii=2\",\"equites=3\",\"scorpio=1\"]}",
+  "  real-time at t+0: {\"fps\":120.3,\"n\":361,\"worstMs\":10,\"p95Ms\":10,\"medMs\":8}",
+  "  [PASS] pydna: playable frame rate at t+0 (>=30 fps)  expected=\">=30 fps\" actual=\"120.3 fps\"",
+  "  pressed BEGIN on the deployment panel",
+  "  real-time once the battle is live: {\"fps\":120.1,\"n\":481,\"worstMs\":10,\"p95Ms\":10,\"medMs\":8}",
+  "  [PASS] pydna: playable frame rate in battle (>=30 fps)  expected=\">=30 fps\" actual=\"120.1 fps\"",
+  "  at {\"t\":25.2,\"tick\":757}: phase=\"The Advance\" adv=\"JUTHUNGI advantage 13%\"",
+  "  blocks: [{\"name\":\"ROME\",\"men\":\"3 772\",\"units\":\"16 units\",\"loss\":\"−0\",\"line\":\"3 772\\n              −0\\n              16 units\"},{\"name\":\"JUTHUNGI\",\"men\":\"4 860\",\"units\":\"19 units\",\"loss\":\"−0\",\"line\":\"4 860\\n              −0\\n              19 units\"}]",
+  "  feed: []",
+  "  siege at t+20: {\"gate\":{\"shutAtStart\":false,\"open\":true,\"breached\":false,\"blows\":0,\"hp\":1,\"x\":null,\"z\":null,\"id\":\"\",\"gates\":[]},\"breach\":{\"bays\":[],\"lanes\":0,\"through\":0,\"deadStations\":0,\"integrity\":[]},\"stats\":{\"stations\":0,\"garrisoned\":0,\"garrisonMen\":0,\"towers\":0,\"rams\":0,\"ladders\":0,\"crossing\":0,\"gateBreached\":false}}",
+  "  [PASS] pydna: no page errors  expected=0 actual=0",
+  "  [PASS] pydna: no console errors  expected=0 actual=0",
+  "\nrecon: 18/24 checks passed",
+  "  FAILED: campus-martius: the seed I typed is the seed that runs  expected=4265438264 actual=null",
+  "  FAILED: campus-martius: the scenario I clicked is the scenario that runs  expected=\"assault\" actual=null",
+  "  FAILED: carthage: the seed I typed is the seed that runs  expected=4265438264 actual=null",
+  "  FAILED: carthage: the scenario I clicked is the scenario that runs  expected=\"assault\" actual=null",
+  "  FAILED: pydna: the seed I typed is the seed that runs  expected=4265438264 actual=null",
+  "  FAILED: pydna: the scenario I clicked is the scenario that runs  expected=\"field\" actual=null"
+ ]
+}

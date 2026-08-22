@@ -1,0 +1,89 @@
+{
+ "seed": 4265438264,
+ "rows": [
+  {
+   "name": "case 1: my own unit on the wall selects",
+   "ok": false,
+   "expected": "selectable"
+  },
+  {
+   "name": "case 2: the walker selects",
+   "ok": true,
+   "expected": "selectable",
+   "actual": "yes"
+  },
+  {
+   "name": "case 2: the destination bay reads as a wall target",
+   "ok": true,
+   "expected": "wallValid somewhere on it",
+   "actual": "yes"
+  },
+  {
+   "name": "case 3: the unit selects",
+   "ok": true,
+   "expected": "selectable",
+   "actual": "yes"
+  },
+  {
+   "name": "case 3: a street inside the wall can be framed and aimed at",
+   "ok": true,
+   "expected": "a pixel",
+   "actual": "yes"
+  },
+  {
+   "name": "case 3: the unit came down off the wall",
+   "ok": false,
+   "expected": "fewer than half of 95 still elevated",
+   "actual": 70
+  },
+  {
+   "name": "case 3: the unit went back up onto the wall",
+   "ok": false,
+   "expected": "more than 78 elevated",
+   "actual": 12
+  },
+  {
+   "name": "no page errors",
+   "ok": true,
+   "expected": 0,
+   "actual": 0
+  },
+  {
+   "name": "no console errors",
+   "ok": true,
+   "expected": 0,
+   "actual": 0
+  }
+ ],
+ "log": [
+  "\n=== t+56.9: the escalade is on the wall ===",
+  "enemy units with men on my parapet: [{\"id\":16,\"t\":\"escalade-party\",\"n\":68,\"up\":68,\"x\":206.9,\"z\":532.18,\"y\":33.37},{\"id\":17,\"t\":\"escalade-party\",\"n\":66,\"up\":66,\"x\":243.31,\"z\":535.06,\"y\":38.69},{\"id\":18,\"t\":\"escalade-party\",\"n\":58,\"up\":58,\"x\":280.94,\"z\":538.83,\"y\":43.91},{\"id\":19,\"t\":\"escalade-party\",\"n\":21,\"up\":14,\"x\":315.2,\"z\":510.06,\"y\":41}]",
+  "my units on the parapet: [{\"id\":0,\"t\":\"ballistarii\",\"n\":100,\"up\":100,\"x\":49.82,\"y\":20.9},{\"id\":1,\"t\":\"ballistarii\",\"n\":99,\"up\":99,\"x\":204.45,\"y\":34.52},{\"id\":2,\"t\":\"ballistarii\",\"n\":98,\"up\":98,\"x\":241.37,\"y\":39.74},{\"id\":3,\"t\":\"ballistarii\",\"n\":100,\"up\":100,\"x\":278.91,\"y\":44.97},{\"id\":4,\"t\":\"ballistarii\",\"n\":100,\"up\":100,\"x\":315.28,\"y\":50.2},{\"id\":5,\"t\":\"wall-slingers\",\"n\":90,\"up\":90,\"x\":353.69,\"y\":55.43},{\"id\":6,\"t\":\"wall-slingers\",\"n\":90,\"up\":90,\"x\":390.56,\"y\":60.66},{\"id\":7,\"t\":\"wall-slingers\",\"n\":90,\"up\":90,\"x\":427.74,\"y\":65.46}]",
+  "\n--- CASE 1: attack an enemy standing on my parapet ---",
+  "attacker: 1 ballistarii 99 men at x204.45 y34.52",
+  "target:   16 escalade-party 68 men at x206.9 y33.37, 68 on the stone",
+  "  [FAIL] case 1: my own unit on the wall selects  expected=\"selectable\" actual=undefined",
+  "\n--- CASE 2: traverse along my own wall to a bay I choose ---",
+  "walker: 0 ballistarii 100 men at x49.53 y20.9",
+  "from bay 1 (x57.53 walkY 20.9) to bay 5 (x205.59 walkY 34.52) — 148 m along the wall",
+  "  [PASS] case 2: the walker selects  expected=\"selectable\" actual=\"yes\"",
+  "  [PASS] case 2: the destination bay reads as a wall target  expected=\"wallValid somewhere on it\" actual=\"yes\"",
+  "  hint: \"No way along the wall to bay 5 — the walk is broken in between\" cursor=refuse",
+  "  the game REFUSED out loud",
+  "  60 s later: x49.54 -> 50.17 (target x205.59); closed 1 of 156 m",
+  "  wall state before: {\"onWall\":100,\"onGround\":0,\"onLink\":0,\"runs\":[0],\"runCounts\":{\"0\":100},\"goal\":\"none\",\"destRun\":-1,\"planAge\":-1,\"stuck\":0,\"worstFeetError\":0}",
+  "  wall state after:  {\"onWall\":95,\"onGround\":0,\"onLink\":0,\"runs\":[0],\"runCounts\":{\"0\":95},\"goal\":\"none\",\"destRun\":-1,\"planAge\":-1,\"stuck\":0,\"worstFeetError\":0}",
+  "\n--- CASE 3: down off the wall, then back up ---",
+  "  [PASS] case 3: the unit selects  expected=\"selectable\" actual=\"yes\"",
+  "  [PASS] case 3: a street inside the wall can be framed and aimed at  expected=\"a pixel\" actual=\"yes\"",
+  "  hint over the street: \"\" cursor=default",
+  "  70 s later: y 20.9 -> 20.9, elevated 95 -> 70, at x50.46 z533.12",
+  "  [FAIL] case 3: the unit came down off the wall  expected=\"fewer than half of 95 still elevated\" actual=70",
+  "  hint back at the wall: \"\" cursor=default",
+  "  80 s later: y 20.9 -> 20.9, elevated 70 -> 12",
+  "  [FAIL] case 3: the unit went back up onto the wall  expected=\"more than 78 elevated\" actual=12",
+  "\n--- CASE 4: halt ---",
+  "  [PASS] no page errors  expected=0 actual=0",
+  "  [PASS] no console errors  expected=0 actual=0"
+ ]
+}

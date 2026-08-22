@@ -1,0 +1,320 @@
+{
+ "seed": 4265438264,
+ "arm": "passive",
+ "rows": [
+  {
+   "name": "the besieger's brief does not tell me to man a parapet I do not have",
+   "ok": true,
+   "expected": "no parapet instruction",
+   "actual": "it does not"
+  },
+  {
+   "name": "opening runs at 30 fps or better",
+   "ok": true,
+   "expected": ">=30",
+   "actual": 120.2
+  },
+  {
+   "name": "t+25.37: the plaque's inside count is the arbiter's",
+   "ok": true,
+   "expected": 0,
+   "actual": "0"
+  },
+  {
+   "name": "t+45.9: the plaque's inside count is the arbiter's",
+   "ok": true,
+   "expected": 0,
+   "actual": "0"
+  },
+  {
+   "name": "t+66.43: the plaque's inside count is the arbiter's",
+   "ok": true,
+   "expected": 0,
+   "actual": "0"
+  },
+  {
+   "name": "t+87: the plaque's inside count is the arbiter's",
+   "ok": true,
+   "expected": 0,
+   "actual": "0"
+  },
+  {
+   "name": "t+107.47: the plaque's inside count is the arbiter's",
+   "ok": true,
+   "expected": 15,
+   "actual": "15"
+  },
+  {
+   "name": "t+128.03: the plaque's inside count is the arbiter's",
+   "ok": true,
+   "expected": 58,
+   "actual": "58"
+  },
+  {
+   "name": "the card's sentence names the condition that actually fired",
+   "ok": true,
+   "expected": "a sentence about getting inside",
+   "actual": "The wall was carried. The Byrsa is taken. The three streets are choked from the forum to the citadel gate, and the Senat"
+  },
+  {
+   "name": "no page errors",
+   "ok": true,
+   "expected": 0,
+   "actual": 0
+  },
+  {
+   "name": "no console errors",
+   "ok": true,
+   "expected": 0,
+   "actual": 0
+  }
+ ],
+ "log": [
+  "brief: To take the city: get 60 men 14 m past the curtain — through the gate or down off the parapet — or take a stretch of parapet and hold 24 men on it for 20 s with no defender left standing on that stretch. Killing the garrison alone will not do it.",
+  "help:  Left-click a unit, right-drag to stand it there — the drag sets the facing and the frontage Z X C V B formation · Delete removes",
+  "tally: 20/20 units 3,440 men 8,560 free",
+  "rows:  [\"legio-tower-party=4\",\"legio-escalade=4\",\"legio-ram-crew=1\",\"legio-ballista=2\",\"carroballista=1\",\"legio-cohort=6\",\"equites=2\"]",
+  "  [PASS] the besieger's brief does not tell me to man a parapet I do not have  expected=\"no parapet instruction\" actual=\"it does not\"",
+  "my train: [{\"id\":14,\"t\":\"legio-tower-party\",\"n\":80,\"x\":-27.23,\"z\":466.55},{\"id\":15,\"t\":\"legio-tower-party\",\"n\":80,\"x\":32.52,\"z\":453.84},{\"id\":16,\"t\":\"legio-tower-party\",\"n\":80,\"x\":-58.55,\"z\":450.54},{\"id\":17,\"t\":\"legio-tower-party\",\"n\":80,\"x\":61.63,\"z\":434.08},{\"id\":18,\"t\":\"legio-escalade\",\"n\":104,\"x\":-84.3,\"z\":506.42},{\"id\":19,\"t\":\"legio-escalade\",\"n\":104,\"x\":96.07,\"z\":495.24},{\"id\":20,\"t\":\"legio-escalade\",\"n\":104,\"x\":-114.36,\"z\":508.47},{\"id\":21,\"t\":\"legio-escalade\",\"n\":104,\"x\":126.13,\"z\":493.56},{\"id\":22,\"t\":\"legio-ram-crew\",\"n\":32,\"x\":-3.83,\"z\":465.12},{\"id\":23,\"t\":\"legio-ballista\",\"n\":12,\"x\":-75.49,\"z\":335.31},{\"id\":24,\"t\":\"legio-ballista\",\"n\":12,\"x\":-4.63,\"z\":330.92},{\"id\":25,\"t\":\"carroballista\",\"n\":12,\"x\":66.23,\"z\":326.52},{\"id\":26,\"t\":\"legio-cohort\",\"n\":160,\"x\":-155.38,\"z\":404.38},{\"id\":27,\"t\":\"legio-cohort\",\"n\":160,\"x\":-93.49,\"z\":400.55},{\"id\":28,\"t\":\"legio-cohort\",\"n\":160,\"x\":-31.61,\"z\":396.71},{\"id\":29,\"t\":\"legio-cohort\",\"n\":160,\"x\":30.27,\"z\":392.88},{\"id\":30,\"t\":\"legio-cohort\",\"n\":160,\"x\":92.15,\"z\":389.04},{\"id\":31,\"t\":\"legio-cohort\",\"n\":160,\"x\":154.03,\"z\":385.21},{\"id\":32,\"t\":\"equites\",\"n\":60,\"x\":-243.06,\"z\":363.73},{\"id\":33,\"t\":\"equites\",\"n\":60,\"x\":236.02,\"z\":334.04}]",
+  "gates: [{\"id\":\"porta-byrsae\",\"x\":0,\"z\":527,\"open\":false},{\"id\":\"porta-uticensis\",\"x\":560,\"z\":501,\"open\":false},{\"id\":\"porta-maritima\",\"x\":-560,\"z\":571,\"open\":false},{\"id\":\"postern-6\",\"x\":-773,\"z\":593,\"open\":false},{\"id\":\"postern-14\",\"x\":-533,\"z\":569,\"open\":false},{\"id\":\"postern-22\",\"x\":-293,\"z\":548,\"open\":false},{\"id\":\"postern-30\",\"x\":-53,\"z\":530,\"open\":false},{\"id\":\"postern-38\",\"x\":188,\"z\":516,\"open\":false},{\"id\":\"postern-46\",\"x\":428,\"z\":506,\"open\":false},{\"id\":\"postern-54\",\"x\":668,\"z\":498,\"open\":false},{\"id\":\"postern-62\",\"x\":908,\"z\":495,\"open\":false}]",
+  "real-time frame rate at the opening: {\"fps\":120.2,\"n\":482,\"worstMs\":10,\"p95Ms\":10,\"medMs\":8}",
+  "  [PASS] opening runs at 30 fps or better  expected=\">=30\" actual=120.2",
+  "  t+25.37 [The Wall Reached] \"The ramps are down; get men onto the walk\" adv=\"0 of 60 inside\" {\"onWall\":0,\"holding\":0,\"garr\":1340,\"inside\":0,\"heldFor\":0,\"stalled\":25} gate={\"hp\":1,\"blows\":0,\"breached\":false} towers=[\"approach:0\",\"approach:0\",\"approach:0\",\"approach:0\"] crossing=163 ROME 1 883 −1 | QART-HADASHT 1 555 −1",
+  "  [PASS] t+25.37: the plaque's inside count is the arbiter's  expected=0 actual=\"0\"",
+  "  t+45.9 [The Wall Reached] \"113 of ours on the parapet against 1318 of theirs\" adv=\"0 of 60 inside\" {\"onWall\":113,\"holding\":0,\"garr\":1318,\"inside\":0,\"heldFor\":0,\"stalled\":0} gate={\"hp\":1,\"blows\":0,\"breached\":false} towers=[\"approach:0\",\"approach:0\",\"approach:0\",\"approach:0\"] crossing=262 ROME 1 856 −28 | QART-HADASHT 1 533 −23",
+  "  [PASS] t+45.9: the plaque's inside count is the arbiter's  expected=0 actual=\"0\"",
+  "  t+66.43 [The Wall Reached] \"290 of ours on the parapet against 1247 of theirs\" adv=\"0 of 60 inside\" {\"onWall\":290,\"holding\":0,\"garr\":1247,\"inside\":0,\"heldFor\":0,\"stalled\":0} gate={\"hp\":1,\"blows\":0,\"breached\":false} towers=[\"approach:0\",\"approach:0\",\"approach:0\",\"approach:0\"] crossing=36 ROME 1 798 −86 | QART-HADASHT 1 491 −65",
+  "      feed: [\"The lines have met\",\"Velite Ladder Party II — heavy losses\",\"Velite Ladder Party IV has broken\"]",
+  "  [PASS] t+66.43: the plaque's inside count is the arbiter's  expected=0 actual=\"0\"",
+  "  t+87 [The Wall Reached] \"240 of ours on the parapet against 1198 of theirs\" adv=\"0 of 60 inside\" {\"onWall\":240,\"holding\":0,\"garr\":1198,\"inside\":0,\"heldFor\":0,\"stalled\":0} gate={\"hp\":1,\"blows\":0,\"breached\":false} towers=[\"approach:0\",\"approach:0\",\"approach:0\",\"approach:0\"] crossing=0 ROME 1 738 −146 | QART-HADASHT 1 445 −111",
+  "      feed: [\"Velite Ladder Party III has broken\"]",
+  "  [PASS] t+87: the plaque's inside count is the arbiter's  expected=0 actual=\"0\"",
+  "  t+107.47 [In the Streets] \"15 of ours are past the curtain\" adv=\"15 of 60 inside\" {\"onWall\":91,\"holding\":0,\"garr\":1170,\"inside\":15,\"heldFor\":0,\"stalled\":1} gate={\"hp\":0.92,\"blows\":2,\"breached\":false} towers=[\"approach:0\",\"approach:0\",\"approach:0\",\"approach:0\"] crossing=0 ROME 1 637 −247 | QART-HADASHT 1 419 −137",
+  "      feed: [\"Velite Ladder Party II — heavy losses\",\"The lines have met\"]",
+  "  [PASS] t+107.47: the plaque's inside count is the arbiter's  expected=15 actual=\"15\"",
+  "  t+128.03 [In the Streets] \"58 of ours are past the curtain\" adv=\"58 of 60 inside\" {\"onWall\":19,\"holding\":0,\"garr\":1141,\"inside\":58,\"heldFor\":0,\"stalled\":1} gate={\"hp\":0.77,\"blows\":6,\"breached\":false} towers=[\"approach:0\",\"approach:0\",\"approach:0\",\"approach:0\"] crossing=0 ROME 1 573 −311 | QART-HADASHT 1 404 −152",
+  "      feed: [\"The lines have met\",\"Velite Ladder Party IV has rallied\"]",
+  "  [PASS] t+128.03: the plaque's inside count is the arbiter's  expected=58 actual=\"58\"",
+  "  t+148.6 [Aftermath] \"The field is decided\" adv=\"ROME advantage 5%\" {\"onWall\":11,\"holding\":0,\"garr\":1140,\"inside\":60,\"heldFor\":0,\"stalled\":2} gate={\"hp\":0.58,\"blows\":11,\"breached\":false} towers=[\"approach:0\",\"approach:0\",\"approach:0\",\"approach:0\"] crossing=0 ROME 1 551 −333 | QART-HADASHT 1 401 −155",
+  "\n*** RESULT at t+148.6: {\"verdict\":\"Victory\",\"reason\":\"By objective — the ground that mattered has been taken\"} ***",
+  "result panel: {\n \"verdict\": \"Victory\",\n \"reason\": \"By objective — the ground that mattered has been taken\",\n \"clock\": \"02:10 on the field\",\n \"flavour\": [\n  \"The wall was carried.\",\n  \"The Byrsa is taken. The three streets are choked from the forum to the citadel gate, and the Senate’s instruction was that nothing should be left standing.\"\n ],\n \"cols\": [\n  {\n   \"f\": \"rome\",\n   \"txt\": \"ROME Senatus Populusque Romanus Committed1 884 Surviving1 568 Fallen316 (17%) Units lost3 of 20 Destroyed outright0 of 20\"\n  },\n  {\n   \"f\": \"carthage\",\n   \"txt\": \"QART-HADASHT Carthaginian Empire Committed1 556 Surviving1 404 Fallen152 (10%) Units lost0 of 14 Destroyed outright0 of 14\"\n  }\n ],\n \"honours\": \"The wall The gateHeld at 73% — 7 blows Breaches in the curtain0 On the parapet at the end11 storming · 1140 holding Inside the walls60 of 60 needed The wall was carried.\",\n \"buttons\": [\n  \"Save replay\",\n  \"Copy replay link\",\n  \"Dismiss\"\n ]\n}",
+  "arbiter: {\"victor\":0,\"reason\":\"objective\",\"casualties\":{\"0\":316,\"2\":152},\"survivors\":{\"0\":1568,\"2\":1404},\"unitsLost\":{\"0\":3,\"2\":0},\"unitsTotal\":{\"0\":20,\"2\":14},\"at\":130.23333333332852}",
+  "objective at the end: {\"stormOnWall\":11,\"garrisonOnWall\":1140,\"stormInside\":60,\"stormHolding\":0,\"holdingRuns\":[],\"heldFor\":0,\"storm\":0,\"garrison\":2,\"needInside\":60,\"insideMargin\":14,\"needFoothold\":24,\"holdSeconds\":20,\"stallSeconds\":180,\"stalledFor\":2.033333333333336}",
+  "  which condition fired: B, sixty men got inside",
+  "  [PASS] the card's sentence names the condition that actually fired  expected=\"a sentence about getting inside\" actual=\"The wall was carried. The Byrsa is taken. The three streets are choked from the forum to the citadel gate, and the Senat\"",
+  "  [PASS] no page errors  expected=0 actual=0",
+  "  [PASS] no console errors  expected=0 actual=0"
+ ],
+ "snaps": [
+  {
+   "t": 25.37,
+   "phase": "The Wall Reached",
+   "note": "The ramps are down; get men onto the walk",
+   "adv": "0 of 60 inside",
+   "obj": {
+    "onWall": 0,
+    "holding": 0,
+    "garr": 1340,
+    "inside": 0,
+    "heldFor": 0,
+    "stalled": 25
+   },
+   "gate": {
+    "hp": 1,
+    "blows": 0,
+    "breached": false
+   },
+   "towers": [
+    "approach:0",
+    "approach:0",
+    "approach:0",
+    "approach:0"
+   ],
+   "crossing": 163,
+   "men": [
+    "ROME 1 883 −1",
+    "QART-HADASHT 1 555 −1"
+   ]
+  },
+  {
+   "t": 45.9,
+   "phase": "The Wall Reached",
+   "note": "113 of ours on the parapet against 1318 of theirs",
+   "adv": "0 of 60 inside",
+   "obj": {
+    "onWall": 113,
+    "holding": 0,
+    "garr": 1318,
+    "inside": 0,
+    "heldFor": 0,
+    "stalled": 0
+   },
+   "gate": {
+    "hp": 1,
+    "blows": 0,
+    "breached": false
+   },
+   "towers": [
+    "approach:0",
+    "approach:0",
+    "approach:0",
+    "approach:0"
+   ],
+   "crossing": 262,
+   "men": [
+    "ROME 1 856 −28",
+    "QART-HADASHT 1 533 −23"
+   ]
+  },
+  {
+   "t": 66.43,
+   "phase": "The Wall Reached",
+   "note": "290 of ours on the parapet against 1247 of theirs",
+   "adv": "0 of 60 inside",
+   "obj": {
+    "onWall": 290,
+    "holding": 0,
+    "garr": 1247,
+    "inside": 0,
+    "heldFor": 0,
+    "stalled": 0
+   },
+   "gate": {
+    "hp": 1,
+    "blows": 0,
+    "breached": false
+   },
+   "towers": [
+    "approach:0",
+    "approach:0",
+    "approach:0",
+    "approach:0"
+   ],
+   "crossing": 36,
+   "men": [
+    "ROME 1 798 −86",
+    "QART-HADASHT 1 491 −65"
+   ]
+  },
+  {
+   "t": 87,
+   "phase": "The Wall Reached",
+   "note": "240 of ours on the parapet against 1198 of theirs",
+   "adv": "0 of 60 inside",
+   "obj": {
+    "onWall": 240,
+    "holding": 0,
+    "garr": 1198,
+    "inside": 0,
+    "heldFor": 0,
+    "stalled": 0
+   },
+   "gate": {
+    "hp": 1,
+    "blows": 0,
+    "breached": false
+   },
+   "towers": [
+    "approach:0",
+    "approach:0",
+    "approach:0",
+    "approach:0"
+   ],
+   "crossing": 0,
+   "men": [
+    "ROME 1 738 −146",
+    "QART-HADASHT 1 445 −111"
+   ]
+  },
+  {
+   "t": 107.47,
+   "phase": "In the Streets",
+   "note": "15 of ours are past the curtain",
+   "adv": "15 of 60 inside",
+   "obj": {
+    "onWall": 91,
+    "holding": 0,
+    "garr": 1170,
+    "inside": 15,
+    "heldFor": 0,
+    "stalled": 1
+   },
+   "gate": {
+    "hp": 0.92,
+    "blows": 2,
+    "breached": false
+   },
+   "towers": [
+    "approach:0",
+    "approach:0",
+    "approach:0",
+    "approach:0"
+   ],
+   "crossing": 0,
+   "men": [
+    "ROME 1 637 −247",
+    "QART-HADASHT 1 419 −137"
+   ]
+  },
+  {
+   "t": 128.03,
+   "phase": "In the Streets",
+   "note": "58 of ours are past the curtain",
+   "adv": "58 of 60 inside",
+   "obj": {
+    "onWall": 19,
+    "holding": 0,
+    "garr": 1141,
+    "inside": 58,
+    "heldFor": 0,
+    "stalled": 1
+   },
+   "gate": {
+    "hp": 0.77,
+    "blows": 6,
+    "breached": false
+   },
+   "towers": [
+    "approach:0",
+    "approach:0",
+    "approach:0",
+    "approach:0"
+   ],
+   "crossing": 0,
+   "men": [
+    "ROME 1 573 −311",
+    "QART-HADASHT 1 404 −152"
+   ]
+  },
+  {
+   "t": 148.6,
+   "phase": "Aftermath",
+   "note": "The field is decided",
+   "adv": "ROME advantage 5%",
+   "obj": {
+    "onWall": 11,
+    "holding": 0,
+    "garr": 1140,
+    "inside": 60,
+    "heldFor": 0,
+    "stalled": 2
+   },
+   "gate": {
+    "hp": 0.58,
+    "blows": 11,
+    "breached": false
+   },
+   "towers": [
+    "approach:0",
+    "approach:0",
+    "approach:0",
+    "approach:0"
+   ],
+   "crossing": 0,
+   "men": [
+    "ROME 1 551 −333",
+    "QART-HADASHT 1 401 −155"
+   ]
+  }
+ ]
+}

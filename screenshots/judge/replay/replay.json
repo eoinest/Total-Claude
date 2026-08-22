@@ -1,0 +1,124 @@
+{
+ "rows": [
+  {
+   "name": "a token can be got mid-battle",
+   "ok": true,
+   "expected": "a base64url string",
+   "actual": "978 chars"
+  },
+  {
+   "name": "the record carries the orders I gave",
+   "ok": false,
+   "expected": ">0 events"
+  },
+  {
+   "name": "the end card offers Save replay and Copy replay link",
+   "ok": true,
+   "expected": "both buttons",
+   "actual": "[\"Save replay\",\"Copy replay link\",\"Dismiss\"]"
+  },
+  {
+   "name": "a token is still obtainable from the end card",
+   "ok": true,
+   "expected": "a token",
+   "actual": "1299 chars"
+  },
+  {
+   "name": "a replay URL boots",
+   "ok": true,
+   "expected": "ready",
+   "actual": true
+  },
+  {
+   "name": "a replay skips the menu",
+   "ok": true,
+   "expected": "no menu sheet",
+   "actual": "no menu"
+  },
+  {
+   "name": "the playback says it is a playback",
+   "ok": true,
+   "expected": "a replay strip on screen",
+   "actual": "DIVERGED"
+  },
+  {
+   "name": "there is a TAKE COMMAND button",
+   "ok": true,
+   "expected": "a .rp-take button",
+   "actual": "TAKE COMMAND"
+  },
+  {
+   "name": "the army is handed over at the ?from= point",
+   "ok": true,
+   "expected": "mode 'commanded'",
+   "actual": "commanded"
+  },
+  {
+   "name": "the strip says the army is mine now",
+   "ok": false,
+   "expected": "a badge saying so",
+   "actual": "DIVERGED"
+  },
+  {
+   "name": "a unit can be selected after taking command",
+   "ok": true,
+   "expected": "selectable",
+   "actual": "yes"
+  },
+  {
+   "name": "an order given after taking command is obeyed",
+   "ok": true,
+   "expected": ">10 m",
+   "actual": "63 m"
+  },
+  {
+   "name": "taking over is not reported as a divergence",
+   "ok": false,
+   "expected": "no divergedAt",
+   "actual": 0
+  },
+  {
+   "name": "no page errors during playback",
+   "ok": true,
+   "expected": 0,
+   "actual": 0
+  },
+  {
+   "name": "no console errors during playback",
+   "ok": false,
+   "expected": 0,
+   "actual": 1
+  }
+ ],
+ "log": [
+  "gave 2 real orders before recording the token",
+  "  [PASS] a token can be got mid-battle  expected=\"a base64url string\" actual=\"978 chars\"",
+  "record at t+98.2: {\"v\":1}",
+  "  [FAIL] the record carries the orders I gave  expected=\">0 events\" actual=undefined",
+  "\n--- the buttons a player would use ---",
+  "battle ended: {\"verdict\":\"Victory\",\"reason\":\"By objective — the ground that mattered has been taken\"}",
+  "end-card buttons: [\"Save replay\",\"Copy replay link\",\"Dismiss\"]",
+  "  [PASS] the end card offers Save replay and Copy replay link  expected=\"both buttons\" actual=\"[\\\"Save replay\\\",\\\"Copy replay link\\\",\\\"Dismiss\\\"]\"",
+  "  [PASS] a token is still obtainable from the end card  expected=\"a token\" actual=\"1299 chars\"",
+  "\n=== WATCHING IT BACK ===",
+  "URL length: 1344 chars",
+  "  [PASS] a replay URL boots  expected=\"ready\" actual=true",
+  "  [PASS] a replay skips the menu  expected=\"no menu sheet\" actual=\"no menu\"",
+  "the replay bar: {\"present\":true,\"text\":\"DIVERGED\",\"classes\":\"rp-badge\",\"takeButton\":true,\"takeText\":\"TAKE COMMAND\"}",
+  "  [PASS] the playback says it is a playback  expected=\"a replay strip on screen\" actual=\"DIVERGED\"",
+  "  [PASS] there is a TAKE COMMAND button  expected=\"a .rp-take button\" actual=\"TAKE COMMAND\"",
+  "past t+45: {\"text\":\"DIVERGED\",\"classes\":\"rp-badge\",\"mode\":\"commanded\",\"diverged\":0}",
+  "  [PASS] the army is handed over at the ?from= point  expected=\"mode 'commanded'\" actual=\"commanded\"",
+  "  [FAIL] the strip says the army is mine now  expected=\"a badge saying so\" actual=\"DIVERGED\"",
+  "  [PASS] a unit can be selected after taking command  expected=\"selectable\" actual=\"yes\"",
+  "  order after takeover: hint \"Move here\" cursor=move",
+  "  40 s later moved 63 m (x-155.38->-155.39 z379.37->316.49)",
+  "  [PASS] an order given after taking command is obeyed  expected=\">10 m\" actual=\"63 m\"",
+  "  replay state after my order: {\"mode\":\"commanded\",\"div\":0,\"bar\":\"DIVERGED\"}",
+  "  [FAIL] taking over is not reported as a divergence  expected=\"no divergedAt\" actual=0",
+  "  [PASS] no page errors during playback  expected=0 actual=0",
+  "  [FAIL] no console errors during playback  expected=0 actual=1",
+  "console: [\"[replay] this record was made by a different build: the armies differ before a tick has run (pool; recorded 8ca295e0/b835cac3/0b2dc55e, here fa60a0ea/b835cac3/0b2dc55e)\"]"
+ ],
+ "tokenChars": 1299
+}
