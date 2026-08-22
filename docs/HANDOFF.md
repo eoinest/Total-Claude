@@ -48,16 +48,30 @@ hashes each: the float32 pool, `uf64` (exact float64 unit state) and `uctl` (dis
 > browser update rather than a commit, and a gate nobody wants to run measures nothing. All three
 > battles are currently **bit-identical in all three engines at all seven checkpoints**.
 >
+> **It takes one browser slot at a time, not four.** Three engines plus a second load of the
+> reference is the entire machine cap, so each run closes its browser at the bottom of `run()`
+> and only its `marks`, `dumps`, `id` and `libm` survive — all plain data, and nothing downstream
+> touches a page. It is correspondingly slow. Budget for it and check `node tools/browsers.mjs`
+> before starting one.
+>
 > **`stop()` after `ready` was never enough, and both determinism tools now close the window.**
 > `engine.start()` runs at the end of `boot()` and `ready` is set after it, so a harness that
 > waits for the flag and *then* evaluates a stop has a driver round trip of rAF in between and
 > loses an unequal number of ticks per run. Under nine concurrent agents that made `qa-xengine`
 > report a `uctl` difference at t+0 — a control-flow difference before a tick had run, which is
 > not a shape rounding can take, which is why it was investigated instead of published. The fix
-> is a four-line `page.addInitScript` that stops the clock on the `ready` assignment itself;
-> `simTime` is now a *compared* mark in both tools rather than a printed one. See
-> `docs/tech/TOOLING.md`, "the shape of every harness here". **Any harness here that hashes
-> anything needs this.**
+> is a four-line `page.addInitScript` that stops the clock on the `ready` assignment itself, and
+> it lives in **`tools/lib/simclock.mjs`** so it is imported rather than pasted. `simTime` is now
+> a *compared* mark rather than a printed one in A-vs-B, **in the cross-tier arm**, and in
+> `qa-xengine`; `qa-replay`'s `playback` takes the hook too, and its `recordBattle` deliberately
+> does not, because that one is recording a real battle in real time. See `docs/tech/TOOLING.md`,
+> "the shape of every harness here". **Any harness here that hashes anything needs this.**
+>
+> The comparison is not symmetric and that is deliberate: `advance()` runs whole fixed steps, so
+> landing up to one tick *short* of a checkpoint is the only thing that can happen and four of
+> the seven do it (t+200 reads 199.967). Landing *past* one is the race. The old
+> `Math.abs(drift) < FIXED_DT` sat exactly on its own boundary at one tick short and passed only
+> because the caller had rounded `simTime` to three decimals first.
 >
 > **Both determinism tools refuse a port they cannot prove is serving this tree**, through
 > `startVite` in `tools/lib/browser-budget.mjs` (`/__tc/tree`), and `qa-xengine.mjs` sets
@@ -84,7 +98,7 @@ Each of those three runs now carries a **cross-tier arm**: the same battle at `l
 identical, because a graphics setting must not change the battle. `--tiers=off` skips it and says
 so out loud; `--tier-at=` moves where it compares (default: the first three of `--at`).
 
-Confirm every run by headcount, always: **field battle 8,632 / Rome 3,074 / Carthage 3,440.** A
+Confirm every run by headcount, always: **field battle 8,632 / Rome 3,072 / Carthage 3,440.** A
 Carthage run reporting 8,632 measured something else. (Headcounts are unchanged by the float32
 firewall — it moves the *survivor* curve, not the order of battle. Field battle survivors at t+200
 went 7,061 → 6,358 and at t+400 5,849 → 4,785 when it landed; see `docs/MULTIPLAYER.md` §3 Stage 3

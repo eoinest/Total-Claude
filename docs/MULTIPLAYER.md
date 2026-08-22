@@ -111,7 +111,7 @@ it is.
 > integrated fields — and then prices it inside a vendored-libm project at 3–5 weeks. It is
 > `src/sim/quantise.ts`, it is about a hundred lines of which ninety are the comment, and with it
 > **all three battles are bit-identical in Chromium 151, Firefox 153 and WebKit 26.5 at all seven
-> checkpoints, t+0 through t+400** — pool hash, `uf64` and `uctl`, 8,632 / 3,440 / 3,074 men.
+> checkpoints, t+0 through t+400** — pool hash, `uf64` and `uctl`, 8,632 / 3,440 / 3,072 men.
 > The t+205.5 escape is closed. Five seeds, a control, the cost and the caveats are in the
 > Stage 3 rewrite.
 >
@@ -823,6 +823,13 @@ Nothing in this stage is speculative and none of it is wasted if multiplayer is 
 "worth measuring properly". If it does not, the vendored-libm question (Stage 3) is the only road
 to cross-engine play and should be priced before anything realtime is started.
 
+> **Resolved, and the second sentence's premise was false.** (1) removed the Carthage t+0 split
+> outright — three engines, one hash, zero of 3,440 men differing. It did *not* touch the field
+> battle's t+205.5 escape, so by the letter of this decision point the vendored libm was next.
+> It was not: the escape is in the tick loop's own float64 unit state, and the fix is the
+> firewall in `src/sim/quantise.ts`. Map generation decides the boot; the tick loop decides the
+> battle; this decision point conflated them. See the reprice at Stage 3.
+
 ### Stage 1 — The replay record. 2–3 weeks. Ships: save, share, watch, take command.
 
 > **Built, 21 August 2026 — `e/sim/replay-record`.** All six items below are in the tree.
@@ -1000,7 +1007,7 @@ better one — so the log need not be hidden.
 Ship this only if Stage 1's record is actually being used. It is worth nothing at population one
 and there is no evidence anyone but the owner wants it.
 
-### Stage 3 — Vendored transcendentals. 3–5 weeks, and unpriced by every design in this pass.
+### Stage 3 — Two separable halves. The cheap one is one file and it is done; the 3–5 week one is not required on this tree.
 
 > **Repriced 21 August 2026, from measurement. The two halves of this stage are separable, the
 > cheap half is a single file, and on this tree the cheap half was sufficient.**
@@ -1018,7 +1025,7 @@ and there is no evidence anyone but the owner wants it.
 > |---|---|---|---|
 > | default field | 8,632 | identical to t+200; apart at t+250 and t+400 — **5,849 / 5,560 / 5,886** survivors | **identical at all seven, all three engines** |
 > | Carthage assault | 3,440 | identical t+30 onward; **t+0 `uf64` apart** — 26 float64 fields, all `facing`/`targetFacing`, 1 ULP, Firefox | **identical at all seven, all three engines** |
-> | Rome assault | 3,074 | identical t+30 onward; t+0 `uf64` apart in *both* other engines | **identical at all seven, all three engines** |
+> | Rome assault | 3,072 | identical t+30 onward; t+0 `uf64` apart in *both* other engines | **identical at all seven, all three engines** |
 >
 > `hash`, `uf64` and `uctl` all three, exact bits, with the arm's own controls green: 13 of 14
 > approximated `Math` functions measurably disagree between those engines on the same run, the
@@ -1116,22 +1123,66 @@ and there is no evidence anyone but the owner wants it.
 > ranks the functions, `hypot` is already gone from every scanned directory, and the 15
 > `Math.pow(x, 2)` and `Math.pow(x, 3)` calls are the next free removal.
 
-One module implementing `sin`, `cos`, `tan`, `exp`, `log`, `atan`, `atan2`, `asin`, `acos`,
-`cbrt` over exactly-specified operations, or a libm compiled to WASM so the transcendentals ship
-in the bundle rather than coming from the engine. Plus `Math.fround` on `UnitGroupState`'s
-integrated fields at the end of each tick, to give that layer the firewall the pool already has —
-one pass measured a 20-line version of this holding the field battle identical across Chrome 143
-and 151 all the way to t+600, where the shipped code diverges by t+300. **[M: lockstep, one seed
-per battle]**
+**Read the reprice above before the two halves below.** What follows is what each half is; the
+blockquote is what the measurement says about whether you need it.
 
-This is the only work that removes the same-build constraint, which is the largest cost to the
-player in any realtime design. It also has three costs nobody priced: it will move every balance
-number that has been tuned, requiring a full re-baseline in the same commit; it needs a
-performance measurement first, because roughly 30,000 trig calls per tick through software
-implementations could plausibly double a 3.4 ms tick; and the `fround` half is a behaviour change
-to a shipped battle (−1.1% survivors at t+200 in the one measurement taken).
+**Half A — the float32 firewall. `Math.fround` on `UnitGroupState`'s integrated fields, at birth
+and at the end of every tick.** This is `src/sim/quantise.ts`: one file, 125 lines, most of them
+prose, written and measured inside one session. It is the only half that turned out to be load-
+bearing, and it is the whole of what removes the same-build constraint on this tree.
 
-Do not start this on the strength of one seed. Run a 30-seed sweep across two Chrome versions
+**Half B — vendored transcendentals.** One module implementing `sin`, `cos`, `tan`, `exp`, `log`,
+`atan`, `atan2`, `asin`, `acos`, `cbrt` over exactly-specified operations, or a libm compiled to
+WASM so the transcendentals ship in the bundle rather than coming from the engine. Still 3–5
+weeks, and it still carries the three costs nobody priced: it will move every balance number that
+has been tuned, requiring a full re-baseline in the same commit; it needs a performance
+measurement first, because roughly 30,000 trig calls per tick through software implementations
+could plausibly double a 3.4 ms tick; and it is a much larger behaviour change to three shipped
+battles than half A already is.
+
+**This section used to price them as one thing, and that was the expensive mistake in it.** The
+old text said "one module … *plus* `Math.fround`", and everything downstream — §3's stage list,
+the item-6 note that a cross-tier failure "would have sent the next pass to Stage 3, which is
+priced at three to five weeks", §7.6 — read the whole stage as a single 3–5 week commitment
+guarding a property nobody had measured. So the property was not measured for a year. The two
+halves are separable, they are separable *in the code*, and the cheap one is sufficient here.
+
+**What is actually needed, by pairing, and it is a handful of call sites rather than a libm:**
+
+  - **Chromium ≡ WebKit: nothing at all beyond what has already landed.** After the `hypot`
+    sweep the Carthage assault boots to one hash in both, with **zero of 3,440 men differing and
+    `uf64` bit-identical** — before the firewall existed. That is §1.2's decade-old finding
+    closed by removing 27 call sites of one function, not by vendoring anything.
+  - **Firefox at boot: 13 call sites.** The residual after the sweep was Firefox alone and it was
+    *named*, not inferred — 26 float64 fields of 1,020, all 1 ULP, all `facing` and
+    `targetFacing`, from the boot-time `Math.atan2(m.nx, m.nz)` calls in `deployAssault`. Half A
+    closes it by quantising in `spawnUnit`, which is one line and covers every unit however it
+    was created. Writing a correctly-rounded `atan2` — and then being right about it forever —
+    would have closed the same 13 sites for more money.
+  - **All three engines, whole battle, to t+400: half A, and nothing else.** Five seeds, with a
+    firewall-off control proving two of them fork without it.
+
+**One gap this pass did not close, named rather than left to be found.** `stateHashes(pool,
+units)` hashes the soldier pool and `UnitGroupState`. It does **not** hash `Siege` — gate
+health, ram progress, ladder and tower occupancy, breach state — and `src/sim/Siege.ts` holds
+float64 there with no quantisation step, which is the same shape of hole `uf64` was invented to
+find. It is not a blindness so much as a delay: siege state drives orders and positions, so a
+divergence in it reaches `uctl` and the pool hash eventually, exactly as an unquantised
+`UnitGroupState` reached the pool hash eventually. Both assaults are bit-identical in three
+engines at all seven checkpoints today, so nothing is currently wrong; what is missing is the
+mark that would say so on the tick it stopped being true. A `usiege` mark beside `uf64` and
+`uctl`, and `Siege`'s continuous fields added to the firewall, is the obvious next piece of
+work and it is the same shape as the piece that just landed.
+
+**What would send you to half B anyway.** A seed that forks with the firewall on; a fork
+appearing past t+400 on a longer run; or a pairing this project has not measured — Chrome
+130-x64 against Chrome 151-arm64 disagrees on `pow` for 10.5% of inputs, and `pow` is 0% across
+the three engines here, so the three-engine result is a statement about *these* three builds.
+And if you do go: reach for the **cheapest subset**, not the module. The portability table ranks
+the functions, `hypot` is already gone from every scanned directory, and the 15 `Math.pow(x, 2)`
+and `Math.pow(x, 3)` calls are the next free removal.
+
+Do not start half B on the strength of one seed. Run a 30-seed sweep across two Chrome versions
 first; the escape is a stochastic boundary-crossing process and one battle holding is not
 evidence.
 
@@ -1346,10 +1397,16 @@ battle-size row, which is a `BattleConfig` field, travels in the `?battle=` toke
 by every record. It is a worse *default* on weak hardware than the accident it replaces, and that
 is a defaults question for the owner rather than something to fix by putting the coupling back.
 
-**7.6 Stage 3 may not be worth its own price.** Vendoring transcendentals moves every tuned
-number in the game and might double the tick cost. It is the only road to cross-engine play, and
-if the performance measurement comes back badly, the honest answer is that this game does not get
-cross-browser multiplayer, and Stages 0–2 are what it gets instead.
+**7.6 Stage 3 may not be worth its own price. — HALF OF IT IS DONE AND THE OTHER HALF IS NOT
+NEEDED HERE.** This paragraph said vendoring transcendentals "is the only road to cross-engine
+play", and that a bad performance number meant the honest answer was no cross-browser
+multiplayer at all. Both statements were wrong, and they were wrong because this file priced
+Stage 3's two halves as one thing. The road to cross-engine play on this tree was the *other*
+half — `Math.fround` on the float64 unit layer, one file — plus 27 `Math.hypot` call sites, and
+all three battles now run bit-identically in Chromium 151, Firefox 153 and WebKit 26.5 over five
+seeds with a firewall-off control proving it. The vendored libm still moves every tuned number
+and might still double the tick cost; it is simply not what was standing between this game and
+cross-browser play. See the reprice at Stage 3.
 
 **7.7bis The tier was a second portability firewall, and it was not made of floating point. —
 CLOSED, `e/core/quality-sim-split`.** §7.1 frames the pairing risk as libm: Chrome-on-Alice

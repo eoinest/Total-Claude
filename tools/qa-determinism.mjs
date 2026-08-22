@@ -24,7 +24,7 @@
  *
  * **Check that a new checkpoint measures the battle you think it does.** `--battle` is the
  * flag, and a *misspelled flag* is still silently ignored — `--batle=…` runs the field battle
- * and says nothing. The tell is the headcount: 8,632 for `default`, 3,074 for Rome's assault,
+ * and says nothing. The tell is the headcount: 8,632 for `default`, 3,072 for Rome's assault,
  * 3,440 for Carthage's. That is printed on every line for exactly this reason.
  *
  * `--battle` itself is now validated rather than merely documented: every segment must be
@@ -313,7 +313,7 @@ const BASELINE_PATH = path.resolve(ROOT, 'tools/determinism-baseline.json');
  * baseline key, so `rome` appends a meaningless `&rome`, loads the **default field battle**,
  * looks up a baseline key that does not exist, prints "no baseline for this battle" and exits
  * 0. It passes while asserting nothing, and the headcount is the only tell — 8,632 where the
- * reader expected 3,074.
+ * reader expected 3,072.
  *
  * Documenting a trap does not close it. Two conditions close it: every segment must be
  * `key=value`, and every key must be one `src/` actually reads. `PARAM_KEYS` is the set that
@@ -340,7 +340,7 @@ if (args.get('battle')) {
     console.error("    node tools/qa-determinism.mjs --battle='map=campus-martius&scenario=assault'");
     console.error("    node tools/qa-determinism.mjs --battle='map=carthage&scenario=assault'\n");
     console.error('  Quote the value or the shell backgrounds on the &. Confirm the run by');
-    console.error('  headcount: field battle 8,632 / Rome 3,074 / Carthage 3,440.');
+    console.error('  headcount: field battle 8,632 / Rome 3,072 / Carthage 3,440.');
     process.exit(2);
   }
 }

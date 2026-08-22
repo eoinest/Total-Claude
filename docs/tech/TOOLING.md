@@ -154,6 +154,14 @@ everyone at once with `node tools/browsers.mjs cap <n>`. A new tool that calls
 `npm run lint`; it carries an allowlist of the files that predate the budget, and that list
 may shrink and must not grow.
 
+**And a tool that opens more than one browser opens them one at a time.** The cap is four. A
+harness that wants three engines plus a control wants the whole machine for the length of its
+run, which is not a thing any one tool is entitled to. `tools/qa-xengine.mjs` is the worked
+example: each engine's browser is closed at the bottom of its own `run()`, and only `marks`,
+`dumps`, `id` and `libm` survive it — all plain data by then, so nothing downstream needs the
+page. If you find yourself collecting browsers to close in a loop at the end, that is the
+smell.
+
 **And a listener you did not start is a tree you have not identified.** `startVite` asks
 whatever is already on the port which worktree it is serving (`/__tc/tree`) and refuses if the
 answer is not yours — reusing another agent's server measures **their branch** and reports the
@@ -422,7 +430,7 @@ run that recorded zero checks fails. This is deliberate and it is not hypothetic
 battle**, looked up a baseline key that does not exist, compared nothing, and exited 0. The three
 real invocations are `--battle="map=campus-martius&scenario=assault"`,
 `--battle="map=carthage&scenario=assault"`, and no flag at all — confirm with the headcount,
-8,632 / 3,074 / 3,440, which is printed on every line for exactly this reason. **`qa-determinism.mjs`
+8,632 / 3,072 / 3,440, which is printed on every line for exactly this reason. **`qa-determinism.mjs`
 validates the flag now**: every segment must be `key=value` with a key `src/` reads, or it exits 2
 and prints those three invocations. Documenting the trap in two files for months did not close it,
 and the same pass added a cross-tier arm to that tool whose entire design problem was not being

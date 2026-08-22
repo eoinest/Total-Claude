@@ -100,6 +100,29 @@ export function quantiseUnit(u: UnitGroupState): void {
   if (wp) for (let j = 0; j < wp.length; j++) wp[j] = Math.fround(wp[j]);
 }
 
+/*
+ * ## The one writer that is outside this firewall, and why it does not need to be inside it
+ *
+ * `DeploymentSystem` is order **690** — after this system — and it writes `x`, `z`, `facing` and
+ * `targetFacing` straight onto an existing unit in `place()`. It also has no `fixedUpdate` at
+ * all: the clock is stopped for the whole deployment phase, so those writes happen outside any
+ * tick, and **t+0 is hashed before this system has ever run once**. A unit the player dragged is
+ * therefore in the t+0 hash carrying a plain double.
+ *
+ * That is safe, and it is safe for a reason rather than by luck. Every coordinate reaching
+ * `place()` has been through `dequantXZ(quantXZ(v))` and every bearing through
+ * `dequantAngle(quantAngle(a))`, and both dequantisers are a single division by a constant.
+ * IEEE-754 requires `/` to be correctly rounded, so every engine computes the identical double
+ * from the identical int16 — which is the same argument that makes `Math.sqrt` a control in
+ * `qa-xengine`'s libm probe while `Math.hypot` is a hazard. The value is not float32, and it does
+ * not need to be: portability here comes from the wire format, not from this file.
+ *
+ * If a future deployment verb ever writes a coordinate that did **not** come through the int16
+ * round trip — a snap to terrain, a formation re-fit, anything with a transcendental in it —
+ * that reasoning stops holding and this system's order, or a `quantiseUnit` call in `place()`,
+ * becomes load-bearing.
+ */
+
 /** The same, over the whole order of battle. */
 export function quantiseUnits(units: readonly UnitGroupState[]): void {
   for (let i = 0; i < units.length; i++) quantiseUnit(units[i]);

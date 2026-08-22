@@ -98,7 +98,7 @@
  *     node tools/qa-xengine.mjs --libm-only    # every build in the Playwright cache, no game
  *
  * Quote the `--battle` value or the shell backgrounds on the `&`. Confirm every run by
- * headcount: **field battle 8,632 / Rome 3,074 / Carthage 3,440.**
+ * headcount: **field battle 8,632 / Rome 3,072 / Carthage 3,440.**
  *
  * **Pass `--port`.** The default is 5901 and the 5900s are heavily contended — nine agents were
  * running the day this was written and three separate collisions were caught. A collision is now
@@ -173,7 +173,7 @@ if (BATTLE) {
     console.error('    node tools/qa-xengine.mjs');
     console.error("    node tools/qa-xengine.mjs --battle='map=campus-martius&scenario=assault'");
     console.error("    node tools/qa-xengine.mjs --battle='map=carthage&scenario=assault'\n");
-    console.error('  Confirm by headcount: field battle 8,632 / Rome 3,074 / Carthage 3,440.');
+    console.error('  Confirm by headcount: field battle 8,632 / Rome 3,072 / Carthage 3,440.');
     process.exit(2);
   }
 }
