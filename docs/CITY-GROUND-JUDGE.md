@@ -382,8 +382,14 @@ the same machinery the *horti* in `ROME-FABRIC.md` §5 Phase 6 already need — 
 
 - Cypresses pass through the Mausoleum of Augustus's drum faces and its cornice
   (`rome-mausoleum.jpg`, centre and right of centre).
-- An umbrella pine stands on the Pantheon's portico steps, in front of the columns
-  (`rome-pantheon.jpg`, centre).
+- An umbrella pine stands on the Pantheon's portico steps, in front of the columns:
+
+  ![The Pantheon from 60 m at a man's height](images/judge-ground/rome-pantheon.jpg)
+
+  *The drum, the dome and an octastyle portico all read, and the brick-and-travertine palette is
+  right. The tree is standing on the steps. The dome has none of the seven stepped rings at its
+  base, the tympanum is empty, and the drum carries neither of its two heavy cornices — so the
+  building is recognisable in mass and not in silhouette, which is `VISUAL-RUBRIC.md` D3.*
 - A shrub is embedded in a blank wall face at Carthage (`pair-narrowest-lane.jpg`, right half,
   upper left of the lane).
 - In several Rome frames cypress canopies read as **floating**, with no trunk and no ground under
