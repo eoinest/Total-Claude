@@ -50,10 +50,22 @@
  * tool hashes anything at a fixed checkpoint, pass it; if your tool watches a battle happen, do
  * not.*
  *
- * ## Who has this fix and who does not, as of 21 August 2026
+ * ## Who has this fix and who does not, as of 22 August 2026
  *
- * Converted: `tools/qa-determinism.mjs` and `tools/qa-xengine.mjs`, the two tools that compare
- * exact bits at fixed checkpoints, plus `bootThroughMenu` on request.
+ * Converted, and the rule for the list is *every tool that compares two runs at a fixed
+ * checkpoint*:
+ *
+ *   - `tools/qa-determinism.mjs` — A vs B, **and the cross-tier arm**, which compares four page
+ *     loads and is four more chances for this race to make an agreement meaningless.
+ *   - `tools/qa-xengine.mjs` — three engines plus a second load of the reference.
+ *   - `tools/qa-replay.mjs`, on the **`playback` side only**. Its `recordBattle` deliberately
+ *     drives a real mouse through a real battle in real time and records whatever tick count
+ *     that reaches; stopping its clock would be stopping the thing it is recording. `playback`
+ *     already compensated for the tick *count* (`target - done` reads the real tick), which is
+ *     why it has been green — and the count was never the whole hazard, because those ticks run
+ *     before `tickCeiling` is pinned and can pump the recorded deployment operations at a tick
+ *     number that varies with the load average.
+ *   - `bootThroughMenu` in `./menu-boot.mjs`, on request.
  *
  * **Still exposed**, and named rather than left to be rediscovered: the `tools/judge/` rig
  * (whose `boot()` waits 1,500 ms of wall clock after `ready` with autoplay on, which is this race
@@ -61,8 +73,7 @@
  * `probe-seams`, `probe-ground`, `probe-wall`, and the `pl-*` and `jg-*` playability rigs.
  * Whether it matters depends on whether the tool compares two runs of anything: a probe that
  * measures one geometry once does not care, and a probe that asserts two runs agree cares a great
- * deal. Verified after this landed: 189 files, 8 approximated-Math digests and every hash in both
- * determinism tools reproduce at load average 47.
+ * deal.
  */
 
 /**
@@ -90,29 +101,56 @@ export const stopClockOnReady = (page) => page.addInitScript(() => {
   });
 });
 
-/** One fixed step, in simulated seconds. The tolerance below is deliberately less than this. */
+/** One fixed step, in simulated seconds. */
 export const FIXED_DT = 1 / 30;
+
+/**
+ * Slack on the *ahead* side only, and it is a floating-point epsilon rather than a tolerance.
+ *
+ * `advance(secs, stepMs)` runs whole fixed steps, so a checkpoint can land up to one step
+ * **short** of the second it names and never past it. Measured on the field battle at
+ * `1000/60`: t+0, t+30, t+90, t+150 and t+400 land exactly, and t+200 and t+250 land one tick
+ * short — 199.967 and 249.967 — reproducibly, in every run and in every engine.
+ */
+const EPS = 1e-9;
 
 /**
  * Is a set of runs comparable at this checkpoint?
  *
  * `times` is one simulated-time reading per run; `expected` is the checkpoint it claims to be.
- * Returns `null` when the runs are comparable, or a printable reason when they are not — every
- * run must be at the *same* simulated time, and that time must be the one it claims to within
- * less than a single tick.
+ * Returns `null` when the runs are comparable, or a printable reason when they are not.
  *
- * Exact equality rather than a tolerance between runs, on purpose: the quantity being compared
- * downstream is exact bits, so anything that makes two runs differ at all makes the comparison
- * meaningless. A tolerance here would need an epsilon, and every epsilon would be invented.
+ * Two conditions, and they catch different things.
+ *
+ * **Every run is at the same simulated time**, by exact equality rather than a tolerance. The
+ * quantity being compared downstream is exact bits, so anything that makes two runs differ at
+ * all makes the comparison meaningless. A tolerance here would need an epsilon and every epsilon
+ * would be invented.
+ *
+ * **And that time is not *past* the checkpoint it claims.** This was `Math.abs(drift) <
+ * FIXED_DT` and that was symmetric, which is wrong in both directions at once. `advance()` runs
+ * whole fixed steps, so landing up to one step short is not a fault — it is the only thing that
+ * can happen, and it happens at four of this project's seven checkpoints. Meanwhile the failure
+ * this module exists for puts *extra* ticks in at boot, so the interesting side is the one the
+ * symmetric form treated as slack. Worse, at exactly one tick short the symmetric form sat on
+ * its own boundary: 200 − 199.96666… is `FIXED_DT` to the last bit, and the check passed only
+ * because the caller had rounded `simTime` to three decimals first. An assertion that holds by
+ * decimal-rounding luck is not an assertion.
+ *
+ * So: never ahead, and at most one whole tick behind.
  */
 export const simTimeFault = (times, expected, labels = null) => {
   const same = times.every((t) => t === times[0]);
-  const onSchedule = Math.abs(times[0] - expected) < FIXED_DT;
+  const drift = times[0] - expected;
+  const onSchedule = drift <= EPS && drift > -(FIXED_DT + EPS);
   if (same && onSchedule) return null;
   const shown = labels
     ? times.map((t, i) => `${labels[i]} ${t}`).join('  ')
     : times.join(', ');
   return `t+${expected}: ${shown}`
-    + (same ? '  — every run agrees but none is at the checkpoint it claims'
+    + (same
+      ? `  — every run agrees, and all of them are ${drift > 0 ? 'PAST' : 'short of'}`
+        + ` the checkpoint they claim by ${Math.abs(drift).toFixed(4)} s`
+        + (drift > 0 ? ' (ticks ran before the clock was stopped)' : ` (> one tick, ${FIXED_DT.toFixed(4)} s)`)
       : '  — the runs are at different points in the battle');
 };
