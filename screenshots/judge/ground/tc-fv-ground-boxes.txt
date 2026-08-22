@@ -1,0 +1,12 @@
+• hidden: vfx-particles, vfx-ground-damage, vfx-decals, vfx-litter, vfx-banner-cloth, vfx-standards, vfx-crows, soldiers-Rome-lod2, soldiers-Germanic-lod2, horses-lod2, soldiers-impostor
+• attacker deployment ground: 14757 cells, 0 under water, 0 over the impassable slope; lowest 7.8 m, steepest 0.272, steepest (-104, -76)
+• defender deployment ground: 11608 cells, 0 under water, 0 over the impassable slope; lowest 6.34 m, steepest 0.413, steepest (-8, 192)
+• attacker box: centre x 340, z -196; x -168..848, z -316..-76
+• defender box: centre x 380, z 150; x -36..796, z 40..260
+• faction 0 (defender box): 3772 men in 16 units, frontage 684.3 m (x 35..719.3), depth 141 m (z 122..263)
+    IN WATER 0 (channel test 0) · FAR BANK 0 · outside its own box 0 (0 west, 0 east)
+    over the impassable slope 0 (worst 0.074) · trees within 4 m of a man 0
+• faction 1 (attacker box): 4860 men in 19 units, frontage 783.4 m (x -12.5..770.9), depth 139.8 m (z -260.6..-120.8)
+    IN WATER 0 (channel test 0) · FAR BANK 0 · outside its own box 0 (0 west, 0 east)
+    over the impassable slope 0 (worst 0.076) · trees within 4 m of a man 0
+• keep-out audit: [{"species":"cypress","total":177,"within30m":0,"deepestPastWall":-30},{"species":"pine","total":186,"within30m":0,"deepestPastWall":-31},{"species":"oak","total":755,"within30m":0,"deepestPastWall":-31},{"species":"olive","total":1069,"within30m":0,"deepestPastWall":-233},{"species":"willow","total":220,"within30m":0,"deepestPastWall":-35}]

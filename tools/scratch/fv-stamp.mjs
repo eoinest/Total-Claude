@@ -25,6 +25,9 @@ const ARMS = {
   'E-noinset': { dir: '/tmp/tc-fv-noinset', rev: '0060874 -feather inset', note: 'diagnostic: standOnDeploymentGround does not inset by box.feather' },
   'F-oldcore': { dir: '/tmp/tc-fv-oldcore', rev: '0060874 -corridor move', note: 'diagnostic: battleCoreMask back to (0,-30,540,360)' },
   'G-oldbox': { dir: '/tmp/tc-fv-oldbox', rev: '0060874 -box widening', note: 'diagnostic: DEPLOY_GROUND back to +-380 / +-250 about x 205' },
+  'H-westbox': { dir: '/tmp/tc-fv-westbox', rev: '0060874 +west rectangle', note: 'candidate: each box gains 80 m of rectangle on its WEST side, cores and east edges unchanged, so the inset returns the old 271.146 m shift' },
+  'A12-mainsrc': { dir: '/tmp/tc-fv-mainsrc', rev: 'd299837', note: 'main src, 12 seeds' },
+  'B12-boxes': { dir: '/tmp/tc-fv-boxes', rev: '0060874', note: 'the deployment boxes widened east, 12 seeds' },
 };
 const hashOf = (dir) => execSync(
   "find src -type f \\( -name '*.ts' -o -name '*.css' -o -name '*.glsl' \\) -print0 | sort -z | xargs -0 cat | shasum -a 256 | cut -c1-16",

@@ -1,0 +1,25 @@
+mainsrc seed 4265438264 t+ 102.9 f0 units 16 routing 1  own-side pairs<145m  40  cross-side 117  routers seen: friendly  2 enemy  0  nearest enemy unit mean 46.6 m
+mainsrc seed 4265438264 t+ 102.9 f1 units 19 routing 0  own-side pairs<145m  69  cross-side 117  routers seen: friendly  0 enemy  4  nearest enemy unit mean 33.9 m
+mainsrc seed 4265438264 t+ 154.6 f0 units 15 routing 1  own-side pairs<145m  45  cross-side 125  routers seen: friendly  6 enemy  3  nearest enemy unit mean 39.2 m
+mainsrc seed 4265438264 t+ 154.6 f1 units 19 routing 1  own-side pairs<145m  72  cross-side 125  routers seen: friendly  3 enemy 12  nearest enemy unit mean 43.8 m
+mainsrc seed 4265438264 t+ 206.8 f0 units 15 routing 3  own-side pairs<145m  43  cross-side 114  routers seen: friendly 11 enemy 14  nearest enemy unit mean 32.9 m
+mainsrc seed 4265438264 t+ 206.8 f1 units 19 routing 3  own-side pairs<145m  66  cross-side 114  routers seen: friendly 12 enemy 24  nearest enemy unit mean 31.8 m
+mainsrc seed          1 t+ 104.4 f0 units 16 routing 1  own-side pairs<145m  40  cross-side 118  routers seen: friendly  2 enemy  0  nearest enemy unit mean 47.7 m
+mainsrc seed          1 t+ 104.4 f1 units 19 routing 0  own-side pairs<145m  70  cross-side 118  routers seen: friendly  0 enemy  4  nearest enemy unit mean 33.5 m
+mainsrc seed          1 t+ 156.4 f0 units 16 routing 1  own-side pairs<145m  45  cross-side 128  routers seen: friendly  0 enemy  7  nearest enemy unit mean 35.6 m
+mainsrc seed          1 t+ 156.4 f1 units 19 routing 2  own-side pairs<145m  71  cross-side 128  routers seen: friendly  6 enemy  1  nearest enemy unit mean 40.9 m
+mainsrc seed          1 t+ 208.2 f0 units 16 routing 3  own-side pairs<145m  40  cross-side 114  routers seen: friendly 12 enemy  9  nearest enemy unit mean 37.4 m
+mainsrc seed          1 t+ 208.2 f1 units 19 routing 2  own-side pairs<145m  58  cross-side 114  routers seen: friendly  7 enemy 21  nearest enemy unit mean 39.6 m
+mainsrc seed          7 t+ 103.4 f0 units 16 routing 1  own-side pairs<145m  42  cross-side 115  routers seen: friendly  2 enemy  0  nearest enemy unit mean 46.1 m
+mainsrc seed          7 t+ 103.4 f1 units 19 routing 0  own-side pairs<145m  68  cross-side 115  routers seen: friendly  0 enemy  4  nearest enemy unit mean 33.4 m
+mainsrc seed          7 t+ 155.4 f0 units 16 routing 2  own-side pairs<145m  37  cross-side 119  routers seen: friendly  4 enemy  3  nearest enemy unit mean 45.5 m
+mainsrc seed          7 t+ 155.4 f1 units 19 routing 1  own-side pairs<145m  73  cross-side 119  routers seen: friendly  5 enemy 14  nearest enemy unit mean 41.5 m
+mainsrc seed          7 t+ 207.3 f0 units 16 routing 4  own-side pairs<145m  40  cross-side 114  routers seen: friendly  9 enemy 19  nearest enemy unit mean 53.9 m
+mainsrc seed          7 t+ 207.3 f1 units 19 routing 4  own-side pairs<145m  67  cross-side 114  routers seen: friendly 19 enemy 23  nearest enemy unit mean 44.4 m
+
+mainsrc t+100 f0  n=3  own-side pairs 40.7  cross-side 116.7  cross/own 2.87  friendly routers seen 2.0  enemy routers seen 0.0  nearest enemy 46.8 m
+mainsrc t+100 f1  n=3  own-side pairs 69.0  cross-side 116.7  cross/own 1.69  friendly routers seen 0.0  enemy routers seen 4.0  nearest enemy 33.6 m
+mainsrc t+150 f0  n=3  own-side pairs 42.3  cross-side 124.0  cross/own 2.93  friendly routers seen 3.3  enemy routers seen 4.3  nearest enemy 40.1 m
+mainsrc t+150 f1  n=3  own-side pairs 72.0  cross-side 124.0  cross/own 1.72  friendly routers seen 4.7  enemy routers seen 9.0  nearest enemy 42.1 m
+mainsrc t+200 f0  n=3  own-side pairs 41.0  cross-side 114.0  cross/own 2.78  friendly routers seen 10.7  enemy routers seen 14.0  nearest enemy 41.4 m
+mainsrc t+200 f1  n=3  own-side pairs 63.7  cross-side 114.0  cross/own 1.79  friendly routers seen 12.7  enemy routers seen 22.7  nearest enemy 38.6 m

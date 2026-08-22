@@ -8,5 +8,6 @@ for d in mainsrc boxes qsplit rams noinset oldcore oldbox; do
   mkdir -p "$A/tools/scratch"
   cp "$W/tools/scratch/fv-relief.mjs" "$A/tools/scratch/fv-relief.mjs"
   cp "$W/tools/scratch/fv-terms.mjs" "$A/tools/scratch/fv-terms.mjs"
+  cp "$W/tools/scratch/fv-envelope.mjs" "$A/tools/scratch/fv-envelope.mjs"
   echo "synced $A"
 done
