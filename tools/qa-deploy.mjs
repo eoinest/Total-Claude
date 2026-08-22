@@ -226,30 +226,40 @@ if (!ONLY || ONLY === 'menu') {
     };
   });
   const ids = door.dest.map((d) => d.id).join(',');
-  record('front-door-destinations', ids === 'battle,docs,viewer' && door.setupHidden
+  record('front-door-destinations', ids === 'battle,multiplayer,docs,viewer' && door.setupHidden
     && door.dest.every((d) => d.w > 400 && d.h > 40 && d.sub.length > 40),
-    'load with no flags at all and read the three plaques off the front door',
+    'load with no flags at all and read the four plaques off the front door',
     `${ids || 'none'}  ·  setup screen hidden ${door.setupHidden}  ·  `
       + door.dest.map((d) => `${d.id} ${d.w}×${d.h}`).join(', '),
     door.dest.map((d) => d.label).join(' / '));
 
   /*
-   * Battle stays in this tab; everything else leaves in a new one.
+   * What is inside this app stays in this tab; what is outside it leaves in a new one.
    *
    * That is the rule the front door is built on — a player two minutes into an order of
    * battle must not be able to lose it to one mis-aimed click — and it is a rule made of
    * three attributes, which is exactly the kind of thing that survives a refactor only if
    * something asserts it. `rel=noopener` on every `target=_blank` as well.
+   *
+   * **Split on where the destination goes, not on which one it is.** This used to read
+   * "Battle stays, everything else leaves", and the multiplayer lobby broke it by being a
+   * third thing: in-app, so it must not open a tab, but reached by a real `href` so that
+   * middle-click and copy-link-address work on it. Testing the *href* rather than the *id*
+   * says the rule out loud and does not have to be edited again for the next in-app screen.
    */
+  const inApp = (d) => !d.href || /^[?#]/.test(d.href);
   const battle = door.dest.find((d) => d.id === 'battle');
-  const external = door.dest.filter((d) => d.id !== 'battle');
+  const internal = door.dest.filter(inApp);
+  const external = door.dest.filter((d) => !inApp(d));
+  const internalOk = internal.length >= 2 && internal.every((d) => !d.target);
   const externalOk = external.length === 2 && external.every(
-    (d) => d.tag === 'A' && d.target === '_blank' && (d.rel ?? '').includes('noopener') && !!d.href);
+    (d) => d.tag === 'A' && d.target === '_blank' && (d.rel ?? '').includes('noopener') && !!d.href)
+    && internalOk;
   const asidesOk = door.asides.length >= 2
     && door.asides.every((a) => a.target === '_blank' && /^https:\/\//.test(a.href));
   record('front-door-leaves-safely',
     !!battle && battle.tag === 'BUTTON' && !battle.href && externalOk && asidesOk,
-    'every destination that is not Battle must be an anchor into a new tab',
+    'every destination outside this app opens a new tab; every one inside it does not',
     `battle is a <${(battle?.tag ?? '?').toLowerCase()}> with href ${battle?.href ?? 'none'};  `
       + external.map((d) => `${d.id} → ${d.href} target ${d.target} rel ${d.rel}`).join(';  '),
     door.asides.map((a) => `${a.id} → ${a.href}`).join('  '));
@@ -286,12 +296,24 @@ if (!ONLY || ONLY === 'menu') {
     cls: document.querySelector('.menu')?.className ?? '',
     beginVisible: !!document.querySelector('.menu .begin')?.offsetParent,
   }));
+  /*
+   * Asserted against the plaque list read off the page a few lines above, not against three
+   * hard-coded ids.
+   *
+   * This read `kbDown === 'docs'`, and adding a fourth plaque between Battle and the
+   * documentation broke it — while the behaviour it exists to protect, *the arrows walk the
+   * list in document order*, was working perfectly. A check that has to be edited every time
+   * the thing it checks legitimately changes is a check people learn to edit without reading.
+   */
+  const order = door.dest.map((d) => d.id);
   record('front-door-keyboard',
-    kbTab === 'battle' && kbDown === 'docs' && kbUp === 'battle'
+    kbTab === order[0] && kbDown === order[1] && kbUp === order[0]
     && kbIn.cls.includes('at-setup') && kbIn.beginVisible,
     'Tab, ArrowDown, ArrowUp and Enter on the front door, with no pointer at all',
     `Tab → ${kbTab}, Down → ${kbDown}, Up → ${kbUp}, Enter → "${kbIn.cls}" `
-      + `with BEGIN BATTLE visible ${kbIn.beginVisible}`);
+      + `with BEGIN BATTLE visible ${kbIn.beginVisible}`,
+    `the plaques are ${order.join(', ')}, so Tab must land on '${order[0]}' and Down on `
+      + `'${order[1]}'`);
 
   /*
    * Back out of the setup and return: the army must still be there.
@@ -1238,17 +1260,32 @@ if (!ONLY || ONLY === 'det') {
     await settle(page, 150);
     await page.click('.dep-begin');
     await settle(page, 200);
+    /*
+     * `advanceTicks`, not `advance` — and the tick and the hash read in one evaluate.
+     *
+     * This asked for seconds: `advance(30)` runs whole synthetic frames of up to
+     * `maxStepsPerFrame = 5` ticks each, so the last one overshoots by up to four and two runs
+     * can land on different tick counts for the same elapsed time. Observed here as the
+     * signature that gives it away — **t+0 identical, t+30 DIVERGED, t+90 identical again** —
+     * which no real divergence can produce, because a forked simulation does not re-converge.
+     * `advanceTicks(n)` exists for exactly this (`Time.tickCeiling`), and `sim` and `tick` are
+     * now compared marks rather than printed decoration, so the next time the two runs are at
+     * two different moments the arm says *that* instead of blaming the simulation.
+     */
     const at = [];
     for (const t of [0, 30, 90]) {
-      if (t > 0) await page.evaluate(() => window.__game.advance(30));
-      if (t === 90) await page.evaluate(() => window.__game.advance(30));
+      if (t > 0) await page.evaluate((n) => window.__game.advanceTicks(n), t === 30 ? 900 : 1800);
       at.push({
-        t, sim: +(await page.evaluate(() => window.__game.simTime())).toFixed(3),
-        ...(await page.evaluate(() => window.__poolHash())),
+        t,
+        ...(await page.evaluate(() => ({
+          tick: window.__game.engine.time.tick,
+          sim: +window.__game.simTime().toFixed(3),
+          ...window.__poolHash(),
+        }))),
       });
     }
     marks.push({ label, framed: !!f2.px, placed, at, errs: page.__errs.slice(0, 2) });
-    console.log(`  run ${label}: ${at.map((m) => `t+${m.t} sim ${m.sim} ${m.hash} (${m.alive}/${m.count})`).join('  ')}`);
+    console.log(`  run ${label}: ${at.map((m) => `t+${m.t} tick ${m.tick} sim ${m.sim} ${m.hash} (${m.alive}/${m.count})`).join('  ')}`);
     await page.close();
   }
   const [A, B] = marks;
@@ -1258,12 +1295,15 @@ if (!ONLY || ONLY === 'det') {
   record('deployment-reproduced', sameInput && A.framed && B.framed,
     'both runs put the unit in the same place with the same frontage',
     `A ${JSON.stringify(A.placed)}  B ${JSON.stringify(B.placed)}`);
-  const same = A.at.every((m, i) =>
-    m.hash === B.at[i].hash && m.count === B.at[i].count && m.sim === B.at[i].sim);
-  record('deployed-battle-replays', same && sameInput && A.framed && B.framed,
+  // The tick is compared, not just the hash. Two runs at two different ticks are not a
+  // divergence and must not be reported as one — see the note on `advanceTicks` above.
+  const sameTick = A.at.every((m, i) => m.tick === B.at[i].tick && m.sim === B.at[i].sim);
+  const same = A.at.every((m, i) => m.hash === B.at[i].hash && m.count === B.at[i].count);
+  record('deployed-battle-replays', same && sameTick && sameInput && A.framed && B.framed,
     'two independent loads driven through the identical hand deployment, then advanced 60 s',
-    A.at.map((m, i) => `t+${m.t} A ${m.hash} B ${B.at[i].hash} `
-      + `${m.hash === B.at[i].hash ? 'IDENTICAL' : 'DIVERGED'}`).join('; '),
+    A.at.map((m, i) => `t+${m.t} tick ${m.tick}/${B.at[i].tick} A ${m.hash} B ${B.at[i].hash} `
+      + `${m.tick !== B.at[i].tick ? 'DIFFERENT TICKS'
+        : m.hash === B.at[i].hash ? 'IDENTICAL' : 'DIVERGED'}`).join('; '),
     `pool count ${A.at[0].count} both runs`);
   measured.determinism = marks;
 }

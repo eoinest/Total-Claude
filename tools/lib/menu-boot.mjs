@@ -103,10 +103,32 @@ export async function bootThroughMenu(page, {
     await page.click('.menu-home .dest-battle');
     await page.waitForSelector('.menu.at-setup .begin', { timeout: 60000 });
   }
-  if (map) await page.click(`.menu [data-map="${map}"]`);
-  if (scenario) await page.click(`.menu [data-scen="${scenario}"]`);
-  if (tier) await page.click(`.menu [data-tier="${tier}"]`);
-  if (size) await page.click(`.menu [data-size="${size}"]`);
+  /*
+   * Click a setup option, or say out loud that it was not available.
+   *
+   * A bare `page.click` on a *disabled* button waits thirty seconds and then throws, and the
+   * menu legitimately disables options: the battle-size stepper is greyed wherever the pool cap
+   * or the scenario fixes the establishment, so `size: 'small'` is unavailable on some
+   * (map, scenario) pairs. A driver that hung there stopped `tools/qa-replay.mjs`'s matrix arm
+   * dead on its second battle.
+   *
+   * Skipped rather than fatal, because "this battle does not offer that option" is a fact about
+   * the product and not a failure — but recorded on `page.__menuSkipped`, because a driver that
+   * silently declines to do what it was asked is how six playability scripts spent two days
+   * unable to reach the setup sheet with nobody noticing.
+   */
+  page.__menuSkipped = [];
+  const pick = async (sel, what) => {
+    const el = await page.$(sel);
+    if (!el) { page.__menuSkipped.push(`${what} (no such option)`); return false; }
+    if (!(await el.isEnabled())) { page.__menuSkipped.push(`${what} (disabled)`); return false; }
+    await el.click();
+    return true;
+  };
+  if (map) await pick(`.menu [data-map="${map}"]`, `map=${map}`);
+  if (scenario) await pick(`.menu [data-scen="${scenario}"]`, `scenario=${scenario}`);
+  if (tier) await pick(`.menu [data-tier="${tier}"]`, `tier=${tier}`);
+  if (size) await pick(`.menu [data-size="${size}"]`, `size=${size}`);
   await page.waitForTimeout(250);
   if (onSetup) await onSetup(page);
   await page.click('.menu .begin');

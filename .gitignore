@@ -12,6 +12,11 @@ dist/
 .DS_Store
 *.log
 .vite/
+# Per-worktree vite cache. `TC_VITE_CACHE_DIR` points here from tools/film.mjs and
+# tools/qa-net.mjs, because every agent worktree symlinks node_modules at the shared checkout
+# and vite's default cache is therefore one directory shared by as many vite processes as
+# there are agents running a gate.
+.vite-cache/
 # Every raster format, not just PNG. This listed `*.png` alone, and a review agent
 # writing JPEG comparison plates into `screenshots/` put frames derived from
 # copyrighted press material onto a committable path. It caught itself; the next one

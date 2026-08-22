@@ -1047,3 +1047,485 @@ twenty-fourth input path when someone adds it. Then re-decide, with a cross-engi
 and a month of real evidence, whether a relay-mediated two-player battle is worth two to four
 months. It might be. Nothing measured here says it is impossible; quite a lot says it is not yet
 ready to be started.
+
+---
+
+## 9. Stage 4, built — the relayed session, 21 August 2026, `e/net/session`
+
+> **This section supersedes §2's recommendation and part of §4.5.** §2 said do not build realtime
+> yet. The owner heard that and overrode it, and this is what got built. §2's *argument* is still
+> the right one, and two of its four steps have since been closed by other passes — the
+> `Math.hypot` sweep and the replay record — so the thing §2 was protecting against is smaller
+> than it was. What has *not* changed is §7.1: every number below is one machine, and
+> Chrome-on-Alice against Chrome-on-Bob remains unmeasured.
+
+**What runs.** Two browsers, one relay, one battle. Both players come through the front door,
+choose or receive a battle, lay out their own army with the mouse on a stopped clock, and fight
+it. Measured on `campus-martius` / field / small / high by `tools/qa-net.mjs`:
+
+```
+tick 1953    pool 04886122 / 04886122     both clients
+             uf64 4735aae8 / 4735aae8
+             uctl fc1c061d / fc1c061d
+            alive 2287 / 2287             of 2,337 men
+             18 relayed events, byte-identical merged order log on both clients
+```
+
+### 9.1 The shape, and the three decisions inside it
+
+**Lockstep with a relay-scheduled input delay.** §4.4's rejection of rollback stands and its
+corrected reason is the one that matters: a snapshot at 9–14 ms and a restore at 4–7 ms is a
+33 ms budget gone twice over before any re-simulation, and that would still be true if the tick
+got faster. What made lockstep cheap here is that Stage 1 had already built the hard half — an
+order log keyed to a tick index, drained at the top of that tick, with `x`/`z` quantised at the
+moment the order is issued. **The netcode did not need a wire format. It reuses
+`encEvent`/`decEvent` from `src/sim/replay.ts` verbatim, and the relay never decodes one.**
+
+Three rules, and everything else follows:
+
+1. **Nothing a client does reaches its own simulation until it has been round-tripped.**
+   `ReplaySystem` in `net` mode diverts every order, every siege-machine command and every
+   deployment verb to the relay and applies only what comes back.
+2. **A client may not simulate past the last turn it has.** `Time.tickCeiling` — added for the
+   replay gate — is set to `turnTick(readyTurn + 1)` every frame.
+3. **Wall clock is a pacing device and never reaches the simulation.** It decides when the relay
+   closes a turn and how fast a client may catch up (`time.gameSpeed`, which scales the
+   accumulator and not the step). The turn packet decides *what* runs and *at which tick*.
+
+**The relay orders; the client stamps.** A turn packet carries opaque tuples sorted by
+`(slot, seq)` plus the execution tick `turnTick(n)`. That split means the relay knows nothing
+about the order format — the day the format changes, the relay is not a second thing to migrate —
+and it means the input delay is a pure relay-side policy that **cannot cause a desync**. Latency
+policy and determinism are decoupled, which is the single most useful property of the design.
+
+**One `Room`, two hosts.** `src/net/room.ts` is a pure state machine with no I/O in it.
+`tools/relay.mjs` (Node, ~90 lines of hand-rolled RFC 6455, no dependencies) and `net/worker.ts`
+(a Cloudflare Worker plus one Durable Object per room code, `state.acceptWebSocket()` for
+hibernation) are both thin adapters over it. Node 24 strips types from a `.ts` import, so all
+three consumers read the same file and the protocol cannot drift. **The Worker has never run** —
+there is no Cloudflare account here and `wrangler` is not a dependency — and `net/wrangler.toml`
+exists so that deploying it is one command rather than a research task.
+
+### 9.2 The turn grid, and why 3 ticks and 2 turns
+
+`TICKS_PER_TURN = 3` (100 ms at 30 Hz) and `DEFAULT_DELAY_TURNS = 2`. An op received during turn
+*n* is scheduled at `max(n + 1, n + delay)`, so the budget is roughly *worst round trip through
+the relay ≤ 200 ms*. 3 divides 30, so a turn boundary is always a tick boundary and
+`turn * TICKS_PER_TURN` is exact.
+
+**There is no drop path.** No per-slot deadline, no discard. Turns close on the relay's own clock
+and a late op lands in the next open turn — one `Math.max`. §3's review named the opposite
+behaviour, closing a turn on a deadline and dropping that peer's input after the UI has already
+acknowledged it, as "a lie told several times a match on any jittery link". Lateness here costs
+latency and never a command.
+
+### 9.3 What the delay costs, measured
+
+`tools/qa-net.mjs --only=lag`, three artificial one-way delays on the relay, orders issued through
+real mouse events and timed from the click to the tick the order executed on:
+
+| one-way | round trip | input delay | stalls | stalled |
+|---|---|---|---|---|
+| 0 ms (localhost) | 146 / 153 / 146 ms | **3.5 / 3.7 / 3.0 ticks — 117 / 122 / 100 ms** | 0 / 0 / 0 | 0 / 0 / 0 ms |
+| 25 ms | 180 / 228 / 175 ms | **4.0 / 7.0 / 4.2 ticks — 133 / 233 / 139 ms** | 0 / 2 / 0 | 0 / 222 / 0 ms |
+| 60 ms | 229 / 240 / 232 ms | **5.7 / 6.0 / 5.5 ticks — 189 / 200 / 183 ms** | 0 / 0 / 0 | 0 / 0 / 0 ms |
+
+Three runs, all reported, because the spread between them is the instrument and not the link: the
+orders are issued by a real mouse against a real HUD, so *which* 100 ms turn a click lands in is
+timing this gate does not control, and the middle run was taken while six other agents' Playwright
+runs had the machine's load average over 100. Take the shape rather than the digits — **an input
+delay of 100–120 ms on a free link, rising to about 185 ms at a 232 ms round trip**, and the
+battle never waiting on the network at all in the two quiet runs.
+
+**The floor is 3 ticks and it is the assertion that matters.** An order cannot execute sooner
+than the start of the next scheduled turn, so anything below 3 would mean an order had reached
+the simulation *without going through the relay* — the one failure this design cannot survive,
+and one a hash comparison would not necessarily catch, because two clients that both apply an
+order locally in the same frame look identical until their frames stop lining up. The ceiling is
+softer: an op that arrives after a turn boundary lands a turn later, and the client's own tick may
+trail the relay's counter by another, so 7 to 9 ticks is legal under latency and the gate refuses
+above 12.
+
+A stall is *waiting longer than one and a half turns for a packet*, not merely sitting on the
+ceiling. The first version of that metric counted every frame at the ceiling and reported 93
+stalls totalling 12.6 s of a 13 s battle on a zero-latency link, which is true and useless:
+lockstep at real-time pacing spends most of its wall clock waiting by construction. Zero stalls
+at a 229 ms round trip is the number that means something.
+
+### 9.4 What happens on a desync: **halt, attribute, and end with a stated result**
+
+Not resync. §1.8 found the simulation *can* be snapshotted, so resync was genuinely on the table,
+and two things took it off — the second is decisive.
+
+The first is cost: the shipping serialiser is not the reflective probe that proved §1.8, and that
+pass's own reviewer counted 331 mutated instance-field names across twelve systems, with 162
+`private` declarations in `Siege.ts` alone. It is a larger piece of work than this whole session
+layer. The second is that **it would not help**. §4's review is right that in same-engine lockstep
+there is no mechanism for a transient disagreement, so any mismatch is a fork — and a fork here
+has exactly one cause, two libms that do not agree, which is a *systematic* property of the
+pairing rather than an event. Resyncing would hand both clients the same state and they would
+fork again on the next contested tick, for the same reason, for as long as anyone kept pressing
+the button. A resync repairs a lost packet; there are no lost packets under TCP, and every op is
+acknowledged by being echoed back in a numbered turn.
+
+*What would change my mind:* a measured **transient** — two clients disagreeing at one checkpoint
+and agreeing at the next without intervention. That cannot happen under the architecture as
+described, so observing one would mean the architecture is not what this section says it is, and
+finding out which part is wrong would matter more than the policy.
+
+**The detector is `uf64`, and the choice is configurable.** Both clients send a checkpoint every
+30 ticks — one simulated second, about 0.25 ms of work — carrying the pool hash, `uf64`, `uctl`
+and the survivor count, and the relay compares them at equal ticks. `uf64` is asked about first
+because it has no quantisation firewall and moves thousands of ticks before the float32 pool hash
+does: measured cross-engine, t+30 against t+200. Which layers are *fatal* is a relay flag
+(`--fatal=uf64,uctl,pool,alive`) rather than a constant, because which layer deserves to be the
+detector changed twice on the day this was written.
+
+**Attribution.** On a mismatch the relay asks both clients for per-unit `uf64` digests at that
+tick — 35 units × one 32-bit hash, about 300 bytes — and broadcasts the differing unit ids. Each
+digest is hashed from a fresh state rather than folded into the next, so a one-regiment fault
+names one regiment instead of every regiment after it. Clients keep twelve checkpoints of digest
+history, because a desync is declared about a round trip after the tick it happened at.
+
+**Survival.** Both clients halt at the diverging tick; the panel names the tick, the layer, the
+two hashes and the regiments; the result is the one at the last *agreed* checkpoint; and both
+sides still hold a complete `.tcr` record of the match, which is the forensic artefact that makes
+the next desync cheaper to find. It never hangs and it never continues.
+
+### 9.5 Pairing is a table, not a flag — and the table is now permissive
+
+The answer moved **three times in one day**, which is the whole argument for the mechanism.
+Morning: "same build only", on all three engines diverging by t+250 and Chromium and Firefox
+ending 289 men apart. Evening: a `Math.fround` firewall on `UnitGroupState`'s integrated fields
+makes Chromium and WebKit bit-identical to t+400. Night: the same firewall measured across **all
+three engines, all three battles, seven checkpoints t+0 to t+400, five seeds** — with a control,
+because switching the firewall off and changing nothing else turns two of the five seeds red. So
+the property is real, attributable to one change, and asserted by a gate rather than believed.
+
+A binary policy would have been wrong twice before it was right once. `DEFAULT_PAIRS` in
+`src/net/protocol.ts` is a dated list with the evidence on each row; `tools/relay.mjs --pairs=`
+and `--unknown=refuse|allow` override it without a deploy.
+
+**The default is now `unknown: 'allow'`, and that is a deliberate inversion.** It was `refuse`.
+Once every measured pairing held for a whole battle, the balance of errors flipped: refusing a
+pairing that would have worked became the likelier and the worse mistake, and the cost of being
+wrong the other way is a match that ends inside a second with the tick, the layer and the
+regiments named. `--unknown=refuse` restores the strict posture for anyone who would rather not
+start than not finish. The gate checks **both** postures, because the mechanism is the thing that
+has to keep working while the policy moves.
+
+**`exact` is a fingerprint, and it must never become a version string.** Measured across eight
+Chromium builds, the fourteen approximated functions fall into *generations* that do not track
+the version number:
+
+| step | functions that differ |
+|---|---|
+| 130.0.6723.31 → 143.0.7499.4 | 1 of 14 — `pow` |
+| 143.0.7499.4 → 147.0.7727.15 | **0** |
+| 147.0.7727.15 → 149.0.7827.55 | **0** |
+| 149.0.7827.55 → 151.0.7922.34 | **12** — `tan atan2 acos asin exp sin cos log log1p expm1 atan cbrt` |
+| 151.0.7922.34 → 152.0.7977.8 | **0** |
+
+Three generations: `{130}`, `{143, 147, 149}`, `{151, 152}`. One of them spans six major
+versions. A version check would refuse pairings that work perfectly and accept the one that does
+not. A generation **is** a fingerprint equivalence class, so `exact` — an identical `libm` hash
+over ~2,000 results from integer-generated inputs, with `sqrt` and `a*b+c` as controls, about
+0.5 ms in the lobby — already means "same generation", with no build-number table to maintain and
+no way for it to go stale. An unknown build is not refused; it is fingerprinted, and if it lands
+in a known generation it plays.
+
+The handshake also compares the sanitised config, the **effective `unitSizeScale` and
+`pool.count` rather than the tier name** (§7.7bis), and the product's own t+0 checkpoint — a real
+check rather than a proxy that always fails, because the `Math.hypot` sweep closed every
+cross-engine t+0 split.
+
+**A correction to §7.1.** It says a `chrome130-x64` build is in the Playwright cache for a
+same-day cross-architecture read. It is not: `chromium-1140`'s binary is Mach-O arm64 and every
+Chromium in that cache is arm64. The cross-architecture question cannot be answered on this
+machine, and the eight-build sweep above is a sweep over libm generations, not over
+architectures. §7.1 needs two physical machines and remains open.
+
+### 9.6 Two players, two deployment phases
+
+`deployment.add` → `spawnUnit` runs `nextUnitId++` **before** `rng.fork('unit' + id)`, so two
+players' deployment operations interleaved differently mint different unit ids, fork different
+RNG streams and take different pool slots. There is no local-prediction path that survives that,
+so **deployment operations are relayed like any other order and applied only when they come
+back**, in canonical order, on both clients. The cost is one round trip of lag on a placement, in
+a phase where the clock is stopped; locally that is about a millisecond.
+
+Each machine runs **two** `DeploymentSystem` instances, one per commanding slot, because
+everything in that class is bound to a faction — the zone is measured off where the *other* army
+stands, the roster comes from `rosterFor(playerFaction, …)`, `headroom` counts against it, and
+the bench is per side. The clock is released by the second player to commit, not the first.
+
+`PLAYER_FACTION` is no longer a compile-time constant. §1.10 listed it as a defect — *"the second
+player cannot be anything but Rome"* — and the fix is `const` → `let` plus one setter, because ES
+module bindings are live and all thirty-one reads follow with no other edit. Two rules come with
+it, both enforced by where the setter is called from: set once, before the HUD is built; and
+**nothing in `src/sim` may read it**, which is what lets the two clients of one battle hold
+different values and still run the identical simulation.
+
+### 9.7 The gate, and every failure it can produce on purpose
+
+`tools/qa-net.mjs` drives two browsers through the real menu with real mouse events. Six of its
+eleven arms exist to go red, and each of those fails if the session does *not* notice.
+
+> **Two browsers, not two contexts of one — changed 22 Aug 2026.** The first version booted both
+> clients as two pages of a single Chromium, which would have satisfied the cap in
+> `tools/lib/browser-budget.mjs` while costing the machine two renderer processes, two WebGL
+> contexts and two full battles. `check-browser-budget` names that gap itself under *not
+> covered*: "a tool that takes one slot and then opens ten contexts inside it." This gate holds
+> **two of the four slots**, and three under `--only=xengine`.
+
+| arm | what is broken | what happened |
+|---|---|---|
+| `battle` | nothing | same tick, same four hashes, byte-identical merged order log, same result, delay inside 3–6 ticks, no console error |
+| `siege` | nothing — **a relayed assault** | §9.11 |
+| `proto` | nothing | the room state machine over a real socket, headless, in two seconds |
+| `drop` | one order removed from one client's turn packet | caught at tick 90 on `uf64`, 2 of 37 units named |
+| `dup` | one **deployment** operation delivered twice | caught at **tick 0** — before a tick of battle — 2 of 38 units named |
+| `swap` | two same-slot orders in one turn exchanged | caught at tick 90 on `uf64`, 2 of 37 units named |
+| `ulp` | one `UnitGroupState` float64 field moved by **1 ULP** on one client | caught at tick 60 on `uf64`, **1 unit named** |
+| `late` | a third client joins mid-battle | refused: *"room … is already in its battle phase"* |
+| `leave` | one client's socket closes | survivor told `peerLeft` at a stated tick, and stops |
+| `lag` | 0 / 50 / 120 ms round trip | the table in §9.3 |
+| `xengine` *(opt-in)* | nothing — **Chromium against Firefox** | §9.8 |
+| `net-coverage` | *(not an arm — a check on the run)* | red unless the run relayed both a field battle and a siege |
+
+**Ten arms run by default; `xengine` is opt-in** (`--only=xengine` or `--all`). It runs two
+full-scale battles in two browser engines at once, and Firefox software-rendering 8,632 soldiers
+is the most expensive thing in this repository — on a shared machine, with six other agents'
+Playwright runs putting the load average at 144, it times out on `page.goto`. **A gate that goes
+red because the laptop is busy teaches people to ignore it.** Cross-engine determinism is
+`tools/qa-determinism.mjs`'s question and it asserts it against pinned hashes; what this file
+uniquely owns is the session, and the `ulp` arm covers detect-attribute-end with a real one-ULP
+fault for nothing.
+
+Two findings from building those arms are worth more than the arms themselves, and both are
+corrections to things this document asserts loosely.
+
+**A duplicated *move* order is harmless, and that is measured rather than assumed.** `applyOrder`
+writes `targetX`/`targetZ`, clears the waypoints and re-plants the hold point, and doing that
+twice with the same numbers leaves the same state — so the first `dup` arm passed by proving
+nothing. Retargeting it at a deployment operation turned it into the sharpest arm in the set. Do
+not read this as "duplication is safe": it is safe for *that verb*, and a shift-queued order
+appends a waypoint.
+
+**A `swap` of two orders on *different* regiments is also harmless**, because `applyOrder` mutates
+only the units an order names, so disjoint orders commute. §4.1's claim is precisely about two
+orders touching **one** unit, and the arm had to be made to produce that case — three right-clicks
+inside 75 ms on one selection — before it could go red. An arm that swapped any two ops would
+have passed while demonstrating the opposite of what it claimed.
+
+### 9.8 Chromium against Firefox: a divergence nobody chose
+
+The best fixture available, and better than the injected one-ULP poke, because nothing about it
+was chosen by the test. On the 8,632-man field battle at this commit — **which does not carry the
+`Math.fround` firewall** — Chromium and Firefox part company at:
+
+```
+tick 30, t+1.0 s, on uf64:  89693b58 against d748c81e
+last agreed tick 0
+4 of 35 regiments differ: 0, 4, 6, 26
+both clients ended
+```
+
+One second. The float64 unit layer has no firewall, which is exactly what §1.4 says and exactly
+what the detector was chosen for. **Both outcomes are handled the same way, and that is the
+point** — the session does not need to know which build it is in, and the arm's pass condition is
+two-sided by design: agree, or disagree *and be detected, attributed and ended*. Only silence
+fails it. That is what lets this arm survive the merge with the firewall, which turns it from a
+guaranteed red into a guaranteed green.
+
+**Two things about running it.** It is opt-in, for the load reason above. And its two
+diagnostics — the frames each socket has seen, and the tick ceiling each client is holding — are
+in `NetStatus` and on the in-battle strip, because a lockstep client that has stopped has stopped
+for one of two very different reasons (nothing arriving, or something arriving it has not got
+round to) and nothing else on screen tells them apart. Both were added because this arm reported
+a correctly-detected divergence as a failure and that was the question which resolved it.
+
+**Which is also why it stops being the desync fixture.** With the firewall, Chromium, Firefox and
+WebKit agree to t+400 on five seeds, so there is no longer a natural divergence to point the
+detector at, and the injected `ulp` arm becomes the primary one. The better successor is the one
+the firewall itself makes available: **a client booted with quantisation disabled, playing a
+client with it on.** That is a real divergence from real floating-point disagreement, at a time
+and place nobody chose, and once `src/sim/quantise.ts` is in the tree it is a URL flag on one
+client and a fifth row in the table above. It is not built here because that file is on another
+branch.
+
+Two things this run corrected in the instrument, both worth recording because both would have
+produced a confident wrong answer:
+
+- **The first version compared hashes wherever the two clients happened to be** and read 7,846
+  ticks against 7,848 as a cross-engine divergence. It was two ticks of a battle. The relay's own
+  comparison — which *is* at equal ticks — had said nothing, and the disagreement between the two
+  instruments is what caught it.
+- **The first version had nobody commanding either army.** With both player factions uncommanded
+  and no orders issued, 8,632 men stood still for 262 simulated seconds, nobody died, and the two
+  engines agreed perfectly. The escape §1.1 measured comes out of *combat*; a battle with no
+  orders in it is two armies standing in a field. The arm now runs `?autoplay=1`, so both armies
+  are under an AI whose plan is derived from the config and the seed and is therefore the same
+  plan on both clients.
+
+And one honest non-result: the same pairing on a **2,337-man** battle ran bit-identically to
+t+300. That is a real measurement and it is *not* evidence that the pairing holds; §7.2 says the
+escape is a stochastic boundary-crossing process, so a quarter of the men is roughly a quarter of
+the chances.
+
+### 9.9 What was deliberately left out of "functional"
+
+Named rather than forgotten. Each was considered and refused with a reason.
+
+1. **Reconnection into a live battle.** §4.5 refused it and this pass has not revisited the
+   refusal, because it needs the §1.8 snapshot serialiser — the 331-field, twelve-system,
+   permanently-taxed object §5 says every design in the pass underestimated. What is built
+   instead is a legible failure: a dropped socket ends the match by name at a stated tick on both
+   sides. A socket dropped in the *lobby* reopens the slot, which is the useful behaviour.
+2. **More than two players.** §4.5, unchanged. The desync surface, the slowest-peer coupling and
+   simultaneous deployment all scale badly, and `Room` is written for two slots throughout.
+3. **Anti-cheat.** §4.5, unchanged, and lockstep hands both clients the whole world by
+   construction. Harmless today because `UnitGroupState.concealed` still has no write site
+   anywhere in `src/`; **the day woods or night concealment ships, this becomes a maphack.**
+4. **Client-side prediction, even cosmetic.** There is none, not even an order marker. At 117 ms
+   of delay a marker that appears when the order actually lands is a truthful interface; one that
+   appears instantly is a lie about three frames in five, which is the shape §3's review
+   objected to. If it feels bad in play, the honest fix is a distinct *sent* state on the marker,
+   not a predicted one.
+5. **Pause and game speed as shared controls.** Speed is now the session's own rate-matching
+   lever and pause is not relayed, so pressing either affects only the local client's *pacing*
+   and never its tick count. A player who pauses falls behind and catches up at up to 8×; one who
+   is more than 300 turns (30 s) behind ends the match as `abandoned`, because 9,000 ticks of
+   catch-up is a second failure rather than a recovery (§3, background tabs).
+6. **A deployed relay.** `net/worker.ts` and `net/wrangler.toml` are written and have never run.
+   §3's arithmetic — ~630 billed requests and 76.8 GB-s per ten-minute match, so ~158 matches a
+   day on the free plan with requests as the binding constraint — is unverified, as is whether
+   Durable Objects are on the free plan at all.
+7. **A second machine.** §7.1 is still open and is still the premise the product rests on. Every
+   number in this section is two browsers on one laptop. A relay makes closing it easy: two
+   machines, one `node tools/relay.mjs`, and the boot-print handshake will either agree or name
+   the field that does not.
+8. **The lobby form itself is not clicked by the gate** *(stated 22 Aug 2026)*. The host goes
+   through the real front door and the real setup sheet; the challenger opens the invite URL —
+   `?net=<relay>&room=<CODE>&host=0`, which is exactly and only what `NetLobby.ts:132-139`
+   builds and puts on the clipboard. So the *join path* is the product's, but nobody has typed a
+   room code into the form under test. Everything downstream of that URL is covered; the text
+   input, the Create/Join buttons and the clipboard write are not.
+
+### 9.10 Where the code is
+
+| file | what |
+|---|---|
+| `src/net/protocol.ts` | the wire, the turn grid, `BootPrint`, the pairing table, `libmPrint` |
+| `src/net/room.ts` | the room state machine, pure, shared by both relay hosts |
+| `src/net/NetLink.ts` | the socket, and the pre-boot lobby exchange |
+| `src/net/NetSession.ts` | the client: ceiling, catch-up, checkpoints, desync policy |
+| `src/ui/NetLobby.ts` | make a room or join one; `?mp=1`, and a plaque on the front door |
+| `src/ui/NetPanel.ts` | who you are, what the link is doing, and what went wrong |
+| `tools/relay.mjs` | the Node relay, dependency-free, with the fault injector |
+| `tools/qa-net.mjs` | the gate: two clients in two browsers, eleven arms, six of them negative |
+| `net/worker.ts`, `net/wrangler.toml` | the Cloudflare target, written, never run |
+
+Changes outside `src/net`: `src/sim/replay.ts` gains a `net` mode and exports its codec;
+`src/sim/deployment.ts` gains a relay hook, a peer and a settable name; `src/sim/stateHash.ts`
+gains `unitDigests`; `src/ui/theme.ts` makes `PLAYER_FACTION` settable; `src/ui/HudSystem.ts`
+guards the deployment teardown against the peer's phase; `src/ui/DeploymentPanel.ts` stops
+flashing an empty refusal; `src/ui/MainMenu.ts` gains one plaque; `src/main.ts` wires it together.
+
+**How to run it, on one machine:**
+
+```
+node tools/relay.mjs                       # ws://127.0.0.1:5959
+npm run dev                                # or any vite on a port that is yours
+open http://127.0.0.1:<port>/?mp=1         # create a room, copy the invite, open it in a
+                                           # second window
+node tools/qa-net.mjs                      # the gate
+```
+
+
+### 9.11 The blind spot the gate inherited, and what closing it found — 22 August 2026
+
+`e/net/session` was written on 21 August and interrupted by a machine crash before it was
+integrated. This section is what happened when it was picked up: it was merged onto a `main` that
+had moved under it, and then pointed at the one battle it had never played.
+
+**The merge.** Two things on `main` were newer than the session branch and both had to win.
+Rome's determinism pin moved to **3,072** at `63be5cd`, so the branch's `3,074` was simply out of
+date — `tools/determinism-baseline.json` did not conflict and no pin moved. And `npm run lint` is
+**3/3** now: `check-browser-budget` fails any file in `tools/` that opens a browser without going
+through `tools/lib/browser-budget.mjs`, and `tools/qa-net.mjs` had two direct launches.
+
+**Two clients are two slots.** The obvious conversion — one `launchBrowser`, both clients as two
+pages inside it — passes the cap and is a lie. Two pages are two renderer processes and two WebGL
+contexts running two battles; the budget's own lint says so under *not covered*: "a tool that
+takes one slot and then opens ten contexts inside it." The host and the challenger now take a
+slot each, so the gate holds two of four and anything else on the machine queues behind it rather
+than oversubscribing it. A third slot is taken by `--only=xengine`'s Firefox.
+
+While moving them, one ordering bug fell out that had nothing to do with the cap.
+`browser-budget.mjs` installs its own `uncaughtException` handler when it takes a slot, and node
+runs those listeners in registration order. `qa-net.mjs`'s `cleanup()` — the function that kills
+the relays — was registered *after* the first launch, behind a handler ending in
+`process.exit(1)`. It was dead code on precisely the paths it existed for. It is registered
+before the first resource now. `tools/relay.mjs` also learned `--parent=<pid>`, polled every two
+seconds, the lesson `tools/lib/vite-runner.mjs` learned the same week: SIGTERM only helps when
+something is alive to send it, and the event this machine has actually had is everything on it
+being SIGKILLed at once.
+
+#### The blind spot
+
+**Every arm in this file booted `campus-martius / field`.** That is the same hole that let
+`tools/qa-replay.mjs` report 21/21 for weeks while no siege record had ever been through it, and
+it was written into this file on the same day that hole was found in the other one.
+
+It matters more here. A siege is where this design's hazards are densest — `Siege.ts` mutates
+private maps outside the tick, a wall and a gate and a ladder queue are control flow that `uctl`
+is the only layer watching — and the challenger *never sees a menu*. Its entire battle, siege
+included, arrives as `MsgSetup.cfg` over the relay. Nothing above would ever have said whether a
+siege config crosses the wire and builds identically on both clients.
+
+**It does.** `campus-martius / assault`, two clients, real menu, real mouse, both armies deployed
+and fighting:
+
+```
+tick 1365 (t+45.5 s), 3,180 men, 3,072 alive on both
+pool  caa88bc8 / caa88bc8
+uf64  d62dcbaa / d62dcbaa
+uctl  50c56120 / 50c56120
+last agreed checkpoint 1350;  17 order events, byte-identical on both clients
+```
+
+#### What closing it found
+
+**A disabled button, and a thirty-second hang.** `deployWith` clicked the first deployment row's
+`+`. On the assault the establishment is fixed and `tower-assault` ships that button *disabled*,
+so Playwright waited thirty seconds and threw a locator name — on the challenger, taking the arm
+with it. This is the second time this repository has paid for it: `tools/lib/menu-boot.mjs`
+carries a long comment about a bare click on a disabled button stopping `qa-replay`'s matrix arm
+dead on its second battle. The driver now takes the first row whose `+` is *enabled* and records
+the skip when there is none, and `.dep-begin` is asked rather than clicked blind.
+
+The identical unguarded line was still sitting in `tools/qa-replay.mjs:293`. It has never fired
+because the `matrix` arm passes `deploy=0` — so it is a latent hang waiting for the first person
+who gives that arm a deployment phase. Fixed in the same style; behaviour on a field battle is
+unchanged, because there row 0 is always addable.
+
+**`net-coverage`, and it goes red.** A siege arm that somebody later narrows or deletes would take
+the coverage with it and the green count would not move. So the run now asserts what it covered:
+`covered` is filled from the **challenger's** own config on every match — not from the arguments
+this file passed, because recording the argument would prove nothing and recording what the second
+client built proves the config crossed the relay. A run containing both the `battle` and the
+`siege` arm must contain at least one `field` and at least one `assault`.
+
+Made to fail on purpose, which is the only reason to believe it:
+
+```
+$ node tools/qa-net.mjs --only=battle,siege --siege-scenario=field
+  FAIL  net-coverage   no relayed assault in this run —
+                       covered: campus-martius/field, campus-martius/field
+  ✗ 14/15 checks passed        exit 1
+```
+
+`--siege-scenario` is a real knob rather than a test hook — it points the arm at any `(map,
+scenario)` the product ships — but it is spelled out rather than hard-coded to `assault`
+specifically so that the check guarding the coverage claim can be shown to work.
