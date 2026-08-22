@@ -13,6 +13,14 @@ import {
   type GeoStream,
 } from '../build';
 import { KeepOut, obbOverlap, type Obb, type WayClass } from '../layout';
+import {
+  WATER_LEVEL,
+  islandMask,
+  regionalPlain,
+  riverInfluence,
+  riverOffset,
+  riverProfile,
+} from '../../terrain/topography';
 import { POMERIUM } from './circuit';
 import {
   DISTRICTS,
@@ -647,6 +655,52 @@ function planDistrict(
 }
 
 /**
+ * **Would any part of this plot stand in water?**
+ *
+ * Not "is it within N metres of the channel". A distance margin is the wrong shape: the Tiber's
+ * cut bank rises to `WATER_LEVEL` + 2.8 in fifteen metres and its point bar takes eighty-two to
+ * reach + 0.8, so one margin is either too tight on one side or eats a hundred metres of dry
+ * quay on the other. Two rounds of tuning a single margin moved the count from 4 to 8 and back,
+ * because a rejected plot frees ground the placer immediately fills with the next candidate.
+ *
+ * So ask the terrain's own question: evaluate the **modelled ground** — `regionalPlain` blended
+ * into `riverProfile` by `riverInfluence`, which is exactly what `heightfield.ts` does before it
+ * adds noise — and reject the plot if any of nine samples over its bounding box comes out under
+ * `WATER_LEVEL + FREEBOARD`. The freeboard absorbs the erosion pass and the fractal relief the
+ * heightfield adds afterwards, which this cannot see: step 4a re-imposes the channel at full
+ * resolution but leaves 18 % of the eroded relief on the banks so they are not glassy, and 18 %
+ * of the 3.9 m the noise stack can reach is 0.7 m. 2.8 m is the cut bank's own terrace height,
+ * so the rule reads as *nothing below the flood terrace*, which is a thing rather than a tuning.
+ *
+ * The box, not the plot's own corners: `CitySystem` publishes footprints to the collision layer
+ * through `occRot(planRot) = -planRot`, so the rectangle the rest of the engine sees is this one
+ * mirrored. Sampling the plot's own corners disagreed with `tools/probe-tiber.mjs` about four
+ * solids, and a filter that disagrees with its own gate is not a filter.
+ *
+ * The Tiber Island is land and is excluded from the test rather than from the map: the Insula
+ * Tiberina, the Pons Fabricius and the Pons Cestius all stand on it.
+ */
+const RIVER_FREEBOARD = 2.8;
+function inTheRiver(p: Plot): boolean {
+  const ah = Math.abs(p.hw * Math.cos(p.rot)) + Math.abs(p.hd * Math.sin(p.rot));
+  const ad = Math.abs(p.hw * Math.sin(p.rot)) + Math.abs(p.hd * Math.cos(p.rot));
+  for (const [su, sv] of [
+    [0, 0], [-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1],
+  ] as const) {
+    const x = p.x + ah * su;
+    const z = p.z + ad * sv;
+    if (islandMask(x, z) > 0.4) continue;
+    const d = riverOffset(x, z);
+    const inf = riverInfluence(d, z);
+    if (inf <= 0.001) continue;
+    const plain = regionalPlain(x, z);
+    const g = plain + (riverProfile(d, z, plain) - plain) * inf;
+    if (g < WATER_LEVEL + RIVER_FREEBOARD) return true;
+  }
+  return false;
+}
+
+/**
  * How built-up a district is at a point in its own frame, 1 in the middle and 0 outside.
  *
  * A district authored as a rectangle of insulae ends at a straight line, and against the
@@ -701,11 +755,24 @@ export function buildDistricts(
   for (const d of DISTRICTS) {
     const drng = rng.fork(d.id);
     const out = planDistrict(d, drng, keepOut, wallZAt, placed);
+    // **Nothing stands in the Tiber.** `planDistrict` lays a lattice over a district's own
+    // rectangle and has never been told where the water is, so it did not avoid it: measured on
+    // this map before the filter, **41 of 1 333 solids were wholly under `WATER_LEVEL` and 62
+    // had their centre in it.** Nothing reported it, because `assertNoFabricOverlaps` and
+    // `probe-fabric` G1/G2 grade solids against each other and the river is not a solid.
+    //
+    // **The wet plots still claim their ground.** Dropping them outright freed the river's own
+    // footprint, later districts filled it — the quarters overlap and are planned in order — and
+    // the reshuffle cost two `probe-fabric` gates about monuments nowhere near the water. So the
+    // whole lattice is committed to `placed` and only the dry part is built and collided. The
+    // river is a hole in the city; nothing is supposed to be standing in it, and nothing is
+    // supposed to move because of it either.
+    const dry = out.plots.filter((p) => !inTheRiver(p));
     // Committed only now the quarter is complete. A plot must be tested against the
     // *neighbouring district*, never against the terrace it belongs to.
     for (const p of out.plots) placed.add(p);
+    out.plots = dry;
     planned.set(d.id, out.plots);
-    for (const l of out.lanes) lanes.push(l);
     for (const p of out.plots) footprints.push({ x: p.x, z: p.z, hw: p.hw, hd: p.hd, rot: p.rot });
 
     // Courtyard trees and street planting: cypress in gardens, umbrella pine in

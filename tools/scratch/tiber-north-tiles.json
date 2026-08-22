@@ -1,0 +1,77 @@
+{
+ "service": "http://wms.pcn.minambiente.it/ogc?map=/ms_ogc/WMS_v1.3/raster/ortofoto_colore_12.map",
+ "layer": "OI.ORTOIMMAGINI.2012.33",
+ "srs": "EPSG:3004",
+ "tileW": 2048,
+ "tileH": 1365,
+ "mppX": 1.712209,
+ "mppY": 1.711966,
+ "tiles": [
+  {
+   "r": 0,
+   "c": 0,
+   "minx": 2307658.1627,
+   "miny": 4643263.3909,
+   "maxx": 2311164.7667320003,
+   "maxy": 4645600.22449,
+   "file": "reference/rome-plans/agea-2012-ortofoto-EPSG3004-north-r0c0-2307658_4643263-2048px.jpg",
+   "bytes": 994042,
+   "sha256": "09d21db5606d5dfc"
+  },
+  {
+   "r": 0,
+   "c": 1,
+   "minx": 2311164.7667320003,
+   "miny": 4643263.3909,
+   "maxx": 2314671.3707640003,
+   "maxy": 4645600.22449,
+   "file": "reference/rome-plans/agea-2012-ortofoto-EPSG3004-north-r0c1-2311165_4643263-2048px.jpg",
+   "bytes": 1054016,
+   "sha256": "3277458a2d80441e"
+  },
+  {
+   "r": 1,
+   "c": 0,
+   "minx": 2307658.1627,
+   "miny": 4645600.22449,
+   "maxx": 2311164.7667320003,
+   "maxy": 4647937.05808,
+   "file": "reference/rome-plans/agea-2012-ortofoto-EPSG3004-north-r1c0-2307658_4645600-2048px.jpg",
+   "bytes": 956869,
+   "sha256": "7cdd49a01f250f12"
+  },
+  {
+   "r": 1,
+   "c": 1,
+   "minx": 2311164.7667320003,
+   "miny": 4645600.22449,
+   "maxx": 2314671.3707640003,
+   "maxy": 4647937.05808,
+   "file": "reference/rome-plans/agea-2012-ortofoto-EPSG3004-north-r1c1-2311165_4645600-2048px.jpg",
+   "bytes": 818600,
+   "sha256": "14e70f440dc4c41f"
+  },
+  {
+   "r": 2,
+   "c": 0,
+   "minx": 2307658.1627,
+   "miny": 4647937.05808,
+   "maxx": 2311164.7667320003,
+   "maxy": 4650273.89167,
+   "file": "reference/rome-plans/agea-2012-ortofoto-EPSG3004-north-r2c0-2307658_4647937-2048px.jpg",
+   "bytes": 759028,
+   "sha256": "5ac1b726b2aae39b"
+  },
+  {
+   "r": 2,
+   "c": 1,
+   "minx": 2311164.7667320003,
+   "miny": 4647937.05808,
+   "maxx": 2314671.3707640003,
+   "maxy": 4650273.89167,
+   "file": "reference/rome-plans/agea-2012-ortofoto-EPSG3004-north-r2c1-2311165_4647937-2048px.jpg",
+   "bytes": 706499,
+   "sha256": "1de53931d02159e0"
+  }
+ ]
+}

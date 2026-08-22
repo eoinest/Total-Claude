@@ -89,6 +89,49 @@ Distilled from §3. Short, and each one traceable to an entry that paid for it.
    and it exposed a latent bug in the second that would have failed a correct build. Any check that
    can lose part of its population must separate "excluded by design" from "missing", count the
    exclusions, and print them by name.
+14. **A curve can pass through every one of its control points and still bend the wrong way, and a
+   residual against those points cannot tell you.** Rome's Tiber was a cubic Hermite through twelve
+   knots and its error was reported as **0.1 world metres**. The report was honest: it compared the
+   transcribed table against `worldOf` of *the same twelve latitudes and longitudes*, which measures
+   the projection's arithmetic. It cannot see the shape between two knots, and it cannot see whether
+   a knot is in the river. Measured against the plate, **one of the twelve stood on water** and the
+   median knot was 115 real metres from the channel. **Grade a shape against a source dense enough
+   to have a shape**, and grade it with: lateral departure at fixed intervals, the *swing* across a
+   named span, and the **sign of curvature** station by station. An inverted bend has a small mean
+   error and cannot have the right sign.
+15. **Sparse control interpolated into a shape is the same fault one level up, and it caught two
+   instruments in one afternoon.** A sixteen-bridge river control graded the engine against the
+   *chords* between bridges: over the 842 m band beside the assaulted front there are two bridges in
+   the list, so the "plate" being compared to was a straight line across the very bend at issue. It
+   reported a 75 m median departure and a 1.435 swing ratio on a channel within 2.4 m of a dense
+   trace. And a by-northing comparison of an **east–west** reach is degenerate: one northing has
+   several answers, and it inflated a **14.7 m** perpendicular error into **392 m**. Use a sparse
+   control as a *point* control — perpendicular distance from each point to the curve — and use a
+   dense one for shape.
+16. **A representation that cannot express the thing will not be fixed by better data.** Rome's
+   channel was `x = f(z)`, a single-valued function of northing. The Tiber turns, so where it ran at
+   76° off the z axis the drawn river reached 385 world metres across a row against the 94 it
+   declared, and the far side of the Campus Martius was reported as being *in the river*. No amount
+   of digitising fixes that: feed a thousand points into `x = f(z)` and it reproduces the fault.
+   **Change the representation first** — here, a polyline in the plane plus a signed distance field —
+   and then the data means something. The same question is worth asking of every survey the project
+   holds: can the type it is stored in say the thing it needs to say?
+17. **A constant in world metres is a variable in real metres, whenever the projection is
+   anisotropic.** `RIVER_HALF_WIDTH = 47` was a true-scale cross-section, which rule 4 endorses. At
+   `KX` 0.443 and `KZ` 0.35 it drew a channel **212 real metres** wide where the Tiber runs
+   north–south and **269** where it runs east–west — one number, two widths, against a plate whose
+   channel is 100.8 m. Cross-sections in an anisotropic frame need a *rule*, not a constant: author
+   in real metres, project, and name the scale. Rule 4's override is still available and is now one
+   named number (`RIVER_WIDTH_SCALE`) rather than a figure nobody could convert.
+18. **When a solver stands between your change and the output, your change is not what the gate
+   measures.** Re-surveying the river moved two monuments that are placed *off* the river —
+   `FAR_BANK` pins far-bank landmarks to the west bank and ignores their own surveyed easting — and
+   `resolveOverlaps` cascaded that into every monument on the map. `probe-fabric` lost G9 (a
+   monument-to-insula clearance of 1.34 m against a 1.5 m gate) and G15, both about monuments
+   nowhere near the water. The same pass, by placing far-bank monuments from their own survey and
+   only clamping them with the river, took the resolver's worst displacement from **690 m to 118 m**
+   — better than the frame change that preceded it managed. **A gate downstream of a solver reports
+   the solver.**
 
 ---
 
@@ -360,5 +403,91 @@ the frame.
   reachable, but only at a 0.36 floor and a 68 m Colosseum, and three pairs are unabsorbable at any
   floor because two of the three are east–west and `KX` cannot move. **A design that proposes an
   optimisation should run it once before recommending it.**
+
+### 21 Aug 2026 — the Tiber, re-surveyed off the plates, and the representation changed under it
+
+**What we did.** Threw away the twelve-knot spline and re-digitised the Tiber: the centreline as a
+least-cost path through gated water on the AGEA 2012 orthophoto, cross-checked against Lanciani's
+inked channel; the width off Lanciani, binned and projected; the Tiber Island measured as the bar
+between its two arms. 451 stations at 25 m of course length, held in **survey metres** in a new file
+`src/terrain/tiberSurvey.ts` and projected by `topography.ts`. Replaced `riverCentreX`'s `x = f(z)`
+distance model with a polyline plus a **signed distance field**. Fetched three orthophoto tiles from
+the same WMS, layer, CRS and licence as `ASSETS.md` item 8 so the map's northern half stopped being
+an extrapolation. Wrote `tools/probe-tiber.mjs`: departure, swing, the sign of curvature, the drawn
+channel's width in *real* metres, and everything standing in water.
+
+**What we expected.** That the river was sound and only its *shape between the control points* was
+wrong — `ROME-FABRIC.md` §2.6 says *"The Tiber is sound… Keep the polyline"* — so a denser
+digitisation through the same twelve points would fix it in an afternoon.
+
+**What happened.** Four surprises, each bigger than the last.
+
+1. **The control points were not on the river.** Measured against the plate, **one of the twelve
+   stood on water**; the median knot was 115 real metres from the channel and the worst 1,166. The
+   0.1 m residual that had blessed them compared the transcribed table against `worldOf` of the same
+   twelve latitudes and longitudes. It was arithmetic, honestly reported, and it could not see the
+   river. Rule 14.
+
+2. **A denser table would not have fixed it, because the representation could not hold the answer.**
+   `x = f(z)` cannot describe a channel that turns: at the Tiber Island the course runs 76° off the
+   z axis, and the drawn river reached 385 world metres across a row against the 94 it declared. That
+   is the mechanism behind buildings standing in water, and it is why the count kept moving depending
+   on who measured it — 37, 60, 74, 71 — because the *declared* channel and the *drawn* channel
+   differed by nearly 3×. Rule 16. A separate judge pass found the same thing independently the same
+   afternoon and put it more sharply than we had: *"a denser table will not fix this."*
+
+3. **The width was one number and two answers.** `RIVER_HALF_WIDTH = 47` world metres is 212 real
+   metres of channel where the Tiber runs north–south and 269 where it runs east–west, against a
+   plate whose channel is 100.8 m. Rule 17. **This bug caught the grading harness as well**, which
+   compared 94 world metres against 100.8 real metres and reported agreement — so for one afternoon
+   two independent instruments held the same wrong number for the same reason.
+
+4. **The one thing we were told was out of scope turned out to be downstream of us.** `FAR_BANK`
+   pins far-bank monuments to the river's west bank and discards their own surveyed easting, so
+   moving the river moved them, and `resolveOverlaps` cascaded that into every monument on the map.
+   `probe-fabric` went **7/21 → 5/21**, losing G9 and G15, both about monuments nowhere near water.
+   Rule 18.
+
+**The numbers, after.** Against the dense plate trace: departure median **2.4 m** (1.1 world m) over
+the front, swing ratio **0.990**, **0 inverted curvature stations** on the front. Against the judge's
+own harness: the channel is **102.1 real metres** wide against the plate's 100.8 (**ratio 1.01**, was
+2.31); the bow turns at the same place (apex **−40 m** of northing, was −360); local curvature has
+the plate's sign everywhere in the city; **0.00 %** of built footprint changes bank between the
+plate's channel and the engine's. Water: **0 solids wholly submerged, 0 with their centre in water**,
+from 41 and 62. Four solids keep an edge in the wetted band and all four are named and attributed.
+Determinism re-recorded: 8,632 / **3,074** / 3,440 — Carthage byte-identical as the control.
+
+**Verdict — the brief was right about the fault and wrong about the layer, and the correction cost
+most of the pass.** We were sent to re-digitise a curve. The curve was the smallest of four faults,
+and three of the other three were *type* errors rather than data errors: a function of one variable
+standing in for a curve in the plane, a cross-section stored in the wrong frame, and a landmark rule
+that read the river when it should have read its own survey. **Density was necessary and nowhere near
+sufficient**, and the tell was available on day one: the thing being graded and the thing grading it
+were the same twelve numbers.
+
+**What we would do differently.**
+
+- **Before digitising anything, check that the existing control points are on the feature.** It cost
+  forty lines (`tools/scratch/tiber-knotcheck.mjs`) and it reframed the whole pass. Every survey in
+  this repository should get the same treatment: `ROME_CIRCUIT_SURVEY`'s fourteen waypoints carry no
+  citation at all, and a separate judge pass has since measured them 165–361 m off the inked wall.
+- **Ask what type the survey is stored in before asking whether its numbers are right.** Rule 16.
+  Three of this pass's four faults were visible from the type signature alone: `x = f(z)`,
+  `RIVER_HALF_WIDTH: number` in an anisotropic frame, and `FAR_BANK(z, offset)` for a thing that has
+  its own `e`.
+- **Two instruments agreeing is not two instruments.** The grading harness and this pass made the
+  identical world-versus-real-metres mistake within hours of each other, because both took the same
+  constant at face value. Agreement between instruments that share an assumption measures the
+  assumption.
+- **When a solver stands between the change and the gate, measure the solver.** `resolveOverlaps`'
+  worst displacement went 399 → 690 m when the river moved and 690 → 118 m when far-bank monuments
+  were given their own survey back. None of that is fabric work and all of it shows up as fabric
+  gates.
+- **The one fabrication is named and drawn.** North of world z −300 the plate-true course turns east
+  through the Pons Milvius reach, stops being a function of z at z −472, puts 0.76 km of channel
+  inside the attacker's deployment box and fords the Via Flaminia unbridged. The map continues north
+  on the measured local bearing instead, eased to due north — chosen over the *mean* bearing because
+  that one reverses the sign of the curvature at the join, which is the fault this pass was called to
+  fix, one level up, and which no residual would have shown.
 
 <!-- Append new entries above this line. -->

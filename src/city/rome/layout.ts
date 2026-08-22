@@ -1,5 +1,6 @@
 // `terrain/topography`, not `terrain/TerrainSystem` — see the note in `circuit.ts`.
-import { HALF_EXTENT, riverCentreX } from '../../terrain/topography';
+import { HALF_EXTENT, worldOf as projectSurvey } from '../../terrain/topography';
+import { TIBER_ISLAND } from '../../terrain/tiberSurvey';
 import { clamp, lerp } from '../../util/math';
 import { hash2 } from '../../util/rand';
 import { AX, axisU, axisV, obbOverlap, obbRadius, type Obb, type WayClass } from '../layout';
@@ -190,12 +191,33 @@ export const offMapSouth = (m: RomeMonument): boolean => {
   return w.z + hd > HALF_EXTENT;
 };
 
+/** The Tiber Island's projected centre. See `terrain/tiberSurvey.ts`. */
+const ISLAND_WORLD = projectSurvey(TIBER_ISLAND.e, TIBER_ISLAND.n);
+
 function place(m: RomeMonument): LandmarkPlacement {
   const w = worldOf(m.e, m.n);
   let x = w.x;
   const z = clamp(w.z, CITY_Z_MIN(w.x) + 20, CITY_Z_MAX);
-  if (m.farBank) x = FAR_BANK(z, 90);
-  else if (m.onRiver) x = riverCentreX(z);
+  // **Far-bank monuments are placed by their own survey, and only clamped by the river.**
+  //
+  // This was `x = FAR_BANK(z, 90)` — the west bank's crossing of that row, minus 90 m — which
+  // discards the row's surveyed easting entirely and pins the monument to the water. Two costs,
+  // both measured this pass. It is less accurate: the judge's plate reading puts the Mausoleum of
+  // Hadrian's survey row 8 m from the inked mausoleum, *"the best-placed monument on the map"*,
+  // and the bank rule moves it off that. And it couples every far-bank monument to the river, so
+  // re-surveying the Tiber moved them, `resolveOverlaps` cascaded, and `probe-fabric` lost G9 and
+  // G15 — two checks about monuments nowhere near the water.
+  //
+  // The clamp stays, because the reason the rule existed is real: a far-bank monument must not
+  // stand in the channel. `FAR_BANK(z, 100)` is 100 m clear of the west bank on that row, and
+  // `Math.min` takes it only when the survey would put the monument east of that.
+  if (m.farBank) x = Math.min(w.x, FAR_BANK(z, 100));
+  // `onRiver` means **on the Tiber Island**, and it now says so. It used to snap x to
+  // `riverCentreX(z)`, which is the channel's crossing of that *row* — and where the channel
+  // runs at 60 degrees to the z axis, as it does at the island, the row crossing is 50-150 m
+  // from the island's own position. The island is modelled ground now
+  // (`terrain/tiberSurvey.ts`), so a thing standing on it stands at its centre.
+  else if (m.onRiver) x = ISLAND_WORLD.x;
   // `len` runs along whichever local axis the monument is built on: X for a circus or a
   // bath block, Z for a temple, a theatre or the Pantheon, whose axial plan runs from the
   // portico at −Z to the back wall at +Z.
@@ -440,7 +462,7 @@ function resolveOverlaps(list: LandmarkPlacement[], sweeps = 9000): void {
     // the Forum Romanum 400 m north into the Horti Sallustiani.
     for (let i = 0; i < n; i++) {
       const l = list[i];
-      // The island is pinned to the river's centreline and never moves.
+      // The island is pinned to the Tiber Island and never moves.
       if (l.onRiver) {
         confine(l);
         continue;
@@ -554,7 +576,7 @@ const Z_AXIS_COST = 2.1;
 /** Keep a footprint inside the buildable city: behind the wall, on land, on the map. */
 function confine(l: LandmarkPlacement): void {
   if (l.onRiver) {
-    l.x = riverCentreX(l.z);
+    l.x = ISLAND_WORLD.x;
     return;
   }
   // Depth half-extent of the oriented box.
