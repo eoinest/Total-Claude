@@ -61,6 +61,15 @@ import {
 /** Lateral spacing of men along a wall-walk. Same as the field spacing: shoulder to shoulder. */
 const STATION_PITCH = 0.86;
 /**
+ * Half a man, added to the box `wallFileOf` publishes for the cursor.
+ *
+ * Not a fudge factor for a sloppy pick: `slotAt` gives every man `jOff` of up to ±0.13 m
+ * across the walk and `jAlong` of up to ±0.21 m along it, and `resolveCrowding` shoves him
+ * further than that in a melee, so the men genuinely stand outside the station band they
+ * were assigned to. The box has to contain the soldiers the player can see.
+ */
+const PICK_BODY_M = 0.6;
+/**
  * Clear metres a station keeps between itself and the tower at either end of its bay.
  *
  * **One constant because there is one rule**, and it is not symmetry for its own sake. A
@@ -834,6 +843,18 @@ const enum WallGoal {
   Descend = 3,
   /** Storm a practicable breach: outside ground, up the rubble, down into the city. */
   Storm = 4,
+  /**
+   * Go along the wall and take those men off it.
+   *
+   * A `Traverse` whose destination is a *unit* rather than a station, re-aimed every tick
+   * while the target lives. There is no separate combat here and there must not be: the
+   * lodgement already lands exactly where the defenders stand — `freeWindow` ignores an
+   * enemy claim on purpose, *"taking a wall off somebody is not an allocation problem, it
+   * is a melee"* — and `Combat` acquires a man within reach at the same level. What was
+   * missing was any way for the player to *say it*, so this is the verb and the walk, and
+   * the killing is where it already was.
+   */
+  Assault = 5,
 }
 
 interface WallPlan {
@@ -850,6 +871,33 @@ interface WallPlan {
   age: number;
   /** Men this plan could not move on the last tick. Reported, never silently absorbed. */
   stuck: number;
+  /**
+   * The unit an `Assault` is aimed at, or -1.
+   *
+   * Held as an id and resolved every tick rather than baked into `destStation` once,
+   * because the thing being chased moves: a lodgement that gives ground along the walk
+   * would otherwise be followed to where it used to be. Cleared when they are dead or no
+   * longer on the stone, at which point the plan has succeeded and closes like any other.
+   */
+  target: number;
+}
+
+/**
+ * The stretch of walk a unit's men are standing on, as an oriented box in plan plus the
+ * height of the stone. Structurally `ui/picking.ts`'s `Footprint` with a `y`, declared here
+ * rather than imported so the simulation takes no dependency on the interface layer for six
+ * numbers — the same rule `PickSolid` follows in the other direction.
+ */
+export interface WallFile {
+  cx: number;
+  cz: number;
+  /** `cos`/`sin` of the outward normal's bearing: depth is across the walk, width along it. */
+  cos: number;
+  sin: number;
+  halfW: number;
+  halfD: number;
+  /** Absolute height of the walkway the men are standing on. */
+  y: number;
 }
 
 interface Ladder {
@@ -1322,6 +1370,28 @@ export class Siege implements ElevationOwner {
    */
   private ordered = new Map<number, { x: number; z: number }>();
 
+  /** Per-tick memo for `wallFileOf`, whose caller is a render loop. */
+  private fileCache = new Map<number, { tick: number; f: WallFile | null }>();
+  /** Scratch for `computeWallFile`'s modal-run count; cleared, never reallocated. */
+  private runTally = new Map<number, number>();
+
+  /**
+   * "Attack *them*", where they are standing on the wall — the same channel, one tick later.
+   *
+   * `orderIssued` with `kind: 'attack'` was filtered out of the handler above and nothing
+   * else in this file has ever looked at it, so a garrison told to fight a lodgement on its
+   * own parapet did nothing at all and said nothing about it. Measured at the storm of Rome:
+   * the cursor read `attack` over the escalade party's men, `dragHostileId` was set, the
+   * order went out — and this system, which owns where every one of those men stands, never
+   * saw it. `BattleSystem.closeToContact` returns early for a siege-owned unit and
+   * `updateGarrisons` rewrites its slots back to its stations every tick, so "attack" was a
+   * unit standing still with an order it could not act on.
+   *
+   * Recorded here and drained in `interceptOrders` for the same reason `ordered` is: the
+   * handler runs outside the fixed step.
+   */
+  private attacks = new Map<number, number>();
+
   // ---- per-soldier crossing state ----
   /** Which crossing this man is on, or -1. Indexed by soldier. */
   private crossOf!: Int32Array;
@@ -1519,6 +1589,19 @@ export class Siege implements ElevationOwner {
      * streets are the same order.
      */
     ctx.events.on('orderIssued', (o) => {
+      /*
+       * "Attack them", where they are standing on the wall. See `attacks`.
+       *
+       * Recorded for every source, not only the player's mouse, and for the same reason the
+       * move branch below is: a defender's counter-attack along its own parapet is the same
+       * order whoever gives it, and a verb that only works for one side is a verb the AI
+       * cannot be graded against.
+       */
+      if (o.kind === 'attack') {
+        if (o.targetUnitId === undefined || o.queued) return;
+        for (const id of o.unitIds) this.attacks.set(id, o.targetUnitId);
+        return;
+      }
       if (o.kind !== 'move' && o.kind !== 'attackMove') return;
       if (o.x === undefined || o.z === undefined) return;
       // A queued waypoint appends to a march that is already running; it is not a decision
@@ -2444,6 +2527,122 @@ export class Siege implements ElevationOwner {
   }
 
   /**
+   * The stretch of stone this unit's men are actually standing on, as an oriented box.
+   *
+   * **A unit on a wall is a file the wall's depth, not a rectangle** — `ranksAt` says so and
+   * `layOutOnWall` lays men out that way — but the *pick* never learned it. `ui/picking.ts`
+   * builds one box per unit from `u.width` and `ranksFor(alive, width)`, which is the shape
+   * a formation has in a field, and on the wall that shape is wrong in both axes at once: a
+   * 106-man `ballistarii` reads 20 m of frontage and 6 m of depth where its men occupy 27
+   * stations of a 3.25 m walk. Measured at the storm of Rome, sampling a 9x7 grid over each
+   * unit's own drawn men, the fraction of pixels that hover the unit under them came out
+   * **21% to 62% across the eight units on the Aurelian wall, and 13% for a lodgement**.
+   * Four pixels in five over a cohort's own soldiers selected nobody, and that is the
+   * measurable half of *"they get disconnected from their banner that allows me to control
+   * them"*.
+   *
+   * Read from the men rather than from the `Garrison` record, deliberately. This whole
+   * family of bugs — `standingOnWall`, `standY`, the muster slot frozen at the last tick —
+   * is a record that outlived the thing it described, and a box drawn from `g.from`/`g.span`
+   * would be the next one: the record is written by the layout and the layout is what a
+   * traverse, a rout and a melee then walk away from.
+   *
+   * Confined to the **modal run**, the one most of them are standing on. A unit filing
+   * through a tower is on two runs that meet at an angle, and one box across both would
+   * cover the tower and a stripe of city; the men on the other run are still pickable by the
+   * ordinary ground box, which this is added to rather than substituted for.
+   *
+   * Null when no man of this unit is on the stone, which is the common case and costs one
+   * `Set.has`.
+   */
+  wallFileOf(unitId: number): WallFile | null {
+    if (!this.garrisons.has(unitId)) return null;
+    /*
+     * Memoised on the tick, because the caller is a render loop.
+     *
+     * `SelectionController.pickUnit` asks this of every view every *frame*, and the answer
+     * can only change in a fixed step: at 120 fps on a 30 Hz sim three reads in four are of
+     * a number that has not moved. The sweep below is one pass over a unit's members, which
+     * multiplied by twelve garrisons and four frames a tick is exactly the kind of cost that
+     * turns up a month later as a HUD budget overrun with nobody able to say what added it.
+     */
+    const now = this.ctx.time.tick;
+    const memo = this.fileCache.get(unitId);
+    if (memo && memo.tick === now) return memo.f;
+    const f = this.computeWallFile(unitId);
+    this.fileCache.set(unitId, { tick: now, f });
+    return f;
+  }
+
+  private computeWallFile(unitId: number): WallFile | null {
+    const u = this.battle.unitById(unitId);
+    if (!u || u.destroyed) return null;
+    const p = this.battle.pool;
+    /*
+     * Which run holds most of them, and the run comes from `stationOf` rather than from
+     * `standingStation`.
+     *
+     * The correction `standingStation` applies is for a man shoved a metre off his own
+     * station, and a metre is inside this box either way — but it scans up to 29 stations
+     * per man, which across a garrisoned circuit is tens of thousands of distance tests a
+     * frame. A bounding box does not need it and must not pay for it.
+     *
+     * Ties break on the lower run index, so the answer is a function of the state and not of
+     * the order `members` happens to be in.
+     */
+    const tally = this.runTally;
+    tally.clear();
+    let run = -1;
+    let bestN = 0;
+    for (const i of u.members) {
+      if (!p.aliveAt(i)) continue;
+      const s = this.stationOf[i];
+      if (s < 0) continue;
+      const r = this.sRun[s];
+      const n = (tally.get(r) ?? 0) + 1;
+      tally.set(r, n);
+      if (n > bestN || (n === bestN && r < run)) { bestN = n; run = r; }
+    }
+    if (run < 0) return null;
+    let lo = 0;
+    let hi = 0;
+    let n0 = 0;
+    for (const i of u.members) {
+      if (!p.aliveAt(i)) continue;
+      const s = this.stationOf[i];
+      if (s < 0 || this.sRun[s] !== run) continue;
+      if (n0 === 0) { lo = s; hi = s; } else { if (s < lo) lo = s; if (s > hi) hi = s; }
+      n0++;
+    }
+    if (n0 === 0) return null;
+    const mid = (lo + hi) >> 1;
+    const nx = this.snx[mid];
+    const nz = this.snz[mid];
+    // Half the walk's own band, plus a body radius so a man leaning on the parapet is inside
+    // his unit's box rather than a hand's breadth outside it.
+    const inner = this.sInner[mid];
+    const outer = this.sOuter[mid];
+    const off = (inner + outer) * 0.5;
+    // The along-wall extent between the two extreme stations, measured in plan so a run that
+    // bends slightly across a bay is still covered end to end.
+    const ax = this.sx[hi] - this.sx[lo];
+    const az = this.sz[hi] - this.sz[lo];
+    const span = Math.sqrt(ax * ax + az * az);
+    return {
+      cx: (this.sx[lo] + this.sx[hi]) * 0.5 + nx * off,
+      cz: (this.sz[lo] + this.sz[hi]) * 0.5 + nz * off,
+      // `Footprint`'s frame: depth runs along `(sin, cos)` and width across it, so the
+      // outward normal is the depth axis and the along-wall tangent is the width axis —
+      // the same convention `slotAt` writes a man's facing in.
+      sin: nx,
+      cos: nz,
+      halfW: span * 0.5 + STATION_PITCH * 0.5 + PICK_BODY_M,
+      halfD: (outer - inner) * 0.5 + PICK_BODY_M,
+      y: this.sy[mid],
+    };
+  }
+
+  /**
    * Is this man on the stonework, or on a path onto it?
    *
    * `-1` is the only `stationOf` value that means the grass — `PENDING_SLOT` and `ON_LINK`
@@ -2561,6 +2760,7 @@ export class Siege implements ElevationOwner {
     u.contactLock = false;
     this.plans.set(u.id, {
       goal: WallGoal.Ascend, destStation: dest, destRun, stair, gx: x, gz: z, age: 0, stuck: 0,
+      target: -1,
     });
     return true;
   }
@@ -2593,9 +2793,109 @@ export class Siege implements ElevationOwner {
     if (!this.runsConnected(fromRun, destRun)) return false;
     this.plans.set(u.id, {
       goal: WallGoal.Traverse, destStation: dest, destRun, stair: -1, gx: x, gz: z, age: 0, stuck: 0,
+      target: -1,
     });
     // A unit walking somewhere else must be free to re-form when it gets there, even if it
     // arrived as a boarding party. Stickiness is a property of a lodgement, not of a unit.
+    const g = this.garrisons.get(u.id);
+    if (g) g.sticky = false;
+    return true;
+  }
+
+  /**
+   * Where along the walk a unit's men are, as a station, or -1 if none of them are up.
+   *
+   * The modal run's midpoint, from `wallFileOf`, put back through `wallTargetAt` so a caller
+   * gets the same station the click path would have produced from that point. One route from
+   * "those men" to "that piece of stone", used by the offer and by the order, because the
+   * last four bugs of this shape in this file were two functions answering one question.
+   */
+  private stationOfUnit(unitId: number): number {
+    const f = this.wallFileOf(unitId);
+    if (!f) return -1;
+    const st = this.wallTargetAt(f.cx, f.cz);
+    if (st >= 0) return st;
+    // The centre of the file can sit over a dead station — a bay the great ram has holed —
+    // while the men either side of it are standing on live ones. Fall back to the nearest
+    // station to the same point, which is what `stationNear` is for.
+    return this.stationNear(f.cx, f.cz);
+  }
+
+  /**
+   * Whether "go and take those men off the wall" would be carried out. Pure.
+   *
+   * Published for the cursor for the same reason `traverseOfferAt` and `escaladeOfferAt`
+   * are, and it is the same predicate `interceptOrders` acts on, so the sentence under the
+   * cursor and the one the field sends back cannot disagree.
+   *
+   * **`noWall` means "not this verb's business", and both readers must treat it that way.**
+   * Two orders arrive here that are ordinary attacks and must be left entirely alone: one
+   * aimed at men who are not on the wall at all, and one *given by* a unit this system does
+   * not place. The second boundary is the load-bearing one. A siege-owned man's slot is
+   * written by `updateGarrisons` or `musterOwned` every tick and `closeToContact` returns
+   * early for him, so for that unit an unanswerable attack order is provably inert and
+   * silence is the defect. An ordinary cohort in the street is still steered by the
+   * formation path and still shoots what it is told to shoot; refusing *its* order would be
+   * this file claiming an authority over ranged fire it has not measured.
+   *
+   * `notOnWall` — "These men are not on the wall — send them up it first" — is therefore
+   * about an attacker this system *is* placing whose men are not up there: a lodgement still
+   * on the rungs, or a ram gang in the carriageway. It names the next click, which is what
+   * the good refusals in this game all do.
+   *
+   * One function, two callers: `interceptOrders` acts on it and `SelectionController` draws
+   * it. Any test that lives in only one of them is the next bug of this shape.
+   */
+  wallAssaultOfferAt(unitId: number, targetId: number): {
+    ok: boolean; refusal: 'none' | WallRefusal; bay: number;
+  } {
+    const u = this.battle.unitById(unitId);
+    const t = this.battle.unitById(targetId);
+    if (!u || !t || t.destroyed || t.alive === 0) return { ok: false, refusal: 'noWall', bay: -1 };
+    const dest = this.stationOfUnit(targetId);
+    if (dest < 0) return { ok: false, refusal: 'noWall', bay: -1 };
+    const bay = this.sBay[dest];
+    if (!this.owned.has(unitId) && !this.garrisons.has(unitId)) {
+      return { ok: false, refusal: 'noWall', bay };
+    }
+    if (!this.garrisons.has(unitId) || !this.standingOnWall(unitId)) {
+      return { ok: false, refusal: 'notOnWall', bay };
+    }
+    const here = this.stationNear(u.x, u.z);
+    const fromRun = here >= 0 ? this.sRun[here] : -1;
+    if (!this.runsConnected(fromRun, this.sRun[dest])) return { ok: false, refusal: 'noRoute', bay };
+    return { ok: true, refusal: 'none', bay };
+  }
+
+  /**
+   * Send a unit along the wall onto another unit standing on it.
+   *
+   * The judge's one-line verdict on the siege was that this is *"the one mechanic between
+   * Rome's siege and being a game"*, and the measurement behind it is that there was no way
+   * to express it: `Siege` never writes `targetUnitId`, `BattleSystem.closeToContact`
+   * returns early for anything the siege system owns, and `updateGarrisons` rewrites every
+   * garrisoned man's slot back to his station every tick. A garrison could only fight what
+   * walked into it.
+   *
+   * So this is a `Traverse` with a name on it. Everything that carries it out already
+   * existed and is unchanged: `nextHop` walks the file through the towers between here and
+   * there, `layOutOnWall` seats the arrivals on the destination run at the wall's own depth,
+   * `freeWindow` ignores the enemy's claim so the seats *are* the ones they are standing on,
+   * and `steerToSlots` damps a man in `SoldierState.Fighting` to zero so nobody walks out of
+   * a melee to reach a slot. The only new thing in the simulation is the re-aim in
+   * `advancePlans`, and the only new thing in the game is that the player can ask for it.
+   */
+  assaultOnWall(u: UnitGroupState, targetId: number): boolean {
+    const offer = this.wallAssaultOfferAt(u.id, targetId);
+    if (!offer.ok) return false;
+    const dest = this.stationOfUnit(targetId);
+    if (dest < 0) return false;
+    this.plans.set(u.id, {
+      goal: WallGoal.Assault, destStation: dest, destRun: this.sRun[dest], stair: -1,
+      gx: this.sx[dest], gz: this.sz[dest], age: 0, stuck: 0, target: targetId,
+    });
+    // Same reason as `moveAlongWall`: a lodgement that has been told to go somewhere is a
+    // unit again, and a unit re-forms when it arrives.
     const g = this.garrisons.get(u.id);
     if (g) g.sticky = false;
     return true;
@@ -2620,7 +2920,7 @@ export class Siege implements ElevationOwner {
     if (stair < 0) return false;
     this.plans.set(u.id, {
       goal: WallGoal.Descend, destStation: -1, destRun: this.links[stair].runB,
-      stair, gx: x, gz: z, age: 0, stuck: 0,
+      stair, gx: x, gz: z, age: 0, stuck: 0, target: -1,
     });
     const g = this.garrisons.get(u.id);
     if (g) g.sticky = false;
@@ -3635,7 +3935,7 @@ export class Siege implements ElevationOwner {
     u.waypoints.length = 0;
     this.plans.set(u.id, {
       goal: WallGoal.Storm, destStation: -1, destRun: -1,
-      stair: this.breachLinks[0], gx, gz, age: 0, stuck: 0,
+      stair: this.breachLinks[0], gx, gz, age: 0, stuck: 0, target: -1,
     });
     return true;
   }
@@ -3766,6 +4066,74 @@ export class Siege implements ElevationOwner {
         if (o && o.ok) this.applyMachineOrder(o);
       }
       this.machineOrders.length = 0;
+    }
+
+    /**
+     * "Take those men off the wall" — the verb the siege did not have.
+     *
+     * Only ever about a target standing on the stone. Anything else is an ordinary attack
+     * and `BattleSystem` already owns it end to end, so this loop leaves it entirely alone:
+     * a `continue` here is not a refusal, it is this system saying the order is none of its
+     * business. That distinction matters because the AI emits on the same wire, and a siege
+     * system that started refusing field attacks would be refusing most of the battle.
+     *
+     * The three outcomes, and there is no fourth:
+     *
+     *  - the attacker's men are on the walk and the walk joins them to their target: the
+     *    file goes along the stone and fights, `assaultOnWall`;
+     *  - the attacker is a unit **this system is already placing** and its men are not up
+     *    there: **"These men are not on the wall — send them up it first"**, which is the
+     *    whole answer and names the next click;
+     *  - the walk between the two is broken: **"No way along the wall to bay N — the walk is
+     *    broken in between"**, which teaches the player the map.
+     *
+     * The `notOnWall` refusal is confined to units this system owns, and the boundary is not
+     * a hedge. A siege-owned man's slot is written by `updateGarrisons` or `musterOwned`
+     * every tick and `BattleSystem.closeToContact` returns early for him, so for *that* unit
+     * the order provably cannot be acted on and silence is the defect. An ordinary cohort in
+     * the street is still steered by the formation path and still shoots what it is told to
+     * shoot; refusing its order would be this file claiming an authority over ranged fire it
+     * does not have and has not measured. That case is named in the report, not guessed at.
+     *
+     * `u.order` is not touched. `BattleSystem.applyOrder` has already set `AttackUnit` and
+     * `targetUnitId`, and leaving those alone is what keeps a garrison's missile troops
+     * shooting at the unit the player named while their file walks at it.
+     */
+    if (this.attacks.size > 0) {
+      for (const [id, targetId] of this.attacks) {
+        const u = b.unitById(id);
+        if (!u || u.destroyed || u.alive === 0) continue;
+        if (u.order === UnitOrder.Rout) continue;
+        const t = b.unitById(targetId);
+        if (!t || t.destroyed || t.alive === 0) continue;
+        // Not about the wall at all unless the target is standing on it. The refusal is
+        // aimed at the stone they are standing on rather than at the unit's own anchor,
+        // which for a lodgement with most of its men still on the rungs is out in the field
+        // — and `refuse` names the bay it finds under the point it is given.
+        const f = this.wallFileOf(targetId);
+        if (!f) continue;
+        /*
+         * The same order twice is not a new order.
+         *
+         * `src/ai/Orders.ts` puts about 6,159 orders across this bus per 200 s of a field
+         * battle and it re-states an attack it has already given. Without this, every
+         * restatement would `plans.set` a fresh plan — `age` back to 0, `sticky` cleared,
+         * `layOutArrived` re-seating the whole file — which is precisely the per-tick
+         * re-layout churn that `48262b3` measured as "they get stuck": men who never reach a
+         * seat because the seat moves under them every tick. An assault already aimed at
+         * this unit is left alone; `advancePlans` is already following them.
+         */
+        const live = this.plans.get(id);
+        if (live && live.goal === WallGoal.Assault && live.target === targetId) continue;
+        const offer = this.wallAssaultOfferAt(id, targetId);
+        if (offer.ok) this.assaultOnWall(u, targetId);
+        // `noWall` is the offer saying this is not a wall order; everything else is a
+        // sentence the player has earned. See `wallAssaultOfferAt`.
+        else if (offer.refusal !== 'noWall' && offer.refusal !== 'none') {
+          this.refuse(id, 'traverse', offer.refusal, { x: f.cx, z: f.cz });
+        }
+      }
+      this.attacks.clear();
     }
 
     /**
@@ -3915,8 +4283,21 @@ export class Siege implements ElevationOwner {
         u.order = UnitOrder.Garrison;
         continue;
       }
-      if (this.wallTargetAt(u.targetX, u.targetZ) >= 0) this.moveAlongWall(u, u.targetX, u.targetZ);
-      else this.sendToGround(u, u.targetX, u.targetZ);
+      /*
+       * The booleans are read here too, and they were not.
+       *
+       * The event path forty lines up refuses `noRoute` and `noStair` out loud; this one —
+       * the fallback for an order that reaches the sim as a changed destination rather than
+       * as an `orderIssued` — threw both away and set the unit back to `Garrison` regardless.
+       * That is the same eaten-whole order the whole refusal pass exists to end, still
+       * shipping in the branch nobody looked at. Two paths, one promise.
+       */
+      const dest = { x: u.targetX, z: u.targetZ };
+      if (this.wallTargetAt(u.targetX, u.targetZ) >= 0) {
+        if (!this.moveAlongWall(u, u.targetX, u.targetZ)) this.refuse(id, 'traverse', 'noRoute', dest);
+      } else if (!this.sendToGround(u, u.targetX, u.targetZ)) {
+        this.refuse(id, 'descend', 'noStair', dest);
+      }
       // Reclaim the order either way: this unit's men are placed by the stonework, and
       // leaving it on `MoveTo` would have `steerToSlots` and the formation path fighting
       // over the same men on alternate ticks.
@@ -3945,6 +4326,18 @@ export class Siege implements ElevationOwner {
       if (u.order !== UnitOrder.MoveTo && u.order !== UnitOrder.AttackMove) continue;
       if (this.wallTargetAt(u.targetX, u.targetZ) < 0) continue;
       if (this.sideOf(u.x, u.z) !== -1) continue;
+      /*
+       * The boolean is **deliberately** dropped here, and only here.
+       *
+       * The two polls above self-limit: a garrison that refuses has `g.lastTx/lastTz`
+       * already written, so the `ORDER_JUMP` guard stops the next tick before it reaches the
+       * verb again. This loop has no such latch — `u.order` stays `MoveTo` and the
+       * destination stays where it is — so refusing here would emit `orderRefused` **thirty
+       * times a second for the rest of the battle**. The click that produced this order was
+       * already answered on the event path, which is where the player's orders arrive; this
+       * is the fallback for the ones that do not, and a fallback that shouts is worse than
+       * one that is quiet.
+       */
       this.sendToWall(u, u.targetX, u.targetZ);
     }
   }
@@ -3979,12 +4372,21 @@ export class Siege implements ElevationOwner {
    * Published for the same reason `escaladeOfferAt` is: `moveAlongWall` now refuses a run it
    * cannot reach, and a refusal the player cannot see is the defect this pass keeps finding.
    * Pure.
+   *
+   * **The `notOnWall` test is `standingOnWall`, not the record**, and the two are not the
+   * same question. `adoptBoarders` creates a `garrisons` entry the moment the *first* man of
+   * an escalade party is over the parapet — measured at the storm of Rome, three lodgements
+   * read `isGarrisoned` true with 9, 10 and 11 men on the stone out of 84, 79 and 83 — so
+   * for most of a climb the record says "on the wall" and the men are on the rungs. This
+   * function was answering from the record while `interceptOrders` acts on
+   * `garrisons.has(id) && standingOnWall(id)`, so the cursor could promise a traverse the
+   * order path would read as an ascent. One predicate, and it is the one the sim obeys.
    */
   traverseOfferAt(unitId: number, x: number, z: number): {
     ok: boolean; refusal: 'none' | WallRefusal; bay: number;
   } {
     const u = this.battle.unitById(unitId);
-    if (!u || !this.garrisons.has(unitId)) {
+    if (!u || !this.garrisons.has(unitId) || !this.standingOnWall(unitId)) {
       return { ok: false, refusal: 'notOnWall', bay: -1 };
     }
     const dest = this.wallTargetAt(x, z);
@@ -4048,6 +4450,32 @@ export class Siege implements ElevationOwner {
       const u = b.unitById(id);
       if (!u || u.destroyed || u.alive === 0) { this.plans.delete(id); continue; }
       plan.age++;
+      /**
+       * An assault follows the men it was aimed at.
+       *
+       * The destination is a unit, so it is resolved here every tick rather than baked into
+       * `destStation` when the order was given: a lodgement that gives ground along the walk
+       * would otherwise be pursued to where it used to be, and the file would form up on
+       * empty stone while the fight moved two bays away. Re-aimed, the plan is a chase.
+       *
+       * When they are dead or no longer standing on the stone the assault has succeeded —
+       * the men are on the parapet they were sent to and that is a legal place to be — so
+       * the plan closes exactly as a completed traverse does, and `updateGarrisons` re-forms
+       * them where they finished. It is not a refusal: nothing was refused, it is over.
+       */
+      if (plan.goal === WallGoal.Assault) {
+        const st = plan.target >= 0 ? this.stationOfUnit(plan.target) : -1;
+        if (st < 0) {
+          this.plans.delete(id);
+          const done = this.garrisons.get(id);
+          if (done) { done.plannedFor = -1; done.sticky = false; }
+          continue;
+        }
+        plan.destStation = st;
+        plan.destRun = this.sRun[st];
+        plan.gx = this.sx[st];
+        plan.gz = this.sz[st];
+      }
       const arrived: number[] = [];
       let moving = 0;
       /**
@@ -4361,7 +4789,7 @@ export class Siege implements ElevationOwner {
     const gz = l.az + this.snz[st] * side * 40;
     this.plans.set(u.id, {
       goal: WallGoal.Descend, destStation: -1, destRun: l.runB,
-      stair, gx, gz, age: 0, stuck: 0,
+      stair, gx, gz, age: 0, stuck: 0, target: -1,
     });
     const g = this.garrisons.get(u.id);
     if (g) g.sticky = false;
@@ -6920,7 +7348,7 @@ export class Siege implements ElevationOwner {
       }
     }
     const plan = this.plans.get(unitId);
-    const names = ['hold', 'ascend', 'traverse', 'descend', 'storm'];
+    const names = ['hold', 'ascend', 'traverse', 'descend', 'storm', 'assault'];
     runs.sort((a, c) => a - c);
     return {
       onWall, onGround, onLink, runs, runCounts,

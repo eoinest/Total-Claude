@@ -27,7 +27,7 @@
  *   node tools/judge/jg-wallcmd.mjs --port=5942 --map=carthage        # the player storms
  */
 import { argsOf, boot, ledger, shot, dump, ff, aim, hover, rightClick,
-  leftClick, ROOT } from './jg-lib.mjs';
+  leftClick, selectHard, ROOT } from './jg-lib.mjs';
 import path from 'node:path';
 
 const A = argsOf();
@@ -107,10 +107,15 @@ const HELPERS = () => {
       tgtView: tgtId >= 0 ? view(tgtId) : null,
       selUnit: selId >= 0 ? u(selId) : null,
       tgtUnit: tgtId >= 0 ? u(tgtId) : null,
+      /** What the pick is scoring against, so a wrong answer can be arithmetic and not a guess. */
+      mpp: t2(ctx0.rig.metresPerPixel(ctx0.viewH) * 7),
       sim: s ? {
         selGarrisoned: selId >= 0 ? s.isGarrisoned(selId) : null,
         selWall: selId >= 0 ? s.unitWallState(selId) : null,
         tgtWall: tgtId >= 0 ? s.unitWallState(tgtId) : null,
+        selFile: selId >= 0 && s.wallFileOf ? s.wallFileOf(selId) : 'no wallFileOf',
+        tgtFile: tgtId >= 0 && s.wallFileOf ? s.wallFileOf(tgtId) : 'no wallFileOf',
+        probeHasFileOf: !!(c && c.wallProbe && c.wallProbe.fileOf),
       } : null,
       events: window.__EV ? window.__EV.splice(0) : [],
     };
@@ -194,15 +199,20 @@ try {
     const rate = await answerRate(page, s.id);
     const plate = await page.evaluate((i) => window.__plate(i), s.id);
     const std = await page.evaluate((i) => window.__standard(i), s.id);
+    /*
+     * `standardOf` reports the *top of the staff*, which is `CLOTH_TOP` = 2.38 m above the
+     * anchor the standard is planted on. So a healthy reading is the men's feet plus about
+     * 2.4 m; anything below their feet means the staff is inside the masonry under them.
+     */
     const row = { id: s.id, f: s.f, type: s.t, onWall: s.onWall, onLink: s.onLink,
       menY: st.y, probes: rate.probes, answering: rate.answering,
       pct: rate.probes ? Math.round(rate.answering / rate.probes * 100) : 0,
-      plate, standard: std, standardDropM: std ? Math.round((st.y - std.y) * 10) / 10 : null };
+      plate, standard: std, staffTopAboveFeet: std ? Math.round((std.y - st.y) * 10) / 10 : null };
     survey.push(row);
     L.say(`  unit ${String(s.id).padStart(2)} f${s.f} ${s.t.padEnd(15)} men y${String(st.y).padStart(6)}`
       + `  pick ${String(rate.answering).padStart(2)}/${rate.probes} (${row.pct}%)`
       + `  plate ${plate.present ? (plate.off ? 'HIDDEN ' : 'shown  ') : 'ABSENT '}`
-      + `hit=${plate.hit}  standard ${std ? `y${std.y} (${row.standardDropM} m below the men)` : 'none'}`);
+      + `hit=${plate.hit}  staff top ${std ? `y${std.y} = ${row.staffTopAboveFeet} m above their feet` : 'none'}`);
   }
   const mineRows = survey.filter((s) => s.f === 0);
   const blind = mineRows.filter((s) => s.pct === 0);
@@ -212,10 +222,14 @@ try {
   L.ck('every unit on the wall has a banner the player can click',
     lostPlate.length === 0, '0 without a usable plaque',
     `${lostPlate.length}: ${JSON.stringify(lostPlate.map((b) => ({ id: b.id, off: b.plate.off, hit: b.plate.hit })))}`);
-  const sunk = survey.filter((s) => s.standardDropM !== null && s.standardDropM > 2);
+  const sunk = survey.filter((s) => s.staffTopAboveFeet !== null
+    && (s.staffTopAboveFeet < 0 || s.staffTopAboveFeet > 5));
   L.ck('every standard is planted with its own men, not in the ground under them',
-    sunk.length === 0, '0 sunk standards',
-    `${sunk.length}: ${JSON.stringify(sunk.map((b) => `${b.id}:${b.standardDropM}m`))}`);
+    sunk.length === 0, '0 staffs outside 0-5 m above the men\'s feet',
+    `${sunk.length}: ${JSON.stringify(sunk.map((b) => `${b.id}:${b.staffTopAboveFeet}m`))}`);
+  const pick = mineRows.map((s) => s.pct);
+  L.say(`  pick rate over my own men: ${JSON.stringify(pick)}  mean `
+    + `${Math.round(pick.reduce((a, b) => a + b, 0) / Math.max(1, pick.length))}%`);
 
   // ------------------------------------ 3. the pairing: mine on the wall, theirs on the wall
   L.say('\n=== 3. MINE ON THE WALL -> THEIRS ON THE WALL ===');
@@ -231,14 +245,12 @@ try {
   L.say(`mine ${me.id} at x${me.x} z${me.z} y${me.y}  ->  theirs ${tgt.id} at x${ts.x} z${ts.z} y${ts.y}`
     + `   ${me.d.toFixed(0)} m apart`);
 
-  // Select mine by the surest handle there is, then confirm from the model.
-  const mp = await aim(page, me.x, me.y + 1.0, me.z, { zoom: 0.55 });
-  const rate = await answerRate(page, me.id);
-  if (rate.first) await leftClick(page, rate.first);
-  else if (mp) await leftClick(page, mp);
-  let st0 = await page.evaluate(([a, b]) => window.__PROBE(a, b), [me.id, tgt.id]);
+  // Select mine the way a player does — men first, plaque if the men will not answer.
+  const grab = await selectHard(page, me.id, { zoom: 0.55 });
+  const st0 = await page.evaluate(([a, b]) => window.__PROBE(a, b), [me.id, tgt.id]);
   L.ck('the unit I am about to give an order to is selected', (st0.sel ?? []).includes(me.id),
-    `[${me.id}]`, JSON.stringify(st0.sel));
+    `[${me.id}]`, `${JSON.stringify(st0.sel)} after ${grab.clicks} click(s)`
+      + `${grab.viaPlate ? ' (via the plaque)' : ''}`);
 
   // Aim at their men on the stone and hold still: no fast-forward between here and the click.
   const tp = await aim(page, ts.x, ts.y + 1.0, ts.z, { zoom: 0.55 });
@@ -251,6 +263,9 @@ try {
       + ` sel=${JSON.stringify(st.sel)} overBanner=${st.overBanner} onWallCount=${st.onWallCount}`
       + ` traverseRefusal="${st.traverseRefusal}" hint="${st.hint}"`);
     L.say(`  my view ${JSON.stringify(st.selView)}   their view ${JSON.stringify(st.tgtView)}`);
+    L.say(`  slack=${st.mpp}  probeHasFileOf=${st.sim.probeHasFileOf}`);
+    L.say(`  my file    ${JSON.stringify(st.sim.selFile)}`);
+    L.say(`  their file ${JSON.stringify(st.sim.tgtFile)}`);
     L.ck('the cursor says something about an enemy standing on my own wall',
       st.cursor !== 'default' || st.hint !== '', 'attack / wall / refuse, or words', st.cursor);
     await shot(page, OUT, 'wc-hover-enemy');
@@ -281,6 +296,63 @@ try {
       'blood, or a refusal', `kills +${st3.selUnit.kills - before.kills}, `
         + `refusals ${st2.events.filter((e) => e.k === 'refused').length}`);
     await shot(page, OUT, 'wc-after-order');
+  }
+
+  /*
+   * ------------------------------------------------------- 4. AT A DISTANCE
+   *
+   * The pairing above is a melee already in progress: my men and theirs are interpenetrated
+   * on the same stations, both boxes contain the cursor, and whichever answers, the traverse
+   * that follows lands on the enemy anyway. That is not a test of the verb — it is a test of
+   * a fight that was going to happen.
+   *
+   * This is the verb. A cohort of mine standing on a *different run* from the lodgement,
+   * pointed at the lodgement's men. There are exactly two acceptable answers and the whole
+   * of requirement 3 is that one of them happens: the file walks the wall and fights, or the
+   * game says why it will not.
+   */
+  L.say('\n=== 4. AT A DISTANCE — a cohort on another run, sent at the lodgement ===');
+  const far = cands.filter((c) => c.d > 25).sort((a, bb) => a.d - bb.d)[0];
+  if (!far) {
+    L.say('  no unit of mine is more than 25 m from the lodgement; nothing to test here');
+  } else {
+    const g4 = await selectHard(page, far.id, { zoom: 0.55 });
+    void g4;
+    const sel4 = await page.evaluate(() => window.__sel());
+    L.ck(`unit ${far.id}, ${far.d.toFixed(0)} m along the wall, can be selected`,
+      (sel4 ?? []).includes(far.id), `[${far.id}]`, JSON.stringify(sel4));
+    const tp2 = await aim(page, ts.x, ts.y + 1.0, ts.z, { zoom: 0.55 });
+    if (tp2 && (sel4 ?? []).includes(far.id)) {
+      await hover(page, tp2);
+      const h4 = await page.evaluate(([a, bb]) => window.__PROBE(a, bb), [far.id, tgt.id]);
+      L.say(`  hover: cursor=${h4.cursor} hovered=${h4.hovered} hostile=${h4.hostile}`
+        + ` intent=${h4.intent} wallValid=${h4.wallValid}`);
+      L.ck('the cursor names the enemy on the wall from another run',
+        h4.hovered === tgt.id && (h4.cursor === 'attack' || h4.cursor === 'refuse'),
+        `hovered ${tgt.id}, cursor attack or refuse`, `hovered ${h4.hovered}, cursor ${h4.cursor}`);
+      const b4 = h4.selUnit;
+      await rightClick(page, tp2, { hold: 380 });
+      await page.waitForTimeout(250);
+      const e4 = await page.evaluate(([a, bb]) => window.__PROBE(a, bb), [far.id, tgt.id]);
+      const mine4 = e4.events.filter((ev) => ev.src !== 'ai');
+      L.say(`  what went out: ${JSON.stringify(mine4)}`);
+      L.say(`  wall state now: ${JSON.stringify(e4.sim.selWall)}`);
+      const refused = mine4.some((ev) => ev.k === 'refused');
+      L.ck('the order is taken as an assault along the wall, or refused out loud',
+        e4.sim.selWall.goal === 'assault' || refused,
+        'goal assault, or an orderRefused', `goal ${e4.sim.selWall.goal}, refusals ${refused}`);
+      await ff(page, 45);
+      const a4 = await page.evaluate(([a, bb]) => window.__PROBE(a, bb), [far.id, tgt.id]);
+      const closed = far.d - Math.hypot(a4.selUnit.x - ts.x, a4.selUnit.z - ts.z);
+      L.say(`  45 s later: closed ${closed.toFixed(0)} of ${far.d.toFixed(0)} m,`
+        + ` kills ${b4.kills}->${a4.selUnit.kills}, their alive ${e4.tgtUnit.alive}->${a4.tgtUnit.alive}`);
+      L.say(`  wall state: ${JSON.stringify(a4.sim.selWall)}`);
+      L.ck('an assault accepted at a distance actually closes on them',
+        refused || closed > Math.min(20, far.d * 0.4) || a4.selUnit.kills > b4.kills,
+        refused ? 'refused, so nothing to close' : `>${Math.min(20, far.d * 0.4).toFixed(0)} m or blood`,
+        `${closed.toFixed(0)} m, kills +${a4.selUnit.kills - b4.kills}`);
+      await shot(page, OUT, 'wc-assault-distance');
+    }
   }
 
   L.ck('no page errors', r.errs.length === 0, 0, r.errs.length);

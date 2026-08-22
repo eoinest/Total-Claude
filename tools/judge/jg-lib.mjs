@@ -335,10 +335,40 @@ export async function selectHard(page, id, { zoom = 0.55, yaw = 0, back = 0 } = 
       await page.mouse.move(x, y); await page.waitForTimeout(30);
       const h = await page.evaluate(() => window.__cur()); probes++;
       if (h.hovered === id) { answering++; if (!first) first = { x, y }; } } }
-  if (!first) return { ok: false, why: 'no pixel answers', clicks, probes, answering, box };
-  await leftClick(page, first); clicks++;
-  const s = await page.evaluate(() => window.__sel());
-  return { ok: s && s.length === 1 && s[0] === id, clicks, p: first, probes, answering, box, easy: false };
+  if (first) {
+    await leftClick(page, first); clicks++;
+    const s = await page.evaluate(() => window.__sel());
+    if (s && s.length === 1 && s[0] === id) {
+      return { ok: true, clicks, p: first, probes, answering, box, easy: false };
+    }
+  }
+  /*
+   * The plaque, which is what a player does when the men will not answer.
+   *
+   * `src/ui/Banners.ts` says so in its own header — *"the banner is the thing a player aims
+   * at to pick a unit out of a melee"* — and `SelectionController.pickUnit` tests it before
+   * the ground footprint. Without this the rig reported "would not select" for a unit that a
+   * player picks up first time, and worse: a *missed* click clears the selection
+   * (`clickSelect`, `if (id < 0) this.clear(ctx)`), so a grid probe that ends on a miss
+   * disarms the session it is measuring. Measured at the storm of Rome, that is exactly how
+   * a run reached `cursor=default hovered=N wallValid=false hint=""` with `sel=[]`.
+   */
+  const plate = await page.evaluate((i) => {
+    const b = document.querySelector(`.bnr[data-unit="${i}"]`);
+    if (!b || b.classList.contains('off')) return null;
+    const r = b.getBoundingClientRect();
+    return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+  }, id);
+  if (plate && plate.x > 2 && plate.x < 1598 && plate.y > 2 && plate.y < 898) {
+    await leftClick(page, plate); clicks++;
+    const s2 = await page.evaluate(() => window.__sel());
+    if (s2 && s2.length === 1 && s2[0] === id) {
+      return { ok: true, clicks, p: plate, probes, answering, box, easy: false, viaPlate: true };
+    }
+    return { ok: false, why: 'neither men nor plaque answered', clicks, probes, answering, box };
+  }
+  return { ok: false, why: first ? 'clicked and did not take' : 'no pixel answers',
+    clicks, probes, answering, box };
 }
 
 /** Has the battle ended? Uses the class the product actually renders. */
