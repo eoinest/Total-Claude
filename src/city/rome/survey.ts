@@ -351,7 +351,7 @@ export const ROME: readonly RomeMonument[] = [
     id: 'pantheon',
     name: 'Pantheon',
     e: -447, n: 678, len: 84, wid: 58, bearing: 176, axis: 'z',
-    draw: 0.704, // 84 x 58 m real -> 59 x 41 m drawn
+    draw: 0.484, // 84 x 58 m real -> 41 x 28 m drawn — see the size-order note below
     where: 'campus-martius', complex: 'campus-medius',
     cite: '41.8986 N 12.4769 E. Rotunda 58 m external / 43.3 m internal diameter, dome apex ' +
       '43.3 m; pronaos 33.1 × 15.5 m facing north, 3.7° west of true north (Hannah & Magli ' +
@@ -461,7 +461,7 @@ export const ROME: readonly RomeMonument[] = [
     id: 'porticus-octaviae',
     name: 'Porticus Octaviae',
     e: -319, n: 61, len: 132, wid: 119, bearing: 26.5,
-    draw: 0.532, // 132 x 119 m real -> 70 x 63 m drawn
+    draw: 0.462, // 132 x 119 m real -> 61 x 55 m drawn
     where: 'campus-martius', complex: 'octavia-marcellus',
     cite: '41.8928 N 12.4784 E, the double-temple precinct of Juno Regina and Jupiter Stator ' +
       'north of the Theatre of Marcellus. 132 × 119 m per the Severan Marble Plan. **Moved 121 m ' +
@@ -480,7 +480,7 @@ export const ROME: readonly RomeMonument[] = [
     id: 'theatre-marcellus',
     name: 'Theatre of Marcellus',
     e: -252, n: -91, len: 130, wid: 115, bearing: 204, axis: 'z',
-    draw: 0.339, // 130 x 115 m real -> 44 x 39 m drawn
+    draw: 0.407, // 130 x 115 m real -> 53 x 47 m drawn
     where: 'campus-martius', complex: 'octavia-marcellus',
     cite: '41.8918 N 12.4797 E. Cavea 111 m across, 32.6 m to the top of the attic, 41 arcade ' +
       'bays per storey, seated c. 15,000; dedicated 13 BC. The cavea opens SE onto its stage, ' +
@@ -522,7 +522,7 @@ export const ROME: readonly RomeMonument[] = [
     id: 'forum-romanum',
     name: 'Forum Romanum',
     e: 265, n: -2, len: 200, wid: 90, bearing: 117,
-    draw: 0.731, // 200 x 90 m real -> 146 x 66 m drawn
+    draw: 0.561, // 200 x 90 m real -> 112 x 50 m drawn
     where: 'forum-valley', complex: 'forum-valley',
     cite: '41.8925 N 12.4853 E. The open square runs NW–SE between the Capitoline and the ' +
       'Velia, c. 200 × 90 m from the Rostra to the Regia. Bearing from the axis of the ' +
@@ -714,8 +714,8 @@ export const ROME: readonly RomeMonument[] = [
     id: 'castra-praetoria',
     name: 'Castra Praetoria',
     e: 2113, n: 1484, len: 400, wid: 377, bearing: 340,
-    draw: 0.190, // 400 x 377 m real -> 76 x 72 m drawn
-    drawMax: 0.190,
+    draw: 0.326, // 400 x 377 m real -> 130 x 123 m drawn
+    drawMax: 0.326,
     where: 'viminal', atWall: 0.02, offMapEast: true,
     cite: '41.9057 N 12.5057 E. 440 × 380 m brick-faced camp of AD 23; Aurelian took its own ' +
       'north and east walls into the circuit, which is why the curtain runs into it. ' +
@@ -749,13 +749,31 @@ export const ROME: readonly RomeMonument[] = [
       'Two hundred metres of barracks therefore stood on the ATTACKERS\' side of the ' +
       'curtain, and `probe-fabric` G6 and G7 saw it the moment `confine` was deleted — ' +
       'because `confine` had been hiding it, clamping the camp from z 733 to z 975 at every ' +
-      'boot, six hundred real metres south of its own surveyed position, silently. 0.228 is ' +
-      '`(centre z 733.5 - wall z 666.7) / 278.6 m of half-depth per unit`, and it draws a ' +
-      '91 x 86 m camp. That is small for a 437 m fortress and it is the honest number: the ' +
-      'alternatives are a fortress standing outside the city it defends, or the six-hundred-' +
-      'metre lie the resolver used to tell. **This is the sharpest measurement of what ' +
-      '`KZ` = 0.35 costs after the Colosseum\'s** — see ROME-FABRIC.md 8.5a for the same ' +
-      'trade and the same three remedies.',
+      'boot, six hundred real metres south of its own surveyed position, silently. ' +
+      '**Phase 3 corrects that arithmetic and then makes it unnecessary.** The number this row ' +
+      'used to carry was 0.190 under a paragraph deriving 0.228, and both were wrong in the ' +
+      'same way: `(733.5 - 666.7) / 278.6` mixes a centre z the built map does not use (it is ' +
+      '**726.096**) with the PRECINCT-inflated half-depth, and it measures the box\'s north face ' +
+      'at the centre\'s own x when the rotated box\'s northernmost corner sits 17 m further east, ' +
+      'where the crest is 4 m further south. Re-derived on the true oriented outline, the ' +
+      'ceiling with the centre pinned is **0.1997** — so 0.190 was right to three per cent and ' +
+      'the reasoning printed for it was not. ' +
+      '**What changes the answer is not the arithmetic but the anchor.** A ground judge put it ' +
+      'exactly right: this is a frame problem stated as a footprint problem. The camp\'s north ' +
+      'wall IS the curtain — that is the archaeology this cite spends a paragraph establishing ' +
+      'from three plate corners — while the centre is a derived midpoint. So `atWall`, declared ' +
+      'and documented and never read by anything for two phases, is now implemented in ' +
+      '`layout.ts:place`: the row is placed by its north edge and the centre follows, 25 m south ' +
+      'of the projection. Measured ceilings at that anchor: **0.326** keeping the footprint west ' +
+      'of the camp\'s own surveyed east return, 0.674 keeping it on the heightfield (which ' +
+      '`offMapEast` licenses, and which the east return does not yet contest — `circuit.ts` ' +
+      'builds only the west one), 1.301 against `CITY_Z_MAX`. This row ships the conservative ' +
+      'one: **130 x 123 m, 1.7x the old footprint in both axes.** It is still not a 437 m ' +
+      'fortress, and it is no longer smaller than the stretch of curtain in front of it, which ' +
+      'is what the judge measured and what made it read as a walled farmyard. ' +
+      'The 25 m shift is a declared placement override and `assertRomeFrame` check 5 prints it ' +
+      'by name at every boot rather than excluding it — MAP-METHOD.md rule 16, learnt from the ' +
+      'Janiculum. See ROME-FABRIC.md 9.2.',
   },
   {
     id: 'gardens-sallust',
