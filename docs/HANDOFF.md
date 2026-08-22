@@ -85,7 +85,16 @@ Carthage run reporting 8,632 measured something else.
   twelve-man scorpio battery at z 262.5 sits at mask 0.024 against a 0.02 threshold.
 - **The Rome balance shift** — defenders gained roughly a cohort as a side effect of walls that
   now work.
-- The host storm order, the great wall-breaking ram, and the trailer's `rome-arch` beat.
+- The host storm order, and the trailer's `rome-arch` beat. *(The great wall-breaking ram was
+  asked for explicitly on 21 Aug and is built — see the session note. The host storm order it
+  wants is still reserved: nothing in `src/ai/` sends a warband at a breach or through an open
+  gate.)*
+- **Rome's assault ends at t+56–59 for a reason that has nothing to do with the siege.**
+  `stormInside >= 60` is satisfied by men who walk over the unbuilt neck and by fifty horse
+  standing 98 m past the west end of the circuit, where `censusWall` clamps them onto bay 0's
+  midline and calls them inside the city. Measured, named and deliberately not touched — half of
+  it is a `BattleFlow` census bug and half is a decision about what the unbuilt neck is *for*.
+  Until it is settled, every ram and tower figure on this map is read out of a decided battle.
 
 ### Queued, unassigned
 
@@ -179,11 +188,16 @@ Everything below came from the player. Items not listed here are done and commit
   or dead, so a carcass costs nothing.** `tools/probe-elefield.mjs`; frames in
   `screenshots/elephant-death/`.
 - soldiers use stairs, move laterally along the wall, descend into the city — siege
-- much larger wall-breaking ram — siege. **The machine is built** (`spawnGreatRam`,
-  `strikeCurtain`, 74 blows at 7 s, breach lanes) and **no scenario fields one**, so
-  `breachReport().lanes` is 0 on both maps and the route is unreachable in play. It is
-  orderable the moment one is deployed: `resolveMachineOrder` gives it the same right-click
-  the tower has, at a stretch of curtain rather than a gate.
+- ~~much larger wall-breaking ram~~ — **done, uncommitted on `e/sim/rams`.** The Juthungi
+  field one. `great-ram-crew` (48 men, the crew the shed can cover), `StormPlan.greatRam`
+  optional, `siegeJuthungi` at twenty units still by trading a squadron of horse for it,
+  `deployAssault` calling `spawnGreatRam` at the first `holdable` bay outward from the gate —
+  bay 5, the Muro Torto's west end, 134 m along the curtain — and `CitySystem.breachWall`
+  implemented at last. `WALL_BLOWS` 74 → **44**, timed rather than chosen: the breach lands at
+  **t+420** on six seeds against the gate's t+220. `breachReport().lanes` 0 → **5**, and men
+  ordered at it through `orderIssued` come out inside the city. **Still drawn standing over the
+  hole** — the geometry is a `curtainSpans` + chunk-re-bake job for the city workstream.
+  Carthage keeps no great ram on purpose, so its determinism arm stays a control.
 - ~~tower drawbridge backwards (ropes forward, door opens backwards)~~ — **does not
   reproduce**, and the measurement is signed: drawn reach **+1.940 m** off the InstancedMesh
   matrix (hinge 4.38, head 2.44). Do not "fix" it without a signed measurement saying it is
@@ -2209,3 +2223,281 @@ trees. The fix is `hz` 120 → about 150, and it was left because this decision 
 because at 150 the south edge comes within 17 m of the quarry at (724, 328), and because z 270 is
 already within 5 m of the Pincian's toe at x 800. `riseToeZ`'s own comment still claims the box
 "reaches z 255", which it has not for two passes.
+
+## Session — the two rams, 21 Aug 2026
+
+Branch `e/sim/rams`. Six source files, two tools: `sim/scenario.ts`, `sim/battleConfig.ts`,
+`sim/Siege.ts`, `units/siegeUnits.ts`, `city/CitySystem.ts`, `ui/siege.ts` and one widened type
+in `ui/SiegeOrders.ts`; `tools/probe-siege.mjs` and `tools/determinism-baseline.json`.
+
+**Two trees appear in the numbers below and the distinction is load-bearing.** The diagnosis
+was taken at `5338249`; §15 task 14 then widened both deployment boxes and moved
+`battleCoreMask` onto the deployment axis, which moves the ground the storm crosses, so every
+headline number was re-taken after merging `15e209f`. Where a figure is quoted at `5338249` it
+is a *diagnosis* — what was wrong and why — and where it is quoted on the merged tree it is a
+*result*. They agree on every conclusion; only the third decimal of the incidental figures
+moved.
+
+### Part 1: the light ram's defect had inverted, and the new one is worse
+
+The brief was *"the ram lands 0 blows in 12 of 12 runs, and it is tier-dependent — dead at
+(68, 514) at `ultra`, 26 blows at `medium`"*. **Neither half reproduces at `5338249`.** Measured
+at the tier the game ships at (`DEFAULT_CONFIG` is `quality: 'ultra'`, `difficulty: 'hard'`),
+`tools/scratch/rm-tier-emc.mjs`:
+
+| | blows | gate opens | crew | damage to the crew |
+|---|---|---|---|---|
+| `5338249`, ultra, 8 seeds | 26/26 ×8 | t+220 ×8 | **32/32** | **0 points, from anybody** |
+| `5338249`, medium, 2 seeds | 26/26 | t+220 | 31/31 | 0 |
+
+**The tier is not a mechanism and never was.** `SimQuality` has one member and its only route
+into this battle is `fittedUnitScale`, which is 1.0000 at ultra/high and 0.9785 at medium — a
+2 % shave that takes a 108-man unit to 106. That is enough to land a *marginal* battle
+differently, and the distribution recorded at `cc72ea6` was 0, 3, 3, 9, 19, 20, 21, 22, 23, 23,
+25, 26. One draw each side of a spread that wide is a coin, not a chain.
+
+**What made the ram invincible is one integer, and §15 task 3 turned it into a defect.**
+`deployAssault` fanned the garrison out with `fanOut(total, 1, holdable)` — start one bay out —
+which was right for as long as a gate bay could not be garrisoned. The redesigned circuit made
+Rome's gate bay ordinary garrisonable curtain *on purpose* (`circuit.ts`: *"the curtain either
+side of a gatehouse is ordinary curtain a rank can stand on"*) and put the Porta Flaminia at
+bay 1, with bays 0, 2, 3 and 4 `footing`/`gap`/`footing` per §4.8. So `holdable` rejected
+offsets −1, +1, +2 and +3, offset **0** was never offered at all, and the first ballistarii unit
+landed on bay 5. **Nearest defender to the Porta Flaminia: 134 m. Defenders within 130 m of the
+gate the ram attacks: none.** `tools/scratch/rm-recon-emc.mjs`; `rm-bays-emc.mjs` prints the bay
+census it follows from — bay 1 carries 19 stations, bays 0, 2, 3 and 4 carry zero.
+
+Fixed by starting the fan at 0, and by making offset 0 one bay rather than two (`-1 * 0` and
+`1 * 0` name the same bay and pushing both would stack two units on the gate's own curtain).
+After it, at ultra over eight seeds:
+
+- `ballistarii#0` garrisons the gate bay's own 19-station run, **65 m** from the ram's start;
+- the crew takes **1,012–2,916** points and ends at 30, 11, 30, 31, 30, 30, 15, 16 of 32;
+- **26 of 26 blows and the gate open at t+220 on 8 of 8** — and `withdrawing` → `spent` intact,
+  17.4 m clear, which was the thing not to break;
+- and the same on the merged tree after §15 task 14 moved the ground: **26 of 26 and t+220 on
+  3 of 3**, with the crew now taking fire from four units instead of none
+  (`ballistarii#1` 2,341–2,608 the heaviest, because the great ram is parked under its bay).
+  Eleven seeds across two trees, no variance in either the blow count or the hour;
+- Carthage is byte-identical: `carthageWall.ts` sets `garrisonable: !bay.isGate`, so
+  `holdable(0)` is false there and the picked-bay list does not move.
+
+**`RAM_SHED_COVER` is now measuring something on Rome for the first time.** At 0.12 the gang
+absorbs 1,012–2,916 points of ballista fire; the same fire at 1.0 is 8,400–24,300 against
+thirty-two men, which is the original finding's *4,846 points in forty seconds* several times
+over. The shed was always the right fix and it has never before been under load on this map.
+
+### The thing that matters more than either ram, and it is nobody's
+
+**Rome's assault is decided at t+56–59 in every run** — before the ram reaches the gate, before
+a ladder is climbed, with `stormHolding` at **0** and `garrisonOnWall` at 779 of 810. It is not
+this pass's doing: the same verdict at the same second appears on an unmodified `5338249`.
+`BattleFlow` ends a storm at `stormInside >= 60`. `tools/scratch/rm-inside-emc.mjs` names them:
+
+```
+t+ 50  onWall 54 holding 0 garrison 801  INSIDE 26
+       juthungi-riders#31@(115,560) 29
+t+ 60  onWall 92 holding 0 garrison 779  INSIDE 86  1/objective@58
+       juthungi-warband#28@(181,549) 46   juthungi-warband#29@(181,547) 29
+       juthungi-riders#30@(-98,580) 50    juthungi-riders#31@(111,558) 21
+```
+
+Two mechanisms wanting two different answers:
+
+- **50 of the 86 are 98 m off the west end of the circuit**, where the Tiber is and there is no
+  masonry at all. `BattleFlow.censusWall` clamps a man's bay index to the ends of the bay list,
+  so a unit past the terminus is measured against bay 0's midline and reads as *inside Rome*.
+  That is a bug in the census and it is cheap to fix.
+- the rest walk over the `footing` and `gap` bays, which §4.8 built on purpose and which
+  `BattleFlow` is right to count.
+
+Left alone deliberately — the first is `BattleFlow`'s, the second is a scenario-design decision
+about what the unbuilt neck is *for*, and Rome's balance is reserved. **But every ram figure
+anybody has ever quoted for this map, including this pass's, is read out of a battle `finish()`
+has already ended.** They are properties of the machine, not of the battle, and nothing about
+the machines will feel right until this is settled.
+
+### Part 2: the great ram is fielded
+
+Four seams named in the record, all four shut, plus a fifth nobody had named.
+
+1. **`great-ram-crew`**, Faction.Germanic, **48 men** — the machine's own layout read back, as
+   `ram-crew`'s 32 is: `musterRams` puts a great ram's gang six abreast, and the last row still
+   inside `GREAT_RAM_HALF_D + SHED_COVER_REACH` = 10.40 m is row 7 at 9.60. Eight rows of six.
+   Every other stat is `ram-crew`'s unchanged, on purpose — a bigger machine worked by the same
+   gang, not better soldiers.
+2. **`StormPlan.greatRam`, optional**, and `siegeJuthungi` pays for it **out of the horse**:
+   `'juthungi-riders': 2 → 1`, `'great-ram-crew': 1`. Still exactly `MAX_UNITS_PER_SIDE`. The
+   horse is what `STORM_PLANS.horse`'s own comment calls *"nothing to do until a gate opens"*,
+   and on the shipped assault that is literal — no cavalry unit is ever ordered at the wall, and
+   one of the two squadrons spends the battle 98 m off the end of the circuit (above). Headcount
+   3,074 → **3,072**. Weighed and rejected: a warband is 180 men and the only reserve the storm
+   has; an `escalade-party` is three ladders and a bay of frontage; an `onager` battery is the
+   artillery workstream's. **Scipio's train is deliberately not given one**, which is what keeps
+   the Carthage assault a clean determinism control.
+3. **`deployAssault` calls `spawnGreatRam`** — its first caller in `src/` — at the first
+   `holdable` bay working outward from the gate, 62 m out on that bay's normal. On Rome that is
+   bay 5, the west end of the Muro Torto, 134 m along the curtain from the gate, because §4.8's
+   four unbuilt bays have no masonry to break and no stations to aim at.
+4. **`CitySystem.breachWall`** — records the hole, clears the occupancy raster across the curtain
+   on the bay's own outward normal, re-cuts the oriented boxes. `pushWallBox` now punches out
+   **every** hole crossing a run instead of the first one it finds, because a bay can carry a
+   gate *and* a breach and Rome's gate bay is one; with one gate and no breaches it emits the
+   same two boxes it always did.
+5. **The fifth seam: `stormBreach` was unreachable through the order path.** `wallTargetAt`
+   refuses a dead station and every station over a breach is dead, so a right-click on the
+   rubble read as *"not the parapet"* and `interceptOrders` dropped it in exactly the silence
+   that branch was written to end. `findEscalade` now answers `kind: 'breach'` within
+   `ESCALADE_REACH` of a breach station — **ahead of towers and ladders**, because eight metres
+   of storming front outranks one man at a time on a rung — `escalade` routes it to
+   `stormBreach` with a rally point 30 m inside the curtain, and `Siege.breachAt(x, z)` is the
+   published loose test the order path and the cursor both read.
+
+6. **The sixth seam, which the fifth exposed: a second breach destroyed the first one.**
+   `buildLinks` opens with `this.links = []` and a breach appends its lanes to that array, so
+   the second bay to fall wiped the first bay’s five lanes and left `breachLinks` naming stairs
+   and tower passes. `probe-siege` spawns a great ram alongside the one the scenario now
+   deploys, and with two breaches it reported *“-18 men climbed the rubble … across 10 lanes”*
+   and a waiting man **190 m** from a lane mouth. Lane construction is now
+   `cutBreachLanes(station)`, re-run for every entry in `breachStations` after each collapse,
+   with the crossings already made banked into `breachThroughBase` before `buildLinks` can
+   destroy the counters. Reachable only because a scenario finally fields one — which is the
+   argument for fielding things.
+
+### `WALL_BLOWS` 74 → 44, timed rather than chosen
+
+74 was picked before anything fielded one, so it could not be timed. It can now: the machine
+starts 62 m out, which is 97 s of rolling, so the breach lands at `97 + blows × 7`.
+
+| blows | breach at | what the battle looks like there |
+|---|---|---|
+| 74 | **t+620** ×2 seeds | the gate has been open 400 s; three units ordered through the hole the second it opened put **6 and 0** men inside before an 800 s window ran out |
+| 44 | **t+420** on 6 of 6 seeds, 3 before the box widening and 3 after | gate at t+220, wall 200 s later — two ways in, in one battle, far enough apart to be two events |
+
+A breach nobody can reach is the same as no breach, which is the defect this pass exists to
+close, so the number is sized against the machine finishing inside a battle. 44 is still
+5 min 08 s of battering against the gate ram's 1 min 54 s — the wall is plainly 2.7× the job the
+door is, which is the relationship worth having — and it leaves five minutes for a defender's
+fire or sally if one is ever built. **What would move it back up:** the host storm order.
+Nothing in `src/ai/` sends a warband at a breach or through an open gate, so the men who should
+be waiting at the hole are 132 m out on Hold. The day they are there, a late breach stops
+costing anything. Re-time it then; do not re-guess it.
+
+### What a breach looks like as a route
+
+`breachReport()` goes from `lanes: 0` on both maps to **5 lanes across one bay**, `sDead` set
+over ±4.5 m, the garrison on that stretch rehoused rather than killed, the occupancy raster
+open and the oriented boxes split either side of the hole. Men are ordered through it by
+`events.emit('orderIssued', …)` — the same event the player's right-click and `ai/Orders.ts`
+both fire, deliberately not `stormBreach` itself, because a probe that calls the verb it is
+asserting about can never fail.
+
+**The number is the whole argument for the machine.** The two nearest foot units on the field
+side, ordered at the hole the second it opened, put **412, 197 and 312 men** inside the curtain
+on three seeds of three on the merged tree at the shipped tier. For comparison `probe-siege`'s own gate assertion — four units ordered into the city through
+the carriageway the light ram opened, nearest 44 m away — measures *"2 at the moment of the
+breach, peak 3"*. A gate is 4.3 m of carriageway with a gatehouse round it and a killing ground
+behind it; a breach is 8 m of front with nothing behind it but the city. That is what "wider
+than a gate" buys, and it is a number now rather than a sentence. Before §15 task 14 widened
+the boxes the same order put 186 and 156 men through — the host now starts on prepared ground
+and closer in, so more of it arrives.
+
+**Not done, and visual only: the curtain is still drawn standing over the hole.** A bay's
+masonry is baked into one of five `wall-N` chunks at load and nothing can re-bake one. The seam
+is `rome/apertures.ts curtainSpans`, already the single place that decides where curtain is
+*not* laid: give it the breach list and re-bake the affected chunk. That is a city-workstream
+change and it is written down rather than half-done.
+
+### `probe-siege`: 42/48 on this tree against 41/48 on the control
+
+Two of its aiming rules were written when the Porta Flaminia was bay 19 of 33 and every
+neighbour was finished curtain. On the redesigned circuit the gate is bay **1** of 36 and both
+rules walk off the end of the wall:
+
+- the great-ram search ran `gi - 6` down to `0`, so it started at -5, never ran, and reported
+  *"no garrisonable bay clear of the gate"* — **six assertions were not failing, they were not
+  being taken**, since `0372fc2`;
+- the ascent test aimed at `bays[gi + 3]`, which is bay **4**, one of §4.8's bare `footing`
+  bays: no walkway, no stations, `wallTargetAt` correctly -1. That is why *"a click on the
+  parapet resolves to a wall station"* has been red for two passes — the probe was clicking on
+  a construction site — and the assertions downstream of it were measuring whatever
+  `stationNear` returned for a point with no masonry under it.
+
+Both now fan outward in both directions to a bay that can carry men, which is also the rule
+`deployAssault` uses. Measured like-for-like with the same probe against `15e209f` served
+alongside on another port:
+
+| | this tree | `15e209f` control |
+|---|---|---|
+| total | **42/48** | 41/48 |
+| a click on the parapet resolves to a wall station | PASS | PASS *(red on both before the aim fix)* |
+| a great ram can be sent against a curtain bay | PASS | PASS *(not taken at all before the aim fix)* |
+| nobody teleports or is flung while using a stair | PASS | FAIL |
+| a run that is already occupied is shared, not overwritten | PASS | FAIL |
+| men can actually get through the gate the ram opened | **FAIL** | PASS |
+| a breach is a way into the city | FAIL, closest man **7.09 m** from a lane mouth | FAIL, closest man **59.20 m** |
+
+**The gate assertion is red because the fix worked.** It orders the four nearest free attacking
+units at the carriageway and counts who walks in. On the control the nearest is **14 m** from
+the gate and strolls through, because nothing defends it. On this tree the nearest is **63 m**
+and the ground between is a fight: the Porta Flaminia has 108 ballistarii over it now. The
+gate's own mechanical assertions still pass — *"the ram breaks the gate open and the passage
+clears"* with `blocksMovement` false, *"no ram is left standing in the passage it opened"*,
+*"no crew is pinned to a machine it has broken from"*. What changed is that walking in
+unopposed is no longer a thing that happens, which is the point of the pass. The assertion is
+worth restating as "can a unit **fight** its way in", and that is a probe decision rather than
+this branch's to make silently.
+
+**The breach assertion is red on both, and much less red here.** Its men now queue **7.09 m**
+from a lane mouth against 59.20 on the control — they reach the hole instead of never
+approaching it — and admission is 2 m, so it is one shuffle short inside its own budget. The
+mechanic itself is demonstrated by the instrument that goes through the player's order path
+instead of calling `stormBreach` directly: **412, 197 and 312 men inside the curtain on three
+seeds of three.** `probe-siege` spends its budget on a battle already advanced through eleven
+other tests with two great rams and two breaches in it.
+
+### Determinism
+
+Three arms, all quoted so the `&` cannot background the shell, on the final merged tree.
+**§15 task 14 re-recorded `default` (all seven) and the Rome assault (t+90 onward; t+0 and t+30
+were unchanged at 3,074, because the box widening moves the ground and not the start line).
+This pass moves Rome again, from t+0, because the deployment itself changes.**
+
+- `node tools/qa-determinism.mjs` — **UNCHANGED** at all seven checkpoints, **8,632**.
+- `node tools/qa-determinism.mjs --battle="map=carthage&scenario=assault"` — **UNCHANGED** at
+  all seven, **3,440**.
+- `node tools/qa-determinism.mjs --battle="map=campus-martius&scenario=assault"` — **DRIFTED at
+  all seven, deliberately, and re-recorded in the same commit.** A and B were identical at every
+  checkpoint before the re-record, so the new battle is reproducible; only the pin moved.
+
+**The Rome headcount tell is now 3,072, not 3,074.** One squadron of horse (50) out, one great
+ram crew (48) in. Anyone checking they measured the right map should expect 8,632 / **3,072** /
+3,440 from here on. Two things moved this arm and both were meant to: the garrison now holds the
+gate bay, and the storm fields a nineteenth unit and a twentieth machine.
+
+### Traps this session paid for
+
+- **A dev server serves a stale module after a whole directory is replaced.** The measurement
+  arms here are `cp -R src` snapshots on their own ports; replacing `src` wholesale (`rm -rf`
+  then `cp`) loses Vite's watcher, and a 44-blow tree reported a breach at t+620 with `bayBlows`
+  74. Restart the server after a bulk copy and **verify through the wire** —
+  `curl .../src/sim/Siege.ts | grep 'WALL_BLOWS = 44'` — not off the file on disk.
+- **Do not edit `src/` while a measurement is running.** HMR is off but each page load still
+  gets fresh transforms, so seed 5 of an eight-seed sweep silently measures a different tree
+  than seed 4. An eight-seed baseline was lost to this mid-run. Snapshot, serve, then edit.
+- **A damage ledger that reports "nobody" needs a control outside itself.** `rm-tier-emc`
+  attributed zero points to the ram crew and that *was* the finding — but the same wrap counting
+  *every* victim reports 106,336 points in 5,291 events, which is what makes the zero a
+  measurement rather than a broken instrument.
+- **A damage ledger keyed on "the ram crews" silently gained a second machine.**
+  `rm-tier-emc` builds its victim set from `ramReport()`, so the moment the scenario fielded a
+  great ram the ledger began pooling two crews 134 m apart and the *gate* crew’s attribution
+  stopped being separable from the great ram’s. The clean measure of the shed is
+  `ramReport()[gate].crewAlive`, which is per-machine; the pooled points are still the right
+  number for “how much fire the roofs absorbed”, but they are not the number the gate ram’s
+  entry in the table describes. Labelled rather than re-run.
+- **"The three nearest free units" is not the population an order is about.** Ordering men
+  through the breach picked, on two seeds of three, units that were *already inside the city*
+  through the unbuilt bays — `interceptOrders` branches on `sideOf` first and gives them the
+  defenders' stairs — and on the third, two onager batteries, which `mayClimb` refuses by
+  `unitClass`. Both refusals are correct and both read as "the breach does not work".

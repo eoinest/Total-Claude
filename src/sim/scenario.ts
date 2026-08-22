@@ -272,6 +272,8 @@ const SLINGER_NAMES = [
 ];
 /** A ram is a named beast. *Widder* is the Germanic word the Romans wrote down. */
 const RAM_NAMES = ['The Widder', 'The Boar', 'The Ash-Head'];
+/** And the great one is named for what it is for, which is not a door. */
+const GREAT_RAM_NAMES = ['The Wall-Biter', 'The Old Oak'];
 
 /** `names[k]`, falling back to a numbered variant once the hand-written list runs out. */
 const nameAt = (names: readonly string[], k: number, stem: string): string =>
@@ -299,6 +301,7 @@ const SIEGE_NAMES: Record<string, { list: readonly string[]; stem: string }> = {
   'tower-assault': { list: [], stem: 'Tower Party' },
   'escalade-party': { list: [], stem: 'Ladder Party' },
   'ram-crew': { list: RAM_NAMES, stem: 'Ram' },
+  'great-ram-crew': { list: GREAT_RAM_NAMES, stem: 'Great Ram' },
   onager: { list: [], stem: 'Onager Battery' },
   'juthungi-warband': { list: BAND_NAMES, stem: 'Warband' },
   'juthungi-riders': { list: RAIDER_NAMES, stem: 'Raiders' },
@@ -1031,11 +1034,15 @@ function deployAssault(
    * set of bays occupied at the default composition is unchanged, and so is the intent —
    * ballistarii on the finished curtain near the gate, slingers on the unfinished stretch
    * beyond. `scenario.ts` already carries the same note about the equites.
+   *
+   * **`from` may now be 0, and offset 0 is one bay rather than two.** `-1 * 0` and `1 * 0`
+   * are the same bay, and pushing both would put two units on top of each other on the
+   * gate's own curtain. See the garrison block for why anybody wants offset 0 at all.
    */
   const fanOut = (count: number, from: number, ok: (k: number) => boolean): number[] => {
     const picked: number[] = [];
     for (let d = from; d < from + bays.length && picked.length < count; d++) {
-      for (const s of [-1, 1]) {
+      for (const s of d === 0 ? [1] : [-1, 1]) {
         if (picked.length >= count) break;
         if (ok(s * d)) picked.push(s * d);
       }
@@ -1051,10 +1058,36 @@ function deployAssault(
   // left, which is the unfinished stretch where there is no parapet to shoot from — a sling
   // does not need one. At Carthage the levy holds the walk and the freedmen stand behind
   // them. `GarrisonPlan.wall`'s order is what decides that, so it is deployment order.
+  /**
+   * **From offset 0, which is the gate bay, and this line is the whole of Rome's undefended
+   * gate.**
+   *
+   * It was `fanOut(total, 1, holdable)` — start one bay out — and that was right for as long
+   * as a gate bay could not be garrisoned. Carthage's still cannot (`carthageWall.ts` sets
+   * `garrisonable: !bay.isGate`), so its deployment is unchanged to the bit. Rome's changed
+   * under it: the redesigned circuit made the gate bay ordinary garrisonable curtain on
+   * purpose — see `circuit.ts`, *"the curtain either side of a gatehouse is ordinary curtain
+   * a rank can stand on"* — and put the Porta Flaminia at bay **1**, with bays 0, 2, 3 and 4
+   * `footing`/`gap`/`footing` because §4.8's archaeology says the Campus Martius neck is the
+   * one stretch Aurelian had to build from nothing.
+   *
+   * So `holdable` rejected every offset from -1 to +3 and the first unit of the garrison
+   * landed on bay 5, and the wall the assault actually attacks was empty. Measured at
+   * `5338249` at the shipped tier: the nearest garrison unit to the ram is **134 m** away,
+   * the gate crew takes **zero** damage from anyone on the wall, and the machine lands
+   * **26 of 26** blows and opens the Porta Flaminia at t+220 on every seed of eight at both
+   * `ultra` and `medium`. A gate defended by nobody is not a difficulty setting.
+   *
+   * Offset 0 is the gate bay's own curtain — 19 stations of it west of the block, which
+   * `buildSpine`'s gate-block clip leaves standing and `recut` severs into its own run — and
+   * one ballistarii unit on it is the garrison the *testudo arietaria*'s roof exists to be
+   * shot at by. It moves no unit strength, count or damage value: the same five units of
+   * ballistarii and three of slingers deploy, one bay nearer the gate apiece.
+   */
   {
     let total = 0;
     for (const type of garrison.wall) total += n(garrisonComp, type);
-    const bayFor = fanOut(total, 1, holdable);
+    const bayFor = fanOut(total, 0, holdable);
     let next = 0;
     for (const type of garrison.wall) {
       for (let i = 0; i < n(garrisonComp, type); i++) {
@@ -1143,6 +1176,49 @@ function deployAssault(
     if (id < 0) continue;
     siege.spawnRam(gx, gz, id);
     push(storming, id, siegeNameFor(storm.ram, i));
+  }
+
+  /**
+   * The great ram, at the curtain rather than at the gate — and this is `spawnGreatRam`'s
+   * first caller in `src/`.
+   *
+   * The machine, `RamKind.Great`, `strikeCurtain`, `breachBay`, `stormBreach` and the
+   * geometry have all existed since the siege pass and no scenario had ever fielded one, so
+   * `Siege.breachReport().lanes` was 0 on both circuits and the whole breach route was
+   * unreachable in play. Four things were missing and this is the third of them.
+   *
+   * **Which bay.** The nearest one a man could stand on, working outward from the gate —
+   * `holdable`, the same predicate the garrison and the ladders use. Two reasons, and
+   * neither is "next to the gate looks good". A `footing` or a `gap` bay has no masonry to
+   * break and no stations, so `spawnGreatRam` would refuse it (`stationNear` answers about
+   * the spine, and the spine skips a bay that cannot carry men); and the point of the
+   * machine, per `Siege.spawnGreatRam`, is to *refuse* the gate's killing ground and open a
+   * way of your own — which is worth most where the defence is thickest. On Rome that
+   * resolves to bay 5, the west end of the Muro Torto, 134 m along the curtain from the
+   * Porta Flaminia and the first bay the garrison holds. On a circuit whose gate bay's
+   * neighbours are ordinary curtain it resolves to the bay next door, which is the same
+   * rule meaning the same thing.
+   *
+   * `from` is **1**, not 0, and unlike the garrison it must stay there: offset 0 is the gate
+   * bay, the light ram is already beating on the gate in the middle of it, and two machines
+   * squared up to one bay is both a berth conflict and the exact thing this machine exists
+   * not to do.
+   *
+   * **Where it starts.** 62 m out on the bay's own normal, which is where the gate ram
+   * starts. At `RAM_SPEED` that is about a hundred seconds of rolling before the first blow,
+   * so both machines come into action at the same moment and the player has one thing to
+   * watch rather than two.
+   */
+  if (storm.greatRam) {
+    const type = storm.greatRam;
+    for (const [i, k] of fanOut(n(stormComp, type), 1, holdable).entries()) {
+      const m = mid(k);
+      const [sx, sz] = out(k, 62 + i * 20);
+      const id = battle.spawnUnit(type, sx, sz, Math.atan2(-m.nx, -m.nz), 'line');
+      if (id < 0) continue;
+      siege.spawnGreatRam(sx, sz, m.x, m.z, id);
+      push(storming, id, siegeNameFor(type, i));
+    }
   }
 
   // Batteries standing off at 196 m, shooting at the parapet. Spread along the wall rather
