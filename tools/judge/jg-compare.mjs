@@ -69,13 +69,34 @@ for (const t of [200, 400]) {
   console.log(`t+${t}  (still being fought in ${nLive} of ${pairs.length} seeds${nLive < pairs.length ? ' — the rest were already decided, so this checkpoint is measuring an emptying field' : ''})`);
   console.log(`  before  mean ${mb.toFixed(0)}  sd ${sb.toFixed(1)}  range ${Math.min(...vb)}-${Math.max(...vb)}  spread ${(100 * (Math.max(...vb) - Math.min(...vb)) / mb).toFixed(1)}% of mean`);
   console.log(`  after   mean ${ma.toFixed(0)}  sd ${sd(va).toFixed(1)}  range ${Math.min(...va)}-${Math.max(...va)}`);
-  console.log(`  shift   ${(ma - mb).toFixed(0)} men = ${(100 * (ma - mb) / mb).toFixed(1)}% = ${(Math.abs(ma - mb) / sb).toFixed(2)} sd of the seed spread`);
-  console.log(`  sign    ${down} seeds down, ${up} up  -> ${down === pairs.length || up === pairs.length
-    ? `TRANSLATION (every seed moved the same way; p=${(2 / 2 ** pairs.length).toFixed(4)} under reshuffle) — the distribution MOVED, which a reroll cannot do`
-    : 'RESHUFFLE (mixed directions) — consistent with "the same order as changing the seed"'}`);
-  const clears = ma < Math.min(...vb) || ma > Math.max(...vb);
-  console.log(`  reach   the after-mean ${clears ? 'FALLS OUTSIDE' : 'sits inside'} the whole before-range${clears
-    ? ` — no reroll before the change could produce the AVERAGE battle after it` : ''}`);
+  console.log(`  shift   ${(ma - mb).toFixed(0)} men = ${(100 * (ma - mb) / mb).toFixed(1)}% = ${sb > 0 ? (Math.abs(ma - mb) / sb).toFixed(2) + ' sd of the seed spread' : 'sd undefined (single seed)'}`);
+  /*
+   * A sign test needs a sample. Caught by the positive control: at t+400 exactly one seed was
+   * still being fought in both arms, and the tool printed "TRANSLATION (every seed moved the
+   * same way; p=1.0000)" — n=1, p=1, and it still named the conclusion. It also printed
+   * "Infinity sd" from an sd of 0 over that one seed. Both are the same error as the src-hash
+   * watch and the zero-spread threshold: a statistic whose sample has collapsed still returns a
+   * confident-looking number, and confident-looking numbers are what get quoted.
+   *
+   * MIN_SIGN is 5 because 2/2^5 = 0.06 is the first n at which unanimity is worth saying out
+   * loud at all, and this decision deserves better than that — so n<5 declines rather than
+   * hedges.
+   */
+  const MIN_SIGN = 5, MIN_RANGE = 3;
+  if (pairs.length < MIN_SIGN) {
+    console.log(`  sign    ${down} down, ${up} up over only ${pairs.length} seed(s) — DECLINED, a sign test needs >= ${MIN_SIGN}`);
+  } else {
+    console.log(`  sign    ${down} seeds down, ${up} up  -> ${down === pairs.length || up === pairs.length
+      ? `TRANSLATION (every seed moved the same way; p=${(2 / 2 ** pairs.length).toFixed(4)} under reshuffle) — the distribution MOVED, which a reroll cannot do`
+      : 'RESHUFFLE (mixed directions) — consistent with "the same order as changing the seed"'}`);
+  }
+  if (pairs.length < MIN_RANGE) {
+    console.log(`  reach   DECLINED — ${pairs.length} seed(s) is not a range`);
+  } else {
+    const clears = ma < Math.min(...vb) || ma > Math.max(...vb);
+    console.log(`  reach   the after-mean ${clears ? 'FALLS OUTSIDE' : 'sits inside'} the whole before-range${clears
+      ? ` — no reroll before the change could produce the AVERAGE battle after it` : ''}`);
+  }
   console.log();
 }
 
@@ -85,8 +106,26 @@ const cmp = (name, f, unit = '') => {
   const b = col(before.rows, f), a = col(after.rows, f);
   if (!b.length || !a.length) return;
   const mb = mean(b), ma = mean(a), s = sd(b);
-  const outside = Math.abs(ma - mb) > s;
-  console.log(`  ${name.padEnd(22)} ${mb.toFixed(1)}${unit} -> ${ma.toFixed(1)}${unit}   (before sd ${s.toFixed(1)})  ${outside ? '** beyond its own spread **' : 'inside its own spread'}`);
+  /*
+   * A near-zero spread cannot be a threshold on its own.
+   *
+   * The positive control flagged `closest it got  0.2 -> 0.2 (before sd 0.0)` as "beyond its own
+   * spread", because with sd 0 every difference is infinitely many sigma and a column that is
+   * *identical to a rounding step* reads as the loudest signal in the table. Rome's assault has
+   * columns with sd 0.0-0.2 by nature — twelve seeds break within a sixth of a second — so this
+   * is not a corner case here, it is most of the table.
+   *
+   * So a move must clear the measured spread AND be worth more than 1% of the column's own
+   * value. That is the same mistake as the src-hash watch in a different costume: a test whose
+   * threshold collapses to zero always fires, and a test that always fires measures nothing.
+   */
+  const floor = Math.max(s, Math.abs(mb) * 0.01);
+  const outside = Math.abs(ma - mb) > floor;
+  const tag = outside ? '** beyond its own spread **'
+    : s < Math.abs(mb) * 0.01 ? 'inside the 1% floor (spread too small to threshold on)'
+      : 'inside its own spread';
+  const pct = mb !== 0 ? ((ma - mb) / Math.abs(mb) * 100) : 0;
+  console.log(`  ${name.padEnd(22)} ${mb.toFixed(2)}${unit} -> ${ma.toFixed(2)}${unit}  ${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%   (sd ${s.toPrecision(2)}, floor ${floor.toPrecision(2)})  ${tag}`);
 };
 console.log('shape:');
 cmp('contact', r => r.contactAt, ' s');
