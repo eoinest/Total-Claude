@@ -94,6 +94,46 @@ A subsystem passes at **mean ≥ 3.0 with no criterion below 2**.
 | G4 | Post restraint | Bloom on genuine highlights only. Subtle vignette and grain. No lens-flare spam. |
 | G5 | Believability | The instinctive reaction is "screenshot from a game I could buy", not "impressive for a browser". |
 
+## H. The city from inside it
+
+**Added because a probe passed Rome and a person did not.** Every category above A–G can be
+scored from the frames this project already shoots, and every one of those frames is taken from
+a tactical camera 30–150 m up. At that height a monument shrunk to fit, a street with a building
+standing in it and a quarter with no street at all all look acceptable. **This category is scored
+only on frames taken at 1.75 m with the lens within 15° of level**, which is the height the
+player's own camera reaches at zoom 0 (`RTSCamera.place` floors the eye at 1.7 m) and the height
+the second act of a siege is fought at.
+
+`tools/shots/judge-city-eye2.shot.mjs` is the reference camera set and
+`tools/scratch/judge-fabric.mjs` measures H1, H3, H4 and H6 against the built scene rather than
+against the plan.
+
+| # | Criterion | The specific tell |
+|---|---|---|
+| H1 | Enclosure | Standing in a street, the frontages left and right are close enough and tall enough that the space reads as a **room** with a floor and two walls. Measured: `H/W`, the mean frontage height over the gap between frontages. An ancient city street runs **1.0–3.0**; a modern arterial 0.3–0.6; under 0.2 it is a road across a field. |
+| H2 | Continuous frontage | Buildings meet at party walls and address the street. **Grass between the pavement and the wall is the fail**, and so is any block standing with air on four sides. A city is made of blocks, not of buildings. |
+| H3 | Nothing in the carriageway | No monument, insula, tree or prop inside the paved width of a ranked way. Measured: ranked-way samples whose centreline is inside a solid. Anything over ~2 % is visible from the ground. |
+| H4 | The way goes somewhere | From a standing eye the street runs on for at least 80 m with no solid across it, and terminates on something the eye can name — a gate, a hill, a façade. A street that stops at a blank wall in 15 m is a gap between two objects. |
+| H5 | One grain, locally | Over a 100–200 m patch the blocks share a direction, and the direction changes at a street, a contour or a river — not at random. From eye level, receding frontages read as a **rhythm**; a scatter of angles reads as a quilt however good the materials. |
+| H6 | Verticality | Insulae read 3–5 storeys against narrow streets. Tell: standing in a street, you cannot see sky over the frontage opposite at 45° of elevation. A city of a million is not two storeys tall. |
+| H7 | The ground floor is inhabited | Doors, arched *tabernae*, shopfronts, steps, thresholds, balconies, awnings. **Count openings per 10 m of frontage at eye level.** A blank painted wall is the single most common tell of a generated city and it is a 0. |
+| H8 | A man is the ruler | **Three readings, and a build can fix one while breaking another — see the note below the table.** (a) A monument's **height-to-width ratio** is its real one. Any plan compression not also applied to height multiplies the proportion of every monument by 1/scale, and the eye reads proportion long before it reads size. (b) **Its size relative to its neighbours is its real one.** Any compression that varies from monument to monument reverses the *order* of size between them, which the eye reads better still, because it has no ruler for absolute size and an excellent one for comparison. (c) **Recognition needs a silhouette, and a silhouette needs the object to fit in the lens** at the distance a person can stand from it inside a city: a monument that overflows a 50° frame at every reachable standoff has no silhouette at any of them, however good its stone. Tells: pick a monument with a published section and compare; then pick two monuments visible in one frame and compare which reads bigger against which really was. |
+| H9 | The floor of the city | Where the city is paved it is paved continuously, with kerbs, gutters, crossing stones, cart ruts and wear that follows the traffic. Grass grows at the edges and in the cracks — **not down the middle of a consular road at a gate under siege**. Two paving materials meeting on a straight line with no kerb is a texture seam, not a design. |
+| H10 | Somebody lives here | Carts, stalls, amphorae, altars, fountains, washing, tethered animals, rubbish. Count props per 100 m of street at eye level. An empty street reads as a model of a city rather than a city, and this is the cheapest of all the fixes on this list. |
+
+> **Why H8 carries three readings and not one, and why there is no H11.** H8 was written with
+> only (a), because the fault in front of the first ground pass was one global plan scale with
+> heights left at 1:1. The build that fixed it replaced the global scale with a per-monument one
+> and thereby broke (b) — **56 of 345 pairs of Rome's monuments now have their size order
+> reversed against the archaeology, against zero under the constant it replaced**, and one in ten
+> of the pairs close enough to share a frame. A criterion that could only see (a) scored that
+> build as an improvement in both directions. (c) was found the same way: at the standoff a man
+> can actually take, a 48 m Colosseum overflowed the frame and was unrecognisable while a 27 m one
+> was not. **All three are added inside H8 rather than as an eleventh criterion, deliberately** —
+> an eleventh criterion changes the denominator and would make the recorded means of every earlier
+> pass incomparable, and comparability across passes is the one thing this category exists to
+> protect. `docs/CITY-GROUND-JUDGE.md` §12.1.
+
 ---
 
 ## Critic instructions
@@ -111,3 +151,17 @@ A subsystem passes at **mean ≥ 3.0 with no criterion below 2**.
    the frame, it scores 0.
 6. State the verdict explicitly: **PASS** (mean ≥ 3.0, nothing below 2) or **FAIL**,
    with the mean and the list of sub-2 criteria.
+7. **Grade the city from 1.75 m before grading it from 150 m.** Category H is scored only on
+   eye-level frames, and a pass on A–G taken from a tactical camera says nothing about it. The
+   first ground-level pass over Rome scored **0.8** on H against Carthage's **2.0** on maps that
+   `probe-fabric`, the plan diagnostic and `assertNoFabricOverlaps` had all passed — see
+   `docs/CITY-GROUND-JUDGE.md`. The second pass, on the landmark rework, scored **1.5**.
+8. **Name where the camera was.** A ground-level finding is only checkable if the reader can
+   stand in the same place: give the world coordinates or the gate standoff, the eye height and
+   the field of view. Every frame in `docs/images/judge-ground/` has them in
+   `docs/CITY-GROUND-JUDGE.md` §2 (pass one) and §10.2 (pass two).
+9. **Re-use the previous pass's rail, and say that you did.** A ground-level score is only
+   comparable if the standoff and the lens are the same, and the temptation is to re-frame a
+   monument that has moved. Move the *focus* and leave `dist`, `eye`, `aim` and `fov` alone: the
+   whole of `docs/CITY-GROUND-JUDGE.md` §10.3 is one frame at pass one's own rail, and it would
+   have said nothing at a different one.
