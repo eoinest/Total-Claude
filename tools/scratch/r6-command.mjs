@@ -6,9 +6,9 @@
 //
 //   node r6-command.mjs --port=5399 --out=DIR --tag=after --map=carthage --at=150
 import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { spawnVite } from '../lib/devtree.mjs';
 
 const ROOT = process.env.TC_ROOT ?? process.cwd();
 const arg = (k, d) => {
@@ -33,7 +33,7 @@ const wait = async (u, ms) => {
 const base = `http://127.0.0.1:${PORT}`;
 let srv = null;
 if (!(await wait(base, 1000))) {
-  srv = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'],
+  srv = spawnVite(['--port', String(PORT), '--host', '127.0.0.1', '--strictPort'],
     { cwd: ROOT, stdio: 'ignore', env: { ...process.env, TC_NO_HMR: '1' } });
   if (!(await wait(base, 120000))) throw new Error('no vite');
 }

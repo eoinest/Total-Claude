@@ -226,7 +226,7 @@ export class TerrainSystem implements Subsystem {
     const e = this.spacing;
     const dx = (this.heightAt(x + e, z) - this.heightAt(x - e, z)) / (2 * e);
     const dz = (this.heightAt(x, z + e) - this.heightAt(x, z - e)) / (2 * e);
-    const m = Math.hypot(dx, dz);
+    const m = Math.sqrt(dx * dx + dz * dz);
     return m > 1 ? 1 : m;
   }
 

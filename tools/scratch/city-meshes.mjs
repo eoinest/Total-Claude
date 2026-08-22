@@ -6,15 +6,15 @@
  * walks the city group's visible LOD groups at a named camera and lists every mesh.
  */
 import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
 import path from 'node:path';
+import { spawnVite } from '../lib/devtree.mjs';
 const ROOT = path.resolve(import.meta.dirname, '../..');
 const args = new Map(process.argv.slice(2).map((a) => { const m = a.match(/^--([^=]+)(?:=(.*))?$/); return m ? [m[1], m[2] ?? 'true'] : [a, 'true']; }));
 const PORT = Number(args.get('port') ?? 5487);
 const base = `http://127.0.0.1:${PORT}`;
 const up = async (ms) => { const end = Date.now() + ms; while (Date.now() < end) { try { const r = await fetch(base, { signal: AbortSignal.timeout(2000) }); if (r.ok || r.status === 304) return true; } catch { /* */ } await new Promise((r) => setTimeout(r, 300)); } return false; };
 let server = null;
-if (!(await up(1200))) { server = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], { cwd: ROOT, stdio: 'ignore', env: { ...process.env, TC_NO_HMR: '1' } }); if (!(await up(90000))) { console.error('no vite'); process.exit(1); } }
+if (!(await up(1200))) { server = spawnVite(['--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], { cwd: ROOT, stdio: 'ignore', env: { ...process.env, TC_NO_HMR: '1' } }); if (!(await up(90000))) { console.error('no vite'); process.exit(1); } }
 const b = await chromium.launch();
 try {
   const p = await b.newPage({ viewport: { width: 1600, height: 900 } });

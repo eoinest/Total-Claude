@@ -18,10 +18,10 @@
  */
 
 import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import { ownDevServer } from './lib/devtree.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const args = new Map(process.argv.slice(2).map((a) => {
@@ -45,25 +45,18 @@ const BASE_CONFIG = {
 const encodeConfig = (c) => Buffer.from(JSON.stringify(c)).toString('base64')
   .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
-const waitForServer = async (b, ms) => {
-  const t0 = Date.now();
-  while (Date.now() - t0 < ms) {
-    try { const r = await fetch(b, { signal: AbortSignal.timeout(1000) }); if (r.ok) return true; }
-    catch { /* not up */ }
-    await new Promise((r) => setTimeout(r, 250));
-  }
-  return false;
-};
-
-const base = `http://127.0.0.1:${PORT}`;
-let server = null;
-if (!(await waitForServer(base, 1200))) {
-  console.log(`• starting vite on ${PORT}`);
-  server = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
-    cwd: ROOT, stdio: 'ignore', env: { ...process.env, TC_NO_HMR: '1' },
-  });
-  if (!(await waitForServer(base, 120000))) { console.error('vite did not start'); process.exit(1); }
-} else console.log(`• reusing dev server on ${PORT}`);
+/*
+ * "Something answers on this port" was never the claim this needed. In a checkout with eighty
+ * worktrees all defaulting to the same few ports, reusing an unverified listener means both
+ * maps can be declared seam-free on another agent's branch. `ownDevServer` proves the listener
+ * serves *this* tree before reusing it, and refuses rather than guessing a port.
+ */
+const { base, kill: killServer } = await ownDevServer({
+  root: ROOT,
+  port: PORT,
+  cacheDir: process.env.TC_VITE_CACHE_DIR ?? null,
+  label: 'probe-seams',
+});
 
 const browser = await chromium.launch({
   args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
@@ -122,6 +115,6 @@ if (JSON_OUT) {
 }
 
 await browser.close();
-if (server) server.kill('SIGTERM');
+killServer();
 console.log(bad === 0 ? '\nPASS — every seam agrees on every map' : `\nFAIL — ${bad} map(s) with faults`);
 process.exit(bad === 0 ? 0 : 1);

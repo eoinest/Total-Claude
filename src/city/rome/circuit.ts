@@ -1837,7 +1837,8 @@ function muroTortoApron(
   const foot = at(bestT, bestOff);
   const head = at(topT, -(HALF_T + 1.2));
   const top = at(topT, -(HALF_T - 0.6));
-  const run = Math.hypot(foot.x - head.x, foot.z - head.z);
+  const run = Math.sqrt((foot.x - head.x) * (foot.x - head.x)
+    + (foot.z - head.z) * (foot.z - head.z));
   return {
     bay: bay.index,
     footX: foot.x, footY: bestG, footZ: foot.z,

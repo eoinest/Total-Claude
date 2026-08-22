@@ -36,11 +36,11 @@
  */
 
 import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import sharp from 'sharp';
+import { spawnVite } from './lib/devtree.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 
@@ -85,7 +85,7 @@ async function waitForServer(url, timeoutMs) {
 let server = null;
 const base = `http://127.0.0.1:${PORT}`;
 if (!(await waitForServer(base, 1200))) {
-  server = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
+  server = spawnVite(['--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
     cwd: ROOT, stdio: 'ignore', env: { ...process.env, TC_NO_HMR: '1' },
   });
   if (!(await waitForServer(base, 60000))) throw new Error('vite did not start');

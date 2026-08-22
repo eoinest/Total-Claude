@@ -88,12 +88,10 @@ Both are fixed in `tools/scratch/r6-liveboot.mjs`, which now navigates to
 They are all the same programme, and knowing it makes an unfamiliar one readable in a minute.
 
 ```js
-// 1. Find or start a dev server on this tool's OWN port.
-const base = `http://127.0.0.1:${PORT}`;
-if (!(await waitForServer(base, 1200))) {
-  server = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'],
-    { cwd: ROOT, stdio: 'ignore', env: { ...process.env, TC_NO_HMR: '1' } });
-}
+// 1. Find or start a dev server on this tool's OWN port — and prove it is serving THIS tree.
+const { base, kill: killServer } = await ownDevServer({
+  root: ROOT, port: PORT, cacheDir: process.env.TC_VITE_CACHE_DIR ?? null, label: 'my-probe',
+});
 // 2. Launch Chromium with a real GPU path.
 const browser = await chromium.launch({
   args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader',
@@ -106,7 +104,7 @@ await page.waitForFunction(() => window.__game?.ready === true, null, { timeout:
 // 6. process.exit(failed === 0 ? 0 : 1)
 ```
 
-Four conventions follow from that, and breaking any of them has cost this project a day.
+Five conventions follow from that, and breaking any of them has cost this project a day.
 
 **`TC_NO_HMR=1` is not optional.** `vite.config.ts` disables HMR when it sees that variable.
 Without it, an agent editing a file mid-run reloads the page and destroys the execution
@@ -137,6 +135,42 @@ wrong, and a list of 19 with 8 non-bugs in it teaches the reader to distrust the
 `node tools/check-tool-args.mjs --explain` prints that correction.
 
 A single-line grep finds 3 of the 9. That is why the check exists and the grep does not.
+
+**An instrument that trusts a port it did not open is measuring an unknown tree.** Step 1
+above used to be four lines — try the port, and if something answers, use it — and every
+harness here had them. That is a real speed-up and it is also a silent instrument defect,
+because *"something answers on 5226"* and *"the tree I am measuring is on 5226"* are different
+claims. There are eighty git worktrees in this checkout and they all default to the same handful
+of ports, so a probe run while another agent's Vite holds the port measures **their branch** and
+reports the verdict as this one's, confidently. It is the same defect class as an arm pointed at
+the wrong battle, which this project has also shipped.
+
+`tools/lib/devtree.mjs` closes it. `ownDevServer` asks the listener for every `.ts` under `src/`
+through Vite's `?raw` route — which returns the file's exact bytes as they are on the disk *the
+server is rooted at* — and compares them with this disk. 189 files in about 200 ms, and both
+directions were verified when it was written: all 189 matched against a server rooted at the
+same worktree, and against that same server the main checkout's copies mismatched on 24 files
+and a third worktree's on 11. It discriminates between *branches*, not just repositories. On a
+mismatch it names the differing paths and **exits 2** rather than picking another port, because
+a harness that silently moves ports is a harness whose printed port is a guess.
+
+It caught a live collision on its first outing: another agent's worktree on port 5901, ten files
+different. Without it that run would have measured a stranger's branch.
+
+**Every browser arm of the gate refuses now, not two thirds of them** — `qa-determinism`,
+`qa-deploy`, `qa-replay`, `probe-seams` and `qa-xengine`, plus everything that goes through
+`ensureServer` in `tools/lib/menu-boot.mjs` (`probe-wall`, `probe-carthage-wall`, `probe-siege`
+and the playability rig). `qa-preview` deliberately does not: its second server serves `dist/`,
+which is a build output and not a tree the check can verify against `src/`. If you write a new
+harness, take `ownDevServer` — the reuse speed-up is the same and the failure mode is gone.
+
+`ownDevServer` also spawns **Vite's own binary, not `npx vite`, and in its own process group**,
+and that is where nineteen orphaned Vite processes and a load average of 72 came from. `npx` is a
+wrapper *process* around Vite: `server.kill('SIGTERM')` reaches the wrapper, the wrapper exits,
+and the dev server keeps running and keeps the port. Every harness in this directory had that
+shape. `spawnVite` from the same module is a drop-in — `spawn('npx', ['vite', ...args], opts)`
+becomes `spawnVite(args, opts)` — and it registers an `exit` hook, so a probe that throws or is
+Ctrl-C'd still takes its server with it. It is applied to all 79 sites that spawned one.
 
 **Never touch port 5173.** `vite.config.ts` pins the game's interactive dev server there and
 it belongs to whoever is playtesting. Every harness carries its own default in the 5199–5847
@@ -323,6 +357,81 @@ over the same battle and the record has none of them.
 using the `Time.tickCeiling` added for it — because at t+30 a 1000/60 step gives 900 ticks, a
 166 ms step gives 901 and an exactly-five-tick 1000/6 step gives 899, and three earlier passes
 compared those arms as though they were the same battle at the same moment.
+
+### `tools/qa-xengine.mjs` — the same battle in three browser engines
+
+`qa-determinism.mjs` loads one build twice, so it answers *does this battle replay* and is
+structurally incapable of answering *is this the same battle on my friend's machine*. This does
+that: Chromium 151, Firefox 153 and WebKit 26.5 — all three already in the Playwright cache —
+against the same battle on the same schedule, compared bit for bit at every checkpoint. Port
+5901 by default.
+
+```sh
+node tools/qa-xengine.mjs                                  # field battle, all seven checkpoints
+node tools/qa-xengine.mjs --at=0                           # the cheap t+0 read
+node tools/qa-xengine.mjs --battle='map=carthage&scenario=assault'
+node tools/qa-xengine.mjs --engines=chromium,webkit        # skip one
+node tools/qa-xengine.mjs --libm-only                      # every build in the cache, no game
+```
+
+**It is not in the per-commit gate, on purpose.** The thing that moves it is usually not a
+commit, it is a browser update — measured below, twelve of fourteen approximated `Math`
+functions changed between Chrome 149 and 151 with no change to this tree at all. An arm that
+reds every agent's gate the day Firefox ships a point release is an arm that gets commented
+out, and this project has already lost a year to a gate nobody wanted to run. Run it
+deliberately: after any change to `src/terrain`, `src/maps` or `src/city`, and before pricing
+anything about cross-machine play.
+
+**Six assertions, and five of them exist so the sixth means something.** A check that compares
+something against itself is this project's most expensive recurring failure and the most recent
+instance was in this file's sibling, so:
+
+| # | It asserts | What it stops |
+|---|---|---|
+| 1 | `--battle` names a battle — every segment `key=value`, every key one `src/` reads | `--battle=carthage` measuring the field battle under Carthage's name |
+| 2 | the dev server serves *this* tree (`tools/lib/devtree.mjs`) | measuring another agent's branch on a shared port |
+| 3 | each page is the engine asked for, by **feature detection not the UA** — Gecko has `mozInnerScreenX`, JavaScriptCore has `webkitConvertPointFromNodeToPage`, Blink is neither and says `vendor === 'Google Inc.'` | three loads of one engine reporting perfect agreement |
+| 4 | the three libms **really disagree** — 14 approximated functions over integer-generated inputs, at least one pair must differ | concluding anything from battle hashes matching when the engines are identical |
+| 5 | the probe's controls **hold everywhere** — the input digest, `Math.sqrt`, `a * b + c` | a disagreement that is the instrument rather than the engine |
+| 6 | a **second load of the reference engine** is bit-identical to the first | reporting harness noise as a libm difference |
+
+Assertion 6 has already earned itself: when two runs of this tool overlapped on one port while
+the tree changed under them, the control run diverged and the arm declared the whole result void
+instead of publishing it.
+
+**The localiser is why it is not the twenty lines the design budgeted.** The documented Carthage
+cross-engine split has two disjoint populations — men differing in x/z by 1–2 float32 ULP, and
+men at *identical x/z* whose **y** differs, because their foot height comes from wall geometry.
+The pinned pool hash covers x/z/state/hp and cannot see the second population at all. So the
+tool dumps `y` too, splits the differing men into an x/z group and a y-only group, reports the
+worst gap in both float32 ULP and millimetres for each, and then does the same for the float64
+unit layer with the field name and the ULP gap. That is the measurement a decision turns on, and
+no hash produces it.
+
+**`--libm-only` prices the same-build restriction.** It skips the game entirely — `about:blank`,
+no dev server, a second or two per build — and runs the fingerprint against every browser in the
+Playwright cache. Measured on arm64 macOS, 8 builds, 14 approximated functions, with the
+`inputs` / `sqrt` / `a*b+c` controls identical across all eight:
+
+```
+    130.0.6723.31 → 143.0.7499.4     1/14   pow
+    143.0.7499.4  → 147.0.7727.15    0/14   identical
+    147.0.7727.15 → 149.0.7827.55    0/14   identical
+    149.0.7827.55 → 151.0.7922.34   12/14   tan atan2 acos asin exp sin cos log log1p expm1 atan cbrt
+    151.0.7922.34 → 152.0.7977.8     0/14   identical
+```
+
+Read that as **libm generations, not patch builds**: `{130}`, `{143,147,149}`, `{151,152}`. Two
+players on Chrome 143 and Chrome 149 compute identically; one on 149 and one on 151 do not. That
+is a materially less restrictive rule than "same patch build", and it means a pairing handshake
+should exchange a **libm fingerprint** rather than a version string. The fingerprint is 14 hashes
+over 4,096 integer-generated inputs each and costs under a second.
+
+It also found that `chromium-1140` in this cache is a **Mach-O arm64** binary, not the x86-64
+slice `docs/MULTIPLAYER.md` §7.1 says is sitting there. There is no cross-architecture read
+available on this machine.
+
+---
 
 ### `tools/check-determinism.mjs` — the invariant that used to have no enforcement
 

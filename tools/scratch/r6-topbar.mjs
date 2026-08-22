@@ -7,9 +7,9 @@
 //
 //   node tools/scratch/r6-topbar.mjs --port=5409 --out=DIR --map=carthage --at=45
 import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { spawnVite } from '../lib/devtree.mjs';
 
 const ROOT = process.env.TC_ROOT ?? process.cwd();
 const arg = (k, d) => { const a = process.argv.find((s) => s.startsWith(`--${k}=`)); return a === undefined ? d : a.slice(k.length + 3); };
@@ -22,7 +22,7 @@ const wait = async (u, ms) => { const d = Date.now() + ms; while (Date.now() < d
 const base = `http://127.0.0.1:${PORT}`;
 let srv = null;
 if (!(await wait(base, 1000))) {
-  srv = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], { cwd: ROOT, stdio: 'ignore', env: { ...process.env, TC_NO_HMR: '1' } });
+  srv = spawnVite(['--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], { cwd: ROOT, stdio: 'ignore', env: { ...process.env, TC_NO_HMR: '1' } });
   if (!(await wait(base, 120000))) throw new Error('no vite');
 }
 await mkdir(OUT, { recursive: true });

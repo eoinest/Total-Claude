@@ -25,11 +25,11 @@
  *   - whether the city of Rome is present and visible
  */
 
-import { spawn } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { spawnVite } from './lib/devtree.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -91,7 +91,7 @@ let server = null;
 const base = `http://127.0.0.1:${PORT}`;
 if (!(await waitForServer(base, 1200))) {
   console.log(`• starting vite on ${PORT}`);
-  server = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
+  server = spawnVite(['--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
     cwd: ROOT, stdio: 'ignore', env: { ...process.env, TC_NO_HMR: '1' },
   });
   if (!(await waitForServer(base, 60000))) {

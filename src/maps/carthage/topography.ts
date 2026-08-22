@@ -322,7 +322,9 @@ const hill = (
   plateauHw: number, plateauHd: number,
   top: number, skirtH: number,
 ): number => {
-  const r = Math.hypot((x - cx) / hw, (z - cz) / hd);
+  const ru = (x - cx) / hw;
+  const rv = (z - cz) / hd;
+  const r = Math.sqrt(ru * ru + rv * rv);
   // Radius at which the plateau ends, in the same normalised units. The two axes give
   // slightly different answers; take the mean, which is what an ellipse of a different aspect
   // inscribed in this one comes to.

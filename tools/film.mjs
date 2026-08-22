@@ -63,6 +63,7 @@ import {
   validateFilm, planFilm, railAt, frameState, provenance, ShotError,
 } from './lib/shot-format.mjs';
 import { PAGE_LIB, OVERLAY_HTML, SET_OVERLAY } from './lib/shot-page.mjs';
+import { spawnVite } from './lib/devtree.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 
@@ -346,7 +347,7 @@ if (await waitForServer(base, 1200)) {
   const cacheDir = path.join(WORK_ROOT, '.vite-cache', `p${PORT}`);
   await mkdir(cacheDir, { recursive: true });
   console.log(`• starting vite on ${PORT} (cache ${cacheDir})`);
-  server = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
+  server = spawnVite(['--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
     cwd: ROOT,
     stdio: 'ignore',
     env: { ...process.env, TC_NO_HMR: '1', TC_VITE_CACHE_DIR: cacheDir, FORCE_COLOR: '0' },

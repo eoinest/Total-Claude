@@ -658,7 +658,10 @@ export const streamDistance = (x: number, z: number): number => {
  * For a locally straight reach this is exact: the perpendicular distance from a point to
  * the line `x = c + s·z` is `|x - c(z)| / hypot(1, s)`.
  */
-export const riverPerpScale = (z: number): number => 1 / Math.hypot(1, riverCurvature(z));
+export const riverPerpScale = (z: number): number => {
+  const s = riverCurvature(z);
+  return 1 / Math.sqrt(1 + s * s);
+};
 
 /** Signed cross-channel offset from the Tiber centreline, in metres (negative = west). */
 export const riverOffset = (x: number, z: number): number =>

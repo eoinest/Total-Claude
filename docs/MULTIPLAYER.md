@@ -66,6 +66,53 @@ it is.
 > happened.**
 
 
+> **Superseded in part again, 21 August 2026 — `e/tools/xengine-arm`.** Stage 0 item 5 is
+> built (`tools/qa-xengine.mjs`), the last 27 `Math.hypot` sites are gone, and the arm's first
+> outing changes four claims in §1 and one estimate in §3. **Everything below is now measured by
+> a standing instrument rather than by a pass that has since gone home**, which is the point of
+> item 5 and is worth more than any single number in it.
+>
+> **§1.2 is closed. The Carthage assault boots identically in three engines.** Before the sweep,
+> at t+0: three different pool hashes, and 838 of 3,440 men differing between Chromium and
+> Firefox — 423 in x/z, **415 in y only** — and 713 between Chromium and WebKit, of which **361
+> were y-only with a worst gap of 3.8691 mm**. That is §1.2's "361 wall garrison … up to 3.87 mm"
+> reproduced to four significant figures by a different rig on a different tree a year later,
+> which is the strongest thing in this whole file. After the sweep: **one hash in all three
+> engines and zero men differing**, and Chromium ≡ WebKit bit-identical including `uf64`. The
+> residual was Firefox only and was named rather than inferred: **26 float64 fields of 1,020, all
+> 1 ULP, all `facing` and `targetFacing` on 13 units**, from the boot-time `Math.atan2(m.nx,
+> m.nz)` calls in `scenario.ts`'s `deployAssault`.
+>
+> **§1.1 is not closed, and `hypot` was never going to close it.** The field battle is still
+> identical on `hash`, `uctl`, `count` and `alive` in all three engines at t+0/30/90/150/200 and
+> **all three are apart at t+250 and t+400** — 5,849 / 5,560 / 5,886 survivors, Chromium against
+> Firefox 4.9% apart. The escape at t+205.5 is exactly where it was. Two different problems were
+> being conflated: map generation decides the *boot*, and the tick loop decides the *battle*.
+>
+> **The leading indicator, which is the most useful operational number here.** On that same run
+> `uf64` — the float64 unit layer — was already apart at **t+30**, one hundred and seventy
+> simulated seconds before the pool hash could see anything. §1.4 predicted exactly this and now
+> it is a standing measurement. **A lockstep implementation should exchange `uf64`, not the pool
+> hash**: it catches a fork nearly two orders of magnitude earlier in simulated time, it costs
+> 0.08–0.12 ms, and it is already in the product at `src/sim/stateHash.ts`.
+>
+> **§1.3's call-site table is now zero for `hypot` in every scanned directory.** The last 27
+> went: 11 in `src/terrain`, 15 in `src/maps` (12 of them in `src/maps/carthage/heightfield.ts`)
+> and **one in `src/city/rome/circuit.ts` that was a regression** — `tools/check-determinism.mjs`
+> was already reporting it, because `hypot` had been cleared out of `src/city` deliberately and
+> a hit there is new code putting it back. The linter's `hypot` row now says so.
+>
+> **The gate's port hazard is closed and it was real.** `qa-determinism.mjs` reused any listener
+> that answered on its port, which in a checkout with eighty worktrees on a handful of default
+> ports means it could measure another agent's branch against this tree's baseline and report the
+> verdict confidently. `tools/lib/devtree.mjs` now proves the listener serves this tree — every
+> `.ts` under `src/`, through Vite's `?raw` route, about 200 ms — and exits 2 naming the differing
+> files if it does not. **It caught a live collision on its first outing**: another agent's
+> worktree on port 5901, ten files different. The same module also found the orphan mechanism
+> behind nineteen stranded Vite processes and a load average of 72 — harnesses spawned `npx vite`,
+> and SIGTERM kills the `npx` wrapper while the server keeps the port. All 79 spawn sites now
+> spawn Vite itself, in its own process group, with an `exit` hook.
+
 ### 1.1 Everyone who stopped at t+200 said IDENTICAL. Everyone who went past it said DIVERGENT
 
 `tools/determinism-baseline.json` pins five checkpoints per battle: t+0, t+30, t+90, t+150,
@@ -168,6 +215,11 @@ inputs. **[M×2: determinism, priorart]** Do not clear `pow`.
 Call-site counts, mine at `66b220b` **[V]**, which differ slightly from the passes' figures
 because they measured at `3595b48` and used different scopes:
 
+> The `hypot` row of this table is **0 and 0** as of 21 August 2026 and a non-zero entry in either
+> column is now a regression the linter reports by name. The `pow` row is the cheapest thing left
+> on it: 15 of the 39 calls are `Math.pow(x, 2)` or `Math.pow(x, 3)`, which are `x * x` and
+> `x * x * x` written the unportable way.
+
 | | `src/sim` + `src/ai` + `src/units` | `src/terrain` + `src/maps` + `src/city` |
 |---|---|---|
 | `hypot` | 158 | 90 |
@@ -229,7 +281,47 @@ For a man near his slot that destroys about three decimal digits of agreement �
 single differing tick, 1.3e-16 relative in becomes 3.1e-13 relative out, a ~2,400× amplifier in
 the hot path of every soldier every tick. **[M: xengine, single trace]**
 
-### 1.5 A routine Chrome update is as dangerous as a different browser
+### 1.5 A routine Chrome update is as dangerous as a different browser — but the unit is a *libm generation*, not a build
+
+> **Re-measured 21 August 2026 by `tools/qa-xengine.mjs --libm-only`, and this is now a standing
+> arm rather than a one-off.** Eight builds — Firefox 153, WebKit 26.5 and every Chromium in the
+> Playwright cache — over 4,096 integer-generated inputs per function across fourteen
+> approximated functions, with `inputs`, `sqrt` and `a*b+c` as controls. **All three controls were
+> identical across all eight builds**, which is what makes the rest of it evidence.
+>
+> ```
+>     130.0.6723.31 → 143.0.7499.4     1/14   pow
+>     143.0.7499.4  → 147.0.7727.15    0/14   identical
+>     147.0.7727.15 → 149.0.7827.55    0/14   identical
+>     149.0.7827.55 → 151.0.7922.34   12/14   tan atan2 acos asin exp sin cos log log1p expm1 atan cbrt
+>     151.0.7922.34 → 152.0.7977.8     0/14   identical
+> ```
+>
+> Three corrections and one reframe.
+>
+> **Chrome 143 = 147 = 149 is confirmed** — 0 of 14 on both transitions.
+>
+> **"Chrome 149 → 151 changed eleven of twelve, `hypot` was the only one that held" is wrong on
+> the second half.** Twelve of fourteen moved and **two** held: `hypot` *and* `pow`.
+>
+> **"Chrome 130-x64 → Chrome 151-arm64 differs on nine of sixteen, including `pow`" localises
+> better than that.** 130 → 151 differs on 13 of 14 here, but 130 → 143 differs on **exactly one
+> function, `pow`**, and `pow` is then identical across 143/147/149/151/152. So the `pow` change
+> this file rightly refuses to clear happened at 143, not at 151.
+>
+> **And the reframe, which is the part that changes a product decision.** The generations are
+> `{130}`, `{143, 147, 149}`, `{151, 152}`. Two players on Chrome 143 and Chrome 149 compute
+> identically; one on 149 and one on 151 do not. So the constraint a realtime design would ship is
+> **not "same patch build"** — it is "same libm generation", and one of those generations spanned
+> at least six major versions. That is a materially better product than §2 describes, and it means
+> a pairing handshake should exchange a **libm fingerprint** rather than a version string: fourteen
+> hashes over 4,096 integer-generated inputs each, computed in under a second, and it is exactly
+> as strict as it needs to be and no stricter. A version check would refuse pairings that work.
+>
+> What would change my mind: a generation boundary that falls *inside* a single Chrome major
+> version — a security patch that ships a libm change — which this sample cannot see because the
+> cache holds six majors and no two patches of one major. That is the measurement to take next
+> and it needs a build source other than the Playwright cache.
 
 Five Chromium builds are already in the Playwright cache. Across 512 integer-generated inputs per
 function, with `sqrt` and `a*b+c` as controls:
@@ -518,6 +610,45 @@ Nothing in this stage is speculative and none of it is wasted if multiplayer is 
    three-argument** and need `sqrt(x*x+y*y+z*z)`. **[V]** Coordinates are bounded by
    `HALF_EXTENT = 1400`, so `hypot`'s overflow guard at ~1e154 buys nothing here. Expect no
    pinned hash to move; if one does, stop and find out why before re-recording.
+
+   > **Done, 21 August 2026, at 249 sites — and the expectation in the line above is wrong for
+   > the last 27 of them.** The second pass was `src/terrain` (11), `src/maps` (15, of which 12
+   > in `src/maps/carthage/heightfield.ts`) and one regression in `src/city/rome/circuit.ts`.
+   > `Math.hypot` now appears **nowhere** in `src/sim`, `src/ai`, `src/units`, `src/city`,
+   > `src/terrain` or `src/maps`, so a hit anywhere in the linter's portability scope is a
+   > regression rather than a backlog item, and the linter says so.
+   >
+   > **"Expect no pinned hash to move" held for the first 222 and failed for the last 27, and the
+   > reason is the whole distinction this stage turns on.** Measured against the pins as they
+   > stood, with nothing else changed:
+   >
+   > | battle | t+0 | t+30 | t+90 | t+150 | t+200 | t+250 | t+400 |
+   > |---|---|---|---|---|---|---|---|
+   > | field | unchanged | unchanged | **8,272 → 8,270** | 7,517 → 7,528 | 7,028 → 7,061 | 6,244 → 6,676 | 4,288 → 5,849 |
+   > | Rome | unchanged | unchanged | **2,553 → 2,547** | 2,468 → 2,466 | 2,418 → 2,421 | 2,389 → 2,343 | 2,233 → 2,072 |
+   > | Carthage | **hash only** | hash + `uf64` | **3,035 → 3,036** | 2,870 → 2,847 | 2,852 → 2,838 | 2,756 → 2,648 | 2,193 → 2,259 |
+   >
+   > The first 222 sites were in `src/sim`, `src/ai`, `src/units` and `src/city` — inside the
+   > simulation, behind the float32 pool round trip, where a 1-ULP perturbation is absorbed. These
+   > 27 are in **world generation**. They change the terrain by about a ULP, the terrain is the
+   > ground the battle is fought on, and there is no firewall between a heightfield sample and a
+   > man's footing. Two men at t+90 becomes fifteen hundred at t+400, which is what a chaotic
+   > system does with two men.
+   >
+   > Carthage is the clean case and it says what kind of change this is: **t+0's pool hash moves
+   > while `uf64` and `uctl` do not** — the roster, the orders and the discrete state are
+   > untouched and the men have moved by a rounding step. And the direction is the point. The
+   > value Chromium now computes is the value Firefox and WebKit were already computing; the pin
+   > was recording Chromium's `hypot`, not the battle. **The pin moved because the pin was
+   > engine-specific.** Re-recorded in the same commit, with the arm's before/after beside it.
+   >
+   > **The decision point below resolves half yes and half no, and the halves are different
+   > problems.** It removed the Carthage t+0 split completely — three engines, one hash, zero of
+   > 3,440 men differing, where before there were 838. It did not touch the field battle's
+   > t+205.5 escape. Map generation decides the boot; the tick loop decides the battle. So
+   > "cross-engine goes from dead to worth measuring properly" is right about boot portability and
+   > wrong about whole-battle portability, and the road to the second one is *not* the vendored
+   > libm this file points at — see the rewrite of Stage 3.
 2. **Add the implementation-approximated `Math` functions to `BANNED` in
    `tools/check-determinism.mjs`**, and **add `src/city` and `src/terrain` to the default
    `SCOPE`** — the Carthage assault's t+0 divergence is in `src/city` and the linter has never
@@ -532,6 +663,28 @@ Nothing in this stage is speculative and none of it is wasted if multiplayer is 
 5. **Add a cross-engine arm.** `firefox` and `webkit` are already in the Playwright cache and the
    harness already launches Playwright. Roughly twenty lines. It will go red on the Carthage
    assault immediately, which is the point.
+
+   > **Built, 21 August 2026 — `tools/qa-xengine.mjs`, and it is not twenty lines.** It went red
+   > on the Carthage assault immediately, exactly as promised, and then the sweep in item 1 turned
+   > it green there. Twenty lines gets you a red light; what a cross-engine run is actually *for*
+   > is which men and by how much, so the tool splits differing soldiers into an x/z population
+   > and a y-only population — the pinned hash covers x/z/state/hp and cannot see foot height at
+   > all — and localises the float64 unit layer by field name and ULP gap. That localiser is what
+   > produced every number in the block at the head of §1.
+   >
+   > Two things the design did not ask for and the arm needed. **It is a separate tool, not an arm
+   > inside `qa-determinism.mjs`.** Portability is not what an every-commit gate can fail on — the
+   > same argument this document already makes for `uf64` being a warning — and twelve of fourteen
+   > `Math` functions changed between two Chrome releases with no change to this tree. An arm that
+   > reds every agent's gate on a browser update gets commented out. **And five of its six
+   > assertions exist only so the sixth means something**, because a check that compares something
+   > against itself is this project's most expensive recurring failure: the engine is established
+   > by feature detection rather than the user-agent string, at least one `Math` function must
+   > *actually* disagree between the engines before agreement on a battle hash is allowed to mean
+   > anything, the probe's own `inputs`/`sqrt`/`a*b+c` controls must be identical everywhere, and
+   > the reference engine is loaded **twice** so that anything reported is the libm rather than the
+   > harness. That last one has already earned itself, refusing a whole result when two runs
+   > overlapped on one port while the tree changed under them.
 
 **Decision point.** If (1) removes the Carthage t+0 split, cross-engine goes from "dead" to
 "worth measuring properly". If it does not, the vendored-libm question (Stage 3) is the only road
@@ -884,9 +1037,18 @@ a same-engine product runs. The risk is Chrome-on-Alice against Chrome-on-Bob: t
 version, possibly different CPUs. V8 ships its own fdlibm port so same-version V8 across
 architectures is *plausibly* bit-exact, but that is a hypothesis, and one pass measured system
 JSC arm64 disagreeing with its own x86-64 slice on 1,315 of 8,192 `sin` results. The cheapest
-close is an afternoon with a second machine and the boot-hash handshake, and a `chrome130-x64`
-build is already sitting in the Playwright cache — a same-day cross-architecture read that nobody
-ran.
+close is an afternoon with a second machine and the boot-hash handshake.
+
+**The `chrome130-x64` half of this is false and was checked, 21 August 2026.** This paragraph used
+to end "and a `chrome130-x64` build is already sitting in the Playwright cache — a same-day
+cross-architecture read that nobody ran." Nobody ran it because it is not there:
+`chromium-1140` in this cache reports Chrome 130.0.6723.31 and its binary is
+`Mach-O 64-bit executable arm64`, single-architecture, not a universal build and not an x86-64
+slice. Every Chromium in the cache is arm64. **There is no cross-architecture read available on
+this machine at any price**, and an afternoon planned around that sentence would have been spent
+discovering so. The cross-architecture question needs a second machine exactly as much as the
+two-machine question does — which makes §7.1 one measurement rather than two, and a strictly
+larger job than it looks.
 
 **7.2 The escape time is a sample, not a constant.** t+205.5 is one seed, one army size, one
 tier, one machine. The mechanism is a stochastic boundary-crossing process, so a different seed

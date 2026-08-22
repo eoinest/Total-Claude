@@ -27,11 +27,12 @@
  *   node tools/scratch/gpucost-cascskip.mjs --port=5921 --scene=rome
  */
 import { chromium } from 'playwright';
-import { spawn, execFileSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import sharp from 'sharp';
+import { spawnVite } from '../lib/devtree.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
 const args = new Map(process.argv.slice(2).map((a) => {
@@ -62,7 +63,7 @@ const base = `http://127.0.0.1:${PORT}`;
 const up = async (ms) => { const e = Date.now() + ms; while (Date.now() < e) { try { const r = await fetch(base, { signal: AbortSignal.timeout(2500) }); if (r.ok || r.status === 304) return true; } catch {} await new Promise((r) => setTimeout(r, 300)); } return false; };
 let server = null;
 if (!(await up(1200))) {
-  server = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], { cwd: ROOT, stdio: 'ignore', env: { ...process.env, TC_NO_HMR: '1' } });
+  server = spawnVite(['--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], { cwd: ROOT, stdio: 'ignore', env: { ...process.env, TC_NO_HMR: '1' } });
   if (!(await up(90000))) throw new Error('vite did not start');
 }
 const token = (o) => Buffer.from(JSON.stringify(o)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');

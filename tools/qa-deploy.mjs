@@ -19,10 +19,10 @@
  */
 
 import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
 import { writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import { ownDevServer } from './lib/devtree.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const args = new Map(
@@ -49,15 +49,19 @@ const waitForServer = async (url, ms) => {
   return false;
 };
 
-const base = `http://127.0.0.1:${PORT}`;
-let server = null;
-if (!(await waitForServer(base, 1200))) {
-  server = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
-    cwd: ROOT, stdio: 'ignore', env: { ...process.env, TC_NO_HMR: '1' },
-  });
-  if (!(await waitForServer(base, 60000))) { console.error('vite did not start'); process.exit(1); }
-}
-console.log(`server ${base}${server ? ' (started here)' : ' (already up)'}`);
+/*
+ * A listener answering on this port is not the same claim as this tree being on it.
+ * Eighty worktrees here default to a handful of ports, so an unverified reuse means a
+ * gate that passes on another agent's branch and reports it as this one's.
+ * `ownDevServer` proves it — every `.ts` under `src/`, through Vite's `?raw` route — or
+ * exits 2 naming the files that differ. See `tools/lib/devtree.mjs`.
+ */
+const { base, kill: killServer } = await ownDevServer({
+  root: ROOT,
+  port: PORT,
+  cacheDir: process.env.TC_VITE_CACHE_DIR ?? null,
+  label: 'qa-deploy',
+});
 
 const browser = await chromium.launch({
   args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader',
@@ -1266,7 +1270,7 @@ if (!ONLY || ONLY === 'det') {
 }
 
 await browser.close();
-if (server) server.kill();
+killServer();
 
 console.log(`\n${failed === 0 ? '✓' : '✗'} ${results.length - failed}/${results.length} checks passed`);
 if (JSON_OUT) {

@@ -27,6 +27,14 @@
  * The tell is the headcount: 8,632 for `default`, 3,074 for Rome's assault, 3,440 for
  * Carthage's. That is printed on every line for exactly this reason.
  *
+ * **And check that it measures the tree you think it does.** This file used to reuse any
+ * listener that answered on `--port`, which in a checkout with eighty worktrees on a handful of
+ * default ports means it could measure another agent's branch against this tree's baseline and
+ * report the verdict with complete confidence. It now proves the listener serves this tree
+ * before reusing it — every `.ts` under `src/`, through Vite's `?raw` route, about 200 ms — and
+ * **exits 2** naming the differing files if it does not. `--port=59xx` to own your own. See
+ * `tools/lib/devtree.mjs`.
+ *
  * ## Why the checkpoints run to t+400 and not to t+200
  *
  * They used to stop at t+200, and the horizon was luck rather than design. Chromium, Firefox
@@ -163,10 +171,10 @@
  */
 
 import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import { ownDevServer } from './lib/devtree.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const args = new Map(
@@ -204,26 +212,38 @@ const BATTLE_KEY = args.get('battle')
   : 'default';
 const BASELINE_PATH = path.resolve(ROOT, 'tools/determinism-baseline.json');
 
-const waitForServer = async (url, ms) => {
-  const end = Date.now() + ms;
-  while (Date.now() < end) {
-    try {
-      const r = await fetch(url, { signal: AbortSignal.timeout(2000) });
-      if (r.ok || r.status === 304) return true;
-    } catch { /* not up */ }
-    await new Promise((r) => setTimeout(r, 300));
-  }
-  return false;
-};
-
-const base = `http://127.0.0.1:${PORT}`;
-let server = null;
-if (!(await waitForServer(base, 1200))) {
-  server = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
-    cwd: ROOT, stdio: 'ignore', env: { ...process.env, TC_NO_HMR: '1' },
-  });
-  if (!(await waitForServer(base, 60000))) { console.error('vite did not start'); process.exit(1); }
-}
+/*
+ * ## The port, and the tree on the other end of it
+ *
+ * This block used to be four lines: try the port, and if something answers, use it. That is a
+ * real speed-up and it was also a silent defect of exactly the kind the rest of this file
+ * exists to prevent. "Something answers on 5226" and "the tree I am measuring is on 5226" are
+ * different claims. There are eighty git worktrees in this checkout and they all default to the
+ * same handful of ports, so an agent who runs this arm while another agent's Vite holds 5226
+ * gets somebody else's hashes, compares them against *this* tree's baseline, and reports a
+ * drift or an all-clear with complete confidence. **An arm that measures the wrong tree is the
+ * same defect as an arm that measures the wrong battle**, and this file has already shipped
+ * that one (`--battle=rome`).
+ *
+ * `ownDevServer` refuses instead. It asks the listener for every `.ts` under `src/` through
+ * Vite's `?raw` route — which returns the file's exact bytes as they are on the disk the server
+ * is rooted at — and compares them with this disk. 189 files in about 200 ms. If they do not
+ * match it names the differing paths and exits 2 rather than choosing a port for you: a harness
+ * that silently moves ports is a harness whose printed port is a guess.
+ *
+ * It caught a live collision on its first outing — another agent's worktree on the port, with
+ * ten files different — which is the only reason this comment is written in the past tense.
+ *
+ * It also spawns Vite's binary rather than `npx vite`, and in its own process group. `npx` is a
+ * wrapper *around* Vite: SIGTERM reaches the wrapper, the wrapper exits, and the server keeps
+ * the port. That is where nineteen orphaned Vite processes came from in one day.
+ */
+const { base, kill: killServer } = await ownDevServer({
+  root: ROOT,
+  port: PORT,
+  cacheDir: process.env.TC_VITE_CACHE_DIR ?? null,
+  label: 'qa-determinism',
+});
 
 const browser = await chromium.launch({
   args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
@@ -510,9 +530,9 @@ if (RECORD) {
       console.log('  one, and it is a warning rather than a failure for a reason:');
       console.log('    · UnitGroupState is float64 integrated in place with no quantisation firewall,');
       console.log('      so one libm call rounding differently moves it within a second of sim time;');
-      console.log('    · a Chromium point release is enough to do that — measured, eleven of twelve');
-      console.log('      Math functions changed between Chrome 149 and 151 — with no change to this');
-      console.log('      tree at all;');
+      console.log('    · a Chromium point release is enough to do that — measured, twelve of');
+      console.log('      fourteen Math functions changed between Chrome 149 and 151 — with no');
+      console.log('      change to this tree at all;');
       console.log('    · the float32 pool round-trip hides it from `hash` for thousands of ticks.');
       console.log('  So: if you changed no simulation code, this is your browser and the battle still');
       console.log('  replays. If you did, you have moved the sim in a way the pool hash cannot yet see,');
@@ -540,7 +560,7 @@ if (JSON_OUT) {
     JSON.stringify({ battle: BATTLE_KEY, A: A.marks, B: B.marks, diffs, unitDiffs, firstDiff, firstUnitDiff, errors }, null, 2));
 }
 await browser.close();
-if (server) server.kill('SIGTERM');
+killServer();
 console.log(failed
   ? `\n✗ ${failed} failing check(s) across ${CHECKPOINTS.length} checkpoints (${A.marks.at(-1).count} soldiers)`
   : `\n✓ deterministic and unchanged across ${CHECKPOINTS.length} checkpoints at ${A.marks.at(-1).count} soldiers`

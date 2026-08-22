@@ -36,9 +36,9 @@
  */
 
 import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
+import { spawnVite } from './lib/devtree.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 
@@ -94,7 +94,7 @@ console.log(alreadyUp
   ? `[probe-crowd] using LIVE dev server already listening on ${PORT}`
   : `[probe-crowd] starting our own vite on ${PORT}`);
 if (!alreadyUp) {
-  server = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
+  server = spawnVite(['--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
     cwd: ROOT,
     stdio: 'ignore',
     env: { ...process.env, TC_NO_HMR: '1' },

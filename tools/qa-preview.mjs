@@ -12,12 +12,12 @@
  */
 
 import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
 import { mkdir, writeFile, readdir, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import sharp from 'sharp';
+import { spawnVite } from './lib/devtree.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const args = new Map(
@@ -63,10 +63,21 @@ async function measure(dir) {
 }
 
 const servers = [];
-const start = async (cmd, argv, port, label) => {
+/*
+ * `spawnVite` rather than `spawn('npx', ['vite', ...])`: `npx` is a wrapper *process* around
+ * Vite, so killing the handle killed the wrapper and left the server holding the port. That is
+ * where the orphan sweeps came from. `spawnVite` hands back the server itself, in its own
+ * process group, with an exit hook. `vite preview` goes through it too — the subcommand is just
+ * the first argument.
+ *
+ * This one keeps its own reuse check rather than taking `ownDevServer`, and deliberately: the
+ * preview server serves `dist/`, which is a *build output* and not a tree `devtree.mjs` can
+ * verify against `src/`. Reuse here is checked by the payload accounting above instead.
+ */
+const start = async (argv, port, label) => {
   const url = `http://127.0.0.1:${port}`;
   if (await waitForServer(url, 1200)) { console.log(`• reusing ${label} on ${port}`); return url; }
-  const p = spawn(cmd, argv, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, TC_NO_HMR: '1' } });
+  const p = spawnVite(argv, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, TC_NO_HMR: '1' } });
   let log = '';
   p.stdout.on('data', (d) => { log += d; });
   p.stderr.on('data', (d) => { log += d; });
@@ -108,8 +119,8 @@ try {
       `(and the full TypeScript source) are part of the deployed output.`);
   }
 
-  const devBase = await start('npx', ['vite', '--port', String(DEV_PORT), '--host', '127.0.0.1', '--strictPort'], DEV_PORT, 'dev server');
-  const prevBase = await start('npx', ['vite', 'preview', '--port', String(PREVIEW_PORT), '--host', '127.0.0.1', '--strictPort'], PREVIEW_PORT, 'preview server');
+  const devBase = await start(['--port', String(DEV_PORT), '--host', '127.0.0.1', '--strictPort'], DEV_PORT, 'dev server');
+  const prevBase = await start(['preview', '--port', String(PREVIEW_PORT), '--host', '127.0.0.1', '--strictPort'], PREVIEW_PORT, 'preview server');
 
   browser = await chromium.launch({
     args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--hide-scrollbars'],

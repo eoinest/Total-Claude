@@ -31,11 +31,12 @@
  */
 
 import { chromium } from 'playwright';
-import { spawn, execFileSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { spawnVite } from './lib/devtree.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 
@@ -1509,7 +1510,7 @@ async function startServer() {
     return base;
   }
   console.log(`• starting vite on ${PORT}`);
-  server = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
+  server = spawnVite(['--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
     cwd: ROOT,
     stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, FORCE_COLOR: '0', TC_NO_HMR: '1' },

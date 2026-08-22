@@ -222,7 +222,7 @@ export function buildTerrain(seedLabel = 'campus-martius-271'): TerrainData {
       const wx = -HALF_EXTENT + i * spacing;
       const gx = (heights[row + i + 1] - heights[row + i - 1]) / (2 * spacing);
       const gz = (heights[row + res + i] - heights[row - res + i]) / (2 * spacing);
-      const slope = clamp01(Math.hypot(gx, gz));
+      const slope = clamp01(Math.sqrt(gx * gx + gz * gz));
       const n = gnoise(wx * 0.038, wz * 0.038, detailSeed) * 0.62 + gnoise(wx * 0.11, wz * 0.11, detailSeed + 7) * 0.38;
       heights[row + i] += n * (0.13 + 0.5 * slope);
     }
@@ -451,7 +451,7 @@ export function buildTerrain(seedLabel = 'campus-martius-271'): TerrainData {
         // Elliptical, and lobed by noise so it does not read as a crater.
         const dx = (wx - q.x) / q.radius;
         const dz = (wz - q.z) / (q.radius * 0.78);
-        const dr = Math.hypot(dx, dz) * (1 + 0.16 * gnoise(wx * 0.03, wz * 0.03, seed + 61));
+        const dr = Math.sqrt(dx * dx + dz * dz) * (1 + 0.16 * gnoise(wx * 0.03, wz * 0.03, seed + 61));
         const cut = 1 - sstep(0.62, 1.0, dr);
         if (cut > 0.002) {
           const h = heights[row + i];
@@ -585,7 +585,9 @@ export function buildTerrain(seedLabel = 'campus-martius-271'): TerrainData {
       // Bedrock: where particles scoured, plus the quarry faces.
       let bare = clamp01((rock[k] / rockMax) * 3.4);
       for (const q of QUARRIES) {
-        const dr = Math.hypot((wx - q.x) / q.radius, (wz - q.z) / (q.radius * 0.78));
+        const qu = (wx - q.x) / q.radius;
+        const qv = (wz - q.z) / (q.radius * 0.78);
+        const dr = Math.sqrt(qu * qu + qv * qv);
         bare = Math.max(bare, 1 - sstep(0.7, 1.15, dr));
       }
 

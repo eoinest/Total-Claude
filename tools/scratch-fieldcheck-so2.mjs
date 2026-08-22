@@ -17,8 +17,8 @@
  */
 
 import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
 import path from 'node:path';
+import { spawnVite } from './lib/devtree.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const PORT = Number(process.argv.find((a) => a.startsWith('--port='))?.slice(7) ?? 5403);
@@ -42,7 +42,7 @@ const up = async (ms) => {
 };
 let server = null;
 if (!(await up(1200))) {
-  server = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'],
+  server = spawnVite(['--port', String(PORT), '--host', '127.0.0.1', '--strictPort'],
     { cwd: ROOT, stdio: 'ignore', env: { ...process.env, TC_NO_HMR: '1' } });
   if (!(await up(90000))) { console.error('vite did not start'); process.exit(1); }
 }

@@ -16,8 +16,9 @@
  */
 
 import { chromium } from 'playwright';
-import { spawn, execFileSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import process from 'node:process';
+import { spawnVite } from './lib/devtree.mjs';
 
 const args = new Map(process.argv.slice(2).map((a) => {
   const m = a.match(/^--([^=]+)(?:=(.*))?$/);
@@ -55,7 +56,7 @@ for (const sha of SHAS) {
   const subject = execFileSync('git', ['-C', TREE, 'log', '-1', '--format=%s'], { encoding: 'utf8' }).trim();
   // A fresh vite per commit. Reusing one risks serving a stale module graph, and this
   // project has already lost a day to a probe that measured someone else's checkout.
-  const server = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
+  const server = spawnVite(['--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
     cwd: TREE, stdio: 'ignore', env: { ...process.env, TC_NO_HMR: '1' },
   });
   const cells = [];

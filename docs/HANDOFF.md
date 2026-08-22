@@ -28,6 +28,20 @@ The full gate is green on this tree: tsc clean, lint 2/2, qa-deploy 33/33, seams
 Determinism is pinned in `tools/determinism-baseline.json` at **t+0/30/90/150/200/250/400**, three
 hashes each: the float32 pool, `uf64` (exact float64 unit state) and `uctl` (discrete state).
 
+> **`node tools/qa-xengine.mjs` is the new arm and it is *not* in the every-commit gate.** It runs
+> the same battle in Chromium, Firefox and WebKit. Run it deliberately — after anything in
+> `src/sim`, `src/terrain`, `src/maps` or `src/city` — because the thing that moves it is usually a
+> browser update rather than a commit, and a gate nobody wants to run measures nothing. All three
+> battles are currently **bit-identical in all three engines at all seven checkpoints**.
+>
+> **Every harness now refuses a port it cannot prove is serving this tree.** `tools/lib/devtree.mjs`
+> asks the listener for every `.ts` under `src/` through Vite's `?raw` route and exits 2 naming the
+> differences. It caught another agent's worktree on port 5901 within an hour of being written.
+> **An instrument that trusts a port it did not open is measuring an unknown tree.** The same module
+> is why the orphan sweeps should stop: all 79 harnesses that used to spawn `npx vite` now spawn
+> Vite itself, in its own process group, with an `exit` hook — `npx` is a wrapper *process*, so
+> SIGTERM killed the wrapper and left the server holding the port.
+
 ```
 node tools/qa-determinism.mjs
 node tools/qa-determinism.mjs --battle="map=campus-martius&scenario=assault"

@@ -103,7 +103,9 @@ const CAMPUS_SCATTER: ScatterProfile = {
     // Everything from the cleared glacis inward belongs to the city.
     if (z > romeWallZ(x) - clearance) return true;
     for (const q of QUARRIES) {
-      if (Math.hypot((x - q.x) / q.radius, (z - q.z) / (q.radius * 0.8)) < 1.25) return true;
+      const qu = (x - q.x) / q.radius;
+      const qv = (z - q.z) / (q.radius * 0.8);
+      if (Math.sqrt(qu * qu + qv * qv) < 1.25) return true;
     }
     return false;
   },

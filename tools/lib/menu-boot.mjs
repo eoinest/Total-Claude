@@ -17,9 +17,9 @@
  * Used by `tools/qa-replay.mjs` and by the playability rig.
  */
 
-import { spawn } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
+import { ownDevServer } from './devtree.mjs';
 
 export const waitForServer = async (url, ms) => {
   const end = Date.now() + ms;
@@ -43,36 +43,31 @@ export const waitForServer = async (url, ms) => {
  * written by as many vite processes as there are agents running a gate.
  */
 export async function ensureServer({ port, root, cacheDir }) {
-  const base = `http://127.0.0.1:${port}`;
-  if (await waitForServer(base, 1200)) return { base, server: null };
-  const server = spawn(
-    'npx', ['vite', '--port', String(port), '--host', '127.0.0.1', '--strictPort'],
-    {
-      cwd: root,
-      stdio: 'ignore',
-      env: {
-        ...process.env,
-        TC_NO_HMR: '1',
-        TC_VITE_CACHE_DIR: cacheDir ?? process.env.TC_VITE_CACHE_DIR
-          ?? path.join('/tmp', `tc-vite-${path.basename(root)}`),
-      },
-    }
-  );
-  if (!(await waitForServer(base, 90000))) {
-    server.kill('SIGTERM');
-    throw new Error(`vite did not start on ${port}`);
-  }
   /*
-   * Unref plus an exit hook, so a script that forgets to kill the server still exits.
+   * Delegated to `tools/lib/devtree.mjs`, and the delegation is the point rather than tidiness.
    *
-   * A live child handle keeps node's event loop alive, and the playability scripts close
-   * their browser and return without touching the server — so before this they hung after
-   * printing their last line, which reads as a stuck run. `unref` lets the parent exit;
-   * the hook stops that orphaning a vite on the port for the next agent to trip over.
+   * This used to be "if something answers on the port, use it", which is not the same claim as
+   * "this tree is on the port". Eighty git worktrees in this checkout default to the same
+   * handful of ports, so the playability rig and `qa-replay` could both boot another agent's
+   * branch and report on it as this one's. `ownDevServer` asks the listener for every `.ts`
+   * under `src/` through Vite's `?raw` route and exits 2 naming the differences.
+   *
+   * It also spawns Vite's own binary rather than `npx vite`. `npx` is a wrapper *process*, so
+   * the `SIGTERM` below reached the wrapper and left the server holding the port — which is
+   * where the orphan sweeps came from, and the reason the exit hook this function already had
+   * was not enough.
+   *
+   * The `{ base, server }` shape is unchanged, including `server: null` on a reused server, so
+   * every caller's `if (server) server.kill('SIGTERM')` still reads correctly.
    */
-  server.unref();
-  process.once('exit', () => { try { server.kill('SIGTERM'); } catch { /* already gone */ } });
-  return { base, server };
+  const { base, spawned, kill } = await ownDevServer({
+    root,
+    port,
+    cacheDir: cacheDir ?? process.env.TC_VITE_CACHE_DIR
+      ?? path.join('/tmp', `tc-vite-${path.basename(root)}`),
+    label: 'menu-boot',
+  });
+  return { base, server: spawned ? { kill: () => kill() } : null };
 }
 
 /**

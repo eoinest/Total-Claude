@@ -199,7 +199,7 @@ export function buildPydnaTerrain(seedLabel = 'pydna-168bc'): TerrainData {
       const wx = -HALF_EXTENT + i * spacing;
       const gx = (heights[row + i + 1] - heights[row + i - 1]) / (2 * spacing);
       const gz = (heights[row + res + i] - heights[row - res + i]) / (2 * spacing);
-      const slope = clamp01(Math.hypot(gx, gz));
+      const slope = clamp01(Math.sqrt(gx * gx + gz * gz));
       const n =
         gnoise(wx * 0.036, wz * 0.036, detailSeed) * 0.62 +
         gnoise(wx * 0.105, wz * 0.105, detailSeed + 7) * 0.38;

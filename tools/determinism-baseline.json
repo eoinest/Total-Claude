@@ -19,43 +19,43 @@
         "units": 35
       },
       "90": {
-        "hash": "e5d49734",
+        "hash": "1a6016f4",
         "count": 8632,
-        "alive": 8272,
-        "uf64": "f7a0d317",
-        "uctl": "881291bc",
+        "alive": 8270,
+        "uf64": "74e0ca93",
+        "uctl": "241da92f",
         "units": 35
       },
       "150": {
-        "hash": "132a5a98",
+        "hash": "d80893dc",
         "count": 8632,
-        "alive": 7517,
-        "uf64": "8c7ed2a4",
-        "uctl": "002abe77",
+        "alive": 7528,
+        "uf64": "ef7eb91d",
+        "uctl": "9491e75d",
         "units": 35
       },
       "200": {
-        "hash": "a84aaa44",
+        "hash": "53c0aa90",
         "count": 8632,
-        "alive": 7028,
-        "uf64": "1c0b47b3",
-        "uctl": "ac18623a",
+        "alive": 7061,
+        "uf64": "ea9df4a0",
+        "uctl": "8775f8d4",
         "units": 35
       },
       "250": {
-        "hash": "86b910c8",
+        "hash": "5a4e2f30",
         "count": 8632,
-        "alive": 6244,
-        "uf64": "5e0b7a90",
-        "uctl": "2b3485b8",
+        "alive": 6676,
+        "uf64": "04d0f1e4",
+        "uctl": "f1c5801c",
         "units": 35
       },
       "400": {
-        "hash": "3ab5fc60",
+        "hash": "2864993c",
         "count": 8632,
-        "alive": 4288,
-        "uf64": "a0dc10cb",
-        "uctl": "d50b68bb",
+        "alive": 5849,
+        "uf64": "f5c3a2e2",
+        "uctl": "f47e618c",
         "units": 35
       }
     }
@@ -80,43 +80,43 @@
         "units": 32
       },
       "90": {
-        "hash": "16eeec50",
+        "hash": "79095ca8",
         "count": 3074,
-        "alive": 2553,
-        "uf64": "17b3fffb",
-        "uctl": "0955cea4",
+        "alive": 2547,
+        "uf64": "0b74d013",
+        "uctl": "2eebd781",
         "units": 32
       },
       "150": {
-        "hash": "361b0df0",
+        "hash": "6a9fb66e",
         "count": 3074,
-        "alive": 2468,
-        "uf64": "29af5fe9",
-        "uctl": "4f3d713f",
+        "alive": 2466,
+        "uf64": "df75caeb",
+        "uctl": "c62a48db",
         "units": 32
       },
       "200": {
-        "hash": "a87a2586",
+        "hash": "bf6c4c0a",
         "count": 3074,
-        "alive": 2418,
-        "uf64": "1e6baac6",
-        "uctl": "716bff02",
+        "alive": 2421,
+        "uf64": "5fd56eba",
+        "uctl": "3c864b4b",
         "units": 32
       },
       "250": {
-        "hash": "f1dfcbca",
+        "hash": "579766ae",
         "count": 3074,
-        "alive": 2389,
-        "uf64": "ee3615a5",
-        "uctl": "b02ef875",
+        "alive": 2343,
+        "uf64": "6aff6623",
+        "uctl": "98023f34",
         "units": 32
       },
       "400": {
-        "hash": "e648857e",
+        "hash": "02ee03f0",
         "count": 3074,
-        "alive": 2233,
-        "uf64": "53ea7cc1",
-        "uctl": "f795e25d",
+        "alive": 2072,
+        "uf64": "f2f82eef",
+        "uctl": "fa0b0c1f",
         "units": 32
       }
     }
@@ -125,7 +125,7 @@
     "note": "Carthage's assault, quality=high. Recorded at 88a4aa5. The five hashes in this tool's own header comment (ebf383b0 d021b848 8106e2b2 b4fc645e cbfa61c0) are an earlier tree and are the reason prose is not a baseline. Re-record only in the same commit as the change that moved it. ||| Re-recorded again by the aperture pass, which is the change that moved it. Two mechanisms in src/sim/BattleSystem.ts reach this battle: fitToAperture squeezes a formation's frontage down to what the corridor ahead of it will take and spreads it back out once its tail is through, and aimRout deflects a broken unit's flight line round whatever it is about to run into. Both are inert on a map with no masonry on it, and the evidence is in this file: 'default' is bit-identical across the pass at all five checkpoints, and so are t+0 and t+30 of both assaults, which are before anything has routed or entered a gate. The drift starts at t+90 in both. Checked against a second worktree pinned at 7dd9616, which reproduces the previous pins exactly at all five, so the movement is this pass's and not something inherited. ||| Re-recorded by the determinism-cliff pass, and this one is a re-record of the FORMAT rather than of the battle. Two things changed. (1) Two checkpoints added past t+200: the gate used to stop 5.5 s before the only cross-engine divergence anyone has measured (the field battle forks at t+205.5 s), so t+250 is the sentinel just past the fork and t+400 is the second half of the battle nothing had ever looked at. (2) Two new marks per checkpoint. `uf64` is the exact float64 bits of every continuous UnitGroupState field plus the waypoint queue — the layer the float32 pool hash cannot see, and which nothing in this repository hashed until now. `uctl` is the discrete half: order, target, formation, width, alive, kills, membership, flags, and unit array order. The five original pool hashes are UNCHANGED at all three battles across the whole pass, including across the Math.hypot -> Math.sqrt(a*a + b*b) substitution in the same branch, and so are all 21 survivor counts. Every `uf64` moved, and no `uctl` did: the substitution perturbs the simulation own float64 state everywhere, never reaches a control-flow decision, and never survives the float32 round trip. That is the quantisation firewall, and it is why the old five-checkpoint pool-only gate would have reported that a 222-call-site change did nothing. A `uf64` drift with `hash` and `uctl` unchanged is a PORTABILITY finding — a browser update is enough to cause one — and the gate warns rather than fails on it. A `uctl` or `hash` drift is a real change in the battle and still fails. Recorded from three independent page loads per battle, cross-checked against an earlier independent pair of runs: all 21 checkpoints reproduced exactly. Headcounts 8,632 / 3,074 / 3,440 confirm each arm measured the battle it names.",
     "checkpoints": {
       "0": {
-        "hash": "8ca295e0",
+        "hash": "aaf0c4f0",
         "count": 3440,
         "alive": 3440,
         "uf64": "b835cac3",
@@ -133,51 +133,51 @@
         "units": 34
       },
       "30": {
-        "hash": "5b08e7b0",
+        "hash": "21e6784e",
         "count": 3440,
         "alive": 3390,
-        "uf64": "64d53c53",
+        "uf64": "ce909255",
         "uctl": "3828e8f4",
         "units": 34
       },
       "90": {
-        "hash": "69be5398",
+        "hash": "3c542406",
         "count": 3440,
-        "alive": 3035,
-        "uf64": "965bdfbc",
-        "uctl": "71554801",
+        "alive": 3036,
+        "uf64": "6fc18e52",
+        "uctl": "087d14ff",
         "units": 34
       },
       "150": {
-        "hash": "d113c36a",
+        "hash": "72d28ec9",
         "count": 3440,
-        "alive": 2870,
-        "uf64": "79b0cc9d",
-        "uctl": "0927dd8f",
+        "alive": 2847,
+        "uf64": "00ad8cee",
+        "uctl": "42b90e4a",
         "units": 34
       },
       "200": {
-        "hash": "ada4abb6",
+        "hash": "3ec23c98",
         "count": 3440,
-        "alive": 2852,
-        "uf64": "88b5a571",
-        "uctl": "3e494dd9",
+        "alive": 2838,
+        "uf64": "ee8f4b9f",
+        "uctl": "e8b36d41",
         "units": 34
       },
       "250": {
-        "hash": "7235eb60",
+        "hash": "98e5fe64",
         "count": 3440,
-        "alive": 2756,
-        "uf64": "be041749",
-        "uctl": "bb90bec8",
+        "alive": 2648,
+        "uf64": "f9bf8e72",
+        "uctl": "aa153e67",
         "units": 34
       },
       "400": {
-        "hash": "286731a8",
+        "hash": "9ecd9234",
         "count": 3440,
-        "alive": 2193,
-        "uf64": "87b93b09",
-        "uctl": "820eb4ff",
+        "alive": 2259,
+        "uf64": "d4582c3d",
+        "uctl": "04c4e883",
         "units": 34
       }
     }
