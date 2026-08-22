@@ -72,51 +72,51 @@
         "units": 32
       },
       "30": {
-        "hash": "1076449e",
+        "hash": "5c028b98",
         "count": 3074,
-        "alive": 2888,
-        "uf64": "373ba0d7",
-        "uctl": "b9c20b0c",
+        "alive": 3003,
+        "uf64": "0d737499",
+        "uctl": "0632a23f",
         "units": 32
       },
       "90": {
-        "hash": "16eeec50",
+        "hash": "3cd7fd70",
         "count": 3074,
-        "alive": 2553,
-        "uf64": "17b3fffb",
-        "uctl": "0955cea4",
+        "alive": 2691,
+        "uf64": "94a95d62",
+        "uctl": "8df5168d",
         "units": 32
       },
       "150": {
-        "hash": "361b0df0",
+        "hash": "acf572a1",
         "count": 3074,
-        "alive": 2468,
-        "uf64": "29af5fe9",
-        "uctl": "4f3d713f",
+        "alive": 2551,
+        "uf64": "db5f4cc9",
+        "uctl": "b6ba2ea4",
         "units": 32
       },
       "200": {
-        "hash": "a87a2586",
+        "hash": "a8c35428",
         "count": 3074,
-        "alive": 2418,
-        "uf64": "1e6baac6",
-        "uctl": "716bff02",
+        "alive": 2470,
+        "uf64": "dc79a5f5",
+        "uctl": "7603f562",
         "units": 32
       },
       "250": {
-        "hash": "f1dfcbca",
+        "hash": "fb992664",
         "count": 3074,
-        "alive": 2389,
-        "uf64": "ee3615a5",
-        "uctl": "b02ef875",
+        "alive": 2415,
+        "uf64": "a42850c5",
+        "uctl": "b4904388",
         "units": 32
       },
       "400": {
-        "hash": "e648857e",
+        "hash": "98b2a310",
         "count": 3074,
-        "alive": 2233,
-        "uf64": "53ea7cc1",
-        "uctl": "f795e25d",
+        "alive": 2223,
+        "uf64": "3a13d4bc",
+        "uctl": "c5ac8aaf",
         "units": 32
       }
     }
@@ -133,51 +133,51 @@
         "units": 34
       },
       "30": {
-        "hash": "5b08e7b0",
+        "hash": "a4fa4050",
         "count": 3440,
         "alive": 3390,
-        "uf64": "64d53c53",
-        "uctl": "3828e8f4",
+        "uf64": "eb5d3692",
+        "uctl": "0c1f266e",
         "units": 34
       },
       "90": {
-        "hash": "69be5398",
+        "hash": "51a4676a",
         "count": 3440,
-        "alive": 3035,
-        "uf64": "965bdfbc",
-        "uctl": "71554801",
+        "alive": 3021,
+        "uf64": "282f9bfa",
+        "uctl": "e3e2d08e",
         "units": 34
       },
       "150": {
-        "hash": "d113c36a",
+        "hash": "83892236",
         "count": 3440,
-        "alive": 2870,
-        "uf64": "79b0cc9d",
-        "uctl": "0927dd8f",
+        "alive": 2809,
+        "uf64": "1923e9f3",
+        "uctl": "241afd6b",
         "units": 34
       },
       "200": {
-        "hash": "ada4abb6",
+        "hash": "d1203e18",
         "count": 3440,
-        "alive": 2852,
-        "uf64": "88b5a571",
-        "uctl": "3e494dd9",
+        "alive": 2805,
+        "uf64": "99c325f3",
+        "uctl": "a68b18d2",
         "units": 34
       },
       "250": {
-        "hash": "7235eb60",
+        "hash": "63d931fe",
         "count": 3440,
-        "alive": 2756,
-        "uf64": "be041749",
-        "uctl": "bb90bec8",
+        "alive": 2714,
+        "uf64": "6ec1cceb",
+        "uctl": "fd170476",
         "units": 34
       },
       "400": {
-        "hash": "286731a8",
+        "hash": "59b074a2",
         "count": 3440,
-        "alive": 2193,
-        "uf64": "87b93b09",
-        "uctl": "820eb4ff",
+        "alive": 2337,
+        "uf64": "127b21fc",
+        "uctl": "d45bee9b",
         "units": 34
       }
     }
