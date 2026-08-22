@@ -179,11 +179,20 @@ const drawHeightOf = (m: RomeMonument): number => (m.soft ? 1 : (m.drawY ?? m.dr
  * `assertRomeFrame`'s `offMap` list, which prints the names at every boot, so the cost is
  * visible rather than implied.
  *
- * The bound is `HALF_EXTENT`, the heightfield's own edge, and the test is on the **footprint**
- * and not the centre — which is what `topography.ts:KZ`'s original docstring meant by *"with
- * its precinct clear of the edge"*, and what reproduces `ROME-FABRIC.md` §4.5's off-map sets at
- * every swept `KZ`. A monument whose centre is on the map but whose south half hangs over the
- * edge is a monument with a straight cut through it, which is worse than an absent one.
+ * **The bound is `CITY_Z_MAX` and the test is on the centre, and this paragraph used to say the
+ * opposite.** It claimed the bound was `HALF_EXTENT` and the test was *"on the **footprint** and
+ * not the centre… what reproduces `ROME-FABRIC.md` §4.5's off-map sets at every swept `KZ`"*. The
+ * code below tests `worldOf(m.e, m.n).z > CITY_Z_MAX`. Both halves of the claim are wrong and the
+ * second is the dangerous one: `tools/scratch/rome-landmarks.mjs` records that the centre test and
+ * the footprint test agree **only at `KZ` = 0.35** and diverge at 0.30 and 0.38, so the file
+ * documents a test about the +Z edge, ships a test about the fabric inset, and the divergence is
+ * invisible at exactly the value in use.
+ *
+ * The centre test is the right one and `rome-landmarks.mjs:reserve` argues why: with `draw`
+ * authored per row, a footprint test is circular — membership would depend on a footprint chosen
+ * after membership, so a monument could be deleted from the map for the crime of being drawn at
+ * its real size. What the footprint test was protecting against, a building hanging over the edge
+ * of the ground, is `maxDrawAt` below, measured on the true oriented reach.
  *
  * **Phase 6, not now:** whether these six can come back as off-field silhouette geometry beyond
  * the heightfield is tagged **[?]** in §4.5 and is measured by

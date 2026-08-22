@@ -74,19 +74,23 @@ import { clamp } from '../../util/math';
  *  1. **Corrected coordinates.** Five rows were in the wrong place and one of them by 234 m, and
  *     fixing those removed more conflict than any amount of shrinking. Each carries the
  *     correction and its evidence in its own `cite`.
- *  2. **`complex`** — twenty-one rows in six groups where the city had a party wall and not a
+ *  2. **`complex`** — twenty-one rows in five groups where the city had a party wall and not a
  *     street, so the layout stops demanding seven metres of carriageway between the Basilica
  *     Ulpia and the forum it stands in. Inside a complex two rows may
  *     interpenetrate by at most 2.4 m, which is `probe-fabric`'s own abutment allowance.
  *  3. **`draw`** — a per-monument authored footprint, held beside the real published dimension
  *     it departs from. There is **no global plan scale any more** and there must not be one
  *     again: `ROME-FABRIC.md` §4.5 measured that the largest uniform scale with zero conflicts
- *     is 0.232, a 44 m Colosseum. The authored floor achieved here is **0.445**, eleven rows are
- *     at full published plan, and the Colosseum is drawn at its real 189 × 156.
+ *     is 0.232, a 44 m Colosseum. The authored floor achieved here is **0.339**, four *drawn*
+ *     rows are at full published plan (nine rows carry 1.000, but five of those are the rows
+ *     `offMapSouth` drops and are not drawn at all), and the Colosseum is drawn at 108 × 89 —
+ *     0.573 of its real 189 × 156. Every one of those four numbers was wrong here for two
+ *     phases; `tools/scratch/rome-landmarks.mjs --audit` is what re-derives them.
  *
  * The compression is real and worth stating plainly: positions compress by 0.443 × 0.35, so a
  * building at 1:1 covers 6.4× its real share of the ground. That is why some rows must shrink.
- * Heights are never scaled.
+ * Heights shrink with them: see `drawY`, which defaults to `draw` precisely so that a smaller
+ * monument is a smaller model of the real thing and not a squashed one.
  *
  * Anisotropy rotates plan angles, so `worldRot` transforms the long axis through the same map
  * instead of copying the compass bearing. **It is scale-invariant** — the factor cancels inside
@@ -154,7 +158,11 @@ export interface RomeMonument {
    * the Horologium, Trajan's Column and Hadrian's tomb all become eggs. A uniform scalar keeps
    * a circle a circle, and keeps the **aspect ratio** the probe's scale-free check measures.
    *
-   * Heights are never scaled. The Colosseum keeps its 48 m attic whatever this says.
+   * **Heights are scaled with the plan, and this docstring used to say the opposite.** It read
+   * *"heights are never scaled; the Colosseum keeps its 48 m attic whatever this says"* — and the
+   * very next field, `drawY`, defaults to `draw` and brings the attic down to 27.8 m. A field
+   * whose documentation contradicts the field below it is worse than an undocumented one, because
+   * the next reader will believe it. `MAP-METHOD.md` rule 2, found by a ground judge.
    */
   draw?: number;
   /**
@@ -176,8 +184,9 @@ export interface RomeMonument {
    * one. The rows that carry no `draw` at all are drawn at 1.00 on all three axes and were right
    * by accident; this generalises them.
    *
-   * **What it costs, stated because it is the real objection.** The Colosseum is drawn at 0.548,
-   * so its attic comes down from 48 m to 26. That is a visibly lower skyline and it is the price
+   * **What it costs, stated because it is the real objection.** The Colosseum is drawn at 0.573,
+   * so its attic comes down from 48 m to 27.8 m. (This paragraph said 0.548 and 26 m for two
+   * phases; 0.548 was a working value from an earlier allocation and never shipped.) That is a visibly lower skyline and it is the price
    * of the ratio being right. A row may set `drawY: 1` where a building's height genuinely is its
    * identity and the distortion is worth paying — **no row does today**, and any that does must
    * say why in its `cite` and expect to be argued with.
@@ -224,16 +233,34 @@ export interface RomeMonument {
    * collapsing the rows keeps every id, every builder, every bearing and every real dimension,
    * and it is the same statement about the ground.
    *
-   * Every complex below is evidenced by `rome-landmarks.mjs --realgaps`: a set whose published
-   * plans interpenetrate or abut **in real metres, with no projection involved**. That is
-   * arithmetic from published dimensions, not an appeal to convenience.
+   * Every complex below is evidenced by `rome-landmarks.mjs --realgaps`: a set containing a pair
+   * whose published plans interpenetrate or abut **in real metres, with no projection involved**.
+   * That is arithmetic from published dimensions, not an appeal to convenience.
+   *
+   * **And "one piece of continuous built fabric" is a stronger claim than that evidence supports,
+   * which is a fault this docstring owns.** A set with *a* joined pair is not a joined set.
+   * `assertComplexJoined` in `assertions.ts` now asks the harder question — is the complex
+   * *connected* under "closer than a 12 m real street"? — against the same published plans, and
+   * **three of five fail**: `campus-medius` is four pieces, `forum-valley` five, and
+   * `colosseum-valley` four, the last of those being two groups on two different levels, the
+   * Colosseum and the Ludus in the valley and the Baths of Titus and Trajan on the Oppian terrace
+   * 38 real metres away. `pompey` and `octavia-marcellus` are genuinely one piece. The check
+   * faults at every boot and the repair is phase 4's, because narrowing a complex makes its former
+   * members owe each other a projected street and re-opens the `draw` allocation.
    *
    * **What a complex licenses is bounded, and the bound is the gate's, not this file's.** Two
    * rows in one complex may interpenetrate by at most **2.4 m** — just inside
    * `probe-fabric.mjs`'s own `ABUT_DEPTH_M = 2.5`, the depth below which it classes an
-   * intersection as a joint in one structure rather than two buildings inside each other. So a
-   * licensed abutment is licensed by the external instrument too, and not merely by this file's
-   * opinion of itself.
+   * intersection as a joint in one structure rather than two buildings inside each other.
+   *
+   * **That last sentence used to end "so a licensed abutment is licensed by the external
+   * instrument too", and it claimed more than it could.** `probe-fabric`'s abutment class needs
+   * `dep <= 2.5` **and** an area limb, `area <= ABUT_FRAC × min(area)` = 5 %, and for a small
+   * monument the depth alone does not buy the class: 2.4 m along the Tabularium's 12.7 m edge is
+   * 30 m² against a 17 m² allowance. The external licence is narrower than the depth bound
+   * suggests, so the depth bound is this file's floor and not a guarantee about the gate.
+   * `assertions.ts:ABUT_DEPTH` is where it is now actually enforced — it was enforced nowhere in
+   * `src/` at all until this phase, while a docstring said it was.
    *
    * **That bound was learnt the expensive way and the lesson is general.** This field first
    * shipped as an *exemption*: a named pair was skipped by the conflict solve entirely. It
