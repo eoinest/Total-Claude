@@ -10,6 +10,7 @@ import {
   assertHillRing,
   assertNoFootprintOverlaps,
   assertOneAmphitheatre,
+  assertRomeFrame,
   assertTopology,
   assertWaysClearOfMonuments,
 } from './assertions';
@@ -106,6 +107,45 @@ export const ROME_PLAN: CityPlan = {
      */
     const rome = cw ? null : (wall as ReturnType<typeof buildWall>).section;
     const romeAssertions: CityAssertion[] = [];
+    /**
+     * **`assertRomeFrame`, printed once at boot, beside the section.** `ROME-FABRIC.md` §4.1's
+     * closing list — *"sanity checks that must hold **after** the build"* — in
+     * `CARTHAGE.md` §2.5's format.
+     *
+     * It is printed for the whole map and not only for Rome-the-fortification, and it goes
+     * *before* the section line, because the section is one system inside a frame and the frame
+     * is what decides whether any of it can work. `ROME-FABRIC.md` §1.1 step 4's finding on
+     * Carthage is the reason it exists at all: Carthage wrote four whole-map numbers into its
+     * document and never instrumented one of them.
+     *
+     * Rows whose `pending` is set are printed with the phase that closes them and are excluded
+     * from the fault list. See `RomeFrameCheck` for why they are here before they can pass.
+     */
+    const frame = cw ? null : assertRomeFrame();
+    if (frame) {
+      console.info(
+        `[city:rome] frame: KX ${frame.kx} KZ ${frame.kz} (anisotropy ${frame.anisotropy.toFixed(2)}x), ` +
+          `gate at x ${frame.gateX.toFixed(1)} z ${frame.gateZ.toFixed(1)}; ` +
+          `${frame.offMap.length} survey row(s) past the +Z edge: ${frame.offMap.join(', ') || 'none'}`
+      );
+      for (const c of frame.checks) {
+        const mark = c.pending ? 'PENDING' : c.ok ? 'ok     ' : 'FAULT  ';
+        console.info(
+          `[city:rome]   ${mark} ${c.name}: ${c.detail}` +
+            `  [target ${c.target}]${c.pending ? `  <- ${c.pending}` : ''}`
+        );
+      }
+      for (const s of frame.faults) console.warn(`[city:rome] frame fault: ${s}`);
+      romeAssertions.push({
+        name: 'frame',
+        ok: frame.faults.length === 0,
+        detail:
+          `KX ${frame.kx} KZ ${frame.kz}; ` +
+          `${frame.checks.filter((c) => c.ok).length} of ${frame.checks.length} checks pass, ` +
+          `${frame.checks.filter((c) => c.pending).length} pending a later phase, ` +
+          `${frame.faults.length} fault(s)`,
+      });
+    }
     if (rome) {
       console.info(
         `[city:rome] circuit: ${rome.bays} bays at ${rome.pitch.toFixed(2)} m, ` +
@@ -193,6 +233,21 @@ export const ROME_PLAN: CityPlan = {
     if (!topology.ok) {
       console.warn(`[city] topology check failed: ${topology.failures.join('; ')}`);
     }
+    /**
+     * **The rules and ring members the frame ruled out, printed by name.**
+     *
+     * At `KZ` = 0.35 six survey rows are past the +Z edge, so eleven topology rules and three
+     * ring members cannot be checked. That is a real reduction in what the build proves about
+     * itself and it is printed rather than absorbed, because a check count that quietly falls
+     * is the shape of every fault `MAP-METHOD.md` rule 6 is about. `assertTopology` separates
+     * an off-map id from an unknown one so that a genuine typo is still a fault.
+     */
+    if (topo.offMapSkips > 0 || ring.offMapSkips > 0) {
+      console.info(
+        `[city:rome] frame: ${topo.offMapSkips} topology rule(s) and ${ring.offMapSkips} hill-ring ` +
+          `member(s) are off this map and not checked — ${[...topo.skipped, ...ring.skipped].join(', ')}`
+      );
+    }
     // Exactly one Flavian Amphitheatre. See `assertOneAmphitheatre`.
     const amphitheatres = assertOneAmphitheatre();
     if (!amphitheatres.ok) {
@@ -253,6 +308,9 @@ export const ROME_PLAN: CityPlan = {
       // The whole `assertRomeSection` record, so a probe reads the builder's own arithmetic
       // rather than re-deriving it from the bays. Absent under the `?fort=carthage` rig.
       romeSection: rome,
+      // The whole `assertRomeFrame` record. `tools/probe-fabric.mjs` reads this rather than
+      // re-deriving the projection, which is what stops a second, drifting copy of it.
+      romeFrame: frame,
       checks: {
         assertions: romeAssertions,
         footprintOverlaps: overlaps.count,
