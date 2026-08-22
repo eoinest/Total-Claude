@@ -1027,6 +1027,25 @@ and there is no evidence anyone but the owner wants it.
 > | Carthage assault | 3,440 | identical t+30 onward; **t+0 `uf64` apart** — 26 float64 fields, all `facing`/`targetFacing`, 1 ULP, Firefox | **identical at all seven, all three engines** |
 > | Rome assault | 3,072 | identical t+30 onward; t+0 `uf64` apart in *both* other engines | **identical at all seven, all three engines** |
 >
+> **Re-run in full on the merged tree, 22 August 2026, and the property survived the merge.**
+> All three battles bit-identical in the same three engines at all seven checkpoints to t+400 —
+> 8,632 / 3,072 / 3,440 men, `hash`, `uf64` and `uctl` — with 13 of 14 approximated functions
+> measured disagreeing on every run, the `inputs`/`sqrt`/`fma` controls identical everywhere, and
+> a second Chromium load bit-identical to the first. `simTime` is now a compared mark on all four
+> runs of each arm, so "all 4 runs at t+0 … t+400 exactly, to the tick" is asserted rather than
+> printed.
+>
+> The two firewall-off controls were re-taken at the same time, and they are what stop the row
+> above being a table of things that were never going to fork:
+>
+>   - **Chromium against WebKit is still bit-identical at the Carthage boot with the firewall
+>     off.** That pairing needs nothing beyond the `hypot` sweep, which is the measurement the
+>     Stage 3 reprice rests on.
+>   - **Chromium against Firefox differs at t+0 by exactly 26 float64 fields of 1,020** — 1 ULP
+>     each, 13 `facing` and 13 `targetFacing` across 34 units, **zero** control fields and
+>     **zero** of 3,440 men in the float32 pool. Reproduced field for field, a year and a tree
+>     later, and closed by the `spawnUnit` half of the firewall.
+>
 > `hash`, `uf64` and `uctl` all three, exact bits, with the arm's own controls green: 13 of 14
 > approximated `Math` functions measurably disagree between those engines on the same run, the
 > probe's `inputs`/`sqrt`/`a*b+c` controls are identical everywhere, and a second Chromium load is

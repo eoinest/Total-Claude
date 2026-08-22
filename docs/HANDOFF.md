@@ -54,13 +54,14 @@ hashes each: the float32 pool, `uf64` (exact float64 unit state) and `uctl` (dis
 > `src/sim`, `src/terrain`, `src/maps` or `src/city` — because the thing that moves it is usually a
 > browser update rather than a commit, and a gate nobody wants to run measures nothing.
 >
-> **Re-run on the merged tree, 22 Aug 2026.** The field battle and the Carthage assault are both
-> **bit-identical in Chromium 151, Firefox 153 and WebKit 26.5 at all seven checkpoints to
-> t+400** — `hash`, `uf64` and `uctl`, 8,632 and 3,440 men — with 13 of 14 approximated `Math`
+> **Re-run on the merged tree, 22 Aug 2026 — all three battles.** The field battle, Rome's
+> assault and the Carthage assault are **bit-identical in Chromium 151, Firefox 153 and WebKit
+> 26.5 at all seven checkpoints to t+400** — `hash`, `uf64` and `uctl`, 8,632 / 3,072 / 3,440
+> men — with 13 of 14 approximated `Math`
 > functions measured disagreeing between those engines on the same run, all three vacuity
-> controls green, and a second Chromium load bit-identical to the first. The field battle's
-> t+205.5 escape, which is the oldest open finding in `docs/MULTIPLAYER.md`, is closed: t+250 and
-> t+400 agree in all three.
+> controls green on every run, and a second Chromium load bit-identical to the first. The field
+> battle's t+205.5 escape, which is the oldest open finding in `docs/MULTIPLAYER.md`, is closed:
+> t+250 and t+400 agree in all three engines.
 >
 > **The firewall-off controls, so none of that is vacuous.** With `tools/scratch/firewall-toggle.py
 > off`: Chromium and WebKit are still bit-identical at the Carthage boot — **that pairing needs
