@@ -156,12 +156,28 @@ const deploy = await page.evaluate(async () => {
   if (!topo.germanDeployMask) return null;
   const WATER = topo.WATER_LEVEL;
   const IMPASSABLE = 0.62; // ROUGH_SLOPE_IMPASSABLE, src/sim/Obstacles.ts
+  /*
+   * The window is read off the boxes, not written down beside them.
+   *
+   * It was a literal `x -800..800`, which was comfortably outside both boxes until §15 task 14
+   * widened the attacker's to x 848 — at which point this audit would have gone on reporting
+   * "0 under water, 0 over the impassable slope" over a box whose last 48 m it never looked at,
+   * and the count of cells would have been short by about 630 without saying so. A probe that
+   * silently stops at the edge of its own literal is the failure `DEPLOY_GROUND` was made data
+   * to prevent, one layer up.
+   */
+  const g0 = topo.DEPLOY_GROUND;
+  const pad = 8;
+  const X0 = Math.min(g0.north.cx - g0.north.hx, g0.south.cx - g0.south.hx) - pad;
+  const X1 = Math.max(g0.north.cx + g0.north.hx, g0.south.cx + g0.south.hx) + pad;
+  const Z0 = Math.min(g0.north.cz - g0.north.hz, g0.south.cz - g0.south.hz) - pad;
+  const Z1 = Math.max(g0.north.cz + g0.north.hz, g0.south.cz + g0.south.hz) + pad;
   const rows = [];
   for (const [name, mask] of [['attacker', topo.germanDeployMask], ['defender', topo.romanDeployMask]]) {
     let cells = 0, wet = 0, steep = 0, minH = Infinity, maxSlope = 0;
     let wettest = null, steepest = null;
-    for (let z = -420; z <= 420; z += 4) {
-      for (let x = -800; x <= 800; x += 4) {
+    for (let z = Z0; z <= Z1; z += 4) {
+      for (let x = X0; x <= X1; x += 4) {
         if (mask(x, z) < 0.02) continue;
         cells++;
         const h = t.heightAt(x, z);

@@ -25,9 +25,11 @@
  * out an army rather than commanding one.
  *
  * **The pool cannot be handed a slot back.** `SoldierPool.alloc` is a bump allocator —
- * `if (count >= capacity) return -1; return count++` — with no free list, and its capacity
- * is fixed at `BattleSystem.init` from `quality.maxSoldiers`, which is *before* the
- * scenario deploys. So a unit removed here can never give its men back to the pool. Two
+ * `if (count >= capacity) return -1; return count++` — with no free list, and its capacity is
+ * fixed at `BattleSystem.init` from `SOLDIER_POOL_CAPACITY`, which is *before* the scenario
+ * deploys. (It used to be fixed from `quality.maxSoldiers`, which made how many units a player
+ * could add during deployment a function of their shadow-quality setting. One number now.) So
+ * a unit removed here can never give its men back to the pool. Two
  * consequences, both handled rather than hoped over: removed units are **benched and
  * reused** when a unit of the same type is added again, which makes the ordinary edit loop
  * (add the wrong thing, remove it, add the right thing) cost nothing at all; and every add

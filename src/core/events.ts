@@ -1,6 +1,35 @@
 import type { QualitySettings } from './Engine';
 
 /**
+ * Why a wall order could not be carried out.
+ *
+ * Declared here rather than in `sim/Siege.ts` because it has two readers on opposite sides of
+ * a seam and exactly one of them may own it: `Siege.traverseOfferAt` answers with it *before*
+ * the click, so the cursor can refuse, and `orderRefused` carries it back *after* the click,
+ * for the orders the cursor could not pre-judge. Both must be the same list of reasons or the
+ * player gets two vocabularies for one rule.
+ *
+ * `src/ui/siege.ts` holds the sentence for each, in one total map, because a refusal the
+ * player cannot read is the same defect as no refusal at all.
+ *
+ *  - `notOnWall`  — this unit has no garrison on the stonework to move along it.
+ *  - `noWall`     — the point is not on a wall the simulation knows about.
+ *  - `noRoute`    — the walk between here and there is broken: a construction step, a
+ *                   gatehouse, a bay the great ram has brought down.
+ *  - `noStair`    — there is no flight of steps joining this stretch to the ground.
+ *  - `busy`       — the siege system is already placing these men and will not be interrupted.
+ */
+export type WallRefusal = 'notOnWall' | 'noWall' | 'noRoute' | 'noStair' | 'busy';
+
+/**
+ * Which wall order was asked for. Carried with the refusal because one reason reads two ways:
+ * "no steps join that bay to the ground" is the right sentence for a descent and the wrong one
+ * for a climb, and the first cut of this said the descent version over a cohort standing in the
+ * street trying to get up. Same defect as the card naming the wrong condition, one size down.
+ */
+export type WallVerb = 'traverse' | 'descend' | 'ascend';
+
+/**
  * The engine-wide event vocabulary. Every cross-subsystem signal is declared here
  * so the compiler catches typos and payload drift between producer and consumer.
  */
@@ -69,6 +98,32 @@ export interface GameEvents {
     queued?: boolean;
     /** Run instead of walk (double-click / Alt). */
     running?: boolean;
+  };
+
+  /**
+   * A wall order was given and the simulation will not carry it out.
+   *
+   * The counterpart of `orderIssued`, and the reason it exists is measured: a garrison order
+   * that `Siege` refuses was **eaten whole**. `interceptOrders` discarded the boolean
+   * `moveAlongWall`/`sendToGround`/`sendToWall` return and set the unit back to `Garrison`
+   * either way, so the unit stood still, `unitWallState.goal` never left `none`, `planAge`
+   * stayed −1, and nothing anywhere said a word. A judge issued four orders the cursor had
+   * offered — 407 m, 370 m, 37 m and 37 m — and closed 0 m of all four, including to the bay
+   * next door.
+   *
+   * The cursor refuses what it can see coming (`traverseOfferAt`). This is for the rest: the
+   * order point is decided a tick later from a point the UI pushed clear of the masonry, and
+   * a predicate that runs on hover cannot always answer for it. **An order must execute or be
+   * refused out loud; those are the only two acceptable outcomes.**
+   *
+   * The payload is a code, not a sentence: the wall verbs' words belong to the interface.
+   */
+  orderRefused: {
+    unitId: number;
+    verb: WallVerb;
+    refusal: WallRefusal;
+    /** The bay the order pointed at, or −1 when it was not on a bay. */
+    bay: number;
   };
 
   // ---- Combat feedback (sim -> audio/vfx/ui) ----

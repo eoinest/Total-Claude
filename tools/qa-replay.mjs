@@ -634,26 +634,34 @@ if (wanted('coarse')) {
 }
 
 if (wanted('tier')) {
-  console.log('\n=== the graphics tier is a simulation input ===');
+  console.log('\n=== the graphics tier is not a simulation input ===');
   /*
-   * Measured elsewhere, on the Campus Martius assault at one seed: **ultra fields 3,074 men
-   * and medium 3,009**, the ram crew dies 16 m short of the door at ultra and lands 26 blows
-   * at medium, and the Porta Flaminia opens at one tier and never at the other. Same map,
-   * same scenario, same seed. The chain is one field — `quality.maxSoldiers` sizes the pool,
-   * `fittedUnitScale` fits the army to it, `scenario.ts` writes `battle.unitSizeScale`. A
-   * "graphics setting" is a simulation input.
+   * It was one, and this arm's name is the history. Measured on the Campus Martius assault at
+   * one seed: **ultra fielded 3,074 men and medium 3,009**, the ram crew died 16 m short of the
+   * door at ultra and landed 26 blows at medium, and the Porta Flaminia opened at one tier and
+   * never at the other. Same map, same scenario, same seed. The chain was one field —
+   * `quality.maxSoldiers` sized the pool, `fittedUnitScale` fitted the army to it, `scenario.ts`
+   * wrote `battle.unitSizeScale` — and the owner ruled that a graphics setting must not change
+   * the outcome of a battle. The pool is `SOLDIER_POOL_CAPACITY` now, one number at every tier.
    *
-   * So a record has to carry the tier and a replay has to honour it, and both halves are
-   * checked here rather than assumed. The second one uses a tampered token instead of a real
-   * tier change, because whether `low` actually clamps *this* army is arithmetic that could
-   * change; whether the refusal fires when the recorded army differs from the fitted one
-   * must not depend on that.
+   * So the first check has changed meaning and is worth more than it was. It used to say "the
+   * record's tier beats the URL's, so a replay cannot be watched at another army size", which
+   * was true and was a workaround. It now says the stronger thing: `?quality=low` over a record
+   * made at any tier replays the identical battle, because there is no army size to watch it at.
+   * A regression that reintroduced the coupling would fail it here as well as in
+   * `qa-determinism.mjs`'s cross-tier arm, which is the instrument that owns the ruling.
+   *
+   * The second check is untouched and is the one that keeps this arm honest. It tampers with the
+   * token's `us` field rather than changing a tier, because whether some tier clamps *this* army
+   * is arithmetic that can change; whether the refusal fires when the recorded army differs from
+   * the fitted one must not depend on that. It is now the only way the refusal can fire at all,
+   * and it still fires.
    */
   const forced = await playback(R.token, { stepMs: 1000 / 60, ticks: rec.ticks, quality: 'low' });
   const d = markDiff(rec.marks, forced.rec.marks);
   measured.tier = { urlTier: 'low', recordedTier: rec.quality, count0: forced.rec.count0, diff: d };
   record('tier-in-record', d === null && forced.rec.count0 === rec.count0,
-    "the record's tier beats the URL's, so a replay cannot be watched at another army size",
+    'a record replays identically at another graphics tier — the tier is not an army size',
     `?quality=low over a record made at '${rec.quality}': `
       + `${forced.rec.count0} men against ${rec.count0} recorded, `
       + (d === null ? 'every checkpoint identical' : `diverged at ${d.at}: ${d.why}`));

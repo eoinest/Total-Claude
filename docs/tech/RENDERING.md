@@ -68,9 +68,9 @@ Two settings the engine makes and something else overrides, both deliberate:
 
 `src/units/UnitRenderSystem.ts` (2,935 lines) is the centre of this. Measured on the field
 battle at `ultra`, **8,632 soldiers** are deployed (35 units, into a pool sized by
-`quality.maxSoldiers = 12,000`). That figure is independently quoted by
-`AdaptiveQuality.ts:232` as the headcount at which `fixedUpdate` costs 3.657 ms, so the two
-agree.
+`SOLDIER_POOL_CAPACITY = 12,000` — one number at every tier; see SIMULATION.md §3). That figure
+is independently quoted by `AdaptiveQuality.ts:232` as the headcount at which `fixedUpdate` costs
+3.657 ms, so the two agree.
 
 The whole army is drawn by, at most, **sixteen meshes**, of which the measured worst case
 across the cameras probed was **four visible at once** (§3).
@@ -145,8 +145,14 @@ to spare. A piece the man does not wear collapses to `vec3(0.0)`: all three corn
 triangle land on the same vertex, so it has zero area and never reaches the rasteriser
 (`skinShader.ts:170-176`).
 
-Buffers are allocated at `cap = quality.maxSoldiers` for soldiers, `max(256, cap * 0.25)` for
-horses, 64 for elephants and 64 for each engine kind. At ultra:
+Buffers are allocated at `cap = SOLDIER_POOL_CAPACITY` for soldiers, `max(256, cap * 0.25)` for
+horses, 64 for elephants and 64 for each engine kind. **This is the same figure at every tier**,
+so the table below is the allocation on a `low` machine as well — it used to be `cap =
+quality.maxSoldiers`, which was 1,600 at low, and sizing the *army* from the graphics tier meant
+the graphics tier decided the outcome of the battle. The cost of the change on a weak machine is
+about 11 MB more instance buffer, allocated once at boot; `geometry.instanceCount` is set to the
+men actually drawn on every frame, so an unfilled buffer is never traversed and never uploaded and
+costs no frame time. At ultra:
 
 ```
 soldiers   9 tiers x 12,000 x 116 B = 12,528,000
@@ -1358,17 +1364,21 @@ linked a program (151.0 ms and 65.1 ms) against a p50 of 10.8 ms.
 material), `shadowMapSize` (`LightingSystem.resize` returns early unless the cascade count
 changed, so writing it does nothing — "a lever that is wired and silently inert, this project's
 most common failure mode"), `antialias`, `lodFarDistance` (a legibility threshold, not a cost
-knob — see §2.4), `bloom`, and `maxSoldiers` (simulation state; not expressible in
-`RenderQualityPatch`).
+knob — see §2.4) and `bloom`.
 
-**The headcount exclusion is a structural guarantee, not a convention, and it is worth saying
-so plainly: the adaptive loop cannot thin an army even by mistake.** `maxSoldiers` lives in its
-own `SimQuality` interface, deliberately outside `RenderQuality`, and the loop's patch type is
-`RenderQualityPatch = Partial<Omit<RenderQuality, 'tier'>>` — so a patch that named it would not
-compile. It is *also* in `AdaptiveQuality.EXCLUDED`, and `Engine.applyRenderQuality` re-pins it
-from `simQuality` after every patch. Three independent mechanisms, one of them the type checker.
-`lodFarDistance` is excluded alongside it, so the loop cannot push men into billboards either.
-Frames are never bought with men.
+**The headcount exclusion used to be the fourth item on that list and is now stronger than an
+exclusion: there is nothing to exclude.** `maxSoldiers` lived in its own `SimQuality` interface
+outside `RenderQuality`, so the loop's patch type `RenderQualityPatch = Partial<Omit<RenderQuality,
+'tier'>>` could not name it; it was *also* in `AdaptiveQuality.EXCLUDED`, and
+`Engine.applyRenderQuality` re-pinned it from a frozen `simQuality` after every patch. Three
+independent mechanisms, one of them the type checker — and all three were guarding the wrong
+door. They stopped the adaptive loop thinning a *deployed* army and said nothing about the tier
+choosing the army at boot, which it did: 8,632 men on the field at `high` and 1,515 at `low`. The
+field is deleted, `QualitySettings = RenderQuality`, the pool is `SOLDIER_POOL_CAPACITY`, and the
+guarantee is now that **no quality setting reaches the simulation at all** — enforced by
+`tools/qa-determinism.mjs`'s cross-tier arm, which runs the same battle at all four tiers and
+requires bit-identical hashes. `lodFarDistance` is still excluded, so the loop cannot push men
+into billboards either. Frames are never bought with men.
 
 ---
 

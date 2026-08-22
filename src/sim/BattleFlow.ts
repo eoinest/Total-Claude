@@ -1,6 +1,6 @@
 import type { EngineContext, Subsystem } from '../core/Engine';
 import type { BattleSystem } from './BattleSystem';
-import { ALL_FACTIONS, Faction, UnitOrder, type UnitGroupState } from './types';
+import { ALL_FACTIONS, Faction, isBroken, UnitOrder, type UnitGroupState } from './types';
 
 /**
  * Battle flow: decides when the engagement is over and who won.
@@ -104,6 +104,59 @@ export const WALL_HOLD_SECONDS = 20;
 export const BREAK_IN = 60;
 /** Metres past the curtain's own line a man must be to be "in the city" rather than on it. */
 export const INSIDE_MARGIN = 14;
+
+/**
+ * Which of the objective's two conditions ended the battle.
+ *
+ * There are two ways to win a storm and they are not the same event — `parapet` is a
+ * lodgement held on the walkway for `WALL_HOLD_SECONDS`, `breakIn` is `BREAK_IN` men loose
+ * behind the curtain — and both used to leave the same footprint: `reason === 'objective'`.
+ * So the card had to guess which had fired, and guessed the one that never does. It printed
+ * *"The wall was carried"* under a gate held at 85 %, zero breaches, 869 of the garrison
+ * still on the parapet and a roll of honour reading HELD five times.
+ *
+ * That is the **fourth** card this project has shipped naming a condition that did not decide
+ * the battle, so the fix is not the string. The arbiter knows which one fired; it publishes
+ * it, and `src/ui/BattleFlow.ts` keys its sentence off a total map, so a third condition
+ * cannot be added without a sentence and the two cannot drift apart again.
+ */
+export type WallCondition = 'parapet' | 'breakIn';
+
+/**
+ * Fraction of its establishment below which a unit has stopped being one.
+ *
+ * A cohort of 320 down to 79 men is not a cohort; it is a knot of survivors. It has not
+ * broken and it has not been destroyed, and calling it either would be false, so it gets its
+ * own word.
+ */
+export const UNIT_SPENT_FRACTION = 0.25;
+
+/** How a unit ended the battle. Ordered worst first, which is also the order it is decided. */
+export type UnitOutcome = 'destroyed' | 'routed' | 'mauled' | 'held';
+
+/**
+ * How this unit ended the battle — the *one* definition of it.
+ *
+ * Why it is a function and not two pieces of arithmetic in two files: the card prints a
+ * headline count of "Units lost" from the arbiter, and beside it a roll of honour labelling
+ * each unit HELD / ROUTED / DESTROYED from the HUD's own view of the same army. Those were
+ * two rules. The arbiter's counted a unit under a quarter strength as lost — correctly; the
+ * roll had no word for it and printed **HELD**. So a card could read "Units lost 3 of 12"
+ * over twelve rows none of which said anything had happened, which is the same defect as the
+ * verdict sentence one panel up, one size smaller. `mauled` is the missing word.
+ *
+ * Takes primitives rather than a `UnitGroupState` so the HUD can ask it about a `UnitView`
+ * without `src/ui` reaching into simulation state.
+ */
+export const unitOutcome = (
+  destroyed: boolean,
+  routing: boolean,
+  alive: number,
+  establishment: number
+): UnitOutcome => (destroyed ? 'destroyed'
+  : routing ? 'routed'
+    : alive < establishment * UNIT_SPENT_FRACTION ? 'mauled' : 'held');
+
 /**
  * Seconds an assault may go without reducing the garrison's hold on the parapet before it is
  * judged to have been thrown back.
@@ -136,6 +189,13 @@ interface WallLine {
   mz: Float64Array;
   nx: Float64Array;
   nz: Float64Array;
+  /**
+   * Half the frontage of each bay, along the wall's own tangent.
+   *
+   * Carried because a bay's normal defines an infinite line and the wall is 37 m of it. See
+   * the lateral test in `censusWall`.
+   */
+  half: Float64Array;
   /** x of bay 0's midpoint and the uniform pitch, so a man's bay is arithmetic, not a search. */
   x0: number;
   pitch: number;
@@ -213,6 +273,13 @@ export class BattleFlowSystem implements Subsystem {
   result: {
     victor: Faction | -1;
     reason: 'annihilation' | 'rout' | 'timeout' | 'objective' | 'stalemate' | 'repulsed';
+    /**
+     * Which objective condition fired, or null when the battle did not end on one.
+     *
+     * Non-null exactly when `reason === 'objective'`. Published so the card does not have to
+     * infer it — see `WallCondition`.
+     */
+    condition: WallCondition | null;
     casualties: Record<number, number>;
     survivors: Record<number, number>;
     /** Units destroyed, broken, or reduced below a quarter strength. */
@@ -288,8 +355,11 @@ export class BattleFlowSystem implements Subsystem {
        */
       const taken = c.stormHolding >= WALL_FOOTHOLD;
       this.parapetHeldFor = taken ? this.parapetHeldFor + dt : 0;
-      if (this.parapetHeldFor >= WALL_HOLD_SECONDS || c.stormInside >= BREAK_IN) {
-        this.finish(ctx, this.wall.storm, 'objective');
+      // Named separately, and the name is published. See `WallCondition`.
+      const carried = this.parapetHeldFor >= WALL_HOLD_SECONDS;
+      const brokeIn = c.stormInside >= BREAK_IN;
+      if (carried || brokeIn) {
+        this.finish(ctx, this.wall.storm, 'objective', carried ? 'parapet' : 'breakIn');
         return;
       }
       /*
@@ -465,12 +535,16 @@ export class BattleFlowSystem implements Subsystem {
     const mz = new Float64Array(n);
     const nx = new Float64Array(n);
     const nz = new Float64Array(n);
+    const half = new Float64Array(n);
     for (let i = 0; i < n; i++) {
       const bay = bays[i];
       mx[i] = (bay.x0 + bay.x1) * 0.5;
       mz[i] = (bay.z0 + bay.z1) * 0.5;
       nx[i] = bay.nx;
       nz[i] = bay.nz;
+      const dx = bay.x1 - bay.x0;
+      const dz = bay.z1 - bay.z0;
+      half[i] = 0.5 * Math.sqrt(dx * dx + dz * dz);
     }
     // Bays run broadly along x on every map — `CitySystem` asserts a uniform pitch and
     // `bayAt` already indexes them arithmetically for the same reason — so a man's bay is a
@@ -478,7 +552,7 @@ export class BattleFlowSystem implements Subsystem {
     const pitch = (mx[n - 1] - mx[0]) / (n - 1);
     if (!Number.isFinite(pitch) || Math.abs(pitch) < 1) return null;
 
-    return { mx, mz, nx, nz, x0: mx[0], pitch, garrison, storm };
+    return { mx, mz, nx, nz, half, x0: mx[0], pitch, garrison, storm };
   }
 
   /**
@@ -493,6 +567,37 @@ export class BattleFlowSystem implements Subsystem {
    * Men in the city come from a pool walk, because the wall system has no notion of "inside"
    * — it is a fact about the curtain's geometry, and the bays carry it in their own normals.
    *
+   * ## A normal defines an infinite line, and the wall is 37 m of it
+   *
+   * That pool walk found a man's bay by arithmetic, **clamped the index to the ends of the
+   * circuit**, and then asked whether he was more than `INSIDE_MARGIN` past that bay's
+   * midline. Both halves are needed and the second was missing: a bay's outward normal
+   * defines a half-plane that runs to the edge of the map, so any man on the cityward side of
+   * the *extension* of the end bay's line was counted as being inside the city.
+   *
+   * Measured on the storm of Rome, at the tick condition B fired — world positions read out
+   * of the pool, not the census's opinion of them:
+   *
+   * ```
+   *   t+72  stormInside 67, stormHolding 0, stormOnWall 147
+   *   86 men counted inside; 50 of them are one cavalry squadron at x -110, z 575-584
+   *   the circuit's west end is x = 2, so those men are 112 m past the end of the wall
+   *   their arithmetic bay index is -4, clamped to 0, depth read -20 to -32 m
+   * ```
+   *
+   * **And picking the nearest bay instead of the clamped one does not help** — bay 0 *is* the
+   * nearest, at 135-142 m, and it reads them just as deep. The fault is the half-plane, not
+   * the clamp. So the test now also asks that the man be within the bay's own frontage along
+   * the wall's tangent, `half[k] + INSIDE_MARGIN`: 32.5 m either side of a 37 m bay's centre,
+   * which admits a man who has just come round a corner and excludes one standing in open
+   * country a hundred metres off the end.
+   *
+   * Two thirds of a twelve-seed campaign's verdicts were being decided by this. It does not
+   * touch the legitimate route: the 36 men behind bay 2's `footing` at that same tick are the
+   * building site the design intends to be walkable (`ROME.md` §8.8.2) and they still count.
+   * **Whether cavalry should be able to ride round the unbuilt west end of the circuit at all
+   * is a separate question and not this file's** — `ROME.md` §15 task 9 closes the flanks.
+   *
    * ## What the storm is *holding*, as against what it is standing on
    *
    * `garrisonOnWall` is a sum over the whole circuit, and condition A used to ask it to reach
@@ -502,18 +607,44 @@ export class BattleFlowSystem implements Subsystem {
    * and no assault was ever going to do it. A storm takes a *stretch*.
    *
    * So the same walk also bins both sides by run — `Siege` cuts the spine into runs, maximal
-   * stretches a man can walk without leaving the wall, and on this circuit there are 45 of
-   * them for 45 garrisonable bays: 1,695 stations, ~38 m and ~38 stations apiece, so a run is
-   * a bay. A lodgement is a maximal block of consecutive runs the storm has men on, and it
-   * counts as held on two things:
+   * stretches a man can walk without leaving the wall, and there is one per garrisonable bay
+   * because every break on either circuit is a tower: ~38 m and ~38 stations apiece, so a run
+   * is a bay. **The run is the unit of decision**, and it is held on two things:
    *
-   *   - no man of the garrison stands anywhere on it;
-   *   - at least one of its runs is ground the garrison has held (`contestedRuns`).
+   *   - no man of the garrison stands on it;
+   *   - it is ground the garrison has held (`contestedRuns`).
    *
-   * `stormHolding` is the men on every block that passes. Condition A then asks that number,
+   * `stormHolding` is the men on every run that passes. Condition A then asks that number,
    * not `stormOnWall`, to reach `WALL_FOOTHOLD` and stay there for `WALL_HOLD_SECONDS` —
    * which is the same twenty-four men and the same twenty seconds as before, now asked about
    * the ground they are actually on.
+   *
+   * ## Why a run and not a lodgement, which is the third time this has been narrowed
+   *
+   * The rule this replaces judged a **maximal block of consecutive runs the storm had men
+   * on**, all or nothing: one defender anywhere in the block and none of it counted. That is
+   * the shoulder again — it asks the storm to clear ground it is not fighting for — and this
+   * time it was the whole footprint of the escalade rather than one bay either side of it. A
+   * shipped storm plants four banks of ladders on four adjacent bays and spills men onto the
+   * two beyond them, so the block is five or six runs and about a hundred and fifty
+   * defenders. Measured over twelve seeded runs of the Aurelian Wall with the host storming,
+   * both rules on the same seeds: the block form reported **`stormHolding` 0 in 12 of 12 and
+   * never within an order of magnitude of the 24 it wants**, while `stormOnWall` peaked at
+   * 115-164 and the garrison on the walkway was driven from 810 down to 661-778. Off the
+   * shipped plan, with the escalade aimed at a stretch it could actually take, the block form
+   * stayed at 0 through peaks of 237 men on the parapet and the per-run form read 220. Two
+   * hundred men on the parapet and the number the win is read off never leaving zero is an
+   * instrument disagreeing with the battle in front of it.
+   *
+   * The same sentence that killed the shoulder decides this: **a run is its own margin.** It
+   * is 38 m, a lodgement of two dozen men occupies about 17 m of it, and to count at all it
+   * must be ground the garrison chose to hold and has been driven off. If that is enough
+   * margin to stop counting the defender one station past the joint, it is enough to stop
+   * counting the one two bays away — and "the block" was counting him.
+   *
+   * What would change this back: a circuit whose runs are much shorter than a bay, where 24
+   * men on one run would be a foothold rather than a capture and the block would be doing
+   * real work. `Siege.wallReport().runs` is the number to check.
    *
    * ## Why there is no shoulder, which is the one thing here that was measured twice
    *
@@ -537,6 +668,23 @@ export class BattleFlowSystem implements Subsystem {
    * of that, so clearing the run already puts the nearest possible defender ten metres beyond
    * either flank — and to be counted at all that defender must be standing somewhere the
    * garrison chose to hold, having been driven off ground it did hold.
+   *
+   * ## And a unit that has broken is not contesting anything
+   *
+   * `garrisonOnWall` counts men, because it is a physical fact and condition C reads it as
+   * one. **`garrisonRun` counts defenders**, and a unit under `UnitOrder.Rout` is not one.
+   * That is not a special case invented here: `effectiveMen` in this file already excludes
+   * routers from an army, `Siege.mayBoard` refuses a broken unit a place in a file,
+   * `WallDoctrine.decideWall` skips a routing enemy, and the whole victory model in the
+   * header is "a battle ends when one side stops being an army".
+   *
+   * It matters because a routed man on a parapet has nowhere to run to. Measured at the end
+   * of seeded storms of the Aurelian Wall: **three to six of Rome's garrison units had broken
+   * and were still standing on 6 to 170 stations** — up to five bays' worth of curtain, denied
+   * to the storm for the rest of the battle by men who had stopped fighting. Counting them is
+   * the annihilation demand for the third time, at the smallest scale yet: one terrified man
+   * holds 38 m for ever. On the arm where condition A becomes reachable at all, excluding them
+   * is what takes `stormHolding` from 0 to 66-220 and fires the condition.
    */
   private censusWall(w: WallLine): WallCensus {
     const b = this.battle;
@@ -546,47 +694,88 @@ export class BattleFlowSystem implements Subsystem {
     };
     const stormRun = new Map<number, number>();
     const garrisonRun = new Map<number, number>();
+    /**
+     * Storm units that have broken, by id — read by **both** halves of this function.
+     *
+     * Collected in the walk that bins the parapet rather than tested inside the pool loop
+     * below, because that loop runs over every slot in the pool and `unitById` is a search.
+     * Thirty-five entries against nine thousand lookups.
+     *
+     * It was written here and read nowhere for one commit, so the exclusion reached condition
+     * A — where it changes nothing, because `stormHolding` has never been non-zero — and not
+     * condition B, which is the condition that decides every siege in this game. A set with
+     * one writer and no reader is the exact shape of a fix that was designed and not wired,
+     * and the compiler cannot see it because the write is legal on its own.
+     */
+    const routed = new Set<number>();
     for (const u of b.units) {
       if (u.destroyed || u.alive === 0) continue;
       if (u.faction !== w.garrison && u.faction !== w.storm) continue;
       const st = b.siege.unitWallState(u.id);
+      if (u.faction === w.storm && isBroken(u)) {
+        routed.add(u.id);
+        // Still counted where he stands — `stormOnWall` is a description of the parapet and
+        // a man running along it is on it — but he takes no part in a lodgement, and the
+        // pool walk below will not count him as having got inside either.
+        out.stormOnWall += st.onWall;
+        continue;
+      }
       if (st.onWall === 0) continue;
-      const byRun = u.faction === w.garrison ? garrisonRun : stormRun;
-      if (u.faction === w.garrison) out.garrisonOnWall += st.onWall;
+      const held = u.faction === w.garrison;
+      if (held) out.garrisonOnWall += st.onWall;
       else out.stormOnWall += st.onWall;
+      // A broken unit is still men on the stone — `garrisonOnWall` above counts them — and it
+      // is no longer a defence, so it does not deny a run. See the note on breaking.
+      const contests = !held || u.order !== UnitOrder.Rout;
       for (const key of Object.keys(st.runCounts)) {
         const r = Number(key);
-        byRun.set(r, (byRun.get(r) ?? 0) + st.runCounts[r]);
-        if (u.faction === w.garrison) this.contestedRuns.add(r);
+        if (contests) {
+          const byRun = held ? garrisonRun : stormRun;
+          byRun.set(r, (byRun.get(r) ?? 0) + st.runCounts[r]);
+        }
+        // Ground the garrison stood on counts as ground it held whether it is still fighting
+        // for it or not: a run that has been taken from a unit that then broke on it is
+        // exactly the case condition A exists to reward.
+        if (held) this.contestedRuns.add(r);
       }
     }
-    // Maximal blocks of consecutive runs, each judged on its own occupants and its own
-    // history. A storm split between two cleared stretches holds both.
+    // Run by run, each judged on its own occupants and its own history. A storm split
+    // between two cleared stretches holds both, and a run it has a toe-hold on but has not
+    // cleared costs it nothing.
     const runs = [...stormRun.keys()].sort((a, c) => a - c);
-    for (let i = 0; i < runs.length;) {
-      let j = i;
-      while (j + 1 < runs.length && runs[j + 1] === runs[j] + 1) j++;
-      let men = 0;
-      let foe = 0;
-      let taken = false;
-      for (let r = runs[i]; r <= runs[j]; r++) {
-        men += stormRun.get(r) ?? 0;
-        foe += garrisonRun.get(r) ?? 0;
-        if (this.contestedRuns.has(r)) taken = true;
-      }
-      if (foe === 0 && taken) {
-        out.stormHolding += men;
-        for (let k = i; k <= j; k++) out.holdingRuns.push(runs[k]);
-      }
-      i = j + 1;
+    for (const r of runs) {
+      if ((garrisonRun.get(r) ?? 0) !== 0) continue;
+      if (!this.contestedRuns.has(r)) continue;
+      out.stormHolding += stormRun.get(r) ?? 0;
+      out.holdingRuns.push(r);
     }
     const last = w.mx.length - 1;
     for (let i = 0; i < p.count; i++) {
       if (p.faction[i] !== w.storm || b.elevated[i] !== 0 || !p.aliveAt(i)) continue;
+      /*
+       * The rout test, on the condition that actually decides both sieges.
+       *
+       * `pool.unitId` is the canonical owner of a man — `BattleSystem` writes it at spawn and
+       * `unitOfSoldier`, `Combat`, `Projectiles` and `Siege` all read it — so this needs no
+       * new index and costs one set lookup per living man of the storm. That is the whole
+       * price of asking the question at all, which is worth stating because the first cut of
+       * this walked units instead and could not, having no unit in hand.
+       */
+      if (routed.has(p.unitId[i])) continue;
       const k = Math.max(0, Math.min(last, Math.round((p.x[i] - w.x0) / w.pitch)));
+      const dx = p.x[i] - w.mx[k];
+      const dz = p.z[i] - w.mz[k];
       // Negative is cityward: a bay's normal points away from the city by contract.
-      const depth = (p.x[i] - w.mx[k]) * w.nx[k] + (p.z[i] - w.mz[k]) * w.nz[k];
-      if (depth < -INSIDE_MARGIN) out.stormInside++;
+      const depth = dx * w.nx[k] + dz * w.nz[k];
+      if (depth >= -INSIDE_MARGIN) continue;
+      /*
+       * And he has to be *behind the bay*, not merely on the cityward side of the infinite
+       * line its normal defines. The tangent is the normal turned 90 degrees, so this is the
+       * same two multiplies again. See the note on the half-plane above `censusWall`.
+       */
+      const lateral = Math.abs(dx * -w.nz[k] + dz * w.nx[k]);
+      if (lateral > w.half[k] + INSIDE_MARGIN) continue;
+      out.stormInside++;
     }
     return out;
   }
@@ -636,7 +825,8 @@ export class BattleFlowSystem implements Subsystem {
   private finish(
     ctx: EngineContext,
     victor: Faction | -1,
-    reason: 'annihilation' | 'rout' | 'timeout' | 'objective' | 'stalemate' | 'repulsed'
+    reason: 'annihilation' | 'rout' | 'timeout' | 'objective' | 'stalemate' | 'repulsed',
+    condition: WallCondition | null = null
   ): void {
     this.ended = true;
     const b = this.battle;
@@ -655,12 +845,16 @@ export class BattleFlowSystem implements Subsystem {
       // of victory reported "0 of 21 lost" on a battle whose roll of honour listed cohorts
       // at 18 of 320 men and flagged ROUTED — units are flagged destroyed later, as they
       // leave the field, long after the result is called.
+      //
+      // Through `unitOutcome`, which is the same function the roll of honour labels its rows
+      // with. It used to be this expression here and a different one in the card.
       unitsLost[side.faction] = own.filter(
-        (u) => u.destroyed || u.order === UnitOrder.Rout || u.alive < u.initialStrength * 0.25
+        (u) => unitOutcome(u.destroyed, u.order === UnitOrder.Rout, u.alive, u.initialStrength)
+          !== 'held'
       ).length;
     }
     this.result = {
-      victor, reason, casualties, survivors, unitsLost, unitsTotal, at: this.elapsed,
+      victor, reason, condition, casualties, survivors, unitsLost, unitsTotal, at: this.elapsed,
     };
 
     ctx.events.emit('battleEnded', { victor: victor as number, reason });

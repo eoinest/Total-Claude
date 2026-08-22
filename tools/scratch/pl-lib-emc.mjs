@@ -1,10 +1,46 @@
-/** Shared rig for the playability pass: boot through the real menu, drive real input. */
+/**
+ * Shared rig for the playability pass: boot through the real menu, drive real input.
+ *
+ * ## Two things in here had never once worked, and neither could say so
+ *
+ * **The end of a battle was looked for on selectors the product does not render.** `__hud`
+ * polled `.result, .verdict, .battle-end, .endcard` and the run scripts polled
+ * `.endcard, .result, .verdict, .battle-result, .result-sheet, .outcome`. The panel is
+ * **`.rs-panel`**, with `.rs-verdict` / `.rs-reason` inside it (`src/ui/BattleFlow.ts`), so
+ * none of the nine matched and **no playability run in this project's history had ever seen a
+ * battle finish.** `pl-runA` looped 24 × 25 s looking for it and reported nothing wrong,
+ * because nothing in this directory asserted anything.
+ *
+ * **The clock was advanced on a schedule the engine documents as a different battle.**
+ * `fast()` called `advance(sec, 166)`. `src/core/Engine.ts` says in its own comment that
+ * 166 ms runs a different *number of ticks* for the same elapsed time — 901 against 900 at
+ * t+30 — so every figure this rig has ever printed came off a run nothing else can reproduce.
+ * `Engine.advanceTicks(n, stepMs)` exists precisely so a driver can be bit-comparable, and it
+ * is what this now uses.
+ *
+ * Both are the same failure one layer down from the one the `boot` comment below is about: a
+ * check that cannot fail. So this file now carries `ledger()`/`ck()` — **a claim is only made
+ * by asserting it** — and `mustEnd()`, which fails a run that never saw a verdict.
+ *
+ * ## Converged deliberately with `tools/judge/jg-lib.mjs`
+ *
+ * That rig was written fresh for the gameplay judge against these same two faults and is the
+ * better instrument: it asserts everything, it drives by ticks, and it reads the HUD by the
+ * real class names. `ledger`, `ck`, `secTicks`, `ended` and the tick-driven fast-forward here
+ * are deliberately the *same design and the same names*, so the two do not drift while both
+ * exist — and when `tools/judge/` lands on `main`, **delete this rig and point its callers at
+ * that one** rather than maintaining two drivers for one menu. The one thing that must not
+ * happen is a third.
+ */
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { bootThroughMenu, ensureServer } from '../lib/menu-boot.mjs';
 import { launchBrowser } from '../lib/browser-budget.mjs';
 
 export const ROOT = path.resolve(import.meta.dirname, '../..');
+/** `src/core/Time.ts` fixed step. */
+export const TICK_HZ = 30;
+export const secTicks = (s) => Math.round(s * TICK_HZ);
 
 export function argsOf() {
   return new Map(process.argv.slice(2).map(a => {
@@ -99,7 +135,14 @@ const INSTALL = () => {
   };
   window.__wallState = (id) => safe(() => window.__siege()?.unitWallState?.(id) ?? null);
   window.__hud = () => ({
-    banner: document.querySelector('.result, .verdict, .battle-end, .endcard')?.textContent ?? '',
+    /*
+     * `.rs-panel`, which is the class the product renders. This read
+     * `.result, .verdict, .battle-end, .endcard` and therefore read `''` at the end of every
+     * battle ever driven by this rig. See the file header.
+     */
+    banner: document.querySelector('.rs-panel')?.textContent?.replace(/\s+/g, ' ').slice(0, 600) ?? '',
+    verdict: document.querySelector('.rs-verdict')?.textContent?.trim() ?? '',
+    reason: document.querySelector('.rs-reason')?.textContent?.trim() ?? '',
     top: document.querySelector('.topbar, .top')?.textContent?.replace(/\s+/g, ' ').slice(0, 300) ?? '',
     feed: Array.from(document.querySelectorAll('.feed-row, .ev-row, .feed li')).slice(-8).map(e => e.textContent.replace(/\s+/g, ' ')),
     cmd: document.querySelector('.cmd')?.textContent?.replace(/\s+/g, ' ').slice(0, 300) ?? '',
@@ -121,21 +164,25 @@ const INSTALL = () => {
  */
 export async function boot({ port, map, tier = 'high', out, size = 'default', label }) {
   await mkdir(out, { recursive: true });
-  const { base } = await ensureServer({ port, root: ROOT, label: label ?? 'pl-lib' });
   /*
-   * `launchBrowser` rather than `chromium.launch`: twenty-three scripts in this directory boot
-   * through here, and before the budget existed twenty-three agents running them was
-   * twenty-three browsers. The slot is released by `browser.close()`, which every caller
-   * already does, and by an exit hook for the ones that throw first.
+   * The browser slot before the server — `tools/lib/browser-budget.mjs`, 22 Aug 2026.
+   *
+   * Twenty-three scripts in this directory boot through here, and before the budget existed
+   * twenty-three agents running them was twenty-three browsers with nothing counting them. The
+   * slot is released by `browser.close()`, which every caller already does, and by an exit hook
+   * for the ones that throw first.
    *
    * The args list also lost `--use-gl=angle --use-angle=metal --ignore-gpu-blocklist`, which
-   * are now the default in `GPU_ARGS`. It never passed `--enable-unsafe-swiftshader`, unlike
+   * are the default in `GPU_ARGS` now. It never passed `--enable-unsafe-swiftshader`, unlike
    * every other rig here, so these scripts were one blocklist entry away from a headless
-   * configuration where WebGL context creation simply fails.
+   * configuration in which WebGL context creation simply fails.
    */
   const browser = await launchBrowser({
     label: label ?? 'pl-lib', port, root: ROOT,
     args: ['--hide-scrollbars'],
+  });
+  const { base } = await ensureServer({
+    port, root: ROOT, label: label ?? 'pl-lib', slot: browser.budgetSlot,
   });
   const page = await browser.newPage({ viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1 });
   const errs = [], cerrs = [];
@@ -160,16 +207,91 @@ export async function boot({ port, map, tier = 'high', out, size = 'default', la
 export const shot = (page, out, name) => page.screenshot({ path: path.join(out, `${name}.png`) });
 export const dump = (out, name, obj) => writeFile(path.join(out, `${name}.json`), JSON.stringify(obj, null, 1));
 
-/** Advance the sim fast, in chunks, letting the page breathe between them. */
+/**
+ * Advance the sim fast, in chunks, letting the page breathe between them.
+ *
+ * **By ticks, at 1000/60.** This called `advance(sec, 166)`, and `Engine.advance`'s own
+ * comment says a 166 ms step runs a different number of ticks for the same elapsed time than
+ * 1000/60 does — 901 against 900 at t+30 — which makes it a different battle from the one any
+ * other tool in this repository measures. `advanceTicks(n, stepMs)` was added so a driver
+ * could be bit-comparable and this is the call it was added for.
+ *
+ * The seconds-in / seconds-out signature is unchanged, so the eight scripts that import this
+ * keep working; what changed is that the number they print is now reproducible.
+ */
 export async function fast(page, seconds, chunk = 10) {
   let done = 0;
   while (done < seconds) {
     const s = Math.min(chunk, seconds - done);
-    await page.evaluate((sec) => window.__game.engine.advance(sec, 166), s);
+    await page.evaluate((n) => window.__game.advanceTicks(n, 1000 / 60), secTicks(s));
     done += s;
     await page.waitForTimeout(30);
   }
   return page.evaluate(() => +window.__game.simTime().toFixed(1));
+}
+
+/* ------------------------------------------------------------------ verdicts */
+
+/**
+ * Has the battle ended? Reads the class the product renders, and nothing else.
+ *
+ * Returns `{ verdict, reason }` or `null`. Every "did it finish" test in this directory goes
+ * through here now, so there is one selector to be wrong rather than nine.
+ */
+export const ended = (page) => page.evaluate(() => {
+  const rs = document.querySelector('.rs-panel');
+  return rs ? {
+    verdict: rs.querySelector('.rs-verdict')?.textContent?.trim() ?? '?',
+    reason: rs.querySelector('.rs-reason')?.textContent?.trim() ?? '?',
+  } : null;
+});
+
+/**
+ * A run that proves nothing has to say so in its last line.
+ *
+ * The same shape and the same names as `tools/judge/jg-lib.mjs:ledger` — see the file header
+ * on why that is deliberate. `ck(name, ok, expected, actual)` is the only way a claim gets
+ * made; `summary()` returns the number of failures so a caller can set an exit code.
+ */
+export function ledger(label) {
+  const rows = [], log = [];
+  const say = (...a) => {
+    const s = a.map(x => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ');
+    console.log(s); log.push(s);
+  };
+  const ck = (name, ok, expected, actual) => {
+    rows.push({ name, ok: !!ok, expected, actual });
+    say(`  [${ok ? 'PASS' : 'FAIL'}] ${name}  expected=${JSON.stringify(expected)} actual=${JSON.stringify(actual)}`);
+    return !!ok;
+  };
+  const summary = () => {
+    const bad = rows.filter(r => !r.ok);
+    say(`\n${label}: ${rows.length - bad.length}/${rows.length} checks passed`);
+    for (const b of bad) say(`  FAILED: ${b.name}  expected=${JSON.stringify(b.expected)} actual=${JSON.stringify(b.actual)}`);
+    if (rows.length === 0) say(`${label}: NOTHING WAS ASSERTED — this run proves nothing.`);
+    return bad.length + (rows.length === 0 ? 1 : 0);
+  };
+  return { say, ck, rows, log, summary };
+}
+
+/**
+ * Run the clock on until the battle ends, and **assert that it did**.
+ *
+ * This is the check the whole directory was missing. Every one of these scripts had a loop
+ * that looked for a result panel, could never find one, and finished with a cheerful log —
+ * so "the rig ran" and "the rig saw a battle" were indistinguishable for two days. A driver
+ * that never reaches a verdict is not a slow driver, it is a broken one, and it now fails.
+ */
+export async function mustEnd(page, L, { until = 1600, step = 20, label = 'the battle' } = {}) {
+  let seen = null, t = await page.evaluate(() => +window.__game.simTime().toFixed(1));
+  while (t < until && !seen) {
+    await fast(page, step);
+    t = await page.evaluate(() => +window.__game.simTime().toFixed(1));
+    seen = await ended(page);
+  }
+  L.ck(`${label} reaches a verdict`, !!seen, 'a .rs-panel with a verdict', seen ?? `nothing by t+${t}`);
+  if (seen) L.say(`  verdict at t+${t}: ${seen.verdict} — ${seen.reason}`);
+  return { end: seen, t };
 }
 
 /** Move the mouse to a screen point and report what the cursor says it will do. */

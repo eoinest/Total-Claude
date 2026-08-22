@@ -9,8 +9,8 @@ import { unitType, isCavalry } from '../units/roster';
 import { ridesElephant } from '../units/kit';
 import type { TerrainSystem } from '../terrain/TerrainSystem';
 import {
-  ALL_FACTIONS, Clip, Faction, SoldierPool, SoldierState, SpatialHash, UnitOrder,
-  isAlive, type UnitGroupState, type UnitTypeDef,
+  ALL_FACTIONS, Clip, Faction, SOLDIER_POOL_CAPACITY, SoldierPool, SoldierState, SpatialHash,
+  UnitOrder, isAlive, type UnitGroupState, type UnitTypeDef,
 } from './types';
 import { Siege } from './Siege';
 import { ObstacleField, ROUGH_SLOWS_MOVEMENT, type Obstacle, type Resolved, type RoughBox } from './Obstacles';
@@ -697,24 +697,31 @@ export class BattleSystem implements Subsystem {
   init(ctx: EngineContext): void {
     this.ctx = ctx;
     this.terrain = ctx.tryGet<TerrainSystem>('terrain');
-    this.pool = new SoldierPool(ctx.quality.maxSoldiers);
-    this.mounted = new Uint8Array(ctx.quality.maxSoldiers);
-    this.onElephant = new Uint8Array(ctx.quality.maxSoldiers);
+    /*
+     * `SOLDIER_POOL_CAPACITY`, not `ctx.quality.maxSoldiers`, and that is the whole of the
+     * quality/simulation split. The pool used to be sized by the graphics tier, which fitted
+     * `unitSizeScale` to it and made the army — and therefore the battle — a function of a
+     * shadow-quality dropdown. Nothing on the settings path reaches the simulation now; see the
+     * constant's own comment in `./types` for the measurement that forced this.
+     */
+    const cap = SOLDIER_POOL_CAPACITY;
+    this.pool = new SoldierPool(cap);
+    this.mounted = new Uint8Array(cap);
+    this.onElephant = new Uint8Array(cap);
     this.orderGrace = new Float32Array(256);
     this.breakingOff = new Uint8Array(256);
-    this.press = new Float32Array(ctx.quality.maxSoldiers);
-    this.sepUsed = new Float32Array(ctx.quality.maxSoldiers);
-    this.roughDrag = new Float32Array(ctx.quality.maxSoldiers).fill(1);
-    this.rallyX = new Float32Array(ctx.quality.maxSoldiers);
-    this.rallyZ = new Float32Array(ctx.quality.maxSoldiers);
-    this.rallyOn = new Uint8Array(ctx.quality.maxSoldiers);
-    this.rallyUntil = new Float32Array(ctx.quality.maxSoldiers);
+    this.press = new Float32Array(cap);
+    this.sepUsed = new Float32Array(cap);
+    this.roughDrag = new Float32Array(cap).fill(1);
+    this.rallyX = new Float32Array(cap);
+    this.rallyZ = new Float32Array(cap);
+    this.rallyOn = new Uint8Array(cap);
+    this.rallyUntil = new Float32Array(cap);
     // 2.0 m cells. The separation pass asks for everything within 0.84 m once per man per
     // tick, and at 3.5 m cells that scanned about 37 candidates to find 6. The rebuild can
     // afford the finer grid because it only ever touches the rectangle the armies stand on.
     this.hash = new SpatialHash(1500, 2.0);
 
-    const cap = ctx.quality.maxSoldiers;
     this.elevated = new Uint8Array(cap);
     this.support = new Float32Array(cap).fill(NO_SUPPORT);
     this.slotX = new Float32Array(cap);

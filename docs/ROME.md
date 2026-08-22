@@ -2787,7 +2787,8 @@ stays as it is.
 clear-ground check re-run with **Rome's own** threshold rather than the shared one.
 
 **14. The order of battle and the sun.** §8. Juthungi strengths, the escalade-heavy storm
-plan, the narrowed deployment box from task 1.
+plan, and the deployment box task 1 moved east — since **widened** east, which was the half of
+this task reserved for the owner and is the only half of it that is closed.
 *Acceptance:* `probe-romewin-ds.mjs` over **twelve seeds** reports a win distribution in which
 **both** victory conditions fire at least once, and the storm's route is not exclusively the
 footings; `tools/probe-budget.mjs` reports the whole-frame draw count **at or below the 180–213
@@ -2810,17 +2811,99 @@ band the map sits in today**, and the assault camera's triangle count at or belo
 > man 7 → 5. Carthage's and Pydna's field battles are unmoved: the same probe reports dx 0 on
 > both.
 >
-> **What is left is a real design question and it is the owner's.** The lines are wider than
+> **What was left was a real design question and it was the owner's.** The lines were wider than
 > the ground task 1 gave them. At `DEFAULT_CONFIG` on the `high` tier the Roman line measures
 > **684 m** across its own men against a **500 m** box, and the Juthungi host **783 m** against
-> **760 m**. No translation fixes that: 562 Roman and 182 Juthungi men stand outside their own
+> **760 m**. No translation fixes that: 562 Roman and 182 Juthungi men stood outside their own
 > box, all but 14 of them to the east, which is why the rule overhangs east — that side is open
-> plain, dry, under a 0.32 slope, out to x 700. The choices are a narrower Roman frontage
+> plain, dry, under a 0.32 slope, out to x 700. The choices were a narrower Roman frontage
 > (§8.3's business) or a box that reaches further east (task 1's), and either is a change to the
 > shipped battle. Two consequences to price with it: everything outside a box stands on ground
 > the heightfield never flattened and the scatter never cleared, and `battleCoreMask` — the
-> corridor whose relief is damped — is still centred on x 0 with a 540 m half-width, so the
-> Juthungi right wing at x 691 is outside the fighting corridor entirely.
+> corridor whose relief is damped — was still centred on x 0 with a 540 m half-width, so the
+> Juthungi right wing at x 691 was outside the fighting corridor entirely.
+
+> **Decided, and done. The owner's answer was *"battle lines should fit their deployment boxes.
+> I would recommend widening boxes east."*** So the frontages are untouched — no unit's
+> composition, strength or count moved, and `uctl` at t+0 is still `2b2ac282`, the value
+> recorded at `88a4aa5` before the Tiber moved, which is the discrete half of every unit's
+> state saying so in one number. What moved is the ground and where the line stands on it.
+>
+> **Three numbers, each derived from a constraint rather than chosen.**
+>
+>  1. **Neither west edge moves.** They are the two lines task 1 measured against the funnel's
+>     standing water — `cx − hx` = −175 north and −45 south, clearing it by 23 m at each box's
+>     worst row. A symmetric widening would take the defender's edge from −45 to −225 and put a
+>     quarter of the parade ground in the Tiber, which is why "east" is the only direction with
+>     ground in it and not a preference. Half-widths and centres therefore move together:
+>     attacker **380 → 515** about **205 → 340**, defender **250 → 425** about **205 → 380**.
+>     `DEPLOY_AXIS_X` stays 205 and is now what `DeployGround.axisX` always said it was — the
+>     axis the two lines face each other along, not either rectangle's midpoint.
+>  2. **Each east edge stands one feather beyond the outermost man**, so the whole line is
+>     inside the mask's *full-strength core* and not on its soft edge. That distinction is the
+>     third consequence above, made precise: the heightfield lerps toward the regional plane in
+>     proportion to the mask and the scatter's exclusion does not bite until 0.12, which the
+>     feather does not reach until 17 m in. Outermost men at x 719.3 and 770.9, cores to 725 and
+>     775, rectangles to 805 and 855.
+>  3. **The battle stands 80 m further east — one feather — and that is where the 14 men
+>     outside to the *west* came from.** `standOnDeploymentGround` anchors the line's west end
+>     to the box, and it was anchoring it to the rectangle's edge, which is the contour where
+>     the mask reaches **zero**: the four leftmost files of the left-wing equites stood on
+>     ground the box had done nothing to while the rule reported success. It now insets by
+>     `DeployBox.feather`, published on the box as data for the purpose. Shift 271.146 →
+>     **351.146 m**, one number for every unit of both armies.
+>
+> **The acceptance, and all three of the owner's conditions in one table.** `probe-ground.mjs
+> --quality=high`, `5338249` → this branch:
+>
+> | | before | after |
+> |---|---:|---:|
+> | Roman men outside their own box | **562** (14 W / 548 E) | **0** |
+> | Juthungi men outside their own box | **182** (0 W / 182 E) | **0** |
+> | men in water · on the far bank · over `ROUGH_SLOPE_IMPASSABLE` | 0 · 0 · 0 | 0 · 0 · 0 |
+> | worst slope under a man, Rome / host | 0.315 / 0.048 | **0.074 / 0.076** |
+> | trees within 4 m of a man, Rome / host | 1 / 4 | **0 / 0** |
+> | ground the boxes flatten and clear (4 m cells) | 11,462 + 6,785 | **15,626 + 11,791**, **+14.67 ha** |
+> | scatter instances cleared out of the widened ground | — | **61** (24 oak, 37 olive) |
+> | men fighting outside `battleCoreMask` | **440** (240 Rome, 200 host) | **0** |
+> | weakest corridor value under a man, Rome / host | 0.000 / 0.000 | **0.343 / 0.856** |
+> | damped corridor area | 44,740 cells | **62,312, +28.1 ha** |
+>
+> The corridor is written against the deployment axis at a 745 m half-width, so its west edge
+> stays at −540 — it still covers the river angle, the Porta Flaminia and the west end of the
+> circuit — and its east edge reaches 950. The heightfield's row skip over the boxes was a
+> transcription of their z extent and is now derived from `DEPLOY_GROUND`; it changes no height
+> (both masks are 0 outside it) and it is one fewer copy of the data that was 165 m wrong once.
+>
+> **Determinism.** Both Rome arms moved and both were re-recorded in the same commit with the
+> reason in the file. `default` (the Campus Martius field battle, 8,632) moved because the men
+> moved and because the ground under the men they did not move is now prepared; survivors at
+> t+400 4,288 → 4,660. `map=campus-martius&scenario=assault` (3,074) moved from t+90 only, with
+> `uf64`, `uctl` and **all seven survivor counts unchanged** — `deployAssault` never calls the
+> placement rule, so that arm is men walking over ground that shifted east of the gate, not a
+> different battle. **`map=carthage&scenario=assault` (3,440) is bit-identical at all seven
+> checkpoints on all three marks**, and the shift on Carthage and on Pydna is still exactly
+> 0.000 m: both are 980 m boxes about x 0 holding the same ~684 m line, so the west rule was
+> slack by ~148 m there and the inset spends 80 of it.
+>
+> **One thing deliberately not fixed, with its number, because it is depth and not width.** The
+> defender's box is under-sized in **z**. At `hz` 120 about z 150 its full-strength core is
+> z 110…190 while the Roman line is 141 m deep, so the twelve-man scorpio battery at z 262.5
+> stands where the mask reads **0.024** — inside the box by the arithmetic, on ground 2 %
+> flattened and never cleared of trees, and passing the 0.02 acceptance by 22 %. It is the
+> weakest reading under any man on the map and it is the one number here with no margin behind
+> it. The fix is `hz` 120 → about 150. **It was left because deepening the box and widening it
+> east are not independent, and widening it east is what was decided.** Over the box's *old* x
+> range (−45…455) `riseToeZ` never came below z 344.9, so its z 270 south edge cleared the
+> Pincian's toe by 74.9 m; over the new range (−45…805) the toe reaches **z 273.1 at x 805**, so
+> that clearance is now **3.1 m**, and at `hz` 150 the south edge would stand **26.9 m past the
+> toe** — a corner of parade ground flattened into the side of the hill. It would also bring the
+> south edge within 17 m of the quarry at (724, 328). Nothing there is unsafe today (worst slope
+> across that edge 0.285, worst under any Roman man 0.074, and the rise has not started at
+> z 270), but the margin is 3 m of x-wobble rather than seventy, and `riseToeZ`'s own comment had
+> been claiming the box "reaches z 255" for two passes. **What would change the call:** the
+> scorpio reading under 0.02, a Roman line deeper than 141 m out of §8.3's order-of-battle
+> rework, or anyone finding a tree in the battery. All three are one `probe-ground` run away.
 
 ### The one number that says the redesign worked
 

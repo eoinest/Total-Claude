@@ -3,7 +3,8 @@ import type { EngineContext, Subsystem } from '../core/Engine';
 import type { BattleSystem } from '../sim/BattleSystem';
 import type { ProjectileSystem } from '../sim/Projectiles';
 import {
-  ALL_FACTIONS, Clip, Faction, SoldierState, type UnitGroupState, type UnitTypeDef,
+  ALL_FACTIONS, Clip, Faction, SOLDIER_POOL_CAPACITY, SoldierState, type UnitGroupState,
+  type UnitTypeDef,
 } from '../sim/types';
 import { unitType, isCavalry } from './roster';
 import {
@@ -604,7 +605,22 @@ export class UnitRenderSystem implements Subsystem {
     this.sky = ctx.tryGet<SkySystem>('sky');
     this.ragdoll = ctx.tryGet<RagdollSystem>('ragdoll');
     this.projectiles = ctx.tryGet<ProjectileSystem>('projectiles') ?? null;
-    const cap = ctx.quality.maxSoldiers;
+    /*
+     * The soldier pool's own capacity, not a graphics setting.
+     *
+     * This read `ctx.quality.maxSoldiers`, which was the same number by accident of both being
+     * the tier's — and the field is gone, because sizing the *army* from the graphics tier meant
+     * the graphics tier decided the outcome of the battle. The instance buffers below are sized
+     * from the pool they draw, which is what they always meant.
+     *
+     * The cost is one allocation and no frame time. 12.5 MB across nine soldier tiers at 12,000
+     * (9 × 12,000 × 116 B), where `low` used to allocate 1.7 MB — so about 11 MB more on a weak
+     * machine, once, at boot. `geometry.instanceCount` is set to the men actually drawn on every
+     * frame, so the unfilled tail is never traversed and never uploaded. A low tier sheds cost
+     * through resolution, shadows, post-effects and `lodFarDistance`, and not by leaving men off
+     * the field.
+     */
+    const cap = SOLDIER_POOL_CAPACITY;
 
     this.atlas = buildSoldierAtlas(Math.min(8, ctx.renderer.capabilities.getMaxAnisotropy()));
     this.manAnim = bakeAnimTexture(MAN_CLIP_SET, 'man');

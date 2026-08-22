@@ -48,24 +48,29 @@ export interface Subsystem {
 export type QualityTier = 'low' | 'medium' | 'high' | 'ultra';
 
 /**
- * The half of the quality settings the **simulation** reads, and which therefore must not move
- * while a battle is running.
+ * The quality settings, and **every one of them is a rendering setting**.
  *
- * `BattleSystem.init` sizes `SoldierPool` and eight parallel typed arrays from `maxSoldiers`,
- * and `scenario.ts` derives `unitSizeScale` from it through `fittedUnitScale`, so changing it
- * under a running sim changes the order of battle and breaks the determinism hashes. It is kept
- * in its own interface, out of `RenderQuality`, so that the adaptive loop's patch type cannot
- * name it: the mistake does not typecheck rather than being caught by review.
- */
-export interface SimQuality {
-  /** Max simultaneously simulated soldiers. Pinned at boot; see `Engine.setQuality`. */
-  maxSoldiers: number;
-}
-
-/**
- * The half only the renderer reads. Everything here is safe for the adaptive loop to write on
- * any frame — but only where a consumer actually re-reads it after boot, which is not true of
- * all of them; see `AdaptiveQuality.EXCLUDED` for the ones that are wired and inert.
+ * There was a `SimQuality` half, with exactly one member: `maxSoldiers`. `BattleSystem.init`
+ * sized `SoldierPool` and eight parallel typed arrays from it and `scenario.ts` derived
+ * `unitSizeScale` from it through `fittedUnitScale`, so the graphics tier decided how many men
+ * fought — measured on one seeded Campus Martius assault as `ultra` 3,074 men with the ram crew
+ * dead 16 m short of the door and `medium` 3,009 men with the Porta Flaminia open by t+240. Two
+ * different battles from a dropdown. The owner ruled that graphics settings must not change the
+ * outcome of a battle, so the field is gone: the pool is `SOLDIER_POOL_CAPACITY` in
+ * `src/sim/types.ts`, one number at every tier, and the interface that used to carry the
+ * exception no longer exists.
+ *
+ * The guard that came with it is gone too and does not need replacing. `Engine` froze
+ * `simQuality` at construction and re-asserted `q.maxSoldiers` after every patch so that a
+ * mid-battle tier press could not resize a deployed army; with nothing simulation-side left in
+ * here, `setQuality` may replace the whole object and `AdaptiveQuality` may write any field on
+ * any frame, and the strongest statement about the settings path is now structural: **there is
+ * no simulation half to protect.** The only field `src/sim`, `src/ai` or `src/units` reads at
+ * all is `lodFarDistance`, in `UnitRenderSystem.preRender`, which is the impostor swap distance.
+ *
+ * Everything here is safe for the adaptive loop to write on any frame — but only where a
+ * consumer actually re-reads it after boot, which is not true of all of them; see
+ * `AdaptiveQuality.EXCLUDED` for the ones that are wired and inert.
  */
 export interface RenderQuality {
   tier: QualityTier;
@@ -97,14 +102,20 @@ export interface RenderQuality {
   antialias: 'none' | 'fxaa' | 'smaa' | 'taa';
 }
 
-export type QualitySettings = SimQuality & RenderQuality;
+/**
+ * Kept as an alias rather than deleted: it is named in about forty places, it reads better at a
+ * consumer than `RenderQuality` does, and the equality is the claim. If a simulation-side
+ * setting is ever genuinely needed it must arrive as a `BattleConfig` field — something the
+ * player chooses, that travels in the `?battle=` token and in a replay record — and not by
+ * widening this back into an intersection.
+ */
+export type QualitySettings = RenderQuality;
 
 /**
  * What the adaptive loop is allowed to write.
  *
- * `maxSoldiers` is absent because it is not in `RenderQuality`; `tier` is excluded because the
- * loop works *within* the player's choice rather than overriding it. Both exclusions are
- * enforced by the type, and re-asserted at runtime in `applyRenderQuality`.
+ * `tier` is excluded because the loop works *within* the player's choice rather than overriding
+ * it. There is nothing else to exclude: every field of `RenderQuality` is a rendering field.
  */
 export type RenderQualityPatch = Partial<Omit<RenderQuality, 'tier'>>;
 
@@ -115,25 +126,25 @@ export const QUALITY_PRESETS: Record<QualityTier, QualitySettings> = {
   low: {
     tier: 'low', maxPixelRatio: 1, renderScale: 1, shadowMapSize: 1024, shadowCascades: 2,
     ssao: false, bloom: true, motionBlur: false, volumetricLight: false,
-    depthOfField: false, maxSoldiers: 1600, lodFarDistance: 90,
+    depthOfField: false, lodFarDistance: 90,
     grassDensity: 0.15, antialias: 'fxaa',
   },
   medium: {
     tier: 'medium', maxPixelRatio: 1.25, renderScale: 1, shadowMapSize: 2048, shadowCascades: 3,
     ssao: true, bloom: true, motionBlur: false, volumetricLight: false,
-    depthOfField: false, maxSoldiers: 3200, lodFarDistance: 140,
+    depthOfField: false, lodFarDistance: 140,
     grassDensity: 0.45, antialias: 'smaa',
   },
   high: {
     tier: 'high', maxPixelRatio: 1.5, renderScale: 1, shadowMapSize: 2048, shadowCascades: 4,
     ssao: true, bloom: true, motionBlur: true, volumetricLight: true,
-    depthOfField: true, maxSoldiers: 10000, lodFarDistance: 220,
+    depthOfField: true, lodFarDistance: 220,
     grassDensity: 1, antialias: 'smaa',
   },
   ultra: {
     tier: 'ultra', maxPixelRatio: 2, renderScale: 1, shadowMapSize: 4096, shadowCascades: 4,
     ssao: true, bloom: true, motionBlur: true, volumetricLight: true,
-    depthOfField: true, maxSoldiers: 12000, lodFarDistance: 320,
+    depthOfField: true, lodFarDistance: 320,
     // SMAA rather than TAA. Soldiers are GPU-skinned instances animated entirely in
     // the vertex shader, so there are no per-object motion vectors to reproject with;
     // TAA's history clamp cannot distinguish a moving man from a disoccluded background
@@ -190,16 +201,6 @@ export class Engine {
   private resizeObserver?: ResizeObserver;
 
   /**
-   * The simulation-side settings, frozen at construction.
-   *
-   * Everything that sizes the soldier pool or the order of battle is read from here and
-   * re-asserted onto `quality` after any change, so neither the adaptive loop nor a mid-battle
-   * tier switch can move it. Before this, `setQuality` replaced the whole settings object from
-   * the preset table, which changed `maxSoldiers` from 12,000 to 1,600 under a running sim.
-   */
-  private readonly simQuality: Readonly<SimQuality>;
-
-  /**
    * The player's chosen tier, unmodified. The adaptive loop derives every lever's ceiling from
    * this, so `pressure = 0` is exactly what the player asked for.
    */
@@ -234,7 +235,6 @@ export class Engine {
     this.canvas = opts.canvas;
     this.fixedSize = opts.fixedSize;
     this.quality = { ...QUALITY_PRESETS[opts.quality ?? 'high'] };
-    this.simQuality = Object.freeze({ maxSoldiers: this.quality.maxSoldiers });
     this.tierQuality = Object.freeze({ ...this.quality });
 
     this.renderer = new THREE.WebGLRenderer({
@@ -728,8 +728,9 @@ export class Engine {
       q.maxPixelRatio = patch.maxPixelRatio;
       resolutionMoved = true;
     }
-    // A `RenderQuality` view of the same object, so the helper cannot be handed a sim-side key:
-    // `keyof RenderQuality` does not include `maxSoldiers`.
+    // A no-op alias since `QualitySettings` *is* `RenderQuality`; kept because it is what names
+    // the key type for `set` below, and because the day a simulation-side setting is proposed
+    // again this line is where the intersection would have to reappear.
     const rq: RenderQuality = q;
     const set = <K extends keyof RenderQuality>(k: K, v: RenderQuality[K] | undefined): void => {
       if (v === undefined || rq[k] === v) return;
@@ -746,11 +747,6 @@ export class Engine {
     set('lodFarDistance', patch.lodFarDistance);
     set('grassDensity', patch.grassDensity === undefined ? undefined : Math.max(0, patch.grassDensity));
     set('antialias', patch.antialias);
-
-    // Belt and braces over the type. `RenderQualityPatch` cannot name `maxSoldiers`, but the
-    // field lives on the same object every consumer reads, so it is re-pinned rather than
-    // trusted. A drift here would change the order of battle under a running sim.
-    q.maxSoldiers = this.simQuality.maxSoldiers;
 
     if (resolutionMoved) {
       const drawn = this.basePixelRatio() * q.renderScale;
@@ -781,17 +777,18 @@ export class Engine {
 
   setQuality(tier: QualityTier): void {
     const before = this.quality;
-    this.quality = {
-      ...QUALITY_PRESETS[tier],
-      // The pool and the order of battle were fixed at boot; a settings-menu press must not
-      // resize them under a battle already deployed. Before this, ultra -> low took
-      // `maxSoldiers` from 12,000 to 1,600 while `BattleSystem` held 12,000 men in its arrays.
-      maxSoldiers: this.simQuality.maxSoldiers,
-      // The adaptive loop's verdict about this machine survives a tier change; only the
-      // envelope it works inside moves. It re-derives the exact scale from its own pressure
-      // when it sees `qualityChanged`.
-      renderScale: before.renderScale,
-    };
+    /*
+     * The whole preset, with nothing carried over but the adaptive loop's own lever.
+     *
+     * This used to have to re-pin `maxSoldiers`, because a settings-menu press from ultra to low
+     * took it from 12,000 to 1,600 while `BattleSystem` held 12,000 men in its arrays. There is
+     * no such field any longer: the soldier pool is `SOLDIER_POOL_CAPACITY` and a tier press
+     * cannot reach the battle at all. `renderScale` is carried because the adaptive loop's
+     * verdict about this machine survives a tier change; only the envelope it works inside
+     * moves, and it re-derives the exact scale from its own pressure when it sees
+     * `qualityChanged`.
+     */
+    this.quality = { ...QUALITY_PRESETS[tier], renderScale: before.renderScale };
     this.renderer.setPixelRatio(this.basePixelRatio() * this.quality.renderScale);
 
     // Changing the cascade count changes `NUM_DIR_LIGHT_SHADOWS`, which is compiled into

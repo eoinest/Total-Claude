@@ -360,16 +360,20 @@ const SHOTS = {
    *              picture of what most players are actually looking at, and a tier nobody
    *              photographs is a tier nobody fixes.
    *
-   *              It is `high` rather than `low`, and the reason is worth recording because
-   *              `low` was tried first and was wrong. The tiers do not only change render
-   *              settings: `maxSoldiers` is 1,600 at low and 3,200 at medium against an
-   *              order of battle of 8,632. A low-tier frame therefore photographs a
-   *              different battle — the shot came back with 1,189 men where ultra has
-   *              8,632 — and headcount, not filtering, is what a grader would sort on. That
-   *              is a confound dressed up as honesty. `high` caps at 10,000, so every man
-   *              stays on the field, and it still turns the dial down properly: shadow maps
-   *              at a quarter the area, grass density 1 against 1.5, and the pixel ratio at
-   *              1.5 rather than 2.
+   *              It is `high` rather than `low`, and the reason is worth recording even
+   *              though it has since been fixed at the source. `low` was tried first and was
+   *              wrong: the tiers did not only change render settings, because
+   *              `quality.maxSoldiers` was 1,600 at low and 3,200 at medium against an order
+   *              of battle of 8,632, so a low-tier frame photographed a *different battle* —
+   *              the shot came back with 1,189 men where ultra has 8,632 — and headcount,
+   *              not filtering, is what a grader sorts on. That was a confound dressed up as
+   *              honesty. The soldier pool is now `SOLDIER_POOL_CAPACITY`, one number at every
+   *              tier, so every tier photographs the same 8,632 men and `low` is a legitimate
+   *              deck tier for the first time. `high` is kept because the deck's numbers were
+   *              measured there and a graded set should not move under a change that is not
+   *              about grading; it still turns the dial down properly — shadow maps at a
+   *              quarter the area, grass density 1 against 1.5, the pixel ratio 1.5 rather
+   *              than 2.
    *   subject    one frame per scene family. No two frames here share a follow target.
    *
    * Anything with a `map` or `hour` costs a page load — see the grouping note below. Ten

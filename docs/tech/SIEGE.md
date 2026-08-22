@@ -1042,7 +1042,8 @@ and sampling every 5 s, it holds to within one sample interval:
 | `Spent` | t+260 | t+255 |
 | crew at the breach → at spend | 32 → 24 → 13 | 16 → 13 → 5 |
 
-The crew figures differ because `fittedUnitScale` halves unit strengths at the `low` tier;
+The crew figures differ because `fittedUnitScale` halved unit strengths at the `low` tier (it
+does not any more — see the note in §5.1 below and `SOLDIER_POOL_CAPACITY`);
 the timings do not, because they are governed by `RAM_SPEED`, `RAM_PERIOD` and `GATE_BLOWS`.
 At t+280 in the same run the crew count jumps to 81 — `recrew` has put a warband on the parked
 machine, which is `RECREW_RADIUS` working as designed on a machine that no longer has any work
@@ -1113,9 +1114,15 @@ have been true at the tier the game is played at" is the right question to ask:
 **`high` and `ultra` are the same battle here** — 3,074 men fits under both caps (10,000 and
 12,000), and the two arms agree line for line — so `high` is a faithful proxy for the tier the
 game ships at, and the boundary lands on the same commit at both. The ram did *not* already
-fail at ultra at r6. `medium` and `low` genuinely are different scenarios and their numbers
+fail at ultra at r6. `medium` and `low` genuinely were different scenarios and their numbers
 are not comparable with these; the `quality=low` column in the table at the top of §5.1 is
 labelled as such for that reason.
+
+> **All four tiers are the same battle now** — `e/core/quality-sim-split`. The soldier pool is
+> `SOLDIER_POOL_CAPACITY`, one number at every tier, because a graphics setting sizing the armies
+> meant a graphics setting decided the outcome. The `high`/`ultra` numbers above are unaffected
+> and are the shipped battle at every tier; the `medium` and `low` figures in this file are
+> history. `tools/qa-determinism.mjs` carries a cross-tier arm that asserts it.
 
 At the boundary, same probe, same port, same idiom, `quality=high`:
 
@@ -1307,6 +1314,79 @@ the armies in the same places and fights the battle differently. `tools/determin
 that moving one costs a sentence in a commit message. Rome's assault entry is pinned at
 `88a4aa5` — the *regressed* battle — and says so, because pinning it stops drift and does not
 bless it. The table at the top of §5.1 is deliberately still un-re-pinned.
+
+### The circuit rebuild inverted this defect, and everything above is now history
+
+**At `5338249` the ram lands 26 of 26 blows and opens the Porta Flaminia at t+220 on eight
+seeds of eight, at `ultra` and at `medium`, taking zero damage from anybody on the wall.**
+(§15 task 14 later widened both deployment boxes and moved `battleCoreMask` onto the deployment
+axis, which moves the ground the storm crosses. Every conclusion below was re-taken after that
+merge and none of them moved; the headcount is 3,072 rather than 3,074 for a roster reason of
+this pass s own, see §7.1.) The
+distribution above — 0, 3, 3, 9, 19, 20, 21, 22, 23, 23, 25, 26, one gate opened in twelve — was
+measured at `cc72ea6` and does not reproduce. Neither does the tier-dependence that was reported
+alongside it: `ultra` and `medium` produce the same ram schedule blow for blow, because
+`SimQuality` has one member and its only route into this battle is `fittedUnitScale`, which is
+1.0000 at ultra/high and 0.9785 at medium — a 2 % shave that moves a 108-man unit to 106. That
+is enough to land a *marginal* battle differently and it is not a mechanism. The old split was
+one draw each from a distribution whose own spread was 0 to 26.
+
+**What changed it is §15 task 3, and it is a defect rather than a fix.** The redesigned circuit
+puts the Porta Flaminia at bay **1** of 36 and makes bays 0, 2, 3 and 4 `footing`/`gap`/
+`footing`, because §4.8's archaeology says the Campus Martius neck is the one stretch Aurelian
+had to build from nothing. `walkGeometry` gives a footing and a gap no walkway, so
+`garrisonable` is false, so `holdable` rejects bay offsets −1, +1, +2 and +3 — and
+`deployAssault` fanned the garrison out with `fanOut(total, 1, holdable)`, from offset **1**,
+so offset **0**, the gate bay's own curtain, was never offered at all. That start value was
+right for as long as a gate bay could not be garrisoned; the same task made Rome's
+garrisonable on purpose (*"the curtain either side of a gatehouse is ordinary curtain a rank
+can stand on"*) and nothing moved the deployment to match.
+
+Measured at `5338249`, `tools/scratch/rm-recon-emc.mjs`:
+
+| | at `5338249` | with `fanOut(total, 0, holdable)` |
+|---|---|---|
+| nearest garrison unit to the ram | `ballistarii#0` at **134 m**, bay 5 | `ballistarii#0` at **65 m**, bay 1 |
+| garrison within 130 m of the Porta Flaminia | **none** | 108 ballistarii |
+| damage to the gate crew, 8 seeds | **0** | 1,012–2,916 points |
+| crew alive at the breach, 8 seeds | 32/32 | 30, 11, 30, 31, 30, 30, 15, 16 |
+| blows / gate open | 26/26, t+220, 8 of 8 | 26/26, t+220, **8 of 8** |
+
+So the ram still gets through at the tier the game ships at, on every seed — and
+`RAM_SHED_COVER` is now measuring something on Rome for the first time. At 0.12 the gang absorbs
+1,012–2,916 points; at 1.0 the same fire is 8,400–24,300 against a 32-man crew, which is the
+4,846 points that killed all thirty-two by t+40 in the original finding, several times over.
+Carthage is untouched — `carthageWall.ts` sets `garrisonable: !bay.isGate`, so `holdable(0)` is
+false there and the picked-bay list is identical to the bit.
+
+**And a much larger thing was found on the way, which is nobody's yet.** Rome's assault is
+**decided at t+56–59 in every run**, before the ram has reached the gate and before a ladder has
+been climbed, and it has been for as long as the redesigned circuit has existed. `BattleFlow`
+ends a storm at `stormInside >= 60` — sixty storming men more than `INSIDE_MARGIN` = 14 m
+cityward of the curtain line — and `tools/scratch/rm-inside-emc.mjs` names them at t+60:
+
+```
+t+ 50  onWall 54 holding 0 garrison 801  INSIDE 26
+       juthungi-riders#31@(115,560) 29
+t+ 60  onWall 92 holding 0 garrison 779  INSIDE 86  1/objective@58
+       juthungi-warband#28@(181,549) 46   juthungi-warband#29@(181,547) 29
+       juthungi-riders#30@(-98,580) 50    juthungi-riders#31@(111,558) 21
+```
+
+`stormHolding` is **0** — not one foot of parapet has been taken — and `garrisonOnWall` has
+moved 810 → 779. Two mechanisms, and they want different answers:
+
+- **50 of the 86 are 98 m off the west end of the circuit**, where the Tiber is and there is no
+  masonry at all. `censusWall` clamps a man's bay index to the ends of the bay list, so a unit
+  past the terminus is measured against bay 0's midline and reads as inside the city. That is a
+  bug in the census.
+- the rest walk over the `footing` and `gap` bays, which is by design (*"which is where the
+  assault goes"*) and which `BattleFlow` is right to count.
+
+Left alone deliberately: the first is `BattleFlow`'s, the second is a scenario-design decision
+about what the unbuilt neck is *for*, and Rome's balance is reserved. **But every ram figure in
+this document, including the new ones above, is read out of a battle `finish()` has already
+ended.** They are properties of the machine, not of the battle.
 
 ### 5.2 The pattern, and three more of it
 
@@ -1525,14 +1605,16 @@ export const GARRISON_PLANS: Partial<Record<Faction, GarrisonPlan>> = {
 
 export const STORM_PLANS: Partial<Record<Faction, StormPlan>> = {
   [Faction.Germanic]: { tower: 'tower-assault',      ladder: 'escalade-party', ram: 'ram-crew',
+                        greatRam: 'great-ram-crew',
                         batteries: ['onager'], host: ['juthungi-warband'], hostFormation: 'horde', horse: ['juthungi-riders'] },
   [Faction.Rome]:     { tower: 'legio-tower-party',  ladder: 'legio-escalade', ram: 'legio-ram-crew',
                         batteries: ['legio-ballista', 'carroballista'], host: ['legio-cohort'], hostFormation: 'line', horse: ['equites'] },
 };
 ```
 
-`StormPlan` has **no field for a great ram**. There is no `great-ram-crew` unit type in
-`src/units/siegeUnits.ts`. No scenario can field one.
+`StormPlan.greatRam` is **optional**, and the asymmetry above is the point: the Juthungi field a
+*testudo arietaria* at scale and Scipio's train does not. See §7.1 for why and for what it cost
+at the twenty-unit cap.
 
 `deployAssault` — which is not exported, and whose only caller is `deployBattle` when
 `variant === 'assault'` — never learns a city's name:
@@ -1547,12 +1629,13 @@ outward alternately either side of the gate, skipping bays the predicate rejects
 
 | Element | Where |
 |---|---|
-| garrison `wall` types | on the walk, from bay ±1 outward, `garrisonable` only, then `siege.garrison()` |
+| garrison `wall` types | on the walk, from bay **0** outward, `garrisonable` only, then `siege.garrison()` |
 | garrison `engines` | `out(k, -14)` from bay ±2 |
 | garrison `reserve` | `out(k, -46)` from bay ±1 — behind the bays the towers come at, because that is where a breach will be |
 | storm `tower` | `out(k, 74 + i*9)` from bay ±1; echeloned 9 m apiece so four machines do not arrive in one rank |
 | storm `ladder` | `out(k, 26)` from bay ±3 (±1 if no towers are fielded), three ladders at ±7 m |
 | storm `ram` | `62 + i*18` m out on the gate's own axis |
+| storm `greatRam` | `out(k, 62 + i*20)` from the first **`holdable`** bay outward — bay 5 on Rome |
 | `batteries` | `out(0, 196)` on 71 m centres, all types dealt into one line |
 | `host` | `out(0, 132)` on 62 m centres |
 | `horse` | `out(0, 178)`, flanking |
@@ -1563,7 +1646,8 @@ that can put him anywhere else.
 
 The two shipped assault orders of battle (assault does not scale with the battle-size
 multiplier — `scaleAppliesTo('assault')` is false — but `fittedUnitScale` may still lower it to
-fit the quality tier's soldier pool):
+fit `SOLDIER_POOL_CAPACITY`, which is one number at every quality tier and no longer the tier's
+own):
 
 | Rome garrisons the Aurelian Wall | | The Juthungi storm | |
 |---|---|---|---|
@@ -1649,26 +1733,69 @@ checkout.
 
 Stated plainly, because each of these is reachable in code and unreachable in play.
 
-### 7.1 The breach route has no way in
+### 7.1 The breach route has no way in — **closed, 21 Aug 2026**
 
-`stormBreach` has **no caller in `src/`**. Its only callers are `tools/probe-siege.mjs` and
-`tools/qa-siegecommand.mjs`, which reach into `window.__game`.
+The four seams below were the whole of it and all four are shut. Kept as the statement of what
+was wrong, because the shape of the failure is instructive: every part of the mechanic existed
+and worked, and nothing joined it to a battle.
 
-`spawnGreatRam` has **no caller in `src/`** either, for the reason in §6.3: `StormPlan` has no
-field for one and no unit type exists.
+- ~~`spawnGreatRam` has **no caller in `src/`**~~ — `deployAssault` calls it, at the first
+  `holdable` bay working outward from the gate, 62 m out on that bay's own normal. On Rome that
+  is bay 5, the west end of the Muro Torto, 134 m along the curtain from the Porta Flaminia,
+  because §4.8's four unbuilt bays either side of the gate carry no masonry to break and no
+  stations to aim at.
+- ~~no `great-ram-crew` unit type~~ — `src/units/siegeUnits.ts`, Faction.Germanic, **48 men**.
+  The number is the machine's own layout read back, exactly as `ram-crew`'s 32 is:
+  `musterRams` puts a great ram's gang six abreast, and the last row still inside
+  `GREAT_RAM_HALF_D + SHED_COVER_REACH` = 10.40 m is row 7 at 9.60 m. Eight rows of six.
+  Every other stat is `ram-crew`'s, unchanged, deliberately.
+- ~~no roster entry, and both storming rosters are at `MAX_UNITS_PER_SIDE`~~ — `StormPlan`
+  gains an **optional** `greatRam`, and `siegeJuthungi` pays for it out of the horse:
+  `'juthungi-riders': 2 -> 1`, `'great-ram-crew': 1`. Still exactly twenty units. The horse is
+  the unit `STORM_PLANS.horse`'s own comment calls *"nothing to do until a gate opens"*, and
+  measured on the shipped assault that is literal — no cavalry unit is ever ordered at the
+  wall. Headcount 3,074 → 3,072. **Scipio's train is deliberately not given one**, so the
+  Carthage assault stays a bit-identical determinism control; the optional field is the seam
+  for the day it is.
+- ~~`CityView.breachWall?()` is not implemented on `CitySystem`~~ — implemented. It records
+  the hole, clears the occupancy raster across the curtain on the bay's own outward normal
+  (`halfThickness + 9` m either side, `BREACH_HALF_W` wide), and re-cuts the oriented boxes.
+  `pushWallBox` now punches out **every** hole crossing a run rather than the first one it
+  finds, because a bay can carry a gate and a breach and Rome's gate bay is one.
 
-So the whole great-ram branch is live code that cannot execute in a shipped battle:
-`GREAT_RAM_PERIOD`, `WALL_BLOWS = 74`, `strikeCurtain`, `breachBay`, `LinkKind.Breach`,
-`BREACH_LANES = 5` and `breachReport()`. `sDead` is allocated and read on every station test
-and never set to 1; `wallReport().deadStations` measures 0 on both circuits at `6698e19`. `src/ui/siege.ts` says so at the point
-where it reports the number: *"`breachedBays` is reported and is always zero in a shipped
-battle."*
+One more seam nobody had named: `stormBreach` had a caller in neither `src/` **nor** the order
+path. `wallTargetAt` refuses a dead station and every station over a breach is dead, so a
+right-click on the rubble read as "not the parapet" and `interceptOrders` dropped it.
+`findEscalade` now answers `kind: 'breach'` for a click within `ESCALADE_REACH` of a breach
+station — *ahead* of towers and ladders, because 8 m of storming front outranks one man at a
+time on a rung — `escalade` routes it to `stormBreach` with a rally point 30 m inside the
+curtain, and `Siege.breachAt(x, z)` is the published loose test the order path and the cursor
+both read.
 
-And one layer further down, even if a breach did happen, `CityView.breachWall?()` — which would
-cut the passage in the occupancy raster and the oriented-box set the way `setGateOpen(id, true)`
-does for a gate — **is not implemented on `CitySystem`**. The five `Breach` crossings would work
-(they are authored paths and do not consult the nav grid) but the wall would still be solid to
-pathfinding, to the crowd solver and to the obstacle push-out.
+And a sixth that the fifth exposed: **`buildLinks` empties `this.links`, so a *second* breach
+wiped the first breach’s five lanes and left `breachLinks` holding indices that now named stairs
+and tower passes.** `probe-siege` spawns a great ram of its own alongside the one the scenario
+now deploys, and with two breaches it reported *"-18 men climbed the rubble ... across 10 lanes"*
+with a waiting man 190 m from a lane mouth. A negative count is the tell; walking a storming
+column into a tower doorway is the cost. Lane construction is now `cutBreachLanes(station)`,
+re-run for every entry in `breachStations` after each collapse, and what has already come
+through is banked into `breachThroughBase` *before* `buildLinks` destroys the counters.
+
+**What is still missing, and it is visual only: the curtain is drawn standing over the hole.**
+The mechanic is complete — five lanes, dead stations, the garrison rehoused, the raster open,
+the boxes split, men through — and the geometry is not, because a bay's masonry is baked into
+one of five `wall-N` chunks at load and nothing can re-bake one. The seam is
+`rome/apertures.ts curtainSpans`, already the single place that decides where curtain is *not*
+laid: give it the breach list and re-bake the chunk. That is a city-workstream change.
+
+`WALL_BLOWS` was **74 and is now 44**, timed rather than chosen. `deployAssault` starts the
+machine 62 m out, which is 97 s of rolling, so the breach lands at `97 + blows x 7`: t+620 at
+74 and **t+420** at 44, measured, against the gate ram s t+220. At 74 the hole opened with
+nothing left of the battle to use it — three units ordered through it put 6 and 0 men inside
+before an 800 s window ran out. At 44 the two nearest foot units on the field side, ordered at it,
+put **412, 197 and 312** men inside the curtain on three seeds of three. 44 is still 5 min 08 s of battering against the gate ram s 1 min 54 s, so the wall
+is plainly 2.7x the job the door is. Re-time it, do not re-guess it, the day the host is given
+a storm order.
 
 ### 7.2 The gatehouse station clip does not fire
 
@@ -1758,13 +1885,20 @@ units and the condition fires.
 `Siege.stats()` reports `garrisoned: 8, garrisonMen: 810` at t=0 — five `ballistarii` of 108
 and three `wall-slingers` of 90.
 
-That number is also the reason to be careful with the quality tier when measuring an assault.
-At `quality=low`, `fittedUnitScale` drops the same eight units to **301 men on the parapet**,
-which is well inside the range the sweep says condition A becomes reachable in — and in the
-low-tier run used for the ram timeline above, `BattleFlow` wrote a Juthungi victory on the
-assault objective at `result.at = 92.0` — before the ram had landed a blow. That is a
-legitimate result for a quarter-strength garrison and it is *not* the shipped battle. Timings
-scale with the tier; outcomes do not.
+That number **used to be the reason to be careful with the quality tier when measuring an
+assault, and that hazard is now gone.** At `quality=low`, `fittedUnitScale` dropped the same
+eight units to **301 men on the parapet**, which is well inside the range the sweep says
+condition A becomes reachable in — and in the low-tier run used for the ram timeline above,
+`BattleFlow` wrote a Juthungi victory on the assault objective at `result.at = 92.0`, before the
+ram had landed a blow. That was a legitimate result for a quarter-strength garrison and it was
+*not* the shipped battle. It was a graphics setting changing the outcome of a battle, the owner
+ruled on it, and the soldier pool is `SOLDIER_POOL_CAPACITY` now — one number at every tier. All
+four tiers put 810 men on this parapet.
+
+**So the `quality=low` column in the table at the top of §5.1 describes a battle this build does
+not produce at any tier**, and the numbers in it are kept as history rather than as a
+reproduction target. Timings still scale with the tier, because a slower machine runs fewer ticks
+per wall second; the *battle* no longer does.
 
 So on the shipped Rome assault the besieger's realistic routes are the gate (which now opens at
 t+220, §5.1) and the three unbuilt footings (§2.8) — and the AI only ever finds the second.

@@ -15,6 +15,7 @@
  */
 
 import type { EngineContext, QualityTier, Subsystem } from '../core/Engine';
+import type { WallRefusal } from '../core/events';
 import type { BattleSystem } from '../sim/BattleSystem';
 import type { DeploymentSystem } from '../sim/deployment';
 import type { PlayerOrder } from '../sim/replay';
@@ -313,7 +314,7 @@ export class HudSystem implements Subsystem {
         releaseEscalade?: (unitId: number) => boolean;
         escaladeOfferAt?: (u: number, x: number, z: number) => EscaladeOfferView;
         traverseOfferAt?: (u: number, x: number, z: number)
-          => { ok: boolean; refusal: string; bay: number };
+          => { ok: boolean; refusal: WallRefusal | 'none'; bay: number };
       };
     } | undefined)?.siege;
     if (siege && typeof siege.wallTargetAt === 'function' && typeof siege.isGarrisoned === 'function'
