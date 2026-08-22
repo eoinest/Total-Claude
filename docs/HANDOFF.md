@@ -15,6 +15,13 @@ maps, **`qa-replay` 21/21**, and all three determinism arms UNCHANGED at all sev
 (**8,632 / 3,072 / 3,440** — Rome's pin moved to 3,072 at `63be5cd`; anything still saying
 3,074 predates that commit).
 
+> **Re-run in full on `e/tools/xengine-arm` after it merged `main`, 22 Aug 2026.** Same result,
+> against pins re-measured on the merged tree: tsc clean, lint 3/3, qa-deploy 33/33, seams PASS
+> both maps, qa-replay 21/21, three determinism arms UNCHANGED at all seven checkpoints and
+> **identical at all four quality tiers**. The baseline conflicted at all three battles and was
+> re-measured rather than resolved by choosing a side; both parents had moved it for real
+> reasons and neither parent's numbers were right for the merged tree.
+
 **The gate, and how to re-run it.** All green at `5f9030e`:
 
 | check | command | expected |
@@ -45,8 +52,22 @@ hashes each: the float32 pool, `uf64` (exact float64 unit state) and `uctl` (dis
 > **`node tools/qa-xengine.mjs` is the new arm and it is *not* in the every-commit gate.** It runs
 > the same battle in Chromium, Firefox and WebKit. Run it deliberately — after anything in
 > `src/sim`, `src/terrain`, `src/maps` or `src/city` — because the thing that moves it is usually a
-> browser update rather than a commit, and a gate nobody wants to run measures nothing. All three
-> battles are currently **bit-identical in all three engines at all seven checkpoints**.
+> browser update rather than a commit, and a gate nobody wants to run measures nothing.
+>
+> **Re-run on the merged tree, 22 Aug 2026.** The field battle and the Carthage assault are both
+> **bit-identical in Chromium 151, Firefox 153 and WebKit 26.5 at all seven checkpoints to
+> t+400** — `hash`, `uf64` and `uctl`, 8,632 and 3,440 men — with 13 of 14 approximated `Math`
+> functions measured disagreeing between those engines on the same run, all three vacuity
+> controls green, and a second Chromium load bit-identical to the first. The field battle's
+> t+205.5 escape, which is the oldest open finding in `docs/MULTIPLAYER.md`, is closed: t+250 and
+> t+400 agree in all three.
+>
+> **The firewall-off controls, so none of that is vacuous.** With `tools/scratch/firewall-toggle.py
+> off`: Chromium and WebKit are still bit-identical at the Carthage boot — **that pairing needs
+> nothing beyond the `hypot` sweep** — and Chromium against Firefox differs at t+0 by exactly
+> **26 float64 fields of 1,020, all 1 ULP, 13 `facing` and 13 `targetFacing`, zero control fields
+> and zero of 3,440 men in the pool**. That is the residual the `spawnUnit` half of the firewall
+> closes, reproduced field-for-field on this tree.
 >
 > **It takes one browser slot at a time, not four.** Three engines plus a second load of the
 > reference is the entire machine cap, so each run closes its browser at the bottom of `run()`
@@ -212,14 +233,24 @@ silently with the hardware is one nobody can reason about across two machines.
 
 ### Reserved for the owner — do not decide these
 
-- **The float32 firewall's balance cost.** `src/sim/quantise.ts` is what makes all three battles
-  run identically in three browser engines, which is the whole of cross-machine multiplayer, and
-  it costs **−10.0% survivors at t+200 and −18.2% at t+400** on the default field battle. For
-  scale, five seeds of that same battle span 14.2% at t+400, so it is the same order as changing
-  the seed. The quanta are invisible (0.12 mm on a position against a 0.72 m rank pitch); the
-  mechanism is that a few discrete decisions land the other way and twelve thousand ticks amplify
-  the branch. It is **one commit and one `git revert`**. Ratify it or revert it; do not let it sit
-  unnoticed.
+- **The float32 firewall's balance cost — re-measured after the merge, and it is smaller than the
+  number this entry used to carry.** `src/sim/quantise.ts` is what makes all three battles run
+  identically in three browser engines, which is the whole of cross-machine multiplayer. It was
+  priced at −10.0% survivors at t+200 and −18.2% at t+400; **on the merged tree it is −6.7% at
+  t+200 and −2.2% at t+400** on the default field battle. The old pair was measured before the
+  branch met `main`, and `main` had meanwhile moved this battle's deployment onto its own ground
+  and widened both boxes east — which moved the battle the firewall is a percentage *of*. For
+  scale, five seeds of that same battle span 14.2% at t+400, so the t+400 figure is now well
+  inside seed noise and t+200 is about half of it. The quanta are invisible (0.12 mm on a
+  position against a 0.72 m rank pitch); the mechanism is that a few discrete decisions land the
+  other way and twelve thousand ticks amplify the branch. It is **one commit and one
+  `git revert 5a1a439`**. Ratify it or revert it; do not let it sit unnoticed. The full
+  three-way decomposition, with the control that makes it trustworthy, is in
+  `docs/MULTIPLAYER.md` §3 Stage 3.
+- **Do not squash `8c1ebca` and `5a1a439`.** The `hypot` sweep is **+9.2%** survivors at t+400
+  and the firewall is **−2.2%** — opposite in sign, and together they read as +6.7%, which looks
+  like a change that did almost nothing. They are separate commits with separate parents so that
+  the firewall can be ratified or reverted on its own.
 - ~~Whether battle lines should **fit** their deployment boxes rather than merely be dry~~ —
   **decided by the owner and discharged on `e/sim/deploy-boxes`.** *"Battle lines should fit their
   deployment boxes. I would recommend widening boxes east."* Both boxes widened east with their

@@ -1106,6 +1106,41 @@ and there is no evidence anyone but the owner wants it.
 > branch change and not a nerf. What it is *not* is evidence that the battle got worse, and
 > nothing here measures that.
 >
+> **Re-measured on the merged tree, 22 August 2026, and the cost is materially smaller than the
+> figure above.** The −10.0%/−18.2% pair was measured on the branch before it met `main`, and
+> `main` had meanwhile moved the field battle's deployment onto its own ground and then widened
+> both boxes east. Those changes moved the battle the firewall is a percentage *of*. Re-measured
+> after the merge with `tools/scratch/firewall-toggle.py`, which is a save-and-restore rather
+> than an edit-and-remember, the three-way decomposition on the field battle in Chromium is:
+>
+> ```
+> survivors        t+0    t+30   t+90   t+150  t+200  t+250  t+400
+> main's pin       8632   8632   8220   7384   6853   6310   4660    neither change
+> + hypot sweep    8632   8632   8220   7348   6758   6412   5087    firewall toggled off
+> + firewall       8632   8632   8252   7160   6304   5648   4973    this tree
+>
+> hypot alone                            -0.5%  -1.4%  +1.6%  +9.2%
+> firewall alone                         -2.6%  -6.7% -11.9%  -2.2%
+> both, vs main's pin                    -3.0%  -8.0% -10.5%  +6.7%
+> ```
+>
+> So on this tree the firewall costs **−6.7% survivors at t+200 and −2.2% at t+400**, not −10.0%
+> and −18.2%. Against the five-seed spread of 14.2% at t+400 measured above, the t+400 figure is
+> now well inside seed noise and the t+200 figure is about half of it.
+>
+> **The control that makes the decomposition trustworthy is in the first two columns.** With the
+> firewall off, this tree reproduces `main`'s pinned t+0 and t+30 hashes *exactly* — `0caf94c2`
+> / `cf9e9e4e` and `3a315656` / `a54889bc`. The tree is therefore byte-identical to `main` at
+> boot apart from the firewall, which is what entitles the middle row to be read as the `hypot`
+> sweep alone.
+>
+> **And it is the reason the two commits must not be squashed.** The two effects are opposite in
+> sign at t+400 (+9.2% and −2.2%) and they very nearly cancel: a single squashed commit would
+> have reported +6.7% at t+400 and looked like a change that did almost nothing to a battle,
+> when in fact one half moved it 9% one way and the other half moved it 2% back. `8c1ebca` and
+> `5a1a439` are separate commits with separate parents on purpose, and `git revert 5a1a439` is
+> the firewall alone.
+>
 > **It is a firewall, not a proof.** Quantising reduces the probability that two engines' answers
 > straddle a rounding boundary to about 2e-9 per field per tick; it does not make it zero. The
 > pool has always had exactly this bound and it held the pool for six thousand ticks. A battle
