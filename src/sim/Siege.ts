@@ -2615,30 +2615,72 @@ export class Siege implements ElevationOwner {
       n0++;
     }
     if (n0 === 0) return null;
+    /*
+     * The run gives the *bearing*; the men give the *extent*. Both halves matter and the
+     * first cut got the second one wrong.
+     *
+     * Built from the station indices, this box was the record again — and the record is not
+     * where the men are. Measured at the storm of Rome on the lodgement of run 2: eleven men
+     * on stations spanning 1.7 m centred at x 256.3, and those same eleven men standing at a
+     * median of x 243.5. **Thirteen metres**, because a lodgement is re-laid-out every time
+     * another man tops the ladder and the ones already up are walking to their new seats for
+     * most of a minute. A 1.5 m box thirteen metres from its own soldiers answers no pixel
+     * the player will ever aim at, which is exactly the failure this whole file is about:
+     * `standingOnWall`, `standY`, the frozen muster slot, and now this.
+     *
+     * So the extent is measured off `pool.x/z` in the run's own frame. Self-correcting by
+     * construction — a man shoved by the crowd, mid-traverse, or locked in a melee is inside
+     * his unit's box because his position *is* the box.
+     */
     const mid = (lo + hi) >> 1;
     const nx = this.snx[mid];
     const nz = this.snz[mid];
-    // Half the walk's own band, plus a body radius so a man leaning on the parapet is inside
-    // his unit's box rather than a hand's breadth outside it.
-    const inner = this.sInner[mid];
-    const outer = this.sOuter[mid];
-    const off = (inner + outer) * 0.5;
-    // The along-wall extent between the two extreme stations, measured in plan so a run that
-    // bends slightly across a bay is still covered end to end.
-    const ax = this.sx[hi] - this.sx[lo];
-    const az = this.sz[hi] - this.sz[lo];
-    const span = Math.sqrt(ax * ax + az * az);
+    // Along the wall, in plan: perpendicular to the outward normal, the same axis `slotAt`
+    // walks a man along when it staggers his rank.
+    const tx = -nz;
+    const tz = nx;
+    const ox = this.sx[mid];
+    const oz = this.sz[mid];
+    let aMin = Infinity;
+    let aMax = -Infinity;
+    let dMin = Infinity;
+    let dMax = -Infinity;
+    let ySum = 0;
+    for (const i of u.members) {
+      if (!p.aliveAt(i)) continue;
+      const s = this.stationOf[i];
+      if (s < 0 || this.sRun[s] !== run) continue;
+      const dx = p.x[i] - ox;
+      const dz = p.z[i] - oz;
+      const a = dx * tx + dz * tz;
+      const d = dx * nx + dz * nz;
+      if (a < aMin) aMin = a;
+      if (a > aMax) aMax = a;
+      if (d < dMin) dMin = d;
+      if (d > dMax) dMax = d;
+      ySum += p.y[i];
+    }
+    if (!isFinite(aMin)) return null;
+    const aMid = (aMin + aMax) * 0.5;
+    const dMid = (dMin + dMax) * 0.5;
+    // Floored at the walk's own band. A unit standing one rank deep still occupies the whole
+    // width of the stone as far as a cursor is concerned — the player is pointing at the men
+    // on that walk, not at a 40 cm ribbon down the middle of it.
+    const band = (this.sOuter[mid] - this.sInner[mid]) * 0.5;
     return {
-      cx: (this.sx[lo] + this.sx[hi]) * 0.5 + nx * off,
-      cz: (this.sz[lo] + this.sz[hi]) * 0.5 + nz * off,
+      cx: ox + tx * aMid + nx * dMid,
+      cz: oz + tz * aMid + nz * dMid,
       // `Footprint`'s frame: depth runs along `(sin, cos)` and width across it, so the
       // outward normal is the depth axis and the along-wall tangent is the width axis —
       // the same convention `slotAt` writes a man's facing in.
       sin: nx,
       cos: nz,
-      halfW: span * 0.5 + STATION_PITCH * 0.5 + PICK_BODY_M,
-      halfD: (outer - inner) * 0.5 + PICK_BODY_M,
-      y: this.sy[mid],
+      halfW: Math.max((aMax - aMin) * 0.5, STATION_PITCH * 0.5) + PICK_BODY_M,
+      halfD: Math.max((dMax - dMin) * 0.5, band) + PICK_BODY_M,
+      // Their own feet, not the station's. `holdGarrisonsOnTheWalk` snaps the two together
+      // for a man who has arrived, and a run that steps 3.62 m at a joint is exactly where
+      // they come apart for one who has not.
+      y: ySum / n0,
     };
   }
 
@@ -2858,9 +2900,26 @@ export class Siege implements ElevationOwner {
     if (!this.owned.has(unitId) && !this.garrisons.has(unitId)) {
       return { ok: false, refusal: 'noWall', bay };
     }
+    /*
+     * On the *walk*, which is a narrower question than `standingOnWall` asks.
+     *
+     * `standingOnWall` counts a man on a crossing as up — `stationOf >= 0 || crossOf !== -1`
+     * — because for "may this unit take a wall order at all" a man on a ladder is on his way
+     * and will be there. For *this* verb that is the wrong reading: an assault along the
+     * parapet is men walking along stone, and a party with 9 of 84 over the top and 71 still
+     * on the rungs cannot walk anywhere. Measured at the storm of Rome, that is not a corner
+     * case — it is what every lodgement looks like for the first minute, because
+     * `adoptBoarders` creates the garrison record on the *first* man over.
+     *
+     * More on the stone than on the rungs, so the body of the unit decides. The refusal it
+     * produces is the true one and it names the next click: "These men are not on the wall —
+     * send them up it first."
+     */
     if (!this.garrisons.has(unitId) || !this.standingOnWall(unitId)) {
       return { ok: false, refusal: 'notOnWall', bay };
     }
+    const w = this.unitWallState(unitId);
+    if (w.onWall <= w.onLink) return { ok: false, refusal: 'notOnWall', bay };
     const here = this.stationNear(u.x, u.z);
     const fromRun = here >= 0 ? this.sRun[here] : -1;
     if (!this.runsConnected(fromRun, this.sRun[dest])) return { ok: false, refusal: 'noRoute', bay };
@@ -5440,7 +5499,13 @@ export class Siege implements ElevationOwner {
     // `ordered` is in the test because a unit ordered *onto* an ungarrisoned wall is the one
     // case where nothing is owned yet and there is still work to do — and because a queue
     // left unconsumed would grow for the length of a field battle.
-    if (this.owned.size === 0 && this.garrisons.size === 0 && this.ordered.size === 0) return;
+    //
+    // `attacks` joins them for the second of those reasons only. Nothing this system does
+    // with an attack order matters on a wall nobody is standing on, but the field battle
+    // puts about six thousand orders a minute across this bus and a map that is never
+    // drained is a leak with a battle-length lifetime.
+    if (this.owned.size === 0 && this.garrisons.size === 0
+      && this.ordered.size === 0 && this.attacks.size === 0) return;
     // A player order arrives between ticks and this runs before `trackOwnedAnchors` can
     // overwrite the target it came with, which is the whole reason the interception works
     // without a patch anywhere else. See `interceptOrders`.

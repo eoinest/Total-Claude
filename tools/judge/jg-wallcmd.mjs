@@ -26,8 +26,8 @@
  *   node tools/judge/jg-wallcmd.mjs --port=5942 --map=campus-martius --seed=4265438264
  *   node tools/judge/jg-wallcmd.mjs --port=5942 --map=carthage        # the player storms
  */
-import { argsOf, boot, ledger, shot, dump, ff, aim, hover, rightClick,
-  leftClick, selectHard, ROOT } from './jg-lib.mjs';
+import { argsOf, boot, ledger, shot, dump, ff, aim, cam, hover, rightClick,
+  leftClick, boxSelect, selectHard, ROOT } from './jg-lib.mjs';
 import path from 'node:path';
 
 const A = argsOf();
@@ -62,7 +62,16 @@ const HELPERS = () => {
     const h = ctx0.tryGet('hud'), c = h ? h.controller : null;
     const b = document.querySelector(`.bnr[data-unit="${id}"]`);
     if (!b) return { present: false };
-    const r = b.getBoundingClientRect();
+    /*
+     * The **plate**, not the root. `.bnr` is transformed `translate(-50%,-100%)` so its
+     * bottom sits on the anchor and its box extends upward by the whole height of the staff
+     * — measured, 405 px at battle zoom. Its centre is therefore twenty metres of world
+     * above the men and lands under the top bar, which is how a first attempt at this test
+     * read "the plaque is not clickable" about a plaque that is perfectly clickable. The
+     * thing a player aims at is the plate at the bottom of that box.
+     */
+    const pl = b.querySelector('.bnr-plate') ?? b;
+    const r = pl.getBoundingClientRect();
     const cx = Math.round(r.x + r.width / 2), cy = Math.round(r.y + r.height / 2);
     return { present: true, off: b.classList.contains('off'),
       opacity: b.style.opacity, x: cx, y: cy, w: Math.round(r.width),
@@ -115,6 +124,9 @@ const HELPERS = () => {
         tgtWall: tgtId >= 0 ? s.unitWallState(tgtId) : null,
         selFile: selId >= 0 && s.wallFileOf ? s.wallFileOf(selId) : 'no wallFileOf',
         tgtFile: tgtId >= 0 && s.wallFileOf ? s.wallFileOf(tgtId) : 'no wallFileOf',
+        /** The sim's own answer, which is what `interceptOrders` acts on. */
+        assaultOffer: selId >= 0 && tgtId >= 0 && s.wallAssaultOfferAt
+          ? s.wallAssaultOfferAt(selId, tgtId) : 'no wallAssaultOfferAt',
         probeHasFileOf: !!(c && c.wallProbe && c.wallProbe.fileOf),
       } : null,
       events: window.__EV ? window.__EV.splice(0) : [],
@@ -140,6 +152,29 @@ const ONSTONE = () => {
       runs: w.runs, goal: w.goal, garr: s.isGarrisoned(u.id) };
   }).filter((r) => r.onWall > 0 || r.onLink > 0);
 };
+
+/**
+ * Put a unit's plaque somewhere the mouse can reach it, and say where.
+ *
+ * The plaque is not where the men are: `.bnr` is transformed `translate(-50%, -100%)` and
+ * anchored on the *plaque plane*, so at battle zoom it floats hundreds of pixels above the
+ * crowd and lands under the top bar — or off the top of the frame entirely — from any camera
+ * that frames the men comfortably. Two readings of "the plaque is not clickable" in this file
+ * were about that and not about the product. So the camera is walked along the wall until the
+ * plate itself is in the band the pointer can use, and the band is stated: clear of the top
+ * bar at 140 px and clear of the card bar at 700.
+ */
+async function framePlate(page, at, id) {
+  for (const dz of [0, -25, 25, -50, 50, -90, 90, -140, 140]) {
+    for (const zoom of [0.55, 0.42, 0.7]) {
+      await cam(page, at.x, at.z + dz, zoom, 0);
+      await page.waitForTimeout(200);
+      const q = await page.evaluate((i) => window.__plate(i), id);
+      if (q.present && !q.off && q.x > 40 && q.x < 1560 && q.y > 140 && q.y < 700) return q;
+    }
+  }
+  return null;
+}
 
 /** How many pixels over a unit's own drawn men answer with that unit's id. */
 async function answerRate(page, id) {
@@ -231,6 +266,24 @@ try {
   L.say(`  pick rate over my own men: ${JSON.stringify(pick)}  mean `
     + `${Math.round(pick.reduce((a, b) => a + b, 0) / Math.max(1, pick.length))}%`);
 
+  /*
+   * And the marquee, because that is the other half of "selectable" and it reads the same
+   * box. A drag thrown over a cohort's own men on the parapet has to catch it.
+   */
+  {
+    const m0 = mineRows[0];
+    const st0 = await page.evaluate((i) => window.__stone(i), m0.id);
+    await aim(page, st0.x, st0.y + 1.0, st0.z, { zoom: 0.55 });
+    const b0 = await page.evaluate((i) => window.__box(i), m0.id);
+    if (b0 && isFinite(b0.x0)) {
+      const sel = await boxSelect(page,
+        { x: Math.max(8, Math.round(b0.x0) - 10), y: Math.max(120, Math.round(b0.y0) - 10) },
+        { x: Math.min(1592, Math.round(b0.x1) + 10), y: Math.min(740, Math.round(b0.y1) + 10) });
+      L.ck(`a marquee over unit ${m0.id}'s men on the parapet catches it`,
+        (sel ?? []).includes(m0.id), `includes ${m0.id}`, JSON.stringify(sel));
+    }
+  }
+
   // ------------------------------------ 3. the pairing: mine on the wall, theirs on the wall
   L.say('\n=== 3. MINE ON THE WALL -> THEIRS ON THE WALL ===');
   const tgt = enemy[0];
@@ -277,9 +330,20 @@ try {
     const st2 = await page.evaluate(([a, b]) => window.__PROBE(a, b), [me.id, tgt.id]);
     const local = st2.events.filter((e) => e.src !== 'ai');
     L.say(`  what went out: ${JSON.stringify(local)}`);
+    L.say(`  the sim's own offer: ${JSON.stringify(st2.sim.assaultOffer)}`);
+    /*
+     * Either answer is honest here and the pixel decides which. My cohort and their lodgement
+     * are standing on the same stone, so both boxes contain the cursor and both are the same
+     * size to within a metre; whichever the pick returns, the order has to be one that
+     * reaches them — `attack` on the unit, or the traverse onto the stone they are on.
+     * §5 tests the route that is *not* a coin flip.
+     */
     L.ck('the order that went out is the order the cursor promised',
-      local.some((e) => e.kind === 'attack') || local.some((e) => e.k === 'refused'),
-      'an attack, or a refusal', JSON.stringify(local.map((e) => e.kind ?? e.refusal)));
+      local.some((e) => e.kind === 'attack')
+        || local.some((e) => e.k === 'refused')
+        || (st.cursor === 'wall' && local.some((e) => e.kind === 'move')),
+      'an attack, a refusal, or the traverse the cursor offered',
+      `cursor ${st.cursor} -> ${JSON.stringify(local.map((e) => e.kind ?? e.refusal))}`);
 
     await ff(page, 30);
     const st3 = await page.evaluate(([a, b]) => window.__PROBE(a, b), [me.id, tgt.id]);
@@ -327,20 +391,32 @@ try {
       const h4 = await page.evaluate(([a, bb]) => window.__PROBE(a, bb), [far.id, tgt.id]);
       L.say(`  hover: cursor=${h4.cursor} hovered=${h4.hovered} hostile=${h4.hostile}`
         + ` intent=${h4.intent} wallValid=${h4.wallValid}`);
-      L.ck('the cursor names the enemy on the wall from another run',
-        h4.hovered === tgt.id && (h4.cursor === 'attack' || h4.cursor === 'refuse'),
-        `hovered ${tgt.id}, cursor attack or refuse`, `hovered ${h4.hovered}, cursor ${h4.cursor}`);
+      /*
+       * Two units on one stretch of stone are two claims on every pixel between them, and
+       * when they are interlocked in a melee the claims are the same size to within a metre
+       * — measured here, my cohort's file halfW 12.46 against the lodgement's 10.93, centres
+       * 0.8 m apart. No tie-break on geometry can separate those honestly, and the game's own
+       * answer to "pick one unit out of a pile" is the plaque, which §5 tests. What this cell
+       * must not accept is *nothing*: the cursor has to offer an order that reaches them.
+       */
+      L.ck('the cursor offers an order that reaches the enemy on the wall',
+        (h4.hovered === tgt.id && (h4.cursor === 'attack' || h4.cursor === 'refuse'))
+          || (h4.cursor === 'wall' && h4.intent === 'traverse'),
+        'attack / refuse on them, or a traverse onto their stone',
+        `hovered ${h4.hovered}, cursor ${h4.cursor}, intent ${h4.intent}`);
       const b4 = h4.selUnit;
       await rightClick(page, tp2, { hold: 380 });
       await page.waitForTimeout(250);
       const e4 = await page.evaluate(([a, bb]) => window.__PROBE(a, bb), [far.id, tgt.id]);
       const mine4 = e4.events.filter((ev) => ev.src !== 'ai');
       L.say(`  what went out: ${JSON.stringify(mine4)}`);
+      L.say(`  the sim's own offer: ${JSON.stringify(e4.sim.assaultOffer)}`);
       L.say(`  wall state now: ${JSON.stringify(e4.sim.selWall)}`);
       const refused = mine4.some((ev) => ev.k === 'refused');
-      L.ck('the order is taken as an assault along the wall, or refused out loud',
-        e4.sim.selWall.goal === 'assault' || refused,
-        'goal assault, or an orderRefused', `goal ${e4.sim.selWall.goal}, refusals ${refused}`);
+      L.ck('the order opens a plan that reaches them, or is refused out loud',
+        e4.sim.selWall.goal === 'assault' || e4.sim.selWall.goal === 'traverse' || refused,
+        'goal assault or traverse, or an orderRefused',
+        `goal ${e4.sim.selWall.goal}, refusals ${refused}`);
       await ff(page, 45);
       const a4 = await page.evaluate(([a, bb]) => window.__PROBE(a, bb), [far.id, tgt.id]);
       const closed = far.d - Math.hypot(a4.selUnit.x - ts.x, a4.selUnit.z - ts.z);
@@ -352,6 +428,121 @@ try {
         refused ? 'refused, so nothing to close' : `>${Math.min(20, far.d * 0.4).toFixed(0)} m or blood`,
         `${closed.toFixed(0)} m, kills +${a4.selUnit.kills - b4.kills}`);
       await shot(page, OUT, 'wc-assault-distance');
+    }
+  }
+
+  /*
+   * -------------------------------------------- 5. BY THE PLAQUE, AND THE REFUSAL
+   *
+   * Two units on one stretch of stone are two claims on every pixel between them, and this
+   * game already has an answer to that: `src/ui/Banners.ts` — *"the banner is the thing a
+   * player aims at to pick a unit out of a melee"* — and `pickUnit` tests the plaque before
+   * it tests the ground. So the plaque is the route to "attack **them**", and
+   * `hostileUnder` names it as one of the three ways an attack beats a wall order.
+   *
+   * Then the refusal. Rome's circuit is four disconnected components (runs 0-1, 2-18, 19-24,
+   * 25-44), so a cohort on run 0 has no walk to a lodgement on run 2 however short the line
+   * between them looks. There is exactly one acceptable answer and it is a sentence.
+   */
+  L.say('\n=== 5. BY THE PLAQUE, AND THE REFUSAL ===');
+  {
+    /*
+     * A **live** lodgement, re-read now rather than reused from §3.
+     *
+     * The first version of this section kept pointing at unit 17, and by the time it got
+     * there §3 and §4 had killed 65 of its 83 men and driven the survivors back onto the
+     * rungs — `wallFileOf` null, so `wallAssaultOfferAt` answered `noWall`, which is the
+     * correct answer to "attack those men on the wall" about men who are not on the wall.
+     * Three failures in a row, all of them the fixture measuring a target it had itself
+     * destroyed. This asks the sim who is on the stone *now*.
+     */
+    const now5 = await page.evaluate(ONSTONE);
+    const live = now5.filter((x) => x.f !== 0 && x.onWall >= 5).sort((a, bb) => bb.onWall - a.onWall)[0];
+    if (!live) { L.say('  no enemy is on the stone any more; nothing to point at'); }
+    else if (live.id !== tgt.id) {
+      L.say(`  the lodgement of §3 is off the stone; pointing at unit ${live.id} instead`
+        + ` (${live.onWall} men up)`);
+    }
+    if (live) { tgt.id = live.id; tgt.runs = live.runs; }
+    const ts2 = live ? await page.evaluate((i) => window.__stone(i), live.id) : null;
+    if (ts2) { ts.x = ts2.x; ts.y = ts2.y; ts.z = ts2.z; }
+    const actor = far ?? me;
+    const g5 = await selectHard(page, actor.id, { zoom: 0.55 });
+    /*
+     * Frame the *target* before reading its plaque, and this is the instrument's own bug
+     * caught by its own output. `selectHard` leaves the camera on the unit it just picked
+     * up; read from there, unit 17's plaque sat at screen y 24 — **under the top bar** — so
+     * `ptr.overUi` was true, `pickUnit` returned -1, `model.hoveredId` stayed stale at the
+     * actor's own id and the right-click emitted nothing. Every one of those readings was
+     * about where the camera was pointing and none of them was about the product.
+     */
+    const plate = live ? await framePlate(page, ts, tgt.id) : null;
+    L.say(`  selected ${actor.id} (${g5.ok ? 'ok' : g5.why}); their plaque ${JSON.stringify(plate)}`);
+    if (live) {
+      L.ck('an enemy on the wall has a plaque the mouse can reach', !!plate,
+        'a plate in the clickable band', plate ? `${plate.x},${plate.y}` : 'nowhere from any camera');
+    }
+    if (g5.ok && plate && plate.hit === tgt.id) {
+      await hover(page, { x: plate.x, y: plate.y });
+      const h5 = await page.evaluate(([a, bb]) => window.__PROBE(a, bb), [actor.id, tgt.id]);
+      L.say(`  over their plaque: cursor=${h5.cursor} hovered=${h5.hovered} hostile=${h5.hostile}`
+        + ` overBanner=${h5.overBanner}`);
+      L.ck('their own plaque names them',
+        h5.hovered === tgt.id, tgt.id, h5.hovered);
+      const b5 = h5.selUnit;
+      await rightClick(page, { x: plate.x, y: plate.y }, { hold: 380 });
+      await page.waitForTimeout(250);
+      const e5 = await page.evaluate(([a, bb]) => window.__PROBE(a, bb), [actor.id, tgt.id]);
+      const mine5 = e5.events.filter((ev) => ev.src !== 'ai');
+      L.say(`  what went out: ${JSON.stringify(mine5)}`);
+      L.say(`  the sim's own offer: ${JSON.stringify(e5.sim.assaultOffer)}`);
+      L.say(`  wall state: ${JSON.stringify(e5.sim.selWall)}`);
+      L.ck('right-clicking an enemy plaque on the wall is an attack order',
+        mine5.some((ev) => ev.kind === 'attack'), 'kind attack', JSON.stringify(mine5.map((ev) => ev.kind ?? ev.refusal)));
+      L.ck('and the simulation takes it as an assault along the wall, or refuses it out loud',
+        e5.sim.selWall.goal === 'assault' || mine5.some((ev) => ev.k === 'refused'),
+        'goal assault, or an orderRefused',
+        `goal ${e5.sim.selWall.goal}, refusals ${JSON.stringify(mine5.filter((ev) => ev.k === 'refused'))}`);
+      await ff(page, 40);
+      const a5 = await page.evaluate(([a, bb]) => window.__PROBE(a, bb), [actor.id, tgt.id]);
+      L.say(`  40 s later: kills ${b5.kills}->${a5.selUnit.kills}, their alive`
+        + ` ${e5.tgtUnit.alive}->${a5.tgtUnit ? a5.tgtUnit.alive : 'gone'},`
+        + ` wall ${JSON.stringify(a5.sim.selWall)}`);
+      await shot(page, OUT, 'wc-plaque-assault');
+    } else {
+      L.say('  their plaque is not a usable target from this camera; nothing to test');
+    }
+
+    // The refusal: a cohort on a component of the circuit the lodgement is not on.
+    const other = !live ? null : (await Promise.all(mine.map(async (m) => {
+      const st = await page.evaluate((i) => window.__stone(i), m.id);
+      const w = stone.find((x) => x.id === m.id);
+      return { id: m.id, run: w.runs[0], ...st };
+    }))).find((c) => c.run <= 1 && (tgt.runs?.[0] ?? 2) > 1);
+    if (!other) { L.say('  no unit of mine on a severed component; the refusal is untested here'); }
+    else {
+      const g6 = await selectHard(page, other.id, { zoom: 0.55 });
+      const plate2 = await framePlate(page, ts, tgt.id);
+      L.say(`  selected ${other.id} on run ${other.run} (${g6.ok ? 'ok' : g6.why});`
+        + ` their plaque ${JSON.stringify(plate2)}`);
+      if (g6.ok && plate2) {
+        await hover(page, { x: plate2.x, y: plate2.y });
+        const h6 = await page.evaluate(([a, bb]) => window.__PROBE(a, bb), [other.id, tgt.id]);
+        L.say(`  cursor=${h6.cursor} hovered=${h6.hovered} hint="${h6.hint}"`);
+        await rightClick(page, { x: plate2.x, y: plate2.y }, { hold: 420 });
+        await page.waitForTimeout(250);
+        const e6 = await page.evaluate(([a, bb]) => window.__PROBE(a, bb), [other.id, tgt.id]);
+        const mine6 = e6.events.filter((ev) => ev.src !== 'ai');
+        L.say(`  what went out: ${JSON.stringify(mine6)}`);
+        L.say(`  the sim's own offer: ${JSON.stringify(e6.sim.assaultOffer)}`);
+        L.say(`  their file: ${JSON.stringify(e6.sim.tgtFile)}`);
+        L.ck('an attack across a severed walk is refused out loud, with a reason',
+          mine6.some((ev) => ev.k === 'refused' && ev.refusal === 'noRoute'),
+          "an orderRefused carrying 'noRoute'",
+          JSON.stringify(mine6.filter((ev) => ev.k === 'refused')));
+        L.ck('and the cursor said so before the click',
+          h6.cursor === 'refuse', 'refuse', `${h6.cursor} (hovered ${h6.hovered})`);
+      }
     }
   }
 
