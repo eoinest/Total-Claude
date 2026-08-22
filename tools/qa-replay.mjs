@@ -56,6 +56,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { bootThroughMenu, ensureServer } from './lib/menu-boot.mjs';
+import { stopClockOnReady } from './lib/simclock.mjs';
 import { launchBrowser } from './lib/browser-budget.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -423,6 +424,25 @@ async function playback(token, {
   stepMs = 1000 / 60, ticks, fromTick, injectAt, inject, shotName, quality,
 } = {}) {
   const page = await newPage();
+  /*
+   * Stop the clock on the `ready` assignment, before a frame can run.
+   *
+   * `main.ts` calls `engine.start()` and *then* sets `__game.ready = true`, so the
+   * `engine.stop()` below — which waits for the flag and then makes a driver round trip — has
+   * an unbounded number of rAF frames in front of it on a loaded machine, and every frame
+   * carries fixed steps. This arm compensates for the *count* (`target - done` reads the real
+   * tick), which is why it has been green, and the count was never the whole hazard: those
+   * ticks run before `tickCeiling` is pinned, so the recorded deployment operations can be
+   * pumped at a tick number that varies with the load average. A replay whose deployment
+   * happened at a different tick is a different battle, and the negative arms below are
+   * calibrated on the difference between "different battle" and "no difference".
+   *
+   * `recordBattle` deliberately does **not** get this: it drives a real mouse through a real
+   * battle in real time and records whatever tick count that reaches. `tools/lib/simclock.mjs`
+   * states the rule — if your tool hashes at a fixed checkpoint, stop the clock; if it watches
+   * a battle happen, do not.
+   */
+  await stopClockOnReady(page);
   const q = (fromTick === undefined ? '' : `&from=${(fromTick / 30).toFixed(6)}`)
     + (quality === undefined ? '' : `&quality=${quality}`);
   await page.goto(`${base}/?replay=${token}${q}`, { waitUntil: 'domcontentloaded' });

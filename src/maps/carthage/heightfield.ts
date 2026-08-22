@@ -85,8 +85,12 @@ const UP_B = 9 / 16;
  * `max`ed rather than summed for the same reason `regionalLand` maxes the hills themselves.
  */
 const uplandWeight = (x: number, z: number): number => {
-  const byrsa = Math.exp(-Math.pow(Math.hypot((x - BYRSA_X) / 230, (z - BYRSA_Z) / 145), 2));
-  const djedid = Math.exp(-Math.pow(Math.hypot((x - 210) / 260, (z - 1037) / 175), 2));
+  const bu = (x - BYRSA_X) / 230;
+  const bv = (z - BYRSA_Z) / 145;
+  const byrsa = Math.exp(-Math.pow(Math.sqrt(bu * bu + bv * bv), 2));
+  const ju = (x - 210) / 260;
+  const jv = (z - 1037) / 175;
+  const djedid = Math.exp(-Math.pow(Math.sqrt(ju * ju + jv * jv), 2));
   return Math.max(byrsa, djedid * 0.85);
 };
 
@@ -304,7 +308,9 @@ const segDist = (
   const dz = z2 - z1;
   const l2 = dx * dx + dz * dz;
   const t = l2 > 0 ? clamp01(((x - x1) * dx + (z - z1) * dz) / l2) : 0;
-  return Math.hypot(x - (x1 + dx * t), z - (z1 + dz * t));
+  const px = x - (x1 + dx * t);
+  const pz = z - (z1 + dz * t);
+  return Math.sqrt(px * px + pz * pz);
 };
 
 /** 0 on a channel's centreline, 1 at its lip, greater than 1 clear of both. */
@@ -317,7 +323,8 @@ const channelNess = (x: number, z: number): number => {
 /** 1 on the cothon's made ground — island, water and ring quay alike — 0 past its outer fall. */
 const cothonApron = (x: number, z: number): number => {
   const flat = COTHON.outerR + COTHON_QUAY + QUAY_MARGIN;
-  return 1 - sstep(flat, flat + APRON_FALL, Math.hypot(x - COTHON.x, z - COTHON.z));
+  return 1 - sstep(flat, flat + APRON_FALL,
+    Math.sqrt((x - COTHON.x) * (x - COTHON.x) + (z - COTHON.z) * (z - COTHON.z)));
 };
 
 /**
@@ -344,7 +351,7 @@ const cothonApron = (x: number, z: number): number => {
  * manoeuvring ring in the middle stays a hard obstacle because the city stamps it as one.
  */
 const harbourWater = (x: number, z: number): number => {
-  const r = Math.hypot(x - COTHON.x, z - COTHON.z);
+  const r = Math.sqrt((x - COTHON.x) * (x - COTHON.x) + (z - COTHON.z) * (z - COTHON.z));
   let w = sstep(COTHON.islandR, COTHON.islandR + BASIN_EDGE, r)
     * (1 - sstep(COTHON.outerR - BASIN_EDGE, COTHON.outerR, r));
   const mh = MERCHANT_HARBOUR;
@@ -560,7 +567,7 @@ export function buildCarthageTerrain(seedLabel = 'carthage-146bc'): TerrainData 
       const wx = -HALF_EXTENT + i * spacing;
       const gx = (heights[row + i + 1] - heights[row + i - 1]) / (2 * spacing);
       const gz = (heights[row + res + i] - heights[row - res + i]) / (2 * spacing);
-      const slope = clamp01(Math.hypot(gx, gz));
+      const slope = clamp01(Math.sqrt(gx * gx + gz * gz));
       const n =
         gnoise(wx * 0.036, wz * 0.036, detailSeed) * 0.62 +
         gnoise(wx * 0.105, wz * 0.105, detailSeed + 7) * 0.38;
@@ -806,7 +813,9 @@ export function buildCarthageTerrain(seedLabel = 'carthage-146bc'): TerrainData 
         const dz = b.z - a.z;
         const l2 = dx * dx + dz * dz;
         const t = l2 > 0 ? clamp01(((x - a.x) * dx + (z - a.z) * dz) / l2) : 0;
-        const d = Math.hypot(x - (a.x + dx * t), z - (a.z + dz * t));
+        const px = x - (a.x + dx * t);
+        const pz = z - (a.z + dz * t);
+        const d = Math.sqrt(px * px + pz * pz);
         if (d < best) best = d;
       }
       return best;
@@ -1074,7 +1083,7 @@ function assertHarbourWorks(heights: Float32Array, res: number, spacing: number)
 
   const R = COTHON.outerR;
   const cothon = survey((x, z) => {
-    const r = Math.hypot(x - COTHON.x, z - COTHON.z);
+    const r = Math.sqrt((x - COTHON.x) * (x - COTHON.x) + (z - COTHON.z) * (z - COTHON.z));
     return r <= R && r >= COTHON.islandR;
   }, COTHON.x - R, COTHON.x + R, COTHON.z - R, COTHON.z + R);
   const merchant = survey(() => true, mh.x - mh.hw, mh.x + mh.hw, mh.z - mh.hd, mh.z + mh.hd);
@@ -1115,10 +1124,9 @@ function assertHarbourWorks(heights: Float32Array, res: number, spacing: number)
       const x = COTHON.x + Math.cos(th) * r;
       const z = COTHON.z + Math.sin(th) * r;
       if (channelNess(x, z) < 1.6) continue;
-      const g = Math.hypot(
-        (at(x + 3.5, z) - at(x - 3.5, z)) / 7,
-        (at(x, z + 3.5) - at(x, z - 3.5)) / 7,
-      );
+      const gx = (at(x + 3.5, z) - at(x - 3.5, z)) / 7;
+      const gz = (at(x, z + 3.5) - at(x, z - 3.5)) / 7;
+      const g = Math.sqrt(gx * gx + gz * gz);
       if (g > quaySlope) { quaySlope = g; quayAt = `(${x.toFixed(0)}, ${z.toFixed(0)})`; }
     }
   }
@@ -1181,7 +1189,7 @@ function assertDitchCut(heights: Float32Array, res: number, spacing: number): vo
   /** Fieldward unit normal of the wall at x — the direction a transect runs. */
   const normalAt = (x: number): { nx: number; nz: number } => {
     const dz = (carthageWallZ(x + 1) - carthageWallZ(x - 1)) * 0.5;
-    const len = Math.hypot(1, dz);
+    const len = Math.sqrt(1 + dz * dz);
     return { nx: dz / len, nz: -1 / len };
   };
 
@@ -1232,10 +1240,9 @@ function assertDitchCut(heights: Float32Array, res: number, spacing: number): vo
       // Snap to the nav lattice so the stencil straddles the same cells the pathfinder uses.
       const x = Math.round((p.x + n.nx * d) / CELL) * CELL;
       const z = Math.round((cz + n.nz * d) / CELL) * CELL;
-      const g = Math.hypot(
-        (at(x + CELL, z) - at(x - CELL, z)) / (CELL * 2),
-        (at(x, z + CELL) - at(x, z - CELL)) / (CELL * 2),
-      );
+      const gx = (at(x + CELL, z) - at(x - CELL, z)) / (CELL * 2);
+      const gz = (at(x, z + CELL) - at(x, z - CELL)) / (CELL * 2);
+      const g = Math.sqrt(gx * gx + gz * gz);
       if (g > worstGrad) {
         worstGrad = g;
         gradAt = `(${x.toFixed(0)}, ${z.toFixed(0)})`;
@@ -1288,7 +1295,7 @@ function slopeOfWork(
   const jp = j < wres - 1 ? j + 1 : wres - 1;
   const gx = (work[j * wres + ip] - work[j * wres + im]) / ((ip - im) * wspacing);
   const gz = (work[jp * wres + i] - work[jm * wres + i]) / ((jp - jm) * wspacing);
-  const m = Math.hypot(gx, gz);
+  const m = Math.sqrt(gx * gx + gz * gz);
   return m > 1 ? 1 : m;
 }
 

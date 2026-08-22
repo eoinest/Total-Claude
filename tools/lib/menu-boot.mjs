@@ -20,6 +20,7 @@
 import path from 'node:path';
 import process from 'node:process';
 import { startVite } from './browser-budget.mjs';
+import { stopClockOnReady } from './simclock.mjs';
 
 export const waitForServer = async (url, ms) => {
   const end = Date.now() + ms;
@@ -88,10 +89,23 @@ export async function ensureServer({ port, root, cacheDir, label = 'menu-boot', 
  * `onSetup` is called with the page once the setup sheet is up and before BEGIN is pressed,
  * for anything a caller wants to do there — a screenshot, an army edit.
  */
+/**
+ * `stopClock` is **opt-in and defaults off, deliberately.**
+ *
+ * `src/main.ts` starts the rAF loop at the end of `boot()` and sets `ready` after it, so any
+ * driver that waits for the flag and then evaluates a stop loses an unpredictable number of
+ * ticks to the round trip — see `tools/lib/simclock.mjs` for the measurement and the scare.
+ * Passing `stopClock: true` closes that window from inside the page.
+ *
+ * It cannot be the default here because this function's other callers are the playability rigs,
+ * which drive the battle in real time and need the clock they were given. **If your tool hashes
+ * anything at a fixed checkpoint, pass it.** If your tool watches a battle happen, do not.
+ */
 export async function bootThroughMenu(page, {
   base, map, scenario, tier = 'high', size, query = 'autoplay=0',
-  onSetup, readyTimeout = 240000,
+  onSetup, readyTimeout = 240000, stopClock = false,
 } = {}) {
+  if (stopClock) await stopClockOnReady(page);
   await page.goto(`${base}/?${query}`, { waitUntil: 'domcontentloaded' });
   // Either sheet may be the one that appears: `startStep` opens on the setup screen for
   // `?menu=battle` and for any URL that already names a battle, and on the front door for

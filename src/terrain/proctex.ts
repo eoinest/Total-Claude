@@ -154,7 +154,7 @@ function layerHeight(kind: LayerKind, u: number, v: number, seed: number): numbe
           const jy = pgnoiseCell(gx, gy, seed + 82);
           const px = iu + dx + 0.5 + jx * 0.36;
           const py = iv + dy + 0.5 + jy * 0.36;
-          const d = Math.hypot(cu - px, cv - py);
+          const d = Math.sqrt((cu - px) * (cu - px) + (cv - py) * (cv - py));
           if (d < best) {
             second = best;
             best = d;
@@ -239,7 +239,7 @@ export function generateLayer(kind: LayerKind, seed = 1): ProcLayer {
       let nx = (hL - hR) * bump;
       let ny = (hD - hU) * bump;
       const nz = 1;
-      const len = Math.hypot(nx, ny, nz);
+      const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
       nx /= len;
       ny /= len;
 
@@ -333,7 +333,7 @@ export function generateDetailNormal(size = 256, seed = 13): Uint8Array {
       const yp = (y + 1) % size;
       let nx = (h[y * size + xm] - h[y * size + xp]) * 2.9;
       let ny = (h[ym * size + x] - h[yp * size + x]) * 2.9;
-      const len = Math.hypot(nx, ny, 1);
+      const len = Math.sqrt(nx * nx + ny * ny + 1);
       nx /= len;
       ny /= len;
       const o = (y * size + x) * 4;
@@ -477,7 +477,7 @@ export function generateWaterNormal(size = 256, seed = 3, lattice = 9): Uint8Arr
       const yp = (y + 1) % size;
       let nx = (h[y * size + xm] - h[y * size + xp]) * 3.2;
       let ny = (h[ym * size + x] - h[yp * size + x]) * 3.2;
-      const len = Math.hypot(nx, ny, 1);
+      const len = Math.sqrt(nx * nx + ny * ny + 1);
       const o = (y * size + x) * 4;
       data[o] = clamp255((nx / len * 0.5 + 0.5) * 255);
       data[o + 1] = clamp255((ny / len * 0.5 + 0.5) * 255);

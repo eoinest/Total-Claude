@@ -14,6 +14,7 @@ import { MoraleSystem } from './sim/Morale';
 import { AbilitySystem } from './sim/Abilities';
 import { RagdollSystem } from './sim/Ragdoll';
 import { BattleFlowSystem } from './sim/BattleFlow';
+import { UnitQuantiseSystem } from './sim/quantise';
 
 // --- AI ---
 import { installAI } from './ai';
@@ -388,6 +389,13 @@ engine.add(new MoraleSystem());
 engine.add(new AbilitySystem());
 engine.add(new RagdollSystem());
 engine.add(new BattleFlowSystem());
+/*
+ * The unit layer's quantisation firewall, at order 60 — after every system that writes a
+ * `UnitGroupState` inside a tick (including the two AIs, whose `orderIssued` emits land
+ * synchronously through `BattleSystem`'s handler at 42 and 45) and before anything render-side.
+ * See `src/sim/quantise.ts` for what it is for and what it measured.
+ */
+engine.add(new UnitQuantiseSystem(battle));
 
 /*
  * The pre-battle deployment phase.

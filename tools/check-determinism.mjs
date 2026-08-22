@@ -120,9 +120,14 @@
  * is a separate and much larger pass. And failing the build on them would block every agent
  * working in this tree tonight over a risk that has been latent for a year.
  *
- * The one substitution that is free has already been taken: `Math.hypot(a, b)` is
- * `Math.sqrt(a * a + b * b)` throughout `src/sim`, `src/ai`, `src/units` and `src/city`, so a
- * `hypot` hit in those directories is a regression rather than a backlog item.
+ * The one substitution that is free has already been taken, and it is now taken everywhere:
+ * `Math.hypot(a, b)` is `Math.sqrt(a * a + b * b)` throughout every directory this file scans —
+ * `src/sim`, `src/ai`, `src/units`, `src/city`, `src/terrain` and `src/maps` — so a `hypot` hit
+ * anywhere in `PORT_SCOPE` is a regression rather than a backlog item. The final 27 sites went
+ * on 21 August 2026 and `tools/qa-xengine.mjs` measured what they bought: the Carthage assault
+ * boots bit-identically in Chromium, Firefox and WebKit where it used to boot as three
+ * different battles. It bought nothing after t+200 on the field battle, which is the other half
+ * of the finding and is why `hypot` was never the whole story.
  *
  * ## Usage
  *
@@ -189,16 +194,31 @@ const BANNED = [
 const APPROXIMATED = [
   { fn: 'tan', worst: '41%', ulp: '3', note: 'the worst measured. Chromium vs WebKit.' },
   { fn: 'hypot', worst: '37%', ulp: '2',
-    note: 'ALREADY REMOVED from src/sim, src/ai, src/units and src/city — a hit there is a '
-      + 'regression. Use Math.sqrt(a * a + b * b): sqrt is one of the two things IEEE-754 '
-      + 'requires correctly rounded, and it measured 0% disagreement in every engine tested. '
-      + 'The substitution cut Chromium-vs-Firefox divergent frames over t+200 from 1,684 to '
-      + '484 and moved no pinned checkpoint hash on any of the three battles.' },
+    note: 'ALREADY REMOVED from every scanned directory — src/sim, src/ai, src/units, '
+      + 'src/city, src/terrain and src/maps. A hit anywhere in PORT_SCOPE is a regression, '
+      + 'not a backlog item. Use Math.sqrt(a * a + b * b): sqrt is one of the two things '
+      + 'IEEE-754 requires correctly rounded, and it measured 0% disagreement in every engine '
+      + 'tested. Measured, with tools/qa-xengine.mjs, before and after the last 27 sites went: '
+      + 'the Carthage assault at t+0 went from three different pool hashes and 838 of 3,440 men '
+      + 'differing between Chromium and Firefox — including 361 wall-garrison men at identical '
+      + 'x/z whose foot height differed by up to 3.87 mm — to ONE hash in all three engines and '
+      + 'zero men differing. It did not close the field battle\'s mid-battle fork: all three '
+      + 'engines are still identical through t+200 and apart by t+250.' },
   { fn: 'atan2', worst: '17%', ulp: '1' },
   { fn: 'acos', worst: '17%', ulp: '1' },
   { fn: 'exp', worst: '10%', ulp: '1' },
   { fn: 'sin', worst: '4%', ulp: '1' },
   { fn: 'cos', worst: '4%', ulp: '1' },
+  /*
+   * `Math.pow(x, 2)` and `Math.pow(x, 3)` are not transcendental calls, they are `x * x` and
+   * `x * x * x` written the slow and unportable way, and there are **15 of them** in the scanned
+   * directories — 4 in `src/maps/carthage`, 3 in `src/maps/pydna`, and the rest across
+   * `src/terrain` and `src/city`. Every one is a free removal in the same sense the `hypot`
+   * substitution was free, and unlike `hypot` it does not even change the value when the
+   * exponent is an exact small integer on most implementations — which is precisely why nobody
+   * should assume it and why the change has to be measured rather than waved through. It is the
+   * cheapest item left on this list; `tools/qa-xengine.mjs` is the instrument for it.
+   */
   { fn: 'pow', worst: '0%', ulp: '0',
     note: 'zero across these three engines is luck, not a guarantee: Chrome 130-x64 vs '
       + 'Chrome 151-arm64 disagrees on 10.5% of inputs. Not cleared.' },

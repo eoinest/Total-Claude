@@ -90,7 +90,7 @@ export function hydraulicErode(
   let wsum = 0;
   for (let dy = -r; dy <= r; dy++) {
     for (let dx = -r; dx <= r; dx++) {
-      const d = Math.hypot(dx, dy);
+      const d = Math.sqrt(dx * dx + dy * dy);
       if (d > r + 0.5) continue;
       const w = 1 - d / (r + 1);
       offs.push(dx, dy);
@@ -151,7 +151,7 @@ export function hydraulicErode(
 
       dirX = dirX * p.inertia - gx * (1 - p.inertia);
       dirY = dirY * p.inertia - gy * (1 - p.inertia);
-      const dl = Math.hypot(dirX, dirY);
+      const dl = Math.sqrt(dirX * dirX + dirY * dirY);
       if (dl < 1e-6) break;
       dirX /= dl;
       dirY /= dl;

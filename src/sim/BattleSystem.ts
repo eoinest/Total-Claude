@@ -13,6 +13,7 @@ import {
   UnitOrder, isAlive, type UnitGroupState, type UnitTypeDef,
 } from './types';
 import { Siege } from './Siege';
+import { quantiseUnit } from './quantise';
 import { ObstacleField, ROUGH_SLOWS_MOVEMENT, type Obstacle, type Resolved, type RoughBox } from './Obstacles';
 
 /**
@@ -1007,6 +1008,15 @@ export class BattleSystem implements Subsystem {
       selected: false,
       concealed: false,
     };
+
+    /*
+     * The float32 firewall, on the way in. `src/sim/quantise.ts` keeps this layer quantised at
+     * the end of every tick; a unit has to enter it already quantised or the t+0 hash — the one
+     * a lobby handshake and the replay record's refusal both key on — carries whatever
+     * `Math.atan2` returned in this browser. Measured at 26 differing float64 fields on the
+     * Carthage assault before this line existed.
+     */
+    quantiseUnit(u);
 
     const ranks = ranksFor(strength, width);
     const rng = this.rng.fork(`unit${u.id}`);

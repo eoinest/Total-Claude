@@ -43,6 +43,13 @@ still saying 3,074 predates that commit).
 > probe queues behind it rather than oversubscribing the machine; the `xengine` arm needs two
 > slots of its own and is why it is opt-in. `node tools/browsers.mjs` says who holds what.
 
+> **Re-run in full on `e/tools/xengine-arm` after it merged `main`, 22 Aug 2026.** Same result,
+> against pins re-measured on the merged tree: tsc clean, lint 3/3, qa-deploy 33/33, seams PASS
+> both maps, qa-replay 21/21, three determinism arms UNCHANGED at all seven checkpoints and
+> **identical at all four quality tiers**. The baseline conflicted at all three battles and was
+> re-measured rather than resolved by choosing a side; both parents had moved it for real
+> reasons and neither parent's numbers were right for the merged tree.
+
 **The gate, and how to re-run it.** All green at `5f9030e`:
 
 | check | command | expected |
@@ -65,6 +72,64 @@ still saying 3,074 predates that commit).
 Determinism is pinned in `tools/determinism-baseline.json` at **t+0/30/90/150/200/250/400**, three
 hashes each: the float32 pool, `uf64` (exact float64 unit state) and `uctl` (discrete state).
 
+> **21 Aug 2026 — `uf64` is a hard failure now.** `uf64` was a warning because an unquantised
+> float64 layer moves on a browser update alone. `src/sim/quantise.ts` snaps that layer to float32
+> at birth and at the end of every tick, and three browser engines now agree on it for six
+> thousand ticks, so it is pinned like the other two. `--soft-units` restores the warning; needing
+> it on an unchanged tree is itself a finding.
+>
+> **`node tools/qa-xengine.mjs` is the new arm and it is *not* in the every-commit gate.** It runs
+> the same battle in Chromium, Firefox and WebKit. Run it deliberately — after anything in
+> `src/sim`, `src/terrain`, `src/maps` or `src/city` — because the thing that moves it is usually a
+> browser update rather than a commit, and a gate nobody wants to run measures nothing.
+>
+> **Re-run on the merged tree, 22 Aug 2026 — all three battles.** The field battle, Rome's
+> assault and the Carthage assault are **bit-identical in Chromium 151, Firefox 153 and WebKit
+> 26.5 at all seven checkpoints to t+400** — `hash`, `uf64` and `uctl`, 8,632 / 3,072 / 3,440
+> men — with 13 of 14 approximated `Math`
+> functions measured disagreeing between those engines on the same run, all three vacuity
+> controls green on every run, and a second Chromium load bit-identical to the first. The field
+> battle's t+205.5 escape, which is the oldest open finding in `docs/MULTIPLAYER.md`, is closed:
+> t+250 and t+400 agree in all three engines.
+>
+> **The firewall-off controls, so none of that is vacuous.** With `tools/scratch/firewall-toggle.py
+> off`: Chromium and WebKit are still bit-identical at the Carthage boot — **that pairing needs
+> nothing beyond the `hypot` sweep** — and Chromium against Firefox differs at t+0 by exactly
+> **26 float64 fields of 1,020, all 1 ULP, 13 `facing` and 13 `targetFacing`, zero control fields
+> and zero of 3,440 men in the pool**. That is the residual the `spawnUnit` half of the firewall
+> closes, reproduced field-for-field on this tree.
+>
+> **It takes one browser slot at a time, not four.** Three engines plus a second load of the
+> reference is the entire machine cap, so each run closes its browser at the bottom of `run()`
+> and only its `marks`, `dumps`, `id` and `libm` survive — all plain data, and nothing downstream
+> touches a page. It is correspondingly slow. Budget for it and check `node tools/browsers.mjs`
+> before starting one.
+>
+> **`stop()` after `ready` was never enough, and both determinism tools now close the window.**
+> `engine.start()` runs at the end of `boot()` and `ready` is set after it, so a harness that
+> waits for the flag and *then* evaluates a stop has a driver round trip of rAF in between and
+> loses an unequal number of ticks per run. Under nine concurrent agents that made `qa-xengine`
+> report a `uctl` difference at t+0 — a control-flow difference before a tick had run, which is
+> not a shape rounding can take, which is why it was investigated instead of published. The fix
+> is a four-line `page.addInitScript` that stops the clock on the `ready` assignment itself, and
+> it lives in **`tools/lib/simclock.mjs`** so it is imported rather than pasted. `simTime` is now
+> a *compared* mark rather than a printed one in A-vs-B, **in the cross-tier arm**, and in
+> `qa-xengine`; `qa-replay`'s `playback` takes the hook too, and its `recordBattle` deliberately
+> does not, because that one is recording a real battle in real time. See `docs/tech/TOOLING.md`,
+> "the shape of every harness here". **Any harness here that hashes anything needs this.**
+>
+> The comparison is not symmetric and that is deliberate: `advance()` runs whole fixed steps, so
+> landing up to one tick *short* of a checkpoint is the only thing that can happen and four of
+> the seven do it (t+200 reads 199.967). Landing *past* one is the race. The old
+> `Math.abs(drift) < FIXED_DT` sat exactly on its own boundary at one tick short and passed only
+> because the caller had rounded `simTime` to three decimals first.
+>
+> **Both determinism tools refuse a port they cannot prove is serving this tree**, through
+> `startVite` in `tools/lib/browser-budget.mjs` (`/__tc/tree`), and `qa-xengine.mjs` sets
+> **`TC_STRICT_TREE=1`** so that a listener too old to answer is a refusal rather than a warning.
+> A collision was caught live on port 5901: another agent's worktree, ten files different.
+> **An instrument that trusts a port it did not open is measuring an unknown tree.**
+
 ```
 node tools/qa-determinism.mjs
 node tools/qa-determinism.mjs --battle="map=campus-martius&scenario=assault"
@@ -84,8 +149,11 @@ Each of those three runs now carries a **cross-tier arm**: the same battle at `l
 identical, because a graphics setting must not change the battle. `--tiers=off` skips it and says
 so out loud; `--tier-at=` moves where it compares (default: the first three of `--at`).
 
-Confirm every run by headcount, always: **field battle 8,632 / Rome 3,074 / Carthage 3,440.** A
-Carthage run reporting 8,632 measured something else.
+Confirm every run by headcount, always: **field battle 8,632 / Rome 3,072 / Carthage 3,440.** A
+Carthage run reporting 8,632 measured something else. (Headcounts are unchanged by the float32
+firewall — it moves the *survivor* curve, not the order of battle. Field battle survivors at t+200
+went 7,061 → 6,358 and at t+400 5,849 → 4,785 when it landed; see `docs/MULTIPLAYER.md` §3 Stage 3
+and the balance note in the reserved list.)
 
 > This table itself printed `--battle=<default|rome|carthage>` for a day, two thousand lines above
 > the passage explaining why that is wrong, and three agents were dispatched with it. **A summary
@@ -139,6 +207,14 @@ exists. A relay, not peer-to-peer, either way — §4.1's total-order problem, n
 - **Never grade an A/B deck its author has not declared frozen.**
 - **A self-consistent instrument can never fail.** Compare against something outside the thing
   being checked.
+- **Printing a diagnostic is not checking it.** `qa-determinism.mjs` named the "t+0 rAF race" in
+  its own header, printed `simTime` on every line it emitted, and never compared it — the number
+  that would have caught the bug sat next to the bug for as long as the bug existed, and it took a
+  loaded machine and a `uctl` difference at t+0 to find. Every probe here prints a second line
+  under each assertion saying what was observed. Ask of each one: *would anything fail if that
+  number were wrong?*
+- **A prevention you have not verified is a hope.** Fixing a race is half the work; the other half
+  is a compared mark that voids the run when the fix did not hold.
 - Worktrees need an isolated vite `cacheDir`. **Port 5173 is the owner's.**
 - **At most four headless browsers on this machine at once, and the filesystem now enforces it.**
   22 Aug 2026: load average 160 on 16 cores, 136 `vite` and `chrome-headless-shell` processes,
@@ -187,6 +263,24 @@ silently with the hardware is one nobody can reason about across two machines.
 
 ### Reserved for the owner — do not decide these
 
+- **The float32 firewall's balance cost — re-measured after the merge, and it is smaller than the
+  number this entry used to carry.** `src/sim/quantise.ts` is what makes all three battles run
+  identically in three browser engines, which is the whole of cross-machine multiplayer. It was
+  priced at −10.0% survivors at t+200 and −18.2% at t+400; **on the merged tree it is −6.7% at
+  t+200 and −2.2% at t+400** on the default field battle. The old pair was measured before the
+  branch met `main`, and `main` had meanwhile moved this battle's deployment onto its own ground
+  and widened both boxes east — which moved the battle the firewall is a percentage *of*. For
+  scale, five seeds of that same battle span 14.2% at t+400, so the t+400 figure is now well
+  inside seed noise and t+200 is about half of it. The quanta are invisible (0.12 mm on a
+  position against a 0.72 m rank pitch); the mechanism is that a few discrete decisions land the
+  other way and twelve thousand ticks amplify the branch. It is **one commit and one
+  `git revert 5a1a439`**. Ratify it or revert it; do not let it sit unnoticed. The full
+  three-way decomposition, with the control that makes it trustworthy, is in
+  `docs/MULTIPLAYER.md` §3 Stage 3.
+- **Do not squash `8c1ebca` and `5a1a439`.** The `hypot` sweep is **+9.2%** survivors at t+400
+  and the firewall is **−2.2%** — opposite in sign, and together they read as +6.7%, which looks
+  like a change that did almost nothing. They are separate commits with separate parents so that
+  the firewall can be ratified or reverted on its own.
 - ~~Whether battle lines should **fit** their deployment boxes rather than merely be dry~~ —
   **decided by the owner and discharged on `e/sim/deploy-boxes`.** *"Battle lines should fit their
   deployment boxes. I would recommend widening boxes east."* Both boxes widened east with their

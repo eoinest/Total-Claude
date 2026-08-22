@@ -14,7 +14,7 @@
  * Usage: node tools/qa-determinism.mjs [--port=5226] [--at=0,30,90,150,200,250,400]
  *                                       [--json=path] [--render] [--record]
  *                                       [--battle=map=carthage&scenario=assault]
- *                                       [--strict-units] [--tiers=off] [--tier-at=0,30,90]
+ *                                       [--soft-units] [--tiers=off] [--tier-at=0,30,90]
  *
  * `--battle` appends extra query parameters, so the gate can be run against a battle other
  * than the default one. It matters now that there are two besiegeable cities: an assault
@@ -24,7 +24,7 @@
  *
  * **Check that a new checkpoint measures the battle you think it does.** `--battle` is the
  * flag, and a *misspelled flag* is still silently ignored — `--batle=…` runs the field battle
- * and says nothing. The tell is the headcount: 8,632 for `default`, 3,074 for Rome's assault,
+ * and says nothing. The tell is the headcount: 8,632 for `default`, 3,072 for Rome's assault,
  * 3,440 for Carthage's. That is printed on every line for exactly this reason.
  *
  * `--battle` itself is now validated rather than merely documented: every segment must be
@@ -43,7 +43,14 @@
  *     setting change the battle? Exact bits, hard failure. See the block that runs it for why
  *     it cannot pass vacuously; `--tiers=off` skips it and says so out loud.
  *   **baseline** — run A against `tools/determinism-baseline.json`. Is this the same battle as
- *     yesterday? `hash` and `uctl` hard, `uf64` a warning unless `--strict-units`.
+ *     yesterday? All three of `hash`, `uctl` and `uf64` hard, unless `--soft-units`.
+ *
+ * **And check that it measures the tree you think it does.** This file used to reuse any
+ * listener that answered on `--port`, which in a checkout with eighty worktrees on a handful of
+ * default ports means it could measure another agent's branch against this tree's baseline and
+ * report the verdict with complete confidence. `startVite` below asks the listener which
+ * worktree it is serving (`/__tc/tree`) and refuses a foreign one. `--port=59xx` to own your
+ * own; `node tools/browsers.mjs` says who holds what.
  *
  * ## Why the checkpoints run to t+400 and not to t+200
  *
@@ -109,6 +116,12 @@
  *             move it through no fault of the tree: this is the portability signal, and
  *             portability is not what an every-commit gate can afford to fail on. `--strict-units`
  *             promotes it to a failure for anyone deliberately testing portability.
+ *
+ *             **Amended 21 August 2026.** That reasoning was correct about an *unquantised*
+ *             float64 layer and `src/sim/quantise.ts` quantised it. Three browser engines now
+ *             agree on `uf64` for six thousand ticks, so it is hard-failing by default like the
+ *             other two marks, and `--soft-units` is the escape rather than `--strict-units`
+ *             being the promotion. See the flag's own comment below.
  *
  *   `uctl`  — the discrete half of `UnitGroupState`: order, target, formation, width, alive,
  *             kills, membership, and the flags. This is what the battle *decided*, and it is
@@ -184,6 +197,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { launchBrowser, startVite } from './lib/browser-budget.mjs';
+import { simTimeFault, stopClockOnReady } from './lib/simclock.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const args = new Map(
@@ -201,13 +215,29 @@ const RENDER = args.get('render') === 'true';
 /** Overwrite this battle's entry in the baseline instead of asserting against it. */
 const RECORD = args.get('record') === 'true';
 /**
- * Make a float64 unit-layer drift against the *baseline* a failure rather than a warning.
+ * Whether a float64 unit-layer drift against the *baseline* is a failure or a warning.
  *
- * Off by default. `uf64` is exact-bit and the measurement says a Chromium point release moves
- * it on its own, so defaulting this on would red the gate for every agent every time the
- * browser updated. On, this file becomes a portability gate rather than a reproducibility one.
+ * **This defaulted to a warning for a measured reason, and that reason has expired.** `uf64`
+ * was exact-bit over a layer with no quantisation step anywhere, so one libm call rounding
+ * differently moved it within a second of simulated time and a Chromium point release moved it
+ * with no change to this tree at all. Defaulting it to a failure would have redded the gate for
+ * every agent every time a browser updated. So it was a warning, and `--strict-units` promoted
+ * it for anyone deliberately testing portability.
+ *
+ * `src/sim/quantise.ts` closed that. The unit layer is now snapped to float32 at birth and at
+ * the end of every tick — the same firewall the soldier pool has always had — and the
+ * consequence, measured with `tools/qa-xengine.mjs` across Chromium 151, Firefox 153 and
+ * WebKit 26.5: `uf64` used to differ at **t+30** on the field battle and now agrees through
+ * **t+200**, and on both sieges it agrees at every one of the seven checkpoints. A mark that
+ * three browser engines agree on for six thousand ticks is not a noise source. It is a gate.
+ *
+ * So the default is now a hard failure, like `hash` and `uctl`. `--soft-units` restores the
+ * warning for whoever needs it; `--strict-units` is still accepted and is now what happens
+ * anyway. **If you find yourself reaching for `--soft-units` on an unchanged tree, that is a
+ * finding — the firewall has a hole in it and `qa-xengine.mjs` will tell you which field.**
  */
-const STRICT_UNITS = args.get('strict-units') === 'true';
+const SOFT_UNITS = args.get('soft-units') === 'true';
+const STRICT_UNITS = !SOFT_UNITS;
 
 // ---------------------------------------------------------------------------
 // The cross-tier arm
@@ -283,7 +313,7 @@ const BASELINE_PATH = path.resolve(ROOT, 'tools/determinism-baseline.json');
  * baseline key, so `rome` appends a meaningless `&rome`, loads the **default field battle**,
  * looks up a baseline key that does not exist, prints "no baseline for this battle" and exits
  * 0. It passes while asserting nothing, and the headcount is the only tell — 8,632 where the
- * reader expected 3,074.
+ * reader expected 3,072.
  *
  * Documenting a trap does not close it. Two conditions close it: every segment must be
  * `key=value`, and every key must be one `src/` actually reads. `PARAM_KEYS` is the set that
@@ -310,7 +340,7 @@ if (args.get('battle')) {
     console.error("    node tools/qa-determinism.mjs --battle='map=campus-martius&scenario=assault'");
     console.error("    node tools/qa-determinism.mjs --battle='map=carthage&scenario=assault'\n");
     console.error('  Quote the value or the shell backgrounds on the &. Confirm the run by');
-    console.error('  headcount: field battle 8,632 / Rome 3,074 / Carthage 3,440.');
+    console.error('  headcount: field battle 8,632 / Rome 3,072 / Carthage 3,440.');
     process.exit(2);
   }
 }
@@ -407,10 +437,31 @@ async function run(label, tier = GATE_TIER, checkpoints = CHECKPOINTS) {
   const errors = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto(`${base}/?harness=1&quality=${tier}&w=960&h=540${EXTRA}`, { waitUntil: 'domcontentloaded' });
+  /*
+   * Stop the clock inside the page, on the assignment that announces readiness.
+   *
+   * The `page.evaluate(stop)` below is still here and is still correct, and it was never
+   * sufficient. `main.ts` calls `engine.start()` at the end of `boot()` and then sets
+   * `__game.ready = true`; a harness that waits for the flag and *then* evaluates a stop has a
+   * driver round trip in between, and on a loaded machine that is tens or hundreds of
+   * milliseconds of rAF, every frame of which carries ticks. Two runs need not lose the same
+   * number, which is the "t+0 rAF race" this file's history already names — and
+   * `tools/qa-xengine.mjs` caught the cross-engine version of it reporting a `uctl` difference
+   * at t+0, which is a shape rounding cannot produce.
+   *
+   * `addInitScript` runs before the page's own scripts, so this intercepts the assignment: the
+   * stop happens synchronously in the same microtask as the start, before the first frame.
+   * (Blocking `requestAnimationFrame` outright hangs the boot — something on that path needs a
+   * frame — so the hook is on the flag.) `simTime` is no longer merely printed below: it is
+   * compared, against the other run and against the checkpoint it claims to be.
+   */
+  await stopClockOnReady(page);
+  // 180 s, not Playwright's 30 s default: at load average 47 a cold boot exceeds it and the
+  // run dies on navigation rather than on anything this file is about.
+  await page.goto(`${base}/?harness=1&quality=${tier}&w=960&h=540${EXTRA}`,
+    { waitUntil: 'domcontentloaded', timeout: 180000 });
   await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 180000 });
-  // Stop the rAF loop: otherwise wall-clock time between Playwright calls advances one run
-  // more than the other and every hash diverges for an uninteresting reason.
+  // Belt as well as braces: the hook above should already have stopped it.
   await page.evaluate(() => window.__game.engine.stop());
   await page.evaluate(HASH_FN);
 
@@ -510,7 +561,18 @@ for (let i = 0; i < CHECKPOINTS.length; i++) {
    * is the reproducibility gate and nothing about it is negotiable.
    */
   const unitSame = a.uf64 === b.uf64 && a.uctl === b.uctl && a.units === b.units;
-  const same = poolSame && unitSame;
+  /*
+   * And the precondition for either comparison meaning anything: the two runs are at the same
+   * point in the battle. This file has printed `simTime` since it was written and never compared
+   * it, which is the difference between a number a human might notice and a check.
+   */
+  const timeFault = simTimeFault([a.simTime, b.simTime], a.at, ['A', 'B']);
+  const same = poolSame && unitSame && !timeFault;
+  if (timeFault) {
+    console.log(`  SIM TIME FAULT  ${timeFault}`);
+    console.log('    Unequal tick counts are not comparable. This is the rAF race in');
+    console.log('    tools/lib/simclock.mjs, not the simulation.');
+  }
   console.log(`  t+${String(a.at).padStart(3)}  A ${a.hash} (${a.alive}/${a.count})   ` +
     `B ${b.hash} (${b.alive}/${b.count})   ${poolSame ? 'IDENTICAL' : 'DIVERGED'}`);
   console.log(`         units  A ${a.uf64}/${a.uctl}   B ${b.uf64}/${b.uctl}   `
@@ -657,6 +719,14 @@ if (TIER_ARM) {
         if (a[k] !== b[k]) fields.push(`${k} ${a[k]} vs ${b[k]}`);
       }
       if (fields.length) drift.push(`t+${at}  ${fields.join('  ')}`);
+      /*
+       * And the precondition, here as much as in A vs B: two runs at different tick counts are
+       * not comparable, and four tiers is four more chances for the t+0 rAF race to make an
+       * agreement meaningless. `tools/lib/simclock.mjs` stops the clock before it can start;
+       * this is the check that it did.
+       */
+      const tf = simTimeFault([a.simTime, b.simTime], at, [GATE_TIER, row.tier]);
+      if (tf) drift.push(`SIM TIME FAULT  ${tf}  — see tools/lib/simclock.mjs`);
     }
 
     const ok = tierTook && renderDiff.length > 0 && simSame && drift.length === 0;
@@ -750,7 +820,7 @@ if (RECORD) {
       const ctlSame = want.uctl === m.uctl && (want.units === undefined || want.units === m.units);
       const verdict = f64Same && ctlSame ? 'UNCHANGED'
         : !ctlSame ? 'DRIFTED (control flow — hard)'
-          : STRICT_UNITS ? 'DRIFTED (float64 — hard, --strict-units)' : 'DRIFTED (float64 only — warning)';
+          : STRICT_UNITS ? 'DRIFTED (float64 — hard)' : 'DRIFTED (float64 only — warning, --soft-units)';
       console.log(`         units  pinned ${want.uf64}/${want.uctl}   now ${m.uf64}/${m.uctl}   ${verdict}`);
       if (!ctlSame) hardDrift++;
       else if (!f64Same) { if (STRICT_UNITS) hardDrift++; else softDrift++; }
@@ -769,19 +839,24 @@ if (RECORD) {
       console.log('  uf64/uctl. Nothing is being checked on the float64 layer at those. Re-record.');
     }
     if (softDrift) {
-      console.log(`\n  ${softDrift} checkpoint(s) drifted on uf64 only, with the pool hash and the`);
+      console.log(`\n  ${softDrift} checkpoint(s) drifted on uf64 only (warning: --soft-units),`);
+      console.log('  with the pool hash and the');
       console.log('  control hash both unchanged. That is a PORTABILITY finding, not a reproducibility');
       console.log('  one, and it is a warning rather than a failure for a reason:');
       console.log('    · UnitGroupState is float64 integrated in place with no quantisation firewall,');
       console.log('      so one libm call rounding differently moves it within a second of sim time;');
-      console.log('    · a Chromium point release is enough to do that — measured, eleven of twelve');
-      console.log('      Math functions changed between Chrome 149 and 151 — with no change to this');
-      console.log('      tree at all;');
+      console.log('    · a Chromium point release is enough to do that — measured, twelve of');
+      console.log('      fourteen Math functions changed between Chrome 149 and 151 — with no');
+      console.log('      change to this tree at all;');
       console.log('    · the float32 pool round-trip hides it from `hash` for thousands of ticks.');
       console.log('  So: if you changed no simulation code, this is your browser and the battle still');
       console.log('  replays. If you did, you have moved the sim in a way the pool hash cannot yet see,');
-      console.log('  and it will surface later as a real divergence. Re-record deliberately, or run');
-      console.log('  --strict-units to make it a failure while you investigate.');
+      console.log('  and it will surface later as a real divergence. Re-record deliberately.');
+      console.log('  NOTE: uf64 is a hard failure by default since src/sim/quantise.ts landed —');
+      console.log('  the unit layer is float32-quantised at birth and at the end of every tick, so');
+      console.log('  three browser engines now agree on it for six thousand ticks. You are seeing');
+      console.log('  this text because --soft-units was passed. On an unchanged tree that is');
+      console.log('  itself a finding: run tools/qa-xengine.mjs, which names the field.');
     }
     if (hardDrift) {
       console.log('\n  The battle is not the one that was pinned. That is a finding, not necessarily');
