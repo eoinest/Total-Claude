@@ -145,11 +145,15 @@
  * resolution, measured rather than asserted.
  *
  * ---------------------------------------------------------------------------
- *   node tools/probe-plan.mjs --port=5931                     # measure, no model
- *   node tools/probe-plan.mjs --port=5931 --vlm=claude        # measure and interrogate
+ *   node tools/probe-plan.mjs --port=5931                     # measure, no model, ~13 s warm
+ *   node tools/probe-plan.mjs --port=5931 --vlm=claude        # measure and interrogate, +3 min
  *   node tools/probe-plan.mjs --port=5931 --offset=200,0      # the negative control
+ *   node tools/probe-plan.mjs --port=5931 --mirror            # the other negative control
  *   node tools/probe-plan.mjs --port=5931 --ladder            # the resolution ladder
  *   node tools/probe-plan.mjs --only=plate                    # plate side only, no boot
+ *
+ *   # grade ANOTHER branch's tree without copying this file into it:
+ *   node tools/probe-plan.mjs --root=/path/to/that/worktree --port=5941 --tag=tiber-resurvey
  * ---------------------------------------------------------------------------
  */
 import { chromium } from 'playwright';
@@ -158,7 +162,6 @@ import { mkdirSync, existsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
 
-const ROOT = path.resolve(import.meta.dirname, '..');
 const args = new Map(
   process.argv.slice(2).filter((a) => a.startsWith('--')).map((a) => {
     const i = a.indexOf('=');
@@ -166,6 +169,16 @@ const args = new Map(
   })
 );
 const arg = (k, d) => (args.has(k) ? args.get(k) : d);
+/**
+ * The tree under test, which is NOT necessarily the tree this file lives in.
+ *
+ * `--root=/path/to/another/worktree` points the whole probe — the vite it spawns, the modules the
+ * page imports, the commit it stamps the report with, and where it writes — at somebody else's
+ * branch. That matters because this instrument exists to be run many times over a few hours on
+ * trees that are changing under it, and copying a 2,600-line probe into each branch to run it is
+ * how a comparison harness stops being run. One file, one flag, any tree.
+ */
+const ROOT = path.resolve(arg('root', path.resolve(import.meta.dirname, '..')));
 const PORT = Number(arg('port', 5931));
 const MAP = arg('map', 'campus-martius');
 const TIER = arg('quality', 'high');
@@ -732,11 +745,28 @@ const bootAndRead = async () => {
       const layout = await import('/src/city/rome/layout.ts');
       const survey = await import('/src/city/rome/survey.ts');
 
-      // The projection, and its inverse. `X0`/`Z0` are module-private in
-      // `topography.ts`, so they are recovered from `worldOf` itself rather than
-      // re-typed — one fewer constant to rot.
-      const o = topo.worldOf(0, 0);
-      const KX = topo.KX, KZ = topo.KZ, X0 = o.x, Z0 = o.z;
+      /*
+       * The projection, and its inverse. `X0`/`Z0` are module-private in `topography.ts`, so they
+       * are recovered from `worldOf` itself rather than re-typed — one fewer constant to rot.
+       *
+       * Two sources, tried in order, because this probe is meant to be pointed at other people's
+       * branches with `--root` and they do not all export the same things: `worldOf` moved from
+       * `survey.ts` to `topography.ts` at some point and `survey.ts` re-exports it. A tree that has
+       * neither gets a named refusal rather than `topo.worldOf is not a function` and a stack.
+       */
+      const worldOf = topo.worldOf ?? survey.worldOf ?? null;
+      if (!worldOf) {
+        return { fatal: 'neither src/terrain/topography.ts nor src/city/rome/survey.ts exports '
+          + '`worldOf` in this tree. probe-plan needs the projection to invert it; without it '
+          + 'there is no survey frame and nothing to compare with the plate.' };
+      }
+      const o = worldOf(0, 0);
+      const KX = topo.KX ?? survey.KX;
+      const KZ = topo.KZ ?? survey.KZ;
+      const X0 = o.x, Z0 = o.z;
+      if (!Number.isFinite(KX) || !Number.isFinite(KZ)) {
+        return { fatal: 'this tree exports `worldOf` but not `KX`/`KZ`, so the projection cannot be inverted.' };
+      }
 
       const obst = city.getObstacles();
       const WATER = topo.WATER_LEVEL;
@@ -909,6 +939,12 @@ const bootAndRead = async () => {
       ex: PLATE.ex, ey: PLATE.ey, e0: PLATE.e0, nx: PLATE.nx, ny: PLATE.ny, n0: PLATE.n0,
       det: DET, crop: CROP,
     });
+    if (built.fatal) {
+      console.error(`[probe-plan] cannot grade this tree: ${built.fatal}`);
+      console.error(`  tree: ${ROOT}`);
+      process.exitCode = 2;
+      return null;
+    }
     built.pageErrors = errs.slice(0, 5);
     console.log(`[probe-plan] read back in ${((Date.now() - t0) / 1000).toFixed(0)} s:`
       + ` ${built.solids.length} solids, ${built.landmarks.length} landmarks,`
@@ -2158,6 +2194,7 @@ if (ONLY === 'plate') {
 }
 
 const built = await bootAndRead();
+if (!built) process.exit(2);
 const frame = makeFrame(built);
 console.log(`[probe-plan] frame from the page: KX ${frame.KX} KZ ${frame.KZ} X0 ${frame.X0.toFixed(3)} `
   + `Z0 ${frame.Z0.toFixed(3)}; anisotropy KX/KZ ${(frame.aniso).toFixed(3)}`);
