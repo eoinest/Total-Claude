@@ -109,10 +109,13 @@ const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n =
  * battle can be won by taking it. Asking the map, the scenario id or the presence of a city
  * would each answer a slightly different question and one of them would eventually be wrong.
  *
- * `breachedBays` is reported and is always zero in a shipped battle: `Siege.breachReport()`
- * counts what the **great** ram has brought down, `spawnGreatRam` has no caller in `src/`,
- * and the gate ram sets `gateBreached` without ever touching a bay. The two are different
- * events and the gate is the one that happens; see the report.
+ * `breachedBays` counts what the **great** ram has brought down and the gate ram sets
+ * `gateBreached` without ever touching a bay, so the two are different events and this reads
+ * both. It used to be always zero in a shipped battle because `spawnGreatRam` had no caller
+ * in `src/`; `deployAssault` now fields one on the Campus Martius and the Juthungi bring a
+ * bay of the Muro Torto down at about t+420, so `HAVE A BREACH` is a phase the player will
+ * actually see. Scipio's train carries no great ram, so on Carthage this is still zero —
+ * that is a roster fact, not a mechanic one. See `StormPlan.greatRam`.
  */
 export function readSiege(ctx: EngineContext): SiegeRead | null {
   const flow = ctx.tryGet('battleFlow') as unknown as FlowView | undefined;

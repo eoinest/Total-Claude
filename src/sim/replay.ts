@@ -207,11 +207,21 @@ export interface ReplayRecord {
   /** The battle setup. Stored as the object rather than as `encodeConfig`'s base64, because
    *  base64 does not compress and the object does — the token is recoverable either way. */
   cfg: BattleConfig;
-  /** The tier the record was made at. The army size depends on it, so it is not cosmetic. */
+  /**
+   * The tier the record was made at.
+   *
+   * It was load-bearing and it is now provenance. `fittedUnitScale` fitted the army to
+   * `quality.maxSoldiers`, so a record made at `high` was a different battle from the same
+   * config at `low` — 8,632 men against 1,515 — and the tier had to travel with the record for
+   * it to mean anything. The soldier pool is `SOLDIER_POOL_CAPACITY` now, one number at every
+   * tier, so a record plays identically whatever the watcher's graphics are set to. Kept in the
+   * format because it costs a word, because it says what the recorder was looking at, and
+   * because removing a field from a wire format that is already in URLs buys nothing.
+   */
   quality: QualityTier;
   /** Effective `unitSizeScale` after `fittedUnitScale` clamped it to the pool. */
   unitScale: number;
-  /** `pool.count` at t+0. A tier that cannot hold this army is refused, not silently fitted. */
+  /** `pool.count` at t+0. An army this build does not reproduce is refused, not silently fitted. */
   count0: number;
   /** Whether a pre-battle deployment phase ran. Drives `?deploy=` on playback. */
   deployPhase: boolean;
@@ -702,23 +712,27 @@ export class ReplaySystem implements Subsystem {
   /**
    * Play a record. Refuses rather than silently playing a different battle.
    *
-   * Two refusals, both from §7.5 of the design: a build that produces a different army for
-   * the same config, and a quality tier that cannot hold the recorded one. `fittedUnitScale`
-   * will happily fit 1,515 men where 8,632 were recorded, and the result is a battle that
-   * looks plausible and is not the one in the file.
+   * The refusal is from §7.5 of the design and it caught two things: a build that produces a
+   * different army for the same config, and a quality tier that could not hold the recorded
+   * one. It now catches the first only, and that is the fix rather than a regression — the
+   * second was a graphics setting changing the battle, and the soldier pool no longer depends
+   * on the tier. A record made on a weak machine plays on a strong one and back again.
    */
   play(r: ReplayRecord, opts: { fromTick?: number } = {}): boolean {
     /*
-     * The tier refusal, before a tick has run.
+     * The army refusal, before a tick has run.
      *
-     * `fittedUnitScale` will cheerfully fit 1,515 men on `low` where 8,632 were recorded on
-     * `high`, and the result is a battle that looks entirely plausible and is not the one in
-     * the file. Refusing is the right behaviour and it is still a bad outcome — see §7.5 of
-     * docs/MULTIPLAYER.md — but a silent substitution is worse.
+     * This used to fire on a tier mismatch: `fittedUnitScale` would cheerfully fit 1,515 men on
+     * `low` where 8,632 were recorded on `high`, and the result was a battle that looked
+     * entirely plausible and was not the one in the file. It cannot fire for that reason any
+     * more — the pool is tier-independent — and the comparison is kept because the *build* can
+     * still move the fitted scale: a roster strength edited, a unit added to a composition, a
+     * `UNIT_SIZES` multiplier retuned. That is precisely the case where a silent substitution
+     * would be worst, because nothing in the record's own name would say so.
      */
     if (Math.abs(r.unitScale - this.unitScale) > 1e-9) {
-      this.fail(`this record was made at quality '${r.quality}', unit scale ${r.unitScale};`
-        + ` this run is '${this.header?.quality}' and fitted ${this.unitScale}.`
+      this.fail(`this record was made at unit scale ${r.unitScale} (quality '${r.quality}');`
+        + ` this build fits ${this.unitScale} for the same config.`
         + ` It would be ${r.count0} men against a different army.`);
       return false;
     }

@@ -79,18 +79,32 @@ const SOUTH = 0; // facing toward +Z
  *  1. `axisX` — the axis the two lines form up on. One number per map rather than one per box,
  *     because the two lines have to face each other: an axis per side would rotate the
  *     engagement rather than move it.
- *  2. **No man stands west of the west edge of his own deployment box.** This only ever wins
- *     when a line is wider than the ground it was given, and at `DEFAULT_CONFIG` it does win:
- *     the Roman line measures 684 m across its own men and its box is 500 m, so centring it on
- *     the axis would leave its outer cavalry squadron — 108 men — in the Tiber. Measured, not
- *     assumed; `tools/probe-ground.mjs` counts them.
+ *  2. **No man stands west of the west edge of his own deployment box, inset by the box's own
+ *     feather.** This only ever wins when a line is wider than the ground it was given, and at
+ *     `DEFAULT_CONFIG` it does win: the Roman line measures 684 m across its own men and its
+ *     box was 500 m, so centring it on the axis would leave its outer cavalry squadron — 108
+ *     men — in the Tiber. Measured, not assumed; `tools/probe-ground.mjs` counts them.
  *
  *     The asymmetry is the map's, not a convention. At Rome the river is west of the
  *     deployment ground and the east is open plain out to x 700; task 1 moved both boxes east
- *     rather than widening them for exactly that reason. So a line that does not fit overhangs
- *     onto grass rather than into water. The box's own west edge is used rather than the
- *     waterline, which inherits the 23–39 m clearance task 1 measured instead of shaving the
- *     line to the bank.
+ *     rather than widening them for exactly that reason, and §15 task 14 has since widened
+ *     them east as well. So a line that does not fit overhangs onto grass rather than into
+ *     water. The box's own west edge is used rather than the waterline, which inherits the
+ *     23–39 m clearance task 1 measured instead of shaving the line to the bank.
+ *
+ *     **The inset is `box.feather` and it is not a fudge factor.** The rectangle's edge is
+ *     where the mask reaches *zero*: the heightfield lerps toward the regional plane in
+ *     proportion to the mask and the scatter does not exclude a tree until it passes 0.12, so
+ *     a file parked on the edge stands on ground the box did nothing to. Without the inset,
+ *     `tools/probe-ground.mjs --quality=high` counted **14 Roman men outside their own box to
+ *     the west** — the four leftmost files of the left-wing equites, on the contour where the
+ *     mask is 0.00 — while the rule that put them there was reporting success. With it, the
+ *     whole line stands inside the box's full-strength core and the count is 0.
+ *
+ *     It costs 80 m of eastward shift at Rome, 271.146 → 351.146, and **nothing at all at
+ *     Carthage or Pydna**: both are 980 m boxes about x 0 holding the same ~684 m line, so the
+ *     rule was slack by ~148 m there and the inset spends 80 of it. Their field battles still
+ *     report a shift of exactly 0.
  *
  * One shift for the whole battle, so the two lines keep their relative alignment to the metre:
  * this moves the engagement, it does not change it. Frontage, spacing, facing, formation and
@@ -111,7 +125,7 @@ function standOnDeploymentGround(battle: BattleSystem, config: BattleConfig): nu
     // width and spacing, and the widest overhang here is a 33 m loose cavalry screen.
     let westmost = Infinity;
     for (const i of u.members) if (battle.pool.x[i] < westmost) westmost = battle.pool.x[i];
-    shift = Math.max(shift, box.cx - box.hx - westmost);
+    shift = Math.max(shift, box.cx - box.hx + box.feather - westmost);
   }
   battle.translateDeployment(shift);
   return shift;
@@ -125,6 +139,13 @@ function standOnDeploymentGround(battle: BattleSystem, config: BattleConfig): nu
  * wide enough to push the right wing into them would be a composition that does not fit the
  * map, and the honest place to catch that is a boot assertion with a measured limit behind it,
  * not a magic constant here.
+ *
+ * Re-measured past that range by `tools/scratch/probe-deployfit.mjs` when §15 task 14 added the
+ * feather inset, because 351.146 is outside it: at the shipped shift the worst slope under any
+ * man is **0.076** on the host's side and **0.074** on Rome's, against the 0.62 that stops one,
+ * with 0 wet and 0 on the far bank. The unprepared plain at both box latitudes stays under a
+ * 0.06 slope out to x 1000 north and rises only to 0.28 in the x 680–780 band south, where the
+ * Pincian's toe first shows; the box flattens that band, and the acceptance measures it after.
  */
 
 /**
@@ -138,7 +159,7 @@ function standOnDeploymentGround(battle: BattleSystem, config: BattleConfig): nu
  * whole thing onto the map's own deployment axis once everything is spawned, so the offsets
  * here are relative and the shipped x are those plus the shift. This used to say "symmetric
  * about the Via Flaminia", which was true when the road ran through x 20-50 and the army stood
- * on x 0; the deployment ground is now 271 m east of the road and the sentence was quietly
+ * on x 0; the deployment ground is now 351 m east of the road and the sentence was quietly
  * describing a different map.
  */
 const centred = (n: number, spacing: number): number[] =>
@@ -251,6 +272,8 @@ const SLINGER_NAMES = [
 ];
 /** A ram is a named beast. *Widder* is the Germanic word the Romans wrote down. */
 const RAM_NAMES = ['The Widder', 'The Boar', 'The Ash-Head'];
+/** And the great one is named for what it is for, which is not a door. */
+const GREAT_RAM_NAMES = ['The Wall-Biter', 'The Old Oak'];
 
 /** `names[k]`, falling back to a numbered variant once the hand-written list runs out. */
 const nameAt = (names: readonly string[], k: number, stem: string): string =>
@@ -278,6 +301,7 @@ const SIEGE_NAMES: Record<string, { list: readonly string[]; stem: string }> = {
   'tower-assault': { list: [], stem: 'Tower Party' },
   'escalade-party': { list: [], stem: 'Ladder Party' },
   'ram-crew': { list: RAM_NAMES, stem: 'Ram' },
+  'great-ram-crew': { list: GREAT_RAM_NAMES, stem: 'Great Ram' },
   onager: { list: [], stem: 'Onager Battery' },
   'juthungi-warband': { list: BAND_NAMES, stem: 'Warband' },
   'juthungi-riders': { list: RAIDER_NAMES, stem: 'Raiders' },
@@ -369,7 +393,7 @@ export function deployBattle(
   // Always the *field* composition, whatever `config.scenario` says: `deployAssault` falls
   // back through here when there is no wall on the map, and it must then lay out a field
   // battle from the field's order of battle rather than from the siege one.
-  battle.unitSizeScale = fittedUnitScale(config, ctx.quality.maxSoldiers, 'field');
+  battle.unitSizeScale = fittedUnitScale(config, 'field');
 
   /**
    * Who Rome is fighting, and the one place the whole battle learns it.
@@ -892,14 +916,18 @@ function deployAssault(
    * Establishment, not the menu's battle-size multiplier — but still fitted to the pool.
    *
    * `scaleAppliesTo('assault')` is false, so `fittedUnitScale` asks for x1 and then only ever
-   * lowers it to make the battle fit the quality tier's soldier pool. See its comment for the
-   * measurement behind that: a wall-walk run holds about 84 men and a ballistarii unit is
-   * already 108, so doubling establishment puts nobody new on the parapet, it stacks men
-   * inside each other at the inner edge. This is strictly better than the flat `= 1` it
-   * replaces, which overflowed the pool at the `low` tier and lost whole units off the end of
-   * the deployment.
+   * lowers it to make the battle fit the soldier pool. See its comment for the measurement
+   * behind that: a wall-walk run holds about 84 men and a ballistarii unit is already 108, so
+   * doubling establishment puts nobody new on the parapet, it stacks men inside each other at
+   * the inner edge. This is strictly better than the flat `= 1` it replaces, which overflowed
+   * the pool and lost whole units off the end of the deployment.
+   *
+   * The pool is `SOLDIER_POOL_CAPACITY` and no longer the graphics tier's, so this storm is now
+   * the same storm at every tier. It was not: at `medium` the fitted scale was x0.9785, the
+   * garrison and the host were 65 men lighter, and the ram reached the Porta Flaminia and opened
+   * it while at `ultra` the ram crew died 16 m short of the door.
    */
-  battle.unitSizeScale = fittedUnitScale(config, ctx.quality.maxSoldiers, 'assault');
+  battle.unitSizeScale = fittedUnitScale(config, 'assault');
 
   const n = (comp: Readonly<Record<string, number>>, id: string): number =>
     Math.max(0, comp[id] ?? 0);
@@ -1006,11 +1034,15 @@ function deployAssault(
    * set of bays occupied at the default composition is unchanged, and so is the intent —
    * ballistarii on the finished curtain near the gate, slingers on the unfinished stretch
    * beyond. `scenario.ts` already carries the same note about the equites.
+   *
+   * **`from` may now be 0, and offset 0 is one bay rather than two.** `-1 * 0` and `1 * 0`
+   * are the same bay, and pushing both would put two units on top of each other on the
+   * gate's own curtain. See the garrison block for why anybody wants offset 0 at all.
    */
   const fanOut = (count: number, from: number, ok: (k: number) => boolean): number[] => {
     const picked: number[] = [];
     for (let d = from; d < from + bays.length && picked.length < count; d++) {
-      for (const s of [-1, 1]) {
+      for (const s of d === 0 ? [1] : [-1, 1]) {
         if (picked.length >= count) break;
         if (ok(s * d)) picked.push(s * d);
       }
@@ -1026,10 +1058,36 @@ function deployAssault(
   // left, which is the unfinished stretch where there is no parapet to shoot from — a sling
   // does not need one. At Carthage the levy holds the walk and the freedmen stand behind
   // them. `GarrisonPlan.wall`'s order is what decides that, so it is deployment order.
+  /**
+   * **From offset 0, which is the gate bay, and this line is the whole of Rome's undefended
+   * gate.**
+   *
+   * It was `fanOut(total, 1, holdable)` — start one bay out — and that was right for as long
+   * as a gate bay could not be garrisoned. Carthage's still cannot (`carthageWall.ts` sets
+   * `garrisonable: !bay.isGate`), so its deployment is unchanged to the bit. Rome's changed
+   * under it: the redesigned circuit made the gate bay ordinary garrisonable curtain on
+   * purpose — see `circuit.ts`, *"the curtain either side of a gatehouse is ordinary curtain
+   * a rank can stand on"* — and put the Porta Flaminia at bay **1**, with bays 0, 2, 3 and 4
+   * `footing`/`gap`/`footing` because §4.8's archaeology says the Campus Martius neck is the
+   * one stretch Aurelian had to build from nothing.
+   *
+   * So `holdable` rejected every offset from -1 to +3 and the first unit of the garrison
+   * landed on bay 5, and the wall the assault actually attacks was empty. Measured at
+   * `5338249` at the shipped tier: the nearest garrison unit to the ram is **134 m** away,
+   * the gate crew takes **zero** damage from anyone on the wall, and the machine lands
+   * **26 of 26** blows and opens the Porta Flaminia at t+220 on every seed of eight at both
+   * `ultra` and `medium`. A gate defended by nobody is not a difficulty setting.
+   *
+   * Offset 0 is the gate bay's own curtain — 19 stations of it west of the block, which
+   * `buildSpine`'s gate-block clip leaves standing and `recut` severs into its own run — and
+   * one ballistarii unit on it is the garrison the *testudo arietaria*'s roof exists to be
+   * shot at by. It moves no unit strength, count or damage value: the same five units of
+   * ballistarii and three of slingers deploy, one bay nearer the gate apiece.
+   */
   {
     let total = 0;
     for (const type of garrison.wall) total += n(garrisonComp, type);
-    const bayFor = fanOut(total, 1, holdable);
+    const bayFor = fanOut(total, 0, holdable);
     let next = 0;
     for (const type of garrison.wall) {
       for (let i = 0; i < n(garrisonComp, type); i++) {
@@ -1118,6 +1176,49 @@ function deployAssault(
     if (id < 0) continue;
     siege.spawnRam(gx, gz, id);
     push(storming, id, siegeNameFor(storm.ram, i));
+  }
+
+  /**
+   * The great ram, at the curtain rather than at the gate — and this is `spawnGreatRam`'s
+   * first caller in `src/`.
+   *
+   * The machine, `RamKind.Great`, `strikeCurtain`, `breachBay`, `stormBreach` and the
+   * geometry have all existed since the siege pass and no scenario had ever fielded one, so
+   * `Siege.breachReport().lanes` was 0 on both circuits and the whole breach route was
+   * unreachable in play. Four things were missing and this is the third of them.
+   *
+   * **Which bay.** The nearest one a man could stand on, working outward from the gate —
+   * `holdable`, the same predicate the garrison and the ladders use. Two reasons, and
+   * neither is "next to the gate looks good". A `footing` or a `gap` bay has no masonry to
+   * break and no stations, so `spawnGreatRam` would refuse it (`stationNear` answers about
+   * the spine, and the spine skips a bay that cannot carry men); and the point of the
+   * machine, per `Siege.spawnGreatRam`, is to *refuse* the gate's killing ground and open a
+   * way of your own — which is worth most where the defence is thickest. On Rome that
+   * resolves to bay 5, the west end of the Muro Torto, 134 m along the curtain from the
+   * Porta Flaminia and the first bay the garrison holds. On a circuit whose gate bay's
+   * neighbours are ordinary curtain it resolves to the bay next door, which is the same
+   * rule meaning the same thing.
+   *
+   * `from` is **1**, not 0, and unlike the garrison it must stay there: offset 0 is the gate
+   * bay, the light ram is already beating on the gate in the middle of it, and two machines
+   * squared up to one bay is both a berth conflict and the exact thing this machine exists
+   * not to do.
+   *
+   * **Where it starts.** 62 m out on the bay's own normal, which is where the gate ram
+   * starts. At `RAM_SPEED` that is about a hundred seconds of rolling before the first blow,
+   * so both machines come into action at the same moment and the player has one thing to
+   * watch rather than two.
+   */
+  if (storm.greatRam) {
+    const type = storm.greatRam;
+    for (const [i, k] of fanOut(n(stormComp, type), 1, holdable).entries()) {
+      const m = mid(k);
+      const [sx, sz] = out(k, 62 + i * 20);
+      const id = battle.spawnUnit(type, sx, sz, Math.atan2(-m.nx, -m.nz), 'line');
+      if (id < 0) continue;
+      siege.spawnGreatRam(sx, sz, m.x, m.z, id);
+      push(storming, id, siegeNameFor(type, i));
+    }
   }
 
   // Batteries standing off at 196 m, shooting at the parapet. Spread along the wall rather

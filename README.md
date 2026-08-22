@@ -115,11 +115,13 @@ battle never waits for a big one's assets.
   side** (Total War's limit, and past it the card bar stops fitting on screen) and 12 of any
   one type. Live totals show units, men and metres of battle line for each army.
 - **Conditions** — time of day, difficulty, graphics tier, and the seed. Same seed and same
-  composition replays identically.
+  composition replays identically **at every graphics tier**: the tier buys resolution, shadows,
+  post-effects and LOD distance, and it does not change the battle. It used to — it sized the
+  soldier pool, which sized both armies — and that is fixed and gated.
 
-Two things it tells you rather than deciding for you. If the chosen size needs more men than
-the graphics tier's soldier pool holds, every unit is scaled down to fit — all units stay
-present — and it says by how much. And past about 9,000 men it warns that a heavy frame drops
+Two things it tells you rather than deciding for you. If the chosen size needs more men than the
+engine's soldier pool holds, every unit is scaled down to fit — all units stay present — and it
+says by how much. And past about 9,000 men it warns that a heavy frame drops
 under 60 fps, with the measured numbers, because it does: on an M4 Max at 1920×1080 a rout
 frame costs 13.4 ms at 8,644 men, 16.1 ms at 9,584 and 19.2 ms at 11,255.
 
@@ -138,10 +140,12 @@ then hands you the army: **take command from here**, which is not a separate fea
 what happens when the rest of the order log is withheld. The battle you take over records
 itself from there, so it can be saved and shared in turn.
 
-A record is refused rather than approximated. A quality tier that cannot field the recorded
-army is refused by name — `fittedUnitScale` would happily fit 1,515 men where 8,632 were
-recorded, and that is a different battle, not a smaller one — and so is a build of the game
-whose armies differ before a tick has run.
+A record is refused rather than approximated. A build of the game whose armies differ before a
+tick has run is refused by name, because `fittedUnitScale` would otherwise happily fit a
+different battle and call it the recorded one. The refusal used to fire on the *graphics tier*
+too — `low` fielded 1,515 men where `high` recorded 8,632 — and it no longer can: the soldier
+pool is one number at every tier, so a record plays identically whatever the watcher's graphics
+are set to. A graphics setting does not change the battle.
 
 `tools/qa-replay.mjs` is the gate: it boots through the real menu with a real mouse, records
 what that produces, and replays it in a fresh page on a deliberately different frame schedule,

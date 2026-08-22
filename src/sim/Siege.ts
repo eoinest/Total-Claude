@@ -245,6 +245,21 @@ const TOWER_IDLE_LIMIT = 20;
  * `tools/scratch/so-ramkill.mjs`: `killed by: nobody, damage by: none` over 140 s including
  * forty of battering — so any multiplier applied to it is a multiplier on nothing. See
  * `GARRISON_PLANS` for why, which is where the ram's real dial turned out to be.
+ *
+ * **Everything above this line is history, and the reason is one integer in
+ * `deployAssault`.** Between `cc72ea6` and `5338249` the circuit was rebuilt (`ROME.md` §15
+ * task 3): the Porta Flaminia became bay 1 of 36 with four unbuilt bays around it, its own bay
+ * became garrisonable, and the garrison's `fanOut(total, 1, holdable)` — which starts one bay
+ * *out* — was left pointing at the first bay it could hold, 134 m away. So on Rome this
+ * multiplier was applied to zero incoming fire as well, and the distribution above was
+ * replaced by 26 blows and an open gate on every seed of eight at both tiers.
+ *
+ * The garrison holds the gate bay again from `e/sim/rams`, and at 0.12 the gang now absorbs
+ * **1,012-2,916 points across eight seeds** and still lands 26 of 26 blows with the gate open
+ * at t+220 on all eight, ending at 11-31 of 32 men. The same fire without the roof is
+ * 8,400-24,300 points against thirty-two men. That is the first time this constant has been
+ * under load on this map, and it holds; the figure `docs/tech/SIEGE.md` 5.1 wanted to tune it
+ * against exists now, and it does not need tuning.
  */
 const RAM_SHED_COVER = 0.12;
 /**
@@ -322,13 +337,36 @@ const GATE_BLOWS = 26;
  *
  * The *testudo arietaria* at scale swings a trunk two or three times the mass of a gate
  * ram, so the crew cannot cycle it as fast — 7.0 s against 4.4 — and 3.5 m of Aurelianic
- * concrete-and-brick is not a pair of oak leaves. 74 blows at 7 s is about nine minutes of
- * battering, which is fast for masonry and slow enough that the defence has a real chance
- * to sally, burn the shed or drop a millstone on it. Vegetius IV.23 is explicit that the
+ * concrete-and-brick is not a pair of oak leaves. Vegetius IV.23 is explicit that the
  * counter to a ram is the counter-weight and the fire, not the wall.
+ *
+ * **74 -> 44, and 74 was chosen rather than measured because nothing had ever fielded one.**
+ * Now that a scenario does, it can be timed. `spawnGreatRam` is called from `deployAssault`
+ * 62 m out on the bay's normal, which at `RAM_SPEED` is 97 s of rolling before the first
+ * blow, so the breach lands at `97 + blows * 7`:
+ *
+ *     blows    breach at    what the battle looks like there
+ *        74      t+620      the gate has been open for 400 s; measured over two seeds with
+ *                           an 800 s window, 3 units ordered through the hole the second it
+ *                           opened put **6 and 0** men inside before the window ran out
+ *        44      t+405      the gate falls at t+220, the wall 185 s later — two ways in,
+ *                           in one battle, far enough apart to be two events
+ *
+ * A breach nobody can reach is the same thing as no breach, which is the defect this whole
+ * pass exists to close, so the number is sized against **the machine finishing inside a
+ * battle** rather than against a feeling about masonry. 44 blows is still 5 min 8 s of
+ * battering against the gate ram's 1 min 54 s — the wall is plainly 2.7 times the job the
+ * door is, which is the relationship worth having — and it is long enough that a defender
+ * who is given a fire or a sally has five minutes in which to use it.
+ *
+ * **What would move it back up.** The host storm order is reserved for the owner and does
+ * not exist: nothing in `src/ai/` sends a warband at a breach or through the open gate, so
+ * the men who should be waiting at the hole are 132 m out on Hold. The day they are there,
+ * "the breach opens late" stops costing anything and a longer grind becomes the better
+ * theatre. Re-time it then; do not re-guess it.
  */
 const GREAT_RAM_PERIOD = 7.0;
-const WALL_BLOWS = 74;
+const WALL_BLOWS = 44;
 /**
  * How far a derelict machine will look for a fresh gang, and how long it waits.
  *
@@ -507,6 +545,14 @@ const LINK_ADMIT = 2.0;
 const BREACH_LANES = 5;
 const BREACH_HALF_W = 4.5;
 const BREACH_STUB_DROP = 2.4;
+/**
+ * How far inside the curtain a unit ordered through a breach forms up, metres.
+ *
+ * `BattleFlow.INSIDE_MARGIN` is 14, so a rally point on the wall line would leave the front
+ * rank of a storming cohort standing in the masonry and none of it counted as being in the
+ * city. Thirty is a formation's depth clear of both.
+ */
+const BREACH_RALLY = 30;
 
 /**
  * Cadence of the **synthesised fallback** stairs, in bays, and the pitch of a flight.
@@ -1321,6 +1367,21 @@ export class Siege implements ElevationOwner {
    */
   private fileRows = new Int32Array(MAX_LADDERS);
   /**
+   * Scratch for `escaladePoints`, which the AI reads once per thinking unit per think.
+   *
+   * Two pieces so nothing is allocated after the first battle-second: `escaladePool` grows
+   * to the number of machines and its entries are overwritten in place, and
+   * `escaladeScratch` is the view handed out, refilled from the pool on every call. See
+   * `escaladePoints` for why the array must not be retained.
+   */
+  private escaladePool: {
+    x: number; z: number; station: number; kind: 'tower' | 'ladder'; ready: boolean; free: number;
+  }[] = [];
+  private escaladeScratch: {
+    x: number; z: number; station: number; kind: 'tower' | 'ladder'; ready: boolean; free: number;
+  }[] = [];
+  private escaladeSeen = new Set<number>();
+  /**
    * Which men `layOutArrived` is allowed to place this tick. Scratch, one bit per soldier.
    *
    * A typed array rather than the `Set` this obviously wants to be, because `advancePlans`
@@ -1374,6 +1435,25 @@ export class Siege implements ElevationOwner {
   private breachedBays: number[] = [];
   /** Link ids of the storming lanes through those breaches. */
   private breachLinks: number[] = [];
+  /**
+   * Men who crossed a breach lane that a later collapse rebuilt away.
+   *
+   * `breachReport().through` sums `used` over the live lanes, and a second breach lays every
+   * lane again (see `breachBay`), so without this the count would go *down* when a second bay
+   * fell. It went to -18 in `probe-siege` before this existed.
+   */
+  private breachThroughBase = 0;
+  /**
+   * The station at the centre of each breach, so an order given *at* one can be recognised.
+   *
+   * A breach lane belongs to no run at either end (`runA`/`runB` are -1) and its stations
+   * are dead, which is what makes it invisible to every wall query: `wallTargetAt` refuses a
+   * dead station, so a right-click on the rubble reads as "not the parapet" and the order
+   * falls through to an ordinary march. Keeping the centre station is the one index that
+   * lets `findEscalade` answer "there is a way in here" — and the index is stable, because
+   * `recut` renumbers *runs* and never stations.
+   */
+  private breachStations: number[] = [];
 
   // ---- diagnostics ----
   /** Missiles released by men whose feet were on a wall-walk. */
@@ -2403,6 +2483,29 @@ export class Siege implements ElevationOwner {
   }
 
   /**
+   * The breach a point means, or -1. `wallTargetAt` for a hole.
+   *
+   * Published for the same reason `wallTargetAt` is: the order path and the cursor have to
+   * agree about what a click means, and a breach is the one wall feature `wallTargetAt`
+   * cannot answer for — its stations are dead by construction, which is the whole of what
+   * "the wall is down here" means to the spine.
+   *
+   * `MACHINE_AIM_R` rather than `ESCALADE_REACH`: this is the *loose* test that decides
+   * whether the click is about the wall at all, the same job it does for a machine order, and
+   * `findEscalade` then applies the tight one.
+   */
+  breachAt(x: number, z: number): number {
+    let best = -1;
+    let bestD = MACHINE_AIM_R * MACHINE_AIM_R;
+    for (const st of this.breachStations) {
+      if (st < 0 || st >= this.nStations) continue;
+      const d = (this.sx[st] - x) * (this.sx[st] - x) + (this.sz[st] - z) * (this.sz[st] - z);
+      if (d < bestD) { bestD = d; best = st; }
+    }
+    return best;
+  }
+
+  /**
    * Which side of the wall a point is on: -1 inside the city, +1 out in the field.
    *
    * Published because the UI has to draw the same distinction the sim acts on. A click on
@@ -2540,7 +2643,7 @@ export class Siege implements ElevationOwner {
    */
   private findEscalade(unitId: number, x: number, z: number): {
     refusal: 'none' | 'crew' | 'noWall' | 'noWay' | 'full' | 'notFoot';
-    kind: 'tower' | 'ladder' | null;
+    kind: 'tower' | 'ladder' | 'breach' | null;
     tower: SiegeTower | null;
     group: Ladder[] | null;
     station: number;
@@ -2578,6 +2681,41 @@ export class Siege implements ElevationOwner {
     if (dest < 0) return none('noWall');
     const u = this.battle.unitById(unitId);
     if (!u) return none('noWall', dest);
+
+    /**
+     * A breach outranks a ladder and a ramp, and it is checked first for that reason.
+     *
+     * The whole argument for building a machine three times the mass of a gate ram is that
+     * what it leaves is **wider than a gate** — `BREACH_LANES` files at 1.6 m centres is 8 m
+     * of storming front against a carriageway's 4.3 and a ladder's one man at a time — and
+     * that it comes out *inside the city* rather than on the parapet, where the fight is
+     * already lost or won. Given a hole and a ladder at the same bay, no commander picks the
+     * ladder, so neither does this.
+     *
+     * The window is `ESCALADE_REACH`, the same twenty stations a tower or a ladder is
+     * offered over, so "storm the wall about here" means the breach when there is one about
+     * here. It is deliberately not tested on the click being *on* the rubble: the stations
+     * over a breach are dead, so `wallTargetAt` refuses them and the UI's own ray-walk
+     * (`SelectionController`, `SIEGE_REACH_M`) resolves a click near the hole onto the first
+     * live station past it. Requiring the exact pixel would make the order unreachable
+     * through the very cursor that has to give it.
+     */
+    let holeAt = -1;
+    let holeAlong = Infinity;
+    for (const st of this.breachStations) {
+      if (st < 0 || st >= this.nStations) continue;
+      const along = Math.abs(st - dest);
+      // Nearest to the point clicked, not first in the array. Two great rams can breach two
+      // bays and "whichever fell first" is not an answer to "storm it here".
+      if (along > ESCALADE_REACH || along >= holeAlong) continue;
+      holeAlong = along;
+      holeAt = st;
+    }
+    if (holeAt >= 0) {
+      return { refusal: 'none', kind: 'breach', tower: null, group: null, station: holeAt,
+        distance: Math.sqrt((this.sx[holeAt] - u.x) * (this.sx[holeAt] - u.x)
+          + (this.sz[holeAt] - u.z) * (this.sz[holeAt] - u.z)) };
+    }
 
     let bestKind: 'tower' | 'ladder' | null = null;
     let bestD = Infinity;
@@ -2625,7 +2763,7 @@ export class Siege implements ElevationOwner {
    * `findEscalade` for the report this came out of.
    */
   escaladeOfferAt(unitId: number, x: number, z: number): {
-    ok: boolean; refusal: string; kind: 'tower' | 'ladder' | null; bay: number;
+    ok: boolean; refusal: string; kind: 'tower' | 'ladder' | 'breach' | null; bay: number;
     /**
      * Whether the thing they would climb is a road yet or still a promise.
      *
@@ -2650,11 +2788,71 @@ export class Siege implements ElevationOwner {
       kind: f.kind,
       bay: f.station >= 0 && f.station < this.nStations ? this.sBay[f.station] : -1,
       // A ladder is raised where it stands, so it is a road the moment it exists; a tower is
-      // one only once its ramp is on the parapet.
-      ready: f.kind === 'ladder' || (!!t && t.state !== TowerState.Approach),
+      // one only once its ramp is on the parapet. A breach is a road by definition — it does
+      // not exist until the wall is down.
+      ready: f.kind === 'ladder' || f.kind === 'breach' || (!!t && t.state !== TowerState.Approach),
       machineDistance: run,
       machineSeconds: run / TOWER_SPEED + (t ? Math.max(0, t.heave) : 0),
     };
+  }
+
+  /**
+   * Every way up this army has put against the wall, one entry per **bank**.
+   *
+   * Published for the same reason `escaladeOfferAt` and `machineOrderAt` are: anything that
+   * has to *choose* a storm has to see the same set the verb will act on. The player sees it
+   * — the machines are drawn — and until now nothing else could, which is the whole of "the
+   * host never storms": `escalade` has existed since the siege-orders pass and the only
+   * caller was a right-click.
+   *
+   * A bank, not a rail, because `escalade` enrols on a bank: three ladders raised by one
+   * party share a boarder list and `musterOwned` round-robins across them. The point is the
+   * **station's** own world position rather than the machine's, so a caller aims at the
+   * stonework — which is what `wallTargetAt` reads and what a player's click lands on.
+   *
+   * `free` is the number of units that may still join, so a caller can spread a host across
+   * the train instead of piling it onto whichever machine happens to be nearest; without it
+   * six warbands all pick one bank and four of them are refused. `ready` distinguishes a
+   * road from a promise on exactly the rule `escaladeOfferAt` uses.
+   *
+   * **The array is reused between calls** and must not be retained. This is read once per
+   * thinking unit per think inside `fixedUpdate`, and a fresh array there is the per-tick
+   * allocation this engine does not have anywhere else.
+   */
+  escaladePoints(): readonly {
+    x: number; z: number; station: number; kind: 'tower' | 'ladder'; ready: boolean; free: number;
+  }[] {
+    const out = this.escaladeScratch;
+    out.length = 0;
+    const push = (
+      x: number, z: number, station: number, kind: 'tower' | 'ladder', ready: boolean, free: number,
+    ): void => {
+      const slot = this.escaladePool[out.length]
+        ?? (this.escaladePool[out.length] = { x: 0, z: 0, station: 0, kind: 'ladder', ready: false, free: 0 });
+      slot.x = x; slot.z = z; slot.station = station;
+      slot.kind = kind; slot.ready = ready; slot.free = free;
+      out.push(slot);
+    };
+    for (const t of this.towers) {
+      // Same exclusion `findEscalade` makes: a spent machine is scenery.
+      if (t.state === TowerState.Spent) continue;
+      const s = t.station;
+      if (s < 0 || s >= this.nStations) continue;
+      push(this.sx[s], this.sz[s], s, 'tower', t.state !== TowerState.Approach,
+        MAX_BOARDING_UNITS - t.boarders.length);
+    }
+    // One entry per party. `escalade` enrols on every rail the party raised at once, so
+    // three rails of one bank would otherwise read as three separate ways up.
+    const seen = this.escaladeSeen;
+    seen.clear();
+    for (const l of this.ladders) {
+      if (seen.has(l.unitId)) continue;
+      seen.add(l.unitId);
+      const s = l.station;
+      if (s < 0 || s >= this.nStations) continue;
+      push(this.sx[s], this.sz[s], s, 'ladder', true, MAX_BOARDING_UNITS - l.boarders.length);
+    }
+    return out;
   }
 
   /**
@@ -2678,6 +2876,24 @@ export class Siege implements ElevationOwner {
   escalade(u: UnitGroupState, x: number, z: number): boolean {
     const found = this.findEscalade(u.id, x, z);
     if (found.refusal !== 'none') return false;
+    /**
+     * Through the hole rather than over the top, and the rally point is *inside*.
+     *
+     * `stormBreach` takes the point the unit forms up on after it is through, and a click on
+     * the wall is not that point — it is on the rubble. Pushing 30 m in along the breach
+     * station's own inward normal is what makes "storm it here" mean "and come out the other
+     * side"; `advancePlans`' `WallGoal.Storm` branch drops a man into a ground slot on this
+     * point the moment `sideOf` says he is in the city.
+     *
+     * Thirty metres because `INSIDE_MARGIN` is 14 and a formation forming up on the line
+     * would have its front rank still in the masonry.
+     */
+    if (found.kind === 'breach') {
+      const st = found.station;
+      return this.stormBreach(u,
+        this.sx[st] - this.snx[st] * BREACH_RALLY,
+        this.sz[st] - this.snz[st] * BREACH_RALLY);
+    }
     const bestTower = found.tower;
     const bestGroup = found.group;
 
@@ -3577,10 +3793,16 @@ export class Siege implements ElevationOwner {
         u.waypoints.length = 0;
         const g = this.garrisons.get(id);
         if (g) { g.lastTx = u.x; g.lastTz = u.z; }
-      } else if (this.wallTargetAt(dest.x, dest.z) >= 0) {
+      } else if (this.wallTargetAt(dest.x, dest.z) >= 0 || this.breachAt(dest.x, dest.z) >= 0) {
         /**
          * On the ground and told to get on the wall. Which way up depends on which side of
          * it he is standing.
+         *
+         * **Or told to go through a hole in it**, which `wallTargetAt` cannot recognise: it
+         * refuses a dead station, and every station over a breach is dead. Without the second
+         * clause the one order the great ram exists to make possible is the one order the
+         * order path drops — and it drops it in the silence this whole branch was written to
+         * end.
          *
          * The city side walks up the defenders' own stairs. The field side does not — a
          * besieger is not entitled to those — but it is entitled to the ramp or the ladder
@@ -4480,6 +4702,7 @@ export class Siege implements ElevationOwner {
     const st = r.station;
     if (st < 0 || this.breachedBays.includes(r.bay)) return;
     this.breachedBays.push(r.bay);
+    this.breachStations.push(st);
 
     // ---- the masonry comes down -------------------------------------------
     const bounds = this.runBounds(st);
@@ -4490,6 +4713,20 @@ export class Siege implements ElevationOwner {
       this.sDead[s] = 1;
       this.sOwner[s] = -1;
     }
+    /**
+     * Bank what has already come through, **before** `buildLinks` destroys the evidence.
+     *
+     * `buildLinks` opens with `this.links = []`, and a breach's lanes are appended to that
+     * array after it. So the second bay to fall wipes the first bay's five lanes and their
+     * `used` counters, and `breachLinks` is left holding indices that now name stairs and
+     * tower passes. That is not hypothetical: `probe-siege` spawns a great ram of its own
+     * alongside the one the scenario now deploys, and with two breaches it reported
+     * **"-18 men climbed the rubble ... across 10 lanes"** and a waiting man 190 m from a
+     * lane mouth. A negative count is the tell; walking a storming column into a tower
+     * doorway is the cost.
+     */
+    for (const id of this.breachLinks) this.breachThroughBase += this.links[id]?.used ?? 0;
+
     this.recut();
     this.buildLinks();
     this.invalidateWallTraffic();
@@ -4498,6 +4735,28 @@ export class Siege implements ElevationOwner {
     this.rehouseTheFallen(lo, hi);
 
     // ---- the way through --------------------------------------------------
+    // Every breach's lanes, not just this one's, for the reason above: they were all in the
+    // array `buildLinks` just emptied. `breachStations` is the record that survives it.
+    this.breachLinks.length = 0;
+    for (const bst of this.breachStations) this.cutBreachLanes(bst);
+
+    // The city cuts its own nav if it knows how; absent, the breach is still crossable by
+    // the lanes above, which is the mechanic. See the report.
+    this.city?.breachWall?.(this.sx[st], this.sz[st], BREACH_HALF_W);
+    this.ctx.events.emit('cameraShake', { amplitude: 1.6, decay: 0.7 });
+    // The machine has done what it was built for. Get it off the rubble.
+    this.beginWithdraw(r);
+  }
+
+  /**
+   * Lay the `BREACH_LANES` storming files through one breached station.
+   *
+   * Split out of `breachBay` so a second collapse can lay *every* breach's lanes again after
+   * `buildLinks` has emptied `this.links` from under them. Idempotent in the sense that
+   * matters: it appends a fresh set and pushes their ids, and the caller has cleared
+   * `breachLinks` first.
+   */
+  private cutBreachLanes(st: number): void {
     const nx = this.snx[st];
     const nz = this.snz[st];
     const ax = -nz;
@@ -4538,13 +4797,6 @@ export class Siege implements ElevationOwner {
       this.links.push(l);
       this.breachLinks.push(l.id);
     }
-
-    // The city cuts its own nav if it knows how; absent, the breach is still crossable by
-    // the lanes above, which is the mechanic. See the report.
-    this.city?.breachWall?.(this.sx[st], this.sz[st], BREACH_HALF_W);
-    this.ctx.events.emit('cameraShake', { amplitude: 1.6, decay: 0.7 });
-    // The machine has done what it was built for. Get it off the rubble.
-    this.beginWithdraw(r);
   }
 
   /**
@@ -6712,7 +6964,7 @@ export class Siege implements ElevationOwner {
     bays: number[]; lanes: number; through: number; deadStations: number;
     integrity: { bay: number; hp: number }[];
   } {
-    let through = 0;
+    let through = this.breachThroughBase;
     for (const id of this.breachLinks) through += this.links[id]?.used ?? 0;
     let deadStations = 0;
     for (let s = 0; s < this.nStations; s++) if (this.sDead[s]) deadStations++;

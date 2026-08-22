@@ -179,6 +179,9 @@ export const runnelDistance = (i: number, x: number, z: number): number => {
  * legions, which is also the historical arrangement: Perseus' line advanced, Paullus' gave
  * ground and then went into the gaps.
  */
+/** Soft edge on every deployment box, in metres. Published on the box; see `DeployBox`. */
+const DEPLOY_FEATHER = 80;
+
 const rectMask = (
   x: number,
   z: number,
@@ -202,19 +205,24 @@ const rectMask = (
  * always been drawn and is not the axis the two lines face each other along. Keeping the 10 m
  * on the box rather than promoting it to `axisX` is what leaves this map's field battle exactly
  * where it was.
+ *
+ * `feather` is published on the box because `standOnDeploymentGround` insets by it. Nothing
+ * about Pydna changes: 490 m of half-width against a line that reaches 342 m either side of
+ * the axis leaves the west rule slack by 138 m even on the offset southern box, and the inset
+ * spends 80 of it, so the shift here is still exactly 0.
  */
 export const DEPLOY_GROUND = {
   axisX: 0,
-  north: { cx: 0, cz: -196, hx: 490, hz: 130 },
-  south: { cx: 10, cz: 150, hx: 490, hz: 120 },
+  north: { cx: 0, cz: -196, hx: 490, hz: 130, feather: DEPLOY_FEATHER },
+  south: { cx: 10, cz: 150, hx: 490, hz: 120, feather: DEPLOY_FEATHER },
 } as const satisfies DeployGround;
 
 export const macedonianDeployMask = (x: number, z: number): number =>
   rectMask(x, z, DEPLOY_GROUND.north.cx, DEPLOY_GROUND.north.cz,
-    DEPLOY_GROUND.north.hx, DEPLOY_GROUND.north.hz, 80);
+    DEPLOY_GROUND.north.hx, DEPLOY_GROUND.north.hz, DEPLOY_GROUND.north.feather);
 export const romanDeployMask = (x: number, z: number): number =>
   rectMask(x, z, DEPLOY_GROUND.south.cx, DEPLOY_GROUND.south.cz,
-    DEPLOY_GROUND.south.hx, DEPLOY_GROUND.south.hz, 80);
+    DEPLOY_GROUND.south.hx, DEPLOY_GROUND.south.hz, DEPLOY_GROUND.south.feather);
 
 /**
  * The fighting corridor. High-frequency relief is damped here and the broad swells kept.

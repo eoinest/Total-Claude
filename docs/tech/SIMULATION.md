@@ -196,8 +196,8 @@ about whether a player would have seen a dropped frame.
 
 ## 3. The soldier pool
 
-`SoldierPool` (`src/sim/types.ts:429`) is a structure of arrays: 37 parallel typed arrays,
-all allocated once at battle start to `quality.maxSoldiers`.
+`SoldierPool` (`src/sim/types.ts`) is a structure of arrays: 37 parallel typed arrays,
+all allocated once at battle start to `SOLDIER_POOL_CAPACITY`.
 
 ### Why SoA
 
@@ -306,19 +306,37 @@ unit of the same type is re-added (`src/sim/deployment.ts:663`).
 
 ### How big the pool actually is
 
-`maxSoldiers` is the one quality setting the simulation reads, and it is deliberately kept in
-its own interface (`SimQuality`, `src/core/Engine.ts:60`) so that the adaptive-quality loop's
-patch type *cannot name it* — the mistake fails to typecheck rather than being caught in
-review. It is frozen at construction (`src/core/Engine.ts:214`) and re-asserted after any
-tier change. The comment records the bug that motivated this: `setQuality` used to replace
-the whole settings object from the preset table, which changed `maxSoldiers` from 12,000 to
-1,600 under a running sim.
+**`SOLDIER_POOL_CAPACITY = 12000` (`src/sim/types.ts`). One number, at every quality tier, on
+every machine. No quality setting reaches the simulation at all.**
 
-Per tier (`QUALITY_PRESETS`, `src/core/Engine.ts:114-139`): low 1,600 · medium 3,200 · high 10,000 ·
-ultra 12,000.
+It was `quality.maxSoldiers`, per tier: low 1,600 · medium 3,200 · high 10,000 · ultra 12,000. It
+lived in its own `SimQuality` interface so the adaptive-quality loop's patch type could not name
+it, was frozen at `Engine` construction and re-asserted after any tier change — three mechanisms
+guarding against a *mid-battle* resize, and none of them addressing the actual defect, which was
+that the tier chose the size of the armies at boot. `fittedUnitScale` fits the order of battle to
+the pool, so the field battle booted 8,632 men at `high` and 1,515 at `low`, and the Campus
+Martius assault at one seed was 3,074 men at `ultra` with the ram crew dead 16 m short of the door
+against 3,009 at `medium` with the Porta Flaminia open by t+240. Two different battles from a
+graphics dropdown. The owner's ruling was that graphics settings must not change the outcome of a
+battle; `SimQuality` is deleted and `QualitySettings = RenderQuality`.
 
-The actual order of battle is fitted to that ceiling by `fittedUnitScale`
-(`src/sim/battleConfig.ts:606`), which is `min(requested, maxSoldiers * 0.94 / base)`.
+What a tier buys instead is the whole of `RenderQuality`: resolution, shadow cascades and map
+size, SSAO, motion blur, volumetric light, depth of field, grass density and the LOD/impostor
+switch distance. What a *smaller battle* costs is the menu's battle-size row, which is a
+`BattleConfig` field — an explicit choice that travels in the `?battle=` token and in every replay
+record. Fewer men is a simulation concession and is not a graphics setting's to make.
+
+The change moved no pinned hash: `high` and `ultra` were already bit-identical, because `Math.min`
+in `fittedUnitScale` binds on the *asked* unit size long before the pool cap did, and the new
+ceiling is the old `ultra` one. `tools/qa-determinism.mjs` carries a cross-tier arm that runs the
+same battle at all four tiers and requires the pool hash, `uf64`, `uctl`, headcount and unit count
+to be identical, with three separate guards against the arm passing vacuously.
+
+The order of battle is still fitted to the ceiling by `fittedUnitScale`
+(`src/sim/battleConfig.ts`), which is now `min(requested, SOLDIER_POOL_CAPACITY * 0.94 / base)` —
+11,280 men, the 6% headroom absorbing the unscaled artillery crews. It takes no pool-size
+argument any more, which is deliberate: there is no parameter left through which a setting could
+be passed in.
 
 I measured the shipped default battle by running `tools/qa-determinism.mjs` at this commit:
 the pool reports **8,632** soldiers (Campus Martius, `field`, `unitSize: 'ultra'`,

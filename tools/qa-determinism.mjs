@@ -14,7 +14,7 @@
  * Usage: node tools/qa-determinism.mjs [--port=5226] [--at=0,30,90,150,200,250,400]
  *                                       [--json=path] [--render] [--record]
  *                                       [--battle=map=carthage&scenario=assault]
- *                                       [--strict-units]
+ *                                       [--strict-units] [--tiers=off] [--tier-at=0,30,90]
  *
  * `--battle` appends extra query parameters, so the gate can be run against a battle other
  * than the default one. It matters now that there are two besiegeable cities: an assault
@@ -23,9 +23,27 @@
  * always measured.
  *
  * **Check that a new checkpoint measures the battle you think it does.** `--battle` is the
- * flag; an unknown flag is silently ignored and the run measures the field battle instead.
- * The tell is the headcount: 8,632 for `default`, 3,074 for Rome's assault, 3,440 for
- * Carthage's. That is printed on every line for exactly this reason.
+ * flag, and a *misspelled flag* is still silently ignored — `--batle=…` runs the field battle
+ * and says nothing. The tell is the headcount: 8,632 for `default`, 3,074 for Rome's assault,
+ * 3,440 for Carthage's. That is printed on every line for exactly this reason.
+ *
+ * `--battle` itself is now validated rather than merely documented: every segment must be
+ * `key=value` and every key must be one `src/` reads, so `--battle=rome` exits 2 with the three
+ * real invocations printed instead of quietly measuring the field battle under Rome's name.
+ * The three arms, and the shell quoting is not optional:
+ *
+ *     node tools/qa-determinism.mjs
+ *     node tools/qa-determinism.mjs --battle='map=campus-martius&scenario=assault'
+ *     node tools/qa-determinism.mjs --battle='map=carthage&scenario=assault'
+ *
+ * ## Three arms per invocation
+ *
+ *   **A vs B** — two loads of this build. Does this battle replay? Exact bits, hard failure.
+ *   **cross-tier** — the same battle at `low`, `medium`, `high` and `ultra`. Does a graphics
+ *     setting change the battle? Exact bits, hard failure. See the block that runs it for why
+ *     it cannot pass vacuously; `--tiers=off` skips it and says so out loud.
+ *   **baseline** — run A against `tools/determinism-baseline.json`. Is this the same battle as
+ *     yesterday? `hash` and `uctl` hard, `uf64` a warning unless `--strict-units`.
  *
  * ## Why the checkpoints run to t+400 and not to t+200
  *
@@ -192,6 +210,60 @@ const RECORD = args.get('record') === 'true';
  */
 const STRICT_UNITS = args.get('strict-units') === 'true';
 
+// ---------------------------------------------------------------------------
+// The cross-tier arm
+// ---------------------------------------------------------------------------
+
+/**
+ * Every tier the game ships, **read out of `src/core/Engine.ts` rather than written here**.
+ *
+ * A hardcoded list is how this arm would eventually go quiet: somebody adds a fifth preset, the
+ * list still says four, and the tool reports tier independence for a tier it never loaded. So
+ * `QUALITY_PRESETS`' own keys are the source and a mismatch against the expected four is a hard
+ * failure with an instruction rather than a silent gap. It is a lexer and it says so: it matches
+ * the top-level keys of the preset object literal and nothing cleverer.
+ */
+const ENGINE_SRC = await readFile(path.resolve(ROOT, 'src/core/Engine.ts'), 'utf8');
+const ALL_TIERS = (() => {
+  const block = ENGINE_SRC.match(
+    /QUALITY_PRESETS:\s*Record<QualityTier,\s*QualitySettings>\s*=\s*\{([\s\S]*?)\n\};/
+  );
+  if (!block) {
+    console.error('could not find QUALITY_PRESETS in src/core/Engine.ts.');
+    console.error('  The cross-tier arm derives its tier list from it and will not guess.');
+    process.exit(2);
+  }
+  return [...block[1].matchAll(/^ {2}(\w+):\s*\{/gm)].map((m) => m[1]);
+})();
+/** The tier runs A and B use, and therefore the tier the baseline is keyed to. */
+const GATE_TIER = 'high';
+if (ALL_TIERS.length !== 4 || !ALL_TIERS.includes(GATE_TIER)) {
+  console.error(`QUALITY_PRESETS has ${ALL_TIERS.length} tier(s) (${ALL_TIERS.join(', ')}).`);
+  console.error(`  This file expected four including '${GATE_TIER}'. A tier was added or renamed:`);
+  console.error('  check GATE_TIER is still the tier the baseline is recorded at, then update the');
+  console.error('  count here. Failing loudly beats testing three tiers out of five in silence.');
+  process.exit(2);
+}
+/** `--tiers=off` skips the cross-tier arm. On by default; it is the arm that owns a ruling. */
+const TIER_ARM = (args.get('tiers') ?? 'on') !== 'off';
+/**
+ * Where the cross-tier arm compares, and why it is shorter than the main schedule by default.
+ *
+ * The coupling this arm exists to catch is an *input* to the battle — the tier fixed the
+ * soldier pool, the pool fitted `unitSizeScale`, and the armies were different sizes before a
+ * tick had run — so it is visible at **t+0**, which is the cheapest detection there is and the
+ * same argument this file already makes for the assault's t+0 hash. t+30 and t+90 are there
+ * because that argument only covers couplings that land at boot: a render field read from
+ * inside `fixedUpdate` would leave t+0 identical and fork later, and t+90 is the first
+ * checkpoint at which both assaults have men routing and machines working at a gate.
+ *
+ * The full schedule is one flag away (`--tier-at=0,30,90,150,200,250,400`) and costs about
+ * three more field-battle page loads to t+400, which is why it is not the default: a gate
+ * nobody runs measures nothing, and this file has already paid for that lesson once.
+ */
+const TIER_AT = (args.get('tier-at') ?? CHECKPOINTS.slice(0, 3).join(','))
+  .split(',').map(Number).filter((n) => Number.isFinite(n));
+
 /**
  * The battle, as a stable key.
  *
@@ -203,6 +275,55 @@ const BATTLE_KEY = args.get('battle')
   ? args.get('battle').split('&').map((s) => s.trim()).filter(Boolean).sort().join('&')
   : 'default';
 const BASELINE_PATH = path.resolve(ROOT, 'tools/determinism-baseline.json');
+
+/**
+ * `--battle` must name a battle, and a run that does not is refused rather than run.
+ *
+ * `--battle=rome` was a trap for months and `docs/HANDOFF.md` and `docs/tech/TOOLING.md` both
+ * documented it as one. The value is appended verbatim as query parameters *and* used as the
+ * baseline key, so `rome` appends a meaningless `&rome`, loads the **default field battle**,
+ * looks up a baseline key that does not exist, prints "no baseline for this battle" and exits
+ * 0. It passes while asserting nothing, and the headcount is the only tell — 8,632 where the
+ * reader expected 3,074.
+ *
+ * Documenting a trap does not close it. Two conditions close it: every segment must be
+ * `key=value`, and every key must be one `src/` actually reads. `PARAM_KEYS` is the set that
+ * appears in a `params.get`/`params.has` call anywhere under `src/`; a new one costs a word
+ * here and the failure it prevents costs a pass. It does not catch a misspelled *flag* name,
+ * which is a different hole and still open — the headcount remains the backstop for that.
+ */
+const PARAM_KEYS = new Set([
+  'autoplay', 'battle', 'deploy', 'difficulty', 'enemy', 'from', 'h', 'harness', 'map',
+  'menu', 'overlay', 'procedural', 'quality', 'replay', 'scenario', 'w',
+]);
+if (args.get('battle')) {
+  const segs = args.get('battle').split('&').map((s) => s.trim()).filter(Boolean);
+  const bad = segs.filter((s) => !s.includes('=') || !PARAM_KEYS.has(s.split('=')[0]));
+  if (!segs.length || bad.length) {
+    console.error(`--battle=${args.get('battle')} is not a battle.\n`);
+    console.error(bad.length
+      ? `  ${bad.length} segment(s) the app does not read: ${bad.join(', ')}`
+      : '  empty value');
+    console.error('\n  The value is appended verbatim as query parameters AND used as the');
+    console.error('  baseline key, so a short name loads the default field battle and looks up');
+    console.error('  a key nobody recorded. The three real invocations are:\n');
+    console.error('    node tools/qa-determinism.mjs');
+    console.error("    node tools/qa-determinism.mjs --battle='map=campus-martius&scenario=assault'");
+    console.error("    node tools/qa-determinism.mjs --battle='map=carthage&scenario=assault'\n");
+    console.error('  Quote the value or the shell backgrounds on the &. Confirm the run by');
+    console.error('  headcount: field battle 8,632 / Rome 3,074 / Carthage 3,440.');
+    process.exit(2);
+  }
+}
+if (TIER_ARM) {
+  const missing = TIER_AT.filter((t) => !CHECKPOINTS.includes(t));
+  if (!TIER_AT.length || missing.length) {
+    console.error(`--tier-at must be a non-empty subset of --at=${CHECKPOINTS.join(',')};`
+      + ` ${missing.length ? `${missing.join(',')} is not in it` : 'it is empty'}.`);
+    console.error('  The arm compares each tier against run A, so run A has to have a mark there.');
+    process.exit(2);
+  }
+}
 
 const waitForServer = async (url, ms) => {
   const end = Date.now() + ms;
@@ -274,21 +395,52 @@ const HASH_FN = `
 `;
 
 /** One independent run: fresh page, rAF stopped, advanced by the identical schedule. */
-async function run(label) {
+async function run(label, tier = GATE_TIER, checkpoints = CHECKPOINTS) {
   const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
   const errors = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto(`${base}/?harness=1&quality=high&w=960&h=540${EXTRA}`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${base}/?harness=1&quality=${tier}&w=960&h=540${EXTRA}`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 180000 });
   // Stop the rAF loop: otherwise wall-clock time between Playwright calls advances one run
   // more than the other and every hash diverges for an uninteresting reason.
   await page.evaluate(() => window.__game.engine.stop());
   await page.evaluate(HASH_FN);
 
+  /*
+   * What this page actually loaded, read off the engine rather than assumed from the URL.
+   *
+   * The cross-tier arm below is worthless without it: if `?quality=` were ignored — a typo in
+   * the parameter name, a `sanitiseConfig` that rejected the value, a future build that reads
+   * the tier from somewhere else — four "different" tiers would be four identical runs and the
+   * arm would report tier independence while measuring one tier four times. So the tier is
+   * read back, and so is every render field, and the arm requires the render half to *differ*
+   * before it is willing to conclude anything from the simulation half matching.
+   */
+  const settings = await page.evaluate(() => {
+    const q = window.__game.engine.quality;
+    const b = window.__game.battle;
+    return {
+      tier: q.tier,
+      render: {
+        maxPixelRatio: q.maxPixelRatio, renderScale: q.renderScale,
+        shadowMapSize: q.shadowMapSize, shadowCascades: q.shadowCascades,
+        ssao: q.ssao, bloom: q.bloom, motionBlur: q.motionBlur,
+        volumetricLight: q.volumetricLight, depthOfField: q.depthOfField,
+        lodFarDistance: q.lodFarDistance, grassDensity: q.grassDensity,
+        antialias: q.antialias,
+      },
+      // The simulation's own inputs. `maxSoldiers` is reported rather than compared: it is
+      // provenance for a reader of the log, and the assertion is on the two fields below it
+      // that actually reach the battle, plus the hashes.
+      sim: { poolCap: b.pool.capacity, unitScale: b.unitSizeScale },
+      maxSoldiers: q.maxSoldiers ?? null,
+    };
+  });
+
   const marks = [];
   let prev = 0;
-  for (const at of CHECKPOINTS) {
+  for (const at of checkpoints) {
     if (at > prev) {
       // Identical step size in both runs, so the fixed-step schedule matches exactly. The
       // third argument is ignored by any build predating it, which only makes the gate slower.
@@ -307,7 +459,7 @@ async function run(label) {
     console.log(`  ${label}  t+${String(at).padStart(3)}  simTime ${marks.at(-1).simTime.toFixed(3)}  ` +
       `count ${h.count}  alive ${h.alive}  hash ${h.hash}  uf64 ${u.uf64}  uctl ${u.uctl}`);
   }
-  return { page, marks, errors };
+  return { page, marks, errors, settings };
 }
 
 // ---------------------------------------------------------------------------
@@ -424,6 +576,111 @@ if (unitDiffs.length) {
 }
 
 // ---------------------------------------------------------------------------
+// The same battle at every quality tier
+// ---------------------------------------------------------------------------
+/*
+ * A graphics setting must not change the battle, and until this arm existed nothing checked it.
+ *
+ * The ruling is the owner's: "definitely graphics settings should not change outcome of battle".
+ * The measurement that produced it — Campus Martius assault, seed 4265438264, hard — is that
+ * `ultra` fielded 3,074 men and the ram crew died 16 m short of the door with nothing landed by
+ * t+520, while `medium` fielded 3,009, landed 26 blows and opened the Porta Flaminia between
+ * t+180 and t+240. Different headcount, different battle, different result, from a dropdown.
+ *
+ * ## Why this arm and not a cross-engine one
+ *
+ * `docs/MULTIPLAYER.md` §3 Stage 0 item 5 asks for a cross-engine arm and it still does not
+ * exist. This is its sibling and it is the cheaper, nearer half of the same hole: two players on
+ * different hardware pick different default tiers, so a match desyncs **before a single `Math`
+ * call disagrees** — at t+0, on army size, with both engines computing identically. A
+ * cross-engine arm run at one tier per machine would have reported that as a libm difference.
+ *
+ * ## How it is kept from passing vacuously
+ *
+ * This project's most expensive recurring failure is a check that compares something against
+ * itself, so the arm carries four assertions and three of them exist only to make the fourth
+ * mean something:
+ *
+ *   1. **The page loaded the tier it was asked for.** Read back off `engine.quality.tier`, not
+ *      assumed from the URL. If `?quality=` were ignored this would be one tier measured four
+ *      times, reporting perfect agreement.
+ *   2. **The render half really differs.** Every render field is compared and at least one must
+ *      have moved. Four identical settings objects agreeing on a hash proves nothing.
+ *   3. **The simulation's own inputs are identical** — `pool.capacity` and the effective
+ *      `unitSizeScale`. These are what the tier used to reach, and naming them separately is
+ *      what turns a failure into a diagnosis instead of a mystery.
+ *   4. **The hashes are identical** — pool, `uf64`, `uctl`, count, alive and unit count, at
+ *      every compared checkpoint, exact bits. Same build, same browser, same machine, so this
+ *      is held to the A-vs-B standard and not the baseline's: there is no libm difference to
+ *      forgive between two page loads that differ only in a shadow-map size.
+ */
+const tierRows = [{ tier: GATE_TIER, marks: A.marks, settings: A.settings }];
+if (TIER_ARM) {
+  console.log(`\n--- cross-tier: the same battle at every tier, compared against run A`
+    + ` (${GATE_TIER}) at ${TIER_AT.map((t) => `t+${t}`).join(', ')} ---`);
+  for (const tier of ALL_TIERS.filter((t) => t !== GATE_TIER)) {
+    const r = await run(`Q:${tier}`, tier, TIER_AT);
+    tierRows.push({ tier, marks: r.marks, settings: r.settings, errors: r.errors });
+    await r.page.close();
+  }
+
+  const gate = tierRows[0];
+  const describe = (row) => `${String(row.tier).padEnd(6)} pool ${String(row.settings.sim.poolCap).padStart(6)}`
+    + `  scale x${row.settings.sim.unitScale.toFixed(4)}`
+    + `  maxSoldiers ${String(row.settings.maxSoldiers).padStart(6)}`
+    + `  men ${String(row.marks[0].count).padStart(6)}`;
+  console.log(`\n  ${describe(gate)}   <- run A, the tier the baseline is keyed to`);
+  for (const row of tierRows.slice(1)) console.log(`  ${describe(row)}`);
+
+  console.log('');
+  for (const row of tierRows.slice(1)) {
+    const tierTook = row.settings.tier === row.tier;
+    const renderDiff = Object.keys(gate.settings.render)
+      .filter((k) => gate.settings.render[k] !== row.settings.render[k]);
+    const simSame = row.settings.sim.poolCap === gate.settings.sim.poolCap
+      && Object.is(row.settings.sim.unitScale, gate.settings.sim.unitScale);
+
+    const drift = [];
+    for (const at of TIER_AT) {
+      const a = gate.marks.find((m) => m.at === at);
+      const b = row.marks.find((m) => m.at === at);
+      if (!a || !b) { drift.push(`t+${at}: no mark`); continue; }
+      const fields = [];
+      for (const k of ['hash', 'count', 'alive', 'uf64', 'uctl', 'units']) {
+        if (a[k] !== b[k]) fields.push(`${k} ${a[k]} vs ${b[k]}`);
+      }
+      if (fields.length) drift.push(`t+${at}  ${fields.join('  ')}`);
+    }
+
+    const ok = tierTook && renderDiff.length > 0 && simSame && drift.length === 0;
+    console.log(`  ${row.tier.padEnd(6)} vs ${GATE_TIER}   ${ok ? 'IDENTICAL BATTLE' : 'FAILED'}`
+      + `   render fields differing: ${renderDiff.length} (${renderDiff.slice(0, 4).join(', ')}`
+      + `${renderDiff.length > 4 ? ', …' : ''})`);
+    if (!tierTook) {
+      console.log(`    FAIL: asked for '${row.tier}' and the engine reports '${row.settings.tier}'.`);
+      console.log('      The tier did not take, so this arm compared one tier with itself.');
+    }
+    if (!renderDiff.length) {
+      console.log('    FAIL: not one render field differs from the gate tier. Two runs that are');
+      console.log('      configured identically agreeing on a hash is not evidence of anything.');
+    }
+    if (!simSame) {
+      console.log(`    FAIL: the simulation's inputs differ — pool ${gate.settings.sim.poolCap}`
+        + ` vs ${row.settings.sim.poolCap}, unitSizeScale ${gate.settings.sim.unitScale}`
+        + ` vs ${row.settings.sim.unitScale}.`);
+      console.log('      A graphics setting is sizing the army. See `fittedUnitScale` in');
+      console.log('      src/sim/battleConfig.ts and `SOLDIER_POOL_CAPACITY` in src/sim/types.ts.');
+    }
+    for (const d of drift) console.log(`    DRIFT ${d}`);
+    if (!ok) failed++;
+    for (const e of new Set(row.errors ?? [])) console.log(`    console: ${e}`);
+  }
+} else {
+  console.log('\n--- cross-tier: SKIPPED (--tiers=off). Nothing checked that a graphics setting');
+  console.log('    does not change the battle. ---');
+}
+
+// ---------------------------------------------------------------------------
 // The battle has not changed since it was last recorded
 // ---------------------------------------------------------------------------
 /*
@@ -537,13 +794,22 @@ if (errors.length) {
 
 if (JSON_OUT) {
   await writeFile(path.resolve(ROOT, JSON_OUT),
-    JSON.stringify({ battle: BATTLE_KEY, A: A.marks, B: B.marks, diffs, unitDiffs, firstDiff, firstUnitDiff, errors }, null, 2));
+    JSON.stringify({
+      battle: BATTLE_KEY, A: A.marks, B: B.marks, diffs, unitDiffs, firstDiff, firstUnitDiff,
+      tiers: TIER_ARM
+        ? tierRows.map((r) => ({ tier: r.tier, at: TIER_AT, settings: r.settings, marks: r.marks }))
+        : null,
+      errors,
+    }, null, 2));
 }
 await browser.close();
 if (server) server.kill('SIGTERM');
+const tierNote = TIER_ARM
+  ? `, identical at ${ALL_TIERS.length} tiers`
+  : ', CROSS-TIER SKIPPED';
 console.log(failed
   ? `\n✗ ${failed} failing check(s) across ${CHECKPOINTS.length} checkpoints (${A.marks.at(-1).count} soldiers)`
   : `\n✓ deterministic and unchanged across ${CHECKPOINTS.length} checkpoints at ${A.marks.at(-1).count} soldiers`
-    + ` [${A.marks.at(-1).units} units]`);
+    + ` [${A.marks.at(-1).units} units]${tierNote}`);
 if (warned) console.log(`  ${warned} portability warning(s) — see above. Not counted as a failure.`);
 process.exit(failed ? 1 : 0);

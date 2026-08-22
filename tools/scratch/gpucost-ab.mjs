@@ -305,7 +305,7 @@ const diag = await page.evaluate(() => {
       depthOfField: ctx.quality.depthOfField, ssao: ctx.quality.ssao,
       volumetricLight: ctx.quality.volumetricLight, bloom: ctx.quality.bloom,
       antialias: ctx.quality.antialias, lodFarDistance: ctx.quality.lodFarDistance,
-      maxSoldiers: ctx.quality.maxSoldiers,
+      poolCap: window.__game.battle.pool.capacity,
     },
     lod: {
       lodDist: units && units.lodDist ? units.lodDist.map((v) => +v.toFixed(1)) : null,
