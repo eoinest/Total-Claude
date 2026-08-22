@@ -18,11 +18,10 @@
  * Usage: node tools/qa-deploy.mjs [--port=5311] [--json=path] [--shots=dir] [--only=arm]
  */
 
-import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
 import { writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import { launchBrowser, startVite } from './lib/browser-budget.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const args = new Map(
@@ -49,20 +48,24 @@ const waitForServer = async (url, ms) => {
   return false;
 };
 
-const base = `http://127.0.0.1:${PORT}`;
-let server = null;
-if (!(await waitForServer(base, 1200))) {
-  server = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
-    cwd: ROOT, stdio: 'ignore', env: { ...process.env, TC_NO_HMR: '1' },
-  });
-  if (!(await waitForServer(base, 60000))) { console.error('vite did not start'); process.exit(1); }
-}
-console.log(`server ${base}${server ? ' (started here)' : ' (already up)'}`);
-
-const browser = await chromium.launch({
+/*
+ * Server and browser via `tools/lib/browser-budget.mjs` — 22 Aug 2026.
+ *
+ * The browser slot is taken **first** and the server started second, so a run that has to
+ * queue queues holding nothing. `startVite` replaces `spawn('npx', ['vite', …])`, whose
+ * handle was the npx wrapper rather than Vite and so left the server on the port when it was
+ * killed; it also refuses to reuse a listener that is serving a different worktree, which
+ * this file used to do silently.
+ */
+const browser = await launchBrowser({
+  label: 'qa-deploy', port: PORT, root: ROOT,
   args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader',
     '--ignore-gpu-blocklist', '--hide-scrollbars'],
 });
+const { base, close: closeServer } = await startVite({
+  port: PORT, root: ROOT, label: 'qa-deploy', slot: browser.budgetSlot,
+});
+
 if (SHOT_DIR) await mkdir(SHOT_DIR, { recursive: true });
 
 const results = [];
@@ -1266,7 +1269,7 @@ if (!ONLY || ONLY === 'det') {
 }
 
 await browser.close();
-if (server) server.kill();
+await closeServer();
 
 console.log(`\n${failed === 0 ? '✓' : '✗'} ${results.length - failed}/${results.length} checks passed`);
 if (JSON_OUT) {

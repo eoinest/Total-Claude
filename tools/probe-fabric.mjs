@@ -237,8 +237,7 @@
  * `node_modules/.vite` would be one dependency cache written by as many vites as there are
  * agents running a gate.
  */
-import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
+import { launchBrowser, startVite } from './lib/browser-budget.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -966,72 +965,68 @@ if (await up(1200)) {
     `[probe-fabric] something is ALREADY serving ${base}. Refusing to use it.\n`
     + '  Six agents run vite on this box out of six different worktrees. A reused port serves\n'
     + "  another branch's modules, and the probe then grades a tree it is not standing in.\n"
-    + '  Pass a free --port in the 5900s.'
+    + '  Pass a free --port in the 5900s.\n'
+    + '  See what is taken: node tools/browsers.mjs'
   );
   process.exit(2);
 }
-const server = spawn(
-  'npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'],
-  {
-    cwd: ROOT,
-    stdio: 'ignore',
-    env: {
-      ...process.env,
-      TC_NO_HMR: '1',
-      TC_VITE_CACHE_DIR: process.env.TC_VITE_CACHE_DIR ?? path.join(ROOT, '.vite', 'probe-fabric'),
-    },
-  }
-);
-if (!(await up(150000))) {
-  console.error('[probe-fabric] vite did not start on', PORT);
-  server.kill('SIGTERM');
-  process.exit(2);
-}
-/*
- * An agent that starts a server owns killing it, and a `finally` block does not discharge
- * that: this tool was SIGKILLed mid-run during a machine pause and left its vite listening on
- * 5951, which the next run then correctly refused to use. Nineteen orphaned servers were swept
- * off this box in one pass, several more than a day old. So the kill is registered three ways —
- * `unref` so a forgotten handle cannot hold node open, an `exit` hook for the normal and the
- * throwing paths, and explicit signal handlers because the default SIGINT/SIGTERM disposition
- * terminates without running `exit` hooks. `tools/lib/menu-boot.mjs` documents the first two.
- */
-let killed = false;
-const killServer = () => {
-  if (killed) return;
-  killed = true;
-  try { server.kill('SIGTERM'); } catch { /* already gone */ }
-};
-server.unref();
-process.once('exit', killServer);
-for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
-  process.once(sig, () => { killServer(); process.exit(130); });
-}
-console.log(`[probe-fabric] own vite on ${base}  map=${MAP}  tier=${TIER}  (pid ${server.pid})`);
 
-// ---------------------------------------------------------------------------
 /*
- * `--use-angle=metal`, and it is not a nicety.
+ * ## 22 Aug 2026 — the browser is budgeted and the server is `startVite`
  *
- * A bare `chromium.launch()` on this box comes up with `--use-angle=swiftshader-webgl`: the
- * whole scene rasterised in software. Boots took four to six minutes and every screenshot
- * timed out, at 30 s and again at 180 s, on both maps — which reads as a hung page and is a
- * missing flag. `tools/shoot.mjs:1548` has carried these args since the shot harness was
- * written; nothing pointed a new tool at them. Check the GPU process's command line before
- * believing any timing taken through Playwright here:
- *   ps -A -o command | grep 'type=gpu-process'
+ * This file had the best server cleanup in the repository: `unref`, an `exit` hook, and
+ * explicit SIGINT/SIGTERM/SIGHUP handlers, written after this tool was SIGKILLed mid-run and
+ * left its vite listening on 5951. **It still leaked**, and the header comment it replaced
+ * names the reason without drawing the conclusion: `server` was `npx`, not Vite. `npx` execs a
+ * shell which execs `node …/vite.js`, so all three of those careful kills signalled a wrapper
+ * two processes above the one holding the port.
+ *
+ * `startVite` runs Vite under `node` directly — the handle is the server — and the server
+ * polls this process and exits within two seconds of losing it, which is the part that
+ * survives the SIGKILL that no exit hook can. The refusal above is kept, and `startVite` adds
+ * the check it could not make: it asks a listener which tree it is serving rather than
+ * assuming, so "grades a tree it is not standing in" is now impossible rather than merely
+ * warned about.
+ *
+ * The browser comes from the same place and takes one of a small number of machine-wide slots.
+ * On the day this comment was written, twelve agents each doing what this file does put the
+ * box at load average 160 on 16 cores.
  */
-const browser = await chromium.launch({
+const browser = await launchBrowser({
+  label: 'probe-fabric', port: PORT, root: ROOT,
   args: [
-    '--use-gl=angle',
-    '--use-angle=metal',
-    '--enable-unsafe-swiftshader',
-    '--ignore-gpu-blocklist',
     '--enable-gpu-rasterization',
     '--disable-dev-shm-usage',
     '--hide-scrollbars',
   ],
 });
+const { close: killServer } = await startVite({
+  port: PORT,
+  root: ROOT,
+  label: 'probe-fabric',
+  slot: browser.budgetSlot,
+  cacheDir: process.env.TC_VITE_CACHE_DIR ?? path.join(ROOT, '.vite', 'probe-fabric'),
+  timeoutMs: 150000,
+});
+console.log(`[probe-fabric] own vite on ${base}  map=${MAP}  tier=${TIER}`);
+
+// ---------------------------------------------------------------------------
+/*
+ * `--use-angle=metal`, and it is not a nicety — now supplied by default.
+ *
+ * A bare `chromium.launch()` on this box comes up with `--use-angle=swiftshader-webgl`: the
+ * whole scene rasterised in software. Boots took four to six minutes and every screenshot
+ * timed out, at 30 s and again at 180 s, on both maps — which reads as a hung page and is a
+ * missing flag. This file found that the hard way and `tools/shoot.mjs` had carried the right
+ * args for a year; nothing pointed a new tool at them, which is precisely the failure that
+ * `GPU_ARGS` in `tools/lib/browser-budget.mjs` now prevents by making the *shortest* call the
+ * correct one. The four flags that were here are those four; only the two specific to this
+ * tool are still passed at the call site above.
+ *
+ * Check the GPU process's command line before believing any timing taken through Playwright:
+ *   ps -A -o command | grep 'type=gpu-process'
+ * or `node tools/browsers.mjs`, which reads the value of `--use-angle` and counts them.
+ */
 let exitCode = 0;
 try {
   const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });

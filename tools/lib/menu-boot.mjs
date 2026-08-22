@@ -17,9 +17,9 @@
  * Used by `tools/qa-replay.mjs` and by the playability rig.
  */
 
-import { spawn } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
+import { startVite } from './browser-budget.mjs';
 
 export const waitForServer = async (url, ms) => {
   const end = Date.now() + ms;
@@ -42,37 +42,40 @@ export const waitForServer = async (url, ms) => {
  * the shared checkout, so vite's default `node_modules/.vite` is one dependency cache being
  * written by as many vite processes as there are agents running a gate.
  */
-export async function ensureServer({ port, root, cacheDir }) {
-  const base = `http://127.0.0.1:${port}`;
-  if (await waitForServer(base, 1200)) return { base, server: null };
-  const server = spawn(
-    'npx', ['vite', '--port', String(port), '--host', '127.0.0.1', '--strictPort'],
-    {
-      cwd: root,
-      stdio: 'ignore',
-      env: {
-        ...process.env,
-        TC_NO_HMR: '1',
-        TC_VITE_CACHE_DIR: cacheDir ?? process.env.TC_VITE_CACHE_DIR
-          ?? path.join('/tmp', `tc-vite-${path.basename(root)}`),
-      },
-    }
-  );
-  if (!(await waitForServer(base, 90000))) {
-    server.kill('SIGTERM');
-    throw new Error(`vite did not start on ${port}`);
-  }
+export async function ensureServer({ port, root, cacheDir, label = 'menu-boot', slot = null }) {
   /*
-   * Unref plus an exit hook, so a script that forgets to kill the server still exits.
+   * ## 22 Aug 2026 — this now goes through `startVite` in `tools/lib/browser-budget.mjs`
    *
-   * A live child handle keeps node's event loop alive, and the playability scripts close
-   * their browser and return without touching the server — so before this they hung after
-   * printing their last line, which reads as a stuck run. `unref` lets the parent exit;
-   * the hook stops that orphaning a vite on the port for the next agent to trip over.
+   * The body used to be `spawn('npx', ['vite', …])` plus `unref` plus an exit hook, and the
+   * hook was the best cleanup in the repository. It still leaked, and the reason is in the
+   * first word: **`server` was npx, not Vite.** `npx` execs a shell which execs
+   * `node …/vite.js`, so `server.kill('SIGTERM')` signalled a wrapper two processes above the
+   * one holding the port. You can watch it happen — `ps` on this machine shows the pair,
+   * `npm exec vite --port 5934` and `node …/.bin/vite --port 5934`, every time.
+   *
+   * Nineteen dev servers were swept off this box in one morning, several more than a day old.
+   * And an exit hook does nothing at all when the harness is SIGKILLed or the machine falls
+   * over, which is what happened at load 160.
+   *
+   * `startVite` spawns `tools/lib/vite-runner.mjs` under `node` directly — the PID the caller
+   * holds is the PID holding the port — in its own process group, and the runner polls its
+   * parent and exits within two seconds of losing it. It also refuses to reuse a listener that
+   * turns out to be serving a *different worktree*, which this function did silently and which
+   * is how a probe measures another branch and reports it as yours.
+   *
+   * The return shape is unchanged: `{ base, server }`, `server` null when a server was reused,
+   * so `if (server) server.kill('SIGTERM')` at the end of two dozen callers still works. There
+   * is now also `close()`, which is safe to call in either case and is what new code should use.
    */
-  server.unref();
-  process.once('exit', () => { try { server.kill('SIGTERM'); } catch { /* already gone */ } });
-  return { base, server };
+  const r = await startVite({
+    port,
+    root,
+    cacheDir: cacheDir ?? process.env.TC_VITE_CACHE_DIR
+      ?? path.join('/tmp', `tc-vite-${path.basename(root)}`),
+    label,
+    slot,
+  });
+  return { base: r.base, server: r.server, started: r.started, close: r.close };
 }
 
 /**

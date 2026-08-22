@@ -37,12 +37,12 @@
  * object's own `raycast` method; only the `Ray` maths comes from this copy.
  */
 
-import { chromium } from 'playwright';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 
 import { ensureServer, bootThroughMenu } from '../lib/menu-boot.mjs';
+import { launchBrowser } from '../lib/browser-budget.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
 const args = new Map(process.argv.slice(2).map((a) => {
@@ -60,10 +60,15 @@ const { base, server } = await ensureServer({
   port: PORT, root: ROOT, cacheDir: `/tmp/tc-judge/.vite-p${PORT}`,
 });
 
-const browser = await chromium.launch({
-  args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader',
-    '--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--disable-dev-shm-usage',
-    '--hide-scrollbars'],
+/*
+ * `launchBrowser` — `tools/lib/browser-budget.mjs`, 22 Aug 2026. A judge is a long run and a
+ * judge loop is several of them; on the day this landed twelve agents each opening one browser
+ * put the machine at load average 160 on 16 cores. The four GPU flags that were listed here are
+ * the default `GPU_ARGS` now, so only the two specific to a screenshot rig are passed.
+ */
+const browser = await launchBrowser({
+  label: 'judge-fabric', port: PORT, root: ROOT,
+  args: ['--enable-gpu-rasterization', '--disable-dev-shm-usage', '--hide-scrollbars'],
 });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 const errs = [];

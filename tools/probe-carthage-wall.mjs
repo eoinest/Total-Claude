@@ -31,7 +31,7 @@
  *   node tools/probe-carthage-wall.mjs --port=5733 --json
  */
 
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser-budget.mjs';
 
 const args = new Map(
   process.argv.slice(2).map((a) => {
@@ -65,7 +65,13 @@ async function ensureServer() {
 }
 
 const base = await ensureServer();
-const browser = await chromium.launch({ args: ['--use-gl=angle', '--enable-unsafe-swiftshader'] });
+/*
+ * `launchBrowser` — 22 Aug 2026. Note what the old argument list did *not* contain:
+ * `--use-angle=metal`. Without it Chromium software-rasterises through SwiftShader, which on
+ * this scene is a four-to-six-minute boot rather than seconds, and nothing anywhere says so.
+ * It is in the default `GPU_ARGS` now, so this call gets it by getting out of the way.
+ */
+const browser = await launchBrowser({ label: 'probe-carthage-wall', port: PORT });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 
 const pageErrors = [];

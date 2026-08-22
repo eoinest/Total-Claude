@@ -26,8 +26,7 @@
  *   node tools/probe-water.mjs --port=5561 --map=carthage --only=movement --json=out.json
  */
 
-import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
+import { launchBrowser, startVite } from './lib/browser-budget.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -106,24 +105,30 @@ const waitForServer = async (url, ms) => {
  * it prints the root, because the whole point of a worktree is that two trees serve the same
  * URL shape.
  */
-let server = null;
-let ownServer = false;
-if (!(await waitForServer(base, 1500))) {
-  ownServer = true;
-  server = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
-    cwd: ROOT, stdio: 'ignore', env: { ...process.env, TC_NO_HMR: '1' },
-  });
-  if (!(await waitForServer(base, 90000))) {
-    console.error('vite did not start on ' + base);
-    process.exit(1);
-  }
-}
+/*
+ * Server and browser through `tools/lib/browser-budget.mjs` — 22 Aug 2026, after load average
+ * 160 on 16 cores took the machine down. The slot is taken before the server is started so a
+ * queued run holds nothing, and `startVite` cannot leave an orphan on the port the way
+ * `spawn('npx', ['vite', …])` did: the handle it returns is Vite itself, and the server exits
+ * on its own within two seconds of losing this process.
+ */
+const browser = await launchBrowser({
+  label: 'probe-water', port: PORT, root: ROOT,
+  /*
+   * No `args` at all, and that is the fix. This file passed
+   * `['--use-gl=angle', '--enable-unsafe-swiftshader']` and **not** `--use-angle=metal`, which
+   * is the software-rasteriser fallback spelled out — four-to-six-minute boots, invisible from
+   * the output, it just looked slow. `GPU_ARGS` supplies metal by default now.
+   */
+});
+const { started: ownServer, close: closeServer } = await startVite({
+  port: PORT, root: ROOT, label: 'probe-water', slot: browser.budgetSlot,
+});
 const load = os.loadavg();
 console.log(`[probe-water] ${base} — ${ownServer ? 'server started by this run' : 'server already up'}`);
 console.log(`[probe-water] root ${ROOT}`);
 console.log(`[probe-water] load ${load.map((l) => l.toFixed(1)).join(' / ')} on ${os.cpus().length} cores`);
 
-const browser = await chromium.launch({ args: ['--use-gl=angle', '--enable-unsafe-swiftshader'] });
 const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
 
 const errors = [];
@@ -149,7 +154,7 @@ try {
   console.error('\n*** window.__game.ready never became true ***');
   for (const x of errors) console.error('   ' + x);
   await browser.close();
-  if (server) server.kill();
+  await closeServer();
   process.exit(1);
 }
 console.log(`[probe-water] booted ${MAP} at ${QUALITY}${HOUR !== null ? ` hour ${HOUR}` : ''}`);
@@ -382,5 +387,5 @@ if (JSON_OUT) {
 }
 
 await browser.close();
-if (server) server.kill();
+await closeServer();
 process.exit(errors.length ? 1 : 0);

@@ -50,7 +50,7 @@
  * behaviour changes and no pinned determinism hash moves.
  */
 
-import { chromium } from 'playwright';
+import { launchBrowser, startVite } from './lib/browser-budget.mjs';
 import { spawn } from 'node:child_process';
 import { mkdir, writeFile, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -328,36 +328,35 @@ const waitForServer = async (url, ms) => {
   return false;
 };
 
-const base = `http://127.0.0.1:${PORT}`;
-let server = null;
-if (await waitForServer(base, 1200)) {
-  console.log(`• reusing the dev server already on ${PORT}`);
-} else {
-  /*
-   * An isolated Vite cache, and this is a worktree trap rather than a nicety.
-   *
-   * Every agent worktree in this repository symlinks `node_modules` back to the main checkout,
-   * and Vite's default `cacheDir` is `<pkgDir>/node_modules/.vite` — a *path*, resolved through
-   * that symlink. So six agents on six branches share one dependency-optimiser cache and one
-   * transform cache, and the failure that produces is the worst kind: a page that loads
-   * perfectly while serving another branch's modules. `TC_VITE_CACHE_DIR` is read by
-   * `vite.config.ts`; the directory is named for the port so two runs cannot collide either.
-   */
-  const cacheDir = path.join(WORK_ROOT, '.vite-cache', `p${PORT}`);
-  await mkdir(cacheDir, { recursive: true });
-  console.log(`• starting vite on ${PORT} (cache ${cacheDir})`);
-  server = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
-    cwd: ROOT,
-    stdio: 'ignore',
-    env: { ...process.env, TC_NO_HMR: '1', TC_VITE_CACHE_DIR: cacheDir, FORCE_COLOR: '0' },
-  });
-  if (!(await waitForServer(base, 90000))) {
-    console.error(`vite did not start on ${PORT}`);
-    server.kill('SIGTERM');
-    process.exit(1);
-  }
-}
-const shutdown = () => { if (server && !args.has('keep')) server.kill('SIGTERM'); };
+/*
+ * The browser slot first, then the server — `tools/lib/browser-budget.mjs`, 22 Aug 2026.
+ *
+ * A film is the longest-running job in this directory and therefore the one most worth
+ * queueing rather than piling on: it holds a browser for minutes. Taking the slot before
+ * starting Vite means a film that has to wait is not sitting on a port while it waits.
+ *
+ * `startVite` replaces `spawn('npx', ['vite', …])`. The isolated cache directory below is
+ * unchanged and the reason for it is unchanged — worktrees symlink `node_modules` back to the
+ * main checkout and Vite's default `cacheDir` resolves *through* that symlink, so several
+ * agents share one optimiser cache and a page can load perfectly while serving another
+ * branch's modules. What is new is that `startVite` also *asks* a listener it is about to
+ * reuse which tree it is serving, and refuses if the answer is not this one.
+ */
+const cacheDir = path.join(WORK_ROOT, '.vite-cache', `p${PORT}`);
+await mkdir(cacheDir, { recursive: true });
+const browser = await launchBrowser({
+  label: 'film', port: PORT, root: ROOT,
+  args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader',
+    '--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--disable-dev-shm-usage',
+    '--hide-scrollbars'],
+});
+const { base, started: startedServer, close: closeServer } = await startVite({
+  port: PORT, root: ROOT, cacheDir, label: 'film', slot: browser.budgetSlot,
+});
+console.log(startedServer
+  ? `• started vite on ${PORT} (cache ${cacheDir})`
+  : `• reusing the dev server already on ${PORT}`);
+const shutdown = () => { if (startedServer && !args.has('keep')) void closeServer(); };
 
 // ---------------------------------------------------------------------------
 // Capture
@@ -377,11 +376,6 @@ if (!PROV.clean) {
   console.log(`  srcHash ${PROV.srcHash}, which is what Vite is actually serving — not with ${PROV.commit}.`);
 }
 
-const browser = await chromium.launch({
-  args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader',
-    '--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--disable-dev-shm-usage',
-    '--hide-scrollbars'],
-});
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: DPR });
 const errs = [];
 page.on('pageerror', (e) => errs.push(`pageerror: ${e.message}`));

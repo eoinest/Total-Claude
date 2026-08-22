@@ -10,20 +10,28 @@ this tree three ways: `index.html` byte-identical to a rebuild, all nine build o
 identical, and Vercel's own SHA-1 digest matching the rebuild for 86 of 86 files in both
 directions. All three maps boot against the live URL with the clock advancing.
 
-The full gate is green on this tree: tsc clean, lint 2/2, qa-deploy 33/33, seams PASS both maps,
-**`qa-replay` 21/21**, and all three determinism arms UNCHANGED at all seven checkpoints
-(8,632 / 3,074 / 3,440).
+The full gate is green on this tree: tsc clean, **lint 3/3**, qa-deploy 33/33, seams PASS both
+maps, **`qa-replay` 21/21**, and all three determinism arms UNCHANGED at all seven checkpoints
+(**8,632 / 3,072 / 3,440** — Rome's pin moved to 3,072 at `63be5cd`; anything still saying
+3,074 predates that commit).
 
 **The gate, and how to re-run it.** All green at `5f9030e`:
 
 | check | command | expected |
 |---|---|---|
 | types | `npx tsc --noEmit` | clean |
-| lint | `npm run lint` | 2/2 |
+| lint | `npm run lint` | **3/3** — see the note below |
 | deploy | `node tools/qa-deploy.mjs` | 33/33 |
 | seams | `node tools/probe-seams.mjs` | PASS, both maps |
 | replay | `node tools/qa-replay.mjs` | 21/21 |
 | determinism | the three arms below, **spelled exactly** | 7 checkpoints each |
+
+> **`lint` is three checks now, not two — changed 22 Aug 2026.** `check-determinism` and
+> `check-tool-args` are joined by **`check-browser-budget`**, which fails when a file in
+> `tools/` opens a browser or spawns `npx vite` without going through
+> `tools/lib/browser-budget.mjs`. It carries an allowlist of the 91 files in `tools/` (254
+> including `scratch/`) that predate the budget; that list may shrink and must not grow. If you
+> were told "lint 2/2", this is why it says 3/3. See `docs/tech/BROWSER-BUDGET.md`.
 
 Determinism is pinned in `tools/determinism-baseline.json` at **t+0/30/90/150/200/250/400**, three
 hashes each: the float32 pool, `uf64` (exact float64 unit state) and `uctl` (discrete state).
@@ -103,8 +111,50 @@ exists. A relay, not peer-to-peer, either way — §4.1's total-order problem, n
 - **A self-consistent instrument can never fail.** Compare against something outside the thing
   being checked.
 - Worktrees need an isolated vite `cacheDir`. **Port 5173 is the owner's.**
+- **At most four headless browsers on this machine at once, and the filesystem now enforces it.**
+  22 Aug 2026: load average 160 on 16 cores, 136 `vite` and `chrome-headless-shell` processes,
+  machine recovered by hand; and nineteen orphaned dev servers swept off it the same morning.
+  Use `launchBrowser`/`startVite` from `tools/lib/browser-budget.mjs` — one line each, and they
+  queue rather than pile on. `node tools/browsers.mjs` says what is running and who owns it.
+  **How many agents to run at once is below.** Full account: `docs/tech/BROWSER-BUDGET.md`.
 - Unattended agents carry: *where you would normally ask, make the call, write down what you chose
   and why, and name what would change your mind.*
+
+### How many agents to run at once — the rule, and where the number comes from
+
+This is the number that was got wrong on 22 Aug 2026. Roughly a dozen agents were running; the
+machine reached **load average 160 on 16 cores with 136 `vite` and `chrome-headless-shell`
+processes** and had to be recovered by hand.
+
+> **Run at most six agents at once, and never dispatch more than four that you expect to run a
+> gate, a probe or a film in the same window.** Before dispatching a wave, run
+> `node tools/browsers.mjs`. If the slots are full and there is a queue, the machine is already
+> at its limit — wait rather than adding to it.
+
+**The four is measured and it is now enforced.** `tools/scratch/bb-bench.mjs` ran the shape of a
+real gate job — own Vite, own Chromium, the field battle through the real menu, 8,632 men — at
+N = 1…8, in a CPU arm and a rendering arm. At N=4 the machine sits at **0.45–0.48× its cores**
+and keeps **92–98% of perfect linear scaling**: four browsers cost essentially nothing in
+throughput. At N=8 the CPU arm reaches **1.09× cores**, which is an oversubscribed machine, and
+the rendering arm loses a fifth of its scaling. `tools/lib/browser-budget.mjs` caps it at 4 and
+a fifth caller **queues** rather than piling on, so exceeding it is now slow rather than fatal.
+The whole table is in `docs/tech/BROWSER-BUDGET.md`.
+
+**The six is a different constraint and is *not* enforced — it is yours.** Agents are bursty:
+an agent spends most of its life reading and editing and only part of it holding a browser. At
+six, typical demand stays under four and nobody queues. At twelve — what was run on 22 August —
+demand is permanently over the cap and half the fleet sits in a queue burning wall clock and
+tokens even when the machine is healthy. The cap protects the *machine*; only you can protect
+the *fleet's throughput*, and the two numbers are not the same.
+
+There is a third limit and it is the one that actually bit: **an orchestrator who dispatches
+twelve cannot read twelve reports.** Nineteen orphaned dev servers sat on this box for more
+than a day before anyone looked.
+
+Scaling to another machine: **one browser slot per four cores**, agents at 1.5× the slot count.
+On anything smaller than 16 cores, set it — `node tools/browsers.mjs cap <n>` writes it once
+for every agent. It is deliberately *not* computed from `os.cpus()`: a cap that changes
+silently with the hardware is one nobody can reason about across two machines.
 
 ### Reserved for the owner — do not decide these
 

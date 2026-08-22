@@ -32,10 +32,10 @@
  * that one** rather than maintaining two drivers for one menu. The one thing that must not
  * happen is a third.
  */
-import { chromium } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { bootThroughMenu, ensureServer } from '../lib/menu-boot.mjs';
+import { launchBrowser } from '../lib/browser-budget.mjs';
 
 export const ROOT = path.resolve(import.meta.dirname, '../..');
 /** `src/core/Time.ts` fixed step. */
@@ -164,9 +164,25 @@ const INSTALL = () => {
  */
 export async function boot({ port, map, tier = 'high', out, size = 'default', label }) {
   await mkdir(out, { recursive: true });
-  const { base } = await ensureServer({ port, root: ROOT });
-  const browser = await chromium.launch({
-    args: ['--use-gl=angle', '--use-angle=metal', '--ignore-gpu-blocklist', '--hide-scrollbars'],
+  /*
+   * The browser slot before the server — `tools/lib/browser-budget.mjs`, 22 Aug 2026.
+   *
+   * Twenty-three scripts in this directory boot through here, and before the budget existed
+   * twenty-three agents running them was twenty-three browsers with nothing counting them. The
+   * slot is released by `browser.close()`, which every caller already does, and by an exit hook
+   * for the ones that throw first.
+   *
+   * The args list also lost `--use-gl=angle --use-angle=metal --ignore-gpu-blocklist`, which
+   * are the default in `GPU_ARGS` now. It never passed `--enable-unsafe-swiftshader`, unlike
+   * every other rig here, so these scripts were one blocklist entry away from a headless
+   * configuration in which WebGL context creation simply fails.
+   */
+  const browser = await launchBrowser({
+    label: label ?? 'pl-lib', port, root: ROOT,
+    args: ['--hide-scrollbars'],
+  });
+  const { base } = await ensureServer({
+    port, root: ROOT, label: label ?? 'pl-lib', slot: browser.budgetSlot,
   });
   const page = await browser.newPage({ viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1 });
   const errs = [], cerrs = [];

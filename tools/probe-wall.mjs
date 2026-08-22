@@ -28,7 +28,7 @@
  *   node tools/probe-wall.mjs --port=5511 --dump=screenshots/wall-profile.json
  */
 
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser-budget.mjs';
 import { createServer } from 'node:http';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, extname, join, resolve } from 'node:path';
@@ -144,9 +144,14 @@ let measured = null;
 
 try {
   srv = await ensureServer();
-  browser = await chromium.launch({
-    args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader',
-      '--ignore-gpu-blocklist', '--disable-dev-shm-usage'],
+  /*
+   * `launchBrowser` — 22 Aug 2026. This file's own `ensureServer` is a `node:http` static
+   * server, which dies with the process and never orphaned anything; the browser is the part
+   * that needed counting. The GPU flags are `GPU_ARGS` now and are supplied by default.
+   */
+  browser = await launchBrowser({
+    label: 'probe-wall', port: PORT, root: ROOT,
+    args: ['--disable-dev-shm-usage'],
   });
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
   const errors = [];
