@@ -8,6 +8,31 @@ exist together.
 **These are photographs of the city, not probe illustrations.** Nothing here is a diagnostic
 overlay. If a fault is visible in one of these frames it is visible because the city has it.
 
+## Start here
+
+Twelve pictures, flat, numbered, in one folder — open this in Finder:
+
+```
+/Users/ernestmccarter/Documents/dev/Total-Claude/.claude/worktrees/agent-aa1ea2e71531566ea/screenshots/ROME-LOOK-HERE/
+```
+
+```
+01-the-wall-the-road-and-the-river.jpg          the establishing shot
+02-oblique-over-the-campus-martius.jpg          Rome as a city
+03-across-the-tiber-into-the-city.jpg           the far bank, the Janiculum, the channel
+04-north-up-the-via-lata-axis.jpg               the monumental Campus Martius
+05-plan-whole-city-north-up-1px-1.617m.jpg      the plan, at a stated scale
+06-plan-campus-martius-north-up-1px-0.606m.jpg  the plan, closer
+07-eye-1.75m-porta-flaminia-from-inside.jpg     a man's eye at the gate
+08-eye-1.75m-in-the-ordinary-fabric.jpg         a man's eye in an insula quarter
+09-along-the-via-lata.jpg                       down the axis
+10-across-the-via-lata.jpg                      the enclosure reading
+11-THE-CITY-ON-THE-LANCIANI-PLATE.png           the map laid on the 1901 plate
+12-the-lanciani-plate-alone.png                 the plate by itself, to compare
+```
+
+Copies. The originals, and the other seven cameras, are below.
+
 ## Where the files are
 
 ```
