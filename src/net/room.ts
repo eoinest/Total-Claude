@@ -387,6 +387,25 @@ export class Room {
    * the effective scale and the pool count are what get compared, per §7.7bis.
    */
   private mismatch(a: BootPrint, b: BootPrint): { why: string; detail: string } | null {
+    /*
+     * The tick index, first, because it is the one clause that makes every clause after it
+     * mean anything.
+     *
+     * Two clients that announce from different ticks are not desynced — they were never
+     * synced, and every checkpoint they exchange afterwards compares different points in the
+     * same battle. The failure has a specific shape that looks like a determinism bug and is
+     * not one: a `uctl` difference at t+0, which is a *control-flow* disagreement before a
+     * tick was supposed to have run, and rounding cannot take that shape. `NetSession.init`
+     * pins the tick ceiling to 0 so this cannot happen; this refuses the day it does.
+     */
+    if (a.tick0 !== 0 || b.tick0 !== 0) {
+      return {
+        why: 'tick',
+        detail: `a client announced from tick ${a.tick0} and the other from ${b.tick0}; both `
+          + 'must be 0. The frame loop starts before the page reports itself ready, so a '
+          + 'client whose clock is not held runs ticks while its opponent loads.',
+      };
+    }
     if (a.cfgKey !== b.cfgKey) {
       return { why: 'config', detail: 'the two clients are set up for different battles' };
     }

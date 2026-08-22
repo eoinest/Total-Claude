@@ -143,9 +143,20 @@ const relays = [];
  * already refused a pairing or declared a desync stays refused — that is the correct behaviour
  * and it makes a shared relay a shared fixture between arms. A node process is 40 ms.
  */
-async function startRelay(port, extra = []) {
+async function startRelay(port, extra = [], attempt = 0) {
+  /*
+   * `pipe`, not `ignore`, and a retry — both earned in one run.
+   *
+   * `stdio: 'ignore'` threw "relay did not start on 5992" and said nothing else, when the real
+   * story was that the previous arm's relay on that port was still inside its SIGTERM while the
+   * new one tried to bind, so the new one exited on EADDRINUSE and the old one had already
+   * stopped answering. A gate that cannot say *why* a server did not start is a gate somebody
+   * reruns until it works.
+   */
   const p = spawn('node', [path.join(ROOT, 'tools', 'relay.mjs'), `--port=${port}`, ...extra],
-    { cwd: ROOT, stdio: 'ignore' });
+    { cwd: ROOT, stdio: ['ignore', 'ignore', 'pipe'] });
+  let stderr = '';
+  p.stderr?.on('data', (d) => { stderr += String(d); });
   relays.push(p);
   /*
    * Wait for *this relay*, not for "something answering on that port".
@@ -166,7 +177,19 @@ async function startRelay(port, extra = []) {
       + `'${body.slice(0, 60).replace(/\s+/g, ' ')}' — somebody else's server has it`);
     else await sleep(200);
   }
-  if (!ok) throw new Error(`relay did not start on ${port}`);
+  if (!ok) {
+    const at = relays.indexOf(p);
+    if (at >= 0) relays.splice(at, 1);
+    try { p.kill('SIGKILL'); } catch { /* already gone */ }
+    if (attempt < 2) {
+      console.log(`  relay on ${port} did not come up (${stderr.trim().slice(0, 80) || 'no output'})`
+        + `; retrying in 1.5 s`);
+      await sleep(1500);
+      return startRelay(port, extra, attempt + 1);
+    }
+    throw new Error(`relay did not start on ${port} after 3 attempts: `
+      + `${stderr.trim().slice(0, 200) || 'it printed nothing'}`);
+  }
   /*
    * Each relay stops itself, and there is no blanket "stop them all" inside an arm.
    *
@@ -259,6 +282,16 @@ const INSTALL = () => {
     lat: g.net.latencies(),
   } : null);
   window.__tick = () => g.engine.time.tick;
+  /**
+   * The tick and the state, in **one** evaluate.
+   *
+   * Not two, and not three. A live frame lands between a driver's round trips and carries up to
+   * `maxStepsPerFrame = 5` ticks with it, so reading the tick and then reading the hash reports
+   * the hash of a *different* tick — measured elsewhere in this project as two runs both asked
+   * for tick 6,000 and arriving at 6,000 and 6,004. Nothing about that looks like a harness
+   * fault from the outside; it looks like the engine being sloppy. One evaluate, one tick.
+   */
+  window.__mark = () => ({ tick: g.engine.time.tick, sim: g.simTime(), ...g.hashes() });
   window.__rec = () => g.replay.record();
   window.__flow = () => ctx.tryGet('battleFlow')?.result ?? null;
   window.__dep = () => {
@@ -493,19 +526,39 @@ async function doubleOrder(page, i) {
 }
 
 /** Wait until both clients sit on the same tick, or the session ends. Never longer than `ms`. */
-async function settleTogether(host, guest, ms = 40000) {
+async function settleTogether(host, guest, ms = 40000, relay = null) {
+  /*
+   * Stop the relay's turn clock before asking whether the two clients agree.
+   *
+   * They never go static on their own: the relay closes a turn every 100 ms for as long as it is
+   * running, so both clients keep advancing and "poll until the two ticks are equal and
+   * unchanged" is a race that this arm won for four runs and then lost — reporting ticks 2,615
+   * and 2,638 as a failed comparison while the relay's own checkpoint stream had agreed all the
+   * way to 2,640. The clients were right and the instrument was wrong.
+   *
+   * SIGSTOP rather than a protocol message, because the protocol should not grow a pause verb
+   * for a test's convenience. Whatever turns are already in flight still arrive — SIGSTOP stops
+   * the process, not the kernel's socket buffers — so both clients drain to the ceiling of the
+   * same last turn and stop there, at the same tick, by construction rather than by luck.
+   * SIGCONT afterwards, because the `late` and `leave` arms reuse this match.
+   */
+  try { relay?.proc.kill('SIGSTOP'); } catch { /* already gone */ }
   const t0 = Date.now();
   let last = [-1, -2];
   while (Date.now() - t0 < ms) {
-    const a = await host.evaluate(() => window.__tick());
-    const b = await guest.evaluate(() => window.__tick());
+    const a = await host.evaluate(() => window.__mark().tick);
+    const b = await guest.evaluate(() => window.__mark().tick);
     const na = await host.evaluate(() => window.__net());
-    if (a === b && a === last[0] && b === last[1]) return { tick: a, ended: na?.ended ?? '' };
+    if (a === b && a === last[0] && b === last[1]) {
+      try { relay?.proc.kill('SIGCONT'); } catch { /* already gone */ }
+      return { tick: a, ended: na?.ended ?? '' };
+    }
     if (na?.ended) {
       // An ended session stops moving; one more read confirms it.
       await sleep(400);
       const a2 = await host.evaluate(() => window.__tick());
       const b2 = await guest.evaluate(() => window.__tick());
+      try { relay?.proc.kill('SIGCONT'); } catch { /* already gone */ }
       return { tick: Math.min(a2, b2), ended: na.ended, apart: a2 !== b2 };
     }
     last = [a, b];
@@ -513,19 +566,27 @@ async function settleTogether(host, guest, ms = 40000) {
   }
   const a = await host.evaluate(() => window.__tick());
   const b = await guest.evaluate(() => window.__tick());
+  try { relay?.proc.kill('SIGCONT'); } catch { /* already gone */ }
   return { tick: Math.min(a, b), ended: '', timedOut: true, apart: a !== b };
 }
 
 /** Both clients' final state, for comparison. */
 async function readBoth(host, guest) {
-  const rd = async (p) => ({
-    net: await p.evaluate(() => window.__net()),
-    tick: await p.evaluate(() => window.__tick()),
-    hashes: await p.evaluate(() => window.__game.hashes()),
-    rec: await p.evaluate(() => window.__rec()),
-    flow: await p.evaluate(() => window.__flow()),
-    errs: p.__errs.slice(),
-  });
+  const rd = async (p) => {
+    // The tick and the hashes together, in one evaluate: see `__mark`. Reading them separately
+    // lets a live frame put five ticks between the number and the state it is supposed to
+    // describe, and the comparison below is bit-for-bit.
+    const mark = await p.evaluate(() => window.__mark());
+    return {
+      net: await p.evaluate(() => window.__net()),
+      tick: mark.tick,
+      simTime: mark.sim,
+      hashes: mark,
+      rec: await p.evaluate(() => window.__rec()),
+      flow: await p.evaluate(() => window.__flow()),
+      errs: p.__errs.slice(),
+    };
+  };
   return { a: await rd(host), b: await rd(guest) };
 }
 
@@ -568,7 +629,7 @@ if (wanted('proto')) {
   });
   const put = (ws, m) => ws.send(JSON.stringify(m));
   const print = (over = {}) => ({
-    cfgKey: '{"map":"pydna"}', quality: 'high', unitScale: 1, count0: 100,
+    cfgKey: '{"map":"pydna"}', quality: 'high', unitScale: 1, count0: 100, tick0: 0,
     hash: 'aaaa1111', uf64: 'bbbb2222', uctl: 'cccc3333',
     libm: 'deadbeef', ua: 'Mozilla/5.0 Chrome/151.0.0.0', deployPhase: false, ...over,
   });
@@ -690,6 +751,31 @@ if (wanted('proto')) {
     'a policy table, not a flag: this answer moved three times on the day it was written');
   E.close(); F.close();
 
+  /*
+   * A client that announces from a tick other than 0 is refused before the battle starts.
+   *
+   * This arm exists because the invariant is invisible: `main.ts` calls `engine.start()` and
+   * then sets `ready = true`, so a client with no deployment phase to pause its clock runs
+   * ticks for as long as its opponent takes to load. Two clients that announced from different
+   * ticks are not desynced, they were never synced, and the symptom is a `uctl` difference at
+   * t+0 — a control-flow disagreement before a tick was supposed to have run, which rounding
+   * cannot produce. `NetSession.init` pins the tick ceiling to 0; this is what happens if a
+   * future change unpins it.
+   */
+  const T1 = await open('TQTQT', 'host');
+  await waitFor(T1, 'welcome');
+  put(T1, { k: 'setup', cfg: { map: 'pydna' }, deployPhase: false });
+  const T2 = await open('TQTQT', 'join');
+  await waitFor(T2, 'welcome');
+  put(T1, { k: 'ready', print: print(), cfg: { map: 'pydna' }, factions: [0, 1] });
+  put(T2, { k: 'ready', print: print({ tick0: 7 }), cfg: { map: 'pydna' }, factions: [0, 1] });
+  const tref = await waitFor(T1, 'refuse');
+  record('proto-tick-zero', tref.why === 'tick' && tref.detail.includes('tick 0'),
+    'a client that announces from a tick other than 0 is refused before the battle starts',
+    tref.detail.slice(0, 150),
+    'every checkpoint exchanged afterwards would be comparing different points in one battle');
+  T1.close(); T2.close();
+
   const G = await open('DQDQD', 'host');
   await waitFor(G, 'welcome');
   put(G, { k: 'setup', cfg: { map: 'pydna' }, deployPhase: false });
@@ -719,6 +805,23 @@ if (wanted('battle')) {
   const n0 = await host.evaluate(() => window.__net());
   const n1 = await guest.evaluate(() => window.__net());
   measured.factions = { host: n0.myFaction, guest: n1.myFaction, slots: [n0.slot, n1.slot] };
+  /*
+   * The invariant every hash exchanged afterwards depends on.
+   *
+   * `main.ts` calls `engine.start()` and then sets `ready = true`, so the frame loop is live
+   * before anything downstream knows the page exists — and a client with no deployment phase to
+   * pause its clock will run ticks for as long as its opponent takes to load. Two clients that
+   * announced from different ticks are not desynced; they were never synced, and the symptom is
+   * a `uctl` difference at t+0, which is a control-flow disagreement before a tick was supposed
+   * to have run and is not a shape rounding can take. `NetSession.init` pins the ceiling to 0;
+   * this is the assertion that it worked.
+   */
+  record('joined-at-tick-zero', n0.tick0 === 0 && n1.tick0 === 0,
+    'both clients announced themselves from tick 0, so every later checkpoint compares the '
+      + 'same moment of the same battle',
+    `host announced from tick ${n0.tick0}, guest from ${n1.tick0}`,
+    'the relay refuses the pairing outright if either is not 0 — see BootPrint.tick0');
+
   record('two-factions', n0.myFaction !== n1.myFaction && n0.slot === 0 && n1.slot === 1,
     'the two clients command different armies',
     `slot 0 commands faction ${n0.myFaction}, slot 1 commands faction ${n1.myFaction}`,
@@ -753,7 +856,7 @@ if (wanted('battle')) {
     if (t >= target) break;
     await sleep(700);
   }
-  const settled = await settleTogether(host, guest);
+  const settled = await settleTogether(host, guest, 40000, relay);
   const { a, b } = await readBoth(host, guest);
   const rs = await relayStatus(relay);
   measured.battle = {
@@ -763,7 +866,8 @@ if (wanted('battle')) {
     hashes: { host: a.hashes, guest: b.hashes },
   };
 
-  const sameHash = a.tick === b.tick && a.hashes.hash === b.hashes.hash
+  const sameHash = a.tick === b.tick && a.simTime === b.simTime
+    && a.hashes.hash === b.hashes.hash
     && a.hashes.uf64 === b.hashes.uf64 && a.hashes.uctl === b.hashes.uctl
     && a.hashes.alive === b.hashes.alive;
   record('same-battle', sameHash,
@@ -771,8 +875,10 @@ if (wanted('battle')) {
     a.tick === b.tick
       ? `tick ${a.tick}: pool ${a.hashes.hash}/${b.hashes.hash}, uf64 ${a.hashes.uf64}/${b.hashes.uf64}, `
         + `uctl ${a.hashes.uctl}/${b.hashes.uctl}, alive ${a.hashes.alive}/${b.hashes.alive}`
-      : `they stopped at different ticks: ${a.tick} and ${b.tick}`,
-    `${a.hashes.count} men`);
+      : `they stopped at different ticks: ${a.tick} (sim ${a.simTime}) and ${b.tick} `
+        + `(sim ${b.simTime})`,
+    `${a.hashes.count} men; simTime compared as well as hashed, because equal hashes at `
+      + 'unequal sim times would mean the comparison had been taken at two moments');
 
   const agreed = rs?.rooms?.[0]?.lastAgreedTick ?? -1;
   record('checkpoints-agreed', agreed >= Math.min(a.tick, b.tick) - 60 && agreed > 0
@@ -1100,7 +1206,7 @@ if (wanted('xengine')) {
       n = await host.evaluate(() => window.__net());
       ng = await guest.evaluate(() => window.__net());
       if (n?.desync || n?.ended) break;
-      const t = await host.evaluate(() => window.__tick());
+      const t = await host.evaluate(() => window.__mark().tick);
       if (t > XTICKS) break;                     // t+50 by default; the fork is at tick 30
       await sleep(600);
     }
@@ -1122,7 +1228,7 @@ if (wanted('xengine')) {
      * which *is* at equal ticks — had said nothing, and that disagreement between the two
      * instruments is what caught it.
      */
-    const settled = await settleTogether(host, guest, 60000);
+    const settled = await settleTogether(host, guest, 60000, relay);
     /*
      * Re-read the status after settling, and not before.
      *
@@ -1142,10 +1248,12 @@ if (wanted('xengine')) {
         await sleep(300);
       }
     }
-    const ta = await host.evaluate(() => window.__tick());
-    const tb = await guest.evaluate(() => window.__tick());
-    const ha = await host.evaluate(() => window.__game.hashes());
-    const hb = await guest.evaluate(() => window.__game.hashes());
+    const ma = await host.evaluate(() => window.__mark());
+    const mb = await guest.evaluate(() => window.__mark());
+    const ta = ma.tick;
+    const tb = mb.tick;
+    const ha = ma;
+    const hb = mb;
     void settled;
     const rs = await relayStatus(relay);
     const d = n?.desync ?? null;

@@ -112,6 +112,7 @@ export const turnTick = (turn: number): number => turn * TICKS_PER_TURN;
  *   of by proxy. §1.5: Chrome 149 → 151 changed eleven of twelve tested functions, and the
  *   field battle ended 42% apart on that change alone. A user-agent string is a guess about
  *   libm; this is libm.
+ * - `tick0` — the tick each client was on when it announced. Must be 0 on both; see below.
  * - `ua` — kept for the error message, never for the decision.
  */
 export interface BootPrint {
@@ -119,6 +120,18 @@ export interface BootPrint {
   quality: string;
   unitScale: number;
   count0: number;
+  /**
+   * The tick this client was on when it announced itself. **Must be 0, on both clients.**
+   *
+   * Asserted rather than assumed, because "both clients are ready" does not mean "both clients
+   * are at the same tick". `main.ts` calls `engine.start()` and then sets `ready = true`, so
+   * the frame loop is live before anything else knows the page exists — and a client with no
+   * deployment phase to pause its clock will run ticks for as long as its opponent takes to
+   * load. `NetSession.init` pins the ceiling to 0 to prevent that; this field is how a future
+   * change that reintroduces the window gets refused in the lobby rather than desyncing at
+   * t+30. It is one integer and it turns an invisible assumption into a named sentence.
+   */
+  tick0: number;
   hash: string;
   uf64: string;
   uctl: string;

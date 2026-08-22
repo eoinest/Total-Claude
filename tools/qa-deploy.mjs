@@ -1257,17 +1257,32 @@ if (!ONLY || ONLY === 'det') {
     await settle(page, 150);
     await page.click('.dep-begin');
     await settle(page, 200);
+    /*
+     * `advanceTicks`, not `advance` — and the tick and the hash read in one evaluate.
+     *
+     * This asked for seconds: `advance(30)` runs whole synthetic frames of up to
+     * `maxStepsPerFrame = 5` ticks each, so the last one overshoots by up to four and two runs
+     * can land on different tick counts for the same elapsed time. Observed here as the
+     * signature that gives it away — **t+0 identical, t+30 DIVERGED, t+90 identical again** —
+     * which no real divergence can produce, because a forked simulation does not re-converge.
+     * `advanceTicks(n)` exists for exactly this (`Time.tickCeiling`), and `sim` and `tick` are
+     * now compared marks rather than printed decoration, so the next time the two runs are at
+     * two different moments the arm says *that* instead of blaming the simulation.
+     */
     const at = [];
     for (const t of [0, 30, 90]) {
-      if (t > 0) await page.evaluate(() => window.__game.advance(30));
-      if (t === 90) await page.evaluate(() => window.__game.advance(30));
+      if (t > 0) await page.evaluate((n) => window.__game.advanceTicks(n), t === 30 ? 900 : 1800);
       at.push({
-        t, sim: +(await page.evaluate(() => window.__game.simTime())).toFixed(3),
-        ...(await page.evaluate(() => window.__poolHash())),
+        t,
+        ...(await page.evaluate(() => ({
+          tick: window.__game.engine.time.tick,
+          sim: +window.__game.simTime().toFixed(3),
+          ...window.__poolHash(),
+        }))),
       });
     }
     marks.push({ label, framed: !!f2.px, placed, at, errs: page.__errs.slice(0, 2) });
-    console.log(`  run ${label}: ${at.map((m) => `t+${m.t} sim ${m.sim} ${m.hash} (${m.alive}/${m.count})`).join('  ')}`);
+    console.log(`  run ${label}: ${at.map((m) => `t+${m.t} tick ${m.tick} sim ${m.sim} ${m.hash} (${m.alive}/${m.count})`).join('  ')}`);
     await page.close();
   }
   const [A, B] = marks;
@@ -1277,12 +1292,15 @@ if (!ONLY || ONLY === 'det') {
   record('deployment-reproduced', sameInput && A.framed && B.framed,
     'both runs put the unit in the same place with the same frontage',
     `A ${JSON.stringify(A.placed)}  B ${JSON.stringify(B.placed)}`);
-  const same = A.at.every((m, i) =>
-    m.hash === B.at[i].hash && m.count === B.at[i].count && m.sim === B.at[i].sim);
-  record('deployed-battle-replays', same && sameInput && A.framed && B.framed,
+  // The tick is compared, not just the hash. Two runs at two different ticks are not a
+  // divergence and must not be reported as one — see the note on `advanceTicks` above.
+  const sameTick = A.at.every((m, i) => m.tick === B.at[i].tick && m.sim === B.at[i].sim);
+  const same = A.at.every((m, i) => m.hash === B.at[i].hash && m.count === B.at[i].count);
+  record('deployed-battle-replays', same && sameTick && sameInput && A.framed && B.framed,
     'two independent loads driven through the identical hand deployment, then advanced 60 s',
-    A.at.map((m, i) => `t+${m.t} A ${m.hash} B ${B.at[i].hash} `
-      + `${m.hash === B.at[i].hash ? 'IDENTICAL' : 'DIVERGED'}`).join('; '),
+    A.at.map((m, i) => `t+${m.t} tick ${m.tick}/${B.at[i].tick} A ${m.hash} B ${B.at[i].hash} `
+      + `${m.tick !== B.at[i].tick ? 'DIFFERENT TICKS'
+        : m.hash === B.at[i].hash ? 'IDENTICAL' : 'DIVERGED'}`).join('; '),
     `pool count ${A.at[0].count} both runs`);
   measured.determinism = marks;
 }

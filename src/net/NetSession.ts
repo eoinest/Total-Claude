@@ -82,6 +82,14 @@ export interface NetStatus {
   /** The highest tick this client is authorised to reach, and the turn that authorised it. */
   ceiling: number;
   readyTurn: number;
+  /**
+   * The tick this client announced itself from. Must be 0; see `BootPrint.tick0`.
+   *
+   * Published so a gate can assert the invariant instead of trusting it. "Both clients are
+   * ready" does not mean "both clients are at the same tick", and the difference is invisible
+   * from outside the page.
+   */
+  tick0: number;
 }
 
 /** A desync, as this client saw it. Every field is in the panel and in the gate's JSON. */
@@ -156,6 +164,8 @@ export class NetSession implements Subsystem {
   /** When this client first ran out of authorised ticks. Not yet a stall; see `STALL_MS`. */
   private waitingSince = 0;
   private perturbed = -1;
+  /** The tick this client was on when it announced. -1 until `announce` runs. */
+  private tick0 = -1;
 
   constructor(link: NetLink, cfg: BattleConfig, quality: QualityTier, deployPhase: boolean) {
     this.link = link;
@@ -166,6 +176,26 @@ export class NetSession implements Subsystem {
 
   init(ctx: EngineContext): void {
     this.ctx = ctx;
+    /*
+     * Nail the clock to tick 0 here, in `init`, and not when the relay says the battle has
+     * started. **This is a protocol requirement, not a tidiness one.**
+     *
+     * `main.ts` calls `engine.start()` and *then* sets `ready = true`, so the frame loop is
+     * running before anything downstream knows the page exists. With a deployment phase the
+     * clock is paused and nothing happens; **without one** — `?deploy=0` — the accumulator is
+     * live, and a client left free between `engine.start()` and the relay's `start` runs ticks
+     * for as long as its opponent takes to load. On a full-scale siege in a second browser
+     * that is tens of seconds, so the host would be thousands of ticks in before the battle
+     * began, and every checkpoint the two exchanged afterwards would be comparing different
+     * points in the same battle. Two clients would not be desynced; they would never have been
+     * synced.
+     *
+     * `init` runs inside `engine.initAll()`, which is before `engine.start()`, so from the
+     * first frame of this client's life the ceiling is 0 and the tick index at join is 0 by
+     * construction rather than by hope. `BootPrint.tick0` then *asserts* it, so a future change
+     * that reintroduces the window is refused in the lobby instead of desyncing at t+30.
+     */
+    ctx.time.tickCeiling = 0;
     this.battle = ctx.get<Subsystem>('battle') as unknown as BattleSystem;
     this.replay = ctx.get<Subsystem>('replay') as unknown as ReplaySystem;
     const sink: NetSink = {
@@ -197,6 +227,7 @@ export class NetSession implements Subsystem {
       quality: this.quality,
       unitScale: this.battle.unitSizeScale,
       count0: h.count,
+      tick0: (this.tick0 = this.ctx.time.tick),
       hash: h.hash,
       uf64: h.uf64,
       uctl: h.uctl,
@@ -240,7 +271,11 @@ export class NetSession implements Subsystem {
       t.gameSpeed = 1;
       return;
     }
-    if (this.phase !== 'battle' && this.phase !== 'deploy') return;
+    /*
+     * No early return for `connecting` and `lobby`. `readyTurn` is -1 until the first battle
+     * turn arrives, so the expression below evaluates to 0 in those phases and holding it is
+     * the whole point — see `init`.
+     */
     const ceiling = turnTick(this.readyTurn + 1);
     t.tickCeiling = ceiling;
     /*
@@ -508,6 +543,7 @@ export class NetSession implements Subsystem {
       sent: this.link.counts.sent,
       ceiling: t ? t.tickCeiling : -1,
       readyTurn: this.readyTurn,
+      tick0: this.tick0,
     };
   }
 
