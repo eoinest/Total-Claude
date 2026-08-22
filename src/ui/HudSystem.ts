@@ -315,12 +315,6 @@ export class HudSystem implements Subsystem {
         escaladeOfferAt?: (u: number, x: number, z: number) => EscaladeOfferView;
         traverseOfferAt?: (u: number, x: number, z: number)
           => { ok: boolean; refusal: WallRefusal | 'none'; bay: number };
-        wallFileOf?: (u: number) => {
-          cx: number; cz: number; cos: number; sin: number;
-          halfW: number; halfD: number; y: number;
-        } | null;
-        wallAssaultOfferAt?: (u: number, target: number)
-          => { ok: boolean; refusal: WallRefusal | 'none'; bay: number };
       };
     } | undefined)?.siege;
     if (siege && typeof siege.wallTargetAt === 'function' && typeof siege.isGarrisoned === 'function'
@@ -364,26 +358,6 @@ export class HudSystem implements Subsystem {
          */
         traverseOfferAt: typeof siege.traverseOfferAt === 'function'
           ? (u, x, z) => siege.traverseOfferAt!(u, x, z) : undefined,
-        /*
-         * The stretch of stone a unit's men are on, so the pick can describe a file.
-         *
-         * `ui/picking.ts` builds one box per unit out of `u.width` and the ranks a formation
-         * would take, which is the shape a body of men has in a field. Measured over each
-         * unit's own drawn men at the storm of Rome, that box answered the cursor on **21%
-         * to 62%** of pixels for the eight cohorts standing on the Aurelian walk. A click
-         * that misses clears the selection, so two clicks in three disarmed the player —
-         * which is the mechanism behind *"they get disconnected from their banner"* and
-         * behind the judge's `cursor=default hovered=16 wallValid=false hint=""`, where the
-         * selection was simply empty by the time the cursor got there.
-         */
-        fileOf: typeof siege.wallFileOf === 'function'
-          ? (u) => siege.wallFileOf!(u) : undefined,
-        /*
-         * And whether "take those men off the wall" would be carried out, so the cursor can
-         * refuse it before the click rather than after.
-         */
-        assaultOfferAt: typeof siege.wallAssaultOfferAt === 'function'
-          ? (u, t) => siege.wallAssaultOfferAt!(u, t) : undefined,
       };
     }
 

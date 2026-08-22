@@ -137,19 +137,6 @@ export class EventFeed {
      */
     this.offs.push(
       ctx.events.on('orderRefused', (e) => {
-        /*
-         * The player's own units only, and this line is load-bearing now.
-         *
-         * A refusal is the one notice in this feed that is *an answer to the player*, so it
-         * has no business reporting what the other army was told it could not do. It never
-         * had, but until a garrison could be ordered to attack, the AI hardly ever tripped
-         * one; with the assault verb on the same wire it trips them constantly — measured at
-         * the storm of Rome, a lodgement with 9 of its 84 men over the parapet is told
-         * "These men are not on the wall — send them up it first" every time its own general
-         * points it at my cohort. Thirty of those a minute about somebody else's army is the
-         * best writing in this product spent on the wrong reader.
-         */
-        if (!this.model.view(e.unitId)?.own) return;
         this.push(
           `refuse${e.unitId}`,
           ICON.rout,

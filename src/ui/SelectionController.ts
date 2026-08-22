@@ -76,8 +76,6 @@ const MIN_RANKS = 3;
 const PICK_SLACK_M = 1.1;
 
 const FOOT: Footprint = { cx: 0, cz: 0, halfW: 1, halfD: 1, cos: 1, sin: 0 };
-/** The same, for the stretch of walk a unit's men are standing on. See `pickUnit`. */
-const WALL_FOOT: Footprint = { cx: 0, cz: 0, halfW: 1, halfD: 1, cos: 1, sin: 0 };
 const PROJECTED: Projected = { x: 0, y: 0, distance: 0, visible: false };
 const PICK: ScreenPick = makeScreenPick();
 const RAY: ScreenRay = makeScreenRay();
@@ -363,26 +361,6 @@ export class SelectionController {
     traverseOfferAt?(unitId: number, x: number, z: number): {
       ok: boolean; refusal: WallRefusal | 'none'; bay: number;
     };
-    /**
-     * The stretch of stone a unit's men are standing on, or null — `Siege.wallFileOf`.
-     *
-     * The pick's own copy of "a unit on a wall is a file the wall's depth, not a rectangle".
-     * `footprintOf` builds a block from `u.width` and the ranks a formation would take, and
-     * on the walk that is wrong in both axes: measured over each unit's own drawn men at the
-     * storm of Rome, **21% to 62%** of pixels hovered the unit under them. Added to the
-     * ordinary box rather than substituted for it, so a party with men on the grass and men
-     * on the parapet is pickable at both and nothing that answers today stops answering.
-     */
-    fileOf?(unitId: number): {
-      cx: number; cz: number; cos: number; sin: number; halfW: number; halfD: number; y: number;
-    } | null;
-    /**
-     * Whether an attack on a unit standing on the wall would be carried out —
-     * `Siege.wallAssaultOfferAt`, pure, and the same predicate `interceptOrders` acts on.
-     */
-    assaultOfferAt?(unitId: number, targetId: number): {
-      ok: boolean; refusal: WallRefusal | 'none'; bay: number;
-    };
   } | null = null;
 
   constructor(
@@ -604,8 +582,6 @@ export class SelectionController {
     this.refreshWallOffer();
     const hovered = this.pickUnit(ctx);
     if (!this.ptr.overUi) this.model.hoveredId = hovered;
-    // After the pick, because this one is about a unit rather than about a point.
-    this.refreshAssaultOffer(hovered);
 
     this.handleLeft(ctx);
     this.handleRight(ctx, hovered);
@@ -952,37 +928,6 @@ export class SelectionController {
   }
 
   /**
-   * The sentence for "go and take *those* men off the wall", or `''` when it is real.
-   *
-   * Separate from `traverseRefusal` because it is about a *unit* and not about a point, so
-   * it can only be asked once the pick has run — `refreshWallOffer` is called before
-   * `pickUnit` and must stay there, since `updateGround` writes the point it reads.
-   */
-  private assaultRefusal = '';
-
-  /**
-   * Ask the simulation whether the attack the cursor is about to promise will happen.
-   *
-   * `Siege.wallAssaultOfferAt` is the same function `interceptOrders` acts on, and `noWall`
-   * is its way of saying the order is not about the wall at all — an ordinary attack, which
-   * this must leave to the ordinary `attack` glyph. Everything else is a sentence, drawn
-   * from the same `WALL_REFUSAL` table the feed prints a tick later, so the words before the
-   * click and the words after it cannot come apart.
-   */
-  private refreshAssaultOffer(hovered: number): void {
-    this.assaultRefusal = '';
-    const probe = this.wallProbe;
-    if (!probe?.assaultOfferAt || this.deployment?.active || hovered < 0) return;
-    const v = this.model.view(hovered);
-    if (!v || v.own || v.destroyed) return;
-    const lead = this.model.selectedViews.find((s) => s.own && !s.destroyed);
-    if (!lead) return;
-    const o = probe.assaultOfferAt(lead.id, hovered);
-    if (o.ok || o.refusal === 'none' || o.refusal === 'noWall') return;
-    this.assaultRefusal = WALL_REFUSAL[o.refusal](o.bay, 'traverse');
-  }
-
-  /**
    * A cohort already on the wall, pointing at the top of a piece of the wall.
    *
    * The second half of the same defect the storming branch has. A garrison on Carthage's
@@ -1081,76 +1026,21 @@ export class SelectionController {
     const slack = Math.max(PICK_SLACK_M, Math.min(9, ctx.rig.metresPerPixel(ctx.viewH) * 7));
     let best = -1;
     let bestD = Infinity;
-    const fileOf = this.wallProbe?.fileOf;
     for (const v of this.model.views) {
       if (v.destroyed) continue;
-      const file = fileOf ? fileOf(v.id) : null;
-      /*
-       * How specific a claim on this pixel the box is, and it is only ever charged to a unit
-       * standing on a wall.
-       *
-       * Two boxes that both *contain* the cursor are two claims on it, and "the nearer
-       * centre" cannot separate them when they share one: a lodgement climbs into the middle
-       * of the cohort holding that bay, so the two centres coincide to a metre and the pick
-       * answered with whichever came first in id order — measured, the cursor over a
-       * lodgement's own men on run 2 resolved to *my* cohort on run 2 from every pixel, and
-       * `hostileUnder` cannot name an enemy the pick never returns. The tighter box is the
-       * more specific claim and is what the player meant; on a walk it is also the smaller
-       * unit, which is the one that is otherwise unreachable.
-       *
-       * Scaled so it can separate two boxes the cursor is inside (areas here run 5 to 60 m²,
-       * so 0.05 to 0.6) and can never beat a box it is genuinely outside of, whose `d` is a
-       * raw metre. Zero for a unit on the ground, so field picking is unchanged to the bit.
-       */
-      const spread = file ? 0.01 : 0;
       // The level the men are standing on, mid-body. One expression, both cases — a unit on a
       // wall walk and a unit on grass differ only in which number goes into it.
       const standing = (v.standY - v.cy > ELEVATED_MIN_DY ? v.standY : v.cy) + MAN_MID_Y;
-      if (rayPlaneY(RAY, standing, PLANE_AT)) {
-        const px = PLANE_AT.x;
-        const pz = PLANE_AT.z;
-        footprintOf(v.unit, v.def, FOOT);
-        const d = distanceToFootprint(FOOT, px, pz);
-        if (d <= slack) {
-          // Inside two footprints at once: prefer the nearer centre.
-          const score = d + Math.hypot(v.cx - px, v.cz - pz) * 0.01
-            + spread * FOOT.halfW * FOOT.halfD;
-          if (score < bestD) {
-            bestD = score;
-            best = v.id;
-          }
-        }
-      }
-      /*
-       * And the men on the stone, which the block above cannot describe.
-       *
-       * `footprintOf` builds the shape a formation has in a field — `u.width` across,
-       * `ranksFor(alive, width)` deep — and a unit on a wall does not have one. Measured at
-       * the storm of Rome over a 9x7 grid of each unit's *own drawn men*, the fraction of
-       * pixels that hovered the unit under them was **21% to 62%** for the eight cohorts on
-       * the Aurelian walk and **13%** for a lodgement: four pixels in five over a cohort's
-       * own soldiers selected nobody. `Siege.wallFileOf` answers with the stretch of walk
-       * the men are standing on, at the walk's own height, so an escalade party whose
-       * `standY` is halfway up a ladder is still pickable at the men it has over the parapet.
-       *
-       * A second test rather than a replacement, and that is the safety property: a unit in
-       * two places is pickable in both, and nothing that answered before this line can stop
-       * answering because of it.
-       */
-      if (!file) continue;
-      if (!rayPlaneY(RAY, file.y + MAN_MID_Y, PLANE_AT)) continue;
-      WALL_FOOT.cx = file.cx;
-      WALL_FOOT.cz = file.cz;
-      WALL_FOOT.cos = file.cos;
-      WALL_FOOT.sin = file.sin;
-      WALL_FOOT.halfW = file.halfW;
-      WALL_FOOT.halfD = file.halfD;
-      const wd = distanceToFootprint(WALL_FOOT, PLANE_AT.x, PLANE_AT.z);
-      if (wd > slack) continue;
-      const wscore = wd + Math.hypot(file.cx - PLANE_AT.x, file.cz - PLANE_AT.z) * 0.01
-        + spread * file.halfW * file.halfD;
-      if (wscore < bestD) {
-        bestD = wscore;
+      if (!rayPlaneY(RAY, standing, PLANE_AT)) continue;
+      const px = PLANE_AT.x;
+      const pz = PLANE_AT.z;
+      footprintOf(v.unit, v.def, FOOT);
+      const d = distanceToFootprint(FOOT, px, pz);
+      if (d > slack) continue;
+      // Inside two footprints at once: prefer the nearer centre.
+      const score = d + Math.hypot(v.cx - px, v.cz - pz) * 0.01;
+      if (score < bestD) {
+        bestD = score;
         best = v.id;
       }
     }
@@ -1253,29 +1143,6 @@ export class SelectionController {
           inside = true;
         }
       }
-      // And the stretch of walk its men are standing on, for the same reason `pickUnit`
-      // tests it: the block above is a shape a formation has in a field, and a marquee
-      // thrown over a parapet is being thrown over a file.
-      const f = !inside ? (this.wallProbe?.fileOf?.(v.id) ?? null) : null;
-      if (f) {
-        WALL_FOOT.cx = f.cx;
-        WALL_FOOT.cz = f.cz;
-        WALL_FOOT.cos = f.cos;
-        WALL_FOOT.sin = f.sin;
-        WALL_FOOT.halfW = f.halfW;
-        WALL_FOOT.halfD = f.halfD;
-        projectPoint(ctx.camera, f.cx, f.y + 1, f.cz, ctx.viewW, ctx.viewH, PROJECTED);
-        if (PROJECTED.visible && PROJECTED.x >= l && PROJECTED.x <= r && PROJECTED.y >= t && PROJECTED.y <= b) {
-          inside = true;
-        }
-        for (let c = 0; c < 4 && !inside; c++) {
-          footprintCorner(WALL_FOOT, c, CORNER);
-          projectPoint(ctx.camera, CORNER.x, f.y + 1, CORNER.z, ctx.viewW, ctx.viewH, PROJECTED);
-          if (PROJECTED.visible && PROJECTED.x >= l && PROJECTED.x <= r && PROJECTED.y >= t && PROJECTED.y <= b) {
-            inside = true;
-          }
-        }
-      }
       if (inside && !hits.includes(v.id)) hits.push(v.id);
     }
     this.commit(hits, ctx);
@@ -1358,10 +1225,6 @@ export class SelectionController {
             'move'
           );
         }
-      } else if (this.dragHostileId >= 0 && this.assaultRefusal) {
-        // Before the "Attack X" line, because it is the sentence that changes what the
-        // player does next: the wall will not carry this order and here is why.
-        this.showHint(this.assaultRefusal, 'attack');
       } else if (this.dragHostileId >= 0) {
         const t = this.model.view(this.dragHostileId);
         this.showHint(`Attack ${t ? t.title : 'enemy'}`, 'attack');
@@ -1446,25 +1309,7 @@ export class SelectionController {
     if (hovered < 0) return -1;
     const v = this.model.view(hovered);
     if (!v || v.own || v.destroyed) return -1;
-    if (!this.wallValid) {
-      /*
-       * ...**except from outside somebody else's curtain, where the wall order still wins.**
-       *
-       * `wallValid` is false on most pixels of an enemy parapet seen from the field — the ray
-       * meets the merlons or misses the stone over the men's heads — so this line hands the
-       * besieger an attack on the garrison instead of the storm he is trying to order. It did
-       * not bite before, because the pick could not name a unit standing on a wall; making it
-       * able to is the whole of this branch, and it turned `qa-wallattack`'s *"the wall order
-       * still wins unmodified"* from green to red: `orderIssued kind=attack targetUnitId=7`
-       * where the base tree emitted `kind=move` at the foot of the bay.
-       *
-       * Storming a defended bay is the besieger's entire game and it must keep working from
-       * the plain click. The three named ways to attack him instead — his banner, ctrl, and
-       * both parties already on the same wall — are all still open, and the first two are
-       * measured green on Carthage.
-       */
-      return this.selectionIsStorming() ? -1 : hovered;
-    }
+    if (!this.wallValid) return hovered;
     if (!this.wallProbe?.isGarrisoned(v.id)) return hovered;
     const intent = this.wallIntent();
     if (!intent) return hovered;
@@ -1855,13 +1700,7 @@ export class SelectionController {
        * the thing the owner said the cursor fails to tell them. A hostile unit still wins
        * outright: attacking is never the surprising reading.
        */
-      // An attack on men standing on the wall that the wall will not let happen — the walk
-      // is broken between here and there, or these men are not up there to begin with. The
-      // refusal outranks the attack glyph for the same reason `traverseRefusal` outranks the
-      // wall glyph: promising an order the simulation will drop is the defect, not the
-      // absence of a promise.
-      if (hostile >= 0 && this.assaultRefusal) c = 'refuse';
-      else if (hostile >= 0) c = 'attack';
+      if (hostile >= 0) c = 'attack';
       // A wall order that will be eaten gets its own glyph, on this file's own attribute:
       // `SiegeOrders` owns `data-siegecur` and two files writing one attribute is a race.
       else if (haveSel && this.wallValid && this.traverseRefusal) c = 'refuse';
