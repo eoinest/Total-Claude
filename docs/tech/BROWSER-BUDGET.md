@@ -195,7 +195,15 @@ its own process group. It also **polls its parent every two seconds** and exits 
 way to get "die with my parent", and two seconds is a bounded orphan lifetime instead of an
 unbounded one. That is the part that survives a SIGKILL, which no exit hook does.
 
-Proved: start it, kill the parent shell, and the port is free within four seconds.
+Proved, and the proof is the SIGKILL case rather than the polite one:
+
+```
+server up, vite pid 52074 harness pid 52072
+node    52074 ... TCP 127.0.0.1:5933 (LISTEN)          <- the handle IS the server
+SIGKILL the harness (52072) - no exit hook, no finally, nothing runs
+after 4s, listening on 5933:
+RESULT: port free, vite pid 52074 self-terminated
+```
 
 It also serves **`/__tc/tree`**, stating which root it is serving. `startVite` asks before
 reusing any listener and refuses one serving a different worktree. That closes a hole nobody
@@ -241,8 +249,8 @@ line too — and that flag is a permission to fall back, not a statement that an
 2**). It fails on any file in `tools/` that calls `chromium.launch` or spawns `npx vite`
 directly and is not on `tools/browser-budget-allow.json`.
 
-It is a **ratchet, not a wall**: 237 files were already doing it directly when the budget
-landed, most of them one-off scratch scripts. The allowlist is a to-do list with a number on
+It is a **ratchet, not a wall**: 254 files were already doing it directly when the budget
+landed — 91 in `tools/` and 163 under `tools/scratch/` — most of them one-off scratch scripts. The allowlist is a to-do list with a number on
 it. It may shrink — `--prune` after converting one — and it must not grow. A *new* tool that
 launches directly fails, with the one-line fix printed.
 
@@ -266,6 +274,23 @@ contexts, deliberately — a context is cheap and a browser is not.
 cap of two, so three queue; `browsers.mjs` printed verbatim while the queue is full; and then
 one holder **SIGKILLed** — no exit hook, no `finally`, nothing runs — with the queue required
 to advance anyway. That last act is the machine crash in miniature.
+
+Measured, twice, on two different trees:
+
+```
+[21:53:20.431] child 0: GOT slot 0 after 0.2s
+[21:53:20.843] child 1: GOT slot 1 after 0.2s
+               children 2, 3, 4 queue — 3 waiting, FIFO, each named in browsers.mjs
+[21:53:35.387] SIGKILL to pid 51827 (bb-proof-0, slot 0)
+[21:53:35.816] child 2: GOT slot 0 after 14.8s     <- 0.43 s after the holder died
+[21:53:39.418] child 3: GOT slot 1 after 18.0s
+[21:53:54.762] child 4: GOT slot 0 after 32.9s
+               all children done in 52.6s — three waves of 18 s, as predicted
+               slots still held: 0
+```
+
+Two slots, five callers, three waves, FIFO order preserved across a holder that died without
+running a line of cleanup, and nothing left behind.
 
 ---
 
