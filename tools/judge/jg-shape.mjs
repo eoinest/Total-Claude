@@ -176,7 +176,17 @@ for (const seed of SEEDS) {
       const share = living > 0 ? me.alive / living : 0.5;
       const lead = (share - 0.5) * 2;
       maxLead = Math.max(maxLead, Math.abs(lead));
-      if (contactAt !== null) minGapAfterContact = Math.min(minGapAfterContact, Math.abs(lead));
+      /*
+       * The grid value here, not the tick-exact one — and deliberately.
+       *
+       * This is a *gate* on when to start tracking the closest the battle ever got, not a
+       * reported figure, so 10 s of resolution is immaterial. It also has to be the grid value
+       * for a duller reason: the tick-exact `contactAt` is read off the event bus after the loop
+       * ends, and referencing it in here was a temporal-dead-zone error that threw on all 27
+       * seeds of both arms. Caught by the run failing loudly, which is the one failure mode I
+       * have not had to go looking for today.
+       */
+      if (gridContact !== null) minGapAfterContact = Math.min(minGapAfterContact, Math.abs(lead));
       const sign = Math.abs(lead) < 0.04 ? 0 : Math.sign(lead);
       if (sign !== 0 && lastSign !== 0 && sign !== lastSign) flips++;
       if (sign !== 0) lastSign = sign;

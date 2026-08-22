@@ -19,6 +19,39 @@ admissible; neither may masquerade as the other. An impression is flagged as one
 measurement that would settle it named. A measurement with no experiential consequence is
 noted and ranked low.
 
+## 0.5 — Dispersion, and why every location test missed it
+
+**A comparator that only asks whether the mean moved is blind to the battles all becoming the
+same battle. A shifted mean is a different balance; a collapsed spread is a game that has
+stopped surprising anyone.** The second is the worse of the two and it is the one nothing in this
+project was measuring.
+
+Earned in one day, three faults, all dispersion, all missed by every location test:
+
+| fault | what it did | where |
+|---|---|---|
+| **collapsed** | `sd = 0.0` made a difference of one rounding step the loudest signal in the table — with a zero denominator every move is infinitely many sigma | my own comparator |
+| **bloated** | `sd ≈ 150 s` made a **15 %** move in Carthage's decided-at read as *"inside its own spread"* — and it was then quoted as no change | my own comparator |
+| **halved** | the real effect of a regression was **half the spread** in decided-at, contested window and peak routing (F, p = 0.016–0.018) while every location test said RESHUFFLE | the shipped tree |
+
+So: **report a variance ratio beside every mean, and a median beside every mean.** The F-test
+catches the halving; the median catches the bloating, because a distribution with one t+626
+outlier moves its mean when the outlier leaves the set and that is not a change in the
+population. Neither is optional and neither was present.
+
+And the reason this belongs in a *gameplay* rubric rather than a statistics appendix: the thing a
+player learns over twenty battles is not the mean, it is the **range**. "Sometimes the line holds
+and sometimes it doesn't" is the whole of replayability. A change that halves the spread while
+leaving the mean alone will pass every check in this document's first draft and make the game
+duller, and the player's complaint will arrive as *"it feels samey"* — which is not a sentence
+anyone can bisect.
+
+**The measured extreme case is already in the product, not hypothetical.** Rome's assault decides
+at t+56 on 12 of 12 seeds with about three seconds between fastest and slowest, the first storming
+party breaks at t+42.17–42.43 across twelve different seeds, and the contested window takes five
+distinct values across twelve runs. There is nothing left for a seed to change. That is not a
+balance problem the mean can see.
+
 ## 1. Is the battle *legible*? — weight 3
 
 The player must be able to answer four questions at a glance, and the game must not answer any
