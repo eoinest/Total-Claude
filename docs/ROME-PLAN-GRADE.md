@@ -32,7 +32,7 @@ from `KZ` 0.222 to 0.35 and nothing else was rebuilt. No roads, no grid, no fabr
 | P8 | bearing | 7 | **7.0** | median **2.4°**, worst 3.8° over 29 monuments; 5° allowed |
 | P9 | footprint vs published | 5 | **4.2** | 10 of 12 pass; compression **0.696 uniform** across the cohort |
 | P10 | topology vs the plate | 4 | **0.1** | **18 of 184** plate relations inverted |
-| P11 | nothing in water | 8 | **0.0** ⚠ | **42 of 1,160** insulae with their centre in the channel, 24 wholly submerged |
+| P11 | nothing in water | 8 | **0.0** ⚠ | **74 of 1,160** insulae with their centre in the channel, **56 wholly submerged**, 87 touching it |
 | P12 | nothing in a carriageway | 6 | **0.0** | **16.9 %** of 37.0 ha of carriageway covered; 24 of 29 monuments offend |
 | P13 | nothing inside the curtain | 3 | **2.5** | 1 undeclared insula; the one monument north of the line declares `atWall` |
 | P14 | regions partition | 5 | **0.0** | 17 districts claim **2.66×** the walled ground over **79** overlapping pairs |
@@ -141,11 +141,21 @@ survive a simple threshold (the sheet mosaic has white seams across this exact r
 orthophoto is too dark and mottled to segment naively. **Do not repeat either without a better
 classifier.**
 
-#### 3 — Forty-two buildings and one island stand in the river
+#### 3 — Seventy-four buildings and one island stand in the river
 
-42 of 1,160 insulae have their centre inside the modelled channel and **24 are wholly inside it**.
-Nothing in the build has ever checked for this; `assertNoFabricOverlaps` does not know the river
-exists.
+**74 of 1,160 insulae have their centre inside the modelled channel, 56 are wholly inside it, and
+87 touch it.** Nothing in the build has ever checked for this; `assertNoFabricOverlaps` does not
+know the river exists.
+
+*(My first pass said 42 and 24. It used the bare `RIVER_HALF_WIDTH = 47`; the channel's wet band
+measured **along x** is wider than that by `hypot(1, dx/dz)` wherever the river runs diagonally —
+`topography.ts:riverBankX` divides by `riverPerpScale` for exactly this reason — and in the bend
+that factor reaches 1.7. Corrected in `grade.mjs`. The phase-1 author's own figure, 60 of 1,259,
+was taken on the smaller plan-view fabric with, I think, the same bare half-width.)*
+
+**It is not a marginal, sub-pixel fault.** `screenshots/rome-fabric-p1/engine-after/city.png`
+shows a dozen insulae standing on the open water surface in one frame, several of them entirely
+surrounded by it, with no bank underneath. Look at the right-hand third of that image.
 
 The Insula Tiberina is a separate case and worse than it looks. It carries `onRiver: true`, so it
 is placed on the *modelled* river's centreline rather than by the survey — which means it inherits
@@ -271,9 +281,13 @@ Stated rather than suppressed, per the rubric's rule 1.
    frame is nearer 1.45:1 than 2:1."* The plan is to delete the resolver. The frame's own ratio at
    `KZ` 0.35 is `0.443 / 0.35 = 1.266`, and 1.45 over-rotates every bearing by up to 3.8°. **A
    build that deletes `resolveOverlaps` and leaves `ROT_RATIO` at 1.45 fails P8 on argument.**
-3. **The Porticus Octaviae's plate position is unresolved.** Screened at 1.03 m/px, the colonnaded
-   enclosure I take for the quadriportico reads ~200 m east of the survey row, but I could not
-   separate it from the Crypta Balbi at that scale. *Settles it:* one crop at 0.4 m/px.
+3. ~~**The Porticus Octaviae's plate position is unresolved.**~~ **Withdrawn.** Re-read at
+   0.46 m/px: the structure I took for the quadriportico 200 m east is on the far side of the
+   Theatre of Marcellus and is the Forum Holitorium slope, not the porticus. The survey row is
+   consistent with the plate to within about 60 m, which is inside my reading error at that scale
+   for a feature I cannot positively identify. **The coarse reading was wrong and the claim is
+   retracted.** The same crop refines the Theatre of Marcellus: its cavea's centre of curvature is
+   at plate (−252, −91), 39 m from the survey row, not the 0 m the contact sheet suggested.
 4. **Fourteen of twenty-nine placed monuments have no plate control at all** and their positions are
    therefore ungraded, including the Imperial fora, the Basilica Ulpia, Trajan's Market, the
    Tabularium, the Temple of Serapis, the Baths of Titus and Trajan, the Ludus Magnus, the Ara

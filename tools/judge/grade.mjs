@@ -152,16 +152,27 @@ const riverAtZ = (z) => { let best = null; for (const [zz, xx] of D.river) if (!
 // C7  nothing stands in water
 // ---------------------------------------------------------------------------
 const RHW = D.constants.RIVER_HALF_WIDTH;
+// The channel's half-width measured ALONG x, not perpendicular. `topography.ts:riverBankX`
+// divides by `riverPerpScale = 1/hypot(1, slope)`, so where the river runs diagonally the wet
+// band in x is wider than RIVER_HALF_WIDTH by that factor. A first version of this check used
+// the bare 47 m and undercounted.
+const riverSlope = (z) => {
+  let a = null, b = null;
+  for (const [zz, xx] of D.river) { if (zz <= z && (!a || zz > a[0])) a = [zz, xx]; if (zz >= z && (!b || zz < b[0])) b = [zz, xx]; }
+  if (!a || !b || a[0] === b[0]) return 0;
+  return (b[1] - a[1]) / (b[0] - a[0]);
+};
+const halfX = (z) => RHW * Math.hypot(1, riverSlope(z));
 const inWater = (x, z, hw, hd, rot) => {
   // sample the oriented box; count a solid wet if its centre or >= 2 corners are in channel
   const c = Math.cos(rot), s = Math.sin(rot);
   const pts = [[0, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]].map(([a, b]) => [x + c * hw * a + s * hd * b, z - s * hw * a + c * hd * b]);
   let wet = 0;
-  for (const [px, pz] of pts) if (Math.abs(px - riverAtZ(pz)) < RHW) wet++;
-  return { wet, centreWet: Math.abs(pts[0][0] - riverAtZ(pts[0][1])) < RHW };
+  for (const [px, pz] of pts) if (Math.abs(px - riverAtZ(pz)) < halfX(pz)) wet++;
+  return { wet, centreWet: Math.abs(pts[0][0] - riverAtZ(pts[0][1])) < halfX(pts[0][1]) };
 };
-let wetInsulae = 0, wetInsulaeFull = 0;
-for (const b of D.insulae) { const r = inWater(b.x, b.z, b.hw, b.hd, b.rot); if (r.centreWet) wetInsulae++; if (r.wet === 5) wetInsulaeFull++; }
+let wetInsulae = 0, wetInsulaeFull = 0, wetInsulaeAny = 0;
+for (const b of D.insulae) { const r = inWater(b.x, b.z, b.hw, b.hd, b.rot); if (r.centreWet) wetInsulae++; if (r.wet === 5) wetInsulaeFull++; if (r.wet > 0) wetInsulaeAny++; }
 const wetLandmarks = D.landmarks.filter((l) => inWater(l.x, l.z, l.hw, l.hd, l.rot).centreWet).map((l) => l.id);
 
 // ---------------------------------------------------------------------------
@@ -329,6 +340,7 @@ console.log(`  east end (castra-ne)    x ${front.east.x.toFixed(2)}  z ${front.e
 console.log('\n-- C7 nothing stands in water');
 console.log(`  insulae with their centre inside the channel: ${wetInsulae} of ${D.insulae.length} (${(100*wetInsulae/D.insulae.length).toFixed(1)}%)`);
 console.log(`  insulae wholly inside the channel:           ${wetInsulaeFull}`);
+console.log(`  insulae with ANY corner inside the channel:  ${wetInsulaeAny} (${(100*wetInsulaeAny/D.insulae.length).toFixed(1)}%)`);
 console.log(`  landmarks with their centre in the channel:  ${wetLandmarks.length} ${wetLandmarks.length ? '[' + wetLandmarks.join(', ') + ']' : ''}`);
 
 console.log('\n-- C8 nothing stands in a carriageway');
