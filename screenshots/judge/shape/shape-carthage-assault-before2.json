@@ -1,0 +1,83 @@
+{
+ "tag": "before2",
+ "head": "186b6483ff76007389224d3246f1b95dc6486f7f",
+ "srcHash": "0e659d472a58c8f2",
+ "map": "carthage",
+ "scen": "assault",
+ "seeds": [
+  4265438264,
+  1,
+  7,
+  99,
+  12345,
+  777777,
+  2718281828,
+  31415926
+ ],
+ "step": 10,
+ "marks": [
+  1800,
+  2700,
+  4500,
+  6000,
+  12000
+ ],
+ "rows": [
+  {
+   "seed": 4265438264,
+   "error": "ReferenceError: Cannot access 'contactAt' before initialization"
+  },
+  {
+   "seed": 1,
+   "error": "ReferenceError: Cannot access 'contactAt' before initialization"
+  },
+  {
+   "seed": 7,
+   "error": "ReferenceError: Cannot access 'contactAt' before initialization"
+  },
+  {
+   "seed": 99,
+   "error": "ReferenceError: Cannot access 'contactAt' before initialization"
+  },
+  {
+   "seed": 12345,
+   "error": "Error: page.goto: Target page, context or browser has been closed\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:5911/?autoplay=1&deploy=0\", waiting until \"domcontentloaded\"\u001b[22m\n"
+  },
+  {
+   "seed": 777777,
+   "error": "ReferenceError: Cannot access 'contactAt' before initialization"
+  },
+  {
+   "seed": 2718281828,
+   "error": "ReferenceError: Cannot access 'contactAt' before initialization"
+  },
+  {
+   "seed": 31415926,
+   "error": "ReferenceError: Cannot access 'contactAt' before initialization"
+  }
+ ],
+ "log": [
+  "tree: HEAD 186b6483ff76007389224d3246f1b95dc6486f7f srcHash 0e659d472a58c8f2",
+  "carthage/assault, 8 seeds, sampling every 10 s to t+2400",
+  "seed 4265438264: THREW ReferenceError: Cannot access 'contactAt' before initialization",
+  "seed 1: THREW ReferenceError: Cannot access 'contactAt' before initialization",
+  "seed 7: THREW ReferenceError: Cannot access 'contactAt' before initialization",
+  "seed 99: THREW ReferenceError: Cannot access 'contactAt' before initialization",
+  "seed 12345: THREW Error: page.goto: Target page, context or browser has been closed\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:5911/?autoplay=1&deploy=0\", waiting until \"domcontentloaded\"\u001b[22m\n",
+  "seed 777777: THREW ReferenceError: Cannot access 'contactAt' before initialization",
+  "seed 2718281828: THREW ReferenceError: Cannot access 'contactAt' before initialization",
+  "seed 31415926: THREW ReferenceError: Cannot access 'contactAt' before initialization",
+  "\n--- before2 @ 186b6483 / src 0e659d472a58c8f2 ---",
+  "survivors at t+200: []  mean null",
+  "survivors at t+400: []  mean null",
+  "contact:            []  mean null",
+  "my first break:     []  mean null",
+  "their first break:  []  mean null",
+  "decided at:         []  mean null",
+  "contested window:   []  mean null",
+  "advantage flips:    []",
+  "closest it ever got:[]",
+  "outcomes:           {}",
+  "hash marks:         []"
+ ]
+}
