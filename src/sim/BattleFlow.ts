@@ -136,6 +136,13 @@ interface WallLine {
   mz: Float64Array;
   nx: Float64Array;
   nz: Float64Array;
+  /**
+   * Half the frontage of each bay, along the wall's own tangent.
+   *
+   * Carried because a bay's normal defines an infinite line and the wall is 37 m of it. See
+   * the lateral test in `censusWall`.
+   */
+  half: Float64Array;
   /** x of bay 0's midpoint and the uniform pitch, so a man's bay is arithmetic, not a search. */
   x0: number;
   pitch: number;
@@ -465,12 +472,16 @@ export class BattleFlowSystem implements Subsystem {
     const mz = new Float64Array(n);
     const nx = new Float64Array(n);
     const nz = new Float64Array(n);
+    const half = new Float64Array(n);
     for (let i = 0; i < n; i++) {
       const bay = bays[i];
       mx[i] = (bay.x0 + bay.x1) * 0.5;
       mz[i] = (bay.z0 + bay.z1) * 0.5;
       nx[i] = bay.nx;
       nz[i] = bay.nz;
+      const dx = bay.x1 - bay.x0;
+      const dz = bay.z1 - bay.z0;
+      half[i] = 0.5 * Math.sqrt(dx * dx + dz * dz);
     }
     // Bays run broadly along x on every map — `CitySystem` asserts a uniform pitch and
     // `bayAt` already indexes them arithmetically for the same reason — so a man's bay is a
@@ -478,7 +489,7 @@ export class BattleFlowSystem implements Subsystem {
     const pitch = (mx[n - 1] - mx[0]) / (n - 1);
     if (!Number.isFinite(pitch) || Math.abs(pitch) < 1) return null;
 
-    return { mx, mz, nx, nz, x0: mx[0], pitch, garrison, storm };
+    return { mx, mz, nx, nz, half, x0: mx[0], pitch, garrison, storm };
   }
 
   /**
@@ -492,6 +503,37 @@ export class BattleFlowSystem implements Subsystem {
    *
    * Men in the city come from a pool walk, because the wall system has no notion of "inside"
    * — it is a fact about the curtain's geometry, and the bays carry it in their own normals.
+   *
+   * ## A normal defines an infinite line, and the wall is 37 m of it
+   *
+   * That pool walk found a man's bay by arithmetic, **clamped the index to the ends of the
+   * circuit**, and then asked whether he was more than `INSIDE_MARGIN` past that bay's
+   * midline. Both halves are needed and the second was missing: a bay's outward normal
+   * defines a half-plane that runs to the edge of the map, so any man on the cityward side of
+   * the *extension* of the end bay's line was counted as being inside the city.
+   *
+   * Measured on the storm of Rome, at the tick condition B fired — world positions read out
+   * of the pool, not the census's opinion of them:
+   *
+   * ```
+   *   t+72  stormInside 67, stormHolding 0, stormOnWall 147
+   *   86 men counted inside; 50 of them are one cavalry squadron at x -110, z 575-584
+   *   the circuit's west end is x = 2, so those men are 112 m past the end of the wall
+   *   their arithmetic bay index is -4, clamped to 0, depth read -20 to -32 m
+   * ```
+   *
+   * **And picking the nearest bay instead of the clamped one does not help** — bay 0 *is* the
+   * nearest, at 135-142 m, and it reads them just as deep. The fault is the half-plane, not
+   * the clamp. So the test now also asks that the man be within the bay's own frontage along
+   * the wall's tangent, `half[k] + INSIDE_MARGIN`: 32.5 m either side of a 37 m bay's centre,
+   * which admits a man who has just come round a corner and excludes one standing in open
+   * country a hundred metres off the end.
+   *
+   * Two thirds of a twelve-seed campaign's verdicts were being decided by this. It does not
+   * touch the legitimate route: the 36 men behind bay 2's `footing` at that same tick are the
+   * building site the design intends to be walkable (`ROME.md` §8.8.2) and they still count.
+   * **Whether cavalry should be able to ride round the unbuilt west end of the circuit at all
+   * is a separate question and not this file's** — `ROME.md` §15 task 9 closes the flanks.
    *
    * ## What the storm is *holding*, as against what it is standing on
    *
@@ -626,9 +668,19 @@ export class BattleFlowSystem implements Subsystem {
     for (let i = 0; i < p.count; i++) {
       if (p.faction[i] !== w.storm || b.elevated[i] !== 0 || !p.aliveAt(i)) continue;
       const k = Math.max(0, Math.min(last, Math.round((p.x[i] - w.x0) / w.pitch)));
+      const dx = p.x[i] - w.mx[k];
+      const dz = p.z[i] - w.mz[k];
       // Negative is cityward: a bay's normal points away from the city by contract.
-      const depth = (p.x[i] - w.mx[k]) * w.nx[k] + (p.z[i] - w.mz[k]) * w.nz[k];
-      if (depth < -INSIDE_MARGIN) out.stormInside++;
+      const depth = dx * w.nx[k] + dz * w.nz[k];
+      if (depth >= -INSIDE_MARGIN) continue;
+      /*
+       * And he has to be *behind the bay*, not merely on the cityward side of the infinite
+       * line its normal defines. The tangent is the normal turned 90 degrees, so this is the
+       * same two multiplies again. See the note on the half-plane above `censusWall`.
+       */
+      const lateral = Math.abs(dx * -w.nz[k] + dz * w.nx[k]);
+      if (lateral > w.half[k] + INSIDE_MARGIN) continue;
+      out.stormInside++;
     }
     return out;
   }
